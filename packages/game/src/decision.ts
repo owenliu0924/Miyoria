@@ -198,10 +198,15 @@ export type GoalSource =
   | { type: "command"; by: string }
   | { type: "queue"; item: number; requester: string }
   /** A survival goal the director started itself (night, death); it holds her body. */
-  | { type: "survival" };
+  | { type: "survival" }
+  /**
+   * Something small the director started itself because her body was free and no decision
+   * started anything (`idle_action`); any decision replaces it.
+   */
+  | { type: "idle" };
 
 export function goalLocked(source: GoalSource): boolean {
-  return source.type !== "director";
+  return source.type !== "director" && source.type !== "idle";
 }
 
 /** Someone asked for this goal, so its result is owed to them. */
@@ -220,6 +225,8 @@ export function goalNote(source: GoalSource): string {
       return `(觀眾 ${source.requester} 的請求)`;
     case "survival":
       return "(求生)";
+    case "idle":
+      return "(閒著先做的)";
   }
 }
 
@@ -238,6 +245,8 @@ export interface GoalFacts {
   running: boolean;
   /** A survival goal (sheltering for the night, going back for her things). */
   survival?: boolean;
+  /** Something she does while idle (`idle_action`): any other goal replaces it at once. */
+  idle?: boolean;
 }
 
 /**
@@ -289,6 +298,8 @@ export function judge(
   }
   if (cfg.instant_actions.includes(proposal.name)) return { type: "step" };
   if (!goal) return { type: "replace" };
+  // What she does while idle gives way to anything she decides (even the same thing: then it is hers).
+  if (goal.idle) return { type: "replace" };
   if (goal.pending) return { type: "step" };
   const ended = !goal.running;
   const minGoal = cfg.min_goal_secs * 1000;

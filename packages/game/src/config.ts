@@ -104,6 +104,20 @@ const GameConfigFields = z.object({
    * off.
    */
   night_action: z.string().nullable().default("shelter"),
+  /**
+   * Design doc P1: when her body has been free for `idle_fill_secs` and no decision started
+   * anything (the model was slow, failed, or chose nothing), the director starts this goal by
+   * itself, when the adapter offers it (Minecraft: `idle`, something small and useful nearby).
+   * Any decision replaces it. `null` turns it off.
+   */
+  idle_action: z.string().nullable().default("idle"),
+  idle_fill_secs: z.number().nonnegative().default(8),
+  /**
+   * Decisions in a row that started nothing while her body was free and her own goal waited for
+   * a next step: that many and the goal ends (`no_progress`, "no next step"), so she moves on
+   * instead of standing there. 0 turns it off.
+   */
+  empty_decisions_limit: z.number().int().nonnegative().default(2),
   death_action: z.string().nullable().default("recover"),
   death_action_delay_secs: z.number().nonnegative().default(5),
   /** Reasoning of the decision model (`null`: what `[llm.reasoning]` says for `purpose`). */
