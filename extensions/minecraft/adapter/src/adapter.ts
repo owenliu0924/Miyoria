@@ -75,6 +75,9 @@ import {
   outcomeOf,
   sightings,
 } from "./progress.js";
+import { DeadEnds } from "./deadends.js";
+import { chooseIdle } from "./idle.js";
+import { STALL_SECS, StallWatch } from "./stall.js";
 import { type SteerRequest, SteerableTasks } from "./steer.js";
 import { type Snapshot, compactState, summarize } from "./summary.js";
 import {
@@ -116,6 +119,15 @@ export interface AdapterOptions extends EventOptions {
   shelterPollMs?: number;
   /** How long `shelter` waits for a bed to skip the night. */
   bedWaitMs?: number;
+  /**
+   * Seconds without progress before a body task ends with `stuck`, per goal (stall.ts
+   * `STALL_SECS` for the rest); `false` turns the watchdog off.
+   */
+  stallSecs?: Readonly<Record<string, number>> | false;
+  /** How often the watchdog looks at a running task. */
+  stallPollMs?: number;
+  /** How long an `idle` choice that went nowhere is skipped. */
+  idleAvoidMs?: number;
 }
 
 /** Goals whose outcome is measured around the task (`explore` and `shelter` measure their own). */
@@ -220,6 +232,12 @@ export class MinecraftAdapter implements GameAdapter {
   readonly #queue = new EventQueue();
   /** The running `obtain` plan, and the task it runs for. */
   #runner: ObtainRunner | null = null;
+  /** The watchdog of the running body task (stall.ts), if it is watched. */
+  #stall: StallWatch | null = null;
+  /** Where exploring found nothing (deadends.ts), for the next explore. */
+  readonly #deadEnds = new DeadEnds();
+  /** `idle` choices that went nowhere lately → until when they are skipped. */
+  readonly #idleAvoid = new Map<string, number>();
   #planTask: string | null = null;
   /** Actions waiting for an interrupting reflex to end. */
   readonly #reflexWaiters = new Set<() => void>();
@@ -381,6 +399,7 @@ export class MinecraftAdapter implements GameAdapter {
       case "hunt":
       case "shelter":
       case "recover":
+      case "idle":
         return { ok: false, code: "invalid", message: `${action.name} 是一個任務(由執行器開始)` };
     }
     // Anything but talking replaces a running plan (she chose to do something else).
@@ -445,10 +464,69 @@ export class MinecraftAdapter implements GameAdapter {
 
   // ---- the executor ----------------------------------------------------------------------
 
-  async #run(spec: TaskSpec, task: TaskContext): Promise<TaskResult> {
+  async #run(spec: TaskSpec, outer: TaskContext): Promise<TaskResult> {
     const goal = spec.goal;
     const known = ACTIONS.some((a) => a.name === goal) || HIDDEN_ACTIONS.some((a) => a.name === goal);
     if (!known) throw new TaskFailure("invalid", `沒有「${goal}」這個動作`);
+    const watched = this.#watchStall(goal, outer);
+    const task = watched?.task ?? outer;
+    try {
+      return await this.#measured(spec, task);
+    } finally {
+      watched?.stop();
+    }
+  }
+
+  /**
+   * The progress watchdog of a body task (stall.ts): a task of its own whose signal also aborts
+   * with `stuck` when the task showed no progress for its window. `null` when `goal` is not
+   * watched.
+   */
+  #watchStall(goal: string, task: TaskContext): { task: TaskContext; stop: () => void } | null {
+    const table = this.#opts.stallSecs;
+    if (table === false) return null;
+    const secs = table?.[goal] ?? STALL_SECS[goal];
+    if (secs === undefined || secs <= 0) return null;
+    const watch = new StallWatch(secs * 1000, Date.now());
+    const stuck = new AbortController();
+    const previous = this.#stall;
+    this.#stall = watch;
+    let looking = false;
+    const poll = setInterval(() => {
+      if (looking || stuck.signal.aborted || task.signal.aborted) return;
+      looking = true;
+      void this.#snapshot()
+        .then((s) => {
+          const now = Date.now();
+          if (!watch.look(s, now) || stuck.signal.aborted) return;
+          const last = watch.lastProgress === "" ? "" : `(上一次有進展是${watch.lastProgress})`;
+          stuck.abort(new TaskFailure("stuck", `卡住了:${watch.idleSecs(now)} 秒沒有移動、背包也沒有變化${last},換個做法或地方`));
+        })
+        .finally(() => {
+          looking = false;
+        });
+    }, this.#opts.stallPollMs ?? 5_000);
+    const signal = AbortSignal.any([task.signal, stuck.signal]);
+    const watched: TaskContext = {
+      spec: task.spec,
+      signal,
+      progress: (detail, progress) => {
+        watch.bump(Date.now());
+        task.progress(detail, progress);
+      },
+      remainingMs: () => task.remainingMs(),
+    };
+    return {
+      task: watched,
+      stop: () => {
+        clearInterval(poll);
+        if (this.#stall === watch) this.#stall = previous;
+      },
+    };
+  }
+
+  async #measured(spec: TaskSpec, task: TaskContext): Promise<TaskResult> {
+    const goal = spec.goal;
     if (!MEASURED.has(goal)) return this.#runGoal(spec, task);
     // What it changed is measured around it: her inventory before and after, and what was
     // picked up meanwhile.
@@ -481,6 +559,8 @@ export class MinecraftAdapter implements GameAdapter {
         return this.#runHunt(spec, task);
       case "explore":
         return this.#runExplore(spec, task);
+      case "idle":
+        return this.#runIdle(spec, task);
       case "shelter":
         return this.#runShelter(spec, task);
       case "recover":
@@ -739,6 +819,7 @@ export class MinecraftAdapter implements GameAdapter {
         // Its steps are the task's progress.
         emit: (e) => task.progress(String((e.data as { text?: unknown } | undefined)?.text ?? e.type)),
         steered: (id, outcome, detail) => this.tasks.reportSteer(task.spec.id, id, outcome, detail),
+        quiet: (ms) => this.#stall?.quiet(Date.now() + ms),
       },
       item,
       count,
@@ -810,6 +891,18 @@ export class MinecraftAdapter implements GameAdapter {
     const ended = this.#watch(jobEnd("explore", spec.id, this.modTasks), task);
     this.#stopOnAbort(task);
     const { find: _find, ...args } = spec.args;
+    // No center given: away from where exploring lately found nothing (deadends.ts).
+    const dimension = before?.dimension ?? "overworld";
+    const from = before?.block_position ?? before?.position ?? null;
+    const steer =
+      from !== null && (args.x === undefined || args.z === undefined)
+        ? this.#deadEnds.steer(dimension, from, find, Date.now())
+        : null;
+    if (steer !== null) {
+      args.x = steer.x;
+      args.z = steer.z;
+      task.progress(`這附近探索過了沒什麼,${steer.direction}走`);
+    }
     const result = await this.act({ name: "explore", args }, task.signal, spec.id);
     if (!result.ok) {
       ended.cancel();
@@ -842,7 +935,37 @@ export class MinecraftAdapter implements GameAdapter {
     look(after);
     const secs = Math.round((Date.now() - started) / 1000);
     const outcome = exploreOutcome(before, after, fresh, found);
-    return withOutcome({ detail: `探索了 ${secs} 秒,${outcome.note}` }, outcome);
+    // What it found nothing of is remembered, so the next explore goes elsewhere.
+    const to = after?.block_position ?? after?.position ?? null;
+    if (from !== null && to !== null) {
+      if (!outcome.progressed) this.#deadEnds.mark(dimension, from, to, [], Date.now());
+      else if (find.length > 0 && found === null) this.#deadEnds.mark(dimension, from, to, find, Date.now());
+    }
+    const steered = steer === null ? "" : `(${steer.direction}探索)`;
+    return withOutcome({ detail: `探索了 ${secs} 秒${steered},${outcome.note}` }, outcome);
+  }
+
+  /**
+   * `idle`: the most useful small thing in reach (idle.ts), run as that goal's own task (measured
+   * and watched like it). A choice that went nowhere is skipped for `idleAvoidMs`.
+   */
+  async #runIdle(spec: TaskSpec, task: TaskContext): Promise<TaskResult> {
+    const s = await this.#snapshot();
+    if (!s) throw new TaskFailure("disconnected", errorText("not_connected", ""));
+    const now = Date.now();
+    for (const [key, until] of this.#idleAvoid) if (until <= now) this.#idleAvoid.delete(key);
+    const choice = chooseIdle(s, new Set(this.#idleAvoid.keys()));
+    task.progress(choice.why);
+    const avoid = () => this.#idleAvoid.set(choice.key, Date.now() + (this.#opts.idleAvoidMs ?? 10 * 60_000));
+    try {
+      const result = await this.#run({ ...spec, goal: choice.goal, args: choice.args }, task);
+      const outcome = (result.data as { outcome?: Outcome } | null | undefined)?.outcome;
+      if (outcome && !outcome.progressed) avoid();
+      return { ...result, detail: `${choice.why}:${result.detail}` };
+    } catch (error) {
+      if (!(error instanceof TaskFailure) || !["cancelled", "superseded", "busy", "died", "disconnected"].includes(error.code)) avoid();
+      throw error;
+    }
   }
 
   /**
