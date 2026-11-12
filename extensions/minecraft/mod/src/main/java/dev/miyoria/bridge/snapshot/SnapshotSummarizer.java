@@ -95,6 +95,13 @@ public final class SnapshotSummarizer {
             if (e.name() != null && !e.name().equals(e.type())) eo.addProperty("name", e.name());
             eo.addProperty("distance", round(e.distance(), 1));
             eo.addProperty("hostile", e.hostile());
+            if (e.position() != null) {
+                JsonObject at = new JsonObject();
+                at.addProperty("x", e.position().x());
+                at.addProperty("y", e.position().y());
+                at.addProperty("z", e.position().z());
+                eo.add("position", at);
+            }
             ents.add(eo);
         }
         o.add("nearby_entities", ents);
