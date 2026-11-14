@@ -108,7 +108,7 @@ pnpm start:dist                   # node dist/main.js
 - **收音前要取得同意**(ARCHITECTURE §10.1):進頻道的人要知道她在聽、會被轉成文字。節點會把所有人的音訊送給 Core,是否處理由 Core 的同意名單決定;建議在頻道說明或進場時公告。節點不會把音訊寫到磁碟。
 - **身分共用**:Discord user id 是全域唯一的,官方 bot 在文字頻道看到的人與 self 帳號在語音聽到的人會對應到同一個 `Person`,記憶與好感共用。Core 要把 bot 和 self 兩個帳號 id 都登記為自己的帳號(避免自己回自己)。
 - **權限**:self 帳號要有該頻道的「檢視頻道」與「連線」權限,頻道不能是滿的;要被聽到還需要「說話」權限。
-- **DAVE**:Discord 語音已採端對端加密。收音、送音都靠 `@discordjs/voice` 內建的 DAVE(`@snazzah/davey`);**這個專案沒有實際連過 Discord 驗證**,Phase 0 的 spike(`spikes/voice-node`)就是要驗證這件事,結果以 spike 為準。
+- **DAVE**:Discord 語音已採端對端加密。收音、送音都靠 `@discordjs/voice` 內建的 DAVE(`@snazzah/davey`);**這個專案沒有實際連過 Discord 驗證**,Phase 0 的 spike(已移除,留在 git 歷史)就是要驗證這件事,結果以 spike 為準。
 - 一個 self 帳號同一時間在同一個伺服器只能待在一個語音頻道(Discord 的限制)。
 
 ## 疑難排解
@@ -158,6 +158,6 @@ test/                 vitest:協定、重新取樣、播放佇列(含假 player)
 
 ## 已知限制 / 尚未實測
 
-- 沒有對真的 Discord 連線測過(測試環境無法):所有 Discord 相關程式是依 `node_modules` 裡 `@discordjs/voice` 0.19.2 與 `@lng2004/discord.js-selfbot-v13` 3.7.2 的型別與原始碼寫的,版本與 `spikes/voice-node` 相同。請先用 spike 驗證 DAVE 收音 / 送音可行,再用本節點。
+- 沒有對真的 Discord 連線測過(測試環境無法):所有 Discord 相關程式是依 `node_modules` 裡 `@discordjs/voice` 0.19.2 與 `@lng2004/discord.js-selfbot-v13` 3.7.2 的型別與原始碼寫的,版本與 Phase 0 的 spike 相同(spike 已移除,留在 git 歷史)。
 - 播放是節點自己把 PCM 編成 Opus(`StreamType.Opus`),不經過 prism-media 的編碼器;`prism-media` 的 peer 依賴會警告 `opusscript` 版本(`^0.0.8` vs `0.1.1`),與 spike 相同,不影響這條路徑。
 - Go Live 與語音同時進行(hybrid)尚未對真的 Discord 驗證(見上);Go Live 的 DAVE 加密由 discord-video-stream 處理(`@snazzah/davey`),同樣沒有實測。

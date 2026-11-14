@@ -8,9 +8,9 @@
 
 - [x] Monorepo 骨架:pnpm workspace、CI(Biome / typecheck / Vitest / build)、`.editorconfig`
 - [ ] 授權(待決定)
-- [ ] **Spike:Discord self 帳號**(程式已備好:`spikes/voice-node`,待你用小帳號執行):候選 self-bot 函式庫能不能在 DAVE 加密下分別接收每個人的音訊、送出音訊、推 Go Live(風險 R1);同一個伺服器裡 bot 帳號和 self 帳號同時在線
-- [ ] **Spike:ASR 評測**(程式已備好:`spikes/speech-bench`):SenseVoice-Small vs Qwen3-ASR-0.6B / 1.7B(Whisper turbo 當參考),用 Discord 真實錄音(台灣腔、夾日英、遊戲用語),量準確率、每段延遲、VRAM
-- [ ] **Spike:TTS 評測**(程式已備好:`spikes/speech-bench`):Qwen3-TTS(Base 複製、VoiceDesign → Clone)vs GPT-SoVITS(CosyVoice、IndexTTS2 有空再測),在 4070S 上跟遊戲同時跑,量首包延遲、即時率、VRAM、中日混說與情緒表現
+- [ ] **Spike:Discord self 帳號**(spike 程式已移除,留在 git 歷史):候選 self-bot 函式庫能不能在 DAVE 加密下分別接收每個人的音訊、送出音訊、推 Go Live(風險 R1);同一個伺服器裡 bot 帳號和 self 帳號同時在線
+- [ ] **Spike:ASR 評測**(評測程式已移除,留在 git 歷史):SenseVoice-Small vs Qwen3-ASR-0.6B / 1.7B(Whisper turbo 當參考),用 Discord 真實錄音(台灣腔、夾日英、遊戲用語),量準確率、每段延遲、VRAM
+- [ ] **Spike:TTS 評測**(評測程式已移除,留在 git 歷史):Qwen3-TTS(Base 複製、VoiceDesign → Clone)vs GPT-SoVITS(CosyVoice、IndexTTS2 有空再測),在 4070S 上跟遊戲同時跑,量首包延遲、即時率、VRAM、中日混說與情緒表現
 - [ ] **Spike:DeepSeek-chan 的聲音**:用 Qwen3-TTS VoiceDesign 依 `voice.toml` 的描述生成多個候選,挑一個固定成參考音
 - [ ] **Spike:VTS 嘴型**:匯入 DeepSeek-chan 模型,列出它的 expression / 參數,從音訊注入 `MouthOpen`,確認同步效果
 - [x] **Spike:LLM 抽象**:決定自己寫薄介面 + OpenAI 相容 provider(`@miyoria/llm/llm`)

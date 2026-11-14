@@ -196,7 +196,7 @@ ASR_BACKEND=qwen3 docker compose up --build            # 換成 Qwen3-ASR(也可
 
 ## 2. VRAM 預期(4070 SUPER 12 GB)
 
-> **這些是依模型大小估的數字,還沒實測。**實測請用 `spikes/speech-bench`(在開著遊戲 + OBS 的狀態下量),worker 的 `/health` 也會回報 `vram_allocated_mb`(僅 PyTorch 配置的部分)。
+> **這些是依模型大小估的數字,還沒實測。**實測請在開著遊戲 + OBS 的狀態下量,worker 的 `/health` 也會回報 `vram_allocated_mb`(僅 PyTorch 配置的部分)。
 
 | 元件 | 權重 | 實際約佔 | 備註 |
 |---|---|---|---|
