@@ -107,6 +107,15 @@ first choice for what they cover. Run `pnpm install` from the root (one `pnpm-lo
   union and enum, and a field added to a shape already in use is `.optional()` or has a
   `.default()`. `packages/types` re-exports the wire types under their old names; service keys
   and in-process logic stay there.
+- **An HTTP route is declared once, in `packages/contracts/api`**, as an oRPC contract (method,
+  path, input and output schemas, the audience `admin` / `member` / `public`, a permission node).
+  `packages/api` implements it and mounts it in the Hono table; the shell there still owns
+  authentication, CSRF, 405 and the body checks, and oRPC owns input and output validation. The
+  panel and the CLI call it through the typed client. The panel takes only types from the contract
+  and reads the generated `schema/api.routes.json` at run time, so zod stays out of its bundle.
+  `packages/contracts` depends on zod and, for this part, on `@orpc/contract` (kept on 1.16.x).
+  Routes that are not JSON (images, the OAuth redirects, `/metrics`, panel files) stay plain Hono
+  routes.
 - TS-only APIs (methods, constructor options, in-process classes) are camelCase:
   `store.dueFollowups(...)`, `new OpenAiConfig(...).timeoutMs`.
 - **Module ids, config keys, event topics, service names, permission nodes, settings keys and

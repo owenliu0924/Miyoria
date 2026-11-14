@@ -41,7 +41,16 @@
 
 每一步都要 lint、typecheck、測試、build 和 Python 的 CI 全綠;除了註明的以外不改行為。
 
-**進度(2026-11-14)**:K1、K2、K3、K4、K6、K11 已完成。K4 只做了 Core 這邊:overlay 這個 app 和語音節點的嘴型 client 還在用自己手寫的形狀。K3 沒有對真的 Discord 語音測過,合併前要在線上那台機器實際進出一次語音頻道。K5 和 K8 先不照下面的原設計動工:要先看現成套件(hono 的 RPC 和 zod-openapi、oRPC、JSON-RPC 套件)能不能做得更好。
+**進度(2026-11-14)**:K1、K2、K3、K4、K6、K11 已完成。K4 只做了 Core 這邊:overlay 這個 app 和語音節點的嘴型 client 還在用自己手寫的形狀。K3 沒有對真的 Discord 語音測過,合併前要在線上那台機器實際進出一次語音頻道。K5 也已完成(協定寫成契約,兩份 JSON-RPC 合成一份放在 SDK,加了對 `vscode-jsonrpc` 的相容性測試;`@miyoria/contracts` 可以和 SDK 一起發佈)。
+
+**K8 改用 oRPC 做完了(2026-11-15)**,取代下面原設計裡手做的 `defineRoute`;理由在 [v5-packages.md](v5-packages.md)。試驗搬了 8 條路由,四道關卡都過:
+
+- 型別檢查:165 條路由的 client 檢查約 0.7 秒,成本隨路由數線性成長;編輯器裡重新檢查一個用到三條路由的頁面約 0.3 秒。
+- 面板 bundle(用 esbuild 估):總量從 574 KiB 變 584 KiB(gzip)。面板只拿契約的型別,執行時讀產生出來的 `schema/api.routes.json`,所以 zod 不會進 bundle。
+- 測試:API、面板、CLI 現有的測試全過,沒有改任何期望值。
+- SSE:有清楚、有型別的做法(`eventIterator`),但要等事件信封有 schema 之後(K12)才搬。
+
+採用的條件:認證、CSRF、405 和 body 的檢查留在 Hono 的外殼,oRPC 只管輸入輸出的驗證和 client;面板執行時不 import 契約;`@orpc/*` 停在 1.16.x;不是 JSON 的路由(圖片、OAuth 轉址、`/metrics`、面板的檔案,約 6 條)維持一般的 Hono 路由。剩下約 155 條照 K9 逐組搬。
 
 | 步 | 做什麼 | 大小 | 備註 |
 |---|---|---|---|

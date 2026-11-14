@@ -26,6 +26,9 @@ importers:
 
   apps/overlay:
     devDependencies:
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -48,13 +51,13 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
       '@orpc/client':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2
       '@orpc/openapi-client':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2
       '@orpc/tanstack-query':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2(@orpc/client@1.16.2)(@tanstack/query-core@5.105.1)
       '@radix-ui/react-alert-dialog':
         specifier: ^1.2.1
@@ -373,10 +376,10 @@ importers:
         specifier: workspace:*
         version: link:../workspace
       '@orpc/openapi':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2(ws@8.22.1)
       '@orpc/server':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2(ws@8.22.1)
       '@resvg/resvg-js':
         specifier: ^2.6.2
@@ -518,19 +521,19 @@ importers:
         specifier: ^2.0.4
         version: 2.0.4
       '@orpc/client':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2
       '@orpc/contract':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2
       '@orpc/openapi':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2(ws@8.22.1)
       '@orpc/openapi-client':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2
       '@orpc/server':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2(ws@8.22.1)
       '@resvg/resvg-js':
         specifier: ^2.6.2
@@ -637,7 +640,7 @@ importers:
   packages/contracts:
     dependencies:
       '@orpc/contract':
-        specifier: ^1.16.2
+        specifier: ~1.16.2
         version: 1.16.2
       zod:
         specifier: ^4.6.7
