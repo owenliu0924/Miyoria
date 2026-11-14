@@ -69,7 +69,7 @@ export interface HistoryEntry {
   around?: { before: HistoryEntry[]; after: HistoryEntry[] };
 }
 
-/** Someone else seen in a context (Rust `session::Participant`). */
+/** Someone else seen in a context. */
 export interface SessionParticipant {
   account: AccountRef;
   displayName: string;

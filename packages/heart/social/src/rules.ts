@@ -195,7 +195,7 @@ function charAt(text: string, i: number): string | undefined {
 /** ASCII keywords must sit on word boundaries; CJK keywords must not follow a negation. */
 function containsKeyword(text: string, word: string): boolean {
   const ascii = isAscii(word);
-  // Non-overlapping matches, like Rust's `match_indices`.
+  // Non-overlapping matches.
   for (let i = text.indexOf(word); i >= 0; i = text.indexOf(word, i + word.length)) {
     const before = charBefore(text, i);
     const after = charAt(text, i + word.length);

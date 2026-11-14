@@ -1,5 +1,5 @@
 // Test harness: a supervisor running `voice.link` on port 0 and a fake voice node speaking the
-// Voice Link protocol (port of `tests/common/mod.rs`).
+// Voice Link protocol.
 
 import { readFileSync } from "node:fs";
 import {

@@ -11,7 +11,7 @@ export type ServerState =
   /** The last attempt failed or the connection dropped; retrying with backoff. */
   | "failed";
 
-/** Status of one configured server (legacy JSON shape). */
+/** Status of one configured server (JSON shape). */
 export interface ServerStatus {
   name: string;
   /** `"stdio"` or `"http"`. */

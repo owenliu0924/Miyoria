@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ModuleContext } from "./context.js";
 
 export interface ModuleManifest {
-  /** Stable id, identical to legacy (e.g. `"platform.discord.bot"`); also `[modules.<id>]`. */
+  /** Stable id (e.g. `"platform.discord.bot"`); also `[modules.<id>]`. */
   readonly id: ModuleId;
   readonly name: string;
   readonly description: string;
@@ -37,7 +37,7 @@ export function defineManifest(
   };
 }
 
-/** Legacy JSON form of a manifest (`config_schema` is a JSON Schema of the config input). */
+/** JSON form of a manifest (`config_schema` is a JSON Schema of the config input). */
 export interface ModuleManifestJson {
   id: ModuleId;
   name: string;
@@ -63,7 +63,7 @@ export function manifestJson(manifest: ModuleManifest): ModuleManifestJson {
   };
 }
 
-/** Serialized like Rust `#[serde(tag = "status", content = "reason")]`. */
+/** Serialized as `{ status, reason? }`. */
 export type Health =
   | { status: "healthy" }
   | { status: "degraded"; reason: string }

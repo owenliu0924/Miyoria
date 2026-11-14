@@ -66,7 +66,7 @@ const ArgKindSchema = z.union([
   z.object({ type: z.literal("choice"), choices: z.array(z.string()) }),
 ]);
 
-/** `CommandSpec` as serde reads it (every field required, like the Rust struct). */
+/** `CommandSpec` as the extension protocol reads it (every field required). */
 export const CommandSpecSchema = z.object({
   path: z.array(z.string()),
   description: z.string(),

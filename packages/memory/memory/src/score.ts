@@ -30,7 +30,7 @@ export function signalScore(s: Signals, w: Weights): number {
   );
 }
 
-/** Whole seconds from `then` to `now` (Rust `(now - then).num_seconds()`). */
+/** Whole seconds from `then` to `now` (truncated toward zero). */
 function secondsBetween(then: Timestamp, now: Timestamp): number {
   return Math.trunc((timestampMs(now) - timestampMs(then)) / 1000);
 }

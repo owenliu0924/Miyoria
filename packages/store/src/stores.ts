@@ -2,7 +2,7 @@
 // backends (SQLite by default, Postgres optional) implement all of them.
 //
 // Data that belongs to one character is keyed by `ProfileId`. Module state and people are
-// shared by all profiles. Rust `BTreeMap` results are `Map`s with keys in ascending order.
+// shared by all profiles. Map results have their keys in ascending order.
 
 import {
   type AccountRef,

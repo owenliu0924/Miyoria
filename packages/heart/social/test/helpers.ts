@@ -1,4 +1,4 @@
-// In-memory fake stores and shared helpers (the Rust `tests.rs` fakes).
+// In-memory fake stores and shared helpers.
 
 import { parseAccount } from "@miyoria/commands";
 import { type ChatProvider, LlmRouter, type MockProvider, parseModelRef } from "@miyoria/llm/llm";

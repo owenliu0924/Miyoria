@@ -1,4 +1,4 @@
-// Small stand-ins the Rust tests also use: an idle module and a voice sink that records what it
+// Small stand-ins shared by the API tests: an idle module and a voice sink that records what it
 // was asked to say.
 
 import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";

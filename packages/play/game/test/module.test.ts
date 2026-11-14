@@ -1172,7 +1172,7 @@ describe("GameModule", () => {
     await h.stop();
   });
 
-  it("works without any optional service and manifest matches Rust", async () => {
+  it("works without any optional service and has the expected manifest", async () => {
     const m = new GameModule("A", "B").manifest;
     expect(m.id).toBe("game");
     expect(m.requires).toEqual([]);

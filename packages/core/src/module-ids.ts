@@ -1,4 +1,4 @@
-// Module ids the core knows about, in boot order (legacy `boot.rs` `MODULES`). Kept free of
+// Module ids the core knows about, in boot order. Kept free of
 // imports so the CLI can list configured modules without loading any module package.
 
 import type { Config } from "@miyoria/runtime/kernel";

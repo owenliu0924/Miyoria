@@ -127,7 +127,7 @@ export function actorOf(c: ApiContext): string {
   return principalActor(c.get("principal"));
 }
 
-/** Drops `undefined` fields, like serde's `skip_serializing_if = "Option::is_none"`. */
+/** Drops `undefined` fields. */
 export function toJson(value: object): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }

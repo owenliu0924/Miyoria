@@ -1,5 +1,5 @@
-// Ports of the Rust unit tests (`#[cfg(test)]` modules of protocol, avatar, emotion, motion,
-// lipsync and link::forward), plus TS-specific shape and config checks.
+// Unit tests of protocol, avatar, emotion, motion, lipsync and link forwarding, plus shape
+// and config checks.
 
 import { fileURLToPath } from "node:url";
 import type { ContextKey, ContextKind, Event, PlaybackState } from "@miyoria/types";

@@ -30,8 +30,7 @@ export interface DecisionTrace {
 }
 
 /**
- * Every bus event. Adjacently tagged exactly like the Rust
- * `#[serde(tag = "type", content = "data", rename_all = "snake_case")]` enum:
+ * Every bus event. Adjacently tagged (snake_case type names):
  * `{"type": "platform_message_created", "data": {...}}`.
  *
  * Optional (`Option<T>`) fields are always present, `null` when unset.

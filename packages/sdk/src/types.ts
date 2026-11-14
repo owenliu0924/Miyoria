@@ -1,6 +1,5 @@
-// Wire types of the Miyoria extension protocol, mirroring the Rust types in
-// `miyoria-types`, `miyoria-commands` and `miyoria-ext-host` (serde JSON
-// form). Hand-written: keep in sync with `docs/protocols/extension-rpc.md`.
+// Wire types of the Miyoria extension protocol (JSON form). Hand-written: keep in
+// sync with `docs/protocols/extension-rpc.md`.
 
 // ---- ids and platform -------------------------------------------------------
 

@@ -412,5 +412,5 @@ export class StageLink {
   }
 }
 
-/** Service key of the `StageLink` (Rust `Arc<StageLink>`). */
+/** Service key of the `StageLink`. */
 export const StageLinkKey = serviceKey<StageLink>("StageLink");

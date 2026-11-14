@@ -275,7 +275,7 @@ export function whenAndWhere(ctx: ContextKey, now: Date, utcOffsetMinutes: numbe
 
 /**
  * The per-turn situation message. `now` is shown in the time zone `utcOffsetMinutes` east of
- * UTC (default: the local time zone, like Rust `Local::now()`).
+ * UTC (default: the local time zone).
  */
 export function situationPrompt(
   s: Situation,
@@ -802,7 +802,7 @@ export function splitMessage(text: string, maxChars: number): string[] {
   let rest = [...text.trim()];
   while (rest.length > max) {
     const window = rest.slice(0, max);
-    // Byte offsets, like the Rust implementation (`min` is half the window's bytes).
+    // Offsets are in UTF-8 bytes (`min` is half the window's bytes).
     const offsets: number[] = [];
     let bytes = 0;
     for (const c of window) {

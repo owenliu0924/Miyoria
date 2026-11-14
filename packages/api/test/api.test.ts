@@ -1,6 +1,5 @@
 // End-to-end tests: a real supervisor running the `api` module on a random port, in-memory
-// stores and a persona loaded from a temp profile dir, driven through `ApiClient`
-// (`tests/api.rs`).
+// stores and a persona loaded from a temp profile dir, driven through `ApiClient`.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";

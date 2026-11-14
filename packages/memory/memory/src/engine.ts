@@ -2008,7 +2008,7 @@ export class MemoryEngine implements FollowupSource {
   }
 }
 
-/** `MemoryEngine` service (Rust `Arc<MemoryEngine>`). */
+/** `MemoryEngine` service. */
 export const MemoryEngineKey = serviceKey<MemoryEngine>("MemoryEngine");
 
 function afterMark(e: LogEntry, w: Watermark): boolean {

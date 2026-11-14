@@ -138,7 +138,7 @@ export type CoreMessage =
   | { type: "ping" }
   | { type: "pong" };
 
-/** Serializes a Core message; `undefined` fields are dropped (serde `skip_serializing_if`). */
+/** Serializes a Core message; `undefined` fields are dropped. */
 export function coreMessageJson(msg: CoreMessage): string {
   return JSON.stringify(msg);
 }

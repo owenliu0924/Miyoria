@@ -237,7 +237,7 @@ const changed = <R>(value: R, ...events: Event[]): Change<R> => ({
 
 const lower = (s: string): string => s.toLowerCase();
 
-/** Rust `f32::round() as i64`: half away from zero. */
+/** Rounds half away from zero. */
 function roundHalfAway(x: number): number {
   return Math.sign(x) * Math.round(Math.abs(x));
 }

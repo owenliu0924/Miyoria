@@ -1,4 +1,4 @@
-// Command line: a small declarative parser with Traditional Chinese help (legacy clap setup).
+// Command line: a small declarative parser with Traditional Chinese help.
 
 import { loadDotenv } from "@miyoria/runtime/kernel";
 import { cliVersion } from "./assets.js";

@@ -1,8 +1,8 @@
-// Deterministic test signals at 16 kHz (port of `vad::synth`).
+// Deterministic test signals at 16 kHz.
 
 export const RATE = 16_000;
 
-/** Rust `f32 as i16`: truncates toward zero and saturates. */
+/** Float to 16-bit sample: truncates toward zero and saturates. */
 function toI16(x: number): number {
   const t = Math.trunc(x);
   return Math.max(-32768, Math.min(32767, t));

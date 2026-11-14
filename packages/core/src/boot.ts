@@ -1,4 +1,4 @@
-// Wires config, store, profile and modules into a running core node (legacy `boot.rs`).
+// Wires config, store, profile and modules into a running core node.
 //
 // The module packages are reached only through a `ModuleCatalog` (see `modules.ts`), so this
 // file stays testable with fake modules and an in-memory store.

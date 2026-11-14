@@ -1,4 +1,4 @@
-// Consolidation with a scripted summarizer, dedupe and forgetting (Rust `tests/consolidation.rs`).
+// Consolidation with a scripted summarizer, dedupe and forgetting.
 
 import { contextHash, MockProvider } from "@miyoria/llm/llm";
 import type { MemoryRecord, MemoryScope } from "@miyoria/store";

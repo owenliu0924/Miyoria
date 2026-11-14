@@ -1,5 +1,4 @@
-// The Rust crate's inline unit tests (session, oauth, people, monitor, panel, client), plus
-// TS-specific checks of helpers.
+// Unit tests of session, oauth, people, monitor, panel and client, plus checks of helpers.
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,7 +44,7 @@ import {
   TOKEN_LEN,
 } from "../src/session.js";
 
-// ---- session.rs ---------------------------------------------------------------------------
+// ---- session ---
 
 function account(): AccountRef {
   return { platform: "discord", id: "1" };
@@ -108,7 +107,7 @@ describe("session", () => {
   });
 });
 
-// ---- oauth.rs -----------------------------------------------------------------------------
+// ---- oauth ---
 
 function login(at: number): PendingLogin {
   return { verifier: "v", next: "/", redirect: new URL("http://127.0.0.1/cb"), at };
@@ -176,7 +175,7 @@ describe("oauth", () => {
   });
 });
 
-// ---- people.rs ----------------------------------------------------------------------------
+// ---- people ---
 
 function delta(affinity: number, reason: string): RelationshipDelta {
   return { at: new Date().toISOString(), affinity, trust: 0, familiarity: 1, reason };
@@ -208,7 +207,7 @@ describe("people", () => {
   });
 });
 
-// ---- monitor.rs ---------------------------------------------------------------------------
+// ---- monitor ---
 
 describe("monitor", () => {
   it("percentiles_use_nearest_rank", () => {
@@ -324,7 +323,7 @@ describe("monitor", () => {
   });
 });
 
-// ---- panel.rs -----------------------------------------------------------------------------
+// ---- panel ---
 
 describe("panel", () => {
   it("env_overrides_config_and_missing_dirs_are_skipped", () => {
@@ -363,7 +362,7 @@ describe("panel", () => {
   });
 });
 
-// ---- client.rs ----------------------------------------------------------------------------
+// ---- client ---
 
 describe("client", () => {
   const bytes = (s: string) => new TextEncoder().encode(s);
@@ -399,7 +398,7 @@ describe("client", () => {
 // ---- TS-specific ---------------------------------------------------------------------------
 
 describe("config and helpers", () => {
-  it("config defaults equal the Rust Default impls", () => {
+  it("config defaults", () => {
     expect(ApiConfigSchema.parse({})).toEqual({
       bind: "127.0.0.1:7878",
       token: "",

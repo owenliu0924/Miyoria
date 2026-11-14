@@ -1,5 +1,4 @@
-// Provider and module tests against in-process `node:http` mock servers (ports of
-// `tests/providers.rs`).
+// Provider and module tests against in-process `node:http` mock servers.
 
 import {
   createServer,

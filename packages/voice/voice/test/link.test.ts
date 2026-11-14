@@ -1,4 +1,4 @@
-// Voice Link protocol tests against a real server (port of `tests/link.rs`).
+// Voice Link protocol tests against a real server.
 
 import {
   type Event,

@@ -1,6 +1,6 @@
 // Discord OAuth login for the panel against a fake Discord: the full login → callback → cookie →
 // session flow, PKCE, state handling, open redirects, CSRF, write permission, logout, expiry,
-// revocation and session persistence (`tests/oauth.rs`).
+// revocation and session persistence.
 
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";

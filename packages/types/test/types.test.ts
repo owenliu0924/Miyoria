@@ -43,7 +43,7 @@ describe("ContextKey", () => {
 });
 
 describe("Action", () => {
-  it("priority order and serde names", () => {
+  it("priority order and wire names", () => {
     const sorted: Priority[] = ["idle", "direct", "system", "initiative", "request"];
     expect(sorted.sort(comparePriority)).toEqual([
       "system",
@@ -54,7 +54,7 @@ describe("Action", () => {
     ]);
   });
 
-  it("matches the Rust JSON shape and expires after its ttl", () => {
+  it("matches the JSON shape and expires after its ttl", () => {
     const now = Date.parse("2026-03-10T00:00:00Z");
     const action = newAction(
       textLane(guild),
@@ -85,7 +85,7 @@ describe("Action", () => {
 });
 
 describe("Event", () => {
-  it("adjacently tagged JSON, same as serde", () => {
+  it("adjacently tagged JSON", () => {
     // Taken from docs/protocols/extension-rpc.md.
     const wire = `{"type":"agent_turn_completed","data":{"turn":"01JC0000000000000000000000","context":{"platform":"discord","scope":"123","channel":"456","kind":"channel"},"text":"沒幹嘛啊"}}`;
     const event = JSON.parse(wire) as Event;

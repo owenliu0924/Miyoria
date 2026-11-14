@@ -97,7 +97,7 @@ describe("policy", () => {
   });
 
   it("hash_matches_legacy", () => {
-    // FNV-1a 64 of "fs\0a.b", folded to 32 bits (same as the Rust implementation).
+    // FNV-1a 64 of "fs\0a.b", folded to 32 bits.
     const alt = registryName("fs", "a.b", new Set(["mcp_fs_a_b"])) as string;
     expect(alt).toBe("mcp_fs_a_b_d7150808");
   });

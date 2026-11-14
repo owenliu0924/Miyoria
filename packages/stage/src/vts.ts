@@ -213,7 +213,7 @@ export class VtsClient {
     return this.#closedPromise;
   }
 
-  /** Closes the connection (the Rust `Drop`). */
+  /** Closes the connection. */
   close(): void {
     if (this.#closed) return;
     this.#markClosed();

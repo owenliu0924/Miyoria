@@ -3647,7 +3647,7 @@ class Turn {
       }
     } finally {
       if (!finished) {
-        // Like dropping the Rust stream; never wait for a provider that ignores aborts.
+        // Release the stream without waiting; a provider that ignores aborts must not block us.
         void Promise.resolve(iterator.return?.()).catch(() => undefined);
       }
     }

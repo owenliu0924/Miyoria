@@ -11,7 +11,7 @@ import { type Counter, type MetricsRegistry, metrics } from "./metrics.js";
 
 const log = getLogger("kernel.bus");
 
-/** Per-subscription buffer, like the Rust broadcast channel capacity. */
+/** Per-subscription buffer capacity. */
 export const DEFAULT_BUS_CAPACITY = 4096;
 
 /**

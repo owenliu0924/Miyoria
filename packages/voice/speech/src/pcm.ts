@@ -144,7 +144,7 @@ export function rateFromContentType(contentType: string): number | null {
   return null;
 }
 
-/** Rust `str::parse::<u32>()`: plain decimal digits (optional `+`) within range. */
+/** Parses an unsigned 32-bit integer: plain decimal digits (optional `+`) within range. */
 export function parseU32(text: string): number | null {
   if (!/^\+?\d+$/.test(text)) return null;
   const n = Number(text);

@@ -1,7 +1,7 @@
-// The one place that imports the module packages. Names mirror the legacy Rust constructors
-// (camelCased); if a package exported something else, fix it here and nowhere else.
+// The one place that imports the module packages. Names are the camelCased constructors;
+// if a package exported something else, fix it here and nowhere else.
 //
-// Boot order (legacy `boot.rs`, after `facts`, which every other module outlives, and `moderation`,
+// Boot order (after `facts`, which every other module outlives, and `moderation`,
 // which is there before anything can say a word): llm, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, social, mood, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
@@ -302,7 +302,7 @@ export async function setupStageObs(
   }
 }
 
-/** Offline extension tools for `miyoria ext ...` (legacy `miyoria_ext_host::cli`). */
+/** Offline extension tools for `miyoria ext ...`. */
 export const extensionsCli: ExtensionsCli = {
   newExtension: async (parent, name, options) => extHost.newExtension(parent, name, options),
   list: async (config, base) => extHost.list(config, base),

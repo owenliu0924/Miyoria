@@ -1,4 +1,4 @@
-// In-memory store areas for the API tests (the Rust tests use `Store::memory()`).
+// In-memory store areas for the API tests.
 
 import {
   type Account,
@@ -392,7 +392,7 @@ export class MemoryMemberCards implements MemberCardStore {
   }
 }
 
-/** Every area the tests use, like Rust's `Store::memory()`. */
+/** Every area the tests use, all in memory. */
 export class TestStore {
   readonly decisions = new MemoryDecisionLog();
   readonly personaOverrides = new MemoryPersonaOverrides();

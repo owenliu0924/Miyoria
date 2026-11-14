@@ -54,7 +54,7 @@ describe("records", () => {
     expect(entry.id).toHaveLength(26);
   });
 
-  it("scopes are internally tagged like serde", () => {
+  it("scopes are internally tagged", () => {
     const scope: MemoryScope = { type: "guild", platform: "discord", guild: "g" };
     expect(JSON.stringify(scope)).toBe('{"type":"guild","platform":"discord","guild":"g"}');
   });

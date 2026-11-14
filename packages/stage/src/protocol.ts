@@ -383,7 +383,7 @@ const CoreMessageSchema = z.discriminatedUnion("type", [
 /** Optional keys that are left out when missing. */
 const OPTIONAL_KEYS = ["id", "transition", "transition_ms", "path", "offset_ms", "scene"] as const;
 
-/** Drops missing optional keys, like serde's `skip_serializing_if = "Option::is_none"`. */
+/** Drops missing optional keys. */
 function dropMissingId<T extends object>(msg: T): T {
   const record = msg as Record<string, unknown>;
   for (const key of OPTIONAL_KEYS) {

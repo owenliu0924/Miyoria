@@ -43,7 +43,7 @@ export function comparePriority(a: Priority, b: Priority): number {
 }
 
 /**
- * Internally tagged (`{"type": "send_message", ...}`), like the Rust serde shape.
+ * Internally tagged (`{"type": "send_message", ...}`).
  * `speak` says `text` in a voice channel (executed through `VoiceSink`); use a `voiceLane` so
  * her speech is serialized.
  * `actuate` runs a capability call the gate already approved (`ticket`, executed through

@@ -88,7 +88,7 @@ export function decodeWav(bytes: Uint8Array): AudioBuf {
   throw new SpeechError("WAV has no `data` chunk");
 }
 
-/** Rust `f64::round`: halves away from zero. */
+/** Rounds halves away from zero. */
 function roundHalfAway(x: number): number {
   return x < 0 ? -Math.round(-x) : Math.round(x);
 }

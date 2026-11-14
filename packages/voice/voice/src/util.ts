@@ -1,4 +1,4 @@
-// Small concurrency helpers (stand-ins for tokio `watch`, `mpsc` and `Semaphore`).
+// Small concurrency helpers (a watch cell, a bounded queue and a semaphore).
 
 export interface Deferred<T> {
   promise: Promise<T>;
@@ -17,7 +17,7 @@ export function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-/** A value whose changes can be awaited (tokio `watch`). */
+/** A value whose changes can be awaited. */
 export class Watch<T> {
   #value: T;
   #version = 0;
@@ -57,7 +57,7 @@ export class Watch<T> {
 }
 
 /**
- * A bounded queue read with `for await` / `recv()` (tokio bounded `mpsc`). `push` never waits:
+ * A bounded queue read with `for await` / `recv()`. `push` never waits:
  * it returns `false` and drops the item while the queue is full.
  */
 export class BoundedQueue<T> implements AsyncIterableIterator<T> {
@@ -125,7 +125,7 @@ export class BoundedQueue<T> implements AsyncIterableIterator<T> {
   }
 }
 
-/** Counting semaphore (tokio `Semaphore`). */
+/** Counting semaphore. */
 export class Semaphore {
   #permits: number;
   readonly #waiters: Array<() => void> = [];

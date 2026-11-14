@@ -94,7 +94,7 @@ export const ProfileLlmSchema = z.object({
   purposes: z.record(z.string(), z.array(z.string())).default({}),
 });
 
-/** `profile.toml`. Unknown keys are ignored, like serde. */
+/** `profile.toml`. Unknown keys are ignored. */
 export const ProfileManifestSchema = z.object({
   id: z.string(),
   display_name: z.string(),

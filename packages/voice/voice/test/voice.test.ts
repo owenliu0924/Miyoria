@@ -1,5 +1,5 @@
 // `voice` module tests: listening, consent, speaking, barge-in and commands, with a fake voice
-// node and fake ASR / TTS providers (port of `tests/voice.rs`).
+// node and fake ASR / TTS providers.
 
 import { mkdtempSync, readdirSync } from "node:fs";
 import { createServer, type Server } from "node:http";

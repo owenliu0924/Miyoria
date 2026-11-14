@@ -1,4 +1,4 @@
-// Port of `tests/signals.rs`: tool registry from the app, prompt contributors, social and mood
+// Tool registry from the app, prompt contributors, social and mood
 // signals, initiative and the LLM budget.
 
 import { contentText, MockProvider } from "@miyoria/llm/llm";

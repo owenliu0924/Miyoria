@@ -79,5 +79,5 @@ export class PersonaHandle {
   }
 }
 
-/** Rust `Arc<PersonaHandle>` service. */
+/** Service key of the `PersonaHandle`. */
 export const PersonaHandleKey = serviceKey<PersonaHandle>("PersonaHandle");

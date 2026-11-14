@@ -142,7 +142,7 @@ function chain(error: unknown): string {
   return parts.join(": ");
 }
 
-/** A one-shot-at-a-time wake-up (like `tokio::sync::Notify::notify_one`). */
+/** A one-shot-at-a-time wake-up (a pending wake-up is remembered until consumed). */
 class Notify {
   #pending = false;
   #waiter: (() => void) | null = null;

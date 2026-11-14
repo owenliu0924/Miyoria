@@ -198,7 +198,7 @@ export type Input =
   /** The emergency stop: the turn in flight and everything waiting here ends. */
   | { type: "halt" };
 
-/** Unbounded queue from the event loop to one coordinator (Rust `mpsc` channel). */
+/** Unbounded queue from the event loop to one coordinator. */
 export class Inbox {
   readonly #items: Input[] = [];
   #waiter: (() => void) | null = null;

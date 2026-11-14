@@ -1,4 +1,4 @@
-// Pure functions: tokenizer, dates, parsing, scoring, scopes, triggers (Rust `tests/units.rs`).
+// Pure functions: tokenizer, dates, parsing, scoring, scopes, triggers.
 
 import type { MemoryScope } from "@miyoria/store";
 import {

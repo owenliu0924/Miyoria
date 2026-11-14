@@ -97,7 +97,7 @@ export function parseTomlJson(text: string): JsonObject {
 
 /**
  * Validates `value` with `schema`. `undefined` / `null` validate as `{}`, so schemas whose
- * fields all have defaults accept a missing section (like `#[serde(default)]`).
+ * fields all have defaults accept a missing section.
  * Throws `ConfigError("invalid")` naming `path`.
  */
 export function parseSection<S extends z.ZodType>(

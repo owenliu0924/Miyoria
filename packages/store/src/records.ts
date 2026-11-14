@@ -1,5 +1,5 @@
-// Record types of every storage area. JSON shapes are identical to the legacy Rust structs
-// (snake_case, `Option<T>` as `T | null`, ULIDs as strings, RFC 3339 timestamps).
+// Record types of every storage area. JSON shapes are the stored form
+// (snake_case, optional values as `T | null`, ULIDs as strings, RFC 3339 timestamps).
 
 import type {
   AccountRef,

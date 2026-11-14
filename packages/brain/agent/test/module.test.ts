@@ -1,4 +1,4 @@
-// Port of the crate's module-level tests (`tests.rs`).
+// Module-level tests of the agent.
 
 import { CommandRegistryKey } from "@miyoria/commands";
 import { contentText, contextSession, MockProvider } from "@miyoria/llm/llm";

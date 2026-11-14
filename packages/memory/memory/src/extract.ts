@@ -364,7 +364,7 @@ function subject(map: JsonObject): SubjectName {
   return SELF_NAMES.has(name.toLowerCase()) ? { type: "myself" } : { type: "named", name };
 }
 
-/** Rust `str::parse::<f64>` syntax (decimal, optional exponent, `inf` / `nan`). */
+/** Float syntax accepted: decimal with an optional exponent. */
 const FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
 function number(value: JsonValue | undefined): number | null {

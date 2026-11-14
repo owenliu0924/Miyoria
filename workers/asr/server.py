@@ -40,7 +40,7 @@ in a thread pool (so several uploads can be decoded in parallel and the event lo
 blocked); the model call itself is serialised with a lock, so the GPU sees one job at a time. The
 lock serves ``now`` before ``ahead``, first come first served within each.
 
-Output text is raw model output (usually Simplified for Chinese). The Rust side runs OpenCC
+Output text is raw model output (usually Simplified for Chinese). The caller runs OpenCC
 (s2tw) on it, so this worker deliberately does not convert.
 """
 

@@ -1,5 +1,5 @@
-// The v2 bus topics and their payloads in one table. Like every domain event since the Rust
-// port (`world.salient`, `mind.thought`, `sing.cue`), they travel as `custom` events
+// The v2 bus topics and their payloads in one table. Like the other domain events
+// (`world.salient`, `mind.thought`, `sing.cue`), they travel as `custom` events
 // (`{type: "custom", data: {topic, payload}}`), so the adjacently tagged `Event` union, its
 // `EVENT_TOPICS` table and the SDK copy stay as they are. Task events use dynamic topics
 // (`taskTopic(owner, type)`, task.ts) and are not listed here.

@@ -13,7 +13,7 @@ import {
 } from "../protocol.js";
 
 export const MAX_MESSAGE = 1 << 16;
-/** Bytes queued on a socket before messages are dropped (the Rust queue held 256 messages). */
+/** Bytes queued on a socket before messages are dropped. */
 const MAX_BUFFERED = 1 << 20;
 
 /** Constant-time comparison of the token. */

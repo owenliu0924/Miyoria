@@ -101,7 +101,7 @@ describe("manifest", () => {
     expect(validTopic("a..b")).toBe(false);
   });
 
-  it("serializes_like_serde", () => {
+  it("serializes_to_the_wire_shape", () => {
     const m = ExtensionManifest.parse('id = "x"\nversion = "1"\nruntime = "node"\nentry = "i.js"');
     expect(JSON.parse(JSON.stringify(m))).toEqual({
       id: "x",

@@ -1,4 +1,4 @@
-// Shared test helpers (Rust `src/tests/mod.rs`).
+// Shared test helpers.
 
 import { LlmRouter, MockProvider, parseModelRef } from "@miyoria/llm/llm";
 import {

@@ -18,7 +18,7 @@ export const BLOCKED_TAG = "blocked";
 
 const DAY_MS = 86_400_000;
 
-/** Something a person did toward her (serialized snake_case, like the Rust enum). */
+/** Something a person did toward her (serialized in snake_case). */
 export type EventKind =
   | "greeting"
   | "thanks"
@@ -45,7 +45,7 @@ export const ECONOMY_KINDS: readonly EconomyKind[] = ["treat", "deal_kept"];
 /** What a day's budget counts: events and the economy's kinds. */
 export type LedgerKind = EventKind | EconomyKind;
 
-/** Every kind, in declaration order (the Rust `Ord`). */
+/** Every kind, in declaration order (the sort order). */
 export const EVENT_KINDS: readonly EventKind[] = [
   "greeting",
   "thanks",
@@ -106,7 +106,7 @@ export function parseEventKind(name: string): EventKind | null {
   return Object.hasOwn(SYNONYMS, n) ? (SYNONYMS[n] as EventKind) : null;
 }
 
-/** Position in `EVENT_KINDS` (for sorting like the Rust `Ord`). */
+/** Position in `EVENT_KINDS` (for sorting). */
 export function eventKindOrder(kind: EventKind): number {
   return EVENT_KINDS.indexOf(kind);
 }
@@ -370,7 +370,7 @@ export function label(rel: Relationship): RelationshipLabel {
 
 function offsetMs(config: SocialConfig): number {
   const minutes = config.utc_offset_minutes;
-  // chrono's FixedOffset rejects offsets of a day or more; fall back to UTC like legacy.
+  // Offsets of a day or more are invalid; fall back to UTC.
   return Math.abs(minutes) < 24 * 60 ? minutes * 60_000 : 0;
 }
 

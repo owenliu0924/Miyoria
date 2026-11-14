@@ -280,7 +280,7 @@ const STOP_WORDS: ReadonlySet<string> = new Set([
 
 type Script = "han" | "hiragana" | "katakana" | "word" | "other";
 
-/** Rust `char::is_alphanumeric`: Alphabetic or Numeric. */
+/** A Unicode letter or number: Alphabetic or Numeric. */
 const ALPHANUMERIC = /^[\p{Alphabetic}\p{N}]$/u;
 
 function script(c: string): Script {

@@ -43,7 +43,7 @@ const HALLUCINATION_CONTAINS = [
   "subtitlesby",
 ];
 
-/** Rust `char::is_alphanumeric`. */
+/** A Unicode letter or number. */
 const ALPHANUMERIC = /[\p{Alphabetic}\p{N}]/u;
 const NOT_ALPHANUMERIC = /[^\p{Alphabetic}\p{N}]/gu;
 
@@ -51,7 +51,7 @@ function normalize(text: string): string {
   return text.replace(NOT_ALPHANUMERIC, "").toLowerCase();
 }
 
-/** Rust `split_whitespace().join(" ")`. */
+/** Collapses runs of whitespace into single spaces. */
 function collapseWhitespace(text: string): string {
   return text
     .split(/[\s\u0085]+/u)

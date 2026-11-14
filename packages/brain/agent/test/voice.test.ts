@@ -1,4 +1,4 @@
-// Port of `tests/voice.rs`: utterances in, `speak` actions out. Playback events that the voice
+// Utterances in, `speak` actions out. Playback events that the voice
 // module would publish are simulated by the tests.
 
 import { CommandRegistryKey } from "@miyoria/commands";

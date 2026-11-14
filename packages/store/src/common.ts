@@ -30,8 +30,8 @@ export const MAX_QUERY_TOKENS = 64;
 export const MEMORY_KINDS: readonly MemoryKind[] = ["episode", "fact", "self_note", "followup"];
 
 // ---- canonical JSON keys ----------------------------------------------------------------
-// Rust used `serde_json::to_string` of the value as lookup key (fields in declaration order).
-// These rebuild the same text whatever key order the caller's object has.
+// The lookup key is the value's JSON text with fields in declaration order (existing rows use
+// it). These rebuild the same text whatever key order the caller's object has.
 
 function canonicalContext(context: ContextKey): ContextKey {
   return {
@@ -177,7 +177,7 @@ export function sqlLimit(limit: number): number | null {
   return Math.max(0, Math.floor(limit));
 }
 
-/** Saturates at `u32::MAX`, like the Rust records. */
+/** Saturates at 4,294,967,295. */
 export function u32(n: number): number {
   return Math.min(Math.max(0, n), 4_294_967_295);
 }
@@ -198,7 +198,7 @@ export function cleanEmbedding(embedding: readonly number[] | null | undefined):
 
 /**
  * The shortest decimal that rounds to the same float32, so a stored `0.1` reads back as `0.1`
- * (what Rust's `f32` and pgvector print) instead of `0.10000000149011612`.
+ * (what pgvector prints) instead of `0.10000000149011612`.
  */
 export function shortestF32(x: number): number {
   for (let precision = 1; precision < 9; precision++) {

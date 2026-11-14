@@ -11,7 +11,7 @@ import {
 } from "@miyoria/types";
 
 /**
- * Map key of a context: like Rust's `Hash` / `Eq` on `ContextKey`, the kind is part of it
+ * Map key of a context: the kind is part of it
  * (`contextKeyString` alone is not unique).
  */
 export function contextId(context: ContextKey): string {
@@ -23,7 +23,7 @@ export function accountId(account: AccountRef): string {
   return accountRefString(account);
 }
 
-/** Number of Unicode scalar values (Rust `chars().count()`). */
+/** Number of Unicode scalar values (not UTF-16 code units). */
 export function charCount(s: string): number {
   let n = 0;
   for (const _ of s) n++;
@@ -46,37 +46,37 @@ export function framedAsIs(
   return opened > 0 && opened === text.split(DATA_CLOSE).length - 1;
 }
 
-/** UTF-8 byte length (Rust `str::len`). */
+/** UTF-8 byte length. */
 export function utf8Len(s: string): number {
   return Buffer.byteLength(s, "utf8");
 }
 
-/** Rust `to_ascii_lowercase`: only ASCII letters change. */
+/** Lowercases ASCII letters only; other characters are untouched. */
 export function asciiLower(s: string): string {
   return s.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 
-/** Rust `char::is_alphanumeric`. */
+/** Whether `c` is a Unicode letter or number. */
 export function isAlphanumeric(c: string): boolean {
   return /^[\p{Alphabetic}\p{N}]$/u.test(c);
 }
 
-/** Rust `char::is_ascii_alphanumeric`. */
+/** Whether `c` is an ASCII letter or digit. */
 export function isAsciiAlphanumeric(c: string | undefined): boolean {
   return c !== undefined && /^[A-Za-z0-9]$/.test(c);
 }
 
-/** Rust `char::is_whitespace`. */
+/** Whether `c` is a whitespace character. */
 export function isWhitespace(c: string): boolean {
   return /^\s$/u.test(c);
 }
 
-/** Rust `{x:.N}` (fixed decimals). */
+/** `x` with a fixed number of decimals. */
 export function fixed(x: number, digits: number): string {
   return x.toFixed(digits);
 }
 
-/** Rust `{x:+.N}` (always signed). */
+/** `x` with a fixed number of decimals and always a sign. */
 export function signed(x: number, digits: number): string {
   const s = x.toFixed(digits);
   return s.startsWith("-") ? s : `+${s}`;

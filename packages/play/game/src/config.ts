@@ -207,7 +207,7 @@ export const GameConfigSchema = z.object({
 });
 export type GameConfig = z.output<typeof GameConfigSchema>;
 
-/** Defaults of every field (the Rust `Default` impl). */
+/** Defaults of every field: the schema parsed from an empty config. */
 export function defaultGameConfig(): GameConfig {
   return GameConfigSchema.parse({});
 }

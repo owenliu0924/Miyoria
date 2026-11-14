@@ -65,7 +65,7 @@ export function readQuery<S extends z.ZodType>(c: ApiContext, schema: S): z.outp
   return parsed.data;
 }
 
-// ---- query field schemas (serde_urlencoded semantics) -----------------------------------
+// ---- query field schemas (URL-encoded form semantics) -----------------------------------
 
 /** `usize`: digits only. */
 export const usizeParam = z

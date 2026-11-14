@@ -83,7 +83,7 @@ export function defaultTtsFactories(): TtsFactory[] {
   ];
 }
 
-/** BTreeMap order (keys ascending by code unit). */
+/** Entries ordered by key (ascending by code unit). */
 function byName<T>(record: Record<string, T>): [string, T][] {
   return Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }

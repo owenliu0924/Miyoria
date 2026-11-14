@@ -1,5 +1,4 @@
-// Ports of the Rust unit tests in `protocol.rs`, `vad.rs`, `segment.rs`, `text.rs`,
-// `consent.rs`, `barge.rs` and `config.rs`.
+// Unit tests of the protocol, VAD, segmentation, text, consent, barge-in and config helpers.
 
 import { MemorySettingsStore, type SettingsStore } from "@miyoria/store";
 import { type AccountRef, EMOTION_NAMES, EMOTION_OUTPUTS, type JsonObject } from "@miyoria/types";

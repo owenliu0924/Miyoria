@@ -1,6 +1,6 @@
 // Route groups added for the admin panel: a real supervisor running the `api` module, in-memory
 // stores, the real auth service and request queue, and fakes for the services of packages that
-// are ported separately (`tests/routes.rs`).
+// are tested elsewhere.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

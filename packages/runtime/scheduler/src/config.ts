@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** `[modules.scheduler]` config section. Defaults equal the Rust `SchedulerConfig::default()`. */
+/** `[modules.scheduler]` config section. Every field has a default. */
 export const SchedulerConfigSchema = z.object({
   /** A lane worker with nothing queued exits after this long. */
   lane_idle_ms: z.number().int().min(0).default(60_000),

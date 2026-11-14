@@ -35,7 +35,7 @@ interface Queued {
 
 type WakeResult = "notified" | "timeout" | "aborted";
 
-/** Wakes a sleeping lane worker (Rust `tokio::sync::Notify`, without the stored permit). */
+/** Wakes a sleeping lane worker (a notification sent while nobody sleeps is not remembered). */
 class Wake {
   #resolve: ((result: WakeResult) => void) | null = null;
 

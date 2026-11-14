@@ -1082,7 +1082,7 @@ export class Social implements SocialSignals, RelationshipEffects {
   }
 }
 
-/** The service key of the engine itself (Rust `Arc<Social>`). */
+/** The service key of the engine itself. */
 export const SocialKey = serviceKey<Social>("Social");
 
 export function attitude(r: Relationship): Attitude {

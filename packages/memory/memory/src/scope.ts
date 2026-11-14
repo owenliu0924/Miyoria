@@ -31,7 +31,7 @@ import {
 } from "@miyoria/types";
 import type { MemoryConfig } from "./config.js";
 
-/** Structural equality of two scopes (Rust `PartialEq`). */
+/** Structural equality of two scopes. */
 export function scopeEquals(a: MemoryScope, b: MemoryScope): boolean {
   switch (a.type) {
     case "global":

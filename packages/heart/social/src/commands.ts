@@ -424,7 +424,7 @@ async function admin(social: Social, op: AdminOp, inv: Invocation): Promise<Comm
   }
 }
 
-/** Rust `{:.1}`. */
+/** One decimal. */
 function fixed1(v: number): string {
   return v.toFixed(1);
 }

@@ -76,7 +76,10 @@ export function pipeline(config: Config): Pipeline {
   throw new Error(`core.pipeline must be one of ${PIPELINES.join(", ")}, not ${String(value)}`);
 }
 
-/** `core.log` (default `info`). Legacy values are tracing filters (`info,miyoria=debug`). */
+/**
+ * `core.log` (default `info`). Values like `info,miyoria=debug` (a per-target filter list) are
+ * also accepted.
+ */
 export function logFilter(config: Config): string {
   return str(config, "core.log") ?? "info";
 }

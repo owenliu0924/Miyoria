@@ -1,5 +1,5 @@
-// Wire types shared by the server and the client (Rust `miyoria_api::types`). Field names and
-// nullability mirror the serde JSON exactly; `apps/panel/src/api/*types.ts` mirror these.
+// Wire types shared by the server and the client. Field names and nullability are part of the
+// JSON wire format; `apps/panel/src/api/*types.ts` mirror these.
 
 import type { WalletExport } from "@miyoria/economy";
 import type { PendingApproval } from "@miyoria/gate/actions";

@@ -570,7 +570,7 @@ export class Coordinator {
     return this.#start([], null, signal, input);
   }
 
-  /** Waits for the next thing to do (Rust `select!` over the coordinator's sources). */
+  /** Waits for the next thing to do from any of the coordinator's sources. */
   async #next(
     signal: AbortSignal,
     running: Running | null,

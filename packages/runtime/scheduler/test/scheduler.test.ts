@@ -38,7 +38,7 @@ import {
 } from "../../kernel/src/index.js";
 import { Scheduler, SchedulerModule } from "../src/index.js";
 
-/** Like tokio's `Notify`: `notifyOne` before `notified` is remembered. */
+/** A gate: `notifyOne` before `notified` is remembered. */
 class Gate {
   #permit = false;
   #waiter: (() => void) | null = null;

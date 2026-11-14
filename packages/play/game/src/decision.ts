@@ -4,7 +4,7 @@ import { dataBlock, escapeData, type JsonObject, type JsonValue } from "@miyoria
 import type { GameConfig } from "./config.js";
 import { normalizeItem } from "./methods.js";
 
-/** Compact JSON with ascending object keys, like `serde_json::Value`'s `Display` (BTreeMap). */
+/** Compact JSON with ascending object keys (a stable text for comparing and tracing). */
 export function sortedJson(value: JsonValue): string {
   return JSON.stringify(sortKeys(value));
 }

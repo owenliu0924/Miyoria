@@ -1,5 +1,4 @@
-// @miyoria/core: wires config, store, profile and every module into a running core node
-// (legacy `apps/miyoria/src/boot.rs` + `cli_platform.rs`).
+// @miyoria/core: wires config, store, profile and every module into a running core node.
 
 export { describeStep as describeObsSetupStep } from "@miyoria/stage";
 export {

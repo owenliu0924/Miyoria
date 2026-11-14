@@ -4,8 +4,8 @@
 // here over the event bus, or call the service interfaces defined here through the kernel's
 // service registry (each interface has a `...Key` constant).
 //
-// Every data type mirrors the legacy Rust serde JSON exactly: snake_case field names,
-// `Option<T>` as `T | null` (key always present), timestamps as RFC 3339 strings.
+// Every data type is the JSON wire form exactly: snake_case field names,
+// optional values as `T | null` (key always present), timestamps as RFC 3339 strings.
 
 export {
   ACTION_SETTLED_TOPIC,

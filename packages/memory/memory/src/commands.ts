@@ -467,7 +467,7 @@ function truncate(s: string, max: number): string {
 
 const round2 = (x: number) => Math.round(x * 100) / 100;
 
-/** Rust `DateTime::to_rfc3339`: `+00:00` instead of `Z`. */
+/** RFC 3339 with `+00:00` instead of `Z`. */
 function rfc3339(ts: string): string {
   return new Date(ts)
     .toISOString()

@@ -1,4 +1,4 @@
-// `contextKeyString` is Rust `ContextKey`'s `Display` (`<platform>:<scope or dm>:<channel>`,
+// `contextKeyString` is the text form of a `ContextKey` (`<platform>:<scope or dm>:<channel>`,
 // voice contexts with a `voice:` infix), as used for config keys, settings keys and lanes.
 import { type ContextKey, contextKeyString as contextDisplay } from "@miyoria/types";
 import { z } from "zod";
@@ -682,7 +682,7 @@ export const AgentConfigSchema = z.object({
 });
 export type AgentConfig = z.output<typeof AgentConfigSchema>;
 
-/** The defaults (Rust `AgentConfig::default()`). */
+/** The defaults: the schema parsed from an empty config. */
 export function defaultAgentConfig(): AgentConfig {
   return AgentConfigSchema.parse({});
 }

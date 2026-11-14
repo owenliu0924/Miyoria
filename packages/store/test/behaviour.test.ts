@@ -1,4 +1,4 @@
-// One behaviour suite (port of legacy `tests/behaviour.rs`), run against every backend.
+// One behaviour suite run against every backend.
 //
 // SQLite (in memory and on a file) always runs. PostgreSQL runs only when
 // `MIYORIA_TEST_DATABASE_URL` is set; otherwise its tests are skipped. Every case uses fresh

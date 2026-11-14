@@ -427,7 +427,7 @@ function retryAfterMs(response: Response): number | null {
   return Math.min(Number(raw) * 1000, MAX_RETRY_AFTER_MS);
 }
 
-/** Like Rust's `StatusCode` display: `"401 Unauthorized"`. */
+/** Status code and reason phrase: `"401 Unauthorized"`. */
 function statusText(status: number): string {
   return `${status} ${STATUS_CODES[status] ?? "<unknown status code>"}`;
 }

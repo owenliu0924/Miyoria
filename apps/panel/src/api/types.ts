@@ -117,7 +117,7 @@ export interface DecisionTrace {
   reasons: string[];
 }
 
-/** `Event`, serialized with `#[serde(tag = "type", content = "data")]`. */
+/** A bus event: `{ type, data }`, adjacently tagged. */
 export type BusEvent =
   | { type: "platform_ready"; data: { platform: PlatformId; self_account: AccountRef } }
   | { type: "platform_message_created"; data: IncomingMessage }
@@ -587,7 +587,7 @@ export interface Page<T> {
 }
 
 // ---------------------------------------------------------------------------
-// LLM cost (`CostReport` in miyoria-llm/src/cost.rs)
+// LLM cost (`CostReport`)
 
 export type BudgetState = "ok" | "degraded" | "exhausted";
 

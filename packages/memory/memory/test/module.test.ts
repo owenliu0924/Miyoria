@@ -1,5 +1,5 @@
 // The module under a supervisor: services, registrations, commands and event-driven
-// consolidation (Rust `tests/module.rs`).
+// consolidation.
 
 import {
   type ArgValue,

@@ -1,4 +1,4 @@
-// Ports of the Rust unit tests in `pcm.rs`, `wav.rs` and `tts.rs`.
+// Unit tests of the PCM, WAV and TTS helpers.
 
 import { describe, expect, it } from "vitest";
 import {

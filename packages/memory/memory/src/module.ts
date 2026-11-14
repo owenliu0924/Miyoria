@@ -391,8 +391,8 @@ async function consolidationLoop(
       (): Wake => ({ kind: "tick" }),
       (): Wake => ({ kind: "abort" }),
     );
-  // Like a tokio interval: the first tick fires right away. The pending `recv` is kept across
-  // ticks, so events that arrive during a consolidation are handled after it (none are lost).
+  // Like an interval timer, except that the first tick fires right away. The pending `recv` is
+  // kept across ticks, so events that arrive during a consolidation are handled after it (none are lost).
   let event: Promise<Wake> = sub.recv().then((env): Wake => ({ kind: "event", env }));
   let tick = nextTick(0);
   for (;;) {

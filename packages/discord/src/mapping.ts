@@ -517,7 +517,7 @@ export interface OptionLike {
   options?: readonly OptionLike[];
 }
 
-/** An argument value: strings, integers and booleans, like the commands crate's `ArgValue`. */
+/** An argument value: strings, integers and booleans, like `ArgValue` in the commands package. */
 export type ArgValueLike = string | number | boolean;
 
 /** Flattens an interaction into a command path and argument values. */

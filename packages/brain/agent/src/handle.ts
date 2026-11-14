@@ -299,5 +299,5 @@ function parseEntry<T>(
   }
 }
 
-/** Rust `Arc<AgentHandle>` service. */
+/** Service key of the `AgentHandle`. */
 export const AgentHandleKey = serviceKey<AgentHandle>("AgentHandle");

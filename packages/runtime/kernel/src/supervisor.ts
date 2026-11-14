@@ -24,7 +24,7 @@ export function restartBackoffMs(attempts: number): number {
   return Math.min(1000 * 2 ** Math.min(attempts, 6), MAX_BACKOFF_MS);
 }
 
-/** Legacy JSON shape (`miyoria module list`, Admin API). */
+/** JSON shape (`miyoria module list`, Admin API). */
 export interface ModuleStatus {
   id: ModuleId;
   name: string;
@@ -416,5 +416,5 @@ export class Supervisor {
   }
 }
 
-/** The supervisor itself, provided by the app for admin modules (Rust `SupervisorHandle`). */
+/** The supervisor itself, provided by the app for admin modules. */
 export const SupervisorKey = serviceKey<Supervisor>("SupervisorHandle");

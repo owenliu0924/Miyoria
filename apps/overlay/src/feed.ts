@@ -1,7 +1,7 @@
 // The overlay feed: message parsing and the reducer that folds messages into display state.
 // Everything here is pure (no DOM, no timers), so it is unit tested.
 //
-// Wire format (crates/miyoria-stage/src/overlay.rs):
+// Wire format:
 //   {"type":"subtitle","turn":"…","text":"…","final":bool}
 //   {"type":"emotion","name":"happy","intensity":0..1}
 //   {"type":"speaking","state":"started"|"stopped"}

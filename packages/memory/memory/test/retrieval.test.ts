@@ -1,4 +1,4 @@
-// Hybrid recall, the prompt section and the model tools (Rust `tests/retrieval.rs`).
+// Hybrid recall, the prompt section and the model tools.
 
 import type { ToolContext } from "@miyoria/llm/tools";
 import type { MemoryRecord, MemoryScope } from "@miyoria/store";

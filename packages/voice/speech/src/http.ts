@@ -28,7 +28,7 @@ export function bearerHeaders(apiKey: string | null | undefined): Record<string,
   return { authorization: `Bearer ${key}` };
 }
 
-/** Like Rust's `StatusCode` display: `"400 Bad Request"`. */
+/** Status code and reason phrase: `"400 Bad Request"`. */
 function statusText(status: number): string {
   return `${status} ${STATUS_CODES[status] ?? "<unknown status code>"}`;
 }

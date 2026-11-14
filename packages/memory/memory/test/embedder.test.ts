@@ -1,4 +1,4 @@
-// The OpenAI-compatible embedder against a local HTTP mock (Rust `tests/embedder.rs`).
+// The OpenAI-compatible embedder against a local HTTP mock.
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";

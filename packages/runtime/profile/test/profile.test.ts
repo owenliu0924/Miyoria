@@ -21,7 +21,7 @@ describe("Profile", () => {
     expect(m.interests).toEqual(["海"]);
   });
 
-  it("fills every default like serde", () => {
+  it("fills every default", () => {
     const m = parseProfileManifest(
       'id = "x"\ndisplay_name = "X"\nunknown_key = 1\n[mood]\nvalence = 0.2',
     );

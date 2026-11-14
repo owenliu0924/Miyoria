@@ -1,5 +1,5 @@
 // SQLite backend on the built-in `node:sqlite` (`DatabaseSync`). A file database or `:memory:`
-// (which replaces the Rust in-memory backend for tests and quick runs).
+// (for tests and quick runs).
 //
 // Every call is synchronous inside an async method, so one call never interleaves with another
 // in this process: read-modify-write sequences run inside one `BEGIN IMMEDIATE` transaction
@@ -163,7 +163,7 @@ export interface SqliteStoreOptions {
   busyTimeoutMs?: number;
   /**
    * Decisions kept per profile (older ones are dropped); `null` keeps all. Default: 10 000 for
-   * `:memory:` (like the Rust in-memory backend), unbounded for files (like PostgreSQL).
+   * `:memory:` (an in-memory database), unbounded for files (like PostgreSQL).
    */
   maxDecisionsPerProfile?: number | null;
 }

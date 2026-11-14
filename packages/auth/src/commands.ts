@@ -195,7 +195,7 @@ const PERM_OPS: Record<PermOp, { path: string; description: string }> = {
   clear: { path: "admin perm clear", description: "移除某個範圍的權限節點覆寫" },
 };
 
-/** An early exit with the reply to send (Rust `Err(CommandReply)`). */
+/** An early exit with the reply to send. */
 class Refusal extends Error {
   override readonly name = "Refusal";
 

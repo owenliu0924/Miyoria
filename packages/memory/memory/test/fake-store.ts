@@ -1,4 +1,4 @@
-// In-memory store for the tests, mirroring the legacy Rust `MemoryStore` (message log, people,
+// In-memory store for the tests, standing in for the memory store (message log, people,
 // settings and memory records).
 
 import type {

@@ -218,7 +218,7 @@ async function pump(
         wake = deferred<void>();
         await Promise.race([wake.promise, node.changed(), ...(pending !== null ? [pending] : [])]);
       }
-      // Same priority as the legacy `biased` select.
+      // Stop requests win over every other wake-up; the checks below run in this order.
       if (playback.stopRequested) {
         await stopPlay(playback.fadeMs);
         return "interrupted";

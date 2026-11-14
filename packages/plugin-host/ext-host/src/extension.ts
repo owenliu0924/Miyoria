@@ -97,7 +97,7 @@ export function reservedTopic(topic: string): boolean {
   return RESERVED_PREFIXES.some((r) => topic === r || topic.startsWith(`${r}.`));
 }
 
-/** Lines an extension writes to stderr and `log` calls go here (legacy target `miyoria_ext`). */
+/** Lines an extension writes to stderr and `log` calls go here (logger `miyoria_ext`). */
 const extLog = getLogger("miyoria_ext");
 
 /** A discovered extension with the permissions the host grants it. */
