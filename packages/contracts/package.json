@@ -1,0 +1,34 @@
+{
+  "name": "@miyoria/contracts",
+  "version": "0.1.0",
+  "description": "Every shape that crosses a process boundary, written once as a zod schema. wire: accounts, contexts, messages and voice shapes; kit: the rules the schemas follow and the JSON Schema emitter",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    "./wire": {
+      "@miyoria/source": "./wire/src/index.ts",
+      "types": "./dist/wire/src/index.d.ts",
+      "default": "./dist/wire/src/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "schema"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gen": "tsx --conditions=@miyoria/source kit/src/gen.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

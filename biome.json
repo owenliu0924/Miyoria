@@ -20,6 +20,7 @@
       "!profiles",
       "!extensions/minecraft/mod",
       "!tools/eval/fixtures",
+      "!packages/contracts/schema",
       "!**/dist",
       "!**/coverage"
     ]

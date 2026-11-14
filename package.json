@@ -18,6 +18,7 @@
     "dev:core": "tsx --conditions=@miyoria/source packages/cli/src/main.ts core",
     "replay": "node tools/replay/bin/replay.mjs",
     "eval": "tsx --conditions=@miyoria/source tools/eval/src/cli.ts",
+    "contracts:gen": "pnpm --filter @miyoria/contracts gen",
     "build:web": "pnpm --filter @miyoria/panel --filter @miyoria/overlay build",
     "release:pack": "pnpm build:web && pnpm --dir packages/sdk pack && pnpm --dir packages/cli pack",
     "release:publish": "pnpm build:web && pnpm --dir packages/sdk publish --access public && pnpm --dir packages/cli publish --access public"
