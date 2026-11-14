@@ -110,3 +110,27 @@ export function Bipolar({ value, label }: { value: number; label: string }) {
     </div>
   );
 }
+
+/** Bond bar, -100..1000: the right half is full at 100, a primary layer grows past it. */
+export function BondBar({ value, label }: { value: number; label: string }) {
+  const v = Math.max(-100, Math.min(1000, value));
+  const half = Math.min(Math.abs(v), 100) / 2;
+  const over = v > 100 ? ((v - 100) / 900) * 50 : 0;
+  return (
+    <div
+      role="meter"
+      aria-label={label}
+      aria-valuemin={-100}
+      aria-valuemax={1000}
+      aria-valuenow={Math.round(v)}
+      className="relative h-1 w-full min-w-16 overflow-hidden rounded-[2px] bg-muted"
+    >
+      <span className="absolute inset-y-0 left-1/2 w-px bg-foreground/30" />
+      <span
+        className={cn("absolute inset-y-0", v >= 0 ? "bg-secondary-line" : "bg-foreground/60")}
+        style={v >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }}
+      />
+      {over > 0 && <span className="absolute inset-y-0 bg-primary" style={{ left: "50%", width: `${over}%` }} />}
+    </div>
+  );
+}
