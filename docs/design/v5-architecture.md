@@ -533,7 +533,7 @@ miyoria up                     # 啟動這台裝的全部
 
 | 之後的名字 | 現在 | 什麼時候 |
 |---|---|---|
-| `contracts` | `types`,加上各條連線協定和 API 路由表 | 階段 1 的契約那一步 |
+| `contracts` | `types` 裡的連線形狀,加上各條連線協定和 API 路由表 | 階段 1 的契約那一步,設計在 [v5-contracts.md](v5-contracts.md) |
 | `store` | `store`:只剩連線、遷移、事件紀錄、產物庫;各外掛自己的表 | 階段 1 的資料庫那一步 |
 | `access` | `auth`,加上 `commands` 裡的第二套權限 | 做權限時 |
 | `interaction` | `commands` 的平台中性部分 | 階段 6 |
@@ -549,6 +549,8 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 ## 13. 資料
 
 資料層的完整設計(事件紀錄、外掛自己的表、身分和場所、產物庫、切換步驟和工作順序)在 [v5-data.md](v5-data.md),裡面有八件要 owner 決定的事。
+
+契約層的設計(手抄的契約清單、`contracts` 套件、路由表、工作順序)在 [v5-contracts.md](v5-contracts.md),裡面有五件要 owner 決定的事。
 
 建議 V5 從空的資料庫開始:外掛各自的表、一份只增的事件紀錄,訊息、決策、回合紀錄從它導出(取代今天的五份),人物模型一處存放。
 
