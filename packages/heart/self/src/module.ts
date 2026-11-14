@@ -4,7 +4,6 @@ import {
   interval,
   type Module,
   type ModuleContext,
-  presentKeys,
   SerialQueue,
   withTimeout,
 } from "@miyoria/runtime/kernel";
@@ -40,7 +39,7 @@ import {
   WorldStateKey,
 } from "@miyoria/types";
 import { AffectService } from "./affect.js";
-import { DEPRECATED_SELF_KEYS, type SelfConfig, SelfConfigSchema } from "./config.js";
+import { type SelfConfig, SelfConfigSchema } from "./config.js";
 import { type TemperamentInput, temperament } from "./emotions.js";
 import { type Circumstances, IDLE, SelfEngine } from "./engine.js";
 import { FeelingsBook } from "./feelings.js";
@@ -176,13 +175,6 @@ export class SelfModule implements Module {
 
   async start(ctx: ModuleContext): Promise<void> {
     const config = ctx.config(SelfConfigSchema);
-    const gone = presentKeys(ctx.rawConfig, DEPRECATED_SELF_KEYS);
-    if (gone.length > 0) {
-      ctx.log.warn(
-        { keys: gone },
-        "[modules.self] keys are deprecated and ignored: the agent renders her state in its prompt itself",
-      );
-    }
     const clock = this.#options.clock ?? ctx.clock;
     const profile = this.#profile;
     const temper = temperament(this.#options.temperament);

@@ -386,7 +386,7 @@ describe("legacy config", () => {
         NOENV,
       ),
     );
-    expect(notes).toHaveLength(3);
+    expect(notes).toHaveLength(1);
     expect(notes.join("\n")).not.toContain("= 5");
   });
 });

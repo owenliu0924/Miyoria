@@ -198,13 +198,4 @@ describe("prompt", () => {
     const h = await boot();
     expect(h.contributors.all()).toEqual([]);
   });
-
-  it("still loads an old `prompt = false`", async () => {
-    const sup = new Supervisor();
-    cleanup.push(() => sup.stopAll());
-    await sup.register(new SelfModule("p"), { prompt: false }, true);
-    await sup.startAll();
-    // Works without a store or world (the mood is derived, so it is always there).
-    expect(sup.services.require(SelfStateKey).snapshot().mood).not.toBeNull();
-  });
 });

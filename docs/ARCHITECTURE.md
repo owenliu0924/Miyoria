@@ -213,7 +213,7 @@ interface Stimulus {
 
 最後由 `respond_probability = score × 4^(2L−1)`(L = 她的 talkativeness)抽樣,讓她的行為不會死板。生成階段的 LLM 也可以輸出 `<silence/>` 主動選擇不回。
 
-**多話程度是她自己的**([design/autonomy.md](design/autonomy.md) §6,v2 §3.3):attention 只留便宜的前置過濾(被叫到、名字、語音裡有人還在講就不插嘴)與「她的 talkativeness L × 佔比上限」,灰色區才問 `fast` 模型。L 是她在 `SelfState` 給這個情境(或伺服器、`voice` / `text`、`*`)定的值,加上 lesson 與情緒(`AffectSnapshot.biases`)的偏移與下限;她沒定時用等級的預設,設定的 activeness 只是把預設往下 / 往上移(−0.25 / +0.17)。插話機率 = 分數 × 4^(2L−1),L ≤ 0.05 不插話。好感、精力、activeness 倍率、語音的 `ambient_factor` / `interrupt_scale` 與所有冷卻都拿掉了(舊設定鍵照樣能讀,會警告);她自己多久開一次口是 Arbiter 的規則。`channel_activeness` 工具(有人說「活躍點」「安靜點」,`silent` / `low` / `medium` / `high`,最多一天)會設定該情境的 talkativeness。
+**多話程度是她自己的**([design/autonomy.md](design/autonomy.md) §6,v2 §3.3):attention 只留便宜的前置過濾(被叫到、名字、語音裡有人還在講就不插嘴)與「她的 talkativeness L × 佔比上限」,灰色區才問 `fast` 模型。L 是她在 `SelfState` 給這個情境(或伺服器、`voice` / `text`、`*`)定的值,加上 lesson 與情緒(`AffectSnapshot.biases`)的偏移與下限;她沒定時用等級的預設,設定的 activeness 只是把預設往下 / 往上移(−0.25 / +0.17)。插話機率 = 分數 × 4^(2L−1),L ≤ 0.05 不插話。好感、精力、activeness 倍率、語音的 `ambient_factor` / `interrupt_scale` 與所有冷卻都拿掉了;她自己多久開一次口是 Arbiter 的規則。`channel_activeness` 工具(有人說「活躍點」「安靜點」,`silent` / `low` / `medium` / `high`,最多一天)會設定該情境的 talkativeness。
 
 **聊天等級是上限**(`agent/src/levels.ts`,只用在文字頻道,語音不變):她的 talkativeness(含學到的事的調整)被限制在等級的上限內,整個插話倍率也不超過上限;她沒定時用等級的預設。等級另外加上最低分數、較低的佔比上限,以及她自己開話題(她的 `chat.start` 意圖;唱歌報幕、遊戲實況與動作結果不算)的最小間隔(Arbiter 的規則之一):
 

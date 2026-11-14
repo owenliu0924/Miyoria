@@ -7,7 +7,6 @@ import {
   interval,
   type Module,
   type ModuleContext,
-  presentKeys,
 } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
 import {
@@ -36,7 +35,7 @@ import {
 } from "@miyoria/types";
 import { callNameCapability } from "./call-name-tool.js";
 import { registerCommands, unregisterCommands } from "./commands.js";
-import { DEPRECATED_SOCIAL_KEYS, SocialConfigSchema } from "./config.js";
+import { SocialConfigSchema } from "./config.js";
 import { type Observed, Social, SocialKey, type SocialStores } from "./engine.js";
 
 /** Thrown by `start` when a required store is missing. */
@@ -129,13 +128,6 @@ export class SocialModule implements Module {
 
   async start(ctx: ModuleContext): Promise<void> {
     const config = ctx.config(SocialConfigSchema);
-    const gone = presentKeys(ctx.rawConfig, DEPRECATED_SOCIAL_KEYS);
-    if (gone.length > 0) {
-      ctx.log.warn(
-        { keys: gone },
-        "[modules.social] keys are deprecated and ignored: the agent renders the people present itself",
-      );
-    }
     const social = new Social(
       this.#profile,
       this.#herName,

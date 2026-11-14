@@ -629,8 +629,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # talk_floor = 0.15
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
-# × 佔比上限;有人還在講話時她不插嘴。舊的 ambient_factor、cooldown_ms、min_cooldown_ms、
-# interrupt_scale 已經拿掉(留著也能讀,只會警告);她自己多久開一次口由 [modules.arbiter] 決定
+# × 佔比上限;有人還在講話時她不插嘴。她自己多久開一次口由 [modules.arbiter] 決定
 # pipeline = "v3" 的主線:一次呼叫同時決定說什麼和做什麼(v4 §4.1)。prompt 預設沒有 token 上限,各部分各有字數預算。
 # 對話紀錄放在快取前綴裡,所以放得長也不貴;超過預算時一次砍到 history_trim 的比例(不是每回合丟一則),
 # 這樣紀錄的第一行和快取前綴能留很多回合。下面都是預設值
@@ -873,8 +872,6 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # channel = "123456789012345678" # 唯一能貼的文字頻道 id(要加引號);沒設 = 不貼
 # max_per_day = 3                # 0 到 10
 # min_gap_mins = 120             # 兩次之間至少隔多久
-# quiet_start_hour / quiet_end_hour / voice_quiet_secs 已移除(留著會警告):安靜時段只有
-# [modules.arbiter] 一份,語音冷場只有 [modules.world] 的 voice_quiet_secs 一個偵測器
 
 # ---- 反思與學習(自主層階段 G)-------------------------------------------------
 

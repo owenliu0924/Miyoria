@@ -137,19 +137,6 @@ export const MindConfigSchema = z.object({
 
 export type MindConfig = z.output<typeof MindConfigSchema>;
 
-/**
- * Keys of `[modules.mind]` that are gone: her own quiet hours (one owner now: the Arbiter's
- * ledger limits, `quiet_hours.active` makes her heartbeat sparser) and her own voice-lull
- * detector (one cold-channel signal now: world's `channel_quiet`, `[modules.world]
- * voice_quiet_secs`). An old `miyoria.toml` that still sets them loads (they are ignored) with
- * a deprecation warning.
- */
-export const DEPRECATED_MIND_KEYS: readonly string[] = [
-  "quiet_start_hour",
-  "quiet_end_hour",
-  "voice_quiet_secs",
-];
-
 /** The defaults, optionally overridden. */
 export function mindConfig(overrides: Partial<MindConfig> = {}): MindConfig {
   return { ...MindConfigSchema.parse({}), ...overrides };

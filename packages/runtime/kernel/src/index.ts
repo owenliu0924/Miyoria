@@ -32,7 +32,6 @@ export {
   type ModuleSection,
   parseSection,
   parseTomlJson,
-  presentKeys,
   processEnv,
 } from "./config.js";
 export { ModuleContext, type PublishOptions, type Task } from "./context.js";

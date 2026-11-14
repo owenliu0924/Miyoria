@@ -63,12 +63,6 @@ export const SocialConfigSchema = z.object({
 
 export type SocialConfig = z.output<typeof SocialConfigSchema>;
 
-/**
- * Keys of `[modules.social]` that are gone: `prompt_max_people` sized her `在場的人` section,
- * which the agent renders itself now (v2 §3.5). Still loads, with a warning.
- */
-export const DEPRECATED_SOCIAL_KEYS: readonly string[] = ["prompt_max_people"];
-
 /** The defaults (`SocialConfig::default()`), optionally overridden. */
 export function socialConfig(overrides: Partial<SocialConfig> = {}): SocialConfig {
   return { ...SocialConfigSchema.parse({}), ...overrides };

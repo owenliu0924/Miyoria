@@ -698,21 +698,11 @@ export async function healthChecks(input: DeepInput): Promise<Finding[]> {
 
 // ---- leftovers from older setups ---------------------------------------------------------
 
-const V2_AGENT_VOICE_KEYS = ["ambient_factor", "cooldown_ms", "min_cooldown_ms", "interrupt_scale"];
-
 /** Old values that still parse but no longer do anything. Keys only; values are not printed. */
 export function legacyConfigNotes(config: Config): string[] {
   const notes: string[] = [];
   const agent = config.module("agent").config;
   if (isJsonObject(agent)) {
-    const voice = agent.voice;
-    if (isJsonObject(voice)) {
-      for (const key of V2_AGENT_VOICE_KEYS) {
-        if (key in voice) {
-          notes.push(`[modules.agent.voice] ${key} 已經拿掉(留著只會警告),可以刪除`);
-        }
-      }
-    }
     const modes = [
       agent.default_mode,
       ...(isJsonObject(agent.channels) ? Object.values(agent.channels) : []),

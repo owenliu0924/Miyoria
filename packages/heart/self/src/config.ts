@@ -197,12 +197,6 @@ export type EmotionsConfig = SelfConfig["emotions"];
 export type HeartConfig = SelfConfig["heart"];
 export type BondConfig = SelfConfig["bond"];
 
-/**
- * Keys of `[modules.self]` that are gone: `prompt` switched her `self` / `emotion` prompt
- * sections, which the agent renders itself now (v2 §3.5). Still loads, with a warning.
- */
-export const DEPRECATED_SELF_KEYS: readonly string[] = ["prompt"];
-
 /** The defaults, optionally overridden. */
 export function selfConfig(overrides: Partial<SelfConfig> = {}): SelfConfig {
   return { ...SelfConfigSchema.parse({}), ...overrides };

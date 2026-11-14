@@ -94,8 +94,7 @@ export const ActivenessSchema = z.enum(["low", "medium", "high"]);
 
 /**
  * `[modules.agent.attention]`: when she replies. Only the prefilter, the score thresholds, the
- * share cap and the gray-zone check: cooldowns and the other multipliers are gone (see
- * `DEPRECATED_AGENT_KEYS`).
+ * share cap and the gray-zone check.
  */
 export const AttentionConfigSchema = z.object({
   /** Window (in messages) for the anti-spam share check. */
@@ -678,34 +677,6 @@ export const AgentConfigSchema = z.object({
   prompt: PromptConfigSchema.prefault({}),
 });
 export type AgentConfig = z.output<typeof AgentConfigSchema>;
-
-/**
- * Keys of `[modules.agent]` that are gone (attention's cooldowns and multipliers, v2 §3.3): an
- * old `miyoria.toml` that still has them loads (they are ignored) with a deprecation warning.
- */
-export const DEPRECATED_AGENT_KEYS: readonly string[] = [
-  "attention.cooldown_ms",
-  "attention.min_cooldown_ms",
-  "voice.ambient_factor",
-  "voice.cooldown_ms",
-  "voice.min_cooldown_ms",
-  "voice.interrupt_scale",
-];
-
-/** The deprecated keys `raw` (the `[modules.agent]` section) still sets. */
-export function deprecatedAgentKeys(raw: unknown): string[] {
-  const obj = (v: unknown): Record<string, unknown> | null =>
-    v !== null && typeof v === "object" && !Array.isArray(v)
-      ? (v as Record<string, unknown>)
-      : null;
-  const root = obj(raw);
-  if (root === null) return [];
-  return DEPRECATED_AGENT_KEYS.filter((path) => {
-    const [section, key] = path.split(".") as [string, string];
-    const part = obj(root[section]);
-    return part !== null && Object.hasOwn(part, key);
-  });
-}
 
 /** The defaults (Rust `AgentConfig::default()`). */
 export function defaultAgentConfig(): AgentConfig {

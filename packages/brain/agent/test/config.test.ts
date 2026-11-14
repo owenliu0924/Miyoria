@@ -5,7 +5,6 @@ import {
   AgentConfigSchema,
   activenessFor,
   defaultAgentConfig,
-  deprecatedAgentKeys,
   modeFor,
   parseActiveness,
   parseChannelMode,
@@ -54,26 +53,6 @@ describe("config", () => {
 
     expect(parseActiveness("HIGH")).toBe("high");
     expect(() => parseActiveness("loud")).toThrow("unknown activeness `loud`");
-  });
-
-  it("old attention cooldowns and multipliers still load, flagged as deprecated", () => {
-    const raw = {
-      attention: { cooldown_ms: 5000, min_cooldown_ms: 2000, talk_floor: 0.2 },
-      voice: { ambient_factor: 0.5, cooldown_ms: 20_000, interrupt_scale: 0.35, debounce_ms: 600 },
-    };
-    const parsed = AgentConfigSchema.parse(raw);
-    expect(parsed.attention.talk_floor).toBe(0.2);
-    expect(parsed.voice.debounce_ms).toBe(600);
-    expect("cooldown_ms" in parsed.attention).toBe(false);
-    expect(deprecatedAgentKeys(raw)).toEqual([
-      "attention.cooldown_ms",
-      "attention.min_cooldown_ms",
-      "voice.ambient_factor",
-      "voice.cooldown_ms",
-      "voice.interrupt_scale",
-    ]);
-    expect(deprecatedAgentKeys({ attention: { talk_floor: 0.1 } })).toEqual([]);
-    expect(deprecatedAgentKeys(null)).toEqual([]);
   });
 
   it("parses_modes", () => {

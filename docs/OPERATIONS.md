@@ -284,7 +284,7 @@ sing = { venv = "workers/.venv-sing", port = 8005, offload = ["tts", "asr"] }
 | 暫存檔 | 在暫存資料夾寫、讀、刪 2 MB 檔案(防毒鎖檔的症狀)、殘留的 `esbuild-*`、偵測到 Kaspersky 等會說明 |
 | 顯存 | `nvidia-smi` 的使用量,以及各 worker 估計值(含 offload)的尖峰是否超過總量 92% |
 | 服務健康 | 各服務 `/health`;執行中的 core 版本和這份 CLI 不同 |
-| 舊設定 | V2 留下的 `ambient_factor`、`cooldown_ms`、`min_cooldown_ms`、`interrupt_scale`,聊天等級 `ambient`(只列鍵名) |
+| 舊設定 | V2 留下的聊天等級 `ambient` |
 
 Windows 保留埠的處理需要系統管理員,要自己做:`netsh interface ipv4 show excludedportrange protocol=tcp` 查看,`net stop winnat` 再 `net start winnat` 釋放;長期做法是 `netsh int ipv4 set dynamic tcp start=49152 num=16384`(要重開機)。
 
