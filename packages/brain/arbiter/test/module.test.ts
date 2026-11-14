@@ -11,6 +11,7 @@ import {
   ArbiterKey,
   type Attitude,
   type ContextKey,
+  contextKeyString,
   type Event,
   EventLogKey,
   FloorKey,
@@ -31,7 +32,7 @@ import {
   v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArbiterModule, arbiterConfig, Producers } from "../src/index.js";
+import { ArbiterModule, arbiterConfig, Producers, STATE_KEY, STATE_PROFILE } from "../src/index.js";
 import { acct, FakeHost, MIN, T0, textCtx, voiceCtx } from "./helpers.js";
 
 afterEach(() => {
@@ -193,8 +194,9 @@ describe("ArbiterModule", () => {
 });
 
 describe("the Floor's module", () => {
-  async function floorRig(config: JsonValue = null) {
+  async function floorRig(config: JsonValue = null, store: MemorySettingsStore | null = null) {
     const sup = new Supervisor();
+    if (store) sup.services.provide("app", SettingsStoreKey, store);
     const log = new EventLogService({ profile: "p", store: null });
     const proposals: NewProposal[] = [];
     const social = new FakeSocial();
@@ -322,5 +324,31 @@ describe("the Floor's module", () => {
     );
     expect(decision.verdict).toBe("rejected");
     await r.sup.stopAll();
+  });
+
+  it("saves her state on stop and reads it back on start: today's starts survive a restart", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    const store = new MemorySettingsStore();
+    const here = textCtx("c1");
+    const first = await floorRig(null, store);
+    first.host.set(here, { humans: 2 });
+    const started = await first.sup.services
+      .require(ArbiterKey)
+      .submit(newImpulse({ source: "plan", context: here, ttlMs: MIN, why: "想聊天" }, T0));
+    expect(started.verdict).toBe("accepted");
+    expect(first.sup.services.require(ArbiterKey).ledger(here).limits.initiatives_today).toBe(1);
+    // No tick has passed (30 s): what is saved is written by the stop.
+    expect(await store.get(STATE_PROFILE, STATE_KEY)).toBeNull();
+    await first.sup.stopAll();
+    const saved = (await store.get(STATE_PROFILE, STATE_KEY)) as {
+      ledger: { starts: { place: string }[] };
+    };
+    expect(saved.ledger.starts.map((s) => s.place)).toEqual([contextKeyString(here)]);
+
+    await vi.advanceTimersByTimeAsync(MIN);
+    const second = await floorRig(null, store);
+    expect(second.sup.services.require(ArbiterKey).ledger(here).limits.initiatives_today).toBe(1);
+    await second.sup.stopAll();
   });
 });

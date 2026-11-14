@@ -102,6 +102,7 @@
 - **推理外洩的源頭沒查實**:2026-11-09 15:29 她在一回合(`reasoning` off、4.9 秒、23 則)把整段思考當回覆一行一行發出去。DB 的訊息和 `turn_outcomes` 看得出推理在 content 裡(provider 已把 `reasoning_content` 分開,不是它併進來的),但 LLM 呼叫的原始回應只存在 Core 記憶體,查不到;最可能是 opencode 上的 `deepseek-v4.1-flash` 收了 `thinking: disabled` 卻仍把思考寫在 content。已加的是送出前的防線(`packages/brain/agent/src/leak.ts`)和提示詞一行;要根治得在 Core 重啟後的面板呼叫檢視器看原始回應,再決定是換模型、改 `thinking_off`,還是讓 `chat_text` 開 `low`。防線擋不住不含「情緒標記 / 回覆要短 / 可以說:」這類字眼的純驗算自言自語(要兩行以上才算外洩)。
 - **連結預覽的圖沒用 Geist 字型**:resvg 吃不了 woff2,預覽圖用系統的中文字型(Windows 微軟正黑體),和面板上的卡字型略有差;要一致得把 Geist 的 ttf 放進 repo。另外 Discord 對同一個圖片網址的快取時間沒實測:網址帶 `?v=` 版本,卡變了網址就變,但已經貼出去的舊訊息可能還是舊圖。
 - **Core 從 `/` 起的非公開頁(`/me`、管理頁)只有靜態標題**,沒有各自的預覽;要的話在 `meta.ts` 的 `pageMeta` 加。
+- **叫了這回合沒提供的工具,她說「等我一下」就沒下文**:那個工具不在現在的範圍、也不是迴圈裡的工具時,工具沒有執行,她卻已經說了等一下的話(`稍等喔。` 這類),後面沒有任何結果或下一句(`packages/brain/agent/test/tool-scope.test.ts` 的 `refuses a call of a tool that is not offered now` 照現在的樣子寫)。V5 階段 3 做工具迴圈時一起修。
 
 ### V4 實作(分支 `v4-int`)留下的
 

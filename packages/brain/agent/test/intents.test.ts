@@ -310,21 +310,27 @@ describe("intents", () => {
 describe("talkativeness", () => {
   it("decides whether she joins in in text", async () => {
     const chat = new MockProvider("chat").reply("我也覺得");
-    const config = { attention: { cooldown_ms: 0, keywords: ["鯨魚"] } };
+    // Her talkativeness scales her looks, not the score thresholds any more. `lively` gives 2 ×
+    // 0.1 looks an hour, times her factor: about 0.3 unset (0.65), rounded to none; 0.8 at 1.
+    const config = { attention: { cooldown_ms: 0 }, rhythm: { looks_per_hour: 0.1 } };
     const r = await rig("lively", config, chat);
     const self = new FakeSelf();
     r.h.sup.services.provide("self", SelfStateKey, self.asSelf());
     const c = channel("c");
-    r.h.say(incoming(c, "Owen", "哈哈"));
+    // A new topic is worth a look, no keyword of hers needed.
+    const line = "話說你們看過鯨魚嗎?";
+    r.h.say(incoming(c, "Owen", line));
     await wait(3000);
-    expect(r.h.decisions(), "unset: the configured numbers").toEqual([false]);
+    const unset = r.h.traces()[0];
+    expect(unset?.respond, unset?.reasons.join("; ")).toBe(false);
+    expect(unset?.reasons.some((x) => x.includes("looks spent (0/0"))).toBe(true);
     self.level = 1;
-    // (Her talkativeness scales her looks, not the score thresholds any more.)
-    r.h.say(incoming(c, "Owen", "真的有鯨魚嗎?"));
+    r.h.say(incoming(c, "Owen", line));
     await wait(3000);
     const [trace] = r.h.traces();
     expect(trace?.respond, trace?.reasons.join("; ")).toBe(true);
     expect(trace?.reasons.some((x) => x.startsWith("talkativeness 1.00"))).toBe(true);
+    expect(trace?.reasons.some((x) => x.startsWith("a look: a new topic (1/1"))).toBe(true);
     self.level = 0;
     // Someone answering what she just said is never shut out by her quiet setting ...
     r.h.say(incoming(c, "Owen", "那妳覺得呢?"));

@@ -225,6 +225,27 @@ describe("prompt contributors", () => {
     // Contributors are only asked for turns she answers.
     expect(memory.requests.length).toBe(2);
   });
+
+  it("contributed_context_is_capped", async () => {
+    const mock = new MockProvider("chat").reply("嗯");
+    const config = { mainline: { data_chars: 110 } };
+    const h = await Harness.create("always", config, mock);
+    const registry = new PromptContributors();
+    h.sup.services.provide(APP, PromptContributorsKey, registry);
+    registry.register(
+      new Contributor("memory", [
+        section("a", "短", "第一段", 0),
+        section("b", "長", "很長".repeat(100), 1),
+      ]),
+    );
+    h.say(incoming(channel("c"), "Owen", "嗨"));
+    await wait(3000);
+    const d = data(mock, 0);
+    const tail = d.slice(d.indexOf('<data source="a"'));
+    expect([...tail].length, tail).toBeLessThanOrEqual(110);
+    expect(tail).toContain("第一段");
+    expect(tail.endsWith("…\n</data>"), tail).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------- social

@@ -6,6 +6,7 @@ import { ToolRegistryKey } from "@miyoria/llm/tools";
 import { type ContextKey, eventTopic, isJsonObject } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonaHandleKey } from "../src/index.js";
+import { NOT_OFFERED } from "../src/mainline/loop.js";
 import {
   account,
   channel,
@@ -417,6 +418,28 @@ describe("agent module", () => {
     expect(h.sink.reactions().length).toBe(3);
     const results = (mock.requests()[3]?.messages ?? []).filter((m) => m.role === "tool");
     expect(String(results.at(-1)?.content)).toContain("at most 5");
+  });
+
+  it("tool_errors_go_back_to_the_model", async () => {
+    const probe = new Probe("probe");
+    const mock = new MockProvider("chat")
+      .events([toolCall(0, "x", "nope", "{}"), toolCall(1, "y", "probe", "{bad"), done()])
+      .reply("嗯?");
+    // The main line's loop runs `probe` inside the turn: what it answered comes back to her.
+    const config = { ...(noCheck() as object), mainline: { loop_tools: ["probe"] } };
+    const h = await Harness.build("always", config, mock, null, { tools: [probe] });
+    h.say(incoming(channel("c"), "Owen", "試試看"));
+    await wait(3000);
+    expect(probe.calls).toEqual([]);
+    expect(h.sink.texts()).toEqual(["嗯?"]);
+    const requests = mock.requests();
+    expect(requests.length).toBe(2);
+    const results = (requests[1]?.messages ?? [])
+      .filter((m) => m.role === "tool")
+      .map((m) => [m.tool_call_id, contentText(m.content ?? "")] as const);
+    expect(results.map(([id]) => id)).toEqual(["x", "y"]);
+    expect(results[0]?.[1]).toContain(NOT_OFFERED);
+    expect(results[1]?.[1]).toContain("arguments are not valid JSON");
   });
 
   it("tool_permissions_follow_the_triggering_users", async () => {

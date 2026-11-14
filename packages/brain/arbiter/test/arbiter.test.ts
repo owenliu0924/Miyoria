@@ -277,10 +277,10 @@ describe("ledger", () => {
     const view = r.arbiter.ledger(HERE);
     expect(view.limits.initiatives_today).toBe(1);
     expect(view.limits.initiative_cap).toBe(5);
-    // Not before the rule that blocked her lets go (quiet hours may come after it).
-    expect(Date.parse(view.limits.next_initiative_at as string)).toBeGreaterThanOrEqual(
-      Date.parse(blocked.retry_at as string),
-    );
+    // The rule that blocked her lets go when her day turns (04:00 local, UTC+8), and her quiet
+    // hours push that to their end (07:00 local).
+    expect(blocked.retry_at).toBe("2026-11-03T20:00:00.000Z");
+    expect(view.limits.next_initiative_at).toBe("2026-11-03T23:00:00.000Z");
     // Elsewhere she may start now.
     expect(r.arbiter.ledger(THERE).limits.next_initiative_at).toBeNull();
     expect(view.entries[0]?.context).toEqual(HERE);

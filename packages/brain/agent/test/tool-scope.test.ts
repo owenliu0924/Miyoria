@@ -17,6 +17,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { acceptedRequests, asksForGame, CLAIMS, unbackedClaim } from "../src/claims.js";
+import { WAIT_LINES } from "../src/mainline/main.js";
 import { offeredIn, scopeOfSnapshot } from "../src/tool-scope.js";
 import {
   channel,
@@ -209,6 +210,13 @@ describe("tool scope", () => {
     h.say(mention(channel("c"), "Owen", "去挖鐵"));
     await wait(3000);
     expect(t.goal.calls).toHaveLength(0);
+    // A known gap (docs/design/backlog.md): the tool is neither offered now nor a loop tool, so
+    // nothing runs, yet she says a wait line and nothing follows it: one model request, no
+    // second line, however long one waits.
+    await wait(60_000);
+    expect(h.sink.texts()).toHaveLength(1);
+    expect(WAIT_LINES[""]).toContain(h.sink.texts()[0]);
+    expect(chat.requests()).toHaveLength(1);
   });
 });
 
