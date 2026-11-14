@@ -291,7 +291,12 @@ miyoria up                     # 啟動這台裝的全部
 
 ### 7.5 模型
 
-- **決定(2026-11-14):繼續經 OpenCode,全部用 flash。** 階段 0 先驗證它有沒有照做思考開關、有沒有把 effort 送出去;思考的上限不能截斷答案。驗證不過再回來談直連。
+- **決定(2026-11-14):繼續經 OpenCode,全部用 flash。** 同一天用 22 個小請求實測過這個端點:
+  - `thinking: {type: "disabled"}` 有效:沒有推理文字,推理 token 是 0。什麼都不送時思考是開的。
+  - `max_tokens` 把推理也算進去。上限太緊時回來的是空的答案加 `finish_reason: length`。原本文字回合的「low」只是把上限壓到 2048,沒有送 effort,所以是用預設的思考量、再被上限截斷。
+  - `reasoning_effort` 被接受(模型清單列的是 low / high / max,medium 當成 high)。現在 `opencode` 這種 provider 預設會送它,而且不再壓 `max_tokens`。在小題目上量不出 low 和 high 的差別。
+  - 沒有找到獨立的推理預算。呼叫端自己設的 `max_tokens`(appraise 800、review 2000、plan 3000)仍然含推理,要留意 `finish_reason: length`。
+  - **工具迴圈可能不會思考**:歷史裡沒有帶回上一輪的 `reasoning_content` 時,那一次請求的推理 token 是 0。我們從來不把推理帶回去。階段 3 做工具迴圈時要處理。
 - 依用途只分思考量:
 
 | 用途 | 思考 |

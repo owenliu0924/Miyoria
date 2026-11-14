@@ -11,6 +11,7 @@ import {
   LlmRouter,
   MockProvider,
   OpenAiConfig,
+  OpenAiProvider,
   ProviderConfigSchema,
   parseModelRef,
   userMessage,
@@ -122,5 +123,88 @@ describe("reasoning levels", () => {
     expect(body("low", null, capped).max_tokens).toBe(1000);
     expect(body("high", null, capped).max_tokens).toBe(20000);
     expect(body("medium", null, capped).max_tokens).toBe(8192);
+  });
+
+  it("opencode_sends_reasoning_effort_and_never_caps_the_answer", () => {
+    const cfg = (raw: Record<string, unknown>) =>
+      OpenAiConfig.fromProviderConfig(ProviderConfigSchema.parse({ api_key: "k", ...raw }));
+    const opencode = cfg({ kind: "opencode" });
+    expect(opencode.reasoning.effort).toBe(true);
+    const body = (level: ReasoningLevel, max: number | null, c = opencode) =>
+      requestBody(
+        { ...request(), reasoning: level, thinking: level !== "off", max_tokens: max },
+        c.thinkingOff,
+        c.reasoning,
+      );
+    expect(body("low", null).reasoning_effort).toBe("low");
+    expect(body("low", null).max_tokens).toBeUndefined();
+    expect(body("low", null).thinking).toBeUndefined();
+    expect(body("high", null).reasoning_effort).toBe("high");
+    // A caller's own limit is kept as it is, not lowered to a level cap.
+    expect(body("low", 6000).max_tokens).toBe(6000);
+    // Off: the switch alone, no effort.
+    expect(body("off", null).thinking).toStrictEqual({ type: "disabled" });
+    expect(body("off", null).reasoning_effort).toBeUndefined();
+    // Opting out restores the old on / off behaviour with caps.
+    const capped = cfg({ kind: "opencode", reasoning_effort: false });
+    expect(body("low", null, capped).max_tokens).toBe(2048);
+    expect(body("low", null, capped).reasoning_effort).toBeUndefined();
+    // Other kinds keep their defaults.
+    expect(cfg({ kind: "deepseek" }).reasoning.effort).toBe(false);
+    expect(cfg({ kind: "openai-compatible", base_url: "http://x" }).reasoning.effort).toBe(false);
+  });
+
+  it("opencode_bodies_per_purpose_through_the_router", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fakeFetch: typeof fetch = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      const sse =
+        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+      return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
+    };
+    const provider = new OpenAiProvider(
+      "deepseek",
+      OpenAiConfig.fromProviderConfig(
+        ProviderConfigSchema.parse({ kind: "opencode", api_key: "k" }),
+      ),
+      { fetch: fakeFetch },
+    );
+    const chain = [parseModelRef("deepseek:deepseek-v4.1-flash")];
+    const r = new LlmRouter(
+      new Map([["deepseek", provider]]),
+      new Map([
+        ["chat", chain],
+        ["mind", chain],
+      ]),
+      {
+        reasoning: new Map<string, ReasoningLevel>([
+          ["chat_voice", "off"],
+          ["chat_text", "low"],
+          ["reflect", "high"],
+        ]),
+      },
+    );
+    const sent: [string, Partial<ChatRequest>][] = [
+      ["chat", { reasoning_purpose: "chat_voice" }],
+      ["chat", { reasoning_purpose: "chat_text" }],
+      ["chat", { reasoning_purpose: "work" }],
+      ["mind", { reasoning_purpose: "reflect", max_tokens: 6000 }],
+      ["chat", { thinking: false, max_tokens: 400 }],
+    ];
+    for (const [purpose, extra] of sent) {
+      await collectResponse(await r.stream(purpose, { ...request(), ...extra }));
+    }
+    const pick = (b: Record<string, unknown>) => ({
+      thinking: b.thinking,
+      reasoning_effort: b.reasoning_effort,
+      max_tokens: b.max_tokens,
+    });
+    expect(bodies.map(pick)).toStrictEqual([
+      { thinking: { type: "disabled" }, reasoning_effort: undefined, max_tokens: undefined },
+      { thinking: undefined, reasoning_effort: "low", max_tokens: undefined },
+      { thinking: undefined, reasoning_effort: "high", max_tokens: undefined },
+      { thinking: undefined, reasoning_effort: "high", max_tokens: 6000 },
+      { thinking: { type: "disabled" }, reasoning_effort: undefined, max_tokens: 400 },
+    ]);
   });
 });
