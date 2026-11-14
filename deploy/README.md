@@ -2,7 +2,7 @@
 
 Docker 部署:Core 容器(Node 24,內含管理面板),資料存在容器 volume 裡的 SQLite。完整的部署、升級、備份流程見 [docs/OPERATIONS.md](../docs/OPERATIONS.md)。
 
-> 不用 Docker 也能跑:`npx miyoria@latest init` → `npx miyoria core`,資料預設存在 SQLite(`data/miyoria.db`),不需要另外裝資料庫。
+> 不用 Docker 也能跑:`pnpm dlx miyoria@latest init` → `pnpm dlx miyoria core`,資料預設存在 SQLite(`data/miyoria.db`),不需要另外裝資料庫。
 
 | 檔案 | 用途 |
 |---|---|
@@ -18,7 +18,7 @@ build 時排除的檔案(`.env`、`node_modules`、`dist`、`legacy`、`spikes`�
 
 ```sh
 cp deploy/.env.example deploy/.env   # 可選:改埠、映像檔、設定檔
-npx miyoria init                     # 在專案根目錄產生 .env(LLM key、Discord token、各種 token)
+pnpm dlx miyoria init                     # 在專案根目錄產生 .env(LLM key、Discord token、各種 token)
 docker compose -f deploy/docker-compose.yml up -d --build
 docker compose -f deploy/docker-compose.yml ps      # core 要變成 healthy
 docker compose -f deploy/docker-compose.yml logs -f core

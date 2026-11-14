@@ -53,6 +53,16 @@ jobs:
           npx --no-install miyoria --version
           npx --no-install miyoria init --yes
           npx --no-install miyoria profile validate
+      # The same with pnpm, which is what the docs show first.
+      - name: Smoke-test the packed CLI with pnpm
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir smoke-pnpm && cd smoke-pnpm
+          pnpm init > /dev/null
+          pnpm add "$RUNNER_TEMP"/pack/miyoria-*.tgz
+          pnpm exec miyoria --version
+          pnpm exec miyoria init --yes
+          pnpm exec miyoria profile validate
 
   # Light-weight worker tests: they run against the in-process fake worker, no GPU or model needed.
   workers-python:

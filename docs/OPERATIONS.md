@@ -4,7 +4,7 @@
 
 > 狀態:Phase 0–8 的程式都已實作(TypeScript,Node 24);Discord 文字、DeepSeek、語音模型和 Minecraft 已經實際跑過(見 [design/v4-plan.md](design/v4-plan.md) §1、[design/minecraft-findings.md](design/minecraft-findings.md));VTube Studio、OBS、Go Live 的實測進度見 [ROADMAP.md](ROADMAP.md) 各 phase 的「實測」項目。
 >
-> 指令寫法:下面的 `miyoria <指令>` 在不同安裝方式下是 `npx miyoria <指令>`(npm 套件)或 `pnpm dev <指令>`(從原始碼,在 repo 根目錄)。
+> 指令寫法:下面的 `miyoria <指令>` 在不同安裝方式下是 `pnpm dlx miyoria <指令>`(發佈的套件;用 npm 的話是 `npx miyoria <指令>`)或 `pnpm dev <指令>`(從原始碼,在 repo 根目錄)。
 
 ## 目錄
 
@@ -25,7 +25,7 @@
 
 | 節點 | 怎麼跑 | 在哪 | 對外埠(預設) |
 |---|---|---|---|
-| **Core** | `miyoria core`(npx、從原始碼或 Docker) | 直播機或 server | `7878` Admin API(CLI / 面板 / `/metrics`)、`7879` voice link(voice node 連進來)、`7882` stage link(Stage 連進來);選用:`7881` MCP server(`[mcp.server]`,預設關) |
+| **Core** | `miyoria core`(pnpm dlx、從原始碼或 Docker) | 直播機或 server | `7878` Admin API(CLI / 面板 / `/metrics`)、`7879` voice link(voice node 連進來)、`7882` stage link(Stage 連進來);選用:`7881` MCP server(`[mcp.server]`,預設關) |
 | **資料庫** | SQLite 檔案(`data/miyoria.db`,Core 自己開,不用另外跑) | 跟 Core 同一台 | 無 |
 | **Self voice node** | `apps/voice-node`(Node ≥ 22.4) | 直播機(跟 ASR/TTS、OBS 同一台最好) | 不開埠,主動連 Core 的 7879 |
 | **ASR worker** | `workers/asr`(Python,GPU 或 CPU) | 有 GPU 的機器 | `8001`(自己跑 `server.py` 的預設)或 `8003`(`miyoria start` / `[machine]` 的預設),見下方說明 |
@@ -56,7 +56,7 @@ ASR 的預設埠有兩個,看怎麼啟動:自己跑 `workers/asr/server.py`(沒�
 | 在直播機上 | 怎麼跑 |
 |---|---|
 | 資料庫 | 不用做什麼:SQLite(`data/miyoria.db`) |
-| Core | `npx miyoria core`(或從原始碼 `pnpm dev:core`) |
+| Core | `pnpm dlx miyoria core`(或從原始碼 `pnpm dev:core`) |
 | ASR / TTS worker | 見 [workers/README.md](../workers/README.md)(沒有 GPU 先用 `workers/fake`) |
 | Voice node | `cd apps/voice-node && pnpm start`(repo 根目錄先 `pnpm install`) |
 
@@ -86,7 +86,7 @@ Server 上:
 ```bash
 git clone <repo> miyoria && cd miyoria
 cp deploy/.env.example deploy/.env        # 可選:改埠、映像檔、設定檔
-# 在專案根目錄產生 .env:可以在任何機器跑 `npx miyoria init` 再把 .env 複製過來,
+# 在專案根目錄產生 .env:可以在任何機器跑 `pnpm dlx miyoria init` 再把 .env 複製過來,
 # 或直接手動從 .env.example 建立,token 用 `openssl rand -hex 32` 產生
 docker compose -f deploy/docker-compose.yml up -d --build
 docker compose -f deploy/docker-compose.yml ps      # 等 core 變成 healthy
@@ -122,13 +122,13 @@ Core 在 server,ASR / TTS 用雲端供應者(`miyoria.toml` 的 `[speech.*]` 改
 用 npm 套件(在一個空資料夾):
 
 ```bash
-npx miyoria@latest init                # 互動式精靈
-npx miyoria doctor                     # 檢查連線
-npx miyoria profile validate
-npx miyoria chat                       # 在終端機跟她聊天,不需要 Discord
+pnpm dlx miyoria@latest init                # 互動式精靈
+pnpm dlx miyoria doctor                     # 檢查連線
+pnpm dlx miyoria profile validate
+pnpm dlx miyoria chat                       # 在終端機跟她聊天,不需要 Discord
 ```
 
-想固定版本、少打 `npx`:`npm install -g miyoria`(之後直接打 `miyoria …`),或在專案裡 `npm install miyoria`。
+想固定版本、少打 `pnpm dlx`:`pnpm add -g miyoria`(之後直接打 `miyoria …`),或在專案裡 `pnpm add miyoria`(之後打 `pnpm exec miyoria …`)。用 npm 也可以:`npx miyoria …`、`npm install -g miyoria`。
 
 從原始碼(repo 根目錄):
 
@@ -161,7 +161,7 @@ pnpm dev chat
 原生:
 
 ```bash
-npx miyoria core                   # 或從原始碼:pnpm dev:core
+pnpm dlx miyoria core                   # 或從原始碼:pnpm dev:core
 ```
 
 Core 預設在 `http://127.0.0.1:7878/` 提供管理面板(npm 套件內含;從原始碼要先 `pnpm build:web`)。
@@ -364,7 +364,7 @@ git pull
 原生 Core:
 
 ```bash
-npx miyoria@latest doctor        # npm 套件:@latest 會拿最新版;全域安裝的用 npm install -g miyoria@latest
+pnpm dlx miyoria@latest doctor        # 發佈的套件:@latest 會拿最新版;全域安裝的用 pnpm add -g miyoria@latest
 # 從原始碼:git pull && pnpm install
 # 重啟 core(Ctrl+C 後再 miyoria core,或你的行程管理員)
 ```
@@ -431,8 +431,8 @@ Docker:資料在 `core-data` volume 的 `/data/miyoria.db`。停掉 core 再把 
 Core 用 pino:預設每行一筆 JSON(在終端機會自動改成好讀的單行格式),層級由環境變數 `MIYORIA_LOG_LEVEL`(`fatal|error|warn|info|debug|trace|silent`)控制;沒設時用 `miyoria.toml` 的 `[core] log` 的第一個層級(預設 `info,miyoria=debug` → `info`)。`MIYORIA_LOG_FORMAT=json` / `pretty` 可以強制格式。
 
 ```bash
-MIYORIA_LOG_LEVEL=warn npx miyoria core          # 安靜
-MIYORIA_LOG_LEVEL=debug npx miyoria core         # 查語音管線、Discord adapter 等細節
+MIYORIA_LOG_LEVEL=warn pnpm dlx miyoria core          # 安靜
+MIYORIA_LOG_LEVEL=debug pnpm dlx miyoria core         # 查語音管線、Discord adapter 等細節
 MIYORIA_LOG_LEVEL=debug pnpm dev:core            # 從原始碼
 ```
 
@@ -527,7 +527,7 @@ Voice node 的層級用它的 `LOG_LEVEL`(`error|warn|info|debug`);`debug` 會�
 | 語音延遲很高 | TTS 沒用真串流(看 worker `/health` 的 `streaming`);GPU 記憶體被遊戲吃光;跨網路的 voice link 延遲過大(改用 B')。 |
 | 還原後 Core 報 migration 錯誤 | 備份是比較新的版本做的,Core 比較舊:用同版或更新的 Core。 |
 | 想完全重來 | 原生:停掉 Core,刪掉 `data/`(SQLite)。Docker:`docker compose -f deploy/docker-compose.yml down -v` 會**刪掉 Core 資料 volume(資料庫在裡面)**。先備份(§7)。 |
-| 啟動時說 `No such built-in module: node:sqlite` 或 `npx miyoria` 拒絕安裝(engines) | Node 版本太舊:要 Node ≥ 24(`node -v`)。 |
+| 啟動時說 `No such built-in module: node:sqlite` 或 `pnpm dlx miyoria`(或 `npx miyoria`)拒絕安裝(engines) | Node 版本太舊:要 Node ≥ 24(`node -v`)。 |
 | 磁碟被 Docker 吃滿 | `docker system df`;`docker image prune`、`docker builder prune`;設定日誌輪替(§8)。 |
 
 ## 一句話的來龍去脈

@@ -916,7 +916,7 @@ extensions/minecraft/
 
 ### 15.2 CLI(`miyoria`,npm 套件 `packages/cli`)
 
-安裝後是 `miyoria`,不安裝就用 `npx miyoria@latest <指令>`;在 repo 裡是 `pnpm dev <指令>`。
+安裝後是 `miyoria`,不安裝就用 `pnpm dlx miyoria@latest <指令>`;在 repo 裡是 `pnpm dev <指令>`。
 
 | 指令 | 用途 |
 |---|---|
