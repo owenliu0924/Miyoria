@@ -202,6 +202,7 @@ function mindView(paused: boolean, approvals: number): MindView {
       idle_reason: paused ? "paused" : null,
     },
     pending_approvals: approvals,
+    emergency: null,
   };
 }
 

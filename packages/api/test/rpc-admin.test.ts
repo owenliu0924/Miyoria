@@ -6,16 +6,22 @@
 import {
   type CostReport as ContractCostReport,
   type DecisionRecord as ContractDecisionRecord,
+  type EmergencyReport as ContractEmergencyReport,
+  type MindStats as ContractMindStats,
   type ModuleInfo as ContractModuleInfo,
+  type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
   type Relationship as ContractRelationship,
   type RelationshipDelta as ContractRelationshipDelta,
+  type ThoughtSummary as ContractThoughtSummary,
   contract,
   routeMeta,
 } from "@miyoria/contracts/api";
+import { NODE_APPROVE, type PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport } from "@miyoria/llm/llm";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";
 import type { DecisionRecord, Person, Relationship, RelationshipDelta } from "@miyoria/store";
+import type { EmergencyReport, MindStats, Thought } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { rpcRoutes } from "../src/rpc.js";
 
@@ -52,6 +58,33 @@ const CASES: Case[] = [
     method: "PUT",
     path: "/api/channels/level",
     permission: "admin.channel.mode",
+  },
+  { name: "mind.status", method: "GET", path: "/api/mind" },
+  { name: "mind.thoughts", method: "GET", path: "/api/mind/thoughts" },
+  { name: "mind.approvals", method: "GET", path: "/api/mind/approvals" },
+  {
+    name: "mind.approve",
+    method: "POST",
+    path: "/api/mind/approvals/:id/approve",
+    permission: "owner.autonomy.approve",
+  },
+  {
+    name: "mind.deny",
+    method: "POST",
+    path: "/api/mind/approvals/:id/deny",
+    permission: "owner.autonomy.approve",
+  },
+  {
+    name: "mind.pause",
+    method: "POST",
+    path: "/api/mind/pause",
+    permission: "owner.autonomy.approve",
+  },
+  {
+    name: "mind.resume",
+    method: "POST",
+    path: "/api/mind/resume",
+    permission: "owner.autonomy.approve",
   },
 ];
 
@@ -91,5 +124,22 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const decision: Same<ContractDecisionRecord, DecisionRecord> = true;
     const cost: Same<ContractCostReport, CostReport> = true;
     expect([module, decision, cost]).toEqual([true, true, true]);
+  });
+
+  it("the mind view, a thought in the journal and an approval", () => {
+    // The list leaves out what each thought saw and its reasoning, and says whether it has them.
+    type Listed = Omit<Thought, "input" | "reasoning"> & {
+      has_input: boolean;
+      has_reasoning: boolean;
+    };
+    const thought: Same<ContractThoughtSummary, Listed> = true;
+    const stats: Same<ContractMindStats, MindStats> = true;
+    const emergency: Same<ContractEmergencyReport, EmergencyReport> = true;
+    const approval: Same<ContractPendingApproval, PendingApproval> = true;
+    expect([thought, stats, emergency, approval]).toEqual([true, true, true, true]);
+  });
+
+  it("the owner node is the one the gate's commands use", () => {
+    expect(routeMeta(contract, ["mind", "approve"])?.permission).toBe(NODE_APPROVE);
   });
 });

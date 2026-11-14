@@ -278,6 +278,106 @@
         }
       }
     },
+    "mind": {
+      "status": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/mind"
+          }
+        }
+      },
+      "thoughts": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/mind/thoughts"
+          }
+        }
+      },
+      "approvals": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/mind/approvals"
+          }
+        }
+      },
+      "approve": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "owner.autonomy.approve"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/mind/approvals/{id}/approve"
+          }
+        }
+      },
+      "deny": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "owner.autonomy.approve"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/mind/approvals/{id}/deny"
+          }
+        }
+      },
+      "pause": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "owner.autonomy.approve"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/mind/pause"
+          }
+        }
+      },
+      "resume": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "owner.autonomy.approve"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/mind/resume"
+          }
+        }
+      }
+    },
     "facts": {
       "effects": {
         "~orpc": {

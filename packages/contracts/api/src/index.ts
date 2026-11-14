@@ -23,6 +23,7 @@ import { decisions, llm, modules } from "./core.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { member } from "./member.js";
+import { mind } from "./mind.js";
 import { people } from "./people.js";
 import { persona } from "./persona.js";
 import { publicView } from "./public.js";
@@ -133,6 +134,34 @@ export {
   SongRequestSchema,
 } from "./member.js";
 export {
+  type EmergencyReport,
+  EmergencyReportSchema,
+  type EmergencyStep,
+  EmergencyStepSchema,
+  type IntentStatus,
+  IntentStatusSchema,
+  type MindStats,
+  MindStatsSchema,
+  type MindSuggestion,
+  MindSuggestionSchema,
+  type MindView,
+  MindViewSchema,
+  type PendingApproval,
+  PendingApprovalSchema,
+  type ThoughtDecision,
+  ThoughtDecisionSchema,
+  type ThoughtEffects,
+  ThoughtEffectsSchema,
+  type ThoughtIntent,
+  ThoughtIntentSchema,
+  type ThoughtSummary,
+  ThoughtSummarySchema,
+  type ThoughtTrigger,
+  type ThoughtTriggerKind,
+  ThoughtTriggerKindSchema,
+  ThoughtTriggerSchema,
+} from "./mind.js";
+export {
   type AdjustPersonRequest,
   AdjustPersonRequestSchema,
   type Person,
@@ -241,6 +270,7 @@ export const contract = {
   decisions,
   llm,
   channels,
+  mind,
   facts,
   public: publicView,
   member,

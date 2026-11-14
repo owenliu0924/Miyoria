@@ -2,7 +2,13 @@
 // `packages/types` serialize them. Timestamps are RFC 3339 strings, ids are ULID strings.
 // Keep this file in sync when the API changes.
 
-import type { DecisionTrace, ModuleStateKind } from "@miyoria/contracts/api";
+import type {
+  DecisionTrace,
+  MindSuggestion,
+  ModuleStateKind,
+  ThoughtIntent,
+  ThoughtSummary,
+} from "@miyoria/contracts/api";
 
 /** A ULID, serialized as a 26-character string. */
 export type Ulid = string;
@@ -166,6 +172,18 @@ export type {
   CostReport,
   DecisionRecord,
   DecisionTrace,
+  EmergencyReport,
+  EmergencyStep,
+  IntentStatus,
+  MindStats,
+  MindSuggestion,
+  MindView,
+  PendingApproval,
+  ThoughtDecision,
+  ThoughtEffects,
+  ThoughtIntent,
+  ThoughtTrigger,
+  ThoughtTriggerKind,
   DealView,
   EarnLine,
   FeedItem,
@@ -818,79 +836,6 @@ export interface DataWipeResult {
 // ---------------------------------------------------------------------------
 // mind loop and autonomy (`packages/types/src/mind.ts`, `packages/api/src/mind.ts`)
 
-export interface MindStats {
-  calls_last_hour: number;
-  max_calls_per_hour: number;
-  calls_total: number;
-  tokens_total: number;
-  last_at: Timestamp | null;
-  next_heartbeat_at: Timestamp | null;
-  /** Why she is not thinking right now (`paused`, `budget exhausted`, ...). */
-  idle_reason: string | null;
-}
-
-/** One step of the emergency stop, in the order they ran. */
-export interface EmergencyStep {
-  step: "pause" | "silence" | "song" | "stream" | "voice" | "game" | "resume";
-  ok: boolean;
-  detail: string;
-}
-
-export interface EmergencyReport {
-  paused: boolean;
-  by: string;
-  at: Timestamp;
-  steps: EmergencyStep[];
-}
-
-/** `GET /api/mind`, `POST /api/mind/pause|resume`. */
-export interface MindView {
-  paused: boolean;
-  running: boolean;
-  accepting: boolean;
-  stats: MindStats | null;
-  pending_approvals: number;
-  /** The last press of the emergency stop; `null`: none since the core started. */
-  emergency?: EmergencyReport | null;
-}
-
-export type ThoughtTriggerKind = "heartbeat" | "salient" | "suggestion" | "turn" | "voice_quiet" | "manual";
-
-export interface ThoughtTrigger {
-  kind: ThoughtTriggerKind;
-  detail: string;
-  context: ContextKey | null;
-  at: Timestamp;
-}
-
-export interface ThoughtDecision {
-  at: Timestamp;
-  capability: string;
-  allowed: boolean;
-  stage: string;
-  reason: string;
-}
-
-export type IntentStatus = "pending" | "started" | "done" | "denied" | "dropped" | "failed";
-
-export interface ThoughtIntent {
-  id: string;
-  capability: string;
-  args: unknown;
-  why: string;
-  opening: string | null;
-  context: ContextKey | null;
-  about: AccountRef | null;
-  expires_at: Timestamp;
-  status: IntentStatus;
-  detail: string | null;
-  turn: TurnId | null;
-  decisions: ThoughtDecision[];
-  said: string | null;
-  /** Every status it went through, oldest first (newer journals only). */
-  history?: { at: Timestamp; status: IntentStatus; detail: string | null }[];
-}
-
 /** What one thought saw (bounded copies; only the newest thoughts keep it). */
 export interface ThoughtInput {
   time: string;
@@ -918,52 +863,19 @@ export interface ThoughtInput {
   recent: number;
 }
 
-/** What one thought changed, item by item. */
-export interface ThoughtEffects {
-  drives: Record<string, number>;
-  talkativeness: { scope: string; level: number; minutes: number; why: string }[];
-  initiative: { level: number; why: string } | null;
-  feelings: { person: string; name: string; note: string | null; hint: "+" | "-" | null }[];
-  agenda_added: { text: string; why: string }[];
-  agenda_done: string[];
-  agenda_dropped: string[];
-  documents: { type: string; title: string | null; ok: boolean; error: string | null }[];
-}
-
-/** A reason to think, offered by another module. */
-export interface MindSuggestion {
-  source: string;
-  reason: string;
-  context: ContextKey | null;
-  hint: string;
-  about: AccountRef[];
-}
-
-/** `GET /api/mind/thoughts` (newest first, without `input` and `reasoning`) and `GET /api/mind/thoughts/{id}`. */
-export interface Thought {
-  id: string;
-  at: Timestamp;
-  triggers: ThoughtTrigger[];
-  thought: string;
-  changes: string[];
-  intents: ThoughtIntent[];
-  tokens: number | null;
-  error: string | null;
-  ms: number;
-  suggestions?: MindSuggestion[];
-  /** Only from `GET /api/mind/thoughts/{id}`, and only for the newest thoughts. */
-  input?: ThoughtInput | null;
-  reasoning?: string | null;
+/**
+ * One thought: the list (`GET /api/mind/thoughts`, newest first, without `input` and `reasoning`,
+ * with `has_input` and `has_reasoning`) and `GET /api/mind/thoughts/{id}` (with them, for the newest
+ * thoughts).
+ */
+export type Thought = Omit<ThoughtSummary, "has_input" | "has_reasoning"> & {
   /** In the list: whether the full thought has them. */
   has_input?: boolean;
   has_reasoning?: boolean;
-  effects?: ThoughtEffects | null;
-  /** Ids of her LLM calls for this thought. */
-  calls?: string[];
-  cost_usd?: number | null;
-  attempts?: number;
-  idle?: { thoughts: number; minutes: number } | null;
-}
+  /** Only from `GET /api/mind/thoughts/{id}`, and only for the newest thoughts. */
+  input?: ThoughtInput | null;
+  reasoning?: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // LLM call inspector (`packages/llm/llm/src/calls.ts`, `packages/api/src/llmcalls.ts`)
@@ -1113,19 +1025,6 @@ export interface LlmCallStats {
   kept: number;
   oldest: Timestamp | null;
   prices: Record<string, LlmPricing>;
-}
-
-/** `GET /api/mind/approvals`: high-risk actions waiting for an owner. */
-export interface PendingApproval {
-  id: string;
-  capability: string;
-  summary: string;
-  principal: string;
-  args: unknown;
-  why: string | null;
-  review: string;
-  requested_at: Timestamp;
-  expires_at: Timestamp;
 }
 
 

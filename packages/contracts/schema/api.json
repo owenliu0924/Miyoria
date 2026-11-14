@@ -430,6 +430,60 @@
         "cap"
       ]
     },
+    "ApiEmergencyReport": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiEmergencyStep"
+          }
+        }
+      },
+      "required": [
+        "paused",
+        "by",
+        "at",
+        "steps"
+      ]
+    },
+    "ApiEmergencyStep": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "string",
+          "enum": [
+            "pause",
+            "silence",
+            "song",
+            "stream",
+            "voice",
+            "game",
+            "resume"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "ok",
+        "detail"
+      ]
+    },
     "ApiEmptyRequest": {
       "type": "object",
       "properties": {},
@@ -707,6 +761,17 @@
         "ok",
         "hungry",
         "starving"
+      ]
+    },
+    "ApiIntentStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "started",
+        "done",
+        "denied",
+        "dropped",
+        "failed"
       ]
     },
     "ApiIssueCardRequest": {
@@ -1266,6 +1331,132 @@
         "forget"
       ]
     },
+    "ApiMindStats": {
+      "type": "object",
+      "properties": {
+        "calls_last_hour": {
+          "type": "number"
+        },
+        "max_calls_per_hour": {
+          "type": "number"
+        },
+        "calls_total": {
+          "type": "number"
+        },
+        "tokens_total": {
+          "type": "number"
+        },
+        "last_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_heartbeat_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idle_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "calls_last_hour",
+        "max_calls_per_hour",
+        "calls_total",
+        "tokens_total",
+        "last_at",
+        "next_heartbeat_at",
+        "idle_reason"
+      ]
+    },
+    "ApiMindSuggestion": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "type": "string"
+        },
+        "about": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireAccountRef"
+          }
+        }
+      },
+      "required": [
+        "source",
+        "reason",
+        "context",
+        "hint",
+        "about"
+      ]
+    },
+    "ApiMindView": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "accepting": {
+          "type": "boolean"
+        },
+        "stats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiMindStats"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending_approvals": {
+          "type": "number"
+        },
+        "emergency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiEmergencyReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "paused",
+        "running",
+        "accepting",
+        "stats",
+        "pending_approvals",
+        "emergency"
+      ]
+    },
     "ApiModelUsage": {
       "type": "object",
       "properties": {
@@ -1341,6 +1532,52 @@
         "stopping",
         "stopped",
         "failed"
+      ]
+    },
+    "ApiPendingApproval": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "principal": {
+          "type": "string"
+        },
+        "args": {
+          "$ref": "#/$defs/WireJsonValue"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review": {
+          "type": "string"
+        },
+        "requested_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "capability",
+        "summary",
+        "principal",
+        "args",
+        "why",
+        "review",
+        "requested_at",
+        "expires_at"
       ]
     },
     "ApiPeriodReport": {
@@ -2135,6 +2372,489 @@
         "charged",
         "balance",
         "message"
+      ]
+    },
+    "ApiThoughtDecision": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "capability",
+        "allowed",
+        "stage",
+        "reason"
+      ]
+    },
+    "ApiThoughtEffects": {
+      "type": "object",
+      "properties": {
+        "drives": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "emotions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "talkativeness": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "type": "string"
+              },
+              "level": {
+                "type": "number"
+              },
+              "minutes": {
+                "type": "number"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "scope",
+              "level",
+              "minutes",
+              "why"
+            ]
+          }
+        },
+        "initiative": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "level": {
+                  "type": "number"
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "level",
+                "why"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "feelings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "person": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hint": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "+",
+                      "-"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "person",
+              "name",
+              "note",
+              "hint"
+            ]
+          }
+        },
+        "agenda_added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "why"
+            ]
+          }
+        },
+        "agenda_done": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "agenda_dropped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "title",
+              "ok",
+              "error"
+            ]
+          }
+        }
+      },
+      "required": [
+        "drives",
+        "talkativeness",
+        "initiative",
+        "feelings",
+        "agenda_added",
+        "agenda_done",
+        "agenda_dropped",
+        "documents"
+      ]
+    },
+    "ApiThoughtIntent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "args": {
+          "$ref": "#/$defs/WireJsonValue"
+        },
+        "why": {
+          "type": "string"
+        },
+        "opening": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "about": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ApiIntentStatus"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiThoughtDecision"
+          }
+        },
+        "said": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/ApiIntentStatus"
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at",
+              "status",
+              "detail"
+            ]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "capability",
+        "args",
+        "why",
+        "opening",
+        "context",
+        "about",
+        "expires_at",
+        "status",
+        "detail",
+        "turn",
+        "decisions",
+        "said"
+      ]
+    },
+    "ApiThoughtSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiThoughtTrigger"
+          }
+        },
+        "thought": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiThoughtIntent"
+          }
+        },
+        "tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ms": {
+          "type": "number"
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMindSuggestion"
+          }
+        },
+        "effects": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiThoughtEffects"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": "number"
+        },
+        "idle": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "thoughts": {
+                  "type": "number"
+                },
+                "minutes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "thoughts",
+                "minutes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "has_input": {
+          "type": "boolean"
+        },
+        "has_reasoning": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "triggers",
+        "thought",
+        "changes",
+        "intents",
+        "tokens",
+        "error",
+        "ms",
+        "has_input",
+        "has_reasoning"
+      ]
+    },
+    "ApiThoughtTrigger": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ApiThoughtTriggerKind"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "detail",
+        "context",
+        "at"
+      ]
+    },
+    "ApiThoughtTriggerKind": {
+      "type": "string",
+      "enum": [
+        "heartbeat",
+        "salient",
+        "suggestion",
+        "turn",
+        "voice_quiet",
+        "manual"
       ]
     },
     "ApiTransferRequest": {

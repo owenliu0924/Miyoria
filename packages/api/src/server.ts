@@ -23,7 +23,6 @@ import { memberRoutes } from "./member.js";
 import { memoryRoutes } from "./memory.js";
 import { metricsRoutes } from "./metrics.js";
 import { turnMetricsRoutes } from "./metrics-turns.js";
-import { mindRoutes } from "./mind.js";
 import { notebookRoutes } from "./notebook.js";
 import * as oauth from "./oauth.js";
 import { ogRoutes, rewriteHtml } from "./og.js";
@@ -151,7 +150,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...factRoutes(state),
     ...dataRoutes(state),
     ...sandboxRoutes(state),
-    ...mindRoutes(state),
     ...directiveRoutes(state),
     ...planRoutes(state),
     ...bodyRoutes(state),

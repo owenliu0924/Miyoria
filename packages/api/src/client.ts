@@ -31,9 +31,7 @@ import type {
   MemoryItem,
   MemoryListQuery,
   MemoryRecordView,
-  MindView,
   Page,
-  PendingApproval,
   PromptSummary,
   QueueState,
   ReflectionView,
@@ -42,7 +40,6 @@ import type {
   SceneRolesState,
   SelfView,
   StageState,
-  Thought,
   TurnOutcomeKind,
   UpdateMemoryRequest,
   UpsertRoleRequest,
@@ -441,26 +438,6 @@ export class ApiClient {
     });
   }
 
-  /** Her mind loop: paused or not, call counts, pending approvals. */
-  mind(o?: CallOptions): Promise<MindView> {
-    return this.#json("GET", ["mind"], o);
-  }
-
-  /** Her thought journal, newest first. */
-  thoughts(limit = 50, o?: CallOptions): Promise<Thought[]> {
-    return this.#json("GET", ["mind", "thoughts"], { ...o, query: { limit: String(limit) } });
-  }
-
-  /** High-risk actions waiting for an owner. */
-  approvals(o?: CallOptions): Promise<PendingApproval[]> {
-    return this.#json("GET", ["mind", "approvals"], o);
-  }
-
-  /** Answers a pending approval; resolves with the ones still pending. */
-  answerApproval(id: string, approved: boolean, o?: CallOptions): Promise<PendingApproval[]> {
-    return this.#json("POST", ["mind", "approvals", id, approved ? "approve" : "deny"], o);
-  }
-
   /** Digests of her older thoughts, newest first. */
   digests(limit = 20, o?: CallOptions): Promise<ThoughtDigest[]> {
     return this.#json("GET", ["mind", "digests"], { ...o, query: { limit: String(limit) } });
@@ -479,11 +456,6 @@ export class ApiClient {
   /** Her reflections, lessons and the feedback of the last `days` days. */
   reflection(days = 7, o?: CallOptions): Promise<ReflectionView> {
     return this.#json("GET", ["reflection"], { ...o, query: { days: String(days) } });
-  }
-
-  /** The emergency stop of her autonomy. */
-  autonomyPause(paused: boolean, o?: CallOptions): Promise<MindView> {
-    return this.#json("POST", ["mind", paused ? "pause" : "resume"], o);
   }
 
   /**

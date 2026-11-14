@@ -51,6 +51,7 @@ import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
 import { memberRpc } from "./member.js";
+import { mindRpc } from "./mind.js";
 import { authRpc } from "./oauth.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
@@ -75,6 +76,7 @@ export const router = os.router({
   people: { ...peopleRpc, ...personWalletRpc },
   ...coreRpc,
   channels: channelRpc,
+  mind: mindRpc,
 });
 
 export type ResponseCheck = "strict" | "production";

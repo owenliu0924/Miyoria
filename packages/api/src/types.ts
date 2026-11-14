@@ -9,7 +9,6 @@ import type {
   MemberSong,
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
-import type { PendingApproval } from "@miyoria/gate/actions";
 import type { ItemState } from "@miyoria/play/queue";
 import type { AuthScope, MemoryKind, MemoryScope } from "@miyoria/store";
 import type {
@@ -18,13 +17,11 @@ import type {
   ChannelActivity,
   ContextKey,
   ConversationState,
-  EmergencyReport,
   FeedbackTally,
   Feeling,
   Goal,
   KnowledgeDoc,
   Lesson,
-  MindStats,
   ModuleId,
   ModuleStateKind,
   PersonId,
@@ -34,7 +31,6 @@ import type {
   ReflectionRun,
   ReflectionStats,
   SelfSnapshot,
-  Thought,
   Timestamp,
   TurnId,
   TurnOutcome,
@@ -69,8 +65,10 @@ export type {
   MemberSession,
   MemberSong,
   MemberView,
+  MindView,
   ModelUsage,
   ModuleInfo,
+  PendingApproval,
   PeriodReport,
   PersonaOverride,
   PersonaSectionInfo,
@@ -91,6 +89,7 @@ export type {
   SetPersonaRequest,
   SetPersonaResponse,
   SongAccepted,
+  ThoughtSummary,
   UpdatePersonRequest,
   UsageInfo,
   UsageMap,
@@ -438,23 +437,6 @@ export interface ChannelActivityView extends ChannelActivity {
 export interface WorldView extends Omit<WorldSnapshot, "channels"> {
   channels: ChannelActivityView[];
 }
-
-/** `GET /api/mind` (and the answer of `POST /api/mind/pause|resume`). */
-export interface MindView {
-  /** The emergency stop is on: she does not reply or speak, only commands and the panel act. */
-  paused: boolean;
-  /** The `mind` module is running. */
-  running: boolean;
-  /** Her mind takes triggers right now. */
-  accepting: boolean;
-  stats: MindStats | null;
-  /** High-risk actions waiting for an owner. */
-  pending_approvals: number;
-  /** The last press of the emergency stop, step by step; `null`: none since the core started. */
-  emergency: EmergencyReport | null;
-}
-
-export type { PendingApproval, Thought };
 
 // ---- what she organized and learned (phase G) -----------------------------------------------
 

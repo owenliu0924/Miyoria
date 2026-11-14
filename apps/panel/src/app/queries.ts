@@ -476,14 +476,14 @@ export function useDataMutations() {
 }
 export function useMind() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.mind, queryFn: ({ signal }) => api.mind({ signal }), refetchInterval: poll(5_000) });
+  return useQuery({ queryKey: queryKeys.mind, queryFn: ({ signal }) => api.rpc.mind.status(undefined, { signal }), refetchInterval: poll(5_000) });
 }
 
 export function useThoughts(limit = 50) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.thoughts,
-    queryFn: ({ signal }) => api.thoughts(limit, { signal }),
+    queryFn: ({ signal }) => api.rpc.mind.thoughts({ query: { limit } }, { signal }),
     refetchInterval: poll(5_000),
   });
 }
@@ -514,7 +514,7 @@ export function useReflection(days = 7) {
 
 export function useApprovals() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.approvals, queryFn: ({ signal }) => api.approvals({ signal }), refetchInterval: poll(5_000) });
+  return useQuery({ queryKey: queryKeys.approvals, queryFn: ({ signal }) => api.rpc.mind.approvals(undefined, { signal }), refetchInterval: poll(5_000) });
 }
 
 export function useMindMutations() {
@@ -522,11 +522,11 @@ export function useMindMutations() {
   const qc = useQueryClient();
   return {
     pause: useMutation({
-      mutationFn: (paused: boolean) => api.autonomyPause(paused),
+      mutationFn: (paused: boolean) => (paused ? api.rpc.mind.pause : api.rpc.mind.resume)(),
       onSuccess: (view) => qc.setQueryData(queryKeys.mind, view),
     }),
     answer: useMutation({
-      mutationFn: ({ id, approved }: { id: string; approved: boolean }) => api.answerApproval(id, approved),
+      mutationFn: ({ id, approved }: { id: string; approved: boolean }) => (approved ? api.rpc.mind.approve : api.rpc.mind.deny)({ params: { id } }),
       onSuccess: (pending) => {
         qc.setQueryData(queryKeys.approvals, pending);
         void qc.invalidateQueries({ queryKey: queryKeys.mind });
@@ -657,7 +657,7 @@ export function useThoughtHistory() {
   const api = useApi();
   return useQuery({
     queryKey: [...queryKeys.thoughts, "history"],
-    queryFn: ({ signal }) => api.thoughts(300, { signal }),
+    queryFn: ({ signal }) => api.rpc.mind.thoughts({ query: { limit: 300 } }, { signal }),
     refetchInterval: poll(60_000),
   });
 }
