@@ -1,4 +1,6 @@
--- People with each other (docs/design/economy.md §13): who is on the sponsor board, and the
+// Legacy migration 14 (was `0014_wallet_social.sql`). Never edit it: its checksum is recorded.
+
+export const m0014 = `-- People with each other (docs/design/economy.md §13): who is on the sponsor board, and the
 -- fortune slips she writes. Transfers need no table; they are two ledger rows.
 
 -- Opted in to the sponsor board. Off unless someone turns it on. A person's accounts are one
@@ -18,7 +20,7 @@ CREATE TABLE fortunes (
     -- The local day number (days since the epoch, at the API's UTC offset).
     day             INTEGER NOT NULL,
     issued_at       INTEGER NOT NULL,
-    -- The `fortune` row of the coin ledger that paid for it.
+    -- The \`fortune\` row of the coin ledger that paid for it.
     entry_id        TEXT,
     -- JSON of the slip: rank, title, poem, fields, line.
     slip            TEXT    NOT NULL
@@ -26,3 +28,4 @@ CREATE TABLE fortunes (
 
 CREATE INDEX fortunes_author_idx
     ON fortunes (profile_id, author_platform, author_id, day);
+`;

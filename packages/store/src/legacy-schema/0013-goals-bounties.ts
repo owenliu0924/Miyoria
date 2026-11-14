@@ -1,5 +1,7 @@
--- Her own money (docs/design/economy.md §13): crowdfunding goals people pledge to, and bounties
--- she pays from her purse. The coins themselves are rows of `coin_ledger`; these say where each
+// Legacy migration 13 (was `0013_goals_bounties.sql`). Never edit it: its checksum is recorded.
+
+export const m0013 = `-- Her own money (docs/design/economy.md §13): crowdfunding goals people pledge to, and bounties
+-- she pays from her purse. The coins themselves are rows of \`coin_ledger\`; these say where each
 -- goal or bounty stands.
 CREATE TABLE goals (
     -- ULID.
@@ -18,7 +20,7 @@ CREATE TABLE goals (
 
 CREATE INDEX goals_status_idx ON goals (profile_id, status, created_at);
 
--- Coins held for a goal; `id` is the escrow's `coin_ledger` row.
+-- Coins held for a goal; \`id\` is the escrow's \`coin_ledger\` row.
 CREATE TABLE goal_pledges (
     id              TEXT    PRIMARY KEY,
     goal_id         TEXT    NOT NULL,
@@ -37,7 +39,7 @@ CREATE TABLE bounties (
     profile_id      TEXT    NOT NULL,
     task            TEXT    NOT NULL,
     reward          INTEGER NOT NULL,
-    -- The purse's `bounty_hold` row in `coin_ledger`.
+    -- The purse's \`bounty_hold\` row in \`coin_ledger\`.
     hold_entry      TEXT    NOT NULL,
     status          TEXT    NOT NULL
                     CHECK (status IN ('open', 'awarded', 'cancelled', 'expired')),
@@ -50,3 +52,4 @@ CREATE TABLE bounties (
 );
 
 CREATE INDEX bounties_status_idx ON bounties (profile_id, status, created_at);
+`;

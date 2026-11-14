@@ -33,7 +33,7 @@ jobs:
       - run: pnpm -r test
       - run: pnpm -r build
       # The published `miyoria` package: `pnpm pack` runs its prepack (esbuild bundle + panel,
-      # profiles, migrations), then the tarball is installed like a user would and smoke-tested.
+      # profiles), then the tarball is installed like a user would and smoke-tested.
       - name: Pack the miyoria npm package
         run: |
           mkdir -p "$RUNNER_TEMP/pack"
@@ -41,7 +41,7 @@ jobs:
           tarball=$(ls "$RUNNER_TEMP"/pack/miyoria-*.tgz)
           tar -tzf "$tarball" > "$RUNNER_TEMP/pack/files.txt"
           for f in package/dist/main.js package/dist/panel/index.html package/templates/miyoria.example.toml \
-                   package/assets/profiles/deepseek-chan/profile.toml package/migrations/sqlite/0001_init.sql; do
+                   package/assets/profiles/deepseek-chan/profile.toml; do
             grep -qx "$f" "$RUNNER_TEMP/pack/files.txt" || { echo "::error::$f missing from $(basename "$tarball")"; exit 1; }
           done
       - name: Smoke-test the packed CLI

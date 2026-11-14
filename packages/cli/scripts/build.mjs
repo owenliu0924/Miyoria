@@ -10,11 +10,10 @@
 // relative to `import.meta.url` keeps working:
 //   - `src/assets.ts`: `new URL("..", import.meta.url)` -> package root (`templates/`,
 //     `assets/profiles/`, `package.json`)
-//   - `@miyoria/store`: `../migrations/sqlite/` -> `<package>/migrations/sqlite/`
+// Database migrations are TypeScript strings inside the bundle; no files are copied for them.
 //
 // Copied next to the bundle:
 //   - `assets/profiles/`  <- repo `profiles/` (without local-only third-party assets)
-//   - `migrations/`       <- `packages/store/migrations/`
 //   - `dist/panel/`       <- `apps/panel/dist/` (build it first: `pnpm --filter @miyoria/panel build`)
 //   - `dist/overlay/`     <- `apps/overlay/dist/` (`pnpm --filter @miyoria/overlay build`)
 
@@ -111,11 +110,8 @@ cpSync(profiles, join(root, "assets", "profiles"), {
   filter: (src) => !localOnly(src),
 });
 
-// Store migrations, read at runtime from `<bundle dir>/../migrations/`.
+// Left over from builds that copied the store's `.sql` migrations next to the bundle.
 rmSync(join(root, "migrations"), { recursive: true, force: true });
-cpSync(join(repo, "packages", "store", "migrations"), join(root, "migrations"), {
-  recursive: true,
-});
 
 // Admin panel and stream overlay (optional: `miyoria core` / `miyoria stage` run without them).
 for (const [app, what, pkg] of [
@@ -134,4 +130,4 @@ for (const [app, what, pkg] of [
 }
 
 const files = Object.keys(result.metafile.outputs).filter((f) => f.endsWith(".js"));
-console.log(`build: ${files.length} bundle files in dist/, assets/profiles, migrations`);
+console.log(`build: ${files.length} bundle files in dist/, assets/profiles`);

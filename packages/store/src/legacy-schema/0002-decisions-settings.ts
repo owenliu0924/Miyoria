@@ -1,13 +1,15 @@
--- Attention decisions of the agent and small per-profile runtime settings.
+// Legacy migration 2 (was `0002_decisions_settings.sql`). Never edit it: its checksum is recorded.
+
+export const m0002 = `-- Attention decisions of the agent and small per-profile runtime settings.
 
 -- One row per decision, for "why did she (not) reply" views.
 CREATE TABLE decision_log (
     id           TEXT    PRIMARY KEY,
     profile_id   TEXT    NOT NULL,
-    -- Canonical JSON of the trace's `ContextKey`, used for lookups.
+    -- Canonical JSON of the trace's \`ContextKey\`, used for lookups.
     context_key  TEXT    NOT NULL,
     ts           INTEGER NOT NULL,
-    -- JSON text of the `DecisionTrace`.
+    -- JSON text of the \`DecisionTrace\`.
     trace        TEXT    NOT NULL
 );
 
@@ -17,7 +19,7 @@ CREATE INDEX decision_log_recent_idx
 CREATE INDEX decision_log_context_idx
     ON decision_log (profile_id, context_key, ts DESC, id DESC);
 
--- Free-form JSON settings per profile, keyed `area:subkey` by convention.
+-- Free-form JSON settings per profile, keyed \`area:subkey\` by convention.
 CREATE TABLE profile_settings (
     profile_id  TEXT    NOT NULL,
     key         TEXT    NOT NULL,
@@ -26,3 +28,4 @@ CREATE TABLE profile_settings (
     updated_at  INTEGER NOT NULL,
     PRIMARY KEY (profile_id, key)
 );
+`;

@@ -31,9 +31,27 @@ export {
   type WipeCounts,
   type WipeOptions,
 } from "./data.js";
+export { Db, type Params, type Row } from "./db.js";
 export { HANDLE_PREFIX, handleKey, StoredHandleDirectory } from "./handles.js";
 export { knownNames } from "./known-names.js";
+export { legacySchema } from "./legacy-schema/index.js";
 export { MemorySettingsStore } from "./memory-settings.js";
+export {
+  type AppliedMigration,
+  appliedMigrations,
+  checkDatabaseFile,
+  checksum,
+  coreSchema,
+  lintSchemas,
+  type MigrateOptions,
+  type Migration,
+  migrate,
+  orderSchemas,
+  type PluginSchema,
+  SchemaError,
+  type SchemaErrorCode,
+  schemaVersions,
+} from "./migrate.js";
 export {
   DEFAULT_STORE_URL,
   type OpenStoreOptions,

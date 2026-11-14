@@ -1,9 +1,11 @@
--- Long-term memory, relationships, identity linking, roles and the audit log.
--- Ids are ULIDs stored as text. Per-character data carries `profile_id`.
--- Arrays (`subjects`, `tags`, `grants`, `denies`) are JSON text arrays.
+// Legacy migration 3 (was `0003_memory_social_auth.sql`). Never edit it: its checksum is recorded.
+
+export const m0003 = `-- Long-term memory, relationships, identity linking, roles and the audit log.
+-- Ids are ULIDs stored as text. Per-character data carries \`profile_id\`.
+-- Arrays (\`subjects\`, \`tags\`, \`grants\`, \`denies\`) are JSON text arrays.
 
 -- Memory records. The privacy scope is kept both as JSON (readable) and as a
--- canonical JSON string `scope_key` (exact-match filtering and deletion).
+-- canonical JSON string \`scope_key\` (exact-match filtering and deletion).
 CREATE TABLE memory_records (
     -- Stable integer key for the full-text index (upserts keep it).
     seq           INTEGER PRIMARY KEY,
@@ -18,7 +20,7 @@ CREATE TABLE memory_records (
     tokens        TEXT    NOT NULL,
     -- Little-endian float32 components. No fixed dimension: the embedding
     -- model may change. Searches only compare rows with the query's
-    -- dimension (`length(embedding) = 4 * dims`).
+    -- dimension (\`length(embedding) = 4 * dims\`).
     embedding     BLOB,
     importance    REAL    NOT NULL,
     confidence    REAL    NOT NULL,
@@ -41,9 +43,9 @@ CREATE INDEX memory_records_due_idx
     ON memory_records (profile_id, due)
     WHERE kind = 'followup' AND NOT done AND due IS NOT NULL;
 
--- Full-text index over `tokens` (the counterpart of PostgreSQL's
--- `to_tsvector('simple', tokens)`): unicode61 folds case and keeps CJK words
--- whole; diacritics are kept, like the `simple` configuration.
+-- Full-text index over \`tokens\` (the counterpart of PostgreSQL's
+-- \`to_tsvector('simple', tokens)\`): unicode61 folds case and keeps CJK words
+-- whole; diacritics are kept, like the \`simple\` configuration.
 CREATE VIRTUAL TABLE memory_fts USING fts5(
     tokens,
     content = 'memory_records',
@@ -102,7 +104,7 @@ CREATE TABLE link_codes (
     expires_at INTEGER NOT NULL
 );
 
--- Roles. `scope` columns hold the canonical JSON of an `AuthScope`.
+-- Roles. \`scope\` columns hold the canonical JSON of an \`AuthScope\`.
 CREATE TABLE roles (
     name     TEXT    PRIMARY KEY,
     rank     INTEGER NOT NULL,
@@ -151,3 +153,4 @@ CREATE TABLE audit_log (
 
 CREATE INDEX audit_log_recent_idx ON audit_log (at DESC, id DESC);
 CREATE INDEX audit_log_actor_idx ON audit_log (actor, at DESC, id DESC);
+`;

@@ -1,27 +1,18 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { systemClock } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { type MemoryRecord, SqliteStore } from "../src/index.js";
-
-const MIGRATIONS = new URL("../migrations/sqlite/", import.meta.url);
+import { Db, legacySchema, type MemoryRecord, migrate, SqliteStore } from "../src/index.js";
 
 /** A database as the build before provenance left it: migrations up to 0006, then old rows. */
 function legacyDatabase(path: string): void {
+  const db = new Db(new DatabaseSync(path), systemClock);
+  const before = legacySchema.migrations.filter((m) => m.version <= 6);
+  migrate(db, [{ ...legacySchema, migrations: before }]);
+  db.close();
   const raw = new DatabaseSync(path);
-  raw.exec(
-    "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, name TEXT NOT NULL, " +
-      "applied_at INTEGER NOT NULL)",
-  );
-  for (const file of readdirSync(MIGRATIONS)
-    .filter((f) => /^\d+_.+\.sql$/.test(f))
-    .sort()) {
-    const version = Number.parseInt(file, 10);
-    if (version > 6) continue;
-    raw.exec(readFileSync(new URL(file, MIGRATIONS), "utf8"));
-    raw.prepare("INSERT INTO schema_version VALUES (?, ?, 0)").run(version, file);
-  }
   const insert = raw.prepare(
     "INSERT INTO memory_records (id, profile_id, kind, scope, scope_key, subjects, content, " +
       "tokens, importance, confidence, created_at, updated_at, source) " +

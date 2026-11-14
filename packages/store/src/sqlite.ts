@@ -8,15 +8,9 @@
 // Timestamps are INTEGER microseconds since the epoch, JSON values are text, embeddings are
 // little-endian float32 BLOBs (cosine computed in JS), full text uses FTS5 over `tokens`.
 
-import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import {
-  DatabaseSync,
-  type SQLInputValue,
-  type SQLOutputValue,
-  type StatementSync,
-} from "node:sqlite";
-import { getLogger } from "@miyoria/runtime/kernel";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import {
   type AccountRef,
   type Clock,
@@ -79,6 +73,9 @@ import {
   type WipeOptions,
   wipeStatements,
 } from "./data.js";
+import { Db, type Params, type Row } from "./db.js";
+import { legacySchema } from "./legacy-schema/index.js";
+import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
 import type {
   Account,
   AuditEntry,
@@ -151,11 +148,6 @@ import type {
   Store,
 } from "./stores.js";
 
-const log = getLogger("store.sqlite");
-
-/** Ordered `NNNN_name.sql` files, applied once each and recorded in `schema_version`. */
-const MIGRATIONS_DIR = new URL("../migrations/sqlite/", import.meta.url);
-
 export interface SqliteStoreOptions {
   /** Source of "now" for rows stamped by the store (`edited_at`, `first_seen`, ...). */
   clock?: Clock;
@@ -166,10 +158,9 @@ export interface SqliteStoreOptions {
    * `:memory:` (an in-memory database), unbounded for files.
    */
   maxDecisionsPerProfile?: number | null;
+  /** Plugin schemas to migrate besides the store's own (`core` and `legacy`). */
+  schemas?: readonly PluginSchema[];
 }
-
-type Row = Record<string, SQLOutputValue>;
-type Params = Record<string, SQLInputValue>;
 
 // ---- row accessors ----------------------------------------------------------------------
 
@@ -225,15 +216,6 @@ function limitParam(limit: number): number {
 
 // ---- backend core -----------------------------------------------------------------------
 
-/** `$1` placeholders as named `$p1` (`node:sqlite` binds no positional `?1`). */
-function numbered(stmt: Stmt): [string, Params] {
-  const params: Params = {};
-  stmt.params.forEach((value, i) => {
-    params[`p${i + 1}`] = value as SQLInputValue;
-  });
-  return [stmt.sql.replace(/\$(\d+)/g, "$$p$1"), params];
-}
-
 const SQLITE_DIALECT: SqlDialect = {
   startsWith: (column, param) => `substr(${column}, 1, length(${param})) = ${param}`,
   jsonText: (column) => column,
@@ -241,121 +223,6 @@ const SQLITE_DIALECT: SqlDialect = {
   list: (values) => JSON.stringify(values),
   bool: (value) => (value ? 1 : 0),
 };
-
-class Db {
-  readonly #db: DatabaseSync;
-  readonly #statements = new Map<string, StatementSync>();
-  readonly clock: Clock;
-  #open = true;
-
-  constructor(db: DatabaseSync, clock: Clock) {
-    this.#db = db;
-    this.clock = clock;
-  }
-
-  nowMicros(): number {
-    return Math.floor(this.clock.now()) * 1000;
-  }
-
-  #stmt(sql: string): StatementSync {
-    if (!this.#open) throw new StoreError("the store is closed");
-    let stmt = this.#statements.get(sql);
-    if (!stmt) {
-      stmt = this.#db.prepare(sql);
-      this.#statements.set(sql, stmt);
-    }
-    return stmt;
-  }
-
-  all(sql: string, params: Params = {}): Row[] {
-    return this.#stmt(sql).all(params);
-  }
-
-  get(sql: string, params: Params = {}): Row | undefined {
-    return this.#stmt(sql).get(params);
-  }
-
-  run(sql: string, params: Params = {}): number {
-    return Number(this.#stmt(sql).run(params).changes);
-  }
-
-  /** A `$1`-style statement (`data.ts`). */
-  allStmt(stmt: Stmt): Row[] {
-    return this.all(...numbered(stmt));
-  }
-
-  runStmt(stmt: Stmt): number {
-    return this.run(...numbered(stmt));
-  }
-
-  exec(sql: string): void {
-    this.#db.exec(sql);
-  }
-
-  /** Whether a transaction is open (what it wrote may still be rolled back). */
-  get inTransaction(): boolean {
-    return this.#db.isTransaction;
-  }
-
-  /** Runs `fn` in one write transaction. `fn` must not await. */
-  tx<T>(fn: () => T): T {
-    this.#db.exec("BEGIN IMMEDIATE");
-    try {
-      const result = fn();
-      this.#db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      if (this.#db.isTransaction) this.#db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  close(): void {
-    if (!this.#open) return;
-    this.#open = false;
-    this.#statements.clear();
-    this.#db.close();
-  }
-}
-
-function migrate(db: Db): void {
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS schema_version (" +
-      "version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)",
-  );
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => /^\d+_.+\.sql$/.test(f))
-    .sort();
-  const known = new Set(files.map((f) => Number.parseInt(f, 10)));
-  const applied = new Set(
-    db.all("SELECT version FROM schema_version").map((r) => num(r, "version")),
-  );
-  for (const version of applied) {
-    if (!known.has(version)) {
-      throw new StoreError(`migration ${version} was previously applied but is missing`);
-    }
-  }
-  for (const file of files) {
-    const version = Number.parseInt(file, 10);
-    if (applied.has(version)) continue;
-    const sql = readFileSync(new URL(file, MIGRATIONS_DIR), "utf8");
-    try {
-      db.tx(() => {
-        db.exec(sql);
-        db.run("INSERT INTO schema_version (version, name, applied_at) VALUES ($v, $name, $at)", {
-          v: version,
-          name: file.replace(/\.sql$/, ""),
-          at: db.nowMicros(),
-        });
-      });
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      throw new StoreError("database migration failed", { cause });
-    }
-    log.info({ version, file }, "applied database migration");
-  }
-  log.debug("database migrations are up to date");
-}
 
 // ---- conversation log ---------------------------------------------------------------------
 
@@ -2978,11 +2845,15 @@ export class SqliteStore implements Store {
 
   /**
    * Opens (creating it and its directory if needed) a database file, or `":memory:"` for a
-   * fresh in-memory database, and runs pending migrations.
+   * fresh in-memory database, and runs pending migrations. A file this build must not migrate
+   * (a V4 database, see `migrate.ts`) is refused before anything is written to it.
    */
   static async open(path: string, options: SqliteStoreOptions = {}): Promise<SqliteStore> {
     const memory = path === ":memory:";
-    if (!memory) mkdirSync(dirname(path), { recursive: true });
+    if (!memory) {
+      mkdirSync(dirname(path), { recursive: true });
+      checkDatabaseFile(path);
+    }
     let raw: DatabaseSync;
     try {
       raw = new DatabaseSync(path, { enableForeignKeyConstraints: true });
@@ -2998,7 +2869,7 @@ export class SqliteStore implements Store {
         db.exec("PRAGMA synchronous = NORMAL");
       }
       db.exec("PRAGMA foreign_keys = ON");
-      migrate(db);
+      migrate(db, [legacySchema, ...(options.schemas ?? [])], { location: path });
     } catch (error) {
       db.close();
       throw error;
@@ -3012,11 +2883,9 @@ export class SqliteStore implements Store {
     return new SqliteStore(db, maxDecisions);
   }
 
-  /** Versions recorded in `schema_version`, ascending. */
+  /** Versions of the `legacy` schema recorded in `_migrations`, ascending. */
   async schemaVersions(): Promise<number[]> {
-    return this.#db
-      .all("SELECT version FROM schema_version ORDER BY version")
-      .map((r) => num(r, "version"));
+    return schemaVersions(this.#db, legacySchema.plugin);
   }
 
   async close(): Promise<void> {

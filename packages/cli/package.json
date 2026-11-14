@@ -27,8 +27,7 @@
     "dist",
     "!dist/**/*.map",
     "templates",
-    "assets",
-    "migrations"
+    "assets"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

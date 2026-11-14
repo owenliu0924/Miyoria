@@ -1,4 +1,6 @@
--- Deals (docs/design/economy.md §12): a bribe she accepted, someone's promise of a snack for a task.
+// Legacy migration 12 (was `0012_deals.sql`). Never edit it: its checksum is recorded.
+
+export const m0012 = `-- Deals (docs/design/economy.md §12): a bribe she accepted, someone's promise of a snack for a task.
 -- Payment is read from the coin ledger, never from her memory; the row only says where the deal is.
 CREATE TABLE deals (
     -- ULID.
@@ -13,7 +15,7 @@ CREATE TABLE deals (
     reward_value    INTEGER NOT NULL,
     task            TEXT    NOT NULL,
     prepaid         INTEGER NOT NULL DEFAULT 0,
-    -- The escrow's `coin_ledger` row, for a prepaid deal.
+    -- The escrow's \`coin_ledger\` row, for a prepaid deal.
     escrow_entry    TEXT,
     status          TEXT    NOT NULL
                     CHECK (status IN ('open', 'owed', 'settled', 'broken', 'refunded', 'cancelled')),
@@ -27,3 +29,4 @@ CREATE TABLE deals (
 
 CREATE INDEX deals_author_idx ON deals (profile_id, author_platform, author_id, created_at);
 CREATE INDEX deals_status_idx ON deals (profile_id, status, due_at);
+`;

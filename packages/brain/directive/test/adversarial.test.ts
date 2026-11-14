@@ -1,12 +1,11 @@
 // What people will actually try. Each block is one way around a rule; every one of them has to end
 // with the rule still standing and a line that says it was tried.
 
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Tool } from "@miyoria/llm/tools";
-import { SqliteStore } from "@miyoria/store";
+import { legacySchema, SqliteStore } from "@miyoria/store";
 import { type DirectiveChangedBody, type LogEvent, Principals, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectiveService, directiveTools, RULES_UNREADABLE } from "../src/index.js";
@@ -440,7 +439,7 @@ describe("restart", () => {
       expect(await after.rules.list({ history: true })).toHaveLength(3);
       await closeStores();
       // Every migration once, in order, however many the store has by now.
-      const count = readdirSync(SQLITE_MIGRATIONS).filter((f) => f.endsWith(".sql")).length;
+      const count = legacySchema.migrations.length;
       expect(await reopened(path)).toEqual(Array.from({ length: count }, (_, i) => i + 1));
     } finally {
       await closeStores();
@@ -448,10 +447,6 @@ describe("restart", () => {
     }
   });
 });
-
-const SQLITE_MIGRATIONS = fileURLToPath(
-  new URL("../../../store/migrations/sqlite", import.meta.url),
-);
 
 async function reopened(path: string): Promise<number[]> {
   const store = await SqliteStore.open(path);

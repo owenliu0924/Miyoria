@@ -88,9 +88,14 @@ describe("SqliteStore", () => {
       const path = join(dir, "x.db");
       await (await SqliteStore.open(path)).close();
       const raw = new DatabaseSync(path);
-      raw.exec("INSERT INTO schema_version (version, name, applied_at) VALUES (99, 'future', 0)");
+      raw.exec(
+        "INSERT INTO _migrations (plugin, version, name, checksum, applied_at) " +
+          "VALUES ('legacy', 99, 'future', 'x', 0)",
+      );
       raw.close();
-      await expect(SqliteStore.open(path)).rejects.toThrow(/migration 99 .* missing/);
+      await expect(SqliteStore.open(path)).rejects.toThrow(
+        /legacy migration 99 \(future\) was applied but this build does not have it/,
+      );
     }));
 
   it("vector search sees memories another connection changed", () =>

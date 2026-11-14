@@ -1,6 +1,8 @@
--- The V3 EventLog (docs/design/v3-architecture.md §5): every fact she perceived, thought, decided,
+// Legacy migration 6 (was `0006_event_log.sql`). Never edit it: its checksum is recorded.
+
+export const m0006 = `-- The V3 EventLog (docs/design/v3-architecture.md §5): every fact she perceived, thought, decided,
 -- said and did, append-only. Rows are never changed; compaction only ever deletes rows nothing
--- points at, and keeps a count of them in `log_event_rollups`.
+-- points at, and keeps a count of them in \`log_event_rollups\`.
 CREATE TABLE log_events (
     seq           INTEGER PRIMARY KEY AUTOINCREMENT,
     -- ULID: sorts in creation order, paging goes by it.
@@ -9,13 +11,13 @@ CREATE TABLE log_events (
     at            INTEGER NOT NULL,
     kind          TEXT    NOT NULL,
     source        TEXT    NOT NULL,
-    -- The `id` of the event that caused this one.
+    -- The \`id\` of the event that caused this one.
     cause         TEXT,
-    -- Canonical JSON of `context`, used for lookups.
+    -- Canonical JSON of \`context\`, used for lookups.
     context_key   TEXT,
     context       TEXT,
     person        TEXT,
-    -- Copied out of `body` for lookups (`observation`, `utterance`, `delivered`).
+    -- Copied out of \`body\` for lookups (\`observation\`, \`utterance\`, \`delivered\`).
     attention_key TEXT,
     salience      TEXT,
     body          TEXT    NOT NULL
@@ -50,3 +52,4 @@ CREATE TABLE log_event_rollups (
     last_at    INTEGER NOT NULL,
     PRIMARY KEY (profile_id, day, kind, source)
 );
+`;

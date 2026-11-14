@@ -1,5 +1,7 @@
--- Phase-1 schema (SQLite port of migrations/postgres/0001_init.sql). Ids are ULIDs stored as
--- text. Data that belongs to one character carries `profile_id`. Timestamps are INTEGER
+// Legacy migration 1 (was `0001_init.sql`). Never edit it: its checksum is recorded.
+
+export const m0001 = `-- Phase-1 schema (SQLite port of migrations/postgres/0001_init.sql). Ids are ULIDs stored as
+-- text. Data that belongs to one character carries \`profile_id\`. Timestamps are INTEGER
 -- microseconds since the Unix epoch (PostgreSQL's precision); booleans are 0 / 1.
 
 -- Conversation log (working memory source), per profile and context.
@@ -7,7 +9,7 @@ CREATE TABLE message_log (
     seq          INTEGER PRIMARY KEY,
     id           TEXT    NOT NULL UNIQUE,
     profile_id   TEXT    NOT NULL,
-    -- Canonical JSON of the `ContextKey`, used for lookups.
+    -- Canonical JSON of the \`ContextKey\`, used for lookups.
     context_key  TEXT    NOT NULL,
     platform     TEXT    NOT NULL,
     scope        TEXT,
@@ -61,3 +63,4 @@ CREATE TABLE accounts (
 );
 
 CREATE INDEX accounts_person_idx ON accounts (person_id);
+`;
