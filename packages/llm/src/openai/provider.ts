@@ -68,8 +68,9 @@ export class OpenAiConfig {
   thinkingOff: Record<string, JsonValue> | null = null;
   /**
    * How reasoning levels (`[llm.reasoning]`) are sent: `effort` sends `reasoning_effort`
-   * (default for `openai`); otherwise levels only switch thinking on and `maxTokens` caps the
-   * length per level (`reasoning_effort` / `reasoning_max_tokens` in the provider settings).
+   * (default for `openai` and `opencode`, never capping `max_tokens`); otherwise levels only
+   * switch thinking on and `maxTokens` caps the length per level, answer included
+   * (`reasoning_effort` / `reasoning_max_tokens` in the provider settings).
    */
   reasoning: ReasoningWire = { effort: false, maxTokens: { ...DEFAULT_REASONING_MAX_TOKENS } };
   /** Max idle time while waiting for response bytes (headers or stream), in ms. */
@@ -137,7 +138,11 @@ export class OpenAiConfig {
     } else if (config.kind === "deepseek" || config.kind === "opencode") {
       out.thinkingOff = { thinking: { type: "disabled" } };
     }
-    const effort = extra.reasoning_effort ?? config.kind === "openai";
+    // OpenCode's DeepSeek models take `reasoning_effort` next to the `thinking` switch (its
+    // model list: effort `low | high | max`; DeepSeek maps `medium` to `high`). Without it a
+    // level could only cap `max_tokens`, which counts the reasoning too and cut answers.
+    const effort =
+      extra.reasoning_effort ?? (config.kind === "openai" || config.kind === "opencode");
     out.reasoning = {
       effort,
       maxTokens: { ...DEFAULT_REASONING_MAX_TOKENS, ...(extra.reasoning_max_tokens ?? {}) },
@@ -182,7 +187,7 @@ const ExtraSchema = z.object({
   session_header: z.string().nullable().optional(),
   /** Body fields that turn thinking off; `{}` or null sends nothing. */
   thinking_off: z.record(z.string(), z.json()).nullable().optional(),
-  /** Send `reasoning_effort` for reasoning levels (default: only for `openai`). */
+  /** Send `reasoning_effort` for reasoning levels (default: `openai` and `opencode`). */
   reasoning_effort: z.boolean().nullable().optional(),
   /** `max_tokens` cap per reasoning level when there is no `reasoning_effort`. */
   reasoning_max_tokens: z
