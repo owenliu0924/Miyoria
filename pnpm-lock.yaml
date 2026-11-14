@@ -355,9 +355,6 @@ importers:
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@miyoria/sandbox':
-        specifier: workspace:*
-        version: link:../sandbox
       '@miyoria/sing':
         specifier: workspace:*
         version: link:../sing
@@ -370,6 +367,9 @@ importers:
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
+      '@miyoria/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       '@resvg/resvg-js':
         specifier: ^2.6.2
         version: 2.6.2
@@ -640,9 +640,6 @@ importers:
       '@miyoria/heart':
         specifier: workspace:*
         version: link:../heart
-      '@miyoria/imagegen':
-        specifier: workspace:*
-        version: link:../imagegen
       '@miyoria/live':
         specifier: workspace:*
         version: link:../live
@@ -667,15 +664,9 @@ importers:
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@miyoria/sandbox':
-        specifier: workspace:*
-        version: link:../sandbox
       '@miyoria/sing':
         specifier: workspace:*
         version: link:../sing
-      '@miyoria/skills':
-        specifier: workspace:*
-        version: link:../skills
       '@miyoria/stage':
         specifier: workspace:*
         version: link:../stage
@@ -688,9 +679,9 @@ importers:
       '@miyoria/voice':
         specifier: workspace:*
         version: link:../voice
-      '@miyoria/web':
+      '@miyoria/workspace':
         specifier: workspace:*
-        version: link:../web
+        version: link:../workspace
     devDependencies:
       '@types/node':
         specifier: ^24.19.2
@@ -892,28 +883,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/imagegen:
-    dependencies:
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1194,40 +1163,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/sandbox:
-    dependencies:
-      '@miyoria/gate':
-        specifier: workspace:*
-        version: link:../gate
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@miyoria/commands':
-        specifier: workspace:*
-        version: link:../commands
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/sdk:
     devDependencies:
       '@types/node':
@@ -1264,43 +1199,6 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/skills:
-    dependencies:
-      '@miyoria/gate':
-        specifier: workspace:*
-        version: link:../gate
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/sandbox':
-        specifier: workspace:*
-        version: link:../sandbox
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@miyoria/commands':
-        specifier: workspace:*
-        version: link:../commands
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1444,7 +1342,7 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/web:
+  packages/workspace:
     dependencies:
       '@miyoria/gate':
         specifier: workspace:*
@@ -1452,6 +1350,9 @@ importers:
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@miyoria/store':
+        specifier: workspace:*
+        version: link:../store
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1459,6 +1360,12 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@miyoria/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@miyoria/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

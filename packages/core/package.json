@@ -36,7 +36,6 @@
     "@miyoria/game": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/heart": "workspace:*",
-    "@miyoria/imagegen": "workspace:*",
     "@miyoria/live": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/memory": "workspace:*",
@@ -45,14 +44,12 @@
     "@miyoria/queue": "workspace:*",
     "@miyoria/replay": "workspace:*",
     "@miyoria/runtime": "workspace:*",
-    "@miyoria/sandbox": "workspace:*",
     "@miyoria/sing": "workspace:*",
-    "@miyoria/skills": "workspace:*",
     "@miyoria/stage": "workspace:*",
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",
     "@miyoria/voice": "workspace:*",
-    "@miyoria/web": "workspace:*"
+    "@miyoria/workspace": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

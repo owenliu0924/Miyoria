@@ -19,7 +19,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { AuthServiceKey, builtinRoles } from "@miyoria/auth";
 import { AgentHandleKey } from "@miyoria/brain/agent";
 import { errorMessage, getLogger, SupervisorKey } from "@miyoria/runtime/kernel";
-import { SandboxKey, type ScriptInfo } from "@miyoria/sandbox";
 import {
   type CategoryInventory,
   categoryModules,
@@ -42,6 +41,7 @@ import {
   type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
+import { SandboxKey, type ScriptInfo } from "@miyoria/workspace/sandbox";
 import { z } from "zod";
 import { ApiError } from "./errors.js";
 import { readJson } from "./extract.js";

@@ -7,7 +7,7 @@ import { Config } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import { ImageGenConfigSchema } from "../src/index.js";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 /** The `# [modules.imagegen]` block, uncommented. */
 function example(text: string): string {

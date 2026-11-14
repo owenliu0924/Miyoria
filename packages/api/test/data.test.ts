@@ -16,7 +16,6 @@ import {
   Supervisor,
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
-import { SandboxKey, type ScriptInfo, TOOL_KEY_PREFIX } from "@miyoria/sandbox";
 import {
   AuditLogKey,
   AuthStoreKey,
@@ -37,6 +36,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { CONSENT_PROFILE, consentKey } from "@miyoria/voice/voice";
+import { SandboxKey, type ScriptInfo, TOOL_KEY_PREFIX } from "@miyoria/workspace/sandbox";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ActiveProfileKey,

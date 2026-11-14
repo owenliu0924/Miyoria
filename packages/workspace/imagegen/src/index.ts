@@ -1,4 +1,4 @@
-// @miyoria/imagegen: pictures made on a ComfyUI server (docs/design/imagegen.md). The module
+// @miyoria/workspace/imagegen: pictures made on a ComfyUI server (docs/design/imagegen.md). The module
 // provides `ImageGen` (`ImageGenKey`, in `@miyoria/types`); the client, the adapters and the
 // workflow files are exported for tests and tools.
 

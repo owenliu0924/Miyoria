@@ -563,7 +563,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
       },
     ),
   ]),
-  // @miyoria/sandbox `TOOL_KEY_PREFIX`
+  // @miyoria/workspace/sandbox `TOOL_KEY_PREFIX`
   category("proposed_tools", [settings("proposed_tools", "active", [], ["sandbox:tool:"])], {
     modules: ["sandbox"],
   }),

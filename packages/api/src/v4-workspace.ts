@@ -12,8 +12,8 @@
 // which; without the skills module, so are the skills. Everything shown is text a program or she
 // may have written: it is data for a person to read, never instructions.
 
-import { SandboxKey, type WorkspaceApi } from "@miyoria/sandbox";
 import { type SkillShelf, SkillShelfKey, type SkillShelfPage } from "@miyoria/types";
+import { SandboxKey, type WorkspaceApi } from "@miyoria/workspace/sandbox";
 import { ApiError } from "./errors.js";
 import { json, param, type Route } from "./route.js";
 import type { ApiState } from "./state.js";

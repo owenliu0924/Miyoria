@@ -8,7 +8,6 @@ import { Economy2Key } from "@miyoria/economy";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { LIFE_ACTIVITIES } from "@miyoria/heart/mind";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
-import { PersistentWorkspace, SandboxKey } from "@miyoria/sandbox";
 import {
   type JustNowEntry,
   JustNowKey,
@@ -22,6 +21,7 @@ import {
   SkillShelfKey,
   toTimestamp,
 } from "@miyoria/types";
+import { PersistentWorkspace, SandboxKey } from "@miyoria/workspace/sandbox";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActiveProfileKey, ApiModule } from "../src/index.js";
 import { ACTIVITY_ROWS } from "../src/v4-life.js";

@@ -1,4 +1,4 @@
-// @miyoria/skills: module `skills`, her skills (small how-to documents with optional scripts,
+// @miyoria/workspace/skills: module `skills`, her skills (small how-to documents with optional scripts,
 // kept in her sandbox workspace and loaded on demand). See README.md.
 
 export {

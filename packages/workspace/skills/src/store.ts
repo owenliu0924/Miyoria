@@ -8,8 +8,8 @@
 // limits that refuse instead of cutting) and again when it is read, and what is shown to the
 // model is inside a data block, never in her system text.
 
-import { checkName, type WorkspaceApi } from "@miyoria/sandbox";
 import { dataBlock, escapeData } from "@miyoria/types";
+import { checkName, type WorkspaceApi } from "../../sandbox/src/index.js";
 import type { SkillsConfig } from "./config.js";
 
 export const SKILLS_DIR = "skills";

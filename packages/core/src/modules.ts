@@ -25,7 +25,6 @@ import { ModerationModule } from "@miyoria/gate/moderation";
 import { MindModule } from "@miyoria/heart/mind";
 import { SelfModule } from "@miyoria/heart/self";
 import { MoodModule, SocialModule } from "@miyoria/heart/social";
-import { ImageGenModule } from "@miyoria/imagegen";
 import { LiveModule } from "@miyoria/live";
 import {
   type LlmConfig,
@@ -51,9 +50,7 @@ import { QueueModule } from "@miyoria/queue";
 import type { Config, Module } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
 import { SchedulerModule } from "@miyoria/runtime/scheduler";
-import { SandboxModule } from "@miyoria/sandbox";
 import { SingModule } from "@miyoria/sing";
-import { SkillsModule } from "@miyoria/skills";
 import {
   AvatarProfile,
   applyObsSetup,
@@ -74,7 +71,10 @@ import {
 import { isJsonObject, type ProfileId } from "@miyoria/types";
 import { SpeechConfigSchema, SpeechModule } from "@miyoria/voice/speech";
 import { VoiceLinkModule, VoiceModule } from "@miyoria/voice/voice";
-import { WebModule } from "@miyoria/web";
+import { ImageGenModule } from "@miyoria/workspace/imagegen";
+import { SandboxModule } from "@miyoria/workspace/sandbox";
+import { SkillsModule } from "@miyoria/workspace/skills";
+import { WebModule } from "@miyoria/workspace/web";
 import {
   buildCoreWith,
   type Core,

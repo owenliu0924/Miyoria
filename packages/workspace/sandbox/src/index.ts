@@ -1,4 +1,4 @@
-// @miyoria/sandbox: module `sandbox`, a Docker code sandbox for code she writes (`code.run`, in a
+// @miyoria/workspace/sandbox: module `sandbox`, a Docker code sandbox for code she writes (`code.run`, in a
 // fresh container or one of her sessions: `code.session`), her persistent tools workspace, and
 // tools she proposes (`tool.propose`). See README.md for the threat model.
 

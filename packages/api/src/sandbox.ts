@@ -5,14 +5,14 @@
 
 import { NODE_APPROVE } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
+import { AuthorizerKey } from "@miyoria/types";
 import {
   type ProposedTool,
   type ProposedTools,
   ProposedToolsKey,
   SandboxError,
   SandboxKey,
-} from "@miyoria/sandbox";
-import { AuthorizerKey } from "@miyoria/types";
+} from "@miyoria/workspace/sandbox";
 import { z } from "zod";
 import { ApiError } from "./errors.js";
 import { readJson } from "./extract.js";

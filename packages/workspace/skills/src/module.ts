@@ -6,8 +6,8 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { SandboxKey } from "@miyoria/sandbox";
 import { SkillIndexKey, SkillShelfKey, serviceKey } from "@miyoria/types";
+import { SandboxKey } from "../../sandbox/src/index.js";
 import { skillCapabilities } from "./capabilities.js";
 import { SkillsConfigSchema } from "./config.js";
 import { SkillStore } from "./store.js";

@@ -2,8 +2,8 @@
 // exact version.
 
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
-import { ProposedTools, ProposedToolsKey } from "@miyoria/sandbox";
 import { MemorySettingsStore } from "@miyoria/store";
+import { ProposedTools, ProposedToolsKey } from "@miyoria/workspace/sandbox";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActiveProfileKey, ApiModule } from "../src/index.js";
 import { raw } from "./support/http.js";
