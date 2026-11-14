@@ -441,7 +441,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { modules: ["facts"], confirm: "simple" },
   ),
-  // @miyoria/arbiter `STATE_KEY` under `STATE_PROFILE` (her ledger: counters, backoff, topics,
+  // @miyoria/brain/arbiter `STATE_KEY` under `STATE_PROFILE` (her ledger: counters, backoff, topics,
   // greetings), and the old @miyoria/initiative state it replaced
   category(
     "initiative",
@@ -485,7 +485,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   ),
   category(
     "channels",
-    // @miyoria/agent `MODE_PREFIX`, `ACTIVENESS_PREFIX`
+    // @miyoria/brain/agent `MODE_PREFIX`, `ACTIVENESS_PREFIX`
     [
       settings("channel_modes", "active", [], ["channel_mode:"]),
       settings("channel_activeness", "active", [], ["activeness:"]),

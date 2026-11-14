@@ -23,7 +23,7 @@ import {
   STEER_SPEC,
   slimTool,
   tailSection,
-} from "@miyoria/agent";
+} from "@miyoria/brain/agent";
 import { ActuatorRegistry, CapabilityTool, messageDm } from "@miyoria/gate/actions";
 import type { ToolSpec } from "@miyoria/llm/llm";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";

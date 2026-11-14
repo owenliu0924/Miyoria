@@ -1,10 +1,10 @@
 // Subject `attention`: who a line is for, as attention decides it (`directReason` of
-// `packages/agent/src/attention.ts`, v4 §7.1). Every recorded line goes through it with what the
+// `packages/brain/agent/src/attention.ts`, v4 §7.1). Every recorded line goes through it with what the
 // platform said about it (a reply to her, whom it @-mentions, whether it opens with that); the
 // verdict replaces the recorded one. Open loop: what she would have said instead is not asked,
 // only whether the line would have been answered as if it were said to her.
 
-import { directReason } from "@miyoria/agent";
+import { directReason } from "@miyoria/brain/agent";
 import { z } from "zod";
 import type { TraceEvent } from "../trace.js";
 import type { Subject } from "./types.js";

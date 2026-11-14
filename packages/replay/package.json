@@ -22,9 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@miyoria/activity": "workspace:*",
-    "@miyoria/agent": "workspace:*",
-    "@miyoria/arbiter": "workspace:*",
+    "@miyoria/brain": "workspace:*",
     "@miyoria/facts": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",

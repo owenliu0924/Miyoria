@@ -39,9 +39,9 @@ describe("only the main line speaks", () => {
         // `message.dm`: a tool, so only ever an action of a main-line turn; the scheduler checks.
         "packages/gate/actions/src/builtin.ts",
         // The mouth (`MainLine.say`).
-        "packages/agent/src/mainline/main.ts",
+        "packages/brain/agent/src/mainline/main.ts",
         // The turn itself: sentences, text, the fixed line.
-        "packages/agent/src/turn.ts",
+        "packages/brain/agent/src/turn.ts",
         // The bus shape of `action.settled` in the type's own file.
         "packages/replay/src/fakes.ts",
         "packages/types/src/action.ts",
@@ -88,15 +88,15 @@ describe("only the main line acts", () => {
         // A tool: runs in the hands of a main-line turn.
         "packages/gate/actions/src/tools.ts",
         // Transitions of a request the turn already made.
-        "packages/activity/src/port.ts",
+        "packages/brain/activity/src/port.ts",
         // `chat.*` only under V3 (`#propose` runs nothing): the consent check of a line she chose.
-        "packages/agent/src/intents.ts",
+        "packages/brain/agent/src/intents.ts",
         // A person on the member page asking for a song, as a `user`: a request she may turn down.
         "packages/api/src/member.ts",
         // A person at the panel, or a slash command: people, not her.
         "packages/api/src/ops.ts",
         // `actThroughGate`: V2 only, `ArbiterEnv.act` is not set under V3.
-        "packages/arbiter/src/module.ts",
+        "packages/brain/arbiter/src/module.ts",
         // An expression a person bought on the member page: `stage.expression`, as the panel.
         "packages/economy/src/economy.ts",
         // The game executor: the steps of a session the main line started.
@@ -115,17 +115,17 @@ describe("only the main line acts", () => {
   });
 
   it("under V3 the Arbiter has no hands and her Plan no way but the board", () => {
-    const arbiter = readFileSync(join(ROOT, "packages/arbiter/src/module.ts"), "utf8");
+    const arbiter = readFileSync(join(ROOT, "packages/brain/arbiter/src/module.ts"), "utf8");
     expect(arbiter).toContain("floor === null\n        ? { act:");
     const mind = readFileSync(join(ROOT, "packages/mind/src/mind.ts"), "utf8");
     const act = mind.slice(mind.indexOf("async #act("));
     expect(act.indexOf("if (board)")).toBeLessThan(act.indexOf("arbiter.submit"));
-    const intents = readFileSync(join(ROOT, "packages/agent/src/intents.ts"), "utf8");
+    const intents = readFileSync(join(ROOT, "packages/brain/agent/src/intents.ts"), "utf8");
     expect(intents).toContain("if (main !== null && !talkOnly) return this.#propose(intent);");
   });
 
   it("the old self-starting paths cannot run under V3", () => {
-    const runtime = readFileSync(join(ROOT, "packages/agent/src/runtime.ts"), "utf8");
+    const runtime = readFileSync(join(ROOT, "packages/brain/agent/src/runtime.ts"), "utf8");
     const legacy = runtime.slice(runtime.indexOf("#legacyInitiative(context: ContextKey"));
     expect(legacy.indexOf("if (this.mainline)")).toBeLessThan(legacy.indexOf("inbox.push"));
     const director = readFileSync(join(ROOT, "packages/game/src/director.ts"), "utf8");

@@ -27,11 +27,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@miyoria/activity": "workspace:*",
-    "@miyoria/agent": "workspace:*",
     "@miyoria/api": "workspace:*",
-    "@miyoria/arbiter": "workspace:*",
     "@miyoria/auth": "workspace:*",
+    "@miyoria/brain": "workspace:*",
     "@miyoria/commands": "workspace:*",
     "@miyoria/discord": "workspace:*",
     "@miyoria/economy": "workspace:*",

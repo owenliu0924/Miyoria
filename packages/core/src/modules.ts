@@ -10,11 +10,11 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { ActivityModule } from "@miyoria/activity";
-import { AgentModule, PersonaHandleKey } from "@miyoria/agent";
 import { ApiModule, avatarEmotions } from "@miyoria/api";
-import { ArbiterModule } from "@miyoria/arbiter";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
+import { ActivityModule } from "@miyoria/brain/activity";
+import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
+import { ArbiterModule } from "@miyoria/brain/arbiter";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";

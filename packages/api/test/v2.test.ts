@@ -1,7 +1,7 @@
 // The v2 read-only routes: `/api/activity*`, `/api/arbiter/*`, `/api/affect*`, `/api/mind/goals`,
 // `/api/mind/plan`, `/api/prompts*` and `/api/turns/outcomes`, against fake services.
 
-import { SavedPromptsKey } from "@miyoria/agent";
+import { SavedPromptsKey } from "@miyoria/brain/agent";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { DecisionLogKey } from "@miyoria/store";
 import {

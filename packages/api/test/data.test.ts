@@ -1,9 +1,9 @@
 // `/api/data/*` against a real in-memory SQLite store: inventory, export, deletes with their
 // confirmations and module pauses, the backup-before-reset rule and the factory reset.
 
-import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/agent";
-import * as arbiter from "@miyoria/arbiter";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
+import * as arbiter from "@miyoria/brain/arbiter";
 import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm/llm";
 import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory";
 import * as queue from "@miyoria/queue";

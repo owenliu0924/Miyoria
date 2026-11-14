@@ -16,8 +16,8 @@
 // auth cache). The audit log is never deleted; every delete and reset is audited.
 
 import { createHash, randomBytes } from "node:crypto";
-import { AgentHandleKey } from "@miyoria/agent";
 import { AuthServiceKey, builtinRoles } from "@miyoria/auth";
+import { AgentHandleKey } from "@miyoria/brain/agent";
 import { errorMessage, getLogger, SupervisorKey } from "@miyoria/runtime/kernel";
 import { SandboxKey, type ScriptInfo } from "@miyoria/sandbox";
 import {

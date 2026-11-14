@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PersonaHandle, PersonaHandleKey } from "@miyoria/agent";
+import { PersonaHandle, PersonaHandleKey } from "@miyoria/brain/agent";
 import { LlmRouter, LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";

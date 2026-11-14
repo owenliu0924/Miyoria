@@ -1,5 +1,5 @@
 // Services the admin API looks up per request that other modules own. Their keys come from the
-// owning packages (`PersonaHandleKey` from `@miyoria/agent`, `SocialKey` from
+// owning packages (`PersonaHandleKey` from `@miyoria/brain/agent`, `SocialKey` from
 // `@miyoria/social`, `MemoryEngineKey` from `@miyoria/memory`, `AuthServiceKey` from
 // `@miyoria/auth`, `ExtensionCatalogKey` from `@miyoria/plugin-host/ext-host`, `McpStatusKey` from
 // `@miyoria/plugin-host/mcp`, `RequestQueueKey` from `@miyoria/queue`, `StageLinkKey` from

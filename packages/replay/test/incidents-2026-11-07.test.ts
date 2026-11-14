@@ -4,9 +4,9 @@
 // agent, gate, Arbiter, ActivityManager and mind with a scripted LLM.
 //
 // Not expressible here, covered in the owning package instead: a promise with no action behind
-// it (`packages/agent/test/promise-claims.test.ts`: the replay's scripted LLM makes no tool
+// it (`packages/brain/agent/test/promise-claims.test.ts`: the replay's scripted LLM makes no tool
 // calls and the voice and game tools are not registered), and the game staying closed after a
-// stop (`packages/arbiter/test/game-hold.test.ts`: `activity.done` is her output, not a replayed
+// stop (`packages/brain/arbiter/test/game-hold.test.ts`: `activity.done` is her output, not a replayed
 // input). The keying of a reworded line is `packages/game/test/narration.test.ts`; the replay
 // shows that the Arbiter goes by the key.
 

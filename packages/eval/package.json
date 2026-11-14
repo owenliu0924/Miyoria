@@ -21,7 +21,7 @@
     "blind": "tsx --conditions=@miyoria/source src/blind-cli.ts"
   },
   "dependencies": {
-    "@miyoria/agent": "workspace:*",
+    "@miyoria/brain": "workspace:*",
     "@miyoria/game": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",

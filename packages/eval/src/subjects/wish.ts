@@ -1,4 +1,4 @@
-// Subject `wish`: one wish, asked once (`WishBook` of `packages/arbiter/src/wishes.ts`, v4 §2.4,
+// Subject `wish`: one wish, asked once (`WishBook` of `packages/brain/arbiter/src/wishes.ts`, v4 §2.4,
 // §7.6). The recorded run goes through the book in order: whatever holds a wish of hers (a
 // proposal, a commitment, a goal of her Plan) registers with it, what the person says is the
 // observation the book follows ("you asked me already" closes it, an answer after she asked
@@ -10,7 +10,7 @@
 // The book lives in the arbiter, which this package does not depend on; it is imported from its
 // source so the case runs the code that runs live, not a copy of its rules.
 
-import { WishBook } from "../../../arbiter/src/wishes.js";
+import { WishBook } from "../../../brain/arbiter/src/wishes.js";
 import type { Trace } from "../trace.js";
 import type { Subject } from "./types.js";
 

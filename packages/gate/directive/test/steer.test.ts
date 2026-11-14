@@ -1,7 +1,7 @@
 // Steer against the real rules and the real gate (§10.6 rule 5): the goal is checked as it would be
 // after the patch, so a steer cannot turn an allowed task into a forbidden one.
 
-import { ActivityConfigSchema, ActivityService, GatePort } from "@miyoria/activity";
+import { ActivityConfigSchema, ActivityService, GatePort } from "@miyoria/brain/activity";
 import {
   customEvent,
   type Event,

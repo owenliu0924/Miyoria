@@ -3,7 +3,7 @@
 // covered. Whatever the parser lets through as text is what people would see or hear again; a
 // tag it recognises as a tool is recorded as a tool written as text (it is never run).
 
-import { ExpressionParser, type Segment } from "@miyoria/agent";
+import { ExpressionParser, type Segment } from "@miyoria/brain/agent";
 import { ofType, type Trace } from "../trace.js";
 import type { Subject } from "./types.js";
 

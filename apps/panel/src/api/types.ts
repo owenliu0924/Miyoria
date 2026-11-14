@@ -1435,7 +1435,7 @@ export interface Thought {
 }
 
 // ---------------------------------------------------------------------------
-// LLM call inspector (`packages/llm/src/calls.ts`, `packages/api/src/llmcalls.ts`)
+// LLM call inspector (`packages/llm/llm/src/calls.ts`, `packages/api/src/llmcalls.ts`)
 
 export interface LlmPricing {
   input_per_mtok: number;

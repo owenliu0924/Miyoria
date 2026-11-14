@@ -5,7 +5,7 @@
 // /api/turns/outcomes?context=&outcome=&limit=` (how turns ended: sent, silence, cancelled and by
 // whom, error; newest first). The panel puts these next to the decision trace of the same turn.
 
-import { SavedPromptsKey } from "@miyoria/agent";
+import { SavedPromptsKey } from "@miyoria/brain/agent";
 import { DecisionLogKey } from "@miyoria/store";
 import type { SavedPrompt, TurnOutcomeRecord } from "@miyoria/types";
 import { z } from "zod";

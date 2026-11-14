@@ -70,15 +70,15 @@ describe("every line of hers is reviewed", () => {
     expect(builders).toEqual(
       [
         "packages/gate/actions/src/builtin.ts",
-        "packages/agent/src/mainline/main.ts",
-        "packages/agent/src/turn.ts",
+        "packages/brain/agent/src/mainline/main.ts",
+        "packages/brain/agent/src/turn.ts",
       ].sort(),
     );
     for (const file of builders) expect(read(file), file).toContain("safeOutgoing(");
   });
 
   it("each way out of a turn goes through the review", () => {
-    const turn = read("packages/agent/src/turn.ts");
+    const turn = read("packages/brain/agent/src/turn.ts");
     for (const [head, call] of [
       ["async #say(", "this.safe("],
       ["async #sayLine(", "this.safe("],
@@ -101,7 +101,10 @@ describe("every line of hers is reviewed", () => {
     // What says which path it is.
     expect(turn).toContain('this.#fallback ? "fallback" : "reply"');
     expect(turn).toContain("this.#fallback = stream.fallback;");
-    const say = bodyOf(read("packages/agent/src/mainline/main.ts"), "async say(line: FixedLine)");
+    const say = bodyOf(
+      read("packages/brain/agent/src/mainline/main.ts"),
+      "async say(line: FixedLine)",
+    );
     expect(say).toContain("safeOutgoing(");
   });
 
@@ -167,9 +170,9 @@ describe("everything people write is judged", () => {
     const readers = using(/type === "platform_message_created"|case "platform_message_created"/);
     // Only counters and presence: no text of a message goes anywhere from these.
     const counting = [
-      "packages/arbiter/src/module.ts",
-      "packages/arbiter/src/producers.ts",
-      "packages/arbiter/src/unanswered.ts",
+      "packages/brain/arbiter/src/module.ts",
+      "packages/brain/arbiter/src/producers.ts",
+      "packages/brain/arbiter/src/unanswered.ts",
       "packages/core/src/recorder.ts",
       "packages/economy/src/earn.ts",
       "packages/learning/src/modules.ts",
@@ -184,7 +187,7 @@ describe("everything people write is judged", () => {
     ];
     expect(readers.filter((f) => !counting.includes(f))).toEqual(
       [
-        "packages/agent/src/runtime.ts",
+        "packages/brain/agent/src/runtime.ts",
         "packages/facts/src/bus.ts",
         "packages/mind/src/mind.ts",
         // Players' answers in the voice channel's chat: judged before they reach a game.
@@ -193,7 +196,7 @@ describe("everything people write is judged", () => {
     );
     for (const file of ["runtime", "bus", "mind", "party"]) {
       const path = {
-        runtime: "packages/agent/src/runtime.ts",
+        runtime: "packages/brain/agent/src/runtime.ts",
         bus: "packages/facts/src/bus.ts",
         mind: "packages/mind/src/mind.ts",
         party: "packages/party/src/module.ts",
@@ -210,7 +213,7 @@ describe("everything people write is judged", () => {
   });
 
   it("what tools bring back is outside content", () => {
-    const turn = read("packages/agent/src/turn.ts");
+    const turn = read("packages/brain/agent/src/turn.ts");
     expect(bodyOf(turn, "async #tryTool(")).toContain("this.#outside(out)");
     expect(bodyOf(turn, "#outside(text: string)")).toContain('source: "tool"');
   });

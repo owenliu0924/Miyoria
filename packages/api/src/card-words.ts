@@ -7,7 +7,7 @@
 // may read) and her mood, never her private feeling: it names other people and may hold a secret,
 // and a card's code lets anyone read it.
 
-import { PersonaHandleKey } from "@miyoria/agent";
+import { PersonaHandleKey } from "@miyoria/brain/agent";
 import {
   completeJson,
   LlmRouterKey,

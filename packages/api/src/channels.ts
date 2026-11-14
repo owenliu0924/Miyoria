@@ -10,7 +10,7 @@ import {
   modeDescription,
   modeLabel,
   parseChannelMode,
-} from "@miyoria/agent";
+} from "@miyoria/brain/agent";
 import {
   AuthorizerKey,
   type ContextKey,

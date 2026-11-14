@@ -24,7 +24,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
-import { Proposals } from "../../../agent/src/mainline/proposals.js";
+import { Proposals } from "../../../brain/agent/src/mainline/proposals.js";
 import {
   ActuatorRegistry,
   ActuatorRegistryKey,

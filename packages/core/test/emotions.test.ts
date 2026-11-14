@@ -4,7 +4,7 @@
 // heartbeat. A new emotion, or a row that no longer reaches anything, fails here.
 
 import { fileURLToPath } from "node:url";
-import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/arbiter";
+import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/brain/arbiter";
 import { EventLogService } from "@miyoria/facts";
 import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/mind";
 import { Supervisor } from "@miyoria/runtime/kernel";

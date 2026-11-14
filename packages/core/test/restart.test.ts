@@ -4,7 +4,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActivityModule } from "@miyoria/activity";
+import { ActivityModule } from "@miyoria/brain/activity";
 import { FactsModule, toReplayLines } from "@miyoria/facts";
 import { entryTopic, formatEntry, isReplayInput, parseReplayLog } from "@miyoria/replay";
 import {

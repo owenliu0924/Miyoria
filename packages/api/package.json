@@ -23,8 +23,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
-    "@miyoria/agent": "workspace:*",
     "@miyoria/auth": "workspace:*",
+    "@miyoria/brain": "workspace:*",
     "@miyoria/card-face": "workspace:*",
     "@miyoria/economy": "workspace:*",
     "@miyoria/gate": "workspace:*",
@@ -45,7 +45,6 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@miyoria/arbiter": "workspace:*",
     "@miyoria/facts": "workspace:*",
     "@miyoria/learning": "workspace:*",
     "@miyoria/mind": "workspace:*",

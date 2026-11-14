@@ -8,7 +8,7 @@
 // may read) and her mood, never her private feeling. One slip per person per local day, kept so
 // they can look at it again, export it and have it forgotten with their cards.
 
-import { PersonaHandleKey } from "@miyoria/agent";
+import { PersonaHandleKey } from "@miyoria/brain/agent";
 import {
   completeJson,
   LlmRouterKey,
