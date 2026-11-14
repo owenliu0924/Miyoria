@@ -5,7 +5,6 @@ import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
 import * as arbiter from "@miyoria/brain/arbiter";
 import * as self from "@miyoria/heart/self";
-import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm/llm";
 import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory/memory";
 import * as queue from "@miyoria/play/queue";
 import {
@@ -181,7 +180,13 @@ async function harness(options: { sandbox?: boolean } = {}) {
   await store.settings.set(P, `${MODE_PREFIX}discord:g1:c1`, "always");
   await store.settings.set(P, `${ACTIVENESS_PREFIX}discord:dm:voice:v1`, "high");
   await store.settings.set(GLOBAL_SETTINGS_PROFILE, "queue:state", { items: [] });
-  await store.settings.set(GLOBAL_SETTINGS_PROFILE, "llm_usage:2026-11", { usd: 1 });
+  // One finished LLM call: the `llm_usage` category counts these events.
+  await store.events?.append([
+    {
+      draft: { id: newId(), at: now, type: "llm.call", data: { call_id: "c1", cost_usd: 1 } },
+      source: "llm",
+    },
+  ]);
   await store.auth.upsertRole({ name: "vip", rank: 50, grants: ["x"], denies: [], builtin: false });
   await auth.reload();
   await auth.assign("test", { platform: "discord", id: "2" }, "vip", { type: "global" });
@@ -362,7 +367,6 @@ describe("data categories", () => {
       [queue.STATE_PROFILE, queue.STATE_KEY],
       [CONSENT_PROFILE, consentKey({ platform: "x", id: "y" }).replace(/x:y$/, "")],
       [PRIVACY_PROFILE, PRIVACY_PREFIX],
-      [USAGE_PROFILE, USAGE_KEY_PREFIX],
       [SESSION_STORE_PROFILE, SESSION_STORE_PREFIX],
     ] as const) {
       expect(profile).toBe(GLOBAL_SETTINGS_PROFILE);
