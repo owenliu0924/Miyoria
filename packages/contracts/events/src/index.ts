@@ -1,7 +1,18 @@
 // @miyoria/contracts/events: the event envelope, defineEvent and the registry of event types
-// (docs/design/v5-data.md §2.2, docs/design/v5-contracts.md §2.8). Payload schemas of real event
-// types come later; nothing here does I/O, so a browser bundle can use it.
+// (docs/design/v5-data.md §2.2, docs/design/v5-contracts.md §2.8), and the payload schemas of the
+// event types defined so far (chat lines). Nothing here does I/O, so a browser bundle can use it.
 
+export {
+  CHAT_EVENT_TYPES,
+  CHAT_EVENTS,
+  type PlatformMessage,
+  PlatformMessageCreated,
+  PlatformMessageSchema,
+  type VoicePlayback,
+  VoicePlaybackEvent,
+  VoicePlaybackSchema,
+  VoiceUtteranceEvent,
+} from "./chat.js";
 export {
   DEFAULT_EVENT_TIER,
   type EventDraft,
