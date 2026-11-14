@@ -1,7 +1,7 @@
 // Data categories (`data.ts`): the registry's invariants and the node-wide parts of a wipe /
 // factory reset. Node-wide categories (people, roles, `_global` settings) delete every row, so
-// these cases run only on fresh in-memory SQLite databases, never on a shared Postgres; the
-// per-profile categories run on every backend in `behaviour.test.ts`.
+// these cases run only on fresh in-memory databases; the per-profile categories run in
+// `behaviour.test.ts`.
 
 import { newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";

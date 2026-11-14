@@ -87,8 +87,8 @@ import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
 
 /**
- * Opens the store for `url`: `sqlite:<path>` (default, the parent directory is created),
- * `memory://`, or `postgres://...`.
+ * Opens the store for `url`: `sqlite:<path>` (default, the parent directory is created) or
+ * `memory://`. Any other scheme fails with a message that names the supported ones.
  */
 export async function openStore(url: string): Promise<Store> {
   const path = sqlitePath(url);

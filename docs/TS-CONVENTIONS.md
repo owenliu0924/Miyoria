@@ -5,8 +5,8 @@ history) and was ported module by module; module ids, config keys, event topics,
 defaults were kept as they were, and they are now a compatibility contract (stored data, config
 files, the panel, voice node, Stage and extensions all depend on them).
 
-Runtime: **Node 24**, **pnpm 9**, ESM only, strict TypeScript 5.9. Database default: SQLite
-(`node:sqlite`), Postgres optional.
+Runtime: **Node 24**, **pnpm 9**, ESM only, strict TypeScript 5.9. Database: SQLite
+(`node:sqlite`) only.
 
 ## 1. Workspace
 

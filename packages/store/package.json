@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/store",
   "version": "0.1.0",
-  "description": "Storage interfaces, record types and backends (SQLite via node:sqlite, PostgreSQL + pgvector)",
+  "description": "Storage interfaces, record types and the SQLite backend (node:sqlite)",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -24,12 +24,10 @@
   },
   "dependencies": {
     "@miyoria/runtime": "workspace:*",
-    "@miyoria/types": "workspace:*",
-    "pg": "^8.23.1"
+    "@miyoria/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "@types/pg": "^8.23.1",
     "typescript": "~5.9.3",
     "vitest": "^4.1.12"
   }

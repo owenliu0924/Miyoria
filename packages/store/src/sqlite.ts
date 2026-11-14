@@ -163,7 +163,7 @@ export interface SqliteStoreOptions {
   busyTimeoutMs?: number;
   /**
    * Decisions kept per profile (older ones are dropped); `null` keeps all. Default: 10 000 for
-   * `:memory:` (an in-memory database), unbounded for files (like PostgreSQL).
+   * `:memory:` (an in-memory database), unbounded for files.
    */
   maxDecisionsPerProfile?: number | null;
 }

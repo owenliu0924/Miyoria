@@ -699,11 +699,11 @@ export interface WipeOptions {
 
 // ---- SQL ----------------------------------------------------------------------------------
 
-/** What differs between the backends. SQL uses `$1`-style placeholders. */
+/** SQL fragments the statement builders below use. SQL uses `$1`-style placeholders. */
 export interface SqlDialect {
   /** `column` starts with the text parameter `param` (case-sensitive, `%` / `_` literal). */
   startsWith(column: string, param: string): string;
-  /** A JSON / JSONB column as JSON text. */
+  /** A JSON column as JSON text. */
   jsonText(column: string): string;
   /** `ORDER BY` of settings keys (byte order). */
   keyOrder: string;

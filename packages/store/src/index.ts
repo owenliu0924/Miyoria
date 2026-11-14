@@ -1,6 +1,6 @@
-// @miyoria/store: persistence interfaces, record types and the backends implementing all of
-// them: SQLite via `node:sqlite` (default; `:memory:` for tests) and PostgreSQL + pgvector.
-// `openStore(url)` picks one from a store URL.
+// @miyoria/store: persistence interfaces, record types and their SQLite implementation on
+// `node:sqlite` (a file, or `:memory:` for tests). `openStore(url)` opens the database a store
+// URL names.
 
 export {
   embeddingValues,
@@ -41,7 +41,6 @@ export {
   parseStoreUrl,
   type StoreLocation,
 } from "./open.js";
-export { PostgresStore, type PostgresStoreOptions } from "./postgres.js";
 export {
   type Account,
   type AuditEntry,

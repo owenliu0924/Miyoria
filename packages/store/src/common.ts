@@ -124,8 +124,8 @@ const RFC3339 =
 
 /**
  * Microseconds since the Unix epoch of an RFC 3339 timestamp; sub-microsecond digits are
- * dropped (timestamps are stored with PostgreSQL's precision). Also accepts PostgreSQL's text
- * output (`2026-03-10 12:00:00.123456+00`). A missing offset means UTC.
+ * dropped (timestamps are stored as integer microseconds). Also accepts a space instead of `T`
+ * and a short offset (`2026-03-10 12:00:00.123456+00`). A missing offset means UTC.
  */
 export function toMicros(ts: Timestamp): number {
   const m = RFC3339.exec(ts);
@@ -198,7 +198,7 @@ export function cleanEmbedding(embedding: readonly number[] | null | undefined):
 
 /**
  * The shortest decimal that rounds to the same float32, so a stored `0.1` reads back as `0.1`
- * (what pgvector prints) instead of `0.10000000149011612`.
+ * instead of `0.10000000149011612`.
  */
 export function shortestF32(x: number): number {
   for (let precision = 1; precision < 9; precision++) {

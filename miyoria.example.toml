@@ -4,7 +4,7 @@
 [core]
 profile = "deepseek-chan"          # profiles/<id>/
 profiles_dir = "profiles"
-database_url = "${DATABASE_URL:-sqlite:data/miyoria.db}"
+database_url = "${DATABASE_URL:-sqlite:data/miyoria.db}"   # 只支援 SQLite:sqlite:<路徑> 或 memory://
 log = "info,miyoria=debug"
 
 # ---- LLM ----------------------------------------------------------------

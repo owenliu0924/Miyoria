@@ -1,5 +1,5 @@
-// Storage interfaces. Each area is its own interface so callers never depend on a backend;
-// backends (SQLite by default, Postgres optional) implement all of them.
+// Storage interfaces. Each area is its own interface so callers never depend on the backend;
+// `SqliteStore` implements all of them, and tests may provide their own.
 //
 // Data that belongs to one character is keyed by `ProfileId`. Module state and people are
 // shared by all profiles. Map results have their keys in ascending order.
@@ -569,7 +569,7 @@ export interface Store {
   readonly auth: AuthStore;
   readonly audit: AuditLog;
   readonly profileData: ProfileDataStore;
-  /** The EventLog. Only the SQLite backend has it so far; without it the log stays in memory. */
+  /** The EventLog. Optional for test doubles; without it the log stays in memory. */
   readonly events?: EventLogStore;
   readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;

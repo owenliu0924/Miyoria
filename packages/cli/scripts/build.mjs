@@ -10,7 +10,7 @@
 // relative to `import.meta.url` keeps working:
 //   - `src/assets.ts`: `new URL("..", import.meta.url)` -> package root (`templates/`,
 //     `assets/profiles/`, `package.json`)
-//   - `@miyoria/store`: `../migrations/{sqlite,postgres}/` -> `<package>/migrations/`
+//   - `@miyoria/store`: `../migrations/sqlite/` -> `<package>/migrations/sqlite/`
 //
 // Copied next to the bundle:
 //   - `assets/profiles/`  <- repo `profiles/` (without local-only third-party assets)

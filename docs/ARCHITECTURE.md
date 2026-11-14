@@ -26,9 +26,9 @@ Miyoria 是打造「全能 AI waifu」的框架;角色本身是一個 **profile*
 flowchart LR
   subgraph Server["Server(Docker)"]
     Core["miyoria core<br/>kernel · agent · memory · social<br/>scheduler · platform adapters · API"]
-    PG[(SQLite 檔案<br/>或 PostgreSQL + pgvector)]
+    DB[(SQLite 檔案)]
     Panel["Admin Panel<br/>(靜態檔,由 Core 提供)"]
-    Core --- PG
+    Core --- DB
     Core --- Panel
   end
 
@@ -296,7 +296,7 @@ interface Stimulus {
 - 例外:`person-global` 的事實(例如「他的名字叫 Owen」)可以跨伺服器使用,使用者可以設定。
 - 使用者權利:`/memory show`(看她記得你什麼)、`/memory forget`(刪除)、`/memory export`;管理員可以在 Panel 編輯。
 
-儲存:預設 SQLite(FTS5 全文索引,向量存成 BLOB、在 JS 端算 cosine),或 PostgreSQL + pgvector(`tsvector` 全文);中文都先用 jieba 分詞(見 DECISIONS)。
+儲存:SQLite(FTS5 全文索引,向量存成 BLOB、在 JS 端算 cosine);中文先用 jieba 分詞(見 DECISIONS)。
 
 ---
 
@@ -943,10 +943,10 @@ CLI 透過 Admin API 操作正在跑的 Core,跟 Panel 用同一套權限。
 
 - **設定分層**:`miyoria.toml`(檔案,`${VAR}` / `${VAR:-預設}` 引用環境變數)→ `.env` 與環境變數 → DB 中的執行期設定(頻道模式、人格覆寫等由 Panel / 指令改的)。每個 module 的設定都有 zod schema(轉成 JSON Schema 給 Panel)。
 - **Secrets**:放 `.env`(`miyoria init` 產生,不進 git)或環境變數,`miyoria.toml` 只用 `${VAR}` 引用。
-- **資料庫**:預設 SQLite(`node:sqlite`,WAL,`data/miyoria.db`);選用 PostgreSQL 16+ 與 pgvector(`pg`)。兩邊各有一套 migrations(`packages/store/migrations/{sqlite,postgres}`),Core 啟動時自動套用。不另外加 Redis 或 message broker(事件匯流排在程序內,跨節點走 WebSocket)。
-- **資料類別**(`@miyoria/store` 的 `data.ts`,`DATA_CATEGORIES`):把她的每一類資料對應到資料表、設定 key 與前綴(角色本身的 profile 或節點共用的 `_global`),標出相依(刪人物會一起刪關係、稱呼與感情)、快取它的 module、是否所有角色共用、刪除要不要輸入 profile id、是否保留不刪。`ProfileDataStore` 依類別計數(`inventory`)、匯出 JSON(`export`)、在一個交易裡刪除(`wipe`),兩個資料庫共用同一份 SQL。不變式寫在結構裡:watermark 只屬於「聊天紀錄」類別,所以永遠和 `message_log` 一起刪;稽核紀錄、LLM 用量、面板登入是保留類別,任何刪除與重設都不碰;「角色與權限」是重設而不是清空,同一個交易裡寫回內建角色,設定檔的擁有者不存在資料庫裡,所以永遠不會被鎖在外面。`/admin memory wipe` 與面板的 `/api/data/*` 都走這份定義。她自己整理的資料不管長什麼樣子都在 `knowledge` 類別(`knowledge:doc:*`),學到的事、反思與回饋在 `learning`,對話筆記在 `conversation`(跟著聊天紀錄一起刪)。新增會存資料的 module 時,要把它的資料表或設定 key 加進來(沒被任何類別認領的設定會出現在「其他設定」)。
+- **資料庫**:SQLite(`node:sqlite`,WAL,`data/miyoria.db`),只有這一種(PostgreSQL 在 V5 拿掉了,見 [design/v5-data.md](design/v5-data.md) D1)。migrations 在 `packages/store/migrations/sqlite`,Core 啟動時自動套用。不另外加 Redis 或 message broker(事件匯流排在程序內,跨節點走 WebSocket)。
+- **資料類別**(`@miyoria/store` 的 `data.ts`,`DATA_CATEGORIES`):把她的每一類資料對應到資料表、設定 key 與前綴(角色本身的 profile 或節點共用的 `_global`),標出相依(刪人物會一起刪關係、稱呼與感情)、快取它的 module、是否所有角色共用、刪除要不要輸入 profile id、是否保留不刪。`ProfileDataStore` 依類別計數(`inventory`)、匯出 JSON(`export`)、在一個交易裡刪除(`wipe`)。不變式寫在結構裡:watermark 只屬於「聊天紀錄」類別,所以永遠和 `message_log` 一起刪;稽核紀錄、LLM 用量、面板登入是保留類別,任何刪除與重設都不碰;「角色與權限」是重設而不是清空,同一個交易裡寫回內建角色,設定檔的擁有者不存在資料庫裡,所以永遠不會被鎖在外面。`/admin memory wipe` 與面板的 `/api/data/*` 都走這份定義。她自己整理的資料不管長什麼樣子都在 `knowledge` 類別(`knowledge:doc:*`),學到的事、反思與回饋在 `learning`,對話筆記在 `conversation`(跟著聊天紀錄一起刪)。新增會存資料的 module 時,要把它的資料表或設定 key 加進來(沒被任何類別認領的設定會出現在「其他設定」)。
 - **可觀測性**:pino 結構化日誌(`MIYORIA_LOG_LEVEL`);Admin API 的 `GET /metrics` 提供 Prometheus metrics(事件數、LLM 首 token 延遲、用量等),可以接 Grafana;每個回合有 Decision Trace,Panel 內建檢視。OpenTelemetry 之後再加。
-- **Docker**:Core 映像檔(`deploy/Dockerfile.core`,Node 24)+ 可選的 Postgres 用 compose;Stage 在 Windows 原生跑;GPU workers 可以用 Docker(WSL2 + NVIDIA container toolkit)或原生。
+- **Docker**:Core 映像檔(`deploy/Dockerfile.core`,Node 24)用 compose 跑;Stage 在 Windows 原生跑;GPU workers 可以用 Docker(WSL2 + NVIDIA container toolkit)或原生。
 
 ---
 
@@ -971,7 +971,7 @@ miyoria/
 ├─ packages/                  # @miyoria/* 函式庫與模組(TypeScript)
 │  ├─ types/                  # 共用型別、事件、ID、service 介面
 │  ├─ kernel/                 # Module、Supervisor、事件匯流排、service registry、設定、日誌、metrics
-│  ├─ store/                  # SQLite / PostgreSQL 後端與 migrations
+│  ├─ store/                  # SQLite 後端與 migrations
 │  ├─ llm/                    # LLM 供應者、用途路由、成本與預算
 │  ├─ tools/                  # 工具註冊(給 LLM 呼叫)
 │  ├─ actions/                # 行動 registry 與閘門(principal、風險、同意、自我審核、稽核)

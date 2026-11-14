@@ -21,7 +21,7 @@
 ## Phase 1:Kernel + 文字聊天 MVP
 
 - [x] `@miyoria/types`、`@miyoria/runtime/kernel`(Module、Supervisor、事件匯流排、service registry、設定與 JSON Schema)
-- [x] `@miyoria/store`(SQLite 預設 + Postgres / pgvector、migrations)、`deploy/docker-compose.yml`(Postgres 部分尚未對真資料庫測過)
+- [x] `@miyoria/store`(SQLite、migrations)、`deploy/docker-compose.yml`(V5 拿掉了沒測過的 Postgres)
 - [x] `@miyoria/llm/llm`(OpenAI 相容供應者 + DeepSeek 專屬處理:推理內容過濾、前綴快取友善的 prompt 順序;依用途路由、成本記錄)
 - [x] `@miyoria/runtime/profile`(載入、驗證、執行期修改人格段落;所有資料帶 `profile_id`)+ 把 `profiles/deepseek-chan/` 定案
 - [x] `@miyoria/brain/agent`:Stimulus、Conversation Session(working memory)、TurnCoordinator(debounce / 合併)、Attention 第一、二層、Expression Parser(文字部分)
@@ -143,7 +143,7 @@
 Phase 0–8 先用 Rust 寫成原型(留在 git 歷史裡),之後整個改寫成 TypeScript(理由見 [DECISIONS.md](DECISIONS.md) ADR 13)。
 
 - [x] pnpm workspace(Node 24):`packages/*` 的 `@miyoria/*` 套件逐一移植,module id、設定鍵、事件、JSON 格式與預設值照舊,測試一併移植
-- [x] Store:SQLite(`node:sqlite`)預設 + PostgreSQL / pgvector,兩個後端跑同一份行為測試
+- [x] Store:SQLite(`node:sqlite`)跑一份行為測試(PostgreSQL 在 V5 拿掉)
 - [x] 端到端驗證:假 LLM + 假語音節點 + 假 worker 跑完整流程(文字、語音、Stage)
 - [x] npm 套件 `miyoria`:esbuild 打包(內含管理面板、內建角色、migrations),`npx miyoria@latest init` 就能開始;已可發佈(`pnpm release:publish`)
 - [x] Docker 映像檔、CI 換成 Node 版本

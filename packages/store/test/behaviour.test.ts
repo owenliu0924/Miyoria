@@ -1,8 +1,5 @@
-// One behaviour suite run against every backend.
-//
-// SQLite (in memory and on a file) always runs. PostgreSQL runs only when
-// `MIYORIA_TEST_DATABASE_URL` is set; otherwise its tests are skipped. Every case uses fresh
-// ids, so it can share a database with other runs.
+// One behaviour suite, run against SQLite in memory and on a file. Every case uses fresh ids, so
+// the file runs share one database.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,8 +45,6 @@ import {
   type RoleMapping,
   type Store,
 } from "../src/index.js";
-
-const DB_ENV = "MIYORIA_TEST_DATABASE_URL";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -2330,11 +2325,6 @@ describe("sqlite (file)", () => {
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
   // One file for every case (each case uses fresh ids), reopened per case.
   behaviour(() => openStore(`sqlite:${join(dir, "nested", "behaviour.db")}`));
-});
-
-const pgUrl = process.env[DB_ENV];
-describe.skipIf(!pgUrl)("postgres", () => {
-  behaviour(() => openStore(pgUrl as string));
 });
 
 /** The in-memory backend keeps only the newest decisions of each profile. */

@@ -1,7 +1,7 @@
 // What economy 2.0 keeps besides the ledger: collection items, predictions and their bets,
 // commissions and what the audience has funded of her room (docs/design/v4-plan.md §10). The
 // types and the service key live in `@miyoria/store`, which implements them (one `economy_docs`
-// table on SQLite and Postgres); the in-memory `MemoryDocs` here is what the tests run against and
+// table on SQLite); the in-memory `MemoryDocs` here is what the tests run against and
 // what the module falls back to (with a warning) when no store provides `EconomyDocsKey`.
 //
 // Coins never live here: every balance change is a ledger row. A document says what the coins were

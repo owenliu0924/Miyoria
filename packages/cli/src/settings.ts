@@ -11,7 +11,6 @@ import * as validate from "./validate.js";
 import type { Workspace } from "./workspace.js";
 
 export const DEFAULT_REDIRECT_URI = "http://127.0.0.1:7878/api/auth/oauth/callback";
-export const DEFAULT_POSTGRES_URL = "postgres://miyoria:miyoria@127.0.0.1:5432/miyoria";
 export const DEFAULT_SQLITE_URL = "sqlite:data/miyoria.db";
 export const LLM_KINDS = ["deepseek", "openai", "openai-compatible", "opencode"] as const;
 
@@ -532,20 +531,9 @@ export async function llmStep(p: Prompter, ws: Workspace, pick: boolean): Promis
 
 export async function databaseStep(p: Prompter, ws: Workspace): Promise<void> {
   const cur = current(ws, DATABASE).value;
-  const options = [
-    "SQLite(推薦,存在 data/miyoria.db)",
-    "memory://(不保存,先試用)",
-    "PostgreSQL(用 deploy/docker-compose.yml)",
-  ];
-  const start = cur.startsWith("postgres") ? 2 : cur === "memory://" ? 1 : 0;
-  const pick = await p.select("資料庫", options, start);
-  let next: string;
-  if (pick === 0) next = cur.startsWith("sqlite:") ? cur : DEFAULT_SQLITE_URL;
-  else if (pick === 1) next = "memory://";
-  else {
-    const def = cur.startsWith("postgres") ? cur : DEFAULT_POSTGRES_URL;
-    next = (await p.text("DATABASE_URL", def, validate.databaseUrl)).trim();
-  }
+  const options = ["SQLite(推薦,存在 data/miyoria.db)", "memory://(不保存,先試用)"];
+  const pick = await p.select("資料庫", options, cur === "memory://" ? 1 : 0);
+  const next = pick === 1 ? "memory://" : cur.startsWith("sqlite:") ? cur : DEFAULT_SQLITE_URL;
   if (next !== cur) apply(ws, DATABASE, next);
 }
 

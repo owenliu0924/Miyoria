@@ -37,11 +37,9 @@ export const databaseUrl: Check = (s) => {
       ? "SQLite 要有檔案路徑,例如 sqlite:data/miyoria.db"
       : null;
   }
-  return urlWith(
-    t,
-    ["postgres", "postgresql"],
-    "要是 sqlite:data/miyoria.db、memory:// 或 postgres://使用者:密碼@主機:5432/資料庫",
-  );
+  if (/^postgres(ql)?:/i.test(t))
+    return "已經不支援 PostgreSQL:要是 sqlite:data/miyoria.db 或 memory://";
+  return "要是 sqlite:data/miyoria.db 或 memory://";
 };
 
 export const port: Check = (s) => {

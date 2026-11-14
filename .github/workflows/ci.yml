@@ -91,7 +91,7 @@ jobs:
           cache-from: type=gha,scope=core-image
           cache-to: type=gha,scope=core-image,mode=max
 
-  # `docker compose config` validates the compose file (both with and without the core profile).
+  # `docker compose config` validates the compose file.
   compose-config:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -99,9 +99,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate deploy/docker-compose.yml
         working-directory: deploy
-        env:
-          POSTGRES_PASSWORD: ci-only
         run: |
-          docker compose config --quiet
           touch ../.env
-          docker compose --profile core config --quiet
+          docker compose config --quiet

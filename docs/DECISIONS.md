@@ -9,9 +9,9 @@
 | 語言 / 執行環境 | **TypeScript 5.9(strict、ESM)+ Node 24**,pnpm 9 workspace(2026-11 從 Rust 原型改寫,見 ADR 13) | 原生 `fetch`、`AbortSignal`、`node:sqlite`;Core、Stage、voice node、面板、SDK 同一種語言 |
 | HTTP / SSE API | Hono(`@hono/node-server`)+ zod 驗證;typed client 在 `@miyoria/api` | Panel 與 CLI 共用同一套路由;沒有另外產生 OpenAPI |
 | 節點間連線 | WebSocket + JSON(音訊用二進位訊框),`ws` | 2026-11-01 改:原本規劃 gRPC,但在 Windows 要裝 protoc;WebSocket 夠用而且 TS 節點好寫 |
-| DB | **SQLite(`node:sqlite`,預設)**;PostgreSQL + pgvector(`pg`,選用) | 2026-11 改:預設不必裝資料庫,`npx miyoria init` 就能跑;server 部署或要大量向量檢索時用 Postgres。兩個後端共用同一份行為測試(`packages/store/test/behaviour.test.ts`)與對應的 migrations |
-| 中文全文檢索 | `@node-rs/jieba` 斷詞;SQLite 用 FTS5、Postgres 存成 `simple` 設定的 `tsvector` | 不需要在 Postgres 裝 zhparser 之類的擴充,Docker 映像檔維持原版;jieba 有預編譯的原生套件,不用編譯 |
-| 嵌入模型 | 可選:任何 OpenAI 相容的 `/embeddings` 端點(Ollama / LM Studio 跑 bge-m3,或雲端) | 不設也能用(全文 + 新舊 + 重要度);SQLite 在 JS 端算 cosine,Postgres 用 pgvector |
+| DB | **SQLite(`node:sqlite`)**,只有這一種 | 2026-11 改:預設不必裝資料庫,`npx miyoria init` 就能跑。2026-11-14 V5 拿掉 PostgreSQL(見 [design/v5-data.md](design/v5-data.md) D1):它從沒對真資料庫測過,也沒有事件紀錄的實作,Core 是一台機器上的一個行程 |
+| 中文全文檢索 | `@node-rs/jieba` 斷詞,SQLite 用 FTS5 | jieba 有預編譯的原生套件,不用編譯 |
+| 嵌入模型 | 可選:任何 OpenAI 相容的 `/embeddings` 端點(Ollama / LM Studio 跑 bge-m3,或雲端) | 不設也能用(全文 + 新舊 + 重要度);SQLite 在 JS 端算 cosine |
 | Discord bot 帳號 | discord.js(跑在 Core) | 文字、指令 |
 | Discord self 帳號 🧪 | TS voice node:`discord.js-selfbot-v13` 登入 + **`@discordjs/voice`**(透過 selfbot 的 `voiceAdapterCreator`)收發語音 + `@dank074/discord-video-stream` 負責 Go Live | 讀過套件原始碼:selfbot 內建語音沒有 DAVE;`@discordjs/voice` 有 DAVE 且每人一條串流;video-stream 有 DAVE 但不能收音。同一帳號能否同時收音 + Go Live 待 spike 驗證 |
 | 指令 / 設定精靈 | 自己寫的小型指令解析器 + `@clack/prompts` | 繁中說明、`--yes` 給腳本用 |
@@ -68,7 +68,7 @@ Phase 0 用你朋友在 Discord 的真實錄音測(台灣腔中文、夾日英�
 13. **從 Rust 改寫成 TypeScript**(2026-11):Phase 0–8 的 Rust 原型(留在 git 歷史裡)改寫成 pnpm workspace 裡的 `@miyoria/*` 套件,module id、設定鍵、事件 topic、JSON 格式與預設值都照舊,舊的測試一併移植。
     - **為什麼**:voice node、面板、overlay、SDK、擴充本來就是 TS,Core 也改成 TS 之後只剩一種語言、一套工具(型別、測試、lint)與一個 lockfile;Discord(discord.js)、MCP、OBS 的官方 / 主流函式庫都在 Node 生態;散佈變成 `npx miyoria@latest init`,不用裝 Rust 工具鏈或下載各平台執行檔。效能瓶頸在 LLM 與語音推論(遠端 / Python worker),不在 Core。
     - **Node 24 + pnpm 9**:Node 24 內建 `node:sqlite`、`fetch`、`AbortSignal.any`、`util.parseEnv`,少掉一批依賴;pnpm workspace 讓每個子系統是獨立套件(module 之間只能透過 `@miyoria/runtime/kernel` 的事件與 service registry 溝通),開發時 `tsx` 直接跑原始碼(`@miyoria/source` 匯出條件),發佈時用 esbuild 打成單一套件。
-    - **SQLite 預設、Postgres 選用**:個人使用不必先架資料庫,資料是一個檔案(`data/miyoria.db`,好備份);`node:sqlite` 是內建的,不需要原生編譯。server 部署或資料量大時改 `DATABASE_URL=postgres://…`(pgvector 做向量檢索)。兩個後端實作同一組 store 介面、跑同一份行為測試。取代舊決策「只支援 Postgres」。
+    - **SQLite 預設、Postgres 選用**:個人使用不必先架資料庫,資料是一個檔案(`data/miyoria.db`,好備份);`node:sqlite` 是內建的,不需要原生編譯。取代舊決策「只支援 Postgres」。2026-11-14 V5 再改成只留 SQLite(見 [design/v5-data.md](design/v5-data.md) D1)。
     - **WebSocket + JSON 連線**:voice link、stage link、Admin API 的 SSE 都是純文字 / JSON(音訊用二進位訊框),瀏覽器與 Node 都能直接用,不需要 protoc 或程式碼產生;協定文件在 `docs/protocols/`。
 
 ## 3. 風險

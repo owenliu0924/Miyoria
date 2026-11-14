@@ -21,26 +21,23 @@ function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 }
 
 describe("parseStoreUrl", () => {
-  it("selects the backend", () => {
-    expect(parseStoreUrl(DEFAULT_STORE_URL)).toEqual({
-      backend: "sqlite",
-      path: "data/miyoria.db",
-    });
-    expect(parseStoreUrl("sqlite://data/x.db")).toEqual({ backend: "sqlite", path: "data/x.db" });
-    expect(parseStoreUrl("sqlite:///var/x.db")).toEqual({ backend: "sqlite", path: "/var/x.db" });
-    expect(parseStoreUrl("sqlite:///C:/x/y.db")).toEqual({ backend: "sqlite", path: "C:/x/y.db" });
-    expect(parseStoreUrl("sqlite:C:\\x\\y.db?mode=rwc")).toEqual({
-      backend: "sqlite",
-      path: "C:\\x\\y.db",
-    });
+  it("finds the SQLite path", () => {
+    expect(parseStoreUrl(DEFAULT_STORE_URL)).toEqual({ path: "data/miyoria.db" });
+    expect(parseStoreUrl("sqlite://data/x.db")).toEqual({ path: "data/x.db" });
+    expect(parseStoreUrl("sqlite:///var/x.db")).toEqual({ path: "/var/x.db" });
+    expect(parseStoreUrl("sqlite:///C:/x/y.db")).toEqual({ path: "C:/x/y.db" });
+    expect(parseStoreUrl("sqlite:C:\\x\\y.db?mode=rwc")).toEqual({ path: "C:\\x\\y.db" });
     for (const memory of ["sqlite::memory:", "memory://", "memory:", "sqlite://:memory:"]) {
-      expect(parseStoreUrl(memory)).toEqual({ backend: "sqlite", path: ":memory:" });
+      expect(parseStoreUrl(memory)).toEqual({ path: ":memory:" });
     }
-    expect(parseStoreUrl("postgres://u:p@h/db")).toEqual({
-      backend: "postgres",
-      url: "postgres://u:p@h/db",
-    });
-    expect(parseStoreUrl("postgresql://h/db").backend).toBe("postgres");
+  });
+
+  it("refuses PostgreSQL with a clear message, without echoing the URL", async () => {
+    for (const url of ["postgres://u:secret@h/db", "postgresql://h/db"]) {
+      expect(() => parseStoreUrl(url)).toThrow(/PostgreSQL is no longer supported/);
+      expect(() => parseStoreUrl(url)).not.toThrow(/secret/);
+      await expect(openStore(url)).rejects.toThrow(/sqlite:<path>/);
+    }
   });
 
   it("rejects unknown schemes without echoing the URL", () => {
