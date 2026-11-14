@@ -190,7 +190,7 @@ miyoria persona show
 pnpm install                    # 在 repo 根目錄(voice node 是 workspace 的一員)
 cd apps/voice-node
 cp .env.example .env            # 填 SELF_TOKEN、VOICE_LINK_URL、VOICE_LINK_TOKEN
-pnpm start                      # 或 pnpm build && pnpm start:dist
+pnpm start                      # 或 pnpm --filter "@miyoria/voice-node..." build && pnpm start:dist
 ```
 
 - `VOICE_LINK_TOKEN` 必須跟 Core 的 `.env` 一樣。
@@ -378,7 +378,7 @@ docker compose -f deploy/docker-compose.yml logs -f core
 
 - 資料庫 migration 在 Core 啟動時自動往前套用。**migration 不會自動回退**,要降版就是「還原備份 + 換回舊版映像檔」。
 - 想保留舊版可回退:升級前 `docker tag miyoria-core:local miyoria-core:previous`,出問題時在 `deploy/.env` 設 `MIYORIA_IMAGE=miyoria-core:previous`,`up -d` 時不加 `--build`。
-- voice node:`git pull && pnpm install && pnpm --filter @miyoria/voice-node build`,再重啟。Core 與 voice node 的協定版本不符會用 close code `4400` 拒絕連線,兩邊要一起升級。
+- voice node:`git pull && pnpm install && pnpm --filter "@miyoria/voice-node..." build`(`...` 連它用到的 `@miyoria/contracts` 一起編;用 `pnpm start` 跑的話不用編),再重啟。Core 與 voice node 的協定版本不符會用 close code `4400` 拒絕連線,兩邊要一起升級。
 - 從原始碼升級可以用 `miyoria update`(見 §4「從原始碼一個指令跑起來」),升級後跑 `miyoria doctor --deep`。
 - 設定檔有新欄位時,對照 `miyoria.example.toml` 手動合併,或重跑 `miyoria init`(可重複執行,Enter 保留現值,寫入前會問)。
 

@@ -31,13 +31,15 @@ cd apps/voice-node
 cp .env.example .env              # 然後填 SELF_TOKEN 等
 pnpm typecheck
 pnpm test
-pnpm start                        # tsx 直接跑 src/main.ts
+pnpm start                        # tsx 直接跑 src/main.ts(--conditions=@miyoria/source:workspace 套件用原始碼)
 ```
 
-也可以編譯後執行:
+協定的訊息定義在 workspace 套件 `@miyoria/contracts/voice-link`。`pnpm start`、`pnpm dev`、`pnpm test`、`pnpm typecheck` 直接讀它的原始碼,不用先編譯。
+
+也可以編譯後執行(`dist/` 用的是 `@miyoria/contracts` 編譯好的 `dist/`,所以要連它一起編):
 
 ```bash
-pnpm build                        # tsc → dist/
+pnpm --filter "@miyoria/voice-node..." build   # 先編 @miyoria/contracts,再 tsc → dist/
 pnpm start:dist                   # node dist/main.js
 ```
 
@@ -135,7 +137,7 @@ src/
   main.ts             進入點:載入設定、登入 Discord、連 Core、處理 SIGINT
   config.ts           環境變數 / .env
   log.ts              分級日誌(不記 token)
-  protocol.ts         Voice Link v1:訊息型別、解析 / 驗證、二進位訊框編解碼
+  protocol.ts         Voice Link v1:用 @miyoria/contracts/voice-link 的 schema 解析 Core 的訊息,加上 schema 說不出的部分(join 要有 channel 或 user_id、fade_ms 四捨五入並夾到 10 秒、null 當省略);二進位訊框編解碼
   link.ts             Core 的 WebSocket 用戶端:hello/welcome、ping/pong、重連退避、close code
   node.ts             協調者:Core 指令 ⇄ 各伺服器的語音 session
   guild-voice.ts      單一語音 session:@discordjs/voice 連線、AudioPlayer、收音

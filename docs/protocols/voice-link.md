@@ -5,6 +5,8 @@ Self voice node(`apps/voice-node`,TS)和 Core 的 `voice.link` 模組之間的�
 - **方向**:voice node 主動連到 Core:`ws://<core>:7879/voice-link`(位址由 `[modules."voice.link"] bind` 設定)。
 - **訊框**:文字訊框是 JSON(都有 `type` 欄位);二進位訊框是音訊。
 - **音訊格式**:一律 **PCM s16le、單聲道**。收音固定 16 kHz;播放的取樣率由 `play_start.sample_rate` 指定,voice node 負責轉成 Discord 要的 48 kHz 立體聲。
+- **Schema**:每個訊息只寫一次,是 `packages/contracts/voice-link` 的 zod schema,兩邊都用它解析;輸出成 [`packages/contracts/schema/voice-link.json`](../../packages/contracts/schema/voice-link.json)(JSON Schema,以該檔為準,下面的表格只是摘要)。Node → Core 是 `VoiceLinkNodeMessage`,Core → Node 是 `VoiceLinkCoreMessage`,每種訊息各有一個定義(`VoiceLinkHello`、`VoiceLinkJoin`…)。版本號、close code、二進位訊框的標籤和欄位上限是同一個資料夾 `protocol.ts` 裡的常數(`VOICE_LINK_VERSION`、`VOICE_LINK_CLOSE`、`VOICE_LINK_FRAME`、`VOICE_LINK_LIMITS`)。
+- **相容**:v1 之內只加不改:新欄位一定是可選或有預設值。收到不認得的欄位一律忽略。收到不認得的 `type`:node 忽略(debug 日誌);Core 記一行警告後丟掉。格式不對的訊息兩邊都是記警告、丟掉,**不回任何訊息**。
 
 ## 連線與認證
 
@@ -15,14 +17,30 @@ Self voice node(`apps/voice-node`,TS)和 Core 的 `voice.link` 模組之間的�
     "capabilities":["play_duck","play_pause"]}
    ```
    `capabilities`(可選,字串陣列,預設空)是這個 node 支援的**選用功能**,Core 只會對宣告過的 node 送對應的訊息,所以新的 Core 配舊的 node(或反過來)照常運作,版本號不變(仍是 1)。目前有:`play_duck`(`play_duck`)、`play_pause`(`play_pause` + `play_resume`)。不認得的名稱忽略。
-2. Core 回 `{"type":"welcome","session":"<ulid>"}`。token 錯誤時用 close code `4401` 關閉;版本不符用 `4400`。
+   `node`(名稱,只用在日誌)和 `capabilities` 可以省略。Core 先比對 token,再檢查其他欄位;`self_account` 的 `platform`、`id` 不可以是空字串。
+2. Core 回 `{"type":"welcome","session":"<ulid>"}`。token 錯誤(或不是字串)時用 close code `4401` 關閉;hello 格式不對、版本不是 1、5 秒內沒送 hello、第一個訊框不是 hello(或是二進位)都用 `4400`。Node 送出 hello 後 10 秒內沒收到 `welcome` 就斷線重連。
 3. 同一個 `self_account` 只允許一條連線,新的連線會取代舊的(舊的用 `4409` 關閉)。
-4. 心跳:Core 每 15 秒送 `{"type":"ping"}`,node 回 `{"type":"pong"}`;45 秒沒回應就斷線。
+4. 心跳:Core 每 15 秒(`ping_interval_ms`)送 `{"type":"ping"}`,node 回 `{"type":"pong"}`。Node 的任何訊框(包括 WebSocket 的 ping / pong)都算活著;45 秒(`peer_timeout_ms`)什麼都沒收到,Core 用 `4408` 關閉。Node 那邊 60 秒沒收到 Core 的任何訊框就自己斷線重連。Node 不送 `ping`;它送的話 Core 會回 `pong`,而 node 收到 Core 的 `pong` 會當作不認得的 `type` 忽略。
+
+**Close code**(`VOICE_LINK_CLOSE`,都是 Core 送的):
+
+| code | 意思 | node 的反應 |
+|---|---|---|
+| `4400` | hello 不對(格式、版本、逾時) | 不重連,結束行程 |
+| `4401` | token 錯誤 | 不重連,結束行程 |
+| `4408` | 太久沒收到 node 的訊框 | 重連 |
+| `4409` | 同一個 self 帳號有更新的連線 | 不重連,結束行程 |
+| `1001` | Core 正在關閉 | 重連 |
+
+其他 code(或連線直接斷掉)node 都用指數退避重連。
 
 ## Core → Node
 
+Schema:`VoiceLinkCoreMessage`。Core 沒設定的可選欄位整個鍵不送;node 把 `null` 也當作省略。Node 檢查的範圍(schema 裡寫著):`guild`、`channel`、`user_id` 是 1~64 個字元;`play` 是 u32;`sample_rate` 是 8000~192000 的整數;`gain` 是 0~1;`fade_ms` 不是負數;`source` 不是空白、最多 2048 個字元;`width`、`height`、`fps`、`bitrate_kbps` 是正整數(u32);`encoder` 是 `auto` / `nvenc` / `software`;`audio`、`listen` 是布林值。不合的訊息整則丟掉(node 記警告,不回 `error`)。Schema 說不出、由 node 解析後處理的:`join` 至少要有 `channel` 或 `user_id`;`fade_ms` 四捨五入、超過 10 秒當 10 秒、省略當 0;`levels` 只有 `true` 算數,其他值都當省略,不會因為它拒絕訊息。
+
 | type | 欄位 | 說明 |
 |---|---|---|
+| `welcome` | `session` | 回應 hello,見上面〈連線與認證〉 |
 | `join` | `guild`, `channel?`, `user_id?` | 進語音。給 `channel` 就進那個頻道;只給 `user_id` 就進那個人目前所在的頻道(node 看得到 voice state) |
 | `leave` | `guild` | 離開該伺服器的語音 |
 | `play_start` | `play`(u32), `guild`, `sample_rate`, `levels?` | 開始一段播放;接著用二進位訊框送音訊。`levels: true`:這段播放另外帶一條**嘴型音軌**(`0x03`,例如歌曲的人聲),嘴型跟它走而不是跟播出的音訊走(舊的 node 會忽略) |
@@ -33,9 +51,10 @@ Self voice node(`apps/voice-node`,TS)和 Core 的 `voice.link` 模組之間的�
 | `play_resume` | `play`, `fade_ms` | 繼續暫停的播放,`fade_ms` 毫秒淡入(回到 `play_duck` 設的音量)。需要 capability `play_pause` |
 | `golive_start` | `guild`, `source`, `channel?`, `width?`, `height?`, `fps?`, `bitrate_kbps?`, `encoder?`, `audio?`, `listen?` | 開始 Go Live,見下面〈Go Live〉 |
 | `golive_stop` | `guild` | 停止 Go Live |
-| `ping` | | |
+| `ping` | | 心跳,node 回 `pong` |
+| `pong` | | 回應 node 的 `ping`(node 不送 `ping`,收到也忽略) |
 
-`play_duck` / `play_pause` / `play_resume` 對已經結束或不存在的 `play` 無作用;`gain` 超出 0~1、`fade_ms` 為負數的訊息被拒絕(node 回 `error`)。`fade_ms` 上限 10 秒,省略視為 0。音量調整同樣套用在嘴型音量上(她小聲嘴就小動)。
+`play_duck` / `play_pause` / `play_resume` 對已經結束或不存在的 `play` 無作用;`gain` 超出 0~1、`fade_ms` 為負數的訊息被丟掉(node 只記警告,不回 `error`)。`fade_ms` 上限 10 秒,省略視為 0。音量調整同樣套用在嘴型音量上(她小聲嘴就小動)。
 
 **選擇性 barge-in(Core 端的規則,node 只負責執行上面的訊息)**:別人講話時 Core 先對播放送 `play_duck`;這回合要回的人講超過 `barge_in_ms` 就送 `play_pause`;語音辨識(ASR)回來後,如果是叫她名字、或要回的人說了實質內容就送 `play_stop`,否則(「嗯」、回音、跟她無關的話)送 `play_resume` 與 `play_duck` `gain: 1`,她接著講完剩下的句子。node 不宣告這兩個 capability(舊 node)時,Core 不送 duck、把「暫停」改成 `play_stop`(等於以前的行為)。這些決定都會以 `voice.barge_in` 事件(`{context, turn, account, action: duck|pause|resume|stop, reason}`)發到 Core 的事件匯流排。
 
@@ -45,8 +64,11 @@ Self voice node(`apps/voice-node`,TS)和 Core 的 `voice.link` 模組之間的�
 
 ## Node → Core
 
+Schema:`VoiceLinkNodeMessage`。Node 可以省略有預設值的欄位,Core 會補上:可選的字串補 `null`,`display_name` 補 `""`,`is_self` / `muted` / `deafened` 補 `false`,`capabilities` 補 `[]`。Core 只檢查 `stream`、`play`、`sample_rate`、`version` 是 u32,字串不限長度。
+
 | type | 欄位 | 說明 |
 |---|---|---|
+| `hello` | 見上面〈連線與認證〉 | 連線後的第一則;之後再送會被忽略 |
 | `joined` | `guild`, `channel` | 已進入語音頻道 |
 | `left` | `guild`, `reason?` | 已離開(被踢、頻道刪除、`leave`…) |
 | `voice_state` | `guild`, `channel`, `participants[]` | 進頻道時送一次,之後成員有變動就送。`participants` 每筆:`user_id`, `display_name`, `is_self`, `muted`, `deafened` |
@@ -55,8 +77,9 @@ Self voice node(`apps/voice-node`,TS)和 Core 的 `voice.link` 模組之間的�
 | `stream_close` | `stream` | 這個人停止說話(Discord 停止送封包);可以當作斷句的提示 |
 | `playback` | `play`, `state`(`started` / `finished` / `interrupted` / `failed`), `error?` | 播放狀態 |
 | `golive` | `guild`, `state`(`starting` / `live` / `stopped` / `failed`), `error?`, `reason?` | Go Live 狀態,見下面〈Go Live〉 |
-| `error` | `message` | 非致命錯誤(例如進頻道失敗) |
-| `pong` | | |
+| `error` | `message` | 非致命錯誤(例如進頻道失敗)。Core 用它讓最早一個還在等的 `join` 失敗 |
+| `ping` | | Core 回 `pong`(目前的 node 不送) |
+| `pong` | | 回應 Core 的 `ping` |
 
 二進位 `0x01`(收音):`[0x01][stream: u32 LE][PCM s16le 單聲道 16 kHz …]`,建議每 20 ms 一個訊框(640 bytes 的 PCM)。
 
@@ -77,10 +100,10 @@ Core 端由 `voice` 模組的 `/golive start`、`/golive stop`、`/golive status
 | 欄位 | 說明 |
 |---|---|
 | `guild` | 必填。 |
-| `source` | 必填。`rtmp://` / `rtmps://`、`srt://`、`udp://`、`rtsp://`、`http(s)://`、`file://` 或本機檔案路徑。其他(`pipe:`、`concat:`、`-` 開頭…)一律拒絕。 |
+| `source` | 必填。`rtmp://` / `rtmps://`、`srt://`、`udp://`、`rtsp://`、`http(s)://`、`file://` 或本機檔案路徑。其他(`pipe:`、`concat:`、`-` 開頭…)一律拒絕(回 `failed`)。空白或超過 2048 個字元的 `source` 不符合 schema,整則訊息被丟掉。 |
 | `channel` | 在哪個語音頻道直播。省略 = 她目前在的頻道;她不在任何頻道又沒給 `channel` 就 `failed`。給了但她不在那個頻道,node 會先進去(hybrid 模式)。 |
-| `width` `height` `fps` `bitrate_kbps` | 輸出規格,省略時用 node 的設定(預設高 1080、60 fps、6000 kbps,寬度依來源比例)。超出範圍(寬/高 16~7680/4320、fps 1~120、碼率 100~100000)回 `failed`,不會默默夾住。只給 `width` 時高度依比例。 |
-| `encoder` | `auto`(預設:`h264_nvenc` 真的開得起來就用,否則 x264)/ `nvenc` / `software`。要求 `nvenc` 但開不起來時退回 x264(node 日誌會有警告)。 |
+| `width` `height` `fps` `bitrate_kbps` | 輸出規格,省略時用 node 的設定(預設高 1080、60 fps、6000 kbps,寬度依來源比例)。超出範圍(寬/高 16~7680/4320、fps 1~120、碼率 100~100000)回 `failed`,不會默默夾住;0、負數、小數不符合 schema,整則訊息被丟掉。只給 `width` 時高度依比例。 |
+| `encoder` | `auto`(預設:`h264_nvenc` 真的開得起來就用,否則 x264)/ `nvenc` / `software`。要求 `nvenc` 但開不起來時退回 x264(node 日誌會有警告)。其他值不符合 schema,整則訊息被丟掉;Core 的 `goliveStart` 在送出前就拒絕。 |
 | `audio` | 是否送來源的音軌。預設 `true`。如果 OBS 的來源本來就含她的 TTS(例如 VB-Cable),設 `false` 避免觀眾聽到兩次。 |
 | `listen` | 誰是伺服器。**預設讓 node 的 ffmpeg 當伺服器等 OBS 來推**:`rtmp://` 預設 `-listen 1`;`srt://` 沒寫 `mode=` 時補 `mode=listener`。來源是一台已經在跑的 RTMP/SRT 伺服器(node 去拉)時給 `listen: false`(SRT 補 `mode=caller`)。URL 裡明寫的 `mode=` 優先。 |
 

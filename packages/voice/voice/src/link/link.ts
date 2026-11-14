@@ -21,6 +21,8 @@ import type { AudioStream } from "../../../speech/src/index.js";
 import {
   CLOSE,
   decodeAudio,
+  type GoLiveEncoder,
+  GoLiveEncoderSchema,
   type NodeMessage,
   NodeMessageSchema,
   TAG_CAPTURE,
@@ -154,7 +156,9 @@ function rawBytes(data: RawData): Buffer {
   return data instanceof ArrayBuffer ? Buffer.from(data) : data;
 }
 
-const ENCODERS = ["auto", "nvenc", "software"];
+function isEncoder(value: string): value is GoLiveEncoder {
+  return GoLiveEncoderSchema.safeParse(value).success;
+}
 
 export interface VoiceLinkOptions {
   config: VoiceLinkConfig;
@@ -345,10 +349,9 @@ export class VoiceLink {
   async goliveStart(req: GoLiveRequest): Promise<void> {
     if (req.guild.trim() === "") throw new VoiceLinkError("go live needs a guild");
     if (req.source.trim() === "") throw new VoiceLinkError("go live needs a source");
-    if (req.encoder !== undefined && !ENCODERS.includes(req.encoder)) {
-      throw new VoiceLinkError(
-        `unknown encoder \`${req.encoder}\` (expected auto, nvenc or software)`,
-      );
+    const encoder = req.encoder;
+    if (encoder !== undefined && !isEncoder(encoder)) {
+      throw new VoiceLinkError(`unknown encoder \`${encoder}\` (expected auto, nvenc or software)`);
     }
     for (const [name, v] of [
       ["width", req.width],
@@ -368,7 +371,7 @@ export class VoiceLink {
       height: req.height,
       fps: req.fps,
       bitrate_kbps: req.bitrateKbps,
-      encoder: req.encoder,
+      encoder,
       audio: req.audio,
       listen: req.listen,
     });
