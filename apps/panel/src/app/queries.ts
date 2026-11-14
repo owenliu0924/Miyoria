@@ -308,19 +308,19 @@ export function useDeleteMemory() {
 
 export function useRoles() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.roles, queryFn: ({ signal }) => api.roles({ signal }) });
+  return useQuery({ queryKey: queryKeys.roles, queryFn: ({ signal }) => api.rpc.roles.list(undefined, { signal }) });
 }
 
 export function useAssignments() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.assignments, queryFn: ({ signal }) => api.assignments({ signal }) });
+  return useQuery({ queryKey: queryKeys.assignments, queryFn: ({ signal }) => api.rpc.roles.assignments(undefined, { signal }) });
 }
 
 export function useMappings(platform: string, guild: string) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.mappings(platform, guild),
-    queryFn: ({ signal }) => api.mappings(platform, guild, { signal }),
+    queryFn: ({ signal }) => api.rpc.roles.mappings({ query: { platform, guild } }, { signal }),
     enabled: Boolean(platform && guild),
   });
 }
@@ -330,15 +330,15 @@ export function useAccessMutations() {
   const qc = useQueryClient();
   const auth = () => void qc.invalidateQueries({ queryKey: ["auth"] });
   return {
-    assign: useMutation({ mutationFn: (r: AssignRoleRequest) => api.assignRole(r), onSuccess: auth }),
-    revoke: useMutation({ mutationFn: (r: AssignRoleRequest) => api.revokeRole(r), onSuccess: auth }),
+    assign: useMutation({ mutationFn: (r: AssignRoleRequest) => api.rpc.roles.assign({ body: r }), onSuccess: auth }),
+    revoke: useMutation({ mutationFn: (r: AssignRoleRequest) => api.rpc.roles.revoke({ body: r }), onSuccess: auth }),
     upsertRole: useMutation({
-      mutationFn: ({ name, req }: { name: string; req: UpsertRoleRequest }) => api.upsertRole(name, req),
+      mutationFn: ({ name, req }: { name: string; req: UpsertRoleRequest }) => api.rpc.roles.upsert({ params: { name }, body: req }),
       onSuccess: auth,
     }),
-    deleteRole: useMutation({ mutationFn: (name: string) => api.deleteRole(name), onSuccess: auth }),
-    setMapping: useMutation({ mutationFn: (m: RoleMapping) => api.setMapping(m), onSuccess: auth }),
-    removeMapping: useMutation({ mutationFn: (m: RemoveMappingRequest) => api.removeMapping(m), onSuccess: auth }),
+    deleteRole: useMutation({ mutationFn: (name: string) => api.rpc.roles.remove({ params: { name } }), onSuccess: auth }),
+    setMapping: useMutation({ mutationFn: (m: RoleMapping) => api.rpc.roles.setMapping({ body: m }), onSuccess: auth }),
+    removeMapping: useMutation({ mutationFn: (m: RemoveMappingRequest) => api.rpc.roles.removeMapping({ body: m }), onSuccess: auth }),
   };
 }
 

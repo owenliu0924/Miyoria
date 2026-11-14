@@ -5,7 +5,6 @@
 import { type ApiClient, seg } from "./http";
 import { createQueries, createRpc } from "./orpc";
 import type {
-  AssignRoleRequest,
   ContextKey,
   DataCategoryId,
   DataInventory,
@@ -24,16 +23,11 @@ import type {
   MemoryRecordView,
   Page,
   QueueState,
-  RemoveMappingRequest,
-  RoleAssignment,
-  RoleDefinition,
-  RoleMapping,
   SayRequest,
   SceneRolesState,
   StageState,
   StreamAction,
   UpdateMemoryRequest,
-  UpsertRoleRequest,
   VoiceState,
   SelfView,
   WorldView,
@@ -110,22 +104,6 @@ export function createApi(client: ApiClient) {
     updateMemory: (id: string, req: UpdateMemoryRequest) =>
       client.patch<MemoryRecordView>(`/api/memory/${seg(id)}`, req),
     deleteMemory: (id: string) => client.delete<void>(`/api/memory/${seg(id)}`),
-
-    roles: (o?: Opts) => client.get<RoleDefinition[]>("/api/auth/roles", o),
-    assignments: (o?: Opts) => client.get<RoleAssignment[]>("/api/auth/assignments", o),
-    assignRole: (req: AssignRoleRequest) =>
-      client.post<RoleAssignment>("/api/auth/assignments", req),
-    revokeRole: (req: AssignRoleRequest) =>
-      client.delete<void>("/api/auth/assignments", { body: req }),
-    role: (name: string, o?: Opts) => client.get<RoleDefinition>(`/api/auth/roles/${seg(name)}`, o),
-    upsertRole: (name: string, req: UpsertRoleRequest) =>
-      client.put<RoleDefinition>(`/api/auth/roles/${seg(name)}`, req),
-    deleteRole: (name: string) => client.delete<void>(`/api/auth/roles/${seg(name)}`),
-    mappings: (platform: string, guild: string, o?: Opts) =>
-      client.get<RoleMapping[]>("/api/auth/mappings", { ...o, query: { platform, guild } }),
-    setMapping: (req: RoleMapping) => client.put<RoleMapping>("/api/auth/mappings", req),
-    removeMapping: (req: RemoveMappingRequest) =>
-      client.delete<void>("/api/auth/mappings", { body: req }),
 
     extensions: (o?: Opts) => client.get<ExtensionInfo[]>("/api/extensions", o),
     extensionAction: (id: string, action: "enable" | "disable" | "restart") =>

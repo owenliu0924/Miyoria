@@ -32,7 +32,6 @@ import { partyRoutes } from "./party.js";
 import { planRoutes } from "./plan.js";
 import { promptRoutes } from "./prompts.js";
 import { clientKey, tooMany } from "./public.js";
-import { roleRoutes } from "./roles.js";
 import type { Route } from "./route.js";
 import { type ResponseCheck, rpcRoutes } from "./rpc.js";
 import { sandboxRoutes } from "./sandbox.js";
@@ -144,7 +143,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...memberRoutes(state),
     ...goalAdminRoutes(state),
     ...memoryRoutes(state),
-    ...roleRoutes(state),
     ...opsRoutes(state),
     ...innerRoutes(state),
     ...factRoutes(state),

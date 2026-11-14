@@ -13,6 +13,25 @@
         "affinity"
       ]
     },
+    "ApiAssignRoleRequest": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "role": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/ApiAuthScope"
+        }
+      },
+      "required": [
+        "account",
+        "role",
+        "scope"
+      ]
+    },
     "ApiAuthMethods": {
       "type": "object",
       "properties": {
@@ -26,6 +45,58 @@
       "required": [
         "token",
         "discord"
+      ]
+    },
+    "ApiAuthScope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "global"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "guild"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "guild": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "platform",
+            "guild"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "channel"
+            },
+            "context": {
+              "$ref": "#/$defs/ApiContextKeyIn"
+            }
+          },
+          "required": [
+            "type",
+            "context"
+          ]
+        }
       ]
     },
     "ApiBoardChoice": {
@@ -2179,6 +2250,108 @@
         "reason"
       ]
     },
+    "ApiRemoveMappingRequest": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "platform_role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "platform_role"
+      ]
+    },
+    "ApiRoleAssignment": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "role": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/ApiAuthScope"
+        },
+        "granted_by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "role",
+        "scope",
+        "granted_by",
+        "at"
+      ]
+    },
+    "ApiRoleDefinition": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "number"
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "denies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "builtin": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "rank",
+        "grants",
+        "denies",
+        "builtin"
+      ]
+    },
+    "ApiRoleMapping": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "platform_role": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "platform_role",
+        "role"
+      ]
+    },
     "ApiScreenRequest": {
       "type": "object",
       "properties": {
@@ -2930,6 +3103,33 @@
           ]
         }
       }
+    },
+    "ApiUpsertRoleRequest": {
+      "type": "object",
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "grants": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "denies": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "rank"
+      ]
     },
     "ApiUsageInfo": {
       "type": "object",

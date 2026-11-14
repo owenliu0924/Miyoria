@@ -2,7 +2,6 @@
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
 import type { StreamAction } from "@miyoria/stage";
-import type { RoleAssignment, RoleDefinition, RoleMapping } from "@miyoria/store";
 import type {
   ActivitySnapshot,
   ActivityTask,
@@ -12,7 +11,6 @@ import type {
   Envelope,
   LedgerView,
   PersonCard,
-  PlatformId,
   SavedPrompt,
   ThoughtDigest,
   TurnOutcomeRecord,
@@ -20,7 +18,6 @@ import type {
 import { statusText } from "./errors.js";
 import type {
   ArbiterDecisionsView,
-  AssignRoleRequest,
   ConversationNoteView,
   DayPlanView,
   ErrorBody,
@@ -35,14 +32,12 @@ import type {
   PromptSummary,
   QueueState,
   ReflectionView,
-  RemoveMappingRequest,
   SayResponse,
   SceneRolesState,
   SelfView,
   StageState,
   TurnOutcomeKind,
   UpdateMemoryRequest,
-  UpsertRoleRequest,
   VoiceState,
   WorldView,
 } from "./types.js";
@@ -207,51 +202,6 @@ export class ApiClient {
 
   deleteMemory(id: string, o?: CallOptions): Promise<void> {
     return this.#empty("DELETE", ["memory", id], o);
-  }
-
-  // ---- roles & permissions --------------------------------------------------------------
-
-  /** Every role, highest rank first. */
-  roles(o?: CallOptions): Promise<RoleDefinition[]> {
-    return this.#json("GET", ["auth", "roles"], o);
-  }
-
-  role(name: string, o?: CallOptions): Promise<RoleDefinition> {
-    return this.#json("GET", ["auth", "roles", name], o);
-  }
-
-  /** Creates or replaces a role. */
-  upsertRole(name: string, request: UpsertRoleRequest, o?: CallOptions): Promise<RoleDefinition> {
-    return this.#json("PUT", ["auth", "roles", name], { ...o, body: request });
-  }
-
-  deleteRole(name: string, o?: CallOptions): Promise<void> {
-    return this.#empty("DELETE", ["auth", "roles", name], o);
-  }
-
-  assignments(o?: CallOptions): Promise<RoleAssignment[]> {
-    return this.#json("GET", ["auth", "assignments"], o);
-  }
-
-  assignRole(request: AssignRoleRequest, o?: CallOptions): Promise<RoleAssignment> {
-    return this.#json("POST", ["auth", "assignments"], { ...o, body: request });
-  }
-
-  revokeRole(request: AssignRoleRequest, o?: CallOptions): Promise<void> {
-    return this.#empty("DELETE", ["auth", "assignments"], { ...o, body: request });
-  }
-
-  /** Platform role mappings of one guild. */
-  mappings(platform: PlatformId, guild: string, o?: CallOptions): Promise<RoleMapping[]> {
-    return this.#json("GET", ["auth", "mappings"], { ...o, query: { platform, guild } });
-  }
-
-  setMapping(mapping: RoleMapping, o?: CallOptions): Promise<RoleMapping> {
-    return this.#json("PUT", ["auth", "mappings"], { ...o, body: mapping });
-  }
-
-  removeMapping(request: RemoveMappingRequest, o?: CallOptions): Promise<void> {
-    return this.#empty("DELETE", ["auth", "mappings"], { ...o, body: request });
   }
 
   // ---- extensions & MCP -----------------------------------------------------------------

@@ -162,7 +162,9 @@ export interface Envelope {
 // The routes on the route table: their shapes come from the contract, under their old names.
 export type {
   AdjustPersonRequest,
+  AssignRoleRequest,
   AuthMethods,
+  AuthScope,
   BountyView,
   BudgetState,
   ChannelLevelInfo,
@@ -227,6 +229,10 @@ export type {
   PublicToday,
   Relationship,
   RelationshipDelta,
+  RemoveMappingRequest,
+  RoleAssignment,
+  RoleDefinition,
+  RoleMapping,
   SessionInfo,
   SessionUser,
   SetPersonaRequest,
@@ -235,6 +241,7 @@ export type {
   SpendResult,
   TransferResult,
   UpdatePersonRequest,
+  UpsertRoleRequest,
   UsageInfo,
   UsageMap,
   WalletAdjustRequest,
@@ -351,56 +358,6 @@ export interface UpdateMemoryRequest {
 
 // ---------------------------------------------------------------------------
 // Roles & permissions (`RoleDefinition`, `RoleAssignment`, `AuthScope`)
-
-export type AuthScope =
-  | { type: "global" }
-  | { type: "guild"; platform: PlatformId; guild: string }
-  | { type: "channel"; context: ContextKey };
-
-export interface RoleDefinition {
-  name: string;
-  /** Higher outranks lower. */
-  rank: number;
-  grants: string[];
-  denies: string[];
-  builtin: boolean;
-}
-
-export interface RoleAssignment {
-  account: AccountRef;
-  role: string;
-  scope: AuthScope;
-  granted_by: string;
-  at: Timestamp;
-}
-
-export interface AssignRoleRequest {
-  account: AccountRef;
-  role: string;
-  scope: AuthScope;
-}
-
-/** `PUT /api/auth/roles/{name}`. */
-export interface UpsertRoleRequest {
-  rank: number;
-  grants: string[];
-  denies: string[];
-}
-
-/** Platform role (e.g. a Discord role id) → Miyoria role, per guild. */
-export interface RoleMapping {
-  platform: PlatformId;
-  guild: string;
-  platform_role: string;
-  role: string;
-}
-
-/** `DELETE /api/auth/mappings`. */
-export interface RemoveMappingRequest {
-  platform: PlatformId;
-  guild: string;
-  platform_role: string;
-}
 
 // ---------------------------------------------------------------------------
 // Extensions

@@ -10,7 +10,7 @@ import type {
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
 import type { ItemState } from "@miyoria/play/queue";
-import type { AuthScope, MemoryKind, MemoryScope } from "@miyoria/store";
+import type { MemoryKind, MemoryScope } from "@miyoria/store";
 import type {
   AccountRef,
   ArbiterDecision,
@@ -25,7 +25,6 @@ import type {
   ModuleId,
   ModuleStateKind,
   PersonId,
-  PlatformId,
   ProfileId,
   ReasoningLevel,
   ReflectionRun,
@@ -41,6 +40,7 @@ import type {
 // Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
 export type {
   AdjustPersonRequest,
+  AssignRoleRequest,
   AuthMethods,
   BudgetState,
   CardField,
@@ -82,6 +82,7 @@ export type {
   PublicState,
   PublicStatus,
   PublicToday,
+  RemoveMappingRequest,
   SessionInfo,
   SessionPermissions,
   SessionUser,
@@ -91,6 +92,7 @@ export type {
   SongAccepted,
   ThoughtSummary,
   UpdatePersonRequest,
+  UpsertRoleRequest,
   UsageInfo,
   UsageMap,
   WalletAdjustRequest,
@@ -182,29 +184,6 @@ export interface UpdateMemoryRequest {
   kind?: MemoryKind;
   importance?: number;
   done?: boolean;
-}
-
-// ---- roles & permissions ----------------------------------------------------------------
-
-/** Body of `POST` / `DELETE /api/auth/assignments`. */
-export interface AssignRoleRequest {
-  account: AccountRef;
-  role: string;
-  scope: AuthScope;
-}
-
-/** Body of `PUT /api/auth/roles/{name}`. */
-export interface UpsertRoleRequest {
-  rank: number;
-  grants?: string[];
-  denies?: string[];
-}
-
-/** Body of `DELETE /api/auth/mappings`. */
-export interface RemoveMappingRequest {
-  platform: PlatformId;
-  guild: string;
-  platform_role: string;
 }
 
 // ---- extensions -------------------------------------------------------------------------

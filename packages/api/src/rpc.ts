@@ -56,6 +56,7 @@ import { authRpc } from "./oauth.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
 import { limitMember, publicRpc } from "./public.js";
+import { roleRpc } from "./roles.js";
 import type { Method, Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
 import { walletRpc } from "./wallet.js";
@@ -77,6 +78,7 @@ export const router = os.router({
   ...coreRpc,
   channels: channelRpc,
   mind: mindRpc,
+  roles: roleRpc,
 });
 
 export type ResponseCheck = "strict" | "production";

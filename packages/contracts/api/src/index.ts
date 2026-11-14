@@ -27,6 +27,7 @@ import { mind } from "./mind.js";
 import { people } from "./people.js";
 import { persona } from "./persona.js";
 import { publicView } from "./public.js";
+import { roles } from "./roles.js";
 import { wallet } from "./wallet.js";
 
 export {
@@ -213,6 +214,22 @@ export {
   type PublicToday,
   PublicTodaySchema,
 } from "./public.js";
+export {
+  type AssignRoleRequest,
+  AssignRoleRequestSchema,
+  type AuthScope,
+  AuthScopeSchema,
+  type RemoveMappingRequest,
+  RemoveMappingRequestSchema,
+  type RoleAssignment,
+  RoleAssignmentSchema,
+  type RoleDefinition,
+  RoleDefinitionSchema,
+  type RoleMapping,
+  RoleMappingSchema,
+  type UpsertRoleRequest,
+  UpsertRoleRequestSchema,
+} from "./roles.js";
 export { type Audience, type RouteMeta, route, routeMeta } from "./route.js";
 export { type ContextKeyIn, ContextKeyInSchema } from "./shared.js";
 export {
@@ -271,6 +288,7 @@ export const contract = {
   llm,
   channels,
   mind,
+  roles,
   facts,
   public: publicView,
   member,

@@ -4,6 +4,7 @@
 // with those packages' types.
 
 import {
+  type AuthScope as ContractAuthScope,
   type CostReport as ContractCostReport,
   type DecisionRecord as ContractDecisionRecord,
   type EmergencyReport as ContractEmergencyReport,
@@ -13,6 +14,9 @@ import {
   type Person as ContractPerson,
   type Relationship as ContractRelationship,
   type RelationshipDelta as ContractRelationshipDelta,
+  type RoleAssignment as ContractRoleAssignment,
+  type RoleDefinition as ContractRoleDefinition,
+  type RoleMapping as ContractRoleMapping,
   type ThoughtSummary as ContractThoughtSummary,
   contract,
   routeMeta,
@@ -20,7 +24,16 @@ import {
 import { NODE_APPROVE, type PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport } from "@miyoria/llm/llm";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";
-import type { DecisionRecord, Person, Relationship, RelationshipDelta } from "@miyoria/store";
+import type {
+  AuthScope,
+  DecisionRecord,
+  Person,
+  Relationship,
+  RelationshipDelta,
+  RoleAssignment,
+  RoleDefinition,
+  RoleMapping,
+} from "@miyoria/store";
 import type { EmergencyReport, MindStats, Thought } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { rpcRoutes } from "../src/rpc.js";
@@ -86,6 +99,16 @@ const CASES: Case[] = [
     path: "/api/mind/resume",
     permission: "owner.autonomy.approve",
   },
+  { name: "roles.list", method: "GET", path: "/api/auth/roles" },
+  { name: "roles.get", method: "GET", path: "/api/auth/roles/:name" },
+  { name: "roles.upsert", method: "PUT", path: "/api/auth/roles/:name" },
+  { name: "roles.remove", method: "DELETE", path: "/api/auth/roles/:name" },
+  { name: "roles.assignments", method: "GET", path: "/api/auth/assignments" },
+  { name: "roles.assign", method: "POST", path: "/api/auth/assignments" },
+  { name: "roles.revoke", method: "DELETE", path: "/api/auth/assignments" },
+  { name: "roles.mappings", method: "GET", path: "/api/auth/mappings" },
+  { name: "roles.setMapping", method: "PUT", path: "/api/auth/mappings" },
+  { name: "roles.removeMapping", method: "DELETE", path: "/api/auth/mappings" },
 ];
 
 describe("the admin routes of the table", () => {
@@ -137,6 +160,14 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const emergency: Same<ContractEmergencyReport, EmergencyReport> = true;
     const approval: Same<ContractPendingApproval, PendingApproval> = true;
     expect([thought, stats, emergency, approval]).toEqual([true, true, true, true]);
+  });
+
+  it("roles, assignments and mappings", () => {
+    const role: Same<ContractRoleDefinition, RoleDefinition> = true;
+    const assignment: Same<ContractRoleAssignment, RoleAssignment> = true;
+    const mapping: Same<ContractRoleMapping, RoleMapping> = true;
+    const scope: Same<ContractAuthScope, AuthScope> = true;
+    expect([role, assignment, mapping, scope]).toEqual([true, true, true, true]);
   });
 
   it("the owner node is the one the gate's commands use", () => {

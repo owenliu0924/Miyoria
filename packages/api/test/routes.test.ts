@@ -547,41 +547,41 @@ describe("routes", () => {
 
   it("roles_assignments_and_mappings", async () => {
     const h = await harness();
-    const c = h.client;
-    const roles = await c.roles();
+    const adm = adminCalls(h.base, TOKEN);
+    const roles = await adm.roles();
     expect(roles[0]?.name).toBe("owner");
     expect(roles.every((r) => r.builtin)).toBe(true);
-    expect((await c.role("moderator")).rank).toBe(60);
-    expect(await statusOf(c.role("ghost"))).toBe(404);
+    expect((await adm.role("moderator")).rank).toBe(60);
+    expect(await statusOf(adm.role("ghost"))).toBe(404);
 
     const request: AssignRoleRequest = {
       account: account("123"),
       role: "moderator",
       scope: { type: "guild", platform: "discord", guild: "g1" },
     };
-    const created = await c.assignRole(request);
+    const created = await adm.assignRole(request);
     expect(created.granted_by).toBe("api");
     expect(created.role).toBe("moderator");
-    expect(await statusOf(c.assignRole(request))).toBe(409);
-    expect(await statusOf(c.assignRole({ ...request, role: "ghost" }))).toBe(404);
-    expect(await c.assignments()).toHaveLength(1);
+    expect(await statusOf(adm.assignRole(request))).toBe(409);
+    expect(await statusOf(adm.assignRole({ ...request, role: "ghost" }))).toBe(404);
+    expect(await adm.assignments()).toHaveLength(1);
     const all = await raw(h.base, "GET", "/api/auth/assignments", { token: TOKEN });
     expect((all.body as Array<{ scope: { type: string } }>)[0]?.scope.type).toBe("guild");
     await audited(h, "role.assign");
 
-    await c.revokeRole(request);
-    expect(await c.assignments()).toHaveLength(0);
-    expect(await statusOf(c.revokeRole(request))).toBe(404);
+    await adm.revokeRole(request);
+    expect(await adm.assignments()).toHaveLength(0);
+    expect(await statusOf(adm.revokeRole(request))).toBe(404);
     await audited(h, "role.revoke");
 
-    const custom = await c.upsertRole("dj", { rank: 30, grants: ["queue.*"], denies: [] });
+    const custom = await adm.upsertRole("dj", { rank: 30, grants: ["queue.*"], denies: [] });
     expect(custom.builtin).toBe(false);
     expect(
-      await statusOf(c.upsertRole("bad", { rank: 1, grants: ["not a node!"], denies: [] })),
+      await statusOf(adm.upsertRole("bad", { rank: 1, grants: ["not a node!"], denies: [] })),
     ).toBe(400);
-    expect(await statusOf(c.deleteRole("owner"))).toBe(409);
-    await c.deleteRole("dj");
-    expect(await statusOf(c.deleteRole("dj"))).toBe(404);
+    expect(await statusOf(adm.deleteRole("owner"))).toBe(409);
+    await adm.deleteRole("dj");
+    expect(await statusOf(adm.deleteRole("dj"))).toBe(404);
 
     const mapping: RoleMapping = {
       platform: "discord",
@@ -589,12 +589,12 @@ describe("routes", () => {
       platform_role: "555",
       role: "trusted",
     };
-    await c.setMapping(mapping);
-    expect(await c.mappings("discord", "g1")).toEqual([mapping]);
+    await adm.setMapping(mapping);
+    expect(await adm.mappings("discord", "g1")).toEqual([mapping]);
     await audited(h, "role.map");
     const remove = { platform: "discord", guild: "g1", platform_role: "555" };
-    await c.removeMapping(remove);
-    expect(await statusOf(c.removeMapping(remove))).toBe(404);
+    await adm.removeMapping(remove);
+    expect(await statusOf(adm.removeMapping(remove))).toBe(404);
     const missing = await raw(h.base, "GET", "/api/auth/mappings", { token: TOKEN });
     expect(missing.status, "platform and guild required").toBe(400);
   });
