@@ -193,6 +193,7 @@ for f in [f for f in git("ls-files", "*package.json").split("\n") if f]:
 # ---- 4. import specifiers and relative paths --------------------------------------------------
 
 SPEC = re.compile(r"""(["'])@miyoria/(""" + "|".join(re.escape(m) for m in MEMBERS) + r""")(/[^"'\n]*)?\1""")
+GROUP_FILES = ("package.json", "tsconfig.json", "tsconfig.build.json", "vitest.config.ts")
 # Not what the pass above already wrote: when the group is named after one of its parts,
 # "@miyoria/<new>/<member>" starts with "@miyoria/<member>".
 BARE = re.compile(r"(?<![\w/-])@miyoria/(" + "|".join(re.escape(m) for m in MEMBERS) + r")(?![\w-])(?!/src)"
@@ -240,6 +241,10 @@ for new_path in [f for f in git("ls-files").split("\n") if f.endswith(CODE_EXT)]
             return match.group(0)  # outside the repository: left alone
         target = "" if target == "." else target
         own = old_dir[inside] if inside else None
+        owner = member_of(target)
+        if owner and target[len(old_dir[owner]) + 1:] in GROUP_FILES:
+            # A part's own manifest or config: the group has one for all of them now.
+            return f"{quote}{relative(f'packages/{NEW}/' + target[len(old_dir[owner]) + 1:], new_from)}{quote}"
         if own and (target == own or target.startswith(own + "/")):
             return match.group(0)  # stays inside its own part
         if target not in exists_before and target.removesuffix(".js") + ".ts" not in exists_before \
