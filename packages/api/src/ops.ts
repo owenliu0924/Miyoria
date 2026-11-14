@@ -3,9 +3,13 @@
 // `panel`).
 
 import { ActuatorRegistryKey } from "@miyoria/actions";
-import { type CatalogEntry, ExtensionCatalogKey, extensionModuleId } from "@miyoria/ext-host";
 import { errorMessage, getLogger, type ModuleStatus, SupervisorKey } from "@miyoria/kernel";
-import { type ServerStatus as McpServerStatus, McpStatusKey } from "@miyoria/mcp";
+import {
+  type CatalogEntry,
+  ExtensionCatalogKey,
+  extensionModuleId,
+} from "@miyoria/plugin-host/ext-host";
+import { type ServerStatus as McpServerStatus, McpStatusKey } from "@miyoria/plugin-host/mcp";
 import { type RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import {
   defaultStageStatus,

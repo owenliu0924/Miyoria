@@ -7,10 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { ExtensionCatalog, ExtensionCatalogKey, ExtensionManifest } from "@miyoria/ext-host";
 import { Supervisor, SupervisorKey } from "@miyoria/kernel";
 import { LlmRouter, LlmRouterKey } from "@miyoria/llm";
-import { McpStatus, McpStatusKey, newServerStatus } from "@miyoria/mcp";
 import {
   type Embedder,
   MemoryEngine,
@@ -18,6 +16,12 @@ import {
   memoryConfig,
   tokenString,
 } from "@miyoria/memory";
+import {
+  ExtensionCatalog,
+  ExtensionCatalogKey,
+  ExtensionManifest,
+} from "@miyoria/plugin-host/ext-host";
+import { McpStatus, McpStatusKey, newServerStatus } from "@miyoria/plugin-host/mcp";
 import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { Social, SocialKey, socialConfig } from "@miyoria/social";
 import {

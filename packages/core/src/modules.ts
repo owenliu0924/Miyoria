@@ -20,7 +20,6 @@ import { CommandsModule } from "@miyoria/commands";
 import { DirectiveModule } from "@miyoria/directive";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
-import * as extHost from "@miyoria/ext-host";
 import { FactsModule } from "@miyoria/facts";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/game";
 import { ImageGenModule } from "@miyoria/imagegen";
@@ -40,11 +39,12 @@ import {
   OpenAiFactory,
   parseModelRef,
 } from "@miyoria/llm";
-import { McpModule } from "@miyoria/mcp";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory";
 import { MindModule } from "@miyoria/mind";
 import { ModerationModule } from "@miyoria/moderation";
 import { PartyModule } from "@miyoria/party";
+import * as extHost from "@miyoria/plugin-host/ext-host";
+import { McpModule } from "@miyoria/plugin-host/mcp";
 import type { Profile } from "@miyoria/profile";
 import { QueueModule } from "@miyoria/queue";
 import { SandboxModule } from "@miyoria/sandbox";

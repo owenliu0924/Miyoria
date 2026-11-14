@@ -43,7 +43,10 @@ import { discover } from "../src/index.js";
 
 const EXT = "ext.test.fixture";
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
-const HELLO = join(dirname(fileURLToPath(import.meta.url)), "../../../extensions/examples/hello");
+const HELLO = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../../extensions/examples/hello",
+);
 
 interface Harness {
   sup: Supervisor;

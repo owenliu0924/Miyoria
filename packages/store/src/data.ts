@@ -567,7 +567,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   category("proposed_tools", [settings("proposed_tools", "active", [], ["sandbox:tool:"])], {
     modules: ["sandbox"],
   }),
-  // @miyoria/ext-host `storageKey`
+  // @miyoria/plugin-host/ext-host `storageKey`
   category("extensions", [settings("extension_storage", "active", [], ["ext:"])]),
   category(
     "module_state",

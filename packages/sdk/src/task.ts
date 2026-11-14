@@ -1,7 +1,7 @@
 // The task contract for activity-type extensions (docs/design/v2-architecture.md §3.8).
 //
 // A copy of `@miyoria/types` `task.ts` (the SDK does not depend on the core packages; the JSON
-// shapes are identical and a test in `@miyoria/ext-host` compares them), plus `TaskRunner`: the
+// shapes are identical and a test in `@miyoria/plugin-host/ext-host` compares them), plus `TaskRunner`: the
 // typed way to implement `TaskExecutor`. The runner owns the lifecycle so an extension only
 // writes `run(spec, task)`:
 //

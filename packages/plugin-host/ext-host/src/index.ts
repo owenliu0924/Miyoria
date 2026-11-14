@@ -1,4 +1,4 @@
-// @miyoria/ext-host: the extension host (module `extensions`).
+// @miyoria/plugin-host/ext-host: the extension host (module `extensions`).
 //
 // Extensions are separate processes described by `miyoria.extension.toml`. Each one runs as its
 // own supervisor module `ext.<id>` and talks JSON-RPC 2.0 over stdio with `Content-Length`

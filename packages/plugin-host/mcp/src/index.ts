@@ -1,4 +1,4 @@
-// @miyoria/mcp: MCP integration (module `mcp`).
+// @miyoria/plugin-host/mcp: MCP integration (module `mcp`).
 //
 // Client. Every server in `[mcp.servers.<name>]` is connected over stdio or Streamable HTTP
 // (concurrently, in the background; a server that fails to start never fails the module). Its
