@@ -82,7 +82,3 @@ export const ModerationConfigSchema = z.object({
 });
 
 export type ModerationConfig = z.output<typeof ModerationConfigSchema>;
-
-export function defaultModerationConfig(): ModerationConfig {
-  return ModerationConfigSchema.parse({});
-}

@@ -872,9 +872,6 @@ export interface PanelsOptions {
   policyUrl?: string | null;
 }
 
-/** Slash commands of the four panels, in display order. */
-export const PANEL_COMMANDS = ["miyo", "song", "me", "admin"] as const;
-
 /** The four panels (see the page tables above). */
 export function panelDefs(options: PanelsOptions = {}): PanelDef[] {
   const policyUrl = options.policyUrl?.trim() || null;
@@ -918,7 +915,7 @@ export function panelDefs(options: PanelsOptions = {}): PanelDef[] {
   ];
 }
 
-/** Registers the four panels. Undo with `unregisterPanels`. */
+/** Registers the four panels. */
 export function registerPanels(registry: CommandRegistry, options: PanelsOptions = {}): void {
   const defs = panelDefs(options);
   const mapped = mappedPaths(defs);
@@ -927,10 +924,6 @@ export function registerPanels(registry: CommandRegistry, options: PanelsOptions
   for (const def of defs) {
     registerPanelCommand(registry, def, { services: options.services ?? null, mapped });
   }
-}
-
-export function unregisterPanels(registry: CommandRegistry): void {
-  for (const command of PANEL_COMMANDS) registry.unregisterPanel(command);
 }
 
 /** The commands the panels run (their paths), for tests and docs. */

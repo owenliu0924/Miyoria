@@ -177,9 +177,6 @@ class BoundLogger implements Logger {
   }
 }
 
-/** The root logger (no bindings). Prefer `getLogger(scope)` or `ctx.log`. */
-export const rootLogger: Logger = new BoundLogger({});
-
 /** Logger bound to `{ scope }`, e.g. `getLogger("kernel.supervisor")`. */
 export function getLogger(scope: string): Logger {
   return new BoundLogger({ scope });

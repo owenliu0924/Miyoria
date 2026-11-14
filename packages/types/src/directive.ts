@@ -33,10 +33,6 @@ export const DIRECTIVE_AUTHORITIES = ["owner", "moderator", "system", "viewer"] 
 
 export type DirectiveAuthority = (typeof DIRECTIVE_AUTHORITIES)[number];
 
-export function isDirectiveAuthority(value: unknown): value is DirectiveAuthority {
-  return typeof value === "string" && (DIRECTIVE_AUTHORITIES as readonly string[]).includes(value);
-}
-
 /** What a rule applies to. Every field narrows it; a field left out does not. */
 export interface DirectiveScope {
   /** A capability or tool name, or a pattern (`game.*`, `*`). */

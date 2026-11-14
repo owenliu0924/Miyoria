@@ -84,9 +84,9 @@ export class InvalidToolNameError extends Error {
 }
 
 /** 1–64 ASCII letters, digits, `_` or `-` (what every provider accepts). */
-export const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
-export function isValidToolName(name: string): boolean {
+function isValidToolName(name: string): boolean {
   return TOOL_NAME.test(name);
 }
 

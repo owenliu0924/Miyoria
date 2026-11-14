@@ -35,7 +35,6 @@ export {
 } from "./builtin.js";
 export { AuthCommands, COMMAND_PATHS } from "./commands.js";
 export {
-  type AuthConfig,
   AuthConfigSchema,
   AuthModule,
   AuthServiceKey,

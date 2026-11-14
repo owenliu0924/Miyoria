@@ -31,7 +31,6 @@ export const RuleSchema = z.object({
   note: z.string().default(""),
 });
 
-export type RuleInput = z.input<typeof RuleSchema>;
 export type RuleDef = z.output<typeof RuleSchema> & {
   /** Built-in rules only: a match must also pass this (a card number must pass Luhn). */
   test?: (match: string) => boolean;

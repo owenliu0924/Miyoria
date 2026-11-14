@@ -43,8 +43,6 @@ export const SELF_BLOCK_KEYS = [
   "self.notices",
 ] as const;
 
-export type SelfBlockKey = (typeof SELF_BLOCK_KEYS)[number];
-
 export interface PromptBlock extends PromptSection {
   authority: PromptAuthority;
   /** Provenance shown in the data block (`記憶`, `人物卡`, `遊戲聊天`, `網頁`). */

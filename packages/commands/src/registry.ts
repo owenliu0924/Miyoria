@@ -297,17 +297,6 @@ export class CommandRegistry {
     this.#store(this.#panels, key, `${PANEL_OWNER}${key}`, spec, handler, options);
   }
 
-  /** Removes a panel command (and its component routes). */
-  unregisterPanel(path: string): boolean {
-    const key = splitPath(path).join(" ");
-    const removed = this.#panels.delete(key);
-    if (removed) {
-      this.#dropRoutes(`${PANEL_OWNER}${key}`);
-      this.#bump();
-    }
-    return removed;
-  }
-
   /**
    * Registers (or replaces) a context menu entry. Throws `CommandError` for a bad name or id,
    * or when the platform's limit per target would be passed.

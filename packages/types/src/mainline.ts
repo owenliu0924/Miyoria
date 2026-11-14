@@ -320,6 +320,3 @@ export const MouthKey = serviceKey<Mouth>("Mouth");
 
 /** The error of a line the scheduler refused for going around the main line. */
 export const NOT_MAIN_LINE = "not the main line";
-
-/** Bus topic: one `MainResultBody`, for whoever follows actions without reading the log. */
-export const MAIN_RESULT_TOPIC = "mainline.result";

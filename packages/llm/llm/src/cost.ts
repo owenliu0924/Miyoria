@@ -55,9 +55,6 @@ export function callCost(p: Pricing, usage: Usage): number {
   );
 }
 
-/** What to do when the budget is used up: reject requests, or keep going on fallback models. */
-export type OnExhausted = "stop" | "fallback";
-
 /**
  * `[llm.budget]`. Limits `<= 0` count as unset.
  *

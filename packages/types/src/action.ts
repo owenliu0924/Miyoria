@@ -21,8 +21,6 @@ export function voiceLane(platform: string, scope: string): LaneKey {
   return `voice:${platform}:${scope}`;
 }
 
-export const AVATAR_LANE: LaneKey = "avatar";
-
 /**
  * Serialized as the snake_case name. Lower rank = more urgent (see `PRIORITY_RANK`):
  * `system` (system / admin output) > `direct` (reply to someone who addressed her) >

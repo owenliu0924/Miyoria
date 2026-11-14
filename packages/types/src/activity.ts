@@ -26,12 +26,6 @@ import type { Timestamp } from "./time.js";
 /** The three resources; each has its own mutex. */
 export type ActivityResource = "presence" | "broadcast" | "activity";
 
-export const ACTIVITY_RESOURCES: readonly ActivityResource[] = [
-  "presence",
-  "broadcast",
-  "activity",
-];
-
 // ---- states ---------------------------------------------------------------------------------
 
 /**
@@ -66,14 +60,6 @@ export type HerBroadcast =
 
 /** What she is busy with. `idle` has no phase. */
 export type ActivityType = "idle" | "chatting" | "singing" | "game" | "browse";
-
-export const ACTIVITY_TYPES: readonly ActivityType[] = [
-  "idle",
-  "chatting",
-  "singing",
-  "game",
-  "browse",
-];
 
 export type ActivityPhase = "starting" | "running" | "stopping" | "failed";
 

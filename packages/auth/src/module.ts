@@ -48,8 +48,6 @@ export const AuthConfigSchema = z.object({
   refresh_secs: z.number().int().nonnegative().default(300),
 });
 
-export type AuthConfig = z.output<typeof AuthConfigSchema>;
-
 /** The `AuthService` (cached roles, assignments, overrides and management API). */
 export const AuthServiceKey = serviceKey<AuthService>("AuthService");
 

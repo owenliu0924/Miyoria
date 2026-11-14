@@ -17,14 +17,6 @@ import { serviceKey } from "./service-key.js";
  */
 export type PrincipalKind = "self" | "user" | "command" | "panel" | "director";
 
-export const PRINCIPAL_KINDS: readonly PrincipalKind[] = [
-  "self",
-  "user",
-  "command",
-  "panel",
-  "director",
-];
-
 /** On whose behalf an action runs (serialized into audit entries and `gate.decision`). */
 export interface Principal {
   kind: PrincipalKind;

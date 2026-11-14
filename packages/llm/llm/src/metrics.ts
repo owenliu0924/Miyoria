@@ -16,9 +16,6 @@ export const FIRST_TOKEN_BUCKETS: readonly number[] = [
   0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 13, 20, 30, 60,
 ];
 
-/** Where an LLM call failed: before its first event (falls back) or mid-stream. */
-export type ErrorStage = "request" | "stream";
-
 /**
  * Error classes counted by `miyoria_llm_errors_total`: `connect_timeout`, `timeout`,
  * `http_4xx`, `http_5xx`, `aborted` or `error`.

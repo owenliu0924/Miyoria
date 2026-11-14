@@ -13,7 +13,6 @@ export {
   CALL_LOG_PRELOAD_MAX_BYTES,
   CALL_LOG_PRUNE_INTERVAL_MS,
   CALL_LOG_WARN_INTERVAL_MS,
-  type CallLogConfig,
   CallLogConfigSchema,
   callLine,
   type FinishedLlmCall,
@@ -63,7 +62,6 @@ export {
   callCost,
   type EventSink,
   type ModelUsage,
-  type OnExhausted,
   type PeriodReport,
   type Pricing,
   PricingSchema,
@@ -73,7 +71,6 @@ export {
   USAGE_PROFILE,
 } from "./cost.js";
 export {
-  type ErrorStage,
   errorKind,
   FIRST_TOKEN_BUCKETS,
   type LlmMetrics,

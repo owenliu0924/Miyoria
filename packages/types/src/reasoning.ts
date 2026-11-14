@@ -10,10 +10,6 @@ export const REASONING_LEVELS = ["off", "low", "medium", "high"] as const;
 
 export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
 
-export function isReasoningLevel(value: unknown): value is ReasoningLevel {
-  return typeof value === "string" && (REASONING_LEVELS as readonly string[]).includes(value);
-}
-
 /** Whether the provider's reasoning switch is on at `level`. */
 export function reasoningEnabled(level: ReasoningLevel): boolean {
   return level !== "off";

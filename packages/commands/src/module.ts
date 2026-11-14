@@ -78,8 +78,6 @@ export const CommandsConfigSchema = z.object({
   visibility: z.record(z.string().min(1), z.enum(["public", "private"])).default({}),
 });
 
-export type CommandsConfig = z.output<typeof CommandsConfigSchema>;
-
 export interface CommandsModuleOptions {
   /** More owners from elsewhere in the config (the app passes `[modules.auth] owners`). */
   owners?: readonly string[];

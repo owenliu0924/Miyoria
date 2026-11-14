@@ -140,7 +140,3 @@ function outcome(
   if (result === null) return notice("error", MENU_TEXT.failed);
   return result.ok ? notice("success", result.note ?? done) : notice("warn", result.reason);
 }
-
-export function unregisterMenus(registry: CommandRegistry): void {
-  for (const id of [MENU_REPLY, MENU_FORGET, MENU_PERSON]) registry.unregisterMenu(id);
-}

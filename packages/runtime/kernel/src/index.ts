@@ -45,7 +45,6 @@ export {
   type Logger,
   type LoggingOptions,
   type LogLevel,
-  rootLogger,
 } from "./log.js";
 export {
   Counter,

@@ -38,8 +38,6 @@ export const CallLogConfigSchema = z.object({
   /** `false`: metadata only, always. */
   bodies: z.boolean().default(true),
 });
-export type CallLogConfig = z.output<typeof CallLogConfigSchema>;
-
 /** Lines waiting for the writer; past this, new ones are dropped. */
 export const CALL_LOG_MAX_QUEUE = 1000;
 /** At most one warning about dropped lines per this many ms. */

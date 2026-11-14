@@ -14,7 +14,6 @@ export {
   type ActionSettled,
   type ActionSink,
   ActionSinkKey,
-  AVATAR_LANE,
   actionPlatform,
   actLane,
   comparePriority,
@@ -33,7 +32,6 @@ export {
   type ActuatorExecutor,
   ActuatorExecutorKey,
   isAutonomous,
-  PRINCIPAL_KINDS,
   type Principal,
   type PrincipalKind,
   Principals,
@@ -420,7 +418,6 @@ export {
   INTERRUPT_LEVELS,
   type InterruptLevel,
   isPipeline,
-  MAIN_RESULT_TOPIC,
   type MainActionBody,
   type MainResultBody,
   type Mouth,
@@ -470,10 +467,8 @@ export {
   ACTIVITY_CHANGED_TOPIC,
   ACTIVITY_DONE_TOPIC,
   ACTIVITY_FAILED_TOPIC,
-  ACTIVITY_RESOURCES,
   ACTIVITY_RESTORE_TOPIC,
   ACTIVITY_STARTED_TOPIC,
-  ACTIVITY_TYPES,
   type ActivityFailure,
   type ActivityManager,
   ActivityManagerKey,
@@ -610,7 +605,6 @@ export {
   DirectivesKey,
   type DirectiveVerdict,
   directiveLive,
-  isDirectiveAuthority,
   isDirectiveEffect,
 } from "./directive.js";
 export {
@@ -729,7 +723,6 @@ export {
   type Participation,
   ParticipationKey,
   PLAY_ACTIVITIES,
-  type PlayActivity,
   type PlayAward,
   type PlayStatus,
 } from "./participation.js";
@@ -777,7 +770,6 @@ export {
   type PromptBlock,
   type SavedPrompt,
   SELF_BLOCK_KEYS,
-  type SelfBlockKey,
 } from "./prompt-block.js";
 export {
   type PartyGameStatus,
@@ -789,7 +781,6 @@ export {
 export { type KnownName, mentionsAnother, type NameSplit, splitNames } from "./public-text.js";
 export {
   DEFAULT_REASONING,
-  isReasoningLevel,
   REASONING_LEVELS,
   REASONING_PURPOSES,
   type ReasoningLevel,
@@ -939,7 +930,6 @@ export {
   type DrivenStep,
   type DrivenWork,
   type DrivenWorkSpec,
-  isWorkEnd,
   WORK_ENDS,
   WORK_LIST,
   WORK_OWNER,
