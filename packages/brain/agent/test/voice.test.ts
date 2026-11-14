@@ -252,7 +252,7 @@ describe("voice", () => {
 
   it("no_reply_while_someone_is_speaking", async () => {
     const mock = new MockProvider("chat").reply("我看過喔。");
-    const cfg = voiceConfig("ambient");
+    const cfg = voiceConfig("normal");
     // She never joins in over someone (the voice prefilter; no interrupt scale any more).
     const h = await Harness.create("off", cfg, mock);
     h.publish(joined());
@@ -318,7 +318,7 @@ describe("voice", () => {
     const fast = new MockProvider("fast").reply('{"respond": true, "reason": "她的話題"}');
     const config = {
       attention: { keywords: ["鯨魚"], llm_yes_probability: 1.0, cooldown_ms: 0 },
-      voice: { default_mode: "ambient", cooldown_ms: 0, llm_check: true, gray_low: 0 },
+      voice: { default_mode: "normal", cooldown_ms: 0, llm_check: true, gray_low: 0 },
     };
     const h = await Harness.build("ambient", config, chat, fast, {
       thinking: new Map([
@@ -669,7 +669,7 @@ describe("voice", () => {
 
   it("voice_mode_command", async () => {
     const mock = new MockProvider("chat").reply("嗯。");
-    const h = await Harness.build("ambient", voiceConfig("ambient"), mock, null, {
+    const h = await Harness.build("ambient", voiceConfig("normal"), mock, null, {
       owners: ["test:Owen"],
     });
     const reg = h.sup.services.require(CommandRegistryKey);

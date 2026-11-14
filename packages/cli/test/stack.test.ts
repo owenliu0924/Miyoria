@@ -21,7 +21,6 @@ import {
   type DeepDeps,
   type DeepInput,
   healthChecks,
-  legacyConfigNotes,
   portChecks,
   workerChecks,
 } from "../src/stack/checks.js";
@@ -375,19 +374,6 @@ describe("doctor --deep: builds", () => {
     expect(jdk?.detail).toContain("8");
     expect(f.find((x) => x.what === "遊戲裡的 mod")?.level).toBe("fail");
     expect(existsSync(mods)).toBe(true);
-  });
-});
-
-describe("legacy config", () => {
-  it("lists_v2_leftovers_by_key_only", () => {
-    const notes = legacyConfigNotes(
-      Config.fromToml(
-        '[modules.agent]\ndefault_mode = "ambient"\n[modules.agent.voice]\ncooldown_ms = 5\ninterrupt_scale = 2',
-        NOENV,
-      ),
-    );
-    expect(notes).toHaveLength(1);
-    expect(notes.join("\n")).not.toContain("= 5");
   });
 });
 

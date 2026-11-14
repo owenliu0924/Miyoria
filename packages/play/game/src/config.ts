@@ -17,7 +17,7 @@ const ContextKeySchema = z.object({
   kind: z.enum(["channel", "thread", "dm", "voice"]),
 });
 
-/** Defaults of the method guard (methods.ts), whichever name the config used. */
+/** Defaults of the method guard (methods.ts). */
 export const METHOD_DEFAULTS = { method_repeat_limit: 2, method_hold_secs: 600 } as const;
 
 /**
@@ -29,7 +29,7 @@ export const METHOD_DEFAULTS = { method_repeat_limit: 2, method_hold_secs: 600 }
  * stream_context = { platform = "discord", scope = "123", channel = "456", kind = "voice" }
  * ```
  */
-const GameConfigFields = z.object({
+export const GameConfigSchema = z.object({
   /** Game id used when `game start` names none. */
   default_game: z.string().default("minecraft"),
   /** Regular decision interval while playing. */
@@ -62,19 +62,10 @@ const GameConfigFields = z.object({
    * The same method (an action with its item, `obtain:bread`) failing this many times in a row
    * with the same code is held for `method_hold_secs`; one `invalid` holds an item method for the
    * rest of the session. A goal that runs out of attempts holds its item the same way. 0 turns it
-   * off. Defaults 2 and 600 (`METHOD_DEFAULTS`); `repeat_failure_limit` / `repeat_guard_secs`
-   * are older names of the two (see below).
+   * off. Defaults 2 and 600 (`METHOD_DEFAULTS`).
    */
-  method_repeat_limit: z.number().int().nonnegative().optional(),
-  method_hold_secs: z.number().nonnegative().optional(),
-  /**
-   * Older names of `method_repeat_limit` / `method_hold_secs`, from a goal guard written beside
-   * this one (PR 8, keyed by the action's parameter string and released after a fixed time). The
-   * method guard took its place; a config that sets these still sets the method guard, unless the
-   * new name is set too.
-   */
-  repeat_failure_limit: z.number().int().nonnegative().optional(),
-  repeat_guard_secs: z.number().nonnegative().optional(),
+  method_repeat_limit: z.number().int().nonnegative().default(METHOD_DEFAULTS.method_repeat_limit),
+  method_hold_secs: z.number().nonnegative().default(METHOD_DEFAULTS.method_hold_secs),
   /**
    * When a held method may come back (methods.ts). `changed`: only once something changed (an item
    * the failure said was missing is in her inventory now, another method got her somewhere), and
@@ -214,16 +205,6 @@ const GameConfigFields = z.object({
   max_llm_nudge: z.number().default(0.1),
   permissions: GamePermissionsSchema.prefault({}),
 });
-
-/** `[modules.game]`, with the method guard's older key names read as its own. */
-export const GameConfigSchema = GameConfigFields.transform(
-  ({ repeat_failure_limit, repeat_guard_secs, ...cfg }) => ({
-    ...cfg,
-    method_repeat_limit:
-      cfg.method_repeat_limit ?? repeat_failure_limit ?? METHOD_DEFAULTS.method_repeat_limit,
-    method_hold_secs: cfg.method_hold_secs ?? repeat_guard_secs ?? METHOD_DEFAULTS.method_hold_secs,
-  }),
-);
 export type GameConfig = z.output<typeof GameConfigSchema>;
 
 /** Defaults of every field (the Rust `Default` impl). */

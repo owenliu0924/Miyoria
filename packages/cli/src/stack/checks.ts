@@ -696,31 +696,6 @@ export async function healthChecks(input: DeepInput): Promise<Finding[]> {
   return findings;
 }
 
-// ---- leftovers from older setups ---------------------------------------------------------
-
-/** Old values that still parse but no longer do anything. Keys only; values are not printed. */
-export function legacyConfigNotes(config: Config): string[] {
-  const notes: string[] = [];
-  const agent = config.module("agent").config;
-  if (isJsonObject(agent)) {
-    const modes = [
-      agent.default_mode,
-      ...(isJsonObject(agent.channels) ? Object.values(agent.channels) : []),
-    ];
-    if (modes.includes("ambient")) {
-      notes.push('[modules.agent] 的聊天等級 "ambient" 已改名為 "normal"');
-    }
-  }
-  return notes;
-}
-
-export function legacyChecks(input: DeepInput): Finding[] {
-  const notes = legacyConfigNotes(input.config);
-  return notes.length === 0
-    ? [ok("舊設定", "沒有 V2 留下的舊值")]
-    : notes.map((n) => warn("舊設定", n, ["`miyoria config unset <key>` 或直接編輯 miyoria.toml"]));
-}
-
 // ---- all ---------------------------------------------------------------------------------
 
 export async function deepChecks(input: DeepInput): Promise<Finding[]> {
@@ -732,7 +707,6 @@ export async function deepChecks(input: DeepInput): Promise<Finding[]> {
     () => tempChecks(input),
     () => vramChecks(input),
     () => healthChecks(input),
-    () => legacyChecks(input),
   ];
   const out: Finding[] = [];
   for (const group of groups) {

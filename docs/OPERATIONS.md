@@ -284,7 +284,6 @@ sing = { venv = "workers/.venv-sing", port = 8005, offload = ["tts", "asr"] }
 | 暫存檔 | 在暫存資料夾寫、讀、刪 2 MB 檔案(防毒鎖檔的症狀)、殘留的 `esbuild-*`、偵測到 Kaspersky 等會說明 |
 | 顯存 | `nvidia-smi` 的使用量,以及各 worker 估計值(含 offload)的尖峰是否超過總量 92% |
 | 服務健康 | 各服務 `/health`;執行中的 core 版本和這份 CLI 不同 |
-| 舊設定 | V2 留下的聊天等級 `ambient` |
 
 Windows 保留埠的處理需要系統管理員,要自己做:`netsh interface ipv4 show excludedportrange protocol=tcp` 查看,`net stop winnat` 再 `net start winnat` 釋放;長期做法是 `netsh int ipv4 set dynamic tcp start=49152 num=16384`(要重開機)。
 
@@ -295,7 +294,6 @@ Windows 保留埠的處理需要系統管理員,要自己做:`netsh interface ip
 3. 只重建過期的:SDK、各擴充的 `dist`、面板、overlay、Minecraft mod。比的是原始碼和輸出的檔案時間;`--force` 全部重建,`--skip-mod` 跳過 mod。
 4. 面板與 overlay 一律用 `vite build --minify false --target esnext`(避開防毒鎖住 esbuild 暫存檔),輸出先到 `dist.next`,成功才換掉 `dist`;失敗時舊的 `dist` 原封不動。
 5. mod 用找到的 JDK 21 建置(只對這次 Gradle 設 `JAVA_HOME`,不改系統設定)。要覆蓋 `<minecraft_dir>/mods` 裡的 jar 時**先問**,舊檔備份到 `<minecraft_dir>/miyoria-backup/<時間>/`;自動化加 `--yes`,非互動又沒有 `--yes` 就不覆蓋。請先關掉遊戲。
-6. 最後列出 V2 留下的舊設定值(只提示,不自動改寫)。
 
 `--dry-run` 只列出會做的事。更新後已在執行的 core / worker 要重啟(`miyoria up`)。
 

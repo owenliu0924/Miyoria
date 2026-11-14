@@ -171,15 +171,15 @@ describe("channel levels", () => {
     );
   });
 
-  it("read the old `ambient` as normal and accept the new names", () => {
+  it("read the old `ambient` as normal when typed or saved; config takes the new names only", () => {
     expect(parseChannelMode("ambient")).toBe("normal");
     expect(parseChannelMode("Quiet")).toBe("quiet");
     expect(parseChannelMode("lively")).toBe("lively");
-    expect(ChannelModeSchema.parse("ambient")).toBe("normal");
+    expect(() => ChannelModeSchema.parse("ambient")).toThrow();
     const cfg = AgentConfigSchema.parse({
       default_mode: "quiet",
-      channels: { a: "ambient", b: "lively" },
-      voice: { default_mode: "ambient" },
+      channels: { a: "normal", b: "lively" },
+      voice: { default_mode: "normal" },
     });
     expect(cfg.default_mode).toBe("quiet");
     expect(cfg.channels).toEqual({ a: "normal", b: "lively" });

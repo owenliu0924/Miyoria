@@ -77,7 +77,6 @@ export function parseActiveness(s: string): Activeness {
     case "low":
       return "low";
     case "medium":
-    case "normal":
       return "medium";
     case "high":
       return "high";
@@ -86,10 +85,15 @@ export function parseActiveness(s: string): Activeness {
   }
 }
 
-/** A channel mode in config; also accepts the old `ambient` (= `normal`). */
-export const ChannelModeSchema = z
-  .enum(["off", "mention-only", "quiet", "normal", "lively", "always", "ambient"])
-  .transform((v): ChannelMode => (v === "ambient" ? "normal" : v));
+/** A channel mode in config. */
+export const ChannelModeSchema = z.enum([
+  "off",
+  "mention-only",
+  "quiet",
+  "normal",
+  "lively",
+  "always",
+]) satisfies z.ZodType<ChannelMode>;
 export const ActivenessSchema = z.enum(["low", "medium", "high"]);
 
 /**

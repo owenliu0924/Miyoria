@@ -53,6 +53,7 @@ describe("config", () => {
 
     expect(parseActiveness("HIGH")).toBe("high");
     expect(() => parseActiveness("loud")).toThrow("unknown activeness `loud`");
+    expect(() => parseActiveness("normal")).toThrow("unknown activeness `normal`");
   });
 
   it("parses_modes", () => {
