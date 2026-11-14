@@ -1,6 +1,7 @@
-// `max_unanswered` (docs/design/v3-architecture.md §7.2, 有人回應才算對話), a stop-gap inside the
-// V2 Arbiter: both halves of the rule live here, what counts as her starting to talk and what
-// counts as a person responding.
+// What counts as her starting to talk and as a person responding (docs/design/v3-architecture.md
+// §7.2, 有人回應才算對話), for the count the Arbiter's ledger keeps (`Ledger.startedTalking`,
+// `heard`). Whether she may talk now is the Floor's (floor.ts), which counts from the
+// DeliveryLedger.
 //
 // The other rules on her own starts (caps, gaps, backoff) only look at `isSelfInitiated`, but in
 // the run of 2026-11-07 that was a few of her 83 self-started turns: nearly all were game

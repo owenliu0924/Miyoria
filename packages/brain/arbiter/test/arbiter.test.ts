@@ -180,33 +180,6 @@ describe("floors", () => {
     expect(again).toMatchObject({ verdict: "rejected", reason: "rate" });
   });
 
-  it("gaps: between any two starts, per place, and the level's gap", async () => {
-    const r = rig({ min_gap_secs: 60, gap_text_secs: 600 });
-    expect(
-      (await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }))).verdict,
-    ).toBe("accepted");
-    const soon = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: THERE }));
-    expect(soon).toMatchObject({ verdict: "rejected", reason: "cooldown" });
-    expect(Date.parse(soon.retry_at as string)).toBe(T0 + 60_000);
-    r.clock.advance(2 * MIN);
-    expect(
-      (await r.arbiter.submit(impulse(r.clock, { source: "plan", context: THERE }))).verdict,
-    ).toBe("accepted");
-    r.clock.advance(2 * MIN);
-    const here = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    expect(here).toMatchObject({ verdict: "rejected", reason: "cooldown" });
-    expect(Date.parse(here.retry_at as string)).toBe(T0 + 10 * MIN);
-    expect(here.detail).toContain("4 分鐘前");
-
-    const lvl = rig({ min_gap_secs: 0, gap_text_secs: 60 });
-    lvl.host.set(HERE, { mode: "quiet", start_gap_ms: 3 * 60 * MIN });
-    await lvl.arbiter.submit(impulse(lvl.clock, { source: "plan", context: HERE }));
-    lvl.clock.advance(10 * MIN);
-    expect(
-      await lvl.arbiter.submit(impulse(lvl.clock, { source: "plan", context: HERE })),
-    ).toMatchObject({ verdict: "rejected", reason: "ceiling" });
-  });
-
   it("greetings wait a moment after she spoke (deferred, then retried)", async () => {
     const r = rig({ after_speech_text_secs: 5 });
     r.host.set(HERE, { last_spoke_at: T0 - 2_000 });
@@ -292,19 +265,22 @@ describe("ordering, merging, preemption, expiry", () => {
 
 describe("ledger", () => {
   it("every block is recorded with its reason; limits show what applies", async () => {
-    const r = rig({ max_per_day: 5, min_gap_secs: 0, gap_text_secs: 600 });
+    const r = rig({ max_per_day: 5, max_per_context_per_day: 1 });
     await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE, hint: "週末要幹嘛" }));
     const blocked = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
     expect(blocked.verdict).toBe("rejected");
     const entries = payloads<LedgerEntry>(r.events, LEDGER_TOPIC);
     const denied = entries.filter((e) => e.outcome === "denied");
     expect(denied).toHaveLength(1);
-    expect(denied[0]?.detail).toMatch(/^cooldown: /);
+    expect(denied[0]?.detail).toMatch(/^rate: /);
     expect(denied[0]?.self_initiated).toBe(true);
     const view = r.arbiter.ledger(HERE);
     expect(view.limits.initiatives_today).toBe(1);
     expect(view.limits.initiative_cap).toBe(5);
-    expect(view.limits.next_initiative_at).toBe(new Date(T0 + 10 * MIN).toISOString());
+    // Not before the rule that blocked her lets go (quiet hours may come after it).
+    expect(Date.parse(view.limits.next_initiative_at as string)).toBeGreaterThanOrEqual(
+      Date.parse(blocked.retry_at as string),
+    );
     // Elsewhere she may start now.
     expect(r.arbiter.ledger(THERE).limits.next_initiative_at).toBeNull();
     expect(view.entries[0]?.context).toEqual(HERE);
@@ -329,7 +305,7 @@ describe("ledger", () => {
     expect(r.arbiter.ledger().entries[0]).toMatchObject({ outcome: "failed", detail: "OBS 沒開" });
   });
 
-  it("a topic nobody picked up: topic_ignored, the streak and the backoff", async () => {
+  it("a topic nobody picked up: topic_ignored and the streak", async () => {
     const r = rig({ min_gap_secs: 0, gap_text_secs: 600, reply_window_text_secs: 600 });
     const d = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
     const turn = d.turn as string;
@@ -344,11 +320,6 @@ describe("ledger", () => {
     const view = r.arbiter.ledger(HERE);
     expect(view.limits.unanswered_streak).toBe(1);
     expect(view.unanswered.map((t) => t.text)).toEqual(["欸你們週末要幹嘛"]);
-    // The gap doubled: 20 minutes after her start, with the reason "unanswered" past the base.
-    const again = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    expect(again).toMatchObject({ verdict: "rejected", reason: "unanswered" });
-    expect(Date.parse(again.retry_at as string)).toBe(T0 + 20 * MIN);
-    expect(again.detail).toContain("連續 1 次沒人接");
   });
 
   it("someone answering resolves the topic and resets the backoff", async () => {

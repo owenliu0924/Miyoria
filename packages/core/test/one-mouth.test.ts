@@ -95,8 +95,6 @@ describe("only the main line acts", () => {
         "packages/api/src/member.ts",
         // A person at the panel, or a slash command: people, not her.
         "packages/api/src/ops.ts",
-        // `actThroughGate`: V2 only, `ArbiterEnv.act` is not set under V3.
-        "packages/brain/arbiter/src/module.ts",
         // An expression a person bought on the member page: `stage.expression`, as the panel.
         "packages/economy/src/economy.ts",
         // The game executor: the steps of a session the main line started.
@@ -116,7 +114,7 @@ describe("only the main line acts", () => {
 
   it("under V3 the Arbiter has no hands and her Plan no way but the board", () => {
     const arbiter = readFileSync(join(ROOT, "packages/brain/arbiter/src/module.ts"), "utf8");
-    expect(arbiter).toContain("floor === null\n        ? { act:");
+    expect(arbiter).not.toContain("actThroughGate");
     const mind = readFileSync(join(ROOT, "packages/heart/mind/src/mind.ts"), "utf8");
     const act = mind.slice(mind.indexOf("async #act("));
     expect(act.indexOf("if (board)")).toBeLessThan(act.indexOf("arbiter.submit"));

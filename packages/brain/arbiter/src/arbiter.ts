@@ -2,10 +2,7 @@
 // speaks or acts now. Every wish arrives as an `Impulse`; the Arbiter only
 //
 // * applies the floors: autonomy pause, LLM budget, consent, the owner's channel level, quiet
-//   hours, and for her own starts (`plan` / `agenda` that make her talk) the daily caps, the
-//   gaps and the unanswered backoff. Narration (`Impulse.attention`) is not said twice, and
-//   everything that has her talking unasked stops at `max_unanswered` until a person speaks
-//   (`unanswered.ts`). One rule set (`[modules.arbiter]`);
+//   hours, and for her own starts (`plan` / `agenda` that make her talk) the daily caps;
 // * orders, merges and preempts: impulses with the same `coalesce_key` merge (the newest
 //   wins); a place that is busy defers an impulse, retried most urgent first (addressed >
 //   ongoing conversation > her own wishes); once something takes a place, her own wishes
@@ -19,12 +16,12 @@
 // in view. Only facts of the moment (the place is busy, she just spoke) defer.
 //
 // Accepted impulses are run by the agent's `ImpulseHost` (speak, and her own act impulses
-// that may end in a turn) or `ArbiterEnv.act` (other act impulses, through the gate).
+// that may end in a turn).
 //
-// Under `pipeline = "v3"` (`ArbiterEnv.floor`) this class is the queue in front of the Floor: an
-// impulse is only a claim on the mic, narration dedupe and `max_unanswered` are the Floor's and
-// the DeliveryLedger's (floor.ts), and an accepted claim opens a turn of the main line, nothing
-// else: there is no `act`, and no text of a claim is ever said as it stands.
+// This class is the queue in front of the Floor (`ArbiterEnv.floor`): an impulse is only a claim
+// on the mic; narration dedupe, `max_unanswered` and the gaps between her starts are the Floor's
+// and the DeliveryLedger's (floor.ts), and an accepted claim opens a turn of the main line,
+// nothing else: no act impulse runs here, and no text of a claim is ever said as it stands.
 
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
@@ -84,9 +81,10 @@ export interface ArbiterEnv {
   blocked?(account: AccountRef): boolean;
   /** The agent's host (looked up per call). */
   host?(): ImpulseHost | null;
-  /** Runs an `act` impulse that is not one of hers through the gate. */
-  act?(impulse: Impulse, signal?: AbortSignal): Promise<ImpulseRun>;
-  /** `pipeline = "v3"`: the Floor decides instead of the V2 narration and `max_unanswered` rules. */
+  /**
+   * The Floor: narration repeats, `max_unanswered`, the gaps and the claim order. The module
+   * always has one; a core without it (a test of the rest) has none of those rules.
+   */
   floor?: FloorCore;
   /** What she wants to ask whom, and whether it was asked or answered (`wishes.ts`). */
   wishes?: Wishes;
@@ -163,10 +161,6 @@ function personKey(impulse: Impulse): string | null {
   return impulse.target.person === null ? null : `h:${impulse.target.person}`;
 }
 
-function minutes(ms: number): number {
-  return Math.max(Math.ceil(ms / MINUTE_MS), 1);
-}
-
 export class ArbiterCore implements Arbiter {
   readonly #cfg: ArbiterConfig;
   readonly #env: ArbiterEnv;
@@ -220,9 +214,7 @@ export class ArbiterCore implements Arbiter {
   #repeat(impulse: Impulse): boolean {
     const attention = impulse.attention ?? null;
     if (attention === null) return false;
-    const floor = this.#env.floor;
-    if (floor) return floor.repeated(attention);
-    return this.book.saidUntil(attention.key, this.#now()) !== null;
+    return this.#env.floor?.repeated(attention) ?? false;
   }
 
   ledger(context: ContextKey | null = null): LedgerView {
@@ -299,21 +291,19 @@ export class ArbiterCore implements Arbiter {
   /** `max_unanswered` turns went out at `place` and no person spoke there since. */
   #waitingForResponse(place: Place): boolean {
     const floor = this.#env.floor;
-    if (floor) return place.context !== null && floor.waitingForResponse(place.context);
-    const max = this.#cfg.max_unanswered;
-    return max > 0 && this.book.turnsUnanswered(place.key) >= max;
+    return floor !== undefined && place.context !== null && floor.waitingForResponse(place.context);
   }
 
   /** When she may start talking on her own (at `place`) again; `null`: now. */
   #nextAllowed(place: Place | null, facts: ConversationFacts, now: number): string | null {
     let at = now;
     for (let i = 0; i < 8; i++) {
-      const floor = this.#timeRules(place, null, facts, at);
+      const floor = this.#timeRules(place, null, at);
       if (floor === null) break;
       if (floor.retryAt === null || floor.retryAt <= at) return null;
       at = floor.retryAt;
     }
-    // Under the Floor the gaps are its one wait (`FloorCore.check`), not rules of this class.
+    // The gaps are the Floor's one wait (`FloorCore.check`), not rules of this class.
     const floor = this.#env.floor;
     if (floor && place?.context) {
       const waits = floor.startsAt(place.context, this.#startFacts(place, facts));
@@ -635,31 +625,15 @@ export class ArbiterCore implements Arbiter {
     if (this.#env.floor) {
       const refused = this.#floorClaim(impulse, this.#env.floor, facts);
       if (refused !== null) return refused;
-    } else if (impulse.kind === "speak" && startsTalk(impulse)) {
-      const quiet = !isSelfInitiated(source);
-      const attention = impulse.attention ?? null;
-      const until = attention === null ? null : this.book.saidUntil(attention.key, now);
-      if (until !== null) {
-        const detail = "這件事你剛說過了,沒有新進展就不用再提";
-        return { reason: "repeat", detail, retryAt: until, defer: false, quiet };
-      }
-      const place = this.#placeOf(impulse);
-      if (place !== null && this.#waitingForResponse(place)) {
-        const n = this.#cfg.max_unanswered;
-        const detail = `你在這裡連續 ${n} 次開口都沒人回應,等有人說話再開口`;
-        return { reason: "unanswered", detail, retryAt: null, defer: false, quiet };
-      }
     }
     const self = isSelfInitiated(source);
     if (self) {
+      // The gaps are part of the Floor's one decision (`#floorClaim`).
       const rules = this.#timeRules(
         this.#placeOf(impulse),
         personKey(impulse),
-        facts,
         now,
         isSelfTalk(impulse),
-        // Under the Floor the gaps are part of its one decision (`#floorClaim`).
-        !this.#env.floor,
       );
       if (rules !== null) return rules;
     }
@@ -673,7 +647,7 @@ export class ArbiterCore implements Arbiter {
   }
 
   /**
-   * V3: narration dedupe through the ledger, then the claim order, her budget and, for her own
+   * Narration dedupe through the ledger, then the claim order, her budget and, for her own
    * starts, every wait on them as the Floor's one decision.
    */
   #floorClaim(impulse: Impulse, floor: FloorCore, facts: ConversationFacts): Floor | null {
@@ -731,18 +705,10 @@ export class ArbiterCore implements Arbiter {
   }
 
   /**
-   * The rules on her own starts that only depend on time and what she already did: quiet
-   * hours, the daily caps, the gaps and the unanswered backoff (`talk`: she starts talking; her
-   * act impulses only respect quiet hours).
+   * The rules on her own starts that only depend on time and what she already did: quiet hours
+   * and the daily caps (`talk`: she starts talking; her act impulses only respect quiet hours).
    */
-  #timeRules(
-    place: Place | null,
-    person: string | null,
-    facts: ConversationFacts,
-    now: number,
-    talk = true,
-    gaps = !this.#env.floor,
-  ): Floor | null {
+  #timeRules(place: Place | null, person: string | null, now: number, talk = true): Floor | null {
     const cfg = this.#cfg;
     const no = (reason: ArbiterReason, detail: string, retryAt: number | null): Floor => ({
       reason,
@@ -788,41 +754,6 @@ export class ArbiterCore implements Arbiter {
         );
       }
     }
-    if (!gaps) return null;
-    const last = this.book.lastStart();
-    if (last !== null && now < last + cfg.min_gap_secs * 1000) {
-      const at = last + cfg.min_gap_secs * 1000;
-      return no("cooldown", `剛主動開過話題,${clockText(at, cfg)} 之後`, at);
-    }
-    if (place === null) return null;
-    const spoke = this.#afterSpeech(place.context, facts);
-    if (spoke !== null && now < spoke) {
-      return no("cooldown", "你剛在這裡講完話,等一下再自己開話題", spoke);
-    }
-    const lastHere = this.book.lastStart(place.key);
-    if (lastHere !== null) {
-      const gap = this.book.gapMs(place, now);
-      if (now < lastHere + gap) {
-        const at = lastHere + gap;
-        const misses = this.book.misses(place.key, now);
-        if (misses > 0 && now >= lastHere + this.book.baseGapMs(place.kind)) {
-          return no(
-            "unanswered",
-            `你在這裡主動開的話題最近連續 ${misses} 次沒人接,下次可主動在 ${clockText(at, cfg)} 之後`,
-            at,
-          );
-        }
-        return no(
-          "cooldown",
-          `你 ${minutes(now - lastHere)} 分鐘前才在這裡主動開過話題,下次可主動在 ${clockText(at, cfg)} 之後`,
-          at,
-        );
-      }
-      if (facts.start_gap_ms > 0 && now < lastHere + facts.start_gap_ms) {
-        const at = lastHere + facts.start_gap_ms;
-        return no("ceiling", `這個頻道的等級限制:${clockText(at, cfg)} 之後才能再自己開話題`, at);
-      }
-    }
     return null;
   }
 
@@ -836,8 +767,7 @@ export class ArbiterCore implements Arbiter {
         return { status: "refused", reason: "denied", detail: "沒有人能開回合(agent 沒在跑)" };
       return host.open(impulse, signal);
     }
-    if (!this.#env.act) return { status: "refused", reason: "denied", detail: "沒有動作的執行者" };
-    return this.#env.act(impulse, signal);
+    return { status: "refused", reason: "denied", detail: "沒有動作的執行者" };
   }
 
   #factsFor(context: ContextKey): ConversationFacts {

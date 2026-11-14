@@ -91,7 +91,7 @@ const keyOf = (v: Verdict) => v.impulse.attention?.key ?? null;
 const sentFromImpulses = (report: ReplayReport) =>
   report.turns.filter((t) => t.reason === "initiative" && t.outcome === "sent").length;
 
-describe.each(["v2", "v3"] as const)("pipeline %s", (under) => {
+describe.each(["v3"] as const)("pipeline %s", (under) => {
   beforeEach(() => {
     pipeline = under;
   });

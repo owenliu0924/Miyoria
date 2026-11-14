@@ -333,11 +333,6 @@ export class Ledger {
 
   // ---- talking to nobody ----------------------------------------------------------------------
 
-  /** Turns she started at `place` since a person last spoke there. */
-  turnsUnanswered(place: string): number {
-    return this.#places.get(place)?.unanswered ?? 0;
-  }
-
   /** A turn she started went out at `place`. */
   startedTalking(place: Place, now: number): void {
     this.#place(place, now).unanswered += 1;
@@ -353,12 +348,6 @@ export class Ledger {
   }
 
   // ---- what she already said ------------------------------------------------------------------
-
-  /** Until when `key` may not ask to be said again (`null`: it may). */
-  saidUntil(key: string, now: number): number | null {
-    const until = this.#said.get(key);
-    return until !== undefined && until > now ? until : null;
-  }
 
   markSaid(key: string, until: number, now: number): void {
     for (const [k, at] of this.#said) if (at <= now) this.#said.delete(k);

@@ -31,7 +31,6 @@ import {
   HandleDirectoryKey,
   type Impulse,
   ImpulseHostKey,
-  type ImpulseRun,
   inVoice,
   isJsonObject,
   type JsonValue,
@@ -42,10 +41,8 @@ import {
   type ObservationBody,
   PartyStatusKey,
   PersonThreadsKey,
-  Principals,
   type ProfileId,
   ProposalBoardKey,
-  pipelineOf,
   runningActivity,
   SelfStateKey,
   SocialSignalsKey,
@@ -105,9 +102,9 @@ export interface ArbiterModuleOptions {
  * `ArbiterKey.submit` and the `arbiter.impulse` topic. Accepted speak impulses are opened by the
  * agent (`ImpulseHostKey`). Greets friends and brings up due followups (`FollowupSourceKey`).
  *
- * Under `pipeline = "v3"` it is the Floor (`FloorKey`, docs/design/v3-architecture.md §7): the
- * greetings become Observations and the due followups Proposals, nothing here runs an action, and
- * every non-silent observation of a game, a greeting or a commitment asks for the mic from the log.
+ * It is the Floor (`FloorKey`, docs/design/v3-architecture.md §7): the greetings become
+ * Observations and the due followups Proposals, nothing here runs an action, and every non-silent
+ * observation of a game, a greeting or a commitment asks for the mic from the log.
  */
 export class ArbiterModule implements Module {
   static readonly ID = "arbiter";
@@ -129,7 +126,7 @@ export class ArbiterModule implements Module {
     const config = ctx.config(ArbiterConfigSchema);
     const clock = this.#clock ?? ctx.clock;
     const services = ctx.services;
-    const floor = pipelineOf(services) === "v3" ? floorOf(ctx, config, clock) : null;
+    const floor = floorOf(ctx, config, clock);
     const wishes = new WishBook(config.wishes, {
       now: () => clock.now(),
       log: () => services.get(EventLogKey) ?? null,
@@ -144,20 +141,18 @@ export class ArbiterModule implements Module {
       budget: () => services.get(LlmRouterKey)?.budgetState() ?? "ok",
       blocked: (account) => services.get(SocialSignalsKey)?.attitude(account)?.blocked ?? false,
       host: () => services.get(ImpulseHostKey) ?? null,
-      ...(floor === null
-        ? { act: (impulse, signal) => actThroughGate(ctx, impulse, signal) }
-        : { floor }),
+      floor,
     });
     const producers = new Producers(config);
     const store = services.get(SettingsStoreKey);
     if (store) await restore(store, core, producers, clock.now());
     ctx.provide(ArbiterKey, core);
     ctx.provide(WishesKey, wishes);
-    if (floor !== null) ctx.provide(FloorKey, floor);
+    ctx.provide(FloorKey, floor);
     await this.#followWishes(ctx, config, clock, wishes);
 
     const runner = new Runner(ctx, core, producers, this.#profile, clock, store, floor);
-    if (floor !== null) await this.#follow(ctx, config, clock, floor, runner);
+    await this.#follow(ctx, config, clock, floor, runner);
     const events = ctx.subscribe([
       "platform.ready",
       "platform.message.created",
@@ -181,7 +176,7 @@ export class ArbiterModule implements Module {
     });
     ctx.spawn("arbiter.queue", async (signal) => {
       for await (const _ of interval(Math.min(config.retry_ms, PUMP_MS), signal)) {
-        floor?.expire();
+        floor.expire();
         const next = core.nextRetry();
         if (next !== null && next <= clock.now()) await core.pump();
       }
@@ -278,39 +273,6 @@ async function restore(
   }
 }
 
-/** An `act` impulse that is not one of hers: through the gate (the director for game ones). */
-async function actThroughGate(
-  ctx: ModuleContext,
-  impulse: Impulse,
-  signal: AbortSignal | undefined,
-): Promise<ImpulseRun> {
-  const registry = ctx.services.get(ActuatorRegistryKey);
-  if (!registry || impulse.capability === null) {
-    return { status: "refused", reason: "denied", detail: "沒有可以執行的能力" };
-  }
-  const context = impulse.target.context;
-  const outcome = await registry.invoke(
-    {
-      principal:
-        impulse.source === "game" ? Principals.director(context) : Principals.self(context, null),
-      capability: impulse.capability,
-      args: impulse.args,
-      why: impulse.why === "" ? null : impulse.why,
-      turn: null,
-      about: impulse.target.account,
-    },
-    signal ? { signal, priority: impulse.priority } : { priority: impulse.priority },
-  );
-  switch (outcome.status) {
-    case "done":
-      return { status: "started", turn: null, task: null, detail: outcome.result.text };
-    case "denied":
-      return { status: "refused", reason: "denied", detail: outcome.decision.reason };
-    case "failed":
-      return { status: "refused", reason: "denied", detail: outcome.error };
-  }
-}
-
 /** The local day of `now` as a key part; greetings are once a day. */
 function dayStamp(now: number): number {
   return Math.floor(now / DAY_MS);
@@ -330,7 +292,7 @@ class Runner {
     private readonly profile: ProfileId,
     private readonly clock: Clock,
     private readonly store: SettingsStore | undefined,
-    private readonly floor: FloorCore | null = null,
+    private readonly floor: FloorCore,
   ) {}
 
   #submit(impulse: Impulse): void {
@@ -414,8 +376,7 @@ class Runner {
     const now = this.clock.now();
     const social = this.ctx.services.get(SocialSignalsKey) ?? null;
     for (const impulse of this.producers.observe(now, event, social)) {
-      if (this.floor === null) this.#submit(impulse);
-      else this.#observe(impulse);
+      this.#observe(impulse);
     }
     const response = humanResponse(event, (account) => this.producers.isSelf(account));
     if (response) this.core.heard(response.context, response.account);
@@ -436,7 +397,7 @@ class Runner {
       case "voice_left":
         // Not a response: a new stay in voice is a new audience, nobody there ignored her yet.
         this.core.heard(event.data.context, null);
-        this.floor?.newAudience(event.data.context);
+        this.floor.newAudience(event.data.context);
         break;
       case "custom": {
         const outcome = v2Payload(event, TURN_OUTCOME_TOPIC);
@@ -503,24 +464,11 @@ class Runner {
       const person = followup.person === null ? null : (handles?.ofPerson(followup.person) ?? null);
       const impulse = this.producers.followup(now, followup, social, person);
       if (!impulse) continue;
-      if (this.floor !== null) {
-        await this.#propose(impulse, followup.id);
-        continue;
-      }
-      const decision = await this.core.submit(impulse);
-      // Rejected or expired: it stays due and comes back on a later tick.
-      if (decision.verdict !== "accepted" && decision.verdict !== "deferred") continue;
-      try {
-        await source.markDone(followup.id);
-        log.debug({ id: followup.id }, "followup brought up");
-      } catch (error) {
-        log.warn({ id: followup.id, error: errorMessage(error) }, "could not mark followup done");
-        this.#failedMarks.add(followup.id);
-      }
+      await this.#propose(impulse, followup.id);
     }
   }
 
-  /** V3: memory work only proposes. She is told of it next time she has the floor. */
+  /** Memory work only proposes. She is told of it next time she has the floor. */
   async #propose(impulse: Impulse, followup: string): Promise<void> {
     const board = this.ctx.services.get(ProposalBoardKey);
     const source = this.ctx.services.get(FollowupSourceKey);

@@ -14,7 +14,7 @@
 //   `max_hold_secs`: a lost ack must not make her mute (§21).
 //
 // The claim order is `FLOOR_CLAIMS`. The queue around it (coalescing, retries, the decision trail)
-// is the Arbiter's: under `pipeline = "v3"` it asks this class instead of its own V2 rules.
+// is the Arbiter's, which asks this class.
 //
 // One decision on what she starts herself (v4 §7.6). Before, five limiters overlapped: the
 // Arbiter's gaps between her starts, this class's wait after lines nobody answered, the channel

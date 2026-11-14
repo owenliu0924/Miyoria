@@ -219,16 +219,10 @@ describe("the Floor's module (pipeline v3)", () => {
     return { sup, log, proposals, followups, host, social };
   }
 
-  it("provides the Floor; V2 does not", async () => {
+  it("provides the Floor", async () => {
     const r = await floorRig();
     expect(r.sup.services.get(FloorKey)).toBeDefined();
     await r.sup.stopAll();
-    const v2 = new Supervisor();
-    v2.services.provide("app", PipelineKey, { pipeline: "v2" as const });
-    await v2.register(new ArbiterModule("p"), null, true);
-    await v2.startAll();
-    expect(v2.services.get(FloorKey)).toBeUndefined();
-    await v2.stopAll();
   });
 
   it("her feelings reach the budget as a weight, her own setting stays apart", async () => {

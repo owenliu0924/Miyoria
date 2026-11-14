@@ -270,13 +270,9 @@ describe.each(["v2", "v3"] as const)(
       expect(Object.keys(snapshot.biases).sort()).toEqual(["initiative", "talkativeness", "wants"]);
     });
 
-    it("reaches the Floor only where there is one", async () => {
+    it("reaches the Floor", async () => {
       const sup = await boot();
       const floor = sup.services.get(FloorKey);
-      if (pipeline === "v2") {
-        expect(floor).toBeUndefined();
-        return;
-      }
       expect(floor?.budget(ROOM).allowed).toBe(6);
       sup.services.provide("app", AffectStateKey, {
         snapshot: () => ({ biases: { talkativeness: -MAX_BIAS } }),

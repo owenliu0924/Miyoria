@@ -43,7 +43,7 @@ async function run(
   return report;
 }
 
-describe.each(["v2", "v3"] as const)("replay scenarios (v2 §4 acceptance), %s", (pipeline) => {
+describe.each(["v3"] as const)("replay scenarios (v2 §4 acceptance), %s", (pipeline) => {
   it("a voice room full of 「對」「嗯」: she speaks when called (> 70%), to the caller", async () => {
     const r = await run("voice-backchannel.jsonl", pipeline);
     expect(r.voice_direct_speak_rate.den).toBe(8);
