@@ -1,4 +1,4 @@
-// @miyoria/kernel: every feature is a `Module`. The `Supervisor` starts modules in dependency
+// @miyoria/runtime/kernel: every feature is a `Module`. The `Supervisor` starts modules in dependency
 // order, restarts them when they fail and lets them be enabled or disabled at runtime. Modules
 // only talk to each other through the `EventBus` and the `ServiceRegistry`, both reached via
 // the `ModuleContext` they get in `start`.

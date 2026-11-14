@@ -7,7 +7,7 @@
 // starts when the session is created (so it mostly runs during the debounce), a turn waits for
 // it at most `history.timeout_ms` from its start, and failures only cost the context.
 
-import { errorMessage, sleep } from "@miyoria/kernel";
+import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import { MessageLogKey } from "@miyoria/store";
 import {
   type IncomingMessage,

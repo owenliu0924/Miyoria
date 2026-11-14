@@ -2,7 +2,7 @@
 // sinks and the scheduler), `speak` (say a line in the voice channel she is in; the panel's
 // "say") and the placeholder high-risk `test.high`.
 
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   ActionSinkKey,

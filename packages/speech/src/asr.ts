@@ -1,7 +1,7 @@
 // ASR providers: the Miyoria inference-worker protocol and OpenAI-compatible
 // `/audio/transcriptions`.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { z } from "zod";
 import { bearerHeaders, joinUrl, parseSettings, post } from "./http.js";
 import {

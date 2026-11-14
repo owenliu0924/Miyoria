@@ -2,7 +2,7 @@
 // `stage.stream` for commands and the panel only.
 
 import { ActuatorRegistry } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { type ToolContext, ToolRegistry } from "@miyoria/tools";
 import { type AccountRef, type ContextKey, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";

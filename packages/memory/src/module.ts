@@ -1,6 +1,7 @@
 // Module `memory`.
 
 import { CommandRegistryKey } from "@miyoria/commands";
+import { LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
@@ -11,8 +12,7 @@ import {
   type ModuleManifest,
   type Subscription,
   sleep,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   type MemoryRecordStore,
   MemoryRecordStoreKey,

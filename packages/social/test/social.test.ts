@@ -5,6 +5,7 @@ import {
   type InvocationData,
   Permissions,
 } from "@miyoria/commands";
+import { LlmRouterKey, MockProvider } from "@miyoria/llm";
 import {
   defineManifest,
   EventBus,
@@ -13,8 +14,7 @@ import {
   ServiceRegistry,
   Supervisor,
   withTimeout,
-} from "@miyoria/kernel";
-import { LlmRouterKey, MockProvider } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   IdentityStoreKey,
   type MemoryKind,

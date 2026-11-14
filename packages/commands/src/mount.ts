@@ -1,6 +1,11 @@
 // Keeps a module's commands in the current `CommandRegistry` service.
 
-import { errorMessage, getLogger, type ModuleContext, type ServiceLookup } from "@miyoria/kernel";
+import {
+  errorMessage,
+  getLogger,
+  type ModuleContext,
+  type ServiceLookup,
+} from "@miyoria/runtime/kernel";
 import { type CommandRegistry, CommandRegistryKey } from "./registry.js";
 
 const log = getLogger("commands.mount");

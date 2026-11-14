@@ -6,7 +6,7 @@
 // utterance outlives its stream: a speaker who pauses longer than the node waits comes back on
 // a new stream and carries on in the same utterance, instead of being cut in two.
 
-import { errorMessage, interval, type ModuleContext } from "@miyoria/kernel";
+import { errorMessage, interval, type ModuleContext } from "@miyoria/runtime/kernel";
 import {
   type AsrHint,
   durationMs,

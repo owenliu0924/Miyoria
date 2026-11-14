@@ -3,8 +3,8 @@
 // removes and leaves.
 
 import { CommandRegistry, type InvocationData } from "@miyoria/commands";
-import { ServiceRegistry } from "@miyoria/kernel";
 import { MockProvider } from "@miyoria/llm";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import type { MemoryRecord, MemoryScope } from "@miyoria/store";
 import type { ToolContext } from "@miyoria/tools";
 import {

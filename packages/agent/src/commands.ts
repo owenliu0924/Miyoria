@@ -26,7 +26,7 @@ import {
   type Invocation,
   notice,
 } from "@miyoria/commands";
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import type { ContextKey } from "@miyoria/types";
 import {
   type Activeness,

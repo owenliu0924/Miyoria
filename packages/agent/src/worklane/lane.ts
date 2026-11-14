@@ -12,7 +12,6 @@
 // hands follow by task id (a result turn where someone waits, her next prompt otherwise), and a
 // task cut by a restart is told once after it, from the row the lane kept while it ran.
 
-import { errorMessage, type Logger, SerialQueue, type ServiceLookup } from "@miyoria/kernel";
 import {
   assistantMessage,
   type ChatMessage,
@@ -25,6 +24,12 @@ import {
   toolResultMessage,
   userMessage,
 } from "@miyoria/llm";
+import {
+  errorMessage,
+  type Logger,
+  SerialQueue,
+  type ServiceLookup,
+} from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import type { Tool, ToolContext, ToolRegistry } from "@miyoria/tools";
 import {

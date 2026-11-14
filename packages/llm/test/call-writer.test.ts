@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import type { Clock } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {

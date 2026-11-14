@@ -1,7 +1,7 @@
 // `GET /api/channels/levels` and `PUT /api/channels/level` against a fake agent handle.
 
 import { AgentHandleKey, type ChannelMode } from "@miyoria/agent";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   contextKeyString,

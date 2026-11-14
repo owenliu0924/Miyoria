@@ -3,7 +3,7 @@
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "@miyoria/core/light";
-import { Config, configureLogging, errorMessage } from "@miyoria/kernel";
+import { Config, configureLogging, errorMessage } from "@miyoria/runtime/kernel";
 import { cliVersion } from "../assets.js";
 import { type DeepDeps, deepChecks, type Finding } from "../stack/checks.js";
 import { repoRoot, stackConfig } from "../stack/config.js";

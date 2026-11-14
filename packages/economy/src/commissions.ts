@@ -17,7 +17,7 @@
 // The commission is a document (docs.ts); the coins are ledger rows (reason `commission`, refunds
 // keyed on the row), so a crash never loses or doubles a payment.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   customEvent,

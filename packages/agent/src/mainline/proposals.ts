@@ -9,7 +9,7 @@
 // answered or asked already (2026-11-10: memory, a commitment and her Plan raised the same
 // question again and again), and leaves the board once she asked, whichever turn did it.
 
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type ArbiterDecision,
   ArbiterKey,

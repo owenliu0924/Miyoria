@@ -7,7 +7,7 @@ import {
   presentKeys,
   SerialQueue,
   withTimeout,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import {
   PeopleStoreKey,
   RelationshipStoreKey,

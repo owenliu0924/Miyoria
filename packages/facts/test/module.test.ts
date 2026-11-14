@@ -4,7 +4,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { type EventLogStore, SqliteStore } from "@miyoria/store";
 import {
   ActivityRecoveryKey,

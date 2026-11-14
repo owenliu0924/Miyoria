@@ -1,6 +1,6 @@
 // Her picture: its config, what a touch lands on, MediaMTX's state, and touches as pats.
 
-import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/kernel";
+import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { PeopleStoreKey } from "@miyoria/store";
 import type { JsonObject } from "@miyoria/types";
 import {

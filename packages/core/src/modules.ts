@@ -23,7 +23,6 @@ import { EconomyModule } from "@miyoria/economy";
 import { FactsModule } from "@miyoria/facts";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/game";
 import { ImageGenModule } from "@miyoria/imagegen";
-import type { Config, Module } from "@miyoria/kernel";
 import {
   ConversationModule,
   KnowledgeModule,
@@ -45,10 +44,11 @@ import { ModerationModule } from "@miyoria/moderation";
 import { PartyModule } from "@miyoria/party";
 import * as extHost from "@miyoria/plugin-host/ext-host";
 import { McpModule } from "@miyoria/plugin-host/mcp";
-import type { Profile } from "@miyoria/profile";
 import { QueueModule } from "@miyoria/queue";
+import type { Config, Module } from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
+import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import { SandboxModule } from "@miyoria/sandbox";
-import { SchedulerModule } from "@miyoria/scheduler";
 import { SelfModule } from "@miyoria/self";
 import { SingModule } from "@miyoria/sing";
 import { SkillsModule } from "@miyoria/skills";

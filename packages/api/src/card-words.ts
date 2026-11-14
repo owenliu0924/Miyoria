@@ -8,8 +8,8 @@
 // and a card's code lets anyone read it.
 
 import { PersonaHandleKey } from "@miyoria/agent";
-import { errorMessage, getLogger } from "@miyoria/kernel";
 import { completeJson, LlmRouterKey, systemMessage, userMessage, withLlmTag } from "@miyoria/llm";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { AffectStateKey, characterCore } from "@miyoria/types";
 import { z } from "zod";
 import type { ApiState } from "./state.js";

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { Config, ConfigError } from "@miyoria/kernel";
+import { Config, ConfigError } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import {
   extensionSettings,

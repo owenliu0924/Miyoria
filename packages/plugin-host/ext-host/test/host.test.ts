@@ -22,7 +22,7 @@ import {
   Supervisor,
   SupervisorKey,
   sleep,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {

@@ -13,7 +13,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import {
   type BuildTarget,
   buildTargets,

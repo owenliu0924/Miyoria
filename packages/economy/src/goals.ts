@@ -13,7 +13,7 @@
 // * A reached goal's promise is owed until it is marked kept (`fulfill`): by the owner on the panel,
 //   or by her when she says she did it. Until then her purse block reminds her; after, it does not.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { type Goal, type GoalFulfiller, GoalStoreKey } from "@miyoria/store";
 import { type AccountRef, type ContextKey, newId, toTimestamp } from "@miyoria/types";
 import { cleanText, guardTask } from "./deals.js";

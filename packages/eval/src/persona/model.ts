@@ -3,7 +3,6 @@
 // the same chain and the same settings. With nothing configured it says so and returns `none`.
 
 import { existsSync } from "node:fs";
-import { Config, loadDotenv } from "@miyoria/kernel";
 import {
   LlmConfigSchema,
   LlmModule,
@@ -13,7 +12,8 @@ import {
   systemMessage,
   userMessage,
 } from "@miyoria/llm";
-import type { Profile } from "@miyoria/profile";
+import { Config, loadDotenv } from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
 import type { Complete } from "./blind.js";
 
 export interface ModelSettings {

@@ -2,7 +2,7 @@
 // protocol loop.
 
 import { timingSafeEqual } from "node:crypto";
-import { errorMessage, type Logger } from "@miyoria/kernel";
+import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
 import type { AudioStream } from "@miyoria/speech";
 import {
   type AccountRef,

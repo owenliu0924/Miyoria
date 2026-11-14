@@ -9,7 +9,7 @@ import {
   type ModuleContext,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { openStore, type Store, StoreKey } from "@miyoria/store";
 import { ToolRegistryKey } from "@miyoria/tools";
 import {

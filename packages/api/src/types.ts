@@ -3,10 +3,9 @@
 
 import type { PendingApproval } from "@miyoria/actions";
 import type { WalletExport } from "@miyoria/economy";
-import type { ModuleStatus } from "@miyoria/kernel";
-
 import type { CostReport, ModelUsage, PeriodReport } from "@miyoria/llm";
 import type { ItemState } from "@miyoria/queue";
+import type { ModuleStatus } from "@miyoria/runtime/kernel";
 import type { StreamAction } from "@miyoria/stage";
 import type {
   AuthScope,

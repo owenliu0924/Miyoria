@@ -16,7 +16,7 @@
 //   settling is idempotent: every payout and refund has a key, and a sweep finishes what a crash
 //   left halfway.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { type AccountRef, newId, toTimestamp } from "@miyoria/types";
 import type { EconomyDoc } from "./docs.js";
 import { type EconomyService, type Member, STRANGER } from "./economy.js";

@@ -2,8 +2,8 @@
 // chat log keep the original. A voice reply usually writes the spoken line itself
 // (`<voice>…</voice>`, see the agent's `Speech`); only lines without one take a translation call.
 
-import { errorMessage, type Logger } from "@miyoria/kernel";
 import { type LlmRouter, systemMessage, userMessage, withLlmTag } from "@miyoria/llm";
+import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
 
 /** Translations kept for lines that were prepared but not spoken yet (or spoken twice). */
 const MAX_CACHED = 32;

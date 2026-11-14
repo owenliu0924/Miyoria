@@ -12,7 +12,7 @@
 //   prompt is data (`escapeData`), never instructions.
 // * `forgetPerson` deletes the pages about someone (`/me memory forget`).
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type Clock,

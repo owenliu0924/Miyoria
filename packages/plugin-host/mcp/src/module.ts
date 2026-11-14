@@ -8,7 +8,7 @@ import {
   type Module,
   type ModuleContext,
   type ModuleManifest,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { ToolRegistryKey } from "@miyoria/tools";
 import { Registrar, ServerRunner } from "./client.js";
 import { type McpConfig, parseMcpConfig, reconnectInitialMs, reconnectMaxMs } from "./config.js";

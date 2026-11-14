@@ -1,5 +1,5 @@
 import { CommandsModule } from "@miyoria/commands";
-import { EventBus, manifestJson, ServiceRegistry, Supervisor } from "@miyoria/kernel";
+import { EventBus, manifestJson, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { GatewayIntentBits } from "discord.js";
 import { describe, expect, test } from "vitest";
 import { DiscordBotModule, intents } from "../src/index.js";

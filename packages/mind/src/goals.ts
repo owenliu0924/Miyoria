@@ -22,7 +22,7 @@
 // whose wish was asked or answered is not added, and one that is open is done (or loses that
 // step) the moment she asks, wherever she does.
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type AgendaItem,

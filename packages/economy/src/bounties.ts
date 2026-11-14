@@ -7,7 +7,7 @@
 //   herself, once per bounty. Cancelled or run out, the hold goes back to the purse.
 // * Bounties persist in `BountyStore`; a sweep ends what ran out.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { type Bounty, BountyStoreKey } from "@miyoria/store";
 import { type AccountRef, type ContextKey, newId, safeName, toTimestamp } from "@miyoria/types";
 import { cleanTask, guardTask } from "./deals.js";

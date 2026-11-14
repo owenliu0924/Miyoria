@@ -5,8 +5,8 @@
 import { join, resolve } from "node:path";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { CommandRegistry, CommandRegistryKey, Invocation, Permissions } from "@miyoria/commands";
-import { Supervisor } from "@miyoria/kernel";
 import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,

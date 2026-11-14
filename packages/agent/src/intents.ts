@@ -20,7 +20,7 @@
 // goes through the gate here: consent is the gate's.
 
 import type { ActuatorRegistry } from "@miyoria/actions";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type ArbiterDecision,
   ArbiterKey,

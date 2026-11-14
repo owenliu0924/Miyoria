@@ -1,5 +1,5 @@
 import { PassThrough } from "node:stream";
-import { sleep } from "@miyoria/kernel";
+import { sleep } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {

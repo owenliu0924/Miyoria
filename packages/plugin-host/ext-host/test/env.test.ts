@@ -1,4 +1,4 @@
-import { Config, ConfigError } from "@miyoria/kernel";
+import { Config, ConfigError } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import { extensionEnv, extensionSettings } from "../src/index.js";
 

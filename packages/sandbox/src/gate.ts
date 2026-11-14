@@ -21,7 +21,7 @@ import {
   type Capability,
   defineCapability,
 } from "@miyoria/actions";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   escapeData,
   isJsonObject,

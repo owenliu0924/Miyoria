@@ -2,14 +2,14 @@
 // keeps of the id, and everything that must stop using the text from then on.
 
 import { CommandsModule } from "@miyoria/commands";
+import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
 import {
   defineManifest,
   type Module,
   type ModuleContext,
   ServiceRegistry,
   Supervisor,
-} from "@miyoria/kernel";
-import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   MemoryRecordStoreKey,
   MessageLogKey,

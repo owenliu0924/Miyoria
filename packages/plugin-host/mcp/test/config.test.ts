@@ -1,5 +1,5 @@
 import { inspect } from "node:util";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import { ExposeConfig, McpModule, parseMcpConfig, ServerConfig } from "../src/index.js";
 

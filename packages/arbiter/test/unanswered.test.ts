@@ -1,7 +1,7 @@
 // Repeats and talking to nobody (docs/design/v3-architecture.md §7.2, §8), and the opposite
 // failure, 她變啞巴: what these two rules must never touch.
 
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   ARBITER_DECISION_TOPIC,

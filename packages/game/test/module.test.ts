@@ -6,7 +6,6 @@ import {
   Invocation,
   Permissions,
 } from "@miyoria/commands";
-import { Supervisor } from "@miyoria/kernel";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -18,6 +17,7 @@ import {
   parseModelRef,
 } from "@miyoria/llm";
 import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   ARBITER_IMPULSE_TOPIC,

@@ -1,6 +1,6 @@
 // `GET /api/self` and `GET /api/world` against fake `SelfState` / `WorldState` services.
 
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { type Social, SocialKey } from "@miyoria/social";
 import {
   type ContextKey,

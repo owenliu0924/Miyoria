@@ -10,7 +10,7 @@
 // director follows instead of fighting it.
 
 import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
-import { SerialQueue } from "@miyoria/kernel";
+import { SerialQueue } from "@miyoria/runtime/kernel";
 import { actLane, type StreamCurtain } from "@miyoria/types";
 import { z } from "zod";
 import { GIFT_EXPRESSION_MAX_S, GIFT_EXPRESSIONS, type SceneTransition } from "../protocol.js";

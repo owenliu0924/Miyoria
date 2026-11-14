@@ -3,7 +3,7 @@
 // ignored, explicit phrases about her (cheap rules here, plus what a fold noticed), and her
 // autonomous actions that were refused. Reflection reads them; nothing here calls a model.
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type AccountRef,

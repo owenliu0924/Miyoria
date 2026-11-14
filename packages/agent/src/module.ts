@@ -1,13 +1,13 @@
 import { type ActuatorRegistry, ActuatorRegistryKey, actuatorsFor } from "@miyoria/actions";
+import { LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
   type Module,
   type ModuleContext,
   sleep,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
-import type { Profile } from "@miyoria/profile";
+} from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
 import { SettingsStoreKey } from "@miyoria/store";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {

@@ -4,7 +4,7 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import {
   type GpuContext,

@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import {
   buildTargets,

@@ -2,7 +2,7 @@
 // when the test says so (or at once for instant goals), and publishes every task event on the
 // bus as `game.<id>.task.<type>` like the extension host does.
 
-import type { ServiceRegistry } from "@miyoria/kernel";
+import type { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   customEvent,
   type Event,

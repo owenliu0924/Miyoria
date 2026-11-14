@@ -8,7 +8,7 @@ import {
   type Module,
   type ModuleContext,
   sleep,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { customEvent, FileReaderKey, type ProfileId } from "@miyoria/types";
 import { SandboxConfigSchema } from "./config.js";

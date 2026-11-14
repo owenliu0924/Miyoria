@@ -5,7 +5,6 @@
 // It runs in its own task off the message log, so it never adds latency to a reply; turns only
 // read the state from memory.
 
-import { errorMessage, type Logger, SerialQueue } from "@miyoria/kernel";
 import {
   completeJson,
   type LlmRouter,
@@ -14,6 +13,7 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm";
+import { errorMessage, type Logger, SerialQueue } from "@miyoria/runtime/kernel";
 import {
   type LogEntry,
   type MessageLog,

@@ -7,8 +7,8 @@
 // no reader (sandbox off) or no authorizer; the history keeps `[附件: name]` for later turns.
 
 import { FILE_READ } from "@miyoria/commands";
-import { errorMessage } from "@miyoria/kernel";
 import type { ContentPart } from "@miyoria/llm";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type Attachment,
   type Authorizer,

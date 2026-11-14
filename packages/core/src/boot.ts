@@ -5,6 +5,7 @@
 
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { DirectiveModule, DirectiveService } from "@miyoria/directive";
+import { ReplayRecorderModule } from "@miyoria/replay";
 import {
   type Config,
   EventBus,
@@ -14,9 +15,8 @@ import {
   ServiceRegistry,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
-import type { Profile } from "@miyoria/profile";
-import { ReplayRecorderModule } from "@miyoria/replay";
+} from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
 import {
   AuditLogKey,
   AuthStoreKey,

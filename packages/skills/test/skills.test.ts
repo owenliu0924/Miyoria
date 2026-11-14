@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActuatorRegistry, ActuatorRegistryKey, type Capability } from "@miyoria/actions";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { PersistentWorkspace, type Sandbox, SandboxKey } from "@miyoria/sandbox";
 import { ToolRegistry } from "@miyoria/tools";
 import { DATA_CLOSE, DATA_OPEN, SkillShelfKey } from "@miyoria/types";

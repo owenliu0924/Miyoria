@@ -1,5 +1,5 @@
 import { STATUS_CODES } from "node:http";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import type { ErrorBody } from "./types.js";
 
 /**

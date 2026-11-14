@@ -2,6 +2,7 @@
 
 import { actuatorsFor } from "@miyoria/actions";
 import { type CommandRegistry, CommandRegistryKey } from "@miyoria/commands";
+import { LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
@@ -10,8 +11,7 @@ import {
   interval,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   ACTIVITY_CHANGED_TOPIC,

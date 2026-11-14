@@ -2,7 +2,7 @@
 // as a proposal to the main line with a stable attention key; nothing in the background speaks.
 
 import { ActuatorRegistry } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
 import {
   type AccountRef,

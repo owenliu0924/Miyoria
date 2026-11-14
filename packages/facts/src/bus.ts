@@ -8,7 +8,7 @@
 //
 // Nothing here may touch the disk or wait: it runs on every event on the bus.
 
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   ACTION_SETTLED_TOPIC,
   ACTIVITY_CHANGED_TOPIC,

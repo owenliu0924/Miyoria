@@ -12,7 +12,7 @@
 // reaches neither the store nor the voice path. Nothing here publishes anything or writes where
 // she can read it: being looked at changes nothing about her.
 
-import { getLogger, type ModuleContext } from "@miyoria/kernel";
+import { getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import { SingerKey, type SongEntry } from "@miyoria/sing";
 import { knownNames, type SettingsStore } from "@miyoria/store";
 import {

@@ -1,7 +1,7 @@
 // What her mind is told about singing and about hearing the voice channel.
 
 import { ActuatorRegistry, defineCapability } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { SpeechPauseKey, type VoiceChannelState, VoiceFloorKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";

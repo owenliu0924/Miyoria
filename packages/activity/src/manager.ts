@@ -16,7 +16,7 @@
 //   through the gate.
 
 import type { ActionResult, ActivityRouter, RoutedCall } from "@miyoria/actions";
-import { errorMessage, getLogger, type ServiceLookup, sleep } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup, sleep } from "@miyoria/runtime/kernel";
 import {
   ACTIVITY_CHANGED_TOPIC,
   ACTIVITY_DONE_TOPIC,

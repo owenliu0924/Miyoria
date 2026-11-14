@@ -1,6 +1,6 @@
 // Per-user consent to being listened to.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import { type AccountRef, type Clock, type ProfileId, systemClock } from "@miyoria/types";
 

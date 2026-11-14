@@ -1,6 +1,6 @@
 // Prometheus metrics of the agent (served by the `api` module at `GET /metrics`).
 
-import { metrics } from "@miyoria/kernel";
+import { metrics } from "@miyoria/runtime/kernel";
 import type { CorrectionCounts, CorrectionKind } from "@miyoria/types";
 
 /** `agent_decision`s by outcome (`responded` / `ignored`). */

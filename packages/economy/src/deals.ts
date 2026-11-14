@@ -14,7 +14,7 @@
 //   moderation, an owner rule, a forbidden or gated capability or a missing permission stops.
 
 import { ActuatorRegistryKey, capabilityMatches } from "@miyoria/actions";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type CoinEntry,
   type Deal,

@@ -1,4 +1,9 @@
-import { defineManifest, type Module, type ModuleContext, Supervisor } from "@miyoria/kernel";
+import {
+  defineManifest,
+  type Module,
+  type ModuleContext,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AffectState,

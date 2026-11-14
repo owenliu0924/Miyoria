@@ -1,7 +1,7 @@
 // Module ids the core knows about, in boot order (legacy `boot.rs` `MODULES`). Kept free of
 // imports so the CLI can list configured modules without loading any module package.
 
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 
 /** Every module the core knows about, for `miyoria module list`. */
 export const MODULE_IDS: readonly string[] = [

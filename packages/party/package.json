@@ -23,8 +23,8 @@
   },
   "dependencies": {
     "@miyoria/actions": "workspace:*",
-    "@miyoria/kernel": "workspace:*",
     "@miyoria/llm": "workspace:*",
+    "@miyoria/runtime": "workspace:*",
     "@miyoria/types": "workspace:*",
     "opencc-js": "^1.4.2",
     "zod": "^4.6.7"

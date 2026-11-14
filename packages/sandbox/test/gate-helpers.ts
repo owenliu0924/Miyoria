@@ -10,8 +10,8 @@ import {
   type ReplySink,
   ReplySinkKey,
 } from "@miyoria/commands";
-import { ServiceRegistry } from "@miyoria/kernel";
 import { type ChatRequest, type ChatResponse, type LlmRouter, LlmRouterKey } from "@miyoria/llm";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {

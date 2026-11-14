@@ -1,4 +1,4 @@
-import { errorMessage, getLogger, interval, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, interval, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type AccountRef,

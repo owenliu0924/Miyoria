@@ -322,12 +322,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -356,9 +356,9 @@ importers:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -390,15 +390,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
-      '@miyoria/profile':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../profile
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -451,9 +448,6 @@ importers:
       '@miyoria/economy':
         specifier: workspace:*
         version: link:../economy
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -466,6 +460,9 @@ importers:
       '@miyoria/queue':
         specifier: workspace:*
         version: link:../queue
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -515,9 +512,6 @@ importers:
       '@miyoria/mind':
         specifier: workspace:*
         version: link:../mind
-      '@miyoria/profile':
-        specifier: workspace:*
-        version: link:../profile
       '@miyoria/self':
         specifier: workspace:*
         version: link:../self
@@ -539,12 +533,12 @@ importers:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -573,9 +567,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -693,12 +687,12 @@ importers:
       '@miyoria/discord':
         specifier: workspace:*
         version: link:../discord
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -717,9 +711,9 @@ importers:
 
   packages/commands:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -781,9 +775,6 @@ importers:
       '@miyoria/imagegen':
         specifier: workspace:*
         version: link:../imagegen
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/learning':
         specifier: workspace:*
         version: link:../learning
@@ -808,21 +799,18 @@ importers:
       '@miyoria/plugin-host':
         specifier: workspace:*
         version: link:../plugin-host
-      '@miyoria/profile':
-        specifier: workspace:*
-        version: link:../profile
       '@miyoria/queue':
         specifier: workspace:*
         version: link:../queue
       '@miyoria/replay':
         specifier: workspace:*
         version: link:../replay
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/sandbox':
         specifier: workspace:*
         version: link:../sandbox
-      '@miyoria/scheduler':
-        specifier: workspace:*
-        version: link:../scheduler
       '@miyoria/self':
         specifier: workspace:*
         version: link:../self
@@ -878,9 +866,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -915,12 +903,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -952,9 +940,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/sing':
         specifier: workspace:*
         version: link:../sing
@@ -989,15 +977,12 @@ importers:
       '@miyoria/game':
         specifier: workspace:*
         version: link:../game
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
-      '@miyoria/profile':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../profile
+        version: link:../runtime
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -1014,9 +999,9 @@ importers:
 
   packages/facts:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1045,18 +1030,15 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
-      '@miyoria/profile':
-        specifier: workspace:*
-        version: link:../profile
       '@miyoria/queue':
         specifier: workspace:*
         version: link:../queue
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/social':
         specifier: workspace:*
         version: link:../social
@@ -1082,37 +1064,12 @@ importers:
 
   packages/imagegen:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/kernel:
-    dependencies:
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      pino:
-        specifier: ^10.4.0
-        version: 10.4.0
-      smol-toml:
-        specifier: ^1.9.1
-        version: 1.9.1
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -1132,12 +1089,12 @@ importers:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1166,9 +1123,9 @@ importers:
 
   packages/live:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/stage':
         specifier: workspace:*
         version: link:../stage
@@ -1194,9 +1151,9 @@ importers:
 
   packages/llm:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1222,12 +1179,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1262,12 +1219,12 @@ importers:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/social':
         specifier: workspace:*
         version: link:../social
@@ -1296,9 +1253,9 @@ importers:
 
   packages/moderation:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1321,12 +1278,12 @@ importers:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1355,12 +1312,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1393,36 +1350,14 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/profile:
-    dependencies:
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      smol-toml:
-        specifier: ^1.9.1
-        version: 1.9.1
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/queue:
     dependencies:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1460,18 +1395,15 @@ importers:
       '@miyoria/facts':
         specifier: workspace:*
         version: link:../facts
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
       '@miyoria/mind':
         specifier: workspace:*
         version: link:../mind
-      '@miyoria/profile':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../profile
+        version: link:../runtime
       '@miyoria/self':
         specifier: workspace:*
         version: link:../self
@@ -1501,14 +1433,39 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
+  packages/runtime:
+    dependencies:
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../types
+      pino:
+        specifier: ^10.4.0
+        version: 10.4.0
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+
   packages/sandbox:
     dependencies:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1538,28 +1495,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/scheduler:
-    dependencies:
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/sdk:
     devDependencies:
       '@types/node':
@@ -1574,9 +1509,9 @@ importers:
 
   packages/self:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1605,12 +1540,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/queue':
         specifier: workspace:*
         version: link:../queue
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1636,9 +1571,9 @@ importers:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -1679,15 +1614,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
-      '@miyoria/profile':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../profile
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1710,9 +1642,9 @@ importers:
 
   packages/speech:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1738,12 +1670,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1781,9 +1713,9 @@ importers:
 
   packages/store:
     dependencies:
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1847,12 +1779,12 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@miyoria/speech':
         specifier: workspace:*
         version: link:../speech
@@ -1896,9 +1828,9 @@ importers:
       '@miyoria/actions':
         specifier: workspace:*
         version: link:../actions
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1921,9 +1853,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/kernel':
+      '@miyoria/runtime':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store

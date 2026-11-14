@@ -17,7 +17,12 @@
 // lines are sanitized before they reach the game.
 
 import { actuatorsFor, type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
-import { defineManifest, errorMessage, type Module, type ModuleContext } from "@miyoria/kernel";
+import {
+  defineManifest,
+  errorMessage,
+  type Module,
+  type ModuleContext,
+} from "@miyoria/runtime/kernel";
 import { SocialKey } from "@miyoria/social";
 import {
   type AccountRef,

@@ -34,7 +34,7 @@ import {
   type WalletExport,
   type WalletView,
 } from "@miyoria/economy";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, accountRefString, newId } from "@miyoria/types";
 import { z } from "zod";
 import { ApiError } from "./errors.js";

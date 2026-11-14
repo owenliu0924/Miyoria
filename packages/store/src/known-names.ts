@@ -1,7 +1,7 @@
 // Every name she knows people by, for the check that keeps one person's name off another person's
 // page (`mentionsAnother`): display names, handles and what she calls them.
 
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import { AffectStateKey, HandleDirectoryKey, type KnownName } from "@miyoria/types";
 import { PeopleStoreKey } from "./stores.js";
 

@@ -3,7 +3,12 @@
 
 import { EventEmitter } from "node:events";
 import { CommandRegistry } from "@miyoria/commands";
-import { defineManifest, type Module, type ModuleContext, Supervisor } from "@miyoria/kernel";
+import {
+  defineManifest,
+  type Module,
+  type ModuleContext,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type JsonValue,

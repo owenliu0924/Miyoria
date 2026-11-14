@@ -5,7 +5,7 @@
 // broken store can never reach a turn or the voice path: `append` does not throw and does not
 // wait, and while the store fails the buffer holds on, bounded, dropping its oldest events.
 
-import { errorMessage, getLogger, metrics } from "@miyoria/kernel";
+import { errorMessage, getLogger, metrics } from "@miyoria/runtime/kernel";
 import type { EventLogStore } from "@miyoria/store";
 import {
   type CauseChain,

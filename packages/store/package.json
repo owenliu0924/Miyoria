@@ -23,7 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@miyoria/kernel": "workspace:*",
+    "@miyoria/runtime": "workspace:*",
     "@miyoria/types": "workspace:*",
     "pg": "^8.23.1"
   },

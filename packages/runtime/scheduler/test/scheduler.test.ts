@@ -1,4 +1,3 @@
-import { EventBus, ServiceRegistry, type Subscription, Supervisor } from "@miyoria/kernel";
 import {
   ACTION_SETTLED_TOPIC,
   type Action,
@@ -31,6 +30,12 @@ import {
   voiceLane,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  EventBus,
+  ServiceRegistry,
+  type Subscription,
+  Supervisor,
+} from "../../kernel/src/index.js";
 import { Scheduler, SchedulerModule } from "../src/index.js";
 
 /** Like tokio's `Notify`: `notifyOne` before `notified` is remembered. */

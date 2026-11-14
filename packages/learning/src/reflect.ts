@@ -10,7 +10,6 @@
 // of empty values), reasoning `reflect`; capped per day; budget degraded = only the daily one,
 // exhausted = none.
 
-import { errorMessage, getLogger, SerialQueue, type ServiceLookup } from "@miyoria/kernel";
 import {
   completeJson,
   LlmRouterKey,
@@ -19,6 +18,7 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm";
+import { errorMessage, getLogger, SerialQueue, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   knownNames,
   PeopleStoreKey,

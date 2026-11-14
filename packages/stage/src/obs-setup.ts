@@ -22,7 +22,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
-import { errorMessage, withTimeout } from "@miyoria/kernel";
+import { errorMessage, withTimeout } from "@miyoria/runtime/kernel";
 import OBSWebSocket from "obs-websocket-js/json";
 import { ObsError } from "./obs.js";
 

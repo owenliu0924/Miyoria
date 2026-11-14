@@ -1,5 +1,6 @@
 import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
+import { LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
@@ -7,9 +8,8 @@ import {
   type Module,
   type ModuleContext,
   presentKeys,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
-import type { Profile } from "@miyoria/profile";
+} from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
 import {
   IdentityStoreKey,
   MemoryRecordStoreKey,

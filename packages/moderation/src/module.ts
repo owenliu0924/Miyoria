@@ -1,7 +1,7 @@
 // Module `moderation`: provides `ModerationKey`. Blocks and non-plain input verdicts are
 // published on the bus and logged without the text, so the log can be shown publicly.
 
-import { defineManifest, type Module, type ModuleContext } from "@miyoria/kernel";
+import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import {
   customEvent,
   type JsonValue,

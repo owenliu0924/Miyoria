@@ -4,8 +4,8 @@
 import { statSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import type { Stream } from "node:stream";
-import { errorMessage, getLogger, sleep, withTimeout } from "@miyoria/kernel";
 import { MIYORIA_VERSION } from "@miyoria/llm";
+import { errorMessage, getLogger, sleep, withTimeout } from "@miyoria/runtime/kernel";
 import type { Tool, ToolContext, ToolRegistry, ToolSpec } from "@miyoria/tools";
 import { type Clock, isJsonObject, type JsonValue } from "@miyoria/types";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

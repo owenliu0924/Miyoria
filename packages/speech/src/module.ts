@@ -1,6 +1,11 @@
 // The `speech` module: builds providers from config and provides `SpeechService`.
 
-import { defineManifest, errorMessage, type Module, type ModuleContext } from "@miyoria/kernel";
+import {
+  defineManifest,
+  errorMessage,
+  type Module,
+  type ModuleContext,
+} from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
 import { HttpWorkerAsrFactory, OpenAiAsrFactory } from "./asr.js";

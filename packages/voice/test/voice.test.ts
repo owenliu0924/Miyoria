@@ -12,13 +12,13 @@ import {
   CommandsModule,
   replyEphemeral,
 } from "@miyoria/commands";
+import { type ChatRequest, type LlmRouter, LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   type Module,
   type ModuleContext,
   type Subscription,
-} from "@miyoria/kernel";
-import { type ChatRequest, type LlmRouter, LlmRouterKey } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   type AsrHint,
   type AsrProvider,

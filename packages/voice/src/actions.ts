@@ -15,7 +15,7 @@
 // mid-song, and her friends kept calling her back. A person or a command can still send her away.
 
 import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type ActivityRequest,
   actLane,

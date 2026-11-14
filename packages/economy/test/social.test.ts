@@ -3,7 +3,7 @@
 // two rows finished by a retry) and the sponsor board (opt-in only, the window, refunds, linked
 // accounts as one person, no balances).
 
-import { getLogger, ServiceRegistry } from "@miyoria/kernel";
+import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { CoinLedgerStoreKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,

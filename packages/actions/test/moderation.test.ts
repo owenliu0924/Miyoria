@@ -1,7 +1,7 @@
 // `message.dm` and `speak`: the two capabilities that put her words out without a turn. Both go
 // through the output review before anything else, under either pipeline.
 
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type Action,
   ActionSinkKey,

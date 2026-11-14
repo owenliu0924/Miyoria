@@ -6,7 +6,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import { type Gift, GiftMerger } from "./gifts.js";
 import { closeOnAbort, type ServeResult } from "./lipsync.js";
 import { formatAddress, HttpServer } from "./net.js";

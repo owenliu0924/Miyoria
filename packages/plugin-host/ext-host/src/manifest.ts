@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { errorMessage, parseTomlJson } from "@miyoria/kernel";
+import { errorMessage, parseTomlJson } from "@miyoria/runtime/kernel";
 import { z } from "zod";
 
 /** File name of an extension manifest. */

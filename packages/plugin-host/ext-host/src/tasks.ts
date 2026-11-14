@@ -19,7 +19,7 @@
 //   or was never known (`rejected`): the one case where an event of an ended task is not stale.
 // - Every event is published on the bus as `<owner>.task.<type>` (payload: the `TaskEvent`).
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   isStructuredStateLike,
   isTaskFailureCode,

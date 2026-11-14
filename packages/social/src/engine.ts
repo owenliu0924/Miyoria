@@ -3,8 +3,8 @@
 //
 // Callers pass `now` (epoch ms) explicitly so everything is testable without a clock.
 
-import { getLogger, SerialQueue } from "@miyoria/kernel";
 import { type LlmRouter, sessionId, withLlmTag } from "@miyoria/llm";
+import { getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type {
   IdentityStore,
   MemoryRecordStore,

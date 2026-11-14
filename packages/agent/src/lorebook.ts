@@ -9,7 +9,7 @@
 // * Kaomoji (text only): `KAOMOJI_PICKS` faces, mostly of the group(s) of her mood and one or two of
 //   the others, none she used in her last lines, in an order seeded by the turn.
 
-import type { Lorebook, LoreEntry } from "@miyoria/profile";
+import type { Lorebook, LoreEntry } from "@miyoria/runtime/profile";
 
 /** Entries shown in one turn at most. */
 export const MAX_ENTRIES = 3;

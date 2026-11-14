@@ -11,7 +11,7 @@
 // * Money in her purse is hers to spend: it counts toward none of the caps on `give_coins`.
 
 import { ActuatorRegistryKey } from "@miyoria/actions";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import {
   AuditLogKey,

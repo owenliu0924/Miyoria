@@ -2,7 +2,7 @@
 // is looked up per request, because the modules providing them may be stopped or restarted at
 // any time.
 
-import { errorMessage, getLogger, type ModuleContext } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import { type AuditEntry, AuditLogKey } from "@miyoria/store";
 import {
   type JsonValue,

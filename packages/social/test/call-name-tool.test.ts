@@ -2,7 +2,7 @@
 // capability tool; only the speaker's own, whatever the arguments say.
 
 import { ActuatorRegistry, CapabilityTool } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { type AccountRef, type ContextKey, type JsonValue, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { callNameCapability } from "../src/index.js";

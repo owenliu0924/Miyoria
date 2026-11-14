@@ -17,7 +17,7 @@ import {
   type Invocation,
   notice,
 } from "@miyoria/commands";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonObject, Principals } from "@miyoria/types";
 import { defaultStageStatus, type StageStatus, type StreamAction } from "../protocol.js";
 import type { StageLink } from "./link.js";

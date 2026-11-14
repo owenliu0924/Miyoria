@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActuatorRegistryKey } from "@miyoria/actions";
 import { Economy2Key } from "@miyoria/economy";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
 import { LIFE_ACTIVITIES } from "@miyoria/mind";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { PersistentWorkspace, SandboxKey } from "@miyoria/sandbox";
 import {
   type JustNowEntry,

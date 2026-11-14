@@ -6,9 +6,9 @@
 import { fileURLToPath } from "node:url";
 import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/arbiter";
 import { EventLogService } from "@miyoria/facts";
-import { Supervisor } from "@miyoria/kernel";
 import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/mind";
-import { Profile } from "@miyoria/profile";
+import { Supervisor } from "@miyoria/runtime/kernel";
+import { Profile } from "@miyoria/runtime/profile";
 import { computeBiases, MAX_BIAS, SelfModule, shownEmotion } from "@miyoria/self";
 import { MoodModule } from "@miyoria/social";
 import { Forwarder } from "@miyoria/stage";

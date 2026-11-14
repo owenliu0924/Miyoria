@@ -5,7 +5,7 @@
 // `keep` are condensed into one digest (`mind:digest:<id>`, the newest `digestsKeep` kept), so
 // the settings never grow unbounded.
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   isJsonObject,

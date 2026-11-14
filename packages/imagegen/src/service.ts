@@ -18,7 +18,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { errorMessage, isAbortError, type Logger, sleep } from "@miyoria/kernel";
+import { errorMessage, isAbortError, type Logger, sleep } from "@miyoria/runtime/kernel";
 import {
   type Clock,
   customEvent,

@@ -3,7 +3,7 @@
 // contract has the same shapes as `@miyoria/types`.
 
 import { PassThrough } from "node:stream";
-import { sleep } from "@miyoria/kernel";
+import { sleep } from "@miyoria/runtime/kernel";
 import {
   runExtension,
   TASK_FAILURE_CODES as SDK_CODES,

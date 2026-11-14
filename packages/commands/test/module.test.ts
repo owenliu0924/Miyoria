@@ -7,7 +7,7 @@ import {
   ServiceRegistry,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { type AuditEntry, type AuditLog, AuditLogKey } from "@miyoria/store";
 import { type Authorizer, AuthorizerKey, type ModuleStateKind } from "@miyoria/types";
 import { describe, expect, it, vi } from "vitest";

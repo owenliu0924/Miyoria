@@ -13,7 +13,7 @@ import { createRequire } from "node:module";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import { DEFAULT_LOCAL_MODEL, type EmbeddingConfig } from "./config.js";
 import { type Embedder, EmbeddingError } from "./embed.js";
 

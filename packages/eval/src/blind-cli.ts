@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Profile } from "@miyoria/profile";
+import { Profile } from "@miyoria/runtime/profile";
 import {
   type BlindKey,
   buildChoicesTemplate,

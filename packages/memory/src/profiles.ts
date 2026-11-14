@@ -8,7 +8,7 @@
 // and, for the people she is talking with, her recent questions to them and whether they answered.
 // Nothing stored moves or is deleted: this is a reader.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { MemoryRecord } from "@miyoria/store";
 import {
   AFFINITY_LEVEL_MAX,

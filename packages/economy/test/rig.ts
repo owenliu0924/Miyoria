@@ -7,7 +7,7 @@ import {
   type Capability,
   CapabilityTool,
 } from "@miyoria/actions";
-import { getLogger, ServiceRegistry } from "@miyoria/kernel";
+import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   CoinLedgerStoreKey,
   DealStoreKey,

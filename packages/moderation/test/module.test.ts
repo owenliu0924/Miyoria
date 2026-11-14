@@ -1,7 +1,7 @@
 // Module `moderation` under the real kernel: the service is provided, a block is published on
 // the bus without its text, the admin token from the environment is protected.
 
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type Envelope,
   MODERATION_BLOCK_TOPIC,

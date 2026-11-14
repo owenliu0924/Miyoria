@@ -1,6 +1,6 @@
 // Router, authentication and the fallback. The route groups live in sibling modules.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";

@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { configuredModules } from "@miyoria/core/light";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import {
   isCancelled,
   isInteractive,

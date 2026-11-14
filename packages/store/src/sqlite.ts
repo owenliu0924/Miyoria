@@ -16,7 +16,7 @@ import {
   type SQLOutputValue,
   type StatementSync,
 } from "node:sqlite";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type Clock,

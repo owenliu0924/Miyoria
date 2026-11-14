@@ -2,6 +2,7 @@
 // `reflect` (feedback signals, lessons, daily and light reflections).
 
 import { ActuatorRegistryKey, actuatorsFor } from "@miyoria/actions";
+import { LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
@@ -10,8 +11,7 @@ import {
   type ServiceLookup,
   sleep,
   withTimeout,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   MessageLogKey,
   PeopleStoreKey,

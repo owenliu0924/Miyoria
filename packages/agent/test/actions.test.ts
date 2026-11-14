@@ -2,8 +2,8 @@
 // tool calls in a reactive turn carry the `user` principal.
 
 import { ActuatorRegistry } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
 import { MockProvider } from "@miyoria/llm";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { type ToolContext, ToolRegistry } from "@miyoria/tools";
 import {
   type AccountRef,

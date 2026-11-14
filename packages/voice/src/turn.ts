@@ -10,7 +10,7 @@
 // when the people it answers are not talking and stayed quiet for `turn_confirm_ms`. It opens by
 // itself after `turn_gate_max_ms`: her voice is never held up by the gate going wrong.
 
-import { errorMessage, sleep } from "@miyoria/kernel";
+import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import { type AccountRef, accountRefString } from "@miyoria/types";
 import { deferred } from "./util.js";
 

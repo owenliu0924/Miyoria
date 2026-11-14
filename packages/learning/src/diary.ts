@@ -14,8 +14,8 @@
 // and the owner's rules can stop it.
 
 import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
-import { errorMessage, getLogger } from "@miyoria/kernel";
 import { type LlmRouter, systemMessage, userMessage, withLlmTag } from "@miyoria/llm";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type ContextKey,

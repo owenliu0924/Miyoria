@@ -7,7 +7,7 @@
 // `cancelled`, `state`, `exchange`, `discord`, `denied`, `unavailable`. Details go to the log.
 
 import { createHash } from "node:crypto";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { type AccountRef, AuthorizerKey, accountRefString, type Clock } from "@miyoria/types";
 import { z } from "zod";

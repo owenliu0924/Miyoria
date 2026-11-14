@@ -6,7 +6,7 @@
 // shows they were not talking to her (a "嗯", an echo, noise) she goes on with the rest of her
 // line instead of dropping it.
 
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   accountRefString,

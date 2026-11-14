@@ -2,7 +2,6 @@
 // an in-memory settings store and message log, and the app's prompt contributor / tool
 // registries.
 
-import { defineManifest, type Module, type ModuleContext, Supervisor } from "@miyoria/kernel";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -12,6 +11,12 @@ import {
   type ModelRef,
   parseModelRef,
 } from "@miyoria/llm";
+import {
+  defineManifest,
+  type Module,
+  type ModuleContext,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
 import {
   type AuthoredEntry,
   type LogEntry,

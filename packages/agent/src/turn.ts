@@ -25,7 +25,6 @@
 // turn of their own), every line goes through the gate and the ledger (mainline/), and a call that
 // fails ends in a fixed line instead of silence. `#speakMain` is that path; the rest is shared.
 
-import { errorMessage, sleep } from "@miyoria/kernel";
 import {
   assistantMessage,
   type ChatMessage,
@@ -41,6 +40,7 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm";
+import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import type { Tool, ToolContext } from "@miyoria/tools";
 import {
   type AccountRef,

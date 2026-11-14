@@ -2,7 +2,7 @@
 // lost), refunds, the sweep that finishes what a crash left, and her tools and `/me bet`.
 
 import { CommandRegistry, Permissions } from "@miyoria/commands";
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import type { AccountRef, JsonValue } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyCommands } from "../src/commands.js";

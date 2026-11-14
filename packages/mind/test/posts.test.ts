@@ -1,7 +1,7 @@
 // Her daily posts (v4 §8.4, row 8 of §16): off by default, one channel, a daily cap, and even then
 // only a proposal for the main line; rules, levels, quiet hours and the budget come first.
 
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
 import {
   ArbiterKey,

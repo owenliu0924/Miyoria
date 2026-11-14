@@ -7,7 +7,7 @@ import {
   Invocation,
   type ResolvedUser,
 } from "@miyoria/commands";
-import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/kernel";
+import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { AuditLogKey, AuthStoreKey } from "@miyoria/store";
 import {
   type AccountRef,

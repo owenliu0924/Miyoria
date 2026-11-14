@@ -3,7 +3,7 @@
 // `applied`, `rejected` or `too_late`; one without `steer` must look like an executor with none.
 
 import { PassThrough } from "node:stream";
-import { sleep } from "@miyoria/kernel";
+import { sleep } from "@miyoria/runtime/kernel";
 import {
   runExtension,
   type TaskEvent as SdkTaskEvent,

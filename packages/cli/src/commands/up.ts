@@ -6,7 +6,7 @@ import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import { cliVersion } from "../assets.js";
 import { buildChecks, type DeepDeps, type DeepInput, workerChecks } from "../stack/checks.js";

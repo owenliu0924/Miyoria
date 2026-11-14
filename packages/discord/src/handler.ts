@@ -7,7 +7,7 @@ import {
   ReplySinkKey,
   UserResolverKey,
 } from "@miyoria/commands";
-import { errorMessage, getLogger, type ModuleContext } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type ContextKind,

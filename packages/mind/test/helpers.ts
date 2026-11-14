@@ -4,13 +4,6 @@
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
 import {
-  defineManifest,
-  type Module,
-  type ModuleContext,
-  type Subscription,
-  Supervisor,
-} from "@miyoria/kernel";
-import {
   type ChatProvider,
   type ChatRequest,
   LlmRouter,
@@ -18,6 +11,13 @@ import {
   type ModelRef,
   parseModelRef,
 } from "@miyoria/llm";
+import {
+  defineManifest,
+  type Module,
+  type ModuleContext,
+  type Subscription,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
 import { SelfModule } from "@miyoria/self";
 import { type Social, SocialKey } from "@miyoria/social";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";

@@ -1,8 +1,8 @@
 // Tools by what she is doing (v2 §3.4) and claims backed by structured signals (§1.8 #5).
 
 import { ActuatorRegistry, CapabilityTool, defineCapability } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
 import { MockProvider } from "@miyoria/llm";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { type ToolContext, ToolRegistry } from "@miyoria/tools";
 import {
   type ActivityManager,

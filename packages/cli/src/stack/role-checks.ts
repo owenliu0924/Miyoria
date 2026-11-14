@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import { configuredWorkerUrls, type DeepInput, type Finding, fail, ok, warn } from "./checks.js";
 import { parseBind, pythonPath, type Stack, type Worker } from "./config.js";

@@ -11,7 +11,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { encodeWav } from "@miyoria/speech";
 
 export type ClipKind = "utterance" | "ended" | "resumed";

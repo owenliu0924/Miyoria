@@ -3,7 +3,7 @@
 // and their refunds, frames, and her own `give_coins`.
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
-import { getLogger, ServiceRegistry, Supervisor } from "@miyoria/kernel";
+import { getLogger, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import { AuditLogKey, CoinLedgerStoreKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {

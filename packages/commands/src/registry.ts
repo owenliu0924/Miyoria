@@ -1,4 +1,4 @@
-import { getLogger, type ServiceLookup } from "@miyoria/kernel";
+import { getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { type AuditLog, AuditLogKey } from "@miyoria/store";
 import {
   AuthorizerKey,

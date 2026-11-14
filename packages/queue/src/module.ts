@@ -5,7 +5,7 @@ import {
   getLogger,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { SocialSignalsKey, serviceKey } from "@miyoria/types";
 import { registerCommands } from "./commands.js";

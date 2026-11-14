@@ -8,7 +8,7 @@ import {
   Invocation,
   Permissions,
 } from "@miyoria/commands";
-import { EventBus, ServiceRegistry, type Subscription, Supervisor } from "@miyoria/kernel";
+import { EventBus, ServiceRegistry, type Subscription, Supervisor } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   customEvent,

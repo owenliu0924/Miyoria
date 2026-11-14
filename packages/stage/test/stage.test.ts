@@ -4,7 +4,7 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/kernel";
+import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { type ContextKey, customEvent, newId, SONG_PREPARE_TOPIC } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";

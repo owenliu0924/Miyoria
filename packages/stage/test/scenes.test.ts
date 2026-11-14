@@ -3,7 +3,6 @@
 // on the Stage side with a fake OBS.
 
 import { ActuatorRegistry } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -11,6 +10,7 @@ import {
   LlmRouter,
   parseModelRef,
 } from "@miyoria/llm";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
 import { ToolRegistry } from "@miyoria/tools";
 import { type JsonObject, Principals } from "@miyoria/types";

@@ -1,4 +1,5 @@
 import { actuatorsFor } from "@miyoria/actions";
+import { completeJson, LlmRouterKey, systemMessage, userMessage, withLlmTag } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
@@ -7,8 +8,7 @@ import {
   presentKeys,
   type ServiceLookup,
   withTimeout,
-} from "@miyoria/kernel";
-import { completeJson, LlmRouterKey, systemMessage, userMessage, withLlmTag } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   ACTIVITY_CHANGED_TOPIC,

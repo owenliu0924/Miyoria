@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { inspect } from "node:util";
-import { errorMessage, getLogger, isAbortError, sleep } from "@miyoria/kernel";
+import { errorMessage, getLogger, isAbortError, sleep } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
 import type { ProviderConfig, ProviderFactory } from "../module.js";

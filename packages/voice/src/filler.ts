@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { type AudioBuf, decodeWav, encodeWav } from "@miyoria/speech";
 import type { ContextKey, TurnId } from "@miyoria/types";
 

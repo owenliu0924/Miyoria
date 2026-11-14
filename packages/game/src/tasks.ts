@@ -2,7 +2,7 @@
 // goals to the model, run one task to its end. Completion and failure always come from the
 // executor's task events (with a code), never from event names or result texts.
 
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   gameTaskOwner,
   isTaskFailureCode,

@@ -1,6 +1,6 @@
 // Command line: a small declarative parser with Traditional Chinese help (legacy clap setup).
 
-import { loadDotenv } from "@miyoria/kernel";
+import { loadDotenv } from "@miyoria/runtime/kernel";
 import { cliVersion } from "./assets.js";
 import * as configCmd from "./commands/config.js";
 import * as discordCmd from "./commands/discord.js";

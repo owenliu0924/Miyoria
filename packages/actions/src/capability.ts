@@ -3,7 +3,7 @@
 // director) goes through `ActuatorRegistry.invoke`, which runs the gate first.
 
 import type { CommandReply, ReplyFile } from "@miyoria/commands";
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import type {
   AccountRef,
   ActivityRequest,

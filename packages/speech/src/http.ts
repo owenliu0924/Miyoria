@@ -1,7 +1,7 @@
 // Helpers shared by the HTTP-based providers.
 
 import { STATUS_CODES } from "node:http";
-import { errorMessage, isAbortError } from "@miyoria/kernel";
+import { errorMessage, isAbortError } from "@miyoria/runtime/kernel";
 import { z } from "zod";
 import { IdleTimer } from "./pcm.js";
 import { type ProviderConfig, SpeechError } from "./types.js";

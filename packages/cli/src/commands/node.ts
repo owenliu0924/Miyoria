@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { type CoreLogLevel, loadProfile, logFilter, logLevel } from "@miyoria/core/light";
-import { Config, configureLogging } from "@miyoria/kernel";
+import { Config, configureLogging } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import { PACKAGE_ROOT } from "../assets.js";
 import { fail, ok, println, warn } from "../ui.js";

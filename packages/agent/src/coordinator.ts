@@ -46,7 +46,7 @@
 // cuts in as far as the Floor's interrupt level says (§7.3): `wrap_up` finishes the sentence that
 // is playing and drops the rest, `cut_short` and `interrupt` stop that sentence too.
 
-import { errorMessage, metrics } from "@miyoria/kernel";
+import { errorMessage, metrics } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   ActionSinkKey,

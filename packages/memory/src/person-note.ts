@@ -3,7 +3,7 @@
 // It goes through `MemoryEngine.store` like every other memory: merged with a near-identical one,
 // faded and tidied by the usual upkeep.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { PersonId, PersonNoteWriter, Timestamp } from "@miyoria/types";
 import type { MemoryEngine } from "./engine.js";
 

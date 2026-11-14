@@ -1,6 +1,6 @@
 // Streaming one playback to the node.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { AudioChunk, AudioStream } from "@miyoria/speech";
 import type { PlaybackState } from "@miyoria/types";
 import { type CoreMessage, encodeAudio, TAG_LEVELS, TAG_PLAYBACK } from "../protocol.js";

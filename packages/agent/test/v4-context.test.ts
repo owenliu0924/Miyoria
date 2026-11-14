@@ -6,8 +6,8 @@
 
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
-import type { ServiceRegistry } from "@miyoria/kernel";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm";
+import type { ServiceRegistry } from "@miyoria/runtime/kernel";
 import type { Tool } from "@miyoria/tools";
 import {
   type Attitude,

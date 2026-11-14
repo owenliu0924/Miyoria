@@ -14,7 +14,7 @@
 //
 // Persistence: one settings record per document (`knowledge:doc:<id>`), cached in memory.
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type Clock,

@@ -1,7 +1,7 @@
 // Runtime control of the agent: per-context channel mode and activeness, which voice channel
 // she is in, and the LLM budget state.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type Clock,

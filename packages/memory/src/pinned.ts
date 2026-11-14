@@ -6,7 +6,7 @@
 // search: a person's line is their most reliable facts joined, from one indexed read that is
 // reused for `cache_secs` (a write or a forget resets it).
 
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import type { MemoryRecord } from "@miyoria/store";
 import {
   type Clock,

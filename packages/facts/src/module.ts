@@ -12,7 +12,7 @@ import {
   type ModuleContext,
   type Subscription,
   sleep,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import type { EventLogStore, Store } from "@miyoria/store";
 import {
   ActivityRecoveryKey,

@@ -4,7 +4,7 @@ import {
   type Health,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import {
   ImageGenKey,
   parseSongCue,

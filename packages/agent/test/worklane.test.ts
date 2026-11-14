@@ -5,7 +5,6 @@
 import { ActuatorRegistry } from "@miyoria/actions";
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
-import { getLogger, ServiceRegistry } from "@miyoria/kernel";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -14,6 +13,7 @@ import {
   parseModelRef,
   type StreamEvent,
 } from "@miyoria/llm";
+import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
 import { type Tool, type ToolContext, ToolRegistry } from "@miyoria/tools";
 import {

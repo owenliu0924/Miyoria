@@ -1,7 +1,7 @@
 // Module `live` on a real supervisor and bus: it serves the feed, writes pat Observations to the
 // EventLog and nothing else, and publishes nothing.
 
-import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/kernel";
+import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { PeopleStoreKey } from "@miyoria/store";
 import {
   type ContextKey,

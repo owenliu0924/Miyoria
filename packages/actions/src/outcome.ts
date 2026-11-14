@@ -6,7 +6,7 @@
 // published on `ACTION_OUTCOME_TOPIC` for whoever keeps one. A late result (a high-risk tool that
 // answered "pending" and nobody waits for any more) is also a `Notice` for her conversation.
 
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   ArbiterKey,
   customEvent,

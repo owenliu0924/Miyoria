@@ -2,7 +2,7 @@
 // games' coins are paid once per game, and the health table reads the real ledger.
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   CoinLedgerStoreKey,
   EconomyDocsKey,

@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { type Config, errorMessage } from "@miyoria/kernel";
+import { type Config, errorMessage } from "@miyoria/runtime/kernel";
 import { newId } from "@miyoria/types";
 import { extensionSettings, hostConfigFromConfig, resolvedDirs } from "./config.js";
 import { findExtensionDirs } from "./host.js";

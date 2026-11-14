@@ -1,7 +1,7 @@
 // `/api/sandbox/tools*`: the owners' view of the tools she wrote, and approving / rejecting one
 // exact version.
 
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { ProposedTools, ProposedToolsKey } from "@miyoria/sandbox";
 import { MemorySettingsStore } from "@miyoria/store";
 import { afterEach, describe, expect, it } from "vitest";

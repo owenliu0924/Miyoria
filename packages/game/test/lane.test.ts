@@ -4,7 +4,6 @@
 // restarts.
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
-import { Supervisor } from "@miyoria/kernel";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -14,6 +13,7 @@ import {
   LlmRouterKey,
   parseModelRef,
 } from "@miyoria/llm";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { ToolRegistry } from "@miyoria/tools";
 import {
   type ContextKey,

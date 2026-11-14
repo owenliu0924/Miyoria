@@ -1,12 +1,12 @@
 import { actuatorsFor } from "@miyoria/actions";
+import { LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
   getLogger,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   ACTIVITY_CHANGED_TOPIC,
   type ActivitySnapshot,

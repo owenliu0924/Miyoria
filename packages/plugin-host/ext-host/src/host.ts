@@ -13,7 +13,7 @@ import {
   type ModuleManifest,
   SupervisorKey,
   sleep,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { ToolRegistry } from "@miyoria/tools";
 import { type JsonValue, type ModuleId, serviceKey, TaskExecutorsKey } from "@miyoria/types";
 import {

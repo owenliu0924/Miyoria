@@ -1,6 +1,5 @@
 // `/api/knowledge*`, `/api/reflection`, `/api/mind/digests`: what she organized and learned.
 
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
 import {
   DOC_PREFIX,
   FEEDBACK_PREFIX,
@@ -12,6 +11,7 @@ import {
   STATE_PREFIX,
 } from "@miyoria/learning";
 import { DIGEST_PREFIX, GOAL_MIGRATION_KEY, GOAL_PREFIX, PLAN_STATE_KEY } from "@miyoria/mind";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { DATA_CATEGORIES, MemorySettingsStore } from "@miyoria/store";
 import {
   type ConversationState,

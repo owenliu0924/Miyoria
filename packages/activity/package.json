@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@miyoria/actions": "workspace:*",
-    "@miyoria/kernel": "workspace:*",
+    "@miyoria/runtime": "workspace:*",
     "@miyoria/types": "workspace:*",
     "zod": "^4.6.7"
   },

@@ -1,7 +1,7 @@
 // `GET /api/facts/*` against a real EventLog.
 
 import { DeliveryLedgerView, EventLogService, WorkingContextView } from "@miyoria/facts";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   DeliveryLedgerKey,

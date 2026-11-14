@@ -2,7 +2,7 @@
 // after it, each answers for itself, and resume lifts the flag. The ActivityManager is a fake here:
 // the real one, with the gate between them, is in packages/core/test/emergency.test.ts.
 
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   ActionSinkKey,

@@ -14,7 +14,7 @@ import {
   type ModuleContext,
   type ModuleManifest,
   withTimeout,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { AuditLogKey, AuthStoreKey } from "@miyoria/store";
 import { type AccountRef, AuthorizerKey, serviceKey } from "@miyoria/types";
 import { z } from "zod";

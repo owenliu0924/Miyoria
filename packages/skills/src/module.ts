@@ -5,7 +5,7 @@ import {
   type Health,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { SandboxKey } from "@miyoria/sandbox";
 import { SkillIndexKey, SkillShelfKey, serviceKey } from "@miyoria/types";
 import { skillCapabilities } from "./capabilities.js";

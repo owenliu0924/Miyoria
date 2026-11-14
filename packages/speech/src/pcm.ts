@@ -1,6 +1,6 @@
 // Turns a raw s16le byte stream into `AudioChunk`s.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { type AudioBuf, type AudioChunk, type AudioStream, SpeechError } from "./types.js";
 
 /** One pending odd byte between network chunks. */

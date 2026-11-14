@@ -10,8 +10,8 @@ import {
 } from "@miyoria/actions";
 import { ActivityModule } from "@miyoria/activity";
 import { CommandsModule } from "@miyoria/commands";
-import { defineManifest, type Module, type ModuleContext } from "@miyoria/kernel";
-import { SchedulerModule } from "@miyoria/scheduler";
+import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
+import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import {
   type AudioChunk,
   type AudioStream,

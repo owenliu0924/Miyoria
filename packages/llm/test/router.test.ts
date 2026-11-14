@@ -1,4 +1,4 @@
-import { MetricsRegistry } from "@miyoria/kernel";
+import { MetricsRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
 import type { Clock, JsonValue } from "@miyoria/types";
 import { describe, expect, it } from "vitest";

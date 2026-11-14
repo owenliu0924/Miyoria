@@ -27,7 +27,7 @@
 // ```
 
 import { inspect } from "node:util";
-import { ConfigError } from "@miyoria/kernel";
+import { ConfigError } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
 

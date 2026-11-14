@@ -5,7 +5,7 @@
 
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import type { ImageJob } from "@miyoria/types";
 
 const log = getLogger("imagegen.store");

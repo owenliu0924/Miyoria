@@ -2,7 +2,7 @@
 // inject a fake `DockerRunner`; the real one spawns the CLI without a shell.
 
 import { spawn } from "node:child_process";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { dockerCliEnv } from "./args.js";
 
 export interface ExecOptions {

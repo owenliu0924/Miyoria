@@ -1,7 +1,7 @@
 // What `miyoria ext ...` needs from the extension host (legacy `miyoria_ext_host::cli`). The
 // adapter to `@miyoria/plugin-host/ext-host` lives in `modules.ts`.
 
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 
 export interface ExtensionManifestInfo {
   id: string;

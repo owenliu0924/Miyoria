@@ -1,7 +1,7 @@
 // The migration into person cards: nothing is lost, running it again changes nothing, and what
 // she wrote with reference codes is not guessed at.
 
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   MemorySettingsStore,
   PeopleStoreKey,

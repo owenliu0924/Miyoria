@@ -2,7 +2,12 @@
 // Voice Link protocol (port of `tests/common/mod.rs`).
 
 import { readFileSync } from "node:fs";
-import { type Module, ServiceRegistry, type Subscription, Supervisor } from "@miyoria/kernel";
+import {
+  type Module,
+  ServiceRegistry,
+  type Subscription,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
 import type { Envelope, JsonObject, JsonValue, ModuleStateKind } from "@miyoria/types";
 import { parse as parseToml } from "smol-toml";
 import WebSocket, { type RawData } from "ws";

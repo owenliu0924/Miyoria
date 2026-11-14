@@ -2,8 +2,8 @@
 // `reflect`, person-card tidy-up through `adjustBond(..., "reflect")` within caps, long-term
 // goals into her `GoalAgenda`, and the interaction threshold.
 
-import { ServiceRegistry } from "@miyoria/kernel";
 import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, PeopleStoreKey } from "@miyoria/store";
 import {
   type AffectSource,

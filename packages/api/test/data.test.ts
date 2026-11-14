@@ -4,16 +4,16 @@
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/agent";
 import * as arbiter from "@miyoria/arbiter";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm";
+import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory";
+import * as queue from "@miyoria/queue";
 import {
   defineManifest,
   type Module,
   type ModuleContext,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
-import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm";
-import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory";
-import * as queue from "@miyoria/queue";
+} from "@miyoria/runtime/kernel";
 import { SandboxKey, type ScriptInfo, TOOL_KEY_PREFIX } from "@miyoria/sandbox";
 import * as self from "@miyoria/self";
 import { SETTINGS_KEY as MOOD_KEY } from "@miyoria/social";

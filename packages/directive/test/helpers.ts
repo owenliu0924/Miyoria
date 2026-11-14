@@ -9,7 +9,7 @@ import {
 } from "@miyoria/actions";
 import { builtinRole, granted } from "@miyoria/commands";
 import { EventLogService } from "@miyoria/facts";
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { AuditLogKey, type DirectiveStore, SqliteStore, type Store } from "@miyoria/store";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {

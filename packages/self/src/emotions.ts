@@ -55,7 +55,7 @@ export interface Temperament {
   toward: Record<PersonEmotionName, Temper>;
 }
 
-/** The profile's `[temperament]` table (see `@miyoria/profile` `TemperamentSchema`). */
+/** The profile's `[temperament]` table (see `@miyoria/runtime/profile` `TemperamentSchema`). */
 export interface TemperamentInput {
   display?: DisplayRules;
   emotions?: Record<

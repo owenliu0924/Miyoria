@@ -1,4 +1,4 @@
-import { errorMessage, getLogger, type MetricsRegistry } from "@miyoria/kernel";
+import { errorMessage, getLogger, type MetricsRegistry } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type Clock,

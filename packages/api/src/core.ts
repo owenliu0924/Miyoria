@@ -1,8 +1,8 @@
 // The original routes: health, modules, decisions, LLM usage and cost, persona, events (SSE).
 
 import { PersonaHandleKey } from "@miyoria/agent";
-import { errorMessage, getLogger, type ModuleStatus, SupervisorKey } from "@miyoria/kernel";
 import { LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm";
+import { errorMessage, getLogger, type ModuleStatus, SupervisorKey } from "@miyoria/runtime/kernel";
 import { DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";
 import type { JsonValue, ModuleId } from "@miyoria/types";
 import { z } from "zod";

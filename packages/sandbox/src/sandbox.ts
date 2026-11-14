@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { errorMessage, getLogger, sleep } from "@miyoria/kernel";
+import { errorMessage, getLogger, sleep } from "@miyoria/runtime/kernel";
 import { type Clock, isUlid, type JsonValue, newId, systemClock } from "@miyoria/types";
 import {
   buildRunArgs,

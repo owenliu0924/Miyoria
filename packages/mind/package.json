@@ -23,8 +23,8 @@
   },
   "dependencies": {
     "@miyoria/actions": "workspace:*",
-    "@miyoria/kernel": "workspace:*",
     "@miyoria/llm": "workspace:*",
+    "@miyoria/runtime": "workspace:*",
     "@miyoria/social": "workspace:*",
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",

@@ -1,7 +1,7 @@
 // What her feelings go on to do (docs/design/v3-architecture.md §12): the weights of
 // `EMOTION_OUTPUTS` as numbers, their limits, and the Affect module as the owner of her mood.
 
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AffectBiases,

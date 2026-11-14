@@ -1,7 +1,7 @@
 // Steer (v3 §10.6) in the ActivityManager: only the main line, a live task, the same rules as any
 // other action, the budget and the clock untouched, and one outcome for every steer.
 
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type Arbiter,
   ArbiterKey,

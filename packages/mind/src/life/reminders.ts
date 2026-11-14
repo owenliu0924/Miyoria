@@ -22,7 +22,13 @@ import {
   defineCapability,
   type ExecContext,
 } from "@miyoria/actions";
-import { errorMessage, getLogger, SerialQueue, type ServiceLookup, sleep } from "@miyoria/kernel";
+import {
+  errorMessage,
+  getLogger,
+  SerialQueue,
+  type ServiceLookup,
+  sleep,
+} from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type AccountRef,

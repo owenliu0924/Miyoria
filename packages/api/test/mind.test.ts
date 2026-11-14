@@ -1,7 +1,7 @@
 // `/api/mind*`: her thought journal, the approvals of high-risk actions and the pause switch.
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
-import { ServiceRegistry, Supervisor, SupervisorKey } from "@miyoria/kernel";
+import { ServiceRegistry, Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   AuthorizerKey,

@@ -8,7 +8,7 @@
 // synchronously; new rows are written in the background. It is shared by every profile, like
 // the people it names.
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   accountRefString,

@@ -7,6 +7,7 @@ import {
   CommandsModule,
   type ComponentInvocationData,
 } from "@miyoria/commands";
+import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
 import {
   defineManifest,
   type Module,
@@ -14,8 +15,7 @@ import {
   ServiceRegistry,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
-import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   AuditLogKey,
   dataCategory,

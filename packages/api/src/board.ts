@@ -7,7 +7,7 @@
 // changes nothing about her. Joining or leaving is a member route (`POST /api/member/board`).
 
 import { type BoardLine, EconomyKey } from "@miyoria/economy";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { safeName } from "@miyoria/types";
 import { clientKey, tooMany } from "./public.js";
 import type { Route } from "./route.js";

@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadProfile } from "@miyoria/core/light";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { exampleConfig, PACKAGE_ROOT } from "../src/assets.js";
 import { flow, openForInit, run } from "../src/commands/init.js";

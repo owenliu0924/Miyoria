@@ -8,7 +8,7 @@
 // and voice output are the V2 code. What changes is who may start one (the Floor), what one call
 // may produce (`TurnOutput`) and what happens to it afterwards (this file).
 
-import { errorMessage, interval } from "@miyoria/kernel";
+import { errorMessage, interval } from "@miyoria/runtime/kernel";
 import {
   ACTION_SETTLED_TOPIC,
   ACTIVITY_DONE_TOPIC,

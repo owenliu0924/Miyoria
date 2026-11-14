@@ -21,7 +21,7 @@
 //    the event that triggered it; every outcome is a `steered` bus event whose `steer` names that
 //    id (the facts layer writes it under it), so the whole chain can be followed.
 
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type ActivityRequest,
   ArbiterKey,

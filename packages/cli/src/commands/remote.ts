@@ -1,7 +1,7 @@
 // CLI commands that talk to a running core through the Admin API.
 
 import { ApiClient } from "@miyoria/api";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import type { ModuleStateKind } from "@miyoria/types";
 import { eventTopic } from "@miyoria/types";
 import { cyan, dim, green, println, red, yellow } from "../ui.js";

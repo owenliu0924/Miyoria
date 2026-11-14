@@ -2,7 +2,7 @@
 // (415), must parse (400) and must match the expected shape (422); query strings that do not
 // match their shape are 400.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import type { ContextKey } from "@miyoria/types";
 import { z } from "zod";
 import { ApiError } from "./errors.js";

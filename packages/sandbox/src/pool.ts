@@ -5,7 +5,7 @@
 // container serves exactly one run by construction, and `take` hands each out once. The model
 // never sees the pool: a run without a ready container starts one as before.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { ExecResult } from "./runner.js";
 import type { Language } from "./types.js";
 import type { RunDirs } from "./workspace.js";

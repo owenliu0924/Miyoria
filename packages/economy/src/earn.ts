@@ -14,7 +14,7 @@
 // Only people she knows earn (`EconomyService.earn` checks); keys make a replayed event or a
 // restart pay nothing twice.
 
-import { errorMessage, type Logger, type ServiceLookup } from "@miyoria/kernel";
+import { errorMessage, type Logger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import {
   type AccountRef,

@@ -5,7 +5,7 @@ import {
   interval,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { type JsonValue, REASONING_LEVELS, serviceKey } from "@miyoria/types";
 import { z } from "zod";

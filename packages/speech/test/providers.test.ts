@@ -9,7 +9,7 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 import { inspect } from "node:util";
-import { errorMessage, sleep } from "@miyoria/kernel";
+import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {

@@ -8,7 +8,7 @@
 
 import { appendFile, mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   type Clock,
   type ReasoningLevel,

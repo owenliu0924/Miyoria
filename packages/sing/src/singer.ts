@@ -22,8 +22,8 @@
 
 import { randomUUID } from "node:crypto";
 import { CapabilityError } from "@miyoria/actions";
-import { errorMessage, getLogger, type ModuleContext } from "@miyoria/kernel";
 import { type RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,

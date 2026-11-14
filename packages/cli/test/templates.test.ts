@@ -3,7 +3,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import { exampleConfig } from "../src/assets.js";
 

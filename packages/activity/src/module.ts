@@ -3,7 +3,7 @@
 // the mind, the directors) goes through it.
 
 import { ActuatorRegistryKey } from "@miyoria/actions";
-import { defineManifest, type Module, type ModuleContext } from "@miyoria/kernel";
+import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import { ActivityManagerKey, ActivityRecoveryKey, TaskSteerKey } from "@miyoria/types";
 import { ActivityConfigSchema } from "./config.js";
 import { FACT_TOPICS, TASK_EVENT_TOPICS } from "./facts.js";

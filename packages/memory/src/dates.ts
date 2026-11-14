@@ -8,7 +8,7 @@
 // Each date is brought up once a year. The day she met someone (their person record's
 // `created_at`) counts from the first anniversary on, when `met_anniversary` is on.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { PeopleStore, SettingsStore } from "@miyoria/store";
 import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
 import {

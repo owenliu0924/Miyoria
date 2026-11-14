@@ -3,7 +3,7 @@
 // The choice is stored in the shared
 // per-person privacy record (`privacy:<platform>:<id>` under `_global`, see `@miyoria/types`).
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type AccountRef,

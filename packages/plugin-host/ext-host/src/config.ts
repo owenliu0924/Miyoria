@@ -1,8 +1,8 @@
 // `[modules.extensions]` and `[extensions."<id>"]` config sections.
 
 import { isAbsolute, join } from "node:path";
-import type { Config } from "@miyoria/kernel";
-import { ConfigError } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
+import { ConfigError } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonObject } from "@miyoria/types";
 import { z } from "zod";
 import type { Permissions } from "./manifest.js";

@@ -4,7 +4,7 @@
 // refusals are the panel's, as data.
 
 import { ActionDeniedError, ActuatorRegistry, CapabilityTool } from "@miyoria/actions";
-import { getLogger, ServiceRegistry } from "@miyoria/kernel";
+import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { CoinLedgerStoreKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,

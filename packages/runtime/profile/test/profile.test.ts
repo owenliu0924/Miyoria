@@ -11,7 +11,7 @@ import {
   parseProfileManifest,
 } from "../src/index.js";
 
-const PROFILES = fileURLToPath(new URL("../../../profiles", import.meta.url));
+const PROFILES = fileURLToPath(new URL("../../../../profiles", import.meta.url));
 
 describe("Profile", () => {
   it("interests_default_to_empty", () => {

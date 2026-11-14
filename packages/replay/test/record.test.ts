@@ -3,7 +3,7 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { customEvent, type Event, toTimestamp } from "@miyoria/types";
 import { describe, expect, it, vi } from "vitest";
 import {

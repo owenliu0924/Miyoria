@@ -1,4 +1,3 @@
-import { errorMessage, type ModuleContext } from "@miyoria/kernel";
 import {
   ACTION_SETTLED_TOPIC,
   type Action,
@@ -24,6 +23,7 @@ import {
   type VoiceSink,
   VoiceSinkKey,
 } from "@miyoria/types";
+import { errorMessage, type ModuleContext } from "../../kernel/src/index.js";
 import type { SchedulerConfig } from "./config.js";
 
 interface Queued {

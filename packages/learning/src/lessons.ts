@@ -2,7 +2,7 @@
 // place. Turns see them as data; attention shifts her talkativeness by them; her mind loop
 // reads them. One settings record per lesson (`reflect:lesson:<id>`).
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type Clock,

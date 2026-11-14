@@ -4,7 +4,7 @@
 // Discord approval card); the bearer token is the owner.
 
 import { NODE_APPROVE } from "@miyoria/actions";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type ProposedTool,
   type ProposedTools,

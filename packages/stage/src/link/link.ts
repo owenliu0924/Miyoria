@@ -1,6 +1,6 @@
 // The `StageLink` service: the connection to the Stage node and the requests other modules send.
 
-import { type EventBus, errorMessage, getLogger } from "@miyoria/kernel";
+import { type EventBus, errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   customEvent,
   type Event,

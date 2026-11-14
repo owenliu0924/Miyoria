@@ -1,15 +1,15 @@
-// @miyoria/scheduler: module `scheduler`. Provides the `ActionSink` service; everything that
+// @miyoria/runtime/scheduler: module `scheduler`. Provides the `ActionSink` service; everything that
 // produces output submits `Action`s to it. Each lane (`LaneKey`) gets its own worker that runs
 // the lane's actions one at a time, most urgent first, through the `PlatformSinks` service
 // (`VoiceSink` for `speak`). Idle lane workers exit, so lanes cost nothing while quiet.
 
+import { ActionSinkKey, type LaneKey } from "@miyoria/types";
 import {
   defineManifest,
   type Module,
   type ModuleContext,
   type ModuleManifest,
-} from "@miyoria/kernel";
-import { ActionSinkKey, type LaneKey } from "@miyoria/types";
+} from "../../kernel/src/index.js";
 import { type SchedulerConfig, SchedulerConfigSchema } from "./config.js";
 import { Scheduler } from "./scheduler.js";
 

@@ -7,7 +7,7 @@
 // "my birthday is today") is then the same wish, already asked: it is not raised again.
 
 import { EventLogService } from "@miyoria/facts";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type Attitude,

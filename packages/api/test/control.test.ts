@@ -2,7 +2,6 @@
 // `/api/telemetry` (the panel's chart samples).
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
 import {
   LlmRouter,
   LlmRouterKey,
@@ -11,6 +10,7 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import { type Principal, SelfStateKey } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";

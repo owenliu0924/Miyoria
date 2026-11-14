@@ -3,8 +3,8 @@
 // stays under 30%.
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
-import { getLogger, ServiceRegistry } from "@miyoria/kernel";
 import { LlmRouter, LlmRouterKey, parseModelRef } from "@miyoria/llm";
+import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type AffectSnapshot,
   AffectStateKey,

@@ -9,8 +9,8 @@
 // they can look at it again, export it and have it forgotten with their cards.
 
 import { PersonaHandleKey } from "@miyoria/agent";
-import { errorMessage, getLogger } from "@miyoria/kernel";
 import { completeJson, LlmRouterKey, systemMessage, userMessage, withLlmTag } from "@miyoria/llm";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type FortuneRecord, FortuneStoreKey } from "@miyoria/store";
 import {
   type AccountRef,

@@ -3,7 +3,7 @@
 // counts) and counts a few bus topics between samples. Samples live in memory for 24 hours, so
 // the series starts when the `api` module started.
 
-import { type MetricFamily, metrics } from "@miyoria/kernel";
+import { type MetricFamily, metrics } from "@miyoria/runtime/kernel";
 import { type Envelope, eventTopic, MindKey, SelfStateKey, toTimestamp } from "@miyoria/types";
 import { z } from "zod";
 import { readQuery, usizeParam } from "./extract.js";

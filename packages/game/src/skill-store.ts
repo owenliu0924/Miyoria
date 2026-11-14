@@ -11,7 +11,7 @@
 // The page is lines she can read, one per item: `- bread ← obtain {"item":"wheat"} → …`.
 
 import type { ActionOutcome } from "@miyoria/actions";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonObject, type JsonValue, type WorkLane } from "@miyoria/types";
 import type { Skill } from "./skills.js";
 

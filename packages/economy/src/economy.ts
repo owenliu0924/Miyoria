@@ -13,7 +13,12 @@
 // * Spends of this process take turns, so two clicks cannot both pass a check meant for one.
 
 import { ActuatorRegistryKey } from "@miyoria/actions";
-import { errorMessage, type Logger, SerialQueue, type ServiceLookup } from "@miyoria/kernel";
+import {
+  errorMessage,
+  type Logger,
+  SerialQueue,
+  type ServiceLookup,
+} from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import {
   AuditLogKey,

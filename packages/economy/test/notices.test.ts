@@ -3,7 +3,7 @@
 // where a goal was met, and nothing at all when there is no place to say it.
 
 import { CommandRegistry, type CommandReply, Permissions, ReplySinkKey } from "@miyoria/commands";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import { GoalStoreKey } from "@miyoria/store";
 import {

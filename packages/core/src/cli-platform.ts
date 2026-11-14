@@ -2,7 +2,7 @@
 // typed is a DM from "you"; her replies are printed.
 
 import { createInterface } from "node:readline";
-import { defineManifest, type Module, type ModuleContext } from "@miyoria/kernel";
+import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type ContextKey,

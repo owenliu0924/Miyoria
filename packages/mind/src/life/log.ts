@@ -8,7 +8,7 @@
 // One settings row per day of hers (`mind:life:<day>`, the day turning at `[modules.mind]
 // daily_hour`, so 01:00 still belongs to the evening before), the last `life_keep_days` kept.
 
-import { errorMessage, getLogger, SerialQueue } from "@miyoria/kernel";
+import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   ACTIVITY_CHANGED_TOPIC,

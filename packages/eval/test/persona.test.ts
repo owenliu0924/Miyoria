@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Profile } from "@miyoria/profile";
+import { Profile } from "@miyoria/runtime/profile";
 import { describe, expect, it } from "vitest";
 import {
   assignSides,

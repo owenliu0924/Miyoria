@@ -1,7 +1,7 @@
 // What a voice turn reads without waiting (contributors.ts `Warm`): the kept value at once and a
 // refresh for the next turn, a short wait only when nothing is kept, never another audience's.
 
-import { sleep } from "@miyoria/kernel";
+import { sleep } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readWarm, Warm, type WarmRead } from "../src/contributors.js";
 

@@ -9,16 +9,16 @@ import { ActivityModule } from "@miyoria/activity";
 import { AgentModule } from "@miyoria/agent";
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
+import { LlmRouter, LlmRouterKey, type ModelRef, parseModelRef } from "@miyoria/llm";
+import { MindModule } from "@miyoria/mind";
 import {
   defineManifest,
   type Module,
   type ModuleContext,
   type Subscription,
   Supervisor,
-} from "@miyoria/kernel";
-import { LlmRouter, LlmRouterKey, type ModelRef, parseModelRef } from "@miyoria/llm";
-import { MindModule } from "@miyoria/mind";
-import { Profile, ProfileManifestSchema } from "@miyoria/profile";
+} from "@miyoria/runtime/kernel";
+import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { SelfModule } from "@miyoria/self";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";

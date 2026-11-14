@@ -3,7 +3,7 @@
 // reused for `cache_secs`, so the voice hot path pays for it once every few seconds, and nothing
 // here lives only in memory: after a restart the log is read again.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   contextKeyString,

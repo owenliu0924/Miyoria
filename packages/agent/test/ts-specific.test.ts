@@ -1,7 +1,6 @@
 // Behaviour specific to the TypeScript port: cancellation of providers that ignore their
 // signal, idle session retirement, JSON shapes and the manifest.
 
-import { manifestJson } from "@miyoria/kernel";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -9,6 +8,7 @@ import {
   contentText,
   MockProvider,
 } from "@miyoria/llm";
+import { manifestJson } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentModule } from "../src/index.js";
 import {

@@ -6,7 +6,7 @@ import {
   type ModuleContext,
   type ServiceLookup,
   withTimeout,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,

@@ -9,7 +9,7 @@
 //   the channel waits for the clip (`Singer.clipping`);
 // * the abort signal fades it out.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type {
   ClipOutcome,
   Clock,

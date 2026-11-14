@@ -3,7 +3,7 @@
 // the `notebook_*` tools. Services are looked up when used, so the start order of modules does
 // not matter.
 
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import type { ToolRegistry } from "@miyoria/tools";
 import {
   AffectStateKey,

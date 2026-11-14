@@ -19,7 +19,7 @@ import {
   type Module,
   type ModuleContext,
   SerialQueue,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { eventTopic, toTimestamp } from "@miyoria/types";
 import { z } from "zod";
 import { DEFAULT_RECORD_TOPICS, formatEntry } from "./log.js";

@@ -26,7 +26,7 @@
 // the DeliveryLedger's (floor.ts), and an accepted claim opens a turn of the main line, nothing
 // else: there is no `act`, and no text of a claim is ever said as it stands.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   AFFECT_EVENT_TOPIC,

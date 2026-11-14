@@ -14,7 +14,7 @@
 // `resume` lifts the flag. Nothing comes back on its own: she does not rejoin the channel, and what
 // was said while she was stopped is in her history but gets no answer.
 
-import { errorMessage, getLogger, type ServiceLookup, sleep } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup, sleep } from "@miyoria/runtime/kernel";
 import {
   ActionSinkKey,
   type ActivityManager,

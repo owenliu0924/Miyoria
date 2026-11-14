@@ -2,6 +2,7 @@
 
 import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
+import { contextSession, LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   HEALTHY,
@@ -9,8 +10,7 @@ import {
   type Module,
   type ModuleContext,
   sleep,
-} from "@miyoria/kernel";
-import { contextSession, LlmRouterKey } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import { type SpeechService, SpeechServiceKey } from "@miyoria/speech";
 import { SettingsStoreKey } from "@miyoria/store";
 import {

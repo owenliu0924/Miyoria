@@ -9,7 +9,7 @@
 // conversation states keep theirs. Run it before the modules that cache these records start,
 // or their next save puts the old text back (`core/src/boot.ts` does).
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type ConversationState,

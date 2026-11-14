@@ -17,7 +17,7 @@ import {
   type GoalView,
   type PledgeResult,
 } from "@miyoria/economy";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, accountRefString } from "@miyoria/types";
 import { z } from "zod";
 import { ApiError } from "./errors.js";

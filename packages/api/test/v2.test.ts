@@ -2,7 +2,7 @@
 // `/api/mind/plan`, `/api/prompts*` and `/api/turns/outcomes`, against fake services.
 
 import { SavedPromptsKey } from "@miyoria/agent";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { DecisionLogKey } from "@miyoria/store";
 import {
   type ActivityManager,

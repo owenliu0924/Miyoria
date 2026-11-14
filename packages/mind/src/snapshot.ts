@@ -3,7 +3,7 @@
 // people and place involved. No long chat transcripts, no per-call codes.
 
 import type { ActuatorRegistry } from "@miyoria/actions";
-import { errorMessage, getLogger, type ServiceLookup, withTimeout } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup, withTimeout } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   AffectStateKey,

@@ -6,7 +6,7 @@ import {
   interval,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { SongPaymentsKey } from "@miyoria/sing";
 import { ParticipationKey, PartyRewardsKey, type ProfileId, SONG_TOPIC } from "@miyoria/types";
 import { agencyCapabilities } from "./agency-tools.js";

@@ -3,7 +3,7 @@
 // sees the bottom and answers one fixed word. The bottom reaches her only once the soup is over
 // (solved, given up, out of time), so until then she cannot let it slip.
 
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { SOUP_PUZZLES, type SoupPuzzle } from "../content.js";
 import {
   type EndReason,

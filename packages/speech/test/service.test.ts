@@ -1,6 +1,6 @@
 // `SpeechService` fallback chains and their request counters.
 
-import { MetricsRegistry } from "@miyoria/kernel";
+import { MetricsRegistry } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import {
   type AsrProvider,

@@ -23,7 +23,7 @@ import {
   type ModuleManifest,
   TopicFilter,
   withTimeout,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { type Tool, type ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {

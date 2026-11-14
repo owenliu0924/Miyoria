@@ -9,7 +9,7 @@ import {
   type ModuleContext,
   type Subscription,
   Supervisor,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { PlatformHistories, PlatformSinks } from "@miyoria/types";
 import { ChannelType, type Client, Events, MessageType } from "discord.js";
 import { afterEach, describe, expect, test } from "vitest";

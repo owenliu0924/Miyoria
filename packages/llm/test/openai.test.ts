@@ -3,7 +3,7 @@
 import { createServer, type Server as HttpServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { inspect } from "node:util";
-import { MetricsRegistry } from "@miyoria/kernel";
+import { MetricsRegistry } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {

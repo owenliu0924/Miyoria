@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../src/cli.js";
 import * as up from "../src/commands/up.js";

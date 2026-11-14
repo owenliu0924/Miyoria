@@ -14,7 +14,7 @@ import {
   getLogger,
   type MetricsRegistry,
   metrics,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { type JsonValue, serviceKey } from "@miyoria/types";
 
 const log = getLogger("speech");

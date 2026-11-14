@@ -4,7 +4,7 @@
 // concurrently; every outgoing request has a timeout.
 
 import type { Readable, Writable } from "node:stream";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonValue } from "@miyoria/types";
 
 const log = getLogger("ext_host.rpc");

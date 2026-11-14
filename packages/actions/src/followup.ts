@@ -6,7 +6,7 @@
 // skips one (a turn in flight, people still talking) the delivery is tried again every few
 // seconds until it is too old to matter.
 
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   ARBITER_IMPULSE_TOPIC,

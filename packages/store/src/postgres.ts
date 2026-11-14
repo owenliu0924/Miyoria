@@ -6,7 +6,7 @@
 // pgvector text form `[1,2,3]`.
 
 import { readdirSync, readFileSync } from "node:fs";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type Clock,

@@ -8,14 +8,14 @@ import {
   type InvocationData,
   replyEphemeral,
 } from "@miyoria/commands";
+import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
 import {
   defineManifest,
   type Module,
   type ModuleContext,
   ServiceRegistry,
   Supervisor,
-} from "@miyoria/kernel";
-import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import {
   logEntryFromIncoming,
   type MemoryKind,

@@ -1,8 +1,8 @@
 // Core-level settings read from `[core]`.
 
 import { isAbsolute, resolve } from "node:path";
-import type { Config } from "@miyoria/kernel";
-import { Profile } from "@miyoria/profile";
+import type { Config } from "@miyoria/runtime/kernel";
+import { Profile } from "@miyoria/runtime/profile";
 import { DEFAULT_PIPELINE, isPipeline, PIPELINES, type Pipeline } from "@miyoria/types";
 
 /** Used when `core.database_url` is missing or empty. */

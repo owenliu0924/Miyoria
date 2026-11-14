@@ -6,7 +6,7 @@
 // channel needs nobody there, pats may claim, a party game is a show.
 
 import { EventLogService } from "@miyoria/facts";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   type DeliveryLedger,

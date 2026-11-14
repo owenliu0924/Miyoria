@@ -2,7 +2,12 @@
 // switch) and serves its commands.
 
 import { CommandMount } from "@miyoria/commands";
-import { defineManifest, errorMessage, type Module, type ModuleContext } from "@miyoria/kernel";
+import {
+  defineManifest,
+  errorMessage,
+  type Module,
+  type ModuleContext,
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { ToolRegistryKey } from "@miyoria/tools";
 import { PresencePrivacyKey } from "@miyoria/types";

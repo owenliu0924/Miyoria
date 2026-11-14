@@ -4,8 +4,13 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { errorMessage, getLogger, type ModuleContext, SupervisorKey } from "@miyoria/kernel";
 import { MIYORIA_VERSION } from "@miyoria/llm";
+import {
+  errorMessage,
+  getLogger,
+  type ModuleContext,
+  SupervisorKey,
+} from "@miyoria/runtime/kernel";
 import { DecisionLogKey } from "@miyoria/store";
 import { ToolRegistryKey } from "@miyoria/tools";
 import type { JsonValue } from "@miyoria/types";

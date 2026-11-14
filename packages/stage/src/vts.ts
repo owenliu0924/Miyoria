@@ -7,7 +7,7 @@
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonObject, type JsonValue } from "@miyoria/types";
 import WebSocket from "ws";
 import { z } from "zod";

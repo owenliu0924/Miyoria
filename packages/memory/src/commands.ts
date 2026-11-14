@@ -29,7 +29,12 @@ import {
   pageButtons,
   pageOf,
 } from "@miyoria/commands";
-import { errorMessage, getLogger, type ServiceLookup, SupervisorKey } from "@miyoria/kernel";
+import {
+  errorMessage,
+  getLogger,
+  type ServiceLookup,
+  SupervisorKey,
+} from "@miyoria/runtime/kernel";
 import {
   AuditLogKey,
   categoryModules,

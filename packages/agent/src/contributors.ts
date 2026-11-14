@@ -3,7 +3,7 @@
 // handed to the prompt compiler (compiler.ts), which budgets them into the data message. In voice
 // some are kept warm instead (`Warm`, below).
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type {
   Pinned,
   PromptContributor,

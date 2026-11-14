@@ -2,7 +2,12 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { defineManifest, errorMessage, type Module, type ModuleContext } from "@miyoria/kernel";
+import {
+  defineManifest,
+  errorMessage,
+  type Module,
+  type ModuleContext,
+} from "@miyoria/runtime/kernel";
 import { type PlayChunk, type VoicePlayer, VoicePlayerKey } from "@miyoria/types";
 import { WebSocketServer } from "ws";
 import { aborted } from "../util.js";

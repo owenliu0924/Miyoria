@@ -1,6 +1,6 @@
 // Speaking: `VoiceSink` → TTS → voice node playback.
 
-import { errorMessage, type ModuleContext, sleep } from "@miyoria/kernel";
+import { errorMessage, type ModuleContext, sleep } from "@miyoria/runtime/kernel";
 import {
   type AudioChunk,
   isOffloaded,

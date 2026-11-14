@@ -23,14 +23,14 @@
 import type { AddressInfo } from "node:net";
 import { isIPv4, isIPv6 } from "node:net";
 import { createAdaptorServer, type ServerType } from "@hono/node-server";
+import { tokenize } from "@miyoria/memory";
 import {
   defineManifest,
   errorMessage,
   interval,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
-import { tokenize } from "@miyoria/memory";
+} from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { ActivityManagerKey, KeepsakesKey, SONG_TOPIC } from "@miyoria/types";
 import { z } from "zod";

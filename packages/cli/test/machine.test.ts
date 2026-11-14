@@ -4,7 +4,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exampleConfig, exampleEnv } from "../src/assets.js";
 import { parseArgs } from "../src/cli.js";

@@ -12,7 +12,7 @@
 
 import { randomBytes } from "node:crypto";
 import { type Economy, EconomyError, EconomyKey, type PaidItem } from "@miyoria/economy";
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   type MemberCardRecord,
   type MemberCardStore,

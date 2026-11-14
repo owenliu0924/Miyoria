@@ -2,7 +2,7 @@
 // permission, failures as plain answers, results as untrusted data, and the module itself.
 
 import { ActionDeniedError, ActuatorRegistry, type CapabilityTool } from "@miyoria/actions";
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   AuthorizerKey,

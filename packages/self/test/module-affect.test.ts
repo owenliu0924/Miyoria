@@ -1,6 +1,6 @@
 // The affect service through the module and the bus: its inputs and what it publishes.
 
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   AFFECT_CHANGED_TOPIC,

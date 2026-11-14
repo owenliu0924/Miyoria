@@ -1,7 +1,6 @@
 // `MemoryEngine`: storing with dedupe, hybrid recall, consolidation, forgetting and followups.
 // Provided as the service `MemoryEngineKey` (and as `FollowupSourceKey`).
 
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/kernel";
 import {
   assistantMessage,
   type ChatRequest,
@@ -14,6 +13,7 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm";
+import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   embeddingValues,
   type LogEntry,

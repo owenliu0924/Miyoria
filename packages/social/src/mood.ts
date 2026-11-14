@@ -20,8 +20,8 @@ import {
   type Module,
   type ModuleContext,
   SerialQueue,
-} from "@miyoria/kernel";
-import type { MoodBaseline } from "@miyoria/profile";
+} from "@miyoria/runtime/kernel";
+import type { MoodBaseline } from "@miyoria/runtime/profile";
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type Affect,

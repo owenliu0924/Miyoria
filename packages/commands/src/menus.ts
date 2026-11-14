@@ -9,7 +9,7 @@
 //
 // Every answer is a neutral system notice, private to the person who clicked (never her voice).
 
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { type MessageActionRequest, MessageActionsKey, sameAccount } from "@miyoria/types";
 import { runCommand } from "./panel.js";
 import type { CommandRegistry } from "./registry.js";

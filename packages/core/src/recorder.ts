@@ -1,7 +1,12 @@
 // `recorder`: writes every message (hers included, voice transcripts and her spoken lines too)
 // to the message log, keeps the people table up to date and stores the agent's decision traces.
 
-import { defineManifest, errorMessage, type Module, type ModuleContext } from "@miyoria/kernel";
+import {
+  defineManifest,
+  errorMessage,
+  type Module,
+  type ModuleContext,
+} from "@miyoria/runtime/kernel";
 import { logEntryFromIncoming, type Store } from "@miyoria/store";
 import {
   type AccountRef,

@@ -18,7 +18,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { AgentHandleKey } from "@miyoria/agent";
 import { AuthServiceKey, builtinRoles } from "@miyoria/auth";
-import { errorMessage, getLogger, SupervisorKey } from "@miyoria/kernel";
+import { errorMessage, getLogger, SupervisorKey } from "@miyoria/runtime/kernel";
 import { SandboxKey, type ScriptInfo } from "@miyoria/sandbox";
 import {
   type CategoryInventory,

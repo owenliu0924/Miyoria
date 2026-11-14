@@ -24,9 +24,8 @@
     "@miyoria/agent": "workspace:*",
     "@miyoria/directive": "workspace:*",
     "@miyoria/game": "workspace:*",
-    "@miyoria/kernel": "workspace:*",
     "@miyoria/llm": "workspace:*",
-    "@miyoria/profile": "workspace:*",
+    "@miyoria/runtime": "workspace:*",
     "zod": "^4.6.7"
   },
   "devDependencies": {

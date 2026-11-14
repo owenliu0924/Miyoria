@@ -2,7 +2,7 @@
 // (a game, a song heard to the end, her own judgement) and her tools and `/me quests`.
 
 import { CommandRegistry, Permissions } from "@miyoria/commands";
-import { getLogger, ServiceRegistry } from "@miyoria/kernel";
+import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { customEvent, type Event, SONG_TOPIC } from "@miyoria/types";
 import { describe, expect, it } from "vitest";

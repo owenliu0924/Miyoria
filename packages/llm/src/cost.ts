@@ -1,7 +1,7 @@
 // Cost tracking and budgets: pricing, per day / month totals per model, the
 // `ok -> degraded -> exhausted` state machine and persistence.
 
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import { type Clock, customEvent, type Event, type JsonValue, systemClock } from "@miyoria/types";
 import { z } from "zod";

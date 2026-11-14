@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { EconomyConfigSchema, EconomyKey, EconomyService } from "@miyoria/economy";
+import { LlmRouterKey } from "@miyoria/llm";
+import { MemoryEngineKey } from "@miyoria/memory";
 import {
   defineManifest,
   getLogger,
@@ -16,9 +18,7 @@ import {
   type ModuleContext,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
-import { MemoryEngineKey } from "@miyoria/memory";
+} from "@miyoria/runtime/kernel";
 import { SingerKey, type SongEntry } from "@miyoria/sing";
 import {
   AuditLogKey,

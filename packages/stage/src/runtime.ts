@@ -1,6 +1,6 @@
 // The Stage node: `miyoria stage` on the streaming PC.
 
-import { errorMessage, getLogger, sleep } from "@miyoria/kernel";
+import { errorMessage, getLogger, sleep } from "@miyoria/runtime/kernel";
 import { type Clock, systemClock } from "@miyoria/types";
 import WebSocket from "ws";
 import { z } from "zod";

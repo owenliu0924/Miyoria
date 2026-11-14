@@ -9,7 +9,7 @@
 // Both go away with `[modules.api.public] enabled = false`, and answer 503 while the `live` module
 // is not running.
 
-import { errorMessage, getLogger } from "@miyoria/kernel";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type LiveEvent, type LiveFeed, LiveFeedKey } from "@miyoria/types";
 import { z } from "zod";
 import { ApiError } from "./errors.js";

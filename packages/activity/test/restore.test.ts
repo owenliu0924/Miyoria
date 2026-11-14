@@ -1,7 +1,7 @@
 // After a restart (v3 §5): the game the last run left open is not shown as idle, is confirmed
 // before it counts as running, and gives way to the truth and to whoever asks for something else.
 
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   ACTIVITY_RESTORE_TOPIC,
   type ActivityRestore,

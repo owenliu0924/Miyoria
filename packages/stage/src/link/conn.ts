@@ -1,7 +1,7 @@
 // One Stage connection: hello validation, the per-connection state and its close frame.
 
 import { timingSafeEqual } from "node:crypto";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import WebSocket from "ws";
 import {
   CLOSE,

@@ -14,7 +14,6 @@
 // that is kept (thoughts, goals, the day plan) goes through `repairHandleText`.
 
 import { ActuatorRegistryKey } from "@miyoria/actions";
-import { errorMessage, getLogger, type Logger, type ServiceLookup, sleep } from "@miyoria/kernel";
 import {
   assistantMessage,
   type ChatMessage,
@@ -23,6 +22,13 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm";
+import {
+  errorMessage,
+  getLogger,
+  type Logger,
+  type ServiceLookup,
+  sleep,
+} from "@miyoria/runtime/kernel";
 import { SocialKey } from "@miyoria/social";
 import { MessageLogKey, type SettingsStore } from "@miyoria/store";
 import {

@@ -1,8 +1,8 @@
 // The fakes around the real pipeline: a scripted LLM and the action sink that stands in for the
 // scheduler and the platforms (it records what she sends and plays her speech back on fake time).
 
-import { type EventBus, sleep } from "@miyoria/kernel";
 import type { ChatProvider, ChatRequest, ChatStream } from "@miyoria/llm";
+import { type EventBus, sleep } from "@miyoria/runtime/kernel";
 import {
   ACTION_SETTLED_TOPIC,
   type Action,

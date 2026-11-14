@@ -3,7 +3,7 @@
 // through the module and the bus: a finished `stop` of the game holds `game.start` for her own
 // starts, a crash or another activity does not, and people asking her are never held back.
 
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   ACTIVITY_DONE_TOPIC,

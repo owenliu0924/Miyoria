@@ -1,7 +1,7 @@
 import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
-import { defineManifest, type Module, type ModuleContext } from "@miyoria/kernel";
-import type { Profile } from "@miyoria/profile";
+import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
 import {
   type AccountRef,
   ActivityManagerKey,

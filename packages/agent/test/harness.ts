@@ -4,14 +4,6 @@
 import { type ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { CommandsModule, type InvocationData, splitPath } from "@miyoria/commands";
 import {
-  defineManifest,
-  type Module,
-  type ModuleContext,
-  type Subscription,
-  Supervisor,
-  sleep,
-} from "@miyoria/kernel";
-import {
   type ChatProvider,
   type ChatRequest,
   type ChatStream,
@@ -21,7 +13,15 @@ import {
   parseModelRef,
   type StreamEvent,
 } from "@miyoria/llm";
-import { Profile, ProfileManifestSchema } from "@miyoria/profile";
+import {
+  defineManifest,
+  type Module,
+  type ModuleContext,
+  type Subscription,
+  Supervisor,
+  sleep,
+} from "@miyoria/runtime/kernel";
+import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import { type Tool, type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {

@@ -8,7 +8,7 @@
 //   (`/ws?clientId=`), which is optional: when it cannot be opened the job still finishes.
 // * `POST /free` unloads the models so the speech and song workers get the VRAM back.
 
-import { errorMessage, sleep } from "@miyoria/kernel";
+import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
 

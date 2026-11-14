@@ -2,7 +2,7 @@
 // speaking, recent latency) and whether her own speech is playing. Only events seen since the
 // `api` module started count.
 
-import type { Subscription } from "@miyoria/kernel";
+import type { Subscription } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type ContextKey,

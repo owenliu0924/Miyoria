@@ -9,7 +9,7 @@ import {
   type Supervisor,
   SupervisorKey,
   sleep,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { type AccountRef, AuthorizerKey, type ModuleId } from "@miyoria/types";
 import { z } from "zod";
 import {

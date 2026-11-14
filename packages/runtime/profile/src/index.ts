@@ -1,4 +1,4 @@
-// @miyoria/profile: a *profile* is one complete character: persona prompts, which LLM it uses,
+// @miyoria/runtime/profile: a *profile* is one complete character: persona prompts, which LLM it uses,
 // voice and avatar settings. The persona prompts inside a profile can be edited without
 // touching the rest.
 //

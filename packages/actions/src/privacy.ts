@@ -1,7 +1,7 @@
 // Per-person opt-outs: "don't DM me", "don't come to me on your own". Set with `/me privacy`,
 // checked by the gate before anything else that concerns the person.
 
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/kernel";
+import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,

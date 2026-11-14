@@ -4,7 +4,6 @@
 // item), enemies and reflexes do not wake her, night and death start survival goals, and what
 // she managed becomes a skill.
 
-import { Supervisor } from "@miyoria/kernel";
 import {
   type ChatProvider,
   type ChatRequest,
@@ -14,6 +13,7 @@ import {
   LlmRouterKey,
   parseModelRef,
 } from "@miyoria/llm";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import type { ContextKey, Event, JsonObject, JsonValue } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {

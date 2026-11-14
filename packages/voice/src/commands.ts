@@ -17,7 +17,7 @@ import {
   MAX_SESSION_TTL_MS,
   notice,
 } from "@miyoria/commands";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonObject, Principals } from "@miyoria/types";
 import { GoLiveJoinError } from "./actions.js";
 import type { Consent, ConsentPolicy } from "./consent.js";

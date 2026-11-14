@@ -10,8 +10,8 @@ import {
   defineCapability,
   type GateDecision,
 } from "@miyoria/actions";
-import { Supervisor } from "@miyoria/kernel";
 import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,

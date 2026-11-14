@@ -1,4 +1,4 @@
-import { type Lorebook, type PersonaSection, Profile } from "@miyoria/profile";
+import { type Lorebook, type PersonaSection, Profile } from "@miyoria/runtime/profile";
 import { serviceKey } from "@miyoria/types";
 import { charCount } from "./util.js";
 

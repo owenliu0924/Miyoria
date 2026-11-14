@@ -6,7 +6,7 @@ import {
   type InvocationData,
   Permissions,
 } from "@miyoria/commands";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import { DirectivesKey, EventLogKey, ProposalBoardKey } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";

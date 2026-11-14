@@ -12,7 +12,7 @@ import {
   type DirectRun,
   deniedText,
 } from "@miyoria/actions";
-import { errorMessage, isAbortError, type ServiceLookup } from "@miyoria/kernel";
+import { errorMessage, isAbortError, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   isTaskFailureCode,
   type JsonObject,

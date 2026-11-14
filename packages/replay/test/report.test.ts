@@ -1,7 +1,7 @@
 // The report's measures on a hand-made run: what counts as answered, as the right focus, as a
 // block of her own, and as residual activity state.
 
-import type { EventBus } from "@miyoria/kernel";
+import type { EventBus } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   customEvent,

@@ -21,8 +21,8 @@
 //    the owners.
 
 import { CommandRegistryKey, ReplySinkKey } from "@miyoria/commands";
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/kernel";
 import { LlmRouterKey, withLlmTag } from "@miyoria/llm";
+import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { AuditLogKey, SettingsStoreKey } from "@miyoria/store";
 import type { ToolRegistry } from "@miyoria/tools";
 import {

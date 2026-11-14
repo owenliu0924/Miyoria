@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import { isUlid } from "@miyoria/types";
 import { ENTRY_FILE } from "./args.js";
 import type { SandboxCaps } from "./config.js";

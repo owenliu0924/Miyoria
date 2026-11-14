@@ -8,7 +8,7 @@ import {
   CapabilityTool,
   defineCapability,
 } from "@miyoria/actions";
-import { getLogger, ServiceRegistry } from "@miyoria/kernel";
+import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import {
   BountyStoreKey,

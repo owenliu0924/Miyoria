@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Lorebook, parseLorebook } from "@miyoria/profile";
+import { type Lorebook, parseLorebook } from "@miyoria/runtime/profile";
 import { describe, expect, it } from "vitest";
 import {
   KAOMOJI_LINE,

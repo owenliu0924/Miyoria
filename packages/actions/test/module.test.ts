@@ -1,5 +1,5 @@
 import { CommandRegistryKey, CommandsModule, Invocation, splitPath } from "@miyoria/commands";
-import { Supervisor } from "@miyoria/kernel";
+import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import { type ContextKey, type JsonValue, mergePrivacy, PresencePrivacyKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";

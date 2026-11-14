@@ -1,4 +1,5 @@
 import { ActuatorRegistryKey } from "@miyoria/actions";
+import { LlmRouterKey } from "@miyoria/llm";
 import {
   defineManifest,
   errorMessage,
@@ -8,8 +9,7 @@ import {
   type ModuleContext,
   SerialQueue,
   withTimeout,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
+} from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   ACTIVITY_DONE_TOPIC,

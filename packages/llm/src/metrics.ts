@@ -8,7 +8,7 @@ import {
   isAbortError,
   type MetricsRegistry,
   metrics,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { ProviderHttpError, ProviderTimeoutError } from "./types.js";
 
 /** Bucket bounds (seconds) of `miyoria_llm_first_token_seconds`. */

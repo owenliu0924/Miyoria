@@ -10,7 +10,7 @@
 // (or is a status line), and the `admin` panel lists any command that does not, so a command
 // added later is reachable before someone adds a control for it.
 
-import type { ServiceLookup } from "@miyoria/kernel";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type FieldAsk,
   mappedPaths,

@@ -1,7 +1,7 @@
 // From V2 bus events to log lines: keys, salience and silence by rule, the buckets they fill, the
 // lines of hers and the `cause` chains stitched from what V2 events share.
 
-import { ServiceRegistry } from "@miyoria/kernel";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   ACTION_SETTLED_TOPIC,
   ACTIVITY_CHANGED_TOPIC,
