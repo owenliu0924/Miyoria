@@ -25,7 +25,7 @@ export interface InitOptions {
   machine?: MachinePreset & { ask: boolean };
   /** Runs `install` for this computer's services; offered after the files are written (interactive only). */
   offerInstall?: () => Promise<void>;
-  /** Command prefix shown in the next steps (default `miyoria`, or `npx miyoria` under npx). */
+  /** Command prefix shown in the next steps (default: `commandPrefix()`, from how it was started). */
   command?: string;
 }
 
@@ -55,8 +55,16 @@ export function openForInit(configPath: string, options: WorkspaceOptions = {}):
   return Workspace.openOrCreate(configPath, exampleConfig(), exampleEnv(), options);
 }
 
-function commandPrefix(): string {
-  return process.env.npm_command === "exec" ? "npx miyoria" : "miyoria";
+/**
+ * How the user reaches this CLI again, from what the package manager that started it left in the
+ * environment: `pnpm exec` and `npx` set `npm_command` to `exec`; `pnpm dlx` sets only the user
+ * agent. Anything else (a global install, a script of the repository) is plain `miyoria`.
+ */
+export function commandPrefix(env: NodeJS.ProcessEnv = process.env): string {
+  const pnpm = (env.npm_config_user_agent ?? "").startsWith("pnpm/");
+  if (env.npm_command === "exec") return pnpm ? "pnpm exec miyoria" : "npx miyoria";
+  if (pnpm && env.npm_command === undefined) return "pnpm dlx miyoria";
+  return "miyoria";
 }
 
 export async function run(
