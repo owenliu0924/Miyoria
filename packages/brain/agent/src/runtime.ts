@@ -112,7 +112,7 @@ const LEGACY_AFTER_SPEECH_TEXT_MS = 5_000;
 const LEGACY_AFTER_SPEECH_VOICE_MS = 20_000;
 /** How long the Arbiter waits for a coordinator to take (or refuse) an impulse's turn. */
 const OPEN_TIMEOUT_MS = 5_000;
-/** Topic of the voice module's barge-in reports (`packages/voice/src/topics.ts`, W2). */
+/** Topic of the voice module's barge-in reports (`packages/voice/voice/src/topics.ts`, W2). */
 export const BARGE_IN_TOPIC = "voice.barge_in";
 /** Topic of the subtitle of a line she spoke before writing it (payload: see `noteSubtitle`). */
 export const SUBTITLE_TOPIC = "agent.subtitle";

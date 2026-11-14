@@ -492,7 +492,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { confirm: "simple" },
   ),
-  // @miyoria/voice `consentKey` under `CONSENT_PROFILE`
+  // @miyoria/voice/voice `consentKey` under `CONSENT_PROFILE`
   category("voice_consent", [settings("voice_consent", "global", [], ["voice_consent:"])], {
     shared: true,
   }),

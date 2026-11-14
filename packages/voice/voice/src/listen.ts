@@ -8,13 +8,6 @@
 
 import { errorMessage, interval, type ModuleContext } from "@miyoria/runtime/kernel";
 import {
-  type AsrHint,
-  durationMs,
-  isOffloaded,
-  type SpeechService,
-  type Transcript,
-} from "@miyoria/speech";
-import {
   type AccountRef,
   accountRefString,
   contextKeyEquals,
@@ -27,6 +20,13 @@ import {
   toTimestamp,
   VoiceFloorKey,
 } from "@miyoria/types";
+import {
+  type AsrHint,
+  durationMs,
+  isOffloaded,
+  type SpeechService,
+  type Transcript,
+} from "../../speech/src/index.js";
 import type { BargeIn, BargeWho, SpeakerRole } from "./barge.js";
 import type { ClipRecorder } from "./clips.js";
 import { segmenterConfig, type VoiceConfig } from "./config.js";

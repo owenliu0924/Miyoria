@@ -13,13 +13,6 @@ import {
 import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import {
-  type AudioChunk,
-  type AudioStream,
-  SpeechService,
-  SpeechServiceKey,
-  type TtsProvider,
-} from "@miyoria/speech";
-import {
   ActionSinkKey,
   ActivityManagerKey,
   ActuatorExecutorKey,
@@ -30,7 +23,14 @@ import {
   Principals,
   voiceLane,
 } from "@miyoria/types";
-import { VoiceModule } from "@miyoria/voice";
+import {
+  type AudioChunk,
+  type AudioStream,
+  SpeechService,
+  SpeechServiceKey,
+  type TtsProvider,
+} from "@miyoria/voice/speech";
+import { VoiceModule } from "@miyoria/voice/voice";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   deepseekVoice,
@@ -39,7 +39,7 @@ import {
   nextEvent,
   SELF_ID,
   waitUntil,
-} from "../../voice/test/harness.js";
+} from "../../voice/voice/test/harness.js";
 
 const GUILD = "g1";
 const VOICE: ContextKey = { platform: "discord", scope: GUILD, channel: "vc1", kind: "voice" };

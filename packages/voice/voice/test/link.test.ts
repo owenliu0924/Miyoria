@@ -1,6 +1,5 @@
 // Voice Link protocol tests against a real server (port of `tests/link.rs`).
 
-import type { AudioChunk, AudioStream } from "@miyoria/speech";
 import {
   type Event,
   type EventData,
@@ -9,6 +8,7 @@ import {
   VoicePlayerKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import type { AudioChunk, AudioStream } from "../../speech/src/index.js";
 import { type AudioEvent, GOLIVE_TOPIC, type GoLiveRequest } from "../src/index.js";
 import type { BoundedQueue } from "../src/util.js";
 import { Harness, nextEvent, SELF_ID, sleepMs, TOKEN, waitUntil } from "./harness.js";

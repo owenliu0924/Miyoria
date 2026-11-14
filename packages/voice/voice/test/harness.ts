@@ -17,7 +17,7 @@ export const TOKEN = "secret-token";
 export const SELF_ID = "42";
 const WAIT_MS = 5_000;
 
-const PROFILE_VOICE = new URL("../../../profiles/deepseek-chan/voice.toml", import.meta.url);
+const PROFILE_VOICE = new URL("../../../../profiles/deepseek-chan/voice.toml", import.meta.url);
 
 export function deepseekVoice(): JsonObject {
   return parseToml(readFileSync(PROFILE_VOICE, "utf8")) as JsonObject;

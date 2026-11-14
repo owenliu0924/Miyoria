@@ -3,7 +3,6 @@
 
 import { timingSafeEqual } from "node:crypto";
 import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
-import type { AudioStream } from "@miyoria/speech";
 import {
   type AccountRef,
   type ContextKey,
@@ -18,6 +17,7 @@ import {
 } from "@miyoria/types";
 import type { RawData, WebSocket } from "ws";
 import { z } from "zod";
+import type { AudioStream } from "../../../speech/src/index.js";
 import {
   CLOSE,
   decodeAudio,

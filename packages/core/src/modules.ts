@@ -54,7 +54,6 @@ import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import { SandboxModule } from "@miyoria/sandbox";
 import { SingModule } from "@miyoria/sing";
 import { SkillsModule } from "@miyoria/skills";
-import { SpeechConfigSchema, SpeechModule } from "@miyoria/speech";
 import {
   AvatarProfile,
   applyObsSetup,
@@ -73,7 +72,8 @@ import {
   type StoredHandleDirectory,
 } from "@miyoria/store";
 import { isJsonObject, type ProfileId } from "@miyoria/types";
-import { VoiceLinkModule, VoiceModule } from "@miyoria/voice";
+import { SpeechConfigSchema, SpeechModule } from "@miyoria/voice/speech";
+import { VoiceLinkModule, VoiceModule } from "@miyoria/voice/voice";
 import { WebModule } from "@miyoria/web";
 import {
   buildCoreWith,

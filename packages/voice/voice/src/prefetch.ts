@@ -6,7 +6,7 @@
 // shared GPU), unclaimed lines expire, and a line nobody takes can be cancelled together with the
 // rest of its guild's (barge-in, a song taking the floor).
 
-import type { AudioChunk } from "@miyoria/speech";
+import type { AudioChunk } from "../../speech/src/index.js";
 import type { TtsTiming } from "./e2e.js";
 import { Semaphore } from "./util.js";
 

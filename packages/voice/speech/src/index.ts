@@ -1,4 +1,4 @@
-// @miyoria/speech: ASR / TTS provider interfaces, fallback chains (`SpeechService`), the
+// @miyoria/voice/speech: ASR / TTS provider interfaces, fallback chains (`SpeechService`), the
 // built-in HTTP providers and the `speech` module. Audio is mono 16-bit PCM (`Int16Array`).
 
 export {

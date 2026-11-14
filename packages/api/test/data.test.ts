@@ -36,7 +36,7 @@ import {
   PRIVACY_PROFILE,
   toTimestamp,
 } from "@miyoria/types";
-import { CONSENT_PROFILE, consentKey } from "@miyoria/voice";
+import { CONSENT_PROFILE, consentKey } from "@miyoria/voice/voice";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ActiveProfileKey,

@@ -109,7 +109,7 @@ describe("only the main line acts", () => {
         "packages/sing/src/commands.ts",
         "packages/stage/src/link/commands.ts",
         "packages/stage/src/link/module.ts",
-        "packages/voice/src/commands.ts",
+        "packages/voice/voice/src/commands.ts",
       ].sort(),
     );
   });

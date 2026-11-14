@@ -1,4 +1,4 @@
-// @miyoria/voice: the voice pipeline.
+// @miyoria/voice/voice: the voice pipeline.
 //
 // * Module `voice.link` (`VoiceLinkModule`) serves the Voice Link WebSocket
 //   (`docs/protocols/voice-link.md`) the self voice node connects to, and provides `VoiceLink`

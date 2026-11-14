@@ -19,18 +19,6 @@ import {
   type ModuleContext,
   type Subscription,
 } from "@miyoria/runtime/kernel";
-import {
-  type AsrHint,
-  type AsrProvider,
-  type AudioBuf,
-  type AudioChunk,
-  type AudioStream,
-  SpeechService,
-  SpeechServiceKey,
-  type Transcript,
-  type TtsProvider,
-  type TtsRequest,
-} from "@miyoria/speech";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
@@ -53,6 +41,18 @@ import {
   type VoiceUtterance,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  type AsrHint,
+  type AsrProvider,
+  type AudioBuf,
+  type AudioChunk,
+  type AudioStream,
+  SpeechService,
+  SpeechServiceKey,
+  type Transcript,
+  type TtsProvider,
+  type TtsRequest,
+} from "../../speech/src/index.js";
 import { VoiceModule } from "../src/index.js";
 import {
   deepseekVoice,

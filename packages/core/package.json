@@ -48,7 +48,6 @@
     "@miyoria/sandbox": "workspace:*",
     "@miyoria/sing": "workspace:*",
     "@miyoria/skills": "workspace:*",
-    "@miyoria/speech": "workspace:*",
     "@miyoria/stage": "workspace:*",
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",

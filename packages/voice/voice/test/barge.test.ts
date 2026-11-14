@@ -1,9 +1,9 @@
 // Barge-in: the decision function, ducking / pausing / resuming, echo detection and the TTS
 // prefetch cache (docs/design/v2-architecture.md §3.9).
 
-import type { AudioChunk } from "@miyoria/speech";
 import type { AccountRef, ContextKey, VoiceBargeIn } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AudioChunk } from "../../speech/src/index.js";
 import {
   BargeIn,
   type BargeTarget,

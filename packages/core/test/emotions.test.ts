@@ -33,7 +33,7 @@ import {
   PipelineKey,
   toTimestamp,
 } from "@miyoria/types";
-import { VoiceProfile } from "@miyoria/voice";
+import { VoiceProfile } from "@miyoria/voice/voice";
 import { afterEach, describe, expect, it } from "vitest";
 
 const NOW = Date.UTC(2026, 10, 7, 6);

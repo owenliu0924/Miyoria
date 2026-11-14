@@ -3,9 +3,9 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AudioBuf } from "@miyoria/speech";
 import type { ContextKey, TurnId } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AudioBuf } from "../../speech/src/index.js";
 import { Filler, FillerBank, type FillerClip, type FillerDeps, trim } from "../src/index.js";
 
 const ctx: ContextKey = { platform: "discord", scope: "g1", channel: "vc1", kind: "voice" };

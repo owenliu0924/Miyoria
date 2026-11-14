@@ -11,7 +11,6 @@ import {
   type ModuleContext,
   sleep,
 } from "@miyoria/runtime/kernel";
-import { type SpeechService, SpeechServiceKey } from "@miyoria/speech";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   customEvent,
@@ -24,6 +23,7 @@ import {
   VoiceTurnsKey,
   WorldStateKey,
 } from "@miyoria/types";
+import { type SpeechService, SpeechServiceKey } from "../../speech/src/index.js";
 import { voiceCapabilities } from "./actions.js";
 import { BargeIn } from "./barge.js";
 import { ClipRecorder } from "./clips.js";

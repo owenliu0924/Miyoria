@@ -46,7 +46,7 @@ import { type Candidate, Salience } from "./salience.js";
 
 /** Topic of Stage node status changes (`@miyoria/stage`). */
 const STAGE_STATUS_TOPIC = "stage.status";
-/** Topic of Go Live state changes (`@miyoria/voice`). */
+/** Topic of Go Live state changes (`@miyoria/voice/voice`). */
 const GOLIVE_TOPIC = "voice.golive";
 
 const STORE_TIMEOUT_MS = 5_000;

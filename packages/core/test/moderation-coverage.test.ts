@@ -120,7 +120,7 @@ describe("every line of hers is reviewed", () => {
     const discord = read("packages/discord/src/sink.ts");
     expect(bodyOf(discord, "async send(")).toContain("safeOutgoing(");
     expect(bodyOf(discord, "async setVoiceStatus(")).toContain("safeOutgoing(");
-    const voice = read("packages/voice/src/sink.ts");
+    const voice = read("packages/voice/voice/src/sink.ts");
     const producer = bodyOf(voice, "#producer(");
     expect(producer.match(/this\.#review\(/g)).toHaveLength(2);
     expect(producer).toContain('"tts"');

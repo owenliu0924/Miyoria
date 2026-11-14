@@ -14,7 +14,7 @@ import {
   type TurnId,
 } from "@miyoria/types";
 
-/** `voice.golive` (published by `@miyoria/voice`). */
+/** `voice.golive` (published by `@miyoria/voice/voice`). */
 export const GOLIVE_TOPIC = "voice.golive";
 /** `stage.status` (published by `stage.link`). */
 export const STAGE_STATUS_TOPIC = "stage.status";

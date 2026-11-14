@@ -41,7 +41,7 @@ import {
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { gameCapabilities } from "../../game/src/actions.js";
-import { voiceCapabilities } from "../../voice/src/actions.js";
+import { voiceCapabilities } from "../../voice/voice/src/actions.js";
 
 const PROFILE = join(fileURLToPath(new URL("../../..", import.meta.url)), "profiles/deepseek-chan");
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };

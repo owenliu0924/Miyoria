@@ -2,13 +2,6 @@
 
 import { errorMessage, type ModuleContext, sleep } from "@miyoria/runtime/kernel";
 import {
-  type AudioChunk,
-  isOffloaded,
-  SpeechError,
-  type SpeechService,
-  type TtsPriority,
-} from "@miyoria/speech";
-import {
   ActuatorExecutorKey,
   AffectStateKey,
   type ContextKey,
@@ -29,6 +22,13 @@ import {
   VoiceFloorKey,
   type VoiceSink,
 } from "@miyoria/types";
+import {
+  type AudioChunk,
+  isOffloaded,
+  SpeechError,
+  type SpeechService,
+  type TtsPriority,
+} from "../../speech/src/index.js";
 import type { BargeIn } from "./barge.js";
 import type { VoiceConfig, VoiceProfile } from "./config.js";
 import type { E2eLatency, E2eMeasure } from "./e2e.js";
