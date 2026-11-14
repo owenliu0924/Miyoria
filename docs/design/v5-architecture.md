@@ -10,7 +10,7 @@ V5 做七件事,前三件是地基:
 
 1. **一份契約、一個登記處**:平台、worker、遊戲、渲染器、擴充都是「能力的提供者」,用同一份 schema 向 Core 報到。Core 不再認識任何功能。
 2. **每台電腦一個管家(hostd)**:一個指令裝這台要的服務、一個指令全部啟動、一個指令加入別台的 Core。位址不再寫進設定。
-3. **整併**:`packages/` 底下 45 個套件收成 20 個,V2 管線和重複的層刪掉,設定只有一份 schema,資料庫重開。
+3. **整併**:`packages/` 底下 45 個套件收成 22 個左右(第一步已經到 26 個,§12),V2 管線和重複的層刪掉,設定只有一份 schema,資料庫重開。
 4. **大腦**:一個決定者(Self loop)。程式只管護欄和成本,要不要說、說什麼、做什麼都在同一次模型呼叫裡決定,拒絕會回給她看。把 harness 給模型的東西給她:足夠的思考、留得住的對話和工具紀錄、找得到的工具、子代理。
 5. **心**:羈絆為主,加八個細分數值和文字印象。變動由她提出、程式限速,每一筆都有原因。面板用環狀進度顯示。
 6. **玩**:卡照 owner 的企劃分成每日卡和生圖卡,每日卡先做,生圖卡等模型選定;經濟補上去處;每個互動都要有看得見的下文。
@@ -114,7 +114,7 @@ V5 做七件事,前三件是地基:
 | `asr` · `tts` · `turn` · `embed` | Python worker | `workers/*` |
 | `sing` · `imagegen` | 排隊型的 GPU 工作 | `workers/sing`、ComfyUI |
 | `renderer` | VTube Studio、overlay,以後的 VRM | `packages/stage` |
-| `activity` | Minecraft、osu、Neuro SDK 遊戲、派對遊戲 | `packages/game`、`extensions/*` |
+| `activity` | Minecraft、osu、Neuro SDK 遊戲、派對遊戲 | `packages/play/game`、`extensions/*` |
 | `tool` | MCP、擴充的工具 | `mcp`、`ext-host` |
 | `panel` | 外掛自己的面板頁 | 有寫沒做 |
 
@@ -508,28 +508,43 @@ miyoria up                     # 啟動這台裝的全部
 
 ## 12. 套件整併
 
-| V5 | 收進來的 |
+**已經做的(2026-11-14,`v5` 分支)**:十組機械式合併,`packages/` 從 45 個變成 26 個,行為沒有改。每一組是一個套件,裡面每個部分一個資料夾(各有自己的 `src/` 和 `test/`),對外用 `@miyoria/<組>/<部分>` 匯入,組內互相用相對路徑。工具是 `scripts/merge-packages.py`。
+
+| 套件 | 裡面的部分 |
 |---|---|
-| `contracts` | `types` 的基礎部分、SDK 型別、所有連線協定、API 路由表 |
-| `runtime` | `kernel`、`tools`、`profile`、`scheduler`、設定組裝、外掛載入(不再有寫死的模組清單) |
-| `store` | 只剩連線、遷移、事件紀錄、產物庫(§11.2);各外掛自己的表;只留一種 SQL 寫法 |
-| `access` | `auth`、`commands` 裡的第二套權限、主人名單 |
-| `interaction` | `commands` 的平台中性部分 |
-| `platform-discord` | `discord`、Discord 的指令繪製 |
-| `brain` | `agent`、`arbiter`、`activity`、`actions`、`directive`、`moderation`、`llm` |
-| `memory` | `memory`、`facts`、`learning`、`world`、`self` 的文件部分 |
-| `heart` | `mind` 的情緒、`social`、`self` 的情感 |
+| `runtime` | `kernel`、`profile`、`scheduler` |
+| `llm` | `llm`、`tools` |
+| `gate` | `actions`、`moderation` |
+| `brain` | `agent`、`arbiter`、`activity`、`directive` |
+| `memory` | `memory`、`facts`、`learning`、`world` |
+| `heart` | `mind`、`social`、`self` |
 | `voice` | `voice`、`speech` |
-| `stage` | stage 連線的 Core 端、表演者(情緒 → 表情意圖);渲染器搬到 stage app |
-| `economy` · `cards` · `sing` · `live` | 各自一個外掛;`cards` 收 `card-face` |
-| `play` | `party`、`game`、`queue` |
 | `workspace` | `sandbox`、`skills`、`web`、`imagegen` |
-| `plugin-host` | `ext-host`、`mcp`,加上 WebSocket 和遠端放置 |
-| `sdk` · `http` | SDK(型別由 `contracts` 產生);`api` 的殼 |
+| `play` | `party`、`game`、`queue` |
+| `plugin-host` | `ext-host`、`mcp` |
+
+和原本規劃不同的三處,都是算過相依圖之後改的,不這樣會有循環相依:
+
+- `tools`(工具登記表)依賴 `llm` 的工具型別,所以和 `llm` 一組,不放 `runtime`。
+- `actions`(能力登記表和風險閘門)被 `learning`、`mind`、`social`、`stage` 用到,所以不能放在 `brain` 裡。它和 `moderation` 合成 `gate`,位置在 `brain` 下面。
+- `directive`(主人規則)放在 `brain`:它的測試要用到 `activity` 和事件紀錄,放在 `gate` 會讓 `gate` 和 `brain` 在測試上互相依賴,pnpm 就排不出建置順序。
+
+**還沒做的**:
+
+| 之後的名字 | 現在 | 什麼時候 |
+|---|---|---|
+| `contracts` | `types`,加上各條連線協定和 API 路由表 | 階段 1 的契約那一步 |
+| `store` | `store`:只剩連線、遷移、事件紀錄、產物庫;各外掛自己的表 | 階段 1 的資料庫那一步 |
+| `access` | `auth`,加上 `commands` 裡的第二套權限 | 做權限時 |
+| `interaction` | `commands` 的平台中性部分 | 階段 6 |
+| `platform-discord` | `discord`、Discord 的指令繪製 | 階段 6 |
+| `cards` | `card-face`,加上立繪卡和收藏品 | 階段 5 |
+| `http` | `api` 變成殼,路由由外掛貢獻 | 階段 1 的契約之後 |
+| `stage`、`sing`、`live`、`economy`、`sdk` | 不動 | |
 
 Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admin`、`web`、`overlay`。`replay`、`eval`、`card-studio` 搬到 `tools/`,Core 不依賴它們。
 
-一起刪:V2 管線和它的開關、`/api/economy` 與 `economy2` 併一、`api/v4-*.ts`、30 個舊設定鍵的相容層、兩種事件形式併一、88 處 Rust 時代的註解、`spikes/`、沒被 ignore 的暫存資料夾(`workers/pip-*`、`pytest-of-*`、`torchinductor_*`)。
+一起刪:V2 管線和它的開關、`/api/economy` 與 `economy2` 併一、`api/v4-*.ts`、30 個舊設定鍵的相容層、兩種事件形式併一、88 處 Rust 時代的註解、`spikes/`。
 
 ## 13. 資料
 

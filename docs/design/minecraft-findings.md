@@ -81,7 +81,7 @@
 
 | §11.2 | 改法 | 在哪裡 |
 |---|---|---|
-| 1 導演有紀錄 | 導演記得這場每一步:動作、結果(有進展 / 沒有進展 / 失敗 / 被打斷)、失敗碼、遊戲的說明,每次決定都看得到,和事件分開一欄。**還沒做**:變成工作車道上的任務(多輪紀錄、工具迴圈),工作車道還沒有 | `packages/game/src/record.ts`、`director.ts` |
+| 1 導演有紀錄 | 導演記得這場每一步:動作、結果(有進展 / 沒有進展 / 失敗 / 被打斷)、失敗碼、遊戲的說明,每次決定都看得到,和事件分開一欄。**還沒做**:變成工作車道上的任務(多輪紀錄、工具迴圈),工作車道還沒有 | `packages/play/game/src/record.ts`、`director.ts` |
 | 2 目標有成功條件 | 決定多了 `want: {item, count}`(`obtain` 沒給就用它的物品);背包有了才算完成,她說完成但背包沒有不算。失敗一次不再結束目標(自己的目標也是),`max_attempts` 3 次、`max_goal_steps` 8 步、`max_goal_secs` 600 秒 | `decision.ts`、`director.ts`、`config.ts` |
 | 3 做完要有變化 | adapter 每個用身體的任務前後各看一次背包(加上 `item_picked`),`done` 帶 `data.outcome`;導演把沒有進展的 `done` 當一次失敗。空的 `mine`、拿已經有的東西、`explore` 沒看到新東西都是沒有進展。`stop` 變成即時動作,不是目標也不算成功 | `packages/types/src/game-outcome.ts`、adapter `progress.ts` |
 | 4 食物 | `obtain` 認得食物:打獵(跟著動物、準心對到就打)、熔爐烤熟、`farm` 收小麥再做麵包、`{item:"food"}` 挑附近最容易的;另有 `hunt {entity}` | adapter `planner.ts`、`obtain.ts` |

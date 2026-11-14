@@ -1,6 +1,6 @@
 // `/api/directives`: the panel says who is asking, and the rules decide what that person may do.
 
-import { DirectiveService } from "@miyoria/gate/directive";
+import { DirectiveService } from "@miyoria/brain/directive";
 import { ServiceRegistry, Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { openStore, type Store } from "@miyoria/store";
 import {

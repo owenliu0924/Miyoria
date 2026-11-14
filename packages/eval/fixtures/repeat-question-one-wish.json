@@ -6,9 +6,9 @@
     "at": "2026-11-10T09:07:00+08:00",
     "summary": "One wish, to ask S how a report went, lived in three stores that did not know of each other: a proposal from memory at 09:07, a commitment made in the turn it opened, and later a goal of her Plan to ask whenever S spoke. She asked by DM at 11:07, twice, five seconds apart; S answered at 11:22 and 11:33; from 12:12 to 12:49 she asked again each time S spoke in the channel, although S said she had asked already. The times, the count and S's lines are from the sources; her own questions are paraphrased.",
     "source": [
-      "packages/types/src/wish.ts and packages/arbiter/src/wishes.ts (the incident as their comments record it)",
-      "packages/agent/src/mainline/main.ts MainTurn.take (11:07, 12:12 to 12:49)",
-      "packages/agent/test/one-wish.test.ts and packages/agent/test/wish-turns.test.ts, 2026-11-10"
+      "packages/types/src/wish.ts and packages/brain/arbiter/src/wishes.ts (the incident as their comments record it)",
+      "packages/brain/agent/src/mainline/main.ts MainTurn.take (11:07, 12:12 to 12:49)",
+      "packages/brain/agent/test/one-wish.test.ts and packages/brain/agent/test/wish-turns.test.ts, 2026-11-10"
     ]
   },
   "harness": "wish",

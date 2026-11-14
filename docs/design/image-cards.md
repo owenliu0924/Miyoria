@@ -106,7 +106,7 @@
 
 ## 分階段與要決定的事
 
-1. **生圖底座**:`packages/imagegen` 接 ComfyUI、`image_jobs`、訓練她的 Krea 2 LoRA、一個 N 主題的 workflow;實測每張秒數和 VRAM。
+1. **生圖底座**:`packages/workspace/imagegen` 接 ComfyUI、`image_jobs`、訓練她的 Krea 2 LoRA、一個 N 主題的 workflow;實測每張秒數和 VRAM。
 2. **底片庫 + 自動檢查**:補貨排程、相似度 / 壞圖 / NSFW 三道檢查、面板抽查和主題樣本審核。
 3. **生圖卡上線**:主題池作為獨立的、比較貴的卡池,另一套卡面排版;同時把 `collection_series` 的抽收藏改成每日卡隨機配部件。沖洗動畫,她寫卡面,圖鑑和分解。
 4. **限定池、覺醒、SSR「和你」**:她提主題、現場生成、語音。

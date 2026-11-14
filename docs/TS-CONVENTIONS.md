@@ -12,7 +12,8 @@ Runtime: **Node 24**, **pnpm 9**, ESM only, strict TypeScript 5.9. Database defa
 
 | Path | Package | Notes |
 |---|---|---|
-| `packages/<name>` | `@miyoria/<name>` | libraries and modules (`types`, `kernel`, `llm`, ...) |
+| `packages/<name>` | `@miyoria/<name>` | a package of its own (`types`, `store`, `sing`, ...) |
+| `packages/<group>/<part>` | `@miyoria/<group>/<part>` | a part of a group package (`runtime/kernel`, `brain/agent`, `llm/tools`, ...): one `package.json` for the group, one folder with `src/` and `test/` per part |
 | `packages/cli` | `miyoria` | the CLI / npm package (`miyoria core`, `init`, ...), bundled with esbuild |
 | `apps/<name>` | `@miyoria/<name>` | separately run apps (`panel`, `overlay`, `voice-node`) |
 | `extensions/**` | `@miyoria/ext-<name>` | extensions (use `@miyoria/sdk` only) |
@@ -45,13 +46,27 @@ Every workspace package exports a custom condition first:
 
 ```
 packages/<name>/
-  package.json          # copy packages/tools/package.json: name, deps, same exports/scripts
+  package.json          # copy packages/sing/package.json: name, deps, same exports/scripts
   tsconfig.json         # { "extends": "../../tsconfig.base.json" }
   tsconfig.build.json   # { "extends": "../../tsconfig.build.base.json" }
   vitest.config.ts      # import { nodeProject } from "../../vitest.shared.ts"; export default nodeProject();
   src/index.ts          # the only entry point; explicit named re-exports
   test/*.test.ts        # (or src/**/*.test.ts, excluded from the build)
 ```
+
+A new part of an existing group package needs no manifest of its own:
+
+```
+packages/<group>/
+  package.json          # add "./<part>" to exports, pointing at ./<part>/src/index.ts and ./dist/<part>/src/index.*
+  <part>/src/index.ts   # the part's only entry point
+  <part>/test/*.test.ts
+```
+
+Other packages import a part as `@miyoria/<group>/<part>`. Parts of the same group import each
+other by relative path (`../../<part>/src/index.js`), never by the group's own name. The group's
+`tsconfig.json` includes `*/src` and `*/test`, and its build keeps the folders (`dist/<part>/src`).
+`scripts/merge-packages.py` is what turned separate packages into groups.
 
 Dependencies on other packages are `"@miyoria/<x>": "workspace:*"`. Add a third-party dependency
 only when it clearly pays for itself; prefer Node built-ins (`fetch`, `node:crypto`,
@@ -93,7 +108,7 @@ only when it clearly pays for itself; prefer Node built-ins (`fetch`, `node:cryp
 - No `any` (Biome errors on it). Use `unknown` + narrowing, zod for untrusted input.
 - Never put secrets in messages, logs or `toJSON` / `util.inspect` output (see
   `OpenAiConfig`).
-- `catch (error)` is `unknown`; use `errorMessage(error)` from `@miyoria/kernel` for text.
+- `catch (error)` is `unknown`; use `errorMessage(error)` from `@miyoria/runtime/kernel` for text.
 
 ## 4. Async and cancellation
 
@@ -103,7 +118,7 @@ only when it clearly pays for itself; prefer Node built-ins (`fetch`, `node:cryp
 - No floating promises (Biome `noFloatingPromises` is an error). Await, return, or hand the
   work to `ctx.spawn`. Fire-and-forget is only `void p.catch(log)` with a reason.
 - Use `sleep(ms, signal)`, `interval(ms, signal)`, `withTimeout`, `SerialQueue` from
-  `@miyoria/kernel`. They use global timers, so Vitest fake timers control them; do not use
+  `@miyoria/runtime/kernel`. They use global timers, so Vitest fake timers control them; do not use
   `node:timers/promises`.
 - Streams are `AsyncIterable`s (`for await`, `break` to stop; implement `return()` cleanup).
 
@@ -138,7 +153,7 @@ timers (`vi.useFakeTimers()` also fakes `Date.now()` and the kernel timers).
 ## 8. Kernel API (what modules see)
 
 ```ts
-import { defineManifest, type Module, type ModuleContext } from "@miyoria/kernel";
+import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 
 export const SchedulerConfigSchema = z.object({ text_rate_ms: z.number().default(1000) });
 
@@ -204,7 +219,7 @@ cache another module's service across its restarts.
 - Time-dependent code: fake timers or an injected `Clock`. Restore with `vi.useRealTimers()`
   in `afterEach`.
 - No real network. HTTP clients are tested against a local `node:http` server on
-  `127.0.0.1:0` (see `packages/llm/test/openai.test.ts`); other I/O through in-memory
+  `127.0.0.1:0` (see `packages/llm/llm/test/openai.test.ts`); other I/O through in-memory
   implementations (`MemorySettingsStore`, `MockProvider`).
 - Module tests run the real `Supervisor`: register, `startAll()`, assert on services, events
   (`sub.tryRecv()`) and `list()`, then `stopAll()`.

@@ -116,7 +116,7 @@ voice node 另外把**實際送去 Discord 的 PCM**(重新取樣成 48 kHz 之�
 
 # 推論 Worker HTTP 介面(v1)
 
-`workers/` 底下的 ASR / TTS 服務(Python),對應 `@miyoria/speech` 的 `http-worker` provider。
+`workers/` 底下的 ASR / TTS 服務(Python),對應 `@miyoria/voice/speech` 的 `http-worker` provider。
 
 ## ASR:`POST /asr`
 

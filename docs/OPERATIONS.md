@@ -34,7 +34,7 @@
 | **Turn worker** | `workers/turn`(Python,CPU) | 跟 Core 同一台 | `8006`(判斷講完,選用) |
 | **Lyrics worker** | `workers/lyrics`(Python) | 跟 Core 同一台 | `8007`(只有翻唱 worker 在別台電腦時才用) |
 | **MediaMTX** | `workers/mediamtx`(`start.ps1`) | 直播機 | `1935` RTMP、`8888` LL-HLS、`9997` API(選用:`[modules.live.video]`) |
-| **ComfyUI** | 自己跑,給 `packages/imagegen` 用 | 有 GPU 的機器 | `8188`(`[modules.imagegen]` 的 `url`) |
+| **ComfyUI** | 自己跑,給 `packages/workspace/imagegen` 用 | 有 GPU 的機器 | `8188`(`[modules.imagegen]` 的 `url`) |
 | **Neuro 擴充** | `extensions/neuro`(Core 的擴充行程) | 跟 Core 同一台 | `8000`(`serve = true` 才開,讓遊戲連進來) |
 | **fake worker** | `workers/fake`(沒有 GPU 測試用) | 任何機器 | `8000`(`PORT` 可改) |
 | **Stage** | `miyoria stage`(原生,不放 Docker) | 直播機 | 主動連 Core 的 7882;本機 `7883` 嘴型音量(`/levels`)、`7884` overlay;另外連 VTube Studio 的 API(預設 `8001`,不是 Stage 開的埠) |
@@ -43,7 +43,7 @@
 
 **所有埠預設都只綁 `127.0.0.1`。7878 / 7879 / 7882 永遠不要直接開到公網**(見 [§9](#9-安全檢查表))。
 
-ASR 的預設埠有兩個,看怎麼啟動:自己跑 `workers/asr/server.py`(沒設 `PORT`)是 `8001`;`miyoria start` 和 `[machine]`(`miyoria init` 寫好 `ASR_URL`)是 `8003`;只有 `[stack]` 沒有 `[machine]` 時,`[stack.workers.asr]` 沒寫 `port` 仍用舊的 `8001`。`[speech.asr.*]` 的 `url` 要跟實際啟動的埠一致。VTube Studio 的 API 預設也是 `8001`,兩個同機跑時要把其中一個改掉。`packages/speech` 原始碼註解裡的 `8101` / `8102` 只是範例,沒有任何程式用它當預設。
+ASR 的預設埠有兩個,看怎麼啟動:自己跑 `workers/asr/server.py`(沒設 `PORT`)是 `8001`;`miyoria start` 和 `[machine]`(`miyoria init` 寫好 `ASR_URL`)是 `8003`;只有 `[stack]` 沒有 `[machine]` 時,`[stack.workers.asr]` 沒寫 `port` 仍用舊的 `8001`。`[speech.asr.*]` 的 `url` 要跟實際啟動的埠一致。VTube Studio 的 API 預設也是 `8001`,兩個同機跑時要把其中一個改掉。`packages/voice/speech` 原始碼註解裡的 `8101` / `8102` 只是範例,沒有任何程式用它當預設。
 
 ## 2. 部署型態
 

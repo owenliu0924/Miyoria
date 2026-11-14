@@ -6,8 +6,8 @@
 // rule on `diamond` catches a steer whose patch says `diamond_ore`. It is lexical: a rule written
 // `鑽石` does not catch `diamond`; the main line writes the word the capability uses.
 
+import { capabilityMatches } from "@miyoria/gate/actions";
 import type { ContextKey, DirectiveScope } from "@miyoria/types";
-import { capabilityMatches } from "../../actions/src/index.js";
 
 /** The shortest word a rule may name: shorter ones would match almost anything. */
 export const MIN_TERM = 2;

@@ -1100,7 +1100,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # 預設關閉,要明確寫 enabled = true 才會啟動;Docker 沒開時模組顯示 degraded,不影響其他功能。
 # Docker 可用時她會多出工具 code_run(跑程式)、tool_propose(把寫好的程式提出成工具)與已核准的
 # sbx_<name>;前兩個是高風險,她自己審核,有疑慮才私訊你確認。/admin autonomy status 看狀態,
-# GET /api/sandbox/tools 看她寫的工具。安全說明見 packages/sandbox/README.md。
+# GET /api/sandbox/tools 看她寫的工具。安全說明見 packages/workspace/sandbox/README.md。
 # [modules.sandbox]
 # enabled = true
 # root = "data/sandbox"          # runs/<id>(每次執行)與 profiles/<profile>/tools(她留下的腳本)

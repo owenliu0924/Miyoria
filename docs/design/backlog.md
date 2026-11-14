@@ -73,12 +73,12 @@
 
 ## 已知但還沒修
 
-- **主人規則沒寫進去**(2026-11-10 加了保險):回合裡有人明說「不要玩 <她有的遊戲>」而她這回合沒自己呼叫 `directive_add` 時,回合結束前用說這句話的人的身分替她寫一條 deny(`packages/agent/src/prohibition.ts`、`turn.ts` 的 `keepRules`;規則服務照樣判斷這個人能不能立規則;「先 / 今天」是 6 小時)。只認得 Minecraft、osu 和幾個別名;事故評測 `mc-owner-rule-never-written` 要重新錄才會翻成通過。
-- **她把自己的盤算講出來**(2026-11-10 先用規則擋):送出前把「第三人稱講對方 + 對自己下指令」的那一行拿掉(`packages/agent/src/leak.ts` 的 `isSelfTalk`,只拿掉那行、其他照送,有「你」的不算)。還沒做事故評測題、也還沒看真實頻率;規則抓不到的說法要再補。
+- **主人規則沒寫進去**(2026-11-10 加了保險):回合裡有人明說「不要玩 <她有的遊戲>」而她這回合沒自己呼叫 `directive_add` 時,回合結束前用說這句話的人的身分替她寫一條 deny(`packages/brain/agent/src/prohibition.ts`、`turn.ts` 的 `keepRules`;規則服務照樣判斷這個人能不能立規則;「先 / 今天」是 6 小時)。只認得 Minecraft、osu 和幾個別名;事故評測 `mc-owner-rule-never-written` 要重新錄才會翻成通過。
+- **她把自己的盤算講出來**(2026-11-10 先用規則擋):送出前把「第三人稱講對方 + 對自己下指令」的那一行拿掉(`packages/brain/agent/src/leak.ts` 的 `isSelfTalk`,只拿掉那行、其他照送,有「你」的不算)。還沒做事故評測題、也還沒看真實頻率;規則抓不到的說法要再補。
 - **抓被回覆的訊息為什麼會失敗**:2026-11-08 14:19、14:22 兩次回覆都沒帶到被回覆的那句。已改成先用 Discord 隨回覆送來的引用內容、抓到再換成完整的,失敗會記 `could not fetch reply parents` 警告;原本為什麼抓不到(逾時、權限或 Discord 錯誤)還沒查,重啟後看警告。
   - 2026-11-10:找到一個會讓它抓不到的情況並修掉:被回覆的是她自己的卡片(斜線指令的回覆、收據,Components V2、`content` 是空的)時,以前算「沒內容」直接丟掉;現在讀卡片上的文字(`componentsText`),指令回覆也算可以回覆的訊息。抓取失敗改記 warning(`cannot fetch the replied-to message`,帶頻道和錯誤),拿到但沒內容記 info 和訊息類型。14:19 那兩次是不是這個原因還沒對照。
   - 2026-11-11 再查程式:引用內容先從 gateway 快取拿、沒有就 `fetchReference`,兩邊都失敗時才會沒有被回覆的那句;最可能是那個頻道沒給 bot「讀取訊息歷史」(Read Message History,`docs/OPERATIONS.md` 的邀請權限有列),快取裡沒有的舊訊息就抓不到。重啟後看 `cannot fetch the replied-to message` 警告裡的錯誤:`Missing Access` / `Missing Permissions` 就是權限。
-  - 同一天修掉相關的看圖問題:14:22 她把對方之前貼的截圖當成答案,原因是同一個人 2 分鐘內的圖會一起給她看,而每張圖都只標「某某傳的圖片」。現在每張圖標明是這則訊息附的、被回覆的那則裡的、還是幾秒前另外傳的(不是這則訊息附的);回覆別人的訊息時不再帶同一個人更早的圖(`packages/agent/src/vision.ts`)。
+  - 同一天修掉相關的看圖問題:14:22 她把對方之前貼的截圖當成答案,原因是同一個人 2 分鐘內的圖會一起給她看,而每張圖都只標「某某傳的圖片」。現在每張圖標明是這則訊息附的、被回覆的那則裡的、還是幾秒前另外傳的(不是這則訊息附的);回覆別人的訊息時不再帶同一個人更早的圖(`packages/brain/agent/src/vision.ts`)。
 - **主線提示詞的「新東西別說不存在」只有一句短的**:主線固定提示詞已貼著 4000 token 的上限(`prompt-budget` 測試),完整版(產品、版本、事件、日期)只在 V2 規則裡。要放完整版得先騰出空間。
 - 語音視窗跑到 92.5 秒,超過 90 秒的上限。2026-11-11 查過:程式裡找不到叫「語音視窗」、上限 90 秒的東西(`speech_hold_max_ms` 是 90 秒,但每 250 ms 檢查一次,不會超過 2.5 秒),這一行也沒附記錄;下次看到時記下是哪一行記錄。
 - 網頁的直播卡「OBS 推流」只控制 OBS。
@@ -99,7 +99,7 @@
 - **MelBand karaoke 模型的原始授權**沒確認。
 - **becruily BS-RoFormer karaoke 的授權**:HF 上沒標(`becruily/bs-roformer-karaoke`);現在是唱歌預設的主唱模型,只在本機跑、沒散布。
 - **「伴唱也轉」(`backing=convert`)**沒實測:伴唱常是好幾個聲音疊在一起,RVC 的 RMVPE 只抓一條音高,可能轉得很怪。
-- **推理外洩的源頭沒查實**:2026-11-09 15:29 她在一回合(`reasoning` off、4.9 秒、23 則)把整段思考當回覆一行一行發出去。DB 的訊息和 `turn_outcomes` 看得出推理在 content 裡(provider 已把 `reasoning_content` 分開,不是它併進來的),但 LLM 呼叫的原始回應只存在 Core 記憶體,查不到;最可能是 opencode 上的 `deepseek-v4.1-flash` 收了 `thinking: disabled` 卻仍把思考寫在 content。已加的是送出前的防線(`packages/agent/src/leak.ts`)和提示詞一行;要根治得在 Core 重啟後的面板呼叫檢視器看原始回應,再決定是換模型、改 `thinking_off`,還是讓 `chat_text` 開 `low`。防線擋不住不含「情緒標記 / 回覆要短 / 可以說:」這類字眼的純驗算自言自語(要兩行以上才算外洩)。
+- **推理外洩的源頭沒查實**:2026-11-09 15:29 她在一回合(`reasoning` off、4.9 秒、23 則)把整段思考當回覆一行一行發出去。DB 的訊息和 `turn_outcomes` 看得出推理在 content 裡(provider 已把 `reasoning_content` 分開,不是它併進來的),但 LLM 呼叫的原始回應只存在 Core 記憶體,查不到;最可能是 opencode 上的 `deepseek-v4.1-flash` 收了 `thinking: disabled` 卻仍把思考寫在 content。已加的是送出前的防線(`packages/brain/agent/src/leak.ts`)和提示詞一行;要根治得在 Core 重啟後的面板呼叫檢視器看原始回應,再決定是換模型、改 `thinking_off`,還是讓 `chat_text` 開 `low`。防線擋不住不含「情緒標記 / 回覆要短 / 可以說:」這類字眼的純驗算自言自語(要兩行以上才算外洩)。
 - **連結預覽的圖沒用 Geist 字型**:resvg 吃不了 woff2,預覽圖用系統的中文字型(Windows 微軟正黑體),和面板上的卡字型略有差;要一致得把 Geist 的 ttf 放進 repo。另外 Discord 對同一個圖片網址的快取時間沒實測:網址帶 `?v=` 版本,卡變了網址就變,但已經貼出去的舊訊息可能還是舊圖。
 - **Core 從 `/` 起的非公開頁(`/me`、管理頁)只有靜態標題**,沒有各自的預覽;要的話在 `meta.ts` 的 `pageMeta` 加。
 
@@ -114,7 +114,7 @@
 - **Minecraft**:打獵要動物剛好在準星上,Java 模組的 `nearby_entities` 要加座標才能直接瞄準(模組沒改);導演在工作車道上的行為沒進過遊戲。
 - **沙箱網路白名單**:代理和設定做了,沒在真的 Docker 上跑過(`MIYORIA_LIVE_WORKSPACE_TESTS=1`)。
 - **經濟 2.0 的 Postgres 那一半**沒有資料庫可測。
-- **面板的活動表是 API 裡的一份複本**(有測試防它走樣),`packages/mind` 還沒有可讀的服務。
+- **面板的活動表是 API 裡的一份複本**(有測試防它走樣),`packages/heart/mind` 還沒有可讀的服務。
 - **網頁現場的角色是另外畫的**,不是她的樣子;她的 Live2D 能不能放上網頁要先確認授權。
 - **PR 8 還沒收**:`v4-int` 只挑了它的兩個 CI 修復。它的資料表遷移編號和 `turn.ts` 會和 `v4-int` 衝突。
 

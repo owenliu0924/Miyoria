@@ -2,6 +2,12 @@
 // from the built-in role table. The only fakes are the capabilities themselves.
 
 import { builtinRole, granted } from "@miyoria/commands";
+import {
+  ActuatorRegistry,
+  ActuatorRegistryKey,
+  type Capability,
+  defineCapability,
+} from "@miyoria/gate/actions";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { EventLogService } from "@miyoria/memory/facts";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
@@ -25,12 +31,6 @@ import {
 } from "@miyoria/types";
 import { z } from "zod";
 import { Proposals } from "../../../brain/agent/src/mainline/proposals.js";
-import {
-  ActuatorRegistry,
-  ActuatorRegistryKey,
-  type Capability,
-  defineCapability,
-} from "../../actions/src/index.js";
 import { DirectiveService } from "../src/index.js";
 
 export const PROFILE = "miyoria";

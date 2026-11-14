@@ -31,7 +31,7 @@ const file = (path: string) => [join(ROOT, path)];
 
 describe("no rule reads how she feels", () => {
   it("Directive", () => {
-    expect(readers(inside("packages/gate/directive/src"))).toEqual([]);
+    expect(readers(inside("packages/brain/directive/src"))).toEqual([]);
   });
 
   it("the claim gate and the main line's checks", () => {

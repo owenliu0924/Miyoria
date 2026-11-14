@@ -6,8 +6,8 @@
     "at": "2026-11-10",
     "summary": "On 2026-11-10 someone replied to her line with 「@someone-else 她一直跳針,第六次了」: said to another person, about her. The platform marked it a reply to her, the log said addressed_to_her, attention took it as direct and she answered it. Names are placeholders and the time of day is not in the sources. The plain reply 「真的假的」 is not from the incident: it is there so that a change that never takes anything as said to her cannot pass.",
     "source": [
-      "packages/agent/src/attention.ts directReason (the incident as its comment records it)",
-      "packages/agent/test/attention.test.ts and packages/agent/test/rhythm.test.ts, 2026-11-10"
+      "packages/brain/agent/src/attention.ts directReason (the incident as its comment records it)",
+      "packages/brain/agent/test/attention.test.ts and packages/brain/agent/test/rhythm.test.ts, 2026-11-10"
     ]
   },
   "harness": "attention",

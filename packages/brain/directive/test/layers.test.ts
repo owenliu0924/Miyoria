@@ -1,6 +1,7 @@
 // The three layers on the real action path: what the gate does with a rule, who it binds, and what
 // disappears from the tool list. And what an unclear statement comes back as.
 
+import { defineCapability } from "@miyoria/gate/actions";
 import { type Tool, ToolRegistryKey } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
@@ -20,7 +21,6 @@ import {
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { defineCapability } from "../../actions/src/index.js";
 import { DirectiveService, directiveTools } from "../src/index.js";
 import {
   BLOCKED,

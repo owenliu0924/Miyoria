@@ -92,7 +92,7 @@ flowchart LR
 ### 2.1 Module 合約
 
 ```ts
-// @miyoria/kernel
+// @miyoria/runtime/kernel
 export interface Module {
   readonly manifest: ModuleManifest;        // id、名稱、requires / optional、config 的 zod schema
   start(ctx: ModuleContext): Promise<void>;
@@ -140,7 +140,7 @@ export interface Envelope {
 }
 ```
 
-- 程序內:`@miyoria/kernel` 的 `EventBus`,依 topic 過濾(`"*"`、`"prefix.*"`、完整名稱);每個訂閱者有自己的緩衝,落後太多就丟最舊的。事件是 tagged union,依主題分(`platform.*`、`voice.*`、`agent.*`、`stage.*`、`game.*`、`system.*`)。
+- 程序內:`@miyoria/runtime/kernel` 的 `EventBus`,依 topic 過濾(`"*"`、`"prefix.*"`、完整名稱);每個訂閱者有自己的緩衝,落後太多就丟最舊的。事件是 tagged union,依主題分(`platform.*`、`voice.*`、`agent.*`、`stage.*`、`game.*`、`system.*`)。
 - 跨節點:voice link / stage link 只送各自協定定義的訊息,不轉送整條匯流排。
 - 擴充套件:JSON 序列化後轉送,依權限過濾 topic。
 - 事件類型集中定義在 `@miyoria/types`;`@miyoria/sdk` 帶一份給擴充用的對應型別。
@@ -168,7 +168,7 @@ flowchart LR
 
 ## 4. Agent(認知核心)
 
-套件:`@miyoria/agent`。
+套件:`@miyoria/brain/agent`。
 
 ### 4.1 Stimulus 與 Context
 
@@ -233,7 +233,7 @@ interface Stimulus {
 - **預算**:每個頻道每天有主動發話額度,依頻道設定與最近的反應調整(她主動講話都沒人理,就降低頻率)。
 - 主動發話也走 Attention → Generation → Scheduler 同一條路,只是 `priority` 較低,也可以被取代。
 - **Arbiter**(`arbiter` 模組,`ArbiterKey`,docs/design/v2-architecture.md §3.3)是她「現在要不要說話 / 做事」的唯一關卡:她的意圖(`plan`)、唱歌報幕(`song`)、遊戲實況(`game`)、追問與動作結果(`followup`)、notice、打招呼(`world`)都是 Impulse,規則只有 `[modules.arbiter]` 一份(暫停、預算、同意、聊天等級、安靜時段;她自己開話題的每日次數、間隔與沒人接的退避),並寫進她的帳本(prompt 的 `self.ledger`)。只有 `plan` / `agenda` 算她主動開的話題。接受的 Impulse 由 agent 的 `ImpulseHostKey` 開回合;地方忙的時候 Arbiter 稍後再試。沒有 Arbiter 時 agent 照舊處理 `agent.initiative`。「冷場」只有一個訊號:world 的 `channel_quiet`(文字與語音),它喚醒心智迴圈。
-- **不重複、不對空氣講話**(V3 階段 0 的止血,在 V3 主線完成前的 V2 做法):遊戲實況的 Impulse 帶 `attention`(內容鍵和多久後算新的一次,`packages/game/src/narration.ts`)。同一把鍵說出去後,`repeat_after_ms` 內 Arbiter 回 `rejected` / `repeat`;沒有真的說出去(沉默、取消、失敗、等到過期)不算說過。導演的自由實況也歸到它講的那件事上,換句話說還是同一把鍵。遊戲狀態照常留在她的 context,只是不會因此開口。她自己開口(`plan` / `agenda`)、遊戲實況和記憶追問算「她自己開口」,同一個地方連續 `max_unanswered` 次沒有人說話就回 `rejected` / `unanswered`,任何人說話就恢復;定義都在 `packages/arbiter/src/unanswered.ts`。她自己的動作照做,只是開場白先不說。回話、指令、面板、報幕、notice、答應的結果(`action_result`)、打招呼、緊急遊戲事件和有人要求的目標不帶鍵,兩條規則都不管。
+- **不重複、不對空氣講話**(V3 階段 0 的止血,在 V3 主線完成前的 V2 做法):遊戲實況的 Impulse 帶 `attention`(內容鍵和多久後算新的一次,`packages/play/game/src/narration.ts`)。同一把鍵說出去後,`repeat_after_ms` 內 Arbiter 回 `rejected` / `repeat`;沒有真的說出去(沉默、取消、失敗、等到過期)不算說過。導演的自由實況也歸到它講的那件事上,換句話說還是同一把鍵。遊戲狀態照常留在她的 context,只是不會因此開口。她自己開口(`plan` / `agenda`)、遊戲實況和記憶追問算「她自己開口」,同一個地方連續 `max_unanswered` 次沒有人說話就回 `rejected` / `unanswered`,任何人說話就恢復;定義都在 `packages/brain/arbiter/src/unanswered.ts`。她自己的動作照做,只是開場白先不說。回話、指令、面板、報幕、notice、答應的結果(`action_result`)、打招呼、緊急遊戲事件和有人要求的目標不帶鍵,兩條規則都不管。
 - **她的意圖**(`IntentSinkKey`,agent 提供):`chat.start` / `chat.dm` 過閘門後由 coordinator 開一個她自己發起的回合;其他能力先以 `self` 名義執行,成功後在她所在的地方開口(`voice.join` 等她真的進了語音頻道)。意圖不打斷進行中的回合、等待中的訊息或排隊的語音,過期就丟。
 
 ### 4.4 生成與工具
@@ -266,7 +266,7 @@ interface Stimulus {
 
 ## 5. 記憶系統
 
-套件:`@miyoria/memory`。
+套件:`@miyoria/memory/memory`。
 
 ### 5.1 分層
 
@@ -302,7 +302,7 @@ interface Stimulus {
 
 ## 6. 社交系統:身分與好感
 
-套件:`@miyoria/social`。
+套件:`@miyoria/heart/social`。
 
 ### 6.1 身分
 
@@ -337,17 +337,17 @@ export interface Attitude {
 
 ### 6.4 感知與自我(自主層階段 B,見 [design/autonomy.md](design/autonomy.md) §3、§4)
 
-- **`world` 模組**(`@miyoria/world`,`WorldStateKey`):從匯流排整理出世界快照——Discord presence(在線狀態、遊戲含開始時間、Spotify、直播、自訂狀態)、伺服器成員、所有語音頻道的語音狀態(誰在哪、靜音 / 拒聽、視訊 / 分享螢幕)、各文字頻道熱度(最近則數、最後發言、便宜的滾動話題詞,不叫 LLM)、她在的語音頻道的對話熱度(`voice.utterance`:最近幾句、誰剛說話、最後一句幾秒前、是不是「正在聊天」)、她自己的狀態(語音、Go Live、OBS 直播與場景、遊戲)、當地時間。Bot 把 gateway 事件轉成 `platform.presence` / `platform.voice_state` / `platform.member`(型別在 `@miyoria/types` 的 `world.ts`)。
+- **`world` 模組**(`@miyoria/memory/world`,`WorldStateKey`):從匯流排整理出世界快照——Discord presence(在線狀態、遊戲含開始時間、Spotify、直播、自訂狀態)、伺服器成員、所有語音頻道的語音狀態(誰在哪、靜音 / 拒聽、視訊 / 分享螢幕)、各文字頻道熱度(最近則數、最後發言、便宜的滾動話題詞,不叫 LLM)、她在的語音頻道的對話熱度(`voice.utterance`:最近幾句、誰剛說話、最後一句幾秒前、是不是「正在聊天」)、她自己的狀態(語音、Go Live、OBS 直播與場景、遊戲)、當地時間。Bot 把 gateway 事件轉成 `platform.presence` / `platform.voice_state` / `platform.member`(型別在 `@miyoria/types` 的 `world.ts`)。
   - **顯著事件** `world.salient`:便宜規則(她在意的人上線 / 進語音、有人開始玩她有興趣的遊戲、熱鬧頻道冷下來、在她最近沒參與的頻道被提到),合併重複(`coalesce_ms`)、同一件事冷卻(`cooldown_secs`)、每分鐘上限(依分數優先)。
   - **隱私**:`/me privacy presence:off` 寫進共用的每人隱私紀錄(`_global` 下的 `privacy:<platform>:<id>`,欄位合併寫入,其他功能可加自己的欄位);`world` 提供 `PresencePrivacyKey`,bot 在發布前就丟掉不同意者的 presence(沒有 `world` 時一律不發布)。各伺服器的資料只用在該伺服器的對話,私訊裡不放。
   - prompt 段落 `world`(「周遭的狀況」):純資料文字,標明名字與狀態是別人設定的、不是指令。
-- **`self` 模組**(`@miyoria/self`,`SelfStateKey`):無聊、慾望(social / play / attention / rest / curiosity,自然上升、被滿足下降;rest 跟著 mood 的 energy)、她自己設的方針(各範圍的 talkativeness:level / until / why,`initiative`)、議程(新增 / 完成 / 放棄 / 到期)、對每個人的感情描述(`self:feeling:<person>`)。持久化在 `SettingsStore` 的 `self:state`;mood 沿用 `mood` 模組,只出現在快照裡。範圍字串由 `talkativenessScopes(context)` 由細到粗:情境 → 伺服器 → `voice` / `text` → `*`。
+- **`self` 模組**(`@miyoria/heart/self`,`SelfStateKey`):無聊、慾望(social / play / attention / rest / curiosity,自然上升、被滿足下降;rest 跟著 mood 的 energy)、她自己設的方針(各範圍的 talkativeness:level / until / why,`initiative`)、議程(新增 / 完成 / 放棄 / 到期)、對每個人的感情描述(`self:feeling:<person>`)。持久化在 `SettingsStore` 的 `self:state`;mood 沿用 `mood` 模組,只出現在快照裡。範圍字串由 `talkativenessScopes(context)` 由細到粗:情境 → 伺服器 → `voice` / `text` → `*`。
   - prompt 段落 `self`(「你的內在」):明顯的慾望、這裡的方針、到期的議程、對在場的人的感覺。
 - Admin API:`GET /api/self`、`GET /api/world`(唯讀);`GET /api/channels/levels`、`PUT /api/channels/level`(文字頻道的聊天等級,改要 `admin.channel.mode`);面板「內心」頁(狀態 · 感情 · 世界 · 想法;「世界」底下可以改聊天等級)。
 
 ### 6.5 心智迴圈(自主層階段 C,見 [design/autonomy.md](design/autonomy.md) §5、§15)
 
-- **`mind` 模組**(`@miyoria/mind`,`MindKey`):觸發是 `world.salient`(合併)、自適應心跳(閒時約 12 分鐘、熱鬧 / 在語音 4 分鐘、議程到期 3 分鐘;沒事就漸慢,安靜時段與預算 degraded 再慢,exhausted 停)、她的回合結束、她所在的語音頻道聊完後冷場、其他模組的建議。上限只有設定 `[modules.mind]` 的每小時次數與最小間隔。
+- **`mind` 模組**(`@miyoria/heart/mind`,`MindKey`):觸發是 `world.salient`(合併)、自適應心跳(閒時約 12 分鐘、熱鬧 / 在語音 4 分鐘、議程到期 3 分鐘;沒事就漸慢,安靜時段與預算 degraded 再慢,exhausted 停)、她的回合結束、她所在的語音頻道聊完後冷場、其他模組的建議。上限只有設定 `[modules.mind]` 的每小時次數與最小間隔。
 - 一次想法 = 一次 `mind` 用途呼叫(thinking 開,沒設就用 `chat`):system 只有人格、規則、能力清單與她自己的數字;世界摘要、地點與人(短代號)、觸發、建議、記憶(`memory` contributor)、議程、最近的想法都在 user role 的資料區塊。回覆是 JSON,zod 逐項驗證並設上限:內心獨白、感情描述(好感只能給 `+` / `-` 提示,經 social 的每日上限)、慾望微調、多話程度與主動程度、議程、意圖。
 - 意圖交給 agent(`IntentSinkKey`,§4.3),一律過閘門(principal `self`;`ActionRequest.about` 讓「不要主動找我」與每人次數套用在相關的人身上)。
 - **防重複與退避**(見 [design/autonomy.md](design/autonomy.md) §20):每個地點自己主動開口有最小間隔,沒人接就加倍;她提過、沒人接的話題(`MindKey.unanswered`)進心智迴圈與回合的 prompt,而且不會再被主動提起;失敗的動作與相關議程(`AgendaItem.blocked`)在狀況改變前不再試;她自己發起的回合結束不會觸發新的想法。
@@ -358,7 +358,7 @@ export interface Attitude {
 
 ### 6.6 反思與學習(自主層階段 G,見 [design/autonomy.md](design/autonomy.md) §19)
 
-套件 `@miyoria/learning`,三個模組;服務介面在 `@miyoria/types` 的 `learning.ts`。
+套件 `@miyoria/memory/learning`,三個模組;服務介面在 `@miyoria/types` 的 `learning.ts`。
 
 - **`conversation`**(`ConversationStatesKey`):每個情境的對話筆記 = 固定的信封(情境、更新時間、整理到紀錄的哪一句、次數、一段前情提要)+ 她自己決定結構的 JSON。每 `fold_every_messages`(16)句或停頓 `fold_idle_secs`(90 秒),把 `message_log` 裡還沒整理的最舊那段跟之前的筆記一起送 `summarizer`(增量),存 `conversation:state:<情境>`,發 `conversation.folded`。背景執行,回合只從記憶體讀(contributor `conversation`「這段對話的前情提要」),語音延遲不受影響。同一次呼叫也可以提出文件修改與注意到的回饋(`feedback.signal`)。
 - **`knowledge`**(`KnowledgeKey`):她自己整理的資料庫。信封固定:主題(`person` / `guild` / `self` / 她取名的 `topic`)、她定的種類與標題、**每個欄位的來源**(`self` / `inferred` / `said`(誰說的)/ `panel`、信心、時間、隱私來源)、版本紀錄、大小上限;**內容沒有 schema**(任意 JSON,文字可用 Markdown),用 JSON-patch 式操作修改(`add` / `replace` / `remove` / `move`,整批或不改),也能改名、合併、拆開、刪除。防覆寫:她自己(心智迴圈、反思)與面板都能改;關於她自己的文件只有她能寫;其他人(`said`、`inferred`)可以新增(別人說的關於別人的事信心上限 0.6),但只能改或刪自己寫的欄位,一個人可以改自己的文件的全部。欄位只在隱私來源看得到的地方顯示。進 prompt 時轉成精簡的類 Markdown 大綱(`- key: value`,只在需要時標「(X 說)」),包在不可信資料區塊裡(contributor `knowledge`「你整理的資料」);聊天回合用工具 `knowledge_note`(發言者 = `said`,她自己發起的回合 = `inferred`)。
@@ -369,7 +369,7 @@ export interface Attitude {
 
 ## 7. Profile(角色)
 
-套件:`@miyoria/profile`。一個 profile 是一個資料夾,用 git 管版本:
+套件:`@miyoria/runtime/profile`。一個 profile 是一個資料夾,用 git 管版本:
 
 ```
 profiles/deepseek-chan/
@@ -394,7 +394,7 @@ profiles/deepseek-chan/
 
 ## 8. Action Scheduler 與請求佇列(order queue)
 
-套件:`@miyoria/scheduler`(lanes)、`@miyoria/queue`(請求佇列)。這一層負責文字頻道、語音、遊戲、直播共用的佇列。
+套件:`@miyoria/runtime/scheduler`(lanes)、`@miyoria/play/queue`(請求佇列)。這一層負責文字頻道、語音、遊戲、直播共用的佇列。
 
 ### 8.1 Action 與 Lane
 
@@ -441,7 +441,7 @@ export interface Action {
 
 ## 9. 擴充系統(Extensions)與 MCP
 
-套件:`@miyoria/ext-host`、`@miyoria/mcp`;SDK:`@miyoria/sdk`(TS)。其他語言照 [Extension RPC 協定](protocols/extension-rpc.md) 實作即可。
+套件:`@miyoria/plugin-host/ext-host`、`@miyoria/plugin-host/mcp`;SDK:`@miyoria/sdk`(TS)。其他語言照 [Extension RPC 協定](protocols/extension-rpc.md) 實作即可。
 
 ### 9.1 為什麼跨行程
 
@@ -521,7 +521,7 @@ export default defineExtension({
 
 ## 10. 語音系統
 
-套件:`@miyoria/voice`(管線、`voice.link`)、`@miyoria/speech`(ASR/TTS 供應者);Discord 語音連線由 self voice node(`apps/voice-node`)負責,透過 [voice link](protocols/voice-link.md) 把每個人的 PCM 串流送進管線(見 §11.2)。
+套件:`@miyoria/voice/voice`(管線、`voice.link`)、`@miyoria/voice/speech`(ASR/TTS 供應者);Discord 語音連線由 self voice node(`apps/voice-node`)負責,透過 [voice link](protocols/voice-link.md) 把每個人的 PCM 串流送進管線(見 §11.2)。
 
 ### 10.1 管線
 
@@ -550,7 +550,7 @@ flowchart LR
 ### 10.2 供應者介面
 
 ```ts
-// @miyoria/speech
+// @miyoria/voice/speech
 export interface AsrProvider {
   readonly name: string;
   transcribe(audio: AudioBuf, hint: AsrHint, signal?: AbortSignal): Promise<Transcript>;  // 整段辨識(partial 之後再加)
@@ -762,7 +762,7 @@ extensions/minecraft/
 5. 導演每 `decide_secs` 觀察、決定、以 `game.act`(principal `director`)行動,並用 `game` Impulse(交給 Arbiter)實況;遊戲聊天、事件文字對導演都是不可信資料。
 6. `game stop` → `game.director.session` `stopped` → 場景切回 `chat`。
 
-**遊戲內聊天是獨立的對話**(模組 `game.chat`,`@miyoria/game`):
+**遊戲內聊天是獨立的對話**(模組 `game.chat`,`@miyoria/play/game`):
 
 - `game.minecraft.chat` 的玩家訊息(不含系統訊息與她自己的)變成平台 `minecraft` 的 `platform.message.created`,情境 `{platform: "minecraft", scope: <世界>, channel: "chat", kind: "channel"}`(`[modules."game.chat"] world`,adapter 帶 `server` 時用它),所以 agent 給它自己的 session 歷史、attention、頻道模式(鍵 `minecraft:<世界>`)、記憶與社交處理。名稱與內容在進來時就 `safeName` / `neutralize`;導演在這款遊戲不再對玩家聊天實況。
 - 玩家帳號是 `minecraft:<小寫名稱>`;沒連結的是陌生人。在 Discord `/me link` 拿代碼,在遊戲聊天室打 `!link <代碼>` 就把遊戲帳號併進那個人(共用好感、感情、記憶;這行不進對話)。
@@ -800,7 +800,7 @@ extensions/minecraft/
 
 ## 13. LLM 層
 
-套件:`@miyoria/llm`。
+套件:`@miyoria/llm/llm`。
 
 - **供應者**:目前是 OpenAI 相容 provider,`kind` = `deepseek` / `openai` / `opencode` / `openai-compatible`(Ollama、llama.cpp、vLLM、LM Studio、OpenRouter 等);Anthropic、Gemini 原生 API 之後再加。
 - **能力**:串流、工具呼叫、圖片輸入、結構化輸出、prompt caching(persona 和記憶前綴很適合快取)。
@@ -849,7 +849,7 @@ extensions/minecraft/
 - **Panel 登入**:Discord OAuth2(Panel 使用者就是 Discord 使用者,權限一致,要有 `admin.panel.access` / `admin.panel.write`);`miyoria init` 產生的 `MIYORIA_API_TOKEN` 照樣能用(CLI 一直用 token)。
 - **稽核紀錄**:所有管理操作(誰、何時、改了什麼)都記下來。
 
-### 14.1 行動與閘門(`@miyoria/actions`)
+### 14.1 行動與閘門(`@miyoria/gate/actions`)
 
 她能做的每件事都是一個**能力(capability)**:註冊一次,帶風險分級(low / medium / high)、zod 參數 schema 與執行函式,由包裝那個服務的 module 註冊到 app 在開機時建立的 `ActuatorRegistry`(`ActuatorRegistryKey`;同一個物件也是排程器用的 `ActuatorExecutorKey`)。module 測試沒有 app registry 時,`actuatorsFor(ctx)` 給一個私有的。
 
@@ -957,7 +957,7 @@ CLI 透過 Admin API 操作正在跑的 Core,跟 Panel 用同一套權限。
 - **內容**:可設定的內容政策(依伺服器);輸出前做輕量檢查。
 - **速率與成本**:每人、每頻道限流;預算上限當作硬性煞車。
 - **擴充**:安裝時列出要求的權限;高風險權限(鍵鼠輸入、網路、檔案)要明確同意;跨行程本身不是沙箱,所以要標示信任等級。擴充行程只拿到白名單內的環境變數,不繼承 Core 的密鑰(§9.2)。`[modules.mcp]` 啟動的 stdio MCP server 目前仍繼承完整環境(加上設定的 `env`),待修。
-- **她寫的程式**:模組 `sandbox`(`@miyoria/sandbox`,opt-in)在用完即丟的 Docker 容器裡執行:`--network none`、唯讀根目錄、非 root、`--cap-drop ALL`、資源與時間上限、不帶任何主機環境變數,只掛載當次的工作資料夾。服務是 `SandboxKey`(`run`、工具工作區)與 `ProposedToolsKey`(她提出的工具,核准後才能用,仍在沙箱裡跑)。Docker 可用時 module 在閘門註冊 `code.run` / `tool.propose`(高風險,她自己審核,有疑慮才問擁有者)與每個已核准工具的 `sbx.<name>`(中風險)(§14.1);程式輸出以不可信資料區塊、截斷後回給她。擁有者:`/admin autonomy status` 看沙箱與自寫工具,`GET /api/sandbox/tools`、`GET /api/sandbox/tools/:name`(含程式碼)、`POST /api/sandbox/tools/:name/approve|reject`(`{ version, note? }`,token 或有 `owner.autonomy.approve` 的面板帳號)。威脅模型與剩餘風險見 [`packages/sandbox/README.md`](../packages/sandbox/README.md)。
+- **她寫的程式**:模組 `sandbox`(`@miyoria/workspace/sandbox`,opt-in)在用完即丟的 Docker 容器裡執行:`--network none`、唯讀根目錄、非 root、`--cap-drop ALL`、資源與時間上限、不帶任何主機環境變數,只掛載當次的工作資料夾。服務是 `SandboxKey`(`run`、工具工作區)與 `ProposedToolsKey`(她提出的工具,核准後才能用,仍在沙箱裡跑)。Docker 可用時 module 在閘門註冊 `code.run` / `tool.propose`(高風險,她自己審核,有疑慮才問擁有者)與每個已核准工具的 `sbx.<name>`(中風險)(§14.1);程式輸出以不可信資料區塊、截斷後回給她。擁有者:`/admin autonomy status` 看沙箱與自寫工具,`GET /api/sandbox/tools`、`GET /api/sandbox/tools/:name`(含程式碼)、`POST /api/sandbox/tools/:name/approve|reject`(`{ version, note? }`,token 或有 `owner.autonomy.approve` 的面板帳號)。威脅模型與剩餘風險見 [`packages/workspace/sandbox/README.md`](../packages/workspace/sandbox/README.md)。
 - **語音**:收音前公告、需要同意、預設不存音訊。
 - **資料權利**:使用者可以匯出、刪除自己的資料。
 

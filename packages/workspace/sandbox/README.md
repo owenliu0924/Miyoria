@@ -1,4 +1,4 @@
-# @miyoria/sandbox
+# @miyoria/workspace/sandbox
 
 模組 `sandbox`:讓 DeepSeek-chan 在**不能連外的 Docker 容器**裡執行她自己寫的程式(Python / Node):預設每次一個用完即丟的新容器,要分好幾步做的事可以開一個有名字的**工作階段**(session,`/work` 會留給同名的下一次執行)。另外保存她寫的腳本(工具工作區),以及管理她提出的自寫工具(`tool.propose`)。設計見 [`docs/design/autonomy.md`](../../docs/design/autonomy.md) §7、§8.3(階段 F)。
 
@@ -190,7 +190,7 @@ Docker 可用時(啟動時檢查,之後每 `recheck_ms` 再檢查),module 在 ap
 
 ## 測試
 
-- `pnpm --filter @miyoria/sandbox test`:單元測試用注入的假 `DockerRunner`,不需要 Docker。
+- `pnpm --filter @miyoria/workspace test`:單元測試用注入的假 `DockerRunner`,不需要 Docker。
 - `test/gate.test.ts`:閘門路徑(審核 allow / deny / uncertain → 擁有者)、`network` 永遠是 `none`、輸出的不可信框與截斷、後續回合、自寫工具的核准 → 註冊 → 呼叫。
 - `test/sessions.test.ts`:工作階段(同名重用、檔案只回這次改的、閒置 / 存活上限與「只說一次」、數量上限、磁碟上限、逾時只殺程式、容器不見了、一次一個、關掉時中止、輸入檔不能寫穿之前留下的路徑、停止與啟動時清理)與暖池(每個容器只跑一個程式、逾時以名稱 kill、容器死了改走 fresh、`mount_tools` 不用暖池、壞的請求也會丟掉拿走的容器、沒有 Docker / 沒有 `warm()` 時不開)。
 - `test/docker.integration.test.ts` 會真的跑容器(也有一個經過閘門的 `code_run` 與 `sbx_<name>` 案例,以及工作階段的重用 / 過期 / 上限、暖池的一次性與延遲量測);偵測不到 Docker daemon(或設 `MIYORIA_SKIP_DOCKER_TESTS=1`)時自動跳過。第一次會下載映像檔(在作者的機器上 `python:3.12-slim` 約 9 秒、`node:24-slim` 約 3 秒)。

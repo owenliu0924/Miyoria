@@ -1,6 +1,6 @@
 # Extension RPC 協定(v1)
 
-Core 的擴充宿主(`@miyoria/ext-host`,module id `extensions`)和每個擴充套件行程之間的協定。TS 擴充用 `@miyoria/sdk` 就不用自己處理這些細節;其他語言照這份文件實作即可(`packages/ext-host/test/fixtures/test-ext/index.mjs` 是一個不用 SDK、約 150 行的完整範例)。
+Core 的擴充宿主(`@miyoria/plugin-host/ext-host`,module id `extensions`)和每個擴充套件行程之間的協定。TS 擴充用 `@miyoria/sdk` 就不用自己處理這些細節;其他語言照這份文件實作即可(`packages/plugin-host/ext-host/test/fixtures/test-ext/index.mjs` 是一個不用 SDK、約 150 行的完整範例)。
 
 - **傳輸**:宿主把擴充當子行程啟動,協定走 **stdin / stdout**。**stdout 只能拿來寫協定訊框**;擴充自己的輸出請寫到 stderr(宿主會逐行轉進 Core 的 pino 日誌,logger 名稱 `miyoria_ext`)或用 `log` 方法。SDK 會自動把 `console.log / info / debug` 導到 stderr。
 - **訊息**:JSON-RPC 2.0。雙方都可以送 request 和 notification;request 可以並行,用 `id` 對應 response。
@@ -293,7 +293,7 @@ game = "minecraft"          # 遊戲 id:1–32 個小寫英數、`-`、`_`(一�
 - 同一個遊戲 id 只能有一個擴充;第二個在 discovery 時被略過。
 - 宿主在 `initialize` 的 `extension.game` 送出這個 id。
 - **事件**:adapter 可以發佈 `game.<id>.<type>`(例如 `game.minecraft.death`),不需要 `events` 權限。別的擴充即使有 `events = ["game.*"]` 也只能**訂閱**、不能發佈 `game.*`。
-- **任務執行器**:adapter 是 `game.<id>` 的任務執行器(見〈任務執行器〉),慢迴路 `@miyoria/game` 只透過它 observe、開始 / 取消目標。SDK 的 `registerAdapter` 不再登記原始的 `game.<id>.observe` / `game.<id>.act` 工具;沒有自己執行器的 adapter,它的 `act` 會被包成一步就結束的任務。`game.` 底下的工具名稱仍只保留給該 adapter,而且**不會**出現在聊天回合的工具清單裡(宿主登記在只給能力用的 `GatedToolsKey`);她只能透過過閘門的能力(`game.start` / `game.stop` / `game.goal`,導演的 `game.act`)動到遊戲。
+- **任務執行器**:adapter 是 `game.<id>` 的任務執行器(見〈任務執行器〉),慢迴路 `@miyoria/play/game` 只透過它 observe、開始 / 取消目標。SDK 的 `registerAdapter` 不再登記原始的 `game.<id>.observe` / `game.<id>.act` 工具;沒有自己執行器的 adapter,它的 `act` 會被包成一步就結束的任務。`game.` 底下的工具名稱仍只保留給該 adapter,而且**不會**出現在聊天回合的工具清單裡(宿主登記在只給能力用的 `GatedToolsKey`);她只能透過過閘門的能力(`game.start` / `game.stop` / `game.goal`,導演的 `game.act`)動到遊戲。
 - **prompt**:`prompt.register` 的 key 照常加上 `ext.<id>.` 前綴。
 
 SDK 的 `ctx.game.registerAdapter(adapter)` 負責這些對應;`describe().id` 必須等於 `ctx.game.id`(= `extension.game`),否則丟出錯誤、啟動失敗。事件的 `payload` 是 `GameEvent`:
