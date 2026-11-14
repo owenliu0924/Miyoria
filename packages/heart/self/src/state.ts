@@ -233,14 +233,6 @@ export class SelfService implements SelfState {
     return missed;
   }
 
-  /** Changes her romance for someone (see `HeartBook.romance`); returns the change made. */
-  romance(person: PersonId, amount: number): number {
-    const now = this.now();
-    const change = this.d.engine.hearts.romance(person, amount, now);
-    if (change !== 0) this.d.changed("event");
-    return change;
-  }
-
   /** Her crush's person id, without advancing (cheap, for event routing). */
   crushPerson(): PersonId | null {
     return this.d.engine.hearts.crush(this.d.clock.now())?.person ?? null;

@@ -216,7 +216,6 @@ export class SelfEngine {
     this.hearts = new HeartBook(
       config.heart,
       temper,
-      config.utc_offset_minutes,
       config.emotions.missing_after_hours * HOUR_MS,
       now,
     );

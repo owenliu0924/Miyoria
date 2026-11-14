@@ -99,10 +99,6 @@ const EmotionsSchema = z.object({
 
 /** `[modules.self.heart]`: romance and her crush. */
 const HeartSchema = z.object({
-  /** Romance grows only with people she likes at least this much (affinity)... */
-  min_affinity: z.number().default(25),
-  /** ...and by at most this much per person per local day. */
-  daily_gain: unit().default(0.06),
   /** Half-life of romance while nothing new happens (days). */
   half_life_days: z.number().positive().default(45),
   /** Her crush: the highest romance at or above this... */

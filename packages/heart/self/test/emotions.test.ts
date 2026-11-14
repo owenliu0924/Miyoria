@@ -151,19 +151,16 @@ describe("display rules", () => {
 });
 
 describe("romance and crush", () => {
-  const book = (now = T0) => new HeartBook(selfConfig().heart, base, 480, 20 * HOUR, now);
+  const book = (now = T0) => new HeartBook(selfConfig().heart, base, 20 * HOUR, now);
 
   it("the crush is the highest romance above the threshold, or nobody", () => {
     const h = book();
-    h.romance("a", 0.06, T0);
+    h.attach("a", 0.06, T0);
     expect(h.crush(T0)).toBeNull();
-    // Romance gains are limited per local day.
-    h.romance("a", 0.5, T0);
-    expect(h.romanceOf("a")).toBeCloseTo(0.06, 2);
     let t = T0;
     for (let day = 1; day <= 8; day++) {
       t = T0 + day * DAY;
-      h.romance("a", 0.06, t);
+      h.attach("a", 0.06, t);
     }
     expect(h.romanceOf("a")).toBeGreaterThan(0.35);
     expect(h.crush(t)?.person).toBe("a");
@@ -172,30 +169,30 @@ describe("romance and crush", () => {
   it("changes only when someone clearly passes the current one, and can fall to nobody", () => {
     const h = book();
     for (let d = 0; d < 9; d++) {
-      h.romance("a", 0.06, T0 + d * DAY);
-      h.romance("b", 0.06, T0 + d * DAY);
+      h.attach("a", 0.06, T0 + d * DAY);
+      h.attach("b", 0.06, T0 + d * DAY);
     }
     const t = T0 + 9 * DAY;
     const a = h.romanceOf("a");
     expect(h.romanceOf("b")).toBeCloseTo(a, 6);
     expect(h.crush(t)?.person).toBe("a");
     // b a little ahead: not enough.
-    h.romance("b", 0.03, t);
+    h.attach("b", 0.03, t);
     expect(h.crush(t)?.person).toBe("a");
     // a hurt her: b takes the place.
-    h.romance("a", -0.3, t);
+    h.attach("a", -0.3, t);
     expect(h.crush(t)?.person).toBe("b");
-    h.romance("b", -1, t);
+    h.attach("b", -1, t);
     expect(h.crush(t)).toBeNull();
     // It fades slowly on its own.
-    h.romance("c", 0.06, t);
+    h.attach("c", 0.06, t);
     h.advance(t + 45 * DAY);
     expect(h.romanceOf("c")).toBeCloseTo(0.03, 2);
   });
 
   it("persists the people and the crush", () => {
     const h = book();
-    for (let d = 0; d < 9; d++) h.romance("a", 0.06, T0 + d * DAY);
+    for (let d = 0; d < 9; d++) h.attach("a", 0.06, T0 + d * DAY);
     h.seen("a", "Owen", true, T0 + 9 * DAY);
     h.feel("a", "gratitude", 0.5, T0 + 9 * DAY);
     const copy = book(T0 + 9 * DAY);
@@ -209,7 +206,7 @@ describe("drives and emotions", () => {
   /** An engine whose crush is `a`. */
   function withCrush(): SelfEngine {
     const e = new SelfEngine(selfConfig(), T0, base);
-    for (let d = 0; d < 10; d++) e.hearts.romance("a", 0.06, T0 - (10 - d) * DAY);
+    for (let d = 0; d < 10; d++) e.hearts.attach("a", 0.06, T0 - (10 - d) * DAY);
     e.hearts.seen("a", "Owen", true, T0);
     expect(e.hearts.crush(T0)?.person).toBe("a");
     return e;

@@ -5,8 +5,7 @@
 //
 // * Attachment ("romance") no longer grows by itself from events: only the affect service moves
 //   it, on Reflect's proposals, in small steps within a daily cap (`attach`). It fades slowly
-//   (`half_life_days`) and drops without limit when they hurt her. (`romance()` keeps the old
-//   per-day growth for callers that still want it.)
+//   (`half_life_days`) and drops without limit when they hurt her.
 // * Her crush is whoever has the highest romance at or above `crush_threshold`; someone else
 //   needs `crush_margin` more to take the place. It can be nobody.
 // * Emotions toward someone fade with their own half-lives (her temperament).
@@ -36,9 +35,6 @@ interface Rec {
   emotions: Map<PersonEmotionName, number>;
   lastSeen: number | null;
   lastTogether: number | null;
-  /** Local day of `gained` (romance gained today, for the daily limit). */
-  day: number;
-  gained: number;
 }
 
 function newRec(): Rec {
@@ -48,8 +44,6 @@ function newRec(): Rec {
     emotions: new Map(),
     lastSeen: null,
     lastTogether: null,
-    day: 0,
-    gained: 0,
   };
 }
 
@@ -69,16 +63,11 @@ export class HeartBook {
   constructor(
     private readonly config: HeartConfig,
     private readonly temper: Temperament,
-    private readonly utcOffsetMinutes: number,
     /** Away this long, 想念 toward someone holds instead of fading. */
     private readonly awayMs: number,
     now: number,
   ) {
     this.#at = now;
-  }
-
-  #day(now: number): number {
-    return Math.floor((now + this.utcOffsetMinutes * 60_000) / DAY_MS);
   }
 
   #rec(person: PersonId): Rec {
@@ -143,32 +132,6 @@ export class HeartBook {
     if (name !== null && name.trim() !== "") r.name = [...name.trim()].slice(0, MAX_NAME).join("");
     r.lastSeen = now;
     if (together) r.lastTogether = now;
-  }
-
-  /**
-   * Adds romance: positive changes are limited to `daily_gain` per local day, negative ones are
-   * not. Returns the change actually made.
-   */
-  romance(person: PersonId, amount: number, now: number): number {
-    if (!Number.isFinite(amount) || amount === 0) return 0;
-    this.advance(now);
-    const r = this.#rec(person);
-    const before = r.romance;
-    if (amount > 0) {
-      const day = this.#day(now);
-      if (r.day !== day) {
-        r.day = day;
-        r.gained = 0;
-      }
-      const room = Math.max(this.config.daily_gain - r.gained, 0);
-      const add = Math.min(amount, room);
-      r.romance = clamp01(r.romance + add * (1 - r.romance * 0.5));
-      r.gained += r.romance - before;
-    } else {
-      r.romance = clamp01(r.romance + amount);
-    }
-    this.#pickCrush(now);
-    return r.romance - before;
   }
 
   /**
@@ -324,8 +287,6 @@ export class HeartBook {
         emotions: Object.fromEntries(r.emotions),
         last_seen: ts(r.lastSeen),
         last_together: ts(r.lastTogether),
-        day: r.day,
-        gained: r.gained,
       };
     }
     const crush = this.#crush
@@ -354,8 +315,6 @@ export class HeartBook {
         }
         r.lastSeen = parseMs(raw.last_seen);
         r.lastTogether = parseMs(raw.last_together);
-        r.day = typeof raw.day === "number" ? raw.day : 0;
-        r.gained = typeof raw.gained === "number" ? raw.gained : 0;
         this.#people.set(p, r);
       }
     }

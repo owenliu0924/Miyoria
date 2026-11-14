@@ -817,9 +817,7 @@ boredom_per_hour = 0.15          # 沒事做時無聊上升的速度
 # [modules.self.mood]            # 心情不單獨存,是從慾望、情緒和時段算出來的
 # night_dip = 0.4                # 深夜精力最多掉這麼多
 # emotion_weight = 1             # 情緒對心情的影響(0 = 只看基準值、時段與慾望)
-# [modules.self.heart]           # 心動與暗戀:只從她喜歡的人的互動自己長出來,沒有人能設定
-# min_affinity = 25              # 好感至少這麼多才會心動
-# daily_gain = 0.06              # 每人每天最多長這麼多
+# [modules.self.heart]           # 暗戀:在意程度([modules.self.bond])最高的人,沒有人能設定
 # crush_threshold = 0.35         # 心動最高、而且超過這個的人就是她暗戀的人(可能沒有)
 # crush_margin = 0.08            # 別人要多這麼多才會換人
 

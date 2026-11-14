@@ -170,7 +170,7 @@ function makeCrush(h: Booted, person = "p1") {
   const now = h.clock.at;
   for (let d = 10; d > 0; d--) {
     h.clock.at = now - d * DAY;
-    h.self.romance(person, 0.06);
+    h.self.engine.hearts.attach(person, 0.06, h.clock.at);
   }
   h.clock.at = now;
   expect(h.self.crush()?.person).toBe(person);

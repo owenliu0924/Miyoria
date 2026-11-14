@@ -50,8 +50,8 @@ async function oldStore() {
   const store = new MemorySettingsStore();
   const engine = new SelfEngine(selfConfig(), T0, temperament().temperament);
   engine.hearts.seen("owen", "Owen", true, T0);
-  // Romance she felt for Owen (the old way: many small days).
-  for (let d = 10; d > 0; d--) engine.hearts.romance("owen", 0.06, T0 - d * 86_400_000);
+  // Romance she felt for Owen (many small days).
+  for (let d = 10; d > 0; d--) engine.hearts.attach("owen", 0.06, T0 - d * 86_400_000);
   engine.hearts.feel("owen", "gratitude", 0.4, T0);
   await store.set(profile, STATE_KEY, engine.toJson());
   await store.set(profile, "self:feeling:owen", {
