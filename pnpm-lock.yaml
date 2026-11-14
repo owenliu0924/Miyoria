@@ -177,6 +177,9 @@ importers:
       '@lng2004/discord.js-selfbot-v13':
         specifier: 3.7.2
         version: 3.7.2(opusscript@0.1.1)
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       dotenv:
         specifier: ^18.0.9
         version: 18.0.9
