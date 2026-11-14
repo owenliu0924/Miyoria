@@ -38,6 +38,14 @@ export {
   RedactedDataSchema,
 } from "./envelope.js";
 export {
+  LlmCall,
+  type LlmCallData,
+  LlmCallFallbackSchema,
+  LlmCallSchema,
+  LlmCallStatusSchema,
+  LlmCallUsageSchema,
+} from "./llm.js";
+export {
   type AnyEventDefinition,
   defineEvent,
   type EventDataSource,
