@@ -31,8 +31,6 @@ import { ogRoutes, rewriteHtml } from "./og.js";
 import { opsRoutes } from "./ops.js";
 import { servePanel } from "./panel.js";
 import { partyRoutes } from "./party.js";
-import { peopleRoutes } from "./people.js";
-import { personWalletRoutes } from "./people-wallet.js";
 import { planRoutes } from "./plan.js";
 import { promptRoutes } from "./prompts.js";
 import { clientKey, tooMany } from "./public.js";
@@ -146,8 +144,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...publicRoutes(state),
     ...ogRoutes(state),
     ...memberRoutes(state),
-    ...peopleRoutes(state),
-    ...personWalletRoutes(state),
     ...goalAdminRoutes(state),
     ...memoryRoutes(state),
     ...roleRoutes(state),

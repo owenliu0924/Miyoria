@@ -2,6 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/api",
   "$defs": {
+    "ApiAdjustPersonRequest": {
+      "type": "object",
+      "properties": {
+        "affinity": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "affinity"
+      ]
+    },
     "ApiAuthMethods": {
       "type": "object",
       "properties": {
@@ -1061,6 +1072,187 @@
         "forget"
       ]
     },
+    "ApiPerson": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPersonAccount"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "display_name",
+        "created_at",
+        "accounts"
+      ]
+    },
+    "ApiPersonAccount": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "first_seen": {
+          "type": "string"
+        },
+        "last_seen": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "display_name",
+        "first_seen",
+        "last_seen"
+      ]
+    },
+    "ApiPersonDetail": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "$ref": "#/$defs/ApiPerson"
+        },
+        "relationship": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiRelationship"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiRelationshipDelta"
+          }
+        },
+        "memory_count": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "person",
+        "relationship",
+        "label",
+        "blocked",
+        "history",
+        "memory_count"
+      ]
+    },
+    "ApiPersonPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPersonSummary"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    "ApiPersonSummary": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "$ref": "#/$defs/ApiPerson"
+        },
+        "relationship": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiRelationship"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blocked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "person",
+        "relationship",
+        "label",
+        "blocked"
+      ]
+    },
+    "ApiPersonWalletView": {
+      "type": "object",
+      "properties": {
+        "balance": {
+          "type": "number"
+        },
+        "ledger": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ts": {
+                "type": "string"
+              },
+              "delta": {
+                "type": "number"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ts",
+              "delta",
+              "label"
+            ]
+          }
+        }
+      },
+      "required": [
+        "balance",
+        "ledger"
+      ]
+    },
     "ApiPersonaOverride": {
       "type": "object",
       "properties": {
@@ -1363,6 +1555,93 @@
         "hours_in_voice"
       ]
     },
+    "ApiRelationship": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "person": {
+          "type": "string"
+        },
+        "affinity": {
+          "type": "number"
+        },
+        "trust": {
+          "type": "number"
+        },
+        "familiarity": {
+          "type": "number"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        },
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interactions": {
+          "type": "number"
+        },
+        "last_interaction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "person",
+        "affinity",
+        "trust",
+        "familiarity",
+        "tags",
+        "notes",
+        "call_name",
+        "interactions",
+        "last_interaction",
+        "updated_at"
+      ]
+    },
+    "ApiRelationshipDelta": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "affinity": {
+          "type": "number"
+        },
+        "trust": {
+          "type": "number"
+        },
+        "familiarity": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "affinity",
+        "trust",
+        "familiarity",
+        "reason"
+      ]
+    },
     "ApiScreenRequest": {
       "type": "object",
       "properties": {
@@ -1578,6 +1857,69 @@
         "to"
       ]
     },
+    "ApiUpdatePersonRequest": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blocked": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "ApiWalletAdjustRequest": {
+      "type": "object",
+      "properties": {
+        "amount": {},
+        "note": {},
+        "key": {}
+      }
+    },
+    "ApiWalletAdjustResult": {
+      "type": "object",
+      "properties": {
+        "balance": {
+          "type": "number"
+        },
+        "entry_id": {
+          "type": "string"
+        },
+        "duplicate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "balance",
+        "entry_id",
+        "duplicate"
+      ]
+    },
     "ApiWalletView": {
       "type": "object",
       "properties": {
@@ -1672,6 +2014,21 @@
         "recent",
         "deals",
         "on_board"
+      ]
+    },
+    "WireAccountRef": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform",
+        "id"
       ]
     },
     "WireContextKey": {

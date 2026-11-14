@@ -68,6 +68,7 @@ import {
   type AssignRoleRequest,
   avatarEmotions,
 } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { FakeSink, Idle } from "./support/fakes.js";
 import { errorOf, raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
@@ -263,7 +264,7 @@ describe("routes", () => {
 
   it("people_list_detail_and_changes", async () => {
     const h = await harness();
-    const c = h.client;
+    const m = adminCalls(h.base, TOKEN);
     const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
@@ -272,10 +273,10 @@ describe("routes", () => {
     await h.social.adjust(mika, -3, "test", now);
     await h.store.memories.upsert(memory(owen, "fact", "Owen 喜歡拉麵", 0));
 
-    let page = await c.people();
+    let page = await m.people();
     expect(page.items).toHaveLength(2);
     expect(page.next_cursor).toBeNull();
-    page = await c.people({ q: "owe" });
+    page = await m.people({ q: "owe" });
     expect(page.items).toHaveLength(1);
     const summary = page.items[0];
     expect(summary?.person.id).toBe(owen);
@@ -284,15 +285,15 @@ describe("routes", () => {
     expect(summary?.relationship?.affinity).toBe(15);
     expect(summary?.label).not.toBeNull();
     expect(summary?.blocked).toBe(false);
-    page = await c.people({ limit: 1 });
+    page = await m.people({ limit: 1 });
     expect(page.items).toHaveLength(1);
     const cursor = page.next_cursor;
     expect(cursor, "a second page").not.toBeNull();
-    page = await c.people({ limit: 1, cursor: cursor ?? "" });
+    page = await m.people({ limit: 1, cursor: cursor ?? "" });
     expect(page.items).toHaveLength(1);
     expect(page.next_cursor).toBeNull();
 
-    const detail = await c.person(owen);
+    const detail = await m.person(owen);
     expect(
       detail.history.map((d) => d.affinity),
       "absolute levels, oldest first",
@@ -302,7 +303,7 @@ describe("routes", () => {
     expect(flat.body, "flattened").toHaveProperty("person");
     expect(flat.body).toHaveProperty("history");
 
-    const updated = await c.updatePerson(owen, {
+    const updated = await m.updatePerson(owen, {
       tags: ["常客", " Minecraft ", "常客"],
       notes: "喜歡拉麵",
       call_name: "歐文",
@@ -335,33 +336,33 @@ describe("routes", () => {
     expect(body.relationship.tags).toEqual(["常客"]);
     expect(body.blocked).toBe(false);
 
-    const adjusted = await c.adjustPerson(mika, 20);
+    const adjusted = await m.adjustPerson(mika, 20);
     expect(adjusted.relationship?.affinity).toBe(17);
     await audited(h, "person.adjust");
 
     for (const id of [newId(), "nope"]) {
-      const err = await errorOf(c.person(id));
+      const err = await errorOf(m.person(id));
       expect(err.status).toBe(404);
       expect(err.message).toContain("unknown person");
     }
-    expect(await statusOf(c.updatePerson(newId(), {}))).toBe(404);
+    expect(await statusOf(m.updatePerson(newId(), {}))).toBe(404);
 
     h.sup.services.removeOwnedBy("social");
-    expect(await statusOf(c.updatePerson(owen, {}))).toBe(503);
+    expect(await statusOf(m.updatePerson(owen, {}))).toBe(503);
     // Reads still work from the stores.
-    expect((await c.people()).items).toHaveLength(2);
+    expect((await m.people()).items).toHaveLength(2);
   });
 
   it("people_list_includes_people_without_a_relationship", async () => {
     const h = await harness();
-    const c = h.client;
+    const m = adminCalls(h.base, TOKEN);
     const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
     const lurker = await h.store.people.upsertAccount(account("3"), "Lurker");
     await h.social.adjust(owen, 10, "test", now);
 
-    let page = await c.people();
+    let page = await m.people();
     const order = page.items.map((i) => i.person.id);
     expect(order[0], "with a relationship first").toBe(owen);
     expect([...order].sort()).toEqual([owen, mika, lurker].sort());
@@ -373,28 +374,28 @@ describe("routes", () => {
     expect(stranger?.person.accounts.map((a) => a.account)).toEqual([account("2")]);
     expect(page.items[0]?.relationship?.affinity).toBe(10);
 
-    page = await c.people({ q: "mik" });
+    page = await m.people({ q: "mik" });
     expect(page.items.map((i) => i.person.id)).toEqual([mika]);
-    page = await c.people({ q: "discord" });
+    page = await m.people({ q: "discord" });
     expect(page.items, "account ids are not matched by platform").toHaveLength(0);
-    page = await c.people({ q: "3" });
+    page = await m.people({ q: "3" });
     expect(
       page.items.map((i) => i.person.id),
       "account id",
     ).toEqual([lurker]);
 
-    page = await c.people({ limit: 2 });
+    page = await m.people({ limit: 2 });
     expect(page.items.map((i) => i.person.id)).toEqual(order.slice(0, 2));
     expect(page.next_cursor).toBe("2");
-    page = await c.people({ limit: 2, cursor: "2" });
+    page = await m.people({ limit: 2, cursor: "2" });
     expect(page.items.map((i) => i.person.id)).toEqual(order.slice(2));
     expect(page.next_cursor).toBeNull();
 
     // A relationship the engine has not written yet still shows.
     await h.social.adjust(mika, 1, "test", now);
-    page = await c.people();
+    page = await m.people();
     expect(page.items.find((i) => i.person.id === mika)?.relationship?.affinity).toBe(1);
-    const detail = await c.person(lurker);
+    const detail = await m.person(lurker);
     expect(detail.relationship).toBeNull();
     expect(detail.label).toBe("陌生人");
     expect(detail.memory_count).toBe(0);

@@ -5,7 +5,6 @@
 import { type ApiClient, seg } from "./http";
 import { createQueries, createRpc } from "./orpc";
 import type {
-  AdjustPersonRequest,
   AssignRoleRequest,
   ChannelLevelsView,
   ChannelLevelView,
@@ -27,9 +26,6 @@ import type {
   MemoryQuery,
   MemoryRecordView,
   Page,
-  PeopleQuery,
-  PersonDetail,
-  PersonSummary,
   QueueState,
   RemoveMappingRequest,
   RoleAssignment,
@@ -40,11 +36,7 @@ import type {
   StageState,
   StreamAction,
   UpdateMemoryRequest,
-  UpdatePersonRequest,
   UpsertRoleRequest,
-  PersonWalletView,
-  WalletAdjustRequest,
-  WalletAdjustResult,
   VoiceState,
   SelfView,
   WorldView,
@@ -136,17 +128,6 @@ export function createApi(client: ApiClient) {
     llmUsage: (o?: Opts) => client.get<UsageMap>("/api/llm/usage", o),
 
     llmCost: (o?: Opts) => client.get<CostReport>("/api/llm/cost", o),
-
-    people: (q: PeopleQuery = {}, o?: Opts) =>
-      client.get<Page<PersonSummary>>("/api/people", { ...o, query: { ...q } }),
-    person: (id: string, o?: Opts) => client.get<PersonDetail>(`/api/people/${seg(id)}`, o),
-    updatePerson: (id: string, req: UpdatePersonRequest) =>
-      client.patch<PersonSummary>(`/api/people/${seg(id)}`, req),
-    adjustPerson: (id: string, req: AdjustPersonRequest) =>
-      client.post<PersonSummary>(`/api/people/${seg(id)}/adjust`, req),
-    personWallet: (id: string, o?: Opts) => client.get<PersonWalletView>(`/api/people/${seg(id)}/wallet`, o),
-    adjustWallet: (id: string, req: WalletAdjustRequest) =>
-      client.post<WalletAdjustResult>(`/api/people/${seg(id)}/wallet/adjust`, req),
 
     memory: (q: MemoryQuery = {}, o?: Opts) =>
       client.get<Page<MemoryItem>>("/api/memory", { ...o, query: { ...q } }),

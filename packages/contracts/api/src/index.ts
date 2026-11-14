@@ -21,6 +21,7 @@ import { auth, health } from "./auth.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { member } from "./member.js";
+import { people } from "./people.js";
 import { persona } from "./persona.js";
 import { publicView } from "./public.js";
 import { wallet } from "./wallet.js";
@@ -98,6 +99,32 @@ export {
   SongRequestSchema,
 } from "./member.js";
 export {
+  type AdjustPersonRequest,
+  AdjustPersonRequestSchema,
+  type Person,
+  type PersonAccount,
+  PersonAccountSchema,
+  type PersonDetail,
+  PersonDetailSchema,
+  type PersonPage,
+  PersonPageSchema,
+  PersonSchema,
+  type PersonSummary,
+  PersonSummarySchema,
+  type PersonWalletView,
+  PersonWalletViewSchema,
+  type Relationship,
+  type RelationshipDelta,
+  RelationshipDeltaSchema,
+  RelationshipSchema,
+  type UpdatePersonRequest,
+  UpdatePersonRequestSchema,
+  type WalletAdjustRequest,
+  WalletAdjustRequestSchema,
+  type WalletAdjustResult,
+  WalletAdjustResultSchema,
+} from "./people.js";
+export {
   type PersonaOverride,
   PersonaOverrideSchema,
   type PersonaSectionInfo,
@@ -174,6 +201,7 @@ export const contract = {
   health,
   auth,
   persona,
+  people,
   facts,
   public: publicView,
   member,

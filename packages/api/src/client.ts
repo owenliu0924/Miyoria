@@ -36,8 +36,6 @@ import type {
   ModuleInfo,
   Page,
   PendingApproval,
-  PersonDetail,
-  PersonSummary,
   PromptSummary,
   QueueState,
   ReflectionView,
@@ -49,7 +47,6 @@ import type {
   Thought,
   TurnOutcomeKind,
   UpdateMemoryRequest,
-  UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
   VoiceState,
@@ -228,39 +225,6 @@ export class ApiClient {
   /** Spend today and this month per model, plus the budget state. */
   cost(o?: CallOptions): Promise<CostInfo> {
     return this.#json("GET", ["llm", "cost"], o);
-  }
-
-  // ---- people ---------------------------------------------------------------------------
-
-  /**
-   * Every known person (with or without a relationship), most recent interaction first. `q`
-   * filters by name or account id; `cursor` is a previous `next_cursor`.
-   */
-  people(
-    query: { q?: string; limit?: number; cursor?: string } = {},
-    o?: CallOptions,
-  ): Promise<Page<PersonSummary>> {
-    return this.#json("GET", ["people"], {
-      ...o,
-      query: {
-        q: query.q,
-        limit: query.limit === undefined ? undefined : String(query.limit),
-        cursor: query.cursor,
-      },
-    });
-  }
-
-  person(id: string, o?: CallOptions): Promise<PersonDetail> {
-    return this.#json("GET", ["people", id], o);
-  }
-
-  updatePerson(id: string, request: UpdatePersonRequest, o?: CallOptions): Promise<PersonSummary> {
-    return this.#json("PATCH", ["people", id], { ...o, body: request });
-  }
-
-  /** Adds `affinity` directly (ignoring the daily caps). */
-  adjustPerson(id: string, affinity: number, o?: CallOptions): Promise<PersonSummary> {
-    return this.#json("POST", ["people", id, "adjust"], { ...o, body: { affinity } });
   }
 
   // ---- memory ---------------------------------------------------------------------------

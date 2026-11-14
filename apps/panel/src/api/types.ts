@@ -171,6 +171,7 @@ export interface Envelope {
 
 // The routes on the route table: their shapes come from the contract, under their old names.
 export type {
+  AdjustPersonRequest,
   AuthMethods,
   BountyView,
   CheckinResult,
@@ -196,6 +197,11 @@ export type {
   MemberSession,
   MemberSong,
   MemberView,
+  Person,
+  PersonAccount as Account,
+  PersonDetail,
+  PersonSummary,
+  PersonWalletView,
   PersonaOverride,
   PersonaSectionInfo,
   PledgeResult,
@@ -206,6 +212,8 @@ export type {
   PublicState,
   PublicStatus,
   PublicToday,
+  Relationship,
+  RelationshipDelta,
   SessionInfo,
   SessionUser,
   SetPersonaRequest,
@@ -213,6 +221,9 @@ export type {
   ShopItem,
   SpendResult,
   TransferResult,
+  UpdatePersonRequest,
+  WalletAdjustRequest,
+  WalletAdjustResult,
   WalletView,
 } from "@miyoria/contracts/api";
 
@@ -315,100 +326,10 @@ export interface CostReport {
 // ---------------------------------------------------------------------------
 // People & relationships (`Person`, `Account`, `Relationship`, `RelationshipDelta`)
 
-export interface Account {
-  account: AccountRef;
-  display_name: string;
-  first_seen: Timestamp;
-  last_seen: Timestamp;
-}
-
-export interface Person {
-  id: PersonId;
-  display_name: string;
-  created_at: Timestamp;
-  accounts: Account[];
-}
-
-export interface Relationship {
-  profile: ProfileId;
-  person: PersonId;
-  /** -100..1000 (the bond scale; tiers past 100) */
-  affinity: number;
-  /** 0..100 */
-  trust: number;
-  /** 0..100 */
-  familiarity: number;
-  tags: string[];
-  notes: string;
-  call_name: string | null;
-  interactions: number;
-  last_interaction: Timestamp | null;
-  updated_at: Timestamp;
-}
-
-export interface RelationshipDelta {
-  at: Timestamp;
-  affinity: number;
-  trust: number;
-  familiarity: number;
-  reason: string;
-}
-
-/** `GET /api/people` items. */
-export interface PersonSummary {
-  person: Person;
-  relationship: Relationship | null;
-  /** Short attitude label, e.g. `"朋友"`. */
-  label: string | null;
-  blocked: boolean;
-}
-
-/** `GET /api/people/{id}`. */
-export interface PersonDetail extends PersonSummary {
-  /** Oldest first, for the affinity chart. */
-  history: RelationshipDelta[];
-  memory_count: number;
-}
-
-/** `GET /api/people/{id}/wallet`: their coins and newest rows (newest first). */
-export interface PersonWalletView {
-  balance: number;
-  ledger: { ts: Timestamp; delta: number; label: string }[];
-}
-
-/** `POST /api/people/{id}/wallet/adjust`; a negative `amount` takes coins. */
-export interface WalletAdjustRequest {
-  amount: number;
-  /** 1 to 100 characters. */
-  note: string;
-  /** One per confirmed submit; the same key twice answers the first. */
-  key: string;
-}
-
-export interface WalletAdjustResult {
-  balance: number;
-  entry_id: string;
-  duplicate: boolean;
-}
-
-/** `POST /api/people/{id}/adjust`: added to the affinity, ignoring daily caps. */
-export interface AdjustPersonRequest {
-  affinity: number;
-}
-
 export interface PeopleQuery {
   q?: string;
   limit?: number;
   cursor?: string;
-}
-
-/** `PATCH /api/people/{id}`; every field optional. */
-export interface UpdatePersonRequest {
-  /** Replaces every tag except `blocked` (set that with `blocked`). */
-  tags?: string[];
-  notes?: string;
-  call_name?: string | null;
-  blocked?: boolean;
 }
 
 // ---------------------------------------------------------------------------

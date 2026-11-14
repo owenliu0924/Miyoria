@@ -19,12 +19,16 @@ import {
   RelationshipStoreKey,
 } from "@miyoria/store";
 import { isUlid, type PersonId, type ProfileId, toTimestamp } from "@miyoria/types";
-import { z } from "zod";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { readJson, readQuery, usizeParam } from "./extract.js";
-import { json, param, type Route } from "./route.js";
 import { type ApiContext, type ApiState, actorOf, toJson } from "./state.js";
-import type { Page, PersonDetail, PersonSummary, UpdatePersonRequest } from "./types.js";
+import type {
+  AdjustPersonRequest,
+  Page,
+  PersonDetail,
+  PersonSummary,
+  UpdatePersonRequest,
+} from "./types.js";
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
@@ -156,18 +160,14 @@ function matches(summary: PersonSummary, needle: string): boolean {
   );
 }
 
-const ListQuerySchema = z.object({
-  q: z.string().optional(),
-  limit: usizeParam.optional(),
-  cursor: z.string().optional(),
-});
-
 /**
  * `GET /api/people?q=&limit=&cursor=`: every known person, most recent interaction first. Without
  * a people store only people with a relationship are known.
  */
-async function list(state: ApiState, c: ApiContext): Promise<Response> {
-  const q = readQuery(c, ListQuerySchema);
+async function list(
+  state: ApiState,
+  q: { q?: string | undefined; limit?: number | undefined; cursor?: string | undefined },
+): Promise<Page<PersonSummary>> {
   const ctx = new PeopleCtx(state);
   let offset = 0;
   const cursor = q.cursor?.trim() ?? "";
@@ -203,7 +203,7 @@ async function list(state: ApiState, c: ApiContext): Promise<Response> {
     items: items.slice(offset, offset + limit),
     next_cursor: items.length > offset + limit ? String(offset + limit) : null,
   };
-  return json(page);
+  return page;
 }
 
 /**
@@ -248,18 +248,17 @@ async function memoryCount(state: ApiState, profile: ProfileId, person: PersonId
 }
 
 /** `GET /api/people/{id}`. */
-async function detail(state: ApiState, c: ApiContext): Promise<Response> {
-  const person = parsePerson(param(c, "id"));
+async function detail(state: ApiState, id: string): Promise<PersonDetail> {
+  const person = parsePerson(id);
   const ctx = new PeopleCtx(state);
   const summary = await ctx.requireSummary(person);
   let deltas = await ctx.relationships.deltasSince(ctx.profile, person, toTimestamp(0));
   if (deltas.length > MAX_HISTORY) deltas = deltas.slice(deltas.length - MAX_HISTORY);
-  const body: PersonDetail = {
+  return {
     ...summary,
     history: absoluteHistory(deltas, summary.relationship),
     memory_count: await memoryCount(state, ctx.profile, person),
   };
-  return json(body);
 }
 
 function cleanTags(tags: readonly string[]): string[] {
@@ -276,7 +275,24 @@ function cleanTags(tags: readonly string[]): string[] {
   return out;
 }
 
-function validate(request: UpdatePersonRequest): void {
+/** What a `PATCH` changes: the fields it sent, a `null` meaning "not sent" (except `call_name`). */
+interface PersonChange {
+  tags?: string[];
+  notes?: string;
+  call_name?: string | null;
+  blocked?: boolean;
+}
+
+function changeOf(r: UpdatePersonRequest): PersonChange {
+  const out: PersonChange = {};
+  if (r.tags != null) out.tags = r.tags;
+  if (r.notes != null) out.notes = r.notes;
+  if (r.call_name !== undefined) out.call_name = r.call_name;
+  if (r.blocked != null) out.blocked = r.blocked;
+  return out;
+}
+
+function validate(request: PersonChange): void {
   if (request.notes !== undefined && chars(request.notes) > MAX_NOTES_CHARS) {
     throw ApiError.badRequest(`notes are longer than ${MAX_NOTES_CHARS} characters`);
   }
@@ -296,27 +312,11 @@ function tagChanges(current: readonly string[], wanted: readonly string[]) {
   };
 }
 
-const UpdatePersonSchema = z
-  .object({
-    tags: z.array(z.string()).nullish(),
-    notes: z.string().nullish(),
-    call_name: z.string().nullable().optional(),
-    blocked: z.boolean().nullish(),
-  })
-  .transform((r): UpdatePersonRequest => {
-    const out: UpdatePersonRequest = {};
-    if (r.tags != null) out.tags = r.tags;
-    if (r.notes != null) out.notes = r.notes;
-    if (r.call_name !== undefined) out.call_name = r.call_name;
-    if (r.blocked != null) out.blocked = r.blocked;
-    return out;
-  });
-
 async function applyUpdate(
   ctx: PeopleCtx,
   social: Social,
   person: PersonId,
-  request: UpdatePersonRequest,
+  request: PersonChange,
   tags: { add: string[]; remove: string[] } | null,
   actor: string,
   now: number,
@@ -349,9 +349,13 @@ async function applyUpdate(
 }
 
 /** `PATCH /api/people/{id}`. */
-async function update(state: ApiState, c: ApiContext): Promise<Response> {
-  const request = await readJson(c, UpdatePersonSchema);
-  const id = param(c, "id");
+async function update(
+  state: ApiState,
+  c: ApiContext,
+  id: string,
+  body: UpdatePersonRequest,
+): Promise<PersonSummary> {
+  const request = changeOf(body);
   const person = parsePerson(id);
   validate(request);
   const wanted = request.tags ? cleanTags(request.tags) : null;
@@ -374,15 +378,16 @@ async function update(state: ApiState, c: ApiContext): Promise<Response> {
   if (failure !== null) detailJson.error = ApiError.internal(failure).message;
   await state.audit(c, "person.update", person, toJson(detailJson), failure === null);
   if (failure !== null) throw ApiError.internal(failure);
-  return json(await ctx.requireSummary(person));
+  return ctx.requireSummary(person);
 }
 
-const AdjustSchema = z.object({ affinity: z.number() });
-
 /** `POST /api/people/{id}/adjust`: adds to the affinity, ignoring caps. */
-async function adjust(state: ApiState, c: ApiContext): Promise<Response> {
-  const request = await readJson(c, AdjustSchema);
-  const id = param(c, "id");
+async function adjust(
+  state: ApiState,
+  c: ApiContext,
+  id: string,
+  request: AdjustPersonRequest,
+): Promise<PersonSummary> {
   const person = parsePerson(id);
   if (!Number.isFinite(request.affinity) || Math.abs(request.affinity) > 1100) {
     throw ApiError.badRequest("`affinity` must be a number between -1100 and 1100");
@@ -398,14 +403,17 @@ async function adjust(state: ApiState, c: ApiContext): Promise<Response> {
   }
   await state.audit(c, "person.adjust", person, { affinity: request.affinity }, failure === null);
   if (failure !== null) throw ApiError.internal(failure);
-  return json(await ctx.requireSummary(person));
+  return ctx.requireSummary(person);
 }
 
-export function peopleRoutes(state: ApiState): Route[] {
-  return [
-    { method: "GET", path: "/api/people", handler: (c) => list(state, c) },
-    { method: "GET", path: "/api/people/:id", handler: (c) => detail(state, c) },
-    { method: "PATCH", path: "/api/people/:id", handler: (c) => update(state, c) },
-    { method: "POST", path: "/api/people/:id/adjust", handler: (c) => adjust(state, c) },
-  ];
-}
+/** The people routes on the route table (`@miyoria/contracts/api`). */
+export const peopleRpc = {
+  list: os.people.list.handler(({ input, context }) => list(context.state, input.query)),
+  get: os.people.get.handler(({ input, context }) => detail(context.state, input.params.id)),
+  update: os.people.update.handler(({ input, context }) =>
+    update(context.state, context.c, input.params.id, input.body),
+  ),
+  adjust: os.people.adjust.handler(({ input, context }) =>
+    adjust(context.state, context.c, input.params.id, input.body),
+  ),
+};

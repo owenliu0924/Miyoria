@@ -75,6 +75,7 @@ export async function call<T>(
     throw ClientError.transport(error);
   }
   if (!response.ok) throw await responseError(response);
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 

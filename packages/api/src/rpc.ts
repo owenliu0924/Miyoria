@@ -51,6 +51,8 @@ import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
 import { memberRpc } from "./member.js";
 import { authRpc } from "./oauth.js";
+import { peopleRpc } from "./people.js";
+import { personWalletRpc } from "./people-wallet.js";
 import { limitMember, publicRpc } from "./public.js";
 import type { Method, Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
@@ -69,6 +71,7 @@ export const router = os.router({
   wallet: walletRpc,
   agency: agencyRpc,
   fortune: fortuneRpc,
+  people: { ...peopleRpc, ...personWalletRpc },
 });
 
 export type ResponseCheck = "strict" | "production";

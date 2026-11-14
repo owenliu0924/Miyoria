@@ -109,7 +109,7 @@ describe("ApiClient", () => {
   it("classifies the server fallback 404 as not provided", async () => {
     mockFetch(() => undefined);
     const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));
-    const err = await api.people().catch((e: unknown) => e);
+    const err = await api.rpc.people.list({ query: {} }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).kind).toBe("not_provided");
     expect(isNotProvided(err)).toBe(true);

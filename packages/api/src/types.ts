@@ -13,14 +13,7 @@ import type { PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport, ModelUsage } from "@miyoria/llm/llm";
 import type { ItemState } from "@miyoria/play/queue";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";
-import type {
-  AuthScope,
-  MemoryKind,
-  MemoryScope,
-  Person,
-  Relationship,
-  RelationshipDelta,
-} from "@miyoria/store";
+import type { AuthScope, MemoryKind, MemoryScope } from "@miyoria/store";
 import type {
   AccountRef,
   ArbiterDecision,
@@ -53,6 +46,7 @@ import type {
 
 // Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
 export type {
+  AdjustPersonRequest,
   AuthMethods,
   CardField,
   CardPoseChoice,
@@ -72,6 +66,9 @@ export type {
   MemberView,
   PersonaOverride,
   PersonaSectionInfo,
+  PersonDetail,
+  PersonSummary,
+  PersonWalletView,
   PublicBoard,
   PublicDay,
   PublicSong,
@@ -85,6 +82,9 @@ export type {
   SetPersonaRequest,
   SetPersonaResponse,
   SongAccepted,
+  UpdatePersonRequest,
+  WalletAdjustRequest,
+  WalletAdjustResult,
 } from "@miyoria/contracts/api";
 
 /** `GET /api/member/export` (a file). */
@@ -130,62 +130,6 @@ export interface Page<T> {
 /** `GET /api/llm/cost`: the router's `CostReport` as-is. */
 export type CostInfo = CostReport;
 export type { ModelUsage };
-
-// ---- people -----------------------------------------------------------------------------
-
-/** `GET /api/people` items: every known person, with or without a relationship. */
-export interface PersonSummary {
-  person: Person;
-  /** `null` before the first interaction. */
-  relationship: Relationship | null;
-  /** Short attitude label, e.g. `"朋友"`; `"陌生人"` (a neutral relationship's) without one. */
-  label: string | null;
-  blocked: boolean;
-}
-
-/** `GET /api/people/{id}` (the summary's fields flattened in). */
-export interface PersonDetail extends PersonSummary {
-  /** Oldest first; values are the resulting absolute levels. */
-  history: RelationshipDelta[];
-  memory_count: number;
-}
-
-/** Body of `PATCH /api/people/{id}`; omitted fields are unchanged. */
-export interface UpdatePersonRequest {
-  /** Replaces every tag except `blocked` (use `blocked`). */
-  tags?: string[];
-  notes?: string;
-  /** `null` clears it. */
-  call_name?: string | null;
-  blocked?: boolean;
-}
-
-/** `GET /api/people/{id}/wallet`: their coins and newest rows (newest first). */
-export interface PersonWalletView {
-  balance: number;
-  ledger: { ts: string; delta: number; label: string }[];
-}
-
-/** Body of `POST /api/people/{id}/wallet/adjust`; a negative `amount` takes coins. */
-export interface WalletAdjustRequest {
-  amount: number;
-  /** 1 to 100 characters. */
-  note: string;
-  /** One per confirmed submit; the same key twice answers the first. */
-  key: string;
-}
-
-export interface WalletAdjustResult {
-  balance: number;
-  entry_id: string;
-  duplicate: boolean;
-}
-
-/** Body of `POST /api/people/{id}/adjust`. */
-export interface AdjustPersonRequest {
-  /** Added to the affinity directly, ignoring the daily caps. */
-  affinity: number;
-}
 
 // ---- memory -----------------------------------------------------------------------------
 

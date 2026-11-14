@@ -223,14 +223,14 @@ export function useSetPersona() {
 
 export function usePeople(q: PeopleQuery, enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.people(q), queryFn: ({ signal }) => api.people(q, { signal }), enabled });
+  return useQuery({ queryKey: queryKeys.people(q), queryFn: ({ signal }) => api.rpc.people.list({ query: q }, { signal }), enabled });
 }
 
 export function usePerson(id: string | undefined) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.person(id ?? ""),
-    queryFn: ({ signal }) => api.person(id ?? "", { signal }),
+    queryFn: ({ signal }) => api.rpc.people.get({ params: { id: id ?? "" } }, { signal }),
     enabled: Boolean(id),
   });
 }
@@ -239,7 +239,7 @@ export function useUpdatePerson(id: string) {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: UpdatePersonRequest) => api.updatePerson(id, req),
+    mutationFn: (req: UpdatePersonRequest) => api.rpc.people.update({ params: { id }, body: req }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["people"] }),
   });
 }
@@ -248,7 +248,7 @@ export function usePersonWallet(id: string) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.personWallet(id),
-    queryFn: ({ signal }) => api.personWallet(id, { signal }),
+    queryFn: ({ signal }) => api.rpc.people.wallet({ params: { id } }, { signal }),
     retry: false,
   });
 }
@@ -257,7 +257,7 @@ export function useAdjustWallet(id: string) {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: WalletAdjustRequest) => api.adjustWallet(id, req),
+    mutationFn: (req: WalletAdjustRequest) => api.rpc.people.adjustWallet({ params: { id }, body: req }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.personWallet(id) }),
   });
 }
@@ -266,7 +266,7 @@ export function useAdjustPerson(id: string) {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: AdjustPersonRequest) => api.adjustPerson(id, req),
+    mutationFn: (req: AdjustPersonRequest) => api.rpc.people.adjust({ params: { id }, body: req }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["people"] }),
   });
 }
@@ -667,7 +667,7 @@ export function usePeopleDetails(ids: string[]) {
   return useQueries({
     queries: ids.map((id) => ({
       queryKey: queryKeys.person(id),
-      queryFn: ({ signal }: { signal: AbortSignal }) => api.person(id, { signal }),
+      queryFn: ({ signal }: { signal: AbortSignal }) => api.rpc.people.get({ params: { id } }, { signal }),
     })),
   });
 }
