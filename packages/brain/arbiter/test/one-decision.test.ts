@@ -5,7 +5,7 @@
 // one reason and one retry time. And the three things other modules asked of it: the daily-post
 // channel needs nobody there, pats may claim, a party game is a show.
 
-import { EventLogService } from "@miyoria/facts";
+import { EventLogService } from "@miyoria/memory/facts";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,

@@ -2,8 +2,8 @@
 // from the built-in role table. The only fakes are the capabilities themselves.
 
 import { builtinRole, granted } from "@miyoria/commands";
-import { EventLogService } from "@miyoria/facts";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
+import { EventLogService } from "@miyoria/memory/facts";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { AuditLogKey, type DirectiveStore, SqliteStore, type Store } from "@miyoria/store";
 import {

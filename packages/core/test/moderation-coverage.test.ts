@@ -175,20 +175,20 @@ describe("everything people write is judged", () => {
       "packages/brain/arbiter/src/unanswered.ts",
       "packages/core/src/recorder.ts",
       "packages/economy/src/earn.ts",
-      "packages/learning/src/modules.ts",
-      "packages/memory/src/module.ts",
+      "packages/memory/learning/src/modules.ts",
+      "packages/memory/memory/src/module.ts",
       "packages/replay/src/report.ts",
       "packages/replay/src/runner.ts",
       "packages/self/src/module.ts",
       "packages/self/src/rules.ts",
       "packages/social/src/module.ts",
       "packages/stage/src/link/module.ts",
-      "packages/world/src/module.ts",
+      "packages/memory/world/src/module.ts",
     ];
     expect(readers.filter((f) => !counting.includes(f))).toEqual(
       [
         "packages/brain/agent/src/runtime.ts",
-        "packages/facts/src/bus.ts",
+        "packages/memory/facts/src/bus.ts",
         "packages/mind/src/mind.ts",
         // Players' answers in the voice channel's chat: judged before they reach a game.
         "packages/party/src/module.ts",
@@ -197,7 +197,7 @@ describe("everything people write is judged", () => {
     for (const file of ["runtime", "bus", "mind", "party"]) {
       const path = {
         runtime: "packages/brain/agent/src/runtime.ts",
-        bus: "packages/facts/src/bus.ts",
+        bus: "packages/memory/facts/src/bus.ts",
         mind: "packages/mind/src/mind.ts",
         party: "packages/party/src/module.ts",
       }[file] as string;

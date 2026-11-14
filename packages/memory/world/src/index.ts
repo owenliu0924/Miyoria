@@ -1,4 +1,4 @@
-// @miyoria/world: what she perceives (docs/design/autonomy.md §3).
+// @miyoria/memory/world: what she perceives (docs/design/autonomy.md §3).
 //
 // Module `WorldModule` (`world`) keeps a snapshot of the world from the bus: presence, voice
 // states and members published by platform modules (`platform.presence`,

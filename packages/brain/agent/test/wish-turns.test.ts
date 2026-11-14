@@ -2,8 +2,8 @@
 // party game a person's line could be answered twice, once by her reply and once by the game's
 // note of the same line. These pin the seams of the main line that keep it to one.
 
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider } from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
 import {
   ArbiterKey,
   EventLogKey,

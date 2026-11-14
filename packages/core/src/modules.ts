@@ -18,18 +18,11 @@ import { ArbiterModule } from "@miyoria/brain/arbiter";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
-import { FactsModule } from "@miyoria/facts";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/game";
 import { ActionsModule } from "@miyoria/gate/actions";
 import { DirectiveModule } from "@miyoria/gate/directive";
 import { ModerationModule } from "@miyoria/gate/moderation";
 import { ImageGenModule } from "@miyoria/imagegen";
-import {
-  ConversationModule,
-  KnowledgeModule,
-  ReflectModule,
-  repairEphemeralHandles,
-} from "@miyoria/learning";
 import { LiveModule } from "@miyoria/live";
 import {
   type LlmConfig,
@@ -39,7 +32,15 @@ import {
   OpenAiFactory,
   parseModelRef,
 } from "@miyoria/llm/llm";
-import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory";
+import { FactsModule } from "@miyoria/memory/facts";
+import {
+  ConversationModule,
+  KnowledgeModule,
+  ReflectModule,
+  repairEphemeralHandles,
+} from "@miyoria/memory/learning";
+import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
+import { WorldModule } from "@miyoria/memory/world";
 import { MindModule } from "@miyoria/mind";
 import { PartyModule } from "@miyoria/party";
 import * as extHost from "@miyoria/plugin-host/ext-host";
@@ -74,7 +75,6 @@ import {
 import { isJsonObject, type ProfileId } from "@miyoria/types";
 import { VoiceLinkModule, VoiceModule } from "@miyoria/voice";
 import { WebModule } from "@miyoria/web";
-import { WorldModule } from "@miyoria/world";
 import {
   buildCoreWith,
   type Core,

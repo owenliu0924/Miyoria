@@ -1,4 +1,4 @@
-// A birthday is said once (PR 8's dates in `@miyoria/memory`, v4's one wish per topic).
+// A birthday is said once (PR 8's dates in `@miyoria/memory/memory`, v4's one wish per topic).
 //
 // On the day, the memory's DateGreeter writes a followup that is due at once. It goes the way of
 // every memory followup: the Arbiter makes it a proposal, the board holds it as a wish of hers
@@ -6,7 +6,7 @@
 // something. A second store raising the same thing that day (a followup consolidation wrote from
 // "my birthday is today") is then the same wish, already asked: it is not raised again.
 
-import { EventLogService } from "@miyoria/facts";
+import { EventLogService } from "@miyoria/memory/facts";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
@@ -41,7 +41,7 @@ const C: ContextKey = textCtx("c1");
 const PERSON = "person-a";
 const HANDLE = "阿明";
 
-/** What the DateGreeter writes for a birthday (packages/memory/src/dates.ts `occasionsOf`). */
+/** What the DateGreeter writes for a birthday (packages/memory/memory/src/dates.ts `occasionsOf`). */
 const BIRTHDAY = `今天(11/3)是${HANDLE}的生日,找機會跟${HANDLE}說聲生日快樂`;
 
 class Followups implements FollowupSource {

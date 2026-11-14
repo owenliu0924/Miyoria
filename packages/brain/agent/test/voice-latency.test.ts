@@ -3,8 +3,8 @@
 // only after it, what the prompt needs that does not depend on the line is read warm, and the
 // agent marks where its time went (for the voice module's measurement and the outcome row).
 
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
 import { type ServiceRegistry, sleep } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,

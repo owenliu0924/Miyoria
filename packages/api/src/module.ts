@@ -23,7 +23,7 @@
 import type { AddressInfo } from "node:net";
 import { isIPv4, isIPv6 } from "node:net";
 import { createAdaptorServer, type ServerType } from "@hono/node-server";
-import { tokenize } from "@miyoria/memory";
+import { tokenize } from "@miyoria/memory/memory";
 import {
   defineManifest,
   errorMessage,
@@ -81,7 +81,7 @@ export class ApiConfigError extends Error {
 }
 
 export interface ApiModuleOptions {
-  /** Search tokenizer for `/api/memory`. Default: `@miyoria/memory`'s `tokenize`. */
+  /** Search tokenizer for `/api/memory`. Default: `@miyoria/memory/memory`'s `tokenize`. */
   tokenize?: Tokenizer;
   /** Environment lookup for `MIYORIA_PANEL_DIR` (default `process.env`). */
   env?: (name: string) => string | undefined;

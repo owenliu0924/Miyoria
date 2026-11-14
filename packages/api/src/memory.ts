@@ -2,7 +2,7 @@
 // Searches use the memory engine's hybrid recall when the memory module runs, else the store's
 // full-text search; either way over every scope of the profile (an admin view).
 
-import { type MemoryEngine, MemoryEngineKey, tokenString } from "@miyoria/memory";
+import { type MemoryEngine, MemoryEngineKey, tokenString } from "@miyoria/memory/memory";
 import {
   type MemoryFilter,
   type MemoryHit,

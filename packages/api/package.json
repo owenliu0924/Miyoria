@@ -45,8 +45,6 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@miyoria/facts": "workspace:*",
-    "@miyoria/learning": "workspace:*",
     "@miyoria/mind": "workspace:*",
     "@miyoria/self": "workspace:*",
     "@miyoria/voice": "workspace:*",

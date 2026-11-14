@@ -185,7 +185,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
       table("memory_records", "memory_records", "profile", "updated_at", "created_at, id", {
         ...MEMORY_COLUMNS,
       }),
-      // @miyoria/memory `MAINTENANCE_KEY`
+      // @miyoria/memory/memory `MAINTENANCE_KEY`
       settings("memory_maintenance", "active", ["memory_maintenance_last"]),
     ],
     { modules: ["memory", "arbiter"] },
@@ -325,11 +325,11 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { modules: ["self", "mind"] },
   ),
-  // @miyoria/learning `DOC_PREFIX`: her self-organized documents, whatever their shape.
+  // @miyoria/memory/learning `DOC_PREFIX`: her self-organized documents, whatever their shape.
   category("knowledge", [settings("knowledge_docs", "active", [], ["knowledge:doc:"])], {
     modules: ["knowledge"],
   }),
-  // @miyoria/learning `LESSON_PREFIX`, `RUN_PREFIX`, `REFLECT_STATE_KEY`, `FEEDBACK_PREFIX`
+  // @miyoria/memory/learning `LESSON_PREFIX`, `RUN_PREFIX`, `REFLECT_STATE_KEY`, `FEEDBACK_PREFIX`
   category(
     "learning",
     [
@@ -339,7 +339,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { modules: ["reflect"], confirm: "simple" },
   ),
-  // @miyoria/learning `STATE_PREFIX`: her running notes on each conversation (from the log).
+  // @miyoria/memory/learning `STATE_PREFIX`: her running notes on each conversation (from the log).
   category(
     "conversation",
     [settings("conversation_states", "active", [], ["conversation:state:"])],
@@ -370,7 +370,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         ts: "ts",
         turn_id: "text",
       }),
-      // @miyoria/memory `WATERMARK_PREFIX`: only ever together with the log.
+      // @miyoria/memory/memory `WATERMARK_PREFIX`: only ever together with the log.
       settings("memory_watermarks", "active", [], ["memory_watermark:"]),
     ],
     // Her conversation notes are made from the log, and the EventLog repeats what people said:

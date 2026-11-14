@@ -7,8 +7,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
 import { Profile } from "@miyoria/runtime/profile";
 import {
   type ActivityManager,

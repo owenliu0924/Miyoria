@@ -9,7 +9,7 @@ import {
   REFLECT_STATE_KEY,
   RUN_PREFIX,
   STATE_PREFIX,
-} from "@miyoria/learning";
+} from "@miyoria/memory/learning";
 import { DIGEST_PREFIX, GOAL_MIGRATION_KEY, GOAL_PREFIX, PLAN_STATE_KEY } from "@miyoria/mind";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { DATA_CATEGORIES, MemorySettingsStore } from "@miyoria/store";

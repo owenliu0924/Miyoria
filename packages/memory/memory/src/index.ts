@@ -1,4 +1,4 @@
-// @miyoria/memory: long-term memory (module `memory`).
+// @miyoria/memory/memory: long-term memory (module `memory`).
 //
 // * Consolidation: when a context goes quiet (or many lines piled up), new log lines are
 //   summarized by the `summarizer` purpose into an episode, facts, her own notes and followups,

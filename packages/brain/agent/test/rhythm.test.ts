@@ -3,8 +3,8 @@
 // rung (an emoji) with a limit of its own, messages spaced like typing, long content in one
 // message, the context menus, and the voice channel's text chat with nobody listening.
 
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
 import {
   type Action,
   type ContextKey,

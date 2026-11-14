@@ -2,7 +2,7 @@
 // The book on a real EventLog: what makes a wish asked, answered or closed, what `screen` says
 // before something raises it again, and that a restart keeps it.
 
-import { EventLogService } from "@miyoria/facts";
+import { EventLogService } from "@miyoria/memory/facts";
 import {
   type AskedLookup,
   type ContextKey,

@@ -11,8 +11,8 @@
 //
 // SQLite only. Stop the node first (it holds the database), and back it up (scripts/backup.*).
 //
-//   pnpm --filter @miyoria/memory rescope-self-notes -- --db data/miyoria.db            (dry run)
-//   pnpm --filter @miyoria/memory rescope-self-notes -- --db data/miyoria.db --apply
+//   pnpm --filter @miyoria/memory/memory rescope-self-notes -- --db data/miyoria.db            (dry run)
+//   pnpm --filter @miyoria/memory/memory rescope-self-notes -- --db data/miyoria.db --apply
 //
 // Options: `--scope guild|channel` (default `guild`, like `memory.guild_scope`), `--samples N`
 // (rows printed per group, default 8), `--profile ID` (default: every profile).

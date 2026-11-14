@@ -27,7 +27,7 @@ import {
   MemoryEngineKey,
   ownMemories,
   visibleToSelf,
-} from "@miyoria/memory";
+} from "@miyoria/memory/memory";
 import { SingerKey, type SongEntry } from "@miyoria/sing";
 import { type MemoryRecord, MessageLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {

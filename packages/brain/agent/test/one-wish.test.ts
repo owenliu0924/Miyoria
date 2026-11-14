@@ -7,8 +7,8 @@
 // The model here does what her prompt says: while the prompt holds the open wish she asks, and
 // once nothing holds it she does not. So what is counted is what the system put in front of her.
 
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
 import {
   type ContextKey,
   EventLogKey,

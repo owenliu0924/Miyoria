@@ -2,7 +2,6 @@
 // its own transcript, off the Floor, bounded by steps, time and tokens, steered and stopped from
 // the main line, and reported back to it once. Nothing in it speaks.
 
-import { FactsModule } from "@miyoria/facts";
 import { ActuatorRegistry } from "@miyoria/gate/actions";
 import {
   type ChatProvider,
@@ -13,6 +12,7 @@ import {
   type StreamEvent,
 } from "@miyoria/llm/llm";
 import { type Tool, type ToolContext, ToolRegistry } from "@miyoria/llm/tools";
+import { FactsModule } from "@miyoria/memory/facts";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
 import {

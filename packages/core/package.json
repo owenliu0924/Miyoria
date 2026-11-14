@@ -33,11 +33,9 @@
     "@miyoria/commands": "workspace:*",
     "@miyoria/discord": "workspace:*",
     "@miyoria/economy": "workspace:*",
-    "@miyoria/facts": "workspace:*",
     "@miyoria/game": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/imagegen": "workspace:*",
-    "@miyoria/learning": "workspace:*",
     "@miyoria/live": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/memory": "workspace:*",
@@ -57,8 +55,7 @@
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",
     "@miyoria/voice": "workspace:*",
-    "@miyoria/web": "workspace:*",
-    "@miyoria/world": "workspace:*"
+    "@miyoria/web": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

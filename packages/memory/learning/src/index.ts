@@ -1,4 +1,4 @@
-// @miyoria/learning: reflection and learning (docs/design/autonomy.md §19, phase G).
+// @miyoria/memory/learning: reflection and learning (docs/design/autonomy.md §19, phase G).
 //
 // * Module `conversation`: continuous conversation compaction. Every context's conversation is
 //   folded into her own notes (free-form JSON + a recap) every few lines or after a pause, in

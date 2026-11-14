@@ -8,7 +8,7 @@
 //   salient changes and suggestions, and by an adaptive heartbeat. Sees the world, her affect,
 //   her goals, the ledger with its limits and the ranked desire list; changes her goals and
 //   produces 0–2 impulses for the Arbiter (or, until it runs, intents for the agent).
-// * Reflect lives with her lessons in `@miyoria/learning` (the `reflect` module).
+// * Reflect lives with her lessons in `@miyoria/memory/learning` (the `reflect` module).
 //
 // Plan never writes emotions; nothing here writes drives or talkativeness any more. Everything
 // that is kept (thoughts, goals, the day plan) goes through `repairHandleText`.

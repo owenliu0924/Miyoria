@@ -14,7 +14,7 @@ import {
   MemoryEngineKey,
   memoryConfig,
   tokenString,
-} from "@miyoria/memory";
+} from "@miyoria/memory/memory";
 import {
   ExtensionCatalog,
   ExtensionCatalogKey,

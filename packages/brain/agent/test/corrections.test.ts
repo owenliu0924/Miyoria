@@ -3,9 +3,9 @@
 // 4 can each be switched off (`[modules.agent.corrections]`), and the two of step 1 are narrowed
 // to what the tool loop does not cover.
 
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
 import type { ToolContext } from "@miyoria/llm/tools";
+import { FactsModule } from "@miyoria/memory/facts";
 import {
   type ActivityManager,
   ActivityManagerKey,

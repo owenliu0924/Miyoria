@@ -5,7 +5,7 @@
 
 import { fileURLToPath } from "node:url";
 import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/brain/arbiter";
-import { EventLogService } from "@miyoria/facts";
+import { EventLogService } from "@miyoria/memory/facts";
 import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/mind";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";

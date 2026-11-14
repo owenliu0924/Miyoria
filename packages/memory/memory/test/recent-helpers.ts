@@ -1,5 +1,5 @@
 // An EventLog and a handle directory for the v4 §5 readers, writing events in the shapes the
-// `facts` module writes them (packages/facts/src/bus.ts, delivery.ts).
+// `facts` module writes them (packages/memory/facts/src/bus.ts, delivery.ts).
 
 import {
   type AccountRef,

@@ -3,7 +3,7 @@
 // the social engine. Everyone in the people store is listed; people she has no relationship with
 // yet have `relationship: null` and the label of a neutral relationship.
 
-import { MemoryEngineKey } from "@miyoria/memory";
+import { MemoryEngineKey } from "@miyoria/memory/memory";
 import { attitude, BLOCKED_TAG, label, type Social, SocialKey } from "@miyoria/social";
 import {
   type IdentityStore,

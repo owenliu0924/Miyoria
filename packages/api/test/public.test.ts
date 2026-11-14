@@ -10,7 +10,7 @@ import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { EconomyConfigSchema, EconomyKey, EconomyService } from "@miyoria/economy";
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
-import { MemoryEngineKey } from "@miyoria/memory";
+import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
   defineManifest,
   getLogger,

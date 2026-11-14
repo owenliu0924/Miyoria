@@ -1,4 +1,4 @@
-// @miyoria/facts: the fact layer of V3 (docs/design/v3-architecture.md §5, §6, §8).
+// @miyoria/memory/facts: the fact layer of V3 (docs/design/v3-architecture.md §5, §6, §8).
 //
 // * `EventLogService`: the append-only EventLog on the store's `events` area, with a hot window
 //   in memory, and the `cause` walks.

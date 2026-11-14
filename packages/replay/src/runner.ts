@@ -7,10 +7,11 @@
 import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule } from "@miyoria/brain/agent";
 import { ArbiterModule } from "@miyoria/brain/arbiter";
-import { FactsModule } from "@miyoria/facts";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { LlmRouter, LlmRouterKey, type ModelRef, parseModelRef } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
+import { FactsModule } from "@miyoria/memory/facts";
+import { WorldModule } from "@miyoria/memory/world";
 import { MindModule } from "@miyoria/mind";
 import {
   defineManifest,
@@ -39,7 +40,6 @@ import {
   PromptContributorsKey,
   sameAccount,
 } from "@miyoria/types";
-import { WorldModule } from "@miyoria/world";
 import { ReplaySink, ScriptedLlm } from "./fakes.js";
 import { entryTopic, isReplayInput, type ReplayEntry, type ReplayLog } from "./log.js";
 

@@ -59,10 +59,10 @@ export interface LifeActivity {
 export const FUTURE_CAPABILITIES = {
   /**
    * PR 8's diary: registered by `reflect` once `[modules.reflect.diary] channel` is set
-   * (packages/learning/src/diary.ts), off by default.
+   * (packages/memory/learning/src/diary.ts), off by default.
    */
   diary: "diary.write",
-  /** The notebook of `@miyoria/memory` (§5, §8.1 筆記). */
+  /** The notebook of `@miyoria/memory/memory` (§5, §8.1 筆記). */
   notebook: "notebook.write",
   /** Her persistent sandbox workspace (§8.3 item 2). */
   workspace: "workspace.write",

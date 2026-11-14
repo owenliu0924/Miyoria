@@ -4,9 +4,9 @@
 // now, elsewhere), what her tools brought back beside her reply, and a running game's referee in
 // the tail.
 
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
 import type { Tool } from "@miyoria/llm/tools";
+import { FactsModule } from "@miyoria/memory/facts";
 import type { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type Attitude,

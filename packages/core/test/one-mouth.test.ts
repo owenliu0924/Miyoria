@@ -71,7 +71,7 @@ describe("only the main line speaks", () => {
   });
 
   it("nobody but a turn writes `utterance` lines: the bus handlers stand down under V3", () => {
-    const text = readFileSync(join(ROOT, "packages/facts/src/bus.ts"), "utf8");
+    const text = readFileSync(join(ROOT, "packages/memory/facts/src/bus.ts"), "utf8");
     expect(text).toContain("if (!this.#ownLines) this.#playback(event.data);");
     expect(text).toContain("if (!this.#ownLines) this.#settled(");
   });

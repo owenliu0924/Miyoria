@@ -2,8 +2,8 @@
 // reply leaves goes through the output review, what comes in is judged before it can start a turn,
 // and the emergency stop ends what is in flight and keeps her quiet until it is lifted.
 
-import { FactsModule } from "@miyoria/facts";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
 import {
   type AccountRef,
   ActuatorExecutorKey,
