@@ -2,7 +2,7 @@
 
 這份文件講「怎麼把 Miyoria 跑起來並維持運作」:選部署型態、第一次設定、啟動各節點、Discord 設定、升級、備份、日誌、安全與疑難排解。架構背景見 [ARCHITECTURE.md](ARCHITECTURE.md) §1、§16。
 
-> 狀態:Phase 0–8 的程式都已實作(TypeScript,Node 24);尚未用真的 Discord、DeepSeek、語音模型、VTube Studio、OBS、Minecraft 實測。
+> 狀態:Phase 0–8 的程式都已實作(TypeScript,Node 24);Discord 文字、DeepSeek、語音模型和 Minecraft 已經實際跑過(見 [design/v4-plan.md](design/v4-plan.md) §1、[design/minecraft-findings.md](design/minecraft-findings.md));VTube Studio、OBS、Go Live 的實測進度見 [ROADMAP.md](ROADMAP.md) 各 phase 的「實測」項目。
 >
 > 指令寫法:下面的 `miyoria <指令>` 在不同安裝方式下是 `npx miyoria <指令>`(npm 套件)或 `pnpm dev <指令>`(從原始碼,在 repo 根目錄)。
 
@@ -25,15 +25,25 @@
 
 | 節點 | 怎麼跑 | 在哪 | 對外埠(預設) |
 |---|---|---|---|
-| **Core** | `miyoria core`(npx、從原始碼或 Docker) | 直播機或 server | `7878` Admin API(CLI / 面板 / `/metrics`)、`7879` voice link(voice node 連進來)、`7882` stage link(Stage 連進來) |
+| **Core** | `miyoria core`(npx、從原始碼或 Docker) | 直播機或 server | `7878` Admin API(CLI / 面板 / `/metrics`)、`7879` voice link(voice node 連進來)、`7882` stage link(Stage 連進來);選用:`7881` MCP server(`[mcp.server]`,預設關) |
 | **資料庫** | 預設 SQLite 檔案(`data/miyoria.db`,Core 自己開,不用另外跑);選用 PostgreSQL:`deploy/docker-compose.yml` | 跟 Core 同一台 | Postgres `5432`(只綁 127.0.0.1) |
 | **Self voice node** | `apps/voice-node`(Node ≥ 22.4) | 直播機(跟 ASR/TTS、OBS 同一台最好) | 不開埠,主動連 Core 的 7879 |
-| **ASR / TTS worker** | `workers/`(Python,GPU) | 有 GPU 的機器 | `8001` ASR、`8002` TTS(只給 Core 用,不要對外) |
-| **Stage** | `miyoria stage`(原生,不放 Docker) | 直播機 | 主動連 Core 的 7882;本機 `7883` 嘴型音量、`7884` overlay |
+| **ASR worker** | `workers/asr`(Python,GPU 或 CPU) | 有 GPU 的機器 | `8001`(自己跑 `server.py` 的預設)或 `8003`(`miyoria start` / `[machine]` 的預設),見下方說明 |
+| **TTS worker** | `workers/tts`(Python,GPU) | 有 GPU 的機器 | `8002` |
+| **Sing worker** | `workers/sing`(Python,GPU) | 跟 ASR / TTS 同一台 | `8005` |
+| **Turn worker** | `workers/turn`(Python,CPU) | 跟 Core 同一台 | `8006`(判斷講完,選用) |
+| **Lyrics worker** | `workers/lyrics`(Python) | 跟 Core 同一台 | `8007`(只有翻唱 worker 在別台電腦時才用) |
+| **MediaMTX** | `workers/mediamtx`(`start.ps1`) | 直播機 | `1935` RTMP、`8888` LL-HLS、`9997` API(選用:`[modules.live.video]`) |
+| **ComfyUI** | 自己跑,給 `packages/imagegen` 用 | 有 GPU 的機器 | `8188`(`[modules.imagegen]` 的 `url`) |
+| **Neuro 擴充** | `extensions/neuro`(Core 的擴充行程) | 跟 Core 同一台 | `8000`(`serve = true` 才開,讓遊戲連進來) |
+| **fake worker** | `workers/fake`(沒有 GPU 測試用) | 任何機器 | `8000`(`PORT` 可改) |
+| **Stage** | `miyoria stage`(原生,不放 Docker) | 直播機 | 主動連 Core 的 7882;本機 `7883` 嘴型音量(`/levels`)、`7884` overlay;另外連 VTube Studio 的 API(預設 `8001`,不是 Stage 開的埠) |
 
 節點一律**主動往外連** Core,所以直播機在 NAT 後面不用做任何 port forwarding。
 
 **所有埠預設都只綁 `127.0.0.1`。7878 / 7879 / 7882 永遠不要直接開到公網**(見 [§9](#9-安全檢查表))。
+
+ASR 的預設埠有兩個,看怎麼啟動:自己跑 `workers/asr/server.py`(沒設 `PORT`)是 `8001`;`miyoria start` 和 `[machine]`(`miyoria init` 寫好 `ASR_URL`)是 `8003`;只有 `[stack]` 沒有 `[machine]` 時,`[stack.workers.asr]` 沒寫 `port` 仍用舊的 `8001`。`[speech.asr.*]` 的 `url` 要跟實際啟動的埠一致。VTube Studio 的 API 預設也是 `8001`,兩個同機跑時要把其中一個改掉。`packages/speech` 原始碼註解裡的 `8101` / `8102` 只是範例,沒有任何程式用它當預設。
 
 ## 2. 部署型態
 
@@ -67,7 +77,7 @@ Core(+ 資料庫)在 server(Docker),直播機跑 worker、voice node、Stage。D
 
 重點:
 
-- Core 要呼叫直播機上的 ASR / TTS,所以 server 必須連得到那兩個埠。**不要把 8001/8002 開到公網**,走 Tailscale / WireGuard:Core 的 `ASR_URL=http://<直播機 tailnet IP>:8001`、`TTS_URL=http://<直播機 tailnet IP>:8002`,worker 啟動時用 `HOST=<tailnet IP>`(或只綁 tailnet 網卡)。
+- Core 要呼叫直播機上的 ASR / TTS,所以 server 必須連得到那兩個埠。**不要把 8001(或 8003)/ 8002 開到公網**,走 Tailscale / WireGuard:Core 的 `ASR_URL=http://<直播機 tailnet IP>:8001`、`TTS_URL=http://<直播機 tailnet IP>:8002`,worker 啟動時用 `HOST=<tailnet IP>`(或只綁 tailnet 網卡)。
 - 想少做網路設定,用 **B'**(下一節):語音推論也放 server。
 - voice link 跨網路要走加密,見 [§9](#9-安全檢查表)。
 
@@ -524,7 +534,7 @@ Voice node 的層級用它的 `LOG_LEVEL`(`error|warn|info|debug`);`debug` 會�
 - [ ] **Token 都是隨機長字串**:`MIYORIA_API_TOKEN`、`VOICE_LINK_TOKEN`、`STAGE_LINK_TOKEN` 由 `miyoria init` 產生(或 `openssl rand -hex 32`);`POSTGRES_PASSWORD` 不是 `change-me`。
 - [ ] **秘密不進 git**:`.env`、`deploy/.env`、`miyoria.toml` 都在 `.gitignore`;`git status` 看不到它們。Docker 映像檔不含 `.env`(根目錄的 `.dockerignore` 已排除),不要把映像檔推到公開 registry 前自行 `docker history` 檢查。
 - [ ] **全部綁 127.0.0.1**:`docker compose ... ps` 的 PORTS 欄看到的是 `127.0.0.1:7878->7878/tcp`,不是 `0.0.0.0:`。原生 Core 的 `[modules.api] bind`、`[modules."voice.link"] bind`、`[modules."stage.link"] bind` 維持 `127.0.0.1:...`。`miyoria.docker.toml` 裡的 `0.0.0.0` 只是容器內部的位址,對外與否由 compose 的 `ports:` 決定,不要把 `ports:` 的 `127.0.0.1:` 前綴拿掉。
-- [ ] **7878 / 7879 / 7882(以及 8001 / 8002 / 5432)沒有直接開到公網**:防火牆(`ufw`、雲端 security group)對這些埠預設全擋。Docker 發布的埠會繞過 `ufw`,所以更要靠 `127.0.0.1` 綁定而不是靠防火牆。
+- [ ] **7878 / 7879 / 7882(以及 8001 / 8003 / 8002 / 5432)沒有直接開到公網**:防火牆(`ufw`、雲端 security group)對這些埠預設全擋。Docker 發布的埠會繞過 `ufw`,所以更要靠 `127.0.0.1` 綁定而不是靠防火牆。
 - [ ] **跨機器連線有加密**:
   - **Tailscale / WireGuard(最簡單)**:`bind` 改成 server 的 tailnet IP(compose 的 `ports:` 也改成 `<tailnet-ip>:7879:7879`),voice node 用 `VOICE_LINK_URL=ws://<tailnet-ip>:7879/voice-link`。tailnet 內部流量本身已加密。
   - **wss 反向代理**:Caddy / nginx 把 `wss://voice.example.com/voice-link` 轉到 `127.0.0.1:7879`,voice node 用 `wss://...`。Admin API 同理(要從遠端用面板時),且不要在代理上放寬 `Authorization` 檢查。
@@ -579,7 +589,7 @@ Voice node 的層級用它的 `LOG_LEVEL`(`error|warn|info|debug`);`debug` 會�
 | Voice node 結束,close code 4400 | Core 與 voice node 版本不符,兩邊都升級到同一版。 |
 | Voice node 結束,close code 4409 | 同一個 self 帳號被另一個 voice node 取代了,確認沒有重複啟動。 |
 | Voice node 一直重連 | `VOICE_LINK_URL` 不對,或 Core 的 7879 沒有發布出來(`docker compose ps`);跨機器時 Tailscale 沒連上。指數退避最長 30 秒。 |
-| 她進語音但沒反應 | 用 `MIYORIA_LOG_LEVEL=debug` 看 log(`module` 是 `voice`、`speech`):ASR 有沒有收到、`ASR_URL` 對不對、worker `/health` 是否回 200(`curl http://127.0.0.1:8001/health`)。 |
+| 她進語音但沒反應 | 用 `MIYORIA_LOG_LEVEL=debug` 看 log(`module` 是 `voice`、`speech`):ASR 有沒有收到、`ASR_URL` 對不對、worker `/health` 是否回 200(`curl http://127.0.0.1:8001/health`;`miyoria start` / `[machine]` 起的 ASR 是 8003)。 |
 | 語音延遲很高 | TTS 沒用真串流(看 worker `/health` 的 `streaming`);GPU 記憶體被遊戲吃光;跨網路的 voice link 延遲過大(改用 B')。 |
 | 備份腳本說 `cannot reach the Docker daemon` | Docker Desktop / dockerd 沒啟動。 |
 | 備份腳本說 `postgres service is not running` | `docker compose -f deploy/docker-compose.yml up -d postgres`。 |

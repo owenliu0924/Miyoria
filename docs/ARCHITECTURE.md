@@ -33,7 +33,7 @@ flowchart LR
   end
 
   subgraph PC["直播 / 遊戲機(Windows, 4070S)"]
-    Stage["miyoria stage<br/>VTS · OBS · 音訊輸出 · game adapter host"]
+    Stage["miyoria stage<br/>VTS · OBS · 音訊輸出 · overlay"]
     Workers["推論 workers<br/>ASR · TTS(GPU)"]
     VoiceNode["self voice node(TS)<br/>Discord 語音 + Go Live"]
     VTS["VTube Studio"]
@@ -61,7 +61,7 @@ flowchart LR
 | 節點 | 執行檔 | 責任 | 部署 |
 |---|---|---|---|
 | **Core** | `miyoria core` | 大腦:kernel、事件匯流排、agent、記憶、社交、排程、平台 adapter(文字)、Admin API、擴充宿主 | Server 上 Docker,或本機 |
-| **Stage** | `miyoria stage` | 「身體」:VTube Studio 控制與嘴型、OBS 控制、音訊播放、game adapter、overlay | 直播機原生執行(要直接碰 VTS/OBS/遊戲,不放 Docker) |
+| **Stage** | `miyoria stage` | 「身體」:VTube Studio 控制與嘴型、OBS 控制、音訊播放、overlay(擴充和 game adapter 由 Core 的擴充宿主跑,不在 Stage 上) | 直播機原生執行(要直接碰 VTS/OBS/遊戲,不放 Docker) |
 | **Worker** | `workers/`(Python FastAPI)或第三方服務 | GPU 推論:ASR、TTS、(可選)本地 LLM、嵌入。Core 用 HTTP 呼叫它們 | 有 GPU 的機器;可 Docker |
 | **Self voice node** | `apps/voice-node`(TS / Node) | 用 self 帳號登入 Discord:進語音、分別接收每個人的音訊、播放 TTS、Go Live 推流。不處理文字 | 放在直播機,跟 ASR/TTS 與 OBS 同一台 |
 
@@ -78,7 +78,7 @@ flowchart LR
 |---|---|---|
 | Node ↔ Core | **WebSocket + JSON**(二進位訊框傳音訊),token 認證;跨網路走 Tailscale / wss | 節點主動外連;不需要在 Windows 裝 protoc。協定:[voice-link](protocols/voice-link.md)、[stage-link](protocols/stage-link.md) |
 | Panel / CLI ↔ Core | **REST + SSE**(Hono),typed client 在 `@miyoria/api` | 瀏覽器友善;CLI 和 Panel 共用同一套 API |
-| Extension ↔ 宿主 | **JSON-RPC 2.0** over stdio / WebSocket | 跟 LSP/MCP 同模式,TS 寫起來最簡單,與語言無關 |
+| Extension ↔ 宿主 | **JSON-RPC 2.0** over stdio(只有 stdio;擴充是 Core 啟動的子行程) | 跟 LSP/MCP 同模式,TS 寫起來最簡單,與語言無關 |
 | Agent ↔ 外部工具 | **MCP**(`@modelcontextprotocol/sdk`) | 生態系現成工具 |
 
 節點認證:目前用共用 token(`VOICE_LINK_TOKEN`、`STAGE_LINK_TOKEN`,由 `miyoria init` 產生,節點與 Core 的 `.env` 填同一個);之後可以加一次性配對碼。斷線自動重連;節點在 `hello` 裡回報 **capabilities**(例如 `vts`、`obs`、`overlay`),Core 記下來給管理面板看。
@@ -117,7 +117,7 @@ export interface Module {
 - 狀態機:`Disabled → Starting → Running ⇄ Degraded → Stopping → Stopped / Failed`
 - 依 manifest 的相依關係做拓撲排序啟動;停用某 module 時,依賴它的 module 會進入 `Degraded` 或一起停(由 manifest 宣告是 `requires` 還是 `optional`)。例:關掉 `speech.asr` → `voice.listen` 降級成「只能說不能聽」。
 - module 崩潰時用指數退避自動重啟,超過次數就標成 `Failed` 並通知管理員。
-- 執行期操作:`enable / disable / restart`,CLI、Panel、Discord 指令都能下(要有權限)。改設定後重啟該 module 生效。
+- 執行期操作:`enable / disable / restart`,CLI、Panel、Discord 指令都能下(要有權限)。`restart` 只是停了再起,沿用 module 註冊時拿到的設定(`Supervisor.register` 存下的 `[modules.<id>]`);改了設定檔要重啟 Core 才會生效。
 - 每個 module 的啟用狀態存在 DB,重開機後還原。
 
 ### 2.3 三種 module 來源
@@ -445,7 +445,7 @@ export interface Action {
 
 ### 9.1 為什麼跨行程
 
-擴充套件是**獨立行程**,透過 JSON-RPC 跟宿主溝通:跟語言無關(TS 優先)、崩潰不會拖垮 Core、可以熱重載、可以指定在 Core 或 Stage 上執行。日後可以再加 WASM component 給需要沙箱的輕量外掛。
+擴充套件是**獨立行程**,透過 JSON-RPC 跟宿主溝通:跟語言無關(TS 優先)、崩潰不會拖垮 Core、可以熱重載;`placement` 目前只有 `core` 和 `any` 會被宿主載入。日後可以再加 WASM component 給需要沙箱的輕量外掛。
 
 ### 9.2 Manifest
 
@@ -456,7 +456,7 @@ version = "0.1.0"
 kind = ["game-adapter", "tools", "commands"]   # 也可以是 "module" = 自建子系統
 runtime = "node"            # node | deno | bun | binary
 entry = "dist/index.js"
-placement = "stage"         # core | stage | any
+placement = "any"           # core | any 會由 Core 的宿主載入;stage 會被略過(Stage 節點不跑擴充)
 
 [permissions]
 events = ["game.*", "agent.turn.completed"]
@@ -707,7 +707,7 @@ registry.register(
 
 ### 12.3 遊戲:Game Adapter
 
-遊戲走「專屬 API/mod」,每款遊戲一個 adapter 擴充(`kind = "game-adapter"`,通常 `placement = "stage"`):
+遊戲走「專屬 API/mod」,每款遊戲一個 adapter 擴充(`kind = "game-adapter"`,`placement = "any"` 或 `core`,跑在 Core 那台;`stage` 會被宿主略過):
 
 ```ts
 interface GameAdapter {

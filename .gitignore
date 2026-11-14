@@ -43,6 +43,11 @@ workers/.venv-*/
 pytest-of-*/
 .pytest-tmp/
 .tmp-build/
+# pip 和 PyTorch 在工作資料夾留下的暫存(pip 的 metadata / unpack、torch inductor 快取)
+/workers/pip-metadata-*/
+/workers/pip-unpack-*/
+/torchinductor_*/
+/workers/torchinductor_*/
 # The owner's panel pictures (background, login): game art, local only
 apps/panel/public/*.local.*
 
