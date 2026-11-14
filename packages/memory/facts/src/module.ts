@@ -13,7 +13,7 @@ import {
   type Subscription,
   sleep,
 } from "@miyoria/runtime/kernel";
-import type { EventLogStore, Store } from "@miyoria/store";
+import type { EventCompaction, EventLogStore, Store } from "@miyoria/store";
 import {
   ActivityRecoveryKey,
   DeliveryLedgerKey,
@@ -64,17 +64,16 @@ export class FactsModule implements Module {
     configSchema: FactsConfigSchema,
   });
   readonly #events: EventLogStore | null;
-  readonly #profile: ProfileId;
   readonly #names: readonly string[];
   #running: Running | null = null;
 
+  /** `_profile`: unused, one database belongs to one character (v5-data decision D6). */
   constructor(
     store: Pick<Store, "events"> | null,
-    profile: ProfileId,
+    _profile: ProfileId,
     options: FactsModuleOptions = {},
   ) {
     this.#events = store?.events ?? null;
-    this.#profile = profile;
     this.#names = options.names ?? [];
   }
 
@@ -82,7 +81,6 @@ export class FactsModule implements Module {
     const config = ctx.config(FactsConfigSchema);
     if (!this.#events) ctx.log.warn("this store has no event log: it stays in memory");
     const log = new EventLogService({
-      profile: this.#profile,
       store: this.#events,
       clock: ctx.clock,
       hotEvents: config.hot_events,
@@ -188,23 +186,28 @@ export class FactsModule implements Module {
     signal: AbortSignal,
   ): Promise<void> {
     const now = ctx.clock.now();
-    const policy = {
-      fold_before: toTimestamp(now - config.fold_after_days * DAY_MS),
-      expire_before:
-        config.retain_days === 0 ? null : toTimestamp(now - config.retain_days * DAY_MS),
-      max_rows: config.compact_max_rows,
+    const before = (days: number) => (days === 0 ? null : toTimestamp(now - days * DAY_MS));
+    const policy: EventCompaction = {
+      before: {
+        ambient: before(config.fold_after_days),
+        short: before(config.short_days),
+        long: before(config.long_days),
+      },
+      maxRows: config.compact_max_rows,
     };
     try {
-      let folded = 0;
-      let expired = 0;
+      const removed = { ambient: 0, short: 0, long: 0 };
       for (let pass = 0; pass < MAX_COMPACT_PASSES; pass++) {
-        const result = await events.compact(this.#profile, policy);
-        folded += result.folded;
-        expired += result.expired;
+        const result = await events.compact(policy);
+        removed.ambient += result.removed.ambient;
+        removed.short += result.removed.short;
+        removed.long += result.removed.long;
         if (!result.more) break;
         await sleep(COMPACT_PAUSE_MS, signal);
       }
-      if (folded + expired > 0) ctx.log.info({ folded, expired }, "compacted the event log");
+      if (removed.ambient + removed.short + removed.long > 0) {
+        ctx.log.info(removed, "compacted the event log");
+      }
     } catch (error) {
       if (signal.aborted) return;
       ctx.log.warn({ err: errorMessage(error) }, "cannot compact the event log");

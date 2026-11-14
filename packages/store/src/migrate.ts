@@ -22,6 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { StoreError } from "./common.js";
 import type { Db, Row } from "./db.js";
+import { EVENTS_SQL } from "./events/schema.js";
 
 const log = getLogger("store.migrate");
 
@@ -86,10 +87,13 @@ const BOOKKEEPING = `CREATE TABLE _migrations (
 ) STRICT;
 `;
 
-/** Core's own tables. They have no prefix. Always applied first. */
+/** Core's own tables: the bookkeeping, then the event log. No prefix. Always applied first. */
 export const coreSchema: PluginSchema = {
   plugin: "core",
-  migrations: [{ version: 1, name: "bookkeeping", sql: BOOKKEEPING }],
+  migrations: [
+    { version: 1, name: "bookkeeping", sql: BOOKKEEPING },
+    { version: 2, name: "events", sql: EVENTS_SQL },
+  ],
 };
 
 /** Core plugins that always run, in this order, right after `core`. */

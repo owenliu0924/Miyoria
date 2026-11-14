@@ -14,10 +14,12 @@ export const FactsConfigSchema = z.object({
   compact_every_mins: z.number().positive().default(60),
   /** Rows one compaction pass deletes at most (a pass blocks whatever else uses the store). */
   compact_max_rows: z.number().int().positive().default(2_000),
-  /** Ambient observations older than this are folded into per-day counts. */
+  /** Ambient observations (tier `ambient`) older than this are folded into per-day counts. */
   fold_after_days: z.number().positive().default(14),
-  /** Everything older than this goes (0: nothing does). */
-  retain_days: z.number().nonnegative().default(180),
+  /** Turn internals and the rest of tier `short` older than this go (0: never). */
+  short_days: z.number().nonnegative().default(90),
+  /** What people said and her lines (tier `long`) older than this go (0: never). */
+  long_days: z.number().nonnegative().default(365),
   /** Entries of an `append-self` bucket. */
   bucket_entries: z.number().int().positive().default(20),
   /** Characters of one bucket entry. */

@@ -1,4 +1,5 @@
-// `@miyoria/store/testing`: a migrated in-memory database for tests of plugin schemas.
+// `@miyoria/store/testing`: a migrated in-memory database for tests of plugin schemas and of the
+// event log.
 //
 //     const t = openTestDb({ plugins: [economySchema] });
 //     try { t.db.run("INSERT INTO economy_ledger ..."); } finally { t.close(); }
@@ -6,6 +7,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { type Clock, systemClock } from "@miyoria/types";
 import { Db } from "./db.js";
+import { EventStore } from "./events/log.js";
 import { Identity } from "./identity/identity.js";
 import { identitySchema } from "./identity/migrations.js";
 import { legacySchema } from "./legacy-schema/index.js";
@@ -28,6 +30,8 @@ export interface TestDb {
   readonly applied: readonly AppliedMigration[];
   /** Persons, accounts and places, when `identity` was asked for. */
   readonly identity: Identity | null;
+  /** The event log (core), resolving places through `identity` when it is there. */
+  readonly events: EventStore;
   close(): void;
 }
 
@@ -43,7 +47,8 @@ export function openTestDb(options: OpenTestDbOptions = {}): TestDb {
     ];
     const applied = migrate(db, schemas, { location: ":memory:" });
     const identity = options.identity ? new Identity(db) : null;
-    return { db, applied, identity, close: () => db.close() };
+    const events = new EventStore(db, { identity });
+    return { db, applied, identity, events, close: () => db.close() };
   } catch (error) {
     db.close();
     throw error;

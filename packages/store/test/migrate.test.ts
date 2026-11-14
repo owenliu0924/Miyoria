@@ -76,6 +76,7 @@ describe("bookkeeping", () => {
       const rows = appliedMigrations(t.db);
       expect(rows.map((r) => `${r.plugin}:${r.version}`)).toEqual([
         "core:1",
+        "core:2",
         ...legacySchema.migrations.map((m) => `legacy:${m.version}`),
       ]);
       expect(rows[0]).toMatchObject({
@@ -121,7 +122,11 @@ describe("bookkeeping", () => {
   it("applies a plugin schema after core, and only its new migrations later", () => {
     const first = openTestDb({ plugins: [{ ...SHOP, migrations: SHOP.migrations.slice(0, 1) }] });
     try {
-      expect(first.applied.map((m) => `${m.plugin}:${m.version}`)).toEqual(["core:1", "shop:1"]);
+      expect(first.applied.map((m) => `${m.plugin}:${m.version}`)).toEqual([
+        "core:1",
+        "core:2",
+        "shop:1",
+      ]);
       const later = migrate(first.db, [SHOP]);
       expect(later.map((m) => `${m.plugin}:${m.version}`)).toEqual(["shop:2"]);
     } finally {
@@ -147,7 +152,7 @@ describe("bookkeeping", () => {
       const error = thrown(() => migrate(t.db, [bad]));
       expect(error.code).toBe("failed");
       expect(error.message).toMatch(/shop migration 1 \(step1\) failed/);
-      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core"]);
+      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core"]);
       expect(t.db.get("SELECT name FROM sqlite_schema WHERE name = 'shop_items'")).toBeUndefined();
     } finally {
       t.close();
@@ -177,6 +182,7 @@ describe("refusals before any write", () => {
       expect(error.message).toMatch(/shop migration 1 \(step1\) changed after it was applied/);
       expect(appliedMigrations(db).map((m) => `${m.plugin}:${m.version}`)).toEqual([
         "core:1",
+        "core:2",
         "shop:1",
       ]);
       db.close();
@@ -380,7 +386,7 @@ describe("naming lint", () => {
     try {
       const error = thrown(() => migrate(t.db, [other, bad]));
       expect(error.code).toBe("lint");
-      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core"]);
+      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core"]);
     } finally {
       t.close();
     }

@@ -11,8 +11,6 @@ import {
   type DirectiveRecord,
   type JsonObject,
   type JsonValue,
-  type LogEvent,
-  type LogEventFilter,
   type ModuleId,
   type PersonId,
   type PlatformId,
@@ -22,6 +20,7 @@ import {
   type TurnOutcomeRecord,
 } from "@miyoria/types";
 import type { DataCategoryId, DataExport, DataInventory, WipeCounts, WipeOptions } from "./data.js";
+import type { EventLogStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
 import type {
   Account,
@@ -491,52 +490,6 @@ export interface ProfileDataStore {
   ): Promise<WipeCounts>;
 }
 
-/** What one compaction pass of the EventLog may delete. */
-export interface EventCompaction {
-  /** Ambient observations from before this time go. */
-  fold_before: Timestamp;
-  /** Every event from before this time goes (`null`: none). */
-  expire_before: Timestamp | null;
-  /** Rows deleted at most in this pass (it blocks whatever else runs on the store). */
-  max_rows: number;
-}
-
-export interface EventCompactionResult {
-  /** Ambient observations deleted. */
-  folded: number;
-  /** Other events deleted because they expired. */
-  expired: number;
-  /** Another pass may find more (what these rows caused is gone now). */
-  more: boolean;
-}
-
-/** How many events compaction removed, per UTC day, kind and source. */
-export interface EventRollup {
-  day: Timestamp;
-  kind: string;
-  source: string;
-  count: number;
-  first_at: Timestamp;
-  last_at: Timestamp;
-}
-
-/**
- * The EventLog's rows (docs/design/v3-architecture.md §5). Append-only: nothing changes a row.
- * Compaction deletes only rows no other row names as `cause`, so what survives keeps its whole
- * `cause` chain; old rows go leaf first, over several passes.
- */
-export interface EventLogStore {
-  /** Writes `events` in one transaction. An id that already exists is left as it is. */
-  append(profile: ProfileId, events: readonly LogEvent[]): Promise<void>;
-  get(profile: ProfileId, id: string): Promise<LogEvent | null>;
-  query(profile: ProfileId, filter: LogEventFilter): Promise<LogEvent[]>;
-  /** The events that name one of `causes` as their `cause`, oldest first. */
-  effectsOf(profile: ProfileId, causes: readonly string[], limit: number): Promise<LogEvent[]>;
-  compact(profile: ProfileId, policy: EventCompaction): Promise<EventCompactionResult>;
-  /** What compaction removed, newest day first. */
-  rollups(profile: ProfileId, limit: number): Promise<EventRollup[]>;
-}
-
 /**
  * The owner's rules (docs/design/v3-architecture.md §9). A rule that ended stays as a row until
  * `prune`, so the panel can show it.
@@ -570,7 +523,7 @@ export interface Store {
   readonly auth: AuthStore;
   readonly audit: AuditLog;
   readonly profileData: ProfileDataStore;
-  /** The EventLog. Optional for test doubles; without it the log stays in memory. */
+  /** The event log (`events`). Optional for test doubles; without it the log stays in memory. */
   readonly events?: EventLogStore;
   readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;

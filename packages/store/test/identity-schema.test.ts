@@ -38,9 +38,14 @@ describe("identity schema", () => {
       for (const name of TABLES) {
         expect(list.find((t) => t.name === name)?.strict, name).toBe(1);
       }
-      const indexes = raw
-        .prepare("SELECT name, sql FROM sqlite_schema WHERE type = 'index' AND sql IS NOT NULL")
-        .all() as { name: string; sql: string }[];
+      // Identity's own: core's event log is in every database.
+      const indexes = (
+        raw
+          .prepare(
+            "SELECT name, sql, tbl_name FROM sqlite_schema WHERE type = 'index' AND sql IS NOT NULL",
+          )
+          .all() as { name: string; sql: string; tbl_name: string }[]
+      ).filter((i) => TABLES.includes(i.tbl_name));
       const wanted = (await createSql(tables)).filter((s) => s.startsWith("CREATE"));
       for (const index of indexes) {
         expect(wanted.map((s) => s.trim().replace(/;$/, ""))).toContain(index.sql);

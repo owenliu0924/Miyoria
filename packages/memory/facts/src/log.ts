@@ -4,15 +4,17 @@
 // projections, and a task writes the buffer in one transaction every `flush_ms`. So a slow or
 // broken store can never reach a turn or the voice path: `append` does not throw and does not
 // wait, and while the store fails the buffer holds on, bounded, dropping its oldest events.
+//
+// The store is the event log on `events` (docs/design/v5-data.md §2): a flush hands it the
+// buffered lines as envelopes (`envelope.ts`), and what it reads comes back as lines.
 
 import { errorMessage, getLogger, metrics } from "@miyoria/runtime/kernel";
-import type { EventLogStore } from "@miyoria/store";
+import type { EventLogStore, LoggedEvent } from "@miyoria/store";
 import {
   type CauseChain,
   type Clock,
   contextKeyEquals,
   type EventLog,
-  isJsonObject,
   type JsonValue,
   type LogEvent,
   type LogEventFilter,
@@ -27,6 +29,9 @@ import {
   timestampMs,
   toTimestamp,
 } from "@miyoria/types";
+import { attentionOf, FACTS_TYPES, fromLogged, toQuery, toWrite, turnOf } from "./envelope.js";
+
+export { attentionOf, turnOf } from "./envelope.js";
 
 const log = getLogger("facts");
 
@@ -50,23 +55,6 @@ const DEFAULT_CHAIN_DEPTH = 64;
 const DEFAULT_EFFECTS = 200;
 const DEFAULT_EFFECTS_DEPTH = 32;
 
-/** The key an event is filed under: its observation's, or the one in its body. */
-export function attentionOf(event: LogEvent): string | null {
-  const body = event.body;
-  if (!isJsonObject(body)) return null;
-  const fields = isJsonObject(body.observation) ? body.observation : body;
-  return typeof fields.attention_key === "string" ? fields.attention_key : null;
-}
-
-/** The turn a line's body names (`turn`, or the `turn_outcome` of a turn's result), if any. */
-export function turnOf(event: LogEvent): string | null {
-  const body = event.body;
-  if (!isJsonObject(body)) return null;
-  if (typeof body.turn === "string") return body.turn;
-  const outcome = body.turn_outcome;
-  return isJsonObject(outcome) && typeof outcome.turn === "string" ? outcome.turn : null;
-}
-
 /** Whether `event` passes `filter` (paging and order aside, what the store's `query` does). */
 export function matchesFilter(event: LogEvent, filter: LogEventFilter): boolean {
   if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
@@ -87,6 +75,11 @@ export function matchesFilter(event: LogEvent, filter: LogEventFilter): boolean 
   return true;
 }
 
+/** The stored events that are lines, as lines. */
+function lines(found: readonly LoggedEvent[]): LogEvent[] {
+  return found.flatMap((e) => fromLogged(e) ?? []);
+}
+
 /** Plain JSON, whatever a writer handed in: a bad body must not poison a whole batch. */
 function plain(body: JsonValue): JsonValue {
   try {
@@ -97,7 +90,8 @@ function plain(body: JsonValue): JsonValue {
 }
 
 export interface EventLogServiceOptions {
-  profile: ProfileId;
+  /** Unused: one database belongs to one character (v5-data decision D6). */
+  profile?: ProfileId;
   /** `null`: the log lives in memory only (the backend has no event log). */
   store: EventLogStore | null;
   clock?: Clock;
@@ -108,7 +102,6 @@ export interface EventLogServiceOptions {
 }
 
 export class EventLogService implements EventLog {
-  readonly #profile: ProfileId;
   readonly #store: EventLogStore | null;
   readonly #clock: Clock;
   readonly #hotEvents: number;
@@ -121,7 +114,6 @@ export class EventLogService implements EventLog {
   #failing = false;
 
   constructor(options: EventLogServiceOptions) {
-    this.#profile = options.profile;
     this.#store = options.store;
     this.#clock = options.clock ?? systemClock;
     this.#hotEvents = options.hotEvents ?? 2_000;
@@ -221,7 +213,7 @@ export class EventLogService implements EventLog {
       this.#buffer = [];
       const started = performance.now();
       try {
-        await store.append(this.#profile, batch);
+        await store.append(batch.map(toWrite));
         flushSeconds.observe({}, (performance.now() - started) / 1000);
         if (this.#failing) log.info("the event log reaches its store again");
         this.#failing = false;
@@ -247,7 +239,8 @@ export class EventLogService implements EventLog {
     if (!this.#store) return null;
     try {
       await this.flush();
-      return await this.#store.get(this.#profile, id);
+      const found = await this.#store.get(id);
+      return found === null ? null : fromLogged(found);
     } catch (error) {
       log.warn({ err: errorMessage(error) }, "cannot read the event log");
       return null;
@@ -264,7 +257,7 @@ export class EventLogService implements EventLog {
     if (!this.#store) return this.#fromHot(filter);
     try {
       await this.flush();
-      return await this.#store.query(this.#profile, filter);
+      return lines(await this.#store.query(toQuery(filter)));
     } catch (error) {
       log.warn({ err: errorMessage(error) }, "cannot read the event log; answering from memory");
       return this.#fromHot(filter);
@@ -297,7 +290,13 @@ export class EventLogService implements EventLog {
     if (!this.#store) return fromHot();
     try {
       await this.flush();
-      return await this.#store.effectsOf(this.#profile, causes, limit);
+      const found = await this.#store.query({
+        parents: causes,
+        types: FACTS_TYPES,
+        order: "asc",
+        limit,
+      });
+      return lines(found);
     } catch (error) {
       log.warn({ err: errorMessage(error) }, "cannot read the event log; answering from memory");
       return fromHot();

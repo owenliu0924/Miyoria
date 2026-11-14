@@ -2216,8 +2216,8 @@ function behaviour(open: () => Promise<Store>): void {
       message_log: 1,
       memory_watermarks: 2,
       conversation_states: 0,
-      log_events: 0,
-      log_event_rollups: 0,
+      events: 0,
+      event_rollups: 0,
     });
     expect(await store.messages.recent(profile, ctx, 9)).toEqual([]);
     expect((await store.settings.list(profile, "memory_watermark:")).size).toBe(0);

@@ -17,7 +17,18 @@ import { generateDrizzleJson, generateMigration, pushSchema } from "drizzle-kit/
 import { Db } from "../src/db.js";
 import { identitySchema } from "../src/identity/migrations.js";
 import * as identityTables from "../src/identity/schema.js";
-import { migrate, type PluginSchema } from "../src/migrate.js";
+import { coreSchema, migrate, type PluginSchema, sqlNames } from "../src/migrate.js";
+
+/** Core's tables and indexes (the event log): in every database, and no plugin's business. */
+const CORE_NAMES = new Set(coreSchema.migrations.flatMap((m) => sqlNames(m.sql).created));
+
+/** Whether drizzle-kit's statement drops one of core's tables or indexes. */
+function dropsCore(statement: string): boolean {
+  const name = /^DROP\s+(?:TABLE|INDEX|TRIGGER|VIEW)\s+(?:IF\s+EXISTS\s+)?[`"]?([^`"\s;]+)/i.exec(
+    statement.trim(),
+  )?.[1];
+  return name !== undefined && CORE_NAMES.has(name);
+}
 
 /** The Drizzle tables of each plugin that declares its tables with Drizzle. */
 export const DRIZZLE_PLUGINS: Record<string, { tables: object; schema: PluginSchema }> = {
@@ -64,9 +75,10 @@ function kitClient(raw: DatabaseSync) {
  * drizzle-kit can see: not `STRICT`, not a partial index's WHERE, not an expression index).
  */
 export async function pendingSql(raw: DatabaseSync, tables: object): Promise<string[]> {
-  // `_migrations` is the runner's; drizzle-kit would drop it as a table it does not know.
+  // `_migrations` is the runner's, and the event log is core's; drizzle-kit would drop them as
+  // tables it does not know.
   const result = await pushSchema(sorted(tables), kitClient(raw), { table: "_migrations" });
-  return result.sqlStatements;
+  return result.sqlStatements.filter((s) => !dropsCore(s));
 }
 
 /** A `:memory:` database with `core` and `schema` applied from the checked-in migrations. */

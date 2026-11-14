@@ -431,25 +431,34 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { modules: ["directive"] },
   ),
-  // The V3 EventLog: what she perceived, decided and said, and the counts of what was compacted.
+  // The event log (`events`): what she perceived, decided and said, and the counts of what
+  // compaction removed. One database is one character, so every row belongs to this profile.
   category(
     "event_log",
     [
-      table("log_events", "log_events", "profile", "at", "seq", {
+      table("events", "events", "node", "at", "seq", {
+        seq: "num",
         id: "text",
         at: "ts",
-        kind: "text",
+        type: "text",
+        v: "num",
         source: "text",
-        cause: "text",
-        context: "json",
-        person: "text",
-        attention_key: "text",
-        salience: "text",
-        body: "json",
+        parent: "text",
+        turn: "text",
+        session: "text",
+        space_id: "text",
+        room_id: "text",
+        person_id: "text",
+        account_id: "text",
+        scope: "text",
+        tier: "text",
+        key: "text",
+        data: "json",
+        redacted_at: "ts",
       }),
-      table("log_event_rollups", "log_event_rollups", "profile", "last_at", "day, kind, source", {
+      table("event_rollups", "event_rollups", "node", "last_at", "day, type, source", {
         day: "ts",
-        kind: "text",
+        type: "text",
         source: "text",
         count: "num",
         first_at: "ts",

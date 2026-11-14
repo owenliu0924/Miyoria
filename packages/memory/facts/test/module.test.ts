@@ -23,6 +23,7 @@ import { FactsModule } from "../src/module.js";
 
 const P = "miyoria";
 const VOICE = { platform: "discord", scope: "g", channel: "v", kind: "voice" } as const;
+const OWEN = { platform: "discord", id: "100" };
 const CONFIG = { flush_ms: 5, compact_every_mins: 0.001 };
 
 let dir: string;
@@ -86,8 +87,21 @@ describe("beside V2", () => {
     const sup = await run(store);
     const env = sup.bus.publish("voice.link", utterance("大家好", "u1"));
     await settle();
-    const event = await store.events.get(P, env.id);
-    expect(event).toMatchObject({ kind: "observation", source: "voice.asr", person: "Owen" });
+    const event = await store.events.get(env.id);
+    expect(event).toMatchObject({
+      envelope: {
+        type: "facts.observation.said",
+        source: "voice.asr",
+        session: "discord:g:voice:v",
+        scope: "room",
+        tier: "long",
+      },
+      context: VOICE,
+      handle: "Owen",
+    });
+    expect(event?.envelope.person_id).toBe(store.persons.personOf(OWEN)?.id);
+    const line = await sup.services.require(EventLogKey).get(env.id);
+    expect(line).toMatchObject({ kind: "observation", source: "voice.asr", person: "Owen" });
     await sup.stopAll();
     await store.close();
   });
@@ -135,7 +149,7 @@ describe("beside V2", () => {
     let release = () => {};
     slow.append = () =>
       new Promise((resolve) => {
-        release = () => resolve();
+        release = () => resolve([]);
       });
     const sup = await run({ events: slow });
     sup.bus.publish("voice.link", utterance("一", "u1"));
@@ -156,7 +170,7 @@ describe("beside V2", () => {
     const sup = await run(store, { flush_ms: 60_000 });
     const env = sup.bus.publish("voice.link", utterance("最後一句", "u1"));
     await sup.stopAll();
-    expect(await store.events.get(P, env.id)).not.toBeNull();
+    expect(await store.events.get(env.id)).not.toBeNull();
     await store.close();
   });
 

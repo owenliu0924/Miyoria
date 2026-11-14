@@ -1,0 +1,142 @@
+// The event types the store knows today, with their default scope and their tier (v5-data §2.4,
+// §2.5). The store owns the registry because the store is what stamps `tier` and resolves the
+// default `scope` when it commits an event; Core hands the store its registry when it opens it
+// (`EventStore` takes one), so later plugins add their definitions there.
+//
+// Payload schemas are permissive (`JsonValueSchema`) on purpose: the real ones per type are a
+// later step (K12a in docs/design/v5-contracts.md).
+//
+// The `facts.*` types are what the V3 facts writer (`@miyoria/memory/facts`) records: one type per
+// line kind, and three for observations, split by how long they are kept. They are not named
+// after the bus topic a line came from: a line's `data` is the facts body (an `ObservationBody`,
+// a decision trace), not the topic's payload, and the topic stays in `data.origin.topic`. Steps 5
+// to 7 of v5-data §8 replace them with `chat.*`, `turn.*` and `llm.call`.
+
+import { defineEvent, EventRegistry } from "@miyoria/contracts/events";
+import { JsonValueSchema } from "@miyoria/contracts/wire";
+
+/** Prefix of every type the facts writer records. */
+export const FACTS_TYPE_PREFIX = "facts.";
+
+/** Something she perceived that is not a person's words, and not ambient. 90 days. */
+export const FactsObservation = defineEvent({
+  type: "facts.observation",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "short",
+});
+
+/** What people said, in text or voice (the raw chat record, decision D2). 365 days. */
+export const FactsObservationSaid = defineEvent({
+  type: "facts.observation.said",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "long",
+});
+
+/** An ambient observation (presence, state ticks, game hazards). Folded after 14 days. */
+export const FactsObservationAmbient = defineEvent({
+  type: "facts.observation.ambient",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "ambient",
+});
+
+export const FactsThought = defineEvent({
+  type: "facts.thought",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "short",
+});
+
+export const FactsDecision = defineEvent({
+  type: "facts.decision",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "short",
+});
+
+/** A line of hers about to be said: the record of what she said, kept like chat. */
+export const FactsUtterance = defineEvent({
+  type: "facts.utterance",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "long",
+});
+
+/** A delivery ack of one of her lines. */
+export const FactsDelivered = defineEvent({
+  type: "facts.delivered",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "long",
+});
+
+export const FactsAction = defineEvent({
+  type: "facts.action",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "short",
+});
+
+export const FactsResult = defineEvent({
+  type: "facts.result",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "short",
+});
+
+export const FactsSteer = defineEvent({
+  type: "facts.steer",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "short",
+});
+
+/** A change of the owner's rules: small, and the "why" of later behaviour. Kept. */
+export const FactsDirective = defineEvent({
+  type: "facts.directive",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "keep",
+});
+
+export const FactsProposal = defineEvent({
+  type: "facts.proposal",
+  v: 1,
+  data: JsonValueSchema,
+  tier: "short",
+});
+
+/**
+ * `redact()` replaced an event's content. `data` is `{ target, reason }` (the target's id and a
+ * short reason, never the text). For the owner only, and kept.
+ */
+export const PrivacyRedacted = defineEvent({
+  type: "privacy.redacted",
+  v: 1,
+  data: JsonValueSchema,
+  scope: "owner",
+  tier: "keep",
+});
+
+/** Every `facts.*` definition. */
+export const FACTS_EVENTS = [
+  FactsObservation,
+  FactsObservationSaid,
+  FactsObservationAmbient,
+  FactsThought,
+  FactsDecision,
+  FactsUtterance,
+  FactsDelivered,
+  FactsAction,
+  FactsResult,
+  FactsSteer,
+  FactsDirective,
+  FactsProposal,
+] as const;
+
+/** A new registry holding every type the store knows. Callers may register more. */
+export function coreEventRegistry(): EventRegistry {
+  return new EventRegistry().register(...FACTS_EVENTS, PrivacyRedacted);
+}

@@ -71,6 +71,22 @@ const ROOM_KIND: Readonly<Record<ContextKind, RoomKind>> = {
   dm: "dm",
 };
 
+/**
+ * The session key of a place (§4.1): a DM's is its person's (`dmPerson`, required for a DM), a
+ * voice room's has the `voice:` infix, a thread whose channel is known (`parent`, its platform id)
+ * names it.
+ */
+function sessionKey(ctx: ContextKey, dmPerson: PersonId | null, parent: string | null): string {
+  if (ctx.scope === null) {
+    return `${ctx.platform}:dm:${ctx.kind === "voice" ? "voice:" : ""}${dmPerson}`;
+  }
+  if (ctx.kind === "voice") return `${ctx.platform}:${ctx.scope}:voice:${ctx.channel}`;
+  if (ctx.kind === "thread" && parent !== null) {
+    return `${ctx.platform}:${ctx.scope}:${parent}:${ctx.channel}`;
+  }
+  return `${ctx.platform}:${ctx.scope}:${ctx.channel}`;
+}
+
 /** sha256 (hex) of a link code: codes are never stored as typed. */
 export function linkCodeHash(code: string): string {
   return createHash("sha256").update(code, "utf8").digest("hex");
@@ -520,7 +536,6 @@ export class Identity {
         at,
       );
       const lane: Lane = ctx.kind === "voice" ? "voice" : "text";
-      let key: string;
       let personId = person?.id ?? null;
       if (dm) {
         personId ??= room.dm_person === null ? null : (this.person(room.dm_person)?.id ?? null);
@@ -529,19 +544,13 @@ export class Identity {
             `a DM (${ctx.platform}:${ctx.channel}) resolves only with its author`,
           );
         }
-        key = `${ctx.platform}:dm:${lane === "voice" ? "voice:" : ""}${personId}`;
-      } else if (lane === "voice") {
-        key = `${ctx.platform}:${ctx.scope}:voice:${ctx.channel}`;
-      } else if (ctx.kind === "thread") {
-        const parent =
-          options.parent ?? (room.parent_id === null ? null : this.#roomExternalId(room.parent_id));
-        key =
-          parent === null
-            ? `${ctx.platform}:${ctx.scope}:${ctx.channel}`
-            : `${ctx.platform}:${ctx.scope}:${parent}:${ctx.channel}`;
-      } else {
-        key = `${ctx.platform}:${ctx.scope}:${ctx.channel}`;
       }
+      const parent =
+        ctx.kind === "thread"
+          ? (options.parent ??
+            (room.parent_id === null ? null : this.#roomExternalId(room.parent_id)))
+          : null;
+      const key = sessionKey(ctx, personId, parent);
       const place = { space_id: spaceId, room_id: room.id, lane, person_id: personId };
       this.#session(key, place, at);
       if (spaceId !== null && author !== null) {
@@ -559,6 +568,29 @@ export class Identity {
       }
       return { ...place, session: key };
     });
+  }
+
+  /**
+   * The session key `resolve` would give `ctx`, without writing anything: `null` when its room
+   * is unknown, or when it is a DM whose person is unknown.
+   */
+  sessionOf(ctx: ContextKey): string | null {
+    const room = this.#db.orm
+      .select({ parent_id: rooms.parent_id, dm_person: rooms.dm_person })
+      .from(rooms)
+      .where(and(eq(rooms.platform, ctx.platform), eq(rooms.external_id, ctx.channel)))
+      .get();
+    if (!room) return null;
+    let personId: PersonId | null = null;
+    if (ctx.scope === null) {
+      personId = room.dm_person === null ? null : (this.person(room.dm_person)?.id ?? null);
+      if (personId === null) return null;
+    }
+    const parent =
+      ctx.kind === "thread" && room.parent_id !== null
+        ? this.#roomExternalId(room.parent_id)
+        : null;
+    return sessionKey(ctx, personId, parent);
   }
 
   /** Her own space's session (`home`), created on first use. */

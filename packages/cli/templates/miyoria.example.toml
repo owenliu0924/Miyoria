@@ -1331,7 +1331,8 @@ record = false
 # compact_every_mins = 60        # 多久壓縮一次舊資料
 # compact_max_rows = 2000        # 每次壓縮最多刪幾筆
 # fold_after_days = 14           # 背景事實(ambient)過多久合併成每日統計
-# retain_days = 180              # 所有事件留多久(0 = 永久);還有後續事件指向的不會被刪
+# short_days = 90                # 回合內部、動作這類事件留多久(0 = 永久);還有後續事件指向的不會被刪
+# long_days = 365                # 大家說過的話和她說的話留多久(0 = 永久)
 # bucket_entries = 20            # 事件類 bucket 最多幾筆
 # bucket_chars = 400             # 一筆最多幾個字
 # answer_window_secs = 60        # 她講完多久內有人開口算回應她

@@ -1,7 +1,7 @@
 // @miyoria/memory/facts: the fact layer of V3 (docs/design/v3-architecture.md §5, §6, §8).
 //
-// * `EventLogService`: the append-only EventLog on the store's `events` area, with a hot window
-//   in memory, and the `cause` walks.
+// * `EventLogService`: the append-only EventLog on the store's event log (`events`), with a hot
+//   window in memory, and the `cause` walks; `envelope.ts` maps its lines to envelopes and back.
 // * `BusFacts`: turns bus events into log lines (Observations, decisions, results, proposals);
 //   her own lines are written by the main line's turns, not here.
 // * `WorkingContextView`: what she knows right now, per-writer buckets.
@@ -16,6 +16,16 @@ export { BusFacts, type BusFactsOptions } from "./bus.js";
 export { defaultFactsConfig, type FactsConfig, FactsConfigSchema } from "./config.js";
 export { observationBody, type WorkingContextOptions, WorkingContextView } from "./context.js";
 export { type DeliveryLedgerOptions, DeliveryLedgerView } from "./delivery.js";
+export {
+  authorOf,
+  FACTS_TYPES,
+  fromLogged,
+  lineKind,
+  lineType,
+  toQuery,
+  toWrite,
+  typesOf,
+} from "./envelope.js";
 export {
   attentionOf,
   EventLogService,

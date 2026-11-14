@@ -25,12 +25,11 @@ async function sqlite(): Promise<EventLogStore> {
 function flaky(inner: EventLogStore): EventLogStore & { down: boolean } {
   const store = Object.create(inner) as EventLogStore & { down: boolean };
   store.down = false;
-  store.append = (profile, events) =>
-    store.down ? Promise.reject(new Error("disk full")) : inner.append(profile, events);
-  store.query = (profile, filter) =>
-    store.down ? Promise.reject(new Error("disk full")) : inner.query(profile, filter);
-  store.get = (profile, id) => inner.get(profile, id);
-  store.effectsOf = (profile, causes, limit) => inner.effectsOf(profile, causes, limit);
+  store.append = (writes) =>
+    store.down ? Promise.reject(new Error("disk full")) : inner.append(writes);
+  store.query = (query) =>
+    store.down ? Promise.reject(new Error("disk full")) : inner.query(query);
+  store.get = (id) => inner.get(id);
   return store;
 }
 
@@ -76,7 +75,7 @@ describe("writing", () => {
     expect(append).not.toHaveBeenCalled();
     await log.flush();
     expect(append).toHaveBeenCalledTimes(1);
-    expect(append.mock.calls[0]?.[1]).toHaveLength(2);
+    expect(append.mock.calls[0]?.[0]).toHaveLength(2);
     expect(log.buffered).toBe(0);
   });
 

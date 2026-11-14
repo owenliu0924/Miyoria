@@ -10,7 +10,7 @@
 
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import {
   type AccountRef,
   type Clock,
@@ -19,12 +19,8 @@ import {
   type DecisionTrace,
   type Directive,
   type DirectiveRecord,
-  isJsonObject,
   type JsonObject,
   type JsonValue,
-  type LogEvent,
-  type LogEventFilter,
-  type LogEventKind,
   type ModuleId,
   type PersonId,
   type PlatformId,
@@ -73,6 +69,7 @@ import {
   wipeStatements,
 } from "./data.js";
 import { Db, type Params, type Row } from "./db.js";
+import { EventStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
 import {
   IdentityHandles,
@@ -135,10 +132,6 @@ import type {
   DecisionLog,
   DirectiveStore,
   EconomyDocStore,
-  EventCompaction,
-  EventCompactionResult,
-  EventLogStore,
-  EventRollup,
   FortuneStore,
   GoalStore,
   IdentityStore,
@@ -2303,34 +2296,6 @@ class SqliteAuth implements AuthStore {
 
 // ---- event log ----------------------------------------------------------------------------
 
-const DAY_MICROS = 86_400_000_000;
-
-function logEventFromRow(row: Row): LogEvent {
-  const context = optStr(row, "context");
-  return {
-    id: str(row, "id"),
-    at: ts(row, "at"),
-    kind: str(row, "kind") as LogEventKind,
-    source: str(row, "source"),
-    cause: optStr(row, "cause"),
-    context: context === null ? null : parseJson<ContextKey>(context, "event context"),
-    person: optStr(row, "person"),
-    body: json<JsonValue>(row, "body", "event body"),
-  };
-}
-
-/** The lookup columns of an event: `observation` keeps them in its `Observation`. */
-function eventLookups(event: LogEvent): { key: string | null; salience: string | null } {
-  const body = event.body;
-  if (!isJsonObject(body)) return { key: null, salience: null };
-  const fields = isJsonObject(body.observation) ? body.observation : body;
-  const { attention_key: key, salience } = fields;
-  return {
-    key: typeof key === "string" ? key : null,
-    salience: typeof salience === "string" ? salience : null,
-  };
-}
-
 function directiveFromRow(row: Row): DirectiveRecord {
   return {
     id: str(row, "id"),
@@ -2413,199 +2378,6 @@ class SqliteDirectives implements DirectiveStore {
   }
 }
 
-class SqliteEventLog implements EventLogStore {
-  constructor(private readonly db: Db) {}
-
-  async append(profile: ProfileId, events: readonly LogEvent[]): Promise<void> {
-    if (events.length === 0) return;
-    try {
-      this.db.tx(() => {
-        for (const event of events) {
-          const { key, salience } = eventLookups(event);
-          this.db.run(
-            "INSERT INTO log_events (id, profile_id, at, kind, source, cause, context_key, " +
-              "context, person, attention_key, salience, body) VALUES ($id, $profile, $at, " +
-              "$kind, $source, $cause, $context_key, $context, $person, $key, $salience, $body) " +
-              "ON CONFLICT (id) DO NOTHING",
-            {
-              id: event.id,
-              profile,
-              at: toMicros(event.at),
-              kind: event.kind,
-              source: event.source,
-              cause: event.cause,
-              context_key: event.context === null ? null : contextLookupKey(event.context),
-              context: event.context === null ? null : JSON.stringify(event.context),
-              person: event.person,
-              key,
-              salience,
-              body: JSON.stringify(event.body),
-            },
-          );
-        }
-      });
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      throw new StoreError("cannot append to the event log", { cause });
-    }
-  }
-
-  async get(profile: ProfileId, id: string): Promise<LogEvent | null> {
-    const row = this.db.get("SELECT * FROM log_events WHERE id = $id AND profile_id = $profile", {
-      id,
-      profile,
-    });
-    return row ? logEventFromRow(row) : null;
-  }
-
-  async query(profile: ProfileId, filter: LogEventFilter): Promise<LogEvent[]> {
-    const where = ["profile_id = $profile"];
-    const params: Params = { profile, limit: limitParam(filter.limit ?? 100) };
-    const add = (clause: string, name: string, value: SQLInputValue) => {
-      where.push(clause);
-      params[name] = value;
-    };
-    if (filter.kinds) {
-      add("kind IN (SELECT value FROM json_each($kinds))", "kinds", JSON.stringify(filter.kinds));
-    }
-    if (filter.sources) {
-      add(
-        "source IN (SELECT value FROM json_each($sources))",
-        "sources",
-        JSON.stringify(filter.sources),
-      );
-    }
-    if (filter.context) add("context_key = $context", "context", contextLookupKey(filter.context));
-    if (filter.person !== undefined) add("person = $person", "person", filter.person);
-    if (filter.attention_key !== undefined) {
-      add("attention_key = $key", "key", filter.attention_key);
-    }
-    if (filter.turn !== undefined) {
-      add(
-        "COALESCE(json_extract(body, '$.turn'), json_extract(body, '$.turn_outcome.turn')) = $turn",
-        "turn",
-        filter.turn,
-      );
-    }
-    if (filter.since !== undefined) add("at >= $since", "since", toMicros(filter.since));
-    if (filter.until !== undefined) add("at < $until", "until", toMicros(filter.until));
-    if (filter.before !== undefined) add("id < $before", "before", filter.before);
-    if (filter.after !== undefined) add("id > $after", "after", filter.after);
-    const order = filter.order === "asc" ? "ASC" : "DESC";
-    const rows = this.db.all(
-      `SELECT * FROM log_events WHERE ${where.join(" AND ")} ORDER BY id ${order} LIMIT $limit`,
-      params,
-    );
-    return rows.map(logEventFromRow);
-  }
-
-  async effectsOf(
-    profile: ProfileId,
-    causes: readonly string[],
-    limit: number,
-  ): Promise<LogEvent[]> {
-    if (causes.length === 0) return [];
-    const rows = this.db.all(
-      "SELECT * FROM log_events WHERE cause IN (SELECT value FROM json_each($causes)) " +
-        "AND profile_id = $profile ORDER BY id ASC LIMIT $limit",
-      { causes: JSON.stringify(causes), profile, limit: limitParam(limit) },
-    );
-    return rows.map(logEventFromRow);
-  }
-
-  /** Rows that may go: `tier` matches and no other row names them as its cause. */
-  #leaves(profile: ProfileId, tier: string, before: Timestamp, limit: number): Row[] {
-    return this.db.all(
-      "SELECT e.seq, e.at, e.kind, e.source FROM log_events e WHERE e.profile_id = $profile " +
-        `AND e.at < $before AND ${tier} AND NOT EXISTS ` +
-        "(SELECT 1 FROM log_events c WHERE c.cause = e.id) ORDER BY e.at LIMIT $limit",
-      { profile, before: toMicros(before), limit },
-    );
-  }
-
-  /** Counts `rows` in the rollups and deletes them. */
-  #remove(profile: ProfileId, rows: readonly Row[]): void {
-    const groups = new Map<string, { day: number; kind: string; source: string; rows: Row[] }>();
-    for (const row of rows) {
-      const day = Math.floor(num(row, "at") / DAY_MICROS) * DAY_MICROS;
-      const key = `${day}|${str(row, "kind")}|${str(row, "source")}`;
-      let group = groups.get(key);
-      if (!group) {
-        group = { day, kind: str(row, "kind"), source: str(row, "source"), rows: [] };
-        groups.set(key, group);
-      }
-      group.rows.push(row);
-    }
-    for (const group of groups.values()) {
-      const times = group.rows.map((r) => num(r, "at"));
-      this.db.run(
-        "INSERT INTO log_event_rollups (profile_id, day, kind, source, count, first_at, last_at) " +
-          "VALUES ($profile, $day, $kind, $source, $count, $first, $last) " +
-          "ON CONFLICT (profile_id, day, kind, source) DO UPDATE SET " +
-          "count = count + excluded.count, first_at = min(first_at, excluded.first_at), " +
-          "last_at = max(last_at, excluded.last_at)",
-        {
-          profile,
-          day: group.day,
-          kind: group.kind,
-          source: group.source,
-          count: group.rows.length,
-          first: Math.min(...times),
-          last: Math.max(...times),
-        },
-      );
-    }
-    this.db.run("DELETE FROM log_events WHERE seq IN (SELECT value FROM json_each($seqs))", {
-      seqs: JSON.stringify(rows.map((r) => num(r, "seq"))),
-    });
-  }
-
-  async compact(profile: ProfileId, policy: EventCompaction): Promise<EventCompactionResult> {
-    const limit = Math.max(1, Math.floor(policy.max_rows));
-    try {
-      return this.db.tx(() => {
-        const ambient = this.#leaves(
-          profile,
-          "e.kind = 'observation' AND e.salience = 'ambient'",
-          policy.fold_before,
-          limit,
-        );
-        if (ambient.length > 0) this.#remove(profile, ambient);
-        const left = limit - ambient.length;
-        const old =
-          policy.expire_before === null || left === 0
-            ? []
-            : this.#leaves(profile, "1 = 1", policy.expire_before, left);
-        if (old.length > 0) this.#remove(profile, old);
-        return {
-          folded: ambient.length,
-          expired: old.length,
-          more: ambient.length + old.length > 0,
-        };
-      });
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      throw new StoreError("cannot compact the event log", { cause });
-    }
-  }
-
-  async rollups(profile: ProfileId, limit: number): Promise<EventRollup[]> {
-    const rows = this.db.all(
-      "SELECT * FROM log_event_rollups WHERE profile_id = $profile " +
-        "ORDER BY day DESC, kind, source LIMIT $limit",
-      { profile, limit: limitParam(limit) },
-    );
-    return rows.map((r) => ({
-      day: ts(r, "day"),
-      kind: str(r, "kind"),
-      source: str(r, "source"),
-      count: num(r, "count"),
-      first_at: ts(r, "first_at"),
-      last_at: ts(r, "last_at"),
-    }));
-  }
-}
-
 class SqliteAudit implements AuditLog {
   constructor(private readonly db: Db) {}
 
@@ -2667,7 +2439,7 @@ export class SqliteStore implements Store {
   readonly auth: AuthStore;
   readonly audit: AuditLog;
   readonly profileData: ProfileDataStore;
-  readonly events: EventLogStore;
+  readonly events: EventStore;
   readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;
   readonly coins: CoinLedgerStore;
@@ -2697,7 +2469,7 @@ export class SqliteStore implements Store {
     this.auth = new SqliteAuth(db);
     this.audit = new SqliteAudit(db);
     this.profileData = new SqliteProfileData(db);
-    this.events = new SqliteEventLog(db);
+    this.events = new EventStore(db, { identity: this.persons });
     this.directives = new SqliteDirectives(db);
     this.cards = new SqliteMemberCards(db);
     this.coins = new SqliteCoins(db);

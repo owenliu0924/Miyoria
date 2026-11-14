@@ -268,8 +268,8 @@ describe("data routes", () => {
       message_log: 1,
       memory_watermarks: 1,
       conversation_states: 0,
-      log_events: 0,
-      log_event_rollups: 0,
+      events: 0,
+      event_rollups: 0,
     });
     expect((await h.store.settings.list(P, WATERMARK_PREFIX)).size).toBe(0);
     expect(countOf(await inventoryOf(h), "memories")).toBe(1);

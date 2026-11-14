@@ -33,6 +33,40 @@ export {
 } from "./data.js";
 export { Db, type Orm, type Params, type Row } from "./db.js";
 export {
+  type Awaitable,
+  COMPACTED_TIERS,
+  type CompactedTier,
+  type EventCompaction,
+  type EventCompactionResult,
+  type EventLogStore,
+  type EventQuery,
+  type EventRollup,
+  EventStore,
+  type EventStoreOptions,
+  type EventWrite,
+  type LoggedEvent,
+  sessionScope,
+} from "./events/log.js";
+export { EVENTS_SQL } from "./events/schema.js";
+export {
+  coreEventRegistry,
+  FACTS_EVENTS,
+  FACTS_TYPE_PREFIX,
+  FactsAction,
+  FactsDecision,
+  FactsDelivered,
+  FactsDirective,
+  FactsObservation,
+  FactsObservationAmbient,
+  FactsObservationSaid,
+  FactsProposal,
+  FactsResult,
+  FactsSteer,
+  FactsThought,
+  FactsUtterance,
+  PrivacyRedacted,
+} from "./events/types.js";
+export {
   HANDLE_PREFIX,
   handleKey,
   type PersonHandleDirectory,
@@ -156,10 +190,6 @@ export {
   type DirectiveStore,
   type EconomyDocStore,
   EconomyDocsKey,
-  type EventCompaction,
-  type EventCompactionResult,
-  type EventLogStore,
-  type EventRollup,
   type FortuneStore,
   FortuneStoreKey,
   type GoalStore,
