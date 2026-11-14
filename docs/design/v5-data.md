@@ -39,7 +39,7 @@
 
 ## Drizzle 試用的結果(2026-11-14)
 
-第 4 步的 identity 外掛是用 Drizzle(`drizzle-orm` 1.0.0-rc.5,`drizzle-orm/node-sqlite` 驅動,不需要原生編譯的套件)寫的,同時回答「要不要全面用它」。結論是**一般的外掛資料表都用 Drizzle,有幾樣維持手寫 SQL**。
+第 4 步的 identity 外掛是用 Drizzle(`drizzle-orm` 1.0.0-rc.5,`drizzle-orm/node-sqlite` 驅動,不需要原生編譯的套件)寫的,同時回答「要不要全面用它」。結論是**一般的外掛資料表都用 Drizzle,有幾樣維持手寫 SQL**。**2026-11-15:owner 決定全面採用。**
 
 - **用 Drizzle 的**:各外掛的一般資料表(設定、auth、directive、economy、交易所、卡片、產物庫的中繼資料等)。資料表定義就是型別的來源,不再手寫資料列的轉換。
 - **維持手寫 SQL 的**:`events` 表和它的 trigger、JSON 檢視;全文搜尋;遷移執行器本身;`legacy` schema;會重建整張表的遷移。

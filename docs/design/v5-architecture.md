@@ -607,7 +607,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 | 12 | 資料層的八件事(D1 到 D8) | 全部照 [v5-data.md](v5-data.md) 的建議:只留 SQLite、原始聊天留 365 天、隱私和語音同意跟著帳號連結走、存紀念卡要的資料、階段 1 結束時切換、拿掉 `profile_id`、提示詞留在 JSONL、錢的帳本是外掛自己的表 |
 | 13 | 契約層的五件事(C1 到 C5) | 全部照 [v5-contracts.md](v5-contracts.md) 的建議:`contracts` 和 `types` 並排、Python 模型用產生器、public 和 member 路由嚴格驗證回應、現有事件沿用 topic 名稱、`@miyoria/contracts` 也發佈 |
 | 14 | `agent` 和 `arbiter` 模組 | 必要模組,不能停用;它們不在的時候沒有任何東西會替她說話 |
-| 15 | 現成套件 | 套件做得比手寫好的地方就用套件(規則在 TS-CONVENTIONS §1)。資料層的新資料表先用 Drizzle 試寫 identity,比過再決定是否全面採用;事件表、全文搜尋和 trigger 維持手寫 SQL。LLM 這邊等階段 3 重建大腦時評估 Vercel AI SDK。其餘手寫的基礎設施逐項盤點 |
+| 15 | 現成套件 | 套件做得比手寫好的地方就用套件(規則在 TS-CONVENTIONS §1)。資料層:一般的外掛資料表全面用 Drizzle(2026-11-15 決定,試用結果在 [v5-data.md](v5-data.md));事件表、全文搜尋和 trigger 維持手寫 SQL。LLM 這邊等階段 3 重建大腦時評估 Vercel AI SDK。其餘手寫的基礎設施逐項盤點 |
 | 16 | 套件管理 | pnpm;文件裡給使用者看的指令也用 pnpm |
 
 **還沒定的**:
@@ -616,7 +616,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 - 十二月:生圖的模型、ComfyUI 跑在哪一台、她的 LoRA 的授權。
 - 「玩」的大部分已決定,剩下的(水族箱、交易所的幾個細節):[v5-play.md](v5-play.md) §8。
 - Minecraft 原設計的三個決定(志向清單和權重、誰算主人、AltoClef),階段 7 之前。
-- 套件盤點的結論在 [v5-packages.md](v5-packages.md),裡面有四件要 owner 決定的事(路由層用 oRPC、擴充協定維持手寫、一般資料表全面用 Drizzle、階段 3 換 AI SDK 的 provider)。
+- 套件盤點的結論在 [v5-packages.md](v5-packages.md),裡面還有三件要 owner 決定的事(路由層用 oRPC、擴充協定維持手寫、階段 3 換 AI SDK 的 provider);「一般資料表全面用 Drizzle」已決定。
 - 線上 `miyoria.toml` 的三處修改(拿掉剩下的設定相容層要先改),以及 `/api/facts/context`、`/api/facts/retryable` 兩條路由有沒有人手動在用。
 
 ## 17. 風險和不做的事
