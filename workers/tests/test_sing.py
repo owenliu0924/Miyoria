@@ -15,6 +15,7 @@ from pathlib import Path
 import threading
 
 import pytest
+from conftest import NO_BODY, send
 
 SING = Path(__file__).resolve().parent.parent / "sing"
 sys.path.insert(0, str(SING))
@@ -1798,3 +1799,137 @@ def test_her_rvc_model_picks_the_key_from_the_pitch_it_reads(sing, monkeypatch):
     # An explicit pitch is the requester's: the plain conversion, no question asked.
     _job(sing, "rvc reads the pitch", pitch=-3)
     assert len(asked) == 1
+
+
+# ── what the request bodies take and refuse ──────────────────────────────────
+# Pinned with the hand-written request models, before they were generated from the JSON Schema:
+# the generated ones must take and refuse exactly the same, with the same status and error body.
+
+INVALID = "invalid request: "
+NOT_AN_OBJECT = INVALID + "body: Input should be a valid dictionary or object to extract fields from"
+ONE_SOURCE = {"error": "give exactly one of query, url or path"}
+
+# The model takes these; the handler then refuses them for their sources, before any job exists.
+JOB_TAKEN_BY_THE_MODEL = [
+    {},
+    {"query": None, "url": None, "path": None, "title": None, "artist": None, "pitch": None},
+    {"query": "  "},
+    {"query": "q" * 200, "url": "https://youtu.be/" + "u" * 483},
+    {"url": "https://youtu.be/" + "u" * 483, "path": "p" * 300},
+    {"title": "t" * 120, "artist": "a" * 120},
+    {"pitch": 24, "key": -12},
+    {"pitch": -24, "key": 12},
+    {"pitch": 2.0, "key": "3"},
+    {"backing": "acapella"},
+    {"backing": "drop", "force": True, "exclusive_ack": True},
+    {"backing": "convert", "force": "true", "exclusive_ack": 1},
+    {"unknown": {"a": 1}},
+]
+
+JOB_REFUSED = [
+    ({"query": "q" * 201}, "query: String should have at most 200 characters"),
+    ({"url": "u" * 501}, "url: String should have at most 500 characters"),
+    ({"path": "p" * 301}, "path: String should have at most 300 characters"),
+    ({"title": "t" * 121}, "title: String should have at most 120 characters"),
+    ({"artist": "a" * 121}, "artist: String should have at most 120 characters"),
+    ({"query": 5}, "query: Input should be a valid string"),
+    ({"pitch": 25}, "pitch: Input should be less than or equal to 24"),
+    ({"pitch": -25}, "pitch: Input should be greater than or equal to -24"),
+    ({"pitch": 1.5}, "pitch: Input should be a valid integer, got a number with a fractional part"),
+    ({"pitch": "up"}, "pitch: Input should be a valid integer, unable to parse string as an integer"),
+    ({"key": 13}, "key: Input should be less than or equal to 12"),
+    ({"key": -13}, "key: Input should be greater than or equal to -12"),
+    ({"key": None}, "key: Input should be a valid integer"),
+    ({"backing": "loud"}, "backing: Input should be 'keep', 'drop', 'convert' or 'acapella'"),
+    ({"backing": "KEEP"}, "backing: Input should be 'keep', 'drop', 'convert' or 'acapella'"),
+    ({"backing": None}, "backing: Input should be 'keep', 'drop', 'convert' or 'acapella'"),
+    ({"force": "maybe"}, "force: Input should be a valid boolean, unable to interpret input"),
+    ({"force": None}, "force: Input should be a valid boolean"),
+    ({"exclusive_ack": None}, "exclusive_ack: Input should be a valid boolean"),
+    ({"key": 13, "pitch": 25}, "pitch: Input should be less than or equal to 24"),
+    (b"[]", "body: Input should be a valid dictionary or object to extract fields from"),
+    (b"null", "body: Input should be a valid dictionary or object to extract fields from"),
+    (b"nope", "0: JSON decode error"),
+    (NO_BODY, "body: Field required"),
+]
+
+
+def test_job_request_bodies(sing):
+    for body in JOB_TAKEN_BY_THE_MODEL:
+        assert send(sing, "POST", "/jobs", body) == (400, ONE_SOURCE), body
+    for body, error in JOB_REFUSED:
+        assert send(sing, "POST", "/jobs", body) == (400, {"error": INVALID + error}), body
+
+
+def test_a_job_keeps_its_request_as_given_with_the_defaults(sing):
+    if not is_mock():
+        pytest.skip("makes songs")
+    status, a = send(sing, "POST", "/jobs", {"query": "pinned defaults"})
+    assert status == 200
+    status, b = send(sing, "POST", "/jobs", {"query": "pinned request", "url": None, "pitch": None, "key": "3",
+                                             "backing": "drop", "force": True, "unknown": 1})
+    assert status == 200
+    for job in (a["job"], b["job"]):
+        sing.delete(f"/jobs/{job['id']}")
+        wait(sing, job["id"])
+    assert a["job"]["request"] == {"query": "pinned defaults", "key": 0, "backing": "keep", "force": False,
+                                   "exclusive_ack": False}
+    assert b["job"]["request"] == {"query": "pinned request", "key": 3, "backing": "drop", "force": True,
+                                   "exclusive_ack": False}
+
+
+def test_lyrics_request_bodies(sing):
+    no_song = (404, {"error": "no song nosuchsong"})
+    for body in (NO_BODY, b"null", {}, {"title": None, "artist": None, "fresh": False},
+                 {"title": "t" * 200, "artist": "a" * 200, "fresh": True}, {"fresh": "yes"}, {"unknown": 1}):
+        assert send(sing, "POST", "/songs/nosuchsong/lyrics", body) == no_song, body
+    for body, error in (
+        ({"title": "t" * 201}, "title: String should have at most 200 characters"),
+        ({"artist": "a" * 201}, "artist: String should have at most 200 characters"),
+        ({"artist": 5}, "artist: Input should be a valid string"),
+        ({"fresh": "maybe"}, "fresh: Input should be a valid boolean, unable to interpret input"),
+        ({"fresh": None}, "fresh: Input should be a valid boolean"),
+        (b"[]", "body: Input should be a valid dictionary or object to extract fields from"),
+        (b"nope", "0: JSON decode error"),
+    ):
+        assert send(sing, "POST", "/songs/nosuchsong/lyrics", body) == (400, {"error": INVALID + error}), body
+
+
+def test_gpu_context_request_bodies(sing):
+    if not is_mock():
+        pytest.skip("tells the worker who listens")
+    server = sys.modules["sing_server"]
+    try:
+        for body in ({}, {"in_voice": True, "listeners": 3, "live": False, "urgent": ["j"] * 200},
+                     {"in_voice": "true", "listeners": "2", "live": 0}, {"unknown": 1}):
+            assert send(sing, "POST", "/gpu/context", body) == (200, {"ok": True}), body
+        for body, error in (
+            ({"listeners": -1}, "listeners: Input should be greater than or equal to 0"),
+            ({"listeners": 1.5}, "listeners: Input should be a valid integer, got a number with a fractional part"),
+            ({"listeners": None}, "listeners: Input should be a valid integer"),
+            ({"in_voice": None}, "in_voice: Input should be a valid boolean"),
+            ({"live": "maybe"}, "live: Input should be a valid boolean, unable to interpret input"),
+            ({"urgent": ["j"] * 201}, "urgent: List should have at most 200 items after validation, not 201"),
+            ({"urgent": "j"}, "urgent: Input should be a valid list"),
+            ({"urgent": [1]}, "urgent.0: Input should be a valid string"),
+            ({"urgent": None}, "urgent: Input should be a valid list"),
+            (b"[]", "body: Input should be a valid dictionary or object to extract fields from"),
+            (b"null", "body: Input should be a valid dictionary or object to extract fields from"),
+            (NO_BODY, "body: Field required"),
+        ):
+            assert send(sing, "POST", "/gpu/context", body) == (400, {"error": INVALID + error}), body
+    finally:
+        server.state.machine.audience = server.Audience()
+
+
+def test_prune_request_bodies(sing):
+    for body in (NO_BODY, b"null", {}, {"dry_run": True}, {"dry_run": False}, {"dry_run": "yes"}, {"unknown": 1}):
+        status, _ = send(sing, "POST", "/cache/prune?dry_run=true", body)
+        assert status == 200, body
+    for body, error in (
+        ({"dry_run": "maybe"}, "dry_run: Input should be a valid boolean, unable to interpret input"),
+        ({"dry_run": None}, "dry_run: Input should be a valid boolean"),
+        (b"[]", "body: Input should be a valid dictionary or object to extract fields from"),
+        (b"nope", "0: JSON decode error"),
+    ):
+        assert send(sing, "POST", "/cache/prune?dry_run=true", body) == (400, {"error": INVALID + error}), body

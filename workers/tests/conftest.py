@@ -44,6 +44,23 @@ def make_wav(seconds: float = 0.5, rate: int = 16_000, channels: int = 1, freq: 
     return buf.getvalue()
 
 
+NO_BODY = object()
+"""For `send`: the request goes without a body."""
+
+
+def send(client, method: str, path: str, body=NO_BODY) -> tuple[int, dict | None]:
+    """Status and JSON answer (``None`` when the answer is not JSON) of a request whose body is
+    ``body`` as JSON. Bytes are sent as they are, as JSON: ``b"null"``, ``b"[]"``, broken JSON."""
+    if body is NO_BODY:
+        r = client.request(method, path)
+    elif isinstance(body, bytes):
+        r = client.request(method, path, content=body, headers={"content-type": "application/json"})
+    else:
+        r = client.request(method, path, json=body)
+    is_json = r.headers.get("content-type", "").startswith("application/json")
+    return r.status_code, (r.json() if is_json else None)
+
+
 def pcm_to_wav(pcm: bytes, rate: int) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:

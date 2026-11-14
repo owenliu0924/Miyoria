@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
-from conftest import ROOT, make_wav
+from conftest import NO_BODY, ROOT, make_wav, send
 from fastapi.testclient import TestClient
 
 TWO = "第一句話在這裡。第二句話也在這裡。"
@@ -810,3 +810,75 @@ def test_the_qwen_tts_backend_uses_the_same_references(load_server, voice_dir):
         r = client.post("/tts", json={"text": S1, "language": "Japanese", "emotion": "happy"})
         assert r.status_code == 200 and r.headers["x-tts-reference"] == "bank/ja/happy"
     assert used[-1]["text"] == "やった" and used[-1]["xvec"] is False
+
+
+# ── what /tts and /offload take and refuse ───────────────────────────────────
+# Pinned with the hand-written request models, before they were generated from the JSON Schema:
+# the generated ones must take and refuse exactly the same, with the same status and error body.
+
+INVALID = "invalid request: "
+NOT_AN_OBJECT = INVALID + "body: Input should be a valid dictionary or object to extract fields from"
+
+TTS_BODIES = [
+    ({"text": S1}, 200, None),
+    ({"text": S1, "language": None, "emotion": None, "instruct": None, "voice": None, "priority": None}, 200, None),
+    ({"text": S1, "language": "zh", "emotion": "happy", "instruct": "輕聲", "voice": "v1", "priority": "ahead"}, 200, None),
+    ({"text": S1, "priority": "whenever", "unknown": {"a": 1}}, 200, None),
+    ({"text": "   "}, 400, {"error": "text is empty"}),
+    ({"text": "。" * 3}, 400, {"error": "text has nothing to speak (punctuation only)"}),
+    ({"text": "字" * 2001}, 413, {"error": "text too long (2001 > 2000 chars)"}),
+    ({}, 400, {"error": INVALID + "text: Field required"}),
+    ({"text": None}, 400, {"error": INVALID + "text: Input should be a valid string"}),
+    ({"text": 5}, 400, {"error": INVALID + "text: Input should be a valid string"}),
+    ({"text": S1, "language": 5}, 400, {"error": INVALID + "language: Input should be a valid string"}),
+    ({"text": S1, "emotion": ["happy"]}, 400, {"error": INVALID + "emotion: Input should be a valid string"}),
+    ({"text": S1, "instruct": {}}, 400, {"error": INVALID + "instruct: Input should be a valid string"}),
+    ({"text": S1, "voice": True}, 400, {"error": INVALID + "voice: Input should be a valid string"}),
+    ({"text": S1, "priority": 1}, 400, {"error": INVALID + "priority: Input should be a valid string"}),
+    (b"[]", 400, {"error": NOT_AN_OBJECT}),
+    (b"null", 400, {"error": NOT_AN_OBJECT}),
+    (b"nope", 400, {"error": INVALID + "0: JSON decode error"}),
+    (NO_BODY, 400, {"error": INVALID + "body: Field required"}),
+]
+
+
+def test_tts_request_bodies(run):
+    client, _, _ = run()
+    got = [(body, *send(client, "POST", "/tts", body)) for body, _, _ in TTS_BODIES]
+    assert got == TTS_BODIES
+
+
+OFFLOAD_TAKEN = [
+    NO_BODY,
+    b"null",
+    {},
+    {"reason": "sing", "max_s": 0, "drain_s": 0},
+    {"reason": None, "max_s": None, "drain_s": None},
+    {"max_s": "0", "drain_s": "0.5"},
+    {"max_s": False, "drain_s": True},
+    {"reason": "x" * 500, "max_s": 0, "unknown": [1]},
+]
+
+OFFLOAD_REFUSED = [
+    ({"reason": 5}, INVALID + "reason: Input should be a valid string"),
+    ({"max_s": "soon"}, INVALID + "max_s: Input should be a valid number, unable to parse string as a number"),
+    ({"drain_s": "soon"}, INVALID + "drain_s: Input should be a valid number, unable to parse string as a number"),
+    ({"drain_s": [1]}, INVALID + "drain_s: Input should be a valid number"),
+    ({"max_s": "x", "drain_s": "y"}, INVALID + "max_s: Input should be a valid number, unable to parse string as a number"),
+    (b"[]", NOT_AN_OBJECT),
+    (b"nope", INVALID + "0: JSON decode error"),
+]
+
+
+@pytest.mark.parametrize("body", OFFLOAD_TAKEN)
+def test_offload_takes(run, body):
+    client, _, _ = run()
+    status, answer = send(client, "POST", "/offload", body)
+    assert status == 200 and answer["state"] == "offloaded"
+
+
+def test_offload_refuses(run):
+    client, _, _ = run()
+    for body, error in OFFLOAD_REFUSED:
+        assert send(client, "POST", "/offload", body) == (400, {"error": error}), body
+    assert client.get("/health").json()["offloaded"] is False

@@ -34,6 +34,8 @@ coverage/
 # 本機執行資料與 Python 虛擬環境
 /data/
 workers/.venv-*/
+# TMP / TEMP for Python and pip when the system temp folder is not writable
+/workers/.tmp/
 
 # Claude Code 子代理的暫存 worktree,和它的預覽設定
 /.claude/worktrees/
