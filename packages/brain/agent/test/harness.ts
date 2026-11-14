@@ -329,7 +329,7 @@ export class Harness {
 }
 
 export function noCheck(): JsonValue {
-  return { attention: { llm_check: false } };
+  return {};
 }
 
 export function channel(id: string): ContextKey {

@@ -25,7 +25,7 @@ export const DEFAULT_NOTE_MINUTES = 30;
 export const LONG_RESULT_CHARS = 300;
 /**
  * The reminder for a result nothing keeps after the turn that reads it: a result the hands bring
- * back in a turn of its own (`resultData`), and every tool result of the V2 pipeline.
+ * back in a turn of its own (`resultData`).
  */
 export const KEEP_HINT =
   "\n(這些結果下一回合就看不到了;這段對話之後還會用到的,用 keep_note 用自己的話記下重點)";

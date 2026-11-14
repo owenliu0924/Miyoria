@@ -63,16 +63,13 @@ describe("config", () => {
     const cfg = AgentConfigSchema.parse({
       debounce_ms: 10,
       channels: { c: "always" },
-      attention: { llm_check: false },
     });
     expect(cfg.debounce_ms).toBe(10);
     expect(cfg.channels.c).toBe("always");
-    expect(cfg.attention.llm_check).toBe(false);
     expect(cfg.max_debounce_ms).toBe(4000);
     expect(cfg.tools_enabled).toBe(true);
     expect(cfg.max_tool_steps).toBe(3);
     expect(cfg.contributor_timeout_ms).toBe(800);
-    expect(cfg.max_context_chars).toBe(4000);
     expect(cfg.budget_notice_interval_ms).toBe(3_600_000);
   });
 
@@ -86,8 +83,6 @@ describe("config", () => {
       work: WorkConfigSchema.parse({}),
       history_limit: 240,
       prompt_history: 30,
-      max_prompt_chars: 16_000,
-      max_entry_chars: 2000,
       time_gap_ms: 1_800_000,
       mention_users: true,
       default_mode: null,
@@ -109,7 +104,6 @@ describe("config", () => {
       session_idle_ms: 21_600_000,
       seed: null,
       contributor_timeout_ms: 800,
-      max_context_chars: 4000,
       budget_notice_interval_ms: 3_600_000,
       corrections: {
         tool_text_reask: true,
@@ -124,11 +118,7 @@ describe("config", () => {
         max_share_of_recent: null,
         keywords: [],
         gray_low: 0.3,
-        gray_high: 0.6,
         direct_probability: 1.0,
-        llm_check: true,
-        llm_check_timeout_ms: 8000,
-        llm_yes_probability: 0.9,
         talk_floor: 0.15,
       },
       voice: {
@@ -140,9 +130,7 @@ describe("config", () => {
         max_share_of_recent: 0.2,
         question_window_ms: 8000,
         gray_low: 0.15,
-        llm_check: false,
         speak_ttl_ms: 30_000,
-        voice_first: true,
         text_chat: true,
         text_aside: true,
         keep_in_voice: true,
@@ -186,7 +174,6 @@ describe("config", () => {
           examples: 2500,
         },
         default_budget: 600,
-        self_chars: 1600,
         save_every: 1,
         saved: 50,
         saved_message_chars: 800,

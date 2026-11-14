@@ -121,7 +121,7 @@ describe("only the main line acts", () => {
     const act = mind.slice(mind.indexOf("async #act("));
     expect(act.indexOf("if (board)")).toBeLessThan(act.indexOf("arbiter.submit"));
     const intents = readFileSync(join(ROOT, "packages/brain/agent/src/intents.ts"), "utf8");
-    expect(intents).toContain("if (main !== null && !talkOnly) return this.#propose(intent);");
+    expect(intents).toContain("if (!talkOnly) return this.#propose(intent);");
   });
 
   it("the old self-starting paths cannot run under V3", () => {

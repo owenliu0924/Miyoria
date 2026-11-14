@@ -63,7 +63,6 @@ import {
   newImpulse,
   type PlatformId,
   type PlaybackState,
-  pipelineOf,
   type SavedPrompt,
   SelfStateKey,
   type SocialSignals,
@@ -282,8 +281,8 @@ export class Agent {
   readonly #barges = new Map<TurnId, Handle | null>();
   /** Written sentences of lines she spoke first, by turn: spoken line → subtitle. */
   readonly #subtitles = new Map<TurnId, Map<string, string>>();
-  /** `pipeline = "v3"`: the one foreground decider. `null`: the V2 paths. */
-  readonly mainline: MainLine | null;
+  /** The one foreground decider. */
+  readonly mainline: MainLine;
   /** Her rhythm in text channels: looks, reactions, pacing (`[modules.agent.rhythm]`). */
   readonly rhythm: Rhythm;
   /** Messages people asked her not to remember, by context id (bounded). */
@@ -312,7 +311,7 @@ export class Agent {
       (focus) => ctx.publish(v2Event(TURN_FOCUS_TOPIC, focus), { turn: focus.turn }),
     );
     this.prompts = new SavedPrompts(config.prompt.saved);
-    this.mainline = pipelineOf(ctx.services) === "v3" ? new MainLine(this) : null;
+    this.mainline = new MainLine(this);
     this.rhythm = new Rhythm(ctx.config(RhythmSectionSchema).rhythm, () => ctx.clock.now());
     // An emoji is the cheapest rung of joining in (v4 §7.2). It is no line, so neither the Floor's
     // budget nor her share counts it: it has a limit of its own per channel.
@@ -332,20 +331,22 @@ export class Agent {
 
   /** `TurnSilencer`. */
   silence(why: string): void {
-    const floor = this.mainline?.floor();
+    const floor = this.mainline.floor();
     for (const handle of this.#contexts.values()) {
       handle.inbox.push({ type: "halt" });
       floor?.releaseContext(handle.session.context, why);
     }
     this.#arrivals.clear();
-    this.mainline?.silence();
+    this.mainline.silence();
   }
 
-  static topics(mainline = false): string[] {
+  static topics(): string[] {
     return [
-      ...(mainline
-        ? [ACTION_SETTLED_TOPIC, ACTIVITY_DONE_TOPIC, ACTIVITY_FAILED_TOPIC, "game.*", "sing.*"]
-        : []),
+      ACTION_SETTLED_TOPIC,
+      ACTIVITY_DONE_TOPIC,
+      ACTIVITY_FAILED_TOPIC,
+      "game.*",
+      "sing.*",
       "platform.ready",
       "platform.message.created",
       "platform.typing",
@@ -379,7 +380,7 @@ export class Agent {
         break;
       }
       case "platform_message_created":
-        this.mainline?.noteCause(event.data.id.id, env.id);
+        this.mainline.noteCause(event.data.id.id, env.id);
         this.#onMessage(event.data);
         break;
       case "platform_typing":
@@ -398,8 +399,8 @@ export class Agent {
         if (!this.#isVoice(context)) break;
         this.log.debug({ context: contextId(context), reason }, "left voice, session dropped");
         this.handle.setVoiceRoom(context, false);
-        this.mainline?.lines.dropContext(context, "she left the voice channel");
-        this.mainline?.floor()?.releaseContext(context, "she left the voice channel");
+        this.mainline.lines.dropContext(context, "she left the voice channel");
+        this.mainline.floor()?.releaseContext(context, "she left the voice channel");
         // Closing the inbox stops the coordinator (and its turn).
         const id = contextId(context);
         this.#contexts.get(id)?.inbox.close();
@@ -417,7 +418,7 @@ export class Agent {
         break;
       }
       case "voice_utterance":
-        this.mainline?.noteCause(event.data.id, env.id);
+        this.mainline.noteCause(event.data.id, env.id);
         if (this.#isVoice(event.data.context)) this.#onUtterance(event.data);
         break;
       case "voice_playback":
@@ -441,7 +442,7 @@ export class Agent {
         break;
       }
       case "custom":
-        if (this.mainline?.custom(event.data.topic, event.data.payload)) break;
+        if (this.mainline.custom(event.data.topic, event.data.payload)) break;
         if (event.data.topic === BUDGET_TOPIC) this.#onBudget(event.data.payload);
         else if (event.data.topic === BARGE_IN_TOPIC) this.#onBargeIn(event.data.payload);
         else if (event.data.topic === ARBITER_IMPULSE_TOPIC) {
@@ -860,7 +861,7 @@ export class Agent {
     while (list.length > MAX_NOTICES) list.shift();
     this.#notices.set(id, list);
     // What the hands follow they report themselves, with the line that may be waiting for it.
-    if (this.mainline?.hands.follows(notice.task)) return;
+    if (this.mainline.hands.follows(notice.task)) return;
     if (context !== null) {
       this.#onInitiative(context, { reason: "notice", hint: "", about: [] });
     }
@@ -880,7 +881,7 @@ export class Agent {
   }
 
   /**
-   * A line she spoke before writing it (`voice_first`) got its written sentence: her history
+   * A line she spoke before writing it (`Speech.voiceFirst`) got its written sentence: her history
    * keeps the written one, and `agent.subtitle` tells the overlay.
    */
   noteSubtitle(context: ContextKey, turn: TurnId, spoken: string, written: string): void {
@@ -942,7 +943,7 @@ export class Agent {
   /** Her own speech enters history once it starts playing. */
   #onPlayback(playback: EventData<"voice_playback">): void {
     const { context, turn, state, text, blocked = null } = playback;
-    const heardMs = this.mainline?.lines.playback(context, turn, state, text, blocked) ?? 0;
+    const heardMs = this.mainline.lines.playback(context, turn, state, text, blocked) ?? 0;
     const h = this.#existing(context);
     if (!h) return;
     const name = this.persona.displayName();
@@ -956,14 +957,13 @@ export class Agent {
       case "interrupted":
         h.session.recordInterruption(name, me, written, turn, now);
         // History keeps what was really heard (§7.3), not what she meant to say.
-        if (this.mainline)
-          h.session.keepHeard(turn, written, this.#heard(written, playback, heardMs));
+        h.session.keepHeard(turn, written, this.#heard(written, playback, heardMs));
         break;
       case "finished":
         h.session.noteSelfSpoke(now);
         break;
       case "failed":
-        if (this.mainline) h.session.keepHeard(turn, written, "");
+        h.session.keepHeard(turn, written, "");
         break;
     }
     if (turn !== null) h.inbox.push({ type: "playback", turn, state });
@@ -1032,7 +1032,7 @@ export class Agent {
 
   /** A claim of `kind` is coming in `context`: what speaks there gives way as far as it must. */
   yieldTo(context: ContextKey, kind: FloorClaimKind): void {
-    const floor = this.mainline?.floor();
+    const floor = this.mainline.floor();
     const holder = floor?.holder(context) ?? null;
     if (!floor || holder === null) return;
     const level = floor.interruptLevel(kind, holder.kind);

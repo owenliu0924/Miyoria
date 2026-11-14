@@ -156,7 +156,7 @@ describe("a look instead of the dice (§7.2)", () => {
   it("a topic of hers opens a turn where she picks the rung, up to the cap", async () => {
     const llm = new Scripted([reply("<silence/>", ["react", '{"emoji":"🐋"}'])]);
     const h = await rig(llm, {
-      attention: { llm_check: false, keywords: ["鯨魚"] },
+      attention: { keywords: ["鯨魚"] },
       rhythm: { looks_per_hour: 1 },
     });
     h.say(incoming(C, "Alice", "昨天在海邊看到鯨魚"));
@@ -211,7 +211,7 @@ describe("a look instead of the dice (§7.2)", () => {
   it("an emoji has a limit of its own", async () => {
     const llm = new Scripted([reply("<silence/>", ["react", '{"emoji":"🐋"}'])]);
     const h = await rig(llm, {
-      attention: { llm_check: false, keywords: ["鯨魚"] },
+      attention: { keywords: ["鯨魚"] },
       rhythm: { reactions_per_hour: 1 },
     });
     h.say(incoming(C, "Alice", "鯨魚"));

@@ -18,7 +18,6 @@ import {
   MouthKey,
   PromptContributorsKey,
   ProposalBoardKey,
-  pipelineOf,
   SelfStateKey,
   TurnFocusViewKey,
   TurnSilencerKey,
@@ -73,8 +72,8 @@ const RECOVER_DELAY_MS = 5_000;
  * the actuator registry. Provides `IntentSinkKey`: her mind loop's intents become turns she
  * starts herself (principal `self`, with tools). Provides `ImpulseHostKey`: the Arbiter's
  * accepted impulses open her turns here (and her intents go through the Arbiter while it runs).
- * Under `pipeline = "v3"` her turns are turns of the main line (mainline/main.ts), which also
- * provides `MouthKey` and `ProposalBoardKey`.
+ * Her turns are turns of the main line (mainline/main.ts), which also provides `MouthKey` and
+ * `ProposalBoardKey`.
  * Provides `TurnFocusViewKey` (whom each turn in
  * flight answers, for voice barge-in) and `SavedPromptsKey` (compressed prompts of recent turns,
  * also published as `agent.prompt`); every turn ends with an `agent.turn.outcome`.
@@ -195,7 +194,7 @@ export class AgentModule implements Module {
       ),
     );
 
-    const events = ctx.subscribe(Agent.topics(pipelineOf(ctx.services) === "v3"));
+    const events = ctx.subscribe(Agent.topics());
     ctx.provide(PersonaHandleKey, this.#persona);
     ctx.provide(AgentHandleKey, handle);
     if (own) ctx.provide(ToolRegistryKey, tools);
@@ -224,18 +223,16 @@ export class AgentModule implements Module {
     ctx.provide(SavedPromptsKey, agent.prompts);
     this.#agent = agent;
     const lane = config.work.enabled ? this.#startLane(ctx, agent, tools, actuators) : null;
-    if (agent.mainline !== null) {
-      ctx.provide(MouthKey, agent.mainline);
-      // Her own wishes to work become work-lane tasks on the same board (worklane/initiative.ts).
-      const proposals = agent.mainline.proposals;
-      ctx.provide(
-        ProposalBoardKey,
-        lane === null || !config.work.initiative
-          ? proposals
-          : workBoard(proposals, () => !ctx.signal.aborted),
-      );
-      await agent.mainline.start();
-    }
+    ctx.provide(MouthKey, agent.mainline);
+    // Her own wishes to work become work-lane tasks on the same board (worklane/initiative.ts).
+    const proposals = agent.mainline.proposals;
+    ctx.provide(
+      ProposalBoardKey,
+      lane === null || !config.work.initiative
+        ? proposals
+        : workBoard(proposals, () => !ctx.signal.aborted),
+    );
+    await agent.mainline.start();
     ctx.spawn("events", () => agent.run(events));
   }
 
@@ -260,7 +257,7 @@ export class AgentModule implements Module {
       services: ctx.services,
       publish: (topic, payload) => ctx.publish(customEvent(topic, payload)),
       follow: (topic, payload) => {
-        main?.custom(topic, payload);
+        main.custom(topic, payload);
       },
       store: () => ctx.services.get(SettingsStoreKey) ?? null,
       profile: () => persona.read((p) => p.id),
@@ -271,7 +268,7 @@ export class AgentModule implements Module {
       }),
       rules: (context) => ctx.services.get(DirectivesKey)?.inject(context) ?? [],
       retell: ({ context, requester, detail }) => {
-        main?.hands.report({
+        main.hands.report({
           context: context ?? ACTING_ALONE,
           tool: WORK_START_TOOL,
           state: "failed",
@@ -284,11 +281,9 @@ export class AgentModule implements Module {
     });
     this.#lane = lane;
     ctx.provide(WorkLaneKey, lane);
-    if (main !== null) {
-      main.hands.lookUpEnded((task) => lane.ended(task));
-      for (const capability of workCapabilities({ lane, tools: () => tools })) {
-        this.#unregister.push(actuators.register(capability));
-      }
+    main.hands.lookUpEnded((task) => lane.ended(task));
+    for (const capability of workCapabilities({ lane, tools: () => tools })) {
+      this.#unregister.push(actuators.register(capability));
     }
     ctx.spawn("work-recover", async (signal) => {
       // After the Floor and the Arbiter are up: telling her opens a turn through them.
@@ -303,7 +298,7 @@ export class AgentModule implements Module {
     this.#lane?.close();
     this.#lane = null;
     this.#commands.uninstall();
-    this.#agent?.mainline?.stop();
+    this.#agent?.mainline.stop();
     this.#agent = null;
     this.#tools.unregister(ReactTool.NAME);
     this.#tools.unregister(KeepNoteTool.NAME);

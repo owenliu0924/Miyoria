@@ -115,7 +115,7 @@ describe("attention", () => {
   });
 
   it("ambient_scoring_and_gray_zone", () => {
-    let cfg = config({ keywords: ["鯨魚"] });
+    const cfg = config({ keywords: ["鯨魚"] });
     const busy = busyChatter();
     const s = sessionWith(busy);
     let a = run(cfg, "normal", s, busy.slice(5));
@@ -125,13 +125,11 @@ describe("attention", () => {
     const s2 = sessionWith(busy);
     s2.recordMessage(q[0] as IncomingMessage, false);
     a = run(cfg, "normal", s2, q);
-    expect(a.gate, a.reasons.join("; ")).toEqual({ kind: "ask_llm" });
-    cfg = { ...cfg, llm_check: false };
-    expect(run(cfg, "normal", s2, q).gate.kind).toBe("sample");
+    expect(a.gate.kind, a.reasons.join("; ")).toBe("sample");
   });
 
   it("follow_up_and_share", () => {
-    const cfg = config({ llm_check: false });
+    const cfg = config();
     const s = sessionWith([msg("channel", "a", "早")]);
     s.recordOwn("Her", me, "早啊", newId(), Date.now());
     const reply = [msg("channel", "a", "妳今天幹嘛")];
@@ -151,7 +149,7 @@ describe("attention", () => {
   describe("someone who goes on talking with her", () => {
     const quiet = (session: Session, inputs: IncomingMessage[], modelMayPass = true) =>
       assess({
-        config: config({ llm_check: false }),
+        config: config(),
         mode: "quiet",
         activeness: "medium",
         ceiling: CEILINGS.quiet,
@@ -322,7 +320,7 @@ describe("attention", () => {
       const s = backAndForth();
       const inputs = said(s, "a", "好啊");
       const a = assess({
-        config: config({ llm_check: false }),
+        config: config(),
         mode: "mention-only",
         activeness: "medium",
         names: NAMES,
@@ -339,7 +337,7 @@ describe("attention", () => {
   });
 
   it("interests_raise_salience", () => {
-    const cfg = config({ llm_check: false });
+    const cfg = config();
     const busy = busyChatter();
     const q = [msg("channel", "p1", "昨天去看了深海紀錄片")];
     const s = sessionWith(busy);
@@ -360,7 +358,7 @@ describe("attention", () => {
   });
 
   it("activeness_moves_her_default_talkativeness", () => {
-    const cfg = config({ llm_check: false });
+    const cfg = config();
     const q = [msg("channel", "a", "你們看過鯨魚嗎?")];
     let s = sessionWith(q);
     const medium = sample(run(cfg, "normal", s, q));
@@ -412,7 +410,7 @@ describe("attention", () => {
   }
 
   it("voice_rules", () => {
-    const cfg = config({ llm_check: false });
+    const cfg = config();
     const q = [msg("voice", "a", "你們看過鯨魚嗎?")];
     let s = sessionWith(q);
     const text = sample(run(cfg, "normal", s, q));
@@ -458,7 +456,7 @@ describe("attention", () => {
   });
 
   it("her quiet setting never shuts out someone answering her", () => {
-    const cfg = config({ llm_check: false });
+    const cfg = config();
     const s = sessionWith([msg("channel", "a", "早")]);
     s.recordOwn("Her", me, "早啊", newId(), Date.now());
     const reply = [msg("channel", "a", "妳今天幹嘛")];
@@ -555,7 +553,7 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
   };
   const passable = (s: Session, inputs: IncomingMessage[], modelMayPass = true) =>
     assess({
-      config: config({ llm_check: false }),
+      config: config(),
       mode: "quiet",
       activeness: "medium",
       ceiling: CEILINGS.quiet,
@@ -639,7 +637,7 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
     expect(a.opened, a.reasons.join("; ")).toBe("reaction");
     // It counts as a look: once the looks of the hour are spent, it is only seen next time.
     const spent = assess({
-      config: config({ llm_check: false }),
+      config: config(),
       mode: "normal",
       activeness: "medium",
       ceiling: CEILINGS.normal,
@@ -672,7 +670,7 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
       m.id = { ...m.id, id: newId() };
       s.recordUtterance(m);
       return assess({
-        config: config({ llm_check: false }),
+        config: config(),
         mode: "normal",
         activeness: "medium",
         names: NAMES,
@@ -738,7 +736,7 @@ describe("a look (v4 §7.2)", () => {
     return m;
   };
   const lookInput = (s: Session, m: IncomingMessage, mode: "quiet" | "normal" | "lively") => ({
-    config: config({ llm_check: false, keywords: ["鯨魚"] }),
+    config: config({ keywords: ["鯨魚"] }),
     mode,
     activeness: "medium" as const,
     ceiling: CEILINGS[mode],

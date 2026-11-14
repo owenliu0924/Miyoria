@@ -150,7 +150,6 @@ function provide(services: Services, voice: boolean) {
 
 async function rig(chat: ChatProvider, voice: boolean): Promise<Harness> {
   const config: JsonValue = {
-    attention: { llm_check: false },
     ...(voice ? { voice: { default_mode: "always", cooldown_ms: 0 } } : {}),
   };
   return Harness.build(voice ? "off" : "normal", config, chat, null, {

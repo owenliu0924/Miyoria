@@ -310,7 +310,7 @@ describe("intents", () => {
 describe("talkativeness", () => {
   it("decides whether she joins in in text", async () => {
     const chat = new MockProvider("chat").reply("我也覺得");
-    const config = { attention: { llm_check: false, cooldown_ms: 0, keywords: ["鯨魚"] } };
+    const config = { attention: { cooldown_ms: 0, keywords: ["鯨魚"] } };
     const r = await rig("lively", config, chat);
     const self = new FakeSelf();
     r.h.sup.services.provide("self", SelfStateKey, self.asSelf());
@@ -349,7 +349,6 @@ describe("talkativeness", () => {
       .reply("我們可以去吃拉麵");
     // Setting it runs inside her turn, which then goes on to answer.
     const config = {
-      attention: { llm_check: false },
       voice: { cooldown_ms: 0 },
       mainline: { loop_tools: [...LOOP_TOOLS, "channel_activeness"] },
     };
@@ -381,7 +380,7 @@ describe("talkativeness", () => {
 describe("channel levels", () => {
   it("quiet bounds her own starts there", async () => {
     const chat = new MockProvider("chat").reply("欸大家").reply("我又來了");
-    const config = { attention: { llm_check: false, cooldown_ms: 0 } };
+    const config = { attention: { cooldown_ms: 0 } };
     const r = await rig("quiet", config, chat);
     const c = channel("c");
     expect(r.intents.ceiling?.(c)).toEqual({ mode: "quiet", label: "安靜", blocked: null });

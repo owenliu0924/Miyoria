@@ -88,16 +88,16 @@ describe("every line of hers is reviewed", () => {
     ] as const) {
       expect(bodyOf(turn, head), head).toContain(call);
     }
-    // Both text `send` closures, and both `Speech`es get the review.
-    expect(turn.match(/const send = async \(raw: string\) => \{/g)).toHaveLength(2);
-    // Each closure reviews every part it sends (`[回覆 N]` splits one into several).
+    // The text `send` closure and the `Speech` get the review.
+    expect(turn.match(/const send = async \(raw: string\) => \{/g)).toHaveLength(1);
+    // The closure reviews every part it sends (`[回覆 N]` splits one into several).
     expect(
       turn.match(/const safe = this\.#safe\(cleanReply\(mark\.text, names\)\);/g),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(
       turn.match(/\(text, spoken, aloud\) => this\.#safe\(text, spoken, aloud\)/g),
-    ).toHaveLength(2);
-    expect(turn.match(/new Speech\(/g)).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(turn.match(/new Speech\(/g)).toHaveLength(1);
     // What says which path it is.
     expect(turn).toContain('this.#fallback ? "fallback" : "reply"');
     expect(turn).toContain("this.#fallback = stream.fallback;");

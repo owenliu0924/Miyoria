@@ -5,7 +5,7 @@
 // (`chat_text`, `chat_voice`, `chat_intent`; off by default for replies). Text replies go out
 // line by line as they are written; voice replies are spoken sentence by sentence while the
 // model is still generating (links and code blocks go to the voice channel's text chat instead
-// of being read out), a bilingual line as soon as its `<voice>` part is complete.
+// of being read out), a bilingual line together with its written sentence.
 //
 // The turn answers its focus (focus.ts): the "要回的訊息" block shows only the focus messages,
 // naming who asked, and a reply quotes the first of them. Every turn ends with one
@@ -20,10 +20,10 @@
 // permission node are refused); her plan goes into the data message. While the LLM budget is exhausted nothing is generated: a turn she would
 // have answered gets a canned line at most once per context per `budget_notice_interval_ms`.
 //
-// Under `pipeline = "v3"` (`Agent.mainline`) a turn is a turn of the main line: it holds the Floor,
-// makes one call for what she says and does (`TurnOutput`, no tool loop: the hands report back in a
-// turn of their own), every line goes through the gate and the ledger (mainline/), and a call that
-// fails ends in a fixed line instead of silence. `#speakMain` is that path; the rest is shared.
+// A turn is a turn of the main line (`Agent.mainline`): it holds the Floor, makes one call for
+// what she says and does (`TurnOutput`; the tools that answer at once run in its tool loop, the
+// hands report the rest back in a turn of their own), every line goes through the gate and the
+// ledger (mainline/), and a call that fails ends in a fixed line instead of silence (`#speakMain`).
 
 import {
   assistantMessage,
@@ -125,15 +125,7 @@ import {
   type TalkLevel,
   type VoiceAttention,
 } from "./attention.js";
-import {
-  acceptedRequests,
-  asksForGame,
-  type Backing,
-  claimReminder,
-  toolsWrittenAsText,
-  toolTextReminder,
-  unbackedClaim,
-} from "./claims.js";
+import { asksForGame, claimReminder, toolsWrittenAsText, toolTextReminder } from "./claims.js";
 import { budgetBlocks, budgetSelf, contributedData, savedPrompt } from "./compiler.js";
 import type { AttentionConfig, ChannelMode } from "./config.js";
 import { AMBIENT_MODES, typingRefreshMs } from "./config.js";
@@ -225,15 +217,10 @@ import {
 } from "./mainline/prompt.js";
 import { linkMentions, type MentionTarget } from "./mentions.js";
 import { agentTurns, CorrectionTally } from "./metrics.js";
-import { KEEP_HINT, LONG_RESULT_CHARS, loopKeepHint, NOTE_TOOLS } from "./notes.js";
+import { LONG_RESULT_CHARS, loopKeepHint, NOTE_TOOLS } from "./notes.js";
 import { prohibitionOf } from "./prohibition.js";
 import {
-  afterFold,
-  buildMessages,
-  checkMessages,
   cleanReply,
-  dataMessage,
-  EXAMPLES_TITLE,
   FEELING_TITLE,
   FLAGGED_TITLE,
   flaggedBody,
@@ -243,9 +230,7 @@ import {
   type IntentData,
   intentBody,
   PRESENT_TITLE,
-  rulesPrompt,
   severalPeople,
-  situationPrompt,
   splitByReplyMarks,
   splitMessage,
   type TraceAnchor,
@@ -274,21 +259,10 @@ import {
 } from "./speech.js";
 import { offeredIn, scopeOfHer, scopeOfSnapshot, type ToolScope } from "./tool-scope.js";
 import { KeepNoteTool, ReactTool } from "./tools.js";
-import {
-  charCount,
-  contextId,
-  fixed,
-  framedAsIs,
-  guard,
-  TimeoutError,
-  timeout,
-  toolBatches,
-} from "./util.js";
+import { charCount, contextId, fixed, framedAsIs, guard, TimeoutError, timeout } from "./util.js";
 import { imageParts, selectImages } from "./vision.js";
 
 const TYPING_TTL_MS = 10_000;
-/** History lines shown to the `fast` model. */
-const CHECK_HISTORY = 12;
 /** History lines before the input sent to prompt contributors. */
 const CONTRIBUTOR_HISTORY = 6;
 /** People in the prompt request and the people block (text contexts). */
@@ -462,11 +436,6 @@ interface Step {
   /** Raw text as the model wrote it (tags included). */
   raw: string;
   calls: ToolCall[];
-}
-
-interface CheckReply {
-  respond: boolean;
-  reason: string;
 }
 
 /** Written sentences a bilingual reply may hold before their `<voice>` line is given up on. */
@@ -810,7 +779,7 @@ export function textPieces(text: string): string[] {
  * Text replies go out line by line while the model writes (a line break outside code blocks
  * ends a message, unless it is inside a list or a run of links: `breaksAt`). A line that claims
  * something only a tool does, with nothing backing it (claims.ts), is held back (with the rest of
- * the response), so the reminder in `#produce` can still replace it.
+ * the response), so the main line's reminder can still replace it.
  */
 class TextSegments {
   /** UTF-16 offset into the step's text up to which it was handled. */
@@ -917,37 +886,6 @@ export function truncate(text: string, maxChars: number): string {
   return chars.length > maxChars ? `${chars.slice(0, maxChars).join("")}…` : text;
 }
 
-export class CheckError extends Error {
-  override readonly name = "CheckError";
-}
-
-/** Parses the `fast` model's `{"respond": bool, "reason": "..."}` reply. */
-export function parseCheck(text: string): CheckReply {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1 || start >= end) {
-    throw new CheckError("no JSON object in fast model reply");
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(text.slice(start, end + 1));
-  } catch (error) {
-    throw new CheckError(`invalid JSON from fast model: ${errorMessage(error)}`);
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new CheckError("invalid JSON from fast model: expected an object");
-  }
-  const obj = value as Record<string, unknown>;
-  if (typeof obj.respond !== "boolean") {
-    throw new CheckError("invalid JSON from fast model: `respond` must be a boolean");
-  }
-  const reason = obj.reason ?? "";
-  if (typeof reason !== "string") {
-    throw new CheckError("invalid JSON from fast model: `reason` must be a string");
-  }
-  return { respond: obj.respond, reason };
-}
-
 /** Topic of latency measurements (the `voice` package's `LATENCY_TOPIC`). */
 const VOICE_LATENCY_TOPIC = "voice.latency";
 
@@ -971,12 +909,10 @@ class Turn {
   #saved: SavedPrompt | null = null;
   /** Prompt tokens of the first model response, as the provider reported them. */
   #promptTokens: number | null = null;
-  /** The notices she was told in this turn (they may back what she says she did). */
-  #notices: readonly Notice[] = [];
   /** Tools of this turn that answered without an error. */
   readonly #succeeded = new Set<string>();
-  /** `pipeline = "v3"`: this turn of the main line. */
-  readonly #main: MainTurn | null;
+  /** This turn of the main line. */
+  readonly #main: MainTurn;
   /** The router says a fallback model is answering: its words are reviewed as such. */
   #fallback = false;
   /** The calls of the tool loop in this turn, for the trace kept beside her reply (v4 §4.2). */
@@ -1009,9 +945,7 @@ class Turn {
     this.voice = key.kind === "voice";
     this.social = agent.social();
     this.#tally = new CorrectionTally(this.voice);
-    const main = agent.mainline;
-    this.#main =
-      main === null ? null : new MainTurn(main, agent, turn, key, this.#claim(), this.#tally);
+    this.#main = new MainTurn(agent.mainline, agent, turn, key, this.#claim(), this.#tally);
   }
 
   /** What the Floor knows this turn as. */
@@ -1047,7 +981,7 @@ class Turn {
     return {
       kind,
       attention: i?.attention ?? answers,
-      cause: this.agent.mainline?.causeOf(first?.id.id) ?? null,
+      cause: this.agent.mainline.causeOf(first?.id.id) ?? null,
       muted: this.intent?.muted === true || unheard,
       proposal,
       chain: i?.chain ?? null,
@@ -1056,7 +990,7 @@ class Turn {
 
   /** Generation is over, however it went. */
   ended(): void {
-    this.#main?.ended();
+    this.#main.ended();
     // Whatever she says now is on its way (or nothing is): no filler for this turn any more.
     if (this.voice) this.agent.ctx.services.get(VoiceTurnsKey)?.settle(this.turn);
   }
@@ -1154,7 +1088,7 @@ class Turn {
    */
   async fallback(): Promise<string> {
     const main = this.#main;
-    if (main === null || !main.owed || this.#parts > 0 || main.claim.muted) return "";
+    if (!main.owed || this.#parts > 0 || main.claim.muted) return "";
     // A voice turn started early that failed says nothing before it is confirmed (or dropped).
     try {
       await this.#confirmed();
@@ -1311,15 +1245,15 @@ class Turn {
       // Voice, started early: the person may still go on, and then this turn never was.
       await this.#confirmed();
       this.#publishDecision(false, score, reasons);
-      this.#main?.silent(reasons.at(-1) ?? "");
+      this.#main.silent(reasons.at(-1) ?? "");
       return "";
     }
-    const refused = this.#main?.take() ?? null;
+    const refused = this.#main.take();
     if (refused !== null) {
       await this.#confirmed();
       reasons.push(`floor: ${refused}`);
       this.#publishDecision(false, score, reasons);
-      this.#main?.silent(refused);
+      this.#main.silent(refused);
       return "";
     }
     this.#mark("decided");
@@ -1547,7 +1481,7 @@ class Turn {
         (m) => m.mentions_self || (m.reply_to_self && directReason(m, names) === "reply"),
       ) ??
       pool.at(-1) ??
-      (this.#main?.claim.chain?.requester as IncomingMessage | undefined)
+      (this.#main.claim.chain?.requester as IncomingMessage | undefined)
     );
   }
 
@@ -1555,7 +1489,7 @@ class Turn {
   #askers(): AccountRef[] {
     const authors = this.#authors();
     if (authors.length > 0) return authors;
-    const requester = this.#main?.claim.chain?.requester as IncomingMessage | undefined;
+    const requester = this.#main.claim.chain?.requester as IncomingMessage | undefined;
     return requester === undefined ? [] : [requester.author.account];
   }
 
@@ -1599,18 +1533,12 @@ class Turn {
     let attentionCfg: AttentionConfig;
     let maxShare: number;
     if (this.voice) {
-      attentionCfg = {
-        ...cfg.attention,
-        llm_check: voiceCfg.llm_check,
-        gray_low: voiceCfg.gray_low,
-      };
+      attentionCfg = { ...cfg.attention, gray_low: voiceCfg.gray_low };
       maxShare = voiceCfg.max_share_of_recent;
     } else {
       attentionCfg = cfg.attention;
       maxShare = cfg.attention.max_share_of_recent ?? profileShare;
     }
-    // §2: asking a model whether to speak is close to a coin toss; the Floor decides by rules.
-    if (this.#main !== null) attentionCfg = { ...attentionCfg, llm_check: false };
     const voice: VoiceAttention | null = this.voice
       ? {
           someoneSpeaking: this.session.someoneSpeaking(),
@@ -1622,7 +1550,7 @@ class Turn {
     // v4 §7.2: under the main line a text channel with a level gets looks instead of the dice.
     const rhythm = this.agent.rhythm;
     const look: LookFacts | null =
-      this.#main !== null && !this.voice && ceiling !== null
+      !this.voice && ceiling !== null
         ? {
             used: rhythm.looksUsed(this.key),
             perHour: rhythm.config.looks_per_hour,
@@ -1645,39 +1573,12 @@ class Turn {
       inputs: this.inputs,
       now: this.#now,
       voice,
-      modelMayPass: this.#main !== null,
+      modelMayPass: true,
       look,
     });
     const reasons = assessment.reasons;
     if (mode !== configured) reasons.push(`llm budget ${budget}: as mention-only`);
-    const scale = assessment.ambientScale;
-    const ambient = (p: number): number => Math.min(Math.max(p * scale, 0), 1);
-    let probability: number;
-    switch (assessment.gate.kind) {
-      case "ignore":
-        probability = 0;
-        break;
-      case "sample":
-        probability = assessment.gate.probability;
-        break;
-      case "ask_llm": {
-        try {
-          const reply = await this.#llmCheck();
-          if (reply.respond) {
-            reasons.push(`fast model: respond (${reply.reason})`);
-            probability = ambient(cfg.attention.llm_yes_probability);
-          } else {
-            reasons.push(`fast model: stay quiet (${reply.reason})`);
-            probability = 0;
-          }
-        } catch (error) {
-          if (this.signal.aborted) throw error;
-          reasons.push(`fast model check failed: ${errorMessage(error)}`);
-          probability = ambient(assessment.score);
-        }
-        break;
-      }
-    }
+    const probability = assessment.gate.kind === "sample" ? assessment.gate.probability : 0;
     const [respond, roll] = sample(probability, this.agent.random);
     reasons.push(
       roll === null
@@ -1708,35 +1609,6 @@ class Turn {
   #llmSession(): string {
     const profile = this.agent.persona.read((p) => p.id);
     return contextSession(profile, this.key);
-  }
-
-  async #llmCheck(): Promise<CheckReply> {
-    const router = this.agent.ctx.services.require(LlmRouterKey);
-    const name = this.agent.persona.displayName();
-    const messages = checkMessages(
-      name,
-      this.session.recent(CHECK_HISTORY).filter((e) => !this.#hidden(e)),
-    );
-    const request: ChatRequest = {
-      messages,
-      temperature: 0,
-      max_tokens: 1000, // reasoning models spend part of this on thinking
-      json_mode: true,
-      reasoning_purpose: "fast",
-      session: `${this.#llmSession()}-attention`,
-    };
-    // The voice gray-zone check is on the reply's critical path: never any reasoning. Text
-    // checks use `[llm.reasoning] fast` (default off).
-    if (this.voice) request.reasoning = "off";
-    const response = await timeout(
-      this.agent.config.attention.llm_check_timeout_ms,
-      this.signal,
-      (signal) =>
-        withLlmTag({ module: "agent", turn: this.turn, label: "attention" }, () =>
-          router.complete("fast", request, signal),
-        ),
-    );
-    return parseCheck(response.text);
   }
 
   /** The name she knows `account` by in this turn. */
@@ -1812,9 +1684,8 @@ class Turn {
     const crushHere = crush !== null && present.some((p) => p.person === crush.person);
     // The contributors are asked while her memory is read: the two waits overlap.
     const registry = services.get(PromptContributorsKey);
-    // The main line reads memory through its layers (`#mainMemory`), not the V2 contributor.
-    const skip =
-      this.#main !== null && services.has(MemoryRetrievalKey) ? [MEMORY_CONTRIBUTOR] : [];
+    // The main line reads memory through its layers (`#mainMemory`), not the contributor.
+    const skip = services.has(MemoryRetrievalKey) ? [MEMORY_CONTRIBUTOR] : [];
     // Voice: what does not depend on her line is read warm, the rest waited for briefly (§7.5).
     const warm = this.#warm(present);
     const gathering =
@@ -1824,26 +1695,24 @@ class Turn {
           : this.#gatherVoice(registry, request, skip, warm)
         : null;
     gathering?.catch(() => undefined);
-    const skills = this.#main !== null ? this.#mainSkills(warm) : null;
-    skills?.catch(() => undefined);
+    const skills = this.#mainSkills(warm);
+    skills.catch(() => undefined);
     let people: string | null | undefined;
-    if (this.#main !== null) {
-      // With person profiles, the people present are one slow block of theirs instead of the
-      // agent's people line and the pinned people section (v4 §5.6).
-      const profiled = services.has(PersonProfilesKey);
-      const crushOf = crushHere ? (crush?.person ?? null) : null;
-      if (warm !== null) {
-        // Side by side: the profiles cannot leave out what this turn's retrieval brings, but
-        // they no longer wait for it (two 800 ms waits in a row before, 2026-11-10).
-        const [, read] = await Promise.all([
-          this.#mainMemory(extras, present, request, profiled, warm),
-          profiled ? this.#mainPeople(extras, present, [], crushOf, warm) : undefined,
-        ]);
-        people = read;
-      } else {
-        const retrieved = await this.#mainMemory(extras, present, request, profiled);
-        if (profiled) people = await this.#mainPeople(extras, present, retrieved, crushOf);
-      }
+    // With person profiles, the people present are one slow block of theirs instead of the
+    // agent's people line and the pinned people section (v4 §5.6).
+    const profiled = services.has(PersonProfilesKey);
+    const crushOf = crushHere ? (crush?.person ?? null) : null;
+    if (warm !== null) {
+      // Side by side: the profiles cannot leave out what this turn's retrieval brings, but
+      // they no longer wait for it (two 800 ms waits in a row before, 2026-11-10).
+      const [, read] = await Promise.all([
+        this.#mainMemory(extras, present, request, profiled, warm),
+        profiled ? this.#mainPeople(extras, present, [], crushOf, warm) : undefined,
+      ]);
+      people = read;
+    } else {
+      const retrieved = await this.#mainMemory(extras, present, request, profiled);
+      if (profiled) people = await this.#mainPeople(extras, present, retrieved, crushOf);
     }
     const own = selfBlocks({
       context: this.key,
@@ -1862,8 +1731,7 @@ class Turn {
       notices: this.#takeNotices(),
       crushHere,
     });
-    const selfChars = this.#main === null ? cfg.prompt.self_chars : cfg.mainline.self_chars;
-    const selfBudget = budgetSelf(own, selfChars);
+    const selfBudget = budgetSelf(own, cfg.mainline.self_chars);
     extras.self = selfBudget.notes;
     extras.compiled.push(...selfBudget.compiled);
 
@@ -1908,23 +1776,14 @@ class Turn {
     const gathered = gathering === null ? null : await gathering;
     const sections = gathered?.sections ?? [];
     if (gathered !== null) extras.reasons.push(...gathered.reasons());
-    const { data, superseded } = contributedData(
-      this.#main === null ? sections : sections.filter((s) => !SLOW_SECTIONS.has(s.key)),
-    );
+    const { data, superseded } = contributedData(sections.filter((s) => !SLOW_SECTIONS.has(s.key)));
     if (superseded.length > 0)
       extras.reasons.push(`rendered by the agent: ${superseded.join(", ")}`);
     const m = cfg.mainline;
     const contributed = budgetBlocks(data, {
-      total: this.#main === null ? cfg.max_context_chars : m.data_chars,
+      total: m.data_chars,
       // §5's readers bring more than the default budget of a section.
-      budgets:
-        this.#main === null
-          ? cfg.prompt.budgets
-          : {
-              ...cfg.prompt.budgets,
-              just_now: m.just_now_chars,
-              elsewhere: m.elsewhere_chars,
-            },
+      budgets: { ...cfg.prompt.budgets, just_now: m.just_now_chars, elsewhere: m.elsewhere_chars },
       defaultBudget: cfg.prompt.default_budget,
     });
     extras.sections = contributed.blocks;
@@ -1933,10 +1792,8 @@ class Turn {
     if (cut.length > 0) {
       extras.reasons.push(`context budgeted: ${cut.map((b) => `${b.key} ${b.fate}`).join(", ")}`);
     }
-    if (this.#main !== null) {
-      const slow = sections.filter((s) => SLOW_SECTIONS.has(s.key));
-      this.#mainSlow(extras, slow, skills === null ? null : await skills, people ?? null);
-    }
+    const slow = sections.filter((s) => SLOW_SECTIONS.has(s.key));
+    this.#mainSlow(extras, slow, await skills, people ?? null);
     return extras;
   }
 
@@ -2167,22 +2024,6 @@ class Turn {
     }
   }
 
-  /** The example dialogues as one data block (`null`: none). */
-  #examples(): string | null {
-    const examples = this.agent.persona.examples().filter((e) => e.trim() !== "");
-    if (examples.length === 0) return null;
-    const cfg = this.agent.config.prompt;
-    const { blocks } = budgetBlocks(
-      [ownBlock("examples", EXAMPLES_TITLE, examples.join("\n\n"), 0)],
-      {
-        total: UNLIMITED,
-        budgets: cfg.budgets,
-        defaultBudget: cfg.default_budget,
-      },
-    );
-    return blocks.length === 0 ? null : blocks.join("");
-  }
-
   /**
    * The main line's example dialogues as one data block (`null`: none). V3 left them out (the
    * prompt had 4000 tokens); they show how she talks better than any rule. Which ones turns over
@@ -2307,170 +2148,14 @@ class Turn {
     images: readonly ContentPart[],
   ): Promise<string> {
     this.#generated = true;
-    if (this.#main !== null)
-      return await this.#speakMain(this.#main, direct, names, extras, images);
-    const cfg = this.agent.config;
-    const services = this.agent.ctx.services;
-    const router = services.require(LlmRouterKey);
-    const sink = services.require(ActionSinkKey);
-
-    const voiceSink = this.voice ? services.get(VoiceSinkKey) : undefined;
-    const core = this.agent.persona.corePrompt();
-    const rules = rulesPrompt(this.voice, voiceSink?.speaksIn ?? null);
-    const persona = core === "" ? rules : `${core}\n\n${rules}`;
-    const situation = situationPrompt(
-      {
-        context: this.key,
-        direct,
-        notice: this.initiative?.reason === "notice",
-        initiative: this.initiative?.hint ?? null,
-        intent: this.intent !== null,
-        speaksIn: voiceSink?.speaksIn ?? null,
-        notes: extras.self,
-      },
-      new Date(this.#now),
-    );
-    const data = dataMessage([...extras.own, ...extras.sections]);
-    const selection = this.plan.selection;
-    const focusInputs = selection?.focus ?? [];
-    const verbs = selection === null ? new Map<string, string>() : focusVerbs(selection);
-    // What her conversation notes already cover is not repeated raw (a few lines always stay).
-    const folded = services.get(ConversationStatesKey)?.get(this.key) ?? null;
-    const marked = withOlderParents(
-      markCurrent(
-        afterFold(
-          this.session.recent(cfg.prompt_history).filter((e) => !this.#hidden(e)),
-          folded?.folded_up_to ?? null,
-          cfg.history_after_fold,
-        ),
-        focusInputs,
-        verbs,
-      ),
-      (id) => this.#shownEntry(id),
-      (id) => this.#shownAround(id),
-    );
-    this.#replyTargets = focusEntries(marked);
-    const messages = buildMessages(
-      persona,
-      situation,
-      marked,
-      data,
-      {
-        maxChars: cfg.max_prompt_chars,
-        maxEntryChars: cfg.max_entry_chars,
-        gapMs: cfg.time_gap_ms,
-      },
-      images,
-      this.#examples(),
-    );
-    this.#saved = savedPrompt({
-      turn: this.turn,
-      context: this.key,
-      at: toTimestamp(this.#now),
-      reasoning: "off",
-      blocks: extras.compiled,
-      messages,
-      maxChars: cfg.prompt.saved_message_chars,
-    });
-
-    const priority = this.#priority(direct);
-    if (this.voice) {
-      const [platform, scope] = voiceScope(this.key);
-      const speech = new Speech(
-        sink,
-        this.flags,
-        names,
-        this.key,
-        this.turn,
-        voiceLane(platform, scope),
-        priority,
-        cfg.voice.speak_ttl_ms,
-        this.signal,
-        voiceSink?.prepare
-          ? (text, spoken, emotion) => voiceSink.prepare?.(this.key, text, spoken, emotion)
-          : null,
-        Boolean(voiceSink?.speaksIn),
-        cfg.voice.voice_first,
-        () => this.#output(),
-        (spoken, written) => this.agent.noteSubtitle(this.key, this.turn, spoken, written),
-        null,
-        (text, spoken, aloud) => this.#safe(text, spoken, aloud),
-        (text) => this.#selfTalk(text),
-      );
-      await this.#produce(router, messages, priority, speech);
-      this.#save();
-      await this.#postAside(sink, speech.aside, priority);
-      if (speech.spoken === "") this.agent.log.debug({ turn: this.turn }, "she stayed quiet");
-      return speech.spoken;
-    }
-
-    const lane = textLane(this.key);
-    // Typing is refreshed until the reply is ready; cancelling the turn stops it too.
-    const typing = new AbortController();
-    const stopTyping = () => typing.abort();
-    this.signal.addEventListener("abort", stopTyping, { once: true });
-    const typingLoop = this.#keepTyping(sink, lane, priority, typing.signal);
-    // Complete lines go out while she writes, and what she writes alongside a tool call
-    // ("好，我寫寫看，等我一下") goes out at once, so a slow tool never leaves the person waiting
-    // in silence.
-    const early: string[] = [];
-    // Her reasoning is no reply (leak.ts).
-    type Line = { text: string; blocked: string | null; n: number | null };
-    const screen = new ReplyScreen<Line>(cfg.corrections.leak_screen, cfg.corrections.self_talk);
-    const send = async (raw: string) => {
-      for (const part of splitByReplyMarks(raw)) {
-        const mark = takeReplyMark(part);
-        const safe = this.#safe(cleanReply(mark.text, names));
-        const text = this.#linkMentions(safe.text);
-        if (text === "") continue;
-        const before = screen.droppedLines;
-        const cut = screen.selfTalk;
-        const { send: now } = screen.push({ text, blocked: safe.blocked, n: mark.n });
-        this.#tally.count("leak_dropped", screen.droppedLines - before);
-        this.#tally.count("self_talk_cut", screen.selfTalk - cut);
-        for (const item of now) {
-          early.push(await this.#sendText(sink, item.text, direct, priority, item.blocked, item.n));
-        }
-      }
-    };
-    const offered = new Set(this.#toolSpecs().map((t) => t.name));
-    const segments = new TextSegments(send, (text) => {
-      const hold = cfg.corrections.claims && unbackedClaim(text, offered, this.#backing()) !== null;
-      if (hold) this.#tally.count("claim_held");
-      return hold;
-    });
-    const interim = async (e: Expression) => send(segments.rest(e));
-    let expression: Expression;
-    try {
-      expression = await this.#produce(router, messages, priority, null, interim, segments);
-      this.#save();
-    } finally {
-      typing.abort();
-      this.signal.removeEventListener("abort", stopTyping);
-      await typingLoop;
-    }
-    const flush = async () => {
-      for (const item of screen.flush()) {
-        early.push(await this.#sendText(sink, item.text, direct, priority, item.blocked, item.n));
-      }
-    };
-    if (expression.isSilent()) {
-      await flush();
-      if (early.length === 0) this.agent.log.debug({ turn: this.turn }, "she chose silence");
-      return early.join("\n");
-    }
-    await send(segments.rest(expression));
-    await flush();
-    return early.join("\n");
+    return await this.#speakMain(this.#main, direct, names, extras, images);
   }
 
   // ---- the main line ---------------------------------------------------------------------------
 
   /** The scheduler as this turn uses it. */
   #out(sink: ActionSink): ActionSink {
-    const main = this.#main;
-    if (main === null) return sink;
-    return main.mouth(sink, () =>
+    return this.#main.mouth(sink, () =>
       this.voice ? this.agent.audience(this.key) : this.plan.focus.addressed_by,
     );
   }
@@ -2495,7 +2180,7 @@ class Turn {
       accounts: present.map((p) => p.account),
       now,
     };
-    const pinned = this.#main?.main.pinned() ?? null;
+    const pinned = this.#main.main.pinned();
     // The pinned sections and the retrieval run side by side: they waited for each other before
     // (up to 800 ms each, 2026-11-10). In voice the pinned ones come warm (they depend on who is
     // here, not on the line) and the retrieval for the line gets `live_context_ms`.
@@ -3484,100 +3169,6 @@ class Turn {
   }
 
   /**
-   * Runs the model, executing tool calls for up to `max_tool_steps` rounds, and returns the
-   * reply to send.
-   *
-   * Text written alongside tool calls is kept in the conversation sent back to the model. With
-   * `interim` (text) it is sent at once, before the tools run; otherwise it is only used as the
-   * reply if the final response has none, so it is never sent twice. With `speech` (voice), all
-   * text is spoken as it streams in, including text written alongside tool calls.
-   */
-  async #produce(
-    router: LlmRouter,
-    initial: ChatMessage[],
-    priority: Priority,
-    speech: Speech | null,
-    interim: ((expression: Expression) => Promise<void>) | null = null,
-    segments: TextSegments | null = null,
-  ): Promise<Expression> {
-    const cfg = this.agent.config;
-    // Reactive turns and the turns she starts herself act; initiative turns only talk.
-    const toolsEnabled = cfg.tools_enabled && (this.inputs.length > 0 || this.intent !== null);
-    const messages = [...initial];
-    let earlier: Expression | null = null;
-    let reminded = false;
-    for (let step = 0; step <= cfg.max_tool_steps; step++) {
-      const tools = toolsEnabled ? this.#toolSpecs() : [];
-      const offered = tools.length > 0;
-      const request: ChatRequest = {
-        messages: [...messages],
-        tools,
-        temperature: cfg.temperature,
-        max_tokens: cfg.max_tokens,
-        // `[llm.reasoning]` chat_text / chat_voice / chat_intent (replies: off by default).
-        reasoning_purpose: this.#reasoningPurpose(),
-        session: this.#llmSession(),
-      };
-      this.#level ??= router.reasoningFor("chat", request);
-      segments?.step();
-      const { expression, raw, calls } = await this.#streamStep(router, request, speech, segments);
-      if (speech?.stopped()) {
-        this.agent.log.debug({ turn: this.turn }, "speech interrupted, generation stopped");
-        return expression;
-      }
-      // She said she did something only a tool does ("我游過去了") and nothing backs it (no
-      // accepted transition of this turn, no notice, not already so; claims.ts): once per turn
-      // she is told it has not happened, and either does it or says so. In text the claim was
-      // not sent yet and the corrected reply replaces it.
-      if (calls.length === 0 && offered && !reminded && step < cfg.max_tool_steps) {
-        const names = new Set(tools.map((t) => t.name));
-        const flags = cfg.corrections;
-        const claim = flags.claims ? unbackedClaim(expression.text, names, this.#backing()) : null;
-        // The same for a tool she wrote as a tag: it runs nothing, she is asked to call it.
-        const written =
-          claim === null && flags.tool_text_reask
-            ? toolsWrittenAsText(expression.tools, names, [], promptText(initial))
-            : [];
-        if (claim || written.length > 0) {
-          reminded = true;
-          this.#tally.count(claim ? "claim_reask" : "tool_text_reask");
-          this.agent.log.info(
-            { turn: this.turn, tool: claim?.tool ?? written.join(",") },
-            "she claimed an action without doing it",
-          );
-          messages.push(assistantMessage(raw, []));
-          messages.push(userMessage(claim ? claimReminder(claim.tool) : toolTextReminder(written)));
-          continue;
-        }
-      }
-      if (calls.length === 0 || !offered || step === cfg.max_tool_steps) {
-        if (calls.length > 0) {
-          this.agent.log.warn(
-            { turn: this.turn, offered },
-            "ignoring tool calls (disabled or step limit reached)",
-          );
-        }
-        return earlier !== null && expression.isSilent() ? earlier : expression;
-      }
-      if (!expression.isSilent()) {
-        if (interim) await interim(expression);
-        else earlier = expression;
-      }
-      messages.push(assistantMessage(raw, calls));
-      // Calls that only look (a search, a balance) run side by side; anything else alone, in order.
-      const readOnly = (call: ToolCall) => this.#tool(call.name)?.readOnly === true;
-      for (const batch of toolBatches(calls, readOnly)) {
-        const tried = await Promise.all(batch.map((call) => this.#tryTool(call, priority)));
-        batch.forEach((call, i) => {
-          const result = this.#toolResult(call, tried[i] as [boolean, string]);
-          messages.push(toolResultMessage(call.id, result));
-        });
-      }
-    }
-    return earlier ?? new Expression();
-  }
-
-  /**
    * Streams one model response, publishing emotions as they arrive (and speaking its
    * sentences, with `speech`).
    */
@@ -3700,49 +3291,6 @@ class Turn {
     return out;
   }
 
-  /** What a call brought back, as the model reads it; publishes `agent.tool`. */
-  #toolResult(call: ToolCall, [ok, full]: [boolean, string]): string {
-    if (ok) this.#succeeded.add(call.name);
-    const body = truncate(full, this.agent.config.max_tool_result_chars);
-    let hint = "";
-    // A long result (a search, lyrics, a page) is gone next turn unless she keeps what matters.
-    if (
-      ok &&
-      body.length >= LONG_RESULT_CHARS &&
-      call.name !== KeepNoteTool.NAME &&
-      this.#tool(KeepNoteTool.NAME) !== undefined
-    ) {
-      hint = KEEP_HINT;
-      this.#tally.count("keep_hint");
-    }
-    const result = `${body}${hint}`;
-    this.agent.log.debug({ turn: this.turn, tool: call.name, ok, result }, "tool call");
-    this.signal.throwIfAborted();
-    this.agent.ctx.publish(
-      {
-        type: "custom",
-        data: {
-          topic: "agent.tool",
-          payload: {
-            turn: this.turn,
-            context: contextJson(this.key),
-            tool: call.name,
-            ok,
-            result,
-          },
-        },
-      },
-      { turn: this.turn },
-    );
-    // Untrusted data, as in the main line and the work lane: a page or an MCP server's answer can
-    // carry instructions meant for her.
-    const cap = this.agent.config.max_tool_result_chars;
-    const framed = framedAsIs(this.agent.tools.get(call.name), ok, full, cap)
-      ? full
-      : dataBlock("tool", `${call.name} 的結果`, neutralize(body));
-    return `${framed}${hint}`;
-  }
-
   /**
    * What she is doing now, for which tools are offered (tool-scope.ts): the ActivityManager's
    * snapshot, else world's `her`; `null` (unknown): every tool is.
@@ -3828,21 +3376,9 @@ class Turn {
     return tool && this.#offers(tool, this.#toolScope()) ? tool : undefined;
   }
 
-  /** The notices for this context, told in this turn (kept: they may back her claims). */
+  /** The notices for this context, told in this turn. */
   #takeNotices(): Notice[] {
-    const notices = this.agent.takeNotices(this.key);
-    this.#notices = notices;
-    return notices;
-  }
-
-  /** What backs what she says she did (claims.ts). */
-  #backing(): Backing {
-    const manager = this.agent.ctx.services.get(ActivityManagerKey) ?? null;
-    return {
-      requests: acceptedRequests(manager, this.turn, this.#notices),
-      tools: this.#succeeded,
-      scope: this.#toolScope(),
-    };
+    return this.agent.takeNotices(this.key);
   }
 
   async #tryTool(
@@ -3854,15 +3390,15 @@ class Turn {
   ): Promise<[boolean, string]> {
     // The main line runs only what this turn offered: the Directives' filter is not just a list
     // shown to the model (a name it wrote anyway used to reach the hands and run).
-    if (this.#main !== null && !this.#main.isOffered(call.name)) {
+    if (!this.#main.isOffered(call.name)) {
       this.agent.log.warn({ turn: this.turn, tool: call.name }, "a tool not on offer was called");
       return [false, `error: ${NOT_OFFERED}`];
     }
     const tool = this.#tool(call.name);
     if (!tool) return [false, `error: unknown tool \`${call.name}\``];
     const node = tool.permission ?? null;
-    const asked = this.#main === null ? this.#authors() : this.#askers();
-    if (node !== null && (this.intent !== null || (this.#main !== null && asked.length === 0))) {
+    const asked = this.#askers();
+    if (node !== null && (this.intent !== null || asked.length === 0)) {
       // Nobody asked: tools that need a person's permission are not hers to use alone.
       return [false, "error: permission denied (needs someone who may use this tool to ask)"];
     }
@@ -3886,15 +3422,10 @@ class Turn {
     // Whom it is for, before anything runs: never silently the latest speaker (`callFor`).
     const target = this.#callFor(tool, args);
     if (!target.ok) return [false, `error: ${target.error}`];
-    if (this.#main !== null) {
-      const grounded = groundArgs(call.name, args, this.key);
-      if (JSON.stringify(grounded) !== JSON.stringify(args)) this.#tally.count("ground_args");
-      args = grounded;
-    }
+    const grounded = groundArgs(call.name, args, this.key);
+    if (JSON.stringify(grounded) !== JSON.stringify(args)) this.#tally.count("ground_args");
+    args = grounded;
     const last = target.message;
-    if (!last && this.intent === null && this.#main === null) {
-      return [false, "error: no triggering message"];
-    }
     const me = this.agent.selfAccount(this.key.platform);
     try {
       const out = await timeout(limitMs, turnSignal, (signal) => {

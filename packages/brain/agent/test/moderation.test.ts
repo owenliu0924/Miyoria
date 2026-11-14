@@ -255,17 +255,6 @@ describe("the other ways out", () => {
     expect(moderation.recent()[0]).toMatchObject({ field: "voice" });
   });
 
-  it("the subtitle of a line that went out first", async () => {
-    const h = await rig("v2", new Scripted([reply("<voice>こんにちは</voice>那個禁語")]), {
-      setup: { voiceSink: new Voice("ja") },
-    });
-    const subtitles = h.sup.bus.subscribe("agent.subtitle");
-    await talkInVoice(h);
-    expect(h.sink.speeches().map(([text]) => text)).toEqual(["こんにちは"]);
-    const event = subtitles.tryRecv()?.event;
-    expect(event?.type === "custom" ? event.data.payload : null).toMatchObject({ text: FILTERED });
-  });
-
   it("the main line's own mouth", async () => {
     const h = await rig("v3", new Scripted([reply("x")]));
     const mouth = h.sup.services.require(MouthKey);
@@ -274,7 +263,7 @@ describe("the other ways out", () => {
   });
 });
 
-describe.each<Pipeline>(["v2", "v3"])("what comes in, under %s", (pipeline) => {
+describe.each<Pipeline>(["v3"])("what comes in, under %s", (pipeline) => {
   it("`mark`: she answers, with it as data beside its note and not as a line of chat", async () => {
     const llm = new Scripted([reply("不要")]);
     const h = await rig(pipeline, llm);

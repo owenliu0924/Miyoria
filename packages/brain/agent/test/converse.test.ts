@@ -627,7 +627,7 @@ describe("self and people renderers", () => {
 });
 
 describe("attention: replying to her", () => {
-  const cfg = { ...AttentionConfigSchema.parse({}), llm_check: false };
+  const cfg = { ...AttentionConfigSchema.parse({}) };
 
   function run(session: Session, inputs: IncomingMessage[], level: number) {
     return assess({

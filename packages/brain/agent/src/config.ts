@@ -109,15 +109,8 @@ export const AttentionConfigSchema = z.object({
   keywords: z.array(z.string()).default([]),
   /** Ambient turns scoring below this are ignored. */
   gray_low: z.number().default(0.3),
-  /** Ambient turns scoring at least this skip the LLM check. */
-  gray_high: z.number().default(0.6),
   /** Reply probability when directly addressed. */
   direct_probability: z.number().default(1.0),
-  /** Ask the `fast` model about gray-zone ambient turns. */
-  llm_check: z.boolean().default(true),
-  llm_check_timeout_ms: z.number().int().nonnegative().default(8000),
-  /** Reply probability after the LLM check said yes. */
-  llm_yes_probability: z.number().default(0.9),
   /**
    * Lowest talkativeness lessons and moods can push her to (her own setting of exactly 0 still
    * silences her). Someone answering what she just said is never shut out by it either way.
@@ -156,17 +149,8 @@ export const VoiceConfigSchema = z.object({
    * Lower than in text: spoken chatter rarely carries the cues that raise the score.
    */
   gray_low: z.number().default(0.15),
-  /** Ask the `fast` model about gray-zone ambient voice turns (adds latency). */
-  llm_check: z.boolean().default(false),
   /** Sentences that have not started playing within this time are dropped. */
   speak_ttl_ms: z.number().int().nonnegative().default(30_000),
-  /**
-   * Bilingual voice (she is heard in another language than she writes): she writes each
-   * `<voice>` line first and it goes to TTS as soon as it is complete; the written sentence
-   * after it becomes the subtitle and her history line (`agent.subtitle`). `false`: a line
-   * waits for its written sentence and both go out together.
-   */
-  voice_first: z.boolean().default(true),
   /**
    * While she is in a voice channel, messages typed in its text chat are part of the voice
    * conversation and she answers them by speaking (Discord voice channels have a text chat
@@ -280,7 +264,7 @@ export type FilesConfig = z.output<typeof FilesConfigSchema>;
  * `[modules.agent.prompt]`: the prompt compiler (docs/design/v2-architecture.md §3.5). Every
  * data section has its own budget (characters of its body); over it a section is cut to whole
  * lines (or characters), and when the contributed sections together exceed
- * `max_context_chars` the room is shared fairly instead of the last ones dropping.
+ * `mainline.data_chars` the room is shared fairly instead of the last ones dropping.
  */
 export const PromptConfigSchema = z.object({
   /** Budget per section key; sections without one get `default_budget`. */
@@ -296,8 +280,6 @@ export const PromptConfigSchema = z.object({
     examples: 2500,
   }),
   default_budget: z.number().int().nonnegative().default(600),
-  /** Her own state (the trusted system part: mood, activity, policy, goals, limits). */
-  self_chars: z.number().int().nonnegative().default(1600),
   /** Keep a compressed copy of every n-th turn's prompt (`agent.prompt`); 0 = none. */
   save_every: z.number().int().nonnegative().default(1),
   /** Saved prompts kept in memory. */
@@ -585,10 +567,6 @@ export const AgentConfigSchema = z.object({
    * the lines after them, but at least this many of the newest.
    */
   history_after_fold: z.number().int().nonnegative().default(25),
-  /** The history in the prompt is cut to this many characters, oldest entries first. */
-  max_prompt_chars: z.number().int().nonnegative().default(16_000),
-  /** One history entry is cut to this many characters. */
-  max_entry_chars: z.number().int().nonnegative().default(2000),
   /** Two messages further apart than this get a time-gap line between them. */
   time_gap_ms: z
     .number()
@@ -662,8 +640,6 @@ export const AgentConfigSchema = z.object({
   seed: z.number().int().nonnegative().nullable().default(null),
   /** Time limit for each prompt contributor; slower ones are skipped. */
   contributor_timeout_ms: z.number().int().nonnegative().default(800),
-  /** Contributed data sections together are budgeted to this many characters. */
-  max_context_chars: z.number().int().nonnegative().default(4000),
   /**
    * While the LLM budget is exhausted, her canned "out of energy" line is sent at most once
    * per context in this interval.

@@ -4,9 +4,9 @@
 // the proposal board and the mouth the scheduler asks ("is this one of yours?"). `MainTurn` is one
 // turn of it: the claim it holds, the gate its lines pass through and what it ends with.
 //
-// A turn itself is still `turn.ts`: attention, the prompt pieces, sentence streaming and the text
-// and voice output are the V2 code. What changes is who may start one (the Floor), what one call
-// may produce (`TurnOutput`) and what happens to it afterwards (this file).
+// A turn itself is `turn.ts`: attention, the prompt pieces, sentence streaming and the text and
+// voice output. What is here is who may start one (the Floor), what one call may produce
+// (`TurnOutput`) and what happens to it afterwards.
 
 import { errorMessage, interval } from "@miyoria/runtime/kernel";
 import {

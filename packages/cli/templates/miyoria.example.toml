@@ -597,9 +597,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # 也可以在 Discord 用 /channel mode 或面板「內心 → 世界」即時切換
 # default_mode = "quiet"
 # channels = { "<channel id>" = "lively", "discord:<guild id>" = "mention-only" }
-# 對話紀錄:最多幾個字進 prompt(舊的先丟)、單則上限;她寫 @名字 會變成真的 tag
-# max_prompt_chars = 16000
-# max_entry_chars = 2000
+# 她寫 @名字 會變成真的 tag
 # mention_users = true
 # 回合:最後一則訊息後等多久才開始回(打字中會延長);回覆會引用叫她的那則訊息;
 # 對話整理過後至少留幾則原文
@@ -620,11 +618,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # max_share_of_recent = 0.3      # 預設不設,用 profile 的 behavior.max_share_of_recent;要蓋掉它才寫
 # keywords = []                  # 讓訊息對她更有意思的話題
 # gray_low = 0.3                 # 沒叫她的訊息分數低於這個就不理
-# gray_high = 0.6                # 到這個分數就不問模型直接過
 # direct_probability = 1.0       # 有人直接叫她時回的機率
-# llm_check = true               # 灰色區問 fast 模型
-# llm_check_timeout_ms = 8000
-# llm_yes_probability = 0.9      # 模型說要回之後真的回的機率
 # talk_floor = 0.15
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
@@ -731,7 +725,6 @@ text_aside = true          # 用說的回時,網址和程式碼改貼到語音�
 keep_in_voice = true       # 她在語音時,自己的事(做事的結果、遊戲實況)用說的,不發到文字頻道;回別人的話還是留在原處
 direct_debounce_ms = 400   # 有人叫她(名字、她剛講完就問她)時只等這麼久
 # turn_debounce_ms = 100   # Smart Turn 判定講完時只等這麼久(turn_engine = "smart-turn" 才會用到)
-# voice_first = true       # 雙語語音:先寫 <voice> 那句,寫完馬上送 TTS,中文字幕後補(false = 等中文寫完一起送)
 # debounce_from_speech_end = true  # 上面的等待從對方最後一個聲音算起,不是從轉錄送到才算(語音節點的靜音偵測和 ASR 本來就等了約一秒);false = 從轉錄算
 # speculate = true         # 有人叫她、等待還沒結束時,回合先開始跑(記憶、prompt、模型),等待結束前不說也不做任何事;對方接著講就丟掉重來(次數在 agent_voice_speculation_total)
 # speculate_max_per_min = 4  # 每個語音頻道每分鐘最多丟掉幾次提早開始,超過就照舊等
@@ -744,7 +737,6 @@ direct_debounce_ms = 400   # 有人叫她(名字、她剛講完就問她)時只�
 # max_share_of_recent = 0.2  # 沒人叫她時,她佔最近語音紀錄的比例上限
 # question_window_ms = 8000  # 她講完後這麼久內有人問問題,算是在問她
 # gray_low = 0.15          # 沒叫她的語音低於這個分數就不理(語音沒有文字的線索,比文字低)
-# llm_check = false        # 灰色區問 fast 模型(會多一段延遲)
 # speak_ttl_ms = 30000     # 句子這麼久還沒開始播就丟掉
 
 # 她沒親眼看到的上下文:重開後(或很久沒人講話後)補抓頻道之前的訊息、回覆鏈。
@@ -770,10 +762,9 @@ enabled = true
 max_files = 2              # 每回合最多讀幾個檔案
 
 # prompt 編譯器:每一段參考資料有自己的字數上限(超過就留整行、標「還有幾行略過」),
-# 其他模組附上的段落加起來不超過 max_context_chars(超過時公平分配,不是後面的直接被砍)
+# 其他模組附上的段落加起來不超過 [modules.agent.mainline] data_chars(超過時公平分配,不是後面的直接被砍)
 [modules.agent.prompt]
 default_budget = 600       # 沒列在 budgets 的段落
-self_chars = 1600          # 她自己的狀態(心情、在做什麼、方針、議程、限制)
 save_every = 1             # 每幾個回合存一份壓縮過的實際 prompt(面板看;0 = 不存)
 # budgets = { conversation = 900, memory = 1000, knowledge = 700, lessons = 500, world = 500, game = 700, sing = 400, people = 800, examples = 2500 }
 

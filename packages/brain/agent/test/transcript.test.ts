@@ -3,15 +3,7 @@
 
 import { type ContentPart, contentText } from "@miyoria/llm/llm";
 import { describe, expect, it } from "vitest";
-import {
-  buildMessages,
-  gapLine,
-  type HistoryEntry,
-  RULES,
-  TRANSCRIPT_RULES,
-  transcriptLine,
-  VOICE_RULES,
-} from "../src/index.js";
+import { buildMessages, gapLine, type HistoryEntry, transcriptLine } from "../src/index.js";
 import { mainRules } from "../src/mainline/prompt.js";
 import {
   focusMessage,
@@ -20,7 +12,6 @@ import {
   PICK_SOME_RULE,
   REPLY_PICK_RULE,
   replyTag,
-  rulesPrompt,
 } from "../src/prompt.js";
 import { withOlderParents } from "../src/turn.js";
 import { entry } from "./fixtures.js";
@@ -237,20 +228,8 @@ describe("transcript", () => {
   });
 
   it("every set of format rules keeps actions out of brackets", () => {
-    for (const rules of [
-      rulesPrompt(false),
-      rulesPrompt(true),
-      mainRules(false, null),
-      mainRules(true, null),
-    ]) {
+    for (const rules of [mainRules(false, null), mainRules(true, null)]) {
       expect(rules).toContain("不要用括號寫動作");
     }
-  });
-
-  it("rules_explain_the_markers", () => {
-    expect(RULES).toContain(TRANSCRIPT_RULES);
-    expect(VOICE_RULES).toContain(TRANSCRIPT_RULES);
-    expect(RULES).toContain("@名字");
-    expect(VOICE_RULES).toContain("文字區");
   });
 });

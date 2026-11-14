@@ -14,9 +14,8 @@
 // * whether to join in: under the main line in text channels "a look" (v4 §7.2): something worth
 //   a look (a topic of hers, a question left unanswered, someone she is close to, an image, a new
 //   topic) opens a turn in which the model picks a rung of the response ladder, within the level's
-//   share cap and a cap of looks per hour (`[modules.agent.rhythm]`). Otherwise (voice, V2) a cheap
-//   salience score × her talkativeness (`talkFactor`), under the share cap; in the gray zone the
-//   `fast` model is asked (in the turn itself).
+//   share cap and a cap of looks per hour (`[modules.agent.rhythm]`). Otherwise (voice) a cheap
+//   salience score × her talkativeness (`talkFactor`), under the share cap.
 //
 // Her talkativeness is hers: what she set for the context (`SelfState`), shifted by lessons and
 // her feelings (`AffectSnapshot.biases`, in the turn), with a floor; without one, the channel
@@ -82,9 +81,7 @@ export class SeededRandom implements RandomSource {
 export type Gate =
   | { kind: "ignore" }
   /** Respond with this probability. */
-  | { kind: "sample"; probability: number }
-  /** Gray zone: ask the `fast` model, otherwise sample with the score. */
-  | { kind: "ask_llm" };
+  | { kind: "sample"; probability: number };
 
 /**
  * Why a turn that is not direct was handed to the model (main line): it goes on talking with
@@ -556,18 +553,11 @@ export function assess(input: AttentionInput): Assessment {
     return done({ kind: "sample", probability: 1 }, "look");
   }
   const grayLow = Math.max(cfg.gray_low, ceiling?.minScore ?? 0);
-  const grayHigh = Math.max(cfg.gray_high, grayLow);
   if (score < grayLow) {
     reasons.push(`score ${fixed(score, 2)} < ${fixed(grayLow, 2)}`);
     return done({ kind: "ignore" });
   }
-  const probability = clamp01(score * scale);
-  if (score >= grayHigh) return done({ kind: "sample", probability });
-  if (cfg.llm_check) {
-    reasons.push("gray zone: asking fast model");
-    return done({ kind: "ask_llm" });
-  }
-  return done({ kind: "sample", probability });
+  return done({ kind: "sample", probability: clamp01(score * scale) });
 }
 
 /** Someone in this turn takes up what she just said (`followsHerLine`). */

@@ -81,7 +81,7 @@ describe("ts port", () => {
 
   it("idle text contexts forget their session", async () => {
     const mock = new MockProvider("chat").reply("嗯");
-    const config = { attention: { llm_check: false }, session_idle_ms: 60_000 };
+    const config = { session_idle_ms: 60_000 };
     const h = await Harness.create("always", config, mock);
     const c = channel("c");
     h.say(incoming(c, "Owen", "舊的話"));
@@ -97,7 +97,6 @@ describe("ts port", () => {
   it("reply_reference replies to the last input of direct turns", async () => {
     const mock = new MockProvider("chat").reply(`${"啊".repeat(15)}。${"嗯".repeat(10)}`);
     const config = {
-      attention: { llm_check: false },
       reply_reference: true,
       max_message_chars: 20,
     };
@@ -115,7 +114,6 @@ describe("ts port", () => {
     // 2026-11-08 14:07: one turn answered two people and quoted the first while talking to the second.
     // One turn for both: what voice still does (text gives each caller a turn of their own).
     const config = {
-      attention: { llm_check: false },
       reply_reference: true,
       one_caller_per_turn: false,
     };
@@ -158,7 +156,7 @@ describe("ts port", () => {
   it("two people calling her at once in text get a turn each, each quoting its own", async () => {
     // 2026-11-13 03:06: one turn answered 阿鰻 and When You See It, and the second answer read as
     // said to 阿鰻.
-    const config = { attention: { llm_check: false }, reply_reference: true };
+    const config = { reply_reference: true };
     const llm = new MockProvider("chat").reply("中文的話我很行").reply("那是她的專長沒錯");
     const h = await Harness.create("mention-only", config, llm);
     const c = channel("c");

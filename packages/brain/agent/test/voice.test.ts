@@ -46,7 +46,7 @@ function voiceCtx(): ContextKey {
 
 /** No LLM check, no cooldown; `mode` is the voice default mode. */
 function voiceConfig(mode: string) {
-  return { attention: { llm_check: false }, voice: { default_mode: mode, cooldown_ms: 0 } };
+  return { voice: { default_mode: mode, cooldown_ms: 0 } };
 }
 
 function member(id: string, isSelf: boolean): VoiceParticipant {
@@ -199,10 +199,7 @@ describe("keep_in_voice", () => {
     await wait(300);
     expect(away.sink.texts()).toEqual(["開台失敗了。"]);
 
-    const off = await withFloor(
-      { attention: { llm_check: false }, voice: { default_mode: "always", keep_in_voice: false } },
-      mock,
-    );
+    const off = await withFloor({ voice: { default_mode: "always", keep_in_voice: false } }, mock);
     off.publish(joined());
     await wait(50);
     off.publish(notice(general));
@@ -366,7 +363,7 @@ describe("voice", () => {
     expect(prepared[0]?.[0]).toEqual(voiceCtx());
   });
 
-  it("voice_lines_wait_for_their_written_text_without_voice_first", async () => {
+  it("voice_lines_wait_for_their_written_text", async () => {
     const prepared: [string, string | undefined][] = [];
     const voiceSink = {
       speaksIn: "Japanese",
@@ -376,11 +373,7 @@ describe("voice", () => {
     const mock = new MockProvider("chat").reply(
       "<voice>えっ、本当に?</voice><emo:happy>欸,真的嗎?<voice>じゃあ行こう!</voice>那走吧!最後一句沒有日文。",
     );
-    const config = {
-      ...voiceConfig("always"),
-      voice: { ...voiceConfig("always").voice, voice_first: false },
-    };
-    const h = await Harness.build("off", config, mock, null, { voiceSink });
+    const h = await Harness.build("off", voiceConfig("always"), mock, null, { voiceSink });
     h.publish(joined());
     h.publish(utterance("Owen", "我中樂透了"));
     await wait(3000);

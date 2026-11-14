@@ -1,48 +1,20 @@
 import { assistantMessage, systemMessage, userMessage } from "@miyoria/llm/llm";
-import type { ContextKey, PromptSection } from "@miyoria/types";
+import type { PromptSection } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
-  ADDRESSED,
-  AMBIENT,
   buildMessages,
   cleanReply,
   FOCUS_HEAD,
-  FRESHNESS_RULE,
-  GUARD_RULES,
   type HistoryEntry,
-  INITIATIVE,
-  INITIATIVE_HINT,
-  INITIATIVE_SILENCE,
   mainRules,
   markCurrent,
-  RULES,
   renderSections,
-  rulesPrompt,
-  SELF_HEAD,
-  situationPrompt,
-  speaksReminder,
   splitMessage,
-  VOICE_ADDRESSED,
-  VOICE_INITIATIVE,
 } from "../src/index.js";
 import { ONE_THOUGHT_RULE } from "../src/prompt.js";
 import { entry } from "./fixtures.js";
 
-const utc = (y: number, mo: number, d: number, h: number, mi: number) =>
-  new Date(Date.UTC(y, mo - 1, d, h, mi, 0));
-
 describe("prompt", () => {
-  it("repeats the spoken-language rule last in a bilingual voice turn, not in text", () => {
-    const voice: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };
-    const text: ContextKey = { platform: "discord", scope: "g", channel: "c", kind: "channel" };
-    const at = utc(2026, 11, 1, 14, 3);
-    const of = (context: ContextKey, speaksIn: string | null) =>
-      situationPrompt({ context, direct: false, initiative: null, notes: [], speaksIn }, at, 0);
-    expect(of(voice, "Japanese")).toContain(speaksReminder("Japanese"));
-    expect(of(voice, null)).not.toContain("<voice>");
-    expect(of(text, "Japanese")).not.toContain("<voice>");
-  });
-
   it("builds_role_mapped_merged_history", () => {
     const history = [
       entry("Owen", "早安", false),
@@ -59,89 +31,12 @@ describe("prompt", () => {
     expect(msgs[4]).toEqual(systemMessage("SITUATION"));
   });
 
-  it("situation_mentions_place_and_addressing_rules_are_fixed", () => {
-    const ctx: ContextKey = {
-      platform: "discord",
-      scope: "g",
-      channel: "general",
-      kind: "channel",
-    };
-    const s = situationPrompt(
-      { context: ctx, direct: false, initiative: null, notes: [] },
-      utc(2026, 11, 1, 14, 3),
-      0,
-    );
-    expect(s).toContain("2026-11-01 14:03(星期日)");
-    expect(s).toContain("discord 的頻道 general");
-    expect(s).toContain(AMBIENT);
-    // The rules are part of the fixed (cached) system prefix, said once.
-    expect(s).not.toContain(GUARD_RULES);
-    expect(s).not.toContain(SELF_HEAD);
-    const rules = rulesPrompt(false);
-    expect(rules).toBe(RULES);
-    expect(rules).toContain(GUARD_RULES);
-    for (const rule of ["<silence/>", "<emo:名稱>", "長短跟著當下走"]) {
-      expect(rules.split(rule).length - 1, rule).toBe(1);
-    }
-  });
-
   it("every rules block says newer things are looked up, never denied", () => {
-    expect(FRESHNESS_RULE).toContain("web_search");
-    expect(rulesPrompt(false)).toContain(FRESHNESS_RULE);
-    expect(rulesPrompt(true)).toContain(FRESHNESS_RULE);
     for (const voice of [false, true]) {
       const text = mainRules(voice, null);
       expect(text, String(voice)).toContain("web_search");
       expect(text, String(voice)).toContain("別說不存在");
     }
-  });
-
-  it("voice_rules_have_speech_rules_and_the_spoken_line_first", () => {
-    const ctx: ContextKey = { platform: "discord", scope: "g", channel: "lounge", kind: "voice" };
-    const s = situationPrompt(
-      { context: ctx, direct: true, initiative: null, notes: [] },
-      utc(2026, 11, 1, 22, 0),
-      0,
-    );
-    expect(s).toContain("語音頻道 lounge");
-    expect(s).toContain(VOICE_ADDRESSED);
-    expect(s).not.toContain(ADDRESSED);
-    const rules = rulesPrompt(true);
-    expect(rules).toContain("有人在聽");
-    expect(rules).toContain("emoji");
-    expect(rules).toContain("<emo:名稱>");
-    expect(rules).not.toContain("<voice>");
-    const bilingual = rulesPrompt(true, "Japanese");
-    expect(bilingual).toContain("每一句先寫 <voice>…</voice>");
-    expect(bilingual).toContain("<voice>えっ、本当に?</voice>欸,真的嗎?");
-  });
-
-  it("her_own_state_is_trusted_system_text", () => {
-    const ctx: ContextKey = {
-      platform: "discord",
-      scope: "g",
-      channel: "general",
-      kind: "channel",
-    };
-    const notes = ["你現在的狀態:心情不錯", "你打算做的事:\n- 問 Owen 報告"];
-    const now = utc(2026, 11, 1, 9, 0);
-    const hint = "問 Owen 考試考得怎樣";
-    let s = situationPrompt({ context: ctx, direct: false, initiative: hint, notes }, now, 0);
-    expect(s).toContain(INITIATIVE);
-    expect(s).toContain(INITIATIVE_HINT);
-    expect(s).toContain(INITIATIVE_SILENCE);
-    expect(s).not.toContain(AMBIENT);
-    expect(s).toContain(`${SELF_HEAD}\n- 你現在的狀態:心情不錯\n- 你打算做的事:\n- 問 Owen 報告`);
-    // The hint (it may quote game chat) is data.
-    expect(s).not.toContain(hint);
-
-    s = situationPrompt(
-      { context: { ...ctx, kind: "voice" }, direct: false, initiative: "", notes: [] },
-      now,
-      0,
-    );
-    expect(s).toContain(VOICE_INITIATIVE);
-    expect(s).not.toContain(INITIATIVE_HINT);
   });
 
   it("repeats_the_focus_naming_who_asked", () => {

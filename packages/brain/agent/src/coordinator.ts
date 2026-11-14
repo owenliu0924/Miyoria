@@ -251,7 +251,7 @@ export class Coordinator {
    * a question not said to her (that one she answers anyway). `null`: never.
    */
   #recheckAt(msg: IncomingMessage, kind: CallKind): number | null {
-    if (this.#agent.mainline === null || callsHer(kind)) return null;
+    if (callsHer(kind)) return null;
     if (this.#key.kind === "voice" || this.#key.kind === "dm") return null;
     if (!isQuestion(msg.text.toLowerCase())) return null;
     // By this clock, from when it arrived: a platform's timestamps may be skewed from it.
@@ -407,7 +407,7 @@ export class Coordinator {
               break;
             }
             case "yield": {
-              const holder = this.#agent.mainline?.floor()?.holder(this.#key)?.turn ?? null;
+              const holder = this.#agent.mainline.floor()?.holder(this.#key)?.turn ?? null;
               if (holder !== null) await this.#apply(input.level, holder, running);
               break;
             }
@@ -526,7 +526,7 @@ export class Coordinator {
     running: Running | null,
     unplayed: Unplayed | null,
   ): Promise<void> {
-    const floor = this.#agent.mainline?.floor();
+    const floor = this.#agent.mainline.floor();
     const holder = floor?.holder(this.#key) ?? null;
     if (!floor || holder === null) return;
     // Her own turn still generating is `inputDisposition`'s: it restarts.
@@ -824,7 +824,7 @@ export class Coordinator {
     if (!this.#voice || !cfg.speculate || window.deadline <= now) return false;
     if (this.#session.someoneSpeaking() || this.#agent.handle.llmBudget() !== "ok") return false;
     // She holds the mic (her own line plays or waits): giving way and barge-in stay as they are.
-    if ((this.#agent.mainline?.floor()?.holder(this.#key) ?? null) !== null) return false;
+    if ((this.#agent.mainline.floor()?.holder(this.#key) ?? null) !== null) return false;
     while (dropped.length > 0 && (dropped[0] as number) <= now - MINUTE_MS) dropped.shift();
     if (dropped.length >= cfg.speculate_max_per_min) return false;
     return pending.some((m) => this.#callKind(m) !== null);
@@ -963,7 +963,7 @@ export class Coordinator {
         this.#agent.log.debug({ turn, error: errorMessage(error) }, "could not cancel turn");
       }
     }
-    this.#agent.mainline?.lines.cancelUnstarted(turn, "the turn was cancelled");
+    this.#agent.mainline.lines.cancelUnstarted(turn, "the turn was cancelled");
   }
 
   /** The outcome of a turn that never ran or was stopped here. */

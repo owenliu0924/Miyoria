@@ -14,10 +14,11 @@
 // (`ImpulseHost.open`) to run as above. Impulses that are not hers (songs, game commentary,
 // followups, notices, greetings) open an initiative turn in their context.
 //
-// Under `pipeline = "v3"` nothing here acts. An accepted claim opens a turn of the main line, and
+// What the Arbiter accepts acts nowhere here. An accepted claim opens a turn of the main line, and
 // an accepted proposal with a capability is one too: the turn sees what she wanted and decides,
 // and only its hands call the capability. Only `chat.*`, which runs no action of its own, still
-// goes through the gate here: consent is the gate's.
+// goes through the gate here: consent is the gate's. Running an intent as above is what is left
+// when no Arbiter runs.
 
 import type { ActuatorRegistry } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
@@ -112,7 +113,7 @@ export class AgentIntents implements IntentSink, ImpulseHost {
     const talkOnly = impulse.capability === CHAT_START || impulse.capability === CHAT_DM;
     const main = this.agent.mainline;
     const attention = impulse.attention ?? null;
-    if (main !== null && attention !== null) {
+    if (attention !== null) {
       // A retry of something a turn is already on (the context answered too late for the first
       // try, 2026-11-10 11:07) is that turn, not a second one.
       const live = main.liveTurn(attention);
@@ -122,13 +123,13 @@ export class AgentIntents implements IntentSink, ImpulseHost {
         return { status: "refused", reason: "repeat", detail: "這個承諾已經結束了" };
       }
     }
-    if (main !== null && impulse.target.context !== null) {
+    if (impulse.target.context !== null) {
       this.agent.yieldTo(impulse.target.context, claimOf(impulse));
     }
     if (isSelfInitiated(impulse.source) || talkOnly || impulse.kind === "act") {
       const slot = this.#submitted.get(impulse.id);
       const intent = slot?.intent ?? intentOfImpulse(impulse, this.agent.ctx.clock.now());
-      if (main !== null && !talkOnly) return this.#propose(intent);
+      if (!talkOnly) return this.#propose(intent);
       const outcome = await this.#run(intent, signal, true);
       if (slot) slot.outcome = outcome;
       return runOf(outcome);
@@ -141,15 +142,10 @@ export class AgentIntents implements IntentSink, ImpulseHost {
       reason: impulseReason(impulse),
       hint: impulse.hint ?? "",
       about: [...impulse.about],
-      ...(main === null
-        ? {}
-        : {
-            attention: impulse.attention ?? null,
-            claim: claimOf(impulse),
-            chain: main.takeChain(impulse.id),
-            proposal:
-              main.proposals.get(impulse.id) === null ? null : { id: impulse.id, tool: null },
-          }),
+      attention: impulse.attention ?? null,
+      claim: claimOf(impulse),
+      chain: main.takeChain(impulse.id),
+      proposal: main.proposals.get(impulse.id) === null ? null : { id: impulse.id, tool: null },
     });
   }
 
@@ -164,7 +160,7 @@ export class AgentIntents implements IntentSink, ImpulseHost {
     const context = intent.context === null ? null : agent.ownLinesContext(intent.context);
     const place = context !== null && (context.kind !== "voice" || agent.inVoice(context));
     const where = place ? context : ACTING_ALONE;
-    const refused = agent.mainline?.floor()?.refuses("wish", where, intent.why) ?? null;
+    const refused = agent.mainline.floor()?.refuses("wish", where, intent.why) ?? null;
     const input: IntentTurn = {
       intent,
       turn: newId(),

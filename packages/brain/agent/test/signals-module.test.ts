@@ -355,7 +355,7 @@ describe("social signals", () => {
 
   it("affinity no longer scales the ambient probability (her talkativeness does)", async () => {
     const mock = new MockProvider("chat").reply("鯨魚最大").reply("鯨魚最大");
-    const config = { attention: { llm_check: false, keywords: ["鯨魚"] } };
+    const config = { attention: { keywords: ["鯨魚"] } };
     const h = await Harness.build("ambient", config, mock, null, { roll: 0.45 });
     const social = provideSocial(h);
     social.set("friend", 100, false);
@@ -431,7 +431,7 @@ function budget(state: string): Event {
 describe("llm budget", () => {
   it("degraded_budget_saves_tokens", async () => {
     const mock = new MockProvider("chat").reply("嗯");
-    const config = { attention: { llm_check: false, cooldown_ms: 0, keywords: ["鯨魚"] } };
+    const config = { attention: { cooldown_ms: 0, keywords: ["鯨魚"] } };
     const h = await Harness.create("ambient", config, mock);
     h.publish(budget("degraded"));
     await wait(10);
@@ -507,7 +507,6 @@ describe("llm budget", () => {
   it("exhausted_budget_in_voice_speaks_the_line", async () => {
     const mock = new MockProvider("chat").reply("嗯。");
     const config = {
-      attention: { llm_check: false },
       voice: { default_mode: "mention-only", cooldown_ms: 0 },
     };
     const h = await Harness.create("mention-only", config, mock);

@@ -2,9 +2,8 @@
 // lessons shift her ambient talkativeness.
 
 import { MockProvider } from "@miyoria/llm/llm";
-import { type Lessons, LessonsKey, SocialSignalsKey, toTimestamp } from "@miyoria/types";
+import { type Lessons, LessonsKey, SocialSignalsKey } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { afterFold } from "../src/index.js";
 import { channel, Harness, incoming, noCheck, stopHarnesses, wait } from "./harness.js";
 
 beforeEach(() => {
@@ -14,16 +13,6 @@ beforeEach(() => {
 afterEach(async () => {
   await stopHarnesses();
   vi.useRealTimers();
-});
-
-describe("afterFold", () => {
-  const h = [1, 2, 3, 4, 5, 6].map((ts) => ({ ts }));
-  it("keeps what is after the fold, but at least `keep` of the newest", () => {
-    expect(afterFold(h, null, 2)).toEqual(h);
-    expect(afterFold(h, { id: "x", ts: toTimestamp(2) }, 2).map((e) => e.ts)).toEqual([3, 4, 5, 6]);
-    expect(afterFold(h, { id: "x", ts: toTimestamp(5) }, 3).map((e) => e.ts)).toEqual([4, 5, 6]);
-    expect(afterFold(h, { id: "x", ts: toTimestamp(9) }, 0)).toEqual([]);
-  });
 });
 
 describe("turns with conversation notes", () => {

@@ -179,7 +179,7 @@ describe("agent module", () => {
 
   it("off_mode_and_channel_overrides", async () => {
     const mock = new MockProvider("chat").reply("好");
-    const config = { attention: { llm_check: false }, channels: { loud: "always" } };
+    const config = { channels: { loud: "always" } };
     const h = await Harness.create("off", config, mock);
     h.say(mention(channel("quiet"), "Owen", "DeepSeek!"));
     await wait(3000);
@@ -475,7 +475,7 @@ describe("agent module", () => {
       toolCall(0, "a", "react", '{"emoji":"👍"}'),
       done(),
     ]);
-    const config = { attention: { llm_check: false }, tools_enabled: false };
+    const config = { tools_enabled: false };
     const h = await Harness.create("always", config, mock);
     h.say(incoming(channel("c"), "Owen", "嗨"));
     await wait(3000);

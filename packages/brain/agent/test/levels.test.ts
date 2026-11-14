@@ -29,7 +29,6 @@ const VOICE: ContextKey = tctx("voice");
 
 const config = (overrides: Partial<AttentionConfig> = {}): AttentionConfig => ({
   ...AttentionConfigSchema.parse({}),
-  llm_check: false,
   ...overrides,
 });
 
@@ -108,7 +107,7 @@ describe("channel levels", () => {
   });
 
   it("give the effective ambient probability of a turn", () => {
-    // Topic + question + small group: score 0.55, below `gray_high`, sampled with the score.
+    // Topic + question + small group: score 0.55, sampled with the score.
     const q = [tmsg("channel", "a", "你們看過鯨魚嗎?")];
     const s = sessionWith(q);
     expect(run("normal", null, s, q).score).toBeCloseTo(0.55);

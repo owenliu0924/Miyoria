@@ -7,10 +7,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  buildMessages,
   COMMIT_SPEC,
   contextData,
-  dataMessage,
   fitHistory,
   type HistoryEntry,
   MainLineConfigSchema,
@@ -19,7 +17,6 @@ import {
   pinnedSection,
   promptTokens,
   proposalData,
-  rulesPrompt,
   STEER_SPEC,
   slimTool,
   tailSection,
@@ -222,31 +219,9 @@ async function mainPrompt() {
   return { raw, tools, build, lines, persona, data, tail };
 }
 
-/** The V2 prompt of the same moment, with its budgets. */
-function v2Tokens(persona: string, raw: ToolSpec[], speaksIn: string): number {
-  const data = dataMessage([
-    dataBlock("people", "語音頻道裡的人", chat(800)),
-    dataBlock("memory", "記憶", chat(1000)),
-    dataBlock("world", "世界", chat(500)),
-    dataBlock("game", "遊戲", chat(700)),
-    dataBlock("lessons", "學到的事", chat(500)),
-    dataBlock("conversation", "對話筆記", chat(500)),
-  ]);
-  const messages = buildMessages(
-    `${persona}\n\n${rulesPrompt(true, speaksIn)}`,
-    chat(1600),
-    history(30, 120),
-    data,
-    { maxChars: 16_000, maxEntryChars: 2000, gapMs: 0 },
-    [],
-    chat(1000),
-  );
-  return promptTokens(messages, raw);
-}
-
 describe("the prompt budget (§10.4)", () => {
   it("a full turn stays within the target, tools included", async () => {
-    const { raw, tools, build, lines, persona } = await mainPrompt();
+    const { raw, tools, build, lines } = await mainPrompt();
     const whole = build(lines);
     const fitted = fitHistory(build, lines, tools, target);
     const toolTokens = promptTokens([], tools);
@@ -264,7 +239,6 @@ describe("the prompt budget (§10.4)", () => {
       history: promptTokens(whole.slice(2, -2)),
       data: promptTokens(whole.slice(-2, -1)),
       tail: promptTokens(whole.slice(-1)),
-      v2_total: v2Tokens(persona, raw, SPEAKS_IN),
     };
     if (process.env.MIYORIA_PROMPT_REPORT) {
       writeFileSync(process.env.MIYORIA_PROMPT_REPORT, JSON.stringify(parts, null, 2));
