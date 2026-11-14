@@ -1,8 +1,7 @@
 // The agent's event loop: turns bus events into session updates and coordinator input, and
 // keeps the state shared by the per-context coordinators and their turns: the focus of every
 // turn in flight (`TurnFocusBoard`, provided as `TurnFocusViewKey`), turn outcomes
-// (`agent.turn.outcome`), saved prompts, notices waiting to be told and the subtitles of
-// lines she spoke before writing them.
+// (`agent.turn.outcome`), saved prompts and notices waiting to be told.
 //
 // It also keeps her rhythm in text channels (`Rhythm`, levels.ts: looks, reactions, pacing) and
 // provides `MessageActionsKey` for the context menus: "要她回這則" opens an addressed turn on that

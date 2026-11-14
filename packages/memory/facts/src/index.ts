@@ -2,10 +2,11 @@
 //
 // * `EventLogService`: the append-only EventLog on the store's `events` area, with a hot window
 //   in memory, and the `cause` walks.
-// * `BusFacts`: turns V2 bus events into log lines (Observations, decisions, lines of hers).
+// * `BusFacts`: turns bus events into log lines (Observations, decisions, results, proposals);
+//   her own lines are written by the main line's turns, not here.
 // * `WorkingContextView`: what she knows right now, per-writer buckets.
 // * `DeliveryLedgerView`: what really reached someone, ack-only.
-// * `FactsModule` (`[modules.facts]`): runs them beside V2 and provides `EventLogKey`,
+// * `FactsModule` (`[modules.facts]`): runs them and provides `EventLogKey`,
 //   `WorkingContextKey`, `DeliveryLedgerKey` and `ActivityRecoveryKey`.
 //
 // The contracts are in `@miyoria/types` (log-event.ts): other packages depend on those, not on

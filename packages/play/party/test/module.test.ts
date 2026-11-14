@@ -1,6 +1,6 @@
 // The module in a supervisor: her tools through the gate, players heard from the bus (speech
 // and the voice channel's chat, judged by the input defence first), what happens reaching her as
-// Observations under V3 and as impulses under V2, the prompt section, and a quiet stop.
+// Observations, the prompt section, and a quiet stop.
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Supervisor } from "@miyoria/runtime/kernel";

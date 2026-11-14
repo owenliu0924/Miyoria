@@ -7,8 +7,8 @@
 // * `WorkingContext`: what she knows right now, one bucket per writer (§5).
 // * `DeliveryLedger`: what really reached someone (§8). Only an ack counts as said.
 //
-// In this phase the log runs beside V2: the `facts` module writes it from the bus and nothing
-// reads it to make a decision yet (§21). The interfaces are the ones later phases switch to.
+// The `facts` module writes it from the bus, the main line writes her lines to it, and the Floor
+// reads it (§21).
 
 import type { Handle } from "./handle.js";
 import type { ModuleId, TurnId } from "./ids.js";

@@ -1,6 +1,6 @@
-// Module `facts`: runs the fact layer beside V2 (docs/design/v3-architecture.md §21). It listens to
-// the whole bus and nothing in V2 waits for it: a turn never calls in here, and every write stays
-// in memory until the flush task picks it up, so a broken log costs the log, not a turn.
+// Module `facts`: runs the fact layer (docs/design/v3-architecture.md §21). It listens to the whole
+// bus and provides the log and the delivery ledger the main line writes her lines to; every write
+// stays in memory until the flush task picks it up, so a broken log costs the log, not a turn.
 
 import {
   defineManifest,

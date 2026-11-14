@@ -199,7 +199,7 @@ export class Scheduler implements ActionSink {
     if (replaced) this.#complete(replaced, { ok: false, error: "coalesced" });
   }
 
-  /** V3: only the main line opens her mouth. `MouthKey` is only there under V3. */
+  /** Only the main line opens her mouth. `MouthKey` is there while the agent module runs. */
   #notTheMainLine(action: Action): boolean {
     const type = action.payload.type;
     if (type !== "speak" && type !== "send_message") return false;
