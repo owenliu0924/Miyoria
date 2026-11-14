@@ -5,7 +5,7 @@
 // `ActivityTracker` says when she is thinking or preparing a song. This file decides what they are
 // fed (privacy.ts, rule 1), screens what comes out (rule 2) and tells every watcher what changed.
 
-import { ActivityTracker, EMOTION_TOPIC, Forwarder, SUBTITLE_TOPIC } from "@miyoria/stage";
+import { ActivityTracker, EMOTION_TOPIC, Forwarder } from "@miyoria/stage";
 import {
   type ActivitySnapshot,
   AFFECT_CHANGED_TOPIC,
@@ -35,7 +35,6 @@ export const LIVE_TOPICS: readonly string[] = [
   "agent.turn.completed",
   "voice.playback",
   EMOTION_TOPIC,
-  SUBTITLE_TOPIC,
   VOICE_UPCOMING_TOPIC,
   SPEECH_SYNTH_TOPIC,
   AFFECT_CHANGED_TOPIC,
@@ -297,7 +296,6 @@ export class LiveState {
         if (topic === SONG_TOPIC || topic === SONG_PREPARE_TOPIC) return "track";
         if (
           topic === EMOTION_TOPIC ||
-          topic === SUBTITLE_TOPIC ||
           topic === VOICE_UPCOMING_TOPIC ||
           topic === SPEECH_SYNTH_TOPIC
         ) {

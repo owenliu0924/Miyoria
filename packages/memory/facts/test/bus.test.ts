@@ -63,7 +63,6 @@ beforeEach(async () => {
   for (const p of [revisions, context, ledger]) await log.project(p);
   bus = new BusFacts({
     log,
-    ledger,
     revisions,
     config: defaultFactsConfig(),
     names: ["Miyoria", "米優"],
@@ -677,7 +676,6 @@ describe("the main line owns its lines", () => {
   it("playback and settled actions open and close nothing here", async () => {
     const quiet = new BusFacts({
       log,
-      ledger,
       revisions: new RevisionBook(),
       config: defaultFactsConfig(),
     });
@@ -712,7 +710,6 @@ describe("what the input defence said", () => {
     } as unknown as ModerationService);
     bus = new BusFacts({
       log,
-      ledger,
       revisions: new RevisionBook(),
       config: defaultFactsConfig(),
       names: ["Miyoria"],

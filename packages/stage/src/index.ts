@@ -79,7 +79,6 @@ export {
   type ForwarderOptions,
   GIFT_TOPIC,
   SCREEN_TOPIC,
-  SUBTITLE_TOPIC,
 } from "./link/forward.js";
 export { type GoLiveFollow, goliveFollow, VOICE_GOLIVE_TOPIC } from "./link/golive.js";
 export { Highlights, type HighlightsConfig, HighlightsConfigSchema } from "./link/highlights.js";

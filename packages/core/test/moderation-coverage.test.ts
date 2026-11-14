@@ -81,13 +81,17 @@ describe("every line of hers is reviewed", () => {
     const turn = read("packages/brain/agent/src/turn.ts");
     for (const [head, call] of [
       ["async #say(", "this.safe("],
-      ["async #sayLine(", "this.safe("],
-      ["async #endPair(", "this.safe("],
+      ["async #endPair(", "this.#say("],
       ["async #postAside(", "safeOutgoing("],
       ["async #canned(", "this.#safe("],
     ] as const) {
       expect(bodyOf(turn, head), head).toContain(call);
     }
+    // `Speech` hands a line to the sink in one place, `#say`, after the review.
+    expect(bodyOf(turn, "class Speech {").match(/this\.sink\.submit\(/g)).toHaveLength(1);
+    const speak = bodyOf(turn, "async #say(");
+    expect(speak.indexOf("this.safe(")).toBeGreaterThan(-1);
+    expect(speak.indexOf("this.safe(")).toBeLessThan(speak.indexOf("this.sink.submit("));
     // The text `send` closure and the `Speech` get the review.
     expect(turn.match(/const send = async \(raw: string\) => \{/g)).toHaveLength(1);
     // The closure reviews every part it sends (`[回覆 N]` splits one into several).

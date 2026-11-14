@@ -113,11 +113,9 @@ const LEGACY_AFTER_SPEECH_VOICE_MS = 20_000;
 const OPEN_TIMEOUT_MS = 5_000;
 /** Topic of the voice module's barge-in reports (`packages/voice/voice/src/topics.ts`, W2). */
 export const BARGE_IN_TOPIC = "voice.barge_in";
-/** Topic of the subtitle of a line she spoke before writing it (payload: see `noteSubtitle`). */
-export const SUBTITLE_TOPIC = "agent.subtitle";
 /** Notices kept per context while nobody reads them. */
 const MAX_NOTICES = 10;
-/** Barge-ins and subtitles remembered (by turn). */
+/** Barge-ins remembered (by turn). */
 const MAX_REMEMBERED = 64;
 
 /** An `agent.initiative` request. */
@@ -279,8 +277,6 @@ export class Agent {
   readonly #notices = new Map<string, Notice[]>();
   /** Who barged in on her speech, by turn (`voice.barge_in` with `stop`). */
   readonly #barges = new Map<TurnId, Handle | null>();
-  /** Written sentences of lines she spoke first, by turn: spoken line → subtitle. */
-  readonly #subtitles = new Map<TurnId, Map<string, string>>();
   /** The one foreground decider. */
   readonly mainline: MainLine;
   /** Her rhythm in text channels: looks, reactions, pacing (`[modules.agent.rhythm]`). */
@@ -880,42 +876,6 @@ export class Agent {
     return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   }
 
-  /**
-   * A line she spoke before writing it (`Speech.voiceFirst`) got its written sentence: her history
-   * keeps the written one, and `agent.subtitle` tells the overlay.
-   */
-  noteSubtitle(context: ContextKey, turn: TurnId, spoken: string, written: string): void {
-    const h = this.#existing(context);
-    if (!h?.session.replaceSpoken(turn, spoken, written)) {
-      let map = this.#subtitles.get(turn);
-      if (!map) {
-        map = new Map();
-        this.#subtitles.set(turn, map);
-        while (this.#subtitles.size > MAX_REMEMBERED) {
-          const oldest = this.#subtitles.keys().next().value;
-          if (oldest === undefined) break;
-          this.#subtitles.delete(oldest);
-        }
-      }
-      map.set(spoken.trim(), written);
-    }
-    this.ctx.publish(
-      customEvent(SUBTITLE_TOPIC, {
-        turn,
-        context: { ...context },
-        spoken,
-        text: written,
-      }),
-      { turn },
-    );
-  }
-
-  /** The written sentence of a spoken line, when it came before playback reported it. */
-  #written(turn: TurnId | null, text: string): string {
-    if (turn === null) return text;
-    return this.#subtitles.get(turn)?.get(text.trim()) ?? text;
-  }
-
   /** Her own talkativeness for `context` (`SelfState`), if she set one. */
   talkativeness(context: ContextKey): TalkLevel | null {
     const t = this.ctx.services.get(SelfStateKey)?.talkativeness(context) ?? null;
@@ -949,21 +909,20 @@ export class Agent {
     const name = this.persona.displayName();
     const me = this.selfAccount(context.platform);
     const now = this.ctx.clock.now();
-    const written = this.#written(turn, text);
     switch (state) {
       case "started":
-        h.session.recordSpeech(name, me, written, turn, now);
+        h.session.recordSpeech(name, me, text, turn, now);
         break;
       case "interrupted":
-        h.session.recordInterruption(name, me, written, turn, now);
+        h.session.recordInterruption(name, me, text, turn, now);
         // History keeps what was really heard (§7.3), not what she meant to say.
-        h.session.keepHeard(turn, written, this.#heard(written, playback, heardMs));
+        h.session.keepHeard(turn, text, this.#heard(text, playback, heardMs));
         break;
       case "finished":
         h.session.noteSelfSpoke(now);
         break;
       case "failed":
-        h.session.keepHeard(turn, written, "");
+        h.session.keepHeard(turn, text, "");
         break;
     }
     if (turn !== null) h.inbox.push({ type: "playback", turn, state });
@@ -1041,6 +1000,7 @@ export class Agent {
   }
 
   /** An `arbiter.impulse` while no Arbiter runs: a speak impulse is an initiative as before. */
+  // Cannot run while the main line exists; kept until the owner decides on the no-Arbiter paths.
   #onImpulseEvent(impulse: Impulse): void {
     if (this.ctx.services.get(ArbiterKey) || this.mainline) return;
     const context = impulse.target?.context ?? null;
@@ -1101,6 +1061,8 @@ export class Agent {
     });
   }
 
+  // Past the "no floor" skip this cannot run while the main line exists; kept until the owner
+  // decides on the no-Arbiter paths.
   #legacyInitiative(context: ContextKey, initiative: Initiative): void {
     // Without the Floor nothing unasked gets the mic: the main line has no rules of its own.
     if (this.mainline) {

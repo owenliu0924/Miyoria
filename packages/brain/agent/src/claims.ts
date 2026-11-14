@@ -12,7 +12,7 @@
 // decides what happened, and a claim backed by a task, a notice or the current state is never
 // questioned.
 
-import type { ActivityManager, ActivityRequestType, Notice, TurnId } from "@miyoria/types";
+import type { ActivityRequestType } from "@miyoria/types";
 import type { ToolScope } from "./tool-scope.js";
 
 /** A claim of something only a tool does, by the transition (and tool) it stands for. */
@@ -138,28 +138,6 @@ export interface Backing {
   tools: ReadonlySet<string>;
   /** Her state now (`null`: unknown). */
   scope: ToolScope | null;
-}
-
-/**
- * The transitions `turn` asked for that were accepted, plus those an ok notice she was told
- * reports (by its task id).
- */
-export function acceptedRequests(
-  manager: ActivityManager | null,
-  turn: TurnId,
-  notices: readonly Notice[],
-): Set<ActivityRequestType> {
-  const out = new Set<ActivityRequestType>();
-  if (manager === null) return out;
-  for (const task of manager.tasks()) {
-    if (task.turn === turn && task.status !== "failed") out.add(task.request.type);
-  }
-  for (const notice of notices) {
-    if (!notice.ok || notice.task === null) continue;
-    const task = manager.task(notice.task);
-    if (task !== null && task.status === "done") out.add(task.request.type);
-  }
-  return out;
 }
 
 /**

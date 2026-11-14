@@ -30,12 +30,6 @@ export const GIFT_TOPIC = "economy.gift";
 export const SCREEN_TOPIC = "economy.screen";
 /** How much a feeling must change before her resting face follows it. */
 const RESTING_STEP = 0.1;
-/**
- * Topic of the written sentence of a line she spoke first (`voice_first`, e.g. the Japanese
- * voice line and its Chinese subtitle): `{turn, context, spoken, text}`.
- */
-export const SUBTITLE_TOPIC = "agent.subtitle";
-
 /** Turns whose subtitles are tracked at once. */
 const MAX_TURNS = 16;
 
@@ -43,10 +37,8 @@ interface TurnSubtitle {
   turn: TurnId;
   /** Text of the playbacks started so far (the segments joined). */
   spoken: string;
-  /** One entry per started playback: its text, or its written sentence once known. */
+  /** One entry per started playback: its text. */
   segments: string[];
-  /** Written sentences that arrived before their line played: spoken line → subtitle. */
-  written: Map<string, string>;
   /** Playbacks started and not yet ended. */
   active: number;
   /** Lines shown before they started (`voice.upcoming`): their text and segment. */
@@ -179,7 +171,6 @@ export class Forwarder {
       turn,
       spoken: "",
       segments: [],
-      written: new Map(),
       active: 0,
       early: [],
       completed: false,
@@ -233,7 +224,6 @@ export class Forwarder {
       case "custom":
         if (event.data.topic === SONG_TOPIC) return this.#onSong(event.data.payload);
         if (event.data.topic === SPEECH_PAUSE_TOPIC) return pauseNotice(event.data.payload);
-        if (event.data.topic === SUBTITLE_TOPIC) return this.#onWritten(event.data.payload);
         if (event.data.topic === VOICE_UPCOMING_TOPIC) return this.#onUpcoming(event.data.payload);
         if (event.data.topic === GIFT_TOPIC) return giftMessage(event.data.payload);
         if (event.data.topic === TOUCH_TOPIC) return touchMessage(event.data.payload);
@@ -279,11 +269,8 @@ export class Forwarder {
         const early = e.early.findIndex((x) => x.text === text);
         if (early >= 0) {
           e.early.splice(early, 1); // shown already
-        } else {
-          // A line whose written sentence is known already shows that instead.
-          const shown = e.written.get(text) ?? text;
-          e.written.delete(text);
-          if (shown !== "") e.segments.push(shown);
+        } else if (text !== "") {
+          e.segments.push(text);
         }
         e.spoken = joined(e.segments);
         if (e.spoken !== "") out.push(subtitle(turn, e.spoken, false));
@@ -331,36 +318,11 @@ export class Forwarder {
     if (turn === null || text === "") return [];
     const e = this.#entry(turn);
     if (e.early.some((x) => x.text === text)) return [];
-    const shown = e.written.get(text) ?? text;
-    e.written.delete(text);
     e.early.push({ text, index: e.segments.length });
-    e.segments.push(shown);
+    e.segments.push(text);
     e.finalized = false;
     e.spoken = joined(e.segments);
     return [subtitle(turn, e.spoken, false)];
-  }
-
-  /**
-   * A line she spoke before writing it got its written sentence (`agent.subtitle`): the voice
-   * line (e.g. Japanese) in the subtitle is swapped for it (e.g. Chinese) and the subtitle is
-   * sent again (final when the turn's subtitle was final already). One that arrives before the
-   * line played is kept for that playback.
-   */
-  #onWritten(payload: JsonValue): CoreMessage[] {
-    const p = isJsonObject(payload) ? payload : {};
-    const turn = typeof p.turn === "string" && p.turn !== "" ? p.turn : null;
-    const spoken = typeof p.spoken === "string" ? p.spoken.trim() : "";
-    const written = typeof p.text === "string" ? p.text.trim() : "";
-    if (turn === null || spoken === "" || written === "" || spoken === written) return [];
-    const e = this.#entry(turn);
-    const i = e.segments.indexOf(spoken);
-    if (i < 0) {
-      e.written.set(spoken, written);
-      return [];
-    }
-    e.segments[i] = written;
-    e.spoken = joined(e.segments);
-    return [subtitle(turn, e.spoken, e.finalized)];
   }
 
   /**

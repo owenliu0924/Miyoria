@@ -94,8 +94,6 @@ export interface Assessment {
   score: number;
   gate: Gate;
   reasons: string[];
-  /** Multiplier for ambient probabilities decided later (after the LLM check): `talkFactor`. */
-  ambientScale: number;
   /** Set when the turn was handed to the model without being direct (main line). */
   opened?: Opened | null;
 }
@@ -179,11 +177,6 @@ export interface AttentionInput {
   now: number;
   /** Set for voice contexts. */
   voice: VoiceAttention | null;
-  /**
-   * The model may answer `<silence/>` (the main line): a turn that goes on talking with her
-   * (`conversing`) is left to it instead of the score and the share cap.
-   */
-  modelMayPass?: boolean;
   /** Text channels under the main line: what a look needs (`null`: no looks, the score decides). */
   look?: LookFacts | null;
 }
@@ -452,7 +445,6 @@ export function assess(input: AttentionInput): Assessment {
     score,
     gate,
     reasons,
-    ambientScale: scale,
     ...(opened === null ? {} : { opened }),
   });
 
@@ -492,39 +484,32 @@ export function assess(input: AttentionInput): Assessment {
     reasons.push("someone is speaking");
     return done({ kind: "ignore" });
   }
-  const mayPass = input.modelMayPass === true;
-  const look = mayPass && input.voice === null ? (input.look ?? null) : null;
+  const look = input.voice === null ? (input.look ?? null) : null;
   // Looks taken in the last hour against the cap of this level and her talkativeness.
   const lookCap =
     look === null ? 0 : Math.round(look.perHour * (ceiling?.looks ?? 1) * talkFactor(talk.level));
-  if (mayPass) {
-    const asides = input.inputs.map((m) => asideOf(m, input.names, roster, replying));
-    const about = asides.find((a) => a?.kind === "about_her");
-    // 2026-11-10: a reply to her opening with "@someone-else she keeps skipping…" was answered
-    // as if said to her. It is about her: hers to join, but she is told whom it is said to.
-    if (about?.kind === "about_her") {
-      reasons.push(`about her, said to ${about.to}: hers to join or pass`);
-      return done({ kind: "sample", probability: 1 }, "about_her");
+  const asides = input.inputs.map((m) => asideOf(m, input.names, roster, replying));
+  const about = asides.find((a) => a?.kind === "about_her");
+  // 2026-11-10: a reply to her opening with "@someone-else she keeps skipping…" was answered
+  // as if said to her. It is about her: hers to join, but she is told whom it is said to.
+  if (about?.kind === "about_her") {
+    reasons.push(`about her, said to ${about.to}: hers to join or pass`);
+    return done({ kind: "sample", probability: 1 }, "about_her");
+  }
+  if (asides.length > 0 && asides.every((a) => a?.kind === "reaction")) {
+    // A laugh at her line needs no answer: the model sees it and may pass or react, and it
+    // counts as a look, so a lively room does not buy a model call per laugh.
+    if (look !== null && look.used >= lookCap) {
+      reasons.push(`a reaction to her line; looks spent (${look.used}/${lookCap} this hour)`);
+      return done({ kind: "ignore" });
     }
-    if (asides.length > 0 && asides.every((a) => a?.kind === "reaction")) {
-      // A laugh at her line needs no answer: the model sees it and may pass or react, and it
-      // counts as a look, so a lively room does not buy a model call per laugh.
-      if (look !== null && look.used >= lookCap) {
-        reasons.push(`a reaction to her line; looks spent (${look.used}/${lookCap} this hour)`);
-        return done({ kind: "ignore" });
-      }
-      reasons.push("a reaction to her line: hers to answer or pass");
-      return done({ kind: "sample", probability: 1 }, "reaction");
-    }
+    reasons.push("a reaction to her line: hers to answer or pass");
+    return done({ kind: "sample", probability: 1 }, "reaction");
   }
   // 2026-11-07 to 11-10: of 1,803 follow-ups she did not answer, the share cap stopped 1,489 (two
   // people going back and forth put her near 0.5) and the level's minimum score 253. Whether a
   // line is still meant for her is read off its words, so the model decides: it may pass.
-  if (
-    replying &&
-    mayPass &&
-    conversing(input.session, input.inputs, input.now, input.names, roster)
-  ) {
+  if (replying && conversing(input.session, input.inputs, input.now, input.names, roster)) {
     reasons.push("talking with her: hers to answer or pass");
     return done({ kind: "sample", probability: 1 }, "conversing");
   }

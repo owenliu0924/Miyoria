@@ -74,6 +74,9 @@ describe("only the main line speaks", () => {
     const text = readFileSync(join(ROOT, "packages/memory/facts/src/bus.ts"), "utf8");
     expect(text).not.toContain("#playback(");
     expect(text).not.toContain("#settled(");
+    // It is not handed the delivery ledger, so it can neither open nor acknowledge a line.
+    expect(text).not.toMatch(/DeliveryLedger|#ledger|options\.ledger/);
+    expect(text).not.toMatch(/\.(?:open|ack|undelivered)\(/);
   });
 });
 

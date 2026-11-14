@@ -285,22 +285,6 @@ export class Session {
     if (found.text.trim() === "") this.#history.splice(this.#history.indexOf(found), 1);
   }
 
-  /**
-   * Her speech of `turn` was recorded with its spoken line (`spoken`, a line sent to TTS before
-   * its written sentence existed): the written sentence replaces it. Returns whether it was
-   * found.
-   */
-  replaceSpoken(turn: TurnId, spoken: string, written: string): boolean {
-    const from = spoken.trim();
-    if (from === "") return false;
-    const found = this.#history.findLast(
-      (e) => e.isSelf && e.spoken && e.turn === turn && e.text.includes(from),
-    );
-    if (!found) return false;
-    found.text = found.text.replace(from, written.trim());
-    return true;
-  }
-
   /** She was talking at `ts` (start or end of her speech). */
   noteSelfSpoke(ts: number): void {
     this.#lastSelfAt = this.#lastSelfAt === null ? ts : Math.max(this.#lastSelfAt, ts);

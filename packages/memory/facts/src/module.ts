@@ -136,7 +136,6 @@ export class FactsModule implements Module {
 
     const bus = new BusFacts({
       log,
-      ledger,
       revisions,
       config,
       names: this.#names,

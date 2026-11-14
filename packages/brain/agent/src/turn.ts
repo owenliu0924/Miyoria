@@ -467,15 +467,9 @@ class Speech {
   #written: { text: string; emotion: string | null }[] = [];
   /**
    * ... or, when the line came first, the line and the written text after it are collected
-   * here until the next line (or a pause, an emotion change, the end). `sent`: the line was
-   * spoken already (`voiceFirst`), as this; the written text only becomes its subtitle.
+   * here until the next line (or a pause, an emotion change, the end).
    */
-  #pair: { spoken: string; text: string; sent: string | null } | null = null;
-  /**
-   * How this reply pairs lines and sentences, from whichever came first: `line` (as asked:
-   * `<voice>…</voice>written`, lines may go out early) or `written` (`written<voice>…</voice>`).
-   */
-  #order: "line" | "written" | null = null;
+  #pair: { spoken: string; text: string } | null = null;
 
   constructor(
     readonly sink: ActionSink,
@@ -493,12 +487,8 @@ class Speech {
       | null = null,
     /** She is heard in another language and writes `<voice>` lines (`VoiceSink.speaksIn`). */
     readonly bilingual = false,
-    /** A `<voice>` line written first goes out as soon as it is complete. */
-    readonly voiceFirst = false,
     /** Called with every submitted line (output counting, latency). */
     readonly onOutput: (() => void) | null = null,
-    /** A line spoken first got its written sentence (the subtitle and history text). */
-    readonly onSubtitle: ((spoken: string, written: string) => void) | null = null,
     /** The main line's gate: `false`, and the sentence does not go out now. */
     readonly screen: ((line: HeldLine) => boolean) | null = null,
     /** Every sentence passes here before anything is done with it. */
@@ -544,7 +534,6 @@ class Speech {
 
   async #sentence(sentence: string): Promise<void> {
     if (!this.bilingual) return this.#say(sentence);
-    this.#order ??= "written";
     this.#written.push({ text: sentence, emotion: this.#emotion });
     // A reply that does not write the lines is not held back for long: the oldest sentences
     // go out on their own (the voice sink translates them).
@@ -569,22 +558,13 @@ class Speech {
       }
     }
     if (line.trim() === "") return;
-    this.#order ??= "line";
-    const sent = this.voiceFirst && this.#order === "line" ? await this.#sayLine(line) : null;
-    this.#pair = { spoken: line, text: "", sent };
+    this.#pair = { spoken: line, text: "" };
   }
 
   async #endPair(): Promise<void> {
     const pair = this.#pair;
     if (pair === null) return;
     this.#pair = null;
-    if (pair.sent !== null) {
-      const written = this.safe(cleanReply(pair.text, this.names), null, false).text.trim();
-      if (written === "") return;
-      this.spoken += written;
-      this.onSubtitle?.(pair.sent, written);
-      return;
-    }
     // A line nobody wrote down: subtitles and her history only ever carry the written text, so
     // it is said only when it is all she said (better than silence).
     if (pair.text.trim() === "" && this.spoken !== "") return;
@@ -642,38 +622,6 @@ class Speech {
     for (const part of this.#links.flush()) await this.#part(part);
     await this.flush();
     await this.#sayWritten();
-  }
-
-  /**
-   * Speaks a `<voice>` line before its written sentence exists: the line itself is the text
-   * of the action (handed to the sink as its own spoken words, so nothing is translated).
-   * Returns what was said (`null`: nothing).
-   */
-  async #sayLine(line: string): Promise<string | null> {
-    if (this.stopped()) return null;
-    const safe = this.safe(cleanReply(line, this.names), null, true);
-    const said = safe.text.replace(/[ \t]{2,}/g, " ").trim();
-    if (!isSpeakable(said)) return null;
-    this.prepare?.(said, said, this.#emotion);
-    await this.#submit(said, safe.blocked);
-    return said;
-  }
-
-  async #submit(text: string, blocked: string | null): Promise<void> {
-    const action = newAction(
-      this.lane,
-      this.priority,
-      { type: "speak", context: this.context, text, emotion: this.#emotion },
-      { ttl: this.ttlMs, turn: this.turn, blocked },
-    );
-    try {
-      await guard(this.sink.submit(action), this.signal);
-    } catch (error) {
-      if (this.signal.aborted) throw error;
-      throw new TurnError(`submitting speech: ${errorMessage(error)}`, { cause: error });
-    }
-    this.flags.queued = true;
-    this.onOutput?.();
   }
 
   async #say(
@@ -1573,7 +1521,6 @@ class Turn {
       inputs: this.inputs,
       now: this.#now,
       voice,
-      modelMayPass: true,
       look,
     });
     const reasons = assessment.reasons;
@@ -2444,10 +2391,7 @@ class Turn {
           ? (text, spoken, emotion) => voiceSink.prepare?.(this.key, text, spoken, emotion)
           : null,
         Boolean(voiceSink?.speaksIn),
-        // A `<voice>` line first would be out before the gate can read the sentence it stands for.
-        false,
         () => this.#output(),
-        (spoken, written) => this.agent.noteSubtitle(this.key, this.turn, spoken, written),
         (line) => main.screen(line),
         (text, spoken, aloud) => this.#safe(text, spoken, aloud),
         (text) => this.#selfTalk(text),

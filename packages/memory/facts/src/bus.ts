@@ -26,7 +26,6 @@ import {
   type BucketWrite,
   type ContextKey,
   contextKeyString,
-  type DeliveryLedger,
   type Envelope,
   type EventData,
   type EventLog,
@@ -151,7 +150,6 @@ interface Draft {
 
 export interface BusFactsOptions {
   log: EventLog;
-  ledger: DeliveryLedger;
   revisions: RevisionBook;
   config: FactsConfig;
   /** Her names, for "said her name" (lower-cased here). */
@@ -171,7 +169,6 @@ function joined(names: readonly string[]): string {
 
 export class BusFacts {
   readonly #log: EventLog;
-  readonly #ledger: DeliveryLedger;
   readonly #revisions: RevisionBook;
   readonly #config: FactsConfig;
   readonly #names: readonly string[];
@@ -188,7 +185,6 @@ export class BusFacts {
 
   constructor(options: BusFactsOptions) {
     this.#log = options.log;
-    this.#ledger = options.ledger;
     this.#revisions = options.revisions;
     this.#config = options.config;
     this.#names = (options.names ?? []).map((n) => n.toLowerCase()).filter((n) => n !== "");

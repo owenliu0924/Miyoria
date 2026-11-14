@@ -16,7 +16,7 @@ import {
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { acceptedRequests, asksForGame, CLAIMS, unbackedClaim } from "../src/claims.js";
+import { asksForGame, CLAIMS, unbackedClaim } from "../src/claims.js";
 import { WAIT_LINES } from "../src/mainline/main.js";
 import { offeredIn, scopeOfSnapshot } from "../src/tool-scope.js";
 import {
@@ -280,42 +280,6 @@ describe("claims", () => {
     expect(tool("你要不要開台?")).toBeNull();
     expect(tool("晚點看心情,不一定開台")).toBeNull();
     expect(tool("你們在語音嗎?")).toBeNull();
-  });
-
-  it("backing comes from her turn's tasks and the notices she was told", () => {
-    const manager = new FakeManager(snapshot());
-    const task = (id: string, turn: string | null, status: ActivityTask["status"]) =>
-      ({
-        id,
-        resource: "presence",
-        request: { type: "leave_voice" },
-        by: "self",
-        turn,
-        context: null,
-        status,
-        created_at: AT,
-        ended_at: null,
-        failure: null,
-        detail: null,
-      }) satisfies ActivityTask;
-    manager.tasksList.push(task("t1", "turn-a", "running"), task("t2", "turn-b", "failed"));
-    expect([...acceptedRequests(manager, "turn-a", [])]).toEqual(["leave_voice"]);
-    expect([...acceptedRequests(manager, "turn-b", [])]).toEqual([]);
-    manager.tasksList.push({ ...task("t3", "turn-c", "done"), request: { type: "stop_live" } });
-    const notice = {
-      id: "n",
-      at: AT,
-      source: "activity",
-      task: "t3",
-      turn: "turn-c",
-      context: null,
-      ok: true,
-      code: null,
-      text: "關台了",
-      expires_at: AT,
-    };
-    expect([...acceptedRequests(manager, "turn-z", [notice])]).toEqual(["stop_live"]);
-    expect([...acceptedRequests(null, "turn-a", [notice])]).toEqual([]);
   });
 
   it("a successful tool call of her turn backs what she says next", async () => {

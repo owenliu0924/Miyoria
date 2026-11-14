@@ -5,7 +5,6 @@ import {
   asideOf,
   followsHerLine,
   type LookFacts,
-  lookTriggers,
   openingCall,
   reactionOnly,
 } from "../src/attention.js";
@@ -134,20 +133,18 @@ describe("attention", () => {
     s.recordOwn("Her", me, "早啊", newId(), Date.now());
     const reply = [msg("channel", "a", "妳今天幹嘛")];
     s.recordMessage(reply[0] as IncomingMessage, false);
-    let a = run(cfg, "normal", s, reply);
+    const a = run(cfg, "normal", s, reply);
     expect(a.reasons.some((r) => r.startsWith("follow-up"))).toBe(true);
     expect(sample(a)).toBeGreaterThanOrEqual(0.6);
     // No cooldown after she spoke any more (v2 §3.3): the share cap spaces her lines.
     expect(a.reasons.some((r) => r.startsWith("cooldown"))).toBe(false);
-
-    for (let i = 0; i < 10; i++) s.recordOwn("Her", me, "spam", newId(), Date.now());
-    a = run(cfg, "normal", s, reply);
-    expect(a.gate).toEqual({ kind: "ignore" });
-    expect(a.reasons.some((r) => r.startsWith("anti-spam"))).toBe(true);
+    // Someone talking with her is hers to answer or pass whatever her share ("someone who goes
+    // on talking with her" below); the share cap holds for the rest ("a look ...", the level's
+    // share cap).
   });
 
   describe("someone who goes on talking with her", () => {
-    const quiet = (session: Session, inputs: IncomingMessage[], modelMayPass = true) =>
+    const quiet = (session: Session, inputs: IncomingMessage[]) =>
       assess({
         config: config(),
         mode: "quiet",
@@ -160,7 +157,6 @@ describe("attention", () => {
         inputs,
         now: Date.now(),
         voice: null,
-        modelMayPass,
       });
     const handedOver = (a: Assessment) =>
       a.reasons.includes("talking with her: hers to answer or pass");
@@ -186,13 +182,6 @@ describe("attention", () => {
       expect(a.gate, a.reasons.join("; ")).toEqual({ kind: "sample", probability: 1 });
       expect(handedOver(a)).toBe(true);
       expect(a.direct).toBe(false);
-    });
-
-    it("without a model that may pass, the share cap and the score decide as before", () => {
-      const s = backAndForth();
-      const a = quiet(s, said(s, "a", "好啊"), false);
-      expect(a.gate).toEqual({ kind: "ignore" });
-      expect(a.reasons.some((r) => r.startsWith("anti-spam"))).toBe(true);
     });
 
     it("someone else right after she answered one person is not talking with her", () => {
@@ -330,7 +319,6 @@ describe("attention", () => {
         inputs,
         now: Date.now(),
         voice: null,
-        modelMayPass: true,
       });
       expect(a.gate).toEqual({ kind: "ignore" });
     });
@@ -464,7 +452,6 @@ describe("attention", () => {
     const quiet = { level: 0.05, scope: "here" };
     const a = assess({ ...input(cfg, s, reply), talkativeness: quiet });
     expect(a.gate.kind, a.reasons.join("; ")).toBe("sample");
-    expect(a.ambientScale).toBe(1);
     const plain = [msg("channel", "b", "今天好熱")];
     const t = sessionWith(plain);
     expect(assess({ ...input(cfg, t, plain), talkativeness: quiet }).gate).toEqual({
@@ -551,7 +538,7 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
     s.recordMessage(m, false);
     return m;
   };
-  const passable = (s: Session, inputs: IncomingMessage[], modelMayPass = true) =>
+  const passable = (s: Session, inputs: IncomingMessage[]) =>
     assess({
       config: config(),
       mode: "quiet",
@@ -564,7 +551,6 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
       inputs,
       now: Date.now(),
       voice: null,
-      modelMayPass,
     });
 
   it("the incident: a reply to her that opens with someone else is about her, said to them", () => {
@@ -580,8 +566,6 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
     expect(a.direct).toBe(false);
     expect(a.opened, a.reasons.join("; ")).toBe("about_her");
     expect(a.reasons).toContain("about her, said to Bob: hers to join or pass");
-    // Without a model that may pass it is ambient chatter like any other, never direct.
-    expect(passable(s, [m], false).direct).toBe(false);
   });
 
   it("only others mentioned and her in the third person: about her too; her and others: to her", () => {
@@ -648,7 +632,6 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
       inputs: [reply(s, hers, "LOL")],
       now: Date.now(),
       voice: null,
-      modelMayPass: true,
       look: { used: 6, perHour: 6, questionSecs: 20, topicGapMs: 900_000, close: null },
     });
     expect(spent.gate).toEqual({ kind: "ignore" });
@@ -680,7 +663,6 @@ describe("who a line is for (v4 §7.1, 2026-11-10)", () => {
         inputs: [m],
         now: Date.now(),
         voice: { someoneSpeaking: false, questionWindowMs: 8000, others, roster },
-        modelMayPass: true,
       });
     };
     const afterHer = () => {
@@ -747,7 +729,6 @@ describe("a look (v4 §7.2)", () => {
     inputs: [m],
     now: Date.now(),
     voice: null,
-    modelMayPass: true,
     look: facts(),
   });
   const look = (
@@ -804,15 +785,6 @@ describe("a look (v4 §7.2)", () => {
     line(busy, "再聊");
     const capped = assess({ ...lookInput(busy, line(busy, "鯨魚好可愛"), "quiet"), maxShare: 0.3 });
     expect(capped.reasons.some((r) => r.startsWith("anti-spam"))).toBe(true);
-  });
-
-  it("without the main line the score decides as before", () => {
-    const s = chatter();
-    const m = line(s, "你們看過鯨魚嗎");
-    const v2 = assess({ ...lookInput(s, m, "normal"), modelMayPass: false });
-    expect(v2.opened ?? null).toBeNull();
-    expect(says(v2, "a look")).toBe(false);
-    expect(lookTriggers(lookInput(s, m, "normal"), facts())).toEqual(["topic `鯨魚`"]);
   });
 });
 
