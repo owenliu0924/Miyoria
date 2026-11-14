@@ -1,5 +1,7 @@
-// Messages she was asked not to remember ("不要記住這個", `agent.message.excluded`): what memory
-// keeps of the id, and everything that must stop using the text from then on.
+// Messages she was asked not to remember ("不要記住這個", `agent.message.excluded`) and people who
+// asked to be forgotten: the recorder redacts the message's events and "forget me" a person's
+// lines (docs/design/v5-data.md §2.4); memory takes out what was derived from them, and nothing
+// that reads the log can get the text back.
 
 import { CommandsModule } from "@miyoria/commands";
 import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm/llm";
@@ -10,29 +12,19 @@ import {
   ServiceRegistry,
   Supervisor,
 } from "@miyoria/runtime/kernel";
-import {
-  MemoryRecordStoreKey,
-  MessageLogKey,
-  PeopleStoreKey,
-  SettingsStoreKey,
-} from "@miyoria/store";
+import { SqliteStore, StoreKey } from "@miyoria/store";
 import {
   customEvent,
   EventLogKey,
+  type IncomingMessage,
   type JsonValue,
-  type LogEvent,
-  type LogEventFilter,
   MESSAGE_EXCLUDED_TOPIC,
   type MessageExcluded,
-  newId,
   type Timestamp,
-  timestampMs,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { EventLogService } from "../../facts/src/index.js";
 import {
-  EXCLUDED_KEY,
-  ExclusionList,
-  MAX_EXCLUDED,
   MemoryEngine,
   MemoryEngineKey,
   MemoryModule,
@@ -40,60 +32,27 @@ import {
   memoryFilter,
   parseWindow,
 } from "../src/index.js";
-import { acct, closeAll, guildCtx, openAreas, plus, profile, router, t0 } from "./helpers.js";
-
-afterEach(closeAll);
+import { acct, guildCtx, plus, profile, router, t0 } from "./helpers.js";
 
 const ctx = guildCtx("g1", "c1");
 const OWEN = acct("2");
+const AMY = acct("3");
 
-/** The observation `facts` writes for a chat message (attention key `msg:<platform>:<id>`). */
-function observation(message: string, name: string, text: string, at: Timestamp): LogEvent {
+const stores: SqliteStore[] = [];
+afterEach(async () => {
+  for (const s of stores.splice(0)) await s.close();
+});
+
+function message(id: string, text: string, at: Timestamp, account = OWEN): IncomingMessage {
   return {
-    id: newId(),
-    at,
-    kind: "observation",
-    source: "platform.discord",
-    cause: null,
-    context: ctx,
-    person: name,
-    body: {
-      observation: {
-        source: "platform.discord",
-        silent: false,
-        salience: "ambient",
-        attention_key: `msg:discord:${message}`,
-        revision: 1,
-        summary: `${name}:${text}`,
-        addressed_to_her: false,
-        from: name,
-        context: ctx,
-      },
-      buckets: [],
-      speech: true,
-      origin: null,
-    } as unknown as JsonValue,
+    id: { context: ctx, id },
+    author: { account, display_name: account === OWEN ? "Owen" : "Amy", is_bot: false },
+    text,
+    mentions_self: false,
+    reply_to_self: false,
+    attachments: [],
+    ts: at,
   };
-}
-
-class Log {
-  constructor(readonly events: LogEvent[]) {}
-  async query(filter: LogEventFilter = {}): Promise<LogEvent[]> {
-    return this.events
-      .filter((e) => {
-        const body = e.body as { observation?: { attention_key?: string } };
-        return (
-          (!filter.kinds || filter.kinds.includes(e.kind)) &&
-          (!filter.attention_key || body.observation?.attention_key === filter.attention_key) &&
-          (!filter.since || timestampMs(e.at) >= timestampMs(filter.since)) &&
-          (!filter.until || timestampMs(e.at) < timestampMs(filter.until))
-        );
-      })
-      .slice(0, filter.limit ?? 100);
-  }
-  async get(id: string): Promise<LogEvent | null> {
-    return this.events.find((e) => e.id === id) ?? null;
-  }
 }
 
 const excludedBody = (id: string): MessageExcluded => ({
@@ -104,34 +63,51 @@ const excludedBody = (id: string): MessageExcluded => ({
   at: new Date(Date.now()).toISOString(),
 });
 
+/**
+ * A database with two lines of Owen's (and her observations of them, as the facts module
+ * writes them: same key, `facts.observation.said`) and an engine reading both.
+ */
 async function rig(llm: MockProvider | null = null) {
-  const store = await openAreas("fake");
-  const cat = observation("m1", "Owen", "我養了一隻貓", t0());
-  const fine = observation("m2", "Owen", "我喜歡拉麵", plus(t0(), 1000));
-  const log = new Log([cat, fine]);
+  const store = await SqliteStore.open(":memory:");
+  stores.push(store);
+  const log = new EventLogService({ store: store.events });
+  const say = (id: string, text: string, at: Timestamp, account = OWEN) => {
+    const line = store.chat.message(message(id, text, at, account), {
+      self: false,
+      source: "platform.discord.bot",
+    });
+    const name = account === OWEN ? "Owen" : "Amy";
+    const seen = log.observe(
+      {
+        source: "platform.discord",
+        silent: false,
+        salience: "notable",
+        attention_key: `msg:discord:${id}`,
+        revision: 1,
+        summary: `${name}:${text}`,
+        addressed_to_her: false,
+        from: name,
+        context: ctx,
+      },
+      { at, speech: true },
+    );
+    return { line: line?.id ?? "", seen };
+  };
+  const cat = say("m1", "我養了一隻貓", t0());
+  const fine = say("m2", "我喜歡拉麵", plus(t0(), 1000));
+  await log.flush();
   const engine = new MemoryEngine(profile(), memoryConfig(), store.memories, {
     people: store.people,
     messages: store.messages,
     settings: store.settings,
     events: log,
+    chat: store.chat,
     router: llm ? router(llm) : null,
   });
-  const line = async (text: string, at: Timestamp) => {
-    const id = newId();
-    await store.messages.append({
-      id,
-      profile: profile(),
-      context: ctx,
-      author: OWEN,
-      author_name: "Owen",
-      text,
-      is_self: false,
-      ts: at,
-      turn: null,
-    });
-    return id;
-  };
-  return { store, engine, cat, fine, line };
+  /** What the recorder does with `agent.message.excluded`. */
+  const redact = (id: string) =>
+    store.chat.redactMessage({ context: ctx, id }, "do not remember", "recorder");
+  return { store, log, engine, cat, fine, say, redact };
 }
 
 const fact = (content: string, source_events: string[]) => ({
@@ -159,100 +135,89 @@ class LlmStub implements Module {
 describe("excluded messages", () => {
   it("delete what rested on that message alone and trim what has other evidence too", async () => {
     const r = await rig();
-    const lineId = await r.line("我養了一隻貓", t0());
     const now = plus(t0(), 5000);
-    const alone = await r.engine.store(fact("Owen 養了一隻貓", [r.cat.id]), now);
-    const byLine = await r.engine.store(fact("Owen 有寵物，是貓", [`msg:${lineId}`]), now);
-    const both = await r.engine.store(fact("Owen 喜歡拉麵也養貓", [r.cat.id, r.fine.id]), now);
+    const alone = await r.engine.store(fact("Owen 養了一隻貓", [r.cat.seen.id]), now);
+    const byLine = await r.engine.store(fact("Owen 有寵物，是貓", [`msg:${r.cat.line}`]), now);
+    const both = await r.engine.store(
+      fact("Owen 喜歡拉麵也養貓", [r.cat.seen.id, r.fine.seen.id]),
+      now,
+    );
     const bare = await r.engine.store(
       { ...fact("Owen 住台北", []), origin: "unknown" as const },
       now,
     );
+    // The memory module may hear the bus before the recorder redacts: the envelopes are found
+    // by key either way.
     const gone = await r.engine.excludeMessage(excludedBody("m1"));
+    r.redact("m1");
     expect(gone).toEqual({ deleted: 2, trimmed: 1 });
     const ids = (await r.store.memories.list(profile(), memoryFilter(50))).map((x) => x.id);
     expect(ids).toHaveLength(2);
-    const kept = await r.store.memories.get(
-      both.type === "refused" ? "" : (both as { id: string }).id,
-    );
-    expect(kept?.source_events).toEqual([r.fine.id]);
+    const kept = await r.store.memories.get((both as { id: string }).id);
+    expect(kept?.source_events).toEqual([r.fine.seen.id]);
     expect(alone.type).not.toBe("refused");
     expect(byLine.type).not.toBe("refused");
     expect(bare.type).not.toBe("refused");
   });
 
-  it("are not stored as evidence from then on", async () => {
+  it("are not stored as evidence from then on, after a restart too", async () => {
     const r = await rig();
+    r.redact("m1");
     await r.engine.excludeMessage(excludedBody("m1"));
-    const refused = await r.engine.store(fact("Owen 養貓", [r.cat.id]), plus(t0(), 9000));
+    const refused = await r.engine.store(fact("Owen 養貓", [r.cat.seen.id]), plus(t0(), 9000));
     expect(refused).toEqual({ type: "refused", reason: "no_evidence" });
-    const stored = await r.engine.store(fact("Owen 養貓也喜歡拉麵", [r.cat.id, r.fine.id]), t0());
+    const byLine = await r.engine.store(fact("Owen 養貓", [`msg:${r.cat.line}`]), t0());
+    expect(byLine).toEqual({ type: "refused", reason: "no_evidence" });
+    const stored = await r.engine.store(
+      fact("Owen 養貓也喜歡拉麵", [r.cat.seen.id, r.fine.seen.id]),
+      t0(),
+    );
     expect(stored.type).not.toBe("refused");
     const record = await r.store.memories.get((stored as { id: string }).id);
-    expect(record?.source_events).toEqual([r.fine.id]);
+    expect(record?.source_events).toEqual([r.fine.seen.id]);
+    // A new engine knows from the log itself: no list is kept anywhere.
+    const second = new MemoryEngine(profile(), memoryConfig(), r.store.memories, {
+      settings: r.store.settings,
+      chat: r.store.chat,
+    });
+    expect(await second.store(fact("Owen 有貓", [r.cat.seen.id]), t0())).toEqual({
+      type: "refused",
+      reason: "no_evidence",
+    });
+    expect(await r.store.settings.get(profile(), "memory_excluded")).toBeNull();
   });
 
-  it("are left out of consolidation, even when the log has no event for the line", async () => {
+  it("are left out of consolidation", async () => {
     const llm = new MockProvider("sum").reply("{}");
     const r = await rig(llm);
-    await r.line("我養了一隻貓", t0());
-    await r.line("我喜歡拉麵", plus(t0(), 1000));
-    await r.engine.excludeMessage(excludedBody("m1"));
-    // Another line with the same words in the same place, written after the exclusion, is the
-    // same message to her: it is not told either.
-    await r.line("我養了一隻貓", plus(t0(), 2000));
+    r.redact("m1");
     const report = await r.engine.consolidate(ctx, plus(t0(), 60_000));
-    expect(report.lines).toBe(3);
+    expect(report.lines).toBe(1);
     const asked = llm.requests()[0]?.messages[1]?.content ?? "";
     expect(asked).toContain("我喜歡拉麵");
     expect(asked).not.toContain("貓");
     expect(await r.engine.watermark(ctx)).not.toBeNull();
   });
 
-  it("leave the windows of 'just now' and of a person's last words", async () => {
+  it("leave the windows of 'just now' and of a person's last words, and the hot window", async () => {
     const r = await rig();
-    await r.engine.excludeMessage(excludedBody("m1"));
-    const window = parseWindow([r.cat, r.fine], 0, r.engine.exclusions);
-    expect(window.said.map((s) => s.text)).toEqual(["我喜歡拉麵"]);
-    // An observation made later from the same message (a re-fetch, a replay) is the same message.
-    const again = observation("m1", "Owen", "我養了一隻貓", plus(t0(), 99_000));
-    expect(parseWindow([again], 0, r.engine.exclusions).said).toEqual([]);
-    expect(parseWindow([again], 0).said).toHaveLength(1);
-  });
-
-  it("survive a restart, and the list is bounded", async () => {
-    const r = await rig();
-    await r.engine.excludeMessage(excludedBody("m1"));
-    const second = new MemoryEngine(profile(), memoryConfig(), r.store.memories, {
-      settings: r.store.settings,
-    });
-    expect(second.exclusions.hasRef(r.cat.id)).toBe(false);
-    await second.loadExclusions();
-    expect(second.exclusions.hasRef(r.cat.id)).toBe(true);
-    expect(second.exclusions.hasMessage("discord", "m1")).toBe(true);
-    expect(second.exclusions.hasLine(ctx, "Owen", "我養了一隻貓")).toBe(true);
-    // The text itself is not what is kept.
-    expect(JSON.stringify(await r.store.settings.get(profile(), EXCLUDED_KEY))).not.toContain("貓");
-
-    const list = new ExclusionList();
-    for (let i = 0; i < MAX_EXCLUDED + 20; i++) {
-      list.add({ c: "k", key: `msg:discord:${i}`, refs: [`r${i}`], hashes: [], at: i });
-    }
-    expect(list.size).toBe(MAX_EXCLUDED);
-    expect(list.hasRef("r0")).toBe(false);
-    expect(list.hasRef(`r${MAX_EXCLUDED + 19}`)).toBe(true);
+    r.redact("m1");
+    const events = await r.log.query({ kinds: ["observation"] });
+    expect(parseWindow(events, 0).said.map((s) => s.text)).toEqual(["我喜歡拉麵"]);
+    expect(JSON.stringify(r.log.recent(10))).not.toContain("貓");
+    // A line of that message still in the EventLog's buffer is stored redacted.
+    const again = r.say("m1", "我養了一隻貓", plus(t0(), 99_000));
+    await r.log.flush();
+    expect(r.store.events.get(again.seen.id)?.envelope.data).toEqual({ redacted: true });
+    expect(parseWindow(await r.log.query({ kinds: ["observation"] }), 0).said).toHaveLength(1);
   });
 
   it("are taken out when the agent says so on the bus", async () => {
     const services = new ServiceRegistry();
     const sup = new Supervisor({ services });
-    const store = await openAreas("fake");
-    const cat = observation("m1", "Owen", "我養了一隻貓", t0());
-    services.provide("app", MemoryRecordStoreKey, store.memories);
-    services.provide("app", MessageLogKey, store.messages);
-    services.provide("app", PeopleStoreKey, store.people);
-    services.provide("app", SettingsStoreKey, store.settings);
-    services.provide("app", EventLogKey, new Log([cat]) as never);
+    const r = await rig();
+    services.provide("app", StoreKey, r.store);
+    services.provide("app", EventLogKey, r.log);
     await sup.register(new LlmStub(router(new MockProvider("sum").reply("{}"))), null, true);
     await sup.register(new CommandsModule(), { owners: ["discord:1"] }, true);
     await sup.register(
@@ -263,20 +228,48 @@ describe("excluded messages", () => {
     await sup.startAll();
     try {
       const engine = services.require(MemoryEngineKey);
-      const stored = await engine.store(fact("Owen 養了一隻貓", [cat.id]), t0());
+      const stored = await engine.store(fact("Owen 養了一隻貓", [r.cat.seen.id]), t0());
       const id = (stored as { id: string }).id;
       sup.bus.publish(
         "agent",
         customEvent(MESSAGE_EXCLUDED_TOPIC, excludedBody("m1") as unknown as JsonValue),
       );
       const deadline = Date.now() + 5000;
-      while ((await store.memories.get(id)) !== null) {
+      while ((await r.store.memories.get(id)) !== null) {
         expect(Date.now() < deadline, "not taken out").toBe(true);
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      expect(engine.exclusions.hasMessage("discord", "m1")).toBe(true);
     } finally {
       await sup.stopAll();
     }
+  });
+});
+
+describe("forgetting someone", () => {
+  it("redacts their lines and her observations of them, and nobody else's", async () => {
+    const r = await rig();
+    const amy = r.say("m3", "我是 Amy", plus(t0(), 2000), AMY);
+    await r.log.flush();
+    // Said just now: still in the EventLog's buffer when they ask.
+    const late = r.say("m4", "我住台北", plus(t0(), 3000));
+    const person = await r.engine.personOf(OWEN);
+    expect(person).not.toBeNull();
+    const report = await r.engine.forget(person, OWEN, null);
+    // Three chat lines and her three observations of them (one still buffered when asked).
+    expect(report.lines).toBe(6);
+    const theirs = [r.cat, r.fine, late].flatMap((x) => [x.line, x.seen.id]);
+    for (const id of theirs) {
+      expect(r.store.events.get(id)?.envelope.data, id).toEqual({ redacted: true });
+    }
+    expect(r.store.events.get(amy.line)?.envelope.redacted_at).toBeNull();
+    expect((await r.store.messages.recent(profile(), ctx, 10)).map((e) => e.text)).toEqual([
+      "我是 Amy",
+    ]);
+    expect(JSON.stringify(r.log.recent(10))).not.toMatch(/貓|拉麵|台北/);
+    // A keyword forgets memories, not lines.
+    const r2 = await rig();
+    const keyword = await r2.engine.forget(await r2.engine.personOf(OWEN), OWEN, "貓");
+    expect(keyword.lines).toBeUndefined();
+    expect((await r2.store.messages.recent(profile(), ctx, 10)).length).toBe(2);
   });
 });

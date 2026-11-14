@@ -1,5 +1,12 @@
-// `recorder`: writes every message (hers included, voice transcripts and her spoken lines too)
-// to the message log, keeps the people table up to date and stores the agent's decision traces.
+// `recorder`: writes every chat line (people's text and voice, hers too: her echoed messages and
+// her spoken sentences) to the event log as one chat event each (docs/design/v5-data.md §8 step
+// 5), keeps the people table up to date and stores the agent's decision traces.
+//
+// It is the one writer of the raw chat record: one subscriber, so a line is stored once. The facts
+// module's observations of the same messages are hers, a derived view under the same key.
+//
+// "Do not remember this" (`agent.message.excluded`) is applied here too: the message's events
+// (its line and her observations of it) are redacted, so every reader of the log stops seeing it.
 
 import {
   defineManifest,
@@ -12,6 +19,9 @@ import {
   type AccountRef,
   HandleDirectoryKey,
   type IncomingMessage,
+  isJsonObject,
+  MESSAGE_EXCLUDED_TOPIC,
+  type MessageRef,
   newId,
   type ProfileId,
   sameAccount,
@@ -41,6 +51,7 @@ export class RecorderModule implements Module {
       "voice.playback",
       "agent.decision",
       TURN_OUTCOME_TOPIC,
+      MESSAGE_EXCLUDED_TOPIC,
     ]);
     const store = this.#store;
     const profile = this.#profile;
@@ -58,7 +69,12 @@ export class RecorderModule implements Module {
           case "platform_message_created": {
             const msg = event.data;
             const isSelf = own.some((a) => sameAccount(a, msg.author.account));
-            await record(ctx, store, profile, msg, isSelf, env.correlation);
+            await line(ctx, async () => {
+              const options = { self: isSelf, turn: env.correlation, source: env.source };
+              if (store.chat) await store.chat.message(msg, options);
+              else await store.messages.append(entry(profile, msg, isSelf, env.correlation));
+            });
+            if (!isSelf) await person(ctx, store, msg);
             break;
           }
           case "voice_utterance": {
@@ -72,24 +88,37 @@ export class RecorderModule implements Module {
               attachments: [],
               ts: u.ended_at,
             };
-            await record(ctx, store, profile, msg, false, env.correlation);
+            await line(ctx, async () => {
+              const options = { turn: env.correlation, source: env.source };
+              if (store.chat) await store.chat.utterance(u, options);
+              else await store.messages.append(entry(profile, msg, false, env.correlation));
+            });
+            await person(ctx, store, msg);
             break;
           }
           case "voice_playback": {
-            const { context, turn, state, text } = event.data;
-            if (state !== "started") break;
-            const account = own.find((a) => a.platform === context.platform);
+            const playback = event.data;
+            if (playback.state !== "started") break;
+            const account = own.find((a) => a.platform === playback.context.platform);
             if (!account) break;
-            const msg: IncomingMessage = {
-              id: { context, id: newId() },
-              author: { account, display_name: "", is_bot: true },
-              text,
-              mentions_self: false,
-              reply_to_self: false,
-              attachments: [],
-              ts: env.ts,
-            };
-            await record(ctx, store, profile, msg, true, turn);
+            const speaker = { account, display_name: "", is_bot: true };
+            await line(ctx, async () => {
+              if (store.chat) {
+                const options = { at: env.ts, turn: playback.turn, source: env.source };
+                await store.chat.playback({ ...playback, speaker }, options);
+                return;
+              }
+              const msg: IncomingMessage = {
+                id: { context: playback.context, id: newId() },
+                author: speaker,
+                text: playback.text,
+                mentions_self: false,
+                reply_to_self: false,
+                attachments: [],
+                ts: env.ts,
+              };
+              await store.messages.append(entry(profile, msg, true, playback.turn));
+            });
             break;
           }
           case "agent_decision": {
@@ -101,6 +130,17 @@ export class RecorderModule implements Module {
             break;
           }
           case "custom": {
+            if (event.data.topic === MESSAGE_EXCLUDED_TOPIC) {
+              const message = excludedMessage(event.data.payload);
+              if (message === null || !store.chat) break;
+              try {
+                const ids = await store.chat.redactMessage(message, "do not remember", env.source);
+                log.info({ events: ids.length }, "a message she was asked not to remember");
+              } catch (error) {
+                log.warn({ err: errorMessage(error) }, "failed to redact an excluded message");
+              }
+              break;
+            }
             // How a turn ended: "decided to reply but nothing was sent" becomes queryable.
             const outcome = v2Payload(event, TURN_OUTCOME_TOPIC);
             if (outcome === null || !store.decisions.appendOutcome) break;
@@ -119,21 +159,22 @@ export class RecorderModule implements Module {
   }
 }
 
-async function record(
-  ctx: ModuleContext,
-  store: Store,
-  profile: ProfileId,
-  msg: IncomingMessage,
-  isSelf: boolean,
-  turn: TurnId | null,
-): Promise<void> {
-  const entry = { ...logEntryFromIncoming(profile, msg, isSelf), turn };
+/** A line as a `LogEntry`, for a store without chat events (test doubles). */
+function entry(profile: ProfileId, msg: IncomingMessage, isSelf: boolean, turn: TurnId | null) {
+  return { ...logEntryFromIncoming(profile, msg, isSelf), turn };
+}
+
+/** Stores one line; a failing store costs that line, never the loop. */
+async function line(ctx: ModuleContext, write: () => Promise<unknown>): Promise<void> {
   try {
-    await store.messages.append(entry);
+    await write();
   } catch (error) {
     ctx.log.warn({ err: errorMessage(error) }, "failed to record message");
   }
-  if (isSelf) return;
+}
+
+/** Keeps the people table up to date for someone who wrote or spoke. */
+async function person(ctx: ModuleContext, store: Store, msg: IncomingMessage): Promise<void> {
   try {
     const person = await store.people.upsertAccount(msg.author.account, msg.author.display_name);
     // Her stable name for them is fixed the first time she sees them.
@@ -143,4 +184,13 @@ async function record(
   } catch (error) {
     ctx.log.warn({ err: errorMessage(error) }, "failed to record person");
   }
+}
+
+/** The message of an `agent.message.excluded` payload, when it names one. */
+function excludedMessage(payload: unknown): MessageRef | null {
+  if (!isJsonObject(payload) || !isJsonObject(payload.message)) return null;
+  const { context, id } = payload.message;
+  if (!isJsonObject(context) || typeof id !== "string") return null;
+  if (typeof context.platform !== "string") return null;
+  return payload.message as unknown as MessageRef;
 }

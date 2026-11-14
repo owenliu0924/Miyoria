@@ -77,6 +77,7 @@ describe("bookkeeping", () => {
       expect(rows.map((r) => `${r.plugin}:${r.version}`)).toEqual([
         "core:1",
         "core:2",
+        "core:3",
         ...legacySchema.migrations.map((m) => `legacy:${m.version}`),
       ]);
       expect(rows[0]).toMatchObject({
@@ -91,10 +92,10 @@ describe("bookkeeping", () => {
       const tables = t.db
         .all("SELECT name FROM sqlite_schema WHERE type = 'table'")
         .map((r) => r.name);
-      expect(tables).toEqual(
-        expect.arrayContaining(["message_log", "memory_records", "economy_docs"]),
-      );
+      expect(tables).toEqual(expect.arrayContaining(["memory_records", "economy_docs"]));
       expect(tables).not.toContain("schema_version");
+      // Chat lines are events (core migration 3).
+      expect(tables).not.toContain("message_log");
       // Re-running is a no-op.
       expect(migrate(t.db, [legacySchema])).toEqual([]);
       expect(appliedMigrations(t.db)).toEqual(rows);
@@ -112,8 +113,7 @@ describe("bookkeeping", () => {
       createHash("sha256")
         .update(
           "-- What someone wrote over time, for the member page's chart (docs/design/v3-architecture.md §17.1).\n" +
-            "CREATE INDEX message_log_author_idx\n" +
-            "    ON message_log (profile_id, author_platform, author_id, ts);\n",
+            "-- The index on message_log went with the table: chat lines are events (core migration 3).\n",
         )
         .digest("hex"),
     );
@@ -125,6 +125,7 @@ describe("bookkeeping", () => {
       expect(first.applied.map((m) => `${m.plugin}:${m.version}`)).toEqual([
         "core:1",
         "core:2",
+        "core:3",
         "shop:1",
       ]);
       const later = migrate(first.db, [SHOP]);
@@ -152,7 +153,7 @@ describe("bookkeeping", () => {
       const error = thrown(() => migrate(t.db, [bad]));
       expect(error.code).toBe("failed");
       expect(error.message).toMatch(/shop migration 1 \(step1\) failed/);
-      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core"]);
+      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core", "core"]);
       expect(t.db.get("SELECT name FROM sqlite_schema WHERE name = 'shop_items'")).toBeUndefined();
     } finally {
       t.close();
@@ -183,6 +184,7 @@ describe("refusals before any write", () => {
       expect(appliedMigrations(db).map((m) => `${m.plugin}:${m.version}`)).toEqual([
         "core:1",
         "core:2",
+        "core:3",
         "shop:1",
       ]);
       db.close();
@@ -386,7 +388,7 @@ describe("naming lint", () => {
     try {
       const error = thrown(() => migrate(t.db, [other, bad]));
       expect(error.code).toBe("lint");
-      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core"]);
+      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core", "core"]);
     } finally {
       t.close();
     }

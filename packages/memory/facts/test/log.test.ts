@@ -30,6 +30,7 @@ function flaky(inner: EventLogStore): EventLogStore & { down: boolean } {
   store.query = (query) =>
     store.down ? Promise.reject(new Error("disk full")) : inner.query(query);
   store.get = (id) => inner.get(id);
+  store.onRedacted = (listener) => inner.onRedacted?.(listener) ?? (() => {});
   return store;
 }
 
@@ -279,5 +280,68 @@ describe("projections", () => {
     await log.project(seen);
     const event = log.append(thought());
     expect(seen.ids).toEqual([event.id]);
+  });
+});
+
+describe("redaction", () => {
+  const ctx = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
+  const said = (key: string, text: string) =>
+    ({
+      source: "platform.discord",
+      silent: false,
+      salience: "notable",
+      attention_key: key,
+      revision: 1,
+      summary: `Owen:${text}`,
+      addressed_to_her: false,
+      from: "Owen",
+      context: ctx,
+    }) as const;
+
+  it("takes a redacted line's body out of the hot window and the buffer", async () => {
+    const store = await SqliteStore.open(":memory:");
+    stores.push(store);
+    const owen = store.persons.see({ platform: "discord", id: "100" }, "Owen");
+    const log = new EventLogService({ store: store.events, clock });
+    const cat = log.observe(said("msg:discord:m1", "我養了一隻貓"), { speech: true });
+    const noodles = log.observe(said("msg:discord:m2", "我喜歡拉麵"), { speech: true });
+    await log.flush();
+    // Waiting in the buffer when it is redacted.
+    const late = log.observe(said("msg:discord:m3", "我住台北"), { speech: true });
+
+    store.chat.redactMessage({ context: ctx, id: "m1" }, "do not remember", "recorder");
+    store.chat.redactMessage({ context: ctx, id: "m3" }, "do not remember", "recorder");
+    const hot = new Map(log.recent(10).map((e) => [e.id, e]));
+    expect(hot.get(cat.id)?.body).toEqual({ redacted: true });
+    expect(hot.get(late.id)?.body).toEqual({ redacted: true });
+    expect(hot.get(cat.id)).toMatchObject({ kind: "observation", context: ctx });
+    expect(hot.get(noodles.id)?.body).toEqual(noodles.body);
+    expect((await log.get(cat.id))?.body).toEqual({ redacted: true });
+    expect(JSON.stringify(log.recent(10))).not.toMatch(/貓|台北/);
+
+    await log.flush();
+    expect(store.events.get(late.id)?.envelope.redacted_at).not.toBeNull();
+    const stored = await log.query({ kinds: ["observation"], order: "asc" });
+    expect(stored.map((e) => e.body)).toEqual([
+      { redacted: true },
+      noodles.body,
+      { redacted: true },
+    ]);
+
+    // "Forget me": every line of theirs.
+    expect(store.chat.forgetPerson(owen.id, "forget me", "memory")).toBe(1);
+    expect(log.recent(10).find((e) => e.id === noodles.id)?.body).toEqual({ redacted: true });
+    log.close();
+  });
+
+  it("stops listening once closed", async () => {
+    const store = await SqliteStore.open(":memory:");
+    stores.push(store);
+    const log = new EventLogService({ store: store.events, clock });
+    const cat = log.observe(said("msg:discord:m1", "我養了一隻貓"), { speech: true });
+    await log.flush();
+    log.close();
+    store.chat.redactMessage({ context: ctx, id: "m1" }, "do not remember", "recorder");
+    expect(log.recent(1)[0]?.body).toEqual(cat.body);
   });
 });

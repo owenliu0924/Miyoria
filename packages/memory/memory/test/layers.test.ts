@@ -983,6 +983,7 @@ describe("forget", () => {
     expect(text).toContain("其中關於你的 1 件");
     expect(text).toContain("你告訴她或從你的話整理出來的 2 件");
     expect(text).toContain("不會刪除");
-    expect(text).toContain("聊天紀錄和事件紀錄");
+    expect(text).toContain("事件紀錄");
+    expect(text).toContain("用關鍵字忘記時，聊天紀錄不變");
   });
 });

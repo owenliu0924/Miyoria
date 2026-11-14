@@ -15,9 +15,11 @@ import {
 import { openStore, type Store, StoreKey } from "@miyoria/store";
 import {
   type ContextKey,
+  customEvent,
   DirectivesKey,
   type Envelope,
   HandleDirectoryKey,
+  MESSAGE_EXCLUDED_TOPIC,
   PlatformSinksKey,
   Principals,
   SYSTEM_SHUTDOWN_TOPIC,
@@ -469,6 +471,52 @@ describe("recorder", () => {
     await waitFor(async () => (await store.decisions.recent("p", null, 5)).length === 1);
     expect((await store.people.personByAccount(owen)) !== null).toBe(true);
     expect(await store.people.personByAccount(her)).toBeNull();
+    await supervisor.stopAll();
+  });
+
+  it("stores_each_line_once_and_redacts_one_she_was_asked_not_to_remember", async () => {
+    const store = await openStore("memory://");
+    const { supervisor } = await running([new RecorderModule(store, "p")], store);
+    const bus = supervisor.bus;
+    const owen = { platform: "discord", id: "owen" };
+    const msg = (id: string, text: string) => ({
+      id: { context: discord, id },
+      author: { account: owen, display_name: "Owen", is_bot: false },
+      text,
+      mentions_self: false,
+      reply_to_self: false,
+      attachments: [],
+      ts: toTimestamp(Date.parse("2026-01-01T00:00:00Z")),
+    });
+    // Both connections deliver the first message.
+    bus.publish("platform.discord.bot", {
+      type: "platform_message_created",
+      data: msg("m1", "貓"),
+    });
+    bus.publish("platform.discord.self", {
+      type: "platform_message_created",
+      data: msg("m1", "貓"),
+    });
+    bus.publish("platform.discord.bot", {
+      type: "platform_message_created",
+      data: msg("m2", "麵"),
+    });
+    await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 2);
+    expect(await store.events?.query({ key: "msg:discord:m1" })).toHaveLength(1);
+    bus.publish(
+      "agent",
+      customEvent(MESSAGE_EXCLUDED_TOPIC, {
+        context: discord,
+        message: { context: discord, id: "m1" },
+        author: owen,
+        requested_by: owen,
+        at: "2026-01-01T00:01:00Z",
+      }),
+    );
+    await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 1);
+    expect((await store.messages.recent("p", discord, 10)).map((e) => e.text)).toEqual(["麵"]);
+    const [line] = (await store.events?.query({ key: "msg:discord:m1" })) ?? [];
+    expect(line?.envelope).toMatchObject({ data: { redacted: true }, key: "msg:discord:m1" });
     await supervisor.stopAll();
   });
 

@@ -33,6 +33,14 @@ export {
 } from "./data.js";
 export { Db, type Orm, type Params, type Row } from "./db.js";
 export {
+  CHAT_TYPES_SQL,
+  type ChatLineOptions,
+  ChatLog,
+  type ChatLogStore,
+  messageKey,
+  utteranceKey,
+} from "./events/chat.js";
+export {
   type Awaitable,
   COMPACTED_TIERS,
   type CompactedTier,
@@ -45,9 +53,12 @@ export {
   type EventStoreOptions,
   type EventWrite,
   type LoggedEvent,
+  type Redaction,
+  type RedactionFilter,
+  type RedactionListener,
   sessionScope,
 } from "./events/log.js";
-export { EVENTS_SQL } from "./events/schema.js";
+export { CHAT_SQL, EVENTS_SQL } from "./events/schema.js";
 export {
   coreEventRegistry,
   FACTS_EVENTS,

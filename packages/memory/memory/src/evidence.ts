@@ -19,8 +19,8 @@ import {
 import type { EvidenceConfig } from "./config.js";
 import { tokenize } from "./tokenize.js";
 
-/** What the evidence checks and `forget` need of the EventLog. */
-export type EventReader = Pick<EventLog, "query" | "get">;
+/** What the evidence checks and `forget` need of the EventLog (`flush`: its buffer, written first). */
+export type EventReader = Pick<EventLog, "query" | "get"> & Partial<Pick<EventLog, "flush">>;
 
 /** Prefix of an evidence id that names a chat line the EventLog has no event for. */
 export const LINE_REF_PREFIX = "msg:";

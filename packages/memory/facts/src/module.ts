@@ -227,6 +227,7 @@ export class FactsModule implements Module {
       }
     }
     await running.log.flush();
+    running.log.close();
   }
 
   async health(): Promise<Health> {

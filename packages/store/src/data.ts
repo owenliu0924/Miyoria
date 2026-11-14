@@ -62,6 +62,10 @@ export interface TablePart {
   updated: string | null;
   order: string;
   columns: Readonly<Record<string, ExportColumn>>;
+  /** Only the rows matching this (a code constant, never input); `null`: every row. */
+  where: string | null;
+  /** Where the export reads `columns` from (a view over `table`); `null`: `table`. */
+  exportFrom: string | null;
 }
 
 /** Settings keys of the profile (`active`) or of `_global` (`global`). */
@@ -160,9 +164,23 @@ function table(
   updated: string | null,
   order: string,
   columns: Record<string, ExportColumn>,
+  options: { where?: string; exportFrom?: string } = {},
 ): TablePart {
-  return { kind: "table", id, table: name, rows, updated, order, columns };
+  return {
+    kind: "table",
+    id,
+    table: name,
+    rows,
+    updated,
+    order,
+    columns,
+    where: options.where ?? null,
+    exportFrom: options.exportFrom ?? null,
+  };
 }
+
+/** The chat lines among `events` (`events/chat.ts`): the conversation log. */
+const CHAT_LINES = "type IN ('platform.message.created', 'voice.utterance', 'voice.playback')";
 
 function settings(
   id: string,
@@ -373,20 +391,35 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   category(
     "messages",
     [
-      table("message_log", "message_log", "profile", "ts", "seq", {
-        id: "text",
-        platform: "text",
-        scope: "text",
-        channel: "text",
-        kind: "text",
-        author_platform: "text",
-        author_id: "text",
-        author_name: "text",
-        text: "text",
-        is_self: "bool",
-        ts: "ts",
-        turn_id: "text",
-      }),
+      // The chat lines of the event log, exported in the old `message_log` columns (`v_messages`)
+      // with their payload. One database is one character, so every line belongs to this profile.
+      table(
+        "message_log",
+        "events",
+        "node",
+        "at",
+        "seq",
+        {
+          id: "text",
+          type: "text",
+          platform: "text",
+          scope: "text",
+          channel: "text",
+          kind: "text",
+          author_platform: "text",
+          author_id: "text",
+          author_name: "text",
+          text: "text",
+          is_self: "bool",
+          ts: "ts",
+          turn_id: "text",
+          session: "text",
+          person_id: "text",
+          redacted_at: "ts",
+          data: "json",
+        },
+        { where: CHAT_LINES, exportFrom: "v_messages" },
+      ),
       // @miyoria/memory/memory `WATERMARK_PREFIX`: only ever together with the log.
       settings("memory_watermarks", "active", [], ["memory_watermark:"]),
     ],
@@ -432,30 +465,39 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     { modules: ["directive"] },
   ),
   // The event log (`events`): what she perceived, decided and said, and the counts of what
-  // compaction removed. One database is one character, so every row belongs to this profile.
+  // compaction removed. One database is one character, so every row belongs to this profile. The
+  // chat lines are `messages`, not here.
   category(
     "event_log",
     [
-      table("events", "events", "node", "at", "seq", {
-        seq: "num",
-        id: "text",
-        at: "ts",
-        type: "text",
-        v: "num",
-        source: "text",
-        parent: "text",
-        turn: "text",
-        session: "text",
-        space_id: "text",
-        room_id: "text",
-        person_id: "text",
-        account_id: "text",
-        scope: "text",
-        tier: "text",
-        key: "text",
-        data: "json",
-        redacted_at: "ts",
-      }),
+      table(
+        "events",
+        "events",
+        "node",
+        "at",
+        "seq",
+        {
+          seq: "num",
+          id: "text",
+          at: "ts",
+          type: "text",
+          v: "num",
+          source: "text",
+          parent: "text",
+          turn: "text",
+          session: "text",
+          space_id: "text",
+          room_id: "text",
+          person_id: "text",
+          account_id: "text",
+          scope: "text",
+          tier: "text",
+          key: "text",
+          data: "json",
+          redacted_at: "ts",
+        },
+        { where: `NOT ${CHAT_LINES}` },
+      ),
       table("event_rollups", "event_rollups", "node", "last_at", "day, type, source", {
         day: "ts",
         type: "text",
@@ -849,7 +891,11 @@ function otherSettingsWhere(d: SqlDialect, p: Params, profile: ProfileId): strin
 }
 
 function tableWhere(p: Params, part: TablePart, profile: ProfileId): string {
-  return part.rows === "profile" ? `WHERE profile_id = ${p.add(profile)}` : "";
+  const terms = [
+    ...(part.rows === "profile" ? [`profile_id = ${p.add(profile)}`] : []),
+    ...(part.where === null ? [] : [`(${part.where})`]),
+  ];
+  return terms.length === 0 ? "" : `WHERE ${terms.join(" AND ")}`;
 }
 
 /** `persons` rows that hold entry `key` of `prefs` (a code constant, never input). */
@@ -928,7 +974,8 @@ export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
       const cols = Object.keys(part.columns)
         .map((c) => (part.columns[c] === "json" ? `${d.jsonText(c)} AS ${c}` : c))
         .join(", ");
-      const sql = `SELECT ${cols} FROM ${part.table} ${tableWhere(p, part, profile)} ORDER BY ${part.order}`;
+      const from = part.exportFrom ?? part.table;
+      const sql = `SELECT ${cols} FROM ${from} ${tableWhere(p, part, profile)} ORDER BY ${part.order}`;
       return { sql, params: p.values };
     }
     case "settings":

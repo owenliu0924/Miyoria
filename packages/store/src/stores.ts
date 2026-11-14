@@ -20,6 +20,7 @@ import {
   type TurnOutcomeRecord,
 } from "@miyoria/types";
 import type { DataCategoryId, DataExport, DataInventory, WipeCounts, WipeOptions } from "./data.js";
+import type { ChatLogStore } from "./events/chat.js";
 import type { EventLogStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
 import type {
@@ -64,7 +65,10 @@ import type {
   RoleMapping,
 } from "./records.js";
 
-/** Append-only conversation log per profile and context. */
+/**
+ * The conversation lines of one character, per context: on SQLite a reading of the chat events
+ * (`ChatLog`). `profile` arguments name the character the database belongs to.
+ */
 export interface MessageLog {
   /** Appends an entry. Entry ids must be unique. */
   append(entry: LogEntry): Promise<void>;
@@ -525,6 +529,11 @@ export interface Store {
   readonly profileData: ProfileDataStore;
   /** The event log (`events`). Optional for test doubles; without it the log stays in memory. */
   readonly events?: EventLogStore;
+  /**
+   * Chat lines on the event log: writing them, "do not remember this" and "forget me". Optional
+   * for test doubles; `messages` reads the same lines.
+   */
+  readonly chat?: ChatLogStore;
   readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;
   readonly coins: CoinLedgerStore;

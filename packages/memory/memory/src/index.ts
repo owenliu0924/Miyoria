@@ -117,7 +117,7 @@ export {
   nameWords,
   supporting,
 } from "./evidence.js";
-export { EXCLUDED_KEY, ExclusionList, lineHash, MAX_EXCLUDED, messageKey } from "./exclusion.js";
+export { messageKey } from "./exclusion.js";
 export {
   expired,
   expiryOf,

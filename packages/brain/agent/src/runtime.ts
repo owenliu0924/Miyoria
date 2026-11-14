@@ -568,7 +568,7 @@ export class Agent {
   /**
    * "不要記住這個": what lives in the agent. The message (and every quote of it) reads as
    * `EXCLUDED_LINE` in the conversation her prompts show from now on, a turn cannot be opened on
-   * it, and `agent.message.excluded` tells the rest of her memory, which keeps its own copies.
+   * it, and `agent.message.excluded` tells the rest of her (the recorder redacts its events).
    */
   #dontRemember(request: MessageActionRequest): MessageActionOutcome {
     const found = this.#find(request.message);
@@ -1137,7 +1137,7 @@ class LimitedReact implements Tool {
 /** What stands in her history for a message someone asked her not to remember. */
 export const EXCLUDED_LINE = "[這則訊息有人請你不要記住]";
 
-/** Excluded message ids remembered per context (older ones live on in memory's own list). */
+/** Excluded message ids remembered per context (the event log redacts the message itself). */
 const MAX_EXCLUDED = 500;
 
 /** The entry keeps its place (the cached prefix moves once) but says nothing of what it said. */

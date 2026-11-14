@@ -7,9 +7,15 @@
 //
 // The store is the event log on `events` (docs/design/v5-data.md §2): a flush hands it the
 // buffered lines as envelopes (`envelope.ts`), and what it reads comes back as lines.
+//
+// A redaction in the store ("do not remember this", "forget me") reaches the lines kept here as
+// well: the store tells which events and keys it redacted, and those lines in the hot window keep
+// their envelope and lose their body, as they read back from the store. A line of a redacted key
+// still waiting in the buffer is stored redacted by the store itself.
 
+import { REDACTED_DATA } from "@miyoria/contracts/events";
 import { errorMessage, getLogger, metrics } from "@miyoria/runtime/kernel";
-import type { EventLogStore, LoggedEvent } from "@miyoria/store";
+import type { EventLogStore, LoggedEvent, Redaction } from "@miyoria/store";
 import {
   type CauseChain,
   type Clock,
@@ -112,12 +118,37 @@ export class EventLogService implements EventLog {
   #buffer: LogEvent[] = [];
   #writing: Promise<void> | null = null;
   #failing = false;
+  readonly #unlisten: () => void;
 
   constructor(options: EventLogServiceOptions) {
     this.#store = options.store;
     this.#clock = options.clock ?? systemClock;
     this.#hotEvents = options.hotEvents ?? 2_000;
     this.#maxBuffer = options.maxBuffer ?? 20_000;
+    this.#unlisten = this.#store?.onRedacted?.((r) => this.#redacted(r)) ?? (() => {});
+  }
+
+  /** Stops hearing the store's redactions (the module stopped). */
+  close(): void {
+    this.#unlisten();
+  }
+
+  /**
+   * Lines the store redacted lose their body here too: none is served from memory again. The
+   * buffer keeps them whole (their key is how the store knows to redact them on arrival).
+   */
+  #redacted(redaction: Redaction): void {
+    const ids = new Set(redaction.ids);
+    const keys = new Set(redaction.keys);
+    const gone = (event: LogEvent) => {
+      if (ids.has(event.id)) return true;
+      const key = keys.size === 0 ? null : attentionOf(event);
+      return key !== null && keys.has(key);
+    };
+    const blank = (event: LogEvent): LogEvent => ({ ...event, body: { ...REDACTED_DATA } });
+    for (const [id, event] of this.#hot) {
+      if (gone(event)) this.#hot.set(id, blank(event));
+    }
   }
 
   /** The last write failed. */

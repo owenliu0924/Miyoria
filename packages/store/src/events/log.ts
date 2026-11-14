@@ -29,6 +29,7 @@ import {
   type ContextKind,
   contextKeyString,
   type Handle,
+  isJsonObject,
   type JsonValue,
   newId,
   type PersonId,
@@ -37,6 +38,7 @@ import {
 import {
   fromMicros,
   normalizeTimestamp,
+  optionalMicros,
   optionalTimestamp,
   parseJson,
   StoreError,
@@ -54,6 +56,8 @@ const DEFAULT_LIMIT = 100;
 /** What `redact()` writes into `data`; the trigger allows exactly this text. */
 const REDACTED_JSON = JSON.stringify(REDACTED_DATA);
 const SCOPES: readonly string[] = EventScopeSchema.options;
+/** Redacted keys remembered for lines appended after their redaction (see `RedactionFilter`). */
+const REDACTED_KEYS = 10_000;
 
 export type Awaitable<T> = T | Promise<T>;
 
@@ -112,6 +116,28 @@ export interface EventQuery {
   limit?: number;
 }
 
+/** Which events `redactWhere` takes the content of: every given field must match. */
+export interface RedactionFilter {
+  /**
+   * Events filed under this key (a chat message and her observations of it share one). An event
+   * with this key appended later (a line still waiting in a writer's buffer) is stored redacted.
+   */
+  key?: string;
+  personId?: PersonId;
+  /** Only these types. */
+  types?: readonly string[];
+}
+
+/** What one redaction took the content of, told to `onRedacted` listeners once it committed. */
+export interface Redaction {
+  /** The events whose content went. */
+  ids: readonly string[];
+  /** The keys redacted (`RedactionFilter.key`): what a cache of lines must drop by key. */
+  keys: readonly string[];
+}
+
+export type RedactionListener = (redaction: Redaction) => void;
+
 /** The tiers compaction removes from; `keep` is never removed. */
 export type CompactedTier = Exclude<EventTier, "keep">;
 
@@ -153,6 +179,11 @@ export interface EventLogStore {
    * already redacted.
    */
   redact(id: string, reason: string, source: string): Awaitable<EventEnvelope | null>;
+  /**
+   * Hears every redaction once it is committed, so a reader that keeps lines in memory can drop
+   * their content too. Returns the function that stops it. Optional for test doubles.
+   */
+  onRedacted?(listener: RedactionListener): () => void;
   /**
    * Removes old rows by tier, leaves first: a row goes only when no row names it as `parent`, so
    * what stays keeps its whole chain. What it removes is counted in the rollups.
@@ -258,6 +289,9 @@ export class EventStore implements EventLogStore {
   readonly #db: Db;
   readonly #identity: Identity | null;
   readonly #select: string;
+  readonly #listeners = new Set<RedactionListener>();
+  /** Keys redacted in this process, oldest first: a later append of one is stored redacted. */
+  readonly #redactedKeys = new Set<string>();
 
   constructor(db: Db, options: EventStoreOptions = {}) {
     this.#db = db;
@@ -382,11 +416,17 @@ export class EventStore implements EventLogStore {
       // A draft's `data` is typed by zod's input side of `JsonValueSchema`; producers hand JSON.
       data: (d.data ?? null) as JsonValue,
     };
+    // A line of a key redacted before it reached the store (it waited in a writer's buffer).
+    const late = envelope.key !== null && this.#redactedKeys.has(envelope.key);
+    if (late) {
+      envelope.data = { ...REDACTED_DATA };
+      envelope.redacted_at = fromMicros(this.#db.nowMicros());
+    }
     const inserted = this.#db.get(
       "INSERT INTO events (id, at, type, v, source, parent, turn, session, space_id, room_id, " +
-        "person_id, account_id, scope, tier, key, data) VALUES ($id, $at, $type, $v, $source, " +
-        "$parent, $turn, $session, $space_id, $room_id, $person_id, $account_id, $scope, $tier, " +
-        "$key, $data) ON CONFLICT (id) DO NOTHING RETURNING seq",
+        "person_id, account_id, scope, tier, key, data, redacted_at) VALUES ($id, $at, $type, " +
+        "$v, $source, $parent, $turn, $session, $space_id, $room_id, $person_id, $account_id, " +
+        "$scope, $tier, $key, $data, $redacted_at) ON CONFLICT (id) DO NOTHING RETURNING seq",
       {
         id: envelope.id,
         at: toMicros(envelope.at),
@@ -404,8 +444,10 @@ export class EventStore implements EventLogStore {
         tier: envelope.tier,
         key: envelope.key,
         data: JSON.stringify(envelope.data),
+        redacted_at: optionalMicros(envelope.redacted_at),
       },
     );
+    if (late && inserted !== undefined) this.#record(envelope, "redacted on arrival", write.source);
     if (inserted === undefined) {
       // Appended before (a retry keeps its id): what is stored stands.
       const stored = this.#db.get("SELECT * FROM events WHERE id = $id", { id: envelope.id });
@@ -511,41 +553,133 @@ export class EventStore implements EventLogStore {
 
   // ---- redaction ----------------------------------------------------------------------------
 
+  /** A bound function: it works on wrappers of the store (`Object.create`) too. */
+  readonly onRedacted = (listener: RedactionListener): (() => void) => {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  };
+
+  /** Appends the `privacy.redacted` record of `target` (never its text). */
+  #record(target: EventEnvelope, reason: string, source: string): EventEnvelope {
+    return this.#insert(
+      {
+        draft: {
+          id: newId(),
+          at: fromMicros(this.#db.nowMicros()),
+          type: PrivacyRedacted.type,
+          v: PrivacyRedacted.v,
+          // Not `parent`: a record kept forever would keep the redacted row forever too.
+          session: target.session,
+          space_id: target.space_id,
+          room_id: target.room_id,
+          person_id: target.person_id,
+          data: { target: target.id, reason },
+        },
+        source,
+      },
+      new Map(),
+    );
+  }
+
+  /** Redacts `rows` and records each; the caller holds the transaction. */
+  #redactRows(rows: readonly Row[], reason: string, source: string): EventEnvelope[] {
+    const at = this.#db.nowMicros();
+    const records: EventEnvelope[] = [];
+    for (const row of rows) {
+      const target = envelopeOf(row);
+      if (target.redacted_at !== null) continue;
+      this.#db.run(
+        "UPDATE events SET data = $data, redacted_at = $at WHERE id = $id AND redacted_at IS NULL",
+        { data: REDACTED_JSON, at, id: target.id },
+      );
+      records.push(this.#record(target, reason, source));
+    }
+    return records;
+  }
+
+  #told(redaction: Redaction): void {
+    if (redaction.ids.length === 0 && redaction.keys.length === 0) return;
+    for (const listener of this.#listeners) {
+      try {
+        listener(redaction);
+      } catch (error) {
+        log.warn({ err: errorMessage(error) }, "a redaction listener failed");
+      }
+    }
+  }
+
   redact(id: string, reason: string, source: string): EventEnvelope | null {
+    let records: EventEnvelope[];
     try {
-      return this.#db.tx(() => {
+      records = this.#db.tx(() => {
         const row = this.#db.get("SELECT * FROM events WHERE id = $id", { id });
-        if (row === undefined) return null;
-        const target = envelopeOf(row);
-        if (target.redacted_at !== null) return null;
-        const at = this.#db.nowMicros();
-        this.#db.run(
-          "UPDATE events SET data = $data, redacted_at = $at WHERE id = $id AND redacted_at IS NULL",
-          { data: REDACTED_JSON, at, id },
-        );
-        return this.#insert(
-          {
-            draft: {
-              id: newId(),
-              at: fromMicros(at),
-              type: PrivacyRedacted.type,
-              v: PrivacyRedacted.v,
-              // Not `parent`: a record kept forever would keep the redacted row forever too.
-              session: target.session,
-              space_id: target.space_id,
-              room_id: target.room_id,
-              person_id: target.person_id,
-              data: { target: id, reason },
-            },
-            source,
-          },
-          new Map(),
-        );
+        return row === undefined ? [] : this.#redactRows([row], reason, source);
       });
     } catch (cause) {
       if (cause instanceof StoreError) throw cause;
       throw new StoreError("cannot redact the event", { cause });
     }
+    const record = records[0] ?? null;
+    if (record !== null) this.#told({ ids: [id], keys: [] });
+    return record;
+  }
+
+  /**
+   * Redacts every event `filter` matches, in one transaction, each with its `privacy.redacted`
+   * record; returns the records. A filter must name a key or a person: nothing redacts the
+   * whole log.
+   */
+  redactWhere(filter: RedactionFilter, reason: string, source: string): EventEnvelope[] {
+    if (filter.key === undefined && filter.personId === undefined) {
+      throw new StoreError("a redaction names a key or a person");
+    }
+    if (filter.types?.length === 0) return [];
+    const where = ["redacted_at IS NULL"];
+    const params: Params = {};
+    if (filter.key !== undefined) {
+      where.push("key = $key");
+      params.key = filter.key;
+    }
+    if (filter.personId !== undefined) {
+      where.push("person_id = $person");
+      params.person = filter.personId;
+    }
+    if (filter.types !== undefined) {
+      where.push("type IN (SELECT value FROM json_each($types))");
+      params.types = JSON.stringify(filter.types);
+    }
+    let records: EventEnvelope[];
+    try {
+      records = this.#db.tx(() => {
+        const rows = this.#db.all(
+          `SELECT * FROM events WHERE ${where.join(" AND ")} ORDER BY seq`,
+          params,
+        );
+        return this.#redactRows(rows, reason, source);
+      });
+    } catch (cause) {
+      if (cause instanceof StoreError) throw cause;
+      throw new StoreError("cannot redact the events", { cause });
+    }
+    const keys: string[] = [];
+    if (filter.key !== undefined) {
+      keys.push(filter.key);
+      this.#redactedKeys.delete(filter.key);
+      this.#redactedKeys.add(filter.key);
+      while (this.#redactedKeys.size > REDACTED_KEYS) {
+        const oldest = this.#redactedKeys.values().next().value;
+        if (oldest === undefined) break;
+        this.#redactedKeys.delete(oldest);
+      }
+    }
+    const ids = records.flatMap((r) => {
+      const data = r.data;
+      return isJsonObject(data) && typeof data.target === "string" ? [data.target] : [];
+    });
+    this.#told({ ids, keys });
+    return records;
   }
 
   // ---- compaction ---------------------------------------------------------------------------

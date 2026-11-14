@@ -81,3 +81,51 @@ CREATE TABLE event_rollups (
     PRIMARY KEY (day, type, source)
 ) STRICT;
 `;
+
+/**
+ * Core migration 3: chat lines on the event log (§2.7, §8 step 5). The lines of a session and of
+ * an account, by time, over partial indexes (the chat types are a few percent of the log), and
+ * `v_messages`, the old `message_log` columns read from the payloads (the data export uses it).
+ * The type list is the same text in `chat.ts`: SQLite uses a partial index only when the query
+ * names its condition.
+ */
+export const CHAT_SQL = `-- A session's chat lines by time: MessageLog.recent.
+CREATE INDEX events_chat_session_idx ON events (session, at, seq)
+    WHERE type IN ('platform.message.created', 'voice.utterance', 'voice.playback');
+
+-- An account's chat lines by time: MessageLog.authoredSince.
+CREATE INDEX events_chat_account_idx ON events (account_id, at, seq)
+    WHERE type IN ('platform.message.created', 'voice.utterance', 'voice.playback');
+
+-- The chat lines as the message log's rows. A redacted line keeps its envelope; what its payload
+-- held reads as NULL.
+CREATE VIEW v_messages AS
+SELECT
+    seq,
+    id,
+    type,
+    coalesce(json_extract(data, '$.id.context.platform'), json_extract(data, '$.context.platform'))
+        AS platform,
+    CASE WHEN json_type(data, '$.id.context') IS NOT NULL THEN json_extract(data, '$.id.context.scope')
+         ELSE json_extract(data, '$.context.scope') END AS scope,
+    coalesce(json_extract(data, '$.id.context.channel'), json_extract(data, '$.context.channel'))
+        AS channel,
+    coalesce(json_extract(data, '$.id.context.kind'), json_extract(data, '$.context.kind')) AS kind,
+    coalesce(json_extract(data, '$.author.account.platform'),
+             json_extract(data, '$.speaker.account.platform')) AS author_platform,
+    coalesce(json_extract(data, '$.author.account.id'), json_extract(data, '$.speaker.account.id'))
+        AS author_id,
+    coalesce(json_extract(data, '$.author.display_name'), json_extract(data, '$.speaker.display_name'))
+        AS author_name,
+    json_extract(data, '$.text') AS text,
+    CASE WHEN type = 'voice.playback' OR json_extract(data, '$.self') = 1 THEN 1 ELSE 0 END
+        AS is_self,
+    at AS ts,
+    turn AS turn_id,
+    session,
+    person_id,
+    redacted_at,
+    data
+FROM events
+WHERE type IN ('platform.message.created', 'voice.utterance', 'voice.playback');
+`;

@@ -15,7 +15,6 @@ import {
   type AccountRef,
   type Clock,
   type ContextKey,
-  type ContextKind,
   type DecisionTrace,
   type Directive,
   type DirectiveRecord,
@@ -69,6 +68,7 @@ import {
   wipeStatements,
 } from "./data.js";
 import { Db, type Params, type Row } from "./db.js";
+import { ChatLog } from "./events/chat.js";
 import { EventStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
 import {
@@ -83,7 +83,6 @@ import { legacySchema } from "./legacy-schema/index.js";
 import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
 import type {
   AuditEntry,
-  AuthoredEntry,
   AuthScope,
   Bounty,
   BountyPatch,
@@ -106,7 +105,6 @@ import type {
   GoalPledge,
   GoalStatus,
   LedgerDayTotal,
-  LogEntry,
   MemberCardRecord,
   MemoryFilter,
   MemoryHit,
@@ -222,103 +220,6 @@ const SQLITE_DIALECT: SqlDialect = {
   list: (values) => JSON.stringify(values),
   bool: (value) => (value ? 1 : 0),
 };
-
-// ---- conversation log ---------------------------------------------------------------------
-
-function logEntryFromRow(row: Row): LogEntry {
-  return {
-    id: str(row, "id"),
-    profile: str(row, "profile_id"),
-    context: {
-      platform: str(row, "platform"),
-      scope: optStr(row, "scope"),
-      channel: str(row, "channel"),
-      kind: str(row, "kind") as ContextKind,
-    },
-    author: { platform: str(row, "author_platform"), id: str(row, "author_id") },
-    author_name: str(row, "author_name"),
-    text: str(row, "text"),
-    is_self: bool(row, "is_self"),
-    ts: ts(row, "ts"),
-    turn: optStr(row, "turn_id"),
-  };
-}
-
-class SqliteMessageLog implements MessageLog {
-  constructor(private readonly db: Db) {}
-
-  async append(entry: LogEntry): Promise<void> {
-    try {
-      this.db.run(
-        "INSERT INTO message_log (id, profile_id, context_key, platform, scope, channel, kind, " +
-          "author_platform, author_id, author_name, text, is_self, ts, turn_id) VALUES ($id, " +
-          "$profile, $key, $platform, $scope, $channel, $kind, $author_platform, $author_id, " +
-          "$author_name, $text, $is_self, $ts, $turn)",
-        {
-          id: entry.id,
-          profile: entry.profile,
-          key: contextLookupKey(entry.context),
-          platform: entry.context.platform,
-          scope: entry.context.scope,
-          channel: entry.context.channel,
-          kind: entry.context.kind,
-          author_platform: entry.author.platform,
-          author_id: entry.author.id,
-          author_name: entry.author_name,
-          text: entry.text,
-          is_self: entry.is_self ? 1 : 0,
-          ts: toMicros(entry.ts),
-          turn: entry.turn,
-        },
-      );
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      if (isConstraintError(cause)) {
-        throw new StoreError(`log entry \`${entry.id}\` already exists`, { cause });
-      }
-      throw new StoreError("cannot append log entry", { cause });
-    }
-  }
-
-  async purge(profile: ProfileId): Promise<number> {
-    return this.db.run("DELETE FROM message_log WHERE profile_id = $profile", { profile });
-  }
-
-  async recent(profile: ProfileId, context: ContextKey, limit: number): Promise<LogEntry[]> {
-    const rows = this.db.all(
-      "SELECT * FROM (SELECT * FROM message_log WHERE profile_id = $profile AND " +
-        "context_key = $key ORDER BY ts DESC, seq DESC LIMIT $limit) ORDER BY ts ASC, seq ASC",
-      { profile, key: contextLookupKey(context), limit: limitParam(limit) },
-    );
-    return rows.map(logEntryFromRow);
-  }
-
-  async authoredSince(
-    profile: ProfileId,
-    authors: readonly AccountRef[],
-    since: Timestamp,
-    limit: number,
-  ): Promise<AuthoredEntry[]> {
-    if (authors.length === 0) return [];
-    const params: Record<string, string | number> = {
-      profile,
-      since: toMicros(since),
-      limit: limitParam(limit),
-    };
-    const who = authors.map((a, i) => {
-      params[`p${i}`] = a.platform;
-      params[`a${i}`] = a.id;
-      return `(author_platform = $p${i} AND author_id = $a${i})`;
-    });
-    const rows = this.db.all(
-      "SELECT * FROM (SELECT ts, kind, seq FROM message_log WHERE profile_id = $profile AND " +
-        `is_self = 0 AND ts >= $since AND (${who.join(" OR ")}) ORDER BY ts DESC, seq DESC ` +
-        "LIMIT $limit) ORDER BY ts ASC, seq ASC",
-      params,
-    );
-    return rows.map((row) => ({ ts: ts(row, "ts"), kind: str(row, "kind") as ContextKind }));
-  }
-}
 
 // ---- member cards -------------------------------------------------------------------------
 
@@ -2440,6 +2341,8 @@ export class SqliteStore implements Store {
   readonly audit: AuditLog;
   readonly profileData: ProfileDataStore;
   readonly events: EventStore;
+  /** Chat lines on the event log; `messages` is the same object. */
+  readonly chat: ChatLog;
   readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;
   readonly coins: CoinLedgerStore;
@@ -2456,7 +2359,6 @@ export class SqliteStore implements Store {
   private constructor(db: Db, maxDecisions: number | null) {
     this.#db = db;
     this.persons = new Identity(db);
-    this.messages = new SqliteMessageLog(db);
     this.moduleState = new SqliteModuleState(db);
     this.personaOverrides = new SqlitePersonaOverrides(db);
     this.people = new IdentityPeople(this.persons);
@@ -2470,6 +2372,8 @@ export class SqliteStore implements Store {
     this.audit = new SqliteAudit(db);
     this.profileData = new SqliteProfileData(db);
     this.events = new EventStore(db, { identity: this.persons });
+    this.chat = new ChatLog(db, this.events, this.persons);
+    this.messages = this.chat;
     this.directives = new SqliteDirectives(db);
     this.cards = new SqliteMemberCards(db);
     this.coins = new SqliteCoins(db);

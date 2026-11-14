@@ -128,21 +128,22 @@ async function setup() {
       done: false,
       superseded_by: null,
     });
-    await store.messages.append({
-      id: newId(),
-      profile: p,
-      context: ctx,
-      author: acct("2"),
-      author_name: "Owen",
-      text: "我喜歡拉麵",
-      is_self: false,
-      ts: now,
-      turn: null,
-    });
     await store.settings.set(p, `${WATERMARK_PREFIX}x`, { at: now });
     await store.settings.set(p, "mood:last", { valence: 0.2 });
     await store.settings.set(p, "channel_mode:x", "always");
   }
+  // The conversation log is the character's (one database each): one line, not one per profile.
+  await store.messages.append({
+    id: newId(),
+    profile: profile(),
+    context: ctx,
+    author: acct("2"),
+    author_name: "Owen",
+    text: "我喜歡拉麵",
+    is_self: false,
+    ts: now,
+    turn: null,
+  });
   return { store, sup, counting, registry: services.require(CommandRegistryKey), services };
 }
 
@@ -292,7 +293,8 @@ describe("memory wipe", () => {
     expect(await store.messages.recent(profile(), ctx, 9)).toEqual([]);
     expect([...(await store.settings.list(profile(), "")).keys()]).toEqual(["channel_mode:x"]);
     expect(await store.memories.list("other", filter)).toHaveLength(1);
-    expect(await store.messages.recent("other", ctx, 9)).toHaveLength(1);
+    // The log went with it: one database belongs to one character.
+    expect(await store.messages.recent("other", ctx, 9)).toEqual([]);
 
     // Audited, and the caching modules were restarted (fresh engine).
     const audit = await store.audit.recent(10, "discord:1");

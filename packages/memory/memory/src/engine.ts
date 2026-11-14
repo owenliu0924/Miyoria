@@ -15,6 +15,7 @@ import {
 } from "@miyoria/llm/llm";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
+  type ChatLogStore,
   embeddingValues,
   type LogEntry,
   type MemoryFilter,
@@ -26,6 +27,7 @@ import {
   type MessageLog,
   type PeopleStore,
   type SettingsStore,
+  StoreKey,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -68,7 +70,7 @@ import {
   summaryOf,
   supporting,
 } from "./evidence.js";
-import { EXCLUDED_KEY, ExclusionList, lineHash, messageKey } from "./exclusion.js";
+import { messageKey } from "./exclusion.js";
 import { expired, expiryOf, isPresentState, isStateLifetime, wordingTtlHours } from "./expiry.js";
 import {
   type Extraction,
@@ -269,6 +271,11 @@ export interface ForgetReport {
   derived: number;
   /** Records resting on events the log no longer holds, so nothing tied them to the person. */
   unverified: number;
+  /**
+   * Their lines in the conversation log whose content was taken out (forgetting everything;
+   * the envelopes stay, counted). Missing: none were.
+   */
+  lines?: number;
 }
 
 export interface MaintenanceReport {
@@ -296,6 +303,11 @@ export interface MemoryEngineOptions {
   events?: EventReader | null;
   /** Stable names of people, to tell whose events are whose. `attach` fills it in later. */
   handles?: HandleDirectory | null;
+  /**
+   * Chat lines on the event log: what "do not remember this" and "forget me" redact, and where a
+   * redacted line is found. `attach` fills it in later (the `Store`'s).
+   */
+  chat?: ChatLogStore | null;
   /** Source of "now" for writes without an explicit time (`markDone`). */
   clock?: Clock;
 }
@@ -383,13 +395,12 @@ export class MemoryEngine implements FollowupSource {
   readonly #router: LlmRouter | null;
   #events: EventReader | null;
   #handles: HandleDirectory | null;
+  #chat: ChatLogStore | null;
   readonly #clock: Clock;
   readonly #watermarks = new Map<string, Watermark>();
   /** Contexts whose last batch was unusable and is being carried over once (key → true). */
   readonly #carried = new Set<string>();
   readonly #repeats: RepeatDamper;
-  /** Messages she was asked not to remember: nothing derived from them is used or kept. */
-  readonly exclusions = new ExclusionList();
   #lastMaintenance: Timestamp | null = null;
   #version = 0;
 
@@ -409,6 +420,7 @@ export class MemoryEngine implements FollowupSource {
     this.#router = options.router ?? null;
     this.#events = options.events ?? null;
     this.#handles = options.handles ?? null;
+    this.#chat = options.chat ?? null;
     this.#clock = options.clock ?? systemClock;
     this.#repeats = new RepeatDamper(config.repeat);
   }
@@ -420,6 +432,7 @@ export class MemoryEngine implements FollowupSource {
   attach(services: ServiceLookup): void {
     this.#events ??= services.get(EventLogKey) ?? null;
     this.#handles ??= services.get(HandleDirectoryKey) ?? null;
+    this.#chat ??= services.get(StoreKey)?.chat ?? null;
   }
 
   /** The EventLog evidence is checked against, when there is one. */
@@ -648,9 +661,10 @@ export class MemoryEngine implements FollowupSource {
     }
     // A fact nothing said backs is not part of her past (`unknown` is a migrated record).
     const cited = mergeRefs(this.config.evidence.max_events, memory.source_events);
-    // What rests on a message she was asked to forget is not evidence; with nothing else
-    // behind it, it is not stored at all.
-    const evidence = cited.filter((ref) => !this.exclusions.hasRef(ref));
+    // What rests on a message she was asked to forget (a redacted line) is not evidence; with
+    // nothing else behind it, it is not stored at all.
+    const gone = await this.#redactedRefs(cited);
+    const evidence = cited.filter((ref) => !gone.has(ref));
     if (cited.length > 0 && evidence.length === 0) {
       return { type: "refused", reason: "no_evidence" };
     }
@@ -1062,16 +1076,10 @@ export class MemoryEngine implements FollowupSource {
     if (!last) return report;
     report.lines = allLines.length;
     const nextMark: Watermark = { context, ts: last.ts, id: last.id };
-    // Lines she was asked not to remember are never shown to the extractor nor cited.
-    const linked = await linkLines(this.#events, allLines, this.config.evidence);
-    const kept = allLines.filter(
-      (e, i) =>
-        !this.exclusions.hasLine(context, e.author_name, e.text) &&
-        !this.exclusions.hasRef(linked[i]?.ref ?? `${LINE_REF_PREFIX}${e.id}`) &&
-        !this.exclusions.hasRef(`${LINE_REF_PREFIX}${e.id}`),
-    );
-    const evidence = linked.filter((_, i) => kept.includes(allLines[i] as LogEntry));
-    const lines = kept;
+    // Lines she was asked not to remember are redacted: the log does not give them, so they are
+    // never shown to the extractor nor cited.
+    const evidence = await linkLines(this.#events, allLines, this.config.evidence);
+    const lines = allLines;
     if (lines.every((e) => e.is_self || e.text.trim() === "")) {
       await this.#setWatermark(nextMark);
       return report;
@@ -1741,34 +1749,65 @@ export class MemoryEngine implements FollowupSource {
     }
     if (keyword === null && person !== null) {
       report.about += await this.records.deleteBySubject(this.profile, person);
+      // What they said goes too: their lines keep their envelopes and lose their content.
+      const lines = await this.#forgetLines(person);
+      if (lines > 0) report.lines = lines;
     }
     report.deleted = report.about + report.derived;
     return report;
   }
 
-  // ---- messages she was asked not to remember ---------------------------------------------
+  // ---- messages she was asked not to remember, and people who asked to be forgotten --------
 
-  /** Reads the stored list; called once at start. */
-  async loadExclusions(): Promise<void> {
-    if (!this.#settings) return;
+  /** Which of `refs` (EventLog events and `msg:<line id>` chat lines) were redacted. */
+  async #redactedRefs(refs: readonly string[]): Promise<Set<string>> {
+    const chat = this.#chat;
+    if (chat === null || refs.length === 0) return new Set();
+    const ids = refs.map((r) =>
+      r.startsWith(LINE_REF_PREFIX) ? r.slice(LINE_REF_PREFIX.length) : r,
+    );
     try {
-      this.exclusions.load(await this.#settings.get(this.profile, EXCLUDED_KEY));
+      const redacted = await chat.redacted(ids);
+      return new Set(refs.filter((_, i) => redacted.has(ids[i] as string)));
     } catch (error) {
-      log.warn({ error: errorMessage(error) }, "cannot read the list of excluded messages");
+      log.warn({ error: errorMessage(error) }, "cannot check the evidence for redacted lines");
+      return new Set();
     }
   }
 
   /**
-   * A message was excluded: finds what stands for it in the EventLog and the chat log, keeps
-   * that (bounded, persisted), and takes it out of what is already derived. A memory resting
-   * on this message alone is deleted; one with other evidence stays and loses only this
-   * reference. Records that name no evidence cannot be tied to the message and stay.
+   * Redacts every line of `person` in the conversation log, and her observations of what they
+   * said, in one transaction; returns how many. The EventLog's buffer is written first, so a line
+   * of theirs from just now is among them.
+   */
+  async #forgetLines(person: PersonId): Promise<number> {
+    const chat = this.#chat;
+    if (chat === null) return 0;
+    await this.#events?.flush?.();
+    return await chat.forgetPerson(person, "forget me", "memory");
+  }
+
+  /**
+   * A message was excluded ("do not remember this"). The recorder redacts its events (its line
+   * and her observations of it), so no reader of the log sees it again; what is already derived
+   * from them is taken out here. A memory resting on this message alone is deleted; one with
+   * other evidence stays and loses only this reference. Records that name no evidence cannot be
+   * tied to the message and stay.
    */
   async excludeMessage(excluded: MessageExcluded): Promise<{ deleted: number; trimmed: number }> {
-    const platform = excluded.message.context.platform;
-    const key = messageKey(platform, excluded.message.id);
-    const refs: string[] = [];
-    const hashes: string[] = [];
+    const key = messageKey(excluded.message.context.platform, excluded.message.id);
+    const refs = new Set<string>();
+    if (this.#chat) {
+      try {
+        // Redacted or not yet: the envelope keeps its key either way.
+        for (const id of await this.#chat.eventsOf(key)) {
+          refs.add(id);
+          refs.add(`${LINE_REF_PREFIX}${id}`);
+        }
+      } catch (error) {
+        log.warn({ error: errorMessage(error) }, "cannot look up the excluded message's events");
+      }
+    }
     if (this.#events) {
       try {
         const found = await this.#events.query({
@@ -1776,47 +1815,13 @@ export class MemoryEngine implements FollowupSource {
           attention_key: key,
           limit: 10,
         });
-        for (const event of found) {
-          refs.push(event.id);
-          const summary = summaryOf(event);
-          if (summary !== null && !summary.endsWith(":(略過)")) hashes.push(lineHash(summary));
-        }
+        for (const event of found) refs.add(event.id);
       } catch (error) {
         log.warn({ error: errorMessage(error) }, "cannot look up the excluded message's event");
       }
     }
-    if (this.#messages && hashes.length > 0) {
-      try {
-        const lines = await this.#messages.recent(this.profile, excluded.context, 500);
-        for (const line of lines) {
-          if (hashes.includes(lineHash(`${line.author_name}:${line.text}`))) {
-            refs.push(`${LINE_REF_PREFIX}${line.id}`);
-          }
-        }
-      } catch (error) {
-        log.warn({ error: errorMessage(error) }, "cannot look up the excluded message's line");
-      }
-    }
-    this.exclusions.add({
-      c: contextKeyString(excluded.context),
-      key,
-      refs,
-      hashes,
-      at: Date.parse(excluded.at) || this.#clock.now(),
-    });
     this.#version += 1;
-    if (this.#settings) {
-      try {
-        await this.#settings.set(
-          this.profile,
-          EXCLUDED_KEY,
-          this.exclusions.toJSON() as unknown as JsonValue,
-        );
-      } catch (error) {
-        log.warn({ error: errorMessage(error) }, "cannot save the list of excluded messages");
-      }
-    }
-    return this.#unlearn(new Set(refs));
+    return this.#unlearn(refs);
   }
 
   /** Drops `refs` from the evidence of every record; a record left with none is deleted. */

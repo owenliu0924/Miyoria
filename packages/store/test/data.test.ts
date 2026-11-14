@@ -76,17 +76,6 @@ async function seed(store: Store) {
       last_interaction: null,
       updated_at: toTimestamp(T0),
     });
-    await store.messages.append({
-      id: newId(),
-      profile: p,
-      context: ctx,
-      author: { platform: "discord", id: "2" },
-      author_name: "Owen",
-      text: "嗨",
-      is_self: false,
-      ts: toTimestamp(T0),
-      turn: null,
-    });
     await store.personaOverrides.set(p, "style", "新的", "test");
     for (const key of [
       "memory_watermark:x",
@@ -102,6 +91,18 @@ async function seed(store: Store) {
       await store.settings.set(p, key, 1);
     }
   }
+  // The conversation log is the character's (one database each): one line, not one per profile.
+  await store.messages.append({
+    id: newId(),
+    profile: P,
+    context: ctx,
+    author: { platform: "discord", id: "2" },
+    author_name: "Owen",
+    text: "嗨",
+    is_self: false,
+    ts: toTimestamp(T0),
+    turn: null,
+  });
   for (const key of [
     "initiative:state",
     "queue:state",
@@ -150,9 +151,12 @@ describe("data categories", () => {
       c.parts.some((p) => p.kind === "settings" && p.prefixes.includes("memory_watermark:")),
     );
     expect(watermarks.map((c) => c.id)).toEqual(["messages"]);
-    expect(watermarks[0]?.parts.some((p) => p.kind === "table" && p.table === "message_log")).toBe(
-      true,
-    );
+    // The log is the chat lines of the event log.
+    expect(
+      watermarks[0]?.parts.some(
+        (p) => p.kind === "table" && p.id === "message_log" && p.table === "events",
+      ),
+    ).toBe(true);
     expect(RESET_CATEGORIES).not.toContain("audit");
     expect(RESET_CATEGORIES).not.toContain("llm_usage");
     expect(RESET_CATEGORIES).not.toContain("panel_sessions");
@@ -241,8 +245,9 @@ describe("data categories", () => {
     ]);
     expect((await store.settings.list(P, "")).size).toBe(0);
 
-    // The other profile keeps its own data (people are shared and gone).
-    expect(await store.messages.recent(OTHER, ctx, 9)).toHaveLength(1);
+    // The other profile keeps its own data (people are shared and gone, and so is the
+    // conversation log: one database belongs to one character).
+    expect(await store.messages.recent(OTHER, ctx, 9)).toEqual([]);
     expect((await store.relationships.get(OTHER, owen))?.call_name).toBe("歐文");
     expect((await store.settings.list(OTHER, "")).size).toBe(9);
     expect((await store.personaOverrides.current(OTHER)).size).toBe(1);

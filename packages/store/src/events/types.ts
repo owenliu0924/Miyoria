@@ -9,10 +9,15 @@
 // The `facts.*` types are what the V3 facts writer (`@miyoria/memory/facts`) records: one type per
 // line kind, and three for observations, split by how long they are kept. They are not named
 // after the bus topic a line came from: a line's `data` is the facts body (an `ObservationBody`,
-// a decision trace), not the topic's payload, and the topic stays in `data.origin.topic`. Steps 5
-// to 7 of v5-data §8 replace them with `chat.*`, `turn.*` and `llm.call`.
+// a decision trace), not the topic's payload, and the topic stays in `data.origin.topic`. Steps 6
+// and 7 of v5-data §8 replace the turn and LLM ones with `turn.*` and `llm.call`.
+//
+// The chat line types (`platform.message.created`, `voice.utterance`, `voice.playback`, defined
+// with their payloads in `@miyoria/contracts/events`) are the raw record of conversation.
+// `facts.observation.said` and `facts.utterance` stay beside them: they are her observations of
+// those lines, a derived view, not the record.
 
-import { defineEvent, EventRegistry } from "@miyoria/contracts/events";
+import { CHAT_EVENTS, defineEvent, EventRegistry } from "@miyoria/contracts/events";
 import { JsonValueSchema } from "@miyoria/contracts/wire";
 
 /** Prefix of every type the facts writer records. */
@@ -138,5 +143,5 @@ export const FACTS_EVENTS = [
 
 /** A new registry holding every type the store knows. Callers may register more. */
 export function coreEventRegistry(): EventRegistry {
-  return new EventRegistry().register(...FACTS_EVENTS, PrivacyRedacted);
+  return new EventRegistry().register(...FACTS_EVENTS, ...CHAT_EVENTS, PrivacyRedacted);
 }

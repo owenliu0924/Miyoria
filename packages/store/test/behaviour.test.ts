@@ -259,20 +259,23 @@ function behaviour(open: () => Promise<Store>): void {
     const log = store.messages;
     const profile = unique("profile");
     const ctx = channel(null, unique("dm"), "dm");
+    // A DM is placed by the person she talks with there: their line first (a line of hers in a
+    // DM nobody has written in yet is stored, without a place, and not read back here).
+    const theirs = entry(profile, ctx, "在嗎", at(Date.now() - 1000));
     const e = entry(profile, ctx, "她說的話", at(Date.now()));
     e.author = account("999");
     e.author_name = "Miyori";
     e.is_self = true;
     e.turn = newId();
+    await log.append(theirs);
     await log.append(e);
-    expect(await log.recent(profile, ctx, 10)).toEqual([e]);
+    expect(await log.recent(profile, ctx, 10)).toEqual([theirs, e]);
     await expect(log.append(e), "duplicate id must fail").rejects.toThrow(/already exists/);
   });
 
   it("message_log_isolation", async () => {
     const log = store.messages;
     const profile = unique("profile");
-    const otherProfile = unique("profile");
     const id = unique("chan");
     const textCtx = channel("guild", id, "channel");
     const voiceCtx = channel("guild", id, "voice");
@@ -281,10 +284,10 @@ function behaviour(open: () => Promise<Store>): void {
     await log.append(entry(profile, textCtx, "text", now));
     await log.append(entry(profile, voiceCtx, "voice", now));
     await log.append(entry(profile, otherGuild, "other", now));
-    await log.append(entry(otherProfile, textCtx, "other profile", now));
 
+    // Places apart; profiles are not: one database belongs to one character.
     expect(texts(await log.recent(profile, textCtx, 10))).toEqual(["text"]);
-    expect(texts(await log.recent(otherProfile, textCtx, 10))).toEqual(["other profile"]);
+    expect(texts(await log.recent(profile, voiceCtx, 10))).toEqual(["voice"]);
     const empty = channel("guild", unique("chan"), "channel");
     expect(await log.recent(profile, empty, 10)).toEqual([]);
   });
@@ -1671,26 +1674,29 @@ function behaviour(open: () => Promise<Store>): void {
     const profile = unique("profile");
     const ctx = channel("guild", unique("chan"), "channel");
     const voice = channel("guild", unique("chan"), "voice");
-    const theirs = (text: string, context: ContextKey, ms: number, id = "100"): LogEntry => ({
+    // Accounts of this case only: the count is of the whole database (the file runs share one).
+    const owen = unique("100");
+    const amy = unique("200");
+    const theirs = (text: string, context: ContextKey, ms: number, id = owen): LogEntry => ({
       ...entry(profile, context, text, at(ms)),
       author: account(id),
     });
     await store.messages.append(theirs("old", ctx, 0));
     await store.messages.append(theirs("a", ctx, 10_000));
     await store.messages.append(theirs("b", voice, 20_000));
-    await store.messages.append(theirs("other", ctx, 30_000, "200"));
+    await store.messages.append(theirs("other", ctx, 30_000, amy));
     await store.messages.append({ ...theirs("her", ctx, 40_000), is_self: true });
     await store.messages.append(theirs("c", ctx, 50_000));
-    const got = await store.messages.authoredSince(profile, [account("100")], at(5_000), 10);
+    const got = await store.messages.authoredSince(profile, [account(owen)], at(5_000), 10);
     expect(got.map((e) => e.kind)).toEqual(["channel", "voice", "channel"]);
     expect(Date.parse(got[0]?.ts ?? "")).toBe(Date.parse(at(10_000)));
-    expect(
-      await store.messages.authoredSince(profile, [account("100")], at(5_000), 2),
-    ).toHaveLength(2);
+    expect(await store.messages.authoredSince(profile, [account(owen)], at(5_000), 2)).toHaveLength(
+      2,
+    );
     expect(await store.messages.authoredSince(profile, [], at(0), 10)).toEqual([]);
     const both = await store.messages.authoredSince(
       profile,
-      [account("100"), account("200")],
+      [account(owen), account(amy)],
       at(0),
       10,
     );
@@ -2149,7 +2155,8 @@ function behaviour(open: () => Promise<Store>): void {
         },
         { wallet: [] },
       );
-      await store.messages.append(entry(p, ctx, "嗨", at(t0)));
+      // No chat line: the conversation log is the whole database's (one character), and the
+      // file runs share one database. data.test.ts and chat.test.ts cover it on fresh ones.
       await store.decisions.append(decision(p, ctx, "replied", at(t0)));
       await store.decisions.appendOutcome?.(p, outcome(ctx, "sent", at(t0)));
       await store.personaOverrides.set(p, "style", "新的口吻", "test");
@@ -2180,17 +2187,15 @@ function behaviour(open: () => Promise<Store>): void {
     expect(count("call_names")).toBe(1);
     expect(count("inner")).toBe(2);
     expect(count("mood")).toBe(1);
-    expect(count("messages")).toBe(3); // one line + two watermarks
+    expect(count("messages")).toBeGreaterThanOrEqual(2); // two watermarks, any chat lines
     expect(count("decisions")).toBe(2); // decision log + turn outcome
     expect(count("channels")).toBe(2);
     expect(count("persona")).toBe(1);
     expect(count("proposed_tools")).toBe(1);
     expect(count("extensions")).toBe(1);
     const messages = inventory.categories.find((c) => c.id === "messages");
-    expect(messages?.parts.map((p) => [p.id, p.count])).toEqual([
-      ["message_log", 1],
-      ["memory_watermarks", 2],
-    ]);
+    expect(messages?.parts.map((p) => p.id)).toEqual(["message_log", "memory_watermarks"]);
+    expect(messages?.parts.find((p) => p.id === "memory_watermarks")?.count).toBe(2);
     expect(messages?.updated_at).not.toBeNull();
 
     const backup = await store.profileData.export(profile, ["memories", "messages", "call_names"]);
@@ -2199,7 +2204,6 @@ function behaviour(open: () => Promise<Store>): void {
     expect(backup.parts.memory_records).toHaveLength(2);
     expect(backup.parts.memory_records?.[0]).toMatchObject({ kind: "fact", done: false });
     expect(backup.parts.memory_records?.[0]).not.toHaveProperty("embedding");
-    expect(backup.parts.message_log?.[0]).toMatchObject({ text: "嗨", is_self: false, ts: at(t0) });
     expect(backup.parts.memory_watermarks?.map((r) => [r.key, r.value])).toEqual([
       ["memory_watermark:a", { at: 1 }],
       ["memory_watermark:b", { at: 2 }],
@@ -2212,14 +2216,12 @@ function behaviour(open: () => Promise<Store>): void {
 
     // Each category alone, then nothing of it is left and the rest is untouched.
     const counts = await store.profileData.wipe(profile, ["messages"]);
-    expect(counts).toEqual({
-      message_log: 1,
+    expect(counts).toMatchObject({
       memory_watermarks: 2,
       conversation_states: 0,
       events: 0,
       event_rollups: 0,
     });
-    expect(await store.messages.recent(profile, ctx, 9)).toEqual([]);
     expect((await store.settings.list(profile, "memory_watermark:")).size).toBe(0);
     expect(await store.memories.list(profile, { ...baseFilter, limit: 9 })).toHaveLength(2);
 
@@ -2276,7 +2278,6 @@ function behaviour(open: () => Promise<Store>): void {
 
     // Other profiles are untouched.
     expect(await store.memories.list(other, { ...baseFilter, limit: 9 })).toHaveLength(2);
-    expect(await store.messages.recent(other, ctx, 9)).toHaveLength(1);
     expect((await store.settings.list(other, "")).size).toBe(10);
     expect((await store.relationships.get(other, person))?.call_name).toBe("歐文");
 
@@ -2285,13 +2286,9 @@ function behaviour(open: () => Promise<Store>): void {
     await expect(store.profileData.wipe(profile, ["nope" as never])).rejects.toThrow(/unknown/);
   });
 
-  it("purges messages and deletes settings by prefix", async () => {
+  it("deletes settings by prefix", async () => {
+    // Purging the message log (the whole database's) is in message-log.test.ts.
     const profile = unique("profile");
-    const ctx = channel(unique("g"), "chan", "channel");
-    await store.messages.append(entry(profile, ctx, "a", at(0)));
-    await store.messages.append(entry(profile, channel(null, "dm", "dm"), "b", at(0)));
-    expect(await store.messages.purge(profile)).toBe(2);
-    expect(await store.messages.recent(profile, ctx, 9)).toEqual([]);
     await store.settings.set(profile, "a%:1", 1);
     await store.settings.set(profile, "a%:2", 2);
     await store.settings.set(profile, "ab:3", 3);

@@ -141,6 +141,7 @@ export class MemoryModule implements Module {
     const messages = services.get(MessageLogKey) ?? store?.messages ?? null;
     const people = services.get(PeopleStoreKey) ?? store?.people ?? null;
     const settings = services.get(SettingsStoreKey) ?? store?.settings ?? null;
+    const chat = store?.chat ?? null;
     const embedder = this.#embedder ?? buildEmbedder(this.embedding);
     this.#degraded = messages === null ? "no message log: consolidation is off" : null;
 
@@ -150,6 +151,7 @@ export class MemoryModule implements Module {
       messages,
       settings,
       router,
+      chat,
       clock: ctx.clock,
     });
     this.#engine = engine;
@@ -168,7 +170,6 @@ export class MemoryModule implements Module {
     ctx.provide(FollowupSourceKey, engine);
     ctx.provide(MemoryCuratorKey, new Curator(engine));
     ctx.provide(PersonNoteWriterKey, new PersonNotes(engine));
-    await engine.loadExclusions();
     this.#installer.recent = recent;
     const book = new DateBook(settings, this.profile);
     this.#installer.book = book;

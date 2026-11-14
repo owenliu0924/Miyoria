@@ -47,6 +47,7 @@ describe("the table", () => {
     expect(applied.map((m) => `${m.plugin}:${m.version}:${m.name}`)).toEqual([
       "core:1:bookkeeping",
       "core:2:events",
+      "core:3:chat",
     ]);
     const strict = db.all("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'event%'");
     expect(strict).toEqual(
@@ -61,6 +62,8 @@ describe("the table", () => {
       .sort();
     expect(names).toEqual([
       "index:events_at_idx",
+      "index:events_chat_account_idx",
+      "index:events_chat_session_idx",
       "index:events_key_idx",
       "index:events_parent_idx",
       "index:events_person_idx",

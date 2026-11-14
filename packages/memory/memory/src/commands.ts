@@ -118,10 +118,10 @@ export function wipeModules(scope: WipeScope): string[] {
 
 /** What `me memory forget` removes, said before it is asked and again after it is done. */
 export const FORGET_REMOVES =
-  "會刪除：關於你的記憶、你告訴她的事，以及從你說過的話整理出來的記憶（經歷、事實、她的筆記）；全部忘記時，她筆記本裡關於你的頁面也一起刪除。";
+  "會刪除：關於你的記憶、你告訴她的事，以及從你說過的話整理出來的記憶（經歷、事實、她的筆記）；全部忘記時，她筆記本裡關於你的頁面也一起刪除，聊天紀錄裡你說過的話也會清掉內容，只留下時間。";
 /** What it leaves, and why. */
 export const FORGET_KEEPS =
-  "不會刪除：聊天紀錄和事件紀錄（那是整理記憶的證據，只有擁有者能用 /admin memory wipe 清除）、她對你的羈絆與印象，以及和你無關、也不是從你的話整理出來的記憶。之後你再說起同樣的事，她可能會重新記下來。";
+  "不會刪除：事件紀錄裡的其他事（只有擁有者能用 /admin memory wipe 清除）、她對你的羈絆與印象，以及和你無關、也不是從你的話整理出來的記憶；用關鍵字忘記時，聊天紀錄不變。之後你再說起同樣的事，她可能會重新記下來。";
 
 const R = {
   showPage: "me:memory:page",
