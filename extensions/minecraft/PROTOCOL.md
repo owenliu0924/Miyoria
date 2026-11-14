@@ -179,7 +179,7 @@ adapter 應該從這個檔案讀 `port` 與 `token`(同一台機器上)。
   "offhand": null,
   "looking_at": { "kind": "block", "block": "oak_log", "position": { "x": 5, "y": 64, "z": -3 }, "face": "north", "distance": 2.4 },
   "nearby_entities": [
-    { "type": "zombie", "distance": 3.0, "hostile": true },
+    { "type": "zombie", "distance": 3.0, "hostile": true, "position": { "x": 5, "y": 64, "z": -2 } },
     { "type": "player", "name": "Steve", "distance": 8.0, "hostile": false },
     { "type": "cow", "distance": 12.0, "hostile": false }
   ],
@@ -203,7 +203,7 @@ adapter 應該從這個檔案讀 `port` 與 `token`(同一台機器上)。
 - `held_item` 沒拿東西時為 `null`;`durability_pct` 只有會損耗的物品才有(剩餘百分比)。
 - `inventory`:物品 id → 總數(整個背包 + 快捷列加總,依 id 排序);`hotbar` 是 9 格,空格為 `null`;`armor` / `offhand` 空的為 `null`。
 - `looking_at`:準心指到的東西。`kind` 為 `block` / `entity` / `none`。方塊有 `block`、`position`、`face`、`distance`;生物有 `entity`(型別)、`name`(玩家或有自訂名稱時)、`position`、`distance`。
-- `nearby_entities`:只含活的生物(不含自己、盔甲架),依距離排序,最多 `maxEntities` 個;`hostile` 為 Minecraft 的 `Monster` 分類(殭屍、骷髏、苦力怕、史萊姆、幻翼……)。`nearby_entities_total` 是截斷前的總數。`name` 只在玩家或有自訂名稱時出現。
+- `nearby_entities`:只含活的生物(不含自己、盔甲架),依距離排序,最多 `maxEntities` 個;`hostile` 為 Minecraft 的 `Monster` 分類(殭屍、骷髏、苦力怕、史萊姆、幻翼……)。`nearby_entities_total` 是截斷前的總數。`name` 只在玩家或有自訂名稱時出現。`position` 是牠腳下那一格的方塊座標(打獵時 adapter 用它瞄準);舊版模組沒有這個欄位。
 - `nearby_blocks`:`blockScanRadius` 內**她看得到的**「值得注意的方塊」(礦石、原木、石頭 / 沙子 / 礫石 / 黏土、箱子 / 桶 / 終界箱 / 界伏盒、工作台 / 熔爐 / 鐵砧等工作站、床、地獄 / 終界傳送門、刷怪磚、岩漿、可收成作物等),依方塊種類分組,每種給出數量與最近一個的座標。「看得到」= 有一面朝向她、旁邊不是不透明的完整方塊,而且從她眼睛到那一面中心的直線沒有被不透明的完整方塊擋住(樹葉、玻璃、水不擋);埋在石頭裡的礦**不會**出現(不透視)。每種只檢查最近的 24 個,所以 `count` 是「最近的那些裡看得到幾個」。排序:鑽石 / 遠古殘骸 → 其他礦石 / 原木 / 刷怪磚 → 箱子 / 岩漿 / 傳送門 → 其他;同級依距離。最多 `maxBlockKinds` 種。
 - `crafting`:`craft` / `smelt` 工作進行中時是 `{"kind":"craft"|"smelt","item":<成品 / 要燒的東西,只拿東西時為 null>}`,沒有時為 `null`。
 - `reflex.active`:正在跑的反射(§7:`lava`、`suffocation`、`falling_block`、`drowning`、`flee`、`fight`、`eat`、`unstuck`、`pickup`),沒有時為 `null`。

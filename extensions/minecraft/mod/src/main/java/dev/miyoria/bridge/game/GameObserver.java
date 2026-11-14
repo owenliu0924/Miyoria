@@ -3,6 +3,7 @@ package dev.miyoria.bridge.game;
 import dev.miyoria.bridge.config.BridgeConfig;
 import dev.miyoria.bridge.model.Models.BlockInfo;
 import dev.miyoria.bridge.model.Models.EntityInfo;
+import dev.miyoria.bridge.model.Models.Pos;
 import dev.miyoria.bridge.model.Models.StackInfo;
 import dev.miyoria.bridge.model.RawObservation;
 import dev.miyoria.bridge.model.RawObservation.LookTarget;
@@ -147,7 +148,9 @@ public final class GameObserver {
         for (Entity e : found) {
             double d = e.distanceTo(p);
             if (d > radius) continue;
-            out.add(new EntityInfo(entityTypeId(e), entityName(e), d, e instanceof Monster));
+            BlockPos at = e.getBlockPos();
+            out.add(new EntityInfo(entityTypeId(e), entityName(e), d, e instanceof Monster,
+                    new Pos(at.getX(), at.getY(), at.getZ())));
         }
         return out;
     }

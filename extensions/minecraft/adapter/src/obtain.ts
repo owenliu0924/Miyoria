@@ -37,6 +37,8 @@ export interface RunnerHost {
   emit(event: GameEvent): void;
   /** A queued steer was applied at a step boundary, or the plan ended before it could be. */
   steered?(steer: string, outcome: "applied" | "too_late", detail: string): void;
+  /** It waits on purpose for `ms` (a furnace burning): the progress watchdog lets it be. */
+  quiet?(ms: number): void;
 }
 
 /** What a steer of an `obtain` plan may change. */
@@ -628,7 +630,9 @@ export class ObtainRunner {
     }
     // The furnace keeps burning with its screen closed; come back to take the output.
     for (let i = 0; i < step.count + 3; i++) {
-      if (!(await this.#sleep(ready * 1000 + this.#o.collectMarginMs))) return "interrupted";
+      const wait = ready * 1000 + this.#o.collectMarginMs;
+      this.#host.quiet?.(wait + this.#o.jobTimeoutMs);
+      if (!(await this.#sleep(wait))) return "interrupted";
       let wake: Wake;
       try {
         wake = await this.#job("smelt", {}, ["smelt_finished", "smelt_failed"], this.#o.jobTimeoutMs);

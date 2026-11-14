@@ -276,6 +276,8 @@ interface Track {
   want: Want | null;
   /** It starts a survival goal. */
   survival: boolean;
+  /** It starts the goal she does while idle (`idle_action`). */
+  idle?: boolean;
   /** `starting`: the start is in flight; an end that arrives meanwhile waits in `early`. */
   phase: "starting" | "running";
   early: TaskEnd | null;
@@ -323,6 +325,12 @@ interface Session {
   survival: { action: string; goal: string; due: number } | null;
   /** The goal a survival goal interrupted; it comes back when that ends. */
   suspended: Goal | null;
+  /** Since when no body task of hers has been running (design doc P1). */
+  bodyFreeAt: number;
+  /** The idle goal to start at `due` unless a decision starts something first. */
+  fill: { due: number } | null;
+  /** Decisions in a row that started nothing while her body was free. */
+  emptyDecisions: number;
   tasks: Map<TaskId, Track>;
   /** The work-lane task its decisions are steps of (`director_lane`), once opened. */
   work: DrivenWork | null;
@@ -1073,6 +1081,9 @@ export class Director {
       record: new AttemptRecord(this.#cfg.record_attempts),
       survival: null,
       suspended: null,
+      bodyFreeAt: now,
+      fill: null,
+      emptyDecisions: 0,
       tasks: new Map(),
       work: null,
       laneOff: false,
@@ -1294,6 +1305,7 @@ export class Director {
     const action = track.action;
     const now = this.#now();
     const instant = this.#cfg.instant_actions.includes(action.name);
+    if (!instant) this.#bodyFreed(s, now);
     const text = end.detail === "" ? (end.type === "done" ? "好了" : end.code) : end.detail;
     const outcome = end.type === "done" ? parseGameOutcome(end.data) : null;
     // An executor that reports no outcome: a `done` is progress, as before.
@@ -1399,6 +1411,13 @@ export class Director {
     }
   }
 
+  /** A body task ended: her body is free from now, unless another one is still running. */
+  #bodyFreed(s: Session, now: number): void {
+    for (const t of s.tasks.values())
+      if (!this.#cfg.instant_actions.includes(t.action.name)) return;
+    s.bodyFreeAt = now;
+  }
+
   /** Writes how an action ended into her record. */
   #attempt(
     s: Session,
@@ -1433,7 +1452,11 @@ export class Director {
   #goalAttemptFailed(g: Goal, code: Exclude<GoalEndCode, "done" | "reported">, why: string): void {
     g.attempts += 1;
     // A survival goal is one try: what it interrupted comes back, and she decides from there.
-    if (g.attempts >= Math.max(this.#cfg.max_attempts, 1) || g.source.type === "survival") {
+    if (
+      g.attempts >= Math.max(this.#cfg.max_attempts, 1) ||
+      g.source.type === "survival" ||
+      g.source.type === "idle"
+    ) {
       this.#finishGoal({ type: "failed", code, why });
     } else if (!this.#stepsLeft(g)) {
       this.#finishGoal({ type: "failed", code: "timeout", why: `步數用完了(${why})` });
@@ -1602,6 +1625,10 @@ export class Director {
           urgent: true,
         };
       }
+    } else if (outcome.type === "reached" && goal.source.type === "idle") {
+      // What she did meanwhile; the step's own result is in her record.
+      line = `閒著做完了:${goal.text}`;
+      hint = null;
     } else if (outcome.type === "reached") {
       line = `完成目標:${goalLabel(goal)}`;
       hint = { text: `剛完成「${goal.text}」`, urgent: false };
@@ -1845,6 +1872,15 @@ export class Director {
       s.nextDecide = s.survival.due;
       return null;
     }
+    if (s.fill !== null && now >= s.fill.due) {
+      // Her body has been free a while and nothing was decided: something small first, the
+      // decision comes on its next tick (and replaces it).
+      s.fill = null;
+      if (this.#bodyFree(s) && s.goal === null) {
+        const work = this.#startIdle(s);
+        if (work) return work;
+      }
+    }
     const trigger = s.trigger ?? { text: [], important: false };
     s.trigger = null;
     const input: DecideInput = {
@@ -1932,11 +1968,91 @@ export class Director {
         ? now
         : Math.max(s.decideStarted + this.#secs(cfg.min_decide_secs), now)
       : (s.decideStarted ?? now) + this.#secs(cfg.decide_secs);
-    const due = s.survival?.due ?? Number.POSITIVE_INFINITY;
+    const due = Math.min(
+      s.survival?.due ?? Number.POSITIVE_INFINITY,
+      s.fill?.due ?? Number.POSITIVE_INFINITY,
+    );
     s.nextDecide = Math.max(Math.min(next, due), now);
   }
 
   #onDecided(
+    trigger: Trigger,
+    observation: Res<StructuredState>,
+    decisionRes: Res<Decision> | null,
+  ): Work | null {
+    const work = this.#applyDecision(trigger, observation, decisionRes);
+    return work ?? this.#afterEmptyDecision();
+  }
+
+  /** Whether none of her body tasks is running (only talking, or nothing). */
+  #bodyFree(s: Session): boolean {
+    if (s.busy === true || s.goal?.running === true || s.survival !== null) return false;
+    for (const t of s.tasks.values())
+      if (!this.#cfg.instant_actions.includes(t.action.name)) return false;
+    return true;
+  }
+
+  /**
+   * A decision started nothing (design doc P1). With her body free: her own goal that keeps
+   * getting no next step ends after `empty_decisions_limit` such decisions, and without a goal the
+   * idle goal starts once her body has been free `idle_fill_secs` (now, or at that time).
+   */
+  #afterEmptyDecision(): Work | null {
+    const cfg = this.#cfg;
+    const s = this.#session;
+    if (!s || s.survival !== null || !this.#bodyFree(s)) return null;
+    s.emptyDecisions += 1;
+    const g = s.goal;
+    if (
+      g !== null &&
+      g.source.type === "director" &&
+      !g.running &&
+      cfg.empty_decisions_limit > 0 &&
+      s.emptyDecisions >= cfg.empty_decisions_limit
+    ) {
+      this.#finishGoal({ type: "failed", code: "no_progress", why: "一直沒有下一步" });
+    }
+    if (s.goal !== null || !this.#offersIdle(s)) return null;
+    const now = this.#now();
+    const due = s.bodyFreeAt + this.#secs(cfg.idle_fill_secs);
+    if (now >= due) return this.#startIdle(s);
+    s.fill = { due };
+    if (due < s.nextDecide) s.nextDecide = due;
+    return null;
+  }
+
+  #offersIdle(s: Session): boolean {
+    const action = this.#cfg.idle_action;
+    if (action === null) return false;
+    const executor = this.#executor(s.game);
+    return executor !== null && offersGoal(executor.info, action);
+  }
+
+  /** Starts the idle goal without asking the model (like a survival goal, but any decision replaces it). */
+  #startIdle(s: Session): Work | null {
+    const name = this.#cfg.idle_action;
+    if (name === null || !this.#offersIdle(s)) return null;
+    s.fill = null;
+    const action = new ActionCall(name, {});
+    const verdict: Verdict = { type: "replace" };
+    const goal = "閒著先找點事做";
+    const trace: DirectorTrace = {
+      game: s.game,
+      trigger: ["閒著"],
+      goal,
+      action: action.display(),
+      verdict: verdictDebug(verdict),
+      commentary: null,
+      busy: s.busy,
+      observation: s.summary,
+      want: null,
+      held: s.methods.lines(this.#now()),
+    };
+    this.#ctx.publish(customEvent(DECISION_TOPIC, trace as unknown as JsonValue));
+    return this.#actWork(s, action, verdict, goal, null, false, true);
+  }
+
+  #applyDecision(
     trigger: Trigger,
     observation: Res<StructuredState>,
     decisionRes: Res<Decision> | null,
@@ -2018,6 +2134,7 @@ export class Director {
             ageMs: now - g.setAt,
             running: g.running,
             survival: g.source.type === "survival",
+            idle: g.source.type === "idle",
           }
         : null;
       verdict = judge(cfg, facts, decision.action, decision.goal, trigger.important);
@@ -2093,6 +2210,7 @@ export class Director {
     goalText: string | null,
     want: Want | null,
     survival: boolean,
+    idle = false,
   ): Work | null {
     const cfg = this.#cfg;
     const executor = this.#executor(s.game);
@@ -2106,6 +2224,7 @@ export class Director {
       goalText,
       want,
       survival,
+      idle,
       phase: "starting",
       early: null,
     });
@@ -2145,6 +2264,7 @@ export class Director {
     if (!result.ok) {
       // Not accepted (refused by the gate, invalid arguments, the game is busy...).
       s.tasks.delete(id);
+      if (!instant && this.#bodyFree(s)) s.bodyFreeAt = now;
       const why = firstLine(result.error, 80);
       s.lastAction = `${action.display()} → 失敗(${result.code}):${firstLine(result.error, 120)}`;
       log.debug({ action: action.display(), code: result.code }, "game task not started");
@@ -2163,10 +2283,19 @@ export class Director {
     }
     track.phase = "running";
     s.lastAction = `${action.display()} → 開始了`;
+    if (!instant) {
+      s.emptyDecisions = 0;
+      s.fill = null;
+    }
     if (verdict.type === "replace") {
       this.#cancelGoalTask(s);
       const old = s.goal;
-      if (track.survival && old !== null && old.source.type !== "survival") {
+      if (
+        track.survival &&
+        old !== null &&
+        old.source.type !== "survival" &&
+        old.source.type !== "idle"
+      ) {
         // It comes back when the survival goal ends.
         Object.assign(old, { task: null, running: false });
         s.suspended = old;
@@ -2177,7 +2306,11 @@ export class Director {
           requester: old.source.requester,
         });
       }
-      const source: GoalSource = track.survival ? { type: "survival" } : { type: "director" };
+      const source: GoalSource = track.survival
+        ? { type: "survival" }
+        : track.idle
+          ? { type: "idle" }
+          : { type: "director" };
       const goal = newGoal(track.goalText ?? action.display(), source, now, track.want);
       goal.action = action;
       goal.task = id;

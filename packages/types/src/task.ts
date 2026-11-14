@@ -56,6 +56,8 @@ export const TASK_FAILURE_CODES = [
   "crashed",
   /** In a game: she died / lost while doing it. */
   "died",
+  /** It was running but made no progress for a while (did not move, gained nothing). */
+  "stuck",
   /** The gate or a policy refused it. */
   "denied",
   /** Anything else (see `detail`). */

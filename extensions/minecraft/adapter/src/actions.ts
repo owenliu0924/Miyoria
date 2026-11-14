@@ -61,6 +61,13 @@ export const ACTIONS: GameActionSpec[] = [
     budget_s: 120,
   },
   {
+    name: "idle",
+    description:
+      "沒事做的時候讓程式挑一件附近有用的小事(餓了找吃的、做下一把鎬、砍附近的樹,不然換個沒去過的方向探索);你沒選動作時系統也會自己用",
+    parameters: obj({}),
+    budget_s: 120,
+  },
+  {
     name: "farm",
     description: "自動收割並重新種植附近的作物",
     parameters: obj({ range: int("範圍(格),0 = 預設") }),
@@ -371,6 +378,8 @@ export function describeAction(action: GameAction): string {
       return `跟著 ${a.player ?? a.entity}`;
     case "explore":
       return "開始探索";
+    case "idle":
+      return "找點事做";
     case "farm":
       return "開始種田";
     case "build":
