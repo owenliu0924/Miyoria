@@ -68,10 +68,16 @@ other by relative path (`../../<part>/src/index.js`), never by the group's own n
 `tsconfig.json` includes `*/src` and `*/test`, and its build keeps the folders (`dist/<part>/src`).
 `scripts/merge-packages.py` is what turned separate packages into groups.
 
-Dependencies on other packages are `"@miyoria/<x>": "workspace:*"`. Add a third-party dependency
-only when it clearly pays for itself; prefer Node built-ins (`fetch`, `node:crypto`,
-`node:sqlite`, `util.parseEnv`, `AbortSignal`). Run `pnpm install` from the root (one
-`pnpm-lock.yaml`).
+Dependencies on other packages are `"@miyoria/<x>": "workspace:*"`.
+
+**Use a package where it does the job better.** Before hand-writing a piece of infrastructure
+(data access, migrations, an LLM client, an agent loop, a route table and its typed client, RPC
+framing, scheduling, retries), look for a well-maintained package, check its current state in
+its own documentation, and say in the design or the commit which ones were considered. Take the
+package unless there is a stated cost that outweighs it: a native build that makes installing on
+another machine harder, an unmaintained or pre-release package, a known bug on the path we use.
+Node built-ins (`fetch`, `node:crypto`, `node:sqlite`, `util.parseEnv`, `AbortSignal`) stay the
+first choice for what they cover. Run `pnpm install` from the root (one `pnpm-lock.yaml`).
 
 ## 2. Naming and shapes
 
