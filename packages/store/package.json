@@ -29,6 +29,7 @@
     "bench:identity": "tsx --conditions=@miyoria/source scripts/bench-identity.ts"
   },
   "dependencies": {
+    "@miyoria/contracts": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/types": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5"
