@@ -28,10 +28,12 @@
   },
   "dependencies": {
     "@miyoria/runtime": "workspace:*",
-    "@miyoria/types": "workspace:*"
+    "@miyoria/types": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.5"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "drizzle-kit": "1.0.0-rc.5",
     "typescript": "~5.9.3",
     "vitest": "^4.1.12"
   }
