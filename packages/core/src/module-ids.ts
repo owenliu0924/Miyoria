@@ -33,6 +33,7 @@ export const MODULE_IDS: readonly string[] = [
   "sing",
   "mcp",
   "stage.link",
+  "economy",
   "web",
   "sandbox",
   "imagegen",

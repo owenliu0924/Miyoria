@@ -38,10 +38,12 @@ import {
 } from "../src/boot.js";
 import { CLI_PLATFORM, CliPlatform } from "../src/cli-platform.js";
 import { configuredModules, MODULE_IDS, moduleEnabled } from "../src/module-ids.js";
+import { defaultCatalog } from "../src/modules.js";
 import { RecorderModule } from "../src/recorder.js";
 import {
   DEFAULT_DATABASE_URL,
   databaseUrl,
+  loadProfile,
   logLevel,
   pipeline,
   resolveDatabaseUrl,
@@ -198,6 +200,20 @@ describe("buildCore", () => {
     expect(order).toBe(MODULE_IDS.indexOf("facts") + 1);
     expect(order).toBeLessThan(MODULE_IDS.indexOf("agent"));
     expect(order).toBeLessThan(MODULE_IDS.indexOf("voice"));
+  });
+
+  it("module_ids_name_every_module_of_the_real_catalog_in_its_order", async () => {
+    const cfg = config();
+    const profile = await loadProfile(cfg);
+    const store = await openStore("memory://");
+    const modules = await defaultCatalog.coreModules({
+      config: cfg,
+      profile,
+      profileId: profile.id,
+      store,
+      baseDir: PROFILES,
+    });
+    expect(modules.map((m) => m.manifest.id)).toEqual(CORE_IDS);
   });
 
   it("registers_services_and_modules_in_legacy_order", async () => {
