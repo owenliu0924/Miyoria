@@ -35,9 +35,11 @@ summarizer = true    # 記憶整理
 fast = false         # 要不要插話的快速判斷(語音裡一律不思考)
 
 # 推理等級(off | low | medium | high),依用途;取代上面的開關(這裡沒列的用途才看 [llm.thinking],
-# 兩邊都沒列就用預設值)。支援 reasoning_effort 的 provider 直接送等級;只有開關的
-# (deepseek / opencode)low / medium / high 都是「開」,再用 max_tokens 限制推理長度
-# (provider 設定的 reasoning_effort = true / reasoning_max_tokens = { low = 2048, medium = 8192 })
+# 兩邊都沒列就用預設值)。openai、opencode 直接送 reasoning_effort(opencode 上的 DeepSeek 只分
+# low / high,medium 會被當成 high,off 送 thinking = disabled),不會壓 max_tokens。只有開關的
+# (deepseek / openai-compatible)low / medium / high 都是「開」,再用 max_tokens 限制長度,
+# 這個上限連回答一起算,太小會把回答切掉(provider 設定 reasoning_effort = true / false 可以改,
+# reasoning_max_tokens = { low = 2048, medium = 8192 } 是預設上限)
 [llm.reasoning]
 chat_voice = "off"     # 語音回話,要即時
 chat_text = "off"      # 一般文字回話
