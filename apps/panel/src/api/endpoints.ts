@@ -6,10 +6,7 @@ import { type ApiClient, seg } from "./http";
 import { createQueries, createRpc } from "./orpc";
 import type {
   AssignRoleRequest,
-  ChannelLevelsView,
-  ChannelLevelView,
   ContextKey,
-  CostReport,
   DataCategoryId,
   DataInventory,
   DataWipeResult,
@@ -48,11 +45,6 @@ import type {
   ConversationNote,
   ReflectionView,
 
-  DecisionRecord,
-  DecisionsQuery,
-  ModuleAction,
-  ModuleInfo,
-  UsageMap,
   ControlResult,
   GameStartRequest,
   SongsState,
@@ -115,20 +107,6 @@ export function createApi(client: ApiClient) {
     // what anyone may see, and what a logged-in person has of their own: the cookie alone
     memberExportUrl: () => client.url("/api/member/export"),
 
-    modules: (o?: Opts) => client.get<ModuleInfo[]>("/api/modules", o),
-    moduleAction: (id: string, action: ModuleAction) =>
-      client.post<ModuleInfo>(`/api/modules/${seg(id)}/${action}`),
-
-    decisions: (q: DecisionsQuery = {}, o?: Opts) =>
-      client.get<DecisionRecord[]>("/api/decisions", {
-        ...o,
-        query: { limit: q.limit, context: q.context ? JSON.stringify(q.context) : undefined },
-      }),
-
-    llmUsage: (o?: Opts) => client.get<UsageMap>("/api/llm/usage", o),
-
-    llmCost: (o?: Opts) => client.get<CostReport>("/api/llm/cost", o),
-
     memory: (q: MemoryQuery = {}, o?: Opts) =>
       client.get<Page<MemoryItem>>("/api/memory", { ...o, query: { ...q } }),
     updateMemory: (id: string, req: UpdateMemoryRequest) =>
@@ -181,11 +159,6 @@ export function createApi(client: ApiClient) {
 
     self: (o?: Opts) => client.get<SelfView>("/api/self", o),
     world: (o?: Opts) => client.get<WorldView>("/api/world", o),
-    channelLevels: (o?: Opts) => client.get<ChannelLevelsView>("/api/channels/levels", o),
-    /** `mode` `null` goes back to the configured level. */
-    setChannelLevel: (context: ContextKey, mode: string | null) =>
-      client.put<ChannelLevelView>("/api/channels/level", { context, mode }),
-
     // her data
     dataInventory: (o?: Opts) => client.get<DataInventory>("/api/data", o),
     /** A JSON backup of `categories` (all exportable ones without). */

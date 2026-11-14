@@ -25,6 +25,7 @@ import {
   type PersonaSectionInfo,
   type SetPersonaResponse,
 } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { Idle } from "./support/fakes.js";
 import { call, raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
@@ -89,13 +90,12 @@ async function harness(): Promise<Harness> {
 describe("api", () => {
   it("health_and_auth", async () => {
     const h = await harness();
-    const anon = new ApiClient(h.base, "wrong");
 
     const health = await call<HealthInfo>(h.base, "wrong", "GET", "/api/health");
     expect(health.status).toBe("ok");
     expect(health.version).toBe(MIYORIA_VERSION);
 
-    expect(await statusOf(anon.modules())).toBe(401);
+    expect(await statusOf(call(h.base, "wrong", "GET", "/api/modules"))).toBe(401);
 
     const unauthorized = await raw(h.base, "GET", "/api/modules");
     expect(unauthorized.status).toBe(401);
@@ -109,38 +109,38 @@ describe("api", () => {
 
   it("a_required_module_cannot_be_disabled", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
     await h.sup.register(new Idle("vital", "Vital"), null, true, { required: true });
     await h.sup.enable("vital");
-    expect(await statusOf(c.moduleAction("vital", "disable"))).toBe(409);
-    expect((await c.modules()).find((x) => x.id === "vital")?.state).toBe("running");
-    expect((await c.moduleAction("vital", "restart")).state).toBe("running");
+    expect(await statusOf(adm.moduleAction("vital", "disable"))).toBe(409);
+    expect((await adm.modules()).find((x) => x.id === "vital")?.state).toBe("running");
+    expect((await adm.moduleAction("vital", "restart")).state).toBe("running");
   });
 
   it("module_lifecycle", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
 
-    const modules = await c.modules();
+    const modules = await adm.modules();
     expect(modules.map((m) => m.id)).toEqual(["api", "dummy"]);
     expect(modules.every((m) => m.state === "running")).toBe(true);
 
-    let m = await c.moduleAction("dummy", "disable");
+    let m = await adm.moduleAction("dummy", "disable");
     expect([m.enabled, m.state]).toEqual([false, "disabled"]);
-    expect(await statusOf(c.moduleAction("dummy", "restart"))).toBe(409);
-    m = await c.moduleAction("dummy", "enable");
+    expect(await statusOf(adm.moduleAction("dummy", "restart"))).toBe(409);
+    m = await adm.moduleAction("dummy", "enable");
     expect([m.enabled, m.state]).toEqual([true, "running"]);
-    m = await c.moduleAction("dummy", "restart");
+    m = await adm.moduleAction("dummy", "restart");
     expect(m.state).toBe("running");
 
     for (const action of ["disable", "restart"]) {
-      expect(await statusOf(c.moduleAction("api", action)), `${action} api`).toBe(409);
+      expect(await statusOf(adm.moduleAction("api", action)), `${action} api`).toBe(409);
     }
-    expect(await statusOf(c.moduleAction("ghost", "enable"))).toBe(404);
-    expect(await statusOf(c.moduleAction("dummy", "explode"))).toBe(404);
+    expect(await statusOf(adm.moduleAction("ghost", "enable"))).toBe(404);
+    expect(await statusOf(adm.moduleAction("dummy", "explode"))).toBe(404);
 
     // Still serving after all of that.
-    expect(await c.modules()).toHaveLength(2);
+    expect(await adm.modules()).toHaveLength(2);
   });
 
   it("persona_edit_and_history", async () => {
@@ -193,6 +193,7 @@ describe("api", () => {
 
   it("decisions_newest_first", async () => {
     const h = await harness();
+    const adm = adminCalls(h.base, TOKEN);
     for (const [i, channel] of ["a", "b", "a"].entries()) {
       await h.store.decisions.append({
         id: newId(),
@@ -208,11 +209,11 @@ describe("api", () => {
       });
     }
 
-    const all = await h.client.decisions(50);
+    const all = await adm.decisions(50);
     expect(all.map((d) => d.trace.reasons[0])).toEqual(["#2", "#1", "#0"]);
-    expect(await h.client.decisions(1)).toHaveLength(1);
+    expect(await adm.decisions(1)).toHaveLength(1);
 
-    const inA = await h.client.decisionsIn(context("a"), 50);
+    const inA = await adm.decisionsIn(context("a"), 50);
     expect(inA).toHaveLength(2);
     expect(inA.every((d) => d.trace.context.channel === "a")).toBe(true);
 
@@ -222,17 +223,19 @@ describe("api", () => {
 
   it("usage_and_missing_service", async () => {
     const h = await harness();
-    expect((await h.client.usage()).size).toBe(0);
+    const adm = adminCalls(h.base, TOKEN);
+    expect((await adm.usage()).size).toBe(0);
 
     h.sup.services.removeOwnedBy("llm");
-    expect(await statusOf(h.client.usage())).toBe(503);
+    expect(await statusOf(adm.usage())).toBe(503);
   });
 
   it("events_stream_until_stop", async () => {
     const h = await harness();
+    const adm = adminCalls(h.base, TOKEN);
     const events = await h.client.events(["system.*"]);
 
-    await h.client.moduleAction("dummy", "disable");
+    await adm.moduleAction("dummy", "disable");
     const first = await events.next();
     expect(first.done).toBe(false);
     expect(first.value?.event).toMatchObject({

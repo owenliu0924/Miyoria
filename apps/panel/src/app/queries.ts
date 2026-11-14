@@ -136,14 +136,14 @@ export function useHealth() {
 
 export function useModules() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.modules, queryFn: ({ signal }) => api.modules({ signal }), refetchInterval: poll(20_000) });
+  return useQuery({ queryKey: queryKeys.modules, queryFn: ({ signal }) => api.rpc.modules.list(undefined, { signal }), refetchInterval: poll(20_000) });
 }
 
 export function useModuleAction() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: ModuleAction }) => api.moduleAction(id, action),
+    mutationFn: ({ id, action }: { id: string; action: ModuleAction }) => api.rpc.modules.action({ params: { id, action } }),
     onSuccess: (updated) => {
       qc.setQueryData<ModuleInfo[]>(queryKeys.modules, (list) => list?.map((m) => (m.id === updated.id ? updated : m)));
       void qc.invalidateQueries({ queryKey: queryKeys.modules });
@@ -183,17 +183,18 @@ export function useMcpRestart() {
 
 export function useDecisions(q: DecisionsQuery) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.decisions(q), queryFn: ({ signal }) => api.decisions(q, { signal }) });
+  return useQuery({ queryKey: queryKeys.decisions(q), queryFn: ({ signal }) =>
+      api.rpc.decisions({ query: { limit: q.limit, context: q.context ? JSON.stringify(q.context) : undefined } }, { signal }) });
 }
 
 export function useUsage() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.usage, queryFn: ({ signal }) => api.llmUsage({ signal }), refetchInterval: poll(30_000) });
+  return useQuery({ queryKey: queryKeys.usage, queryFn: ({ signal }) => api.rpc.llm.usage(undefined, { signal }), refetchInterval: poll(30_000) });
 }
 
 export function useCost() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.cost, queryFn: ({ signal }) => api.llmCost({ signal }), refetchInterval: poll(60_000) });
+  return useQuery({ queryKey: queryKeys.cost, queryFn: ({ signal }) => api.rpc.llm.cost(undefined, { signal }), refetchInterval: poll(60_000) });
 }
 
 // --- character ---------------------------------------------------------------
@@ -422,7 +423,7 @@ export function useChannelLevels() {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.channelLevels,
-    queryFn: ({ signal }) => api.channelLevels({ signal }),
+    queryFn: ({ signal }) => api.rpc.channels.levels(undefined, { signal }),
     refetchInterval: poll(15_000),
   });
 }
@@ -431,7 +432,7 @@ export function useSetChannelLevel() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ context, mode }: { context: ContextKey; mode: string | null }) => api.setChannelLevel(context, mode),
+    mutationFn: ({ context, mode }: { context: ContextKey; mode: string | null }) => api.rpc.channels.setLevel({ body: { context, mode } }),
     onSuccess: (row) =>
       qc.setQueryData<ChannelLevelsView>(queryKeys.channelLevels, (old) =>
         old

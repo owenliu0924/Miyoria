@@ -22,7 +22,7 @@ export async function verifyConnection(
     return { ok: false, field: "url", message: describeError(e) };
   }
   try {
-    await api.modules();
+    await api.rpc.modules.list();
   } catch (e) {
     if (isApiError(e) && e.kind === "unauthorized") return { ok: false, field: "token", message: "Core 拒絕了這個 token。" };
     return { ok: false, field: "url", message: describeError(e) };

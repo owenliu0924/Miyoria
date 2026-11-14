@@ -43,8 +43,9 @@ import { z } from "zod";
 import { agencyRpc } from "./agency.js";
 import { boardRpc } from "./board.js";
 import { cardCheckRpc } from "./card.js";
+import { channelRpc } from "./channels.js";
 import { os, type RpcContext } from "./contract.js";
-import { healthRpc, personaRpc } from "./core.js";
+import { coreRpc, healthRpc, personaRpc } from "./core.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
@@ -72,6 +73,8 @@ export const router = os.router({
   agency: agencyRpc,
   fortune: fortuneRpc,
   people: { ...peopleRpc, ...personWalletRpc },
+  ...coreRpc,
+  channels: channelRpc,
 });
 
 export type ResponseCheck = "strict" | "production";

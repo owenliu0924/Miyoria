@@ -10,9 +10,7 @@ import type {
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
 import type { PendingApproval } from "@miyoria/gate/actions";
-import type { CostReport, ModelUsage } from "@miyoria/llm/llm";
 import type { ItemState } from "@miyoria/play/queue";
-import type { ModuleStatus } from "@miyoria/runtime/kernel";
 import type { AuthScope, MemoryKind, MemoryScope } from "@miyoria/store";
 import type {
   AccountRef,
@@ -48,9 +46,16 @@ import type {
 export type {
   AdjustPersonRequest,
   AuthMethods,
+  BudgetState,
   CardField,
   CardPoseChoice,
   CardPrices,
+  ChannelLevelInfo,
+  ChannelLevelsView,
+  ChannelLevelView,
+  CostReport,
+  CostReport as CostInfo,
+  DecisionRecord,
   FortuneField,
   HealthInfo,
   IssueCardRequest,
@@ -64,6 +69,9 @@ export type {
   MemberSession,
   MemberSong,
   MemberView,
+  ModelUsage,
+  ModuleInfo,
+  PeriodReport,
   PersonaOverride,
   PersonaSectionInfo,
   PersonDetail,
@@ -79,10 +87,13 @@ export type {
   SessionInfo,
   SessionPermissions,
   SessionUser,
+  SetChannelLevelRequest,
   SetPersonaRequest,
   SetPersonaResponse,
   SongAccepted,
   UpdatePersonRequest,
+  UsageInfo,
+  UsageMap,
   WalletAdjustRequest,
   WalletAdjustResult,
 } from "@miyoria/contracts/api";
@@ -103,17 +114,6 @@ export interface MemberExport {
   fortunes: IssuedFortune[];
 }
 
-/** One module as reported by `GET /api/modules` (the supervisor's `ModuleStatus`). */
-export type ModuleInfo = ModuleStatus;
-
-/** Token usage of one `provider:model`, from `GET /api/llm/usage`. */
-export interface UsageInfo {
-  calls: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  cached_prompt_tokens: number;
-}
-
 /** Every error response: `{ "error": "..." }`. */
 export interface ErrorBody {
   error: string;
@@ -124,12 +124,6 @@ export interface Page<T> {
   items: T[];
   next_cursor: string | null;
 }
-
-// ---- LLM cost ---------------------------------------------------------------------------
-
-/** `GET /api/llm/cost`: the router's `CostReport` as-is. */
-export type CostInfo = CostReport;
-export type { ModelUsage };
 
 // ---- memory -----------------------------------------------------------------------------
 
@@ -443,36 +437,6 @@ export interface ChannelActivityView extends ChannelActivity {
 /** `GET /api/world`: what she perceives right now. */
 export interface WorldView extends Omit<WorldSnapshot, "channels"> {
   channels: ChannelActivityView[];
-}
-
-/** One channel level (docs/design/autonomy.md §21). */
-export interface ChannelLevelInfo {
-  /** `off`, `mention-only`, `quiet`, `normal`, `lively` or `always`. */
-  mode: string;
-  /** In words (`安靜`). */
-  label: string;
-  description: string;
-}
-
-/** The level of one text channel. */
-export interface ChannelLevelView {
-  context: ContextKey;
-  /** The channel's name when the platform knows it. */
-  label: string | null;
-  mode: string;
-  /** Set at runtime (`/channel mode` or the panel); `false`: from config or the profile. */
-  custom: boolean;
-  /** The mode without the runtime setting (what resetting goes back to). */
-  default: string;
-}
-
-/**
- * `GET /api/channels/levels`: the levels, and the text channels she has seen recently or that
- * have their own level.
- */
-export interface ChannelLevelsView {
-  levels: ChannelLevelInfo[];
-  channels: ChannelLevelView[];
 }
 
 /** `GET /api/mind` (and the answer of `POST /api/mind/pause|resume`). */

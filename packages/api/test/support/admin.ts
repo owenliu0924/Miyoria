@@ -7,6 +7,7 @@ import type { DecisionRecord, RoleAssignment, RoleDefinition, RoleMapping } from
 import type { ContextKey, PlatformId } from "@miyoria/types";
 import type {
   AssignRoleRequest,
+  CostInfo,
   MindView,
   ModuleInfo,
   Page,
@@ -65,6 +66,8 @@ export function adminCalls(base: string, token: string) {
           .map((k) => [k, raw[k] as UsageInfo]),
       );
     },
+
+    cost: () => get<CostInfo>("/api/llm/cost"),
 
     // ---- roles
     roles: () => get<RoleDefinition[]>("/api/auth/roles"),

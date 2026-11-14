@@ -2,7 +2,7 @@
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
 import type { StreamAction } from "@miyoria/stage";
-import type { DecisionRecord, RoleAssignment, RoleDefinition, RoleMapping } from "@miyoria/store";
+import type { RoleAssignment, RoleDefinition, RoleMapping } from "@miyoria/store";
 import type {
   ActivitySnapshot,
   ActivityTask,
@@ -22,7 +22,6 @@ import type {
   ArbiterDecisionsView,
   AssignRoleRequest,
   ConversationNoteView,
-  CostInfo,
   DayPlanView,
   ErrorBody,
   ExtensionInfo,
@@ -33,7 +32,6 @@ import type {
   MemoryListQuery,
   MemoryRecordView,
   MindView,
-  ModuleInfo,
   Page,
   PendingApproval,
   PromptSummary,
@@ -48,7 +46,6 @@ import type {
   TurnOutcomeKind,
   UpdateMemoryRequest,
   UpsertRoleRequest,
-  UsageInfo,
   VoiceState,
   WorldView,
 } from "./types.js";
@@ -181,50 +178,6 @@ export class ApiClient {
     }
     this.#base = base;
     this.#token = token;
-  }
-
-  modules(o?: CallOptions): Promise<ModuleInfo[]> {
-    return this.#json("GET", ["modules"], o);
-  }
-
-  /** `action` is `"enable"`, `"disable"` or `"restart"`. Returns the module's status afterwards. */
-  moduleAction(id: string, action: string, o?: CallOptions): Promise<ModuleInfo> {
-    return this.#json("POST", ["modules", id, action], o);
-  }
-
-  /** The newest `limit` attention decisions, newest first. */
-  decisions(limit: number, o?: CallOptions): Promise<DecisionRecord[]> {
-    return this.decisionsIn(null, limit, o);
-  }
-
-  /** Like `decisions`, optionally for one context only. */
-  decisionsIn(
-    context: ContextKey | null,
-    limit: number,
-    o?: CallOptions,
-  ): Promise<DecisionRecord[]> {
-    return this.#json("GET", ["decisions"], {
-      ...o,
-      query: {
-        limit: String(limit),
-        context: context ? JSON.stringify(context) : undefined,
-      },
-    });
-  }
-
-  /** Token usage per `provider:model` since the core started (keys ascending). */
-  async usage(o?: CallOptions): Promise<Map<string, UsageInfo>> {
-    const raw = await this.#json<Record<string, UsageInfo>>("GET", ["llm", "usage"], o);
-    return new Map(
-      Object.keys(raw)
-        .sort()
-        .map((k) => [k, raw[k] as UsageInfo]),
-    );
-  }
-
-  /** Spend today and this month per model, plus the budget state. */
-  cost(o?: CallOptions): Promise<CostInfo> {
-    return this.#json("GET", ["llm", "cost"], o);
   }
 
   // ---- memory ---------------------------------------------------------------------------

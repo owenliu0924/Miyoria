@@ -2,6 +2,8 @@
 // `packages/types` serialize them. Timestamps are RFC 3339 strings, ids are ULID strings.
 // Keep this file in sync when the API changes.
 
+import type { DecisionTrace, ModuleStateKind } from "@miyoria/contracts/api";
+
 /** A ULID, serialized as a 26-character string. */
 export type Ulid = string;
 /** RFC 3339 timestamp, e.g. `2026-11-01T08:30:00.123Z`. */
@@ -89,15 +91,6 @@ export type PlaybackState = "started" | "finished" | "interrupted" | "failed";
 // ---------------------------------------------------------------------------
 // events
 
-export type ModuleStateKind =
-  | "disabled"
-  | "starting"
-  | "running"
-  | "degraded"
-  | "stopping"
-  | "stopped"
-  | "failed";
-
 export const MODULE_STATES: readonly ModuleStateKind[] = [
   "running",
   "degraded",
@@ -107,15 +100,6 @@ export const MODULE_STATES: readonly ModuleStateKind[] = [
   "stopped",
   "disabled",
 ];
-
-/** Why the agent did or did not respond. */
-export interface DecisionTrace {
-  turn: TurnId;
-  context: ContextKey;
-  respond: boolean;
-  score: number;
-  reasons: string[];
-}
 
 /** A bus event: `{ type, data }`, adjacently tagged. */
 export type BusEvent =
@@ -174,7 +158,14 @@ export type {
   AdjustPersonRequest,
   AuthMethods,
   BountyView,
+  BudgetState,
+  ChannelLevelInfo,
+  ChannelLevelsView,
+  ChannelLevelView,
   CheckinResult,
+  CostReport,
+  DecisionRecord,
+  DecisionTrace,
   DealView,
   EarnLine,
   FeedItem,
@@ -197,6 +188,10 @@ export type {
   MemberSession,
   MemberSong,
   MemberView,
+  ModelUsage,
+  ModuleInfo,
+  ModuleStateKind,
+  PeriodReport,
   Person,
   PersonAccount as Account,
   PersonDetail,
@@ -222,33 +217,14 @@ export type {
   SpendResult,
   TransferResult,
   UpdatePersonRequest,
+  UsageInfo,
+  UsageMap,
   WalletAdjustRequest,
   WalletAdjustResult,
   WalletView,
 } from "@miyoria/contracts/api";
 
-/** One module, from `GET /api/modules` and `POST /api/modules/{id}/{action}`. */
-export interface ModuleInfo {
-  id: ModuleId;
-  name: string;
-  description: string;
-  enabled: boolean;
-  state: ModuleStateKind;
-  reason: string | null;
-  recent_restarts: number;
-}
-
 export type ModuleAction = "enable" | "disable" | "restart";
-
-/** Per `provider:model`, from `GET /api/llm/usage`. */
-export interface UsageInfo {
-  calls: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  cached_prompt_tokens: number;
-}
-
-export type UsageMap = Record<string, UsageInfo>;
 
 /** Every error response. */
 export interface ErrorBody {
@@ -257,14 +233,6 @@ export interface ErrorBody {
 
 // ---------------------------------------------------------------------------
 // store records
-
-/** `GET /api/decisions` items, newest first. */
-export interface DecisionRecord {
-  id: Ulid;
-  profile: ProfileId;
-  ts: Timestamp;
-  trace: DecisionTrace;
-}
 
 export interface DecisionsQuery {
   /** Default 50, capped at 1000 by the server. */
@@ -293,35 +261,6 @@ export interface Page<T> {
 
 // ---------------------------------------------------------------------------
 // LLM cost (`CostReport`)
-
-export type BudgetState = "ok" | "degraded" | "exhausted";
-
-export interface ModelUsage {
-  calls: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  cached_prompt_tokens: number;
-  cost_usd: number;
-}
-
-export interface PeriodReport {
-  /** `2026-11-01` for a day, `2026-11` for a month. */
-  period: string;
-  total_usd: number;
-  calls: number;
-  models: Record<string, ModelUsage>;
-}
-
-/** `GET /api/llm/cost`. */
-export interface CostReport {
-  state: BudgetState;
-  daily_usd: number | null;
-  monthly_usd: number | null;
-  /** Fraction of a budget at which the router degrades, e.g. `0.8`. */
-  degrade_at: number;
-  today: PeriodReport;
-  month: PeriodReport;
-}
 
 // ---------------------------------------------------------------------------
 // People & relationships (`Person`, `Account`, `Relationship`, `RelationshipDelta`)
@@ -801,29 +740,6 @@ export interface WorldView {
 
 /** `off` | `mention-only` | `quiet` | `normal` | `lively` | `always`. */
 export type ChannelMode = string;
-
-/** One channel level: a ceiling on how much she talks in a text channel. */
-export interface ChannelLevelInfo {
-  mode: ChannelMode;
-  label: string;
-  description: string;
-}
-
-export interface ChannelLevelView {
-  context: ContextKey;
-  label: string | null;
-  mode: ChannelMode;
-  /** Set with `/channel mode` or here; `false`: from config or the profile. */
-  custom: boolean;
-  /** What resetting goes back to. */
-  default: ChannelMode;
-}
-
-/** `GET /api/channels/levels`. */
-export interface ChannelLevelsView {
-  levels: ChannelLevelInfo[];
-  channels: ChannelLevelView[];
-}
 
 // --- data (`packages/api/src/data.ts`) ----------------------------------------
 

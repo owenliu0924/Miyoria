@@ -174,6 +174,110 @@
         }
       }
     },
+    "modules": {
+      "list": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/modules"
+          }
+        }
+      },
+      "action": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/modules/{id}/{action}"
+          }
+        }
+      }
+    },
+    "decisions": {
+      "~orpc": {
+        "errorMap": {},
+        "meta": {
+          "audience": "admin",
+          "permission": null
+        },
+        "route": {
+          "inputStructure": "detailed",
+          "method": "GET",
+          "path": "/api/decisions"
+        }
+      }
+    },
+    "llm": {
+      "usage": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/usage"
+          }
+        }
+      },
+      "cost": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/cost"
+          }
+        }
+      }
+    },
+    "channels": {
+      "levels": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/channels/levels"
+          }
+        }
+      },
+      "setLevel": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.channel.mode"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/channels/level"
+          }
+        }
+      }
+    },
     "facts": {
       "effects": {
         "~orpc": {

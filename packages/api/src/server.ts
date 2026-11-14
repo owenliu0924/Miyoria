@@ -6,7 +6,6 @@ import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { affectRoutes } from "./affect.js";
 import { bodyRoutes } from "./body.js";
-import { channelRoutes } from "./channels.js";
 import { controlRoutes } from "./control.js";
 import { coreRoutes } from "./core.js";
 import { dataRoutes } from "./data.js";
@@ -150,7 +149,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...opsRoutes(state),
     ...innerRoutes(state),
     ...factRoutes(state),
-    ...channelRoutes(state),
     ...dataRoutes(state),
     ...sandboxRoutes(state),
     ...mindRoutes(state),

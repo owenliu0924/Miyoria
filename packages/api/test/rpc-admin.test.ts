@@ -4,13 +4,18 @@
 // with those packages' types.
 
 import {
+  type CostReport as ContractCostReport,
+  type DecisionRecord as ContractDecisionRecord,
+  type ModuleInfo as ContractModuleInfo,
   type Person as ContractPerson,
   type Relationship as ContractRelationship,
   type RelationshipDelta as ContractRelationshipDelta,
   contract,
   routeMeta,
 } from "@miyoria/contracts/api";
-import type { Person, Relationship, RelationshipDelta } from "@miyoria/store";
+import type { CostReport } from "@miyoria/llm/llm";
+import type { ModuleStatus } from "@miyoria/runtime/kernel";
+import type { DecisionRecord, Person, Relationship, RelationshipDelta } from "@miyoria/store";
 import { describe, expect, it } from "vitest";
 import { rpcRoutes } from "../src/rpc.js";
 
@@ -36,12 +41,23 @@ const CASES: Case[] = [
     path: "/api/people/:id/wallet/adjust",
     permission: "admin.economy.adjust",
   },
+  { name: "modules.list", method: "GET", path: "/api/modules" },
+  { name: "modules.action", method: "POST", path: "/api/modules/:id/:action" },
+  { name: "decisions", method: "GET", path: "/api/decisions" },
+  { name: "llm.usage", method: "GET", path: "/api/llm/usage" },
+  { name: "llm.cost", method: "GET", path: "/api/llm/cost" },
+  { name: "channels.levels", method: "GET", path: "/api/channels/levels" },
+  {
+    name: "channels.setLevel",
+    method: "PUT",
+    path: "/api/channels/level",
+    permission: "admin.channel.mode",
+  },
 ];
 
 describe("the admin routes of the table", () => {
   it.each(CASES)("$name is an admin route: $method $path", (c) => {
-    const [group, route] = c.name.split(".") as [string, string];
-    expect(routeMeta(contract, [group, route])).toEqual({
+    expect(routeMeta(contract, c.name.split("."))).toEqual({
       audience: "admin",
       permission: c.permission ?? null,
     });
@@ -68,5 +84,12 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const relationship: Same<ContractRelationship, Relationship> = true;
     const delta: Same<ContractRelationshipDelta, RelationshipDelta> = true;
     expect([person, relationship, delta]).toEqual([true, true, true]);
+  });
+
+  it("modules, decisions and the cost report", () => {
+    const module: Same<ContractModuleInfo, ModuleStatus> = true;
+    const decision: Same<ContractDecisionRecord, DecisionRecord> = true;
+    const cost: Same<ContractCostReport, CostReport> = true;
+    expect([module, decision, cost]).toEqual([true, true, true]);
   });
 });

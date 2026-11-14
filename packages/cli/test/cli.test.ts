@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { ApiClient, ClientError } from "@miyoria/api";
+import { ClientError } from "@miyoria/api";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkArgs, helpText, main, parseArgs, UsageError } from "../src/cli.js";
 import { rpcClient } from "../src/commands/remote.js";
@@ -94,12 +94,11 @@ describe("admin API client", () => {
     });
     await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
-    const client = new ApiClient(`http://127.0.0.1:${port}`, "tok");
     const rpc = rpcClient(`http://127.0.0.1:${port}`, "tok");
     expect(await rpc.health()).toEqual({ status: "ok", version: "0.1.0" });
-    await expect(client.moduleAction("platform.discord.bot", "enable")).rejects.toThrow(
-      "unknown module `x`",
-    );
+    await expect(
+      rpc.modules.action({ params: { id: "platform.discord.bot", action: "enable" } }),
+    ).rejects.toThrow("unknown module `x`");
     expect(seen).toEqual([
       "GET /api/health Bearer tok",
       "POST /api/modules/platform.discord.bot/enable Bearer tok",

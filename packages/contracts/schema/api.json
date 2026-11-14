@@ -92,6 +92,14 @@
         "expires_at"
       ]
     },
+    "ApiBudgetState": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "degraded",
+        "exhausted"
+      ]
+    },
     "ApiCardField": {
       "type": "object",
       "properties": {
@@ -150,6 +158,76 @@
         "reroll"
       ]
     },
+    "ApiChannelLevelInfo": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "label",
+        "description"
+      ]
+    },
+    "ApiChannelLevelView": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "type": "string"
+        },
+        "custom": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "label",
+        "mode",
+        "custom",
+        "default"
+      ]
+    },
+    "ApiChannelLevelsView": {
+      "type": "object",
+      "properties": {
+        "levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiChannelLevelInfo"
+          }
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiChannelLevelView"
+          }
+        }
+      },
+      "required": [
+        "levels",
+        "channels"
+      ]
+    },
     "ApiCheckinResult": {
       "type": "object",
       "properties": {
@@ -167,6 +245,69 @@
         "gained",
         "streak",
         "balance"
+      ]
+    },
+    "ApiContextKeyIn": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "scope": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/WireContextKind"
+        }
+      },
+      "required": [
+        "platform",
+        "channel",
+        "kind"
+      ]
+    },
+    "ApiCostReport": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ApiBudgetState"
+        },
+        "daily_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "monthly_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "degrade_at": {
+          "type": "number"
+        },
+        "today": {
+          "$ref": "#/$defs/ApiPeriodReport"
+        },
+        "month": {
+          "$ref": "#/$defs/ApiPeriodReport"
+        }
+      },
+      "required": [
+        "state",
+        "daily_usd",
+        "monthly_usd",
+        "degrade_at",
+        "today",
+        "month"
       ]
     },
     "ApiDealView": {
@@ -200,6 +341,59 @@
         "reward_label",
         "status",
         "due_at"
+      ]
+    },
+    "ApiDecisionRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "string"
+        },
+        "trace": {
+          "$ref": "#/$defs/ApiDecisionTrace"
+        }
+      },
+      "required": [
+        "id",
+        "profile",
+        "ts",
+        "trace"
+      ]
+    },
+    "ApiDecisionTrace": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "respond": {
+          "type": "boolean"
+        },
+        "score": {
+          "type": "number"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "respond",
+        "score",
+        "reasons"
       ]
     },
     "ApiEarnLine": {
@@ -1072,6 +1266,112 @@
         "forget"
       ]
     },
+    "ApiModelUsage": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        },
+        "cost_usd": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_prompt_tokens",
+        "cost_usd"
+      ]
+    },
+    "ApiModuleInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/ApiModuleStateKind"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recent_restarts": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "enabled",
+        "state",
+        "reason",
+        "recent_restarts"
+      ]
+    },
+    "ApiModuleStateKind": {
+      "type": "string",
+      "enum": [
+        "disabled",
+        "starting",
+        "running",
+        "degraded",
+        "stopping",
+        "stopped",
+        "failed"
+      ]
+    },
+    "ApiPeriodReport": {
+      "type": "object",
+      "properties": {
+        "period": {
+          "type": "string"
+        },
+        "total_usd": {
+          "type": "number"
+        },
+        "calls": {
+          "type": "number"
+        },
+        "models": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ApiModelUsage"
+          }
+        }
+      },
+      "required": [
+        "period",
+        "total_usd",
+        "calls",
+        "models"
+      ]
+    },
     "ApiPerson": {
       "type": "object",
       "properties": {
@@ -1718,6 +2018,24 @@
         "avatar_url"
       ]
     },
+    "ApiSetChannelLevelRequest": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/ApiContextKeyIn"
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "mode"
+      ]
+    },
     "ApiSetPersonaRequest": {
       "type": "object",
       "properties": {
@@ -1891,6 +2209,38 @@
             "null"
           ]
         }
+      }
+    },
+    "ApiUsageInfo": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_prompt_tokens"
+      ]
+    },
+    "ApiUsageMap": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/ApiUsageInfo"
       }
     },
     "ApiWalletAdjustRequest": {

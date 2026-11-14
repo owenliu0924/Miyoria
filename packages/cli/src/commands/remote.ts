@@ -83,14 +83,14 @@ export function stateLabel(state: ModuleStateKind): string {
 }
 
 export async function modules(client: Remote): Promise<void> {
-  for (const m of await client.api.modules()) {
+  for (const m of await client.rpc.modules.list()) {
     const reason = m.reason === null ? "" : `  (${m.reason})`;
     println(`${m.id.padEnd(24)} ${stateLabel(m.state)}${reason}`);
   }
 }
 
 export async function moduleAction(client: Remote, id: string, action: string): Promise<void> {
-  const m = await client.api.moduleAction(id, action);
+  const m = await client.rpc.modules.action({ params: { id, action } });
   println(`${m.id} → ${stateLabel(m.state)}`);
 }
 
@@ -98,8 +98,10 @@ export async function status(client: Remote): Promise<void> {
   const health = await client.rpc.health();
   println(`core ${health.version}  ${health.status}\n`);
   await modules(client);
-  const usage = await client.api.usage();
-  if (usage.size > 0) {
+  const usage = Object.entries(await client.rpc.llm.usage()).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  if (usage.length > 0) {
     println("\nLLM 用量(啟動以來)");
     for (const [model, u] of usage) {
       println(
@@ -121,7 +123,7 @@ function localStamp(ts: string, withDate: boolean): string {
 }
 
 export async function decisions(client: Remote, limit: number): Promise<void> {
-  for (const d of await client.api.decisions(limit)) {
+  for (const d of await client.rpc.decisions({ query: { limit } })) {
     const t = d.trace;
     println(
       `${localStamp(d.ts, true)} ${t.respond ? "回" : "略"} ${t.context.channel.padEnd(5)} ${t.score.toFixed(2)}  ${t.context.platform}  ${t.reasons.join(";")}`,

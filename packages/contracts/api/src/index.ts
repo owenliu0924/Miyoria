@@ -18,6 +18,8 @@ import type {
 } from "@orpc/contract";
 import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
+import { channels } from "./channels.js";
+import { decisions, llm, modules } from "./core.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { member } from "./member.js";
@@ -52,6 +54,38 @@ export {
   type SessionUser,
   SessionUserSchema,
 } from "./auth.js";
+export {
+  type ChannelLevelInfo,
+  ChannelLevelInfoSchema,
+  type ChannelLevelsView,
+  ChannelLevelsViewSchema,
+  type ChannelLevelView,
+  ChannelLevelViewSchema,
+  type SetChannelLevelRequest,
+  SetChannelLevelRequestSchema,
+} from "./channels.js";
+export {
+  type BudgetState,
+  BudgetStateSchema,
+  type CostReport,
+  CostReportSchema,
+  type DecisionRecord,
+  DecisionRecordSchema,
+  type DecisionTrace,
+  DecisionTraceSchema,
+  type ModelUsage,
+  ModelUsageSchema,
+  type ModuleInfo,
+  ModuleInfoSchema,
+  type ModuleStateKind,
+  ModuleStateKindSchema,
+  type PeriodReport,
+  PeriodReportSchema,
+  type UsageInfo,
+  UsageInfoSchema,
+  type UsageMap,
+  UsageMapSchema,
+} from "./core.js";
 export { type LogEvent, type LogEventKind, LogEventKindSchema, LogEventSchema } from "./facts.js";
 export {
   type FortuneDraw,
@@ -151,6 +185,7 @@ export {
   PublicTodaySchema,
 } from "./public.js";
 export { type Audience, type RouteMeta, route, routeMeta } from "./route.js";
+export { type ContextKeyIn, ContextKeyInSchema } from "./shared.js";
 export {
   type BoardChoice,
   BoardChoiceSchema,
@@ -202,6 +237,10 @@ export const contract = {
   auth,
   persona,
   people,
+  modules,
+  decisions,
+  llm,
+  channels,
   facts,
   public: publicView,
   member,

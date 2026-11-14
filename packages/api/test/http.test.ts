@@ -13,7 +13,13 @@ import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { PersonaOverrideStoreKey } from "@miyoria/store";
 import type { JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiClient, ApiModule, ClientError } from "../src/index.js";
+import {
+  ActiveProfileKey,
+  ApiClient,
+  ApiModule,
+  ClientError,
+  type ModuleInfo,
+} from "../src/index.js";
 import { call, errorOf, raw, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
@@ -142,7 +148,7 @@ describe("http", () => {
 
   it("client errors carry the status and the server's message", async () => {
     const { base } = await start();
-    const err = await errorOf(new ApiClient(base, "wrong").modules());
+    const err = await errorOf(call(base, "wrong", "GET", "/api/modules"));
     expect(err).toBeInstanceOf(ClientError);
     expect(err.kind).toBe("api");
     expect(err.status).toBe(401);
@@ -157,8 +163,8 @@ describe("http", () => {
   });
 
   it("module JSON keeps the legacy shape", async () => {
-    const { client } = await start();
-    const [api] = await client.modules();
+    const { base } = await start();
+    const [api] = await call<ModuleInfo[]>(base, TOKEN, "GET", "/api/modules");
     expect(api).toEqual({
       id: "api",
       name: "Admin API",

@@ -1,5 +1,5 @@
 // The original routes: health, modules, decisions, LLM usage and cost, persona, events (SSE).
-// Health and persona are on the route table (`healthRpc`, `personaRpc`).
+// All but the event stream are on the route table (`healthRpc`, `personaRpc`, `coreRpc`).
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
 import { LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
@@ -15,15 +15,18 @@ import type { JsonValue, ModuleId } from "@miyoria/types";
 import { z } from "zod";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { contextParam, readQuery, usizeParam } from "./extract.js";
-import { json, param, type Route } from "./route.js";
+import { contextParam, readQuery } from "./extract.js";
+import type { Route } from "./route.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
 import type {
+  CostReport,
+  DecisionRecord,
+  ModuleInfo,
   PersonaOverride,
   PersonaSectionInfo,
   SetPersonaRequest,
   SetPersonaResponse,
-  UsageInfo,
+  UsageMap,
 } from "./types.js";
 
 const log = getLogger("api.server");
@@ -95,33 +98,25 @@ export async function runModuleAction(
   return findModule(sup.list(), id);
 }
 
-function listModules(state: ApiState): Response {
-  return json(state.service(SupervisorKey, "supervisor").list());
+function listModules(state: ApiState): ModuleInfo[] {
+  return state.service(SupervisorKey, "supervisor").list();
 }
 
-async function moduleAction(state: ApiState, c: ApiContext): Promise<Response> {
-  const status = await runModuleAction(state, c, param(c, "id"), param(c, "action"), "module");
-  return json(status);
-}
-
-const DecisionsQuerySchema = z.object({
-  limit: usizeParam.optional(),
-  /** JSON-encoded `ContextKey`. */
-  context: z.string().optional(),
-});
-
-async function decisions(state: ApiState, c: ApiContext): Promise<Response> {
-  const q = readQuery(c, DecisionsQuerySchema);
+/** `GET /api/decisions?limit=&context=`: `context` is a JSON-encoded `ContextKey`. */
+async function decisions(
+  state: ApiState,
+  q: { limit?: number | undefined; context?: string | undefined },
+): Promise<DecisionRecord[]> {
   const context = contextParam(q.context);
   const limit = Math.min(q.limit ?? DEFAULT_DECISIONS, MAX_DECISIONS);
   const decisionLog = state.service(DecisionLogKey, "decision log");
   const profile = state.profile();
-  return json(await decisionLog.recent(profile, context, limit));
+  return decisionLog.recent(profile, context, limit);
 }
 
-function llmUsage(state: ApiState): Response {
+function llmUsage(state: ApiState): UsageMap {
   const router = state.service(LlmRouterKey, "LLM router");
-  const usage: Record<string, UsageInfo> = {};
+  const usage: UsageMap = {};
   for (const key of [...router.usage().keys()].sort()) {
     const u = router.usage().get(key);
     if (!u) continue;
@@ -132,11 +127,11 @@ function llmUsage(state: ApiState): Response {
       cached_prompt_tokens: u.cached_prompt_tokens,
     };
   }
-  return json(usage);
+  return usage;
 }
 
-function llmCost(state: ApiState): Response {
-  return json(state.service(LlmRouterKey, "LLM router").costReport());
+function llmCost(state: ApiState): CostReport {
+  return state.service(LlmRouterKey, "LLM router").costReport();
 }
 
 function personaSections(state: ApiState): PersonaSectionInfo[] {
@@ -202,6 +197,21 @@ export const personaRpc = {
   ),
 };
 
+/** The module, decision and LLM usage routes on the route table. */
+export const coreRpc = {
+  modules: {
+    list: os.modules.list.handler(({ context }) => listModules(context.state)),
+    action: os.modules.action.handler(({ input, context }) =>
+      runModuleAction(context.state, context.c, input.params.id, input.params.action, "module"),
+    ),
+  },
+  decisions: os.decisions.handler(({ input, context }) => decisions(context.state, input.query)),
+  llm: {
+    usage: os.llm.usage.handler(({ context }) => llmUsage(context.state)),
+    cost: os.llm.cost.handler(({ context }) => llmCost(context.state)),
+  },
+};
+
 const EventsQuerySchema = z.object({
   /** Comma-separated topic patterns; empty means everything. */
   topics: z.string().optional(),
@@ -264,12 +274,5 @@ function events(state: ApiState, c: ApiContext): Response {
 }
 
 export function coreRoutes(state: ApiState): Route[] {
-  return [
-    { method: "GET", path: "/api/modules", handler: () => listModules(state) },
-    { method: "POST", path: "/api/modules/:id/:action", handler: (c) => moduleAction(state, c) },
-    { method: "GET", path: "/api/decisions", handler: (c) => decisions(state, c) },
-    { method: "GET", path: "/api/llm/usage", handler: () => llmUsage(state) },
-    { method: "GET", path: "/api/llm/cost", handler: () => llmCost(state) },
-    { method: "GET", path: "/api/events", handler: (c) => events(state, c) },
-  ];
+  return [{ method: "GET", path: "/api/events", handler: (c) => events(state, c) }];
 }

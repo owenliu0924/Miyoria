@@ -27,7 +27,7 @@ describe("ApiClient", () => {
     );
     const api = createApi(new ApiClient({ baseUrl: "http://core:7878", token: " s3cret " }));
     expect((await api.rpc.health()).version).toBe("1.2.3");
-    await api.modules();
+    await api.rpc.modules.list();
     const [healthCall, modulesCall] = fetch.mock.calls;
     expect(String(healthCall?.[0])).toBe("http://core:7878/api/health");
     expect(headersOf(healthCall?.[1]).Authorization).toBeUndefined();
@@ -64,7 +64,7 @@ describe("ApiClient", () => {
   it("encodes the decisions context as JSON and passes the limit", async () => {
     const fetch = mockFetch(() => ({ body: [] }));
     const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));
-    await api.decisions({ limit: 200, context: ctx });
+    await api.rpc.decisions({ query: { limit: 200, context: JSON.stringify(ctx) } });
     const url = new URL(String(fetch.mock.calls[0]?.[0]), "http://x");
     expect(url.pathname).toBe("/api/decisions");
     expect(url.searchParams.get("limit")).toBe("200");
@@ -101,7 +101,7 @@ describe("ApiClient", () => {
   it("posts module actions to /api/modules/{id}/{action}", async () => {
     const fetch = mockFetch((m) => (m === "POST" ? { body: { id: "platform.discord.bot" } } : undefined));
     const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));
-    await api.moduleAction("platform.discord.bot", "restart");
+    await api.rpc.modules.action({ params: { id: "platform.discord.bot", action: "restart" } });
     expect(String(fetch.mock.calls[0]?.[0])).toBe("/api/modules/platform.discord.bot/restart");
     expect(fetch.mock.calls[0]?.[1]?.method).toBe("POST");
   });
@@ -119,7 +119,7 @@ describe("ApiClient", () => {
   it("classifies a 404 for a missing item as not found", async () => {
     mockFetch(() => ({ status: 404, body: { error: "unknown module `nope`" } }));
     const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));
-    const err = (await api.moduleAction("nope", "enable").catch((e: unknown) => e)) as ApiError;
+    const err = (await api.rpc.modules.action({ params: { id: "nope", action: "enable" } }).catch((e: unknown) => e)) as ApiError;
     expect(err.kind).toBe("not_found");
     expect(err.message).toBe("unknown module `nope`");
   });
