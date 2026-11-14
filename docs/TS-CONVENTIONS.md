@@ -91,6 +91,16 @@ only when it clearly pays for itself; prefer Node built-ins (`fetch`, `node:cryp
   - times are `Timestamp` (RFC 3339 string; compare with `Date.parse`); durations are a
     number of ms; ULIDs are `string` (`newId()`).
   - maps in return values are `Map` (sorted maps: keys ascending).
+- **A shape that crosses a process boundary is written once, in `packages/contracts`**, as a zod
+  schema (`export const FooSchema = z.object({...}).meta({ id: "<Part>Foo" })`); its type is
+  `z.output<typeof FooSchema>`, and `packages/contracts/schema/<part>.json` is generated from the
+  schemas (`pnpm contracts:gen`) and checked in. Parts: `wire` (accounts, contexts, messages),
+  `events`, `voice-link`, `stage-link`, `overlay`, `workers`. The rules are in
+  `packages/contracts/kit/src/index.ts` and a test holds every part to them: no `.transform`
+  and no `.refine` (normalise after `parse`, in the receiver), a name on every exported object,
+  union and enum, and a field added to a shape already in use is `.optional()` or has a
+  `.default()`. `packages/types` re-exports the wire types under their old names; service keys
+  and in-process logic stay there.
 - TS-only APIs (methods, constructor options, in-process classes) are camelCase:
   `store.dueFollowups(...)`, `new OpenAiConfig(...).timeoutMs`.
 - **Module ids, config keys, event topics, service names, permission nodes, settings keys and
