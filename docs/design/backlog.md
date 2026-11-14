@@ -53,7 +53,7 @@
 
 ## 等 owner 決定
 
-- V5 還沒定的:embedding 用本機的小模型還是 API;十二月的生圖模型、ComfyUI 跑在哪一台、她的 LoRA 的授權;「玩」的八個決定([v5-play.md](v5-play.md) §8:每日卡價格、里程碑卡 / 頻道掉落 / 願望單、交易所、拍賣 / 樂透 / 水族箱、刪除清單、派對遊戲、發放調降);Minecraft 的志向清單 / 誰算主人 / AltoClef。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
+- V5 還沒定的:embedding 用哪個本機模型(階段 3 實測);十二月的生圖模型、ComfyUI 跑在哪一台、她的 LoRA 的授權;「玩」剩下的([v5-play.md](v5-play.md) §8:八家公司的名單、下市、樂透、水族箱、圖片訊息的背景圖);Minecraft 的志向清單 / 誰算主人 / AltoClef。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
 - 貨幣系統 §9 的問題已先用建議值上線,隨時可改:[economy.md](economy.md) §9.1。
 - 人設要不要加一句:肚子餓時可以被零食收買,不情願地配合可愛的小要求(現在人設寫著『現在你是一隻貓』這類要求要吐槽回去)。
 - `ambient_text` 怎麼設。
