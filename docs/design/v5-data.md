@@ -37,6 +37,21 @@
 | D7 | 模型的提示詞和回應 | 留在 JSONL。保留天數從 14 天提高到 30 天是可選的 |
 | D8 | 錢的帳本 | 保持是外掛自己的表,是「只有一份原始紀錄」的刻意例外 |
 
+## Drizzle 試用的結果(2026-11-14)
+
+第 4 步的 identity 外掛是用 Drizzle(`drizzle-orm` 1.0.0-rc.5,`drizzle-orm/node-sqlite` 驅動,不需要原生編譯的套件)寫的,同時回答「要不要全面用它」。結論是**一般的外掛資料表都用 Drizzle,有幾樣維持手寫 SQL**。
+
+- **用 Drizzle 的**:各外掛的一般資料表(設定、auth、directive、economy、交易所、卡片、產物庫的中繼資料等)。資料表定義就是型別的來源,不再手寫資料列的轉換。
+- **維持手寫 SQL 的**:`events` 表和它的 trigger、JSON 檢視;全文搜尋;遷移執行器本身;`legacy` schema;會重建整張表的遷移。
+- **遷移怎麼接**:SQL 由 drizzle-kit 從資料表定義產生,commit 進 repo,交給 `migrate.ts` 的執行器套用;有一個測試比對「定義」和「遷移後的資料庫」,兩邊對不上就失敗。不用 Drizzle 自己的 migrator:它不會拒絕被改過或缺少的遷移,順序錯了也照跑。
+- **速度**(10 萬次查詢):預先 prepare 的 Drizzle 查詢和手寫的 prepared statement 一樣快(約 2 到 3 微秒);每次現組的查詢要 11 到 19 微秒,所以常跑的查詢要先 prepare。
+- **交易**:Drizzle 和手寫 SQL 共用同一條連線,一起 commit、一起 rollback;一律用 `Db.tx`(巢狀時是 savepoint),不用 Drizzle 自己的 `transaction()`。
+- **Drizzle 做不到、要自己補的**:`STRICT`(產生 SQL 時補上);欄位的 `COLLATE NOCASE`(改用不分大小寫的 unique index);drizzle-kit 看不到 partial index 的條件和 expression index(由比對測試檢查)。
+- **代價**:它是 rc 版,試用時踩到十個小問題,都有繞法;程式碼行數沒有變少(同樣的操作從約 285 行變成約 394 行),換到的是型別檢查和不會對不上的 schema;CLI 多一個相依,安裝後約 28 MB。
+- **之後幾步要照做的**:常跑的查詢 prepare 一次;JSON 欄位讀出來時用 zod 解析(`$type` 只是編譯期的標註);第 11 步加一個涵蓋所有 Drizzle 外掛的比對測試。
+
+和原設計不同的地方:identity 放在 `packages/store/src/identity/`,還不是獨立的套件;一個人一個 handle(不是一個帳號一個);`persons.name` 保留第一次見到時的名字;為了讓 identity 擁有 `accounts` 和 `link_codes`,`legacy` 的第 1 和第 3 個遷移拿掉了這幾張表。
+
 ## 切換的步驟
 
 1. 先拿現行檔案的複本演練一次匯入。
