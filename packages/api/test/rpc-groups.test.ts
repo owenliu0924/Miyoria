@@ -89,6 +89,9 @@ const CASES: Case[] = [
   },
 ];
 
+/** The member routes that never counted against the member's rate limit. */
+const UNLIMITED = new Set(["member.forget", "member.requestSong"]);
+
 const CARD = {
   serial: "MYR-AAAA-BBBB-CCCC",
   issued_at: "2026-11-08T03:00:00.000Z",
@@ -261,7 +264,11 @@ function leaky(value: unknown): unknown {
 describe("the public and member routes of the table", () => {
   it.each(CASES)("$name is $method $path, for the $audience", (c) => {
     const [group, route] = c.name.split(".") as [string, string];
-    expect(routeMeta(contract, [group, route])).toEqual({ audience: c.audience, permission: null });
+    expect(routeMeta(contract, [group, route])).toEqual({
+      audience: c.audience,
+      permission: null,
+      ...(UNLIMITED.has(c.name) || c.audience === "public" ? {} : { limited: true }),
+    });
   });
 
   it("holds the shell's flags the old routes had", () => {
@@ -338,10 +345,14 @@ describe("the answers", () => {
       draw: os.fortune.draw.handler(answer("fortune.draw")),
     },
   });
-  const state = { publicSide: { config: { enabled: true } }, optional: () => undefined };
+  const state = {
+    publicSide: { config: { enabled: true }, admitMember: () => null },
+    optional: () => undefined,
+  };
   const hono = new Hono<ApiEnv>();
   for (const r of tableRoutes(state as never, table, { responseCheck: "production" })) {
     hono.on(r.method, r.path, async (c) => {
+      c.set("member", { account: { platform: "discord", id: "1" } } as never);
       try {
         return await r.handler(c);
       } catch (error) {

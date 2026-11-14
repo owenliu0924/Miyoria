@@ -45,7 +45,7 @@ export type FortuneDraw = z.output<typeof FortuneDrawSchema>;
 
 export const fortune = {
   today: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/fortune" })
     .output(FortuneTodaySchema),
   /**
@@ -53,7 +53,7 @@ export const fortune = {
    * given back (`503`); a retry with the key of an attempt that did not finish is `409`.
    */
   draw: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/fortune" })
     .input(z.object({ headers: IdempotencyHeaders, body: EmptyRequestSchema }))
     .output(FortuneDrawSchema),

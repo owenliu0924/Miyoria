@@ -5,8 +5,8 @@
 // Each route becomes one `Route` (`route.ts`): its audience decides the authentication, exactly as
 // the `public` and `member` flags do for an old route, so the order is today's: authentication
 // (with the CSRF check and `admin.panel.write` for a change by session), then 405 for another
-// method on a known path, then the route's permission node, then a JSON body's content type and
-// syntax (415, 400), and only then oRPC: the input schema (422 for the body, 400 for the query),
+// method on a known path, then the route's permission node, then the member's rate limit (a route
+// with `limited`), then a JSON body's content type and syntax (415, 400), and only then oRPC: the input schema (422 for the body, 400 for the query),
 // the handler, the response schema. What oRPC catches is handed back to the shell, which answers
 // it the way it answers an old route (`{ "error": "..." }`, `WWW-Authenticate`, the member
 // wrapper), so a client cannot tell the two kinds of route apart.
@@ -51,7 +51,7 @@ import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
 import { memberRpc } from "./member.js";
 import { authRpc } from "./oauth.js";
-import { publicRpc } from "./public.js";
+import { limitMember, publicRpc } from "./public.js";
 import type { Method, Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
 import { walletRpc } from "./wallet.js";
@@ -275,6 +275,7 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
       member: meta.audience === "member",
       handler: async (c) => {
         if (meta.permission !== null) requirePermission(state, c, meta.permission);
+        if (meta.limited) limitMember(state, c);
         return serve(handler, state, c, body);
       },
     });

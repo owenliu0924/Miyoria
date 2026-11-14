@@ -72,12 +72,12 @@ export type BountyList = z.output<typeof BountyListSchema>;
 
 export const agency = {
   goals: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/goals" })
     .output(GoalListSchema),
   /** Holds coins for the open goal. */
   pledge: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/goals/{id}/pledge" })
     .input(
       z.object({
@@ -88,7 +88,7 @@ export const agency = {
     )
     .output(PledgeResultSchema),
   bounties: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/bounties" })
     .output(BountyListSchema),
 };

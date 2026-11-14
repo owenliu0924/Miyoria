@@ -201,11 +201,11 @@ export const EmptyRequestSchema = z.strictObject({}).meta({ id: "ApiEmptyRequest
  */
 export const member = {
   session: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/session" })
     .output(MemberSessionSchema),
   me: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/me" })
     .output(MemberViewSchema),
   /** `/me memory forget all`; the memory permission nodes are checked by the handler. */
@@ -221,18 +221,18 @@ export const member = {
     .input(z.object({ body: SongRequestSchema }))
     .output(SongAcceptedSchema),
   cards: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/card" })
     .output(MemberCardsSchema),
   /** A card of what the page shows them now; the extras cost coins and take an idempotency key. */
   issueCard: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/card" })
     .input(z.object({ headers: IdempotencyHeaders.optional(), body: IssueCardRequestSchema }))
     .output(IssuedCardSchema),
   /** Today's newest card is voided and she writes a new one. */
   rerollCard: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/card/reroll" })
     .input(z.object({ headers: IdempotencyHeaders, body: EmptyRequestSchema }))
     .output(IssuedCardSchema),

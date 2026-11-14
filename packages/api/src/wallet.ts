@@ -35,7 +35,6 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, newId } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { limitMember } from "./public.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -172,40 +171,33 @@ export async function walletExport(state: ApiState, account: AccountRef): Promis
 /** The wallet routes; served only while the public side is on (see `rpc.ts`). */
 export const walletRpc = {
   view: os.wallet.view.handler(async ({ context: { state, c } }) => {
-    limitMember(state, c);
     return walletView(await withWallet(state, (e) => e.wallet(accountOf(c))));
   }),
   checkin: os.wallet.checkin.handler(async ({ context: { state, c } }) => {
-    limitMember(state, c);
     return checkinResult(await withWallet(state, (e) => e.checkin(accountOf(c))));
   }),
   feed: os.wallet.feed.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const key = keyOf(input.headers["idempotency-key"]);
     const { item, count } = input.body;
     const r = await withWallet(state, (e) => e.feed(accountOf(c), item, count ?? 1, key));
     return feedResult(r);
   }),
   letter: os.wallet.letter.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const key = keyOf(input.headers["idempotency-key"]);
     const { text } = input.body;
     return spendResult(await withWallet(state, (e) => e.letter(accountOf(c), text, key)));
   }),
   screen: os.wallet.screen.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const key = keyOf(input.headers["idempotency-key"]);
     const { text } = input.body;
     return spendResult(await withWallet(state, (e) => e.screenMessage(accountOf(c), text, key)));
   }),
   expression: os.wallet.expression.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const key = keyOf(input.headers["idempotency-key"]);
     const { expression } = input.body;
     return spendResult(await withWallet(state, (e) => e.expression(accountOf(c), expression, key)));
   }),
   transfer: os.wallet.transfer.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const key = keyOf(input.headers["idempotency-key"]);
     const { to_discord_id, amount } = input.body;
     const to: AccountRef = { platform: "discord", id: to_discord_id };
@@ -214,14 +206,12 @@ export const walletRpc = {
     );
   }),
   board: os.wallet.board.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const { on } = input.body;
     const done = await withWallet(state, (e) => e.setOnBoard(accountOf(c), on));
     if (!done) throw new ApiError(403, STRANGER);
     return { on_board: on };
   }),
   frame: os.wallet.frame.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const key = keyOf(input.headers["idempotency-key"]);
     const { buy, select } = input.body;
     const req: { buy?: string; select?: string | null } = {};

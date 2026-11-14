@@ -192,19 +192,19 @@ export type FramesResult = z.output<typeof FramesResultSchema>;
 
 const spend = <B extends z.ZodType>(path: `/${string}`, body: B) =>
   route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path })
     .input(z.object({ headers: IdempotencyHeaders, body }));
 
 export const wallet = {
   /** Their balance, what they can still earn today, the shop and their frames. */
   view: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/wallet" })
     .output(WalletViewSchema),
   /** Once a local day (the Discord command counts too); `409` after. */
   checkin: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/checkin" })
     .input(z.object({ body: EmptyRequestSchema }))
     .output(CheckinResultSchema),
@@ -215,7 +215,7 @@ export const wallet = {
   /** Coins to another member (`403` in the same words for every reason they cannot take them). */
   transfer: spend("/api/member/transfer", TransferRequestSchema).output(TransferResultSchema),
   board: route
-    .meta({ audience: "member", permission: null })
+    .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/board" })
     .input(z.object({ body: BoardRequestSchema }))
     .output(BoardChoiceSchema),

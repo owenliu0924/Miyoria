@@ -39,6 +39,16 @@ const table = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/t/gone" })
     .output(Item),
+  limited: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "POST", path: "/api/t/limited" })
+    .input(z.object({ body: Item }))
+    .output(Item),
+  unlimited: route
+    .meta({ audience: "member", permission: null })
+    .route({ method: "POST", path: "/api/t/unlimited" })
+    .input(z.object({ body: Item }))
+    .output(Item),
 };
 
 /** What the admin route answers; a test sets it. */
@@ -57,24 +67,35 @@ const served = os.router({
   gone: os.gone.handler(() => {
     throw ApiError.notFound("no such thing");
   }),
+  limited: os.limited.handler(({ input }) => input.body),
+  unlimited: os.unlimited.handler(({ input }) => input.body),
 });
 
 const OWEN = { platform: "discord", id: "1" };
 const session = (account = OWEN): Principal =>
   ({ kind: "session", record: { account }, write: true }) as never;
 
-function app(check: ResponseCheck, principal: Principal = { kind: "token" }) {
+/** The member's limit: `allowed` asks, then 5 s to wait; `asked` counts every ask. */
+function app(
+  check: ResponseCheck,
+  principal: Principal = { kind: "token" },
+  limit = { allowed: Number.POSITIVE_INFINITY, asked: 0 },
+) {
   const authorizer = {
     allows: (account: { id: string }, node: string) => account.id === "2" && node === "test.node",
   };
   const state = {
     optional: (key: unknown) => (key === AuthorizerKey ? authorizer : undefined),
-    publicSide: { config: { enabled: true } },
+    publicSide: {
+      config: { enabled: true },
+      admitMember: () => (++limit.asked > limit.allowed ? 5000 : null),
+    },
   };
   const hono = new Hono<ApiEnv>();
   for (const r of tableRoutes(state as never, served, { responseCheck: check })) {
     hono.on(r.method, r.path, async (c) => {
       c.set("principal", principal);
+      if (c.req.path.includes("limited")) c.set("member", { account: OWEN } as never);
       try {
         return await r.handler(c);
       } catch (error) {
@@ -207,5 +228,35 @@ describe("a failed handler", () => {
     const r = await app("strict")("HEAD", "/api/t/open");
     expect(r.status).toBe(200);
     expect(r.body).toBeNull();
+  });
+});
+
+describe("the member's rate limit", () => {
+  const good = put('{"name":"x"}');
+
+  it("runs before the body is read: a limited caller gets 429 whatever the body is", async () => {
+    const limit = { allowed: 0, asked: 0 };
+    const serve = app("strict", { kind: "token" }, limit);
+    for (const body of [good, put("{"), put('{"name":1}'), put("x", "text/plain")]) {
+      const r = await serve("POST", "/api/t/limited", body);
+      expect(r.status).toBe(429);
+      expect(r.response.headers.get("retry-after")).toBe("5");
+    }
+  });
+
+  it("counts a request with a malformed body", async () => {
+    const limit = { allowed: 2, asked: 0 };
+    const serve = app("strict", { kind: "token" }, limit);
+    expect((await serve("POST", "/api/t/limited", put("{"))).status).toBe(400);
+    expect((await serve("POST", "/api/t/limited", put('{"name":1}'))).status).toBe(422);
+    expect((await serve("POST", "/api/t/limited", good)).status).toBe(429);
+    expect(limit.asked).toBe(3);
+  });
+
+  it("is only asked of a route that says it is limited", async () => {
+    const limit = { allowed: 0, asked: 0 };
+    const r = await app("strict", { kind: "token" }, limit)("POST", "/api/t/unlimited", good);
+    expect(r.status).toBe(200);
+    expect(limit.asked).toBe(0);
   });
 });

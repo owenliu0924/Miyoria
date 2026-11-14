@@ -64,7 +64,7 @@ import { type CardWords, writeCard } from "./card-words.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { deleteFortunes, fortunesOf } from "./fortune.js";
-import { dateOf, limitMember, localDay, tooMany } from "./public.js";
+import { dateOf, localDay, tooMany } from "./public.js";
 import type { Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
@@ -594,28 +594,17 @@ export function memberRoutes(state: ApiState): Route[] {
 
 /** The member routes on the route table; served only while the public side is on (see `rpc.ts`). */
 export const memberRpc = {
-  session: os.member.session.handler(({ context }) => {
-    limitMember(context.state, context.c);
-    return session(context.c);
-  }),
-  me: os.member.me.handler(({ context }) => {
-    limitMember(context.state, context.c);
-    return memberView(context.state, context.c);
-  }),
+  session: os.member.session.handler(({ context }) => session(context.c)),
+  me: os.member.me.handler(({ context }) => memberView(context.state, context.c)),
   forget: os.member.forget.handler(({ context }) => forgetMine(context.state, context.c)),
   requestSong: os.member.requestSong.handler(({ input, context }) =>
     requestSong(context.state, context.c, input.body.query),
   ),
-  cards: os.member.cards.handler(({ context }) => {
-    limitMember(context.state, context.c);
-    return cardsMine(context.state, context.c);
-  }),
+  cards: os.member.cards.handler(({ context }) => cardsMine(context.state, context.c)),
   issueCard: os.member.issueCard.handler(({ input, context }) => {
-    limitMember(context.state, context.c);
     return issueMine(context.state, context.c, input.body, input.headers?.["idempotency-key"]);
   }),
   rerollCard: os.member.rerollCard.handler(({ input, context }) => {
-    limitMember(context.state, context.c);
     return rerollMine(context.state, context.c, input.headers["idempotency-key"]);
   }),
 };

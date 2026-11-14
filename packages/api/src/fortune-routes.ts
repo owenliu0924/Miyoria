@@ -28,7 +28,7 @@ import {
   shown,
   shownMemories,
 } from "./member.js";
-import { limitMember, localDay } from "./public.js";
+import { localDay } from "./public.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 import type { IssuedFortune } from "./types.js";
@@ -175,11 +175,9 @@ export async function drawFortune(
  */
 export const fortuneRpc = {
   today: os.fortune.today.handler(({ context: { state, c } }) => {
-    limitMember(state, c);
     return fortuneTodayOf(state, session(c).account);
   }),
   draw: os.fortune.draw.handler(({ input, context: { state, c } }) => {
-    limitMember(state, c);
     return draw(state, c, input.headers["idempotency-key"]);
   }),
 };

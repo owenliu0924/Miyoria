@@ -21,7 +21,6 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { AccountRef } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { limitMember } from "./public.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 import { keyOf } from "./wallet.js";
@@ -80,19 +79,16 @@ const pledgeResult = (r: PledgeResult): PledgeResult => ({
 /** The goal and bounty routes; served only while the public side is on (see `rpc.ts`). */
 export const agencyRpc = {
   goals: os.agency.goals.handler(async ({ context: { state, c } }) => {
-    limitMember(state, c);
     const goals = await withEconomy(state, (e) => e.goals(accountOf(c)));
     return { goals: goals.map(goalView) };
   }),
   pledge: os.agency.pledge.handler(async ({ input, context: { state, c } }) => {
-    limitMember(state, c);
     const { amount } = input.body;
     const key = keyOf(input.headers["idempotency-key"]);
     const r = await withEconomy(state, (e) => e.pledge(accountOf(c), input.params.id, amount, key));
     return pledgeResult(r);
   }),
-  bounties: os.agency.bounties.handler(async ({ context: { state, c } }) => {
-    limitMember(state, c);
+  bounties: os.agency.bounties.handler(async ({ context: { state } }) => {
     const bounties = await withEconomy(state, (e) => e.bounties());
     return { bounties: bounties.map(bountyView) };
   }),
