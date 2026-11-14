@@ -1,7 +1,15 @@
 // @miyoria/contracts/events: the event envelope, defineEvent and the registry of event types
 // (docs/design/v5-data.md §2.2, docs/design/v5-contracts.md §2.8), and the payload schemas of the
-// event types defined so far (chat lines). Nothing here does I/O, so a browser bundle can use it.
+// event types defined so far (chat lines, turn records, audit entries). Nothing here does I/O, so
+// a browser bundle can use it.
 
+export {
+  AUDIT_TYPE_PREFIX,
+  type AuditEntryData,
+  AuditEntrySchema,
+  AuditRecorded,
+  auditType,
+} from "./audit.js";
 export {
   CHAT_EVENT_TYPES,
   CHAT_EVENTS,
@@ -45,3 +53,16 @@ export {
   eventDraft,
   readEventData,
 } from "./registry.js";
+export {
+  AgentDecision,
+  AgentTurnOutcome,
+  type DecisionTraceData,
+  DecisionTraceSchema,
+  TURN_EVENTS,
+  TurnCancelCauseSchema,
+  type TurnOutcomeData,
+  TurnOutcomeRecordSchema,
+  TurnOutcomeSchema,
+  TurnReasonSchema,
+  VoiceTurnStagesSchema,
+} from "./turn.js";

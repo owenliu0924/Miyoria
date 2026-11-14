@@ -2,6 +2,63 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/events",
   "$defs": {
+    "EventsAuditEntry": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "detail": {
+          "$ref": "#/$defs/WireJsonValue"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "actor",
+        "action",
+        "target",
+        "detail",
+        "ok"
+      ]
+    },
+    "EventsDecisionTrace": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "respond": {
+          "type": "boolean"
+        },
+        "score": {
+          "type": "number"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "respond",
+        "score",
+        "reasons"
+      ]
+    },
     "EventsDraft": {
       "type": "object",
       "properties": {
@@ -343,6 +400,179 @@
         "ambient"
       ]
     },
+    "EventsTurnCancelCause": {
+      "type": "string",
+      "enum": [
+        "input",
+        "barge_in",
+        "superseded",
+        "expired",
+        "floor",
+        "shutdown"
+      ]
+    },
+    "EventsTurnOutcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "sent"
+            },
+            "parts": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "parts"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "silence"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "cancelled"
+            },
+            "cause": {
+              "$ref": "#/$defs/EventsTurnCancelCause"
+            },
+            "by": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "cause",
+            "by"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "error"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "error"
+          ]
+        }
+      ]
+    },
+    "EventsTurnOutcomeRecord": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "reason": {
+          "$ref": "#/$defs/EventsTurnReason"
+        },
+        "outcome": {
+          "$ref": "#/$defs/EventsTurnOutcome"
+        },
+        "addressed_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "focus": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireMessageRef"
+          }
+        },
+        "restarts": {
+          "type": "number"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "off",
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "corrections": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "voice_stages": {
+          "$ref": "#/$defs/EventsVoiceTurnStages"
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "reason",
+        "outcome",
+        "addressed_by",
+        "focus",
+        "restarts",
+        "reasoning",
+        "latency_ms",
+        "at"
+      ]
+    },
+    "EventsTurnReason": {
+      "type": "string",
+      "enum": [
+        "addressed",
+        "reply_to_her",
+        "ambient",
+        "initiative",
+        "notice"
+      ]
+    },
     "EventsVoicePlayback": {
       "type": "object",
       "properties": {
@@ -394,6 +624,73 @@
         "turn",
         "state",
         "text"
+      ]
+    },
+    "EventsVoiceTurnStages": {
+      "type": "object",
+      "properties": {
+        "heard_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "wait_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "decide_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "context_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "prompt_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "first_token_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "held_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "first_sentence_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "speculative": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "heard_ms",
+        "wait_ms",
+        "decide_ms",
+        "context_ms",
+        "prompt_ms",
+        "first_token_ms",
+        "held_ms",
+        "first_sentence_ms",
+        "speculative"
       ]
     },
     "WireAccountRef": {
