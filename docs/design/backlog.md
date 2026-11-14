@@ -51,7 +51,7 @@
 
 ## 等 owner 決定
 
-- V5 規劃的十個決定(`boundaries.md` 要不要移除、hostd 自己寫或用現成的、資料庫重開要帶走什麼、公開面的羈絆顯示、羈絆的節奏、第二個平台、模型分流和預算、生圖的模型、階段順序、Minecraft 的兩個 PR):[v5-architecture.md](v5-architecture.md) §16。
+- V5 規劃的十一個決定(`boundaries.md` 要不要移除、hostd 自己寫或用現成的、資料庫重開要帶走什麼、公開面的羈絆顯示、羈絆的節奏、第二個平台、模型分流和預算、生圖的模型、階段順序、Minecraft 的兩個 PR、她做的檔案放哪個網域):[v5-architecture.md](v5-architecture.md) §16。
 - 貨幣系統 §9 的問題已先用建議值上線,隨時可改:[economy.md](economy.md) §9.1。
 - 人設要不要加一句:肚子餓時可以被零食收買,不情願地配合可愛的小要求(現在人設寫著『現在你是一隻貓』這類要求要吐槽回去)。
 - `ambient_text` 怎麼設。
