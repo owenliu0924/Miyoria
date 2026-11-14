@@ -542,9 +542,9 @@ miyoria up                     # 啟動這台裝的全部
 | `http` | `api` 變成殼,路由由外掛貢獻 | 階段 1 的契約之後 |
 | `stage`、`sing`、`live`、`economy`、`sdk` | 不動 | |
 
-Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admin`、`web`、`overlay`。`replay`、`eval`、`card-studio` 搬到 `tools/`,Core 不依賴它們。
+Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admin`、`web`、`overlay`。`replay`、`eval`、`card-studio` 已搬到 `tools/`,Core 不再依賴它們(錄製用的 `replay` 模組和紀錄格式是執行期的東西,留在 `runtime` 的 `replay-log`)。
 
-一起刪:V2 管線和它的開關、`/api/economy` 與 `economy2` 併一、`api/v4-*.ts`、30 個舊設定鍵的相容層、兩種事件形式併一、88 處 Rust 時代的註解、`spikes/`。
+一起刪,已做完的:V2 管線和它的開關、`/api/economy` 與 `economy2` 併一、`api/v4-*.ts` 改成一般檔名、只會警告的舊設定鍵相容層、Rust 時代的註解、`spikes/`。還沒做的:兩種事件形式併一(在契約那一步)、剩下幾個要先改線上設定檔才能拿掉的設定相容層。
 
 ## 13. 資料
 
