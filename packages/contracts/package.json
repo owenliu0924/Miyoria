@@ -7,10 +7,20 @@
     "node": ">=24"
   },
   "exports": {
+    "./api": {
+      "@miyoria/source": "./api/src/index.ts",
+      "types": "./dist/api/src/index.d.ts",
+      "default": "./dist/api/src/index.js"
+    },
     "./events": {
       "@miyoria/source": "./events/src/index.ts",
       "types": "./dist/events/src/index.d.ts",
       "default": "./dist/events/src/index.js"
+    },
+    "./ext": {
+      "@miyoria/source": "./ext/src/index.ts",
+      "types": "./dist/ext/src/index.d.ts",
+      "default": "./dist/ext/src/index.js"
     },
     "./overlay": {
       "@miyoria/source": "./overlay/src/index.ts",
@@ -49,6 +59,7 @@
     "gen": "tsx --conditions=@miyoria/source kit/src/gen.ts"
   },
   "dependencies": {
+    "@orpc/contract": "^1.16.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {

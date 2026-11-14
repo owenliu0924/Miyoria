@@ -40,6 +40,8 @@
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",
     "@miyoria/workspace": "workspace:*",
+    "@orpc/openapi": "^1.16.2",
+    "@orpc/server": "^1.16.2",
     "@resvg/resvg-js": "^2.6.2",
     "hono": "^4.13.16",
     "sharp": "^0.35.5",
