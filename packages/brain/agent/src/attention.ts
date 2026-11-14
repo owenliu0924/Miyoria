@@ -228,11 +228,6 @@ export function ambientScale(input: AttentionInput): number {
   return talkFactor(effectiveTalk(input).level);
 }
 
-/** Ambient probability after `ambientScale`, clamped. */
-export function ambientProbability(input: AttentionInput, p: number): number {
-  return clamp01(p * ambientScale(input));
-}
-
 /**
  * Why a message addresses her directly, if it does. `roster`: the other people in a voice
  * channel (display names), whose names an utterance may open with.

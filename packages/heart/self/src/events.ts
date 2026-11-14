@@ -114,20 +114,6 @@ export function eventEffects(kind: AffectEventKind, c: RuleContext): Effect[] {
   }
 }
 
-/** Kinds of `social.event` (what someone did toward her) that are not praise. */
-export type SocialKind =
-  | "greeting"
-  | "thanks"
-  | "gift"
-  | "friendly"
-  | "apology"
-  | "warm"
-  | "cold"
-  | "rude"
-  | "insult"
-  | "harassment"
-  | "flirt_too_far";
-
 /** The rule events `social.event` kinds become: `praise` is the `praised` event above. */
 export function socialEffects(kind: string, c: RuleContext): Effect[] | null {
   const k = Math.min(Math.max(c.scale, 0), 1) || 1;

@@ -44,11 +44,9 @@ export const WireParticipantSchema = z.object({
 export type WireParticipant = z.output<typeof WireParticipantSchema>;
 
 export const WirePlaybackStateSchema = z.enum(["started", "finished", "interrupted", "failed"]);
-export type WirePlaybackState = z.output<typeof WirePlaybackStateSchema>;
 
 /** Go Live state reported by the node. */
 export const WireGoLiveStateSchema = z.enum(["starting", "live", "stopped", "failed"]);
-export type WireGoLiveState = z.output<typeof WireGoLiveStateSchema>;
 
 /** Text frames sent by the voice node. */
 export const NodeMessageSchema = z.discriminatedUnion("type", [

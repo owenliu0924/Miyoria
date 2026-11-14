@@ -385,8 +385,3 @@ function personaCard(persona: PersonaHandle): CommandReply {
     return cardReply(blocks, { title: `人格：${p.id}`, accent: "neutral" });
   });
 }
-
-/** The persona's sections as plain text (also used by the CLI and tests). */
-export function personaSummary(persona: PersonaHandle): string {
-  return personaCard(persona).text;
-}

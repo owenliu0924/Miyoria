@@ -14,7 +14,6 @@ export { type BudgetState, CallCap, type CapLimits } from "./caps.js";
 export {
   type ConversationConfig,
   ConversationConfigSchema,
-  conversationConfig,
   type KnowledgeConfig,
   KnowledgeConfigSchema,
   knowledgeConfig,

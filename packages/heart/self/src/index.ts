@@ -27,7 +27,7 @@ export {
   MAX_APPRAISALS,
   MAX_PROMISES,
 } from "./affect.js";
-export { type BiasInputs, computeBiases, describeBiases, MAX_BIAS, MIN_WANT } from "./biases.js";
+export { type BiasInputs, computeBiases, MAX_BIAS, MIN_WANT } from "./biases.js";
 export {
   type BondConfig,
   type EmotionsConfig,
@@ -67,7 +67,6 @@ export {
   eventEffects,
   NO_CONTEXT,
   type RuleContext,
-  type SocialKind,
   socialEffects,
   strengthOf,
 } from "./events.js";

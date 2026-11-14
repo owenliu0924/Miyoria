@@ -21,7 +21,6 @@ export type Weights = z.output<typeof WeightsSchema>;
  * guild / server) or `channel` (only where it was learned).
  */
 export const GuildScopeSchema = z.enum(["guild", "channel"]);
-export type GuildScope = z.output<typeof GuildScopeSchema>;
 
 export const DedupeConfigSchema = z.object({
   /** Cosine similarity at which a new memory supersedes an existing one. */
@@ -34,7 +33,6 @@ export const DedupeConfigSchema = z.object({
   /** Confidence added when a fact is learned again. */
   reinforce: z.number().default(0.1),
 });
-export type DedupeConfig = z.output<typeof DedupeConfigSchema>;
 
 /**
  * Down-weighting of a gag she keeps recalling: when memories saying (nearly) the same thing
@@ -72,7 +70,6 @@ export const ForgettingConfigSchema = z.object({
   /** ... and are deleted below this confidence. */
   forget_below_confidence: z.number().default(0.1),
 });
-export type ForgettingConfig = z.output<typeof ForgettingConfigSchema>;
 
 /**
  * The pinned layer: what is in every prompt without being looked up. Each section is cut to its

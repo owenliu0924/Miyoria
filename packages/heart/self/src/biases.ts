@@ -122,18 +122,3 @@ export function computeBiases(i: BiasInputs): AffectBiases {
   real.sort((a, b) => b.weight - a.weight || (a.want < b.want ? -1 : 1));
   return { talkativeness: round(talkativeness), initiative: round(initiative), wants: real };
 }
-
-/** The biases of a snapshot-like state (for the panel). */
-export function describeBiases(b: AffectBiases): string {
-  const parts: string[] = [];
-  if (Math.abs(b.talkativeness) >= 0.05) {
-    parts.push(`話量 ${b.talkativeness > 0 ? "+" : ""}${b.talkativeness.toFixed(2)}`);
-  }
-  if (Math.abs(b.initiative) >= 0.05) {
-    parts.push(`主動 ${b.initiative > 0 ? "+" : ""}${b.initiative.toFixed(2)}`);
-  }
-  for (const w of b.wants.slice(0, 3)) {
-    parts.push(`${w.want}${w.person ? `(${w.person})` : ""} ${w.weight.toFixed(2)}`);
-  }
-  return parts.join("、");
-}

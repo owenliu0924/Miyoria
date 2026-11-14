@@ -22,7 +22,6 @@ export {
   ACTIVENESS_SHIFT,
   type Assessment,
   type AttentionInput,
-  ambientProbability,
   ambientScale,
   answersHer,
   assess,
@@ -44,7 +43,7 @@ export {
   type VoiceAttention,
   vocativeName,
 } from "./attention.js";
-export { activenessLabel, personaSummary } from "./commands.js";
+export { activenessLabel } from "./commands.js";
 export {
   type Budgeted,
   type BudgetOptions,

@@ -37,16 +37,13 @@ export {
 } from "./commands.js";
 export {
   DEFAULT_LOCAL_MODEL,
-  type DedupeConfig,
   DedupeConfigSchema,
   type EmbeddingConfig,
   EmbeddingConfigSchema,
   type EvidenceConfig,
   EvidenceConfigSchema,
   embeddingConfig,
-  type ForgettingConfig,
   ForgettingConfigSchema,
-  type GuildScope,
   GuildScopeSchema,
   type MemoryConfig,
   MemoryConfigSchema,
@@ -180,7 +177,7 @@ export {
 export { PersonNotes } from "./person-note.js";
 export { PINNED_TITLE, PinnedReader } from "./pinned.js";
 export { type Disclosure, disclose, PRIVATE_MARK, placeRef, type Viewer } from "./places.js";
-export { excludeOf, type ProfileSources, Profiles, profileLine } from "./profiles.js";
+export { type ProfileSources, Profiles, profileLine } from "./profiles.js";
 export {
   clockOf,
   entryLine,

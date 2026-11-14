@@ -9,7 +9,6 @@
 // Nothing stored moves or is deleted: this is a reader.
 
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import type { MemoryRecord } from "@miyoria/store";
 import {
   AFFINITY_LEVEL_MAX,
   type AffectState,
@@ -391,8 +390,3 @@ export function profileLine(
 const FREE_TEXT = new Set(["impression", "stance", "last_topic", "notes", "asked"]);
 /** A cut value keeps at least this many characters. */
 const MIN_VALUE = 12;
-
-/** For callers holding records: their ids and contents, as `ProfileOptions.exclude`. */
-export function excludeOf(records: readonly Pick<MemoryRecord, "id" | "content">[]): string[] {
-  return records.flatMap((r) => [r.id, r.content]);
-}

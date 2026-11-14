@@ -108,9 +108,7 @@ export {
   TAG_LEVELS,
   TAG_PLAYBACK,
   VERSION,
-  type WireGoLiveState,
   type WireParticipant,
-  type WirePlaybackState,
 } from "./protocol.js";
 export { DEFAULT_SEGMENTER, Segmenter, type SegmenterConfig, type Utterance } from "./segment.js";
 export { SileroVad, sileroVad } from "./silero.js";

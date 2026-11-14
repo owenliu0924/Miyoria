@@ -189,9 +189,6 @@ export const ReflectConfigSchema = z.object({
 });
 export type ReflectConfig = z.output<typeof ReflectConfigSchema>;
 
-export function conversationConfig(o: z.input<typeof ConversationConfigSchema> = {}) {
-  return ConversationConfigSchema.parse(o);
-}
 export function knowledgeConfig(o: z.input<typeof KnowledgeConfigSchema> = {}) {
   return KnowledgeConfigSchema.parse(o);
 }
