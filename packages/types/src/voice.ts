@@ -1,48 +1,14 @@
+import type { ContextKey, PlaybackState } from "@miyoria/contracts/wire";
 import type { TurnId } from "./ids.js";
-import type { AccountRef, Author, ContextKey } from "./platform.js";
 import { serviceKey } from "./service-key.js";
-import type { Timestamp } from "./time.js";
 
-/** Someone in a voice channel she is in. */
-export interface VoiceParticipant {
-  account: AccountRef;
-  display_name: string;
-  /** One of her own accounts. */
-  is_self: boolean;
-  muted: boolean;
-  deafened: boolean;
-}
-
-/** One finished, transcribed utterance of one speaker. */
-export interface VoiceUtterance {
-  id: string;
-  /** Kind `voice`; `scope` = guild, `channel` = voice channel. */
-  context: ContextKey;
-  speaker: Author;
-  text: string;
-  language: string | null;
-  /** Emotion tag from the ASR model, if it reports one (e.g. SenseVoice). */
-  emotion: string | null;
-  /** Non-speech events detected in the audio (laughter, applause, ...). */
-  audio_events: string[];
-  started_at: Timestamp;
-  ended_at: Timestamp;
-  /** Time from end of speech to transcript, in ms. */
-  asr_ms: number;
-  /** How the turn was judged over, when a model judges it (`turn_engine = "smart-turn"`). */
-  turn?: VoiceTurnEnd;
-}
-
-/** How a speaker's turn ended. */
-export interface VoiceTurnEnd {
-  /** `turn`: the model says they are done; `timeout`: the longest silence; else silence or cap. */
-  ended_by: string;
-  /** The model's last answer; `null` when it did not give one. */
-  probability: number | null;
-}
-
-/** Her own speech playback. `interrupted`: stopped early, e.g. someone talked over her. */
-export type PlaybackState = "started" | "finished" | "interrupted" | "failed";
+// What is heard and who is there are contracts (`@miyoria/contracts/wire`).
+export type {
+  PlaybackState,
+  VoiceParticipant,
+  VoiceTurnEnd,
+  VoiceUtterance,
+} from "@miyoria/contracts/wire";
 
 export type SpeakOutcome = "completed" | "interrupted";
 
