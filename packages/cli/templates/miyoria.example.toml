@@ -75,6 +75,16 @@ reflect = "high"
 # degrade_at = 0.8           # 用到 80% 時改用便宜模型 / 少主動發話
 # on_exhausted = "stop"
 
+# 呼叫紀錄:每次呼叫 LLM 都寫一行到 <dir>/<UTC 日期>.jsonl(用途、模型、送出的訊息與工具、推理與取樣設定、
+# 回覆、用量、耗時、錯誤),Core 重啟後還查得到,也能拿來重播評估。裡面有大家說的話,只存在這台電腦上;
+# API key 和 provider 設定不會寫進去。寫不進去時只丟掉那幾行,不會拖慢或擋住呼叫
+# [llm.call_log]
+# enabled = true             # false = 不寫
+# dir = "data/llm-calls"     # 相對於 miyoria.toml 所在的資料夾
+# keep_days = 14             # 保留最近幾天(含今天);更舊的檔案在啟動時和每天刪掉
+# max_mb_per_day = 512       # 當天的檔案超過這個大小後,當天其餘的呼叫只記用途、模型、用量等,不記內容
+# bodies = true              # false = 一律不記訊息和回覆內容
+
 # ---- 長期記憶 --------------------------------------------------------------
 # DeepSeek 沒有 embeddings;不設也能用(全文檢索 + 新舊 + 重要度)。
 # 有 Ollama / LM Studio / OpenAI 等 /embeddings 端點時可以打開:

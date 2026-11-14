@@ -525,6 +525,8 @@ curl -s -H "Authorization: Bearer $MIYORIA_API_TOKEN" http://127.0.0.1:7878/metr
 
 `GET /metrics` 是 Prometheus 文字格式(事件數、LLM 首 token 延遲、用量等),跟其他 API 一樣要 token;給沒有憑證的 Prometheus 抓,可以設 `[modules.api] metrics_public = true`(只在 API 沒有對外時這樣做)。OpenTelemetry 還沒有。
 
+**LLM 呼叫紀錄**:每次呼叫 LLM(成功或失敗)都寫一行 JSON 到 `data/llm-calls/<UTC 日期>.jsonl`(相對於 `miyoria.toml` 所在的資料夾,`[llm.call_log] dir` 可以改):用途、模型、送出的訊息與工具、推理與取樣設定、回覆(含推理文字)、用量、耗時、錯誤和回合 id。Core 重啟後面板的呼叫檢視器會先載入當天的紀錄(只有摘要,沒有內容),事後查事故或拿來重播評估都靠這些檔案。檔案裡有大家說的話和她的回覆,只存在這台電腦上,不會上傳;API key、Authorization 標頭和 provider 設定不會寫進去,訊息裡看起來像金鑰的字串和內嵌圖片也會先遮掉。預設保留最近 14 天(`keep_days`,含今天),更舊的檔案在啟動時和之後每天自動刪掉;當天的檔案超過 512 MB(`max_mb_per_day`)後,當天其餘的呼叫只記用途、模型、用量這些,不記內容(那幾行帶 `"metadata_only": "size_cap"`)。不要內容就設 `bodies = false`,完全不寫就在 `miyoria.toml` 寫 `[llm.call_log] enabled = false`。寫不進去(磁碟滿、資料夾沒有權限)時只丟掉那幾行,每分鐘最多記一次警告,不會拖慢或擋住她說話。用 `jq` 找失敗的呼叫:`jq -c 'select(.call.status == "error") | .call' data/llm-calls/2026-11-14.jsonl`。
+
 Voice node 的層級用它的 `LOG_LEVEL`(`error|warn|info|debug`);`debug` 會印出 `@discordjs/voice` 與 DAVE 的細節。Worker 的日誌在各自的終端機(或 `docker compose logs`)。
 
 ## 9. 安全檢查表

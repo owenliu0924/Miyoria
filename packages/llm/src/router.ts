@@ -8,6 +8,7 @@ import {
   reasoningFor,
   systemClock,
 } from "@miyoria/types";
+import type { LlmCallSink, LlmLoggedResponse } from "./call-writer.js";
 import { callUsage, LlmCallLog, type LlmCallRecord } from "./calls.js";
 import {
   type BudgetConfig,
@@ -70,6 +71,8 @@ export interface LlmRouterOptions {
   imageInput?: ReadonlyMap<string, boolean>;
   /** Where calls are recorded for the inspector (kept across module restarts by the module). */
   calls?: LlmCallLog;
+  /** Where every finished call also goes (the on-disk call log). */
+  sink?: LlmCallSink;
 }
 
 /** HTTP statuses with which a provider may refuse image parts it does not support. */
@@ -90,6 +93,8 @@ interface Call {
   firstTokenAt: number | null;
   /** Its entry in the call log. */
   record: LlmCallRecord;
+  /** The request as sent to the answering model. */
+  request: ChatRequest;
   tag: LlmCallTag | undefined;
   /** Not the model the purpose normally gets: see `RoutedStream.fallback`. */
   fallback: boolean;
@@ -155,6 +160,7 @@ export class LlmRouter {
   /** Models that refused image parts in this run (`provider:model`); they get text from now on. */
   readonly #refusedImages = new Set<string>();
   readonly #calls: LlmCallLog;
+  readonly #sink: LlmCallSink | undefined;
 
   constructor(
     providers: ReadonlyMap<string, ChatProvider>,
@@ -171,6 +177,7 @@ export class LlmRouter {
     this.#reasoning = options.reasoning ?? new Map();
     this.#imageInput = options.imageInput ?? new Map();
     this.#calls = options.calls ?? new LlmCallLog();
+    this.#sink = options.sink;
   }
 
   /**
@@ -310,11 +317,14 @@ export class LlmRouter {
       level,
     );
     tag?.onCall?.({ id: record.id, cost_usd: null, status: record.status });
+    /** The request last sent (or about to be). */
+    let sent = request;
     const fail = (error: unknown): never => {
       record.status = signal?.aborted ? "aborted" : "error";
       record.error = errorMessage(error);
       record.error_kind = errorKind(error);
       record.total_ms = Math.max(0, this.#clock.now() - requestedAt);
+      this.#finish(record, sent, null);
       tag?.onCall?.({ id: record.id, cost_usd: null, status: record.status });
       throw error;
     };
@@ -356,6 +366,7 @@ export class LlmRouter {
       };
       const images = hasImages(routed.messages);
       if (images && !this.modelTakesImages(model)) routed = textOnlyRequest(routed);
+      sent = routed;
       try {
         try {
           [iterator, first] = await collectRetries(record.retries, () =>
@@ -371,8 +382,10 @@ export class LlmRouter {
             "model refused image input, retrying as text",
           );
           record.retries.push("圖片被拒,改用文字");
+          const textOnly = textOnlyRequest(routed);
+          sent = textOnly;
           [iterator, first] = await collectRetries(record.retries, () =>
-            this.#open(provider, textOnlyRequest(routed), signal),
+            this.#open(provider, textOnly, signal),
           );
           this.#refusedImages.add(key);
           log.warn({ model: key }, "sending this model text only from now on");
@@ -399,6 +412,7 @@ export class LlmRouter {
         sentAt,
         firstTokenAt: null,
         record,
+        request: sent,
         tag,
         fallback: budgetChain || record.fallbacks.length > 0,
       };
@@ -409,6 +423,16 @@ export class LlmRouter {
     const failed = record.fallbacks.pop();
     if (failed) record.model = failed.model;
     return fail(lastError ?? new LlmError("all models failed"));
+  }
+
+  /** Hands a finished call to the sink; a failing sink never fails the call. */
+  #finish(record: LlmCallRecord, request: ChatRequest, response: LlmLoggedResponse | null): void {
+    if (!this.#sink) return;
+    try {
+      this.#sink.write({ record, request, response });
+    } catch (error) {
+      log.warn({ err: errorMessage(error) }, "LLM call sink failed");
+    }
   }
 
   /** The call inspector's log (the most recent calls, bounded). */
@@ -495,6 +519,7 @@ export class LlmRouter {
         record.error_kind = errorKind(error);
       }
       this.#calls.respond(record.id, text, reasoning, tools);
+      this.#finish(record, call.request, { text, reasoning, tool_calls: tools });
       call.tag?.onCall?.({ id: record.id, cost_usd: record.cost_usd, status });
     };
     try {

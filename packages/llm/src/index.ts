@@ -6,7 +6,28 @@
 //   fallback chain of `provider:model` references, tracks usage, cost and the budget.
 // * `LlmModule` (id `llm`) builds providers from `[llm]` through `ProviderFactory`s and
 //   provides the router as `LlmRouterKey`.
+// * `LlmCallWriter` appends every finished call to `[llm.call_log] dir` as daily JSONL.
 
+export {
+  CALL_LOG_MAX_QUEUE,
+  CALL_LOG_PRELOAD_MAX_BYTES,
+  CALL_LOG_PRUNE_INTERVAL_MS,
+  CALL_LOG_WARN_INTERVAL_MS,
+  type CallLogConfig,
+  CallLogConfigSchema,
+  callLine,
+  type FinishedLlmCall,
+  type LlmCallLine,
+  type LlmCallLineCut,
+  type LlmCallSink,
+  LlmCallWriter,
+  type LlmCallWriterOptions,
+  type LlmLoggedRequest,
+  type LlmLoggedResponse,
+  loggedRequest,
+  parseCallLine,
+  utcDay,
+} from "./call-writer.js";
 export {
   CALL_KINDS,
   callKind,

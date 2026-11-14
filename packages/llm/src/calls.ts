@@ -1,8 +1,9 @@
 // Every routed LLM call, for the panel's call inspector: a bounded in-memory ring of call
 // records (time, purpose, model, tokens, latency, cost and the price used, finish reason,
 // fallbacks, retries, errors, who asked), and for the most recent calls the full request and
-// response with secrets redacted. Records and details live in memory only (they start over
-// when the process restarts); the cost tracker keeps the persisted totals. The reasoning and
+// response with secrets redacted. Records and details live in memory; finished calls are also
+// written to disk (call-writer.ts), and the module refills the records (not the details) from
+// today's file at start. The cost tracker keeps the persisted totals. The reasoning and
 // the answer of each call are also kept apart from the details, for many more calls, so the
 // panel can read her chain of thought by kind of call.
 
@@ -486,6 +487,25 @@ export class LlmCallLog {
     };
     this.#detailChars += detailChars(d);
     this.#trim();
+  }
+
+  /**
+   * Puts calls recorded before this process started (oldest first, e.g. from the on-disk call
+   * log) in front of the kept ones, without their request and response. Calls already kept are
+   * skipped; past the ring's size the oldest of them go. Returns how many were added.
+   */
+  restore(records: readonly LlmCallRecord[]): number {
+    const known = new Set(this.#calls.map((c) => c.id));
+    const fresh: LlmCallRecord[] = [];
+    for (const r of records) {
+      if (known.has(r.id)) continue;
+      known.add(r.id);
+      fresh.push({ ...structuredClone(r), has_detail: false });
+    }
+    const room = Math.max(0, this.maxCalls - this.#calls.length);
+    const kept = fresh.slice(Math.max(0, fresh.length - room));
+    this.#calls.unshift(...kept);
+    return kept.length;
   }
 
   #keepThinking(id: string, text: string, reasoning: string, toolCalls: ToolCall[]): void {
