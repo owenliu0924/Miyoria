@@ -77,12 +77,20 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: workers/fake/requirements.txt
+          cache-dependency-path: |
+            workers/fake/requirements.txt
+            workers/requirements-contracts.txt
       - name: Install light dependencies
         # fake/requirements.txt already brings fastapi, httpx and pytest; numpy is used by the
         # text-splitting / backend tests, soundfile and scipy by the sing tests that mix and read
-        # wav files. torch, qwen-tts, sherpa-onnx etc. are NOT installed.
-        run: pip install -r fake/requirements.txt numpy soundfile scipy
+        # wav files; requirements-contracts.txt is the pinned generator of contracts.py.
+        # torch, qwen-tts, sherpa-onnx etc. are NOT installed.
+        run: pip install -r fake/requirements.txt -r requirements-contracts.txt numpy soundfile scipy
+      # contracts.py must be what the checked-in packages/contracts/schema/workers.json gives.
+      - name: Generated request models are up to date
+        run: |
+          python gen_contracts.py
+          git diff --exit-code -- contracts.py
       - run: python -m pytest
 
   # Build the Core image to catch Dockerfile / dependency breakage. Nothing is pushed.
