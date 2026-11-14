@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "@miyoria/contracts/events",
+  "$defs": {
+    "EventsDraft": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "v": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "parent": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsScope"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data": {
+          "$ref": "#/$defs/WireJsonValue"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "data"
+      ]
+    },
+    "EventsEnvelope": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "v": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/EventsScope"
+        },
+        "tier": {
+          "$ref": "#/$defs/EventsTier"
+        },
+        "redacted_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data": {
+          "$ref": "#/$defs/WireJsonValue"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "v",
+        "parent",
+        "turn",
+        "session",
+        "space_id",
+        "room_id",
+        "person_id",
+        "account_id",
+        "key",
+        "seq",
+        "source",
+        "scope",
+        "tier",
+        "redacted_at",
+        "data"
+      ]
+    },
+    "EventsRedactedData": {
+      "type": "object",
+      "properties": {
+        "redacted": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "redacted"
+      ]
+    },
+    "EventsScope": {
+      "type": "string",
+      "enum": [
+        "public",
+        "space",
+        "room",
+        "dm",
+        "self",
+        "owner"
+      ]
+    },
+    "EventsTier": {
+      "type": "string",
+      "enum": [
+        "keep",
+        "long",
+        "short",
+        "ambient"
+      ]
+    },
+    "WireJsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        }
+      ]
+    }
+  }
+}
