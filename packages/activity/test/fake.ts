@@ -75,6 +75,9 @@ export class FakeWorld implements ActivityPort {
   voice = new Map<string, string>();
   golive = new Map<string, string>();
   obsStreaming = false;
+  /** When OBS last started streaming, and when each capability was first called (ms). */
+  obsStreamingAt: number | null = null;
+  readonly calledAt = new Map<string, number>();
   obs: boolean;
   stage: boolean;
   session: string | null = null;
@@ -132,6 +135,7 @@ export class FakeWorld implements ActivityPort {
       return call.primary({ signal: call.signal, task: call.task });
     }
     this.calls.push(call);
+    if (!this.calledAt.has(call.capability)) this.calledAt.set(call.capability, Date.now());
     const fail = this.failNext.get(call.capability);
     if (fail) {
       this.failNext.delete(call.capability);
@@ -210,7 +214,10 @@ export class FakeWorld implements ActivityPort {
         if (!this.obs) throw new Error("OBS is not connected");
         if (args.action === "stop") await this.curtain?.();
         await tick(this.latency);
-        if (args.action === "start" && !this.obsStuck) this.obsStreaming = true;
+        if (args.action === "start" && !this.obsStuck) {
+          this.obsStreaming = true;
+          this.obsStreamingAt = Date.now();
+        }
         if (args.action === "stop") this.obsStreaming = false;
         this.#stageStatus();
         if (this.liveNeedsObs && this.obsStreaming) {

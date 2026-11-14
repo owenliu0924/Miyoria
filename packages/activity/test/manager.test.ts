@@ -229,10 +229,11 @@ describe("broadcast through the hub (obs_hub)", () => {
     const w = new FakeWorld({ config: { ...HUB, obs_start_delay_ms: 40 } });
     const r = await w.service.request(w.transition(LIVE));
     expect(w.service.snapshot().broadcast.type).toBe("starting");
-    await until(() => w.obsStreaming);
-    const streamingAt = Date.now();
     await until(() => w.count("stream.start") === 1);
-    expect(Date.now() - streamingAt).toBeGreaterThanOrEqual(30);
+    // Both moments are taken by the fake itself: a loop in the test notices each one late, by
+    // different amounts, and the difference then came out under the delay on a slow machine.
+    const waited = (w.calledAt.get("stream.start") ?? 0) - (w.obsStreamingAt ?? 0);
+    expect(waited).toBeGreaterThanOrEqual(35);
     await settle(w, r.status === "started" ? r.task : null);
     expect(order(w)).toEqual(["stage.stream:start", "stream.start"]);
     // OBS is an implied step; Go Live is the primary one.
