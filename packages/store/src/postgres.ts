@@ -296,12 +296,11 @@ async function migrate(db: Pg): Promise<void> {
         "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, " +
           "name TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",
       );
-      let applied = new Set(
+      const applied = new Set(
         (await db.query("SELECT version FROM schema_version", [], client)).map((r) =>
           num(r, "version"),
         ),
       );
-      if (applied.size === 0) applied = await adoptSqlxMigrations(db, client, files);
       const known = new Set(files.map((f) => Number.parseInt(f, 10)));
       for (const version of applied) {
         if (!known.has(version)) {
@@ -336,41 +335,6 @@ async function migrate(db: Pg): Promise<void> {
   } finally {
     client.release();
   }
-}
-
-/**
- * A database migrated by the Rust backend (sqlx's `_sqlx_migrations`) has the same schema:
- * its successful versions are recorded as applied instead of being run again.
- */
-async function adoptSqlxMigrations(
-  db: Pg,
-  client: pg.PoolClient,
-  files: string[],
-): Promise<Set<number>> {
-  const exists = await db.query(
-    "SELECT to_regclass('_sqlx_migrations') IS NOT NULL AS x",
-    [],
-    client,
-  );
-  if (!exists[0]?.x) return new Set();
-  const rows = await db.query(
-    "SELECT version FROM _sqlx_migrations WHERE success ORDER BY version",
-    [],
-    client,
-  );
-  const adopted = new Set<number>();
-  for (const row of rows) {
-    const version = num(row, "version");
-    const file = files.find((f) => Number.parseInt(f, 10) === version);
-    if (!file) continue;
-    await client.query(
-      "INSERT INTO schema_version (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-      [version, file.replace(/\.sql$/, "")],
-    );
-    adopted.add(version);
-  }
-  if (adopted.size > 0) log.info({ versions: [...adopted] }, "adopted sqlx migrations");
-  return adopted;
 }
 
 // ---- conversation log ---------------------------------------------------------------------
