@@ -16,12 +16,29 @@ import type {
   InferContractRouterInputs,
   InferContractRouterOutputs,
 } from "@orpc/contract";
+import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
 import { facts } from "./facts.js";
+import { fortune } from "./fortune.js";
 import { member } from "./member.js";
 import { persona } from "./persona.js";
 import { publicView } from "./public.js";
+import { wallet } from "./wallet.js";
 
+export {
+  type BountyList,
+  BountyListSchema,
+  type BountyView,
+  BountyViewSchema,
+  type GoalList,
+  GoalListSchema,
+  type GoalView,
+  GoalViewSchema,
+  type PledgeRequest,
+  PledgeRequestSchema,
+  type PledgeResult,
+  PledgeResultSchema,
+} from "./agency.js";
 export {
   type AuthMethods,
   AuthMethodsSchema,
@@ -35,6 +52,16 @@ export {
   SessionUserSchema,
 } from "./auth.js";
 export { type LogEvent, type LogEventKind, LogEventKindSchema, LogEventSchema } from "./facts.js";
+export {
+  type FortuneDraw,
+  FortuneDrawSchema,
+  type FortuneField,
+  FortuneFieldSchema,
+  type FortuneToday,
+  FortuneTodaySchema,
+  type IssuedFortune,
+  IssuedFortuneSchema,
+} from "./fortune.js";
 export {
   type CardField,
   CardFieldSchema,
@@ -97,6 +124,50 @@ export {
   PublicTodaySchema,
 } from "./public.js";
 export { type Audience, type RouteMeta, route, routeMeta } from "./route.js";
+export {
+  type BoardChoice,
+  BoardChoiceSchema,
+  type BoardRequest,
+  BoardRequestSchema,
+  type CheckinResult,
+  CheckinResultSchema,
+  type DealView,
+  DealViewSchema,
+  type EarnLine,
+  EarnLineSchema,
+  type ExpressionRequest,
+  ExpressionRequestSchema,
+  type FeedItem,
+  FeedItemSchema,
+  type FeedRequest,
+  FeedRequestSchema,
+  type FeedResult,
+  FeedResultSchema,
+  type FrameRequest,
+  FrameRequestSchema,
+  type FramesResult,
+  FramesResultSchema,
+  type GiftExpression,
+  GiftExpressionSchema,
+  type Hunger,
+  HungerSchema,
+  type LedgerLine,
+  LedgerLineSchema,
+  type LetterRequest,
+  LetterRequestSchema,
+  type ScreenRequest,
+  ScreenRequestSchema,
+  type ShopItem,
+  ShopItemSchema,
+  type SpendResult,
+  SpendResultSchema,
+  type TransferRequest,
+  TransferRequestSchema,
+  type TransferResult,
+  TransferResultSchema,
+  type WalletView,
+  WalletViewSchema,
+} from "./wallet.js";
 
 /** Every route that has moved, by group. A route's path here is its name in the clients. */
 export const contract = {
@@ -106,6 +177,9 @@ export const contract = {
   facts,
   public: publicView,
   member,
+  wallet,
+  agency,
+  fortune,
 };
 
 export type ApiContract = typeof contract;

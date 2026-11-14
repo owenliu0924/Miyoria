@@ -20,6 +20,7 @@ import { knownNames, type SettingsStore } from "@miyoria/store";
 import {
   ActivityManagerKey,
   type ActivitySnapshot,
+  accountRefString,
   type Envelope,
   isJsonObject,
   type KnownName,
@@ -159,6 +160,13 @@ export function clientKey(c: ApiContext): string {
   const peer = env?.incoming?.socket?.remoteAddress ?? null;
   if (peer !== null && !isLoopbackPeer(peer)) return network(peer);
   return network(c.req.header("cf-connecting-ip")?.trim() || "local");
+}
+
+/** Throws `429` when the member behind `c` has been asking too much. */
+export function limitMember(state: ApiState, c: ApiContext): void {
+  const { account } = c.get("member");
+  const wait = state.publicSide.admitMember(accountRefString(account));
+  if (wait !== null) throw ApiError.tooMany(wait);
 }
 
 /** `429` with how long to wait. */

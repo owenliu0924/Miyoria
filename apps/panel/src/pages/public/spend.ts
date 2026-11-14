@@ -22,7 +22,7 @@ export function useWallet() {
   const api = useApi();
   return useQuery({
     queryKey: WALLET,
-    queryFn: ({ signal }) => api.memberWallet({ signal }),
+    queryFn: ({ signal }) => api.rpc.wallet.view(undefined, { signal }),
     refetchInterval: POLL_MS,
     // An older Core has no such route: asking again will not change that.
     retry: (n, e) => !isNotProvided(e) && n < 2,

@@ -5,7 +5,6 @@ import { SettingsStoreKey } from "@miyoria/store";
 import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { affectRoutes } from "./affect.js";
-import { agencyRoutes } from "./agency.js";
 import { bodyRoutes } from "./body.js";
 import { channelRoutes } from "./channels.js";
 import { controlRoutes } from "./control.js";
@@ -15,7 +14,6 @@ import { directiveRoutes } from "./directives.js";
 import { economyRoutes } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { factRoutes } from "./facts.js";
-import { fortuneRoutes } from "./fortune-routes.js";
 import { goalAdminRoutes } from "./goals-admin.js";
 import { innerRoutes } from "./inner.js";
 import { learningRoutes } from "./learning.js";
@@ -54,7 +52,6 @@ import {
 } from "./session.js";
 import type { ApiContext, ApiEnv, ApiState } from "./state.js";
 import { telemetryRoutes } from "./telemetry.js";
-import { walletRoutes } from "./wallet.js";
 import { workspaceRoutes } from "./workspace.js";
 
 const log = getLogger("api.server");
@@ -149,9 +146,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...publicRoutes(state),
     ...ogRoutes(state),
     ...memberRoutes(state),
-    ...walletRoutes(state),
-    ...fortuneRoutes(state),
-    ...agencyRoutes(state),
     ...peopleRoutes(state),
     ...personWalletRoutes(state),
     ...goalAdminRoutes(state),

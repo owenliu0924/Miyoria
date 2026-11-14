@@ -17,6 +17,70 @@
         "discord"
       ]
     },
+    "ApiBoardChoice": {
+      "type": "object",
+      "properties": {
+        "on_board": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on_board"
+      ]
+    },
+    "ApiBoardRequest": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "additionalProperties": false
+    },
+    "ApiBountyList": {
+      "type": "object",
+      "properties": {
+        "bounties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiBountyView"
+          }
+        }
+      },
+      "required": [
+        "bounties"
+      ]
+    },
+    "ApiBountyView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "reward": {
+          "type": "number"
+        },
+        "posted_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "task",
+        "reward",
+        "posted_at",
+        "expires_at"
+      ]
+    },
     "ApiCardField": {
       "type": "object",
       "properties": {
@@ -75,10 +139,160 @@
         "reroll"
       ]
     },
+    "ApiCheckinResult": {
+      "type": "object",
+      "properties": {
+        "gained": {
+          "type": "number"
+        },
+        "streak": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "gained",
+        "streak",
+        "balance"
+      ]
+    },
+    "ApiDealView": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "reward_label": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "owed",
+            "settled",
+            "broken",
+            "refunded"
+          ]
+        },
+        "due_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "task",
+        "reward_label",
+        "status",
+        "due_at"
+      ]
+    },
+    "ApiEarnLine": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "checkin",
+            "talked",
+            "voice",
+            "song",
+            "her_gift"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "earned_today": {
+          "type": "number"
+        },
+        "cap": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "reason",
+        "label",
+        "amount",
+        "earned_today",
+        "cap"
+      ]
+    },
     "ApiEmptyRequest": {
       "type": "object",
       "properties": {},
       "additionalProperties": false
+    },
+    "ApiExpressionRequest": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "$ref": "#/$defs/ApiGiftExpression"
+        }
+      },
+      "required": [
+        "expression"
+      ],
+      "additionalProperties": false
+    },
+    "ApiFeedItem": {
+      "type": "string",
+      "enum": [
+        "rice",
+        "big_bowl",
+        "dessert"
+      ]
+    },
+    "ApiFeedRequest": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ApiFeedItem"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "additionalProperties": false
+    },
+    "ApiFeedResult": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "eaten": {
+          "type": "number"
+        },
+        "charged": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accepted",
+        "eaten",
+        "charged",
+        "balance",
+        "message"
+      ]
     },
     "ApiForgetRequest": {
       "type": "object",
@@ -93,6 +307,179 @@
       ],
       "additionalProperties": false
     },
+    "ApiFortuneDraw": {
+      "type": "object",
+      "properties": {
+        "fortune": {
+          "$ref": "#/$defs/ApiIssuedFortune"
+        },
+        "charged": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "fortune",
+        "charged",
+        "balance"
+      ]
+    },
+    "ApiFortuneField": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "text"
+      ]
+    },
+    "ApiFortuneToday": {
+      "type": "object",
+      "properties": {
+        "fortune": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiIssuedFortune"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "fortune",
+        "price"
+      ]
+    },
+    "ApiFrameRequest": {
+      "type": "object",
+      "properties": {
+        "buy": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "select": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApiFramesResult": {
+      "type": "object",
+      "properties": {
+        "owned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "balance": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "owned",
+        "selected",
+        "balance"
+      ]
+    },
+    "ApiGiftExpression": {
+      "type": "string",
+      "enum": [
+        "heart",
+        "blush",
+        "squint"
+      ]
+    },
+    "ApiGoalList": {
+      "type": "object",
+      "properties": {
+        "goals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiGoalView"
+          }
+        }
+      },
+      "required": [
+        "goals"
+      ]
+    },
+    "ApiGoalView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "promise": {
+          "type": "string"
+        },
+        "target": {
+          "type": "number"
+        },
+        "raised": {
+          "type": "number"
+        },
+        "my_pledge": {
+          "type": "number"
+        },
+        "deadline": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "reached",
+            "expired",
+            "cancelled"
+          ]
+        },
+        "fulfilled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "promise",
+        "target",
+        "raised",
+        "my_pledge",
+        "deadline",
+        "status",
+        "fulfilled"
+      ]
+    },
     "ApiHealthInfo": {
       "type": "object",
       "properties": {
@@ -106,6 +493,15 @@
       "required": [
         "status",
         "version"
+      ]
+    },
+    "ApiHunger": {
+      "type": "string",
+      "enum": [
+        "full",
+        "ok",
+        "hungry",
+        "starving"
       ]
     },
     "ApiIssueCardRequest": {
@@ -237,6 +633,94 @@
         "foil",
         "voided_at"
       ]
+    },
+    "ApiIssuedFortune": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "issued_at": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "string",
+          "enum": [
+            "大吉",
+            "吉",
+            "中吉",
+            "小吉",
+            "末吉",
+            "凶"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "poem": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiFortuneField"
+          }
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "date",
+        "issued_at",
+        "rank",
+        "title",
+        "poem",
+        "fields",
+        "line"
+      ]
+    },
+    "ApiLedgerLine": {
+      "type": "object",
+      "properties": {
+        "ts": {
+          "type": "string"
+        },
+        "delta": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ts",
+        "delta",
+        "label"
+      ]
+    },
+    "ApiLetterRequest": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
     },
     "ApiLogEvent": {
       "type": "object",
@@ -625,6 +1109,51 @@
         "body"
       ]
     },
+    "ApiPledgeRequest": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "ApiPledgeResult": {
+      "type": "object",
+      "properties": {
+        "pledged": {
+          "type": "number"
+        },
+        "raised": {
+          "type": "number"
+        },
+        "target": {
+          "type": "number"
+        },
+        "reached": {
+          "type": "boolean"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "duplicate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pledged",
+        "raised",
+        "target",
+        "reached",
+        "balance",
+        "duplicate"
+      ]
+    },
     "ApiPublicBoard": {
       "type": "object",
       "properties": {
@@ -834,6 +1363,19 @@
         "hours_in_voice"
       ]
     },
+    "ApiScreenRequest": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
     "ApiSessionInfo": {
       "type": "object",
       "properties": {
@@ -929,6 +1471,207 @@
       "required": [
         "key",
         "version"
+      ]
+    },
+    "ApiShopItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "feed",
+            "letter",
+            "expression",
+            "frame",
+            "card",
+            "song",
+            "stream",
+            "fortune"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "price",
+        "available",
+        "why"
+      ]
+    },
+    "ApiSpendResult": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "charged": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accepted",
+        "charged",
+        "balance",
+        "message"
+      ]
+    },
+    "ApiTransferRequest": {
+      "type": "object",
+      "properties": {
+        "to_discord_id": {
+          "type": "string",
+          "pattern": "^[0-9]{1,25}$"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "to_discord_id",
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "ApiTransferResult": {
+      "type": "object",
+      "properties": {
+        "sent": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sent",
+        "balance",
+        "to"
+      ]
+    },
+    "ApiWalletView": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "can_earn": {
+          "type": "boolean"
+        },
+        "today_earned": {
+          "type": "number"
+        },
+        "checked_in_today": {
+          "type": "boolean"
+        },
+        "streak": {
+          "type": "number"
+        },
+        "earn": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiEarnLine"
+          }
+        },
+        "shop": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiShopItem"
+          }
+        },
+        "frames": {
+          "type": "object",
+          "properties": {
+            "owned": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "selected": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "owned",
+            "selected"
+          ]
+        },
+        "hungry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiHunger"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLedgerLine"
+          }
+        },
+        "deals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDealView"
+          }
+        },
+        "on_board": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "currency",
+        "balance",
+        "can_earn",
+        "today_earned",
+        "checked_in_today",
+        "streak",
+        "earn",
+        "shop",
+        "frames",
+        "hungry",
+        "recent",
+        "deals",
+        "on_board"
       ]
     },
     "WireContextKey": {

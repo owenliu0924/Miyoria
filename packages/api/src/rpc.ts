@@ -40,6 +40,7 @@ import {
 } from "@orpc/server";
 import { ResponseHeadersPlugin } from "@orpc/server/plugins";
 import { z } from "zod";
+import { agencyRpc } from "./agency.js";
 import { boardRpc } from "./board.js";
 import { cardCheckRpc } from "./card.js";
 import { os, type RpcContext } from "./contract.js";
@@ -47,11 +48,13 @@ import { healthRpc, personaRpc } from "./core.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
+import { fortuneRpc } from "./fortune-routes.js";
 import { memberRpc } from "./member.js";
 import { authRpc } from "./oauth.js";
 import { publicRpc } from "./public.js";
 import type { Method, Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
+import { walletRpc } from "./wallet.js";
 
 const log = getLogger("api.rpc");
 
@@ -63,6 +66,9 @@ export const router = os.router({
   facts: factsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },
   member: memberRpc,
+  wallet: walletRpc,
+  agency: agencyRpc,
+  fortune: fortuneRpc,
 });
 
 export type ResponseCheck = "strict" | "production";
@@ -77,8 +83,8 @@ export function defaultResponseCheck(env: NodeJS.ProcessEnv = process.env): Resp
   return FROM_SOURCE ? "strict" : "production";
 }
 
-/** The groups of the public side (`[modules.api.public]`): the public views and the member pages. */
-const PUBLIC_SIDE = new Set(["public", "member"]);
+/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the wallet, goals and fortune are member pages too). */
+const PUBLIC_SIDE = new Set(["public", "member", "wallet", "agency", "fortune"]);
 
 /** Whether a route is served at all: the public side's routes go away with its switch. */
 function served(state: ApiState, path: readonly string[]): boolean {

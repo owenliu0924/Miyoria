@@ -60,19 +60,6 @@ import type {
   DecisionsQuery,
   ModuleAction,
   ModuleInfo,
-  BountyView,
-  FortuneDraw,
-  FortuneToday,
-  GoalView,
-  PledgeResult,
-  TransferResult,
-  CheckinResult,
-  FeedItem,
-  FeedResult,
-  FramesResult,
-  GiftExpression,
-  SpendResult,
-  WalletView,
   UsageMap,
   ControlResult,
   GameStartRequest,
@@ -119,9 +106,6 @@ import type {
 
 type Opts = { signal?: AbortSignal };
 
-/** A spend: the member routes, with its idempotency key. */
-const spend = (key: string) => ({ public: true, headers: { "Idempotency-Key": key } });
-
 export function createApi(client: ApiClient) {
   const rpc = createRpc(client);
   return {
@@ -138,29 +122,6 @@ export function createApi(client: ApiClient) {
 
     // what anyone may see, and what a logged-in person has of their own: the cookie alone
     memberExportUrl: () => client.url("/api/member/export"),
-    memberWallet: (o?: Opts) => client.get<WalletView>("/api/member/wallet", { ...o, public: true }),
-    memberCheckin: () => client.post<CheckinResult>("/api/member/checkin", {}, { public: true }),
-    // Spends carry one key per click, so a retried request is charged once.
-    memberFeed: (item: FeedItem, count: number, key: string) =>
-      client.post<FeedResult>("/api/member/feed", { item, count }, spend(key)),
-    memberLetter: (text: string, key: string) =>
-      client.post<SpendResult>("/api/member/letter", { text }, spend(key)),
-    memberExpression: (expression: GiftExpression, key: string) =>
-      client.post<SpendResult>("/api/member/expression", { expression }, spend(key)),
-    memberFrame: (req: { buy?: string; select?: string | null }, key: string) =>
-      client.post<FramesResult>("/api/member/frame", req, spend(key)),
-    memberScreen: (text: string, key: string) =>
-      client.post<SpendResult>("/api/member/screen", { text }, spend(key)),
-    memberFortune: (o?: Opts) => client.get<FortuneToday>("/api/member/fortune", { ...o, public: true }),
-    memberDrawFortune: (key: string) => client.post<FortuneDraw>("/api/member/fortune", {}, spend(key)),
-    memberTransfer: (to_discord_id: string, amount: number, key: string) =>
-      client.post<TransferResult>("/api/member/transfer", { to_discord_id, amount }, spend(key)),
-    memberBoard: (on: boolean) => client.post<{ on_board: boolean }>("/api/member/board", { on }, { public: true }),
-    memberGoals: (o?: Opts) => client.get<{ goals: GoalView[] }>("/api/member/goals", { ...o, public: true }),
-    memberPledge: (id: string, amount: number, key: string) =>
-      client.post<PledgeResult>(`/api/member/goals/${seg(id)}/pledge`, { amount }, spend(key)),
-    memberBounties: (o?: Opts) =>
-      client.get<{ bounties: BountyView[] }>("/api/member/bounties", { ...o, public: true }),
 
     modules: (o?: Opts) => client.get<ModuleInfo[]>("/api/modules", o),
     moduleAction: (id: string, action: ModuleAction) =>

@@ -1,8 +1,16 @@
-// The public and member groups of the route table: each route says what the old route said (who may
+// The public, member, wallet, agency and fortune groups of the route table: each route says what the old route said (who may
 // call it, and which method and path), and its answer loses every field the schema does not name.
 // The routes' behaviour (limits, refusals, words) is held by `public.test.ts`.
 
-import { type ApiOutputs, contract, routeMeta } from "@miyoria/contracts/api";
+import {
+  type ApiOutputs,
+  contract,
+  FeedItemSchema,
+  FeedRequestSchema,
+  GiftExpressionSchema,
+  routeMeta,
+} from "@miyoria/contracts/api";
+import { FEED_ITEMS, GIFT_EXPRESSIONS, MAX_FEED_COUNT } from "@miyoria/economy";
 import { implement } from "@orpc/server";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
@@ -21,6 +29,11 @@ interface Case {
   audience: Audience;
   /** The request to send: a body for a change. */
   request?: { json: unknown };
+}
+
+/** A change by a member. */
+function post(name: string, path: string, json: unknown): Case {
+  return { name, method: "POST", path, audience: "member", request: { json } };
 }
 
 /** The routes as the old table had them: the `public` or `member` flag, method and path. */
@@ -53,6 +66,20 @@ const CASES: Case[] = [
     audience: "member",
     request: { json: {} },
   },
+  { name: "wallet.view", method: "GET", path: "/api/member/wallet", audience: "member" },
+  post("wallet.checkin", "/api/member/checkin", {}),
+  post("wallet.feed", "/api/member/feed", { item: "rice" }),
+  post("wallet.letter", "/api/member/letter", { text: "hi" }),
+  post("wallet.screen", "/api/member/screen", { text: "hi" }),
+  post("wallet.expression", "/api/member/expression", { expression: "heart" }),
+  post("wallet.transfer", "/api/member/transfer", { to_discord_id: "1", amount: 1 }),
+  post("wallet.board", "/api/member/board", { on: true }),
+  post("wallet.frame", "/api/member/frame", { buy: "sakura" }),
+  { name: "agency.goals", method: "GET", path: "/api/member/goals", audience: "member" },
+  post("agency.pledge", "/api/member/goals/g1/pledge", { amount: 1 }),
+  { name: "agency.bounties", method: "GET", path: "/api/member/bounties", audience: "member" },
+  { name: "fortune.today", method: "GET", path: "/api/member/fortune", audience: "member" },
+  post("fortune.draw", "/api/member/fortune", {}),
   {
     name: "member.rerollCard",
     method: "POST",
@@ -91,6 +118,24 @@ const WORDS = {
   familiarity: null,
   public_feeling: null,
 };
+
+const SPENT = {
+  accepted: true,
+  charged: 1,
+  balance: 1,
+  message: "a",
+} satisfies ApiOutputs["wallet"]["letter"];
+
+const SLIP = {
+  id: "f1",
+  date: "2026-11-08",
+  issued_at: "2026-11-08T03:00:00Z",
+  rank: "吉",
+  title: "a",
+  poem: ["a", "b", "c", "d"],
+  fields: [{ label: "a", text: "b" }],
+  line: null,
+} satisfies ApiOutputs["fortune"]["today"]["fortune"];
 
 /** What each route answers: the whole of its schema, and a field it does not name on top. */
 const ANSWERS = {
@@ -135,6 +180,71 @@ const ANSWERS = {
     prices: { pose: null, foil: null, reroll: null },
     rerolls_left: 0,
   } satisfies ApiOutputs["member"]["cards"],
+  "wallet.view": {
+    currency: "魚幣",
+    balance: 1,
+    can_earn: true,
+    today_earned: 0,
+    checked_in_today: false,
+    streak: 0,
+    earn: [{ reason: "checkin", label: "a", amount: 1, earned_today: 0, cap: 1 }],
+    shop: [{ id: "rice", kind: "feed", label: "a", price: 1, available: true, why: null }],
+    frames: { owned: [], selected: null },
+    hungry: "ok",
+    recent: [{ ts: "2026-11-08T03:00:00Z", delta: 1, label: "a" }],
+    deals: [{ task: "a", reward_label: "b", status: "open", due_at: null }],
+    on_board: false,
+  } satisfies ApiOutputs["wallet"]["view"],
+  "wallet.checkin": { gained: 1, streak: 1, balance: 1 } satisfies ApiOutputs["wallet"]["checkin"],
+  "wallet.feed": {
+    accepted: true,
+    eaten: 1,
+    charged: 1,
+    balance: 1,
+    message: "a",
+  } satisfies ApiOutputs["wallet"]["feed"],
+  "wallet.letter": SPENT,
+  "wallet.screen": SPENT,
+  "wallet.expression": SPENT,
+  "wallet.transfer": { sent: 1, balance: 1, to: "a" } satisfies ApiOutputs["wallet"]["transfer"],
+  "wallet.board": { on_board: true } satisfies ApiOutputs["wallet"]["board"],
+  "wallet.frame": {
+    owned: ["sakura"],
+    selected: null,
+    balance: 1,
+  } satisfies ApiOutputs["wallet"]["frame"],
+  "agency.goals": {
+    goals: [
+      {
+        id: "g1",
+        title: "a",
+        promise: "b",
+        target: 2,
+        raised: 1,
+        my_pledge: 0,
+        deadline: "2099-01-01T00:00:00Z",
+        status: "open",
+        fulfilled: false,
+      },
+    ],
+  } satisfies ApiOutputs["agency"]["goals"],
+  "agency.pledge": {
+    pledged: 1,
+    raised: 1,
+    target: 2,
+    reached: false,
+    balance: 1,
+    duplicate: false,
+  } satisfies ApiOutputs["agency"]["pledge"],
+  "agency.bounties": {
+    bounties: [{ id: "b1", task: "a", reward: 1, posted_at: "x", expires_at: "y" }],
+  } satisfies ApiOutputs["agency"]["bounties"],
+  "fortune.today": { fortune: SLIP, price: 10 } satisfies ApiOutputs["fortune"]["today"],
+  "fortune.draw": {
+    fortune: SLIP,
+    charged: 10,
+    balance: 1,
+  } satisfies ApiOutputs["fortune"]["draw"],
   "member.issueCard": CARD,
   "member.rerollCard": CARD,
 } as const;
@@ -175,13 +285,21 @@ describe("the public and member routes of the table", () => {
 
 /** The route's Hono path: `/api/public/card/MYR-0` is the `:serial` route. */
 function pathOf(c: Case): string {
-  return c.name === "public.card" ? "/api/public/card/:serial" : c.path;
+  if (c.name === "public.card") return "/api/public/card/:serial";
+  if (c.name === "agency.pledge") return "/api/member/goals/:id/pledge";
+  return c.path;
 }
 
 describe("the answers", () => {
   // The real handlers need a running module; here each route's handler answers with more than its
   // schema says, and what leaves is the schema's.
-  const os = implement({ public: contract.public, member: contract.member }).$context<RpcContext>();
+  const os = implement({
+    public: contract.public,
+    member: contract.member,
+    wallet: contract.wallet,
+    agency: contract.agency,
+    fortune: contract.fortune,
+  }).$context<RpcContext>();
   const answer = (name: keyof typeof ANSWERS) => () => leaky(ANSWERS[name]) as never;
   const table = os.router({
     public: {
@@ -198,6 +316,26 @@ describe("the answers", () => {
       cards: os.member.cards.handler(answer("member.cards")),
       issueCard: os.member.issueCard.handler(answer("member.issueCard")),
       rerollCard: os.member.rerollCard.handler(answer("member.rerollCard")),
+    },
+    wallet: {
+      view: os.wallet.view.handler(answer("wallet.view")),
+      checkin: os.wallet.checkin.handler(answer("wallet.checkin")),
+      feed: os.wallet.feed.handler(answer("wallet.feed")),
+      letter: os.wallet.letter.handler(answer("wallet.letter")),
+      screen: os.wallet.screen.handler(answer("wallet.screen")),
+      expression: os.wallet.expression.handler(answer("wallet.expression")),
+      transfer: os.wallet.transfer.handler(answer("wallet.transfer")),
+      board: os.wallet.board.handler(answer("wallet.board")),
+      frame: os.wallet.frame.handler(answer("wallet.frame")),
+    },
+    agency: {
+      goals: os.agency.goals.handler(answer("agency.goals")),
+      pledge: os.agency.pledge.handler(answer("agency.pledge")),
+      bounties: os.agency.bounties.handler(answer("agency.bounties")),
+    },
+    fortune: {
+      today: os.fortune.today.handler(answer("fortune.today")),
+      draw: os.fortune.draw.handler(answer("fortune.draw")),
     },
   });
   const state = { publicSide: { config: { enabled: true } }, optional: () => undefined };
@@ -223,5 +361,16 @@ describe("the answers", () => {
     const response = await hono.request(c.path, init);
     expect(response.status, c.name).toBe(200);
     expect(await response.json()).toEqual(ANSWERS[c.name as keyof typeof ANSWERS]);
+  });
+});
+
+describe("what the contract says again of the economy", () => {
+  it("allows the items, expressions and count the wallet has", () => {
+    expect(FeedItemSchema.options).toEqual([...FEED_ITEMS]);
+    expect(GiftExpressionSchema.options).toEqual([...GIFT_EXPRESSIONS]);
+    expect(FeedRequestSchema.safeParse({ item: "rice", count: MAX_FEED_COUNT }).success).toBe(true);
+    expect(FeedRequestSchema.safeParse({ item: "rice", count: MAX_FEED_COUNT + 1 }).success).toBe(
+      false,
+    );
   });
 });

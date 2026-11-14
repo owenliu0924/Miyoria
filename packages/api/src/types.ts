@@ -1,7 +1,13 @@
 // Wire types shared by the server and the client. Field names and nullability are part of the
 // JSON wire format; `apps/panel/src/api/*types.ts` mirror these.
 
-import type { IssuedCard, MemberCard, MemberMemory, MemberSong } from "@miyoria/contracts/api";
+import type {
+  IssuedCard,
+  IssuedFortune,
+  MemberCard,
+  MemberMemory,
+  MemberSong,
+} from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
 import type { PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport, ModelUsage } from "@miyoria/llm/llm";
@@ -51,9 +57,11 @@ export type {
   CardField,
   CardPoseChoice,
   CardPrices,
+  FortuneField,
   HealthInfo,
   IssueCardRequest,
   IssuedCard,
+  IssuedFortune,
   MemberCard,
   MemberCards,
   MemberDay,
@@ -93,29 +101,6 @@ export interface MemberExport {
   wallet: WalletExport;
   /** The fortune slips she wrote for them, newest first. */
   fortunes: IssuedFortune[];
-}
-
-/** A field on a fortune slip: its name (戀愛, 學業, ...) and what she wrote. */
-export interface FortuneField {
-  label: string;
-  text: string;
-}
-
-/** A fortune slip she wrote for them, one per local day (`GET`/`POST /api/member/fortune`). */
-export interface IssuedFortune {
-  id: string;
-  /** The local day it is for, `YYYY-MM-DD`. */
-  date: string;
-  issued_at: string;
-  rank: "大吉" | "吉" | "中吉" | "小吉" | "末吉" | "凶";
-  /** At most 8 characters. */
-  title: string;
-  /** Four lines of at most 7 characters. */
-  poem: string[];
-  /** At most three. */
-  fields: FortuneField[];
-  /** A personal line, at most 30 characters. */
-  line: string | null;
 }
 
 /** One module as reported by `GET /api/modules` (the supervisor's `ModuleStatus`). */

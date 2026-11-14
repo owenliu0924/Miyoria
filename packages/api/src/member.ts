@@ -64,7 +64,7 @@ import { type CardWords, writeCard } from "./card-words.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { deleteFortunes, fortunesOf } from "./fortune.js";
-import { dateOf, localDay, tooMany } from "./public.js";
+import { dateOf, limitMember, localDay, tooMany } from "./public.js";
 import type { Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
@@ -583,12 +583,6 @@ function session(c: ApiContext): MemberSession {
   return { name, avatar_url };
 }
 
-/** Throws `429` when this account has been asking too much. */
-export function limit(state: ApiState, c: ApiContext): void {
-  const wait = state.publicSide.admitMember(accountRefString(record(c).account));
-  if (wait !== null) throw ApiError.tooMany(wait);
-}
-
 /** The member route that is not on the route table: a file. None when the public side is off. */
 export function memberRoutes(state: ApiState): Route[] {
   if (!state.publicSide.config.enabled) return [];
@@ -601,11 +595,11 @@ export function memberRoutes(state: ApiState): Route[] {
 /** The member routes on the route table; served only while the public side is on (see `rpc.ts`). */
 export const memberRpc = {
   session: os.member.session.handler(({ context }) => {
-    limit(context.state, context.c);
+    limitMember(context.state, context.c);
     return session(context.c);
   }),
   me: os.member.me.handler(({ context }) => {
-    limit(context.state, context.c);
+    limitMember(context.state, context.c);
     return memberView(context.state, context.c);
   }),
   forget: os.member.forget.handler(({ context }) => forgetMine(context.state, context.c)),
@@ -613,15 +607,15 @@ export const memberRpc = {
     requestSong(context.state, context.c, input.body.query),
   ),
   cards: os.member.cards.handler(({ context }) => {
-    limit(context.state, context.c);
+    limitMember(context.state, context.c);
     return cardsMine(context.state, context.c);
   }),
   issueCard: os.member.issueCard.handler(({ input, context }) => {
-    limit(context.state, context.c);
+    limitMember(context.state, context.c);
     return issueMine(context.state, context.c, input.body, input.headers?.["idempotency-key"]);
   }),
   rerollCard: os.member.rerollCard.handler(({ input, context }) => {
-    limit(context.state, context.c);
+    limitMember(context.state, context.c);
     return rerollMine(context.state, context.c, input.headers["idempotency-key"]);
   }),
 };

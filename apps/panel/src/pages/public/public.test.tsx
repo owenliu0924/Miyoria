@@ -111,6 +111,7 @@ const WALLET: WalletView = {
     { ts: "2026-11-08T03:00:00Z", delta: 10, label: "每日簽到" },
     { ts: "2026-11-08T02:00:00Z", delta: -10, label: "餵了一碗白飯" },
   ],
+  deals: [],
   on_board: false,
 };
 
@@ -134,6 +135,7 @@ const GOAL: GoalView = {
   my_pledge: 0,
   deadline: "2099-01-01T00:00:00Z",
   status: "open",
+  fulfilled: false,
 };
 
 const OFFERS_FOR_REROLL = {
