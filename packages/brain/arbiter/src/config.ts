@@ -205,32 +205,3 @@ export function isContextDisabled(config: ArbiterConfig, context: ContextKey): b
   const display = contextKeyString(context);
   return config.disabled_contexts.some((d) => d === display || d === context.channel);
 }
-
-/** `[modules.initiative]` keys that moved here (the old section is read with a warning). */
-export const INITIATIVE_KEYS: Readonly<Record<string, keyof ArbiterConfig | null>> = {
-  to_mind: null,
-  idle_channel: null,
-  idle_after_secs: null,
-  idle_max_secs: null,
-  lively_min_messages: null,
-  busy_window_secs: null,
-  busy_min_messages: null,
-  mood_influence: null,
-  reply_window_secs: "reply_window_text_secs",
-  max_backoff_doublings: null,
-  backoff_decay_days: null,
-  followup: "followup",
-  greeting: "greeting",
-  voice_join: "voice_join",
-  max_per_context_per_day: "max_per_context_per_day",
-  max_per_day: "max_per_day",
-  day_start_hour: "day_start_hour",
-  quiet_start_hour: "quiet_start_hour",
-  quiet_end_hour: "quiet_end_hour",
-  friend_labels: "friend_labels",
-  voice_join_min_affinity: "voice_join_min_affinity",
-  voice_join_cooldown_secs: "voice_join_cooldown_secs",
-  followup_active_secs: "followup_active_secs",
-  tick_secs: "tick_secs",
-  disabled_contexts: "disabled_contexts",
-};

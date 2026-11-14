@@ -156,7 +156,7 @@ describe("Producers", () => {
 });
 
 describe("ArbiterModule", () => {
-  async function build(config: JsonValue | null = null, legacy: JsonValue | null = null) {
+  async function build(config: JsonValue | null = null) {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
     const sup = new Supervisor();
@@ -169,7 +169,7 @@ describe("ArbiterModule", () => {
     sup.services.provide("app", FollowupSourceKey, followups);
     sup.services.provide("app", SettingsStoreKey, store);
     const decisions = sup.bus.subscribe(ARBITER_DECISION_TOPIC);
-    await sup.register(new ArbiterModule("p", { legacyInitiative: legacy }), config, true);
+    await sup.register(new ArbiterModule("p"), config, true);
     await sup.startAll();
     return { sup, host, social, followups, store, decisions };
   }
@@ -209,18 +209,6 @@ describe("ArbiterModule", () => {
     expect(h.followups.done).toEqual(["f1"]);
     await h.sup.stopAll();
     expect(await h.store.get(STATE_PROFILE, STATE_KEY)).not.toBeNull();
-  });
-
-  it("reads the old [modules.initiative] keys it replaced", async () => {
-    const h = await build(
-      { max_per_day: 7 },
-      { max_per_day: 3, quiet_start_hour: 2, to_mind: true },
-    );
-    const limits = h.sup.services.get(ArbiterKey)?.ledger().limits;
-    // Its own section wins; moved keys carry over.
-    expect(limits?.initiative_cap).toBe(7);
-    expect(limits?.quiet_hours?.start_hour).toBe(2);
-    await h.sup.stopAll();
   });
 });
 

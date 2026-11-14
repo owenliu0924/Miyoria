@@ -57,7 +57,7 @@ import {
 } from "@miyoria/types";
 import { z } from "zod";
 import { ArbiterCore } from "./arbiter.js";
-import { type ArbiterConfig, ArbiterConfigSchema, INITIATIVE_KEYS } from "./config.js";
+import { type ArbiterConfig, ArbiterConfigSchema } from "./config.js";
 import { FloorCore } from "./floor.js";
 import { LedgerSnapshotSchema } from "./ledger.js";
 import { ProducerSnapshotSchema, Producers } from "./producers.js";
@@ -96,11 +96,6 @@ const StateSchema = z.object({
 export interface ArbiterModuleOptions {
   /** Replaces the time source (default: the module context's clock). */
   clock?: Clock;
-  /**
-   * The old `[modules.initiative]` section, if the config file still has one: its keys that
-   * moved are used (unless `[modules.arbiter]` sets them) with a deprecation warning.
-   */
-  legacyInitiative?: JsonValue | null;
 }
 
 /**
@@ -123,38 +118,15 @@ export class ArbiterModule implements Module {
   });
   readonly #profile: ProfileId;
   readonly #clock: Clock | undefined;
-  readonly #legacy: JsonValue | null;
   #stopFollowing: (() => void)[] = [];
 
   constructor(profile: ProfileId, options: ArbiterModuleOptions = {}) {
     this.#profile = profile;
     this.#clock = options.clock;
-    this.#legacy = options.legacyInitiative ?? null;
-  }
-
-  #config(ctx: ModuleContext): ArbiterConfig {
-    const own = isJsonObject(ctx.rawConfig) ? ctx.rawConfig : {};
-    const legacy = isJsonObject(this.#legacy) ? this.#legacy : {};
-    const carried: Record<string, JsonValue> = {};
-    const moved: string[] = [];
-    for (const [key, value] of Object.entries(legacy)) {
-      if (key === "enabled" || value === undefined) continue;
-      moved.push(key);
-      const to = INITIATIVE_KEYS[key];
-      if (to && !(to in own)) carried[to] = value;
-    }
-    if (moved.length > 0) {
-      log.warn(
-        { keys: moved },
-        "[modules.initiative] is deprecated: the arbiter replaced it; move these keys to [modules.arbiter]",
-      );
-    }
-    if (Object.keys(carried).length === 0) return ctx.config(ArbiterConfigSchema);
-    return ArbiterConfigSchema.parse({ ...carried, ...own });
   }
 
   async start(ctx: ModuleContext): Promise<void> {
-    const config = this.#config(ctx);
+    const config = ctx.config(ArbiterConfigSchema);
     const clock = this.#clock ?? ctx.clock;
     const services = ctx.services;
     const floor = pipelineOf(services) === "v3" ? floorOf(ctx, config, clock) : null;

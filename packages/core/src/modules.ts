@@ -162,8 +162,7 @@ async function coreModules({
       baseline: profile.manifest.mood,
     }),
     new MemoryModule(profileId, config.get("memory.embedding", EmbeddingConfigSchema)),
-    // Replaces `initiative` (an old `[modules.initiative]` section is read with a warning).
-    new ArbiterModule(profileId, { legacyInitiative: config.module("initiative").config }),
+    new ArbiterModule(profileId),
     new MindModule(profileId, {
       name: profile.displayName,
       persona: (services) =>

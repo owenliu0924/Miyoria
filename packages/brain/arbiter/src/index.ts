@@ -8,7 +8,6 @@ export {
   arbiterConfig,
   type FloorConfig,
   FloorConfigSchema,
-  INITIATIVE_KEYS,
   isContextDisabled,
 } from "./config.js";
 export {
