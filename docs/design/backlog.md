@@ -7,7 +7,7 @@
 | 項目 | 狀態 | 詳細 |
 |---|---|---|
 | 第二個平台(Telegram、QQ)和直播聊天室輸入 | owner 2026-11-14:暫緩,先把 Discord 做完善 | [v5-architecture.md](v5-architecture.md) §6 |
-| 需要生圖的卡(時刻卡的圖、主題背景的批次、「底片」、你畫我猜) | 生圖走 API,模型等十二月的新模型再選;在那之前只做一般卡 | [v5-architecture.md](v5-architecture.md) §9.2 |
+| 生圖卡池(owner 2026-11-12 的《生圖抽卡企劃》:主題池、底片庫、覺醒、分解、SSR「和你」)和你畫我猜 | 生圖走 API,模型等十二月的新模型再選;在那之前只做每日卡 | [v5-architecture.md](v5-architecture.md) §9.1、§9.2 |
 | Minecraft 幾乎不能玩(任務迴圈、技能庫、狀態快照、食物動作、生存反射) | 調查做一半暫停,原因還沒對照程式碼確認 | [minecraft-findings.md](minecraft-findings.md) |
 | 自我修復、自我改進(失敗後換方法、改動要過評測才留下、在沙箱寫修正開 PR) | owner 說先不做;沙箱要先有 Docker | 本文件 §4 |
 | 經濟系統:點歌券、她自己的錢包、她的訊息上附「餵她」按鈕 | 刻意不做 | [economy.md](economy.md) §9.1 |
@@ -53,7 +53,7 @@
 
 ## 等 owner 決定
 
-- V5 還沒定的四件:embedding 用本機的小模型還是 API、生圖的模型和 API(十二月後)、她的 LoRA(owner 要找網路上那一份並確認授權)、資料庫重開前再確認一次只帶人和帳號連結。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
+- V5 還沒定的:embedding 用本機的小模型還是 API、生圖的模型和 API(十二月後)、生圖的花費算不算在每天 10 美元裡、她的 LoRA(owner 要找網路上那一份並確認授權)、資料庫重開前再確認一次只帶人和帳號連結、V5 對每日卡另外提的三項要不要、兩份企劃要不要收進 `docs/design`、Minecraft 的志向清單 / 誰算主人 / AltoClef。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
 - 貨幣系統 §9 的問題已先用建議值上線,隨時可改:[economy.md](economy.md) §9.1。
 - 人設要不要加一句:肚子餓時可以被零食收買,不情願地配合可愛的小要求(現在人設寫著『現在你是一隻貓』這類要求要吐槽回去)。
 - `ambient_text` 怎麼設。
