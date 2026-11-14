@@ -1,5 +1,5 @@
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
+import { type LlmCallStore, type Store, StoreKey } from "@miyoria/store";
 import { describe, expect, it } from "vitest";
 import {
   type ChatProvider,
@@ -9,8 +9,8 @@ import {
   MockProvider,
   type ProviderFactory,
   parseModelRef,
-  USAGE_PROFILE,
   userMessage,
+  withLlmTag,
 } from "../src/index.js";
 
 const mockFactory = (provider: ChatProvider): ProviderFactory => ({
@@ -19,7 +19,7 @@ const mockFactory = (provider: ChatProvider): ProviderFactory => ({
 });
 
 describe("LlmModule", () => {
-  it("provides the router, announces the budget and persists usage on stop", async () => {
+  it("provides the router, announces the budget and publishes every call", async () => {
     const config = LlmConfigSchema.parse({
       providers: { m: { kind: "mock", some_setting: 1 } },
       purposes: { chat: ["m:model-a"] },
@@ -38,14 +38,26 @@ describe("LlmModule", () => {
       purposeOverrides: new Map([["fast", [parseModelRef("m:model-fast")]]]),
     });
     const sup = new Supervisor();
-    const store = new MemorySettingsStore();
-    sup.services.provide("kernel", SettingsStoreKey, store);
+    const asked: string[] = [];
+    const calls: LlmCallStore = {
+      totalsSince: (since) => {
+        asked.push(since);
+        return [];
+      },
+    };
+    sup.services.provide("kernel", StoreKey, { llmCalls: calls } as unknown as Store);
     const budgetEvents = sup.bus.subscribe("llm.budget");
+    const callEvents = sup.bus.subscribe("llm.call");
     await sup.register(llm, null, true);
     await sup.startAll();
+    // Today's and this month's spending, read once.
+    expect(asked).toHaveLength(2);
 
     const router = sup.services.require(LlmRouterKey);
-    expect((await router.complete("chat", { messages: [userMessage("hi")] })).text).toBe("嗨");
+    const reply = await withLlmTag({ module: "agent", turn: "T1", label: "reply" }, () =>
+      router.complete("chat", { messages: [userMessage("hi")] }),
+    );
+    expect(reply.text).toBe("嗨");
     await router.complete("fast", { messages: [] });
     expect(mock.requests().map((r) => r.model)).toEqual(["model-a", "model-fast"]);
 
@@ -56,10 +68,51 @@ describe("LlmModule", () => {
       data: { topic: "llm.budget", payload: { state: "ok", daily_usd: 100 } },
     });
 
+    // One `llm.call` per call, under its turn: metadata and cost, never the text.
+    const first = callEvents.tryRecv();
+    expect(first?.source).toBe("llm");
+    expect(first?.correlation).toBe("T1");
+    expect(first?.event).toMatchObject({
+      type: "custom",
+      data: {
+        topic: "llm.call",
+        payload: {
+          log_day: null,
+          purpose: "chat",
+          chain: "chat",
+          module: "agent",
+          label: "reply",
+          model: "m:model-a",
+          provider: "m",
+          status: "ok",
+          error_kind: null,
+          finish_reason: "stop",
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            cached_prompt_tokens: 0,
+            reasoning_tokens: null,
+          },
+          cost_usd: 5,
+          fallbacks: [],
+          retries: 0,
+        },
+      },
+    });
+    expect(JSON.stringify(first?.event)).not.toContain("嗨");
+    const second = callEvents.tryRecv();
+    expect(second?.correlation).toBeNull();
+    expect(second?.event).toMatchObject({
+      data: { payload: { purpose: "fast", model: "m:model-fast", cost_usd: 0 } },
+    });
+
+    // A restart keeps the spending in memory and does not read it again.
     await sup.disable("llm");
     expect(sup.services.get(LlmRouterKey)).toBeUndefined();
-    const saved = await store.list(USAGE_PROFILE, "llm_usage:");
-    expect(saved.size).toBe(2);
+    await sup.enable("llm");
+    expect(asked).toHaveLength(2);
+    expect(sup.services.require(LlmRouterKey).costReport().today.total_usd).toBe(5);
+    await sup.stopAll();
   });
 
   it("fails to start with an unknown provider kind", async () => {

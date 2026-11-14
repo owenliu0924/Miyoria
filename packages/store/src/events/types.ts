@@ -9,8 +9,8 @@
 // The `facts.*` types are what the V3 facts writer (`@miyoria/memory/facts`) records: one type per
 // line kind, and three for observations, split by how long they are kept. They are not named
 // after the bus topic a line came from: a line's `data` is the facts body (an `ObservationBody`,
-// a decision trace), not the topic's payload, and the topic stays in `data.origin.topic`. Steps 6
-// and 7 of v5-data §8 replace the turn and LLM ones with `turn.*` and `llm.call`.
+// a decision trace), not the topic's payload, and the topic stays in `data.origin.topic`. Step 6 of
+// v5-data §8 replaced the turn ones with the turn records below.
 //
 // The chat line types (`platform.message.created`, `voice.utterance`, `voice.playback`, defined
 // with their payloads in `@miyoria/contracts/events`) are the raw record of conversation.
@@ -21,6 +21,9 @@
 // defined there too (§8 step 6). The facts writer records her decision and each turn's outcome
 // under those types, not as `facts.decision` / `facts.result` lines: one record each.
 //
+// Each routed LLM call is one `llm.call` (§8 step 7), metadata and cost only, for the owner, kept
+// 90 days; the facts writer records it from the bus.
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
@@ -30,6 +33,7 @@ import {
   defineEvent,
   type EventDefaults,
   EventRegistry,
+  LlmCall,
   TURN_EVENTS,
 } from "@miyoria/contracts/events";
 import { JsonValueSchema } from "@miyoria/contracts/wire";
@@ -162,6 +166,7 @@ export function coreEventRegistry(): EventRegistry {
     ...CHAT_EVENTS,
     ...TURN_EVENTS,
     AuditRecorded,
+    LlmCall,
     PrivacyRedacted,
   );
 }

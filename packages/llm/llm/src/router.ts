@@ -1,5 +1,5 @@
 import { errorMessage, getLogger, type MetricsRegistry } from "@miyoria/runtime/kernel";
-import type { SettingsStore } from "@miyoria/store";
+import type { LlmCallStore } from "@miyoria/store";
 import {
   type Clock,
   newId,
@@ -282,16 +282,11 @@ export class LlmRouter {
   }
 
   /**
-   * Loads persisted usage of the current day and month and enables `flush`. Call once, after
-   * `setEventSink`.
+   * Adds the spending of the current day and month that the event log holds (`llm.call` events
+   * of earlier runs). Call once, after `setEventSink` and before the first call.
    */
-  attachStore(store: SettingsStore): Promise<void> {
-    return this.#cost.attachStore(store);
-  }
-
-  /** Persists unsaved usage totals (no-op without a store). */
-  flush(): Promise<void> {
-    return this.#cost.flush();
+  restoreUsage(calls: LlmCallStore): Promise<void> {
+    return this.#cost.restore(calls);
   }
 
   /**

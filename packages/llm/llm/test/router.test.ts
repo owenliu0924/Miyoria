@@ -1,6 +1,6 @@
 import { MetricsRegistry } from "@miyoria/runtime/kernel";
-import { MemorySettingsStore } from "@miyoria/store";
-import type { Clock, JsonValue } from "@miyoria/types";
+import type { LlmCallStore, LlmModelTotals } from "@miyoria/store";
+import { type Clock, type JsonValue, type Timestamp, toTimestamp } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   type BudgetConfig,
@@ -19,9 +19,9 @@ import {
   ProviderHttpError,
   ProviderTimeoutError,
   parseModelRef,
+  periodStarts,
   pricing,
   type StreamEvent,
-  USAGE_PROFILE,
   userMessage,
 } from "../src/index.js";
 
@@ -279,60 +279,62 @@ describe("cost", () => {
     expect(report.today.total_usd).toBe(0);
   });
 
-  it("persistence_round_trip", async () => {
-    const store = new MemorySettingsStore();
-    const s = setup(3, budget(100), at(2026, 3, 10, 0));
-    await s.router.attachStore(store);
-    await s.router.complete("chat", req());
-    await s.router.complete("chat", req());
-    await s.router.flush();
-
-    const keys = [...(await store.list(USAGE_PROFILE, "llm_usage:")).keys()];
-    expect(keys).toEqual(["llm_usage:2026-03", "llm_usage:2026-03-10"]);
-
-    // A new router (restart) picks the totals up and keeps adding to them.
-    const s2 = setup(3, budget(7), at(2026, 3, 10, 5));
-    await s2.router.attachStore(store);
-    const report = s2.router.costReport();
-    expect(report.today.total_usd).toBeCloseTo(6, 9);
-    expect(report.today.models["a:m1"]?.calls).toBe(2);
-    // 6 of 7 is above the 80% line: the loaded state was published.
-    expect(report.state).toBe("degraded");
-    expect(states(s2.events)).toEqual(["degraded"]);
-    await s2.router.complete("chat", req());
-    await s2.router.flush();
-    const doc = (await store.get(USAGE_PROFILE, "llm_usage:2026-03-10")) as {
-      models: Record<string, { calls: number; cost_usd: number }>;
-    };
-    expect(doc.models["a:m1"]?.calls).toBe(3);
-    expect(doc.models["a:m1"]?.cost_usd).toBe(9);
-
-    // Rolling over still writes the finished day's last totals.
-    const s3 = setup(3, budget(100), at(2026, 3, 10, 6));
-    await s3.router.attachStore(store);
-    await s3.router.complete("chat", req());
-    s3.clock.set(at(2026, 3, 11, 6));
-    await s3.router.complete("chat", req());
-    await s3.router.flush();
-    const old = (await store.get(USAGE_PROFILE, "llm_usage:2026-03-10")) as typeof doc;
-    expect(old.models["a:m1"]?.calls).toBe(4);
-    const next = (await store.get(USAGE_PROFILE, "llm_usage:2026-03-11")) as typeof doc;
-    expect(next.models["a:m1"]?.calls).toBe(1);
+  it("period_starts_follow_the_timezone", () => {
+    // 2026-03-10 17:00 UTC is 03-11 01:00 in UTC+8: the day began at 03-10 16:00 UTC.
+    expect(periodStarts(at(2026, 3, 10, 17), 8)).toEqual([
+      at(2026, 3, 10, 16),
+      at(2026, 2, 28, 16),
+    ]);
+    expect(periodStarts(at(2026, 3, 1, 3), 0)).toEqual([at(2026, 3, 1, 0), at(2026, 3, 1, 0)]);
+    expect(periodStarts(at(2026, 1, 1, 2), -5)).toEqual([at(2025, 12, 31, 5), at(2025, 12, 1, 5)]);
+    // Out of range: UTC.
+    expect(periodStarts(at(2026, 3, 10, 17), 30)).toEqual([at(2026, 3, 10, 0), at(2026, 3, 1, 0)]);
   });
 
-  it("failed flushes are retried", async () => {
-    const store = new MemorySettingsStore();
-    const s = setup(1, budget(100), at(2026, 3, 10, 0));
-    await s.router.attachStore(store);
-    await s.router.complete("chat", req());
-    const set = store.set.bind(store);
-    store.set = async () => {
-      throw new Error("disk full");
+  it("restores_spending_from_the_event_log", async () => {
+    const totals = (calls: number): LlmModelTotals => ({
+      model: "a:m1",
+      calls,
+      prompt_tokens: 10 * calls,
+      completion_tokens: 3 * calls,
+      cached_prompt_tokens: 0,
+      cost_usd: 3 * calls,
+    });
+    const asked: Timestamp[] = [];
+    const calls: LlmCallStore = {
+      totalsSince: (since) => {
+        asked.push(since);
+        // Two calls today, five this month.
+        return [totals(since === toTimestamp(at(2026, 3, 9, 16)) ? 2 : 5)];
+      },
     };
-    await expect(s.router.flush()).rejects.toThrow("disk full");
-    store.set = set;
-    await s.router.flush();
-    expect(await store.get(USAGE_PROFILE, "llm_usage:2026-03-10")).not.toBeNull();
+    const s = setup(3, budget(7), at(2026, 3, 10, 5));
+    await s.router.restoreUsage(calls);
+    // Since the start of the day and of the month in UTC+8.
+    expect(asked).toEqual([toTimestamp(at(2026, 3, 9, 16)), toTimestamp(at(2026, 2, 28, 16))]);
+    const report = s.router.costReport();
+    expect(report.today).toEqual({
+      period: "2026-03-10",
+      total_usd: 6,
+      calls: 2,
+      models: {
+        "a:m1": {
+          calls: 2,
+          prompt_tokens: 20,
+          completion_tokens: 6,
+          cached_prompt_tokens: 0,
+          cost_usd: 6,
+        },
+      },
+    });
+    expect(report.month.total_usd).toBe(15);
+    // 6 of 7 is above the 80% line: the restored state was published.
+    expect(report.state).toBe("degraded");
+    expect(states(s.events)).toEqual(["degraded"]);
+    // Calls of this run add to it; usage since startup does not include earlier runs.
+    await s.router.complete("chat", req());
+    expect(s.router.costReport().today).toMatchObject({ total_usd: 9, calls: 3 });
+    expect(s.router.usage().get("a:m1")?.calls).toBe(1);
   });
 
   it("fallback_chain_used_while_degraded", async () => {

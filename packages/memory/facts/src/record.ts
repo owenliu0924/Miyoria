@@ -8,16 +8,22 @@
 // the terminal chat, the voice room). Her observations of the same messages are hers, a derived
 // view under the same key.
 //
+// Each LLM call's metadata and cost (`llm.call`, published by the `llm` module as the call ends)
+// is recorded here too, as it is on the bus: through the log's buffer, so it reaches the store in
+// the next flush with the lines, and nothing about a call ever waits on the database.
+//
 // Also here, as they go with the lines:
 // - "do not remember this" (`agent.message.excluded`): the message's events (its line and her
 //   observations of it) are redacted, so every reader of the log stops seeing it;
 // - the people table: whoever wrote or spoke is recorded, and her stable name for them is fixed
 //   the first time she sees them.
 
+import { LlmCall, LlmCallSchema } from "@miyoria/contracts/events";
 import { errorMessage, type ModuleContext, type Subscription } from "@miyoria/runtime/kernel";
-import { logEntryFromIncoming, type Store } from "@miyoria/store";
+import { type EventWrite, logEntryFromIncoming, type Store } from "@miyoria/store";
 import {
   type AccountRef,
+  type Envelope,
   HandleDirectoryKey,
   type IncomingMessage,
   isJsonObject,
@@ -169,4 +175,28 @@ function excludedMessage(payload: unknown): MessageRef | null {
   if (!isJsonObject(context) || typeof id !== "string") return null;
   if (typeof context.platform !== "string") return null;
   return payload.message as unknown as MessageRef;
+}
+
+/**
+ * What the event log appends for an `llm.call` bus event: the payload as it is, under the bus
+ * event's id and time (when the call ended) and the turn it belongs to. `null` for any other bus
+ * event, or a payload that does not fit the type.
+ */
+export function llmCallWrite(env: Envelope): EventWrite | null {
+  const event = env.event;
+  if (event.type !== "custom" || event.data.topic !== LlmCall.type) return null;
+  const data = LlmCallSchema.safeParse(event.data.payload);
+  if (!data.success) return null;
+  return {
+    draft: {
+      id: env.id,
+      at: env.ts,
+      type: LlmCall.type,
+      v: LlmCall.v,
+      parent: env.causation,
+      turn: env.correlation,
+      data: data.data,
+    },
+    source: env.source,
+  };
 }

@@ -3,7 +3,8 @@
 // fallbacks, retries, errors, who asked), and for the most recent calls the full request and
 // response with secrets redacted. Records and details live in memory; finished calls are also
 // written to disk (call-writer.ts), and the module refills the records (not the details) from
-// today's file at start. The cost tracker keeps the persisted totals. The reasoning and
+// today's file at start. The cost tracker keeps the totals (rebuilt from the `llm.call` events
+// at start, call-event.ts). The reasoning and
 // the answer of each call are also kept apart from the details, for many more calls, so the
 // panel can read her chain of thought by kind of call.
 

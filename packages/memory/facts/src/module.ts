@@ -3,8 +3,9 @@
 // stays in memory until the flush task picks it up, so a broken log costs the log, not a turn.
 //
 // It is also the one writer of the raw record from the bus (docs/design/v5-data.md §2.3): every
-// chat line goes to the store's chat events as it arrives (`record.ts`), and her decisions and
-// each turn's outcome are lines of the log stored under their bus topics (`envelope.ts`).
+// chat line goes to the store's chat events as it arrives (`record.ts`), her decisions and each
+// turn's outcome are lines of the log stored under their bus topics (`envelope.ts`), and each LLM
+// call's `llm.call` goes through the log's buffer as it is (`record.ts`).
 
 import {
   defineManifest,
@@ -37,7 +38,7 @@ import { type FactsConfig, FactsConfigSchema } from "./config.js";
 import { WorkingContextView } from "./context.js";
 import { DeliveryLedgerView } from "./delivery.js";
 import { EventLogService } from "./log.js";
-import { CHAT_RECORD_TOPICS, type ChatRecordStore, recordChat } from "./record.js";
+import { CHAT_RECORD_TOPICS, type ChatRecordStore, llmCallWrite, recordChat } from "./record.js";
 import { BOOT_KEY, GAME_SESSION_SOURCE, LIFECYCLE_SOURCE, recoverGame } from "./recovery.js";
 import { RevisionBook } from "./revisions.js";
 
@@ -158,7 +159,7 @@ export class FactsModule implements Module {
       services: ctx.services,
     });
     ctx.spawn("observe", async () => {
-      for await (const env of sub) this.#take(ctx, bus, env);
+      for await (const env of sub) this.#take(ctx, log, bus, env);
     });
     ctx.spawn("flush", async (signal) => {
       for await (const _ of interval(config.flush_ms, signal)) await log.flush();
@@ -179,10 +180,17 @@ export class FactsModule implements Module {
     this.#running = { log, sub, bus };
   }
 
+  /** An LLM call goes to the store as it is; everything else to the bus facts. */
+  static #route(log: EventLogService, bus: BusFacts, env: Envelope): void {
+    const call = llmCallWrite(env);
+    if (call !== null) log.record(call);
+    else bus.handle(env);
+  }
+
   /** One bad event costs that event. */
-  #take(ctx: ModuleContext, bus: BusFacts, env: Envelope): void {
+  #take(ctx: ModuleContext, log: EventLogService, bus: BusFacts, env: Envelope): void {
     try {
-      bus.handle(env);
+      FactsModule.#route(log, bus, env);
     } catch (error) {
       ctx.log.warn({ err: errorMessage(error), event: env.id }, "cannot log a bus event");
     }
@@ -239,7 +247,7 @@ export class FactsModule implements Module {
     // What the other modules said on their way down still belongs to this run.
     for (let env = running.sub.tryRecv(); env !== null; env = running.sub.tryRecv()) {
       try {
-        running.bus.handle(env);
+        FactsModule.#route(running.log, running.bus, env);
       } catch {
         // The log is going down with the rest; one line more or less changes nothing.
       }

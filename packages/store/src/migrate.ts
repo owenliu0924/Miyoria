@@ -22,7 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { StoreError } from "./common.js";
 import type { Db, Row } from "./db.js";
-import { CHAT_SQL, EVENTS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
+import { CHAT_SQL, EVENTS_SQL, LLM_CALLS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
 
 const log = getLogger("store.migrate");
 
@@ -89,7 +89,8 @@ const BOOKKEEPING = `CREATE TABLE _migrations (
 
 /**
  * Core's own tables: the bookkeeping, the event log, then its chat indexes and view, then the
- * indexes and views of turn records and audit entries. No prefix. Always applied first.
+ * indexes and views of turn records and audit entries, then those of LLM calls. No prefix.
+ * Always applied first.
  */
 export const coreSchema: PluginSchema = {
   plugin: "core",
@@ -98,6 +99,7 @@ export const coreSchema: PluginSchema = {
     { version: 2, name: "events", sql: EVENTS_SQL },
     { version: 3, name: "chat", sql: CHAT_SQL },
     { version: 4, name: "turns_audit", sql: TURNS_AUDIT_SQL },
+    { version: 5, name: "llm_calls", sql: LLM_CALLS_SQL },
   ],
 };
 

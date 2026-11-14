@@ -3,12 +3,14 @@
 // these cases run only on fresh in-memory databases; the per-profile categories run in
 // `behaviour.test.ts`.
 
+import { LlmCallSchema } from "@miyoria/contracts/events";
 import { newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   categoryModules,
   DATA_CATEGORIES,
   GLOBAL_SETTINGS_PROFILE,
+  LlmCall,
   RESET_CATEGORIES,
   type RoleDefinition,
   resolveCategories,
@@ -108,7 +110,6 @@ async function seed(store: Store) {
     "queue:state",
     "voice_consent:discord:2",
     "privacy:discord:2",
-    "llm_usage:2026-01",
     "panel_session:abc",
     "future:thing",
   ]) {
@@ -142,6 +143,40 @@ async function seed(store: Store) {
     detail: {},
     ok: true,
   });
+  // One LLM call (`llm_usage`).
+  await store.events?.append([
+    {
+      draft: {
+        id: newId(),
+        at: toTimestamp(T0),
+        type: LlmCall.type,
+        data: LlmCallSchema.parse({
+          call_id: "c1",
+          log_day: null,
+          requested_at: toTimestamp(T0),
+          purpose: "chat",
+          chain: "chat",
+          kind: "chat",
+          module: null,
+          label: null,
+          model: "m:x",
+          provider: "m",
+          status: "ok",
+          error_kind: null,
+          finish_reason: "stop",
+          reasoning: "off",
+          usage: null,
+          cost_usd: null,
+          duration_ms: 10,
+          first_token_ms: null,
+          fallbacks: [],
+          retries: 0,
+          tools: [],
+        }),
+      },
+      source: "llm",
+    },
+  ]);
   return { owen, ctx };
 }
 
@@ -240,7 +275,6 @@ describe("data categories", () => {
     expect(await store.moduleState.list()).toEqual(new Map());
     expect((await store.audit.recent(9, null)).map((e) => e.action)).toEqual(["seed"]);
     expect([...(await store.settings.list(GLOBAL_SETTINGS_PROFILE, "")).keys()]).toEqual([
-      "llm_usage:2026-01",
       "panel_session:abc",
     ]);
     expect((await store.settings.list(P, "")).size).toBe(0);

@@ -67,6 +67,7 @@ import {
 import { Db, type Params, type Row } from "./db.js";
 import { AuditTrail } from "./events/audit.js";
 import { ChatLog } from "./events/chat.js";
+import { LlmCallTotals } from "./events/llm.js";
 import { EventStore } from "./events/log.js";
 import { TurnLog } from "./events/turns.js";
 import type { PersonHandleDirectory } from "./handles.js";
@@ -2130,6 +2131,8 @@ export class SqliteStore implements Store {
   readonly events: EventStore;
   /** Chat lines on the event log; `messages` is the same object. */
   readonly chat: ChatLog;
+  /** LLM calls on the event log, as cost and usage totals. */
+  readonly llmCalls: LlmCallTotals;
   readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;
   readonly coins: CoinLedgerStore;
@@ -2161,6 +2164,7 @@ export class SqliteStore implements Store {
     this.messages = this.chat;
     this.decisions = new TurnLog(db, this.events, this.persons);
     this.audit = new AuditTrail(db, this.events, this.persons);
+    this.llmCalls = new LlmCallTotals(db);
     this.directives = new SqliteDirectives(db);
     this.cards = new SqliteMemberCards(db);
     this.coins = new SqliteCoins(db);

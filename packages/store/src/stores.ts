@@ -21,6 +21,7 @@ import {
 } from "@miyoria/types";
 import type { DataCategoryId, DataExport, DataInventory, WipeCounts, WipeOptions } from "./data.js";
 import type { ChatLogStore } from "./events/chat.js";
+import type { LlmCallStore } from "./events/llm.js";
 import type { EventLogStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
 import type {
@@ -534,6 +535,11 @@ export interface Store {
    * for test doubles; `messages` reads the same lines.
    */
   readonly chat?: ChatLogStore;
+  /**
+   * The LLM calls on the event log, as cost and usage totals. Optional for test doubles; without
+   * it the `llm` module's spending starts from zero at every start.
+   */
+  readonly llmCalls?: LlmCallStore;
   readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;
   readonly coins: CoinLedgerStore;

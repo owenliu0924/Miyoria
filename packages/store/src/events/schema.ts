@@ -200,3 +200,39 @@ SELECT
 FROM events
 WHERE type GLOB 'audit.*';
 `;
+
+/**
+ * Core migration 5: LLM calls on the event log (§2.6, §8 step 7). A partial index over the
+ * `llm.call` events by time, for the cost totals of a day or a month, and `v_llm_calls`, the calls
+ * in columns, which the data export reads. The type condition is the same text in `llm.ts`: SQLite
+ * uses a partial index only when the query names its condition.
+ */
+export const LLM_CALLS_SQL = `-- LLM calls by time: the cost and usage totals since the start of a day or a month.
+CREATE INDEX events_llm_call_idx ON events (at) WHERE type = 'llm.call';
+
+-- One row per LLM call: what it was for, the model, tokens, cost and how it ended.
+CREATE VIEW v_llm_calls AS
+SELECT
+    seq,
+    id,
+    type,
+    at,
+    json_extract(data, '$.call_id') AS call_id,
+    json_extract(data, '$.log_day') AS log_day,
+    json_extract(data, '$.purpose') AS purpose,
+    json_extract(data, '$.module') AS module,
+    json_extract(data, '$.model') AS model,
+    json_extract(data, '$.provider') AS provider,
+    json_extract(data, '$.status') AS status,
+    json_extract(data, '$.error_kind') AS error_kind,
+    json_extract(data, '$.usage.prompt_tokens') AS prompt_tokens,
+    json_extract(data, '$.usage.completion_tokens') AS completion_tokens,
+    json_extract(data, '$.usage.cached_prompt_tokens') AS cached_prompt_tokens,
+    json_extract(data, '$.usage.reasoning_tokens') AS reasoning_tokens,
+    json_extract(data, '$.cost_usd') AS cost_usd,
+    json_extract(data, '$.duration_ms') AS duration_ms,
+    turn,
+    data
+FROM events
+WHERE type = 'llm.call';
+`;

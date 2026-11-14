@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import type { Clock } from "@miyoria/types";
+import type { Clock, JsonValue } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type ChatProvider,
@@ -336,8 +336,10 @@ describe("LlmModule call log", () => {
       max_mb_per_day: 512,
       bodies: true,
     });
+    const published: JsonValue[] = [];
     const run = async (): Promise<void> => {
       const sup = new Supervisor({ clock });
+      const events = sup.bus.subscribe("llm.call");
       await sup.register(
         new LlmModule(config, [mockFactory(new MockProvider("m").reply("嗨"))], { baseDir: dir }),
         null,
@@ -346,12 +348,20 @@ describe("LlmModule call log", () => {
       await sup.startAll();
       const r = sup.services.require(LlmRouterKey);
       await r.complete("chat", { messages: [userMessage("hi")] });
+      for (let env = events.tryRecv(); env !== null; env = events.tryRecv()) {
+        if (env.event.type === "custom") published.push(env.event.data.payload);
+      }
       await sup.stopAll();
     };
     await run();
     const file = join(dir, "logs", "llm", `${DAY}.jsonl`);
     expect(lines(file)).toHaveLength(1);
     expect(readFileSync(file, "utf8")).not.toContain("PROVIDERKEY");
+    // The call's event points at its line: the file's day and the call's id.
+    const line = JSON.parse(readFileSync(file, "utf8")) as { call: { id: string } };
+    expect(published).toEqual([
+      expect.objectContaining({ call_id: line.call.id, log_day: DAY, status: "ok" }),
+    ]);
 
     // A new process: the inspector shows the call from before.
     const second = new LlmModule(config, [mockFactory(new MockProvider("m").reply("嗨"))], {

@@ -6,17 +6,19 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { SettingsStoreKey } from "@miyoria/store";
-import { type JsonValue, REASONING_LEVELS, serviceKey } from "@miyoria/types";
+import { StoreKey } from "@miyoria/store";
+import { customEvent, type JsonValue, REASONING_LEVELS, serviceKey } from "@miyoria/types";
 import { z } from "zod";
+import { LLM_CALL_TOPIC, llmCallPayload } from "./call-event.js";
 import {
   CALL_LOG_PRUNE_INTERVAL_MS,
   CallLogConfigSchema,
   type LlmCallSink,
   LlmCallWriter,
+  utcDay,
 } from "./call-writer.js";
 import { LlmCallLog, MAX_CALLS } from "./calls.js";
-import { BudgetConfigSchema, PricingSchema } from "./cost.js";
+import { BudgetConfigSchema, CostTracker, PricingSchema } from "./cost.js";
 import { LlmRouter } from "./router.js";
 import { type ChatProvider, LlmError, type ModelRef, ModelRefSchema } from "./types.js";
 
@@ -126,9 +128,6 @@ export interface ProviderFactory {
 
 export const LlmRouterKey = serviceKey<LlmRouter>("LlmRouter");
 
-/** How often unsaved usage totals are written to the store. */
-export const USAGE_FLUSH_INTERVAL_MS = 5_000;
-
 export interface LlmModuleOptions {
   /** Purpose overrides from the active profile (`profile.toml` `[llm.purposes]`). */
   purposeOverrides?: ReadonlyMap<string, ModelRef[]>;
@@ -136,7 +135,15 @@ export interface LlmModuleOptions {
   baseDir?: string;
 }
 
-/** Module `llm`: builds providers from `[llm]` and provides the `LlmRouter`. */
+/**
+ * Module `llm`: builds providers from `[llm]` and provides the `LlmRouter`.
+ *
+ * Every finished call goes to the call log's JSONL file (prompt and response) and, as an
+ * `llm.call` event with its metadata and cost, onto the bus, from where the facts module writes it
+ * to the event log. Spending is a running total in memory: rebuilt from those events at the first
+ * start of the process, and kept across restarts of the module, so calls whose events have not
+ * reached the database yet still count.
+ */
 export class LlmModule implements Module {
   static readonly ID = "llm";
   readonly manifest = defineManifest(LlmModule.ID, "LLM", {
@@ -145,8 +152,6 @@ export class LlmModule implements Module {
   readonly #config: LlmConfig;
   readonly #factories: readonly ProviderFactory[];
   readonly #overrides: ReadonlyMap<string, ModelRef[]>;
-  /** Router of the running module, flushed on stop. */
-  #router: LlmRouter | undefined;
   /** The call inspector's log; outlives restarts of the module. */
   readonly #calls = new LlmCallLog();
   readonly #baseDir: string;
@@ -154,6 +159,8 @@ export class LlmModule implements Module {
   #writer: LlmCallWriter | undefined;
   /** Today's calls from before this process were loaded into `#calls` (once per process). */
   #preloaded = false;
+  /** Spending today and this month; outlives restarts of the module. */
+  #tracker: CostTracker | undefined;
 
   constructor(
     config: LlmConfig,
@@ -166,8 +173,11 @@ export class LlmModule implements Module {
     this.#baseDir = options.baseDir ?? process.cwd();
   }
 
-  /** The router; `sink` receives every finished call (the running module's on-disk log). */
-  buildRouter(sink?: LlmCallSink): LlmRouter {
+  /**
+   * The router; `sink` receives every finished call (the running module's on-disk log and bus),
+   * `tracker` keeps its spending (default: a new one from `[llm.pricing]` and `[llm.budget]`).
+   */
+  buildRouter(sink?: LlmCallSink, tracker?: CostTracker): LlmRouter {
     const providers = new Map<string, ChatProvider>();
     for (const [name, cfg] of Object.entries(this.#config.providers)) {
       const factory = this.#factories.find((f) => f.kinds.includes(cfg.kind));
@@ -182,6 +192,7 @@ export class LlmModule implements Module {
       imageInput: new Map(Object.entries(this.#config.image_input)),
       calls: this.#calls,
       ...(sink ? { sink } : {}),
+      ...(tracker ? { tracker } : {}),
     });
     router.setPurposes(this.#overrides);
     return router;
@@ -198,27 +209,37 @@ export class LlmModule implements Module {
           clock: ctx.clock,
         })
       : undefined;
-    const router = this.buildRouter(writer);
+    // Every finished call: its line in the JSONL file, and its `llm.call` event on the bus.
+    const sink: LlmCallSink = {
+      write: (call) => {
+        writer?.write(call);
+        try {
+          const day = writer ? utcDay(ctx.clock.now()) : null;
+          const event = customEvent(LLM_CALL_TOPIC, llmCallPayload(call.record, day));
+          ctx.publish(event, { turn: call.record.turn });
+        } catch (error) {
+          ctx.log.warn({ err: errorMessage(error) }, "cannot publish an LLM call");
+        }
+      },
+    };
+    const fresh = this.#tracker === undefined;
+    this.#tracker ??= new CostTracker(
+      new Map(Object.entries(this.#config.pricing)),
+      this.#config.budget,
+      ctx.clock,
+    );
+    const router = this.buildRouter(sink, this.#tracker);
     router.setEventSink((event) => ctx.publish(event));
-    const store = ctx.services.get(SettingsStoreKey);
-    if (store) {
+    const calls = ctx.services.get(StoreKey)?.llmCalls;
+    if (fresh && calls) {
       try {
-        await router.attachStore(store);
+        await router.restoreUsage(calls);
       } catch (error) {
         ctx.log.warn(
           { err: errorMessage(error) },
-          "could not load persisted LLM usage, starting from zero",
+          "could not load LLM usage from the event log, starting from zero",
         );
       }
-      ctx.spawn("usage-flush", async (signal) => {
-        for await (const _ of interval(USAGE_FLUSH_INTERVAL_MS, signal)) {
-          try {
-            await router.flush();
-          } catch (error) {
-            ctx.log.warn({ err: errorMessage(error) }, "could not persist LLM usage");
-          }
-        }
-      });
     }
     if (writer) {
       this.#writer = writer;
@@ -232,20 +253,13 @@ export class LlmModule implements Module {
         for await (const _ of interval(CALL_LOG_PRUNE_INTERVAL_MS, signal)) await writer.prune();
       });
     }
-    this.#router = router;
     router.announceBudget();
     ctx.provide(LlmRouterKey, router);
   }
 
   async stop(): Promise<void> {
-    const router = this.#router;
     const writer = this.#writer;
-    this.#router = undefined;
     this.#writer = undefined;
-    try {
-      await router?.flush();
-    } finally {
-      await writer?.close();
-    }
+    await writer?.close();
   }
 }

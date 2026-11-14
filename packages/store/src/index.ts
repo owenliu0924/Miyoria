@@ -41,6 +41,14 @@ export {
   utteranceKey,
 } from "./events/chat.js";
 export {
+  LLM_CALL_TYPE_SQL,
+  LlmCall,
+  type LlmCallData,
+  type LlmCallStore,
+  LlmCallTotals,
+  type LlmModelTotals,
+} from "./events/llm.js";
+export {
   type Awaitable,
   COMPACTED_TIERS,
   type CompactedTier,
@@ -58,7 +66,7 @@ export {
   type RedactionListener,
   sessionScope,
 } from "./events/log.js";
-export { CHAT_SQL, EVENTS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
+export { CHAT_SQL, EVENTS_SQL, LLM_CALLS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
 export { TurnLog } from "./events/turns.js";
 export {
   coreEventRegistry,

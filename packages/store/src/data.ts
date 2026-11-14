@@ -9,7 +9,8 @@
 // - Consolidation watermarks (`memory_watermark:*`) exist only inside `messages`, so they are
 //   never deleted without the log they point into (otherwise the log would be extracted into
 //   memories again).
-// - The audit log, LLM usage and panel sessions are `kept`: never deleted, also not by a reset.
+// - The audit log, LLM usage (the `llm.call` events) and panel sessions are `kept`: never deleted,
+//   also not by a reset.
 // - `roles` is reset, not emptied: the built-in roles are written again in the same
 //   transaction, and the config owners (not stored) keep `owner`.
 
@@ -187,6 +188,8 @@ const DECISIONS = "type = 'agent.decision'";
 const OUTCOMES = "type = 'agent.turn.outcome'";
 /** The audit entries among `events` (`events/audit.ts`). */
 const AUDIT = "type GLOB 'audit.*'";
+/** The LLM calls among `events` (`events/llm.ts`). */
+const LLM_CALLS = "type = 'llm.call'";
 
 function settings(
   id: string,
@@ -483,8 +486,8 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   ),
   // The event log (`events`): what she perceived, decided and said, and the counts of what
   // compaction removed. One database is one character, so every row belongs to this profile. The
-  // chat lines are `messages`, her decisions and turn outcomes `decisions` and the audit entries
-  // `audit`, not here.
+  // chat lines are `messages`, her decisions and turn outcomes `decisions`, the audit entries
+  // `audit` and the LLM calls `llm_usage`, not here.
   category(
     "event_log",
     [
@@ -514,7 +517,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
           data: "json",
           redacted_at: "ts",
         },
-        { where: `NOT (${CHAT_LINES} OR ${DECISIONS} OR ${OUTCOMES} OR ${AUDIT})` },
+        { where: `NOT (${CHAT_LINES} OR ${DECISIONS} OR ${OUTCOMES} OR ${AUDIT} OR ${LLM_CALLS})` },
       ),
       table("event_rollups", "event_rollups", "node", "last_at", "day, type, source", {
         day: "ts",
@@ -748,11 +751,42 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { shared: true, kept: true },
   ),
-  // @miyoria/llm/llm `USAGE_KEY_PREFIX` under `USAGE_PROFILE`: spending, checked against the budget.
-  category("llm_usage", [settings("llm_usage", "global", [], ["llm_usage:"])], {
-    shared: true,
-    kept: true,
-  }),
+  // Spending, checked against the budget: the `llm.call` events (metadata and cost of each call,
+  // never the prompt or the response), exported in columns (`v_llm_calls`) with their payload.
+  category(
+    "llm_usage",
+    [
+      table(
+        "llm_calls",
+        "events",
+        "node",
+        "at",
+        "seq",
+        {
+          id: "text",
+          at: "ts",
+          call_id: "text",
+          log_day: "text",
+          purpose: "text",
+          module: "text",
+          model: "text",
+          provider: "text",
+          status: "text",
+          error_kind: "text",
+          prompt_tokens: "num",
+          completion_tokens: "num",
+          cached_prompt_tokens: "num",
+          reasoning_tokens: "num",
+          cost_usd: "num",
+          duration_ms: "num",
+          turn: "text",
+          data: "json",
+        },
+        { where: LLM_CALLS, exportFrom: "v_llm_calls" },
+      ),
+    ],
+    { shared: true, kept: true },
+  ),
   // @miyoria/api `STORE_PREFIX` under `STORE_PROFILE`: hashes of login tokens.
   category("panel_sessions", [settings("panel_sessions", "global", [], ["panel_session:"])], {
     shared: true,

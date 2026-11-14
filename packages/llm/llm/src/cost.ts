@@ -1,24 +1,19 @@
-// Cost tracking and budgets: pricing, per day / month totals per model, the
-// `ok -> degraded -> exhausted` state machine and persistence.
+// Cost tracking and budgets: pricing, per day / month totals per model and the
+// `ok -> degraded -> exhausted` state machine.
+//
+// The totals are a running sum in memory, so the budget check never waits on the database and is
+// right between two writes of the event log. What they sum is also written, one `llm.call` event
+// per call (docs/design/v5-data.md §2.6), and at start the totals of the current day and month
+// are rebuilt from those events (`restore`).
 
 import { getLogger } from "@miyoria/runtime/kernel";
-import type { SettingsStore } from "@miyoria/store";
-import { type Clock, customEvent, type Event, type JsonValue, systemClock } from "@miyoria/types";
+import type { LlmCallStore, LlmModelTotals } from "@miyoria/store";
+import { type Clock, customEvent, type Event, systemClock, toTimestamp } from "@miyoria/types";
 import { z } from "zod";
-import {
-  BudgetExhaustedError,
-  LlmError,
-  type ModelRef,
-  ModelRefSchema,
-  type Usage,
-} from "./types.js";
+import { BudgetExhaustedError, type ModelRef, ModelRefSchema, type Usage } from "./types.js";
 
 const log = getLogger("llm.cost");
 
-/** Profile id under which usage totals are persisted. */
-export const USAGE_PROFILE = "_global";
-/** Settings-key prefix of persisted usage (`llm_usage:YYYY-MM-DD`, `llm_usage:YYYY-MM`). */
-export const USAGE_KEY_PREFIX = "llm_usage:";
 /** Topic of the budget state event. */
 export const BUDGET_TOPIC = "llm.budget";
 
@@ -105,19 +100,6 @@ export interface ModelUsage {
   cost_usd: number;
 }
 
-const ModelUsageSchema = z.object({
-  calls: z.number().default(0),
-  prompt_tokens: z.number().default(0),
-  completion_tokens: z.number().default(0),
-  cached_prompt_tokens: z.number().default(0),
-  cost_usd: z.number().default(0),
-});
-
-/** Persisted document of one day or month: `{"models": {"<provider:model>": ModelUsage}}`. */
-const PeriodUsageSchema = z.object({
-  models: z.record(z.string(), ModelUsageSchema).default({}),
-});
-
 function emptyUsage(): ModelUsage {
   return { calls: 0, prompt_tokens: 0, completion_tokens: 0, cached_prompt_tokens: 0, cost_usd: 0 };
 }
@@ -125,16 +107,11 @@ function emptyUsage(): ModelUsage {
 class PeriodUsage {
   readonly models = new Map<string, ModelUsage>();
 
-  static fromJson(value: JsonValue, key: string): PeriodUsage {
-    const parsed = PeriodUsageSchema.safeParse(value);
-    if (!parsed.success) throw new LlmError(`invalid \`${key}\`: ${z.prettifyError(parsed.error)}`);
+  /** The totals the event log holds for a period. */
+  static fromTotals(totals: readonly LlmModelTotals[]): PeriodUsage {
     const out = new PeriodUsage();
-    for (const [model, usage] of Object.entries(parsed.data.models)) out.models.set(model, usage);
+    for (const { model, ...usage } of totals) out.models.set(model, { ...usage });
     return out;
-  }
-
-  get isEmpty(): boolean {
-    return this.models.size === 0;
   }
 
   #sorted(): [string, ModelUsage][] {
@@ -165,7 +142,8 @@ class PeriodUsage {
     m.calls += 1;
     m.prompt_tokens += usage.prompt_tokens;
     m.completion_tokens += usage.completion_tokens;
-    m.cached_prompt_tokens += usage.cached_prompt_tokens ?? 0;
+    // As the call's record and event keep it: over-reported cached tokens are clamped.
+    m.cached_prompt_tokens += Math.min(usage.cached_prompt_tokens ?? 0, usage.prompt_tokens);
     m.cost_usd += cost;
   }
 
@@ -184,10 +162,6 @@ class PeriodUsage {
 
   report(period: string): PeriodReport {
     return { period, total_usd: this.cost(), calls: this.calls(), models: this.modelsRecord() };
-  }
-
-  toJson(): JsonValue {
-    return { models: this.modelsRecord() } as unknown as JsonValue;
   }
 }
 
@@ -219,12 +193,25 @@ export interface BudgetEventPayload {
   monthly_usd: number | null;
 }
 
+/** The UTC offset in seconds that defines days and months (0 when out of range). */
+function offsetSeconds(offsetHours: number): number {
+  const secs = Math.round(offsetHours * 3600);
+  return !Number.isFinite(secs) || Math.abs(secs) >= 86_400 ? 0 : secs;
+}
+
 /** `[YYYY-MM-DD, YYYY-MM]` of `now` in the configured timezone. */
 export function periodKeys(now: number, offsetHours: number): [string, string] {
-  let secs = Math.round(offsetHours * 3600);
-  if (!Number.isFinite(secs) || Math.abs(secs) >= 86_400) secs = 0;
-  const iso = new Date(now + secs * 1000).toISOString();
+  const iso = new Date(now + offsetSeconds(offsetHours) * 1000).toISOString();
   return [iso.slice(0, 10), iso.slice(0, 7)];
+}
+
+/** When the day and the month of `now` began in the configured timezone (epoch ms). */
+export function periodStarts(now: number, offsetHours: number): [number, number] {
+  const shift = offsetSeconds(offsetHours) * 1000;
+  const local = new Date(now + shift);
+  const y = local.getUTCFullYear();
+  const m = local.getUTCMonth();
+  return [Date.UTC(y, m, local.getUTCDate()) - shift, Date.UTC(y, m, 1) - shift];
 }
 
 export class CostTracker {
@@ -236,11 +223,7 @@ export class CostTracker {
   #today = new PeriodUsage();
   #thisMonth = new PeriodUsage();
   #state: BudgetState = "ok";
-  #dirty = false;
-  /** Finished periods still to be written to the store. */
-  #retired: [string, JsonValue][] = [];
   #sink: EventSink | undefined;
-  #store: SettingsStore | undefined;
   /** Models already warned about missing pricing (exposed for tests). */
   readonly unpricedLogged = new Set<string>();
 
@@ -285,17 +268,11 @@ export class CostTracker {
     const [day, month] = periodKeys(this.#clock.now(), this.budget.timezone_offset_hours);
     let changed = false;
     if (day !== this.#day) {
-      if (!this.#today.isEmpty) {
-        this.#retired.push([`${USAGE_KEY_PREFIX}${this.#day}`, this.#today.toJson()]);
-      }
       this.#today = new PeriodUsage();
       this.#day = day;
       changed = true;
     }
     if (month !== this.#month) {
-      if (!this.#thisMonth.isEmpty) {
-        this.#retired.push([`${USAGE_KEY_PREFIX}${this.#month}`, this.#thisMonth.toJson()]);
-      }
       this.#thisMonth = new PeriodUsage();
       this.#month = month;
       changed = true;
@@ -372,7 +349,6 @@ export class CostTracker {
     const rolled = this.#refresh();
     this.#today.add(model, usage, cost);
     this.#thisMonth.add(model, usage, cost);
-    this.#dirty = true;
     const changed = this.#setState(this.#evaluate(this.#today.cost(), this.#thisMonth.cost()));
     if (rolled || changed) this.#emit(this.#payload());
     return cost;
@@ -392,53 +368,21 @@ export class CostTracker {
     return report;
   }
 
-  /** Sets the store and merges the persisted totals of the current day and month. Call once. */
-  async attachStore(store: SettingsStore): Promise<void> {
+  /**
+   * Adds the totals the event log holds for the current day and month (the calls of earlier
+   * runs). Call once, before the first call: what this run adds is not in `calls` yet.
+   */
+  async restore(calls: LlmCallStore): Promise<void> {
     this.#refresh();
-    const day = this.#day;
-    const month = this.#month;
-    const load = async (key: string): Promise<PeriodUsage> => {
-      const value = await store.get(USAGE_PROFILE, key);
-      return value === null ? new PeriodUsage() : PeriodUsage.fromJson(value, key);
-    };
-    const dayUsage = await load(`${USAGE_KEY_PREFIX}${day}`);
-    const monthUsage = await load(`${USAGE_KEY_PREFIX}${month}`);
-    this.#store = store;
-    // The clock may have crossed a boundary while loading.
+    const now = this.#clock.now();
+    const [day, month] = periodKeys(now, this.budget.timezone_offset_hours);
+    const [dayStart, monthStart] = periodStarts(now, this.budget.timezone_offset_hours);
+    const dayUsage = PeriodUsage.fromTotals(await calls.totalsSince(toTimestamp(dayStart)));
+    const monthUsage = PeriodUsage.fromTotals(await calls.totalsSince(toTimestamp(monthStart)));
+    // The clock may have crossed a boundary while reading.
     if (this.#day === day) this.#today.merge(dayUsage);
     if (this.#month === month) this.#thisMonth.merge(monthUsage);
     if (this.#refresh()) this.#emit(this.#payload());
-  }
-
-  /**
-   * Writes unsaved totals to the store (no-op without a store or changes). Failed writes are
-   * retried by the next flush.
-   */
-  async flush(): Promise<void> {
-    const store = this.#store;
-    if (!store) return;
-    const writes = this.#retired;
-    this.#retired = [];
-    if (this.#dirty) {
-      this.#dirty = false;
-      writes.push([`${USAGE_KEY_PREFIX}${this.#day}`, this.#today.toJson()]);
-      writes.push([`${USAGE_KEY_PREFIX}${this.#month}`, this.#thisMonth.toJson()]);
-    }
-    const failed: [string, JsonValue][] = [];
-    let firstError: unknown;
-    for (const [key, value] of writes) {
-      try {
-        await store.set(USAGE_PROFILE, key, value);
-      } catch (error) {
-        firstError ??= error;
-        failed.push([key, value]);
-      }
-    }
-    if (firstError !== undefined) {
-      // Older documents go first so newer snapshots overwrite them.
-      this.#retired = [...failed, ...this.#retired];
-      throw firstError;
-    }
   }
 
   /** Fallback chain configured for `purpose`, if any. */

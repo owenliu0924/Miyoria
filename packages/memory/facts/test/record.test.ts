@@ -7,6 +7,7 @@ import { openStore, type Store } from "@miyoria/store";
 import {
   type ContextKey,
   customEvent,
+  EventLogKey,
   HandleDirectoryKey,
   type JsonValue,
   MESSAGE_EXCLUDED_TOPIC,
@@ -251,5 +252,72 @@ describe("the raw record", () => {
     });
     await waitFor(() => lines.length === 1);
     expect(lines).toEqual(["嗨"]);
+  });
+
+  it("records_each_llm_call_through_the_logs_buffer", async () => {
+    const { supervisor, store } = await facts();
+    const call = {
+      call_id: "c1",
+      log_day: "2026-03-10",
+      requested_at: "2026-03-10T00:00:00.000Z",
+      purpose: "chat",
+      chain: "chat",
+      kind: "chat",
+      module: "agent",
+      label: "reply",
+      model: "m:big",
+      provider: "m",
+      status: "ok",
+      error_kind: null,
+      finish_reason: "stop",
+      reasoning: "off",
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        cached_prompt_tokens: 0,
+        reasoning_tokens: null,
+      },
+      cost_usd: 0.25,
+      duration_ms: 900,
+      first_token_ms: 200,
+      fallbacks: [],
+      retries: 0,
+      tools: [],
+    };
+    const env = supervisor.bus.publish("llm", customEvent("llm.call", call), { correlation: "T1" });
+    // Not a call: left out.
+    supervisor.bus.publish("llm", customEvent("llm.call", { call_id: "c2" }));
+    const stored = async () => (await store.events?.query({ types: ["llm.call"] })) ?? [];
+    await waitFor(async () => (await stored()).length === 1);
+    const [e] = await stored();
+    expect(e?.envelope).toMatchObject({
+      id: env.id,
+      at: env.ts,
+      type: "llm.call",
+      source: "llm",
+      turn: "T1",
+      session: null,
+      person_id: null,
+      scope: "owner",
+      tier: "short",
+      data: call,
+    });
+    expect(store.llmCalls?.totalsSince(env.ts)).toEqual([
+      {
+        model: "m:big",
+        calls: 1,
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        cached_prompt_tokens: 0,
+        cost_usd: 0.25,
+      },
+    ]);
+    // Not a line of the log.
+    expect(
+      supervisor.services
+        .get(EventLogKey)
+        ?.recent(10)
+        .some((l) => l.id === env.id),
+    ).toBe(false);
   });
 });

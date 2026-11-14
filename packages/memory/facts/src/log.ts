@@ -6,7 +6,9 @@
 // wait, and while the store fails the buffer holds on, bounded, dropping its oldest events.
 //
 // The store is the event log on `events` (docs/design/v5-data.md §2): a flush hands it the
-// buffered lines as envelopes (`envelope.ts`), and what it reads comes back as lines.
+// buffered lines as envelopes (`envelope.ts`), and what it reads comes back as lines. Events that
+// are not lines (an LLM call's metadata) take the same buffer through `record`, so they reach the
+// store in the same flush and never make their producer wait either.
 //
 // A redaction in the store ("do not remember this", "forget me") reaches the lines kept here as
 // well: the store tells which events and keys it redacted, and those lines in the hot window keep
@@ -15,7 +17,7 @@
 
 import { REDACTED_DATA } from "@miyoria/contracts/events";
 import { errorMessage, getLogger, metrics } from "@miyoria/runtime/kernel";
-import type { EventLogStore, LoggedEvent, Redaction } from "@miyoria/store";
+import type { EventLogStore, EventWrite, LoggedEvent, Redaction } from "@miyoria/store";
 import {
   type CauseChain,
   type Clock,
@@ -115,7 +117,8 @@ export class EventLogService implements EventLog {
   /** Newest events by id; a `Map` keeps them in append order. */
   readonly #hot = new Map<string, LogEvent>();
   readonly #projections = new Set<Projection>();
-  #buffer: LogEvent[] = [];
+  /** Lines and events waiting for the store, as the store appends them. */
+  #buffer: EventWrite[] = [];
   #writing: Promise<void> | null = null;
   #failing = false;
   readonly #unlisten: () => void;
@@ -182,7 +185,7 @@ export class EventLogService implements EventLog {
       this.#hot.delete(oldest);
     }
     if (this.#store) {
-      this.#buffer.push(event);
+      this.#buffer.push(toWrite(event));
       this.#trimBuffer();
     }
     for (const projection of this.#projections) this.#feed(projection, event);
@@ -192,6 +195,16 @@ export class EventLogService implements EventLog {
   /** A time the store can write: one it cannot would fail the whole batch, again and again. */
   #timestamp(at: string | undefined): string {
     return at !== undefined && !Number.isNaN(Date.parse(at)) ? at : toTimestamp(this.#clock.now());
+  }
+
+  /**
+   * Queues an event that is not a line for the store: it is written with the next flush, and is
+   * neither kept in memory nor seen by projections. Never throws and never waits.
+   */
+  record(write: EventWrite): void {
+    if (!this.#store) return;
+    this.#buffer.push(write);
+    this.#trimBuffer();
   }
 
   observe(observation: Observation, options: ObserveOptions = {}): LogEvent {
@@ -244,7 +257,7 @@ export class EventLogService implements EventLog {
       this.#buffer = [];
       const started = performance.now();
       try {
-        await store.append(batch.map(toWrite));
+        await store.append(batch);
         flushSeconds.observe({}, (performance.now() - started) / 1000);
         if (this.#failing) log.info("the event log reaches its store again");
         this.#failing = false;

@@ -6,8 +6,10 @@
 //   fallback chain of `provider:model` references, tracks usage, cost and the budget.
 // * `LlmModule` (id `llm`) builds providers from `[llm]` through `ProviderFactory`s and
 //   provides the router as `LlmRouterKey`.
-// * `LlmCallWriter` appends every finished call to `[llm.call_log] dir` as daily JSONL.
+// * `LlmCallWriter` appends every finished call to `[llm.call_log] dir` as daily JSONL, and the
+//   module publishes each as an `llm.call` event (metadata and cost) for the event log.
 
+export { LLM_CALL_TOPIC, llmCallPayload } from "./call-event.js";
 export {
   CALL_LOG_MAX_QUEUE,
   CALL_LOG_PRELOAD_MAX_BYTES,
@@ -66,9 +68,8 @@ export {
   type Pricing,
   PricingSchema,
   periodKeys,
+  periodStarts,
   pricing,
-  USAGE_KEY_PREFIX,
-  USAGE_PROFILE,
 } from "./cost.js";
 export {
   errorKind,
@@ -86,7 +87,6 @@ export {
   type ProviderConfig,
   ProviderConfigSchema,
   type ProviderFactory,
-  USAGE_FLUSH_INTERVAL_MS,
 } from "./module.js";
 export * from "./openai/index.js";
 export { LlmRouter, type LlmRouterOptions, RoutedStream, type UsageRecord } from "./router.js";
