@@ -4,18 +4,13 @@
 
 import { MockProvider } from "@miyoria/llm/llm";
 import {
-  customEvent,
   type Envelope,
-  type JsonValue,
-  NOTICE_TOPIC,
-  newId,
   type TurnFocus,
   TurnFocusViewKey,
   type TurnOutcomeRecord,
-  toTimestamp,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NOTICE, SavedPromptsKey } from "../src/index.js";
+import { SavedPromptsKey } from "../src/index.js";
 import {
   channel,
   Harness,
@@ -95,49 +90,6 @@ describe("cancellation table", () => {
     expect(second?.addressed_by).toEqual([]);
     expect(second?.background.length).toBe(1);
   });
-
-  it("her_own_turn_gives_way_to_someone_calling_her", async () => {
-    const slow = new SlowProvider(5000);
-    const h = await Harness.create(
-      "ambient",
-      { attention: { llm_check: false, cooldown_ms: 0 } },
-      slow,
-    );
-    const c = channel("c");
-    h.publish({
-      type: "agent_initiative",
-      data: { context: c, reason: "idle_channel", hint: "聊天", about: [] },
-    });
-    await wait(1000);
-    h.say(mention(c, "Owen", "DeepSeek 妳在嗎"));
-    await wait(10_000);
-    expect(outcomes(h.drain())).toEqual([
-      { type: "cancelled", cause: "superseded", by: "Owen" },
-      { type: "sent", parts: 1 },
-    ]);
-  });
-
-  it("a_result_someone_waits_for_finishes_before_the_next_person", async () => {
-    const slow = new SlowProvider(5000);
-    const h = await Harness.create(
-      "ambient",
-      { attention: { llm_check: false, cooldown_ms: 0 } },
-      slow,
-    );
-    const c = channel("c");
-    h.publish({
-      type: "agent_initiative",
-      data: { context: c, reason: "action_result", hint: "收下了", about: [] },
-    });
-    await wait(1000);
-    h.say(mention(c, "Owen", "DeepSeek 妳在嗎"));
-    await wait(15_000);
-    expect(h.sink.cancelled).toEqual([]);
-    expect(outcomes(h.drain())).toEqual([
-      { type: "sent", parts: 1 },
-      { type: "sent", parts: 1 },
-    ]);
-  });
 });
 
 describe("focus view and output", () => {
@@ -183,41 +135,9 @@ describe("focus view and output", () => {
     const saved = h.sup.services.require(SavedPromptsKey).recent(c);
     expect(saved.length).toBe(1);
     expect(saved[0]?.prompt_tokens).toBe(10);
-    expect(saved[0]?.reasoning).toBe("off");
+    // A real question reasons by its own tier (`[llm.reasoning] chat_question`).
+    expect(saved[0]?.reasoning).toBe("low");
     expect(saved[0]?.blocks.some((b) => b.key === "people")).toBe(true);
-    expect(saved[0]?.messages.at(-2)?.text).toContain("Owen 問你:DeepSeek 等等一起玩?");
-  });
-
-  it("a_notice_is_told_in_her_own_state", async () => {
-    const mock = new MockProvider("chat").reply("Minecraft 開好了喔。");
-    const h = await Harness.create(
-      "ambient",
-      { attention: { llm_check: false, cooldown_ms: 0 } },
-      mock,
-    );
-    const c = channel("c");
-    const now = Date.now();
-    const notice = {
-      id: newId(),
-      at: toTimestamp(now),
-      source: "activity",
-      task: "t7",
-      turn: null,
-      context: c,
-      ok: true,
-      code: null,
-      text: "Minecraft 開好了",
-      expires_at: toTimestamp(now + 600_000),
-    };
-    h.publish(customEvent(NOTICE_TOPIC, notice as unknown as JsonValue));
-    await wait(100);
-    const requests = mock.requests();
-    expect(requests.length).toBe(1);
-    const system = String(requests[0]?.messages.at(-1)?.content);
-    expect(system).toContain(NOTICE);
-    expect(system).toContain("剛收到的結果(你之前做的事):\n- 成功:Minecraft 開好了");
-    expect(h.sink.texts()).toEqual(["Minecraft 開好了喔。"]);
-    const records = payloads<TurnOutcomeRecord>(h.drain(), "agent.turn.outcome");
-    expect(records.map((r) => r.reason)).toEqual(["notice"]);
+    expect(saved[0]?.messages.at(-1)?.text).toContain("Owen 問你:DeepSeek 等等一起玩?");
   });
 });

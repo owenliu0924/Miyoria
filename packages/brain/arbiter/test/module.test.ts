@@ -32,7 +32,7 @@ import {
   v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArbiterModule, arbiterConfig, Producers, STATE_KEY, STATE_PROFILE } from "../src/index.js";
+import { ArbiterModule, arbiterConfig, Producers } from "../src/index.js";
 import { acct, FakeHost, MIN, T0, textCtx, voiceCtx } from "./helpers.js";
 
 afterEach(() => {
@@ -191,25 +191,6 @@ describe("ArbiterModule", () => {
     ).toMatchObject({ impulse: imp.id, verdict: "accepted" });
     await h.sup.stopAll();
   });
-
-  it("brings up due followups through the arbiter and marks them done", async () => {
-    const h = await build();
-    h.social.set("a", "朋友", 60, "person-a");
-    h.followups.due_.push({
-      id: "f1",
-      profile: "p",
-      person: "person-a",
-      context: null,
-      about: "考試考得怎樣?",
-      due: toTimestamp(T0),
-    });
-    h.sup.bus.publish("test", message(textCtx("c1"), "a", Date.now()));
-    await vi.advanceTimersByTimeAsync(31_000);
-    expect(h.host.opened.map((i) => i.source)).toEqual(["world", "followup"]);
-    expect(h.followups.done).toEqual(["f1"]);
-    await h.sup.stopAll();
-    expect(await h.store.get(STATE_PROFILE, STATE_KEY)).not.toBeNull();
-  });
 });
 
 describe("the Floor's module (pipeline v3)", () => {
@@ -243,6 +224,7 @@ describe("the Floor's module (pipeline v3)", () => {
     expect(r.sup.services.get(FloorKey)).toBeDefined();
     await r.sup.stopAll();
     const v2 = new Supervisor();
+    v2.services.provide("app", PipelineKey, { pipeline: "v2" as const });
     await v2.register(new ArbiterModule("p"), null, true);
     await v2.startAll();
     expect(v2.services.get(FloorKey)).toBeUndefined();

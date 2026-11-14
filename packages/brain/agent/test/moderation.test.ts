@@ -124,7 +124,7 @@ function rig(pipeline: Pipeline, chat: ChatProvider, options: Options = {}): Pro
   return Harness.build("normal", { ...(noCheck() as object), ...config }, chat, null, {
     ...setup,
     provide: (services) => {
-      if (pipeline === "v3") services.provide("app", PipelineKey, { pipeline: "v3" as const });
+      services.provide("app", PipelineKey, { pipeline });
       if (moderation) services.provide("app", ModerationKey, moderation);
       provide?.(services);
     },

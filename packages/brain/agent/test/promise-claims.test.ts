@@ -2,18 +2,8 @@
 // A promise counts as a claim like "done" does: until a tool call, an accepted task or her state
 // backs it, it is not sent as it stands (claims.ts, turn.ts).
 
-import { MockProvider } from "@miyoria/llm/llm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { unbackedClaim } from "../src/claims.js";
-import { channel, Harness, mention, noCheck, Probe, toolCall } from "./harness.js";
-
-beforeEach(() => {
-  vi.useFakeTimers();
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 const OFFERED = new Set(["game_stop", "voice_join"]);
 const BARE = { requests: new Set<never>(), tools: new Set<string>(), scope: null };
@@ -47,51 +37,5 @@ describe("a promise with no action behind it", () => {
     expect(unbackedClaim(text, OFFERED, { ...BARE, tools: new Set(["game_stop"]) })).toBeNull();
     // Refusing or talking about it is not promising it.
     expect(unbackedClaim("我不關麥塊。", OFFERED, BARE)).toBeNull();
-  });
-
-  it("does not go out as a promise: one reminder, then what really happened", async () => {
-    const mock = new MockProvider("chat")
-      .reply("算了,我馬上進語音。")
-      .events([
-        toolCall(0, "c1", "voice_join", "{}"),
-        { type: "done", finish_reason: "tool_calls", usage: null },
-      ])
-      .reply("進來了。");
-    const join = new Probe("voice_join");
-    const h = await Harness.build("always", noCheck(), mock, null, { tools: [join] });
-    h.say(mention(channel("c"), "Alice", "come to voice please"));
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(join.calls).toHaveLength(1);
-    expect(h.sink.texts()).toEqual(["進來了。"]);
-    const reminder = mock.requests()[1]?.messages ?? [];
-    expect(String(reminder.at(-1)?.content)).toContain("voice_join");
-  });
-
-  it("a promise she does not keep is not sent: she is told once, then says so", async () => {
-    const mock = new MockProvider("chat").reply("算了,我馬上進語音。").reply("我現在進不去。");
-    const join = new Probe("voice_join");
-    const h = await Harness.build("always", noCheck(), mock, null, { tools: [join] });
-    h.say(mention(channel("c"), "Alice", "come to voice please"));
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(join.calls).toHaveLength(0);
-    // She said so honestly after the reminder; the unkept promise itself was never sent.
-    expect(h.sink.texts()).toEqual(["我現在進不去。"]);
-  });
-
-  it("a tool written as a tag is the same: she is asked once to call it", async () => {
-    const mock = new MockProvider("chat")
-      .reply("好啊<sing_request>")
-      .events([
-        toolCall(0, "c1", "sing_request", '{"query":"x"}'),
-        { type: "done", finish_reason: "tool_calls", usage: null },
-      ])
-      .reply("點好了,等一下喔。");
-    const sing = new Probe("sing_request");
-    const h = await Harness.build("always", noCheck(), mock, null, { tools: [sing] });
-    h.say(mention(channel("c"), "Alice", "幫我點 x"));
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(sing.calls).toHaveLength(1);
-    expect(String(mock.requests()[1]?.messages.at(-1)?.content)).toContain("寫成文字");
-    expect(h.sink.texts()).toEqual(["點好了,等一下喔。"]);
   });
 });

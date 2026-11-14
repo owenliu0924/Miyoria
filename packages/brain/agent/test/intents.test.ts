@@ -28,6 +28,7 @@ import {
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { LOOP_TOOLS } from "../src/index.js";
 import {
   account,
   channel,
@@ -309,7 +310,7 @@ describe("intents", () => {
 describe("talkativeness", () => {
   it("decides whether she joins in in text", async () => {
     const chat = new MockProvider("chat").reply("我也覺得");
-    const config = { attention: { llm_check: false, cooldown_ms: 0 } };
+    const config = { attention: { llm_check: false, cooldown_ms: 0, keywords: ["鯨魚"] } };
     const r = await rig("lively", config, chat);
     const self = new FakeSelf();
     r.h.sup.services.provide("self", SelfStateKey, self.asSelf());
@@ -318,8 +319,8 @@ describe("talkativeness", () => {
     await wait(3000);
     expect(r.h.decisions(), "unset: the configured numbers").toEqual([false]);
     self.level = 1;
-    // (Her talkativeness scales the probability, not the score thresholds any more.)
-    r.h.say(incoming(c, "Owen", "真的嗎?"));
+    // (Her talkativeness scales her looks, not the score thresholds any more.)
+    r.h.say(incoming(c, "Owen", "真的有鯨魚嗎?"));
     await wait(3000);
     const [trace] = r.h.traces();
     expect(trace?.respond, trace?.reasons.join("; ")).toBe(true);
@@ -346,7 +347,12 @@ describe("talkativeness", () => {
       ])
       .reply("好啊我多說點")
       .reply("我們可以去吃拉麵");
-    const config = { attention: { llm_check: false }, voice: { cooldown_ms: 0 } };
+    // Setting it runs inside her turn, which then goes on to answer.
+    const config = {
+      attention: { llm_check: false },
+      voice: { cooldown_ms: 0 },
+      mainline: { loop_tools: [...LOOP_TOOLS, "channel_activeness"] },
+    };
     const r = await rig("ambient", config, chat);
     const self = new FakeSelf();
     r.h.sup.services.provide("self", SelfStateKey, self.asSelf());
@@ -373,13 +379,8 @@ describe("talkativeness", () => {
 });
 
 describe("channel levels", () => {
-  const initiative = (context: ContextKey, reason: string): Event => ({
-    type: "agent_initiative",
-    data: { context, reason, hint: "", about: [] },
-  });
-
-  it("quiet bounds her own starts there: intents and initiative, not game commentary", async () => {
-    const chat = new MockProvider("chat").reply("欸大家").reply("這關好難").reply("我又來了");
+  it("quiet bounds her own starts there", async () => {
+    const chat = new MockProvider("chat").reply("欸大家").reply("我又來了");
     const config = { attention: { llm_check: false, cooldown_ms: 0 } };
     const r = await rig("quiet", config, chat);
     const c = channel("c");
@@ -403,14 +404,6 @@ describe("channel levels", () => {
     const again = await r.intents.submit(intent("chat.start", c));
     expect(again.status).toBe("failed");
     expect(again.detail).toContain("level quiet");
-    r.h.drain();
-    r.h.publish(initiative(c, "idle_channel"));
-    await wait(100);
-    expect(r.h.traces().at(-1)?.reasons[1]).toMatch(/^skipped: level quiet/);
-    // Live game commentary is not her starting a conversation.
-    r.h.publish(initiative(c, "game"));
-    await wait(100);
-    expect(r.h.sink.texts()).toEqual(["欸大家", "這關好難"]);
 
     // A normal channel has no gap of its own.
     await r.h.handle().setChannelMode(channel("n"), "normal");

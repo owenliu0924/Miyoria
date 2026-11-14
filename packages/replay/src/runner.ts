@@ -55,7 +55,7 @@ export interface ReplayRunOptions {
   clock: ReplayClock;
   /** Seed of her attention's dice (default 1). */
   seed?: number;
-  /** Which brain runs (default `v2`, what the scenarios were recorded against). */
+  /** Which brain runs (default `v3`). */
   pipeline?: Pipeline;
 }
 
@@ -169,7 +169,7 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
   };
 
   const services = sup.services;
-  const pipeline = options.pipeline ?? "v2";
+  const pipeline = options.pipeline ?? "v3";
   services.provide("app", PipelineKey, { pipeline });
   services.provide("app", SettingsStoreKey, new MemorySettingsStore());
   const tools = new ToolRegistry();

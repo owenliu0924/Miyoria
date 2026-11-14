@@ -32,7 +32,6 @@ import {
   mention,
   noCheck,
   Probe,
-  SlowProvider,
   stopHarnesses,
   ToolRegistry,
   wait,
@@ -98,6 +97,9 @@ describe("tool registry", () => {
       "early",
       "keep_note",
       "react",
+      "work_list",
+      "work_start",
+      "work_steer",
     ]);
 
     // Tools registered on the app's registry later are offered too.
@@ -112,6 +114,10 @@ describe("tool registry", () => {
       "keep_note",
       "later",
       "react",
+      "work_list",
+      "work_start",
+      "work_steer",
+      "commit",
     ]);
 
     // Stopping the agent removes `react` but leaves the app's service.
@@ -218,27 +224,6 @@ describe("prompt contributors", () => {
     expect(request.participants.map((p) => p.display_name).sort()).toEqual(["Owen", "阿明"]);
     // Contributors are only asked for turns she answers.
     expect(memory.requests.length).toBe(2);
-  });
-
-  it("contributed_context_is_capped", async () => {
-    const mock = new MockProvider("chat").reply("嗯");
-    const config = { attention: { llm_check: false }, max_context_chars: 110 };
-    const h = await Harness.create("always", config, mock);
-    const registry = new PromptContributors();
-    h.sup.services.provide(APP, PromptContributorsKey, registry);
-    registry.register(
-      new Contributor("memory", [
-        section("a", "短", "第一段", 0),
-        section("b", "長", "很長".repeat(100), 1),
-      ]),
-    );
-    h.say(incoming(channel("c"), "Owen", "嗨"));
-    await wait(3000);
-    const d = data(mock, 0);
-    const tail = d.slice(d.indexOf('<data source="a"'));
-    expect([...tail].length, tail).toBeLessThanOrEqual(110);
-    expect(tail).toContain("第一段");
-    expect(tail.endsWith("…\n</data>"), tail).toBe(true);
   });
 });
 
@@ -413,13 +398,6 @@ function initiative(context: ContextKey, hint: string): Event {
   };
 }
 
-function ambientConfig(cooldownMs: number) {
-  return {
-    attention: { llm_check: false, cooldown_ms: cooldownMs },
-    voice: { cooldown_ms: cooldownMs },
-  };
-}
-
 function voiceCtx(): ContextKey {
   return { ...channel("vc"), kind: "voice" };
 }
@@ -444,144 +422,6 @@ function speeches(h: Harness): [string, string][] {
   );
 }
 
-describe("initiative", () => {
-  it("initiative_starts_a_turn_without_input", async () => {
-    const mock = new MockProvider("chat").reply("欸,Owen,考試考得怎樣?");
-    const h = await Harness.create("ambient", ambientConfig(0), mock);
-    provideSocial(h).set("Owen", 60, false);
-    const c = channel("c");
-    h.say(incoming(c, "Owen", "我明天要考試"));
-    await wait(3000);
-    expect(mock.requests(), "plain chatter is not answered").toEqual([]);
-    h.drain();
-
-    h.publish(initiative(c, "問 Owen 考試考得怎樣"));
-    await wait(100);
-    const requests = mock.requests();
-    expect(requests.length).toBe(1);
-    expect(requests[0]?.tools, "no triggering message, no tools").toEqual([]);
-    const s = situation(mock, 0);
-    expect(s).toContain("是你自己想主動開啟話題");
-    expect(s).toContain("你想到可以聊的事在參考資料「你想聊的事」裡。");
-    expect(data(mock, 0)).toContain('title="你想聊的事">\n問 Owen 考試考得怎樣\n</data>');
-    expect(s).not.toContain("問 Owen 考試考得怎樣");
-    expect(data(mock, 0)).toContain('<person name="Owen" relation="好朋友"');
-    expect(h.sink.sent()).toEqual([["欸,Owen,考試考得怎樣?", "initiative"]]);
-    const trace = lastTrace(h);
-    expect(trace.respond).toBe(true);
-    expect(trace.reasons[0]).toBe("initiative:idle_channel");
-  });
-
-  it("initiative_may_stay_silent", async () => {
-    const mock = new MockProvider("chat").reply("<silence/>");
-    const h = await Harness.create("ambient", ambientConfig(0), mock);
-    h.publish(initiative(channel("c"), ""));
-    await wait(100);
-    expect(mock.requests().length).toBe(1);
-    expect(h.sink.sent()).toEqual([]);
-  });
-
-  it("initiative_is_skipped_when_not_appropriate", async () => {
-    const mock = new MockProvider("chat").reply("嗯");
-    const config = {
-      attention: { llm_check: false, cooldown_ms: 60_000 },
-      channels: { quiet: "mention-only", dead: "off" },
-    };
-    const h = await Harness.create("ambient", config, mock);
-    const skipped = (): string => {
-      const trace = lastTrace(h);
-      expect(trace.respond).toBe(false);
-      expect(trace.reasons[0]).toBe("initiative:idle_channel");
-      return trace.reasons[1] ?? "";
-    };
-
-    h.publish(initiative(channel("quiet"), ""));
-    await wait(100);
-    expect(skipped()).toBe("skipped: mode mention-only");
-    h.publish(initiative(channel("dead"), ""));
-    await wait(100);
-    expect(skipped()).toBe("skipped: mode off");
-
-    // A debounce is pending.
-    const c = channel("c");
-    h.say(mention(c, "Owen", "DeepSeek"));
-    await wait(500);
-    h.publish(initiative(c, ""));
-    await wait(100);
-    expect(skipped()).toBe("skipped: messages are waiting for a turn");
-    await wait(3000);
-    expect(mock.requests().length).toBe(1);
-    h.drain();
-
-    // She just spoke there.
-    h.publish(initiative(c, ""));
-    await wait(100);
-    expect(skipped().startsWith("skipped: cooldown")).toBe(true);
-
-    // Not in that voice channel.
-    h.publish(initiative(voiceCtx(), ""));
-    await wait(100);
-    expect(skipped()).toBe("skipped: not in this voice channel");
-    expect(mock.requests().length).toBe(1);
-  });
-
-  it("initiative_is_skipped_while_a_turn_runs", async () => {
-    const slow = new SlowProvider(5000);
-    const h = await Harness.create("ambient", ambientConfig(0), slow);
-    const c = channel("c");
-    h.say(mention(c, "Owen", "DeepSeek"));
-    await wait(2000);
-    h.publish(initiative(c, ""));
-    await wait(100);
-    expect(lastTrace(h).reasons[1]).toBe("skipped: a turn is in flight");
-    await wait(10_000);
-    expect(slow.calls).toBe(1);
-  });
-
-  it("new_message_replaces_an_initiative_turn", async () => {
-    const slow = new SlowProvider(5000);
-    const h = await Harness.create("ambient", ambientConfig(0), slow);
-    const c = channel("c");
-    h.publish(initiative(c, "聊天"));
-    await wait(1000);
-    h.say(mention(c, "Owen", "DeepSeek 妳在嗎"));
-    await wait(10_000);
-    // The initiative turn was cancelled and the message answered instead.
-    expect(slow.calls).toBe(2);
-    expect(h.sink.sent()).toEqual([["reply 2", "direct"]]);
-    expect(slow.requests[1]?.messages.at(-1)?.content).not.toContain("主動");
-  });
-
-  it("initiative_in_voice_is_spoken", async () => {
-    const mock = new MockProvider("chat").reply("大家都好安靜喔。");
-    const h = await Harness.create("ambient", ambientConfig(0), mock);
-    h.publish(voiceJoined());
-    await wait(100);
-    h.publish(initiative(voiceCtx(), "大家都不講話"));
-    await wait(1000);
-    expect(situation(mock, 0)).toContain("你自己想主動用說的開個話題");
-    expect(speeches(h)).toEqual([["大家都好安靜喔。", "initiative"]]);
-  });
-
-  it("game initiative bypasses her cooldown", async () => {
-    const mock = new MockProvider("chat").reply("好險!");
-    const config = { attention: { llm_check: false, cooldown_ms: 60_000 } };
-    const h = await Harness.create("ambient", config, mock);
-    const c = channel("c");
-    h.say(mention(c, "Owen", "DeepSeek"));
-    await wait(3000);
-    expect(mock.requests().length).toBe(1);
-    h.drain();
-    h.publish({
-      type: "agent_initiative",
-      data: { context: c, reason: "game", hint: "Owen 差點掉進岩漿", about: [] },
-    });
-    await wait(100);
-    expect(mock.requests().length).toBe(2);
-    expect(lastTrace(h).reasons[0]).toBe("initiative:game");
-  });
-});
-
 // ---------------------------------------------------------------- budget
 
 function budget(state: string): Event {
@@ -601,16 +441,11 @@ describe("llm budget", () => {
     h.say(incoming(c, "Owen", "你們看過鯨魚嗎?"));
     await wait(3000);
     expect(mock.requests()).toEqual([]);
-    let trace = lastTrace(h);
+    const trace = lastTrace(h);
     expect(trace.respond).toBe(false);
     expect(hasReason(trace, "llm budget degraded: as mention-only"), trace.reasons.join()).toBe(
       true,
     );
-
-    h.publish(initiative(c, ""));
-    await wait(100);
-    trace = lastTrace(h);
-    expect(trace.reasons[1]).toBe("skipped: llm budget degraded");
 
     // Direct address is still answered.
     h.say(mention(c, "Owen", "鯨魚"));

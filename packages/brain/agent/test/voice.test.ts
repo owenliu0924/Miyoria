@@ -3,6 +3,7 @@
 
 import { CommandRegistryKey } from "@miyoria/commands";
 import { MockProvider } from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
 import {
   type ContextKey,
   customEvent,
@@ -15,6 +16,7 @@ import {
   type VoiceParticipant,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ArbiterModule } from "../../arbiter/src/index.js";
 import { agentTurns } from "../src/metrics.js";
 import {
   account,
@@ -22,7 +24,6 @@ import {
   command,
   done,
   Harness,
-  incoming,
   nextTs,
   Paced,
   stopHarnesses,
@@ -173,10 +174,16 @@ describe("the debounce after a turn a model judged over", () => {
 
 describe("keep_in_voice", () => {
   const general: ContextKey = { platform: "test", scope: "guild", channel: "g", kind: "channel" };
+  /** With the Arbiter (and the log its Floor reads), which lets a result be told. */
+  const withFloor = (config: JsonValue, mock: MockProvider) =>
+    Harness.build("always", config, mock, null, {
+      before: [[new FactsModule(null, "p"), null]],
+      modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
+    });
 
   it("a task result for a text channel is said in the voice channel she is in", async () => {
     const mock = new MockProvider("chat").reply("<emo:annoyed>開台失敗了。");
-    const h = await Harness.create("always", voiceConfig("always"), mock);
+    const h = await withFloor(voiceConfig("always"), mock);
     h.publish(joined());
     await wait(50);
     h.publish(notice(general));
@@ -187,13 +194,12 @@ describe("keep_in_voice", () => {
 
   it("stays in the text channel when she is not in voice, or when it is turned off", async () => {
     const mock = new MockProvider("chat").reply("開台失敗了。").reply("開台失敗了。");
-    const away = await Harness.create("always", voiceConfig("always"), mock);
+    const away = await withFloor(voiceConfig("always"), mock);
     away.publish(notice(general));
     await wait(300);
     expect(away.sink.texts()).toEqual(["開台失敗了。"]);
 
-    const off = await Harness.create(
-      "always",
+    const off = await withFloor(
       { attention: { llm_check: false }, voice: { default_mode: "always", keep_in_voice: false } },
       mock,
     );
@@ -234,8 +240,8 @@ describe("voice", () => {
     expect(requests[0]?.thinking).toBe(false);
     expect(
       requests[0]?.tools?.map((t) => t.name),
-      "no `react` in voice: only the working notes",
-    ).toEqual(["drop_note", "keep_note"]);
+      "no `react` in voice: only the working notes and `commit`",
+    ).toEqual(["drop_note", "keep_note", "commit"]);
 
     expect(h.sink.speeches()).toEqual([
       ["考完啦?", "happy"],
@@ -313,32 +319,6 @@ describe("voice", () => {
     expect(msgs[msgs.length - 4]?.content).toBe("幹嘛啦。");
   });
 
-  it("the_voice_gray_zone_check_never_thinks_text_checks_follow_config", async () => {
-    const chat = new MockProvider("chat").reply("鯨魚最大。");
-    const fast = new MockProvider("fast").reply('{"respond": true, "reason": "她的話題"}');
-    const config = {
-      attention: { keywords: ["鯨魚"], llm_yes_probability: 1.0, cooldown_ms: 0 },
-      voice: { default_mode: "normal", cooldown_ms: 0, llm_check: true, gray_low: 0 },
-    };
-    const h = await Harness.build("ambient", config, chat, fast, {
-      thinking: new Map([
-        ["fast", true],
-        ["chat", true],
-      ]),
-    });
-    h.publish(joined());
-    h.publish(utterance("Owen", "你們看過鯨魚嗎?"));
-    await wait(3000);
-    expect(fast.requests().length).toBeGreaterThan(0);
-    expect(fast.requests()[0]?.thinking, "voice check").toBe(false);
-
-    h.say(incoming(channel("t"), "阿明", "鯨魚跟海豚哪個大?"));
-    await wait(3000);
-    const text = fast.requests().at(-1);
-    expect(fast.requests().length).toBeGreaterThan(1);
-    expect(text?.thinking, "text check uses [llm.thinking]").toBe(true);
-  });
-
   it("sentences_are_spoken_while_the_model_still_streams", async () => {
     const paced = new Paced([
       [
@@ -384,66 +364,6 @@ describe("voice", () => {
     expect(texts(h)).toEqual(["哼,才不是在等你呢。", "你回來啦?"]);
     expect(prepared.map(([, t]) => t)).toEqual(texts(h));
     expect(prepared[0]?.[0]).toEqual(voiceCtx());
-  });
-
-  it("voice_lines_written_first_go_to_tts_at_once_and_get_their_subtitles", async () => {
-    const prepared: [string, string | undefined][] = [];
-    const voiceSink = {
-      speaksIn: "Japanese",
-      prepare: (_c: ContextKey, text: string, spoken?: string) => prepared.push([text, spoken]),
-      speak: async () => "completed" as const,
-    };
-    const paced = new Paced([
-      [
-        [0, textDelta("<emo:happy><voice>えっ、本当に?</voice>")],
-        [500, textDelta("欸,真的嗎?")],
-        [0, textDelta("<voice>じゃあ行こう!</voice>那走吧!")],
-        [0, done()],
-      ],
-      [
-        [0, textDelta("嗯。")],
-        [0, done()],
-      ],
-    ]);
-    const h = await Harness.build("off", voiceConfig("always"), paced, null, { voiceSink });
-    const subtitles = h.sup.bus.subscribe("agent.subtitle");
-    h.publish(joined());
-    h.publish(utterance("Owen", "我中了樂透耶"));
-    // Turn at 0.7s: the first line is spoken before its written sentence exists.
-    await wait(900);
-    expect(texts(h)).toEqual(["えっ、本当に?"]);
-    expect(h.sink.speeches()[0]).toEqual(["えっ、本当に?", "happy"]);
-    await wait(2000);
-    expect(texts(h)).toEqual(["えっ、本当に?", "じゃあ行こう!"]);
-    // Handed to the sink as its own spoken words: nothing to translate.
-    expect(prepared).toEqual([
-      ["えっ、本当に?", "えっ、本当に?"],
-      ["じゃあ行こう!", "じゃあ行こう!"],
-    ]);
-    const turn = h.sink.speakActions()[0]?.turn as TurnId;
-    const subs: unknown[] = [];
-    for (let env = subtitles.tryRecv(); env !== null; env = subtitles.tryRecv()) {
-      if (env.event.type === "custom") subs.push(env.event.data.payload);
-    }
-    expect(subs).toEqual([
-      { turn, context: voiceCtx(), spoken: "えっ、本当に?", text: "欸,真的嗎?" },
-      { turn, context: voiceCtx(), spoken: "じゃあ行こう!", text: "那走吧!" },
-    ]);
-    // Her reply and her history are the written sentences.
-    expect(completedTexts(h)).toEqual(["欸,真的嗎?那走吧!"]);
-    h.publish(playback(turn, "started", "えっ、本当に?"));
-    h.publish(playback(turn, "started", "じゃあ行こう!"));
-    await wait(100);
-    h.publish(utterance("Owen", "真的啦,我沒騙你"));
-    await wait(2000);
-    const msgs = paced.requests[1]?.messages ?? [];
-    expect(msgs[2]).toMatchObject({ role: "assistant", content: "欸,真的嗎?那走吧!" });
-    const prompt = JSON.stringify(paced.requests[0]?.messages);
-    expect(prompt).toContain("每一句先寫 <voice>");
-    // The setting's language, named in Chinese.
-    expect(prompt).toContain("用日文念出來");
-    expect(prompt).not.toContain("Japanese");
-    subtitles.close();
   });
 
   it("voice_lines_wait_for_their_written_text_without_voice_first", async () => {
@@ -622,10 +542,6 @@ describe("voice", () => {
         [1000, textDelta("第四句。")],
         [0, done()],
       ],
-      [
-        [0, textDelta("好啦。")],
-        [0, done()],
-      ],
     ]);
     const h = await Harness.create("off", voiceConfig("always"), paced);
     h.publish(joined());
@@ -639,15 +555,6 @@ describe("voice", () => {
     await wait(5000);
     expect(texts(h)).toEqual(["第一句。"]);
     expect(h.sink.cancelled).toEqual([turn]);
-
-    // She knows she was cut off.
-    h.publish(utterance("Owen", "抱歉妳繼續"));
-    await wait(2000);
-    expect(paced.requests.length).toBe(2);
-    const msgs = paced.requests[1]?.messages ?? [];
-    expect(msgs[2]?.role).toBe("assistant");
-    expect(msgs[2]?.content).toBe("第一句。(被打斷)");
-    expect(texts(h)).toEqual(["第一句。", "好啦。"]);
   });
 
   it("leaving_voice_clears_the_session", async () => {

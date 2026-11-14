@@ -37,11 +37,10 @@ export const PipelineKey = serviceKey<{ pipeline: Pipeline }>("Pipeline");
 
 /**
  * The pipeline in use. The core always provides it (`DEFAULT_PIPELINE` unless the config says
- * otherwise); only a module wired up by hand, as in a package's own tests, runs without one, and
- * that module then keeps its V2 behaviour.
+ * otherwise); a module wired up by hand, as in a package's own tests, runs the default.
  */
 export function pipelineOf(services: { get<T>(key: ServiceKey<T>): T | undefined }): Pipeline {
-  return services.get(PipelineKey)?.pipeline ?? "v2";
+  return services.get(PipelineKey)?.pipeline ?? DEFAULT_PIPELINE;
 }
 
 // ---- one turn of the main line ----------------------------------------------------------------

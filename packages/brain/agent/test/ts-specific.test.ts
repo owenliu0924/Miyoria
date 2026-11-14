@@ -140,7 +140,7 @@ describe("ts port", () => {
     ]);
     // The mark never reaches the channel.
     expect(sent.some(([text]) => String(text).includes("回覆"))).toBe(false);
-    const prompt = contentText(marked.requests()[0]?.messages.at(-2)?.content ?? "");
+    const prompt = contentText(marked.requests()[0]?.messages.at(-1)?.content ?? "");
     expect(prompt).toContain("[1] Sakana");
     expect(prompt).toContain("[2] Owen");
 

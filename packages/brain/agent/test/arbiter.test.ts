@@ -5,6 +5,7 @@
 import { ActuatorRegistry, defaultActionsConfig } from "@miyoria/gate/actions";
 import { MockProvider } from "@miyoria/llm/llm";
 import { ToolRegistry } from "@miyoria/llm/tools";
+import { FactsModule } from "@miyoria/memory/facts";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   ARBITER_DECISION_TOPIC,
@@ -63,6 +64,7 @@ async function rig(
     appTools: tools,
     actuators: registry,
     roll: 0.5,
+    before: [[new FactsModule(null, "p"), null]],
     modules: [[new ArbiterModule("p"), arbiter]],
   });
   const decisions = h.sup.bus.subscribe(ARBITER_DECISION_TOPIC);
@@ -107,6 +109,9 @@ describe("the agent with the Arbiter", () => {
     const chat = new MockProvider("chat").reply("嗨大家!").reply("又是我");
     const r = await rig("normal", noCheck(), chat, { min_gap_secs: 0, gap_text_secs: 600 });
     const c = channel("c");
+    // Somebody is there: the Floor does not let her talk to an empty room.
+    r.h.say(incoming(c, "Owen", "今天好冷"));
+    await wait(3000);
     const first = await r.intents.submit(intent(c));
     expect(first.status).toBe("started");
     await wait(100);
@@ -151,6 +156,8 @@ describe("the agent with the Arbiter", () => {
     const chat = new MockProvider("chat").reply("欸大家").reply("這關好難");
     const r = await rig("quiet", noCheck(), chat, { min_gap_secs: 0, gap_text_secs: 60 });
     const c = channel("c");
+    r.h.say(incoming(c, "Owen", "今天好冷"));
+    await wait(3000);
     expect((await r.intents.submit(intent(c))).status).toBe("started");
     await wait(100);
     await wait(2 * 60_000);

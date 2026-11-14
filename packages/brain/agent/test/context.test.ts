@@ -299,8 +299,9 @@ describe("vision", () => {
     expect(srv.calls).toEqual([`${CDN}/cat.png?ex=1`]);
     const msgs = mock.requests()[0]?.messages ?? [];
     expect(hasImages(msgs)).toBe(true);
-    expect(msgs[1]?.content).toEqual([
-      { type: "text", text: "Owen: 看我的貓 [圖片: cat.png(一隻貓)]" },
+    // The line in the history, the picture with the turn's data.
+    expect(msgs[1]?.content).toBe("Owen: 看我的貓 [圖片: cat.png(一隻貓)]");
+    expect(((msgs[2]?.content ?? []) as unknown[]).slice(1)).toEqual([
       { type: "text", text: "(Owen 這則訊息附的圖片 cat.png)" },
       {
         type: "image_url",

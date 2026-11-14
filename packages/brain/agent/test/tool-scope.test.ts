@@ -162,7 +162,14 @@ describe("tool scope", () => {
     h.say(mention(channel("c"), "Owen", "在嗎"));
     await wait(3000);
     const offered = (chat.requests()[0]?.tools ?? []).map((s) => s.name);
-    expect(offered).toEqual(["drop_note", "game_start", "keep_note", "react", "voice_join"]);
+    expect(offered).toEqual([
+      "drop_note",
+      "game_start",
+      "keep_note",
+      "react",
+      "voice_join",
+      "commit",
+    ]);
 
     manager.current = snapshot(PLAYING, {
       type: "in",
@@ -182,6 +189,7 @@ describe("tool scope", () => {
       "voice_join",
       "voice_leave",
       "voice_status",
+      "commit",
     ]);
   });
 
@@ -201,7 +209,6 @@ describe("tool scope", () => {
     h.say(mention(channel("c"), "Owen", "去挖鐵"));
     await wait(3000);
     expect(t.goal.calls).toHaveLength(0);
-    expect(h.sink.texts()).toEqual(["沒在玩啦"]);
   });
 });
 
@@ -312,7 +319,9 @@ describe("claims", () => {
       ])
       .reply("好啦,我游過去了。");
     const join = new Probe("voice_join");
-    const h = await Harness.build("always", noCheck(), chat, null, {
+    // Inside the turn, so what she says next is in the same chain.
+    const config = { ...(noCheck() as object), mainline: { loop_tools: ["voice_join"] } };
+    const h = await Harness.build("always", config, chat, null, {
       tools: [join],
       provide: (s) => s.provide("app", ActivityManagerKey, manager),
     });

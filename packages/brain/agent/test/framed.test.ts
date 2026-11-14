@@ -57,7 +57,12 @@ describe("tool results", () => {
         { type: "done", finish_reason: "tool_calls", usage: null },
       ])
       .reply("好了");
-    const h = await Harness.build("always", noCheck(), mock, null, { tools });
+    // Both run inside the turn, so their answers come back in the same chain.
+    const config = {
+      ...(noCheck() as object),
+      mainline: { loop_tools: tools.map((t) => t.spec.name) },
+    };
+    const h = await Harness.build("always", config, mock, null, { tools });
     h.say(incoming(channel("c"), "Owen", "幫我查一下"));
     await vi.advanceTimersByTimeAsync(5000);
     return (mock.requests()[1]?.messages ?? [])

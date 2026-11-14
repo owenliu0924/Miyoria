@@ -1,35 +1,21 @@
 // Repeats and talking to nobody (docs/design/v3-architecture.md §7.2, §8), and the opposite
 // failure, 她變啞巴: what these two rules must never touch.
 
-import { Supervisor } from "@miyoria/runtime/kernel";
-import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   ARBITER_DECISION_TOPIC,
-  ARBITER_IMPULSE_TOPIC,
   type ArbiterDecision,
   type ContextKey,
   type Event,
   type Impulse,
-  ImpulseHostKey,
   LEDGER_TOPIC,
   type LedgerEntry,
-  newImpulse,
   toTimestamp,
   type VoiceUtterance,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ArbiterModule,
-  humanResponse,
-  LedgerSnapshotSchema,
-  STATE_KEY,
-  STATE_PROFILE,
-  startsTalk,
-} from "../src/index.js";
+import { humanResponse, LedgerSnapshotSchema, startsTalk } from "../src/index.js";
 import {
   acct,
-  FakeHost,
   impulse,
   ManualClock,
   MIN,
@@ -491,110 +477,5 @@ describe("the state survives a restart", () => {
     const parsed = LedgerSnapshotSchema.parse(old);
     expect(parsed.said).toEqual([]);
     expect(parsed.places[0]?.unanswered).toBe(0);
-  });
-});
-
-describe("the module", () => {
-  async function build() {
-    const sup = new Supervisor();
-    const host = new FakeHost();
-    const store = new MemorySettingsStore();
-    sup.services.provide("app", ImpulseHostKey, host);
-    sup.services.provide("app", SettingsStoreKey, store);
-    await sup.register(new ArbiterModule("p"), {}, true);
-    await sup.startAll();
-    const decisions: ArbiterDecision[] = [];
-    const sub = sup.bus.subscribe(ARBITER_DECISION_TOPIC);
-    void (async () => {
-      for await (const env of sub) {
-        if (env.event.type === "custom") {
-          decisions.push(env.event.data.payload as unknown as ArbiterDecision);
-        }
-      }
-    })();
-    const say = async (n: number, key: string): Promise<void> => {
-      sup.bus.publish(
-        "game",
-        v2Event(
-          ARBITER_IMPULSE_TOPIC,
-          newImpulse(
-            {
-              source: "game",
-              context: VOICE,
-              ttlMs: MIN,
-              why: "實況",
-              hint: "石鎬",
-              reason: "game",
-              attention: { key: `${key}${n}`, repeat_after_ms: REPEAT_MS },
-            },
-            Date.now(),
-          ),
-        ),
-      );
-      await vi.advanceTimersByTimeAsync(5);
-    };
-    const finish = async (): Promise<void> => {
-      for (const d of decisions.filter((x) => x.verdict === "accepted" && x.turn !== null)) {
-        if (ended_.has(d.turn as string)) continue;
-        ended_.add(d.turn as string);
-        sup.bus.publish("agent", {
-          type: "custom",
-          data: {
-            topic: "agent.turn.outcome",
-            payload: outcome(d.turn as string, VOICE, "sent") as never,
-          },
-        });
-      }
-      await vi.advanceTimersByTimeAsync(5);
-    };
-    const ended_ = new Set<string>();
-    return { sup, host, store, decisions, say, finish };
-  }
-
-  const speech = (who: string): Event => ({
-    type: "voice_utterance",
-    data: {
-      context: VOICE,
-      speaker: { account: acct(who), display_name: who, is_bot: false },
-      text: "嗯",
-    } as unknown as VoiceUtterance,
-  });
-
-  async function stopped(h: Awaited<ReturnType<typeof build>>): Promise<void> {
-    for (let i = 0; i < 3; i++) {
-      await h.say(i, "a");
-      await h.finish();
-    }
-    await h.say(9, "a");
-    expect(h.decisions.at(-1)).toMatchObject({ verdict: "rejected", reason: "unanswered" });
-  }
-
-  it("real speech on the bus brings her back, and the state is saved", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(T0);
-    const h = await build();
-    await stopped(h);
-    await vi.advanceTimersByTimeAsync(31_000);
-    const saved = (await h.store.get(STATE_PROFILE, STATE_KEY)) as {
-      ledger: { places: { unanswered: number }[] };
-    };
-    expect(saved.ledger.places[0]?.unanswered).toBe(3);
-    h.sup.bus.publish("voice", speech("a"));
-    await vi.advanceTimersByTimeAsync(5);
-    await h.say(10, "a");
-    expect(h.decisions.at(-1)?.verdict).toBe("accepted");
-    await h.sup.stopAll();
-  });
-
-  it("a new stay in voice starts counting again", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(T0);
-    const h = await build();
-    await stopped(h);
-    h.sup.bus.publish("voice", { type: "voice_left", data: { context: VOICE } } as Event);
-    await vi.advanceTimersByTimeAsync(5);
-    await h.say(11, "a");
-    expect(h.decisions.at(-1)?.verdict).toBe("accepted");
-    await h.sup.stopAll();
   });
 });

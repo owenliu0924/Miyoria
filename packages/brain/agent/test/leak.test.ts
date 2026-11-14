@@ -10,6 +10,7 @@ import {
   ReplyScreen,
   reasoningScore,
 } from "../src/leak.js";
+import { FALLBACK_LINES } from "../src/mainline/main.js";
 import { channel, Harness, mention, noCheck } from "./harness.js";
 
 beforeEach(() => {
@@ -126,7 +127,10 @@ describe("the send boundary", () => {
     const h = await Harness.build("always", noCheck(), mock, null, { tools: [] });
     h.say(mention(channel("c"), "Alice", "A 是 (2,8) 嗎"));
     await vi.advanceTimersByTimeAsync(3000);
-    expect(h.sink.texts()).toEqual([]);
+    // None of it goes out; she was asked, so the fixed line answers instead (§21).
+    const sent = h.sink.texts();
+    expect(sent).toHaveLength(1);
+    expect(FALLBACK_LINES).toContain(sent[0]);
   });
 
   it("a normal reply of several lines goes out whole", async () => {

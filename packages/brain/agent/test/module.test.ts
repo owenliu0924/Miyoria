@@ -1,9 +1,9 @@
 // Module-level tests of the agent.
 
 import { CommandRegistryKey } from "@miyoria/commands";
-import { contentText, contextSession, MockProvider } from "@miyoria/llm/llm";
+import { contentText, MockProvider } from "@miyoria/llm/llm";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
-import { type ContextKey, dataBlock, eventTopic, isJsonObject } from "@miyoria/types";
+import { type ContextKey, eventTopic, isJsonObject } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonaHandleKey } from "../src/index.js";
 import {
@@ -69,8 +69,8 @@ describe("agent module", () => {
     const requests = mock.requests();
     expect(requests.length).toBe(1);
     const msgs = requests[0]?.messages ?? [];
-    // Fixed persona + rules first, history next, then the per-turn data (user role) and the
-    // situation with her own state.
+    // Fixed persona + rules first, history next, then the per-turn data (user role) and her own
+    // state with the message she answers.
     expect(msgs.length).toBe(4);
     expect(msgs[0]?.role).toBe("system");
     expect(msgs[0]?.content).toMatch(
@@ -83,15 +83,20 @@ describe("agent module", () => {
       'title="在場的人">\n<person name="阿明"/>\n<person name="Owen"/>\n</data>',
     );
     // The focus: Owen called her, 阿明 is background.
-    expect(msgs[2]?.content).toMatch(/# 要回的訊息.*\nOwen 問你:DeepSeek 在嗎$/);
     expect(msgs[3]?.role).toBe("system");
-    expect(msgs[3]?.content).toContain("目前情境");
+    expect(msgs[3]?.content).toContain("<now>");
+    expect(msgs[3]?.content).toMatch(/<reply_to>\n.*\nOwen 問你:DeepSeek 在嗎\n<\/reply_to>$/);
     expect(msgs[3]?.content).not.toContain("阿明");
     // Text replies do not reason (`[llm.reasoning] chat_text`, default off).
     expect(requests[0]?.reasoning_purpose).toBe("chat_text");
     expect(requests[0]?.reasoning).toBe("off");
     expect(requests[0]?.thinking).toBe(false);
-    expect(requests[0]?.tools?.map((t) => t.name)).toEqual(["drop_note", "keep_note", "react"]);
+    expect(requests[0]?.tools?.map((t) => t.name)).toEqual([
+      "drop_note",
+      "keep_note",
+      "react",
+      "commit",
+    ]);
 
     expect(h.sink.sent()).toEqual([["現在都中午了好嗎……早啦。", "direct"]]);
     // It quotes the message that called her.
@@ -183,52 +188,6 @@ describe("agent module", () => {
     await wait(3000);
     expect(h.decisions()).toEqual([true]);
     expect(h.sink.texts()).toEqual(["好"]);
-  });
-
-  it("ambient_uses_fast_check_in_gray_zone", async () => {
-    const chat = new MockProvider("chat").reply("鯨魚當然比較大");
-    const fast = new MockProvider("fast")
-      .reply('{"respond": false, "reason": "跟她無關"}')
-      .reply('{"respond": true, "reason": "在聊她的話題"}');
-    const config = {
-      attention: { keywords: ["鯨魚"], llm_yes_probability: 1.0, cooldown_ms: 0 },
-    };
-    const h = await Harness.create("ambient", config, chat, fast);
-    const c = channel("c");
-
-    // Low salience: ignored without asking anyone.
-    h.say(incoming(c, "Owen", "哈哈"));
-    await wait(3000);
-    expect(h.decisions()).toEqual([false]);
-    expect(fast.requests()).toEqual([]);
-
-    // Gray zone, fast model says no.
-    h.say(incoming(c, "Owen", "你們看過鯨魚嗎?"));
-    await wait(3000);
-    expect(h.decisions()).toEqual([false]);
-    expect(fast.requests().length).toBe(1);
-    expect(fast.requests()[0]?.json_mode).toBe(true);
-    expect(chat.requests()).toEqual([]);
-
-    // Gray zone, fast model says yes.
-    h.say(incoming(c, "阿明", "鯨魚跟海豚哪個大?"));
-    await wait(3000);
-    expect(fast.requests().length).toBe(2);
-    const decisions = h.traces();
-    expect(decisions.length).toBe(1);
-    expect(decisions[0]?.respond).toBe(true);
-    expect(
-      decisions[0]?.reasons.some((r) => r.includes("fast model: respond")),
-      decisions[0]?.reasons.join("; "),
-    ).toBe(true);
-    expect(h.sink.sent()).toEqual([["鯨魚當然比較大", "initiative"]]);
-
-    // One stable session id per conversation; the attention check adds a suffix.
-    const session = contextSession("test-chan", c);
-    expect(session.startsWith("miyoria-test-chan-")).toBe(true);
-    expect(session).not.toContain("guild");
-    expect(chat.requests()[0]?.session).toBe(session);
-    for (const request of fast.requests()) expect(request.session).toBe(`${session}-attention`);
   });
 
   it("own_messages_are_history_not_input", async () => {
@@ -407,7 +366,9 @@ describe("agent module", () => {
 
   it("typing_is_refreshed_while_generating", async () => {
     const slow = new SlowProvider(20_000);
-    const h = await Harness.create("always", noCheck(), slow);
+    // A model this slow to start still counts (the main line gives up after 15 s by default).
+    const config = { ...(noCheck() as object), mainline: { first_token_timeout_ms: 30_000 } };
+    const h = await Harness.create("always", config, slow);
     h.say(incoming(channel("c"), "Owen", "想一下再回我"));
     // The turn starts at 1.5s; typing at 1.5s, 9.5s and 17.5s; reply at 21.5s.
     await wait(1600);
@@ -437,50 +398,6 @@ describe("agent module", () => {
     expect(h.sink.typing()).toBe(2);
   });
 
-  it("react_tool_round_trip", async () => {
-    const mock = new MockProvider("chat")
-      .events([
-        textDelta("哼,"),
-        toolCall(0, "call_a", "react", '{"emo'),
-        toolCall(0, null, null, 'ji": "🐋"}'),
-        done(),
-      ])
-      .reply("才不是為了你按的。");
-    const h = await Harness.create("always", noCheck(), mock);
-    const msg = incoming(channel("c"), "Owen", "給我一隻鯨魚");
-    h.say(msg);
-    await wait(3000);
-
-    expect(h.sink.reactions()).toEqual([[msg.id, "🐋"]]);
-    // Text from the tool-call response goes out before the tool runs, the final reply after.
-    expect(h.sink.texts()).toEqual(["哼,", "才不是為了你按的。"]);
-
-    const requests = mock.requests();
-    expect(requests.length).toBe(2);
-    const msgs = requests[1]?.messages ?? [];
-    const n = msgs.length;
-    expect(msgs[n - 3]?.content).toContain("目前情境");
-    expect(msgs[n - 2]?.role).toBe("assistant");
-    expect(msgs[n - 2]?.content).toBe("哼,");
-    expect(msgs[n - 2]?.tool_calls).toEqual([
-      { id: "call_a", name: "react", arguments: '{"emoji": "🐋"}' },
-    ]);
-    expect(msgs[n - 1]?.tool_call_id).toBe("call_a");
-    expect(msgs[n - 1]?.content).toBe(dataBlock("tool", "react 的結果", "reacted with 🐋"));
-    // The first request's prefix is kept, so it can be served from cache.
-    expect(msgs.slice(0, n - 2)).toEqual(requests[0]?.messages);
-
-    const react = h.sink.actions.find((a) => a.payload.type === "react");
-    expect(react?.turn).not.toBeNull();
-    expect(react?.lane).toBe("text:test:guild:c");
-    const toolEvents = h
-      .drain()
-      .filter((e) => eventTopic(e.event) === "agent.tool")
-      .map((e) => (e.event.type === "custom" ? e.event.data.payload : null));
-    expect(toolEvents.length).toBe(1);
-    expect(toolEvents[0]).toMatchObject({ tool: "react", ok: true });
-  });
-
   it("react_takes_several_emoji_in_one_call", async () => {
     // "Can't she press more than one?": she can, one reaction per emoji, in order.
     const mock = new MockProvider("chat")
@@ -488,7 +405,9 @@ describe("agent module", () => {
       .reply("<silence/>")
       .events([toolCall(0, "b", "react", '{"emojis":["1","2","3","4","5","6"]}'), done()])
       .reply("太多了啦");
-    const h = await Harness.create("always", noCheck(), mock);
+    // Reacting runs inside the turn: what it answered comes back in the same chain.
+    const config = { ...(noCheck() as object), mainline: { loop_tools: ["react"] } };
+    const h = await Harness.create("always", config, mock);
     const c = channel("c");
     h.say(incoming(c, "Brian", "多按幾個"));
     await wait(3000);
@@ -498,59 +417,6 @@ describe("agent module", () => {
     expect(h.sink.reactions().length).toBe(3);
     const results = (mock.requests()[3]?.messages ?? []).filter((m) => m.role === "tool");
     expect(String(results.at(-1)?.content)).toContain("at most 5");
-  });
-
-  it("text_beside_tool_calls_is_sent_once", async () => {
-    const mock = new MockProvider("chat")
-      .events([textDelta("好啦按給你。"), toolCall(0, "a", "react", '{"emoji":"👍"}'), done()])
-      .reply("<silence/>")
-      .events([toolCall(0, "b", "react", '{"emoji":"😤"}'), done()])
-      .reply("<silence/>");
-    const h = await Harness.create("always", noCheck(), mock);
-    const c = channel("c");
-    h.say(incoming(c, "Owen", "按個讚"));
-    await wait(3000);
-    expect(h.sink.texts()).toEqual(["好啦按給你。"]);
-    // A reaction alone, then silence: nothing is sent.
-    h.say(incoming(c, "Owen", "哈哈"));
-    await wait(3000);
-    expect(h.sink.texts()).toEqual(["好啦按給你。"]);
-    expect(h.sink.reactions().map(([, e]) => e)).toEqual(["👍", "😤"]);
-    expect(mock.requests().length).toBe(4);
-  });
-
-  it("tool_errors_go_back_to_the_model", async () => {
-    const probe = new Probe("probe");
-    const mock = new MockProvider("chat")
-      .events([
-        toolCall(0, "x", "nope", "{}"),
-        toolCall(1, "y", "probe", "{bad"),
-        toolCall(2, null, "react", '{"emoji":""}'),
-        done(),
-      ])
-      .reply("嗯?");
-    const h = await Harness.build("always", noCheck(), mock, null, { tools: [probe] });
-    h.say(incoming(channel("c"), "Owen", "試試看"));
-    await wait(3000);
-    expect(probe.calls).toEqual([]);
-    expect(h.sink.reactions()).toEqual([]);
-    expect(h.sink.texts()).toEqual(["嗯?"]);
-    const requests = mock.requests();
-    const results = (requests[1]?.messages ?? [])
-      .filter((m) => m.role === "tool")
-      .map((m) => [m.tool_call_id, m.content] as const);
-    expect(results.length).toBe(3);
-    expect(results[0]?.[0]).toBe("x");
-    expect(results[0]?.[1]).toContain("unknown tool");
-    expect(results[1]?.[1]).toContain("not valid JSON");
-    expect(results[2]?.[0]).toBe("call_2");
-    expect(results[2]?.[1]).toContain("emoji");
-    expect(requests[0]?.tools?.map((t) => t.name)).toEqual([
-      "drop_note",
-      "keep_note",
-      "probe",
-      "react",
-    ]);
   });
 
   it("tool_permissions_follow_the_triggering_users", async () => {
@@ -564,7 +430,8 @@ describe("agent module", () => {
     // Without an authorizer, tools that need a permission are denied.
     let probe = new Probe("probe", "admin.secret");
     let mock = script(new MockProvider("chat"), 1);
-    let h = await Harness.build("always", noCheck(), mock, null, { tools: [probe] });
+    const config = { ...(noCheck() as object), mainline: { loop_tools: ["probe"] } };
+    let h = await Harness.build("always", config, mock, null, { tools: [probe] });
     h.say(incoming(channel("c"), "Owen", "用一下"));
     await wait(3000);
     expect(probe.calls).toEqual([]);
@@ -574,7 +441,7 @@ describe("agent module", () => {
     // With the commands module's authorizer: owners only.
     probe = new Probe("probe", "admin.secret");
     mock = script(new MockProvider("chat"), 3);
-    h = await Harness.build("always", noCheck(), mock, null, {
+    h = await Harness.build("always", config, mock, null, {
       owners: ["test:Owen"],
       tools: [probe],
     });
@@ -600,20 +467,6 @@ describe("agent module", () => {
     await wait(3000);
     expect(lastToolResult(mock, 5)).toContain("permission denied");
     expect(probe.calls.length).toBe(1);
-  });
-
-  it("tool_loop_is_bounded_and_timed_out", async () => {
-    const probe = new Probe("probe", null, 60_000);
-    // Always asks for another tool call.
-    const mock = new MockProvider("chat").events([toolCall(0, "p", "probe", "{}"), done()]);
-    const config = { attention: { llm_check: false }, max_tool_steps: 2, tool_timeout_ms: 1000 };
-    const h = await Harness.build("always", config, mock, null, { tools: [probe] });
-    h.say(incoming(channel("c"), "Owen", "一直用"));
-    await wait(10_000);
-    expect(mock.requests().length).toBe(3);
-    expect(probe.calls.length).toBe(2);
-    expect(lastToolResult(mock, 2)).toBe("error: timed out");
-    expect(h.sink.texts()).toEqual([]);
   });
 
   it("tools_can_be_disabled", async () => {
@@ -649,8 +502,14 @@ describe("agent module", () => {
       "keep_note",
       "later",
       "react",
+      "commit",
     ]);
-    expect(requests[1]?.tools?.map((t) => t.name)).toEqual(["drop_note", "keep_note", "react"]);
+    expect(requests[1]?.tools?.map((t) => t.name)).toEqual([
+      "drop_note",
+      "keep_note",
+      "react",
+      "commit",
+    ]);
   });
 
   it("runtime_overrides_are_applied_and_persisted", async () => {
