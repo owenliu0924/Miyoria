@@ -1,4 +1,4 @@
-// @miyoria/social: her social life (ARCHITECTURE §6).
+// @miyoria/heart/social: her social life (ARCHITECTURE §6).
 //
 // * Module `SocialModule` (`social`): relationships of the active profile, appraisal of
 //   conversations (keyword rules plus a batched LLM pass), her impression notes, the `在場的人`

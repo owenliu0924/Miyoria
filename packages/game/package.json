@@ -24,10 +24,10 @@
   "dependencies": {
     "@miyoria/commands": "workspace:*",
     "@miyoria/gate": "workspace:*",
+    "@miyoria/heart": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/queue": "workspace:*",
     "@miyoria/runtime": "workspace:*",
-    "@miyoria/social": "workspace:*",
     "@miyoria/types": "workspace:*",
     "zod": "^4.6.7"
   },

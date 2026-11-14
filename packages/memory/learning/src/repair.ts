@@ -28,7 +28,7 @@ import { touchUnits } from "./threads.js";
 
 const log = getLogger("learning.repair");
 
-/** The `self` module's settings key (`@miyoria/self` `STATE_KEY`). */
+/** The `self` module's settings key (`@miyoria/heart/self` `STATE_KEY`). */
 const SELF_STATE_KEY = "self:state";
 
 export interface RepairReport {

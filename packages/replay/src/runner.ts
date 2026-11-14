@@ -8,11 +8,12 @@ import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule } from "@miyoria/brain/agent";
 import { ArbiterModule } from "@miyoria/brain/arbiter";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { MindModule } from "@miyoria/heart/mind";
+import { SelfModule } from "@miyoria/heart/self";
 import { LlmRouter, LlmRouterKey, type ModelRef, parseModelRef } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { FactsModule } from "@miyoria/memory/facts";
 import { WorldModule } from "@miyoria/memory/world";
-import { MindModule } from "@miyoria/mind";
 import {
   defineManifest,
   type Module,
@@ -21,7 +22,6 @@ import {
   Supervisor,
 } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
-import { SelfModule } from "@miyoria/self";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,

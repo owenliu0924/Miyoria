@@ -62,7 +62,7 @@ function pushUnique(scopes: MemoryScope[], scope: MemoryScope): void {
  * 「其他伺服器的內容不外傳」: a `person` note comes back in the server it was written in (its
  * `source_context`) and in a private place, never in another server. Notes written before server
  * notes were scoped by `noteAbout` are still `global`; this reads them as if they were moved
- * (`rescoped`, packages/memory/scripts/rescope-self-notes.ts).
+ * (`rescoped`, packages/memory/memory/scripts/rescope-self-notes.ts).
  */
 export function mayRecall(
   scopes: readonly MemoryScope[],

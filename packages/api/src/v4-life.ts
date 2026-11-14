@@ -32,7 +32,7 @@ export const LATELY_DAYS = 7;
 const MAX_ENTRIES = 500;
 
 /**
- * The rows of `LIFE_ACTIVITIES` in `@miyoria/mind`, as far as this view needs them. `mind` is not
+ * The rows of `LIFE_ACTIVITIES` in `@miyoria/heart/mind`, as far as this view needs them. `mind` is not
  * a dependency of the API, so the table is kept here and `test/v4-life.test.ts` fails when the two
  * differ.
  */

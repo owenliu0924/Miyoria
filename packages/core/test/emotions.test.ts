@@ -5,12 +5,12 @@
 
 import { fileURLToPath } from "node:url";
 import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/brain/arbiter";
+import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/heart/mind";
+import { computeBiases, MAX_BIAS, SelfModule, shownEmotion } from "@miyoria/heart/self";
+import { MoodModule } from "@miyoria/heart/social";
 import { EventLogService } from "@miyoria/memory/facts";
-import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/mind";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
-import { computeBiases, MAX_BIAS, SelfModule, shownEmotion } from "@miyoria/self";
-import { MoodModule } from "@miyoria/social";
 import { Forwarder } from "@miyoria/stage";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {

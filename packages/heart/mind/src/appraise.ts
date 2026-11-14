@@ -6,7 +6,7 @@
 // `adjustBond(..., "appraise")`); Appraise never writes a number.
 //
 // This is the one reader of what an interaction meant to her: while it runs, the social module's
-// batched pass only reads how people treated her (packages/social/src/module.ts).
+// batched pass only reads how people treated her (packages/heart/social/src/module.ts).
 //
 // Segments: lines per context (people's messages and utterances, her own lines); a segment
 // that involved her (she spoke, or someone addressed her) is ready once nobody said anything

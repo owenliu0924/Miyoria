@@ -29,7 +29,6 @@ import {
   type ServiceLookup,
   sleep,
 } from "@miyoria/runtime/kernel";
-import { SocialKey } from "@miyoria/social";
 import { MessageLogKey, type SettingsStore } from "@miyoria/store";
 import {
   ACTIVITY_CHANGED_TOPIC,
@@ -99,6 +98,7 @@ import {
   toTimestamp,
   WorldStateKey,
 } from "@miyoria/types";
+import { SocialKey } from "../../social/src/index.js";
 import {
   type AppraiseReply,
   AppraiseReplyError,

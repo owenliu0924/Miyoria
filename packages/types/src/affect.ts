@@ -365,7 +365,7 @@ export interface AffectState {
   emotions(min?: number): EmotionReading[];
   /**
    * The only write path for what an interaction meant: events in, numbers computed here. The one
-   * reader that calls it for a conversation is Appraise (packages/mind/src/appraise.ts).
+   * reader that calls it for a conversation is Appraise (packages/heart/mind/src/appraise.ts).
    */
   appraise(input: AffectInput): AppliedAppraisal[];
   /** A drive was satisfied (`amount` < 0) or frustrated (> 0) by something she did. */

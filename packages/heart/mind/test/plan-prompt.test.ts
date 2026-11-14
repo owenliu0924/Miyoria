@@ -12,7 +12,7 @@ import {
 } from "../src/index.js";
 import { FakeAffect, limits } from "./fakes.js";
 
-const PROFILE = join(import.meta.dirname, "../../../profiles/deepseek-chan/persona");
+const PROFILE = join(import.meta.dirname, "../../../../profiles/deepseek-chan/persona");
 const persona = ["identity.md", "style.md"]
   .map((f) => readFileSync(join(PROFILE, f), "utf8"))
   .join("\n\n");

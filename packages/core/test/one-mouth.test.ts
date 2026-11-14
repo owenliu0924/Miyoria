@@ -105,7 +105,7 @@ describe("only the main line acts", () => {
         "packages/game/src/commands.ts",
         "packages/game/src/director.ts",
         // V2 only: with a proposal board `#submit` is never reached.
-        "packages/mind/src/mind.ts",
+        "packages/heart/mind/src/mind.ts",
         "packages/sing/src/commands.ts",
         "packages/stage/src/link/commands.ts",
         "packages/stage/src/link/module.ts",
@@ -117,7 +117,7 @@ describe("only the main line acts", () => {
   it("under V3 the Arbiter has no hands and her Plan no way but the board", () => {
     const arbiter = readFileSync(join(ROOT, "packages/brain/arbiter/src/module.ts"), "utf8");
     expect(arbiter).toContain("floor === null\n        ? { act:");
-    const mind = readFileSync(join(ROOT, "packages/mind/src/mind.ts"), "utf8");
+    const mind = readFileSync(join(ROOT, "packages/heart/mind/src/mind.ts"), "utf8");
     const act = mind.slice(mind.indexOf("async #act("));
     expect(act.indexOf("if (board)")).toBeLessThan(act.indexOf("arbiter.submit"));
     const intents = readFileSync(join(ROOT, "packages/brain/agent/src/intents.ts"), "utf8");

@@ -18,8 +18,6 @@ import {
   type Subscription,
   Supervisor,
 } from "@miyoria/runtime/kernel";
-import { SelfModule } from "@miyoria/self";
-import { type Social, SocialKey } from "@miyoria/social";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
@@ -46,6 +44,8 @@ import {
 } from "@miyoria/types";
 import { vi } from "vitest";
 import { z } from "zod";
+import { SelfModule } from "../../self/src/index.js";
+import { type Social, SocialKey } from "../../social/src/index.js";
 import { MindModule } from "../src/index.js";
 import type { FakeArbiter } from "./fakes.js";
 

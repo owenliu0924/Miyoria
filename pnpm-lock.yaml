@@ -337,6 +337,9 @@ importers:
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
+      '@miyoria/heart':
+        specifier: workspace:*
+        version: link:../heart
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -358,9 +361,6 @@ importers:
       '@miyoria/sing':
         specifier: workspace:*
         version: link:../sing
-      '@miyoria/social':
-        specifier: workspace:*
-        version: link:../social
       '@miyoria/stage':
         specifier: workspace:*
         version: link:../stage
@@ -383,12 +383,6 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@miyoria/mind':
-        specifier: workspace:*
-        version: link:../mind
-      '@miyoria/self':
-        specifier: workspace:*
-        version: link:../self
       '@miyoria/voice':
         specifier: workspace:*
         version: link:../voice
@@ -643,6 +637,9 @@ importers:
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
+      '@miyoria/heart':
+        specifier: workspace:*
+        version: link:../heart
       '@miyoria/imagegen':
         specifier: workspace:*
         version: link:../imagegen
@@ -655,9 +652,6 @@ importers:
       '@miyoria/memory':
         specifier: workspace:*
         version: link:../memory
-      '@miyoria/mind':
-        specifier: workspace:*
-        version: link:../mind
       '@miyoria/party':
         specifier: workspace:*
         version: link:../party
@@ -676,18 +670,12 @@ importers:
       '@miyoria/sandbox':
         specifier: workspace:*
         version: link:../sandbox
-      '@miyoria/self':
-        specifier: workspace:*
-        version: link:../self
       '@miyoria/sing':
         specifier: workspace:*
         version: link:../sing
       '@miyoria/skills':
         specifier: workspace:*
         version: link:../skills
-      '@miyoria/social':
-        specifier: workspace:*
-        version: link:../social
       '@miyoria/speech':
         specifier: workspace:*
         version: link:../speech
@@ -824,6 +812,9 @@ importers:
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
+      '@miyoria/heart':
+        specifier: workspace:*
+        version: link:../heart
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -833,9 +824,6 @@ importers:
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@miyoria/social':
-        specifier: workspace:*
-        version: link:../social
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -880,6 +868,40 @@ importers:
       '@miyoria/memory':
         specifier: workspace:*
         version: link:../memory
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+
+  packages/heart:
+    dependencies:
+      '@miyoria/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
+      '@miyoria/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@miyoria/store':
+        specifier: workspace:*
+        version: link:../store
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../types
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -995,46 +1017,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@miyoria/self':
+      '@miyoria/heart':
         specifier: workspace:*
-        version: link:../self
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/mind:
-    dependencies:
-      '@miyoria/gate':
-        specifier: workspace:*
-        version: link:../gate
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/social':
-        specifier: workspace:*
-        version: link:../social
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@miyoria/self':
-        specifier: workspace:*
-        version: link:../self
+        version: link:../heart
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1155,21 +1140,18 @@ importers:
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
+      '@miyoria/heart':
+        specifier: workspace:*
+        version: link:../heart
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
       '@miyoria/memory':
         specifier: workspace:*
         version: link:../memory
-      '@miyoria/mind':
-        specifier: workspace:*
-        version: link:../mind
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@miyoria/self':
-        specifier: workspace:*
-        version: link:../self
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1261,31 +1243,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/self:
-    dependencies:
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/sing:
     dependencies:
       '@miyoria/commands':
@@ -1347,40 +1304,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/social:
-    dependencies:
-      '@miyoria/commands':
-        specifier: workspace:*
-        version: link:../commands
-      '@miyoria/gate':
-        specifier: workspace:*
-        version: link:../gate
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

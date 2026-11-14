@@ -9,7 +9,7 @@
 //   social numbers. Reflect (or the panel) moves a bond only in small steps, within a daily cap.
 // * The weighted behaviour biases her feelings imply are part of the snapshot.
 // * This is where her mood is served from (`MoodSignalsKey`, `mood.changed`): the `mood` module
-//   has nothing left to do while this runs (packages/social/src/mood.ts).
+//   has nothing left to do while this runs (packages/heart/social/src/mood.ts).
 
 import {
   AFFECT_BOND_TOPIC,

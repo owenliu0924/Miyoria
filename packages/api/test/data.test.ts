@@ -4,6 +4,8 @@
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
 import * as arbiter from "@miyoria/brain/arbiter";
+import * as self from "@miyoria/heart/self";
+import { SETTINGS_KEY as MOOD_KEY } from "@miyoria/heart/social";
 import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm/llm";
 import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory/memory";
 import * as queue from "@miyoria/queue";
@@ -15,8 +17,6 @@ import {
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
 import { SandboxKey, type ScriptInfo, TOOL_KEY_PREFIX } from "@miyoria/sandbox";
-import * as self from "@miyoria/self";
-import { SETTINGS_KEY as MOOD_KEY } from "@miyoria/social";
 import {
   AuditLogKey,
   AuthStoreKey,

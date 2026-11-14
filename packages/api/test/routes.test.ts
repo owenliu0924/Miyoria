@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { Social, SocialKey, socialConfig } from "@miyoria/heart/social";
 import { LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   type Embedder,
@@ -23,7 +24,6 @@ import {
 import { McpStatus, McpStatusKey, newServerStatus } from "@miyoria/plugin-host/mcp";
 import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
-import { Social, SocialKey, socialConfig } from "@miyoria/social";
 import {
   defaultStageStatus,
   SceneRoles,

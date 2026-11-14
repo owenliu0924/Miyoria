@@ -8,7 +8,7 @@
 //
 // With a channel it is also something she does, not only something that follows the reflection:
 // the capability `diary.write` (`diaryCapability`) is the "diary" row of her activity table
-// (packages/mind/src/life/activities.ts), so her mind can suggest it in the evening and her life
+// (packages/heart/mind/src/life/activities.ts), so her mind can suggest it in the evening and her life
 // log counts it. It writes from the newest daily reflection not written yet, and the write after
 // the reflection goes through the same capability, so either way it is one entry per reflection
 // and the owner's rules can stop it.

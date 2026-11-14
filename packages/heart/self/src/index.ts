@@ -1,4 +1,4 @@
-// @miyoria/self: her inner state (docs/design/autonomy.md §4, §23).
+// @miyoria/heart/self: her inner state (docs/design/autonomy.md §4, §23).
 //
 // Module `SelfModule` (`self`) keeps her feelings with one writer (docs/design/v2-architecture.md
 // §3.6): three layers at three speeds. Drives (六欲: social, play, attention, rest, curiosity,

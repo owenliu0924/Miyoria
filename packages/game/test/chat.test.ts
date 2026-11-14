@@ -3,9 +3,9 @@
 // (sanitized, through the gate as `self`), to voice, or both.
 
 import { ActuatorRegistry, ActuatorRegistryKey, type GateDecision } from "@miyoria/gate/actions";
+import { type Social, SocialKey } from "@miyoria/heart/social";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { type Social, SocialKey } from "@miyoria/social";
 import {
   type AccountRef,
   type ContextKey,

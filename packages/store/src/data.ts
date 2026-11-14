@@ -312,7 +312,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   }),
   category(
     "inner",
-    // @miyoria/self `STATE_KEY`, `FEELING_PREFIX`; @miyoria/mind's thought journal and its
+    // @miyoria/heart/self `STATE_KEY`, `FEELING_PREFIX`; @miyoria/heart/mind's thought journal and its
     // digests (`THOUGHT_PREFIX`, `DIGEST_PREFIX`), her goals and plan state (`GOAL_PREFIX`,
     // `GOAL_MIGRATION_KEY` and `PLAN_STATE_KEY` under `mind:plan:`)
     [
@@ -348,7 +348,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
       confirm: "simple",
     },
   ),
-  // @miyoria/social `mood.ts` `SETTINGS_KEY`
+  // @miyoria/heart/social `mood.ts` `SETTINGS_KEY`
   category("mood", [settings("mood", "active", ["mood:last"])], {
     modules: ["mood"],
     confirm: "simple",

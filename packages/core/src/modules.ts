@@ -22,6 +22,9 @@ import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/game";
 import { ActionsModule } from "@miyoria/gate/actions";
 import { DirectiveModule } from "@miyoria/gate/directive";
 import { ModerationModule } from "@miyoria/gate/moderation";
+import { MindModule } from "@miyoria/heart/mind";
+import { SelfModule } from "@miyoria/heart/self";
+import { MoodModule, SocialModule } from "@miyoria/heart/social";
 import { ImageGenModule } from "@miyoria/imagegen";
 import { LiveModule } from "@miyoria/live";
 import {
@@ -41,7 +44,6 @@ import {
 } from "@miyoria/memory/learning";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldModule } from "@miyoria/memory/world";
-import { MindModule } from "@miyoria/mind";
 import { PartyModule } from "@miyoria/party";
 import * as extHost from "@miyoria/plugin-host/ext-host";
 import { McpModule } from "@miyoria/plugin-host/mcp";
@@ -50,10 +52,8 @@ import type { Config, Module } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
 import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import { SandboxModule } from "@miyoria/sandbox";
-import { SelfModule } from "@miyoria/self";
 import { SingModule } from "@miyoria/sing";
 import { SkillsModule } from "@miyoria/skills";
-import { MoodModule, SocialModule } from "@miyoria/social";
 import { SpeechConfigSchema, SpeechModule } from "@miyoria/speech";
 import {
   AvatarProfile,

@@ -2,7 +2,7 @@
 // come from the dynamics in `emotions.ts`). Cheap triggers with explicit meaning: praise, a
 // song finished or cut off, someone she cares about coming back or being warm with others
 // while ignoring her, a death in a game, being talked over. What an interaction *meant* is read
-// by Appraise (packages/mind/src/appraise.ts), once. Only without the `mind` module the batched
+// by Appraise (packages/heart/mind/src/appraise.ts), once. Only without the `mind` module the batched
 // pass of the social module reads it instead (`social.appraisal`, see `#appraisal`); either way
 // it arrives as appraisals (an emotion, a strength, who it is about), never as levels.
 //

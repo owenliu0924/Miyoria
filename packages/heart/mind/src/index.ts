@@ -1,4 +1,4 @@
-// @miyoria/mind: her Deliberate calls (docs/design/v2-architecture.md §3.4, §3.7).
+// @miyoria/heart/mind: her Deliberate calls (docs/design/v2-architecture.md §3.4, §3.7).
 //
 // Module `MindModule` (`mind`) runs two of the three small calls, each with its own short
 // system (her 3–5 sentence character core, the task's rules, the JSON format):

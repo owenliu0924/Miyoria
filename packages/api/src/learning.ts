@@ -4,7 +4,7 @@
 // `GET /api/mind/digests` (condensed older thoughts). Changes are hers (or the data page's
 // delete), not these routes'.
 
-import { SocialKey } from "@miyoria/social";
+import { SocialKey } from "@miyoria/heart/social";
 import {
   ConversationStatesKey,
   KnowledgeKey,

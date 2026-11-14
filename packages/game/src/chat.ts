@@ -22,13 +22,13 @@ import {
   CapabilityError,
   defineCapability,
 } from "@miyoria/gate/actions";
+import { SocialKey } from "@miyoria/heart/social";
 import {
   defineManifest,
   errorMessage,
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { SocialKey } from "@miyoria/social";
 import {
   type AccountRef,
   ActivityManagerKey,
