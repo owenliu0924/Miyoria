@@ -10,7 +10,7 @@ V5 做七件事,前三件是地基:
 
 1. **一份契約、一個登記處**:平台、worker、遊戲、渲染器、擴充都是「能力的提供者」,用同一份 schema 向 Core 報到。Core 不再認識任何功能。
 2. **每台電腦一個管家(hostd)**:一個指令裝這台要的服務、一個指令全部啟動、一個指令加入別台的 Core。位址不再寫進設定。
-3. **整併**:49 個套件收成約 17 個,V2 管線和重複的層刪掉,設定只有一份 schema,資料庫重開。
+3. **整併**:`packages/` 底下 45 個套件收成 20 個,V2 管線和重複的層刪掉,設定只有一份 schema,資料庫重開。
 4. **大腦**:一個決定者(Self loop)。程式只管護欄和成本,要不要說、說什麼、做什麼都在同一次模型呼叫裡決定,拒絕會回給她看。把 harness 給模型的東西給她:足夠的思考、留得住的對話和工具紀錄、找得到的工具、子代理。
 5. **心**:羈絆為主,加八個細分數值和文字印象。變動由她提出、程式限速,每一筆都有原因。面板用環狀進度顯示。
 6. **玩**:抽卡收成一套,接上已經做好卻沒人呼叫的生圖;經濟補上去處;每個互動都要有看得見的下文。
@@ -426,13 +426,14 @@ miyoria up                     # 啟動這台裝的全部
 | `contracts` | `types` 的基礎部分、SDK 型別、所有連線協定、API 路由表 |
 | `runtime` | `kernel`、`tools`、`profile`、`scheduler`、設定組裝、外掛載入(不再有寫死的模組清單) |
 | `store` | 只剩連線、遷移、事件紀錄;各外掛自己的表;只留一種 SQL 寫法 |
-| `access` | `auth`、`commands` 裡的第二套權限、`directive` 的主人名單 |
+| `access` | `auth`、`commands` 裡的第二套權限、主人名單 |
 | `interaction` | `commands` 的平台中性部分 |
 | `platform-discord` | `discord`、Discord 的指令繪製 |
 | `brain` | `agent`、`arbiter`、`activity`、`actions`、`directive`、`moderation`、`llm` |
 | `memory` | `memory`、`facts`、`learning`、`world`、`self` 的文件部分 |
 | `heart` | `mind` 的情緒、`social`、`self` 的情感 |
 | `voice` | `voice`、`speech` |
+| `stage` | stage 連線的 Core 端、表演者(情緒 → 表情意圖);渲染器搬到 stage app |
 | `economy` · `cards` · `sing` · `live` | 各自一個外掛;`cards` 收 `card-face` |
 | `play` | `party`、`game`、`queue` |
 | `workspace` | `sandbox`、`skills`、`web`、`imagegen` |
