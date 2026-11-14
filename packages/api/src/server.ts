@@ -41,7 +41,8 @@ import { planRoutes } from "./plan.js";
 import { promptRoutes } from "./prompts.js";
 import { clientKey, publicViewRoutes, tooMany } from "./public.js";
 import { roleRoutes } from "./roles.js";
-import { json, type Route } from "./route.js";
+import type { Route } from "./route.js";
+import { type ResponseCheck, rpcRoutes } from "./rpc.js";
 import { sandboxRoutes } from "./sandbox.js";
 import {
   CSRF_HEADER,
@@ -122,7 +123,6 @@ async function authenticateMember(state: ApiState, c: ApiContext): Promise<Sessi
 
 function publicRoutes(state: ApiState): Route[] {
   const routes: Route[] = [
-    { method: "GET", path: "/api/auth/methods", handler: () => json(oauth.methods(state)) },
     {
       method: "GET",
       path: "/api/auth/oauth/login",
@@ -137,13 +137,11 @@ function publicRoutes(state: ApiState): Route[] {
   return routes.map((r) => ({ ...r, public: true }));
 }
 
-function sessionRoutes(): Route[] {
-  return [{ method: "GET", path: "/api/auth/session", handler: (c) => json(oauth.session(c)) }];
-}
-
 export interface AppOptions {
   /** Serve `GET /metrics` without authentication (`metrics_public`). Default `false`. */
   metricsPublic?: boolean;
+  /** How strictly admin responses are checked against their schema (see `rpc.ts`). */
+  responseCheck?: ResponseCheck;
 }
 
 /** Every route of the API. */
@@ -159,7 +157,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...walletRoutes(state),
     ...fortuneRoutes(state),
     ...agencyRoutes(state),
-    ...sessionRoutes(),
     ...peopleRoutes(state),
     ...personWalletRoutes(state),
     ...goalAdminRoutes(state),
@@ -190,6 +187,9 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...partyRoutes(state),
 
     ...metricsRoutes(state, { public: options.metricsPublic ?? false }),
+
+    // The route table: the groups that have moved to `@miyoria/contracts/api`.
+    ...rpcRoutes(state, options.responseCheck ? { responseCheck: options.responseCheck } : {}),
   ];
 }
 

@@ -45,7 +45,7 @@ function EditDialog({
 
   const doSave = () =>
     save.mutate(
-      { key: section.key, req: { body: next, edited_by: EDITED_BY } },
+      { params: { key: section.key }, body: { body: next, edited_by: EDITED_BY } },
       {
         onSuccess: (r) => {
           notify.ok(`已儲存「${r.key}」v${r.version}`);

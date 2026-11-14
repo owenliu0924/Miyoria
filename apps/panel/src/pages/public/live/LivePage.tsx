@@ -19,11 +19,7 @@ export function LivePage({ source }: { source?: SourceFactory | null }) {
     queryFn: ({ signal }) => api.memberSession({ signal }),
     retry: false,
   });
-  const methods = useQuery({
-    queryKey: ["auth", "methods"],
-    queryFn: ({ signal }) => api.authMethods({ signal }),
-    retry: false,
-  });
+  const methods = useQuery(api.q.auth.methods.queryOptions({ retry: false }));
   const who = member.data ?? null;
   const loginUrl = methods.data?.discord ? api.discordLoginUrl(LIVE_PAGE) : null;
   return (

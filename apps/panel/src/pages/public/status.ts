@@ -29,11 +29,7 @@ export function stateLabel(status: PublicStatus): string {
 
 export function usePublicStatus() {
   const api = useApi();
-  return useQuery({
-    queryKey: ["public", "status"],
-    queryFn: ({ signal }) => api.publicStatus({ signal }),
-    refetchInterval: POLL_MS,
-  });
+  return useQuery(api.q.public.status.queryOptions({ refetchInterval: POLL_MS }));
 }
 
 export function usePublicSongs() {

@@ -1,13 +1,8 @@
-// Typed client for the admin API, used by the CLI.
+// Typed client for the admin API, used by the CLI. The routes on the route table
+// (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
 import type { StreamAction } from "@miyoria/stage";
-import type {
-  DecisionRecord,
-  PersonaOverride,
-  RoleAssignment,
-  RoleDefinition,
-  RoleMapping,
-} from "@miyoria/store";
+import type { DecisionRecord, RoleAssignment, RoleDefinition, RoleMapping } from "@miyoria/store";
 import type {
   ActivitySnapshot,
   ActivityTask,
@@ -26,14 +21,12 @@ import { statusText } from "./errors.js";
 import type {
   ArbiterDecisionsView,
   AssignRoleRequest,
-  AuthMethods,
   ConversationNoteView,
   CostInfo,
   DayPlanView,
   ErrorBody,
   ExtensionInfo,
   GoalsView,
-  HealthInfo,
   KnowledgeView,
   McpServerInfo,
   MemoryItem,
@@ -43,7 +36,6 @@ import type {
   ModuleInfo,
   Page,
   PendingApproval,
-  PersonaSectionInfo,
   PersonDetail,
   PersonSummary,
   PromptSummary,
@@ -53,8 +45,6 @@ import type {
   SayResponse,
   SceneRolesState,
   SelfView,
-  SessionInfo,
-  SetPersonaResponse,
   StageState,
   Thought,
   TurnOutcomeKind,
@@ -151,6 +141,28 @@ export class SseParser {
   }
 }
 
+/** The `ClientError` of a response that is not ok, with the server's message when it sent one. */
+export async function responseError(response: Response): Promise<ClientError> {
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {
+    text = "";
+  }
+  let message: string;
+  try {
+    const parsed = JSON.parse(text) as Partial<ErrorBody>;
+    if (typeof parsed.error !== "string") throw new Error("not an error body");
+    message = parsed.error;
+  } catch {
+    message =
+      text.trim() !== ""
+        ? text.trim()
+        : statusText(response.status).split(" ").slice(1).join(" ") || "error";
+  }
+  return ClientError.api(response.status, message);
+}
+
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type Query = Record<string, string | undefined>;
 
@@ -172,20 +184,6 @@ export class ApiClient {
     }
     this.#base = base;
     this.#token = token;
-  }
-
-  health(o?: CallOptions): Promise<HealthInfo> {
-    return this.#json("GET", ["health"], o);
-  }
-
-  /** Which panel logins the Core offers (public). */
-  authMethods(o?: CallOptions): Promise<AuthMethods> {
-    return this.#json("GET", ["auth", "methods"], o);
-  }
-
-  /** Who this client is to the Core (`method: "token"` for the bearer token). */
-  session(o?: CallOptions): Promise<SessionInfo> {
-    return this.#json("GET", ["auth", "session"], o);
   }
 
   modules(o?: CallOptions): Promise<ModuleInfo[]> {
@@ -225,35 +223,6 @@ export class ApiClient {
         .sort()
         .map((k) => [k, raw[k] as UsageInfo]),
     );
-  }
-
-  persona(o?: CallOptions): Promise<PersonaSectionInfo[]> {
-    return this.#json("GET", ["persona"], o);
-  }
-
-  /** Replaces a persona section (recorded as edited by `"api"`). Returns the new version. */
-  setPersona(key: string, body: string, o?: CallOptions): Promise<number> {
-    return this.setPersonaAs(key, body, null, o);
-  }
-
-  /** Like `setPersona` with an explicit editor name. */
-  async setPersonaAs(
-    key: string,
-    body: string,
-    editedBy: string | null,
-    o?: CallOptions,
-  ): Promise<number> {
-    const request = editedBy === null ? { body } : { body, edited_by: editedBy };
-    const response = await this.#json<SetPersonaResponse>("PUT", ["persona", key], {
-      ...o,
-      body: request,
-    });
-    return response.version;
-  }
-
-  /** Every stored version of a persona section, oldest first. */
-  personaHistory(key: string, o?: CallOptions): Promise<PersonaOverride[]> {
-    return this.#json("GET", ["persona", key, "history"], o);
   }
 
   /** Spend today and this month per model, plus the budget state. */
@@ -707,24 +676,7 @@ export class ApiClient {
       throw ClientError.transport(error);
     }
     if (response.ok) return response;
-    let text = "";
-    try {
-      text = await response.text();
-    } catch {
-      text = "";
-    }
-    let message: string;
-    try {
-      const parsed = JSON.parse(text) as Partial<ErrorBody>;
-      if (typeof parsed.error !== "string") throw new Error("not an error body");
-      message = parsed.error;
-    } catch {
-      message =
-        text.trim() !== ""
-          ? text.trim()
-          : statusText(response.status).split(" ").slice(1).join(" ") || "error";
-    }
-    throw ClientError.api(response.status, message);
+    throw await responseError(response);
   }
 
   async #json<T>(

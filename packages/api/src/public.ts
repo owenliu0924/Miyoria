@@ -1,7 +1,8 @@
 // The public side of the panel (docs/design/v3-architecture.md §17.1): what anyone may see, with no
 // login, at `/api/public/*`.
 //
-// * `GET /api/public/status`: what she is doing and today's aggregate numbers.
+// * `GET /api/public/status`: what she is doing and today's aggregate numbers (on the route table,
+//   `publicRpc`).
 // * `GET /api/public/songs`: what is playing, what is coming up, what she just sang.
 //
 // Every response is built field by field in this file: internal objects are never spread into
@@ -26,6 +27,7 @@ import {
   SONG_TOPIC,
 } from "@miyoria/types";
 import { z } from "zod";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
@@ -161,14 +163,7 @@ export function clientKey(c: ApiContext): string {
 
 /** `429` with how long to wait. */
 export function tooMany(waitMs: number): Response {
-  return new Response(JSON.stringify({ error: "too many requests" }), {
-    status: 429,
-    headers: {
-      "content-type": "application/json",
-      "cache-control": "no-store",
-      "retry-after": String(Math.max(Math.ceil(waitMs / 1000), 1)),
-    },
-  });
+  return ApiError.tooMany(waitMs).toResponse();
 }
 
 // ---- today's numbers ------------------------------------------------------------------------
@@ -337,7 +332,7 @@ export class PublicSide {
   readonly #members = new RateWindow(MEMBER_PER_MINUTE, MINUTE_MS);
   readonly #heavy = new RateWindow(HEAVY_PER_HOUR, HOUR_MS);
   readonly #cardChecks = new RateWindow(CARD_CHECKS_PER_MINUTE, MINUTE_MS);
-  readonly #bodies = new Map<string, { at: number; body: string }>();
+  readonly #bodies = new Map<string, { at: number; value: unknown; body: string }>();
   readonly #verdicts = new Map<string, boolean>();
   #names: { at: number; names: KnownName[] | null } | null = null;
 
@@ -376,16 +371,26 @@ export class PublicSide {
 
   /** The body under `key`, built at most once per `cache_secs`. */
   cached(key: string, build: () => unknown): string {
+    return this.#entry(key, build).body;
+  }
+
+  /** Like `cached`, the value itself, for a route that serialises its own answer. */
+  cachedValue<T>(key: string, build: () => T): T {
+    return this.#entry(key, build).value as T;
+  }
+
+  #entry(key: string, build: () => unknown): { value: unknown; body: string } {
     const now = this.#now();
     const hit = this.#bodies.get(key);
-    if (hit && now - hit.at < this.config.cache_secs * 1000) return hit.body;
+    if (hit && now - hit.at < this.config.cache_secs * 1000) return hit;
     try {
-      const body = JSON.stringify(build());
-      this.#bodies.set(key, { at: now, body });
-      return body;
+      const value = build();
+      const entry = { at: now, value, body: JSON.stringify(value) };
+      this.#bodies.set(key, entry);
+      return entry;
     } catch (error) {
       log.warn({ error: String(error) }, "cannot build a public response");
-      if (hit) return hit.body;
+      if (hit) return hit;
       throw ApiError.unavailable("not available right now");
     }
   }
@@ -509,15 +514,25 @@ export function publicViewRoutes(state: ApiState): Route[] {
   return [
     {
       method: "GET",
-      path: "/api/public/status",
-      public: true,
-      handler: (c) => serve(state, c, "status", () => publicStatus(state)),
-    },
-    {
-      method: "GET",
       path: "/api/public/songs",
       public: true,
       handler: (c) => serve(state, c, "songs", () => publicSongs(state)),
     },
   ];
 }
+
+/** `GET /api/public/status`; served only while the public side is on (see `rpc.ts`). */
+export const publicRpc = {
+  status: os.public.status.handler(({ context }) => {
+    const { state, c } = context;
+    const side = state.publicSide;
+    const wait = side.admit(clientKey(c));
+    if (wait !== null) throw ApiError.tooMany(wait);
+    context.resHeaders?.set(
+      "cache-control",
+      `public, max-age=${Math.ceil(side.config.cache_secs)}`,
+    );
+    context.resHeaders?.set("x-content-type-options", "nosniff");
+    return side.cachedValue("status", () => publicStatus(state));
+  }),
+};

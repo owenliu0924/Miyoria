@@ -33,3 +33,8 @@ export async function loadPart(name: string): Promise<Record<string, unknown>> {
 export function schemaFile(name: string): string {
   return join(SCHEMA_DIR, `${name}.json`);
 }
+
+/** The file a part's route tables (without schemas) are kept in. */
+export function routesFile(name: string): string {
+  return join(SCHEMA_DIR, `${name}.routes.json`);
+}

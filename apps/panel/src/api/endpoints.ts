@@ -1,11 +1,12 @@
-// One function per Admin API route (`packages/api/src`). To add an endpoint: put its wire
-// types in `types.ts`, add a function here and a query key + hook in `app/queries.ts`.
+// One function per Admin API route (`packages/api/src`) that is not on the route table yet. The
+// routes on the table (`@miyoria/contracts/api`) are called through `rpc` and `q` (`orpc.ts`);
+// a group that moves there loses its functions here.
 
 import { type ApiClient, seg } from "./http";
+import { createQueries, createRpc } from "./orpc";
 import type {
   AdjustPersonRequest,
   AssignRoleRequest,
-  AuthMethods,
   ChannelLevelsView,
   ChannelLevelView,
   ContextKey,
@@ -57,7 +58,6 @@ import type {
 
   DecisionRecord,
   DecisionsQuery,
-  HealthInfo,
   ModuleAction,
   ModuleInfo,
   IssuedCard,
@@ -79,13 +79,7 @@ import type {
   MemberView,
   SpendResult,
   WalletView,
-  PersonaOverride,
-  PersonaSectionInfo,
   PublicSongs,
-  PublicStatus,
-  SessionInfo,
-  SetPersonaRequest,
-  SetPersonaResponse,
   UsageMap,
   ControlResult,
   GameStartRequest,
@@ -136,19 +130,20 @@ type Opts = { signal?: AbortSignal };
 const spend = (key: string) => ({ public: true, headers: { "Idempotency-Key": key } });
 
 export function createApi(client: ApiClient) {
+  const rpc = createRpc(client);
   return {
-    health: (o?: Opts) => client.get<HealthInfo>("/api/health", { ...o, public: true }),
+    /** The route table's typed client: `api.rpc.persona.list()`. */
+    rpc,
+    /** Its TanStack Query helpers: `useQuery(api.q.health.queryOptions())`. */
+    q: createQueries(rpc),
 
     // panel login
-    authMethods: (o?: Opts) => client.get<AuthMethods>("/api/auth/methods", { ...o, public: true }),
-    session: (o?: Opts) => client.get<SessionInfo>("/api/auth/session", o),
     /** Ends the Discord session (clears the cookie); harmless for the token. */
     logout: () => client.post<void>("/api/auth/logout", undefined, { public: true }),
     /** Where the browser goes to start a Discord login; `next` is a local path such as `/people`. */
     discordLoginUrl: (next: string) => client.url("/api/auth/oauth/login", { next }),
 
     // what anyone may see, and what a logged-in person has of their own: the cookie alone
-    publicStatus: (o?: Opts) => client.get<PublicStatus>("/api/public/status", { ...o, public: true }),
     publicSongs: (o?: Opts) => client.get<PublicSongs>("/api/public/songs", { ...o, public: true }),
     memberSession: (o?: Opts) => client.get<MemberSession>("/api/member/session", { ...o, public: true }),
     memberMe: (o?: Opts) => client.get<MemberView>("/api/member/me", { ...o, public: true }),
@@ -199,12 +194,6 @@ export function createApi(client: ApiClient) {
       }),
 
     llmUsage: (o?: Opts) => client.get<UsageMap>("/api/llm/usage", o),
-
-    persona: (o?: Opts) => client.get<PersonaSectionInfo[]>("/api/persona", o),
-    setPersonaSection: (key: string, req: SetPersonaRequest) =>
-      client.put<SetPersonaResponse>(`/api/persona/${seg(key)}`, req),
-    personaHistory: (key: string, o?: Opts) =>
-      client.get<PersonaOverride[]>(`/api/persona/${seg(key)}/history`, o),
 
     llmCost: (o?: Opts) => client.get<CostReport>("/api/llm/cost", o),
 
@@ -394,8 +383,6 @@ export function createApi(client: ApiClient) {
     addDirective: (req: AddDirectiveRequest) => client.post<DirectiveChange>("/api/directives", req),
     removeDirective: (id: string) => client.delete<DirectiveChange>(`/api/directives/${seg(id)}`),
     factChain: (id: string, o?: Opts) => client.get<CauseChain>(`/api/facts/events/${seg(id)}/chain`, o),
-    factEffects: (id: string, limit: number, o?: Opts) =>
-      client.get<LogEvent[]>(`/api/facts/events/${seg(id)}/effects`, { ...o, query: { limit } }),
 
     telemetry: (minutes: number, o?: Opts) =>
       client.get<TelemetryView>("/api/telemetry", { ...o, query: { minutes } }),

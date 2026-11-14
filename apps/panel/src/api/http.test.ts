@@ -26,7 +26,7 @@ describe("ApiClient", () => {
       url.pathname === "/api/health" ? { body: { status: "ok", version: "1.2.3" } } : { body: [] },
     );
     const api = createApi(new ApiClient({ baseUrl: "http://core:7878", token: " s3cret " }));
-    expect((await api.health()).version).toBe("1.2.3");
+    expect((await api.rpc.health()).version).toBe("1.2.3");
     await api.modules();
     const [healthCall, modulesCall] = fetch.mock.calls;
     expect(String(healthCall?.[0])).toBe("http://core:7878/api/health");
@@ -42,8 +42,8 @@ describe("ApiClient", () => {
       return { body: [] };
     });
     const api = createApi(new ApiClient({ baseUrl: "", token: "" }));
-    expect((await api.authMethods()).discord).toBe(true);
-    const me = await api.session();
+    expect((await api.rpc.auth.methods()).discord).toBe(true);
+    const me = await api.rpc.auth.session();
     expect(me.user?.name).toBe("Owen");
     await api.queuePause(true);
     await api.logout();
@@ -76,7 +76,7 @@ describe("ApiClient", () => {
       method === "PUT" && url.pathname === "/api/persona/my%20key" ? { body: { key: "my key", version: 3 } } : undefined,
     );
     const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));
-    const res = await api.setPersonaSection("my key", { body: "hi", edited_by: "panel" });
+    const res = await api.rpc.persona.set({ params: { key: "my key" }, body: { body: "hi", edited_by: "panel" } });
     expect(res.version).toBe(3);
     const init = fetch.mock.calls[0]?.[1];
     expect(init?.method).toBe("PUT");

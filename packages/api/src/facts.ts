@@ -8,7 +8,7 @@
 //   `since`, `until`, `order` and `limit` then narrow that; paging and `attention_key` do not).
 //   (`GET /api/events` is the live bus stream.)
 // * `GET /api/facts/events/:id`, `.../:id/chain` (its causes, oldest first), `.../:id/effects`
-//   (what it caused).
+//   (what it caused; on the route table, `factsRpc`).
 // * `GET /api/facts/context`, `GET /api/facts/deliveries`, `GET /api/facts/retryable`.
 
 import {
@@ -23,6 +23,7 @@ import {
   type LogEventFilter,
   WorkingContextKey,
 } from "@miyoria/types";
+import { os } from "./contract.js";
 import { parseContextKeyString } from "./data.js";
 import { ApiError } from "./errors.js";
 import { json, param, type Route } from "./route.js";
@@ -34,7 +35,11 @@ const MAX_LIMIT = 500;
 function limitOf(c: ApiContext): number {
   const raw = Number(c.req.query("limit") ?? DEFAULT_LIMIT);
   if (!Number.isFinite(raw)) throw ApiError.badRequest("limit is not a number");
-  return Math.min(Math.max(Math.floor(raw), 1), MAX_LIMIT);
+  return clampLimit(raw);
+}
+
+function clampLimit(limit: number = DEFAULT_LIMIT): number {
+  return Math.min(Math.max(Math.floor(limit), 1), MAX_LIMIT);
 }
 
 function listOf(c: ApiContext, name: string): string[] | undefined {
@@ -153,11 +158,6 @@ export function factRoutes(state: ApiState): Route[] {
     },
     {
       method: "GET",
-      path: "/api/facts/events/:id/effects",
-      handler: async (c) => json(await events().effects(param(c, "id"), { limit: limitOf(c) })),
-    },
-    {
-      method: "GET",
       path: "/api/facts/context",
       handler: (c) => json(state.service(WorkingContextKey, "facts module").buckets(contextOf(c))),
     },
@@ -179,3 +179,11 @@ export function factRoutes(state: ApiState): Route[] {
     },
   ];
 }
+
+/** `GET /api/facts/events/{id}/effects?limit=`. */
+export const factsRpc = {
+  effects: os.facts.effects.handler(async ({ input, context }) => {
+    const log = context.state.service(EventLogKey, "facts module");
+    return log.effects(input.params.id, { limit: clampLimit(input.query.limit) });
+  }),
+};

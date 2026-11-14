@@ -31,7 +31,6 @@ import type {
   RoleMapping,
   SayRequest,
   SceneRolesState,
-  SetPersonaRequest,
   SongsState,
   StageState,
   StreamAction,
@@ -51,14 +50,11 @@ import { createQueryClient, FINAL } from "./query-client";
 export { createQueryClient };
 
 export const queryKeys = {
-  health: ["health"] as const,
   modules: ["modules"] as const,
   decisionsAll: ["decisions"] as const,
   decisions: (q: DecisionsQuery) => ["decisions", q] as const,
   usage: ["llm", "usage"] as const,
   cost: ["llm", "cost"] as const,
-  persona: ["persona"] as const,
-  personaHistory: (key: string) => ["persona", key, "history"] as const,
   people: (q: PeopleQuery) => ["people", q] as const,
   person: (id: string) => ["people", "detail", id] as const,
   personWallet: (id: string) => ["people", "wallet", id] as const,
@@ -101,7 +97,6 @@ export const queryKeys = {
   turnE2e: (turn: string) => ["e2e", turn] as const,
   factEvents: (q: FactEventsQuery) => ["facts", "events", q] as const,
   factChain: (id: string) => ["facts", "chain", id] as const,
-  factEffects: (id: string) => ["facts", "effects", id] as const,
   directives: (history: boolean) => ["directives", history] as const,
   directivesAll: ["directives"] as const,
   evalData: (windowMs: number) => ["facts", "eval", windowMs] as const,
@@ -135,8 +130,8 @@ const poll =
 // --- system ------------------------------------------------------------------
 
 export function useHealth() {
-  const api = useApi();
-  return useQuery({ queryKey: queryKeys.health, queryFn: ({ signal }) => api.health({ signal }), refetchInterval: poll(15_000) });
+  const { q } = useApi();
+  return useQuery({ ...q.health.queryOptions(), refetchInterval: poll(15_000) });
 }
 
 export function useModules() {
@@ -203,30 +198,27 @@ export function useCost() {
 
 // --- character ---------------------------------------------------------------
 
+// The persona routes are on the route table: these hooks are its pattern for a page. The query
+// options and keys come from the contract (`api.q`); `q.persona.key()` covers every persona query.
+
 export function usePersona() {
-  const api = useApi();
-  return useQuery({ queryKey: queryKeys.persona, queryFn: ({ signal }) => api.persona({ signal }) });
+  const { q } = useApi();
+  return useQuery(q.persona.list.queryOptions());
 }
 
 export function usePersonaHistory(key: string | undefined) {
-  const api = useApi();
-  return useQuery({
-    queryKey: queryKeys.personaHistory(key ?? ""),
-    queryFn: ({ signal }) => api.personaHistory(key ?? "", { signal }),
-    enabled: Boolean(key),
-  });
+  const { q } = useApi();
+  return useQuery(q.persona.history.queryOptions({ input: { params: { key: key ?? "" } }, enabled: Boolean(key) }));
 }
 
 export function useSetPersona() {
-  const api = useApi();
+  const { q } = useApi();
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ key, req }: { key: string; req: SetPersonaRequest }) => api.setPersonaSection(key, req),
-    onSuccess: (_res, { key }) => {
-      void qc.invalidateQueries({ queryKey: queryKeys.persona });
-      void qc.invalidateQueries({ queryKey: queryKeys.personaHistory(key) });
-    },
-  });
+  return useMutation(
+    q.persona.set.mutationOptions({
+      onSuccess: () => void qc.invalidateQueries({ queryKey: q.persona.key() }),
+    }),
+  );
 }
 
 export function usePeople(q: PeopleQuery, enabled = true) {
@@ -810,13 +802,14 @@ export function useFactChain(id: string | null) {
 
 /** What one event caused, oldest first. */
 export function useFactEffects(id: string | null) {
-  const api = useApi();
-  return useQuery({
-    queryKey: queryKeys.factEffects(id ?? ""),
-    queryFn: ({ signal }) => api.factEffects(id ?? "", 200, { signal }),
-    enabled: id !== null,
-    retry: false,
-  });
+  const { q } = useApi();
+  return useQuery(
+    q.facts.effects.queryOptions({
+      input: { params: { id: id ?? "" }, query: { limit: 200 } },
+      enabled: id !== null,
+      retry: false,
+    }),
+  );
 }
 
 /** The newest EventLog lines of the last `ms`, re-read every 10 s. The window moves with the clock. */

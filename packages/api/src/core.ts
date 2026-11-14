@@ -1,4 +1,5 @@
 // The original routes: health, modules, decisions, LLM usage and cost, persona, events (SSE).
+// Health and persona are on the route table (`healthRpc`, `personaRpc`).
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
 import { LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
@@ -12,11 +13,18 @@ import {
 import { DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";
 import type { JsonValue, ModuleId } from "@miyoria/types";
 import { z } from "zod";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { contextParam, readJson, readQuery, usizeParam } from "./extract.js";
+import { contextParam, readQuery, usizeParam } from "./extract.js";
 import { json, param, type Route } from "./route.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
-import type { HealthInfo, PersonaSectionInfo, SetPersonaResponse, UsageInfo } from "./types.js";
+import type {
+  PersonaOverride,
+  PersonaSectionInfo,
+  SetPersonaRequest,
+  SetPersonaResponse,
+  UsageInfo,
+} from "./types.js";
 
 const log = getLogger("api.server");
 
@@ -87,11 +95,6 @@ export async function runModuleAction(
   return findModule(sup.list(), id);
 }
 
-function health(): Response {
-  const body: HealthInfo = { status: "ok", version: MIYORIA_VERSION };
-  return json(body);
-}
-
 function listModules(state: ApiState): Response {
   return json(state.service(SupervisorKey, "supervisor").list());
 }
@@ -136,12 +139,9 @@ function llmCost(state: ApiState): Response {
   return json(state.service(LlmRouterKey, "LLM router").costReport());
 }
 
-function persona(state: ApiState): Response {
+function personaSections(state: ApiState): PersonaSectionInfo[] {
   const handle = state.service(PersonaHandleKey, "persona");
-  const sections: PersonaSectionInfo[] = handle
-    .sections()
-    .map((s) => ({ key: s.key, body: s.body }));
-  return json(sections);
+  return handle.sections().map((s) => ({ key: s.key, body: s.body }));
 }
 
 function checkSectionKey(key: string): void {
@@ -151,14 +151,12 @@ function checkSectionKey(key: string): void {
   );
 }
 
-const SetPersonaSchema = z.object({
-  body: z.string(),
-  edited_by: z.string().nullish(),
-});
-
-async function setPersonaSection(state: ApiState, c: ApiContext): Promise<Response> {
-  const request = await readJson(c, SetPersonaSchema);
-  const key = param(c, "key");
+async function setPersonaSection(
+  state: ApiState,
+  c: ApiContext,
+  key: string,
+  request: SetPersonaRequest,
+): Promise<SetPersonaResponse> {
   checkSectionKey(key);
   const handle = state.service(PersonaHandleKey, "persona");
   const overrides = state.service(PersonaOverrideStoreKey, "persona override store");
@@ -180,17 +178,29 @@ async function setPersonaSection(state: ApiState, c: ApiContext): Promise<Respon
   await state.audit(c, "persona.set", key, detail, failure === null);
   if (failure !== null || version === null) throw ApiError.internal(failure);
   handle.setSection(key, text);
-  const body: SetPersonaResponse = { key, version };
-  return json(body);
+  return { key, version };
 }
 
-async function personaHistory(state: ApiState, c: ApiContext): Promise<Response> {
-  const key = param(c, "key");
+async function personaHistory(state: ApiState, key: string): Promise<PersonaOverride[]> {
   checkSectionKey(key);
   const overrides = state.service(PersonaOverrideStoreKey, "persona override store");
   const profile = state.profile();
-  return json(await overrides.history(profile, key));
+  return overrides.history(profile, key);
 }
+
+/** `GET /api/health`. */
+export const healthRpc = os.health.handler(() => ({ status: "ok", version: MIYORIA_VERSION }));
+
+/** `GET /api/persona`, `PUT /api/persona/{key}`, `GET /api/persona/{key}/history`. */
+export const personaRpc = {
+  list: os.persona.list.handler(({ context }) => personaSections(context.state)),
+  set: os.persona.set.handler(({ input, context }) =>
+    setPersonaSection(context.state, context.c, input.params.key, input.body),
+  ),
+  history: os.persona.history.handler(({ input, context }) =>
+    personaHistory(context.state, input.params.key),
+  ),
+};
 
 const EventsQuerySchema = z.object({
   /** Comma-separated topic patterns; empty means everything. */
@@ -255,15 +265,11 @@ function events(state: ApiState, c: ApiContext): Response {
 
 export function coreRoutes(state: ApiState): Route[] {
   return [
-    { method: "GET", path: "/api/health", handler: health, public: true },
     { method: "GET", path: "/api/modules", handler: () => listModules(state) },
     { method: "POST", path: "/api/modules/:id/:action", handler: (c) => moduleAction(state, c) },
     { method: "GET", path: "/api/decisions", handler: (c) => decisions(state, c) },
     { method: "GET", path: "/api/llm/usage", handler: () => llmUsage(state) },
     { method: "GET", path: "/api/llm/cost", handler: () => llmCost(state) },
-    { method: "GET", path: "/api/persona", handler: () => persona(state) },
-    { method: "PUT", path: "/api/persona/:key", handler: (c) => setPersonaSection(state, c) },
-    { method: "GET", path: "/api/persona/:key/history", handler: (c) => personaHistory(state, c) },
     { method: "GET", path: "/api/events", handler: (c) => events(state, c) },
   ];
 }

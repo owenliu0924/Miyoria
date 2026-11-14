@@ -17,7 +17,7 @@ export async function verifyConnection(
   const api = createApi(new ApiClient(config));
   let version: string;
   try {
-    version = (await api.health()).version;
+    version = (await api.rpc.health()).version;
   } catch (e) {
     return { ok: false, field: "url", message: describeError(e) };
   }

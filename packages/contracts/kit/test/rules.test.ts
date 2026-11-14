@@ -1,11 +1,14 @@
 // The rules a contract schema follows, tried on schemas that break them.
 
+import { oc } from "@orpc/contract";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   checkRules,
   contractId,
+  contractSchemas,
   emitPart,
+  emitRoutes,
   exportedSchemas,
   formatDocument,
   namedSchemas,
@@ -111,6 +114,60 @@ describe("emitPart", () => {
       BagSchema: z.object({ anything: z.json() }).meta({ id: "SampleKitBag" }),
     };
     expect(() => emitPart("sample-kit", part)).toThrow(/recursive schema has no name/);
+  });
+});
+
+describe("route contracts", () => {
+  const base = oc.$meta<{ audience: string }>({ audience: "admin" });
+  const Item = z.object({ name: z.string() }).meta({ id: "SampleKitItem" });
+
+  it("are skipped as exports but their schemas are found, each once", () => {
+    const get = base
+      .route({ method: "GET", path: "/items/{id}" })
+      .input(z.object({ params: z.object({ id: z.string() }) }));
+    const one = get.output(Item);
+    const table = { items: { one }, again: one };
+    const found = contractSchemas({ table, one, ItemSchema: Item });
+    expect([...found.keys()]).toEqual(["one.input", "one.output"]);
+    expect(exportedSchemas({ table, one }).size).toBe(0);
+  });
+
+  it("checks route schemas against the rules, without wanting a name on the input wrapper", () => {
+    const ok = base.input(z.object({ query: z.object({ n: z.coerce.number().optional() }) }));
+    expect(checkRules("sample-kit", { table: { ok: ok.output(Item) } })).toEqual([]);
+    const bad = base.output(z.object({ at: z.date() }));
+    const problems = checkRules("sample-kit", { table: { bad } });
+    expect(problems.length).toBeGreaterThan(0);
+    expect(problems[0]).toMatch(/^table\.bad\.output: no JSON Schema form/);
+    const refined = base.input(z.object({ n: z.number() }).refine((v) => v.n > 0));
+    expect(checkRules("sample-kit", { table: { refined } })).toEqual([
+      "table.refined.input: a custom check (.refine) does not reach JSON Schema",
+    ]);
+  });
+
+  it("emits the named schemas the routes reach, and nothing else of them", () => {
+    const list = base.output(z.array(Item));
+    const document = emitPart("sample-kit", { table: { list } });
+    expect(Object.keys(document?.$defs ?? {})).toEqual(["SampleKitItem"]);
+    expect(emitPart("sample-kit", { table: { bare: base.output(z.string()) } })).toBeNull();
+  });
+
+  it("writes the tables out without their schemas, for a client that does not load them", () => {
+    const one = base.route({ method: "GET", path: "/items/{id}" }).output(Item);
+    expect(emitRoutes({ table: { items: { one } }, ItemSchema: Item, base })).toEqual({
+      table: {
+        items: {
+          one: {
+            "~orpc": {
+              errorMap: {},
+              meta: { audience: "admin" },
+              route: { method: "GET", path: "/items/{id}" },
+            },
+          },
+        },
+      },
+    });
+    expect(emitRoutes({ ItemSchema: Item, base })).toBeNull();
   });
 });
 

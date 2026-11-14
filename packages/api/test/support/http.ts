@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { ClientError, FETCH_BLOCKED_PORTS } from "../../src/index.js";
+import { ClientError, FETCH_BLOCKED_PORTS, responseError } from "../../src/index.js";
 
 /** Listens on a random 127.0.0.1 port that `fetch` may connect to; returns the port. */
 export async function listenFetchable(server: Server): Promise<number> {
@@ -49,6 +49,33 @@ export async function raw(
     parsed = null;
   }
   return { status: response.status, headers: response.headers, body: parsed, text };
+}
+
+/**
+ * A route of the route table called the way the CLI's client calls it: the bearer token, JSON in
+ * and out, a `ClientError` when the call fails.
+ */
+export async function call<T>(
+  base: string,
+  token: string,
+  method: string,
+  path: string,
+  json?: unknown,
+): Promise<T> {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+  if (json !== undefined) headers["content-type"] = "application/json";
+  let response: Response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      method,
+      headers,
+      body: json === undefined ? undefined : JSON.stringify(json),
+    });
+  } catch (error) {
+    throw ClientError.transport(error);
+  }
+  if (!response.ok) throw await responseError(response);
+  return (await response.json()) as T;
 }
 
 /** The HTTP status of a rejected client call. */

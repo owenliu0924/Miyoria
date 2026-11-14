@@ -4,8 +4,8 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { checkRules, emitPart, formatDocument, namedSchemas } from "../src/index.js";
-import { loadPart, partNames, SCHEMA_DIR, schemaFile } from "../src/parts.js";
+import { checkRules, emitPart, emitRoutes, formatDocument, namedSchemas } from "../src/index.js";
+import { loadPart, partNames, routesFile, SCHEMA_DIR, schemaFile } from "../src/parts.js";
 
 const names = partNames();
 const parts = new Map<string, Record<string, unknown>>();
@@ -45,13 +45,28 @@ describe("the parts", () => {
     expect(readFileSync(file, "utf8")).toBe(formatDocument(document));
   });
 
+  it.each(names)("schema/%s.routes.json is up to date (pnpm contracts:gen)", (name) => {
+    const document = emitRoutes(parts.get(name) ?? {});
+    const file = routesFile(name);
+    if (document === null) {
+      expect(existsSync(file)).toBe(false);
+      return;
+    }
+    expect(existsSync(file), `${file} is missing`).toBe(true);
+    expect(readFileSync(file, "utf8")).toBe(formatDocument(document));
+  });
+
   it("have no file left over from a part that is gone", () => {
     const files = existsSync(SCHEMA_DIR)
       ? readdirSync(SCHEMA_DIR).filter((f) => f.endsWith(".json"))
       : [];
-    const expected = names
-      .filter((name) => emitPart(name, parts.get(name) ?? {}) !== null)
-      .map((name) => `${name}.json`);
+    const expected = names.flatMap((name) => {
+      const part = parts.get(name) ?? {};
+      return [
+        ...(emitPart(name, part) === null ? [] : [`${name}.json`]),
+        ...(emitRoutes(part) === null ? [] : [`${name}.routes.json`]),
+      ];
+    });
     expect(files.sort()).toEqual(expected.sort());
   });
 });

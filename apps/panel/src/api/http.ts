@@ -149,11 +149,27 @@ export class ApiClient {
   }
 
   async request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-    const hasBody = opts.body !== undefined;
+    const json = opts.body === undefined ? undefined : JSON.stringify(opts.body);
+    const { value } = await this.exchange(method, path, opts, json);
+    return value as T;
+  }
+
+  /**
+   * A request whose body is already JSON text, answered with a response whose body is JSON (or
+   * empty): the route table's client (`orpc.ts`) sends through this, so its calls carry the same
+   * headers and fail with the same `ApiError` as `request`.
+   */
+  async send(method: string, path: string, opts: Omit<RequestOptions, "body" | "query"> = {}, json?: string): Promise<Response> {
+    const { status, value } = await this.exchange(method, path, opts, json);
+    const body = value === undefined ? null : JSON.stringify(value);
+    return new Response(status === 204 ? null : body, { status, headers: { "content-type": "application/json" } });
+  }
+
+  private async exchange(method: string, path: string, opts: RequestOptions, json: string | undefined): Promise<{ status: number; value: unknown }> {
     const init: RequestInit = {
       method,
-      headers: this.headers({ ...(hasBody ? { "Content-Type": "application/json" } : {}), ...opts.headers }, opts.public),
-      body: hasBody ? JSON.stringify(opts.body) : undefined,
+      headers: this.headers({ ...(json !== undefined ? { "Content-Type": "application/json" } : {}), ...opts.headers }, opts.public),
+      body: json,
       signal: opts.signal,
       credentials: "same-origin",
     };
@@ -169,11 +185,11 @@ export class ApiClient {
       const { message, json } = await readError(res);
       throw new ApiError(classify(res.status, message, json), res.status, path, message);
     }
-    if (res.status === 204) return undefined as T;
+    if (res.status === 204) return { status: 204, value: undefined };
     const text = await res.text();
-    if (!text) return undefined as T;
+    if (!text) return { status: res.status, value: undefined };
     try {
-      return JSON.parse(text) as T;
+      return { status: res.status, value: JSON.parse(text) };
     } catch {
       throw new ApiError("bad_response", res.status, path, "回應不是 JSON:API 位址可能指向了別的服務");
     }

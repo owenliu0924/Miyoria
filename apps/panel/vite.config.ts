@@ -14,7 +14,7 @@ const core = process.env.MIYORIA_CORE_URL ?? "http://127.0.0.1:7878";
 const test: InlineConfig = {
   environment: "jsdom",
   globals: true,
-  setupFiles: ["./src/test/setup.ts"],
+  setupFiles: ["./vitest.setup.ts", "./src/test/setup.ts"],
   css: false,
   restoreMocks: true,
 };
@@ -33,6 +33,12 @@ const config = defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       // The card's drawing is shared with the Core (it renders the link preview); no build step in between.
       "@miyoria/card-face": fileURLToPath(new URL("../../packages/card-face/src/index.tsx", import.meta.url)),
+      // The route table: its types from source like the card, and at run time the table without
+      // its schemas (`pnpm contracts:gen`), so zod stays out of the bundle.
+      "@miyoria/contracts/api": fileURLToPath(new URL("../../packages/contracts/api/src/index.ts", import.meta.url)),
+      "@miyoria/contracts/schema/api.routes.json": fileURLToPath(
+        new URL("../../packages/contracts/schema/api.routes.json", import.meta.url),
+      ),
     },
     dedupe: ["react", "react-dom"],
   },

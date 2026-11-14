@@ -14,7 +14,7 @@ import { PersonaOverrideStoreKey } from "@miyoria/store";
 import type { JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActiveProfileKey, ApiClient, ApiModule, ClientError } from "../src/index.js";
-import { errorOf, raw, waitFor } from "./support/http.js";
+import { call, errorOf, raw, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
 const TOKEN = "test-token";
@@ -150,7 +150,7 @@ describe("http", () => {
       "admin API returned 401 Unauthorized: missing or invalid bearer token",
     );
 
-    const unreachable = await errorOf(new ApiClient("http://127.0.0.1:1", TOKEN).health());
+    const unreachable = await errorOf(call("http://127.0.0.1:1", TOKEN, "GET", "/api/health"));
     expect(unreachable.kind).toBe("transport");
     expect(unreachable.status).toBeNull();
     expect(unreachable.message).toMatch(/^cannot reach the admin API: /);

@@ -1,0 +1,124 @@
+{
+  "contract": {
+    "health": {
+      "~orpc": {
+        "errorMap": {},
+        "meta": {
+          "audience": "public",
+          "permission": null
+        },
+        "route": {
+          "inputStructure": "detailed",
+          "method": "GET",
+          "path": "/api/health"
+        }
+      }
+    },
+    "auth": {
+      "methods": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/auth/methods"
+          }
+        }
+      },
+      "session": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/auth/session"
+          }
+        }
+      }
+    },
+    "persona": {
+      "list": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/persona"
+          }
+        }
+      },
+      "set": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/persona/{key}"
+          }
+        }
+      },
+      "history": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/persona/{key}/history"
+          }
+        }
+      }
+    },
+    "facts": {
+      "effects": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/facts/events/{id}/effects"
+          }
+        }
+      }
+    },
+    "public": {
+      "status": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/public/status"
+          }
+        }
+      }
+    }
+  }
+}

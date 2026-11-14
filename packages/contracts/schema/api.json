@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "@miyoria/contracts/api",
+  "$defs": {
+    "ApiAuthMethods": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "boolean"
+        },
+        "discord": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "token",
+        "discord"
+      ]
+    },
+    "ApiHealthInfo": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "version"
+      ]
+    },
+    "ApiLogEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiLogEventKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "cause": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "$ref": "#/$defs/WireJsonValue"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "kind",
+        "source",
+        "cause",
+        "context",
+        "person",
+        "body"
+      ]
+    },
+    "ApiLogEventKind": {
+      "type": "string",
+      "enum": [
+        "observation",
+        "thought",
+        "decision",
+        "utterance",
+        "delivered",
+        "action",
+        "result",
+        "steer",
+        "directive",
+        "proposal"
+      ]
+    },
+    "ApiPersonaOverride": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "body": {
+          "type": "string"
+        },
+        "edited_by": {
+          "type": "string"
+        },
+        "edited_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "key",
+        "version",
+        "body",
+        "edited_by",
+        "edited_at"
+      ]
+    },
+    "ApiPersonaSectionInfo": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "body"
+      ]
+    },
+    "ApiPublicDay": {
+      "type": "object",
+      "properties": {
+        "songs_sung": {
+          "type": "number"
+        },
+        "hours_live": {
+          "type": "number"
+        },
+        "hours_in_voice": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "songs_sung",
+        "hours_live",
+        "hours_in_voice",
+        "date"
+      ]
+    },
+    "ApiPublicState": {
+      "type": "string",
+      "enum": [
+        "singing",
+        "playing",
+        "live",
+        "in_voice",
+        "idle",
+        "offline"
+      ]
+    },
+    "ApiPublicStatus": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ApiPublicState"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "in_voice": {
+          "type": "boolean"
+        },
+        "game": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "today": {
+          "$ref": "#/$defs/ApiPublicToday"
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPublicDay"
+          }
+        }
+      },
+      "required": [
+        "state",
+        "live",
+        "in_voice",
+        "game",
+        "today",
+        "days"
+      ]
+    },
+    "ApiPublicToday": {
+      "type": "object",
+      "properties": {
+        "songs_sung": {
+          "type": "number"
+        },
+        "hours_live": {
+          "type": "number"
+        },
+        "hours_in_voice": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "songs_sung",
+        "hours_live",
+        "hours_in_voice"
+      ]
+    },
+    "ApiSessionInfo": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "token",
+            "discord"
+          ]
+        },
+        "user": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSessionUser"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "permissions": {
+          "$ref": "#/$defs/ApiSessionPermissions"
+        }
+      },
+      "required": [
+        "method",
+        "user",
+        "permissions"
+      ]
+    },
+    "ApiSessionPermissions": {
+      "type": "object",
+      "properties": {
+        "write": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "write"
+      ]
+    },
+    "ApiSessionUser": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "avatar_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "avatar_url"
+      ]
+    },
+    "ApiSetPersonaRequest": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "edited_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "body"
+      ]
+    },
+    "ApiSetPersonaResponse": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "key",
+        "version"
+      ]
+    },
+    "WireContextKey": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/WireContextKind"
+        }
+      },
+      "required": [
+        "platform",
+        "scope",
+        "channel",
+        "kind"
+      ]
+    },
+    "WireContextKind": {
+      "type": "string",
+      "enum": [
+        "channel",
+        "thread",
+        "dm",
+        "voice"
+      ]
+    },
+    "WireJsonValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        }
+      ]
+    }
+  }
+}

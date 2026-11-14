@@ -23,22 +23,25 @@ function isJsonContentType(value: string | undefined): boolean {
   return mime.startsWith("application/") && mime.endsWith("+json");
 }
 
+/** The JSON value of a body: 415 without a JSON content type, 400 when it does not parse. */
+function parseJsonBody(contentType: string | undefined, text: string): unknown {
+  if (!isJsonContentType(contentType)) {
+    throw new ApiError(415, "Expected request with `Content-Type: application/json`");
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ApiError(400, `Failed to parse the request body as JSON: ${reason}`);
+  }
+}
+
 /** Parses the JSON body with `schema`. */
 export async function readJson<S extends z.ZodType>(
   c: ApiContext,
   schema: S,
 ): Promise<z.output<S>> {
-  if (!isJsonContentType(c.req.header("content-type"))) {
-    throw new ApiError(415, "Expected request with `Content-Type: application/json`");
-  }
-  const text = await c.req.text();
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new ApiError(400, `Failed to parse the request body as JSON: ${reason}`);
-  }
+  const raw = parseJsonBody(c.req.header("content-type"), await c.req.text());
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     throw new ApiError(
@@ -47,6 +50,21 @@ export async function readJson<S extends z.ZodType>(
     );
   }
   return parsed.data;
+}
+
+/**
+ * The request of a route on the route table that takes a JSON body, checked the way `readJson`
+ * checks one (415, 400; the shape is the route's own schema, 422). It leaves the body unread, and
+ * a `+json` type becomes `application/json`, the only one oRPC reads as JSON.
+ */
+export async function jsonRequest(request: Request): Promise<Request> {
+  const contentType = request.headers.get("content-type") ?? undefined;
+  const text = await request.clone().text();
+  parseJsonBody(contentType, text);
+  if (contentType?.toLowerCase().startsWith("application/json")) return request;
+  const headers = new Headers(request.headers);
+  headers.set("content-type", "application/json");
+  return new Request(request.url, { method: request.method, headers, body: text });
 }
 
 /** The query string as an object (the last value wins for repeated keys). */

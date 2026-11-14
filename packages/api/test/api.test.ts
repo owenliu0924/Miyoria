@@ -9,12 +9,24 @@ import { PersonaHandle, PersonaHandleKey } from "@miyoria/brain/agent";
 import { LlmRouter, LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
-import { AuditLogKey, DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";
+import {
+  AuditLogKey,
+  DecisionLogKey,
+  type PersonaOverride,
+  PersonaOverrideStoreKey,
+} from "@miyoria/store";
 import { type ContextKey, newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiClient, ApiModule } from "../src/index.js";
+import {
+  ActiveProfileKey,
+  ApiClient,
+  ApiModule,
+  type HealthInfo,
+  type PersonaSectionInfo,
+  type SetPersonaResponse,
+} from "../src/index.js";
 import { Idle } from "./support/fakes.js";
-import { raw, statusOf, waitFor } from "./support/http.js";
+import { call, raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
 const TOKEN = "test-token";
@@ -79,7 +91,7 @@ describe("api", () => {
     const h = await harness();
     const anon = new ApiClient(h.base, "wrong");
 
-    const health = await anon.health();
+    const health = await call<HealthInfo>(h.base, "wrong", "GET", "/api/health");
     expect(health.status).toBe("ok");
     expect(health.version).toBe(MIYORIA_VERSION);
 
@@ -133,21 +145,31 @@ describe("api", () => {
 
   it("persona_edit_and_history", async () => {
     const h = await harness();
-    const c = h.client;
 
-    const sections = await c.persona();
+    const persona = () => call<PersonaSectionInfo[]>(h.base, TOKEN, "GET", "/api/persona");
+    const setPersona = async (key: string, body: string, editedBy?: string) => {
+      const json = editedBy === undefined ? { body } : { body, edited_by: editedBy };
+      const path = `/api/persona/${encodeURIComponent(key)}`;
+      return (await call<SetPersonaResponse>(h.base, TOKEN, "PUT", path, json)).version;
+    };
+    const sections = await persona();
     expect(sections.map((s) => [s.key, s.body])).toEqual([
       ["identity", "I am Test."],
       ["style", "Be brief."],
     ]);
 
-    expect(await c.setPersona("style", "Be very brief.")).toBe(1);
-    expect(await c.setPersonaAs("style", "Be terse.", "panel:owen")).toBe(2);
+    expect(await setPersona("style", "Be very brief.")).toBe(1);
+    expect(await setPersona("style", "Be terse.", "panel:owen")).toBe(2);
     expect(h.persona.personaPrompt()).toContain("Be terse.");
-    const style = (await c.persona()).find((s) => s.key === "style");
+    const style = (await persona()).find((s) => s.key === "style");
     expect(style?.body).toBe("Be terse.");
 
-    const history = await c.personaHistory("style");
+    const history = await call<PersonaOverride[]>(
+      h.base,
+      TOKEN,
+      "GET",
+      "/api/persona/style/history",
+    );
     expect(history.map((o) => [o.version, o.edited_by])).toEqual([
       [1, "api"],
       [2, "panel:owen"],
@@ -162,7 +184,7 @@ describe("api", () => {
     const current = await h.store.personaOverrides.current(PROFILE);
     expect(current.get("style")).toBe("Be terse.");
 
-    expect(await statusOf(c.setPersona("bad key", "x"))).toBe(400);
+    expect(await statusOf(setPersona("bad key", "x"))).toBe(400);
   });
 
   function context(channel: string): ContextKey {

@@ -20,7 +20,13 @@
     "allowImportingTsExtensions": false,
     "noEmit": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"], "@miyoria/card-face": ["../../packages/card-face/src/index.tsx"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@miyoria/card-face": ["../../packages/card-face/src/index.tsx"],
+      "@miyoria/contracts/api": ["../../packages/contracts/api/src/index.ts"],
+      "@miyoria/contracts/schema/api.routes.json": ["../../packages/contracts/schema/api.routes.json"]
+    },
+    "resolveJsonModule": true
   },
   "include": ["src", "../../packages/card-face/src"]
 }

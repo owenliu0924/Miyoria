@@ -66,6 +66,7 @@
 // * `GET /api/member/session|me|export|card`, `POST /api/member/forget|songs|card` (a logged-in
 //   person's own data; see `member.ts`, `card.ts`)
 
+export { type ApiRpc, contract } from "@miyoria/contracts/api";
 export { CARD_POSES, CARDS_PER_DAY } from "./card.js";
 export {
   ApiClient,
@@ -73,6 +74,7 @@ export {
   ClientError,
   type ClientErrorKind,
   type EventStream,
+  responseError,
   SseParser,
 } from "./client.js";
 export {

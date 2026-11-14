@@ -44,67 +44,22 @@ import type {
   WorldSnapshot,
 } from "@miyoria/types";
 
-/** `GET /api/health`. */
-export interface HealthInfo {
-  status: string;
-  version: string;
-}
-
-/** `GET /api/auth/methods`: which panel logins this Core offers. */
-export interface AuthMethods {
-  /** The static bearer token always works. */
-  token: boolean;
-  /** Discord OAuth2 (`[modules.api.discord_oauth]` is configured). */
-  discord: boolean;
-}
-
-export interface SessionUser {
-  /** Discord user id. */
-  id: string;
-  name: string;
-  avatar_url: string | null;
-}
-
-export interface SessionPermissions {
-  /** May use mutating routes (`admin.panel.write`; always for the token). */
-  write: boolean;
-}
-
-/** `GET /api/auth/session`: who the caller is. */
-export interface SessionInfo {
-  /** `"token"` or `"discord"`. */
-  method: string;
-  /** The Discord user; `null` for the bearer token. */
-  user: SessionUser | null;
-  permissions: SessionPermissions;
-}
-
-/** What she is doing, as the public page says it. `offline`: the modules that know are stopped. */
-export type PublicState = "singing" | "playing" | "live" | "in_voice" | "idle" | "offline";
-
-/** Today's aggregate numbers: nothing in them points at a person. */
-export interface PublicToday {
-  songs_sung: number;
-  hours_live: number;
-  hours_in_voice: number;
-}
-
-/** One local day of `PublicToday`, `date` as `YYYY-MM-DD`. */
-export interface PublicDay extends PublicToday {
-  date: string;
-}
-
-/** `GET /api/public/status`. */
-export interface PublicStatus {
-  state: PublicState;
-  live: boolean;
-  in_voice: boolean;
-  /** The game id while she plays one. */
-  game: string | null;
-  today: PublicToday;
-  /** The last `PUBLIC_DAYS` local days, oldest first, today last. */
-  days: PublicDay[];
-}
+// Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
+export type {
+  AuthMethods,
+  HealthInfo,
+  PersonaOverride,
+  PersonaSectionInfo,
+  PublicDay,
+  PublicState,
+  PublicStatus,
+  PublicToday,
+  SessionInfo,
+  SessionPermissions,
+  SessionUser,
+  SetPersonaRequest,
+  SetPersonaResponse,
+} from "@miyoria/contracts/api";
 
 /** A song on the public page. `title` is `null` until the worker found it, or if it was screened. */
 export interface PublicSong {
@@ -299,25 +254,6 @@ export interface UsageInfo {
   prompt_tokens: number;
   completion_tokens: number;
   cached_prompt_tokens: number;
-}
-
-/** One persona section, from `GET /api/persona`. */
-export interface PersonaSectionInfo {
-  key: string;
-  body: string;
-}
-
-/** Body of `PUT /api/persona/{key}`. */
-export interface SetPersonaRequest {
-  body: string;
-  /** Defaults to the caller (`"api"` for the token). */
-  edited_by?: string;
-}
-
-/** Response of `PUT /api/persona/{key}`. */
-export interface SetPersonaResponse {
-  key: string;
-  version: number;
 }
 
 /** Every error response: `{ "error": "..." }`. */

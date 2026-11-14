@@ -169,11 +169,21 @@ export interface Envelope {
 // ---------------------------------------------------------------------------
 // core routes
 
-/** `GET /api/health` (no token required). */
-export interface HealthInfo {
-  status: string;
-  version: string;
-}
+// The routes on the route table: their shapes come from the contract, under their old names.
+export type {
+  AuthMethods,
+  HealthInfo,
+  PersonaOverride,
+  PersonaSectionInfo,
+  PublicDay,
+  PublicState,
+  PublicStatus,
+  PublicToday,
+  SessionInfo,
+  SessionUser,
+  SetPersonaRequest,
+  SetPersonaResponse,
+} from "@miyoria/contracts/api";
 
 /** One module, from `GET /api/modules` and `POST /api/modules/{id}/{action}`. */
 export interface ModuleInfo {
@@ -198,25 +208,6 @@ export interface UsageInfo {
 
 export type UsageMap = Record<string, UsageInfo>;
 
-/** `GET /api/persona`. */
-export interface PersonaSectionInfo {
-  key: string;
-  body: string;
-}
-
-/** Body of `PUT /api/persona/{key}`. */
-export interface SetPersonaRequest {
-  body: string;
-  /** Defaults to `"api"` on the server. */
-  edited_by?: string;
-}
-
-/** Response of `PUT /api/persona/{key}`. */
-export interface SetPersonaResponse {
-  key: string;
-  version: number;
-}
-
 /** Every error response. */
 export interface ErrorBody {
   error: string;
@@ -224,16 +215,6 @@ export interface ErrorBody {
 
 // ---------------------------------------------------------------------------
 // store records
-
-/** `GET /api/persona/{key}/history` items (`PersonaOverride`). */
-export interface PersonaOverride {
-  profile: ProfileId;
-  key: string;
-  version: number;
-  body: string;
-  edited_by: string;
-  edited_at: Timestamp;
-}
 
 /** `GET /api/decisions` items, newest first. */
 export interface DecisionRecord {
@@ -250,57 +231,8 @@ export interface DecisionsQuery {
 }
 
 // ---------------------------------------------------------------------------
-// panel login (`packages/api/src/oauth.ts`)
-
-/** `GET /api/auth/methods` (public). */
-export interface AuthMethods {
-  token: boolean;
-  /** Discord OAuth2 is configured on this Core. */
-  discord: boolean;
-}
-
-export interface SessionUser {
-  /** Discord user id. */
-  id: string;
-  name: string;
-  avatar_url: string | null;
-}
-
-/** `GET /api/auth/session`. */
-export interface SessionInfo {
-  method: "token" | "discord";
-  /** `null` for the bearer token. */
-  user: SessionUser | null;
-  permissions: { write: boolean };
-}
-
-// ---------------------------------------------------------------------------
 // public side (`/api/public/*`, `/api/member/*`)
 // ---------------------------------------------------------------------------
-
-export type PublicState = "singing" | "playing" | "live" | "in_voice" | "idle" | "offline";
-
-/** `GET /api/public/status`. */
-export interface PublicStatus {
-  state: PublicState;
-  live: boolean;
-  in_voice: boolean;
-  game: string | null;
-  today: PublicToday;
-  /** The last 14 local days, oldest first, today last. Missing on an older Core. */
-  days?: PublicDay[];
-}
-
-export interface PublicToday {
-  songs_sung: number;
-  hours_live: number;
-  hours_in_voice: number;
-}
-
-/** One local day, `date` as `YYYY-MM-DD`. */
-export interface PublicDay extends PublicToday {
-  date: string;
-}
 
 export interface PublicSong {
   title: string | null;

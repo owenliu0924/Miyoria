@@ -1,0 +1,40 @@
+// What every route declaration starts from: the oRPC contract builder with the metadata the
+// server's shell reads (who may call the route, which permission it needs) and the "detailed"
+// input structure, so a handler gets `{ params, query, body }` apart instead of one merged object.
+
+import { isContractProcedure, oc } from "@orpc/contract";
+
+/**
+ * Who may call a route.
+ *
+ * * `admin`: the bearer token, or an admin session by cookie. A change (anything but `GET`) by
+ *   session also needs the `X-Miyoria-Request: 1` header and `admin.panel.write`.
+ * * `member`: a session of any tier, by cookie only; the bearer token opens nothing here. The
+ *   answer is never cached and never carries internal error text.
+ * * `public`: anyone.
+ */
+export type Audience = "admin" | "member" | "public";
+
+export interface RouteMeta {
+  audience: Audience;
+  /** A node the session's account must also hold (`null`: none). The bearer token holds all. */
+  permission: string | null;
+}
+
+/**
+ * The start of every declaration. Each route still states its own metadata with `.meta()`; the
+ * default here only decides what a route that forgot is: an admin route (closed).
+ */
+export const route = oc
+  .$meta<RouteMeta>({ audience: "admin", permission: null })
+  .$route({ inputStructure: "detailed" });
+
+/** The metadata of the route at `path` in `router` (`["persona", "set"]`), `null` for none. */
+export function routeMeta(router: object, path: readonly string[]): RouteMeta | null {
+  let at: unknown = router;
+  for (const key of path) {
+    if (typeof at !== "object" || at === null) return null;
+    at = (at as Record<string, unknown>)[key];
+  }
+  return isContractProcedure(at) ? (at["~orpc"].meta as RouteMeta) : null;
+}
