@@ -190,7 +190,7 @@ export function Board() {
   const id = useId();
   const board = useQuery({
     queryKey: BOARD,
-    queryFn: ({ signal }) => api.publicBoard({ signal }),
+    queryFn: ({ signal }) => api.rpc.public.board(undefined, { signal }),
     refetchInterval: POLL_MS,
     retry,
   });

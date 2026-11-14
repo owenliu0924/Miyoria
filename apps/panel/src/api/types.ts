@@ -173,9 +173,20 @@ export interface Envelope {
 export type {
   AuthMethods,
   HealthInfo,
+  IssuedCard,
+  MemberCard,
+  MemberCards,
+  MemberDay,
+  MemberForgetResult,
+  MemberSession,
+  MemberSong,
+  MemberView,
   PersonaOverride,
   PersonaSectionInfo,
+  PublicBoard as BoardView,
   PublicDay,
+  PublicSong,
+  PublicSongs,
   PublicState,
   PublicStatus,
   PublicToday,
@@ -233,81 +244,6 @@ export interface DecisionsQuery {
 // ---------------------------------------------------------------------------
 // public side (`/api/public/*`, `/api/member/*`)
 // ---------------------------------------------------------------------------
-
-export interface PublicSong {
-  title: string | null;
-  artist: string | null;
-  duration_s: number | null;
-}
-
-/** `GET /api/public/songs`. */
-export interface PublicSongs {
-  playing: PublicSong | null;
-  upcoming: (PublicSong & { ready: boolean })[];
-  recent: PublicSong[];
-}
-
-/** `GET /api/member/session`. */
-export interface MemberSession {
-  name: string;
-  avatar_url: string | null;
-}
-
-/** 她眼中的你, in words. All `null` for someone she does not know. */
-export interface MemberCard {
-  call_name: string | null;
-  relationship: string | null;
-  affinity: string | null;
-  trust: string | null;
-  familiarity: string | null;
-  public_feeling: string | null;
-}
-
-export interface MemberSong {
-  title: string;
-  artist: string | null;
-  state: string;
-  requested_at: string;
-}
-
-/** `GET /api/member/me`. */
-/** Their own lines on one local day. */
-export interface MemberDay {
-  date: string;
-  text: number;
-  voice: number;
-}
-
-/** A card she gave someone: what she thought of them then, kept so its code can be checked. */
-export interface IssuedCard {
-  /** `MYR-XXXX-XXXX-XXXX`. */
-  serial: string;
-  issued_at: string;
-  name: string;
-  avatar_url: string | null;
-  /** The nth card this person has been given, from 1. */
-  number: number;
-  call_name: string | null;
-  relationship: string | null;
-  affinity: string | null;
-  trust: string | null;
-  familiarity: string | null;
-  public_feeling: string | null;
-  /** What she wrote for them as she issued it. Missing on an older Core, null when she did not. */
-  line?: string | null;
-  /** The stamp she put on it. Missing on an older Core. */
-  stamp?: string | null;
-  /** Fields she chose to add, at most three. Missing on an older Core. */
-  fields?: { label: string; text: string }[];
-  /** Which picture of her is on it (she picks within her feeling's band). */
-  pose: string;
-  /** The frame they had selected when it was issued; `null` is the plain border. Missing on an older Core. */
-  frame?: string | null;
-  /** A foil finish they bought. Missing on an older Core. */
-  foil?: boolean;
-  /** When a reroll replaced it: the card is void, never a valid one. Missing on an older Core. */
-  voided_at?: string | null;
-}
 
 /** A field on a fortune slip: its name (戀愛, 學業, ...) and what she wrote. */
 export interface FortuneField {
@@ -430,11 +366,6 @@ export interface TransferResult {
   to: string;
 }
 
-/** `GET /api/public/board`: only people who chose to be on it. */
-export interface BoardView {
-  entries: { rank: number; name: string; spent: number }[];
-}
-
 /** One of her goals (`GET /api/member/goals`). */
 export interface GoalView {
   id: string;
@@ -475,38 +406,6 @@ export interface FramesResult {
   owned: string[];
   selected: string | null;
   balance: number;
-}
-
-/** `GET /api/member/card`. */
-export interface MemberCards {
-  /** Their newest card that is not voided. */
-  latest: IssuedCard | null;
-  today: number;
-  per_day: number;
-  /** Pictures their band allows, for a chosen pose. Missing on an older Core. */
-  poses?: { id: string; label: string }[];
-  /** Prices of the extras; null is off sale. Missing on an older Core. */
-  prices?: { pose: number | null; foil: number | null; reroll: number | null };
-  /** Rerolls of today's newest card still to buy today. Missing on an older Core. */
-  rerolls_left?: number;
-}
-
-export interface MemberView {
-  card: MemberCard;
-  memories: { text: string; kind: string; date: string }[];
-  songs: MemberSong[];
-  /** The last 30 local days, oldest first, today last. Missing on an older Core. */
-  activity?: MemberDay[];
-  can_request_song: boolean;
-  forget: { removes: string; keeps: string };
-}
-
-/** `POST /api/member/forget`. */
-export interface MemberForgetResult {
-  deleted: number;
-  about: number;
-  derived: number;
-  unverified: number;
 }
 
 // ---------------------------------------------------------------------------

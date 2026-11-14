@@ -145,7 +145,7 @@ export function CardVerify({ serial }: { serial: string }) {
   const svg = useRef<SVGSVGElement>(null);
   const card = useQuery({
     queryKey: ["public", "card", serial],
-    queryFn: ({ signal }) => api.publicCard(serial, { signal }),
+    queryFn: ({ signal }) => api.rpc.public.card({ params: { serial } }, { signal }),
     retry: (n, e) => !(isApiError(e) && (e.status === 404 || e.status === 429)) && n < 2,
   });
   const missing = isApiError(card.error) && card.error.status === 404;

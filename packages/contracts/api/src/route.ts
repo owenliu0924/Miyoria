@@ -3,6 +3,7 @@
 // input structure, so a handler gets `{ params, query, body }` apart instead of one merged object.
 
 import { isContractProcedure, oc } from "@orpc/contract";
+import { z } from "zod";
 
 /**
  * Who may call a route.
@@ -38,3 +39,11 @@ export function routeMeta(router: object, path: readonly string[]): RouteMeta | 
   }
   return isContractProcedure(at) ? (at["~orpc"].meta as RouteMeta) : null;
 }
+
+/**
+ * The `Idempotency-Key` header of a member route that spends: the same key answers what it
+ * answered first. Only the header is declared; its length and characters are checked by the
+ * handler, which answers 400 `invalid Idempotency-Key` as it always has. Without one the server
+ * makes a fresh key (no retry protection).
+ */
+export const IdempotencyHeaders = z.object({ "idempotency-key": z.string().optional() });

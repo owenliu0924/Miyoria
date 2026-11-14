@@ -16,7 +16,7 @@ export function LivePage({ source }: { source?: SourceFactory | null }) {
   const api = useApi();
   const member = useQuery({
     queryKey: ["member", "session"],
-    queryFn: ({ signal }) => api.memberSession({ signal }),
+    queryFn: ({ signal }) => api.rpc.member.session(undefined, { signal }),
     retry: false,
   });
   const methods = useQuery(api.q.auth.methods.queryOptions({ retry: false }));

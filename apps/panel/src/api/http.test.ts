@@ -84,6 +84,20 @@ describe("ApiClient", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ body: "hi", edited_by: "panel" });
   });
 
+  it("calls a member route by cookie alone, with its Idempotency-Key and a JSON body", async () => {
+    const fetch = mockFetch(() => ({ body: { serial: "MYR-AAAA-BBBB-CCCC" } }));
+    const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));
+    await api.rpc.member.rerollCard({ headers: { "idempotency-key": "k-1" }, body: {} });
+    await api.rpc.public.card({ params: { serial: "MYR AAAA/1" } });
+    const [reroll, check] = fetch.mock.calls;
+    expect(String(reroll?.[0])).toBe("/api/member/card/reroll");
+    expect(headersOf(reroll?.[1]).Authorization).toBeUndefined();
+    expect(headersOf(reroll?.[1])["Idempotency-Key"]).toBe("k-1");
+    expect(JSON.parse(String(reroll?.[1]?.body))).toEqual({});
+    expect(String(check?.[0])).toBe("/api/public/card/MYR%20AAAA%2F1");
+    expect(headersOf(check?.[1]).Authorization).toBeUndefined();
+  });
+
   it("posts module actions to /api/modules/{id}/{action}", async () => {
     const fetch = mockFetch((m) => (m === "POST" ? { body: { id: "platform.discord.bot" } } : undefined));
     const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));

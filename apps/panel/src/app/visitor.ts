@@ -29,7 +29,7 @@ export interface Visitor {
  * too, and the login screen shows what is wrong.
  */
 async function publicVisitor(api: Api, signal: AbortSignal): Promise<{ member: MemberSession | null } | null> {
-  const [site, member] = await Promise.allSettled([api.rpc.public.status(undefined, { signal }), api.memberSession({ signal })]);
+  const [site, member] = await Promise.allSettled([api.rpc.public.status(undefined, { signal }), api.rpc.member.session(undefined, { signal })]);
   const open = site.status === "fulfilled" || (isApiError(site.reason) && site.reason.status === 429);
   if (!open) return null;
   return { member: member.status === "fulfilled" ? member.value : null };

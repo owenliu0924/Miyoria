@@ -73,7 +73,7 @@ async function fortuneToday(state: ApiState, c: ApiContext): Promise<Response> {
 async function draw(state: ApiState, c: ApiContext): Promise<Response> {
   // The body must be `{}`: nothing a request says reaches the slip.
   await readJson(c, FortuneSchema);
-  const key = keyOf(c);
+  const key = keyOf(c.req.header("idempotency-key"));
   const { account, name } = session(c);
   // Each draw asks a model: the same hourly allowance as the other heavy things.
   const wait = state.publicSide.admitHeavy(`fortune:${accountRefString(account)}`);

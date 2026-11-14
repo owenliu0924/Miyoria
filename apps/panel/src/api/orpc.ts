@@ -39,7 +39,13 @@ export function createRpc(client: ApiClient): ApiRpc {
       const method = request.method;
       const json = method === "GET" || method === "HEAD" ? "" : await request.text();
       const isPublic = metaAt(path)?.audience !== "admin";
-      const opts = { signal: request.signal, public: isPublic };
+      // The one header a route declares in its input: a spend's key, one per click.
+      const key = request.headers.get("idempotency-key");
+      const opts = {
+        signal: request.signal,
+        public: isPublic,
+        ...(key ? { headers: { "Idempotency-Key": key } } : {}),
+      };
       return client.send(method, url.pathname + url.search, opts, json === "" ? undefined : json);
     },
   });

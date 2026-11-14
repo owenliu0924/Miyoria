@@ -106,7 +106,7 @@ export function agencyRoutes(state: ApiState): Route[] {
       path: "/api/member/goals/:id/pledge",
       handler: limited(state, async (c) => {
         const { amount } = await readJson(c, PledgeSchema);
-        const key = keyOf(c);
+        const key = keyOf(c.req.header("idempotency-key"));
         const id = c.req.param("id") ?? "";
         const r = await withEconomy(state, (e) => e.pledge(accountOf(c), id, amount, key));
         return json(pledgeResult(r));

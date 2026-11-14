@@ -72,6 +72,7 @@ const STRANGER: MemberView = {
   },
   memories: [],
   songs: [],
+  activity: [],
   can_request_song: false,
   forget: ME.forget,
 };
@@ -176,7 +177,13 @@ const CARD: IssuedCard = {
   trust: "信任",
   familiarity: "熟",
   public_feeling: "妳總是記得跟我打招呼。",
+  line: null,
+  stamp: null,
+  fields: [],
   pose: "blush",
+  frame: null,
+  foil: false,
+  voided_at: null,
 };
 
 function core(o: Options = {}) {

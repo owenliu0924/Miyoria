@@ -17,6 +17,82 @@
         "discord"
       ]
     },
+    "ApiCardField": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "text"
+      ]
+    },
+    "ApiCardPoseChoice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "ApiCardPrices": {
+      "type": "object",
+      "properties": {
+        "pose": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "foil": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reroll": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pose",
+        "foil",
+        "reroll"
+      ]
+    },
+    "ApiEmptyRequest": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ApiForgetRequest": {
+      "type": "object",
+      "properties": {
+        "confirm": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "confirm"
+      ],
+      "additionalProperties": false
+    },
     "ApiHealthInfo": {
       "type": "object",
       "properties": {
@@ -30,6 +106,136 @@
       "required": [
         "status",
         "version"
+      ]
+    },
+    "ApiIssueCardRequest": {
+      "type": "object",
+      "properties": {
+        "pose": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "foil": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApiIssuedCard": {
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "string"
+        },
+        "issued_at": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "avatar_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relationship": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "affinity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trust": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "familiarity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "public_feeling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stamp": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardField"
+          }
+        },
+        "pose": {
+          "type": "string"
+        },
+        "frame": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "foil": {
+          "type": "boolean"
+        },
+        "voided_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "serial",
+        "issued_at",
+        "name",
+        "avatar_url",
+        "number",
+        "call_name",
+        "relationship",
+        "affinity",
+        "trust",
+        "familiarity",
+        "public_feeling",
+        "line",
+        "stamp",
+        "fields",
+        "pose",
+        "frame",
+        "foil",
+        "voided_at"
       ]
     },
     "ApiLogEvent": {
@@ -99,6 +305,278 @@
         "proposal"
       ]
     },
+    "ApiMemberCard": {
+      "type": "object",
+      "properties": {
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relationship": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "affinity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trust": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "familiarity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "public_feeling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "call_name",
+        "relationship",
+        "affinity",
+        "trust",
+        "familiarity",
+        "public_feeling"
+      ]
+    },
+    "ApiMemberCards": {
+      "type": "object",
+      "properties": {
+        "latest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiIssuedCard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "today": {
+          "type": "number"
+        },
+        "per_day": {
+          "type": "number"
+        },
+        "poses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardPoseChoice"
+          }
+        },
+        "prices": {
+          "$ref": "#/$defs/ApiCardPrices"
+        },
+        "rerolls_left": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "latest",
+        "today",
+        "per_day",
+        "poses",
+        "prices",
+        "rerolls_left"
+      ]
+    },
+    "ApiMemberDay": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "text": {
+          "type": "number"
+        },
+        "voice": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "date",
+        "text",
+        "voice"
+      ]
+    },
+    "ApiMemberForgetResult": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "number"
+        },
+        "about": {
+          "type": "number"
+        },
+        "derived": {
+          "type": "number"
+        },
+        "unverified": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "deleted",
+        "about",
+        "derived",
+        "unverified"
+      ]
+    },
+    "ApiMemberMemory": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "date"
+      ]
+    },
+    "ApiMemberSession": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "avatar_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "avatar_url"
+      ]
+    },
+    "ApiMemberSong": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "artist": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": "string"
+        },
+        "requested_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "artist",
+        "state",
+        "requested_at"
+      ]
+    },
+    "ApiMemberSongAccepted": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted"
+      ]
+    },
+    "ApiMemberSongRequest": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "ApiMemberView": {
+      "type": "object",
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/ApiMemberCard"
+        },
+        "memories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMemberMemory"
+          }
+        },
+        "songs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMemberSong"
+          }
+        },
+        "activity": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMemberDay"
+          }
+        },
+        "can_request_song": {
+          "type": "boolean"
+        },
+        "forget": {
+          "type": "object",
+          "properties": {
+            "removes": {
+              "type": "string"
+            },
+            "keeps": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "removes",
+            "keeps"
+          ]
+        }
+      },
+      "required": [
+        "card",
+        "memories",
+        "songs",
+        "activity",
+        "can_request_song",
+        "forget"
+      ]
+    },
     "ApiPersonaOverride": {
       "type": "object",
       "properties": {
@@ -147,6 +625,36 @@
         "body"
       ]
     },
+    "ApiPublicBoard": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rank": {
+                "type": "number"
+              },
+              "name": {
+                "type": "string"
+              },
+              "spent": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "rank",
+              "name",
+              "spent"
+            ]
+          }
+        }
+      },
+      "required": [
+        "entries"
+      ]
+    },
     "ApiPublicDay": {
       "type": "object",
       "properties": {
@@ -168,6 +676,95 @@
         "hours_live",
         "hours_in_voice",
         "date"
+      ]
+    },
+    "ApiPublicSong": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "artist": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "title",
+        "artist",
+        "duration_s"
+      ]
+    },
+    "ApiPublicSongs": {
+      "type": "object",
+      "properties": {
+        "playing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiPublicSong"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "upcoming": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "artist": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "duration_s": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "ready": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "title",
+              "artist",
+              "duration_s",
+              "ready"
+            ]
+          }
+        },
+        "recent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPublicSong"
+          }
+        }
+      },
+      "required": [
+        "playing",
+        "upcoming",
+        "recent"
       ]
     },
     "ApiPublicState": {

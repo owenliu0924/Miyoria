@@ -48,7 +48,9 @@ describe("the route table", () => {
   it.each(all)("$name declares exactly its path parameters, and a body only on a change", (e) => {
     const shape =
       e.input instanceof z.ZodObject ? (e.input.shape as Record<string, z.ZodType>) : {};
-    expect(Object.keys(shape).every((k) => ["params", "query", "body"].includes(k))).toBe(true);
+    expect(
+      Object.keys(shape).every((k) => ["params", "query", "headers", "body"].includes(k)),
+    ).toBe(true);
     const inPath = [...e.path.matchAll(/\{([a-z_]+)\}/g)].map((m) => m[1]).sort();
     const params =
       shape.params instanceof z.ZodObject ? Object.keys(shape.params.shape).sort() : [];

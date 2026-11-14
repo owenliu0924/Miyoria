@@ -3,7 +3,8 @@
 //
 // * `GET /api/public/status`: what she is doing and today's aggregate numbers (on the route table,
 //   `publicRpc`).
-// * `GET /api/public/songs`: what is playing, what is coming up, what she just sang.
+// * `GET /api/public/songs`: what is playing, what is coming up, what she just sang (on the route
+//   table too, `publicRpc`).
 //
 // Every response is built field by field in this file: internal objects are never spread into
 // one, so a field added to `SongEntry` or `ActivitySnapshot` stays private until someone names it
@@ -27,9 +28,8 @@ import {
   SONG_TOPIC,
 } from "@miyoria/types";
 import { z } from "zod";
-import { os } from "./contract.js";
+import { os, type RpcContext } from "./contract.js";
 import { ApiError } from "./errors.js";
-import type { Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
 import type {
   PublicDay,
@@ -494,45 +494,26 @@ export function publicSongs(state: ApiState): PublicSongs {
   };
 }
 
-function serve(state: ApiState, c: ApiContext, key: string, build: () => unknown): Response {
+/**
+ * The answer of a public view: one value serves everyone for `cache_secs`, shared by every client,
+ * after the client's own rate limit (`429`). It carries the cache headers the public views have.
+ */
+export function servePublic<T>(context: RpcContext, key: string, build: () => T): T {
+  const { state, c } = context;
   const side = state.publicSide;
   const wait = side.admit(clientKey(c));
-  if (wait !== null) return tooMany(wait);
-  return new Response(side.cached(key, build), {
-    status: 200,
-    headers: {
-      "content-type": "application/json",
-      "cache-control": `public, max-age=${Math.ceil(side.config.cache_secs)}`,
-      "x-content-type-options": "nosniff",
-    },
-  });
+  if (wait !== null) throw ApiError.tooMany(wait);
+  context.resHeaders?.set("cache-control", `public, max-age=${Math.ceil(side.config.cache_secs)}`);
+  context.resHeaders?.set("x-content-type-options", "nosniff");
+  return side.cachedValue(key, build);
 }
 
-/** The public routes; none when `[modules.api.public] enabled` is off. */
-export function publicViewRoutes(state: ApiState): Route[] {
-  if (!state.publicSide.config.enabled) return [];
-  return [
-    {
-      method: "GET",
-      path: "/api/public/songs",
-      public: true,
-      handler: (c) => serve(state, c, "songs", () => publicSongs(state)),
-    },
-  ];
-}
-
-/** `GET /api/public/status`; served only while the public side is on (see `rpc.ts`). */
+/** `GET /api/public/status`, `GET /api/public/songs`; served only while the public side is on (see `rpc.ts`). */
 export const publicRpc = {
-  status: os.public.status.handler(({ context }) => {
-    const { state, c } = context;
-    const side = state.publicSide;
-    const wait = side.admit(clientKey(c));
-    if (wait !== null) throw ApiError.tooMany(wait);
-    context.resHeaders?.set(
-      "cache-control",
-      `public, max-age=${Math.ceil(side.config.cache_secs)}`,
-    );
-    context.resHeaders?.set("x-content-type-options", "nosniff");
-    return side.cachedValue("status", () => publicStatus(state));
-  }),
+  status: os.public.status.handler(({ context }) =>
+    servePublic(context, "status", () => publicStatus(context.state)),
+  ),
+  songs: os.public.songs.handler(({ context }) =>
+    servePublic(context, "songs", () => publicSongs(context.state)),
+  ),
 };

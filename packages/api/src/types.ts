@@ -1,6 +1,7 @@
 // Wire types shared by the server and the client. Field names and nullability are part of the
 // JSON wire format; `apps/panel/src/api/*types.ts` mirror these.
 
+import type { IssuedCard, MemberCard, MemberMemory, MemberSong } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
 import type { PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport, ModelUsage } from "@miyoria/llm/llm";
@@ -47,10 +48,26 @@ import type {
 // Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
 export type {
   AuthMethods,
+  CardField,
+  CardPoseChoice,
+  CardPrices,
   HealthInfo,
+  IssueCardRequest,
+  IssuedCard,
+  MemberCard,
+  MemberCards,
+  MemberDay,
+  MemberForgetResult,
+  MemberMemory,
+  MemberSession,
+  MemberSong,
+  MemberView,
   PersonaOverride,
   PersonaSectionInfo,
+  PublicBoard,
   PublicDay,
+  PublicSong,
+  PublicSongs,
   PublicState,
   PublicStatus,
   PublicToday,
@@ -59,143 +76,8 @@ export type {
   SessionUser,
   SetPersonaRequest,
   SetPersonaResponse,
+  SongAccepted,
 } from "@miyoria/contracts/api";
-
-/** A song on the public page. `title` is `null` until the worker found it, or if it was screened. */
-export interface PublicSong {
-  title: string | null;
-  artist: string | null;
-  duration_s: number | null;
-}
-
-/** `GET /api/public/songs`. */
-export interface PublicSongs {
-  playing: PublicSong | null;
-  /** Still to come, in order. */
-  upcoming: (PublicSong & { ready: boolean })[];
-  /** What she sang last, newest first. */
-  recent: PublicSong[];
-}
-
-/** `GET /api/member/session`. */
-export interface MemberSession {
-  name: string;
-  avatar_url: string | null;
-}
-
-/** 她眼中的你, in words. All `null` for someone she does not know. */
-export interface MemberCard {
-  call_name: string | null;
-  relationship: string | null;
-  affinity: string | null;
-  trust: string | null;
-  familiarity: string | null;
-  public_feeling: string | null;
-}
-
-export interface MemberMemory {
-  text: string;
-  kind: string;
-  /** `YYYY-MM-DD`. */
-  date: string;
-}
-
-export interface MemberSong {
-  title: string;
-  artist: string | null;
-  state: string;
-  requested_at: string;
-}
-
-/** `GET /api/member/me`. */
-/** How much someone talked to her on one local day: their own lines, counted. */
-export interface MemberDay {
-  date: string;
-  /** Lines written in text channels, threads and DMs. */
-  text: number;
-  /** Lines said in voice. */
-  voice: number;
-}
-
-export interface MemberView {
-  card: MemberCard;
-  memories: MemberMemory[];
-  songs: MemberSong[];
-  /** The last `MEMBER_DAYS` local days, oldest first, today last. */
-  activity: MemberDay[];
-  can_request_song: boolean;
-  /** What forgetting takes and leaves, in the words `/me memory forget` uses. */
-  forget: { removes: string; keeps: string };
-}
-
-/** A field she added to a card herself: its name and what she wrote. */
-export interface CardField {
-  label: string;
-  text: string;
-}
-
-/** A card she gave someone: what she thought of them then, kept so its code can be checked. */
-export interface IssuedCard {
-  /** `MYR-XXXX-XXXX-XXXX`, Crockford base32 (no I L O U), 60 random bits from crypto. */
-  serial: string;
-  /** ISO 8601 UTC. */
-  issued_at: string;
-  /** Their display name when it was issued (from the session record). */
-  name: string;
-  /** Their avatar URL when it was issued, or null. */
-  avatar_url: string | null;
-  /** The nth card this person has been given, from 1. */
-  number: number;
-  call_name: string | null;
-  relationship: string | null;
-  affinity: string | null;
-  trust: string | null;
-  familiarity: string | null;
-  public_feeling: string | null;
-  /** What she wrote for them as she issued it; null on older cards or when she could not. */
-  line: string | null;
-  /** The stamp she put on it, or null. */
-  stamp: string | null;
-  /** Fields she chose to add (at most three); empty on older cards. */
-  fields: CardField[];
-  /** Which picture of her is on it: a key from CARD_POSES (she picks within the band). */
-  pose: string;
-  /** The card frame they had chosen then (`[modules.economy] frames`), null for none. */
-  frame: string | null;
-  /** Bought foil finish (`card_foil`); false on older cards. */
-  foil: boolean;
-  /** When a reroll replaced it, or null: a voided card is shown as 已作廢, never as valid. */
-  voided_at: string | null;
-}
-
-/** One picture of her they may choose for a card. */
-export interface CardPoseChoice {
-  id: string;
-  /** zh label. */
-  label: string;
-}
-
-/** What the card extras cost them now; a price is null when it is off sale or there is no wallet. */
-export interface CardPrices {
-  pose: number | null;
-  foil: number | null;
-  reroll: number | null;
-}
-
-/** `GET /api/member/card`. */
-export interface MemberCards {
-  /** Their newest card that is not voided. */
-  latest: IssuedCard | null;
-  /** Cards issued to them in the current local day (utc offset as public stats use); rerolls and voided cards not counted. */
-  today: number;
-  /** Most cards a person may be issued per local day. */
-  per_day: number;
-  /** Pictures their affinity band allows, for `card_pose`. */
-  poses: CardPoseChoice[];
-  prices: CardPrices;
-  /** Rerolls of today's newest card they may still buy today (0 when none is possible). */
-  rerolls_left: number;
-}
 
 /** `GET /api/member/export` (a file). */
 export interface MemberExport {
@@ -234,15 +116,6 @@ export interface IssuedFortune {
   fields: FortuneField[];
   /** A personal line, at most 30 characters. */
   line: string | null;
-}
-
-/** `POST /api/member/forget`. */
-export interface MemberForgetResult {
-  deleted: number;
-  about: number;
-  derived: number;
-  /** Memories whose evidence is gone, so nothing ties them to the person; they stay. */
-  unverified: number;
 }
 
 /** One module as reported by `GET /api/modules` (the supervisor's `ModuleStatus`). */

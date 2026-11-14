@@ -28,9 +28,9 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { type CardWords, POSE_WORDS } from "./card-words.js";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { clientKey, localDay, tooMany } from "./public.js";
-import { param, type Route } from "./route.js";
+import { clientKey, localDay } from "./public.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 import type {
@@ -524,49 +524,37 @@ export async function deleteCards(state: ApiState, accounts: readonly AccountRef
 
 // ---- the public check -----------------------------------------------------------------------
 
-function answer(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "content-type": "application/json",
-      // A card can be deleted: nobody may keep the answer.
-      "cache-control": "no-store",
-      "x-content-type-options": "nosniff",
-    },
-  });
-}
+/** What every answer of the check carries: a card can be deleted, so nobody may keep the answer. */
+const CHECK_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
 
 /** `GET /api/public/card/{serial}`. */
-async function checkCard(state: ApiState, c: ApiContext): Promise<Response> {
+async function checkCard(state: ApiState, c: ApiContext, input: string): Promise<IssuedCard> {
   const wait = state.publicSide.admitCardCheck(clientKey(c));
-  if (wait !== null) return tooMany(wait);
-  const missing = () => answer(404, { error: NO_SUCH_CARD });
-  const serial = normalizeSerial(param(c, "serial"));
+  if (wait !== null) throw ApiError.tooMany(wait);
+  const missing = () => new ApiError(404, NO_SUCH_CARD, CHECK_HEADERS);
+  const serial = normalizeSerial(input);
   const store = state.optional(MemberCardStoreKey);
-  if (serial === null || !store) return missing();
+  if (serial === null || !store) throw missing();
   let found: MemberCardRecord | null;
   try {
     found = await store.bySerial(state.profile(), serial);
   } catch (error) {
     log.warn({ error: errorMessage(error) }, "cannot check a card");
-    return answer(503, { error: "not available right now" });
+    throw new ApiError(503, "not available right now", CHECK_HEADERS);
   }
   const card = found && isJsonObject(found.snapshot) ? issuedCard(found) : null;
-  return card ? answer(200, card) : missing();
+  if (!card) throw missing();
+  return card;
 }
 
-/** The public card check; none when `[modules.api.public] enabled` is off. */
-export function cardCheckRoutes(state: ApiState): Route[] {
-  if (!state.publicSide.config.enabled) return [];
-  return [
-    {
-      method: "GET",
-      path: "/api/public/card/:serial",
-      public: true,
-      handler: (c) => checkCard(state, c),
-    },
-  ];
-}
+/** `GET /api/public/card/{serial}`; served only while the public side is on (see `rpc.ts`). */
+export const cardCheckRpc = {
+  card: os.public.card.handler(async ({ input, context }) => {
+    const card = await checkCard(context.state, context.c, input.params.serial);
+    for (const [name, value] of Object.entries(CHECK_HEADERS)) context.resHeaders?.set(name, value);
+    return card;
+  }),
+};
 
 /**
  * The card behind a serial for a page that is open to anyone (the link preview): `null` for a

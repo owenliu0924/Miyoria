@@ -118,6 +118,148 @@
             "path": "/api/public/status"
           }
         }
+      },
+      "songs": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/public/songs"
+          }
+        }
+      },
+      "board": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/public/board"
+          }
+        }
+      },
+      "card": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/public/card/{serial}"
+          }
+        }
+      }
+    },
+    "member": {
+      "session": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/session"
+          }
+        }
+      },
+      "me": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/me"
+          }
+        }
+      },
+      "forget": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/forget"
+          }
+        }
+      },
+      "requestSong": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/songs"
+          }
+        }
+      },
+      "cards": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/card"
+          }
+        }
+      },
+      "issueCard": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/card"
+          }
+        }
+      },
+      "rerollCard": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/card/reroll"
+          }
+        }
       }
     }
   }

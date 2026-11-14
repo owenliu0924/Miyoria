@@ -18,6 +18,7 @@ import type {
 } from "@orpc/contract";
 import { auth, health } from "./auth.js";
 import { facts } from "./facts.js";
+import { member } from "./member.js";
 import { persona } from "./persona.js";
 import { publicView } from "./public.js";
 
@@ -35,6 +36,41 @@ export {
 } from "./auth.js";
 export { type LogEvent, type LogEventKind, LogEventKindSchema, LogEventSchema } from "./facts.js";
 export {
+  type CardField,
+  CardFieldSchema,
+  type CardPoseChoice,
+  CardPoseChoiceSchema,
+  type CardPrices,
+  CardPricesSchema,
+  EmptyRequestSchema,
+  type ForgetRequest,
+  ForgetRequestSchema,
+  type IssueCardRequest,
+  IssueCardRequestSchema,
+  type IssuedCard,
+  IssuedCardSchema,
+  type MemberCard,
+  MemberCardSchema,
+  type MemberCards,
+  MemberCardsSchema,
+  type MemberDay,
+  MemberDaySchema,
+  type MemberForgetResult,
+  MemberForgetResultSchema,
+  type MemberMemory,
+  MemberMemorySchema,
+  type MemberSession,
+  MemberSessionSchema,
+  type MemberSong,
+  MemberSongSchema,
+  type MemberView,
+  MemberViewSchema,
+  type SongAccepted,
+  SongAcceptedSchema,
+  type SongRequest,
+  SongRequestSchema,
+} from "./member.js";
+export {
   type PersonaOverride,
   PersonaOverrideSchema,
   type PersonaSectionInfo,
@@ -45,8 +81,14 @@ export {
   SetPersonaResponseSchema,
 } from "./persona.js";
 export {
+  type PublicBoard,
+  PublicBoardSchema,
   type PublicDay,
   PublicDaySchema,
+  type PublicSong,
+  PublicSongSchema,
+  type PublicSongs,
+  PublicSongsSchema,
   type PublicState,
   PublicStateSchema,
   type PublicStatus,
@@ -63,6 +105,7 @@ export const contract = {
   persona,
   facts,
   public: publicView,
+  member,
 };
 
 export type ApiContract = typeof contract;

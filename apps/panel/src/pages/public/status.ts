@@ -36,7 +36,7 @@ export function usePublicSongs() {
   const api = useApi();
   return useQuery({
     queryKey: ["public", "songs"],
-    queryFn: ({ signal }) => api.publicSongs({ signal }),
+    queryFn: ({ signal }) => api.rpc.public.songs(undefined, { signal }),
     refetchInterval: POLL_MS,
   });
 }

@@ -74,9 +74,9 @@ function accountOf(c: ApiContext): AccountRef {
   return (c.get("member") as SessionRecord).account;
 }
 
-/** The request's `Idempotency-Key`; a fresh one when there is none (no retry protection). */
-export function keyOf(c: ApiContext): string {
-  const key = c.req.header("idempotency-key")?.trim();
+/** The `Idempotency-Key` a request sent; a fresh one when there is none (no retry protection). */
+export function keyOf(header: string | undefined): string {
+  const key = header?.trim();
   if (key === undefined || key === "") return newId();
   if (key.length > MAX_KEY_CHARS || !/^[\x21-\x7e]+$/.test(key)) {
     throw ApiError.badRequest("invalid Idempotency-Key");
@@ -227,7 +227,7 @@ export function walletRoutes(state: ApiState): Route[] {
       path: "/api/member/feed",
       handler: limited(state, async (c) => {
         const body = await readJson(c, FeedSchema);
-        const key = keyOf(c);
+        const key = keyOf(c.req.header("idempotency-key"));
         const item = body.item as (typeof FEED_ITEMS)[number];
         const r = await withWallet(state, (e) => e.feed(accountOf(c), item, body.count ?? 1, key));
         return json(feedResult(r));
@@ -238,7 +238,7 @@ export function walletRoutes(state: ApiState): Route[] {
       path: "/api/member/letter",
       handler: limited(state, async (c) => {
         const { text } = await readJson(c, LetterSchema);
-        const key = keyOf(c);
+        const key = keyOf(c.req.header("idempotency-key"));
         return json(spendResult(await withWallet(state, (e) => e.letter(accountOf(c), text, key))));
       }),
     },
@@ -247,7 +247,7 @@ export function walletRoutes(state: ApiState): Route[] {
       path: "/api/member/screen",
       handler: limited(state, async (c) => {
         const { text } = await readJson(c, ScreenSchema);
-        const key = keyOf(c);
+        const key = keyOf(c.req.header("idempotency-key"));
         const r = await withWallet(state, (e) => e.screenMessage(accountOf(c), text, key));
         return json(spendResult(r));
       }),
@@ -257,7 +257,7 @@ export function walletRoutes(state: ApiState): Route[] {
       path: "/api/member/expression",
       handler: limited(state, async (c) => {
         const body = await readJson(c, ExpressionSchema);
-        const key = keyOf(c);
+        const key = keyOf(c.req.header("idempotency-key"));
         const expression = body.expression as (typeof GIFT_EXPRESSIONS)[number];
         const r = await withWallet(state, (e) => e.expression(accountOf(c), expression, key));
         return json(spendResult(r));
@@ -268,7 +268,7 @@ export function walletRoutes(state: ApiState): Route[] {
       path: "/api/member/transfer",
       handler: limited(state, async (c) => {
         const body = await readJson(c, TransferSchema);
-        const key = keyOf(c);
+        const key = keyOf(c.req.header("idempotency-key"));
         const to: AccountRef = { platform: "discord", id: body.to_discord_id };
         const r = await withWallet(state, (e) => e.transfer(accountOf(c), to, body.amount, key));
         return json(transferResult(r));
@@ -289,7 +289,7 @@ export function walletRoutes(state: ApiState): Route[] {
       path: "/api/member/frame",
       handler: limited(state, async (c) => {
         const body = await readJson(c, FrameSchema);
-        const key = keyOf(c);
+        const key = keyOf(c.req.header("idempotency-key"));
         const req: { buy?: string; select?: string | null } = {};
         if (body.buy !== undefined) req.buy = body.buy;
         if (body.select !== undefined) req.select = body.select;

@@ -6,9 +6,7 @@ import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { affectRoutes } from "./affect.js";
 import { agencyRoutes } from "./agency.js";
-import { boardRoutes } from "./board.js";
 import { bodyRoutes } from "./body.js";
-import { cardCheckRoutes } from "./card.js";
 import { channelRoutes } from "./channels.js";
 import { controlRoutes } from "./control.js";
 import { coreRoutes } from "./core.js";
@@ -39,7 +37,7 @@ import { peopleRoutes } from "./people.js";
 import { personWalletRoutes } from "./people-wallet.js";
 import { planRoutes } from "./plan.js";
 import { promptRoutes } from "./prompts.js";
-import { clientKey, publicViewRoutes, tooMany } from "./public.js";
+import { clientKey, tooMany } from "./public.js";
 import { roleRoutes } from "./roles.js";
 import type { Route } from "./route.js";
 import { type ResponseCheck, rpcRoutes } from "./rpc.js";
@@ -149,10 +147,7 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
   return [
     ...coreRoutes(state),
     ...publicRoutes(state),
-    ...publicViewRoutes(state),
-    ...cardCheckRoutes(state),
     ...ogRoutes(state),
-    ...boardRoutes(state),
     ...memberRoutes(state),
     ...walletRoutes(state),
     ...fortuneRoutes(state),

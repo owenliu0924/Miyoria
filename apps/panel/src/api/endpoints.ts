@@ -60,8 +60,6 @@ import type {
   DecisionsQuery,
   ModuleAction,
   ModuleInfo,
-  IssuedCard,
-  BoardView,
   BountyView,
   FortuneDraw,
   FortuneToday,
@@ -73,13 +71,8 @@ import type {
   FeedResult,
   FramesResult,
   GiftExpression,
-  MemberCards,
-  MemberForgetResult,
-  MemberSession,
-  MemberView,
   SpendResult,
   WalletView,
-  PublicSongs,
   UsageMap,
   ControlResult,
   GameStartRequest,
@@ -144,18 +137,7 @@ export function createApi(client: ApiClient) {
     discordLoginUrl: (next: string) => client.url("/api/auth/oauth/login", { next }),
 
     // what anyone may see, and what a logged-in person has of their own: the cookie alone
-    publicSongs: (o?: Opts) => client.get<PublicSongs>("/api/public/songs", { ...o, public: true }),
-    memberSession: (o?: Opts) => client.get<MemberSession>("/api/member/session", { ...o, public: true }),
-    memberMe: (o?: Opts) => client.get<MemberView>("/api/member/me", { ...o, public: true }),
     memberExportUrl: () => client.url("/api/member/export"),
-    memberForget: () => client.post<MemberForgetResult>("/api/member/forget", { confirm: true }, { public: true }),
-    memberRequestSong: (query: string) =>
-      client.post<{ accepted: boolean }>("/api/member/songs", { query }, { public: true }),
-    memberCards: (o?: Opts) => client.get<MemberCards>("/api/member/card", { ...o, public: true }),
-    memberIssueCard: (req: { pose?: string; foil?: boolean } = {}, key?: string) =>
-      client.post<IssuedCard>("/api/member/card", req, key ? spend(key) : { public: true }),
-    memberRerollCard: (key: string) =>
-      client.post<IssuedCard>("/api/member/card/reroll", {}, spend(key)),
     memberWallet: (o?: Opts) => client.get<WalletView>("/api/member/wallet", { ...o, public: true }),
     memberCheckin: () => client.post<CheckinResult>("/api/member/checkin", {}, { public: true }),
     // Spends carry one key per click, so a retried request is charged once.
@@ -174,14 +156,11 @@ export function createApi(client: ApiClient) {
     memberTransfer: (to_discord_id: string, amount: number, key: string) =>
       client.post<TransferResult>("/api/member/transfer", { to_discord_id, amount }, spend(key)),
     memberBoard: (on: boolean) => client.post<{ on_board: boolean }>("/api/member/board", { on }, { public: true }),
-    publicBoard: (o?: Opts) => client.get<BoardView>("/api/public/board", { ...o, public: true }),
     memberGoals: (o?: Opts) => client.get<{ goals: GoalView[] }>("/api/member/goals", { ...o, public: true }),
     memberPledge: (id: string, amount: number, key: string) =>
       client.post<PledgeResult>(`/api/member/goals/${seg(id)}/pledge`, { amount }, spend(key)),
     memberBounties: (o?: Opts) =>
       client.get<{ bounties: BountyView[] }>("/api/member/bounties", { ...o, public: true }),
-    publicCard: (serial: string, o?: Opts) =>
-      client.get<IssuedCard>(`/api/public/card/${seg(serial)}`, { ...o, public: true }),
 
     modules: (o?: Opts) => client.get<ModuleInfo[]>("/api/modules", o),
     moduleAction: (id: string, action: ModuleAction) =>
