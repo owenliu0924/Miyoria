@@ -1015,6 +1015,9 @@ importers:
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@miyoria/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
@@ -1031,9 +1034,6 @@ importers:
       '@miyoria/ext-hello':
         specifier: workspace:*
         version: link:../../extensions/examples/hello
-      '@miyoria/sdk':
-        specifier: workspace:*
-        version: link:../sdk
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

@@ -1,12 +1,22 @@
 // The host's task plumbing against the real SDK runtime, in memory: `ProxyExecutor` over a
-// `Peer`, the SDK's `TaskRunner` on the other side. Also checks that the SDK's copy of the task
-// contract has the same shapes as `@miyoria/types`.
+// `Peer`, the SDK's `TaskRunner` on the other side. Also checks that the task contract of
+// `@miyoria/contracts/ext` (what the SDK's types come from) and `@miyoria/types` (what the core
+// reads with) say the same thing.
 
 import { PassThrough } from "node:stream";
+import {
+  EXT_STEER_OUTCOMES,
+  EXT_TASK_FAILURE_CODES,
+  type ExtStructuredState,
+  type ExtTaskEvent,
+  ExtTaskEventSchema,
+  type ExtTaskSpec,
+  ExtTaskSpecSchema,
+  type ExtTaskSteer,
+} from "@miyoria/contracts/ext";
 import { sleep } from "@miyoria/runtime/kernel";
 import {
   runExtension,
-  TASK_FAILURE_CODES as SDK_CODES,
   taskTopic as sdkTaskTopic,
   type TaskContext,
   TaskRunner,
@@ -15,12 +25,15 @@ import {
   isTaskSpec,
   type JsonValue,
   parseTaskEvent,
+  STEER_OUTCOMES,
+  type StructuredState,
   TASK_FAILURE_CODES,
   type TaskEvent,
   type TaskSpec,
+  type TaskSteer,
   taskTopic,
 } from "@miyoria/types";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it } from "vitest";
 import {
   callFailureCode,
   Peer,
@@ -265,11 +278,13 @@ describe("ProxyExecutor", () => {
   });
 });
 
-describe("the SDK's copy of the task contract", () => {
+describe("the contract and the core agree on the task contract", () => {
   it("has the same failure codes, topics and JSON shapes", async () => {
-    expect([...SDK_CODES]).toEqual([...TASK_FAILURE_CODES]);
+    expect([...EXT_TASK_FAILURE_CODES]).toEqual([...TASK_FAILURE_CODES]);
+    expect([...EXT_STEER_OUTCOMES]).toEqual([...STEER_OUTCOMES]);
     expect(sdkTaskTopic("game.minecraft", "failed")).toBe(taskTopic("game.minecraft", "failed"));
     expect(isTaskSpec(spec("a"))).toBe(true);
+    expect(ExtTaskSpecSchema.safeParse(spec("a")).success).toBe(true);
     // Events produced by the SDK runner parse as core `TaskEvent`s unchanged.
     const events: unknown[] = [];
     const runner = new TaskRunner({
@@ -288,6 +303,22 @@ describe("the SDK's copy of the task contract", () => {
     runner.close();
     await pump;
     expect(events.length).toBeGreaterThanOrEqual(3);
-    for (const e of events) expect(parseTaskEvent(e)).toEqual(e);
+    for (const e of events) {
+      expect(parseTaskEvent(e)).toEqual(e);
+      expect(ExtTaskEventSchema.parse(e)).toEqual(e);
+    }
+  });
+});
+
+describe("the task types of the contract and of the core are one shape", () => {
+  it("accept each other's values", () => {
+    expectTypeOf<ExtTaskEvent>().toExtend<TaskEvent>();
+    expectTypeOf<TaskEvent>().toExtend<ExtTaskEvent>();
+    expectTypeOf<ExtTaskSpec>().toExtend<TaskSpec>();
+    expectTypeOf<TaskSpec>().toExtend<ExtTaskSpec>();
+    expectTypeOf<ExtTaskSteer>().toExtend<TaskSteer>();
+    expectTypeOf<TaskSteer>().toExtend<ExtTaskSteer>();
+    expectTypeOf<ExtStructuredState>().toExtend<StructuredState>();
+    expectTypeOf<StructuredState>().toExtend<ExtStructuredState>();
   });
 });

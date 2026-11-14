@@ -20,7 +20,7 @@ export {
   startStdio,
   toolDecl,
 } from "./extension.js";
-export { FrameDecoder, FramingError, MAX_FRAME, encodeFrame } from "./framing.js";
+export { FrameBodyDecoder, FrameDecoder, FramingError, MAX_FRAME, encodeFrame } from "./framing.js";
 export {
   type ActionResult,
   type GameAction,
@@ -39,12 +39,14 @@ export {
   CANCEL_METHOD,
   type NotificationHandler,
   type PeerOptions,
+  type PeerRole,
   type RequestHandler,
   RpcError,
   RpcPeer,
 } from "./rpc.js";
 export {
   MAX_TASK_BUDGET_S,
+  STEER_OUTCOMES,
   type StructuredState,
   TASK_FAILURE_CODES,
   type TaskContext,

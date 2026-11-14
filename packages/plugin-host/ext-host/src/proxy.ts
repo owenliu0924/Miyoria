@@ -2,6 +2,7 @@
 // extension process.
 
 import type { CommandReply, CommandSpec, Invocation } from "@miyoria/commands";
+import { ExtCommandReplySchema, ExtPromptContributeResultSchema } from "@miyoria/contracts/ext";
 import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import type { JsonValue, PromptContributor, PromptRequest, PromptSection } from "@miyoria/types";
 import { isJsonObject } from "@miyoria/types";
@@ -69,11 +70,6 @@ export class ProxyTool implements Tool {
   }
 }
 
-const ReplySchema = z.object({
-  text: z.string(),
-  ephemeral: z.boolean().nullable().optional(),
-});
-
 /** Forwards one command to `commands.invoke`. */
 export async function invokeCommand(
   peer: Peer,
@@ -92,7 +88,7 @@ export async function invokeCommand(
     rethrow(error);
   }
   if (typeof result === "string") return { text: result, ephemeral: spec.ephemeral };
-  const parsed = ReplySchema.safeParse(result);
+  const parsed = ExtCommandReplySchema.safeParse(result);
   if (!parsed.success) {
     throw new ExtensionCallError(
       `bad \`commands.invoke\` result: ${z.prettifyError(parsed.error)}`,
@@ -100,12 +96,6 @@ export async function invokeCommand(
   }
   return { text: parsed.data.text, ephemeral: parsed.data.ephemeral ?? spec.ephemeral };
 }
-
-const SectionsSchema = z.object({
-  sections: z
-    .array(z.object({ key: z.string(), title: z.string(), body: z.string(), order: z.int() }))
-    .default([]),
-});
 
 export class ProxyPrompt implements PromptContributor {
   constructor(
@@ -129,7 +119,7 @@ export class ProxyPrompt implements PromptContributor {
     } catch (error) {
       rethrow(error);
     }
-    const parsed = SectionsSchema.safeParse(value);
+    const parsed = ExtPromptContributeResultSchema.safeParse(value);
     if (!parsed.success) {
       throw new ExtensionCallError(
         `bad \`prompt.contribute\` result: ${z.prettifyError(parsed.error)}`,

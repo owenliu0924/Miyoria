@@ -1,129 +1,52 @@
-// Wire types of the extension protocol (`docs/protocols/extension-rpc.md`).
+// The extension protocol as the host uses it (`docs/protocols/extension-rpc.md`). The shapes are
+// the schemas in `@miyoria/contracts/ext`, the same ones the SDK's types are derived from; this
+// file gives them the host's names and adds what only the host does with a tool's name.
 
 import type { CommandSpec } from "@miyoria/commands";
-import type { JsonValue } from "@miyoria/types";
-import { z } from "zod";
-import type { Permissions } from "./manifest.js";
+import {
+  EXT_LIMITS,
+  EXT_PROTOCOL_VERSION,
+  ExtCommandSpecSchema,
+  type ExtContributions,
+  ExtContributionsSchema,
+  type ExtExecutorDecl,
+  ExtExecutorDeclSchema,
+  type ExtExtensionInfo,
+  type ExtHostInfo,
+  type ExtInitializeParams,
+  type ExtInitializeResult,
+  ExtInitializeResultSchema,
+  type ExtToolDecl,
+  ExtToolDeclSchema,
+} from "@miyoria/contracts/ext";
+import type { z } from "zod";
 
 /** Protocol version sent in `initialize`. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION: number = EXT_PROTOCOL_VERSION;
 
-/** `initialize` params (host → extension). */
-export interface InitializeParams {
-  protocol: number;
-  host: HostInfo;
-  extension: ExtensionInfo;
-  /** `[extensions."<id>"]` without `enabled` / `permissions`. */
-  config: JsonValue;
-  /** What the host actually grants (declared ∩ config override). */
-  permissions: Permissions;
-}
-
-export interface HostInfo {
-  name: string;
-  version: string;
-}
-
-export interface ExtensionInfo {
-  id: string;
-  version: string;
-  dir: string;
-  /** Game id owned by a declared game adapter (manifest `game`), else `null`. */
-  game: string | null;
-}
+/** `initialize` params (host to extension). */
+export type InitializeParams = ExtInitializeParams;
+export type HostInfo = ExtHostInfo;
+export type ExtensionInfo = ExtExtensionInfo;
 
 /** `tools.register` params and `contributions.tools` entries. */
-export interface ToolDecl {
-  /**
-   * Wire name, e.g. `"weather.now"`. Dots become `_` in the agent's tool registry
-   * (`weather_now`) because model APIs reject them.
-   */
-  name: string;
-  description: string;
-  /** JSON Schema of the arguments object. */
-  parameters: JsonValue;
-  /** Permission node the triggering user needs. */
-  permission: string | null;
-  /**
-   * It only looks (a lookup, a status): several such calls in one step run at the same time
-   * (`Tool.readOnly`).
-   */
-  read_only: boolean;
-}
-
-const JsonValueSchema: z.ZodType<JsonValue> = z.json() as z.ZodType<JsonValue>;
-
-export const ToolDeclSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  parameters: JsonValueSchema.default(() => ({ type: "object", properties: {} })),
-  permission: z.string().nullable().default(null),
-  read_only: z.boolean().default(false),
-});
-
-const ArgKindSchema = z.union([
-  z.object({ type: z.enum(["string", "integer", "boolean", "user", "role"]) }),
-  z.object({ type: z.literal("choice"), choices: z.array(z.string()) }),
-]);
+export type ToolDecl = ExtToolDecl;
+export const ToolDeclSchema = ExtToolDeclSchema;
 
 /** `CommandSpec` as the extension protocol reads it (every field required). */
-export const CommandSpecSchema = z.object({
-  path: z.array(z.string()),
-  description: z.string(),
-  args: z.array(
-    z.object({
-      name: z.string(),
-      description: z.string(),
-      kind: ArgKindSchema,
-      required: z.boolean(),
-    }),
-  ),
-  permission: z.string(),
-  ephemeral: z.boolean(),
-}) satisfies z.ZodType<CommandSpec>;
+export const CommandSpecSchema = ExtCommandSpecSchema satisfies z.ZodType<CommandSpec>;
 
 /** `tasks.register` params and `contributions.executor`: the extension's task executor. */
-export const ExecutorDeclSchema = z.object({
-  /** Display name (`Minecraft`). */
-  name: z.string().min(1).max(64),
-  goals: z
-    .array(
-      z.object({
-        name: z.string().regex(/^[a-z0-9_-]{1,40}$/),
-        description: z.string().max(2000),
-        parameters: JsonValueSchema.nullable().default(null),
-        budget_s: z.number().positive().max(86_400).nullable().default(null),
-      }),
-    )
-    .max(64)
-    .default([]),
-  guide: z.string().max(8000).nullable().default(null),
-  /** The executor implements `task.steer`. Absent (an older extension) means it does not. */
-  steer: z.boolean().default(false),
-});
-
-export type ExecutorDecl = z.output<typeof ExecutorDeclSchema>;
+export const ExecutorDeclSchema = ExtExecutorDeclSchema;
+export type ExecutorDecl = ExtExecutorDecl;
 
 /** Everything registered during activation, applied by the host at once. */
-export const ContributionsSchema = z.object({
-  tools: z.array(ToolDeclSchema).default([]),
-  commands: z.array(CommandSpecSchema).default([]),
-  /** Prompt contributor keys. */
-  prompts: z.array(z.string()).default([]),
-  /** Topic patterns to receive as `event` notifications. */
-  subscriptions: z.array(z.string()).default([]),
-  /** The extension's task executor, if it has one (`tasks.register`). */
-  executor: ExecutorDeclSchema.nullable().default(null),
-});
+export const ContributionsSchema = ExtContributionsSchema;
+export type Contributions = ExtContributions;
 
-export type Contributions = z.output<typeof ContributionsSchema>;
-
-/** `initialize` result (extension → host). */
-export const InitializeResultSchema = z.object({
-  contributions: ContributionsSchema.prefault({}),
-});
-
-export type InitializeResult = z.output<typeof InitializeResultSchema>;
+/** `initialize` result (extension to host). */
+export const InitializeResultSchema = ExtInitializeResultSchema;
+export type InitializeResult = ExtInitializeResult;
 
 /** Registry name of a tool's wire name. */
 export function registryToolName(wire: string): string {
@@ -132,5 +55,5 @@ export function registryToolName(wire: string): string {
 
 /** Wire names: 1–64 chars of ASCII letters, digits, `_`, `-`, `.`. */
 export function validToolName(wire: string): boolean {
-  return /^[A-Za-z0-9_.-]{1,64}$/.test(wire);
+  return EXT_LIMITS.TOOL_NAME.test(wire);
 }

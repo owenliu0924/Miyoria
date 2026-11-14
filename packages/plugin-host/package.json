@@ -32,6 +32,7 @@
     "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/runtime": "workspace:*",
+    "@miyoria/sdk": "workspace:*",
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -39,7 +40,6 @@
   },
   "devDependencies": {
     "@miyoria/ext-hello": "workspace:*",
-    "@miyoria/sdk": "workspace:*",
     "@types/node": "^24.19.2",
     "typescript": "~5.9.3",
     "vitest": "^4.1.12",

@@ -11,6 +11,15 @@ import {
   commandName,
   splitPath,
 } from "@miyoria/commands";
+import {
+  ExtCommandsUnregisterParamsSchema,
+  ExtEventsPublishParamsSchema,
+  ExtEventsTopicsParamsSchema,
+  ExtKeyParamsSchema,
+  ExtLogParamsSchema,
+  ExtStorageSetParamsSchema,
+  ExtToolsUnregisterParamsSchema,
+} from "@miyoria/contracts/ext";
 import { GatedToolsKey, isGatedToolName } from "@miyoria/gate/actions";
 import { type Tool, type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -29,6 +38,7 @@ import { SettingsStoreKey } from "@miyoria/store";
 import {
   customEvent,
   envelopeTopic,
+  type JsonObject,
   type JsonValue,
   type ModuleId,
   type PromptContributors,
@@ -267,7 +277,7 @@ export class ExtensionModule implements Module {
       protocol: PROTOCOL_VERSION,
       host: { name: "miyoria", version: HOST_VERSION },
       extension: { id: m.id, version: m.version, dir: this.spec.dir, game: m.gameId() },
-      config: raw ?? {},
+      config: (raw ?? {}) as JsonObject,
       permissions: this.spec.granted,
     };
     let result: JsonValue;
@@ -345,22 +355,6 @@ interface CommandReg {
   registry: CommandRegistry;
   spec: CommandSpec;
 }
-
-const TopicsSchema = z.object({ topics: z.array(z.string()) });
-const NamedSchema = z.object({ name: z.string() });
-const KeyedSchema = z.object({ key: z.string() });
-const CommandPathSchema = z.object({ path: z.union([z.array(z.string()), z.string()]) });
-const PublishSchema = z.object({
-  topic: z.string(),
-  payload: z.json().default(null),
-  correlation: z.string().nullable().default(null),
-});
-const StorageSetSchema = z.object({ key: z.string(), value: z.json().nullable().default(null) });
-const LogSchema = z.object({
-  level: z.string().default(""),
-  message: z.string(),
-  fields: z.json().nullable().default(null),
-});
 
 function params<S extends z.ZodType>(schema: S, value: JsonValue): z.output<S> {
   const result = schema.safeParse(value);
@@ -567,7 +561,7 @@ class Session implements RpcHandler {
   }
 
   publish(raw: JsonValue): JsonValue {
-    const p = params(PublishSchema, raw);
+    const p = params(ExtEventsPublishParamsSchema, raw);
     if (!validTopic(p.topic)) throw RpcError.invalidParams(`bad topic \`${p.topic}\``);
     const own = `ext.${this.id}.`;
     const game = this.spec.manifest.gameId();
@@ -707,7 +701,7 @@ class Session implements RpcHandler {
   }
 
   log(raw: JsonValue): void {
-    const parsed = LogSchema.safeParse(raw);
+    const parsed = ExtLogParamsSchema.safeParse(raw);
     if (!parsed.success) return;
     const p = parsed.data;
     const fields = p.fields === null ? "" : JSON.stringify(p.fields);
@@ -753,29 +747,29 @@ class Session implements RpcHandler {
   async request(method: string, p: JsonValue): Promise<JsonValue> {
     switch (method) {
       case "events.subscribe":
-        return this.subscribe(params(TopicsSchema, p).topics);
+        return this.subscribe(params(ExtEventsTopicsParamsSchema, p).topics);
       case "events.unsubscribe":
-        return this.unsubscribe(params(TopicsSchema, p).topics);
+        return this.unsubscribe(params(ExtEventsTopicsParamsSchema, p).topics);
       case "events.publish":
         return this.publish(p);
       case "tools.register":
         return this.registerTool(params(ToolDeclSchema, p));
       case "tools.unregister":
-        return this.unregisterTool(params(NamedSchema, p).name);
+        return this.unregisterTool(params(ExtToolsUnregisterParamsSchema, p).name);
       case "commands.register":
         return this.registerCommand(params(CommandSpecSchema, p));
       case "commands.unregister": {
-        const path = params(CommandPathSchema, p).path;
+        const path = params(ExtCommandsUnregisterParamsSchema, p).path;
         return this.unregisterCommand(typeof path === "string" ? splitPath(path) : path);
       }
       case "tasks.register":
         return this.registerExecutor(params(ExecutorDeclSchema, p));
       case "prompt.register":
-        return this.registerPrompt(params(KeyedSchema, p).key);
+        return this.registerPrompt(params(ExtKeyParamsSchema, p).key);
       case "prompt.unregister":
-        return this.unregisterPrompt(params(KeyedSchema, p).key);
+        return this.unregisterPrompt(params(ExtKeyParamsSchema, p).key);
       case "storage.get": {
-        const key = this.storageKey(params(KeyedSchema, p).key);
+        const key = this.storageKey(params(ExtKeyParamsSchema, p).key);
         const { store, profile } = this.#storage();
         try {
           return { value: await store.get(profile, key) };
@@ -784,7 +778,7 @@ class Session implements RpcHandler {
         }
       }
       case "storage.set": {
-        const set = params(StorageSetSchema, p);
+        const set = params(ExtStorageSetParamsSchema, p);
         const key = this.storageKey(set.key);
         const { store, profile } = this.#storage();
         try {

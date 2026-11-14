@@ -1,6 +1,10 @@
 # Extension RPC 協定(v1)
 
-Core 的擴充宿主(`@miyoria/plugin-host/ext-host`,module id `extensions`)和每個擴充套件行程之間的協定。TS 擴充用 `@miyoria/sdk` 就不用自己處理這些細節;其他語言照這份文件實作即可(`packages/plugin-host/ext-host/test/fixtures/test-ext/index.mjs` 是一個不用 SDK、約 150 行的完整範例)。
+Core 的擴充宿主(`@miyoria/plugin-host/ext-host`,module id `extensions`)和每個擴充套件行程之間的協定。TS 擴充用 `@miyoria/sdk` 就不用自己處理這些細節;其他語言照這份文件實作即可(`packages/plugin-host/ext-host/test/fixtures/test-ext/index.mjs` 是一個不用 SDK、約 230 行的完整範例)。
+
+**訊息的形狀只寫一次**,在 `@miyoria/contracts/ext`(`packages/contracts/ext/src/`,zod schema);它的 JSON Schema 在 [`packages/contracts/schema/ext.json`](../../packages/contracts/schema/ext.json)(每個訊息一個 `$defs`,名字以 `Ext` 開頭,事件裡的帳號、context、訊息等共用形狀以 `Wire` 開頭),非 TS 的實作拿它來產生型別或驗證。宿主讀擴充送來的內容用的就是這些 schema,SDK 的型別(`@miyoria/sdk` 的 `ToolDecl`、`Invocation`、`Envelope`…)也是從它們推出來的,下面的範例和說明跟 schema 不一致時以 schema 為準。協定版本、錯誤碼、訊框上限這些常數在同一個地方(`EXT_PROTOCOL_VERSION`、`EXT_ERROR_CODE`、`EXT_LIMITS`)。
+
+同一個版本內只做加法:新欄位是選填或有預設值,收到不認得的訊息、事件類型或欄位就忽略。
 
 - **傳輸**:宿主把擴充當子行程啟動,協定走 **stdin / stdout**。**stdout 只能拿來寫協定訊框**;擴充自己的輸出請寫到 stderr(宿主會逐行轉進 Core 的 pino 日誌,logger 名稱 `miyoria_ext`)或用 `log` 方法。SDK 會自動把 `console.log / info / debug` 導到 stderr。
 - **訊息**:JSON-RPC 2.0。雙方都可以送 request 和 notification;request 可以並行,用 `id` 對應 response。
@@ -17,7 +21,7 @@ Core 的擴充宿主(`@miyoria/plugin-host/ext-host`,module id `extensions`)和�
 
 ## 訊框
 
-LSP 風格:header、空行、UTF-8 JSON 本文。`Content-Length` 是本文的**位元組數**(不是字元數);header 名稱不分大小寫,其他 header(例如 `Content-Type`)會被忽略。本文上限 16 MiB。
+LSP 風格:header、空行、UTF-8 JSON 本文。`Content-Length` 是本文的**位元組數**(不是字元數);header 名稱不分大小寫,其他 header(例如 `Content-Type`)會被忽略。本文上限 16 MiB(`Content-Length` 超過就中斷連線);header 區塊(到空行為止)上限 8 KiB。
 
 ```
 Content-Length: 51\r\n
@@ -148,7 +152,7 @@ agent 組 prompt 時,對每個已註冊的 prompt key 送出。逾時 `prompt_ti
 }}
 ```
 
-`event` 是 `@miyoria/types` 的 `Event` 的 JSON(`{"type", "data"}`);自訂事件是 `{"type":"custom","data":{"topic":"…","payload":…}}`。完整型別見 `packages/sdk/src/types.ts`。擴充處理太慢、宿主的送出佇列滿了時,事件會被丟棄(會記警告)。
+`event` 是 `@miyoria/types` 的 `Event` 的 JSON(`{"type", "data"}`);自訂事件是 `{"type":"custom","data":{"topic":"…","payload":…}}`。完整形狀見 `ExtEventNotification` / `ExtEvent`(`packages/contracts/ext/src/events.ts`)。擴充處理太慢、宿主的送出佇列滿了時,事件會被丟棄(會記警告)。
 
 ### `shutdown`(notification)
 
@@ -306,7 +310,7 @@ SDK 的 `ctx.game.registerAdapter(adapter)` 負責這些對應;`describe().id` �
 
 ## 任務執行器
 
-活動型擴充(遊戲、瀏覽器)實作任務契約(`docs/design/v2-architecture.md` §3.8;型別在 `@miyoria/types` 的 `task.ts`,SDK 有一份相同的副本):核心開始一個任務 `{id, goal, args, budget_s}`,擴充接受後一定以**剛好一個** `done` 或 `failed{code, detail}` 結束它。核心從不從事件名稱或結果文字猜完成。
+活動型擴充(遊戲、瀏覽器)實作任務契約(`docs/design/v2-architecture.md` §3.8;形狀是 `@miyoria/contracts/ext` 的 `ExtTaskSpec`、`ExtTaskEvent`、`ExtTaskSteer`、`ExtStructuredState`、`ExtExecutorDecl`,SDK 的型別從它們來):核心開始一個任務 `{id, goal, args, budget_s}`,擴充接受後一定以**剛好一個** `done` 或 `failed{code, detail}` 結束它。核心從不從事件名稱或結果文字猜完成。
 
 - **註冊**(Ext → Host):`contributions.executor` 或執行中的 `tasks.register`(request),一個擴充一個:
   ```json
@@ -317,7 +321,7 @@ SDK 的 `ctx.game.registerAdapter(adapter)` 負責這些對應;`describe().id` �
 - **`task.cancel`**(Host → Ext,request):`{"task":"<id>"}` → `{}`;之後該任務會以 `failed` / `cancelled` 結束。不認得或已結束的 id 忽略。
 - **`task.observe`**(Host → Ext,request):`{}` → `StructuredState` `{"at","state":{…},"task":<執行中的 id 或 null>,"summary"}`(結構化狀態,不是要再解析的文字)。
 - **`task.steer`**(Host → Ext,request,選用):`{"steer":{"id","task","patch":{…},"why","cause"}}` → `{}`。中途改方向、保留進度(`docs/design/v3-architecture.md` §10.6)。和 `task.start` 一樣只表示**受理**;結果以 `steered` 事件回報,patch 在下一個安全點才讀。只有註冊時宣告了 `"steer":true` 的擴充才會收到;SDK 在執行器有 `steer` 方法時自動宣告。受理不了才回錯誤(`error.data.code`)。
-- **`task.event`**(Ext → Host,notification):`{"event": TaskEvent}`,`TaskEvent` 是 `{"type":"started","task","goal","at"}`、`{"type":"progress","task","progress":0..1|null,"detail","at"}`、`{"type":"done","task","detail","data","at"}`、`{"type":"failed","task","code","detail","at"}`,或 `{"type":"steered","task","steer","outcome":"applied"|"rejected"|"too_late","detail","at"}`(不是結束,任務繼續跑)。宿主檢查後發佈到匯流排 `<owner>.task.<type>`(例如 `game.minecraft.task.done`,payload 就是這個事件)。
+- **`task.event`**(Ext → Host,notification):`{"event": TaskEvent}`,`TaskEvent` 是 `{"type":"started","task","goal","at"}`、`{"type":"progress","task","progress":0..1|null,"detail","at"}`、`{"type":"done","task","detail","data","at"}`、`{"type":"failed","task","code","detail","at"}`,或 `{"type":"steered","task","steer","outcome":"applied"|"rejected"|"too_late","detail","at"}`(不是結束,任務繼續跑)。宿主檢查後(核心讀事件用 `@miyoria/types` 的 `parseTaskEvent`:`progress` 夾進 0..1、缺的 `detail` 當成空字串、`at` 要是可解析的時間,這些規則 schema 寫不出來,所以 schema 只描述送出的形狀)發佈到匯流排 `<owner>.task.<type>`(例如 `game.minecraft.task.done`,payload 就是這個事件)。
 
 **Steer 的相容性**:註冊內容多一個選用欄位 `steer`(boolean,缺少就是 `false`),SDK 只在執行器有 `steer` 時才送,沒有 steer 的擴充送出的內容和以前完全一樣。宿主只在宣告了 `steer` 時才給 `ProxyExecutor` 一個 `steer` 方法;沒宣告的(包含舊版擴充)看起來就和沒有 `steer` 的執行器一樣,核心回 `unsupported`(`fallback: cancel_then_start`),主線改走取消再開始。舊宿主收到多出來的欄位會忽略,舊擴充不會收到 `task.steer`。回應 steer 的 `steered` 事件即使任務已經結束(`too_late`)或宿主不認得它(`rejected`)也會送到匯流排,這是「已結束任務的事件一律丟掉」的唯一例外;沒有人問過的 `steered` 一律丟掉。
 
@@ -339,13 +343,13 @@ SDK:`TaskRunner`(`@miyoria/sdk`)把一個 `TaskWorker { observe, run(spec, task)
 
 逾時的 request 在呼叫端得到 `-32002`,之後才到的 response 會被忽略;連線本身不受影響。SDK 對宿主的 request 預設 10 秒逾時。
 
-**取消**:呼叫端不再等一個 request 時(逾時,或呼叫被中止:工具逾時、回合被取消、遊戲導演的步驟逾時),宿主送 notification `$/cancelRequest` `{"id": <那個 request 的 id>}`(跟 LSP 一樣)。擴充可以據此停止那件工作(SDK 會中止交給處理函式的 `AbortSignal`:工具的 `ctx.signal`、執行器的 `start(spec, signal)` / `observe(signal)`),讓過期的工作無害;不認得這個 notification 的擴充照舊忽略它。之後送回的 response 會被忽略(被 SDK 取消的處理函式回 `-32800`)。
+**取消**:呼叫端不再等一個 request 時(逾時,或呼叫被中止:工具逾時、回合被取消、遊戲導演的步驟逾時),**宿主**送 notification `$/cancelRequest` `{"id": <那個 request 的 id>}`(跟 LSP 一樣)。擴充可以據此停止那件工作(SDK 會中止交給處理函式的 `AbortSignal`:工具的 `ctx.signal`、執行器的 `start(spec, signal)` / `observe(signal)`),讓過期的工作無害;不認得這個 notification 的擴充照舊忽略它。之後送回的 response 會被忽略(被 SDK 取消的處理函式回 `-32800`)。方向只有宿主到擴充:擴充等宿主的 request 逾時時不會送 `$/cancelRequest`,宿主收到它會當成沒有對象而忽略。
 
 ## 錯誤碼
 
 | code | 意義 |
 |---|---|
-| -32700 | JSON 解析失敗 |
+| -32700 | JSON 解析失敗(宿主收到壞的本文時回這個並繼續讀;SDK 收到時直接中斷連線) |
 | -32600 | 不是合法的 request |
 | -32601 | 沒有這個方法 / 工具 / 指令 / prompt key |
 | -32602 | 參數不對 |
@@ -355,6 +359,7 @@ SDK:`TaskRunner`(`@miyoria/sdk`)把一個 `TaskWorker { observe, run(spec, task)
 | -32003 | 名稱衝突 |
 | -32004 | 宿主服務不存在(工具 registry、指令 registry、storage…) |
 | -32005 | 連線已關閉(只在呼叫端產生) |
+| -32800 | 呼叫端取消了這個 request(`$/cancelRequest`,LSP 的代碼;SDK 中止處理函式時用) |
 
 ## 設定與 manifest
 
@@ -366,3 +371,8 @@ watch_poll_ms = 1000
 ```
 
 宿主在每個 `dirs` 裡往下找最多三層含 `miyoria.extension.toml` 的目錄(略過 `node_modules`、`dist`、`.git`、隱藏目錄)。manifest 格式見 `docs/ARCHITECTURE.md` §9.2;`placement = "stage"` 的擴充會被略過(宿主記為 skipped,Stage 節點沒有擴充宿主,所以不會有人跑它),只有 `core` 和 `any` 會被載入。`[[mcp_servers]]` 宿主只解析,透過 `Arc<ExtensionCatalog>` 服務提供給 MCP 模組。
+
+## 變更紀錄
+
+- 協定本身沒有變動(版本仍是 1,線上的位元組跟以前一樣)。實作上:形狀改寫成 `@miyoria/contracts/ext` 的 schema(宿主和 SDK 共用);JSON-RPC 的訊框、關聯、取消、逾時只剩 `@miyoria/sdk` 裡的一份(`RpcPeer`),宿主以 `host` 角色使用它;`@miyoria/contracts` 跟 `@miyoria/sdk` 一起發佈到 npm,SDK 依賴它。
+- 對 SDK 使用者:`@miyoria/sdk` 匯出的型別名稱都沒變,形狀從手寫改成推導。`IncomingMessage` 多了平台本來就會送的選填欄位(`reply_to`、`stickers`、`embeds`、`forwarded`、附件的 `id` 等),`VoiceUtterance` 多了選填的 `turn`;`RpcMessage` 的結果訊息 `result` 變成選填。`RpcError` 轉成字串時帶代碼(`denied (code -32001)`)。其餘(`ToolDecl.parameters`、`InitializeParams.config`、`TaskSpec.args`、`custom` 事件的 `payload`…)維持原本的寬鬆型別。
