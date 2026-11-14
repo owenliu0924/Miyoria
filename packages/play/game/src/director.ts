@@ -9,7 +9,6 @@
 
 import { type ActuatorRegistry, deniedText } from "@miyoria/gate/actions";
 import { type ChatRequest, type LlmRouter, LlmRouterKey, sessionId } from "@miyoria/llm/llm";
-import { RequestQueueKey } from "@miyoria/queue";
 import { errorMessage, getLogger, type ModuleContext, withTimeout } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
@@ -48,6 +47,7 @@ import {
   WorkEndedError,
   WorkLaneKey,
 } from "@miyoria/types";
+import { RequestQueueKey } from "../../queue/src/index.js";
 import { GAME_ACT } from "./actions.js";
 import type { GameConfig } from "./config.js";
 import {

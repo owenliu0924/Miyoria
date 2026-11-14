@@ -22,9 +22,9 @@
   },
   "dependencies": {
     "@miyoria/brain": "workspace:*",
-    "@miyoria/game": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
+    "@miyoria/play": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "zod": "^4.6.7"
   },

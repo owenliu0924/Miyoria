@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { EconomyError, EconomyKey } from "@miyoria/economy";
-import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   type AuditEntry,

@@ -176,7 +176,7 @@ export class GameModule implements Module {
     for (const problem of timeoutViolations(timeoutValues(cfg))) {
       ctx.log.warn(
         { problem },
-        "game timeouts are out of order (see packages/game/src/timeouts.ts)",
+        "game timeouts are out of order (see packages/play/game/src/timeouts.ts)",
       );
     }
     const view = new View();

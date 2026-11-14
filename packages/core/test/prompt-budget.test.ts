@@ -40,7 +40,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { gameCapabilities } from "../../game/src/actions.js";
+import { gameCapabilities } from "../../play/game/src/actions.js";
 import { voiceCapabilities } from "../../voice/voice/src/actions.js";
 
 const PROFILE = join(fileURLToPath(new URL("../../..", import.meta.url)), "profiles/deepseek-chan");

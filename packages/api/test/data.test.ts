@@ -8,7 +8,7 @@ import * as self from "@miyoria/heart/self";
 import { SETTINGS_KEY as MOOD_KEY } from "@miyoria/heart/social";
 import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm/llm";
 import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory/memory";
-import * as queue from "@miyoria/queue";
+import * as queue from "@miyoria/play/queue";
 import {
   defineManifest,
   type Module,

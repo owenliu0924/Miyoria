@@ -4,7 +4,7 @@
 import type { WalletExport } from "@miyoria/economy";
 import type { PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport, ModelUsage, PeriodReport } from "@miyoria/llm/llm";
-import type { ItemState } from "@miyoria/queue";
+import type { ItemState } from "@miyoria/play/queue";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";
 import type { StreamAction } from "@miyoria/stage";
 import type {

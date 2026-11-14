@@ -248,7 +248,7 @@ function codeOf(detail: string | undefined): string {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(
-  readFileSync(join(here, "../../eval/fixtures/mc-obtain-bread-loop.json"), "utf8"),
+  readFileSync(join(here, "../../../eval/fixtures/mc-obtain-bread-loop.json"), "utf8"),
 ) as { trace: Step[] };
 
 describe("2026-11-08, replayed through the method guard", () => {

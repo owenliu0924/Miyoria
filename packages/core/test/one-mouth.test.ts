@@ -54,11 +54,11 @@ describe("only the main line speaks", () => {
       [
         // After `MouthKey`: only reached under `pipeline = "v2"`.
         "packages/gate/actions/src/builtin.ts",
-        "packages/game/src/chat.ts",
+        "packages/play/game/src/chat.ts",
         "packages/runtime/scheduler/src/scheduler.ts",
       ].sort(),
     );
-    for (const file of ["packages/gate/actions/src/builtin.ts", "packages/game/src/chat.ts"]) {
+    for (const file of ["packages/gate/actions/src/builtin.ts", "packages/play/game/src/chat.ts"]) {
       const text = readFileSync(join(ROOT, file), "utf8");
       expect(text.indexOf("MouthKey)")).toBeGreaterThan(-1);
       expect(text.indexOf("MouthKey)"), file).toBeLessThan(text.lastIndexOf(".speak("));
@@ -100,10 +100,10 @@ describe("only the main line acts", () => {
         // An expression a person bought on the member page: `stage.expression`, as the panel.
         "packages/economy/src/economy.ts",
         // The game executor: the steps of a session the main line started.
-        "packages/game/src/actions.ts",
-        "packages/game/src/chat.ts",
-        "packages/game/src/commands.ts",
-        "packages/game/src/director.ts",
+        "packages/play/game/src/actions.ts",
+        "packages/play/game/src/chat.ts",
+        "packages/play/game/src/commands.ts",
+        "packages/play/game/src/director.ts",
         // V2 only: with a proposal board `#submit` is never reached.
         "packages/heart/mind/src/mind.ts",
         "packages/sing/src/commands.ts",
@@ -128,7 +128,7 @@ describe("only the main line acts", () => {
     const runtime = readFileSync(join(ROOT, "packages/brain/agent/src/runtime.ts"), "utf8");
     const legacy = runtime.slice(runtime.indexOf("#legacyInitiative(context: ContextKey"));
     expect(legacy.indexOf("if (this.mainline)")).toBeLessThan(legacy.indexOf("inbox.push"));
-    const director = readFileSync(join(ROOT, "packages/game/src/director.ts"), "utf8");
+    const director = readFileSync(join(ROOT, "packages/play/game/src/director.ts"), "utf8");
     expect(director.indexOf("ProposalBoardKey);")).toBeLessThan(
       director.indexOf("v2Event(ARBITER_IMPULSE_TOPIC"),
     );

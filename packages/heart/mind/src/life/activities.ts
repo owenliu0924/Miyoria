@@ -68,7 +68,7 @@ export const FUTURE_CAPABILITIES = {
   workspace: "workspace.write",
   /** A skill she saved (§8.3 item 3). */
   skill: "skill.run",
-  /** A party game in voice (`@miyoria/party`, §9.1). */
+  /** A party game in voice (`@miyoria/play/party`, §9.1). */
   party: "party.start",
 } as const;
 

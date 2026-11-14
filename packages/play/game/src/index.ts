@@ -1,4 +1,4 @@
-// @miyoria/game: the game director (module `game`).
+// @miyoria/play/game: the game director (module `game`).
 //
 // A game adapter extension registers the task executor of `game.<id>` (v2 §3.8) and publishes
 // `game.<id>.*` events. While a session runs (`game start`) the director observes the game

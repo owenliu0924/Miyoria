@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { PersonaHandle, PersonaHandleKey } from "@miyoria/brain/agent";
-import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { PersonaOverrideStoreKey } from "@miyoria/store";

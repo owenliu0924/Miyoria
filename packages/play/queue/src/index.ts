@@ -1,4 +1,4 @@
-// @miyoria/queue: module `queue`, the fair user request queue with a voting mode.
+// @miyoria/play/queue: module `queue`, the fair user request queue with a voting mode.
 
 export { errorText, registerCommands } from "./commands.js";
 export {

@@ -501,7 +501,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     modules: ["world"],
     shared: true,
   }),
-  // @miyoria/queue `STATE_KEY` under `STATE_PROFILE`
+  // @miyoria/play/queue `STATE_KEY` under `STATE_PROFILE`
   category("queue", [settings("queue", "global", ["queue:state"])], {
     modules: ["queue"],
     shared: true,

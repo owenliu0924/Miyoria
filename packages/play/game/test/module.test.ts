@@ -16,7 +16,6 @@ import {
   MockProvider,
   parseModelRef,
 } from "@miyoria/llm/llm";
-import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
@@ -36,6 +35,7 @@ import {
   v2Payload,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RequestQueue, RequestQueueKey } from "../../queue/src/index.js";
 import { SELF_GOAL_BY } from "../src/decision.js";
 import {
   DECISION_TOPIC,

@@ -4,13 +4,13 @@
 
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
+import { type RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import {
   type CatalogEntry,
   ExtensionCatalogKey,
   extensionModuleId,
 } from "@miyoria/plugin-host/ext-host";
 import { type ServerStatus as McpServerStatus, McpStatusKey } from "@miyoria/plugin-host/mcp";
-import { type RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { errorMessage, getLogger, type ModuleStatus, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   defaultStageStatus,

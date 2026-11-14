@@ -16,13 +16,13 @@ import {
   memoryConfig,
   tokenString,
 } from "@miyoria/memory/memory";
+import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import {
   ExtensionCatalog,
   ExtensionCatalogKey,
   ExtensionManifest,
 } from "@miyoria/plugin-host/ext-host";
 import { McpStatus, McpStatusKey, newServerStatus } from "@miyoria/plugin-host/mcp";
-import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   defaultStageStatus,

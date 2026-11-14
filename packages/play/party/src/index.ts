@@ -1,4 +1,4 @@
-// @miyoria/party: module `party`, voice party games she hosts and plays (docs/design/v4-plan.md
+// @miyoria/play/party: module `party`, voice party games she hosts and plays (docs/design/v4-plan.md
 // §9.1): turtle soup, song guessing, word and story chains, and quizzes. The framework (one game
 // per voice channel, players, rounds, timers, scores, a clean end) is `Table`; each game is a
 // `Game`; her tools are `party_start` / `party_host` / `party_play` / `party_ask`.

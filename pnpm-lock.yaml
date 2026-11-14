@@ -346,12 +346,12 @@ importers:
       '@miyoria/memory':
         specifier: workspace:*
         version: link:../memory
+      '@miyoria/play':
+        specifier: workspace:*
+        version: link:../play
       '@miyoria/plugin-host':
         specifier: workspace:*
         version: link:../plugin-host
-      '@miyoria/queue':
-        specifier: workspace:*
-        version: link:../queue
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -631,9 +631,6 @@ importers:
       '@miyoria/economy':
         specifier: workspace:*
         version: link:../economy
-      '@miyoria/game':
-        specifier: workspace:*
-        version: link:../game
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
@@ -649,15 +646,12 @@ importers:
       '@miyoria/memory':
         specifier: workspace:*
         version: link:../memory
-      '@miyoria/party':
+      '@miyoria/play':
         specifier: workspace:*
-        version: link:../party
+        version: link:../play
       '@miyoria/plugin-host':
         specifier: workspace:*
         version: link:../plugin-host
-      '@miyoria/queue':
-        specifier: workspace:*
-        version: link:../queue
       '@miyoria/replay':
         specifier: workspace:*
         version: link:../replay
@@ -766,55 +760,18 @@ importers:
       '@miyoria/brain':
         specifier: workspace:*
         version: link:../brain
-      '@miyoria/game':
-        specifier: workspace:*
-        version: link:../game
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/play':
+        specifier: workspace:*
+        version: link:../play
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/game:
-    dependencies:
-      '@miyoria/commands':
-        specifier: workspace:*
-        version: link:../commands
-      '@miyoria/gate':
-        specifier: workspace:*
-        version: link:../gate
-      '@miyoria/heart':
-        specifier: workspace:*
-        version: link:../heart
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/queue':
-        specifier: workspace:*
-        version: link:../queue
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -996,17 +953,26 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/party:
+  packages/play:
     dependencies:
+      '@miyoria/commands':
+        specifier: workspace:*
+        version: link:../commands
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
+      '@miyoria/heart':
+        specifier: workspace:*
+        version: link:../heart
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@miyoria/store':
+        specifier: workspace:*
+        version: link:../store
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1060,34 +1026,6 @@ importers:
       '@miyoria/sdk':
         specifier: workspace:*
         version: link:../sdk
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/queue:
-    dependencies:
-      '@miyoria/commands':
-        specifier: workspace:*
-        version: link:../commands
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1183,9 +1121,9 @@ importers:
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
-      '@miyoria/queue':
+      '@miyoria/play':
         specifier: workspace:*
-        version: link:../queue
+        version: link:../play
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime

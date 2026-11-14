@@ -1,4 +1,4 @@
-// Subject `guard`: the method guard of the game director (`packages/game/src/methods.ts`, v4
+// Subject `guard`: the method guard of the game director (`packages/play/game/src/methods.ts`, v4
 // plan §11.2 item 5), asked about the decisions she actually made. A method (action and item)
 // that failed the same way twice is held; a later decision of a held method never runs
 // (`blocked`). A success of the same method ends its hold. Open loop: the recorded decisions after
@@ -8,7 +8,7 @@
 // The recorded steps carry the game's answer as text, not its failure code, so the code is read
 // back from that text (`failureCode`).
 
-import { defaultGameConfig, MethodGuard, methodKey } from "@miyoria/game";
+import { defaultGameConfig, MethodGuard, methodKey } from "@miyoria/play/game";
 import { ofType, type Trace } from "../trace.js";
 import type { Subject } from "./types.js";
 

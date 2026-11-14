@@ -7,7 +7,7 @@
 // it (`packages/brain/agent/test/promise-claims.test.ts`: the replay's scripted LLM makes no tool
 // calls and the voice and game tools are not registered), and the game staying closed after a
 // stop (`packages/brain/arbiter/test/game-hold.test.ts`: `activity.done` is her output, not a replayed
-// input). The keying of a reworded line is `packages/game/test/narration.test.ts`; the replay
+// input). The keying of a reworded line is `packages/play/game/test/narration.test.ts`; the replay
 // shows that the Arbiter goes by the key.
 
 import { readFileSync } from "node:fs";

@@ -5,7 +5,7 @@
 import { join, resolve } from "node:path";
 import { CommandRegistry, CommandRegistryKey, Invocation, Permissions } from "@miyoria/commands";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
-import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {

@@ -1,4 +1,4 @@
-// Party games (`@miyoria/party`) as `GET /api/party` serves them: the games running now with their
+// Party games (`@miyoria/play/party`) as `GET /api/party` serves them: the games running now with their
 // players and scores, and how the last ones ended. A 503 is the party module being off; an empty
 // snapshot is no game right now.
 
