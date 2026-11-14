@@ -124,7 +124,3 @@ export const SingConfigSchema = z.object({
   permissions: SingPermissionsSchema.prefault({}),
 });
 export type SingConfig = z.output<typeof SingConfigSchema>;
-
-export function defaultSingConfig(): SingConfig {
-  return SingConfigSchema.parse({});
-}

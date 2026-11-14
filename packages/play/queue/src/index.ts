@@ -2,10 +2,8 @@
 
 export { errorText, registerCommands } from "./commands.js";
 export {
-  defaultQueueConfig,
   type QueueConfig,
   QueueConfigSchema,
-  type QueuePermissions,
   QueuePermissionsSchema,
 } from "./config.js";
 export { QueueModule, RequestQueueKey } from "./module.js";

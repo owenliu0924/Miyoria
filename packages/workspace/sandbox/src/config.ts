@@ -13,7 +13,6 @@ export const SandboxImagesSchema = z.object({
   python: image.default("python:3.12-slim"),
   node: image.default("node:24-slim"),
 });
-export type SandboxImages = z.output<typeof SandboxImagesSchema>;
 
 /** Resource limits of one container. */
 export const SandboxLimitsSchema = z.object({
@@ -95,7 +94,6 @@ export const SandboxSessionsSchema = z.object({
   /** Largest `/work` of a session, in MiB; a run that leaves more closes the session. */
   disk_mb: z.number().int().min(1).default(256),
 });
-export type SandboxSessions = z.output<typeof SandboxSessionsSchema>;
 
 /**
  * `[modules.sandbox.files]`: files people send her. The bytes are downloaded by Core (bounded,
@@ -145,7 +143,6 @@ export const SandboxWorkspaceSchema = z.object({
   /** Output files (`outputs/<run id>.txt`, full output of runs whose result was cut) kept. */
   keep_outputs: z.number().int().min(0).default(20),
 });
-export type SandboxWorkspace = z.output<typeof SandboxWorkspaceSchema>;
 
 /** A host name or `*.suffix`: no scheme, port, path or bare wildcard. */
 export const ALLOWED_HOST =

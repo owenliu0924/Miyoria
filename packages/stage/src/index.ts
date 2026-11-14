@@ -176,7 +176,6 @@ export {
   applyObsSetup,
   describeStep,
   GAME_MODEL,
-  MASK_FILE,
   MASK_FILTER,
   type ObsAdmin,
   type ObsSetupOptions,

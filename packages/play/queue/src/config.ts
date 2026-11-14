@@ -10,7 +10,6 @@ export const QueuePermissionsSchema = z.object({
   manage: z.string().default("queue.manage"),
   vote: z.string().default("queue.vote"),
 });
-export type QueuePermissions = z.output<typeof QueuePermissionsSchema>;
 
 /**
  * `[modules.queue]` config section.
@@ -49,8 +48,3 @@ export const QueueConfigSchema = z.object({
   permissions: QueuePermissionsSchema.prefault({}),
 });
 export type QueueConfig = z.output<typeof QueueConfigSchema>;
-
-/** Defaults of every field (the Rust `Default` impl). */
-export function defaultQueueConfig(): QueueConfig {
-  return QueueConfigSchema.parse({});
-}

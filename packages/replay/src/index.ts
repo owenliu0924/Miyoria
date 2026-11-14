@@ -17,7 +17,6 @@ export {
 } from "./log.js";
 export {
   logFileFor,
-  type ReplayConfig,
   ReplayConfigSchema,
   ReplayRecorderModule,
   type ReplayRecorderOptions,

@@ -41,7 +41,6 @@ export const SongMetaSchema = z.object({
     .optional(),
 });
 export type SongMeta = z.output<typeof SongMetaSchema>;
-export type LyricLine = z.output<typeof LyricLineSchema>;
 
 /**
  * Where the worker runs a job and why (`workers/sing/gpu.py`): decided before every GPU stage and
@@ -67,7 +66,6 @@ export const GpuStatusSchema = z.object({
   silence_est_s: z.number().nullable().catch(null),
   silence_max_s: z.number().nullable().catch(null),
 });
-export type GpuStatus = z.output<typeof GpuStatusSchema>;
 
 export const WorkerJobSchema = z.object({
   id: z.string(),

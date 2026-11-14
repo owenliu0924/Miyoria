@@ -59,15 +59,12 @@ export {
   SandboxConfigSchema,
   type SandboxFiles,
   SandboxFilesSchema,
-  type SandboxImages,
   SandboxImagesSchema,
   type SandboxLimits,
   SandboxLimitsSchema,
   type SandboxNetwork,
   SandboxNetworkSchema,
-  type SandboxSessions,
   SandboxSessionsSchema,
-  type SandboxWorkspace,
   SandboxWorkspaceSchema,
 } from "./config.js";
 export {

@@ -3,10 +3,9 @@
 
 import type { WalletExport } from "@miyoria/economy";
 import type { PendingApproval } from "@miyoria/gate/actions";
-import type { CostReport, ModelUsage, PeriodReport } from "@miyoria/llm/llm";
+import type { CostReport, ModelUsage } from "@miyoria/llm/llm";
 import type { ItemState } from "@miyoria/play/queue";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";
-import type { StreamAction } from "@miyoria/stage";
 import type {
   AuthScope,
   MemoryKind,
@@ -334,8 +333,6 @@ export interface Page<T> {
 
 // ---- LLM cost ---------------------------------------------------------------------------
 
-/** Totals of one day (`YYYY-MM-DD`) or month (`YYYY-MM`). */
-export type PeriodInfo = PeriodReport;
 /** `GET /api/llm/cost`: the router's `CostReport` as-is. */
 export type CostInfo = CostReport;
 export type { ModelUsage };
@@ -556,12 +553,6 @@ export interface QueueState {
   items: QueueItemInfo[];
 }
 
-/** Body of `POST /api/queue/{id}/move`. */
-export interface MoveRequest {
-  /** 0-based target index in `QueueState.items`, clamped. */
-  position: number;
-}
-
 // ---- stage ------------------------------------------------------------------------------
 
 export interface StageLinkState {
@@ -616,27 +607,6 @@ export interface SceneRolesState {
   /** `llm`, `heuristic` (keywords) or `null` (not classified yet). */
   classified_by: "llm" | "heuristic" | null;
   classifying: boolean;
-}
-
-/** Body of `PUT /api/stage/scenes`: `scene: null` goes back to the classification. */
-export interface SceneRoleRequest {
-  role: string;
-  scene: string | null;
-}
-
-/** Body of `POST /api/stage/scene`. */
-export interface SceneRequest {
-  scene: string;
-}
-
-/** Body of `POST /api/stage/expression`. */
-export interface ExpressionRequest {
-  expression: string;
-}
-
-/** Body of `POST /api/stage/stream`. */
-export interface StreamRequest {
-  action: StreamAction;
 }
 
 /** Body of `POST /api/stage/say`. */

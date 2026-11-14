@@ -32,7 +32,6 @@ export const ReplayConfigSchema = z.object({
   /** Topics recorded (exact or `prefix.*`); default: her input plus her turn outcomes. */
   topics: z.array(z.string()).default([...DEFAULT_RECORD_TOPICS]),
 });
-export type ReplayConfig = z.output<typeof ReplayConfigSchema>;
 
 export interface ReplayRecorderOptions {
   /** Base directory of a relative `dir` (the config file's directory). */
