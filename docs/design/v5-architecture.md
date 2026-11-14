@@ -566,6 +566,8 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 | **6 很多地方** | Space / Room 的表;每個 Space 的設定;Discord 多伺服器、多頻道做完整;admin / web 拆開;檔案網域和「她做給我的」頁 | 中 | 1、3 |
 | **7 身體** | 活動契約;Neuro SDK 端點;轉接器變服務;表演者和渲染器分開;Minecraft(議程層、不停不卡、蓋建築、多人,§10.1) | 大 | 2 |
 
+**階段 0 在 2026-11-14 做完**:CI 轉綠並合併了原有的 PR;移除 `boundaries.md`,界線寫進 `identity.md`;面板的羈絆條能顯示 100 以上;文件的埠號表和幾處過時的敘述改對,暫存資料夾加進 ignore;`opencode` 的思考量改成送 effort、不再壓 `max_tokens`(§7.5);每次模型呼叫寫進 `data/llm-calls/`;順手修了四個不穩定的測試。`*.local.*` 的圖是面板自己在用的檔案,公開站讀得到,owner 決定暫時沿用。
+
 階段 2 和 3 互不相干,同時做(owner 2026-11-14)。照之前的做法:依套件切給子代理、各自的 worktree、我整合和驗收,核心改動另外找一個獨立的 review。
 
 ## 16. 決定紀錄(owner,2026-11-14)
