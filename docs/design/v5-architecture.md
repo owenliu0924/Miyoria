@@ -609,6 +609,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 | 14 | `agent` 和 `arbiter` 模組 | 必要模組,不能停用;它們不在的時候沒有任何東西會替她說話 |
 | 15 | 現成套件 | 套件做得比手寫好的地方就用套件(規則在 TS-CONVENTIONS §1)。資料層:一般的外掛資料表全面用 Drizzle(2026-11-15 決定,試用結果在 [v5-data.md](v5-data.md));事件表、全文搜尋和 trigger 維持手寫 SQL。LLM 這邊等階段 3 重建大腦時評估 Vercel AI SDK。其餘手寫的基礎設施逐項盤點 |
 | 16 | 套件管理 | pnpm;文件裡給使用者看的指令也用 pnpm |
+| 17 | API 的路由層 | 用 oRPC 1.x(2026-11-15 決定):路由只在 `contracts` 裡定義一次,伺服器和面板、CLI 的 client 都從它來。K8 試驗的四道關卡過了才逐組搬;過不了就回來重談 |
 
 **還沒定的**:
 
@@ -616,7 +617,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 - 十二月:生圖的模型、ComfyUI 跑在哪一台、她的 LoRA 的授權。
 - 「玩」的大部分已決定,剩下的(水族箱、交易所的幾個細節):[v5-play.md](v5-play.md) §8。
 - Minecraft 原設計的三個決定(志向清單和權重、誰算主人、AltoClef),階段 7 之前。
-- 套件盤點的結論在 [v5-packages.md](v5-packages.md),裡面還有三件要 owner 決定的事(路由層用 oRPC、擴充協定維持手寫、階段 3 換 AI SDK 的 provider);「一般資料表全面用 Drizzle」已決定。
+- 套件盤點的結論在 [v5-packages.md](v5-packages.md),「一般資料表全面用 Drizzle」和「路由層用 oRPC」已決定,擴充協定照建議維持手寫並已做完(K5);還剩一件:階段 3 要不要換成 AI SDK 的 provider(換之前先對 OpenCode 實測)。
 - 線上 `miyoria.toml` 的三處修改(拿掉剩下的設定相容層要先改),以及 `/api/facts/context`、`/api/facts/retryable` 兩條路由有沒有人手動在用。
 
 ## 17. 風險和不做的事
