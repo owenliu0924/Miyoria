@@ -638,7 +638,7 @@ export interface Person {
 export interface Relationship {
   profile: ProfileId;
   person: PersonId;
-  /** -100..100 */
+  /** -100..1000 (the bond scale; tiers past 100) */
   affinity: number;
   /** 0..100 */
   trust: number;
@@ -2058,7 +2058,7 @@ export interface PersonCard {
   emotions: Partial<Record<"missing" | "jealousy" | "gratitude" | "resentment", number>>;
   feeling: string;
   label: RelationshipLabel;
-  /** -100..100, one per affinity point (absent on an older Core). */
+  /** -100..1000, one per affinity point (absent on an older Core). */
   level?: number;
   /** How she acts with them now, one line she wrote in her reflection; `null` or absent: none yet. */
   stance?: string | null;
