@@ -616,7 +616,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 - 十二月:生圖的模型、ComfyUI 跑在哪一台、她的 LoRA 的授權。
 - 「玩」的大部分已決定,剩下的(水族箱、交易所的幾個細節):[v5-play.md](v5-play.md) §8。
 - Minecraft 原設計的三個決定(志向清單和權重、誰算主人、AltoClef),階段 7 之前。
-- 路由表(K8)和擴充協定(K5)要不要用現成套件(hono 的 RPC 和 zod-openapi、oRPC、JSON-RPC 套件),等套件盤點的結論。
+- 套件盤點的結論在 [v5-packages.md](v5-packages.md),裡面有四件要 owner 決定的事(路由層用 oRPC、擴充協定維持手寫、一般資料表全面用 Drizzle、階段 3 換 AI SDK 的 provider)。
 - 線上 `miyoria.toml` 的三處修改(拿掉剩下的設定相容層要先改),以及 `/api/facts/context`、`/api/facts/retryable` 兩條路由有沒有人手動在用。
 
 ## 17. 風險和不做的事
