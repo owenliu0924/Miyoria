@@ -193,6 +193,7 @@ for f in [f for f in git("ls-files", "*package.json").split("\n") if f]:
 # ---- 4. import specifiers and relative paths --------------------------------------------------
 
 SPEC = re.compile(r"""(["'])@miyoria/(""" + "|".join(re.escape(m) for m in MEMBERS) + r""")(/[^"'\n]*)?\1""")
+PATHS = re.compile(r"(?<![\w/-])packages/(" + "|".join(re.escape(m) for m in MEMBERS) + r")/(src|test)(?![\w-])")
 GROUP_FILES = ("package.json", "tsconfig.json", "tsconfig.build.json", "vitest.config.ts")
 # Not what the pass above already wrote: when the group is named after one of its parts,
 # "@miyoria/<new>/<member>" starts with "@miyoria/<member>".
@@ -258,6 +259,8 @@ for new_path in [f for f in git("ls-files").split("\n") if f.endswith(CODE_EXT)]
         return f"{quote}{out}{quote}"
 
     updated = REL.sub(rel, SPEC.sub(spec, text))
+    # Repository paths written out in full (tests that read source files, comments).
+    updated = PATHS.sub(lambda m: f"packages/{NEW}/{m.group(1)}/{m.group(2)}", updated)
     # What is left are mentions in comments and messages, not imports.
     updated = BARE.sub(lambda m: f"@miyoria/{NEW}/{m.group(1)}", updated)
     if updated != text:

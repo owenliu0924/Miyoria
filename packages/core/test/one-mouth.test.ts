@@ -34,27 +34,31 @@ function using(pattern: RegExp): string[] {
 
 describe("only the main line speaks", () => {
   it("a line is only built by a turn, the mouth and her own DM tool", () => {
-    expect(using(/\btype:\s*"(?:speak|send_message)"/)).toEqual([
-      // `message.dm`: a tool, so only ever an action of a main-line turn; the scheduler checks.
-      "packages/actions/src/builtin.ts",
-      // The mouth (`MainLine.say`).
-      "packages/agent/src/mainline/main.ts",
-      // The turn itself: sentences, text, the fixed line.
-      "packages/agent/src/turn.ts",
-      // The bus shape of `action.settled` in the type's own file.
-      "packages/replay/src/fakes.ts",
-      "packages/types/src/action.ts",
-    ]);
+    expect(using(/\btype:\s*"(?:speak|send_message)"/)).toEqual(
+      [
+        // `message.dm`: a tool, so only ever an action of a main-line turn; the scheduler checks.
+        "packages/gate/actions/src/builtin.ts",
+        // The mouth (`MainLine.say`).
+        "packages/agent/src/mainline/main.ts",
+        // The turn itself: sentences, text, the fixed line.
+        "packages/agent/src/turn.ts",
+        // The bus shape of `action.settled` in the type's own file.
+        "packages/replay/src/fakes.ts",
+        "packages/types/src/action.ts",
+      ].sort(),
+    );
   });
 
   it("the voice sink is only called by the scheduler; V2 fallbacks sit behind the mouth", () => {
-    expect(using(/\.speak\(/)).toEqual([
-      // After `MouthKey`: only reached under `pipeline = "v2"`.
-      "packages/actions/src/builtin.ts",
-      "packages/game/src/chat.ts",
-      "packages/scheduler/src/scheduler.ts",
-    ]);
-    for (const file of ["packages/actions/src/builtin.ts", "packages/game/src/chat.ts"]) {
+    expect(using(/\.speak\(/)).toEqual(
+      [
+        // After `MouthKey`: only reached under `pipeline = "v2"`.
+        "packages/gate/actions/src/builtin.ts",
+        "packages/game/src/chat.ts",
+        "packages/runtime/scheduler/src/scheduler.ts",
+      ].sort(),
+    );
+    for (const file of ["packages/gate/actions/src/builtin.ts", "packages/game/src/chat.ts"]) {
       const text = readFileSync(join(ROOT, file), "utf8");
       expect(text.indexOf("MouthKey)")).toBeGreaterThan(-1);
       expect(text.indexOf("MouthKey)"), file).toBeLessThan(text.lastIndexOf(".speak("));
@@ -62,7 +66,7 @@ describe("only the main line speaks", () => {
   });
 
   it("the scheduler refuses what the main line does not own", () => {
-    const text = readFileSync(join(ROOT, "packages/scheduler/src/scheduler.ts"), "utf8");
+    const text = readFileSync(join(ROOT, "packages/runtime/scheduler/src/scheduler.ts"), "utf8");
     expect(text).toContain("mouth.owns(action.turn)");
   });
 
@@ -76,36 +80,38 @@ describe("only the main line speaks", () => {
 describe("only the main line acts", () => {
   it("every caller of the gate is listed", () => {
     expect(using(/\.invoke\(\s*(?:\{|request|$)/m).concat(using(/actuators\.invoke\(/))).toEqual(
-      expect.arrayContaining(["packages/actions/src/tools.ts"]),
+      expect.arrayContaining(["packages/gate/actions/src/tools.ts"]),
     );
     const callers = [...new Set([...using(/(?:registry|actuators|actuatorsFor\(.*\))\.invoke\(/)])];
-    expect(callers.sort()).toEqual([
-      // A tool: runs in the hands of a main-line turn.
-      "packages/actions/src/tools.ts",
-      // Transitions of a request the turn already made.
-      "packages/activity/src/port.ts",
-      // `chat.*` only under V3 (`#propose` runs nothing): the consent check of a line she chose.
-      "packages/agent/src/intents.ts",
-      // A person on the member page asking for a song, as a `user`: a request she may turn down.
-      "packages/api/src/member.ts",
-      // A person at the panel, or a slash command: people, not her.
-      "packages/api/src/ops.ts",
-      // `actThroughGate`: V2 only, `ArbiterEnv.act` is not set under V3.
-      "packages/arbiter/src/module.ts",
-      // An expression a person bought on the member page: `stage.expression`, as the panel.
-      "packages/economy/src/economy.ts",
-      // The game executor: the steps of a session the main line started.
-      "packages/game/src/actions.ts",
-      "packages/game/src/chat.ts",
-      "packages/game/src/commands.ts",
-      "packages/game/src/director.ts",
-      // V2 only: with a proposal board `#submit` is never reached.
-      "packages/mind/src/mind.ts",
-      "packages/sing/src/commands.ts",
-      "packages/stage/src/link/commands.ts",
-      "packages/stage/src/link/module.ts",
-      "packages/voice/src/commands.ts",
-    ]);
+    expect(callers.sort()).toEqual(
+      [
+        // A tool: runs in the hands of a main-line turn.
+        "packages/gate/actions/src/tools.ts",
+        // Transitions of a request the turn already made.
+        "packages/activity/src/port.ts",
+        // `chat.*` only under V3 (`#propose` runs nothing): the consent check of a line she chose.
+        "packages/agent/src/intents.ts",
+        // A person on the member page asking for a song, as a `user`: a request she may turn down.
+        "packages/api/src/member.ts",
+        // A person at the panel, or a slash command: people, not her.
+        "packages/api/src/ops.ts",
+        // `actThroughGate`: V2 only, `ArbiterEnv.act` is not set under V3.
+        "packages/arbiter/src/module.ts",
+        // An expression a person bought on the member page: `stage.expression`, as the panel.
+        "packages/economy/src/economy.ts",
+        // The game executor: the steps of a session the main line started.
+        "packages/game/src/actions.ts",
+        "packages/game/src/chat.ts",
+        "packages/game/src/commands.ts",
+        "packages/game/src/director.ts",
+        // V2 only: with a proposal board `#submit` is never reached.
+        "packages/mind/src/mind.ts",
+        "packages/sing/src/commands.ts",
+        "packages/stage/src/link/commands.ts",
+        "packages/stage/src/link/module.ts",
+        "packages/voice/src/commands.ts",
+      ].sort(),
+    );
   });
 
   it("under V3 the Arbiter has no hands and her Plan no way but the board", () => {

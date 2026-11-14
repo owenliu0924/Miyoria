@@ -47,14 +47,16 @@ function bodyOf(text: string, head: string): string {
 
 describe("every line of hers is reviewed", () => {
   it("`filterOutgoing` only runs behind `screen`: nothing calls it on its own", () => {
-    expect(using(/\bfilterOutgoing\(/)).toEqual([
-      // `sanitizeGameChat`: only ever given what `safeOutgoing` let through (checked below).
-      "packages/game/src/chat-text.ts",
-      // The one that calls it, after `screen`.
-      "packages/types/src/moderation.ts",
-      // Its definition.
-      "packages/types/src/untrusted.ts",
-    ]);
+    expect(using(/\bfilterOutgoing\(/)).toEqual(
+      [
+        // `sanitizeGameChat`: only ever given what `safeOutgoing` let through (checked below).
+        "packages/game/src/chat-text.ts",
+        // The one that calls it, after `screen`.
+        "packages/types/src/moderation.ts",
+        // Its definition.
+        "packages/types/src/untrusted.ts",
+      ].sort(),
+    );
     const safe = bodyOf(read("packages/types/src/moderation.ts"), "export function safeOutgoing(");
     expect(safe.indexOf("moderation?.screen(")).toBeGreaterThan(-1);
     expect(safe.indexOf("moderation?.screen(")).toBeLessThan(safe.indexOf("filterOutgoing("));
@@ -65,11 +67,13 @@ describe("every line of hers is reviewed", () => {
       // The bus shape of `action.settled` and the replay's fake sink: they build no words.
       (f) => f !== "packages/types/src/action.ts" && f !== "packages/replay/src/fakes.ts",
     );
-    expect(builders).toEqual([
-      "packages/actions/src/builtin.ts",
-      "packages/agent/src/mainline/main.ts",
-      "packages/agent/src/turn.ts",
-    ]);
+    expect(builders).toEqual(
+      [
+        "packages/gate/actions/src/builtin.ts",
+        "packages/agent/src/mainline/main.ts",
+        "packages/agent/src/turn.ts",
+      ].sort(),
+    );
     for (const file of builders) expect(read(file), file).toContain("safeOutgoing(");
   });
 
@@ -102,12 +106,14 @@ describe("every line of hers is reviewed", () => {
   });
 
   it("every sink a line can reach reviews it or is told why it need not", () => {
-    expect(using(/\bimplements PlatformSink\b/)).toEqual([
-      // The terminal: the owner's own console, nobody else reads it.
-      "packages/core/src/cli-platform.ts",
-      "packages/discord/src/sink.ts",
-      "packages/game/src/chat.ts",
-    ]);
+    expect(using(/\bimplements PlatformSink\b/)).toEqual(
+      [
+        // The terminal: the owner's own console, nobody else reads it.
+        "packages/core/src/cli-platform.ts",
+        "packages/discord/src/sink.ts",
+        "packages/game/src/chat.ts",
+      ].sort(),
+    );
     const discord = read("packages/discord/src/sink.ts");
     expect(bodyOf(discord, "async send(")).toContain("safeOutgoing(");
     expect(bodyOf(discord, "async setVoiceStatus(")).toContain("safeOutgoing(");
@@ -124,12 +130,14 @@ describe("every line of hers is reviewed", () => {
   });
 
   it("the voice sink is only reached by the scheduler and by lines already reviewed", () => {
-    expect(using(/\.speak\(/)).toEqual([
-      "packages/actions/src/builtin.ts",
-      "packages/game/src/chat.ts",
-      "packages/scheduler/src/scheduler.ts",
-    ]);
-    for (const file of ["packages/actions/src/builtin.ts", "packages/game/src/chat.ts"]) {
+    expect(using(/\.speak\(/)).toEqual(
+      [
+        "packages/gate/actions/src/builtin.ts",
+        "packages/game/src/chat.ts",
+        "packages/runtime/scheduler/src/scheduler.ts",
+      ].sort(),
+    );
+    for (const file of ["packages/gate/actions/src/builtin.ts", "packages/game/src/chat.ts"]) {
       const text = read(file);
       expect(text.indexOf("safeOutgoing("), file).toBeGreaterThan(-1);
       expect(text.indexOf("safeOutgoing("), file).toBeLessThan(text.lastIndexOf(".speak("));
@@ -137,11 +145,13 @@ describe("every line of hers is reviewed", () => {
   });
 
   it("game chat is sanitized only after the review", () => {
-    expect(using(/\bsanitizeGameChat\(/)).toEqual([
-      "packages/game/src/actions.ts",
-      "packages/game/src/chat-text.ts",
-      "packages/game/src/chat.ts",
-    ]);
+    expect(using(/\bsanitizeGameChat\(/)).toEqual(
+      [
+        "packages/game/src/actions.ts",
+        "packages/game/src/chat-text.ts",
+        "packages/game/src/chat.ts",
+      ].sort(),
+    );
     const act = bodyOf(read("packages/game/src/actions.ts"), "export function safeActCall(");
     expect(act.indexOf("safeOutgoing(")).toBeLessThan(act.indexOf("sanitizeGameChat("));
     const chat = read("packages/game/src/chat.ts");
@@ -172,13 +182,15 @@ describe("everything people write is judged", () => {
       "packages/stage/src/link/module.ts",
       "packages/world/src/module.ts",
     ];
-    expect(readers.filter((f) => !counting.includes(f))).toEqual([
-      "packages/agent/src/runtime.ts",
-      "packages/facts/src/bus.ts",
-      "packages/mind/src/mind.ts",
-      // Players' answers in the voice channel's chat: judged before they reach a game.
-      "packages/party/src/module.ts",
-    ]);
+    expect(readers.filter((f) => !counting.includes(f))).toEqual(
+      [
+        "packages/agent/src/runtime.ts",
+        "packages/facts/src/bus.ts",
+        "packages/mind/src/mind.ts",
+        // Players' answers in the voice channel's chat: judged before they reach a game.
+        "packages/party/src/module.ts",
+      ].sort(),
+    );
     for (const file of ["runtime", "bus", "mind", "party"]) {
       const path = {
         runtime: "packages/agent/src/runtime.ts",

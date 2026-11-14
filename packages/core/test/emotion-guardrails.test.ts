@@ -31,7 +31,7 @@ const file = (path: string) => [join(ROOT, path)];
 
 describe("no rule reads how she feels", () => {
   it("Directive", () => {
-    expect(readers(inside("packages/directive/src"))).toEqual([]);
+    expect(readers(inside("packages/gate/directive/src"))).toEqual([]);
   });
 
   it("the claim gate and the main line's checks", () => {
@@ -47,15 +47,15 @@ describe("no rule reads how she feels", () => {
   it("the action gate", () => {
     expect(
       readers([
-        ...file("packages/actions/src/capability.ts"),
-        ...file("packages/actions/src/gated.ts"),
-        ...file("packages/actions/src/registry.ts"),
+        ...file("packages/gate/actions/src/capability.ts"),
+        ...file("packages/gate/actions/src/gated.ts"),
+        ...file("packages/gate/actions/src/registry.ts"),
       ]),
     ).toEqual([]);
   });
 
   it("the scheduler", () => {
-    expect(readers(inside("packages/scheduler/src"))).toEqual([]);
+    expect(readers(inside("packages/runtime/scheduler/src"))).toEqual([]);
   });
 
   it("the Floor: one number comes in through its budget, and nothing else", () => {
