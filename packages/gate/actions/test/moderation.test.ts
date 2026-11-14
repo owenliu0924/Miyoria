@@ -116,13 +116,15 @@ describe("message.dm", () => {
 });
 
 describe("speak", () => {
-  it("V2: the voice sink gets the spoken stand-in", async () => {
+  it("without the mouth the action fails and nothing is spoken", async () => {
     const r = rig(review());
-    await r.speak("那個禁語");
-    expect(r.spoken).toEqual(["嗶。"]);
+    const outcome = await r.speak("那個禁語");
+    expect(outcome).toMatchObject({ status: "failed", error: "the agent module is not running" });
+    expect(r.spoken).toEqual([]);
+    expect(r.said).toEqual([]);
   });
 
-  it("V3: the mouth gets it, and knows it is one", async () => {
+  it("the mouth gets the stand-in, and knows it is one", async () => {
     const r = rig(review());
     r.mouth();
     await r.speak("那個禁語");

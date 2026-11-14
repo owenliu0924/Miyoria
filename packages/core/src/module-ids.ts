@@ -56,6 +56,12 @@ export const NEEDS_TOKEN: readonly string[] = [
 ];
 
 /**
+ * Modules that cannot be turned off in the config file: the agent owns her mouth and the arbiter
+ * decides when she speaks, so nothing speaks while either is down.
+ */
+export const REQUIRED_MODULES: readonly string[] = ["agent", "arbiter"];
+
+/**
  * Modules that are off unless their section says `enabled = true` (a missing section or a
  * missing `enabled` key means disabled): high-risk ones, and ones that need a server of their own
  * (`imagegen` needs ComfyUI).

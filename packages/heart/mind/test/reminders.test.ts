@@ -264,20 +264,13 @@ describe("delivery", () => {
     expect(board.proposals).toEqual([]);
   });
 
-  it("without the main line it is an impulse for the Arbiter", async () => {
+  it("without the main line the timer is held: nothing is said, nothing goes to the Arbiter", async () => {
     const services = new ServiceRegistry();
     const arbiter = new FakeArbiter();
     services.provide("arbiter", ArbiterKey, arbiter);
     const deliver = deliverer(services, clock, LIMITS, 480);
-    expect((await deliver(due({ for_account: OWEN }), 7)).status).toBe("delivered");
-    expect(arbiter.impulses[0]).toMatchObject({
-      source: "agenda",
-      kind: "speak",
-      target: { context: CHAT, person: "Owen", account: OWEN },
-      coalesce_key: "reminder:01JREMINDER0000000000ABCDE",
-      attention: { key: "reminder:01JREMINDER0000000000ABCDE", revision: 1 },
-    });
-    expect(arbiter.impulses[0]?.hint).toContain("晚了 7 分鐘");
+    expect((await deliver(due({ for_account: OWEN }), 7)).status).toBe("held");
+    expect(arbiter.impulses).toEqual([]);
     expect((await deliverer(new ServiceRegistry(), clock, LIMITS, 480)(due(), 0)).status).toBe(
       "held",
     );

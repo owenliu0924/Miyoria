@@ -61,7 +61,6 @@ import {
   safeName,
   safeOutgoing,
   toTimestamp,
-  VoiceSinkKey,
 } from "@miyoria/types";
 import { z } from "zod";
 import { GAME_ACT } from "./actions.js";
@@ -376,20 +375,14 @@ export class GameChat implements ChatHandled {
       }
     }
     if (delivery.voice) {
-      const voice = this.#ctx.services.get(VoiceSinkKey);
-      // V3: the words are the main line's, and so is the mouth they go out through.
+      // The words are the main line's, and so is the mouth they go out through.
       const mouth = this.#ctx.services.get(MouthKey);
       if (mouth && safe !== "") {
         await mouth.say({ context: delivery.voice, text: safe, source: "game.chat", blocked });
         return blocked;
       }
-      if (voice && safe !== "") {
-        // Speaking lasts as long as the playback; subtitles follow `voice.playback`.
-        void voice.speak(delivery.voice, safe, null, null).catch((error: unknown) => {
-          this.#ctx.log.warn({ err: errorMessage(error) }, "speaking a game chat reply failed");
-        });
-        return blocked;
-      }
+      // No mouth, no voice: the reply is not spoken through another route.
+      if (safe !== "") typed ??= new Error("the agent module is not running");
     }
     if (typed !== null) throw typed;
     return blocked;
@@ -488,7 +481,8 @@ interface Running {
 
 /**
  * Module `game.chat`. Services used: `PlatformSinksKey` (required), the actuator registry,
- * `SocialKey` (account linking), `VoiceSinkKey` and `PromptContributorsKey` (optional).
+ * `SocialKey` (account linking), `MouthKey` (her spoken replies) and `PromptContributorsKey`
+ * (optional).
  * Provides `GameChatKey`.
  */
 export class GameChatModule implements Module {

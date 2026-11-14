@@ -39,7 +39,6 @@ import {
   isValidHandle,
   type JsonValue,
   newId,
-  newImpulse,
   type ProfileId,
   ProposalBoardKey,
   REMIND_CAPABILITY,
@@ -432,7 +431,7 @@ export function reminderText(r: Reminder, late: number, offsetMinutes: number): 
 
 /**
  * The real delivery: held while quiet hours apply or autonomy is paused; else a proposal to the
- * main line (V3), or an impulse for the Arbiter (V2). Nothing speaks from here.
+ * main line. Nothing speaks from here.
  */
 export function deliverer(
   services: ServiceLookup,
@@ -468,35 +467,9 @@ export function deliverer(
         ? { status: "dropped", detail: outcome.detail }
         : { status: "delivered", detail: outcome.detail };
     }
-    if (arbiter) {
-      const decision = await arbiter.submit(
-        newImpulse(
-          {
-            source: "agenda",
-            context: r.context,
-            person: r.person,
-            account: r.for_account,
-            ttlMs: holdMs,
-            why,
-            hint: what,
-            about: r.for_account === null ? [] : [r.for_account],
-            coalesce_key: `reminder:${r.id}`,
-            reason: "reminder",
-            attention,
-          },
-          now,
-        ),
-      );
-      if (decision.verdict === "rejected" && decision.reason === "denied") {
-        return { status: "dropped", detail: decision.detail };
-      }
-      return decision.verdict === "accepted" ||
-        decision.verdict === "deferred" ||
-        decision.verdict === "merged"
-        ? { status: "delivered", detail: decision.detail }
-        : { status: "held", detail: decision.detail };
-    }
-    return { status: "held", detail: "主線和 Arbiter 都沒有在跑" };
+    // Nobody to hand it to (the agent module is not running): kept for the next try, not said.
+    log.debug({ reminder: r.key }, "a timer is held: the agent module is not running");
+    return { status: "held", detail: "主線沒有在跑" };
   };
 }
 

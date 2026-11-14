@@ -136,18 +136,13 @@ describe("every line of hers is reviewed", () => {
     expect(bodyOf(voice, "async speak(")).toContain("this.#review(");
   });
 
-  it("the voice sink is only reached by the scheduler and by lines already reviewed", () => {
-    expect(using(/\.speak\(/)).toEqual(
-      [
-        "packages/gate/actions/src/builtin.ts",
-        "packages/play/game/src/chat.ts",
-        "packages/runtime/scheduler/src/scheduler.ts",
-      ].sort(),
-    );
+  it("the voice sink is only reached by the scheduler; the other voices go through the mouth, reviewed", () => {
+    expect(using(/\.speak\(/)).toEqual(["packages/runtime/scheduler/src/scheduler.ts"]);
     for (const file of ["packages/gate/actions/src/builtin.ts", "packages/play/game/src/chat.ts"]) {
       const text = read(file);
       expect(text.indexOf("safeOutgoing("), file).toBeGreaterThan(-1);
-      expect(text.indexOf("safeOutgoing("), file).toBeLessThan(text.lastIndexOf(".speak("));
+      expect(text.indexOf("mouth.say("), file).toBeGreaterThan(-1);
+      expect(text.indexOf("safeOutgoing("), file).toBeLessThan(text.lastIndexOf("mouth.say("));
     }
   });
 

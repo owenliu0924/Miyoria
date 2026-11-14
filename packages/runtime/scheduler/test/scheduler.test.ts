@@ -12,6 +12,7 @@ import {
   type JsonObject,
   type JsonValue,
   type MessageRef,
+  type Mouth,
   MouthKey,
   MUTED,
   NOT_MAIN_LINE,
@@ -93,8 +94,16 @@ interface Harness {
   completed: Subscription;
 }
 
-async function harness(config: JsonObject | null = null): Promise<Harness> {
+/** A mouth that owns every turn: most tests are about the queue, not about who may speak. */
+const OPEN_MOUTH: Mouth = { owns: () => true, say: async () => undefined };
+
+/** `mouth: null` is the agent module not running. */
+async function harness(
+  config: JsonObject | null = null,
+  mouth: Mouth | null = OPEN_MOUTH,
+): Promise<Harness> {
   const services = new ServiceRegistry();
+  if (mouth !== null) services.provide("app", MouthKey, mouth);
   const sinks = new PlatformSinks();
   const sink = new FakeSink();
   sinks.register(sink);
@@ -499,18 +508,15 @@ describe("scheduler voice", () => {
   });
 });
 
-describe("the main line (pipeline v3)", () => {
-  function mouthOf(h: Harness, owned: Set<string>): void {
-    h.sup.services.provide("app", MouthKey, {
-      owns: (turn) => turn !== null && owned.has(turn),
-      say: async () => undefined,
-    });
-  }
+describe("the main line", () => {
+  const mouthOf = (owned: Set<string>): Mouth => ({
+    owns: (turn) => turn !== null && owned.has(turn),
+    say: async () => undefined,
+  });
 
   it("a line the main line does not own never goes out", async () => {
     vi.useRealTimers();
-    const h = await harness();
-    mouthOf(h, new Set(["mine"]));
+    const h = await harness(null, mouthOf(new Set(["mine"])));
     const stray = send("繞過主線", "direct", { turn: "other" });
     await h.actions.submit(stray);
     const done = await nextDone(h.completed);
@@ -524,8 +530,7 @@ describe("the main line (pipeline v3)", () => {
 
   it("what is not a line passes: typing, reactions, the gate's actions", async () => {
     vi.useRealTimers();
-    const h = await harness();
-    mouthOf(h, new Set());
+    const h = await harness(null, mouthOf(new Set()));
     const ctx = context("fake");
     await h.actions.submit(
       newAction(textLane(ctx), "direct", {
@@ -538,10 +543,26 @@ describe("the main line (pipeline v3)", () => {
     await h.sup.stopAll();
   });
 
-  it("without a mouth (v2) nothing changes", async () => {
+  it("without a mouth (the agent module is not running) no line goes out", async () => {
     vi.useRealTimers();
-    const h = await harness();
-    await h.actions.submit(send("v2", "direct"));
+    const h = await harness(null, null);
+    const line = send("no mouth", "direct", { turn: "t" });
+    await h.actions.submit(line);
+    expect(await nextDone(h.completed)).toMatchObject({
+      action: line.id,
+      ok: false,
+      error: "the agent module is not running",
+    });
+    expect(h.sink.ops).toEqual([]);
+    // What is not a line still passes.
+    const ctx = context("fake");
+    await h.actions.submit(
+      newAction(textLane(ctx), "direct", {
+        type: "react",
+        message: { context: ctx, id: "m" },
+        emoji: "ok",
+      }),
+    );
     expect(await nextDone(h.completed)).toMatchObject({ ok: true });
     await h.sup.stopAll();
   });

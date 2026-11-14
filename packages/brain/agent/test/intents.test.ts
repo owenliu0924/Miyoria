@@ -7,6 +7,8 @@ import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  type Arbiter,
+  ArbiterKey,
   type ContextKey,
   type EffectiveTalkativeness,
   type Event,
@@ -76,6 +78,30 @@ class FakeSelf {
   asSelf(): SelfState {
     return this as unknown as SelfState;
   }
+}
+
+/**
+ * The Arbiter as far as the agent reads it: its ledger says when she may start in `context`
+ * next, which is where the level's gap between her starts is kept.
+ */
+function ledgerOf(next: (context: ContextKey) => number | null): Arbiter {
+  return {
+    ledger: (context: ContextKey) => {
+      const at = next(context);
+      return {
+        limits: {
+          initiatives_today: 0,
+          initiative_cap: 12,
+          unanswered_streak: 0,
+          waiting_for_response: false,
+          next_initiative_at: at === null ? null : toTimestamp(at),
+          quiet_hours: null,
+          paused: false,
+          blocked: [],
+        },
+      };
+    },
+  } as unknown as Arbiter;
 }
 
 interface Rig {
@@ -403,12 +429,16 @@ describe("channel levels", () => {
       .join("\n");
     expect(system).toContain("這個頻道的聊天等級是「安靜」");
 
-    // Past `chat.start`'s own cooldown, but within the level's gap.
-    await wait(2 * 60_000);
-    expect(r.intents.ceiling?.(c)?.blocked).toMatch(/^level quiet: .*next in \d+ min$/);
-    const again = await r.intents.submit(intent("chat.start", c));
-    expect(again.status).toBe("failed");
-    expect(again.detail).toContain("level quiet");
+    // The gap itself is the Arbiter's: the agent reads when it may start there next from the
+    // ledger, and says so as the reason.
+    const gap = Date.now() + 3 * 60 * 60_000;
+    r.h.sup.services.provide(
+      "app",
+      ArbiterKey,
+      ledgerOf((x) => (x.channel === "c" ? gap : null)),
+    );
+    expect(r.intents.ceiling?.(c)?.blocked).toMatch(/^the arbiter: next in \d+ min$/);
+    expect(r.intents.ceiling?.(c)?.mode).toBe("quiet");
 
     // A normal channel has no gap of its own.
     await r.h.handle().setChannelMode(channel("n"), "normal");
@@ -417,10 +447,5 @@ describe("channel levels", () => {
       label: "一般",
       blocked: null,
     });
-
-    await wait(3 * 60 * 60_000);
-    expect((await r.intents.submit(intent("chat.start", c))).status).toBe("started");
-    await wait(100);
-    expect(r.h.sink.texts().at(-1)).toBe("我又來了");
   });
 });

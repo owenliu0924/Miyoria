@@ -48,25 +48,21 @@ describe("only the main line speaks", () => {
     );
   });
 
-  it("the voice sink is only called by the scheduler; fallbacks sit behind the mouth", () => {
-    expect(using(/\.speak\(/)).toEqual(
-      [
-        // After `MouthKey`: only reached while the agent module (the mouth) is not running.
-        "packages/gate/actions/src/builtin.ts",
-        "packages/play/game/src/chat.ts",
-        "packages/runtime/scheduler/src/scheduler.ts",
-      ].sort(),
-    );
+  it("the voice sink is only called by the scheduler; the others go through the mouth", () => {
+    expect(using(/\.speak\(/)).toEqual(["packages/runtime/scheduler/src/scheduler.ts"]);
+    // The panel's "say" and game chat have no other route: without the mouth they fail.
     for (const file of ["packages/gate/actions/src/builtin.ts", "packages/play/game/src/chat.ts"]) {
       const text = readFileSync(join(ROOT, file), "utf8");
-      expect(text.indexOf("MouthKey)")).toBeGreaterThan(-1);
-      expect(text.indexOf("MouthKey)"), file).toBeLessThan(text.lastIndexOf(".speak("));
+      expect(text, file).toContain("MouthKey)");
+      expect(text, file).toContain("the agent module is not running");
     }
   });
 
   it("the scheduler refuses what the main line does not own", () => {
     const text = readFileSync(join(ROOT, "packages/runtime/scheduler/src/scheduler.ts"), "utf8");
     expect(text).toContain("mouth.owns(action.turn)");
+    // And with no mouth at all (the agent module is not running) no line goes out.
+    expect(text).toContain("the agent module is not running");
   });
 
   it("nobody but a turn writes `utterance` lines: the facts bus has no handler for them", () => {
@@ -91,7 +87,7 @@ describe("only the main line acts", () => {
         "packages/gate/actions/src/tools.ts",
         // Transitions of a request the turn already made.
         "packages/brain/activity/src/port.ts",
-        // `chat.*` only under V3 (`#propose` runs nothing): the consent check of a line she chose.
+        // `chat.*` only (`#propose` runs nothing): the consent check of a line she chose.
         "packages/brain/agent/src/intents.ts",
         // A person on the member page asking for a song, as a `user`: a request she may turn down.
         "packages/api/src/member.ts",
@@ -104,8 +100,6 @@ describe("only the main line acts", () => {
         "packages/play/game/src/chat.ts",
         "packages/play/game/src/commands.ts",
         "packages/play/game/src/director.ts",
-        // V2 only: with a proposal board `#submit` is never reached.
-        "packages/heart/mind/src/mind.ts",
         "packages/sing/src/commands.ts",
         "packages/stage/src/link/commands.ts",
         "packages/stage/src/link/module.ts",
@@ -114,23 +108,26 @@ describe("only the main line acts", () => {
     );
   });
 
-  it("under V3 the Arbiter has no hands and her Plan no way but the board", () => {
+  it("the Arbiter has no hands and her Plan no way but the board", () => {
     const arbiter = readFileSync(join(ROOT, "packages/brain/arbiter/src/module.ts"), "utf8");
     expect(arbiter).not.toContain("actThroughGate");
     const mind = readFileSync(join(ROOT, "packages/heart/mind/src/mind.ts"), "utf8");
     const act = mind.slice(mind.indexOf("async #act("));
-    expect(act.indexOf("if (board)")).toBeLessThan(act.indexOf("arbiter.submit"));
+    expect(act).toContain("if (board)");
+    expect(act).not.toContain("arbiter.submit");
+    expect(act).not.toContain("registry.invoke");
     const intents = readFileSync(join(ROOT, "packages/brain/agent/src/intents.ts"), "utf8");
     expect(intents).toContain("if (!talkOnly) return this.#propose(intent);");
   });
 
-  it("the old self-starting paths cannot run under V3", () => {
+  it("the old self-starting paths are gone: without the agent module a proposal is dropped", () => {
     const runtime = readFileSync(join(ROOT, "packages/brain/agent/src/runtime.ts"), "utf8");
-    const legacy = runtime.slice(runtime.indexOf("#legacyInitiative(context: ContextKey"));
-    expect(legacy.indexOf("if (this.mainline)")).toBeLessThan(legacy.indexOf("inbox.push"));
+    expect(runtime).not.toContain("legacyInitiative");
+    expect(runtime).not.toContain("onImpulseEvent");
     const director = readFileSync(join(ROOT, "packages/play/game/src/director.ts"), "utf8");
-    expect(director.indexOf("ProposalBoardKey);")).toBeLessThan(
-      director.indexOf("v2Event(ARBITER_IMPULSE_TOPIC"),
-    );
+    const board = director.indexOf("ProposalBoardKey);");
+    expect(board).toBeGreaterThan(-1);
+    expect(board).toBeLessThan(director.indexOf("v2Event(ARBITER_IMPULSE_TOPIC"));
+    expect(director).toContain("commentary dropped: the agent module is not running");
   });
 });

@@ -21,7 +21,6 @@ import {
   IntentSinkKey,
   isJsonObject,
   type LifeEntry,
-  newImpulse,
   type ProfileId,
   ProposalBoardKey,
   toTimestamp,
@@ -162,30 +161,9 @@ export class DailyPostDesk implements DailyPosts {
         });
         return outcome.state === "dropped" ? giveBack(outcome.detail) : "offered";
       }
-      const arbiter = this.#o.services.get(ArbiterKey);
-      if (arbiter) {
-        const decision = await arbiter.submit(
-          newImpulse(
-            {
-              source: "plan",
-              context: channel,
-              capability: CHAT_START,
-              ttlMs: OFFER_TTL_MS,
-              why: "日常貼文",
-              hint: what,
-              coalesce_key: "daily_post",
-              attention,
-            },
-            now,
-          ),
-        );
-        return decision.verdict === "accepted" ||
-          decision.verdict === "deferred" ||
-          decision.verdict === "merged"
-          ? "offered"
-          : giveBack(decision.detail);
-      }
-      return giveBack("nobody to hand it to");
+      // Nobody to hand it to (the agent module is not running): the offer is dropped, not posted.
+      log.debug({ day: this.#day }, "daily post offer dropped: the agent module is not running");
+      return giveBack("the agent module is not running");
     } catch (error) {
       return giveBack(errorMessage(error));
     }

@@ -26,6 +26,9 @@ import {
 import { errorMessage, type ModuleContext } from "../../kernel/src/index.js";
 import type { SchedulerConfig } from "./config.js";
 
+/** The error of a speech action when there is no mouth to carry it. */
+const AGENT_NOT_RUNNING = "the agent module is not running";
+
 interface Queued {
   seq: number;
   /** `action.created_at` in epoch ms, parsed once. */
@@ -164,12 +167,10 @@ export class Scheduler implements ActionSink {
 
   async submit(action: Action): Promise<void> {
     if (this.#ctx.signal.aborted) throw new SchedulerStoppedError();
-    if (this.#notTheMainLine(action)) {
-      this.#ctx.log.warn(
-        { action: action.id, turn: action.turn },
-        "a line went around the main line",
-      );
-      this.#complete(action, { ok: false, error: NOT_MAIN_LINE });
+    const refusal = this.#refuseMouth(action);
+    if (refusal !== null) {
+      this.#ctx.log.warn({ action: action.id, turn: action.turn }, refusal.log);
+      this.#complete(action, { ok: false, error: refusal.error });
       return;
     }
     const queued: Queued = {
@@ -199,12 +200,19 @@ export class Scheduler implements ActionSink {
     if (replaced) this.#complete(replaced, { ok: false, error: "coalesced" });
   }
 
-  /** Only the main line opens her mouth. `MouthKey` is there while the agent module runs. */
-  #notTheMainLine(action: Action): boolean {
+  /**
+   * Only the main line opens her mouth, and `MouthKey` is there only while the agent module
+   * runs: without it nothing speaks. `null` when the action may go on.
+   */
+  #refuseMouth(action: Action): { error: string; log: string } | null {
     const type = action.payload.type;
-    if (type !== "speak" && type !== "send_message") return false;
+    if (type !== "speak" && type !== "send_message") return null;
     const mouth = this.#ctx.services.get(MouthKey);
-    return mouth !== undefined && !mouth.owns(action.turn);
+    if (mouth === undefined) {
+      return { error: AGENT_NOT_RUNNING, log: "no line goes out: the agent module is not running" };
+    }
+    if (mouth.owns(action.turn)) return null;
+    return { error: NOT_MAIN_LINE, log: "a line went around the main line" };
   }
 
   async interruptTurn(turn: TurnId): Promise<void> {

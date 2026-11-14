@@ -30,10 +30,15 @@ import {
   type IntentOutcome,
   type IntentSink,
   IntentSinkKey,
+  type JsonObject,
   type JsonValue,
   type Mind,
   MindKey,
+  type NewProposal,
   type PersonPresence,
+  type ProposalBoard,
+  ProposalBoardKey,
+  type ProposalOutcome,
   SocialSignalsKey,
   type TalkCeiling,
   toTimestamp,
@@ -220,6 +225,40 @@ export class FakeIntents implements IntentSink {
   }
 }
 
+/**
+ * The agent's board as the tests see it: every proposal becomes an `Intent` for `FakeIntents`,
+ * and its scripted outcome comes back as the proposal's (`failed` is a board that throws).
+ */
+export class IntentsBoard implements ProposalBoard {
+  constructor(private readonly intents: FakeIntents) {}
+
+  async propose(p: NewProposal): Promise<ProposalOutcome> {
+    const outcome = await this.intents.submit({
+      id: p.id ?? `P${this.intents.intents.length + 1}`,
+      capability: p.capability ?? "",
+      args: (p.args ?? {}) as JsonObject,
+      why: p.why,
+      opening: p.what,
+      context: p.context,
+      about: p.about,
+      created_at: toTimestamp(Date.now()),
+      expires_at: p.expires,
+    });
+    if (outcome.status === "failed") throw new Error(outcome.detail);
+    const state =
+      outcome.status === "started" || outcome.status === "done"
+        ? "taken"
+        : outcome.status === "pending"
+          ? "open"
+          : "dropped";
+    return { id: p.id ?? "x", state, detail: outcome.detail, turn: outcome.turn };
+  }
+
+  open(): [] {
+    return [];
+  }
+}
+
 /** A provider that records its requests (`MockProvider`, `ScriptedProvider`). */
 export type TestProvider = ChatProvider & { requests(): ChatRequest[] };
 
@@ -245,7 +284,7 @@ export interface RigOptions {
   withIntents?: boolean;
   /** Provides more app services before start. */
   extra?: (sup: Supervisor) => void;
-  /** An Arbiter to provide (none: the agent's intent sink is the fallback). */
+  /** An Arbiter to provide (none: `arbiter` is not running). */
   arbiter?: FakeArbiter;
 }
 
@@ -299,7 +338,16 @@ export async function rig(provider: TestProvider, options: RigOptions = {}): Pro
     true,
   );
   if (options.withIntents ?? true) {
-    await sup.register(new Stub("agent", (ctx) => ctx.provide(IntentSinkKey, intents)), null, true);
+    // A test that brings its own board keeps it.
+    const own = sup.services.get(ProposalBoardKey) !== undefined;
+    await sup.register(
+      new Stub("agent", (ctx) => {
+        ctx.provide(IntentSinkKey, intents);
+        if (!own) ctx.provide(ProposalBoardKey, new IntentsBoard(intents));
+      }),
+      null,
+      true,
+    );
   }
   await sup.register(new SelfModule("p"), null, true);
   const events = sup.bus.subscribe("mind.*");

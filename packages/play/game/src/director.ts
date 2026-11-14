@@ -1759,10 +1759,14 @@ export class Director {
     const text = urgent
       ? `(你正在直播玩 ${s.gameName})${hint}`
       : `(你正在直播玩 ${s.gameName})實況:${hint}`;
-    // V3: game events are Observations already and what the director would add is a proposal
+    // Game events are Observations already and what the director would add is a proposal
     // (docs/design/v3-architecture.md §4). Only what cannot wait still claims the mic here.
-    const board = this.#ctx.services.get(ProposalBoardKey);
-    if (board !== undefined && about !== null) {
+    if (about !== null) {
+      const board = this.#ctx.services.get(ProposalBoardKey);
+      if (board === undefined) {
+        log.debug({ hint }, "commentary dropped: the agent module is not running");
+        return false;
+      }
       void board
         .propose({
           what: text,

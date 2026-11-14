@@ -2,7 +2,7 @@
 // sinks and the scheduler), `speak` (say a line in the voice channel she is in; the panel's
 // "say") and the placeholder high-risk `test.high`.
 
-import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
+import { getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   ActionSinkKey,
@@ -158,8 +158,8 @@ export const speak: Capability<SpeakArgs> = defineCapability<SpeakArgs>({
   permission: null,
   scope: (args) => args.context.scope,
   async execute(args, ctx) {
-    const sink = ctx.services.get(VoiceSinkKey);
-    if (!sink) throw new CapabilityError("the voice module is not running");
+    if (!ctx.services.get(VoiceSinkKey))
+      throw new CapabilityError("the voice module is not running");
     const turn = args.turn ?? newId();
     const { text, blocked } = safeOutgoing(ctx.services.get(ModerationKey), {
       path: "other",
@@ -168,17 +168,12 @@ export const speak: Capability<SpeakArgs> = defineCapability<SpeakArgs>({
       context: args.context,
       turn,
     });
-    // V3: one mouth. The owner's line goes through the main line like every other.
+    // One mouth: the owner's line goes through the main line like every other, so without the
+    // agent module there is nothing to say it with.
     const mouth = ctx.services.get(MouthKey);
-    if (mouth) {
-      const emotion = args.emotion ?? null;
-      await mouth.say({ context: args.context, text, emotion, turn, source: "panel", blocked });
-      return { text: "speaking", data: { turn } };
-    }
-    // Speaking lasts as long as the playback; the caller only needs to know it started.
-    void sink.speak(args.context, text, args.emotion ?? null, turn).catch((error: unknown) => {
-      log.warn({ err: errorMessage(error) }, "speaking failed");
-    });
+    if (!mouth) throw new CapabilityError("the agent module is not running");
+    const emotion = args.emotion ?? null;
+    await mouth.say({ context: args.context, text, emotion, turn, source: "panel", blocked });
     return { text: "speaking", data: { turn } };
   },
 });

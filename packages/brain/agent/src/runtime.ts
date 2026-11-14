@@ -22,7 +22,6 @@ import {
   type AccountRef,
   type ActionId,
   ActuatorExecutorKey,
-  ARBITER_IMPULSE_TOPIC,
   ArbiterKey,
   type Attitude,
   type ContextKey,
@@ -34,7 +33,6 @@ import {
   type Handle,
   HandleDirectoryKey,
   holdsBack,
-  type Impulse,
   type ImpulseAttention,
   type ImpulseRun,
   type ImpulseSource,
@@ -42,7 +40,6 @@ import {
   type InputVerdict,
   type Intent,
   type InterruptLevel,
-  impulseReason,
   incomingText,
   inspectInput,
   isJsonObject,
@@ -86,13 +83,7 @@ import { Coordinator } from "./coordinator.js";
 import { TurnFocusBoard } from "./focus.js";
 import type { AgentHandle } from "./handle.js";
 import { startBackfill } from "./history.js";
-import {
-  type Ceiling,
-  ceilingFor,
-  Rhythm,
-  RhythmSectionSchema,
-  UNCAPPED_INITIATIVES,
-} from "./levels.js";
+import { type Ceiling, ceilingFor, Rhythm, RhythmSectionSchema } from "./levels.js";
 import { type Chain, heardPart, heardShare, MainLine } from "./mainline/main.js";
 import { agentTurns } from "./metrics.js";
 import type { PersonaHandle } from "./persona.js";
@@ -105,9 +96,6 @@ import { type FetchLike, ImageLoader } from "./vision.js";
 /** Module whose restart means the agent commands must be registered again. */
 const COMMANDS_MODULE = "commands";
 const MINUTE_MS = 60_000;
-/** Without the Arbiter, an initiative waits this long after she spoke (text / voice). */
-const LEGACY_AFTER_SPEECH_TEXT_MS = 5_000;
-const LEGACY_AFTER_SPEECH_VOICE_MS = 20_000;
 /** How long the Arbiter waits for a coordinator to take (or refuse) an impulse's turn. */
 const OPEN_TIMEOUT_MS = 5_000;
 /** Topic of the voice module's barge-in reports (`packages/voice/voice/src/topics.ts`, W2). */
@@ -186,7 +174,7 @@ export type Input =
    * Start a turn on her own (no new input), if the context is quiet. `reply`: the Arbiter's
    * impulse (it decided the rules; the coordinator only says whether the place is free).
    */
-  | { type: "initiative"; initiative: Initiative; reply?: (run: ImpulseRun) => void }
+  | { type: "initiative"; initiative: Initiative; reply: (run: ImpulseRun) => void }
   /** Start a turn she decided on (principal `self`, with tools) once the context is free. */
   | { type: "intent"; intent: IntentTurn }
   /** Main line: a claim cuts into her speech here, this hard (§7.3). */
@@ -261,11 +249,6 @@ export class Agent {
   readonly images: ImageLoader;
   /** Intents waiting for her to arrive in a voice channel (after `voice.join`), by context. */
   readonly #arrivals = new Map<string, IntentTurn>();
-  /**
-   * When she last started a conversation herself in a text channel (clock ms), by context: the
-   * level's gap between starts. In memory only.
-   */
-  readonly #starts = new Map<string, number>();
   /** The focus of every turn in flight (`TurnFocusViewKey`). */
   readonly focusBoard: TurnFocusBoard;
   /** Compressed prompts of recent turns (`SavedPromptsKey`). */
@@ -351,7 +334,6 @@ export class Agent {
       "agent.initiative",
       NOTICE_TOPIC,
       BUDGET_TOPIC,
-      ARBITER_IMPULSE_TOPIC,
     ];
   }
 
@@ -440,10 +422,7 @@ export class Agent {
         if (this.mainline.custom(event.data.topic, event.data.payload)) break;
         if (event.data.topic === BUDGET_TOPIC) this.#onBudget(event.data.payload);
         else if (event.data.topic === BARGE_IN_TOPIC) this.#onBargeIn(event.data.payload);
-        else if (event.data.topic === ARBITER_IMPULSE_TOPIC) {
-          const impulse = v2Payload(event, ARBITER_IMPULSE_TOPIC);
-          if (impulse) this.#onImpulseEvent(impulse);
-        } else if (event.data.topic === NOTICE_TOPIC) {
+        else if (event.data.topic === NOTICE_TOPIC) {
           const notice = v2Payload(event, NOTICE_TOPIC);
           if (notice) this.#onNotice(notice);
         }
@@ -708,50 +687,31 @@ export class Agent {
   }
 
   /**
-   * Why the channel's mode or level does not let her start a conversation in `context` now
-   * (`off` / `mention-only`, or the level's gap since her last start there), or `null`. DMs
-   * she opens herself have no mode. While the Arbiter runs, its ledger says when she may start
+   * Why the channel's mode or the Arbiter's ledger does not let her start a conversation in
+   * `context` now (`off` / `mention-only`, or the level's gap since her last start there), or
+   * `null`. DMs she opens herself have no mode. The Arbiter's ledger says when she may start
    * there next (its one rule set includes the level's gap).
    */
   startBlocked(context: ContextKey): string | null {
-    const arbiter = this.ctx.services.get(ArbiterKey);
-    if (arbiter) {
-      if (context.kind !== "dm") {
-        const mode = this.handle.channelMode(context);
-        if (mode === "off" || mode === "mention-only") return `mode ${mode}`;
-      }
-      const limits = arbiter.ledger(context).limits;
-      if (limits.waiting_for_response) return "the arbiter: nobody answered her here yet";
-      const next = limits.next_initiative_at;
-      const left = next === null ? 0 : Date.parse(next) - this.ctx.clock.now();
-      if (left <= 0) return null;
-      return `the arbiter: next in ${Math.max(Math.ceil(left / MINUTE_MS), 1)} min`;
+    if (context.kind !== "dm") {
+      const mode = this.handle.channelMode(context);
+      if (mode === "off" || mode === "mention-only") return `mode ${mode}`;
     }
-    if (context.kind === "dm") return null;
-    const mode = this.handle.channelMode(context);
-    if (mode === "off" || mode === "mention-only") return `mode ${mode}`;
-    const gap = ceilingFor(mode, context)?.startGapMs ?? 0;
-    const last = this.#starts.get(contextId(context));
-    if (gap <= 0 || last === undefined) return null;
-    const left = last + gap - this.ctx.clock.now();
+    // Before the Arbiter has started (the agent comes first) there is no gap to read.
+    const arbiter = this.ctx.services.get(ArbiterKey);
+    if (!arbiter) return null;
+    const limits = arbiter.ledger(context).limits;
+    if (limits.waiting_for_response) return "the arbiter: nobody answered her here yet";
+    const next = limits.next_initiative_at;
+    const left = next === null ? 0 : Date.parse(next) - this.ctx.clock.now();
     if (left <= 0) return null;
-    const ago = Math.max(Math.round((gap - left) / MINUTE_MS), 0);
-    const next = Math.max(Math.ceil(left / MINUTE_MS), 1);
-    return `level ${mode}: she started talking here ${ago} min ago; next in ${next} min`;
+    return `the arbiter: next in ${Math.max(Math.ceil(left / MINUTE_MS), 1)} min`;
   }
 
   /** Her lines went unanswered in `context`: she starts nothing there until someone speaks. */
   waitingForResponse(context: ContextKey): boolean {
     const arbiter = this.ctx.services.get(ArbiterKey);
     return arbiter?.ledger(context).limits.waiting_for_response ?? false;
-  }
-
-  /** She starts a conversation herself in `context` now (for the level's gap). */
-  noteStart(context: ContextKey): void {
-    // The Arbiter books her starts itself.
-    if (this.ctx.services.get(ArbiterKey)) return;
-    if (context.kind === "dm" || context.kind === "voice") return;
-    this.#starts.set(contextId(context), this.ctx.clock.now());
   }
 
   /** Publishes the decision not to open (or to drop) one of her intents. */
@@ -939,8 +899,8 @@ export class Agent {
   }
 
   /**
-   * An `agent.initiative` request (or a notice to tell). While the Arbiter runs it is an impulse
-   * for the Arbiter (the one gate); without it the old checks apply here.
+   * An `agent.initiative` request (or a notice to tell): an impulse for the Arbiter, the one
+   * gate.
    */
   #onInitiative(context: ContextKey, initiative: Initiative): void {
     if (this.muted) {
@@ -970,7 +930,9 @@ export class Agent {
       });
       return;
     }
-    this.#legacyInitiative(context, initiative);
+    // Nothing unasked gets the mic without the Arbiter. Only before it has started: the module
+    // is required, but the agent starts first.
+    this.initiativeSkipped(context, initiative.reason, "the arbiter is not running");
   }
 
   /** The people who hear a line in `context` now. */
@@ -996,20 +958,6 @@ export class Agent {
     const level = floor.interruptLevel(kind, holder.kind);
     if (level === "queue") return;
     this.#existing(context)?.inbox.push({ type: "yield", level });
-  }
-
-  /** An `arbiter.impulse` while no Arbiter runs: a speak impulse is an initiative as before. */
-  // Cannot run while the main line exists; kept until the owner decides on the no-Arbiter paths.
-  #onImpulseEvent(impulse: Impulse): void {
-    if (this.ctx.services.get(ArbiterKey) || this.mainline) return;
-    const context = impulse.target?.context ?? null;
-    if (impulse.kind !== "speak" || context === null) return;
-    if (Date.parse(impulse.expires_at) <= this.ctx.clock.now()) return;
-    this.#legacyInitiative(context, {
-      reason: impulseReason(impulse),
-      hint: impulse.hint ?? "",
-      about: [...(impulse.about ?? [])],
-    });
   }
 
   /** Conversation facts for the Arbiter's floors (`ImpulseHost.facts`). */
@@ -1058,44 +1006,6 @@ export class Agent {
       const pushed = this.#context(context).inbox.push({ type: "initiative", initiative, reply });
       if (!pushed) reply({ status: "busy", detail: "the context is closing" });
     });
-  }
-
-  // Past the "no floor" skip this cannot run while the main line exists; kept until the owner
-  // decides on the no-Arbiter paths.
-  #legacyInitiative(context: ContextKey, initiative: Initiative): void {
-    // Without the Floor nothing unasked gets the mic: the main line has no rules of its own.
-    if (this.mainline) {
-      this.initiativeSkipped(context, initiative.reason, "no floor");
-      return;
-    }
-    const mode = this.handle.channelMode(context);
-    if (mode === "off" || mode === "mention-only") {
-      this.initiativeSkipped(context, initiative.reason, `mode ${mode}`);
-      return;
-    }
-    // The level's gap between her own starts (not for game commentary or action results).
-    const gap = UNCAPPED_INITIATIVES.includes(initiative.reason)
-      ? null
-      : this.startBlocked(context);
-    if (gap !== null) {
-      this.initiativeSkipped(context, initiative.reason, gap);
-      return;
-    }
-    const budget = this.handle.llmBudget();
-    if (budget !== "ok") {
-      this.initiativeSkipped(context, initiative.reason, `llm budget ${budget}`);
-      return;
-    }
-    if (context.kind === "voice") {
-      // Only where she is: a stray request must not create a session.
-      const delivered =
-        this.#existing(context)?.inbox.push({ type: "initiative", initiative }) ?? false;
-      if (!delivered) {
-        this.initiativeSkipped(context, initiative.reason, "not in this voice channel");
-      }
-      return;
-    }
-    this.#context(context).inbox.push({ type: "initiative", initiative });
   }
 
   /** Publishes the decision not to act on an initiative request. */
@@ -1166,14 +1076,6 @@ export class Agent {
   /** She ignores this person entirely (social module decision). */
   isBlocked(account: AccountRef): boolean {
     return this.attitude(account)?.blocked ?? false;
-  }
-
-  /**
-   * Without the Arbiter: how long after she spoke an initiative waits in `context` (the
-   * Arbiter's `after_speech_*_secs` defaults).
-   */
-  afterSpeechMs(context: ContextKey): number {
-    return context.kind === "voice" ? LEGACY_AFTER_SPEECH_VOICE_MS : LEGACY_AFTER_SPEECH_TEXT_MS;
   }
 
   isSelf(account: AccountRef): boolean {

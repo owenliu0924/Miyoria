@@ -385,7 +385,7 @@ Attention 的第一層(被直接叫到、語音偵測、名字比對)保留當�
   - 成本:每小時呼叫數(滑動一小時,`max_calls_per_hour`)、兩次最小間隔、累計 token;暫停或預算 exhausted 時不想,也不留待處理的觸發。
 - **意圖 → 她自己發起的回合**:agent 提供 `IntentSinkKey`。
   - 新能力 `chat.start`(在請求的情境開口:文字頻道,或她所在的語音頻道)與 `chat.dm`(私訊某人並聊天,`consent: dm`),中風險、有自己的預設次數(`chat.start` 每天 24 次、每人 4 次、冷卻 1 分鐘;`chat.dm` 6 / 2 / 10 分鐘),都可以用 `[modules.actions.limits."chat.start"]` 改。執行函式把意圖交給該情境的 coordinator。
-  - 其他能力(`voice.join`、`stream.start`、`stage.scene`……)先以 `self` 名義過閘門執行,成功而且她有想說的開場才開回合:`voice.join` 等她真的進了語音頻道(`voice.joined`)才在那裡開口,其他在意圖的情境開口。沒有 agent 時 mind 直接呼叫閘門(只做不說)。
+  - 其他能力(`voice.join`、`stream.start`、`stage.scene`……)先以 `self` 名義過閘門執行,成功而且她有想說的開場才開回合:`voice.join` 等她真的進了語音頻道(`voice.joined`)才在那裡開口,其他在意圖的情境開口。agent 是必要的模組;沒有看板(agent 沒在跑)時 mind 把想做的事丟掉並記一行 debug,不會自己過閘門去做。
   - Coordinator 的新輸入 `intent`:不打斷進行中的回合、等待中的訊息、還在排隊的語音,語音裡也不壓過正在講話的人;空下來才開,過期就丟(發 `agent.decision` 說明),新的意圖取代還在等的。回合 ID 事先決定,閘門決定、`agent.decision`、`agent.turn.completed` 都對得回日誌。
   - 回合本身:不跑 attention、**有工具**,工具以 `Principals.self` 呼叫(能力工具過閘門;需要某個人權限節點的其他工具一律拒絕),她的打算(做了什麼、為什麼、開場想法)放在資料訊息「你的打算」。頻道模式 `off` / `mention-only` 仍是底線,預算不是 ok 時不開。
 - **把數字交給她(§6)**:attention 讀 SelfState 對這個情境的 talkativeness(沒設時照舊用 activeness 與語音的 `ambient_factor` / `interrupt_scale`):插話機率 ×4^(2L−1)(0.5 = 平常,1 = 四倍)、冷卻 ×4^(1−2L)(但不低於新的 `min_cooldown_ms`,文字 2 秒、語音 5 秒)、灰色地帶門檻 ×2^(1−2L)、語音裡別人還在講話時的倍率 0.2 + 0.6L(`interrupt_scale = 0` 仍代表「永遠不壓過別人」)、L ≤ 0.05 = 不插話。底線照舊是設定:近期佔比上限 `max_share_of_recent` 與最小冷卻。`channel_activeness` 工具(「活躍點」)在 self 模組存在時改成設定該情境的 talkativeness(low 0.2 / medium 0.5 / high 0.85),所以在語音裡也真的會更常接話;語音回覆仍不思考。

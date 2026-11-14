@@ -16,6 +16,8 @@ import {
   type JsonValue,
   ModerationKey,
   type ModerationService,
+  type Mouth,
+  MouthKey,
   type OutputCheck,
   PlatformSinks,
   PlatformSinksKey,
@@ -23,8 +25,6 @@ import {
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
-  type VoiceSink,
-  VoiceSinkKey,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -84,7 +84,10 @@ class Chat {
     })();
   }
 
-  static async create(config: JsonValue = null, opts: { social?: boolean } = {}): Promise<Chat> {
+  static async create(
+    config: JsonValue = null,
+    opts: { social?: boolean; mouth?: boolean } = {},
+  ): Promise<Chat> {
     const c = new Chat();
     const s = c.sup.services;
     s.provide("app", ActuatorRegistryKey, c.registry);
@@ -92,13 +95,16 @@ class Chat {
     new FakeExecutors(c.exec).provide(s);
     s.provide("app", PlatformSinksKey, c.sinks);
     s.provide("app", PromptContributorsKey, c.prompts);
-    const voice: VoiceSink = {
-      speak: async (context, text) => {
-        c.spoken.push({ context, text });
-        return "completed";
-      },
-    };
-    s.provide("app", VoiceSinkKey, voice);
+    // Her spoken words go out through the main line's mouth (the agent module).
+    if (opts.mouth !== false) {
+      const mouth: Mouth = {
+        owns: () => true,
+        say: async (line) => {
+          c.spoken.push({ context: line.context, text: line.text });
+        },
+      };
+      s.provide("app", MouthKey, mouth);
+    }
     if (opts.social !== false) {
       const social = {
         redeemLinkCode: async (account: AccountRef, name: string, code: string) => {
@@ -299,6 +305,21 @@ describe("game chat module", () => {
     c.exec.autoEnd = () => ({ type: "done", detail: "好" });
     await c.registry.setPaused(true);
     await expect(sink?.send(MC, { text: "嗨", reply_to: null })).rejects.toThrow(/gate refused/);
+    await c.stop();
+  });
+
+  it("does not speak through another route when the agent module is not running", async () => {
+    const c = await Chat.create(null, { mouth: false });
+    const sink = c.sinks.get("minecraft");
+    await c.live();
+    await c.publish({ type: "voice_joined", data: { context: VOICE, participants: [] } });
+    await expect(sink?.send(MC, { text: "哈囉大家", reply_to: null })).rejects.toThrow(
+      /agent module is not running/,
+    );
+    await settle();
+    expect(c.spoken).toEqual([]);
+    // Typing still happens: the chat is not the mouth.
+    expect(c.typed.map((t) => t.message)).toEqual(["哈囉大家"]);
     await c.stop();
   });
 

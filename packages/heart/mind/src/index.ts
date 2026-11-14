@@ -113,7 +113,6 @@ export {
   applyTurnEvent,
   type MindDeps,
   MindLoop,
-  outcomeOf,
   PLAN_STATE_KEY,
   resolveTrigger,
 } from "./mind.js";

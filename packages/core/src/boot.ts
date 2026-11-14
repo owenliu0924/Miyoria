@@ -8,6 +8,7 @@ import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/g
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   type Config,
+  ConfigError,
   EventBus,
   errorMessage,
   getLogger,
@@ -61,7 +62,7 @@ import {
   SYSTEM_SHUTDOWN_TOPIC,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
-import { moduleEnabled, NEEDS_TOKEN } from "./module-ids.js";
+import { moduleEnabled, NEEDS_TOKEN, REQUIRED_MODULES } from "./module-ids.js";
 import { RecorderModule } from "./recorder.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
@@ -193,6 +194,14 @@ export async function buildCoreWith(
   options: CoreOptions = {},
 ): Promise<Core> {
   const baseDir = options.baseDir ?? process.cwd();
+  for (const id of REQUIRED_MODULES) {
+    if (moduleEnabled(config, id)) continue;
+    throw new ConfigError(
+      "invalid",
+      `invalid config at \`modules.${id}.enabled\`: the \`${id}\` module cannot be disabled; nothing speaks while it is down`,
+      `modules.${id}.enabled`,
+    );
+  }
   const bus = new EventBus();
   const services = new ServiceRegistry();
   const supervisor = new Supervisor({ bus, services });

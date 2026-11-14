@@ -40,7 +40,6 @@ import {
   AFFECT_CHANGED_TOPIC,
   type AffectSnapshot,
   AffectStateKey,
-  type ArbiterDecision,
   ArbiterKey,
   CHAT_DM,
   CHAT_START,
@@ -77,7 +76,6 @@ import {
   newId,
   type PersonId,
   type PlanWake,
-  Principals,
   type ProfileId,
   type ProposalBoard,
   ProposalBoardKey,
@@ -301,27 +299,6 @@ function triggerOf(w: WakeReason, at: number): ThoughtTrigger {
     w.kind === "daily" ? "今天的第一次計畫" : w.kind === "goal_trigger" ? "目標觸發" : "";
   const detail = [prefix, w.detail].filter((s) => s !== "").join(":");
   return { kind, detail, context: w.context, at: toTimestamp(at) };
-}
-
-/** The status of an impulse after the Arbiter's decision, as her journal keeps it. */
-export function outcomeOf(decision: ArbiterDecision): IntentOutcome {
-  switch (decision.verdict) {
-    case "accepted":
-      return { status: "started", detail: decision.detail, turn: decision.turn };
-    case "deferred":
-      return {
-        status: "pending",
-        detail: `${decision.detail}${decision.retry_at ? `(${decision.retry_at} 後再試)` : ""}`,
-        turn: null,
-      };
-    case "rejected":
-      return { status: "denied", detail: decision.detail, turn: null };
-    case "merged":
-      return { status: "dropped", detail: `merged: ${decision.detail}`, turn: decision.turn };
-    case "preempted":
-    case "expired":
-      return { status: "dropped", detail: decision.detail, turn: null };
-  }
 }
 
 /** A trigger she wrote as a goal trigger (`at` resolved to an absolute time). */
@@ -1900,14 +1877,17 @@ export class MindLoop implements Mind {
       let outcome: IntentOutcome;
       if (board) {
         outcome = await this.#propose(board, p, signal);
-      } else if (arbiter) {
-        try {
-          outcome = outcomeOf(await arbiter.submit(p.impulse, signal));
-        } catch (error) {
-          outcome = { status: "failed", detail: errorMessage(error), turn: null };
-        }
       } else {
-        outcome = await this.#submit(p.intent, signal);
+        // Without the agent module there is nobody to take a proposal: she does not act alone.
+        this.#d.log.debug(
+          { capability: p.intent.capability },
+          "intent dropped: the agent module is not running",
+        );
+        outcome = {
+          status: "dropped",
+          detail: "the agent module is not running",
+          turn: null,
+        };
       }
       const intent = p.intent;
       if (outcome.turn !== null) {
@@ -1982,35 +1962,6 @@ export class MindLoop implements Mind {
       const status =
         outcome.state === "taken" ? "started" : outcome.state === "open" ? "pending" : "dropped";
       return { status, detail: outcome.detail, turn: outcome.turn };
-    } catch (error) {
-      return { status: "failed", detail: errorMessage(error), turn: null };
-    }
-  }
-
-  async #submit(intent: Intent, signal: AbortSignal | undefined): Promise<IntentOutcome> {
-    const sink = this.#d.services.get(IntentSinkKey);
-    try {
-      if (sink) return await sink.submit(intent, signal);
-      // Without the agent she can still act, just not talk.
-      const registry = this.#d.services.get(ActuatorRegistryKey);
-      if (!registry) return { status: "dropped", detail: "no actuator registry", turn: null };
-      const turn = newId();
-      const outcome = await registry.invoke(
-        {
-          principal: Principals.self(intent.context, null),
-          capability: intent.capability,
-          args: intent.args,
-          why: intent.why === "" ? null : intent.why,
-          turn,
-          about: intent.about,
-        },
-        signal ? { signal } : {},
-      );
-      if (outcome.status === "done") return { status: "done", detail: outcome.result.text, turn };
-      if (outcome.status === "denied") {
-        return { status: "denied", detail: outcome.decision.reason, turn };
-      }
-      return { status: "failed", detail: outcome.error, turn };
     } catch (error) {
       return { status: "failed", detail: errorMessage(error), turn: null };
     }

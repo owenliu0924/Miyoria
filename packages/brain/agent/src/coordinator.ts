@@ -74,7 +74,6 @@ import {
   oneCaller,
   selectFocus,
 } from "./focus.js";
-import { UNCAPPED_INITIATIVES } from "./levels.js";
 import type { Agent, Inbox, Initiative, Input, IntentTurn } from "./runtime.js";
 import type { Session } from "./session.js";
 import { runTurn, type TurnPlan } from "./turn.js";
@@ -400,7 +399,7 @@ export class Coordinator {
                 running !== null,
                 pending.length > 0 || waiting !== null,
                 unplayed !== null && now < unplayed.since + cfg.voice.speak_ttl_ms,
-                input.reply ?? null,
+                input.reply,
                 this.#justAnswered(input.initiative, answered),
               );
               if (started) running = started;
@@ -565,7 +564,6 @@ export class Coordinator {
         this.#agent.intentSkipped(this.#key, input, blocked);
         return null;
       }
-      this.#agent.noteStart(this.#key);
     }
     return this.#start([], null, signal, input);
   }
@@ -629,16 +627,15 @@ export class Coordinator {
   }
 
   /**
-   * Handles an initiative request; returns the started turn, if any. With `reply` it is an
-   * impulse the Arbiter accepted: the rules were the Arbiter's, only whether the place is free
-   * is decided here (and told back through `reply`).
+   * Handles an impulse the Arbiter accepted; returns the started turn, if any. The rules were the
+   * Arbiter's, only whether the place is free is decided here (and told back through `reply`).
    */
   async #initiative(
     initiative: Initiative,
     turnRunning: boolean,
     messagesWaiting: boolean,
     speechQueued: boolean,
-    reply: ((run: ImpulseRun) => void) | null,
+    reply: (run: ImpulseRun) => void,
     answering: string | null = null,
   ): Promise<Running | null> {
     const busy = turnRunning
@@ -648,47 +645,13 @@ export class Coordinator {
         : speechQueued
           ? "her speech is still queued"
           : answering;
-    if (reply !== null) {
-      if (busy !== null || (this.#voice && this.#session.someoneSpeaking())) {
-        reply({ status: "busy", detail: busy ?? "someone is speaking" });
-        return null;
-      }
-      const started = this.#start([], initiative, this.#agent.ctx.signal);
-      reply({ status: "started", turn: started.turn, task: null, detail: "" });
-      return started;
-    }
-    if (busy !== null) {
-      this.#agent.initiativeSkipped(this.#key, initiative.reason, busy);
+    if (busy !== null || (this.#voice && this.#session.someoneSpeaking())) {
+      reply({ status: "busy", detail: busy ?? "someone is speaking" });
       return null;
     }
-    // Live game commentary is rate-limited by the game director itself, and a result someone
-    // is waiting for (`action_result`, `notice`) is no chatter to space out.
-    const last =
-      initiative.reason === "game" || owedInitiative(initiative)
-        ? null
-        : this.#session.lastSelfAt();
-    const capped = !UNCAPPED_INITIATIVES.includes(initiative.reason);
-    if (last !== null) {
-      const cooldown = this.#agent.afterSpeechMs(this.#key);
-      const since = this.#now - last;
-      if (since < cooldown) {
-        this.#agent.initiativeSkipped(
-          this.#key,
-          initiative.reason,
-          `cooldown (${since}ms since she spoke)`,
-        );
-        return null;
-      }
-    }
-    if (capped) {
-      const blocked = this.#agent.startBlocked(this.#key);
-      if (blocked !== null) {
-        this.#agent.initiativeSkipped(this.#key, initiative.reason, blocked);
-        return null;
-      }
-      this.#agent.noteStart(this.#key);
-    }
-    return this.#start([], initiative, this.#agent.ctx.signal);
+    const started = this.#start([], initiative, this.#agent.ctx.signal);
+    reply({ status: "started", turn: started.turn, task: null, detail: "" });
+    return started;
   }
 
   /**

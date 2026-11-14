@@ -109,7 +109,7 @@ describe("announcements (v2 §5 item 12)", () => {
   });
 });
 
-describe("self-started conversations (her own floor, without the Arbiter)", () => {
+describe("self-started conversations (no Arbiter running)", () => {
   it("backs off, doubling, when nobody responds, and resets after a real exchange", async () => {
     const same = reply([speak("大家在幹嘛", "想聊天")]);
     const provider = new MockProvider("p")
@@ -169,7 +169,7 @@ describe("self-started conversations (her own floor, without the Arbiter)", () =
   });
 });
 
-describe("failed actions (her own floor, without the Arbiter)", () => {
+describe("failed actions (no Arbiter running)", () => {
   it("holds a failed game.start until the activity snapshot shows the game", async () => {
     const provider = new MockProvider("p").reply(
       reply([{ kind: "act", capability: "game.start", place: HERE, why: "想玩麥塊" }]),
@@ -235,7 +235,7 @@ describe("failed actions (her own floor, without the Arbiter)", () => {
     );
     await wait(10);
     const third = await r.plan();
-    expect(status(third)).toEqual([["game.start", "done", "開始玩 Minecraft"]]);
+    expect(status(third)).toEqual([["game.start", "started", "開始玩 Minecraft"]]);
     expect(r.intents.intents).toHaveLength(2);
   });
 

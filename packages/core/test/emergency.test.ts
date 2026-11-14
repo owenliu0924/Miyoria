@@ -18,6 +18,7 @@ import {
   ActuatorExecutorKey,
   type ContextKey,
   customEvent,
+  MouthKey,
   newAction,
   newId,
   Principals,
@@ -131,6 +132,8 @@ async function rig() {
       const registry = new ActuatorRegistry({ services, builtins: false });
       services.provide("app", ActuatorRegistryKey, registry);
       services.provide("app", ActuatorExecutorKey, registry);
+      // Her lines are the main line's; here every turn is (the scheduler refuses lines without it).
+      services.provide("app", MouthKey, { owns: () => true, say: async () => undefined });
       registry.register(
         defineCapability({
           name: "game.stop",

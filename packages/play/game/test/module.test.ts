@@ -23,7 +23,7 @@ import {
   type ContextKey,
   type Event,
   GameResumeKey,
-  type Impulse,
+  type ImpulseAttention,
   impulseReason,
   type JsonValue,
   type NewProposal,
@@ -108,6 +108,17 @@ function collect<T>(sub: AsyncIterable<unknown>, pick: (event: Event) => T | nul
   return { items, take: () => items.splice(0, items.length) };
 }
 
+/** A line of commentary, however it was asked for. */
+interface Line {
+  hint: string | null;
+  attention: ImpulseAttention | null | undefined;
+  context: ContextKey | null;
+  /** The impulse's `coalesce_key` (`null` for a proposal, which has none). */
+  coalesceKey: string | null;
+  /** How long the line may wait for a free moment. */
+  ttlMs: number | null;
+}
+
 class Harness {
   readonly sup = new Supervisor();
   readonly exec: FakeExecutor;
@@ -115,8 +126,11 @@ class Harness {
   readonly commands = new CommandRegistry(Permissions.fromStrings(["discord:1"]));
   readonly prompts = new PromptContributors();
   readonly queue: RequestQueue;
-  readonly hintLog: Log<string>;
-  readonly lineLog: Log<Impulse>;
+  readonly hintLog: Log<string | null>;
+  readonly lineLog: Log<Line>;
+  /** Every proposal the director wrote to the board. */
+  readonly proposed: NewProposal[] = [];
+  readonly #taps: Array<(line: Line) => void> = [];
   readonly hintContexts: Log<ContextKey>;
   readonly nudgeLog: Log<Record<string, JsonValue>>;
   readonly traceLog: Log<Record<string, JsonValue>>;
@@ -128,21 +142,26 @@ class Harness {
     this.queue = new RequestQueue(undefined, {
       publisher: (event) => this.sup.bus.publish("queue", event),
     });
-    // Her commentary: impulses of source `game` for the Arbiter.
-    this.hintLog = collect(this.sup.bus.subscribe(ARBITER_IMPULSE_TOPIC), (e) => {
-      const impulse = v2Payload(e, ARBITER_IMPULSE_TOPIC);
-      if (!impulse) return null;
-      expect(impulse.source).toBe("game");
-      expect(impulseReason(impulse)).toBe("game");
-      return impulse.hint;
-    });
-    this.lineLog = collect(this.sup.bus.subscribe(ARBITER_IMPULSE_TOPIC), (e) =>
-      v2Payload(e, ARBITER_IMPULSE_TOPIC),
-    );
-    this.hintContexts = collect(
-      this.sup.bus.subscribe(ARBITER_IMPULSE_TOPIC),
-      (e) => v2Payload(e, ARBITER_IMPULSE_TOPIC)?.target.context ?? null,
-    );
+    // Her commentary: a proposal on the board (narration), or an impulse of source `game` for
+    // the Arbiter (what she has to say).
+    this.hintLog = this.tap((line) => line.hint);
+    this.lineLog = this.tap((line) => line);
+    this.hintContexts = this.tap((line) => line.context);
+    void (async () => {
+      for await (const env of this.sup.bus.subscribe(ARBITER_IMPULSE_TOPIC)) {
+        const impulse = v2Payload(env.event, ARBITER_IMPULSE_TOPIC);
+        if (!impulse) continue;
+        expect(impulse.source).toBe("game");
+        expect(impulseReason(impulse)).toBe("game");
+        this.emit({
+          hint: impulse.hint,
+          attention: impulse.attention,
+          context: impulse.target.context,
+          coalesceKey: impulse.coalesce_key ?? null,
+          ttlMs: Date.parse(impulse.expires_at) - Date.parse(impulse.created_at),
+        });
+      }
+    })();
     this.nudgeLog = collect(this.sup.bus.subscribe("mood.nudge"), (e) =>
       e.type === "custom" ? (e.data.payload as Record<string, JsonValue>) : null,
     );
@@ -154,10 +173,28 @@ class Harness {
     );
   }
 
+  private tap<T>(pick: (line: Line) => T | null): Log<T> {
+    const items: T[] = [];
+    this.#taps.push((line) => {
+      const v = pick(line);
+      if (v !== null) items.push(v);
+    });
+    return { items, take: () => items.splice(0, items.length) };
+  }
+
+  private emit(line: Line): void {
+    for (const tap of this.#taps) tap(line);
+  }
+
+  /**
+   * `board: false` is the agent module not running: there is no board to propose to. By default
+   * the board takes every proposal and records it (`proposed`, and as a line of commentary).
+   */
   static async create(
     provider: ChatProvider,
     config: JsonValue | null = null,
     actuators: ((h: Harness) => ActuatorRegistry) | null = null,
+    options: { board?: boolean } = {},
   ): Promise<Harness> {
     const h = new Harness();
     const router = new LlmRouter(
@@ -171,6 +208,22 @@ class Harness {
     services.provide("app", RequestQueueKey, h.queue);
     services.provide("app", PromptContributorsKey, h.prompts);
     services.provide("app", LlmRouterKey, router);
+    if (options.board !== false) {
+      services.provide("app", ProposalBoardKey, {
+        propose: async (p) => {
+          h.proposed.push(p);
+          h.emit({
+            hint: p.what,
+            attention: p.attention,
+            context: p.context,
+            coalesceKey: null,
+            ttlMs: null,
+          });
+          return { id: "x", state: "open", detail: "", turn: null };
+        },
+        open: () => [],
+      });
+    }
     await h.sup.register(new GameModule("DeepSeek醬", "傲嬌的鯨魚女孩,嘴硬心軟。"), config, true);
     await h.sup.startAll();
     return h;
@@ -243,7 +296,7 @@ class Harness {
   }
 
   hints(): string[] {
-    return this.hintLog.take();
+    return this.hintLog.take().filter((h): h is string => h !== null);
   }
 
   nudges(): Array<Record<string, JsonValue>> {
@@ -564,22 +617,24 @@ describe("game director", () => {
     await h.stop();
   });
 
-  it("under_v3_a_free_line_is_a_proposal_not_an_impulse", async () => {
+  it("narration_is_a_proposal_not_an_impulse", async () => {
     const llm = new MockProvider("mock").reply(decision("閒晃", null, "看看四周"));
     const h = await Harness.create(llm, { decide_secs: 5 });
-    const proposed: NewProposal[] = [];
-    h.sup.services.provide("app", ProposalBoardKey, {
-      propose: async (p) => {
-        proposed.push(p);
-        return { id: "x", state: "open", detail: "", turn: null };
-      },
-      open: () => [],
-    });
     await h.command("game start");
     await h.publish({ type: "voice_joined", data: { context: voiceCtx(), participants: [] } });
     await secs(20);
+    expect(h.proposed.at(-1)).toMatchObject({ source: "game.director", context: voiceCtx() });
+    await h.stop();
+  });
+
+  it("narration_is_dropped_when_the_agent_module_is_not_running", async () => {
+    const llm = new MockProvider("mock").reply(decision("閒晃", null, "看看四周"));
+    const h = await Harness.create(llm, { decide_secs: 5 }, null, { board: false });
+    await h.command("game start");
+    await h.publish({ type: "voice_joined", data: { context: voiceCtx(), participants: [] } });
+    await secs(20);
+    expect(h.proposed).toEqual([]);
     expect(h.hintContexts.take()).toEqual([]);
-    expect(proposed.at(-1)).toMatchObject({ source: "game.director", context: voiceCtx() });
     await h.stop();
   });
 
@@ -902,8 +957,8 @@ describe("narration and the lines she has to say", () => {
     for (const l of lines) {
       expect(l.attention ?? null).toBeNull();
       // Merged away by nothing, and it outlives the Arbiter's retry while she is talking.
-      expect(l.coalesce_key).toBeNull();
-      expect(Date.parse(l.expires_at) - Date.parse(l.created_at)).toBe(30_000);
+      expect(l.coalesceKey).toBeNull();
+      expect(l.ttlMs).toBe(30_000);
     }
     await h.stop();
   });
@@ -943,7 +998,7 @@ describe("narration and the lines she has to say", () => {
     ]);
     for (const l of lines) {
       expect(l.attention ?? null).toBeNull();
-      expect(Date.parse(l.expires_at) - Date.parse(l.created_at)).toBe(300_000);
+      expect(l.ttlMs).toBe(300_000);
     }
     await h.stop();
   });
@@ -954,7 +1009,7 @@ describe("narration and the lines she has to say", () => {
         ? JSON.stringify({ goal: "蓋房子", goal_status: "done", action: null })
         : decision("蓋房子", { name: "obtain", args: { item: "stone_pickaxe" } }),
     );
-    const finished = async (by: string): Promise<Impulse | undefined> => {
+    const finished = async (by: string): Promise<Line | undefined> => {
       const h = await Harness.create(llm);
       await h.start();
       await h.sup.services.require(GameControlKey).goal("蓋房子", by);

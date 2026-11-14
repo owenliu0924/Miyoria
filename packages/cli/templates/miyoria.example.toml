@@ -164,6 +164,7 @@ voice = "deepseek-chan"
 
 # ---- 子系統 --------------------------------------------------------------
 # 每個 [modules.<id>] 都可以加 enabled = false 關掉
+# (agent 和 arbiter 例外:她的嘴和發言權都在這兩個模組,不能關,寫了會讓啟動失敗)
 
 # 擁有者只在這裡設定(舊設定檔的 [modules.auth] owners 仍然有效,兩邊會合併)
 [modules.commands]

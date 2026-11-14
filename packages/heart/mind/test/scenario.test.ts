@@ -8,7 +8,6 @@ import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type AffectSnapshot,
   AffectStateKey,
-  ArbiterKey,
   customEvent,
   type Envelope,
   type Event,
@@ -55,10 +54,10 @@ function cameOnline(score: number): Event {
 }
 
 describe("Owen 上線就去找他", () => {
-  it("a when_online goal fires when he comes online and becomes an Impulse for the Arbiter", async () => {
+  it("a when_online goal fires when he comes online and becomes a proposal for the main line", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(Date.parse("2026-11-02T12:30:00.000Z")); // 20:30 at UTC+8
-    const arbiter = new FakeArbiter();
+    const proposals: Array<NewProposal & { at: number }> = [];
     const provider = new ScriptedProvider((req) => {
       const key = firedKey(texts(req).data);
       return JSON.stringify(
@@ -79,7 +78,18 @@ describe("Owen 上線就去找他", () => {
             },
       );
     });
-    const r = await rig(provider, { arbiter, config: { min_interval_secs: 0 } });
+    const r = await rig(provider, {
+      config: { min_interval_secs: 0 },
+      extra: (sup) => {
+        sup.services.provide("app", ProposalBoardKey, {
+          propose: async (p) => {
+            proposals.push({ ...structuredClone(p), at: Date.now() });
+            return { id: p.id ?? "x", state: "taken", detail: "", turn: "t1" };
+          },
+          open: () => [],
+        });
+      },
+    });
     r.world.online.clear();
     await wait(10);
     const agenda = r.sup.services.require(GoalAgendaKey);
@@ -94,7 +104,7 @@ describe("Owen 上線就去找他", () => {
     // Offline: the goal does not wake her (and `whenever` would not either).
     await wait(29 * MIN);
     expect(provider.requests().filter((q) => firedKey(texts(q).data) !== null)).toEqual([]);
-    expect(arbiter.impulses).toEqual([]);
+    expect(proposals).toEqual([]);
 
     // 21:00: he comes online (a quiet presence change, not even salient enough on its own).
     r.world.online.add(OWEN.id);
@@ -105,18 +115,16 @@ describe("Owen 上線就去找他", () => {
     expect(fired).toHaveLength(1);
     expect(callKind(fired[0] as never)).toBe("plan");
     expect(texts(fired[0]).data).toContain("你之前定的目標,觸發條件到了");
-    expect(arbiter.impulses).toHaveLength(1);
-    const impulse = arbiter.impulses[0];
-    expect(impulse).toMatchObject({
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]).toMatchObject({
       source: "agenda",
-      kind: "speak",
       capability: "chat.dm",
-      target: { person: "Owen", account: OWEN },
+      person: "Owen",
+      about: OWEN,
       goal: goal.id,
-      hint: "報告怎麼樣了",
-      priority: "initiative",
+      what: "報告怎麼樣了",
     });
-    expect(Date.parse(impulse?.created_at ?? "") - at).toBeLessThan(5000);
+    expect(proposals[0]?.at ?? 0).toBeLessThan(at + 5000);
     // Accepted: the goal is done, and the journal says so.
     expect(agenda.goal(goal.id)?.status).toBe("done");
     expect(
@@ -136,8 +144,15 @@ describe("a synthetic day", () => {
     const localHour = () => new Date(Date.now() + 8 * HOUR).getUTCHours();
 
     const services = new ServiceRegistry();
-    const arbiter = new FakeArbiter();
-    services.provide("app", ArbiterKey, arbiter);
+    // What she decides goes to the main line's board; the times are when it was written.
+    const proposals: Array<NewProposal & { at: number }> = [];
+    services.provide("app", ProposalBoardKey, {
+      propose: async (p) => {
+        proposals.push({ ...structuredClone(p), at: Date.now() });
+        return { id: p.id ?? "x", state: "taken", detail: "", turn: "t1" };
+      },
+      open: () => [],
+    });
     const world = new FakeWorld();
     world.online.clear();
     services.provide("app", WorldStateKey, world);
@@ -313,14 +328,13 @@ describe("a synthetic day", () => {
     expect(stats.runs).toBeGreaterThanOrEqual(5);
     expect(stats.empty / stats.runs).toBeLessThan(0.3);
     // Her impulses happened when they made sense.
-    const at = (i: { created_at: string }) =>
-      new Date(Date.parse(i.created_at) + 8 * HOUR).getUTCHours();
-    const game = arbiter.impulses.filter((i) => i.capability === "game.start");
+    const at = (p: { at: number }) => new Date(p.at + 8 * HOUR).getUTCHours();
+    const game = proposals.filter((p) => p.capability === "game.start");
     expect(game.map(at)).toEqual([13]);
-    const owen = arbiter.impulses.filter((i) => i.target.person === "Owen");
+    const owen = proposals.filter((p) => p.person === "Owen");
     expect(owen.length).toBeGreaterThanOrEqual(1);
     // Only once he is there (21:00 on her first day).
-    expect(owen.every((i) => Date.parse(i.created_at) >= start + 15 * HOUR)).toBe(true);
+    expect(owen.every((p) => p.at >= start + 15 * HOUR)).toBe(true);
     expect(owen.some((i) => i.source === "agenda")).toBe(true);
     // Far fewer calls than a 3-minute heartbeat (480 a day).
     expect(provider.requests().length).toBeLessThan(20);

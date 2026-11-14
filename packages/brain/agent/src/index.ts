@@ -136,7 +136,6 @@ export {
   levelHint,
   modeDescription,
   modeLabel,
-  UNCAPPED_INITIATIVES,
 } from "./levels.js";
 export { ACTING_ALONE, MainLine, MainTurn } from "./mainline/main.js";
 export { COMMIT_SPEC, STEER_SPEC, slimTool } from "./mainline/output.js";
