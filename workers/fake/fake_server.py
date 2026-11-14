@@ -38,12 +38,15 @@ from typing import AsyncIterator
 from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Reuse the real worker's sentence splitter so streaming behaves the same.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tts"))
 from text_split import split_sentences  # noqa: E402
+
+# The request models every worker shares, generated from the JSON Schema (gen_contracts.py).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from contracts import WorkersTtsRequest as TtsRequest  # noqa: E402
 
 SAMPLE_RATE = 24_000
 MS_PER_CHAR = 60
@@ -105,15 +108,6 @@ async def asr(
 
 
 # ── TTS ──────────────────────────────────────────────────────────────────────
-
-
-class TtsRequest(BaseModel):
-    text: str
-    language: str | None = None
-    emotion: str | None = None
-    instruct: str | None = None
-    voice: str | None = None
-    priority: str | None = None
 
 
 def _freq(ch: str, pitch: float) -> float:

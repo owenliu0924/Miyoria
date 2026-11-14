@@ -214,3 +214,20 @@ FAKE_TTS_BODIES = [
 def test_fake_tts_request_bodies(fake_client, monkeypatch, body, status, answer):
     monkeypatch.delenv("FAKE_VOICES", raising=False)
     assert send(fake_client, "POST", "/tts", body) == (status, answer)
+
+
+def test_answers_fit_the_contract(asr_client, tts_client, asr_is_fake, tts_is_fake):
+    """The same for a real worker (WORKER_ASR_URL / WORKER_TTS_URL). In process, every answer is
+    checked anyway (response_contract.py); the fake's /health only has what every health has."""
+    import contracts
+
+    asr_health = contracts.WorkersHealth if asr_is_fake else contracts.WorkersAsrHealth
+    tts_health = contracts.WorkersHealth if tts_is_fake else contracts.WorkersTtsHealth
+    asr_health.model_validate_json(asr_client.get("/health").content, strict=True)
+    tts_health.model_validate_json(tts_client.get("/health").content, strict=True)
+    for client in (asr_client, tts_client):
+        contracts.WorkersBusy.model_validate_json(client.get("/busy").content, strict=True)
+    contracts.WorkersAsrReply.model_validate_json(_asr(asr_client, make_wav()).content, strict=True)
+    contracts.WorkersError.model_validate_json(tts_client.post("/tts", json={"text": " "}).content, strict=True)
+    if not tts_is_fake:
+        contracts.WorkersTtsVoices.model_validate_json(tts_client.get("/voices").content, strict=True)

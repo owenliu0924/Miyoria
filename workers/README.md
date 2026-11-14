@@ -19,7 +19,8 @@ workers/
 ├── sing/  server.py  engine.py  exclusive.py  yielding.py  seedvc_runtime.py  songs.py  lyrics.py  lyricsllm.py  requirements.txt
 ├── turn/  server.py  models.py  features.py  calibrate.py  requirements.txt
 ├── fake/  fake_server.py  requirements.txt
-├── tests/ conftest.py  test_contract.py  test_text_split.py  test_asr_tags.py  test_tts_backends.py  test_sing.py
+├── tests/ conftest.py  test_contract.py  response_contract.py  test_text_split.py  test_asr_tags.py  test_tts_backends.py  test_sing.py
+├── contracts.py  gen_contracts.py  requirements-contracts.txt   # 請求 / 回應的 pydantic 模型(產生的,見第 0 節)
 ├── voices/   # 你的聲音:<name>/ref.wav + ref.txt(不進 git)
 ├── models/   # SenseVoice 模型目錄、seed-vc/ 原始碼與權重、smart-turn/、silero-vad/(不進 git)
 └── docker-compose.yml
@@ -93,6 +94,21 @@ cd workers
 WORKER_ASR_URL=http://127.0.0.1:8001 WORKER_TTS_URL=http://127.0.0.1:8002 \
   .venv/Scripts/python -m pytest tests/test_contract.py
 ```
+
+### `contracts.py`:產生的請求 / 回應模型
+
+worker 收發的 JSON(`/tts` 和 `/offload` 的本體、唱歌的 `/jobs` 等,以及各端點的回應)只寫一次:`packages/contracts/workers/src/` 的 zod schema,根目錄 `pnpm contracts:gen` 輸出成 `packages/contracts/schema/workers.json`(進 git)。`contracts.py` 是從這份 JSON Schema 產生的 pydantic 模型,各 worker 和 fake 都 import 它,**不要手改**。重新產生(不需要 Node,讀進 git 的 JSON):
+
+```bash
+cd workers
+.venv/Scripts/pip install -r requirements-contracts.txt     # 鎖版本的 datamodel-code-generator
+.venv/Scripts/python gen_contracts.py                       # 重寫 contracts.py
+.venv/Scripts/python gen_contracts.py --check               # 過期就失敗並印出差異
+```
+
+改一個欄位:改 zod → `pnpm contracts:gen` → `python workers/gen_contracts.py`,一起 commit。CI 的 `workers-python` 會重新產生並在 `contracts.py` 有差異時失敗;裝了產生器時 `pytest` 也會檢查(`tests/test_contracts_module.py`)。測試裡 fake 和每個 worker 回的 JSON 都會拿去對 `contracts.py` 的回應模型檢查(`tests/response_contract.py`)。
+
+ASR / TTS 的 Docker 映像因此要從 `workers/` build(`docker build -f asr/Dockerfile .`;`docker-compose.yml` 已經這樣設)。
 
 ---
 

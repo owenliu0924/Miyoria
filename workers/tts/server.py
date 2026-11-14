@@ -135,7 +135,6 @@ from typing import Any, AsyncIterator, Iterator
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from text_split import split_sentences
@@ -146,7 +145,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 try:
     import device_memory
     from engine_process import EngineGone, EngineProcess, RemoteError
-except ImportError:  # the Docker image holds this folder only: the model stays in this process
+except ImportError:  # the Docker image holds this folder and contracts.py only: the model stays in this process
     device_memory = None
     EngineProcess = None
 
@@ -155,6 +154,10 @@ except ImportError:  # the Docker image holds this folder only: the model stays 
 
     class RemoteError(Exception):  # type: ignore[no-redef]
         pass
+
+# The JSON bodies, generated from the JSON Schema of packages/contracts (gen_contracts.py).
+from contracts import WorkersTtsOffloadRequest as OffloadRequest  # noqa: E402
+from contracts import WorkersTtsRequest as TtsRequest  # noqa: E402
 
 MAX_TEXT_CHARS = int(os.environ.get("TTS_MAX_TEXT_CHARS", "2000"))
 MIN_CHARS = int(os.environ.get("TTS_MIN_SENTENCE_CHARS", "4"))
@@ -1074,15 +1077,6 @@ async def _validation_exc(_: Request, exc: RequestValidationError) -> JSONRespon
     return _error(400, f"invalid request: {where or 'body'}: {first.get('msg', 'bad value')}")
 
 
-class TtsRequest(BaseModel):
-    text: str
-    language: str | None = None
-    emotion: str | None = None
-    instruct: str | None = None
-    voice: str | None = None
-    priority: str | None = None  # "now" (default) | "ahead"
-
-
 @app.post("/tts")
 async def tts(req: TtsRequest) -> StreamingResponse:
     text = req.text.strip()
@@ -1203,12 +1197,6 @@ def _free_cuda() -> None:
     if cuda is not None and cuda.is_available():
         cuda.synchronize()
         cuda.empty_cache()
-
-
-class OffloadRequest(BaseModel):
-    reason: str | None = None
-    max_s: float | None = None
-    drain_s: float | None = None
 
 
 async def _drain(limit_s: float) -> bool:

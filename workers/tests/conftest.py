@@ -24,8 +24,20 @@ ROOT = Path(__file__).resolve().parent.parent
 # The stubbed model packages live in this process; test_engine_process.py covers the real child.
 os.environ["TTS_ENGINE_PROCESS"] = "0"
 os.environ["ASR_ENGINE_PROCESS"] = "0"
+sys.path.insert(0, str(ROOT))  # contracts.py, gen_contracts.py
 for sub in ("fake", "tts", "asr"):
     sys.path.insert(0, str(ROOT / sub))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _answers_follow_the_contract():
+    """Every JSON answer of a worker in these tests is checked against contracts.py
+    (tests/response_contract.py)."""
+    from response_contract import install
+
+    undo = install()
+    yield
+    undo()
 
 
 def make_wav(seconds: float = 0.5, rate: int = 16_000, channels: int = 1, freq: float = 440.0) -> bytes:
