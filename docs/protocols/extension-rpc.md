@@ -365,4 +365,4 @@ dev = false               # true = 檔案變動就重啟擴充
 watch_poll_ms = 1000
 ```
 
-宿主在每個 `dirs` 裡往下找最多三層含 `miyoria.extension.toml` 的目錄(略過 `node_modules`、`dist`、`.git`、隱藏目錄)。manifest 格式見 `docs/ARCHITECTURE.md` §9.2;`placement = "stage"` 的擴充不會在 Core 上執行(由 Stage 節點負責),`core` 和 `any` 會。`[[mcp_servers]]` 宿主只解析,透過 `Arc<ExtensionCatalog>` 服務提供給 MCP 模組。
+宿主在每個 `dirs` 裡往下找最多三層含 `miyoria.extension.toml` 的目錄(略過 `node_modules`、`dist`、`.git`、隱藏目錄)。manifest 格式見 `docs/ARCHITECTURE.md` §9.2;`placement = "stage"` 的擴充會被略過(宿主記為 skipped,Stage 節點沒有擴充宿主,所以不會有人跑它),只有 `core` 和 `any` 會被載入。`[[mcp_servers]]` 宿主只解析,透過 `Arc<ExtensionCatalog>` 服務提供給 MCP 模組。
