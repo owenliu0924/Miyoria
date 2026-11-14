@@ -2,7 +2,13 @@
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
 import { LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
-import { errorMessage, getLogger, type ModuleStatus, SupervisorKey } from "@miyoria/runtime/kernel";
+import {
+  errorMessage,
+  getLogger,
+  type ModuleStatus,
+  RequiredModuleError,
+  SupervisorKey,
+} from "@miyoria/runtime/kernel";
 import { DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";
 import type { JsonValue, ModuleId } from "@miyoria/types";
 import { z } from "zod";
@@ -69,6 +75,8 @@ export async function runModuleAction(
     }
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    // Asked to disable a module that cannot be: nothing was stopped.
+    if (error instanceof RequiredModuleError) throw ApiError.conflict(error.message);
     failure = error;
   } finally {
     if (onAbort) signal.removeEventListener("abort", onAbort);

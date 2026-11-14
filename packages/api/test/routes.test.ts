@@ -51,6 +51,7 @@ import {
   type AccountRef,
   type ContextKey,
   type JsonValue,
+  MouthKey,
   newId,
   type PersonId,
   type PlatformSink,
@@ -127,6 +128,14 @@ async function harness(
   s.provide("extensions", ExtensionCatalogKey, catalog());
   const sink = new FakeSink();
   s.provide("voice", VoiceSinkKey, sink);
+  // The main line's mouth (the agent module is not part of this rig): a line it is given goes
+  // straight to the voice sink.
+  s.provide("agent", MouthKey, {
+    owns: () => true,
+    say: async (line) => {
+      await sink.speak(line.context, line.text, line.emotion ?? null, line.turn ?? null);
+    },
+  });
   // The app's gate (with the built-in `speak`); the panel's say goes through it.
   s.provide(k, ActuatorRegistryKey, new ActuatorRegistry({ services: s }));
 

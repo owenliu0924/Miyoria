@@ -312,14 +312,16 @@ export async function buildCoreWith(
     const id = module.manifest.id;
     const section = config.module(id);
     let enabled = moduleEnabled(config, id);
-    // A module disabled at runtime (command / panel) stays disabled.
-    const saved = await store.moduleState.get(id);
+    const required = REQUIRED_MODULES.includes(id);
+    // A module disabled at runtime (command / panel) stays disabled. A required one cannot be
+    // disabled, so whatever an older build remembered about it is not followed.
+    const saved = required ? null : await store.moduleState.get(id);
     if (saved !== null) enabled = enabled && saved;
     if (NEEDS_TOKEN.includes(id) && tokenMissing(section.config)) {
       log.warn({ module: id }, "token is empty; module disabled");
       enabled = false;
     }
-    await supervisor.register(module, section.config, enabled);
+    await supervisor.register(module, section.config, enabled, { required });
   }
 
   // Each extension is a module of its own (`ext.<id>`), after the host.

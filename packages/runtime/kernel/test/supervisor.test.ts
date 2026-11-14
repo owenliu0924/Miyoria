@@ -7,6 +7,7 @@ import {
   type ModuleContext,
   type ModuleManifest,
   manifestJson,
+  RequiredModuleError,
   Supervisor,
 } from "../src/index.js";
 
@@ -67,6 +68,26 @@ describe("Supervisor", () => {
     expect(top.starts).toBe(2);
     await sup.stopAll();
     expect(state(sup, "top")).toBe("stopped");
+  });
+
+  it("a required module cannot be disabled and keeps running; it can still be restarted", async () => {
+    const sup = new Supervisor();
+    const base = new TestModule(defineManifest("base", "Base"));
+    const top = new TestModule(defineManifest("top", "Top", { requires: ["base"] }));
+    await sup.register(base, null, true, { required: true });
+    await sup.register(top, null, true);
+    await sup.startAll();
+
+    await expect(sup.disable("base")).rejects.toBeInstanceOf(RequiredModuleError);
+    expect(state(sup, "base")).toBe("running");
+    expect(state(sup, "top")).toBe("running");
+    expect(base.stops).toBe(0);
+    expect(sup.list().find((s) => s.id === "base")?.enabled).toBe(true);
+
+    await sup.restart("base");
+    expect(state(sup, "base")).toBe("running");
+    expect(base.starts).toBe(2);
+    await sup.stopAll();
   });
 
   it("pause stops modules around a change and starts them again", async () => {

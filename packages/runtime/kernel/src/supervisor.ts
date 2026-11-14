@@ -36,7 +36,18 @@ export interface ModuleStatus {
 }
 
 export class SupervisorError extends Error {
-  override readonly name = "SupervisorError";
+  override readonly name: string = "SupervisorError";
+}
+
+/** A required module was asked to be disabled. It keeps running. */
+export class RequiredModuleError extends SupervisorError {
+  override readonly name = "RequiredModuleError";
+}
+
+/** How a module is registered, besides its config. */
+export interface RegisterOptions {
+  /** It cannot be disabled while Core runs (`disable` rejects); `restart` still works. */
+  required?: boolean;
 }
 
 interface Running {
@@ -48,6 +59,7 @@ interface Slot {
   module: Module;
   config: JsonValue | null;
   enabled: boolean;
+  required: boolean;
   state: ModuleStateKind;
   reason: string | null;
   generation: number;
@@ -92,12 +104,18 @@ export class Supervisor {
   }
 
   /** Adds a module. `config` is its `[modules.<id>]` section (see `Config.module`). */
-  register(module: Module, config: JsonValue | null, enabled: boolean): Promise<void> {
+  register(
+    module: Module,
+    config: JsonValue | null,
+    enabled: boolean,
+    options: RegisterOptions = {},
+  ): Promise<void> {
     return this.#queue.run(async () => {
       this.#slots.set(module.manifest.id, {
         module,
         config,
         enabled,
+        required: options.required ?? false,
         state: enabled ? "stopped" : "disabled",
         reason: null,
         generation: 0,
@@ -166,10 +184,15 @@ export class Supervisor {
     });
   }
 
-  /** Stops a module and everything that requires it; it stays `disabled`. */
+  /**
+   * Stops a module and everything that requires it; it stays `disabled`. Rejects with
+   * `RequiredModuleError` for a module registered as required, which keeps running.
+   */
   disable(id: ModuleId): Promise<void> {
     return this.#queue.run(async () => {
-      this.#slot(id);
+      if (this.#slot(id).required) {
+        throw new RequiredModuleError(`module \`${id}\` is required and cannot be disabled`);
+      }
       for (const dep of this.#dependents(id)) {
         await this.#stopOne(dep, "stopped", `dependency \`${id}\` disabled`);
       }

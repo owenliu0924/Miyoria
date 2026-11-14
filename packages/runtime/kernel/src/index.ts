@@ -80,6 +80,8 @@ export {
   MAX_RESTARTS_IN_WINDOW,
   type ModuleStatus,
   RESTART_WINDOW_MS,
+  type RegisterOptions,
+  RequiredModuleError,
   restartBackoffMs,
   STOP_TIMEOUT_MS,
   Supervisor,

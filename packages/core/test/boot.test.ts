@@ -349,6 +349,19 @@ describe("required modules", () => {
     }
   });
 
+  it("does_not_follow_a_remembered_runtime_disable_and_refuses_a_new_one", async () => {
+    const store = await openStore("memory://");
+    for (const id of REQUIRED_MODULES) await store.moduleState.set(id, false);
+    core = await buildCoreWith(catalog(), config(), { store });
+    const before = new Map(core.supervisor.list().map((m) => [m.id, m.enabled]));
+    for (const id of REQUIRED_MODULES) expect(before.get(id), id).toBe(true);
+    for (const id of REQUIRED_MODULES) {
+      await expect(core.supervisor.disable(id), id).rejects.toThrow(/is required/);
+    }
+    const after = new Map(core.supervisor.list().map((m) => [m.id, m.enabled]));
+    for (const id of REQUIRED_MODULES) expect(after.get(id), id).toBe(true);
+  });
+
   it("starts_with_both_on_by_default_or_by_name", async () => {
     expect(REQUIRED_MODULES).toEqual(["agent", "arbiter"]);
     core = await buildCoreWith(

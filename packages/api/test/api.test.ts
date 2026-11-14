@@ -95,6 +95,16 @@ describe("api", () => {
     expect(typeof (missing.body as { error: unknown }).error).toBe("string");
   });
 
+  it("a_required_module_cannot_be_disabled", async () => {
+    const h = await harness();
+    const c = h.client;
+    await h.sup.register(new Idle("vital", "Vital"), null, true, { required: true });
+    await h.sup.enable("vital");
+    expect(await statusOf(c.moduleAction("vital", "disable"))).toBe(409);
+    expect((await c.modules()).find((x) => x.id === "vital")?.state).toBe("running");
+    expect((await c.moduleAction("vital", "restart")).state).toBe("running");
+  });
+
   it("module_lifecycle", async () => {
     const h = await harness();
     const c = h.client;
