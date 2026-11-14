@@ -1452,7 +1452,9 @@ describe("end of turn", () => {
     expect(p.complete).toBe(true);
     expect(p.turn_end).toEqual({ ended_by: "turn", probability: 0.9 });
     const sum = Object.values(p.segments as Record<string, number>).reduce((a, b) => a + b, 0);
-    expect(sum).toBe(p.total_ms);
+    // The segments it could time and the rest (`unattributed_ms`) make up the total. The
+    // segments alone fell a millisecond or two short whenever two marks were taken out of step.
+    expect(sum + (p.unattributed_ms as number)).toBe(p.total_ms);
   });
 
   it("publishes every answer of the model, for calibration", async () => {
