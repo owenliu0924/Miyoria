@@ -1,7 +1,7 @@
-// Built-in tools. The interface lives in `@miyoria/tools`.
+// Built-in tools. The interface lives in `@miyoria/llm/tools`.
 
+import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import type { ModuleContext } from "@miyoria/runtime/kernel";
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
 import { ActionSinkKey, isJsonObject, type JsonValue, newAction, textLane } from "@miyoria/types";
 import { DEFAULT_NOTE_MINUTES, MAX_NOTE_MINUTES, MAX_NOTES, type WorkingNotes } from "./notes.js";
 import { charCount } from "./util.js";

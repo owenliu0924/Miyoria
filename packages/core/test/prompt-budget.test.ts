@@ -25,7 +25,7 @@ import {
   slimTool,
   tailSection,
 } from "@miyoria/agent";
-import type { ToolSpec } from "@miyoria/llm";
+import type { ToolSpec } from "@miyoria/llm/llm";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
 import { singCapabilities } from "@miyoria/sing";

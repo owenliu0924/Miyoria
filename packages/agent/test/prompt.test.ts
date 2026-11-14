@@ -1,4 +1,4 @@
-import { assistantMessage, systemMessage, userMessage } from "@miyoria/llm";
+import { assistantMessage, systemMessage, userMessage } from "@miyoria/llm/llm";
 import type { ContextKey, PromptSection } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {

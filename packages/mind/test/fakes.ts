@@ -2,7 +2,7 @@
 // do), the Arbiter (records impulses, answers with a verdict) and a scripted LLM provider that
 // answers by call kind (Appraise / Plan).
 
-import type { ChatProvider, ChatRequest, ChatStream } from "@miyoria/llm";
+import type { ChatProvider, ChatRequest, ChatStream } from "@miyoria/llm/llm";
 import type {
   AffectInput,
   AffectSnapshot,

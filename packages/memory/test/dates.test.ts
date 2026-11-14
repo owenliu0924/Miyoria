@@ -1,5 +1,5 @@
+import type { ToolContext } from "@miyoria/llm/tools";
 import type { PeopleStore, SettingsStore } from "@miyoria/store";
-import type { ToolContext } from "@miyoria/tools";
 import type { AccountRef, ContextKey, JsonValue, PersonId } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { memoryConfig } from "../src/config.js";

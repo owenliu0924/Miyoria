@@ -1,5 +1,5 @@
 import { actuatorsFor } from "@miyoria/actions";
-import { LlmRouterKey } from "@miyoria/llm";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,
   errorMessage,

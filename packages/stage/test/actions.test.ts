@@ -2,8 +2,8 @@
 // `stage.stream` for commands and the panel only.
 
 import { ActuatorRegistry } from "@miyoria/actions";
+import { type ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { type ToolContext, ToolRegistry } from "@miyoria/tools";
 import { type AccountRef, type ContextKey, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { defaultStageStatus, type StageLink, type StageStatus } from "../src/index.js";

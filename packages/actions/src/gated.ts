@@ -6,7 +6,7 @@
 // host registers them here instead; only capabilities (behind the gate: `game.act`, the game
 // director's observe step) look them up.
 
-import type { ToolRegistry } from "@miyoria/tools";
+import type { ToolRegistry } from "@miyoria/llm/tools";
 import { serviceKey } from "@miyoria/types";
 
 /** Provided by the extension host (`extensions` module) while it runs. */

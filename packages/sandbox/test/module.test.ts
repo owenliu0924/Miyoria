@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
-import { ToolRegistry } from "@miyoria/tools";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CODE_RUN,

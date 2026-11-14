@@ -12,6 +12,7 @@ import {
   commandName,
   splitPath,
 } from "@miyoria/commands";
+import { type Tool, type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   errorMessage,
@@ -25,7 +26,6 @@ import {
   withTimeout,
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
-import { type Tool, type ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   customEvent,
   envelopeTopic,

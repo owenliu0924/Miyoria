@@ -8,7 +8,7 @@
 // names, settle times or "失敗" prefixes; stale tasks (replaced, cancelled) are ignored by id.
 
 import { type ActuatorRegistry, deniedText } from "@miyoria/actions";
-import { type ChatRequest, type LlmRouter, LlmRouterKey, sessionId } from "@miyoria/llm";
+import { type ChatRequest, type LlmRouter, LlmRouterKey, sessionId } from "@miyoria/llm/llm";
 import { RequestQueueKey } from "@miyoria/queue";
 import { errorMessage, getLogger, type ModuleContext, withTimeout } from "@miyoria/runtime/kernel";
 import {

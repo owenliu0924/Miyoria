@@ -9,7 +9,7 @@
 // rule is given back), so she can never post more than `max_per_day`, whatever the main line does
 // with them. The content is what really ran (`LifeBook`), never made up (Developer Policy item 13).
 
-import { LlmRouterKey } from "@miyoria/llm";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {

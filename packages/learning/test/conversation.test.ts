@@ -1,4 +1,4 @@
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import { MemorySettingsStore } from "@miyoria/store";
 import {
   CONVERSATION_FOLDED_TOPIC,

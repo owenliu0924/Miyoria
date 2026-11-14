@@ -28,8 +28,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@miyoria/llm": "workspace:*",
     "@miyoria/stage": "workspace:*",
-    "@miyoria/tools": "workspace:*",
     "@types/node": "^24.19.2",
     "typescript": "~5.9.3",
     "vitest": "^4.1.12"

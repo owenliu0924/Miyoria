@@ -17,7 +17,7 @@ import {
   systemMessage,
   userMessage,
   withLlmTag,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { errorMessage, getLogger, SerialQueue, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   knownNames,

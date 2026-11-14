@@ -3,7 +3,7 @@
 // match, present-tense notes that expire, followups that close, and a gag that cannot fill
 // every recall.
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import type { MemoryScope } from "@miyoria/store";
 import { newId } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";

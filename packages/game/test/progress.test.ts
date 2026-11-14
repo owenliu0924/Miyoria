@@ -12,7 +12,7 @@ import {
   LlmRouter,
   LlmRouterKey,
   parseModelRef,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import type { ContextKey, Event, JsonObject, JsonValue } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

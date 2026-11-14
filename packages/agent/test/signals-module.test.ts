@@ -1,8 +1,8 @@
 // Port of `tests/signals.rs`: tool registry from the app, prompt contributors, social and mood
 // signals, initiative and the LLM budget.
 
-import { contentText, MockProvider } from "@miyoria/llm";
-import { ToolRegistryKey } from "@miyoria/tools";
+import { contentText, MockProvider } from "@miyoria/llm/llm";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   type AffectState,
   AffectStateKey,

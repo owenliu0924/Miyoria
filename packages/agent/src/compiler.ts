@@ -22,7 +22,7 @@
 // A compressed copy of the prompt as sent (`SavedPrompt`) is kept per turn (or every n-th turn)
 // in `SavedPrompts` (`SavedPromptsKey`) and published as `agent.prompt`.
 
-import type { ChatMessage } from "@miyoria/llm";
+import type { ChatMessage } from "@miyoria/llm/llm";
 import {
   asPromptBlock,
   type CompiledBlock,

@@ -1,8 +1,8 @@
 // Port of the crate's module-level tests (`tests.rs`).
 
 import { CommandRegistryKey } from "@miyoria/commands";
-import { contentText, contextSession, MockProvider } from "@miyoria/llm";
-import { ToolRegistryKey } from "@miyoria/tools";
+import { contentText, contextSession, MockProvider } from "@miyoria/llm/llm";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import { type ContextKey, dataBlock, eventTopic, isJsonObject } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonaHandleKey } from "../src/index.js";

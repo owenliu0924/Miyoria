@@ -12,9 +12,9 @@
 // store.
 
 import { ActuatorRegistryKey, type Capability, capabilityMatches } from "@miyoria/actions";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import { errorMessage, getLogger, type ServiceLookup, withTimeout } from "@miyoria/runtime/kernel";
 import { AuditLogKey, type DirectiveStore } from "@miyoria/store";
-import { ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,
   ActivityManagerKey,

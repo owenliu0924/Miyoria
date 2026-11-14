@@ -3,8 +3,8 @@
 // confirmations come from the bus, and the notice goes back to her turn.
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { ToolRegistry } from "@miyoria/tools";
 import {
   ActivityManagerKey,
   type ContextKey,

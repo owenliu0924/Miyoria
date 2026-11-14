@@ -596,7 +596,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { shared: true, kept: true },
   ),
-  // @miyoria/llm `USAGE_KEY_PREFIX` under `USAGE_PROFILE`: spending, checked against the budget.
+  // @miyoria/llm/llm `USAGE_KEY_PREFIX` under `USAGE_PROFILE`: spending, checked against the budget.
   category("llm_usage", [settings("llm_usage", "global", [], ["llm_usage:"])], {
     shared: true,
     kept: true,

@@ -1,7 +1,7 @@
 // Hybrid recall, the prompt section and the model tools (Rust `tests/retrieval.rs`).
 
+import type { ToolContext } from "@miyoria/llm/tools";
 import type { MemoryRecord, MemoryScope } from "@miyoria/store";
-import type { ToolContext } from "@miyoria/tools";
 import { type AccountRef, type ContextKey, newId, systemClock } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {

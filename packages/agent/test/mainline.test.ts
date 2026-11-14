@@ -6,9 +6,9 @@
 import { ActuatorRegistry, defineCapability } from "@miyoria/actions";
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
-import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm";
+import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { ToolRegistry } from "@miyoria/tools";
 import {
   ACTION_SETTLED_TOPIC,
   ACTIVITY_DONE_TOPIC,

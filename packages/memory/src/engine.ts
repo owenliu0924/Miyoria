@@ -12,7 +12,7 @@ import {
   systemMessage,
   userMessage,
   withLlmTag,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   embeddingValues,

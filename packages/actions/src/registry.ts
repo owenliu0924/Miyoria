@@ -21,10 +21,10 @@
 //    the owners.
 
 import { CommandRegistryKey, ReplySinkKey } from "@miyoria/commands";
-import { LlmRouterKey, withLlmTag } from "@miyoria/llm";
+import { LlmRouterKey, withLlmTag } from "@miyoria/llm/llm";
+import type { ToolRegistry } from "@miyoria/llm/tools";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { AuditLogKey, SettingsStoreKey } from "@miyoria/store";
-import type { ToolRegistry } from "@miyoria/tools";
 import {
   ActionSinkKey,
   type ActivityRequest,

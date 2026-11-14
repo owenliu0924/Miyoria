@@ -193,7 +193,10 @@ for f in [f for f in git("ls-files", "*package.json").split("\n") if f]:
 # ---- 4. import specifiers and relative paths --------------------------------------------------
 
 SPEC = re.compile(r"""(["'])@miyoria/(""" + "|".join(re.escape(m) for m in MEMBERS) + r""")(/[^"'\n]*)?\1""")
-BARE = re.compile(r"(?<![\w/-])@miyoria/(" + "|".join(re.escape(m) for m in MEMBERS) + r")(?![\w-])(?!/src)")
+# Not what the pass above already wrote: when the group is named after one of its parts,
+# "@miyoria/<new>/<member>" starts with "@miyoria/<member>".
+BARE = re.compile(r"(?<![\w/-])@miyoria/(" + "|".join(re.escape(m) for m in MEMBERS) + r")(?![\w-])(?!/src)"
+                  + (r"(?!/(?:" + "|".join(re.escape(m) for m in MEMBERS) + r")(?![\w-]))" if NEW in MEMBERS else ""))
 REL = re.compile(r"""(["'])(\.\.?(?:/[^"'\n\s]*)?)\1""")
 
 

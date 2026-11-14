@@ -1,7 +1,7 @@
 // Phase G in turns: history her conversation notes already cover is not repeated raw, and
 // lessons shift her ambient talkativeness.
 
-import { contentText, MockProvider } from "@miyoria/llm";
+import { contentText, MockProvider } from "@miyoria/llm/llm";
 import {
   type ContextKey,
   type ConversationState,

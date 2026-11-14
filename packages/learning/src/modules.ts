@@ -2,7 +2,8 @@
 // `reflect` (feedback signals, lessons, daily and light reflections).
 
 import { ActuatorRegistryKey, actuatorsFor } from "@miyoria/actions";
-import { LlmRouterKey } from "@miyoria/llm";
+import { LlmRouterKey } from "@miyoria/llm/llm";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   errorMessage,
@@ -20,7 +21,6 @@ import {
   StoredHandleDirectory,
   StoreKey,
 } from "@miyoria/store";
-import { ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,
   type Clock,

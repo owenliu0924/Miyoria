@@ -3,7 +3,7 @@
 // places and goals are still the names / context strings / goal keys she wrote and are
 // resolved against the snapshot later.
 
-import { extractJsonObject } from "@miyoria/llm";
+import { extractJsonObject } from "@miyoria/llm/llm";
 import type { JsonObject } from "@miyoria/types";
 import { z } from "zod";
 

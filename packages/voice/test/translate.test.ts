@@ -1,6 +1,6 @@
 // Spoken lines without a `<voice>` part are translated on the conversation's LLM session.
 
-import type { ChatRequest, LlmRouter } from "@miyoria/llm";
+import type { ChatRequest, LlmRouter } from "@miyoria/llm/llm";
 import type { Logger } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import { SpeechTranslator } from "../src/translate.js";

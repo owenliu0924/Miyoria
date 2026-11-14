@@ -1,4 +1,4 @@
-// @miyoria/llm: the LLM layer.
+// @miyoria/llm/llm: the LLM layer.
 //
 // * `ChatProvider` is implemented per API family; `OpenAiProvider` (kinds `openai-compatible`,
 //   `openai`, `deepseek`, `opencode`) ships here.

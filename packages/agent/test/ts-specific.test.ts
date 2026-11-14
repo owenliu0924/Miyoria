@@ -7,7 +7,7 @@ import {
   type ChatStream,
   contentText,
   MockProvider,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { manifestJson } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentModule } from "../src/index.js";

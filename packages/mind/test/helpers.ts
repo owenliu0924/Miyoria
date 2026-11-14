@@ -10,7 +10,7 @@ import {
   LlmRouterKey,
   type ModelRef,
   parseModelRef,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import {
   defineManifest,
   type Module,

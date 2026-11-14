@@ -2,7 +2,7 @@
 // table, `agent.turn.outcome`, `TurnFocusViewKey`, quoting the focus, text streamed line by
 // line, notices and saved prompts.
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import {
   customEvent,
   type Envelope,

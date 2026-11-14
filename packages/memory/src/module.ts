@@ -1,7 +1,8 @@
 // Module `memory`.
 
 import { CommandRegistryKey } from "@miyoria/commands";
-import { LlmRouterKey } from "@miyoria/llm";
+import { LlmRouterKey } from "@miyoria/llm/llm";
+import { type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   errorMessage,
@@ -21,7 +22,6 @@ import {
   SettingsStoreKey,
   StoreKey,
 } from "@miyoria/store";
-import { type ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,
   CONVERSATION_FOLDED_TOPIC,

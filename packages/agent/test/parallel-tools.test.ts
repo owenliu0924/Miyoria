@@ -1,8 +1,8 @@
 // Tool calls that only look run side by side; anything that changes something runs alone, in the
 // order the model gave, and every result goes back in call order.
 
-import { MockProvider } from "@miyoria/llm";
-import type { Tool } from "@miyoria/tools";
+import { MockProvider } from "@miyoria/llm/llm";
+import type { Tool } from "@miyoria/llm/tools";
 import { dataBlock } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toolBatches } from "../src/util.js";

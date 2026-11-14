@@ -11,7 +11,7 @@
 // goes through `#tryTool` (whose permission it is), every line still through the gate, the ledger
 // and moderation, and the decision of the turn is still logged once, with every tool it used.
 
-import type { ToolCall } from "@miyoria/llm";
+import type { ToolCall } from "@miyoria/llm/llm";
 import { REASONING_LEVELS, type ReasoningLevel } from "@miyoria/types";
 import { charCount } from "../util.js";
 import { COMMIT_TOOL } from "./output.js";

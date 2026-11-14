@@ -1,7 +1,7 @@
 // Files people send her: who may, which ones, how they reach the model (as untrusted data, with
 // a fake reader: no sandbox, no network), and a whole turn with a file that carries instructions.
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import {
   type Attachment,
   type Authorizer,

@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GatedToolsKey } from "@miyoria/actions";
 import { CommandRegistry, CommandRegistryKey, Invocation, Permissions } from "@miyoria/commands";
+import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   Config,
   EventBus,
@@ -24,7 +25,6 @@ import {
   sleep,
 } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
-import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,
   type ContextKey,

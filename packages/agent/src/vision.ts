@@ -8,7 +8,7 @@
 // cached by attachment id. Nothing is downloaded when the chat model takes no images
 // (`[llm.image_input]`). The history keeps `[圖片: name(alt)]` for later turns and memory.
 
-import type { ContentPart } from "@miyoria/llm";
+import type { ContentPart } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { type Attachment, type IncomingMessage, imageType, safeName } from "@miyoria/types";
 import type { VisionConfig } from "./config.js";

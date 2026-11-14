@@ -6,8 +6,8 @@ import {
   type InvocationData,
   Permissions,
 } from "@miyoria/commands";
+import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import { DirectivesKey, EventLogKey, ProposalBoardKey } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { DirectiveModule } from "../src/index.js";

@@ -2,7 +2,7 @@
 // one person; answered in a DM, she still asked it seven times in the channel and again in the DM
 // nine minutes later).
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import type { MemoryRecord, MemoryScope } from "@miyoria/store";
 import type { ContextKey, PersonId } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";

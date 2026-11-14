@@ -12,7 +12,7 @@ import {
   CommandsModule,
   replyEphemeral,
 } from "@miyoria/commands";
-import { type ChatRequest, type LlmRouter, LlmRouterKey } from "@miyoria/llm";
+import { type ChatRequest, type LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,
   type Module,

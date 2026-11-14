@@ -1,7 +1,7 @@
 // Transcript quality: character budget, per-entry cap, `(bot)` / `(回覆 X)` tags, quoted
 // parents, time-gap lines and image parts, all through the untrusted-data helpers.
 
-import { type ContentPart, contentText } from "@miyoria/llm";
+import { type ContentPart, contentText } from "@miyoria/llm/llm";
 import { describe, expect, it } from "vitest";
 import {
   buildMessages,

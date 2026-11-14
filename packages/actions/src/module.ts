@@ -2,6 +2,7 @@
 // switch) and serves its commands.
 
 import { CommandMount } from "@miyoria/commands";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   errorMessage,
@@ -9,7 +10,6 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
-import { ToolRegistryKey } from "@miyoria/tools";
 import { PresencePrivacyKey } from "@miyoria/types";
 import { testHigh } from "./builtin.js";
 import { registerCommands, unregisterCommands } from "./commands.js";

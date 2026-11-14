@@ -15,7 +15,7 @@ import {
   LlmRouterKey,
   MockProvider,
   parseModelRef,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {

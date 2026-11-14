@@ -12,7 +12,8 @@ import {
   type ModelRef,
   parseModelRef,
   type StreamEvent,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
+import { type Tool, type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   type Module,
@@ -23,7 +24,6 @@ import {
 } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
-import { type Tool, type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,
   type Action,

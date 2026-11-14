@@ -13,7 +13,7 @@
 // for `quietMs`, or at once after an important event there. Segments that never involved her
 // are dropped unread.
 
-import { type ChatMessage, extractJsonObject, systemMessage, userMessage } from "@miyoria/llm";
+import { type ChatMessage, extractJsonObject, systemMessage, userMessage } from "@miyoria/llm/llm";
 import {
   type AccountRef,
   type AffectInput,

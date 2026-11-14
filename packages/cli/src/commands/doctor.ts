@@ -130,7 +130,7 @@ export async function run(configPath: string, options: DoctorOptions = {}): Prom
 
   // The full core (every module package) is only loaded for the checks that need it.
   const core = await import("@miyoria/core");
-  const { collectResponse, modelRefString, userMessage } = await import("@miyoria/llm");
+  const { collectResponse, modelRefString, userMessage } = await import("@miyoria/llm/llm");
 
   if (profile) {
     try {

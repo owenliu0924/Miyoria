@@ -1,4 +1,4 @@
-import type { ToolContext } from "@miyoria/tools";
+import type { ToolContext } from "@miyoria/llm/tools";
 import {
   type Action,
   type ActionSink,

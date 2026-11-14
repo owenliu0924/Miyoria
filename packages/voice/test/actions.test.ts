@@ -1,8 +1,8 @@
 // The voice capabilities as her tools: each calls the voice link through the gate.
 
 import { ActuatorRegistry } from "@miyoria/actions";
+import { type ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { type ToolContext, ToolRegistry } from "@miyoria/tools";
 import {
   type AccountRef,
   AuthorizerKey,

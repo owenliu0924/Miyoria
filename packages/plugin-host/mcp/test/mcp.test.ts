@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   EventBus,
   ServiceRegistry,
@@ -12,7 +13,6 @@ import {
   SupervisorKey,
   sleep,
 } from "@miyoria/runtime/kernel";
-import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import { type JsonObject, type JsonValue, newId } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { McpModule, type McpStatus, parseMcpConfig, stdioEnv } from "../src/index.js";

@@ -26,7 +26,7 @@
 // she was in voice). Every part has a budget, and with `prompt_tokens` set `fitHistory` gives up
 // the oldest lines if the whole still does not fit.
 
-import { type ChatMessage, type ContentPart, systemMessage, userMessage } from "@miyoria/llm";
+import { type ChatMessage, type ContentPart, systemMessage, userMessage } from "@miyoria/llm/llm";
 import {
   type Commitment,
   type ContextBucket,

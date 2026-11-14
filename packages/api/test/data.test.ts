@@ -4,7 +4,7 @@
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/agent";
 import * as arbiter from "@miyoria/arbiter";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm";
+import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm/llm";
 import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory";
 import * as queue from "@miyoria/queue";
 import {

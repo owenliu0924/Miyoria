@@ -1,4 +1,4 @@
-import { contentText } from "@miyoria/llm";
+import { contentText } from "@miyoria/llm/llm";
 import { describe, expect, it } from "vitest";
 import { AppraisalParseError, appraisalRequest, parseAppraisal, parseNotes } from "../src/index.js";
 

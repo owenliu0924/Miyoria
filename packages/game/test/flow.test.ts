@@ -10,9 +10,9 @@ import {
   defineCapability,
   type GateDecision,
 } from "@miyoria/actions";
-import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm";
+import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm/llm";
+import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,
   ARBITER_IMPULSE_TOPIC,

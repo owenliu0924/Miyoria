@@ -2,8 +2,8 @@
 // disappears from the tool list. And what an unclear statement comes back as.
 
 import { defineCapability } from "@miyoria/actions";
+import { type Tool, ToolRegistryKey } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { type Tool, ToolRegistryKey } from "@miyoria/tools";
 import {
   ActionSinkKey,
   type ActivityManager,

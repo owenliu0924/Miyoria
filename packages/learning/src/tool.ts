@@ -4,7 +4,7 @@
 // speaker (`said`: they may add things and change what is theirs or about them), in a turn she
 // started herself it is `inferred` (she concluded it from a conversation), never privileged.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
+import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import {
   isJsonObject,
   type JsonObject,

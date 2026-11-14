@@ -1,6 +1,6 @@
 // Small helpers shared by the agent's modules.
 
-import type { Tool } from "@miyoria/tools";
+import type { Tool } from "@miyoria/llm/tools";
 import {
   type AccountRef,
   accountRefString,

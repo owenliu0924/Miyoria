@@ -1,5 +1,5 @@
 import type { ExecContext } from "@miyoria/actions";
-import type { LlmRouter } from "@miyoria/llm";
+import type { LlmRouter } from "@miyoria/llm/llm";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type ContextKey,

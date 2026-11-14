@@ -12,7 +12,7 @@
 // from what the page shows them (`fortune.ts`).
 
 import { EconomyError, EconomyKey, STRANGER } from "@miyoria/economy";
-import { LlmRouterKey } from "@miyoria/llm";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { FortuneStoreKey } from "@miyoria/store";
 import { type AccountRef, accountRefString } from "@miyoria/types";

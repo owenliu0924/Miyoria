@@ -1,6 +1,6 @@
 // Shared test helpers (Rust `src/tests/mod.rs`).
 
-import { LlmRouter, MockProvider, parseModelRef } from "@miyoria/llm";
+import { LlmRouter, MockProvider, parseModelRef } from "@miyoria/llm/llm";
 import {
   type MemoryKind,
   type MemoryRecord,

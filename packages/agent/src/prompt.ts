@@ -21,7 +21,7 @@ import {
   type ContentPart,
   systemMessage,
   userMessage,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import {
   type AccountRef,
   CHAT_DM,

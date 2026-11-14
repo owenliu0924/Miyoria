@@ -5,8 +5,8 @@
 
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
-import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm";
-import type { ToolContext } from "@miyoria/tools";
+import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
+import type { ToolContext } from "@miyoria/llm/tools";
 import {
   type ActivityManager,
   ActivityManagerKey,

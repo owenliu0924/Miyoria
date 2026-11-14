@@ -9,10 +9,10 @@ import {
   type ChatStream,
   LlmRouter,
   parseModelRef,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
-import { ToolRegistry } from "@miyoria/tools";
 import { type JsonObject, Principals } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {

@@ -8,7 +8,8 @@ import {
   type InvocationData,
   replyEphemeral,
 } from "@miyoria/commands";
-import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
+import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm/llm";
+import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   type Module,
@@ -25,7 +26,6 @@ import {
   PeopleStoreKey,
   SettingsStoreKey,
 } from "@miyoria/store";
-import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type ContextKey,
   EventLogKey,

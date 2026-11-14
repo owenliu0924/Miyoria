@@ -8,7 +8,7 @@
 // a refusal and never runs.
 
 import { CapabilityTool } from "@miyoria/actions";
-import type { Tool } from "@miyoria/tools";
+import type { Tool } from "@miyoria/llm/tools";
 import type { ContextKey, Directives } from "@miyoria/types";
 
 /**

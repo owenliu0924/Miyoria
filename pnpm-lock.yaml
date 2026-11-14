@@ -331,9 +331,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -366,12 +363,12 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@miyoria/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@miyoria/stage':
         specifier: workspace:*
         version: link:../stage
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -399,9 +396,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -478,9 +472,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -832,9 +823,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -866,15 +854,15 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1042,9 +1030,6 @@ importers:
       '@miyoria/social':
         specifier: workspace:*
         version: link:../social
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1098,9 +1083,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1188,9 +1170,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1321,9 +1300,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1410,9 +1386,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
@@ -1482,9 +1455,6 @@ importers:
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1593,9 +1563,6 @@ importers:
       '@miyoria/store':
         specifier: workspace:*
         version: link:../store
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1695,9 +1662,6 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1729,25 +1693,6 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/tools:
-    dependencies:
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1804,9 +1749,6 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@miyoria/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

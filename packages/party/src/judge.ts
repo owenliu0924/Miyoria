@@ -4,7 +4,7 @@
 // set. What reaches her is that word, never a sentence of the referee's, so the bottom cannot
 // leak through her until it is solved.
 
-import { type LlmRouter, systemMessage, userMessage } from "@miyoria/llm";
+import { type LlmRouter, systemMessage, userMessage } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { dataBlock } from "@miyoria/types";
 

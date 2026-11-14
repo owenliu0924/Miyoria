@@ -11,7 +11,7 @@
 //   distribution, error kinds, the most expensive and slowest calls, and the prices
 // * `GET /api/mind/thoughts/{id}` → one thought with what it saw and its calls
 
-import { CALL_KINDS, LlmRouterKey } from "@miyoria/llm";
+import { CALL_KINDS, LlmRouterKey } from "@miyoria/llm/llm";
 import { MindKey } from "@miyoria/types";
 import { z } from "zod";
 import { ApiError } from "./errors.js";

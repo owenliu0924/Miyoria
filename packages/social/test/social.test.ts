@@ -5,7 +5,7 @@ import {
   type InvocationData,
   Permissions,
 } from "@miyoria/commands";
-import { LlmRouterKey, MockProvider } from "@miyoria/llm";
+import { LlmRouterKey, MockProvider } from "@miyoria/llm/llm";
 import {
   defineManifest,
   EventBus,

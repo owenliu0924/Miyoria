@@ -1,6 +1,6 @@
 // TS-specific checks: config defaults (Rust `Default` impls), persisted JSON shapes, manifest.
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import { manifestJson } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import {

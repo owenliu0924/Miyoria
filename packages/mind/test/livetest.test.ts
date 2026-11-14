@@ -3,7 +3,7 @@
 // Plan. Without the Arbiter her own floor applies (these tests); with it, the Arbiter decides.
 
 import { defineCapability } from "@miyoria/actions";
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import {
   type ContextKey,
   contextKeyString,

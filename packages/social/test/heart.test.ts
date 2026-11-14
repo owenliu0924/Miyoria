@@ -1,7 +1,7 @@
 // Her emotions' side of the social module: every event on `social.event` (caps or not), the
 // appraisal reading her feelings (`social.appraisal`), and the mood following her emotions.
 
-import { contentText, MockProvider } from "@miyoria/llm";
+import { contentText, MockProvider } from "@miyoria/llm/llm";
 import {
   type Affect,
   customEvent,

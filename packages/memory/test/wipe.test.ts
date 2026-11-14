@@ -7,7 +7,7 @@ import {
   CommandsModule,
   type ComponentInvocationData,
 } from "@miyoria/commands";
-import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm";
+import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm/llm";
 import {
   defineManifest,
   type Module,

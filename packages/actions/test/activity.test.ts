@@ -2,7 +2,7 @@
 // turn), activity capabilities are routed to the ActivityManager after the gate, and outcomes
 // land in the Ledger-ready form (and a notice for a late high-risk result).
 
-import type { ToolContext } from "@miyoria/tools";
+import type { ToolContext } from "@miyoria/llm/tools";
 import {
   type Action,
   type ActionSink,

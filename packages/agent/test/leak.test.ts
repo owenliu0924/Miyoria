@@ -1,7 +1,7 @@
 // 2026-11-09: a model with thinking off wrote its reasoning as the reply, and every line went to
 // Discord as a message (23 in one turn). The net at the send boundary (leak.ts, turn.ts).
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isSelfTalk,

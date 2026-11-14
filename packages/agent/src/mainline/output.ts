@@ -7,7 +7,7 @@
 // can fail to parse on the hot path.
 
 import { REQUEST_RULE } from "@miyoria/actions";
-import type { ToolCall, ToolSpec } from "@miyoria/llm";
+import type { ToolCall, ToolSpec } from "@miyoria/llm/llm";
 import {
   type ActionCall,
   type CommitmentDraft,

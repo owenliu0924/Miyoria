@@ -18,7 +18,7 @@
 //    clears everything by hand.
 
 import { CommandRegistryKey, CommandsModule } from "@miyoria/commands";
-import { LlmRouterKey, userMessage, withLlmTag } from "@miyoria/llm";
+import { LlmRouterKey, userMessage, withLlmTag } from "@miyoria/llm/llm";
 import {
   defineManifest,
   errorMessage,

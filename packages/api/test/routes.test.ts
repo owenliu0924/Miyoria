@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { LlmRouter, LlmRouterKey } from "@miyoria/llm";
+import { LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   type Embedder,
   MemoryEngine,

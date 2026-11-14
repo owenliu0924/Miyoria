@@ -1,7 +1,7 @@
 // v4 §5.5: her notebook.
 
+import type { ToolContext } from "@miyoria/llm/tools";
 import { MemorySettingsStore } from "@miyoria/store";
-import type { ToolContext } from "@miyoria/tools";
 import { type ContextKey, DATA_CLOSE } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {

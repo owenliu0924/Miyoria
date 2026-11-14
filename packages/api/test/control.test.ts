@@ -9,7 +9,7 @@ import {
   pricing,
   userMessage,
   withLlmTag,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import { type Principal, SelfStateKey } from "@miyoria/types";

@@ -2,8 +2,8 @@
 // rice with an @-mention, ミルクねこ replied to her two seconds later about something else, both
 // landed in one turn and the feed charged ミルクねこ).
 
-import { MockProvider } from "@miyoria/llm";
-import type { ToolContext } from "@miyoria/tools";
+import { MockProvider } from "@miyoria/llm/llm";
+import type { ToolContext } from "@miyoria/llm/tools";
 import type { IncomingMessage, JsonValue } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { callFor, FOR_ARG } from "../src/focus.js";

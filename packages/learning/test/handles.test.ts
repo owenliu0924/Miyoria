@@ -2,7 +2,7 @@
 // prompt and its notes use people's names, never `u1`; text with a code is rewritten or
 // refused; a style lesson is not a talkativeness knob; and the migration repairs old rows.
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import { GLOBAL_SETTINGS_PROFILE, HANDLE_PREFIX, MemorySettingsStore } from "@miyoria/store";
 import {
   type AccountRef,

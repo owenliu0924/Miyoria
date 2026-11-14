@@ -2,7 +2,7 @@
 
 import { actuatorsFor } from "@miyoria/actions";
 import { type CommandRegistry, CommandRegistryKey } from "@miyoria/commands";
-import { LlmRouterKey } from "@miyoria/llm";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,
   errorMessage,

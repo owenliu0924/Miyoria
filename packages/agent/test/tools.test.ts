@@ -1,4 +1,4 @@
-import type { Tool } from "@miyoria/tools";
+import type { Tool } from "@miyoria/llm/tools";
 import { describe, expect, it } from "vitest";
 import { parseCheck, ToolRegistry, truncate } from "../src/index.js";
 

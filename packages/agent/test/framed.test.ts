@@ -1,8 +1,8 @@
 // A tool whose answer already holds its outside content in data blocks (`Tool.framed`) goes to the
 // model as it is; every other answer goes in one block of the agent's.
 
-import { MockProvider } from "@miyoria/llm";
-import type { Tool } from "@miyoria/tools";
+import { MockProvider } from "@miyoria/llm/llm";
+import type { Tool } from "@miyoria/llm/tools";
 import { dataBlock } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { framedAsIs } from "../src/util.js";

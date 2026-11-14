@@ -2,8 +2,8 @@
 // (and her own face coming back), and the overlay's merged gift line.
 
 import { ActuatorRegistry } from "@miyoria/actions";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { ToolRegistry } from "@miyoria/tools";
 import { customEvent, Principals } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {

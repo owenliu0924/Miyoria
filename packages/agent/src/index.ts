@@ -11,7 +11,7 @@
 // attention and tone, and `agent.initiative` events let her start conversations. `llm.budget`
 // events make her save tokens (see `BudgetState`).
 
-export { type Tool, type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
+export { type Tool, type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 export {
   ACTIVENESS_CAPABILITY,
   activenessCapability,

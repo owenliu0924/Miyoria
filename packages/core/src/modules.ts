@@ -37,7 +37,7 @@ import {
   type ModelRef,
   OpenAiFactory,
   parseModelRef,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory";
 import { MindModule } from "@miyoria/mind";
 import { ModerationModule } from "@miyoria/moderation";

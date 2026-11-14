@@ -1,7 +1,7 @@
 // Model tools `remember` and `recall`.
 
+import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import type { MemoryKind } from "@miyoria/store";
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
 import {
   type Clock,
   isJsonObject,

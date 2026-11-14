@@ -6,7 +6,7 @@
 // answer goes back to her as text, and a statement that can be read two ways comes back as the
 // question to ask.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
+import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import {
   type DirectiveActor,
   type DirectiveChange,

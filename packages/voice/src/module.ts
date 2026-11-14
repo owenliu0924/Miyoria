@@ -2,7 +2,7 @@
 
 import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
-import { contextSession, LlmRouterKey } from "@miyoria/llm";
+import { contextSession, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,
   HEALTHY,

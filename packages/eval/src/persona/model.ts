@@ -11,7 +11,7 @@ import {
   parseModelRef,
   systemMessage,
   userMessage,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
 import { Config, loadDotenv } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
 import type { Complete } from "./blind.js";

@@ -1,6 +1,6 @@
 // LLM prompts and lenient JSON parsing for appraisal and notes.
 
-import { type ChatRequest, systemMessage, userMessage } from "@miyoria/llm";
+import { type ChatRequest, systemMessage, userMessage } from "@miyoria/llm/llm";
 import {
   EMOTION_LABELS,
   EMOTION_NAMES,

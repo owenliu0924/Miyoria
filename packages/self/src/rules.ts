@@ -39,7 +39,7 @@ import type { SelfService } from "./state.js";
 
 /** Bus topic of emotion nudges from games and extensions (see `feelEffects`). */
 export const FEEL_TOPIC = "self.feel";
-/** Bus topic of the LLM budget (`@miyoria/llm` `BUDGET_TOPIC`). */
+/** Bus topic of the LLM budget (`@miyoria/llm/llm` `BUDGET_TOPIC`). */
 const BUDGET_TOPIC = "llm.budget";
 const MINUTE_MS = 60_000;
 

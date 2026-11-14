@@ -2,8 +2,8 @@
 // person she is talking to (principal `user`); with `on_own` she does it as herself (principal
 // `self`, her own limits, no permission of the person needed). Either way the gate decides.
 
+import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
 import { isJsonObject, type JsonObject, type JsonValue, Principals } from "@miyoria/types";
 import {
   ActionDeniedError,

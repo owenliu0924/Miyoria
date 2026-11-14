@@ -3,8 +3,8 @@
 // and the commands and leaves every rule in force.
 
 import { CommandMount } from "@miyoria/commands";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import { defineManifest, type Module, type ModuleContext, sleep } from "@miyoria/runtime/kernel";
-import { ToolRegistryKey } from "@miyoria/tools";
 import {
   DirectivesKey,
   EventLogKey,

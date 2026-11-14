@@ -9,7 +9,7 @@
 // get it past this filter.
 
 import { CapabilityTool, isGatedToolName } from "@miyoria/actions";
-import type { Tool } from "@miyoria/tools";
+import type { Tool } from "@miyoria/llm/tools";
 import type { ActivitySnapshot, HerStatus } from "@miyoria/types";
 
 /** What the scoping rules read of her state. */

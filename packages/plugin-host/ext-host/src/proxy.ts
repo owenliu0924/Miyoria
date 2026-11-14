@@ -2,7 +2,7 @@
 // extension process.
 
 import type { CommandReply, CommandSpec, Invocation } from "@miyoria/commands";
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
+import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import type { JsonValue, PromptContributor, PromptRequest, PromptSection } from "@miyoria/types";
 import { isJsonObject } from "@miyoria/types";
 import { z } from "zod";

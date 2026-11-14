@@ -10,7 +10,8 @@ import {
   LlmRouterKey,
   type ModelRef,
   parseModelRef,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
+import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   type Module,
@@ -25,7 +26,6 @@ import {
   MessageLogKey,
   SettingsStoreKey,
 } from "@miyoria/store";
-import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type AccountRef,
   type Attitude,

@@ -1,4 +1,4 @@
-import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm";
+import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm/llm";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, PeopleStoreKey } from "@miyoria/store";
 import {

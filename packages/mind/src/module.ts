@@ -1,5 +1,11 @@
 import { actuatorsFor } from "@miyoria/actions";
-import { completeJson, LlmRouterKey, systemMessage, userMessage, withLlmTag } from "@miyoria/llm";
+import {
+  completeJson,
+  LlmRouterKey,
+  systemMessage,
+  userMessage,
+  withLlmTag,
+} from "@miyoria/llm/llm";
 import {
   defineManifest,
   errorMessage,

@@ -7,7 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PersonaHandle, PersonaHandleKey } from "@miyoria/agent";
-import { LlmRouter, LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm";
+import { LlmRouter, LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
 import { AuditLogKey, DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";

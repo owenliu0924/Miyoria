@@ -1,7 +1,7 @@
 // Context she did not see live (backfill, reply chains), images, voice-channel text chat and
 // user mentions, through the real agent module with fake platform services. No network.
 
-import { contentText, hasImages, MockProvider } from "@miyoria/llm";
+import { contentText, hasImages, MockProvider } from "@miyoria/llm/llm";
 import { type LogEntry, type MessageLog, MessageLogKey } from "@miyoria/store";
 import {
   type AccountRef,

@@ -11,7 +11,7 @@
 // The allowance of a task is decided here, by code, from where it was started (`allow.ts`).
 
 import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
-import type { ToolRegistry } from "@miyoria/tools";
+import type { ToolRegistry } from "@miyoria/llm/tools";
 import {
   type AccountRef,
   type ContextKey,

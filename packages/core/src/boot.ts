@@ -5,6 +5,7 @@
 
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { DirectiveModule, DirectiveService } from "@miyoria/directive";
+import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { ReplayRecorderModule } from "@miyoria/replay";
 import {
   type Config,
@@ -42,7 +43,6 @@ import {
   StoredHandleDirectory,
   StoreKey,
 } from "@miyoria/store";
-import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   ActuatorExecutorKey,
   customEvent,

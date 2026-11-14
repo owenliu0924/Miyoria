@@ -10,7 +10,7 @@ import {
   componentId,
   notice,
 } from "@miyoria/commands";
-import { type ChatMessage, systemMessage, userMessage } from "@miyoria/llm";
+import { type ChatMessage, systemMessage, userMessage } from "@miyoria/llm/llm";
 import {
   type AccountRef,
   type Attitude,

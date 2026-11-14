@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   Config,
   defineManifest,
@@ -11,7 +12,6 @@ import {
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
 import { openStore, type Store, StoreKey } from "@miyoria/store";
-import { ToolRegistryKey } from "@miyoria/tools";
 import {
   type ContextKey,
   DirectivesKey,

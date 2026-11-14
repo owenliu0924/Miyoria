@@ -3,6 +3,7 @@
 // `panel`).
 
 import { ActuatorRegistryKey } from "@miyoria/actions";
+import { type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   type CatalogEntry,
   ExtensionCatalogKey,
@@ -19,7 +20,6 @@ import {
   type StageLink,
   StageLinkKey,
 } from "@miyoria/stage";
-import { type ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   type ContextKey,
   contextKeyString,

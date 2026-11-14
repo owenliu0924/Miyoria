@@ -2,7 +2,7 @@
 // A promise counts as a claim like "done" does: until a tool call, an accepted task or her state
 // backs it, it is not sent as it stands (claims.ts, turn.ts).
 
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { unbackedClaim } from "../src/claims.js";
 import { channel, Harness, mention, noCheck, Probe, toolCall } from "./harness.js";

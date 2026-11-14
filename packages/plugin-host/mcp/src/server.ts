@@ -4,7 +4,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { MIYORIA_VERSION } from "@miyoria/llm";
+import { MIYORIA_VERSION } from "@miyoria/llm/llm";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   errorMessage,
   getLogger,
@@ -12,7 +13,6 @@ import {
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
 import { DecisionLogKey } from "@miyoria/store";
-import { ToolRegistryKey } from "@miyoria/tools";
 import type { JsonValue } from "@miyoria/types";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";

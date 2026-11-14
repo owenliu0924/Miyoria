@@ -1,7 +1,7 @@
 // Model tools of her notebook: `notebook_read` (a page, or the index), `notebook_write` and
 // `notebook_delete`. Every answer is data: the page text is escaped, and a refused write says why.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/tools";
+import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
 import { isJsonObject, type JsonValue, type NotebookWhere } from "@miyoria/types";
 import type { NotebookConfig } from "./config.js";
 import { indexText, NotebookError, type NotebookStore, pageText } from "./notebook.js";

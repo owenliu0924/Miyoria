@@ -39,9 +39,9 @@ import {
   toolResultMessage,
   userMessage,
   withLlmTag,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
+import type { Tool, ToolContext } from "@miyoria/llm/tools";
 import { errorMessage, sleep } from "@miyoria/runtime/kernel";
-import type { Tool, ToolContext } from "@miyoria/tools";
 import {
   type AccountRef,
   type ActionSink,

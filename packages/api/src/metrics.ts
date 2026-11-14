@@ -5,7 +5,7 @@
 // It needs the bearer token (or a panel session) like `/api`, unless `[modules.api]
 // metrics_public = true`.
 
-import { MIYORIA_VERSION } from "@miyoria/llm";
+import { MIYORIA_VERSION } from "@miyoria/llm/llm";
 import {
   METRICS_CONTENT_TYPE,
   type MetricFamily,

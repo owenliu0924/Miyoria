@@ -4,7 +4,7 @@
 
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
-import type { ChatProvider } from "@miyoria/llm";
+import type { ChatProvider } from "@miyoria/llm/llm";
 import {
   ArbiterKey,
   EventLogKey,

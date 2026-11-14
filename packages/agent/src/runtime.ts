@@ -9,13 +9,13 @@
 // message, "不要記住這個" hides it from her prompts and tells the rest of her memory
 // (`agent.message.excluded`).
 
+import type { Tool, ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import {
   errorMessage,
   type Logger,
   type ModuleContext,
   type Subscription,
 } from "@miyoria/runtime/kernel";
-import type { Tool, ToolContext, ToolRegistry } from "@miyoria/tools";
 import {
   ACTION_SETTLED_TOPIC,
   ACTIVITY_DONE_TOPIC,

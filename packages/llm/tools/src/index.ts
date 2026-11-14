@@ -1,11 +1,10 @@
-// @miyoria/tools: tools the model may call during a turn.
+// @miyoria/llm/tools: tools the model may call during a turn.
 //
 // The app creates one `ToolRegistry` at boot and provides it as `ToolRegistryKey`; any module
 // (memory, extensions, MCP, ...) may register and unregister tools at any time. The agent
 // offers the registered tools to the model and checks permissions against the user who
 // triggered the turn, never against the model.
 
-import type { ToolSpec } from "@miyoria/llm";
 import {
   type AccountRef,
   type ContextKey,
@@ -16,8 +15,9 @@ import {
   serviceKey,
   type TurnId,
 } from "@miyoria/types";
+import type { ToolSpec } from "../../llm/src/index.js";
 
-export type { ToolSpec } from "@miyoria/llm";
+export type { ToolSpec } from "../../llm/src/index.js";
 
 /** What a tool call is running on behalf of. */
 export interface ToolContext {

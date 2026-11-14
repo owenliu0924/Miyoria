@@ -2,7 +2,7 @@
 // module would publish are simulated by the tests.
 
 import { CommandRegistryKey } from "@miyoria/commands";
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
 import {
   type ContextKey,
   customEvent,

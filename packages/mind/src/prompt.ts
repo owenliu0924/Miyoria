@@ -9,7 +9,7 @@
 // People are named by their stable handle and places by their context string, both the same
 // in every call; goals by their key (`G7XK2P`). No per-call `u1` / `p1` codes.
 
-import { type ChatMessage, systemMessage, userMessage } from "@miyoria/llm";
+import { type ChatMessage, systemMessage, userMessage } from "@miyoria/llm/llm";
 import {
   type AccountRef,
   type AffectSnapshot,

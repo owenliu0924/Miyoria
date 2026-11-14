@@ -9,10 +9,15 @@ import {
   type ReplySink,
   ReplySinkKey,
 } from "@miyoria/commands";
-import { type ChatRequest, type ChatResponse, type LlmRouter, LlmRouterKey } from "@miyoria/llm";
+import {
+  type ChatRequest,
+  type ChatResponse,
+  type LlmRouter,
+  LlmRouterKey,
+} from "@miyoria/llm/llm";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { AuditLogKey, openStore, SettingsStoreKey, type Store } from "@miyoria/store";
-import { ToolRegistry } from "@miyoria/tools";
 import {
   type AccountRef,
   type Attitude,

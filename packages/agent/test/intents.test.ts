@@ -2,9 +2,9 @@
 // her talkativeness steering attention in text and voice.
 
 import { ActuatorRegistry, defaultActionsConfig, defineCapability } from "@miyoria/actions";
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { ToolRegistry } from "@miyoria/tools";
 import {
   type AccountRef,
   type ContextKey,

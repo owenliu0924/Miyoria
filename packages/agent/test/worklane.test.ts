@@ -12,10 +12,10 @@ import {
   LlmRouter,
   parseModelRef,
   type StreamEvent,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
+import { type Tool, type ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
-import { type Tool, type ToolContext, ToolRegistry } from "@miyoria/tools";
 import {
   type ContextKey,
   type Directives,

@@ -23,7 +23,8 @@ import {
   type ToolSpec,
   toolResultMessage,
   userMessage,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
+import type { Tool, ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import {
   errorMessage,
   type Logger,
@@ -31,7 +32,6 @@ import {
   type ServiceLookup,
 } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
-import type { Tool, ToolContext, ToolRegistry } from "@miyoria/tools";
 import {
   type AccountRef,
   type ContextKey,

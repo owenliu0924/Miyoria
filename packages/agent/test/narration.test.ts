@@ -4,9 +4,9 @@
 
 import { ActuatorRegistry, defaultActionsConfig, defineCapability } from "@miyoria/actions";
 import { ArbiterModule } from "@miyoria/arbiter";
-import { MockProvider } from "@miyoria/llm";
+import { MockProvider } from "@miyoria/llm/llm";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { ToolRegistry } from "@miyoria/tools";
 import {
   ARBITER_DECISION_TOPIC,
   ARBITER_IMPULSE_TOPIC,

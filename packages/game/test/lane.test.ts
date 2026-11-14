@@ -12,9 +12,9 @@ import {
   LlmRouter,
   LlmRouterKey,
   parseModelRef,
-} from "@miyoria/llm";
+} from "@miyoria/llm/llm";
+import { ToolRegistry } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { ToolRegistry } from "@miyoria/tools";
 import {
   type ContextKey,
   type DrivenStep,

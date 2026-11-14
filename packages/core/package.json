@@ -59,7 +59,6 @@
     "@miyoria/speech": "workspace:*",
     "@miyoria/stage": "workspace:*",
     "@miyoria/store": "workspace:*",
-    "@miyoria/tools": "workspace:*",
     "@miyoria/types": "workspace:*",
     "@miyoria/voice": "workspace:*",
     "@miyoria/web": "workspace:*",

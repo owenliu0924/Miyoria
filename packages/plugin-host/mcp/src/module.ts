@@ -1,4 +1,5 @@
 import type { Server } from "node:http";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   type Config,
   defineManifest,
@@ -9,7 +10,6 @@ import {
   type ModuleContext,
   type ModuleManifest,
 } from "@miyoria/runtime/kernel";
-import { ToolRegistryKey } from "@miyoria/tools";
 import { Registrar, ServerRunner } from "./client.js";
 import { type McpConfig, parseMcpConfig, reconnectInitialMs, reconnectMaxMs } from "./config.js";
 import { bind, exposeHandler, localAddress, McpServeError, serveUntil } from "./server.js";
