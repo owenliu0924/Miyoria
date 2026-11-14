@@ -8,7 +8,7 @@
 // gated `game.*` capabilities. A registry that still holds one (an old extension host) does not
 // get it past this filter.
 
-import { CapabilityTool, isGatedToolName } from "@miyoria/actions";
+import { CapabilityTool, isGatedToolName } from "@miyoria/gate/actions";
 import type { Tool } from "@miyoria/llm/tools";
 import type { ActivitySnapshot, HerStatus } from "@miyoria/types";
 

@@ -4,7 +4,7 @@
 // whether the rule is written at all is the main line's choice (fixture
 // `mc-owner-rule-never-written`).
 
-import { covers, isStopping, subjectsOf } from "@miyoria/directive";
+import { covers, isStopping, subjectsOf } from "@miyoria/gate/directive";
 import { z } from "zod";
 import { ofType, type TraceEvent } from "../trace.js";
 import type { Subject } from "./types.js";

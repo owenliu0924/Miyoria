@@ -1,8 +1,8 @@
 // Wire types shared by the server and the client (Rust `miyoria_api::types`). Field names and
 // nullability mirror the serde JSON exactly; `apps/panel/src/api/*types.ts` mirror these.
 
-import type { PendingApproval } from "@miyoria/actions";
 import type { WalletExport } from "@miyoria/economy";
+import type { PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport, ModelUsage, PeriodReport } from "@miyoria/llm/llm";
 import type { ItemState } from "@miyoria/queue";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";

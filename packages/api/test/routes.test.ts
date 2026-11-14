@@ -5,8 +5,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   type Embedder,

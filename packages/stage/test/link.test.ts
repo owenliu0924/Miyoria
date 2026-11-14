@@ -1,6 +1,5 @@
 // Stage Link protocol tests: `stage.link` on a real socket and a scripted Stage node.
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
 import {
   CommandRegistry,
   CommandRegistryKey,
@@ -8,6 +7,7 @@ import {
   Invocation,
   Permissions,
 } from "@miyoria/commands";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { EventBus, ServiceRegistry, type Subscription, Supervisor } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,

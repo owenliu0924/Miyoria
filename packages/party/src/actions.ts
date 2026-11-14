@@ -6,7 +6,7 @@
 // * `party.play` (tool `party_play`): her own move (a guess, a word, a line of the story).
 // * `party.ask` (tool `party_ask`): turtle soup, a question for the referee.
 
-import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
+import { type Capability, CapabilityError, defineCapability } from "@miyoria/gate/actions";
 import type { ContextKey, Principal } from "@miyoria/types";
 import { z } from "zod";
 import type { PartyPermissions } from "./config.js";

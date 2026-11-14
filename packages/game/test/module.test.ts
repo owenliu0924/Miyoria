@@ -1,4 +1,3 @@
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import {
   type ArgValue,
   CommandRegistry,
@@ -6,6 +5,7 @@ import {
   Invocation,
   Permissions,
 } from "@miyoria/commands";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   type ChatProvider,
   type ChatRequest,

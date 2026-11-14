@@ -13,7 +13,7 @@
 // * A deal can only be about what is hers to decide: the screen (`#guard`) refuses tasks the
 //   moderation, an owner rule, a forbidden or gated capability or a missing permission stops.
 
-import { ActuatorRegistryKey, capabilityMatches } from "@miyoria/actions";
+import { ActuatorRegistryKey, capabilityMatches } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type CoinEntry,

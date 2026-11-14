@@ -3,7 +3,7 @@
 // script that goes with a skill is saved with the sandbox's reviewed `workspace_save_script`
 // at `skills/<name>/<file>` and run with `workspace_run`: only reviewed text ever runs.
 
-import { type ActionResult, type Capability, defineCapability } from "@miyoria/actions";
+import { type ActionResult, type Capability, defineCapability } from "@miyoria/gate/actions";
 import { dataBlock, escapeData } from "@miyoria/types";
 import { z } from "zod";
 import { SkillError, type SkillStore } from "./store.js";

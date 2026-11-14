@@ -1,7 +1,7 @@
 // Who asks for an action, and the hook the scheduler uses to run gate-approved actions.
 //
 // Every action she can take (joining voice, going live, switching scenes, playing a game,
-// sending a DM, ...) is a capability of the actuator registry (`@miyoria/actions`). Every call
+// sending a DM, ...) is a capability of the actuator registry (`@miyoria/gate/actions`). Every call
 // carries a `Principal`: on whose behalf it runs. The gate decides on the principal, the
 // capability and its arguments only, never on chat text.
 

@@ -317,42 +317,11 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/actions:
-    dependencies:
-      '@miyoria/commands':
-        specifier: workspace:*
-        version: link:../commands
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/activity:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -381,12 +350,12 @@ importers:
 
   packages/agent:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -427,9 +396,6 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.5
         version: 2.1.5(hono@4.13.16)
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/agent':
         specifier: workspace:*
         version: link:../agent
@@ -442,6 +408,9 @@ importers:
       '@miyoria/economy':
         specifier: workspace:*
         version: link:../economy
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -491,9 +460,6 @@ importers:
       '@miyoria/arbiter':
         specifier: workspace:*
         version: link:../arbiter
-      '@miyoria/directive':
-        specifier: workspace:*
-        version: link:../directive
       '@miyoria/facts':
         specifier: workspace:*
         version: link:../facts
@@ -521,9 +487,9 @@ importers:
 
   packages/arbiter:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -727,9 +693,6 @@ importers:
 
   packages/core:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/activity':
         specifier: workspace:*
         version: link:../activity
@@ -748,9 +711,6 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
-      '@miyoria/directive':
-        specifier: workspace:*
-        version: link:../directive
       '@miyoria/discord':
         specifier: workspace:*
         version: link:../discord
@@ -763,6 +723,9 @@ importers:
       '@miyoria/game':
         specifier: workspace:*
         version: link:../game
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/imagegen':
         specifier: workspace:*
         version: link:../imagegen
@@ -781,9 +744,6 @@ importers:
       '@miyoria/mind':
         specifier: workspace:*
         version: link:../mind
-      '@miyoria/moderation':
-        specifier: workspace:*
-        version: link:../moderation
       '@miyoria/party':
         specifier: workspace:*
         version: link:../party
@@ -846,46 +806,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/directive:
-    dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
-      '@miyoria/commands':
-        specifier: workspace:*
-        version: link:../commands
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@miyoria/activity':
-        specifier: workspace:*
-        version: link:../activity
-      '@miyoria/facts':
-        specifier: workspace:*
-        version: link:../facts
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/discord:
     dependencies:
       '@miyoria/commands':
@@ -922,12 +842,12 @@ importers:
 
   packages/economy:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -959,12 +879,12 @@ importers:
       '@miyoria/agent':
         specifier: workspace:*
         version: link:../agent
-      '@miyoria/directive':
-        specifier: workspace:*
-        version: link:../directive
       '@miyoria/game':
         specifier: workspace:*
         version: link:../game
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1012,12 +932,12 @@ importers:
 
   packages/game:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1037,6 +957,43 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+
+  packages/gate:
+    dependencies:
+      '@miyoria/commands':
+        specifier: workspace:*
+        version: link:../commands
+      '@miyoria/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@miyoria/store':
+        specifier: workspace:*
+        version: link:../store
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../types
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@miyoria/activity':
+        specifier: workspace:*
+        version: link:../activity
+      '@miyoria/facts':
+        specifier: workspace:*
+        version: link:../facts
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1071,9 +1028,9 @@ importers:
 
   packages/learning:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1195,9 +1152,9 @@ importers:
 
   packages/mind:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1230,33 +1187,11 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/moderation:
-    dependencies:
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/party:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1285,12 +1220,12 @@ importers:
 
   packages/plugin-host:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1356,9 +1291,6 @@ importers:
 
   packages/replay:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/activity':
         specifier: workspace:*
         version: link:../activity
@@ -1371,6 +1303,9 @@ importers:
       '@miyoria/facts':
         specifier: workspace:*
         version: link:../facts
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1433,9 +1368,9 @@ importers:
 
   packages/sandbox:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -1504,12 +1439,12 @@ importers:
 
   packages/sing:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/queue':
         specifier: workspace:*
         version: link:../queue
@@ -1538,9 +1473,9 @@ importers:
 
   packages/skills:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -1575,12 +1510,12 @@ importers:
 
   packages/social:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1631,12 +1566,12 @@ importers:
 
   packages/stage:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1718,12 +1653,12 @@ importers:
 
   packages/voice:
     dependencies:
-      '@miyoria/actions':
-        specifier: workspace:*
-        version: link:../actions
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -1767,9 +1702,9 @@ importers:
 
   packages/web:
     dependencies:
-      '@miyoria/actions':
+      '@miyoria/gate':
         specifier: workspace:*
-        version: link:../actions
+        version: link:../gate
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime

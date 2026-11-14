@@ -1,7 +1,7 @@
 // Module `stage.link`.
 
-import { actuatorsFor } from "@miyoria/actions";
 import { type CommandRegistry, CommandRegistryKey } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,

@@ -2,7 +2,7 @@
 // whose timers reach the main line as proposals, her Plan sees where her wants lead and cannot
 // start a game past its share of her day, and daily posts stay off unless configured.
 
-import { ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import {
   ACTIVITY_CHANGED_TOPIC,
   customEvent,

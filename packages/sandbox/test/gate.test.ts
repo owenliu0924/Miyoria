@@ -3,7 +3,7 @@ import {
   APPROVE_ROUTE,
   FOLLOWUP_REASON,
   RESULT_PENDING,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import { DATA_CLOSE, DATA_OPEN, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {

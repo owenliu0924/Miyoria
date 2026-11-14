@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { actuatorsFor } from "@miyoria/actions";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import {
   defineManifest,
   errorMessage,

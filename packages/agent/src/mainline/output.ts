@@ -6,7 +6,7 @@
 // registry. A provider that only returns text still gives a valid output, so there is no JSON that
 // can fail to parse on the hot path.
 
-import { REQUEST_RULE } from "@miyoria/actions";
+import { REQUEST_RULE } from "@miyoria/gate/actions";
 import type { ToolCall, ToolSpec } from "@miyoria/llm/llm";
 import {
   type ActionCall,

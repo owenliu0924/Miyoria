@@ -6,7 +6,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ActuatorRegistry, CapabilityTool, messageDm } from "@miyoria/actions";
 import {
   buildMessages,
   COMMIT_SPEC,
@@ -25,6 +24,7 @@ import {
   slimTool,
   tailSection,
 } from "@miyoria/agent";
+import { ActuatorRegistry, CapabilityTool, messageDm } from "@miyoria/gate/actions";
 import type { ToolSpec } from "@miyoria/llm/llm";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";

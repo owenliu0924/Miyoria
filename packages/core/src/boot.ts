@@ -3,8 +3,8 @@
 // The module packages are reached only through a `ModuleCatalog` (see `modules.ts`), so this
 // file stays testable with fake modules and an in-memory store.
 
-import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
-import { DirectiveModule, DirectiveService } from "@miyoria/directive";
+import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { DirectiveModule, DirectiveService } from "@miyoria/gate/directive";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { ReplayRecorderModule } from "@miyoria/replay";
 import {

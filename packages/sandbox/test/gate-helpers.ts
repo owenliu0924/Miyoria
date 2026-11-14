@@ -1,7 +1,6 @@
 // An app-like actuator registry for the gate tests: scripted review replies, an owner reachable
 // by DM, grants per account, a fake sandbox and proposed tools in memory.
 
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import {
   CommandRegistry,
   CommandRegistryKey,
@@ -10,6 +9,7 @@ import {
   type ReplySink,
   ReplySinkKey,
 } from "@miyoria/commands";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   type ChatRequest,
   type ChatResponse,

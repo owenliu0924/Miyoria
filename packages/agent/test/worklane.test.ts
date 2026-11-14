@@ -2,9 +2,9 @@
 // its own transcript, off the Floor, bounded by steps, time and tokens, steered and stopped from
 // the main line, and reported back to it once. Nothing in it speaks.
 
-import { ActuatorRegistry } from "@miyoria/actions";
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
+import { ActuatorRegistry } from "@miyoria/gate/actions";
 import {
   type ChatProvider,
   type ChatRequest,

@@ -2,14 +2,14 @@
 // sink with a fake voice node. Only the outside world is fake. This is the proof that the stop works
 // with the pause on: the same tools in her own hands are refused.
 
+import { ActivityModule } from "@miyoria/activity";
+import { CommandsModule } from "@miyoria/commands";
 import {
   ActionsModule,
   ActuatorRegistry,
   ActuatorRegistryKey,
   defineCapability,
-} from "@miyoria/actions";
-import { ActivityModule } from "@miyoria/activity";
-import { CommandsModule } from "@miyoria/commands";
+} from "@miyoria/gate/actions";
 import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import {

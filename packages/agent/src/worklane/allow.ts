@@ -7,7 +7,7 @@
 // config lists: a task has no mouth (§3 item 7, §15). A call outside the allowance is answered with
 // a refusal and never runs.
 
-import { CapabilityTool } from "@miyoria/actions";
+import { CapabilityTool } from "@miyoria/gate/actions";
 import type { Tool } from "@miyoria/llm/tools";
 import type { ContextKey, Directives } from "@miyoria/types";
 

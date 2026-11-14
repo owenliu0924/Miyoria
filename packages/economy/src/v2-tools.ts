@@ -5,8 +5,8 @@
 // * Hers to decide (opening a prediction, resolving it, delivering what she was commissioned): the
 //   `economy.agency` permission, nobody has it by default, so she calls them with `on_own`.
 
-import { type Capability, defineCapability } from "@miyoria/actions";
 import { typedCommand } from "@miyoria/commands";
+import { type Capability, defineCapability } from "@miyoria/gate/actions";
 import type { JsonObject } from "@miyoria/types";
 import { z } from "zod";
 import type { EconomyService } from "./economy.js";

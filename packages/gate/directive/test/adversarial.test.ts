@@ -449,7 +449,9 @@ describe("restart", () => {
   });
 });
 
-const SQLITE_MIGRATIONS = fileURLToPath(new URL("../../store/migrations/sqlite", import.meta.url));
+const SQLITE_MIGRATIONS = fileURLToPath(
+  new URL("../../../store/migrations/sqlite", import.meta.url),
+);
 
 async function reopened(path: string): Promise<number[]> {
   const store = await SqliteStore.open(path);

@@ -14,7 +14,7 @@
 // her mind took the quiet of people listening to a song for a quiet channel and kept leaving
 // mid-song, and her friends kept calling her back. A person or a command can still send her away.
 
-import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
+import { type Capability, CapabilityError, defineCapability } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type ActivityRequest,

@@ -20,7 +20,7 @@ import {
   type ActuatorRegistry,
   type Capability,
   defineCapability,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   escapeData,

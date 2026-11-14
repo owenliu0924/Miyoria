@@ -19,7 +19,7 @@
 // and only its hands call the capability. Only `chat.*`, which runs no action of its own, still
 // goes through the gate here: consent is the gate's.
 
-import type { ActuatorRegistry } from "@miyoria/actions";
+import type { ActuatorRegistry } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type ArbiterDecision,

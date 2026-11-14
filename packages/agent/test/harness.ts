@@ -1,8 +1,8 @@
 // Module-level test harness: a real supervisor with a stub `llm` module (mock providers) and a
 // fake `scheduler` that records actions. Tests run with Vitest fake timers.
 
-import { type ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { CommandsModule, type InvocationData, splitPath } from "@miyoria/commands";
+import { type ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   type ChatProvider,
   type ChatRequest,

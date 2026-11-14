@@ -10,7 +10,12 @@
 //   may start talking is the Arbiter's one rule set (`[modules.arbiter]`: daily caps, per
 //   person, the gaps); the gate's limits on `chat.start` are only a safety net against a loop.
 
-import { type Capability, CapabilityError, defineCapability, recipient } from "@miyoria/actions";
+import {
+  type Capability,
+  CapabilityError,
+  defineCapability,
+  recipient,
+} from "@miyoria/gate/actions";
 import {
   CHAT_DM,
   CHAT_START,

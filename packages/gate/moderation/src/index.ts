@@ -1,4 +1,4 @@
-// @miyoria/moderation: content safety (docs/design/v3-architecture.md §16).
+// @miyoria/gate/moderation: content safety (docs/design/v3-architecture.md §16).
 
 export {
   defaultModerationConfig,

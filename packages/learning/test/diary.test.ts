@@ -1,4 +1,4 @@
-import type { ExecContext } from "@miyoria/actions";
+import type { ExecContext } from "@miyoria/gate/actions";
 import type { LlmRouter } from "@miyoria/llm/llm";
 import type { SettingsStore } from "@miyoria/store";
 import {

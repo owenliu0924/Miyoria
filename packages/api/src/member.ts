@@ -20,7 +20,7 @@
 // A blocked person gets the answers of a stranger she has never met, from every route, so nothing
 // on the page says they are blocked: an empty view, a forget that finds nothing, a refused song.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   FORGET_KEEPS,
   FORGET_REMOVES,

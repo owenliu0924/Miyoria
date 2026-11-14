@@ -1,4 +1,4 @@
-// @miyoria/actions: everything she can do, behind one gate.
+// @miyoria/gate/actions: everything she can do, behind one gate.
 //
 // * A `Capability` wraps one action (join voice, go live, switch scene, play, DM, ...) with a
 //   risk tier, a zod argument schema and an executor. The module owning the wrapped service

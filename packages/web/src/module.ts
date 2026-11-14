@@ -1,4 +1,4 @@
-import { actuatorsFor } from "@miyoria/actions";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import { WebConfigSchema } from "./config.js";
 import { webCapabilities } from "./tools.js";

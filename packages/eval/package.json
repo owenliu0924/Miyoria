@@ -22,8 +22,8 @@
   },
   "dependencies": {
     "@miyoria/agent": "workspace:*",
-    "@miyoria/directive": "workspace:*",
     "@miyoria/game": "workspace:*",
+    "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "zod": "^4.6.7"

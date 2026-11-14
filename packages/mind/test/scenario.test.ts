@@ -2,7 +2,7 @@
 // fires at the right time and becomes an Impulse; over a synthetic day, Plan's empty-run rate
 // stays under 30%.
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { LlmRouter, LlmRouterKey, parseModelRef } from "@miyoria/llm/llm";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import {

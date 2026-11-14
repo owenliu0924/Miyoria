@@ -2,7 +2,7 @@
 // context string) and people (named by their stable handle), and what she remembers about the
 // people and place involved. No long chat transcripts, no per-call codes.
 
-import type { ActuatorRegistry } from "@miyoria/actions";
+import type { ActuatorRegistry } from "@miyoria/gate/actions";
 import { errorMessage, getLogger, type ServiceLookup, withTimeout } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,

@@ -2,7 +2,7 @@
 // context, `!link <code>` links the player to a Discord person, and her replies go to game chat
 // (sanitized, through the gate as `self`), to voice, or both.
 
-import { ActuatorRegistry, ActuatorRegistryKey, type GateDecision } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, type GateDecision } from "@miyoria/gate/actions";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { type Social, SocialKey } from "@miyoria/social";

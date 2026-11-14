@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActuatorRegistry, ActuatorRegistryKey, type Capability } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, type Capability } from "@miyoria/gate/actions";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { PersistentWorkspace, type Sandbox, SandboxKey } from "@miyoria/sandbox";

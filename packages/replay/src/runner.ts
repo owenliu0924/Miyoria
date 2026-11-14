@@ -4,11 +4,11 @@
 // (`ScriptedLlm`), the scheduler and the platforms (`ReplaySink`), and time (`ReplayClock`, the
 // caller's fake timers: the kernel's timers and `Date.now()` are the global ones).
 
-import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { ActivityModule } from "@miyoria/activity";
 import { AgentModule } from "@miyoria/agent";
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
+import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { LlmRouter, LlmRouterKey, type ModelRef, parseModelRef } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { MindModule } from "@miyoria/mind";

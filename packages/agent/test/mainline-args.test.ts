@@ -1,4 +1,4 @@
-import { REQUEST_RULE } from "@miyoria/actions";
+import { REQUEST_RULE } from "@miyoria/gate/actions";
 import type { ContextKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { groundArgs, slimTool, upToSentence } from "../src/mainline/output.js";

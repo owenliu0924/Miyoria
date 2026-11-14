@@ -9,7 +9,7 @@ import {
   ActuatorRegistryKey,
   CapabilityTool,
   defineCapability,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   CoinLedgerStoreKey,

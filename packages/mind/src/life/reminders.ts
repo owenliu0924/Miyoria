@@ -21,7 +21,7 @@ import {
   CapabilityError,
   defineCapability,
   type ExecContext,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import {
   errorMessage,
   getLogger,

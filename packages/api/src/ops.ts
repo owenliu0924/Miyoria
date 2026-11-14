@@ -2,7 +2,7 @@
 // the voice monitor. Scene, stream and say go through the actuator registry's gate (principal
 // `panel`).
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   type CatalogEntry,

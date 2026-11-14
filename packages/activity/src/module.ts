@@ -2,7 +2,7 @@
 // registry's router, so every caller of an activity capability (her tools, commands, the panel,
 // the mind, the directors) goes through it.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import { ActivityManagerKey, ActivityRecoveryKey, TaskSteerKey } from "@miyoria/types";
 import { ActivityConfigSchema } from "./config.js";

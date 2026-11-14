@@ -1,7 +1,7 @@
 // `remind_me` (v4 §8.3): timers that survive a restart, are capped and cancellable, and come back
 // as a proposal to the main line with a stable attention key; nothing in the background speaks.
 
-import { ActuatorRegistry } from "@miyoria/actions";
+import { ActuatorRegistry } from "@miyoria/gate/actions";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
 import {

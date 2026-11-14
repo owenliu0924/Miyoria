@@ -2,7 +2,7 @@
 // the manager after the gate, the manager runs the capability as its task's step (`ctx.task`),
 // confirmations come from the bus, and the notice goes back to her turn.
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {

@@ -1,7 +1,7 @@
 // `channel.activeness`: her temporary activeness, through the gate, reverting on its own; and
 // tool calls in a reactive turn carry the `user` principal.
 
-import { ActuatorRegistry } from "@miyoria/actions";
+import { ActuatorRegistry } from "@miyoria/gate/actions";
 import { MockProvider } from "@miyoria/llm/llm";
 import { type ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
-import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import {
   defineManifest,
   HEALTHY,

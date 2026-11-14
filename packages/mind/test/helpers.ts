@@ -2,7 +2,7 @@
 // provider), an app actuator registry with fake capabilities, and fakes for the world, social
 // and the agent's intent sink.
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import {
   type ChatProvider,
   type ChatRequest,

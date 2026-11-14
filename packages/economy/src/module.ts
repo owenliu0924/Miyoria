@@ -1,5 +1,5 @@
-import { actuatorsFor } from "@miyoria/actions";
 import { CommandRegistryKey } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import {
   defineManifest,
   errorMessage,

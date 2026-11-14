@@ -4,7 +4,6 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { isDeepStrictEqual } from "node:util";
-import { GatedToolsKey, isGatedToolName } from "@miyoria/actions";
 import {
   type CommandRegistry,
   CommandRegistryKey,
@@ -12,6 +11,7 @@ import {
   commandName,
   splitPath,
 } from "@miyoria/commands";
+import { GatedToolsKey, isGatedToolName } from "@miyoria/gate/actions";
 import { type Tool, type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,

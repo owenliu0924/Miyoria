@@ -1,4 +1,4 @@
-import type { ActionResult, DirectRun, RoutedCall } from "@miyoria/actions";
+import type { ActionResult, DirectRun, RoutedCall } from "@miyoria/gate/actions";
 import {
   ACTIVITY_DONE_TOPIC,
   ACTIVITY_FAILED_TOPIC,

@@ -22,7 +22,7 @@ import {
   type VoiceSink,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Moderation, ModerationConfigSchema } from "../../moderation/src/index.js";
+import { Moderation, ModerationConfigSchema } from "../../gate/moderation/src/index.js";
 import { FLAGGED_LINE, FLAGGED_TITLE } from "../src/prompt.js";
 import {
   channel,

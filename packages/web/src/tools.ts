@@ -8,7 +8,7 @@ import {
   CapabilityError,
   defineCapability,
   type ExecContext,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import { accountRefString, type Principal } from "@miyoria/types";
 import { z } from "zod";
 import { WebError } from "./net.js";

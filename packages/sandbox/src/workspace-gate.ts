@@ -6,7 +6,7 @@
 // Everything that comes back from the workspace is data: file names and contents may have been
 // written by a program that ran on a stranger's request, so they are shown inside a data block.
 
-import { type ActionResult, type Capability, defineCapability } from "@miyoria/actions";
+import { type ActionResult, type Capability, defineCapability } from "@miyoria/gate/actions";
 import { dataBlock, escapeData } from "@miyoria/types";
 import {
   MAX_WRITE_CHARS,

@@ -1,4 +1,4 @@
-// @miyoria/directive: the owner's rules (docs/design/v3-architecture.md §9).
+// @miyoria/gate/directive: the owner's rules (docs/design/v3-architecture.md §9).
 //
 // * `DirectiveService` (`DirectivesKey`): the rules, who may change them and the three layers:
 //   `inject` for the system block, `filterTools` for the tool list, `check` for the action path.

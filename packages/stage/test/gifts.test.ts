@@ -1,7 +1,7 @@
 // Gifts: the protocol messages, the `stage.expression` capability, a gift expression on the model
 // (and her own face coming back), and the overlay's merged gift line.
 
-import { ActuatorRegistry } from "@miyoria/actions";
+import { ActuatorRegistry } from "@miyoria/gate/actions";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { customEvent, Principals } from "@miyoria/types";

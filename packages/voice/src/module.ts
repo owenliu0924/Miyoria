@@ -1,7 +1,7 @@
 // Module `voice`: listening and speaking in voice channels.
 
-import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { contextSession, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,

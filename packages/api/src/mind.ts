@@ -4,7 +4,7 @@
 // /api/mind/pause|resume` (the emergency stop: `emergency` says how each of its steps went).
 // Changes need the owner-level node `owner.autonomy.approve` (the bearer token has every right).
 
-import { ActuatorRegistryKey, NODE_APPROVE } from "@miyoria/actions";
+import { ActuatorRegistryKey, NODE_APPROVE } from "@miyoria/gate/actions";
 import { AuthorizerKey, MindKey } from "@miyoria/types";
 import { ApiError } from "./errors.js";
 import { json, param, type Route } from "./route.js";

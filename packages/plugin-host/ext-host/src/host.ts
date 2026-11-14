@@ -2,7 +2,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { GatedToolsKey } from "@miyoria/actions";
+import { GatedToolsKey } from "@miyoria/gate/actions";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import {
   type Config,

@@ -9,7 +9,7 @@
 //   Only the ActivityManager's steer calls it, for the main line (docs/design/v3-architecture.md
 //   §10.6); it answers with the outcome as its data.
 
-import { type Capability, defineCapability } from "@miyoria/actions";
+import { type Capability, defineCapability } from "@miyoria/gate/actions";
 import { type JsonObject, type Principal, safeName } from "@miyoria/types";
 import { z } from "zod";
 import type { SingPermissions } from "./config.js";

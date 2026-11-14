@@ -1,7 +1,7 @@
 // `/api/voice/*`, `/api/songs*`, `/api/game/*` (through the gate as the panel) and
 // `/api/telemetry` (the panel's chart samples).
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import {
   LlmRouter,
   LlmRouterKey,

@@ -9,7 +9,7 @@ import {
   ActuatorRegistryKey,
   defineCapability,
   type GateDecision,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";

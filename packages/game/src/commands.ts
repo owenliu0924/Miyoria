@@ -1,7 +1,6 @@
 // `/game start | stop | goal | status`. Start, stop and goal go through the actuator registry's
 // gate (principal `command`, override).
 
-import { type ActuatorRegistry, deniedText } from "@miyoria/actions";
 import {
   ArgKind,
   argSpec,
@@ -20,6 +19,7 @@ import {
   notice,
   type RegisterOptions,
 } from "@miyoria/commands";
+import { type ActuatorRegistry, deniedText } from "@miyoria/gate/actions";
 import { contextKeyString, type JsonObject, Principals } from "@miyoria/types";
 import type { GamePermissions } from "./config.js";
 import { GameError, type GameStatus, type Placement, type View } from "./director.js";

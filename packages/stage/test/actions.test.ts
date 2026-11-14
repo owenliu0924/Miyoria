@@ -1,7 +1,7 @@
 // The stage capabilities: `stage_scene` as her tool (scenes checked against the node's list),
 // `stage.stream` for commands and the panel only.
 
-import { ActuatorRegistry } from "@miyoria/actions";
+import { ActuatorRegistry } from "@miyoria/gate/actions";
 import { type ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { type AccountRef, type ContextKey, Principals } from "@miyoria/types";

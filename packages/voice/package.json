@@ -22,8 +22,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@miyoria/actions": "workspace:*",
     "@miyoria/commands": "workspace:*",
+    "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/speech": "workspace:*",

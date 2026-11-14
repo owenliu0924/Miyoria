@@ -3,7 +3,7 @@
 // author of the message she answers, a message pays once, voice needs a spoken yes, and the
 // refusals are the panel's, as data.
 
-import { ActionDeniedError, ActuatorRegistry, CapabilityTool } from "@miyoria/actions";
+import { ActionDeniedError, ActuatorRegistry, CapabilityTool } from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { CoinLedgerStoreKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {

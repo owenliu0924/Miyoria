@@ -16,7 +16,12 @@
 // Game chat is untrusted: text and names are neutralized before they reach the agent, and her
 // lines are sanitized before they reach the game.
 
-import { actuatorsFor, type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
+import {
+  actuatorsFor,
+  type Capability,
+  CapabilityError,
+  defineCapability,
+} from "@miyoria/gate/actions";
 import {
   defineManifest,
   errorMessage,

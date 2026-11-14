@@ -1,4 +1,4 @@
-import { type ActuatorRegistry, ActuatorRegistryKey, actuatorsFor } from "@miyoria/actions";
+import { type ActuatorRegistry, ActuatorRegistryKey, actuatorsFor } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {

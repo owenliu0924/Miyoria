@@ -1,4 +1,4 @@
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,

@@ -1,5 +1,5 @@
-import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
 import {

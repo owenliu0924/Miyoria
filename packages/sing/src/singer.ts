@@ -21,7 +21,7 @@
 //   `SONG_PREPARE_TOPIC` whenever they change (the overlay's activity line).
 
 import { randomUUID } from "node:crypto";
-import { CapabilityError } from "@miyoria/actions";
+import { CapabilityError } from "@miyoria/gate/actions";
 import { type RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";

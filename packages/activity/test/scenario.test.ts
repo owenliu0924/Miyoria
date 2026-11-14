@@ -3,7 +3,7 @@
 // time. Afterwards nothing is left over, nothing started twice, and the scene director (fed by
 // the manager's snapshots, like `stage.link`) never flapped.
 
-import type { RoutedCall } from "@miyoria/actions";
+import type { RoutedCall } from "@miyoria/gate/actions";
 import { SceneDirector, SceneRoles, ScenesConfigSchema } from "@miyoria/stage";
 import {
   ACTIVITY_CHANGED_TOPIC,

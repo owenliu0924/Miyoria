@@ -11,7 +11,7 @@
 // The module providing these is `mind`; they are looked up per request, so a stopped module is
 // a 503 that names it.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   type AccountRef,
   type ContextKey,

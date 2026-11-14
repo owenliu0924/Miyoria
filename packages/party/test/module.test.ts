@@ -2,7 +2,7 @@
 // and the voice channel's chat, judged by the input defence first), what happens reaching her as
 // Observations under V3 and as impulses under V2, the prompt section, and a quiet stop.
 
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   ARBITER_IMPULSE_TOPIC,

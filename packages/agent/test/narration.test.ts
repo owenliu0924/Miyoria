@@ -2,8 +2,8 @@
 // talks to nobody stops, and what she owes people still comes out (她變啞巴 is the other way to
 // fail, docs/design/v3-architecture.md §21).
 
-import { ActuatorRegistry, defaultActionsConfig, defineCapability } from "@miyoria/actions";
 import { ArbiterModule } from "@miyoria/arbiter";
+import { ActuatorRegistry, defaultActionsConfig, defineCapability } from "@miyoria/gate/actions";
 import { MockProvider } from "@miyoria/llm/llm";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";

@@ -12,8 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GatedToolsKey } from "@miyoria/actions";
 import { CommandRegistry, CommandRegistryKey, Invocation, Permissions } from "@miyoria/commands";
+import { GatedToolsKey } from "@miyoria/gate/actions";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   Config,

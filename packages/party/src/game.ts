@@ -6,7 +6,7 @@
 // role allows: never the answer of a round that is still open in a game where she does not know
 // it (a quiz, a song). Notes follow the same rule.
 
-import { CapabilityError } from "@miyoria/actions";
+import { CapabilityError } from "@miyoria/gate/actions";
 import type { AccountRef, ContextKey, SongClips } from "@miyoria/types";
 import type { PartyConfig } from "./config.js";
 import type { SoupJudge } from "./judge.js";

@@ -13,7 +13,7 @@
 // Plan never writes emotions; nothing here writes drives or talkativeness any more. Everything
 // that is kept (thoughts, goals, the day plan) goes through `repairHandleText`.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   assistantMessage,
   type ChatMessage,

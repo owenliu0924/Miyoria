@@ -15,7 +15,7 @@
 //   gate allowed it), implied ones (OBS following Go Live, stopping the broadcast before leaving)
 //   through the gate.
 
-import type { ActionResult, ActivityRouter, RoutedCall } from "@miyoria/actions";
+import type { ActionResult, ActivityRouter, RoutedCall } from "@miyoria/gate/actions";
 import { errorMessage, getLogger, type ServiceLookup, sleep } from "@miyoria/runtime/kernel";
 import {
   ACTIVITY_CHANGED_TOPIC,

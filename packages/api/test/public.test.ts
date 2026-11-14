@@ -6,9 +6,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { EconomyConfigSchema, EconomyKey, EconomyService } from "@miyoria/economy";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { MemoryEngineKey } from "@miyoria/memory";
 import {

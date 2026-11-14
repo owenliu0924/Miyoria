@@ -1,6 +1,6 @@
 // The game capabilities as her tools: each calls the game control through the gate.
 
-import { ActuatorRegistry } from "@miyoria/actions";
+import { ActuatorRegistry } from "@miyoria/gate/actions";
 import { type ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {

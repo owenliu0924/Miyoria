@@ -1,7 +1,7 @@
 // The three modules: `conversation` (continuous compaction), `knowledge` (her documents) and
 // `reflect` (feedback signals, lessons, daily and light reflections).
 
-import { ActuatorRegistryKey, actuatorsFor } from "@miyoria/actions";
+import { ActuatorRegistryKey, actuatorsFor } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {

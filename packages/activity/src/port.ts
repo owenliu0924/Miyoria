@@ -11,7 +11,7 @@ import {
   ActuatorRegistryKey,
   type DirectRun,
   deniedText,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import { errorMessage, isAbortError, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   isTaskFailureCode,

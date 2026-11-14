@@ -6,7 +6,7 @@ import {
   ActuatorRegistryKey,
   type Capability,
   CapabilityTool,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   CoinLedgerStoreKey,

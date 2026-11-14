@@ -1,7 +1,7 @@
 // `set_call_name`: she saves how the speaker wants to be called, through the real gate and the
 // capability tool; only the speaker's own, whatever the arguments say.
 
-import { ActuatorRegistry, CapabilityTool } from "@miyoria/actions";
+import { ActuatorRegistry, CapabilityTool } from "@miyoria/gate/actions";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { type AccountRef, type ContextKey, type JsonValue, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";

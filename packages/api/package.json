@@ -23,11 +23,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
-    "@miyoria/actions": "workspace:*",
     "@miyoria/agent": "workspace:*",
     "@miyoria/auth": "workspace:*",
     "@miyoria/card-face": "workspace:*",
     "@miyoria/economy": "workspace:*",
+    "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/memory": "workspace:*",
     "@miyoria/plugin-host": "workspace:*",
@@ -46,7 +46,6 @@
   },
   "devDependencies": {
     "@miyoria/arbiter": "workspace:*",
-    "@miyoria/directive": "workspace:*",
     "@miyoria/facts": "workspace:*",
     "@miyoria/learning": "workspace:*",
     "@miyoria/mind": "workspace:*",

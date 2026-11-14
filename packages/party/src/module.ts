@@ -1,4 +1,4 @@
-import { actuatorsFor } from "@miyoria/actions";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,

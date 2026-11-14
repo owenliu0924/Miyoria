@@ -1,7 +1,7 @@
 // The two tools through the real actuator registry and gate: registration, the `tools.web`
 // permission, failures as plain answers, results as untrusted data, and the module itself.
 
-import { ActionDeniedError, ActuatorRegistry, type CapabilityTool } from "@miyoria/actions";
+import { ActionDeniedError, ActuatorRegistry, type CapabilityTool } from "@miyoria/gate/actions";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,

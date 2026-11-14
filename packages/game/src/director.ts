@@ -7,7 +7,7 @@
 // `game.<id>.task.done|failed` events, each failure with a code. Nothing is guessed from event
 // names, settle times or "失敗" prefixes; stale tasks (replaced, cancelled) are ignored by id.
 
-import { type ActuatorRegistry, deniedText } from "@miyoria/actions";
+import { type ActuatorRegistry, deniedText } from "@miyoria/gate/actions";
 import { type ChatRequest, type LlmRouter, LlmRouterKey, sessionId } from "@miyoria/llm/llm";
 import { RequestQueueKey } from "@miyoria/queue";
 import { errorMessage, getLogger, type ModuleContext, withTimeout } from "@miyoria/runtime/kernel";

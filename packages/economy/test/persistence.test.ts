@@ -1,7 +1,7 @@
 // What economy 2.0 keeps must survive a restart (documents in the store, not in memory), the party
 // games' coins are paid once per game, and the health table reads the real ledger.
 
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   CoinLedgerStoreKey,

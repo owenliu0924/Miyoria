@@ -2,7 +2,7 @@
 // modules publish (`voice.joined`, `voice.golive`, `stage.status`, `game.director.session`), with
 // knobs for slow and failing steps.
 
-import type { ActionResult } from "@miyoria/actions";
+import type { ActionResult } from "@miyoria/gate/actions";
 import {
   type ActivityTransition,
   type ContextKey,

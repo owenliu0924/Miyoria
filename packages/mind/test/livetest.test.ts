@@ -2,7 +2,7 @@
 // stale topics and retrying `game.start` while Minecraft was not running), reproduced against
 // Plan. Without the Arbiter her own floor applies (these tests); with it, the Arbiter decides.
 
-import { defineCapability } from "@miyoria/actions";
+import { defineCapability } from "@miyoria/gate/actions";
 import { MockProvider } from "@miyoria/llm/llm";
 import {
   type ContextKey,

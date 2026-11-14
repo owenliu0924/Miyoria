@@ -11,7 +11,6 @@
 // something can not break a rule about doing it, and an emergency stop must not depend on the
 // store.
 
-import { ActuatorRegistryKey, type Capability, capabilityMatches } from "@miyoria/actions";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
 import { errorMessage, getLogger, type ServiceLookup, withTimeout } from "@miyoria/runtime/kernel";
 import { AuditLogKey, type DirectiveStore } from "@miyoria/store";
@@ -57,6 +56,11 @@ import {
   systemClock,
   toTimestamp,
 } from "@miyoria/types";
+import {
+  ActuatorRegistryKey,
+  type Capability,
+  capabilityMatches,
+} from "../../actions/src/index.js";
 import { type DirectiveConfig, defaultDirectiveConfig } from "./config.js";
 import {
   appliesIn,

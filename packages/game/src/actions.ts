@@ -31,7 +31,7 @@ import {
   CapabilityError,
   defineCapability,
   deniedText,
-} from "@miyoria/actions";
+} from "@miyoria/gate/actions";
 import {
   ActivityManagerKey,
   type ActivityRequest,

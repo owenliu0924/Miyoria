@@ -2,8 +2,8 @@
 // go through it, `agent.initiative` requests become impulses, the coordinator only says
 // whether the place is free, and the level's gap is the Arbiter's rule.
 
-import { ActuatorRegistry, defaultActionsConfig } from "@miyoria/actions";
 import { ArbiterModule } from "@miyoria/arbiter";
+import { ActuatorRegistry, defaultActionsConfig } from "@miyoria/gate/actions";
 import { MockProvider } from "@miyoria/llm/llm";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";

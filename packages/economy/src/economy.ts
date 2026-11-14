@@ -12,7 +12,7 @@
 // * Deals (deals.ts) are someone's promise of a snack for a task; payment is read off this ledger.
 // * Spends of this process take turns, so two clicks cannot both pass a check meant for one.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   errorMessage,
   type Logger,

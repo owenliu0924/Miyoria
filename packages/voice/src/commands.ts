@@ -1,7 +1,6 @@
 // `/voice join | leave | consent | golive start | stop | status`. The agent module adds
 // `/voice mode`.
 
-import { type ActuatorRegistry, deniedText } from "@miyoria/actions";
 import {
   type AnyComponentRoute,
   ArgKind,
@@ -17,6 +16,7 @@ import {
   MAX_SESSION_TTL_MS,
   notice,
 } from "@miyoria/commands";
+import { type ActuatorRegistry, deniedText } from "@miyoria/gate/actions";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonObject, Principals } from "@miyoria/types";
 import { GoLiveJoinError } from "./actions.js";

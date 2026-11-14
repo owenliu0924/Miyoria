@@ -3,9 +3,9 @@
 // that says something is done waits for `result: done`, a failed call still answers, and what the
 // background wants only happens through a turn.
 
-import { ActuatorRegistry, defineCapability } from "@miyoria/actions";
 import { ArbiterModule } from "@miyoria/arbiter";
 import { FactsModule } from "@miyoria/facts";
+import { ActuatorRegistry, defineCapability } from "@miyoria/gate/actions";
 import type { ChatProvider, ChatRequest, ChatStream, StreamEvent } from "@miyoria/llm/llm";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";

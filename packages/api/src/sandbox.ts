@@ -3,7 +3,7 @@
 // for one exact version. Approving needs the owners' approval node (the same one as the
 // Discord approval card); the bearer token is the owner.
 
-import { NODE_APPROVE } from "@miyoria/actions";
+import { NODE_APPROVE } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type ProposedTool,

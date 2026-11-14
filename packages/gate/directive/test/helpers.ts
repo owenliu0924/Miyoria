@@ -1,12 +1,6 @@
 // The rules on a real SQLite store, a real EventLog and a real gate, with people whose roles come
 // from the built-in role table. The only fakes are the capabilities themselves.
 
-import {
-  ActuatorRegistry,
-  ActuatorRegistryKey,
-  type Capability,
-  defineCapability,
-} from "@miyoria/actions";
 import { builtinRole, granted } from "@miyoria/commands";
 import { EventLogService } from "@miyoria/facts";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
@@ -30,7 +24,13 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
-import { Proposals } from "../../agent/src/mainline/proposals.js";
+import { Proposals } from "../../../agent/src/mainline/proposals.js";
+import {
+  ActuatorRegistry,
+  ActuatorRegistryKey,
+  type Capability,
+  defineCapability,
+} from "../../actions/src/index.js";
 import { DirectiveService } from "../src/index.js";
 
 export const PROFILE = "miyoria";

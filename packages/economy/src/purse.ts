@@ -10,7 +10,7 @@
 //   (one entry, replaced when it changes) and `purse_news` (what just happened).
 // * Money in her purse is hers to spend: it counts toward none of the caps on `give_coins`.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import {

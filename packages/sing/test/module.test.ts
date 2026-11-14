@@ -3,8 +3,8 @@
 // the floor held while it plays, skip / stop, the queue integration and the prompt section.
 
 import { join, resolve } from "node:path";
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { CommandRegistry, CommandRegistryKey, Invocation, Permissions } from "@miyoria/commands";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";

@@ -3,7 +3,7 @@
 // failed and was held comes back only once something changed; what she learned is kept across
 // restarts.
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import {
   type ChatProvider,
   type ChatRequest,

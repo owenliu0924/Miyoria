@@ -10,18 +10,19 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { ActionsModule } from "@miyoria/actions";
 import { ActivityModule } from "@miyoria/activity";
 import { AgentModule, PersonaHandleKey } from "@miyoria/agent";
 import { ApiModule, avatarEmotions } from "@miyoria/api";
 import { ArbiterModule } from "@miyoria/arbiter";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
 import { CommandsModule } from "@miyoria/commands";
-import { DirectiveModule } from "@miyoria/directive";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
 import { FactsModule } from "@miyoria/facts";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/game";
+import { ActionsModule } from "@miyoria/gate/actions";
+import { DirectiveModule } from "@miyoria/gate/directive";
+import { ModerationModule } from "@miyoria/gate/moderation";
 import { ImageGenModule } from "@miyoria/imagegen";
 import {
   ConversationModule,
@@ -40,7 +41,6 @@ import {
 } from "@miyoria/llm/llm";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory";
 import { MindModule } from "@miyoria/mind";
-import { ModerationModule } from "@miyoria/moderation";
 import { PartyModule } from "@miyoria/party";
 import * as extHost from "@miyoria/plugin-host/ext-host";
 import { McpModule } from "@miyoria/plugin-host/mcp";

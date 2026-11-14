@@ -1,7 +1,7 @@
 // Her intents as turns she starts herself (principal `self`, with tools, through the gate), and
 // her talkativeness steering attention in text and voice.
 
-import { ActuatorRegistry, defaultActionsConfig, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistry, defaultActionsConfig, defineCapability } from "@miyoria/gate/actions";
 import { MockProvider } from "@miyoria/llm/llm";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";

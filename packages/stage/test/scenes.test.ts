@@ -2,7 +2,7 @@
 // debounce, manual hold, the ending curtain), the gate routing of `stage.scene` and transitions
 // on the Stage side with a fake OBS.
 
-import { ActuatorRegistry } from "@miyoria/actions";
+import { ActuatorRegistry } from "@miyoria/gate/actions";
 import {
   type ChatProvider,
   type ChatRequest,

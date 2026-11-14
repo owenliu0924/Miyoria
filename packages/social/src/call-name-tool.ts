@@ -3,7 +3,7 @@
 // It only ever changes the speaker's own: the person the call acts for (`for_whom` when several
 // called her at once), never a name in its arguments.
 
-import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
+import { type Capability, CapabilityError, defineCapability } from "@miyoria/gate/actions";
 import { z } from "zod";
 import { CLEAR_WORDS, checkCallName } from "./commands.js";
 import type { Social } from "./engine.js";

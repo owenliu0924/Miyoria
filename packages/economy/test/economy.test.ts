@@ -2,7 +2,7 @@
 // keys, the gift and its diminishing, a full stomach, strangers and the blocked, expressions
 // and their refunds, frames, and her own `give_coins`.
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import { AuditLogKey, CoinLedgerStoreKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
