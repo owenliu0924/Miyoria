@@ -7,28 +7,18 @@ import { createQueries, createRpc } from "./orpc";
 import type {
   ContextKey,
   DataCategoryId,
-  DataInventory,
-  DataWipeResult,
   AddDirectiveRequest,
   CauseChain,
   Delivery,
   DirectiveChange,
   DirectivesView,
-  ExtensionInfo,
   FactEventsQuery,
   LogEvent,
-  McpServerInfo,
   MemoryItem,
   MemoryQuery,
   MemoryRecordView,
   Page,
-  QueueState,
-  SayRequest,
-  SceneRolesState,
-  StageState,
-  StreamAction,
   UpdateMemoryRequest,
-  VoiceState,
   SelfView,
   WorldView,
   Thought,
@@ -37,9 +27,6 @@ import type {
   ConversationNote,
   ReflectionView,
 
-  ControlResult,
-  GameStartRequest,
-  SongsState,
   TelemetryView,
   LlmCallDetail,
   LlmCallRecord,
@@ -105,66 +92,18 @@ export function createApi(client: ApiClient) {
       client.patch<MemoryRecordView>(`/api/memory/${seg(id)}`, req),
     deleteMemory: (id: string) => client.delete<void>(`/api/memory/${seg(id)}`),
 
-    extensions: (o?: Opts) => client.get<ExtensionInfo[]>("/api/extensions", o),
-    extensionAction: (id: string, action: "enable" | "disable" | "restart") =>
-      client.post<ExtensionInfo>(`/api/extensions/${seg(id)}/${action}`),
-
-    mcpServers: (o?: Opts) => client.get<McpServerInfo[]>("/api/mcp", o),
-    /** Only `restart` exists at runtime; servers are turned on and off in `miyoria.toml`. */
-    mcpRestart: (name: string) => client.post<McpServerInfo>(`/api/mcp/${seg(name)}/restart`),
-
-    queue: (o?: Opts) => client.get<QueueState>("/api/queue", o),
-    queueSkip: (id: string) => client.post<QueueState>(`/api/queue/${seg(id)}/skip`),
-    queueMove: (id: string, position: number) =>
-      client.post<QueueState>(`/api/queue/${seg(id)}/move`, { position }),
-    queuePause: (paused: boolean) =>
-      client.post<QueueState>(`/api/queue/${paused ? "pause" : "resume"}`),
-
-    stage: (o?: Opts) => client.get<StageState>("/api/stage", o),
-    stageScene: (scene: string) => client.post<StageState>("/api/stage/scene", { scene }),
-    stageExpression: (expression: string) =>
-      client.post<StageState>("/api/stage/expression", { expression }),
-    stageStream: (action: StreamAction) => client.post<StageState>("/api/stage/stream", { action }),
-    stageSay: (req: SayRequest) => client.post<{ turn: string | null }>("/api/stage/say", req),
-    sceneRoles: (o?: Opts) => client.get<SceneRolesState>("/api/stage/scenes", o),
-    setSceneRole: (role: string, scene: string | null) =>
-      client.put<SceneRolesState>("/api/stage/scenes", { role, scene }),
-    classifyScenes: () => client.post<SceneRolesState>("/api/stage/scenes/classify"),
-
-    voice: (o?: Opts) => client.get<VoiceState>("/api/voice", o),
-
     self: (o?: Opts) => client.get<SelfView>("/api/self", o),
     world: (o?: Opts) => client.get<WorldView>("/api/world", o),
-    // her data
-    dataInventory: (o?: Opts) => client.get<DataInventory>("/api/data", o),
+    // her data: the inventory and the deletes are on the route table, the downloads are not
     /** A JSON backup of `categories` (all exportable ones without). */
     dataExport: (categories?: DataCategoryId[]) =>
       client.download("GET", "/api/data/export", { query: { categories: categories?.join(",") } }),
-    dataWipe: (categories: DataCategoryId[], confirm?: string) =>
-      client.post<DataWipeResult>("/api/data/wipe", { categories, confirm }),
     /** The full backup a reset needs; its `x-miyoria-backup-token` header unlocks the reset. */
     dataBackup: () => client.download("POST", "/api/data/backup"),
-    dataReset: (confirm: string, backupToken: string) =>
-      client.post<DataWipeResult>("/api/data/reset", { confirm, backup_token: backupToken }),
     digests: (limit: number, o?: Opts) => client.get<ThoughtDigest[]>(`/api/mind/digests?limit=${limit}`, o),
     knowledge: (o?: Opts) => client.get<KnowledgeView>("/api/knowledge", o),
     conversationNotes: (o?: Opts) => client.get<ConversationNote[]>("/api/knowledge/conversations", o),
     reflection: (days: number, o?: Opts) => client.get<ReflectionView>(`/api/reflection?days=${days}`, o),
-
-    // live controls (through the actuator gate as the panel)
-    voiceJoin: (guild: string, channel: string | null) =>
-      client.post<ControlResult>("/api/voice/join", { guild, channel }),
-    voiceLeave: (guild?: string) => client.post<ControlResult>("/api/voice/leave", { guild: guild ?? null }),
-    goLive: (action: StreamAction, guild?: string) =>
-      client.post<ControlResult>("/api/voice/golive", { action, guild: guild ?? null }),
-    songs: (o?: Opts) => client.get<SongsState>("/api/songs", o),
-    requestSong: (query: string, key?: number) =>
-      client.post<SongsState & ControlResult>("/api/songs", { query, key: key ?? null }),
-    playSong: (song?: number) => client.post<SongsState & ControlResult>("/api/songs/play", { song: song ?? null }),
-    stopSong: (all: boolean) => client.post<SongsState & ControlResult>("/api/songs/stop", { all }),
-    gameStart: (req: GameStartRequest) => client.post<ControlResult>("/api/game/start", req),
-    gameStop: () => client.post<ControlResult>("/api/game/stop", {}),
-    gameGoal: (text: string) => client.post<ControlResult>("/api/game/goal", { text }),
 
     thought: (id: string, o?: Opts) => client.get<Thought>(`/api/mind/thoughts/${seg(id)}`, o),
     llmCalls: (q: LlmCallsQuery, limit: number, before: string | null, o?: Opts) =>

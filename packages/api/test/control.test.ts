@@ -158,6 +158,29 @@ describe("control routes", () => {
   });
 });
 
+describe("control routes: texts are trimmed after they are checked", () => {
+  it("passes the trimmed text to the capability", async () => {
+    const h = await harness();
+    await h.post("/api/voice/join", { guild: " g1 ", channel: " v1 " });
+    expect(h.calls[0]?.args).toEqual({ guild: "g1", channel: "v1" });
+  });
+
+  it("refuses a text that is empty once trimmed like one that is empty", async () => {
+    const h = await harness();
+    const blank = await h.post("/api/songs", { query: "   " });
+    expect(blank.status).toBe(422);
+    expect(blank.body).toEqual({
+      error:
+        "Failed to deserialize the JSON body into the target type: query: Too small: expected string to have >=1 characters",
+    });
+    const empty = await h.post("/api/songs", { query: "" });
+    expect(empty.body).toEqual(blank.body);
+    expect((await h.post("/api/game/goal", { text: " " })).status).toBe(422);
+    expect((await h.post("/api/voice/join", { guild: "  " })).status).toBe(422);
+    expect(h.calls).toEqual([]);
+  });
+});
+
 describe("telemetry", () => {
   it("samples her state and counts topics between samples", async () => {
     const h = await harness();

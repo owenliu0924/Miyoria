@@ -35,6 +35,15 @@ const table = {
       }),
     )
     .output(z.object({ id: z.string(), name: z.string(), n: z.number().nullable() })),
+  worded: route
+    .meta({
+      audience: "admin",
+      permission: "test.node",
+      refusal: "managing the thing needs `test.node`",
+    })
+    .route({ method: "POST", path: "/api/t/worded" })
+    .input(z.object({ body: Item }))
+    .output(Item),
   gone: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/t/gone" })
@@ -64,6 +73,7 @@ const served = os.router({
     name: input.body.name,
     n: input.query.n ?? null,
   })),
+  worded: os.worded.handler(({ input }) => input.body),
   gone: os.gone.handler(() => {
     throw ApiError.notFound("no such thing");
   }),
@@ -173,6 +183,12 @@ describe("the permission node", () => {
     expect(without.body).toEqual({ error: "this needs `test.node`" });
     const holder = session({ platform: "discord", id: "2" });
     expect((await app("strict", holder)("PUT", "/api/t/items/7", body)).status).toBe(200);
+  });
+
+  it("is refused in the words the route gives, when it gives some", async () => {
+    const r = await app("strict", session())("POST", "/api/t/worded", put('{"name":"x"}'));
+    expect(r.status).toBe(403);
+    expect(r.body).toEqual({ error: "managing the thing needs `test.node`" });
   });
 
   it("comes before the body is read", async () => {

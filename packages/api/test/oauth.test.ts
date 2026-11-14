@@ -19,13 +19,8 @@ import {
 } from "@miyoria/store";
 import { type AccountRef, AuthorizerKey, type JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  ActiveProfileKey,
-  ApiClient,
-  ApiModule,
-  type AuthMethods,
-  type SessionInfo,
-} from "../src/index.js";
+import { ActiveProfileKey, ApiModule, type AuthMethods, type SessionInfo } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { call, listenFetchable, raw } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
@@ -268,7 +263,6 @@ async function harnessWith(
 describe("oauth", () => {
   it("full_login_flow_with_pkce", async () => {
     const h = await harnessWith(true);
-    const client = new ApiClient(h.base(), TOKEN);
     const methods = await call<AuthMethods>(h.base(), TOKEN, "GET", "/api/auth/methods");
     expect(methods.token && methods.discord).toBe(true);
 
@@ -329,7 +323,7 @@ describe("oauth", () => {
     const me = await call<SessionInfo>(h.base(), TOKEN, "GET", "/api/auth/session");
     expect(me.method).toBe("token");
     expect(me.user === null && me.permissions.write).toBe(true);
-    await client.queuePause(false);
+    await adminCalls(h.base(), TOKEN).queuePause(false);
     expect((await h.auditBy("api")).some((e) => e.action === "queue.resume")).toBe(true);
     // A wrong bearer token is not rescued by a valid cookie.
     const response = await fetch(`${h.base()}/api/queue`, {

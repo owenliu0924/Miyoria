@@ -45,7 +45,9 @@ import { boardRpc } from "./board.js";
 import { cardCheckRpc } from "./card.js";
 import { channelRpc } from "./channels.js";
 import { os, type RpcContext } from "./contract.js";
+import { controlRpc } from "./control.js";
 import { coreRpc, healthRpc, personaRpc } from "./core.js";
+import { dataRpc } from "./data.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
@@ -53,6 +55,7 @@ import { fortuneRpc } from "./fortune-routes.js";
 import { memberRpc } from "./member.js";
 import { mindRpc } from "./mind.js";
 import { authRpc } from "./oauth.js";
+import { opsRpc } from "./ops.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
 import { limitMember, publicRpc } from "./public.js";
@@ -79,6 +82,11 @@ export const router = os.router({
   channels: channelRpc,
   mind: mindRpc,
   roles: roleRpc,
+  ...opsRpc,
+  voice: { ...opsRpc.voice, ...controlRpc.voice },
+  songs: controlRpc.songs,
+  game: controlRpc.game,
+  data: dataRpc,
 });
 
 export type ResponseCheck = "strict" | "production";
@@ -229,12 +237,15 @@ function holder(c: ApiContext): AccountRef | null {
   return principal?.kind === "session" ? principal.record.account : null;
 }
 
-/** The route's permission node, held by the session's account (the token holds every node). */
-function requirePermission(state: ApiState, c: ApiContext, node: string): void {
+/**
+ * The route's permission node, held by the session's account (the token holds every node). A route
+ * may word its own refusal.
+ */
+function requirePermission(state: ApiState, c: ApiContext, node: string, refusal?: string): void {
   const account = holder(c);
   if (account === null) return;
   if (!state.optional(AuthorizerKey)?.allows(account, node)) {
-    throw new ApiError(403, `this needs \`${node}\``);
+    throw new ApiError(403, refusal ?? `this needs \`${node}\``);
   }
 }
 
@@ -284,7 +295,7 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
       public: meta.audience === "public",
       member: meta.audience === "member",
       handler: async (c) => {
-        if (meta.permission !== null) requirePermission(state, c, meta.permission);
+        if (meta.permission !== null) requirePermission(state, c, meta.permission, meta.refusal);
         if (meta.limited) limitMember(state, c);
         return serve(handler, state, c, body);
       },

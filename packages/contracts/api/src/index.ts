@@ -19,11 +19,14 @@ import type {
 import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
 import { channels } from "./channels.js";
+import { game, songs, voiceControl } from "./control.js";
 import { decisions, llm, modules } from "./core.js";
+import { data } from "./data.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { member } from "./member.js";
 import { mind } from "./mind.js";
+import { extensions, mcp, queue, stage, voiceMonitor } from "./ops.js";
 import { people } from "./people.js";
 import { persona } from "./persona.js";
 import { publicView } from "./public.js";
@@ -67,6 +70,32 @@ export {
   SetChannelLevelRequestSchema,
 } from "./channels.js";
 export {
+  type AddSongRequest,
+  AddSongRequestSchema,
+  type ControlResult,
+  ControlResultSchema,
+  type GameGoalRequest,
+  GameGoalRequestSchema,
+  type GameStartRequest,
+  GameStartRequestSchema,
+  type GoLiveRequest,
+  GoLiveRequestSchema,
+  type JoinVoiceRequest,
+  JoinVoiceRequestSchema,
+  type LeaveVoiceRequest,
+  LeaveVoiceRequestSchema,
+  type PlaySongRequest,
+  PlaySongRequestSchema,
+  type SongsAnswer,
+  SongsAnswerSchema,
+  type SongsState,
+  SongsStateSchema,
+  type SongView,
+  SongViewSchema,
+  type StopSongRequest,
+  StopSongRequestSchema,
+} from "./control.js";
+export {
   type BudgetState,
   BudgetStateSchema,
   type CostReport,
@@ -88,6 +117,24 @@ export {
   type UsageMap,
   UsageMapSchema,
 } from "./core.js";
+export {
+  type DataCategoryId,
+  DataCategoryIdSchema,
+  type DataCategoryView,
+  DataCategoryViewSchema,
+  type DataInventoryView,
+  DataInventoryViewSchema,
+  type DataNote,
+  DataNoteSchema,
+  type DataPartView,
+  DataPartViewSchema,
+  type DataResetRequest,
+  DataResetRequestSchema,
+  type DataWipeRequest,
+  DataWipeRequestSchema,
+  type DataWipeResult,
+  DataWipeResultSchema,
+} from "./data.js";
 export { type LogEvent, type LogEventKind, LogEventKindSchema, LogEventSchema } from "./facts.js";
 export {
   type FortuneDraw,
@@ -162,6 +209,60 @@ export {
   ThoughtTriggerKindSchema,
   ThoughtTriggerSchema,
 } from "./mind.js";
+export {
+  type E2eSegmentName,
+  E2eSegmentNameSchema,
+  type E2eStats,
+  E2eStatsSchema,
+  type ExtensionInfo,
+  ExtensionInfoSchema,
+  type LatencyStats,
+  LatencyStatsSchema,
+  type McpServerInfo,
+  McpServerInfoSchema,
+  type McpState,
+  McpStateSchema,
+  type McpToolInfo,
+  McpToolInfoSchema,
+  type MoveQueueItemRequest,
+  MoveQueueItemRequestSchema,
+  type QueueAuthor,
+  QueueAuthorSchema,
+  type QueueItemInfo,
+  QueueItemInfoSchema,
+  type QueueState,
+  QueueStateSchema,
+  type SayRequest,
+  SayRequestSchema,
+  type SayResponse,
+  SayResponseSchema,
+  type SceneRoleState,
+  SceneRoleStateSchema,
+  type SceneRolesState,
+  SceneRolesStateSchema,
+  type SetSceneRoleRequest,
+  SetSceneRoleRequestSchema,
+  type StageExpressionRequest,
+  StageExpressionRequestSchema,
+  type StageLinkState,
+  StageLinkStateSchema,
+  type StageSceneRequest,
+  StageSceneRequestSchema,
+  type StageState,
+  StageStateSchema,
+  type StageStreamRequest,
+  StageStreamRequestSchema,
+  type StreamAction,
+  StreamActionSchema,
+  type VoiceE2eLatency,
+  VoiceE2eLatencySchema,
+  type VoiceLatency,
+  VoiceLatencySchema,
+  type VoiceSession,
+  VoiceSessionSchema,
+  type VoiceState,
+  VoiceStateSchema,
+} from "./ops.js";
 export {
   type AdjustPersonRequest,
   AdjustPersonRequestSchema,
@@ -289,6 +390,14 @@ export const contract = {
   channels,
   mind,
   roles,
+  extensions,
+  mcp,
+  queue,
+  stage,
+  voice: { ...voiceMonitor, ...voiceControl },
+  songs,
+  game,
+  data,
   facts,
   public: publicView,
   member,

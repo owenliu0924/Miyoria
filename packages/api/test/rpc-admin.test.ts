@@ -1,31 +1,48 @@
 // The admin groups of the route table (people, modules, decisions, LLM usage, channels, mind,
-// roles): each route says what the old route enforced (method, path, audience, permission node),
+// roles, extensions, MCP, the queue, the stage, voice, songs, game, data): each route says what the old route enforced (method, path, audience, permission node),
 // the shell treats it as an admin route, and the schemas of the shapes other packages own agree
 // with those packages' types.
 
 import {
   type AuthScope as ContractAuthScope,
   type CostReport as ContractCostReport,
+  type DataCategoryId as ContractDataCategoryId,
+  type DataCategoryView as ContractDataCategoryView,
+  type DataNote as ContractDataNote,
+  type DataWipeResult as ContractDataWipeResult,
   type DecisionRecord as ContractDecisionRecord,
   type EmergencyReport as ContractEmergencyReport,
+  type ExtensionInfo as ContractExtensionInfo,
+  type McpServerInfo as ContractMcpServerInfo,
   type MindStats as ContractMindStats,
   type ModuleInfo as ContractModuleInfo,
   type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
+  type QueueItemInfo as ContractQueueItemInfo,
   type Relationship as ContractRelationship,
   type RelationshipDelta as ContractRelationshipDelta,
   type RoleAssignment as ContractRoleAssignment,
   type RoleDefinition as ContractRoleDefinition,
   type RoleMapping as ContractRoleMapping,
+  type SceneRolesState as ContractSceneRolesState,
+  type SongView as ContractSongView,
+  type StageState as ContractStageState,
   type ThoughtSummary as ContractThoughtSummary,
+  type VoiceSession as ContractVoiceSession,
   contract,
   routeMeta,
 } from "@miyoria/contracts/api";
 import { NODE_APPROVE, type PendingApproval } from "@miyoria/gate/actions";
 import type { CostReport } from "@miyoria/llm/llm";
+import type { ItemState } from "@miyoria/play/queue";
+import type { ServerStatus } from "@miyoria/plugin-host/mcp";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";
+import type { SongEntry } from "@miyoria/sing";
+import type { SceneRolesView, StageStatus } from "@miyoria/stage";
 import type {
   AuthScope,
+  CategoryInventory,
+  DataCategoryId,
   DecisionRecord,
   Person,
   Relationship,
@@ -34,8 +51,16 @@ import type {
   RoleDefinition,
   RoleMapping,
 } from "@miyoria/store";
-import type { EmergencyReport, MindStats, Thought } from "@miyoria/types";
+import type {
+  ContextKey,
+  EmergencyReport,
+  MindStats,
+  ModuleStateKind,
+  Thought,
+  VoiceParticipant,
+} from "@miyoria/types";
 import { describe, expect, it } from "vitest";
+import { NODE_DATA_MANAGE, type TOOLS_WORKSPACE } from "../src/data.js";
 import { rpcRoutes } from "../src/rpc.js";
 
 interface Case {
@@ -46,7 +71,12 @@ interface Case {
   path: string;
   /** The node the old route's handler checked (`null`: none). */
   permission?: string;
+  /** What the old route said to a session without the node, when not the usual. */
+  refusal?: string;
 }
+
+const MANAGE = "owner.data.manage";
+const MANAGE_REFUSAL = "managing her data needs `owner.data.manage`";
 
 const CASES: Case[] = [
   { name: "people.list", method: "GET", path: "/api/people" },
@@ -109,6 +139,50 @@ const CASES: Case[] = [
   { name: "roles.mappings", method: "GET", path: "/api/auth/mappings" },
   { name: "roles.setMapping", method: "PUT", path: "/api/auth/mappings" },
   { name: "roles.removeMapping", method: "DELETE", path: "/api/auth/mappings" },
+  { name: "extensions.list", method: "GET", path: "/api/extensions" },
+  { name: "extensions.action", method: "POST", path: "/api/extensions/:id/:action" },
+  { name: "mcp.list", method: "GET", path: "/api/mcp" },
+  { name: "mcp.action", method: "POST", path: "/api/mcp/:name/:action" },
+  { name: "queue.list", method: "GET", path: "/api/queue" },
+  { name: "queue.pause", method: "POST", path: "/api/queue/pause" },
+  { name: "queue.resume", method: "POST", path: "/api/queue/resume" },
+  // The old table had one `/api/queue/:id/:action` for both; each action is a route of its own now.
+  { name: "queue.skip", method: "POST", path: "/api/queue/:id/skip" },
+  { name: "queue.move", method: "POST", path: "/api/queue/:id/move" },
+  { name: "stage.status", method: "GET", path: "/api/stage" },
+  { name: "stage.scene", method: "POST", path: "/api/stage/scene" },
+  { name: "stage.scenes", method: "GET", path: "/api/stage/scenes" },
+  { name: "stage.setSceneRole", method: "PUT", path: "/api/stage/scenes" },
+  { name: "stage.classify", method: "POST", path: "/api/stage/scenes/classify" },
+  { name: "stage.expression", method: "POST", path: "/api/stage/expression" },
+  { name: "stage.stream", method: "POST", path: "/api/stage/stream" },
+  { name: "stage.say", method: "POST", path: "/api/stage/say" },
+  { name: "voice.state", method: "GET", path: "/api/voice" },
+  { name: "voice.join", method: "POST", path: "/api/voice/join" },
+  { name: "voice.leave", method: "POST", path: "/api/voice/leave" },
+  { name: "voice.goLive", method: "POST", path: "/api/voice/golive" },
+  { name: "songs.list", method: "GET", path: "/api/songs" },
+  { name: "songs.request", method: "POST", path: "/api/songs" },
+  { name: "songs.play", method: "POST", path: "/api/songs/play" },
+  { name: "songs.stop", method: "POST", path: "/api/songs/stop" },
+  { name: "game.start", method: "POST", path: "/api/game/start" },
+  { name: "game.stop", method: "POST", path: "/api/game/stop" },
+  { name: "game.goal", method: "POST", path: "/api/game/goal" },
+  { name: "data.inventory", method: "GET", path: "/api/data" },
+  {
+    name: "data.wipe",
+    method: "POST",
+    path: "/api/data/wipe",
+    permission: MANAGE,
+    refusal: MANAGE_REFUSAL,
+  },
+  {
+    name: "data.reset",
+    method: "POST",
+    path: "/api/data/reset",
+    permission: MANAGE,
+    refusal: MANAGE_REFUSAL,
+  },
 ];
 
 describe("the admin routes of the table", () => {
@@ -116,6 +190,7 @@ describe("the admin routes of the table", () => {
     expect(routeMeta(contract, c.name.split("."))).toEqual({
       audience: "admin",
       permission: c.permission ?? null,
+      ...(c.refusal === undefined ? {} : { refusal: c.refusal }),
     });
   });
 
@@ -168,6 +243,55 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const mapping: Same<ContractRoleMapping, RoleMapping> = true;
     const scope: Same<ContractAuthScope, AuthScope> = true;
     expect([role, assignment, mapping, scope]).toEqual([true, true, true, true]);
+  });
+
+  it("extensions, MCP servers, the queue, the stage and the voice monitor", () => {
+    const extension: Same<ContractExtensionInfo["state"], ModuleStateKind> = true;
+    // The server reports the transport as a string (`stdio` or `http`).
+    const transport: Same<ContractMcpServerInfo["transport"], ServerStatus["transport"]> = true;
+    const item: Same<ContractQueueItemInfo["state"], ItemState> = true;
+    const scenes: Same<ContractSceneRolesState, SceneRolesView> = true;
+    const stage: Same<ContractStageState["overlay_url"], StageStatus["overlay_url"]> = true;
+    const participant: Same<ContractVoiceSession["participants"][number], VoiceParticipant> = true;
+    const context: Same<ContractVoiceSession["context"], ContextKey> = true;
+    expect([extension, transport, item, scenes, stage, participant, context]).toEqual(
+      Array(7).fill(true),
+    );
+  });
+
+  it("songs and data", () => {
+    const song: Same<ContractSongView["state"], SongEntry["state"]> = true;
+    const category: Same<ContractDataCategoryId, DataCategoryId | typeof TOOLS_WORKSPACE> = true;
+    // The inventory is the store's category with what the category table says of it.
+    type Category = Omit<CategoryInventory, "id"> & {
+      id: DataCategoryId | typeof TOOLS_WORKSPACE;
+      shared: boolean;
+      kept: boolean;
+      exportable: boolean;
+      confirm: "typed" | "simple";
+      requires: (DataCategoryId | typeof TOOLS_WORKSPACE)[];
+    };
+    const view: Same<ContractDataCategoryView, Category> = true;
+    const note: Same<ContractDataNote, "restart_core" | "consent_cache"> = true;
+    const wiped: Same<
+      ContractDataWipeResult,
+      {
+        deleted: (DataCategoryId | typeof TOOLS_WORKSPACE)[];
+        counts: Record<string, number>;
+        failed_modules: string[];
+        notes: ("restart_core" | "consent_cache")[];
+      }
+    > = true;
+    expect([song, category, view, note, wiped]).toEqual(Array(5).fill(true));
+  });
+
+  it("the data node and its refusal are the ones the data routes had", () => {
+    for (const name of ["wipe", "reset"]) {
+      expect(routeMeta(contract, ["data", name])).toMatchObject({
+        permission: NODE_DATA_MANAGE,
+        refusal: `managing her data needs \`${NODE_DATA_MANAGE}\``,
+      });
+    }
   });
 
   it("the owner node is the one the gate's commands use", () => {

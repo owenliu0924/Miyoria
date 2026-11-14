@@ -2,6 +2,31 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/api",
   "$defs": {
+    "ApiAddSongRequest": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -6,
+              "maximum": 6
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "query"
+      ]
+    },
     "ApiAdjustPersonRequest": {
       "type": "object",
       "properties": {
@@ -344,6 +369,17 @@
         "kind"
       ]
     },
+    "ApiControlResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
     "ApiCostReport": {
       "type": "object",
       "properties": {
@@ -379,6 +415,241 @@
         "degrade_at",
         "today",
         "month"
+      ]
+    },
+    "ApiDataCategoryId": {
+      "type": "string",
+      "enum": [
+        "memories",
+        "relationships",
+        "call_names",
+        "inner",
+        "knowledge",
+        "learning",
+        "conversation",
+        "mood",
+        "messages",
+        "decisions",
+        "event_log",
+        "directives",
+        "initiative",
+        "people",
+        "channels",
+        "voice_consent",
+        "privacy",
+        "queue",
+        "roles",
+        "persona",
+        "proposed_tools",
+        "extensions",
+        "module_state",
+        "other_settings",
+        "audit",
+        "llm_usage",
+        "panel_sessions",
+        "tools_workspace"
+      ]
+    },
+    "ApiDataCategoryView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ApiDataCategoryId"
+        },
+        "count": {
+          "type": "number"
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDataPartView"
+          }
+        },
+        "breakdown": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shared": {
+          "type": "boolean"
+        },
+        "kept": {
+          "type": "boolean"
+        },
+        "exportable": {
+          "type": "boolean"
+        },
+        "confirm": {
+          "type": "string",
+          "enum": [
+            "typed",
+            "simple"
+          ]
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDataCategoryId"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "count",
+        "updated_at",
+        "parts",
+        "breakdown",
+        "shared",
+        "kept",
+        "exportable",
+        "confirm",
+        "requires"
+      ]
+    },
+    "ApiDataInventoryView": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "can_manage": {
+          "type": "boolean"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDataCategoryView"
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "at",
+        "can_manage",
+        "categories"
+      ]
+    },
+    "ApiDataNote": {
+      "type": "string",
+      "enum": [
+        "restart_core",
+        "consent_cache"
+      ]
+    },
+    "ApiDataPartView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "count": {
+          "type": "number"
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "count",
+        "updated_at"
+      ]
+    },
+    "ApiDataResetRequest": {
+      "type": "object",
+      "properties": {
+        "confirm": {
+          "type": "string"
+        },
+        "backup_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "confirm",
+        "backup_token"
+      ]
+    },
+    "ApiDataWipeRequest": {
+      "type": "object",
+      "properties": {
+        "categories": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "categories"
+      ]
+    },
+    "ApiDataWipeResult": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDataCategoryId"
+          }
+        },
+        "counts": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "failed_modules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDataNote"
+          }
+        }
+      },
+      "required": [
+        "deleted",
+        "counts",
+        "failed_modules",
+        "notes"
       ]
     },
     "ApiDealView": {
@@ -465,6 +736,43 @@
         "respond",
         "score",
         "reasons"
+      ]
+    },
+    "ApiE2eSegmentName": {
+      "type": "string",
+      "enum": [
+        "endpoint",
+        "asr",
+        "prepare",
+        "llm_first",
+        "tts_queue",
+        "tts_first",
+        "playback"
+      ]
+    },
+    "ApiE2eStats": {
+      "type": "object",
+      "properties": {
+        "p50_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p90_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "samples": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "p50_ms",
+        "p90_ms",
+        "samples"
       ]
     },
     "ApiEarnLine": {
@@ -571,6 +879,59 @@
         "expression"
       ],
       "additionalProperties": false
+    },
+    "ApiExtensionInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/ApiModuleStateKind"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "module",
+        "name",
+        "version",
+        "description",
+        "source",
+        "enabled",
+        "state",
+        "reason",
+        "permissions"
+      ]
     },
     "ApiFeedItem": {
       "type": "string",
@@ -739,12 +1100,97 @@
         "balance"
       ]
     },
+    "ApiGameGoalRequest": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "ApiGameStartRequest": {
+      "type": "object",
+      "properties": {
+        "game": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "goal": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stream": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiContextKeyIn"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "ApiGiftExpression": {
       "type": "string",
       "enum": [
         "heart",
         "blush",
         "squint"
+      ]
+    },
+    "ApiGoLiveRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "start",
+            "stop"
+          ]
+        },
+        "guild": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "action"
       ]
     },
     "ApiGoalList": {
@@ -1031,6 +1477,73 @@
         "line"
       ]
     },
+    "ApiJoinVoiceRequest": {
+      "type": "object",
+      "properties": {
+        "guild": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "guild"
+      ]
+    },
+    "ApiLatencyStats": {
+      "type": "object",
+      "properties": {
+        "p50_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "samples": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "p50_ms",
+        "p95_ms",
+        "samples"
+      ]
+    },
+    "ApiLeaveVoiceRequest": {
+      "type": "object",
+      "properties": {
+        "guild": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "ApiLedgerLine": {
       "type": "object",
       "properties": {
@@ -1128,6 +1641,89 @@
         "steer",
         "directive",
         "proposal"
+      ]
+    },
+    "ApiMcpServerInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "transport": {
+          "type": "string"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/ApiMcpState"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMcpToolInfo"
+          }
+        },
+        "remote_tool_count": {
+          "type": "number"
+        },
+        "permission": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reconnects": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "transport",
+        "target",
+        "enabled",
+        "state",
+        "error",
+        "tools",
+        "remote_tool_count",
+        "permission",
+        "reconnects"
+      ]
+    },
+    "ApiMcpState": {
+      "type": "string",
+      "enum": [
+        "connecting",
+        "ready",
+        "failed",
+        "disabled"
+      ]
+    },
+    "ApiMcpToolInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description"
       ]
     },
     "ApiMemberCard": {
@@ -1605,6 +2201,19 @@
         "failed"
       ]
     },
+    "ApiMoveQueueItemRequest": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "position"
+      ]
+    },
     "ApiPendingApproval": {
       "type": "object",
       "properties": {
@@ -1909,6 +2518,23 @@
         "body"
       ]
     },
+    "ApiPlaySongRequest": {
+      "type": "object",
+      "properties": {
+        "song": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "ApiPledgeRequest": {
       "type": "object",
       "properties": {
@@ -2163,6 +2789,103 @@
         "hours_in_voice"
       ]
     },
+    "ApiQueueAuthor": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "display_name"
+      ]
+    },
+    "ApiQueueItemInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "author": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiQueueAuthor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "number"
+        },
+        "enqueued_at": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "active",
+            "done",
+            "skipped",
+            "removed"
+          ]
+        },
+        "votes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "context",
+        "author",
+        "text",
+        "priority",
+        "enqueued_at",
+        "state",
+        "votes"
+      ]
+    },
+    "ApiQueueState": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiQueueItemInfo"
+          }
+        }
+      },
+      "required": [
+        "paused",
+        "items"
+      ]
+    },
     "ApiRelationship": {
       "type": "object",
       "properties": {
@@ -2352,6 +3075,129 @@
         "role"
       ]
     },
+    "ApiSayRequest": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "emotion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "ApiSayResponse": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "turn"
+      ]
+    },
+    "ApiSceneRoleState": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scene": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "config",
+                "panel",
+                "auto"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "auto": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "role",
+        "label",
+        "scene",
+        "source",
+        "auto",
+        "locked"
+      ]
+    },
+    "ApiSceneRolesState": {
+      "type": "object",
+      "properties": {
+        "scenes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSceneRoleState"
+          }
+        },
+        "classified_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "llm",
+                "heuristic"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "classifying": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scenes",
+        "roles",
+        "classified_by",
+        "classifying"
+      ]
+    },
     "ApiScreenRequest": {
       "type": "object",
       "properties": {
@@ -2480,6 +3326,24 @@
         "version"
       ]
     },
+    "ApiSetSceneRoleRequest": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "scene": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "scene"
+      ]
+    },
     "ApiShopItem": {
       "type": "object",
       "properties": {
@@ -2524,6 +3388,152 @@
         "why"
       ]
     },
+    "ApiSongView": {
+      "type": "object",
+      "properties": {
+        "no": {
+          "type": "number"
+        },
+        "query": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "artist": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "key": {
+          "type": "number"
+        },
+        "requester_name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "preparing",
+            "ready",
+            "playing",
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "stage": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "forced": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "ready_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "no",
+        "query",
+        "title",
+        "artist",
+        "duration_s",
+        "key",
+        "requester_name",
+        "state",
+        "stage",
+        "progress",
+        "error",
+        "forced",
+        "created_at",
+        "ready_at"
+      ]
+    },
+    "ApiSongsAnswer": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "playing": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "paused": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "songs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSongView"
+          }
+        }
+      },
+      "required": [
+        "text",
+        "playing",
+        "paused",
+        "songs"
+      ]
+    },
+    "ApiSongsState": {
+      "type": "object",
+      "properties": {
+        "playing": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "paused": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "songs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSongView"
+          }
+        }
+      },
+      "required": [
+        "playing",
+        "paused",
+        "songs"
+      ]
+    },
     "ApiSpendResult": {
       "type": "object",
       "properties": {
@@ -2545,6 +3555,147 @@
         "charged",
         "balance",
         "message"
+      ]
+    },
+    "ApiStageExpressionRequest": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expression"
+      ]
+    },
+    "ApiStageLinkState": {
+      "type": "object",
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "connected",
+        "error"
+      ]
+    },
+    "ApiStageSceneRequest": {
+      "type": "object",
+      "properties": {
+        "scene": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene"
+      ]
+    },
+    "ApiStageState": {
+      "type": "object",
+      "properties": {
+        "vts": {
+          "$ref": "#/$defs/ApiStageLinkState"
+        },
+        "obs": {
+          "$ref": "#/$defs/ApiStageLinkState"
+        },
+        "scene": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expressions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "emotions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "overlay_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "speaking": {
+          "type": "boolean"
+        },
+        "node": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streaming": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "vts",
+        "obs",
+        "scene",
+        "scenes",
+        "expression",
+        "expressions",
+        "emotions",
+        "overlay_url",
+        "speaking",
+        "node",
+        "streaming"
+      ]
+    },
+    "ApiStageStreamRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ApiStreamAction"
+        }
+      },
+      "required": [
+        "action"
+      ]
+    },
+    "ApiStopSongRequest": {
+      "type": "object",
+      "properties": {
+        "all": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "ApiStreamAction": {
+      "type": "string",
+      "enum": [
+        "start",
+        "stop"
       ]
     },
     "ApiThoughtDecision": {
@@ -3163,6 +4314,155 @@
         "$ref": "#/$defs/ApiUsageInfo"
       }
     },
+    "ApiVoiceE2eLatency": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "$ref": "#/$defs/ApiE2eStats"
+        },
+        "segments": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "$ref": "#/$defs/ApiE2eStats"
+            },
+            "asr": {
+              "$ref": "#/$defs/ApiE2eStats"
+            },
+            "prepare": {
+              "$ref": "#/$defs/ApiE2eStats"
+            },
+            "llm_first": {
+              "$ref": "#/$defs/ApiE2eStats"
+            },
+            "tts_queue": {
+              "$ref": "#/$defs/ApiE2eStats"
+            },
+            "tts_first": {
+              "$ref": "#/$defs/ApiE2eStats"
+            },
+            "playback": {
+              "$ref": "#/$defs/ApiE2eStats"
+            }
+          },
+          "required": [
+            "endpoint",
+            "asr",
+            "prepare",
+            "llm_first",
+            "tts_queue",
+            "tts_first",
+            "playback"
+          ]
+        },
+        "complete": {
+          "type": "number"
+        },
+        "incomplete": {
+          "type": "number"
+        },
+        "incomplete_by_reason": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "total",
+        "segments",
+        "complete",
+        "incomplete",
+        "incomplete_by_reason"
+      ]
+    },
+    "ApiVoiceLatency": {
+      "type": "object",
+      "properties": {
+        "asr": {
+          "$ref": "#/$defs/ApiLatencyStats"
+        },
+        "llm_first_token": {
+          "$ref": "#/$defs/ApiLatencyStats"
+        },
+        "tts_first_audio": {
+          "$ref": "#/$defs/ApiLatencyStats"
+        },
+        "e2e": {
+          "$ref": "#/$defs/ApiVoiceE2eLatency"
+        }
+      },
+      "required": [
+        "asr",
+        "llm_first_token",
+        "tts_first_audio",
+        "e2e"
+      ]
+    },
+    "ApiVoiceSession": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireVoiceParticipant"
+          }
+        },
+        "speaking": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireAccountRef"
+          }
+        },
+        "joined_at": {
+          "type": "string"
+        },
+        "latency": {
+          "$ref": "#/$defs/ApiVoiceLatency"
+        },
+        "last_turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "label",
+        "participants",
+        "speaking",
+        "joined_at",
+        "latency",
+        "last_turn"
+      ]
+    },
+    "ApiVoiceState": {
+      "type": "object",
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiVoiceSession"
+          }
+        }
+      },
+      "required": [
+        "sessions"
+      ]
+    },
     "ApiWalletAdjustRequest": {
       "type": "object",
       "properties": {
@@ -3365,6 +4665,33 @@
             "$ref": "#/$defs/WireJsonValue"
           }
         }
+      ]
+    },
+    "WireVoiceParticipant": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_self": {
+          "type": "boolean"
+        },
+        "muted": {
+          "type": "boolean"
+        },
+        "deafened": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account",
+        "display_name",
+        "is_self",
+        "muted",
+        "deafened"
       ]
     }
   }

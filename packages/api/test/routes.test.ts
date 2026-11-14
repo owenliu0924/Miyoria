@@ -233,7 +233,7 @@ describe("routes", () => {
       expect(r.body, path).toEqual({ error: "no such endpoint" });
     }
     // New routes are protected like the old ones.
-    const anon = new ApiClient(h.base, "wrong");
+    const anon = adminCalls(h.base, "wrong");
     expect(await statusOf(anon.queue())).toBe(401);
 
     // A stopped module's service yields 503 with a JSON error.
@@ -601,7 +601,7 @@ describe("routes", () => {
 
   it("extensions_and_mcp", async () => {
     const h = await harness();
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     const adm = adminCalls(h.base, TOKEN);
     const list = await c.extensions();
     expect(list).toHaveLength(1);
@@ -629,7 +629,7 @@ describe("routes", () => {
 
   it("queue_listing_and_actions", async () => {
     const h = await harness();
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     for (const [who, text] of [
       ["1", "唱千本櫻"],
       ["2", "去挖鑽石"],
@@ -673,7 +673,7 @@ describe("routes", () => {
       true,
     );
     await h.sup.enable(StageLinkModule.ID);
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     const stage = await c.stage();
     expect(stage.vts.connected || stage.obs.connected).toBe(false);
     expect(stage.node).toBeNull();
@@ -717,7 +717,7 @@ describe("routes", () => {
       },
     };
     h.sup.services.provide("stage.link", StageLinkKey, fake as unknown as StageLink);
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     const stage = await c.stage();
     expect(stage.node).toBe("stage-pc");
     expect(stage.scenes).toEqual(["Talk", "Game"]);
@@ -748,7 +748,7 @@ describe("routes", () => {
     roles.observe(["Just Chatting", "Gameplay", "Bye"]);
     await roles.idle();
     h.sup.services.provide("stage.link", SceneRolesKey, roles);
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     const view = await c.sceneRoles();
     expect(view.scenes).toEqual(["Just Chatting", "Gameplay", "Bye"]);
     expect(view.classified_by).toBe("heuristic");
@@ -775,7 +775,7 @@ describe("routes", () => {
     const h = await harness();
     const status = h.sup.services.require(McpStatusKey);
     status.insert(newServerStatus("files", "stdio", "tools.mcp.files", "npx -y srv C:/data"));
-    const [server] = await h.client.mcpServers();
+    const [server] = await adminCalls(h.base, TOKEN).mcpServers();
     expect(server?.target).toBe("npx -y srv C:/data");
   });
 
@@ -800,17 +800,17 @@ describe("routes", () => {
       data: { context: voiceContext(), participants: [] },
     });
     const state = await waitFor(async () => {
-      const s = await h.client.voice();
+      const s = await adminCalls(h.base, TOKEN).voice();
       return s.sessions.length === 1 ? s : null;
     });
     expect(state.sessions[0]?.label).toBe("Miyoria / 雜談");
-    await h.client.voice();
+    await adminCalls(h.base, TOKEN).voice();
     expect(asked, "cached").toBe(1);
   });
 
   it("voice_monitor_and_say", async () => {
     const h = await harness();
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     expect((await c.voice()).sessions).toEqual([]);
     expect(await statusOf(c.stageSay("哼")), "not in voice yet").toBe(409);
 

@@ -9,10 +9,8 @@ import type {
   MemberSong,
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
-import type { ItemState } from "@miyoria/play/queue";
 import type { MemoryKind, MemoryScope } from "@miyoria/store";
 import type {
-  AccountRef,
   ArbiterDecision,
   ChannelActivity,
   ContextKey,
@@ -22,8 +20,6 @@ import type {
   Goal,
   KnowledgeDoc,
   Lesson,
-  ModuleId,
-  ModuleStateKind,
   PersonId,
   ProfileId,
   ReasoningLevel,
@@ -33,7 +29,6 @@ import type {
   Timestamp,
   TurnId,
   TurnOutcome,
-  VoiceParticipant,
   WorldSnapshot,
 } from "@miyoria/types";
 
@@ -49,14 +44,26 @@ export type {
   ChannelLevelInfo,
   ChannelLevelsView,
   ChannelLevelView,
+  ControlResult,
   CostReport,
   CostReport as CostInfo,
+  DataCategoryView,
+  DataInventoryView,
+  DataNote,
+  DataWipeResult,
   DecisionRecord,
+  E2eSegmentName,
+  E2eStats,
+  ExtensionInfo,
   FortuneField,
   HealthInfo,
   IssueCardRequest,
   IssuedCard,
   IssuedFortune,
+  LatencyStats,
+  McpServerInfo,
+  McpState,
+  McpToolInfo,
   MemberCard,
   MemberCards,
   MemberDay,
@@ -82,7 +89,14 @@ export type {
   PublicState,
   PublicStatus,
   PublicToday,
+  QueueAuthor,
+  QueueItemInfo,
+  QueueState,
   RemoveMappingRequest,
+  SayRequest,
+  SayResponse,
+  SceneRoleState,
+  SceneRolesState,
   SessionInfo,
   SessionPermissions,
   SessionUser,
@@ -90,11 +104,21 @@ export type {
   SetPersonaRequest,
   SetPersonaResponse,
   SongAccepted,
+  SongsAnswer,
+  SongsState,
+  SongView,
+  StageLinkState,
+  StageState,
+  StreamAction,
   ThoughtSummary,
   UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
   UsageMap,
+  VoiceE2eLatency,
+  VoiceLatency,
+  VoiceSession,
+  VoiceState,
   WalletAdjustRequest,
   WalletAdjustResult,
 } from "@miyoria/contracts/api";
@@ -186,217 +210,6 @@ export interface UpdateMemoryRequest {
   done?: boolean;
 }
 
-// ---- extensions -------------------------------------------------------------------------
-
-/** One extension, from `GET /api/extensions`. */
-export interface ExtensionInfo {
-  id: string;
-  /** Supervisor module running it (`ext.<id>`). */
-  module: ModuleId;
-  name: string;
-  version: string;
-  description: string;
-  /** Extension directory. */
-  source: string;
-  enabled: boolean;
-  state: ModuleStateKind;
-  reason: string | null;
-  /** Granted permissions, e.g. `"tools"`, `"events:game.*"`. */
-  permissions: string[];
-}
-
-// ---- MCP --------------------------------------------------------------------------------
-
-export type McpState = "connecting" | "ready" | "failed" | "disabled";
-
-export interface McpToolInfo {
-  /** Registry name (`mcp_<server>_<tool>`). */
-  name: string;
-  description: string;
-}
-
-/** One configured MCP server, from `GET /api/mcp`. */
-export interface McpServerInfo {
-  name: string;
-  /** `"stdio"` or `"http"`. */
-  transport: string;
-  /** Command line or URL; `null` while the MCP module does not report it. */
-  target: string | null;
-  enabled: boolean;
-  state: McpState;
-  error: string | null;
-  tools: McpToolInfo[];
-  /** Tools the server offers before allow / deny filtering. */
-  remote_tool_count: number;
-  /** Permission node required to use the tools. */
-  permission: string | null;
-  reconnects: number;
-}
-
-// ---- request queue ----------------------------------------------------------------------
-
-export interface QueueAuthor {
-  account: AccountRef;
-  display_name: string;
-}
-
-/** One queued request, from `GET /api/queue`. */
-export interface QueueItemInfo {
-  /** The queue's numeric item id, as a string. */
-  id: string;
-  /** Free-form, e.g. `"chat"`, `"song"`, `"game_goal"`. */
-  kind: string;
-  context: ContextKey | null;
-  author: QueueAuthor | null;
-  text: string;
-  priority: number;
-  enqueued_at: Timestamp;
-  /** `active` items come first, then `pending` ones. */
-  state: ItemState;
-  votes: number;
-}
-
-/** `GET /api/queue` and the response of every queue mutation. */
-export interface QueueState {
-  paused: boolean;
-  /** In processing order. */
-  items: QueueItemInfo[];
-}
-
-// ---- stage ------------------------------------------------------------------------------
-
-export interface StageLinkState {
-  connected: boolean;
-  error: string | null;
-}
-
-/** `GET /api/stage` and the response of stage mutations. */
-export interface StageState {
-  vts: StageLinkState;
-  obs: StageLinkState;
-  scene: string | null;
-  /** OBS scene names, top of OBS's scene list first; empty while OBS is not connected. */
-  scenes: string[];
-  /** Last expression (VTube Studio hotkey) triggered through the API. */
-  expression: string | null;
-  /** VTube Studio hotkey names of the loaded model (what `POST /api/stage/expression` takes). */
-  expressions: string[];
-  /** Emotions of the profile's `avatar.toml` (what `POST /api/stage/say` takes), sorted. */
-  emotions: string[];
-  /** The Stage node's overlay page (an OBS browser source); `null` without a node. */
-  overlay_url: string | null;
-  /** Her speech is playing. */
-  speaking: boolean;
-  /** Name of the connected Stage node, `null` while disconnected. */
-  node: string | null;
-  /** OBS is streaming. */
-  streaming: boolean;
-}
-
-/** One scene role in `GET /api/stage/scenes`. */
-export interface SceneRoleState {
-  /** `chat`, `game`, `brb`, `starting`, `ending` or one of the owner's roles. */
-  role: string;
-  /** Label of a built-in role, `null` for the owner's own roles. */
-  label: string | null;
-  /** The OBS scene it switches to, `null` = none. */
-  scene: string | null;
-  /** Where that came from: the config file, the panel or the automatic classification. */
-  source: "config" | "panel" | "auto" | null;
-  /** What the classification picked. */
-  auto: string | null;
-  /** Set in the config file (the panel cannot change it). */
-  locked: boolean;
-}
-
-/** `GET /api/stage/scenes` and the response of its mutations. */
-export interface SceneRolesState {
-  /** OBS scene names the stage node reports. */
-  scenes: string[];
-  roles: SceneRoleState[];
-  /** `llm`, `heuristic` (keywords) or `null` (not classified yet). */
-  classified_by: "llm" | "heuristic" | null;
-  classifying: boolean;
-}
-
-/** Body of `POST /api/stage/say`. */
-export interface SayRequest {
-  text: string;
-  emotion?: string;
-}
-
-/** Response of `POST /api/stage/say`. */
-export interface SayResponse {
-  turn: TurnId | null;
-}
-
-// ---- voice ------------------------------------------------------------------------------
-
-/** Latency over the recent window; `null` percentiles without samples. */
-export interface LatencyStats {
-  p50_ms: number | null;
-  p95_ms: number | null;
-  samples: number;
-}
-
-/** p50 / p90 of one end-to-end latency series; `null` percentiles without samples. */
-export interface E2eStats {
-  p50_ms: number | null;
-  p90_ms: number | null;
-  samples: number;
-}
-
-/**
- * The seven segments of `speech_end → first_audio_played`, in the order a listener hears them.
- * `prepare` (the wait, attention, memory and prompt building before the model call) was part of
- * `llm_first` until 2026-11-10.
- */
-export type E2eSegmentName =
-  | "endpoint"
-  | "asr"
-  | "prepare"
-  | "llm_first"
-  | "tts_queue"
-  | "tts_first"
-  | "playback";
-
-/**
- * End-to-end voice latency over the recent window: replies to human speech only. `total` and the
- * segments count complete measurements (a segment that was not measured is left out of its own
- * stats); incomplete ones (cancelled, barged in on, failed) are only counted, by reason.
- */
-export interface VoiceE2eLatency {
-  total: E2eStats;
-  segments: Record<E2eSegmentName, E2eStats>;
-  complete: number;
-  incomplete: number;
-  incomplete_by_reason: Record<string, number>;
-}
-
-export interface VoiceLatency {
-  asr: LatencyStats;
-  llm_first_token: LatencyStats;
-  tts_first_audio: LatencyStats;
-  e2e: VoiceE2eLatency;
-}
-
-/** One voice channel she is in. */
-export interface VoiceSession {
-  context: ContextKey;
-  label: string | null;
-  participants: VoiceParticipant[];
-  /** Accounts currently speaking. */
-  speaking: AccountRef[];
-  joined_at: Timestamp;
-  latency: VoiceLatency;
-  last_turn: TurnId | null;
-}
-
-/** `GET /api/voice`. */
-export interface VoiceState {
-  sessions: VoiceSession[];
-}
-
 /** One of her feelings, with the person's name. */
 export interface FeelingView extends Feeling {
   display_name: string | null;
@@ -448,42 +261,6 @@ export interface ReflectionView {
 }
 
 // ---- live controls (`control.ts`) and telemetry (`telemetry.ts`) ----------------------------
-
-/** Answer of a control route: what the capability said it did. */
-export interface ControlResult {
-  text: string;
-}
-
-/** One song of her set list (`GET /api/songs`). */
-export interface SongView {
-  no: number;
-  /** What was asked for. Untrusted. */
-  query: string;
-  title: string | null;
-  artist: string | null;
-  duration_s: number | null;
-  key: number;
-  requester_name: string;
-  state: "preparing" | "ready" | "playing" | "done" | "failed" | "cancelled";
-  /** Worker stage while preparing (`download`, `separate`, `convert`, ...). */
-  stage: string;
-  /** 0..1 while preparing. */
-  progress: number;
-  error: string | null;
-  /** Sung as soon as she is free once ready. */
-  forced: boolean;
-  created_at: string;
-  ready_at: string | null;
-}
-
-/** `GET /api/songs` (and the answers of the song routes, with `text`). */
-export interface SongsState {
-  /** Number of the song she is singing. */
-  playing: number | null;
-  /** Why speech is paused (a song job has the GPU), else `null`. */
-  paused: string | null;
-  songs: SongView[];
-}
 
 /** Process-wide LLM counters at a sample, summed over models and purposes. */
 export interface TelemetryLlm {

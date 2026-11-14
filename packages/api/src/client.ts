@@ -1,7 +1,6 @@
 // Typed client for the admin API, used by the CLI. The routes on the route table
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
-import type { StreamAction } from "@miyoria/stage";
 import type {
   ActivitySnapshot,
   ActivityTask,
@@ -21,24 +20,17 @@ import type {
   ConversationNoteView,
   DayPlanView,
   ErrorBody,
-  ExtensionInfo,
   GoalsView,
   KnowledgeView,
-  McpServerInfo,
   MemoryItem,
   MemoryListQuery,
   MemoryRecordView,
   Page,
   PromptSummary,
-  QueueState,
   ReflectionView,
-  SayResponse,
-  SceneRolesState,
   SelfView,
-  StageState,
   TurnOutcomeKind,
   UpdateMemoryRequest,
-  VoiceState,
   WorldView,
 } from "./types.js";
 
@@ -202,88 +194,6 @@ export class ApiClient {
 
   deleteMemory(id: string, o?: CallOptions): Promise<void> {
     return this.#empty("DELETE", ["memory", id], o);
-  }
-
-  // ---- extensions & MCP -----------------------------------------------------------------
-
-  extensions(o?: CallOptions): Promise<ExtensionInfo[]> {
-    return this.#json("GET", ["extensions"], o);
-  }
-
-  /** `action` is `"enable"`, `"disable"` or `"restart"`. */
-  extensionAction(id: string, action: string, o?: CallOptions): Promise<ExtensionInfo> {
-    return this.#json("POST", ["extensions", id, action], o);
-  }
-
-  mcpServers(o?: CallOptions): Promise<McpServerInfo[]> {
-    return this.#json("GET", ["mcp"], o);
-  }
-
-  /** Only `"restart"` is supported at runtime. */
-  mcpAction(name: string, action: string, o?: CallOptions): Promise<McpServerInfo> {
-    return this.#json("POST", ["mcp", name, action], o);
-  }
-
-  // ---- request queue --------------------------------------------------------------------
-
-  queue(o?: CallOptions): Promise<QueueState> {
-    return this.#json("GET", ["queue"], o);
-  }
-
-  queueSkip(id: string, o?: CallOptions): Promise<QueueState> {
-    return this.#json("POST", ["queue", id, "skip"], o);
-  }
-
-  /** Moves an item to a 0-based index of `QueueState.items`. */
-  queueMove(id: string, position: number, o?: CallOptions): Promise<QueueState> {
-    return this.#json("POST", ["queue", id, "move"], { ...o, body: { position } });
-  }
-
-  queuePause(paused: boolean, o?: CallOptions): Promise<QueueState> {
-    return this.#json("POST", ["queue", paused ? "pause" : "resume"], o);
-  }
-
-  // ---- stage & voice --------------------------------------------------------------------
-
-  stage(o?: CallOptions): Promise<StageState> {
-    return this.#json("GET", ["stage"], o);
-  }
-
-  stageScene(scene: string, o?: CallOptions): Promise<StageState> {
-    return this.#json("POST", ["stage", "scene"], { ...o, body: { scene } });
-  }
-
-  stageExpression(expression: string, o?: CallOptions): Promise<StageState> {
-    return this.#json("POST", ["stage", "expression"], { ...o, body: { expression } });
-  }
-
-  stageStream(action: StreamAction, o?: CallOptions): Promise<StageState> {
-    return this.#json("POST", ["stage", "stream"], { ...o, body: { action } });
-  }
-
-  /** Which OBS scene each scene role uses. */
-  sceneRoles(o?: CallOptions): Promise<SceneRolesState> {
-    return this.#json("GET", ["stage", "scenes"], o);
-  }
-
-  /** The panel's scene for `role`; `null` goes back to the automatic classification. */
-  setSceneRole(role: string, scene: string | null, o?: CallOptions): Promise<SceneRolesState> {
-    return this.#json("PUT", ["stage", "scenes"], { ...o, body: { role, scene } });
-  }
-
-  /** Classifies the OBS scenes again. */
-  classifyScenes(o?: CallOptions): Promise<SceneRolesState> {
-    return this.#json("POST", ["stage", "scenes", "classify"], o);
-  }
-
-  /** Speaks `text` in her voice channel without the LLM. */
-  stageSay(text: string, emotion: string | null = null, o?: CallOptions): Promise<SayResponse> {
-    const body = emotion === null ? { text } : { text, emotion };
-    return this.#json("POST", ["stage", "say"], { ...o, body });
-  }
-
-  voice(o?: CallOptions): Promise<VoiceState> {
-    return this.#json("GET", ["voice"], o);
   }
 
   // ---- inner life -----------------------------------------------------------------------

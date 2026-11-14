@@ -153,28 +153,28 @@ export function useModuleAction() {
 
 export function useExtensions() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.extensions, queryFn: ({ signal }) => api.extensions({ signal }), refetchInterval: poll(30_000) });
+  return useQuery({ queryKey: queryKeys.extensions, queryFn: ({ signal }) => api.rpc.extensions.list(undefined, { signal }), refetchInterval: poll(30_000) });
 }
 
 export function useExtensionAction() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: ModuleAction }) => api.extensionAction(id, action),
+    mutationFn: ({ id, action }: { id: string; action: ModuleAction }) => api.rpc.extensions.action({ params: { id, action } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.extensions }),
   });
 }
 
 export function useMcpServers() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.mcp, queryFn: ({ signal }) => api.mcpServers({ signal }), refetchInterval: poll(30_000) });
+  return useQuery({ queryKey: queryKeys.mcp, queryFn: ({ signal }) => api.rpc.mcp.list(undefined, { signal }), refetchInterval: poll(30_000) });
 }
 
 export function useMcpRestart() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => api.mcpRestart(name),
+    mutationFn: (name: string) => api.rpc.mcp.action({ params: { name, action: "restart" } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.mcp }),
   });
 }
@@ -346,7 +346,7 @@ export function useAccessMutations() {
 
 export function useQueue() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.queue, queryFn: ({ signal }) => api.queue({ signal }), refetchInterval: poll(3_000) });
+  return useQuery({ queryKey: queryKeys.queue, queryFn: ({ signal }) => api.rpc.queue.list(undefined, { signal }), refetchInterval: poll(3_000) });
 }
 
 export function useQueueMutations() {
@@ -354,18 +354,18 @@ export function useQueueMutations() {
   const qc = useQueryClient();
   const set = (state: QueueState) => qc.setQueryData(queryKeys.queue, state);
   return {
-    skip: useMutation({ mutationFn: (id: string) => api.queueSkip(id), onSuccess: set }),
+    skip: useMutation({ mutationFn: (id: string) => api.rpc.queue.skip({ params: { id } }), onSuccess: set }),
     move: useMutation({
-      mutationFn: ({ id, position }: { id: string; position: number }) => api.queueMove(id, position),
+      mutationFn: ({ id, position }: { id: string; position: number }) => api.rpc.queue.move({ params: { id }, body: { position } }),
       onSuccess: set,
     }),
-    pause: useMutation({ mutationFn: (paused: boolean) => api.queuePause(paused), onSuccess: set }),
+    pause: useMutation({ mutationFn: (paused: boolean) => (paused ? api.rpc.queue.pause() : api.rpc.queue.resume()), onSuccess: set }),
   };
 }
 
 export function useStage() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.stage, queryFn: ({ signal }) => api.stage({ signal }), refetchInterval: poll(5_000) });
+  return useQuery({ queryKey: queryKeys.stage, queryFn: ({ signal }) => api.rpc.stage.status(undefined, { signal }), refetchInterval: poll(5_000) });
 }
 
 export function useStageMutations() {
@@ -373,10 +373,10 @@ export function useStageMutations() {
   const qc = useQueryClient();
   const set = (state: StageState) => qc.setQueryData(queryKeys.stage, state);
   return {
-    scene: useMutation({ mutationFn: (name: string) => api.stageScene(name), onSuccess: set }),
-    expression: useMutation({ mutationFn: (name: string) => api.stageExpression(name), onSuccess: set }),
-    stream: useMutation({ mutationFn: (action: StreamAction) => api.stageStream(action), onSuccess: set }),
-    say: useMutation({ mutationFn: (req: SayRequest) => api.stageSay(req) }),
+    scene: useMutation({ mutationFn: (name: string) => api.rpc.stage.scene({ body: { scene: name } }), onSuccess: set }),
+    expression: useMutation({ mutationFn: (name: string) => api.rpc.stage.expression({ body: { expression: name } }), onSuccess: set }),
+    stream: useMutation({ mutationFn: (action: StreamAction) => api.rpc.stage.stream({ body: { action } }), onSuccess: set }),
+    say: useMutation({ mutationFn: (req: SayRequest) => api.rpc.stage.say({ body: req }) }),
   };
 }
 
@@ -384,7 +384,7 @@ export function useSceneRoles() {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.sceneRoles,
-    queryFn: ({ signal }) => api.sceneRoles({ signal }),
+    queryFn: ({ signal }) => api.rpc.stage.scenes(undefined, { signal }),
     refetchInterval: poll(15_000),
   });
 }
@@ -395,16 +395,16 @@ export function useSceneRoleMutations() {
   const set = (state: SceneRolesState) => qc.setQueryData(queryKeys.sceneRoles, state);
   return {
     set: useMutation({
-      mutationFn: ({ role, scene }: { role: string; scene: string | null }) => api.setSceneRole(role, scene),
+      mutationFn: ({ role, scene }: { role: string; scene: string | null }) => api.rpc.stage.setSceneRole({ body: { role, scene } }),
       onSuccess: set,
     }),
-    classify: useMutation({ mutationFn: () => api.classifyScenes(), onSuccess: set }),
+    classify: useMutation({ mutationFn: () => api.rpc.stage.classify(), onSuccess: set }),
   };
 }
 
 export function useVoice() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.voice, queryFn: ({ signal }) => api.voice({ signal }), refetchInterval: poll(5_000) });
+  return useQuery({ queryKey: queryKeys.voice, queryFn: ({ signal }) => api.rpc.voice.state(undefined, { signal }), refetchInterval: poll(5_000) });
 }
 
 // --- inner life --------------------------------------------------------------
@@ -455,7 +455,7 @@ export function useSetChannelLevel() {
 
 export function useDataInventory() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.data, queryFn: ({ signal }) => api.dataInventory({ signal }), refetchInterval: poll(30_000) });
+  return useQuery({ queryKey: queryKeys.data, queryFn: ({ signal }) => api.rpc.data.inventory(undefined, { signal }), refetchInterval: poll(30_000) });
 }
 
 /** Deletes and the reset change what every page shows: everything is refetched. */
@@ -465,11 +465,11 @@ export function useDataMutations() {
   const all = () => void qc.invalidateQueries();
   return {
     wipe: useMutation({
-      mutationFn: ({ categories, confirm }: { categories: DataCategoryId[]; confirm?: string }) => api.dataWipe(categories, confirm),
+      mutationFn: ({ categories, confirm }: { categories: DataCategoryId[]; confirm?: string }) => api.rpc.data.wipe({ body: { categories, confirm } }),
       onSuccess: all,
     }),
     reset: useMutation({
-      mutationFn: ({ confirm, token }: { confirm: string; token: string }) => api.dataReset(confirm, token),
+      mutationFn: ({ confirm, token }: { confirm: string; token: string }) => api.rpc.data.reset({ body: { confirm, backup_token: token } }),
       onSuccess: all,
     }),
   };
@@ -539,7 +539,7 @@ export function useMindMutations() {
 
 export function useSongs() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.songs, queryFn: ({ signal }) => api.songs({ signal }), refetchInterval: poll(3_000) });
+  return useQuery({ queryKey: queryKeys.songs, queryFn: ({ signal }) => api.rpc.songs.list(undefined, { signal }), refetchInterval: poll(3_000) });
 }
 
 export function useSongMutations() {
@@ -547,9 +547,9 @@ export function useSongMutations() {
   const qc = useQueryClient();
   const set = (s: SongsState) => qc.setQueryData<SongsState>(queryKeys.songs, { playing: s.playing, paused: s.paused, songs: s.songs });
   return {
-    request: useMutation({ mutationFn: ({ query, key }: { query: string; key?: number }) => api.requestSong(query, key), onSuccess: set }),
-    play: useMutation({ mutationFn: (song?: number) => api.playSong(song), onSuccess: set }),
-    stop: useMutation({ mutationFn: (all: boolean) => api.stopSong(all), onSuccess: set }),
+    request: useMutation({ mutationFn: ({ query, key }: { query: string; key?: number }) => api.rpc.songs.request({ body: { query, key: key ?? null } }), onSuccess: set }),
+    play: useMutation({ mutationFn: (song?: number) => api.rpc.songs.play({ body: { song: song ?? null } }), onSuccess: set }),
+    stop: useMutation({ mutationFn: (all: boolean) => api.rpc.songs.stop({ body: { all } }), onSuccess: set }),
   };
 }
 
@@ -562,17 +562,17 @@ export function useLiveControls() {
   };
   return {
     join: useMutation({
-      mutationFn: ({ guild, channel }: { guild: string; channel: string | null }) => api.voiceJoin(guild, channel),
+      mutationFn: ({ guild, channel }: { guild: string; channel: string | null }) => api.rpc.voice.join({ body: { guild, channel } }),
       onSuccess: refresh,
     }),
-    leave: useMutation({ mutationFn: (guild?: string) => api.voiceLeave(guild), onSuccess: refresh }),
+    leave: useMutation({ mutationFn: (guild?: string) => api.rpc.voice.leave({ body: { guild: guild ?? null } }), onSuccess: refresh }),
     goLive: useMutation({
-      mutationFn: ({ action, guild }: { action: StreamAction; guild?: string }) => api.goLive(action, guild),
+      mutationFn: ({ action, guild }: { action: StreamAction; guild?: string }) => api.rpc.voice.goLive({ body: { action, guild: guild ?? null } }),
       onSuccess: refresh,
     }),
-    gameStart: useMutation({ mutationFn: (req: GameStartRequest) => api.gameStart(req), onSuccess: refresh }),
-    gameStop: useMutation({ mutationFn: () => api.gameStop(), onSuccess: refresh }),
-    gameGoal: useMutation({ mutationFn: (text: string) => api.gameGoal(text), onSuccess: refresh }),
+    gameStart: useMutation({ mutationFn: (req: GameStartRequest) => api.rpc.game.start({ body: req }), onSuccess: refresh }),
+    gameStop: useMutation({ mutationFn: () => api.rpc.game.stop(), onSuccess: refresh }),
+    gameGoal: useMutation({ mutationFn: (text: string) => api.rpc.game.goal({ body: { text } }), onSuccess: refresh }),
   };
 }
 

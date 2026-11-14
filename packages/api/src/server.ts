@@ -6,7 +6,6 @@ import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { affectRoutes } from "./affect.js";
 import { bodyRoutes } from "./body.js";
-import { controlRoutes } from "./control.js";
 import { coreRoutes } from "./core.js";
 import { dataRoutes } from "./data.js";
 import { directiveRoutes } from "./directives.js";
@@ -26,7 +25,6 @@ import { turnMetricsRoutes } from "./metrics-turns.js";
 import { notebookRoutes } from "./notebook.js";
 import * as oauth from "./oauth.js";
 import { ogRoutes, rewriteHtml } from "./og.js";
-import { opsRoutes } from "./ops.js";
 import { servePanel } from "./panel.js";
 import { partyRoutes } from "./party.js";
 import { planRoutes } from "./plan.js";
@@ -143,7 +141,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...memberRoutes(state),
     ...goalAdminRoutes(state),
     ...memoryRoutes(state),
-    ...opsRoutes(state),
     ...innerRoutes(state),
     ...factRoutes(state),
     ...dataRoutes(state),
@@ -155,7 +152,6 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...promptRoutes(state),
     ...turnMetricsRoutes(state),
     ...learningRoutes(state),
-    ...controlRoutes(state),
     ...llmCallRoutes(state),
     ...telemetryRoutes(state),
     ...liveRoutes(state),

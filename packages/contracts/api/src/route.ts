@@ -20,6 +20,8 @@ export interface RouteMeta {
   audience: Audience;
   /** A node the session's account must also hold (`null`: none). The bearer token holds all. */
   permission: string | null;
+  /** What a session without the permission is told, in place of `this needs <node>`. */
+  refusal?: string;
   /**
    * A member route that counts against the member's rate limit (`429` when they ask too much). The
    * server's shell applies it before the body is read, so a request with a bad body counts too.

@@ -8,15 +8,22 @@ import type { ContextKey, PlatformId } from "@miyoria/types";
 import type {
   AssignRoleRequest,
   CostInfo,
+  ExtensionInfo,
+  McpServerInfo,
   MindView,
   ModuleInfo,
   Page,
   PersonDetail,
   PersonSummary,
+  QueueState,
   RemoveMappingRequest,
+  SayResponse,
+  SceneRolesState,
+  StageState,
   UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
+  VoiceState,
 } from "../../src/index.js";
 import { call } from "./http.js";
 
@@ -97,5 +104,36 @@ export function adminCalls(base: string, token: string) {
       ),
     autonomyPause: (paused: boolean) =>
       send<MindView>("POST", `/api/mind/${paused ? "pause" : "resume"}`),
+
+    // ---- extensions and MCP
+    extensions: () => get<ExtensionInfo[]>("/api/extensions"),
+    extensionAction: (id: string, action: string) =>
+      send<ExtensionInfo>("POST", `/api/extensions/${seg(id)}/${seg(action)}`),
+    mcpServers: () => get<McpServerInfo[]>("/api/mcp"),
+    mcpAction: (name: string, action: string) =>
+      send<McpServerInfo>("POST", `/api/mcp/${seg(name)}/${seg(action)}`),
+
+    // ---- request queue
+    queue: () => get<QueueState>("/api/queue"),
+    queueSkip: (id: string) => send<QueueState>("POST", `/api/queue/${seg(id)}/skip`),
+    queueMove: (id: string, position: number) =>
+      send<QueueState>("POST", `/api/queue/${seg(id)}/move`, { position }),
+    queuePause: (paused: boolean) =>
+      send<QueueState>("POST", `/api/queue/${paused ? "pause" : "resume"}`),
+
+    // ---- stage and voice
+    stage: () => get<StageState>("/api/stage"),
+    stageScene: (scene: string) => send<StageState>("POST", "/api/stage/scene", { scene }),
+    stageExpression: (expression: string) =>
+      send<StageState>("POST", "/api/stage/expression", { expression }),
+    stageStream: (action: "start" | "stop") =>
+      send<StageState>("POST", "/api/stage/stream", { action }),
+    sceneRoles: () => get<SceneRolesState>("/api/stage/scenes"),
+    setSceneRole: (role: string, scene: string | null) =>
+      send<SceneRolesState>("PUT", "/api/stage/scenes", { role, scene }),
+    classifyScenes: () => send<SceneRolesState>("POST", "/api/stage/scenes/classify"),
+    stageSay: (text: string, emotion: string | null = null) =>
+      send<SayResponse>("POST", "/api/stage/say", emotion === null ? { text } : { text, emotion }),
+    voice: () => get<VoiceState>("/api/voice"),
   };
 }

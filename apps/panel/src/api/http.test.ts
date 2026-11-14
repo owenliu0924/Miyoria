@@ -45,7 +45,7 @@ describe("ApiClient", () => {
     expect((await api.rpc.auth.methods()).discord).toBe(true);
     const me = await api.rpc.auth.session();
     expect(me.user?.name).toBe("Owen");
-    await api.queuePause(true);
+    await api.rpc.queue.pause();
     await api.logout();
     expect(fetch.mock.calls).toHaveLength(4);
     for (const [, init] of fetch.mock.calls) {
