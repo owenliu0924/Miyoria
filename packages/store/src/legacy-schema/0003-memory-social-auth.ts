@@ -1,7 +1,8 @@
 // Legacy migration 3 (was `0003_memory_social_auth.sql`). Never edit it: its checksum is recorded.
-// Step 4 of docs/design/v5-data.md §8 took `link_codes` out (see `0001-init.ts`).
+// Step 4 of docs/design/v5-data.md §8 took `link_codes` out (see `0001-init.ts`). Step 6 took out
+// `audit_log` and its indexes: audit entries are events (`events/audit.ts`).
 
-export const m0003 = `-- Long-term memory, relationships, identity linking, roles and the audit log.
+export const m0003 = `-- Long-term memory, relationships, identity linking and roles.
 -- Ids are ULIDs stored as text. Per-character data carries \`profile_id\`.
 -- Arrays (\`subjects\`, \`tags\`, \`grants\`, \`denies\`) are JSON text arrays.
 
@@ -131,19 +132,4 @@ CREATE TABLE node_overrides (
     allow INTEGER NOT NULL,
     PRIMARY KEY (scope, role, node)
 );
-
--- Who did what, newest first.
-CREATE TABLE audit_log (
-    id     TEXT    PRIMARY KEY,
-    at     INTEGER NOT NULL,
-    actor  TEXT    NOT NULL,
-    action TEXT    NOT NULL,
-    target TEXT    NOT NULL,
-    -- JSON text.
-    detail TEXT    NOT NULL,
-    ok     INTEGER NOT NULL
-);
-
-CREATE INDEX audit_log_recent_idx ON audit_log (at DESC, id DESC);
-CREATE INDEX audit_log_actor_idx ON audit_log (actor, at DESC, id DESC);
 `;

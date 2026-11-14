@@ -15,7 +15,6 @@ import {
   type AccountRef,
   type Clock,
   type ContextKey,
-  type DecisionTrace,
   type Directive,
   type DirectiveRecord,
   type JsonObject,
@@ -26,7 +25,6 @@ import {
   type ProfileId,
   systemClock,
   type Timestamp,
-  type TurnOutcomeRecord,
 } from "@miyoria/types";
 import {
   allowedDelta,
@@ -38,7 +36,6 @@ import {
   encodeEmbedding,
   fromMicros,
   lazyEmbedding,
-  MAX_DECISIONS,
   memoryKind,
   memoryOrigin,
   memoryScopeKey,
@@ -68,8 +65,10 @@ import {
   wipeStatements,
 } from "./data.js";
 import { Db, type Params, type Row } from "./db.js";
+import { AuditTrail } from "./events/audit.js";
 import { ChatLog } from "./events/chat.js";
 import { EventStore } from "./events/log.js";
+import { TurnLog } from "./events/turns.js";
 import type { PersonHandleDirectory } from "./handles.js";
 import {
   IdentityHandles,
@@ -82,7 +81,6 @@ import { identitySchema } from "./identity/migrations.js";
 import { legacySchema } from "./legacy-schema/index.js";
 import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
 import type {
-  AuditEntry,
   AuthScope,
   Bounty,
   BountyPatch,
@@ -94,7 +92,6 @@ import type {
   Deal,
   DealPatch,
   DealStatus,
-  DecisionRecord,
   DocFilter,
   DocUpdate,
   EconomyDoc,
@@ -122,12 +119,10 @@ import type {
   RoleMapping,
 } from "./records.js";
 import type {
-  AuditLog,
   AuthStore,
   BountyStore,
   CoinLedgerStore,
   DealStore,
-  DecisionLog,
   DirectiveStore,
   EconomyDocStore,
   FortuneStore,
@@ -150,11 +145,6 @@ export interface SqliteStoreOptions {
   clock?: Clock;
   /** How long a write waits for another process's lock. Default 5000 ms. */
   busyTimeoutMs?: number;
-  /**
-   * Decisions kept per profile (older ones are dropped); `null` keeps all. Default: 10 000 for
-   * `:memory:` (an in-memory database), unbounded for files.
-   */
-  maxDecisionsPerProfile?: number | null;
   /** Plugin schemas to migrate besides the store's own (`core` and `legacy`). */
   schemas?: readonly PluginSchema[];
 }
@@ -1226,166 +1216,6 @@ class SqlitePersonaOverrides implements PersonaOverrideStore {
   }
 }
 
-// ---- decisions ----------------------------------------------------------------------------
-
-class SqliteDecisionLog implements DecisionLog {
-  /** Rows per profile, tracked only when capped (the database has no other writer then). */
-  readonly #counts = new Map<ProfileId, number>();
-
-  constructor(
-    private readonly db: Db,
-    private readonly cap: number | null,
-  ) {}
-
-  async append(record: DecisionRecord): Promise<void> {
-    const params = {
-      id: record.id,
-      profile: record.profile,
-      key: contextLookupKey(record.trace.context),
-      ts: toMicros(record.ts),
-      trace: JSON.stringify(record.trace),
-    };
-    try {
-      this.db.tx(() => {
-        this.db.run(
-          "INSERT INTO decision_log (id, profile_id, context_key, ts, trace) " +
-            "VALUES ($id, $profile, $key, $ts, $trace)",
-          params,
-        );
-        if (this.cap !== null) this.#trim(record.profile, this.cap);
-      });
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      if (isConstraintError(cause)) {
-        throw new StoreError(`decision \`${record.id}\` already exists`, { cause });
-      }
-      throw new StoreError("cannot append decision", { cause });
-    }
-  }
-
-  async appendOutcome(profile: ProfileId, record: TurnOutcomeRecord): Promise<void> {
-    const params = {
-      id: record.turn,
-      profile,
-      key: contextLookupKey(record.context),
-      ts: toMicros(record.at),
-      outcome: record.outcome.type,
-      record: JSON.stringify(record),
-    };
-    try {
-      this.db.tx(() => {
-        this.db.run(
-          "INSERT INTO turn_outcomes (id, profile_id, context_key, ts, outcome, record) " +
-            "VALUES ($id, $profile, $key, $ts, $outcome, $record) " +
-            "ON CONFLICT(id) DO UPDATE SET profile_id = excluded.profile_id, " +
-            "context_key = excluded.context_key, ts = excluded.ts, " +
-            "outcome = excluded.outcome, record = excluded.record",
-          params,
-        );
-        if (this.cap !== null) {
-          this.db.run(
-            "DELETE FROM turn_outcomes WHERE id IN (SELECT id FROM turn_outcomes WHERE " +
-              "profile_id = $p ORDER BY ts DESC, id DESC LIMIT -1 OFFSET $cap)",
-            { p: profile, cap: this.cap },
-          );
-        }
-      });
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      throw new StoreError("cannot append turn outcome", { cause });
-    }
-  }
-
-  async recentOutcomes(
-    profile: ProfileId,
-    context: ContextKey | null,
-    limit: number,
-  ): Promise<TurnOutcomeRecord[]> {
-    const rows =
-      context === null
-        ? this.db.all(
-            "SELECT record FROM turn_outcomes WHERE profile_id = $profile " +
-              "ORDER BY ts DESC, id DESC LIMIT $limit",
-            { profile, limit: limitParam(limit) },
-          )
-        : this.db.all(
-            "SELECT record FROM turn_outcomes WHERE profile_id = $profile AND " +
-              "context_key = $key ORDER BY ts DESC, id DESC LIMIT $limit",
-            { profile, key: contextLookupKey(context), limit: limitParam(limit) },
-          );
-    return rows.map((r) => json<TurnOutcomeRecord>(r, "record", "turn outcome"));
-  }
-
-  async outcomesSince(profile: ProfileId, sinceTs: Timestamp): Promise<TurnOutcomeRecord[]> {
-    const rows = this.db.all(
-      "SELECT record FROM turn_outcomes WHERE profile_id = $profile AND ts >= $since " +
-        "ORDER BY ts DESC, id DESC",
-      { profile, since: toMicros(sinceTs) },
-    );
-    return rows.map((r) => json<TurnOutcomeRecord>(r, "record", "turn outcome"));
-  }
-
-  async decisionsSince(profile: ProfileId, sinceTs: Timestamp): Promise<DecisionRecord[]> {
-    const rows = this.db.all(
-      "SELECT id, ts, trace FROM decision_log WHERE profile_id = $profile AND ts >= $since " +
-        "ORDER BY ts DESC, id DESC",
-      { profile, since: toMicros(sinceTs) },
-    );
-    return rows.map((r) => ({
-      id: str(r, "id"),
-      profile,
-      ts: ts(r, "ts"),
-      trace: json<DecisionTrace>(r, "trace", "decision trace"),
-    }));
-  }
-
-  #trim(profile: ProfileId, cap: number): void {
-    let count = this.#counts.get(profile);
-    if (count === undefined) {
-      const row = this.db.get("SELECT count(*) AS n FROM decision_log WHERE profile_id = $p", {
-        p: profile,
-      });
-      count = row ? num(row, "n") : 0;
-    } else {
-      count += 1;
-    }
-    if (count > cap) {
-      this.db.run(
-        "DELETE FROM decision_log WHERE id IN (SELECT id FROM decision_log WHERE " +
-          "profile_id = $p ORDER BY ts ASC, id ASC LIMIT $n)",
-        { p: profile, n: count - cap },
-      );
-      count = cap;
-    }
-    this.#counts.set(profile, count);
-  }
-
-  async recent(
-    profile: ProfileId,
-    context: ContextKey | null,
-    limit: number,
-  ): Promise<DecisionRecord[]> {
-    const rows =
-      context === null
-        ? this.db.all(
-            "SELECT id, ts, trace FROM decision_log WHERE profile_id = $profile " +
-              "ORDER BY ts DESC, id DESC LIMIT $limit",
-            { profile, limit: limitParam(limit) },
-          )
-        : this.db.all(
-            "SELECT id, ts, trace FROM decision_log WHERE profile_id = $profile AND " +
-              "context_key = $key ORDER BY ts DESC, id DESC LIMIT $limit",
-            { profile, key: contextLookupKey(context), limit: limitParam(limit) },
-          );
-    return rows.map((r) => ({
-      id: str(r, "id"),
-      profile,
-      ts: ts(r, "ts"),
-      trace: json<DecisionTrace>(r, "trace", "decision trace"),
-    }));
-  }
-}
-
 // ---- settings -----------------------------------------------------------------------------
 
 class SqliteSettings implements SettingsStore {
@@ -2279,51 +2109,6 @@ class SqliteDirectives implements DirectiveStore {
   }
 }
 
-class SqliteAudit implements AuditLog {
-  constructor(private readonly db: Db) {}
-
-  async append(entry: AuditEntry): Promise<void> {
-    try {
-      this.db.run(
-        "INSERT INTO audit_log (id, at, actor, action, target, detail, ok) VALUES ($id, $at, " +
-          "$actor, $action, $target, $detail, $ok)",
-        {
-          id: entry.id,
-          at: toMicros(entry.at),
-          actor: entry.actor,
-          action: entry.action,
-          target: entry.target,
-          detail: JSON.stringify(entry.detail),
-          ok: entry.ok ? 1 : 0,
-        },
-      );
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      if (isConstraintError(cause)) {
-        throw new StoreError(`audit entry \`${entry.id}\` already exists`, { cause });
-      }
-      throw new StoreError("cannot append audit entry", { cause });
-    }
-  }
-
-  async recent(limit: number, actor: string | null): Promise<AuditEntry[]> {
-    const rows = this.db.all(
-      "SELECT * FROM audit_log WHERE ($actor IS NULL OR actor = $actor) " +
-        "ORDER BY at DESC, id DESC LIMIT $limit",
-      { actor, limit: limitParam(limit) },
-    );
-    return rows.map((r) => ({
-      id: str(r, "id"),
-      at: ts(r, "at"),
-      actor: str(r, "actor"),
-      action: str(r, "action"),
-      target: str(r, "target"),
-      detail: json<JsonValue>(r, "detail", "audit detail"),
-      ok: bool(r, "ok"),
-    }));
-  }
-}
-
 // ---- the store ----------------------------------------------------------------------------
 
 /** Every storage area on one SQLite database. */
@@ -2332,13 +2117,15 @@ export class SqliteStore implements Store {
   readonly moduleState: ModuleStateStore;
   readonly personaOverrides: PersonaOverrideStore;
   readonly people: PeopleStore;
-  readonly decisions: DecisionLog;
+  /** Decisions and turn outcomes on the event log. */
+  readonly decisions: TurnLog;
   readonly settings: SettingsStore;
   readonly memories: MemoryRecordStore;
   readonly relationships: RelationshipStore;
   readonly identity: IdentityStore;
   readonly auth: AuthStore;
-  readonly audit: AuditLog;
+  /** Audit entries on the event log. */
+  readonly audit: AuditTrail;
   readonly profileData: ProfileDataStore;
   readonly events: EventStore;
   /** Chat lines on the event log; `messages` is the same object. */
@@ -2356,24 +2143,24 @@ export class SqliteStore implements Store {
   readonly handles: PersonHandleDirectory;
   readonly #db: Db;
 
-  private constructor(db: Db, maxDecisions: number | null) {
+  private constructor(db: Db) {
     this.#db = db;
     this.persons = new Identity(db);
     this.moduleState = new SqliteModuleState(db);
     this.personaOverrides = new SqlitePersonaOverrides(db);
     this.people = new IdentityPeople(this.persons);
-    this.decisions = new SqliteDecisionLog(db, maxDecisions);
     this.settings = new PrefsSettings(new SqliteSettings(db), this.persons);
     this.memories = new SqliteMemories(db);
     this.relationships = new SqliteRelationships(db);
     this.identity = new IdentityLinks(this.persons);
     this.handles = new IdentityHandles(this.persons);
     this.auth = new SqliteAuth(db);
-    this.audit = new SqliteAudit(db);
     this.profileData = new SqliteProfileData(db);
     this.events = new EventStore(db, { identity: this.persons });
     this.chat = new ChatLog(db, this.events, this.persons);
     this.messages = this.chat;
+    this.decisions = new TurnLog(db, this.events, this.persons);
+    this.audit = new AuditTrail(db, this.events, this.persons);
     this.directives = new SqliteDirectives(db);
     this.cards = new SqliteMemberCards(db);
     this.coins = new SqliteCoins(db);
@@ -2415,13 +2202,7 @@ export class SqliteStore implements Store {
       db.close();
       throw error;
     }
-    const maxDecisions =
-      options.maxDecisionsPerProfile !== undefined
-        ? options.maxDecisionsPerProfile
-        : memory
-          ? MAX_DECISIONS
-          : null;
-    return new SqliteStore(db, maxDecisions);
+    return new SqliteStore(db);
   }
 
   /** Versions of the `legacy` schema recorded in `_migrations`, ascending. */

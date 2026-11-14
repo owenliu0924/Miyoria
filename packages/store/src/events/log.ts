@@ -8,10 +8,11 @@
 // - transactional: `appendNow(write)` inside the caller's `db.tx`, when a plugin's own row and its
 //   event must commit together.
 //
-// The store stamps what the producer does not set: `seq` (commit order), `tier` (the type's, from
-// the registry), and `scope` when the draft has none (the type's default, then the session's). A
-// write may name its place as a platform `ContextKey` instead of a session: identity resolves it
-// (space, room, session) in the same transaction, and an author or a handle into `person_id`.
+// The store stamps what the producer does not set: `seq` (commit order), `tier` (the type's, or its
+// family's, from the registry), and `scope` when the draft has none (the type's default, then the
+// session's). A write may name its place as a platform `ContextKey` instead of a session: identity
+// resolves it (space, room, session) in the same transaction, and an author or a handle into
+// `person_id`.
 
 import type { SQLInputValue } from "node:sqlite";
 import {
@@ -47,7 +48,7 @@ import {
 } from "../common.js";
 import type { Db, Params, Row } from "../db.js";
 import { HOME_SESSION, type Identity, type Place, type PlaceAuthor } from "../identity/identity.js";
-import { coreEventRegistry, PrivacyRedacted } from "./types.js";
+import { coreEventRegistry, PrivacyRedacted, typeDefaults } from "./types.js";
 
 const log = getLogger("store.events");
 
@@ -394,7 +395,7 @@ export class EventStore implements EventLogStore {
         log.warn({ err: errorMessage(error), event: d.id }, "cannot resolve an event's place");
       }
     }
-    const defaults = this.registry.defaults(d.type);
+    const defaults = typeDefaults(this.registry, d.type);
     const envelope: EventEnvelope = {
       id: d.id,
       at: normalizeTimestamp(d.at),
@@ -410,7 +411,11 @@ export class EventStore implements EventLogStore {
       key: d.key ?? null,
       seq: null,
       source: write.source,
-      scope: d.scope ?? defaults.scope ?? sessionScope(session, spaceId),
+      // A DM whose session did not resolve (nobody has written in it yet) is still a DM.
+      scope:
+        d.scope ??
+        defaults.scope ??
+        (session === null && write.context?.scope === null ? "dm" : sessionScope(session, spaceId)),
       tier: defaults.tier,
       redacted_at: null,
       // A draft's `data` is typed by zod's input side of `JsonValueSchema`; producers hand JSON.

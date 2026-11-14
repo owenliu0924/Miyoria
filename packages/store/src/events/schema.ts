@@ -129,3 +129,74 @@ SELECT
 FROM events
 WHERE type IN ('platform.message.created', 'voice.utterance', 'voice.playback');
 `;
+
+/**
+ * Core migration 4: turn records and audit entries on the event log (§2.7, §8 step 6). Partial
+ * indexes for what `DecisionLog` and `AuditLog` read (newest first, for everyone or one place or
+ * actor, and the latest outcome of a turn), and the views the data export reads them through in
+ * the old tables' columns. The type conditions are the same text in `turns.ts` and `audit.ts`:
+ * SQLite uses a partial index only when the query names its condition.
+ */
+export const TURNS_AUDIT_SQL = `-- Her decisions by time: DecisionLog.recent and decisionsSince.
+CREATE INDEX events_decision_idx ON events (at, id) WHERE type = 'agent.decision';
+
+-- A session's decisions by time (session NULL: decisions whose place did not resolve).
+CREATE INDEX events_decision_session_idx ON events (session, at, id)
+    WHERE type = 'agent.decision';
+
+-- Turn outcomes by time: DecisionLog.recentOutcomes and outcomesSince.
+CREATE INDEX events_outcome_idx ON events (at, turn) WHERE type = 'agent.turn.outcome';
+
+-- A session's turn outcomes by time.
+CREATE INDEX events_outcome_session_idx ON events (session, at, turn)
+    WHERE type = 'agent.turn.outcome';
+
+-- The outcomes of one turn in commit order: a turn written again reads as its latest.
+CREATE INDEX events_outcome_turn_idx ON events (turn, seq) WHERE type = 'agent.turn.outcome';
+
+-- Audit entries by time: AuditLog.recent.
+CREATE INDEX events_audit_idx ON events (at, id) WHERE type GLOB 'audit.*';
+
+-- One actor's audit entries by time.
+CREATE INDEX events_audit_actor_idx ON events (json_extract(data, '$.actor'), at, id)
+    WHERE type GLOB 'audit.*';
+
+-- Her decisions as the decision log's rows.
+CREATE VIEW v_decisions AS
+SELECT seq, id, type, at AS ts, data AS trace, turn, session, person_id
+FROM events
+WHERE type = 'agent.decision';
+
+-- How each turn ended, the latest outcome of each turn, as the turn outcome rows (id: the turn).
+CREATE VIEW v_turns AS
+SELECT
+    e.seq,
+    e.turn AS id,
+    e.type,
+    e.at AS ts,
+    json_extract(e.data, '$.outcome.type') AS outcome,
+    e.data AS record,
+    e.id AS event_id,
+    e.session,
+    e.person_id
+FROM events e
+WHERE e.type = 'agent.turn.outcome'
+  AND NOT EXISTS (SELECT 1 FROM events n
+                  WHERE n.type = 'agent.turn.outcome' AND n.turn = e.turn AND n.seq > e.seq);
+
+-- Audit entries as the audit log's rows.
+CREATE VIEW v_audit AS
+SELECT
+    seq,
+    id,
+    type,
+    at,
+    json_extract(data, '$.actor') AS actor,
+    json_extract(data, '$.action') AS action,
+    json_extract(data, '$.target') AS target,
+    data -> '$.detail' AS detail,
+    json_extract(data, '$.ok') AS ok,
+    person_id
+FROM events
+WHERE type GLOB 'audit.*';
+`;

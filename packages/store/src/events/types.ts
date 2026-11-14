@@ -16,8 +16,22 @@
 // with their payloads in `@miyoria/contracts/events`) are the raw record of conversation.
 // `facts.observation.said` and `facts.utterance` stay beside them: they are her observations of
 // those lines, a derived view, not the record.
+//
+// The turn records (`agent.decision`, `agent.turn.outcome`) and the audit entries (`audit.*`) are
+// defined there too (§8 step 6). The facts writer records her decision and each turn's outcome
+// under those types, not as `facts.decision` / `facts.result` lines: one record each.
+//
+// A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
+// `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
-import { CHAT_EVENTS, defineEvent, EventRegistry } from "@miyoria/contracts/events";
+import {
+  AuditRecorded,
+  CHAT_EVENTS,
+  defineEvent,
+  type EventDefaults,
+  EventRegistry,
+  TURN_EVENTS,
+} from "@miyoria/contracts/events";
 import { JsonValueSchema } from "@miyoria/contracts/wire";
 
 /** Prefix of every type the facts writer records. */
@@ -143,5 +157,25 @@ export const FACTS_EVENTS = [
 
 /** A new registry holding every type the store knows. Callers may register more. */
 export function coreEventRegistry(): EventRegistry {
-  return new EventRegistry().register(...FACTS_EVENTS, ...CHAT_EVENTS, PrivacyRedacted);
+  return new EventRegistry().register(
+    ...FACTS_EVENTS,
+    ...CHAT_EVENTS,
+    ...TURN_EVENTS,
+    AuditRecorded,
+    PrivacyRedacted,
+  );
+}
+
+/**
+ * The scope and tier of `type`: its own definition's, else the nearest family's (`a.b.*`, then
+ * `a.*`), else what the registry gives a type nobody registered.
+ */
+export function typeDefaults(registry: EventRegistry, type: string): EventDefaults {
+  if (registry.get(type) !== null) return registry.defaults(type);
+  const words = type.split(".");
+  for (let n = words.length - 1; n > 0; n--) {
+    const family = `${words.slice(0, n).join(".")}.*`;
+    if (registry.get(family) !== null) return registry.defaults(family);
+  }
+  return registry.defaults(type);
 }

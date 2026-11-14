@@ -48,6 +48,7 @@ describe("the table", () => {
       "core:1:bookkeeping",
       "core:2:events",
       "core:3:chat",
+      "core:4:turns_audit",
     ]);
     const strict = db.all("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'event%'");
     expect(strict).toEqual(
@@ -62,9 +63,16 @@ describe("the table", () => {
       .sort();
     expect(names).toEqual([
       "index:events_at_idx",
+      "index:events_audit_actor_idx",
+      "index:events_audit_idx",
       "index:events_chat_account_idx",
       "index:events_chat_session_idx",
+      "index:events_decision_idx",
+      "index:events_decision_session_idx",
       "index:events_key_idx",
+      "index:events_outcome_idx",
+      "index:events_outcome_session_idx",
+      "index:events_outcome_turn_idx",
       "index:events_parent_idx",
       "index:events_person_idx",
       "index:events_session_idx",
@@ -260,7 +268,8 @@ describe("places and people", () => {
       context: { ...DM, channel: "never-seen" },
       handle: "owen",
     });
-    expect(e).toMatchObject({ session: null, room_id: null, scope: "self" });
+    // Still a DM: what is about a DM never reads as her own state.
+    expect(e).toMatchObject({ session: null, room_id: null, scope: "dm" });
     expect(e.person_id).toBe(identity?.personOf(OWEN.account)?.id);
     expect(events.get(e.id)).toMatchObject({ context: null, handle: "Owen" });
   });

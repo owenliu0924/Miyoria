@@ -232,24 +232,4 @@ describe("SqliteStore", () => {
       await store.close();
     }
   });
-
-  it("caps decisions only when asked to on files", () =>
-    withTempDir(async (dir) => {
-      const store = await SqliteStore.open(join(dir, "d.db"), { maxDecisionsPerProfile: 2 });
-      try {
-        const context = { platform: "discord", scope: "g", channel: "c", kind: "channel" } as const;
-        for (const i of [1, 2, 3]) {
-          await store.decisions.append({
-            id: `01JAAAAAAAAAAAAAAAAAAAAAA${i}`,
-            profile: "p",
-            ts: new Date(i * 1000).toISOString(),
-            trace: { turn: "t", context, respond: false, score: 0, reasons: [String(i)] },
-          });
-        }
-        const recent = await store.decisions.recent("p", null, 10);
-        expect(recent.map((d) => d.trace.reasons[0])).toEqual(["3", "2"]);
-      } finally {
-        await store.close();
-      }
-    }));
 });

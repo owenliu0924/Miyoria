@@ -5,7 +5,6 @@
 export {
   embeddingValues,
   fromMicros,
-  MAX_DECISIONS,
   normalizeTimestamp,
   StoreError,
   toMicros,
@@ -32,6 +31,7 @@ export {
   type WipeOptions,
 } from "./data.js";
 export { Db, type Orm, type Params, type Row } from "./db.js";
+export { AUDIT_TYPES_SQL, AuditTrail } from "./events/audit.js";
 export {
   CHAT_TYPES_SQL,
   type ChatLineOptions,
@@ -58,7 +58,8 @@ export {
   type RedactionListener,
   sessionScope,
 } from "./events/log.js";
-export { CHAT_SQL, EVENTS_SQL } from "./events/schema.js";
+export { CHAT_SQL, EVENTS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
+export { TurnLog } from "./events/turns.js";
 export {
   coreEventRegistry,
   FACTS_EVENTS,
@@ -76,6 +77,7 @@ export {
   FactsThought,
   FactsUtterance,
   PrivacyRedacted,
+  typeDefaults,
 } from "./events/types.js";
 export {
   HANDLE_PREFIX,

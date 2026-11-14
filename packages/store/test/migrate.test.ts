@@ -78,6 +78,7 @@ describe("bookkeeping", () => {
         "core:1",
         "core:2",
         "core:3",
+        "core:4",
         ...legacySchema.migrations.map((m) => `legacy:${m.version}`),
       ]);
       expect(rows[0]).toMatchObject({
@@ -94,8 +95,11 @@ describe("bookkeeping", () => {
         .map((r) => r.name);
       expect(tables).toEqual(expect.arrayContaining(["memory_records", "economy_docs"]));
       expect(tables).not.toContain("schema_version");
-      // Chat lines are events (core migration 3).
-      expect(tables).not.toContain("message_log");
+      // Chat lines are events (core migration 3); so are decisions, turn outcomes and audit
+      // entries (core migration 4).
+      for (const gone of ["message_log", "decision_log", "turn_outcomes", "audit_log"]) {
+        expect(tables).not.toContain(gone);
+      }
       // Re-running is a no-op.
       expect(migrate(t.db, [legacySchema])).toEqual([]);
       expect(appliedMigrations(t.db)).toEqual(rows);
@@ -126,6 +130,7 @@ describe("bookkeeping", () => {
         "core:1",
         "core:2",
         "core:3",
+        "core:4",
         "shop:1",
       ]);
       const later = migrate(first.db, [SHOP]);
@@ -153,7 +158,12 @@ describe("bookkeeping", () => {
       const error = thrown(() => migrate(t.db, [bad]));
       expect(error.code).toBe("failed");
       expect(error.message).toMatch(/shop migration 1 \(step1\) failed/);
-      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core", "core"]);
+      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual([
+        "core",
+        "core",
+        "core",
+        "core",
+      ]);
       expect(t.db.get("SELECT name FROM sqlite_schema WHERE name = 'shop_items'")).toBeUndefined();
     } finally {
       t.close();
@@ -185,6 +195,7 @@ describe("refusals before any write", () => {
         "core:1",
         "core:2",
         "core:3",
+        "core:4",
         "shop:1",
       ]);
       db.close();
@@ -388,7 +399,12 @@ describe("naming lint", () => {
     try {
       const error = thrown(() => migrate(t.db, [other, bad]));
       expect(error.code).toBe("lint");
-      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual(["core", "core", "core"]);
+      expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual([
+        "core",
+        "core",
+        "core",
+        "core",
+      ]);
     } finally {
       t.close();
     }

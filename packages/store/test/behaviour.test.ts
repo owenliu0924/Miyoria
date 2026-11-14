@@ -98,8 +98,6 @@ function decision(
   };
 }
 
-const reasons = (records: DecisionRecord[]) => records.map((r) => r.trace.reasons[0]);
-
 function outcome(
   context: ContextKey,
   kind: "sent" | "silence" | "cancelled",
@@ -400,35 +398,6 @@ function behaviour(open: () => Promise<Store>): void {
     }
   });
 
-  it("decision_log_recent", async () => {
-    const log = store.decisions;
-    const profile = unique("profile");
-    const otherProfile = unique("profile");
-    const id = unique("chan");
-    const a = channel("guild", id, "channel");
-    const b = channel("guild", id, "voice");
-    const t0 = Date.now();
-    // Appended out of order.
-    for (const [reason, ctx, secs] of [
-      ["a2", a, 2],
-      ["a1", a, 1],
-      ["b3", b, 3],
-      ["a4", a, 4],
-    ] as const) {
-      await log.append(decision(profile, ctx, reason, at(t0 + secs * SECOND)));
-    }
-    await log.append(decision(otherProfile, a, "other", at(t0)));
-
-    expect(reasons(await log.recent(profile, null, 100))).toEqual(["a4", "b3", "a2", "a1"]);
-    expect(reasons(await log.recent(profile, null, 2))).toEqual(["a4", "b3"]);
-    expect(reasons(await log.recent(profile, a, 100))).toEqual(["a4", "a2", "a1"]);
-    expect(reasons(await log.recent(profile, b, 100))).toEqual(["b3"]);
-    expect(await log.recent(profile, null, 0)).toEqual([]);
-    expect(reasons(await log.recent(otherProfile, null, 100))).toEqual(["other"]);
-    const empty = channel("guild", unique("chan"), "channel");
-    expect(await log.recent(profile, empty, 10)).toEqual([]);
-  });
-
   it("decision_log_round_trip", async () => {
     const log = store.decisions;
     const profile = unique("profile");
@@ -444,63 +413,8 @@ function behaviour(open: () => Promise<Store>): void {
     await expect(log.append(d), "duplicate id must fail").rejects.toThrow(/already exists/);
   });
 
-  it("turn_outcomes_round_trip", async () => {
-    const log = store.decisions;
-    expect(log.appendOutcome).toBeTypeOf("function");
-    expect(log.recentOutcomes).toBeTypeOf("function");
-    const profile = unique("profile");
-    const other = unique("profile");
-    const a = channel("guild", unique("chan"), "channel");
-    const b = channel("guild", unique("chan"), "voice");
-    const t0 = Date.now();
-    const sent = outcome(a, "sent", at(t0 + SECOND));
-    const silent = outcome(a, "silence", at(t0 + 2 * SECOND));
-    const cancelled = outcome(b, "cancelled", at(t0 + 3 * SECOND));
-    for (const o of [silent, sent, cancelled]) await log.appendOutcome?.(profile, o);
-    await log.appendOutcome?.(other, outcome(a, "sent", at(t0)));
-
-    // Newest first, per context or for the whole profile, and the record comes back as written.
-    expect(await log.recentOutcomes?.(profile, null, 10)).toEqual([cancelled, silent, sent]);
-    expect(await log.recentOutcomes?.(profile, a, 10)).toEqual([silent, sent]);
-    expect(await log.recentOutcomes?.(profile, b, 1)).toEqual([cancelled]);
-    expect(await log.recentOutcomes?.(profile, null, 0)).toEqual([]);
-
-    // One row per turn: writing a turn again replaces it ("decided to reply" → "nothing sent").
-    const revised: TurnOutcomeRecord = {
-      ...sent,
-      outcome: { type: "error", error: "provider timeout" },
-    };
-    await log.appendOutcome?.(profile, revised);
-    expect(await log.recentOutcomes?.(profile, a, 10)).toEqual([silent, revised]);
-  });
-
-  it("decisions and outcomes since a time: no row cap, newest first, this profile only", async () => {
-    const log = store.decisions;
-    expect(log.decisionsSince).toBeTypeOf("function");
-    expect(log.outcomesSince).toBeTypeOf("function");
-    const profile = unique("profile");
-    const other = unique("profile");
-    const ctx = channel("guild", unique("chan"), "channel");
-    const t0 = Date.now();
-    const old = decision(profile, ctx, "old", at(t0));
-    const edge = decision(profile, ctx, "edge", at(t0 + SECOND));
-    const late = decision(profile, ctx, "late", at(t0 + 2 * SECOND));
-    for (const d of [late, old, edge]) await log.append(d);
-    await log.append(decision(other, ctx, "else", at(t0 + 2 * SECOND)));
-    expect(reasons((await log.decisionsSince?.(profile, at(t0 + SECOND))) ?? [])).toEqual([
-      "late",
-      "edge",
-    ]);
-    expect(await log.decisionsSince?.(profile, at(t0 + 3 * SECOND))).toEqual([]);
-
-    const first = outcome(ctx, "sent", at(t0));
-    const second = outcome(ctx, "silence", at(t0 + SECOND));
-    const third = outcome(ctx, "sent", at(t0 + 2 * SECOND));
-    for (const o of [third, first, second]) await log.appendOutcome?.(profile, o);
-    await log.appendOutcome?.(other, outcome(ctx, "sent", at(t0 + 2 * SECOND)));
-    expect(await log.outcomesSince?.(profile, at(t0 + SECOND))).toEqual([third, second]);
-    expect(await log.outcomesSince?.(profile, at(t0 + 3 * SECOND))).toEqual([]);
-  });
+  // Reading decisions and turn outcomes back per place and since a time is pinned in
+  // decision-log.test.ts on fresh databases: they are the whole database's (one character).
 
   it("economy documents: create once, compare-and-set update, list by kind, owner and status", async () => {
     const docs = store.economyDocs;
@@ -2155,10 +2069,9 @@ function behaviour(open: () => Promise<Store>): void {
         },
         { wallet: [] },
       );
-      // No chat line: the conversation log is the whole database's (one character), and the
-      // file runs share one database. data.test.ts and chat.test.ts cover it on fresh ones.
-      await store.decisions.append(decision(p, ctx, "replied", at(t0)));
-      await store.decisions.appendOutcome?.(p, outcome(ctx, "sent", at(t0)));
+      // No chat line, decision or turn outcome: the event log is the whole database's (one
+      // character), and the file runs share one database. data.test.ts, chat.test.ts and
+      // decision-log.test.ts cover them on fresh ones.
       await store.personaOverrides.set(p, "style", "新的口吻", "test");
       for (const [key, value] of [
         ["memory_maintenance_last", "2026-01-01T00:00:00Z"],
@@ -2188,7 +2101,13 @@ function behaviour(open: () => Promise<Store>): void {
     expect(count("inner")).toBe(2);
     expect(count("mood")).toBe(1);
     expect(count("messages")).toBeGreaterThanOrEqual(2); // two watermarks, any chat lines
-    expect(count("decisions")).toBe(2); // decision log + turn outcome
+    await store.decisions.append(decision(profile, ctx, "replied", at(t0)));
+    await store.decisions.appendOutcome?.(profile, outcome(ctx, "sent", at(t0)));
+    // The whole database's: other cases may have written some on the file.
+    expect(
+      (await store.profileData.inventory(profile)).categories.find((c) => c.id === "decisions")
+        ?.count,
+    ).toBeGreaterThanOrEqual(2);
     expect(count("channels")).toBe(2);
     expect(count("persona")).toBe(1);
     expect(count("proposed_tools")).toBe(1);
@@ -2258,8 +2177,8 @@ function behaviour(open: () => Promise<Store>): void {
       mind_digests: 0,
       mind_goals: 0,
       mood: 1,
-      decision_log: 1,
-      turn_outcomes: 1,
+      decision_log: expect.any(Number),
+      turn_outcomes: expect.any(Number),
       channel_modes: 1,
       channel_activeness: 1,
       persona_overrides: 1,
@@ -2322,24 +2241,4 @@ describe("sqlite (file)", () => {
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
   // One file for every case (each case uses fresh ids), reopened per case.
   behaviour(() => openStore(`sqlite:${join(dir, "nested", "behaviour.db")}`));
-});
-
-/** The in-memory backend keeps only the newest decisions of each profile. */
-it("memory_decision_log_cap", async () => {
-  const CAP = 10_000;
-  const store = await openStore("memory://");
-  try {
-    const profile = unique("profile");
-    const ctx = channel("guild", "chan", "channel");
-    const t0 = Date.now();
-    for (let i = 0; i <= CAP; i++) {
-      await store.decisions.append(decision(profile, ctx, String(i), at(t0 + i * SECOND)));
-    }
-    const all = await store.decisions.recent(profile, null, Number.POSITIVE_INFINITY);
-    expect(all).toHaveLength(CAP);
-    expect(all[0]?.trace.reasons[0]).toBe(String(CAP));
-    expect(all[CAP - 1]?.trace.reasons[0]).toBe("1");
-  } finally {
-    await store.close();
-  }
 });

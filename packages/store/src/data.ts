@@ -181,6 +181,12 @@ function table(
 
 /** The chat lines among `events` (`events/chat.ts`): the conversation log. */
 const CHAT_LINES = "type IN ('platform.message.created', 'voice.utterance', 'voice.playback')";
+/** Her decisions among `events` (`events/turns.ts`). */
+const DECISIONS = "type = 'agent.decision'";
+/** How her turns ended, among `events` (`events/turns.ts`). */
+const OUTCOMES = "type = 'agent.turn.outcome'";
+/** The audit entries among `events` (`events/audit.ts`). */
+const AUDIT = "type GLOB 'audit.*'";
 
 function settings(
   id: string,
@@ -430,17 +436,28 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   category(
     "decisions",
     [
-      table("decision_log", "decision_log", "profile", "ts", "ts, id", {
-        id: "text",
-        ts: "ts",
-        trace: "json",
-      }),
-      table("turn_outcomes", "turn_outcomes", "profile", "ts", "ts, id", {
-        id: "text",
-        ts: "ts",
-        outcome: "text",
-        record: "json",
-      }),
+      // Her decisions and how each turn ended, on the event log, exported in the old tables'
+      // columns (`v_decisions`, and `v_turns`: the latest outcome of each turn) with their place.
+      // One database is one character, so every row belongs to this profile. Counted and deleted
+      // as events: a turn whose outcome was written twice counts twice.
+      table(
+        "decision_log",
+        "events",
+        "node",
+        "at",
+        "ts, id",
+        { id: "text", ts: "ts", trace: "json", turn: "text", session: "text" },
+        { where: DECISIONS, exportFrom: "v_decisions" },
+      ),
+      table(
+        "turn_outcomes",
+        "events",
+        "node",
+        "at",
+        "ts, id",
+        { id: "text", ts: "ts", outcome: "text", record: "json", session: "text" },
+        { where: OUTCOMES, exportFrom: "v_turns" },
+      ),
     ],
     { confirm: "simple" },
   ),
@@ -466,7 +483,8 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   ),
   // The event log (`events`): what she perceived, decided and said, and the counts of what
   // compaction removed. One database is one character, so every row belongs to this profile. The
-  // chat lines are `messages`, not here.
+  // chat lines are `messages`, her decisions and turn outcomes `decisions` and the audit entries
+  // `audit`, not here.
   category(
     "event_log",
     [
@@ -496,7 +514,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
           data: "json",
           redacted_at: "ts",
         },
-        { where: `NOT ${CHAT_LINES}` },
+        { where: `NOT (${CHAT_LINES} OR ${DECISIONS} OR ${OUTCOMES} OR ${AUDIT})` },
       ),
       table("event_rollups", "event_rollups", "node", "last_at", "day, type, source", {
         day: "ts",
@@ -709,15 +727,24 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   category(
     "audit",
     [
-      table("audit_log", "audit_log", "node", "at", "at, id", {
-        id: "text",
-        at: "ts",
-        actor: "text",
-        action: "text",
-        target: "text",
-        detail: "json",
-        ok: "bool",
-      }),
+      // The `audit.*` events, exported in the old `audit_log` columns (`v_audit`).
+      table(
+        "audit_log",
+        "events",
+        "node",
+        "at",
+        "at, id",
+        {
+          id: "text",
+          at: "ts",
+          actor: "text",
+          action: "text",
+          target: "text",
+          detail: "json",
+          ok: "bool",
+        },
+        { where: AUDIT, exportFrom: "v_audit" },
+      ),
     ],
     { shared: true, kept: true },
   ),

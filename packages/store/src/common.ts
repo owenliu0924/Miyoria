@@ -21,9 +21,6 @@ export class StoreError extends Error {
   override readonly name = "StoreError";
 }
 
-/** Decisions kept per profile by the in-memory backend; older ones are dropped. */
-export const MAX_DECISIONS = 10_000;
-
 /** At most this many distinct query tokens are used for a text search. */
 export const MAX_QUERY_TOKENS = 64;
 
