@@ -6,7 +6,7 @@ import { SearchInput } from "@/components/controls";
 import { DataTable } from "@/components/data-table";
 import { Toolbar } from "@/components/page";
 import { QueryView } from "@/components/query-state";
-import { Bipolar, Meter } from "@/components/status";
+import { BondBar, Meter } from "@/components/status";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
@@ -53,7 +53,7 @@ export function PeopleTab({ onOpen }: { onOpen: (id: string) => void }) {
         cell: ({ row: { original: p } }) =>
           p.relationship ? (
             <div className="flex items-center gap-2">
-              <Bipolar value={p.relationship.affinity} label={`羈絆 ${Math.round(p.relationship.affinity)}`} />
+              <BondBar value={p.relationship.affinity} label={`羈絆 ${Math.round(p.relationship.affinity)}`} />
               <span className="w-8 text-right font-mono text-xs">{Math.round(p.relationship.affinity)}</span>
             </div>
           ) : (

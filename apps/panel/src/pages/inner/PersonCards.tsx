@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { PersonCard } from "@/api/types";
 import { useAffectPeople } from "@/app/queries";
-import { Bipolar, Meter, StatusBadge, type Tone } from "@/components/status";
+import { BondBar, Meter, StatusBadge, type Tone } from "@/components/status";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -119,7 +119,7 @@ export function PersonCards() {
                   </TableCell>
                   <TableCell className="hidden align-top md:table-cell">
                     <div className="flex items-center gap-2">
-                      <Bipolar value={c.affinity} label={`${c.handle} 羈絆 ${c.affinity}`} />
+                      <BondBar value={c.affinity} label={`${c.handle} 羈絆 ${c.affinity}`} />
                       <span className="w-8 text-right font-mono text-xs tabular-nums">{Math.round(c.affinity)}</span>
                     </div>
                   </TableCell>

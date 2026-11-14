@@ -8,7 +8,7 @@ import { TimeChart } from "@/components/charts/charts";
 import { ConfirmDialog } from "@/components/confirm";
 import { Facts } from "@/components/json-view";
 import { EmptyLine, ErrorLine, SkeletonRows } from "@/components/query-state";
-import { Bipolar, Meter } from "@/components/status";
+import { BondBar, Meter } from "@/components/status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import { accountString, fmtDateTime, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { QuestsSection } from "./QuestsSection";
 
-/** Affinity, trust and familiarity over time on one -100..100 axis. */
+/** Affinity, trust and familiarity over time on one axis (affinity runs past 100). */
 export function AffinityChart({ history }: { history: RelationshipDelta[] }) {
   if (history.length < 2) return null;
   const first = history[0];
@@ -284,7 +284,7 @@ function PersonBody({ detail }: { detail: PersonDetail }) {
               <dl className="grid grid-cols-[3rem_minmax(0,1fr)_2.5rem] items-center gap-x-3 gap-y-3 text-sm">
                 <dt className="text-muted-foreground">羈絆</dt>
                 <dd>
-                  <Bipolar value={r.affinity} label="羈絆" />
+                  <BondBar value={r.affinity} label="羈絆" />
                 </dd>
                 <dd className="text-right font-mono text-xs tabular-nums">{Math.round(r.affinity)}</dd>
                 <dt className="text-muted-foreground">信任</dt>
