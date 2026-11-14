@@ -1,6 +1,10 @@
 // Module `facts`: runs the fact layer (docs/design/v3-architecture.md §21). It listens to the whole
 // bus and provides the log and the delivery ledger the main line writes her lines to; every write
 // stays in memory until the flush task picks it up, so a broken log costs the log, not a turn.
+//
+// It is also the one writer of the raw record from the bus (docs/design/v5-data.md §2.3): every
+// chat line goes to the store's chat events as it arrives (`record.ts`), and her decisions and
+// each turn's outcome are lines of the log stored under their bus topics (`envelope.ts`).
 
 import {
   defineManifest,
@@ -33,6 +37,7 @@ import { type FactsConfig, FactsConfigSchema } from "./config.js";
 import { WorkingContextView } from "./context.js";
 import { DeliveryLedgerView } from "./delivery.js";
 import { EventLogService } from "./log.js";
+import { CHAT_RECORD_TOPICS, type ChatRecordStore, recordChat } from "./record.js";
 import { BOOT_KEY, GAME_SESSION_SOURCE, LIFECYCLE_SOURCE, recoverGame } from "./recovery.js";
 import { RevisionBook } from "./revisions.js";
 
@@ -64,16 +69,24 @@ export class FactsModule implements Module {
     configSchema: FactsConfigSchema,
   });
   readonly #events: EventLogStore | null;
+  readonly #chat: ChatRecordStore | null;
+  readonly #profile: ProfileId;
   readonly #names: readonly string[];
   #running: Running | null = null;
 
-  /** `_profile`: unused, one database belongs to one character (v5-data decision D6). */
+  /**
+   * `store`: its event log, and where chat lines go (`chat`, or `messages` for a store without
+   * chat events). `profile` only names a message log's entries: one database belongs to one
+   * character (v5-data decision D6).
+   */
   constructor(
-    store: Pick<Store, "events"> | null,
-    _profile: ProfileId,
+    store: (Pick<Store, "events"> & ChatRecordStore) | null,
+    profile: ProfileId,
     options: FactsModuleOptions = {},
   ) {
     this.#events = store?.events ?? null;
+    this.#chat = store?.chat || store?.messages ? store : null;
+    this.#profile = profile;
     this.#names = options.names ?? [];
   }
 
@@ -88,6 +101,11 @@ export class FactsModule implements Module {
     });
     // Subscribed before anything is read: nothing published meanwhile is lost.
     const sub = ctx.subscribe("*");
+    const chat = this.#chat;
+    if (chat) {
+      const lines = ctx.subscribe([...CHAT_RECORD_TOPICS]);
+      ctx.spawn("record", () => recordChat(ctx, chat, this.#profile, lines));
+    }
     const restoring = await this.#lastRun(log);
     const revisions = new RevisionBook();
     const context = new WorkingContextView({

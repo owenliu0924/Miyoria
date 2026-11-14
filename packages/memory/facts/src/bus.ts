@@ -74,6 +74,7 @@ import {
   type VoiceUtterance,
 } from "@miyoria/types";
 import type { FactsConfig } from "./config.js";
+import { TURN_SOURCE } from "./envelope.js";
 import {
   GAME_SESSION_SOURCE,
   LIFECYCLE_SOURCE,
@@ -132,6 +133,8 @@ interface TurnFacts {
   action: string | null;
   /** The message ids of the last focus logged. */
   focusIds: string | null;
+  /** Who the last focus logged answers (a handle). */
+  person: Handle | null;
 }
 
 interface Draft {
@@ -213,6 +216,7 @@ export class BusFacts {
         head: null,
         action: null,
         focusIds: null,
+        person: null,
       };
       this.#turns.set(turn, facts);
     }
@@ -548,6 +552,7 @@ export class BusFacts {
     // Most focus events are phase changes of the same turn.
     if (facts.focusIds === ids) return;
     facts.focusIds = ids;
+    facts.person = focus.addressed_by[0] ?? null;
     const first = focus.focus[0];
     const answers = first ? this.#messages.get(first.id) : undefined;
     const event = this.#log.append({
@@ -567,22 +572,31 @@ export class BusFacts {
     facts.head = event.id;
   }
 
+  /**
+   * Her attention decision: the `agent.decision` record itself (`envelope.ts`), under the bus
+   * event's id and time, answering the turn's focus.
+   */
   #agentDecision(env: Envelope, trace: EventData<"agent_decision">): void {
     const facts = this.#turn(trace.turn);
     const event = this.#log.append({
+      id: env.id,
+      at: env.ts,
       kind: "decision",
-      source: "agent",
+      source: TURN_SOURCE,
       cause: facts.head ?? env.causation,
       context: trace.context,
+      person: facts.person,
       body: trace as unknown as JsonValue,
     });
     facts.head = event.id;
   }
 
+  /** How a turn ended: the `agent.turn.outcome` record itself, at the time it names. */
   #outcome(record: TurnOutcomeRecord): void {
     this.#log.append({
+      at: record.at,
       kind: "result",
-      source: "agent",
+      source: TURN_SOURCE,
       cause: this.#head(record.turn),
       context: record.context,
       person: record.addressed_by[0] ?? null,

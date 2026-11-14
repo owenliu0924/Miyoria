@@ -115,6 +115,10 @@ const newest = (kind: LogEvent["kind"]): LogEvent =>
 
 const owen = () => store.persons.personOf(OWEN);
 
+function never(): never {
+  throw new Error("not stored");
+}
+
 describe("each line written today, as an envelope", () => {
   it("a chat line: said, kept 365 days, in its room, by its author", async () => {
     const env = send("discord", message("今天好冷"));
@@ -258,14 +262,59 @@ describe("each line written today, as an envelope", () => {
       at: toTimestamp(now),
     };
     custom("agent", TURN_OUTCOME_TOPIC, record, "t1");
-    expect(await stored(newest("result").id)).toMatchObject({
-      type: "facts.result",
+    // How the turn ended is the bus event's record: its topic, its payload, at the time it names.
+    const result = newest("result");
+    expect(result.body).toEqual({ turn_outcome: record });
+    expect(await stored(result.id)).toMatchObject({
+      type: "agent.turn.outcome",
       source: "agent",
+      tier: "short",
       parent: decision.id,
       // From `body.turn_outcome.turn`.
       turn: "t1",
       session: "discord:g:c",
+      person_id: owen()?.id,
+      at: record.at,
+      data: record,
     });
+    // It reads back as the line it was.
+    expect(fromLogged(store.events.get(result.id) ?? never())).toEqual(result);
+  });
+
+  it("her attention decision is the bus event's record, answering the turn's focus", async () => {
+    const heard = send("discord", message("米優在嗎"));
+    custom("agent", TURN_FOCUS_TOPIC, focus("t2", ["m1"], TEXT), "t2");
+    const focused = newest("decision");
+    now += 1_000;
+    const trace = { turn: "t2", context: TEXT, respond: true, score: 0.9, reasons: ["mention"] };
+    const env = send("agent", { type: "agent_decision", data: trace }, "t2");
+    const decision = newest("decision");
+    // Under the bus event's id and time.
+    expect(decision.id).toBe(env.id);
+    expect(await stored(env.id)).toMatchObject({
+      type: "agent.decision",
+      source: "agent",
+      tier: "short",
+      scope: "room",
+      parent: focused.id,
+      turn: "t2",
+      session: "discord:g:c",
+      // The person the turn's focus answers.
+      person_id: owen()?.id,
+      at: env.ts,
+      data: trace,
+    });
+    expect(heard.id).not.toBe(decision.id);
+    expect(fromLogged(store.events.get(env.id) ?? never())).toEqual(decision);
+    // Read as decision lines, with the focus line beside them.
+    expect((await log.query({ kinds: ["decision"], turn: "t2" })).map((e) => e.id)).toEqual([
+      decision.id,
+      focused.id,
+    ]);
+    // `DecisionLog` reads the same event.
+    expect(await store.decisions.recent("p", TEXT, 5)).toEqual([
+      { id: env.id, profile: "p", ts: env.ts, trace },
+    ]);
   });
 
   it("a thought and a proposal", async () => {
@@ -385,6 +434,14 @@ describe("reading back", () => {
       "facts.observation.said",
       "facts.observation.ambient",
     ]);
+    expect(typesOf(["decision", "result"])).toEqual([
+      "facts.decision",
+      "agent.decision",
+      "facts.result",
+      "agent.turn.outcome",
+    ]);
+    expect(lineKind("agent.decision")).toBe("decision");
+    expect(lineKind("agent.turn.outcome")).toBe("result");
     expect(typesOf()).toEqual(FACTS_TYPES);
     expect(lineKind("privacy.redacted")).toBeNull();
     expect(lineKind("facts.unknown")).toBeNull();

@@ -14,7 +14,13 @@
 //   `account_id`; otherwise the line's handle gives `person_id`;
 // - `scope` is left to the store: no `facts.*` type has a default, so the session decides (a
 //   room, a DM, or `self` for a line without a place).
+//
+// Two lines are the record of a bus event as it is (v5-data §8 step 6), so they are stored under
+// its topic with its payload, and read back as lines again: her attention decision
+// (`agent.decision`, the trace) and how a turn ended (`agent.turn.outcome`, the record a result
+// line keeps as `turn_outcome`). `DecisionLog` reads the same events.
 
+import { AgentDecision, AgentTurnOutcome } from "@miyoria/contracts/events";
 import {
   type EventQuery,
   type EventWrite,
@@ -29,6 +35,7 @@ import {
 import {
   isJsonObject,
   isLogEventKind,
+  type JsonObject,
   type LogEvent,
   type LogEventFilter,
   type LogEventKind,
@@ -49,8 +56,22 @@ const OBSERVATION_TYPES: readonly string[] = [
   FactsObservationAmbient.type,
 ];
 
+/** The source of her decision and of a turn's outcome, as the bus facts write them. */
+export const TURN_SOURCE = "agent";
+
 /** Every type the facts writer records. */
-export const FACTS_TYPES: readonly string[] = FACTS_EVENTS.map((d) => d.type);
+export const FACTS_TYPES: readonly string[] = [
+  ...FACTS_EVENTS.map((d) => d.type),
+  AgentDecision.type,
+  AgentTurnOutcome.type,
+];
+
+/** The record a turn's result line keeps (`body.turn_outcome`), if it is one. */
+function turnOutcome(event: LogEvent): JsonObject | null {
+  if (event.kind !== "result" || event.source !== TURN_SOURCE) return null;
+  const body = event.body;
+  return isJsonObject(body) && isJsonObject(body.turn_outcome) ? body.turn_outcome : null;
+}
 
 /** The key an event is filed under: its observation's, or the one in its body. */
 export function attentionOf(event: LogEvent): string | null {
@@ -71,6 +92,8 @@ export function turnOf(event: LogEvent): string | null {
 
 /** The event type of a line. */
 export function lineType(event: LogEvent): string {
+  if (event.kind === "decision" && event.source === TURN_SOURCE) return AgentDecision.type;
+  if (turnOutcome(event) !== null) return AgentTurnOutcome.type;
   if (event.kind !== "observation") return `${FACTS_TYPE_PREFIX}${event.kind}`;
   const body = event.body;
   if (!isJsonObject(body) || !isJsonObject(body.observation)) return FactsObservation.type;
@@ -87,6 +110,8 @@ export function lineType(event: LogEvent): string {
 /** The line kind of an event type; `null` for a type the facts writer does not record. */
 export function lineKind(type: string): LogEventKind | null {
   if (OBSERVATION_TYPES.includes(type)) return "observation";
+  if (type === AgentDecision.type) return "decision";
+  if (type === AgentTurnOutcome.type) return "result";
   if (!type.startsWith(FACTS_TYPE_PREFIX)) return null;
   const kind = type.slice(FACTS_TYPE_PREFIX.length);
   return isLogEventKind(kind) && kind !== "observation" ? kind : null;
@@ -95,9 +120,12 @@ export function lineKind(type: string): LogEventKind | null {
 /** The event types of `kinds`; every facts type without them. */
 export function typesOf(kinds?: readonly LogEventKind[]): string[] {
   if (kinds === undefined) return [...FACTS_TYPES];
-  return kinds.flatMap((k) =>
-    k === "observation" ? OBSERVATION_TYPES : [`${FACTS_TYPE_PREFIX}${k}`],
-  );
+  return kinds.flatMap((k) => {
+    if (k === "observation") return OBSERVATION_TYPES;
+    if (k === "decision") return [`${FACTS_TYPE_PREFIX}${k}`, AgentDecision.type];
+    if (k === "result") return [`${FACTS_TYPE_PREFIX}${k}`, AgentTurnOutcome.type];
+    return [`${FACTS_TYPE_PREFIX}${k}`];
+  });
 }
 
 /** Who wrote a chat or voice line, from the bus event its observation keeps. */
@@ -128,7 +156,8 @@ export function toWrite(event: LogEvent): EventWrite {
       parent: event.cause,
       turn: turnOf(event),
       key: attentionOf(event),
-      data: event.body,
+      // A turn's outcome is stored as the bus payload; the line wraps it again when read.
+      data: turnOutcome(event) ?? event.body,
     },
     source: event.source,
     context: event.context,
@@ -142,6 +171,7 @@ export function fromLogged(logged: LoggedEvent): LogEvent | null {
   const e = logged.envelope;
   const kind = lineKind(e.type);
   if (kind === null) return null;
+  const outcome = e.type === AgentTurnOutcome.type && e.redacted_at === null;
   return {
     id: e.id,
     at: e.at,
@@ -150,7 +180,7 @@ export function fromLogged(logged: LoggedEvent): LogEvent | null {
     cause: e.parent,
     context: logged.context,
     person: logged.handle,
-    body: e.data,
+    body: outcome ? { turn_outcome: e.data } : e.data,
   };
 }
 

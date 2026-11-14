@@ -39,7 +39,6 @@ export {
   runStageNode,
   setupStageObs,
 } from "./modules.js";
-export { RecorderModule } from "./recorder.js";
 export {
   type CoreLogLevel,
   DEFAULT_DATABASE_URL,

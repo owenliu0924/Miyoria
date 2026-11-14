@@ -1788,7 +1788,7 @@ export class MemoryEngine implements FollowupSource {
   }
 
   /**
-   * A message was excluded ("do not remember this"). The recorder redacts its events (its line
+   * A message was excluded ("do not remember this"). The facts module redacts its events (its line
    * and her observations of it), so no reader of the log sees it again; what is already derived
    * from them is taken out here. A memory resting on this message alone is deleted; one with
    * other evidence stays and loses only this reference. Records that name no evidence cannot be

@@ -568,7 +568,7 @@ export class Agent {
   /**
    * "不要記住這個": what lives in the agent. The message (and every quote of it) reads as
    * `EXCLUDED_LINE` in the conversation her prompts show from now on, a turn cannot be opened on
-   * it, and `agent.message.excluded` tells the rest of her (the recorder redacts its events).
+   * it, and `agent.message.excluded` tells the rest of her (the facts module redacts its events).
    */
   #dontRemember(request: MessageActionRequest): MessageActionOutcome {
     const found = this.#find(request.message);

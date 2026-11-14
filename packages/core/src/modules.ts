@@ -5,8 +5,9 @@
 // which is there before anything can say a word): llm, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, social, mood, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
-// stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, recorder, Discord bot, Admin API, terminal chat, then the
-// extension host and one `ext.<id>` per extension.
+// stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, Discord bot, Admin API, terminal chat, then the
+// extension host and one `ext.<id>` per extension. `facts` also writes the raw record (chat lines,
+// her decisions, how each turn ended) from the bus.
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";

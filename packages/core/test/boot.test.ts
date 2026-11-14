@@ -14,19 +14,13 @@ import {
 } from "@miyoria/runtime/kernel";
 import { openStore, type Store, StoreKey } from "@miyoria/store";
 import {
-  type ContextKey,
-  customEvent,
   DirectivesKey,
   type Envelope,
   HandleDirectoryKey,
-  MESSAGE_EXCLUDED_TOPIC,
   PlatformSinksKey,
   Principals,
   SYSTEM_SHUTDOWN_TOPIC,
-  TURN_OUTCOME_TOPIC,
-  type TurnOutcomeRecord,
   toTimestamp,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -45,7 +39,6 @@ import {
   REQUIRED_MODULES,
 } from "../src/module-ids.js";
 import { defaultCatalog } from "../src/modules.js";
-import { RecorderModule } from "../src/recorder.js";
 import {
   DEFAULT_DATABASE_URL,
   databaseUrl,
@@ -68,7 +61,7 @@ class Fake implements Module {
 }
 
 const CORE_IDS = MODULE_IDS.filter(
-  (id) => !["extensions", "platform.discord.bot", "recorder", "replay", "api"].includes(id),
+  (id) => !["extensions", "platform.discord.bot", "replay", "api"].includes(id),
 );
 
 function catalog(seen: { deps?: ModuleDeps } = {}): ModuleCatalog {
@@ -208,7 +201,6 @@ describe("buildCore", () => {
     expect(register.mock.calls.find(([m]) => m.manifest.id === "ext.hello")?.[1]).toEqual({ a: 1 });
     expect(ids).toEqual([
       ...CORE_IDS,
-      "recorder",
       "replay",
       "platform.discord.bot",
       "api",
@@ -402,7 +394,7 @@ describe("settings", () => {
   });
 });
 
-// ---- recorder and terminal chat ------------------------------------------------------------
+// ---- terminal chat ---------------------------------------------------------------------------
 
 async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
   const start = Date.now();
@@ -412,8 +404,6 @@ async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs = 2000
   }
 }
 
-const discord: ContextKey = { platform: "discord", scope: "g", channel: "c", kind: "channel" };
-
 async function running(modules: Module[], store?: Store) {
   const supervisor = new Supervisor({ bus: new EventBus() });
   const { PlatformSinks } = await import("@miyoria/types");
@@ -422,164 +412,6 @@ async function running(modules: Module[], store?: Store) {
   await supervisor.startAll();
   return { supervisor, store };
 }
-
-describe("recorder", () => {
-  it("records_messages_people_spoken_lines_and_decisions", async () => {
-    const store = await openStore("memory://");
-    const { supervisor } = await running([new RecorderModule(store, "p")], store);
-    const bus = supervisor.bus;
-    const ts = toTimestamp(Date.parse("2026-01-01T00:00:00Z"));
-    const her = { platform: "discord", id: "her" };
-    const owen = { platform: "discord", id: "owen" };
-    const msg = (account: typeof her, text: string) => ({
-      id: { context: discord, id: text },
-      author: { account, display_name: account.id, is_bot: false },
-      text,
-      mentions_self: false,
-      reply_to_self: false,
-      attachments: [],
-      ts,
-    });
-    bus.publish("platform.discord.bot", {
-      type: "platform_ready",
-      data: { platform: "discord", self_account: her },
-    });
-    bus.publish(
-      "platform.discord.bot",
-      { type: "platform_message_created", data: msg(owen, "hi") },
-      { correlation: "T1" },
-    );
-    bus.publish("platform.discord.bot", {
-      type: "platform_message_created",
-      data: msg(her, "hello"),
-    });
-    bus.publish("voice", {
-      type: "voice_playback",
-      data: { context: discord, turn: "T2", state: "started", text: "說出口的話" },
-    });
-    bus.publish("agent", {
-      type: "agent_decision",
-      data: { turn: "T1", context: discord, respond: true, score: 0.9, reasons: ["mention"] },
-    });
-    await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 3);
-    const log = await store.messages.recent("p", discord, 10);
-    expect(log.map((e) => [e.text, e.is_self, e.turn])).toEqual([
-      ["hi", false, "T1"],
-      ["hello", true, null],
-      ["說出口的話", true, "T2"],
-    ]);
-    await waitFor(async () => (await store.decisions.recent("p", null, 5)).length === 1);
-    expect((await store.people.personByAccount(owen)) !== null).toBe(true);
-    expect(await store.people.personByAccount(her)).toBeNull();
-    await supervisor.stopAll();
-  });
-
-  it("stores_each_line_once_and_redacts_one_she_was_asked_not_to_remember", async () => {
-    const store = await openStore("memory://");
-    const { supervisor } = await running([new RecorderModule(store, "p")], store);
-    const bus = supervisor.bus;
-    const owen = { platform: "discord", id: "owen" };
-    const msg = (id: string, text: string) => ({
-      id: { context: discord, id },
-      author: { account: owen, display_name: "Owen", is_bot: false },
-      text,
-      mentions_self: false,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(Date.parse("2026-01-01T00:00:00Z")),
-    });
-    // Both connections deliver the first message.
-    bus.publish("platform.discord.bot", {
-      type: "platform_message_created",
-      data: msg("m1", "貓"),
-    });
-    bus.publish("platform.discord.self", {
-      type: "platform_message_created",
-      data: msg("m1", "貓"),
-    });
-    bus.publish("platform.discord.bot", {
-      type: "platform_message_created",
-      data: msg("m2", "麵"),
-    });
-    await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 2);
-    expect(await store.events?.query({ key: "msg:discord:m1" })).toHaveLength(1);
-    bus.publish(
-      "agent",
-      customEvent(MESSAGE_EXCLUDED_TOPIC, {
-        context: discord,
-        message: { context: discord, id: "m1" },
-        author: owen,
-        requested_by: owen,
-        at: "2026-01-01T00:01:00Z",
-      }),
-    );
-    await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 1);
-    expect((await store.messages.recent("p", discord, 10)).map((e) => e.text)).toEqual(["麵"]);
-    const [line] = (await store.events?.query({ key: "msg:discord:m1" })) ?? [];
-    expect(line?.envelope).toMatchObject({ data: { redacted: true }, key: "msg:discord:m1" });
-    await supervisor.stopAll();
-  });
-
-  it("records_how_each_turn_ended_so_a_reply_that_was_never_sent_can_be_found", async () => {
-    const store = await openStore("memory://");
-    const { supervisor } = await running([new RecorderModule(store, "p")], store);
-    const outcome = (turn: string, kind: TurnOutcomeRecord["outcome"]): TurnOutcomeRecord => ({
-      turn,
-      context: discord,
-      reason: "addressed",
-      outcome: kind,
-      addressed_by: ["Owen"],
-      focus: [],
-      restarts: 1,
-      reasoning: null,
-      latency_ms: null,
-      at: toTimestamp(Date.parse("2026-01-01T00:00:00Z")),
-    });
-    const cancelled = outcome("T1", { type: "cancelled", cause: "input", by: "Owen" });
-    supervisor.bus.publish("agent", v2Event(TURN_OUTCOME_TOPIC, cancelled));
-    supervisor.bus.publish(
-      "agent",
-      v2Event(TURN_OUTCOME_TOPIC, outcome("T2", { type: "sent", parts: 1 })),
-    );
-    await waitFor(
-      async () => ((await store.decisions.recentOutcomes?.("p", discord, 5)) ?? []).length === 2,
-    );
-    const got = (await store.decisions.recentOutcomes?.("p", discord, 5)) ?? [];
-    expect(got.map((o) => o.turn).sort()).toEqual(["T1", "T2"]);
-    expect(got.find((o) => o.turn === "T1")).toEqual(cancelled);
-    await supervisor.stopAll();
-  });
-
-  it("fixes_her_name_for_a_person_the_first_time_she_sees_them", async () => {
-    const store = await openStore("memory://");
-    const { supervisor } = await running([new RecorderModule(store, "p")], store);
-    const { StoredHandleDirectory } = await import("@miyoria/store");
-    const handles = new StoredHandleDirectory(store.settings);
-    supervisor.services.provide("kernel", HandleDirectoryKey, handles);
-    const ts = toTimestamp(Date.parse("2026-01-01T00:00:00Z"));
-    const say = (id: string, name: string, text: string) =>
-      supervisor.bus.publish("platform.discord.bot", {
-        type: "platform_message_created",
-        data: {
-          id: { context: discord, id: text },
-          author: { account: { platform: "discord", id }, display_name: name, is_bot: false },
-          text,
-          mentions_self: false,
-          reply_to_self: false,
-          attachments: [],
-          ts,
-        },
-      });
-    say("1", "Owen", "hi");
-    say("2", "Owen", "me too");
-    await waitFor(() => handles.list().length === 2);
-    expect(handles.list().map((e) => e.handle)).toEqual(["Owen", "Owen#2"]);
-    // The person is recorded on the row, so `ofPerson` answers.
-    const person = await store.people.personByAccount({ platform: "discord", id: "1" });
-    expect(handles.ofPerson(person?.id ?? "")).toBe("Owen");
-    await supervisor.stopAll();
-  });
-});
 
 describe("terminal chat", () => {
   it("publishes_typed_lines_and_prints_replies", async () => {

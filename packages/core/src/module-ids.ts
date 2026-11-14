@@ -42,7 +42,6 @@ export const MODULE_IDS: readonly string[] = [
   "party",
   "extensions",
   "platform.discord.bot",
-  "recorder",
   "replay",
   "api",
 ];

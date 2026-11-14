@@ -64,7 +64,6 @@ import {
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { moduleEnabled, NEEDS_TOKEN, REQUIRED_MODULES } from "./module-ids.js";
-import { RecorderModule } from "./recorder.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
@@ -98,7 +97,7 @@ export interface ExtensionDiscovery {
 /** How the core reaches the module packages. `modules.ts` has the real one. */
 export interface ModuleCatalog {
   openStore(url: string): Promise<Store>;
-  /** `llm` ... `stage.link` in legacy boot order (without `recorder`, Discord, API). */
+  /** `llm` ... `stage.link` in legacy boot order (without Discord, API). */
   coreModules(deps: ModuleDeps): Promise<Module[]>;
   discord(deps: ModuleDeps): Module;
   api(deps: ModuleDeps): Module;
@@ -299,7 +298,6 @@ export async function buildCoreWith(
 
   const modules: Module[] = [
     ...(await catalog.coreModules(deps)),
-    new RecorderModule(store, profileId),
     // Opt-in (`[modules.replay] record = true`): what she perceives, for `pnpm replay`.
     new ReplayRecorderModule({ baseDir }),
   ];
