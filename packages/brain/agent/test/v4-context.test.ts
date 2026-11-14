@@ -23,7 +23,6 @@ import {
   PersonProfilesKey,
   type PinnedMemory,
   PinnedMemoryKey,
-  PipelineKey,
   PromptContributors,
   PromptContributorsKey,
   type RetrievedMemory,
@@ -124,7 +123,6 @@ async function rig(
   return Harness.build("normal", { ...(noCheck() as object), ...(config as object) }, chat, null, {
     tools,
     provide: (services) => {
-      services.provide("app", PipelineKey, { pipeline: "v3" as const });
       provide(services as unknown as ServiceRegistry);
     },
     before: [[new FactsModule(null, "p"), null]],

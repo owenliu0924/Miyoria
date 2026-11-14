@@ -42,7 +42,7 @@
 // `[modules.agent.rhythm] question_secs` with nobody saying anything after it: a turn on that
 // message, which attention lets through as a look only if the cap allows (v4 §7.2).
 //
-// Under `pipeline = "v3"` someone calling her while she speaks on her own, or something urgent,
+// Someone calling her while she speaks on her own, or something urgent,
 // cuts in as far as the Floor's interrupt level says (§7.3): `wrap_up` finishes the sentence that
 // is playing and drops the rest, `cut_short` and `interrupt` stop that sentence too.
 

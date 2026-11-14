@@ -17,10 +17,8 @@ import {
   DirectivesKey,
   type Envelope,
   HandleDirectoryKey,
-  PipelineKey,
   PlatformSinksKey,
   Principals,
-  pipelineOf,
   SYSTEM_SHUTDOWN_TOPIC,
   TURN_OUTCOME_TOPIC,
   type TurnOutcomeRecord,
@@ -45,7 +43,6 @@ import {
   databaseUrl,
   loadProfile,
   logLevel,
-  pipeline,
   resolveDatabaseUrl,
 } from "../src/settings.js";
 
@@ -95,32 +92,6 @@ let core: Core | undefined;
 afterEach(async () => {
   await core?.stop();
   core = undefined;
-});
-
-describe("pipeline", () => {
-  const toml = (value: string) => Config.fromToml(`[core]\n${value}`);
-
-  it("defaults to v3: a config that says nothing runs the main line", () => {
-    expect(pipeline(toml(""))).toBe("v3");
-  });
-
-  it("one setting rolls back", () => {
-    expect(pipeline(toml('pipeline = "v2"'))).toBe("v2");
-    expect(pipeline(toml('pipeline = "v3"'))).toBe("v3");
-  });
-
-  it("a typo stops the boot: she must not come up as something nobody chose", () => {
-    expect(() => pipeline(toml('pipeline = "v4"'))).toThrow(/core\.pipeline/);
-  });
-
-  it("every module sees it from the start", async () => {
-    core = await buildCoreWith(catalog(), config(), {
-      cliChatName: "Owen",
-      cli: { input: new PassThrough(), output: new PassThrough() },
-    });
-    expect(core.supervisor.services.get(PipelineKey)).toEqual({ pipeline: "v3" });
-    expect(pipelineOf(core.supervisor.services)).toBe("v3");
-  });
 });
 
 describe("going down", () => {

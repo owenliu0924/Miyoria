@@ -24,7 +24,6 @@ import {
   type Observation,
   type ObservationBody,
   type ProfileId,
-  pipelineOf,
   type RestoredGame,
   toTimestamp,
   WorkingContextKey,
@@ -142,7 +141,6 @@ export class FactsModule implements Module {
       config,
       names: this.#names,
       services: ctx.services,
-      ownLines: pipelineOf(ctx.services) === "v3",
     });
     ctx.spawn("observe", async () => {
       for await (const env of sub) this.#take(ctx, bus, env);

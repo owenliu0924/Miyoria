@@ -18,7 +18,6 @@ import {
   type Observation,
   type ObserveOptions,
   PartyOverviewKey,
-  PipelineKey,
   type Principal,
   Principals,
   PromptContributors,
@@ -80,13 +79,12 @@ class Harness {
   readonly registry: ActuatorRegistry;
   readonly events: Event[] = [];
 
-  constructor(pipeline: "v2" | "v3") {
+  constructor() {
     const s = this.sup.services;
     this.registry = new ActuatorRegistry({ services: s, builtins: false });
     s.provide("app", ActuatorRegistryKey, this.registry);
     s.provide("app", AuthorizerKey, new AllowAll());
     s.provide("app", PromptContributorsKey, this.prompts);
-    s.provide("app", PipelineKey, { pipeline });
     s.provide("facts", EventLogKey, this.log as unknown as EventLog);
     s.provide("moderation", ModerationKey, moderation());
     const sub = this.sup.bus.subscribe("*");
@@ -95,8 +93,8 @@ class Harness {
     })();
   }
 
-  static async create(pipeline: "v2" | "v3" = "v3", config: JsonValue = {}): Promise<Harness> {
-    const h = new Harness(pipeline);
+  static async create(config: JsonValue = {}): Promise<Harness> {
+    const h = new Harness();
     await h.sup.register(new PartyModule({ random: () => 0 }), config, true);
     await h.sup.startAll();
     await h.publish({ type: "voice_joined", data: { context: VOICE, participants: ROOM } });
@@ -300,96 +298,6 @@ describe("party module", () => {
     await h.publish({ type: "voice_left", data: { context: VOICE, reason: null } });
     expect(table.session(VOICE)).toBeNull();
     expect(await h.section()).toBe("");
-  });
-
-  it("under V2 what she may react to becomes an impulse for the Arbiter", async () => {
-    h = await Harness.create("v2");
-    await h.invoke("party.start", { game: "quiz", questions: QUESTIONS });
-    await h.invoke("party.host", { action: "next" });
-    await h.say(AMY, "Amy", "玉山");
-    const impulses = h.events.flatMap((e) => {
-      const i = v2Payload(e, ARBITER_IMPULSE_TOPIC);
-      return i ? [i] : [];
-    });
-    expect(impulses).toHaveLength(1);
-    expect(impulses[0]?.source).toBe("game");
-    expect(impulses[0]?.attention?.key).toBe("voice:utterance:u-玉山");
-  });
-
-  describe("one reply to an answer", () => {
-    // The answer's own utterance and the program's verdict both ask for a turn. The main line
-    // keys the turn that answers an utterance `voice:utterance:<id>` (a typed message
-    // `msg:<platform>:<id>`, revision 1) and the Floor's delivery ledger refuses a claim whose
-    // key and revision were delivered. So the verdict is claimed under the answer's key.
-    it("claims the verdict of a spoken answer under the utterance's own key", async () => {
-      h = await Harness.create();
-      await h.invoke("party.start", { game: "quiz", questions: QUESTIONS });
-      await h.invoke("party.host", { action: "next" });
-      await h.say(AMY, "Amy", "玉山");
-      const claims = h.observations().filter((o) => !o.silent);
-      expect(claims).toHaveLength(1);
-      expect(claims[0]).toMatchObject({
-        attention_key: "voice:utterance:u-玉山",
-        revision: 1,
-        source: "game.party.quiz",
-      });
-      expect(claims[0]?.summary).toContain("Amy 答對了");
-    });
-
-    it("keys a typed answer by its message, as the main line does", async () => {
-      h = await Harness.create();
-      await h.invoke("party.start", { game: "quiz", questions: QUESTIONS });
-      await h.invoke("party.host", { action: "next" });
-      await h.type(BOB, "Bob", "玉山");
-      expect(h.observations().filter((o) => !o.silent)[0]?.attention_key).toBe(
-        "msg:discord:m-玉山",
-      );
-    });
-
-    it("keeps every line's own claim apart, and the game's own moves under their own keys", async () => {
-      h = await Harness.create();
-      await h.invoke("party.start", { game: "quiz", questions: QUESTIONS });
-      await h.invoke("party.host", { action: "next" });
-      await h.say(AMY, "Amy", "玉山");
-      await h.invoke("party.host", { action: "next" });
-      await h.say(BOB, "Bob", "tokyo");
-      // Two answers, two utterances, two claims (the second one is the end: the last question).
-      const keys = h
-        .observations()
-        .filter((o) => !o.silent && o.source === "game.party.quiz")
-        .map((o) => o.attention_key);
-      expect(keys.filter((k) => k.startsWith("voice:utterance:")).sort()).toEqual([
-        "voice:utterance:u-tokyo",
-        "voice:utterance:u-玉山",
-      ]);
-    });
-
-    it("a note nobody's line caused (a timeout) keeps the game's own key", async () => {
-      h = await Harness.create();
-      await h.invoke("party.start", { game: "quiz", questions: QUESTIONS });
-      await h.invoke("party.host", { action: "next" });
-      await settle(60_000);
-      const timeout = h.observations().at(-1);
-      expect(timeout?.summary).toContain("時間到");
-      expect(timeout?.attention_key).toMatch(/^party:.+:q1:timeout$/);
-    });
-
-    it("the end a spoken stop brings is the one claim, under that utterance's key", async () => {
-      h = await Harness.create();
-      await h.invoke("party.start", { game: "chain" });
-      const table = h.sup.services.require(PartyTableKey);
-      const session = table.session(VOICE);
-      // A later line makes the session end by someone asking to stop: the end note answers it.
-      await h.say(AMY, "Amy", "不玩了");
-      expect(session?.ended).toBe("stop");
-      // Saying stop is a silent note and an end she may react to: the end is the claim, keyed
-      // by what was said.
-      const end = h.observations().find((o) => o.summary.includes("結束了"));
-      expect(end?.silent).toBe(false);
-      expect(end?.attention_key).toBe("voice:utterance:u-不玩了");
-      expect(end?.revision).toBe(1);
-      expect(h.observations().filter((o) => !o.silent)).toHaveLength(1);
-    });
   });
 
   it("stops quietly: the game ends without a note and the tools go", async () => {

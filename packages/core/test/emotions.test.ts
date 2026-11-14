@@ -28,8 +28,6 @@ import {
   MoodSignalsKey,
   PERSON_EMOTION_NAMES,
   type PersonCard,
-  type Pipeline,
-  PipelineKey,
   toTimestamp,
 } from "@miyoria/types";
 import { VoiceProfile } from "@miyoria/voice/voice";
@@ -219,65 +217,55 @@ describe("an extreme state", () => {
   });
 });
 
-describe.each(["v2", "v3"] as const)(
-  "the Affect module under pipeline %s",
-  (pipeline: Pipeline) => {
-    const running: Supervisor[] = [];
-    afterEach(async () => {
-      for (const sup of running.splice(0)) await sup.stopAll();
-    });
+describe("the Affect module", () => {
+  const running: Supervisor[] = [];
+  afterEach(async () => {
+    for (const sup of running.splice(0)) await sup.stopAll();
+  });
 
-    async function boot() {
-      const sup = new Supervisor();
-      running.push(sup);
-      sup.services.provide("app", PipelineKey, { pipeline });
-      sup.services.provide("app", SettingsStoreKey, new MemorySettingsStore());
-      if (pipeline === "v3") {
-        sup.services.provide(
-          "app",
-          EventLogKey,
-          new EventLogService({ profile: "p", store: null }),
-        );
-      }
-      const baseline = { valence: 0, arousal: 0.5, energy: 0.8 };
-      // The order of the catalog.
-      await sup.register(new SelfModule("p", { baseline }), null, true);
-      await sup.register(new ArbiterModule("p"), null, true);
-      await sup.startAll();
-      return sup;
-    }
+  async function boot() {
+    const sup = new Supervisor();
+    running.push(sup);
+    sup.services.provide("app", SettingsStoreKey, new MemorySettingsStore());
+    sup.services.provide("app", EventLogKey, new EventLogService({ profile: "p", store: null }));
+    const baseline = { valence: 0, arousal: 0.5, energy: 0.8 };
+    // The order of the catalog.
+    await sup.register(new SelfModule("p", { baseline }), null, true);
+    await sup.register(new ArbiterModule("p"), null, true);
+    await sup.startAll();
+    return sup;
+  }
 
-    it("owns her mood, whichever pipeline runs", async () => {
-      const sup = await boot();
-      expect(sup.services.ownerOf(MoodSignalsKey)).toBe("self");
-      const affect = sup.services.require(AffectStateKey);
-      expect(sup.services.require(MoodSignalsKey).mood()).toEqual(affect.snapshot().mood);
-    });
+  it("owns her mood", async () => {
+    const sup = await boot();
+    expect(sup.services.ownerOf(MoodSignalsKey)).toBe("self");
+    const affect = sup.services.require(AffectStateKey);
+    expect(sup.services.require(MoodSignalsKey).mood()).toEqual(affect.snapshot().mood);
+  });
 
-    it("gives the panel the same snapshot", async () => {
-      const sup = await boot();
-      const snapshot = sup.services.require(AffectStateKey).snapshot();
-      expect(Object.keys(snapshot).sort()).toEqual([
-        "at",
-        "biases",
-        "boredom",
-        "drives",
-        "mood",
-        "mood_line",
-        "shown",
-        "top",
-      ]);
-      expect(Object.keys(snapshot.biases).sort()).toEqual(["initiative", "talkativeness", "wants"]);
-    });
+  it("gives the panel the same snapshot", async () => {
+    const sup = await boot();
+    const snapshot = sup.services.require(AffectStateKey).snapshot();
+    expect(Object.keys(snapshot).sort()).toEqual([
+      "at",
+      "biases",
+      "boredom",
+      "drives",
+      "mood",
+      "mood_line",
+      "shown",
+      "top",
+    ]);
+    expect(Object.keys(snapshot.biases).sort()).toEqual(["initiative", "talkativeness", "wants"]);
+  });
 
-    it("reaches the Floor", async () => {
-      const sup = await boot();
-      const floor = sup.services.get(FloorKey);
-      expect(floor?.budget(ROOM).allowed).toBe(6);
-      sup.services.provide("app", AffectStateKey, {
-        snapshot: () => ({ biases: { talkativeness: -MAX_BIAS } }),
-      } as never);
-      expect(floor?.budget(ROOM).allowed).toBe(3);
-    });
-  },
-);
+  it("reaches the Floor", async () => {
+    const sup = await boot();
+    const floor = sup.services.get(FloorKey);
+    expect(floor?.budget(ROOM).allowed).toBe(6);
+    sup.services.provide("app", AffectStateKey, {
+      snapshot: () => ({ biases: { talkativeness: -MAX_BIAS } }),
+    } as never);
+    expect(floor?.budget(ROOM).allowed).toBe(3);
+  });
+});

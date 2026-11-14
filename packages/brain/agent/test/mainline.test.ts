@@ -33,7 +33,6 @@ import {
   MouthKey,
   newId,
   type OutputCheck,
-  PipelineKey,
   type PlaybackState,
   type Proposal,
   ProposalBoardKey,
@@ -189,7 +188,6 @@ async function rig(chat: ChatProvider, options: RigOptions = {}): Promise<Harnes
       ...(options.actuators ? { actuators: options.actuators } : {}),
       ...(options.thinking ? { thinking: options.thinking } : {}),
       provide: (services) => {
-        services.provide("app", PipelineKey, { pipeline: "v3" as const });
         if (options.body) {
           services.provide("app", ActivityManagerKey, options.body as unknown as ActivityManager);
         }

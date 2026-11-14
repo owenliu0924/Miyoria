@@ -22,7 +22,6 @@ import {
   EventLogKey,
   isJsonObject,
   type JsonValue,
-  PipelineKey,
   ProposalBoardKey,
   type TaskEvent,
   toTimestamp,
@@ -575,9 +574,6 @@ async function rig(provider: ChatProvider, tools: Tool[], store?: MemorySettings
     appTools,
     actuators,
     ...(store ? { store } : {}),
-    provide: (services) => {
-      services.provide("app", PipelineKey, { pipeline: "v3" as const });
-    },
     before: [[new FactsModule(null, "p"), null]],
     modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
   });

@@ -2,9 +2,6 @@
 # 字串可以用 ${ENV_VAR} 或 ${ENV_VAR:-預設值} 引用環境變數 / .env。
 
 [core]
-# 誰決定她開口和動手:v3 = 一條主線(只有主線能讓她說話或動作,預設);v2 = 舊路徑(回話、計畫、
-# 遊戲導演各自決定)。出問題時改這一行、重開就退回去
-# pipeline = "v3"
 profile = "deepseek-chan"          # profiles/<id>/
 profiles_dir = "profiles"
 database_url = "${DATABASE_URL:-sqlite:data/miyoria.db}"
@@ -623,7 +620,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
 # × 佔比上限;有人還在講話時她不插嘴。她自己多久開一次口由 [modules.arbiter] 決定
-# pipeline = "v3" 的主線:一次呼叫同時決定說什麼和做什麼(v4 §4.1)。prompt 預設沒有 token 上限,各部分各有字數預算。
+# 主線:一次呼叫同時決定說什麼和做什麼(v4 §4.1)。prompt 預設沒有 token 上限,各部分各有字數預算。
 # 對話紀錄放在快取前綴裡,所以放得長也不貴;超過預算時一次砍到 history_trim 的比例(不是每回合丟一則),
 # 這樣紀錄的第一行和快取前綴能留很多回合。下面都是預設值
 # [modules.agent.mainline]
@@ -1022,7 +1019,7 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # 遊戲實況、追問、打招呼都先到這裡;規則只有這一份(取代舊的 [modules.initiative]、心智迴圈的
 # 第二套安靜時段和 chat.start 的次數限制),而且會寫進她的帳本,讓她看得到:「你今天主動開了
 # 5 次話題,最近 3 次沒人接;下次可主動在 21:40 之後」。報幕、實況、追問不算她主動開的話題。
-# pipeline = "v3" 時,發言權(Floor)也看這裡。有人叫她、回她、等結果和緊急的事一定拿麥;
+# 發言權(Floor)也看這裡。有人叫她、回她、等結果和緊急的事一定拿麥;
 # 下面的額度只管她自己想說的話,而且只算真的送達的台詞,跑工具、開任務都不會重置
 # [modules.arbiter.floor]
 # text_presence_mins = 30        # 文字頻道裡這麼久內有人說過話才算有人在場(語音看頻道裡的人)

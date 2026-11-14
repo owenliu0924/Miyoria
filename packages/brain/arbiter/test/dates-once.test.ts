@@ -21,7 +21,6 @@ import {
   HandleDirectoryKey,
   ImpulseHostKey,
   type NewProposal,
-  PipelineKey,
   ProposalBoardKey,
   type SocialSignals,
   SocialSignalsKey,
@@ -103,7 +102,6 @@ describe("a birthday followup is one wish, said once", () => {
     const followups = new Followups();
     /** What reached the board, and what it did with it (as the main line's board does). */
     const board: { proposal: NewProposal; raised: boolean }[] = [];
-    sup.services.provide("app", PipelineKey, { pipeline: "v3" as const });
     sup.services.provide("app", EventLogKey, log);
     sup.services.provide("app", SocialSignalsKey, social);
     sup.services.provide("app", HandleDirectoryKey, handles);

@@ -13,7 +13,6 @@ import {
   type ContextKey,
   EventLogKey,
   type LogEvent,
-  PipelineKey,
   ProposalBoardKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -85,9 +84,6 @@ class FollowsPrompt implements ChatProvider {
 async function rig(llm: ChatProvider, dm: Probe): Promise<Harness> {
   return Harness.build("normal", noCheck(), llm, null, {
     tools: [dm],
-    provide: (services) => {
-      services.provide("app", PipelineKey, { pipeline: "v3" as const });
-    },
     before: [[new FactsModule(null, "p"), null]],
     modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
   });

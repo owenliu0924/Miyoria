@@ -11,7 +11,6 @@ import {
   type JsonValue,
   type MessageRef,
   newId,
-  PipelineKey,
   PromptContributors,
   PromptContributorsKey,
   type TurnId,
@@ -97,7 +96,6 @@ async function rig(
     null,
     {
       provide: (services) => {
-        services.provide("app", PipelineKey, { pipeline: "v3" as const });
         provide(services as unknown as ServiceRegistry);
       },
       before: [[new FactsModule(null, "p"), null]],

@@ -29,7 +29,6 @@ describe("config template", () => {
     ]) {
       expect(text).toContain(section);
     }
-    expect(text).toContain('# pipeline = "v3"');
     expect(text).toContain("turn = { venv");
   });
 });

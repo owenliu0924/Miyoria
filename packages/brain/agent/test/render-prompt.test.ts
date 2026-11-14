@@ -23,7 +23,6 @@ import {
   MemoryRetrievalKey,
   type PersonProfiles,
   PersonProfilesKey,
-  PipelineKey,
   PromptContributors,
   PromptContributorsKey,
   type RetrievedMemory,
@@ -69,7 +68,6 @@ type Services = Parameters<NonNullable<Parameters<typeof Harness.build>[4]["prov
 
 /** What a live turn reads, at ordinary sizes; `voice`: she is in the voice channel. */
 function provide(services: Services, voice: boolean) {
-  services.provide("app", PipelineKey, { pipeline: "v3" as const });
   const now = toTimestamp(Date.now());
   const affect = {
     snapshot: () => ({

@@ -34,8 +34,6 @@ import {
   type JsonValue,
   type Mouth,
   MouthKey,
-  type Pipeline,
-  PipelineKey,
   PromptContributors,
   PromptContributorsKey,
   sameAccount,
@@ -55,8 +53,6 @@ export interface ReplayRunOptions {
   clock: ReplayClock;
   /** Seed of her attention's dice (default 1). */
   seed?: number;
-  /** Which brain runs (default `v3`). */
-  pipeline?: Pipeline;
 }
 
 /** Everything a replay produced, for the report. */
@@ -169,8 +165,6 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
   };
 
   const services = sup.services;
-  const pipeline = options.pipeline ?? "v3";
-  services.provide("app", PipelineKey, { pipeline });
   services.provide("app", SettingsStoreKey, new MemorySettingsStore());
   const tools = new ToolRegistry();
   services.provide("app", ToolRegistryKey, tools);
@@ -197,7 +191,7 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
   const agent = new AgentModule(profile).withRandom(seeded(options.seed ?? 1));
   const modules: Module[] = [
     // First, as in the core: the main line and the Floor read the log.
-    ...(pipeline === "v3" ? [new FactsModule(null, PROFILE_ID, { names: profile.names() })] : []),
+    new FactsModule(null, PROFILE_ID, { names: profile.names() }),
     agent,
     new ActionsModule(profile.displayName),
     new ActivityModule(),

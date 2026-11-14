@@ -14,7 +14,6 @@ import {
   type JsonValue,
   MESSAGE_EXCLUDED_TOPIC,
   MessageActionsKey,
-  PipelineKey,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -78,7 +77,6 @@ function reply(text: string, ...calls: [string, string][]): StreamEvent[] {
 
 async function rig(chat: ChatProvider, config: object = {}): Promise<Harness> {
   return Harness.build("normal", { ...(noCheck() as object), ...config }, chat, null, {
-    provide: (services) => services.provide("app", PipelineKey, { pipeline: "v3" as const }),
     before: [[new FactsModule(null, "p"), null]],
     modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
   });

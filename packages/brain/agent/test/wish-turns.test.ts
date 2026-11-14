@@ -9,7 +9,6 @@ import {
   EventLogKey,
   ImpulseHostKey,
   newImpulse,
-  PipelineKey,
   ProposalBoardKey,
   toTimestamp,
   WishesKey,
@@ -51,9 +50,6 @@ function slow(ms: number, text = "好喔"): Paced {
 
 async function rig(llm: ChatProvider, mode = "normal"): Promise<Harness> {
   return Harness.build(mode, noCheck(), llm, null, {
-    provide: (services) => {
-      services.provide("app", PipelineKey, { pipeline: "v3" as const });
-    },
     before: [[new FactsModule(null, "p"), null]],
     modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
   });

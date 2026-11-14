@@ -10,14 +10,12 @@
 
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
-  ACTION_SETTLED_TOPIC,
   ACTIVITY_CHANGED_TOPIC,
   ACTIVITY_DONE_TOPIC,
   ACTIVITY_FAILED_TOPIC,
   ACTIVITY_RESTORE_TOPIC,
   ACTIVITY_STARTED_TOPIC,
   type AccountRef,
-  type ActionSettled,
   type ActivityRestore,
   type ActivitySnapshot,
   type ActivityTaskEvent,
@@ -28,7 +26,6 @@ import {
   type BucketWrite,
   type ContextKey,
   contextKeyString,
-  type DeliveryChannel,
   type DeliveryLedger,
   type Envelope,
   type EventData,
@@ -51,7 +48,6 @@ import {
   type JsonValue,
   MIND_THOUGHT_TOPIC,
   type MindThoughtBody,
-  MUTED,
   NOTED_GAME_EVENTS,
   NOTICE_TOPIC,
   type Notice,
@@ -73,7 +69,6 @@ import {
   type TurnId,
   type TurnOutcomeRecord,
   timestampMs,
-  topicKey,
   VOICE_BARGE_IN_TOPIC,
   type VoiceBargeIn,
   type VoiceParticipant,
@@ -99,8 +94,6 @@ const GAME_DECISION_TOPIC = "game.director.decision";
 const GATE_DECISION_TOPIC = "gate.decision";
 const VOICE_LATENCY_TOPIC = "voice.latency";
 
-/** What the scheduler answers for an action that never went out. */
-const NEVER_SENT = new Set(["expired", "cancelled", "coalesced", MUTED]);
 /** A death is always a new one, however soon after the last. */
 const ALWAYS_NEW = new Set(["death"]);
 const URGENT_GAME_EVENTS = new Set(["death", "low_health"]);
@@ -132,22 +125,12 @@ class Recent<V> {
   }
 }
 
-interface Attention {
-  key: string;
-  revision: number;
-}
-
 /** What is known about a turn. */
 interface TurnFacts {
   /** The newest decision of the turn: what its lines were caused by. */
   head: string | null;
   /** The last action the gate let through for it. */
   action: string | null;
-  /** The narration key of the impulse that opened it. */
-  attention: Attention | null;
-  /** The key of the message it answers. */
-  focus: Attention | null;
-  addressed: Handle[];
   /** The message ids of the last focus logged. */
   focusIds: string | null;
 }
@@ -175,11 +158,6 @@ export interface BusFactsOptions {
   names?: readonly string[];
   /** For the handle directory (optional: without it `person` is the display name). */
   services?: ServiceLookup | null;
-  /**
-   * `pipeline = "v3"`: the main line opens and acks its own lines, so nothing here does. The
-   * handlers below only serve the V2 path behind the switch, and go with it.
-   */
-  ownLines?: boolean;
 }
 
 /** The input defence's note, to go beside what it is about. */
@@ -198,22 +176,15 @@ export class BusFacts {
   readonly #config: FactsConfig;
   readonly #names: readonly string[];
   readonly #services: ServiceLookup | null;
-  readonly #ownLines: boolean;
   readonly #own: AccountRef[] = [];
-  /** Who is in each voice channel, her accounts left out. */
-  readonly #present = new Map<string, Handle[]>();
   /** Message or utterance id → its observation. */
   readonly #messages = new Recent<{ event: string; key: string }>();
   /** `attention_key` → its newest observation. */
   readonly #keys = new Recent<string>();
-  readonly #impulses = new Recent<{ event: string; attention: Attention | null }>();
+  readonly #impulses = new Recent<{ event: string }>();
   readonly #turns = new Recent<TurnFacts>();
   /** Task id → its newest line. */
   readonly #tasks = new Recent<string>();
-  /** Lines waiting for the end of their playback, oldest first. */
-  readonly #playing = new Recent<string[]>();
-  /** Speech that already got an end from voice (so the scheduler's failure is not a second). */
-  readonly #ended = new Recent<true>();
 
   constructor(options: BusFactsOptions) {
     this.#log = options.log;
@@ -222,7 +193,6 @@ export class BusFacts {
     this.#config = options.config;
     this.#names = (options.names ?? []).map((n) => n.toLowerCase()).filter((n) => n !== "");
     this.#services = options.services ?? null;
-    this.#ownLines = options.ownLines ?? false;
   }
 
   // ---- shared helpers -----------------------------------------------------------------------
@@ -246,9 +216,6 @@ export class BusFacts {
       facts = {
         head: null,
         action: null,
-        attention: null,
-        focus: null,
-        addressed: [],
         focusIds: null,
       };
       this.#turns.set(turn, facts);
@@ -320,9 +287,6 @@ export class BusFacts {
       case "voice_left":
         this.#voiceLeft(env, event.data.context, event.data.reason);
         break;
-      case "voice_playback":
-        if (!this.#ownLines) this.#playback(event.data);
-        break;
       case "agent_decision":
         this.#agentDecision(env, event.data);
         break;
@@ -354,9 +318,6 @@ export class BusFacts {
         return;
       case ACTIVITY_RESTORE_TOPIC:
         this.#restore(env, data as unknown as ActivityRestore);
-        return;
-      case ACTION_SETTLED_TOPIC:
-        if (!this.#ownLines) this.#settled(data as unknown as ActionSettled);
         return;
       case ACTIVITY_CHANGED_TOPIC:
         this.#activity(env, data as unknown as ActivitySnapshot);
@@ -545,7 +506,6 @@ export class BusFacts {
     }
     names.sort();
     const place = contextKeyString(context);
-    this.#present.set(place, names);
     this.#state(env, names.join("\n"), {
       source: "voice.presence",
       key: `voice:members:${place}`,
@@ -560,7 +520,6 @@ export class BusFacts {
 
   #voiceLeft(env: Envelope, context: ContextKey, reason: string | null): void {
     const place = contextKeyString(context);
-    this.#present.delete(place);
     const key = `voice:members:${place}`;
     this.#observe(env, {
       source: "voice.presence",
@@ -585,99 +544,16 @@ export class BusFacts {
     });
   }
 
-  // ---- delivery -----------------------------------------------------------------------------
-
-  /** Which key a line goes under: the narration's, the message it answers, or its own words. */
-  #lineKey(turn: TurnId | null, text: string): Attention {
-    const facts = turn === null ? undefined : this.#turns.get(turn);
-    return facts?.attention ?? facts?.focus ?? { key: topicKey(text), revision: 1 };
-  }
-
-  #openLine(
-    channel: DeliveryChannel,
-    context: ContextKey,
-    turn: TurnId | null,
-    text: string,
-  ): string {
-    const { key, revision } = this.#lineKey(turn, text);
-    const facts = turn === null ? undefined : this.#turns.get(turn);
-    const audience =
-      channel === "voice"
-        ? (this.#present.get(contextKeyString(context)) ?? [])
-        : (facts?.addressed ?? []);
-    return this.#ledger.open({
-      attention_key: key,
-      revision,
-      channel,
-      context,
-      said: text,
-      audience,
-      turn,
-      cause: this.#head(turn),
-      source: `delivery.${channel}`,
-    });
-  }
-
-  #playback(data: EventData<"voice_playback">): void {
-    const { context, turn, state, text } = data;
-    const id = `${contextKeyString(context)}\n${turn}\n${text}`;
-    const waiting = this.#playing.get(id) ?? [];
-    if (state === "started") {
-      this.#playing.set(id, [...waiting, this.#openLine("voice", context, turn, text)]);
-      return;
-    }
-    const line = waiting[0] ?? this.#openLine("voice", context, turn, text);
-    if (waiting.length > 1) this.#playing.set(id, waiting.slice(1));
-    else this.#playing.delete(id);
-    if (state === "finished" && (data.blocked ?? null) !== null) {
-      this.#ledger.undelivered(line, "blocked", data.blocked);
-    } else if (state === "finished") {
-      this.#ledger.ack(line);
-    } else {
-      this.#ended.set(id, true);
-      this.#ledger.undelivered(line, state);
-    }
-  }
-
-  #settled(settled: ActionSettled): void {
-    const { type, context, turn, text, ok, error } = settled;
-    if (type === "speak") {
-      // Voice reported how it went, unless the line never got that far.
-      const id = `${contextKeyString(context)}\n${turn}\n${text}`;
-      if (ok || this.#ended.get(id)) {
-        this.#ended.delete(id);
-        return;
-      }
-      const state = NEVER_SENT.has(error ?? "") ? "cancelled" : "failed";
-      const waiting = this.#playing.get(id) ?? [];
-      const line = waiting[0] ?? this.#openLine("voice", context, turn, text);
-      if (waiting.length > 1) this.#playing.set(id, waiting.slice(1));
-      else this.#playing.delete(id);
-      this.#ledger.undelivered(line, state, error);
-      return;
-    }
-    const line = this.#openLine("text", context, turn, text);
-    if (ok && (settled.blocked ?? null) !== null) {
-      this.#ledger.undelivered(line, "blocked", settled.blocked);
-    } else if (ok) this.#ledger.ack(line);
-    else {
-      const state = NEVER_SENT.has(error ?? "") ? "cancelled" : "failed";
-      this.#ledger.undelivered(line, state, error);
-    }
-  }
-
   // ---- turns and decisions ------------------------------------------------------------------
 
   #focus(focus: TurnFocus): void {
     const facts = this.#turn(focus.turn);
-    facts.addressed = focus.addressed_by;
     const ids = focus.focus.map((m) => m.id).join(",");
     // Most focus events are phase changes of the same turn.
     if (facts.focusIds === ids) return;
     facts.focusIds = ids;
     const first = focus.focus[0];
     const answers = first ? this.#messages.get(first.id) : undefined;
-    if (answers) facts.focus = { key: answers.key, revision: 1 };
     const event = this.#log.append({
       kind: "decision",
       source: "agent.focus",
@@ -746,8 +622,7 @@ export class BusFacts {
         attention_key: key,
       },
     });
-    const attention = key === null ? null : { key, revision: this.#revisions.current(key) ?? 1 };
-    this.#impulses.set(impulse.id, { event: event.id, attention });
+    this.#impulses.set(impulse.id, { event: event.id });
   }
 
   #arbiterDecision(decision: ArbiterDecision): void {
@@ -761,7 +636,6 @@ export class BusFacts {
     if (decision.verdict !== "accepted" || decision.turn === null) return;
     const facts = this.#turn(decision.turn);
     facts.head = event.id;
-    if (impulse?.attention) facts.attention = impulse.attention;
   }
 
   #gate(decision: JsonObject): void {

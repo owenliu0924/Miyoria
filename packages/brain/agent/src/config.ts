@@ -330,7 +330,7 @@ export const LOOP_TOOLS: readonly string[] = [
 ];
 
 /**
- * `[modules.agent.mainline]`: the main line of `pipeline = "v3"` (docs/design/v3-architecture.md
+ * `[modules.agent.mainline]`: the main line (docs/design/v3-architecture.md
  * §10). The prompt has no token cap by default (2026-11-08: 4000 left her with no conversation);
  * each part keeps its own character budget. The budgets are the ones of docs/design/v4-plan.md
  * §4.1: the history sits in the cached prefix, so a long one costs little once the layout keeps
@@ -607,7 +607,7 @@ export const AgentConfigSchema = z.object({
   one_caller_per_turn: z.boolean().default(true),
   /** The typing indicator is resubmitted this often while generating. */
   typing_refresh_ms: z.number().int().nonnegative().default(8000),
-  /** The main line of `pipeline = "v3"`. */
+  /** The main line. */
   mainline: MainLineConfigSchema.prefault({}),
   /** The work lane (v4 §4.3). */
   work: WorkConfigSchema.prefault({}),

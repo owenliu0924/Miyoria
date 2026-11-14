@@ -15,7 +15,6 @@ import {
   ImpulseHostKey,
   newImpulse,
   PartyStatusKey,
-  PipelineKey,
   ProposalBoardKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -156,7 +155,6 @@ describe("what other modules asked of the Floor", () => {
     const log = new EventLogService({ profile: "p", store: null });
     const host = new FakeHost();
     const playing = new Set<string>();
-    sup.services.provide("app", PipelineKey, { pipeline: "v3" as const });
     sup.services.provide("app", EventLogKey, log);
     sup.services.provide("app", ImpulseHostKey, host);
     sup.services.provide("app", PartyStatusKey, {

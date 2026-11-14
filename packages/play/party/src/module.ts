@@ -10,9 +10,7 @@ import {
 import {
   ACTIVITY_CHANGED_TOPIC,
   type ActivitySnapshot,
-  ARBITER_IMPULSE_TOPIC,
   type ContextKey,
-  contextKeyString,
   type Event,
   EventLogKey,
   holdsBack,
@@ -20,17 +18,14 @@ import {
   inspectInput,
   isJsonObject,
   type JsonValue,
-  newImpulse,
   PartyOverviewKey,
   PartyRewardsKey,
   PartyStatusKey,
   type PromptContributors,
   PromptContributorsKey,
-  pipelineOf,
   type ServiceKey,
   SongClipsKey,
   serviceKey,
-  v2Event,
 } from "@miyoria/types";
 import { partyCapabilities } from "./actions.js";
 import { PartyConfigSchema } from "./config.js";
@@ -58,7 +53,7 @@ interface Running {
 /**
  * What the games tell her. Under V3 an Observation in the EventLog: silent ones are what she
  * knows, the others (source `game.party.*`) may ask the Floor for the mic, once per attention
- * key and revision. Under V2 those become impulses for the Arbiter, like the game director's.
+ * key and revision.
  */
 class Notes implements PartyOutput {
   constructor(private readonly ctx: ModuleContext) {}
@@ -94,21 +89,6 @@ class Notes implements PartyOutput {
     } catch (error) {
       log.warn({ err: errorMessage(error) }, "cannot tell her about the game");
     }
-    if (!n.speak || pipelineOf(services) !== "v2") return;
-    const impulse = newImpulse(
-      {
-        source: "game",
-        context: n.context,
-        ttlMs: 60_000,
-        why: "派對遊戲",
-        hint: n.summary,
-        reason: "game",
-        coalesce_key: `party:${contextKeyString(n.context)}`,
-        attention: { key: n.key, repeat_after_ms: 0, revision: n.revision },
-      },
-      this.ctx.clock.now(),
-    );
-    this.ctx.publish(v2Event(ARBITER_IMPULSE_TOPIC, impulse));
   }
 
   ended(): void {}

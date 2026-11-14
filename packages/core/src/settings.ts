@@ -3,7 +3,6 @@
 import { isAbsolute, resolve } from "node:path";
 import type { Config } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
-import { DEFAULT_PIPELINE, isPipeline, PIPELINES, type Pipeline } from "@miyoria/types";
 
 /** Used when `core.database_url` is missing or empty. */
 export const DEFAULT_DATABASE_URL = "sqlite:data/miyoria.db";
@@ -66,14 +65,6 @@ export async function loadProfile(config: Config, baseDir = process.cwd()): Prom
       },
     );
   }
-}
-
-/** `core.pipeline`: `v3` (the default) or `v2`, one setting to roll back. */
-export function pipeline(config: Config): Pipeline {
-  const value = config.section("core.pipeline");
-  if (value === undefined || value === null) return DEFAULT_PIPELINE;
-  if (isPipeline(value)) return value;
-  throw new Error(`core.pipeline must be one of ${PIPELINES.join(", ")}, not ${String(value)}`);
 }
 
 /**

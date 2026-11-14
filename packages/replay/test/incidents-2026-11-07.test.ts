@@ -12,8 +12,8 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type ArbiterDecision, type Impulse, isJsonObject, type Pipeline } from "@miyoria/types";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type ArbiterDecision, type Impulse, isJsonObject } from "@miyoria/types";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildReport,
   parseReplayLog,
@@ -44,11 +44,8 @@ function load(fixture: string): ReplayLog {
   return parseReplayLog(readFileSync(join(import.meta.dirname, "fixtures", fixture), "utf8"));
 }
 
-/** The pipeline of the block running now. */
-let pipeline: Pipeline = "v2";
-
 async function run(log: ReplayLog): Promise<{ run: ReplayRun; report: ReplayReport }> {
-  const r = await replay(log, { clock, pipeline });
+  const r = await replay(log, { clock });
   return { run: r, report: buildReport(r) };
 }
 
@@ -91,11 +88,7 @@ const keyOf = (v: Verdict) => v.impulse.attention?.key ?? null;
 const sentFromImpulses = (report: ReplayReport) =>
   report.turns.filter((t) => t.reason === "initiative" && t.outcome === "sent").length;
 
-describe.each(["v3"] as const)("pipeline %s", (under) => {
-  beforeEach(() => {
-    pipeline = under;
-  });
-
+describe("the main line", () => {
   describe("2026-11-07: the same thing said again and again", () => {
     it("one game fact over two hours reaches voice at most once per repeat window", async () => {
       const { run: r, report } = await run(load("same-fact-repeated.jsonl"));

@@ -21,7 +21,6 @@ import {
   type JsonValue,
   type NewProposal,
   newImpulse,
-  PipelineKey,
   ProposalBoardKey,
   type SelfState,
   SelfStateKey,
@@ -193,7 +192,7 @@ describe("ArbiterModule", () => {
   });
 });
 
-describe("the Floor's module (pipeline v3)", () => {
+describe("the Floor's module", () => {
   async function floorRig(config: JsonValue = null) {
     const sup = new Supervisor();
     const log = new EventLogService({ profile: "p", store: null });
@@ -202,7 +201,6 @@ describe("the Floor's module (pipeline v3)", () => {
     social.set("a", "朋友", 60);
     const followups = new FakeFollowups();
     const host = new FakeHost();
-    sup.services.provide("app", PipelineKey, { pipeline: "v3" as const });
     sup.services.provide("app", EventLogKey, log);
     sup.services.provide("app", SocialSignalsKey, social);
     sup.services.provide("app", FollowupSourceKey, followups);

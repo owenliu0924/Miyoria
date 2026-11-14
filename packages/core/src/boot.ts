@@ -50,7 +50,6 @@ import {
   HandleDirectoryKey,
   type JsonValue,
   KERNEL_MODULE,
-  PipelineKey,
   PlatformHistories,
   PlatformHistoriesKey,
   PlatformSinks,
@@ -64,7 +63,7 @@ import {
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { moduleEnabled, NEEDS_TOKEN } from "./module-ids.js";
 import { RecorderModule } from "./recorder.js";
-import { databaseUrl, loadProfile, pipeline, resolveDatabaseUrl } from "./settings.js";
+import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
 
@@ -209,7 +208,10 @@ export async function buildCoreWith(
   }
 
   const k = KERNEL_MODULE;
-  services.provide(k, PipelineKey, { pipeline: pipeline(config) });
+  // `[core] pipeline` chose between the main line and the V2 paths; only the main line is left.
+  if (config.section("core.pipeline") !== undefined) {
+    log.warn("`core.pipeline` is no longer read: the main line always runs");
+  }
   services.provide(k, PlatformSinksKey, new PlatformSinks());
   services.provide(k, PlatformHistoriesKey, new PlatformHistories());
   services.provide(k, SupervisorKey, supervisor);

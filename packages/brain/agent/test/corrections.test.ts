@@ -18,7 +18,6 @@ import {
   EventLogKey,
   type JsonValue,
   type LogEvent,
-  PipelineKey,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -103,7 +102,6 @@ async function rig(
   return Harness.build("normal", { ...(noCheck() as object), ...config }, chat, null, {
     tools,
     provide: (services) => {
-      services.provide("app", PipelineKey, { pipeline: "v3" as const });
       services.provide("app", ActivityManagerKey, idle());
       if (directives !== null) services.provide("app", DirectivesKey, directives);
     },

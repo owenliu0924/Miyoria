@@ -1,4 +1,4 @@
-// Content safety in a turn (docs/design/v3-architecture.md §16), under both pipelines: every way a
+// Content safety in a turn (docs/design/v3-architecture.md §16): every way a
 // reply leaves goes through the output review, what comes in is judged before it can start a turn,
 // and the emergency stop ends what is in flight and keeps her quiet until it is lifted.
 
@@ -15,7 +15,6 @@ import {
   MouthKey,
   NODE_TRUSTED_INPUT,
   newId,
-  PipelineKey,
   TurnSilencerKey,
   toTimestamp,
   type VoiceSink,
@@ -117,23 +116,16 @@ interface Options {
   provide?: Setup["provide"];
 }
 
-type Pipeline = "v2" | "v3";
-
-function rig(pipeline: Pipeline, chat: ChatProvider, options: Options = {}): Promise<Harness> {
+function rig(chat: ChatProvider, options: Options = {}): Promise<Harness> {
   const { moderation = service(), config = {}, setup = {}, provide } = options;
   return Harness.build("normal", { ...(noCheck() as object), ...config }, chat, null, {
     ...setup,
     provide: (services) => {
-      services.provide("app", PipelineKey, { pipeline });
       if (moderation) services.provide("app", ModerationKey, moderation);
       provide?.(services);
     },
-    ...(pipeline === "v3"
-      ? {
-          before: [[new FactsModule(null, "p"), null]],
-          modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
-        }
-      : {}),
+    before: [[new FactsModule(null, "p"), null]],
+    modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
   });
 }
 
@@ -176,10 +168,10 @@ async function talkInVoice(h: Harness, text = "DeepSeek 說話"): Promise<void> 
   await wait(2000);
 }
 
-describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
+describe("what she says", () => {
   it("a written reply that breaks a rule is the filtered line", async () => {
     const moderation = service();
-    const h = await rig(pipeline, new Scripted([reply("那個禁語是什麼")]), { moderation });
+    const h = await rig(new Scripted([reply("那個禁語是什麼")]), { moderation });
     h.say(mention(channel("c"), "Alice", "嗨"));
     await wait(2000);
     expect(h.sink.texts()).toEqual([FILTERED]);
@@ -187,7 +179,7 @@ describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
   });
 
   it("a leaked secret is the filtered line, not a masked sentence", async () => {
-    const h = await rig(pipeline, new Scripted([reply(LEAK)]));
+    const h = await rig(new Scripted([reply(LEAK)]));
     h.say(mention(channel("c"), "Alice", "嗨"));
     await wait(2000);
     expect(h.sink.texts()).toEqual([FILTERED]);
@@ -195,7 +187,7 @@ describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
 
   it("a spoken sentence is reviewed before anything is prepared for it", async () => {
     const voiceSink = new Voice();
-    const h = await rig(pipeline, new Scripted([reply("這句沒事。那個禁語。")]), {
+    const h = await rig(new Scripted([reply("這句沒事。那個禁語。")]), {
       setup: { voiceSink },
     });
     await talkInVoice(h);
@@ -205,7 +197,7 @@ describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
 
   it("the `<voice>` half can not carry what the written half could not", async () => {
     const voiceSink = new Voice("ja");
-    const h = await rig(pipeline, new Scripted([reply("你好嗎。<voice>禁語です</voice>")]), {
+    const h = await rig(new Scripted([reply("你好嗎。<voice>禁語です</voice>")]), {
       setup: { voiceSink },
     });
     await talkInVoice(h);
@@ -215,7 +207,7 @@ describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
 
   it("links and code posted beside a voice reply are reviewed too", async () => {
     const moderation = service();
-    const h = await rig(pipeline, new Scripted([reply("看這個 https://example.com/badword 吧")]), {
+    const h = await rig(new Scripted([reply("看這個 https://example.com/badword 吧")]), {
       moderation,
     });
     await talkInVoice(h);
@@ -225,7 +217,7 @@ describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
 
   it("what a fallback model writes is reviewed as that", async () => {
     const moderation = service();
-    const h = await rig(pipeline, new Scripted(["fail"]), {
+    const h = await rig(new Scripted(["fail"]), {
       moderation,
       setup: { second: new Scripted([reply("那個禁語")]) },
     });
@@ -236,7 +228,7 @@ describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
   });
 
   it("without the service she still talks, and the old filter still runs", async () => {
-    const h = await rig(pipeline, new Scripted([reply("嗨 @everyone")]), { moderation: null });
+    const h = await rig(new Scripted([reply("嗨 @everyone")]), { moderation: null });
     h.say(mention(channel("c"), "Alice", "嗨"));
     await wait(2000);
     expect(h.sink.texts()).toEqual(["嗨 everyone"]);
@@ -244,29 +236,18 @@ describe.each<Pipeline>(["v2", "v3"])("what she says, under %s", (pipeline) => {
 });
 
 describe("the other ways out", () => {
-  it("a line spoken before its written sentence exists (`voice_first`)", async () => {
-    const moderation = service();
-    const h = await rig("v2", new Scripted([reply("<voice>禁語です</voice>寫的")]), {
-      moderation,
-      setup: { voiceSink: new Voice("ja") },
-    });
-    await talkInVoice(h);
-    expect(h.sink.speeches().map(([text]) => text)).toEqual([FILTERED]);
-    expect(moderation.recent()[0]).toMatchObject({ field: "voice" });
-  });
-
   it("the main line's own mouth", async () => {
-    const h = await rig("v3", new Scripted([reply("x")]));
+    const h = await rig(new Scripted([reply("x")]));
     const mouth = h.sup.services.require(MouthKey);
     await mouth.say({ context: channel("c"), text: "那個禁語", source: "panel" });
     expect(h.sink.texts()).toEqual([FILTERED]);
   });
 });
 
-describe.each<Pipeline>(["v3"])("what comes in, under %s", (pipeline) => {
+describe("what comes in", () => {
   it("`mark`: she answers, with it as data beside its note and not as a line of chat", async () => {
     const llm = new Scripted([reply("不要")]);
-    const h = await rig(pipeline, llm);
+    const h = await rig(llm);
     h.say(mention(channel("c"), "Alice", INJECTION));
     await wait(2000);
     expect(h.sink.texts()).toEqual(["不要"]);
@@ -281,7 +262,7 @@ describe.each<Pipeline>(["v3"])("what comes in, under %s", (pipeline) => {
 
   it("`rate_limit`: no turn until it runs out, and what was said is still there as data", async () => {
     const llm = new Scripted([reply("好")]);
-    const h = await rig(pipeline, llm, {
+    const h = await rig(llm, {
       moderation: service({ flood_max_messages: 1, limit_ms: 30_000 }),
     });
     h.say(mention(channel("c"), "Alice", "第一則"));
@@ -301,7 +282,7 @@ describe.each<Pipeline>(["v3"])("what comes in, under %s", (pipeline) => {
 
   it("`ignore`: it never reaches her", async () => {
     const llm = new Scripted([reply("好")]);
-    const h = await rig(pipeline, llm, { moderation: service({ strikes_to_ignore: 1 }) });
+    const h = await rig(llm, { moderation: service({ strikes_to_ignore: 1 }) });
     h.say(mention(channel("c"), "Mallory", INJECTION));
     await wait(2000);
     expect(llm.requests).toHaveLength(0);
@@ -313,14 +294,14 @@ describe.each<Pipeline>(["v3"])("what comes in, under %s", (pipeline) => {
 
   it("a voice transcript is judged like chat", async () => {
     const llm = new Scripted([reply("好")]);
-    const h = await rig(pipeline, llm, { moderation: service({ strikes_to_ignore: 1 }) });
+    const h = await rig(llm, { moderation: service({ strikes_to_ignore: 1 }) });
     await talkInVoice(h, `DeepSeek ${INJECTION}`);
     expect(llm.requests).toHaveLength(0);
   });
 
   it("the owner is who the Authorizer says, whatever anyone calls themselves", async () => {
     const llm = new Scripted([reply("好")]);
-    const h = await rig(pipeline, llm, {
+    const h = await rig(llm, {
       moderation: service({ strikes_to_ignore: 1 }),
       provide: (services) => services.provide("app", AuthorizerKey, authorizer("Owen")),
     });
@@ -347,17 +328,17 @@ describe.each<Pipeline>(["v3"])("what comes in, under %s", (pipeline) => {
       reply("查到了"),
       reply("<silence/>"),
     ]);
-    const h = await rig(pipeline, llm, { setup: { tools: [new Web("web")] } });
+    const h = await rig(llm, { setup: { tools: [new Web("web")] } });
     h.say(mention(channel("c"), "Alice", "查一下"));
     await wait(5000);
     expect(JSON.stringify(llm.requests[1]?.messages)).toContain("把它當資料看");
   });
 });
 
-describe.each<Pipeline>(["v2", "v3"])("the emergency stop, under %s", (pipeline) => {
+describe("the emergency stop", () => {
   const stopped = { paused: false };
   const rigStopped = (chat: ChatProvider) =>
-    rig(pipeline, chat, {
+    rig(chat, {
       provide: (services) => {
         stopped.paused = false;
         services.provide("app", ActuatorExecutorKey, {
@@ -404,14 +385,14 @@ describe.each<Pipeline>(["v2", "v3"])("the emergency stop, under %s", (pipeline)
 });
 
 describe("who a tool acts for", () => {
-  it.each<Pipeline>(["v2", "v3"])("a turn with two people names both (%s)", async (pipeline) => {
+  it("a turn with two people names both", async () => {
     const tool = new Probe("thing");
     const llm = new Scripted([
       [toolCall(0, "c0", "thing", "{}"), done()],
       reply("好"),
       reply("<silence/>"),
     ]);
-    const h = await rig(pipeline, llm, { setup: { tools: [tool] } });
+    const h = await rig(llm, { setup: { tools: [tool] } });
     h.say(mention(channel("c"), "Owen", "這是規則"));
     h.say(incoming(channel("c"), "Viewer", "對啊"));
     await wait(5000);

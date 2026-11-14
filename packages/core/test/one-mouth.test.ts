@@ -49,10 +49,10 @@ describe("only the main line speaks", () => {
     );
   });
 
-  it("the voice sink is only called by the scheduler; V2 fallbacks sit behind the mouth", () => {
+  it("the voice sink is only called by the scheduler; fallbacks sit behind the mouth", () => {
     expect(using(/\.speak\(/)).toEqual(
       [
-        // After `MouthKey`: only reached under `pipeline = "v2"`.
+        // After `MouthKey`: only reached while the agent module (the mouth) is not running.
         "packages/gate/actions/src/builtin.ts",
         "packages/play/game/src/chat.ts",
         "packages/runtime/scheduler/src/scheduler.ts",
@@ -70,10 +70,10 @@ describe("only the main line speaks", () => {
     expect(text).toContain("mouth.owns(action.turn)");
   });
 
-  it("nobody but a turn writes `utterance` lines: the bus handlers stand down under V3", () => {
+  it("nobody but a turn writes `utterance` lines: the facts bus has no handler for them", () => {
     const text = readFileSync(join(ROOT, "packages/memory/facts/src/bus.ts"), "utf8");
-    expect(text).toContain("if (!this.#ownLines) this.#playback(event.data);");
-    expect(text).toContain("if (!this.#ownLines) this.#settled(");
+    expect(text).not.toContain("#playback(");
+    expect(text).not.toContain("#settled(");
   });
 });
 

@@ -10,7 +10,7 @@ const count = () => z.number().int().nonnegative();
 const hour = () => z.number().int().min(0).max(23);
 
 /**
- * `[modules.arbiter.floor]` (docs/design/v3-architecture.md §7.2), read under `pipeline = "v3"`:
+ * `[modules.arbiter.floor]` (docs/design/v3-architecture.md §7.2):
  *
  * ```toml
  * [modules.arbiter.floor.budget]
@@ -189,7 +189,7 @@ export const ArbiterConfigSchema = z.object({
     })
     .prefault({}),
 
-  // --- pipeline = "v3" ---
+  // --- the Floor ---
   floor: FloorConfigSchema.prefault({}),
 });
 export type ArbiterConfig = z.output<typeof ArbiterConfigSchema>;

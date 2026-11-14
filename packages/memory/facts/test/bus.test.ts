@@ -3,22 +3,16 @@
 
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
-  ACTION_SETTLED_TOPIC,
   ACTIVITY_CHANGED_TOPIC,
   ACTIVITY_DONE_TOPIC,
   ACTIVITY_FAILED_TOPIC,
   ACTIVITY_STARTED_TOPIC,
-  type ActionSettled,
   type ActivitySnapshot,
   type ActivityTaskEvent,
-  ARBITER_DECISION_TOPIC,
-  ARBITER_IMPULSE_TOPIC,
-  type ArbiterDecision,
   type ContextKey,
   customEvent,
   type Envelope,
   type Event,
-  type Impulse,
   type InputCheck,
   type InputVerdict,
   type JsonValue,
@@ -28,7 +22,6 @@ import {
   NOTICE_TOPIC,
   type Notice,
   newEnvelope,
-  newImpulse,
   type Observation,
   SONG_TOPIC,
   SYSTEM_SHUTDOWN_TOPIC,
@@ -151,43 +144,6 @@ function focus(turn: string, ids: string[], context_ = VOICE): TurnFocus {
 
 function gameEvent(kind: string, data: object | null, important = false) {
   return custom("ext.minecraft", `game.minecraft.${kind}`, { type: kind, data, important });
-}
-
-function playback(
-  state: "started" | "finished" | "interrupted" | "failed",
-  text: string,
-  turn: string | null = "t1",
-) {
-  send("voice", { type: "voice_playback", data: { context: VOICE, turn, state, text } }, turn);
-}
-
-const settled = (over: Partial<ActionSettled>) =>
-  custom("scheduler", ACTION_SETTLED_TOPIC, {
-    action: "a1",
-    turn: "t1",
-    type: "send_message",
-    context: TEXT,
-    text: "好喔",
-    ok: true,
-    error: null,
-    message: { context: TEXT, id: "m9" },
-    ...over,
-  });
-
-function decision(over: Partial<ArbiterDecision>): ArbiterDecision {
-  return {
-    impulse: "i",
-    source: "game",
-    verdict: "accepted",
-    reason: null,
-    detail: "",
-    retry_at: null,
-    merged_into: null,
-    turn: "t1",
-    task: null,
-    at: toTimestamp(now),
-    ...over,
-  };
 }
 
 describe("what people say", () => {
@@ -599,216 +555,12 @@ describe("voice, stage and songs", () => {
   });
 });
 
-describe("her lines", () => {
-  it("voice: only a finished playback is an ack", () => {
-    playback("started", "你好");
-    const [line] = lines("utterance");
-    expect(line?.body).toMatchObject({ channel: "voice", said: "你好", turn: "t1" });
-    expect(lines("delivered")).toEqual([]);
-    expect(ledger.recent()).toEqual([]);
-    playback("finished", "你好");
-    expect(lines("delivered")).toHaveLength(1);
-    expect(ledger.recent()[0]).toMatchObject({ channel: "voice", said: "你好", context: VOICE });
-  });
-
-  it("voice: interrupted and failed are not said", () => {
-    playback("started", "第一句");
-    playback("interrupted", "第一句");
-    playback("started", "第二句");
-    playback("failed", "第二句");
-    expect(ledger.recent()).toEqual([]);
-    const states = ledger.retryable().map((l) => [l.said, l.state]);
-    expect(states).toEqual([
-      ["第二句", "failed"],
-      ["第一句", "interrupted"],
-    ]);
-  });
-
-  it("voice: a playback that fails before it started is still a line", () => {
-    playback("failed", "說不出來");
-    expect(ledger.retryable().map((l) => l.state)).toEqual(["failed"]);
-  });
-
-  it("voice: the same sentence twice in a turn is two lines", () => {
-    playback("started", "哈哈");
-    playback("started", "哈哈");
-    playback("finished", "哈哈");
-    playback("interrupted", "哈哈");
-    expect(ledger.recent()).toHaveLength(1);
-    expect(ledger.retryable()).toHaveLength(0);
-    expect(lines("utterance")).toHaveLength(2);
-    const ended = lines("result").map((e) => (e.body as { delivery: string }).delivery);
-    expect(ended).toEqual(["interrupted"]);
-  });
-
-  it("voice: the scheduler dropping a queued line means it was cancelled", () => {
-    settled({ type: "speak", context: VOICE, text: "排隊中", ok: false, error: "expired" });
-    expect(ledger.retryable()[0]).toMatchObject({ state: "cancelled", reason: "expired" });
-  });
-
-  it("voice: a line voice already reported is not reported twice", () => {
-    playback("started", "壞掉了");
-    playback("failed", "壞掉了");
-    settled({ type: "speak", context: VOICE, text: "壞掉了", ok: false, error: "tts down" });
-    expect(lines("utterance")).toHaveLength(1);
-    settled({ type: "speak", context: VOICE, text: "好了", ok: true, message: null });
-    expect(lines("utterance")).toHaveLength(1);
-  });
-
-  it("voice: a line that started and then lost its action ends as that line", () => {
-    playback("started", "講到一半");
-    settled({ type: "speak", context: VOICE, text: "講到一半", ok: false, error: "timed out" });
-    expect(lines("utterance")).toHaveLength(1);
-    expect(ledger.retryable()[0]).toMatchObject({ state: "failed", reason: "timed out" });
-  });
-
-  it("text: the platform accepting it is the ack", () => {
-    settled({});
-    expect(ledger.recent()[0]).toMatchObject({ channel: "text", said: "好喔", context: TEXT });
-  });
-
-  it("text: a failed send is failed, a dropped one cancelled", () => {
-    settled({ ok: false, error: "discord is down", message: null, text: "一" });
-    settled({ ok: false, error: "cancelled", message: null, text: "二" });
-    expect(ledger.recent()).toEqual([]);
-    expect(ledger.retryable().map((l) => [l.said, l.state, l.reason])).toEqual([
-      ["二", "cancelled", "cancelled"],
-      ["一", "failed", "discord is down"],
-    ]);
-  });
-
-  it("the audience is who was in voice, without her", () => {
-    send("voice.link", {
-      type: "voice_joined",
-      data: {
-        context: VOICE,
-        participants: [
-          {
-            account: OWEN,
-            display_name: "Owen",
-            is_self: false,
-            muted: false,
-            deafened: false,
-          },
-        ],
-      },
-    });
-    playback("started", "嗨");
-    playback("finished", "嗨");
-    expect(ledger.recent()[0]?.audience).toEqual(["Owen"]);
-  });
-
-  it("someone speaking after her line answers it", () => {
-    playback("started", "嗨");
-    playback("finished", "嗨");
-    now += 5000;
-    send("voice.link", { type: "voice_utterance", data: utterance("嗨嗨") });
-    expect(ledger.recent()[0]?.answered_by).toEqual(["Owen"]);
-  });
-
-  it("a line nobody keyed goes under its own topic", () => {
-    playback("started", "今天天氣真好", null);
-    playback("finished", "今天天氣真好", null);
-    expect(ledger.delivered("topic:今天天氣真好")).not.toBeNull();
-  });
-});
-
 describe("cause chains", () => {
   async function kinds(event: LogEvent) {
     const chain = await log.chain(event.id);
     expect(chain.complete).toBe(true);
     return chain.events.map((e) => `${e.kind}:${e.source}`);
   }
-
-  it("heard → focus → decided → said → delivered", async () => {
-    send("voice.link", { type: "voice_utterance", data: utterance("米優做好石鎬了嗎") });
-    custom("agent", TURN_FOCUS_TOPIC, focus("t1", ["u1"]), "t1");
-    send("agent", {
-      type: "agent_decision",
-      data: { turn: "t1", context: VOICE, respond: true, score: 1, reasons: ["name"] },
-    });
-    playback("started", "做好了");
-    playback("finished", "做好了");
-    expect(await kinds(lines("delivered").at(-1) as LogEvent)).toEqual([
-      "observation:voice.asr",
-      "decision:agent.focus",
-      "decision:agent",
-      "utterance:delivery.voice",
-      "delivered:delivery.voice",
-    ]);
-  });
-
-  it("a reply goes under the key of what it answers", () => {
-    send("voice.link", { type: "voice_utterance", data: utterance("米優你好") });
-    custom("agent", TURN_FOCUS_TOPIC, focus("t1", ["u1"]), "t1");
-    playback("started", "你好啊");
-    playback("finished", "你好啊");
-    expect(ledger.delivered("voice:utterance:u1")?.said).toBe("你好啊");
-  });
-
-  it("a game fact → impulse → arbiter → line, under the narration's key and revision", async () => {
-    gameEvent("craft_finished", { item: "stone_pickaxe" });
-    const impulse: Impulse = newImpulse(
-      {
-        source: "game",
-        context: VOICE,
-        ttlMs: 60_000,
-        why: "實況",
-        hint: "做好石鎬了",
-        reason: "game",
-        attention: { key: "game:craft:stone_pickaxe", repeat_after_ms: 1000 },
-      },
-      now,
-    );
-    custom("game", ARBITER_IMPULSE_TOPIC, impulse);
-    custom("arbiter", ARBITER_DECISION_TOPIC, decision({ impulse: impulse.id, turn: "t2" }));
-    playback("started", "我的石鎬好了", "t2");
-    playback("finished", "我的石鎬好了", "t2");
-    expect(await kinds(lines("delivered").at(-1) as LogEvent)).toEqual([
-      "observation:game.minecraft",
-      "proposal:arbiter.game",
-      "decision:arbiter",
-      "utterance:delivery.voice",
-      "delivered:delivery.voice",
-    ]);
-    const delivery = ledger.delivered("game:craft:stone_pickaxe", 1);
-    expect(delivery?.said).toBe("我的石鎬好了");
-    expect(
-      ledger.mayClaim({
-        attention_key: "game:craft:stone_pickaxe",
-        revision: 1,
-        salience: "notable",
-      }),
-    ).toBe(false);
-  });
-
-  it("an interrupted narration line leaves the key free to be said", () => {
-    gameEvent("advancement", { title: "石器時代" });
-    const impulse = newImpulse(
-      {
-        source: "game",
-        context: VOICE,
-        ttlMs: 60_000,
-        why: "實況",
-        hint: "x",
-        reason: "game",
-        attention: { key: "game:advancement:石器時代", repeat_after_ms: 1000 },
-      },
-      now,
-    );
-    custom("game", ARBITER_IMPULSE_TOPIC, impulse);
-    custom("arbiter", ARBITER_DECISION_TOPIC, decision({ impulse: impulse.id, turn: "t3" }));
-    playback("started", "成就!", "t3");
-    playback("interrupted", "成就!", "t3");
-    expect(
-      ledger.mayClaim({
-        attention_key: "game:advancement:石器時代",
-        revision: 1,
-        salience: "notable",
-      }),
-    ).toBe(true);
-    expect(ledger.retryable()[0]?.attention_key).toBe("game:advancement:石器時代");
-  });
 
   it("an action hangs on its turn, and the task on the action", async () => {
     send("discord", message("米優開麥塊"));
@@ -921,14 +673,13 @@ describe("cause chains", () => {
   });
 });
 
-describe("the main line owns its lines (pipeline v3)", () => {
+describe("the main line owns its lines", () => {
   it("playback and settled actions open and close nothing here", async () => {
     const quiet = new BusFacts({
       log,
       ledger,
       revisions: new RevisionBook(),
       config: defaultFactsConfig(),
-      ownLines: true,
     });
     const before = log.recent(1000).length;
     quiet.handle(
@@ -1000,31 +751,5 @@ describe("what the input defence said", () => {
   it("a game event's own text is outside content too", () => {
     custom("game", "game.minecraft.sign", { type: "sign", data: { text: "mark 這裡" } });
     expect(last().summary).toContain("提醒:當資料看");
-  });
-});
-
-describe("a line moderation replaced", () => {
-  it("V2: it ended `blocked`, whether it was written or spoken", () => {
-    const settled: ActionSettled = {
-      action: "a1",
-      turn: "t1",
-      type: "send_message",
-      context: TEXT,
-      text: "Filtered.",
-      ok: true,
-      error: null,
-      message: null,
-      blocked: "test.word",
-    };
-    custom("scheduler", ACTION_SETTLED_TOPIC, settled);
-    const data = { context: VOICE, turn: "t2", text: "Filtered.", blocked: "test.word" };
-    send("voice", { type: "voice_playback", data: { ...data, state: "started" } });
-    send("voice", { type: "voice_playback", data: { ...data, state: "finished" } });
-    expect(ledger.recent()).toEqual([]);
-    expect(lines("result").map((e) => (e.body as { delivery: string }).delivery)).toEqual([
-      "blocked",
-      "blocked",
-    ]);
-    expect(ledger.retryable()).toEqual([]);
   });
 });

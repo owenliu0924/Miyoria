@@ -213,7 +213,7 @@ interface Stimulus {
 
 最後由 `respond_probability = score × 4^(2L−1)`(L = 她的 talkativeness)抽樣,讓她的行為不會死板。生成階段的 LLM 也可以輸出 `<silence/>` 主動選擇不回。
 
-**多話程度是她自己的**([design/autonomy.md](design/autonomy.md) §6,v2 §3.3):attention 只留便宜的前置過濾(被叫到、名字、語音裡有人還在講就不插嘴)與「她的 talkativeness L × 佔比上限」,灰色區才問 `fast` 模型。L 是她在 `SelfState` 給這個情境(或伺服器、`voice` / `text`、`*`)定的值,加上 lesson 與情緒(`AffectSnapshot.biases`)的偏移與下限;她沒定時用等級的預設,設定的 activeness 只是把預設往下 / 往上移(−0.25 / +0.17)。插話機率 = 分數 × 4^(2L−1),L ≤ 0.05 不插話。好感、精力、activeness 倍率、語音的 `ambient_factor` / `interrupt_scale` 與所有冷卻都拿掉了;她自己多久開一次口是 Arbiter 的規則。`channel_activeness` 工具(有人說「活躍點」「安靜點」,`silent` / `low` / `medium` / `high`,最多一天)會設定該情境的 talkativeness。
+**多話程度是她自己的**([design/autonomy.md](design/autonomy.md) §6,v2 §3.3):attention 只留便宜的前置過濾(被叫到、名字、語音裡有人還在講就不插嘴)與「她的 talkativeness L × 佔比上限」。L 是她在 `SelfState` 給這個情境(或伺服器、`voice` / `text`、`*`)定的值,加上 lesson 與情緒(`AffectSnapshot.biases`)的偏移與下限;她沒定時用等級的預設,設定的 activeness 只是把預設往下 / 往上移(−0.25 / +0.17)。插話機率 = 分數 × 4^(2L−1),L ≤ 0.05 不插話。好感、精力、activeness 倍率、語音的 `ambient_factor` / `interrupt_scale` 與所有冷卻都拿掉了;她自己多久開一次口是 Arbiter 的規則。`channel_activeness` 工具(有人說「活躍點」「安靜點」,`silent` / `low` / `medium` / `high`,最多一天)會設定該情境的 talkativeness。
 
 **聊天等級是上限**(`agent/src/levels.ts`,只用在文字頻道,語音不變):她的 talkativeness(含學到的事的調整)被限制在等級的上限內,整個插話倍率也不超過上限;她沒定時用等級的預設。等級另外加上最低分數、較低的佔比上限,以及她自己開話題(她的 `chat.start` 意圖;唱歌報幕、遊戲實況與動作結果不算)的最小間隔(Arbiter 的規則之一):
 
@@ -233,7 +233,7 @@ interface Stimulus {
 - **預算**:每個頻道每天有主動發話額度,依頻道設定與最近的反應調整(她主動講話都沒人理,就降低頻率)。
 - 主動發話也走 Attention → Generation → Scheduler 同一條路,只是 `priority` 較低,也可以被取代。
 - **Arbiter**(`arbiter` 模組,`ArbiterKey`,docs/design/v2-architecture.md §3.3)是她「現在要不要說話 / 做事」的唯一關卡:她的意圖(`plan`)、唱歌報幕(`song`)、遊戲實況(`game`)、追問與動作結果(`followup`)、notice、打招呼(`world`)都是 Impulse,規則只有 `[modules.arbiter]` 一份(暫停、預算、同意、聊天等級、安靜時段;她自己開話題的每日次數、間隔與沒人接的退避),並寫進她的帳本(prompt 的 `self.ledger`)。只有 `plan` / `agenda` 算她主動開的話題。接受的 Impulse 由 agent 的 `ImpulseHostKey` 開回合;地方忙的時候 Arbiter 稍後再試。沒有 Arbiter 時 agent 照舊處理 `agent.initiative`。「冷場」只有一個訊號:world 的 `channel_quiet`(文字與語音),它喚醒心智迴圈。
-- **不重複、不對空氣講話**(V3 階段 0 的止血,在 V3 主線完成前的 V2 做法):遊戲實況的 Impulse 帶 `attention`(內容鍵和多久後算新的一次,`packages/play/game/src/narration.ts`)。同一把鍵說出去後,`repeat_after_ms` 內 Arbiter 回 `rejected` / `repeat`;沒有真的說出去(沉默、取消、失敗、等到過期)不算說過。導演的自由實況也歸到它講的那件事上,換句話說還是同一把鍵。遊戲狀態照常留在她的 context,只是不會因此開口。她自己開口(`plan` / `agenda`)、遊戲實況和記憶追問算「她自己開口」,同一個地方連續 `max_unanswered` 次沒有人說話就回 `rejected` / `unanswered`,任何人說話就恢復;定義都在 `packages/brain/arbiter/src/unanswered.ts`。她自己的動作照做,只是開場白先不說。回話、指令、面板、報幕、notice、答應的結果(`action_result`)、打招呼、緊急遊戲事件和有人要求的目標不帶鍵,兩條規則都不管。
+- **不重複、不對空氣講話**(發言權 Floor 的規則,`packages/brain/arbiter/src/floor.ts`,只算真的送達的台詞):遊戲實況的 Impulse 帶 `attention`(內容鍵和多久後算新的一次,`packages/play/game/src/narration.ts`)。同一把鍵說出去後,`repeat_after_ms` 內 Arbiter 回 `rejected` / `repeat`;沒有真的說出去(沉默、取消、失敗、等到過期)不算說過。導演的自由實況也歸到它講的那件事上,換句話說還是同一把鍵。遊戲狀態照常留在她的 context,只是不會因此開口。她自己開口(`plan` / `agenda`)、遊戲實況和記憶追問算「她自己開口」,同一個地方連續 `max_unanswered` 次沒有人說話就回 `rejected` / `unanswered`,任何人說話就恢復。她自己的動作照做,只是開場白先不說。回話、指令、面板、報幕、notice、答應的結果(`action_result`)、打招呼、緊急遊戲事件和有人要求的目標不帶鍵,兩條規則都不管。
 - **她的意圖**(`IntentSinkKey`,agent 提供):`chat.start` / `chat.dm` 過閘門後由 coordinator 開一個她自己發起的回合;其他能力先以 `self` 名義執行,成功後在她所在的地方開口(`voice.join` 等她真的進了語音頻道)。意圖不打斷進行中的回合、等待中的訊息或排隊的語音,過期就丟。
 
 ### 4.4 生成與工具

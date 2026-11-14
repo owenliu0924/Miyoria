@@ -45,7 +45,7 @@ export interface EmergencyReport {
   steps: EmergencyStep[];
 }
 
-/** Provided by the agent: what stops her turns, under either pipeline. */
+/** Provided by the agent: what stops her turns. */
 export interface TurnSilencer {
   /**
    * Turns in flight end now, what waits for a turn is dropped and nothing she was holding back

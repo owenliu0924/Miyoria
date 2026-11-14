@@ -598,15 +598,8 @@ Voice node 的層級用它的 `LOG_LEVEL`(`error|warn|info|debug`);`debug` 會�
 | 啟動時說 `No such built-in module: node:sqlite` 或 `npx miyoria` 拒絕安裝(engines) | Node 版本太舊:要 Node ≥ 24(`node -v`)。 |
 | 磁碟被 Docker 吃滿 | `docker system df`;`docker image prune`、`docker builder prune`;設定日誌輪替(§8)。 |
 
-## 切回 V2
+## 一句話的來龍去脈
 
-`[core] pipeline` 決定誰能讓她開口和動手。預設 `v3`:只有主線能說話或動作,其他模組只寫事實和提案。主線出問題時,在 `miyoria.toml` 寫:
+只有主線能讓她說話或動作,其他模組只寫事實和提案。舊設定檔裡的 `[core] pipeline` 不再有作用,core 啟動時會警告一次。
 
-```toml
-[core]
-pipeline = "v2"
-```
-
-重開 core 就回到舊路徑(回話、Plan、遊戲導演各自決定)。不用改別的設定,`[modules.arbiter.floor]` 和 `[modules.agent.mainline]` 在 V2 下不會被讀。事件日誌在兩邊都會繼續寫。值打錯時 core 不會啟動,錯誤會寫 `core.pipeline`。
-
-V3 下要查一句話的來龍去脈,看事件日誌:`decision`(來源 `mainline`,含沉默的理由)、`utterance`、`delivered`,動作是 `action` 和 `result`(來源 `mainline.hands`,`accepted` 只代表受理)。
+要查一句話的來龍去脈,看事件日誌:`decision`(來源 `mainline`,含沉默的理由)、`utterance`、`delivered`,動作是 `action` 和 `result`(來源 `mainline.hands`,`accepted` 只代表受理)。
