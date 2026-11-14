@@ -116,20 +116,22 @@ voice node 另外把**實際送去 Discord 的 PCM**(重新取樣成 48 kHz 之�
 
 # 推論 Worker HTTP 介面(v1)
 
-`workers/` 底下的 ASR / TTS 服務(Python),對應 `@miyoria/voice/speech` 的 `http-worker` provider。
+`workers/` 底下的 ASR / TTS / 判斷講完 / 歌曲 / 歌詞服務(Python),對應 `@miyoria/voice/speech` 的 `http-worker` provider、`@miyoria/voice` 的 `HttpTurnJudge`、`@miyoria/sing` 的 `HttpSingWorker`。
+
+**JSON body 的 schema 在 `packages/contracts/workers`,輸出成 [`packages/contracts/schema/workers.json`](../../packages/contracts/schema/workers.json)**(以該檔為準,下面的範例只是舉例)。不是 JSON 的部分(multipart 欄位、PCM、標頭名稱、`/vad` 的文字訊息)是同一個資料夾 `protocol.ts` 裡的常數。錯誤一律是 4xx / 5xx 加 `{"error":"..."}`(`WorkersError`)。
 
 ## ASR:`POST /asr`
 
-- 請求:`multipart/form-data`,欄位 `audio`(WAV,PCM s16le 單聲道,任意取樣率)、`language`(可選)、`prompt`(可選)。
+- 請求:`multipart/form-data`,欄位 `audio`(WAV,PCM s16le 單聲道,任意取樣率)、`language`(可選)、`prompt`(可選)、`priority`(可選,`ahead` 排在 `now` 後面,省略 = `now`)。
 - 回應:
   ```json
   {"text":"早安","language":"zh","emotion":"happy","audio_events":["laughter"],"duration_ms":1234}
   ```
-  `emotion` 和 `audio_events` 是可選欄位(SenseVoice 有,Qwen3-ASR 沒有)。
+  `language`、`emotion`、`audio_events` 是可選欄位,模型不知道就整個鍵不送(SenseVoice 有,Qwen3-ASR 沒有;`WorkersAsrReply`)。`duration_ms` 是音訊長度,client 不用。標頭 `X-Inference-Ms`:模型推論的毫秒數。
 
 ## TTS:`POST /tts`
 
-- 請求(JSON):
+- 請求(JSON,`WorkersTtsRequest`;沒有值的欄位省略或給 `null` 都一樣):
   ```json
   {"text":"哼,才不是在等你呢。","language":"Chinese","emotion":"annoyed","instruct":"不耐煩、拖長音","voice":"deepseek-chan"}
   ```
@@ -139,15 +141,17 @@ voice node 另外把**實際送去 Discord 的 PCM**(重新取樣成 48 kHz 之�
 
 ## TTS 的排隊
 
-`POST /tts` 可以帶 `priority`:`now`(省略時的值,她接下來要講的)排在 `ahead`(先合成的後面幾句)前面。回應多兩個標頭:`X-Tts-Queue-Ms`(等 GPU 鎖的毫秒數,Core 算進 `tts_queue`)、`X-Tts-Reference`(用了哪個參考音,`ref`、`ref.ja`、`bank/ja/happy`)。`emotion` 在 `TTS_VOICE_BANK=1` 時用來選參考音,其他時候仍然只是資訊。
+`POST /tts` 可以帶 `priority`:`now`(省略時的值,她接下來要講的)排在 `ahead`(先合成的後面幾句)前面。回應多幾個標頭:`X-Tts-Queue-Ms`(等 GPU 鎖的毫秒數,Core 算進 `tts_queue`)、`X-Tts-Reference`(用了哪個參考音,`ref`、`ref.ja`、`bank/ja/happy`)、`X-Tts-Streaming`(`chunk`:句子裡面就一塊一塊送;`sentence`:整句整句送)、`X-Tts-First-Audio-Ms`(從收到請求到第一段音訊)。`emotion` 在 `TTS_VOICE_BANK=1` 時用來選參考音,其他時候仍然只是資訊。
 
-`GET /busy`(TTS、ASR)→ `{"busy": n}`:正在處理的請求數,歌曲 worker 共用顯示卡時用它讓路。
+`GET /busy`(TTS、ASR)→ `{"busy": n}`(`WorkersBusy`):正在處理的請求數,歌曲 worker 共用顯示卡時用它讓路。
+
+`GET /voices`(TTS,`POST /voices/reload` 一樣)→ `{"mode","default","clone_mode","voice_bank","voices":[{"name","ref_text","x_vector_only","references":[…]}]}`(`WorkersTtsVoices`)。
 
 ## 判斷講完(`workers/turn`,預設 `127.0.0.1:8006`)
 
-- `POST /turn`:本體是 PCM s16le 單聲道 16 kHz,這個回合到現在為止的聲音(只看最後 8 秒),標頭 `X-Sample-Rate: 16000` → `{"complete": bool, "probability": 0..1, "inference_ms": …}`。模型沒載入回 `503 {"error": …}`。
-- `WS /vad`:一條連線對一條音訊串流。每則二進位訊息 512 個樣本(32 ms),每則回一個文字訊息,內容是語音機率(`"0.923"`)。模型沒載入時關閉連線(1011)。
-- `GET /health` → `{"status":"ok","smart_turn":bool,"silero":bool,"threshold":…,"errors":{…}}`。模型缺了 worker 照常跑。
+- `POST /turn`:本體是 PCM s16le 單聲道 16 kHz,這個回合到現在為止的聲音(只看最後 8 秒),標頭 `X-Sample-Rate: 16000` → `{"complete": bool, "probability": 0..1, "inference_ms": …}`(`WorkersTurnReply`;client 只讀前兩個)。取樣率不是 16000 回 400,模型沒載入回 `503 {"error": …}`。
+- `WS /vad`:一條連線對一條音訊串流。每則二進位訊息 512 個樣本(32 ms),每則回一個文字訊息,內容是語音機率(小數三位,`"0.923"`)。模型沒載入時關閉連線(1011),訊息大小不對關 1003。
+- `GET /health` → `{"status":"ok","smart_turn":bool,"silero":bool,"threshold":…,"errors":{…}}`(`WorkersTurnHealth`)。模型缺了 worker 照常跑。
 
 Core 的 `voice_utterance` 這時多一個 `turn: {ended_by, probability}`:`ended_by` 是 `turn`(模型判定講完)、`timeout`(等到 `turn_max_silence_ms`)或 `silence` / `length` / `close`。
 
@@ -155,26 +159,40 @@ Core 的 `voice_utterance` 這時多一個 `turn: {ended_by, probability}`:`ende
 
 歌曲 worker 轉換時要整張顯示卡(12 GB 的卡上跟 TTS / ASR 一起跑會慢 10 倍以上),所以 `tts/` 和 `asr/` worker 可以暫時放掉模型:
 
-- `POST /offload`(JSON 可省略):`{"reason"?: "sing", "max_s"?: 900, "drain_s"?: 15}`(`drain_s` 只有 TTS)→ `{"state":"offloaded","offload_ms":…,"drained":bool,"vram_before_mb":…,"vram_after_mb":…}`。新的請求馬上回 503;TTS 正在合成的整段話最多等 `drain_s`(`TTS_OFFLOAD_DRAIN_S`)做完,超過才在下一個 chunk 中斷(`drained: false`)。然後整個模型(TTS 還有 CUDA graphs 和聲音的 prompt)丟掉、`torch.cuda.empty_cache()`。CUDA graphs 綁在當初的記憶體位址上,不能搬到 CPU 再搬回來,所以是刪掉、之後重建。
-- 放掉期間 `POST /tts`、`GET /voices`、`POST /asr` 都回 **`503 {"error":"offloaded"}`**(不會自動重新載入:那樣就不算讓出了);`GET /health` 仍是 `status: "ok"`,多 `offloaded: true`、`reason`、`since`、`reload_at`。
-- `POST /reload` → `{"state":"ready","reload_ms":…}`:跟啟動一樣重建(TTS:權重、CUDA graphs、聲音 priming;ASR:模型 + 暖機)。重複呼叫回 `already: true`。
+- `POST /offload`(JSON 可省略,`WorkersOffloadRequest` / TTS 的 `WorkersTtsOffloadRequest`):`{"reason"?: "sing", "max_s"?: 900, "drain_s"?: 15}`(`drain_s` 只有 TTS)→ `{"state":"offloaded","offload_ms":…,"drained":bool,"vram_before_mb":…,"vram_after_mb":…,"device_used_before_mb":…,"device_used_after_mb":…,"released_mb":…}`(`WorkersOffloadReply`;`drained` 只有 TTS;`vram_*` 是這個行程自己用的,`device_*` 和 `released_mb` 是在顯示卡上量到的,讀不到是 `null`;已經放掉時多 `already: true`;停掉一個進行中的 reload 時多 `cancelled_reload: true`)。新的請求馬上回 503;TTS 正在合成的整段話最多等 `drain_s`(`TTS_OFFLOAD_DRAIN_S`)做完,超過才在下一個 chunk 中斷(`drained: false`)。然後整個模型(TTS 還有 CUDA graphs 和聲音的 prompt)丟掉、`torch.cuda.empty_cache()`。CUDA graphs 綁在當初的記憶體位址上,不能搬到 CPU 再搬回來,所以是刪掉、之後重建。
+- 放掉期間 `POST /tts`、`GET /voices`、`POST /asr` 都回 **`503 {"error":"offloaded"}`**(不會自動重新載入:那樣就不算讓出了);`GET /health` 仍是 `status: "ok"`,多 `offloaded: true`、`reason`、`since`、`reload_at`、`loading`、`released_mb`。
+- `POST /reload` → `{"state":"ready","reload_ms":…}`(`WorkersReloadReply`):跟啟動一樣重建(TTS:權重、CUDA graphs、聲音 priming;ASR:模型 + 暖機)。重複呼叫回 `already: true`。
 - 保險:放掉超過 `max_s`(`TTS_OFFLOAD_MAX_S` / `ASR_OFFLOAD_MAX_S`,預設 900 秒,0 = 不會)沒人叫 reload 就自己載回來(歌曲 worker 當掉也不會讓她永遠沒聲音)。
 - Core 端:錯誤訊息有 `offloaded` 的 ASR / TTS 失敗只記 debug,不是警告。
 
 ## 歌曲 Worker(`workers/sing`,預設 `127.0.0.1:8005`)
 
-`@miyoria/sing` 用的翻唱服務:點歌 → 下載(yt-dlp)或本機歌庫 → 人聲分離(Demucs)→ Seed-VC 歌聲轉換成她的聲音 → 混音,一次只做一個工作,做好的歌快取在 `data/songs/<id>/`。
+`@miyoria/sing` 用的翻唱服務:點歌 → 下載(yt-dlp)或本機歌庫 → 人聲分離(預設 Kim 的 Mel-Band RoFormer,沒有檢查點時退回 Demucs)→ 主唱 / 和聲分離(BS-RoFormer karaoke,沒有模型檔就略過)→ 只把主唱轉換成她的聲音(`SING_VOICE`:預設她自己的 RVC 模型;也可以先過 YingMusic-SVC / Seed-VC)→ 混音,一次只做一個工作,做好的歌快取在 `data/songs/<id>/`。
 
-- `POST /jobs`(JSON):`{"query"|"url"|"path": "...", "title"?, "artist"?, "pitch"?, "key"?: 0, "force"?: false, "exclusive_ack"?: false}`,三選一。`url` 只接受 `SING_URL_HOSTS` 的網域;`path` 是歌庫裡的相對路徑。`pitch` 是人聲移調(半音,省略 = 自動挑八度),`key` 是整首轉調(伴奏跟著移;給了 `key` 就不做自動轉調)。回 `{"job": Job}`;已經做過的歌(同一個查詢 / 連結 / 檔案與同樣的音高設定)直接回 `state: "done"`、`cached: true`。
-- `GET /jobs/{id}` → `{"job": Job}`;`DELETE /jobs/{id}` 取消。`Job`:`id`、`state`(`queued` / `running` / `done` / `failed` / `cancelled`)、`stage`(`resolve` / `download` / `exclusive` / `separate` / `convert` / `mix` / `lyrics` / `video`)、`progress`(0..1)、`error`、`song_id`、`source`、`position`、`song`(做好時的 meta)、`video`(`{state, progress, error}`,在抓影片時)、`exclusive`(`null` / `waiting` / `offloading` / `active` / `reloading` / `done`)與 `exclusive_info`(`{offloaded, errors, exclusive_wait_s?, offload_s, reload_s?}`)。
-- **獨佔顯示卡**(`SING_OFFLOAD_URLS`,例如 `http://127.0.0.1:8002,http://127.0.0.1:8003`,預設不開):從第一個用 GPU 的階段(分離,沒有就轉換)開始,先對每個 URL `POST /offload`,轉換一結束(成功、失敗、取消都一樣)就 `POST /reload`;reload 跟混音、歌詞平行跑,工作要等它們回來才算結束(她的開場白才有聲音)。某個 worker 放不掉就跳過它(記在 `exclusive_info.errors`)。`exclusive_ack: true` 的工作在 offload 前先停在 `exclusive: "waiting"`(`stage: "exclusive"`),等 Core `POST /jobs/{id}/exclusive`(她說完「我去準備一下歌喔」)或 `SING_EXCLUSIVE_WAIT_S`(30 秒)。
-- `GET /songs`、`GET /songs/{id}` → meta:`title`、`artist`、`duration_s`、`lyrics`(`{synced, lines: [{t, text}], provider, how, confidence, checks, ...}` 或 `null`,來自 lrclib.net / 網易雲;`confidence` 與 `how` 說明來源與把握)、`play`(`{sample_rate: 48000, samples}`)、`pitch`(`octave_shift`、`auto_key`、`song_key`、`vocal_shift`、`source_median_hz` / `source_top_hz`、`target_note`、`ceiling_note`、`top_after_note`、`f0_clean`、`transposer`)、`timings`、`peak_vram_mb`、`has_video` / `video` / `video_error`、`beats`(`{bpm, times}`,每一拍離播放開頭幾秒;沒有穩定節拍或舊的快取是 `null` / 沒有這個鍵)。
-- `POST /songs/{id}/lyrics`(`{title?, artist?, fresh?}`)重找一首歌的歌詞、不重做音訊,回 `{found, previous, lyrics}`;`GET /songs/{id}/files/{name}`:`mix.wav`、`vocals.wav`、`instrumental.wav`、`lyrics.lrc`、`video.mp4`(本機歌庫可能是 `video.mkv` 等),以及 Core 串流用的 `play_mix.pcm` / `play_vocals.pcm`(PCM s16le 單聲道 48 kHz,標頭 `X-Sample-Rate`)。
+- `POST /jobs`(JSON,`WorkersSingJobRequest`):`{"query"|"url"|"path": "...", "title"?, "artist"?, "pitch"?, "key"?: 0, "backing"?: "keep", "force"?: false, "exclusive_ack"?: false}`,三選一。`url` 只接受 `SING_URL_HOSTS` 的網域;`path` 是歌庫裡的相對路徑。`pitch` 是人聲移調(半音,省略 = 自動挑八度),`key` 是整首轉調(伴奏跟著移;給了 `key` 就不做自動轉調)。`backing` 是原曲的和聲怎麼處理:`keep`(預設,照原樣留在伴奏裡)、`drop`(拿掉)、`convert`(也轉成她的聲音)、`acapella`(只有人聲,沒有伴奏);每個模式在 worker 裡是各自的一首歌(歌曲 id 不同)。回 `{"job": Job}`;已經做過的歌(同一個查詢 / 連結 / 檔案與同樣的音高設定)直接回 `state: "done"`、`cached: true`。
+- `GET /jobs` → `{"jobs": [Job]}`(新的在前);`GET /jobs/{id}` → `{"job": Job}`;`DELETE /jobs/{id}` 取消。`Job`(`WorkersSingJob`):`id`、`state`(`queued` / `running` / `done` / `failed` / `cancelled`)、`stage`(`resolve` / `download` / `exclusive` / `separate` / `convert` / `mix` / `lyrics` / `video`)、`progress`(0..1)、`error`、`song_id`、`source`、`position`、`song`(做好時的 meta)、`video`(`{state, progress, error}`,在抓影片時)、`exclusive`(`null` / `waiting` / `offloading` / `active` / `reloading` / `done` / `shared`;`shared`:跟 TTS / ASR 同時跑,語音照常)與 `exclusive_info`(`{state, offloaded, errors, ...}`)、`gpu`(這個工作在哪裡跑、為什麼:`{policy, stage, mode, code, reason, free_mb, total_mb, need_mb, headroom_mb, speech_loaded, people, urgent, step_s, baseline_s, spilling, spills, steps, waited_s, silenced_s, silence_est_s, silence_max_s}`,`mode` 是 `share` / `offload` / `exclusive` / `wait` / `cpu` / `give_up`)、`yielded`、`request`、`created_at` / `started_at` / `finished_at`。`WorkersSingJob` 只寫 client 讀的欄位,其餘在這裡列出、schema 沒有。
+- `POST /gpu/context`(JSON,`WorkersSingGpuContext`)→ `{"ok": true}`:`{in_voice, listeners, live, urgent: [job id]}`,Core 在工作準備期間每次輪詢都送,告訴 worker 誰會注意到她安靜(要不要跟 TTS 共用卡)、哪些歌馬上要唱。久沒收到就當作有人在聽。
+- **獨佔顯示卡**(`SING_OFFLOAD_URLS`,例如 `http://127.0.0.1:8002,http://127.0.0.1:8003`,預設不開):從第一個用 GPU 的階段(分離,沒有就轉換)開始,先對每個 URL `POST /offload`,轉換一結束(成功、失敗、取消都一樣)就 `POST /reload`;reload 跟混音、歌詞平行跑,工作要等它們回來才算結束(她的開場白才有聲音)。某個 worker 放不掉就跳過它(記在 `exclusive_info.errors`)。決定要不要獨佔是 `SING_GPU_POLICY`(預設 `yield`;還有 `auto` / `share` / `wait` / `offload`)和顯示卡剩多少(`gpu`);不需要就是 `shared`。`exclusive_ack: true` 的工作在 offload 前先停在 `exclusive: "waiting"`(`stage: "exclusive"`),等 Core `POST /jobs/{id}/exclusive`(她說完「我去準備一下歌喔」)或 `SING_EXCLUSIVE_WAIT_S`(30 秒)。
+- `GET /songs` → `{"songs": [meta]}`(新的在前),`GET /songs/{id}` → `{"song": meta}`。meta(`WorkersSingSongMeta`):`title`、`artist`、`duration_s`、`lyrics`(`{synced, lines: [{t, text}], provider, how, confidence, checks, ...}` 或 `null`,來自 lrclib.net / 網易雲;`confidence` 與 `how` 說明來源與把握)、`backing`(請求的 `backing`;沒有主唱分離、和聲還在轉換後的人聲裡時是 `in_vocal`)、`play`(`{sample_rate: 48000, samples}`)、`pitch`(`octave_shift`、`auto_key`、`song_key`、`vocal_shift`、`source_median_hz` / `source_top_hz`、`target_note`、`ceiling_note`、`top_after_note`、`f0_clean`、`transposer`)、`timings`、`peak_vram_mb`、`has_video` / `video` / `video_error`、`beats`(`{bpm, times}`,每一拍離播放開頭幾秒;沒有穩定節拍或舊的快取是 `null` / 沒有這個鍵)。
+- `POST /songs/{id}/lyrics`(`{title?, artist?, fresh?}`)重找一首歌的歌詞、不重做音訊,回 `{found, previous, lyrics, lines}`(找不到是 `{found: false, kept, lyrics}`;`WorkersSingLyricsReply`);`GET /songs/{id}/files/{name}`:`mix.wav`、`vocals.wav`、`instrumental.wav`、`lyrics.lrc`、`video.mp4`(本機歌庫可能是 `video.mkv` 等),以及 Core 串流用的 `play_mix.pcm` / `play_vocals.pcm`(PCM s16le 單聲道 48 kHz,標頭 `X-Sample-Rate`)。
 - `GET /library` → `{"entries": [{path, title, artist, split}]}`(`split` = 資料夾裡已經有 `vocals.*` + `instrumental.*`)。
 - 快取會自己清(`SING_CACHE_MAX_GB` / `SING_CACHE_MAX_DAYS` / `SING_CACHE_PROTECT_HOURS`,見 workers/README.md 第 9 節):最久沒用的歌先刪,所以 Core 手上「準備好了」的歌可能已經不在。`GET /songs/{id}/files/{name}` 回 404 時,Core 用同一個請求重新點(worker 重做,好了再唱)。`GET /cache` → `{bytes, gb, songs, incomplete_songs, sources, oldest_use, limits, running, last}`;`POST /cache/prune`(`{dry_run?}` 或 `?dry_run=true`)現在清一次,回 `{removed: [{kind, id, title, why, last_used, bytes}], freed_bytes, before_bytes, after_bytes, protected, over_cap, errors, ...}`。
+- `GET /health` → `status`、`model`、`device`、`backend`(`seed-vc`;測試用 `mock`)、`busy`(有工作在跑)、`queued`、`vram_allocated_mb`、`gpu`(`{policy, policy_source, cuda, total_mb, free_mb, headroom_mb, audience, learned, job}`)。`WorkersSingHealth`。
 - 標題、歌手、歌詞都來自 YouTube / lrclib / 點歌的人,Core 一律當不可信資料。
+- `@miyoria/sing` 讀 job 和 meta 時每個欄位都有退路(舊的 worker 沒有的欄位用預設值):`WorkersSingJob` / `WorkersSingSongMeta` 的 `.catch(...)` 就是這個寫法,在 JSON Schema 裡是 `default`。
+
+## 歌詞 Worker(`workers/lyrics`,預設 `127.0.0.1:8007`)
+
+歌曲 worker 在另一台機器時(那台沒有 LLM 金鑰、連不到 ASR worker)用它找歌詞:查找本身還是 `workers/sing/lyrics.py`,只有 Python 端(`sing/lyrics_remote.py`)會呼叫,沒有 TypeScript client。沒有認證,只綁私有位址(Tailscale)。
+
+- `POST /lyrics`:`multipart/form-data`,欄位 `hints`(JSON,`WorkersLyricsHints`:`key`、`raw_title`、`title`、`artist`、`uploader`、`track`、`meta_artist`、`alt_title`、`description`、`tags`、`duration`、`url`,沒有值的鍵省略)、`duration`(秒,可選)、`fresh`(`0` / `1`,可選:再問一次語言模型)、`audio`(主唱的 WAV,可選:ASR 抽查要用)。`hints` 不是 JSON 或不是物件回 400,音訊超過 64 MiB 回 413。
+- 回應 `{"found": false, "result": null}` 或 `{"found": true, "result": {provider, synced, lrc, plain, track, artist, how, confidence, matched, checks, tried, llm}}`(`WorkersLyricsReply`)。
+- `GET /health` → `{"ok": true}`(`WorkersLyricsHealth`)。**這個 worker 沒有 `status` 欄位**,跟下面的共通格式不同;CLI 的檢查只看 HTTP 200,所以不影響。
 
 ## 共通
 
-- `GET /health` → `{"status":"ok","model":"...","device":"cuda:0"}`
-- 錯誤用 4xx / 5xx 加上 `{"error":"..."}`。
+- `GET /health` → `{"status":"ok", ...}`(`WorkersHealth`),`status` 在 worker 有回應時一律是 `ok`(模型放掉或沒載入也是);其餘欄位各 worker 自己加:
+  - ASR(`WorkersAsrHealth`):`model`、`device`、`backend`(`sensevoice` / `qwen3`)、`offloaded`、`loading`、`released_mb`、`vram_allocated_mb`,放掉期間再加 `since`、`reason`、`reload_at`,讀得到顯示卡時加 `device_total_mb` / `device_used_mb` / `device_free_mb`。
+  - TTS(`WorkersTtsHealth`):`offloaded`、`model`、`device`、`mode`、`backend`、`sample_rate`、`streaming`、`chunk_size`、`stream_probe`、`voices`、`instruct_supported`、`clone_mode`、`voice_bank`、`released_mb`、`engine_pid`、`vram_allocated_mb`;放掉期間只有 `model`、`since`、`reason`、`reload_at`、`loading`、`released_mb` 和記憶體欄位。
+  - 判斷講完、歌曲:見上。歌詞 worker 例外:見上。
+- 錯誤用 4xx / 5xx 加上 `{"error":"..."}`(`WorkersError`)。

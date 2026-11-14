@@ -1,6 +1,11 @@
 // TTS providers: the Miyoria inference-worker protocol, OpenAI-compatible `/audio/speech`,
 // vLLM-Omni (true streaming for Qwen3-TTS) and GPT-SoVITS (api_v2).
 
+import {
+  WORKERS_SAMPLE_RATE_HEADER,
+  WORKERS_TTS_QUEUE_MS_HEADER,
+  type WorkersTtsRequest,
+} from "@miyoria/contracts/workers";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
 import { bearerHeaders, idleTimer, joinUrl, parseSettings, post } from "./http.js";
@@ -30,7 +35,7 @@ function nonEmpty(s: string | null): string | null {
 async function streamPcm(
   url: string,
   headers: Record<string, string>,
-  body: JsonValue,
+  body: object,
   timeout: number,
   rateOf: (response: Response) => number,
   signal: AbortSignal | undefined,
@@ -52,7 +57,7 @@ async function streamPcm(
   try {
     if (!stream) throw new SpeechError("TTS response has no body");
     const audio = pcmStream(stream, rateOf(response), idle);
-    const queueMs = Number(response.headers.get("x-tts-queue-ms") ?? Number.NaN);
+    const queueMs = Number(response.headers.get(WORKERS_TTS_QUEUE_MS_HEADER) ?? Number.NaN);
     if (Number.isFinite(queueMs) && queueMs >= 0) audio.queueMs = queueMs;
     return audio;
   } catch (error) {
@@ -104,7 +109,7 @@ export class HttpWorkerTts implements TtsProvider {
 
   synthesize(request: TtsRequest, signal?: AbortSignal): Promise<AudioStream> {
     // `None` fields are left out (`skip_serializing_if`).
-    const body: Record<string, JsonValue> = { text: request.text };
+    const body: WorkersTtsRequest = { text: request.text };
     if (request.language !== null) body.language = request.language;
     if (request.emotion !== null) body.emotion = request.emotion;
     if (request.instruct !== null) body.instruct = request.instruct;
@@ -117,7 +122,7 @@ export class HttpWorkerTts implements TtsProvider {
       body,
       this.#timeoutSecs,
       (response) => {
-        const fromHeader = header(response, "x-sample-rate");
+        const fromHeader = header(response, WORKERS_SAMPLE_RATE_HEADER);
         const contentType = header(response, "content-type");
         const rate =
           (fromHeader === null ? null : parseU32(fromHeader.trim())) ??

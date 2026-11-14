@@ -10,6 +10,7 @@
 // when the people it answers are not talking and stayed quiet for `turn_confirm_ms`. It opens by
 // itself after `turn_gate_max_ms`: her voice is never held up by the gate going wrong.
 
+import { WORKERS_SAMPLE_RATE_HEADER, WorkersTurnReplySchema } from "@miyoria/contracts/workers";
 import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import { type AccountRef, accountRefString } from "@miyoria/types";
 import { deferred } from "./util.js";
@@ -62,18 +63,16 @@ export class HttpTurnJudge implements TurnJudge {
         method: "POST",
         headers: {
           "content-type": "application/octet-stream",
-          "x-sample-rate": String(sampleRate),
+          [WORKERS_SAMPLE_RATE_HEADER]: String(sampleRate),
         },
         body: new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength),
         signal: AbortSignal.any([signal, AbortSignal.timeout(this.#o.timeoutMs)]),
       });
       if (!response.ok) throw new Error(`end-of-turn worker answered ${response.status}`);
-      const body = (await response.json()) as Partial<TurnAnswer>;
-      if (typeof body.complete !== "boolean" || typeof body.probability !== "number") {
-        throw new Error("end-of-turn worker sent a bad answer");
-      }
+      const body = WorkersTurnReplySchema.safeParse(await response.json());
+      if (!body.success) throw new Error("end-of-turn worker sent a bad answer");
       this.#warned = false;
-      return { complete: body.complete, probability: body.probability };
+      return { complete: body.data.complete, probability: body.data.probability };
     } catch (error) {
       if (signal.aborted) return null;
       this.#downUntil = this.#o.now() + (this.#o.retryMs ?? DEFAULT_RETRY_MS);

@@ -1,6 +1,7 @@
 // ASR providers: the Miyoria inference-worker protocol and OpenAI-compatible
 // `/audio/transcriptions`.
 
+import { WORKERS_ASR_FORM_FIELDS, WorkersAsrReplySchema } from "@miyoria/contracts/workers";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { z } from "zod";
 import { bearerHeaders, joinUrl, parseSettings, post } from "./http.js";
@@ -58,13 +59,6 @@ export const HttpWorkerAsrConfigSchema = z.object({
 });
 export type HttpWorkerAsrConfig = z.output<typeof HttpWorkerAsrConfigSchema>;
 
-const WorkerReplySchema = z.object({
-  text: z.string(),
-  language: z.string().nullable().default(null),
-  emotion: z.string().nullable().default(null),
-  audio_events: z.array(z.string()).default([]),
-});
-
 /** ASR client for an inference worker (see `docs/protocols/voice-link.md`). */
 export class HttpWorkerAsr implements AsrProvider {
   readonly name: string;
@@ -79,16 +73,17 @@ export class HttpWorkerAsr implements AsrProvider {
 
   async transcribe(audio: AudioBuf, hint: AsrHint, signal?: AbortSignal): Promise<Transcript> {
     const form = new FormData();
-    form.append("audio", wavBlob(audio), "audio.wav");
-    if (hint.language !== null) form.append("language", hint.language);
-    if (hint.prompt !== null) form.append("prompt", hint.prompt);
-    if (hint.priority === "ahead") form.append("priority", "ahead");
+    const field = WORKERS_ASR_FORM_FIELDS;
+    form.append(field.audio, wavBlob(audio), "audio.wav");
+    if (hint.language !== null) form.append(field.language, hint.language);
+    if (hint.prompt !== null) form.append(field.prompt, hint.prompt);
+    if (hint.priority === "ahead") form.append(field.priority, "ahead");
     const response = await post(this.#url, {
       body: form,
       timeoutMs: this.#timeoutMs,
       ...(signal ? { signal } : {}),
     });
-    const reply = await readJson(response, WorkerReplySchema, "invalid ASR worker response");
+    const reply = await readJson(response, WorkersAsrReplySchema, "invalid ASR worker response");
     return {
       text: reply.text,
       language: reply.language,
