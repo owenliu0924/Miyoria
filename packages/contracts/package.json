@@ -1,16 +1,41 @@
 {
   "name": "@miyoria/contracts",
   "version": "0.1.0",
-  "description": "Every shape that crosses a process boundary, written once as a zod schema. wire: accounts, contexts, messages and voice shapes; kit: the rules the schemas follow and the JSON Schema emitter",
+  "description": "Every shape that crosses a process boundary, written once as a zod schema. One folder per kind of contract (wire, events, voice-link, stage-link, overlay, workers); kit holds the rules the schemas follow and the JSON Schema emitter",
   "type": "module",
   "engines": {
     "node": ">=24"
   },
   "exports": {
+    "./events": {
+      "@miyoria/source": "./events/src/index.ts",
+      "types": "./dist/events/src/index.d.ts",
+      "default": "./dist/events/src/index.js"
+    },
+    "./overlay": {
+      "@miyoria/source": "./overlay/src/index.ts",
+      "types": "./dist/overlay/src/index.d.ts",
+      "default": "./dist/overlay/src/index.js"
+    },
+    "./stage-link": {
+      "@miyoria/source": "./stage-link/src/index.ts",
+      "types": "./dist/stage-link/src/index.d.ts",
+      "default": "./dist/stage-link/src/index.js"
+    },
+    "./voice-link": {
+      "@miyoria/source": "./voice-link/src/index.ts",
+      "types": "./dist/voice-link/src/index.d.ts",
+      "default": "./dist/voice-link/src/index.js"
+    },
     "./wire": {
       "@miyoria/source": "./wire/src/index.ts",
       "types": "./dist/wire/src/index.d.ts",
       "default": "./dist/wire/src/index.js"
+    },
+    "./workers": {
+      "@miyoria/source": "./workers/src/index.ts",
+      "types": "./dist/workers/src/index.d.ts",
+      "default": "./dist/workers/src/index.js"
     }
   },
   "files": [

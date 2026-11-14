@@ -1041,6 +1041,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
@@ -1075,6 +1078,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
@@ -1159,6 +1165,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate

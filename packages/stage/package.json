@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@miyoria/commands": "workspace:*",
+    "@miyoria/contracts": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/runtime": "workspace:*",
