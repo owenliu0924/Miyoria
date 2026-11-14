@@ -3,6 +3,7 @@
 
 import type { ChatProvider, ChatRequest, ChatStream } from "@miyoria/llm/llm";
 import { type EventBus, sleep } from "@miyoria/runtime/kernel";
+import type { ScriptedLlmConfig } from "@miyoria/runtime/replay-log";
 import {
   ACTION_SETTLED_TOPIC,
   type Action,
@@ -14,7 +15,6 @@ import {
   type PlaybackState,
   type TurnId,
 } from "@miyoria/types";
-import type { ScriptedLlmConfig } from "./log.js";
 
 const DEFAULT_REPLY = "嗯嗯,我在聽!";
 

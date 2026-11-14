@@ -1,7 +1,8 @@
 {
   "name": "@miyoria/replay",
   "version": "0.1.0",
-  "description": "Records the bus events she perceives to JSONL and replays them through the real conversation pipeline",
+  "private": true,
+  "description": "Plays a recorded replay log through the real conversation pipeline with a scripted LLM and reports on it",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -9,15 +10,10 @@
   "exports": {
     ".": {
       "@miyoria/source": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "default": "./src/index.ts"
     }
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -29,8 +25,7 @@
     "@miyoria/memory": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/store": "workspace:*",
-    "@miyoria/types": "workspace:*",
-    "zod": "^4.6.7"
+    "@miyoria/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

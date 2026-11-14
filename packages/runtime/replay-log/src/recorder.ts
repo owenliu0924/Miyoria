@@ -1,4 +1,4 @@
-// Module `replay`: an opt-in recorder of what she perceives, for the replay harness
+// Module `replay`: an opt-in recorder of what she perceives, for the replay harness (tools/replay)
 // (docs/design/v2-architecture.md §4, "從階段 1 開始建回放測試").
 //
 // ```toml
@@ -13,15 +13,15 @@
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { eventTopic, toTimestamp } from "@miyoria/types";
+import { z } from "zod";
 import {
   defineManifest,
   errorMessage,
   type Module,
   type ModuleContext,
   SerialQueue,
-} from "@miyoria/runtime/kernel";
-import { eventTopic, toTimestamp } from "@miyoria/types";
-import { z } from "zod";
+} from "../../kernel/src/index.js";
 import { DEFAULT_RECORD_TOPICS, formatEntry } from "./log.js";
 
 export const ReplayConfigSchema = z.object({

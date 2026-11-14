@@ -89,7 +89,7 @@
 | 6 少叫醒她 | `hostile_near`、`reflex_end` 不再觸發決定;失敗紀錄是獨立一欄(第 1 項) | `config.ts` |
 | 7 天黑和死掉 | adapter 從快照看出黃昏就送 `night_started`;導演自己開始 `shelter`(有床就睡,沒有就往下挖三格、從裡面封頂,等到天亮)。死掉記住位置和身上的東西,5 秒後自己開始 `recover` 走回去撿。被打斷的目標結束後回來 | adapter `survival.ts`、`adapter.ts`;`director.ts` |
 | 8 技能 | 有 `want` 的目標達成時,這個目標裡有進展的步驟存成技能,下次同樣的東西放進 prompt,也發 `game.director.skill`。**還沒做**:存下來跨重開(§8.3 的工作區),現在只活在模組裡 | `skills.ts` |
-| 9 紀錄和推理 | 決定的 trace 多了看到的狀態摘要、`want`、暫停中的做法;決定用 `reasoning: "low"`;11-08 的紀錄是測試。**還沒做**:`packages/eval` 的 `guard` 題目還是舊的防呆,要換成新的才會翻過來 | `director.ts`、`config.ts` |
+| 9 紀錄和推理 | 決定的 trace 多了看到的狀態摘要、`want`、暫停中的做法;決定用 `reasoning: "low"`;11-08 的紀錄是測試。**還沒做**:`tools/eval` 的 `guard` 題目還是舊的防呆,要換成新的才會翻過來 | `director.ts`、`config.ts` |
 
 模組(Java)沒有改。
 

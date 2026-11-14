@@ -64,8 +64,8 @@ describe("every line of hers is reviewed", () => {
 
   it("whoever builds a line has it reviewed first", () => {
     const builders = using(/\btype:\s*"(?:speak|send_message)"/).filter(
-      // The bus shape of `action.settled` and the replay's fake sink: they build no words.
-      (f) => f !== "packages/types/src/action.ts" && f !== "packages/replay/src/fakes.ts",
+      // The bus shape of `action.settled`: it builds no words.
+      (f) => f !== "packages/types/src/action.ts",
     );
     expect(builders).toEqual(
       [
@@ -181,8 +181,6 @@ describe("everything people write is judged", () => {
       "packages/economy/src/earn.ts",
       "packages/memory/learning/src/modules.ts",
       "packages/memory/memory/src/module.ts",
-      "packages/replay/src/report.ts",
-      "packages/replay/src/runner.ts",
       "packages/heart/self/src/module.ts",
       "packages/heart/self/src/rules.ts",
       "packages/heart/social/src/module.ts",

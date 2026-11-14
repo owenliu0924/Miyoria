@@ -7,10 +7,9 @@
 // system the turn is refused (`MainTurn.take`) or the proposal is dropped before the Floor.
 // Open loop: what she would have said instead is not asked.
 //
-// The book lives in the arbiter, which this package does not depend on; it is imported from its
-// source so the case runs the code that runs live, not a copy of its rules.
+// The book is the arbiter's own, so the case runs the code that runs live, not a copy of its rules.
 
-import { WishBook } from "../../../brain/arbiter/src/wishes.js";
+import { WishBook } from "@miyoria/brain/arbiter";
 import type { Trace } from "../trace.js";
 import type { Subject } from "./types.js";
 

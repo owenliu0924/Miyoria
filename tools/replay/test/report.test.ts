@@ -2,6 +2,7 @@
 // block of her own, and as residual activity state.
 
 import type { EventBus } from "@miyoria/runtime/kernel";
+import type { ReplayEntry } from "@miyoria/runtime/replay-log";
 import {
   type ContextKey,
   customEvent,
@@ -12,7 +13,7 @@ import {
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { ReplaySink } from "../src/fakes.js";
-import { buildReport, type ReplayEntry, type ReplayRun, ScriptedLlm } from "../src/index.js";
+import { buildReport, type ReplayRun, ScriptedLlm } from "../src/index.js";
 
 const VOICE: ContextKey = { platform: "t", scope: "g", channel: "v", kind: "voice" };
 const AT = toTimestamp(Date.UTC(2026, 10, 3, 6));

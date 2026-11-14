@@ -159,7 +159,7 @@ Phase 0–8 先用 Rust 寫成原型(留在 git 歷史裡),之後整個改寫成
 - [x] 階段 4:情緒與關係(遞減、互斥、一人一卡)
 - [x] 階段 5:計畫與日程(Appraise / Plan / Reflect、Goal agenda、日計畫)
 - [x] 階段 6:遊戲任務契約(task id + 原因碼)
-- [x] 回放測試(`packages/replay`)、面板的活動 / 帳本 / 情緒 / 目標 / prompt 檢視
+- [x] 回放測試(`tools/replay`)、面板的活動 / 帳本 / 情緒 / 目標 / prompt 檢視
 - [ ] 實測並對照 §4 的驗收指標(語音 p50 < 2.5 s、文字 p50 < 3 s、被叫開口率 > 70%、主動被擋率 < 20%)
 - [ ] Minecraft 換方法(另外討論)
 - [ ] 決定中日雙語語音是否保留;speculative 生成;Silero VAD

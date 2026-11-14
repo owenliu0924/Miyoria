@@ -24,19 +24,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  apps/card-studio:
-    dependencies:
-      playwright-core:
-        specifier: 1.64.1
-        version: 1.64.1
-    devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vite:
-        specifier: ^7.0.0
-        version: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)
-
   apps/overlay:
     devDependencies:
       typescript:
@@ -652,9 +639,6 @@ importers:
       '@miyoria/plugin-host':
         specifier: workspace:*
         version: link:../plugin-host
-      '@miyoria/replay':
-        specifier: workspace:*
-        version: link:../replay
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -741,37 +725,6 @@ importers:
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
-  packages/eval:
-    dependencies:
-      '@miyoria/brain':
-        specifier: workspace:*
-        version: link:../brain
-      '@miyoria/gate':
-        specifier: workspace:*
-        version: link:../gate
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/play':
-        specifier: workspace:*
-        version: link:../play
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -1030,46 +983,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
-  packages/replay:
-    dependencies:
-      '@miyoria/brain':
-        specifier: workspace:*
-        version: link:../brain
-      '@miyoria/gate':
-        specifier: workspace:*
-        version: link:../gate
-      '@miyoria/heart':
-        specifier: workspace:*
-        version: link:../heart
-      '@miyoria/llm':
-        specifier: workspace:*
-        version: link:../llm
-      '@miyoria/memory':
-        specifier: workspace:*
-        version: link:../memory
-      '@miyoria/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@miyoria/store':
-        specifier: workspace:*
-        version: link:../store
-      '@miyoria/types':
-        specifier: workspace:*
-        version: link:../types
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-
   packages/runtime:
     dependencies:
       '@miyoria/types':
@@ -1298,6 +1211,87 @@ importers:
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+
+  tools/card-studio:
+    dependencies:
+      playwright-core:
+        specifier: 1.64.1
+        version: 1.64.1
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vite:
+        specifier: ^7.0.0
+        version: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)
+
+  tools/eval:
+    dependencies:
+      '@miyoria/brain':
+        specifier: workspace:*
+        version: link:../../packages/brain
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../../packages/gate
+      '@miyoria/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@miyoria/play':
+        specifier: workspace:*
+        version: link:../../packages/play
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+
+  tools/replay:
+    dependencies:
+      '@miyoria/brain':
+        specifier: workspace:*
+        version: link:../../packages/brain
+      '@miyoria/gate':
+        specifier: workspace:*
+        version: link:../../packages/gate
+      '@miyoria/heart':
+        specifier: workspace:*
+        version: link:../../packages/heart
+      '@miyoria/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@miyoria/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@miyoria/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+    devDependencies:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

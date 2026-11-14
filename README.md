@@ -136,6 +136,7 @@ apps/overlay      OBS browser-source overlay, served by the Stage node on :7884
 apps/voice-node   Self-account voice node: Discord voice and Go Live streaming
 workers/          Python GPU workers: asr (:8003), tts (:8002), sing (:8005), plus fakes for testing
 extensions/       The Minecraft bridge mod and adapter, and example extensions
+tools/            Developer tools that Core does not load: the incident eval set, the replay harness, the card renderer
 profiles/         Characters: persona, voice, avatar mapping (the first one is DeepSeek-chan)
 deploy/           Dockerfile and Compose files for Core and the speech workers
 docs/             Architecture, design notes, protocols, decisions and the roadmap

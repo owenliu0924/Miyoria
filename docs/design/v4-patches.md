@@ -148,7 +148,7 @@ backlog 記的:2026-11-09 15:29,`reasoning` off 的一回合把思考當回覆�
 
 ## 7. 事故題
 
-`packages/eval` 加了 2026-11-10 的兩題,改回去就會讓 `pnpm eval` 變紅:
+`tools/eval` 加了 2026-11-10 的兩題,改回去就會讓 `pnpm eval` 變紅:
 
 - `repeat-question-one-wish`(新 harness `wish`):九點的提案、承諾、十一點的兩次私訊、S 的回答、Plan 的目標、S 在頻道說的話,依序丟進 arbiter 真正的 `WishBook`,她每一次問 S 之前先問 `screen`。現在只留 11:07 的第一則;紀錄裡是十次。她問的句子是改寫的,時間、次數和 S 說的話來自程式註解和測試。
 - `attention-aside-about-her`(新 harness `attention`):「@Bob 她一直跳針,第六次了」是回覆她的訊息,但對 Bob 說;用 agent 的 `directReason` 判斷,不能當成對她說。旁邊放一則「真的假的」(不是事故裡的),讓「全部都不算對她說」的改法也會變紅。

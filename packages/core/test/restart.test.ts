@@ -6,13 +6,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActivityModule } from "@miyoria/brain/activity";
 import { FactsModule, toReplayLines } from "@miyoria/memory/facts";
-import { entryTopic, formatEntry, isReplayInput, parseReplayLog } from "@miyoria/replay";
 import {
   defineManifest,
   type Module,
   type ModuleContext,
   Supervisor,
 } from "@miyoria/runtime/kernel";
+import {
+  entryTopic,
+  formatEntry,
+  isReplayInput,
+  parseReplayLog,
+} from "@miyoria/runtime/replay-log";
 import { SqliteStore } from "@miyoria/store";
 import {
   ActivityManagerKey,

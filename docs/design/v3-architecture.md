@@ -138,7 +138,7 @@ interface LogEvent {
 - **`cause` 是關鍵**:面板的「意識軸」和所有除錯都靠它把聽到、想、說、做串起來。
 - 所有模組讀日誌的投影,不再互相訂閱私有狀態。
 - SQLite 存放,熱資料在記憶體,定期壓縮舊資料。重啟從日誌重建活動狀態,解決「重啟後遊戲開著卻顯示閒置」。
-- `packages/replay` 改成直接重播這條日誌。
+- `tools/replay` 改成直接重播這條日誌。
 
 ### Working Context:她現在知道什麼
 
@@ -722,9 +722,9 @@ V2 的教訓是單元測試全過,上線全是問題。
 - **pass^k**:服從和誠實要連續都對。75% 的單次成功率,連三次只剩 42%。
 - **每階段驗收都在真實 Discord 和語音上跑一場**,把數字記進文件。
 
-**事故題庫:`packages/eval`**(11-08 起,14 題,全部取自 11-07 和 11-08 的真實紀錄)
+**事故題庫:`tools/eval`**(11-08 起,14 題,全部取自 11-07 和 11-08 的真實紀錄)
 
-- **為什麼不放 `packages/replay`**:replay 重播的是匯流排事件,`log_events` 裡沒有那種事件,而且要問的程式(表達式解析器、遊戲失敗保護、主人規則比對)分散在 agent、game、directive。`eval` 依賴它們,replay 維持輕。
+- **為什麼不放 `tools/replay`**:replay 重播的是匯流排事件,`log_events` 裡沒有那種事件,而且要問的程式(表達式解析器、遊戲失敗保護、主人規則比對)分散在 agent、game、directive。`eval` 依賴它們,replay 維持輕。
 - **跑法**:`pnpm eval`(`--k 5` 連跑五次、`--json`、只跑某幾題就在後面接 id)。紅燈就結束碼 1。`pnpm --filter @miyoria/eval test` 是同一份,多幾個檢查器的單元測試。
 - **題目**(`fixtures/*.json`):`trace` 是當時發生的事(她講了什麼、哪些請求到了 gate、遊戲決策、舞台狀態),`checks` 是她違反的規則,`control` 是正確的樣子。人名和 Discord id 換成 `owner`、`viewer-N`,別人的訊息只留 owner 的禁令。用 `pnpm --filter @miyoria/eval extract` 從資料庫重做,它只用唯讀開 `data/miyoria.db`。
 - **檢查**都是程式能判的規則:沒有標記漏進發言、工具真的被呼叫、同一個失敗的目標最多兩次、失敗有被說出來、同一句不重複、自言自語不超過 3 句、主人禁令之後她自己不能再開、禁令有被寫下、說了要做就要做。`min_said` 防止沉默的版本拿滿分。

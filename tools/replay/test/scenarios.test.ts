@@ -4,13 +4,12 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseReplayLog, type ReplayLog } from "@miyoria/runtime/replay-log";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildReport,
   formatReport,
-  parseReplayLog,
   type ReplayClock,
-  type ReplayLog,
   type ReplayReport,
   replay,
 } from "../src/index.js";

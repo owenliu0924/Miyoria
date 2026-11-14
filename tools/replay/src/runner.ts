@@ -22,6 +22,12 @@ import {
   Supervisor,
 } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
+import {
+  entryTopic,
+  isReplayInput,
+  type ReplayEntry,
+  type ReplayLog,
+} from "@miyoria/runtime/replay-log";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
@@ -39,7 +45,6 @@ import {
   sameAccount,
 } from "@miyoria/types";
 import { ReplaySink, ScriptedLlm } from "./fakes.js";
-import { entryTopic, isReplayInput, type ReplayEntry, type ReplayLog } from "./log.js";
 
 /** Fake time, driven by the caller (Vitest's fake timers in tests and in `pnpm replay`). */
 export interface ReplayClock {

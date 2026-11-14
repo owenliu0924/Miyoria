@@ -3,8 +3,9 @@
 // `MIYORIA_REPLAY_OUT` (`.txt` text and `.json`).
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { parseReplayLog } from "@miyoria/runtime/replay-log";
 import { it, vi } from "vitest";
-import { buildReport, formatReport, parseReplayLog, replay } from "../src/index.js";
+import { buildReport, formatReport, replay } from "../src/index.js";
 
 it("replays the log", async () => {
   const file = process.env.MIYORIA_REPLAY_FILE;

@@ -51,7 +51,7 @@ Owner 指令是目前結構問題最明確的地方。OpenAI Model Spec 把 assi
 
 記憶沒有哪個架構有乾淨的優勢證據,因為主要 benchmark 本身有爭議(見衝突表)。Letta 把對話放進檔案就拿到 LoCoMo 74.0%,高於 Mem0 回報的圖譜版本 **[vendor]**([Letta](https://www.letta.com/blog/benchmarking-ai-agent-memory)),簡單的基線就足以挑戰專用系統。Generative Agents 的消融顯示記憶、反思、規劃真的有用(TrueSkill 29.89 對 21.21),也記錄了 embellishment 這類失敗 **[CONFIRMED, paper]**([Park et al.](https://arxiv.org/html/2304.03442))。**[推論]** 可辯護的設計是三層:永遠在 prompt 裡、有上限的 pinned core(人格、directive、未兌現的承諾);不可變的事件日誌;帶證據指標的衍生記憶,在背景整理。Directive 不能靠檢索,漏掉一個事實只是一句尷尬的話,漏掉「不准玩」就是抗命。寫入時要帶來源與親歷與否(AIRI [#2883](https://github.com/moeru-ai/airi/issues/2883) **[issue]**),人物事實要逐條有證據(MaiBot [#2366](https://github.com/Mai-with-u/MaiBot/issues/2366) **[issue, 只讀標題]**)。Letta server repo 已在 2026-08-16 封存,自動 dreaming 在原生 Windows 預設關閉 **[doc]**([letta-code](https://github.com/letta-ai/letta-code/blob/main/README.md)),不適合當相依。
 
-評測要用程式判定一切可檢查的規則,LLM judge 只留給品味,並用人工校準。服從與誠實要看 pass^k:單次 75% 的成功率,連三次只剩約 42% **[CONFIRMED]**([Anthropic evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents))。**[repo]** `packages/replay` 已能重播,但 V2 §7 自己寫明只跑過單元測試、模擬與 fixture。**[推論]** log 重播有一個根本限制:她的行為一旦不同,錄下來的未來就失效,所以兩小時的服從測試必須是 closed-loop,用假遊戲、假 executor 和模擬使用者。第一批 20 到 50 題直接取自真實事故,兩小時的 pickaxe log 當固定 fixture,再注入工具拒絕、逾時、ASR 聽錯。「不重複」要和最低活動量一起評,否則一個沉默的版本會滿分通過。
+評測要用程式判定一切可檢查的規則,LLM judge 只留給品味,並用人工校準。服從與誠實要看 pass^k:單次 75% 的成功率,連三次只剩約 42% **[CONFIRMED]**([Anthropic evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents))。**[repo]** `tools/replay` 已能重播,但 V2 §7 自己寫明只跑過單元測試、模擬與 fixture。**[推論]** log 重播有一個根本限制:她的行為一旦不同,錄下來的未來就失效,所以兩小時的服從測試必須是 closed-loop,用假遊戲、假 executor 和模擬使用者。第一批 20 到 50 題直接取自真實事故,兩小時的 pickaxe log 當固定 fixture,再注入工具拒絕、逾時、ASR 聽錯。「不重複」要和最低活動量一起評,否則一個沉默的版本會滿分通過。
 
 ## 4.8 秒主要是 GPU 爭用,換模型救不了
 
@@ -135,7 +135,7 @@ TTS 的第一步是把 x-vector 換成 ICL,速度幾乎一樣(TTFA 152 對 149 m
 | Debounce 加 `consume` 結果,不呼叫 LLM | MaiBot #2276 | **部分** | 被 gate 擋下仍寫入 history |
 | 記憶來源欄位、讀取時衰減、pin | AIRI #2883、Lumi_Nox | **部分**,R6 已有來源與信心值 | 親歷與轉述分開,人物事實要有證據 |
 | 真實送出時間戳,tool 文字在送出和持久化兩處都清掉 | MaiBot #2127、#2346 | 待查 | 主動回合在送出時就寫入 history |
-| pass^k、closed-loop 模擬、fault injection | Anthropic、τ-bench | **部分**,`packages/replay` | 以真實事故建 20 到 50 題 |
+| pass^k、closed-loop 模擬、fault injection | Anthropic、τ-bench | **部分**,`tools/replay` | 以真實事故建 20 到 50 題 |
 
 | 避開 | 為什麼 |
 |---|---|

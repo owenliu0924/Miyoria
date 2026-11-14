@@ -12,13 +12,12 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseReplayLog, type ReplayLog } from "@miyoria/runtime/replay-log";
 import { type ArbiterDecision, type Impulse, isJsonObject } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildReport,
-  parseReplayLog,
   type ReplayClock,
-  type ReplayLog,
   type ReplayReport,
   type ReplayRun,
   replay,

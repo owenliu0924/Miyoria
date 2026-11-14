@@ -43,7 +43,6 @@ describe("only the main line speaks", () => {
         // The turn itself: sentences, text, the fixed line.
         "packages/brain/agent/src/turn.ts",
         // The bus shape of `action.settled` in the type's own file.
-        "packages/replay/src/fakes.ts",
         "packages/types/src/action.ts",
       ].sort(),
     );

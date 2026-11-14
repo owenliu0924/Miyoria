@@ -1,5 +1,5 @@
 // The log as replay input. An observation keeps the bus event it came from (`origin`), so a slice
-// of the log turns back into the lines `packages/replay` reads (`ReplayEntry`: `{at, source,
+// of the log turns back into the lines `tools/replay` reads (`ReplayEntry`: `{at, source,
 // event}`, in time order). Which of them count as input stays the replay's call
 // (`isReplayInput`); `formatEntry` from `@miyoria/replay` writes them as JSONL.
 

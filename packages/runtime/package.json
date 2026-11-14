@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/runtime",
   "version": "0.1.0",
-  "description": "kernel: Module lifecycle, supervisor, event bus, service registry, config and logging; profile: Profile loading: persona, LLM purposes, voice and avatar settings; scheduler: Action scheduler: per-lane output queues with priority, TTL and coalescing",
+  "description": "kernel: Module lifecycle, supervisor, event bus, service registry, config and logging; profile: Profile loading: persona, LLM purposes, voice and avatar settings; scheduler: Action scheduler: per-lane output queues with priority, TTL and coalescing; replay-log: the opt-in recorder of what she perceives and its log format",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -21,6 +21,11 @@
       "@miyoria/source": "./scheduler/src/index.ts",
       "types": "./dist/scheduler/src/index.d.ts",
       "default": "./dist/scheduler/src/index.js"
+    },
+    "./replay-log": {
+      "@miyoria/source": "./replay-log/src/index.ts",
+      "types": "./dist/replay-log/src/index.d.ts",
+      "default": "./dist/replay-log/src/index.js"
     }
   },
   "files": [

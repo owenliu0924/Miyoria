@@ -40,7 +40,6 @@
     "@miyoria/memory": "workspace:*",
     "@miyoria/play": "workspace:*",
     "@miyoria/plugin-host": "workspace:*",
-    "@miyoria/replay": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/sing": "workspace:*",
     "@miyoria/stage": "workspace:*",
