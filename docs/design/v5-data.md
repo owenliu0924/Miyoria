@@ -24,6 +24,8 @@
 
 ## 要 owner 決定的事
 
+**2026-11-14:owner 全部照建議決定。** 之後又加了一項:新的外掛資料表先用 Drizzle(`drizzle-orm` 的 `node:sqlite` 驅動)試寫第 4 步的 identity,比過再決定是否全面採用;`events` 表、全文搜尋和 trigger 維持手寫 SQL。
+
 | # | 事 | 建議 |
 |---|---|---|
 | D1 | 資料庫 | 只留 SQLite。失去的是沒在本機測過的 Docker 加 Postgres 部署,以及多個行程同時寫入 |
@@ -53,10 +55,10 @@
 
 | # | 步驟 | 大小 |
 |---|---|---|
-| 1 | 新的遷移執行器 | 小 |
-| 2 | 刪掉 Postgres | 小 |
+| 1 | 新的遷移執行器(已完成) | 小 |
+| 2 | 刪掉 Postgres(已完成) | 小 |
 | 3 | `events` 表、遮蔽、保留等級 | 中 |
-| 4 | `identity` 外掛 | 中 |
+| 4 | `identity` 外掛(進行中,同時是 Drizzle 的試用) | 中 |
 | 5 | 聊天事件取代 `message_log` | 中 |
 | 6 | 回合和稽核事件;刪掉 recorder | 小到中 |
 | 7 | `llm.call` 事件 | 小 |
