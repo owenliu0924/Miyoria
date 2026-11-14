@@ -22,6 +22,7 @@ import {
   type TurnOutcomeRecord,
 } from "@miyoria/types";
 import type { DataCategoryId, DataExport, DataInventory, WipeCounts, WipeOptions } from "./data.js";
+import type { PersonHandleDirectory } from "./handles.js";
 import type {
   Account,
   AuditEntry,
@@ -579,6 +580,11 @@ export interface Store {
   readonly goals: GoalStore;
   readonly bounties: BountyStore;
   readonly economyDocs: EconomyDocStore;
+  /**
+   * Her stable names for people, kept by the backend itself (the SQLite store's are
+   * `persons.handle`). Optional: without it the app keeps them in `settings`.
+   */
+  readonly handles?: PersonHandleDirectory;
   /** Releases the backend (closes the database). */
   close(): Promise<void>;
 }

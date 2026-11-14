@@ -15,6 +15,7 @@
 
 import type { JsonObject, JsonValue, ProfileId, Timestamp } from "@miyoria/types";
 import { StoreError } from "./common.js";
+import type { PersonPrefs } from "./identity/schema.js";
 import { type ExportColumn, exportValue } from "./profile-data.js";
 import type { RoleDefinition } from "./records.js";
 
@@ -84,7 +85,19 @@ export interface OtherSettingsPart {
   id: string;
 }
 
-export type DataPart = TablePart | SettingsPart | CallNamesPart | OtherSettingsPart;
+/** One entry of `persons.prefs` (cleared, the person stays). */
+export interface PrefsPart {
+  kind: "prefs";
+  id: string;
+  key: keyof PersonPrefs;
+}
+
+export type DataPart = TablePart | SettingsPart | CallNamesPart | OtherSettingsPart | PrefsPart;
+
+/** Parts that clear a column of rows another part may delete; they run first. */
+function clears(part: DataPart): boolean {
+  return part.kind === "call_names" || part.kind === "prefs";
+}
 
 export interface DataCategory {
   id: DataCategoryId;
@@ -158,6 +171,10 @@ function settings(
   prefixes: string[] = [],
 ): SettingsPart {
   return { kind: "settings", id, profile, keys, prefixes };
+}
+
+function prefs(id: string, key: PrefsPart["key"]): PrefsPart {
+  return { kind: "prefs", id, key };
 }
 
 function category(
@@ -453,27 +470,76 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   ),
   category(
     "people",
+    // The `identity` tables (docs/design/v5-data.md §4), dependents first: places name persons
+    // and accounts. Handles are `persons.handle`.
     [
-      table("accounts", "accounts", "node", "last_seen", "person_id, platform, account_id", {
-        platform: "text",
-        account_id: "text",
-        person_id: "text",
-        display_name: "text",
-        first_seen: "ts",
-        last_seen: "ts",
-      }),
-      table("people", "people", "node", "created_at", "created_at, id", {
-        id: "text",
-        display_name: "text",
-        created_at: "ts",
-      }),
-      table("link_codes", "link_codes", "node", null, "code", {
-        code: "text",
-        platform: "text",
+      table("link_codes", "link_codes", "node", null, "code_hash", {
+        code_hash: "text",
         account_id: "text",
         expires_at: "ts",
       }),
-      // @miyoria/store `HANDLE_PREFIX` under `GLOBAL_SETTINGS_PROFILE`: the stable names of people.
+      table("space_members", "space_members", "node", "last_seen", "space_id, account_id", {
+        space_id: "text",
+        account_id: "text",
+        nick: "text",
+        roles: "json",
+        joined_at: "ts",
+        left_at: "ts",
+        last_seen: "ts",
+      }),
+      table("sessions", "sessions", "node", "last_at", "key", {
+        key: "text",
+        space_id: "text",
+        room_id: "text",
+        person_id: "text",
+        lane: "text",
+        created_at: "ts",
+        last_at: "ts",
+      }),
+      table("rooms", "rooms", "node", "created_at", "created_at, id", {
+        id: "text",
+        platform: "text",
+        external_id: "text",
+        space_id: "text",
+        parent_id: "text",
+        kind: "text",
+        name: "text",
+        caps: "json",
+        dm_person: "text",
+        created_at: "ts",
+        archived_at: "ts",
+      }),
+      table("spaces", "spaces", "node", "joined_at", "joined_at, id", {
+        id: "text",
+        platform: "text",
+        external_id: "text",
+        name: "text",
+        joined_at: "ts",
+        left_at: "ts",
+      }),
+      table("accounts", "accounts", "node", "last_seen", "person_id, platform, external_id", {
+        id: "text",
+        platform: "text",
+        external_id: "text",
+        person_id: "text",
+        display_name: "text",
+        is_self: "bool",
+        first_seen: "ts",
+        last_seen: "ts",
+        linked_at: "ts",
+        linked_by: "text",
+      }),
+      table("people", "persons", "node", "created_at", "created_at, id", {
+        id: "text",
+        name: "text",
+        handle: "text",
+        prefs: "json",
+        created_at: "ts",
+        merged_into: "text",
+        legacy: "json",
+      }),
+      // V4 kept handles in settings (`handle:<platform>:<id>` under `_global`); a settings store
+      // that is not this database's (tests, fallbacks) still does.
       settings("handles", "global", [], ["handle:"]),
     ],
     {
@@ -492,15 +558,23 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { confirm: "simple" },
   ),
-  // @miyoria/voice/voice `consentKey` under `CONSENT_PROFILE`
-  category("voice_consent", [settings("voice_consent", "global", [], ["voice_consent:"])], {
-    shared: true,
-  }),
-  // @miyoria/types `PRIVACY_PREFIX` under `PRIVACY_PROFILE`
-  category("privacy", [settings("privacy", "global", [], ["privacy:"])], {
-    modules: ["world"],
-    shared: true,
-  }),
+  // @miyoria/voice/voice `consentKey` under `CONSENT_PROFILE`, and @miyoria/types
+  // `PRIVACY_PREFIX` under `PRIVACY_PROFILE`: owners still read and write these settings keys,
+  // and the store keeps them in `persons.prefs` (`PrefsSettings`). The settings parts claim the
+  // keys, so no stray row counts as `other_settings`.
+  category(
+    "voice_consent",
+    [
+      prefs("voice_consent", "voice_consent"),
+      settings("voice_consent_keys", "global", [], ["voice_consent:"]),
+    ],
+    { shared: true },
+  ),
+  category(
+    "privacy",
+    [prefs("privacy", "privacy"), settings("privacy_keys", "global", [], ["privacy:"])],
+    { modules: ["world"], shared: true },
+  ),
   // @miyoria/play/queue `STATE_KEY` under `STATE_PROFILE`
   category("queue", [settings("queue", "global", ["queue:state"])], {
     modules: ["queue"],
@@ -769,6 +843,11 @@ function tableWhere(p: Params, part: TablePart, profile: ProfileId): string {
   return part.rows === "profile" ? `WHERE profile_id = ${p.add(profile)}` : "";
 }
 
+/** `persons` rows that hold entry `key` of `prefs` (a code constant, never input). */
+function prefsWhere(part: PrefsPart): string {
+  return `json_type(prefs, '$.${part.key}') IS NOT NULL`;
+}
+
 /** Count and last update of a part: one row `{ n, at }`. */
 export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): Stmt {
   const p = new Params();
@@ -792,6 +871,11 @@ export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): St
       return {
         sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM profile_settings WHERE ${otherSettingsWhere(d, p, profile)}`,
         params: p.values,
+      };
+    case "prefs":
+      return {
+        sql: `SELECT COUNT(*) AS n, NULL AS at FROM persons WHERE ${prefsWhere(part)}`,
+        params: [],
       };
   }
 }
@@ -818,6 +902,8 @@ export function exportSpec(part: DataPart): Readonly<Record<string, ExportColumn
       return part.columns;
     case "call_names":
       return { person_id: "text", call_name: "text" };
+    case "prefs":
+      return { person_id: "text", value: "json" };
     case "settings":
     case "other_settings":
       return SETTINGS_COLUMNS;
@@ -851,6 +937,11 @@ export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
         sql: `${settingsSelect} WHERE ${otherSettingsWhere(d, p, profile)} ORDER BY profile_id, ${d.keyOrder}`,
         params: p.values,
       };
+    case "prefs":
+      return {
+        sql: `SELECT id AS person_id, prefs -> '$.${part.key}' AS value FROM persons WHERE ${prefsWhere(part)} ORDER BY id`,
+        params: [],
+      };
   }
 }
 
@@ -875,6 +966,11 @@ export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
         sql: `DELETE FROM profile_settings WHERE ${otherSettingsWhere(d, p, profile)}`,
         params: p.values,
       };
+    case "prefs":
+      return {
+        sql: `UPDATE persons SET prefs = json_remove(prefs, '$.${part.key}') WHERE ${prefsWhere(part)}`,
+        params: [],
+      };
   }
 }
 
@@ -898,10 +994,10 @@ export function wipeStatements(
   const out: { part: string | null; stmt: Stmt }[] = [];
   const resolved = resolveCategories(ids);
   const set = new Set(resolved);
-  // `call_names` first: clearing a column of rows `relationships` may delete next.
-  const ordered = [...resolved].sort((a, b) =>
-    a === "call_names" ? -1 : b === "call_names" ? 1 : 0,
-  );
+  // Clearing categories first (`call_names`, a person's choices): they clear a column of rows
+  // another category may delete next (`relationships`, `people`).
+  const clearing = (id: DataCategoryId) => dataCategory(id).parts.some(clears);
+  const ordered = [...resolved].sort((a, b) => Number(clearing(b)) - Number(clearing(a)));
   for (const id of ordered) {
     for (const part of dataCategory(id).parts) {
       out.push({ part: part.id, stmt: deleteStmt(d, part, profile) });

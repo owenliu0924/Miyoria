@@ -31,8 +31,42 @@ export {
   type WipeCounts,
   type WipeOptions,
 } from "./data.js";
-export { Db, type Params, type Row } from "./db.js";
-export { HANDLE_PREFIX, handleKey, StoredHandleDirectory } from "./handles.js";
+export { Db, type Orm, type Params, type Row } from "./db.js";
+export {
+  HANDLE_PREFIX,
+  handleKey,
+  type PersonHandleDirectory,
+  StoredHandleDirectory,
+} from "./handles.js";
+export {
+  IdentityHandles,
+  IdentityLinks,
+  IdentityPeople,
+  PrefsSettings,
+} from "./identity/adapters.js";
+export {
+  HOME_SESSION,
+  Identity,
+  linkCodeHash,
+  type Place,
+  type PlaceAuthor,
+  type ResolveOptions,
+} from "./identity/identity.js";
+export { identitySchema } from "./identity/migrations.js";
+export type {
+  AccountRow,
+  Lane,
+  LegacySnapshot,
+  LinkedBy,
+  PersonPrefs,
+  PersonRow,
+  RoomCaps,
+  RoomKind,
+  RoomRow,
+  SessionRow,
+  SpaceMemberRow,
+  SpaceRow,
+} from "./identity/schema.js";
 export { knownNames } from "./known-names.js";
 export { legacySchema } from "./legacy-schema/index.js";
 export { MemorySettingsStore } from "./memory-settings.js";

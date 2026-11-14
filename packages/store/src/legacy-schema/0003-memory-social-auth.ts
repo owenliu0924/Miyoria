@@ -1,4 +1,5 @@
 // Legacy migration 3 (was `0003_memory_social_auth.sql`). Never edit it: its checksum is recorded.
+// Step 4 of docs/design/v5-data.md §8 took `link_codes` out (see `0001-init.ts`).
 
 export const m0003 = `-- Long-term memory, relationships, identity linking, roles and the audit log.
 -- Ids are ULIDs stored as text. Per-character data carries \`profile_id\`.
@@ -95,14 +96,6 @@ CREATE TABLE relationship_deltas (
 
 CREATE INDEX relationship_deltas_idx
     ON relationship_deltas (profile_id, person_id, at, seq);
-
--- One-time codes for linking accounts.
-CREATE TABLE link_codes (
-    code       TEXT    PRIMARY KEY,
-    platform   TEXT    NOT NULL,
-    account_id TEXT    NOT NULL,
-    expires_at INTEGER NOT NULL
-);
 
 -- Roles. \`scope\` columns hold the canonical JSON of an \`AuthScope\`.
 CREATE TABLE roles (

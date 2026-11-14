@@ -1,4 +1,8 @@
 // Legacy migration 1 (was `0001_init.sql`). Never edit it: its checksum is recorded.
+//
+// One exception, before any V5 database existed outside tests: step 4 of docs/design/v5-data.md
+// §8 took out `people` and `accounts` (and `link_codes` from migration 3). The `identity` schema
+// owns `persons`, `accounts` and `link_codes` now, and it migrates before `legacy`.
 
 export const m0001 = `-- Phase-1 schema (SQLite port of migrations/postgres/0001_init.sql). Ids are ULIDs stored as
 -- text. Data that belongs to one character carries \`profile_id\`. Timestamps are INTEGER
@@ -44,23 +48,4 @@ CREATE TABLE persona_overrides (
     edited_at   INTEGER NOT NULL,
     PRIMARY KEY (profile_id, section_key, version)
 );
-
--- Cross-platform people and their platform accounts (shared by all profiles).
-CREATE TABLE people (
-    id           TEXT    PRIMARY KEY,
-    display_name TEXT    NOT NULL,
-    created_at   INTEGER NOT NULL
-);
-
-CREATE TABLE accounts (
-    platform     TEXT    NOT NULL,
-    account_id   TEXT    NOT NULL,
-    person_id    TEXT    NOT NULL REFERENCES people (id) ON DELETE CASCADE,
-    display_name TEXT    NOT NULL,
-    first_seen   INTEGER NOT NULL,
-    last_seen    INTEGER NOT NULL,
-    PRIMARY KEY (platform, account_id)
-);
-
-CREATE INDEX accounts_person_idx ON accounts (person_id);
 `;

@@ -26,7 +26,6 @@ import {
   type LogEventFilter,
   type LogEventKind,
   type ModuleId,
-  newId,
   type PersonId,
   type PlatformId,
   type ProfileId,
@@ -74,10 +73,18 @@ import {
   wipeStatements,
 } from "./data.js";
 import { Db, type Params, type Row } from "./db.js";
+import type { PersonHandleDirectory } from "./handles.js";
+import {
+  IdentityHandles,
+  IdentityLinks,
+  IdentityPeople,
+  PrefsSettings,
+} from "./identity/adapters.js";
+import { Identity } from "./identity/identity.js";
+import { identitySchema } from "./identity/migrations.js";
 import { legacySchema } from "./legacy-schema/index.js";
 import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
 import type {
-  Account,
   AuditEntry,
   AuthoredEntry,
   AuthScope,
@@ -111,7 +118,6 @@ import type {
   MemoryScope,
   MemorySource,
   NodeOverride,
-  Person,
   PersonaOverride,
   PrunePolicy,
   Relationship,
@@ -1323,152 +1329,6 @@ class SqlitePersonaOverrides implements PersonaOverrideStore {
       edited_by: str(r, "edited_by"),
       edited_at: ts(r, "edited_at"),
     }));
-  }
-}
-
-// ---- people and identity ------------------------------------------------------------------
-
-function accountFromRow(row: Row): Account {
-  return {
-    account: { platform: str(row, "platform"), id: str(row, "account_id") },
-    display_name: str(row, "display_name"),
-    first_seen: ts(row, "first_seen"),
-    last_seen: ts(row, "last_seen"),
-  };
-}
-
-const ACCOUNTS_OF =
-  "SELECT platform, account_id, display_name, first_seen, last_seen FROM accounts " +
-  "WHERE person_id = $person ORDER BY first_seen, platform, account_id";
-
-class SqlitePeople implements PeopleStore {
-  constructor(private readonly db: Db) {}
-
-  async upsertAccount(account: AccountRef, displayName: string): Promise<PersonId> {
-    const now = this.db.nowMicros();
-    return this.db.tx(() => {
-      const existing = this.db.get(
-        "UPDATE accounts SET display_name = $name, last_seen = $now " +
-          "WHERE platform = $platform AND account_id = $id RETURNING person_id",
-        { platform: account.platform, id: account.id, name: displayName, now },
-      );
-      if (existing) return str(existing, "person_id");
-      const person = newId();
-      this.db.run(
-        "INSERT INTO people (id, display_name, created_at) VALUES ($person, $name, $now)",
-        { person, name: displayName, now },
-      );
-      this.db.run(
-        "INSERT INTO accounts (platform, account_id, person_id, display_name, first_seen, " +
-          "last_seen) VALUES ($platform, $id, $person, $name, $now, $now)",
-        { platform: account.platform, id: account.id, person, name: displayName, now },
-      );
-      return person;
-    });
-  }
-
-  async personByAccount(account: AccountRef): Promise<Person | null> {
-    const row = this.db.get(
-      "SELECT p.id, p.display_name, p.created_at FROM accounts a " +
-        "JOIN people p ON p.id = a.person_id WHERE a.platform = $platform AND a.account_id = $id",
-      { platform: account.platform, id: account.id },
-    );
-    if (!row) return null;
-    const id = str(row, "id");
-    return {
-      id,
-      display_name: str(row, "display_name"),
-      created_at: ts(row, "created_at"),
-      accounts: this.db.all(ACCOUNTS_OF, { person: id }).map(accountFromRow),
-    };
-  }
-
-  async all(): Promise<Person[]> {
-    const accounts = new Map<PersonId, Account[]>();
-    const rows = this.db.all(
-      "SELECT person_id, platform, account_id, display_name, first_seen, last_seen FROM accounts " +
-        "ORDER BY first_seen, platform, account_id",
-    );
-    for (const row of rows) {
-      const person = str(row, "person_id");
-      const list = accounts.get(person) ?? [];
-      list.push(accountFromRow(row));
-      accounts.set(person, list);
-    }
-    return this.db
-      .all("SELECT id, display_name, created_at FROM people ORDER BY created_at, id")
-      .map((row) => ({
-        id: str(row, "id"),
-        display_name: str(row, "display_name"),
-        created_at: ts(row, "created_at"),
-        accounts: accounts.get(str(row, "id")) ?? [],
-      }));
-  }
-}
-
-class SqliteIdentity implements IdentityStore {
-  constructor(private readonly db: Db) {}
-
-  #exists(person: PersonId): boolean {
-    return this.db.get("SELECT 1 AS x FROM people WHERE id = $person", { person }) !== undefined;
-  }
-
-  async linkAccount(account: AccountRef, person: PersonId): Promise<void> {
-    const now = this.db.nowMicros();
-    this.db.tx(() => {
-      if (!this.#exists(person)) throw new StoreError(`unknown person \`${person}\``);
-      // A new account row has no name yet; its id stands in until the account is seen.
-      this.db.run(
-        "INSERT INTO accounts (platform, account_id, person_id, display_name, first_seen, " +
-          "last_seen) VALUES ($platform, $id, $person, $id, $now, $now) " +
-          "ON CONFLICT (platform, account_id) DO UPDATE SET person_id = excluded.person_id",
-        { platform: account.platform, id: account.id, person, now },
-      );
-    });
-  }
-
-  async mergePeople(keep: PersonId, absorb: PersonId): Promise<void> {
-    this.db.tx(() => {
-      for (const person of [keep, absorb]) {
-        if (!this.#exists(person)) throw new StoreError(`unknown person \`${person}\``);
-      }
-      if (keep === absorb) return;
-      this.db.run("UPDATE accounts SET person_id = $keep WHERE person_id = $absorb", {
-        keep,
-        absorb,
-      });
-      this.db.run("DELETE FROM people WHERE id = $absorb", { absorb });
-    });
-  }
-
-  async accountsOf(person: PersonId): Promise<Account[]> {
-    return this.db.all(ACCOUNTS_OF, { person }).map(accountFromRow);
-  }
-
-  async setPersonName(person: PersonId, displayName: string): Promise<void> {
-    const changed = this.db.run("UPDATE people SET display_name = $name WHERE id = $person", {
-      person,
-      name: displayName,
-    });
-    if (changed === 0) throw new StoreError(`unknown person \`${person}\``);
-  }
-
-  async createLinkCode(code: string, account: AccountRef, expiresAt: Timestamp): Promise<void> {
-    this.db.run(
-      "INSERT INTO link_codes (code, platform, account_id, expires_at) VALUES ($code, " +
-        "$platform, $id, $expires) ON CONFLICT (code) DO UPDATE SET platform = " +
-        "excluded.platform, account_id = excluded.account_id, expires_at = excluded.expires_at",
-      { code, platform: account.platform, id: account.id, expires: toMicros(expiresAt) },
-    );
-  }
-
-  async consumeLinkCode(code: string, now: Timestamp): Promise<AccountRef | null> {
-    const row = this.db.get(
-      "DELETE FROM link_codes WHERE code = $code RETURNING platform, account_id, expires_at",
-      { code },
-    );
-    if (!row || num(row, "expires_at") <= toMicros(now)) return null;
-    return { platform: str(row, "platform"), id: str(row, "account_id") };
   }
 }
 
@@ -2816,19 +2676,24 @@ export class SqliteStore implements Store {
   readonly goals: GoalStore;
   readonly bounties: BountyStore;
   readonly economyDocs: EconomyDocStore;
+  /** Persons, accounts and places (the `identity` plugin's tables). */
+  readonly persons: Identity;
+  readonly handles: PersonHandleDirectory;
   readonly #db: Db;
 
   private constructor(db: Db, maxDecisions: number | null) {
     this.#db = db;
+    this.persons = new Identity(db);
     this.messages = new SqliteMessageLog(db);
     this.moduleState = new SqliteModuleState(db);
     this.personaOverrides = new SqlitePersonaOverrides(db);
-    this.people = new SqlitePeople(db);
+    this.people = new IdentityPeople(this.persons);
     this.decisions = new SqliteDecisionLog(db, maxDecisions);
-    this.settings = new SqliteSettings(db);
+    this.settings = new PrefsSettings(new SqliteSettings(db), this.persons);
     this.memories = new SqliteMemories(db);
     this.relationships = new SqliteRelationships(db);
-    this.identity = new SqliteIdentity(db);
+    this.identity = new IdentityLinks(this.persons);
+    this.handles = new IdentityHandles(this.persons);
     this.auth = new SqliteAuth(db);
     this.audit = new SqliteAudit(db);
     this.profileData = new SqliteProfileData(db);
@@ -2869,7 +2734,7 @@ export class SqliteStore implements Store {
         db.exec("PRAGMA synchronous = NORMAL");
       }
       db.exec("PRAGMA foreign_keys = ON");
-      migrate(db, [legacySchema, ...(options.schemas ?? [])], { location: path });
+      migrate(db, [identitySchema, legacySchema, ...(options.schemas ?? [])], { location: path });
     } catch (error) {
       db.close();
       throw error;

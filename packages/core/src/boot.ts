@@ -37,6 +37,7 @@ import {
   ModuleStateStoreKey,
   PeopleStoreKey,
   PersonaOverrideStoreKey,
+  type PersonHandleDirectory,
   ProfileDataStoreKey,
   RelationshipStoreKey,
   SettingsStoreKey,
@@ -114,7 +115,7 @@ export interface ModuleCatalog {
   migrateStoredData?(
     store: Store,
     profile: ProfileId,
-    handles: StoredHandleDirectory | null,
+    handles: PersonHandleDirectory | null,
   ): Promise<void>;
 }
 
@@ -246,9 +247,9 @@ export async function buildCoreWith(
   services.provide(k, ModuleStateStoreKey, store.moduleState);
   services.provide(k, ProfileDataStoreKey, store.profileData);
   // Her stable names for people (`Owen`, `Owen#2`): never per-call codes (`u1`).
-  let handles: StoredHandleDirectory | null = null;
+  let handles: PersonHandleDirectory | null = null;
   try {
-    handles = await StoredHandleDirectory.open(store.settings);
+    handles = store.handles ?? (await StoredHandleDirectory.open(store.settings));
     handles.syncPeople(await store.people.all());
     services.provide(k, HandleDirectoryKey, handles);
   } catch (error) {

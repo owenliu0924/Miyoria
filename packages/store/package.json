@@ -24,7 +24,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "schema:sql": "tsx --conditions=@miyoria/source scripts/schema-sql.ts",
+    "bench:identity": "tsx --conditions=@miyoria/source scripts/bench-identity.ts"
   },
   "dependencies": {
     "@miyoria/runtime": "workspace:*",

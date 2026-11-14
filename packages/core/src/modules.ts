@@ -65,8 +65,8 @@ import {
 } from "@miyoria/stage";
 import {
   openStore as openStoreBackend,
+  type PersonHandleDirectory,
   type Store,
-  type StoredHandleDirectory,
 } from "@miyoria/store";
 import { isJsonObject, type ProfileId } from "@miyoria/types";
 import { SpeechConfigSchema, SpeechModule } from "@miyoria/voice/speech";
@@ -201,7 +201,7 @@ async function discoverExtensions(config: Config, baseDir: string): Promise<Exte
 async function migrateStoredData(
   store: Store,
   profile: ProfileId,
-  handles: StoredHandleDirectory | null,
+  handles: PersonHandleDirectory | null,
 ): Promise<void> {
   const people = await store.people.all();
   const handleOf = new Map(people.map((p) => [p.id, handles?.ensurePerson(p) ?? null] as const));
