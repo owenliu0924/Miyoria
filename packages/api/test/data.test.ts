@@ -208,7 +208,9 @@ describe("data routes", () => {
     expect(inv.categories.map((c) => c.id)).toEqual(DATA_CATEGORIES.map((c) => c.id));
     expect(countOf(inv, "memories")).toBe(1);
     expect(countOf(inv, "messages")).toBe(2);
-    expect(countOf(inv, "people")).toBe(2); // one person, one account
+    // One person and their account, and where the two chat lines were said: a space, a room, a
+    // session and the person's membership of the space.
+    expect(countOf(inv, "people")).toBe(6);
     expect(countOf(inv, "audit")).toBeGreaterThan(0);
     const people = inv.categories.find((c) => c.id === "people");
     expect(people).toMatchObject({ shared: true, confirm: "typed", kept: false });
