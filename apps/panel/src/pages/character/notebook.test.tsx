@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { NotebookPage, RecentView } from "@/api/v4-types";
+import type { NotebookPage, RecentView } from "@/api/types";
 import { mockFetch, renderRoute } from "@/test/render";
 import { splitPath } from "./NotebookTab";
 

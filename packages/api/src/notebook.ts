@@ -38,7 +38,7 @@ function notebook(state: ApiState) {
   return state.service(NotebookKey, "memory module (her notebook)");
 }
 
-export function memoryV4Routes(state: ApiState): Route[] {
+export function notebookRoutes(state: ApiState): Route[] {
   return [
     {
       method: "GET",

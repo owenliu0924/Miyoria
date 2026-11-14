@@ -13,7 +13,7 @@ import { fmtMs } from "@/lib/e2e";
 import { contextShort, fmtPct } from "@/lib/format";
 import { readStorage, writeStorage } from "@/lib/storage";
 
-export const V4_RANGES = [
+export const PARTICIPATION_RANGES = [
   { days: 7, label: "7 天" },
   { days: 14, label: "14 天" },
   { days: 30, label: "30 天" },
@@ -24,7 +24,7 @@ const RANGE_KEY = "miyoria.panel.v4MetricsDays";
 function useDays(): [number, (d: number) => void] {
   const [days, set] = useState<number>(() => {
     const saved = Number(readStorage(RANGE_KEY));
-    return V4_RANGES.find((r) => r.days === saved)?.days ?? 7;
+    return PARTICIPATION_RANGES.find((r) => r.days === saved)?.days ?? 7;
   });
   return [
     days,
@@ -449,7 +449,7 @@ export function emptyWindow(data: TurnMetrics): boolean {
 }
 
 /** §13's participation measures per local day, from the turn log and the gate's decisions. */
-export function V4Metrics() {
+export function Participation() {
   const [days, setDays] = useDays();
   const query = useTurnMetrics(days);
   const data = query.data;
@@ -457,7 +457,7 @@ export function V4Metrics() {
     <section aria-label="參與度指標" className="grid gap-(--stage-gap)">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-medium">參與度(每日)</h2>
-        <Segmented label="天數" value={String(days)} onChange={(v) => setDays(Number(v))} options={V4_RANGES.map((r) => ({ value: String(r.days), label: r.label }))} />
+        <Segmented label="天數" value={String(days)} onChange={(v) => setDays(Number(v))} options={PARTICIPATION_RANGES.map((r) => ({ value: String(r.days), label: r.label }))} />
       </div>
       {query.isPending ? (
         <Loading />

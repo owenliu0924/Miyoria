@@ -1,12 +1,12 @@
 // Economy 2.0 for the admins (docs/design/v4-plan.md §10), read-only, about the whole economy and
 // never about one person's coins (`people-wallet.ts` has those):
 //
-// * `GET /api/economy2/health`: coins issued against recovered per day. `available: false` until a
+// * `GET /api/economy/health`: coins issued against recovered per day. `available: false` until a
 //   store provides the ledger totals; then there are no days, not made-up ones.
-// * `GET /api/economy2/commissions`: what people commissioned that she has not handed in.
-// * `GET /api/economy2/predictions`: open predictions and the ones settled lately (without anyone's
+// * `GET /api/economy/commissions`: what people commissioned that she has not handed in.
+// * `GET /api/economy/predictions`: open predictions and the ones settled lately (without anyone's
 //   stake).
-// * `GET /api/economy2/room`: her room, every item with how far the audience got.
+// * `GET /api/economy/room`: her room, every item with how far the audience got.
 // * `GET /api/people/{id}/quests`: today's three quests as that person sees them.
 //
 // Read through `Economy2Key`, which the economy module provides. Every answer carries the
@@ -22,7 +22,7 @@ import type { ApiContext, ApiState } from "./state.js";
 const NO_ECONOMY = "economy module (economy 2.0) is not available";
 
 /** Economy 2.0 of the running economy, or a 503. */
-export function economy2(state: ApiState): Economy2 {
+export function economyView(state: ApiState): Economy2 {
   const v2 = state.optional(Economy2Key);
   if (v2 === undefined || typeof v2.health !== "function") throw ApiError.unavailable(NO_ECONOMY);
   return v2;
@@ -44,7 +44,7 @@ async function quests(state: ApiState, c: ApiContext): Promise<Response> {
   const id = param(c, "id");
   const unknown = ApiError.notFound(`unknown person \`${id}\``);
   if (!isUlid(id.toUpperCase())) throw unknown;
-  const v2 = economy2(state);
+  const v2 = economyView(state);
   const identity = state.service(IdentityStoreKey, "identity store");
   const first = (await identity.accountsOf(id.toUpperCase() as PersonId))[0];
   if (!first) throw unknown;
@@ -52,21 +52,21 @@ async function quests(state: ApiState, c: ApiContext): Promise<Response> {
   return json({ currency: v2.currency, ...view });
 }
 
-export function economy2Routes(state: ApiState): Route[] {
+export function economyRoutes(state: ApiState): Route[] {
   return [
     {
       method: "GET",
-      path: "/api/economy2/health",
+      path: "/api/economy/health",
       handler: async () => {
-        const v2 = economy2(state);
+        const v2 = economyView(state);
         return json({ currency: v2.currency, ...(await guard(() => v2.health())) });
       },
     },
     {
       method: "GET",
-      path: "/api/economy2/commissions",
+      path: "/api/economy/commissions",
       handler: async () => {
-        const v2 = economy2(state);
+        const v2 = economyView(state);
         return json({
           currency: v2.currency,
           commissions: await guard(() => v2.commissionsWaiting()),
@@ -75,9 +75,9 @@ export function economy2Routes(state: ApiState): Route[] {
     },
     {
       method: "GET",
-      path: "/api/economy2/predictions",
+      path: "/api/economy/predictions",
       handler: async () => {
-        const v2 = economy2(state);
+        const v2 = economyView(state);
         return json({
           currency: v2.currency,
           predictions: await guard(() => v2.predictions(null)),
@@ -86,9 +86,9 @@ export function economy2Routes(state: ApiState): Route[] {
     },
     {
       method: "GET",
-      path: "/api/economy2/room",
+      path: "/api/economy/room",
       handler: async () => {
-        const v2 = economy2(state);
+        const v2 = economyView(state);
         return json({ currency: v2.currency, room: await guard(() => v2.room()) });
       },
     },

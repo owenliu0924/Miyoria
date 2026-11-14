@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { ActivityView, LifeDayView, ReminderView, SkillView, WorkspaceView } from "@/api/v4-types";
+import type { ActivityView, LifeDayView, ReminderView, SkillView, WorkspaceView } from "@/api/types";
 import { mockFetch, renderRoute } from "@/test/render";
 import { dayColumns } from "./TodayTab";
 

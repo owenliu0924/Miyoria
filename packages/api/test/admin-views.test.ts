@@ -1,5 +1,6 @@
-// The admin routes for what V4 added (`src/v4-*.ts`): timers, her day, the activity table,
-// economy 2.0, her workspace and skills, the notebook and the "just now" timeline.
+// The admin routes for her life, economy, workspace, party games and notebook (`src/life.ts`,
+// `economy.ts`, `workspace.ts`, `party.ts`, `notebook.ts`): timers, her day, the activity table,
+// economy health and open items, her workspace and skills, the notebook and the "just now" timeline.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,7 +25,7 @@ import {
 import { PersistentWorkspace, SandboxKey } from "@miyoria/workspace/sandbox";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActiveProfileKey, ApiModule } from "../src/index.js";
-import { ACTIVITY_ROWS } from "../src/v4-life.js";
+import { ACTIVITY_ROWS } from "../src/life.js";
 import { raw } from "./support/http.js";
 
 const TOKEN = "test-token";
@@ -72,10 +73,10 @@ describe("routes need the token and the module that provides them", () => {
       "/api/life/today",
       "/api/life/reminders",
       "/api/life/activities",
-      "/api/economy2/health",
-      "/api/economy2/commissions",
-      "/api/economy2/predictions",
-      "/api/economy2/room",
+      "/api/economy/health",
+      "/api/economy/commissions",
+      "/api/economy/predictions",
+      "/api/economy/room",
       "/api/workspace",
       "/api/skills",
       "/api/notebook",
@@ -228,22 +229,22 @@ describe("economy 2.0", () => {
       room: async () => [{ id: "sofa", label: "沙發", price: 500, funded: 120 }],
     };
     h.sup.services.provide("economy", Economy2Key, v2 as never);
-    const health = await h.get("/api/economy2/health");
+    const health = await h.get("/api/economy/health");
     expect(health.status).toBe(200);
     expect(health.body).toMatchObject({ currency: "魚幣", available: false, days: [] });
-    expect((await h.get("/api/economy2/commissions")).body).toMatchObject({
+    expect((await h.get("/api/economy/commissions")).body).toMatchObject({
       commissions: [{ id: "C1" }],
     });
-    expect((await h.get("/api/economy2/predictions")).body).toMatchObject({
+    expect((await h.get("/api/economy/predictions")).body).toMatchObject({
       predictions: [{ id: "P1" }],
     });
-    expect((await h.get("/api/economy2/room")).body).toMatchObject({ room: [{ id: "sofa" }] });
+    expect((await h.get("/api/economy/room")).body).toMatchObject({ room: [{ id: "sofa" }] });
   });
 
   it("is a 503 when the economy has no 2.0", async () => {
     const h = await harness();
     h.sup.services.provide("economy", Economy2Key, {} as never);
-    expect((await h.get("/api/economy2/health")).status).toBe(503);
+    expect((await h.get("/api/economy/health")).status).toBe(503);
   });
 });
 

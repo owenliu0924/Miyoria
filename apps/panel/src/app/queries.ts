@@ -105,6 +105,22 @@ export const queryKeys = {
   directives: (history: boolean) => ["directives", history] as const,
   directivesAll: ["directives"] as const,
   evalData: (windowMs: number) => ["facts", "eval", windowMs] as const,
+  lifeToday: ["life", "today"] as const,
+  reminders: ["life", "reminders"] as const,
+  activities: ["life", "activities"] as const,
+  economyHealth: ["economy", "health"] as const,
+  commissions: ["economy", "commissions"] as const,
+  predictions: ["economy", "predictions"] as const,
+  room: ["economy", "room"] as const,
+  reachedGoals: ["economy", "goals"] as const,
+  personQuests: (id: string) => ["people", "quests", id] as const,
+  workspace: ["workspace"] as const,
+  skills: ["skills"] as const,
+  skill: (name: string) => ["skills", name] as const,
+  party: ["party"] as const,
+  notebook: ["notebook"] as const,
+  notebookPage: (path: string) => ["notebook", "page", path] as const,
+  recent: (context: ContextKey | null) => ["recent", context] as const,
 };
 
 
@@ -879,4 +895,119 @@ export function useEvalData(windowMs: number) {
 export function useBlocksToday() {
   const since = new Date(startOfDay(Date.now())).toISOString();
   return useFactEvents({ kind: ["result", "directive"], source: ["gate", "directive"], since, order: "desc", limit: 500 }, 15_000);
+}
+
+// --- the routes V4 added: her life, economy, workspace, party games, notebook --------
+
+/** Like `poll`, and also stops on `unavailable`: the module behind the route is off. */
+const OFF = new Set([...FINAL, "unavailable"]);
+const pollModule =
+  (ms: number) =>
+  (query: Query<any, any, any, any>): number | false => {
+    const e = query.state.error;
+    return isApiError(e) && OFF.has(e.kind) ? false : ms;
+  };
+
+export function useLifeToday() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.lifeToday, queryFn: ({ signal }) => api.lifeToday({ signal }), refetchInterval: pollModule(30_000), retry: false });
+}
+
+export function useReminders() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.reminders, queryFn: ({ signal }) => api.reminders({ signal }), refetchInterval: pollModule(15_000), retry: false });
+}
+
+export function useCancelReminder() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) => api.cancelReminder(key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.reminders }),
+  });
+}
+
+export function useActivities() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.activities, queryFn: ({ signal }) => api.activities({ signal }), refetchInterval: pollModule(30_000), retry: false });
+}
+
+export function useReachedGoals() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.reachedGoals, queryFn: ({ signal }) => api.reachedGoals({ signal }), refetchInterval: pollModule(60_000), retry: false });
+}
+
+export function useFulfillGoal() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.fulfillGoal(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.reachedGoals }),
+  });
+}
+
+export function useEconomyHealth() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.economyHealth, queryFn: ({ signal }) => api.economyHealth({ signal }), refetchInterval: pollModule(60_000), retry: false });
+}
+
+export function useCommissions() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.commissions, queryFn: ({ signal }) => api.commissions({ signal }), refetchInterval: pollModule(30_000), retry: false });
+}
+
+export function usePredictions() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.predictions, queryFn: ({ signal }) => api.predictions({ signal }), refetchInterval: pollModule(30_000), retry: false });
+}
+
+export function useRoom() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.room, queryFn: ({ signal }) => api.room({ signal }), refetchInterval: pollModule(60_000), retry: false });
+}
+
+export function usePersonQuests(id: string) {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.personQuests(id), queryFn: ({ signal }) => api.personQuests(id, { signal }), retry: false });
+}
+
+export function useWorkspace() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.workspace, queryFn: ({ signal }) => api.workspace({ signal }), refetchInterval: pollModule(60_000), retry: false });
+}
+
+export function useParty() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.party, queryFn: ({ signal }) => api.party({ signal }), refetchInterval: pollModule(10_000), retry: false });
+}
+
+export function useSkills() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.skills, queryFn: ({ signal }) => api.skills({ signal }), refetchInterval: pollModule(60_000), retry: false });
+}
+
+export function useSkill(name: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.skill(name ?? ""), queryFn: ({ signal }) => api.skill(name as string, { signal }), enabled: name !== null, retry: false });
+}
+
+export function useNotebook() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.notebook, queryFn: ({ signal }) => api.notebook({ signal }), refetchInterval: pollModule(60_000), retry: false });
+}
+
+export function useNotebookPage(path: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.notebookPage(path ?? ""), queryFn: ({ signal }) => api.notebookPage(path as string, { signal }), enabled: path !== null, retry: false });
+}
+
+export function useRecent(context: ContextKey | null) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.recent(context),
+    queryFn: ({ signal }) => api.recent(context as ContextKey, { signal }),
+    enabled: context !== null,
+    refetchInterval: pollModule(30_000),
+    retry: false,
+  });
 }
