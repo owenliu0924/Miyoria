@@ -25,6 +25,7 @@ describe("LlmModule", () => {
       purposes: { chat: ["m:model-a"] },
       pricing: { "m:model-a": { output_per_mtok: 1_000_000 } },
       budget: { daily_usd: 100 },
+      call_log: { enabled: false },
     });
     expect(config.providers.m).toEqual({
       kind: "mock",

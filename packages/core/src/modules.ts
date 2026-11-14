@@ -96,8 +96,11 @@ export async function openStore(url: string): Promise<Store> {
   return openStoreBackend(url);
 }
 
-/** The `llm` module with the profile's `[llm.purposes]` applied over the global ones. */
-export function llmModule(config: Config, profile: Profile): LlmModule {
+/**
+ * The `llm` module with the profile's `[llm.purposes]` applied over the global ones; `baseDir`
+ * is what a relative `[llm.call_log] dir` is resolved against (the config file's directory).
+ */
+export function llmModule(config: Config, profile: Profile, baseDir?: string): LlmModule {
   const llm: LlmConfig = config.get("llm", LlmConfigSchema);
   const overrides = new Map<string, ModelRef[]>();
   for (const [purpose, chain] of Object.entries(profile.manifest.llm.purposes)) {
@@ -112,7 +115,10 @@ export function llmModule(config: Config, profile: Profile): LlmModule {
       );
     }
   }
-  return new LlmModule(llm, [new OpenAiFactory()], { purposeOverrides: overrides });
+  return new LlmModule(llm, [new OpenAiFactory()], {
+    purposeOverrides: overrides,
+    ...(baseDir === undefined ? {} : { baseDir }),
+  });
 }
 
 /**
@@ -135,7 +141,7 @@ async function coreModules({
     // First, so it stops last: it logs what the others say on their way down.
     new FactsModule(store, profileId, { names: profile.names() }),
     new ModerationModule(),
-    llmModule(config, profile),
+    llmModule(config, profile, baseDir),
     SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema)),
     new VoiceLinkModule(),
     new VoiceModule(profileId, profile.voice, profile.names()),

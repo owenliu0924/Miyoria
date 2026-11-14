@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   defineManifest,
   errorMessage,
@@ -8,7 +9,13 @@ import {
 import { SettingsStoreKey } from "@miyoria/store";
 import { type JsonValue, REASONING_LEVELS, serviceKey } from "@miyoria/types";
 import { z } from "zod";
-import { LlmCallLog } from "./calls.js";
+import {
+  CALL_LOG_PRUNE_INTERVAL_MS,
+  CallLogConfigSchema,
+  type LlmCallSink,
+  LlmCallWriter,
+} from "./call-writer.js";
+import { LlmCallLog, MAX_CALLS } from "./calls.js";
 import { BudgetConfigSchema, PricingSchema } from "./cost.js";
 import { LlmRouter } from "./router.js";
 import { type ChatProvider, LlmError, type ModelRef, ModelRefSchema } from "./types.js";
@@ -67,6 +74,13 @@ export const ProviderConfigSchema = z
  *
  * [llm.image_input]   # which models take images; unlisted: yes
  * "ollama" = false
+ *
+ * [llm.call_log]      # every routed call, one JSONL line, <dir>/<UTC day>.jsonl
+ * enabled = true
+ * dir = "data/llm-calls"
+ * keep_days = 14
+ * max_mb_per_day = 512
+ * bodies = true
  * ```
  */
 export const LlmConfigSchema = z.object({
@@ -93,6 +107,13 @@ export const LlmConfigSchema = z.object({
    * wins). Unlisted models do; a model that refuses them gets text from then on anyway.
    */
   image_input: z.record(z.string(), z.boolean()).default({}),
+  /**
+   * Every routed call written to `<dir>/<UTC day>.jsonl` (relative to the config file's
+   * directory), with the request and response unless `bodies = false` or the day passed
+   * `max_mb_per_day`. Holds what people said, so it stays on this machine; `keep_days` of files
+   * are kept.
+   */
+  call_log: CallLogConfigSchema.prefault({}),
 });
 export type LlmConfig = z.output<typeof LlmConfigSchema>;
 
@@ -111,6 +132,8 @@ export const USAGE_FLUSH_INTERVAL_MS = 5_000;
 export interface LlmModuleOptions {
   /** Purpose overrides from the active profile (`profile.toml` `[llm.purposes]`). */
   purposeOverrides?: ReadonlyMap<string, ModelRef[]>;
+  /** Base directory of a relative `[llm.call_log] dir` (the config file's directory). */
+  baseDir?: string;
 }
 
 /** Module `llm`: builds providers from `[llm]` and provides the `LlmRouter`. */
@@ -126,6 +149,11 @@ export class LlmModule implements Module {
   #router: LlmRouter | undefined;
   /** The call inspector's log; outlives restarts of the module. */
   readonly #calls = new LlmCallLog();
+  readonly #baseDir: string;
+  /** The on-disk call log of the running module, closed on stop. */
+  #writer: LlmCallWriter | undefined;
+  /** Today's calls from before this process were loaded into `#calls` (once per process). */
+  #preloaded = false;
 
   constructor(
     config: LlmConfig,
@@ -135,9 +163,11 @@ export class LlmModule implements Module {
     this.#config = config;
     this.#factories = factories;
     this.#overrides = options.purposeOverrides ?? new Map();
+    this.#baseDir = options.baseDir ?? process.cwd();
   }
 
-  buildRouter(): LlmRouter {
+  /** The router; `sink` receives every finished call (the running module's on-disk log). */
+  buildRouter(sink?: LlmCallSink): LlmRouter {
     const providers = new Map<string, ChatProvider>();
     for (const [name, cfg] of Object.entries(this.#config.providers)) {
       const factory = this.#factories.find((f) => f.kinds.includes(cfg.kind));
@@ -151,13 +181,24 @@ export class LlmModule implements Module {
       reasoning: new Map(Object.entries(this.#config.reasoning)),
       imageInput: new Map(Object.entries(this.#config.image_input)),
       calls: this.#calls,
+      ...(sink ? { sink } : {}),
     });
     router.setPurposes(this.#overrides);
     return router;
   }
 
   async start(ctx: ModuleContext): Promise<void> {
-    const router = this.buildRouter();
+    const cfg = this.#config.call_log;
+    const writer = cfg.enabled
+      ? new LlmCallWriter({
+          dir: resolve(this.#baseDir, cfg.dir),
+          keepDays: cfg.keep_days,
+          maxBytesPerDay: cfg.max_mb_per_day * 1024 * 1024,
+          bodies: cfg.bodies,
+          clock: ctx.clock,
+        })
+      : undefined;
+    const router = this.buildRouter(writer);
     router.setEventSink((event) => ctx.publish(event));
     const store = ctx.services.get(SettingsStoreKey);
     if (store) {
@@ -179,6 +220,18 @@ export class LlmModule implements Module {
         }
       });
     }
+    if (writer) {
+      this.#writer = writer;
+      ctx.spawn("call-log", async (signal) => {
+        await writer.prune();
+        if (!this.#preloaded) {
+          this.#preloaded = true;
+          const restored = this.#calls.restore(await writer.recent(MAX_CALLS));
+          if (restored > 0) ctx.log.info({ calls: restored }, "loaded today's LLM calls from disk");
+        }
+        for await (const _ of interval(CALL_LOG_PRUNE_INTERVAL_MS, signal)) await writer.prune();
+      });
+    }
     this.#router = router;
     router.announceBudget();
     ctx.provide(LlmRouterKey, router);
@@ -186,7 +239,13 @@ export class LlmModule implements Module {
 
   async stop(): Promise<void> {
     const router = this.#router;
+    const writer = this.#writer;
     this.#router = undefined;
-    await router?.flush();
+    this.#writer = undefined;
+    try {
+      await router?.flush();
+    } finally {
+      await writer?.close();
+    }
   }
 }
