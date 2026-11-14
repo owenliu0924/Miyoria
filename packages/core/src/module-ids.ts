@@ -19,7 +19,6 @@ export const MODULE_IDS: readonly string[] = [
   "directive",
   "activity",
   "social",
-  "mood",
   "world",
   "self",
   "memory",

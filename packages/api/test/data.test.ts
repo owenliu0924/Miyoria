@@ -5,7 +5,6 @@ import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
 import * as arbiter from "@miyoria/brain/arbiter";
 import * as self from "@miyoria/heart/self";
-import { SETTINGS_KEY as MOOD_KEY } from "@miyoria/heart/social";
 import { USAGE_KEY_PREFIX, USAGE_PROFILE } from "@miyoria/llm/llm";
 import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory/memory";
 import * as queue from "@miyoria/play/queue";
@@ -55,7 +54,7 @@ const P = "deepseek-chan";
 const OWNER = { platform: "discord", id: "1" };
 const ctx: ContextKey = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" };
 
-/** Like the real mood module: saves what it cached on stop. */
+/** A module that saves what it cached on stop, under the `mood` category's module id. */
 class SavingMood implements Module {
   readonly manifest = defineManifest("mood", "mood stand-in");
   starts = 0;
@@ -354,7 +353,7 @@ describe("data categories", () => {
     expect(has("active", ACTIVENESS_PREFIX)).toBe(true);
     expect(has("active", self.STATE_KEY)).toBe(true);
     expect(has("active", self.FEELING_PREFIX)).toBe(true);
-    expect(has("active", MOOD_KEY)).toBe(true);
+    expect(has("active", "mood:last")).toBe(true);
     expect(has("active", TOOL_KEY_PREFIX)).toBe(true);
     for (const [profile, name] of [
       [arbiter.STATE_PROFILE, arbiter.STATE_KEY],

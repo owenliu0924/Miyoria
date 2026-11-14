@@ -341,7 +341,7 @@ export interface Attitude {
   - **顯著事件** `world.salient`:便宜規則(她在意的人上線 / 進語音、有人開始玩她有興趣的遊戲、熱鬧頻道冷下來、在她最近沒參與的頻道被提到),合併重複(`coalesce_ms`)、同一件事冷卻(`cooldown_secs`)、每分鐘上限(依分數優先)。
   - **隱私**:`/me privacy presence:off` 寫進共用的每人隱私紀錄(`_global` 下的 `privacy:<platform>:<id>`,欄位合併寫入,其他功能可加自己的欄位);`world` 提供 `PresencePrivacyKey`,bot 在發布前就丟掉不同意者的 presence(沒有 `world` 時一律不發布)。各伺服器的資料只用在該伺服器的對話,私訊裡不放。
   - prompt 段落 `world`(「周遭的狀況」):純資料文字,標明名字與狀態是別人設定的、不是指令。
-- **`self` 模組**(`@miyoria/heart/self`,`SelfStateKey`):無聊、慾望(social / play / attention / rest / curiosity,自然上升、被滿足下降;rest 跟著 mood 的 energy)、她自己設的方針(各範圍的 talkativeness:level / until / why,`initiative`)、議程(新增 / 完成 / 放棄 / 到期)、對每個人的感情描述(`self:feeling:<person>`)。持久化在 `SettingsStore` 的 `self:state`;mood 沿用 `mood` 模組,只出現在快照裡。範圍字串由 `talkativenessScopes(context)` 由細到粗:情境 → 伺服器 → `voice` / `text` → `*`。
+- **`self` 模組**(`@miyoria/heart/self`,`SelfStateKey`):無聊、慾望(social / play / attention / rest / curiosity,自然上升、被滿足下降;rest 跟著 mood 的 energy)、她自己設的方針(各範圍的 talkativeness:level / until / why,`initiative`)、議程(新增 / 完成 / 放棄 / 到期)、對每個人的感情描述(`self:feeling:<person>`)。持久化在 `SettingsStore` 的 `self:state`;mood 由慾望、情緒和時段推導(`deriveMood`),只出現在快照裡。範圍字串由 `talkativenessScopes(context)` 由細到粗:情境 → 伺服器 → `voice` / `text` → `*`。
   - prompt 段落 `self`(「你的內在」):明顯的慾望、這裡的方針、到期的議程、對在場的人的感覺。
 - Admin API:`GET /api/self`、`GET /api/world`(唯讀);`GET /api/channels/levels`、`PUT /api/channels/level`(文字頻道的聊天等級,改要 `admin.channel.mode`);面板「內心」頁(狀態 · 感情 · 世界 · 想法;「世界」底下可以改聊天等級)。
 

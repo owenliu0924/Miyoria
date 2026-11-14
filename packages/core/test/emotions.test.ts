@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/brain/arbiter";
 import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/heart/mind";
 import { computeBiases, MAX_BIAS, SelfModule, shownEmotion } from "@miyoria/heart/self";
-import { MoodModule } from "@miyoria/heart/social";
 import { EventLogService } from "@miyoria/memory/facts";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
@@ -242,19 +241,17 @@ describe.each(["v2", "v3"] as const)(
       }
       const baseline = { valence: 0, arousal: 0.5, energy: 0.8 };
       // The order of the catalog.
-      await sup.register(new MoodModule("p", baseline), null, true);
       await sup.register(new SelfModule("p", { baseline }), null, true);
       await sup.register(new ArbiterModule("p"), null, true);
       await sup.startAll();
       return sup;
     }
 
-    it("owns her mood; `mood` is running and idle, whichever pipeline runs", async () => {
+    it("owns her mood, whichever pipeline runs", async () => {
       const sup = await boot();
       expect(sup.services.ownerOf(MoodSignalsKey)).toBe("self");
       const affect = sup.services.require(AffectStateKey);
       expect(sup.services.require(MoodSignalsKey).mood()).toEqual(affect.snapshot().mood);
-      expect(sup.list().find((m) => m.id === "mood")?.state).toBe("running");
     });
 
     it("gives the panel the same snapshot", async () => {

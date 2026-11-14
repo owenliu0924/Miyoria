@@ -1,23 +1,10 @@
 // Her emotions' side of the social module: every event on `social.event` (caps or not), the
-// appraisal reading her feelings (`social.appraisal`), and the mood following her emotions.
+// appraisal reading her feelings (`social.appraisal`).
 
 import { contentText, MockProvider } from "@miyoria/llm/llm";
-import {
-  type Affect,
-  customEvent,
-  type JsonValue,
-  SOCIAL_APPRAISAL_TOPIC,
-  SOCIAL_EVENT_TOPIC,
-} from "@miyoria/types";
+import { type JsonValue, SOCIAL_APPRAISAL_TOPIC, SOCIAL_EVENT_TOPIC } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import {
-  appraisalRequest,
-  MoodEngine,
-  MoodState,
-  moodConfig,
-  parseHeartAppraisal,
-  socialConfig,
-} from "../src/index.js";
+import { appraisalRequest, parseHeartAppraisal, socialConfig } from "../src/index.js";
 import { channel, dm, Harness, router, t } from "./helpers.js";
 
 function payloads(h: Harness, topic: string): JsonValue[] {
@@ -119,44 +106,5 @@ describe("the appraisal reads her feelings", () => {
     await plain.say("discord:2", "Alice", "嗨", channel(), t(1, 10));
     await plain.social.appraise(router(mock2), channel(), t(1, 10));
     expect(payloads(plain, SOCIAL_APPRAISAL_TOPIC)).toEqual([]);
-  });
-});
-
-describe("the mood follows her emotions", () => {
-  const baseline = { valence: 0.1, arousal: 0.5, energy: 0.7 };
-  const noon = Date.UTC(2026, 10, 1, 4, 0, 0);
-
-  it("moves its target by her emotions' affect", () => {
-    let affect: Affect | null = { valence: 0.4, arousal: -0.2, energy: 0 };
-    const e = new MoodEngine(baseline, moodConfig(), noon, () => affect);
-    expect(e.target(noon).valence).toBeCloseTo(0.5, 6);
-    expect(e.target(noon).arousal).toBeCloseTo(0.3, 6);
-    // Half of the way there after one half-life.
-    affect = { valence: -0.6, arousal: 0, energy: 0 };
-    const start = e.current().valence;
-    e.advance(noon + 1_800_000);
-    expect(e.current().valence).toBeCloseTo(start + (-0.5 - start) / 2, 2);
-    const weightless = new MoodEngine(
-      baseline,
-      moodConfig({ emotion_weight: 0 }),
-      noon,
-      () => affect,
-    );
-    expect(weightless.target(noon).valence).toBeCloseTo(0.1, 6);
-  });
-
-  it("leaves social events to her emotions when they are there", () => {
-    const relationship = customEvent("social.relationship", { kind: "praise", affinity: 3 });
-    const without = new MoodState(baseline, moodConfig(), noon);
-    expect(without.handle(relationship, noon)).not.toBeNull();
-    const withSelf = new MoodState(baseline, moodConfig(), noon, undefined, () => ({
-      valence: 0,
-      arousal: 0,
-      energy: 0,
-    }));
-    expect(withSelf.handle(relationship, noon)).toBeNull();
-    // Her own tags are expression only: they never move the mood (with or without emotions).
-    expect(withSelf.handle(customEvent("agent.emotion", { emotion: "angry" }), noon)).toBeNull();
-    expect(without.handle(customEvent("agent.emotion", { emotion: "angry" }), noon)).toBeNull();
   });
 });

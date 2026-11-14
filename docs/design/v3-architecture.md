@@ -421,7 +421,7 @@ V2 的混合式情緒保留,但**情緒要有消費者才有價值**,否則只�
 
 情緒怎麼接到輸出是一張表:`EMOTION_OUTPUTS`(`packages/types/src/affect-outputs.ts`),`packages/core/test/emotions.test.ts` 會檢查每個情緒真的走到一個輸出。情緒只改她怎麼說和想做什麼,不改規則:Directive、Floor 的打斷等級和 claim gate 都不讀情緒(`packages/core/test/emotion-guardrails.test.ts`)。多話程度只是 `base_lines` 的權重,有硬上下限(`[modules.arbiter.floor]` 的 `min_feeling_multiplier`、`max_feeling_multiplier`),不動已講句數,也繞不過 `max_unanswered`。
 
-現況:`self` 模組就是 Affect 模組,心情由它提供(`MoodSignalsKey`、`mood.changed`)。`mood` 模組還在,只在 `[modules.self] enabled = false` 時運作。Appraise 在 `packages/heart/mind/src/appraise.ts`;`social` 的批次評估只在 `mind` 沒跑時才讀她的感受。
+現況:`self` 模組就是 Affect 模組,心情由它提供(`MoodSignalsKey`、`mood.changed`)。`mood` 模組已刪除。Appraise 在 `packages/heart/mind/src/appraise.ts`;`social` 的批次評估只在 `mind` 沒跑時才讀她的感受。
 
 ## 13. 語音
 

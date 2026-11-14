@@ -281,12 +281,12 @@ describe("buildCore", () => {
   it("disables_token_modules_without_a_token_and_remembers_runtime_toggles", async () => {
     const store = await openStore("memory://");
     await store.moduleState.set("speech", false);
-    core = await buildCoreWith(catalog(), config("[modules.mood]\nenabled = false\n"), { store });
+    core = await buildCoreWith(catalog(), config("[modules.mcp]\nenabled = false\n"), { store });
     const state = new Map(core.supervisor.list().map((m) => [m.id, m.state]));
     expect(state.get("platform.discord.bot")).toBe("disabled"); // empty token
     expect(state.get("api")).toBe("stopped"); // has a token
     expect(state.get("speech")).toBe("disabled"); // disabled at runtime earlier
-    expect(state.get("mood")).toBe("disabled"); // enabled = false
+    expect(state.get("mcp")).toBe("disabled"); // enabled = false
     expect(state.get("sandbox")).toBe("disabled"); // opt-in, no section
     await core.start();
     expect(core.supervisor.list().find((m) => m.id === "llm")?.state).toBe("running");
@@ -298,12 +298,12 @@ describe("buildCore", () => {
 
   it("does_not_remember_a_module_the_config_leaves_off_as_disabled", async () => {
     const store = await openStore("memory://");
-    core = await buildCoreWith(catalog(), config("[modules.mood]\nenabled = false\n"), { store });
+    core = await buildCoreWith(catalog(), config("[modules.mcp]\nenabled = false\n"), { store });
     await core.start();
     await core.supervisor.disable("llm");
     await waitFor(async () => (await store.moduleState.get("llm")) === false);
     // Off only because of the config: turning it on there must be enough.
-    expect(await store.moduleState.get("mood")).toBeNull();
+    expect(await store.moduleState.get("mcp")).toBeNull();
     expect(await store.moduleState.get("sandbox")).toBeNull();
   });
 

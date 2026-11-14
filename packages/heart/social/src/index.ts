@@ -4,11 +4,8 @@
 //   conversations (keyword rules plus a batched LLM pass), her impression notes, the `在場的人`
 //   prompt section, `/me profile | call | link` and `/admin person ...`. Provides `SocialSignalsKey` and
 //   `SocialKey`.
-// * Module `MoodModule` (`mood`): her global mood (valence / arousal / energy) drifting back to
-//   the profile baseline, for when the Affect module (`self`) does not run; idle when it does.
-//   Provides `MoodSignalsKey`, `MoodStateKey` and the `mood` prompt section.
 //
-// Only these modules change relationship numbers; LLM tools cannot.
+// Only this module changes relationship numbers; LLM tools cannot.
 
 export {
   AppraisalParseError,
@@ -39,20 +36,6 @@ export {
   TOPIC,
 } from "./engine.js";
 export { applyBond, SocialError, SocialModule } from "./module.js";
-export {
-  eventNudge,
-  type MoodConfig,
-  MoodConfigSchema,
-  MoodEngine,
-  MoodModule,
-  type MoodNudge,
-  MoodState,
-  MoodStateKey,
-  moodConfig,
-  nightShape,
-  SETTINGS_KEY,
-  TOPIC_CHANGED,
-} from "./mood.js";
 export {
   apply,
   BLOCKED_TAG,

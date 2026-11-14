@@ -348,7 +348,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
       confirm: "simple",
     },
   ),
-  // @miyoria/heart/social `mood.ts` `SETTINGS_KEY`
+  // The saved mood of the removed `mood` module (`@miyoria/heart/self` `migrate.ts` reads it).
   category("mood", [settings("mood", "active", ["mood:last"])], {
     modules: ["mood"],
     confirm: "simple",

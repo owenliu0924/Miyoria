@@ -29,7 +29,6 @@ import {
   type Event,
   type Mind,
   MindKey,
-  MoodSignalsKey,
   newId,
   PromptContributors,
   PromptContributorsKey,
@@ -48,7 +47,6 @@ import {
   label,
   lineDepth,
   localDay,
-  MoodModule,
   mergeInto,
   registerCommands,
   SocialConfigSchema,
@@ -850,21 +848,13 @@ describe("modules", () => {
     const sup = new Supervisor({ bus, services });
     await sup.register(new LlmStub(new MockProvider("mock").reply('{"people":[]}')), null, true);
     await sup.register(new SocialModule(profile(), "DeepSeek-chan", ["DS醬"]), null, true);
-    await sup.register(
-      new MoodModule(profile(), { valence: 0.1, arousal: 0.5, energy: 0.7 }),
-      null,
-      true,
-    );
     await sup.startAll();
 
     const signals = services.require(SocialSignalsKey);
-    const mood = services.require(MoodSignalsKey);
     expect(services.has(SocialKey)).toBe(true);
     expect(contributors.all()).toEqual([]);
     expect(registry.specs().map((s) => s.path.join(" "))).toContain("admin person adjust");
-    const valenceBefore = mood.mood().valence;
 
-    const changed = bus.subscribe(["mood.changed"]);
     const src = "platform.test";
     bus.publish(src, {
       type: "platform_ready",
@@ -890,10 +880,6 @@ describe("modules", () => {
     }
     await eventually("attitude", () => (signals.attitude(acc("discord:2"))?.affinity ?? 0) > 2);
     expect(signals.attitude(acc("discord:999")), "her own account is skipped").toBeNull();
-    const env = await withTimeout(changed.recv(), 2000);
-    expect(env, "mood.changed published").toBeTruthy();
-    expect(env?.event.type === "custom" && env.event.data.topic).toBe("mood.changed");
-    expect(mood.mood().valence > valenceBefore).toBe(true);
 
     await sup.stopAll();
     expect(contributors.all()).toEqual([]);

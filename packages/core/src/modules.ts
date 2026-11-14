@@ -23,7 +23,7 @@ import { ActionsModule } from "@miyoria/gate/actions";
 import { ModerationModule } from "@miyoria/gate/moderation";
 import { MindModule } from "@miyoria/heart/mind";
 import { SelfModule } from "@miyoria/heart/self";
-import { MoodModule, SocialModule } from "@miyoria/heart/social";
+import { SocialModule } from "@miyoria/heart/social";
 import { LiveModule } from "@miyoria/live";
 import {
   type LlmConfig,
@@ -153,7 +153,6 @@ async function coreModules({
     new DirectiveModule(),
     new ActivityModule(),
     SocialModule.fromProfile(profile),
-    new MoodModule(profileId, profile.manifest.mood),
     new WorldModule({
       interests: profile.manifest.interests,
       game: (services) => services.get(GameHandleKey)?.status()?.game_name ?? null,
