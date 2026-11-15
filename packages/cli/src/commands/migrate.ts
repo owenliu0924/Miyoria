@@ -181,7 +181,7 @@ export async function migrate(target: HostTarget, options: MigrateOptions = {}):
     ok(`已寫入 ${target.hostToml}`);
   }
   for (const line of text.trimEnd().split("\n")) println(dim(`  ${line}`));
-  if (/^[services.(voice-node|stage)]/m.test(text)) {
+  if (/^\[services\.(voice-node|stage)\]/m.test(text)) {
     note(
       "voice node 和 stage 的連線位址與權杖,在這台電腦加入 Core 之後(`miyoria host join`)由 Core 經 hostd 給它們;還沒加入的電腦照舊用 voice node 自己的 .env",
     );
