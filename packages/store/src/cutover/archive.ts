@@ -1,6 +1,7 @@
 // `miyoria db archive`: steps 2 to 4 of the cut-over (docs/design/v5-data.md §7) for a stopped V4.
 //
-// - It refuses while anything holds the database open (`heldFiles`).
+// - It refuses a file that is not V4, and refuses while anything holds the database open
+//   (`heldFiles`).
 // - It renames `miyoria.db`, `-wal` and `-shm` together to `archive/miyoria-v4-<date>.db{,-wal,
 //   -shm}`. SQLite finds the WAL by name, so the writes still in it stay with the file.
 // - It makes a single-file copy, `miyoria-v4-<date>.single.db`, with `VACUUM INTO` over a
@@ -35,7 +36,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { type Clock, systemClock, toTimestamp } from "@miyoria/types";
-import { CutoverError, fileFacts, openReadOnly } from "./old-file.js";
+import { CutoverError, fileFacts, openReadOnly, tablesOf } from "./old-file.js";
 
 /** The database file and the side files SQLite keeps next to it. */
 const SUFFIXES = ["", "-wal", "-shm"] as const;
@@ -402,6 +403,15 @@ export async function archiveDatabase(options: ArchiveOptions): Promise<ArchiveR
     if (facts.walMode === null) {
       throw new CutoverError("not_database", `${source} is not a SQLite database`);
     }
+    // Only a V4 file is archived: `core.database_url` may already name the new database.
+    const ro = openReadOnly(source);
+    let v4: boolean;
+    try {
+      v4 = tablesOf(ro.db).has("schema_version");
+    } finally {
+      ro.close();
+    }
+    if (!v4) throw new CutoverError("not_v4", `${source} is not a V4 database`);
     const date = archiveDate(clock.now());
     names = new Names(source, dir, date);
     const clash = [...SUFFIXES.map((s) => names.to(s)), names.single, names.plan].filter(

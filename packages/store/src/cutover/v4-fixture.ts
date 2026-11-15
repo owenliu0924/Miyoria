@@ -1,4 +1,5 @@
-// A small V4 database for the cut-over tools: the old layout's tables as V4's migrations made them
+// A small V4 database for the tests of the cut-over tools (here and in the CLI, through
+// `@miyoria/store/testing`): the old layout's tables as V4's migrations made them
 // (`main:packages/store/migrations/sqlite/0001`-`0011`, the ones the tools read or must leave
 // behind), the V4 runner's `schema_version`, and a few people with the odd rows the old schema
 // allowed.

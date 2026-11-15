@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { inspectDatabase, SqliteStore } from "../src/index.js";
-import { V4_PROFILE, v4File, v4Iso } from "./v4-fixture.js";
+import { V4_PROFILE, v4File, v4Iso } from "../src/testing.js";
 
 let dir = "";
 beforeEach(() => {

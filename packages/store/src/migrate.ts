@@ -20,9 +20,9 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { StoreError } from "./common.js";
+import { openReadOnly } from "./cutover/old-file.js";
 import type { Db, Row } from "./db.js";
 import { CHAT_SQL, EVENTS_SQL, LLM_CALLS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
 
@@ -343,19 +343,20 @@ function refuseForeign(tables: ReadonlySet<string>, location: string): void {
 
 /**
  * Looks at an existing database file through a read-only connection and throws when it must
- * not be migrated (see the file comment). Writes nothing: the V4 database is checked this way
- * before any read-write connection, pragma or checkpoint can touch it. A missing or empty file
- * passes.
+ * not be migrated (see the file comment). Changes nothing: the V4 database is checked this way
+ * before any read-write connection, pragma or checkpoint can touch it, and through `openReadOnly`,
+ * which (unlike a plain read-only connection) leaves no `-wal` or `-shm` beside a file in WAL mode
+ * that had none. A missing or empty file passes.
  */
 export function checkDatabaseFile(path: string): void {
   if (path === ":memory:" || !existsSync(path) || statSync(path).size === 0) return;
   let tables: Set<string>;
   try {
-    const raw = new DatabaseSync(path, { readOnly: true });
+    const ro = openReadOnly(path);
     try {
-      tables = tableNames(raw.prepare(TABLES).all());
+      tables = tableNames(ro.db.prepare(TABLES).all());
     } finally {
-      raw.close();
+      ro.close();
     }
   } catch (cause) {
     throw new StoreError(`cannot read the SQLite database ${path}`, { cause });

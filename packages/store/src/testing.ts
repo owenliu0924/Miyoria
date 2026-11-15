@@ -14,6 +14,8 @@ import { identitySchema } from "./identity/migrations.js";
 import { legacySchema } from "./legacy-schema/index.js";
 import { type AppliedMigration, migrate, type PluginSchema } from "./migrate.js";
 
+export { fillV4, memoryV4, V4_PROFILE, v4File, v4Iso, v4Micros } from "./cutover/v4-fixture.js";
+
 export interface OpenTestDbOptions {
   /** Schemas to apply after `core`, in dependency order. */
   plugins?: readonly PluginSchema[];

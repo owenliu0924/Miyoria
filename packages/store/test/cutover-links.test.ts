@@ -16,8 +16,7 @@ import {
   LINK_IMPORT_SOURCE,
   linkImportCounts,
 } from "../src/index.js";
-import { openTestDb, type TestDb } from "../src/testing.js";
-import { memoryV4, V4_PROFILE, v4File, v4Iso } from "./v4-fixture.js";
+import { memoryV4, openTestDb, type TestDb, V4_PROFILE, v4File, v4Iso } from "../src/testing.js";
 
 const NOW = Date.UTC(2026, 10, 15, 12);
 const clock = { now: () => NOW };
