@@ -7,6 +7,8 @@
 // Every data type is the JSON wire form exactly: snake_case field names,
 // optional values as `T | null` (key always present), timestamps as RFC 3339 strings.
 
+// The bus envelope as JSON (live readers, the replay log) and the schema that parses it.
+export { type BusEnvelopeJson, BusEnvelopeSchema } from "@miyoria/contracts/events";
 export {
   ACTION_SETTLED_TOPIC,
   type Action,
