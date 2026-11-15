@@ -78,6 +78,7 @@
 2. 停掉 Core。
 3. 把 `miyoria.db`、`-wal`、`-shm` **三個檔一起**改名搬進 `data/archive/`。只搬 `.db` 會丟掉還在 WAL 裡的 4 MB 最近寫入。
 4. 用 `VACUUM INTO` 做一份單一檔案的複本,寫下雜湊。
+   - `data/replay/` 如果有檔案(重播紀錄預設是關的),一起搬進封存:新版一行是一個新格式的事件,讀到舊格式的行會報錯並指出是舊格式,不會轉換。
 5. V5 指向新的 `data/core.db`。
 6. 第一次啟動時跑遷移和種子、建立 `home` session、把 `miyoria.toml` 匯入成第 1 版設定。
 7. 跑 `miyoria db import-links`,然後做基本檢查。
