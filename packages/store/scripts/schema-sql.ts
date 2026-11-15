@@ -14,6 +14,8 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { systemClock } from "@miyoria/types";
 import { generateDrizzleJson, generateMigration, pushSchema } from "drizzle-kit/payload/sqlite";
+import { artifactSchema } from "../src/artifacts/migrations.js";
+import * as artifactTables from "../src/artifacts/schema.js";
 import { configSchema } from "../src/config/migrations.js";
 import * as configTables from "../src/config/schema.js";
 import { Db } from "../src/db.js";
@@ -24,18 +26,28 @@ import { coreSchema, migrate, type PluginSchema, sqlNames } from "../src/migrate
 /** Core's tables and indexes (the event log): in every database, and no plugin's business. */
 const CORE_NAMES = new Set(coreSchema.migrations.flatMap((m) => sqlNames(m.sql).created));
 
-/** Whether drizzle-kit's statement drops one of core's tables or indexes. */
-function dropsCore(statement: string): boolean {
+/**
+ * Whether drizzle-kit's statement drops a table or index that `tables` does not own: core's, or
+ * one of another Drizzle plugin's that the migrated database carries because `tables` requires it.
+ */
+function dropsOthers(statement: string, tables: object): boolean {
   const name = /^DROP\s+(?:TABLE|INDEX|TRIGGER|VIEW)\s+(?:IF\s+EXISTS\s+)?[`"]?([^`"\s;]+)/i.exec(
     statement.trim(),
   )?.[1];
-  return name !== undefined && CORE_NAMES.has(name);
+  if (name === undefined) return false;
+  if (CORE_NAMES.has(name)) return true;
+  return Object.values(DRIZZLE_PLUGINS).some(
+    (other) =>
+      other.tables !== tables &&
+      other.schema.migrations.some((m) => sqlNames(m.sql).created.includes(name)),
+  );
 }
 
 /** The Drizzle tables of each plugin that declares its tables with Drizzle. */
 export const DRIZZLE_PLUGINS: Record<string, { tables: object; schema: PluginSchema }> = {
   identity: { tables: identityTables, schema: identitySchema },
   config: { tables: configTables, schema: configSchema },
+  artifact: { tables: artifactTables, schema: artifactSchema },
 };
 
 /** `CREATE TABLE ... );` as `CREATE TABLE ... ) STRICT;`. */
@@ -78,17 +90,23 @@ function kitClient(raw: DatabaseSync) {
  * drizzle-kit can see: not `STRICT`, not a partial index's WHERE, not an expression index).
  */
 export async function pendingSql(raw: DatabaseSync, tables: object): Promise<string[]> {
-  // `_migrations` is the runner's, and the event log is core's; drizzle-kit would drop them as
-  // tables it does not know.
+  // `_migrations` is the runner's, the event log is core's, and a required plugin's tables are
+  // its own; drizzle-kit would drop them as tables it does not know.
   const result = await pushSchema(sorted(tables), kitClient(raw), { table: "_migrations" });
-  return result.sqlStatements.filter((s) => !dropsCore(s));
+  return result.sqlStatements.filter((s) => !dropsOthers(s, tables));
 }
 
-/** A `:memory:` database with `core` and `schema` applied from the checked-in migrations. */
+/**
+ * A `:memory:` database with `core`, the Drizzle schemas `schema` requires, and `schema` applied
+ * from the checked-in migrations.
+ */
 export function migrated(schema: PluginSchema): { raw: DatabaseSync; db: Db } {
   const raw = new DatabaseSync(":memory:", { enableForeignKeyConstraints: true });
   const db = new Db(raw, systemClock);
-  migrate(db, [schema]);
+  const required = Object.values(DRIZZLE_PLUGINS)
+    .map((entry) => entry.schema)
+    .filter((s) => schema.requires?.includes(s.plugin));
+  migrate(db, [...required, schema]);
   return { raw, db };
 }
 

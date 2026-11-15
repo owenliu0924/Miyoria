@@ -2,6 +2,209 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/events",
   "$defs": {
+    "EventsArtifactCreated": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mime": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EventsArtifactKind"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/EventsArtifactSource"
+        },
+        "plugin": {
+          "type": "string"
+        },
+        "made_for": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "derived_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kept_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsArtifactKeptBy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "downloadable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "sha256",
+        "size",
+        "mime",
+        "kind",
+        "filename",
+        "source",
+        "plugin",
+        "made_for",
+        "derived_from",
+        "expires_at",
+        "kept_by",
+        "downloadable"
+      ]
+    },
+    "EventsArtifactExpired": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "shares_revoked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "artifact_id",
+        "sha256",
+        "expires_at",
+        "shares_revoked"
+      ]
+    },
+    "EventsArtifactKeptBy": {
+      "type": "string",
+      "enum": [
+        "album",
+        "person",
+        "owner",
+        "cards"
+      ]
+    },
+    "EventsArtifactKind": {
+      "type": "string",
+      "enum": [
+        "image",
+        "audio",
+        "video",
+        "document",
+        "text"
+      ]
+    },
+    "EventsArtifactSource": {
+      "type": "string",
+      "enum": [
+        "imagegen",
+        "sandbox",
+        "cards",
+        "sing",
+        "clip",
+        "doc",
+        "render"
+      ]
+    },
+    "EventsArtifactSwept": {
+      "type": "object",
+      "properties": {
+        "rows_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "blobs_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bytes_freed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "orphan_files_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "temp_files_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "missing_blobs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "rows_removed",
+        "blobs_removed",
+        "bytes_freed",
+        "orphan_files_removed",
+        "temp_files_removed",
+        "missing_blobs"
+      ]
+    },
+    "EventsArtifactTakenDown": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "shares_revoked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "artifact_id",
+        "by",
+        "reason",
+        "shares_revoked"
+      ]
+    },
     "EventsAuditEntry": {
       "type": "object",
       "properties": {
@@ -606,6 +809,112 @@
         "dm",
         "self",
         "owner"
+      ]
+    },
+    "EventsShareAudience": {
+      "type": "string",
+      "enum": [
+        "person",
+        "space",
+        "link"
+      ]
+    },
+    "EventsShareCreated": {
+      "type": "object",
+      "properties": {
+        "share_id": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "audience": {
+          "$ref": "#/$defs/EventsShareAudience"
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/EventsShareMode"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_uses": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "share_id",
+        "artifact_id",
+        "audience",
+        "person_id",
+        "space_id",
+        "mode",
+        "expires_at",
+        "max_uses"
+      ]
+    },
+    "EventsShareMode": {
+      "type": "string",
+      "enum": [
+        "stream",
+        "download"
+      ]
+    },
+    "EventsShareOpened": {
+      "type": "object",
+      "properties": {
+        "share_id": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "share_id",
+        "artifact_id"
+      ]
+    },
+    "EventsShareRevoked": {
+      "type": "object",
+      "properties": {
+        "share_id": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "share_id",
+        "artifact_id",
+        "reason"
       ]
     },
     "EventsTier": {

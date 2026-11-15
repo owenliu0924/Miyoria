@@ -1,8 +1,42 @@
 // @miyoria/contracts/events: the event envelope, defineEvent and the registry of event types
 // (docs/design/v5-data.md §2.2, docs/design/v5-contracts.md §2.8), and the payload schemas of the
-// event types defined so far (chat lines, turn records, audit entries). Nothing here does I/O, so
-// a browser bundle can use it.
+// event types defined so far (chat lines, turn records, audit entries, artifacts and shares).
+// Nothing here does I/O, so a browser bundle can use it.
 
+export {
+  ARTIFACT_EVENTS,
+  ArtifactCreated,
+  type ArtifactCreatedData,
+  ArtifactCreatedSchema,
+  ArtifactExpired,
+  type ArtifactExpiredData,
+  ArtifactExpiredSchema,
+  type ArtifactKeptBy,
+  ArtifactKeptBySchema,
+  type ArtifactKind,
+  ArtifactKindSchema,
+  type ArtifactSource,
+  ArtifactSourceSchema,
+  ArtifactSwept,
+  type ArtifactSweptData,
+  ArtifactSweptSchema,
+  ArtifactTakenDown,
+  type ArtifactTakenDownData,
+  ArtifactTakenDownSchema,
+  type ShareAudience,
+  ShareAudienceSchema,
+  ShareCreated,
+  type ShareCreatedData,
+  ShareCreatedSchema,
+  type ShareMode,
+  ShareModeSchema,
+  ShareOpened,
+  type ShareOpenedData,
+  ShareOpenedSchema,
+  ShareRevoked,
+  type ShareRevokedData,
+  ShareRevokedSchema,
+} from "./artifact.js";
 export {
   AUDIT_TYPE_PREFIX,
   type AuditEntryData,

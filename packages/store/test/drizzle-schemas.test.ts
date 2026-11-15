@@ -57,16 +57,19 @@ describe.each(Object.entries(DRIZZLE_PLUGINS))("the %s schema", (id, { tables, s
   });
 
   it("passes the naming lint, and re-running is a no-op", () => {
-    expect(lintSchemas(orderSchemas([coreSchema, schema]))).toEqual([]);
+    const required = Object.values(DRIZZLE_PLUGINS)
+      .map((entry) => entry.schema)
+      .filter((s) => schema.requires?.includes(s.plugin));
+    expect(lintSchemas(orderSchemas([coreSchema, ...required, schema]))).toEqual([]);
     const { db } = migrated(schema);
     try {
-      expect(migrate(db, [schema])).toEqual([]);
+      expect(migrate(db, [...required, schema])).toEqual([]);
     } finally {
       db.close();
     }
   });
 });
 
-it("covers identity and config", () => {
-  expect(Object.keys(DRIZZLE_PLUGINS).sort()).toEqual(["config", "identity"]);
+it("covers identity, config and the artifact store", () => {
+  expect(Object.keys(DRIZZLE_PLUGINS).sort()).toEqual(["artifact", "config", "identity"]);
 });
