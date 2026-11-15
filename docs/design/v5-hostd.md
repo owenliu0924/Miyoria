@@ -495,6 +495,37 @@ from `fetch`. Implemented in `packages/cluster/src/relay.ts` (Core), `packages/h
 
 ## 8. GPU arbitration (H7)
 
+The current behaviour is specified in [v5-gpu.md](v5-gpu.md) and recorded in
+`workers/sing/gpu_decisions.json` (3,172 cases) and `workers/sing/gpu_scenarios.json`
+(26 scripted runs of the real job loop on a simulated clock); `workers/tests/test_gpu_table.py`
+keeps both in step with the Python. Decisions taken on the open points of that specification
+(2026-11-16):
+
+- `gpu.acquire` carries what only the worker knows (stage, whether it can pause, the learned
+  need, whether it can run on the CPU, the silence estimate, spill history, job id). hostd keeps
+  each job's waits. `mode` is a cap: `share` never evicts speech.
+- Before taking her voice hostd answers `wait { code: "announce" }`; the worker waits for Core's
+  go (or 30 s) and asks again with `announced: true`. Core's speech pause keeps reading the job's
+  `exclusive` field.
+- A fourth answer, `refused`, replaces the worker's give-up.
+- hostd runs the window's silence clock and ends a window through the answer to `gpu.renew`; the
+  worker renews at least every second while a window is open, and reports spills there.
+- `gpu.busy` answers `{ busy, allowance_s }` from a 100 ms cache; the pause loop stays in the
+  worker.
+- hostd holds the speech workers' lease (`max_s` 60, renewed every 20 s); their own reload after
+  `max_s` stays as the safety net.
+- Decisions use the measured free memory, as today. `[gpu] reserve_mb` is for static checks and
+  for a card that cannot be read.
+- The worker keeps learning each stage's need and sends it. The sing descriptor's `vram_mb.peak`
+  is 4096 to match.
+- The oddities the specification lists are reproduced as recorded. Each fix is its own later
+  change to the table and the arbiter together.
+- Image generation is not moved in this phase: the module is closed until a model is chosen, and
+  moving it changes when ComfyUI unloads. Core's existing wiring stays; the lease API leaves room
+  for a `share`-only tenant.
+- The worker keeps its own arbitration behind a switch until a song request in a live voice call
+  has been heard on the new path.
+
 Today's logic lives in `workers/sing/gpu.py` (policies `yield`, `auto`, `share`, `offload`,
 `wait`; limits from about twenty `SING_*` variables), `exclusive.py` (the offload lease against
 TTS and ASR) and `yielding.py` (pausing while speech is busy), fed by Core's `/gpu/context` push;
