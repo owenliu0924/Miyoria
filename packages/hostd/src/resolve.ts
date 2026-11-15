@@ -67,6 +67,11 @@ export interface LiveValues {
   offloadUrls: string;
   /** `MIYORIA_SERVICE_TOKEN`. */
   token: string;
+  /**
+   * `MIYORIA_HOST_TOKEN`: shared by the services of this machine, new at each daemon start. A
+   * worker accepts it beside its own token and sends it to a neighbour on the same machine.
+   */
+  hostToken: string;
   /** `MIYORIA_HOSTD_URL`. */
   hostdUrl: string;
 }
@@ -176,6 +181,7 @@ export function checkPlan(plan: ServicePlan, ctx: ResolveContext): string | null
       port: typeof plan.port === "number" ? plan.port : plan.port === "auto" ? 1 : undefined,
       offloadUrls: "",
       token: "check",
+      hostToken: "check",
       hostdUrl: "http://127.0.0.1:1",
     });
     return null;
@@ -326,6 +332,7 @@ export function expandService(plan: ServicePlan, ctx: ResolveContext, live: Live
 
   const added: Record<string, string> = {
     MIYORIA_SERVICE_TOKEN: live.token,
+    MIYORIA_HOST_TOKEN: live.hostToken,
     MIYORIA_HOSTD_URL: live.hostdUrl,
   };
   if (run.host_env !== undefined) added[run.host_env] = ctx.bind;

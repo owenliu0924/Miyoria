@@ -36,6 +36,7 @@ class FakeApi implements HostApi {
   client: ClusterClient | null = null;
   readonly #events = new Set<(event: HostServiceEvent) => void>();
   readonly #logs = new Set<(line: string) => void>();
+  readonly #changes = new Set<() => void>();
 
   report(options: { withTokens: boolean }): HostReport {
     this.tokensAsked.push(options.withTokens);
@@ -56,6 +57,16 @@ class FakeApi implements HostApi {
 
   emit(event: HostServiceEvent): void {
     for (const listener of this.#events) listener(event);
+  }
+
+  onChange(listener: () => void): () => void {
+    this.#changes.add(listener);
+    return () => this.#changes.delete(listener);
+  }
+
+  /** A change that is not a state change, such as a failed probe of a running service. */
+  changed(): void {
+    for (const listener of this.#changes) listener();
   }
 
   get eventListeners(): number {
@@ -168,6 +179,22 @@ describe("CoreLink against the cluster module", () => {
     });
     await expect(api.client?.call("cluster.nothing", {})).rejects.toBeInstanceOf(HostRpcError);
     expect(states).toEqual(["connecting", "connected"]);
+  });
+
+  it("reports again when only a service's health changed", async () => {
+    harness = await Harness.start();
+    const h = harness;
+    const cluster = h.cluster();
+    const made = cluster.hosts.create({ name: "fake-pc", approved: true, capabilities: ["asr"] });
+    const api = new FakeApi();
+    api.services = [asr];
+    const link = coreLink(api, { url: h.url(), hostId: made.host.id, key: made.key });
+    link.start();
+    await waitUntil(() => cluster.registry.pick("asr") !== null, "the report");
+
+    api.services = [{ ...asr, healthy: false }];
+    api.changed();
+    await waitUntil(() => cluster.registry.pick("asr") === null, "the report after the change");
   });
 
   it("coalesces a burst of events into few reports", async () => {

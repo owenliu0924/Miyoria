@@ -160,6 +160,8 @@ function sameToken(a: string, b: string): boolean {
 export class Daemon implements HostApi {
   readonly #options: DaemonOptions;
   readonly #token = randomBytes(32).toString("base64url");
+  /** What the services of this machine send to each other until they stop calling each other. */
+  readonly #hostToken = randomBytes(24).toString("base64url");
   readonly #timing: Timing;
   readonly #gpu: GpuCache;
   readonly #events = new Set<(event: HostServiceEvent) => void>();
@@ -246,6 +248,7 @@ export class Daemon implements HostApi {
       timing: this.#timing,
       log: this.#log,
       hostdUrl: () => `http://127.0.0.1:${this.#port}`,
+      hostToken: () => this.#hostToken,
       offloadUrls: () =>
         offloadUrls(
           [...this.#services.values()].map((s) => s.plan),

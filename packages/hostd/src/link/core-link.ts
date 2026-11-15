@@ -347,9 +347,12 @@ export class CoreLink {
       peer.notify(HOST_NOTIFICATION.ServiceEvent, event);
       report();
     });
+    // A health change alone is not an event, and Core's registry reads health from the report.
+    const unwatch = api.onChange?.(() => report());
 
     return () => {
       unsubscribe();
+      unwatch?.();
       if (timer !== null) clearTimeout(timer);
       api.setClusterClient(null);
       api.setGuardSource(null);

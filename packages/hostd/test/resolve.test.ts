@@ -44,7 +44,13 @@ function plans(ws: TestWorkspace, ctx: ResolveContext) {
   return planServices(loadCatalog(ws.root), loadHostConfig(ws.hostToml), ctx);
 }
 
-const live = { port: 9100, offloadUrls: "", token: "tok", hostdUrl: "http://127.0.0.1:5000" };
+const live = {
+  port: 9100,
+  offloadUrls: "",
+  token: "tok",
+  hostToken: "host-tok",
+  hostdUrl: "http://127.0.0.1:5000",
+};
 
 describe("placeholders", () => {
   it("finds {env:NAME} and rejects unknown ones at load time", () => {
@@ -176,6 +182,7 @@ describe("environment", () => {
       HOST: "127.0.0.1",
       PORT: "9100",
       MIYORIA_SERVICE_TOKEN: "tok",
+      MIYORIA_HOST_TOKEN: "host-tok",
       MIYORIA_HOSTD_URL: "http://127.0.0.1:5000",
       SSL_CERT_FILE: join(ws.root, "certs", "ca.pem"),
       REQUESTS_CA_BUNDLE: join(ws.root, "certs", "ca.pem"),

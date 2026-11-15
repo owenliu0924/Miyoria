@@ -59,6 +59,7 @@ export interface ServiceHost {
   readonly timing: Timing;
   readonly log: Logger;
   hostdUrl(): string;
+  hostToken(): string;
   offloadUrls(): string;
   service(name: string): ManagedService | undefined;
   emit(event: HostServiceEvent): void;
@@ -387,6 +388,7 @@ export class ManagedService {
         port,
         offloadUrls: this.#host.offloadUrls(),
         token,
+        hostToken: this.#host.hostToken(),
         hostdUrl: this.#host.hostdUrl(),
       });
     } catch (error) {
