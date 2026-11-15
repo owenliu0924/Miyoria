@@ -436,6 +436,7 @@ describe("endpoints", () => {
           healthy: true,
           restarts: 0,
           url: "http://pc:8003",
+          advertised: "http://pc:8003",
           token: "service-secret-token",
           version: "1.2",
         },

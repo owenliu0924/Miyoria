@@ -136,6 +136,7 @@ describe("CoreEndpoints", () => {
           healthy: true,
           restarts: 0,
           url: "http://127.0.0.1:8003",
+          advertised: "http://127.0.0.1:8003",
           token: "service-token",
         },
       ],
