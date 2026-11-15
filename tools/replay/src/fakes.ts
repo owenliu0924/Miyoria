@@ -5,13 +5,11 @@ import type { ChatProvider, ChatRequest, ChatStream } from "@miyoria/llm/llm";
 import { type EventBus, sleep } from "@miyoria/runtime/kernel";
 import type { ScriptedLlmConfig } from "@miyoria/runtime/replay-log";
 import {
-  ACTION_SETTLED_TOPIC,
   type Action,
   type ActionSettled,
   type ActionSink,
   type ContextKey,
-  customEvent,
-  type JsonValue,
+  Events,
   type PlaybackState,
   type TurnId,
 } from "@miyoria/types";
@@ -121,9 +119,12 @@ export class ReplaySink implements ActionSink {
     if (payload.type === "send_message") {
       const message = { context: payload.context, id: `sent-${action.id}` };
       queueMicrotask(() =>
-        this.bus.publish("scheduler", {
-          type: "action_completed",
-          data: { action: action.id, turn: action.turn, ok: true, error: null, message },
+        this.bus.publish("scheduler", Events.ActionCompleted, {
+          action: action.id,
+          turn: action.turn,
+          ok: true,
+          error: null,
+          message,
         }),
       );
       const settled: ActionSettled = {
@@ -136,12 +137,7 @@ export class ReplaySink implements ActionSink {
         error: null,
         message,
       };
-      queueMicrotask(() =>
-        this.bus.publish(
-          "scheduler",
-          customEvent(ACTION_SETTLED_TOPIC, settled as unknown as JsonValue),
-        ),
-      );
+      queueMicrotask(() => this.bus.publish("scheduler", Events.ActionSettled, settled));
       return;
     }
     if (payload.type !== "speak") return;
@@ -171,8 +167,9 @@ export class ReplaySink implements ActionSink {
   #playback(context: ContextKey, turn: TurnId | null, state: PlaybackState, text: string): void {
     this.bus.publish(
       "voice",
-      { type: "voice_playback", data: { context, turn, state, text } },
-      turn === null ? {} : { correlation: turn },
+      Events.VoicePlaybackEvent,
+      { context, turn, state, text },
+      turn === null ? {} : { turn },
     );
   }
 
