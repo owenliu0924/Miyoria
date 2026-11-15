@@ -12,9 +12,10 @@ import {
   type AccountRef,
   ActivityManagerKey,
   type ActivitySnapshot,
+  type BusEvent,
   type Clock,
-  customEvent,
-  type Event,
+  Events,
+  is,
   type JsonValue,
   MEMBER_TOPIC,
   type PersonId,
@@ -23,7 +24,6 @@ import {
   PresencePrivacyKey,
   type PromptContributors,
   PromptContributorsKey,
-  SALIENT_TOPIC,
   SocialSignalsKey,
   VOICE_STATE_TOPIC,
   type WorldSnapshot,
@@ -45,9 +45,9 @@ import { WorldPrompt } from "./prompt.js";
 import { type Candidate, Salience } from "./salience.js";
 
 /** Topic of Stage node status changes (`@miyoria/stage`). */
-const STAGE_STATUS_TOPIC = "stage.status";
+const STAGE_STATUS_TOPIC = Events.StageStatus.type;
 /** Topic of Go Live state changes (`@miyoria/voice/voice`). */
-const GOLIVE_TOPIC = "voice.golive";
+const GOLIVE_TOPIC = Events.VoiceGoLive.type;
 
 const STORE_TIMEOUT_MS = 5_000;
 
@@ -173,28 +173,28 @@ export class WorldModule implements Module {
     const flush = () => {
       for (const e of salience.due(clock.now())) {
         ctx.log.debug({ kind: e.kind, key: e.key, count: e.count }, "salient change");
-        ctx.publish(customEvent(SALIENT_TOPIC, e as unknown as JsonValue));
+        ctx.publish(Events.WorldSalient, e);
       }
     };
 
     const sub = ctx.subscribe([
-      "platform.ready",
-      "platform.message.created",
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
       PRESENCE_TOPIC,
       VOICE_STATE_TOPIC,
       MEMBER_TOPIC,
-      "agent.turn.completed",
-      "voice.joined",
-      "voice.left",
-      "voice.utterance",
-      "voice.playback",
+      Events.AgentTurnCompleted.type,
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceUtteranceEvent.type,
+      Events.VoicePlaybackEvent.type,
       STAGE_STATUS_TOPIC,
       GOLIVE_TOPIC,
     ]);
     ctx.spawn("events", async () => {
       for await (const env of sub) {
         try {
-          offer(handle(engine, env.event, clock.now(), signals()));
+          offer(handle(engine, env, clock.now(), signals()));
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "cannot apply a world event");
         }
@@ -221,38 +221,42 @@ export class WorldModule implements Module {
 }
 
 /** Applies one bus event to the engine; returns the salient candidates it caused. */
-export function handle(engine: WorldEngine, event: Event, now: number, sig: Signals): Candidate[] {
-  switch (event.type) {
-    case "platform_ready":
-      engine.addSelf(event.data.self_account);
-      return [];
-    case "platform_message_created":
-      return engine.message(event.data, now, sig);
-    case "agent_turn_completed":
-      engine.herSpoke(event.data.context, now);
-      return [];
-    case "voice_joined":
-      engine.voiceJoined(event.data.context);
-      return [];
-    case "voice_left":
-      engine.voiceLeft(event.data.context);
-      return [];
-    case "voice_utterance":
-      if (event.data.text.trim() !== "") {
-        engine.utterance(event.data.context, event.data.speaker, now);
-      }
-      return [];
-    case "voice_playback":
-      // Her own speech: when she last spoke there, not conversation.
-      if (event.data.state === "started") engine.herSpoke(event.data.context, now);
-      return [];
-    case "custom":
-      break;
-    default:
-      return [];
+export function handle(
+  engine: WorldEngine,
+  event: BusEvent,
+  now: number,
+  sig: Signals,
+): Candidate[] {
+  if (is(Events.PlatformReady, event)) {
+    engine.addSelf(event.data.self_account);
+    return [];
   }
-  const { topic, payload } = event.data;
-  switch (topic) {
+  if (is(Events.PlatformMessageCreated, event)) return engine.message(event.data, now, sig);
+  if (is(Events.AgentTurnCompleted, event)) {
+    engine.herSpoke(event.data.context, now);
+    return [];
+  }
+  if (is(Events.VoiceJoined, event)) {
+    engine.voiceJoined(event.data.context);
+    return [];
+  }
+  if (is(Events.VoiceLeft, event)) {
+    engine.voiceLeft(event.data.context);
+    return [];
+  }
+  if (is(Events.VoiceUtteranceEvent, event)) {
+    if (event.data.text.trim() !== "") {
+      engine.utterance(event.data.context, event.data.speaker, now);
+    }
+    return [];
+  }
+  if (is(Events.VoicePlaybackEvent, event)) {
+    // Her own speech: when she last spoke there, not conversation.
+    if (event.data.state === "started") engine.herSpoke(event.data.context, now);
+    return [];
+  }
+  const payload = event.data as JsonValue;
+  switch (event.type) {
     case PRESENCE_TOPIC: {
       const u = parsePresence(payload);
       return u ? engine.presence(u, now, sig) : [];

@@ -23,15 +23,18 @@ import {
 } from "@miyoria/store";
 import {
   type AccountRef,
+  type BusEvent,
   type Clock,
   CONVERSATION_FOLDED_TOPIC,
   ConversationStatesKey,
   contextKeyString,
-  customEvent,
+  Events,
   type HandleDirectory,
   HandleDirectoryKey,
+  is,
   isJsonObject,
   type JsonValue,
+  type KnowledgeDoc,
   KnowledgeKey,
   type KnowledgeSubject,
   LessonsKey,
@@ -44,6 +47,7 @@ import {
   type PromptRequest,
   REACTION_TOPIC,
   ReflectionKey,
+  type ReflectionRun,
   SocialSignalsKey,
 } from "@miyoria/types";
 import type { BudgetState } from "./caps.js";
@@ -67,7 +71,7 @@ export const CONVERSATION_CONTRIBUTOR = "conversation";
 export const KNOWLEDGE_CONTRIBUTOR = "knowledge";
 export const LESSONS_CONTRIBUTOR = "lessons";
 /** Published after each document change (`{doc, deleted}`). */
-export const KNOWLEDGE_CHANGED_TOPIC = "knowledge.changed";
+export const KNOWLEDGE_CHANGED_TOPIC = Events.KnowledgeChanged.type;
 
 function budgetOf(services: ServiceLookup): BudgetState {
   return services.get(LlmRouterKey)?.budgetState() ?? "ok";
@@ -150,7 +154,7 @@ export class ConversationModule implements Module {
       personOf: (account) => personOf(s, account),
       handles: await handlesOf(s, s.get(SettingsStoreKey) ?? store?.settings ?? null, clock),
       clock,
-      publish: (e) => ctx.publish(e),
+      publish: ctx.publisher,
       log: ctx.log,
     });
     await loadWithTimeout(ctx, "conversation states", () => engine.load());
@@ -171,14 +175,17 @@ export class ConversationModule implements Module {
         return [{ key: CONVERSATION_CONTRIBUTOR, title: "這段對話的前情提要", body, order: 5 }];
       },
     });
-    const sub = ctx.subscribe(["platform.message.created", "voice.utterance", "voice.playback"]);
+    const sub = ctx.subscribe([
+      Events.PlatformMessageCreated.type,
+      Events.VoiceUtteranceEvent.type,
+      Events.VoicePlaybackEvent.type,
+    ]);
     ctx.spawn("lines", async () => {
       for await (const env of sub) {
-        const e = env.event;
-        if (e.type === "platform_message_created") engine.line(e.data.id.context, clock.now());
-        else if (e.type === "voice_utterance") engine.line(e.data.context, clock.now());
-        else if (e.type === "voice_playback" && e.data.state === "started") {
-          engine.line(e.data.context, clock.now());
+        if (is(Events.PlatformMessageCreated, env)) engine.line(env.data.id.context, clock.now());
+        else if (is(Events.VoiceUtteranceEvent, env)) engine.line(env.data.context, clock.now());
+        else if (is(Events.VoicePlaybackEvent, env) && env.data.state === "started") {
+          engine.line(env.data.context, clock.now());
         }
       }
     });
@@ -247,12 +254,10 @@ export class KnowledgeModule implements Module {
       config,
       this.options.clock ?? ctx.clock,
       (doc, deleted) =>
-        ctx.publish(
-          customEvent(KNOWLEDGE_CHANGED_TOPIC, {
-            doc: JSON.parse(JSON.stringify(doc)) as JsonValue,
-            deleted,
-          }),
-        ),
+        ctx.publish(Events.KnowledgeChanged, {
+          doc: JSON.parse(JSON.stringify(doc)) as KnowledgeDoc,
+          deleted,
+        }),
     );
     await loadWithTimeout(ctx, "her documents", () => kb.load());
     this.#store = kb;
@@ -430,121 +435,108 @@ export class ReflectModule implements Module {
       name,
     });
     const sub = ctx.subscribe([
-      "platform.ready",
-      "platform.message.created",
-      "voice.utterance",
-      "action.completed",
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.VoiceUtteranceEvent.type,
+      Events.ActionCompleted.type,
       REACTION_TOPIC,
-      "agent.decision",
-      "agent.turn.completed",
-      "gate.decision",
+      Events.AgentDecision.type,
+      Events.AgentTurnCompleted.type,
+      Events.GateDecision.type,
       FEEDBACK_TOPIC,
       CONVERSATION_FOLDED_TOPIC,
     ]);
+    // One event of those it follows: what it says about how she is received.
+    const signal = (env: BusEvent): void => {
+      if (is(Events.PlatformReady, env)) {
+        selfIds.add(env.data.self_account.id);
+        return;
+      } else if (is(Events.PlatformMessageCreated, env)) {
+        const m = env.data;
+        reflector.activity(clock.now());
+        if (selfIds.has(m.author.account.id)) return;
+        const text = m.text.toLowerCase();
+        const addressed =
+          m.mentions_self ||
+          m.reply_to_self ||
+          m.id.context.kind === "dm" ||
+          names.some((n) => text.includes(n));
+        feedback.message(m, who(m.author.account, m.author.display_name), addressed);
+        return;
+      } else if (is(Events.VoiceUtteranceEvent, env)) {
+        reflector.activity(clock.now());
+        return;
+      } else if (is(Events.ActionCompleted, env)) {
+        if (env.data.ok && env.data.message) {
+          feedback.ownMessage(env.data.message.id, env.data.message.context);
+        }
+        return;
+      } else if (is(Events.AgentDecision, env)) {
+        const first = env.data.reasons[0] ?? "";
+        if (env.data.respond && (first.startsWith("intent:") || first.startsWith("initiative:"))) {
+          startedTurns.add(env.data.turn);
+          if (startedTurns.size > 200) {
+            const oldest = startedTurns.values().next().value;
+            if (oldest !== undefined) startedTurns.delete(oldest);
+          }
+        }
+        return;
+      } else if (is(Events.AgentTurnCompleted, env)) {
+        if (env.data.text.trim() !== "") {
+          feedback.spoke(env.data.context, startedTurns.delete(env.data.turn));
+        }
+        return;
+      } else {
+        const topic = env.type;
+        const payload = env.data as JsonValue;
+        if (!isJsonObject(payload)) return;
+        if (topic === REACTION_TOPIC) {
+          const msg = isJsonObject(payload.message) ? payload.message : null;
+          const account = isJsonObject(payload.account) ? payload.account : null;
+          if (!msg || !account || typeof msg.id !== "string") return;
+          if (typeof account.platform !== "string" || typeof account.id !== "string") return;
+          if (selfIds.has(account.id)) return;
+          const ref = { platform: account.platform, id: account.id };
+          feedback.reaction(
+            msg.id,
+            who(ref, typeof payload.display_name === "string" ? payload.display_name : null),
+            typeof payload.emoji === "string" ? payload.emoji : "",
+            payload.added !== false,
+          );
+        } else if (topic === "gate.decision") {
+          const p = isJsonObject(payload.principal) ? payload.principal : null;
+          if (payload.allowed !== false || p?.kind !== "self") return;
+          const context = parseCtx(p.context);
+          feedback.denied(context, String(payload.capability ?? ""), String(payload.reason ?? ""));
+        } else if (topic === FEEDBACK_TOPIC) {
+          const account = isJsonObject(payload.account) ? payload.account : null;
+          const context = parseCtx(payload.context);
+          if (!account || typeof account.id !== "string" || typeof account.platform !== "string") {
+            return;
+          }
+          feedback.noticed(
+            {
+              account: { platform: account.platform, id: account.id },
+              person: typeof payload.person === "string" ? payload.person : null,
+              name: typeof payload.name === "string" ? payload.name : null,
+            },
+            context,
+            payload.tone === "negative" ? "negative" : "positive",
+            typeof payload.quote === "string" ? payload.quote : "",
+          );
+        } else if (topic === CONVERSATION_FOLDED_TOPIC) {
+          const context = parseCtx(payload.context);
+          if (context && typeof payload.session_lines === "number") {
+            reflector.folded(context, payload.session_lines);
+          }
+        }
+        return;
+      }
+    };
     ctx.spawn("signals", async () => {
       for await (const env of sub) {
         try {
-          const e = env.event;
-          switch (e.type) {
-            case "platform_ready":
-              selfIds.add(e.data.self_account.id);
-              break;
-            case "platform_message_created": {
-              const m = e.data;
-              reflector.activity(clock.now());
-              if (selfIds.has(m.author.account.id)) break;
-              const text = m.text.toLowerCase();
-              const addressed =
-                m.mentions_self ||
-                m.reply_to_self ||
-                m.id.context.kind === "dm" ||
-                names.some((n) => text.includes(n));
-              feedback.message(m, who(m.author.account, m.author.display_name), addressed);
-              break;
-            }
-            case "voice_utterance":
-              reflector.activity(clock.now());
-              break;
-            case "action_completed":
-              if (e.data.ok && e.data.message) {
-                feedback.ownMessage(e.data.message.id, e.data.message.context);
-              }
-              break;
-            case "agent_decision": {
-              const first = e.data.reasons[0] ?? "";
-              if (
-                e.data.respond &&
-                (first.startsWith("intent:") || first.startsWith("initiative:"))
-              ) {
-                startedTurns.add(e.data.turn);
-                if (startedTurns.size > 200) {
-                  const oldest = startedTurns.values().next().value;
-                  if (oldest !== undefined) startedTurns.delete(oldest);
-                }
-              }
-              break;
-            }
-            case "agent_turn_completed":
-              if (e.data.text.trim() !== "") {
-                feedback.spoke(e.data.context, startedTurns.delete(e.data.turn));
-              }
-              break;
-            case "custom": {
-              const { topic, payload } = e.data;
-              if (!isJsonObject(payload)) break;
-              if (topic === REACTION_TOPIC) {
-                const msg = isJsonObject(payload.message) ? payload.message : null;
-                const account = isJsonObject(payload.account) ? payload.account : null;
-                if (!msg || !account || typeof msg.id !== "string") break;
-                if (typeof account.platform !== "string" || typeof account.id !== "string") break;
-                if (selfIds.has(account.id)) break;
-                const ref = { platform: account.platform, id: account.id };
-                feedback.reaction(
-                  msg.id,
-                  who(ref, typeof payload.display_name === "string" ? payload.display_name : null),
-                  typeof payload.emoji === "string" ? payload.emoji : "",
-                  payload.added !== false,
-                );
-              } else if (topic === "gate.decision") {
-                const p = isJsonObject(payload.principal) ? payload.principal : null;
-                if (payload.allowed !== false || p?.kind !== "self") break;
-                const context = parseCtx(p.context);
-                feedback.denied(
-                  context,
-                  String(payload.capability ?? ""),
-                  String(payload.reason ?? ""),
-                );
-              } else if (topic === FEEDBACK_TOPIC) {
-                const account = isJsonObject(payload.account) ? payload.account : null;
-                const context = parseCtx(payload.context);
-                if (
-                  !account ||
-                  typeof account.id !== "string" ||
-                  typeof account.platform !== "string"
-                ) {
-                  break;
-                }
-                feedback.noticed(
-                  {
-                    account: { platform: account.platform, id: account.id },
-                    person: typeof payload.person === "string" ? payload.person : null,
-                    name: typeof payload.name === "string" ? payload.name : null,
-                  },
-                  context,
-                  payload.tone === "negative" ? "negative" : "positive",
-                  typeof payload.quote === "string" ? payload.quote : "",
-                );
-              } else if (topic === CONVERSATION_FOLDED_TOPIC) {
-                const context = parseCtx(payload.context);
-                if (context && typeof payload.session_lines === "number") {
-                  reflector.folded(context, payload.session_lines);
-                }
-              }
-              break;
-            }
-            default:
-              break;
-          }
+          signal(env);
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "could not handle a feedback event");
         }
@@ -604,7 +596,7 @@ export class ReflectModule implements Module {
           signal,
         );
         if (run) {
-          ctx.publish(customEvent("reflect.run", JSON.parse(JSON.stringify(run)) as JsonValue));
+          ctx.publish(Events.ReflectRun, JSON.parse(JSON.stringify(run)) as ReflectionRun);
           if (run.kind === "daily") {
             void writeDiary().catch((error: unknown) => {
               ctx.log.warn({ error: errorMessage(error) }, "she could not write her diary");

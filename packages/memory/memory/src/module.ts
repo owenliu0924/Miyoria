@@ -28,7 +28,9 @@ import {
   type ContextKey,
   contextKeyString,
   type Envelope,
+  Events,
   FollowupSourceKey,
+  is,
   isJsonObject,
   type JsonValue,
   MESSAGE_EXCLUDED_TOPIC,
@@ -184,8 +186,8 @@ export class MemoryModule implements Module {
     // A fold of the conversation (module `conversation`) consolidates its context right away,
     // so no line is past `max_lines_per_batch` before it is consolidated.
     const sub = ctx.subscribe([
-      "platform.message.created",
-      "voice.utterance",
+      Events.PlatformMessageCreated.type,
+      Events.VoiceUtteranceEvent.type,
       CONVERSATION_FOLDED_TOPIC,
       MESSAGE_EXCLUDED_TOPIC,
     ]);
@@ -406,16 +408,16 @@ async function consolidationLoop(
       const env = wake.env;
       if (env === null) return;
       const nowMs = ctx.clock.now();
-      if (env.event.type === "platform_message_created") {
-        const data = env.event.data;
+      if (is(Events.PlatformMessageCreated, env)) {
+        const data = env.data;
         tracker.message(data.id.context, nowMs);
         if (!data.author.is_bot) seen(data.author.account, data.id.context, nowMs);
-      } else if (env.event.type === "voice_utterance") {
-        const data = env.event.data;
+      } else if (is(Events.VoiceUtteranceEvent, env)) {
+        const data = env.data;
         tracker.message(data.context, nowMs);
         if (!data.speaker.is_bot) seen(data.speaker.account, data.context, nowMs);
-      } else if (env.event.type === "custom" && env.event.data.topic === MESSAGE_EXCLUDED_TOPIC) {
-        const body = parseExcluded(env.event.data.payload);
+      } else if (env.type === MESSAGE_EXCLUDED_TOPIC) {
+        const body = parseExcluded(env.data as JsonValue);
         if (body !== null) {
           try {
             const gone = await engine.excludeMessage(body);
@@ -425,12 +427,9 @@ async function consolidationLoop(
             ctx.log.warn({ error: errorMessage(error) }, "cannot take out an excluded message");
           }
         }
-      } else if (
-        env.event.type === "custom" &&
-        env.event.data.topic === CONVERSATION_FOLDED_TOPIC &&
-        isJsonObject(env.event.data.payload)
-      ) {
-        const c = parseFolded(env.event.data.payload.context);
+      } else if (env.type === CONVERSATION_FOLDED_TOPIC) {
+        const payload = env.data as JsonValue;
+        const c = isJsonObject(payload) ? parseFolded(payload.context) : null;
         if (c) tracker.force(c, nowMs);
       }
       event = sub.recv().then((e): Wake => ({ kind: "event", env: e }));

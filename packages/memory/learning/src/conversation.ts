@@ -24,15 +24,13 @@ import {
 import {
   type AccountRef,
   type Clock,
-  CONVERSATION_FOLDED_TOPIC,
   type ContextKey,
   type ConversationFolded,
   type ConversationState,
   type ConversationStates,
   contextKeyString,
-  customEvent,
   dataBlock,
-  type Event,
+  Events,
   type HandleDirectory,
   isJsonObject,
   type JsonObject,
@@ -42,6 +40,7 @@ import {
   neutralize,
   type PersonId,
   type ProfileId,
+  type Publish,
   repairHandleJson,
   repairHandleText,
   safeName,
@@ -59,7 +58,7 @@ import { dropStale, staleness, touchUnits } from "./threads.js";
 /** Settings key prefix of conversation states. */
 export const STATE_PREFIX = "conversation:state:";
 /** Bus topic of feedback a fold noticed (`reflect` records it). */
-export const FEEDBACK_TOPIC = "feedback.signal";
+export const FEEDBACK_TOPIC = Events.FeedbackSignal.type;
 
 export function stateKey(context: ContextKey): string {
   return `${STATE_PREFIX}${contextKeyString(context)}`;
@@ -184,7 +183,7 @@ export interface FoldDeps {
   /** Her stable names for people (default: a table of its own, kept in memory). */
   handles?: HandleDirectory;
   clock: Clock;
-  publish: (event: Event) => void;
+  publish: Publish;
   log: Logger;
 }
 
@@ -468,17 +467,15 @@ export class ConversationEngine implements ConversationStates {
       for (const f of reply.feedback) {
         const who = people.get(f.by.trim()) ?? [...people.values()].find((p) => p.name === f.by);
         if (!who) continue;
-        d.publish(
-          customEvent(FEEDBACK_TOPIC, {
-            context: { ...context },
-            account: { ...who.account },
-            person: who.person,
-            name: who.name,
-            tone: f.tone,
-            quote: cutText(f.quote, 120),
-            at: toTimestamp(d.clock.now()),
-          } as unknown as JsonValue),
-        );
+        d.publish(Events.FeedbackSignal, {
+          context: { ...context },
+          account: { ...who.account },
+          person: who.person,
+          name: who.name,
+          tone: f.tone,
+          quote: cutText(f.quote, 120),
+          at: toTimestamp(d.clock.now()),
+        });
       }
       const folded: ConversationFolded = {
         context,
@@ -486,7 +483,7 @@ export class ConversationEngine implements ConversationStates {
         lines: lines.length,
         session_lines: activity.sessionLines,
       };
-      d.publish(customEvent(CONVERSATION_FOLDED_TOPIC, JSON.parse(JSON.stringify(folded))));
+      d.publish(Events.ConversationFolded, JSON.parse(JSON.stringify(folded)));
       return structuredClone(state);
     } catch (error) {
       // The same lines would fail the same way: every failure in a row waits twice as long.
