@@ -161,6 +161,28 @@ export {
   VoiceUtteranceEvent,
 } from "./chat.js";
 export {
+  CLUSTER_EVENTS,
+  ClusterHostApproved,
+  type ClusterHostApprovedData,
+  ClusterHostApprovedSchema,
+  ClusterHostConnected,
+  type ClusterHostConnectedData,
+  ClusterHostConnectedSchema,
+  ClusterHostDisconnected,
+  type ClusterHostDisconnectedData,
+  ClusterHostDisconnectedSchema,
+  ClusterHostJoined,
+  type ClusterHostJoinedData,
+  ClusterHostJoinedSchema,
+  ClusterHostRemoved,
+  type ClusterHostRemovedData,
+  ClusterHostRemovedSchema,
+  ClusterServiceState,
+  type ClusterServiceStateData,
+  ClusterServiceStateKindSchema,
+  ClusterServiceStateSchema,
+} from "./cluster.js";
+export {
   DIRECTIVE_EVENTS,
   DirectiveAuthoritySchema,
   DirectiveChanged,

@@ -10,6 +10,7 @@ import { ACTIVITY_EVENTS } from "./activity.js";
 import { AGENT_EVENTS } from "./agent.js";
 import { ARBITER_EVENTS } from "./arbiter.js";
 import { CHAT_EVENTS } from "./chat.js";
+import { CLUSTER_EVENTS } from "./cluster.js";
 import { DIRECTIVE_EVENTS } from "./directive.js";
 import { ECONOMY_BUS_EVENTS } from "./economy-topics.js";
 import { EXTENSION_EVENTS } from "./extension.js";
@@ -54,6 +55,7 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   ...SING_EVENTS,
   ...PLAY_EVENTS,
   ...STAGE_EVENTS,
+  ...CLUSTER_EVENTS,
 ];
 
 /** A new registry holding `BUS_EVENTS`. */
