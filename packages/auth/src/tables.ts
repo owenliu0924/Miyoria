@@ -488,4 +488,6 @@ export const authTables: StorePlugin<AuthPlugin> = {
   data: authData,
   // What someone may do is not something she remembers about them.
   forgetPerson: () => declined("roles and panel logins are permissions, kept like the audit log"),
+  mergePerson: () =>
+    declined("assignments are by account and logins by platform id: the accounts move as they are"),
 };

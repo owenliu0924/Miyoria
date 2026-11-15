@@ -134,4 +134,5 @@ export const directiveTables: StorePlugin<DirectiveTables> = {
   open: ({ db }) => new DirectiveTables(db),
   data: directiveData,
   forgetPerson: () => declined("the rules someone set stay until they are revoked"),
+  mergePerson: () => declined("a rule names the account that set it, which moves as it is"),
 };

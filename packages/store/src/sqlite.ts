@@ -533,7 +533,9 @@ export class SqliteStore implements Store {
     this.#settings = new RoutedSettings(new PrefsSettings(new SettingsState(db), this.persons));
     this.settings = this.#settings;
     this.relationships = new SqliteRelationships(db);
-    this.identity = new IdentityLinks(this.persons);
+    this.identity = new IdentityLinks(this.persons, (keep, absorb) => {
+      this.personData.merge(keep, absorb, { source: "identity" });
+    });
     this.handles = new IdentityHandles(this.persons);
     this.profileData = new SqliteProfileData(db, this.moduleState);
     this.chat = new ChatLog(db, this.events, this.persons);

@@ -4,7 +4,6 @@
 // `privacy`). The settings keys their owners still write are claimed in `config/data.ts`.
 
 import { type CategoryData, prefsPart, tablePart } from "../data.js";
-import { PersonForgotten } from "../events/types.js";
 
 export const identityData: readonly CategoryData[] = [
   {
@@ -76,8 +75,8 @@ export const identityData: readonly CategoryData[] = [
         legacy: "json",
       }),
     ],
-    // Imports, merges and forget requests name the persons they were about.
-    keptEvents: `type GLOB 'identity.*' OR type = '${PersonForgotten.type}'`,
+    // Imports name the persons they were about.
+    keptEvents: "type GLOB 'identity.*'",
   },
   { category: "voice_consent", parts: [prefsPart("voice_consent", "voice_consent")] },
   { category: "privacy", parts: [prefsPart("privacy", "privacy")] },

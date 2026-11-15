@@ -60,16 +60,26 @@ export class IdentityPeople implements PeopleStore {
   }
 }
 
-/** `IdentityStore` over `accounts`, `persons` and `link_codes`. */
+/**
+ * `IdentityStore` over `accounts`, `persons` and `link_codes`. A merge goes through `merge`: the
+ * store's coordinator (`person-data.ts`), which runs every schema's `mergePerson` hook with
+ * identity's own in one transaction.
+ */
 export class IdentityLinks implements IdentityStore {
-  constructor(private readonly identity: Identity) {}
+  constructor(
+    private readonly identity: Identity,
+    private readonly merge: (keep: PersonId, absorb: PersonId) => void = (keep, absorb) =>
+      identity.merge(keep, absorb),
+  ) {}
 
   async linkAccount(account: AccountRef, person: PersonId): Promise<void> {
     this.identity.link(account, person, "code");
   }
 
   async mergePeople(keep: PersonId, absorb: PersonId): Promise<void> {
-    this.identity.merge(keep, absorb);
+    // A person merged into itself is no merge: checked, and nothing to run or record.
+    if (keep === absorb) this.identity.merge(keep, absorb);
+    else this.merge(keep, absorb);
   }
 
   async accountsOf(person: PersonId): Promise<Account[]> {

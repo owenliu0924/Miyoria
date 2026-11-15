@@ -35,9 +35,6 @@
 // Every row the economy plugin's coin ledger posts is one `economy.posted` (§3.3, decision D8),
 // appended in the posting's transaction: for the owner, kept like the ledger.
 //
-// A request to forget a person and a merge of two people are one event each (`privacy.forgotten`,
-// `identity.merged`), appended in the transaction that ran every schema's hook (`person-data.ts`).
-//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
@@ -187,31 +184,6 @@ export const SettingsChanged = defineEvent({
   tier: "keep",
 });
 
-/**
- * A person asked to be forgotten (`person-data.ts`). `data` is `{ person, ids, reason, hooks }`,
- * `hooks` what each schema did (`{ <schema>: { <kind>: n } | { declined } }`); never anything
- * they said. For the owner, and kept.
- */
-export const PersonForgotten = defineEvent({
-  type: "privacy.forgotten",
-  v: 1,
-  data: JsonValueSchema,
-  scope: "owner",
-  tier: "keep",
-});
-
-/**
- * Two people were merged (`person-data.ts`). `data` is `{ keep, absorb, hooks }`, `hooks` as
- * `privacy.forgotten`'s. For the owner, and kept.
- */
-export const PersonsMerged = defineEvent({
-  type: "identity.merged",
-  v: 1,
-  data: JsonValueSchema,
-  scope: "owner",
-  tier: "keep",
-});
-
 /** Every `facts.*` definition. */
 export const FACTS_EVENTS = [
   FactsObservation,
@@ -237,8 +209,6 @@ export function coreEventRegistry(): EventRegistry {
     AuditRecorded,
     LlmCall,
     PrivacyRedacted,
-    PersonForgotten,
-    PersonsMerged,
     ConfigRevised,
     SettingsChanged,
     ...ARTIFACT_EVENTS,

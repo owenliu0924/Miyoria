@@ -253,8 +253,9 @@ export interface IdentityStore {
   /** Moves `account` to `person` (creating the account row if needed). */
   linkAccount(account: AccountRef, person: PersonId): Promise<void>;
   /**
-   * Moves every account of `absorb` to `keep` and deletes `absorb`. Callers must merge
-   * per-profile data (relationships, memories) first.
+   * Moves every account of `absorb` to `keep` and makes `absorb` part of `keep`. The SQLite store
+   * runs every schema's `mergePerson` hook with it in one transaction (memories move with it,
+   * `personData`); callers merge what they cache themselves (relationships) first.
    */
   mergePeople(keep: PersonId, absorb: PersonId): Promise<void>;
   accountsOf(person: PersonId): Promise<Account[]>;

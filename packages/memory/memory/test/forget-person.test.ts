@@ -2,7 +2,7 @@
 // `forgetPerson` hook takes what is about the person and what came from them, for every account of
 // theirs, in the same transaction as the redaction of their lines; the engine reports it as before.
 
-import { SqliteStore } from "@miyoria/store";
+import { PERSON_FORGET_TYPE, SqliteStore } from "@miyoria/store";
 import { type AccountRef, newId, type PersonId, type Timestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { EventLogService } from "../../facts/src/index.js";
@@ -140,13 +140,15 @@ describe("forget me through the store", () => {
     expect((await r.store.messages.recent(profile(), ctx, 10)).map((m) => m.text)).toEqual([
       "我不吃香菜",
     ]);
-    const recorded = r.store.events.query({ types: ["privacy.forgotten"] });
+    const recorded = r.store.events.query({ types: [PERSON_FORGET_TYPE] });
     expect(recorded.map((e) => e.envelope.data)).toEqual([
       expect.objectContaining({
-        person: r.owen,
-        hooks: expect.objectContaining({
-          memory: { about: 2, derived: 2, unverified: 1 },
-          core: { lines: 2 },
+        target: r.owen,
+        detail: expect.objectContaining({
+          hooks: expect.objectContaining({
+            memory: { about: 2, derived: 2, unverified: 1 },
+            core: { lines: 2 },
+          }),
         }),
       }),
     ]);
@@ -164,7 +166,7 @@ describe("forget me through the store", () => {
     const r = await rig();
     const report = await r.engine.forget(r.owen, OWEN, "新竹");
     expect(report).toEqual({ deleted: 1, about: 0, derived: 1, unverified: 1 });
-    expect(r.store.events.query({ types: ["privacy.forgotten"] })).toEqual([]);
+    expect(r.store.events.query({ types: [PERSON_FORGET_TYPE] })).toEqual([]);
     expect((await r.store.messages.recent(profile(), ctx, 10)).length).toBe(2);
   });
 });

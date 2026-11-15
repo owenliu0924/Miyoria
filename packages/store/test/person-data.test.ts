@@ -17,8 +17,8 @@ import {
   type Db,
   declined,
   hookCounts,
-  PersonForgotten,
-  PersonsMerged,
+  PERSON_FORGET_TYPE,
+  PERSON_MERGE_TYPE,
   SqliteStore,
   type StorePlugin,
 } from "../src/index.js";
@@ -153,21 +153,31 @@ describe("forgetting a person", () => {
     expect(items.of(owen)).toBe(0);
     expect(items.of(amy)).toBe(1);
     expect(await texts(store)).toEqual(["我是 Amy"]);
-    // The person stays; one event says what was done, never what they said.
+    // The person stays; one audit entry says what was done, never what they said.
     expect((await store.people.personByAccount(OWEN))?.id).toBe(owen);
     const recorded = store.events.get(result.event)?.envelope;
     expect(recorded).toMatchObject({
-      type: PersonForgotten.type,
+      type: PERSON_FORGET_TYPE,
       person_id: owen,
       scope: "owner",
       tier: "keep",
       source: "memory",
       data: {
-        person: owen,
-        ids: [owen, alt],
-        reason: "forget me",
-        hooks: { shop: { items: 2 }, core: { lines: 2 }, vault: { declined: "money is kept" } },
+        actor: "memory",
+        action: "person.forget",
+        target: owen,
+        ok: true,
+        detail: {
+          ids: [owen, alt],
+          reason: "forget me",
+          hooks: { shop: { items: 2 }, core: { lines: 2 }, vault: { declined: "money is kept" } },
+        },
       },
+    });
+    expect((await store.audit.recent(1, null))[0]).toMatchObject({
+      actor: "memory",
+      action: "person.forget",
+      target: owen,
     });
   });
 
@@ -210,9 +220,13 @@ describe("merging two people", () => {
     expect(items.of(owen)).toBe(1);
     expect((await store.people.personByAccount(OWEN_ALT))?.id).toBe(owen);
     expect(store.events.get(result.event)?.envelope).toMatchObject({
-      type: PersonsMerged.type,
+      type: PERSON_MERGE_TYPE,
       person_id: owen,
-      data: { keep: owen, absorb: alt, hooks: { shop: { items: 1 } } },
+      data: {
+        action: "person.merge",
+        target: owen,
+        detail: { absorb: alt, hooks: { shop: { items: 1 } } },
+      },
     });
   });
 
@@ -308,5 +322,74 @@ describe("the installed plugins' hooks", () => {
     expect(await store.plugin(economyTables).ledger.balance("p", owen)).toBe(10);
     expect(await store.plugin(authTables).store.assignmentsFor(OWEN)).toHaveLength(1);
     expect(await store.plugin(directiveTables).all("p", 9)).toHaveLength(1);
+  });
+});
+
+describe("the installed plugins' merge hooks", () => {
+  it("moves the memories, keeps the wallet's rule, and runs through IdentityStore", async () => {
+    const store = await SqliteStore.open(":memory:", {
+      plugins: [authTables, directiveTables, economyTables, memoryTables],
+    });
+    stores.push(store);
+    const owen = await store.people.upsertAccount(OWEN, "Owen");
+    const alt = await store.people.upsertAccount(OWEN_ALT, "Owen2");
+    const at = toTimestamp(Date.UTC(2026, 0, 1));
+    await store.plugin(economyTables).ledger.post({
+      id: newId(),
+      person: alt,
+      delta: 3,
+      reason: "talked",
+      ref: null,
+      idem_key: null,
+      ts: at,
+    });
+    const memories = store.plugin(memoryTables);
+    await memories.upsert({
+      id: "m1",
+      profile: "p",
+      kind: "fact",
+      scope: { type: "person", person: alt },
+      subjects: [alt],
+      content: "Owen2 喜歡拉麵",
+      tokens: "owen2 喜歡 拉麵",
+      embedding: null,
+      importance: 0.5,
+      confidence: 0.8,
+      created_at: at,
+      updated_at: at,
+      last_accessed: null,
+      access_count: 0,
+      source_context: null,
+      source: null,
+      due: null,
+      done: false,
+      superseded_by: null,
+    });
+    // What `/me link` calls: the store's `IdentityStore`.
+    await store.identity.mergePeople(owen, alt);
+    const merged = store.events.query({ types: [PERSON_MERGE_TYPE] });
+    expect(merged.map((e) => (e.envelope.data as { detail: unknown }).detail)).toEqual([
+      {
+        absorb: alt,
+        hooks: {
+          memory: { records: 1 },
+          legacy: { declined: expect.any(String) },
+          economy: { declined: expect.stringMatching(/when it is read/) },
+          directive: { declined: expect.any(String) },
+          auth: { declined: expect.any(String) },
+          identity: { persons: 1, accounts: 1 },
+          core: { declined: expect.any(String) },
+        },
+      },
+    ]);
+    expect((await memories.get("m1"))?.subjects).toEqual([owen]);
+    expect((await memories.get("m1"))?.scope).toEqual({ type: "person", person: owen });
+    // The wallet finds the absorbed person's coins when it is read.
+    expect(await store.plugin(economyTables).ledger.balance("p", owen)).toBe(3);
+    expect((await store.people.personByAccount(OWEN_ALT))?.id).toBe(owen);
+    // Merging a person into itself is checked and is no merge; an absorbed one is unknown.
+    await store.identity.mergePeople(owen, owen);
+    await expect(store.identity.mergePeople(owen, alt)).rejects.toThrow(/unknown person/);
+    expect(store.events.query({ types: [PERSON_MERGE_TYPE] })).toHaveLength(1);
   });
 });

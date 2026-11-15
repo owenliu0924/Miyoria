@@ -4,15 +4,21 @@
 // `StorePlugin.mergePerson`, and the store's own schemas here); this coordinator calls every
 // installed schema's hook in one transaction and records the request as one event in it.
 //
+// The event is an audit entry (`audit.person.forget`, `audit.person.merge`): for the owner, kept
+// forever like the rest of the audit log and never deleted by a wipe, on the panel's audit page.
+// It names the person and what each schema did, never anything they said.
+//
 // - Order: dependents first. A plugin's hook runs before the hooks of the schemas it requires;
 //   `identity` (which merges the person rows) and the event log run last.
 // - All or nothing: a hook that throws rolls back what every hook wrote, and no event is recorded.
 // - A hook says what it did as counts, or that it does nothing and why (`declined`): money and
 //   audit records are kept (§2.5), and the result lists every schema either way.
 
+import { AuditRecorded, auditType } from "@miyoria/contracts/events";
 import {
   type AccountRef,
   type JsonObject,
+  type JsonValue,
   newId,
   type PersonId,
   toTimestamp,
@@ -20,7 +26,6 @@ import {
 import { StoreError } from "./common.js";
 import type { Db } from "./db.js";
 import type { EventStore } from "./events/log.js";
-import { PersonForgotten, PersonsMerged } from "./events/types.js";
 import type { Identity } from "./identity/identity.js";
 
 /** A person asked her to forget them. */
@@ -73,9 +78,17 @@ export interface PersonHookOutcome {
   declined: string | null;
 }
 
+/** The audit action recording a forget request; `detail` is `{ ids, reason, hooks }`. */
+export const PERSON_FORGET_ACTION = "person.forget";
+/** The audit action recording a merge; `target` is the kept person, `detail` `{ absorb, hooks }`. */
+export const PERSON_MERGE_ACTION = "person.merge";
+/** The event types of the two (`audit.person.forget`, `audit.person.merge`). */
+export const PERSON_FORGET_TYPE = auditType(PERSON_FORGET_ACTION);
+export const PERSON_MERGE_TYPE = auditType(PERSON_MERGE_ACTION);
+
 /** What a request did, schema by schema in the order they ran, and the event recording it. */
 export interface PersonRequestResult {
-  /** The id of the event recording the request (`privacy.forgotten`, `identity.merged`). */
+  /** The id of the audit entry recording the request (`PERSON_FORGET_TYPE`, `PERSON_MERGE_TYPE`). */
   event: string;
   hooks: PersonHookOutcome[];
 }
@@ -102,6 +115,7 @@ function outcomeOf(plugin: string, result: PersonHookResult): PersonHookOutcome 
   return { plugin, counts: { ...result.counts }, declined: result.declined ?? null };
 }
 
+/** `hooks` of a request's audit entry: `{ <schema>: { <kind>: n } | { declined } }`. */
 function summary(outcomes: readonly PersonHookOutcome[]): JsonObject {
   return Object.fromEntries(
     outcomes.map((o) => [o.plugin, o.declined === null ? o.counts : { declined: o.declined }]),
@@ -145,6 +159,21 @@ export class PersonData implements PersonDataStore {
     return this.#ordered().map((h) => h.plugin);
   }
 
+  /** The audit entry of a request, in its transaction; returns its id. */
+  #record(action: string, person: PersonId, detail: JsonValue, source: string): string {
+    return this.#events.appendNow({
+      draft: {
+        id: newId(),
+        at: toTimestamp(this.#db.clock.now()),
+        type: auditType(action),
+        v: AuditRecorded.v,
+        person_id: person,
+        data: { actor: source, action, target: person, detail, ok: true },
+      },
+      source,
+    }).id;
+  }
+
   #live(id: PersonId): PersonId {
     const row = this.#identity.personRow(id);
     if (row === null || row.merged_into !== null) throw new StoreError(`unknown person \`${id}\``);
@@ -167,17 +196,8 @@ export class PersonData implements PersonDataStore {
       for (const h of this.#ordered()) {
         if (h.forgetPerson) hooks.push(outcomeOf(h.plugin, h.forgetPerson(ask)));
       }
-      const event = this.#events.appendNow({
-        draft: {
-          id: newId(),
-          at: toTimestamp(this.#db.clock.now()),
-          type: PersonForgotten.type,
-          person_id: id,
-          data: { person: id, ids: [...ask.ids], reason: ask.reason, hooks: summary(hooks) },
-        },
-        source: request.source,
-      });
-      return { event: event.id, hooks };
+      const detail = { ids: [...ask.ids], reason: ask.reason, hooks: summary(hooks) };
+      return { event: this.#record(PERSON_FORGET_ACTION, id, detail, ask.source), hooks };
     });
   }
 
@@ -189,17 +209,8 @@ export class PersonData implements PersonDataStore {
       for (const h of this.#ordered()) {
         if (h.mergePerson) hooks.push(outcomeOf(h.plugin, h.mergePerson(ask)));
       }
-      const event = this.#events.appendNow({
-        draft: {
-          id: newId(),
-          at: toTimestamp(this.#db.clock.now()),
-          type: PersonsMerged.type,
-          person_id: ask.keep,
-          data: { keep: ask.keep, absorb: ask.absorb, hooks: summary(hooks) },
-        },
-        source: request.source,
-      });
-      return { event: event.id, hooks };
+      const detail = { absorb: ask.absorb, hooks: summary(hooks) };
+      return { event: this.#record(PERSON_MERGE_ACTION, ask.keep, detail, ask.source), hooks };
     });
   }
 }

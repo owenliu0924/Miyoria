@@ -685,4 +685,5 @@ export const memoryTables: StorePlugin<MemoryTables> = {
   open: ({ db }) => new MemoryTables(db),
   data: memoryData,
   forgetPerson: (tables, request) => ({ counts: tables.forgetPerson(request) }),
+  mergePerson: (tables, { keep, absorb }) => ({ counts: { records: tables.merge(keep, absorb) } }),
 };

@@ -1198,4 +1198,6 @@ export const economyTables: StorePlugin<EconomyTables> = {
   // Money is kept (v5-data §2.5); the member page deletes their fortune slips itself.
   forgetPerson: () =>
     declined("coins, wallets, deals and bounties are kept; the member page deletes fortune slips"),
+  // A wallet is a person with the persons they absorbed (see the top of this file).
+  mergePerson: () => declined("a wallet resolves the persons it absorbed when it is read"),
 };
