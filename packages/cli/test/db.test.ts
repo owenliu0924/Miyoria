@@ -92,7 +92,9 @@ describe("miyoria db archive", () => {
     expect(text()).toContain("沒有刪除任何檔案");
     const next = lastLines(7);
     expect(next[0]).toBe("接下來");
-    expect(next[1]).toBe(`  miyoria config set core.database_url sqlite:data/core.db -c ${slashed(cfg)}`);
+    expect(next[1]).toBe(
+      `  miyoria config set core.database_url sqlite:data/core.db -c ${slashed(cfg)}`,
+    );
     expect(next[2]).toMatch(/^ {2}miyoria db import-links --from .*\.single\.db --dry-run -c /);
   });
 });
