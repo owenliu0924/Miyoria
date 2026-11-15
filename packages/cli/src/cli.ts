@@ -6,12 +6,12 @@ import * as configCmd from "./commands/config.js";
 import * as dbCmd from "./commands/db.js";
 import * as discordCmd from "./commands/discord.js";
 import * as doctor from "./commands/doctor.js";
+import * as host from "./commands/host.js";
 import * as init from "./commands/init.js";
 import * as install from "./commands/install.js";
+import * as migrate from "./commands/migrate.js";
 import * as nodeCmd from "./commands/node.js";
 import * as remote from "./commands/remote.js";
-import * as start from "./commands/start.js";
-import * as up from "./commands/up.js";
 import * as update from "./commands/update.js";
 import { captureProcessEnv } from "./process-env.js";
 import {
@@ -101,6 +101,26 @@ function flag(ctx: RunContext, name: string): boolean {
 
 async function remoteClient(ctx: RunContext) {
   return remote.clientFor(await nodeCmd.loadConfig(ctx.config));
+}
+
+const HOST_CONFIG_OPTION: OptionSpec = {
+  name: "host-config",
+  value: "PATH",
+  help: "host.toml 的路徑(預設:miyoria.toml 同一個資料夾的 host.toml;它的資料夾就是工作資料夾)",
+};
+const FORCE_OPTION: OptionSpec = { name: "force", help: "她在唱歌或直播時也照樣停止" };
+
+function hostTargetOf(ctx: RunContext): host.HostTarget {
+  return host.hostTarget(ctx.config, str(ctx, "host-config"));
+}
+
+/** `--timeout SECS`, checked. */
+function timeoutOf(ctx: RunContext): { timeoutSecs?: number } {
+  const timeout = str(ctx, "timeout");
+  if (timeout === undefined) return {};
+  const timeoutSecs = Number.parseInt(timeout, 10);
+  if (!(timeoutSecs > 0)) throw new Error("--timeout 要是正整數(秒)");
+  return { timeoutSecs };
 }
 
 /** Aborted on Ctrl+C (for streaming commands). */
@@ -302,72 +322,118 @@ export const COMMANDS: CommandSpec = {
         ),
     },
     {
-      name: "start",
-      help: "每個服務開一個 Windows Terminal 分頁(可看可關);已在執行的不會重複啟動,不會自動重啟",
+      name: "hostd",
+      help: "在這個終端機執行這台電腦的管家 hostd(`up` 會在背景啟動它);Ctrl+C 停止全部服務",
+      options: [HOST_CONFIG_OPTION],
+      run: (ctx) => host.hostd(hostTargetOf(ctx)),
+    },
+    {
+      name: "up",
+      help: "請 hostd 啟動這台電腦的服務(host.toml 啟用的全部,或指定的);hostd 沒在執行時先在背景啟動它",
       args: [
         {
-          name: "target",
-          help: "角色(broadcast、core、inference)、all 或服務名稱;省略 = [machine] 設定的",
+          name: "service",
+          help: "服務名稱;省略 = host.toml 啟用的全部",
           optional: true,
           variadic: true,
         },
       ],
       options: [
-        { name: "dry-run", help: "只列出會啟動什麼、哪些會略過,不啟動" },
-        { name: "no-wait", help: "開完分頁就繼續下一個,不等健康檢查" },
-        { name: "no-check", help: "略過啟動前的套件、venv、設定檢查" },
+        HOST_CONFIG_OPTION,
+        {
+          name: "foreground",
+          help: "不經背景的 hostd,直接在這個終端機監管並顯示狀態;Ctrl+C 依相反順序停止全部",
+        },
         {
           name: "timeout",
           value: "SECS",
-          help: "每個服務等健康檢查的秒數(預設 [stack] start_timeout_secs)",
+          help: "最多等幾秒(hostd 會繼續啟動,用 status 查看);預設等到每個服務有結果",
+        },
+        { name: "no-wait", help: "交給 hostd 後就結束,不等健康檢查" },
+      ],
+      run: (ctx) =>
+        host.up(hostTargetOf(ctx), {
+          services: ctx.args,
+          foreground: flag(ctx, "foreground"),
+          noWait: flag(ctx, "no-wait"),
+          ...timeoutOf(ctx),
+        }),
+    },
+    {
+      name: "down",
+      help: "停止服務;不指定時停止全部並結束 hostd",
+      args: [
+        {
+          name: "service",
+          help: "服務名稱;省略 = 全部,並結束 hostd",
+          optional: true,
+          variadic: true,
         },
       ],
+      options: [HOST_CONFIG_OPTION, FORCE_OPTION],
+      run: (ctx) => host.down(hostTargetOf(ctx), { services: ctx.args, force: flag(ctx, "force") }),
+    },
+    {
+      name: "restart",
+      help: "重新啟動一個服務;她在唱歌或直播時會拒絕,除非加 --force",
+      args: [{ name: "service", help: "服務名稱" }],
+      options: [
+        HOST_CONFIG_OPTION,
+        FORCE_OPTION,
+        { name: "timeout", value: "SECS", help: "最多等幾秒" },
+      ],
+      run: (ctx) =>
+        host.restart(hostTargetOf(ctx), {
+          service: ctx.args[0] as string,
+          force: flag(ctx, "force"),
+          ...timeoutOf(ctx),
+        }),
+    },
+    {
+      name: "status",
+      help: "這台電腦的服務(hostd)和執行中 core 的狀態:模組和 LLM 用量",
+      options: [HOST_CONFIG_OPTION],
+      run: (ctx) => host.status(hostTargetOf(ctx)),
+    },
+    {
+      name: "logs",
+      help: "看一個服務的日誌(<state>/logs/<服務>.log)",
+      args: [{ name: "service", help: "服務名稱" }],
+      options: [
+        HOST_CONFIG_OPTION,
+        { name: "follow", short: "f", help: "持續顯示新的行,Ctrl+C 結束" },
+        { name: "lines", short: "n", value: "N", help: "先顯示最後幾行", default: "100" },
+      ],
       run: (ctx) => {
-        const timeout = str(ctx, "timeout");
-        const timeoutSecs = timeout === undefined ? undefined : Number.parseInt(timeout, 10);
-        if (timeoutSecs !== undefined && !(timeoutSecs > 0))
-          throw new Error("--timeout 要是正整數(秒)");
-        return start.run(ctx.config, {
-          targets: ctx.args,
-          dryRun: flag(ctx, "dry-run"),
-          noWait: flag(ctx, "no-wait"),
-          noCheck: flag(ctx, "no-check"),
-          ...(timeoutSecs !== undefined ? { timeoutSecs } : {}),
+        const lines = Number.parseInt(str(ctx, "lines") ?? "100", 10);
+        if (!Number.isInteger(lines) || lines < 0) throw new Error("--lines 要是 0 或正整數");
+        return host.logs(hostTargetOf(ctx), {
+          service: ctx.args[0] as string,
+          follow: flag(ctx, "follow"),
+          lines: Math.min(lines, 2000),
+          signal: interruptSignal(),
         });
       },
     },
     {
-      name: "up",
-      help: "依序啟動整組服務(worker、core、voice node、stage)並檢查健康;Ctrl+C 停止這次啟動的服務",
-      options: [
-        { name: "only", value: "LIST", help: "只啟動這些服務(逗號分隔,例如 asr,core)" },
-        { name: "skip", value: "LIST", help: "不啟動這些服務" },
+      name: "host",
+      help: "這台電腦的設定(host.toml)",
+      subcommands: [
         {
-          name: "timeout",
-          value: "SECS",
-          help: "每個服務等健康檢查的秒數(預設用 [stack] start_timeout_secs)",
+          name: "migrate",
+          help: "從 miyoria.toml 的 [machine] 和 [stack] 寫出 host.toml:沿用現有的 Python 環境、埠和 worker 環境變數",
+          options: [
+            HOST_CONFIG_OPTION,
+            { name: "force", help: "覆寫已經有的 host.toml" },
+            { name: "dry-run", help: "只顯示會寫的內容,不寫入" },
+          ],
+          run: (ctx) =>
+            migrate.migrate(hostTargetOf(ctx), {
+              force: flag(ctx, "force"),
+              dryRun: flag(ctx, "dry-run"),
+            }),
         },
-        { name: "dry-run", help: "只列出啟動順序和指令,不啟動" },
-        { name: "no-check", help: "略過啟動前的 worker 設定和建置檢查" },
       ],
-      run: (ctx) => {
-        const list = (name: string) =>
-          str(ctx, name)
-            ?.split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-        const timeout = str(ctx, "timeout");
-        const timeoutSecs = timeout === undefined ? undefined : Number.parseInt(timeout, 10);
-        if (timeoutSecs !== undefined && !(timeoutSecs > 0))
-          throw new Error("--timeout 要是正整數(秒)");
-        return up.run(ctx.config, {
-          only: list("only"),
-          skip: list("skip"),
-          timeoutSecs,
-          dryRun: flag(ctx, "dry-run"),
-          noCheck: flag(ctx, "no-check"),
-        });
-      },
     },
     {
       name: "update",
@@ -424,11 +490,6 @@ export const COMMANDS: CommandSpec = {
         { name: "with-discord", help: "聊天時也連上 Discord bot" },
       ],
       run: (ctx) => nodeCmd.chat(ctx.config, str(ctx, "name") ?? "你", flag(ctx, "with-discord")),
-    },
-    {
-      name: "status",
-      help: "執行中 core 的狀態:模組和 LLM 用量",
-      run: async (ctx) => remote.status(await remoteClient(ctx)),
     },
     {
       name: "module",

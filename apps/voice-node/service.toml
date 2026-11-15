@@ -16,7 +16,8 @@ what = "Self 帳號的 token(SELF_TOKEN)和 VOICE_LINK_TOKEN(要和 Core 的相�
 # It runs from source (tsx), as `up` starts it today; a built entry replaces this later.
 command = ["pnpm", "start"]
 cwd = "."
-# The whole environment, as today; `up` adds VOICE_LINK_URL when Core is on another machine.
+# The whole environment, as before. When Core is on another machine, VOICE_LINK_URL comes from
+# host.toml ([services.voice-node] env; `host migrate` writes it) until Core sends the links (H4).
 pass_env = ["*"]
 after = ["core"]
 guard = ["live", "singing"]

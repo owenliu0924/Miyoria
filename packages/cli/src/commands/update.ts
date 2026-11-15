@@ -306,6 +306,6 @@ export async function run(
 
   if (failures > 0) throw new UpdateError(`${failures} 項沒有完成,見上面的訊息`);
   if (!options.dryRun) {
-    println("\n完成。已經在執行的 core / worker 要重啟才會用新版(`miyoria up`)。");
+    println("\n完成。已經在執行的 core / worker 要重啟才會用新版(`miyoria restart <服務>`)。");
   }
 }

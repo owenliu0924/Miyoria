@@ -10,10 +10,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { workerBaseEnv } from "@miyoria/hostd";
 import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../src/cli.js";
-import * as up from "../src/commands/up.js";
 import * as update from "../src/commands/update.js";
 import { freshness, parseJavaMajor } from "../src/stack/builds.js";
 import {
@@ -25,12 +25,12 @@ import {
   workerChecks,
 } from "../src/stack/checks.js";
 import { offloadUrls, repoRoot, stackConfig, startOrder } from "../src/stack/config.js";
+import { buildPlan } from "../src/stack/plan.js";
 import {
   parseDynamicPort,
   parseExcludedRanges,
   type Runner,
   type RunResult,
-  workerBaseEnv,
 } from "../src/stack/system.js";
 import { type Output, setOutput } from "../src/ui.js";
 
@@ -377,14 +377,14 @@ describe("doctor --deep: builds", () => {
   });
 });
 
-// ---- up ------------------------------------------------------------------------------------
+// ---- the old plan (kept for host migrate and the descriptor pin test) -----------------------
 
-describe("up", () => {
+describe("plan", () => {
   function plan(toml: string, env: Record<string, string> = {}) {
     write("pnpm-workspace.yaml", "packages: []");
     mkdirSync(join(dir, "workers"), { recursive: true });
     const config = Config.fromToml(toml, NOENV);
-    return up.buildPlan({
+    return buildPlan({
       config,
       configPath: join(dir, "miyoria.toml"),
       stack: stackConfig(config),
@@ -426,16 +426,6 @@ describe("up", () => {
     ]);
   });
 
-  it("selects_with_only_and_skip_and_rejects_unknown_names", () => {
-    const specs = plan(WORKERS_TOML);
-    expect(up.selectServices(specs, ["asr", "core"], undefined).map((s) => s.name)).toEqual([
-      "asr",
-      "core",
-    ]);
-    expect(up.selectServices(specs, undefined, ["sing"]).map((s) => s.name)).not.toContain("sing");
-    expect(() => up.selectServices(specs, ["nope"], undefined)).toThrow(/nope/);
-  });
-
   it("plans_the_optional_turn_worker_on_its_own_port_with_a_health_check", () => {
     const specs = plan('[stack.workers]\nturn = { venv = "workers/.venv-turn" }', { PATH: "/bin" });
     const turn = specs.find((s) => s.name === "turn");
@@ -446,111 +436,6 @@ describe("up", () => {
 
   it("without_a_stack_section_plans_only_the_core", () => {
     expect(plan("").map((s) => s.name)).toEqual(["core"]);
-  });
-
-  // A fake clock: sleeping advances time, so timeouts take no real time.
-  function harness(opts: {
-    healthy?: (url: string, started: Set<string>) => boolean;
-    exitAfter?: Record<string, number>;
-    probe?: up.UpDeps["probe"];
-  }) {
-    let clock = 0;
-    const started = new Set<string>();
-    const stopped: string[] = [];
-    const spawned: string[] = [];
-    const deps: up.UpDeps = {
-      spawnService: (spec) => {
-        spawned.push(spec.name);
-        started.add(spec.name);
-        const born = clock;
-        return {
-          pid: 1,
-          exitCode: () =>
-            opts.exitAfter?.[spec.name] !== undefined &&
-            clock - born >= (opts.exitAfter[spec.name] as number)
-              ? 1
-              : null,
-          stop: async () => {
-            stopped.push(spec.name);
-          },
-        };
-      },
-      fetchImpl: (async (url: string) => {
-        const name = [...started].find((n) => url.includes(`:${portOf(n)}/`));
-        return new Response("{}", {
-          status: opts.healthy?.(url, started) && name !== undefined ? 200 : 503,
-        });
-      }) as unknown as typeof fetch,
-      probe: opts.probe ?? (async () => "free"),
-      sleep: async (ms) => {
-        clock += ms;
-      },
-      now: () => clock,
-      readLog: () => "boom: CUDA out of memory\n",
-      waitForStop: async () => {},
-      deep: fakeDeps(),
-      aliveMs: 100,
-      pollMs: 100,
-    };
-    return { deps, spawned, stopped };
-  }
-  const portOf = (name: string) => ({ asr: 8003, tts: 8002, sing: 8005, core: 7878 })[name];
-
-  it("starts_in_order_and_waits_for_each_health_check", async () => {
-    const specs = plan(WORKERS_TOML);
-    const h = harness({ healthy: () => true });
-    const started = await up.startStack(specs, h.deps);
-    expect(h.spawned).toEqual(specs.map((s) => s.name));
-    expect(started).toHaveLength(specs.length);
-    expect(out.join("")).toContain("sing");
-  });
-
-  it("reuses_a_service_that_already_answers", async () => {
-    const specs = up.selectServices(plan(WORKERS_TOML), ["tts"], undefined);
-    const h = harness({ healthy: () => true });
-    h.deps.fetchImpl = (async () => new Response("{}", { status: 200 })) as typeof fetch;
-    expect(await up.startStack(specs, h.deps)).toHaveLength(0);
-    expect(h.spawned).toEqual([]);
-    expect(out.join("")).toContain("已在執行");
-  });
-
-  it("stops_what_it_started_and_shows_the_log_tail_when_a_worker_dies", async () => {
-    const specs = plan(WORKERS_TOML);
-    const h = harness({ healthy: (_u, s) => !s.has("sing"), exitAfter: { sing: 300 } });
-    await expect(up.startStack(specs, h.deps)).rejects.toThrow(
-      /sing 啟動後結束了[\s\S]*CUDA out of memory/,
-    );
-    expect(h.stopped).toEqual(["sing", "tts", "asr"]);
-  });
-
-  it("times_out_without_a_health_answer", async () => {
-    const specs = up.selectServices(plan(WORKERS_TOML), ["asr"], undefined);
-    for (const s of specs) s.timeoutMs = 1000;
-    const h = harness({ healthy: () => false });
-    await expect(up.startStack(specs, h.deps)).rejects.toThrow(/沒有通過健康檢查/);
-    expect(h.stopped).toEqual(["asr"]);
-  });
-
-  it("refuses_a_reserved_port_and_never_takes_over_an_occupied_one", async () => {
-    const specs = up.selectServices(plan(WORKERS_TOML), ["asr"], undefined);
-    const denied = harness({ probe: async () => "denied" });
-    await expect(up.startStack(specs, denied.deps)).rejects.toThrow(/被 Windows 保留[\s\S]*winnat/);
-    expect(denied.spawned).toEqual([]);
-    const busy = harness({ probe: async () => "in-use" });
-    await expect(up.startStack(specs, busy.deps)).rejects.toThrow(/不會替你結束別人的程式/);
-    expect(busy.spawned).toEqual([]);
-  });
-
-  it("dry_run_prints_the_plan_without_starting", async () => {
-    write("miyoria.toml", WORKERS_TOML);
-    write("pnpm-workspace.yaml", "packages: []");
-    mkdirSync(join(dir, "workers"), { recursive: true });
-    const h = harness({});
-    await up.run(join(dir, "miyoria.toml"), { dryRun: true }, h.deps);
-    expect(h.spawned).toEqual([]);
-    const text = out.join("");
-    expect(text).toContain("sing");
-    expect(text).toContain("SING_OFFLOAD_URLS");
   });
 });
 
@@ -772,13 +657,10 @@ describe("update", () => {
 
 describe("command line", () => {
   it("parses_up_update_and_doctor_options", () => {
-    expect(
-      parseArgs(["up", "--only", "asr,core", "--dry-run", "--timeout", "30"]).ctx.options,
-    ).toMatchObject({
-      only: "asr,core",
-      "dry-run": true,
-      timeout: "30",
-    });
+    const upArgs = parseArgs(["up", "asr", "core", "--foreground", "--timeout", "30"]);
+    expect(upArgs.ctx.args).toEqual(["asr", "core"]);
+    expect(upArgs.ctx.options).toMatchObject({ foreground: true, timeout: "30" });
+    expect(parseArgs(["up", "--no-wait"]).ctx.options["no-wait"]).toBe(true);
     expect(parseArgs(["update", "--no-pull", "--force", "--skip-mod"]).ctx.options).toMatchObject({
       "no-pull": true,
       force: true,

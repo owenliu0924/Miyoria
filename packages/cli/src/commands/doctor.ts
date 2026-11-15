@@ -3,13 +3,14 @@
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "@miyoria/core/light";
+import { probePort, tcpConnect } from "@miyoria/hostd";
 import { Config, configureLogging, errorMessage } from "@miyoria/runtime/kernel";
 import { cliVersion } from "../assets.js";
 import { type DeepDeps, deepChecks, type Finding } from "../stack/checks.js";
 import { repoRoot, stackConfig } from "../stack/config.js";
 import { roleChecks } from "../stack/role-checks.js";
 import { describeMachine, machineConfig } from "../stack/roles.js";
-import { defaultRunner, probePort, tcpConnect } from "../stack/system.js";
+import { defaultRunner } from "../stack/system.js";
 import { dim, green, println, red, yellow } from "../ui.js";
 
 /** Discord application flags for the message content intent. */

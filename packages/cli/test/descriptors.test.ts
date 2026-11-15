@@ -2,12 +2,20 @@
 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Catalog, type CatalogEntry, loadCatalog } from "@miyoria/hostd";
+import {
+  type Catalog,
+  type CatalogEntry,
+  loadCatalog,
+  offloadUrls,
+  parseHostConfig,
+  planServices,
+  stateLayout,
+} from "@miyoria/hostd";
 import { Config } from "@miyoria/runtime/kernel";
 import { beforeAll, describe, expect, it } from "vitest";
-import { buildPlan, type ServiceSpec } from "../src/commands/up.js";
 import { estimateVram } from "../src/stack/checks.js";
 import { stackConfig, WORKER_DEFAULT_PORT, WORKER_DEFAULTS } from "../src/stack/config.js";
+import { buildPlan, type ServiceSpec } from "../src/stack/plan.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 // The config is never read: only its path is given to the plan.
@@ -71,8 +79,10 @@ describe("the workers", () => {
 
   it.each(["asr", "tts", "sing", "turn"])("%s has the default environment", (name) => {
     const { descriptor, dir } = entry(name);
-    const { VOICES_DIR, ...env } = descriptor.run?.env ?? {};
+    const { VOICES_DIR, SING_OFFLOAD_URLS, ...env } = descriptor.run?.env ?? {};
     expect(env).toEqual(WORKER_DEFAULTS[name]?.env);
+    // The plan fills SING_OFFLOAD_URLS itself; hostd fills {offload_urls} (until H7).
+    expect(SING_OFFLOAD_URLS).toBe(name === "sing" ? "{offload_urls}" : undefined);
     if (name === "tts") {
       // The plan fills VOICES_DIR itself; the descriptor says it with a placeholder.
       expect(VOICES_DIR).toBe("{service}/../voices");
@@ -82,13 +92,42 @@ describe("the workers", () => {
     }
   });
 
-  it("sing starts after the workers it offloads", () => {
+  it("sing starts after the workers it offloads, and gets their addresses in the same order", () => {
     const after = entry("sing").descriptor.run?.after ?? [];
     expect([...after].sort()).toEqual([...(WORKER_DEFAULTS.sing?.offload ?? [])].sort());
     const names = plan.map((s) => s.name);
     for (const peer of after) {
       expect(names.indexOf(peer)).toBeLessThan(names.indexOf("sing"));
     }
+    const hostFile = join(root, "pin-test", "host.toml");
+    const plans = planServices(
+      catalog,
+      {
+        file: hostFile,
+        workspace: dirname(hostFile),
+        config: parseHostConfig(
+          hostFile,
+          'name = "pin"\n[services.sing]\n[services.asr]\n[services.tts]\n',
+        ),
+        state: stateLayout(join(root, "pin-test", "state")),
+      },
+      {
+        workspace: dirname(hostFile),
+        state: join(root, "pin-test", "state"),
+        bind: "127.0.0.1",
+        configPath,
+        miyoria: ["node", "main.js"],
+        node: "node",
+        env: {},
+        platform: "win32",
+      },
+    );
+    const urls = offloadUrls(
+      plans,
+      (p) => (typeof p.port === "number" ? p.port : undefined),
+      "127.0.0.1",
+    );
+    expect(urls).toBe(spec("sing").env.SING_OFFLOAD_URLS);
   });
 
   it("states the VRAM the checks estimate", () => {

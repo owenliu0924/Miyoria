@@ -470,6 +470,6 @@ export async function run(
   }
   if (!dry)
     println(
-      `\n${bold("完成")}。\`miyoria doctor\` 檢查缺什麼,\`miyoria start\` 在各自的分頁啟動。`,
+      `\n${bold("完成")}。\`miyoria doctor\` 檢查缺什麼,\`miyoria host migrate\` 寫出 host.toml 後,\`miyoria up\` 啟動。`,
     );
 }

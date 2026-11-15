@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { PortProbe } from "@miyoria/hostd";
 import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import {
@@ -25,13 +26,7 @@ import {
   type Worker,
   workerUrl,
 } from "./config.js";
-import {
-  inRanges,
-  type PortProbe,
-  parseDynamicPort,
-  parseExcludedRanges,
-  type Runner,
-} from "./system.js";
+import { inRanges, parseDynamicPort, parseExcludedRanges, type Runner } from "./system.js";
 
 export type Level = "ok" | "warn" | "fail";
 
