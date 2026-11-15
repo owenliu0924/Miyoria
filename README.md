@@ -27,47 +27,48 @@ pnpm build:web             # the admin panel (only when running from the reposit
 pnpm dev up                # `miyoria up`: starts hostd, which starts Core; the panel is at http://127.0.0.1:7878/
 ```
 
-You need Node.js 24, a Discord bot token and an LLM API key; no GPU. In the repository `pnpm dev <command>` is the same as `miyoria <command>`. Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `miyoria config` changes settings one at a time. `miyoria status`, `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `miyoria --help` lists everything.
+You need Node.js 24, a Discord bot token and an LLM API key; no GPU. In the repository `pnpm dev <command>` is the same as `miyoria <command>`. Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `miyoria config` changes settings one at a time. `miyoria status` lists this machine's services (state, health, port) and, when Core answers, its modules and LLM usage; `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `miyoria --help` lists everything.
 
-## Several machines: roles, install and start
+## Several machines: hostd, add and up
 
-The services are split into three roles, and each machine only runs the ones you pick (the names live in `packages/cli/src/stack/roles.ts`, the only place to change them):
+Every machine runs one small daemon, hostd. It reads `host.toml` (what this machine runs) and each service's `service.toml` (its port, health check and what it needs installed), starts the services, restarts one that crashes, and keeps its logs. Core, the voice node, Stage, the GPU workers (`asr`, `tts`, `sing`, `turn`, `lyrics`) and MediaMTX are all services with a folder and a `service.toml`. The pieces that need the GPU are the Python workers; `sing` asks `asr` and `tts` to give up the card while it makes a song, so those three belong on the same machine.
 
-| Role | Services | What it does |
-|---|---|---|
-| `broadcast` (streaming PC) | `voice-node`, `stage` | Discord voice and Go Live, VTube Studio, OBS and the overlay. OBS, VTube Studio and games also run here, but Miyoria doesn't start them |
-| `core` (bot server) | `core`, `turn` | The Discord bot, every module, the database and the admin panel (:7878). `turn` is the worker that decides when someone has finished speaking (used with `vad_engine = "silero"`). The file sandbox needs Docker |
-| `inference` (GPU machine) | `asr`, `tts`, `sing` | Every AI model. The three must be on the same machine, because sing asks the other two to give up the GPU while it makes a song |
-
-In the source folder (`pnpm dev <command>` is the same as `miyoria <command>`):
+In the source folder (`pnpm dev <command>` is the same as `miyoria <command>`). The workers need [uv](https://docs.astral.sh/uv/):
 
 ```bash
-miyoria init                  # first question: what this machine runs (everything, one role, or custom); with several machines it then asks for each role's LAN address
-miyoria init --yes --roles inference --inference-host 192.168.1.20   # non-interactive (--roles: all, role or service names, comma separated)
-miyoria install --dry-run     # installs only what this machine needs: node packages and builds, each worker's venv and pip; lists what to download by hand at the end
-miyoria install
-miyoria doctor                # what this machine's roles lack: packages, venvs, model files, Docker, the other machines' addresses and connections
-miyoria start --dry-run       # which tabs it would open and which it skips because they are already running
-miyoria start                 # the roles set for this machine; one Windows Terminal tab per service
-miyoria start inference       # or name a role or service: broadcast, core, inference, all, asr, tts ...
+miyoria init                  # first question: what this machine does (text chat, text plus voice, or only serve another machine's Core); writes host.toml
+miyoria add asr tts turn      # builds each service's environment with uv and downloads the small files; lists what you still place by hand
+miyoria doctor                # what this machine lacks: environments, model files, ports, the link to Core
+miyoria up                    # starts hostd in the background; it starts every service host.toml enables
+miyoria status                # each service's state, health and port; --all also lists every machine Core knows
+miyoria logs asr -f           # one service's log
+miyoria down                  # stops every service and ends hostd
+miyoria update                # pull, rebuild what is out of date, sync environments, restart one at a time
 ```
 
-`miyoria start` opens one tab per service (in the same Windows Terminal window, `miyoria`), so you can see the output; close a tab or press Ctrl+C in it to stop that service. A service that already answers its health check, has something on its port or still has its tab open is not started a second time. Nothing is restarted automatically and nothing is stopped. On the GPU machine, asr and tts start first, and sing starts once they are ready. `miyoria up` is the other option: it runs in the background, writes logs to files and stops everything on Ctrl+C. Both commands read the same `[machine]` section.
+`restart`, `down` and `update` refuse to touch Core, the voice node or Stage while she is singing or live (`--force` overrides). Details are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
-The settings are in `miyoria.toml` (not in git):
+A second machine, for example the one with the GPU, does not need its own Discord token, LLM key or database. It joins the Core:
+
+```bash
+miyoria host invite                                  # on the Core machine: prints a one-time code (10 minutes) and the command for the other machine
+miyoria host join <core-address> --code <code>       # on the other machine
+miyoria host approve <name>                          # on the Core machine: until then the other machine's services are not used
+miyoria up                                           # on the other machine
+```
+
+The other machine dials out to Core's control link (port 7880). Core's requests, and big files such as finished songs, travel back over that same connection, so the other machine opens no port and needs no firewall rule. Only the speech workers (`asr`, `tts`, `turn`) need a direct address, because live voice does not go through the relay: set `[network] advertise` in that machine's `host.toml`. The step-by-step version is in [docs/SETUP.md](docs/SETUP.md) (second machine) and [docs/sing-remote-host.md](docs/sing-remote-host.md) (lending a GPU for singing).
+
+`host.toml` is not in git (`join` adds `[cluster] url` to it). A minimal one:
 
 ```toml
-[machine]
-roles = ["core"]               # broadcast | core | inference, more than one is fine; one machine = all three
-# services = ["core", "asr"]   # custom: list the services directly; this replaces roles
-[machine.hosts]
-core = "192.168.1.10"          # the machine running core: core binds this address (admin API / voice.link / stage.link), the streaming PC connects to it
-inference = "192.168.1.20"     # the machine running asr / tts / sing: the workers bind this address, core connects to it
+name = "gpu-pc"
+[services.asr]
+[services.tts]
+[services.sing]
 ```
 
-When everything is on one machine, both addresses are `127.0.0.1` (the default). When they are split, `miyoria init` writes the addresses where they are used: Core's `bind`, stage's `core_url`, `ASR_URL` / `TTS_URL` in `.env`, and `[modules.sing] url`. The streaming PC needs core's `STAGE_LINK_TOKEN` / `VOICE_LINK_TOKEN` (init asks you to paste them), and the voice node also needs `SELF_TOKEN` in `apps/voice-node/.env`. One thing is not handled yet when running split (see the [backlog](docs/design/backlog.md)): the Minecraft extension launches the game on the core machine. Song videos are fetched from the sing worker into Core's own `data/songs`, so Core and Stage must share a machine.
-
-Old config files without `[machine]` behave as before.
+Old config files with `[machine]` and `[stack]` are no longer read; `miyoria host migrate` writes a `host.toml` from them. One thing is not handled yet when running split (see the [backlog](docs/design/backlog.md)): the Minecraft extension launches the game on the core machine. Song videos are fetched from the sing worker into Core's own `data/songs`, so Core and Stage must share a machine.
 
 ## Autonomy at a glance
 
