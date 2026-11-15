@@ -21,19 +21,19 @@ import {
   ACTIVITY_FAILED_TOPIC,
   AFFECT_CHANGED_TOPIC,
   type Clock,
-  customEvent,
   DailyPostsKey,
   DIRECTIVE_CHANGED_TOPIC,
   dataBlock,
   EventLogKey,
-  GOAL_TOPIC,
+  Events,
+  type Goal,
   GoalAgendaKey,
   isJsonObject,
-  type JsonValue,
   LifeLogKey,
   MindKey,
   newId,
   type ProfileId,
+  type Reminder,
   ReminderDeskKey,
   SALIENT_TOPIC,
   type Thought,
@@ -51,7 +51,6 @@ import { LifeBook } from "./life/log.js";
 import { DailyPostDesk } from "./life/posts.js";
 import {
   deliverer,
-  REMINDER_TOPIC,
   ReminderBook,
   type ReminderLimits,
   remindCapability,
@@ -74,16 +73,16 @@ export interface MindModuleOptions {
 
 /** Bus topics the mind follows. */
 export const MIND_TOPICS = [
-  "platform.ready",
-  "platform.message.created",
+  Events.PlatformReady.type,
+  Events.PlatformMessageCreated.type,
   SALIENT_TOPIC,
-  "agent.turn.completed",
-  "agent.decision",
-  "gate.decision",
-  "voice.joined",
-  "voice.participants",
-  "voice.utterance",
-  "llm.budget",
+  Events.AgentTurnCompleted.type,
+  Events.AgentDecision.type,
+  Events.GateDecision.type,
+  Events.VoiceJoined.type,
+  Events.VoiceParticipants.type,
+  Events.VoiceUtteranceEvent.type,
+  Events.LlmBudget.type,
   // What she is doing (the one owner of it): a game coming up, an activity ending.
   ACTIVITY_CHANGED_TOPIC,
   ACTIVITY_DONE_TOPIC,
@@ -140,7 +139,7 @@ export class MindModule implements Module {
       store,
       this.#profile,
       config.journal_keep,
-      (thought) => MindLoop.publish((e) => ctx.publish(e), thought),
+      (thought) => MindLoop.publish(ctx.publisher, thought),
       {
         batch: config.digest_batch,
         digestsKeep: config.digests_keep,
@@ -165,8 +164,7 @@ export class MindModule implements Module {
       clock: this.#options.clock ?? ctx.clock,
       maxDays: config.goal_max_days,
       defaultDays: config.goal_default_days,
-      publish: (goal) =>
-        ctx.publish(customEvent(GOAL_TOPIC, JSON.parse(JSON.stringify(goal)) as JsonValue)),
+      publish: (goal) => ctx.publish(Events.PlanGoal, JSON.parse(JSON.stringify(goal)) as Goal),
       wishes: () => ctx.services.get(WishesKey) ?? null,
     });
     if (store) {
@@ -192,7 +190,7 @@ export class MindModule implements Module {
       persona: () => (persona ? persona(ctx.services) : ""),
       services: ctx.services,
       clock: this.#options.clock ?? ctx.clock,
-      publish: (e) => ctx.publish(e),
+      publish: ctx.publisher,
       log: ctx.log,
       journal,
       goals,
@@ -257,12 +255,10 @@ export class MindModule implements Module {
       offsetMinutes: offset,
       deliver: deliverer(ctx.services, clock, limits, offset),
       publish: (reminder, state) =>
-        ctx.publish(
-          customEvent(REMINDER_TOPIC, {
-            state,
-            reminder: JSON.parse(JSON.stringify(reminder)) as JsonValue,
-          }),
-        ),
+        ctx.publish(Events.MindReminder, {
+          state,
+          reminder: JSON.parse(JSON.stringify(reminder)) as Reminder,
+        }),
       wishes: () => ctx.services.get(WishesKey) ?? null,
     });
     const desk = new DailyPostDesk({

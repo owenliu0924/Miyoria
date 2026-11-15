@@ -17,11 +17,12 @@ import {
   StoreKey,
 } from "@miyoria/store";
 import {
-  AFFECT_BOND_TOPIC,
   AuthorizerKey,
   type ContextKey,
   contextKeyString,
   EMOTION_LABELS,
+  Events,
+  is,
   isJsonObject,
   type JsonValue,
   MindKey,
@@ -135,9 +136,7 @@ export class SocialModule implements Module {
       this.#names,
       config,
       stores(ctx),
-      (event) => {
-        ctx.publish(event);
-      },
+      ctx.publisher,
       ctx.clock,
     );
     social.setAuthorizer(ctx.services.get(AuthorizerKey) ?? null);
@@ -166,64 +165,51 @@ export class SocialModule implements Module {
 
     // Subscribe before returning so no event published after start is missed.
     const sub = ctx.subscribe([
-      "platform.ready",
-      "platform.message.created",
-      "voice.utterance",
-      "agent.turn.completed",
-      AFFECT_BOND_TOPIC,
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.VoiceUtteranceEvent.type,
+      Events.AgentTurnCompleted.type,
+      Events.AffectBond.type,
     ]);
     ctx.spawn("events", async () => {
       for await (const env of sub) {
         const now = ctx.clock.now();
-        const event = env.event;
         let observed: Observed | null = null;
-        switch (event.type) {
-          case "platform_ready":
-            social.addSelfAccount(event.data.self_account);
-            break;
-          case "platform_message_created": {
-            const m = event.data;
-            const own = m.author.is_bot || social.isSelf(m.author.account);
-            if (!own) {
-              observed = {
-                context: m.id.context,
-                account: m.author.account,
-                display_name: m.author.display_name,
-                text: m.text,
-                directed: m.mentions_self || m.reply_to_self || m.id.context.kind === "dm",
-                ts: now,
-              };
-            }
-            break;
+        if (is(Events.PlatformReady, env)) {
+          social.addSelfAccount(env.data.self_account);
+        } else if (is(Events.PlatformMessageCreated, env)) {
+          const m = env.data;
+          const own = m.author.is_bot || social.isSelf(m.author.account);
+          if (!own) {
+            observed = {
+              context: m.id.context,
+              account: m.author.account,
+              display_name: m.author.display_name,
+              text: m.text,
+              directed: m.mentions_self || m.reply_to_self || m.id.context.kind === "dm",
+              ts: now,
+            };
           }
-          case "voice_utterance": {
-            const u = event.data;
-            const own = u.speaker.is_bot || social.isSelf(u.speaker.account);
-            if (!own) {
-              observed = {
-                context: u.context,
-                account: u.speaker.account,
-                display_name: u.speaker.display_name,
-                text: u.text,
-                directed: false,
-                ts: now,
-              };
-            }
-            break;
+        } else if (is(Events.VoiceUtteranceEvent, env)) {
+          const u = env.data;
+          const own = u.speaker.is_bot || social.isSelf(u.speaker.account);
+          if (!own) {
+            observed = {
+              context: u.context,
+              account: u.speaker.account,
+              display_name: u.speaker.display_name,
+              text: u.text,
+              directed: false,
+              ts: now,
+            };
           }
-          case "agent_turn_completed":
-            social.observeSelf(event.data.context, event.data.text, now);
-            break;
-          case "custom":
-            // A bond change Reflect proposed through the affect service (small, already capped).
-            if (event.data.topic === AFFECT_BOND_TOPIC) {
-              await applyBond(social, event.data.payload, now).catch((error: unknown) => {
-                ctx.log.warn({ err: errorMessage(error) }, "cannot apply a proposed bond change");
-              });
-            }
-            break;
-          default:
-            break;
+        } else if (is(Events.AgentTurnCompleted, env)) {
+          social.observeSelf(env.data.context, env.data.text, now);
+        } else if (is(Events.AffectBond, env)) {
+          // A bond change Reflect proposed through the affect service (small, already capped).
+          await applyBond(social, env.data as JsonValue, now).catch((error: unknown) => {
+            ctx.log.warn({ err: errorMessage(error) }, "cannot apply a proposed bond change");
+          });
         }
         if (observed === null) continue;
         const key = observed.context;

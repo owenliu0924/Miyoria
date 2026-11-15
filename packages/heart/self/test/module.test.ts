@@ -6,6 +6,7 @@ import {
   type Event,
   type JsonValue,
   type Mood,
+  newEnvelope,
   PromptContributors,
   PromptContributorsKey,
   SelfStateKey,
@@ -17,6 +18,9 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { selfConfig } from "../src/config.js";
 import { eventDelta, SelfModule, STATE_KEY } from "../src/index.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 const T0 = Date.parse("2026-11-02T12:00:00.000Z");
 const ctx = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
@@ -168,26 +172,26 @@ describe("eventDelta", () => {
   });
 
   it("maps events to satisfaction", () => {
-    expect(eventDelta(message("a", true), config, self)?.delta).toEqual({
+    expect(eventDelta(ev(message("a", true)), config, self)?.delta).toEqual({
       attention: -0.04,
       boredom: -0.02,
     });
-    expect(eventDelta(message("a", false), config, self)?.delta).toEqual({ boredom: -0.01 });
-    expect(eventDelta(message("me", true), config, self)).toBeNull();
+    expect(eventDelta(ev(message("a", false)), config, self)?.delta).toEqual({ boredom: -0.01 });
+    expect(eventDelta(ev(message("me", true)), config, self)).toBeNull();
     expect(
       eventDelta(
-        { type: "agent_turn_completed", data: { turn: "t", context: ctx, text: " " } },
+        ev({ type: "agent_turn_completed", data: { turn: "t", context: ctx, text: " " } }),
         config,
         self,
       ),
     ).toBeNull();
-    expect(eventDelta(customEvent("world.salient", {}), config, self)?.delta).toEqual({
+    expect(eventDelta(ev(customEvent("world.salient", {})), config, self)?.delta).toEqual({
       boredom: -0.05,
       curiosity: -0.02,
     });
     // Nudges are limited to ±0.5 per drive.
     expect(
-      eventDelta(customEvent("self.nudge", { social: 3, bogus: 1 } as JsonValue), config, self)
+      eventDelta(ev(customEvent("self.nudge", { social: 3, bogus: 1 } as JsonValue)), config, self)
         ?.delta,
     ).toEqual({ social: 0.5 });
   });

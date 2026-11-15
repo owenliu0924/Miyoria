@@ -5,6 +5,7 @@ import {
   type Attitude,
   type Clock,
   type Handle,
+  type JsonValue,
   type Mood,
   type PersonId,
   toTimestamp,
@@ -94,7 +95,9 @@ export function rig(
     baseline: options.mood ?? BASELINE,
     handleOf: (person) => handles.get(person) ?? null,
     personOfHandle: (handle) => [...handles].find(([, h]) => h === handle)?.[0] ?? null,
-    publish: (topic, payload) => published.push({ topic, payload }),
+    publish: (definition, payload, ..._meta) => {
+      published.push({ topic: definition.type, payload: payload as JsonValue });
+    },
   });
   return {
     clock,

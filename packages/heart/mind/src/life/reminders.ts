@@ -35,6 +35,7 @@ import {
   ArbiterKey,
   type Clock,
   type ContextKey,
+  Events,
   isJsonObject,
   isValidHandle,
   type JsonValue,
@@ -56,7 +57,7 @@ import { z } from "zod";
 const log = getLogger("mind.reminders");
 
 /** Bus topic of a timer that was set, came due, was held back, ended or was cancelled. */
-export const REMINDER_TOPIC = "mind.reminder";
+export const REMINDER_TOPIC = Events.MindReminder.type;
 /** Settings key prefix of her timers. */
 export const REMINDER_PREFIX = "mind:reminder:";
 /** Permission node of asking her for a timer (trusted and above have it through `tools.*`). */

@@ -14,6 +14,7 @@ import {
   ACTIVITY_CHANGED_TOPIC,
   type Clock,
   type Envelope,
+  Events,
   isJsonObject,
   isLifeActivityId,
   type JsonObject,
@@ -31,7 +32,7 @@ const log = getLogger("mind.life");
 
 /** Settings key prefix of her life log (one row per day of hers). */
 export const LIFE_PREFIX = "mind:life:";
-const GATE_DECISION_TOPIC = "gate.decision";
+const GATE_DECISION_TOPIC = Events.GateDecision.type;
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -237,11 +238,9 @@ export class LifeBook implements LifeLog {
 
   /** Follows the bus: her own allowed calls, and runs of the activity snapshot. */
   observe(env: Envelope): void {
-    const event = env.event;
-    if (event.type !== "custom") return;
-    const { topic, payload } = event.data;
-    if (topic === GATE_DECISION_TOPIC) this.#decision(payload);
-    else if (topic === ACTIVITY_CHANGED_TOPIC) this.#activity(payload);
+    const payload = env.data as JsonValue;
+    if (env.type === GATE_DECISION_TOPIC) this.#decision(payload);
+    else if (env.type === ACTIVITY_CHANGED_TOPIC) this.#activity(payload);
   }
 
   #decision(payload: JsonValue): void {

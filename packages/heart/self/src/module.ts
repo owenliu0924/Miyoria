@@ -15,16 +15,16 @@ import {
 } from "@miyoria/store";
 import {
   AFFECT_EVENT_KINDS,
-  AFFECT_EVENT_TOPIC,
   type AffectEvent,
   AffectStateKey,
+  type BusEvent,
   type Clock,
   circadianEnergy,
-  customEvent,
   DRIVE_NAMES,
   type Drives,
-  type Event,
+  Events,
   HandleDirectoryKey,
+  is,
   isJsonObject,
   type JsonValue,
   type Mood,
@@ -50,7 +50,7 @@ import { SelfService } from "./state.js";
 /** Settings key of the persisted state (drives, boredom, policy, agenda). */
 export const STATE_KEY = "self:state";
 /** Bus topic of drive nudges from games and extensions (`{social?, ..., boredom?, reason}`). */
-export const NUDGE_TOPIC = "self.nudge";
+export const NUDGE_TOPIC = Events.SelfNudge.type;
 
 const STORE_TIMEOUT_MS = 5_000;
 
@@ -68,62 +68,58 @@ const DEFAULT_BASELINE: Mood = { valence: 0, arousal: 0.5, energy: 0.7 };
 
 /** The satisfaction an event causes (negative deltas), if any. */
 export function eventDelta(
-  event: Event,
+  event: BusEvent,
   config: SelfConfig,
   isSelf: (id: string) => boolean,
 ): { delta: Partial<Drives> & { boredom?: number }; reason: string } | null {
   const s = config.satisfy;
-  switch (event.type) {
-    case "agent_turn_completed":
-      if (event.data.text.trim() === "") return null;
-      return {
-        delta: {
-          social: -s.turn_social,
-          attention: -s.turn_attention,
-          hunger: -s.turn_hunger,
-          boredom: -s.turn_boredom,
-        },
-        reason: "turn",
-      };
-    case "platform_message_created": {
-      const m = event.data;
-      if (m.author.is_bot || isSelf(m.author.account.id)) return null;
-      const direct = m.mentions_self || m.reply_to_self || m.id.context.kind === "dm";
-      return direct
-        ? {
-            delta: { attention: -s.addressed_attention, boredom: -2 * s.ambient_boredom },
-            reason: "addressed",
-          }
-        : { delta: { boredom: -s.ambient_boredom }, reason: "ambient" };
-    }
-    case "voice_utterance":
-      if (event.data.speaker.is_bot || isSelf(event.data.speaker.account.id)) return null;
-      return { delta: { boredom: -s.ambient_boredom }, reason: "voice" };
-    case "custom": {
-      const { topic, payload } = event.data;
-      if (topic === SALIENT_TOPIC) {
-        return {
-          delta: { boredom: -s.salient_boredom, curiosity: -s.salient_curiosity },
-          reason: "salient",
-        };
-      }
-      if (topic === NUDGE_TOPIC && isJsonObject(payload)) {
-        const delta: Partial<Drives> & { boredom?: number } = {};
-        for (const key of [...DRIVE_NAMES, "boredom"] as const) {
-          const v = payload[key];
-          // One nudge moves a drive at most 0.5.
-          if (typeof v === "number" && Number.isFinite(v)) {
-            delta[key] = Math.min(Math.max(v, -0.5), 0.5);
-          }
-        }
-        const reason = typeof payload.reason === "string" ? payload.reason : "nudge";
-        return { delta, reason };
-      }
-      return null;
-    }
-    default:
-      return null;
+  if (is(Events.AgentTurnCompleted, event)) {
+    if (event.data.text.trim() === "") return null;
+    return {
+      delta: {
+        social: -s.turn_social,
+        attention: -s.turn_attention,
+        hunger: -s.turn_hunger,
+        boredom: -s.turn_boredom,
+      },
+      reason: "turn",
+    };
   }
+  if (is(Events.PlatformMessageCreated, event)) {
+    const m = event.data;
+    if (m.author.is_bot || isSelf(m.author.account.id)) return null;
+    const direct = m.mentions_self || m.reply_to_self || m.id.context.kind === "dm";
+    return direct
+      ? {
+          delta: { attention: -s.addressed_attention, boredom: -2 * s.ambient_boredom },
+          reason: "addressed",
+        }
+      : { delta: { boredom: -s.ambient_boredom }, reason: "ambient" };
+  }
+  if (is(Events.VoiceUtteranceEvent, event)) {
+    if (event.data.speaker.is_bot || isSelf(event.data.speaker.account.id)) return null;
+    return { delta: { boredom: -s.ambient_boredom }, reason: "voice" };
+  }
+  const payload = event.data as JsonValue;
+  if (event.type === SALIENT_TOPIC) {
+    return {
+      delta: { boredom: -s.salient_boredom, curiosity: -s.salient_curiosity },
+      reason: "salient",
+    };
+  }
+  if (event.type === NUDGE_TOPIC && isJsonObject(payload)) {
+    const delta: Partial<Drives> & { boredom?: number } = {};
+    for (const key of [...DRIVE_NAMES, "boredom"] as const) {
+      const v = payload[key];
+      // One nudge moves a drive at most 0.5.
+      if (typeof v === "number" && Number.isFinite(v)) {
+        delta[key] = Math.min(Math.max(v, -0.5), 0.5);
+      }
+    }
+    const reason = typeof payload.reason === "string" ? payload.reason : "nudge";
+    return { delta, reason };
+  }
+  return null;
 }
 
 /** An `affect.event` payload that is a well-formed rule event, or `null`. */
@@ -318,7 +314,7 @@ export class SelfModule implements Module {
       baseline,
       handleOf: (person) => directory()?.ofPerson(person) ?? null,
       personOfHandle: (handle) => directory()?.resolve(handle)?.person ?? null,
-      publish: (topic, payload) => ctx.publish(customEvent(topic, payload)),
+      publish: ctx.publisher,
     });
     ctx.provide(SelfStateKey, service);
     ctx.provide(AffectStateKey, affect);
@@ -335,50 +331,46 @@ export class SelfModule implements Module {
       herVoice: () => ctx.services.get(WorldStateKey)?.snapshot().her.voice ?? null,
     });
     const sub = ctx.subscribe([
-      "platform.ready",
-      "platform.message.created",
-      "voice.utterance",
-      "agent.turn.completed",
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.VoiceUtteranceEvent.type,
+      Events.AgentTurnCompleted.type,
       SALIENT_TOPIC,
       NUDGE_TOPIC,
       FEEL_TOPIC,
       SOCIAL_EVENT_TOPIC,
       SOCIAL_APPRAISAL_TOPIC,
       SONG_TOPIC,
-      "llm.budget",
+      Events.LlmBudget.type,
       "game.*",
-      "voice.playback",
-      "activity.done",
-      "activity.failed",
-      AFFECT_EVENT_TOPIC,
+      Events.VoicePlaybackEvent.type,
+      Events.ActivityDone.type,
+      Events.ActivityFailed.type,
+      Events.AffectEvent.type,
     ]);
     ctx.spawn("events", async () => {
       for await (const env of sub) {
-        const event = env.event;
-        if (event.type === "platform_ready") {
-          selfIds.add(event.data.self_account.id);
+        if (is(Events.PlatformReady, env)) {
+          selfIds.add(env.data.self_account.id);
           continue;
         }
         try {
-          if (event.type === "custom" && event.data.topic === AFFECT_EVENT_TOPIC) {
+          if (is(Events.AffectEvent, env)) {
             // Rule events other modules publish (the Arbiter's `topic_ignored` and the like).
-            const ev = parseAffectEvent(event.data.payload);
+            const ev = parseAffectEvent(env.data as JsonValue);
             if (ev) {
               affect.applyEvent(ev);
               dirty = true;
             }
-          } else if (rules.handle(event, clock.now())) dirty = true;
+          } else if (rules.handle(env, clock.now())) dirty = true;
           affect.publishIfChanged();
         } catch (error) {
           ctx.log.warn(
-            {
-              err: errorMessage(error),
-              event: event.type === "custom" ? event.data.topic : event.type,
-            },
+            { err: errorMessage(error), event: env.type },
             "her emotions could not take an event",
           );
         }
-        const effect = eventDelta(event, config, (id) => selfIds.has(id));
+        const effect = eventDelta(env, config, (id) => selfIds.has(id));
         if (!effect) continue;
         service.now();
         engine.adjust(effect.delta);

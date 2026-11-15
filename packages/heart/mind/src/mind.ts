@@ -48,13 +48,12 @@ import {
   ConversationStatesKey,
   characterCore,
   contextKeyString,
-  customEvent,
   type Desire,
   DIRECTIVE_CHANGED_TOPIC,
   type DirectiveChangedBody,
   DirectivesKey,
   type Envelope,
-  type Event,
+  Events,
   type Goal,
   type Handle,
   HandleDirectoryKey,
@@ -65,11 +64,11 @@ import {
   IntentSinkKey,
   incomingText,
   inspectInput,
+  is,
   isJsonObject,
   isValidHandle,
   type JsonValue,
   type LedgerLimits,
-  MIND_THOUGHT_TOPIC,
   type Mind,
   type MindStats,
   type MindSuggestion,
@@ -79,6 +78,7 @@ import {
   type ProfileId,
   type ProposalBoard,
   ProposalBoardKey,
+  type Publish,
   type RaisedTopic,
   ReflectionKey,
   repairHandleText,
@@ -184,7 +184,7 @@ export interface MindDeps {
   persona: () => string;
   services: ServiceLookup;
   clock: Clock;
-  publish: (event: Event) => void;
+  publish: Publish;
   log: Logger;
   journal: Journal;
   goals: GoalBook;
@@ -551,105 +551,96 @@ export class MindLoop implements Mind {
 
   /** Feeds one bus event (salience, her turns, voice, activity, affect, gate decisions). */
   observe(env: Envelope): void {
-    const event = env.event;
     const now = this.#now();
-    switch (event.type) {
-      case "platform_ready":
-        this.#selfIds.add(event.data.self_account.id);
-        return;
-      case "platform_message_created": {
-        const m = event.data;
-        if (m.author.is_bot || this.#selfIds.has(m.author.account.id)) return;
-        const verdict = inspectInput(this.#d.services, {
-          id: m.id.id,
-          text: incomingText(m),
-          source: "chat",
-          author: m.author.account,
-          context: m.id.context,
-        });
-        if (verdict?.action === "ignore") return;
-        const handle = this.#handleOfAccount(m.author.account, m.author.display_name);
-        if (handle !== null) this.#presence.seen(handle, now);
-        const called = m.mentions_self || m.reply_to_self || m.id.context.kind === "dm";
-        if (called && !holdsBack(verdict)) {
-          this.#hear(handle ?? m.author.display_name, m.text, now);
-        }
-        this.#segments.line(m.id.context, {
-          at: now,
-          who: handle ?? m.author.display_name,
-          account: m.author.account,
-          text: m.text,
-          addressed: m.mentions_self || m.reply_to_self || m.id.context.kind === "dm",
-        });
-        return;
+    if (is(Events.PlatformReady, env)) {
+      this.#selfIds.add(env.data.self_account.id);
+      return;
+    } else if (is(Events.PlatformMessageCreated, env)) {
+      const m = env.data;
+      if (m.author.is_bot || this.#selfIds.has(m.author.account.id)) return;
+      const verdict = inspectInput(this.#d.services, {
+        id: m.id.id,
+        text: incomingText(m),
+        source: "chat",
+        author: m.author.account,
+        context: m.id.context,
+      });
+      if (verdict?.action === "ignore") return;
+      const handle = this.#handleOfAccount(m.author.account, m.author.display_name);
+      if (handle !== null) this.#presence.seen(handle, now);
+      const called = m.mentions_self || m.reply_to_self || m.id.context.kind === "dm";
+      if (called && !holdsBack(verdict)) {
+        this.#hear(handle ?? m.author.display_name, m.text, now);
       }
-      case "voice_joined":
-      case "voice_participants":
-        this.#wake?.();
-        return;
-      case "voice_utterance": {
-        const u = event.data;
-        if (u.speaker.is_bot || this.#selfIds.has(u.speaker.account.id)) return;
-        const verdict = inspectInput(this.#d.services, {
-          id: u.id,
-          text: u.text.trim(),
-          source: "voice",
-          author: u.speaker.account,
-          context: u.context,
-        });
-        if (verdict?.action === "ignore") return;
-        const handle = this.#handleOfAccount(u.speaker.account, u.speaker.display_name);
-        if (handle !== null) this.#presence.seen(handle, now);
-        if (!holdsBack(verdict)) this.#hear(handle ?? u.speaker.display_name, u.text, now);
-        this.#segments.line(u.context, {
+      this.#segments.line(m.id.context, {
+        at: now,
+        who: handle ?? m.author.display_name,
+        account: m.author.account,
+        text: m.text,
+        addressed: m.mentions_self || m.reply_to_self || m.id.context.kind === "dm",
+      });
+      return;
+    } else if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+      this.#wake?.();
+      return;
+    } else if (is(Events.VoiceUtteranceEvent, env)) {
+      const u = env.data;
+      if (u.speaker.is_bot || this.#selfIds.has(u.speaker.account.id)) return;
+      const verdict = inspectInput(this.#d.services, {
+        id: u.id,
+        text: u.text.trim(),
+        source: "voice",
+        author: u.speaker.account,
+        context: u.context,
+      });
+      if (verdict?.action === "ignore") return;
+      const handle = this.#handleOfAccount(u.speaker.account, u.speaker.display_name);
+      if (handle !== null) this.#presence.seen(handle, now);
+      if (!holdsBack(verdict)) this.#hear(handle ?? u.speaker.display_name, u.text, now);
+      this.#segments.line(u.context, {
+        at: now,
+        who: handle ?? u.speaker.display_name,
+        account: u.speaker.account,
+        text: u.text,
+        // In voice everyone in the room talks with her.
+        addressed: false,
+      });
+      return;
+    } else if (is(Events.AgentTurnCompleted, env)) {
+      const { turn, context, text } = env.data;
+      if (text.trim() !== "") {
+        this.#segments.line(context, {
           at: now,
-          who: handle ?? u.speaker.display_name,
-          account: u.speaker.account,
-          text: u.text,
-          // In voice everyone in the room talks with her.
+          who: null,
+          account: null,
+          text,
           addressed: false,
         });
-        return;
       }
-      case "agent_turn_completed": {
-        const { turn, context, text } = event.data;
-        if (text.trim() !== "") {
-          this.#segments.line(context, {
-            at: now,
-            who: null,
-            account: null,
-            text,
-            addressed: false,
-          });
-        }
-        const own = this.#turnEvent(turn, { type: "completed", text });
-        if ((own || this.#selfTurns.has(turn)) && text.trim() !== "") {
-          this.#startedTalking(turn, context, text, now);
-        }
-        return;
+      const own = this.#turnEvent(turn, { type: "completed", text });
+      if ((own || this.#selfTurns.has(turn)) && text.trim() !== "") {
+        this.#startedTalking(turn, context, text, now);
       }
-      case "agent_decision": {
-        const d = event.data;
-        const skipped = d.reasons.find((r) => r.startsWith("skipped: "));
-        if (!d.respond && skipped && d.reasons.some((r) => r.startsWith("intent:"))) {
-          this.#turnEvent(d.turn, { type: "skipped", why: skipped.slice("skipped: ".length) });
-        }
-        // Her own turns (her intents; never an announcement, commentary, greeting or result:
-        // those are no topics she raised, v2 §5 item 12) vs. someone addressing her there: a
-        // real exchange, which answers what she raised.
-        const selfStarted = d.reasons.some((r) => r.startsWith("intent:"));
-        if (selfStarted) {
-          if (d.respond) this.#selfTurn(d.turn);
-        } else if (d.reasons.some((r) => r.startsWith("direct: "))) {
-          this.#starts.engaged(this.#placeOf(d.context), now);
-        }
-        return;
+      return;
+    } else if (is(Events.AgentDecision, env)) {
+      const d = env.data;
+      const skipped = d.reasons.find((r) => r.startsWith("skipped: "));
+      if (!d.respond && skipped && d.reasons.some((r) => r.startsWith("intent:"))) {
+        this.#turnEvent(d.turn, { type: "skipped", why: skipped.slice("skipped: ".length) });
       }
-      case "custom":
-        this.#custom(event.data.topic, event.data.payload, now);
-        return;
-      default:
-        return;
+      // Her own turns (her intents; never an announcement, commentary, greeting or result:
+      // those are no topics she raised, v2 §5 item 12) vs. someone addressing her there: a
+      // real exchange, which answers what she raised.
+      const selfStarted = d.reasons.some((r) => r.startsWith("intent:"));
+      if (selfStarted) {
+        if (d.respond) this.#selfTurn(d.turn);
+      } else if (d.reasons.some((r) => r.startsWith("direct: "))) {
+        this.#starts.engaged(this.#placeOf(d.context), now);
+      }
+      return;
+    } else {
+      this.#custom(env.type, env.data as JsonValue, now);
+      return;
     }
   }
 
@@ -2055,8 +2046,8 @@ export class MindLoop implements Mind {
   }
 
   /** Publishes a journal entry (`mind.thought`). */
-  static publish(publish: (event: Event) => void, thought: Thought): void {
-    publish(customEvent(MIND_THOUGHT_TOPIC, JSON.parse(JSON.stringify(thought)) as JsonValue));
+  static publish(publish: Publish, thought: Thought): void {
+    publish(Events.MindThought, JSON.parse(JSON.stringify(thought)) as Thought);
   }
 }
 

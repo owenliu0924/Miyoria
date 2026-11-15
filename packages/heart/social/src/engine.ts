@@ -20,15 +20,13 @@ import {
   accountRefString,
   type Clock,
   type ContextKey,
-  customEvent,
-  type Event,
+  Events,
   newId,
   type PersonId,
   type ProfileId,
+  type Publish,
   type RelationshipEffects,
   type RelationshipGain,
-  SOCIAL_APPRAISAL_TOPIC,
-  SOCIAL_EVENT_TOPIC,
   type SocialAppraisal,
   type SocialSignals,
   type Subject,
@@ -74,10 +72,10 @@ import { classify } from "./rules.js";
 const log = getLogger("social");
 
 /** Bus topic of every relationship change. */
-export const TOPIC = "social.relationship";
+export const TOPIC = Events.SocialRelationship.type;
 
 /** Publishes events on the bus (the module wires it to the `EventBus`). */
-export type Publisher = (event: Event) => void;
+export type Publisher = Publish;
 
 /** The stores the engine works with. Backends are provided by the app. */
 export interface SocialStores {
@@ -660,7 +658,7 @@ export class Social implements SocialSignals, RelationshipEffects {
     }
     if (people.length === 0 && Object.keys(heart.her).length === 0) return;
     const payload: SocialAppraisal = { context: { ...context }, her: heart.her, people };
-    this.#publish(customEvent(SOCIAL_APPRAISAL_TOPIC, JSON.parse(JSON.stringify(payload))));
+    this.#publish(Events.SocialAppraisal, JSON.parse(JSON.stringify(payload)));
   }
 
   /** People whose notes are due for a refresh. */
@@ -782,16 +780,14 @@ export class Social implements SocialSignals, RelationshipEffects {
       }
       // Her emotions react to everything, whether or not the caps let the numbers move.
       for (const [source, kind, scale] of events) {
-        this.#publish(
-          customEvent(SOCIAL_EVENT_TOPIC, {
-            person,
-            name: this.displayName(person),
-            kind,
-            source,
-            scale: Math.abs(scale),
-            context: context === null ? null : { ...context },
-          }),
-        );
+        this.#publish(Events.SocialEvent, {
+          person,
+          name: this.displayName(person),
+          kind,
+          source,
+          scale: Math.abs(scale),
+          context: context === null ? null : { ...context },
+        });
       }
       const ledger = this.#ledgers.get(person);
       if (ledger) {
@@ -882,21 +878,19 @@ export class Social implements SocialSignals, RelationshipEffects {
     kind: EventKind | null,
     context: ContextKey | null,
   ): void {
-    this.#publish(
-      customEvent(TOPIC, {
-        profile: this.profile,
-        person: r.person,
-        name: this.displayName(r.person),
-        reason: delta.reason,
-        kind,
-        positive: kind === null ? null : isPositiveKind(kind),
-        affinity: delta.affinity,
-        trust: delta.trust,
-        familiarity: delta.familiarity,
-        label: label(r),
-        context: context === null ? null : { ...context },
-      }),
-    );
+    this.#publish(Events.SocialRelationship, {
+      profile: this.profile,
+      person: r.person,
+      name: this.displayName(r.person),
+      reason: delta.reason,
+      kind,
+      positive: kind === null ? null : isPositiveKind(kind),
+      affinity: delta.affinity,
+      trust: delta.trust,
+      familiarity: delta.familiarity,
+      label: label(r),
+      context: context === null ? null : { ...context },
+    });
   }
 
   /**

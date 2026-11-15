@@ -21,6 +21,7 @@ import {
   newId,
   type PersonId,
   type ProfileId,
+  publishVia,
   toTimestamp,
 } from "@miyoria/types";
 import { type Observed, Social, type SocialConfig, socialConfig, TOPIC } from "../src/index.js";
@@ -193,9 +194,9 @@ export class Harness {
       ["DS醬", "小鯨魚"],
       config,
       { people: store, relationships: store, identity: store, memories },
-      (e) => {
+      publishVia((e) => {
         this.events.push(e);
-      },
+      }),
     );
   }
 

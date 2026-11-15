@@ -14,11 +14,13 @@ import {
   type AffectEvent,
   type AffectEventKind,
   type AppraisalStrength,
+  type BusEvent,
   type ContextKey,
   contextKeyString,
   EMOTION_NAMES,
   type EmotionName,
-  type Event,
+  Events,
+  is,
   isJsonObject,
   type JsonObject,
   type JsonValue,
@@ -38,7 +40,7 @@ import { strengthOf } from "./events.js";
 import type { SelfService } from "./state.js";
 
 /** Bus topic of emotion nudges from games and extensions (see `feelEffects`). */
-export const FEEL_TOPIC = "self.feel";
+export const FEEL_TOPIC = Events.SelfFeel.type;
 /** Bus topic of the LLM budget (`@miyoria/llm/llm` `BUDGET_TOPIC`). */
 const BUDGET_TOPIC = "llm.budget";
 const MINUTE_MS = 60_000;
@@ -110,47 +112,42 @@ export class EmotionRules {
   }
 
   /** Applies whatever `event` means to her; returns whether anything was felt. */
-  handle(event: Event, now: number): boolean {
-    switch (event.type) {
-      case "platform_message_created": {
-        const m = event.data;
-        if (m.author.is_bot || this.d.isSelf(m.author.account.id)) return false;
-        const person = this.d.personOf(m.author.account);
-        if (person === null) return false;
-        const direct = m.mentions_self || m.reply_to_self || m.id.context.kind === "dm";
-        const replied = m.referenced?.author ?? null;
-        const toOther =
-          !direct &&
-          replied !== null &&
-          !this.d.isSelf(replied.id) &&
-          !(replied.platform === m.author.account.platform && replied.id === m.author.account.id);
-        this.#line(person, m.author.display_name, direct, toOther, false, now);
-        return true;
-      }
-      case "voice_utterance": {
-        const u = event.data;
-        if (u.speaker.is_bot || this.d.isSelf(u.speaker.account.id)) return false;
-        const person = this.d.personOf(u.speaker.account);
-        if (person === null) return false;
-        const voice = this.d.herVoice();
-        const together = voice !== null && contextKeyString(voice) === contextKeyString(u.context);
-        this.#line(person, u.speaker.display_name, together, false, true, now);
-        return true;
-      }
-      case "voice_playback": {
-        // Her speech cut off (someone talked over her): a weak frustration, habituated.
-        if (event.data.state !== "interrupted") return false;
-        const key = `playback|${contextKeyString(event.data.context)}`;
-        this.d.affect.applyEvent(
-          this.#event("interrupted", null, "說話被打斷", key, now, event.data.context),
-        );
-        return true;
-      }
-      case "custom":
-        return this.#custom(event.data.topic, event.data.payload, now);
-      default:
-        return false;
+  handle(event: BusEvent, now: number): boolean {
+    if (is(Events.PlatformMessageCreated, event)) {
+      const m = event.data;
+      if (m.author.is_bot || this.d.isSelf(m.author.account.id)) return false;
+      const person = this.d.personOf(m.author.account);
+      if (person === null) return false;
+      const direct = m.mentions_self || m.reply_to_self || m.id.context.kind === "dm";
+      const replied = m.referenced?.author ?? null;
+      const toOther =
+        !direct &&
+        replied !== null &&
+        !this.d.isSelf(replied.id) &&
+        !(replied.platform === m.author.account.platform && replied.id === m.author.account.id);
+      this.#line(person, m.author.display_name, direct, toOther, false, now);
+      return true;
     }
+    if (is(Events.VoiceUtteranceEvent, event)) {
+      const u = event.data;
+      if (u.speaker.is_bot || this.d.isSelf(u.speaker.account.id)) return false;
+      const person = this.d.personOf(u.speaker.account);
+      if (person === null) return false;
+      const voice = this.d.herVoice();
+      const together = voice !== null && contextKeyString(voice) === contextKeyString(u.context);
+      this.#line(person, u.speaker.display_name, together, false, true, now);
+      return true;
+    }
+    if (is(Events.VoicePlaybackEvent, event)) {
+      // Her speech cut off (someone talked over her): a weak frustration, habituated.
+      if (event.data.state !== "interrupted") return false;
+      const key = `playback|${contextKeyString(event.data.context)}`;
+      this.d.affect.applyEvent(
+        this.#event("interrupted", null, "說話被打斷", key, now, event.data.context),
+      );
+      return true;
+    }
+    return this.#custom(event.type, event.data as JsonValue, now);
   }
 
   #custom(topic: string, payload: JsonValue, now: number): boolean {

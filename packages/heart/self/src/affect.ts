@@ -11,7 +11,6 @@
 // * This is where her mood is served from (`MoodSignalsKey`, `mood.changed`).
 
 import {
-  AFFECT_BOND_TOPIC,
   type AffectBondPayload,
   type AffectEvent,
   type AffectInput,
@@ -29,16 +28,16 @@ import {
   deriveMood,
   type EmotionName,
   type EmotionReading,
+  Events,
   type Handle,
   isEphemeralHandle,
-  type JsonValue,
-  MOOD_CHANGED_TOPIC,
   type Mood,
   type MoodSignals,
   moodLine,
   type PersonCard,
   type PersonEmotionName,
   type PersonId,
+  type Publish,
   relationshipLabel,
   renderAffectMood,
   renderPeople,
@@ -75,8 +74,8 @@ export interface AffectDeps {
   handleOf?: (person: PersonId) => Handle | null;
   /** The person behind a handle, when the directory knows it. */
   personOfHandle?: (handle: Handle) => PersonId | null;
-  /** Publishes a bus topic (`affect.changed`, `affect.bond`). */
-  publish?: (topic: string, payload: JsonValue) => void;
+  /** Publishes on the bus (`affect.changed`, `mood.changed`, `affect.bond`). */
+  publish?: Publish;
 }
 
 /** What one rule event did (for tests and the journal). */
@@ -185,7 +184,7 @@ export class AffectService implements AffectState, MoodSignals {
     const last = this.#published;
     if (last && !this.#moved(last, snap)) return false;
     this.#published = snap;
-    this.d.publish?.("affect.changed", JSON.parse(JSON.stringify(snap)) as JsonValue);
+    this.d.publish?.(Events.AffectChanged, JSON.parse(JSON.stringify(snap)) as AffectSnapshot);
     return true;
   }
 
@@ -194,7 +193,7 @@ export class AffectService implements AffectState, MoodSignals {
     const last = this.#publishedMood;
     if (last !== null && !this.#moodMoved(last, mood)) return;
     this.#publishedMood = mood;
-    if (last !== null) this.d.publish?.(MOOD_CHANGED_TOPIC, { ...mood, reason: "affect" });
+    if (last !== null) this.d.publish?.(Events.MoodChanged, { ...mood, reason: "affect" });
   }
 
   #moodMoved(a: Mood, b: Mood): boolean {
@@ -589,7 +588,7 @@ export class AffectService implements AffectState, MoodSignals {
         familiarity: done.familiarity,
         why: change.why,
       };
-      this.d.publish?.(AFFECT_BOND_TOPIC, payload as unknown as JsonValue);
+      this.d.publish?.(Events.AffectBond, payload);
     }
     // Her feeling uses names: sentences with a `u1`-style code are dropped by the book.
     if (change.feeling !== undefined) await self.setFeeling(person, change.feeling, by);
