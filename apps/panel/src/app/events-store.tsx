@@ -131,6 +131,7 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
         // Keep cached lists fresh without polling.
         const t = env.type;
         if (t === "system.module.state") void queryClient.invalidateQueries({ queryKey: queryKeys.modules });
+        else if (t.startsWith("cluster.")) void queryClient.invalidateQueries({ queryKey: queryKeys.cluster });
         else if (t === "agent.decision") void queryClient.invalidateQueries({ queryKey: queryKeys.decisionsAll });
         else if (t === "agent.turn.completed") void queryClient.invalidateQueries({ queryKey: queryKeys.usage });
         else applyCustomEvent(queryClient, env);
