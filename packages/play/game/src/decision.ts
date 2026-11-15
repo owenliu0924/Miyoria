@@ -1,6 +1,12 @@
 // The model's decision: JSON parsing, prompts and the goal-switching rule.
 
-import { dataBlock, escapeData, type JsonObject, type JsonValue } from "@miyoria/types";
+import {
+  dataBlock,
+  escapeData,
+  type JsonObject,
+  type JsonValue,
+  type MoodNudgePayload,
+} from "@miyoria/types";
 import type { GameConfig } from "./config.js";
 import { normalizeItem } from "./methods.js";
 
@@ -52,13 +58,8 @@ export class ActionCall {
 
 export type ReportedStatus = "working" | "done" | "failed";
 
-/** A requested mood change (`mood.nudge` payload fields). */
-export interface MoodNudge {
-  valence: number;
-  arousal: number;
-  energy: number;
-  reason: string;
-}
+/** A shift of her mood a decision may carry (contract: `MoodNudgeSchema`). */
+export type MoodNudge = MoodNudgePayload;
 
 /**
  * A goal's success condition (§11.2 item 2): her inventory holds at least `count` of `item`.

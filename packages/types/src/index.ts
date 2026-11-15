@@ -46,8 +46,12 @@ export {
 } from "./auth.js";
 export type {
   ActionOutcomePayload,
+  DirectorTracePayload,
+  GameSkillPayload,
   GateDecisionPayload,
+  GoalEndPayload,
   LlmBudgetPayload,
+  MoodNudgePayload,
 } from "./bus-payloads.js";
 export {
   customEvent,

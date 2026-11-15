@@ -1470,6 +1470,81 @@
         }
       }
     },
+    "EventsDirectorTrace": {
+      "type": "object",
+      "properties": {
+        "game": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "goal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verdict": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commentary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "busy": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "observation": {
+          "type": "string"
+        },
+        "want": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsGameWant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "held": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "game",
+        "trigger",
+        "goal",
+        "action",
+        "verdict",
+        "commentary",
+        "busy",
+        "observation",
+        "want",
+        "held"
+      ]
+    },
     "EventsDraft": {
       "type": "object",
       "properties": {
@@ -2050,6 +2125,103 @@
         "ts"
       ]
     },
+    "EventsGameChatLink": {
+      "type": "object",
+      "properties": {
+        "game": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "game",
+        "account",
+        "outcome"
+      ]
+    },
+    "EventsGameSession": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "started",
+            "stopped"
+          ]
+        },
+        "game": {
+          "type": "string"
+        },
+        "game_name": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "code": {
+          "$ref": "#/$defs/EventsTaskFailureCode"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "game",
+        "game_name",
+        "context"
+      ]
+    },
+    "EventsGameSkill": {
+      "type": "object",
+      "properties": {
+        "game": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "game",
+        "target",
+        "goal",
+        "steps",
+        "at"
+      ]
+    },
+    "EventsGameWant": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "item",
+        "count"
+      ]
+    },
     "EventsGateDecision": {
       "type": "object",
       "properties": {
@@ -2232,6 +2404,78 @@
         "updated_at",
         "closed_at",
         "close_reason"
+      ]
+    },
+    "EventsGoalEnd": {
+      "type": "object",
+      "properties": {
+        "game": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "director",
+            "command",
+            "queue",
+            "survival"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "done",
+            "failed"
+          ]
+        },
+        "code": {
+          "$ref": "#/$defs/EventsGoalEndCode"
+        },
+        "task": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "attention_key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "game",
+        "goal",
+        "source",
+        "status",
+        "code",
+        "task",
+        "detail",
+        "at",
+        "attention_key"
+      ]
+    },
+    "EventsGoalEndCode": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "done",
+            "reported",
+            "gave_up",
+            "no_progress"
+          ]
+        },
+        {
+          "$ref": "#/$defs/EventsTaskFailureCode"
+        }
       ]
     },
     "EventsGoalSource": {
@@ -3763,6 +4007,29 @@
         "reason"
       ]
     },
+    "EventsMoodNudge": {
+      "type": "object",
+      "properties": {
+        "valence": {
+          "type": "number"
+        },
+        "arousal": {
+          "type": "number"
+        },
+        "energy": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "valence",
+        "arousal",
+        "energy",
+        "reason"
+      ]
+    },
     "EventsNotice": {
       "type": "object",
       "properties": {
@@ -4167,6 +4434,171 @@
         "request",
         "initiative",
         "idle"
+      ]
+    },
+    "EventsQueueChanged": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsQueueItem"
+          }
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "vote": {
+          "type": "object",
+          "properties": {
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tallies": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "total": {
+              "type": "number"
+            },
+            "started_at": {
+              "type": "string"
+            },
+            "ends_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "options",
+            "tallies",
+            "total",
+            "started_at",
+            "ends_at"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "paused"
+      ]
+    },
+    "EventsQueueItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "number"
+        },
+        "requester": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "requester_name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "number"
+        },
+        "votes": {
+          "type": "number"
+        },
+        "state": {
+          "$ref": "#/$defs/EventsQueueItemState"
+        },
+        "position": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "requester",
+        "requester_name",
+        "kind",
+        "text",
+        "context",
+        "created_at",
+        "priority",
+        "votes",
+        "state",
+        "position"
+      ]
+    },
+    "EventsQueueItemState": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "done",
+        "skipped",
+        "removed"
+      ]
+    },
+    "EventsQueueVoteResult": {
+      "type": "object",
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tallies": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "winner": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "winner_option": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total": {
+          "type": "number"
+        },
+        "ended_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "options",
+        "tallies",
+        "winner",
+        "winner_option",
+        "total",
+        "ended_at"
       ]
     },
     "EventsReasoningLevel": {

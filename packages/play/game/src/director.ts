@@ -18,11 +18,12 @@ import {
   contextKeyEquals,
   contextKeyString,
   customEvent,
-  type DirectorThoughtBody,
+  type DirectorTracePayload,
   type DrivenWork,
   dataBlock,
   type Envelope,
   escapeData,
+  type GoalEndPayload,
   gameTaskOwner,
   type JsonObject,
   type JsonValue,
@@ -131,20 +132,8 @@ export type GoalEndCode =
   /** Its task failed with this code (`timeout` also: the goal ran past `max_goal_secs`). */
   | TaskFailureCode;
 
-/** Payload of `GOAL_TOPIC`. */
-export interface GoalEnd {
-  game: string;
-  goal: string;
-  source: GoalSource["type"];
-  status: "done" | "failed";
-  code: GoalEndCode;
-  /** The goal's last task, if it had one. */
-  task: TaskId | null;
-  detail: string;
-  at: Timestamp;
-  /** What it was about (`goalKey`). */
-  attention_key: string;
-}
+/** Payload of `GOAL_TOPIC` (contract: `GoalEndSchema`). */
+export type GoalEnd = GoalEndPayload;
 
 /** Whether in-game chat of a game is its own conversation (then the director only notes it). */
 export interface ChatHandled {
@@ -331,13 +320,7 @@ interface Session {
 }
 
 /** The decision trace: the thought plus what she saw and what was on hold (§11.2 item 9). */
-type DirectorTrace = DirectorThoughtBody & {
-  /** The observation summary the decision was made from. */
-  observation: string;
-  want: Want | null;
-  /** Methods and goals on hold at the time. */
-  held: string[];
-};
+type DirectorTrace = DirectorTracePayload;
 
 /** Characters of the observation summary kept in the trace. */
 const TRACE_OBSERVATION_CHARS = 800;

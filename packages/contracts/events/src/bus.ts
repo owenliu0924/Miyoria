@@ -16,6 +16,7 @@ import { HEART_EVENTS } from "./heart.js";
 import { LlmBudget, LlmCall } from "./llm.js";
 import { MEMORY_EVENTS } from "./memory.js";
 import { PLATFORM_EVENTS } from "./platform.js";
+import { PLAY_EVENTS } from "./play.js";
 import { type AnyEventDefinition, EventRegistry } from "./registry.js";
 import { STAGE_EVENTS } from "./stage.js";
 import { SYSTEM_EVENTS } from "./system.js";
@@ -43,6 +44,7 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   LlmCall,
   LlmBudget,
   ...GATE_EVENTS,
+  ...PLAY_EVENTS,
   ...STAGE_EVENTS,
 ];
 

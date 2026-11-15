@@ -4,19 +4,13 @@
 // director (`skill-store.ts`: her skill store, else the settings store through the work lane).
 // Pure apart from the clock values passed in.
 
+import type { GameSkillPayload } from "@miyoria/types";
+
 /** Topic of a learned skill, `Skill`. */
 export const SKILL_TOPIC = "game.director.skill";
 
-export interface Skill {
-  game: string;
-  /** The item the goal wanted. */
-  target: string;
-  /** The goal as she put it. */
-  goal: string;
-  /** The methods that made progress, in order (`obtain {"item":"cooked_beef"}`). */
-  steps: string[];
-  at: number;
-}
+/** A method sequence that worked (contract: `GameSkillSchema`). */
+export type Skill = GameSkillPayload;
 
 /** Kept per target (newest first) and in all. */
 const PER_TARGET = 3;
