@@ -9,10 +9,12 @@
 
 import {
   type AccountRef,
+  type BusEvent,
   type ContextKey,
-  type Event,
+  Events,
   type Impulse,
   impulseReason,
+  is,
   isSelfInitiated,
 } from "@miyoria/types";
 
@@ -45,21 +47,18 @@ export interface HumanResponse {
  * and the panel.
  */
 export function humanResponse(
-  event: Event,
+  event: BusEvent,
   isSelf: (account: AccountRef) => boolean,
 ): HumanResponse | null {
-  switch (event.type) {
-    case "platform_message_created": {
-      const { author, id } = event.data;
-      if (author.is_bot || isSelf(author.account)) return null;
-      return { context: id.context, account: author.account };
-    }
-    case "voice_utterance": {
-      const { speaker, context, text } = event.data;
-      if (speaker.is_bot || isSelf(speaker.account) || text.trim() === "") return null;
-      return { context, account: speaker.account };
-    }
-    default:
-      return null;
+  if (is(Events.PlatformMessageCreated, event)) {
+    const { author, id } = event.data;
+    if (author.is_bot || isSelf(author.account)) return null;
+    return { context: id.context, account: author.account };
   }
+  if (is(Events.VoiceUtteranceEvent, event)) {
+    const { speaker, context, text } = event.data;
+    if (speaker.is_bot || isSelf(speaker.account) || text.trim() === "") return null;
+    return { context, account: speaker.account };
+  }
+  return null;
 }

@@ -10,6 +10,7 @@ import {
   type ImpulseRun,
   newId,
   newImpulse,
+  publishInto,
   type TurnOutcomeRecord,
   toTimestamp,
 } from "@miyoria/types";
@@ -95,7 +96,7 @@ export function rig(overrides: Partial<ArbiterConfig> = {}, clock = new ManualCl
   };
   const deps: ArbiterEnv = {
     now: () => clock.now(),
-    publish: (e) => events.push(e),
+    publish: publishInto(events),
     paused: () => env.paused,
     budget: () => env.budget,
     blocked: (a) => env.blocked.has(a.id),

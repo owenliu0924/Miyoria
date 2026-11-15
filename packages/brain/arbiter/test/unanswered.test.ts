@@ -1,10 +1,13 @@
 // What counts as her starting to talk and as a person answering her (`unanswered.ts`), and an
 // older saved ledger state.
 
-import { type Event, toTimestamp, type VoiceUtterance } from "@miyoria/types";
+import { type Event, newEnvelope, toTimestamp, type VoiceUtterance } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { humanResponse, LedgerSnapshotSchema, startsTalk } from "../src/index.js";
 import { acct, impulse, ManualClock, T0, textCtx, voiceCtx } from "./helpers.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 const VOICE = voiceCtx("v1");
 
@@ -56,25 +59,25 @@ describe("what counts", () => {
   const isSelf = (a: { id: string }): boolean => a.id === "her";
 
   it("humanResponse: a person's message or speech, addressed to her or not", () => {
-    expect(humanResponse(message("a", false), isSelf)).toEqual({
+    expect(humanResponse(ev(message("a", false)), isSelf)).toEqual({
       context: textCtx("c"),
       account: acct("a"),
     });
-    expect(humanResponse(utterance("a", "嗯。"), isSelf)).toEqual({
+    expect(humanResponse(ev(utterance("a", "嗯。")), isSelf)).toEqual({
       context: VOICE,
       account: acct("a"),
     });
   });
 
   it("humanResponse: not her, not bots, not silence, not people coming and going", () => {
-    expect(humanResponse(message("her", false), isSelf)).toBeNull();
-    expect(humanResponse(message("b", true), isSelf)).toBeNull();
-    expect(humanResponse(utterance("her", "欸"), isSelf)).toBeNull();
-    expect(humanResponse(utterance("b", "欸", true), isSelf)).toBeNull();
-    expect(humanResponse(utterance("a", "   "), isSelf)).toBeNull();
+    expect(humanResponse(ev(message("her", false)), isSelf)).toBeNull();
+    expect(humanResponse(ev(message("b", true)), isSelf)).toBeNull();
+    expect(humanResponse(ev(utterance("her", "欸")), isSelf)).toBeNull();
+    expect(humanResponse(ev(utterance("b", "欸", true)), isSelf)).toBeNull();
+    expect(humanResponse(ev(utterance("a", "   ")), isSelf)).toBeNull();
     expect(
       humanResponse(
-        { type: "voice_participants", data: { context: VOICE, participants: [] } },
+        ev({ type: "voice_participants", data: { context: VOICE, participants: [] } }),
         isSelf,
       ),
     ).toBeNull();

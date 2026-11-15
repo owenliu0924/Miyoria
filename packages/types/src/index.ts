@@ -57,6 +57,7 @@ export type {
 export {
   type AnyEventDefinition,
   type BusEnvelope,
+  type BusEvent,
   customEvent,
   type DecisionTrace,
   type Envelope,

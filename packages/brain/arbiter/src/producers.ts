@@ -12,12 +12,14 @@
 import {
   type AccountRef,
   type Attitude,
+  type BusEvent,
   type ContextKey,
   contextKeyString,
-  type Event,
+  Events,
   type Followup,
   type Handle,
   type Impulse,
+  is,
   newImpulse,
   type SocialSignals,
   type VoiceParticipant,
@@ -76,35 +78,35 @@ export class Producers {
   }
 
   /** Digests one bus event; returns greetings to submit. */
-  observe(now: number, event: Event, social: SocialSignals | null): Impulse[] {
-    switch (event.type) {
-      case "platform_ready":
-        this.#selfAccounts.add(accId(event.data.self_account));
-        return [];
-      case "platform_message_created": {
-        const m = event.data;
-        return this.#onMessage(now, m.id.context, m.author.account, m.author.is_bot, social);
-      }
-      case "voice_utterance": {
-        const u = event.data;
-        return this.#onMessage(now, u.context, u.speaker.account, u.speaker.is_bot, social);
-      }
-      case "voice_joined": {
-        const { context, participants } = event.data;
-        this.#voice.set(contextKeyString(context), {
-          context,
-          members: this.#nonSelf(participants),
-        });
-        return [];
-      }
-      case "voice_left":
-        this.#voice.delete(contextKeyString(event.data.context));
-        return [];
-      case "voice_participants":
-        return this.#onVoiceParticipants(now, event.data.context, event.data.participants, social);
-      default:
-        return [];
+  observe(now: number, event: BusEvent, social: SocialSignals | null): Impulse[] {
+    if (is(Events.PlatformReady, event)) {
+      this.#selfAccounts.add(accId(event.data.self_account));
+      return [];
     }
+    if (is(Events.PlatformMessageCreated, event)) {
+      const m = event.data;
+      return this.#onMessage(now, m.id.context, m.author.account, m.author.is_bot, social);
+    }
+    if (is(Events.VoiceUtteranceEvent, event)) {
+      const u = event.data;
+      return this.#onMessage(now, u.context, u.speaker.account, u.speaker.is_bot, social);
+    }
+    if (is(Events.VoiceJoined, event)) {
+      const { context, participants } = event.data;
+      this.#voice.set(contextKeyString(context), {
+        context,
+        members: this.#nonSelf(participants),
+      });
+      return [];
+    }
+    if (is(Events.VoiceLeft, event)) {
+      this.#voice.delete(contextKeyString(event.data.context));
+      return [];
+    }
+    if (is(Events.VoiceParticipants, event)) {
+      return this.#onVoiceParticipants(now, event.data.context, event.data.participants, social);
+    }
+    return [];
   }
 
   #nonSelf(participants: readonly VoiceParticipant[]): Map<string, AccountRef> {

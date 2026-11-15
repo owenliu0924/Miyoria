@@ -21,6 +21,7 @@ import {
   ImpulseHostKey,
   type JsonValue,
   type NewProposal,
+  newEnvelope,
   newImpulse,
   ProposalBoardKey,
   type SelfState,
@@ -34,6 +35,9 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArbiterModule, arbiterConfig, Producers, STATE_KEY, STATE_PROFILE } from "../src/index.js";
 import { acct, FakeHost, MIN, T0, textCtx, voiceCtx } from "./helpers.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -100,15 +104,15 @@ describe("Producers", () => {
     social.set("a", "朋友", 60);
     social.set("b", "普通", 10);
     const here = textCtx("c1");
-    const first = p.observe(T0, message(here, "a", T0), social);
+    const first = p.observe(T0, ev(message(here, "a", T0)), social);
     expect(first).toHaveLength(1);
     expect(first[0]).toMatchObject({
       source: "world",
       hint: "跟他打招呼",
       args: { reason: "greeting" },
     });
-    expect(p.observe(T0 + MIN, message(here, "a", T0 + MIN), social)).toEqual([]);
-    expect(p.observe(T0, message(here, "b", T0), social)).toEqual([]);
+    expect(p.observe(T0 + MIN, ev(message(here, "a", T0 + MIN)), social)).toEqual([]);
+    expect(p.observe(T0, ev(message(here, "b", T0)), social)).toEqual([]);
   });
 
   it("greets people with good affinity who join her voice channel", () => {
@@ -118,15 +122,15 @@ describe("Producers", () => {
     const v = voiceCtx("v1");
     p.observe(
       T0,
-      { type: "voice_joined", data: { context: v, participants: [participant("me")] } },
+      ev({ type: "voice_joined", data: { context: v, participants: [participant("me")] } }),
       social,
     );
     const out = p.observe(
       T0 + MIN,
-      {
+      ev({
         type: "voice_participants",
         data: { context: v, participants: [participant("me"), participant("a")] },
-      },
+      }),
       social,
     );
     expect(out).toHaveLength(1);
@@ -139,7 +143,7 @@ describe("Producers", () => {
     const social = new FakeSocial();
     social.set("a", "朋友", 60, "person-a");
     const here = textCtx("c1");
-    p.observe(T0, message(here, "a", T0), social);
+    p.observe(T0, ev(message(here, "a", T0)), social);
     const f: Followup = {
       id: "f1",
       profile: "p",

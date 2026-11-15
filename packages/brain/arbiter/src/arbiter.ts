@@ -26,8 +26,6 @@
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
-  AFFECT_EVENT_TOPIC,
-  ARBITER_DECISION_TOPIC,
   type Arbiter,
   type ArbiterDecision,
   type ArbiterReason,
@@ -36,7 +34,7 @@ import {
   type ConversationFacts,
   claimOf,
   contextKeyString,
-  type Event,
+  Events,
   type Impulse,
   type ImpulseHost,
   type ImpulseRun,
@@ -44,18 +42,17 @@ import {
   isImpulseExpired,
   isSelfInitiated,
   isSelfTalk,
-  LEDGER_TOPIC,
   type LedgerEntry,
   type LedgerLimits,
   type LedgerOutcome,
   type LedgerRecord,
   type LedgerView,
   PRIORITY_RANK,
+  type Publish,
   type TurnFocus,
   type TurnId,
   type TurnOutcomeRecord,
   toTimestamp,
-  v2Event,
   type Wishes,
 } from "@miyoria/types";
 import { type ArbiterConfig, isContextDisabled } from "./config.js";
@@ -73,7 +70,7 @@ export type BudgetState = "ok" | "degraded" | "exhausted";
 /** What the Arbiter consults; every part is optional (absent: no such floor). */
 export interface ArbiterEnv {
   now(): number;
-  publish(event: Event): void;
+  publish: Publish;
   /** Autonomy paused by the owner. */
   paused?(): boolean;
   budget?(): BudgetState;
@@ -489,7 +486,7 @@ export class ArbiterCore implements Arbiter {
       at: toTimestamp(this.#now()),
     };
     // A retry that is held back for the same reason again is not news.
-    if (!same) this.#env.publish(v2Event(ARBITER_DECISION_TOPIC, decision));
+    if (!same) this.#env.publish(Events.ArbiterDecided, decision);
     return decision;
   }
 
@@ -576,7 +573,7 @@ export class ArbiterCore implements Arbiter {
       task: run?.task ?? null,
       at: toTimestamp(this.#now()),
     };
-    this.#env.publish(v2Event(ARBITER_DECISION_TOPIC, decision));
+    this.#env.publish(Events.ArbiterDecided, decision);
     return decision;
   }
 
@@ -852,7 +849,7 @@ export class ArbiterCore implements Arbiter {
   }
 
   #publishEntry(entry: LedgerEntry): void {
-    this.#env.publish(v2Event(LEDGER_TOPIC, { ...entry }));
+    this.#env.publish(Events.ArbiterLedger, { ...entry });
   }
 
   // ---- what happens around her ------------------------------------------------------------------
@@ -975,17 +972,15 @@ export class ArbiterCore implements Arbiter {
     const now = this.#now();
     for (const t of this.book.settle(now)) {
       if (t.entry !== "") this.resolve(t.entry, "ignored", "沒人接話");
-      this.#env.publish(
-        v2Event(AFFECT_EVENT_TOPIC, {
-          kind: "topic_ignored",
-          person: null,
-          handle: t.person,
-          context: t.context === null ? null : { ...t.context },
-          detail: t.said === "" ? "主動開的話題沒人接" : `主動提的「${t.said}」沒人接`,
-          key: `topic_ignored:${t.place}`,
-          at: toTimestamp(now),
-        }),
-      );
+      this.#env.publish(Events.AffectEvent, {
+        kind: "topic_ignored",
+        person: null,
+        handle: t.person,
+        context: t.context === null ? null : { ...t.context },
+        detail: t.said === "" ? "主動開的話題沒人接" : `主動提的「${t.said}」沒人接`,
+        key: `topic_ignored:${t.place}`,
+        at: toTimestamp(now),
+      });
       log.debug({ place: t.place, streak: this.book.streak }, "her topic went unanswered");
     }
     this.#blocks = this.#blocks.filter((b) => b.until > now);

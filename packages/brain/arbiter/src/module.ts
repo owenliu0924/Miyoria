@@ -12,11 +12,8 @@ import {
 } from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
   ActivityManagerKey,
   AffectStateKey,
-  ARBITER_IMPULSE_TOPIC,
   ArbiterKey,
   type Clock,
   type ContextKey,
@@ -26,12 +23,14 @@ import {
   DeliveryLedgerKey,
   type Envelope,
   EventLogKey,
+  Events,
   FloorKey,
   FollowupSourceKey,
   HandleDirectoryKey,
   type Impulse,
   ImpulseHostKey,
   inVoice,
+  is,
   isJsonObject,
   type JsonValue,
   type LogEvent,
@@ -46,10 +45,7 @@ import {
   runningActivity,
   SelfStateKey,
   SocialSignalsKey,
-  TURN_FOCUS_TOPIC,
-  TURN_OUTCOME_TOPIC,
   toTimestamp,
-  v2Payload,
   WishesKey,
 } from "@miyoria/types";
 import { z } from "zod";
@@ -136,7 +132,7 @@ export class ArbiterModule implements Module {
     const core = new ArbiterCore(config, {
       wishes,
       now: () => clock.now(),
-      publish: (event) => ctx.publish(event),
+      publish: ctx.publisher,
       paused: () => services.get(ActuatorRegistryKey)?.paused ?? false,
       budget: () => services.get(LlmRouterKey)?.budgetState() ?? "ok",
       blocked: (account) => services.get(SocialSignalsKey)?.attitude(account)?.blocked ?? false,
@@ -154,18 +150,18 @@ export class ArbiterModule implements Module {
     const runner = new Runner(ctx, core, producers, this.#profile, clock, store, floor);
     await this.#follow(ctx, config, clock, floor, runner);
     const events = ctx.subscribe([
-      "platform.ready",
-      "platform.message.created",
-      "voice.joined",
-      "voice.left",
-      "voice.participants",
-      "voice.utterance",
-      "agent.turn.completed",
-      TURN_OUTCOME_TOPIC,
-      TURN_FOCUS_TOPIC,
-      ARBITER_IMPULSE_TOPIC,
-      ACTIVITY_DONE_TOPIC,
-      ACTIVITY_FAILED_TOPIC,
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
+      Events.VoiceUtteranceEvent.type,
+      Events.AgentTurnCompleted.type,
+      Events.AgentTurnOutcome.type,
+      Events.AgentTurnFocus.type,
+      Events.ArbiterImpulse.type,
+      Events.ActivityDone.type,
+      Events.ActivityFailed.type,
     ]);
     ctx.spawn("arbiter.events", async () => {
       for await (const env of events) runner.onEvent(env);
@@ -372,58 +368,41 @@ class Runner {
   }
 
   onEvent(env: Envelope): void {
-    const event = env.event;
     const now = this.clock.now();
     const social = this.ctx.services.get(SocialSignalsKey) ?? null;
-    for (const impulse of this.producers.observe(now, event, social)) {
+    for (const impulse of this.producers.observe(now, env, social)) {
       this.#observe(impulse);
     }
-    const response = humanResponse(event, (account) => this.producers.isSelf(account));
+    const response = humanResponse(env, (account) => this.producers.isSelf(account));
     if (response) this.core.heard(response.context, response.account);
-    switch (event.type) {
-      case "platform_message_created": {
-        const m = event.data;
-        if (m.author.is_bot || this.producers.isSelf(m.author.account)) break;
-        const dm = m.id.context.kind === "dm";
-        if (dm || m.mentions_self || m.reply_to_self) {
-          this.core.engaged(m.id.context, dm ? m.author.account : null, now);
-        }
-        break;
+    if (is(Events.PlatformMessageCreated, env)) {
+      const m = env.data;
+      if (m.author.is_bot || this.producers.isSelf(m.author.account)) return;
+      const dm = m.id.context.kind === "dm";
+      if (dm || m.mentions_self || m.reply_to_self) {
+        this.core.engaged(m.id.context, dm ? m.author.account : null, now);
       }
-      case "agent_turn_completed":
-        this.core.turnCompleted(event.data.turn, event.data.context, event.data.text);
-        break;
-      case "voice_joined":
-      case "voice_left":
-        // Not a response: a new stay in voice is a new audience, nobody there ignored her yet.
-        this.core.heard(event.data.context, null);
-        this.floor.newAudience(event.data.context);
-        break;
-      case "custom": {
-        const outcome = v2Payload(event, TURN_OUTCOME_TOPIC);
-        if (outcome) {
-          this.core.turnOutcome(outcome);
-          break;
-        }
-        const ended =
-          v2Payload(event, ACTIVITY_DONE_TOPIC) ?? v2Payload(event, ACTIVITY_FAILED_TOPIC);
-        if (ended) {
-          const r = ended.request;
-          const crashed = ended.type === "failed" && ended.code === "crashed";
-          if (r.type === "stop" && r.activity === "game" && !crashed) this.core.gameClosed();
-          break;
-        }
-        const focus = v2Payload(event, TURN_FOCUS_TOPIC);
-        if (focus) {
-          this.core.turnFocus(focus);
-          break;
-        }
-        const impulse = v2Payload(event, ARBITER_IMPULSE_TOPIC);
-        if (impulse && typeof impulse.id === "string" && impulse.target) this.#submit(impulse);
-        break;
-      }
-      default:
-        break;
+    } else if (is(Events.AgentTurnCompleted, env)) {
+      this.core.turnCompleted(env.data.turn, env.data.context, env.data.text);
+    } else if (is(Events.VoiceJoined, env) || is(Events.VoiceLeft, env)) {
+      // Not a response: a new stay in voice is a new audience, nobody there ignored her yet.
+      this.core.heard(env.data.context, null);
+      this.floor.newAudience(env.data.context);
+    }
+    // These are read only with an object payload, as before.
+    if (!isJsonObject(env.data as JsonValue)) return;
+    if (is(Events.AgentTurnOutcome, env)) {
+      this.core.turnOutcome(env.data);
+    } else if (is(Events.ActivityDone, env) || is(Events.ActivityFailed, env)) {
+      const ended = env.data;
+      const r = ended.request;
+      const crashed = ended.type === "failed" && ended.code === "crashed";
+      if (r.type === "stop" && r.activity === "game" && !crashed) this.core.gameClosed();
+    } else if (is(Events.AgentTurnFocus, env)) {
+      this.core.turnFocus(env.data);
+    } else if (is(Events.ArbiterImpulse, env)) {
+      const impulse = env.data;
+      if (typeof impulse.id === "string" && impulse.target) this.#submit(impulse);
     }
   }
 

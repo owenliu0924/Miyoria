@@ -136,6 +136,9 @@ export type BusEnvelope<Type extends string = string, Data = unknown> = Omit<
   data: Data;
 };
 
+/** The part of an envelope that says what happened: what a reader narrows with `is`. */
+export type BusEvent = Pick<BusEnvelope, "type" | "v" | "data">;
+
 /**
  * The old envelope form: what the admin event stream, extension notifications and the CLI carry
  * on the wire today (protocol 1). Built from a bus envelope by `toLegacyEnvelope`.
