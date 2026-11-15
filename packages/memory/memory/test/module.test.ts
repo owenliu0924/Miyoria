@@ -29,6 +29,7 @@ import {
 import {
   type ContextKey,
   EventLogKey,
+  Events,
   FollowupSourceKey,
   type IncomingMessage,
   type JsonValue,
@@ -317,7 +318,7 @@ describe("module", () => {
       };
       // The recorder would append it; do it here.
       await h.store.messages.append(logEntryFromIncoming(profile(), msg, false));
-      h.sup.bus.publish("test", { type: "platform_message_created", data: msg });
+      h.sup.bus.publish("test", Events.PlatformMessageCreated, msg);
     }
     const deadline = Date.now() + 10_000;
     for (;;) {
@@ -359,20 +360,14 @@ describe("module", () => {
       ts: toTimestamp(Date.now()),
     };
     await h.store.messages.append(logEntryFromIncoming(profile(), msg, false));
-    h.sup.bus.publish("test", { type: "platform_message_created", data: msg });
+    h.sup.bus.publish("test", Events.PlatformMessageCreated, msg);
     await pause(1500);
     expect(llm.requests()).toHaveLength(0);
-    h.sup.bus.publish("conversation", {
-      type: "custom",
-      data: {
-        topic: "conversation.folded",
-        payload: {
-          context: { ...ctx },
-          folded_up_to: { id: "x", ts: msg.ts },
-          lines: 1,
-          session_lines: 1,
-        },
-      },
+    h.sup.bus.publish("conversation", Events.ConversationFolded, {
+      context: { ...ctx },
+      folded_up_to: { id: "x", ts: msg.ts },
+      lines: 1,
+      session_lines: 1,
     });
     const deadline = Date.now() + 10_000;
     while (llm.requests().length === 0) {
