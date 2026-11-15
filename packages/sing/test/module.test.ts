@@ -10,11 +10,14 @@ import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
+  type AnyEventDefinition,
   ARBITER_IMPULSE_TOPIC,
   AuthorizerKey,
   BaseAuthorizer,
   type ContextKey,
-  type Event,
+  type EventPayload,
+  Events,
+  type Impulse,
   impulseReason,
   type JsonValue,
   type Mind,
@@ -28,6 +31,8 @@ import {
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
+  type PublishedEvent,
+  type PublishMetaArgs,
   SONG_PREPARE_TOPIC,
   SONG_TOPIC,
   SongClipsKey,
@@ -39,7 +44,6 @@ import {
   type VoiceParticipant,
   type VoicePlayer,
   VoicePlayerKey,
-  v2Payload,
   type WorldState,
   WorldStateKey,
 } from "@miyoria/types";
@@ -319,24 +323,19 @@ class FakeMind implements Mind {
   }
 }
 
-const playback = (state: "started" | "finished"): Event => ({
-  type: "voice_playback",
-  data: { context: VOICE, turn: "t-prep", state, text: "我去準備一下歌喔", emotion: null },
-});
+const playback = (state: "started" | "finished") =>
+  [
+    Events.VoicePlaybackEvent,
+    { context: VOICE, turn: "t-prep", state, text: "我去準備一下歌喔", emotion: null },
+  ] as const;
 
 function prepares(h: Harness): SongPrepare[] {
-  return h.events.flatMap((e) =>
-    e.type === "custom" && e.data.topic === SONG_PREPARE_TOPIC
-      ? [e.data.payload as unknown as SongPrepare]
-      : [],
-  );
+  return h.events.flatMap((e) => (e.type === SONG_PREPARE_TOPIC ? [e.data as SongPrepare] : []));
 }
 
 function pauses(h: Harness): boolean[] {
   return h.events.flatMap((e) =>
-    e.type === "custom" && e.data.topic === SPEECH_PAUSE_TOPIC
-      ? [(e.data.payload as { paused: boolean }).paused]
-      : [],
+    e.type === SPEECH_PAUSE_TOPIC ? [(e.data as { paused: boolean }).paused] : [],
   );
 }
 
@@ -353,7 +352,7 @@ class Harness {
   readonly commands = new CommandRegistry(Permissions.fromStrings(["discord:7"]));
   readonly queue: RequestQueue;
   readonly registry: ActuatorRegistry;
-  readonly events: Event[] = [];
+  readonly events: PublishedEvent[] = [];
 
   private constructor(withMind: boolean, store: MemorySettingsStore | null) {
     const s = this.sup.services;
@@ -371,7 +370,7 @@ class Harness {
     if (withMind) s.provide("mind", MindKey, this.mind);
     const sub = this.sup.bus.subscribe("*");
     void (async () => {
-      for await (const env of sub) this.events.push(env.event);
+      for await (const env of sub) this.events.push({ type: env.type, data: env.data });
     })();
   }
 
@@ -401,25 +400,29 @@ class Harness {
     await done;
   }
 
-  async publish(event: Event): Promise<void> {
-    this.sup.bus.publish("test", event);
+  async publish<D extends AnyEventDefinition>(
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): Promise<void> {
+    this.sup.bus.publish("test", definition, data, ...meta);
     await settle();
   }
 
   /** She joins the voice channel; Owen and Amy are there (requesters are listening). */
   async join(people: AccountRef[] = [OWEN, AMY]): Promise<void> {
     this.voice.channels.set("g1", "voice1");
-    await this.publish({
-      type: "voice_joined",
-      data: { context: VOICE, participants: people.map(listener) },
+    await this.publish(Events.VoiceJoined, {
+      context: VOICE,
+      participants: people.map(listener),
     });
   }
 
   /** Who is in her voice channel now. */
   async members(people: AccountRef[]): Promise<void> {
-    await this.publish({
-      type: "voice_participants",
-      data: { context: VOICE, participants: people.map(listener) },
+    await this.publish(Events.VoiceParticipants, {
+      context: VOICE,
+      participants: people.map(listener),
     });
   }
 
@@ -437,17 +440,15 @@ class Harness {
   }
 
   cues(): SongCue[] {
-    return this.events
-      .filter((e) => e.type === "custom" && e.data.topic === SONG_TOPIC)
-      .map((e) => (e.type === "custom" ? (e.data.payload as unknown as SongCue) : (null as never)));
+    return this.events.filter((e) => e.type === SONG_TOPIC).map((e) => e.data as SongCue);
   }
 
   /** Her announcements: impulses of source `song` for the Arbiter (never `agent.initiative`). */
   initiatives() {
-    expect(this.events.some((e) => e.type === "agent_initiative")).toBe(false);
+    expect(this.events.some((e) => e.type === "agent.initiative")).toBe(false);
     return this.events.flatMap((e) => {
-      const impulse = v2Payload(e, ARBITER_IMPULSE_TOPIC);
-      if (!impulse) return [];
+      if (e.type !== ARBITER_IMPULSE_TOPIC) return [];
+      const impulse = e.data as Impulse;
       expect(impulse.source).toBe("song");
       return [
         {
@@ -520,10 +521,7 @@ describe("sing module", () => {
     // Her opening line still plays: the floor is only held once the song does.
     expect(h.sup.services.require(VoiceFloorKey).holder("g1")).toBeNull();
     expect(await h.section()).toContain("要開始唱:#1");
-    await h.publish({
-      type: "agent_turn_completed",
-      data: { turn: "turn-1", context: VOICE, text: "唱囉" },
-    });
+    await h.publish(Events.AgentTurnCompleted, { turn: "turn-1", context: VOICE, text: "唱囉" });
     await settle(400);
     expect(h.voice.plays).toHaveLength(1);
     expect(h.sup.services.require(VoiceFloorKey).holder("g1")).toBe("song");
@@ -823,10 +821,10 @@ describe("sing module", () => {
     expect(h.worker.gone).toEqual([]);
     expect(pause()).toBeNull();
     // She says it; once she is quiet the worker goes ahead and speech is off.
-    await h.publish(playback("started"));
+    await h.publish(...playback("started"));
     await settle(1600);
     expect(h.worker.gone).toEqual([]);
-    await h.publish(playback("finished"));
+    await h.publish(...playback("finished"));
     await settle(1600 + 800);
     expect(h.worker.gone).toEqual(["j1"]);
     expect(pause()).toBe("song");
@@ -852,20 +850,20 @@ describe("sing module", () => {
     await h.command("queue song request", { song: "Song A" });
     h.worker.exclusive("j1", "waiting");
     await settle(200);
-    await h.publish(playback("started"));
+    await h.publish(...playback("started"));
     await settle(1600);
-    await h.publish(playback("finished"));
+    await h.publish(...playback("finished"));
     await settle(1600 + 800);
     expect(h.worker.gone).toEqual(["j1"]);
     h.worker.finish("j1", "Song A");
     await settle(1600);
 
-    await h.publish(playback("started")); // She is in the middle of a sentence.
+    await h.publish(...playback("started")); // She is in the middle of a sentence.
     await h.command("queue song request", { song: "Song B" });
     h.worker.exclusive("j2", "waiting");
     await settle(1600);
     expect(h.worker.gone).toEqual(["j1"]);
-    await h.publish(playback("finished"));
+    await h.publish(...playback("finished"));
     await settle(1600 + 800);
     expect(h.worker.gone).toEqual(["j1", "j2"]);
     expect(h.initiatives().filter((i) => i.reason === "song_prepare")).toHaveLength(1);
@@ -945,15 +943,21 @@ describe("sing module", () => {
     h.worker.cacheHit = true;
     expect(await h.command("queue song request", { song: "Cached" })).toContain("她馬上就唱");
     await settle(1000);
-    await h.publish({
-      type: "voice_playback",
-      data: { context: VOICE, turn: "t", state: "started", text: "要唱囉", emotion: null },
+    await h.publish(Events.VoicePlaybackEvent, {
+      context: VOICE,
+      turn: "t",
+      state: "started",
+      text: "要唱囉",
+      emotion: null,
     });
     await settle(3000);
     expect(h.voice.plays).toHaveLength(0);
-    await h.publish({
-      type: "voice_playback",
-      data: { context: VOICE, turn: "t", state: "finished", text: "要唱囉", emotion: null },
+    await h.publish(Events.VoicePlaybackEvent, {
+      context: VOICE,
+      turn: "t",
+      state: "finished",
+      text: "要唱囉",
+      emotion: null,
     });
     await settle(400);
     expect(h.voice.plays).toHaveLength(1);
@@ -1198,11 +1202,9 @@ describe("sing module", () => {
       h.worker.finish("j2", "Song A", 1);
       await settle(6000 + 3000);
       expect(h.singer.list.get(2)?.state).toBe("done");
-      const shown = h.events.filter(
-        (e) => e.type === "custom" && e.data.topic === "economy.screen",
-      );
+      const shown = h.events.filter((e) => e.type === "economy.screen");
       expect(shown).toHaveLength(1);
-      expect(shown[0]?.type === "custom" && shown[0].data.payload).toMatchObject({
+      expect(shown[0]?.data).toMatchObject({
         kind: "dedication",
         text: "給今天加班的人",
         song: "Song A",
@@ -1219,9 +1221,7 @@ describe("sing module", () => {
       await h.singer.stop(false);
       await settle(50);
       expect(pay.refunds).toEqual(["e1"]);
-      expect(h.events.some((e) => e.type === "custom" && e.data.topic === "economy.screen")).toBe(
-        false,
-      );
+      expect(h.events.some((e) => e.type === "economy.screen")).toBe(false);
     });
 
     it("tells her about the dedication before the song, and keeps it in her prompt", async () => {
@@ -1342,10 +1342,8 @@ describe("song clips (party guess-the-song)", () => {
     await settle(61_000);
   }
 
-  const heard = (state: "started" | "finished", text: string): Event => ({
-    type: "voice_playback",
-    data: { context: VOICE, turn: "t", state, text, emotion: null },
-  });
+  const heard = (state: "started" | "finished", text: string) =>
+    [Events.VoicePlaybackEvent, { context: VOICE, turn: "t", state, text, emotion: null }] as const;
 
   it("lists the songs she has covered: the worker's library and what the set list just made", async () => {
     await room([
@@ -1432,11 +1430,11 @@ describe("song clips (party guess-the-song)", () => {
 
   it("waits for the line she is saying instead of playing over it", async () => {
     await room([cached("a", "Alpha", 60)]);
-    await h.publish(heard("started", "第一首來了"));
+    await h.publish(...heard("started", "第一首來了"));
     const outcome = clips().play(VOICE, "a", CLIP);
     await settle(3500);
     expect(h.voice.plays).toHaveLength(0);
-    await h.publish(heard("finished", "第一首來了"));
+    await h.publish(...heard("finished", "第一首來了"));
     await settle(500);
     expect(h.voice.plays).toHaveLength(1);
     await settle(5000);
@@ -1445,7 +1443,7 @@ describe("song clips (party guess-the-song)", () => {
 
   it("gives up when she never stops talking, rather than playing over her", async () => {
     await room([cached("a", "Alpha", 60)], { announce_max_secs: 2 });
-    await h.publish(heard("started", "說個不停"));
+    await h.publish(...heard("started", "說個不停"));
     const outcome = clips().play(VOICE, "a", CLIP);
     await settle(3000);
     await expect(outcome).resolves.toBe("failed");
@@ -1475,7 +1473,7 @@ describe("song clips (party guess-the-song)", () => {
     expect((h.voice.plays[0] as Play).stoppedWith).toBe(1500);
     // Stopped while still waiting for her: nothing starts.
     const early = new AbortController();
-    await h.publish(heard("started", "等一下"));
+    await h.publish(...heard("started", "等一下"));
     const waiting = clips().play(VOICE, "a", CLIP, early.signal);
     await settle(500);
     early.abort();
