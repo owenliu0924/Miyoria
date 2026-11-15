@@ -453,21 +453,45 @@ miyoria host ls | approve <name> [capability...] | remove <name>
 ### 7.1 Relay over the control link (H5b)
 
 Owner decision P1. An endpoint with `via: "link"` is one Core cannot call directly: the host has
-no `advertise` address. `request` then sends the HTTP request through that host's control link:
+no `advertise` address. `registry.request` then sends the HTTP request through that host's
+control link and returns a standard `Response` whose body is a stream, so a caller cannot tell it
+from `fetch`. Implemented in `packages/cluster/src/relay.ts` (Core), `packages/hostd/src/link/`
+(host) and `packages/contracts/host/src/relay.ts` (shapes, frame codec, credit windows).
 
-- `relay.request { service, method, path, headers }` from Core to hostd answers with the status
-  and headers. Request and response bodies travel as binary WebSocket frames tagged with the
-  request id, in chunks, with a window so a slow side does not fill memory. The song files a
-  remote sing worker returns (tens of MB) go this way.
-- hostd performs the request against the local service with that service's token, so the token
-  never leaves the host.
-- Cancellation is `$/cancelRequest`; a dropped link fails the request, and the caller's own
-  failover applies.
-- Only request and response HTTP is relayed. Real-time speech (ASR, TTS, the VAD socket) is not
-  offered over the link: its endpoints are returned only when they are direct.
+- **Open.** Core sends the JSON-RPC request
+  `relay.request { stream, service, method, path, headers, body, length? }`. `stream` is a number
+  unique per connection. `path` starts with `/` and is appended to the address
+  `HostApi.target(service)` gives, so the host can only ever call its own services; redirects are
+  passed back, never followed. Hop-by-hop headers, `host`, `content-length` and
+  `authorization` are not sent: the host adds the service's own token, which never leaves it.
+- **Head.** hostd answers `{ status, headers }` as soon as the service's response headers arrive.
+  A 404 or a 503 is a response, not an error.
+- **Bodies** are binary WebSocket frames on the same socket: `[kind u8][stream u32 LE][payload]`.
 
-This also covers the other direction of files: nothing on the host needs to reach Core except
-the link it already dialled.
+  | Kind | Name | Direction | Payload |
+  |---|---|---|---|
+  | 0x01 | request chunk | Core → host | at most 64 KiB |
+  | 0x02 | request end | Core → host | none |
+  | 0x03 | response chunk | host → Core | at most 64 KiB |
+  | 0x04 | response end | host → Core | none |
+  | 0x05 | abort | either | a short reason |
+  | 0x06 | credit | either | a byte count |
+
+- **Flow control.** A window of 1 MiB per stream and direction: the sender is never more than the
+  window ahead of what the receiver's consumer has read. The receiver sends credit after every
+  256 KiB read. A sender also waits while the socket itself has more than 1 MiB queued. Measured
+  on a 30 MB download with a slow reader: about 0.6 s, never more than 1 MiB buffered; a reader
+  that stops reading stalls only its own stream.
+- **Ending.** Before the head, cancelling is `$/cancelRequest`; after it, an abort frame in either
+  direction. A dropped link fails every open stream on Core's side and aborts every running
+  `fetch` on the host's side, and the caller's own failover applies.
+- **Limits.** 16 open streams per host on Core's side (the next call fails at once), 64 as a
+  backstop on the host. The head times out after 120 s by default; a body has no timeout beyond
+  the link's own liveness. A malformed frame closes the link.
+- **Not relayed.** WebSocket upgrades and trailers. Real-time speech (ASR, TTS, the VAD socket)
+  asks for direct endpoints only.
+- A caller that neither reads nor cancels a large response body keeps a stream slot until the
+  link drops, as an unread `fetch` body keeps a connection.
 
 ## 8. GPU arbitration (H7)
 
