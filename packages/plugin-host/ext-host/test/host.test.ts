@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CommandRegistry, CommandRegistryKey, Invocation, Permissions } from "@miyoria/commands";
+import { defineEvent } from "@miyoria/contracts/events";
 import { GatedToolsKey } from "@miyoria/gate/actions";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -29,8 +30,9 @@ import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   type ContextKey,
-  customEvent,
   type Envelope,
+  Events,
+  is,
   type JsonObject,
   type JsonValue,
   type ModuleStateKind,
@@ -40,10 +42,13 @@ import {
   TaskExecutorsKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { discover } from "../src/index.js";
 
-// The custom.* and other.thing topics are made up to test who may publish and receive.
-exemptFromBusCheck(["custom.no.b", "custom.ok.a", "custom.ok.c", "custom.ok.z"]);
+// The custom.* topics are made up to test who may receive what: no definition covers them, so
+// this test defines one to publish them by, and keeps them away from the bus check.
+exemptFromBusCheck(["custom.no.b", "custom.ok.a", "custom.ok.c"]);
+const MadeUp = defineEvent({ type: "custom.**", v: 1, data: z.unknown() });
 
 const EXT = "ext.test.fixture";
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -149,8 +154,7 @@ async function recvWithin(sub: Subscription, ms: number): Promise<Envelope | nul
 }
 
 function payload(env: Envelope): JsonObject {
-  if (env.event.type !== "custom") throw new Error("unexpected event");
-  return env.event.data.payload as JsonObject;
+  return env.data as JsonObject;
 }
 
 describe("ext host end to end", { timeout: 30_000 }, () => {
@@ -240,33 +244,65 @@ describe("ext host end to end", { timeout: 30_000 }, () => {
     await waitState(h, EXT, "running", 5000);
     const seen = h.bus.subscribe(["ext.test.fixture.seen"]);
     // Granted: custom.ok.*, ext.other.*
-    for (const topic of [
+    const sent = new Map<string, string>();
+    for (const type of [
       "custom.ok.a",
       "custom.no.b",
       "ext.other.x",
       "ext.otherx.y",
       "custom.ok.c",
     ]) {
-      h.bus.publish("test", customEvent(topic, {}));
+      const env = type.startsWith("ext.")
+        ? h.bus.publish("test", Events.ExtensionEvent, {}, { type })
+        : h.bus.publish("test", MadeUp, {}, { type });
+      sent.set(type, env.id);
     }
-    const topics: string[] = [];
-    while (topics.length < 3) {
+    const types: string[] = [];
+    while (types.length < 3) {
       const env = await recvWithin(seen, 3000);
       if (!env) throw new Error("extension did not echo the event");
       expect(env.source).toBe(EXT);
-      topics.push(payload(env).topic as string);
+      const type = payload(env).type as string;
+      expect(payload(env).source).toBe("test");
+      // The echo names the event it answers as its parent.
+      expect(env.parent).toBe(sent.get(type));
+      types.push(type);
     }
-    expect(topics.sort()).toEqual(["custom.ok.a", "custom.ok.c", "ext.other.x"]);
+    expect(types.sort()).toEqual(["custom.ok.a", "custom.ok.c", "ext.other.x"]);
     expect(await recvWithin(seen, 200)).toBeNull();
 
     // Publishing permissions.
-    const publish = (topic: string) => call(h, "try_publish", { topic });
-    expect(await publish("custom.ok.z")).toBe("ok");
+    const publish = (type: string) => call(h, "try_publish", { type });
     expect(await publish("ext.test.fixture.mine")).toBe("ok");
-    expect(await publish("custom.no.z")).toBe("denied: -32001");
-    expect(await publish("platform.message.created")).toBe("denied: -32001");
+    // Another extension's namespace, with a granted pattern.
+    expect(await publish("ext.other.z")).toBe("ok");
+    expect(await publish("ext.otherx.z")).toBe("refused: -32001");
+    // Granted, but nobody registered it: protocol 1's custom topics are gone.
+    expect(await publish("custom.ok.z")).toBe("refused: -32602");
+    expect(await publish("custom.no.z")).toBe("refused: -32001");
+    expect(await publish("platform.message.created")).toBe("refused: -32001");
+    // Task events come from `task.event`, even in the extension's own namespace.
+    expect(await publish("ext.test.fixture.task.done")).toBe("refused: -32001");
     // `game.*` is granted, but only a declared adapter may publish game events.
-    expect(await publish("game.fake.death")).toBe("denied: -32001");
+    expect(await publish("game.fake.death")).toBe("refused: -32001");
+  });
+
+  it("refuses an extension that speaks another protocol, saying which side is older", async () => {
+    // Protocol 1 had no `protocol` in the result.
+    let h = await harness(
+      [join(FIXTURES, "test-ext")],
+      '[extensions."test.fixture"]\nspeaks = "none"',
+    );
+    expect(await waitState(h, EXT, "failed", 5000)).toContain(
+      "the extension speaks extension protocol 1 and the host speaks 2; the extension is older: rebuild it against a newer @miyoria/sdk",
+    );
+    expect(h.tools.isEmpty).toBe(true);
+    await h.sup.stopAll();
+    h = await harness([join(FIXTURES, "test-ext")], '[extensions."test.fixture"]\nspeaks = 3');
+    expect(await waitState(h, EXT, "failed", 5000)).toContain(
+      "the extension speaks extension protocol 3 and the host speaks 2; the host is older: update Miyoria",
+    );
+    expect(h.tools.isEmpty).toBe(true);
   });
 
   it("game_adapter_owns_its_namespace", async () => {
@@ -281,13 +317,17 @@ describe("ext host end to end", { timeout: 30_000 }, () => {
     const tool = gated?.get("game_fake_id");
     expect(await tool?.call(toolCtx(), {})).toBe("fake");
 
-    const publish = (topic: string) => call(h, "try_publish", { topic });
+    const publish = (type: string, data?: JsonValue) =>
+      call(h, "try_publish", data === undefined ? { type } : { type, data });
     expect(await publish("game.fake.death")).toBe("ok");
     expect(await publish("game.fake.goal.reached")).toBe("ok");
     expect(await publish("ext.test.game.status")).toBe("ok");
-    expect(await publish("game.other.death")).toBe("denied: -32001");
-    expect(await publish("game.fake")).toBe("denied: -32001");
-    expect(await publish("custom.ok.x")).toBe("denied: -32001");
+    expect(await publish("game.other.death")).toBe("refused: -32001");
+    expect(await publish("game.fake")).toBe("refused: -32001");
+    expect(await publish("game.fake.task.done")).toBe("refused: -32001");
+    expect(await publish("custom.ok.x")).toBe("refused: -32001");
+    // A game event is checked against its schema (`{type, data?, important?}`).
+    expect(await publish("game.fake.death", { important: "yes" })).toBe("refused: -32602");
     await h.sup.stopAll();
 
     // Tools in another game's namespace are refused.
@@ -322,8 +362,8 @@ describe("ext host end to end", { timeout: 30_000 }, () => {
     const sub = h.sub as Subscription;
     const next = async (): Promise<{ topic: string; payload: JsonObject }> => {
       const env = await recvWithin(sub, 3000);
-      if (env?.event.type !== "custom") throw new Error("no task event");
-      return { topic: env.event.data.topic, payload: env.event.data.payload as JsonObject };
+      if (!env) throw new Error("no task event");
+      return { topic: env.type, payload: env.data as JsonObject };
     };
 
     // Done, published on `game.fake.task.*`; the extension's late `failed` is dropped.
@@ -453,9 +493,9 @@ describe("ext host end to end", { timeout: 30_000 }, () => {
       for (;;) {
         const env = await recvWithin(states, Math.max(deadline - Date.now(), 1));
         if (!env) throw new Error("no restart after file change");
-        if (env.event.type !== "module_state_changed" || env.event.data.module !== EXT) continue;
-        if (env.event.data.state === "stopping") sawStopping = true;
-        else if (env.event.data.state === "running" && sawStopping) break;
+        if (!is(Events.SystemModuleState, env) || env.data.module !== EXT) continue;
+        if (env.data.state === "stopping") sawStopping = true;
+        else if (env.data.state === "running" && sawStopping) break;
       }
       await expect(call(h, "echo_say", { text: "dev" })).resolves.toBe("echo: dev from 42");
       await h.sup.stopAll();

@@ -22,9 +22,9 @@ import {
 } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
-  customEvent,
+  type BusEnvelope,
+  Events,
   type JsonValue,
-  type LegacyEnvelope,
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
@@ -199,7 +199,9 @@ describe("extension to host: what the host reads", () => {
   });
 
   it("reads contributions and the initialize result, every field optional", () => {
+    // Without `protocol`: an extension of protocol 1 (the handshake refuses it).
     expect(InitializeResultSchema.parse({})).toEqual({
+      protocol: 1,
       contributions: {
         tools: [],
         commands: [],
@@ -210,6 +212,7 @@ describe("extension to host: what the host reads", () => {
     });
     expect(
       InitializeResultSchema.parse({
+        protocol: 2,
         contributions: {
           tools: [{ name: "dice", description: "roll" }],
           prompts: ["facts"],
@@ -220,6 +223,7 @@ describe("extension to host: what the host reads", () => {
         extra: 1,
       }),
     ).toEqual({
+      protocol: 2,
       contributions: {
         tools: [
           {
@@ -625,27 +629,36 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
         if (Date.now() > deadline) throw new Error("recorder did not start");
         await sleep(25);
       }
-      const envelope: LegacyEnvelope = {
+      // A custom event: a type nobody registered, as a bus envelope made elsewhere.
+      const envelope: BusEnvelope = {
         id: "01JC0000000000000000000001",
-        ts: "2026-11-14T00:00:01.123Z",
+        at: "2026-11-14T00:00:01.123Z",
+        type: "custom.hello",
+        v: 1,
+        parent: null,
+        turn: "01JC0000000000000000000000",
+        session: null,
+        space_id: null,
+        room_id: null,
+        person_id: null,
+        account_id: null,
+        key: null,
+        scope: null,
         source: "test",
-        causation: null,
-        correlation: "01JC0000000000000000000000",
-        event: customEvent("custom.hello", { n: 1 }),
+        data: { n: 1 },
       };
       bus.publishEnvelope(envelope);
-      const unrelated: LegacyEnvelope = { ...envelope, event: customEvent("other.thing", 1) };
-      bus.publishEnvelope(unrelated);
+      bus.publishEnvelope({ ...envelope, type: "other.thing", data: 1 });
+      // A typed event, published by its definition.
       typed = bus.publish(
         "agent",
-        {
-          type: "agent_turn_completed",
-          data: { turn: "01JC0000000000000000000000", context, text: "嗨" },
-        },
+        Events.AgentTurnCompleted,
+        { turn: "01JC0000000000000000000000", context, text: "嗨" },
         {
           now: Date.UTC(2026, 10, 14, 0, 0, 2, 5),
-          correlation: "01JC0000000000000000000000",
-          causation: envelope.id,
+          turn: "01JC0000000000000000000000",
+          parent: envelope.id,
+          session: "discord:123:456",
         },
       ).id;
       await sleep(300);
@@ -656,15 +669,17 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
     const initialize = JSON.parse(lines[0] as string) as { params: { extension: { dir: string } } };
     const extensionDir = initialize.params.extension.dir;
     expect(lines[0]?.replace(JSON.stringify(extensionDir).slice(1, -1), "<dir>")).toBe(
-      `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":${PROTOCOL_VERSION},"host":{"name":"miyoria","version":"${HOST_VERSION}"},"extension":{"id":"test.recorder","version":"0.0.2","dir":"<dir>","game":null},"config":{"record":${JSON.stringify(record)}},"permissions":{"events":["custom.*","agent.turn.completed"],"tools":false,"commands":false,"network":[],"input":[]}}}`,
+      `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":2,"host":{"name":"miyoria","version":"${HOST_VERSION}"},"extension":{"id":"test.recorder","version":"0.0.2","dir":"<dir>","game":null},"config":{"record":${JSON.stringify(record)}},"permissions":{"events":["custom.*","agent.turn.completed"],"tools":false,"commands":false,"network":[],"input":[]}}}`,
     );
+    // Protocol 2: the bus envelope, every key in `BusEnvelopeSchema`'s order, nothing else.
     expect(lines[1]).toBe(
-      '{"jsonrpc":"2.0","method":"event","params":{"id":"01JC0000000000000000000001","ts":"2026-11-14T00:00:01.123Z","source":"test","causation":null,"correlation":"01JC0000000000000000000000","event":{"type":"custom","data":{"topic":"custom.hello","payload":{"n":1}}},"topic":"custom.hello"}}',
+      '{"jsonrpc":"2.0","method":"event","params":{"envelope":{"id":"01JC0000000000000000000001","at":"2026-11-14T00:00:01.123Z","type":"custom.hello","v":1,"parent":null,"turn":"01JC0000000000000000000000","session":null,"space_id":null,"room_id":null,"person_id":null,"account_id":null,"key":null,"scope":null,"source":"test","data":{"n":1}}}}',
     );
     expect(lines[2]).toBe(
-      `{"jsonrpc":"2.0","method":"event","params":{"id":"${typed}","ts":"2026-11-14T00:00:02.005Z","source":"agent","causation":"01JC0000000000000000000001","correlation":"01JC0000000000000000000000","event":{"type":"agent_turn_completed","data":{"turn":"01JC0000000000000000000000","context":{"platform":"discord","scope":"123","channel":"456","kind":"channel"},"text":"嗨"}},"topic":"agent.turn.completed"}}`,
+      `{"jsonrpc":"2.0","method":"event","params":{"envelope":{"id":"${typed}","at":"2026-11-14T00:00:02.005Z","type":"agent.turn.completed","v":1,"parent":"01JC0000000000000000000001","turn":"01JC0000000000000000000000","session":"discord:123:456","space_id":null,"room_id":null,"person_id":null,"account_id":null,"key":null,"scope":null,"source":"agent","data":{"turn":"01JC0000000000000000000000","context":{"platform":"discord","scope":"123","channel":"456","kind":"channel"},"text":"嗨"}}}}`,
     );
     expect(lines[3]).toBe('{"jsonrpc":"2.0","method":"shutdown","params":{}}');
     expect(lines).toHaveLength(4);
+    expect(PROTOCOL_VERSION).toBe(2);
   });
 });

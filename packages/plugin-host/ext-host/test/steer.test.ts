@@ -68,7 +68,7 @@ afterEach(() => {
 });
 
 const INIT = {
-  protocol: 1,
+  protocol: 2,
   host: { name: "miyoria", version: "0" },
   extension: { id: "t", version: "0", dir: "/", game: null },
   config: {},

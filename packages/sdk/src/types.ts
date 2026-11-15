@@ -5,18 +5,22 @@
 // required, `unknown` or JSON), the old shape is kept here and the difference is listed beside it.
 
 import type {
+  AnyEventDefinition,
+  BusEnvelopeJson,
+  DecisionTraceData,
+  EventPayload,
+  ModuleStateData,
+} from "@miyoria/contracts/events";
+import type {
   ExtArgKind,
   ExtArgSpec,
   ExtArgValue,
   ExtCommandReply,
   ExtCommandSpec,
-  ExtDecisionTrace,
-  ExtEvent,
   ExtEventNotification,
   ExtGoalDecl,
   ExtInitializeParamsIn,
   ExtInvocation,
-  ExtModuleStateKind,
   ExtParticipant,
   ExtPermissions,
   ExtPriority,
@@ -66,19 +70,36 @@ export type Priority = ExtPriority;
 
 // ---- events -----------------------------------------------------------------
 
-export type ModuleStateKind = ExtModuleStateKind;
-export type DecisionTrace = ExtDecisionTrace;
+export type ModuleStateKind = ModuleStateData["state"];
+export type DecisionTrace = DecisionTraceData;
+
+/** One version of one event type, as `Events` holds them (from `@miyoria/contracts/events`). */
+export type { AnyEventDefinition, EventPayload };
 
 /**
- * `miyoria_types::Event` (`{ type, data }`). Kept from the old shape: the payload of a `custom`
- * event is `unknown`, where the contract says JSON.
+ * A bus event as the `event` notification delivers it (protocol 2): `type` is the dotted topic
+ * (`voice.playback`), `data` the payload of that type at `v`, every other key present and `null`
+ * when unset. `source` is the module that published it (`agent`, `ext.<id>`, ...).
  */
-export type Event =
-  | Exclude<ExtEvent, { type: "custom" }>
-  | { type: "custom"; data: { topic: string; payload: unknown } };
+export type Envelope = BusEnvelopeJson;
 
-/** Params of the `event` notification: the bus envelope plus its topic. */
-export type Envelope = Omit<ExtEventNotification, "event"> & { event: Event };
+/** An envelope of one definition's events: `data` is its payload (`is` narrows to it). */
+export type EnvelopeOf<D extends AnyEventDefinition> = Omit<Envelope, "data"> & {
+  data: EventPayload<D>;
+};
+
+/** Params of the `event` notification. */
+export type EventNotification = ExtEventNotification;
+
+/** What `ctx.events.publish` may say about an event besides its type and payload. */
+export interface PublishOptions {
+  /** The agent turn the event belongs to. */
+  turn?: string | null;
+  /** The event that caused this one: the `id` of an envelope the extension received. */
+  parent?: string | null;
+  /** Attention and dedupe key. */
+  key?: string | null;
+}
 
 // ---- prompts ----------------------------------------------------------------
 
@@ -162,6 +183,8 @@ export type Contributions = {
 
 /** `initialize` result (extension to host). */
 export interface InitializeResult {
+  /** The protocol version the extension speaks (`PROTOCOL_VERSION`). */
+  protocol: number;
   contributions: Contributions;
 }
 

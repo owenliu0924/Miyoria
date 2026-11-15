@@ -39,6 +39,14 @@ export {
 } from "./config.js";
 export { BASE_ENV, type ExtensionEnv, extensionEnv } from "./env.js";
 export {
+  OPEN_EVENT_NAMESPACES,
+  type Publisher,
+  type ResolvedPublish,
+  reservedBy,
+  resolvePublish,
+  wireEnvelope,
+} from "./events.js";
+export {
   EXTENSIONS_MODULE_ID,
   ExtensionModule,
   ExtensionProcessError,
@@ -47,8 +55,7 @@ export {
   extensionModuleId,
   gameToolAllowed,
   HOST_VERSION,
-  RESERVED_PREFIXES,
-  reservedTopic,
+  protocolMismatch,
   specEnv,
 } from "./extension.js";
 export {

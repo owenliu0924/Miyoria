@@ -12,6 +12,7 @@ import {
   ExtCommandSpecSchema,
   ExtContributionsSchema,
   ExtEventNotificationSchema,
+  ExtEventsPublishParamsSchema,
   ExtExecutorDeclSchema,
   ExtInitializeParamsSchema,
   ExtInitializeResultSchema,
@@ -33,7 +34,7 @@ const at = "2026-11-14T00:00:00.000Z";
 
 describe("constants", () => {
   it("are the protocol's", () => {
-    expect(EXT_PROTOCOL_VERSION).toBe(1);
+    expect(EXT_PROTOCOL_VERSION).toBe(2);
     expect(EXT_CANCEL_METHOD).toBe("$/cancelRequest");
     expect(EXT_LIMITS.MAX_FRAME_BYTES).toBe(16_777_216);
     expect(EXT_ERROR_CODE.Cancelled).toBe(-32800);
@@ -60,7 +61,7 @@ describe("constants", () => {
 describe("the handshake", () => {
   it("reads initialize params, with `game` optional on the wire", () => {
     const params = {
-      protocol: 1,
+      protocol: 2,
       host: { name: "miyoria", version: "0.1.0" },
       extension: { id: "miyoria.hello", version: "0.1.0", dir: "/x", game: null },
       config: { greeting: "哈囉" },
@@ -81,10 +82,14 @@ describe("the handshake", () => {
     expect(ExtInitializeParamsSchema.safeParse({ ...params, protocol: 1.5 }).success).toBe(false);
   });
 
-  it("reads contributions with every part optional", () => {
+  it("reads contributions with every part optional, and the version the extension speaks", () => {
+    // No `protocol`: an extension of protocol 1, which had no such field.
     expect(ExtInitializeResultSchema.parse({})).toEqual({
+      protocol: 1,
       contributions: { tools: [], commands: [], prompts: [], subscriptions: [], executor: null },
     });
+    expect(ExtInitializeResultSchema.parse({ protocol: 2 }).protocol).toBe(2);
+    expect(ExtInitializeResultSchema.safeParse({ protocol: "2" }).success).toBe(false);
     const read = ExtContributionsSchema.parse({
       tools: [{ name: "dice", description: "roll" }],
       executor: { name: "E" },
@@ -176,32 +181,72 @@ describe("what the host sends", () => {
     ).toBe(false);
   });
 
-  it("reads the event notification, custom events and the typed ones", () => {
+  it("reads the event notification: the bus envelope, for a typed event and an extension's own", () => {
     const envelope = {
-      topic: "agent.turn.completed",
       id: "01JC0000000000000000000001",
-      ts: "2026-11-01T10:00:01.123Z",
+      at: "2026-11-01T10:00:01.123Z",
+      type: "agent.turn.completed",
+      v: 1,
+      parent: null,
+      turn: "01JC0000000000000000000000",
+      session: null,
+      space_id: null,
+      room_id: null,
+      person_id: null,
+      account_id: null,
+      key: null,
+      scope: null,
       source: "agent",
-      causation: null,
-      correlation: "01JC0000000000000000000000",
-      event: {
-        type: "agent_turn_completed",
-        data: { turn: "01JC0000000000000000000000", context, text: "沒幹嘛啊" },
-      },
+      data: { turn: "01JC0000000000000000000000", context, text: "沒幹嘛啊" },
     };
-    expect(ExtEventNotificationSchema.parse(envelope)).toEqual(envelope);
-    const custom = {
-      ...envelope,
-      topic: "ext.x.y",
-      event: { type: "custom", data: { topic: "ext.x.y", payload: { n: [1, null] } } },
-    };
-    expect(ExtEventNotificationSchema.parse(custom)).toEqual(custom);
+    expect(ExtEventNotificationSchema.parse({ envelope })).toEqual({ envelope });
+    const own = { ...envelope, type: "ext.x.y", source: "ext.x", data: { n: [1, null] } };
+    expect(ExtEventNotificationSchema.parse({ envelope: own, future: 1 })).toEqual({
+      envelope: own,
+    });
+    // A type nobody knows still reads: the envelope does not depend on the type.
+    expect(
+      ExtEventNotificationSchema.safeParse({ envelope: { ...envelope, type: "from.the.future" } })
+        .success,
+    ).toBe(true);
+    // Protocol 1's form is not an envelope.
     expect(
       ExtEventNotificationSchema.safeParse({
-        ...envelope,
-        event: { type: "from_the_future", data: {} },
+        topic: "agent.turn.completed",
+        id: envelope.id,
+        ts: envelope.at,
+        source: "agent",
+        causation: null,
+        correlation: null,
+        event: { type: "agent_turn_completed", data: envelope.data },
       }).success,
     ).toBe(false);
+    const { session: _session, ...missing } = envelope;
+    expect(ExtEventNotificationSchema.safeParse({ envelope: missing }).success).toBe(false);
+  });
+});
+
+describe("what the extension sends", () => {
+  it("reads events.publish: a type and its data, and the context a publisher may set", () => {
+    expect(ExtEventsPublishParamsSchema.parse({ type: "ext.x.hi" })).toEqual({
+      type: "ext.x.hi",
+      data: null,
+      turn: null,
+      parent: null,
+      key: null,
+    });
+    const full = {
+      type: "game.mc.death",
+      data: { type: "death", important: true },
+      turn: "01JC0000000000000000000000",
+      parent: "01JC0000000000000000000001",
+      key: "death:1",
+    };
+    expect(ExtEventsPublishParamsSchema.parse({ ...full, scope: "public" })).toEqual(full);
+    // Protocol 1's form names a topic, not a type.
+    expect(ExtEventsPublishParamsSchema.safeParse({ topic: "ext.x.hi", payload: 1 }).success).toBe(
+      false,
+    );
   });
 });
 

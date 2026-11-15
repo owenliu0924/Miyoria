@@ -36,7 +36,6 @@ import {
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
-  customEvent,
   type JsonObject,
   type JsonValue,
   type ModuleId,
@@ -44,14 +43,13 @@ import {
   PromptContributorsKey,
   publishTaskEvent,
   TaskExecutorsKey,
-  toLegacyEnvelope,
-  V2_TOPIC_PREFIXES,
 } from "@miyoria/types";
 import { z } from "zod";
 import { type HostConfig, runtimeCommand } from "./config.js";
 import { type ExtensionEnv, extensionEnv } from "./env.js";
+import { resolvePublish, wireEnvelope } from "./events.js";
 import type { ExtensionManifest, Permissions } from "./manifest.js";
-import { validPattern, validTopic } from "./manifest.js";
+import { validPattern } from "./manifest.js";
 import {
   CommandSpecSchema,
   type Contributions,
@@ -83,29 +81,6 @@ export const HOST_VERSION = "0.1.0";
 
 /** Module id of the host module every extension requires. */
 export const EXTENSIONS_MODULE_ID = "extensions";
-
-/**
- * Topic prefixes of built-in events; extensions can never publish on them (except a game
- * adapter on its own `game.<id>.*`). The v2 prefixes (`activity`, `arbiter`, `affect`, `plan`)
- * are trusted by their consumers (`v2Payload` only checks for an object), and `gate` /
- * `actions` carry the gate's decisions and outcomes: forging them is not allowed either.
- */
-export const RESERVED_PREFIXES: readonly string[] = [
-  "platform",
-  "agent",
-  "voice",
-  "action",
-  "system",
-  "game",
-  "gate",
-  "actions",
-  ...V2_TOPIC_PREFIXES,
-];
-
-/** Whether an extension may never publish on `topic` (outside its own namespaces). */
-export function reservedTopic(topic: string): boolean {
-  return RESERVED_PREFIXES.some((r) => topic === r || topic.startsWith(`${r}.`));
-}
 
 /** Lines an extension writes to stderr and `log` calls go here (logger `miyoria_ext`). */
 const extLog = getLogger("miyoria_ext");
@@ -296,6 +271,9 @@ export class ExtensionModule implements Module {
     if (!parsed.success) {
       throw new ExtensionStartError(`invalid initialize result: ${z.prettifyError(parsed.error)}`);
     }
+    if (parsed.data.protocol !== PROTOCOL_VERSION) {
+      throw new ExtensionStartError(protocolMismatch(parsed.data.protocol));
+    }
     session.apply(parsed.data.contributions);
   }
 
@@ -327,6 +305,15 @@ export class ExtensionModule implements Module {
     if (s && !s.peer.isClosed) return HEALTHY;
     return { status: "unhealthy", reason: "extension process is not running" };
   }
+}
+
+/** Why the host refuses an extension that speaks protocol `theirs`, saying which side is older. */
+export function protocolMismatch(theirs: number): string {
+  const older =
+    theirs < PROTOCOL_VERSION
+      ? "the extension is older: rebuild it against a newer @miyoria/sdk"
+      : "the host is older: update Miyoria";
+  return `the extension speaks extension protocol ${theirs} and the host speaks ${PROTOCOL_VERSION}; ${older}`;
 }
 
 async function forwardStderr(
@@ -429,8 +416,7 @@ class Session implements RpcHandler {
       if (env.source === me) continue;
       const topic = env.type;
       if (!this.grants.matches(topic) || !this.#filter.matches(topic)) continue;
-      // Protocol 1: the old envelope form, plus the topic.
-      const value = { ...toLegacyEnvelope(env), topic } as unknown as JsonValue;
+      const value = { envelope: wireEnvelope(env) } as unknown as JsonValue;
       if (!this.peer.tryNotify("event", value)) {
         this.ctx.log.warn({ ext: this.id, topic }, "extension is not keeping up; event dropped");
       }
@@ -559,18 +545,17 @@ class Session implements RpcHandler {
     return { topics: [...this.#patterns] };
   }
 
+  /** `events.publish`: one event of a registered type, by its definition (see `events.ts`). */
   publish(raw: JsonValue): JsonValue {
     const p = params(ExtEventsPublishParamsSchema, raw);
-    if (!validTopic(p.topic)) throw RpcError.invalidParams(`bad topic \`${p.topic}\``);
-    const own = `ext.${this.id}.`;
-    const game = this.spec.manifest.gameId();
-    const ownGame = game !== null && p.topic.startsWith(`game.${game}.`);
-    const reserved = reservedTopic(p.topic);
-    const allowed =
-      p.topic.startsWith(own) || ownGame || (!reserved && this.grants.matches(p.topic));
-    if (!allowed) throw RpcError.denied(`publishing on \`${p.topic}\` is not permitted`);
-    // A topic the extension names: the old form until protocol 2 carries a type and its schema.
-    this.ctx.publish(customEvent(p.topic, p.payload as JsonValue), { turn: p.correlation });
+    const who = { id: this.id, game: this.spec.manifest.gameId(), grants: this.grants };
+    const { definition, data } = resolvePublish(who, p.type, p.data as JsonValue);
+    this.ctx.publish(definition, data, {
+      type: p.type,
+      turn: p.turn,
+      parent: p.parent,
+      key: p.key,
+    });
     return {};
   }
 

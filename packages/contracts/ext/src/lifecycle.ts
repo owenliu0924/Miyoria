@@ -75,7 +75,14 @@ export type ExtContributionsIn = z.input<typeof ExtContributionsSchema>;
 
 /** `initialize` result (extension to host). */
 export const ExtInitializeResultSchema = z
-  .object({ contributions: ExtContributionsSchema.prefault({}) })
+  .object({
+    /**
+     * The protocol version the extension speaks (`EXT_PROTOCOL_VERSION`). Protocol 1 had no such
+     * field, so a result without it is from an extension that speaks 1.
+     */
+    protocol: z.number().int().default(1),
+    contributions: ExtContributionsSchema.prefault({}),
+  })
   .meta({ id: "ExtInitializeResult" });
 export type ExtInitializeResult = z.output<typeof ExtInitializeResultSchema>;
 export type ExtInitializeResultIn = z.input<typeof ExtInitializeResultSchema>;

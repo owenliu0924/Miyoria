@@ -1,4 +1,4 @@
-// Minimal extension speaking the Miyoria extension protocol without the SDK.
+// Minimal extension speaking the Miyoria extension protocol (version 2) without the SDK.
 // Behaviour is driven by the config sent in `initialize`.
 import process from "node:process";
 
@@ -60,8 +60,9 @@ const NEVER = Symbol("never");
 function notification(method, params) {
   if (method === "event") {
     void request("events.publish", {
-      topic: `ext.${extId}.seen`,
-      payload: { topic: params.topic },
+      type: `ext.${extId}.seen`,
+      data: { type: params.envelope.type, source: params.envelope.source },
+      parent: params.envelope.id,
     });
   } else if (method === "shutdown") {
     process.exit(0);
@@ -75,6 +76,8 @@ async function onRequest(method, params) {
       game = params.extension.game ?? null;
       const config = params.config ?? {};
       if (config.hang_init) return NEVER;
+      // The protocol it answers with: 2, or `speaks` (`"none"` leaves the field out, as protocol 1 did).
+      const speaks = config.speaks === "none" ? {} : { protocol: config.speaks ?? 2 };
       process.stderr.write(`fixture ${extId} initializing\n`);
       if (config.dynamic) {
         setTimeout(async () => {
@@ -89,13 +92,14 @@ async function onRequest(method, params) {
             outcome = { ok: false, code: error.code, message: error.message };
           }
           await request("events.publish", {
-            topic: `ext.${extId}.register_result`,
-            payload: outcome,
+            type: `ext.${extId}.register_result`,
+            data: outcome,
           });
         }, 10);
-        return { contributions: {} };
+        return { ...speaks, contributions: {} };
       }
       return {
+        ...speaks,
         contributions: {
           tools: [
             {
@@ -190,10 +194,13 @@ async function onRequest(method, params) {
           return { content: "bye" };
         case "try.publish":
           try {
-            await request("events.publish", { topic: args.topic, payload: { type: "fixture" } });
+            await request("events.publish", {
+              type: args.type,
+              data: args.data === undefined ? { type: "fixture" } : args.data,
+            });
             return "ok";
           } catch (error) {
-            return `denied: ${error.code}`;
+            return `refused: ${error.code}`;
           }
         case "store.roundtrip": {
           await request("storage.set", { key: args.key, value: args.value });

@@ -22,16 +22,7 @@ export {
   type ExtResolvedUser,
   ExtResolvedUserSchema,
 } from "./commands.js";
-export {
-  type ExtDecisionTrace,
-  ExtDecisionTraceSchema,
-  type ExtEvent,
-  type ExtEventNotification,
-  ExtEventNotificationSchema,
-  ExtEventSchema,
-  type ExtModuleStateKind,
-  ExtModuleStateKindSchema,
-} from "./events.js";
+export { type ExtEventNotification, ExtEventNotificationSchema } from "./events.js";
 export {
   type ExtCommandsUnregisterParams,
   ExtCommandsUnregisterParamsSchema,

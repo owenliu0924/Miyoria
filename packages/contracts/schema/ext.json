@@ -2,6 +2,118 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/ext",
   "$defs": {
+    "EventsBusEnvelope": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "v": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsScope"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/WireJsonValue"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "v",
+        "parent",
+        "turn",
+        "session",
+        "space_id",
+        "room_id",
+        "person_id",
+        "account_id",
+        "key",
+        "scope",
+        "source",
+        "data"
+      ]
+    },
+    "EventsScope": {
+      "type": "string",
+      "enum": [
+        "public",
+        "space",
+        "room",
+        "dm",
+        "self",
+        "owner"
+      ]
+    },
     "ExtArgKind": {
       "anyOf": [
         {
@@ -188,599 +300,42 @@
         }
       }
     },
-    "ExtDecisionTrace": {
-      "type": "object",
-      "properties": {
-        "turn": {
-          "type": "string"
-        },
-        "context": {
-          "$ref": "#/$defs/WireContextKey"
-        },
-        "respond": {
-          "type": "boolean"
-        },
-        "score": {
-          "type": "number"
-        },
-        "reasons": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "turn",
-        "context",
-        "respond",
-        "score",
-        "reasons"
-      ]
-    },
-    "ExtEvent": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "platform_ready"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "platform": {
-                  "type": "string"
-                },
-                "self_account": {
-                  "$ref": "#/$defs/WireAccountRef"
-                }
-              },
-              "required": [
-                "platform",
-                "self_account"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "platform_message_created"
-            },
-            "data": {
-              "$ref": "#/$defs/WireIncomingMessage"
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "platform_typing"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "account": {
-                  "$ref": "#/$defs/WireAccountRef"
-                }
-              },
-              "required": [
-                "context",
-                "account"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "agent_turn_started"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "turn": {
-                  "type": "string"
-                },
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                }
-              },
-              "required": [
-                "turn",
-                "context"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "agent_decision"
-            },
-            "data": {
-              "$ref": "#/$defs/ExtDecisionTrace"
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "agent_turn_completed"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "turn": {
-                  "type": "string"
-                },
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "text": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "turn",
-                "context",
-                "text"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "action_completed"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "action": {
-                  "type": "string"
-                },
-                "turn": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "ok": {
-                  "type": "boolean"
-                },
-                "error": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "message": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/WireMessageRef"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "action",
-                "turn",
-                "ok",
-                "error",
-                "message"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "voice_joined"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "participants": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/WireVoiceParticipant"
-                  }
-                }
-              },
-              "required": [
-                "context",
-                "participants"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "voice_left"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "reason": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "context",
-                "reason"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "voice_participants"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "participants": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/WireVoiceParticipant"
-                  }
-                }
-              },
-              "required": [
-                "context",
-                "participants"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "voice_speaking"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "account": {
-                  "$ref": "#/$defs/WireAccountRef"
-                },
-                "speaking": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "context",
-                "account",
-                "speaking"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "voice_utterance"
-            },
-            "data": {
-              "$ref": "#/$defs/WireVoiceUtterance"
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "voice_playback"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "turn": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "state": {
-                  "$ref": "#/$defs/WirePlaybackState"
-                },
-                "text": {
-                  "type": "string"
-                },
-                "emotion": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "heard_ms": {
-                  "type": [
-                    "number",
-                    "null"
-                  ]
-                },
-                "total_ms": {
-                  "type": [
-                    "number",
-                    "null"
-                  ]
-                },
-                "blocked": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "context",
-                "turn",
-                "state",
-                "text"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "agent_initiative"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "context": {
-                  "$ref": "#/$defs/WireContextKey"
-                },
-                "reason": {
-                  "type": "string"
-                },
-                "hint": {
-                  "type": "string"
-                },
-                "about": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/WireAccountRef"
-                  }
-                }
-              },
-              "required": [
-                "context",
-                "reason",
-                "hint",
-                "about"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "module_state_changed"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "module": {
-                  "type": "string"
-                },
-                "state": {
-                  "$ref": "#/$defs/ExtModuleStateKind"
-                },
-                "reason": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "module",
-                "state",
-                "reason"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "custom"
-            },
-            "data": {
-              "type": "object",
-              "properties": {
-                "topic": {
-                  "type": "string"
-                },
-                "payload": {
-                  "$ref": "#/$defs/WireJsonValue"
-                }
-              },
-              "required": [
-                "topic",
-                "payload"
-              ]
-            }
-          },
-          "required": [
-            "type",
-            "data"
-          ]
-        }
-      ]
-    },
     "ExtEventNotification": {
       "type": "object",
       "properties": {
-        "topic": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "ts": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "causation": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "correlation": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "event": {
-          "$ref": "#/$defs/ExtEvent"
+        "envelope": {
+          "$ref": "#/$defs/EventsBusEnvelope"
         }
       },
       "required": [
-        "topic",
-        "id",
-        "ts",
-        "source",
-        "causation",
-        "correlation",
-        "event"
+        "envelope"
       ]
     },
     "ExtEventsPublishParams": {
       "type": "object",
       "properties": {
-        "topic": {
+        "type": {
           "type": "string"
         },
-        "payload": {
+        "data": {
           "default": null,
           "$ref": "#/$defs/WireJsonValue"
         },
-        "correlation": {
+        "turn": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
           "default": null,
           "type": [
             "string",
@@ -789,7 +344,7 @@
         }
       },
       "required": [
-        "topic"
+        "type"
       ]
     },
     "ExtEventsTopicsParams": {
@@ -963,6 +518,12 @@
     "ExtInitializeResult": {
       "type": "object",
       "properties": {
+        "protocol": {
+          "default": 1,
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
         "contributions": {
           "default": {},
           "$ref": "#/$defs/ExtContributions"
@@ -1059,18 +620,6 @@
       },
       "required": [
         "message"
-      ]
-    },
-    "ExtModuleStateKind": {
-      "type": "string",
-      "enum": [
-        "disabled",
-        "starting",
-        "running",
-        "degraded",
-        "stopping",
-        "stopped",
-        "failed"
       ]
     },
     "ExtParticipant": {
@@ -1888,65 +1437,6 @@
         "id"
       ]
     },
-    "WireAttachment": {
-      "type": "object",
-      "properties": {
-        "url": {
-          "type": "string"
-        },
-        "filename": {
-          "type": "string"
-        },
-        "content_type": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "size": {
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "url",
-        "filename",
-        "content_type"
-      ]
-    },
-    "WireAuthor": {
-      "type": "object",
-      "properties": {
-        "account": {
-          "$ref": "#/$defs/WireAccountRef"
-        },
-        "display_name": {
-          "type": "string"
-        },
-        "is_bot": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "account",
-        "display_name",
-        "is_bot"
-      ]
-    },
     "WireContextKey": {
       "type": "object",
       "properties": {
@@ -1982,157 +1472,6 @@
         "voice"
       ]
     },
-    "WireEmbed": {
-      "type": "object",
-      "properties": {
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "url": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "title",
-        "description",
-        "url"
-      ]
-    },
-    "WireForwardedMessage": {
-      "type": "object",
-      "properties": {
-        "text": {
-          "type": "string"
-        },
-        "attachments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireAttachment"
-          }
-        },
-        "stickers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireSticker"
-          }
-        },
-        "embeds": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireEmbed"
-          }
-        }
-      },
-      "required": [
-        "text",
-        "attachments",
-        "stickers",
-        "embeds"
-      ]
-    },
-    "WireIncomingMessage": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/WireMessageRef"
-        },
-        "author": {
-          "$ref": "#/$defs/WireAuthor"
-        },
-        "text": {
-          "type": "string"
-        },
-        "mentions_self": {
-          "type": "boolean"
-        },
-        "reply_to_self": {
-          "type": "boolean"
-        },
-        "attachments": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireAttachment"
-          }
-        },
-        "ts": {
-          "type": "string"
-        },
-        "reply_to": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WireMessageRef"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "referenced": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WireQuotedMessage"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "stickers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireSticker"
-          }
-        },
-        "embeds": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireEmbed"
-          }
-        },
-        "forwarded": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireForwardedMessage"
-          }
-        },
-        "mentions_others": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WireMentionedAccount"
-          }
-        },
-        "opens_with_other_mention": {
-          "type": "boolean"
-        },
-        "turn_complete": {
-          "type": "boolean"
-        },
-        "card": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id",
-        "author",
-        "text",
-        "mentions_self",
-        "reply_to_self",
-        "attachments",
-        "ts"
-      ]
-    },
     "WireJsonValue": {
       "anyOf": [
         {
@@ -2164,25 +1503,6 @@
         }
       ]
     },
-    "WireMentionedAccount": {
-      "type": "object",
-      "properties": {
-        "account": {
-          "$ref": "#/$defs/WireAccountRef"
-        },
-        "display_name": {
-          "type": "string"
-        },
-        "is_bot": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "account",
-        "display_name",
-        "is_bot"
-      ]
-    },
     "WireMessageRef": {
       "type": "object",
       "properties": {
@@ -2196,160 +1516,6 @@
       "required": [
         "context",
         "id"
-      ]
-    },
-    "WirePlaybackState": {
-      "type": "string",
-      "enum": [
-        "started",
-        "finished",
-        "interrupted",
-        "failed"
-      ]
-    },
-    "WireQuotedMessage": {
-      "type": "object",
-      "properties": {
-        "author": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WireAccountRef"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "author_name": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "author",
-        "author_name",
-        "text"
-      ]
-    },
-    "WireSticker": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ]
-    },
-    "WireVoiceParticipant": {
-      "type": "object",
-      "properties": {
-        "account": {
-          "$ref": "#/$defs/WireAccountRef"
-        },
-        "display_name": {
-          "type": "string"
-        },
-        "is_self": {
-          "type": "boolean"
-        },
-        "muted": {
-          "type": "boolean"
-        },
-        "deafened": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "account",
-        "display_name",
-        "is_self",
-        "muted",
-        "deafened"
-      ]
-    },
-    "WireVoiceTurnEnd": {
-      "type": "object",
-      "properties": {
-        "ended_by": {
-          "type": "string"
-        },
-        "probability": {
-          "type": [
-            "number",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "ended_by",
-        "probability"
-      ]
-    },
-    "WireVoiceUtterance": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "context": {
-          "$ref": "#/$defs/WireContextKey"
-        },
-        "speaker": {
-          "$ref": "#/$defs/WireAuthor"
-        },
-        "text": {
-          "type": "string"
-        },
-        "language": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "emotion": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "audio_events": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "started_at": {
-          "type": "string"
-        },
-        "ended_at": {
-          "type": "string"
-        },
-        "asr_ms": {
-          "type": "number"
-        },
-        "turn": {
-          "$ref": "#/$defs/WireVoiceTurnEnd"
-        }
-      },
-      "required": [
-        "id",
-        "context",
-        "speaker",
-        "text",
-        "language",
-        "emotion",
-        "audio_events",
-        "started_at",
-        "ended_at",
-        "asr_ms"
       ]
     }
   }

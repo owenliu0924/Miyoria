@@ -33,7 +33,7 @@ function raw(def: ExtensionDefinition, timeoutMs = 1000) {
 }
 
 const INIT =
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":1,"host":{"name":"miyoria","version":"0.1.0"},"extension":{"id":"test.ext","version":"1.0.0","dir":"/ext","game":null},"config":{"greeting":"hi"},"permissions":{"events":["custom.*"],"tools":true,"commands":true,"network":[],"input":[]}}}';
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":2,"host":{"name":"miyoria","version":"0.1.0"},"extension":{"id":"test.ext","version":"1.0.0","dir":"/ext","game":null},"config":{"greeting":"hi"},"permissions":{"events":["custom.*"],"tools":true,"commands":true,"network":[],"input":[]}}}';
 
 const CONTEXT = '{"platform":"discord","scope":"123","channel":"456","kind":"channel"}';
 
@@ -96,9 +96,18 @@ describe("host to extension: what the SDK reads and answers", () => {
     x.send(INIT);
     await waitFor(() => x.frames.length >= 1);
     expect(x.frames[0]).toBe(
-      '{"jsonrpc":"2.0","id":1,"result":{"contributions":{"tools":[{"name":"weather.now","description":"now","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]},"permission":"tools.weather","read_only":true},{"name":"dice","description":"roll","parameters":{"type":"object","properties":{},"required":[]},"permission":null}],"commands":[{"path":["dice","roll"],"description":"roll","args":[{"name":"sides","description":"n","kind":{"type":"integer"},"required":false},{"name":"style","description":"s","kind":{"type":"choice","choices":["plain","fancy"]},"required":true}],"permission":"","ephemeral":false},{"path":["hello"],"description":"hi","args":[],"permission":"owner.hello","ephemeral":true}],"prompts":["facts"],"subscriptions":["agent.*"],"executor":{"name":"Fake","goals":[{"name":"goto","description":"walk","parameters":{"type":"object"},"budget_s":120}],"guide":"survive"}}}}',
+      '{"jsonrpc":"2.0","id":1,"result":{"protocol":2,"contributions":{"tools":[{"name":"weather.now","description":"now","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]},"permission":"tools.weather","read_only":true},{"name":"dice","description":"roll","parameters":{"type":"object","properties":{},"required":[]},"permission":null}],"commands":[{"path":["dice","roll"],"description":"roll","args":[{"name":"sides","description":"n","kind":{"type":"integer"},"required":false},{"name":"style","description":"s","kind":{"type":"choice","choices":["plain","fancy"]},"required":true}],"permission":"","ephemeral":false},{"path":["hello"],"description":"hi","args":[],"permission":"owner.hello","ephemeral":true}],"prompts":["facts"],"subscriptions":["agent.*"],"executor":{"name":"Fake","goals":[{"name":"goto","description":"walk","parameters":{"type":"object"},"budget_s":120}],"guide":"survive"}}}}',
     );
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
+  });
+
+  it("refuses initialize from a host that speaks protocol 1", async () => {
+    const x = raw({ activate() {} });
+    x.send(INIT.replace('"protocol":2', '"protocol":1'));
+    await waitFor(() => x.frames.length >= 1);
+    expect(x.frames[0]).toBe(
+      '{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"the host speaks extension protocol 1 and this extension speaks 2; the host is older: update Miyoria"}}',
+    );
   });
 
   it("answers an empty extension with empty contributions", async () => {
@@ -106,7 +115,7 @@ describe("host to extension: what the SDK reads and answers", () => {
     x.send(INIT);
     await waitFor(() => x.frames.length >= 1);
     expect(x.frames[0]).toBe(
-      '{"jsonrpc":"2.0","id":1,"result":{"contributions":{"tools":[],"commands":[],"prompts":[],"subscriptions":[]}}}',
+      '{"jsonrpc":"2.0","id":1,"result":{"protocol":2,"contributions":{"tools":[],"commands":[],"prompts":[],"subscriptions":[]}}}',
     );
     // A second initialize is refused.
     x.send(INIT.replace('"id":1', '"id":2'));
@@ -177,14 +186,17 @@ describe("host to extension: what the SDK reads and answers", () => {
     });
     x.send(INIT);
     await waitFor(() => x.frames.length >= 1);
-    const event =
-      `{"topic":"agent.turn.completed","id":"01JC0000000000000000000001","ts":"2026-11-01T10:00:01.123Z","source":"agent","causation":null,"correlation":"01JC0000000000000000000000","event":{"type":"agent_turn_completed","data":{"turn":"01JC0000000000000000000000","context":${CONTEXT},"text":"沒幹嘛啊"}},"future":1}`;
-    x.send(`{"jsonrpc":"2.0","method":"event","params":${event}}`);
+    const envelope = `{"id":"01JC0000000000000000000001","at":"2026-11-01T10:00:01.123Z","type":"agent.turn.completed","v":1,"parent":null,"turn":"01JC0000000000000000000000","session":null,"space_id":null,"room_id":null,"person_id":null,"account_id":null,"key":null,"scope":null,"source":"agent","data":{"turn":"01JC0000000000000000000000","context":${CONTEXT},"text":"沒幹嘛啊"},"future":1}`;
+    // Protocol 1's form, and a notification without an envelope: ignored.
+    x.send(
+      `{"jsonrpc":"2.0","method":"event","params":{"topic":"agent.turn.completed","id":"01JC0000000000000000000002","ts":"2026-11-01T10:00:01.123Z","source":"agent","causation":null,"correlation":null,"event":{"type":"agent_turn_completed","data":{}}}}`,
+    );
     x.send('{"jsonrpc":"2.0","method":"event","params":{"topic":"other.thing"}}');
+    x.send(`{"jsonrpc":"2.0","method":"event","params":{"envelope":${envelope},"later":1}}`);
     x.send('{"jsonrpc":"2.0","method":"unknown.note","params":{}}');
     x.send('{"jsonrpc":"2.0","id":5,"method":"no.such","params":{},"extra":true}');
     await waitFor(() => x.frames.length >= 2);
-    expect(seen).toEqual([JSON.parse(event)]);
+    expect(seen).toEqual([JSON.parse(envelope)]);
     expect(x.frames[1]).toBe(
       '{"jsonrpc":"2.0","id":5,"error":{"code":-32601,"message":"unknown method \\"no.such\\""}}',
     );
@@ -326,7 +338,11 @@ describe("extension to host: what the SDK writes", () => {
       await waitFor(() => x.frames.length >= 1);
       await answer(1, '{"name":"late_tool"}');
       await a;
-      const b = c.events.publish("ext.test.ext.hello", { n: 1 }, { correlation: "01JC0000000000000000000000" });
+      const b = c.events.publish(
+        "ext.test.ext.hello",
+        { n: 1 },
+        { turn: "01JC0000000000000000000000", parent: "01JC0000000000000000000001" },
+      );
       await waitFor(() => x.frames.length >= 2);
       await answer(2, "{}");
       await b;
@@ -352,7 +368,7 @@ describe("extension to host: what the SDK writes", () => {
     await waitFor(() => x.frames.length >= 8);
     expect(x.frames).toEqual([
       '{"jsonrpc":"2.0","id":1,"method":"tools.register","params":{"name":"late.tool","description":"d","parameters":{"type":"object","properties":{},"required":[]},"permission":null}}',
-      '{"jsonrpc":"2.0","id":2,"method":"events.publish","params":{"topic":"ext.test.ext.hello","payload":{"n":1},"correlation":"01JC0000000000000000000000"}}',
+      '{"jsonrpc":"2.0","id":2,"method":"events.publish","params":{"type":"ext.test.ext.hello","data":{"n":1},"turn":"01JC0000000000000000000000","parent":"01JC0000000000000000000001"}}',
       '{"jsonrpc":"2.0","id":3,"method":"storage.get","params":{"key":"k"}}',
       '{"jsonrpc":"2.0","id":4,"method":"storage.set","params":{"key":"k","value":{"n":1}}}',
       '{"jsonrpc":"2.0","id":5,"method":"storage.set","params":{"key":"k","value":null}}',

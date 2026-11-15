@@ -2,7 +2,7 @@
 // registering after activation, storage and logging. Each result is `{}` unless noted.
 
 import { z } from "zod";
-import { JsonValueSchema } from "../../wire/src/index.js";
+import { EventIdSchema, JsonValueSchema, TurnIdSchema } from "../../wire/src/index.js";
 
 /** `events.subscribe` and `events.unsubscribe` params. The result of subscribing lists them all. */
 export const ExtEventsTopicsParamsSchema = z
@@ -10,13 +10,23 @@ export const ExtEventsTopicsParamsSchema = z
   .meta({ id: "ExtEventsTopicsParams" });
 export type ExtEventsTopicsParams = z.output<typeof ExtEventsTopicsParamsSchema>;
 
-/** `events.publish` params: a custom event whose source is `ext.<id>`. */
+/**
+ * `events.publish` params: one event of a registered type, published with source `ext.<id>`. The
+ * host resolves `type` against the bus registry and checks `data` against that type's schema;
+ * the rest of the envelope (`id`, `at`, the place and person fields, `scope`) is the host's.
+ */
 export const ExtEventsPublishParamsSchema = z
   .object({
-    topic: z.string(),
-    payload: JsonValueSchema.default(null),
-    /** A turn id, to hang the event under that turn. */
-    correlation: z.string().nullable().default(null),
+    /** Dotted event type: `ext.<id>.<name>`, or `game.<game>.<name>` for a game adapter. */
+    type: z.string(),
+    /** The payload. */
+    data: JsonValueSchema.default(null),
+    /** The agent turn the event belongs to. */
+    turn: TurnIdSchema.nullable().default(null),
+    /** The event that caused this one: the `id` of an envelope the extension received. */
+    parent: EventIdSchema.nullable().default(null),
+    /** Attention and dedupe key. */
+    key: z.string().nullable().default(null),
   })
   .meta({ id: "ExtEventsPublishParams" });
 export type ExtEventsPublishParams = z.output<typeof ExtEventsPublishParamsSchema>;

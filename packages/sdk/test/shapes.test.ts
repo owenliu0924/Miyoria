@@ -3,8 +3,11 @@
 // its old shape (`previous-types.ts`, verbatim) in both directions, at compile time. The runtime
 // part checks that the constants did not move.
 
+import { BUS_EVENTS, type BusEnvelopeJson, type EventPayload } from "@miyoria/contracts/events";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type * as Old from "./previous-types.js";
+import * as Events from "../src/events.js";
+import { definitionPattern, is } from "../src/topics.js";
 import { ErrorCode, PROTOCOL_VERSION } from "../src/types.js";
 import type * as Now from "../src/types.js";
 import type * as OldTask from "./previous-task.js";
@@ -43,11 +46,22 @@ describe("types derived from the contract keep their shapes", () => {
     same<Now.InitializeParams, Old.InitializeParams>();
     same<Now.Contributions, Old.Contributions>();
     same<Now.ExecutorDecl, Old.ExecutorDecl>();
-    same<Now.InitializeResult, Old.InitializeResult>();
+    // Protocol 2: the result says which protocol the extension speaks.
+    same<Omit<Now.InitializeResult, "protocol">, Old.InitializeResult>();
+    same<Now.InitializeResult["protocol"], number>();
     same<Now.RpcErrorObject, Old.RpcErrorObject>();
-    expectTypeOf<Now.Event["type"]>().toEqualTypeOf<Old.Event["type"]>();
-    same<Now.Envelope["event"], Old.Envelope["event"]>();
-    same<Omit<Now.Envelope, "event">, Omit<Old.Envelope, "event">>();
+  });
+
+  it("protocol 2's envelope is the bus envelope, and a definition types its payload", () => {
+    same<Now.Envelope, BusEnvelopeJson>();
+    same<Now.EnvelopeOf<typeof Events.VoicePlaybackEvent>["data"], EventPayload<typeof Events.VoicePlaybackEvent>>();
+    // The decision trace and the module states are the bus payloads' (same shapes as before).
+    same<Now.DecisionTrace, EventPayload<typeof Events.AgentDecision>>();
+    same<Now.ModuleStateKind, EventPayload<typeof Events.SystemModuleState>["state"]>();
+    const envelope = { type: "voice.playback", v: 1, data: null as unknown };
+    if (is(Events.VoicePlaybackEvent, envelope)) {
+      expectTypeOf(envelope.data).toEqualTypeOf<EventPayload<typeof Events.VoicePlaybackEvent>>();
+    }
   });
 
   it("the types that grew optional fields still take the old values", () => {
@@ -76,7 +90,7 @@ describe("types derived from the contract keep their shapes", () => {
   });
 
   it("the constants", () => {
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
     expect(ErrorCode).toEqual({
       ParseError: -32700,
       InvalidRequest: -32600,
@@ -90,5 +104,31 @@ describe("types derived from the contract keep their shapes", () => {
       Closed: -32005,
       Cancelled: -32800,
     });
+  });
+});
+
+describe("event definitions", () => {
+  it("Events holds every bus topic's definition, the registry's list", () => {
+    const ours = new Set<unknown>(Object.values(Events));
+    expect(ours.size).toBe(BUS_EVENTS.length);
+    for (const definition of BUS_EVENTS) expect(ours.has(definition), definition.type).toBe(true);
+  });
+
+  it("is matches a type, a family's types, at the definition's version", () => {
+    const at = (type: string, v = 1) => ({ type, v });
+    expect(is(Events.VoicePlaybackEvent, at("voice.playback"))).toBe(true);
+    expect(is(Events.VoicePlaybackEvent, at("voice.playback", 2))).toBe(false);
+    expect(is(Events.VoicePlaybackEvent, at("voice.playback.x"))).toBe(false);
+    expect(is(Events.GameAdapterEvent, at("game.osu.death"))).toBe(true);
+    expect(is(Events.GameAdapterEvent, at("game.osu"))).toBe(false);
+    expect(is(Events.TaskDone, at("game.osu.task.done"))).toBe(true);
+    expect(is(Events.ExtensionEvent, at("ext.me.hello.there"))).toBe(true);
+  });
+
+  it("subscribes to a definition through the narrowest pattern that holds its types", () => {
+    expect(definitionPattern(Events.VoicePlaybackEvent)).toBe("voice.playback");
+    expect(definitionPattern(Events.GameAdapterEvent)).toBe("game.*");
+    expect(definitionPattern(Events.ExtensionEvent)).toBe("ext.*");
+    expect(definitionPattern(Events.TaskDone)).toBe("*");
   });
 });

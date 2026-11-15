@@ -36,7 +36,7 @@ process.stdin.on("data", (chunk) => {
     }
     note(body);
     if (msg.method === "initialize") {
-      send({ id: msg.id, result: { contributions: { subscriptions: ["*"] } } });
+      send({ id: msg.id, result: { protocol: 2, contributions: { subscriptions: ["*"] } } });
     } else if (msg.method === "shutdown") {
       process.exit(0);
     }

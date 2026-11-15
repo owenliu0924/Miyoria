@@ -2,8 +2,12 @@
 // error codes, the method that cancels a request, and the bounds both sides hold each other to
 // (docs/protocols/extension-rpc.md).
 
-/** The protocol version the host sends in `initialize`. */
-export const EXT_PROTOCOL_VERSION = 1;
+/**
+ * The protocol version: the host sends it in `initialize`, the extension answers with its own.
+ * Each side refuses the other when the two differ; there is no fallback to an older version.
+ * Version 2 carries the bus envelope in `event` and a registered type in `events.publish`.
+ */
+export const EXT_PROTOCOL_VERSION = 2;
 
 /**
  * Notification `{ id }` a caller sends when it stops waiting for a request (it timed out or was

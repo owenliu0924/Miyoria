@@ -16,10 +16,12 @@ export {
   commandPath,
   commandSpec,
   defineExtension,
+  hostMismatch,
   runExtension,
   startStdio,
   toolDecl,
 } from "./extension.js";
+export * as Events from "./events.js";
 export { FrameBodyDecoder, FrameDecoder, FramingError, MAX_FRAME, encodeFrame } from "./framing.js";
 export {
   type ActionResult,
@@ -69,5 +71,5 @@ export {
   isTerminalTaskEvent,
   taskTopic,
 } from "./task.js";
-export { isValidTopic, topicMatches } from "./topics.js";
+export { definitionPattern, is, isValidTopic, topicMatches } from "./topics.js";
 export * from "./types.js";
