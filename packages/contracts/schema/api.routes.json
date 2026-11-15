@@ -88,6 +88,64 @@
         }
       }
     },
+    "self": {
+      "~orpc": {
+        "errorMap": {},
+        "meta": {
+          "audience": "admin",
+          "permission": null
+        },
+        "route": {
+          "inputStructure": "detailed",
+          "method": "GET",
+          "path": "/api/self"
+        }
+      }
+    },
+    "world": {
+      "~orpc": {
+        "errorMap": {},
+        "meta": {
+          "audience": "admin",
+          "permission": null
+        },
+        "route": {
+          "inputStructure": "detailed",
+          "method": "GET",
+          "path": "/api/world"
+        }
+      }
+    },
+    "affect": {
+      "snapshot": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/affect"
+          }
+        }
+      },
+      "people": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/affect/people"
+          }
+        }
+      }
+    },
     "people": {
       "list": {
         "~orpc": {
@@ -472,6 +530,34 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/mind/digests"
+          }
+        }
+      },
+      "goals": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/mind/goals"
+          }
+        }
+      },
+      "plan": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/mind/plan"
           }
         }
       }

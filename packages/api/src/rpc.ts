@@ -40,6 +40,7 @@ import {
 } from "@orpc/server";
 import { ResponseHeadersPlugin } from "@orpc/server/plugins";
 import { z } from "zod";
+import { affectRpc } from "./affect.js";
 import { agencyRpc } from "./agency.js";
 import { boardRpc } from "./board.js";
 import { activityRpc, arbiterRpc } from "./body.js";
@@ -55,6 +56,7 @@ import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
 import { goalAdminRpc } from "./goals-admin.js";
+import { selfRpc, worldRpc } from "./inner.js";
 import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
 import { lifeRpc } from "./life.js";
 import { llmCallsRpc, thoughtRpc } from "./llmcalls.js";
@@ -64,6 +66,7 @@ import { authRpc } from "./oauth.js";
 import { opsRpc } from "./ops.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
+import { planRpc } from "./plan.js";
 import { limitMember, publicRpc } from "./public.js";
 import { roleRpc } from "./roles.js";
 import type { Method, Route } from "./route.js";
@@ -79,6 +82,9 @@ export const router = os.router({
   health: healthRpc,
   auth: authRpc,
   persona: personaRpc,
+  self: selfRpc,
+  world: worldRpc,
+  affect: affectRpc,
   facts: factsRpc,
   activity: activityRpc,
   arbiter: arbiterRpc,
@@ -98,7 +104,7 @@ export const router = os.router({
   llm: { ...coreRpc.llm, ...llmCallsRpc },
   economy: { ...economyRpc, ...goalAdminRpc },
   channels: channelRpc,
-  mind: { ...mindRpc, ...thoughtRpc, ...digestRpc },
+  mind: { ...mindRpc, ...thoughtRpc, ...digestRpc, ...planRpc },
   roles: roleRpc,
   ...opsRpc,
   voice: { ...opsRpc.voice, ...controlRpc.voice },

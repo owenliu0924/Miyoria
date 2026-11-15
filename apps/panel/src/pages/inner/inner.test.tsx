@@ -19,7 +19,7 @@ const SELF: SelfView = {
   at: "2026-11-02T12:00:00.000Z",
   mood: { valence: 0.3, arousal: 0.4, energy: 0.8 },
   boredom: 0.62,
-  drives: { social: 0.8, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4 },
+  drives: { social: 0.8, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4, esteem: 0.4, hunger: 0.3, longing: 0 },
   policy: {
     talkativeness: {
       "discord:g1:voice:v1": { level: 0.7, until: null, why: "大家在玩遊戲很熱鬧", set_at: "2026-11-02T11:00:00.000Z" },

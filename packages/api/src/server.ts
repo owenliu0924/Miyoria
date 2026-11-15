@@ -4,12 +4,10 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
-import { affectRoutes } from "./affect.js";
 import { coreRoutes } from "./core.js";
 import { dataRoutes } from "./data.js";
 import { directiveRoutes } from "./directives.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
-import { innerRoutes } from "./inner.js";
 import { liveRoutes } from "./live.js";
 import { memberRoutes } from "./member.js";
 import { memoryRoutes } from "./memory.js";
@@ -20,7 +18,6 @@ import * as oauth from "./oauth.js";
 import { ogRoutes, rewriteHtml } from "./og.js";
 import { servePanel } from "./panel.js";
 import { partyRoutes } from "./party.js";
-import { planRoutes } from "./plan.js";
 import { promptRoutes } from "./prompts.js";
 import { clientKey, tooMany } from "./public.js";
 import type { Route } from "./route.js";
@@ -131,11 +128,8 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...ogRoutes(state),
     ...memberRoutes(state),
     ...memoryRoutes(state),
-    ...innerRoutes(state),
     ...dataRoutes(state),
     ...directiveRoutes(state),
-    ...planRoutes(state),
-    ...affectRoutes(state),
     ...promptRoutes(state),
     ...turnMetricsRoutes(state),
     ...telemetryRoutes(state),

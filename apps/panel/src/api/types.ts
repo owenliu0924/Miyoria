@@ -3,6 +3,8 @@
 // Keep this file in sync when the API changes.
 
 import type {
+  DriveName as ContractDriveName,
+  Mood,
   DecisionTrace,
   E2eSegmentName,
   LlmCallKind,
@@ -367,6 +369,45 @@ export type {
   VoiceE2eLatency,
 } from "@miyoria/contracts/api";
 
+// Her inner state, her world, her mood and her goals: shapes of the route table, under their old
+// names. The drives are the eight the server sends (the hand copy had five).
+export type {
+  AffectBiases,
+  AffectSnapshot,
+  AgendaItem,
+  AgendaStatus,
+  ChannelActivityView as ChannelActivity,
+  DayPlanView,
+  EmotionName,
+  EmotionReading,
+  FeelingView,
+  Goal,
+  GoalsView,
+  GoalStatus,
+  GoalTrigger,
+  HerStatus,
+  Mood,
+  PersonCard,
+  PersonPresence,
+  PresenceActivity,
+  PresenceStatus,
+  RelationshipLabel,
+  SelfPolicy,
+  SelfView,
+  ShownEmotion,
+  Talkativeness,
+  TimeContext,
+  VoiceChannelState,
+  VoiceMember,
+  VoiceSpot,
+  WorldView,
+} from "@miyoria/contracts/api";
+
+/** Every drive the server sends. */
+export type AffectDriveName = ContractDriveName;
+/** The five the state page and the trends show; the other three are on the affect page. */
+export type DriveName = Exclude<ContractDriveName, "esteem" | "hunger" | "longing">;
+
 export type ModuleAction = "enable" | "disable" | "restart";
 
 /** Every error response. */
@@ -507,157 +548,6 @@ export interface E2eRecord {
 // ---------------------------------------------------------------------------
 // inner life (`GET /api/self`, `GET /api/world`; `packages/types` self.ts / world.ts)
 
-export type DriveName = "social" | "play" | "attention" | "rest" | "curiosity";
-
-export interface Mood {
-  /** -1..1 */
-  valence: number;
-  /** 0..1 */
-  arousal: number;
-  /** 0..1 */
-  energy: number;
-}
-
-export interface Talkativeness {
-  level: number;
-  until: Timestamp | null;
-  why: string;
-  set_at: Timestamp;
-}
-
-export interface SelfPolicy {
-  /** By scope: `*`, `voice`, `text`, `discord:<guild>`, or a context string. */
-  talkativeness: Record<string, Talkativeness>;
-  initiative: number;
-  initiative_why: string;
-}
-
-export type AgendaStatus = "open" | "done" | "expired" | "dropped";
-
-export interface AgendaItem {
-  id: string;
-  text: string;
-  why: string;
-  person: PersonId | null;
-  context: ContextKey | null;
-  created_at: Timestamp;
-  due: Timestamp | null;
-  expires_at: Timestamp | null;
-  status: AgendaStatus;
-  closed_at: Timestamp | null;
-}
-
-export interface FeelingView {
-  person: PersonId;
-  display_name: string | null;
-  text: string;
-  updated_at: Timestamp;
-  by: string;
-}
-
-/** `GET /api/self`. */
-export interface SelfView {
-  at: Timestamp;
-  mood: Mood | null;
-  boredom: number;
-  drives: Record<DriveName, number>;
-  policy: SelfPolicy;
-  /** Open items first, then recently closed ones. */
-  agenda: AgendaItem[];
-  /** Newest first. */
-  feelings: FeelingView[];
-}
-
-export type PresenceStatus = "online" | "idle" | "dnd" | "offline";
-
-export interface PresenceActivity {
-  type: "playing" | "streaming" | "listening" | "watching" | "competing" | "custom";
-  name: string;
-  details: string | null;
-  state: string | null;
-  started_at: Timestamp | null;
-  url: string | null;
-}
-
-export interface VoiceSpot {
-  platform: PlatformId;
-  guild: string;
-  channel: string;
-  channel_name: string | null;
-}
-
-export interface PersonPresence {
-  account: AccountRef;
-  person: PersonId | null;
-  display_name: string;
-  status: PresenceStatus | null;
-  activities: PresenceActivity[];
-  voice: VoiceSpot | null;
-  online_since: Timestamp | null;
-  updated_at: Timestamp;
-}
-
-export interface VoiceMember {
-  account: AccountRef;
-  person: PersonId | null;
-  display_name: string;
-  is_self: boolean;
-  muted: boolean;
-  deafened: boolean;
-  video: boolean;
-  streaming: boolean;
-  since: Timestamp;
-}
-
-export interface VoiceChannelState {
-  platform: PlatformId;
-  guild: string;
-  channel: string;
-  name: string | null;
-  members: VoiceMember[];
-}
-
-export interface ChannelActivity {
-  context: ContextKey;
-  label: string | null;
-  recent_messages: number;
-  per_minute: number;
-  last_at: Timestamp | null;
-  recent_authors: string[];
-  topic: string[];
-  lively: boolean;
-  her_last_at: Timestamp | null;
-}
-
-export interface HerStatus {
-  voice: ContextKey | null;
-  voice_name: string | null;
-  golive: string | null;
-  streaming: boolean;
-  scene: string | null;
-  game: string | null;
-  /** The song she is singing. Absent on a Core from before the ActivityManager. */
-  singing?: string | null;
-}
-
-export interface TimeContext {
-  local: string;
-  weekday: number;
-  weekend: boolean;
-  part_of_day: string;
-  utc_offset_minutes: number;
-}
-
-/** `GET /api/world`. */
-export interface WorldView {
-  at: Timestamp;
-  time: TimeContext;
-  her: HerStatus;
-  people: PersonPresence[];
-  voice_channels: VoiceChannelState[];
-  channels: ChannelActivity[];
-}
-
 /** `off` | `mention-only` | `quiet` | `normal` | `lively` | `always`. */
 export type ChannelMode = string;
 
@@ -729,139 +619,6 @@ export interface TelemetryView {
 
 export type TaskId = string;
 export type Handle = string;
-
-export type EmotionName =
-  | "joy"
-  | "anger"
-  | "sorrow"
-  | "fear"
-  | "surprise"
-  | "disgust"
-  | "shy"
-  | "pride"
-  | "jealousy"
-  | "lonely"
-  | "missing"
-  | "gratitude"
-  | "guilt"
-  | "frustration";
-
-export type AffectDriveName = DriveName | "esteem" | "hunger" | "longing";
-
-export interface EmotionReading {
-  name: EmotionName;
-  intensity: number;
-  cause: string;
-  at: Timestamp;
-  person: PersonId | null;
-}
-
-export interface ShownEmotion {
-  from: EmotionName;
-  tag: string;
-  style: string;
-  masked: boolean;
-}
-
-export interface AffectBiases {
-  talkativeness: number;
-  initiative: number;
-  wants: { want: string; weight: number; person: Handle | null; why: string }[];
-}
-
-/** `GET /api/affect`. */
-export interface AffectSnapshot {
-  at: Timestamp;
-  drives: Partial<Record<AffectDriveName, number>>;
-  boredom: number;
-  top: EmotionReading[];
-  mood: Mood;
-  mood_line: string;
-  shown: ShownEmotion | null;
-  biases: AffectBiases;
-}
-
-export type RelationshipLabel =
-  | "很討厭"
-  | "討厭"
-  | "陌生人"
-  | "認識"
-  | "朋友"
-  | "好朋友"
-  | "摯友"
-  | "知心"
-  | "知己"
-  | "至交"
-  | "莫逆之交"
-  | "心有靈犀"
-  | "形影不離"
-  | "家人般"
-  | "生死之交"
-  | "命運相連"
-  | "無可取代"
-  | "心之所歸"
-  | "永恆羈絆";
-
-/** `GET /api/affect/people`, highest attachment first. */
-export interface PersonCard {
-  person: PersonId;
-  handle: Handle;
-  call_name: string | null;
-  affinity: number;
-  trust: number;
-  familiarity: number;
-  attachment: number;
-  emotions: Partial<Record<"missing" | "jealousy" | "gratitude" | "resentment", number>>;
-  feeling: string;
-  label: RelationshipLabel;
-  /** -100..1000, one per affinity point (absent on an older Core). */
-  level?: number;
-  /** How she acts with them now, one line she wrote in her reflection; `null` or absent: none yet. */
-  stance?: string | null;
-  /** The `level` the stance was written at; she rewrites it every 5 levels. */
-  stance_level?: number | null;
-  owner: boolean;
-  blocked: boolean;
-  last_seen: Timestamp | null;
-  last_together: Timestamp | null;
-  updated_at: Timestamp;
-}
-
-export type GoalTrigger =
-  | { kind: "at"; time: Timestamp }
-  | { kind: "when_online"; person: Handle }
-  | { kind: "after_activity"; activity: string }
-  | { kind: "whenever" };
-
-export type GoalStatus = "pending" | "active" | "done" | "dropped";
-
-export interface Goal {
-  id: string;
-  what: string;
-  why: string;
-  trigger: GoalTrigger;
-  steps: string[];
-  status: GoalStatus;
-  expires: Timestamp;
-  person: Handle | null;
-  context: ContextKey | null;
-  source: "plan" | "plan_daily" | "reflect" | "panel";
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  closed_at: Timestamp | null;
-  close_reason: string | null;
-}
-
-/** `GET /api/mind/goals`. */
-export interface GoalsView {
-  goals: Goal[];
-  closed_included: boolean;
-}
-
-/** `GET /api/mind/plan`. */
-export interface DayPlanView {
-  day_plan: string | null;
-}
 
 export type ReasoningLevel = string;
 

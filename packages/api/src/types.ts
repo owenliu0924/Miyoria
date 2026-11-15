@@ -11,18 +11,13 @@ import type {
 import type { WalletExport } from "@miyoria/economy";
 import type { MemoryKind, MemoryScope } from "@miyoria/store";
 import type {
-  ChannelActivity,
   ContextKey,
-  Feeling,
-  Goal,
   PersonId,
   ProfileId,
   ReasoningLevel,
-  SelfSnapshot,
   Timestamp,
   TurnId,
   TurnOutcome,
-  WorldSnapshot,
 } from "@miyoria/types";
 
 // Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
@@ -38,6 +33,7 @@ export type {
   CardField,
   CardPoseChoice,
   CardPrices,
+  ChannelActivityView,
   ChannelLevelInfo,
   ChannelLevelsView,
   ChannelLevelView,
@@ -49,11 +45,14 @@ export type {
   DataInventoryView,
   DataNote,
   DataWipeResult,
+  DayPlanView,
   DecisionRecord,
   E2eSegmentName,
   E2eStats,
   ExtensionInfo,
+  FeelingView,
   FortuneField,
+  GoalsView,
   HealthInfo,
   IssueCardRequest,
   IssuedCard,
@@ -105,6 +104,7 @@ export type {
   SayResponse,
   SceneRoleState,
   SceneRolesState,
+  SelfView,
   SessionInfo,
   SessionPermissions,
   SessionUser,
@@ -133,6 +133,7 @@ export type {
   WalletAdjustResult,
   WorkspaceFile as WorkspaceFileView,
   WorkspaceView,
+  WorldView,
 } from "@miyoria/contracts/api";
 
 /** `GET /api/member/export` (a file). */
@@ -222,26 +223,6 @@ export interface UpdateMemoryRequest {
   done?: boolean;
 }
 
-/** One of her feelings, with the person's name. */
-export interface FeelingView extends Feeling {
-  display_name: string | null;
-}
-
-/** `GET /api/self`: her inner state and her feelings about people (newest first). */
-export interface SelfView extends SelfSnapshot {
-  feelings: FeelingView[];
-}
-
-/** A text context of the world snapshot, with its human name when the platform knows it. */
-export interface ChannelActivityView extends ChannelActivity {
-  label: string | null;
-}
-
-/** `GET /api/world`: what she perceives right now. */
-export interface WorldView extends Omit<WorldSnapshot, "channels"> {
-  channels: ChannelActivityView[];
-}
-
 // ---- what she organized and learned (phase G) -----------------------------------------------
 
 // ---- live controls (`control.ts`) and telemetry (`telemetry.ts`) ----------------------------
@@ -280,19 +261,6 @@ export interface TelemetryView {
 }
 
 // ---- body, arbiter, affect, plan, prompts (docs/design/v2-architecture.md §3) -------------
-
-/** `GET /api/mind/goals`. */
-export interface GoalsView {
-  /** Pending and active goals, soonest trigger first, then (with `closed=true`) closed ones. */
-  goals: Goal[];
-  /** The closed goals were asked for and the agenda can list them. */
-  closed_included: boolean;
-}
-
-/** `GET /api/mind/plan`: today's plan in her words (`null`: not written yet). */
-export interface DayPlanView {
-  day_plan: string | null;
-}
 
 /** One saved prompt without its blocks and messages (`GET /api/prompts`). */
 export interface PromptSummary {

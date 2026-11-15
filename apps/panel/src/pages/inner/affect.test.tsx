@@ -57,7 +57,7 @@ const SELF: SelfView = {
   at: AT,
   mood: { valence: 0.2, arousal: 0.5, energy: 0.7 },
   boredom: 0.4,
-  drives: { social: 0.7, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.6 },
+  drives: { social: 0.7, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.6, esteem: 0.4, hunger: 0.3, longing: 0 },
   policy: { talkativeness: {}, initiative: 0.5, initiative_why: "" },
   agenda: [],
   feelings: [{ person: "p1", display_name: "Owen", text: "有點在意他", updated_at: AT, by: "self" }],

@@ -304,10 +304,10 @@ describe("v2 routes", () => {
     expect(await statusOf(h.adm.activity())).toBe(503);
     expect(await statusOf(h.adm.activityTasks())).toBe(503);
     expect(await statusOf(h.adm.ledger())).toBe(503);
-    expect(await statusOf(h.client.affect())).toBe(503);
-    expect(await statusOf(h.client.affectPeople())).toBe(503);
-    expect(await statusOf(h.client.goals())).toBe(503);
-    expect(await statusOf(h.client.dayPlan())).toBe(503);
+    expect(await statusOf(h.adm.affect())).toBe(503);
+    expect(await statusOf(h.adm.affectPeople())).toBe(503);
+    expect(await statusOf(h.adm.goals())).toBe(503);
+    expect(await statusOf(h.adm.dayPlan())).toBe(503);
     expect(await statusOf(h.client.prompts())).toBe(503);
     expect(await statusOf(h.client.prompt("T"))).toBe(503);
     expect(await statusOf(h.client.turnOutcomes())).toBe(503);
@@ -378,30 +378,30 @@ describe("v2 routes", () => {
   it("serve affect with its biases and the person cards", async () => {
     const h = await harness();
     h.sup.services.provide("self", AffectStateKey, fakeAffect);
-    const affect = await h.client.affect();
+    const affect = await h.adm.affect();
     expect(affect).toEqual(AFFECT);
     expect(affect.biases.wants[0]?.want).toBe("chat_with");
-    expect(await h.client.affectPeople()).toEqual([CARD]);
+    expect(await h.adm.affectPeople()).toEqual([CARD]);
   });
 
   it("serve goals and the day plan", async () => {
     const h = await harness();
     h.sup.services.provide("mind", GoalAgendaKey, new FakeAgenda() as unknown as GoalAgenda);
-    expect(await h.client.goals()).toEqual({ goals: [GOAL], closed_included: false });
-    expect(await h.client.goals(true)).toEqual({ goals: [GOAL, DONE], closed_included: true });
+    expect(await h.adm.goals()).toEqual({ goals: [GOAL], closed_included: false });
+    expect(await h.adm.goals(true)).toEqual({ goals: [GOAL, DONE], closed_included: true });
     // The mind does not know the day plan yet.
-    expect(await statusOf(h.client.dayPlan())).toBe(503);
+    expect(await statusOf(h.adm.dayPlan())).toBe(503);
     const mind = { accepting: true, dayPlan: () => "下午玩 MC,晚上陪 Owen" } as unknown as Mind;
     h.sup.services.provide("mind", MindKey, mind);
-    expect(await h.client.dayPlan()).toEqual({ day_plan: "下午玩 MC,晚上陪 Owen" });
+    expect(await h.adm.dayPlan()).toEqual({ day_plan: "下午玩 MC,晚上陪 Owen" });
     h.sup.services.provide("mind", MindKey, { accepting: true } as unknown as Mind);
-    expect(await h.client.dayPlan()).toEqual({ day_plan: null });
+    expect(await h.adm.dayPlan()).toEqual({ day_plan: null });
   });
 
   it("an agenda without a closed list still answers", async () => {
     const h = await harness();
     h.sup.services.provide("mind", GoalAgendaKey, { goals: () => [GOAL] } as unknown as GoalAgenda);
-    expect(await h.client.goals(true)).toEqual({ goals: [GOAL], closed_included: false });
+    expect(await h.adm.goals(true)).toEqual({ goals: [GOAL], closed_included: false });
   });
 
   it("serve saved prompts as a list and in full", async () => {

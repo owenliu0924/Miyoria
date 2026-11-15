@@ -7,9 +7,11 @@ import type { DecisionRecord, RoleAssignment, RoleDefinition, RoleMapping } from
 import type {
   ActivitySnapshot,
   ActivityTask,
+  AffectSnapshot,
   ArbiterVerdict,
   ContextKey,
   LedgerView,
+  PersonCard,
   PlatformId,
   ThoughtDigest,
 } from "@miyoria/types";
@@ -18,7 +20,9 @@ import type {
   AssignRoleRequest,
   ConversationNoteView,
   CostInfo,
+  DayPlanView,
   ExtensionInfo,
+  GoalsView,
   KnowledgeView,
   McpServerInfo,
   MindView,
@@ -31,11 +35,13 @@ import type {
   RemoveMappingRequest,
   SayResponse,
   SceneRolesState,
+  SelfView,
   StageState,
   UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
   VoiceState,
+  WorldView,
 } from "../../src/index.js";
 import { call } from "./http.js";
 
@@ -137,6 +143,15 @@ export function adminCalls(base: string, token: string) {
     knowledge: () => get<KnowledgeView>("/api/knowledge"),
     conversationNotes: () => get<ConversationNoteView[]>("/api/knowledge/conversations"),
     reflection: (days = 7) => get<ReflectionView>("/api/reflection", { days }),
+
+    // ---- her inner life, her mood and her plans
+    self: () => get<SelfView>("/api/self"),
+    world: () => get<WorldView>("/api/world"),
+    affect: () => get<AffectSnapshot>("/api/affect"),
+    affectPeople: () => get<PersonCard[]>("/api/affect/people"),
+    goals: (closed = false) =>
+      get<GoalsView>("/api/mind/goals", { closed: closed ? "true" : undefined }),
+    dayPlan: () => get<DayPlanView>("/api/mind/plan"),
 
     // ---- extensions and MCP
     extensions: () => get<ExtensionInfo[]>("/api/extensions"),

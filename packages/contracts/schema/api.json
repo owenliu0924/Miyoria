@@ -519,6 +519,204 @@
         "affinity"
       ]
     },
+    "ApiAffectBiases": {
+      "type": "object",
+      "properties": {
+        "talkativeness": {
+          "type": "number"
+        },
+        "initiative": {
+          "type": "number"
+        },
+        "wants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "want": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "number"
+              },
+              "person": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "why": {
+                "type": "string"
+              },
+              "from": {
+                "$ref": "#/$defs/ApiEmotionName"
+              }
+            },
+            "required": [
+              "want",
+              "weight",
+              "person",
+              "why"
+            ]
+          }
+        }
+      },
+      "required": [
+        "talkativeness",
+        "initiative",
+        "wants"
+      ]
+    },
+    "ApiAffectSnapshot": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "drives": {
+          "$ref": "#/$defs/ApiDrives"
+        },
+        "boredom": {
+          "type": "number"
+        },
+        "top": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiEmotionReading"
+          }
+        },
+        "mood": {
+          "$ref": "#/$defs/ApiMood"
+        },
+        "mood_line": {
+          "type": "string"
+        },
+        "shown": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiShownEmotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "biases": {
+          "$ref": "#/$defs/ApiAffectBiases"
+        }
+      },
+      "required": [
+        "at",
+        "drives",
+        "boredom",
+        "top",
+        "mood",
+        "mood_line",
+        "shown",
+        "biases"
+      ]
+    },
+    "ApiAgendaItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "due": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ApiAgendaStatus"
+        },
+        "closed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blocked": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "capability": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "capability",
+                "reason",
+                "at"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "why",
+        "person",
+        "context",
+        "created_at",
+        "due",
+        "expires_at",
+        "status",
+        "closed_at"
+      ]
+    },
+    "ApiAgendaStatus": {
+      "type": "string",
+      "enum": [
+        "open",
+        "done",
+        "expired",
+        "dropped"
+      ]
+    },
     "ApiArbiterDecisionView": {
       "type": "object",
       "properties": {
@@ -886,6 +1084,64 @@
       "required": [
         "events",
         "complete"
+      ]
+    },
+    "ApiChannelActivityView": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "recent_messages": {
+          "type": "number"
+        },
+        "per_minute": {
+          "type": "number"
+        },
+        "last_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recent_authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "topic": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lively": {
+          "type": "boolean"
+        },
+        "her_last_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "recent_messages",
+        "per_minute",
+        "last_at",
+        "recent_authors",
+        "topic",
+        "lively",
+        "her_last_at",
+        "label"
       ]
     },
     "ApiChannelLevelInfo": {
@@ -1282,6 +1538,32 @@
         "month"
       ]
     },
+    "ApiCrush": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "romance": {
+          "type": "number"
+        },
+        "since": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "person",
+        "name",
+        "romance",
+        "since"
+      ]
+    },
     "ApiDataCategoryId": {
       "type": "string",
       "enum": [
@@ -1517,6 +1799,20 @@
         "notes"
       ]
     },
+    "ApiDayPlanView": {
+      "type": "object",
+      "properties": {
+        "day_plan": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "day_plan"
+      ]
+    },
     "ApiDealView": {
       "type": "object",
       "properties": {
@@ -1657,6 +1953,58 @@
       "enum": [
         "voice",
         "text"
+      ]
+    },
+    "ApiDriveName": {
+      "type": "string",
+      "enum": [
+        "social",
+        "play",
+        "attention",
+        "rest",
+        "curiosity",
+        "esteem",
+        "hunger",
+        "longing"
+      ]
+    },
+    "ApiDrives": {
+      "type": "object",
+      "properties": {
+        "social": {
+          "type": "number"
+        },
+        "play": {
+          "type": "number"
+        },
+        "attention": {
+          "type": "number"
+        },
+        "rest": {
+          "type": "number"
+        },
+        "curiosity": {
+          "type": "number"
+        },
+        "esteem": {
+          "type": "number"
+        },
+        "hunger": {
+          "type": "number"
+        },
+        "longing": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "social",
+        "play",
+        "attention",
+        "rest",
+        "curiosity",
+        "esteem",
+        "hunger",
+        "longing"
       ]
     },
     "ApiE2eSegmentName": {
@@ -1834,6 +2182,55 @@
         "step",
         "ok",
         "detail"
+      ]
+    },
+    "ApiEmotionName": {
+      "type": "string",
+      "enum": [
+        "joy",
+        "anger",
+        "sorrow",
+        "fear",
+        "surprise",
+        "disgust",
+        "shy",
+        "pride",
+        "jealousy",
+        "lonely",
+        "missing",
+        "gratitude",
+        "guilt",
+        "frustration"
+      ]
+    },
+    "ApiEmotionReading": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ApiEmotionName"
+        },
+        "intensity": {
+          "type": "number"
+        },
+        "cause": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "intensity",
+        "cause",
+        "at",
+        "person"
       ]
     },
     "ApiEmptyRequest": {
@@ -2014,6 +2411,36 @@
         "negative",
         "denied",
         "examples"
+      ]
+    },
+    "ApiFeelingView": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "person",
+        "text",
+        "updated_at",
+        "by",
+        "display_name"
       ]
     },
     "ApiFieldSource": {
@@ -2268,6 +2695,94 @@
         "action"
       ]
     },
+    "ApiGoal": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "trigger": {
+          "$ref": "#/$defs/ApiGoalTrigger"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/ApiGoalStatus"
+        },
+        "expires": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "plan",
+            "plan_daily",
+            "reflect",
+            "panel"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "closed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "close_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "what",
+        "why",
+        "trigger",
+        "steps",
+        "status",
+        "expires",
+        "person",
+        "context",
+        "source",
+        "created_at",
+        "updated_at",
+        "closed_at",
+        "close_reason"
+      ]
+    },
     "ApiGoalList": {
       "type": "object",
       "properties": {
@@ -2280,6 +2795,79 @@
       },
       "required": [
         "goals"
+      ]
+    },
+    "ApiGoalStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "done",
+        "dropped"
+      ]
+    },
+    "ApiGoalTrigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "at"
+            },
+            "time": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "time"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "when_online"
+            },
+            "person": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "person"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "after_activity"
+            },
+            "activity": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "activity"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "whenever"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
       ]
     },
     "ApiGoalView": {
@@ -2331,6 +2919,24 @@
         "fulfilled"
       ]
     },
+    "ApiGoalsView": {
+      "type": "object",
+      "properties": {
+        "goals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiGoal"
+          }
+        },
+        "closed_included": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "goals",
+        "closed_included"
+      ]
+    },
     "ApiHealthDay": {
       "type": "object",
       "properties": {
@@ -2374,6 +2980,52 @@
       "required": [
         "status",
         "version"
+      ]
+    },
+    "ApiHeart": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "romance": {
+          "type": "number"
+        },
+        "emotions": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ApiPersonEmotionName"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "last_seen": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_together": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "person",
+        "name",
+        "romance",
+        "emotions",
+        "last_seen",
+        "last_together"
       ]
     },
     "ApiHerActivity": {
@@ -2583,6 +3235,62 @@
             "since"
           ]
         }
+      ]
+    },
+    "ApiHerStatus": {
+      "type": "object",
+      "properties": {
+        "voice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "voice_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "golive": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "scene": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "game": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "singing": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "voice",
+        "voice_name",
+        "golive",
+        "streaming",
+        "scene",
+        "game"
       ]
     },
     "ApiHunger": {
@@ -4887,6 +5595,25 @@
         "failed"
       ]
     },
+    "ApiMood": {
+      "type": "object",
+      "properties": {
+        "valence": {
+          "type": "number"
+        },
+        "arousal": {
+          "type": "number"
+        },
+        "energy": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "valence",
+        "arousal",
+        "energy"
+      ]
+    },
     "ApiMoveQueueItemRequest": {
       "type": "object",
       "properties": {
@@ -5024,6 +5751,110 @@
         "last_seen"
       ]
     },
+    "ApiPersonCard": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "handle": {
+          "type": "string"
+        },
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "affinity": {
+          "type": "number"
+        },
+        "trust": {
+          "type": "number"
+        },
+        "familiarity": {
+          "type": "number"
+        },
+        "attachment": {
+          "type": "number"
+        },
+        "emotions": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ApiPersonEmotionName"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "feeling": {
+          "type": "string"
+        },
+        "public_feeling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "$ref": "#/$defs/ApiRelationshipLabel"
+        },
+        "level": {
+          "type": "number"
+        },
+        "stance": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stance_level": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "owner": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "last_seen": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_together": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "person",
+        "handle",
+        "call_name",
+        "affinity",
+        "trust",
+        "familiarity",
+        "attachment",
+        "emotions",
+        "feeling",
+        "label",
+        "level",
+        "owner",
+        "blocked",
+        "last_seen",
+        "last_together",
+        "updated_at"
+      ]
+    },
     "ApiPersonDetail": {
       "type": "object",
       "properties": {
@@ -5068,6 +5899,15 @@
         "memory_count"
       ]
     },
+    "ApiPersonEmotionName": {
+      "type": "string",
+      "enum": [
+        "missing",
+        "jealousy",
+        "gratitude",
+        "resentment"
+      ]
+    },
     "ApiPersonPage": {
       "type": "object",
       "properties": {
@@ -5087,6 +5927,68 @@
       "required": [
         "items",
         "next_cursor"
+      ]
+    },
+    "ApiPersonPresence": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiPresenceStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPresenceActivity"
+          }
+        },
+        "voice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiVoiceSpot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "online_since": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "person",
+        "display_name",
+        "status",
+        "activities",
+        "voice",
+        "online_since",
+        "updated_at"
       ]
     },
     "ApiPersonSummary": {
@@ -5371,6 +6273,66 @@
         "status",
         "winner",
         "my_bet"
+      ]
+    },
+    "ApiPresenceActivity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "playing",
+            "streaming",
+            "listening",
+            "watching",
+            "competing",
+            "custom"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "details": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "details",
+        "state",
+        "started_at",
+        "url"
+      ]
+    },
+    "ApiPresenceStatus": {
+      "type": "string",
+      "enum": [
+        "online",
+        "idle",
+        "dnd",
+        "offline"
       ]
     },
     "ApiProposedTool": {
@@ -6250,6 +7212,30 @@
         "reason"
       ]
     },
+    "ApiRelationshipLabel": {
+      "type": "string",
+      "enum": [
+        "很討厭",
+        "討厭",
+        "陌生人",
+        "認識",
+        "朋友",
+        "好朋友",
+        "摯友",
+        "知心",
+        "知己",
+        "至交",
+        "莫逆之交",
+        "心有靈犀",
+        "形影不離",
+        "家人般",
+        "生死之交",
+        "命運相連",
+        "無可取代",
+        "心之所歸",
+        "永恆羈絆"
+      ]
+    },
     "ApiReminderView": {
       "type": "object",
       "properties": {
@@ -6710,6 +7696,111 @@
       ],
       "additionalProperties": false
     },
+    "ApiSelfPolicy": {
+      "type": "object",
+      "properties": {
+        "talkativeness": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ApiTalkativeness"
+          }
+        },
+        "initiative": {
+          "type": "number"
+        },
+        "initiative_why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "talkativeness",
+        "initiative",
+        "initiative_why"
+      ]
+    },
+    "ApiSelfView": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "mood": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiMood"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boredom": {
+          "type": "number"
+        },
+        "drives": {
+          "$ref": "#/$defs/ApiDrives"
+        },
+        "policy": {
+          "$ref": "#/$defs/ApiSelfPolicy"
+        },
+        "agenda": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiAgendaItem"
+          }
+        },
+        "emotions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiEmotionReading"
+          }
+        },
+        "shown": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiShownEmotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hearts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiHeart"
+          }
+        },
+        "crush": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiCrush"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "feelings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiFeelingView"
+          }
+        }
+      },
+      "required": [
+        "at",
+        "mood",
+        "boredom",
+        "drives",
+        "policy",
+        "agenda",
+        "feelings"
+      ]
+    },
     "ApiSessionInfo": {
       "type": "object",
       "properties": {
@@ -6885,6 +7976,29 @@
         "price",
         "available",
         "why"
+      ]
+    },
+    "ApiShownEmotion": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/ApiEmotionName"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "style": {
+          "type": "string"
+        },
+        "masked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "from",
+        "tag",
+        "style",
+        "masked"
       ]
     },
     "ApiSkillFile": {
@@ -7346,6 +8460,32 @@
       "enum": [
         "start",
         "stop"
+      ]
+    },
+    "ApiTalkativeness": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "number"
+        },
+        "until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "why": {
+          "type": "string"
+        },
+        "set_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "level",
+        "until",
+        "why",
+        "set_at"
       ]
     },
     "ApiTaskFailureCode": {
@@ -8330,6 +9470,33 @@
         "manual"
       ]
     },
+    "ApiTimeContext": {
+      "type": "object",
+      "properties": {
+        "local": {
+          "type": "string"
+        },
+        "weekday": {
+          "type": "number"
+        },
+        "weekend": {
+          "type": "boolean"
+        },
+        "part_of_day": {
+          "type": "string"
+        },
+        "utc_offset_minutes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "local",
+        "weekday",
+        "weekend",
+        "part_of_day",
+        "utc_offset_minutes"
+      ]
+    },
     "ApiTransferRequest": {
       "type": "object",
       "properties": {
@@ -8463,6 +9630,96 @@
         "$ref": "#/$defs/ApiUsageInfo"
       }
     },
+    "ApiVoiceActivity": {
+      "type": "object",
+      "properties": {
+        "recent_utterances": {
+          "type": "number"
+        },
+        "per_minute": {
+          "type": "number"
+        },
+        "last_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "secs_since_last": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "recent_speakers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lively": {
+          "type": "boolean"
+        },
+        "her_last_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "recent_utterances",
+        "per_minute",
+        "last_at",
+        "secs_since_last",
+        "recent_speakers",
+        "lively",
+        "her_last_at"
+      ]
+    },
+    "ApiVoiceChannelState": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiVoiceMember"
+          }
+        },
+        "activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiVoiceActivity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "channel",
+        "name",
+        "members"
+      ]
+    },
     "ApiVoiceE2eLatency": {
       "type": "object",
       "properties": {
@@ -8551,6 +9808,52 @@
         "e2e"
       ]
     },
+    "ApiVoiceMember": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_self": {
+          "type": "boolean"
+        },
+        "muted": {
+          "type": "boolean"
+        },
+        "deafened": {
+          "type": "boolean"
+        },
+        "video": {
+          "type": "boolean"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "since": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "person",
+        "display_name",
+        "is_self",
+        "muted",
+        "deafened",
+        "video",
+        "streaming",
+        "since"
+      ]
+    },
     "ApiVoiceSession": {
       "type": "object",
       "properties": {
@@ -8596,6 +9899,32 @@
         "joined_at",
         "latency",
         "last_turn"
+      ]
+    },
+    "ApiVoiceSpot": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "channel_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "channel",
+        "channel_name"
       ]
     },
     "ApiVoiceState": {
@@ -8806,6 +10135,46 @@
         "truncated",
         "usage",
         "limits"
+      ]
+    },
+    "ApiWorldView": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "time": {
+          "$ref": "#/$defs/ApiTimeContext"
+        },
+        "her": {
+          "$ref": "#/$defs/ApiHerStatus"
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPersonPresence"
+          }
+        },
+        "voice_channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiVoiceChannelState"
+          }
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiChannelActivityView"
+          }
+        }
+      },
+      "required": [
+        "at",
+        "time",
+        "her",
+        "people",
+        "voice_channels",
+        "channels"
       ]
     },
     "WireAccountRef": {

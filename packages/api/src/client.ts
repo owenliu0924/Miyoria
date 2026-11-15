@@ -1,28 +1,17 @@
 // Typed client for the admin API, used by the CLI. The routes on the route table
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
-import type {
-  AffectSnapshot,
-  ContextKey,
-  Envelope,
-  PersonCard,
-  SavedPrompt,
-  TurnOutcomeRecord,
-} from "@miyoria/types";
+import type { ContextKey, Envelope, SavedPrompt, TurnOutcomeRecord } from "@miyoria/types";
 import { statusText } from "./errors.js";
 import type {
-  DayPlanView,
   ErrorBody,
-  GoalsView,
   MemoryItem,
   MemoryListQuery,
   MemoryRecordView,
   Page,
   PromptSummary,
-  SelfView,
   TurnOutcomeKind,
   UpdateMemoryRequest,
-  WorldView,
 } from "./types.js";
 
 export type ClientErrorKind = "invalid_url" | "transport" | "api" | "decode";
@@ -185,43 +174,6 @@ export class ApiClient {
 
   deleteMemory(id: string, o?: CallOptions): Promise<void> {
     return this.#empty("DELETE", ["memory", id], o);
-  }
-
-  // ---- inner life -----------------------------------------------------------------------
-
-  /** Her drives, boredom, policy, agenda, mood and feelings. */
-  self(o?: CallOptions): Promise<SelfView> {
-    return this.#json("GET", ["self"], o);
-  }
-
-  /** What she perceives: people, voice channels, channel activity, her own status. */
-  world(o?: CallOptions): Promise<WorldView> {
-    return this.#json("GET", ["world"], o);
-  }
-
-  // ---- body, arbiter, affect, plan, prompts -----------------------------------------------
-
-  /** Her emotions, derived mood, drives and the behaviour biases they imply. */
-  affect(o?: CallOptions): Promise<AffectSnapshot> {
-    return this.#json("GET", ["affect"], o);
-  }
-
-  /** One card per person, highest attachment first. */
-  affectPeople(o?: CallOptions): Promise<PersonCard[]> {
-    return this.#json("GET", ["affect", "people"], o);
-  }
-
-  /** Her goals (`closed`: also the done and dropped ones when the agenda keeps them). */
-  goals(closed = false, o?: CallOptions): Promise<GoalsView> {
-    return this.#json("GET", ["mind", "goals"], {
-      ...o,
-      query: { closed: closed ? "true" : undefined },
-    });
-  }
-
-  /** Today's plan in her words. */
-  dayPlan(o?: CallOptions): Promise<DayPlanView> {
-    return this.#json("GET", ["mind", "plan"], o);
   }
 
   /** The saved prompts of recent turns (no text), newest first. */

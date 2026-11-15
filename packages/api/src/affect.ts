@@ -5,20 +5,14 @@
 // routes (`/api/people/{id}/adjust`).
 
 import { AffectStateKey } from "@miyoria/types";
-import { json, type Route } from "./route.js";
-import type { ApiState } from "./state.js";
+import { os } from "./contract.js";
 
-export function affectRoutes(state: ApiState): Route[] {
-  return [
-    {
-      method: "GET",
-      path: "/api/affect",
-      handler: () => json(state.service(AffectStateKey, "affect module").snapshot()),
-    },
-    {
-      method: "GET",
-      path: "/api/affect/people",
-      handler: () => json(state.service(AffectStateKey, "affect module").cards()),
-    },
-  ];
-}
+/** The affect routes on the route table. */
+export const affectRpc = {
+  snapshot: os.affect.snapshot.handler(({ context }) =>
+    context.state.service(AffectStateKey, "affect module").snapshot(),
+  ),
+  people: os.affect.people.handler(({ context }) =>
+    context.state.service(AffectStateKey, "affect module").cards(),
+  ),
+};

@@ -412,12 +412,12 @@ export function useVoice() {
 
 export function useSelf() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.self, queryFn: ({ signal }) => api.self({ signal }), refetchInterval: poll(5_000) });
+  return useQuery({ queryKey: queryKeys.self, queryFn: ({ signal }) => api.rpc.self(undefined, { signal }), refetchInterval: poll(5_000) });
 }
 
 export function useWorld() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.world, queryFn: ({ signal }) => api.world({ signal }), refetchInterval: poll(5_000) });
+  return useQuery({ queryKey: queryKeys.world, queryFn: ({ signal }) => api.rpc.world(undefined, { signal }), refetchInterval: poll(5_000) });
 }
 
 export function useChannelLevels() {
@@ -746,26 +746,26 @@ export function useArbiterDecisions(q: { limit?: number; verdict?: ArbiterVerdic
 
 export function useAffect() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.affect, queryFn: ({ signal }) => api.affect({ signal }), refetchInterval: poll(10_000) });
+  return useQuery({ queryKey: queryKeys.affect, queryFn: ({ signal }) => api.rpc.affect.snapshot(undefined, { signal }), refetchInterval: poll(10_000) });
 }
 
 export function useAffectPeople() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.affectPeople, queryFn: ({ signal }) => api.affectPeople({ signal }), refetchInterval: poll(30_000) });
+  return useQuery({ queryKey: queryKeys.affectPeople, queryFn: ({ signal }) => api.rpc.affect.people(undefined, { signal }), refetchInterval: poll(30_000) });
 }
 
 export function useGoals(closed: boolean) {
   const api = useApi();
   return useQuery({
     queryKey: [...queryKeys.goals, closed],
-    queryFn: ({ signal }) => api.goals(closed, { signal }),
+    queryFn: ({ signal }) => api.rpc.mind.goals({ query: { closed: closed ? "true" : undefined } }, { signal }),
     refetchInterval: poll(15_000),
   });
 }
 
 export function useDayPlan() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.dayPlan, queryFn: ({ signal }) => api.dayPlan({ signal }), refetchInterval: poll(60_000) });
+  return useQuery({ queryKey: queryKeys.dayPlan, queryFn: ({ signal }) => api.rpc.mind.plan(undefined, { signal }), refetchInterval: poll(60_000) });
 }
 
 export function usePrompts(limit = 30) {

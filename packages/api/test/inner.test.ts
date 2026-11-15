@@ -16,7 +16,8 @@ import {
   WorldStateKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiClient, ApiModule } from "../src/index.js";
+import { ActiveProfileKey, ApiModule } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { raw, statusOf } from "./support/http.js";
 
 const TOKEN = "test-token";
@@ -127,13 +128,13 @@ async function harness() {
   await sup.startAll();
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  return { sup, base, client: new ApiClient(base, TOKEN) };
+  return { sup, base, adm: adminCalls(base, TOKEN) };
 }
 
 describe("inner routes", () => {
   it("are 503 while the modules are stopped and need the token", async () => {
     const h = await harness();
-    expect(await statusOf(h.client.self())).toBe(503);
+    expect(await statusOf(h.adm.self())).toBe(503);
     const world = await raw(h.base, "GET", "/api/world", { token: TOKEN });
     expect(world.status).toBe(503);
     expect((world.body as { error: string }).error).toContain("world module");
@@ -147,7 +148,7 @@ describe("inner routes", () => {
     const h = await harness();
     h.sup.services.provide("self", SelfStateKey, fakeSelf);
     h.sup.services.provide("social", SocialKey, fakeSocial);
-    const self = await h.client.self();
+    const self = await h.adm.self();
     expect(self).toEqual({
       ...SNAPSHOT,
       feelings: [
@@ -170,7 +171,7 @@ describe("inner routes", () => {
     };
     sinks.register(sink);
     h.sup.services.provide("kernel", PlatformSinksKey, sinks);
-    const world = await h.client.world();
+    const world = await h.adm.world();
     expect(world.people).toEqual(WORLD.people);
     expect(world.channels).toEqual([{ ...WORLD.channels[0], label: "Miyoria / 雜談" }]);
     expect(world.time.part_of_day).toBe("晚上");

@@ -15,14 +15,8 @@ import type {
   MemoryRecordView,
   Page,
   UpdateMemoryRequest,
-  SelfView,
-  WorldView,
 
   TelemetryView,
-  AffectSnapshot,
-  DayPlanView,
-  GoalsView,
-  PersonCard,
   PromptSummary,
   SavedPrompt,
   TurnMetrics,
@@ -59,8 +53,6 @@ export function createApi(client: ApiClient) {
       client.patch<MemoryRecordView>(`/api/memory/${seg(id)}`, req),
     deleteMemory: (id: string) => client.delete<void>(`/api/memory/${seg(id)}`),
 
-    self: (o?: Opts) => client.get<SelfView>("/api/self", o),
-    world: (o?: Opts) => client.get<WorldView>("/api/world", o),
     // her data: the inventory and the deletes are on the route table, the downloads are not
     /** A JSON backup of `categories` (all exportable ones without). */
     dataExport: (categories?: DataCategoryId[]) =>
@@ -68,11 +60,6 @@ export function createApi(client: ApiClient) {
     /** The full backup a reset needs; its `x-miyoria-backup-token` header unlocks the reset. */
     dataBackup: () => client.download("POST", "/api/data/backup"),
     // body, arbiter, affect, plan, prompts
-    affect: (o?: Opts) => client.get<AffectSnapshot>("/api/affect", o),
-    affectPeople: (o?: Opts) => client.get<PersonCard[]>("/api/affect/people", o),
-    goals: (closed: boolean, o?: Opts) =>
-      client.get<GoalsView>("/api/mind/goals", { ...o, query: { closed: closed ? "true" : undefined } }),
-    dayPlan: (o?: Opts) => client.get<DayPlanView>("/api/mind/plan", o),
     prompts: (limit: number, context?: ContextKey, o?: Opts) =>
       client.get<PromptSummary[]>("/api/prompts", {
         ...o,

@@ -16,6 +16,7 @@ import type {
   InferContractRouterInputs,
   InferContractRouterOutputs,
 } from "@orpc/contract";
+import { affect } from "./affect.js";
 import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
 import { activity, arbiter } from "./body.js";
@@ -26,6 +27,7 @@ import { data } from "./data.js";
 import { economy, peopleEconomy } from "./economy.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
+import { self, world } from "./inner.js";
 import { knowledge, mindDigests, reflection } from "./learning.js";
 import { life } from "./life.js";
 import { member } from "./member.js";
@@ -33,12 +35,23 @@ import { mind } from "./mind.js";
 import { extensions, mcp, queue, stage, voiceMonitor } from "./ops.js";
 import { people } from "./people.js";
 import { persona } from "./persona.js";
+import { mindPlan } from "./plan.js";
 import { publicView } from "./public.js";
 import { roles } from "./roles.js";
 import { sandbox } from "./sandbox.js";
 import { wallet } from "./wallet.js";
 import { skills, workspace } from "./workspace.js";
 
+export {
+  type AffectBiases,
+  AffectBiasesSchema,
+  type AffectSnapshot,
+  AffectSnapshotSchema,
+  type PersonCard,
+  PersonCardSchema,
+  type RelationshipLabel,
+  RelationshipLabelSchema,
+} from "./affect.js";
 export {
   type BountyList,
   BountyListSchema,
@@ -260,6 +273,60 @@ export {
   IssuedFortuneSchema,
 } from "./fortune.js";
 export {
+  type AgendaItem,
+  AgendaItemSchema,
+  type AgendaStatus,
+  AgendaStatusSchema,
+  type ChannelActivityView,
+  ChannelActivityViewSchema,
+  type Crush,
+  CrushSchema,
+  type DriveName,
+  DriveNameSchema,
+  type Drives,
+  DrivesSchema,
+  type EmotionName,
+  EmotionNameSchema,
+  type EmotionReading,
+  EmotionReadingSchema,
+  type FeelingView,
+  FeelingViewSchema,
+  type Heart,
+  HeartSchema,
+  type HerStatus,
+  HerStatusSchema,
+  type Mood,
+  MoodSchema,
+  type PersonEmotionName,
+  PersonEmotionNameSchema,
+  type PersonPresence,
+  PersonPresenceSchema,
+  type PresenceActivity,
+  PresenceActivitySchema,
+  type PresenceStatus,
+  PresenceStatusSchema,
+  type SelfPolicy,
+  SelfPolicySchema,
+  type SelfView,
+  SelfViewSchema,
+  type ShownEmotion,
+  ShownEmotionSchema,
+  type Talkativeness,
+  TalkativenessSchema,
+  type TimeContext,
+  TimeContextSchema,
+  type VoiceActivity,
+  VoiceActivitySchema,
+  type VoiceChannelState,
+  VoiceChannelStateSchema,
+  type VoiceMember,
+  VoiceMemberSchema,
+  type VoiceSpot,
+  VoiceSpotSchema,
+  type WorldView,
+  WorldViewSchema,
+} from "./inner.js";
+export {
   type ConversationNote,
   ConversationNoteSchema,
   type FeedbackTally,
@@ -461,6 +528,18 @@ export {
   SetPersonaResponseSchema,
 } from "./persona.js";
 export {
+  type DayPlanView,
+  DayPlanViewSchema,
+  type Goal,
+  GoalSchema,
+  type GoalStatus,
+  GoalStatusSchema,
+  type GoalsView,
+  GoalsViewSchema,
+  type GoalTrigger,
+  GoalTriggerSchema,
+} from "./plan.js";
+export {
   type PublicBoard,
   PublicBoardSchema,
   type PublicDay,
@@ -570,12 +649,15 @@ export const contract = {
   health,
   auth,
   persona,
+  self,
+  world,
+  affect,
   people: { ...people, ...peopleEconomy },
   modules,
   decisions,
   llm,
   channels,
-  mind: { ...mind, ...mindDigests },
+  mind: { ...mind, ...mindDigests, ...mindPlan },
   roles,
   extensions,
   mcp,

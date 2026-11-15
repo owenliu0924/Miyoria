@@ -6,6 +6,7 @@
 import {
   type ActivitySnapshot as ContractActivitySnapshot,
   type ActivityTask as ContractActivityTask,
+  type AffectSnapshot as ContractAffectSnapshot,
   type ArbiterDecisionView as ContractArbiterDecisionView,
   type AuthScope as ContractAuthScope,
   type CauseChain as ContractCauseChain,
@@ -23,6 +24,7 @@ import {
   type EmergencyReport as ContractEmergencyReport,
   type ExtensionInfo as ContractExtensionInfo,
   type FeedbackTally as ContractFeedbackTally,
+  type Goal as ContractGoal,
   type KnowledgeDoc as ContractKnowledgeDoc,
   type LedgerView as ContractLedgerView,
   type Lesson as ContractLesson,
@@ -37,6 +39,7 @@ import {
   type ModuleInfo as ContractModuleInfo,
   type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
+  type PersonCard as ContractPersonCard,
   type PredictionView as ContractPredictionView,
   type ProposedTool as ContractProposedTool,
   type QuestsView as ContractQuestsView,
@@ -53,6 +56,7 @@ import {
   type RoomItem as ContractRoomItem,
   type SandboxHealth as ContractSandboxHealth,
   type SceneRolesState as ContractSceneRolesState,
+  type SelfView as ContractSelfView,
   type SkillFile as ContractSkillFile,
   type SongView as ContractSongView,
   type SpokenLine as ContractSpokenLine,
@@ -61,6 +65,7 @@ import {
   type ThoughtDigest as ContractThoughtDigest,
   type ThoughtSummary as ContractThoughtSummary,
   type VoiceSession as ContractVoiceSession,
+  type WorldView as ContractWorldView,
   contract,
   routeMeta,
 } from "@miyoria/contracts/api";
@@ -94,14 +99,18 @@ import type {
 import type {
   ActivitySnapshot,
   ActivityTask,
+  AffectSnapshot,
   ArbiterDecision,
   CauseChain,
+  ChannelActivity,
   ContextBucket,
   ContextKey,
   ConversationState,
   Delivery,
   EmergencyReport,
   FeedbackTally,
+  Feeling,
+  Goal,
   KnowledgeDoc,
   LedgerView,
   Lesson,
@@ -109,14 +118,17 @@ import type {
   LogEvent,
   MindStats,
   ModuleStateKind,
+  PersonCard,
   ReflectionRun,
   ReflectionStats,
   Reminder,
+  SelfSnapshot,
   SkillShelfFile,
   SpokenLine,
   Thought,
   ThoughtDigest,
   VoiceParticipant,
+  WorldSnapshot,
 } from "@miyoria/types";
 import type { ProposedTool, SandboxHealth } from "@miyoria/workspace/sandbox";
 import { describe, expect, it } from "vitest";
@@ -256,6 +268,12 @@ const CASES: Case[] = [
     permission: "owner.autonomy.approve",
     refusal: REVIEW_REFUSAL,
   },
+  { name: "self", method: "GET", path: "/api/self" },
+  { name: "world", method: "GET", path: "/api/world" },
+  { name: "affect.snapshot", method: "GET", path: "/api/affect" },
+  { name: "affect.people", method: "GET", path: "/api/affect/people" },
+  { name: "mind.goals", method: "GET", path: "/api/mind/goals" },
+  { name: "mind.plan", method: "GET", path: "/api/mind/plan" },
   { name: "extensions.list", method: "GET", path: "/api/extensions" },
   { name: "extensions.action", method: "POST", path: "/api/extensions/:id/:action" },
   { name: "mcp.list", method: "GET", path: "/api/mcp" },
@@ -436,6 +454,20 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const quests: Same<ContractQuestsView, Quests & { currency: string }> = true;
     const goal: Same<ContractReachedGoal, ReachedGoalView> = true;
     expect([health, commission, prediction, room, quests, goal]).toEqual(Array(6).fill(true));
+  });
+
+  it("her inner state, her world, her mood and her goals", () => {
+    // The self module's snapshot with her feelings named, and the world's with its channels named.
+    type Self = SelfSnapshot & { feelings: (Feeling & { display_name: string | null })[] };
+    type World = Omit<WorldSnapshot, "channels"> & {
+      channels: (ChannelActivity & { label: string | null })[];
+    };
+    const self: Same<ContractSelfView, Self> = true;
+    const world: Same<ContractWorldView, World> = true;
+    const affect: Same<ContractAffectSnapshot, AffectSnapshot> = true;
+    const card: Same<ContractPersonCard, PersonCard> = true;
+    const goal: Same<ContractGoal, Goal> = true;
+    expect([self, world, affect, card, goal]).toEqual(Array(5).fill(true));
   });
 
   it("extensions, MCP servers, the queue, the stage and the voice monitor", () => {
