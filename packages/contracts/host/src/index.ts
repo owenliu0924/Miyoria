@@ -8,4 +8,5 @@
 export * from "./host-config.js";
 export * from "./methods.js";
 export * from "./protocol.js";
+export * from "./relay.js";
 export * from "./service.js";
