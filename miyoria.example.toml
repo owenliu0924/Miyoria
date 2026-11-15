@@ -89,15 +89,23 @@ reflect = "high"
 # provider = "openai-compatible"
 # base_url = "http://127.0.0.1:11434/v1"
 # model = "bge-m3"
-# 或在這台機器上用 CPU 跑小型多語模型(預設 Xenova/multilingual-e5-small),成員說的話不會離開這台機器。
-# 不搶 GPU;需要另外安裝 @huggingface/transformers,第一次會下載模型檔(只下載模型)
+# 或在這台機器上用 CPU 跑多語模型,成員說的話不會離開這台機器。不搶 GPU;需要另外安裝
+# @huggingface/transformers。下面是 Harrier-OSS-v1 270M(fp16):模型檔自己放進 models_dir
+# (models_dir/onnx-community/harrier-oss-v1-270m-ONNX/ 底下的 config.json、tokenizer.json、
+# tokenizer_config.json 和 onnx/model_fp16.onnx、onnx/model_fp16.onnx_data),不連網路下載。
+# 換成 0.6B 只改 model(= "onnx-community/harrier-oss-v1-0.6b-ONNX")和下面的 min_vector(0.55)。
+# 換模型後舊的向量不再拿來比,背景會用新模型重算。
 # [memory.embedding]
 # provider = "local"             # none(預設,不用 embedding)| local | openai-compatible
-# model = ""                     # 空 = Xenova/multilingual-e5-small
-# dtype = "q8"                   # 權重型別;q8 大約是 fp32 的四分之一,品質差不多
+# model = "onnx-community/harrier-oss-v1-270m-ONNX"   # 空 = Xenova/multilingual-e5-small
+# dtype = "fp16"                 # 權重型別(模型檔的後綴);Harrier、Qwen3 用 fp16,q8 對 Qwen3 損失明顯、對 Harrier 慢很多
+# pooling = ""                   # 空 = 依模型名稱(Harrier 用模型自己輸出的向量,Qwen3 last_token,bge-m3 cls,e5 mean)
+#                                # 也可以指定 mean | cls | last_token | model;前綴(query_prefix / passage_prefix)同樣依模型預設
 # threads = 2                    # worker 用的 CPU 執行緒;留給語音用的核心不要佔
-# allow_download = true          # 模型檔不在本機時下載一次;false = 只用本機已有的檔案,不連網路
-# models_dir = ""                # 模型檔放哪裡(空 = 執行環境自己的快取)
+# models_dir = "D:/models"       # 模型檔放哪裡(空 = 執行環境自己的快取)
+# allow_download = false         # false = 只用本機已有的檔案,不連網路(連不上 Hugging Face 時就這樣用)
+# batch_size = 1                 # CPU 上一次一句最快
+# timeout_secs = 30              # 第一次呼叫要先載入模型
 
 # ---- MCP 工具 --------------------------------------------------------------
 # [mcp.servers.files]
@@ -902,7 +910,8 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # 長期記憶的新鮮度:回想時只放真的相關的事,舊的、現在式的、一直重複的會被淘汰。
 # [modules.memory]
 # min_score = 0.25               # 低於這個分數不回想(原本 0.05,幾乎什麼都放)
-# min_vector = 0.3               # 沒有共同的字時,向量至少這麼像才算相關(在場的人的記憶也一樣要相關)
+# min_vector = 0.5               # 沒有共同的字時,向量至少這麼像(cosine)才算相關,也是向量分數從 0 起算的地方。
+#                                # 依模型:Harrier 270M 0.5、Harrier 0.6B 和 bge-m3 0.55、Qwen3 0.45、e5-small 約 0.85
 # episode_recency_tau_days = 1.5 # 事件記憶(episode)的新近度衰減:小時到幾天,不是幾週
 # state_note_hours = 12          # 「已經開台」「正在下載」這類現在式的筆記多久後失效(0 = 不失效)
 # followup_max_age_hours = 6     # 追問過了時間這麼久沒人提就自動關掉;先挑最新的(0 = 不自動關)
