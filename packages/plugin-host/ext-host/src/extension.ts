@@ -42,8 +42,8 @@ import {
   type ModuleId,
   type PromptContributors,
   PromptContributorsKey,
+  publishTaskEvent,
   TaskExecutorsKey,
-  taskTopic,
   toLegacyEnvelope,
   V2_TOPIC_PREFIXES,
 } from "@miyoria/types";
@@ -528,9 +528,7 @@ class Session implements RpcHandler {
         steer: decl.steer,
         graceMs: this.host.task_grace_ms,
         publish: (event) => {
-          this.ctx.publish(
-            customEvent(taskTopic(owner, event.type), event as unknown as JsonValue),
-          );
+          publishTaskEvent(this.ctx.publisher, owner, event);
         },
         now: () => this.ctx.clock.now(),
       },
@@ -571,6 +569,7 @@ class Session implements RpcHandler {
     const allowed =
       p.topic.startsWith(own) || ownGame || (!reserved && this.grants.matches(p.topic));
     if (!allowed) throw RpcError.denied(`publishing on \`${p.topic}\` is not permitted`);
+    // A topic the extension names: the old form until protocol 2 carries a type and its schema.
     this.ctx.publish(customEvent(p.topic, p.payload as JsonValue), { turn: p.correlation });
     return {};
   }
