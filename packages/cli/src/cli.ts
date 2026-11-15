@@ -3,6 +3,7 @@
 import { loadDotenv } from "@miyoria/runtime/kernel";
 import { cliVersion } from "./assets.js";
 import * as configCmd from "./commands/config.js";
+import * as dbCmd from "./commands/db.js";
 import * as discordCmd from "./commands/discord.js";
 import * as doctor from "./commands/doctor.js";
 import * as init from "./commands/init.js";
@@ -235,6 +236,47 @@ export const COMMANDS: CommandSpec = {
       ],
       run: (ctx) =>
         doctor.run(ctx.config, { deep: flag(ctx, "deep"), stackOnly: flag(ctx, "deep-only") }),
+    },
+    {
+      name: "db",
+      help: "資料庫的切換工具(離線):檢查檔案、封存停掉的 V4 資料庫、把身分匯入新的資料庫",
+      subcommands: [
+        {
+          name: "import-links",
+          help: "把 V4 資料庫裡的人、帳號、handle、隱私和語音同意、紀念卡資料匯入 core.database_url 的資料庫;只讀舊檔,重跑不會重複",
+          options: [
+            {
+              name: "from",
+              value: "FILE",
+              help: "V4 的資料庫(通常是 db archive 做的 .single.db)",
+            },
+            { name: "dry-run", help: "只列出會匯入什麼和數量,不寫入" },
+          ],
+          run: (ctx) =>
+            dbCmd.importLinksCommand(ctx.config, {
+              from: str(ctx, "from"),
+              dryRun: flag(ctx, "dry-run"),
+            }),
+        },
+        {
+          name: "archive",
+          help: "把停掉的 V4 資料庫(.db、-wal、-shm 一起)搬進 data/archive/,做單一檔案複本並寫下雜湊;不刪任何檔案,中斷後可重跑",
+          args: [{ name: "file", help: "要封存的資料庫;省略 = core.database_url", optional: true }],
+          options: [{ name: "dry-run", help: "只檢查有沒有被開著並列出會做的事,不搬動" }],
+          run: (ctx) =>
+            dbCmd.archiveCommand(
+              ctx.config,
+              { file: ctx.args[0], dryRun: flag(ctx, "dry-run"), yes: ctx.yes },
+              isInteractive() ? interactivePrompter() : null,
+            ),
+        },
+        {
+          name: "doctor",
+          help: "只讀檢查一個資料庫檔:V4 / V5 / 空的、Core 會不會拒絕、遷移、完整性、人數和事件數;V4 另列 import-links 會帶過來的",
+          args: [{ name: "file", help: "要檢查的檔案;省略 = core.database_url", optional: true }],
+          run: (ctx) => dbCmd.doctorCommand(ctx.config, ctx.args[0]),
+        },
+      ],
     },
     {
       name: "install",
