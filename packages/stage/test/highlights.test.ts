@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { customEvent, SONG_TOPIC } from "@miyoria/types";
+import { customEvent, type Event, newEnvelope, SONG_TOPIC } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   EMOTION_TOPIC,
@@ -14,6 +14,9 @@ import {
   parseStageMessage,
 } from "../src/index.js";
 
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
+
 const cfg = (over: object = {}) => HighlightsConfigSchema.parse({ cooldown_secs: 60, ...over });
 const song = (state: string, extra: object = {}) =>
   customEvent(SONG_TOPIC, { state, song: "yt-a", title: "雪は何色", ...extra });
@@ -21,22 +24,22 @@ const song = (state: string, extra: object = {}) =>
 describe("highlights", () => {
   it("a_song_sung_to_the_end_is_one", () => {
     const h = new Highlights(cfg());
-    expect(h.onEvent(song("started"), 0)).toBeNull();
-    expect(h.onEvent(song("ended", { outcome: "finished" }), 1_000)).toBe("唱完《雪は何色》");
+    expect(h.onEvent(ev(song("started")), 0)).toBeNull();
+    expect(h.onEvent(ev(song("ended", { outcome: "finished" })), 1_000)).toBe("唱完《雪は何色》");
     const skipped = new Highlights(cfg());
-    skipped.onEvent(song("started"), 0);
-    expect(skipped.onEvent(song("ended", { outcome: "interrupted" }), 1_000)).toBeNull();
+    skipped.onEvent(ev(song("started")), 0);
+    expect(skipped.onEvent(ev(song("ended", { outcome: "interrupted" })), 1_000)).toBeNull();
   });
 
   it("a_strong_feeling_counts_and_the_cooldown_holds", () => {
     const h = new Highlights(cfg());
     const feel = (emotion: string, intensity: number) =>
       customEvent(EMOTION_TOPIC, { emotion, intensity });
-    expect(h.onEvent(feel("laugh", 0.5), 0)).toBeNull();
-    expect(h.onEvent(feel("sad", 1), 0)).toBeNull();
-    expect(h.onEvent(feel("LAUGH", 0.95), 0)).toContain("laugh");
-    expect(h.onEvent(feel("laugh", 1), 30_000)).toBeNull();
-    expect(h.onEvent(feel("surprised", 1), 61_000)).toContain("surprised");
+    expect(h.onEvent(ev(feel("laugh", 0.5)), 0)).toBeNull();
+    expect(h.onEvent(ev(feel("sad", 1)), 0)).toBeNull();
+    expect(h.onEvent(ev(feel("LAUGH", 0.95)), 0)).toContain("laugh");
+    expect(h.onEvent(ev(feel("laugh", 1)), 30_000)).toBeNull();
+    expect(h.onEvent(ev(feel("surprised", 1)), 61_000)).toContain("surprised");
   });
 
   it("the_chat_taking_off_counts", () => {
@@ -46,7 +49,7 @@ describe("highlights", () => {
     expect(h.message(21_000)).toBeNull();
     expect(h.message(22_000)).toBe("聊天室突然熱起來");
     expect(new Highlights(cfg({ chat_burst_messages: 0 })).message(0)).toBeNull();
-    expect(new Highlights(cfg({ enabled: false })).onEvent(song("ended"), 0)).toBeNull();
+    expect(new Highlights(cfg({ enabled: false })).onEvent(ev(song("ended")), 0)).toBeNull();
   });
 
   it("parses_the_wire_messages", () => {

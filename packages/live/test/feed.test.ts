@@ -9,6 +9,7 @@ import {
   type Event,
   type JsonObject,
   type LiveEvent,
+  newEnvelope,
   SONG_TOPIC,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
@@ -53,7 +54,7 @@ function rig(over: Partial<Screen> = {}, channels = [OPEN]) {
   );
   const seen: LiveEvent[] = [];
   state.follow((e) => seen.push(e));
-  const send = (event: Event) => state.onEvent(event, clock);
+  const send = (event: Event) => state.onEvent(newEnvelope("test", event), clock);
   const advance = (ms: number) => {
     clock += ms;
     state.tick(clock);

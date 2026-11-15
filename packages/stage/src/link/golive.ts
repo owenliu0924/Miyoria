@@ -1,3 +1,4 @@
+import { Events } from "@miyoria/types";
 // Core → Stage: follow the voice node's Go Live with OBS.
 //
 // `@miyoria/voice/voice` publishes `voice.golive` whenever the node reports a state change. The Stage
@@ -5,7 +6,7 @@
 // listener here, press OBS there".
 
 /** Topic of the Go Live state events (the `GOLIVE_TOPIC` of `@miyoria/voice/voice`). */
-export const VOICE_GOLIVE_TOPIC = "voice.golive";
+export const VOICE_GOLIVE_TOPIC = Events.VoiceGoLive.type;
 
 /** What OBS should do for a Go Live state: `null` = leave OBS alone. */
 export type GoLiveFollow = "start" | "stop" | null;

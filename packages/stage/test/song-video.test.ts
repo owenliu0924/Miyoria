@@ -6,7 +6,9 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   customEvent,
+  type Event,
   type JsonObject,
+  newEnvelope,
   parseSongCue,
   SONG_TOPIC,
   SPEECH_PAUSE_TOPIC,
@@ -26,6 +28,9 @@ import {
   songVideoFile,
 } from "../src/index.js";
 import { delay, FakeObs, tempDir, waitUntil } from "./common.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 const SOURCE = "Miyoria 歌曲影片";
 
@@ -192,7 +197,7 @@ describe("song cues to stage messages", () => {
   it("sends play with the sing scene and stop at the end; resumes for a new node", () => {
     let now = 1_000;
     const f = new Forwarder(false, { singScene: () => "唱歌", now: () => now });
-    const out = f.onEvent(started({ video: "C:\\songs\\yt-abc\\video.mp4", offset_ms: 0 }));
+    const out = f.onEvent(ev(started({ video: "C:\\songs\\yt-abc\\video.mp4", offset_ms: 0 })));
     expect(out).toStrictEqual([
       { type: "speaking", state: "started" },
       {
@@ -207,7 +212,7 @@ describe("song cues to stage messages", () => {
     now += 42_000;
     expect(f.resumeSongVideo()).toMatchObject({ action: "play", offset_ms: 42_000 });
     const end = f.onEvent(
-      customEvent(SONG_TOPIC, { state: "ended", song: "yt-abc", outcome: "finished" }),
+      ev(customEvent(SONG_TOPIC, { state: "ended", song: "yt-abc", outcome: "finished" })),
     );
     expect(end.at(-1)).toStrictEqual({ type: "song_video", action: "stop", song: "yt-abc" });
     expect(f.resumeSongVideo()).toBeNull();
@@ -215,7 +220,7 @@ describe("song cues to stage messages", () => {
 
   it("a speech pause shows 準備歌曲中… on the overlay until it ends", () => {
     const f = new Forwarder(false);
-    const pause = (payload: JsonObject) => f.onEvent(customEvent(SPEECH_PAUSE_TOPIC, payload));
+    const pause = (payload: JsonObject) => f.onEvent(ev(customEvent(SPEECH_PAUSE_TOPIC, payload)));
     expect(pause({ paused: true, reason: "song" })).toStrictEqual([
       { type: "notice", text: "準備歌曲中…" },
     ]);
@@ -236,7 +241,7 @@ describe("song cues to stage messages", () => {
     let now = 5_000;
     const f = new Forwarder(false, { now: () => now });
     const beats = { bpm: 120, times_ms: [500, 1000, 1500] };
-    const out = f.onEvent(started({ beats }));
+    const out = f.onEvent(ev(started({ beats })));
     expect(out).toStrictEqual([
       { type: "speaking", state: "started" },
       { type: "beat", song: "yt-abc", bpm: 120, times_ms: [500, 1000, 1500], offset_ms: 0 },
@@ -244,7 +249,7 @@ describe("song cues to stage messages", () => {
     now += 1_200;
     expect(f.resumeBeat()).toMatchObject({ type: "beat", offset_ms: 1_200 });
     const end = f.onEvent(
-      customEvent(SONG_TOPIC, { state: "ended", song: "yt-abc", outcome: "finished" }),
+      ev(customEvent(SONG_TOPIC, { state: "ended", song: "yt-abc", outcome: "finished" })),
     );
     expect(end.at(-1)).toStrictEqual({
       type: "beat",
@@ -274,9 +279,9 @@ describe("song cues to stage messages", () => {
 
   it("songs without a video send no video messages", () => {
     const f = new Forwarder(false);
-    expect(f.onEvent(started()).map((m: CoreMessage) => m.type)).toEqual(["speaking"]);
+    expect(f.onEvent(ev(started())).map((m: CoreMessage) => m.type)).toEqual(["speaking"]);
     const end = f.onEvent(
-      customEvent(SONG_TOPIC, { state: "ended", song: "yt-abc", outcome: "x" }),
+      ev(customEvent(SONG_TOPIC, { state: "ended", song: "yt-abc", outcome: "x" })),
     );
     expect(end.map((m) => m.type)).toEqual(["speaking", "subtitle"]);
   });

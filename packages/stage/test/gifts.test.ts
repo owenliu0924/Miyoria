@@ -4,7 +4,7 @@
 import { ActuatorRegistry } from "@miyoria/gate/actions";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { customEvent, Principals } from "@miyoria/types";
+import { customEvent, type Event, newEnvelope, Principals } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AvatarLoop,
@@ -25,6 +25,9 @@ import {
 } from "../src/index.js";
 import type { VtsClient } from "../src/vts.js";
 import { Watch } from "../src/watch.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 afterEach(() => vi.useRealTimers());
 
@@ -54,7 +57,7 @@ describe("gift messages", () => {
   it("the forwarder turns economy.gift into gift and drops junk", () => {
     const f = new Forwarder(false);
     const gift = { name: " Owen ", item: "dessert", count: 3.9, label: "一份甜點" };
-    expect(f.onEvent(customEvent("economy.gift", gift))).toStrictEqual([
+    expect(f.onEvent(ev(customEvent("economy.gift", gift)))).toStrictEqual([
       { type: "gift", name: "Owen", item: "dessert", count: 3, label: "一份甜點" },
     ]);
     for (const bad of [
@@ -64,7 +67,9 @@ describe("gift messages", () => {
       { ...gift, count: 0 },
       "nope",
     ]) {
-      expect(f.onEvent(customEvent("economy.gift", bad as never)), JSON.stringify(bad)).toEqual([]);
+      expect(f.onEvent(ev(customEvent("economy.gift", bad as never))), JSON.stringify(bad)).toEqual(
+        [],
+      );
     }
   });
 });

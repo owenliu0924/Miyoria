@@ -13,8 +13,11 @@
 // show nothing. Short-lived thinking / synthesizing (under `showDelayMs`) never shows.
 
 import {
-  type Event,
+  type BusEvent,
+  Events,
+  is,
   isJsonObject,
+  type JsonValue,
   parseSongCue,
   parseSongPrepare,
   SONG_PREPARE_TOPIC,
@@ -128,53 +131,48 @@ export class ActivityTracker {
     this.#synthTtlMs = options.synthTtlMs ?? 30_000;
   }
 
-  onEvent(event: Event, now: number): void {
-    switch (event.type) {
-      case "agent_turn_started": {
-        const { turn, context } = event.data;
-        if (context.kind !== "voice" && !this.#textTurns) return;
-        if (this.#spoken.has(turn)) return;
-        if (this.#turns.size >= MAX_TRACKED) {
-          const oldest = this.#turns.keys().next().value;
-          if (oldest !== undefined) this.#turns.delete(oldest);
-        }
-        this.#turns.set(turn, { since: now, spoke: false });
-        return;
+  onEvent(event: BusEvent, now: number): void {
+    if (is(Events.AgentTurnStarted, event)) {
+      const { turn, context } = event.data;
+      if (context.kind !== "voice" && !this.#textTurns) return;
+      if (this.#spoken.has(turn)) return;
+      if (this.#turns.size >= MAX_TRACKED) {
+        const oldest = this.#turns.keys().next().value;
+        if (oldest !== undefined) this.#turns.delete(oldest);
       }
-      case "agent_turn_completed":
-        this.#turns.delete(event.data.turn);
-        this.#synths = this.#synths.filter((s) => s.turn !== event.data.turn);
-        return;
-      case "voice_playback": {
-        const { turn, state } = event.data;
-        if (state !== "started" && state !== "failed") return;
-        // The line that was at TTS: the oldest of the same turn.
-        const i = this.#synths.findIndex((s) => s.turn === turn);
-        if (i >= 0) this.#synths.splice(i, 1);
-        if (state === "started" && turn !== null) {
-          const t = this.#turns.get(turn);
-          if (t) t.spoke = true;
-          this.#markSpoken(turn);
-        }
-        return;
+      this.#turns.set(turn, { since: now, spoke: false });
+      return;
+    } else if (is(Events.AgentTurnCompleted, event)) {
+      this.#turns.delete(event.data.turn);
+      this.#synths = this.#synths.filter((s) => s.turn !== event.data.turn);
+      return;
+    } else if (is(Events.VoicePlaybackEvent, event)) {
+      const { turn, state } = event.data;
+      if (state !== "started" && state !== "failed") return;
+      // The line that was at TTS: the oldest of the same turn.
+      const i = this.#synths.findIndex((s) => s.turn === turn);
+      if (i >= 0) this.#synths.splice(i, 1);
+      if (state === "started" && turn !== null) {
+        const t = this.#turns.get(turn);
+        if (t) t.spoke = true;
+        this.#markSpoken(turn);
       }
-      case "custom": {
-        const { topic, payload } = event.data;
-        if (topic === SPEECH_SYNTH_TOPIC) {
-          const p = isJsonObject(payload) ? payload : {};
-          const turn = typeof p.turn === "string" && p.turn !== "" ? p.turn : null;
-          if (this.#synths.length >= MAX_TRACKED) this.#synths.shift();
-          this.#synths.push({ turn, since: now });
-        } else if (topic === SONG_PREPARE_TOPIC) {
-          const p = parseSongPrepare(payload);
-          if (p !== null) this.#prepare = p.no === null ? null : p;
-        } else if (topic === SONG_TOPIC) {
-          this.#onSong(payload, now);
-        }
-        return;
+      return;
+    } else {
+      const topic = event.type;
+      const payload = event.data as JsonValue;
+      if (topic === SPEECH_SYNTH_TOPIC) {
+        const p = isJsonObject(payload) ? payload : {};
+        const turn = typeof p.turn === "string" && p.turn !== "" ? p.turn : null;
+        if (this.#synths.length >= MAX_TRACKED) this.#synths.shift();
+        this.#synths.push({ turn, since: now });
+      } else if (topic === SONG_PREPARE_TOPIC) {
+        const p = parseSongPrepare(payload);
+        if (p !== null) this.#prepare = p.no === null ? null : p;
+      } else if (topic === SONG_TOPIC) {
+        this.#onSong(payload, now);
       }
-      default:
-        return;
+      return;
     }
   }
 

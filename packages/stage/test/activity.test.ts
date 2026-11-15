@@ -6,6 +6,7 @@ import {
   customEvent,
   type Event,
   type JsonObject,
+  newEnvelope,
   SONG_PREPARE_TOPIC,
   SONG_TOPIC,
   SPEECH_SYNTH_TOPIC,
@@ -18,6 +19,9 @@ import {
   parseCoreMessage,
   prepareLabel,
 } from "../src/index.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "vc", kind: "voice" };
 const TEXT: ContextKey = { platform: "discord", scope: "g", channel: "chat", kind: "channel" };
@@ -58,7 +62,7 @@ function tracker(options: ConstructorParameters<typeof ActivityTracker>[0] = {})
       now += ms;
     },
     feed(...events: Event[]) {
-      for (const e of events) t.onEvent(e, now);
+      for (const e of events) t.onEvent(ev(e), now);
     },
     next: () => t.next(now),
   };

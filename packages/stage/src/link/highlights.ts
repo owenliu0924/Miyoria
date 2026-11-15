@@ -7,7 +7,13 @@
 // `chat_burst_secs`). At most one per `cooldown_secs`; each is saved `delay_ms` after the moment,
 // so the reaction is in the clip too.
 
-import { type Event, isJsonObject, parseSongCue, SONG_TOPIC } from "@miyoria/types";
+import {
+  type BusEvent,
+  isJsonObject,
+  type JsonValue,
+  parseSongCue,
+  SONG_TOPIC,
+} from "@miyoria/types";
 import { z } from "zod";
 import { EMOTION_TOPIC } from "./forward.js";
 
@@ -53,9 +59,10 @@ export class Highlights {
   }
 
   /** The reason when `event` is a highlight now. */
-  onEvent(event: Event, nowMs: number): string | null {
-    if (!this.#cfg.enabled || event.type !== "custom") return null;
-    const { topic, payload } = event.data;
+  onEvent(event: BusEvent, nowMs: number): string | null {
+    if (!this.#cfg.enabled) return null;
+    const topic = event.type;
+    const payload = event.data as JsonValue;
     if (topic === SONG_TOPIC) {
       const cue = parseSongCue(payload);
       if (cue?.state === "started") {

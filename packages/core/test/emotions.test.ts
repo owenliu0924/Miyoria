@@ -21,17 +21,22 @@ import {
   EMOTION_NAMES,
   EMOTION_OUTPUTS,
   type EmotionName,
+  type Event,
   EventLogKey,
   FLOOR_CLAIMS,
   FloorKey,
   type JsonValue,
   MoodSignalsKey,
+  newEnvelope,
   PERSON_EMOTION_NAMES,
   type PersonCard,
   toTimestamp,
 } from "@miyoria/types";
 import { VoiceProfile } from "@miyoria/voice/voice";
 import { afterEach, describe, expect, it } from "vitest";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 const NOW = Date.UTC(2026, 10, 7, 6);
 const NOTICE = 0.2;
@@ -128,7 +133,7 @@ function reached(
   const clip = tag === null ? null : voice.referenceFor(tag);
   if (clip !== null && clip !== "neutral") out.push("voice");
   const stage = new Forwarder(false).onEvent(
-    customEvent("affect.changed", now as unknown as JsonValue),
+    ev(customEvent("affect.changed", now as unknown as JsonValue)),
   );
   if (stage.some((m) => m.type === "emotion" && m.resting === true && m.name !== "neutral")) {
     out.push("expression");

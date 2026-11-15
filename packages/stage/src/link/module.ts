@@ -19,8 +19,11 @@ import {
   AFFECT_CHANGED_TOPIC,
   contextKeyString,
   type Envelope,
+  Events,
+  is,
   isJsonObject,
   type JsonObject,
+  type JsonValue,
   Principals,
   parseSongCue,
   SceneRuleKey,
@@ -30,7 +33,6 @@ import {
   SPEECH_SYNTH_TOPIC,
   StreamCurtainKey,
   VOICE_UPCOMING_TOPIC,
-  v2Payload,
 } from "@miyoria/types";
 import { type BoundAddress, formatAddress, HttpServer, isLoopback } from "../net.js";
 import { TOUCH_TOPIC } from "../touch.js";
@@ -52,7 +54,7 @@ import {
 import { SceneRoles, SceneRolesKey } from "./scenes.js";
 
 /** Topic of the game director's session events (`{state: "started" | "stopped", game}`). */
-export const GAME_SESSION_TOPIC = "game.director.session";
+export const GAME_SESSION_TOPIC = Events.GameDirectorSession.type;
 
 const GOLIVE_STATES: readonly GoLiveState[] = ["starting", "live", "stopped", "failed"];
 
@@ -62,44 +64,38 @@ const GOLIVE_STATES: readonly GoLiveState[] = ["starting", "live", "stopped", "f
  * song events below.
  */
 function direct(director: SceneDirector, env: Envelope): void {
-  const event = env.event;
-  const snapshot = v2Payload(event, ACTIVITY_CHANGED_TOPIC);
-  if (snapshot !== null) {
-    director.onSnapshot(snapshot);
+  if (is(Events.ActivityChanged, env)) {
+    // Read only with an object payload, as before.
+    if (isJsonObject(env.data as JsonValue)) director.onSnapshot(env.data);
     return;
   }
-  switch (event.type) {
-    case "voice_joined":
-    case "voice_participants":
-      director.onVoice(contextKeyString(event.data.context), true);
-      return;
-    case "voice_left":
-      director.onVoice(contextKeyString(event.data.context), false);
-      return;
-    case "voice_utterance":
-    case "agent_turn_completed":
-      director.onActivity();
-      return;
-    case "voice_playback":
-      if (event.data.state === "started") director.onActivity();
-      return;
-    case "custom": {
-      const { topic, payload } = event.data;
-      const data = isJsonObject(payload) ? payload : {};
-      if (topic === VOICE_GOLIVE_TOPIC) {
-        const state = GOLIVE_STATES.find((s) => s === data.state);
-        if (state) director.onGoLive(typeof data.guild === "string" ? data.guild : "", state);
-      } else if (topic === GAME_SESSION_TOPIC) {
-        director.onGame(data.state === "started", typeof data.game === "string" ? data.game : null);
-      } else if (topic === SONG_TOPIC) {
-        const cue = parseSongCue(payload);
-        if (cue?.state === "started") director.onSong(true);
-        else if (cue?.state === "ended") director.onSong(false);
-      }
-      return;
+  if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+    director.onVoice(contextKeyString(env.data.context), true);
+    return;
+  } else if (is(Events.VoiceLeft, env)) {
+    director.onVoice(contextKeyString(env.data.context), false);
+    return;
+  } else if (is(Events.VoiceUtteranceEvent, env) || is(Events.AgentTurnCompleted, env)) {
+    director.onActivity();
+    return;
+  } else if (is(Events.VoicePlaybackEvent, env)) {
+    if (env.data.state === "started") director.onActivity();
+    return;
+  } else {
+    const topic = env.type;
+    const payload = env.data as JsonValue;
+    const data = isJsonObject(payload) ? payload : {};
+    if (topic === VOICE_GOLIVE_TOPIC) {
+      const state = GOLIVE_STATES.find((s) => s === data.state);
+      if (state) director.onGoLive(typeof data.guild === "string" ? data.guild : "", state);
+    } else if (topic === GAME_SESSION_TOPIC) {
+      director.onGame(data.state === "started", typeof data.game === "string" ? data.game : null);
+    } else if (topic === SONG_TOPIC) {
+      const cue = parseSongCue(payload);
+      if (cue?.state === "started") director.onSong(true);
+      else if (cue?.state === "ended") director.onSong(false);
     }
-    default:
-      return;
+    return;
   }
 }
 
@@ -260,20 +256,20 @@ export class StageLinkModule implements Module {
       SCREEN_TOPIC,
       SONG_TOPIC,
       SPEECH_PAUSE_TOPIC,
-      "agent.turn.started",
-      "agent.turn.completed",
-      "voice.playback",
+      Events.AgentTurnStarted.type,
+      Events.AgentTurnCompleted.type,
+      Events.VoicePlaybackEvent.type,
       SPEECH_SYNTH_TOPIC,
       VOICE_UPCOMING_TOPIC,
       SONG_PREPARE_TOPIC,
       VOICE_GOLIVE_TOPIC,
       GAME_SESSION_TOPIC,
       ACTIVITY_CHANGED_TOPIC,
-      "voice.joined",
-      "voice.left",
-      "voice.participants",
-      "voice.utterance",
-      "platform.message.created",
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
+      Events.VoiceUtteranceEvent.type,
+      Events.PlatformMessageCreated.type,
     ]);
     ctx.spawn("forward", async (signal) => {
       // Follow the voice node's Go Live with OBS (see golive.ts). Timers are cleared on stop.
@@ -342,22 +338,20 @@ export class StageLinkModule implements Module {
       try {
         for await (const env of events) {
           // Chat lines only count towards highlights (nothing of their text is used).
-          if (env.event.type === "platform_message_created") {
-            if (!env.event.data.author.is_bot) clip(highlights.message(ctx.clock.now()));
+          if (is(Events.PlatformMessageCreated, env)) {
+            if (!env.data.author.is_bot) clip(highlights.message(ctx.clock.now()));
             continue;
           }
-          clip(highlights.onEvent(env.event, ctx.clock.now()));
+          clip(highlights.onEvent(env, ctx.clock.now()));
           direct(director, env);
-          activity.onEvent(env.event, ctx.clock.now());
-          if (env.event.type === "custom" && env.event.data.topic === GAME_SESSION_TOPIC) continue;
-          if (env.event.type === "custom" && env.event.data.topic === ACTIVITY_CHANGED_TOPIC) {
+          activity.onEvent(env, ctx.clock.now());
+          if (env.type === GAME_SESSION_TOPIC) continue;
+          if (env.type === ACTIVITY_CHANGED_TOPIC) continue;
+          if (env.type === VOICE_GOLIVE_TOPIC) {
+            followGoLive(env.data as JsonValue);
             continue;
           }
-          if (env.event.type === "custom" && env.event.data.topic === VOICE_GOLIVE_TOPIC) {
-            followGoLive(env.event.data.payload);
-            continue;
-          }
-          for (const msg of forwarder.onEvent(env.event)) {
+          for (const msg of forwarder.onEvent(env)) {
             if (!link.send(msg) && link.isConnected()) {
               ctx.log.debug("stage node queue full, dropping a message");
             }

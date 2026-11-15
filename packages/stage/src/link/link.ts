@@ -1,14 +1,7 @@
 // The `StageLink` service: the connection to the Stage node and the requests other modules send.
 
 import { type EventBus, errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import {
-  customEvent,
-  type Event,
-  type JsonValue,
-  type ModuleId,
-  newId,
-  serviceKey,
-} from "@miyoria/types";
+import { type EventPayload, Events, type ModuleId, newId, serviceKey } from "@miyoria/types";
 import type WebSocket from "ws";
 import { z } from "zod";
 import {
@@ -37,11 +30,11 @@ const log = getLogger("stage.link");
  * Topic of status updates published by `stage.link`
  * (`{connected, vts, obs, scene, streaming, scenes, hotkeys, overlay_url}`).
  */
-export const STATUS_TOPIC = "stage.status";
+export const STATUS_TOPIC = Events.StageStatus.type;
 /** Topic of errors reported by the Stage node (`{message}`). */
-export const ERROR_TOPIC = "stage.error";
+export const ERROR_TOPIC = Events.StageError.type;
 /** Topic of a highlight the Stage node saved (`{reason, path}`; the path is on the streaming PC). */
-export const CLIP_TOPIC = "stage.clip";
+export const CLIP_TOPIC = Events.StageClip.type;
 
 export const DEFAULT_BIND = "127.0.0.1:7882";
 
@@ -240,7 +233,7 @@ export class StageLink {
 
   #setStatus(status: StageStatus | null): void {
     if (!this.#status.set(status ? { ...status } : null)) return;
-    const payload: JsonValue = status
+    const payload: EventPayload<typeof Events.StageStatus> = status
       ? {
           connected: true,
           vts: status.vts,
@@ -252,11 +245,7 @@ export class StageLink {
           overlay_url: status.overlay_url,
         }
       : { connected: false };
-    this.#publish(customEvent(STATUS_TOPIC, payload));
-  }
-
-  #publish(event: Event): void {
-    this.#bus.publish(this.#module, event);
+    this.#bus.publish(this.#module, Events.StageStatus, payload);
   }
 
   /** Closes the connection (module stop). */
@@ -387,7 +376,7 @@ export class StageLink {
       }
       case "clip_saved":
         log.info({ reason: msg.reason, path: msg.path }, "highlight saved");
-        this.#publish(customEvent(CLIP_TOPIC, { reason: msg.reason, path: msg.path }));
+        this.#bus.publish(this.#module, Events.StageClip, { reason: msg.reason, path: msg.path });
         return;
       case "error": {
         log.warn({ message: msg.message, id: msg.id ?? null }, "stage node error");
@@ -396,7 +385,7 @@ export class StageLink {
           conn.pending.delete(msg.id);
           reply?.reject(new StageLinkError(msg.message));
         }
-        this.#publish(customEvent(ERROR_TOPIC, { message: msg.message }));
+        this.#bus.publish(this.#module, Events.StageError, { message: msg.message });
         return;
       }
     }

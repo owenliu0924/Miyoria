@@ -2,7 +2,9 @@
 
 import {
   AFFECT_CHANGED_TOPIC,
-  type Event,
+  type BusEvent,
+  Events,
+  is,
   isJsonObject,
   type JsonValue,
   type PlaybackState,
@@ -23,11 +25,11 @@ import {
 import { parseTouch, TOUCH_TOPIC } from "../touch.js";
 
 /** Topic of the agent's emotion markers. */
-export const EMOTION_TOPIC = "agent.emotion";
+export const EMOTION_TOPIC = Events.AgentEmotion.type;
 /** Topic of a gift to her (`{name, item, count, label}`), shown on the overlay. */
-export const GIFT_TOPIC = "economy.gift";
+export const GIFT_TOPIC = Events.EconomyGift.type;
 /** Topic of a paid screen message or dedication (`{kind, name, text, song}`). */
-export const SCREEN_TOPIC = "economy.screen";
+export const SCREEN_TOPIC = Events.EconomyScreen.type;
 /** How much a feeling must change before her resting face follows it. */
 const RESTING_STEP = 0.1;
 /** Turns whose subtitles are tracked at once. */
@@ -219,42 +221,37 @@ export class Forwarder {
     return [{ type: "emotion", name, intensity: pending?.byName.get(name) ?? resting }];
   }
 
-  onEvent(event: Event): CoreMessage[] {
-    switch (event.type) {
-      case "custom":
-        if (event.data.topic === SONG_TOPIC) return this.#onSong(event.data.payload);
-        if (event.data.topic === SPEECH_PAUSE_TOPIC) return pauseNotice(event.data.payload);
-        if (event.data.topic === VOICE_UPCOMING_TOPIC) return this.#onUpcoming(event.data.payload);
-        if (event.data.topic === GIFT_TOPIC) return giftMessage(event.data.payload);
-        if (event.data.topic === TOUCH_TOPIC) return touchMessage(event.data.payload);
-        if (event.data.topic === SCREEN_TOPIC) return screenMessage(event.data.payload);
-        if (event.data.topic === AFFECT_CHANGED_TOPIC) return this.#onAffect(event.data.payload);
-        return event.data.topic === EMOTION_TOPIC ? this.#onEmotion(event.data.payload) : [];
-      case "voice_playback": {
-        const { turn, state, text, emotion } = event.data;
-        const out = this.#onPlayback(turn, state, text);
-        if (state === "started") out.push(...this.#playbackEmotion(turn, emotion));
-        return out;
-      }
-      case "agent_turn_completed": {
-        const { turn, context, text } = event.data;
-        const voice = context.kind === "voice";
-        const e = this.#entry(turn);
-        e.completed = true;
-        if (voice || e.spoken !== "") {
-          // A line shown early is about to play: the subtitle is final after it.
-          if (e.active === 0 && e.early.length === 0 && e.spoken !== "" && !e.finalized) {
-            e.finalized = true;
-            return [subtitle(turn, e.spoken, true)];
-          }
-        } else if (this.#textTurns && text.trim() !== "" && !e.finalized) {
+  onEvent(event: BusEvent): CoreMessage[] {
+    if (is(Events.VoicePlaybackEvent, event)) {
+      const { turn, state, text, emotion } = event.data;
+      const out = this.#onPlayback(turn, state, text);
+      if (state === "started") out.push(...this.#playbackEmotion(turn, emotion));
+      return out;
+    } else if (is(Events.AgentTurnCompleted, event)) {
+      const { turn, context, text } = event.data;
+      const voice = context.kind === "voice";
+      const e = this.#entry(turn);
+      e.completed = true;
+      if (voice || e.spoken !== "") {
+        // A line shown early is about to play: the subtitle is final after it.
+        if (e.active === 0 && e.early.length === 0 && e.spoken !== "" && !e.finalized) {
           e.finalized = true;
-          return [subtitle(turn, text.trim(), true)];
+          return [subtitle(turn, e.spoken, true)];
         }
-        return [];
+      } else if (this.#textTurns && text.trim() !== "" && !e.finalized) {
+        e.finalized = true;
+        return [subtitle(turn, text.trim(), true)];
       }
-      default:
-        return [];
+      return [];
+    } else {
+      if (event.type === SONG_TOPIC) return this.#onSong(event.data as JsonValue);
+      if (event.type === SPEECH_PAUSE_TOPIC) return pauseNotice(event.data as JsonValue);
+      if (event.type === VOICE_UPCOMING_TOPIC) return this.#onUpcoming(event.data as JsonValue);
+      if (event.type === GIFT_TOPIC) return giftMessage(event.data as JsonValue);
+      if (event.type === TOUCH_TOPIC) return touchMessage(event.data as JsonValue);
+      if (event.type === SCREEN_TOPIC) return screenMessage(event.data as JsonValue);
+      if (event.type === AFFECT_CHANGED_TOPIC) return this.#onAffect(event.data as JsonValue);
+      return event.type === EMOTION_TOPIC ? this.#onEmotion(event.data as JsonValue) : [];
     }
   }
 
