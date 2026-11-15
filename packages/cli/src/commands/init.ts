@@ -8,6 +8,7 @@ import { bundledProfilesDir, exampleConfig, exampleEnv } from "../assets.js";
 import { type MachinePreset, machineStep, pasteTokens } from "../machine-step.js";
 import type { Prompter } from "../prompt.js";
 import * as settings from "../settings.js";
+import { configSchema } from "../validate.js";
 import { Workspace, type WorkspaceOptions } from "../workspace.js";
 import { afterWrite, commit } from "./config.js";
 
@@ -31,6 +32,8 @@ export interface InitOptions {
 
 /** All questions, editing `ws` in memory. Returns the generated tokens. */
 export async function flow(p: Prompter, ws: Workspace): Promise<string[]> {
+  // The answers are checked by the root schema, which loads every module package: start now.
+  void configSchema();
   p.section("角色");
   await settings.profileStep(p, ws);
 

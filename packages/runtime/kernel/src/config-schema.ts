@@ -30,6 +30,8 @@ export interface ConfigProblem {
   keys: readonly (string | number)[];
   /** What the schema expected there (zod's wording). */
   expected: string;
+  /** The zod issue itself, for a caller that words it in its own language (the CLI). */
+  issue: z.core.$ZodIssue;
   severity: ConfigSeverity;
 }
 
@@ -155,6 +157,7 @@ export function checkConfig(
       path: configPath(keys),
       keys,
       expected: issue.message,
+      issue,
       severity: options.policy?.(keys) ?? "error",
     });
   }

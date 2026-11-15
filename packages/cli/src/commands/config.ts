@@ -349,6 +349,8 @@ export async function runArea(area: Area, p: Prompter, ws: Workspace): Promise<v
 export async function menu(configPath: string, p: Prompter, yes: boolean): Promise<void> {
   let ws = Workspace.open(configPath);
   if (!isInteractive()) throw new NotTtyError();
+  // The answers are checked by the root schema, which loads every module package: start now.
+  void validate.configSchema();
   p.intro("Miyoria 設定");
   p.note("選一個項目修改,只會動到你選的欄位。Esc 返回,選「完成」離開。");
   let cursor = 0;
@@ -524,7 +526,8 @@ export async function set(
       r.note(`密碼類的值放在 .env 的 ${variable},miyoria.toml 引用它`);
     } else {
       const parsed = parseValue(value);
-      const err = validate.valueForKey(path, parsed);
+      const ctx = await validate.schemaContext(ws.doc.data);
+      const err = validate.valueForKey(path, parsed, ctx);
       if (err) throw new ConfigCommandError(`\`${shown}\`:${err}`);
       ws.doc.set(path, parsed);
     }
