@@ -274,7 +274,7 @@ describe.each(BACKENDS)("consolidation (%s store)", (backend) => {
       cara: { amy: false, owen: false, both: false, everyone: false, self: true },
     });
 
-    // The migration (scripts/rescope-self-notes.ts) moves them by `rescoped`.
+    // Moving them for good goes by `rescoped`, the same rule the read uses.
     const names = [
       { name: "Owen", person: owen },
       { name: "Amy", person: amy },
