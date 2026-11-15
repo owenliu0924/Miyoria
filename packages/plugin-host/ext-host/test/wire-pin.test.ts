@@ -598,7 +598,7 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
     dir = "";
   });
 
-  it("writes initialize and event frames exactly", async () => {
+  it("writes initialize and event frames exactly, for a custom and a typed event", async () => {
     dir = mkdtempSync(join(tmpdir(), "miyoria-pin-"));
     mkdirSync(dir, { recursive: true });
     const record = join(dir, "frames.jsonl");
@@ -618,6 +618,7 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
     const discovery = discover(config, ".");
     for (const m of discovery.modules) await sup.register(m.module, m.config, m.enabled);
     await sup.startAll();
+    let typed = "";
     try {
       const deadline = Date.now() + 5000;
       while (sup.list().find((m) => m.id === "ext.test.recorder")?.state !== "running") {
@@ -635,6 +636,18 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
       bus.publishEnvelope(envelope);
       const unrelated: Envelope = { ...envelope, event: customEvent("other.thing", 1) };
       bus.publishEnvelope(unrelated);
+      typed = bus.publish(
+        "agent",
+        {
+          type: "agent_turn_completed",
+          data: { turn: "01JC0000000000000000000000", context, text: "嗨" },
+        },
+        {
+          now: Date.UTC(2026, 10, 14, 0, 0, 2, 5),
+          correlation: "01JC0000000000000000000000",
+          causation: envelope.id,
+        },
+      ).id;
       await sleep(300);
     } finally {
       await sup.stopAll();
@@ -643,12 +656,15 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
     const initialize = JSON.parse(lines[0] as string) as { params: { extension: { dir: string } } };
     const extensionDir = initialize.params.extension.dir;
     expect(lines[0]?.replace(JSON.stringify(extensionDir).slice(1, -1), "<dir>")).toBe(
-      `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":${PROTOCOL_VERSION},"host":{"name":"miyoria","version":"${HOST_VERSION}"},"extension":{"id":"test.recorder","version":"0.0.2","dir":"<dir>","game":null},"config":{"record":${JSON.stringify(record)}},"permissions":{"events":["custom.*"],"tools":false,"commands":false,"network":[],"input":[]}}}`,
+      `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":${PROTOCOL_VERSION},"host":{"name":"miyoria","version":"${HOST_VERSION}"},"extension":{"id":"test.recorder","version":"0.0.2","dir":"<dir>","game":null},"config":{"record":${JSON.stringify(record)}},"permissions":{"events":["custom.*","agent.turn.completed"],"tools":false,"commands":false,"network":[],"input":[]}}}`,
     );
     expect(lines[1]).toBe(
       '{"jsonrpc":"2.0","method":"event","params":{"id":"01JC0000000000000000000001","ts":"2026-11-14T00:00:01.123Z","source":"test","causation":null,"correlation":"01JC0000000000000000000000","event":{"type":"custom","data":{"topic":"custom.hello","payload":{"n":1}}},"topic":"custom.hello"}}',
     );
-    expect(lines[2]).toBe('{"jsonrpc":"2.0","method":"shutdown","params":{}}');
-    expect(lines).toHaveLength(3);
+    expect(lines[2]).toBe(
+      `{"jsonrpc":"2.0","method":"event","params":{"id":"${typed}","ts":"2026-11-14T00:00:02.005Z","source":"agent","causation":"01JC0000000000000000000001","correlation":"01JC0000000000000000000000","event":{"type":"agent_turn_completed","data":{"turn":"01JC0000000000000000000000","context":{"platform":"discord","scope":"123","channel":"456","kind":"channel"},"text":"嗨"}},"topic":"agent.turn.completed"}}`,
+    );
+    expect(lines[3]).toBe('{"jsonrpc":"2.0","method":"shutdown","params":{}}');
+    expect(lines).toHaveLength(4);
   });
 });

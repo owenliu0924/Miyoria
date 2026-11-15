@@ -6,4 +6,4 @@ entry = "index.mjs"
 placement = "core"
 
 [permissions]
-events = ["custom.*"]
+events = ["custom.*", "agent.turn.completed"]

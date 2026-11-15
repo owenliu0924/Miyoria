@@ -99,6 +99,21 @@ describe("recorder", () => {
       ["agent", "custom"],
     ]);
   });
+
+  it("writes the lines byte for byte as the replay harness reads them", async () => {
+    const at = Date.UTC(2026, 10, 3, 6, 0, 1, 250);
+    const lines = await record({ record: true, dir: "logs" }, (sup) => {
+      sup.bus.publish("discord", message, { now: at, correlation: "01JC0000000000000000000000" });
+      sup.bus.publish("stage", customEvent("stage.status", { connected: false }), {
+        now: at + 1,
+      });
+    });
+    expect(lines).toEqual([
+      '{"at":"2026-11-03T06:00:01.250Z","source":"discord","event":{"type":"platform_message_created","data":{"id":{"context":{"platform":"t","scope":"g","channel":"c","kind":"channel"},"id":"m1"},"author":{"account":{"platform":"t","id":"owen"},"display_name":"Owen","is_bot":false},"text":"@Miyoria 嗨","mentions_self":true,"reply_to_self":false,"attachments":[],"ts":"2026-11-03T06:00:00.000Z"}}}',
+      '{"at":"2026-11-03T06:00:01.251Z","source":"stage","event":{"type":"custom","data":{"topic":"stage.status","payload":{"connected":false}}}}',
+      "",
+    ]);
+  });
 });
 
 describe("log", () => {
