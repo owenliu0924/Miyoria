@@ -1,6 +1,6 @@
 {
   "name": "@miyoria/contracts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Every shape that crosses a process boundary, written once as a zod schema. One folder per kind of contract (wire, events, voice-link, stage-link, overlay, workers); kit holds the rules the schemas follow and the JSON Schema emitter",
   "type": "module",
   "engines": {
