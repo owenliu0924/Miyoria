@@ -532,6 +532,76 @@
       },
       "additionalProperties": false
     },
+    "HostRelayRequest": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{1,32}$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^\\/\\S*$"
+        },
+        "headers": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "default": false,
+          "type": "boolean"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "stream",
+        "service",
+        "method",
+        "path"
+      ]
+    },
+    "HostRelayResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 599
+        },
+        "headers": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
     "HostRelinkResult": {
       "type": "object",
       "properties": {
