@@ -323,7 +323,8 @@ http.createServer((req, res) => { res.writeHead(200, { "content-type": "applicat
     await host.hostd(target, { start: true });
     expect(text()).toMatch(/已請它啟動 1 個啟用的服務/);
     const client = await HostdClient.connect(host.loadHost(target).state.root);
-    const { services } = (await client?.call("service.list")) as { services: HostServiceStatus[] };
+    if (client === null) throw new Error("the daemon of this test does not answer");
+    const { services } = await client.call<{ services: HostServiceStatus[] }>("service.list");
     expect(services.find((x) => x.name === "fake")?.state).toMatch(/starting|running/);
   });
 
