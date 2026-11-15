@@ -31,6 +31,7 @@ import { ClusterConfigSchema } from "./config.js";
 import { GuardRegistry, type GuardSourceFn } from "./guards.js";
 import { ClusterLink, type HostConnection } from "./link.js";
 import { EndpointRegistry } from "./registry.js";
+import { ClusterRelay, type RelayOptions } from "./relay.js";
 import {
   ClusterError,
   type ClusterTables,
@@ -87,6 +88,8 @@ export interface ClusterModuleOptions {
   guards?: readonly ClusterGuard[];
   /** What `welcome` says Core's version is. */
   version?: string;
+  /** Limits of the relay over the control link (v5-hostd §7.1). */
+  relay?: RelayOptions;
 }
 
 /** `host:port` / `[v6]:port`. */
@@ -177,12 +180,15 @@ export class ClusterModule implements Module {
   /** Outlives restarts of the module: Core's sources are added once. */
   readonly guards = new GuardRegistry();
   readonly #version: string;
+  readonly #relay: RelayOptions;
+  #registry: EndpointRegistry | null = null;
   #services: ServiceLookup | null = null;
   #addr: AddressInfo | null = null;
   #link: ClusterLink | null = null;
 
   constructor(options: ClusterModuleOptions = {}) {
     this.#version = options.version ?? "0.0.0";
+    this.#relay = options.relay ?? {};
     for (const guard of options.guards ?? []) {
       this.guards.add(() => (this.#services === null ? null : guard(this.#services)));
     }
@@ -218,7 +224,10 @@ export class ClusterModule implements Module {
       log: ctx.log,
       coreVersion: this.#version,
       now: () => ctx.clock.now(),
+      relay: this.#relay,
     });
+    // `request` for an endpoint only a host's link reaches goes through that link.
+    registry.setRelay(new ClusterRelay((name) => link.relayHost(name)));
     const wss = new WebSocketServer({
       noServer: true,
       maxPayload: MAX_MESSAGE,
@@ -253,6 +262,7 @@ export class ClusterModule implements Module {
     ctx.log.info({ addr: `${addr.address}:${addr.port}` }, "cluster link listening");
     this.#addr = addr;
     this.#link = link;
+    this.#registry = registry;
     ctx.provide(ClusterKey, {
       registry,
       hosts: clusterHosts(tables, link, ctx.publisher),
@@ -270,6 +280,7 @@ export class ClusterModule implements Module {
       try {
         await Promise.race([aborted(signal), failed]);
       } finally {
+        registry.setRelay(null);
         link.closeAll();
         wss.close();
         server.close();
@@ -279,6 +290,8 @@ export class ClusterModule implements Module {
   }
 
   async stop(): Promise<void> {
+    this.#registry?.setRelay(null);
+    this.#registry = null;
     this.#link?.closeAll();
     this.#link = null;
     this.#addr = null;

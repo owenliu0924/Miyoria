@@ -29,6 +29,15 @@ export {
   RelayUnavailableError,
 } from "./registry.js";
 export {
+  ClusterRelay,
+  DEFAULT_RELAY_TIMEOUT_MS,
+  RelayChannel,
+  type RelayChannelOptions,
+  RelayError,
+  type RelayHost,
+  type RelayOptions,
+} from "./relay.js";
+export {
   type ClusterHostRow,
   type ClusterInviteRow,
   clusterHosts,

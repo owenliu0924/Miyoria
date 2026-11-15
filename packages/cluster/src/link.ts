@@ -8,6 +8,9 @@
 // every `ping_secs` and drops a host it has heard nothing from for `peer_timeout_secs`.
 //
 // A pending host (joined, not approved) may connect and report; nothing it reports is used.
+//
+// Binary frames after `welcome` are the relay's (§7.1, `relay.ts`): each connection has its
+// channel, and every stream of it fails when the connection ends.
 
 import { EXT_ERROR_CODE } from "@miyoria/contracts/ext";
 import {
@@ -16,8 +19,10 @@ import {
   HOST_METHOD,
   HOST_NOTIFICATION,
   HOST_PROTOCOL_VERSION,
+  HOST_RELAY_PROTOCOL_ERROR,
   type HostHello,
   HostHelloSchema,
+  type HostReport,
   HostReportSchema,
   HostResolveSchema,
   HostServiceEventSchema,
@@ -30,6 +35,7 @@ import WebSocket, { type RawData } from "ws";
 import type { ClusterConfig } from "./config.js";
 import type { GuardRegistry } from "./guards.js";
 import type { EndpointRegistry } from "./registry.js";
+import { RelayChannel, RelayError, type RelayHost, type RelayOptions } from "./relay.js";
 import { ClusterError, type ClusterTables, type HostRecord } from "./tables.js";
 
 /** How long a close handshake may take before the socket is dropped. */
@@ -62,6 +68,8 @@ export interface ClusterLinkOptions {
   /** What `welcome` says Core's version is. */
   coreVersion: string;
   now: () => number;
+  /** The relay of HTTP requests over the link (v5-hostd §7.1). */
+  relay?: RelayOptions;
 }
 
 interface Conn {
@@ -70,9 +78,15 @@ interface Conn {
   readonly platform: string;
   readonly version: string;
   approved: boolean;
+  /** The capabilities it is approved for. */
+  capabilities: readonly string[];
+  /** Its latest report. */
+  report: HostReport | null;
   readonly since: number;
   readonly ws: WebSocket;
   readonly peer: RpcPeer;
+  /** Requests relayed to its services. */
+  readonly relay: RelayChannel;
   /** The first close code wins. */
   closing: { code: number; reason: string } | null;
 }
@@ -93,9 +107,13 @@ export function closeSocket(ws: WebSocket, code: number, reason: string): void {
   }, CLOSE_GRACE_MS).unref();
 }
 
+function rawBytes(data: RawData): Buffer {
+  if (Array.isArray(data)) return Buffer.concat(data);
+  return data instanceof ArrayBuffer ? Buffer.from(data) : data;
+}
+
 function rawText(data: RawData): string {
-  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
-  return (data instanceof ArrayBuffer ? Buffer.from(data) : data).toString("utf8");
+  return rawBytes(data).toString("utf8");
 }
 
 type HelloOutcome =
@@ -138,11 +156,24 @@ export class ClusterLink {
     return conn.peer.request(method, params ?? null, CALL_TIMEOUT_MS, signal);
   }
 
+  /** What the relay needs of a connected host; `null` when it is not connected. */
+  relayHost(name: string): RelayHost | null {
+    const conn = this.#conns.get(name);
+    if (conn === undefined) return null;
+    return {
+      approved: conn.approved,
+      capabilities: conn.capabilities,
+      services: conn.report?.services ?? null,
+      channel: conn.relay,
+    };
+  }
+
   /** The host's approval changed while it may be connected. */
   approvalChanged(host: HostRecord): void {
     const conn = this.#conns.get(host.name);
     if (conn === undefined) return;
     conn.approved = host.status === "approved";
+    conn.capabilities = conn.approved ? host.capabilities : [];
     this.#o.registry.setHost(host.name, conn.approved ? host.capabilities : null);
   }
 
@@ -273,17 +304,48 @@ export class ClusterLink {
       onError: (what, error, method) =>
         o.log.debug({ host: host.name, what, method, err: errorMessage(error) }, "host link"),
     });
+    const relay = new RelayChannel({
+      host: host.name,
+      peer,
+      sink: {
+        send: (frame) => {
+          if (ws.readyState !== WebSocket.OPEN) return false;
+          try {
+            ws.send(frame);
+          } catch {
+            return false;
+          }
+          return true;
+        },
+        get bufferedAmount() {
+          return ws.bufferedAmount;
+        },
+      },
+      onProtocolError: (reason) => {
+        o.log.warn({ host: host.name, reason }, "a host broke the relay protocol");
+        if (conn !== null) this.#shutdown(conn, HOST_RELAY_PROTOCOL_ERROR, "relay protocol error");
+      },
+      ...(o.relay?.maxStreams === undefined ? {} : { maxStreams: o.relay.maxStreams }),
+      ...(o.relay?.timeoutMs === undefined ? {} : { timeoutMs: o.relay.timeoutMs }),
+    });
     conn = {
       id: host.id,
       name: host.name,
       platform: hello.platform,
       version: hello.version,
       approved,
+      capabilities: approved ? host.capabilities : [],
+      report: null,
       since: o.now(),
       ws,
       peer,
+      relay,
       closing: null,
     };
+    // Binary frames are the relay's; JSON-RPC reads the text frames.
+    ws.on("message", (data: RawData, isBinary: boolean) => {
+      if (isBinary) relay.frame(rawBytes(data));
+    });
     const old = this.#conns.get(host.name);
     this.#conns.set(host.name, conn);
     if (old !== undefined) {
@@ -302,6 +364,7 @@ export class ClusterLink {
     const current = conn;
     ws.on("close", (code: number, reason: Buffer) => {
       stopBeat();
+      relay.close(new RelayError(`the link to host \`${current.name}\` closed`));
       peer.close();
       const closing = current.closing ?? { code, reason: reason.toString("utf8") };
       if (this.#conns.get(current.name) === current) {
@@ -385,7 +448,9 @@ export class ClusterLink {
           o.log.warn({ host: conn.name, err: parsed.error.message }, "a host sent a bad report");
           return;
         }
-        if (this.#conns.get(conn.name) === conn) o.registry.report(conn.name, parsed.data);
+        if (this.#conns.get(conn.name) !== conn) return;
+        conn.report = parsed.data;
+        o.registry.report(conn.name, parsed.data);
         return;
       }
       case HOST_NOTIFICATION.ServiceEvent: {

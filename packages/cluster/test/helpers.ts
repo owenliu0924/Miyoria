@@ -25,6 +25,7 @@ import {
   ClusterModule,
   type ClusterService,
   clusterTables,
+  type RelayOptions,
 } from "../src/index.js";
 
 export const WAIT_MS = 5_000;
@@ -92,13 +93,17 @@ export class Harness {
 
   static async start(
     config: JsonObject = {},
-    options: { guards?: ClusterGuard[]; extra?: Module[] } = {},
+    options: { guards?: ClusterGuard[]; extra?: Module[]; relay?: RelayOptions } = {},
   ): Promise<Harness> {
     const services = new ServiceRegistry();
     const store = await SqliteStore.open(":memory:", { plugins: [clusterTables] });
     services.provide("kernel", StoreKey, store);
     const sup = new Supervisor({ services });
-    const module = new ClusterModule({ guards: options.guards ?? [], version: "9.9.9" });
+    const module = new ClusterModule({
+      guards: options.guards ?? [],
+      version: "9.9.9",
+      ...(options.relay === undefined ? {} : { relay: options.relay }),
+    });
     await sup.register(module, { bind: "127.0.0.1:0", hello_timeout_ms: 2_000, ...config }, true);
     for (const extra of options.extra ?? []) await sup.register(extra, null, true);
     await sup.startAll();
