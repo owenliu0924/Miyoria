@@ -437,6 +437,8 @@ interface Step {
   /** Raw text as the model wrote it (tags included). */
   raw: string;
   calls: ToolCall[];
+  /** The model's reasoning for this response; it goes back with the response in a tool loop. */
+  reasoning: string;
 }
 
 /** Written sentences a bilingual reply may hold before their `<voice>` line is given up on. */
@@ -2647,7 +2649,7 @@ class Turn {
         if (now.length > 0 && rounds < cfg.max_tool_steps && left() > 0) {
           looped = true;
           await this.#roundEnded(main, expression, now, speech, segments, send, between);
-          messages.push(assistantMessage(raw, calls));
+          messages.push({ ...assistantMessage(raw, calls), reasoning: step.reasoning });
           let ran = 0;
           // A page is one result now: what a round adds together keeps the bound it had.
           let roundLeft = main.config.loop_round_chars;
@@ -3128,6 +3130,7 @@ class Turn {
     const parser = new ExpressionParser();
     const expression = new Expression();
     let raw = "";
+    let reasoning = "";
     const calls: ToolCall[] = [];
     let finished = false;
     let first = true;
@@ -3156,6 +3159,7 @@ class Turn {
           if (expression.silence && !offeredTools) break;
           if (speech?.stopped()) break;
         } else if (event.type === "reasoning_delta") {
+          reasoning += event.text;
           this.agent.log.debug({ turn: this.turn, reasoning: event.text }, "reasoning");
         } else if (event.type === "tool_call_delta") {
           // Her words are written before her tool calls: the last sentence need not wait for them.
@@ -3189,7 +3193,7 @@ class Turn {
     named.forEach((call, i) => {
       if (call.id === "") call.id = `call_${i}`;
     });
-    return { expression, raw, calls: named };
+    return { expression, raw, calls: named, reasoning };
   }
 
   /**
