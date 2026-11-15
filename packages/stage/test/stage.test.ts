@@ -5,7 +5,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
-import { type ContextKey, customEvent, newId, SONG_PREPARE_TOPIC } from "@miyoria/types";
+import { type ContextKey, Events, newId } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import {
@@ -13,7 +13,6 @@ import {
   type BoundAddress,
   defaultLipSyncConfig,
   defaultStageStatus,
-  EMOTION_TOPIC,
   formatAddress,
   Levels,
   OverlayHub,
@@ -171,10 +170,11 @@ describe("stage", () => {
     ).toBe(true);
     await expect(link.hotkey("Dance")).rejects.toThrow("Dance");
 
-    bus.publish(
-      "agent",
-      customEvent(EMOTION_TOPIC, { turn: newId(), context: textCtx(), emotion: "happy" }),
-    );
+    bus.publish("agent", Events.AgentEmotion, {
+      turn: newId(),
+      context: textCtx(),
+      emotion: "happy",
+    });
     const t0 = Date.now();
     await waitUntil(() => {
       const e = expressionRequests(vts);
@@ -229,16 +229,13 @@ describe("stage", () => {
     cleanup.push(() => early.terminate());
     early.on("message", (data) => seen.push(JSON.parse(data.toString())));
     await new Promise<void>((r, j) => early.once("open", () => r()).once("error", j));
-    bus.publish(
-      "sing",
-      customEvent(SONG_PREPARE_TOPIC, {
-        no: 1,
-        title: "夜に駆ける",
-        stage: "download",
-        progress: 0.25,
-        exclusive: null,
-      }),
-    );
+    bus.publish("sing", Events.SingPrepare, {
+      no: 1,
+      title: "夜に駆ける",
+      stage: "download",
+      progress: 0.25,
+      exclusive: null,
+    });
     const activity = {
       type: "activity",
       kind: "song_prepare",
