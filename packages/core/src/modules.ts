@@ -79,6 +79,7 @@ import {
 } from "./boot.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
 import { assertStartConfig, validateRevision } from "./config-schema.js";
+import { CoreEndpoints, legacyEndpoints } from "./endpoints.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
 
@@ -137,6 +138,9 @@ async function coreModules({
   store,
   baseDir,
 }: ModuleDeps): Promise<Module[]> {
+  // Where the modules' workers are: the cluster module's registry, with the address keys of the
+  // modules' own sections added as static entries (endpoints.ts).
+  const endpoints = new CoreEndpoints(legacyEndpoints(config)).option;
   return [
     // First, so it stops last: it logs what the others say on their way down.
     new FactsModule(store, profileId, { names: profile.names() }),
@@ -144,9 +148,9 @@ async function coreModules({
     llmModule(config, profile, baseDir),
     // Before the modules that will ask its registry where their services are.
     new ClusterModule({ guards: CLUSTER_GUARDS }),
-    SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema)),
+    SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema), { endpoints }),
     new VoiceLinkModule(),
-    new VoiceModule(profileId, profile.voice, profile.names()),
+    new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),
     new SchedulerModule(),
     new AgentModule(profile),
     new CommandsModule({ owners: authOwners(config) }),
@@ -181,13 +185,13 @@ async function coreModules({
     new QueueModule(),
     GameModule.fromProfile(profile),
     new GameChatModule(),
-    new SingModule(null, { baseDir }),
+    new SingModule(null, { baseDir, endpoints }),
     McpModule.fromAppConfig(config),
     new StageLinkModule(),
     new EconomyModule(profileId),
     new WebModule(),
     new SandboxModule(profileId, { baseDir }),
-    new ImageGenModule({ baseDir }),
+    new ImageGenModule({ baseDir, endpoints }),
     new SkillsModule(),
     new LiveModule({ names: profile.names() }),
     new PartyModule(),
