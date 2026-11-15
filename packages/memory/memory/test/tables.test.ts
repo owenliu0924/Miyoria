@@ -796,6 +796,28 @@ describe("sqlite (in memory)", () => {
   }));
 });
 
+describe("whose database it is", () => {
+  it("a record looked up by id reports the profile set at start, before any other call", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "miyoria-memory-"));
+    try {
+      const file = join(dir, "memory.db");
+      const first = await SqliteStore.open(file, { plugins: [memoryTables] });
+      const r = memory("p", "fact", { type: "person", person: newId() }, "ramen", at(Date.now()));
+      await first.plugin(memoryTables).upsert(r);
+      await first.close();
+      // A new start: nothing has named a profile on these tables yet.
+      const second = await SqliteStore.open(file, { plugins: [memoryTables] });
+      const tables = second.plugin(memoryTables);
+      expect((await tables.get(r.id))?.profile).toBe("");
+      tables.forProfile("deepseek-chan");
+      expect((await tables.get(r.id))?.profile).toBe("deepseek-chan");
+      await second.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+    }
+  });
+});
+
 describe("sqlite (file)", () => {
   tables(async () => {
     const dir = mkdtempSync(join(tmpdir(), "miyoria-memory-"));

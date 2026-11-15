@@ -279,6 +279,15 @@ export class MemoryTables implements MemoryRecordStore {
     this.#q = prepared(db);
   }
 
+  /**
+   * Says whose database this is, so `get(id)` reports that profile from the first call on (it
+   * would otherwise report none until some other call had named one). Core sets it at start.
+   */
+  forProfile(profile: ProfileId): this {
+    this.#profile = profile;
+    return this;
+  }
+
   /** Remembers the profile a call names, and checks the store is open for a prepared query. */
   #named(profile: ProfileId): ProfileId {
     this.#db.ensureOpen();

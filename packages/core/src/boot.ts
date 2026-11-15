@@ -294,6 +294,8 @@ export async function buildCoreWith(
   const profileDisplayName = profile.displayName;
   const profileId = profile.id;
   services.provide(k, ProfileIdKey, profileId);
+  // One database belongs to one character: a memory looked up by id reports this profile.
+  store.plugin(memoryTables).forProfile(profileId);
   // Lessons, recaps and agenda text written with per-call codes before handles were stable are
   // repaired before any module caches them (idempotent; resolves what the record itself says,
   // drops the rest).
