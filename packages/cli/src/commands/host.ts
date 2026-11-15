@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import {
   HOST_ERROR_CODE,
   type HostInfo,
+  type HostLinkState,
   type HostServiceControlResult,
   type HostServiceEvent,
   type HostServiceList,
@@ -477,6 +478,22 @@ export async function restart(
 
 // ---- status ------------------------------------------------------------------------------
 
+/** The control link's state as `status` says it. */
+export function linkText(state: HostLinkState | undefined): string {
+  switch (state) {
+    case "connected":
+      return green("已連上");
+    case "connecting":
+      return yellow("連線中");
+    case "unauthorized":
+      return red("被拒絕(host.key 無效或已撤銷)");
+    case "stopped":
+      return dim("已停止");
+    default:
+      return dim("沒有(host.toml 沒有 [cluster] 或還沒有 host.key)");
+  }
+}
+
 /** `12 秒`, `5 分`, `3 小時`, `2 天`. */
 export function ago(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -571,7 +588,7 @@ export async function status(target: HostTarget): Promise<void> {
       section(`這台電腦:${info.name}`);
       const uptime = Date.now() - Date.parse(client.info.started_at);
       println(
-        `hostd  pid ${client.info.pid}  已執行 ${ago(uptime)}  ${dim(client.info.workspace)}`,
+        `hostd  pid ${client.info.pid}  已執行 ${ago(uptime)}  Core 連線:${linkText(info.link)}  ${dim(client.info.workspace)}`,
       );
       println(
         info.gpu === null

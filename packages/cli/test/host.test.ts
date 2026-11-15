@@ -256,6 +256,7 @@ http.createServer((req, res) => { res.writeHead(200, { "content-type": "applicat
     expect(text()).toContain("這台電腦:test-pc");
     expect(text()).toMatch(/fake\s+running\s+✓/);
     expect(text()).toContain("讀不到");
+    expect(text()).toContain("Core 連線:沒有");
 
     out.length = 0;
     await host.logs(target, { service: "fake", lines: 10 });
