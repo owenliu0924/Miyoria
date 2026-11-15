@@ -235,6 +235,23 @@ describe("doctor --deep: builds", () => {
     write("packages/sdk/dist/index.js", "x", 300);
   };
 
+  it("builds_the_contracts_before_the_sdk_and_the_sdk_again_when_they_changed", async () => {
+    sdkFiles();
+    write("packages/contracts/package.json", "{}", 900);
+    write("packages/contracts/tsconfig.build.json", "{}", 900);
+    // Changed after both builds: the checkout moved to a newer commit.
+    write("packages/contracts/events/src/index.ts", "x", 10);
+    write("packages/contracts/dist/events/src/index.js", "x", 300);
+    const f = await buildChecks(input("", fakeDeps()));
+    const contracts = f.findIndex((x) => x.what.includes("契約"));
+    const sdk = f.findIndex((x) => x.what.includes("SDK"));
+    expect(f[contracts]?.level).toBe("fail");
+    // The SDK's own sources are older than its output; the contracts it compiles against are not.
+    expect(f[sdk]?.level).toBe("fail");
+    expect(contracts).toBeGreaterThanOrEqual(0);
+    expect(contracts).toBeLessThan(sdk);
+  });
+
   it("flags_a_stale_extension_dist_and_a_stale_mod_jar_with_the_update_fix", async () => {
     sdkFiles();
     write(
