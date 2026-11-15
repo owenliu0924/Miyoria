@@ -6,11 +6,12 @@
 import type { RoutedCall } from "@miyoria/gate/actions";
 import { SceneDirector, SceneRoles, ScenesConfigSchema } from "@miyoria/stage";
 import {
-  ACTIVITY_CHANGED_TOPIC,
   type ActivityRequest,
+  type EventPayload,
+  Events,
+  isJsonObject,
   type Principal,
   Principals,
-  v2Payload,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHAT, FakeWorld, GUILD, OWEN } from "./fake.js";
@@ -95,8 +96,8 @@ describe("acceptance: 開台玩 MC / 關台 / 離開語音 × 20", () => {
     show();
     // `stage.link` feeds the director the manager's snapshots; the curtain is the director.
     w.listeners.push((event) => {
-      const snapshot = v2Payload(event, ACTIVITY_CHANGED_TOPIC);
-      if (snapshot !== null) director.onSnapshot(snapshot);
+      if (event.type !== Events.ActivityChanged.type || !isJsonObject(event.data)) return;
+      director.onSnapshot(event.data as EventPayload<typeof Events.ActivityChanged>);
     });
     w.curtain = () => director.close();
 
@@ -110,7 +111,7 @@ describe("acceptance: 開台玩 MC / 關台 / 離開語音 × 20", () => {
     for (let i = 0; i < cycles; i++) {
       // 「開台玩 MC」: her tool answers at once; the panel asks for the same game meanwhile.
       const turn = `t${i}`;
-      w.emit({ type: "agent_turn_started", data: { turn, context: CHAT } });
+      w.emit(Events.AgentTurnStarted, { turn, context: CHAT });
       const asked = await w.service.route(call("game.start", playLive, her, false, turn));
       expect(asked.text).toContain("開始了");
       const again = w.service.route(
@@ -121,7 +122,7 @@ describe("acceptance: 開台玩 MC / 關台 / 離開語音 × 20", () => {
           true,
         ),
       );
-      w.emit({ type: "agent_turn_completed", data: { turn, context: CHAT, text: "好啊" } });
+      w.emit(Events.AgentTurnCompleted, { turn, context: CHAT, text: "好啊" });
       await until(() => {
         const s = w.service.snapshot();
         return (
@@ -144,11 +145,11 @@ describe("acceptance: 開台玩 MC / 關台 / 離開語音 × 20", () => {
       await w.service.request(w.transition({ type: "stop", activity: "game" }, her));
       await until(() => w.service.snapshot().activity.type === "idle");
       const bye = `bye${i}`;
-      w.emit({ type: "agent_turn_started", data: { turn: bye, context: CHAT } });
+      w.emit(Events.AgentTurnStarted, { turn: bye, context: CHAT });
       await w.service.request({ ...w.transition({ type: "leave_voice" }, her), turn: bye });
       await vi.advanceTimersByTimeAsync(500);
       expect(w.voice.size, "she waits for her goodbye").toBe(1);
-      w.emit({ type: "agent_turn_completed", data: { turn: bye, context: CHAT, text: "掰掰" } });
+      w.emit(Events.AgentTurnCompleted, { turn: bye, context: CHAT, text: "掰掰" });
       await until(() => w.service.snapshot().presence.type === "none");
       await vi.advanceTimersByTimeAsync(10_000);
 

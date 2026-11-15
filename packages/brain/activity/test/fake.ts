@@ -5,15 +5,16 @@
 import type { ActionResult } from "@miyoria/gate/actions";
 import {
   type ActivityTransition,
+  type AnyEventDefinition,
   type ContextKey,
-  customEvent,
-  type Event,
+  type EventPayload,
+  Events,
+  eventEnvelope,
   type JsonObject,
-  newEnvelope,
   type Principal,
   Principals,
-  publishVia,
-  v2Payload,
+  type PublishedEvent,
+  publishedVia,
 } from "@miyoria/types";
 import { type ActivityConfig, defaultActivityConfig } from "../src/config.js";
 import { ActivityService } from "../src/manager.js";
@@ -48,7 +49,7 @@ export interface FakeOptions {
 
 export class FakeWorld implements ActivityPort {
   readonly calls: StepCall[] = [];
-  readonly events: Event[] = [];
+  readonly events: PublishedEvent[] = [];
   readonly service: ActivityService;
   latency: number;
   launchMs: number;
@@ -69,7 +70,7 @@ export class FakeWorld implements ActivityPort {
   /** Run primary steps through the routed call's executor (router tests). */
   primaries = false;
   /** Called with everything the manager publishes. */
-  readonly listeners: ((event: Event) => void)[] = [];
+  readonly listeners: ((event: PublishedEvent) => void)[] = [];
   /** Shown before OBS stops (the stage's ending scene). */
   curtain: (() => Promise<void>) | null = null;
 
@@ -94,7 +95,7 @@ export class FakeWorld implements ActivityPort {
     this.service = new ActivityService({
       port: this,
       config: { ...defaultActivityConfig(), obs_start_delay_ms: 10, ...(options.config ?? {}) },
-      publish: publishVia((e) => {
+      publish: publishedVia((e) => {
         this.events.push(e);
         for (const listen of this.listeners) listen(e);
       }),
@@ -106,8 +107,9 @@ export class FakeWorld implements ActivityPort {
     return !this.missing.has(capability);
   }
 
-  emit(event: Event): void {
-    this.service.observe(newEnvelope("fake", event));
+  /** Delivers an event to the manager as the bus would; the payloads here are as loose as the manager reads them. */
+  emit(definition: AnyEventDefinition, data: unknown): void {
+    this.service.observe(eventEnvelope("fake", definition, data));
   }
 
   #later(fn: () => void): void {
@@ -116,12 +118,10 @@ export class FakeWorld implements ActivityPort {
 
   #stageStatus(): void {
     this.emit(
-      customEvent(
-        "stage.status",
-        this.stage
-          ? { connected: true, obs: this.obs, streaming: this.obsStreaming, scene: this.scene }
-          : { connected: false },
-      ),
+      Events.StageStatus,
+      this.stage
+        ? { connected: true, obs: this.obs, streaming: this.obsStreaming, scene: this.scene }
+        : { connected: false },
     );
   }
 
@@ -149,10 +149,7 @@ export class FakeWorld implements ActivityPort {
         const channel = typeof args.channel === "string" ? args.channel : "v1";
         await tick(this.latency);
         this.voice.set(guild, channel);
-        this.emit({
-          type: "voice_joined",
-          data: { context: voiceCtx(guild, channel), participants: [] },
-        });
+        this.emit(Events.VoiceJoined, { context: voiceCtx(guild, channel), participants: [] });
         return { text: `joined ${channel}`, data: { channel } };
       }
       case "voice.leave": {
@@ -160,10 +157,7 @@ export class FakeWorld implements ActivityPort {
         if (channel === undefined) return { text: "not in voice", data: { left: false } };
         this.#later(() => {
           this.voice.delete(guild);
-          this.emit({
-            type: "voice_left",
-            data: { context: voiceCtx(guild, channel), reason: null },
-          });
+          this.emit(Events.VoiceLeft, { context: voiceCtx(guild, channel), reason: null });
         });
         return { text: "left", data: { left: true } };
       }
@@ -171,32 +165,23 @@ export class FakeWorld implements ActivityPort {
         if (!this.voice.has(guild)) {
           await tick(this.latency);
           this.voice.set(guild, "v1");
-          this.emit({
-            type: "voice_joined",
-            data: { context: voiceCtx(guild, "v1"), participants: [] },
-          });
+          this.emit(Events.VoiceJoined, { context: voiceCtx(guild, "v1"), participants: [] });
         }
         if (this.golive.get(guild) === "live")
           return { text: "already live", data: { already: true } };
         this.golive.set(guild, "starting");
-        this.emit(
-          customEvent("voice.golive", { guild, state: "starting", error: null, reason: null }),
-        );
+        this.emit(Events.VoiceGoLive, { guild, state: "starting", error: null, reason: null });
         this.#later(() => {
           if (this.golive.get(guild) !== "starting") return;
           if (this.liveNeedsObs || this.goliveHangs) return;
           const failed = this.goliveFails;
           if (failed !== null) {
             this.golive.delete(guild);
-            this.emit(
-              customEvent("voice.golive", { guild, state: "failed", error: failed, reason: null }),
-            );
+            this.emit(Events.VoiceGoLive, { guild, state: "failed", error: failed, reason: null });
             return;
           }
           this.golive.set(guild, "live");
-          this.emit(
-            customEvent("voice.golive", { guild, state: "live", error: null, reason: null }),
-          );
+          this.emit(Events.VoiceGoLive, { guild, state: "live", error: null, reason: null });
         });
         return { text: "Go Live started", data: { already: false } };
       }
@@ -204,9 +189,7 @@ export class FakeWorld implements ActivityPort {
         if (!this.golive.has(guild)) return { text: "not live", data: { stopped: false } };
         this.#later(() => {
           this.golive.delete(guild);
-          this.emit(
-            customEvent("voice.golive", { guild, state: "stopped", error: null, reason: null }),
-          );
+          this.emit(Events.VoiceGoLive, { guild, state: "stopped", error: null, reason: null });
         });
         return { text: "Go Live stopped", data: { stopped: true } };
       }
@@ -225,9 +208,7 @@ export class FakeWorld implements ActivityPort {
           for (const [g, state] of this.golive) {
             if (state !== "starting") continue;
             this.golive.set(g, "live");
-            this.emit(
-              customEvent("voice.golive", { guild: g, state: "live", error: null, reason: null }),
-            );
+            this.emit(Events.VoiceGoLive, { guild: g, state: "live", error: null, reason: null });
           }
         }
         return {
@@ -257,14 +238,12 @@ export class FakeWorld implements ActivityPort {
         this.session = game;
         this.starts += 1;
         if (this.sessionEvent)
-          this.emit(
-            customEvent("game.director.session", {
-              state: "started",
-              game,
-              game_name: game === "minecraft" ? "Minecraft" : game,
-              context: null,
-            }),
-          );
+          this.emit(Events.GameDirectorSession, {
+            state: "started",
+            game,
+            game_name: game === "minecraft" ? "Minecraft" : game,
+            context: null,
+          });
         return {
           text: `她開始玩 ${game} 了`,
           data: {
@@ -281,9 +260,7 @@ export class FakeWorld implements ActivityPort {
         if (game === null)
           throw Object.assign(new Error("她目前沒有在玩遊戲。"), { name: "GameError" });
         this.session = null;
-        this.emit(
-          customEvent("game.director.session", { state: "stopped", game, game_name: game }),
-        );
+        this.emit(Events.GameDirectorSession, { state: "stopped", game, game_name: game });
         return { text: `她已停止玩 ${game}。`, data: null };
       }
       default:
@@ -296,15 +273,13 @@ export class FakeWorld implements ActivityPort {
     const game = this.session;
     if (game === null) return;
     this.session = null;
-    this.emit(
-      customEvent("game.director.session", {
-        state: "stopped",
-        game,
-        game_name: "Minecraft",
-        reason: "遊戲斷線了",
-        code: "disconnected",
-      }),
-    );
+    this.emit(Events.GameDirectorSession, {
+      state: "stopped",
+      game,
+      game_name: "Minecraft",
+      reason: "遊戲斷線了",
+      code: "disconnected",
+    });
   }
 
   transition(
@@ -315,8 +290,10 @@ export class FakeWorld implements ActivityPort {
   }
 
   /** Payloads of a v2 topic published so far. */
-  published<T extends Parameters<typeof v2Payload>[1]>(topic: T) {
-    return this.events.map((e) => v2Payload(e, topic)).filter((p) => p !== null);
+  published<D extends AnyEventDefinition>(definition: D): EventPayload<D>[] {
+    return this.events
+      .filter((e) => e.type === definition.type)
+      .map((e) => e.data as EventPayload<D>);
   }
 
   /** Calls of `capability` so far. */

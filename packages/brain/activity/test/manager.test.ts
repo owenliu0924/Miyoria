@@ -1,13 +1,5 @@
 import type { ActionResult, DirectRun, RoutedCall } from "@miyoria/gate/actions";
-import {
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
-  ACTIVITY_STARTED_TOPIC,
-  type ActivityRequest,
-  customEvent,
-  NOTICE_TOPIC,
-  Principals,
-} from "@miyoria/types";
+import { type ActivityRequest, Events, Principals } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHAT, FakeWorld, GUILD, OWEN, tick, until } from "./fake.js";
 
@@ -81,16 +73,16 @@ describe("presence", () => {
   it("speak then leave: waits for the asking turn, then leaves behind her speech", async () => {
     const w = new FakeWorld();
     w.voice.set(GUILD, "v1");
-    w.emit({
-      type: "voice_joined",
-      data: { context: { ...CHAT, channel: "v1", kind: "voice" }, participants: [] },
+    w.emit(Events.VoiceJoined, {
+      context: { ...CHAT, channel: "v1", kind: "voice" },
+      participants: [],
     });
-    w.emit({ type: "agent_turn_started", data: { turn: "t1", context: CHAT } });
+    w.emit(Events.AgentTurnStarted, { turn: "t1", context: CHAT });
     const leave = await w.service.request({ ...w.transition({ type: "leave_voice" }), turn: "t1" });
     expect(leave.status).toBe("started");
     await tick(30);
     expect(w.count("voice.leave")).toBe(0);
-    w.emit({ type: "agent_turn_completed", data: { turn: "t1", context: CHAT, text: "掰掰" } });
+    w.emit(Events.AgentTurnCompleted, { turn: "t1", context: CHAT, text: "掰掰" });
     await settle(w, leave.status === "started" ? leave.task : null);
     const call = w.calls.find((c) => c.capability === "voice.leave");
     expect(call).toMatchObject({ priority: "idle", lane: "voice:discord:g1" });
@@ -120,9 +112,9 @@ describe("broadcast", () => {
     // OBS following Go Live is an implied step: through the gate (not the primary capability).
     expect(w.calls[1]?.primary).toBeNull();
     expect(w.calls[1]?.principal.kind).toBe("director");
-    const done = w.published(ACTIVITY_DONE_TOPIC);
+    const done = w.published(Events.ActivityDone);
     expect(done).toHaveLength(1);
-    const notices = w.published(NOTICE_TOPIC);
+    const notices = w.published(Events.AgentNotice);
     expect(notices.at(-1)).toMatchObject({ ok: true, context: CHAT, source: "activity" });
     // Idempotent once live.
     expect((await w.service.request(w.transition(LIVE))).status).toBe("already");
@@ -133,7 +125,7 @@ describe("broadcast", () => {
     w.liveNeedsObs = true;
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
-    expect(w.published(ACTIVITY_FAILED_TOPIC)).toHaveLength(0);
+    expect(w.published(Events.ActivityFailed)).toHaveLength(0);
     expect(w.service.snapshot().broadcast).toMatchObject({ type: "live", golive: true, obs: true });
     expect(w.calls.map((c) => c.capability)).toEqual(["stream.start", "stage.stream"]);
   });
@@ -143,7 +135,7 @@ describe("broadcast", () => {
     w.goliveHangs = true;
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
-    expect(w.published(ACTIVITY_FAILED_TOPIC)[0]?.detail).toContain("還沒開始");
+    expect(w.published(Events.ActivityFailed)[0]?.detail).toContain("還沒開始");
     expect(
       w.calls.map((c) => `${c.capability}${c.args.action ? `:${String(c.args.action)}` : ""}`),
     ).toEqual(["stream.start", "stage.stream:start", "stage.stream:stop", "stream.stop"]);
@@ -156,10 +148,10 @@ describe("broadcast", () => {
     w.goliveFails = "ffmpeg exited";
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
-    const failed = w.published(ACTIVITY_FAILED_TOPIC);
+    const failed = w.published(Events.ActivityFailed);
     expect(failed).toHaveLength(1);
     expect(failed[0]?.detail).toContain("ffmpeg exited");
-    expect(w.published(NOTICE_TOPIC).at(-1)).toMatchObject({
+    expect(w.published(Events.AgentNotice).at(-1)).toMatchObject({
       ok: false,
       text: expect.stringContaining("開台失敗"),
     });
@@ -170,8 +162,8 @@ describe("broadcast", () => {
     const w = new FakeWorld({ obs: false });
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
-    expect(w.published(NOTICE_TOPIC).at(-1)?.text).toBe("開台失敗:OBS 沒開");
-    expect(w.published(ACTIVITY_FAILED_TOPIC)[0]?.code).toBe("precondition");
+    expect(w.published(Events.AgentNotice).at(-1)?.text).toBe("開台失敗:OBS 沒開");
+    expect(w.published(Events.ActivityFailed)[0]?.code).toBe("precondition");
     expect(w.count("stream.stop")).toBe(1);
     await until(() => w.service.snapshot().broadcast.type === "off");
   });
@@ -190,19 +182,17 @@ describe("broadcast", () => {
 
   it("OBS follows a Go Live started elsewhere, and stops when it ends", async () => {
     const w = new FakeWorld();
-    w.emit(customEvent("voice.golive", { guild: GUILD, state: "live", error: null, reason: null }));
+    w.emit(Events.VoiceGoLive, { guild: GUILD, state: "live", error: null, reason: null });
     w.golive.set(GUILD, "live");
     await until(() => w.obsStreaming);
     expect(w.calls.map((c) => c.capability)).toEqual(["stream.start", "stage.stream"]);
     w.golive.delete(GUILD);
-    w.emit(
-      customEvent("voice.golive", {
-        guild: GUILD,
-        state: "failed",
-        error: "node crashed",
-        reason: null,
-      }),
-    );
+    w.emit(Events.VoiceGoLive, {
+      guild: GUILD,
+      state: "failed",
+      error: "node crashed",
+      reason: null,
+    });
     await until(() => !w.obsStreaming);
     expect(w.service.snapshot().broadcast.type).toBe("off");
   });
@@ -239,7 +229,7 @@ describe("broadcast through the hub (obs_hub)", () => {
     // OBS is an implied step; Go Live is the primary one.
     expect(w.calls[0]?.primary).toBeNull();
     expect(w.calls[0]?.principal.kind).toBe("director");
-    expect(w.published(ACTIVITY_DONE_TOPIC)).toHaveLength(1);
+    expect(w.published(Events.ActivityDone)).toHaveLength(1);
     expect(w.service.snapshot().broadcast).toMatchObject({ type: "live", golive: true, obs: true });
     expect((await w.service.request(w.transition(LIVE))).status).toBe("already");
   });
@@ -261,7 +251,7 @@ describe("broadcast through the hub (obs_hub)", () => {
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
     expect(order(w)).toEqual(["stage.stream:start", "stage.stream:start"]);
-    expect(w.published(NOTICE_TOPIC).at(-1)?.text).toBe("開台失敗:OBS 沒有開始直播");
+    expect(w.published(Events.AgentNotice).at(-1)?.text).toBe("開台失敗:OBS 沒有開始直播");
     expect(w.service.snapshot().broadcast.type).toBe("off");
   });
 
@@ -269,7 +259,7 @@ describe("broadcast through the hub (obs_hub)", () => {
     const w = new FakeWorld({ obs: false, config: HUB });
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
-    expect(w.published(NOTICE_TOPIC).at(-1)?.text).toBe("開台失敗:OBS 沒開");
+    expect(w.published(Events.AgentNotice).at(-1)?.text).toBe("開台失敗:OBS 沒開");
     expect(w.calls).toEqual([]);
   });
 
@@ -315,9 +305,9 @@ describe("broadcast through the hub (obs_hub)", () => {
     w.obsStreaming = true;
     w.setObs(true);
     w.voice.set(GUILD, "v1");
-    w.emit({
-      type: "voice_joined",
-      data: { context: { ...CHAT, channel: "v1", kind: "voice" }, participants: [] },
+    w.emit(Events.VoiceJoined, {
+      context: { ...CHAT, channel: "v1", kind: "voice" },
+      participants: [],
     });
     const leave = await w.service.request(w.transition({ type: "leave_voice" }));
     await settle(w, leave.status === "started" ? leave.task : null);
@@ -330,7 +320,7 @@ describe("broadcast through the hub (obs_hub)", () => {
     w.goliveFails = "rtmp pull: no publisher";
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
-    expect(w.published(ACTIVITY_FAILED_TOPIC)[0]?.detail).toContain("no publisher");
+    expect(w.published(Events.ActivityFailed)[0]?.detail).toContain("no publisher");
     expect(w.count("stage.stream")).toBe(1);
     expect(w.obsStreaming).toBe(true);
     expect(w.service.snapshot().broadcast.type).toBe("off");
@@ -341,7 +331,7 @@ describe("broadcast through the hub (obs_hub)", () => {
     w.goliveHangs = true;
     const r = await w.service.request(w.transition(LIVE));
     await settle(w, r.status === "started" ? r.task : null);
-    expect(w.published(ACTIVITY_FAILED_TOPIC)[0]?.detail).toContain("還沒開始");
+    expect(w.published(Events.ActivityFailed)[0]?.detail).toContain("還沒開始");
     expect(order(w)).toEqual(["stage.stream:start", "stream.start", "stream.stop"]);
     expect(w.obsStreaming).toBe(true);
   });
@@ -351,17 +341,15 @@ describe("broadcast through the hub (obs_hub)", () => {
     w.obsStreaming = true;
     w.setObs(true);
     w.golive.set(GUILD, "live");
-    w.emit(customEvent("voice.golive", { guild: GUILD, state: "live", error: null, reason: null }));
+    w.emit(Events.VoiceGoLive, { guild: GUILD, state: "live", error: null, reason: null });
     expect(w.service.snapshot().broadcast).toMatchObject({ type: "live", golive: true, obs: true });
     w.golive.delete(GUILD);
-    w.emit(
-      customEvent("voice.golive", {
-        guild: GUILD,
-        state: "failed",
-        error: "node crashed",
-        reason: null,
-      }),
-    );
+    w.emit(Events.VoiceGoLive, {
+      guild: GUILD,
+      state: "failed",
+      error: "node crashed",
+      reason: null,
+    });
     await tick(30);
     expect(w.calls).toEqual([]);
     expect(w.obsStreaming).toBe(true);
@@ -371,7 +359,7 @@ describe("broadcast through the hub (obs_hub)", () => {
   it("a Go Live started elsewhere while OBS is off brings OBS up", async () => {
     const w = new FakeWorld({ config: HUB });
     w.golive.set(GUILD, "live");
-    w.emit(customEvent("voice.golive", { guild: GUILD, state: "live", error: null, reason: null }));
+    w.emit(Events.VoiceGoLive, { guild: GUILD, state: "live", error: null, reason: null });
     await until(() => w.obsStreaming);
     await until(() => w.count("stream.start") === 1);
     expect(order(w)).toEqual(["stage.stream:start", "stream.start"]);
@@ -397,8 +385,8 @@ describe("activity", () => {
     await settle(w, a.status === "started" ? a.task : null);
     expect(w.starts).toBe(1);
     expect(w.service.snapshot().activity).toMatchObject({ type: "game", phase: "running" });
-    expect(w.published(NOTICE_TOPIC).at(-1)?.text).toBe("Minecraft 開好了,已經開始玩。");
-    expect(w.published(ACTIVITY_STARTED_TOPIC).length).toBe(1);
+    expect(w.published(Events.AgentNotice).at(-1)?.text).toBe("Minecraft 開好了,已經開始玩。");
+    expect(w.published(Events.ActivityStarted).length).toBe(1);
   });
 
   it("a game start ends with its step, without waiting for the session event", async () => {
@@ -408,7 +396,7 @@ describe("activity", () => {
     await settle(w, a.status === "started" ? a.task : null);
     expect(w.service.task(a.status === "started" ? a.task : "")?.status).toBe("done");
     expect(w.service.snapshot().activity).toMatchObject({ type: "game", phase: "running" });
-    expect(w.published(NOTICE_TOPIC).at(-1)?.text).toBe("Minecraft 開好了,已經開始玩。");
+    expect(w.published(Events.AgentNotice).at(-1)?.text).toBe("Minecraft 開好了,已經開始玩。");
   });
 
   it("stop while the game is still launching cancels the launch", async () => {
@@ -435,12 +423,12 @@ describe("activity", () => {
       phase: "failed",
       failure: { code: "disconnected" },
     });
-    expect(w.published(NOTICE_TOPIC).at(-1)).toMatchObject({
+    expect(w.published(Events.AgentNotice).at(-1)).toMatchObject({
       ok: false,
       code: "disconnected",
       context: CHAT,
     });
-    expect(w.published(ACTIVITY_FAILED_TOPIC).at(-1)?.code).toBe("disconnected");
+    expect(w.published(Events.ActivityFailed).at(-1)?.code).toBe("disconnected");
     const again = await w.service.request(w.transition(MC));
     await settle(w, again.status === "started" ? again.task : null);
     expect(w.service.snapshot().activity).toMatchObject({ phase: "running" });
@@ -476,9 +464,9 @@ describe("activity", () => {
 
   it("singing shows up from the song cues", () => {
     const w = new FakeWorld();
-    w.emit(customEvent("sing.cue", { state: "started", song: "s1", title: "夜に駆ける" }));
+    w.emit(Events.SingCue, { state: "started", song: "s1", title: "夜に駆ける" });
     expect(w.service.snapshot().activity).toMatchObject({ type: "singing", target: "夜に駆ける" });
-    w.emit(customEvent("sing.cue", { state: "ended", song: "s1" }));
+    w.emit(Events.SingCue, { state: "ended", song: "s1" });
     expect(w.service.snapshot().activity.type).toBe("idle");
   });
 });
@@ -594,8 +582,12 @@ describe("router", () => {
         w.service.snapshot().activity.type !== "idle" &&
         w.starts === 1,
     );
-    await until(() => w.published(NOTICE_TOPIC).length > 0);
-    expect(w.published(NOTICE_TOPIC)[0]).toMatchObject({ turn: "t9", context: CHAT, ok: true });
+    await until(() => w.published(Events.AgentNotice).length > 0);
+    expect(w.published(Events.AgentNotice)[0]).toMatchObject({
+      turn: "t9",
+      context: CHAT,
+      ok: true,
+    });
   });
 
   it("wait resolves with the outcome and rethrows the executor's own error", async () => {
@@ -603,7 +595,7 @@ describe("router", () => {
     w.primaries = true;
     const ok = await w.service.route(routed(w, [MC], true));
     expect(ok.text).toContain("開始玩");
-    expect(w.published(NOTICE_TOPIC)).toHaveLength(0); // the waiting caller gets the answer
+    expect(w.published(Events.AgentNotice)).toHaveLength(0); // the waiting caller gets the answer
     const stop = await w.service.route(
       routed(w, [{ type: "stop", activity: "game" }], true, (run) =>
         w.run({

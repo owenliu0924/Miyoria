@@ -6,22 +6,22 @@ import {
   type Arbiter,
   ArbiterKey,
   type ContextKey,
-  customEvent,
   type DirectiveQuery,
   type Directives,
   DirectivesKey,
   type DirectiveVerdict,
-  type Event,
   type EventLog,
   EventLogKey,
+  eventEnvelope,
   type JsonObject,
   type NewLogEvent,
-  newEnvelope,
   newId,
   type Principal,
   Principals,
-  publishInto,
-  publishVia,
+  type Publish,
+  type PublishedEvent,
+  publishedInto,
+  publishTaskEvent,
   type RegisteredTaskExecutor,
   type SteerReceipt,
   type TaskEvent,
@@ -44,7 +44,7 @@ const SELF: Principal = Principals.self(CHAT);
 
 interface Harness {
   service: ActivityService;
-  events: Event[];
+  events: PublishedEvent[];
   /** Calls the gate (the port) saw. */
   runs: StepCall[];
   /** `steer` calls the executor got. */
@@ -89,20 +89,18 @@ function harness(
   const { check } = options;
   if (check) services.provide("core", DirectivesKey, { check } as unknown as Directives);
   const executor = new Executor();
-  const events: Event[] = [];
+  const events: PublishedEvent[] = [];
   const runs: StepCall[] = [];
   const steers: TaskSteer[] = [];
   const logged: NewLogEvent[] = [];
   const holds = new Map<string, string>();
   const gate = { deny: null as string | null };
   let service!: ActivityService;
-  const bus = (event: TaskEvent, owner = OWNER) =>
-    service.observe(
-      newEnvelope(
-        "fake",
-        customEvent(taskTopic(owner, event.type), event as unknown as JsonObject),
-      ),
-    );
+  const bus = (event: TaskEvent, owner = OWNER) => {
+    const observe: Publish = (definition, data, ...meta) =>
+      service.observe(eventEnvelope("fake", definition, data, ...meta));
+    publishTaskEvent(observe, owner, event);
+  };
   if (options.executorSteers !== false) {
     executor.steer = async (steer) => {
       steers.push(steer);
@@ -138,10 +136,10 @@ function harness(
     clock: { now: () => NOW },
     config: { ...defaultActivityConfig() },
     // What the module does: the bus brings the manager its own events back.
-    publish: publishVia((e) => {
-      events.push(e);
-      queueMicrotask(() => service.observe(newEnvelope("activity", e)));
-    }),
+    publish: (definition, data, ...meta) => {
+      events.push({ type: meta[0]?.type ?? definition.type, data });
+      queueMicrotask(() => service.observe(eventEnvelope("activity", definition, data, ...meta)));
+    },
   });
   return {
     service,
@@ -154,8 +152,8 @@ function harness(
     executor,
     steered: () =>
       events.flatMap((e) =>
-        e.type === "custom" && e.data.topic === taskTopic(OWNER, "steered")
-          ? [e.data.payload as unknown as Extract<TaskEvent, { type: "steered" }>]
+        e.type === taskTopic(OWNER, "steered")
+          ? [e.data as Extract<TaskEvent, { type: "steered" }>]
           : [],
       ),
     bus,
@@ -580,7 +578,7 @@ describe("steer: in-process routes (the song list)", () => {
   it("is gated as its own capability and answers at once with the outcome", async () => {
     let seen: StepCall | null = null;
     const services = new ServiceRegistry();
-    const events: Event[] = [];
+    const events: PublishedEvent[] = [];
     const service = new ActivityService({
       port: {
         has: (c) => c === "sing.steer",
@@ -591,7 +589,7 @@ describe("steer: in-process routes (the song list)", () => {
       },
       services,
       clock: { now: () => NOW },
-      publish: publishInto(events),
+      publish: publishedInto(events),
     });
     service.registerRoute("sing", {
       capability: "sing.steer",
@@ -602,9 +600,7 @@ describe("steer: in-process routes (the song list)", () => {
     const receipt = await service.steer({ steer, owner: "sing", principal: SELF });
     expect(receipt).toMatchObject({ status: "accepted", task: "song:3" });
     expect((seen as StepCall | null)?.capability).toBe("sing.steer");
-    const published = events.flatMap((e) =>
-      e.type === "custom" && e.data.topic === "sing.task.steered" ? [e.data.payload] : [],
-    );
+    const published = events.flatMap((e) => (e.type === "sing.task.steered" ? [e.data] : []));
     expect(published).toMatchObject([{ steer: steer.id, outcome: "applied", task: "song:3" }]);
   });
 

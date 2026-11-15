@@ -8,11 +8,9 @@ import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   ActivityManagerKey,
   type ContextKey,
-  customEvent,
   type Envelope,
-  NOTICE_TOPIC,
+  Events,
   Principals,
-  v2Payload,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -53,21 +51,18 @@ describe("activity module", () => {
         async execute(args, ctx) {
           tasks.push(ctx.task ?? null);
           await new Promise((resolve) => setTimeout(resolve, 20));
-          sup.bus.publish(
-            "game",
-            customEvent("game.director.session", {
-              state: "started",
-              game: args.game ?? "minecraft",
-              game_name: "Minecraft",
-              context: CTX,
-            }),
-          );
+          sup.bus.publish("game", Events.GameDirectorSession, {
+            state: "started",
+            game: args.game ?? "minecraft",
+            game_name: "Minecraft",
+            context: CTX,
+          });
           return "她開始玩 Minecraft 了";
         },
       }),
     );
     const notices: Envelope[] = [];
-    const sub = sup.bus.subscribe(NOTICE_TOPIC);
+    const sub = sup.bus.subscribe(Events.AgentNotice.type);
     void (async () => {
       for await (const env of sub) notices.push(env);
     })();
@@ -96,7 +91,7 @@ describe("activity module", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toBe(manager.tasks(1)[0]?.id);
     await vi.waitFor(() => expect(notices).toHaveLength(1));
-    expect(v2Payload(notices[0]?.event as never, NOTICE_TOPIC)).toMatchObject({
+    expect(notices[0]?.data).toMatchObject({
       turn: "t1",
       context: CTX,
       ok: true,

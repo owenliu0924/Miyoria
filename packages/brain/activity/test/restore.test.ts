@@ -3,16 +3,15 @@
 
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
-  ACTIVITY_RESTORE_TOPIC,
   type ActivityRestore,
   type ContextKey,
-  customEvent,
-  type Event,
+  Events,
+  eventEnvelope,
   type GameResume,
   GameResumeKey,
-  newEnvelope,
   Principals,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   type RestoredGame,
   toTimestamp,
 } from "@miyoria/types";
@@ -45,30 +44,25 @@ function harness(answer: GameResume["resume"] | null) {
       },
     });
   }
-  const events: Event[] = [];
+  const events: PublishedEvent[] = [];
   const service = new ActivityService({
     port,
     services,
     config: { ...defaultActivityConfig(), restore_grace_ms: 10_000, restore_poll_ms: 1_000 },
-    publish: publishInto(events),
+    publish: publishedInto(events),
   });
   const restores = () =>
     events.flatMap((e) =>
-      e.type === "custom" && e.data.topic === ACTIVITY_RESTORE_TOPIC
-        ? [e.data.payload as unknown as ActivityRestore]
-        : [],
+      e.type === Events.ActivityRestored.type ? [e.data as ActivityRestore] : [],
     );
   const session = (state: "started" | "stopped", game = "minecraft") =>
     service.observe(
-      newEnvelope(
-        "game",
-        customEvent("game.director.session", {
-          state,
-          game,
-          game_name: game,
-          context: { ...VOICE },
-        }),
-      ),
+      eventEnvelope("game", Events.GameDirectorSession, {
+        state,
+        game,
+        game_name: game,
+        context: { ...VOICE },
+      }),
     );
   return { service, services, calls, restores, session };
 }

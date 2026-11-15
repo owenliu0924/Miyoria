@@ -4,7 +4,7 @@
 
 import {
   type ActivityRequest,
-  customEvent,
+  Events,
   type Principal,
   Principals,
   toTimestamp,
@@ -31,22 +31,20 @@ function decided(
   principal: Principal = Principals.self(CHAT),
   allowed = true,
 ): void {
-  w.emit(
-    customEvent("gate.decision", {
-      id: "d1",
-      at: toTimestamp(Date.now()),
-      capability,
-      risk: "low",
-      principal: JSON.parse(JSON.stringify(principal)),
-      args,
-      why: null,
-      turn: null,
-      allowed,
-      stage: allowed ? "review" : "rate",
-      reason: "",
-      reviewer: null,
-    }),
-  );
+  w.emit(Events.GateDecision, {
+    id: "d1",
+    at: toTimestamp(Date.now()),
+    capability,
+    risk: "low",
+    principal: JSON.parse(JSON.stringify(principal)),
+    args,
+    why: null,
+    turn: null,
+    allowed,
+    stage: allowed ? "review" : "rate",
+    reason: "",
+    reviewer: null,
+  });
 }
 
 afterEach(() => {
@@ -126,7 +124,7 @@ describe("browsing", () => {
   it("publishes the change so the stage and the public page see it", () => {
     const w = world();
     decided(w, "web.search", { query: "新聞" });
-    const changes = w.published("activity.changed");
+    const changes = w.published(Events.ActivityChanged);
     expect(changes.at(-1)?.activity).toMatchObject({ type: "browse", target: "新聞" });
   });
 });
