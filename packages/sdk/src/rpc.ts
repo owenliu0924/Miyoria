@@ -1,10 +1,12 @@
-// Symmetric JSON-RPC 2.0 peer over a pair of byte streams: the one copy of the machinery, used
-// by an extension (through the SDK) and by the host (`@miyoria/plugin-host/ext-host`).
+// Symmetric JSON-RPC 2.0 peer: the one copy of the machinery, used by an extension (through the
+// SDK), by the host (`@miyoria/plugin-host/ext-host`), and by hostd and Core on the control link.
 //
 // Both sides may send requests and notifications. Incoming requests run concurrently and get an
 // `AbortSignal` that aborts when the caller sends `$/cancelRequest`; every outgoing request has a
-// timeout. The wire is LSP's (`Content-Length` frames, `$/cancelRequest`); the conformance test
-// in `@miyoria/plugin-host` reads and writes frames with `vscode-jsonrpc` to keep it so.
+// timeout. Messages travel over a transport (`transport.ts`): LSP's `Content-Length` frames over
+// two streams (given as `input` and `output`), or any other `RpcTransport` (one JSON text frame
+// per message over a WebSocket). On streams the wire is LSP's; the conformance test in
+// `@miyoria/plugin-host` reads and writes frames with `vscode-jsonrpc` to keep it so.
 
 import type { Readable, Writable } from "node:stream";
 import {
@@ -13,7 +15,7 @@ import {
   EXT_LIMITS,
   type ExtRpcErrorObject,
 } from "@miyoria/contracts/ext";
-import { FrameBodyDecoder, encodeFrame } from "./framing.js";
+import { type RpcTransport, type RpcTransportSink, StreamTransport } from "./transport.js";
 
 /** Notification (`{id}`) a caller sends when it stops waiting for a request it sent. */
 export const CANCEL_METHOD = EXT_CANCEL_METHOD;
@@ -103,10 +105,8 @@ const POLICY: Record<PeerRole, Policy> = {
   },
 };
 
-export interface PeerOptions {
-  output: Writable;
-  /** Start reading at once (an extension). Without it the peer reads when `serve` is called. */
-  input?: Readable;
+/** What every peer takes, whatever carries its messages. */
+export interface PeerBaseOptions {
   /** Answers incoming requests. Throw `RpcError` for a specific code. */
   onRequest?: RequestHandler;
   onNotification?: NotificationHandler;
@@ -119,6 +119,23 @@ export interface PeerOptions {
   /** A failure nobody can handle: the writer broke, or a notification handler failed. */
   onError?: (what: "writer" | "notification", error: unknown, method?: string) => void;
 }
+
+/** A peer over two byte streams, with `Content-Length` frames. */
+export interface StreamPeerOptions extends PeerBaseOptions {
+  output: Writable;
+  /** Start reading at once (an extension). Without it the peer reads when `serve` is called. */
+  input?: Readable;
+  transport?: undefined;
+}
+
+/** A peer over a message transport (a WebSocket). It reads from the start; `serve` is not used. */
+export interface TransportPeerOptions extends PeerBaseOptions {
+  transport: RpcTransport;
+  output?: undefined;
+  input?: undefined;
+}
+
+export type PeerOptions = StreamPeerOptions | TransportPeerOptions;
 
 interface Pending {
   resolve: (value: unknown) => void;
@@ -135,7 +152,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export class RpcPeer {
-  readonly #output: Writable;
+  /** Writes; on streams it also reads when `input` was given. */
+  readonly #transport: RpcTransport;
+  /** The stream peer's writer, for `serve`; `null` on a message transport. */
+  readonly #output: Writable | null;
   readonly #opts: PeerOptions;
   readonly #policy: Policy;
   readonly #pending = new Map<number, Pending>();
@@ -150,11 +170,23 @@ export class RpcPeer {
 
   constructor(opts: PeerOptions) {
     this.#opts = opts;
-    this.#output = opts.output;
     this.#policy = POLICY[opts.role ?? "extension"];
+    if (opts.transport !== undefined) {
+      this.#output = null;
+      this.#transport = opts.transport;
+      this.#read(this.#transport, {}, undefined);
+      return;
+    }
+    const output = opts.output;
+    this.#output = output;
+    this.#transport = this.#streams(output, opts.input);
     // A broken pipe shows up as end of input too; this only keeps it from being an unhandled error.
-    opts.output.on("error", (error) => opts.onError?.("writer", error));
-    if (opts.input) this.#read(opts.input, {}, undefined);
+    output.on("error", (error) => opts.onError?.("writer", error));
+    if (opts.input) this.#read(this.#transport, {}, undefined);
+  }
+
+  #streams(output: Writable, input: Readable | undefined): StreamTransport {
+    return new StreamTransport(output, input, { strictEnd: this.#policy.truncatedIsError });
   }
 
   get closed(): boolean {
@@ -233,7 +265,7 @@ export class RpcPeer {
 
   /** Like `notify`, but drops the notification when the outgoing queue is full. */
   tryNotify(method: string, params?: unknown): boolean {
-    if (this.#output.writableLength > EXT_LIMITS.MAX_QUEUED_BYTES) return false;
+    if (this.#transport.queuedBytes > EXT_LIMITS.MAX_QUEUED_BYTES) return false;
     return this.notify(method, params);
   }
 
@@ -241,12 +273,17 @@ export class RpcPeer {
    * Reads incoming messages from `input` until the stream ends (resolves) or breaks (rejects),
    * dispatching requests and notifications to the handlers (`handlers` over the peer's own) and
    * responses to waiting callers. Pending requests fail with `Closed` when it settles. Aborting
-   * `signal` stops reading and resolves.
+   * `signal` stops reading and resolves. Only for a peer over streams: one over a message
+   * transport reads from the start.
    */
   serve(input: Readable, handlers: ServeHandlers = {}, signal?: AbortSignal): Promise<void> {
+    const output = this.#output;
+    if (output === null) {
+      return Promise.reject(new Error("a peer over a message transport reads from the start"));
+    }
     return new Promise<void>((resolve, reject) => {
       this.#settle = (error) => (error ? reject(error) : resolve());
-      this.#read(input, handlers, signal);
+      this.#read(this.#streams(output, input), handlers, signal);
     });
   }
 
@@ -269,40 +306,11 @@ export class RpcPeer {
     this.#opts.onClose?.(error ?? undefined);
   }
 
-  #read(input: Readable, handlers: ServeHandlers, signal: AbortSignal | undefined): void {
-    const decoder = new FrameBodyDecoder();
-    const onData = (chunk: Buffer | string) => {
-      let bodies: Buffer[];
-      try {
-        bodies = decoder.push(chunk);
-      } catch (error) {
-        this.#teardown(error as Error);
-        return;
-      }
-      for (const body of bodies) {
-        if (this.#closed) return;
-        this.#onBody(body, handlers);
-      }
-    };
-    const onEnd = () => {
-      if (!this.#policy.truncatedIsError) {
-        this.#teardown(null);
-        return;
-      }
-      try {
-        decoder.end();
-        this.#teardown(null);
-      } catch (error) {
-        this.#teardown(error as Error);
-      }
-    };
-    const onError = (error: Error) => this.#teardown(error);
+  #read(transport: RpcTransport, handlers: ServeHandlers, signal: AbortSignal | undefined): void {
     const onAbort = () => this.#teardown(null);
+    let stop: (() => void) | null = null;
     this.#detach = () => {
-      input.off("data", onData);
-      input.off("end", onEnd);
-      input.off("close", onEnd);
-      input.off("error", onError);
+      stop?.();
       signal?.removeEventListener("abort", onAbort);
     };
     if (signal?.aborted) {
@@ -310,17 +318,21 @@ export class RpcPeer {
       return;
     }
     signal?.addEventListener("abort", onAbort, { once: true });
-    input.on("data", onData);
-    input.on("end", onEnd);
-    input.on("close", onEnd);
-    input.on("error", onError);
+    const sink: RpcTransportSink = {
+      message: (message) => {
+        if (!this.#closed) this.#dispatch(message, handlers);
+      },
+      malformed: (error) => {
+        if (!this.#closed) this.#malformed(error);
+      },
+      end: (error) => this.#teardown(error ?? null),
+    };
+    stop = transport.listen(sink);
   }
 
   #write(message: unknown): boolean {
     if (this.#closed && !this.#policy.writeAfterClose) return false;
-    if (this.#output.destroyed || this.#output.writableEnded) return false;
-    this.#output.write(encodeFrame(message));
-    return true;
+    return this.#transport.send(message);
   }
 
   #respond(id: unknown, result: { ok: unknown } | { err: RpcError }): void {
@@ -331,19 +343,13 @@ export class RpcPeer {
     );
   }
 
-  #onBody(body: Buffer, handlers: ServeHandlers): void {
-    let message: unknown;
-    try {
-      message = JSON.parse(body.toString("utf8"));
-    } catch (error) {
-      if (this.#policy.badJson === "close") {
-        this.#teardown(error as Error);
-        return;
-      }
-      this.#respond(null, { err: new RpcError(EXT_ERROR_CODE.ParseError, messageOf(error)) });
+  /** A whole message that is not JSON. */
+  #malformed(error: Error): void {
+    if (this.#policy.badJson === "close") {
+      this.#teardown(error);
       return;
     }
-    this.#dispatch(message, handlers);
+    this.#respond(null, { err: new RpcError(EXT_ERROR_CODE.ParseError, messageOf(error)) });
   }
 
   #dispatch(message: unknown, handlers: ServeHandlers): void {
