@@ -325,6 +325,9 @@
           "items": {
             "$ref": "#/$defs/HostServiceStatus"
           }
+        },
+        "link": {
+          "$ref": "#/$defs/HostLinkState"
         }
       },
       "required": [
@@ -498,6 +501,16 @@
         "command"
       ],
       "additionalProperties": false
+    },
+    "HostLinkState": {
+      "type": "string",
+      "enum": [
+        "none",
+        "connecting",
+        "connected",
+        "unauthorized",
+        "stopped"
+      ]
     },
     "HostPort": {
       "anyOf": [

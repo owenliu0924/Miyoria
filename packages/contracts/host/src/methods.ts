@@ -89,6 +89,12 @@ export const HostGpuReadingSchema = z
   .meta({ id: "HostGpuReading" });
 export type HostGpuReading = z.output<typeof HostGpuReadingSchema>;
 
+/** Where the daemon's control link to Core is; `none` without `[cluster]` or a host key. */
+export const HostLinkStateSchema = z
+  .enum(["none", "connecting", "connected", "unauthorized", "stopped"])
+  .meta({ id: "HostLinkState" });
+export type HostLinkState = z.output<typeof HostLinkStateSchema>;
+
 /** `host.info` result. `gpu` is null when the machine has no card. */
 export const HostInfoSchema = z
   .object({
@@ -98,6 +104,8 @@ export const HostInfoSchema = z
     protocol: z.number().int(),
     gpu: HostGpuReadingSchema.nullable(),
     services: z.array(HostServiceStatusSchema),
+    /** The control link's state; older daemons leave it out. */
+    link: HostLinkStateSchema.optional(),
   })
   .meta({ id: "HostInfo" });
 export type HostInfo = z.output<typeof HostInfoSchema>;

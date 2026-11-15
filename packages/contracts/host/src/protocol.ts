@@ -42,11 +42,11 @@ export const HOST_NOTIFICATION = {
 
 /** WebSocket close codes of the control link, the same meanings as the voice link's. */
 export const HOST_LINK_CLOSE = {
-  /** Malformed hello, another version, or no hello in time. The host does not retry. */
+  /** Malformed hello or another version. The host does not retry. (No hello in time is `TIMEOUT`.) */
   BAD_HELLO: 4400,
   /** Wrong or revoked host key. The host does not retry. */
   UNAUTHORIZED: 4401,
-  /** No traffic from the host within Core's peer timeout. The host reconnects. */
+  /** No hello in time, or no traffic from the host within Core's peer timeout. The host reconnects. */
   TIMEOUT: 4408,
   /** A newer connection for the same host took over. The host does not retry. */
   REPLACED: 4409,
