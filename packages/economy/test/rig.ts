@@ -14,14 +14,14 @@ import {
   AffectStateKey,
   AuthorizerKey,
   type ContextKey,
-  type Event,
   EventLogKey,
   type JsonValue,
   ModerationKey,
   newId,
   type PersonId,
   Principals,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   SelfStateKey,
   SocialSignalsKey,
   toTimestamp,
@@ -52,7 +52,7 @@ export interface Rig {
   registry: ActuatorRegistry;
   services: ServiceRegistry;
   clock: { at: number };
-  bus: Event[];
+  bus: PublishedEvent[];
   docs: MemoryDocs;
   /** What `random()` returns next (cycled); empty: `0.5`. */
   dice: { values: number[] };
@@ -119,7 +119,7 @@ export async function rig(
   const registry = new ActuatorRegistry({ services, builtins: false });
   services.provide(k, ActuatorRegistryKey, registry);
   const clock = { at: T0 };
-  const bus: Event[] = [];
+  const bus: PublishedEvent[] = [];
   const dice = { values: [] as number[] };
   let n = 0;
   const docs = new MemoryDocs();
@@ -130,7 +130,7 @@ export async function rig(
     services,
     profile: "p",
     clock: { now: () => clock.at },
-    publish: publishInto(bus),
+    publish: publishedInto(bus),
     log: getLogger("test"),
     random: () =>
       dice.values.length === 0 ? 0.5 : (dice.values[n++ % dice.values.length] as number),

@@ -7,12 +7,13 @@ import { getLogger } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
 import {
   type AccountRef,
+  type AnyEventDefinition,
   type ContextKey,
-  customEvent,
-  type Event,
+  type EventPayload,
+  Events,
+  eventEnvelope,
   type JsonValue,
-  newEnvelope,
-  SONG_TOPIC,
+  type PublishMetaArgs,
   toTimestamp,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
@@ -23,8 +24,12 @@ import { v2Capabilities } from "../src/v2-tools.js";
 import { economyOf, ledgerOf, walletOf } from "./ledger.js";
 import { ALICE, BOB, DAY, ERIN, fund, type Rig, rig, say, T0, TEXT } from "./rig.js";
 
-/** An old-form event as the bus delivers it. */
-const ev = (event: Event) => newEnvelope("test", event);
+/** An event of `definition` as the bus delivers it. */
+const ev = <D extends AnyEventDefinition>(
+  definition: D,
+  data: EventPayload<D>,
+  ...meta: PublishMetaArgs<D>
+) => eventEnvelope("test", definition, data, ...meta);
 
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };
 
@@ -58,10 +63,10 @@ const part = (account: AccountRef) => ({
   muted: false,
   deafened: false,
 });
-const joined = (...who: AccountRef[]): Event =>
-  ({ type: "voice_joined", data: { context: VOICE, participants: who.map(part) } }) as never;
-const cue = (state: string, extra: Record<string, JsonValue> = {}): Event =>
-  customEvent(SONG_TOPIC, { state, song: "s1", ...extra });
+const joined = (...who: AccountRef[]) =>
+  ev(Events.VoiceJoined, { context: VOICE, participants: who.map(part) } as never);
+const cue = (state: string, extra: Record<string, JsonValue> = {}) =>
+  ev(Events.SingCue, { state, song: "s1", ...extra } as never);
 
 /** A finished song `s1` Alice requested, in a rig whose singer lists it. */
 function singer(r: Rig, requester: AccountRef | null = ALICE): void {
@@ -161,9 +166,9 @@ describe("song notices", () => {
     await r.economy.v2.completeQuest(BOB, "play_game");
     await r.economy.v2.completeQuest(BOB, "new_topic", "他的貓");
     const earnings = new Earnings(r.economy, r.economy.config, r.services, getLogger("test"));
-    await earnings.onEvent(ev(joined(ALICE, BOB, ERIN)), T0);
-    await earnings.onEvent(ev(cue("started", { title: "小星星" })), T0);
-    await earnings.onEvent(ev(cue("ended", { outcome: "finished" })), T0);
+    await earnings.onEvent(joined(ALICE, BOB, ERIN), T0);
+    await earnings.onEvent(cue("started", { title: "小星星" }), T0);
+    await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
     expect(posted).toHaveLength(1);
     const [card] = posted;
     if (!card) throw new Error("no card");
@@ -183,8 +188,8 @@ describe("song notices", () => {
       "🏅 <@5> 解鎖「第一個每日任務」,稱號「跑腿」+10",
     ]);
     // The same song again pays nobody and posts nothing.
-    await earnings.onEvent(ev(cue("started", { title: "小星星" })), T0);
-    await earnings.onEvent(ev(cue("ended", { outcome: "finished" })), T0);
+    await earnings.onEvent(cue("started", { title: "小星星" }), T0);
+    await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
     expect(posted).toHaveLength(1);
   });
 
@@ -193,8 +198,8 @@ describe("song notices", () => {
     const posted = sink(r);
     singer(r);
     const earnings = new Earnings(r.economy, r.economy.config, r.services, getLogger("test"));
-    await earnings.onEvent(ev(cue("started", { title: "小星星" })), T0);
-    await earnings.onEvent(ev(cue("ended", { outcome: "finished" })), T0);
+    await earnings.onEvent(cue("started", { title: "小星星" }), T0);
+    await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
     // The requester is still paid; nobody is told where it would be a guess.
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBeGreaterThan(0);
     expect(posted).toEqual([]);

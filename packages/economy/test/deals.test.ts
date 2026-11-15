@@ -18,7 +18,6 @@ import {
   AuthorizerKey,
   type ContextKey,
   DirectivesKey,
-  type Event,
   EventLogKey,
   HandleDirectoryKey,
   type JsonValue,
@@ -27,7 +26,8 @@ import {
   type PersonId,
   PersonNoteWriterKey,
   Principals,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   RelationshipEffectsKey,
   type RelationshipGain,
   SelfStateKey,
@@ -69,7 +69,7 @@ interface Rig {
   services: ServiceRegistry;
   registry: ActuatorRegistry;
   clock: { at: number };
-  bus: Event[];
+  bus: PublishedEvent[];
   hunger: { value: number };
   observed: Observed[];
   gains: { person: PersonId; gain: RelationshipGain }[];
@@ -185,7 +185,7 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
           : { outcome: "allow" },
   } as never);
 
-  const bus: Event[] = [];
+  const bus: PublishedEvent[] = [];
   const clock = { at: T0 };
   const registry = new ActuatorRegistry({ services, builtins: false });
   services.provide(k, ActuatorRegistryKey, registry);
@@ -215,7 +215,7 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
       services,
       profile: "p",
       clock: { now: () => clock.at },
-      publish: publishInto(bus),
+      publish: publishedInto(bus),
       log: getLogger("test"),
     });
   const economy = make();
@@ -305,10 +305,8 @@ const live = async (r: Rig, who: AccountRef): Promise<Deal[]> =>
 
 const events = (r: Rig, kind: string) =>
   r.bus.flatMap((e) =>
-    e.type === "custom" &&
-    e.data.topic === SOCIAL_EVENT_TOPIC &&
-    (e.data.payload as { kind?: string }).kind === kind
-      ? [e.data.payload as Record<string, JsonValue>]
+    e.type === SOCIAL_EVENT_TOPIC && (e.data as { kind?: string }).kind === kind
+      ? [e.data as Record<string, JsonValue>]
       : [],
   );
 

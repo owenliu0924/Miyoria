@@ -4,7 +4,13 @@
 import { CommandRegistry, Permissions } from "@miyoria/commands";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
-import { customEvent, type Event, newEnvelope, SONG_TOPIC } from "@miyoria/types";
+import {
+  type AnyEventDefinition,
+  type EventPayload,
+  Events,
+  eventEnvelope,
+  type PublishMetaArgs,
+} from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyCommands } from "../src/commands.js";
 import { Earnings } from "../src/earn.js";
@@ -12,8 +18,12 @@ import { v2Capabilities } from "../src/v2-tools.js";
 import { Economy2Key } from "../src/v2-types.js";
 import { ALICE, BOB, balance, rig as baseRig, CAROL, DAVE, DAY, rejects, say, T0 } from "./rig.js";
 
-/** An old-form event as the bus delivers it. */
-const ev = (event: Event) => newEnvelope("test", event);
+/** An event of `definition` as the bus delivers it. */
+const ev = <D extends AnyEventDefinition>(
+  definition: D,
+  data: EventPayload<D>,
+  ...meta: PublishMetaArgs<D>
+) => eventEnvelope("test", definition, data, ...meta);
 
 /** Achievements pay coins of their own: keep them out of these sums. */
 const rig = (config: Record<string, JsonValue> = {}) => baseRig({ achievement_cap: 0, ...config });
@@ -95,27 +105,24 @@ describe("quests", () => {
       muted: false,
       deafened: false,
     });
-    const joined = (...who: (typeof ALICE)[]): Event =>
-      ({ type: "voice_joined", data: { context: voice, participants: who.map(part) } }) as never;
-    const cue = (state: string, extra = {}): Event =>
-      customEvent(SONG_TOPIC, { state, song: "s1", ...extra });
-    await earnings.onEvent(ev(joined(ALICE)), T0);
-    await earnings.onEvent(ev(cue("started", { title: "t" })), T0);
+    const joined = (...who: (typeof ALICE)[]) =>
+      ev(Events.VoiceJoined, { context: voice, participants: who.map(part) } as never);
+    const cue = (state: string, extra = {}) =>
+      ev(Events.SingCue, { state, song: "s1", ...extra } as never);
+    await earnings.onEvent(joined(ALICE), T0);
+    await earnings.onEvent(cue("started", { title: "t" }), T0);
     await earnings.onEvent(
-      ev({
-        type: "voice_participants",
-        data: { context: voice, participants: [part(ALICE), part(BOB)] },
-      } as never),
+      ev(Events.VoiceParticipants, { context: voice, participants: [part(ALICE), part(BOB)] }),
       T0,
     );
-    await earnings.onEvent(ev(cue("ended", { outcome: "finished" })), T0);
+    await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
     const done = async (a: typeof ALICE) =>
       (await r.economy.v2.quests(a)).quests.find((x) => x.id === "listen_song")?.done;
     expect(await done(ALICE)).toBe(true);
     expect(await done(BOB)).toBe(false);
     // A song she stopped is not heard to the end.
-    await earnings.onEvent(ev(cue("started")), T0);
-    await earnings.onEvent(ev(cue("ended", { outcome: "interrupted" })), T0);
+    await earnings.onEvent(cue("started"), T0);
+    await earnings.onEvent(cue("ended", { outcome: "interrupted" }), T0);
     expect(await done(BOB)).toBe(false);
   });
 });
