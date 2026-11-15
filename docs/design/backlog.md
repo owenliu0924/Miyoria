@@ -29,6 +29,8 @@
 
 ### 多台電腦(角色分機)還沒做的
 
+> 2026-11-16 補註:這一節是 hostd 之前寫的。`miyoria start`、`miyoria install`、`[machine]`、`[stack]` 和三個角色已經被 hostd、`service.toml`、`host.toml` 取代(見 [v5-hostd.md](v5-hostd.md)):服務死了會自動重啟,有 `down`、`restart` 和守衛,環境用 uv 和 lock 檔,worker 有 token 檢查,推論機不再限一台。下面仍成立的只有:Minecraft 擴充在 Core 那台開遊戲、新手要自己放 TTS 的聲音參考音、`add` 不管 Docker / JDK / Minecraft mod,以及最後「只在乾跑和單元測試驗證過」裡跨電腦和 Linux 那兩項(現在的做法見上面「V5 階段 2」)。其餘留作歷史。
+
 三個角色(直播機、Bot 服務機、GPU 推論機)分到不同電腦時,`miyoria init / install / start / doctor` 已經能設定、啟動和檢查,但下面這些還不行或還沒決定:
 
 - **Minecraft 擴充在 Core 那台開遊戲**:擴充(`extensions/minecraft`)用 Prism Launcher 開遊戲,開的是 Core 所在的電腦,不是直播機。要改成由直播機上的節點開遊戲。
@@ -149,6 +151,20 @@
 - **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。
 - **只在機器很忙時失敗的測試**:`apps/voice-node` 的 `link.test.ts`(「sends hello… answers ping」)在同時跑很多東西時失敗過一次,單獨跑會過。再出現就改成等條件成立。
 - **範例擴充的端對端測試在 CI 被跳過**:它要先 build 才會跑,CI 是先測試;本機的整體檢查會跑。要不要讓 CI 也跑,等決定。
+
+### V5 階段 2(hostd)做的過程中留下的(2026-11-16)
+
+- **voice node 還沒有跟著套件發行**:`miyoria add voice-node` 只能在有 repository 的資料夾裡做。`apps/voice-node/service.toml` 用 `pnpm start`(tsx 從原始碼跑),沒有 repository 的安裝(`npm i -g miyoria`)沒有東西可跑。要先有一個編譯好的進入點,再換掉描述檔的 `command`。
+- **`install.manual` 的路徑在套件安裝時會落在套件資料夾裡**:路徑(`workers/models/applio`、`workers/voices/<聲音>/ref.wav` 等)是從目錄根(repository 的根)算起。從 repository 跑時那就是使用者放東西的地方;套件安裝時目錄根是套件資料夾,不是使用者的資料夾。用套件安裝的人要把這些東西放在哪裡,還沒定。
+- **Docker 的檔案還是舊的,也沒有跑過**:`workers/docker-compose.yml`、`workers/asr/Dockerfile`、`workers/tts/Dockerfile` 和 `deploy/` 仍用 `requirements*.txt`(不是 uv 專案)、舊的埠(asr 在 8001),`deploy/docker-compose.yml` 沒有發佈 `7880`,所以 Docker 的 Core 收不到別台電腦的連線。這一輪沒有改它們,也沒有 build 過。
+- **Linux 只被 CI 的單元測試跑過**:hostd、安裝和更新在 Linux 上只被 CI 的單元測試跑過,沒有在 Linux 上用真的 worker 跑過;macOS 的登入時自動啟動(`host autostart`)還不支援。
+- **voice link 和 stage link 的用戶端沒有改用共用的重連工具**:`packages/hostd/src/link/reconnect.ts` 有退避、看門狗和「哪些關閉碼不該再撥」的規則,註解寫明 voice node 和 Stage 之後可以搬過去(列在 H12)。目前 `apps/voice-node/src/link.ts` 和 Stage 的連線(`packages/stage/src/link/`)還是各寫各的重連。
+- **生圖的顯卡讓出還在 Core 裡**:`ImageGenService` 在唱歌事件時自己暫停批次、請 ComfyUI 釋放(`pause_while_singing`、`free_on_sing`),沒有走 hostd 的顯卡仲裁。等生圖模組開放、hostd 的仲裁(`v5-gpu.md`)上線後再搬。
+- **有一個中繼測試只在機器很忙時失敗過一次**:`packages/cluster/test/relay.test.ts` 的 `aborts mid-body`(中途中斷時讀的一方失敗、服務看到關閉)在負載高時失敗過一次,之後每次重跑都過。再出現就改成等條件成立,不要加長逾時。
+- **MediaMTX 有三個埠,不進登記處**:API(9997)、RTMP(1935)、LL-HLS(8888),voice node 的編碼器用其中一個,所以 `[modules.live.video]` 仍然自己寫位址。hostd 只啟動它和探測行程。`workers/mediamtx/start.ps1` 和 `workers/mediamtx/README.md` 裡講它的部分還沒刪(`v5-hostd.md` §12)。
+- **`check_imports` 每個服務只有一份清單**:`doctor --deep` 用服務自己環境的 Python 去 import `service.toml` 的 `check_imports`,那份清單是預設後端的。換了後端(ASR 的 `sensevoice`、TTS 的 `qwen-tts`)後,清單裡的套件(`torch`、`qwen_asr`、`faster_qwen3_tts`)可能不在環境裡,會誤報失敗。要讓清單跟著 extras 走,還沒做。
+- **`sing` 的描述檔漏了參考音**:`workers/sing/service.toml` 的 `install.manual` 沒有 `workers/voices/<聲音>/ref.wav`,但 worker 啟動時要它(`SING_REF`),缺了就啟動失敗;而且 `seed-vc` 項目寫著「只有 seedvc 轉換鏈用得到」,實際上 `engine.py` 啟動時一定檢查 `models/seed-vc/modules`。`miyoria add sing` 因此少列一項,又把一項說成可略過。
+
 
 ## 4. 自我修復與自我改進(備忘)
 
