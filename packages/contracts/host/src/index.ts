@@ -5,6 +5,7 @@
 // and results of the JSON-RPC methods between hostd, the CLI and Core; names and codes are
 // constants in `protocol.ts` (docs/design/v5-hostd.md).
 
+export * from "./gpu.js";
 export * from "./host-config.js";
 export * from "./methods.js";
 export * from "./protocol.js";
