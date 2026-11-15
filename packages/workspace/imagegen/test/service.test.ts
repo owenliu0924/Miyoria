@@ -9,6 +9,7 @@ import { ComfyClient } from "../src/comfy.js";
 import { ImageGenConfigSchema } from "../src/config.js";
 import { ImageGenService } from "../src/service.js";
 import { JobStore } from "../src/store.js";
+import { comfyAt } from "./endpoints.js";
 import { FakeComfy, PNG } from "./fake-comfy.js";
 
 let comfy: FakeComfy;
@@ -28,7 +29,7 @@ function service(extra: Record<string, unknown> = {}): ImageGenService {
   return new ImageGenService({
     config,
     baseDir: dir,
-    client: new ComfyClient({ url: comfy.url, webSocket: null }),
+    client: new ComfyClient({ endpoints: comfyAt(comfy.url), webSocket: null }),
     clock: { now: () => now },
     log: getLogger("imagegen.test"),
     publish: publishedInto(events),
