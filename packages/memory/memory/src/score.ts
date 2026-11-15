@@ -18,7 +18,8 @@ export interface Signals {
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 /**
- * `w_vec·cos + w_text·text + w_recency·recency + w_importance·importance + w_subject·subject`.
+ * `w_vec·vector + w_text·text + w_recency·recency + w_importance·importance + w_subject·subject`,
+ * with `vector` the cosine spread over the candidates (`spreadCosine`).
  */
 export function signalScore(s: Signals, w: Weights): number {
   return (
@@ -49,7 +50,35 @@ export function recencyTau(config: MemoryConfig, kind: MemoryRecord["kind"]): nu
   return kind === "episode" ? config.episode_recency_tau_days : config.recency_tau_days;
 }
 
-/** Signals of a record. `text` is already normalized (0..1). */
+/**
+ * The cosine as a 0..1 signal, spread over the candidates of one search the way the text score is
+ * (each text score over the best one): the best cosine among them is 1, the floor 0, anything at
+ * or below the floor 0. The floor is the higher of `minVector` (the cosine that counts as related
+ * at all) and the lowest cosine among the store's nearest neighbours (`nearest`: the candidates
+ * its vector search returned), so a crowded store spreads over its neighbourhood and a sparse one
+ * over what is related. When no candidate is above the floor, the vector adds nothing.
+ *
+ * Why: good embedders put almost every record between 0.35 and 0.65 against a query, so the raw
+ * cosine moved a record by a few hundredths while the text score, spread from 0 to 1, moved it by
+ * its whole weight, and the record sharing the most words won, often the wrong person's (the
+ * embedding trial, 2026-11-15: Harrier 0.6B hit@1 0.80 with vectors alone, 0.57 combined).
+ */
+export function spreadCosine(
+  cosines: Iterable<readonly [cosine: number | null, nearest: boolean]>,
+  minVector: number,
+): (cosine: number) => number {
+  let top = Number.NEGATIVE_INFINITY;
+  let farthest = Number.POSITIVE_INFINITY;
+  for (const [cosine, nearest] of cosines) {
+    if (cosine === null) continue;
+    top = Math.max(top, cosine);
+    if (nearest) farthest = Math.min(farthest, cosine);
+  }
+  const floor = farthest === Number.POSITIVE_INFINITY ? minVector : Math.max(minVector, farthest);
+  return (cosine) => (top > floor ? clamp((cosine - floor) / (top - floor), 0, 1) : 0);
+}
+
+/** Signals of a record. `text` is already normalized (0..1), `vector` spread (`spreadCosine`). */
 export function signals(
   config: MemoryConfig,
   record: MemoryRecord,

@@ -5,7 +5,11 @@ import { z } from "zod";
 
 const uint = () => z.number().int().min(0);
 
-/** Hybrid retrieval weights. */
+/**
+ * Hybrid retrieval weights. `vector` and `text` both weigh a signal spread over the candidates of
+ * one search (0 to 1): the cosine from `min_vector` up to the best candidate's, the text score
+ * over the best candidate's.
+ */
 export const WeightsSchema = z.object({
   vector: z.number().default(0.35),
   text: z.number().default(0.25),
@@ -251,10 +255,18 @@ export const MemoryConfigSchema = z.object({
   min_score: z.number().default(0.25),
   /**
    * A memory has to be about what is being said: a word in common with the query, or an
-   * embedding at least this similar. Being about someone who is present, or being one of the
-   * nearest neighbours of a query it has nothing to do with, is not enough.
+   * embedding at least this similar (cosine). Being about someone who is present, or being one
+   * of the nearest neighbours of a query it has nothing to do with, is not enough. It is also
+   * where the vector signal starts counting (`score.ts` `spreadCosine`).
+   *
+   * Depends on the model, which puts related and unrelated texts in its own band (embedding
+   * trial, 2026-11-15, Traditional Chinese chat): 0.5 for Harrier 270M (the default), 0.55 for
+   * Harrier 0.6B and for bge-m3 with CLS pooling, 0.45 for Qwen3-Embedding fp16, about 0.85 for
+   * multilingual-e5-small (whose every record scores 0.80 to 0.89, so no value separates them).
+   * Raise it when unrelated memories come up, lower it when she forgets what she was told; tune
+   * it on real recall, not on the trial's set.
    */
-  min_vector: z.number().default(0.3),
+  min_vector: z.number().default(0.5),
   weights: WeightsSchema.prefault({}),
   /** Recency decay time constant (days): `exp(-age / tau)`. */
   recency_tau_days: z.number().default(14),

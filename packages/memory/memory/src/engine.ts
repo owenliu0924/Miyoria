@@ -99,6 +99,7 @@ import {
   fadedConfidence,
   finalScore,
   signals,
+  spreadCosine,
   tokenOverlap,
 } from "./score.js";
 import { embeddingValues } from "./stored.js";
@@ -929,9 +930,21 @@ export class MemoryEngine implements FollowupSource {
       : new Set<string>();
     // Only the lines before matched: they count for less than the line itself.
     const backendWeight = tokens.length > 0 ? 1 : this.config.context_weight;
+    const scored = [...candidates.values()].map(
+      ([record, text, vectorScore]) =>
+        [
+          record,
+          text,
+          vectorScore ?? (embedding !== null ? recordCosine(embedding, record) : null),
+          vectorScore !== null,
+        ] as const,
+    );
+    const spread = spreadCosine(
+      scored.map(([, , vector, nearest]) => [vector, nearest] as const),
+      this.config.min_vector,
+    );
     const ranked: Searched[] = [];
-    for (const [record, text, vectorScore] of candidates.values()) {
-      const vector = vectorScore ?? (embedding !== null ? recordCosine(embedding, record) : null);
+    for (const [record, text, vector] of scored) {
       const backend = maxText > 0 ? (text / maxText) * backendWeight : 0;
       let t = Math.max(
         backend,
@@ -943,7 +956,14 @@ export class MemoryEngine implements FollowupSource {
       // neighbour of an unrelated query is no match): it has to be about what is being said,
       // by a shared word or a close embedding.
       if (options.forTurn && t <= 0 && (vector ?? 0) < this.config.min_vector) continue;
-      const s = signals(this.config, record, vector, t, present, now);
+      const s = signals(
+        this.config,
+        record,
+        vector === null ? null : spread(vector),
+        t,
+        present,
+        now,
+      );
       let score = finalScore(this.config, record, s, now);
       if (options.forTurn) score *= this.#repeats.factor(record.tokens);
       if (options.minScore === null || score >= options.minScore) {

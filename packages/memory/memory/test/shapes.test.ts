@@ -28,7 +28,7 @@ describe("shapes", () => {
       recall_limit: 8,
       candidate_limit: 32,
       min_score: 0.25,
-      min_vector: 0.3,
+      min_vector: 0.5,
       weights: { vector: 0.35, text: 0.25, recency: 0.15, importance: 0.15, subject: 0.1 },
       recency_tau_days: 14,
       episode_recency_tau_days: 1.5,

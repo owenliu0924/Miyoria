@@ -10,6 +10,7 @@ import {
   PROMPT_KINDS,
   RecallTool,
   RememberTool,
+  spreadCosine,
   visibleScopes,
 } from "../src/index.js";
 import {
@@ -100,6 +101,29 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     expect(got).toHaveLength(1);
     expect(got[0]?.record.id).toBe(ramen);
     expect(got[0]?.score ?? 0, "cosine ~0.99 scaled by fact confidence").toBeGreaterThan(0.85);
+  });
+
+  it("a close vector outranks a record that only shares the words, and a far one is gated", async () => {
+    // The trial's failure: cosines sit in a narrow band, so the raw cosine barely moved a record
+    // while the record sharing the most words (often about someone else) took the first place.
+    const embedder = new TableEmbedder()
+      .with("小魚喜歡吃什麼", [1, 0, 0])
+      .with("她最愛的食物是拉麵", [0.8, 0.6, 0])
+      // Far enough from each other not to be merged as the same memory.
+      .with("小魚喜歡打籃球", [0.55, 0, Math.sqrt(1 - 0.55 ** 2)])
+      .with("今天的天空很藍", [0.45, -Math.sqrt(1 - 0.45 ** 2), 0]);
+    const e = await envWith(backend, memoryConfig(), null, embedder);
+    const global: MemoryScope = { type: "global" };
+    const ramen = await e.add("self_note", global, [], "她最愛的食物是拉麵", 0.5, t0());
+    const ball = await e.add("self_note", global, [], "小魚喜歡打籃球", 0.5, t0());
+    const sky = await e.add("self_note", global, [], "今天的天空很藍", 0.5, t0());
+    const got = await e.engine.recall([global], [], "小魚喜歡吃什麼", PROMPT_KINDS, 8, t0());
+    const ids = got.map((r) => r.record.id);
+    // Raw: ramen 0.35·0.80 = 0.28 against ball 0.35·0.55 + 0.25 = 0.44. Spread from the gate
+    // (0.5) to the best (0.8): ramen 0.35 against ball 0.35·0.17 + 0.25 = 0.31.
+    expect(ids.slice(0, 2)).toEqual([ramen, ball]);
+    // No shared word and a cosine under `min_vector` (0.5): not brought up.
+    expect(ids).not.toContain(sky);
   });
 
   it("search_ranks_like_recall_without_touching", async () => {
@@ -197,6 +221,42 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     expect(inDm).toContain("「Owen」說過:Owen 下週三要看牙醫");
     const otherGuild = toolCtx(guildCtx("g2", "c1"), acct("9"));
     expect(await recall.call(otherGuild, { query: "Minecraft 牙醫" })).toBe("想不起來有關的事。");
+  });
+});
+
+describe("the spread cosine", () => {
+  it("runs from the higher of the gate and the farthest neighbour up to the best candidate", () => {
+    // A sparse store: its neighbours reach below the gate, so the gate is the floor.
+    let spread = spreadCosine(
+      [
+        [0.8, true],
+        [0.2, true],
+        [0.6, false],
+        [null, false],
+      ],
+      0.5,
+    );
+    expect(spread(0.8)).toBe(1);
+    expect(spread(0.65)).toBeCloseTo(0.5);
+    expect(spread(0.5)).toBe(0);
+    expect(spread(0.2)).toBe(0);
+    // A crowded one: the farthest of the nearest neighbours is above the gate.
+    spread = spreadCosine(
+      [
+        [0.8, true],
+        [0.6, true],
+        [0.3, false],
+      ],
+      0.5,
+    );
+    expect(spread(0.7)).toBeCloseTo(0.5);
+    expect(spread(0.3)).toBe(0);
+    // Nothing above the floor (a question nothing answers): the vector adds nothing.
+    spread = spreadCosine([[0.45, true]], 0.5);
+    expect(spread(0.45)).toBe(0);
+    // No store neighbours (vectors computed for text matches only): the gate is the floor.
+    spread = spreadCosine([[0.9, false]], 0.5);
+    expect(spread(0.7)).toBeCloseTo(0.5);
   });
 });
 

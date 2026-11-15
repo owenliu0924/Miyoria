@@ -246,6 +246,7 @@ export {
   type Signals,
   signalScore,
   signals,
+  spreadCosine,
   tokenOverlap,
 } from "./score.js";
 export { embeddingValues } from "./stored.js";
