@@ -1247,6 +1247,93 @@
         "browse"
       ]
     },
+    "EventsCommissionAsked": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "commission": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EventsCommissionKind"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "price": {
+          "type": "number"
+        },
+        "due_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "commission",
+        "kind",
+        "brief",
+        "name",
+        "account",
+        "price",
+        "due_at"
+      ]
+    },
+    "EventsCommissionDone": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "delivered",
+            "declined"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/EventsCommissionKind"
+        },
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "kind",
+        "account",
+        "text"
+      ]
+    },
+    "EventsCommissionKind": {
+      "type": "string",
+      "enum": [
+        "poem",
+        "name",
+        "tool",
+        "song",
+        "voice"
+      ]
+    },
     "EventsCompiledBlock": {
       "type": "object",
       "properties": {
@@ -2330,6 +2417,39 @@
         "rate",
         "review",
         "escalation"
+      ]
+    },
+    "EventsGift": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "item": {
+          "$ref": "#/$defs/EventsGiftItem"
+        },
+        "count": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "item",
+        "count",
+        "label"
+      ]
+    },
+    "EventsGiftItem": {
+      "type": "string",
+      "enum": [
+        "rice",
+        "big_bowl",
+        "dessert",
+        "letter",
+        "expression"
       ]
     },
     "EventsGoLiveState": {
@@ -4864,6 +4984,30 @@
         "reminder"
       ]
     },
+    "EventsRoomPlaced": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "furniture",
+            "outfit",
+            "background"
+          ]
+        }
+      },
+      "required": [
+        "item",
+        "label",
+        "kind"
+      ]
+    },
     "EventsSalienceKind": {
       "type": "string",
       "enum": [
@@ -5223,6 +5367,36 @@
         "dm",
         "self",
         "owner"
+      ]
+    },
+    "EventsScreenLine": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "message",
+            "dedication"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "song": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "text",
+        "song"
       ]
     },
     "EventsSelfFeel": {
