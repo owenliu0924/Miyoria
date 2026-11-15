@@ -493,11 +493,13 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { confirm: "simple" },
   ),
-  // The owner's rules. Deleting them lifts every rule at once, so the profile id has to be typed.
+  // The owner's rules: the `directive` plugin's table (`@miyoria/brain/directive` `schema.ts`). One
+  // database is one character, so every rule is this profile's. Deleting them lifts every rule at
+  // once, so the profile id has to be typed.
   category(
     "directives",
     [
-      table("directives", "directives", "profile", "created_at", "created_at, id", {
+      table("directives", "directive_rules", "node", "created_at", "created_at, id", {
         id: "text",
         issuer: "json",
         authority: "text",

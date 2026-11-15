@@ -31,7 +31,7 @@ import {
 } from "@miyoria/types";
 import { z } from "zod";
 import { Proposals } from "../../../brain/agent/src/mainline/proposals.js";
-import { DirectiveService } from "../src/index.js";
+import { DirectiveService, directiveTables } from "../src/index.js";
 
 export const PROFILE = "miyoria";
 export const CTX: ContextKey = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" };
@@ -171,7 +171,7 @@ export async function world(path = ":memory:"): Promise<World> {
   const clock = { now: () => t };
   const store = await SqliteStore.open(path, { clock });
   open.push(store);
-  const flaky = new FlakyStore(store.directives);
+  const flaky = new FlakyStore(store.plugin(directiveTables));
   const services = new ServiceRegistry();
   services.provide("test", AuthorizerKey, new Roles());
   services.provide("test", AuditLogKey, store.audit);

@@ -1,6 +1,6 @@
 // `/api/directives`: the panel says who is asking, and the rules decide what that person may do.
 
-import { DirectiveService } from "@miyoria/brain/directive";
+import { DirectiveService, directiveTables } from "@miyoria/brain/directive";
 import { ServiceRegistry, Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { openStore, type Store } from "@miyoria/store";
 import {
@@ -42,7 +42,11 @@ async function rules(services: ServiceRegistry) {
   const store = await openStore("memory://");
   stores.push(store);
   services.provide("test", AuthorizerKey, new Roles());
-  const service = new DirectiveService({ services, store: store.directives, profile: "p" });
+  const service = new DirectiveService({
+    services,
+    store: store.plugin(directiveTables),
+    profile: "p",
+  });
   await service.refresh();
   services.provide("kernel", DirectivesKey, service);
   return service;

@@ -540,7 +540,6 @@ export interface Store {
    * it the `llm` module's spending starts from zero at every start.
    */
   readonly llmCalls?: LlmCallStore;
-  readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;
   readonly coins: CoinLedgerStore;
   readonly deals: DealStore;

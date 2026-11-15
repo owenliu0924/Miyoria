@@ -111,6 +111,7 @@ describe("bookkeeping", () => {
         "role_assignments",
         "role_mappings",
         "node_overrides",
+        "directives",
       ]) {
         expect(tables).not.toContain(gone);
       }

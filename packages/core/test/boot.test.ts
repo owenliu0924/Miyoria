@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { directiveTables } from "@miyoria/brain/directive";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   Config,
@@ -148,7 +149,7 @@ describe("the rules", () => {
 
   it("what the store holds is in force from the first moment of a boot", async () => {
     const store = await openStore("memory://");
-    await store.directives.insert("deepseek-chan", {
+    await store.plugin(directiveTables).insert("deepseek-chan", {
       id: "r1",
       issuer: { platform: "discord", id: "1" },
       authority: "owner",

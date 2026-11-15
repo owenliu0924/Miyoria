@@ -8,7 +8,12 @@ import type { Tool } from "@miyoria/llm/tools";
 import { legacySchema, SqliteStore } from "@miyoria/store";
 import { type DirectiveChangedBody, type LogEvent, Principals, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DirectiveService, directiveTools, RULES_UNREADABLE } from "../src/index.js";
+import {
+  DirectiveService,
+  directiveTables,
+  directiveTools,
+  RULES_UNREADABLE,
+} from "../src/index.js";
 import {
   CTX,
   closeStores,
@@ -162,7 +167,7 @@ describe("a viewer trying to lift an owner's deny", () => {
     const w = await world();
     const rule = await ownerRule(w, NO_MINECRAFT);
     for (let i = 0; i < 210; i++) {
-      await w.store.directives.insert("miyoria", {
+      await w.store.plugin(directiveTables).insert("miyoria", {
         ...rule,
         id: `old${i}`,
         expires: toTimestamp(w.now() - 1),

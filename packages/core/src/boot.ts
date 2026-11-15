@@ -4,7 +4,7 @@
 // file stays testable with fake modules and an in-memory store.
 
 import { authTables } from "@miyoria/auth";
-import { DirectiveModule, DirectiveService } from "@miyoria/brain/directive";
+import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -78,7 +78,7 @@ const DIRECTIVE_MODULE = DirectiveModule.ID;
  * The plugins whose tables live in the store (docs/design/v5-data.md §3): the catalog opens the
  * store with them, so their migrations run at start whether the module is on or off.
  */
-export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [authTables];
+export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [authTables, directiveTables];
 
 /** What the module factories get. */
 export interface ModuleDeps {
@@ -294,7 +294,7 @@ export async function buildCoreWith(
   // The rules hold from before the first module starts, and with the `directive` module off.
   const directives = new DirectiveService({
     services,
-    store: store.directives,
+    store: store.plugin(directiveTables),
     profile: profileId,
     publish: (event) => bus.publish(DIRECTIVE_MODULE, event),
   });

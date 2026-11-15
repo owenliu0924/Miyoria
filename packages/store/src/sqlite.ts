@@ -15,8 +15,6 @@ import {
   type AccountRef,
   type Clock,
   type ContextKey,
-  type Directive,
-  type DirectiveRecord,
   type JsonObject,
   type PersonId,
   type ProfileId,
@@ -128,7 +126,6 @@ import type {
   BountyStore,
   CoinLedgerStore,
   DealStore,
-  DirectiveStore,
   EconomyDocStore,
   FortuneStore,
   GoalStore,
@@ -1825,90 +1822,6 @@ class SqliteRelationships implements RelationshipStore {
   }
 }
 
-// ---- event log ----------------------------------------------------------------------------
-
-function directiveFromRow(row: Row): DirectiveRecord {
-  return {
-    id: str(row, "id"),
-    issuer: json<AccountRef>(row, "issuer", "directive issuer"),
-    authority: str(row, "authority") as DirectiveRecord["authority"],
-    scope: json<DirectiveRecord["scope"]>(row, "scope", "directive scope"),
-    effect: str(row, "effect") as DirectiveRecord["effect"],
-    text: str(row, "text"),
-    expires: optTs(row, "expires") ?? "until_revoked",
-    source_event: str(row, "source_event"),
-    created_at: ts(row, "created_at"),
-    revoked_at: optTs(row, "revoked_at"),
-    revoked_by: optStr(row, "revoked_by"),
-  };
-}
-
-class SqliteDirectives implements DirectiveStore {
-  constructor(private readonly db: Db) {}
-
-  async insert(profile: ProfileId, d: Directive): Promise<void> {
-    try {
-      this.db.run(
-        "INSERT INTO directives (id, profile_id, issuer, authority, scope, effect, text, " +
-          "expires, source_event, created_at) VALUES ($id, $profile, $issuer, $authority, " +
-          "$scope, $effect, $text, $expires, $source_event, $created_at)",
-        {
-          id: d.id,
-          profile,
-          issuer: JSON.stringify(d.issuer),
-          authority: d.authority,
-          scope: JSON.stringify(d.scope),
-          effect: d.effect,
-          text: d.text,
-          expires: d.expires === "until_revoked" ? null : toMicros(d.expires),
-          source_event: d.source_event,
-          created_at: toMicros(d.created_at),
-        },
-      );
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      throw new StoreError("cannot store the directive", { cause });
-    }
-  }
-
-  async active(profile: ProfileId, now: Timestamp): Promise<DirectiveRecord[]> {
-    return this.db
-      .all(
-        "SELECT * FROM directives WHERE profile_id = $profile AND revoked_at IS NULL " +
-          "AND (expires IS NULL OR expires > $now) ORDER BY created_at, id",
-        { profile, now: toMicros(now) },
-      )
-      .map(directiveFromRow);
-  }
-
-  async all(profile: ProfileId, limit: number): Promise<DirectiveRecord[]> {
-    return this.db
-      .all(
-        "SELECT * FROM directives WHERE profile_id = $profile " +
-          "ORDER BY created_at DESC, id DESC LIMIT $limit",
-        { profile, limit: limitParam(limit) },
-      )
-      .map(directiveFromRow);
-  }
-
-  async revoke(profile: ProfileId, id: string, by: string, at: Timestamp): Promise<boolean> {
-    const changed = this.db.run(
-      "UPDATE directives SET revoked_at = $at, revoked_by = $by " +
-        "WHERE id = $id AND profile_id = $profile AND revoked_at IS NULL",
-      { id, profile, by, at: toMicros(at) },
-    );
-    return changed > 0;
-  }
-
-  async prune(profile: ProfileId, before: Timestamp): Promise<number> {
-    return this.db.run(
-      "DELETE FROM directives WHERE profile_id = $profile " +
-        "AND (revoked_at < $before OR expires < $before)",
-      { profile, before: toMicros(before) },
-    );
-  }
-}
-
 // ---- the store ----------------------------------------------------------------------------
 
 /** Every storage area on one SQLite database. */
@@ -1932,7 +1845,6 @@ export class SqliteStore implements Store {
   readonly chat: ChatLog;
   /** LLM calls on the event log, as cost and usage totals. */
   readonly llmCalls: LlmCallTotals;
-  readonly directives: DirectiveStore;
   readonly cards: MemberCardStore;
   readonly coins: CoinLedgerStore;
   readonly deals: DealStore;
@@ -1992,7 +1904,6 @@ export class SqliteStore implements Store {
     this.decisions = new TurnLog(db, this.events, this.persons);
     this.audit = new AuditTrail(db, this.events, this.persons);
     this.llmCalls = new LlmCallTotals(db);
-    this.directives = new SqliteDirectives(db);
     this.cards = new SqliteMemberCards(db);
     this.coins = new SqliteCoins(db);
     this.deals = new SqliteDeals(db);

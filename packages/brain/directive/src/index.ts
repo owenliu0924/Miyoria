@@ -7,6 +7,8 @@
 // * `admin directive list | add | remove`: the commands behind `/miyo` and `/admin`.
 // * Module `directive`: applies `[modules.directive]`, serves the tools and the commands, and
 //   puts every background proposal through the rules.
+// * Storage: the plugin owns `directive_rules` (`schema.ts`, `migrations.ts`). Core opens the store
+//   with `directiveTables` and gives `store.plugin(directiveTables)` to the service.
 
 export { NODE_ADD, NODE_REMOVE, NODE_VIEW, PATHS as COMMAND_PATHS } from "./commands.js";
 export {
@@ -15,6 +17,7 @@ export {
   defaultDirectiveConfig,
 } from "./config.js";
 export { covers, isStopping, normalizeTerm, type RuleAction, subjectsOf } from "./match.js";
+export { directiveSchema } from "./migrations.js";
 export { DirectiveModule } from "./module.js";
 export {
   DirectiveService,
@@ -24,4 +27,5 @@ export {
   RULE_TOOLS,
   RULES_UNREADABLE,
 } from "./service.js";
+export { DirectiveTables, directiveTables } from "./tables.js";
 export { directiveTools } from "./tools.js";

@@ -1,9 +1,11 @@
-// The owner's rules on SQLite: what `active` returns, how a rule ends, and that they are a data
-// category like everything else she keeps.
+// The owner's rules on the directive plugin's table (`directive_rules`): what `active` returns,
+// how a rule ends, and that they are a data category like everything else she keeps. One
+// database is one character: the profile a caller names is not part of the key.
 
+import { resolveCategories, SqliteStore } from "@miyoria/store";
 import { type Directive, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveCategories, SqliteStore } from "../src/index.js";
+import { type DirectiveTables, directiveTables } from "../src/index.js";
 
 const P = "miyoria";
 const T0 = Date.UTC(2026, 10, 7, 12);
@@ -14,10 +16,10 @@ afterEach(async () => {
   for (const s of stores.splice(0)) await s.close();
 });
 
-async function open(): Promise<SqliteStore> {
-  const store = await SqliteStore.open(":memory:");
+async function open(): Promise<{ store: SqliteStore; directives: DirectiveTables }> {
+  const store = await SqliteStore.open(":memory:", { plugins: [directiveTables] });
   stores.push(store);
-  return store;
+  return { store, directives: store.plugin(directiveTables) };
 }
 
 function rule(id: string, fields: Partial<Directive> = {}): Directive {
@@ -42,7 +44,6 @@ describe("directives", () => {
     const soon = rule("b", { expires: toTimestamp(T0 + 5 * MINUTE) });
     await directives.insert(P, forever);
     await directives.insert(P, soon);
-    await directives.insert("other", rule("c"));
     expect(await directives.active(P, toTimestamp(T0))).toMatchObject([forever, soon]);
     expect(await directives.active(P, toTimestamp(T0 + 5 * MINUTE))).toMatchObject([forever]);
     // `until_revoked` is not a far-away date.
@@ -53,13 +54,19 @@ describe("directives", () => {
     const { directives } = await open();
     await directives.insert(P, rule("a"));
     const at = toTimestamp(T0 + MINUTE);
-    expect(await directives.revoke("other", "a", "discord:1", at)).toBe(false);
+    expect(await directives.revoke(P, "missing", "discord:1", at)).toBe(false);
     expect(await directives.revoke(P, "a", "discord:1", at)).toBe(true);
     expect(await directives.revoke(P, "a", "discord:1", at)).toBe(false);
     expect(await directives.active(P, toTimestamp(T0))).toEqual([]);
     expect(await directives.all(P, 10)).toMatchObject([
       { id: "a", revoked_at: at, revoked_by: "discord:1" },
     ]);
+  });
+
+  it("are one list whatever profile is named", async () => {
+    const { directives } = await open();
+    await directives.insert("other", rule("a"));
+    expect(await directives.active(P, toTimestamp(T0))).toMatchObject([rule("a")]);
   });
 
   it("prune what ended long ago and never a rule still in force", async () => {
@@ -84,14 +91,14 @@ describe("directives", () => {
   });
 
   it("are a data category: counted, exported, wiped", async () => {
-    const store = await open();
-    await store.directives.insert(P, rule("a"));
+    const { store, directives } = await open();
+    await directives.insert(P, rule("a"));
     const inventory = await store.profileData.inventory(P);
     expect(inventory.categories.find((c) => c.id === "directives")?.count).toBe(1);
     const backup = await store.profileData.export(P, ["directives"]);
     expect(JSON.stringify(backup)).toContain("不要玩 Minecraft");
     await store.profileData.wipe(P, ["directives"]);
-    expect(await store.directives.all(P, 10)).toEqual([]);
+    expect(await directives.all(P, 10)).toEqual([]);
     expect(resolveCategories(["directives"])).toEqual(["directives"]);
   });
 });
