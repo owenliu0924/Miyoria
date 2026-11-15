@@ -588,6 +588,10 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 
 **階段 0 在 2026-11-14 做完**:CI 轉綠並合併了原有的 PR;移除 `boundaries.md`,界線寫進 `identity.md`;面板的羈絆條能顯示 100 以上;文件的埠號表和幾處過時的敘述改對,暫存資料夾加進 ignore;`opencode` 的思考量改成送 effort、不再壓 `max_tokens`(§7.5);每次模型呼叫寫進 `data/llm-calls/`;順手修了四個不穩定的測試。`*.local.*` 的圖是面板自己在用的檔案,公開站讀得到,owner 決定暫時沿用。
 
+**階段 1 在 2026-11-15 合併**(PR #53),線上已經跑在新的資料庫和契約上。
+
+**階段 2 在 2026-11-15 開始**(分支 `v5p2`)。設計、要 owner 決定的七件事和工作順序在 [v5-hostd.md](v5-hostd.md)。hostd 是 `packages/hostd` 而不是 app,因為發佈的 CLI 要把它包進去,和 Core 一樣。
+
 階段 2 和 3 互不相干,同時做(owner 2026-11-14)。照之前的做法:依套件切給子代理、各自的 worktree、我整合和驗收,核心改動另外找一個獨立的 review。
 
 ## 16. 決定紀錄(owner,2026-11-14)
