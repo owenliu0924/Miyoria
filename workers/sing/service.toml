@@ -1,0 +1,48 @@
+# Sing worker: covers songs (separation, RVC voice conversion, mixing, lyrics), workers/sing/server.py.
+name = "sing"
+kind = "worker"
+provides = ["sing"]
+summary = "翻唱(人聲分離、RVC 轉換、混音、歌詞)"
+
+[install]
+runtime = "python"
+python = ">=3.11,<3.14"
+system = ["ffmpeg"]
+# Until H6; replaced by `project`.
+requirements = ["requirements.txt"]
+torch = { index = "https://download.pytorch.org/whl/cu128", packages = ["torch==2.11.0", "torchaudio==2.11.0"] }
+
+# The first song downloads about 2 GB of models by itself; their repositories are not pinned yet.
+[[install.manual]]
+path = "workers/models/applio"
+what = "她的 RVC 歌聲模型(Applio 訓練出來的;只用 SING_VOICE=seedvc 時可略過)"
+
+[[install.manual]]
+path = "workers/models/lead-split"
+what = "主唱與伴唱分離模型(BS-RoFormer karaoke,放在 becruily-bs/;沒有就不切主唱)"
+
+[[install.manual]]
+path = "workers/models/vocal-split"
+what = "人聲分離模型(MelBandRoformer.ckpt 和 .yaml;沒有就退回 Demucs)"
+
+[[install.manual]]
+path = "workers/models/seed-vc"
+what = "Seed-VC 原始碼(只有 seedvc 轉換鏈用得到)"
+
+[run]
+command = ["{python}", "server.py"]
+cwd = "."
+port = 8005
+host_env = "HOST"
+port_env = "PORT"
+# Today `up` starts it after asr and tts, and gives it their addresses as SING_OFFLOAD_URLS.
+after = ["asr", "tts"]
+
+[run.health]
+http = "/health"
+
+# The worker has no offload endpoint of its own: it holds the card by the job and asks others
+# to make room.
+[gpu]
+policy = "on_demand"
+vram_mb = { resident = 7500, peak = 7500 }

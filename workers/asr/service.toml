@@ -1,0 +1,35 @@
+# ASR worker: speech to text (Qwen3-ASR by default), workers/asr/server.py.
+name = "asr"
+kind = "worker"
+provides = ["asr"]
+summary = "語音辨識(Qwen3-ASR 0.6B)"
+
+[install]
+runtime = "python"
+python = ">=3.11,<3.14"
+# Until H6; replaced by `project`. The other backend (ASR_BACKEND=sensevoice) installs
+# requirements-sensevoice.txt without torch.
+requirements = ["requirements-qwen3.txt"]
+torch = { index = "https://download.pytorch.org/whl/cu128", packages = ["torch"] }
+
+[[install.models]]
+repo = "Qwen/Qwen3-ASR-0.6B"     # downloaded by the worker itself on its first start (about 2 GB)
+
+[run]
+command = ["{python}", "server.py"]
+cwd = "."
+port = 8003
+host_env = "HOST"
+port_env = "PORT"
+env = { ASR_BACKEND = "qwen3", ASR_QWEN_SIZE = "0.6B" }
+
+[run.health]
+http = "/health"
+
+[gpu]
+policy = "evictable"
+# 1500 MB for the 0.6B model; the 1.7B model is estimated at 4500 MB.
+vram_mb = { resident = 1500, peak = 1500 }
+offload = "/offload"
+reload = "/reload"
+busy = "/busy"

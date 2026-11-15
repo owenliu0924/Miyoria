@@ -1,0 +1,23 @@
+# Lyrics worker: finds synced lyrics for a song worker on another machine, workers/lyrics/server.py.
+# It imports workers/sing/lyrics.py and reads Core's [llm] from miyoria.toml (docs/OPERATIONS.md).
+# docs/OPERATIONS.md names its environment (.venv-lyrics) and requirements, but not the Python
+# version, so none is stated here.
+name = "lyrics"
+kind = "worker"
+provides = ["lyrics"]
+summary = "歌詞服務(給在別台電腦的翻唱 worker 用)"
+
+[install]
+runtime = "python"
+# Until H6; replaced by `project`.
+requirements = ["requirements.txt"]
+
+[run]
+command = ["{python}", "server.py"]
+cwd = "."
+port = 8007
+host_env = "HOST"
+port_env = "PORT"
+
+[run.health]
+http = "/health"

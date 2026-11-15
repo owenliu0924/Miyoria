@@ -1,0 +1,31 @@
+# Turn worker: end-of-turn (Smart Turn) and voice activity (Silero) on the CPU, workers/turn/server.py.
+name = "turn"
+kind = "worker"
+provides = ["turn", "vad"]
+summary = "判斷講完與語音活動偵測(CPU)"
+
+[install]
+runtime = "python"
+python = ">=3.11,<3.14"
+# Until H6; replaced by `project`.
+requirements = ["requirements.txt"]
+
+# Without these two files the worker still runs and Core falls back to silence length.
+# Paths are under the workers' model folder (workers/models today).
+[[install.files]]
+url = "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.2-cpu.onnx?download=true"
+path = "models/smart-turn/smart-turn-v3.2-cpu.onnx"
+
+[[install.files]]
+url = "https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx"
+path = "models/silero-vad/silero_vad.onnx"
+
+[run]
+command = ["{python}", "server.py"]
+cwd = "."
+port = 8006
+host_env = "HOST"
+port_env = "PORT"
+
+[run.health]
+http = "/health"

@@ -1,0 +1,21 @@
+# Stage: drives VTube Studio and OBS and serves the overlay, started as `miyoria stage -c <config>`.
+name = "stage"
+kind = "node"
+provides = ["renderer"]
+summary = "舞台(VTube Studio、OBS 與 overlay)"
+
+[install]
+runtime = "node"
+
+[run]
+# Today it runs in the config file's folder; see core's service.toml.
+command = ["{miyoria}", "stage", "-c", "{config}"]
+cwd = "."
+port = 7884                      # the overlay (`[stage] overlay_bind`)
+pass_env = ["*"]
+after = ["core"]
+guard = ["live"]
+
+# No health URL today: `up` only waits for the process to stay alive.
+[run.health]
+process = true
