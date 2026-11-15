@@ -5,19 +5,35 @@
 import type {
   DecisionTrace,
   E2eSegmentName,
+  LlmCallKind,
+  LlmCallStatus,
+  LogEventKind,
+  LogEvent as ContractLogEvent,
+  Thought as ContractThought,
   VoiceE2eLatency as ContractVoiceE2eLatency,
   VoiceLatency as ContractVoiceLatency,
   VoiceSession as ContractVoiceSession,
-  MindSuggestion,
   ModuleStateKind,
   ThoughtIntent,
-  ThoughtSummary,
 } from "@miyoria/contracts/api";
 
 /** A ULID, serialized as a 26-character string. */
 export type Ulid = string;
 /** RFC 3339 timestamp, e.g. `2026-11-01T08:30:00.123Z`. */
 export type Timestamp = string;
+
+/**
+ * One line of the EventLog. The route says `body` is JSON (`JsonValue`); the panel reads it by
+ * narrowing it itself, so it is `unknown` here.
+ */
+export type LogEvent = Omit<ContractLogEvent, "body"> & { body: unknown };
+
+/**
+ * One thought: the list (`GET /api/mind/thoughts`, newest first, without `input` and `reasoning`,
+ * with `has_input` and `has_reasoning`) and `GET /api/mind/thoughts/{id}` (with them, for the
+ * newest thoughts), in one type.
+ */
+export type Thought = ContractThought & { has_input?: boolean; has_reasoning?: boolean };
 
 // ---------------------------------------------------------------------------
 // ids and platform
@@ -170,6 +186,33 @@ export type {
   AuthMethods,
   AuthScope,
   BountyView,
+  CauseChain,
+  CommissionKind,
+  CommissionView,
+  ContextBucket,
+  ContextEntry,
+  Delivery,
+  EconomyHealth,
+  HealthDay,
+  LlmCallDetail,
+  LlmCallKind,
+  LlmCallRecord,
+  LlmCallStats,
+  LlmCallStatus,
+  LlmCallsPage,
+  LlmGroupStats,
+  LlmHourStats,
+  LlmPricing,
+  LlmThinking,
+  LlmThinkingPage,
+  LlmToolCall,
+  LogEventKind,
+  PredictionView,
+  QuestsView,
+  ReachedGoal,
+  RoomItem,
+  SpokenLine,
+  ThoughtInput,
   BudgetState,
   ChannelLevelInfo,
   ChannelLevelsView,
@@ -576,109 +619,8 @@ export type ChannelMode = string;
 // ---------------------------------------------------------------------------
 // mind loop and autonomy (`packages/types/src/mind.ts`, `packages/api/src/mind.ts`)
 
-/** What one thought saw (bounded copies; only the newest thoughts keep it). */
-export interface ThoughtInput {
-  time: string;
-  night: boolean;
-  self: {
-    mood: Mood | null;
-    boredom: number;
-    drives: Record<string, number>;
-    initiative: number;
-  } | null;
-  suggestions: MindSuggestion[];
-  world: string;
-  places: { ref: string; label: string; note: string; here: boolean }[];
-  people: { ref: string; name: string; person: string | null; relation: string | null; feeling: string | null; doing: string | null }[];
-  agenda: { ref: string; text: string; due: Timestamp | null; blocked: string | null }[];
-  memories: string | null;
-  documents: string | null;
-  lessons: string[];
-  recap: string | null;
-  digest: string | null;
-  unanswered: string[];
-  blocked: { capability: string; reason: string }[];
-  idle: { thoughts: number; minutes: number } | null;
-  capabilities: string[];
-  recent: number;
-}
-
-/**
- * One thought: the list (`GET /api/mind/thoughts`, newest first, without `input` and `reasoning`,
- * with `has_input` and `has_reasoning`) and `GET /api/mind/thoughts/{id}` (with them, for the newest
- * thoughts).
- */
-export type Thought = Omit<ThoughtSummary, "has_input" | "has_reasoning"> & {
-  /** In the list: whether the full thought has them. */
-  has_input?: boolean;
-  has_reasoning?: boolean;
-  /** Only from `GET /api/mind/thoughts/{id}`, and only for the newest thoughts. */
-  input?: ThoughtInput | null;
-  reasoning?: string | null;
-};
-
 // ---------------------------------------------------------------------------
 // LLM call inspector (`packages/llm/llm/src/calls.ts`, `packages/api/src/llmcalls.ts`)
-
-export interface LlmPricing {
-  input_per_mtok: number;
-  cached_input_per_mtok: number | null;
-  output_per_mtok: number;
-}
-
-export type LlmCallStatus = "streaming" | "ok" | "error" | "aborted";
-
-/** What a call was for, broadly (`callKind` in the llm package). */
-export type LlmCallKind = "mind" | "chat" | "voice" | "attention" | "memory" | "learning" | "social" | "other";
-
-export interface LlmCallRecord {
-  id: string;
-  at: Timestamp;
-  purpose: string;
-  chain: string;
-  kind: LlmCallKind;
-  model: string | null;
-  provider: string | null;
-  status: LlmCallStatus;
-  fallbacks: { model: string; error: string; kind: string }[];
-  retries: string[];
-  thinking: boolean;
-  json_mode: boolean;
-  tools: string[];
-  max_tokens: number | null;
-  temperature: number | null;
-  messages: number;
-  images: number;
-  usage: { prompt_tokens: number; completion_tokens: number; cached_prompt_tokens: number; reasoning_tokens: number | null } | null;
-  first_token_ms: number | null;
-  total_ms: number | null;
-  cost_usd: number | null;
-  pricing: LlmPricing | null;
-  finish_reason: string | null;
-  error: string | null;
-  error_kind: string | null;
-  module: string | null;
-  turn: string | null;
-  thought: string | null;
-  label: string | null;
-  repair: number | null;
-  text_chars: number;
-  reasoning_chars: number;
-  tool_calls: number;
-  has_detail: boolean;
-}
-
-export interface LlmToolCall {
-  id: string;
-  name: string;
-  arguments: string;
-}
-
-export interface LlmCallDetail {
-  messages: { role: string; name: string | null; content: string; cut: number; tool_calls: LlmToolCall[]; tool_call_id: string | null }[];
-  tools: string[];
-  response: { text: string; reasoning: string; tool_calls: LlmToolCall[]; cut: number };
-}
 
 export interface LlmCallsQuery {
   purpose?: string;
@@ -692,81 +634,12 @@ export interface LlmCallsQuery {
   q?: string;
 }
 
-/** A call with its chain of thought, `GET /api/llm/thinking`. */
-export interface LlmThinking {
-  call: LlmCallRecord;
-  /** `null` once dropped from the ring. */
-  reasoning: string | null;
-  answer: string | null;
-  tool_calls: string[];
-  cut: number;
-}
-
 export interface LlmThinkingQuery {
   kind?: LlmCallKind;
   reasoned?: boolean;
   since?: string;
   q?: string;
 }
-
-/** `GET /api/llm/thinking`. */
-export interface LlmThinkingPage {
-  items: LlmThinking[];
-  next_cursor: string | null;
-  matched: number;
-  by_kind: { kind: LlmCallKind; calls: number; reasoned: number }[];
-  kept: number;
-}
-
-/** `GET /api/llm/calls`. */
-export interface LlmCallsPage {
-  items: LlmCallRecord[];
-  next_cursor: string | null;
-  matched: number;
-  kept: number;
-}
-
-export interface LlmGroupStats {
-  key: string;
-  calls: number;
-  errors: number;
-  prompt_tokens: number;
-  cached_prompt_tokens: number;
-  completion_tokens: number;
-  reasoning_tokens: number;
-  cost_usd: number;
-  p50_ms: number | null;
-  p95_ms: number | null;
-  total_p50_ms: number | null;
-}
-
-/** `GET /api/llm/stats?minutes=`. */
-export interface LlmCallStats {
-  since: Timestamp | null;
-  total: LlmGroupStats;
-  by_purpose: LlmGroupStats[];
-  by_model: LlmGroupStats[];
-  by_module: LlmGroupStats[];
-  by_hour: {
-    hour: Timestamp;
-    calls: number;
-    errors: number;
-    prompt_tokens: number;
-    cached_prompt_tokens: number;
-    completion_tokens: number;
-    cost_usd: number;
-    by_purpose: Record<string, number>;
-  }[];
-  latency: { le_ms: number; count: number }[];
-  errors: { kind: string; count: number }[];
-  finish_reasons: { reason: string; count: number }[];
-  expensive: LlmCallRecord[];
-  slowest: LlmCallRecord[];
-  kept: number;
-  oldest: Timestamp | null;
-  prices: Record<string, LlmPricing>;
-}
-
 
 // ---------------------------------------------------------------------------
 // what she organized and learned (phase G)
@@ -1300,32 +1173,6 @@ export interface TurnOutcomeRecord {
 // ---------------------------------------------------------------------------
 // The fact layer (`GET /api/facts/*`; `packages/types` log-event.ts)
 
-export type LogEventKind =
-  | "observation"
-  | "thought"
-  | "decision"
-  | "utterance"
-  | "delivered"
-  | "action"
-  | "result"
-  | "steer"
-  | "directive"
-  | "proposal";
-
-/** One line of the EventLog. */
-export interface LogEvent {
-  id: Ulid;
-  at: Timestamp;
-  kind: LogEventKind;
-  /** What wrote it: `voice.asr`, `game.minecraft`, `plan`, ... */
-  source: string;
-  /** The event that caused this one. */
-  cause: Ulid | null;
-  context: ContextKey | null;
-  person: string | null;
-  body: unknown;
-}
-
 /** `body` of a `steer` line: the request (`phase: "request"`) or how it went (`"outcome"`). */
 export type SteerBody = SteerRequestBody | SteerOutcomeBody;
 
@@ -1394,13 +1241,6 @@ export interface FactEventsQuery {
   limit?: number;
 }
 
-/** `GET /api/facts/events/:id/chain`: the causes, oldest first, the event asked for last. */
-export interface CauseChain {
-  events: LogEvent[];
-  /** False when an ancestor is gone or the walk hit its limit. */
-  complete: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // the owner's rules (`GET /api/directives`; `packages/types` directive.ts)
 
@@ -1453,20 +1293,6 @@ export type DirectiveChange =
   | { status: "added"; directive: DirectiveRecord; note: string | null }
   | { status: "removed"; directive: DirectiveRecord }
   | { status: "question"; question: string };
-
-/** One delivered line (`GET /api/facts/deliveries`), newest first; `answered_by` is who answered in the window. */
-export interface Delivery {
-  attention_key: string;
-  revision: number;
-  channel: "voice" | "text";
-  context: ContextKey;
-  said: string;
-  delivered_at: Timestamp;
-  audience: Handle[];
-  answered_by: Handle[];
-  /** Its `utterance` event. */
-  line: Ulid;
-}
 
 // ---- turn metrics (`GET /api/turns/metrics`, mirrors packages/api/src/metrics-turns.ts) -------
 
@@ -1580,70 +1406,6 @@ export interface ActivitiesView {
 
 // --- economy 2.0 ----------------------------------------------------------------------
 
-export interface HealthDay {
-  day: number;
-  date: string;
-  issued: number;
-  recovered: number;
-  ratio: number | null;
-}
-
-/** `GET /api/economy/health`. */
-export interface EconomyHealth {
-  currency: string;
-  /** `false` until a store provides the ledger totals. */
-  available: boolean;
-  days: HealthDay[];
-  week: { issued: number; recovered: number; ratio: number | null };
-  warn: string | null;
-}
-
-export type CommissionKind = "poem" | "name" | "tool" | "song" | "voice";
-
-export interface CommissionView {
-  id: string;
-  kind: CommissionKind;
-  label: string;
-  brief: string;
-  price: number;
-  status: "open" | "delivered" | "declined" | "expired";
-  created_at: string;
-  due_at: string;
-  result: string | null;
-  note: string | null;
-}
-
-export interface PredictionView {
-  id: string;
-  question: string;
-  options: { label: string; staked: number; backers: number; multiplier: number | null }[];
-  total: number;
-  closes_at: string;
-  status: "open" | "closed" | "resolved" | "cancelled";
-  winner: string | null;
-}
-
-export interface RoomItem {
-  id: string;
-  label: string;
-  kind: "furniture" | "outfit" | "background";
-  kind_label: string;
-  price: number;
-  funded: number;
-  backers: number;
-  placed: boolean;
-}
-
-export interface QuestsView {
-  currency: string;
-  quests: { id: string; label: string; done: boolean }[];
-  reward: number;
-  bonus: number;
-  bonus_done: boolean;
-  earned_today: number;
-  cap: number;
-}
-
 // --- her workspace and skills ----------------------------------------------------------
 
 export interface WorkspaceFile {
@@ -1733,19 +1495,6 @@ export interface PartyResultView {
   ended_at: Timestamp;
   scored: boolean;
   players: PartyPlayerView[];
-}
-
-/** One of `GET /api/economy/goals`: a goal people filled, and whether she kept its promise. */
-export interface ReachedGoal {
-  id: string;
-  title: string;
-  promise: string;
-  target: number;
-  reached_at: string | null;
-  /** When the promise was marked kept; `null` while it is owed. */
-  fulfilled_at: string | null;
-  /** `owner` from the panel, `self` when she said she did it. */
-  fulfilled_by: "owner" | "self" | null;
 }
 
 /** `GET /api/party` (503 when the party module is off). */

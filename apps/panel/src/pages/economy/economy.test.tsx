@@ -123,6 +123,7 @@ describe("經濟 / 委託、預測、房間", () => {
       closes_at: new Date(Date.now() + 3_600_000).toISOString(),
       status: "open",
       winner: null,
+      my_bet: null,
     };
     const done: PredictionView = { ...open, id: "P0", question: "osu 幾分", status: "resolved", winner: "岩漿", options: [{ label: "岩漿", staked: 50, backers: 1, multiplier: 1 }], total: 50 };
     mockFetch((_m, u) => (u.pathname === "/api/economy/predictions" ? { body: { currency: "魚幣", predictions: [open, done] } } : undefined));

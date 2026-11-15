@@ -188,6 +188,13 @@
         "expires_at"
       ]
     },
+    "ApiBucketMode": {
+      "type": "string",
+      "enum": [
+        "replace-self",
+        "append-self"
+      ]
+    },
     "ApiBudgetState": {
       "type": "string",
       "enum": [
@@ -252,6 +259,24 @@
         "pose",
         "foil",
         "reroll"
+      ]
+    },
+    "ApiCauseChain": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLogEvent"
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "complete"
       ]
     },
     "ApiChannelLevelInfo": {
@@ -341,6 +366,161 @@
         "gained",
         "streak",
         "balance"
+      ]
+    },
+    "ApiCommissionKind": {
+      "type": "string",
+      "enum": [
+        "poem",
+        "name",
+        "tool",
+        "song",
+        "voice"
+      ]
+    },
+    "ApiCommissionView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiCommissionKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "delivered",
+            "declined",
+            "expired"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "due_at": {
+          "type": "string"
+        },
+        "result": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "brief",
+        "price",
+        "status",
+        "created_at",
+        "due_at",
+        "result",
+        "note"
+      ]
+    },
+    "ApiContextBucket": {
+      "type": "object",
+      "properties": {
+        "writer": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/ApiBucketMode"
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiContextEntry"
+          }
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "writer",
+        "mode",
+        "owner",
+        "entries",
+        "updated_at"
+      ]
+    },
+    "ApiContextEntry": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "attention_key": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "untrusted": {
+          "type": "boolean"
+        },
+        "restored": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "event",
+        "at",
+        "text",
+        "attention_key",
+        "revision",
+        "context",
+        "from",
+        "untrusted",
+        "restored"
       ]
     },
     "ApiContextKeyIn": {
@@ -738,6 +918,62 @@
         "reasons"
       ]
     },
+    "ApiDelivery": {
+      "type": "object",
+      "properties": {
+        "attention_key": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "channel": {
+          "$ref": "#/$defs/ApiDeliveryChannel"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "said": {
+          "type": "string"
+        },
+        "delivered_at": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "answered_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "line": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attention_key",
+        "revision",
+        "channel",
+        "context",
+        "said",
+        "delivered_at",
+        "audience",
+        "answered_by",
+        "line"
+      ]
+    },
+    "ApiDeliveryChannel": {
+      "type": "string",
+      "enum": [
+        "voice",
+        "text"
+      ]
+    },
     "ApiE2eSegmentName": {
       "type": "string",
       "enum": [
@@ -807,6 +1043,58 @@
         "amount",
         "earned_today",
         "cap"
+      ]
+    },
+    "ApiEconomyHealth": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiHealthDay"
+          }
+        },
+        "week": {
+          "type": "object",
+          "properties": {
+            "issued": {
+              "type": "number"
+            },
+            "recovered": {
+              "type": "number"
+            },
+            "ratio": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "issued",
+            "recovered",
+            "ratio"
+          ]
+        },
+        "warn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "currency",
+        "available",
+        "days",
+        "week",
+        "warn"
       ]
     },
     "ApiEmergencyReport": {
@@ -1256,6 +1544,36 @@
         "fulfilled"
       ]
     },
+    "ApiHealthDay": {
+      "type": "object",
+      "properties": {
+        "day": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string"
+        },
+        "issued": {
+          "type": "number"
+        },
+        "recovered": {
+          "type": "number"
+        },
+        "ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "day",
+        "date",
+        "issued",
+        "recovered",
+        "ratio"
+      ]
+    },
     "ApiHealthInfo": {
       "type": "object",
       "properties": {
@@ -1575,6 +1893,807 @@
         "text"
       ],
       "additionalProperties": false
+    },
+    "ApiLineState": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "delivered",
+        "interrupted",
+        "failed",
+        "cancelled",
+        "blocked"
+      ]
+    },
+    "ApiLlmCallDetail": {
+      "type": "object",
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "content": {
+                "type": "string"
+              },
+              "cut": {
+                "type": "number"
+              },
+              "tool_calls": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ApiLlmToolCall"
+                }
+              },
+              "tool_call_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "role",
+              "name",
+              "content",
+              "cut",
+              "tool_calls",
+              "tool_call_id"
+            ]
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "reasoning": {
+              "type": "string"
+            },
+            "tool_calls": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ApiLlmToolCall"
+              }
+            },
+            "cut": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "text",
+            "reasoning",
+            "tool_calls",
+            "cut"
+          ]
+        }
+      },
+      "required": [
+        "messages",
+        "tools",
+        "response"
+      ]
+    },
+    "ApiLlmCallKind": {
+      "type": "string",
+      "enum": [
+        "mind",
+        "chat",
+        "voice",
+        "attention",
+        "memory",
+        "learning",
+        "social",
+        "other"
+      ]
+    },
+    "ApiLlmCallRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiLlmCallKind"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ApiLlmCallStatus"
+        },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "model",
+              "error",
+              "kind"
+            ]
+          }
+        },
+        "retries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "thinking": {
+          "type": "boolean"
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": [
+            "off",
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "json_mode": {
+          "type": "boolean"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "temperature": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "messages": {
+          "type": "number"
+        },
+        "images": {
+          "type": "number"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "prompt_tokens": {
+                  "type": "number"
+                },
+                "completion_tokens": {
+                  "type": "number"
+                },
+                "cached_prompt_tokens": {
+                  "type": "number"
+                },
+                "reasoning_tokens": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "prompt_tokens",
+                "completion_tokens",
+                "cached_prompt_tokens",
+                "reasoning_tokens"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_token_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "total_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiLlmPricing"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finish_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error_kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thought": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repair": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "text_chars": {
+          "type": "number"
+        },
+        "reasoning_chars": {
+          "type": "number"
+        },
+        "tool_calls": {
+          "type": "number"
+        },
+        "has_detail": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "purpose",
+        "chain",
+        "kind",
+        "model",
+        "provider",
+        "status",
+        "fallbacks",
+        "retries",
+        "thinking",
+        "reasoning",
+        "json_mode",
+        "tools",
+        "max_tokens",
+        "temperature",
+        "messages",
+        "images",
+        "usage",
+        "first_token_ms",
+        "total_ms",
+        "cost_usd",
+        "pricing",
+        "finish_reason",
+        "error",
+        "error_kind",
+        "module",
+        "turn",
+        "thought",
+        "label",
+        "repair",
+        "text_chars",
+        "reasoning_chars",
+        "tool_calls",
+        "has_detail"
+      ]
+    },
+    "ApiLlmCallStats": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total": {
+          "$ref": "#/$defs/ApiLlmGroupStats"
+        },
+        "by_purpose": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmGroupStats"
+          }
+        },
+        "by_model": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmGroupStats"
+          }
+        },
+        "by_module": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmGroupStats"
+          }
+        },
+        "by_hour": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmHourStats"
+          }
+        },
+        "latency": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "le_ms": {
+                "type": "number"
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "le_ms",
+              "count"
+            ]
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "kind",
+              "count"
+            ]
+          }
+        },
+        "finish_reasons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "count": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "reason",
+              "count"
+            ]
+          }
+        },
+        "expensive": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmCallRecord"
+          }
+        },
+        "slowest": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmCallRecord"
+          }
+        },
+        "kept": {
+          "type": "number"
+        },
+        "oldest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prices": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ApiLlmPricing"
+          }
+        }
+      },
+      "required": [
+        "since",
+        "total",
+        "by_purpose",
+        "by_model",
+        "by_module",
+        "by_hour",
+        "latency",
+        "errors",
+        "finish_reasons",
+        "expensive",
+        "slowest",
+        "kept",
+        "oldest",
+        "prices"
+      ]
+    },
+    "ApiLlmCallStatus": {
+      "type": "string",
+      "enum": [
+        "streaming",
+        "ok",
+        "error",
+        "aborted"
+      ]
+    },
+    "ApiLlmCallWithDetail": {
+      "type": "object",
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/ApiLlmCallRecord"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiLlmCallDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "call",
+        "detail"
+      ]
+    },
+    "ApiLlmCallsPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmCallRecord"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "matched": {
+          "type": "number"
+        },
+        "kept": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "matched",
+        "kept"
+      ]
+    },
+    "ApiLlmGroupStats": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "calls": {
+          "type": "number"
+        },
+        "errors": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "reasoning_tokens": {
+          "type": "number"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "p50_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "total_p50_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "calls",
+        "errors",
+        "prompt_tokens",
+        "cached_prompt_tokens",
+        "completion_tokens",
+        "reasoning_tokens",
+        "cost_usd",
+        "p50_ms",
+        "p95_ms",
+        "total_p50_ms"
+      ]
+    },
+    "ApiLlmHourStats": {
+      "type": "object",
+      "properties": {
+        "hour": {
+          "type": "string"
+        },
+        "calls": {
+          "type": "number"
+        },
+        "errors": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "by_purpose": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "hour",
+        "calls",
+        "errors",
+        "prompt_tokens",
+        "cached_prompt_tokens",
+        "completion_tokens",
+        "cost_usd",
+        "by_purpose"
+      ]
+    },
+    "ApiLlmPricing": {
+      "type": "object",
+      "properties": {
+        "input_per_mtok": {
+          "type": "number"
+        },
+        "cached_input_per_mtok": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "output_per_mtok": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "input_per_mtok",
+        "cached_input_per_mtok",
+        "output_per_mtok"
+      ]
+    },
+    "ApiLlmThinking": {
+      "type": "object",
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/ApiLlmCallRecord"
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "answer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_calls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cut": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "call",
+        "reasoning",
+        "answer",
+        "tool_calls",
+        "cut"
+      ]
+    },
+    "ApiLlmThinkingPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmThinking"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "matched": {
+          "type": "number"
+        },
+        "by_kind": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "$ref": "#/$defs/ApiLlmCallKind"
+              },
+              "calls": {
+                "type": "number"
+              },
+              "reasoned": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "kind",
+              "calls",
+              "reasoned"
+            ]
+          }
+        },
+        "kept": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "matched",
+        "by_kind",
+        "kept"
+      ]
+    },
+    "ApiLlmToolCall": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "arguments"
+      ]
     },
     "ApiLogEvent": {
       "type": "object",
@@ -2580,6 +3699,113 @@
         "duplicate"
       ]
     },
+    "ApiPredictionView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "staked": {
+                "type": "number"
+              },
+              "backers": {
+                "type": "number"
+              },
+              "multiplier": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "label",
+              "staked",
+              "backers",
+              "multiplier"
+            ]
+          }
+        },
+        "total": {
+          "type": "number"
+        },
+        "closes_at": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed",
+            "resolved",
+            "cancelled"
+          ]
+        },
+        "winner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "my_bet": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "option": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "number"
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "won",
+                    "lost",
+                    "refunded"
+                  ]
+                },
+                "payout": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "option",
+                "amount",
+                "outcome",
+                "payout"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "options",
+        "total",
+        "closes_at",
+        "status",
+        "winner",
+        "my_bet"
+      ]
+    },
     "ApiPublicBoard": {
       "type": "object",
       "properties": {
@@ -2789,6 +4015,65 @@
         "hours_in_voice"
       ]
     },
+    "ApiQuestsView": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "quests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "new_topic",
+                  "play_game",
+                  "listen_song"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "done": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "done"
+            ]
+          }
+        },
+        "reward": {
+          "type": "number"
+        },
+        "bonus": {
+          "type": "number"
+        },
+        "bonus_done": {
+          "type": "boolean"
+        },
+        "earned_today": {
+          "type": "number"
+        },
+        "cap": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "currency",
+        "quests",
+        "reward",
+        "bonus",
+        "bonus_done",
+        "earned_today",
+        "cap"
+      ]
+    },
     "ApiQueueAuthor": {
       "type": "object",
       "properties": {
@@ -2884,6 +4169,58 @@
       "required": [
         "paused",
         "items"
+      ]
+    },
+    "ApiReachedGoal": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "promise": {
+          "type": "string"
+        },
+        "target": {
+          "type": "number"
+        },
+        "reached_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fulfilled_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fulfilled_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "owner",
+                "self"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "promise",
+        "target",
+        "reached_at",
+        "fulfilled_at",
+        "fulfilled_by"
       ]
     },
     "ApiRelationship": {
@@ -3073,6 +4410,50 @@
         "guild",
         "platform_role",
         "role"
+      ]
+    },
+    "ApiRoomItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "furniture",
+            "outfit",
+            "background"
+          ]
+        },
+        "kind_label": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "funded": {
+          "type": "number"
+        },
+        "backers": {
+          "type": "number"
+        },
+        "placed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "kind",
+        "kind_label",
+        "price",
+        "funded",
+        "backers",
+        "placed"
       ]
     },
     "ApiSayRequest": {
@@ -3557,6 +4938,73 @@
         "message"
       ]
     },
+    "ApiSpokenLine": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "string"
+        },
+        "attention_key": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "channel": {
+          "$ref": "#/$defs/ApiDeliveryChannel"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "said": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ApiLineState"
+        },
+        "at": {
+          "type": "string"
+        },
+        "settled_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "line",
+        "attention_key",
+        "revision",
+        "channel",
+        "context",
+        "said",
+        "audience",
+        "turn",
+        "state",
+        "at",
+        "settled_at",
+        "reason"
+      ]
+    },
     "ApiStageExpressionRequest": {
       "type": "object",
       "properties": {
@@ -3696,6 +5144,133 @@
       "enum": [
         "start",
         "stop"
+      ]
+    },
+    "ApiThought": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiThoughtTrigger"
+          }
+        },
+        "thought": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiThoughtIntent"
+          }
+        },
+        "tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ms": {
+          "type": "number"
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMindSuggestion"
+          }
+        },
+        "effects": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiThoughtEffects"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": "number"
+        },
+        "idle": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "thoughts": {
+                  "type": "number"
+                },
+                "minutes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "thoughts",
+                "minutes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiThoughtInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "triggers",
+        "thought",
+        "changes",
+        "intents",
+        "tokens",
+        "error",
+        "ms"
       ]
     },
     "ApiThoughtDecision": {
@@ -3906,6 +5481,315 @@
         "agenda_done",
         "agenda_dropped",
         "documents"
+      ]
+    },
+    "ApiThoughtInput": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "string"
+        },
+        "night": {
+          "type": "boolean"
+        },
+        "self": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mood": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "valence": {
+                          "type": "number"
+                        },
+                        "arousal": {
+                          "type": "number"
+                        },
+                        "energy": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "valence",
+                        "arousal",
+                        "energy"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "boredom": {
+                  "type": "number"
+                },
+                "drives": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "initiative": {
+                  "type": "number"
+                },
+                "emotions": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "shown": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "mood",
+                "boredom",
+                "drives",
+                "initiative"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMindSuggestion"
+          }
+        },
+        "world": {
+          "type": "string"
+        },
+        "places": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "here": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "ref",
+              "label",
+              "note",
+              "here"
+            ]
+          }
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "person": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "relation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "feeling": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "doing": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "heart": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "ref",
+              "name",
+              "person",
+              "relation",
+              "feeling",
+              "doing"
+            ]
+          }
+        },
+        "agenda": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "due": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "blocked": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "ref",
+              "text",
+              "due",
+              "blocked"
+            ]
+          }
+        },
+        "memories": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "documents": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recap": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unanswered": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blocked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "capability": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "capability",
+              "reason"
+            ]
+          }
+        },
+        "idle": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "thoughts": {
+                  "type": "number"
+                },
+                "minutes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "thoughts",
+                "minutes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "time",
+        "night",
+        "self",
+        "suggestions",
+        "world",
+        "places",
+        "people",
+        "agenda",
+        "memories",
+        "documents",
+        "lessons",
+        "recap",
+        "digest",
+        "unanswered",
+        "blocked",
+        "idle",
+        "capabilities",
+        "recent"
       ]
     },
     "ApiThoughtIntent": {

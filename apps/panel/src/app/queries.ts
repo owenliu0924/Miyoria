@@ -42,6 +42,7 @@ import type {
   WalletAdjustRequest,
 } from "@/api/types";
 import { type EvalData, loadEvalData } from "@/lib/eval-data";
+import { factEventsInput } from "@/lib/fact-events";
 import { startOfDay } from "@/lib/rules";
 import { fetchTurnEvents } from "@/lib/turn-events";
 import { useApi } from "./connection";
@@ -594,7 +595,7 @@ export function useThought(id: string | undefined) {
   const api = useApi();
   return useQuery({
     queryKey: [...queryKeys.thoughts, "one", id ?? ""],
-    queryFn: ({ signal }) => api.thought(id ?? "", { signal }),
+    queryFn: ({ signal }) => api.rpc.mind.thought({ params: { id: id ?? "" } }, { signal }),
     enabled: Boolean(id),
     refetchInterval: poll(10_000),
   });
@@ -602,12 +603,40 @@ export function useThought(id: string | undefined) {
 
 const LLM_PAGE = 100;
 
+/** The call inspector's filters as the route reads them: flags as `true`, a page and its cursor. */
+function llmCallsInput(q: LlmCallsQuery, limit: number, before: string | null) {
+  return {
+    purpose: q.purpose,
+    model: q.model,
+    module: q.module,
+    status: q.status,
+    trouble: q.trouble ? ("true" as const) : undefined,
+    thought: q.thought,
+    turn: q.turn,
+    since: q.since,
+    q: q.q,
+    limit: String(limit),
+    before: before ?? undefined,
+  };
+}
+
+function llmThinkingInput(q: LlmThinkingQuery, limit: number, before: string | null) {
+  return {
+    kind: q.kind,
+    reasoned: q.reasoned ? ("true" as const) : undefined,
+    since: q.since,
+    q: q.q,
+    limit: String(limit),
+    before: before ?? undefined,
+  };
+}
+
 /** The call inspector, newest first, one page at a time. */
 export function useLlmCalls(q: LlmCallsQuery) {
   const api = useApi();
   return useInfiniteQuery({
     queryKey: ["llm", "calls", q],
-    queryFn: ({ signal, pageParam }) => api.llmCalls(q, LLM_PAGE, pageParam, { signal }),
+    queryFn: ({ signal, pageParam }) => api.rpc.llm.calls({ query: llmCallsInput(q, LLM_PAGE, pageParam) }, { signal }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next_cursor,
     refetchInterval: poll(10_000),
@@ -623,7 +652,7 @@ export function useLlmThinking(q: LlmThinkingQuery) {
   const api = useApi();
   return useInfiniteQuery({
     queryKey: ["llm", "thinking", q],
-    queryFn: ({ signal, pageParam }) => api.llmThinking(q, THINKING_PAGE, pageParam, { signal }),
+    queryFn: ({ signal, pageParam }) => api.rpc.llm.thinking({ query: llmThinkingInput(q, THINKING_PAGE, pageParam) }, { signal }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next_cursor,
     refetchInterval: poll(10_000),
@@ -635,7 +664,7 @@ export function useLlmCall(id: string | undefined) {
   const api = useApi();
   return useQuery({
     queryKey: ["llm", "call", id ?? ""],
-    queryFn: ({ signal }) => api.llmCall(id ?? "", { signal }),
+    queryFn: ({ signal }) => api.rpc.llm.callDetail({ params: { id: id ?? "" } }, { signal }),
     enabled: Boolean(id),
     refetchInterval: (query) => (query.state.data?.call.status === "streaming" ? 2_000 : false),
   });
@@ -646,7 +675,7 @@ export function useLlmStats(minutes: number | null) {
   const api = useApi();
   return useQuery({
     queryKey: ["llm", "stats", minutes],
-    queryFn: ({ signal }) => api.llmStats(minutes, { signal }),
+    queryFn: ({ signal }) => api.rpc.llm.stats({ query: { minutes: minutes === null ? undefined : String(minutes) } }, { signal }),
     refetchInterval: poll(30_000),
     placeholderData: (prev) => prev,
   });
@@ -782,7 +811,7 @@ export function useFactEvents(q: FactEventsQuery, every: number | false = false,
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.factEvents(q),
-    queryFn: ({ signal }) => api.factEvents(q, { signal }),
+    queryFn: ({ signal }) => api.rpc.facts.events(factEventsInput(q), { signal }),
     refetchInterval: every === false ? false : poll(every),
     placeholderData: (prev) => prev,
     enabled,
@@ -795,7 +824,7 @@ export function useFactChain(id: string | null) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.factChain(id ?? ""),
-    queryFn: ({ signal }) => api.factChain(id ?? "", { signal }),
+    queryFn: ({ signal }) => api.rpc.facts.chain({ params: { id: id ?? "" } }, { signal }),
     enabled: id !== null,
     retry: false,
   });
@@ -818,7 +847,7 @@ export function useFactWindow(ms: number, limit: number) {
   const api = useApi();
   return useQuery({
     queryKey: ["facts", "window", ms, limit] as const,
-    queryFn: ({ signal }) => api.factEvents({ since: new Date(Date.now() - ms).toISOString(), order: "desc", limit }, { signal }),
+    queryFn: ({ signal }) => api.rpc.facts.events(factEventsInput({ since: new Date(Date.now() - ms).toISOString(), order: "desc", limit }), { signal }),
     refetchInterval: poll(10_000),
     placeholderData: (prev) => prev,
     retry: false,
@@ -928,41 +957,41 @@ export function useActivities() {
 
 export function useReachedGoals() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.reachedGoals, queryFn: ({ signal }) => api.reachedGoals({ signal }), refetchInterval: pollModule(60_000), retry: false });
+  return useQuery({ queryKey: queryKeys.reachedGoals, queryFn: ({ signal }) => api.rpc.economy.goals(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
 }
 
 export function useFulfillGoal() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.fulfillGoal(id),
+    mutationFn: (id: string) => api.rpc.economy.fulfill({ params: { id }, body: {} }),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.reachedGoals }),
   });
 }
 
 export function useEconomyHealth() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.economyHealth, queryFn: ({ signal }) => api.economyHealth({ signal }), refetchInterval: pollModule(60_000), retry: false });
+  return useQuery({ queryKey: queryKeys.economyHealth, queryFn: ({ signal }) => api.rpc.economy.health(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
 }
 
 export function useCommissions() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.commissions, queryFn: ({ signal }) => api.commissions({ signal }), refetchInterval: pollModule(30_000), retry: false });
+  return useQuery({ queryKey: queryKeys.commissions, queryFn: ({ signal }) => api.rpc.economy.commissions(undefined, { signal }), refetchInterval: pollModule(30_000), retry: false });
 }
 
 export function usePredictions() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.predictions, queryFn: ({ signal }) => api.predictions({ signal }), refetchInterval: pollModule(30_000), retry: false });
+  return useQuery({ queryKey: queryKeys.predictions, queryFn: ({ signal }) => api.rpc.economy.predictions(undefined, { signal }), refetchInterval: pollModule(30_000), retry: false });
 }
 
 export function useRoom() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.room, queryFn: ({ signal }) => api.room({ signal }), refetchInterval: pollModule(60_000), retry: false });
+  return useQuery({ queryKey: queryKeys.room, queryFn: ({ signal }) => api.rpc.economy.room(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
 }
 
 export function usePersonQuests(id: string) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.personQuests(id), queryFn: ({ signal }) => api.personQuests(id, { signal }), retry: false });
+  return useQuery({ queryKey: queryKeys.personQuests(id), queryFn: ({ signal }) => api.rpc.people.quests({ params: { id } }, { signal }), retry: false });
 }
 
 export function useWorkspace() {

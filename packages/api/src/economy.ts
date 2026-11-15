@@ -15,9 +15,9 @@
 import { type Economy2, Economy2Key } from "@miyoria/economy";
 import { IdentityStoreKey } from "@miyoria/store";
 import { isUlid, type PersonId } from "@miyoria/types";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { json, param, type Route } from "./route.js";
-import type { ApiContext, ApiState } from "./state.js";
+import type { ApiState } from "./state.js";
 
 const NO_ECONOMY = "economy module (economy 2.0) is not available";
 
@@ -40,58 +40,38 @@ async function guard<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-async function quests(state: ApiState, c: ApiContext): Promise<Response> {
-  const id = param(c, "id");
-  const unknown = ApiError.notFound(`unknown person \`${id}\``);
-  if (!isUlid(id.toUpperCase())) throw unknown;
-  const v2 = economyView(state);
-  const identity = state.service(IdentityStoreKey, "identity store");
-  const first = (await identity.accountsOf(id.toUpperCase() as PersonId))[0];
-  if (!first) throw unknown;
-  const view = await guard(() => v2.quests(first.account));
-  return json({ currency: v2.currency, ...view });
-}
+/** The economy routes on the route table (`@miyoria/contracts/api`). */
+export const economyRpc = {
+  health: os.economy.health.handler(async ({ context }) => {
+    const v2 = economyView(context.state);
+    return { currency: v2.currency, ...(await guard(() => v2.health())) };
+  }),
+  commissions: os.economy.commissions.handler(async ({ context }) => {
+    const v2 = economyView(context.state);
+    return { currency: v2.currency, commissions: await guard(() => v2.commissionsWaiting()) };
+  }),
+  predictions: os.economy.predictions.handler(async ({ context }) => {
+    const v2 = economyView(context.state);
+    return { currency: v2.currency, predictions: await guard(() => v2.predictions(null)) };
+  }),
+  room: os.economy.room.handler(async ({ context }) => {
+    const v2 = economyView(context.state);
+    return { currency: v2.currency, room: await guard(() => v2.room()) };
+  }),
+};
 
-export function economyRoutes(state: ApiState): Route[] {
-  return [
-    {
-      method: "GET",
-      path: "/api/economy/health",
-      handler: async () => {
-        const v2 = economyView(state);
-        return json({ currency: v2.currency, ...(await guard(() => v2.health())) });
-      },
-    },
-    {
-      method: "GET",
-      path: "/api/economy/commissions",
-      handler: async () => {
-        const v2 = economyView(state);
-        return json({
-          currency: v2.currency,
-          commissions: await guard(() => v2.commissionsWaiting()),
-        });
-      },
-    },
-    {
-      method: "GET",
-      path: "/api/economy/predictions",
-      handler: async () => {
-        const v2 = economyView(state);
-        return json({
-          currency: v2.currency,
-          predictions: await guard(() => v2.predictions(null)),
-        });
-      },
-    },
-    {
-      method: "GET",
-      path: "/api/economy/room",
-      handler: async () => {
-        const v2 = economyView(state);
-        return json({ currency: v2.currency, room: await guard(() => v2.room()) });
-      },
-    },
-    { method: "GET", path: "/api/people/:id/quests", handler: (c) => quests(state, c) },
-  ];
-}
+/** `GET /api/people/{id}/quests`: joins the people group. */
+export const personQuestsRpc = {
+  quests: os.people.quests.handler(async ({ input, context }) => {
+    const { state } = context;
+    const id = input.params.id;
+    const unknown = ApiError.notFound(`unknown person \`${id}\``);
+    if (!isUlid(id.toUpperCase())) throw unknown;
+    const v2 = economyView(state);
+    const identity = state.service(IdentityStoreKey, "identity store");
+    const first = (await identity.accountsOf(id.toUpperCase() as PersonId))[0];
+    if (!first) throw unknown;
+    const view = await guard(() => v2.quests(first.account));
+    return { currency: v2.currency, ...view };
+  }),
+};

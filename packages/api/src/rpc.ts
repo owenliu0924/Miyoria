@@ -48,10 +48,13 @@ import { os, type RpcContext } from "./contract.js";
 import { controlRpc } from "./control.js";
 import { coreRpc, healthRpc, personaRpc } from "./core.js";
 import { dataRpc } from "./data.js";
+import { economyRpc, personQuestsRpc } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
+import { goalAdminRpc } from "./goals-admin.js";
+import { llmCallsRpc, thoughtRpc } from "./llmcalls.js";
 import { memberRpc } from "./member.js";
 import { mindRpc } from "./mind.js";
 import { authRpc } from "./oauth.js";
@@ -77,10 +80,12 @@ export const router = os.router({
   wallet: walletRpc,
   agency: agencyRpc,
   fortune: fortuneRpc,
-  people: { ...peopleRpc, ...personWalletRpc },
+  people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
+  llm: { ...coreRpc.llm, ...llmCallsRpc },
+  economy: { ...economyRpc, ...goalAdminRpc },
   channels: channelRpc,
-  mind: mindRpc,
+  mind: { ...mindRpc, ...thoughtRpc },
   roles: roleRpc,
   ...opsRpc,
   voice: { ...opsRpc.voice, ...controlRpc.voice },

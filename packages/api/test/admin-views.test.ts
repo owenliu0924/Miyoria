@@ -221,12 +221,47 @@ describe("economy 2.0", () => {
         week: { issued: 0, recovered: 0, ratio: null },
         warn: null,
       }),
-      commissionsWaiting: async () => [{ id: "C1", kind: "poem", status: "open" }],
+      commissionsWaiting: async () => [
+        {
+          id: "C1",
+          kind: "poem",
+          label: "詩",
+          brief: "寫一首",
+          price: 50,
+          status: "open",
+          created_at: "2026-11-01T00:00:00.000Z",
+          due_at: "2026-11-03T00:00:00.000Z",
+          result: null,
+          note: null,
+        },
+      ],
       predictions: async (account: unknown) => {
         expect(account).toBeNull();
-        return [{ id: "P1", question: "她會死嗎", status: "open" }];
+        return [
+          {
+            id: "P1",
+            question: "她會死嗎",
+            options: [{ label: "會", staked: 0, backers: 0, multiplier: null }],
+            total: 0,
+            closes_at: "2026-11-02T00:00:00.000Z",
+            status: "open",
+            winner: null,
+            my_bet: null,
+          },
+        ];
       },
-      room: async () => [{ id: "sofa", label: "沙發", price: 500, funded: 120 }],
+      room: async () => [
+        {
+          id: "sofa",
+          label: "沙發",
+          kind: "furniture",
+          kind_label: "家具",
+          price: 500,
+          funded: 120,
+          backers: 3,
+          placed: false,
+        },
+      ],
     };
     h.sup.services.provide("economy", Economy2Key, v2 as never);
     const health = await h.get("/api/economy/health");

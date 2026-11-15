@@ -5,35 +5,59 @@
 
 import {
   type AuthScope as ContractAuthScope,
+  type CauseChain as ContractCauseChain,
+  type CommissionView as ContractCommissionView,
+  type ContextBucket as ContractContextBucket,
   type CostReport as ContractCostReport,
   type DataCategoryId as ContractDataCategoryId,
   type DataCategoryView as ContractDataCategoryView,
   type DataNote as ContractDataNote,
   type DataWipeResult as ContractDataWipeResult,
   type DecisionRecord as ContractDecisionRecord,
+  type Delivery as ContractDelivery,
+  type EconomyHealth as ContractEconomyHealth,
   type EmergencyReport as ContractEmergencyReport,
   type ExtensionInfo as ContractExtensionInfo,
+  type LlmCallDetail as ContractLlmCallDetail,
+  type LlmCallRecord as ContractLlmCallRecord,
+  type LlmCallStats as ContractLlmCallStats,
+  type LlmThinkingPage as ContractLlmThinkingPage,
+  type LogEvent as ContractLogEvent,
   type McpServerInfo as ContractMcpServerInfo,
   type MindStats as ContractMindStats,
   type ModuleInfo as ContractModuleInfo,
   type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
+  type PredictionView as ContractPredictionView,
+  type QuestsView as ContractQuestsView,
   type QueueItemInfo as ContractQueueItemInfo,
+  type ReachedGoal as ContractReachedGoal,
   type Relationship as ContractRelationship,
   type RelationshipDelta as ContractRelationshipDelta,
   type RoleAssignment as ContractRoleAssignment,
   type RoleDefinition as ContractRoleDefinition,
   type RoleMapping as ContractRoleMapping,
+  type RoomItem as ContractRoomItem,
   type SceneRolesState as ContractSceneRolesState,
   type SongView as ContractSongView,
+  type SpokenLine as ContractSpokenLine,
   type StageState as ContractStageState,
+  type Thought as ContractThought,
   type ThoughtSummary as ContractThoughtSummary,
   type VoiceSession as ContractVoiceSession,
   contract,
   routeMeta,
 } from "@miyoria/contracts/api";
+import type { Economy2, ReachedGoalView } from "@miyoria/economy";
 import { NODE_APPROVE, type PendingApproval } from "@miyoria/gate/actions";
-import type { CostReport } from "@miyoria/llm/llm";
+import type {
+  CostReport,
+  LlmCallDetail,
+  LlmCallRecord,
+  LlmCallStats,
+  LlmThinkingPage,
+  Pricing,
+} from "@miyoria/llm/llm";
 import type { ItemState } from "@miyoria/play/queue";
 import type { ServerStatus } from "@miyoria/plugin-host/mcp";
 import type { ModuleStatus } from "@miyoria/runtime/kernel";
@@ -52,10 +76,15 @@ import type {
   RoleMapping,
 } from "@miyoria/store";
 import type {
+  CauseChain,
+  ContextBucket,
   ContextKey,
+  Delivery,
   EmergencyReport,
+  LogEvent,
   MindStats,
   ModuleStateKind,
+  SpokenLine,
   Thought,
   VoiceParticipant,
 } from "@miyoria/types";
@@ -95,6 +124,10 @@ const CASES: Case[] = [
   { name: "decisions", method: "GET", path: "/api/decisions" },
   { name: "llm.usage", method: "GET", path: "/api/llm/usage" },
   { name: "llm.cost", method: "GET", path: "/api/llm/cost" },
+  { name: "llm.calls", method: "GET", path: "/api/llm/calls" },
+  { name: "llm.callDetail", method: "GET", path: "/api/llm/calls/:id" },
+  { name: "llm.thinking", method: "GET", path: "/api/llm/thinking" },
+  { name: "llm.stats", method: "GET", path: "/api/llm/stats" },
   { name: "channels.levels", method: "GET", path: "/api/channels/levels" },
   {
     name: "channels.setLevel",
@@ -102,6 +135,7 @@ const CASES: Case[] = [
     path: "/api/channels/level",
     permission: "admin.channel.mode",
   },
+  { name: "mind.thought", method: "GET", path: "/api/mind/thoughts/:id" },
   { name: "mind.status", method: "GET", path: "/api/mind" },
   { name: "mind.thoughts", method: "GET", path: "/api/mind/thoughts" },
   { name: "mind.approvals", method: "GET", path: "/api/mind/approvals" },
@@ -139,6 +173,26 @@ const CASES: Case[] = [
   { name: "roles.mappings", method: "GET", path: "/api/auth/mappings" },
   { name: "roles.setMapping", method: "PUT", path: "/api/auth/mappings" },
   { name: "roles.removeMapping", method: "DELETE", path: "/api/auth/mappings" },
+  { name: "facts.events", method: "GET", path: "/api/facts/events" },
+  { name: "facts.event", method: "GET", path: "/api/facts/events/:id" },
+  { name: "facts.chain", method: "GET", path: "/api/facts/events/:id/chain" },
+  { name: "facts.effects", method: "GET", path: "/api/facts/events/:id/effects" },
+  // No client in this repository calls the next two; only the tests do.
+  { name: "facts.context", method: "GET", path: "/api/facts/context" },
+  { name: "facts.deliveries", method: "GET", path: "/api/facts/deliveries" },
+  { name: "facts.retryable", method: "GET", path: "/api/facts/retryable" },
+  { name: "economy.health", method: "GET", path: "/api/economy/health" },
+  { name: "economy.commissions", method: "GET", path: "/api/economy/commissions" },
+  { name: "economy.predictions", method: "GET", path: "/api/economy/predictions" },
+  { name: "economy.room", method: "GET", path: "/api/economy/room" },
+  { name: "economy.goals", method: "GET", path: "/api/economy/goals" },
+  {
+    name: "economy.fulfill",
+    method: "POST",
+    path: "/api/economy/goals/:id/fulfill",
+    permission: "admin.economy.goals",
+  },
+  { name: "people.quests", method: "GET", path: "/api/people/:id/quests" },
   { name: "extensions.list", method: "GET", path: "/api/extensions" },
   { name: "extensions.action", method: "POST", path: "/api/extensions/:id/:action" },
   { name: "mcp.list", method: "GET", path: "/api/mcp" },
@@ -243,6 +297,41 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const mapping: Same<ContractRoleMapping, RoleMapping> = true;
     const scope: Same<ContractAuthScope, AuthScope> = true;
     expect([role, assignment, mapping, scope]).toEqual([true, true, true, true]);
+  });
+
+  it("the fact layer", () => {
+    const event: Same<ContractLogEvent, LogEvent> = true;
+    const chain: Same<ContractCauseChain, CauseChain> = true;
+    const bucket: Same<ContractContextBucket, ContextBucket> = true;
+    const delivery: Same<ContractDelivery, Delivery> = true;
+    const line: Same<ContractSpokenLine, SpokenLine> = true;
+    expect([event, chain, bucket, delivery, line]).toEqual(Array(5).fill(true));
+  });
+
+  it("the call inspector and a thought in full", () => {
+    const call: Same<ContractLlmCallRecord, LlmCallRecord> = true;
+    const detail: Same<ContractLlmCallDetail, LlmCallDetail> = true;
+    const thinking: Same<ContractLlmThinkingPage, Omit<LlmThinkingPage, never> & { kept: number }> =
+      true;
+    const stats: Same<ContractLlmCallStats, LlmCallStats & { prices: Record<string, Pricing> }> =
+      true;
+    const thought: Same<ContractThought, Thought> = true;
+    expect([call, detail, thinking, stats, thought]).toEqual(Array(5).fill(true));
+  });
+
+  it("the economy", () => {
+    type Health = Awaited<ReturnType<Economy2["health"]>>;
+    type Commission = Awaited<ReturnType<Economy2["commissionsWaiting"]>>[number];
+    type Prediction = Awaited<ReturnType<Economy2["predictions"]>>[number];
+    type Room = Awaited<ReturnType<Economy2["room"]>>[number];
+    type Quests = Awaited<ReturnType<Economy2["quests"]>>;
+    const health: Same<ContractEconomyHealth, Health & { currency: string }> = true;
+    const commission: Same<ContractCommissionView, Commission> = true;
+    const prediction: Same<ContractPredictionView, Prediction> = true;
+    const room: Same<ContractRoomItem, Room> = true;
+    const quests: Same<ContractQuestsView, Quests & { currency: string }> = true;
+    const goal: Same<ContractReachedGoal, ReachedGoalView> = true;
+    expect([health, commission, prediction, room, quests, goal]).toEqual(Array(6).fill(true));
   });
 
   it("extensions, MCP servers, the queue, the stage and the voice monitor", () => {

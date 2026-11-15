@@ -8,12 +8,8 @@ import type {
   ContextKey,
   DataCategoryId,
   AddDirectiveRequest,
-  CauseChain,
-  Delivery,
   DirectiveChange,
   DirectivesView,
-  FactEventsQuery,
-  LogEvent,
   MemoryItem,
   MemoryQuery,
   MemoryRecordView,
@@ -21,20 +17,12 @@ import type {
   UpdateMemoryRequest,
   SelfView,
   WorldView,
-  Thought,
   ThoughtDigest,
   KnowledgeView,
   ConversationNote,
   ReflectionView,
 
   TelemetryView,
-  LlmCallDetail,
-  LlmCallRecord,
-  LlmCallsPage,
-  LlmThinkingPage,
-  LlmThinkingQuery,
-  LlmCallsQuery,
-  LlmCallStats,
   ActivitySnapshot,
   ActivityTask,
   AffectSnapshot,
@@ -50,18 +38,12 @@ import type {
   TurnOutcomeKind,
   TurnOutcomeRecord,
   ActivitiesView,
-  CommissionView,
-  EconomyHealth,
   LifeDayView,
   NotebookEntry,
   NotebookPage,
   PartySnapshot,
-  PredictionView,
-  QuestsView,
-  ReachedGoal,
   RecentView,
   RemindersView,
-  RoomItem,
   SkillSummary,
   SkillView,
   WorkspaceView,
@@ -105,41 +87,6 @@ export function createApi(client: ApiClient) {
     conversationNotes: (o?: Opts) => client.get<ConversationNote[]>("/api/knowledge/conversations", o),
     reflection: (days: number, o?: Opts) => client.get<ReflectionView>(`/api/reflection?days=${days}`, o),
 
-    thought: (id: string, o?: Opts) => client.get<Thought>(`/api/mind/thoughts/${seg(id)}`, o),
-    llmCalls: (q: LlmCallsQuery, limit: number, before: string | null, o?: Opts) =>
-      client.get<LlmCallsPage>("/api/llm/calls", {
-        ...o,
-        query: {
-          purpose: q.purpose,
-          model: q.model,
-          module: q.module,
-          status: q.status,
-          trouble: q.trouble ? "true" : undefined,
-          thought: q.thought,
-          turn: q.turn,
-          since: q.since,
-          q: q.q,
-          limit,
-          before: before ?? undefined,
-        },
-      }),
-    llmCall: (id: string, o?: Opts) =>
-      client.get<{ call: LlmCallRecord; detail: LlmCallDetail | null }>(`/api/llm/calls/${seg(id)}`, o),
-    llmThinking: (q: LlmThinkingQuery, limit: number, before: string | null, o?: Opts) =>
-      client.get<LlmThinkingPage>("/api/llm/thinking", {
-        ...o,
-        query: {
-          kind: q.kind,
-          reasoned: q.reasoned ? "true" : undefined,
-          since: q.since,
-          q: q.q,
-          limit,
-          before: before ?? undefined,
-        },
-      }),
-    llmStats: (minutes: number | null, o?: Opts) =>
-      client.get<LlmCallStats>("/api/llm/stats", { ...o, query: { minutes: minutes ?? undefined } }),
-
     // body, arbiter, affect, plan, prompts
     activity: (o?: Opts) => client.get<ActivitySnapshot>("/api/activity", o),
     activityTasks: (limit: number, o?: Opts) =>
@@ -173,19 +120,10 @@ export function createApi(client: ApiClient) {
 
     turnMetrics: (days: number, o?: Opts) => client.get<TurnMetrics>("/api/turns/metrics", { ...o, query: { days } }),
 
-    factEvents: (q: FactEventsQuery, o?: Opts) =>
-      client.get<LogEvent[]>("/api/facts/events", {
-        ...o,
-        query: { kind: q.kind?.join(","), source: q.source?.join(","), turn: q.turn, since: q.since, until: q.until, before: q.before, order: q.order, limit: q.limit },
-      }),
-    factDeliveries: (limit: number, o?: Opts) => client.get<Delivery[]>("/api/facts/deliveries", { ...o, query: { limit } }),
-
     directives: (history: boolean, o?: Opts) =>
       client.get<DirectivesView>("/api/directives", { ...o, query: { history: history ? "1" : undefined } }),
     addDirective: (req: AddDirectiveRequest) => client.post<DirectiveChange>("/api/directives", req),
     removeDirective: (id: string) => client.delete<DirectiveChange>(`/api/directives/${seg(id)}`),
-    factChain: (id: string, o?: Opts) => client.get<CauseChain>(`/api/facts/events/${seg(id)}/chain`, o),
-
     telemetry: (minutes: number, o?: Opts) =>
       client.get<TelemetryView>("/api/telemetry", { ...o, query: { minutes } }),
 
@@ -193,14 +131,6 @@ export function createApi(client: ApiClient) {
     reminders: (o?: Opts) => client.get<RemindersView>("/api/life/reminders", o),
     cancelReminder: (key: string) => client.delete<{ cancelled: true; key: string }>(`/api/life/reminders/${seg(key)}`),
     activities: (o?: Opts) => client.get<ActivitiesView>("/api/life/activities", o),
-
-    economyHealth: (o?: Opts) => client.get<EconomyHealth>("/api/economy/health", o),
-    commissions: (o?: Opts) => client.get<{ currency: string; commissions: CommissionView[] }>("/api/economy/commissions", o),
-    predictions: (o?: Opts) => client.get<{ currency: string; predictions: PredictionView[] }>("/api/economy/predictions", o),
-    room: (o?: Opts) => client.get<{ currency: string; room: RoomItem[] }>("/api/economy/room", o),
-    reachedGoals: (o?: Opts) => client.get<{ goals: ReachedGoal[] }>("/api/economy/goals", o),
-    fulfillGoal: (id: string) => client.post<{ goal: ReachedGoal }>(`/api/economy/goals/${seg(id)}/fulfill`, {}),
-    personQuests: (id: string, o?: Opts) => client.get<QuestsView>(`/api/people/${seg(id)}/quests`, o),
 
     workspace: (o?: Opts) => client.get<WorkspaceView>("/api/workspace", o),
     skills: (o?: Opts) => client.get<{ skills: SkillSummary[] }>("/api/skills", o),

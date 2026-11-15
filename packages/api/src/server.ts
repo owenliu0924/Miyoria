@@ -9,15 +9,11 @@ import { bodyRoutes } from "./body.js";
 import { coreRoutes } from "./core.js";
 import { dataRoutes } from "./data.js";
 import { directiveRoutes } from "./directives.js";
-import { economyRoutes } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
-import { factRoutes } from "./facts.js";
-import { goalAdminRoutes } from "./goals-admin.js";
 import { innerRoutes } from "./inner.js";
 import { learningRoutes } from "./learning.js";
 import { lifeRoutes } from "./life.js";
 import { liveRoutes } from "./live.js";
-import { llmCallRoutes } from "./llmcalls.js";
 import { memberRoutes } from "./member.js";
 import { memoryRoutes } from "./memory.js";
 import { metricsRoutes } from "./metrics.js";
@@ -139,10 +135,8 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...publicRoutes(state),
     ...ogRoutes(state),
     ...memberRoutes(state),
-    ...goalAdminRoutes(state),
     ...memoryRoutes(state),
     ...innerRoutes(state),
-    ...factRoutes(state),
     ...dataRoutes(state),
     ...sandboxRoutes(state),
     ...directiveRoutes(state),
@@ -152,11 +146,9 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...promptRoutes(state),
     ...turnMetricsRoutes(state),
     ...learningRoutes(state),
-    ...llmCallRoutes(state),
     ...telemetryRoutes(state),
     ...liveRoutes(state),
     ...lifeRoutes(state),
-    ...economyRoutes(state),
     ...workspaceRoutes(state),
     ...notebookRoutes(state),
     ...partyRoutes(state),

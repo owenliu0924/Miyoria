@@ -172,6 +172,20 @@
             "path": "/api/people/{id}/wallet/adjust"
           }
         }
+      },
+      "quests": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/people/{id}/quests"
+          }
+        }
       }
     },
     "modules": {
@@ -246,6 +260,62 @@
             "path": "/api/llm/cost"
           }
         }
+      },
+      "calls": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/calls"
+          }
+        }
+      },
+      "callDetail": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/calls/{id}"
+          }
+        }
+      },
+      "thinking": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/thinking"
+          }
+        }
+      },
+      "stats": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/stats"
+          }
+        }
       }
     },
     "channels": {
@@ -304,6 +374,20 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/mind/thoughts"
+          }
+        }
+      },
+      "thought": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/mind/thoughts/{id}"
           }
         }
       },
@@ -975,7 +1059,135 @@
         }
       }
     },
+    "economy": {
+      "health": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/economy/health"
+          }
+        }
+      },
+      "commissions": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/economy/commissions"
+          }
+        }
+      },
+      "predictions": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/economy/predictions"
+          }
+        }
+      },
+      "room": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/economy/room"
+          }
+        }
+      },
+      "goals": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/economy/goals"
+          }
+        }
+      },
+      "fulfill": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.goals"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/economy/goals/{id}/fulfill"
+          }
+        }
+      }
+    },
     "facts": {
+      "events": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/facts/events"
+          }
+        }
+      },
+      "event": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/facts/events/{id}"
+          }
+        }
+      },
+      "chain": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/facts/events/{id}/chain"
+          }
+        }
+      },
       "effects": {
         "~orpc": {
           "errorMap": {},
@@ -987,6 +1199,48 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/facts/events/{id}/effects"
+          }
+        }
+      },
+      "context": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/facts/context"
+          }
+        }
+      },
+      "deliveries": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/facts/deliveries"
+          }
+        }
+      },
+      "retryable": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/facts/retryable"
           }
         }
       }
