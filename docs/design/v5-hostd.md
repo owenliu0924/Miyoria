@@ -60,6 +60,17 @@
 | H12 | 收尾:刪除清單、`OPERATIONS.md`、`workers/README.md`、朋友那台的升級教學改成 `host join`、backlog | 全部 | 小 |
 | 切換 | 這台線上的服務改由 hostd 管,Python 環境換成 uv 管的(舊環境先留著);朋友那台加入。和階段 1 一樣要你在場,動手前給清單 | | |
 
+## 切換那天要注意的事(邊做邊累積)
+
+- **先停掉舊的全部服務**,尤其是語音節點:它沒有埠,hostd 看不到手動啟動的那一個,兩個同時在會讓 self 帳號登入兩次。
+- **三個位址不再有預設值**:`[modules.voice] turn_url`、`[modules.sing] url`、`[modules.imagegen] url` 沒寫就是沒有。hostd 回報之後登記處會有它們;在那之前(或 hostd 沒連上時)要靠設定檔明寫。切換前檢查線上設定有沒有靠預設值的。
+- **設定檔的位址和 hostd 回報的位址要寫法一致**才會被當成同一個:`localhost` 和 `127.0.0.1` 不算同一個。對不上時會用到沒有 token 的那一筆,worker 開了 token 檢查之後就是 401。
+- **Windows 上停服務是直接結束整棵行程樹**,沒有溫和停止,和現在一樣。
+- **guard 的預設來源**是 Core 的 `/api/public/status`,要 `[modules.api.public]` 開著才有;控制連線接上之後改由 Core 直接回答。
+- **Python 環境**:五個 worker 的 uv 專案已經在暫存資料夾照 lock 裝起來驗證過(torch 2.11.0+cu128,CUDA 可用)。這台換過去時 `host.toml` 先指向舊環境起一次,確認沒問題再一個一個換成 uv 管的。
+- **朋友那台**:升級前是靜態登記(沒有 token);升級並加入之後走控制連線。歌詞服務要等 H8 做完才能跨機器帶對 token。
+- **7880 埠**:Core 的 `cluster` 模組要用。切換前確認這台沒有別的東西占著。
+
 ## 風險
 
 - **hostd 壞了整台都受影響**。它要小;`up --foreground` 是不經它的退路;切換前線上那套照舊能用 `start` 啟動(H2 刪 `start` 是在分支上,線上換過去是切換那一步)。
