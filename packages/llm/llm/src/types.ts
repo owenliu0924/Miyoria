@@ -45,6 +45,12 @@ export interface ChatMessage {
   tool_calls: ToolCall[];
   /** For `tool` messages: which call this answers. */
   tool_call_id: string | null;
+  /**
+   * The model's reasoning for this assistant message. When set and not empty it is sent back
+   * with the message (`reasoning_content`), which reasoning models expect between the rounds
+   * of a tool loop.
+   */
+  reasoning?: string | null;
 }
 
 /** What stands in for an image without `alt` in text-only form. */
@@ -157,7 +163,7 @@ export interface Usage {
 /**
  * One streamed piece of a response. A well-formed stream ends with exactly one `done`.
  * `reasoning_delta` is model "thinking" (e.g. DeepSeek `reasoning_content`): it must never be
- * spoken, sent to chat, or put back into the conversation history.
+ * spoken or sent to chat. It goes back to the model only as `ChatMessage.reasoning`.
  * `tool_call_delta` fragments with the same `index` belong to the same call.
  */
 export type StreamEvent =

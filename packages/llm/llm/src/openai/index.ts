@@ -10,5 +10,9 @@ export {
   OpenAiProvider,
   type OpenAiProviderOptions,
 } from "./provider.js";
-export { SseParser } from "./sse.js";
-export { DEFAULT_REASONING_MAX_TOKENS, type ReasoningWire } from "./wire.js";
+export {
+  DEFAULT_REASONING_MAX_TOKENS,
+  PROVIDER_KINDS,
+  type ProviderKind,
+  type ReasoningWire,
+} from "./wire.js";

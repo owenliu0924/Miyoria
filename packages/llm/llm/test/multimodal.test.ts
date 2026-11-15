@@ -11,12 +11,14 @@ import {
   LlmConfigSchema,
   LlmRouter,
   MockProvider,
+  OpenAiConfig,
+  ProviderConfigSchema,
   ProviderHttpError,
   parseModelRef,
   textOnlyRequest,
   userMessage,
 } from "../src/index.js";
-import { requestBody } from "../src/openai/wire.js";
+import { wireBody } from "./support.js";
 
 const IMAGE = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -58,9 +60,8 @@ function router(providers: [string, ChatProvider][], imageInput = new Map<string
 }
 
 describe("multimodal content", () => {
-  it("serializes_image_parts_without_alt", () => {
-    const body = requestBody({ ...withImage(), model: "deepseek-v4.1-flash" });
-    expect(body.messages).toEqual([
+  it("serializes_image_parts_without_alt", async () => {
+    const expected = [
       {
         role: "user",
         content: [
@@ -68,7 +69,42 @@ describe("multimodal content", () => {
           { type: "image_url", image_url: { url: IMAGE, detail: "low" } },
         ],
       },
-    ]);
+    ];
+    const request = { ...withImage(), model: "deepseek-v4.1-flash" };
+    expect((await wireBody(request)).messages).toEqual(expected);
+    const deepseek = OpenAiConfig.fromProviderConfig(
+      ProviderConfigSchema.parse({ kind: "opencode", api_key: "k" }),
+    );
+    expect((await wireBody(request, deepseek)).messages).toEqual(expected);
+  });
+
+  it("image_urls_are_sent_as_they_are_each_with_its_detail", async () => {
+    const urls = ["https://cdn.example/a.jpg?size=512", "https://cdn.example/b", IMAGE];
+    const request: ChatRequest = {
+      model: "m",
+      messages: [
+        userMessage([
+          { type: "image_url", image_url: { url: urls[0] as string, detail: "high" } },
+          { type: "text", text: "和" },
+          { type: "image_url", image_url: { url: urls[1] as string, detail: "auto" } },
+        ]),
+        userMessage([{ type: "image_url", image_url: { url: IMAGE, detail: "low" } }]),
+      ],
+    };
+    const images = (body: Awaited<ReturnType<typeof wireBody>>) =>
+      (body.messages as { content: { type: string; image_url?: unknown }[] }[]).flatMap((m) =>
+        m.content.filter((p) => p.type === "image_url").map((p) => p.image_url),
+      );
+    const expected = [
+      { url: urls[0], detail: "high" },
+      { url: urls[1], detail: "auto" },
+      { url: IMAGE, detail: "low" },
+    ];
+    expect(images(await wireBody(request))).toEqual(expected);
+    const deepseek = OpenAiConfig.fromProviderConfig(
+      ProviderConfigSchema.parse({ kind: "deepseek" }),
+    );
+    expect(images(await wireBody(request, deepseek))).toEqual(expected);
   });
 
   it("flattens_to_text_for_text_only_models", () => {

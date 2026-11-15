@@ -16,7 +16,7 @@ import {
   parseModelRef,
   userMessage,
 } from "../src/index.js";
-import { requestBody } from "../src/openai/wire.js";
+import { wireBody } from "./support.js";
 
 const request = (): ChatRequest => ({ messages: [userMessage("hi")] });
 
@@ -93,62 +93,59 @@ describe("reasoning levels", () => {
     expect(LlmConfigSchema.parse({}).reasoning).toStrictEqual({});
   });
 
-  it("levels_map_onto_effort_or_a_max_tokens_cap", () => {
+  it("levels_map_onto_effort_or_a_max_tokens_cap", async () => {
     const cfg = (raw: Record<string, unknown>) =>
       OpenAiConfig.fromProviderConfig(ProviderConfigSchema.parse(raw));
     const deepseek = cfg({ kind: "deepseek" });
     expect(deepseek.reasoning.effort).toBe(false);
     expect(cfg({ kind: "openai" }).reasoning.effort).toBe(true);
     const body = (level: ReasoningLevel, max: number | null, c = deepseek) =>
-      requestBody(
-        { ...request(), reasoning: level, thinking: level !== "off", max_tokens: max },
-        c.thinkingOff,
-        c.reasoning,
-      );
+      wireBody({ ...request(), reasoning: level, thinking: level !== "off", max_tokens: max }, c);
     // On / off providers: thinking on, length capped per level, a smaller max kept.
-    expect(body("low", null).max_tokens).toBe(2048);
-    expect(body("low", 500).max_tokens).toBe(500);
-    expect(body("medium", null).max_tokens).toBe(8192);
-    expect(body("high", null).max_tokens).toBeUndefined();
-    expect(body("low", null).reasoning_effort).toBeUndefined();
-    expect(body("off", null).thinking).toStrictEqual({ type: "disabled" });
-    expect(body("off", null).max_tokens).toBeUndefined();
-    // Effort providers get the level itself.
+    expect((await body("low", null)).max_tokens).toBe(2048);
+    expect((await body("low", 500)).max_tokens).toBe(500);
+    expect((await body("medium", null)).max_tokens).toBe(8192);
+    expect((await body("high", null)).max_tokens).toBeUndefined();
+    expect((await body("low", null)).reasoning_effort).toBeUndefined();
+    expect((await body("off", null)).thinking).toStrictEqual({ type: "disabled" });
+    expect((await body("off", null)).max_tokens).toBeUndefined();
+    // Effort providers get the level: DeepSeek has no `medium` and takes it as `high`.
     const effort = cfg({ kind: "deepseek", reasoning_effort: true });
-    expect(body("medium", null, effort).reasoning_effort).toBe("medium");
-    expect(body("medium", null, effort).max_tokens).toBeUndefined();
-    expect(body("off", null, effort).reasoning_effort).toBeUndefined();
+    expect((await body("low", null, effort)).reasoning_effort).toBe("low");
+    expect((await body("medium", null, effort)).reasoning_effort).toBe("high");
+    expect((await body("high", null, effort)).reasoning_effort).toBe("high");
+    expect((await body("medium", null, effort)).max_tokens).toBeUndefined();
+    expect((await body("off", null, effort)).reasoning_effort).toBeUndefined();
+    // The other kinds send the level itself.
+    const openai = cfg({ kind: "openai", api_key: "k" });
+    expect((await body("medium", null, openai)).reasoning_effort).toBe("medium");
     // Caps are configurable.
     const capped = cfg({ kind: "deepseek", reasoning_max_tokens: { low: 1000, high: 20000 } });
-    expect(body("low", null, capped).max_tokens).toBe(1000);
-    expect(body("high", null, capped).max_tokens).toBe(20000);
-    expect(body("medium", null, capped).max_tokens).toBe(8192);
+    expect((await body("low", null, capped)).max_tokens).toBe(1000);
+    expect((await body("high", null, capped)).max_tokens).toBe(20000);
+    expect((await body("medium", null, capped)).max_tokens).toBe(8192);
   });
 
-  it("opencode_sends_reasoning_effort_and_never_caps_the_answer", () => {
+  it("opencode_sends_reasoning_effort_and_never_caps_the_answer", async () => {
     const cfg = (raw: Record<string, unknown>) =>
       OpenAiConfig.fromProviderConfig(ProviderConfigSchema.parse({ api_key: "k", ...raw }));
     const opencode = cfg({ kind: "opencode" });
     expect(opencode.reasoning.effort).toBe(true);
     const body = (level: ReasoningLevel, max: number | null, c = opencode) =>
-      requestBody(
-        { ...request(), reasoning: level, thinking: level !== "off", max_tokens: max },
-        c.thinkingOff,
-        c.reasoning,
-      );
-    expect(body("low", null).reasoning_effort).toBe("low");
-    expect(body("low", null).max_tokens).toBeUndefined();
-    expect(body("low", null).thinking).toBeUndefined();
-    expect(body("high", null).reasoning_effort).toBe("high");
+      wireBody({ ...request(), reasoning: level, thinking: level !== "off", max_tokens: max }, c);
+    expect((await body("low", null)).reasoning_effort).toBe("low");
+    expect((await body("low", null)).max_tokens).toBeUndefined();
+    expect((await body("low", null)).thinking).toBeUndefined();
+    expect((await body("high", null)).reasoning_effort).toBe("high");
     // A caller's own limit is kept as it is, not lowered to a level cap.
-    expect(body("low", 6000).max_tokens).toBe(6000);
+    expect((await body("low", 6000)).max_tokens).toBe(6000);
     // Off: the switch alone, no effort.
-    expect(body("off", null).thinking).toStrictEqual({ type: "disabled" });
-    expect(body("off", null).reasoning_effort).toBeUndefined();
+    expect((await body("off", null)).thinking).toStrictEqual({ type: "disabled" });
+    expect((await body("off", null)).reasoning_effort).toBeUndefined();
     // Opting out restores the old on / off behaviour with caps.
     const capped = cfg({ kind: "opencode", reasoning_effort: false });
-    expect(body("low", null, capped).max_tokens).toBe(2048);
-    expect(body("low", null, capped).reasoning_effort).toBeUndefined();
+    expect((await body("low", null, capped)).max_tokens).toBe(2048);
+    expect((await body("low", null, capped)).reasoning_effort).toBeUndefined();
     // Other kinds keep their defaults.
     expect(cfg({ kind: "deepseek" }).reasoning.effort).toBe(false);
     expect(cfg({ kind: "openai-compatible", base_url: "http://x" }).reasoning.effort).toBe(false);
