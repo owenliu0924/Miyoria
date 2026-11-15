@@ -85,6 +85,7 @@ import {
   type ModuleDeps,
   STORE_PLUGINS,
 } from "./boot.js";
+import { assertStartConfig } from "./config-schema.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
 
@@ -224,8 +225,12 @@ export const defaultCatalog: ModuleCatalog = {
   migrateStoredData,
 };
 
-/** Builds a core node from `config` with every module package. */
-export function buildCore(config: Config, options: CoreOptions = {}): Promise<Core> {
+/**
+ * Builds a core node from `config` with every module package, once the whole file fits the root
+ * schema (`assertStartConfig`: every problem that would stop the start, at once).
+ */
+export async function buildCore(config: Config, options: CoreOptions = {}): Promise<Core> {
+  assertStartConfig(config);
   return buildCoreWith(defaultCatalog, config, options);
 }
 

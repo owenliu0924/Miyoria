@@ -14,6 +14,16 @@ export {
   shutdownSignal,
 } from "./boot.js";
 export { CLI_PLATFORM, CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
+export {
+  assertStartConfig,
+  CONFIG_SECTIONS,
+  type ConfigCheck,
+  checkStartConfig,
+  MODULE_CONFIG_SCHEMAS,
+  rootConfigSchema,
+  startPolicy,
+  validateRevision,
+} from "./config-schema.js";
 export type {
   ExtensionListing,
   ExtensionManifestInfo,
