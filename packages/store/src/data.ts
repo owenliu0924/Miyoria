@@ -1226,6 +1226,7 @@ export function wipeStatements(
   profile: ProfileId,
   ids: readonly DataCategoryId[],
   options: WipeOptions = {},
+  has: PartPresent = everyPart,
 ): { part: string | null; stmt: Stmt | null }[] {
   const out: { part: string | null; stmt: Stmt | null }[] = [];
   const resolved = resolveCategories(ids);
@@ -1236,10 +1237,10 @@ export function wipeStatements(
   const ordered = [...resolved].sort((a, b) => Number(clearing(b)) - Number(clearing(a)));
   for (const id of ordered) {
     for (const part of dataCategory(id).parts) {
-      out.push({ part: part.id, stmt: deleteStmt(d, part, profile) });
+      if (has(part)) out.push({ part: part.id, stmt: deleteStmt(d, part, profile) });
     }
   }
-  if (set.has("roles")) {
+  if (set.has("roles") && dataCategory("roles").parts.every(has)) {
     for (const role of options.seedRoles ?? [])
       out.push({ part: null, stmt: seedRoleStmt(d, role) });
   }
@@ -1296,17 +1297,33 @@ export function exportCategories(ids: Iterable<DataCategoryId>): DataCategoryId[
 
 export type RunQuery = (stmt: Stmt) => Promise<Record<string, unknown>[]>;
 
+/**
+ * Whether a part's tables exist in the database. A plugin that is not installed has no tables:
+ * its parts count nothing, export nothing and delete nothing.
+ */
+export type PartPresent = (part: DataPart) => boolean;
+
+const everyPart: PartPresent = () => true;
+
+/** `PartPresent` over the names of the database's tables and views. */
+export function partPresent(names: ReadonlySet<string>): PartPresent {
+  return (part) =>
+    part.kind !== "table" ||
+    (names.has(part.table) && (part.exportFrom === null || names.has(part.exportFrom)));
+}
+
 export async function readInventory(
   d: SqlDialect,
   query: RunQuery,
   profile: ProfileId,
   now: Timestamp,
+  has: PartPresent = everyPart,
 ): Promise<DataInventory> {
   const categories: CategoryInventory[] = [];
   for (const c of DATA_CATEGORIES) {
     const parts: PartInventory[] = [];
     for (const part of c.parts) {
-      const rows = await query(countStmt(d, part, profile));
+      const rows = has(part) ? await query(countStmt(d, part, profile)) : [];
       parts.push(partInventory(part.id, rows[0]));
     }
     let breakdown: Record<string, number> | null = null;
@@ -1328,13 +1345,14 @@ export async function readExport(
   profile: ProfileId,
   ids: readonly DataCategoryId[],
   now: Timestamp,
+  has: PartPresent = everyPart,
 ): Promise<DataExport> {
   for (const id of ids) dataCategory(id);
   const categories = exportCategories(ids);
   const parts: Record<string, JsonObject[]> = {};
   for (const id of categories) {
     for (const part of dataCategory(id).parts) {
-      const rows = await query(exportStmt(d, part, profile));
+      const rows = has(part) ? await query(exportStmt(d, part, profile)) : [];
       parts[part.id] = rows.map((row) => exportPartRow(part, row));
     }
   }

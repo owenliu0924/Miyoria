@@ -68,6 +68,7 @@ export {
   type VisibleArtifact,
 } from "./artifacts/visibility.js";
 export {
+  authScopeKey,
   embeddingValues,
   fromMicros,
   normalizeTimestamp,
@@ -254,19 +255,22 @@ export {
   type ResolveOptions,
 } from "./identity/identity.js";
 export { identitySchema } from "./identity/migrations.js";
-export type {
-  AccountRow,
-  Lane,
-  LegacySnapshot,
-  LinkedBy,
-  PersonPrefs,
-  PersonRow,
-  RoomCaps,
-  RoomKind,
-  RoomRow,
-  SessionRow,
-  SpaceMemberRow,
-  SpaceRow,
+export {
+  type AccountRow,
+  // The Drizzle tables other plugins' foreign keys point at.
+  accounts,
+  type Lane,
+  type LegacySnapshot,
+  type LinkedBy,
+  type PersonPrefs,
+  type PersonRow,
+  type RoomCaps,
+  type RoomKind,
+  type RoomRow,
+  type SessionRow,
+  type SpaceMemberRow,
+  type SpaceRow,
+  spaces,
 } from "./identity/schema.js";
 export { knownNames } from "./known-names.js";
 export { legacySchema } from "./legacy-schema/index.js";
@@ -294,6 +298,13 @@ export {
   parseStoreUrl,
   type StoreLocation,
 } from "./open.js";
+export { micros } from "./orm.js";
+export {
+  type PluginContext,
+  RoutedSettings,
+  type SettingsFamily,
+  type StorePlugin,
+} from "./plugin.js";
 export {
   type Account,
   type AuditEntry,

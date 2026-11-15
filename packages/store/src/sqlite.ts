@@ -65,6 +65,8 @@ import {
   type DataCategoryId,
   type DataExport,
   type DataInventory,
+  type PartPresent,
+  partPresent,
   readExport,
   readInventory,
   type SqlDialect,
@@ -90,6 +92,7 @@ import { Identity } from "./identity/identity.js";
 import { identitySchema } from "./identity/migrations.js";
 import { legacySchema } from "./legacy-schema/index.js";
 import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
+import { type PluginContext, RoutedSettings, type StorePlugin } from "./plugin.js";
 import type {
   AuthScope,
   Bounty,
@@ -156,6 +159,8 @@ export interface SqliteStoreOptions {
   busyTimeoutMs?: number;
   /** Plugin schemas to migrate besides the store's own (`core`, `identity`, `config`, `legacy`). */
   schemas?: readonly PluginSchema[];
+  /** Plugins whose tables are migrated at open and whose code is attached (`store.plugin`). */
+  plugins?: readonly StorePlugin<unknown>[];
   /**
    * Where the artifact store keeps its bytes. Default: `artifacts` beside a database file; none
    * for `:memory:` (then `artifacts` is `null`).
@@ -1213,13 +1218,20 @@ class SqliteProfileData implements ProfileDataStore {
 
   #query = async (stmt: Stmt) => this.db.allStmt(stmt);
 
+  /** The parts whose tables exist: a plugin's are there once it is installed. */
+  #present(): PartPresent {
+    const rows = this.db.all("SELECT name FROM sqlite_schema WHERE type IN ('table', 'view')");
+    return partPresent(new Set(rows.map((r) => String(r.name))));
+  }
+
   async inventory(profile: ProfileId): Promise<DataInventory> {
-    return readInventory(SQLITE_DIALECT, this.#query, profile, fromMicros(this.db.nowMicros()));
+    const now = fromMicros(this.db.nowMicros());
+    return readInventory(SQLITE_DIALECT, this.#query, profile, now, this.#present());
   }
 
   async export(profile: ProfileId, categories: readonly DataCategoryId[]): Promise<DataExport> {
     const now = fromMicros(this.db.nowMicros());
-    return readExport(SQLITE_DIALECT, this.#query, profile, categories, now);
+    return readExport(SQLITE_DIALECT, this.#query, profile, categories, now, this.#present());
   }
 
   async wipe(
@@ -1227,7 +1239,13 @@ class SqliteProfileData implements ProfileDataStore {
     categories: readonly DataCategoryId[],
     options: WipeOptions = {},
   ): Promise<WipeCounts> {
-    const statements = wipeStatements(SQLITE_DIALECT, profile, categories, options);
+    const statements = wipeStatements(
+      SQLITE_DIALECT,
+      profile,
+      categories,
+      options,
+      this.#present(),
+    );
     try {
       return this.db.tx(() => {
         const counts: WipeCounts = {};
@@ -2098,9 +2116,21 @@ export class SqliteStore implements Store {
   /** The files she makes (the `artifact` plugin's tables, bytes under the artifact root). */
   readonly artifacts: ArtifactStore | null;
   readonly #db: Db;
+  readonly #location: string;
+  /** Every schema migrated on this database by this store (the store's own and plugins'). */
+  readonly #schemas: PluginSchema[];
+  readonly #settings: RoutedSettings;
+  readonly #plugins = new Map<string, { plugin: StorePlugin<unknown>; opened: unknown }>();
 
-  private constructor(db: Db, artifactRoot: string | null) {
+  private constructor(
+    db: Db,
+    artifactRoot: string | null,
+    schemas: readonly PluginSchema[],
+    location: string,
+  ) {
     this.#db = db;
+    this.#location = location;
+    this.#schemas = [...schemas];
     this.persons = new Identity(db);
     this.events = new EventStore(db, { identity: this.persons });
     this.artifacts =
@@ -2114,7 +2144,8 @@ export class SqliteStore implements Store {
     this.moduleState = new ConfigModuleState(db, revisions);
     this.personaOverrides = new SqlitePersonaOverrides(db);
     this.people = new IdentityPeople(this.persons);
-    this.settings = new PrefsSettings(new SettingsState(db), this.persons);
+    this.#settings = new RoutedSettings(new PrefsSettings(new SettingsState(db), this.persons));
+    this.settings = this.#settings;
     this.memories = new SqliteMemories(db);
     this.relationships = new SqliteRelationships(db);
     this.identity = new IdentityLinks(this.persons);
@@ -2162,17 +2193,45 @@ export class SqliteStore implements Store {
         db.exec("PRAGMA synchronous = NORMAL");
       }
       db.exec("PRAGMA foreign_keys = ON");
-      migrate(
-        db,
-        [identitySchema, configSchema, legacySchema, artifactSchema, ...(options.schemas ?? [])],
-        { location: path },
-      );
+      const plugins = options.plugins ?? [];
+      const schemas = [
+        identitySchema,
+        configSchema,
+        legacySchema,
+        artifactSchema,
+        ...(options.schemas ?? []),
+        ...plugins.map((p) => p.schema),
+      ];
+      migrate(db, schemas, { location: path });
+      const root = options.artifactRoot ?? (memory ? null : join(dirname(path), "artifacts"));
+      const store = new SqliteStore(db, root, schemas, path);
+      for (const plugin of plugins) store.plugin(plugin);
+      return store;
     } catch (error) {
       db.close();
       throw error;
     }
-    const root = options.artifactRoot ?? (memory ? null : join(dirname(path), "artifacts"));
-    return new SqliteStore(db, root);
+  }
+
+  plugin<T>(plugin: StorePlugin<T>): T {
+    const id = plugin.schema.plugin;
+    const attached = this.#plugins.get(id);
+    if (attached !== undefined) {
+      if (attached.plugin !== plugin) {
+        throw new StoreError(`another plugin with the schema \`${id}\` is attached already`);
+      }
+      return attached.opened as T;
+    }
+    this.#db.ensureOpen();
+    if (!this.#schemas.some((s) => s.plugin === id)) {
+      migrate(this.#db, [...this.#schemas, plugin.schema], { location: this.#location });
+      this.#schemas.push(plugin.schema);
+    }
+    const ctx: PluginContext = { db: this.#db, events: this.events, identity: this.persons };
+    const opened = plugin.open(ctx);
+    for (const family of plugin.settings?.(opened) ?? []) this.#settings.route(family);
+    this.#plugins.set(id, { plugin: plugin as StorePlugin<unknown>, opened });
+    return opened;
   }
 
   /**

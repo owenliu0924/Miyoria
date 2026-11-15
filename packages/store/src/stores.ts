@@ -24,6 +24,7 @@ import type { ChatLogStore } from "./events/chat.js";
 import type { LlmCallStore } from "./events/llm.js";
 import type { EventLogStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
+import type { StorePlugin } from "./plugin.js";
 import type {
   Account,
   AuditEntry,
@@ -553,6 +554,11 @@ export interface Store {
    * `persons.handle`). Optional: without it the app keeps them in `settings`.
    */
   readonly handles?: PersonHandleDirectory;
+  /**
+   * A plugin's tables on this database and its code over them (`plugin.ts`): migrated when the
+   * store opened with it, or the first time it is asked for; built once per store.
+   */
+  plugin<T>(plugin: StorePlugin<T>): T;
   /** Releases the backend (closes the database). */
   close(): Promise<void>;
 }
