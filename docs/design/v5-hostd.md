@@ -421,6 +421,11 @@ miyoria host ls | approve <name> [capability...] | remove <name>
   `workers/service_auth.py`, a FastAPI dependency that requires the bearer token on every route
   when `MIYORIA_SERVICE_TOKEN` is set, and does nothing when it is not (a worker run by hand).
   hostd's own probes send the token.
+- Until H7 and H8 remove them, workers still call their neighbours on the same machine (the sing
+  worker's offload calls to TTS and ASR, the lyrics code's ASR check). For those hostd also gives
+  every service of the machine one shared `MIYORIA_HOST_TOKEN`, new at each daemon start; a worker
+  accepts its own token or the host token, and sends the host token to a neighbour.
+- The host id and key live together in `<state>/host.key` as JSON `{ "id", "key" }`.
 - `remove` revokes the key, closes the link, drops the host's endpoints.
 
 ### 7.1 Relay over the control link (H5b)
