@@ -590,7 +590,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 
 **階段 1 在 2026-11-15 合併**(PR #53),線上已經跑在新的資料庫和契約上。
 
-**階段 2 在 2026-11-15 開始**(分支 `v5p2`)。設計、要 owner 決定的七件事和工作順序在 [v5-hostd.md](v5-hostd.md)。hostd 是 `packages/hostd` 而不是 app,因為發佈的 CLI 要把它包進去,和 Core 一樣。
+**階段 2 在 2026-11-16 合併**(PR #55),線上已經由 hostd 管理:這台的七個服務由它啟動和重啟,語音辨識、語音合成和斷句跑在 uv 的環境上,Core 經登記處帶 token 呼叫它們。還沒做的收尾列在 [backlog.md](backlog.md) 的「V5 階段 2」兩節。設計、owner 決定的七件事和工作順序在 [v5-hostd.md](v5-hostd.md)。hostd 是 `packages/hostd` 而不是 app,因為發佈的 CLI 要把它包進去,和 Core 一樣。
 
 階段 2 和 3 互不相干,同時做(owner 2026-11-14)。照之前的做法:依套件切給子代理、各自的 worktree、我整合和驗收,核心改動另外找一個獨立的 review。
 

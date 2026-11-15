@@ -163,7 +163,18 @@
 - **有一個中繼測試只在機器很忙時失敗過一次**:`packages/cluster/test/relay.test.ts` 的 `aborts mid-body`(中途中斷時讀的一方失敗、服務看到關閉)在負載高時失敗過一次,之後每次重跑都過。再出現就改成等條件成立,不要加長逾時。
 - **MediaMTX 有三個埠,不進登記處**:API(9997)、RTMP(1935)、LL-HLS(8888),voice node 的編碼器用其中一個,所以 `[modules.live.video]` 仍然自己寫位址。hostd 只啟動它和探測行程。`workers/mediamtx/start.ps1` 和 `workers/mediamtx/README.md` 裡講它的部分還沒刪(`v5-hostd.md` §12)。
 - **`check_imports` 每個服務只有一份清單**:`doctor --deep` 用服務自己環境的 Python 去 import `service.toml` 的 `check_imports`,那份清單是預設後端的。換了後端(ASR 的 `sensevoice`、TTS 的 `qwen-tts`)後,清單裡的套件(`torch`、`qwen_asr`、`faster_qwen3_tts`)可能不在環境裡,會誤報失敗。要讓清單跟著 extras 走,還沒做。
-- **`sing` 的描述檔漏了參考音**:`workers/sing/service.toml` 的 `install.manual` 沒有 `workers/voices/<聲音>/ref.wav`,但 worker 啟動時要它(`SING_REF`),缺了就啟動失敗;而且 `seed-vc` 項目寫著「只有 seedvc 轉換鏈用得到」,實際上 `engine.py` 啟動時一定檢查 `models/seed-vc/modules`。`miyoria add sing` 因此少列一項,又把一項說成可略過。
+
+### V5 階段 2 合併之後還沒做的收尾(2026-11-16)
+
+階段 2 在 2026-11-16 合併(PR #55)。下面是 `v5-hostd.md` 切換清單第三段還沒做的,照建議的順序:
+
+- **登入時自動啟動還沒開**:`miyoria host autostart on` 要 owner 自己執行,再照清單檢查四點(工作是用自己的帳號、沒有視窗、手動觸發能帶起服務、登出再登入後會回來)。這個指令從來沒有在真的 Windows 帳號上註冊過。在那之前,重開機後要手動 `miyoria up`。
+- **朋友那台(翻唱)還沒升級**:照 `docs/sing-remote-host.md`。現在它是設定檔裡的靜態登記(`[modules.sing] url`),沒有 token;他那台的歌詞語音辨識抽查會被這台擋下(這台的語音辨識現在要 token)。經控制連線的中繼也因此還沒有被真的另一台電腦用過。
+- **hostd 的顯卡仲裁沒有在真的顯卡上跑過**:這台是 `[gpu] arbiter = "worker"`,而且沒有跑翻唱。2026-11-16 修的兩件事(伴唱也轉換時和重新載入的語音搶顯卡、預設策略下無限等)只通過對照表和模擬情境。要測得在這台唱一次歌:owner 明確同意、`host.toml` 設 `[gpu] arbiter = "hostd"`、加上翻唱服務、在語音裡點一首歌。
+- **刪除只為了搬遷留著的東西**(另開一個 PR,`v5-hostd.md` §12):`[stack]` 和 `[machine]`、`host migrate`、`stack/roles.ts`、`stack/config.ts`、`workers/mediamtx/start.ps1`。下面兩項要等前面的事:設定裡的位址鍵和它們的靜態登記(等朋友那台升級);唱歌 worker 自己的顯卡判斷、`SING_OFFLOAD_URLS`、`SING_YIELD_URLS`、Core 對 worker 的 `/gpu/context` 推送(等顯卡仲裁實測過)。
+- **舊的 Python 環境還在**:`workers/.venv-asr`、`.venv-tts`、`.venv-turn` 是換成 uv 之前的環境,留著當退路;`data/backups/host.toml.old-venvs-20261116` 有換回去要用的那幾行。uv 的環境穩定一陣子之後可以刪。
+- **她的聲音少一個檔**:`workers/voices/deepseek-chan/ref.txt`(參考音實際說的內容)不在,語音合成因此用只看音色的模式載入,`doctor` 會提醒。切換前就是這樣。
+- **npm 還沒發佈**(owner 2026-11-15:晚點)。
 
 
 ## 4. 自我修復與自我改進(備忘)
