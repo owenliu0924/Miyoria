@@ -14,6 +14,8 @@ import {
   type Authorizer,
   AuthorizerKey,
   type ContextKey,
+  Events,
+  is,
   type Subject,
 } from "@miyoria/types";
 import { afterEach, describe, expect, test } from "vitest";
@@ -298,8 +300,8 @@ describe("auth module config", () => {
     try {
       for (;;) {
         const env = await states.recv();
-        if (env?.event.type === "module_state_changed" && env.event.data.state === "failed") {
-          expect(env.event.data.reason).toContain("invalid account `nope`");
+        if (env !== null && is(Events.SystemModuleState, env) && env.data.state === "failed") {
+          expect(env.data.reason).toContain("invalid account `nope`");
           break;
         }
       }
