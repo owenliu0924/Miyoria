@@ -416,9 +416,9 @@ urgent and not; policies `share`, `wait`, `offload`; no CUDA; the RVC stage and 
 Decided 2026-11-16 (the twelve questions of the first version of this section, all answered as
 recommended, image generation deferred) and built in H7b part 1: `packages/hostd/src/arbiter`
 (not wired into the daemon yet), the shapes in `@miyoria/contracts/host` (`gpu.ts`), and three
-tests in `packages/hostd/test/arbiter`. The Python worker keeps its own arbitration until the
-owner has heard a live song request in a voice call on the new path; the switch and the Python
-lease client are a later part.
+tests in `packages/hostd/test/arbiter`. H7b part 2 added the Python lease client behind a switch
+(§12.6, §12.7); the worker keeps deciding by itself by default until the owner has heard a live
+song request in a voice call on the new path.
 
 ### 12.1 Where each recorded function lives now
 
@@ -475,8 +475,8 @@ it from the service token).
   7, reproduced). **At the job's end** (done, failed or cancelled): wait for that, then
   `gpu.release { window: "close", done: true }` → the job's summary for `meta.json`.
 - **Keep-alive**: the job's lease ends after `max_s` (60) without a call; the worker sends a bare
-  `gpu.renew { lease }` every 20 s whenever it is not stepping (mixing, a long CPU stretch without
-  gates).
+  `gpu.renew { lease }` whenever 20 s passed since its last call of any kind (the ack wait, a long
+  reload, the mix).
 - **Core**: `cluster.context { in_voice, listeners, live, urgent }` to hostd, every poll while a
   song is prepared (today's push, other address); the TTL rule stays 20 s. Core keeps reading the
   job's `exclusive` field from the worker for its speech pause and its go (decision 12).
@@ -549,10 +549,95 @@ The daemon routes `gpu.acquire` (with the caller's service name as holder), `gpu
 `cluster.context` to `context()`; calls `holderGone(name)` when a service's process exits;
 `recover()` at start; `close()` at shutdown.
 
-### 12.6 Not done here
+### 12.6 The song worker as a lease client (H7b part 2)
 
-- Wiring into the daemon and the local API; the real device reader, peer client, profile file.
-- The Python lease client and the switch between the two paths.
-- `schema/host.json` is regenerated in the working tree but not committed: it also carries
-  another step's uncommitted `methods.ts` shapes.
-- Image generation as a share-only tenant (decision 9).
+`SING_GPU_ARBITER` picks who decides: `self` (the default, today's code, unchanged in behaviour:
+the recorded table and scenarios are reproduced without a diff) or `hostd` (`workers/sing/lease.py`).
+
+**One seam.** server.py's job loop (`_gpu_stage`, `_give_gpu_back`, `run_job`, `/gpu/context`,
+`/health`) calls an arbitration object chosen at start: `SelfArbitration` in server.py, which only
+delegates to the functions that were there, or `HostdArbitration` in lease.py. Both have the same
+methods: `start`, `place`, `arm` (the gate), `run_begins`, `run_ended`, `close_window`,
+`give_back`, `finish`, `startup`, `context`, `health`. In `hostd` mode `job.gpu`,
+`job.exclusive` and `job.yielding` are lease.py's `LeaseJob`, `LeaseWindow` and `LeaseYield`, with
+the same fields and shapes as gpu.py's `GpuJob`, exclusive.py's `Exclusive` and yielding.py's
+`SpeechYield`, so what Core and the panel read (`exclusive` and its states, `stage`, `gpu`,
+`yielded`, the summary in `meta.json`) means the same in both modes. `/health`'s `gpu` section
+gains `arbiter: "self" | "hostd"`; in `hostd` mode its other fields come from `gpu.state` (read
+at most every 2 s) and the worker's own per-stage learning. hostd's summary of a job, known only
+when its lease ends, replaces the provisional one in `meta.json`.
+
+When `self` goes: delete `SelfArbitration`, `_start_gpu`, `_place`, `_open_window`,
+`_close_window`, `_act`, `_arm`, `_urgent`, `_recover_speech` and `State.offload_post` /
+`busy_get` from server.py; exclusive.py and yielding.py; in gpu.py everything but `Profile`
+(per-stage half), `StepMeter`, `typical_peak`, `RATE_PRIORS`, `CPU_STAGES`, `CPU_FALLBACK`;
+`SING_OFFLOAD_URLS`, `SING_YIELD_URLS` and the other `SING_*` limits hostd now reads; the self
+half of the table test; and the switch itself.
+
+**What the worker sends, and when**: §12.2, implemented as listed there, plus `gpu.state` once
+when a job's first GPU stage starts (the policy the job shows). The keep-alive is a bare
+`gpu.renew` 20 s after the last call of any kind, so it also runs during the ack wait and during a
+long reload. In `hostd` mode the worker makes no call to the speech workers, does not run
+`_recover_speech`, and answers `POST /gpu/context` with `{"ok": true, "ignored": ...}` (logged
+once). Core's go (`POST /jobs/{id}/exclusive`) works as before.
+
+**When hostd cannot be asked**:
+
+| Case | What the worker does | Limit and why |
+|---|---|---|
+| `SING_GPU_ARBITER=hostd` without `MIYORIA_HOSTD_URL` and `MIYORIA_SERVICE_TOKEN`, or another value | refuses to start, saying which | a wrong switch must not become self-arbitration |
+| hostd unreachable or erroring while a stage is placed (`gpu.acquire`) | holds nothing, `stage: gpu_wait`, asks again after 0.5, 1, 2, 4, then every 5 s | `SING_OFFLOAD_LEASE_S` (60 s), then the job fails: "hostd did not answer gpu.acquire for 60 s: …". hostd's lease for a silent holder is 60 s: past it hostd has dropped the job and brought speech back, so nothing the job waited for is left. Steps stay under 5 s, the old renewal timeout, so a restarting hostd is noticed within seconds |
+| `gpu.renew` fails, or answers `ok: false`, before a step | the stage lets go (suspend `hostd_unreachable`), a window counts as released (a failing `close` release is recorded in the window's errors), then the stage is placed again as above | giving the card back costs the song time at most; running on would keep her voice offline with nobody keeping the silence limit. Her voice does not depend on the worker: hostd renews the speech workers' lease only while it lives, and they reload themselves when that lease runs out |
+| `gpu.busy` fails | counts as not busy | as a speech worker that did not answer `/busy` |
+| `gpu.release` fails | the window is recorded as given back, with the error | as above |
+| `refused` | the job fails with hostd's reason | |
+
+### 12.7 The cross-check between the Python client and the TypeScript arbiter
+
+`packages/hostd/test/arbiter/scenarios.test.ts` records, for each of the 26 scenarios, every
+`gpu.*` call its worker made to the real `Arbiter` and the answer, in simulated seconds, into
+`lease_exchanges.jsonl` (JSON Lines; `UPDATE_LEASE_EXCHANGES=1` rewrites it, otherwise the test
+fails when it is stale). `workers/tests/test_gpu_lease_replay.py` runs the song worker's real job
+loop with `SING_GPU_ARBITER=hostd` on the Python recorder's simulated clock against a hostd that
+answers from that file. The rule, as strict as the recording allows:
+
+1. Every call is the next recorded one with the same params, at the same simulated time to the
+   last bit. A run of equal calls answered at once is stored as one entry: same params each time,
+   the first and last at the recorded times, the count equal, the ones between within them.
+   `gpu.busy` calls must fall in a recorded run of equal answers, with the same count per run. A
+   call answered later in the recording is answered at the recorded time.
+2. Every recorded call is made.
+3. What the job shows against the Python worker's own recording (`gpu_scenarios.json`), by the rule
+   of §12.3: the worker's states (`stage`, `exclusive`, `window`, `running`, `yield_pauses`) as
+   end-of-instant timelines, its own and the script's events in order, and the result.
+
+All 26 pass. A one-second change of the keep-alive period fails 16 of them.
+
+What it proves: the Python client asks hostd exactly what the TypeScript harness's worker asked,
+when it asked it, and, given the arbiter's answers, ends where the self-arbitrating worker ended.
+With §12.3 (the arbiter's answers reproduce the self-arbitrating worker's speech calls and
+decisions), the two halves are checked against each other rather than each against its own fake.
+What it does not prove: the transport (`hostd_client.py`, the daemon's routing and schema
+checks), real time and real thread interleaving, the speech services themselves, and the failure
+paths (those are covered by `workers/tests/test_sing_lease.py` against a scripted hostd).
+Answers are replayed, so a request hostd would answer differently shows up only as a different
+request.
+
+### 12.8 Before a live test
+
+- **Daemon wiring** (`packages/hostd` outside `arbiter`): construct the `Arbiter` (§12.5); route
+  `gpu.acquire` (holder = the calling service), `gpu.renew`, `gpu.release`, `gpu.busy`,
+  `gpu.state` from the local API after parsing with the contract schemas; pass
+  `cluster.context` from the control link to `context()`; call `holderGone(name)` when a
+  service's process exits; `recover()` at start; `close()` at shutdown. The real device reader
+  (free = total − used, the whole device), the peer client (HTTP with each service's token,
+  timeouts in seconds), the `CardProfile` file in the state folder, and the policy and limits
+  from host settings.
+- **The sing service under hostd** gets `SING_GPU_ARBITER=hostd` and the hostd variables in its
+  environment; `SING_OFFLOAD_URLS` is then unused. (Its `service.toml` is not this step's.)
+- **Core**: send `cluster.context` to the hosts that hold `tts` or `asr`, on the same poll and
+  with the same fields as today's `/gpu/context` push; keep the go and keep reading the job's
+  `exclusive`. The old push can stay until the self path is deleted (the worker ignores it).
+- **Contracts** (not this step's files): `WorkersSingHealth.gpu` may describe the new `arbiter`
+  field; nothing is strict about it today, so nothing breaks without it.
+- Image generation stays as it is (decision 9).
