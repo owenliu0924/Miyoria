@@ -14,6 +14,7 @@ import {
   type ActivityTransition,
   EMERGENCY_TOPIC,
   type Event,
+  publishInto,
   type TransitionResult,
   TurnSilencerKey,
   toTimestamp,
@@ -134,7 +135,7 @@ function rig(options: { silence?: boolean } = {}) {
   const registry = new ActuatorRegistry({
     services,
     builtins: false,
-    publish: (e) => events.push(e),
+    publish: publishInto(events),
   });
   registry.configure({ ...registry.config, emergency_step_ms: 200 });
   const stop = () => registry.emergency.stop("panel:test", "test");

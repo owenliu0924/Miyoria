@@ -302,7 +302,7 @@ export async function rig(provider: TestProvider, options: RigOptions = {}): Pro
   const registry = new ActuatorRegistry({
     services: sup.services,
     builtins: false,
-    publish: (e) => sup.bus.publish("actions", e),
+    publish: sup.bus.publisher("actions"),
   });
   for (const name of ["chat.start", "chat.dm", "voice.join", "speak"]) {
     registry.register(

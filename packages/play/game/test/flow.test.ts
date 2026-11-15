@@ -63,10 +63,8 @@ class Flow {
       services: this.sup.services,
       tools: this.tools,
       builtins: false,
-      publish: (e) => {
-        if (e.type === "custom" && e.data.topic === "gate.decision") {
-          this.gate.push(e.data.payload as unknown as GateDecision);
-        }
+      publish: (definition, data, ..._meta) => {
+        if (definition.type === "gate.decision") this.gate.push(data as unknown as GateDecision);
       },
     });
     this.exec = new FakeExecutor(

@@ -11,6 +11,7 @@ import {
   type LegacyEnvelope,
   type ModuleId,
   newEnvelope,
+  type Publish,
   type PublishMetaArgs,
   toEnvelope,
 } from "@miyoria/types";
@@ -301,6 +302,13 @@ export class EventBus {
         )
       : newEnvelope(source, event, (dataOrOptions ?? {}) as EnvelopeOptions);
     return this.publishEnvelope(envelope);
+  }
+
+  /** `publish` by definition with `source` fixed, for the parts a module hands it to. */
+  publisher(source: ModuleId): Publish {
+    return (definition, data, ...meta) => {
+      this.publish(source, definition, data, ...meta);
+    };
   }
 
   subscribe(filter: TopicFilterLike, options: SubscribeOptions = {}): Subscription {

@@ -2,13 +2,7 @@
 // published on the bus and logged without the text, so the log can be shown publicly.
 
 import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
-import {
-  customEvent,
-  type JsonValue,
-  MODERATION_BLOCK_TOPIC,
-  MODERATION_INPUT_TOPIC,
-  ModerationKey,
-} from "@miyoria/types";
+import { Events, ModerationKey } from "@miyoria/types";
 import { type ModerationConfig, ModerationConfigSchema } from "./config.js";
 import { Moderation } from "./service.js";
 
@@ -50,9 +44,7 @@ export class ModerationModule implements Module {
           },
           "output blocked",
         );
-        ctx.publish(customEvent(MODERATION_BLOCK_TOPIC, record as unknown as JsonValue), {
-          turn: record.turn,
-        });
+        ctx.publish(Events.ModerationBlocked, record, { turn: record.turn });
       },
       onInput: (record) => {
         ctx.log.info(
@@ -64,7 +56,7 @@ export class ModerationModule implements Module {
           },
           "input flagged",
         );
-        ctx.publish(customEvent(MODERATION_INPUT_TOPIC, record as unknown as JsonValue));
+        ctx.publish(Events.ModerationInput, record);
       },
       onProviderFailure: (provider, reason) =>
         ctx.log.warn({ provider, reason }, "moderation provider failed"),

@@ -32,16 +32,17 @@ import {
   AuthorizerKey,
   accountRefString,
   type Clock,
-  customEvent,
   DirectivesKey,
   type DirectiveVerdict,
-  type Event,
+  Events,
+  type GateDecisionPayload,
   isAutonomous,
   type JsonValue,
   type LaneKey,
   newAction,
   newId,
   type Priority,
+  type Publish,
   principalActor,
   SocialSignalsKey,
   sameAccount,
@@ -74,7 +75,7 @@ import { CapabilityTool } from "./tools.js";
 const log = getLogger("actions");
 
 /** Topic of the event published for every gate decision. */
-export const GATE_DECISION_TOPIC = "gate.decision";
+export const GATE_DECISION_TOPIC = Events.GateDecision.type;
 /** Settings key (profile `_global`) of the runtime pause switch. */
 export const PAUSED_KEY = "autonomy:paused";
 
@@ -85,7 +86,7 @@ export interface ActuatorRegistryOptions {
   /** Where capability tools are registered (none: no tools). */
   tools?: ToolRegistry | null;
   /** Publishes `gate.decision` events. */
-  publish?: (event: Event) => void;
+  publish?: Publish;
   clock?: Clock;
   /** Register the built-in `message.dm` and `speak` (the app's registry does). Default `true`. */
   builtins?: boolean;
@@ -251,7 +252,7 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Pro
 export class ActuatorRegistry implements ActuatorExecutor {
   readonly #services: ServiceLookup;
   readonly #tools: ToolRegistry | null;
-  readonly #publish: (event: Event) => void;
+  readonly #publish: Publish;
   readonly #clock: Clock;
   readonly #capabilities = new Map<string, Capability>();
   readonly #tickets = new Map<string, Ticket>();
@@ -277,13 +278,13 @@ export class ActuatorRegistry implements ActuatorExecutor {
     this.privacy = new Privacy(options.services);
     this.escalations = new Escalations(this.#clock);
     this.followups = new Followups(
-      (event) => this.#publish(event),
+      (definition, data, ...meta) => this.#publish(definition, data, ...meta),
       () => this.#clock.now(),
     );
     this.emergency = new EmergencyStop({
       services: options.services,
       clock: this.#clock,
-      publish: (event) => this.#publish(event),
+      publish: (definition, data, ...meta) => this.#publish(definition, data, ...meta),
       setPaused: (paused) => this.setPaused(paused),
       invoke: (request, signal) => this.invoke(request, { signal }),
       stepMs: () => this.#config.emergency_step_ms,
@@ -779,7 +780,8 @@ export class ActuatorRegistry implements ActuatorExecutor {
     else log.info(fields, "gate denied an action");
     const payload = toJson(decision);
     try {
-      this.#publish(customEvent(GATE_DECISION_TOPIC, payload));
+      // A JSON round trip of the decision, as published before.
+      this.#publish(Events.GateDecision, payload as GateDecisionPayload);
     } catch (error) {
       log.debug({ err: errorMessage(error) }, "cannot publish gate decision");
     }

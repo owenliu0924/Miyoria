@@ -177,7 +177,7 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
   const actuators = new ActuatorRegistry({
     services,
     tools,
-    publish: (event) => sup.bus.publish("actions", event),
+    publish: sup.bus.publisher("actions"),
   });
   services.provide("app", ActuatorRegistryKey, actuators);
 

@@ -12,6 +12,7 @@ import {
   PlatformSinks,
   PlatformSinksKey,
   Principals,
+  publishInto,
   type StreamCurtain,
   StreamCurtainKey,
   type Subject,
@@ -121,7 +122,7 @@ function setup(nodes: string[], options: SetupOptions = {}) {
     services,
     tools,
     builtins: false,
-    publish: (e) => events.push(e),
+    publish: publishInto(events),
   });
   for (const c of voiceCapabilities(
     link as unknown as VoiceLink,

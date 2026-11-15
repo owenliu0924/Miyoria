@@ -4,6 +4,7 @@ import {
   type Event,
   impulseReason,
   Principals,
+  publishInto,
   v2Payload,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -128,10 +129,7 @@ describe("Followups", () => {
   it("retries_skipped_deliveries_until_they_are_too_old", () => {
     vi.useFakeTimers();
     const events: Event[] = [];
-    const f = new Followups(
-      (e) => events.push(e),
-      () => Date.now(),
-    );
+    const f = new Followups(publishInto(events), () => Date.now());
     f.deliver(CTX, "result", [AMY]);
     expect(initiatives(events)).toHaveLength(1);
     const skipped = {

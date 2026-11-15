@@ -9,6 +9,7 @@ import {
   isEventDefinition,
   type JsonValue,
   type ModuleId,
+  type Publish,
   type PublishMetaArgs,
   type ServiceKey,
   type TurnId,
@@ -120,6 +121,11 @@ export class ModuleContext {
       correlation: options.turn ?? null,
       causation: options.causation ?? null,
     });
+  }
+
+  /** `publish` by definition from this module, for the parts the module hands it to. */
+  get publisher(): Publish {
+    return this.#host.bus.publisher(this.#host.id);
   }
 
   /** Subscription that closes automatically when the module stops. */

@@ -22,15 +22,13 @@ import {
   type ActivityRequest,
   type ActivitySnapshot,
   type Clock,
-  customEvent,
-  EMERGENCY_TOPIC,
   type EmergencyReport,
   type EmergencyStep,
   type EmergencyStepName,
-  type Event,
-  type JsonValue,
+  Events,
   type Principal,
   Principals,
+  type Publish,
   type TaskId,
   TurnSilencerKey,
   toTimestamp,
@@ -49,7 +47,7 @@ const POLL_MS = 100;
 export interface EmergencyDeps {
   services: ServiceLookup;
   clock: Clock;
-  publish(event: Event): void;
+  publish: Publish;
   /** The flag: in memory at once, then persisted. */
   setPaused(paused: boolean): Promise<void>;
   /** Runs a capability through the gate. */
@@ -100,7 +98,7 @@ export class EmergencyStop {
     const report: EmergencyReport = { paused, by, at, steps };
     this.#last = report;
     log.warn({ by, paused, steps }, paused ? "emergency stop" : "emergency stop lifted");
-    this.#d.publish(customEvent(EMERGENCY_TOPIC, report as unknown as JsonValue));
+    this.#d.publish(Events.AutonomyEmergency, report);
     return report;
   }
 

@@ -200,6 +200,16 @@ export type PublishMetaArgs<D extends AnyEventDefinition> =
     ? [meta: EventMeta & { type: string }]
     : [meta?: EventMeta & { type?: undefined }];
 
+/**
+ * Publishes one event by definition: what a module hands the parts that publish for it
+ * (`ctx.publisher`, `bus.publisher(source)`).
+ */
+export type Publish = <D extends AnyEventDefinition>(
+  definition: D,
+  data: EventPayload<D>,
+  ...meta: PublishMetaArgs<D>
+) => void;
+
 /** Dotted topic -> old variant, for the view. */
 const VARIANT_OF_TOPIC: ReadonlyMap<string, Exclude<EventType, "custom">> = new Map(
   (Object.entries(EVENT_TOPICS) as [Exclude<EventType, "custom">, string][]).map(([k, v]) => [
@@ -381,6 +391,17 @@ export function toEnvelope(envelope: Envelope | BusEnvelope | LegacyEnvelope): E
   if (!("at" in envelope)) return fromLegacyEnvelope(envelope);
   if ("event" in envelope) return envelope;
   return withView(envelope);
+}
+
+/**
+ * A `Publish` that appends the old `{type, data}` form of each event to `events`: for tests that
+ * record what a part publishes (until the old forms are gone).
+ */
+export function publishInto(events: Event[]): Publish {
+  return (definition, data, ...meta) => {
+    const type = (meta[0] as { type?: string } | undefined)?.type ?? definition.type;
+    events.push(legacyEvent(type, data));
+  };
 }
 
 /** Module id of the kernel itself: source of `system.module.state` events. */

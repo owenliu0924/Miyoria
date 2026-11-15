@@ -28,6 +28,7 @@ import {
   type Envelope,
   type Event,
   type MessageRef,
+  publishInto,
   SocialSignalsKey,
   type Subject,
 } from "@miyoria/types";
@@ -161,7 +162,7 @@ export async function gate(): Promise<Gate> {
   services.provide(k, CommandRegistryKey, commands);
   const tools = new ToolRegistry();
   const events: Event[] = [];
-  const registry = new ActuatorRegistry({ services, tools, publish: (e) => events.push(e) });
+  const registry = new ActuatorRegistry({ services, tools, publish: publishInto(events) });
   const runs: string[] = [];
   for (const c of testCapabilities(runs)) registry.register(c);
   return { services, registry, tools, authorizer, router, replies, social, store, events, runs };

@@ -10,7 +10,7 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
-import { PresencePrivacyKey } from "@miyoria/types";
+import { Events, is, PresencePrivacyKey } from "@miyoria/types";
 import { testHigh } from "./builtin.js";
 import { registerCommands, unregisterCommands } from "./commands.js";
 import { ActionsConfigSchema } from "./config.js";
@@ -27,7 +27,7 @@ export function actuatorsFor(ctx: ModuleContext): ActuatorRegistry {
     new ActuatorRegistry({
       services: ctx.services,
       tools: ctx.services.get(ToolRegistryKey) ?? null,
-      publish: (event) => ctx.publish(event),
+      publish: ctx.publisher,
       clock: ctx.clock,
       builtins: false,
     })
@@ -87,10 +87,10 @@ export class ActionsModule implements Module {
     commands.attach(ctx);
     this.#commands = commands;
     // Skipped follow-ups (a turn in flight, her cooldown) are tried again.
-    const decisions = ctx.subscribe(["agent.decision"]);
+    const decisions = ctx.subscribe([Events.AgentDecision.type]);
     ctx.spawn("followups", async () => {
       for await (const env of decisions) {
-        if (env.event.type === "agent_decision") registry.followups.onDecision(env.event.data);
+        if (is(Events.AgentDecision, env)) registry.followups.onDecision(env.data);
       }
     });
   }

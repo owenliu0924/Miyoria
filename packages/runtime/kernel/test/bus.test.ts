@@ -1,4 +1,4 @@
-import { customEvent, type Envelope, type Event, serviceKey } from "@miyoria/types";
+import { customEvent, type Envelope, type Event, Events, is, serviceKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   EventBus,
@@ -74,6 +74,58 @@ describe("EventBus", () => {
 
     const late = bus.subscribe("*", { signal: controller.signal });
     expect(late.closed).toBe(true);
+  });
+});
+
+describe("publishing by definition", () => {
+  const context = { platform: "discord", scope: "g", channel: "c", kind: "channel" } as const;
+  it("stamps the source, the turn and the parent, and hands the payload over as it is", async () => {
+    const bus = new EventBus();
+    const sub = bus.subscribe(["stage.error", "worklane.task.*"]);
+    const data = { message: "x" };
+    const published = bus.publish("stage", Events.StageError, data, { turn: "t1", parent: "p1" });
+    const viaPublisher = bus.publisher("worklane");
+    const failed = {
+      type: "failed" as const,
+      task: "k1",
+      code: "internal" as const,
+      detail: "d",
+      at: "2026-11-15T00:00:00.000Z",
+    };
+    viaPublisher(Events.TaskFailed, failed, { type: "worklane.task.failed" });
+    const a = await sub.recv();
+    const b = await sub.recv();
+    expect(a).toBe(published);
+    expect(a?.data).toBe(data);
+    expect(a).toMatchObject({ type: "stage.error", source: "stage", turn: "t1", parent: "p1" });
+    expect(a?.event).toEqual(customEvent("stage.error", data));
+    expect(b).toMatchObject({ type: "worklane.task.failed", source: "worklane", data: failed });
+    expect(is(Events.TaskFailed, b as Envelope)).toBe(true);
+    expect(is(Events.PlatformTyping, a as Envelope)).toBe(false);
+  });
+
+  it("delivers an old-form envelope as the bus envelope it stands for", async () => {
+    const bus = new EventBus();
+    const sub = bus.subscribe("platform.typing");
+    const event: Event = {
+      type: "platform_typing",
+      data: { context, account: { platform: "discord", id: "1" } },
+    };
+    const delivered = bus.publishEnvelope({
+      id: "01JC0000000000000000000009",
+      ts: "2026-11-15T00:00:00.000Z",
+      source: "test",
+      causation: null,
+      correlation: "t",
+      event,
+    });
+    expect(await sub.recv()).toBe(delivered);
+    expect(delivered).toMatchObject({
+      type: "platform.typing",
+      turn: "t",
+      data: event.data,
+      event,
+    });
   });
 });
 

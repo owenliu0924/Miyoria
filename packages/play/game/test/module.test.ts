@@ -467,10 +467,8 @@ describe("game director", () => {
       registry = new ActuatorRegistry({
         services: harness.sup.services,
         builtins: false,
-        publish: (e) => {
-          if (e.type === "custom" && e.data.topic === "gate.decision") {
-            gate.push(e.data.payload as Record<string, JsonValue>);
-          }
+        publish: (definition, data, ..._meta) => {
+          if (definition.type === "gate.decision") gate.push(data as Record<string, JsonValue>);
         },
       });
       return registry;

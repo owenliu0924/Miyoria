@@ -34,7 +34,7 @@ describe("activity module", () => {
     const registry = new ActuatorRegistry({
       services: sup.services,
       tools,
-      publish: (e) => sup.bus.publish("actions", e),
+      publish: sup.bus.publisher("actions"),
       builtins: false,
     });
     sup.services.provide("app", ActuatorRegistryKey, registry);

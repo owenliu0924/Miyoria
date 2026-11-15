@@ -10,25 +10,22 @@ import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type ActionOutcomePayload,
   ArbiterKey,
-  customEvent,
-  type Event,
+  Events,
   type ImpulseSource,
-  type JsonValue,
   type LedgerOutcome,
   type LedgerRecord,
-  NOTICE_TOPIC,
   type Notice,
   newId,
   type Principal,
+  type Publish,
   type TaskFailureCode,
   toTimestamp,
-  v2Event,
 } from "@miyoria/types";
 import type { ActionOutcome, ActionRequest, Capability } from "./capability.js";
 import { deniedText } from "./capability.js";
 
 /** Payload: `ActionOutcomeRecord`; published when no Arbiter keeps the Ledger. */
-export const ACTION_OUTCOME_TOPIC = "actions.outcome";
+export const ACTION_OUTCOME_TOPIC = Events.ActionsOutcome.type;
 
 /** How long a late result stays worth telling her (ms). */
 export const NOTICE_TTL_MS = 30 * 60_000;
@@ -104,7 +101,7 @@ export function outcomeNotice(
 
 export interface OutcomeSink {
   services: ServiceLookup;
-  publish: (event: Event) => void;
+  publish: Publish;
   now: number;
 }
 
@@ -137,7 +134,7 @@ export function recordOutcome(
       status: outcome.status,
       at: toTimestamp(sink.now),
     };
-    sink.publish(customEvent(ACTION_OUTCOME_TOPIC, payload as unknown as JsonValue));
+    sink.publish(Events.ActionsOutcome, payload);
   }
 }
 
@@ -148,5 +145,5 @@ export function publishNotice(
   request: ActionRequest,
   outcome: ActionOutcome,
 ): void {
-  sink.publish(v2Event(NOTICE_TOPIC, outcomeNotice(capability, request, outcome, sink.now)));
+  sink.publish(Events.AgentNotice, outcomeNotice(capability, request, outcome, sink.now));
 }

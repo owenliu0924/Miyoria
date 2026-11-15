@@ -84,7 +84,9 @@ export {
   legacyEvent,
   type ModuleStateKind,
   newEnvelope,
+  type Publish,
   type PublishMetaArgs,
+  publishInto,
   toEnvelope,
   toLegacyEnvelope,
 } from "./event.js";

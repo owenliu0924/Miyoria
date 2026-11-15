@@ -9,13 +9,12 @@
 import { getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
-  ARBITER_IMPULSE_TOPIC,
   type ContextKey,
   contextKeyEquals,
   type DecisionTrace,
-  type Event,
+  Events,
   newImpulse,
-  v2Event,
+  type Publish,
 } from "@miyoria/types";
 import type { ActionOutcome, ActionRequest, Capability } from "./capability.js";
 import { deniedText } from "./capability.js";
@@ -76,13 +75,13 @@ export function followupHint(
 
 /** Pending follow-up deliveries. Owned by the registry; the `actions` module feeds decisions. */
 export class Followups {
-  readonly #publish: (event: Event) => void;
+  readonly #publish: Publish;
   readonly #now: () => number;
   readonly #pending: Delivery[] = [];
   readonly #timers = new Set<ReturnType<typeof setTimeout>>();
   #closed = false;
 
-  constructor(publish: (event: Event) => void, now: () => number) {
+  constructor(publish: Publish, now: () => number) {
     this.#publish = publish;
     this.#now = now;
   }
@@ -117,7 +116,7 @@ export class Followups {
       },
       now,
     );
-    this.#publish(v2Event(ARBITER_IMPULSE_TOPIC, impulse));
+    this.#publish(Events.ArbiterImpulse, impulse);
   }
 
   #prune(): void {

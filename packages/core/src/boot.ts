@@ -282,7 +282,7 @@ export async function buildCoreWith(
   const actuators = new ActuatorRegistry({
     services,
     tools,
-    publish: (event) => bus.publish(ACTIONS_MODULE, event),
+    publish: bus.publisher(ACTIONS_MODULE),
   });
   services.provide(k, ActuatorRegistryKey, actuators);
   services.provide(k, ActuatorExecutorKey, actuators);

@@ -30,6 +30,7 @@ import {
   type MessageRef,
   type Principal,
   Principals,
+  publishInto,
   type Subject,
   v2Payload,
 } from "@miyoria/types";
@@ -200,7 +201,7 @@ export function harness(real: Sandbox | null = null): Harness {
   const registry = new ActuatorRegistry({
     services,
     tools,
-    publish: (e) => events.push(e),
+    publish: publishInto(events),
     builtins: false,
   });
   services.provide(k, ActuatorRegistryKey, registry);
