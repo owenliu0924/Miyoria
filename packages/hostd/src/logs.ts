@@ -13,11 +13,11 @@ export const ROTATE_SIZE = "10M";
 export const ROTATE_KEEP = 5;
 
 /** A size-rotated log file `<dir>/<base>`, older ones `<base>.1` … `<base>.5`. */
-export function rotatingLog(dir: string, base: string): RotatingFileStream {
+export function rotatingLog(dir: string, base: string, size = ROTATE_SIZE): RotatingFileStream {
   mkdirSync(dir, { recursive: true });
   return createStream((index: number | null) => (index === null ? base : `${base}.${index}`), {
     path: dir,
-    size: ROTATE_SIZE,
+    size,
     rotate: ROTATE_KEEP,
   });
 }

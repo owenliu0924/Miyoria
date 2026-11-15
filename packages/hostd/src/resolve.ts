@@ -356,7 +356,7 @@ export function localUrl(bind: string, port: number): string {
 
 /**
  * `{offload_urls}` (until H7): the services of this host with the effective GPU policy
- * `evictable` that are not disabled, tts first, then asr, then the others in start order.
+ * `evictable` that host.toml enables, tts first, then asr, then the others in start order.
  */
 export function offloadUrls(
   plans: readonly ServicePlan[],
@@ -364,7 +364,7 @@ export function offloadUrls(
   bind: string,
 ): string {
   const first = ["tts", "asr"];
-  const evictable = plans.filter((p) => p.disabled === null && p.gpuPolicy === "evictable");
+  const evictable = plans.filter((p) => p.override.enabled && p.gpuPolicy === "evictable");
   const ordered = [
     ...first.flatMap((n) => evictable.filter((p) => p.name === n)),
     ...evictable.filter((p) => !first.includes(p.name)),

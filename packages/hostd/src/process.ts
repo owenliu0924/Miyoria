@@ -33,6 +33,9 @@ export interface ServiceProcess {
   kill(): void;
 }
 
+/** How long the last output of an exited process may take to arrive. */
+const OUTPUT_DRAIN_MS = 500;
+
 /** How long to wait for the process after the tree was killed. */
 const KILL_WAIT_MS = 10_000;
 
@@ -96,9 +99,26 @@ export function spawnService(spec: SpawnSpec, log: ServiceLog): ServiceProcess {
 
   subprocess.stdout?.on("data", (chunk: Buffer) => log.write(chunk, "out"));
   subprocess.stderr?.on("data", (chunk: Buffer) => log.write(chunk, "err"));
-  // The child's own exit: execa's promise also waits for the output pipes, which a descendant
-  // may keep open.
-  subprocess.nodeChildProcess.on("exit", (code, signal) => settle({ code, signal }));
+  const drained = Promise.all(
+    [subprocess.stdout, subprocess.stderr].map(
+      (stream) =>
+        new Promise<void>((done) => {
+          if (stream === null || stream === undefined || stream.readableEnded) done();
+          else {
+            stream.once("end", () => done());
+            stream.once("close", () => done());
+          }
+        }),
+    ),
+  );
+  // The child's own exit. Its last output (a traceback) may still be in the pipes: wait for them
+  // a moment, not for ever, since a descendant may keep them open. execa's promise waits for them
+  // without a limit.
+  let processExited = false;
+  subprocess.nodeChildProcess.on("exit", (code, signal) => {
+    processExited = true;
+    void Promise.race([drained, wait(OUTPUT_DRAIN_MS)]).then(() => settle({ code, signal }));
+  });
   void subprocess.then((result) => {
     settle({
       code: result.exitCode ?? null,
@@ -109,7 +129,7 @@ export function spawnService(spec: SpawnSpec, log: ServiceLog): ServiceProcess {
     });
   });
 
-  const hasExited = () => exitInfo !== null;
+  const hasExited = () => processExited || exitInfo !== null;
   const gone = (ms: number) => Promise.race([exited.then(() => true), wait(ms).then(() => false)]);
 
   const kill = () => {

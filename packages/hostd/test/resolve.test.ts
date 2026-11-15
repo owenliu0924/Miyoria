@@ -1,8 +1,10 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   expandService,
+  fileTail,
   HostConfigError,
   loadCatalog,
   loadHostConfig,
@@ -15,6 +17,7 @@ import {
   type ResolveContext,
   workerBaseEnv,
 } from "../src/index.js";
+import { rotatingLog } from "../src/logs.js";
 import { cleanup, type TestWorkspace, workspace, writeIn } from "./fakes.js";
 
 afterEach(cleanup);
@@ -264,5 +267,57 @@ describe("gpu", () => {
       used_mb: 3021,
     });
     expect(parseNvidiaSmi("")).toBeNull();
+  });
+});
+
+describe("logs", () => {
+  it("rotates by size and keeps five old files", async () => {
+    const ws = workspace([]);
+    const dir = join(ws.state, "logs");
+    const stream = rotatingLog(dir, "svc.log", "1K");
+    const line = `${"x".repeat(99)}\n`;
+    for (let i = 0; i < 80; i++) {
+      stream.write(line);
+      // Let the stream rotate between writes.
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    await new Promise<void>((done) => stream.end(() => done()));
+    const files = readdirSync(dir).sort();
+    expect(files).toContain("svc.log");
+    expect(files).toContain("svc.log.1");
+    expect(files.filter((f) => f.startsWith("svc.log.")).length).toBeLessThanOrEqual(5);
+    expect(fileTail(join(dir, "svc.log.1"), 2)).toHaveLength(2);
+  });
+});
+
+describe("the repo's descriptors", () => {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+  function repoPlans(hostToml: string, env: Record<string, string> = {}) {
+    const ws = workspace([]);
+    writeIn(ws, "host.toml", hostToml);
+    return planServices(loadCatalog(repo), loadHostConfig(ws.hostToml), {
+      ...ctxFor(ws, { env, platform: "win32" }),
+    });
+  }
+
+  it("runs core and stage in the workspace with the CLI's own entry", () => {
+    const [core, stage] = repoPlans('name = "h"\n[services.core]\n[services.stage]\n');
+    const ctx = ctxFor(workspace([]), { platform: "win32" });
+    for (const plan of [core, stage]) {
+      expect(plan?.disabled).toBeNull();
+      const spec = expandService(plan as NonNullable<typeof plan>, ctx, live);
+      expect(spec.cwd).toBe(ctx.workspace);
+      expect(spec.file).toBe("node");
+      expect(spec.args.slice(0, 3)).toEqual(["--import", "tsx", "/src/main.ts"]);
+      expect(spec.args.slice(3, 4)).toEqual([plan?.name]);
+    }
+  });
+
+  it("disables mediamtx without MIYORIA_HLS_SECRET and passes it under MediaMTX's name", () => {
+    const toml = 'name = "h"\n[services.mediamtx]\n';
+    expect(repoPlans(toml)[0]?.disabled).toMatch(/MIYORIA_HLS_SECRET/);
+    const with_ = repoPlans(toml, { MIYORIA_HLS_SECRET: "s" });
+    expect(with_[0]?.disabled).toBeNull();
   });
 });
