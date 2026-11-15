@@ -6,7 +6,8 @@
 > `workers/sing/gpu_decisions.json` (3 172 cases of 18 decision functions) and
 > `workers/sing/gpu_scenarios.json` (26 timed scenarios). `workers/tests/test_gpu_table.py`
 > rebuilds both from the code on every run and fails when they differ;
-> `UPDATE_GPU_TABLE=1` rewrites them. Nothing here changes behaviour.
+> `UPDATE_GPU_TABLE=1` rewrites them. Nothing here changes behaviour. §12 is the move into hostd
+> as decided and as built in H7b part 1 (the arbiter, reproducing every row and scenario).
 >
 > Sources: `workers/sing/gpu.py` (decisions), `exclusive.py` (offload windows), `yielding.py`
 > (pausing while she speaks), `server.py` (where a job takes them), `workers/device_memory.py`,
@@ -303,7 +304,9 @@ On their own:
   interrupted and requeued; when that period starts, ComfyUI is asked to unload
   (`POST /free {"unload_models": true, "free_memory": true}`). ComfyUI is also unloaded after
   `free_after_idle_s` (120 s) without work. The song worker knows nothing of this: ComfyUI's memory
-  is simply missing from the device reading.
+  is simply missing from the device reading. Moving this into hostd is deferred (§12.2): it
+  changes when ComfyUI unloads, which needs the owner, and the module stays closed until a model
+  is chosen.
 
 ## 10. Oddities and doc/code mismatches (not fixed)
 
@@ -410,117 +413,146 @@ urgent and not; policies `share`, `wait`, `offload`; no CUDA; the RVC stage and 
 
 ## 12. Mapping to hostd
 
-The design (v5-hostd §8) gives hostd a lease table: `gpu.acquire { mb, mode, max_s, reason }` →
-`granted` (with what was evicted) / `wait` (with the reason) / `cpu`; `gpu.renew`; `gpu.release`;
-`gpu.busy`; `gpu.state`; Core sends `cluster.context { in_voice, listeners, live, urgent }`.
+Decided 2026-11-16 (the twelve questions of the first version of this section, all answered as
+recommended, image generation deferred) and built in H7b part 1: `packages/hostd/src/arbiter`
+(not wired into the daemon yet), the shapes in `@miyoria/contracts/host` (`gpu.ts`), and three
+tests in `packages/hostd/test/arbiter`. The Python worker keeps its own arbitration until the
+owner has heard a live song request in a voice call on the new path; the switch and the Python
+lease client are a later part.
 
-### 12.1 Decisions (must match the table)
+### 12.1 Where each recorded function lives now
 
-| Today | In hostd |
-|---|---|
-| `decide` (all of §4) | the evaluation of a `gpu.acquire`: `share` → `granted` without eviction; `offload` → `granted` with eviction of the evictable tenants; `exclusive` → the holder already has an exclusive lease (renew, not acquire); `wait` → `wait` with `code` and `reason`; `cpu` → `cpu`; `give_up` → no outcome exists yet (Q3) |
-| `gather` | hostd's own reading and state, plus fields only the client knows (Q1) |
-| `policy_from_env`, `limits_from_env` | per host settings (`host.toml [gpu]`), same names and defaults |
-| `headroom`, learned `freed_mb` and `reload_s`, `gap_until` | per card: hostd's state |
-| `audience.people`, `context_ttl_s` | `cluster.context` with the same freshness rule; never told = unknown |
-| `server.urgent` | `urgent` ids in `cluster.context` matched against the acquiring job (Q1) |
-| `tick` step 2, the silence limit | hostd owns the window clock; it ends a window by answering a `gpu.renew` with "release" (Q4) |
-| `tick` steps 1, 3, 4, spill detection | stays in the client (only it sees step times); it reports the outcome (Q5) |
-| `yield_allowance`, `yield.hold` | Q6 |
-| `server.recover_speech` | replaced: hostd reloads what it evicted when a lease ends, expires, or its holder exits |
-| `typical_peak`, `profile.note_step`, `silence_estimate` | stay in the client (per stage, per song) and travel in `gpu.acquire` (Q1) |
+Every row of `gpu_decisions.json` is reproduced exactly by `test/arbiter/table.test.ts` (3 172 of
+3 172, no tolerance). Worker-side functions stay in Python, where their rows keep guarding them;
+the test also checks the TypeScript copies the scenario harness uses to play the worker.
 
-### 12.2 Mechanism (moves from the song worker to hostd)
+| Function | Lives in | Rows |
+|---|---|---|
+| `decide`, `tick`, `gather` (with the worker's values from the request) | hostd: `rules.ts`, `job.ts` | 1733, 673, 53 |
+| `headroom`, `profile.note_spill`, `profile.note_healthy` | hostd: `CardProfile` | 108, 30, 12 |
+| `audience.people` | hostd: `Audience` | 98 |
+| `speech.read`, `speech.read_cache` | hostd: `SpeechReader` | 43, 8 |
+| `yield_allowance`, `yield.hold` | hostd: `rules.ts` | 12, 5 |
+| `server.urgent` | hostd: `urgentOf` (the worker sends its queued job ids) | 15 |
+| `server.recover_speech` | hostd: `Arbiter.recover` at hostd's start | 34 |
+| `policy_from_env`, `limits_from_env` | hostd: `policyFrom`, `limitsFrom` (same names and parsing, from host settings) | 45, 85 |
+| `silence_estimate` | both: the worker estimates the work left, hostd adds the learned reload time | 72 |
+| `typical_peak`, `profile.note_step` | the worker | 125, 21 |
 
-The device reading (NVML), `GET /health` of the speech workers, `POST /offload` with renewals every
-`max_s / 3`, `POST /reload` (in turn, waiting for it before the next decision), the gap, the
-`/busy` polling, and the startup recovery. The song worker keeps: the stage loop, the gate, the
-spill detection, the reduction of diffusion steps, its own trim/unload, and its job state fields
-(`exclusive`, `gpu`) that Core reads.
+### 12.2 The protocol
 
-### 12.3 Open questions (each with a recommendation; nothing decided here)
+All durations are seconds (the table's arithmetic is Python's, float for float). The shapes are
+`HostGpu*` in `contracts/host/src/gpu.ts`; the holder is the calling service (the local API knows
+it from the service token).
 
-**Q1. What does `gpu.acquire` carry?** The table's inputs that only the client knows are `stage`,
-`pauses`, `need_mb` (learned peak, or the prior), `on_gpu`, `cpu_fallback`/"can run on the CPU",
-`silence_est_s`, the job's spill history (`cpu_only`, `offload_useless`, `crowded_mb`), and which
-job it is (for `urgent` and for the waits).
-*Recommendation*: `gpu.acquire { job, stage, mb, pauses, cpu_ok, est_s, crowded_mb?,
-offload_useless?, max_s, reason }`; hostd keeps per `job` the start of the current wait and the
-total (so `waited_s`/`waited_total_s` mean what they mean today: the client re-asks every
-`check_s` while told `wait`, and a `granted`/`cpu` answer ends "this wait"). `mode` then becomes
-an upper bound: `share` never evicts (image generation), `exclusive`/default may.
+- **Placement** (`_place`): `gpu.acquire { job, stage, on_gpu, pauses, need_mb, own_mb,
+  est_work_s, est_work_by_card, cpu_fallback, queued, ack, resumed, max_s }`, asked again every
+  `check_s` while the answer is a plain `wait`. Answers: `granted { mode: share | exclusive,
+  free_mb }`, `wait { code, reason, announce, evict }`, `cpu`, `refused { reason }` (give up).
+  hostd counts the job's waits: "this wait" from the first `wait` until the placement ends
+  (`granted`, `cpu`, `refused`, or the granted window after an announce), the total over the job.
+- **Taking speech offline** (decision 2): a decided eviction is answered `wait` with
+  `announce: true` and the services in `evict`. The worker shows `exclusive: "waiting"` (with
+  `ack`), waits for Core's go or `SING_EXCLUSIVE_WAIT_S`, shows `offloading`, and asks again with
+  `announced: true`; hostd then offloads the services in turn without deciding again and answers
+  `granted` with `evicted`, `errors`, `released_mb`, `offload_s`. The worker shows `active`.
+  hostd renews the services' own lease (`max_s` = `lease_s`, 60) every `lease_s / 3`.
+- **Every step** (the gate, GPU and CPU stages alike): `gpu.busy { lease }` → `{ busy,
+  allowance_s }` (the worker's 20 ms pause loop asks it again while busy), then `gpu.renew {
+  lease, own_mb, queued, step: { recent_s, normal_s } }` → `{ action, clear_steps }`. hostd runs
+  `tick`: the card at most every `check_s`, the window's silence limit, the spill test and
+  response. `action` is `trim`, `reduce { steps }`, `offload` (open a window between two steps:
+  as an announce, then `gpu.acquire` with `announced`), or `suspend { code }` (`silence_limit`,
+  `spill_cpu`, `spill_wait`).
+- **Stage end**: `gpu.renew { end: { how: finished | suspended | oom, step_s, normal_s } }`.
+  After `finished` the answer's `learned { card, drop_mb, note_step, note_rate }` says on which
+  card to learn, how far free memory fell (the peak a subprocess hides), and whether the run's
+  step time and rate count. After `oom` hostd remembers the room (`crowded`). After a suspension
+  or OOM with a window open: `gpu.release { window: "close" }` (speech back, waited for), then
+  placement again.
+- **After the conversion** (`_give_gpu_back`): `gpu.release { window: "keep" }`, on its own
+  thread: speech comes back while the song is mixed, the job's window stays open (oddities 4 and
+  7, reproduced). **At the job's end** (done, failed or cancelled): wait for that, then
+  `gpu.release { window: "close", done: true }` → the job's summary for `meta.json`.
+- **Keep-alive**: the job's lease ends after `max_s` (60) without a call; the worker sends a bare
+  `gpu.renew { lease }` every 20 s whenever it is not stepping (mixing, a long CPU stretch without
+  gates).
+- **Core**: `cluster.context { in_voice, listeners, live, urgent }` to hostd, every poll while a
+  song is prepared (today's push, other address); the TTL rule stays 20 s. Core keeps reading the
+  job's `exclusive` field from the worker for its speech pause and its go (decision 12).
+- **Holder gone**: when hostd sees the holder's process exit (`holderGone`) or its lease expire,
+  it brings speech back at once and forgets the job. At hostd's own start, `recover` reloads a
+  service left offloaded for a holder (today's `_recover_speech`).
+- **A share-only tenant** (`mode: "share"`): where an exclusive one would be told to announce,
+  it gets a plain `wait`. Image generation is deferred (decision 9): Core's existing ComfyUI wiring
+  stays, and ComfyUI can be added later as such a tenant.
 
-**Q2. Core's go before an eviction.** Today the decision is taken, the job shows `waiting`, Core
-announces, Core says go to the worker, and only then are the workers offloaded.
-*Recommendation*: keep the handshake where Core already watches it: hostd answers
-`wait { code: "announce", evict: [...] }` for a decision `offload` when the job asked with
-`ack: true`; the worker shows `exclusive: "waiting"`, waits for Core's go (or
-`SING_EXCLUSIVE_WAIT_S`) as now, and acquires again with `announced: true`, which hostd grants with
-the eviction without deciding again. Alternative: Core says go to hostd over the link; cleaner,
-but Core's speech pause would then have to follow hostd's state instead of the job's.
+### 12.3 How the scenarios are compared
 
-**Q3. `give_up`.** The lease model has no "never".
-*Recommendation*: a fourth answer `refused { code, reason }` (the job fails with the reason), so
-the table maps one to one.
+`test/arbiter/scenarios.test.ts` plays each recorded scenario against the real `Arbiter` on a
+simulated clock. The song worker is a port of server.py's job loop in which every GPU question is
+one of the calls above; the card, the speech services, Core and the stages are ported fakes. The
+rule, written in the test's header too, as strict as it can be:
 
-**Q4. Ending a window.** Today the job itself ends a window at its silence limit (between two
-steps) and closes it after the conversion.
-*Recommendation*: hostd runs the silence clock (it knows when eviction finished and has the
-context) and answers the holder's next `gpu.renew` with `{ release: "silence_limit" }`; the client
-suspends at its next step and calls `gpu.release`; hostd reloads, waits for the reload, then sets
-the gap. To keep the table's timing, the client must renew at least every `check_s` while a
-window is open (today the check happens before every step), i.e. renewal becomes a per-step
-`gpu.renew` at most once per `check_s`, not only `max_s / 3`.
+1. Calls to the speech services (with body and reply): same list, order and times (ms).
+2. Decisions (`mode/code`, stage, reason): same list, order and times.
+3. Other events (Core's go, card changes, trim and unload, a service reloading by itself, the
+   job's end, the horizon): same list, order and times.
+4. Observed states (`stage`, `exclusive`, `window`, `running`, `yield_pauses`, each service):
+   the value at the end of every instant, as a timeline of changes. Not compared: the order of
+   events of different kinds within one instant, and a value held only in the middle of an
+   instant. Both depend on which thread the recorder's probe ran in; no peer can observe them.
+5. The result: outcome, the job's summary, the last window's record, yielding, the services'
+   states, what was learned about the card, the end time, the steps run per device. Not
+   compared: how often `/health` and `/busy` were asked, and the new `gpu.*` exchanges.
 
-**Q5. Spills.** Detection needs step times, so it stays in the client; the response depends on
-policy, people, urgency, gap and speech state, which hostd has.
-*Recommendation*: the client reports `gpu.renew { spill: { slow|low, free_mb, step_s,
-baseline_s } }` and hostd answers with the action (`trim`, `reduce`, `release` with `spill_wait`
-or `spill_cpu`, or `evict` for `spill_offload`) using the `tick` rows of the table; hostd learns
-the headroom from it. The simpler alternative (client decides as today and only releases) would
-leave part of the arbitration in Python, against P7.
+All 26 scenarios pass this rule. The two `holder_dies_*` scenarios are compared up to the death;
+after it the behaviour changes on purpose (v5-hostd §8): hostd reloads both services at once when
+the holder exits (tts at the death, asr 20 s later), where the recording shows them offline until
+their own lease ran out (54 s later) or the worker restarted. The test asserts the new behaviour.
 
-**Q6. Yielding.** Pausing between steps can only happen in the client.
-*Recommendation*: `gpu.busy` answers `{ busy: bool, allowance_s }` from hostd's cache of the
-evictable tenants' `/busy` (polled every 100 ms only while a sharing lease is held, hold 300 ms),
-with `allowance_s` from the context (`yield_allowance`); the client keeps the 20 ms pause loop and
-its running total.
+### 12.4 What the decisions needed beyond what they said
 
-**Q7. Who renews the speech workers' own lease, and with what `max_s`?** Today `max_s` = 60 s,
-renewed by the song worker; the speech workers' self-reload is the safety net when it dies.
-*Recommendation*: hostd sends `/offload { max_s: 60 }` and renews every 20 s while the holder's
-lease is alive; the self-reload stays as the net for hostd itself dying. hostd's own lease on the
-client can be longer, since it also sees the process exit.
+- **Per-card values.** The worker learns per card (`name/total_mb`), and gpu.py takes the card's
+  values only after reading the card in the same call. Since only hostd reads the card, the worker
+  sends its learned need, normal step and work estimate per card (`need_mb`, `step.normal_s`,
+  `end.normal_s`, `est_work_by_card`) and hostd takes the entry of the card it just read, else its
+  prior. Eight table rows (unreadable or missing card with a learned profile) fail otherwise.
+- **The announce handshake for every eviction**, not only with `ack`: the worker must show
+  `offloading` while the services are taken offline (Core pauses her speech on it), and it can
+  only know an eviction is coming if hostd says so before doing it. Without `ack` the worker asks
+  again with `announced` at once.
+- **`gpu.renew` before every step, not once a second**: gpu.py checks the silence limit and the
+  spill rules before every step; once a second would move a window's end by up to a second.
+- **Busy polling while a job holds any lease**, not only a sharing one: CPU stages yield to her
+  speech too. hostd polls `/busy` every 100 ms from the job's first `gpu.acquire` to its final
+  release.
+- **The worker sends what hostd cannot see**: `own_mb` (its own reserved memory, counted as
+  room) on every call, and `queued` (the ids of jobs queued behind it, for urgency).
+- **Two kinds of release** (`keep`, `close`), so the window lasts until the job's end as today.
 
-**Q8. Budget and `reserve_mb`.** The table's decisions use the **measured** free memory of the
-device (what OBS and VTube Studio use is already missing from it) plus a percentage headroom.
-§8 of v5-hostd says "budget: total minus `reserve_mb`".
-*Recommendation*: decisions use the measured reading exactly as today (otherwise the table cannot
-match); `reserve_mb` only for the static check of what fits on a machine (installer, `doctor`)
-and for a card that cannot be read.
+### 12.5 The arbiter's interface (for the daemon wiring)
 
-**Q9. Image generation.** Today it is a separate, coarse rule in Core (hold all jobs and unload
-ComfyUI while a song is prepared or sung).
-*Recommendation*: ComfyUI as an `on_demand` tenant that acquires with `mode: "share"` (never
-evicts speech, as today); hostd answers it `wait` while a song job has a lease or a pending
-acquire, and posts `/free` to it when its lease ends or a song job needs the room. "Hold while she
-**sings**" (playback, no GPU decision) stays in Core. Keep `free_after_idle_s` as a linger after
-the lease rather than freeing at once, so a burst of image jobs does not reload each time. This
-changes when ComfyUI is unloaded (on demand rather than on every song), so it is a behaviour
-change to agree on; it is outside the table.
+`new Arbiter(options)` with:
+- `clock` and `timers` (seconds; `timers.sleep(s, signal)` rejects at once on abort);
+- `readDevice()` → `{ cuda, total_mb, free_mb, name }` of the whole device, other processes
+  included (NVML or `nvidia-smi`; `free = total − used`), throwing when it cannot be read;
+- `peers`: `offload(tenant, { reason, max_s }, timeout_s)`, `reload`, `busy`, `health`, HTTP with
+  the service's token, throwing on a failed call;
+- `tenants` (`tenantsFrom(descriptors with URLs)`, in offload order: TTS, then ASR, as today) and
+  `holders` (`holdersFrom`, the `on_demand` names);
+- `policy`, `limits` (`policyFrom`, `limitsFrom` over host settings with the `SING_*` names),
+  `profile` (a `CardProfile` over a JSON file in the state folder), `onEvent` (logging).
 
-**Q10. The stage's prior need.** Today `SING_SHARE_MIN_FREE_MB` (4096) until a stage was measured.
-The descriptor has `vram_mb.peak`.
-*Recommendation*: the client keeps learning per stage and sends `mb`; the descriptor's peak is
-only the prior and must be 4096 for `sing` to match the table.
+The daemon routes `gpu.acquire` (with the caller's service name as holder), `gpu.renew`,
+`gpu.release`, `gpu.busy`, `gpu.state` to it after parsing with the contract schemas; passes
+`cluster.context` to `context()`; calls `holderGone(name)` when a service's process exits;
+`recover()` at start; `close()` at shutdown.
 
-**Q11. The oddities.** Some of §10 are probably not intended (2, 3, 4, 6, 9).
-*Recommendation*: reproduce them as recorded first (the table is the contract), and fix each one
-afterwards as its own change to both the table and the arbiter, with the owner's word, rather
-than mixing fixes into the port.
+### 12.6 Not done here
 
-**Q12. Core's speech pause.** Core pauses her speech when the sing job's `exclusive` state is
-`offloading`, `active` or `reloading`. Once hostd evicts, Core could learn it from hostd's
-`host.report` instead.
-*Recommendation*: keep the job field for H7 (the client mirrors its lease into `exclusive`), and
-move to hostd's report only when a second tenant can evict speech.
+- Wiring into the daemon and the local API; the real device reader, peer client, profile file.
+- The Python lease client and the switch between the two paths.
+- `schema/host.json` is regenerated in the working tree but not committed: it also carries
+  another step's uncommitted `methods.ts` shapes.
+- Image generation as a share-only tenant (decision 9).
