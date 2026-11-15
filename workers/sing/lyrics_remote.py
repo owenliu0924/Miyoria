@@ -17,6 +17,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+try:  # workers/service_auth.py; a worker run by hand sends nothing
+    from service_auth import peer_headers
+except ImportError:
+    def peer_headers() -> dict[str, str]:  # type: ignore[misc]
+        return {}
+
 log = logging.getLogger("miyoria.sing.lyrics")
 
 
@@ -61,7 +67,7 @@ def search_remote(url: str, hints: dict[str, Any], duration: float | None, audio
     if duration:
         data["duration"] = str(duration)
     try:
-        r = httpx.post(url + "/lyrics", data=data, files=files or None, timeout=wait)
+        r = httpx.post(url + "/lyrics", data=data, files=files or None, timeout=wait, headers=peer_headers())
         if r.status_code != 200:
             log.warning("lyrics service answered HTTP %s", r.status_code)
             return None

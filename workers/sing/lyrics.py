@@ -28,6 +28,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+try:  # workers/service_auth.py; a worker run by hand sends nothing
+    from service_auth import peer_headers
+except ImportError:
+    def peer_headers() -> dict[str, str]:  # type: ignore[misc]
+        return {}
+
 log = logging.getLogger("miyoria.sing.lyrics")
 
 LRCLIB_URL = "https://lrclib.net"
@@ -417,7 +423,8 @@ def asr_text(wav: bytes, url: str, timeout: float) -> str | None:
     import httpx
 
     try:
-        r = httpx.post(url.rstrip("/") + "/asr", files={"audio": ("clip.wav", wav, "audio/wav")}, timeout=timeout)
+        r = httpx.post(url.rstrip("/") + "/asr", files={"audio": ("clip.wav", wav, "audio/wav")}, timeout=timeout,
+                       headers=peer_headers())
         if r.status_code != 200:
             return None
         return str(r.json().get("text") or "")

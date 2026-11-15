@@ -31,13 +31,24 @@ from fastapi.responses import JSONResponse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "sing"))  # lyrics.py / lyricsllm.py live with the song worker
+sys.path.insert(1, str(HERE.parent))  # service_auth.py, shared by the workers
 
 import lyrics  # noqa: E402
+
+try:
+    import service_auth
+except ImportError:  # never run open: with a token set, no check means no service
+    if os.environ.get("MIYORIA_SERVICE_TOKEN") or os.environ.get("MIYORIA_HOST_TOKEN"):
+        raise SystemExit("MIYORIA_SERVICE_TOKEN or MIYORIA_HOST_TOKEN is set but service_auth.py cannot be "
+                         "imported: refusing to start without the token check")
+    service_auth = None
 
 log = logging.getLogger("miyoria.lyrics")
 MAX_AUDIO_BYTES = 64 * 1024 * 1024
 
 app = FastAPI(title="miyoria-lyrics")
+if service_auth is not None:
+    service_auth.install(app)  # every route needs the bearer token when hostd set one
 
 
 def cache_dir() -> Path:

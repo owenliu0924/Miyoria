@@ -28,6 +28,12 @@ import threading
 import time
 from typing import Any, Callable
 
+try:  # workers/service_auth.py; a worker run by hand sends nothing
+    from service_auth import peer_headers
+except ImportError:
+    def peer_headers() -> dict[str, str]:  # type: ignore[misc]
+        return {}
+
 log = logging.getLogger("miyoria.sing.exclusive")
 
 Poster = Callable[[str, dict[str, Any], float], dict[str, Any]]
@@ -36,7 +42,7 @@ Poster = Callable[[str, dict[str, Any], float], dict[str, Any]]
 def http_post(url: str, body: dict[str, Any], timeout: float) -> dict[str, Any]:
     import httpx
 
-    r = httpx.post(url, json=body, timeout=timeout)
+    r = httpx.post(url, json=body, timeout=timeout, headers=peer_headers())
     r.raise_for_status()
     out = r.json()
     return out if isinstance(out, dict) else {}
