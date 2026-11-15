@@ -1,2 +1,50 @@
-// The cluster module of Core. Parts are added step by step (docs/design/v5-hostd.md).
-export {};
+// @miyoria/cluster: the cluster module of Core (docs/design/v5-hostd.md §6). The control link
+// each host's hostd dials, the hosts that joined (`cluster_hosts`, `cluster_invites`), the
+// registry of service endpoints, and the guarded states hosts ask about.
+
+export {
+  type ClusterConfig,
+  ClusterConfigSchema,
+  DEFAULT_CLUSTER_BIND,
+  type StaticEndpointConfig,
+  StaticEndpointConfigSchema,
+} from "./config.js";
+export { GuardRegistry, type GuardSourceFn } from "./guards.js";
+export { ClusterLink, type ClusterLinkOptions, closeSocket, type HostConnection } from "./link.js";
+export { clusterSchema } from "./migrations.js";
+export {
+  type ClusterGuard,
+  type ClusterHosts,
+  ClusterKey,
+  ClusterModule,
+  type ClusterModuleOptions,
+  type ClusterService,
+} from "./module.js";
+export {
+  type Endpoint,
+  EndpointRegistry,
+  type EndpointRegistryOptions,
+  type LinkRelay,
+  type PickOptions,
+  RelayUnavailableError,
+} from "./registry.js";
+export {
+  type ClusterHostRow,
+  type ClusterInviteRow,
+  clusterHosts,
+  clusterInvites,
+  HOST_STATUSES,
+  type HostStatus,
+} from "./schema.js";
+export {
+  ClusterError,
+  ClusterTables,
+  clusterTables,
+  DEFAULT_INVITE_TTL_S,
+  type HostRecord,
+  Hosts,
+  InviteError,
+  Invites,
+  type NewHost,
+  type NewInvite,
+} from "./tables.js";
