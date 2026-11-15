@@ -26,6 +26,7 @@ import {
   joinTarget,
   STAY_AFTER_INVITE_MS,
   voiceCapabilities,
+  wantedChannel,
 } from "../src/actions.js";
 import type { VoiceLink } from "../src/index.js";
 
@@ -91,24 +92,38 @@ interface SetupOptions {
   now?: () => number;
   /** The Go Live defaults (the source alone by default). */
   golive?: () => string | GoLiveDefaults;
+  /** The voice channels the bot sees in `g1` (instead of the one she is in). */
+  voices?: { channel: string; name: string | null; people?: number }[];
+  /** The voice channel the person asking is in, as the bot sees it. */
+  askerIn?: string;
 }
 
 function setup(nodes: string[], options: SetupOptions = {}) {
   const link = new FakeLink();
   const world = {
     snapshot: () => ({
-      voice_channels: [
-        {
-          guild: "g1",
-          channel: link.inVoice ?? "",
-          members: [
-            { is_self: true },
-            ...Array.from({ length: options.others ?? 0 }, () => ({ is_self: false })),
+      voice_channels: options.voices
+        ? options.voices.map((v) => ({
+            guild: "g1",
+            channel: v.channel,
+            name: v.name,
+            members: Array.from({ length: v.people ?? 0 }, () => ({ is_self: false })),
+          }))
+        : [
+            {
+              guild: "g1",
+              channel: link.inVoice ?? "",
+              members: [
+                { is_self: true },
+                ...Array.from({ length: options.others ?? 0 }, () => ({ is_self: false })),
+              ],
+            },
           ],
-        },
-      ],
     }),
-    person: () => null,
+    person: () =>
+      options.askerIn
+        ? { voice: { platform: "discord", guild: "g1", channel: options.askerIn } }
+        : null,
   } as unknown as WorldState;
   const songs = options.songs;
   const floor: VoiceFloor | undefined = songs
@@ -142,7 +157,7 @@ function setup(nodes: string[], options: SetupOptions = {}) {
     priority: "direct",
     signal: new AbortController().signal,
   };
-  return { link, tools, registry, ctx, events, services };
+  return { link, tools, registry, ctx, events, services, world };
 }
 
 /** She asks to leave on her own (her mind), in the server's text channel. */
@@ -205,11 +220,122 @@ describe("leaving on her own", () => {
     await own.registry.invoke({
       principal: Principals.self(CTX),
       capability: "voice.join",
-      args: { channel: "vc9" },
+      args: { channel: "1408410900859326669" },
       why: "想陪大家",
       turn: null,
     });
     expect((await leaveOnHerOwn(own)).status).toBe("done");
+  });
+});
+
+describe("joining a channel by its name", () => {
+  const VOICES = [
+    { channel: "111", name: "還能用的語音", people: 2 },
+    { channel: "222", name: "Active-Only", people: 5 },
+  ];
+
+  it("joins the channel she named, as she read it in her context", async () => {
+    const s = setup(["voice.join"], { voices: VOICES });
+    expect(await s.tools.get("voice_join")?.call(s.ctx, { channel: "「還能用的語音」" })).toBe(
+      "joined voice channel 111",
+    );
+    await s.registry.invoke({
+      principal: Principals.command(OWEN, CTX, true),
+      capability: "voice.leave",
+      args: {},
+      why: null,
+      turn: null,
+    });
+    await s.registry.invoke({
+      principal: Principals.command(OWEN, CTX, true),
+      capability: "voice.join",
+      args: { channel: "#active-only" },
+      why: null,
+      turn: null,
+    });
+    expect(s.link.calls).toEqual(["join g1 111 null", "leave g1", "join g1 222 null"]);
+  });
+
+  it("a name that fits no channel joins the person asking, and says so", async () => {
+    const s = setup(["voice.join"], { voices: VOICES });
+    const said = await s.tools.get("voice_join")?.call(s.ctx, { channel: "不存在的頻道" });
+    expect(s.link.calls).toEqual(["join g1 null 7"]);
+    expect(said).toContain('no voice channel named "不存在的頻道" here');
+  });
+
+  it("a name that fits no channel never moves her out of the channel she is in", async () => {
+    const s = setup(["voice.join"], { voices: VOICES });
+    s.link.inVoice = "111";
+    expect(await s.tools.get("voice_join")?.call(s.ctx, { channel: "不存在的頻道" })).toBe(
+      "already in voice channel 111",
+    );
+    expect(s.link.calls).toEqual([]);
+  });
+
+  it("fails with the name when there is nobody to follow", async () => {
+    const s = setup([], { voices: [{ channel: "111", name: "空的", people: 0 }] });
+    const out = await s.registry.invoke({
+      principal: Principals.self(CTX),
+      capability: "voice.join",
+      args: { channel: "不存在的頻道" },
+      why: "想找人聊天",
+      turn: null,
+    });
+    expect(out).toMatchObject({
+      status: "failed",
+      error: 'no voice channel named "不存在的頻道" here and nobody to follow',
+    });
+    expect(s.link.calls).toEqual([]);
+  });
+
+  it("the activity request carries the channel id, or none for an unknown name", () => {
+    const link = new FakeLink() as unknown as VoiceLink;
+    const s = setup([], { voices: VOICES });
+    const world = s.world;
+    const join = voiceCapabilities(
+      link,
+      () => "rtmp://obs/live",
+      () => world,
+    ).find((c) => c.name === "voice.join");
+    const user = Principals.user(OWEN, CTX);
+    expect(join?.activity?.({ channel: "還能用的語音" }, user)).toMatchObject([
+      { type: "ensure_voice", guild: "g1", channel: "111" },
+    ]);
+    expect(join?.activity?.({ channel: "不存在的頻道" }, user)).toMatchObject([
+      { type: "ensure_voice", guild: "g1", channel: null, follow: OWEN },
+    ]);
+  });
+
+  it("wantedChannel: ids pass, a shared name goes to the asker's channel, else the fullest", () => {
+    const user = Principals.user(OWEN, CTX);
+    const twins = [
+      { channel: "111", name: "聊天", people: 1 },
+      { channel: "222", name: "聊天", people: 4 },
+    ];
+    const none = { channel: null, unknown: null };
+    expect(wantedChannel(null, "g1", user, setup([], { voices: twins }).world)).toEqual(none);
+    expect(wantedChannel("聊天", "g1", user, setup([], { voices: twins }).world)).toEqual({
+      channel: "222",
+      unknown: null,
+    });
+    expect(
+      wantedChannel("聊天", "g1", user, setup([], { voices: twins, askerIn: "111" }).world),
+    ).toEqual({ channel: "111", unknown: null });
+    // An id the bot sees nobody in (an empty channel) is still an id.
+    expect(wantedChannel("1408410900859326665", "g1", user, undefined)).toEqual({
+      channel: "1408410900859326665",
+      unknown: null,
+    });
+    expect(wantedChannel("聊天", "g1", user, undefined)).toEqual({
+      channel: null,
+      unknown: "聊天",
+    });
+    // Only Discord ids are known to be digits.
+    const elsewhere = Principals.user(OWEN, { ...CTX, platform: "other" });
+    expect(wantedChannel("room-a", "g1", elsewhere, undefined)).toEqual({
+      channel: "room-a",
+      unknown: null,
+    });
   });
 });
 

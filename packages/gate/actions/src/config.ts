@@ -9,7 +9,7 @@ export const LimitSchema = z.object({
   per_day: z.number().int().nonnegative().nullable().default(null),
   /** Allowed runs in any rolling 24 hours involving one person (requester or target). */
   per_person_per_day: z.number().int().nonnegative().nullable().default(null),
-  /** Minimum time between two runs. */
+  /** Minimum time between two runs. A run whose executor failed starts none. */
   cooldown_ms: z.number().int().nonnegative().nullable().default(null),
 });
 export type Limit = z.output<typeof LimitSchema>;
