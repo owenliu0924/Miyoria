@@ -24,6 +24,7 @@ import { SYSTEM_EVENTS } from "./system.js";
 import { TASK_EVENTS } from "./task.js";
 import { TURN_EVENTS } from "./turn.js";
 import { VOICE_EVENTS } from "./voice.js";
+import { WORKSPACE_EVENTS } from "./workspace.js";
 
 /** Every bus topic with a payload schema, families included. */
 export const BUS_EVENTS: readonly AnyEventDefinition[] = [
@@ -45,6 +46,7 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   LlmCall,
   LlmBudget,
   ...GATE_EVENTS,
+  ...WORKSPACE_EVENTS,
   ...SING_EVENTS,
   ...PLAY_EVENTS,
   ...STAGE_EVENTS,

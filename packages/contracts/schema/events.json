@@ -2814,6 +2814,53 @@
         "from"
       ]
     },
+    "EventsImageJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/EventsImageJobState"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "purpose",
+        "state",
+        "progress",
+        "error",
+        "outputs"
+      ]
+    },
+    "EventsImageJobState": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "done",
+        "failed",
+        "cancelled"
+      ]
+    },
     "EventsImportedAccount": {
       "type": "object",
       "properties": {
@@ -4879,6 +4926,191 @@
         "count",
         "first_at",
         "at"
+      ]
+    },
+    "EventsSandboxKilledReason": {
+      "type": "string",
+      "enum": [
+        "timeout",
+        "aborted",
+        "output_limit",
+        "memory"
+      ]
+    },
+    "EventsSandboxLanguage": {
+      "type": "string",
+      "enum": [
+        "python",
+        "node"
+      ]
+    },
+    "EventsSandboxRunFinished": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "language": {
+          "$ref": "#/$defs/EventsSandboxLanguage"
+        },
+        "exit_code": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "type": "number"
+        },
+        "killed_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsSandboxKilledReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files_out": {
+          "type": "number"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "run_id",
+        "language",
+        "exit_code",
+        "duration_ms",
+        "killed_reason",
+        "files_out",
+        "session"
+      ]
+    },
+    "EventsSandboxSessionCloseReason": {
+      "type": "string",
+      "enum": [
+        "closed",
+        "idle",
+        "lifetime",
+        "disk",
+        "lost",
+        "shutdown"
+      ]
+    },
+    "EventsSandboxSessionClosed": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/EventsSandboxSessionCloseReason"
+        },
+        "runs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "reason",
+        "runs"
+      ]
+    },
+    "EventsSandboxSessionStarted": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "language": {
+          "$ref": "#/$defs/EventsSandboxLanguage"
+        }
+      },
+      "required": [
+        "name",
+        "language"
+      ]
+    },
+    "EventsSandboxTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "language": {
+          "$ref": "#/$defs/EventsSandboxLanguage"
+        },
+        "code_sha256": {
+          "type": "string"
+        },
+        "proposed_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "status",
+        "language",
+        "code_sha256",
+        "proposed_by",
+        "reviewer"
+      ]
+    },
+    "EventsSandboxToolRemoved": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "EventsSandboxWorkspaceEnforced": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "removed": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "run_id",
+        "removed"
       ]
     },
     "EventsSavedPrompt": {
