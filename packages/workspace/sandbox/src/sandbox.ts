@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { errorMessage, getLogger, sleep } from "@miyoria/runtime/kernel";
-import { type Clock, isUlid, type JsonValue, newId, systemClock } from "@miyoria/types";
+import { type Clock, Events, isUlid, newId, type Publish, systemClock } from "@miyoria/types";
 import {
   buildRunArgs,
   CONTAINER_ENV,
@@ -98,7 +98,7 @@ const DAEMON_ERROR =
   /^(Error response from daemon|error during connect|Cannot connect to the Docker daemon)/m;
 
 /** Receives `sandbox.*` events (the module publishes them on the bus). */
-export type SandboxPublisher = (topic: string, payload: JsonValue) => void;
+export type SandboxPublisher = Publish;
 
 export interface DockerSandboxOptions {
   /** Absolute sandbox root (`config.root` resolved). */
@@ -665,7 +665,7 @@ export class DockerSandbox implements Sandbox {
 
   /** Publishes `sandbox.run.finished` (no code, no output) and returns the result. */
   #done(done: RunResult): RunResult {
-    this.#publish("sandbox.run.finished", {
+    this.#publish(Events.SandboxRunFinished, {
       run_id: done.run_id,
       language: done.language,
       exit_code: done.exit_code,
@@ -757,7 +757,10 @@ export class DockerSandbox implements Sandbox {
         if (removed === undefined) return;
         state.removed = removed;
         if (removed.length > 0) {
-          this.#publish("sandbox.workspace.enforced", { run_id: runId, removed: removed.length });
+          this.#publish(Events.SandboxWorkspaceEnforced, {
+            run_id: runId,
+            removed: removed.length,
+          });
         }
       };
       try {
@@ -1205,7 +1208,7 @@ export class DockerSandbox implements Sandbox {
       throw error;
     }
     log.info({ session: session.name, language: session.language }, "sandbox session started");
-    this.#publish("sandbox.session.started", { name: session.name, language: session.language });
+    this.#publish(Events.SandboxSessionStarted, { name: session.name, language: session.language });
   }
 
   async #execInSession(
@@ -1300,7 +1303,7 @@ export class DockerSandbox implements Sandbox {
     this.#syncSweep();
     if (session.dirs !== null) {
       log.info({ session: session.name, reason, runs: session.runs }, "sandbox session closed");
-      this.#publish("sandbox.session.closed", {
+      this.#publish(Events.SandboxSessionClosed, {
         name: session.name,
         reason,
         runs: session.runs,

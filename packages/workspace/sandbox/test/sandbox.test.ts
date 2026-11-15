@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newId } from "@miyoria/types";
+import { type JsonValue, newId } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DockerSandbox,
@@ -36,7 +36,9 @@ function sandbox(config: Record<string, unknown> = {}): DockerSandbox {
     runner,
     hostUser: null,
     killGraceMs: 50,
-    publisher: (topic, payload) => events.push([topic, payload]),
+    publisher: (definition, payload, ..._meta) => {
+      events.push([definition.type, payload as JsonValue]);
+    },
   });
 }
 

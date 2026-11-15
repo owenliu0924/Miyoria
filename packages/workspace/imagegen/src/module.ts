@@ -7,6 +7,7 @@ import {
 } from "@miyoria/runtime/kernel";
 import {
   ImageGenKey,
+  type JsonValue,
   parseSongCue,
   parseSongPrepare,
   SONG_PREPARE_TOPIC,
@@ -45,7 +46,7 @@ export class ImageGenModule implements Module {
       client,
       clock: ctx.clock,
       log: ctx.log,
-      publish: (event) => ctx.publish(event),
+      publish: ctx.publisher,
     });
     await service.load();
     this.#service = service;
@@ -54,8 +55,8 @@ export class ImageGenModule implements Module {
     const songs = ctx.subscribe([SONG_TOPIC, SONG_PREPARE_TOPIC]);
     ctx.spawn("songs", async () => {
       for await (const env of songs) {
-        if (env.event.type !== "custom") continue;
-        const { topic, payload } = env.event.data;
+        const topic = env.type;
+        const payload = env.data as JsonValue;
         if (topic === SONG_TOPIC) {
           const cue = parseSongCue(payload);
           if (cue) service.onSongCue(cue);

@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type Clock,
+  Events,
   type JsonObject,
   type JsonValue,
   type ProfileId,
@@ -145,8 +146,11 @@ export class ProposedTools {
     await this.#o.store.set(this.#o.profile, this.#key(tool.name), tool as unknown as JsonValue);
   }
 
-  #publish(topic: string, tool: ProposedTool): void {
-    this.#o.publisher?.(topic, {
+  #publish(
+    definition: typeof Events.SandboxToolProposed | typeof Events.SandboxToolReviewed,
+    tool: ProposedTool,
+  ): void {
+    this.#o.publisher?.(definition, {
       name: tool.name,
       version: tool.version,
       status: tool.status,
@@ -215,7 +219,7 @@ export class ProposedTools {
       reviewed_at: null,
     };
     await this.#save(tool);
-    this.#publish("sandbox.tool.proposed", tool);
+    this.#publish(Events.SandboxToolProposed, tool);
     return tool;
   }
 
@@ -246,7 +250,7 @@ export class ProposedTools {
       updated_at: now,
     };
     await this.#save(next);
-    this.#publish("sandbox.tool.reviewed", next);
+    this.#publish(Events.SandboxToolReviewed, next);
     return next;
   }
 
@@ -271,7 +275,7 @@ export class ProposedTools {
     const tool = await this.get(name);
     if (!tool) return false;
     await this.#o.store.set(this.#o.profile, this.#key(name), null);
-    this.#o.publisher?.("sandbox.tool.removed", { name, version: tool.version });
+    this.#o.publisher?.(Events.SandboxToolRemoved, { name, version: tool.version });
     return true;
   }
 

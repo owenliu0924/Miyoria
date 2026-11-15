@@ -83,7 +83,9 @@ function setup(maxTools = 10) {
     profile: "deepseek-chan",
     sandbox,
     clock: { now: () => now },
-    publisher: (topic, payload) => events.push([topic, payload]),
+    publisher: (definition, payload, ..._meta) => {
+      events.push([definition.type, payload as JsonValue]);
+    },
     maxTools,
     maxCodeBytes: 1000,
   });

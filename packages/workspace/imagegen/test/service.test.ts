@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getLogger } from "@miyoria/runtime/kernel";
-import type { Event, ImageJob } from "@miyoria/types";
+import { type Event, type ImageJob, publishInto } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ComfyClient } from "../src/comfy.js";
 import { ImageGenConfigSchema } from "../src/config.js";
@@ -31,7 +31,7 @@ function service(extra: Record<string, unknown> = {}): ImageGenService {
     client: new ComfyClient({ url: comfy.url, webSocket: null }),
     clock: { now: () => now },
     log: getLogger("imagegen.test"),
-    publish: (e) => events.push(e),
+    publish: publishInto(events),
     random: () => 1234,
   });
 }

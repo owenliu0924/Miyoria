@@ -10,7 +10,7 @@ import {
   sleep,
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
-import { customEvent, FileReaderKey, type ProfileId } from "@miyoria/types";
+import { FileReaderKey, type ProfileId } from "@miyoria/types";
 import { SandboxConfigSchema } from "./config.js";
 import { SandboxFileReader } from "./files.js";
 import { SandboxGate } from "./gate.js";
@@ -59,8 +59,7 @@ export class SandboxModule implements Module {
   async start(ctx: ModuleContext): Promise<void> {
     const config = ctx.config(SandboxConfigSchema);
     const runner = (this.options.runner ?? ((exe) => new ProcessDockerRunner(exe)))(config.docker);
-    const publisher = (topic: string, payload: Parameters<typeof customEvent>[1]) =>
-      ctx.publish(customEvent(topic, payload));
+    const publisher = ctx.publisher;
     const sandbox = new DockerSandbox(config, {
       root: resolve(this.options.baseDir, config.root),
       profile: this.profile,

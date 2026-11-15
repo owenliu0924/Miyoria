@@ -21,9 +21,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { errorMessage, isAbortError, type Logger, sleep } from "@miyoria/runtime/kernel";
 import {
   type Clock,
-  customEvent,
-  type Event,
-  IMAGEGEN_TOPIC,
+  Events,
   type ImageGen,
   type ImageGenStatus,
   type ImageJob,
@@ -37,6 +35,7 @@ import {
   type ImageWorkflowInfo,
   type JsonValue,
   newId,
+  type Publish,
   type SongCue,
   type SongPrepare,
   toTimestamp,
@@ -85,7 +84,7 @@ export interface ImageGenServiceOptions {
   client: ComfyClient;
   clock: Clock;
   log: Logger;
-  publish?: (event: Event) => void;
+  publish?: Publish;
   /** Seeds; `randomInt` unless a test pins it. */
   random?: () => number;
 }
@@ -141,7 +140,7 @@ export class ImageGenService implements ImageGen {
   readonly #client: ComfyClient;
   readonly #clock: Clock;
   readonly #log: Logger;
-  readonly #publish: (event: Event) => void;
+  readonly #publish: Publish;
   readonly #random: () => number;
   readonly #store: JobStore;
   readonly #models = new Map<string, ModelAdapter>();
@@ -701,7 +700,7 @@ export class ImageGenService implements ImageGen {
       error: job.error,
       outputs: job.outputs.map((o) => o.path),
     };
-    this.#publish(customEvent(IMAGEGEN_TOPIC, payload as unknown as JsonValue));
+    this.#publish(Events.ImagegenJob, payload);
   }
 
   async #finish(
