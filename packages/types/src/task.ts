@@ -12,7 +12,16 @@
 // a change of direction (`TaskSteer`, docs/design/v3-architecture.md §10.6) went. `@miyoria/sdk` carries its own copy of these shapes
 // for extensions (it does not depend on this package).
 
-import type { TaskEventData } from "@miyoria/contracts/events";
+import {
+  type AnyEventDefinition,
+  TaskDone,
+  type TaskEventData,
+  TaskFailed,
+  TaskProgress,
+  TaskStarted,
+  TaskSteered,
+} from "@miyoria/contracts/events";
+import type { Publish } from "./event.js";
 import type { JsonObject } from "./json.js";
 import type { Timestamp } from "./time.js";
 
@@ -84,6 +93,20 @@ export function isTerminalTaskEvent(
 /** Bus topic of a task event: `<owner>.task.<type>` (`game.minecraft.task.done`). */
 export function taskTopic(owner: string, type: TaskEventType): string {
   return `${owner}.task.${type}`;
+}
+
+/** The family definition of each kind of task event. */
+const TASK_EVENT_DEFINITIONS: Readonly<Record<TaskEventType, AnyEventDefinition>> = {
+  started: TaskStarted,
+  progress: TaskProgress,
+  done: TaskDone,
+  failed: TaskFailed,
+  steered: TaskSteered,
+};
+
+/** Publishes `event` of a task of `owner` on `taskTopic(owner, event.type)`, by its family. */
+export function publishTaskEvent(publish: Publish, owner: string, event: TaskEvent): void {
+  publish(TASK_EVENT_DEFINITIONS[event.type], event, { type: taskTopic(owner, event.type) });
 }
 
 /** Inverse of `taskTopic`: `{owner, type}` of a task topic, or `null`. */

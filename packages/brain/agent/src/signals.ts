@@ -1,14 +1,20 @@
 // Signals from other modules that shape her behaviour: how she feels about people
 // (`SocialSignals`), her mood (`MoodSignals`) and the LLM budget (`llm.budget` events).
 
-import { type HerStatus, neutralize, type RaisedTopic, type ShownEmotion } from "@miyoria/types";
+import {
+  Events,
+  type HerStatus,
+  neutralize,
+  type RaisedTopic,
+  type ShownEmotion,
+} from "@miyoria/types";
 import { ParseError } from "./config.js";
 
 /**
  * Topic of the `custom` event the LLM layer publishes when its budget state changes; the
  * payload is `{"state": "ok" | "degraded" | "exhausted", ...}`.
  */
-export const BUDGET_TOPIC = "llm.budget";
+export const BUDGET_TOPIC = Events.LlmBudget.type;
 
 /**
  * What she says (at most once per context per notice interval) when the LLM budget is

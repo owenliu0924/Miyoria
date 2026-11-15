@@ -51,6 +51,7 @@ import {
   type AccountRef,
   ActionSinkKey,
   type ContextKey,
+  Events,
   type ImpulseRun,
   type IncomingMessage,
   type InterruptLevel,
@@ -79,8 +80,6 @@ import type { Session } from "./session.js";
 import { runTurn, type TurnPlan } from "./turn.js";
 import { contextId } from "./util.js";
 
-/** Topic of latency measurements (the `voice` package's `LATENCY_TOPIC`). */
-const VOICE_LATENCY_TOPIC = "voice.latency";
 const MINUTE_MS = 60_000;
 /** How long a dropped early start is given to let go of the Floor before the merged turn. */
 const DROP_WAIT_MS = 1_000;
@@ -726,10 +725,7 @@ export class Coordinator {
     heard: { heardAt: number; hold: Promise<void> | null } | null = null,
   ): Running {
     const turn = intent?.turn ?? newId();
-    this.#agent.ctx.publish(
-      { type: "agent_turn_started", data: { turn, context: this.#key } },
-      { turn },
-    );
+    this.#agent.ctx.publish(Events.AgentTurnStarted, { turn, context: this.#key }, { turn });
     const plan = this.#plan(turn, inputs, initiative, restarts);
     if (stood) plan.stood = true;
     this.#agent.focusBoard.start(plan.focus);
@@ -843,7 +839,8 @@ export class Coordinator {
     clearTimeout(timer);
     this.#agent.focusBoard.end(running.turn);
     this.#agent.ctx.publish(
-      { type: "agent_turn_completed", data: { turn: running.turn, context: this.#key, text: "" } },
+      Events.AgentTurnCompleted,
+      { turn: running.turn, context: this.#key, text: "" },
       { turn: running.turn },
     );
     const now = this.#now;
@@ -865,21 +862,16 @@ export class Coordinator {
   #speculation(running: Running, result: "confirmed" | "dropped", ms: number): void {
     const requested = running.flags.requestedAt;
     this.#agent.ctx.publish(
+      Events.VoiceLatency,
       {
-        type: "custom",
-        data: {
-          topic: VOICE_LATENCY_TOPIC,
-          payload: {
-            stage: "speculation",
-            context: { ...this.#key },
-            turn: running.turn,
-            result,
-            // From the early start to this; `model`: it asked the model (a dropped one paid for
-            // its prompt and what was streamed until it was cut).
-            ms,
-            model: requested !== undefined,
-          },
-        },
+        stage: "speculation",
+        context: { ...this.#key },
+        turn: running.turn,
+        result,
+        // From the early start to this; `model`: it asked the model (a dropped one paid for
+        // its prompt and what was streamed until it was cut).
+        ms,
+        model: requested !== undefined,
       },
       { turn: running.turn },
     );
@@ -966,10 +958,8 @@ export class Coordinator {
     );
     await this.#cancel(running.turn);
     this.#agent.ctx.publish(
-      {
-        type: "agent_turn_completed",
-        data: { turn: running.turn, context: this.#key, text: "" },
-      },
+      Events.AgentTurnCompleted,
+      { turn: running.turn, context: this.#key, text: "" },
       { turn: running.turn },
     );
     this.#cancelled(running.turn, running.plan.focus.reason, cause, by, running);

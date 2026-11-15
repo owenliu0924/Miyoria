@@ -196,10 +196,12 @@ export type IsEventFamily<Type extends string> = Type extends `${string}*${strin
 
 /**
  * The meta argument of a publish by definition: a family needs the concrete `type` (one it
- * covers, `worklane.task.done` for `**.task.done`); a fixed type takes none.
+ * covers, `worklane.task.done` for `**.task.done`); a fixed type takes none. A definition whose
+ * type is not known statically may take one.
  */
-export type PublishMetaArgs<D extends AnyEventDefinition> =
-  IsEventFamily<D["type"]> extends true
+export type PublishMetaArgs<D extends AnyEventDefinition> = string extends D["type"]
+  ? [meta?: EventMeta & { type?: string }]
+  : IsEventFamily<D["type"]> extends true
     ? [meta: EventMeta & { type: string }]
     : [meta?: EventMeta & { type?: undefined }];
 

@@ -47,6 +47,8 @@ import {
   type Principal,
   Principals,
   type ProfileId,
+  type Publish,
+  publishTaskEvent,
   type TaskEvent,
   type TaskFailureCode,
   type TurnId,
@@ -100,8 +102,8 @@ export interface LaneDeps {
   router(): LlmRouter | null;
   tools(): ToolRegistry;
   services: ServiceLookup;
-  /** Publishes a custom bus event (the fact layer, the panel, her life log read it). */
-  publish(topic: string, payload: JsonValue): void;
+  /** Publishes on the bus (the fact layer, the panel, her life log read its task events). */
+  publish: Publish;
   /** The hands follow `worklane.task.*` by task id (the agent does not subscribe to its own). */
   follow(topic: string, payload: JsonValue): void;
   store(): SettingsStore | null;
@@ -582,10 +584,8 @@ export class WorkLaneService implements WorkLane {
   }
 
   #emit(event: TaskEvent): void {
-    const topic = taskTopic(WORK_OWNER, event.type);
-    const payload = event as unknown as JsonValue;
-    this.#d.publish(topic, payload);
-    this.#d.follow(topic, payload);
+    publishTaskEvent(this.#d.publish, WORK_OWNER, event);
+    this.#d.follow(taskTopic(WORK_OWNER, event.type), event as unknown as JsonValue);
   }
 
   // ---- budget -----------------------------------------------------------------------------------

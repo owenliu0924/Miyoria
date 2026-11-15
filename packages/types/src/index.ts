@@ -856,6 +856,7 @@ export {
   isTaskFailureCode,
   isTerminalTaskEvent,
   parseTaskTopic,
+  publishTaskEvent,
   STEER_OUTCOMES,
   type SteerOutcome,
   type StructuredState,

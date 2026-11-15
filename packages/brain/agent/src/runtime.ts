@@ -16,9 +16,6 @@ import {
   type Subscription,
 } from "@miyoria/runtime/kernel";
 import {
-  ACTION_SETTLED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
   type AccountRef,
   type ActionId,
   ActuatorExecutorKey,
@@ -26,9 +23,9 @@ import {
   type Attitude,
   type ContextKey,
   type ConversationFacts,
-  customEvent,
   type Envelope,
-  type EventData,
+  type EventPayload,
+  Events,
   type FloorClaimKind,
   type Handle,
   HandleDirectoryKey,
@@ -42,9 +39,9 @@ import {
   type InterruptLevel,
   incomingText,
   inspectInput,
+  is,
   isJsonObject,
   type JsonValue,
-  MESSAGE_EXCLUDED_TOPIC,
   type MessageActionOutcome,
   type MessageActionRequest,
   type MessageActions,
@@ -53,7 +50,6 @@ import {
   type MessageRef,
   type Mood,
   MoodSignalsKey,
-  NOTICE_TOPIC,
   type Notice,
   newId,
   newImpulse,
@@ -65,19 +61,15 @@ import {
   SocialSignalsKey,
   safeName,
   sameAccount,
-  TURN_FOCUS_TOPIC,
-  TURN_OUTCOME_TOPIC,
   type TurnId,
   type TurnOutcomeRecord,
   toTimestamp,
   type VoiceParticipant,
   type VoiceUtterance,
-  v2Event,
-  v2Payload,
 } from "@miyoria/types";
 import type { RandomSource, TalkLevel } from "./attention.js";
 import type { AgentCommands } from "./commands.js";
-import { PROMPT_TOPIC, SavedPrompts } from "./compiler.js";
+import { SavedPrompts } from "./compiler.js";
 import type { AgentConfig } from "./config.js";
 import { Coordinator } from "./coordinator.js";
 import { TurnFocusBoard } from "./focus.js";
@@ -99,7 +91,7 @@ const MINUTE_MS = 60_000;
 /** How long the Arbiter waits for a coordinator to take (or refuse) an impulse's turn. */
 const OPEN_TIMEOUT_MS = 5_000;
 /** Topic of the voice module's barge-in reports (`packages/voice/voice/src/topics.ts`, W2). */
-export const BARGE_IN_TOPIC = "voice.barge_in";
+export const BARGE_IN_TOPIC = Events.VoiceBargeIn.type;
 /** Notices kept per context while nobody reads them. */
 const MAX_NOTICES = 10;
 /** Barge-ins remembered (by turn). */
@@ -286,7 +278,7 @@ export class Agent {
     );
     this.focusBoard = new TurnFocusBoard(
       () => ctx.clock.now(),
-      (focus) => ctx.publish(v2Event(TURN_FOCUS_TOPIC, focus), { turn: focus.turn }),
+      (focus) => ctx.publish(Events.AgentTurnFocus, focus, { turn: focus.turn }),
     );
     this.prompts = new SavedPrompts(config.prompt.saved);
     this.mainline = new MainLine(this);
@@ -320,19 +312,19 @@ export class Agent {
 
   static topics(): string[] {
     return [
-      ACTION_SETTLED_TOPIC,
-      ACTIVITY_DONE_TOPIC,
-      ACTIVITY_FAILED_TOPIC,
+      Events.ActionSettled.type,
+      Events.ActivityDone.type,
+      Events.ActivityFailed.type,
       "game.*",
       "sing.*",
-      "platform.ready",
-      "platform.message.created",
-      "platform.typing",
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.PlatformTyping.type,
       "voice.*",
-      "action.completed",
-      "system.module.state",
-      "agent.initiative",
-      NOTICE_TOPIC,
+      Events.ActionCompleted.type,
+      Events.SystemModuleState.type,
+      Events.AgentInitiative.type,
+      Events.AgentNotice.type,
       BUDGET_TOPIC,
     ];
   }
@@ -348,87 +340,64 @@ export class Agent {
   }
 
   #handle(env: Envelope): void {
-    const event = env.event;
-    switch (event.type) {
-      case "platform_ready": {
-        const account = event.data.self_account;
-        this.log.debug({ platform: account.platform, id: account.id }, "self account ready");
-        this.#selfAccounts.set(accountId(account), account);
-        break;
+    if (is(Events.PlatformReady, env)) {
+      const account = env.data.self_account;
+      this.log.debug({ platform: account.platform, id: account.id }, "self account ready");
+      this.#selfAccounts.set(accountId(account), account);
+    } else if (is(Events.PlatformMessageCreated, env)) {
+      this.mainline.noteCause(env.data.id.id, env.id);
+      this.#onMessage(env.data);
+    } else if (is(Events.PlatformTyping, env)) {
+      if (!this.isSelf(env.data.account)) {
+        this.#contexts.get(contextId(env.data.context))?.inbox.push({ type: "typing" });
       }
-      case "platform_message_created":
-        this.mainline.noteCause(event.data.id.id, env.id);
-        this.#onMessage(event.data);
-        break;
-      case "platform_typing":
-        if (!this.isSelf(event.data.account)) {
-          this.#contexts.get(contextId(event.data.context))?.inbox.push({ type: "typing" });
-        }
-        break;
-      case "voice_joined":
-      case "voice_participants":
-        if (this.#isVoice(event.data.context)) {
-          this.#onVoiceMembers(event.data.context, event.data.participants);
-        }
-        break;
-      case "voice_left": {
-        const { context, reason } = event.data;
-        if (!this.#isVoice(context)) break;
-        this.log.debug({ context: contextId(context), reason }, "left voice, session dropped");
-        this.handle.setVoiceRoom(context, false);
-        this.mainline.lines.dropContext(context, "she left the voice channel");
-        this.mainline.floor()?.releaseContext(context, "she left the voice channel");
-        // Closing the inbox stops the coordinator (and its turn).
-        const id = contextId(context);
-        this.#contexts.get(id)?.inbox.close();
-        this.#contexts.delete(id);
-        break;
+    } else if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+      if (this.#isVoice(env.data.context)) {
+        this.#onVoiceMembers(env.data.context, env.data.participants);
       }
-      case "voice_speaking": {
-        const { context, account, speaking } = event.data;
-        if (!this.#isVoice(context) || this.isSelf(account)) break;
-        const h = this.#contexts.get(contextId(context));
-        if (h) {
-          h.session.setSpeaking(account, speaking);
-          h.inbox.push({ type: "speaking" });
-        }
-        break;
+    } else if (is(Events.VoiceLeft, env)) {
+      const { context, reason } = env.data;
+      if (!this.#isVoice(context)) return;
+      this.log.debug({ context: contextId(context), reason }, "left voice, session dropped");
+      this.handle.setVoiceRoom(context, false);
+      this.mainline.lines.dropContext(context, "she left the voice channel");
+      this.mainline.floor()?.releaseContext(context, "she left the voice channel");
+      // Closing the inbox stops the coordinator (and its turn).
+      const id = contextId(context);
+      this.#contexts.get(id)?.inbox.close();
+      this.#contexts.delete(id);
+    } else if (is(Events.VoiceSpeaking, env)) {
+      const { context, account, speaking } = env.data;
+      if (!this.#isVoice(context) || this.isSelf(account)) return;
+      const h = this.#contexts.get(contextId(context));
+      if (h) {
+        h.session.setSpeaking(account, speaking);
+        h.inbox.push({ type: "speaking" });
       }
-      case "voice_utterance":
-        this.mainline.noteCause(event.data.id, env.id);
-        if (this.#isVoice(event.data.context)) this.#onUtterance(event.data);
-        break;
-      case "voice_playback":
-        if (this.#isVoice(event.data.context)) this.#onPlayback(event.data);
-        break;
-      case "action_completed": {
-        const { action, ok } = event.data;
-        const session = this.#pendingActions.get(action);
-        this.#pendingActions.delete(action);
-        if (session && !ok) session.forgetAction(action);
-        break;
+    } else if (is(Events.VoiceUtteranceEvent, env)) {
+      this.mainline.noteCause(env.data.id, env.id);
+      if (this.#isVoice(env.data.context)) this.#onUtterance(env.data);
+    } else if (is(Events.VoicePlaybackEvent, env)) {
+      if (this.#isVoice(env.data.context)) this.#onPlayback(env.data);
+    } else if (is(Events.ActionCompleted, env)) {
+      const { action, ok } = env.data;
+      const session = this.#pendingActions.get(action);
+      this.#pendingActions.delete(action);
+      if (session && !ok) session.forgetAction(action);
+    } else if (is(Events.SystemModuleState, env)) {
+      if (env.data.state === "running" && env.data.module === COMMANDS_MODULE) {
+        this.commands.install(this.ctx.services, this.handle, this.persona);
       }
-      case "module_state_changed":
-        if (event.data.state === "running" && event.data.module === COMMANDS_MODULE) {
-          this.commands.install(this.ctx.services, this.handle, this.persona);
-        }
-        break;
-      case "agent_initiative": {
-        const { context, reason, hint, about } = event.data;
-        this.#onInitiative(context, { reason, hint, about: [...about] });
-        break;
-      }
-      case "custom":
-        if (this.mainline.custom(event.data.topic, event.data.payload)) break;
-        if (event.data.topic === BUDGET_TOPIC) this.#onBudget(event.data.payload);
-        else if (event.data.topic === BARGE_IN_TOPIC) this.#onBargeIn(event.data.payload);
-        else if (event.data.topic === NOTICE_TOPIC) {
-          const notice = v2Payload(event, NOTICE_TOPIC);
-          if (notice) this.#onNotice(notice);
-        }
-        break;
-      default:
-        break;
+    } else if (is(Events.AgentInitiative, env)) {
+      const { context, reason, hint, about } = env.data;
+      this.#onInitiative(context, { reason, hint, about: [...about] });
+    } else {
+      // Every other topic it follows (they travelled as `custom` events).
+      const payload = env.data as JsonValue;
+      if (this.mainline.custom(env.type, payload)) return;
+      if (env.type === BUDGET_TOPIC) this.#onBudget(payload);
+      else if (env.type === BARGE_IN_TOPIC) this.#onBargeIn(payload);
+      else if (is(Events.AgentNotice, env) && isJsonObject(payload)) this.#onNotice(env.data);
     }
   }
 
@@ -598,7 +567,7 @@ export class Agent {
       requested_by: request.requested_by,
       at: new Date(this.ctx.clock.now()).toISOString(),
     };
-    this.ctx.publish(customEvent(MESSAGE_EXCLUDED_TOPIC, body as unknown as JsonValue));
+    this.ctx.publish(Events.AgentMessageExcluded, body);
     return { ok: true };
   }
 
@@ -722,15 +691,13 @@ export class Agent {
     );
     agentTurns.inc({ decision: "ignored" });
     this.ctx.publish(
+      Events.AgentDecision,
       {
-        type: "agent_decision",
-        data: {
-          turn: input.turn,
-          context,
-          respond: false,
-          score: 0,
-          reasons: [`intent:${input.intent.capability}`, `skipped: ${why}`],
-        },
+        turn: input.turn,
+        context,
+        respond: false,
+        score: 0,
+        reasons: [`intent:${input.intent.capability}`, `skipped: ${why}`],
       },
       { turn: input.turn },
     );
@@ -757,7 +724,7 @@ export class Agent {
   /** Publishes the one `agent.turn.outcome` of a turn. */
   publishOutcome(record: TurnOutcomeRecord): void {
     this.#barges.delete(record.turn);
-    this.ctx.publish(v2Event(TURN_OUTCOME_TOPIC, record), { turn: record.turn });
+    this.ctx.publish(Events.AgentTurnOutcome, record, { turn: record.turn });
   }
 
   /** Keeps (every `save_every`-th) saved prompt and publishes it as `agent.prompt`. */
@@ -767,7 +734,7 @@ export class Agent {
     this.#promptCount += 1;
     if ((this.#promptCount - 1) % every !== 0) return;
     this.prompts.push(prompt);
-    this.ctx.publish(customEvent(PROMPT_TOPIC, prompt as unknown as JsonValue), {
+    this.ctx.publish(Events.AgentPrompt, prompt, {
       turn: prompt.turn,
     });
   }
@@ -860,7 +827,7 @@ export class Agent {
   }
 
   /** Her own speech enters history once it starts playing. */
-  #onPlayback(playback: EventData<"voice_playback">): void {
+  #onPlayback(playback: EventPayload<typeof Events.VoicePlaybackEvent>): void {
     const { context, turn, state, text, blocked = null } = playback;
     const heardMs = this.mainline.lines.playback(context, turn, state, text, blocked) ?? 0;
     const h = this.#existing(context);
@@ -891,7 +858,11 @@ export class Agent {
    * What was heard of a line cut off: voice's measure of the audio, or how long ago it started
    * at the rate speech usually goes, from a publisher that does not say.
    */
-  #heard(written: string, playback: EventData<"voice_playback">, sinceStart: number): string {
+  #heard(
+    written: string,
+    playback: EventPayload<typeof Events.VoicePlaybackEvent>,
+    sinceStart: number,
+  ): string {
     const text = written.trim();
     const { heard_ms: ms = null, total_ms: total = null } = playback;
     if (ms !== null && total !== null) return heardShare(text, ms, total);
@@ -1014,15 +985,13 @@ export class Agent {
     const turn = newId();
     agentTurns.inc({ decision: "ignored" });
     this.ctx.publish(
+      Events.AgentDecision,
       {
-        type: "agent_decision",
-        data: {
-          turn,
-          context,
-          respond: false,
-          score: 0,
-          reasons: [`initiative:${reason}`, `skipped: ${why}`],
-        },
+        turn,
+        context,
+        respond: false,
+        score: 0,
+        reasons: [`initiative:${reason}`, `skipped: ${why}`],
       },
       { turn },
     );

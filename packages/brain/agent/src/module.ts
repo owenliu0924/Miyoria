@@ -11,7 +11,6 @@ import {
 import type { Profile } from "@miyoria/runtime/profile";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
-  customEvent,
   DirectivesKey,
   ImpulseHostKey,
   IntentSinkKey,
@@ -255,7 +254,7 @@ export class AgentModule implements Module {
       router: () => ctx.services.get(LlmRouterKey) ?? null,
       tools: () => tools,
       services: ctx.services,
-      publish: (topic, payload) => ctx.publish(customEvent(topic, payload)),
+      publish: ctx.publisher,
       follow: (topic, payload) => {
         main.custom(topic, payload);
       },

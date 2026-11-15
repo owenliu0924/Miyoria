@@ -59,6 +59,7 @@ import {
   DATA_OPEN,
   DirectivesKey,
   dataBlock,
+  Events,
   escapeXml,
   FileReaderKey,
   type FloorClaimKind,
@@ -396,7 +397,7 @@ export async function runTurn(
     t.ended();
   }
   if (signal.aborted) return;
-  agent.ctx.publish({ type: "agent_turn_completed", data: { turn, context: key, text } }, { turn });
+  agent.ctx.publish(Events.AgentTurnCompleted, { turn, context: key, text }, { turn });
   agent.publishOutcome(t.outcomeRecord(outcome));
 }
 
@@ -833,9 +834,6 @@ export function truncate(text: string, maxChars: number): string {
   const chars = [...text];
   return chars.length > maxChars ? `${chars.slice(0, maxChars).join("")}…` : text;
 }
-
-/** Topic of latency measurements (the `voice` package's `LATENCY_TOPIC`). */
-const VOICE_LATENCY_TOPIC = "voice.latency";
 
 class Turn {
   /** A voice channel: the reply is spoken. */
@@ -1328,10 +1326,8 @@ class Turn {
     this.signal.throwIfAborted();
     agentTurns.inc({ decision: respond ? "responded" : "ignored" });
     this.agent.ctx.publish(
-      {
-        type: "agent_decision",
-        data: { turn: this.turn, context: this.key, respond, score, reasons },
-      },
+      Events.AgentDecision,
+      { turn: this.turn, context: this.key, respond, score, reasons },
       { turn: this.turn },
     );
   }
@@ -2884,18 +2880,13 @@ class Turn {
     );
     const text = truncate(full, this.agent.config.max_tool_result_chars);
     this.agent.ctx.publish(
+      Events.AgentTool,
       {
-        type: "custom",
-        data: {
-          topic: "agent.tool",
-          payload: {
-            turn: this.turn,
-            context: contextJson(this.key),
-            tool: call.name,
-            ok,
-            result: text,
-          },
-        },
+        turn: this.turn,
+        context: contextJson(this.key),
+        tool: call.name,
+        ok,
+        result: text,
       },
       { turn: this.turn },
     );
@@ -3209,18 +3200,13 @@ class Turn {
     if (!this.voice || this.#latencyReported || firstTokenMs === null) return;
     this.#latencyReported = true;
     this.agent.ctx.publish(
+      Events.VoiceLatency,
       {
-        type: "custom",
-        data: {
-          topic: VOICE_LATENCY_TOPIC,
-          payload: {
-            stage: "llm",
-            context: contextJson(this.key),
-            turn: this.turn,
-            model,
-            first_token_ms: Math.round(firstTokenMs),
-          },
-        },
+        stage: "llm",
+        context: contextJson(this.key),
+        turn: this.turn,
+        model,
+        first_token_ms: Math.round(firstTokenMs),
       },
       { turn: this.turn },
     );
@@ -3460,17 +3446,12 @@ class Turn {
     if (segment.type === "emotion" && !expression.silence) {
       this.signal.throwIfAborted();
       this.agent.ctx.publish(
+        Events.AgentEmotion,
         {
-          type: "custom",
-          data: {
-            topic: "agent.emotion",
-            payload: {
-              turn: this.turn,
-              context: contextJson(this.key),
-              emotion: segment.emotion,
-              ...(segment.intensity === undefined ? {} : { intensity: segment.intensity }),
-            },
-          },
+          turn: this.turn,
+          context: contextJson(this.key),
+          emotion: segment.emotion,
+          ...(segment.intensity === undefined ? {} : { intensity: segment.intensity }),
         },
         { turn: this.turn },
       );
@@ -3511,7 +3492,7 @@ function ownBlock(key: string, title: string, body: string, order: number): Prom
 }
 
 /** The context as a JSON object (event payloads). */
-function contextJson(key: ContextKey): JsonValue {
+function contextJson(key: ContextKey): ContextKey {
   return { platform: key.platform, scope: key.scope, channel: key.channel, kind: key.kind };
 }
 
