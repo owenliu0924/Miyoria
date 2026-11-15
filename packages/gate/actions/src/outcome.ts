@@ -8,6 +8,7 @@
 
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
+  type ActionOutcomePayload,
   ArbiterKey,
   customEvent,
   type Event,
@@ -34,12 +35,8 @@ export const NOTICE_TTL_MS = 30 * 60_000;
 
 const MAX_TEXT = 300;
 
-/** `ACTION_OUTCOME_TOPIC` payload: the ledger record plus what ran. */
-export interface ActionOutcomeRecord extends LedgerRecord {
-  capability: string;
-  status: ActionOutcome["status"];
-  at: string;
-}
+/** `ACTION_OUTCOME_TOPIC` payload: the ledger record plus what ran (contract: `ActionOutcomeSchema`). */
+export type ActionOutcomeRecord = ActionOutcomePayload;
 
 /** The ledger source of a principal (who started it). */
 export function ledgerSource(principal: Principal, turn: string | null): ImpulseSource {

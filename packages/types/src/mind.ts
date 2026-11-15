@@ -8,6 +8,7 @@
 // * The agent provides `IntentSinkKey`: an intent opens a turn she starts herself (principal
 //   `self`, with tools) in the right context, after the action it names passed the gate.
 
+import type { ThoughtData } from "@miyoria/contracts/events";
 import type { TurnId } from "./ids.js";
 import type { JsonObject, JsonValue } from "./json.js";
 import type { AccountRef, ContextKey } from "./platform.js";
@@ -220,38 +221,8 @@ export interface DirectorThoughtBody {
 /** What a `thought` line says; `source` tells which. */
 export type ThoughtBody = MindThoughtBody | DirectorThoughtBody;
 
-/** One entry of her thought journal. */
-export interface Thought {
-  id: string;
-  at: Timestamp;
-  triggers: ThoughtTrigger[];
-  /** Her inner monologue (first person, in her voice). */
-  thought: string;
-  /** What she changed in her inner state, in words (`多話程度 語音 0.8`, ...). */
-  changes: string[];
-  intents: ThoughtIntent[];
-  /** Prompt + completion tokens of the call, when reported. */
-  tokens: number | null;
-  /** The call or the reply failed; `thought` is empty then. */
-  error: string | null;
-  /** Latency of the call. */
-  ms: number;
-  /** The suggestions that woke her (newer journals only). */
-  suggestions?: MindSuggestion[];
-  /** What she saw (only the newest thoughts keep it). */
-  input?: ThoughtInput | null;
-  /** The model's reasoning, when it thought out loud (only the newest thoughts keep it). */
-  reasoning?: string | null;
-  effects?: ThoughtEffects | null;
-  /** Ids of her LLM calls for this thought (the call inspector's). */
-  calls?: string[];
-  /** Cost of those calls in USD (`[llm.pricing]`). */
-  cost_usd?: number | null;
-  /** Calls made (2 = one repair). */
-  attempts?: number;
-  /** Thoughts in a row that did nothing before this one, and for how long. */
-  idle?: { thoughts: number; minutes: number } | null;
-}
+/** One entry of her thought journal (contract: `ThoughtSchema` in @miyoria/contracts/events). */
+export type Thought = ThoughtData;
 
 /** Older journal entries condensed into one record (the journal keeps a bounded number raw). */
 export interface ThoughtDigest {

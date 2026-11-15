@@ -42,6 +42,105 @@
         "message"
       ]
     },
+    "EventsActionOutcome": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "impulse",
+            "turn",
+            "task",
+            "notice"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/EventsImpulseSource"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "ok",
+            "ignored",
+            "failed",
+            "denied"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "impulse": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capability": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "done",
+            "denied",
+            "failed"
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "context",
+        "person",
+        "summary",
+        "outcome",
+        "detail",
+        "impulse",
+        "turn",
+        "task",
+        "capability",
+        "status",
+        "at"
+      ]
+    },
     "EventsActionSettled": {
       "type": "object",
       "properties": {
@@ -504,6 +603,195 @@
         "at"
       ]
     },
+    "EventsAffectBiases": {
+      "type": "object",
+      "properties": {
+        "talkativeness": {
+          "type": "number"
+        },
+        "initiative": {
+          "type": "number"
+        },
+        "wants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "want": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "number"
+              },
+              "person": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "why": {
+                "type": "string"
+              },
+              "from": {
+                "$ref": "#/$defs/EventsEmotionName"
+              }
+            },
+            "required": [
+              "want",
+              "weight",
+              "person",
+              "why"
+            ]
+          }
+        }
+      },
+      "required": [
+        "talkativeness",
+        "initiative",
+        "wants"
+      ]
+    },
+    "EventsAffectBond": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "affinity": {
+          "type": "number"
+        },
+        "trust": {
+          "type": "number"
+        },
+        "familiarity": {
+          "type": "number"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "person",
+        "affinity",
+        "trust",
+        "familiarity",
+        "why"
+      ]
+    },
+    "EventsAffectEvent": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EventsAffectEventKind"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "handle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "person",
+        "handle",
+        "context",
+        "detail",
+        "key",
+        "at"
+      ]
+    },
+    "EventsAffectEventKind": {
+      "type": "string",
+      "enum": [
+        "praised",
+        "cared_arrived",
+        "topic_ignored",
+        "song_finished",
+        "song_applauded",
+        "interrupted",
+        "ignored",
+        "cared_close_with_other",
+        "task_succeeded",
+        "task_failed",
+        "game_won",
+        "game_lost"
+      ]
+    },
+    "EventsAffectSnapshot": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "drives": {
+          "$ref": "#/$defs/EventsDrives"
+        },
+        "boredom": {
+          "type": "number"
+        },
+        "top": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsEmotionReading"
+          }
+        },
+        "mood": {
+          "$ref": "#/$defs/EventsMood"
+        },
+        "mood_line": {
+          "type": "string"
+        },
+        "shown": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsShownEmotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "biases": {
+          "$ref": "#/$defs/EventsAffectBiases"
+        }
+      },
+      "required": [
+        "at",
+        "drives",
+        "boredom",
+        "top",
+        "mood",
+        "mood_line",
+        "shown",
+        "biases"
+      ]
+    },
     "EventsAgentEmotion": {
       "type": "object",
       "properties": {
@@ -577,6 +865,51 @@
         "tool",
         "ok",
         "result"
+      ]
+    },
+    "EventsAppraisedPerson": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "toward_her": {
+          "type": "number"
+        },
+        "romance": {
+          "type": "number"
+        },
+        "others": {
+          "type": "number"
+        },
+        "promise": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "kept",
+                "broken"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "person",
+        "name",
+        "toward_her",
+        "romance",
+        "others",
+        "promise"
       ]
     },
     "EventsArbiterDecision": {
@@ -959,6 +1292,29 @@
         "fate"
       ]
     },
+    "EventsConversationFolded": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "folded_up_to": {
+          "$ref": "#/$defs/EventsFoldMark"
+        },
+        "lines": {
+          "type": "number"
+        },
+        "session_lines": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "context",
+        "folded_up_to",
+        "lines",
+        "session_lines"
+      ]
+    },
     "EventsDecisionTrace": {
       "type": "object",
       "properties": {
@@ -1211,6 +1567,58 @@
         "data"
       ]
     },
+    "EventsDriveName": {
+      "type": "string",
+      "enum": [
+        "social",
+        "play",
+        "attention",
+        "rest",
+        "curiosity",
+        "esteem",
+        "hunger",
+        "longing"
+      ]
+    },
+    "EventsDrives": {
+      "type": "object",
+      "properties": {
+        "social": {
+          "type": "number"
+        },
+        "play": {
+          "type": "number"
+        },
+        "attention": {
+          "type": "number"
+        },
+        "rest": {
+          "type": "number"
+        },
+        "curiosity": {
+          "type": "number"
+        },
+        "esteem": {
+          "type": "number"
+        },
+        "hunger": {
+          "type": "number"
+        },
+        "longing": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "social",
+        "play",
+        "attention",
+        "rest",
+        "curiosity",
+        "esteem",
+        "hunger",
+        "longing"
+      ]
+    },
     "EventsE2eParts": {
       "type": "object",
       "properties": {
@@ -1352,6 +1760,109 @@
         "playback"
       ]
     },
+    "EventsEmergencyReport": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "$ref": "#/$defs/EventsEmergencyStepName"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "ok",
+              "detail"
+            ]
+          }
+        }
+      },
+      "required": [
+        "paused",
+        "by",
+        "at",
+        "steps"
+      ]
+    },
+    "EventsEmergencyStepName": {
+      "type": "string",
+      "enum": [
+        "pause",
+        "silence",
+        "song",
+        "stream",
+        "voice",
+        "game",
+        "resume"
+      ]
+    },
+    "EventsEmotionName": {
+      "type": "string",
+      "enum": [
+        "joy",
+        "anger",
+        "sorrow",
+        "fear",
+        "surprise",
+        "disgust",
+        "shy",
+        "pride",
+        "jealousy",
+        "lonely",
+        "missing",
+        "gratitude",
+        "guilt",
+        "frustration"
+      ]
+    },
+    "EventsEmotionReading": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/EventsEmotionName"
+        },
+        "intensity": {
+          "type": "number"
+        },
+        "cause": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "intensity",
+        "cause",
+        "at",
+        "person"
+      ]
+    },
     "EventsEnvelope": {
       "type": "object",
       "properties": {
@@ -1470,6 +1981,48 @@
         "data"
       ]
     },
+    "EventsFeedbackSignal": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "tone": {
+          "type": "string",
+          "enum": [
+            "positive",
+            "negative"
+          ]
+        },
+        "quote": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "account",
+        "person",
+        "name",
+        "tone",
+        "quote",
+        "at"
+      ]
+    },
     "EventsFloorClaimKind": {
       "type": "string",
       "enum": [
@@ -1482,6 +2035,114 @@
         "ambient"
       ]
     },
+    "EventsFoldMark": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "ts"
+      ]
+    },
+    "EventsGateDecision": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "risk": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "principal": {
+          "$ref": "#/$defs/EventsPrincipal"
+        },
+        "args": {
+          "$ref": "#/$defs/WireJsonValue"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/EventsGateStage"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reviewer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "capability",
+        "risk",
+        "principal",
+        "args",
+        "why",
+        "turn",
+        "allowed",
+        "stage",
+        "reason",
+        "reviewer"
+      ]
+    },
+    "EventsGateStage": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "args",
+        "directive",
+        "pause",
+        "prohibition",
+        "consent",
+        "permission",
+        "budget",
+        "risk",
+        "rate",
+        "review",
+        "escalation"
+      ]
+    },
     "EventsGoLiveState": {
       "type": "string",
       "enum": [
@@ -1489,6 +2150,170 @@
         "live",
         "stopped",
         "failed"
+      ]
+    },
+    "EventsGoal": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "trigger": {
+          "$ref": "#/$defs/EventsGoalTrigger"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/EventsGoalStatus"
+        },
+        "expires": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/EventsGoalSource"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "closed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "close_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "what",
+        "why",
+        "trigger",
+        "steps",
+        "status",
+        "expires",
+        "person",
+        "context",
+        "source",
+        "created_at",
+        "updated_at",
+        "closed_at",
+        "close_reason"
+      ]
+    },
+    "EventsGoalSource": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "plan_daily",
+        "reflect",
+        "panel"
+      ]
+    },
+    "EventsGoalStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "done",
+        "dropped"
+      ]
+    },
+    "EventsGoalTrigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "at"
+            },
+            "time": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "time"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "when_online"
+            },
+            "person": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "person"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "after_activity"
+            },
+            "activity": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "activity"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "whenever"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
       ]
     },
     "EventsHerActivity": {
@@ -1937,6 +2762,325 @@
         "account"
       ]
     },
+    "EventsInputAction": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "mark",
+        "rate_limit",
+        "ignore"
+      ]
+    },
+    "EventsInputFlag": {
+      "type": "string",
+      "enum": [
+        "injection",
+        "flood",
+        "bait",
+        "impersonation"
+      ]
+    },
+    "EventsInputSource": {
+      "type": "string",
+      "enum": [
+        "chat",
+        "voice",
+        "game_chat",
+        "web",
+        "tool",
+        "other"
+      ]
+    },
+    "EventsInputVerdict": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/EventsInputSource"
+        },
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "$ref": "#/$defs/EventsInputAction"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsInputFlag"
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "owner": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "at",
+        "source",
+        "author",
+        "action",
+        "flags",
+        "reasons",
+        "owner"
+      ]
+    },
+    "EventsIntentStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "started",
+        "done",
+        "denied",
+        "dropped",
+        "failed"
+      ]
+    },
+    "EventsKnowledgeChanged": {
+      "type": "object",
+      "properties": {
+        "doc": {
+          "$ref": "#/$defs/EventsKnowledgeDoc"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "doc",
+        "deleted"
+      ]
+    },
+    "EventsKnowledgeDoc": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "#/$defs/EventsKnowledgeSubject"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "content": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        "sources": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/EventsKnowledgeFieldSource"
+          }
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsKnowledgeVersion"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "kind",
+        "title",
+        "content",
+        "sources",
+        "created_at",
+        "updated_at",
+        "version",
+        "history"
+      ]
+    },
+    "EventsKnowledgeFieldSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EventsKnowledgeSourceKind"
+        },
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "account",
+        "name",
+        "origin",
+        "confidence",
+        "at"
+      ]
+    },
+    "EventsKnowledgeSourceKind": {
+      "type": "string",
+      "enum": [
+        "self",
+        "inferred",
+        "said",
+        "panel"
+      ]
+    },
+    "EventsKnowledgeSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "person"
+            },
+            "person": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "person"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "guild"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "guild": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "platform",
+            "guild"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "self"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "topic"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        }
+      ]
+    },
+    "EventsKnowledgeVersion": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "$ref": "#/$defs/EventsKnowledgeSourceKind"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "why": {
+          "type": "string"
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "at",
+        "by",
+        "name",
+        "why",
+        "ops"
+      ]
+    },
     "EventsLatencyTurnEnd": {
       "type": "object",
       "properties": {
@@ -2075,6 +3219,49 @@
         "first_seen",
         "old_tier",
         "cards"
+      ]
+    },
+    "EventsLlmBudget": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/EventsLlmBudgetState"
+        },
+        "spent_today_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "daily_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "spent_month_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "monthly_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "spent_today_usd",
+        "daily_usd",
+        "spent_month_usd",
+        "monthly_usd"
+      ]
+    },
+    "EventsLlmBudgetState": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "degraded",
+        "exhausted"
       ]
     },
     "EventsLlmCall": {
@@ -2359,6 +3546,119 @@
         "at"
       ]
     },
+    "EventsMindSuggestion": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "type": "string"
+        },
+        "about": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireAccountRef"
+          }
+        }
+      },
+      "required": [
+        "source",
+        "reason",
+        "context",
+        "hint",
+        "about"
+      ]
+    },
+    "EventsModerationBlock": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string",
+          "enum": [
+            "visible",
+            "voice"
+          ]
+        },
+        "category": {
+          "$ref": "#/$defs/EventsModerationCategory"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "layer": {
+          "type": "string",
+          "enum": [
+            "rules",
+            "provider"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/EventsOutputPath"
+        },
+        "chars": {
+          "type": "number"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "field",
+        "category",
+        "rule",
+        "layer",
+        "at",
+        "path",
+        "chars",
+        "fingerprint",
+        "context",
+        "turn"
+      ]
+    },
+    "EventsModerationCategory": {
+      "type": "string",
+      "enum": [
+        "hate",
+        "minors",
+        "self_harm",
+        "doxxing",
+        "secrets",
+        "custom"
+      ]
+    },
     "EventsModuleState": {
       "type": "object",
       "properties": {
@@ -2391,6 +3691,48 @@
         "stopping",
         "stopped",
         "failed"
+      ]
+    },
+    "EventsMood": {
+      "type": "object",
+      "properties": {
+        "valence": {
+          "type": "number"
+        },
+        "arousal": {
+          "type": "number"
+        },
+        "energy": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "valence",
+        "arousal",
+        "energy"
+      ]
+    },
+    "EventsMoodChanged": {
+      "type": "object",
+      "properties": {
+        "valence": {
+          "type": "number"
+        },
+        "arousal": {
+          "type": "number"
+        },
+        "energy": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "valence",
+        "arousal",
+        "energy",
+        "reason"
       ]
     },
     "EventsNotice": {
@@ -2458,6 +3800,18 @@
         "code",
         "text",
         "expires_at"
+      ]
+    },
+    "EventsOutputPath": {
+      "type": "string",
+      "enum": [
+        "reply",
+        "fallback",
+        "translation",
+        "tts",
+        "aside",
+        "game_chat",
+        "other"
       ]
     },
     "EventsPlatformMessage": {
@@ -2723,6 +4077,60 @@
         "initial"
       ]
     },
+    "EventsPrincipal": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EventsPrincipalKind"
+        },
+        "requester": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "override": {
+          "type": "boolean"
+        },
+        "actor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "requester",
+        "context",
+        "override",
+        "actor"
+      ]
+    },
+    "EventsPrincipalKind": {
+      "type": "string",
+      "enum": [
+        "self",
+        "user",
+        "command",
+        "panel",
+        "director"
+      ]
+    },
     "EventsPriority": {
       "type": "string",
       "enum": [
@@ -2752,6 +4160,265 @@
       },
       "required": [
         "redacted"
+      ]
+    },
+    "EventsReflectionRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "daily",
+            "light"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "insights": {
+          "type": "number"
+        },
+        "superseded": {
+          "type": "number"
+        },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "goals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "feelings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "kind",
+        "context",
+        "summary",
+        "insights",
+        "superseded",
+        "lessons",
+        "goals",
+        "documents",
+        "feelings",
+        "error",
+        "tokens",
+        "ms"
+      ]
+    },
+    "EventsReminder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "due": {
+          "type": "string"
+        },
+        "daily": {
+          "type": "boolean"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "for_account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fired": {
+          "type": "number"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "what",
+        "due",
+        "daily",
+        "context",
+        "person",
+        "for_account",
+        "fired",
+        "created_at"
+      ]
+    },
+    "EventsReminderChanged": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "set",
+            "fired",
+            "held",
+            "done",
+            "cancelled"
+          ]
+        },
+        "reminder": {
+          "$ref": "#/$defs/EventsReminder"
+        }
+      },
+      "required": [
+        "state",
+        "reminder"
+      ]
+    },
+    "EventsSalienceKind": {
+      "type": "string",
+      "enum": [
+        "came_online",
+        "joined_voice",
+        "started_game",
+        "channel_quiet",
+        "mentioned"
+      ]
+    },
+    "EventsSalientEvent": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EventsSalienceKind"
+        },
+        "key": {
+          "type": "string"
+        },
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number"
+        },
+        "count": {
+          "type": "number"
+        },
+        "first_at": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "key",
+        "account",
+        "person",
+        "display_name",
+        "context",
+        "detail",
+        "score",
+        "count",
+        "first_at",
+        "at"
       ]
     },
     "EventsSavedPrompt": {
@@ -2848,6 +4515,73 @@
         "self",
         "owner"
       ]
+    },
+    "EventsSelfFeel": {
+      "type": "object",
+      "properties": {
+        "emotion": {
+          "type": "string"
+        },
+        "emotions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "amount": {
+          "type": "number"
+        },
+        "toward": {
+          "type": "string"
+        },
+        "person": {
+          "type": "string"
+        },
+        "cause": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "EventsSelfNudge": {
+      "type": "object",
+      "properties": {
+        "social": {
+          "type": "number"
+        },
+        "play": {
+          "type": "number"
+        },
+        "attention": {
+          "type": "number"
+        },
+        "rest": {
+          "type": "number"
+        },
+        "curiosity": {
+          "type": "number"
+        },
+        "esteem": {
+          "type": "number"
+        },
+        "hunger": {
+          "type": "number"
+        },
+        "longing": {
+          "type": "number"
+        },
+        "boredom": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
     },
     "EventsSentMessage": {
       "type": "object",
@@ -2971,6 +4705,168 @@
         "share_id",
         "artifact_id",
         "reason"
+      ]
+    },
+    "EventsShownEmotion": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/EventsEmotionName"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "style": {
+          "type": "string"
+        },
+        "masked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "from",
+        "tag",
+        "style",
+        "masked"
+      ]
+    },
+    "EventsSocialAppraisal": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "her": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsAppraisedPerson"
+          }
+        }
+      },
+      "required": [
+        "context",
+        "her",
+        "people"
+      ]
+    },
+    "EventsSocialEvent": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "scale": {
+          "type": "number"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hunger": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "person",
+        "name",
+        "kind",
+        "source",
+        "scale",
+        "context"
+      ]
+    },
+    "EventsSocialRelationship": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "person": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "positive": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "affinity": {
+          "type": "number"
+        },
+        "trust": {
+          "type": "number"
+        },
+        "familiarity": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "profile",
+        "person",
+        "name",
+        "reason",
+        "kind",
+        "positive",
+        "affinity",
+        "trust",
+        "familiarity",
+        "label",
+        "context"
       ]
     },
     "EventsSpeechPause": {
@@ -3181,6 +5077,790 @@
         "outcome",
         "detail",
         "at"
+      ]
+    },
+    "EventsThought": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsThoughtTrigger"
+          }
+        },
+        "thought": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsThoughtIntent"
+          }
+        },
+        "tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ms": {
+          "type": "number"
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsMindSuggestion"
+          }
+        },
+        "input": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsThoughtInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effects": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsThoughtEffects"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": "number"
+        },
+        "idle": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "thoughts": {
+                  "type": "number"
+                },
+                "minutes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "thoughts",
+                "minutes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "triggers",
+        "thought",
+        "changes",
+        "intents",
+        "tokens",
+        "error",
+        "ms"
+      ]
+    },
+    "EventsThoughtDecision": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "capability",
+        "allowed",
+        "stage",
+        "reason"
+      ]
+    },
+    "EventsThoughtEffects": {
+      "type": "object",
+      "properties": {
+        "drives": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "emotions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "talkativeness": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "type": "string"
+              },
+              "level": {
+                "type": "number"
+              },
+              "minutes": {
+                "type": "number"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "scope",
+              "level",
+              "minutes",
+              "why"
+            ]
+          }
+        },
+        "initiative": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "level": {
+                  "type": "number"
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "level",
+                "why"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "feelings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "person": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hint": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "+",
+                      "-"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "person",
+              "name",
+              "note",
+              "hint"
+            ]
+          }
+        },
+        "agenda_added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "why"
+            ]
+          }
+        },
+        "agenda_done": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "agenda_dropped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "title",
+              "ok",
+              "error"
+            ]
+          }
+        }
+      },
+      "required": [
+        "drives",
+        "talkativeness",
+        "initiative",
+        "feelings",
+        "agenda_added",
+        "agenda_done",
+        "agenda_dropped",
+        "documents"
+      ]
+    },
+    "EventsThoughtInput": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "string"
+        },
+        "night": {
+          "type": "boolean"
+        },
+        "self": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mood": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EventsMood"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "boredom": {
+                  "type": "number"
+                },
+                "drives": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "initiative": {
+                  "type": "number"
+                },
+                "emotions": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "shown": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "mood",
+                "boredom",
+                "drives",
+                "initiative"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsMindSuggestion"
+          }
+        },
+        "world": {
+          "type": "string"
+        },
+        "places": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "here": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "ref",
+              "label",
+              "note",
+              "here"
+            ]
+          }
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "person": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "relation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "feeling": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "doing": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "heart": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "ref",
+              "name",
+              "person",
+              "relation",
+              "feeling",
+              "doing"
+            ]
+          }
+        },
+        "agenda": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "due": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "blocked": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "ref",
+              "text",
+              "due",
+              "blocked"
+            ]
+          }
+        },
+        "memories": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "documents": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recap": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unanswered": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blocked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "capability": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "capability",
+              "reason"
+            ]
+          }
+        },
+        "idle": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "thoughts": {
+                  "type": "number"
+                },
+                "minutes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "thoughts",
+                "minutes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "time",
+        "night",
+        "self",
+        "suggestions",
+        "world",
+        "places",
+        "people",
+        "agenda",
+        "memories",
+        "documents",
+        "lessons",
+        "recap",
+        "digest",
+        "unanswered",
+        "blocked",
+        "idle",
+        "capabilities",
+        "recent"
+      ]
+    },
+    "EventsThoughtIntent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "args": {
+          "$ref": "#/$defs/WireJsonValue"
+        },
+        "why": {
+          "type": "string"
+        },
+        "opening": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "about": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/EventsIntentStatus"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsThoughtDecision"
+          }
+        },
+        "said": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/EventsIntentStatus"
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at",
+              "status",
+              "detail"
+            ]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "capability",
+        "args",
+        "why",
+        "opening",
+        "context",
+        "about",
+        "expires_at",
+        "status",
+        "detail",
+        "turn",
+        "decisions",
+        "said"
+      ]
+    },
+    "EventsThoughtTrigger": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EventsThoughtTriggerKind"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "detail",
+        "context",
+        "at"
+      ]
+    },
+    "EventsThoughtTriggerKind": {
+      "type": "string",
+      "enum": [
+        "heartbeat",
+        "salient",
+        "suggestion",
+        "turn",
+        "voice_quiet",
+        "manual"
       ]
     },
     "EventsTier": {

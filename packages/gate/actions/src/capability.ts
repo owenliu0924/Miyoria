@@ -7,13 +7,13 @@ import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import type {
   AccountRef,
   ActivityRequest,
+  GateDecisionPayload,
   JsonObject,
   JsonValue,
   LaneKey,
   MessageRef,
   Principal,
   TaskId,
-  Timestamp,
   TurnId,
 } from "@miyoria/types";
 import type { z } from "zod";
@@ -188,25 +188,8 @@ export type GateStage =
   | "review"
   | "escalation";
 
-/** One gate decision (audit `detail` and `gate.decision` payload). */
-export interface GateDecision {
-  id: string;
-  at: Timestamp;
-  capability: string;
-  risk: Risk | null;
-  principal: Principal;
-  args: JsonValue;
-  why: string | null;
-  turn: TurnId | null;
-  allowed: boolean;
-  stage: GateStage;
-  reason: string;
-  /**
-   * Who made the call at the `review` / `escalation` stage: `self` (her own review) or the
-   * owner who answered (`discord:<id>`); `null` at other stages and when no owner answered.
-   */
-  reviewer: string | null;
-}
+/** One gate decision (audit `detail` and `gate.decision` payload; contract: `GateDecisionSchema`). */
+export type GateDecision = GateDecisionPayload;
 
 export type ActionOutcome =
   | { status: "done"; decision: GateDecision; result: ActionResult }

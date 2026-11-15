@@ -14,7 +14,12 @@
 // Everything here may be derived from what other people said: prompts show it as untrusted
 // data blocks, never in the system role.
 
-import type { PlatformReactionData } from "@miyoria/contracts/events";
+import type {
+  ConversationFoldedData,
+  KnowledgeDocData,
+  PlatformReactionData,
+  ReflectionRunData,
+} from "@miyoria/contracts/events";
 import type { PersonId, PlatformId } from "./ids.js";
 import type { JsonObject, JsonValue } from "./json.js";
 import type { AccountRef, ContextKey } from "./platform.js";
@@ -54,15 +59,8 @@ export interface ConversationState {
   touched?: Record<string, Timestamp>;
 }
 
-/** `conversation.folded` payload. */
-export interface ConversationFolded {
-  context: ContextKey;
-  folded_up_to: FoldMark;
-  /** Lines folded this time. */
-  lines: number;
-  /** Total lines folded since the context went quiet last (a long session). */
-  session_lines: number;
-}
+/** `conversation.folded` payload (contract: `ConversationFoldedSchema` in @miyoria/contracts/events). */
+export type ConversationFolded = ConversationFoldedData;
 
 /** Provided by the `conversation` module; answers from memory (safe on the voice hot path). */
 export interface ConversationStates {
@@ -133,23 +131,8 @@ export interface KnowledgeVersion {
   ops: string[];
 }
 
-/** One of her documents. */
-export interface KnowledgeDoc {
-  /** ULID. */
-  id: string;
-  subject: KnowledgeSubject;
-  /** Her own label of the kind of document ("人物卡", "內梗", "建築計畫", ...). */
-  kind: string;
-  title: string;
-  /** Schema-free: whatever structure she chose. */
-  content: JsonObject;
-  /** JSON pointer (`""` = the document, `/likes/0`) → its source. */
-  sources: Record<string, FieldSource>;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  version: number;
-  history: KnowledgeVersion[];
-}
+/** One of her documents (contract: `KnowledgeDocSchema` in @miyoria/contracts/events). */
+export type KnowledgeDoc = KnowledgeDocData;
 
 /** JSON-patch-like operations (RFC 6902 subset; paths are JSON pointers, `-` appends). */
 export type PatchOp =
@@ -267,26 +250,8 @@ export interface FeedbackTally {
   examples: string[];
 }
 
-/** One of her reflections. */
-export interface ReflectionRun {
-  id: string;
-  at: Timestamp;
-  /** `daily` (the day) or `light` (after a long session). */
-  kind: "daily" | "light";
-  context: ContextKey | null;
-  /** Her summary, in her words. */
-  summary: string;
-  insights: number;
-  superseded: number;
-  lessons: string[];
-  goals: string[];
-  /** Documents changed (titles). */
-  documents: string[];
-  feelings: string[];
-  error: string | null;
-  tokens: number | null;
-  ms: number;
-}
+/** One of her reflections (contract: `ReflectionRunSchema` in @miyoria/contracts/events). */
+export type ReflectionRun = ReflectionRunData;
 
 export interface ReflectionStats {
   calls_today: number;

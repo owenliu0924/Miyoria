@@ -8,7 +8,14 @@
 
 import { getLogger } from "@miyoria/runtime/kernel";
 import type { LlmCallStore, LlmModelTotals } from "@miyoria/store";
-import { type Clock, customEvent, type Event, systemClock, toTimestamp } from "@miyoria/types";
+import {
+  type Clock,
+  customEvent,
+  type Event,
+  type LlmBudgetPayload,
+  systemClock,
+  toTimestamp,
+} from "@miyoria/types";
 import { z } from "zod";
 import { BudgetExhaustedError, type ModelRef, ModelRefSchema, type Usage } from "./types.js";
 
@@ -184,14 +191,8 @@ export interface CostReport {
   month: PeriodReport;
 }
 
-/** Payload of the `llm.budget` event. */
-export interface BudgetEventPayload {
-  state: BudgetState;
-  spent_today_usd: number;
-  daily_usd: number | null;
-  spent_month_usd: number;
-  monthly_usd: number | null;
-}
+/** Payload of the `llm.budget` event (contract: `LlmBudgetSchema`). */
+export type BudgetEventPayload = LlmBudgetPayload;
 
 /** The UTC offset in seconds that defines days and months (0 when out of range). */
 function offsetSeconds(offsetHours: number): number {

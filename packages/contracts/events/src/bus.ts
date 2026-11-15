@@ -11,7 +11,10 @@ import { AGENT_EVENTS } from "./agent.js";
 import { ARBITER_EVENTS } from "./arbiter.js";
 import { CHAT_EVENTS } from "./chat.js";
 import { DIRECTIVE_EVENTS } from "./directive.js";
-import { LlmCall } from "./llm.js";
+import { GATE_EVENTS } from "./gate.js";
+import { HEART_EVENTS } from "./heart.js";
+import { LlmBudget, LlmCall } from "./llm.js";
+import { MEMORY_EVENTS } from "./memory.js";
 import { PLATFORM_EVENTS } from "./platform.js";
 import { type AnyEventDefinition, EventRegistry } from "./registry.js";
 import { SYSTEM_EVENTS } from "./system.js";
@@ -33,8 +36,12 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   ...ACTIVITY_EVENTS,
   ...ARBITER_EVENTS,
   ...DIRECTIVE_EVENTS,
-  // Other areas.
+  // Heart, memory, llm and gate.
+  ...HEART_EVENTS,
+  ...MEMORY_EVENTS,
   LlmCall,
+  LlmBudget,
+  ...GATE_EVENTS,
 ];
 
 /** A new registry holding `BUS_EVENTS`. */

@@ -44,6 +44,11 @@ export {
   BaseAuthorizer,
   type Subject,
 } from "./auth.js";
+export type {
+  ActionOutcomePayload,
+  GateDecisionPayload,
+  LlmBudgetPayload,
+} from "./bus-payloads.js";
 export {
   customEvent,
   type DecisionTrace,

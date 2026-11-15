@@ -12,19 +12,12 @@
 // The existing `Drives`, `DriveName`, `EmotionName`, `PersonEmotionName`, `EmotionReading` and
 // `ShownEmotion` (self.ts) and `Mood` (social.ts) are reused as they are.
 
+import type { AffectEventData, AffectSnapshotData } from "@miyoria/contracts/events";
 import type { Handle } from "./handle.js";
 import type { PersonId } from "./ids.js";
 import type { ContextKey } from "./platform.js";
-import type {
-  DriveName,
-  Drives,
-  EmotionName,
-  EmotionReading,
-  PersonEmotionName,
-  ShownEmotion,
-} from "./self.js";
+import type { DriveName, EmotionName, EmotionReading, PersonEmotionName } from "./self.js";
 import { serviceKey } from "./service-key.js";
-import type { Mood } from "./social.js";
 import type { Timestamp } from "./time.js";
 
 // ---- appraisal ------------------------------------------------------------------------------
@@ -85,19 +78,8 @@ export const AFFECT_EVENT_KINDS = [
 
 export type AffectEventKind = (typeof AFFECT_EVENT_KINDS)[number];
 
-/** Payload of `AFFECT_EVENT_TOPIC`. */
-export interface AffectEvent {
-  kind: AffectEventKind;
-  /** Who it involves, when someone. */
-  person: PersonId | null;
-  handle: Handle | null;
-  context: ContextKey | null;
-  /** Short neutral zh-TW detail (the cause she remembers). */
-  detail: string;
-  /** Repeats with the same key within the habituation window count as the same cause. */
-  key: string;
-  at: Timestamp;
-}
+/** A rule event for her emotions (contract: `AffectEventSchema` in @miyoria/contracts/events). */
+export type AffectEvent = AffectEventData;
 
 /** A promise made to her that was kept or broken: it counts toward the person. */
 export interface AppraisedPromise {
@@ -336,20 +318,8 @@ export interface AffectBiases {
   }[];
 }
 
-export interface AffectSnapshot {
-  at: Timestamp;
-  drives: Drives;
-  /** 0..1 */
-  boredom: number;
-  /** The strongest 2–3 emotions only (what prompts show). */
-  top: EmotionReading[];
-  /** Derived (never stored on its own). */
-  mood: Mood;
-  /** One line for the prompt (`"心情不錯、有點累"`): the only mood renderer. */
-  mood_line: string;
-  shown: ShownEmotion | null;
-  biases: AffectBiases;
-}
+/** Her state of feeling (contract: `AffectSnapshotSchema` in @miyoria/contracts/events). */
+export type AffectSnapshot = AffectSnapshotData;
 
 /** Payload of `AFFECT_EVENT_TOPIC`: `AffectEvent`. */
 export const AFFECT_EVENT_TOPIC = "affect.event";

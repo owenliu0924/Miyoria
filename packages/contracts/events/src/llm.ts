@@ -90,3 +90,30 @@ export const LlmCall = defineEvent({
   scope: "owner",
   tier: "short",
 });
+
+/** Where the spending stands against the budget. */
+export const LlmBudgetStateSchema = z
+  .enum(["ok", "degraded", "exhausted"])
+  .meta({ id: "EventsLlmBudgetState" });
+
+/** The budget state changed, or was announced at startup: `llm.budget`. */
+export const LlmBudgetSchema = z
+  .object({
+    state: LlmBudgetStateSchema,
+    spent_today_usd: z.number().min(0),
+    /** The daily cap in USD; `null`: none. */
+    daily_usd: z.number().nullable(),
+    spent_month_usd: z.number().min(0),
+    monthly_usd: z.number().nullable(),
+  })
+  .meta({ id: "EventsLlmBudget" });
+export type LlmBudgetData = z.output<typeof LlmBudgetSchema>;
+
+/** The LLM budget state: spending as an owner's metric (`owner`), kept 90 days (`short`). */
+export const LlmBudget = defineEvent({
+  type: "llm.budget",
+  v: 1,
+  data: LlmBudgetSchema,
+  scope: "owner",
+  tier: "short",
+});

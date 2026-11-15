@@ -3,8 +3,8 @@
 // `/miyo` button all run the same steps, and each answers how its steps went: a failing step does
 // not stop the ones after it, and whoever pressed the button sees which ones did not work.
 
+import type { EmergencyReportData } from "@miyoria/contracts/events";
 import { serviceKey } from "./service-key.js";
-import type { Timestamp } from "./time.js";
 
 /** Bus topic: one `EmergencyReport`. */
 export const EMERGENCY_TOPIC = "autonomy.emergency";
@@ -36,14 +36,8 @@ export interface EmergencyStep {
   detail: string;
 }
 
-export interface EmergencyReport {
-  /** She is stopped after this. */
-  paused: boolean;
-  /** Who pressed it (`panel:<actor>`, `command:discord:1`). */
-  by: string;
-  at: Timestamp;
-  steps: EmergencyStep[];
-}
+/** The report of one stop or resume (contract: `EmergencyReportSchema` in @miyoria/contracts/events). */
+export type EmergencyReport = EmergencyReportData;
 
 /** Provided by the agent: what stops her turns. */
 export interface TurnSilencer {

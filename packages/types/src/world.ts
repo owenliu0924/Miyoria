@@ -8,6 +8,7 @@
 import type {
   MemberUpdateData,
   PresenceUpdateData,
+  SalientEventData,
   VoiceStateUpdateData,
 } from "@miyoria/contracts/events";
 import type { PersonId, PlatformId } from "./ids.js";
@@ -222,24 +223,8 @@ export type SalienceKind =
   /** She was mentioned in a context she has not been part of lately. */
   | "mentioned";
 
-/** Payload of `world.salient`. */
-export interface SalientEvent {
-  kind: SalienceKind;
-  /** Coalescing key (same key = same thing happening again). */
-  key: string;
-  account: AccountRef | null;
-  person: PersonId | null;
-  display_name: string | null;
-  context: ContextKey | null;
-  /** Short neutral description (zh-TW) with untrusted names inside. */
-  detail: string;
-  /** 0..1, how much it probably matters. */
-  score: number;
-  /** How many raw occurrences were merged into this event. */
-  count: number;
-  first_at: Timestamp;
-  at: Timestamp;
-}
+/** Payload of `world.salient` (contract: `SalientEventSchema` in @miyoria/contracts/events). */
+export type SalientEvent = SalientEventData;
 
 // ---- privacy --------------------------------------------------------------------------------
 

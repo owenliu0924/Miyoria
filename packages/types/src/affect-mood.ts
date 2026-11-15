@@ -6,6 +6,7 @@
 // the prompt compiler (`agent`) and the legacy `mood` contributor use them instead of keeping
 // their own thresholds.
 
+import type { AffectBondData } from "@miyoria/contracts/events";
 import type { AffectSnapshot, PersonCard } from "./affect.js";
 import type { Affect, Drives, EmotionReading } from "./self.js";
 import { EMOTION_LABELS } from "./self.js";
@@ -17,14 +18,8 @@ import type { Mood } from "./social.js";
  */
 export const AFFECT_BOND_TOPIC = "affect.bond";
 
-/** Payload of `AFFECT_BOND_TOPIC`. */
-export interface AffectBondPayload {
-  person: string;
-  affinity: number;
-  trust: number;
-  familiarity: number;
-  why: string;
-}
+/** Payload of `AFFECT_BOND_TOPIC` (contract: `AffectBondSchema` in @miyoria/contracts/events). */
+export type AffectBondPayload = AffectBondData;
 
 /** Sleepiness per local hour (0 = awake, 1 = deepest night), interpolated. */
 const NIGHT_SHAPE = [
