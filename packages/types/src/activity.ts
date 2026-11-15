@@ -15,9 +15,16 @@
 // change), `ACTIVITY_STARTED_TOPIC` / `ACTIVITY_DONE_TOPIC` / `ACTIVITY_FAILED_TOPIC`
 // (`ActivityTaskEvent`), and `NOTICE_TOPIC` (`Notice`, for her conversation).
 
+import type {
+  ActivityDoneData,
+  ActivityFailedData,
+  ActivityRestoreData,
+  ActivitySnapshotData,
+  ActivityStartedData,
+  NoticeData,
+} from "@miyoria/contracts/events";
 import type { Principal } from "./actuator.js";
 import type { TurnId } from "./ids.js";
-import type { JsonValue } from "./json.js";
 import type { AccountRef, ContextKey } from "./platform.js";
 import { serviceKey } from "./service-key.js";
 import type { TaskFailureCode, TaskId } from "./task.js";
@@ -98,16 +105,7 @@ export interface SceneOverride {
 }
 
 /** The whole body state. `version` increases by one on every change. */
-export interface ActivitySnapshot {
-  version: number;
-  at: Timestamp;
-  presence: HerPresence;
-  broadcast: HerBroadcast;
-  activity: HerActivity;
-  override: SceneOverride | null;
-  /** The scene `f(presence, broadcast, activity, override)` picks; `null`: no OBS / no rule. */
-  scene: string | null;
-}
+export type ActivitySnapshot = ActivitySnapshotData;
 
 // ---- requests -------------------------------------------------------------------------------
 
@@ -223,35 +221,7 @@ export const ACTIVITY_DONE_TOPIC = "activity.done";
 export const ACTIVITY_FAILED_TOPIC = "activity.failed";
 
 /** Lifecycle of one transition task (the `TaskEvent` shape plus what it was about). */
-export type ActivityTaskEvent =
-  | {
-      type: "started";
-      task: TaskId;
-      resource: ActivityResource;
-      request: ActivityRequest;
-      turn: TurnId | null;
-      at: Timestamp;
-    }
-  | {
-      type: "done";
-      task: TaskId;
-      resource: ActivityResource;
-      request: ActivityRequest;
-      turn: TurnId | null;
-      detail: string;
-      data: JsonValue;
-      at: Timestamp;
-    }
-  | {
-      type: "failed";
-      task: TaskId;
-      resource: ActivityResource;
-      request: ActivityRequest;
-      turn: TurnId | null;
-      code: TaskFailureCode;
-      detail: string;
-      at: Timestamp;
-    };
+export type ActivityTaskEvent = ActivityStartedData | ActivityDoneData | ActivityFailedData;
 
 // ---- notices --------------------------------------------------------------------------------
 
@@ -264,25 +234,7 @@ export const NOTICE_TOPIC = "agent.notice";
  * shows it in her trusted self-state (it is her own state), never as a user message, and may
  * start a turn for it (through the Arbiter once it exists, `ImpulseSource` `notice`).
  */
-export interface Notice {
-  id: string;
-  at: Timestamp;
-  /** The module that reports it (`activity`, `actions`, `game`). */
-  source: string;
-  /** The task it reports on, if any. */
-  task: TaskId | null;
-  /** Her turn that asked for it (`null`: nobody waits for it). */
-  turn: TurnId | null;
-  /** Where to tell her (`null`: wherever she is talking next). */
-  context: ContextKey | null;
-  ok: boolean;
-  /** Set when `ok` is false. */
-  code: TaskFailureCode | null;
-  /** What happened, short zh-TW for her (may contain untrusted names). */
-  text: string;
-  /** It no longer matters after this (dropped unshown). */
-  expires_at: Timestamp;
-}
+export type Notice = NoticeData;
 
 // ---- service --------------------------------------------------------------------------------
 
@@ -342,10 +294,7 @@ export const ACTIVITY_RESTORE_TOPIC = "activity.restore";
  * `resumed`: it was still there and runs again. `gone`: it did not come back in time. `dropped`:
  * something else was asked for meanwhile.
  */
-export interface ActivityRestore {
-  game: string;
-  outcome: "resumed" | "gone" | "dropped";
-}
+export type ActivityRestore = ActivityRestoreData;
 
 /** She is in a voice channel (not joining or leaving). */
 export function inVoice(snapshot: ActivitySnapshot): ContextKey | null {

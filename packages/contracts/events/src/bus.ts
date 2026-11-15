@@ -6,12 +6,16 @@
 // Tests check every published event against it (`bus-check.ts`). Topics are added area by area
 // (K12a in docs/design/v5-contracts.md); a topic missing here is reported as unregistered.
 
+import { ACTIVITY_EVENTS } from "./activity.js";
 import { AGENT_EVENTS } from "./agent.js";
+import { ARBITER_EVENTS } from "./arbiter.js";
 import { CHAT_EVENTS } from "./chat.js";
+import { DIRECTIVE_EVENTS } from "./directive.js";
 import { LlmCall } from "./llm.js";
 import { PLATFORM_EVENTS } from "./platform.js";
 import { type AnyEventDefinition, EventRegistry } from "./registry.js";
 import { SYSTEM_EVENTS } from "./system.js";
+import { TASK_EVENTS } from "./task.js";
 import { TURN_EVENTS } from "./turn.js";
 import { VOICE_EVENTS } from "./voice.js";
 
@@ -25,6 +29,10 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   // The brain.
   ...TURN_EVENTS,
   ...AGENT_EVENTS,
+  ...TASK_EVENTS,
+  ...ACTIVITY_EVENTS,
+  ...ARBITER_EVENTS,
+  ...DIRECTIVE_EVENTS,
   // Other areas.
   LlmCall,
 ];

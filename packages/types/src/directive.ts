@@ -11,6 +11,7 @@
 // The authority of a rule comes from the account that made it, resolved by the service. Nothing
 // here takes an authority from a caller, and no text of a message ever reaches that decision.
 
+import type { DirectiveChangedData } from "@miyoria/contracts/events";
 import type { Principal } from "./actuator.js";
 import type { Subject } from "./auth.js";
 import type { Handle } from "./handle.js";
@@ -186,13 +187,4 @@ export const DirectivesKey = serviceKey<Directives>("Directives");
 export const DIRECTIVE_CHANGED_TOPIC = "directive.changed";
 
 /** The `body` of a `directive` log line, and the payload of `DIRECTIVE_CHANGED_TOPIC`. */
-export interface DirectiveChangedBody {
-  op: "add" | "remove" | "refused" | "proposal_dropped";
-  /** What the panel shows. */
-  text: string;
-  directive: Directive | null;
-  /** Who did it (`discord:1`, a panel actor, `directive` for what the rules themselves did). */
-  by: string;
-  /** `proposal_dropped`: which one. */
-  proposal?: string;
-}
+export type DirectiveChangedBody = DirectiveChangedData;

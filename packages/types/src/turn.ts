@@ -14,12 +14,10 @@
 // Messages are `MessageRef`s; a voice utterance is `{context, id: utterance.id}` (that is how
 // the agent already wraps utterances as messages).
 
+import type { TurnFocusData, TurnOutcomeData } from "@miyoria/contracts/events";
 import type { Handle } from "./handle.js";
-import type { TurnId } from "./ids.js";
-import type { AccountRef, ContextKey, MessageRef } from "./platform.js";
-import type { ReasoningLevel } from "./reasoning.js";
+import type { ContextKey } from "./platform.js";
 import { serviceKey } from "./service-key.js";
-import type { Timestamp } from "./time.js";
 
 /** Why a turn exists. */
 export type TurnReason =
@@ -40,24 +38,8 @@ export type TurnReason =
  */
 export type TurnPhase = "debounce" | "generating" | "speaking" | "done";
 
-export interface TurnFocus {
-  turn: TurnId;
-  context: ContextKey;
-  reason: TurnReason;
-  phase: TurnPhase;
-  /** The people the reply is for (handles, in the order they addressed her). */
-  addressed_by: Handle[];
-  /** Their accounts, same order (what voice barge-in matches speakers against). */
-  addressed_accounts: AccountRef[];
-  /** The messages the reply answers, oldest first. */
-  focus: MessageRef[];
-  /** Other input of the turn: context only, never "what to answer". */
-  background: MessageRef[];
-  /** How often the turn was restarted for new focus input (at most `MAX_TURN_RESTARTS`). */
-  restarts: number;
-  started_at: Timestamp;
-  updated_at: Timestamp;
-}
+/** Whom a turn answers (contract: `TurnFocusSchema` in @miyoria/contracts/events). */
+export type TurnFocus = TurnFocusData;
 
 /** Payload: `TurnFocus`, whenever a turn's focus or phase changes. */
 export const TURN_FOCUS_TOPIC = "agent.turn.focus";
@@ -161,20 +143,7 @@ export type TurnOutcome =
   | { type: "error"; error: string };
 
 /** Payload of `TURN_OUTCOME_TOPIC`, one per turn. */
-export interface TurnOutcomeRecord {
-  turn: TurnId;
-  context: ContextKey;
-  reason: TurnReason;
-  outcome: TurnOutcome;
-  addressed_by: Handle[];
-  focus: MessageRef[];
-  restarts: number;
-  /** Reasoning level the reply was generated with (`null`: no generation). */
-  reasoning: ReasoningLevel | null;
-  /** From the last focus input to her first output (`null`: nothing went out). */
-  latency_ms: number | null;
-  at: Timestamp;
-}
+export type TurnOutcomeRecord = TurnOutcomeData;
 
 /** Payload: `TurnOutcomeRecord`. */
 export const TURN_OUTCOME_TOPIC = "agent.turn.outcome";
