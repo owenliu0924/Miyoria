@@ -4,7 +4,7 @@
 // generates from them, `STRICT` added, and after it the hand-written full-text index and triggers
 // Drizzle cannot declare; the store's drift test keeps the two together. Phase 3 redesigns these
 // tables with the brain (§8 "Wait for phase 3"), so they keep their old shape until then, plus
-// `embedding_model` (migration 2): which model made a record's vector.
+// `embedding_model`: which model made a record's vector.
 //
 // - `memory_records`: episodes, facts, her own notes and followups. The privacy scope is kept both
 //   as JSON (readable) and as its canonical JSON text `scope_key` (exact-match filtering and

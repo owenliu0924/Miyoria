@@ -8,10 +8,8 @@
 // - `MEMORY_SEARCH_SQL`: what Drizzle cannot declare, by hand: the vector counter's one row, the
 //   FTS5 index over `tokens` with the triggers that keep it in step, and the triggers that bump the
 //   vector counter.
-// Migration 2 adds `embedding_model` (generated the same way: what the migrated database lacks)
-// and remakes the vector counter's update trigger to watch it.
-// The store's drift test proves the migrated database (after every migration) and the Drizzle
-// tables agree.
+// The store's drift test proves the migrated database and the Drizzle tables agree, and that
+// migration 1 is exactly the two parts.
 
 import type { PluginSchema } from "@miyoria/store";
 
@@ -26,6 +24,7 @@ export const MEMORY_TABLES_SQL = `CREATE TABLE \`memory_records\` (
 	\`content\` text NOT NULL,
 	\`tokens\` text NOT NULL,
 	\`embedding\` blob,
+	\`embedding_model\` text,
 	\`importance\` real NOT NULL,
 	\`confidence\` real NOT NULL,
 	\`created_at\` integer NOT NULL,
@@ -81,8 +80,9 @@ CREATE TRIGGER memory_records_fts_update AFTER UPDATE OF tokens ON memory_record
 END;
 
 -- Bumped by every change to which records vector search compares and what it compares them by
--- (membership, vector, scope, kind, superseded, time, id). Updates that leave those columns as
--- they were do not bump it, even when they name them: an upsert sets every column, so
+-- (membership, vector and the model that made it, scope, kind, superseded, time, id). Updates
+-- that leave those columns as they were do not bump it, even when they name them: an upsert
+-- sets every column, so
 -- reinforcing, touching or closing a memory compares values (\`IS NOT\`, since \`embedding\` and
 -- \`superseded_by\` may be NULL).
 CREATE TRIGGER memory_records_vector_insert AFTER INSERT ON memory_records BEGIN
@@ -92,27 +92,6 @@ END;
 CREATE TRIGGER memory_records_vector_delete AFTER DELETE ON memory_records BEGIN
     UPDATE memory_vector_version SET n = n + 1 WHERE id = 1;
 END;
-
-CREATE TRIGGER memory_records_vector_update AFTER UPDATE ON memory_records
-WHEN OLD.id IS NOT NEW.id
-    OR OLD.kind IS NOT NEW.kind
-    OR OLD.scope_key IS NOT NEW.scope_key
-    OR OLD.embedding IS NOT NEW.embedding
-    OR OLD.created_at IS NOT NEW.created_at
-    OR OLD.superseded_by IS NOT NEW.superseded_by
-BEGIN
-    UPDATE memory_vector_version SET n = n + 1 WHERE id = 1;
-END;
-`;
-
-/**
- * Migration 2: which model made a vector. The column is drizzle-kit's (`schema:sql memory`); the
- * vector counter's update trigger is made again by hand to watch it too, so a record re-embedded
- * by another model (the same bytes are not possible, the label is) drops the decoded vectors.
- */
-export const MEMORY_EMBEDDING_MODEL_SQL = `ALTER TABLE \`memory_records\` ADD \`embedding_model\` text;
-
-DROP TRIGGER memory_records_vector_update;
 
 CREATE TRIGGER memory_records_vector_update AFTER UPDATE ON memory_records
 WHEN OLD.id IS NOT NEW.id
@@ -130,8 +109,5 @@ END;
 /** Memory records, their full-text index and the vector counter. */
 export const memorySchema: PluginSchema = {
   plugin: "memory",
-  migrations: [
-    { version: 1, name: "init", sql: `${MEMORY_TABLES_SQL}\n${MEMORY_SEARCH_SQL}` },
-    { version: 2, name: "embedding_model", sql: MEMORY_EMBEDDING_MODEL_SQL },
-  ],
+  migrations: [{ version: 1, name: "init", sql: `${MEMORY_TABLES_SQL}\n${MEMORY_SEARCH_SQL}` }],
 };
