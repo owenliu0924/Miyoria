@@ -2,6 +2,17 @@
 // the voice monitor, all on the route table (`@miyoria/contracts/api`). Scene, stream and say go
 // through the actuator registry's gate (principal `panel`).
 
+import type {
+  ExtensionInfo,
+  McpServerInfo,
+  McpState,
+  QueueState,
+  SceneRolesState,
+  StageLinkState,
+  StageState,
+  StreamAction,
+  VoiceState,
+} from "@miyoria/contracts/api";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { type RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
@@ -34,17 +45,6 @@ import { runModuleAction } from "./core.js";
 import { ApiError } from "./errors.js";
 import { isQueueNotFound, MCP_MODULE_ID } from "./services.js";
 import { type ApiContext, type ApiState, actorOf, toJson } from "./state.js";
-import type {
-  ExtensionInfo,
-  McpServerInfo,
-  McpState,
-  QueueState,
-  SceneRolesState,
-  StageLinkState,
-  StageState,
-  StreamAction,
-  VoiceState,
-} from "./types.js";
 
 const log = getLogger("api.ops");
 

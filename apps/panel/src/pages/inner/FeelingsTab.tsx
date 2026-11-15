@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { SelfView } from "@/api/types";
+import type { SelfView } from "@miyoria/contracts/api";
 import { EmptyLine } from "@/components/query-state";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";

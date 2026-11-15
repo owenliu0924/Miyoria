@@ -7,6 +7,7 @@
 // gate (`/api/stage`, `/api/voice`, `/api/game`), not through these routes. On the route table
 // (`@miyoria/contracts/api`): `activityRpc` and `arbiterRpc`.
 
+import type { ArbiterDecisionsView, ArbiterDecisionView } from "@miyoria/contracts/api";
 import {
   ActivityManagerKey,
   type ArbiterDecision,
@@ -21,7 +22,6 @@ import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { clampLimit, contextParam, countOf } from "./extract.js";
 import type { ApiState } from "./state.js";
-import type { ArbiterDecisionsView, ArbiterDecisionView } from "./types.js";
 
 const DEFAULT_TASKS = 20;
 const MAX_TASKS = 200;

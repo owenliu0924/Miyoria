@@ -2,17 +2,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  GoalView,
-  IssuedCard,
-  IssuedFortune,
-  MemberSession,
-  MemberView,
-  PublicSongs,
-  PublicStatus,
-  SessionInfo,
-  WalletView,
-} from "@/api/types";
+import type { GoalView, IssuedCard, IssuedFortune, MemberSession, MemberView, PublicSongs, PublicStatus, SessionInfo, WalletView } from "@miyoria/contracts/api";
 import { App } from "@/app/App";
 import { STORAGE_BASE_URL, STORAGE_TOKEN } from "@/app/connection";
 import { createAppRouter } from "@/app/router";

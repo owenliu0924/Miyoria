@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TelemetryPoint, Thought } from "@/api/types";
+import type { Thought } from "@/api/types";
+import type { TelemetryPoint } from "@miyoria/contracts/api";
 import { extent, niceMax, ticks } from "@/components/charts/scale";
 import { bucketize, quantile, thoughtColumns, thoughtOutcome } from "./telemetry";
 

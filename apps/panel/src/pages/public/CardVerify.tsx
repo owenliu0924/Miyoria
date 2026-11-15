@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BadgeCheck, CircleX, Download, Link2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { isApiError } from "@/api/http";
-import type { IssuedCard } from "@/api/types";
+import type { IssuedCard } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import { Logo } from "@/components/logo";
 import { SkeletonRows } from "@/components/query-state";

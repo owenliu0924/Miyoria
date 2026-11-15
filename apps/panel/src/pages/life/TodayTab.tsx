@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { LifeEntry } from "@/api/types";
+import type { LifeEntry } from "@miyoria/contracts/api";
 import { useLifeToday } from "@/app/queries";
 import { ChartBlock, ColumnChart } from "@/components/charts/charts";
 import { ModuleQuery } from "@/components/module-query";

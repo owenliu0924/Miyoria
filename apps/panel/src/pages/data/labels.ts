@@ -1,4 +1,4 @@
-import type { DataCategoryId, DataCategoryView, DataNote } from "@/api/types";
+import type { DataCategoryId, DataCategoryView, DataNote } from "@miyoria/contracts/api";
 import type { NavPath } from "@/app/nav";
 
 export const CATEGORY_LABEL: Record<DataCategoryId, string> = {

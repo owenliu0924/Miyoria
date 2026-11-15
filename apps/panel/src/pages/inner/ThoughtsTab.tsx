@@ -1,14 +1,7 @@
 import { Brain, Check, ChevronRight, X } from "lucide-react";
 import { type ReactNode, useDeferredValue, useId, useState } from "react";
-import type {
-  IntentStatus,
-  MindView,
-  PendingApproval,
-  Thought,
-  ThoughtDigest,
-  ThoughtIntent,
-  ThoughtTriggerKind,
-} from "@/api/types";
+import type { Thought } from "@/api/types";
+import type { IntentStatus, MindView, PendingApproval, ThoughtDigest, ThoughtIntent, ThoughtTriggerKind } from "@miyoria/contracts/api";
 import { useApprovals, useDigests, useMind, useMindMutations, useThoughtHistory } from "@/app/queries";
 import { BarList, ChartBlock, SegmentBar } from "@/components/charts/charts";
 import { SearchInput } from "@/components/controls";

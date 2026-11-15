@@ -11,12 +11,16 @@ import {
   modeLabel,
   parseChannelMode,
 } from "@miyoria/brain/agent";
+import type {
+  ChannelLevelsView,
+  ChannelLevelView,
+  SetChannelLevelRequest,
+} from "@miyoria/contracts/api";
 import { type ContextKey, contextKeyString, PlatformSinksKey, WorldStateKey } from "@miyoria/types";
 import { os } from "./contract.js";
 import { parseContextKeyString } from "./data.js";
 import { ApiError } from "./errors.js";
 import type { ApiContext, ApiState } from "./state.js";
-import type { ChannelLevelsView, ChannelLevelView, SetChannelLevelRequest } from "./types.js";
 
 const isText = (c: ContextKey) => c.kind === "channel" || c.kind === "thread";
 

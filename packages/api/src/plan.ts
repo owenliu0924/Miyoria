@@ -4,9 +4,9 @@
 // (today's plan in her words). The agenda service and the mind loop are looked up for the
 // optional getters `all()` and `dayPlan()` that their contract does not list.
 
+import type { DayPlanView, GoalsView } from "@miyoria/contracts/api";
 import { type Goal, GoalAgendaKey, MindKey } from "@miyoria/types";
 import { os } from "./contract.js";
-import type { DayPlanView, GoalsView } from "./types.js";
 
 /** `GoalBook.all()`, when the agenda is one. */
 function allGoals(agenda: object): (() => Goal[]) | null {

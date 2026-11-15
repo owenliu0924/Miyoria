@@ -1,10 +1,11 @@
-// One function per Admin API route (`packages/api/src`) that is not on the route table yet. The
-// routes on the table (`@miyoria/contracts/api`) are called through `rpc` and `q` (`orpc.ts`);
-// a group that moves there loses its functions here.
+// The Admin API as the panel calls it: the route table (`@miyoria/contracts/api`) through `rpc` and
+// `q` (`orpc.ts`), and the few routes that are not JSON and so not on the table: the logout and
+// the Discord login redirect, and the downloads (`/api/member/export`, `/api/data/export`,
+// `/api/data/backup`).
 
 import type { ApiClient } from "./http";
 import { createQueries, createRpc } from "./orpc";
-import type { DataCategoryId } from "./types";
+import type { DataCategoryId } from "@miyoria/contracts/api";
 
 export function createApi(client: ApiClient) {
   const rpc = createRpc(client);

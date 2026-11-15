@@ -2,6 +2,16 @@
 // All on the route table (`healthRpc`, `personaRpc`, `coreRpc`, `eventsRpc`).
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
+import type {
+  CostReport,
+  DecisionRecord,
+  ModuleInfo,
+  PersonaOverride,
+  PersonaSectionInfo,
+  SetPersonaRequest,
+  SetPersonaResponse,
+  UsageMap,
+} from "@miyoria/contracts/api";
 import type { BusEnvelopeJson } from "@miyoria/contracts/events";
 import { LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
 import {
@@ -18,16 +28,6 @@ import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { contextParam } from "./extract.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
-import type {
-  CostReport,
-  DecisionRecord,
-  ModuleInfo,
-  PersonaOverride,
-  PersonaSectionInfo,
-  SetPersonaRequest,
-  SetPersonaResponse,
-  UsageMap,
-} from "./types.js";
 
 const log = getLogger("api.server");
 

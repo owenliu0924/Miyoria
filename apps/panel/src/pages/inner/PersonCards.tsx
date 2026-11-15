@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { PersonCard } from "@/api/types";
+import type { PersonCard } from "@miyoria/contracts/api";
 import { useAffectPeople } from "@/app/queries";
 import { BondBar, Meter, StatusBadge, type Tone } from "@/components/status";
 import { Badge } from "@/components/ui/badge";

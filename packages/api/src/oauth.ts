@@ -7,6 +7,7 @@
 // `cancelled`, `state`, `exchange`, `discord`, `denied`, `unavailable`. Details go to the log.
 
 import { createHash } from "node:crypto";
+import type { AuthMethods, SessionInfo } from "@miyoria/contracts/api";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { type AccountRef, AuthorizerKey, accountRefString, type Clock } from "@miyoria/types";
@@ -22,7 +23,6 @@ import {
   randomToken,
 } from "./session.js";
 import type { ApiContext, ApiState, PanelAuth } from "./state.js";
-import type { AuthMethods, SessionInfo } from "./types.js";
 
 const log = getLogger("api.oauth");
 

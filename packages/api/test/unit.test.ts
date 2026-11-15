@@ -15,7 +15,7 @@ import {
   type Subject,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { ApiClient, ApiConfigSchema, parseBind } from "../src/index.js";
+import { ApiConfigSchema, parseBind } from "../src/index.js";
 import { ContextLabels, LABEL_MISS_TTL_MS } from "../src/labels.js";
 import { Monitor, percentile } from "../src/monitor.js";
 import {
@@ -372,23 +372,6 @@ describe("panel", () => {
     ] as const) {
       expect(pickEncoding(header), String(header)).toBe(want);
     }
-  });
-});
-
-// ---- client ---
-
-describe("client", () => {
-  it("builds_urls_under_api", () => {
-    const c = new ApiClient("http://127.0.0.1:7878/", "t");
-    expect(c.url(["modules", "platform.discord.bot", "enable"]).href).toBe(
-      "http://127.0.0.1:7878/api/modules/platform.discord.bot/enable",
-    );
-    expect(new ApiClient("http://host/prefix", "t").url(["health"]).href).toBe(
-      "http://host/prefix/api/health",
-    );
-    expect(c.url(["people", "a/b c"]).href).toBe("http://127.0.0.1:7878/api/people/a%2Fb%20c");
-    expect(() => new ApiClient("not a url", "t")).toThrow("invalid API base URL");
-    expect(() => new ApiClient("ftp://host", "t")).toThrow("invalid API base URL");
   });
 });
 

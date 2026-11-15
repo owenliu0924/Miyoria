@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dices } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 import { isNotProvided } from "@/api/http";
-import type { BountyView, GoalView } from "@/api/types";
+import type { BountyView, GoalView } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import { ConfirmDialog } from "@/components/confirm";
 import { EmptyLine, QueryView, SkeletonRows } from "@/components/query-state";

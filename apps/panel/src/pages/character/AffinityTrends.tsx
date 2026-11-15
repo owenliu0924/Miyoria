@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { PersonDetail, PersonSummary } from "@/api/types";
+import type { PersonDetail, PersonSummary } from "@miyoria/contracts/api";
 import { usePeopleDetails } from "@/app/queries";
 import { ChartBlock, ChartEmpty, type LineSeries, TimeChart } from "@/components/charts/charts";
 import { Skeleton } from "@/components/ui/misc";

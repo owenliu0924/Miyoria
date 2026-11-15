@@ -8,6 +8,7 @@
 // and a card's code lets anyone read it.
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
+import type { CardField, MemberCard } from "@miyoria/contracts/api";
 import {
   completeJson,
   LlmRouterKey,
@@ -19,7 +20,6 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { AffectStateKey, characterCore } from "@miyoria/types";
 import { z } from "zod";
 import type { ApiState } from "./state.js";
-import type { CardField, MemberCard } from "./types.js";
 
 const log = getLogger("api.card");
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ConversationNote, FieldSource, KnowledgeDoc } from "@/api/types";
+import type { ConversationNote, FieldSource, KnowledgeDoc } from "@miyoria/contracts/api";
 import { useConversationNotes, useKnowledge } from "@/app/queries";
 import { EmptyLine, QueryView, SkeletonRows } from "@/components/query-state";
 import { Badge } from "@/components/ui/badge";

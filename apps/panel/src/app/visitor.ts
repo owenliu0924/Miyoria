@@ -3,7 +3,7 @@
 
 import type { Api } from "@/api/endpoints";
 import { isApiError } from "@/api/http";
-import type { AuthMethods, MemberSession, SessionInfo } from "@/api/types";
+import type { AuthMethods, MemberSession, SessionInfo } from "@miyoria/contracts/api";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { TOKEN_SESSION } from "./session";
 

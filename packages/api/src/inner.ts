@@ -2,11 +2,11 @@
 // and `GET /api/world` (what she perceives). Changes go through her own decisions (and, later,
 // the action gate), not through these routes.
 
+import type { FeelingView, SelfView, WorldView } from "@miyoria/contracts/api";
 import { SocialKey } from "@miyoria/heart/social";
 import { PlatformSinksKey, SelfStateKey, WorldStateKey } from "@miyoria/types";
 import { os } from "./contract.js";
 import type { ApiState } from "./state.js";
-import type { FeelingView, SelfView, WorldView } from "./types.js";
 
 function selfView(state: ApiState): SelfView {
   const self = state.service(SelfStateKey, "self module");

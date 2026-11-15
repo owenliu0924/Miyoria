@@ -128,7 +128,7 @@ function isLoopback(address: string): boolean {
 
 /**
  * Ports above 1024 that `fetch` refuses to connect to (the Fetch standard's "bad ports"). Some
- * systems hand them out for port 0, which would make the server unreachable for `ApiClient`.
+ * systems hand them out for port 0, which would make the server unreachable for `fetch`.
  */
 export const FETCH_BLOCKED_PORTS: ReadonlySet<number> = new Set([
   1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669,

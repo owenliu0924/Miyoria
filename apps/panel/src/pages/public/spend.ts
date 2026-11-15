@@ -3,7 +3,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isNotProvided } from "@/api/http";
-import type { WalletView } from "@/api/types";
+import type { WalletView } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import { fmtInt } from "@/lib/format";
 import { notify } from "@/lib/notify";

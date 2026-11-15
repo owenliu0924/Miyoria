@@ -5,6 +5,13 @@
 // delete), not these routes'. On the route table (`@miyoria/contracts/api`): `knowledgeRpc`,
 // `reflectionRpc` and `digestRpc`.
 
+import type {
+  ConversationNote as ConversationNoteView,
+  KnowledgeDoc as KnowledgeDocView,
+  KnowledgeView,
+  Lesson as LessonView,
+  ReflectionView,
+} from "@miyoria/contracts/api";
 import { SocialKey } from "@miyoria/heart/social";
 import {
   ConversationStatesKey,
@@ -17,13 +24,6 @@ import {
 } from "@miyoria/types";
 import { os } from "./contract.js";
 import type { ApiState } from "./state.js";
-import type {
-  ConversationNoteView,
-  KnowledgeDocView,
-  KnowledgeView,
-  LessonView,
-  ReflectionView,
-} from "./types.js";
 
 const MAX_RUNS = 60;
 

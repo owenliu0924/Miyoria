@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { EconomyHealth } from "@/api/types";
+import type { EconomyHealth } from "@miyoria/contracts/api";
 import { useEconomyHealth } from "@/app/queries";
 import { ChartBlock, ChartEmpty, TimeChart } from "@/components/charts/charts";
 import { ModuleQuery } from "@/components/module-query";

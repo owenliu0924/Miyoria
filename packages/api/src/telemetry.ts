@@ -3,12 +3,12 @@
 // counts) and counts a few bus topics between samples. Samples live in memory for 24 hours, so
 // the series starts when the `api` module started.
 
+import type { TelemetryLlm, TelemetryPoint, TelemetryView } from "@miyoria/contracts/api";
 import { type MetricFamily, metrics } from "@miyoria/runtime/kernel";
 import { type BusEvent, Events, is, MindKey, SelfStateKey, toTimestamp } from "@miyoria/types";
 import { os } from "./contract.js";
 import { countOf } from "./extract.js";
 import type { ApiState } from "./state.js";
-import type { TelemetryLlm, TelemetryPoint, TelemetryView } from "./types.js";
 
 /** One sample a minute. */
 export const SAMPLE_EVERY_MS = 60_000;

@@ -6,6 +6,7 @@
 // `cache_secs`, like the other public views, so traffic does not reach the ledger. Being looked at
 // changes nothing about her. Joining or leaving is a member route (`POST /api/member/board`).
 
+import type { PublicBoard } from "@miyoria/contracts/api";
 import { type BoardLine, EconomyKey } from "@miyoria/economy";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { safeName } from "@miyoria/types";
@@ -13,7 +14,6 @@ import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { clientKey } from "./public.js";
 import type { ApiState } from "./state.js";
-import type { PublicBoard } from "./types.js";
 
 const log = getLogger("api.board");
 

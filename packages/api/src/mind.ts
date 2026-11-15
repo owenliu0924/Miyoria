@@ -4,12 +4,12 @@
 // /api/mind/pause|resume` (the emergency stop: `emergency` says how each of its steps went).
 // Changes need the owner-level node `owner.autonomy.approve` (the bearer token has every right).
 
+import type { MindView, PendingApproval, ThoughtSummary } from "@miyoria/contracts/api";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { MindKey } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { type ApiContext, type ApiState, actorOf, toJson } from "./state.js";
-import type { MindView, PendingApproval, ThoughtSummary } from "./types.js";
 
 const DEFAULT_THOUGHTS = 50;
 const MAX_THOUGHTS = 300;

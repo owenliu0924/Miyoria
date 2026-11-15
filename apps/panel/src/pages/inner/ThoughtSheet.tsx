@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Brain, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
-import type { IntentStatus, Thought, ThoughtEffects, ThoughtInput, ThoughtIntent } from "@/api/types";
+import type { Thought } from "@/api/types";
+import type { IntentStatus, ThoughtEffects, ThoughtInput, ThoughtIntent } from "@miyoria/contracts/api";
 import { useLlmCalls, useThought } from "@/app/queries";
 import { ErrorLine, SkeletonRows } from "@/components/query-state";
 import { Bipolar, Meter, StatusBadge } from "@/components/status";

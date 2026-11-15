@@ -1,6 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { useDeferredValue, useMemo, useState } from "react";
-import type { PersonSummary } from "@/api/types";
+import type { PersonSummary } from "@miyoria/contracts/api";
 import { usePeople } from "@/app/queries";
 import { SearchInput } from "@/components/controls";
 import { DataTable } from "@/components/data-table";

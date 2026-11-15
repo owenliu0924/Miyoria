@@ -6,12 +6,12 @@
 // whom, error; newest first). The panel puts these next to the decision trace of the same turn.
 
 import { SavedPromptsKey } from "@miyoria/brain/agent";
+import type { PromptSummary, TurnOutcomeKind } from "@miyoria/contracts/api";
 import { DecisionLogKey } from "@miyoria/store";
 import type { SavedPrompt, TurnOutcomeRecord } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { clampLimit, contextParam, countOf } from "./extract.js";
-import type { PromptSummary, TurnOutcomeKind } from "./types.js";
 
 const DEFAULT_PROMPTS = 30;
 const MAX_PROMPTS = 200;

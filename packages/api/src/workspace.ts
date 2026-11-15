@@ -13,12 +13,12 @@
 // may have written: it is data for a person to read, never instructions. On the route table
 // (`@miyoria/contracts/api`): `workspaceRpc` and `skillsRpc`.
 
+import type { SkillSummary, SkillView, WorkspaceView } from "@miyoria/contracts/api";
 import { type SkillShelf, SkillShelfKey, type SkillShelfPage } from "@miyoria/types";
 import { SandboxKey, type WorkspaceApi } from "@miyoria/workspace/sandbox";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { ApiState } from "./state.js";
-import type { SkillSummary, SkillView, WorkspaceView } from "./types.js";
 
 /** Most characters of one skill's body shown. */
 export const MAX_BODY_CHARS = 20_000;

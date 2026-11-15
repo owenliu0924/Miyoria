@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { AffectSnapshot, DayPlanView, Goal, GoalsView, PersonCard, SelfView, WorldView } from "@/api/types";
+import type { AffectSnapshot, DayPlanView, Goal, GoalsView, PersonCard, SelfView, WorldView } from "@miyoria/contracts/api";
 import { applyCustomEvent } from "@/app/events-store";
 import { queryKeys } from "@/app/queries";
 import { envelope } from "@/test/envelope";

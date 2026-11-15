@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mockFetch } from "../test/render";
 import { createApi } from "./endpoints";
 import { ApiClient, ApiError, buildQuery, describeError, isNotProvided, joinUrl } from "./http";
-import type { ContextKey } from "./types";
+import type { ContextKey } from "@miyoria/contracts/wire";
 
 const ctx: ContextKey = { platform: "discord", scope: "1", channel: "2", kind: "channel" };
 const headersOf = (init: RequestInit | undefined) => (init?.headers ?? {}) as Record<string, string>;

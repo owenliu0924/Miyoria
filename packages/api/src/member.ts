@@ -23,6 +23,21 @@
 // A blocked person gets the answers of a stranger she has never met, from every route, so nothing
 // on the page says they are blocked: an empty view, a forget that finds nothing, a refused song.
 
+import type {
+  IssueCardRequest,
+  IssuedCard,
+  IssuedFortune,
+  MemberCard,
+  MemberCards,
+  MemberDay,
+  MemberForgetResult,
+  MemberMemory,
+  MemberSession,
+  MemberSong,
+  MemberView,
+  SongAccepted,
+} from "@miyoria/contracts/api";
+import type { WalletExport } from "@miyoria/economy";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import {
   FORGET_KEEPS,
@@ -68,21 +83,23 @@ import { dateOf, localDay, tooMany } from "./public.js";
 import type { Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
-import type {
-  IssueCardRequest,
-  IssuedCard,
-  MemberCard,
-  MemberCards,
-  MemberDay,
-  MemberExport,
-  MemberForgetResult,
-  MemberMemory,
-  MemberSession,
-  MemberSong,
-  MemberView,
-  SongAccepted,
-} from "./types.js";
 import { keyOf, walletExport } from "./wallet.js";
+
+/** `GET /api/member/export` (a file, so not on the route table). */
+export interface MemberExport {
+  exported_at: string;
+  card: MemberCard;
+  memories: (MemberMemory & { derived_from_you: boolean })[];
+  /** Memories left out because they hold someone else's name or words, or her own notes. */
+  withheld: number;
+  songs: MemberSong[];
+  /** The cards she gave them, newest first. */
+  cards: IssuedCard[];
+  /** Their coins: the balance and every line of the ledger, newest first. */
+  wallet: WalletExport;
+  /** The fortune slips she wrote for them, newest first. */
+  fortunes: IssuedFortune[];
+}
 
 /** Nodes of `/me memory`: a role that may not use those may not use these. */
 const NODE_SHOW = "memory.self.show";

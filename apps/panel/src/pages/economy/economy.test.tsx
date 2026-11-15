@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { EarnReason } from "@/api/types";
-import type { EconomyHealth, PredictionView, ReachedGoal, RoomItem } from "@/api/types";
+import type { EconomyHealth, PredictionView, ReachedGoal, RoomItem } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 import { EARN_REASON_LABEL, ISSUED_REASONS, reasonLabel, RECOVERED_REASONS } from "./labels";
 

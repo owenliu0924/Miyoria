@@ -1,6 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { TurnMetrics, TurnMetricsBucket } from "@/api/types";
+import type { TurnMetrics, TurnMetricsBucket } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 
 const ratio = (sent: number, total: number) => ({ sent, total, rate: total === 0 ? null : sent / total });

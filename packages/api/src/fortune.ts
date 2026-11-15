@@ -9,6 +9,7 @@
 // they can look at it again, export it and have it forgotten with their cards.
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
+import type { FortuneField, IssuedFortune, MemberCard } from "@miyoria/contracts/api";
 import { type FortuneRecord, FortuneStoreKey } from "@miyoria/economy";
 import {
   completeJson,
@@ -32,7 +33,6 @@ import {
 import { z } from "zod";
 import { dateOf } from "./public.js";
 import type { ApiState } from "./state.js";
-import type { FortuneField, IssuedFortune, MemberCard } from "./types.js";
 
 const log = getLogger("api.fortune");
 

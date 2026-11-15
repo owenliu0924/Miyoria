@@ -1,7 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { LlmCallRecord, LlmCallStats, Thought } from "@/api/types";
+import type { Thought } from "@/api/types";
+import type { LlmCallRecord, LlmCallStats } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 
 const CALL: LlmCallRecord = {

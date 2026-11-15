@@ -1,17 +1,4 @@
-import type {
-  ActivityPhase,
-  ActivityRequest,
-  ActivityResource,
-  ActivityTask,
-  ActivityType,
-  ArbiterReason,
-  ArbiterVerdict,
-  LedgerKind,
-  LedgerOutcome,
-  TurnCancelCause,
-  TurnOutcome,
-  TurnReason,
-} from "@/api/types";
+import type { ActivityPhase, ActivityRequest, ActivityResource, ActivityTask, ActivityType, ArbiterReason, ArbiterVerdict, LedgerKind, LedgerOutcome, TurnCancelCause, TurnOutcome, TurnReason } from "@miyoria/contracts/api";
 import type { Tone } from "@/components/status";
 
 export const ACTIVITY_TYPE_LABEL: Record<ActivityType, string> = {

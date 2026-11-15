@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { NotebookPage, RecentView } from "@/api/types";
+import type { NotebookPage, RecentView } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 import { splitPath } from "./NotebookTab";
 

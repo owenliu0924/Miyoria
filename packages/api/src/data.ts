@@ -18,6 +18,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { AuthServiceKey, builtinRoles } from "@miyoria/auth";
 import { AgentHandleKey } from "@miyoria/brain/agent";
+import type { DataInventoryView, DataNote, DataWipeResult } from "@miyoria/contracts/api";
 import { errorMessage, getLogger, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   categoryModules,
@@ -44,9 +45,6 @@ import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { Route } from "./route.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
-import type { DataInventoryView, DataNote, DataWipeResult } from "./types.js";
-
-export type { DataCategoryView, DataInventoryView, DataNote, DataWipeResult } from "./types.js";
 
 const log = getLogger("api.data");
 

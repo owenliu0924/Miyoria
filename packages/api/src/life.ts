@@ -11,12 +11,17 @@
 // The module providing these is `mind`; they are looked up per request, so a stopped module is
 // a 503 that names it. On the route table (`@miyoria/contracts/api`): `lifeRpc`.
 
+import type {
+  ActivityView,
+  LifeDayView,
+  LifeEntry as LifeEntryView,
+  ReminderView,
+} from "@miyoria/contracts/api";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type LifeActivityId, type LifeEntry, LifeLogKey, ReminderDeskKey } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { ApiState } from "./state.js";
-import type { ActivityView, LifeDayView, LifeEntryView, ReminderView } from "./types.js";
 
 const DAY_MS = 86_400_000;
 /** "Lately" in the day view. */

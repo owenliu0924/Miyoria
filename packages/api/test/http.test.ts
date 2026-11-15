@@ -7,13 +7,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { PersonaHandle, PersonaHandleKey } from "@miyoria/brain/agent";
+import type { ModuleInfo } from "@miyoria/contracts/api";
 import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { PersonaOverrideStoreKey } from "@miyoria/store";
 import { Events, type JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiModule, ClientError, type ModuleInfo } from "../src/index.js";
+import { ActiveProfileKey, ApiModule, ClientError } from "../src/index.js";
 import { call, errorOf, nextEvent, openEvents, raw, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 

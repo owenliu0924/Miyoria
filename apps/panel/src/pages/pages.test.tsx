@@ -1,17 +1,8 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type {
-  ChannelLevelsView,
-  ChannelLevelView,
-  ModuleInfo,
-  PersonDetail,
-  SongsState,
-  SongView,
-  StageState,
-  VoiceState,
-  WorldView,
-} from "@/api/types";
+import type { VoiceState } from "@/api/types";
+import type { ChannelLevelsView, ChannelLevelView, ModuleInfo, PersonDetail, SongsState, SongView, StageState, WorldView } from "@miyoria/contracts/api";
 import { ConnectionProvider, STORAGE_TOKEN } from "@/app/connection";
 import { EventStore } from "@/app/events-store";
 import { envelope as busEnvelope } from "@/test/envelope";

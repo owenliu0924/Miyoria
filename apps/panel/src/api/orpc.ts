@@ -1,15 +1,15 @@
-// The route table's typed client (`@miyoria/contracts/api`) and its TanStack Query helpers. The
-// routes that have moved there are called through this; the rest stay in `endpoints.ts` until
-// their group moves.
+// The route table's typed client (`@miyoria/contracts/api`) and its TanStack Query helpers. Every
+// JSON route is called through this; `endpoints.ts` keeps the few that are not JSON.
 //
 // The types come from the contract; at run time the client needs only each route's method, path
 // and metadata, so it loads the table without its schemas (`schema/api.routes.json`, written by
 // `pnpm contracts:gen`) and zod stays out of the bundle. The panel does not check responses.
 //
 // oRPC's link builds each request from the table (method, path, query, JSON body) and decodes the
-// answer (JSON, or an event stream as an async iterator of its events). The request itself goes through `ApiClient.send`, so it carries the same headers as
-// every other call (the bearer token unless the route is open to non-admins, the CSRF header,
-// same-origin credentials) and fails with the same `ApiError` kinds.
+// answer (JSON, or an event stream as an async iterator of its events). The request itself goes
+// through `ApiClient.send`, so it carries the same headers as every other call (the bearer token
+// unless the route is open to non-admins, the CSRF header, same-origin credentials) and fails
+// with the same `ApiError` kinds.
 
 import type { ApiContract, ApiRpc, RouteMeta } from "@miyoria/contracts/api";
 import routes from "@miyoria/contracts/schema/api.routes.json";

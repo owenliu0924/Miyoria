@@ -1,38 +1,24 @@
 // The admin routes that moved to the route table, called the way the CLI's client calls them: the
 // bearer token, JSON in and out, a `ClientError` when a call fails. Each function keeps the name
-// and the arguments of the `ApiClient` method it replaced, so a test reads as it did.
+// and the arguments of the client method it replaced, so a test reads as it did.
 
-import type { PendingApproval } from "@miyoria/gate/actions";
-import type { DecisionRecord, RoleAssignment, RoleDefinition, RoleMapping } from "@miyoria/store";
-import type {
-  ActivitySnapshot,
-  ActivityTask,
-  AffectSnapshot,
-  ArbiterVerdict,
-  ContextKey,
-  LedgerView,
-  PersonCard,
-  PlatformId,
-  SavedPrompt,
-  ThoughtDigest,
-  TurnOutcomeRecord,
-} from "@miyoria/types";
 import type {
   ArbiterDecisionsView,
   AssignRoleRequest,
-  ConversationNoteView,
-  CostInfo,
+  ConversationNote as ConversationNoteView,
+  CostReport as CostInfo,
   DayPlanView,
   ExtensionInfo,
   GoalsView,
   KnowledgeView,
   McpServerInfo,
   MemoryItem,
+  MemoryPage,
   MemoryRecordView,
   MindView,
   ModuleInfo,
-  Page,
   PersonDetail,
+  PersonPage,
   PersonSummary,
   PromptSummary,
   QueueState,
@@ -49,7 +35,22 @@ import type {
   UsageInfo,
   VoiceState,
   WorldView,
-} from "../../src/index.js";
+} from "@miyoria/contracts/api";
+import type { PendingApproval } from "@miyoria/gate/actions";
+import type { DecisionRecord, RoleAssignment, RoleDefinition, RoleMapping } from "@miyoria/store";
+import type {
+  ActivitySnapshot,
+  ActivityTask,
+  AffectSnapshot,
+  ArbiterVerdict,
+  ContextKey,
+  LedgerView,
+  PersonCard,
+  PlatformId,
+  SavedPrompt,
+  ThoughtDigest,
+  TurnOutcomeRecord,
+} from "@miyoria/types";
 import { call } from "./http.js";
 
 /** Query of `GET /api/memory`, as a caller writes it (numbers and flags, not their text). */
@@ -83,7 +84,7 @@ export function adminCalls(base: string, token: string) {
   return {
     // ---- people
     people: (query: { q?: string; limit?: number; cursor?: string } = {}) =>
-      get<Page<PersonSummary>>("/api/people", query),
+      get<PersonPage>("/api/people", query),
     person: (id: string) => get<PersonDetail>(`/api/people/${seg(id)}`),
     updatePerson: (id: string, request: UpdatePersonRequest) =>
       send<PersonSummary>("PATCH", `/api/people/${seg(id)}`, request),
@@ -91,7 +92,7 @@ export function adminCalls(base: string, token: string) {
       send<PersonSummary>("POST", `/api/people/${seg(id)}/adjust`, { affinity }),
 
     // ---- memory
-    memory: (query: MemoryListQuery = {}) => get<Page<MemoryItem>>("/api/memory", query),
+    memory: (query: MemoryListQuery = {}) => get<MemoryPage>("/api/memory", query),
     updateMemory: (id: string, request: UpdateMemoryRequest) =>
       send<MemoryRecordView>("PATCH", `/api/memory/${seg(id)}`, request),
     deleteMemory: (id: string) => send<void>("DELETE", `/api/memory/${seg(id)}`),

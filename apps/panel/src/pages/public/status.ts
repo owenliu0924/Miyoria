@@ -2,7 +2,7 @@
 // page. Kept apart from PublicSite so the landing does not pull in the member pages.
 
 import { useQuery } from "@tanstack/react-query";
-import type { PublicState, PublicStatus } from "@/api/types";
+import type { PublicState, PublicStatus } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import type { Tone } from "@/components/status";
 

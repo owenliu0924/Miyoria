@@ -4,6 +4,7 @@
 import { AuthService, AuthServiceKey, authTables } from "@miyoria/auth";
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
 import * as arbiter from "@miyoria/brain/arbiter";
+import type { DataInventoryView, DataWipeResult } from "@miyoria/contracts/api";
 import * as self from "@miyoria/heart/self";
 import { MAINTENANCE_KEY, memoryTables, WATERMARK_PREFIX } from "@miyoria/memory/memory";
 import * as queue from "@miyoria/play/queue";
@@ -40,8 +41,6 @@ import {
   ActiveProfileKey,
   ApiModule,
   BACKUP_TOKEN_HEADER,
-  type DataInventoryView,
-  type DataWipeResult,
   parseContextKeyString,
   SESSION_STORE_PREFIX,
   SESSION_STORE_PROFILE,

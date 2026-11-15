@@ -1,7 +1,7 @@
 import { Hand, LogIn, Mic, MessageSquareText } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { isApiError } from "@/api/http";
-import type { MemberSession } from "@/api/types";
+import type { MemberSession } from "@miyoria/contracts/api";
 import { useConnection } from "@/app/connection";
 import { Dot, type Tone } from "@/components/status";
 import { Button } from "@/components/ui/button";

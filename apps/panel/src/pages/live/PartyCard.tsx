@@ -1,4 +1,4 @@
-import type { PartyResultView, PartySessionView } from "@/api/types";
+import type { PartyResultView, PartySessionView } from "@miyoria/contracts/api";
 import { useParty } from "@/app/queries";
 import { ModuleQuery } from "@/components/module-query";
 import { EmptyLine } from "@/components/query-state";

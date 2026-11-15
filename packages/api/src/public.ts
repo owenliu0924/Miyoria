@@ -14,6 +14,14 @@
 // reaches neither the store nor the voice path. Nothing here publishes anything or writes where
 // she can read it: being looked at changes nothing about her.
 
+import type {
+  PublicDay,
+  PublicSong,
+  PublicSongs,
+  PublicState,
+  PublicStatus,
+  PublicToday,
+} from "@miyoria/contracts/api";
 import { getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import { SingerKey, type SongEntry } from "@miyoria/sing";
 import { knownNames, type SettingsStore } from "@miyoria/store";
@@ -33,14 +41,6 @@ import { z } from "zod";
 import { os, type RpcContext } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { ApiContext, ApiState } from "./state.js";
-import type {
-  PublicDay,
-  PublicSong,
-  PublicSongs,
-  PublicState,
-  PublicStatus,
-  PublicToday,
-} from "./types.js";
 
 const log = getLogger("api.public");
 

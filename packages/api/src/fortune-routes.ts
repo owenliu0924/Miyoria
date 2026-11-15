@@ -11,6 +11,7 @@
 // Only a person she knows and has not blocked may draw (403, as everywhere); the slip is built
 // from what the page shows them (`fortune.ts`).
 
+import type { IssuedFortune } from "@miyoria/contracts/api";
 import { EconomyError, EconomyKey, FortuneStoreKey, STRANGER } from "@miyoria/economy";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
@@ -30,7 +31,6 @@ import {
 import { localDay } from "./public.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
-import type { IssuedFortune } from "./types.js";
 import { keyOf } from "./wallet.js";
 
 const log = getLogger("api.fortune");

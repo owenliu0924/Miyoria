@@ -6,6 +6,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PersonaHandle, PersonaHandleKey } from "@miyoria/brain/agent";
+import type { HealthInfo, PersonaSectionInfo, SetPersonaResponse } from "@miyoria/contracts/api";
 import { LlmRouter, LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
@@ -17,13 +18,7 @@ import {
 } from "@miyoria/store";
 import { type ContextKey, newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  ActiveProfileKey,
-  ApiModule,
-  type HealthInfo,
-  type PersonaSectionInfo,
-  type SetPersonaResponse,
-} from "../src/index.js";
+import { ActiveProfileKey, ApiModule } from "../src/index.js";
 import { adminCalls } from "./support/admin.js";
 import { Idle } from "./support/fakes.js";
 import { call, nextEvent, openEvents, raw, statusOf, waitFor } from "./support/http.js";

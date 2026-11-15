@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { MetricRatio, TurnMetrics, TurnMetricsBucket } from "@/api/types";
+import type { MetricRatio, TurnMetrics, TurnMetricsBucket } from "@miyoria/contracts/api";
 import { useTurnMetrics, useVoice } from "@/app/queries";
 import { BarList, ChartBlock, ChartEmpty, type Part, SegmentBar, TimeChart } from "@/components/charts/charts";
 import { EmptyLine, ErrorLine } from "@/components/query-state";

@@ -1,18 +1,8 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type {
-  ChannelLevelsView,
-  ConversationNote,
-  KnowledgeView,
-  MindView,
-  PendingApproval,
-  ReflectionView,
-  SelfView,
-  TelemetryPoint,
-  Thought,
-  WorldView,
-} from "@/api/types";
+import type { Thought } from "@/api/types";
+import type { ChannelLevelsView, ConversationNote, KnowledgeView, MindView, PendingApproval, ReflectionView, SelfView, TelemetryPoint, WorldView } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 
 const SELF: SelfView = {

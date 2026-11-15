@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { ContextKey } from "@/api/types";
-import type { JustNowKind } from "@/api/types";
+import type { ContextKey } from "@miyoria/contracts/wire";
+import type { JustNowKind } from "@miyoria/contracts/api";
 import { useChannelLevels } from "@/app/queries";
 import { useRecent } from "@/app/queries";
 import { ModuleQuery } from "@/components/module-query";

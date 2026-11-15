@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dices, Download, ExternalLink, Share2, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
-import type { IssuedCard, WalletView } from "@/api/types";
+import type { IssuedCard, WalletView } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import { ConfirmDialog } from "@/components/confirm";
 import { EmptyLine, QueryView, SkeletonRows } from "@/components/query-state";

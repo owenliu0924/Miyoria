@@ -3,6 +3,7 @@
 // fall back to the store.
 
 import { type AuthService, AuthServiceKey } from "@miyoria/auth";
+import type { RemoveMappingRequest, UpsertRoleRequest } from "@miyoria/contracts/api";
 import {
   type AuthScope,
   AuthStoreKey,
@@ -15,7 +16,6 @@ import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { scopeEquals } from "./schemas.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
-import type { RemoveMappingRequest, UpsertRoleRequest } from "./types.js";
 
 /** An assignment as the handler gets it: the scope's context has its `scope` (a DM: `null`). */
 interface Assignment {

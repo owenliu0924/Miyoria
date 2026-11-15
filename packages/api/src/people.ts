@@ -3,6 +3,13 @@
 // the social engine. Everyone in the people store is listed; people she has no relationship with
 // yet have `relationship: null` and the label of a neutral relationship.
 
+import type {
+  AdjustPersonRequest,
+  PersonDetail,
+  PersonPage,
+  PersonSummary,
+  UpdatePersonRequest,
+} from "@miyoria/contracts/api";
 import { attitude, BLOCKED_TAG, label, type Social, SocialKey } from "@miyoria/heart/social";
 import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
@@ -22,13 +29,6 @@ import { isUlid, type PersonId, type ProfileId, toTimestamp } from "@miyoria/typ
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { type ApiContext, type ApiState, actorOf, toJson } from "./state.js";
-import type {
-  AdjustPersonRequest,
-  Page,
-  PersonDetail,
-  PersonSummary,
-  UpdatePersonRequest,
-} from "./types.js";
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
@@ -167,7 +167,7 @@ function matches(summary: PersonSummary, needle: string): boolean {
 async function list(
   state: ApiState,
   q: { q?: string | undefined; limit?: number | undefined; cursor?: string | undefined },
-): Promise<Page<PersonSummary>> {
+): Promise<PersonPage> {
   const ctx = new PeopleCtx(state);
   let offset = 0;
   const cursor = q.cursor?.trim() ?? "";
@@ -199,7 +199,7 @@ async function list(
   const items = all
     .filter((summary) => needle === null || matches(summary, needle))
     .sort(byRecency);
-  const page: Page<PersonSummary> = {
+  const page: PersonPage = {
     items: items.slice(offset, offset + limit),
     next_cursor: items.length > offset + limit ? String(offset + limit) : null,
   };

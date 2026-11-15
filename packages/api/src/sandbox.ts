@@ -3,6 +3,7 @@
 // for one exact version. Approving needs the owners' approval node (the same one as the
 // Discord approval card); the bearer token is the owner.
 
+import type { ProposedToolSummary, ReviewToolRequest } from "@miyoria/contracts/api";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import {
   type ProposedTool,
@@ -14,7 +15,6 @@ import {
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
-import type { ProposedToolSummary, ReviewToolRequest } from "./types.js";
 
 function summary(tool: ProposedTool): ProposedToolSummary {
   const { code, ...rest } = tool;

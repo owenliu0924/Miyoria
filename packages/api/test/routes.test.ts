@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import type { AssignRoleRequest } from "@miyoria/contracts/api";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Social, SocialKey, socialConfig } from "@miyoria/heart/social";
 import { LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
@@ -64,10 +65,8 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ActiveProfileKey,
-  ApiClient,
   ApiModule,
   type ApiModuleOptions,
-  type AssignRoleRequest,
   avatarEmotions,
 } from "../src/index.js";
 import { adminCalls } from "./support/admin.js";
@@ -84,7 +83,6 @@ interface Harness {
   social: Social;
   queue: RequestQueue;
   sink: FakeSink;
-  client: ApiClient;
   base: string;
 }
 
@@ -149,7 +147,7 @@ async function harness(
 
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  const h = { sup, store, social, queue, sink, client: new ApiClient(base, TOKEN), base };
+  const h = { sup, store, social, queue, sink, base };
   harnesses.push(h);
   return h;
 }

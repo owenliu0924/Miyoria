@@ -3,7 +3,8 @@
 // hands exactly that over; an older one ignores it and the turn is cut out of a time window.
 
 import type { Api } from "@/api/endpoints";
-import type { E2eRecord, LogEvent, Timestamp } from "@/api/types";
+import type { E2eRecord, LogEvent } from "@/api/types";
+import type { Timestamp } from "@miyoria/contracts/wire";
 import { laneOf, turnOf } from "@/lib/consciousness";
 import { asE2eEvent } from "@/lib/e2e";
 import { factEventsInput } from "@/lib/fact-events";

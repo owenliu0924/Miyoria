@@ -5,13 +5,17 @@
 //   coins as one `admin_adjust` row. Needs `admin.economy.adjust` (the bearer token has every
 //   right); the same `key` twice answers the first. 402 when it would go below 0.
 
+import type {
+  PersonWalletView,
+  WalletAdjustRequest,
+  WalletAdjustResult,
+} from "@miyoria/contracts/api";
 import { type Economy, MAX_ADJUST, MAX_ADJUST_NOTE_CHARS } from "@miyoria/economy";
 import { IdentityStoreKey } from "@miyoria/store";
 import { isUlid, type PersonId } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
-import type { PersonWalletView, WalletAdjustRequest, WalletAdjustResult } from "./types.js";
 import { withWallet } from "./wallet.js";
 
 const HISTORY_ROWS = 20;

@@ -1,6 +1,6 @@
 import { History, Pencil, RotateCcw } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
-import type { PersonaOverride, PersonaSectionInfo } from "@/api/types";
+import type { PersonaOverride, PersonaSectionInfo } from "@miyoria/contracts/api";
 import { usePersona, usePersonaHistory, useSetPersona } from "@/app/queries";
 import { DiffView } from "@/components/diff-view";
 import { EmptyLine, QueryView, SkeletonRows } from "@/components/query-state";

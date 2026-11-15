@@ -1,6 +1,10 @@
 import { STATUS_CODES } from "node:http";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import type { ErrorBody } from "./types.js";
+
+/** Every error response: `{ "error": "..." }`. */
+export interface ErrorBody {
+  error: string;
+}
 
 /**
  * The message of the fallback for unknown `/api/*` routes; the panel shows "not provided by

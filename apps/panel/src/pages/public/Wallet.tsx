@@ -4,7 +4,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import type { FeedItem, FeedResult, GiftExpression, ShopItem, SpendResult, WalletView } from "@/api/types";
+import type { FeedItem, FeedResult, GiftExpression, ShopItem, SpendResult, WalletView } from "@miyoria/contracts/api";
 import { isNotProvided } from "@/api/http";
 import { useApi } from "@/app/connection";
 import { ConfirmDialog } from "@/components/confirm";

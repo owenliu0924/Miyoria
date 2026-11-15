@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Music } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
-import type { MemberCard, MemberDay, MemberForgetResult, MemberSession, MemberSong } from "@/api/types";
+import type { MemberCard, MemberDay, MemberForgetResult, MemberSession, MemberSong } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import { ChartBlock, ChartEmpty, ColumnChart } from "@/components/charts/charts";
 import { ConfirmDialog } from "@/components/confirm";

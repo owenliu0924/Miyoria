@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import type { AuthMethods, SessionInfo } from "@miyoria/contracts/api";
 import { EconomyError, EconomyKey } from "@miyoria/economy";
 import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
@@ -19,7 +20,7 @@ import {
 } from "@miyoria/store";
 import { type AccountRef, AuthorizerKey, type JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiModule, type AuthMethods, type SessionInfo } from "../src/index.js";
+import { ActiveProfileKey, ApiModule } from "../src/index.js";
 import { adminCalls } from "./support/admin.js";
 import { call, listenFetchable, raw } from "./support/http.js";
 import { TestStore } from "./support/stores.js";

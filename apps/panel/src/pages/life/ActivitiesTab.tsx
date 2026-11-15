@@ -1,4 +1,4 @@
-import type { ActivityView } from "@/api/types";
+import type { ActivityView } from "@miyoria/contracts/api";
 import { useActivities } from "@/app/queries";
 import { SegmentBar } from "@/components/charts/charts";
 import { ModuleQuery } from "@/components/module-query";

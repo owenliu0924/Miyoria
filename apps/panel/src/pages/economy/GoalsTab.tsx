@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ReachedGoal } from "@/api/types";
+import type { ReachedGoal } from "@miyoria/contracts/api";
 import { READ_ONLY_HINT, useCanWrite } from "@/app/session";
 import { useFulfillGoal, useReachedGoals } from "@/app/queries";
 import { ConfirmDialog } from "@/components/confirm";

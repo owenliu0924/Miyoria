@@ -3,7 +3,8 @@
 // that could not be read back to the start of the window says from where it can be trusted.
 
 import type { Api } from "@/api/endpoints";
-import type { Delivery, LogEvent, LogEventKind } from "@/api/types";
+import type { LogEvent } from "@/api/types";
+import type { Delivery, LogEventKind } from "@miyoria/contracts/api";
 import { factEventsInput } from "@/lib/fact-events";
 import { ulidTime } from "@/lib/turn-events";
 

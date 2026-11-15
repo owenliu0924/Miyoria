@@ -11,13 +11,13 @@
 // * `POST /api/game/start` `{ game?, goal?, stream? }`, `POST /api/game/stop`,
 //   `POST /api/game/goal` `{ text }` (`game.*`; played where she is in voice)
 
+import type { ControlResult, SongsState, SongView } from "@miyoria/contracts/api";
 import { SingerKey, type SongEntry } from "@miyoria/sing";
 import { type ContextKey, contextKeyString, type JsonObject } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { actAs } from "./ops.js";
 import { type ApiContext, type ApiState, toJson } from "./state.js";
-import type { ControlResult, SongsState, SongView } from "./types.js";
 
 const BODY_REJECTED = "Failed to deserialize the JSON body into the target type";
 

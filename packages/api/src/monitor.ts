@@ -2,6 +2,13 @@
 // speaking, recent latency) and whether her own speech is playing. Only events seen since the
 // `api` module started count.
 
+import type {
+  E2eSegmentName,
+  E2eStats,
+  LatencyStats,
+  VoiceE2eLatency,
+  VoiceState,
+} from "@miyoria/contracts/api";
 import type { Subscription } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
@@ -18,13 +25,6 @@ import {
   timestampMs,
   type VoiceParticipant,
 } from "@miyoria/types";
-import type {
-  E2eSegmentName,
-  E2eStats,
-  LatencyStats,
-  VoiceE2eLatency,
-  VoiceState,
-} from "./types.js";
 
 /** Topics the monitor follows. */
 export const MONITOR_TOPICS: readonly string[] = ["voice.*", "agent.turn.started"];
