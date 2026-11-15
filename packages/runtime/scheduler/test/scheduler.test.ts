@@ -8,9 +8,9 @@ import {
   ActuatorExecutorKey,
   actLane,
   type ContextKey,
-  customEvent,
+  Events,
+  is,
   type JsonObject,
-  type JsonValue,
   type MessageRef,
   type Mouth,
   MouthKey,
@@ -145,10 +145,10 @@ interface Done {
 async function nextDone(sub: Subscription): Promise<Done> {
   const env = await sub.recv();
   if (env === null) throw new Error("subscription closed");
-  if (env.event.type !== "action_completed") {
-    throw new Error(`unexpected event ${env.event.type}`);
+  if (!is(Events.ActionCompleted, env)) {
+    throw new Error(`unexpected event ${env.type}`);
   }
-  const { action, ok, error } = env.event.data;
+  const { action, ok, error } = env.data;
   return { action, ok, error };
 }
 
@@ -306,15 +306,13 @@ describe("scheduler (TS specifics)", () => {
     await h.actions.submit(send("hi", "direct"));
     const env = await h.completed.recv();
     expect(env?.source).toBe("scheduler");
-    expect(env?.event).toEqual({
-      type: "action_completed",
-      data: {
-        action: expect.any(String),
-        turn: null,
-        ok: true,
-        error: null,
-        message: { context: context("fake"), id: "m" },
-      },
+    expect(env?.type).toBe("action.completed");
+    expect(env?.data).toEqual({
+      action: expect.any(String),
+      turn: null,
+      ok: true,
+      error: null,
+      message: { context: context("fake"), id: "m" },
     });
     await h.sup.stopAll();
   });
@@ -324,7 +322,7 @@ describe("scheduler (TS specifics)", () => {
     const turn = newId();
     await h.actions.submit(send("hi", "direct", { turn }));
     const env = await h.completed.recv();
-    expect(env?.correlation).toBe(turn);
+    expect(env?.turn).toBe(turn);
     await h.sup.stopAll();
   });
 
@@ -335,7 +333,7 @@ describe("scheduler (TS specifics)", () => {
     const action = send("hi", "direct", { turn });
     await h.actions.submit(action);
     const env = await settled.recv();
-    expect(env?.correlation).toBe(turn);
+    expect(env?.turn).toBe(turn);
     const payload: ActionSettled = {
       action: action.id,
       turn,
@@ -346,7 +344,8 @@ describe("scheduler (TS specifics)", () => {
       error: null,
       message: { context: context("fake"), id: "m" },
     };
-    expect(env?.event).toEqual(customEvent(ACTION_SETTLED_TOPIC, payload as unknown as JsonValue));
+    expect(env?.type).toBe(ACTION_SETTLED_TOPIC);
+    expect(env?.data).toEqual(payload);
     await h.sup.stopAll();
   });
 
@@ -364,10 +363,11 @@ describe("scheduler (TS specifics)", () => {
     await h.actions.submit(newAction("text:x", "direct", { type: "react", message, emoji: "👍" }));
     await h.actions.submit(speak);
     const env = await settled.recv();
-    expect(env?.event).toMatchObject({
-      data: {
-        payload: { type: "speak", text: "沒有聲音", ok: false, error: "no voice sink" },
-      },
+    expect(env?.data).toMatchObject({
+      type: "speak",
+      text: "沒有聲音",
+      ok: false,
+      error: "no voice sink",
     });
     expect(settled.tryRecv()).toBeNull();
     await h.sup.stopAll();
@@ -603,7 +603,7 @@ describe("the emergency stop", () => {
   const settledOf = (sub: Subscription): ActionSettled[] => {
     const out: ActionSettled[] = [];
     for (let e = sub.tryRecv(); e !== null; e = sub.tryRecv()) {
-      if (e.event.type === "custom") out.push(e.event.data.payload as unknown as ActionSettled);
+      if (e.type === ACTION_SETTLED_TOPIC) out.push(e.data as ActionSettled);
     }
     return out;
   };
