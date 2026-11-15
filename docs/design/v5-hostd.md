@@ -11,7 +11,7 @@
 - **所有 Python worker 都沒有認證**,靠綁在 loopback 或 Tailscale 位址。voice link、stage link、管理 API 各有一個寫在設定檔的固定 token。
 - **顯卡記憶體有兩條各自為政的路**:唱歌 worker 自己呼叫 TTS 和 ASR 的 `/offload`(位址由 CLI 用 `SING_OFFLOAD_URLS` 塞進去),Core 的生圖模組在唱歌事件時自己叫 ComfyUI 釋放。昨晚遇到的兩個 `start sing` 問題都出在第一條路的位址怎麼算。
 - **Python 環境沒有 lock 檔**:`python -m venv` 加沒有釘版本的 `pip install`,`update` 不會動 Python 這邊。
-- **lyrics 服務自己讀 `miyoria.toml` 和 `.env`** 來拿 LLM 的金鑰。
+- **lyrics 服務自己讀 `miyoria.toml` 和 `.env`** 來拿 LLM 的金鑰。(2026-11-16 補註:H8 已改掉。hostd 啟動的翻唱 worker 和 lyrics 服務不再讀 `miyoria.toml`:要 LLM 時經 hostd 請 Core 代跑(`cluster.llm`,用途 `fast`),ASR 抽查經 `cluster.fetch`;沒有 hostd 時只用 `SING_LYRICS_LLM_URL` / `_KEY` / `_MODEL` 三個環境變數。)
 - **已經有的**:CLI 的 npm 套件會把 Core、面板和角色包打包進去,CI 會把打包好的檔案裝起來跑 `init`;kernel 的 Supervisor 有退避和放棄的算法;擴充協定有一份對稱的 JSON-RPC 實作。
 
 ## 設計的結論
@@ -301,7 +301,7 @@ Three kinds of caller reach hostd, all with the same method table (the daemon im
 | Caller | Transport | Authenticated by | May call |
 |---|---|---|---|
 | CLI on this machine | HTTP `POST /rpc` on the local API; `GET /logs/<service>` streams log lines | the token in `run/hostd.json` | everything |
-| A service on this machine | HTTP `POST /rpc` on the local API | its `MIYORIA_SERVICE_TOKEN` | `gpu.*`, `cluster.resolve`, `cluster.llm` |
+| A service on this machine | HTTP `POST /rpc` on the local API | its `MIYORIA_SERVICE_TOKEN` | the forwarded `cluster.resolve`, `cluster.llm` and `cluster.fetch`. `gpu.*` comes with H7; hostd does not serve it to a service yet |
 | Core | the control link (hostd dialled it) | the host key, in `hello` | `host.*`, `service.*` |
 
 Methods hostd serves:
@@ -311,14 +311,31 @@ Methods hostd serves:
   cancelled).
 - `service.install`, `service.remove`, `host.update` (H6).
 - `gpu.acquire`, `gpu.renew`, `gpu.release`, `gpu.busy`, `gpu.state` (H7).
-- `cluster.resolve`, `cluster.llm`: forwarded to Core over the link (H5, H8).
+- `cluster.resolve`, `cluster.llm`, `cluster.fetch`: forwarded to Core over the link (H5, H8). hostd adds the name of the service that asked (`service`); a service cannot set it itself.
 
 Methods Core serves on the control link:
 - `cluster.guard` → the active guarded states.
 - `cluster.resolve { capability }` → endpoints with the headers to send.
-- `cluster.llm { purpose, messages, max_tokens }` → text. Allowed only for a host whose approved
-  capabilities include the one the request names; counted in the daily budget and written to the
-  call log like any other call.
+- `cluster.llm { purpose, messages, max_tokens, temperature, json }` → text. One completion
+  through Core's own model and key; counted in the daily budget and written to the call log like
+  any other call. The key never leaves Core.
+- `cluster.fetch { capability, method, path, headers, body }` → `{ status, headers, body }`. Core
+  sends one HTTP request to the first usable endpoint of `capability` and returns the whole answer
+  (body base64, each body at most `HOST_FETCH_LIMITS.MAX_BODY_BYTES`, 8 MiB; the response head must
+  arrive within `HEAD_TIMEOUT_MS`, 60 s). For small calls such as the ASR spot check.
+
+Who may use `cluster.llm` and `cluster.fetch`: Core decides, never the caller
+(`packages/cluster/src/calls.ts`). It checks that the host is approved, that the host's last
+report lists the service that asked, that the service provides a capability the host is approved
+for, and that the `provides` → `uses` table lets that capability use what is asked for (an LLM
+purpose, a capability to fetch from; a purpose must also be on Core's list, default `fast`). The
+table `DEFAULT_CLUSTER_USES` is in code and has no config key yet: `sing` and `lyrics` may use the
+LLM purpose `fast` and fetch from `asr`; nothing else may use anything. `cluster.llm` is rate
+limited per host (30 calls per 60 s by default). The errors are the codes of `HOST_ERROR_CODE`
+(`packages/contracts/host/src/protocol.ts`): `NotAllowed` (-32014) for any failed check,
+`NotLinked` (-32015) when hostd has no link to Core, `Unavailable` (-32016) when there is no usable
+endpoint or no LLM or the call failed, `TooLarge` (-32017) for a body over the limit,
+`RateLimited` (-32018) over the `cluster.llm` rate.
 
 Notifications:
 - hostd → Core: `host.report` (the full snapshot: on connect, then on every change),
@@ -443,10 +460,12 @@ miyoria host ls | approve <name> [capability...] | remove <name>
   `workers/service_auth.py`, a FastAPI dependency that requires the bearer token on every route
   when `MIYORIA_SERVICE_TOKEN` is set, and does nothing when it is not (a worker run by hand).
   hostd's own probes send the token.
-- Until H7 and H8 remove them, workers still call their neighbours on the same machine (the sing
-  worker's offload calls to TTS and ASR, the lyrics code's ASR check). For those hostd also gives
-  every service of the machine one shared `MIYORIA_HOST_TOKEN`, new at each daemon start; a worker
-  accepts its own token or the host token, and sends the host token to a neighbour.
+- Workers still call their neighbours on the same machine in one place: the sing worker's offload
+  calls to TTS and ASR, until H7 lands (the hostd arbiter is written but off; `SING_GPU_ARBITER`
+  defaults to `self`). The lyrics code's ASR check no longer is one: under hostd it goes through
+  Core (`cluster.fetch` to `asr`, H8). For the offload calls hostd also gives every service of the
+  machine one shared `MIYORIA_HOST_TOKEN`, new at each daemon start; a worker accepts its own token
+  or the host token, and sends the host token to a neighbour.
 - The host id and key live together in `<state>/host.key` as JSON `{ "id", "key" }`.
 - `remove` revokes the key, closes the link, drops the host's endpoints.
 
@@ -607,13 +626,28 @@ The parser stays hand-written (v5-packages §12). `core`, `stage`, `chat`, `conf
 
 ## 12. Deleted at the end of the phase
 
-`commands/start.ts`; the launcher in `commands/up.ts`; `commands/install.ts` pip steps;
-`stack/launch.ts`, `stack/roles.ts`, `stack/config.ts`, the port and VRAM tables in
-`stack/checks.ts` and `role-checks.ts`; `machine-step.ts`'s address writing; the `[stack]` and
-`[machine]` sections; `host migrate`; URL keys listed in §6.4; `SING_OFFLOAD_URLS`,
-`SING_YIELD_URLS`; Core's `/gpu/context` push; `ImageGenService`'s sing wiring;
-`lyricsllm.load_config`; `workers/mediamtx/start.ps1`. `workers/docker-compose.yml` and
-`deploy/` are not part of this phase and stay as they are (noted in the backlog as untested).
+What the phase deletes. Status checked against the tree on 2026-11-16 (the branch is not at the end
+of the phase yet).
+
+Already gone: `commands/start.ts`; `commands/up.ts` (`up` now lives with the hostd commands in
+`commands/host.ts`); `commands/install.ts`; `stack/launch.ts`; `role-checks.ts`; `machine-step.ts`;
+the port and VRAM tables of `stack/checks.ts` (the file stays, for the Windows port and antivirus
+checks). `lyricsllm.load_config` is not deleted: it was rewritten (H8) and no longer reads
+`miyoria.toml`.
+
+Still there, to delete at the end:
+- `stack/roles.ts` and `stack/config.ts`, with the `[stack]` and `[machine]` sections of the
+  config schema; `host migrate` reads them, so it goes with them.
+- The URL keys listed in §6.4 (`speech.*.url`, `modules.voice.turn_url`, `modules.sing.url` and
+  `fallback_urls`, `modules.imagegen.url`, `[stage] core_url`). They stay as optional static
+  registry entries and have no default address.
+- `SING_OFFLOAD_URLS` (still set by the `sing` descriptor) and `SING_YIELD_URLS`, until H7 is on.
+- Core's `/gpu/context` push (`packages/sing/src/client.ts`) and `ImageGenService`'s sing wiring
+  (`packages/workspace/imagegen`), until the GPU step and the imagegen move.
+- `workers/mediamtx/start.ps1`.
+
+`workers/docker-compose.yml` and `deploy/` are not part of this phase and stay as they are (noted
+in the backlog as untested).
 
 ## 13. Tests
 
