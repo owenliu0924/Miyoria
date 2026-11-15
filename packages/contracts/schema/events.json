@@ -2,6 +2,134 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/events",
   "$defs": {
+    "EventsActionCompleted": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsSentMessage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "turn",
+        "ok",
+        "error",
+        "message"
+      ]
+    },
+    "EventsActionSettled": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "send_message",
+            "speak"
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "text": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsSentMessage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocked": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "turn",
+        "type",
+        "context",
+        "text",
+        "ok",
+        "error",
+        "message"
+      ]
+    },
+    "EventsAgentInitiative": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "about": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireAccountRef"
+          }
+        }
+      },
+      "required": [
+        "context",
+        "reason",
+        "hint",
+        "about"
+      ]
+    },
     "EventsArtifactCreated": {
       "type": "object",
       "properties": {
@@ -359,6 +487,147 @@
         "data"
       ]
     },
+    "EventsE2eParts": {
+      "type": "object",
+      "properties": {
+        "prepare": {
+          "type": "object",
+          "properties": {
+            "wait": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "decide": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "context": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "prompt": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "wait",
+            "decide",
+            "context",
+            "prompt"
+          ]
+        },
+        "llm_first": {
+          "type": "object",
+          "properties": {
+            "first_token": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "held": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "first_sentence": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "first_token",
+            "held",
+            "first_sentence"
+          ]
+        }
+      },
+      "required": [
+        "prepare",
+        "llm_first"
+      ]
+    },
+    "EventsE2eReason": {
+      "type": "string",
+      "enum": [
+        "barge_in",
+        "interrupted",
+        "cancelled",
+        "floor",
+        "tts_failed",
+        "playback_failed",
+        "speech_end_unknown",
+        "expired"
+      ]
+    },
+    "EventsE2eSegments": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "asr": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "prepare": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "llm_first": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tts_queue": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tts_first": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "playback": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "endpoint",
+        "asr",
+        "prepare",
+        "llm_first",
+        "tts_queue",
+        "tts_first",
+        "playback"
+      ]
+    },
     "EventsEnvelope": {
       "type": "object",
       "properties": {
@@ -477,6 +746,15 @@
         "data"
       ]
     },
+    "EventsGoLiveState": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "live",
+        "stopped",
+        "failed"
+      ]
+    },
     "EventsIdentityImported": {
       "type": "object",
       "properties": {
@@ -548,6 +826,24 @@
       "enum": [
         "privacy",
         "voice_consent"
+      ]
+    },
+    "EventsLatencyTurnEnd": {
+      "type": "object",
+      "properties": {
+        "ended_by": {
+          "type": "string"
+        },
+        "probability": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ended_by",
+        "probability"
       ]
     },
     "EventsLegacySnapshot": {
@@ -791,6 +1087,71 @@
         "reasoning_tokens"
       ]
     },
+    "EventsMemberUpdate": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_bot": {
+          "type": "boolean"
+        },
+        "left": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "account",
+        "display_name",
+        "is_bot",
+        "left"
+      ]
+    },
+    "EventsModuleState": {
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/EventsModuleStateKind"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "module",
+        "state",
+        "reason"
+      ]
+    },
+    "EventsModuleStateKind": {
+      "type": "string",
+      "enum": [
+        "disabled",
+        "starting",
+        "running",
+        "degraded",
+        "stopping",
+        "stopped",
+        "failed"
+      ]
+    },
     "EventsPlatformMessage": {
       "type": "object",
       "properties": {
@@ -885,6 +1246,175 @@
         "ts"
       ]
     },
+    "EventsPlatformReaction": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/WireMessageRef"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "added": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message",
+        "account",
+        "display_name",
+        "emoji",
+        "added",
+        "at"
+      ]
+    },
+    "EventsPlatformReady": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "self_account": {
+          "$ref": "#/$defs/WireAccountRef"
+        }
+      },
+      "required": [
+        "platform",
+        "self_account"
+      ]
+    },
+    "EventsPlatformTyping": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        }
+      },
+      "required": [
+        "context",
+        "account"
+      ]
+    },
+    "EventsPresenceActivity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/EventsPresenceActivityKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "details": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "details",
+        "state",
+        "started_at",
+        "url"
+      ]
+    },
+    "EventsPresenceActivityKind": {
+      "type": "string",
+      "enum": [
+        "playing",
+        "streaming",
+        "listening",
+        "watching",
+        "competing",
+        "custom"
+      ]
+    },
+    "EventsPresenceStatus": {
+      "type": "string",
+      "enum": [
+        "online",
+        "idle",
+        "dnd",
+        "offline"
+      ]
+    },
+    "EventsPresenceUpdate": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_bot": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/EventsPresenceStatus"
+        },
+        "activities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsPresenceActivity"
+          }
+        },
+        "initial": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "account",
+        "display_name",
+        "is_bot",
+        "status",
+        "activities",
+        "initial"
+      ]
+    },
     "EventsRedactedData": {
       "type": "object",
       "properties": {
@@ -906,6 +1436,24 @@
         "dm",
         "self",
         "owner"
+      ]
+    },
+    "EventsSentMessage": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "id": {
+          "type": "string"
+        },
+        "blocked": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "id"
       ]
     },
     "EventsShareAudience": {
@@ -1014,6 +1562,28 @@
         "reason"
       ]
     },
+    "EventsSpeechPause": {
+      "type": "object",
+      "properties": {
+        "paused": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "paused",
+        "reason"
+      ]
+    },
+    "EventsSystemShutdown": {
+      "type": "object",
+      "properties": {}
+    },
     "EventsTier": {
       "type": "string",
       "enum": [
@@ -1032,6 +1602,25 @@
         "expired",
         "floor",
         "shutdown"
+      ]
+    },
+    "EventsTurnCompleted": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "text"
       ]
     },
     "EventsTurnOutcome": {
@@ -1196,6 +1785,497 @@
         "notice"
       ]
     },
+    "EventsTurnStarted": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        }
+      },
+      "required": [
+        "turn",
+        "context"
+      ]
+    },
+    "EventsVoiceBargeIn": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "$ref": "#/$defs/EventsVoiceBargeInAction"
+        },
+        "reason": {
+          "$ref": "#/$defs/EventsVoiceBargeInReason"
+        }
+      },
+      "required": [
+        "context",
+        "turn",
+        "account",
+        "action",
+        "reason"
+      ]
+    },
+    "EventsVoiceBargeInAction": {
+      "type": "string",
+      "enum": [
+        "duck",
+        "pause",
+        "resume",
+        "stop"
+      ]
+    },
+    "EventsVoiceBargeInReason": {
+      "type": "string",
+      "enum": [
+        "focus",
+        "name",
+        "substantive",
+        "other",
+        "no_focus",
+        "short_reply",
+        "echo",
+        "music",
+        "timeout",
+        "legacy",
+        "floor"
+      ]
+    },
+    "EventsVoiceGoLive": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/EventsGoLiveState"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "state",
+        "error",
+        "reason"
+      ]
+    },
+    "EventsVoiceJoined": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireVoiceParticipant"
+          }
+        }
+      },
+      "required": [
+        "context",
+        "participants"
+      ]
+    },
+    "EventsVoiceLatency": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "asr"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "speaker": {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "audio_ms": {
+              "type": "number"
+            },
+            "transcribe_ms": {
+              "type": "number"
+            },
+            "asr_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "speaker",
+            "provider",
+            "audio_ms",
+            "transcribe_ms",
+            "asr_ms"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "turn"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "complete",
+                "incomplete",
+                "unknown"
+              ]
+            },
+            "probability": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "judge_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "verdict",
+            "probability",
+            "judge_ms"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "turn_resumed"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "after_ms": {
+              "type": "number"
+            },
+            "at": {
+              "type": "number"
+            },
+            "probability": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "after_ms",
+            "at",
+            "probability"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "llm"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "turn": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "first_token_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "turn",
+            "model",
+            "first_token_ms"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "speculation"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "turn": {
+              "type": "string"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "confirmed",
+                "dropped"
+              ]
+            },
+            "ms": {
+              "type": "number"
+            },
+            "model": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "turn",
+            "result",
+            "ms",
+            "model"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "tts"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "turn": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "provider": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chars": {
+              "type": "number"
+            },
+            "first_audio_ms": {
+              "type": "number"
+            },
+            "prefetched": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "turn",
+            "provider",
+            "chars",
+            "first_audio_ms",
+            "prefetched"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "filler"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "turn": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "turn",
+            "text",
+            "ms"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "const": "e2e"
+            },
+            "context": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "turn": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "utterance": {
+              "type": "string"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EventsE2eReason"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "total_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "segments": {
+              "$ref": "#/$defs/EventsE2eSegments"
+            },
+            "unattributed_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "prefetched": {
+              "type": "boolean"
+            },
+            "provider": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "turn_end": {
+              "$ref": "#/$defs/EventsLatencyTurnEnd"
+            },
+            "parts": {
+              "$ref": "#/$defs/EventsE2eParts"
+            },
+            "speculative": {
+              "type": "boolean"
+            },
+            "filler_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "stage",
+            "context",
+            "turn",
+            "utterance",
+            "complete",
+            "reason",
+            "total_ms",
+            "segments",
+            "unattributed_ms",
+            "prefetched",
+            "provider"
+          ]
+        }
+      ]
+    },
+    "EventsVoiceLeft": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "reason"
+      ]
+    },
+    "EventsVoiceParticipants": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireVoiceParticipant"
+          }
+        }
+      },
+      "required": [
+        "context",
+        "participants"
+      ]
+    },
     "EventsVoicePlayback": {
       "type": "object",
       "properties": {
@@ -1247,6 +2327,112 @@
         "turn",
         "state",
         "text"
+      ]
+    },
+    "EventsVoiceSpeaking": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "speaking": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "context",
+        "account",
+        "speaking"
+      ]
+    },
+    "EventsVoiceStateUpdate": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "guild": {
+          "type": "string"
+        },
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_bot": {
+          "type": "boolean"
+        },
+        "channel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "self_mute": {
+          "type": "boolean"
+        },
+        "self_deaf": {
+          "type": "boolean"
+        },
+        "server_mute": {
+          "type": "boolean"
+        },
+        "server_deaf": {
+          "type": "boolean"
+        },
+        "video": {
+          "type": "boolean"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "initial": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "platform",
+        "guild",
+        "account",
+        "display_name",
+        "is_bot",
+        "channel",
+        "channel_name",
+        "self_mute",
+        "self_deaf",
+        "server_mute",
+        "server_deaf",
+        "video",
+        "streaming",
+        "initial"
+      ]
+    },
+    "EventsVoiceSynthesis": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "turn"
       ]
     },
     "EventsVoiceTurnStages": {
@@ -1314,6 +2500,35 @@
         "held_ms",
         "first_sentence_ms",
         "speculative"
+      ]
+    },
+    "EventsVoiceUpcoming": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "emotion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "turn",
+        "text",
+        "emotion"
       ]
     },
     "WireAccountRef": {
@@ -1598,6 +2813,33 @@
       "required": [
         "id",
         "name"
+      ]
+    },
+    "WireVoiceParticipant": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_self": {
+          "type": "boolean"
+        },
+        "muted": {
+          "type": "boolean"
+        },
+        "deafened": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account",
+        "display_name",
+        "is_self",
+        "muted",
+        "deafened"
       ]
     }
   }

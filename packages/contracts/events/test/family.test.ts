@@ -43,6 +43,28 @@ describe("family patterns", () => {
     expect(familyCovers("game.*.*", "game.neuro.force.done")).toBe(true);
     expect(familyCovers("audit.module.disable", "audit.module.disable")).toBe(true);
   });
+
+  it("cover one word or more with `**` anywhere", () => {
+    expect(familyCovers("**.task.done", "worklane.task.done")).toBe(true);
+    expect(familyCovers("**.task.done", "game.minecraft.task.done")).toBe(true);
+    expect(familyCovers("**.task.done", "ext.test.fixture.task.done")).toBe(true);
+    expect(familyCovers("**.task.done", "task.done")).toBe(false);
+    expect(familyCovers("**.task.done", "worklane.task.failed")).toBe(false);
+    expect(familyCovers("game.**.end", "game.a.b.end")).toBe(true);
+    expect(familyCovers("game.**", "game.a.b")).toBe(true);
+    expect(isEventFamily("**.task.done")).toBe(true);
+    expect(() => defineEvent({ type: "**", v: 1, data })).toThrow(EventDefinitionError);
+    expect(() => defineEvent({ type: "a.***", v: 1, data })).toThrow(EventDefinitionError);
+  });
+
+  it("rank `**` below a pattern with as many fixed words that takes fewer", () => {
+    const Deep = defineEvent({ type: "**.task.done", v: 1, data });
+    const Exact = defineEvent({ type: "*.task.done", v: 1, data });
+    const events = new EventRegistry().register(Deep, Exact, Game);
+    expect(events.resolve("worklane.task.done")).toBe(Exact);
+    expect(events.resolve("game.minecraft.task.done")).toBe(Deep);
+    expect(events.resolve("game.minecraft.death")).toBe(Game);
+  });
 });
 
 describe("EventRegistry with families", () => {

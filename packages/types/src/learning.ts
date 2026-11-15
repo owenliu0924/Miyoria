@@ -14,6 +14,7 @@
 // Everything here may be derived from what other people said: prompts show it as untrusted
 // data blocks, never in the system role.
 
+import type { PlatformReactionData } from "@miyoria/contracts/events";
 import type { PersonId, PlatformId } from "./ids.js";
 import type { JsonObject, JsonValue } from "./json.js";
 import type { AccountRef, ContextKey } from "./platform.js";
@@ -351,11 +352,4 @@ export const MemoryCuratorKey = serviceKey<MemoryCurator>("MemoryCurator");
 export const REACTION_TOPIC = "platform.reaction";
 
 /** `platform.reaction` payload. */
-export interface ReactionEvent {
-  message: { context: ContextKey; id: string };
-  account: AccountRef;
-  display_name: string | null;
-  emoji: string;
-  added: boolean;
-  at: Timestamp;
-}
+export type ReactionEvent = PlatformReactionData;

@@ -2,11 +2,12 @@
 // with the type's default scope and its tier; `EventRegistry` holds the definitions Core knows.
 // No bus, no store, no I/O: this runs in a browser bundle as well as in Core.
 //
-// A type may be a family: a pattern whose `*` words stand for any word, for types built from
-// parts (`audit.<area>.<action>`, `game.<id>.task.<type>`). A `*` in the middle stands for exactly
-// one word; a `*` at the end for one word or more, as in a bus topic filter (`audit.*` covers
-// `audit.admin.memory.wipe`). `EventRegistry.resolve` finds a type's own definition, else the most
-// specific family that covers it.
+// A type may be a family: a pattern with wildcard words, for types built from parts
+// (`audit.<area>.<action>`, `game.<id>.<kind>`, `<owner>.task.<type>`). A `*` in the middle stands
+// for exactly one word; a `*` at the end for one word or more, as in a bus topic filter (`audit.*`
+// covers `audit.admin.memory.wipe`); a `**` anywhere for one word or more (`**.task.done` covers
+// `worklane.task.done` and `game.minecraft.task.done`). `EventRegistry.resolve` finds a type's own
+// definition, else the most specific family that covers it.
 
 import type { z } from "zod";
 import type { EventId, Timestamp } from "../../wire/src/index.js";
@@ -74,12 +75,12 @@ export function defineEvent<const Type extends string, Data extends z.ZodType>(
   }
   if (spec.type.includes("*")) {
     const words = spec.type.split(".");
-    if (words.some((word) => word === "" || (word.includes("*") && word !== "*"))) {
+    if (words.some((word) => word === "" || (word.includes("*") && !isWildcard(word)))) {
       throw new EventDefinitionError(
-        `event family \`${spec.type}\`: a \`*\` must be a whole word, and no word may be empty`,
+        `event family \`${spec.type}\`: \`*\` and \`**\` must be whole words, and no word may be empty`,
       );
     }
-    if (words.every((word) => word === "*")) {
+    if (words.every(isWildcard)) {
       throw new EventDefinitionError(`event family \`${spec.type}\` has no fixed word`);
     }
   }
@@ -95,42 +96,56 @@ export function defineEvent<const Type extends string, Data extends z.ZodType>(
   });
 }
 
-/** Whether `type` is a family pattern (it has a `*` word). */
+function isWildcard(word: string): boolean {
+  return word === "*" || word === "**";
+}
+
+/** Whether `type` is a family pattern (it has a `*` or `**` word). */
 export function isEventFamily(type: string): boolean {
-  return type.split(".").includes("*");
+  return type.split(".").some(isWildcard);
+}
+
+/** Whether word `i` of `pattern` takes one word or more: a `**`, or a `*` at the end. */
+function takesMany(pattern: readonly string[], i: number): boolean {
+  return pattern[i] === "**" || (pattern[i] === "*" && i === pattern.length - 1);
+}
+
+function covers(p: readonly string[], t: readonly string[], i: number, j: number): boolean {
+  if (i === p.length) return j === t.length;
+  if (takesMany(p, i)) {
+    for (let k = j + 1; k <= t.length; k++) if (covers(p, t, i + 1, k)) return true;
+    return false;
+  }
+  if (j === t.length || (p[i] !== "*" && p[i] !== t[j])) return false;
+  return covers(p, t, i + 1, j + 1);
 }
 
 /**
  * Whether the family `pattern` covers `type`. A `*` in the middle matches exactly one word, a `*`
- * at the end one word or more; every other word must be equal. A pattern without `*` covers only
- * itself.
+ * at the end or a `**` anywhere one word or more; every other word must be equal. A pattern
+ * without wildcards covers only itself.
  */
 export function familyCovers(pattern: string, type: string): boolean {
-  const p = pattern.split(".");
-  const t = type.split(".");
-  const open = p[p.length - 1] === "*";
-  if (open ? t.length < p.length : t.length !== p.length) return false;
-  return p.every((word, i) => word === "*" || word === t[i]);
+  return covers(pattern.split("."), type.split("."), 0, 0);
 }
 
 /**
- * Orders two families that both cover a type, the more specific first: more fixed words, then more
- * words, then the one without an open end, then the one whose first difference is a fixed word
- * (`game.*.*` before `*.task.*`), then by name.
+ * Orders two families that both cover a type, the more specific first: more fixed words, then
+ * fewer words that take several, then more words, then the one whose first difference is a fixed
+ * word (`game.*.*` before `*.task.*`), then by name.
  */
 function moreSpecific(a: string, b: string): number {
-  const fixed = (words: string[]) => words.filter((word) => word !== "*").length;
   const wa = a.split(".");
   const wb = b.split(".");
+  const fixed = (words: string[]) => words.filter((word) => !isWildcard(word)).length;
+  const many = (words: string[]) => words.filter((_, i) => takesMany(words, i)).length;
   if (fixed(wa) !== fixed(wb)) return fixed(wb) - fixed(wa);
+  if (many(wa) !== many(wb)) return many(wa) - many(wb);
   if (wa.length !== wb.length) return wb.length - wa.length;
-  const openA = wa[wa.length - 1] === "*";
-  const openB = wb[wb.length - 1] === "*";
-  if (openA !== openB) return openA ? 1 : -1;
   for (let i = 0; i < wa.length; i++) {
     if (wa[i] === wb[i]) continue;
-    if (wa[i] === "*") return 1;
-    if (wb[i] === "*") return -1;
+    if (isWildcard(wa[i] ?? "")) return 1;
+    if (isWildcard(wb[i] ?? "")) return -1;
     break;
   }
   return a < b ? -1 : a > b ? 1 : 0;

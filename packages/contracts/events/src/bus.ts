@@ -6,13 +6,28 @@
 // Tests check every published event against it (`bus-check.ts`). Topics are added area by area
 // (K12a in docs/design/v5-contracts.md); a topic missing here is reported as unregistered.
 
+import { AGENT_EVENTS } from "./agent.js";
 import { CHAT_EVENTS } from "./chat.js";
 import { LlmCall } from "./llm.js";
+import { PLATFORM_EVENTS } from "./platform.js";
 import { type AnyEventDefinition, EventRegistry } from "./registry.js";
+import { SYSTEM_EVENTS } from "./system.js";
 import { TURN_EVENTS } from "./turn.js";
+import { VOICE_EVENTS } from "./voice.js";
 
 /** Every bus topic with a payload schema, families included. */
-export const BUS_EVENTS: readonly AnyEventDefinition[] = [...CHAT_EVENTS, ...TURN_EVENTS, LlmCall];
+export const BUS_EVENTS: readonly AnyEventDefinition[] = [
+  // Platforms, voice and the kernel.
+  ...CHAT_EVENTS,
+  ...PLATFORM_EVENTS,
+  ...VOICE_EVENTS,
+  ...SYSTEM_EVENTS,
+  // The brain.
+  ...TURN_EVENTS,
+  ...AGENT_EVENTS,
+  // Other areas.
+  LlmCall,
+];
 
 /** A new registry holding `BUS_EVENTS`. */
 export function busEventRegistry(): EventRegistry {

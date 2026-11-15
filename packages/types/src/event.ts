@@ -1,33 +1,31 @@
-import {
-  type ActionId,
-  type EventId,
-  type ModuleId,
-  newId,
-  type PlatformId,
-  type TurnId,
-} from "./ids.js";
+import type {
+  ActionCompletedData,
+  AgentInitiativeData,
+  DecisionTraceData,
+  ModuleStateData,
+  PlatformReadyData,
+  PlatformTypingData,
+  TurnCompletedData,
+  TurnStartedData,
+  VoiceJoinedData,
+  VoiceLeftData,
+  VoiceParticipantsData,
+  VoicePlayback,
+  VoiceSpeakingData,
+} from "@miyoria/contracts/events";
+import { type EventId, type ModuleId, newId, type TurnId } from "./ids.js";
 import type { JsonValue } from "./json.js";
-import type { AccountRef, ContextKey, IncomingMessage, MessageRef } from "./platform.js";
+import type { IncomingMessage } from "./platform.js";
 import { type Timestamp, toTimestamp } from "./time.js";
-import type { PlaybackState, VoiceParticipant, VoiceUtterance } from "./voice.js";
+import type { VoiceUtterance } from "./voice.js";
 
-export type ModuleStateKind =
-  | "disabled"
-  | "starting"
-  | "running"
-  | "degraded"
-  | "stopping"
-  | "stopped"
-  | "failed";
+// The payload of every typed variant is a contract (`@miyoria/contracts/events`, one schema per
+// bus topic); the types here are inferred from those schemas.
+
+export type ModuleStateKind = ModuleStateData["state"];
 
 /** Why the agent did or did not respond. Shown in the panel for debugging. */
-export interface DecisionTrace {
-  turn: TurnId;
-  context: ContextKey;
-  respond: boolean;
-  score: number;
-  reasons: string[];
-}
+export type DecisionTrace = DecisionTraceData;
 
 /**
  * Every bus event. Adjacently tagged (snake_case type names):
@@ -40,73 +38,32 @@ export type Event =
    * A platform connection is up. `self_account` is one of her own accounts; messages from her
    * own accounts are never treated as input.
    */
-  | { type: "platform_ready"; data: { platform: PlatformId; self_account: AccountRef } }
+  | { type: "platform_ready"; data: PlatformReadyData }
   | { type: "platform_message_created"; data: IncomingMessage }
   /** Someone started typing (used to extend the reply debounce). */
-  | { type: "platform_typing"; data: { context: ContextKey; account: AccountRef } }
-  | { type: "agent_turn_started"; data: { turn: TurnId; context: ContextKey } }
+  | { type: "platform_typing"; data: PlatformTypingData }
+  | { type: "agent_turn_started"; data: TurnStartedData }
   | { type: "agent_decision"; data: DecisionTrace }
-  | { type: "agent_turn_completed"; data: { turn: TurnId; context: ContextKey; text: string } }
-  | {
-      type: "action_completed";
-      data: {
-        action: ActionId;
-        turn: TurnId | null;
-        ok: boolean;
-        error: string | null;
-        /** The message created by a successful `send_message` (may be missing in old JSON). */
-        message: MessageRef | null;
-      };
-    }
+  | { type: "agent_turn_completed"; data: TurnCompletedData }
+  /** `message`: the message a successful `send_message` created (may be missing in old JSON). */
+  | { type: "action_completed"; data: ActionCompletedData }
   /** She joined a voice channel (`context.kind === "voice"`). */
-  | { type: "voice_joined"; data: { context: ContextKey; participants: VoiceParticipant[] } }
-  | { type: "voice_left"; data: { context: ContextKey; reason: string | null } }
+  | { type: "voice_joined"; data: VoiceJoinedData }
+  | { type: "voice_left"; data: VoiceLeftData }
   /** Who is in the voice channel changed. */
-  | { type: "voice_participants"; data: { context: ContextKey; participants: VoiceParticipant[] } }
+  | { type: "voice_participants"; data: VoiceParticipantsData }
   /** Someone started or stopped speaking (raw signal, before ASR). */
-  | {
-      type: "voice_speaking";
-      data: { context: ContextKey; account: AccountRef; speaking: boolean };
-    }
+  | { type: "voice_speaking"; data: VoiceSpeakingData }
   | { type: "voice_utterance"; data: VoiceUtterance }
-  /** Her own speech playback. */
-  | {
-      type: "voice_playback";
-      data: {
-        context: ContextKey;
-        turn: TurnId | null;
-        state: PlaybackState;
-        text: string;
-        /**
-         * Emotion the sentence is spoken with (`null`: none). Missing from older publishers; the
-         * Stage shows the emotion when the sentence starts playing.
-         */
-        emotion?: string | null;
-        /** How much of it was audible, in ms (`interrupted`, `finished`). */
-        heard_ms?: number | null;
-        /** How long all of it is, in ms; `null`: it was still being synthesized. */
-        total_ms?: number | null;
-        /** Moderation replaced what she meant (the rule): this is not her line reaching anyone. */
-        blocked?: string | null;
-      };
-    }
+  /**
+   * Her own speech playback. `emotion`, `heard_ms`, `total_ms` and `blocked` are missing from
+   * older publishers; `blocked`: moderation replaced what she meant (the rule), so this is not
+   * her line reaching anyone. (`speaker` is what the recorder adds when it stores the line.)
+   */
+  | { type: "voice_playback"; data: Omit<VoicePlayback, "speaker"> }
   /** Asks the agent to start a turn on her own initiative (no new input). */
-  | {
-      type: "agent_initiative";
-      data: {
-        context: ContextKey;
-        /** Why, for the decision trace (e.g. `"idle_channel"`, `"followup"`). */
-        reason: string;
-        /** What she might bring up, added to the situation message. */
-        hint: string;
-        /** Accounts the hint is about, if any. */
-        about: AccountRef[];
-      };
-    }
-  | {
-      type: "module_state_changed";
-      data: { module: ModuleId; state: ModuleStateKind; reason: string | null };
-    }
+  | { type: "agent_initiative"; data: AgentInitiativeData }
+  | { type: "module_state_changed"; data: ModuleStateData }
   /** Escape hatch for extensions and experimental modules; `topic` is the bus topic. */
   | { type: "custom"; data: { topic: string; payload: JsonValue } };
 

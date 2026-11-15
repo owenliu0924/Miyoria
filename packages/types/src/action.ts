@@ -1,3 +1,4 @@
+import type { ActionSettledData } from "@miyoria/contracts/events";
 import { type ActionId, newId, type TurnId } from "./ids.js";
 import {
   type ContextKey,
@@ -63,19 +64,7 @@ export type ActionPayload =
  * says an action ended; this says which line it was, so "sent" can be told from a dropped typing
  * indicator (`error`: `expired`, `cancelled` and `coalesced` mean it never went out).
  */
-export interface ActionSettled {
-  action: ActionId;
-  turn: TurnId | null;
-  type: "send_message" | "speak";
-  context: ContextKey;
-  text: string;
-  ok: boolean;
-  error: string | null;
-  /** The message a successful `send_message` created. */
-  message: MessageRef | null;
-  /** Moderation replaced the line (the rule): what she meant did not reach anyone. */
-  blocked?: string | null;
-}
+export type ActionSettled = ActionSettledData;
 
 /** Published next to `action_completed` for every `send_message` and `speak` action. */
 export const ACTION_SETTLED_TOPIC = "action.settled";

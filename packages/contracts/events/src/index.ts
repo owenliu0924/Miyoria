@@ -1,8 +1,21 @@
 // @miyoria/contracts/events: the event envelope, defineEvent and the registry of event types
 // (docs/design/v5-data.md §2.2, docs/design/v5-contracts.md §2.8), and the payload schemas of the
-// event types defined so far (chat lines, turn records, audit entries, artifacts and shares).
-// Nothing here does I/O, so a browser bundle can use it.
+// event types defined so far (chat lines, turn records, audit entries, artifacts and shares, and
+// the bus topics: `BUS_EVENTS`, checked in tests by `bus-check.ts`). Nothing here does I/O, so a
+// browser bundle can use it.
 
+export {
+  AGENT_EVENTS,
+  AgentInitiative,
+  type AgentInitiativeData,
+  AgentInitiativeSchema,
+  AgentTurnCompleted,
+  AgentTurnStarted,
+  type TurnCompletedData,
+  TurnCompletedSchema,
+  type TurnStartedData,
+  TurnStartedSchema,
+} from "./agent.js";
 export {
   ARTIFACT_EVENTS,
   ArtifactCreated,
@@ -44,6 +57,31 @@ export {
   AuditRecorded,
   auditType,
 } from "./audit.js";
+export {
+  BUS_EVENTS,
+  busEventRegistry,
+} from "./bus.js";
+export {
+  BUS_CHECK_MODES,
+  BusCheck,
+  BusCheckError,
+  type BusCheckEvent,
+  type BusCheckFinding,
+  type BusCheckMode,
+  type BusCheckPlace,
+  type BusCheckReport,
+  type BusCheckTopic,
+  type BusEventCheck,
+  type BusEventProblem,
+  type BusEventProblemKind,
+  busCheckMode,
+  checkBusEvent,
+  DEFAULT_BUS_CHECK_MODE,
+  describeFinding,
+  formatBusCheckSummary,
+  formatPath,
+  mergeBusCheckReports,
+} from "./bus-check.js";
 export {
   CHAT_EVENT_TYPES,
   CHAT_EVENTS,
@@ -88,6 +126,30 @@ export {
   LlmCallUsageSchema,
 } from "./llm.js";
 export {
+  type MemberUpdateData,
+  MemberUpdateSchema,
+  PLATFORM_EVENTS,
+  PlatformMember,
+  PlatformPresence,
+  PlatformReaction,
+  type PlatformReactionData,
+  PlatformReactionSchema,
+  PlatformReady,
+  type PlatformReadyData,
+  PlatformReadySchema,
+  PlatformTyping,
+  type PlatformTypingData,
+  PlatformTypingSchema,
+  PlatformVoiceState,
+  PresenceActivityKindSchema,
+  PresenceActivitySchema,
+  PresenceStatusSchema,
+  type PresenceUpdateData,
+  PresenceUpdateSchema,
+  type VoiceStateUpdateData,
+  VoiceStateUpdateSchema,
+} from "./platform.js";
+export {
   type AnyEventDefinition,
   defineEvent,
   type EventDataSource,
@@ -101,8 +163,27 @@ export {
   EventRegistry,
   type EventSpec,
   eventDraft,
+  familyCovers,
+  isEventFamily,
   readEventData,
 } from "./registry.js";
+export {
+  ActionCompleted,
+  type ActionCompletedData,
+  ActionCompletedSchema,
+  ActionSettled,
+  type ActionSettledData,
+  ActionSettledSchema,
+  type ModuleStateData,
+  ModuleStateKindSchema,
+  ModuleStateSchema,
+  SentMessageSchema,
+  SYSTEM_EVENTS,
+  SystemModuleState,
+  SystemShutdown,
+  type SystemShutdownData,
+  SystemShutdownSchema,
+} from "./system.js";
 export {
   AgentDecision,
   AgentTurnOutcome,
@@ -116,3 +197,43 @@ export {
   TurnReasonSchema,
   VoiceTurnStagesSchema,
 } from "./turn.js";
+export {
+  E2ePartsSchema,
+  E2eReasonSchema,
+  E2eSegmentsSchema,
+  GoLiveStateSchema,
+  LatencyTurnEndSchema,
+  SpeechPause,
+  type SpeechPauseData,
+  SpeechPauseSchema,
+  VOICE_EVENTS,
+  VoiceBargeIn,
+  VoiceBargeInActionSchema,
+  type VoiceBargeInData,
+  VoiceBargeInReasonSchema,
+  VoiceBargeInSchema,
+  VoiceGoLive,
+  type VoiceGoLiveData,
+  VoiceGoLiveSchema,
+  VoiceJoined,
+  type VoiceJoinedData,
+  VoiceJoinedSchema,
+  VoiceLatency,
+  type VoiceLatencyData,
+  VoiceLatencySchema,
+  VoiceLeft,
+  type VoiceLeftData,
+  VoiceLeftSchema,
+  VoiceParticipants,
+  type VoiceParticipantsData,
+  VoiceParticipantsSchema,
+  VoiceSpeaking,
+  type VoiceSpeakingData,
+  VoiceSpeakingSchema,
+  VoiceSynthesis,
+  type VoiceSynthesisData,
+  VoiceSynthesisSchema,
+  VoiceUpcoming,
+  type VoiceUpcomingData,
+  VoiceUpcomingSchema,
+} from "./voice.js";
