@@ -14,6 +14,7 @@ import {
   type Timestamp,
 } from "@miyoria/types";
 import type { PersonHandleDirectory } from "../handles.js";
+import type { PersonRequestResult } from "../person-data.js";
 import type { Account, Person } from "../records.js";
 import type { IdentityStore, PeopleStore, SettingsStore } from "../stores.js";
 import type { Identity } from "./identity.js";
@@ -68,18 +69,24 @@ export class IdentityPeople implements PeopleStore {
 export class IdentityLinks implements IdentityStore {
   constructor(
     private readonly identity: Identity,
-    private readonly merge: (keep: PersonId, absorb: PersonId) => void = (keep, absorb) =>
-      identity.merge(keep, absorb),
+    private readonly merge: (keep: PersonId, absorb: PersonId) => PersonRequestResult | null = (
+      keep,
+      absorb,
+    ) => {
+      identity.merge(keep, absorb);
+      return null;
+    },
   ) {}
 
   async linkAccount(account: AccountRef, person: PersonId): Promise<void> {
     this.identity.link(account, person, "code");
   }
 
-  async mergePeople(keep: PersonId, absorb: PersonId): Promise<void> {
+  async mergePeople(keep: PersonId, absorb: PersonId): Promise<PersonRequestResult | null> {
     // A person merged into itself is no merge: checked, and nothing to run or record.
-    if (keep === absorb) this.identity.merge(keep, absorb);
-    else this.merge(keep, absorb);
+    if (keep !== absorb) return this.merge(keep, absorb);
+    this.identity.merge(keep, absorb);
+    return null;
   }
 
   async accountsOf(person: PersonId): Promise<Account[]> {

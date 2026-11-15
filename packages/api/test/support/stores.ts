@@ -227,9 +227,10 @@ export class MemoryPeople implements PeopleStore, IdentityStore {
     const found = this.#accounts.find((a) => sameAccount(a.account, account));
     if (found) found.person = person;
   }
-  async mergePeople(keep: PersonId, absorb: PersonId): Promise<void> {
+  async mergePeople(keep: PersonId, absorb: PersonId): Promise<null> {
     for (const a of this.#accounts) if (a.person === absorb) a.person = keep;
     this.#names.delete(absorb);
+    return null;
   }
   async accountsOf(person: PersonId): Promise<Account[]> {
     return this.#accounts.filter((a) => a.person === person).map(({ person: _, ...a }) => clone(a));

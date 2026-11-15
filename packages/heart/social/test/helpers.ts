@@ -5,7 +5,6 @@ import { type ChatProvider, LlmRouter, type MockProvider, parseModelRef } from "
 import type {
   Account,
   IdentityStore,
-  MemoryRecordStore,
   PeopleStore,
   Person,
   Relationship,
@@ -24,7 +23,14 @@ import {
   publishedVia,
   toTimestamp,
 } from "@miyoria/types";
-import { type Observed, Social, type SocialConfig, socialConfig, TOPIC } from "../src/index.js";
+import {
+  type Observed,
+  Social,
+  type SocialConfig,
+  type SocialStores,
+  socialConfig,
+  TOPIC,
+} from "../src/index.js";
 
 /** People, relationships and identity in one in-memory fake. */
 export class FakeStore implements PeopleStore, RelationshipStore, IdentityStore {
@@ -124,11 +130,12 @@ export class FakeStore implements PeopleStore, RelationshipStore, IdentityStore 
     if (moved) this.people.get(person)?.accounts.push(moved);
   }
 
-  async mergePeople(keep: PersonId, absorb: PersonId): Promise<void> {
+  async mergePeople(keep: PersonId, absorb: PersonId): Promise<null> {
     const gone = this.people.get(absorb);
     this.people.delete(absorb);
     for (const [k, p] of this.accounts) if (p === absorb) this.accounts.set(k, keep);
     if (gone) this.people.get(keep)?.accounts.push(...gone.accounts);
+    return null;
   }
 
   async accountsOf(person: PersonId): Promise<Account[]> {
@@ -186,14 +193,15 @@ export class Harness {
   constructor(
     config: SocialConfig = socialConfig(),
     readonly store: FakeStore = new FakeStore(),
-    memories: MemoryRecordStore | null = null,
+    /** Stores used instead of `store` (a real store's people and identity). */
+    stores: Partial<SocialStores> = {},
   ) {
     this.social = new Social(
       profile(),
       "DeepSeek-chan",
       ["DS醬", "小鯨魚"],
       config,
-      { people: store, relationships: store, identity: store, memories },
+      { people: store, relationships: store, identity: store, ...stores },
       publishedVia((e) => {
         this.events.push(e);
       }),

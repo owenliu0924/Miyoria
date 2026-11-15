@@ -37,7 +37,7 @@ import {
   SocialSignalsKey,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-// The memory plugin's tables (v5-data §8 step 9b); social reaches them by `MemoryRecordStoreKey`.
+// The memory plugin's tables (v5-data §8 step 9b): a link moves memories through its merge hook.
 import { memoryTables } from "../../../memory/memory/src/tables.js";
 import {
   baseChange,
@@ -477,7 +477,11 @@ describe("social engine", () => {
     const store = await SqliteStore.open(":memory:");
     try {
       const memories = store.plugin(memoryTables);
-      const h = new Harness(socialConfig(), new FakeStore(), memories);
+      // The store's people and identity: its merge moves the memories (the memory plugin's hook).
+      const h = new Harness(socialConfig(), new FakeStore(), {
+        people: store.people,
+        identity: store.identity,
+      });
       const a = acc("discord:1");
       const b = acc("twitch:9");
       const keep = (await h.social.resolve(a, "Owen", t(1, 10))) ?? "";

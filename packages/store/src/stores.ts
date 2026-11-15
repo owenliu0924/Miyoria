@@ -24,7 +24,7 @@ import type { ChatLogStore } from "./events/chat.js";
 import type { LlmCallStore } from "./events/llm.js";
 import type { EventLogStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
-import type { PersonDataStore } from "./person-data.js";
+import type { PersonDataStore, PersonRequestResult } from "./person-data.js";
 import type { StorePlugin } from "./plugin.js";
 import type {
   Account,
@@ -247,9 +247,10 @@ export interface IdentityStore {
   /**
    * Moves every account of `absorb` to `keep` and makes `absorb` part of `keep`. The SQLite store
    * runs every schema's `mergePerson` hook with it in one transaction (memories move with it,
-   * `personData`); callers merge what they cache themselves (relationships) first.
+   * `personData`) and returns what each did; `null` when no hook ran (a person merged into
+   * itself, a store without hooks). Callers merge what they cache themselves (relationships) first.
    */
-  mergePeople(keep: PersonId, absorb: PersonId): Promise<void>;
+  mergePeople(keep: PersonId, absorb: PersonId): Promise<PersonRequestResult | null>;
   accountsOf(person: PersonId): Promise<Account[]>;
   setPersonName(person: PersonId, displayName: string): Promise<void>;
   /** Stores a one-time code issued to `account`, valid until `expiresAt`. */

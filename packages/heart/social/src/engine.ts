@@ -5,13 +5,13 @@
 
 import { type LlmRouter, sessionId, withLlmTag } from "@miyoria/llm/llm";
 import { getLogger, SerialQueue } from "@miyoria/runtime/kernel";
-import type {
-  IdentityStore,
-  MemoryRecordStore,
-  PeopleStore,
-  Relationship,
-  RelationshipDelta,
-  RelationshipStore,
+import {
+  hookCounts,
+  type IdentityStore,
+  type PeopleStore,
+  type Relationship,
+  type RelationshipDelta,
+  type RelationshipStore,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -81,10 +81,11 @@ export type Publisher = Publish;
 export interface SocialStores {
   people: PeopleStore;
   relationships: RelationshipStore;
-  /** Needed for `/me link` and to know people's accounts right after start. */
+  /**
+   * Needed for `/me link` and to know people's accounts right after start. Its merge moves what
+   * every other schema keeps about the absorbed person (memories too).
+   */
   identity: IdentityStore | null;
-  /** When set, `/me link` moves the absorbed person's memories to the surviving person. */
-  memories?: MemoryRecordStore | null;
 }
 
 /** One line someone said, as seen by the engine. */
@@ -996,9 +997,9 @@ export class Social implements SocialSignals, RelationshipEffects {
 
   /**
    * Redeems a code from another account: the invoker's person is merged into the issuer's.
-   * Relationships keep the higher-affinity side; memories about the absorbed person (subjects
-   * and `person` scopes, every profile) move to the kept one when a memory store is set. Both
-   * happen before the people are merged, so a failure leaves the absorbed person in place.
+   * Relationships keep the higher-affinity side, merged first, so a failure leaves the absorbed
+   * person in place. The identity store's merge then moves what every schema keeps about them
+   * (memories: subjects and `person` scopes, every profile) in one transaction.
    */
   async redeemLinkCode(
     account: AccountRef,
@@ -1028,10 +1029,9 @@ export class Social implements SocialSignals, RelationshipEffects {
     if (absorb === null) return { type: "invalid_code" };
     if (keep === absorb) return { type: "already_linked" };
     await this.#merge(keep, absorb, now);
-    const memories = this.#stores.memories ?? null;
-    const moved = memories ? await memories.mergePerson(keep, absorb) : null;
     await identity.linkAccount(account, keep);
-    await identity.mergePeople(keep, absorb);
+    const merged = await identity.mergePeople(keep, absorb);
+    const moved = merged === null ? undefined : hookCounts(merged, "memory").records;
     for (const [k, p] of this.#accounts) if (p === absorb) this.#accounts.set(k, keep);
     this.#personNames.delete(absorb);
     this.#ledgers.delete(absorb);
@@ -1040,7 +1040,7 @@ export class Social implements SocialSignals, RelationshipEffects {
       this.#activity.delete(absorb);
       getOrInsert(this.#activity, keep, newActivity).lines.push(...activity.lines);
     }
-    if (moved === null) log.info({ keep, absorb }, "accounts linked; memories are not merged");
+    if (moved === undefined) log.info({ keep, absorb }, "accounts linked; memories are not merged");
     else log.info({ keep, absorb, memories: moved }, "accounts linked");
     return { type: "linked", keep, absorbed: absorb };
   }

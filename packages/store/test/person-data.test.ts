@@ -366,7 +366,9 @@ describe("the installed plugins' merge hooks", () => {
       superseded_by: null,
     });
     // What `/me link` calls: the store's `IdentityStore`.
-    await store.identity.mergePeople(owen, alt);
+    // It returns what each hook did, so the caller can say how many memories moved.
+    const result = await store.identity.mergePeople(owen, alt);
+    expect(result === null ? null : hookCounts(result, "memory")).toEqual({ records: 1 });
     const merged = store.events.query({ types: [PERSON_MERGE_TYPE] });
     expect(merged.map((e) => (e.envelope.data as { detail: unknown }).detail)).toEqual([
       {
@@ -388,7 +390,7 @@ describe("the installed plugins' merge hooks", () => {
     expect(await store.plugin(economyTables).ledger.balance("p", owen)).toBe(3);
     expect((await store.people.personByAccount(OWEN_ALT))?.id).toBe(owen);
     // Merging a person into itself is checked and is no merge; an absorbed one is unknown.
-    await store.identity.mergePeople(owen, owen);
+    expect(await store.identity.mergePeople(owen, owen)).toBeNull();
     await expect(store.identity.mergePeople(owen, alt)).rejects.toThrow(/unknown person/);
     expect(store.events.query({ types: [PERSON_MERGE_TYPE] })).toHaveLength(1);
   });
