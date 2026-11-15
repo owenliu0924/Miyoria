@@ -14,7 +14,7 @@
 |---|---|---|
 | API 的路由層和它的 client | **oRPC 1.x**(contract-first,掛在現有的 Hono 上) | 取代原設計裡手做的 `defineRoute` 和通用 client。先做一個有四道關卡的小試驗(K8),過不了就退回手做的設計;zod schema 兩邊通用,不會白寫 |
 | 語音節點讀 `.env` | Node 內建的 `process.loadEnvFile()` | 拿掉 `dotenv` 這個相依 |
-| 管理 token 的失敗次數限制、公開路由的頻率限制 | `rate-limiter-flexible` | 動到 HTTP 外殼(K8)時一起換 |
+| 管理 token 的失敗次數限制 | `rate-limiter-flexible` | 階段 6 拆開 admin / web、加上這個限制時採用。K8 做完後重看:公開路由現有的計數視窗只有 40 行,同步、時鐘可以注入、key 數有上限;這個套件是非同步的、靠計時器過期、不能注入時鐘,換過去沒有比較好,所以留著 |
 
 **那一塊重建時換**
 
