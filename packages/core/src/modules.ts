@@ -83,18 +83,20 @@ import {
   type ExtensionDiscovery,
   type ModuleCatalog,
   type ModuleDeps,
+  STORE_PLUGINS,
 } from "./boot.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
 
 /**
  * Opens the store for `url`: `sqlite:<path>` (default, the parent directory is created) or
- * `memory://`. Any other scheme fails with a message that names the supported ones.
+ * `memory://`, with the installed plugins' tables (`STORE_PLUGINS`). Any other scheme fails with a
+ * message that names the supported ones.
  */
 export async function openStore(url: string): Promise<Store> {
   const path = sqlitePath(url);
   if (path !== null && path !== ":memory:") await mkdir(dirname(path), { recursive: true });
-  return openStoreBackend(url);
+  return openStoreBackend(url, { sqlite: { plugins: STORE_PLUGINS } });
 }
 
 /**

@@ -1,6 +1,8 @@
 // Legacy migration 3 (was `0003_memory_social_auth.sql`). Never edit it: its checksum is recorded.
 // Step 4 of docs/design/v5-data.md §8 took `link_codes` out (see `0001-init.ts`). Step 6 took out
-// `audit_log` and its indexes: audit entries are events (`events/audit.ts`).
+// `audit_log` and its indexes: audit entries are events (`events/audit.ts`). Step 9a took out
+// `roles`, `role_assignments`, `role_mappings` and `node_overrides`: they are the `auth` plugin's
+// tables (`packages/auth/src/schema.ts`).
 
 export const m0003 = `-- Long-term memory, relationships, identity linking and roles.
 -- Ids are ULIDs stored as text. Per-character data carries \`profile_id\`.
@@ -98,38 +100,5 @@ CREATE TABLE relationship_deltas (
 CREATE INDEX relationship_deltas_idx
     ON relationship_deltas (profile_id, person_id, at, seq);
 
--- Roles. \`scope\` columns hold the canonical JSON of an \`AuthScope\`.
-CREATE TABLE roles (
-    name     TEXT    PRIMARY KEY,
-    rank     INTEGER NOT NULL,
-    grants   TEXT    NOT NULL DEFAULT '[]',
-    denies   TEXT    NOT NULL DEFAULT '[]',
-    builtin  INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE role_assignments (
-    platform   TEXT    NOT NULL,
-    account_id TEXT    NOT NULL,
-    role       TEXT    NOT NULL,
-    scope      TEXT    NOT NULL,
-    granted_by TEXT    NOT NULL,
-    at         INTEGER NOT NULL,
-    PRIMARY KEY (platform, account_id, role, scope)
-);
-
-CREATE TABLE role_mappings (
-    platform      TEXT NOT NULL,
-    guild         TEXT NOT NULL,
-    platform_role TEXT NOT NULL,
-    role          TEXT NOT NULL,
-    PRIMARY KEY (platform, guild, platform_role)
-);
-
-CREATE TABLE node_overrides (
-    scope TEXT    NOT NULL,
-    role  TEXT    NOT NULL,
-    node  TEXT    NOT NULL,
-    allow INTEGER NOT NULL,
-    PRIMARY KEY (scope, role, node)
-);
+-- Roles, role assignments, role mappings and node overrides are the auth plugin's tables.
 `;

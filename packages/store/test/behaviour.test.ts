@@ -16,6 +16,8 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+// The auth plugin's tables are its own package's (v5-data §8 step 9a); their cases stay here.
+import { authTables } from "../../auth/src/tables.js";
 import {
   type AuditEntry,
   type AuthScope,
@@ -1405,7 +1407,7 @@ function behaviour(open: () => Promise<Store>): void {
   // ---- authorization and audit ------------------------------------------------------------
 
   it("auth_roles", async () => {
-    const auth = store.auth;
+    const auth = store.plugin(authTables).store;
     const name = unique("role");
     const r = role(name, 50, false);
     const find = (roles: RoleDefinition[], n: string) => roles.filter((x) => x.name === n);
@@ -1453,7 +1455,7 @@ function behaviour(open: () => Promise<Store>): void {
   });
 
   it("auth_assignments", async () => {
-    const auth = store.auth;
+    const auth = store.plugin(authTables).store;
     const a = account(unique("a"));
     const b = account(unique("b"));
     const roleName = unique("role");
@@ -1486,7 +1488,7 @@ function behaviour(open: () => Promise<Store>): void {
   });
 
   it("auth_mappings_and_overrides", async () => {
-    const auth = store.auth;
+    const auth = store.plugin(authTables).store;
     const g1 = unique("g");
     const g2 = unique("g");
     const mapping = (guild: string, platformRole: string, r: string): RoleMapping => ({

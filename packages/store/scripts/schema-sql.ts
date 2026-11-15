@@ -14,6 +14,8 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { systemClock } from "@miyoria/types";
 import { generateDrizzleJson, generateMigration, pushSchema } from "drizzle-kit/payload/sqlite";
+import { authSchema } from "../../auth/src/migrations.js";
+import * as authTables from "../../auth/src/schema.js";
 import { artifactSchema } from "../src/artifacts/migrations.js";
 import * as artifactTables from "../src/artifacts/schema.js";
 import { configSchema } from "../src/config/migrations.js";
@@ -43,11 +45,16 @@ function dropsOthers(statement: string, tables: object): boolean {
   );
 }
 
-/** The Drizzle tables of each plugin that declares its tables with Drizzle. */
+/**
+ * The Drizzle tables of each plugin that declares its tables with Drizzle: the store's own, and
+ * those of the packages that own theirs (`<package>/src/schema.ts` and `migrations.ts`), by
+ * relative path. This file and the drift test are tooling: nothing the store ships imports them.
+ */
 export const DRIZZLE_PLUGINS: Record<string, { tables: object; schema: PluginSchema }> = {
   identity: { tables: identityTables, schema: identitySchema },
   config: { tables: configTables, schema: configSchema },
   artifact: { tables: artifactTables, schema: artifactSchema },
+  auth: { tables: authTables, schema: authSchema },
 };
 
 /** `CREATE TABLE ... );` as `CREATE TABLE ... ) STRICT;`. */

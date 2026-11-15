@@ -6,6 +6,8 @@
 import { LlmCallSchema } from "@miyoria/contracts/events";
 import { newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+// The roles and panel sessions are the auth plugin's tables (v5-data §8 step 9a).
+import { authTables } from "../../auth/src/tables.js";
 import {
   categoryModules,
   DATA_CATEGORIES,
@@ -28,7 +30,7 @@ afterEach(async () => {
 });
 
 async function open(): Promise<Store> {
-  const store = await SqliteStore.open(":memory:");
+  const store = await SqliteStore.open(":memory:", { plugins: [authTables] });
   stores.push(store);
   return store;
 }
@@ -110,29 +112,38 @@ async function seed(store: Store) {
     "queue:state",
     "voice_consent:discord:2",
     "privacy:discord:2",
-    "panel_session:abc",
     "future:thing",
   ]) {
     await store.settings.set(GLOBAL_SETTINGS_PROFILE, key, 1);
   }
-  await store.auth.upsertRole({
+  // A login as the API writes it: a row of `auth_sessions`.
+  await store.settings.set(GLOBAL_SETTINGS_PROFILE, "panel_session:abc", {
+    account: { platform: "discord", id: "2" },
+    name: "Owen",
+    avatar_url: null,
+    tier: "admin",
+    created_at: toTimestamp(T0),
+    expires_at: toTimestamp(T0 + 86_400_000),
+  });
+  const auth = store.plugin(authTables).store;
+  await auth.upsertRole({
     name: "owner",
     rank: 100,
     grants: ["x"],
     denies: [],
     builtin: true,
   });
-  await store.auth.upsertRole({ name: "vip", rank: 50, grants: ["a"], denies: [], builtin: false });
+  await auth.upsertRole({ name: "vip", rank: 50, grants: ["a"], denies: [], builtin: false });
   const scope = { type: "global" as const };
-  await store.auth.assign({
+  await auth.assign({
     account: { platform: "discord", id: "2" },
     role: "vip",
     scope,
     granted_by: "test",
     at: toTimestamp(T0),
   });
-  await store.auth.setMapping({ platform: "discord", guild: "g", platform_role: "r", role: "vip" });
-  await store.auth.setOverride({ scope, role: "vip", node: "b", allow: true });
+  await auth.setMapping({ platform: "discord", guild: "g", platform_role: "r", role: "vip" });
+  await auth.setOverride({ scope, role: "vip", node: "b", allow: true });
   await store.moduleState.set("agent", false);
   await store.audit.append({
     id: newId(),
@@ -286,8 +297,8 @@ describe("data categories", () => {
       ["config_changes", 2],
     ]);
     // Built-in roles as given, nothing else.
-    expect(await store.auth.roles()).toEqual(BUILTINS);
-    expect(await store.auth.allAssignments()).toEqual([]);
+    expect(await store.plugin(authTables).store.roles()).toEqual(BUILTINS);
+    expect(await store.plugin(authTables).store.allAssignments()).toEqual([]);
     expect(await store.people.all()).toEqual([]);
     expect(await store.moduleState.list()).toEqual(new Map());
     expect((await store.audit.recent(9, null)).map((e) => e.action)).toEqual(["seed"]);
@@ -315,7 +326,8 @@ describe("data categories", () => {
     );
     expect(await store.messages.recent(P, ctx, 9)).toHaveLength(1);
     expect(await store.people.all()).toHaveLength(1);
-    expect((await store.auth.roles()).map((r) => r.name).sort()).toEqual(["owner", "vip"]);
+    const roles = await store.plugin(authTables).store.roles();
+    expect(roles.map((r) => r.name).sort()).toEqual(["owner", "vip"]);
   });
 
   it("exports node-wide categories and never the panel sessions", async () => {

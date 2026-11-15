@@ -23,6 +23,9 @@ import type { PersonPrefs } from "./identity/schema.js";
 import { type ExportColumn, exportValue } from "./profile-data.js";
 import type { RoleDefinition } from "./records.js";
 
+/** The `auth` plugin's role definitions (`@miyoria/auth` `schema.ts`). */
+const ROLES_TABLE = "auth_roles";
+
 /** Settings profile of node-wide settings (`arbiter:state`, `queue:state`, ...). */
 export const GLOBAL_SETTINGS_PROFILE: ProfileId = "_global";
 
@@ -733,38 +736,31 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     shared: true,
     confirm: "simple",
   }),
+  // The `auth` plugin's tables (`@miyoria/auth` `schema.ts`). Assignments name identity's
+  // `accounts.id` and mappings its `spaces.id`; they go with their account or space too.
   category(
     "roles",
     [
-      table("roles", "roles", "node", null, "rank DESC, name", {
+      table("roles", ROLES_TABLE, "node", null, "rank DESC, name", {
         name: "text",
         rank: "num",
         grants: "json",
         denies: "json",
         builtin: "bool",
       }),
-      table(
-        "role_assignments",
-        "role_assignments",
-        "node",
-        "at",
-        "at, platform, account_id, role, scope",
-        {
-          platform: "text",
-          account_id: "text",
-          role: "text",
-          scope: "json",
-          granted_by: "text",
-          at: "ts",
-        },
-      ),
-      table("role_mappings", "role_mappings", "node", null, "platform, guild, platform_role", {
-        platform: "text",
-        guild: "text",
+      table("role_assignments", "auth_assignments", "node", "at", "at, account_id, role, scope", {
+        account_id: "text",
+        role: "text",
+        scope: "json",
+        granted_by: "text",
+        at: "ts",
+      }),
+      table("role_mappings", "auth_role_mappings", "node", null, "space_id, platform_role", {
+        space_id: "text",
         platform_role: "text",
         role: "text",
       }),
-      table("node_overrides", "node_overrides", "node", null, "scope, role, node", {
+      table("node_overrides", "auth_overrides", "node", null, "scope, role, node", {
         scope: "json",
         role: "text",
         node: "text",
@@ -871,12 +867,27 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { shared: true, kept: true },
   ),
-  // @miyoria/api `STORE_PREFIX` under `STORE_PROFILE`: hashes of login tokens.
-  category("panel_sessions", [settings("panel_sessions", "global", [], ["panel_session:"])], {
-    shared: true,
-    kept: true,
-    exportable: false,
-  }),
+  // The panel's logins: `auth_sessions` (`@miyoria/auth`), by the hash of the token. The API
+  // still writes them as settings (`@miyoria/api` `STORE_PREFIX` under `STORE_PROFILE`), which
+  // the auth plugin routes to its table; a store without it keeps them as settings rows, which
+  // the settings part claims.
+  category(
+    "panel_sessions",
+    [
+      table("panel_sessions", "auth_sessions", "node", "created_at", "token_hash", {
+        token_hash: "text",
+        platform: "text",
+        external_id: "text",
+        name: "text",
+        avatar_url: "text",
+        tier: "text",
+        created_at: "ts",
+        expires_at: "ts",
+      }),
+      settings("panel_session_keys", "global", [], ["panel_session:"]),
+    ],
+    { shared: true, kept: true, exportable: false },
+  ),
 ];
 
 const BY_ID = new Map(DATA_CATEGORIES.map((c) => [c.id, c]));
@@ -1211,7 +1222,7 @@ export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
 
 export function seedRoleStmt(d: SqlDialect, role: RoleDefinition): Stmt {
   return {
-    sql: "INSERT INTO roles (name, rank, grants, denies, builtin) VALUES ($1, $2, $3, $4, $5)",
+    sql: `INSERT INTO ${ROLES_TABLE} (name, rank, grants, denies, builtin) VALUES ($1, $2, $3, $4, $5)`,
     params: [role.name, role.rank, d.list(role.grants), d.list(role.denies), d.bool(role.builtin)],
   };
 }
@@ -1232,9 +1243,12 @@ export function wipeStatements(
   const resolved = resolveCategories(ids);
   const set = new Set(resolved);
   // Clearing categories first (`call_names`, a person's choices): they clear a column of rows
-  // another category may delete next (`relationships`, `people`).
-  const clearing = (id: DataCategoryId) => dataCategory(id).parts.some(clears);
-  const ordered = [...resolved].sort((a, b) => Number(clearing(b)) - Number(clearing(a)));
+  // another category may delete next (`relationships`, `people`). `people` last: other
+  // categories' rows name its accounts and spaces, and a plugin's go with them (role
+  // assignments), which would leave those categories nothing to count.
+  const rank = (id: DataCategoryId) =>
+    dataCategory(id).parts.some(clears) ? 0 : id === "people" ? 2 : 1;
+  const ordered = [...resolved].sort((a, b) => rank(a) - rank(b));
   for (const id of ordered) {
     for (const part of dataCategory(id).parts) {
       if (has(part)) out.push({ part: part.id, stmt: deleteStmt(d, part, profile) });

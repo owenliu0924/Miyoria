@@ -70,6 +70,6 @@ describe.each(Object.entries(DRIZZLE_PLUGINS))("the %s schema", (id, { tables, s
   });
 });
 
-it("covers identity, config and the artifact store", () => {
-  expect(Object.keys(DRIZZLE_PLUGINS).sort()).toEqual(["artifact", "config", "identity"]);
+it("covers identity, config, the artifact store and the plugins that own their tables", () => {
+  expect(Object.keys(DRIZZLE_PLUGINS).sort()).toEqual(["artifact", "auth", "config", "identity"]);
 });

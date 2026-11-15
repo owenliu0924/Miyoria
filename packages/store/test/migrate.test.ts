@@ -106,6 +106,11 @@ describe("bookkeeping", () => {
         "audit_log",
         "profile_settings",
         "module_state",
+        // The auth plugin's tables (v5-data §8 step 9a).
+        "roles",
+        "role_assignments",
+        "role_mappings",
+        "node_overrides",
       ]) {
         expect(tables).not.toContain(gone);
       }

@@ -19,7 +19,6 @@ import {
   type DirectiveRecord,
   type JsonObject,
   type PersonId,
-  type PlatformId,
   type ProfileId,
   systemClock,
   type Timestamp,
@@ -28,7 +27,6 @@ import { artifactSchema } from "./artifacts/migrations.js";
 import { ArtifactStore } from "./artifacts/store.js";
 import {
   allowedDelta,
-  authScopeKey,
   canonicalMemoryScope,
   cleanEmbedding,
   contextLookupKey,
@@ -94,7 +92,6 @@ import { legacySchema } from "./legacy-schema/index.js";
 import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
 import { type PluginContext, RoutedSettings, type StorePlugin } from "./plugin.js";
 import type {
-  AuthScope,
   Bounty,
   BountyPatch,
   BountyStatus,
@@ -122,17 +119,12 @@ import type {
   MemoryRecord,
   MemoryScope,
   MemorySource,
-  NodeOverride,
   PersonaOverride,
   PrunePolicy,
   Relationship,
   RelationshipDelta,
-  RoleAssignment,
-  RoleDefinition,
-  RoleMapping,
 } from "./records.js";
 import type {
-  AuthStore,
   BountyStore,
   CoinLedgerStore,
   DealStore,
@@ -1833,161 +1825,6 @@ class SqliteRelationships implements RelationshipStore {
   }
 }
 
-// ---- auth and audit -----------------------------------------------------------------------
-
-function assignmentFromRow(row: Row): RoleAssignment {
-  return {
-    account: { platform: str(row, "platform"), id: str(row, "account_id") },
-    role: str(row, "role"),
-    scope: json<AuthScope>(row, "scope", "auth scope"),
-    granted_by: str(row, "granted_by"),
-    at: ts(row, "at"),
-  };
-}
-
-const ASSIGNMENT_ORDER = "at, platform, account_id, role, scope";
-
-class SqliteAuth implements AuthStore {
-  constructor(private readonly db: Db) {}
-
-  async roles(): Promise<RoleDefinition[]> {
-    return this.db.all("SELECT * FROM roles ORDER BY rank DESC, name").map((r) => ({
-      name: str(r, "name"),
-      rank: num(r, "rank"),
-      grants: json<string[]>(r, "grants", "role grants"),
-      denies: json<string[]>(r, "denies", "role denies"),
-      builtin: bool(r, "builtin"),
-    }));
-  }
-
-  async upsertRole(role: RoleDefinition): Promise<void> {
-    this.db.run(
-      "INSERT INTO roles (name, rank, grants, denies, builtin) VALUES ($name, $rank, $grants, " +
-        "$denies, $builtin) ON CONFLICT (name) DO UPDATE SET rank = excluded.rank, grants = " +
-        "excluded.grants, denies = excluded.denies, builtin = excluded.builtin",
-      {
-        name: role.name,
-        rank: role.rank,
-        grants: JSON.stringify(role.grants),
-        denies: JSON.stringify(role.denies),
-        builtin: role.builtin ? 1 : 0,
-      },
-    );
-  }
-
-  async deleteRole(name: string): Promise<boolean> {
-    return this.db.tx(() => {
-      const row = this.db.get("SELECT builtin FROM roles WHERE name = $name", { name });
-      if (!row) return false;
-      if (bool(row, "builtin")) throw new StoreError(`role \`${name}\` is built in`);
-      for (const table of ["role_assignments", "role_mappings", "node_overrides"]) {
-        this.db.run(`DELETE FROM ${table} WHERE role = $name`, { name });
-      }
-      this.db.run("DELETE FROM roles WHERE name = $name", { name });
-      return true;
-    });
-  }
-
-  async assignmentsFor(account: AccountRef): Promise<RoleAssignment[]> {
-    return this.db
-      .all(
-        "SELECT * FROM role_assignments WHERE platform = $platform AND account_id = $id " +
-          `ORDER BY ${ASSIGNMENT_ORDER}`,
-        { platform: account.platform, id: account.id },
-      )
-      .map(assignmentFromRow);
-  }
-
-  async allAssignments(): Promise<RoleAssignment[]> {
-    return this.db
-      .all(`SELECT * FROM role_assignments ORDER BY ${ASSIGNMENT_ORDER}`)
-      .map(assignmentFromRow);
-  }
-
-  async assign(a: RoleAssignment): Promise<void> {
-    this.db.run(
-      "INSERT INTO role_assignments (platform, account_id, role, scope, granted_by, at) " +
-        "VALUES ($platform, $id, $role, $scope, $by, $at) ON CONFLICT (platform, account_id, " +
-        "role, scope) DO UPDATE SET granted_by = excluded.granted_by, at = excluded.at",
-      {
-        platform: a.account.platform,
-        id: a.account.id,
-        role: a.role,
-        scope: authScopeKey(a.scope),
-        by: a.granted_by,
-        at: toMicros(a.at),
-      },
-    );
-  }
-
-  async revoke(account: AccountRef, role: string, scope: AuthScope): Promise<boolean> {
-    const removed = this.db.run(
-      "DELETE FROM role_assignments WHERE platform = $platform AND account_id = $id AND " +
-        "role = $role AND scope = $scope",
-      { platform: account.platform, id: account.id, role, scope: authScopeKey(scope) },
-    );
-    return removed > 0;
-  }
-
-  async mappings(platform: PlatformId, guild: string): Promise<RoleMapping[]> {
-    return this.db
-      .all(
-        "SELECT platform_role, role FROM role_mappings WHERE platform = $platform AND " +
-          "guild = $guild ORDER BY platform_role",
-        { platform, guild },
-      )
-      .map((r) => ({
-        platform,
-        guild,
-        platform_role: str(r, "platform_role"),
-        role: str(r, "role"),
-      }));
-  }
-
-  async setMapping(m: RoleMapping): Promise<void> {
-    this.db.run(
-      "INSERT INTO role_mappings (platform, guild, platform_role, role) VALUES ($platform, " +
-        "$guild, $platform_role, $role) ON CONFLICT (platform, guild, platform_role) " +
-        "DO UPDATE SET role = excluded.role",
-      { platform: m.platform, guild: m.guild, platform_role: m.platform_role, role: m.role },
-    );
-  }
-
-  async removeMapping(platform: PlatformId, guild: string, platformRole: string): Promise<boolean> {
-    const removed = this.db.run(
-      "DELETE FROM role_mappings WHERE platform = $platform AND guild = $guild AND " +
-        "platform_role = $platform_role",
-      { platform, guild, platform_role: platformRole },
-    );
-    return removed > 0;
-  }
-
-  async overrides(): Promise<NodeOverride[]> {
-    return this.db.all("SELECT * FROM node_overrides ORDER BY scope, role, node").map((r) => ({
-      scope: json<AuthScope>(r, "scope", "auth scope"),
-      role: str(r, "role"),
-      node: str(r, "node"),
-      allow: bool(r, "allow"),
-    }));
-  }
-
-  async setOverride(o: NodeOverride): Promise<void> {
-    this.db.run(
-      "INSERT INTO node_overrides (scope, role, node, allow) VALUES ($scope, $role, $node, " +
-        "$allow) ON CONFLICT (scope, role, node) DO UPDATE SET allow = excluded.allow",
-      { scope: authScopeKey(o.scope), role: o.role, node: o.node, allow: o.allow ? 1 : 0 },
-    );
-  }
-
-  async removeOverride(scope: AuthScope, role: string, node: string): Promise<boolean> {
-    const removed = this.db.run(
-      "DELETE FROM node_overrides WHERE scope = $scope AND role = $role AND node = $node",
-      { scope: authScopeKey(scope), role, node },
-    );
-    return removed > 0;
-  }
-}
-
 // ---- event log ----------------------------------------------------------------------------
 
 function directiveFromRow(row: Row): DirectiveRecord {
@@ -2087,7 +1924,6 @@ export class SqliteStore implements Store {
   readonly memories: MemoryRecordStore;
   readonly relationships: RelationshipStore;
   readonly identity: IdentityStore;
-  readonly auth: AuthStore;
   /** Audit entries on the event log. */
   readonly audit: AuditTrail;
   readonly profileData: ProfileDataStore;
@@ -2150,7 +1986,6 @@ export class SqliteStore implements Store {
     this.relationships = new SqliteRelationships(db);
     this.identity = new IdentityLinks(this.persons);
     this.handles = new IdentityHandles(this.persons);
-    this.auth = new SqliteAuth(db);
     this.profileData = new SqliteProfileData(db, this.moduleState);
     this.chat = new ChatLog(db, this.events, this.persons);
     this.messages = this.chat;

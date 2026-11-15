@@ -526,7 +526,6 @@ export interface Store {
   readonly memories: MemoryRecordStore;
   readonly relationships: RelationshipStore;
   readonly identity: IdentityStore;
-  readonly auth: AuthStore;
   readonly audit: AuditLog;
   readonly profileData: ProfileDataStore;
   /** The event log (`events`). Optional for test doubles; without it the log stays in memory. */

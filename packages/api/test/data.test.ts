@@ -1,7 +1,7 @@
 // `/api/data/*` against a real in-memory SQLite store: inventory, export, deletes with their
 // confirmations and module pauses, the backup-before-reset rule and the factory reset.
 
-import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import { AuthService, AuthServiceKey, authTables } from "@miyoria/auth";
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
 import * as arbiter from "@miyoria/brain/arbiter";
 import * as self from "@miyoria/heart/self";
@@ -117,9 +117,9 @@ async function harness(options: { sandbox?: boolean } = {}) {
   s.provide(k, ProfileDataStoreKey, store.profileData);
   s.provide(k, SettingsStoreKey, store.settings);
   s.provide(k, MessageLogKey, store.messages);
-  s.provide(k, AuthStoreKey, store.auth);
+  s.provide(k, AuthStoreKey, store.plugin(authTables).store);
   s.provide(k, AuditLogKey, store.audit);
-  const auth = await AuthService.load(store.auth, store.audit, [OWNER], "user");
+  const auth = await AuthService.load(store.plugin(authTables).store, store.audit, [OWNER], "user");
   s.provide("auth", AuthServiceKey, auth);
   const cleared: string[] = [];
   s.provide("agent", AgentHandleKey, {
@@ -187,7 +187,9 @@ async function harness(options: { sandbox?: boolean } = {}) {
       source: "llm",
     },
   ]);
-  await store.auth.upsertRole({ name: "vip", rank: 50, grants: ["x"], denies: [], builtin: false });
+  await store
+    .plugin(authTables)
+    .store.upsertRole({ name: "vip", rank: 50, grants: ["x"], denies: [], builtin: false });
   await auth.reload();
   await auth.assign("test", { platform: "discord", id: "2" }, "vip", { type: "global" });
   await store.personaOverrides.set(P, "style", "新的口吻", "test");

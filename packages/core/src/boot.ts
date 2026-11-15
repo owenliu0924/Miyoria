@@ -3,6 +3,7 @@
 // The module packages are reached only through a `ModuleCatalog` (see `modules.ts`), so this
 // file stays testable with fake modules and an in-memory store.
 
+import { authTables } from "@miyoria/auth";
 import { DirectiveModule, DirectiveService } from "@miyoria/brain/directive";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
@@ -44,6 +45,7 @@ import {
   type Store,
   StoredHandleDirectory,
   StoreKey,
+  type StorePlugin,
 } from "@miyoria/store";
 import {
   ActuatorExecutorKey,
@@ -71,6 +73,12 @@ const log = getLogger("core.boot");
 /** Source of the gate's `gate.decision` events. */
 const ACTIONS_MODULE = ActionsModule.ID;
 const DIRECTIVE_MODULE = DirectiveModule.ID;
+
+/**
+ * The plugins whose tables live in the store (docs/design/v5-data.md §3): the catalog opens the
+ * store with them, so their migrations run at start whether the module is on or off.
+ */
+export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [authTables];
 
 /** What the module factories get. */
 export interface ModuleDeps {
@@ -241,7 +249,7 @@ export async function buildCoreWith(
   services.provide(k, MemoryRecordStoreKey, store.memories);
   services.provide(k, RelationshipStoreKey, store.relationships);
   services.provide(k, IdentityStoreKey, store.identity);
-  services.provide(k, AuthStoreKey, store.auth);
+  services.provide(k, AuthStoreKey, store.plugin(authTables).store);
   services.provide(k, AuditLogKey, store.audit);
   services.provide(k, ModuleStateStoreKey, store.moduleState);
   services.provide(k, ProfileDataStoreKey, store.profileData);
