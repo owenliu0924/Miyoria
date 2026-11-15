@@ -142,6 +142,7 @@
 - lyrics 服務和 turn worker 的錯誤回應是 FastAPI 預設的格式,和其他 worker 不一樣(測試裡標成已知)。
 - `@miyoria/contracts` 依賴 `@orpc/contract`,所以裝 SDK 的擴充作者也會裝到它;之後可以把路由那一部分拆出去或改成 peer 相依。
 - 路由搬到 oRPC 之後幾個使用者碰不到的差別:同一個查詢參數重複出現會回 400(以前取最後一個);幾個 `limit` 格式錯誤的訊息文字不同(狀態碼一樣)。
+- `miyoria config set` 現在要載入所有模組的設定 schema,打包後的 CLI 量起來約 1.7 到 2.0 秒(`--version` 約 0.9 秒),比改之前多了大約 0.7 秒。要更快的話,可以在打包時先把整份 schema 算好。
 - 線上 `miyoria.toml` 的三處修改還沒做(剩下的設定相容層要先改它才能拿掉);`/api/facts/context` 和 `/api/facts/retryable` 有沒有人手動在用,還沒問到答案。
 
 ## 4. 自我修復與自我改進(備忘)
