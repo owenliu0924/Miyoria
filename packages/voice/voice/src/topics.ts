@@ -1,9 +1,10 @@
+import { Events } from "@miyoria/types";
 /**
  * Topic of latency measurements (`custom` events), with `stage` = `asr` (`asr_ms`,
  * `transcribe_ms`), `tts` (`first_audio_ms`) or `e2e` (`E2eRecord`: `speech_end →
  * first_audio_played` and its six `segments`, one per reply that answers human speech).
  */
-export const LATENCY_TOPIC = "voice.latency";
+export const LATENCY_TOPIC = Events.VoiceLatency.type;
 
 /**
  * Topic of `VoiceBargeIn` custom events: somebody talked while she spoke and her speech was

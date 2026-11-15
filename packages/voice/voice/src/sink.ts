@@ -6,19 +6,16 @@ import {
   AffectStateKey,
   type ContextKey,
   contextKeyString,
-  customEvent,
-  type EventData,
+  type EventPayload,
+  Events,
   type MessageRef,
   ModerationKey,
   type OutputPath,
   type PlaybackState,
-  SPEECH_SYNTH_TOPIC,
   type SpeakOutcome,
   SpeechPauseKey,
   TurnFocusViewKey,
   type TurnId,
-  VOICE_BARGE_IN_TOPIC,
-  VOICE_UPCOMING_TOPIC,
   VoiceFloorKey,
   type VoiceSink,
 } from "@miyoria/types";
@@ -39,7 +36,6 @@ import type { VoiceLink } from "./link/link.js";
 import type { Playback } from "./link/playback.js";
 import { BufferedAudio, type LinePrefetch, type PreparedLine, type Producer } from "./prefetch.js";
 import { stripEmoji, stripTags } from "./text.js";
-import { LATENCY_TOPIC } from "./topics.js";
 import type { SpeechTranslator } from "./translate.js";
 import type { TurnGate } from "./turn.js";
 import { aborted, deferred } from "./util.js";
@@ -94,7 +90,10 @@ const LENGTH_POLL_MS = 100;
 const FIRST_AUDIO_PRIOR_MS = 700;
 
 /** What a playback event says beyond its state. */
-type PlaybackFacts = Pick<EventData<"voice_playback">, "heard_ms" | "total_ms" | "blocked">;
+type PlaybackFacts = Pick<
+  EventPayload<typeof Events.VoicePlaybackEvent>,
+  "heard_ms" | "total_ms" | "blocked"
+>;
 
 /** The `VoiceSink` provided by the `voice` module. */
 export class Speaker implements VoiceSink {
@@ -136,7 +135,8 @@ export class Speaker implements VoiceSink {
     facts: PlaybackFacts = {},
   ) {
     this.#d.ctx.publish(
-      { type: "voice_playback", data: { context, turn, state, text, emotion, ...facts } },
+      Events.VoicePlaybackEvent,
+      { context, turn, state, text, emotion, ...facts },
       { turn },
     );
   }
@@ -150,7 +150,8 @@ export class Speaker implements VoiceSink {
     seen.add(text);
     this.#announced.set(guild, seen);
     this.#d.ctx.publish(
-      customEvent(VOICE_UPCOMING_TOPIC, { context: { ...context }, turn, text, emotion }),
+      Events.VoiceUpcoming,
+      { context: { ...context }, turn, text, emotion },
       { turn },
     );
   }
@@ -349,7 +350,7 @@ export class Speaker implements VoiceSink {
     const { ctx, link, prefetch } = this.#d;
     const t0 = ctx.clock.now();
     // The overlay says she is getting her line ready until it plays (or fails).
-    ctx.publish(customEvent(SPEECH_SYNTH_TOPIC, { context: { ...context }, turn }), { turn });
+    ctx.publish(Events.VoiceSynthesis, { context: { ...context }, turn }, { turn });
     let line: PreparedLine | null = null;
     let prefetched = false;
     const taken = prefetch?.take(this.#key(context, text, emotion)) ?? null;
@@ -377,20 +378,15 @@ export class Speaker implements VoiceSink {
     measure?.tts(line.timing ?? null, prefetched, line.provider);
     const firstAudioMs = Math.max(0, ctx.clock.now() - t0);
     ctx.publish(
+      Events.VoiceLatency,
       {
-        type: "custom",
-        data: {
-          topic: LATENCY_TOPIC,
-          payload: {
-            stage: "tts",
-            context: { ...context },
-            turn,
-            provider: line.provider,
-            chars: [...line.said].length,
-            first_audio_ms: firstAudioMs,
-            prefetched,
-          },
-        },
+        stage: "tts",
+        context: { ...context },
+        turn,
+        provider: line.provider,
+        chars: [...line.said].length,
+        first_audio_ms: firstAudioMs,
+        prefetched,
       },
       { turn },
     );
@@ -484,13 +480,14 @@ export class Speaker implements VoiceSink {
         const at = ctx.clock.now();
         e2e.filler(turn, at);
         ctx.publish(
-          customEvent(LATENCY_TOPIC, {
+          Events.VoiceLatency,
+          {
             stage: "filler",
             context: { ...context },
             turn,
             text: clip.text,
             ms: Math.round((clip.samples.length * 1000) / Math.max(1, clip.sampleRate)),
-          }),
+          },
           { turn },
         );
       }
@@ -604,13 +601,14 @@ export class Speaker implements VoiceSink {
       if (ctx.clock.now() - since >= config.speech_hold_max_ms) {
         ctx.log.debug({ guild, holder: held }, "voice floor held too long; dropping her line");
         ctx.publish(
-          customEvent(VOICE_BARGE_IN_TOPIC, {
+          Events.VoiceBargeIn,
+          {
             context: { ...context },
             turn,
             account: null,
             action: "stop",
             reason: "floor",
-          }),
+          },
           { turn },
         );
         return false;

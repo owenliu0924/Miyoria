@@ -6,11 +6,11 @@ import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type ContextKey,
-  customEvent,
-  type Event,
+  Events,
   newId,
   type PlatformId,
   type PlaybackState,
+  type Publish,
   sameAccount,
   serviceKey,
   type VoiceParticipant,
@@ -34,7 +34,7 @@ import { Conn, closeSocket, type GoLiveStatus, newConnState, VoiceLinkError } fr
 import { type LeveledChunk, type Playback, startPlayback } from "./playback.js";
 
 /** Topic of Go Live state changes (`custom` event). */
-export const GOLIVE_TOPIC = "voice.golive";
+export const GOLIVE_TOPIC = Events.VoiceGoLive.type;
 
 export const DEFAULT_BIND = "127.0.0.1:7879";
 
@@ -163,7 +163,7 @@ function isEncoder(value: string): value is GoLiveEncoder {
 export interface VoiceLinkOptions {
   config: VoiceLinkConfig;
   /** Publishes an event as the owning module. */
-  publish(event: Event): void;
+  publish: Publish;
   /** The module's stop signal. */
   signal: AbortSignal;
   log: Logger;
@@ -177,7 +177,7 @@ export interface VoiceLinkOptions {
  * one.
  */
 export class VoiceLink {
-  readonly #publishEvent: (event: Event) => void;
+  readonly #publishEvent: Publish;
   readonly #signal: AbortSignal;
   readonly #log: Logger;
   readonly #token: string;
@@ -398,15 +398,13 @@ export class VoiceLink {
   }
 
   #publishGolive(platform: PlatformId, guild: string, status: GoLiveStatus): void {
-    this.#publishEvent(
-      customEvent(GOLIVE_TOPIC, {
-        platform,
-        guild,
-        state: status.state,
-        error: status.error,
-        reason: status.reason,
-      }),
-    );
+    this.#publishEvent(Events.VoiceGoLive, {
+      platform,
+      guild,
+      state: status.state,
+      error: status.error,
+      reason: status.reason,
+    });
   }
 
   /**
@@ -523,10 +521,7 @@ export class VoiceLink {
     }
     this.addSelfAccount(account);
     this.#log.info({ account: account.id, node, session }, "voice node connected");
-    this.#publishEvent({
-      type: "platform_ready",
-      data: { platform: account.platform, self_account: account },
-    });
+    this.#publishEvent(Events.PlatformReady, { platform: account.platform, self_account: account });
     return conn;
   }
 
@@ -614,9 +609,9 @@ export class VoiceLink {
         const participants = [...g.participants];
         for (const p of this.#takeJoins(conn, guild)) p.resolve(channel);
         this.#log.info({ guild, channel }, "joined voice");
-        this.#publishEvent({
-          type: "voice_joined",
-          data: { context: voiceContext(platform, guild, channel), participants },
+        this.#publishEvent(Events.VoiceJoined, {
+          context: voiceContext(platform, guild, channel),
+          participants,
         });
         return;
       }
@@ -629,9 +624,9 @@ export class VoiceLink {
         }
         if (left) {
           this.#log.info({ guild, reason }, "left voice");
-          this.#publishEvent({
-            type: "voice_left",
-            data: { context: voiceContext(platform, guild, left.channel), reason },
+          this.#publishEvent(Events.VoiceLeft, {
+            context: voiceContext(platform, guild, left.channel),
+            reason,
           });
         }
         return;
@@ -640,9 +635,9 @@ export class VoiceLink {
         const { guild, channel } = msg;
         const participants = msg.participants.map((p) => this.#participant(platform, p));
         st.guilds.set(guild, { channel, participants: [...participants] });
-        this.#publishEvent({
-          type: "voice_participants",
-          data: { context: voiceContext(platform, guild, channel), participants },
+        this.#publishEvent(Events.VoiceParticipants, {
+          context: voiceContext(platform, guild, channel),
+          participants,
         });
         return;
       }
@@ -652,13 +647,10 @@ export class VoiceLink {
           this.#log.debug({ guild: msg.guild }, "speaking signal for a guild she is not in");
           return;
         }
-        this.#publishEvent({
-          type: "voice_speaking",
-          data: {
-            context: voiceContext(platform, msg.guild, channel),
-            account: { platform, id: msg.user_id },
-            speaking: msg.speaking,
-          },
+        this.#publishEvent(Events.VoiceSpeaking, {
+          context: voiceContext(platform, msg.guild, channel),
+          account: { platform, id: msg.user_id },
+          speaking: msg.speaking,
         });
         return;
       }
@@ -748,12 +740,9 @@ export class VoiceLink {
         }
       }
       for (const [guild, g] of state.guilds) {
-        this.#publishEvent({
-          type: "voice_left",
-          data: {
-            context: voiceContext(platform, guild, g.channel),
-            reason: "voice node disconnected",
-          },
+        this.#publishEvent(Events.VoiceLeft, {
+          context: voiceContext(platform, guild, g.channel),
+          reason: "voice node disconnected",
         });
       }
     }

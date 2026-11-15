@@ -11,7 +11,8 @@ import {
   type AccountRef,
   accountRefString,
   contextKeyEquals,
-  customEvent,
+  type EventPayload,
+  Events,
   type JsonValue,
   newId,
   SpeechPauseKey,
@@ -42,7 +43,6 @@ import {
   compileAliases,
   echoesHint,
 } from "./text.js";
-import { LATENCY_TOPIC } from "./topics.js";
 import type { TurnAnswer, TurnGate, TurnJudge } from "./turn.js";
 import type { Semaphore } from "./util.js";
 import { createVad, type Vad } from "./vad.js";
@@ -358,9 +358,9 @@ export class Listener {
   }
 
   #publishTurn(stream: Stream, fields: Record<string, JsonValue>): void {
-    this.#d.ctx.publish(
-      customEvent(LATENCY_TOPIC, { context: { ...stream.info.context }, ...fields }),
-    );
+    // `fields` carry the stage (`turn`, `turn_resumed`, `asr`) and its measures.
+    const payload = { context: { ...stream.info.context }, ...fields };
+    this.#d.ctx.publish(Events.VoiceLatency, payload as EventPayload<typeof Events.VoiceLatency>);
   }
 
   /** Asks the model about the pause, off the audio path. */
@@ -607,36 +607,27 @@ export class Listener {
         link.participants(guild).find((p) => sameAccount(p.account, info.speaker))?.display_name ||
         info.displayName;
       ctx.log.info({ speaker: displayName, text, asr_ms: asrMs }, "voice utterance");
-      ctx.publish({
-        type: "voice_utterance",
-        data: {
-          id,
-          context: info.context,
-          speaker: { account: info.speaker, display_name: displayName, is_bot: false },
-          text,
-          language: transcript.language,
-          emotion: transcript.emotion,
-          audio_events: transcript.audio_events,
-          started_at: toTimestamp(startedAt),
-          ended_at: toTimestamp(endedAt),
-          asr_ms: asrMs,
-          ...(turn ? { turn } : {}),
-        },
+      ctx.publish(Events.VoiceUtteranceEvent, {
+        id,
+        context: info.context,
+        speaker: { account: info.speaker, display_name: displayName, is_bot: false },
+        text,
+        language: transcript.language,
+        emotion: transcript.emotion,
+        audio_events: transcript.audio_events,
+        started_at: toTimestamp(startedAt),
+        ended_at: toTimestamp(endedAt),
+        asr_ms: asrMs,
+        ...(turn ? { turn } : {}),
       });
-      ctx.publish({
-        type: "custom",
-        data: {
-          topic: LATENCY_TOPIC,
-          payload: {
-            stage: "asr",
-            context: { ...info.context },
-            speaker: { ...info.speaker },
-            provider,
-            audio_ms: audioMs,
-            transcribe_ms: transcribeMs,
-            asr_ms: asrMs,
-          },
-        },
+      ctx.publish(Events.VoiceLatency, {
+        stage: "asr",
+        context: { ...info.context },
+        speaker: { ...info.speaker },
+        provider,
+        audio_ms: audioMs,
+        transcribe_ms: transcribeMs,
+        asr_ms: asrMs,
       });
     } finally {
       if (!settled) letGo("timeout");

@@ -8,7 +8,7 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { type PlayChunk, type VoicePlayer, VoicePlayerKey } from "@miyoria/types";
+import { Events, is, type PlayChunk, type VoicePlayer, VoicePlayerKey } from "@miyoria/types";
 import { WebSocketServer } from "ws";
 import { aborted } from "../util.js";
 import { VoiceLinkError } from "./conn.js";
@@ -100,7 +100,7 @@ export class VoiceLinkModule implements Module {
 
     const link = new VoiceLink({
       config,
-      publish: (event) => ctx.publish(event),
+      publish: ctx.publisher,
       signal: ctx.signal,
       log: ctx.log,
     });
@@ -142,10 +142,10 @@ export class VoiceLinkModule implements Module {
     ctx.provide(VoicePlayerKey, voicePlayer(link));
 
     // Remember her other accounts (e.g. the bot account) for `isSelf`.
-    const ready = ctx.subscribe("platform.ready");
+    const ready = ctx.subscribe(Events.PlatformReady.type);
     ctx.spawn("self-accounts", async () => {
       for await (const env of ready) {
-        if (env.event.type === "platform_ready") link.addSelfAccount(env.event.data.self_account);
+        if (is(Events.PlatformReady, env)) link.addSelfAccount(env.data.self_account);
       }
     });
 

@@ -13,11 +13,11 @@ import {
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
-  customEvent,
+  type EventPayload,
+  Events,
   type JsonObject,
   type ProfileId,
   SpeechPauseKey,
-  VOICE_BARGE_IN_TOPIC,
   VoiceFloorKey,
   VoiceSinkKey,
   VoiceTurnsKey,
@@ -39,7 +39,6 @@ import { Listener } from "./listen.js";
 import { LinePrefetch } from "./prefetch.js";
 import { sileroVad } from "./silero.js";
 import { Speaker } from "./sink.js";
-import { LATENCY_TOPIC } from "./topics.js";
 import { SpeechTranslator } from "./translate.js";
 import { HttpTurnJudge, TurnGate } from "./turn.js";
 import { Semaphore } from "./util.js";
@@ -113,13 +112,14 @@ export class VoiceModule implements Module {
         settleMs: Math.max(config.end_silence_ms, smartTurn ? config.turn_max_silence_ms : 0) + 500,
         publish: (record) => {
           ctx.publish(
-            customEvent(VOICE_BARGE_IN_TOPIC, {
+            Events.VoiceBargeIn,
+            {
               context: { ...record.context },
               turn: record.turn,
               account: record.account === null ? null : { ...record.account },
               action: record.action,
               reason: record.reason,
-            }),
+            },
             { turn: record.turn },
           );
           // The rest of her lines are dropped: do not synthesize them for nothing.
@@ -170,7 +170,8 @@ export class VoiceModule implements Module {
           },
           "voice e2e latency",
         );
-        ctx.publish(customEvent(LATENCY_TOPIC, { stage: "e2e", ...e2eJson(record) }), {
+        const payload = { stage: "e2e", ...e2eJson(record) };
+        ctx.publish(Events.VoiceLatency, payload as EventPayload<typeof Events.VoiceLatency>, {
           turn: record.turn,
         });
       },
