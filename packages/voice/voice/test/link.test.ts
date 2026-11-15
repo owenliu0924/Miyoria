@@ -1,10 +1,11 @@
 // Voice Link protocol tests against a real server.
 
 import {
-  type Event,
-  type EventData,
-  type EventType,
-  isEvent,
+  type AnyEventDefinition,
+  type Envelope,
+  type EventPayload,
+  Events,
+  is,
   VoicePlayerKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,9 +41,9 @@ async function recvAudio(q: BoundedQueue<AudioEvent>): Promise<AudioEvent> {
   return ev;
 }
 
-function data<T extends EventType>(event: Event, type: T): EventData<T> {
-  if (!isEvent(event, type)) throw new Error(`expected ${type}, got ${event.type}`);
-  return event.data as unknown as EventData<T>;
+function data<D extends AnyEventDefinition>(env: Envelope, definition: D): EventPayload<D> {
+  if (!is(definition, env)) throw new Error(`expected ${definition.type}, got ${env.type}`);
+  return env.data as EventPayload<D>;
 }
 
 async function rejection(p: Promise<unknown>): Promise<string> {
@@ -97,7 +98,7 @@ describe("voice.link", () => {
     expect(link.isConnected()).toBe(true);
     const account = link.selfAccount();
     expect(account).toEqual({ platform: "discord", id: SELF_ID });
-    const ev = data((await nextEvent(ready)).event, "platform_ready");
+    const ev = data(await nextEvent(ready), Events.PlatformReady);
     expect(ev.platform).toBe("discord");
     expect(ev.self_account).toEqual(account);
   });
@@ -107,9 +108,9 @@ describe("voice.link", () => {
     // The bot account announces itself; it must count as her.
     const bot = { platform: "discord", id: "99" };
     const ready = h.subscribe(["platform.ready"]);
-    h.bus.publish("platform.discord.bot", {
-      type: "platform_ready",
-      data: { platform: "discord", self_account: bot },
+    h.bus.publish("platform.discord.bot", Events.PlatformReady, {
+      platform: "discord",
+      self_account: bot,
     });
     await nextEvent(ready);
     const link = h.link();
@@ -139,18 +140,18 @@ describe("voice.link", () => {
     node.sendJson({ type: "joined", guild: "g1", channel: "vc1" });
     expect(await joining).toBe("vc1");
 
-    const vp = data((await nextEvent(events)).event, "voice_participants");
+    const vp = data(await nextEvent(events), Events.VoiceParticipants);
     expect(vp.context).toEqual({ platform: "discord", scope: "g1", channel: "vc1", kind: "voice" });
     expect(vp.participants.map((p) => p.is_self)).toEqual([false, true, true]);
     expect(vp.participants[2]?.muted).toBe(true);
-    const vj = data((await nextEvent(events)).event, "voice_joined");
+    const vj = data(await nextEvent(events), Events.VoiceJoined);
     expect(vj.context.channel).toBe("vc1");
     expect(vj.participants.length).toBe(3);
     expect(link.channel("g1")).toBe("vc1");
     expect(link.participants("g1")[0]?.display_name).toBe("小明");
 
     node.sendJson({ type: "speaking", guild: "g1", user_id: "u1", speaking: true });
-    const vs = data((await nextEvent(events)).event, "voice_speaking");
+    const vs = data(await nextEvent(events), Events.VoiceSpeaking);
     expect(vs.context.channel).toBe("vc1");
     expect(vs.account.id).toBe("u1");
     expect(vs.speaking).toBe(true);
@@ -168,7 +169,7 @@ describe("voice.link", () => {
     await link.leave("g1");
     expect(await node.recvJson()).toEqual({ type: "leave", guild: "g1" });
     node.sendJson({ type: "left", guild: "g1", reason: "leave" });
-    const vl = data((await nextEvent(events)).event, "voice_left");
+    const vl = data(await nextEvent(events), Events.VoiceLeft);
     expect(vl.context.channel).toBe("vc1");
     expect(vl.reason).toBe("leave");
     expect(link.channel("g1")).toBeNull();
@@ -405,7 +406,7 @@ describe("voice.link", () => {
     expect(await alive.recvJson()).toEqual({ type: "ping" });
     expect(await alive.expectClose()).toBe(4408);
     await waitUntil(() => !link.isConnected());
-    const vl = data((await nextEvent(events)).event, "voice_left");
+    const vl = data(await nextEvent(events), Events.VoiceLeft);
     expect(vl.context.channel).toBe("vc1");
     expect(vl.reason).toBe("voice node disconnected");
   });
@@ -447,9 +448,9 @@ describe("voice.link", () => {
     expect(link.golive("g1")).toBeNull();
 
     node.sendJson({ type: "golive", guild: "g1", state: "starting" });
-    const ev = data((await nextEvent(events)).event, "custom");
-    expect(ev.topic).toBe(GOLIVE_TOPIC);
-    expect(ev.payload).toEqual({
+    const ev = await nextEvent(events);
+    expect(ev.type).toBe(GOLIVE_TOPIC);
+    expect(ev.data).toEqual({
       platform: "discord",
       guild: "g1",
       state: "starting",
@@ -465,20 +466,14 @@ describe("voice.link", () => {
     await link.goliveStop("g1");
     expect(await node.recvJson()).toEqual({ type: "golive_stop", guild: "g1" });
     node.sendJson({ type: "golive", guild: "g1", state: "stopped", reason: "stop requested" });
-    const stopped = data((await nextEvent(events)).event, "custom").payload as Record<
-      string,
-      unknown
-    >;
+    const stopped = data(await nextEvent(events), Events.VoiceGoLive) as Record<string, unknown>;
     expect(stopped.state).toBe("stopped");
     expect(stopped.reason).toBe("stop requested");
     expect(link.golive("g1")).toEqual({ state: "stopped", error: null, reason: "stop requested" });
     expect(link.isStreaming("g1")).toBe(false);
 
     node.sendJson({ type: "golive", guild: "g1", state: "failed", error: "ffmpeg not found" });
-    const failed = data((await nextEvent(events)).event, "custom").payload as Record<
-      string,
-      unknown
-    >;
+    const failed = data(await nextEvent(events), Events.VoiceGoLive) as Record<string, unknown>;
     expect(failed.state).toBe("failed");
     expect(failed.error).toBe("ffmpeg not found");
     expect(link.golive("g1")?.error).toBe("ffmpeg not found");
@@ -506,10 +501,7 @@ describe("voice.link", () => {
     await nextEvent(events);
     expect(link.isStreaming("g1")).toBe(true);
     node.drop();
-    const payload = data((await nextEvent(events)).event, "custom").payload as Record<
-      string,
-      unknown
-    >;
+    const payload = data(await nextEvent(events), Events.VoiceGoLive) as Record<string, unknown>;
     expect(payload.state).toBe("stopped");
     expect(payload.reason).toBe("voice node disconnected");
     await waitUntil(() => !link.isConnected());

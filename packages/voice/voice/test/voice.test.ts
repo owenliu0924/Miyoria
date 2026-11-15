@@ -26,6 +26,8 @@ import {
   type AffectState,
   AffectStateKey,
   type ContextKey,
+  Events,
+  is,
   type JsonObject,
   type JsonValue,
   ModerationKey,
@@ -248,8 +250,8 @@ async function boot(
 
 async function nextUtterance(sub: Subscription): Promise<VoiceUtterance> {
   for (;;) {
-    const ev = (await nextEvent(sub)).event;
-    if (ev.type === "voice_utterance") return ev.data;
+    const ev = await nextEvent(sub);
+    if (is(Events.VoiceUtteranceEvent, ev)) return ev.data;
   }
 }
 
@@ -286,10 +288,9 @@ describe("voice", () => {
     expect(u.emotion).toBe("happy");
     expect(u.audio_events).toEqual(["laughter"]);
     expect(Date.parse(u.ended_at)).toBeGreaterThan(Date.parse(u.started_at));
-    const latency = (await nextEvent(events)).event;
-    if (latency.type !== "custom") throw new Error(`unexpected ${latency.type}`);
-    expect(latency.data.topic).toBe("voice.latency");
-    const payload = latency.data.payload as Record<string, JsonValue>;
+    const latency = await nextEvent(events);
+    expect(latency.type).toBe("voice.latency");
+    const payload = latency.data as Record<string, JsonValue>;
     expect(payload.stage).toBe("asr");
     expect(payload.provider).toBe("fake-asr");
     expect(typeof payload.asr_ms).toBe("number");
@@ -361,11 +362,9 @@ describe("voice", () => {
       null,
     );
     // The overlay hears that her line went to TTS before it plays.
-    const asked = (await nextEvent(synth)).event;
-    expect(asked).toEqual({
-      type: "custom",
-      data: { topic: "voice.synthesis", payload: { context: { ...voiceCtx }, turn: null } },
-    });
+    const asked = await nextEvent(synth);
+    expect(asked.type).toBe("voice.synthesis");
+    expect(asked.data).toEqual({ context: { ...voiceCtx }, turn: null });
     const [id, rate, samples] = await readPlayback(e.node);
     expect([rate, samples]).toEqual([24_000, 4800]);
     e.node.sendJson({ type: "playback", play: id, state: "started" });
@@ -382,12 +381,12 @@ describe("voice", () => {
     const states: PlaybackState[] = [];
     let firstAudio: JsonValue | undefined;
     while (states.length < 2) {
-      const ev = (await nextEvent(events)).event;
-      if (ev.type === "voice_playback") {
+      const ev = await nextEvent(events);
+      if (is(Events.VoicePlaybackEvent, ev)) {
         expect(ev.data.text).toBe("哼,才不是在等你呢。");
         states.push(ev.data.state);
-      } else if (ev.type === "custom") {
-        const p = ev.data.payload as Record<string, JsonValue>;
+      } else if (ev.type === "voice.latency") {
+        const p = ev.data as Record<string, JsonValue>;
         expect(p.stage).toBe("tts");
         firstAudio = p.first_audio_ms;
       } else {
@@ -414,8 +413,8 @@ describe("voice", () => {
     });
     const start = await e.node.recvType("play_start");
     const id = start.play as number;
-    const started = (await nextEvent(events)).event;
-    expect(started.type === "voice_playback" && started.data.state).toBe("started");
+    const started = await nextEvent(events);
+    expect(is(Events.VoicePlaybackEvent, started) && started.data.state).toBe("started");
 
     // A short "嗯" does not interrupt her; talking over her does.
     e.node.sendJson({
@@ -439,8 +438,8 @@ describe("voice", () => {
       fade_ms: 150,
     });
     expect(await speaking).toBe("interrupted");
-    const ended = (await nextEvent(events)).event;
-    expect(ended.type === "voice_playback" && ended.data.state).toBe("interrupted");
+    const ended = await nextEvent(events);
+    expect(is(Events.VoicePlaybackEvent, ended) && ended.data.state).toBe("interrupted");
   });
 
   it("barge_in_can_be_ignored", async () => {
@@ -472,8 +471,8 @@ describe("voice", () => {
     expect(reply.ephemeral).toBe(false);
     expect(reply.text).toContain("`/me`");
     // The command went through the gate as an overriding `command` principal.
-    const decision = gate.tryRecv()?.event;
-    expect(decision?.type === "custom" && decision.data.payload).toMatchObject({
+    const decision = gate.tryRecv();
+    expect(decision?.data).toMatchObject({
       capability: "voice.join",
       allowed: true,
       principal: { kind: "command", requester: { id: "u7" }, override: true },
@@ -567,8 +566,8 @@ describe("voice", () => {
     expect(asked.length).toBe(1);
     expect(asked[0]?.thinking).toBe(false);
     expect(e.tts.requests[0]).toMatchObject({ text: "ja(你好啊)", language: "Japanese" });
-    const started = (await nextEvent(events)).event;
-    expect(started.type === "voice_playback" && started.data.text).toBe("你好啊");
+    const started = await nextEvent(events);
+    expect(is(Events.VoicePlaybackEvent, started) && started.data.text).toBe("你好啊");
 
     // A failed translation still speaks, untranslated.
     const fallback = sink.speak(voiceCtx, "壞掉", null, null);
@@ -641,8 +640,8 @@ describe("voice", () => {
     expect(await speaking).toBe("interrupted");
     const states = [];
     for (;;) {
-      const event = (await nextEvent(events)).event;
-      if (event.type !== "voice_playback") continue;
+      const event = await nextEvent(events);
+      if (!is(Events.VoicePlaybackEvent, event)) continue;
       states.push(event.data.state);
       if (event.data.state === "started") continue;
       expect(event.data).toMatchObject({ text: "說很久", turn: "t1", total_ms: null });
@@ -661,8 +660,8 @@ describe("voice", () => {
     finish(e.node, play);
     expect(await speaking).toBe("completed");
     for (;;) {
-      const event = (await nextEvent(events)).event;
-      if (event.type !== "voice_playback" || event.data.state !== "finished") continue;
+      const event = await nextEvent(events);
+      if (!is(Events.VoicePlaybackEvent, event) || event.data.state !== "finished") continue;
       // 4800 samples at 24 kHz.
       expect(event.data.total_ms).toBe(200);
       break;
@@ -697,8 +696,8 @@ describe("voice", () => {
     const sink = e.h.services.require(VoiceSinkKey);
     expect(await sink.speak(voiceCtx, "唱歌的時候說話", null, "turn-1")).toBe("interrupted");
     expect(e.tts.requests).toHaveLength(0);
-    const ev = (await nextEvent(events)).event;
-    expect(ev.type === "custom" && ev.data.payload).toEqual({
+    const ev = await nextEvent(events);
+    expect(ev.data).toEqual({
       context: voiceCtx,
       turn: "turn-1",
       account: null,
@@ -780,9 +779,8 @@ interface Barge {
 async function nextBarges(sub: Subscription, n: number): Promise<Barge[]> {
   const out: Barge[] = [];
   while (out.length < n) {
-    const ev = (await nextEvent(sub)).event;
-    if (ev.type !== "custom") continue;
-    const p = ev.data.payload as {
+    const ev = await nextEvent(sub);
+    const p = ev.data as {
       action: string;
       reason: string;
       account: { id: string } | null;
@@ -798,7 +796,7 @@ async function expectNoUtterance(sub: Subscription, ms = 800): Promise<void> {
   while (Date.now() < until) {
     const got = await Promise.race([sub.recv(), sleepMs(until - Date.now()).then(() => null)]);
     if (got === null) return;
-    expect(got.event.type).not.toBe("voice_utterance");
+    expect(got.type).not.toBe("voice.utterance");
   }
 }
 
@@ -1000,8 +998,7 @@ describe("TTS prefetch", () => {
     const sink = e.h.services.require(VoiceSinkKey);
     const texts = async () => {
       const env = await nextEvent(upcoming);
-      const ev = env.event;
-      return ev.type === "custom" ? (ev.data.payload as { text: string; turn: string }) : null;
+      return env.data as { text: string; turn: string };
     };
     sink.prepare?.(voiceCtx, "第一句", undefined, "happy");
     const first = sink.speak(voiceCtx, "第一句", "happy", "turn-1");
@@ -1047,8 +1044,8 @@ describe("TTS prefetch", () => {
       e.node.sendJson({ type: "playback", play: id, state: "started" });
       e.node.sendJson({ type: "playback", play: id, state: "finished" });
       await speaking;
-      const event = (await nextEvent(playback)).event;
-      expect(event.type === "voice_playback" && event.data.emotion).toBe(emotion ?? tag);
+      const event = await nextEvent(playback);
+      expect(is(Events.VoicePlaybackEvent, event) && event.data.emotion).toBe(emotion ?? tag);
       return e.tts.requests[0] as TtsRequest;
     }
 
@@ -1146,9 +1143,8 @@ describe("TTS prefetch", () => {
 /** The next `voice.latency` payload of stage `e2e`. */
 async function nextE2e(sub: Subscription): Promise<Record<string, JsonValue>> {
   for (;;) {
-    const ev = (await nextEvent(sub)).event;
-    if (ev.type !== "custom") continue;
-    const p = ev.data.payload as Record<string, JsonValue>;
+    const ev = await nextEvent(sub);
+    const p = ev.data as Record<string, JsonValue>;
     if (p.stage === "e2e") return p;
   }
 }
@@ -1238,8 +1234,7 @@ describe("end-to-end latency", () => {
     for (;;) {
       const env = await Promise.race([events.recv(), sleepMs(50).then(() => "idle" as const)]);
       if (env === "idle" || env === null) break;
-      const ev = env.event;
-      if (ev.type === "custom" && (ev.data.payload as { stage?: string }).stage === "e2e") seen++;
+      if ((env.data as { stage?: string }).stage === "e2e") seen++;
     }
     expect(seen).toBe(0);
   });
@@ -1462,9 +1457,8 @@ describe("end of turn", () => {
     const events = e.h.subscribe(["voice.latency"]);
     e.speakStream(1, "u1", utteranceAudio());
     for (;;) {
-      const ev = (await nextEvent(events)).event;
-      if (ev.type !== "custom") continue;
-      const p = ev.data.payload as Record<string, JsonValue>;
+      const ev = await nextEvent(events);
+      const p = ev.data as Record<string, JsonValue>;
       if (p.stage !== "turn") continue;
       expect(p.verdict).toBe("complete");
       expect(p.probability).toBe(0.9);
@@ -1573,7 +1567,7 @@ describe("the last stop before a voice", () => {
     expect(e.tts.requests.map((r) => r.text)).toEqual(["嗶。"]);
     expect(asked[0]).toMatchObject({ path: "tts", turn: "t1" });
     // Subtitles and her history follow this event: the words are gone from there too.
-    const first = (await nextEvent(events)).event;
+    const first = await nextEvent(events);
     expect(first).toMatchObject({ data: { state: "started", text: "嗶。", blocked: "test.word" } });
   });
 
@@ -1588,7 +1582,7 @@ describe("the last stop before a voice", () => {
     expect(e.tts.requests.map((r) => r.text)).toEqual(["嗶。"]);
     expect(asked.map((a) => a.path)).toEqual(["tts", "tts", "translation"]);
     // The written line was fine: the subtitle stays, and the ledger still hears it was not said.
-    const first = (await nextEvent(events)).event;
+    const first = await nextEvent(events);
     expect(first).toMatchObject({
       data: { state: "started", text: "沒問題的句子", blocked: "test.word" },
     });
@@ -1611,7 +1605,7 @@ describe("the last stop before a voice", () => {
     const speaking = sink.speak(voiceCtx, "Filtered.", null, "t1");
     finish(e.node, (await readPlayback(e.node))[0]);
     await speaking;
-    expect((await nextEvent(events)).event).toMatchObject({ data: { blocked: "Filtered." } });
+    expect(await nextEvent(events)).toMatchObject({ data: { blocked: "Filtered." } });
   });
 
   it("without the service she speaks as she always did", async () => {
@@ -1687,8 +1681,8 @@ describe("filler", () => {
     const [id, rate, samples] = await readPlayback(e.node);
     expect([rate, samples]).toEqual([24_000, 4800]);
     finish(e.node, id);
-    const ev = (await nextEvent(events)).event;
-    const p = (ev.type === "custom" ? ev.data.payload : null) as Record<string, JsonValue>;
+    const ev = await nextEvent(events);
+    const p = ev.data as Record<string, JsonValue>;
     expect(p.stage).toBe("filler");
     expect(p.turn).toBe("turn-1");
     expect(["嗯?", "欸~", "蛤?", "等等"]).toContain(p.text);

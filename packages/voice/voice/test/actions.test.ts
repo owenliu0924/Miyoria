@@ -8,11 +8,11 @@ import {
   AuthorizerKey,
   BaseAuthorizer,
   type ContextKey,
-  type Event,
   PlatformSinks,
   PlatformSinksKey,
   Principals,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   type StreamCurtain,
   StreamCurtainKey,
   type Subject,
@@ -117,12 +117,12 @@ function setup(nodes: string[], options: SetupOptions = {}) {
   const services = new ServiceRegistry();
   services.provide("test", AuthorizerKey, new Grants(new Set(nodes)));
   const tools = new ToolRegistry();
-  const events: Event[] = [];
+  const events: PublishedEvent[] = [];
   const registry = new ActuatorRegistry({
     services,
     tools,
     builtins: false,
-    publish: publishInto(events),
+    publish: publishedInto(events),
   });
   for (const c of voiceCapabilities(
     link as unknown as VoiceLink,
@@ -288,9 +288,7 @@ describe("voice capabilities", () => {
       "leave g1",
     ]);
     const decisions = s.events.flatMap((e) =>
-      e.type === "custom" && e.data.topic === "gate.decision"
-        ? [e.data.payload as Record<string, unknown>]
-        : [],
+      e.type === "gate.decision" ? [e.data as Record<string, unknown>] : [],
     );
     expect(decisions.map((d) => d.capability)).toEqual([
       "voice.join",
