@@ -6,6 +6,13 @@
 // loses its endpoints at once. An endpoint that failed rests for `retry_secs` and goes last.
 // Module clients call `request` and never build a URL themselves, so the relay of §7.1 needs no
 // change in them.
+//
+// Core's wiring also adds static entries at run time (`addStatic`): the addresses the modules'
+// own config keys still name (`[modules.sing] url`, ...) while the move to hostd goes on. They
+// come after the other endpoints unless `order` names them, in the order they were added. When a
+// host reports a service at the same URL as a static entry, for the same capability, only the
+// reported endpoint is returned (it carries the token); it takes the static entry's place in the
+// order and answers for its name (`entry`).
 
 import type { HostEndpoint, HostReport, HostServiceState } from "@miyoria/contracts/host";
 import { type Clock, systemClock } from "@miyoria/types";
@@ -18,6 +25,28 @@ export type Endpoint = HostEndpoint;
 export interface PickOptions {
   /** Only endpoints Core can call itself (a WebSocket service, real-time speech). */
   direct?: boolean;
+  /**
+   * Only the endpoint of this static entry: the entry itself, or the reported endpoint at the
+   * same URL that stands for it.
+   */
+  entry?: string;
+  /**
+   * An endpoint that failed lately keeps its place instead of going last (for callers with
+   * failover rules of their own). Unhealthy endpoints still go last.
+   */
+  ignoreResting?: boolean;
+}
+
+/** A static entry added at run time (`addStatic`). */
+export interface StaticEndpointEntry {
+  /** The capabilities it serves. */
+  provides: readonly string[];
+  /** Its base URL. */
+  url: string;
+  /** Sent as `authorization: Bearer <token>` when set. */
+  token?: string;
+  /** Sent with every request (a token for a proxy in front of the service). */
+  headers?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -35,6 +64,24 @@ export class RelayUnavailableError extends ClusterError {
 
 /** Service states in which a service can answer. */
 const SERVING: ReadonlySet<HostServiceState> = new Set(["running", "foreign", "external"]);
+
+interface StaticEntry {
+  name: string;
+  provides: ReadonlySet<string>;
+  url: string;
+  headers: Record<string, string>;
+  /** Order of `addStatic` calls; `null` for an entry of `[modules.cluster.static]`. */
+  added: number | null;
+}
+
+/** An endpoint with what decides its place. */
+interface Ranked {
+  endpoint: Endpoint;
+  /** Static entries at the same URL it stands for. */
+  standsFor: string[];
+  /** The earliest `added` of itself and the entries it stands for; `null`: none was added. */
+  added: number | null;
+}
 
 interface HostEntry {
   /** The capabilities it is approved for; empty while pending. */
@@ -62,6 +109,17 @@ function bearer(token: string | undefined): Record<string, string> {
   return token === undefined || token === "" ? {} : { authorization: `Bearer ${token}` };
 }
 
+/** What two URLs of the same place have in common. */
+function sameUrl(url: string): string {
+  return url.trim().replace(/\/+$/u, "").toLowerCase();
+}
+
+function minAdded(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
 /** `url` + `path` with exactly one slash between them. */
 function join(url: string, path: string): string {
   if (path === "") return url;
@@ -80,7 +138,8 @@ function mergeHeaders(base: Record<string, string>, own: RequestInit["headers"])
 export class EndpointRegistry {
   readonly #hosts = new Map<string, HostEntry>();
   readonly #order: Readonly<Record<string, readonly string[]>>;
-  readonly #static: Endpoint[];
+  readonly #static = new Map<string, StaticEntry>();
+  #added = 0;
   readonly #retryMs: number;
   readonly #clock: Clock;
   readonly #fetch: typeof fetch;
@@ -96,21 +155,45 @@ export class EndpointRegistry {
     this.#retryMs = (options.retrySecs ?? 30) * 1000;
     this.#clock = options.clock ?? systemClock;
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
-    this.#static = [];
     for (const [name, entry] of Object.entries(options.static ?? {})) {
-      for (const capability of new Set(entry.provides)) {
-        this.#static.push({
-          capability,
-          host: name,
-          service: name,
-          url: entry.url,
-          via: "direct",
-          headers: bearer(entry.token),
-          healthy: true,
-          version: null,
-        });
-      }
+      this.#static.set(name, {
+        name,
+        provides: new Set(entry.provides),
+        url: entry.url,
+        headers: bearer(entry.token),
+        added: null,
+      });
     }
+  }
+
+  // ---- what Core's wiring adds -----------------------------------------------------------------
+
+  /**
+   * Adds a static entry while Core runs (an address a module's own config still names). It comes
+   * after the other endpoints of its capabilities unless `order` names it, in the order entries
+   * were added. Returns the function that removes it again. Throws when the name is taken.
+   */
+  addStatic(name: string, entry: StaticEndpointEntry): () => void {
+    if (this.#static.has(name)) {
+      throw new ClusterError(`there is a static endpoint named \`${name}\` already`);
+    }
+    const added: StaticEntry = {
+      name,
+      provides: new Set(entry.provides),
+      url: entry.url,
+      headers: { ...(entry.headers ?? {}), ...bearer(entry.token) },
+      added: this.#added++,
+    };
+    this.#static.set(name, added);
+    this.#changed();
+    return () => {
+      if (this.#static.get(name) !== added) return;
+      this.#static.delete(name);
+      for (const key of [...this.#resting.keys()]) {
+        if (key.startsWith(`${name}\u0000${name}\u0000`)) this.#resting.delete(key);
+      }
+      this.#changed();
+    };
   }
 
   // ---- what the link feeds in ----------------------------------------------------------------
@@ -162,7 +245,9 @@ export class EndpointRegistry {
         }
       }
     }
-    for (const endpoint of this.#static) found.add(endpoint.capability);
+    for (const entry of this.#static.values()) {
+      for (const capability of entry.provides) found.add(capability);
+    }
     return [...found].filter((c) => this.#all(c, {}).length > 0).sort();
   }
 
@@ -175,24 +260,41 @@ export class EndpointRegistry {
 
   /**
    * Every endpoint of `capability`, for callers with their own failover: healthy ones that are
-   * not resting first, each group in `order` and then by host and service name.
+   * not resting first; each group in `order`, then the reported endpoints and the entries of
+   * `[modules.cluster.static]` by host and service name, then the entries added at run time in
+   * the order they were added.
    */
   candidates(capability: string, options: PickOptions = {}): Endpoint[] {
     const now = this.#clock.now();
     const listed = this.#order[capability] ?? [];
-    const rank = (e: Endpoint) => {
-      const i = listed.indexOf(e.host);
-      return i < 0 ? listed.length : i;
+    const rank = (r: Ranked) => {
+      let best = listed.length;
+      for (const name of [r.endpoint.host, ...r.standsFor]) {
+        const i = listed.indexOf(name);
+        if (i >= 0 && i < best) best = i;
+      }
+      return best;
     };
-    const ready = (e: Endpoint) => (e.healthy && !this.#isResting(e, now) ? 0 : 1);
+    const ready = ({ endpoint: e }: Ranked) =>
+      e.healthy && (options.ignoreResting === true || !this.#isResting(e, now)) ? 0 : 1;
+    const late = (r: Ranked) => (r.added === null ? 0 : 1);
     const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-    return this.#all(capability, options).sort(
-      (a, b) =>
-        ready(a) - ready(b) ||
-        rank(a) - rank(b) ||
-        byText(a.host, b.host) ||
-        byText(a.service, b.service),
-    );
+    let all = this.#all(capability, options);
+    if (options.entry !== undefined) {
+      const entry = options.entry;
+      all = all.filter((r) => r.endpoint.host === entry || r.standsFor.includes(entry));
+    }
+    return all
+      .sort(
+        (a, b) =>
+          ready(a) - ready(b) ||
+          rank(a) - rank(b) ||
+          late(a) - late(b) ||
+          (a.added ?? 0) - (b.added ?? 0) ||
+          byText(a.endpoint.host, b.endpoint.host) ||
+          byText(a.endpoint.service, b.endpoint.service),
+      )
+      .map((r) => r.endpoint);
   }
 
   /** Passes over `endpoint` for `retry_secs`: it goes last until then. */
@@ -252,31 +354,63 @@ export class EndpointRegistry {
     return false;
   }
 
-  /** Every endpoint of `capability`, unordered: hosts' then static entries. */
-  #all(capability: string, options: PickOptions): Endpoint[] {
-    const out: Endpoint[] = [];
+  /**
+   * Every endpoint of `capability`, unordered: hosts' then static entries. A static entry at the
+   * URL of an endpoint before it (a reported one, or an entry of `[modules.cluster.static]` for
+   * one added at run time) is not returned; that endpoint stands for it.
+   */
+  #all(capability: string, options: PickOptions): Ranked[] {
+    const out: Ranked[] = [];
     for (const [name, entry] of this.#hosts) {
       if (!entry.approved.has(capability) || entry.report === null) continue;
       for (const service of entry.report.services) {
         if (!service.provides.includes(capability) || !SERVING.has(service.state)) continue;
         const direct = service.url !== undefined && service.url !== "";
         out.push({
-          capability,
-          host: name,
-          service: service.name,
-          url: direct ? (service.url as string) : `link://${name}/${service.name}`,
-          via: direct ? "direct" : "link",
-          headers: bearer(service.token),
-          healthy: service.healthy,
-          version: service.version ?? null,
+          endpoint: {
+            capability,
+            host: name,
+            service: service.name,
+            url: direct ? (service.url as string) : `link://${name}/${service.name}`,
+            via: direct ? "direct" : "link",
+            headers: bearer(service.token),
+            healthy: service.healthy,
+            version: service.version ?? null,
+          },
+          standsFor: [],
+          added: null,
         });
       }
     }
-    for (const endpoint of this.#static) {
-      if (endpoint.capability === capability)
-        out.push({ ...endpoint, headers: { ...endpoint.headers } });
+    const statics = [...this.#static.values()]
+      .filter((entry) => entry.provides.has(capability))
+      // Entries of `[modules.cluster.static]` before the ones added at run time.
+      .sort((a, b) => (a.added ?? -1) - (b.added ?? -1));
+    for (const entry of statics) {
+      const twin = out.find(
+        (r) => r.endpoint.via === "direct" && sameUrl(r.endpoint.url) === sameUrl(entry.url),
+      );
+      if (twin !== undefined) {
+        twin.standsFor.push(entry.name);
+        twin.added = minAdded(twin.added, entry.added);
+        continue;
+      }
+      out.push({
+        endpoint: {
+          capability,
+          host: entry.name,
+          service: entry.name,
+          url: entry.url,
+          via: "direct",
+          headers: { ...entry.headers },
+          healthy: true,
+          version: null,
+        },
+        standsFor: [],
+        added: entry.added,
+      });
     }
-    return options.direct === true ? out.filter((e) => e.via === "direct") : out;
+    return options.direct === true ? out.filter((r) => r.endpoint.via === "direct") : out;
   }
 
   #signature(capability: string): string {
