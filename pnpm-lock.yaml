@@ -550,6 +550,9 @@ importers:
       drizzle-orm:
         specifier: 1.0.0-rc.5
         version: 1.0.0-rc.5(zod@4.6.7)
+      execa:
+        specifier: ^10.2.1
+        version: 10.2.1
       hono:
         specifier: ^4.13.16
         version: 4.13.16
@@ -568,6 +571,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.3.1(react@19.3.1)
+      rotating-file-stream:
+        specifier: ^4.0.0
+        version: 4.0.0
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@24.19.2)
@@ -590,12 +596,18 @@ importers:
       '@miyoria/api':
         specifier: workspace:*
         version: link:../api
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@miyoria/core':
         specifier: workspace:*
         version: link:../core
       '@miyoria/discord':
         specifier: workspace:*
         version: link:../discord
+      '@miyoria/hostd':
+        specifier: workspace:*
+        version: link:../hostd
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
@@ -614,6 +626,46 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+
+  packages/cluster:
+    dependencies:
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@miyoria/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@miyoria/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@miyoria/store':
+        specifier: workspace:*
+        version: link:../store
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../types
+      drizzle-orm:
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5(zod@4.6.7)
+      ws:
+        specifier: ^8.22.1
+        version: 8.22.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.2
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -676,6 +728,9 @@ importers:
       '@miyoria/brain':
         specifier: workspace:*
         version: link:../brain
+      '@miyoria/cluster':
+        specifier: workspace:*
+        version: link:../cluster
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
@@ -867,6 +922,46 @@ importers:
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.19.2)(jsdom@26.1.0)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+
+  packages/hostd:
+    dependencies:
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@miyoria/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      execa:
+        specifier: ^10.2.1
+        version: 10.2.1
+      pino:
+        specifier: ^10.4.0
+        version: 10.4.0
+      rotating-file-stream:
+        specifier: ^4.0.0
+        version: 4.0.0
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
+      ws:
+        specifier: ^8.22.1
+        version: 8.22.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.2
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -3975,6 +4070,10 @@ packages:
     resolution: {integrity: sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==}
     engines: {node: '>=18.0.0'}
 
+  execa@10.2.1:
+    resolution: {integrity: sha512-/Bofl3ZBh2Q4/PG0W63qFzP5vDAypi8Zc90UWTBzaDNIYiX7apPOd0N6L8hG8CojUdq4V51adu8BObP+iVsSTw==}
+    engines: {node: '>=22'}
+
   execa@9.6.1:
     resolution: {integrity: sha512-9Be3ZoN4LmYR90tUoVu2te2BsbzHfhJyfEiAVfz7N5/zv+jduIfLrV2xdQXOHbaD6KgpGdO9PRPM1Y4Q9QkPkA==}
     engines: {node: ^18.19.0 || >=20.5.0}
@@ -4726,6 +4825,10 @@ packages:
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
     hasBin: true
 
+  rotating-file-stream@4.0.0:
+    resolution: {integrity: sha512-JqUtVjzM4Yl4t28fEXpdGc66j22ftqRKSZ3TqQQ7/cJaKAMz3nFRGcvDxLDv3o/jrhE6bLvdR6bftuwLIcle5Q==}
+    engines: {node: '>=22.0'}
+
   rou3@0.7.12:
     resolution: {integrity: sha512-iFE4hLDuloSWcD7mjdCDhx2bKcIsYbtOTpfH5MHHLSKMOUyjqQXTeZVa289uuwEGEKFoE/BAPbhaU4B774nceg==}
 
@@ -5278,6 +5381,11 @@ packages:
   whatwg-url@14.2.0:
     resolution: {integrity: sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==}
     engines: {node: '>=18'}
+
+  which-command@0.1.0:
+    resolution: {integrity: sha512-XZyoF5/5hZtXitIwzrU4NKK+Wtbb9aB9CezUEw2Q0wlYK8NUYQxC1rRXgNueYLtBAJwXIb+/tFVk4dozciNJMA==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   which-module@2.0.1:
     resolution: {integrity: sha512-iBdZ57RDvnOR9AGBhML2vFZf7h8vmBjhoaZqODJBFWHVtKkDmKuHai3cx5PgVMrX5YDNp27AofYbAwctSS+vhQ==}
@@ -7617,6 +7725,21 @@ snapshots:
     dependencies:
       eventsource-parser: 3.1.1
 
+  execa@10.2.1:
+    dependencies:
+      '@sindresorhus/merge-streams': 4.0.0
+      figures: 6.1.0
+      get-stream: 9.0.1
+      human-signals: 8.0.1
+      is-plain-obj: 4.1.0
+      is-stream: 4.0.1
+      npm-run-path: 6.0.0
+      pretty-ms: 9.3.1
+      signal-exit: 4.1.0
+      strip-final-newline: 4.0.0
+      which-command: 0.1.0
+      yoctocolors: 2.2.0
+
   execa@9.6.1:
     dependencies:
       '@sindresorhus/merge-streams': 4.0.0
@@ -8330,6 +8453,8 @@ snapshots:
       '@rollup/rollup-win32-x64-msvc': 4.67.4
       fsevents: 2.3.3
 
+  rotating-file-stream@4.0.0: {}
+
   rou3@0.7.12: {}
 
   router@2.2.0:
@@ -8831,6 +8956,8 @@ snapshots:
     dependencies:
       tr46: 5.1.1
       webidl-conversions: 7.0.0
+
+  which-command@0.1.0: {}
 
   which-module@2.0.1: {}
 
