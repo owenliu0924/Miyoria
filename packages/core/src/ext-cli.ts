@@ -29,7 +29,7 @@ export interface ExtensionValidation {
 }
 
 export interface NewExtensionOptions {
-  /** `@miyoria/sdk` version spec: `workspace:*` inside the monorepo, `^0.1.0` elsewhere. */
+  /** `@miyoria/sdk` version spec: `workspace:*` inside the monorepo, `^0.2.0` elsewhere. */
   sdk: string;
   id: string | null;
 }

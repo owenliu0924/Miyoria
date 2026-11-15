@@ -33,7 +33,7 @@ import { BoundedQueue, deferred, Watch } from "../util.js";
 import { Conn, closeSocket, type GoLiveStatus, newConnState, VoiceLinkError } from "./conn.js";
 import { type LeveledChunk, type Playback, startPlayback } from "./playback.js";
 
-/** Topic of Go Live state changes (`custom` event). */
+/** Topic of Go Live state changes. */
 export const GOLIVE_TOPIC = Events.VoiceGoLive.type;
 
 export const DEFAULT_BIND = "127.0.0.1:7879";
@@ -218,7 +218,7 @@ export class VoiceLink {
 
   /**
    * Whether `account` is one of her accounts (a connected node's self account, or any account
-   * announced with `platform_ready`).
+   * announced with `platform.ready`).
    */
   isSelf(account: AccountRef): boolean {
     return (
@@ -284,7 +284,7 @@ export class VoiceLink {
     }
   }
 
-  /** Leaves voice in `guild`. `voice_left` follows when the node confirms. */
+  /** Leaves voice in `guild`. `voice.left` follows when the node confirms. */
   async leave(guild: string): Promise<void> {
     await this.#connFor(guild).sendJson({ type: "leave", guild });
   }

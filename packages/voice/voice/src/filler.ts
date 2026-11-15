@@ -8,7 +8,7 @@
 // the scheduler. The agent knows whether she will answer, and says so (`VoiceTurns.expect` once
 // attention and the Floor said yes and she was addressed; `settle` when the turn ends). A filler
 // is never an action: it is not in her history, the Floor's budget or her share of recent lines,
-// and publishes no `voice_playback` (that would commit the turn and close it to new input).
+// and publishes no `voice.playback` (that would commit the turn and close it to new input).
 //
 // The sounds are synthesized once per voice by the TTS that is there (no other model) and cached
 // on disk; they are short, neutral acknowledgements that fit before any answer, a refusal too. A

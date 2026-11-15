@@ -103,7 +103,7 @@ export function resolvePublish(who: Publisher, type: string, data: JsonValue): R
 
 /**
  * The bus envelope as the `event` notification carries it (`BusEnvelopeSchema`): every key in the
- * schema's order, and nothing else (the in-process envelope still has old fields beside them).
+ * schema's order (the bus stamps them in another order).
  */
 export function wireEnvelope(envelope: BusEnvelope): BusEnvelopeJson {
   return {

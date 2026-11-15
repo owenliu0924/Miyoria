@@ -3,7 +3,7 @@
 import { metrics } from "@miyoria/runtime/kernel";
 import type { CorrectionCounts, CorrectionKind } from "@miyoria/types";
 
-/** `agent_decision`s by outcome (`responded` / `ignored`). */
+/** `agent.decision` events by outcome (`responded` / `ignored`). */
 export const agentTurns = metrics.counter("miyoria_agent_turns_total", {
   help: "Attention decisions of the agent; decision is responded or ignored.",
   labels: ["decision"],

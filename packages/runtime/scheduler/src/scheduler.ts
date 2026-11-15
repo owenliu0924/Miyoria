@@ -381,7 +381,7 @@ export class Scheduler implements ActionSink {
     this.#publishSettled(action, result);
   }
 
-  /** Which line of hers this was: `action_completed` only says that an action ended. */
+  /** Which line of hers this was: `action.completed` only says that an action ended. */
   #publishSettled(action: Action, result: Completion): void {
     const { payload } = action;
     let text: string;

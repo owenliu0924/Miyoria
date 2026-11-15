@@ -2,7 +2,7 @@
 // inputs are structural subsets of the discord.js classes so tests use plain objects.
 //
 // The bridge publishes the results as `platform.presence` / `platform.voice_state` /
-// `platform.member` custom events for the `world` module. Presence of someone who opted out
+// `platform.member` events for the `world` module. Presence of someone who opted out
 // (`/me privacy presence:off`) is dropped before it reaches the bus (`PresencePrivacy`).
 
 import {

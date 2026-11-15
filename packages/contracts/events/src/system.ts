@@ -20,7 +20,7 @@ export const ModuleStateKindSchema = z
   .enum(["disabled", "starting", "running", "degraded", "stopping", "stopped", "failed"])
   .meta({ id: "EventsModuleStateKind" });
 
-/** A module's state changed: `system.module.state` (typed bus variant `module_state_changed`). */
+/** A module's state changed: `system.module.state`. */
 export const ModuleStateSchema = z
   .object({
     module: ModuleIdSchema,
@@ -42,7 +42,7 @@ export const SentMessageSchema = MessageRefSchema.extend({
   blocked: z.string().optional(),
 }).meta({ id: "EventsSentMessage" });
 
-/** An action ended: `action.completed` (typed bus variant `action_completed`). */
+/** An action ended: `action.completed`. */
 export const ActionCompletedSchema = z
   .object({
     action: ActionIdSchema,

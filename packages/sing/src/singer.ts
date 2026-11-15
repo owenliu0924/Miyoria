@@ -16,9 +16,9 @@
 // * When the worker takes the whole GPU to convert (its TTS / ASR go away for a minute or two),
 //   she first says she is off to prepare it, and only then does the worker go ahead
 //   (`exclusive: "waiting"` → `goExclusive`). Meanwhile speech is paused (`SpeechPauseKey`,
-//   `SPEECH_PAUSE_TOPIC`): the voice module neither speaks nor transcribes, the overlay says so.
+//   `Events.SpeechPause`): the voice module neither speaks nor transcribes, the overlay says so.
 // * The song being prepared, its worker stage and progress are published as
-//   `SONG_PREPARE_TOPIC` whenever they change (the overlay's activity line).
+//   `Events.SingPrepare` whenever they change (the overlay's activity line).
 
 import { randomUUID } from "node:crypto";
 import { CapabilityError } from "@miyoria/gate/actions";
@@ -204,7 +204,7 @@ export class Singer implements VoiceFloor, SpeechPause {
   #paused = false;
   /** What the worker last said about preparing songs (not stored). */
   readonly #jobs = new Map<SongNo, { title: string; exclusive: string | null }>();
-  /** JSON of the `SONG_PREPARE_TOPIC` payload last published. */
+  /** JSON of the `Events.SingPrepare` payload last published. */
   #prepareSent = JSON.stringify(NOT_PREPARING);
 
   /**
@@ -1156,7 +1156,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     };
   }
 
-  /** Publishes the song being prepared (`SONG_PREPARE_TOPIC`) when it changed. */
+  /** Publishes the song being prepared (`Events.SingPrepare`) when it changed. */
   #publishPrepare(): void {
     const preparing = this.#closed ? [] : this.list.preparing();
     for (const no of this.#jobs.keys()) {

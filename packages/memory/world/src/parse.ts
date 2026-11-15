@@ -1,5 +1,5 @@
-// Validation of the custom event payloads the world consumes. Any module or extension may
-// publish custom events, so payloads are parsed, never cast.
+// Validation of the bus payloads the world consumes. Extensions may publish under their own
+// namespaces too, so payloads are parsed, never cast.
 
 import type {
   JsonValue,

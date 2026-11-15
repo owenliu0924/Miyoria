@@ -139,7 +139,7 @@ export class LineBook {
   }
 
   /**
-   * `voice_playback`. Returns how long the line was audible when it ended, for what she keeps of
+   * `voice.playback`. Returns how long the line was audible when it ended, for what she keeps of
    * a sentence that was cut off (`null`: it never started).
    */
   playback(

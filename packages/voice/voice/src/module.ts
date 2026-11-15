@@ -49,7 +49,7 @@ const FILLER_ATTEMPTS = 30;
 const FILLER_RETRY_MS = 60_000;
 
 /**
- * Module `voice`: listens in voice channels (VAD → ASR → `voice_utterance`) and speaks
+ * Module `voice`: listens in voice channels (VAD → ASR → `voice.utterance`) and speaks
  * (`VoiceSink` → TTS → playback), with consent, barge-in and the `join` / `leave` /
  * `/voice join | leave | consent | golive ...` commands.
  *

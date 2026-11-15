@@ -21,14 +21,14 @@ import { defineEvent } from "./registry.js";
 import { TaskFailureCodeSchema } from "./task.js";
 import { TurnReasonSchema } from "./turn.js";
 
-/** A turn started: `agent.turn.started` (typed bus variant `agent_turn_started`). */
+/** A turn started: `agent.turn.started`. */
 export const TurnStartedSchema = z
   .object({ turn: TurnIdSchema, context: ContextKeySchema })
   .meta({ id: "EventsTurnStarted" });
 export type TurnStartedData = z.output<typeof TurnStartedSchema>;
 
 /**
- * A turn's generation ended: `agent.turn.completed` (`agent_turn_completed`). `text`: what she
+ * A turn's generation ended: `agent.turn.completed`. `text`: what she
  * wrote, empty for a cancelled or dropped turn.
  */
 export const TurnCompletedSchema = z
@@ -36,7 +36,7 @@ export const TurnCompletedSchema = z
   .meta({ id: "EventsTurnCompleted" });
 export type TurnCompletedData = z.output<typeof TurnCompletedSchema>;
 
-/** Asks the agent to start a turn on her own: `agent.initiative` (`agent_initiative`). */
+/** Asks the agent to start a turn on her own: `agent.initiative`. */
 export const AgentInitiativeSchema = z
   .object({
     context: ContextKeySchema,

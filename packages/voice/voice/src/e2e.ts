@@ -86,7 +86,7 @@ export interface E2eParts {
 export interface E2eRecord {
   context: ContextKey;
   turn: TurnId | null;
-  /** The `voice_utterance` id the reply answers. */
+  /** The `voice.utterance` id the reply answers. */
   utterance: string;
   complete: boolean;
   reason: E2eReason | null;
@@ -133,7 +133,7 @@ export interface TtsTiming {
 /** What the listener knows once a transcript is accepted. */
 export interface Heard {
   context: ContextKey;
-  /** The `voice_utterance` id. */
+  /** The `voice.utterance` id. */
   utterance: string;
   /** When the person stopped talking; `null` when they may not have (length-capped). */
   speechEndAt: number | null;

@@ -18,7 +18,7 @@ import {
 } from "../../wire/src/index.js";
 import { defineEvent } from "./registry.js";
 
-/** A connection of hers is up: `platform.ready` (typed bus variant `platform_ready`). */
+/** A connection of hers is up: `platform.ready`. */
 export const PlatformReadySchema = z
   .object({
     platform: PlatformIdSchema,
@@ -28,7 +28,7 @@ export const PlatformReadySchema = z
   .meta({ id: "EventsPlatformReady" });
 export type PlatformReadyData = z.output<typeof PlatformReadySchema>;
 
-/** Someone started typing: `platform.typing` (typed bus variant `platform_typing`). */
+/** Someone started typing: `platform.typing`. */
 export const PlatformTypingSchema = z
   .object({ context: ContextKeySchema, account: AccountRefSchema })
   .meta({ id: "EventsPlatformTyping" });

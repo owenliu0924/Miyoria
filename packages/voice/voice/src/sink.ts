@@ -141,7 +141,7 @@ export class Speaker implements VoiceSink {
     );
   }
 
-  /** The line's subtitle goes up now (`VOICE_UPCOMING_TOPIC`), once per line. */
+  /** The line's subtitle goes up now (`Events.VoiceUpcoming`), once per line. */
   #announce(context: ContextKey, turn: TurnId | null, text: string, emotion: string | null): void {
     const guild = context.scope;
     if (guild === null || this.#d.config.subtitle_lead_ms <= 0 || text === "") return;
@@ -456,7 +456,7 @@ export class Speaker implements VoiceSink {
   }
 
   /**
-   * Plays a filler sound for `turn` (filler.ts). Not a line: no `voice_playback`, no subtitle,
+   * Plays a filler sound for `turn` (filler.ts). Not a line: no `voice.playback`, no subtitle,
    * nothing for her history; her own voice coming back is still known as hers. Resolves when it is
    * over.
    */

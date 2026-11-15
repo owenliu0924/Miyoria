@@ -7,7 +7,7 @@
 // out) must be harmless: its late events are ignored by id.
 //
 // On the bus a task owner `<owner>` (e.g. `game.minecraft`, `activity`) publishes
-// `<owner>.task.started|progress|done|failed|steered` custom events (`taskTopic`) whose payload is
+// `<owner>.task.started|progress|done|failed|steered` events (`taskTopic`) whose payload is
 // the `TaskEvent` (internally tagged by `type`). `steered` is not a lifecycle end: it reports how
 // a change of direction (`TaskSteer`, docs/design/v3-architecture.md §10.6) went. `@miyoria/sdk` carries its own copy of these shapes
 // for extensions (it does not depend on this package).

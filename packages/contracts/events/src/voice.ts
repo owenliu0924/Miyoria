@@ -20,25 +20,25 @@ import {
 } from "../../wire/src/index.js";
 import { defineEvent } from "./registry.js";
 
-/** She joined a voice room: `voice.joined` (typed bus variant `voice_joined`). */
+/** She joined a voice room: `voice.joined`. */
 export const VoiceJoinedSchema = z
   .object({ context: ContextKeySchema, participants: z.array(VoiceParticipantSchema) })
   .meta({ id: "EventsVoiceJoined" });
 export type VoiceJoinedData = z.output<typeof VoiceJoinedSchema>;
 
-/** She left a voice room: `voice.left` (typed bus variant `voice_left`). */
+/** She left a voice room: `voice.left`. */
 export const VoiceLeftSchema = z
   .object({ context: ContextKeySchema, reason: z.string().nullable() })
   .meta({ id: "EventsVoiceLeft" });
 export type VoiceLeftData = z.output<typeof VoiceLeftSchema>;
 
-/** Who is in the voice room changed: `voice.participants` (`voice_participants`). */
+/** Who is in the voice room changed: `voice.participants`. */
 export const VoiceParticipantsSchema = z
   .object({ context: ContextKeySchema, participants: z.array(VoiceParticipantSchema) })
   .meta({ id: "EventsVoiceParticipants" });
 export type VoiceParticipantsData = z.output<typeof VoiceParticipantsSchema>;
 
-/** Someone started or stopped speaking, before ASR: `voice.speaking` (`voice_speaking`). */
+/** Someone started or stopped speaking, before ASR: `voice.speaking`. */
 export const VoiceSpeakingSchema = z
   .object({ context: ContextKeySchema, account: AccountRefSchema, speaking: z.boolean() })
   .meta({ id: "EventsVoiceSpeaking" });

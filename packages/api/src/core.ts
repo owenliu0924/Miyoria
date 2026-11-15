@@ -212,7 +212,7 @@ export const coreRpc = {
   },
 };
 
-/** The envelope's own fields, in the schema's order: the old-form view an `Envelope` carries stays home. */
+/** The envelope's fields in the schema's order (the bus stamps them in another order). */
 function wireEnvelope(env: BusEnvelope): BusEnvelope {
   return {
     id: env.id,

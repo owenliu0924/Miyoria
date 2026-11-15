@@ -1,4 +1,4 @@
-// Listening: audio streams → consent filter → segmentation → ASR → `voice_utterance` events.
+// Listening: audio streams → consent filter → segmentation → ASR → `voice.utterance` events.
 //
 // With `turn_engine = "smart-turn"` silence is measured on the clock, not on the audio: Discord
 // stops sending packets when somebody stops talking, and the voice node closes the stream after

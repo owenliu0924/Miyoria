@@ -166,10 +166,7 @@ export function parseReplayLog(text: string): ReplayLog {
   return { meta, entries };
 }
 
-/**
- * The entry of a bus envelope: its keys in the schema's order and nothing else (an envelope on
- * the bus may carry more, such as the old view's fields until they are gone).
- */
+/** The entry of a bus envelope: its keys in the schema's order (the bus stamps another order). */
 export function entryOf(envelope: BusEnvelope | ReplayEntry): ReplayEntry {
   return {
     id: envelope.id,
