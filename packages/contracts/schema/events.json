@@ -5329,6 +5329,137 @@
         "context"
       ]
     },
+    "EventsSongBeats": {
+      "type": "object",
+      "properties": {
+        "bpm": {
+          "type": "number"
+        },
+        "times_ms": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "bpm",
+        "times_ms"
+      ]
+    },
+    "EventsSongCue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "started"
+            },
+            "song": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "video": {
+              "type": "string"
+            },
+            "offset_ms": {
+              "type": "number"
+            },
+            "duration_ms": {
+              "type": "number"
+            },
+            "beats": {
+              "$ref": "#/$defs/EventsSongBeats"
+            }
+          },
+          "required": [
+            "state",
+            "song",
+            "title"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "line"
+            },
+            "song": {
+              "type": "string"
+            },
+            "index": {
+              "type": "number"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state",
+            "song",
+            "index",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "ended"
+            },
+            "song": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state",
+            "song",
+            "outcome"
+          ]
+        }
+      ]
+    },
+    "EventsSongPrepare": {
+      "type": "object",
+      "properties": {
+        "no": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "exclusive": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "no",
+        "title",
+        "stage",
+        "progress",
+        "exclusive"
+      ]
+    },
     "EventsSpeechPause": {
       "type": "object",
       "properties": {

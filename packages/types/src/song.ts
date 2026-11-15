@@ -3,6 +3,7 @@
 // (the song's original video, muted, while she sings). `SONG_PREPARE_TOPIC` reports the song the
 // worker is preparing, for the overlay's activity line.
 
+import type { SongCueData, SongPrepareData } from "@miyoria/contracts/events";
 import { isJsonObject, type JsonValue } from "./json.js";
 
 /** Topic of `SongCue` custom events. */
@@ -44,6 +45,7 @@ export function parseSongBeats(value: JsonValue | undefined): SongBeats | null {
 }
 
 /**
+ * (Contract: `SongCueSchema` in @miyoria/contracts/events.)
  * `started`: the song became audible; `video` is the absolute path of its original video on the
  * streaming PC (inside the song worker's data dir) when it has one, and `offset_ms` how far into
  * the song it already was when the cue was sent; `duration_ms` is how long the song is (missing
@@ -51,18 +53,7 @@ export function parseSongBeats(value: JsonValue | undefined): SongBeats | null {
  * starts now (`text` may be empty: an instrumental break). `ended`: the song finished, was
  * stopped or failed.
  */
-export type SongCue =
-  | {
-      state: "started";
-      song: string;
-      title: string;
-      video?: string;
-      offset_ms?: number;
-      duration_ms?: number;
-      beats?: SongBeats;
-    }
-  | { state: "line"; song: string; index: number; text: string }
-  | { state: "ended"; song: string; outcome: string };
+export type SongCue = SongCueData;
 
 /** A `SongCue` from an untyped payload, or `null`. */
 export function parseSongCue(payload: JsonValue): SongCue | null {
@@ -115,13 +106,7 @@ export function parseSongCue(payload: JsonValue): SongCue | null {
  * `exclusive` (the job's GPU window: `waiting`, `offloading`, `active`, `reloading`, `done` or
  * `null`). `no: null`: nothing is being prepared.
  */
-export interface SongPrepare {
-  no: number | null;
-  title: string;
-  stage: string;
-  progress: number;
-  exclusive: string | null;
-}
+export type SongPrepare = SongPrepareData;
 
 /** A `SongPrepare` from an untyped payload, or `null`. */
 export function parseSongPrepare(payload: JsonValue): SongPrepare | null {

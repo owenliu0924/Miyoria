@@ -397,6 +397,16 @@ export {
   readEventData,
 } from "./registry.js";
 export {
+  SING_EVENTS,
+  SingCue,
+  SingPrepare,
+  SongBeatsSchema,
+  type SongCueData,
+  SongCueSchema,
+  type SongPrepareData,
+  SongPrepareSchema,
+} from "./sing.js";
+export {
   LivePartSchema,
   LiveTouch,
   type LiveTouchData,
