@@ -405,7 +405,7 @@ describe("routes", () => {
 
   it("memory_search_uses_hybrid_recall", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
     const sqlite = await SqliteStore.open(":memory:");
     try {
       const embedder = new TableEmbedder(
@@ -436,7 +436,7 @@ describe("routes", () => {
       await withVector(old);
 
       // No shared words: found by the vector, ranked by the hybrid score.
-      let page = await c.memory({ q: "他愛吃什麼" });
+      let page = await adm.memory({ q: "他愛吃什麼" });
       const first = page.items[0];
       expect(first?.record.id).toBe(ramen.id);
       expect(first?.text_score).toBe(0);
@@ -452,24 +452,24 @@ describe("routes", () => {
       expect(page.next_cursor).toBeNull();
 
       // Every scope (DM too) and done followups are visible to the admin; filters apply.
-      page = await c.memory({ q: "牙醫" });
+      page = await adm.memory({ q: "牙醫" });
       expect(page.items[0]?.record.id).toBe(dentist.id);
       expect(page.items[0]?.text_score ?? 0).toBeGreaterThan(0);
-      page = await c.memory({ q: "拉麵", kind: "episode" });
+      page = await adm.memory({ q: "拉麵", kind: "episode" });
       expect(page.items.every((i) => i.record.kind === "episode")).toBe(true);
-      page = await c.memory({ q: "拉麵", subject: owen });
+      page = await adm.memory({ q: "拉麵", subject: owen });
       expect(page.items.every((i) => i.record.subjects.includes(owen))).toBe(true);
       expect(page.items.map((i) => i.record.id)).toContain(ramen.id);
-      page = await c.memory({ q: "Minecraft", limit: 1 });
+      page = await adm.memory({ q: "Minecraft", limit: 1 });
       expect(page.items.map((i) => i.record.id)).toEqual([game.id]);
-      page = await c.memory({ q: "拉麵", before: "2026-10-01T12:00:30Z" });
+      page = await adm.memory({ q: "拉麵", before: "2026-10-01T12:00:30Z" });
       expect(page.items, "only records created before").toEqual([]);
 
       expect((await sqlite.memories.get(ramen.id))?.access_count, "not touched").toBe(0);
 
       // Without the memory module the store's full-text search answers.
       h.sup.services.removeOwnedBy("memory");
-      page = await c.memory({ q: "他愛吃什麼" });
+      page = await adm.memory({ q: "他愛吃什麼" });
       expect(page.items).toEqual([]);
     } finally {
       await sqlite.close();
@@ -478,14 +478,14 @@ describe("routes", () => {
 
   it("memory_list_search_edit_delete", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
     const owen = newId();
     const ramen = memory(owen, "fact", "Owen 喜歡 豚骨 拉麵", 1);
     const game = memory(null, "episode", "大家 一起 玩 Minecraft", 2);
     const note = memory(null, "self_note", "我 想 學 拉麵 的 做法", 3);
     for (const r of [ramen, game, note]) await h.store.memories.upsert(r);
 
-    let page = await c.memory();
+    let page = await adm.memory();
     expect(
       page.items.map((i) => i.record.id),
       "newest first",
@@ -501,20 +501,20 @@ describe("routes", () => {
     expect(first?.record).not.toHaveProperty("embedding");
     expect(first?.record?.scope).toEqual({ type: "global" });
 
-    page = await c.memory({ limit: 2 });
+    page = await adm.memory({ limit: 2 });
     expect(page.items).toHaveLength(2);
     const before = page.next_cursor;
     expect(before, "more").not.toBeNull();
     expect(Number.isNaN(Date.parse(before ?? ""))).toBe(false);
-    page = await c.memory({ before: before ?? "" });
+    page = await adm.memory({ before: before ?? "" });
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.record.id).toBe(ramen.id);
 
-    expect((await c.memory({ kind: "fact" })).items).toHaveLength(1);
-    expect((await c.memory({ subject: owen })).items).toHaveLength(1);
+    expect((await adm.memory({ kind: "fact" })).items).toHaveLength(1);
+    expect((await adm.memory({ subject: owen })).items).toHaveLength(1);
 
     // Search across all scopes (person and global), with scores.
-    const hits = await c.memory({ q: "拉麵" });
+    const hits = await adm.memory({ q: "拉麵" });
     expect(hits.items.map((i) => i.record.id).sort()).toEqual([ramen.id, note.id].sort());
     expect(hits.items.every((i) => (i.text_score ?? 0) > 0)).toBe(true);
     const mc = await raw(h.base, "GET", "/api/memory?q=Minecraft", { token: TOKEN });
@@ -523,7 +523,7 @@ describe("routes", () => {
     expect(mcItems[0]?.text_score as number).toBeGreaterThan(0);
     expect(mcItems[0]?.vector_score).toBeNull();
 
-    const updated = await c.updateMemory(ramen.id, {
+    const updated = await adm.updateMemory(ramen.id, {
       content: "Owen 喜歡 豚骨 拉麵,不吃 香菜",
       importance: 0.7,
     });
@@ -533,14 +533,14 @@ describe("routes", () => {
     const stored = await h.store.memories.get(ramen.id);
     expect(stored?.tokens, "re-tokenized").toContain("香菜");
     await audited(h, "memory.update");
-    expect(await statusOf(c.updateMemory(ramen.id, { importance: 3 }))).toBe(400);
+    expect(await statusOf(adm.updateMemory(ramen.id, { importance: 3 }))).toBe(400);
 
-    await c.deleteMemory(game.id);
+    await adm.deleteMemory(game.id);
     expect(await h.store.memories.get(game.id)).toBeNull();
     const entry = await audited(h, "memory.delete");
     expect(entry.target).toBe(game.id);
     expect((entry.detail as { content: string }).content).toBe("大家 一起 玩 Minecraft");
-    const err = await errorOf(c.deleteMemory(game.id));
+    const err = await errorOf(adm.deleteMemory(game.id));
     expect(err.status).toBe(404);
     expect(err.message).toContain("unknown memory");
   });

@@ -192,6 +192,26 @@ export const IssueCardRequestSchema = z
 export type IssueCardRequest = z.input<typeof IssueCardRequestSchema>;
 
 /** The body of a request that says nothing (reroll, check-in, a fortune draw): `{}`, no other field. */
+/** Body of `POST /api/member/live/pat`: empty, or where on her picture the pat landed (0..1). */
+const PatUnit = z.number().finite().min(0).max(1);
+export const PatRequestSchema = z
+  .union([z.strictObject({}), z.strictObject({ x: PatUnit, y: PatUnit })])
+  .meta({ id: "ApiPatRequest" });
+export type PatRequest = z.input<typeof PatRequestSchema>;
+
+/** Answer of a pat: what the live page counts. */
+export const PatResultSchema = z
+  .object({
+    pats: z.object({
+      /** Pats in the last minute, everyone together. */
+      recent: z.number(),
+      /** Members may pat her. */
+      open: z.boolean(),
+    }),
+  })
+  .meta({ id: "ApiPatResult" });
+export type PatResult = z.output<typeof PatResultSchema>;
+
 export const EmptyRequestSchema = z.strictObject({}).meta({ id: "ApiEmptyRequest" });
 
 /**
@@ -236,4 +256,10 @@ export const member = {
     .route({ method: "POST", path: "/api/member/card/reroll" })
     .input(z.object({ headers: IdempotencyHeaders, body: EmptyRequestSchema }))
     .output(IssuedCardSchema),
+  /** A head-pat, as themselves only. `403` while pats are off, `429` for too many, `503` without the live module. */
+  pat: route
+    .meta({ audience: "member", permission: null })
+    .route({ method: "POST", path: "/api/member/live/pat" })
+    .input(z.object({ body: PatRequestSchema }))
+    .output(PatResultSchema),
 };

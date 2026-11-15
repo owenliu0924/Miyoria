@@ -14,6 +14,8 @@ export interface RpcContext extends ResponseHeadersPluginContext {
   state: ApiState;
   /** What the call threw, kept so the shell answers with the error path the old routes use. */
   failure: { error?: unknown };
+  /** A handler that answers with another status than the route's `successStatus` says so here. */
+  reply: { status?: number };
 }
 
 export const os = implement(contract).$context<RpcContext>();

@@ -3,14 +3,7 @@
 
 import type { Envelope } from "@miyoria/types";
 import { statusText } from "./errors.js";
-import type {
-  ErrorBody,
-  MemoryItem,
-  MemoryListQuery,
-  MemoryRecordView,
-  Page,
-  UpdateMemoryRequest,
-} from "./types.js";
+import type { ErrorBody } from "./types.js";
 
 export type ClientErrorKind = "invalid_url" | "transport" | "api" | "decode";
 
@@ -142,38 +135,6 @@ export class ApiClient {
     this.#token = token;
   }
 
-  // ---- memory ---------------------------------------------------------------------------
-
-  /**
-   * Lists (newest first) or, with `q`, searches her memories (hybrid recall when the memory
-   * module runs, full text otherwise).
-   */
-  memory(query: MemoryListQuery = {}, o?: CallOptions): Promise<Page<MemoryItem>> {
-    return this.#json("GET", ["memory"], {
-      ...o,
-      query: {
-        q: query.q,
-        kind: query.kind,
-        subject: query.subject,
-        before: query.before,
-        include_superseded: query.include_superseded ? "true" : undefined,
-        limit: query.limit === undefined ? undefined : String(query.limit),
-      },
-    });
-  }
-
-  updateMemory(
-    id: string,
-    request: UpdateMemoryRequest,
-    o?: CallOptions,
-  ): Promise<MemoryRecordView> {
-    return this.#json("PATCH", ["memory", id], { ...o, body: request });
-  }
-
-  deleteMemory(id: string, o?: CallOptions): Promise<void> {
-    return this.#empty("DELETE", ["memory", id], o);
-  }
-
   /**
    * Streams bus envelopes matching `topics` (e.g. `["platform.*", "agent.*"]`; empty means
    * everything). The subscription is active once this resolves; the stream ends when the
@@ -292,20 +253,6 @@ export class ApiClient {
     const response = await this.#send(method, segments, options);
     try {
       return (await response.json()) as T;
-    } catch (error) {
-      throw ClientError.transport(error);
-    }
-  }
-
-  /** For routes answering `204 No Content`. */
-  async #empty(
-    method: Method,
-    segments: readonly string[],
-    options?: CallOptions & { query?: Query; body?: unknown },
-  ): Promise<void> {
-    const response = await this.#send(method, segments, options);
-    try {
-      await response.arrayBuffer();
     } catch (error) {
       throw ClientError.transport(error);
     }

@@ -27,6 +27,8 @@ import type {
   GoalsView,
   KnowledgeView,
   McpServerInfo,
+  MemoryItem,
+  MemoryRecordView,
   MindView,
   ModuleInfo,
   Page,
@@ -41,6 +43,7 @@ import type {
   SelfView,
   StageState,
   TurnOutcomeKind,
+  UpdateMemoryRequest,
   UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
@@ -49,7 +52,17 @@ import type {
 } from "../../src/index.js";
 import { call } from "./http.js";
 
-type Query = Record<string, string | number | undefined>;
+/** Query of `GET /api/memory`, as a caller writes it (numbers and flags, not their text). */
+type MemoryListQuery = {
+  q?: string;
+  kind?: MemoryItem["record"]["kind"];
+  subject?: string;
+  before?: string;
+  include_superseded?: boolean;
+  limit?: number;
+};
+
+type Query = Record<string, string | number | boolean | undefined>;
 
 function withQuery(path: string, query: Query = {}): string {
   const params = new URLSearchParams();
@@ -76,6 +89,12 @@ export function adminCalls(base: string, token: string) {
       send<PersonSummary>("PATCH", `/api/people/${seg(id)}`, request),
     adjustPerson: (id: string, affinity: number) =>
       send<PersonSummary>("POST", `/api/people/${seg(id)}/adjust`, { affinity }),
+
+    // ---- memory
+    memory: (query: MemoryListQuery = {}) => get<Page<MemoryItem>>("/api/memory", query),
+    updateMemory: (id: string, request: UpdateMemoryRequest) =>
+      send<MemoryRecordView>("PATCH", `/api/memory/${seg(id)}`, request),
+    deleteMemory: (id: string) => send<void>("DELETE", `/api/memory/${seg(id)}`),
 
     // ---- modules, decisions, LLM usage
     modules: () => get<ModuleInfo[]>("/api/modules"),

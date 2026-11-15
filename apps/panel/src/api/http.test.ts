@@ -165,7 +165,7 @@ describe("ApiClient", () => {
   it("builds planned query strings", async () => {
     const fetch = mockFetch(() => ({ body: { items: [], next_cursor: null } }));
     const api = createApi(new ApiClient({ baseUrl: "", token: "t" }));
-    await api.memory({ q: "拉麵", kind: "fact", include_superseded: true, limit: 20 });
+    await api.rpc.memory.list({ query: { q: "拉麵", kind: "fact", include_superseded: "true", limit: "20" } });
     const url = new URL(String(fetch.mock.calls[0]?.[0]), "http://x");
     expect(url.pathname).toBe("/api/memory");
     expect(Object.fromEntries(url.searchParams)).toEqual({ q: "拉麵", kind: "fact", include_superseded: "true", limit: "20" });

@@ -75,6 +75,7 @@ const CASES: Case[] = [
   post("wallet.transfer", "/api/member/transfer", { to_discord_id: "1", amount: 1 }),
   post("wallet.board", "/api/member/board", { on: true }),
   post("wallet.frame", "/api/member/frame", { buy: "sakura" }),
+  post("member.pat", "/api/member/live/pat", {}),
   { name: "agency.goals", method: "GET", path: "/api/member/goals", audience: "member" },
   post("agency.pledge", "/api/member/goals/g1/pledge", { amount: 1 }),
   { name: "agency.bounties", method: "GET", path: "/api/member/bounties", audience: "member" },
@@ -90,7 +91,7 @@ const CASES: Case[] = [
 ];
 
 /** The member routes that never counted against the member's rate limit. */
-const UNLIMITED = new Set(["member.forget", "member.requestSong"]);
+const UNLIMITED = new Set(["member.forget", "member.requestSong", "member.pat"]);
 
 const CARD = {
   serial: "MYR-AAAA-BBBB-CCCC",
@@ -248,6 +249,7 @@ const ANSWERS = {
     charged: 10,
     balance: 1,
   } satisfies ApiOutputs["fortune"]["draw"],
+  "member.pat": { pats: { recent: 1, open: true } } satisfies ApiOutputs["member"]["pat"],
   "member.issueCard": CARD,
   "member.rerollCard": CARD,
 } as const;
@@ -323,6 +325,7 @@ describe("the answers", () => {
       cards: os.member.cards.handler(answer("member.cards")),
       issueCard: os.member.issueCard.handler(answer("member.issueCard")),
       rerollCard: os.member.rerollCard.handler(answer("member.rerollCard")),
+      pat: os.member.pat.handler(answer("member.pat")),
     },
     wallet: {
       view: os.wallet.view.handler(answer("wallet.view")),

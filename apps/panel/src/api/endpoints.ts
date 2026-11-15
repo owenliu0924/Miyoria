@@ -2,25 +2,9 @@
 // routes on the table (`@miyoria/contracts/api`) are called through `rpc` and `q` (`orpc.ts`);
 // a group that moves there loses its functions here.
 
-import { type ApiClient, seg } from "./http";
+import type { ApiClient } from "./http";
 import { createQueries, createRpc } from "./orpc";
-import type {
-  ContextKey,
-  DataCategoryId,
-  AddDirectiveRequest,
-  DirectiveChange,
-  DirectivesView,
-  MemoryItem,
-  MemoryQuery,
-  MemoryRecordView,
-  Page,
-  UpdateMemoryRequest,
-  NotebookEntry,
-  NotebookPage,
-  RecentView,
-} from "./types";
-
-type Opts = { signal?: AbortSignal };
+import type { DataCategoryId } from "./types";
 
 export function createApi(client: ApiClient) {
   const rpc = createRpc(client);
@@ -39,25 +23,12 @@ export function createApi(client: ApiClient) {
     // what anyone may see, and what a logged-in person has of their own: the cookie alone
     memberExportUrl: () => client.url("/api/member/export"),
 
-    memory: (q: MemoryQuery = {}, o?: Opts) =>
-      client.get<Page<MemoryItem>>("/api/memory", { ...o, query: { ...q } }),
-    updateMemory: (id: string, req: UpdateMemoryRequest) =>
-      client.patch<MemoryRecordView>(`/api/memory/${seg(id)}`, req),
-    deleteMemory: (id: string) => client.delete<void>(`/api/memory/${seg(id)}`),
-
     // her data: the inventory and the deletes are on the route table, the downloads are not
     /** A JSON backup of `categories` (all exportable ones without). */
     dataExport: (categories?: DataCategoryId[]) =>
       client.download("GET", "/api/data/export", { query: { categories: categories?.join(",") } }),
     /** The full backup a reset needs; its `x-miyoria-backup-token` header unlocks the reset. */
     dataBackup: () => client.download("POST", "/api/data/backup"),
-    directives: (history: boolean, o?: Opts) =>
-      client.get<DirectivesView>("/api/directives", { ...o, query: { history: history ? "1" : undefined } }),
-    addDirective: (req: AddDirectiveRequest) => client.post<DirectiveChange>("/api/directives", req),
-    removeDirective: (id: string) => client.delete<DirectiveChange>(`/api/directives/${seg(id)}`),
-    notebook: (o?: Opts) => client.get<{ pages: NotebookEntry[] }>("/api/notebook", o),
-    notebookPage: (path: string, o?: Opts) => client.get<NotebookPage>("/api/notebook/page", { ...o, query: { path } }),
-    recent: (context: ContextKey, o?: Opts) => client.get<RecentView>("/api/recent", { ...o, query: { context: JSON.stringify(context) } }),
   };
 }
 

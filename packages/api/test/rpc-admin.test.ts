@@ -20,11 +20,13 @@ import {
   type DataWipeResult as ContractDataWipeResult,
   type DecisionRecord as ContractDecisionRecord,
   type Delivery as ContractDelivery,
+  type Directive as ContractDirective,
   type EconomyHealth as ContractEconomyHealth,
   type EmergencyReport as ContractEmergencyReport,
   type ExtensionInfo as ContractExtensionInfo,
   type FeedbackTally as ContractFeedbackTally,
   type Goal as ContractGoal,
+  type JustNowEntry as ContractJustNowEntry,
   type KnowledgeDoc as ContractKnowledgeDoc,
   type LedgerView as ContractLedgerView,
   type Lesson as ContractLesson,
@@ -35,8 +37,11 @@ import {
   type LlmThinkingPage as ContractLlmThinkingPage,
   type LogEvent as ContractLogEvent,
   type McpServerInfo as ContractMcpServerInfo,
+  type MemoryRecordView as ContractMemoryRecordView,
   type MindStats as ContractMindStats,
   type ModuleInfo as ContractModuleInfo,
+  type NotebookEntry as ContractNotebookEntry,
+  type NotebookPage as ContractNotebookPage,
   type PartySnapshot as ContractPartySnapshot,
   type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
@@ -92,6 +97,7 @@ import type {
   CategoryInventory,
   DataCategoryId,
   DecisionRecord,
+  MemoryRecord,
   Person,
   Relationship,
   RelationshipDelta,
@@ -111,10 +117,12 @@ import type {
   ConversationState,
   CountedOutcome,
   Delivery,
+  Directive,
   EmergencyReport,
   FeedbackTally,
   Feeling,
   Goal,
+  JustNowEntry,
   KnowledgeDoc,
   LedgerView,
   Lesson,
@@ -122,6 +130,8 @@ import type {
   LogEvent,
   MindStats,
   ModuleStateKind,
+  NotebookEntry,
+  NotebookPage,
   PartySnapshot,
   PersonCard,
   ReflectionRun,
@@ -286,6 +296,15 @@ const CASES: Case[] = [
   { name: "turns.metrics", method: "GET", path: "/api/turns/metrics" },
   { name: "telemetry", method: "GET", path: "/api/telemetry" },
   { name: "party", method: "GET", path: "/api/party" },
+  { name: "memory.list", method: "GET", path: "/api/memory" },
+  { name: "memory.update", method: "PATCH", path: "/api/memory/:id" },
+  { name: "memory.remove", method: "DELETE", path: "/api/memory/:id" },
+  { name: "notebook.pages", method: "GET", path: "/api/notebook" },
+  { name: "notebook.page", method: "GET", path: "/api/notebook/page" },
+  { name: "recent", method: "GET", path: "/api/recent" },
+  { name: "directives.list", method: "GET", path: "/api/directives" },
+  { name: "directives.add", method: "POST", path: "/api/directives" },
+  { name: "directives.remove", method: "DELETE", path: "/api/directives/:id" },
   { name: "extensions.list", method: "GET", path: "/api/extensions" },
   { name: "extensions.action", method: "POST", path: "/api/extensions/:id/:action" },
   { name: "mcp.list", method: "GET", path: "/api/mcp" },
@@ -488,6 +507,22 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const outcome: Same<ContractTurnOutcomeRecord, CountedOutcome> = true;
     const party: Same<ContractPartySnapshot, PartySnapshot> = true;
     expect([prompt, outcome, party]).toEqual([true, true, true]);
+  });
+
+  it("her memories, notebook, just-now timeline and the owner's rules", () => {
+    // A record without its search tokens and vector (saying whether it has one) and without who
+    // told her and where the origin was recorded: the view never carried those.
+    const record: Same<
+      ContractMemoryRecordView,
+      Omit<MemoryRecord, "tokens" | "embedding" | "source" | "origin" | "source_events"> & {
+        has_embedding: boolean;
+      }
+    > = true;
+    const entry: Same<ContractNotebookEntry, NotebookEntry> = true;
+    const page: Same<ContractNotebookPage, NotebookPage> = true;
+    const line: Same<ContractJustNowEntry, JustNowEntry> = true;
+    const directive: Same<ContractDirective, Directive> = true;
+    expect([record, entry, page, line, directive]).toEqual(Array(5).fill(true));
   });
 
   it("extensions, MCP servers, the queue, the stage and the voice monitor", () => {

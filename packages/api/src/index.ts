@@ -166,7 +166,6 @@ export type {
   MemberSong,
   MemberView,
   MemoryItem,
-  MemoryListQuery,
   MemoryRecordView,
   MindView,
   ModelUsage,

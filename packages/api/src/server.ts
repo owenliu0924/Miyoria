@@ -6,13 +6,10 @@ import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { coreRoutes } from "./core.js";
 import { dataRoutes } from "./data.js";
-import { directiveRoutes } from "./directives.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { liveRoutes } from "./live.js";
 import { memberRoutes } from "./member.js";
-import { memoryRoutes } from "./memory.js";
 import { metricsRoutes } from "./metrics.js";
-import { notebookRoutes } from "./notebook.js";
 import * as oauth from "./oauth.js";
 import { ogRoutes, rewriteHtml } from "./og.js";
 import { servePanel } from "./panel.js";
@@ -123,11 +120,8 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...publicRoutes(state),
     ...ogRoutes(state),
     ...memberRoutes(state),
-    ...memoryRoutes(state),
     ...dataRoutes(state),
-    ...directiveRoutes(state),
     ...liveRoutes(state),
-    ...notebookRoutes(state),
 
     ...metricsRoutes(state, { public: options.metricsPublic ?? false }),
 

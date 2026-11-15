@@ -24,6 +24,7 @@ import { channels } from "./channels.js";
 import { game, songs, voiceControl } from "./control.js";
 import { decisions, llm, modules } from "./core.js";
 import { data } from "./data.js";
+import { directives } from "./directives.js";
 import { economy, peopleEconomy } from "./economy.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
@@ -31,7 +32,9 @@ import { self, world } from "./inner.js";
 import { knowledge, mindDigests, reflection } from "./learning.js";
 import { life } from "./life.js";
 import { member } from "./member.js";
+import { memory } from "./memory.js";
 import { mind } from "./mind.js";
+import { notebook, recent } from "./notebook.js";
 import { extensions, mcp, queue, stage, voiceMonitor } from "./ops.js";
 import { party } from "./party.js";
 import { people } from "./people.js";
@@ -233,6 +236,24 @@ export {
   DataWipeResultSchema,
 } from "./data.js";
 export {
+  type AddDirectiveRequest,
+  AddDirectiveRequestSchema,
+  type Directive,
+  type DirectiveAuthority,
+  DirectiveAuthoritySchema,
+  type DirectiveChange,
+  DirectiveChangeSchema,
+  type DirectiveEffect,
+  DirectiveEffectSchema,
+  type DirectiveRecord,
+  DirectiveRecordSchema,
+  DirectiveSchema,
+  type DirectiveScope,
+  DirectiveScopeSchema,
+  type DirectivesView,
+  DirectivesViewSchema,
+} from "./directives.js";
+export {
   type CommissionKind,
   CommissionKindSchema,
   type CommissionView,
@@ -404,11 +425,29 @@ export {
   MemberSongSchema,
   type MemberView,
   MemberViewSchema,
+  type PatRequest,
+  PatRequestSchema,
+  type PatResult,
+  PatResultSchema,
   type SongAccepted,
   SongAcceptedSchema,
   type SongRequest,
   SongRequestSchema,
 } from "./member.js";
+export {
+  type MemoryItem,
+  MemoryItemSchema,
+  type MemoryKind,
+  MemoryKindSchema,
+  type MemoryPage,
+  MemoryPageSchema,
+  type MemoryRecordView,
+  MemoryRecordViewSchema,
+  type MemoryScope,
+  MemoryScopeSchema,
+  type UpdateMemoryRequest,
+  UpdateMemoryRequestSchema,
+} from "./memory.js";
 export {
   type EmergencyReport,
   EmergencyReportSchema,
@@ -441,6 +480,20 @@ export {
   ThoughtTriggerKindSchema,
   ThoughtTriggerSchema,
 } from "./mind.js";
+export {
+  type JustNowEntry,
+  JustNowEntrySchema,
+  type JustNowKind,
+  JustNowKindSchema,
+  type NotebookEntry,
+  NotebookEntrySchema,
+  type NotebookIndex,
+  NotebookIndexSchema,
+  type NotebookPage,
+  NotebookPageSchema,
+  type RecentView,
+  RecentViewSchema,
+} from "./notebook.js";
 export {
   type E2eSegmentName,
   E2eSegmentNameSchema,
@@ -732,6 +785,10 @@ export const contract = {
   songs,
   game,
   data,
+  directives,
+  memory,
+  notebook,
+  recent,
   economy,
   facts,
   activity,

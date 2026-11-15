@@ -10,6 +10,7 @@ import type {
   LlmCallStatus,
   LogEventKind,
   LogEvent as ContractLogEvent,
+  MemoryKind,
   Thought as ContractThought,
   VoiceE2eLatency as ContractVoiceE2eLatency,
   VoiceLatency as ContractVoiceLatency,
@@ -370,6 +371,32 @@ export type {
 
 // Her inner state, her world, her mood and her goals: shapes of the route table, under their old
 // names. The drives are the eight the server sends (the hand copy had five).
+// Her memories, notebook, just-now timeline, the owner's rules and a pat: shapes of the route table.
+export type {
+  AddDirectiveRequest,
+  Directive,
+  DirectiveAuthority,
+  DirectiveChange,
+  DirectiveEffect,
+  DirectiveRecord,
+  DirectiveScope,
+  DirectivesView,
+  JustNowEntry,
+  JustNowKind,
+  MemoryItem,
+  MemoryKind,
+  MemoryPage,
+  MemoryRecordView,
+  MemoryScope,
+  NotebookEntry,
+  NotebookIndex,
+  NotebookPage,
+  PatRequest,
+  PatResult,
+  RecentView,
+  UpdateMemoryRequest,
+} from "@miyoria/contracts/api";
+
 export type {
   AffectBiases,
   AffectSnapshot,
@@ -476,45 +503,8 @@ export interface PeopleQuery {
 }
 
 // ---------------------------------------------------------------------------
-// Memory (`MemoryRecord`, `MemoryHit`, `MemoryScope`)
-
-export type MemoryKind = "episode" | "fact" | "self_note" | "followup";
-
-export type MemoryScope =
-  | { type: "global" }
-  | { type: "guild"; platform: PlatformId; guild: string }
-  | { type: "channel"; context: ContextKey }
-  | { type: "dm"; account: AccountRef }
-  | { type: "person"; person: PersonId };
-
-/** A memory record without its embedding vector. */
-export interface MemoryRecordView {
-  id: Ulid;
-  profile: ProfileId;
-  kind: MemoryKind;
-  scope: MemoryScope;
-  subjects: PersonId[];
-  content: string;
-  importance: number;
-  confidence: number;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  last_accessed: Timestamp | null;
-  access_count: number;
-  source_context: ContextKey | null;
-  due: Timestamp | null;
-  done: boolean;
-  superseded_by: Ulid | null;
-  has_embedding: boolean;
-}
-
-export interface MemoryItem {
-  record: MemoryRecordView;
-  /** Present when `q` was given: full-text relevance. */
-  text_score?: number;
-  /** Present when `q` was given and vectors were compared. */
-  vector_score?: number | null;
-}
+// Memory: the shapes are the route table's (re-exported below); the query is what the panel asks
+// with (numbers and flags; the call turns them into the wire's text).
 
 export interface MemoryQuery {
   /** Search text; omit to list newest first. */
@@ -525,14 +515,6 @@ export interface MemoryQuery {
   before?: Timestamp;
   include_superseded?: boolean;
   limit?: number;
-}
-
-/** `PATCH /api/memory/{id}`. */
-export interface UpdateMemoryRequest {
-  content?: string;
-  kind?: MemoryKind;
-  importance?: number;
-  done?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -679,59 +661,6 @@ export interface FactEventsQuery {
   limit?: number;
 }
 
-// ---------------------------------------------------------------------------
-// the owner's rules (`GET /api/directives`; `packages/types` directive.ts)
-
-export type DirectiveEffect = "deny" | "require_approval" | "prefer" | "avoid";
-
-export type DirectiveAuthority = "owner" | "moderator" | "system" | "viewer";
-
-export interface DirectiveScope {
-  /** A capability or tool name, or a pattern (`game.*`, `*`). */
-  capability?: string;
-  /** A word of what is being done: the game (`minecraft`), a goal, a target. */
-  activity?: string;
-  context?: ContextKey;
-  person?: Handle;
-}
-
-/** A stored rule and how it ended, if someone ended it. */
-export interface DirectiveRecord {
-  id: string;
-  issuer: AccountRef;
-  authority: DirectiveAuthority;
-  scope: DirectiveScope;
-  effect: DirectiveEffect;
-  text: string;
-  /** `until_revoked` never expires. */
-  expires: Timestamp | "until_revoked";
-  /** An EventLog id, `msg:<id>`, `command:<path>` or `panel:<actor>`. */
-  source_event: string;
-  created_at: Timestamp;
-  revoked_at: Timestamp | null;
-  revoked_by: string | null;
-}
-
-/** `GET /api/directives`: `healthy` is false while the store cannot be read (everything fails closed). */
-export interface DirectivesView {
-  healthy: boolean;
-  directives: DirectiveRecord[];
-}
-
-/** `POST /api/directives`. `minutes` left out: until revoked (a moderator has to say). */
-export interface AddDirectiveRequest {
-  text: string;
-  effect: DirectiveEffect;
-  scope?: { capability?: string; activity?: string };
-  minutes?: number | null;
-}
-
-/** The answer of a change: a `question` means nothing happened and the Core needs more. */
-export type DirectiveChange =
-  | { status: "added"; directive: DirectiveRecord; note: string | null }
-  | { status: "removed"; directive: DirectiveRecord }
-  | { status: "question"; question: string };
-
 // --- the admin routes V4 added: her life, economy, workspace, party games, notebook ---
 // (Timestamps are ISO strings.)
 // --- her life ---------------------------------------------------------------------
@@ -742,32 +671,4 @@ export type DirectiveChange =
 
 // --- memory -----------------------------------------------------------------------------
 
-export interface NotebookEntry {
-  path: string;
-  chars: number;
-  updated_at: Timestamp;
-  about: string | null;
-}
-
-export interface NotebookPage extends NotebookEntry {
-  body: string;
-  created_at: Timestamp;
-}
-
-export type JustNowKind = "song" | "game" | "voice" | "stream" | "notice" | "talk" | "asked";
-
-export interface JustNowEntry {
-  at: Timestamp;
-  kind: JustNowKind;
-  place: { kind: "here" | "voice" | "text" | "dm"; label: string; context: ContextKey | null };
-  text: string;
-  private: boolean;
-}
-
-/** `GET /api/recent?context=`. */
-export interface RecentView {
-  entries: JustNowEntry[];
-  /** Lines left out because they came from a DM. */
-  private_hidden: number;
-}
 

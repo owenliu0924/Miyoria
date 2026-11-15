@@ -281,7 +281,19 @@ export function useMemory(q: Omit<MemoryQuery, "before" | "limit">) {
   return useInfiniteQuery({
     queryKey: queryKeys.memory(q),
     queryFn: ({ signal, pageParam }) =>
-      api.memory({ ...q, limit: MEMORY_PAGE, before: pageParam ?? undefined }, { signal }),
+      api.rpc.memory.list(
+        {
+          query: {
+            ...(q.q !== undefined ? { q: q.q } : {}),
+            ...(q.kind !== undefined ? { kind: q.kind } : {}),
+            ...(q.subject !== undefined ? { subject: q.subject } : {}),
+            ...(q.include_superseded ? { include_superseded: "true" as const } : {}),
+            limit: String(MEMORY_PAGE),
+            ...(pageParam ? { before: pageParam } : {}),
+          },
+        },
+        { signal },
+      ),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next_cursor,
   });
@@ -291,7 +303,7 @@ export function useUpdateMemory() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, req }: { id: string; req: UpdateMemoryRequest }) => api.updateMemory(id, req),
+    mutationFn: ({ id, req }: { id: string; req: UpdateMemoryRequest }) => api.rpc.memory.update({ params: { id }, body: req }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["memory"] }),
   });
 }
@@ -300,7 +312,7 @@ export function useDeleteMemory() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.deleteMemory(id),
+    mutationFn: (id: string) => api.rpc.memory.remove({ params: { id } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["memory"] }),
   });
 }
@@ -893,7 +905,7 @@ export function useDirectives(history = false) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.directives(history),
-    queryFn: ({ signal }) => api.directives(history, { signal }),
+    queryFn: ({ signal }) => api.rpc.directives.list({ query: history ? { history: "1" } : {} }, { signal }),
     refetchInterval: poll(15_000),
     retry: false,
   });
@@ -904,8 +916,8 @@ export function useDirectiveMutations() {
   const qc = useQueryClient();
   const changed = () => void qc.invalidateQueries({ queryKey: queryKeys.directivesAll });
   return {
-    add: useMutation({ mutationFn: (r: AddDirectiveRequest) => api.addDirective(r), onSuccess: changed }),
-    remove: useMutation({ mutationFn: (id: string) => api.removeDirective(id), onSuccess: changed }),
+    add: useMutation({ mutationFn: (r: AddDirectiveRequest) => api.rpc.directives.add({ body: r }), onSuccess: changed }),
+    remove: useMutation({ mutationFn: (id: string) => api.rpc.directives.remove({ params: { id } }), onSuccess: changed }),
   };
 }
 
@@ -1025,19 +1037,19 @@ export function useSkill(name: string | null) {
 
 export function useNotebook() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.notebook, queryFn: ({ signal }) => api.notebook({ signal }), refetchInterval: pollModule(60_000), retry: false });
+  return useQuery({ queryKey: queryKeys.notebook, queryFn: ({ signal }) => api.rpc.notebook.pages(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
 }
 
 export function useNotebookPage(path: string | null) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.notebookPage(path ?? ""), queryFn: ({ signal }) => api.notebookPage(path as string, { signal }), enabled: path !== null, retry: false });
+  return useQuery({ queryKey: queryKeys.notebookPage(path ?? ""), queryFn: ({ signal }) => api.rpc.notebook.page({ query: { path: path as string } }, { signal }), enabled: path !== null, retry: false });
 }
 
 export function useRecent(context: ContextKey | null) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.recent(context),
-    queryFn: ({ signal }) => api.recent(context as ContextKey, { signal }),
+    queryFn: ({ signal }) => api.rpc.recent({ query: { context: JSON.stringify(context) } }, { signal }),
     enabled: context !== null,
     refetchInterval: pollModule(30_000),
     retry: false,

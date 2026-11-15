@@ -9,8 +9,6 @@ import type {
   MemberSong,
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
-import type { MemoryKind, MemoryScope } from "@miyoria/store";
-import type { ContextKey, PersonId, ProfileId, Timestamp } from "@miyoria/types";
 
 // Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
 export type {
@@ -66,6 +64,8 @@ export type {
   MemberSession,
   MemberSong,
   MemberView,
+  MemoryItem,
+  MemoryRecordView,
   MindView,
   ModelUsage,
   ModuleInfo,
@@ -119,6 +119,7 @@ export type {
   TelemetryView,
   ThoughtSummary,
   TurnOutcomeKind,
+  UpdateMemoryRequest,
   UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
@@ -159,64 +160,4 @@ export interface ErrorBody {
 export interface Page<T> {
   items: T[];
   next_cursor: string | null;
-}
-
-// ---- memory -----------------------------------------------------------------------------
-
-/** A `MemoryRecord` without its search tokens and embedding vector. */
-export interface MemoryRecordView {
-  id: string;
-  profile: ProfileId;
-  kind: MemoryKind;
-  scope: MemoryScope;
-  subjects: PersonId[];
-  content: string;
-  importance: number;
-  confidence: number;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  last_accessed: Timestamp | null;
-  access_count: number;
-  source_context: ContextKey | null;
-  due: Timestamp | null;
-  done: boolean;
-  superseded_by: string | null;
-  has_embedding: boolean;
-}
-
-/** `GET /api/memory` items. The scores are present only for a search (`q`). */
-export interface MemoryItem {
-  record: MemoryRecordView;
-  /** The backend's full-text relevance, 0 when only the vector matched. */
-  text_score?: number;
-  /** `null` for a search that compared no vectors. */
-  vector_score?: number | null;
-  /**
-   * Hybrid recall score (vector, text, recency, importance), present when the search ran through
-   * the memory engine; results are ordered by it.
-   */
-  score?: number;
-}
-
-/** Query of `GET /api/memory`. */
-export interface MemoryListQuery {
-  /**
-   * Search text: hybrid recall (vector, text, recency, importance) through the memory module
-   * when it runs, full text otherwise. Omitted lists newest first.
-   */
-  q?: string;
-  kind?: MemoryKind;
-  subject?: PersonId;
-  /** Only records created before this time (pagination when listing). */
-  before?: Timestamp;
-  include_superseded?: boolean;
-  limit?: number;
-}
-
-/** Body of `PATCH /api/memory/{id}`; omitted fields are unchanged. */
-export interface UpdateMemoryRequest {
-  content?: string;
-  kind?: MemoryKind;
-  importance?: number;
-  done?: boolean;
 }

@@ -50,6 +50,7 @@ import { os, type RpcContext } from "./contract.js";
 import { controlRpc } from "./control.js";
 import { coreRpc, healthRpc, personaRpc } from "./core.js";
 import { dataRpc } from "./data.js";
+import { directivesRpc } from "./directives.js";
 import { economyRpc, personQuestsRpc } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { jsonRequest } from "./extract.js";
@@ -59,10 +60,13 @@ import { goalAdminRpc } from "./goals-admin.js";
 import { selfRpc, worldRpc } from "./inner.js";
 import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
 import { lifeRpc } from "./life.js";
+import { livePatRpc } from "./live.js";
 import { llmCallsRpc, thoughtRpc } from "./llmcalls.js";
 import { memberRpc } from "./member.js";
+import { memoryRpc } from "./memory.js";
 import { turnMetricsRpc } from "./metrics-turns.js";
 import { mindRpc } from "./mind.js";
+import { notebookRpc, recentRpc } from "./notebook.js";
 import { authRpc } from "./oauth.js";
 import { opsRpc } from "./ops.js";
 import { partyRpc } from "./party.js";
@@ -103,7 +107,7 @@ export const router = os.router({
   workspace: workspaceRpc,
   skills: skillsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },
-  member: memberRpc,
+  member: { ...memberRpc, ...livePatRpc },
   wallet: walletRpc,
   agency: agencyRpc,
   fortune: fortuneRpc,
@@ -119,6 +123,10 @@ export const router = os.router({
   songs: controlRpc.songs,
   game: controlRpc.game,
   data: dataRpc,
+  directives: directivesRpc,
+  memory: memoryRpc,
+  notebook: notebookRpc,
+  recent: recentRpc,
 });
 
 export type ResponseCheck = "strict" | "production";
@@ -288,11 +296,13 @@ async function serve(handler: Handler, state: ApiState, c: ApiContext, body: boo
   // Hono answers HEAD with the GET route; oRPC only knows the GET.
   if (request.method === "HEAD") request = new Request(request, { method: "GET" });
   if (body) request = await jsonRequest(request);
-  const context: RpcContext = { c, state, failure: {} };
+  const context: RpcContext = { c, state, failure: {}, reply: {} };
   const { matched, response } = await handler.handle(request, { context });
   if (context.failure.error !== undefined) throw context.failure.error;
   if (!matched || !response) throw ApiError.notFound(NO_SUCH_ENDPOINT);
-  return response;
+  const status = context.reply.status;
+  if (status === undefined || status === response.status) return response;
+  return new Response(response.body, { status, headers: response.headers });
 }
 
 /** The `{name}` of an OpenAPI path as Hono's `:name`. */

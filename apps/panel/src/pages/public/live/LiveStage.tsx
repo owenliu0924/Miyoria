@@ -15,7 +15,6 @@ import {
   type LiveSnapshot,
   type LiveSpot,
   liveReducer,
-  PAT_PATH,
   type SourceFactory,
 } from "./feed";
 import { LivePlayer, type Spot, type TouchMode } from "./LivePlayer";
@@ -91,7 +90,7 @@ export interface LiveStageProps {
  */
 export function LiveStage({ member, loginUrl = null, source, size = "section" }: LiveStageProps) {
   const large = size === "page";
-  const { client } = useConnection();
+  const { client, api } = useConnection();
   const view = useLive(source);
   const now = view.now;
   const [spots, setSpots] = useState<Spot[]>([]);
@@ -157,7 +156,7 @@ export function LiveStage({ member, loginUrl = null, source, size = "section" }:
       setBusy(true);
       let next: PatNote;
       try {
-        await client.post<{ pats: LivePats }>(PAT_PATH, spot ? { x: spot.x, y: spot.y } : {}, { public: true });
+        await api.rpc.member.pat({ body: spot ? { x: spot.x, y: spot.y } : {} });
         next = { tone: "ok", text: "她感覺到了" };
       } catch (e) {
         ownPats.current = Math.max(0, ownPats.current - 1);
@@ -169,7 +168,7 @@ export function LiveStage({ member, loginUrl = null, source, size = "section" }:
       // A short breath between pats, so one held key is not a burst.
       later(350, () => setBusy(false));
     },
-    [busy, client, touchAt, later],
+    [busy, api, touchAt, later],
   );
 
   const open = now?.pats.open ?? false;
