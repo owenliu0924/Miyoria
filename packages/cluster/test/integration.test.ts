@@ -59,6 +59,10 @@ class FakeApi implements HostApi {
     for (const listener of this.#events) listener(event);
   }
 
+  target(): { url: string; headers: Record<string, string> } | null {
+    return null;
+  }
+
   onChange(listener: () => void): () => void {
     this.#changes.add(listener);
     return () => this.#changes.delete(listener);

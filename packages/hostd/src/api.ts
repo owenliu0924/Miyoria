@@ -47,6 +47,11 @@ export interface HostApi {
   onChange?(listener: () => void): () => void;
   /** Log lines of one service as they are written, for `service.log`. */
   followLogs(service: string, listener: (line: string) => void): () => void;
+  /**
+   * Where a running service of this machine listens and what it expects in a request: for
+   * requests Core relays over the control link. `null` when it is not running or has no port.
+   */
+  target(service: string): { url: string; headers: Record<string, string> } | null;
   /** The control link sets this while it is connected; `null` puts the default source back. */
   setGuardSource(source: GuardSource | null): void;
   /** The control link sets this while it is connected. */

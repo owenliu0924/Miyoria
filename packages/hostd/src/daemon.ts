@@ -547,6 +547,20 @@ export class Daemon implements HostApi {
     return this.#service(service).logs.follow(listener);
   }
 
+  target(service: string): { url: string; headers: Record<string, string> } | null {
+    const managed = this.#services.get(service);
+    const port = managed?.port;
+    const host = this.#host;
+    if (managed === undefined || !managed.active || port === undefined || host === null) {
+      return null;
+    }
+    const token = managed.token;
+    return {
+      url: localUrl(host.config.network.bind, port),
+      headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
+    };
+  }
+
   setGuardSource(source: GuardSource | null): void {
     this.#guard = source;
   }
