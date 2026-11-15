@@ -21,10 +21,14 @@ export type SingPermissions = z.output<typeof SingPermissionsSchema>;
  * url = "http://127.0.0.1:8005"
  * start = "decide"
  * ```
+ *
+ * `url` and `fallback_urls` are read by Core's wiring, not by the module: they become the static
+ * entries `sing`, `sing.fallback.1`, ... of the endpoint registry, in this order, and the module
+ * uses the registry's `sing` endpoints. Neither has a default address any more.
  */
 export const SingConfigSchema = z.object({
-  /** Song worker base URL. */
-  url: z.string().default("http://127.0.0.1:8005"),
+  /** Song worker base URL (a static registry entry). Not set: the workers come from hostd. */
+  url: z.string().optional(),
   /**
    * More song workers, tried in this order when `url` does not answer (its computer is off, or
    * off the tailnet): new songs go to the first one that answers, and a song stays with the

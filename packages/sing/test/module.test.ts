@@ -63,6 +63,7 @@ import {
   type WorkerJob,
   workerQuery,
 } from "../src/index.js";
+import { oneWorker } from "./endpoints.js";
 
 // The player looks for a song's video on disk before asking the worker for it. No test writes
 // one, and a real file read does not finish while the clock is a fake one being advanced: the
@@ -380,7 +381,7 @@ class Harness {
     const h = new Harness(withMind, restart?.store ?? null);
     if (restart?.worker) h.worker = restart.worker;
     await h.sup.register(
-      new SingModule(() => h.worker),
+      new SingModule(() => h.worker, { endpoints: oneWorker() }),
       { poll_ms: 100, quiet_ms: 200, lead_ms: 300, announce_max_secs: 5, ...(config as object) },
       true,
     );
