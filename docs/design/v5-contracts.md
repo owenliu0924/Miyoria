@@ -54,6 +54,21 @@
 
 **K9 的進度**:第一批(public、member、wallet、agency、fortune,24 條)已搬完;`/api/member/export` 是下載,維持一般的 Hono 路由。對照時以伺服器實際送出的為準:面板的型別把 12 個一定會送的欄位標成可有可無,還少了一個欄位。K4 剩下的兩處(overlay 這個 app、語音節點的嘴型 client)也改成用契約的型別了。
 
+**K9、K10、K12 的進度(2026-11-15)**:
+
+- **K9 做完**:約 155 條 JSON 路由都宣告在契約裡。管理 API 的事件串流(`GET /api/events`)也搬了,用 oRPC 的 `eventIterator`,送的是匯流排信封。公開直播頁的串流(`/api/public/live`)維持一般路由:它用具名的 SSE 事件、先送 `retry`、滿了回 503,oRPC 的串流做不到這幾件。下載、圖片、OAuth 轉址、`/metrics` 也維持一般路由。
+- **K10 做完**:API 手寫的 view 型別檔刪了;手寫的 client 只剩錯誤型別;面板的型別檔只剩契約還沒有的東西(查詢參數、紀錄內文的幾個型別),108 個檔案改成直接從契約拿型別。面板的 `endpoints.ts` 留著,放不是 JSON 的幾條路由。
+- **K12a 做完**:每個匯流排 topic 都有 payload schema,測試可以開嚴格檢查(`MIYORIA_BUS_CHECK=strict`)。
+- **K12b 做完**:匯流排只有一種信封(`BusEnvelopeSchema`)。程式裡一律用事件定義發布和讀取。離開程序的四個地方都送同一個信封:管理 API 的事件串流、擴充的通知(協定第 2 版,新舊互相拒絕)、重播紀錄的每一行、事實寫入讀的欄位。
+- **K12c 進行中**:刪掉舊的輔助函式、信封上的舊欄位和只測舊形式的測試。
+
+這幾步之後,外面看得到的差別:
+
+- 事件串流的每一筆是 `{id, at, type, v, parent, turn, session, …, source, data}`,不再是 `{id, ts, source, causation, correlation, event: {type, data}}`;每筆前面多一行 `event: message`。`miyoria tail` 每行顯示「時間、型別、data」。
+- 擴充:要用 `@miyoria/sdk` 0.2.0 重新 build;自己的事件一定要放在 `ext.<擴充 id>.` 底下,隨便取的 topic 會被拒絕;處理函式拿到的是新信封。詳細在 [extension-rpc.md](../protocols/extension-rpc.md)。
+- 重播紀錄:一行一個信封;舊格式的檔案讀到會報錯,不轉換。
+- 沒有對真的行程驗證過的:neuro、osu、threads、minecraft 四個擴充沒有實際啟動對著 host 跑;面板的串流只用測試驗過,沒有開瀏覽器接真的 Core。
+
 | 步 | 做什麼 | 大小 | 備註 |
 |---|---|---|---|
 | K1 | 套件骨架、規則測試、產生器、CI 的差異檢查 | 小 | 定下慣例 |
@@ -79,7 +94,7 @@
 - 語音節點、overlay、面板各有自己的 tsconfig 和工具版本,現在都不 import workspace 的套件;加進去對它們是新的事。
 - public 和 member 路由嚴格去掉多餘的欄位,可能拿掉某個頁面在讀、但 schema 漏寫的欄位。所以先做 public 那幾組,每一頁打開看過。
 - 面板的 bundle 會多出 zod 和 schema,大小還沒量,K8 時量。
-- SDK 已經發佈;K5 和 K12 的形狀改動會到 repo 外面(如果外面有人在用)。
+- SDK 已經發佈;K5 和 K12 的形狀改動會到 repo 外面(如果外面有人在用)。K12 之後 SDK 是 0.2.0、`@miyoria/contracts` 是 0.2.0。
 - 還沒驗證的事:Python 產生器沒有實際跑過;沒有跑任何 build 或測試;面板和伺服器型別的比對只比了名字,沒有比欄位的型別。
 
 ## Design detail
