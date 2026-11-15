@@ -43,7 +43,7 @@ export const ROLES = {
 export type Role = keyof typeof ROLES;
 export const ROLE_NAMES = Object.keys(ROLES) as Role[];
 
-/** Every service, in the order `start` brings them up (models first, then core, then broadcast). */
+/** Every service, in the order the old launcher brought them up (models, core, broadcast). */
 export const SERVICE_ORDER = ["asr", "tts", "sing", "turn", "core", "voice-node", "stage"] as const;
 export type ServiceName = (typeof SERVICE_ORDER)[number];
 

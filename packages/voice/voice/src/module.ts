@@ -23,7 +23,11 @@ import {
   VoiceTurnsKey,
   WorldStateKey,
 } from "@miyoria/types";
-import { type SpeechService, SpeechServiceKey } from "../../speech/src/index.js";
+import {
+  type EndpointsOption,
+  type SpeechService,
+  SpeechServiceKey,
+} from "../../speech/src/index.js";
 import { voiceCapabilities } from "./actions.js";
 import { BargeIn } from "./barge.js";
 import { ClipRecorder } from "./clips.js";
@@ -69,6 +73,7 @@ export class VoiceModule implements Module {
   readonly #profileId: ProfileId;
   readonly #voice: JsonObject | null;
   readonly #names: readonly string[];
+  readonly #endpoints: EndpointsOption | null;
   #barge: BargeIn | null = null;
   #fillerTimer: Filler | null = null;
   #e2e: E2eLatency | null = null;
@@ -79,11 +84,18 @@ export class VoiceModule implements Module {
   /**
    * `voice` is the profile's `voice.toml` (`Profile.voice`); `names`: what people call her
    * (`Profile.names()`), so her name in a transcript stops her when somebody talks over her.
+   * `endpoints`: Core's endpoint registry, where Smart Turn (`turn`) and Silero (`vad`) run.
    */
-  constructor(profileId: ProfileId, voice: JsonObject | null, names: readonly string[] = []) {
+  constructor(
+    profileId: ProfileId,
+    voice: JsonObject | null,
+    names: readonly string[] = [],
+    options: { endpoints?: EndpointsOption } = {},
+  ) {
     this.#profileId = profileId;
     this.#voice = voice;
     this.#names = names;
+    this.#endpoints = options.endpoints ?? null;
   }
 
   async start(ctx: ModuleContext): Promise<void> {
@@ -91,6 +103,7 @@ export class VoiceModule implements Module {
     const profile = VoiceProfile.parse(this.#profileId, this.#voice);
     const link = ctx.services.require(VoiceLinkKey);
     const speech = ctx.services.require(SpeechServiceKey);
+    const endpoints = this.#endpoints?.(ctx.services) ?? null;
     const store = ctx.services.get(SettingsStoreKey) ?? null;
     if (store === null) {
       ctx.log.warn("no settings store: voice consent choices are kept in memory only");
@@ -241,7 +254,7 @@ export class VoiceModule implements Module {
         e2e,
         turn: smartTurn
           ? new HttpTurnJudge({
-              url: config.turn_url,
+              endpoints,
               timeoutMs: config.turn_timeout_ms,
               now: () => ctx.clock.now(),
               warn: (message) => ctx.log.warn(message),
@@ -252,6 +265,7 @@ export class VoiceModule implements Module {
           config.clip_dir === null
             ? null
             : new ClipRecorder(config.clip_dir, (message) => ctx.log.warn(message)),
+        endpoints,
       });
       const audio = link.subscribeAudio(ctx.signal);
       const running = listener;

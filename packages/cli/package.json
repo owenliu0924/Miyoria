@@ -27,7 +27,10 @@
     "dist",
     "!dist/**/*.map",
     "templates",
-    "assets"
+    "assets",
+    "workers",
+    "services",
+    "packages"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -49,12 +52,15 @@
     "@resvg/resvg-js": "^2.6.2",
     "discord.js": "^14.26.0",
     "drizzle-orm": "1.0.0-rc.5",
+    "execa": "^10.2.1",
     "hono": "^4.13.16",
+    "koffi": "^3.3.8",
     "obs-websocket-js": "^5.0.6",
     "opencc-js": "^1.4.2",
     "pino": "^10.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "rotating-file-stream": "^4.0.0",
     "sharp": "^0.35.5",
     "smol-toml": "^1.9.1",
     "ulid": "^3.0.2",
@@ -64,8 +70,10 @@
   },
   "devDependencies": {
     "@miyoria/api": "workspace:*",
+    "@miyoria/contracts": "workspace:*",
     "@miyoria/core": "workspace:*",
     "@miyoria/discord": "workspace:*",
+    "@miyoria/hostd": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/store": "workspace:*",

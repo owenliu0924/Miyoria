@@ -28,6 +28,7 @@ import {
   type SpeechService,
   ttsRequest,
 } from "../src/index.js";
+import { FakeEndpoints, speechEntries } from "./endpoints.js";
 
 /** What the mock saw: headers and raw body of the last request. */
 interface Seen {
@@ -100,7 +101,21 @@ function config(v: Record<string, JsonValue>): SpeechConfig {
 }
 
 function service(v: Record<string, JsonValue>): SpeechService {
-  return SpeechModule.withDefaultFactories(config(v)).buildService();
+  const c = config(v);
+  const entries = speechEntries({
+    asr: Object.fromEntries(Object.entries(c.asr).map(([n, p]) => [n, { ...p.settings, ...p }])),
+    tts: Object.fromEntries(Object.entries(c.tts).map(([n, p]) => [n, { ...p.settings, ...p }])),
+  });
+  return SpeechModule.withDefaultFactories(c).buildService({
+    endpoints: new FakeEndpoints(entries),
+  });
+}
+
+/** The registry as Core's wiring fills it for one `http-worker` provider `w` at `url`. */
+function workerEnv(family: "asr" | "tts", url: string) {
+  return {
+    endpoints: new FakeEndpoints([{ name: `speech.${family}.w`, provides: [family], url }]),
+  };
 }
 
 function tone(): AudioBuf {
@@ -181,7 +196,11 @@ describe("ASR", () => {
       "/bad/asr": json(400, { error: "bad wav" }),
     });
     const build = (path: string) =>
-      new HttpWorkerAsrFactory().build("w", cfg({ kind: "http-worker", url: `${url}/${path}` }));
+      new HttpWorkerAsrFactory().build(
+        "w",
+        cfg({ kind: "http-worker", url: `${url}/${path}` }),
+        workerEnv("asr", `${url}/${path}`),
+      );
 
     const t = await build("ok").transcribe(tone(), NO_HINT);
     expect(t.text).toBe("hi");
@@ -298,7 +317,11 @@ describe("TTS", () => {
       "/none/tts": chunked(Uint8Array.of(1, 0), [], {}),
     });
     const tts = (path: string) =>
-      new HttpWorkerTtsFactory().build("w", cfg({ kind: "http-worker", url: `${url}/${path}` }));
+      new HttpWorkerTtsFactory().build(
+        "w",
+        cfg({ kind: "http-worker", url: `${url}/${path}` }),
+        workerEnv("tts", `${url}/${path}`),
+      );
 
     const chunks = await collect(await tts("ct").synthesize(ttsRequest("")));
     expect(chunks.every((c) => c.sampleRate === 16_000)).toBe(true);
@@ -505,7 +528,7 @@ describe("module", () => {
     expect(err({ asr: { x: { kind: "nope" } } })).toContain("unknown ASR kind");
     expect(err({ tts: { x: { kind: "gpt-sovits", url: "u" } } })).toContain("speech.tts.x");
     expect(err({ asr_chain: ["ghost"] })).toContain("ghost");
-    expect(err({ asr: { x: { kind: "http-worker" } } })).toContain("speech.asr.x");
+    expect(err({ asr: { x: { kind: "http-worker", url: 5 } } })).toContain("speech.asr.x");
   });
 
   it("module_manifest_id", () => {

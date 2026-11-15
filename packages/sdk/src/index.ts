@@ -40,11 +40,14 @@ export {
 export {
   CANCEL_METHOD,
   type NotificationHandler,
+  type PeerBaseOptions,
   type PeerOptions,
   type PeerRole,
   type RequestHandler,
   RpcError,
   RpcPeer,
+  type StreamPeerOptions,
+  type TransportPeerOptions,
 } from "./rpc.js";
 export {
   MAX_TASK_BUDGET_S,
@@ -72,4 +75,14 @@ export {
   taskTopic,
 } from "./task.js";
 export { definitionPattern, is, isValidTopic, topicMatches } from "./topics.js";
+export {
+  MAX_MESSAGE_BYTES,
+  type RpcTransport,
+  type RpcTransportSink,
+  StreamTransport,
+  type StreamTransportOptions,
+  type WebSocketEventLike,
+  type WebSocketLike,
+  WebSocketTransport,
+} from "./transport.js";
 export * from "./types.js";

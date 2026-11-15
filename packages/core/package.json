@@ -30,6 +30,7 @@
     "@miyoria/api": "workspace:*",
     "@miyoria/auth": "workspace:*",
     "@miyoria/brain": "workspace:*",
+    "@miyoria/cluster": "workspace:*",
     "@miyoria/commands": "workspace:*",
     "@miyoria/discord": "workspace:*",
     "@miyoria/economy": "workspace:*",

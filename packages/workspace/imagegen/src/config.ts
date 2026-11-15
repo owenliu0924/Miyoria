@@ -45,8 +45,12 @@ const HOURS = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/;
 
 export const ImageGenConfigSchema = z
   .object({
-    /** ComfyUI's address. Keep it on 127.0.0.1 or the LAN: ComfyUI has no login. */
-    url: z.string().url().default("http://127.0.0.1:8188"),
+    /**
+     * ComfyUI's address. Keep it on 127.0.0.1 or the LAN: ComfyUI has no login. Read by Core's
+     * wiring, which makes it the static registry entry `imagegen`; the module uses the registry.
+     * Not set: no static entry (there is no default address any more).
+     */
+    url: z.string().url().optional(),
     /** Extra headers on every request (a token for a reverse proxy in front of ComfyUI). */
     headers: z.record(z.string(), z.string()).default({}),
     /** Where pictures and job records go (relative to the config file's directory). */

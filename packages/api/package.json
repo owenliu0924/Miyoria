@@ -26,6 +26,7 @@
     "@miyoria/auth": "workspace:*",
     "@miyoria/brain": "workspace:*",
     "@miyoria/card-face": "workspace:*",
+    "@miyoria/cluster": "workspace:*",
     "@miyoria/contracts": "workspace:*",
     "@miyoria/economy": "workspace:*",
     "@miyoria/gate": "workspace:*",

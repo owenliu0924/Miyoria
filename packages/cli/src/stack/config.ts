@@ -1,5 +1,6 @@
-// `[stack]` in miyoria.toml: what `miyoria up` starts and what `doctor --deep` checks. Every key is
-// optional; without the section `up` starts the core only, like `miyoria core`.
+// `[stack]` in miyoria.toml: what `install` and `doctor --deep` work on and `host migrate` turns
+// into host.toml (hostd runs the services now). Every key is optional; without the section the
+// machine runs the core only, like `miyoria core`.
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -112,7 +113,7 @@ export interface Stack {
 
 /**
  * The services to run. With `[machine]` they come from its roles (or hand-picked services); an
- * explicit `services` list (the `start` command's targets) replaces that. Without `[machine]` and
+ * explicit `services` list (`install`'s targets) replaces that. Without `[machine]` and
  * without a list the old `[stack]` keys decide: core on, voice_node / stage off, workers as written.
  */
 export function stackConfig(config: Config, services?: readonly string[]): Stack {

@@ -115,6 +115,13 @@ export function zeroCrossingRate(frame: Int16Array): number {
 
 // ---- engines ----------------------------------------------------------------------------------
 
+/** Where a model-based detector's worker is: a direct endpoint of Core's registry. */
+export interface VadWorker {
+  url: string;
+  /** Sent when connecting (the service token). */
+  headers: Record<string, string>;
+}
+
 /** Which detector the listener builds for a stream. */
 export interface VadSettings {
   engine: "energy" | "silero";
@@ -124,8 +131,8 @@ export interface VadSettings {
   sileroModel: string | null;
   /** Speech probability above which a Silero frame is speech. */
   sileroThreshold: number;
-  /** The worker that runs the model (`http://127.0.0.1:8006`). */
-  url?: string;
+  /** Where the worker that runs the model is now (the registry's `vad`), asked at each connect. */
+  worker?: () => VadWorker | null;
 }
 
 /** Builds a detector for one stream. */

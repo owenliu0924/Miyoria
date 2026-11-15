@@ -75,8 +75,9 @@ export const VoiceConfigSchema = z.object({
   /** A transcript that repeats her own words this long after she spoke is an echo. Default 5000. */
   self_echo_tail_ms: z.number().int().nonnegative().default(5_000),
   /**
-   * Voice activity detector: `energy` (default) or `silero` (runs in the end-of-turn worker at
-   * `turn_url`; the energy detector takes over whenever the worker cannot answer).
+   * Voice activity detector: `energy` (default) or `silero` (runs in the end-of-turn worker, the
+   * registry's direct `vad` endpoint; the energy detector takes over whenever there is none or
+   * it cannot answer).
    */
   vad_engine: z.enum(["energy", "silero"]).default("energy"),
   /** Model path for an engine of your own registered with `registerVadEngine`. */
@@ -90,8 +91,12 @@ export const VoiceConfigSchema = z.object({
    * `turn_timeout_ms` that utterance falls back to `end_silence_ms`.
    */
   turn_engine: z.enum(["silence", "smart-turn"]).default("silence"),
-  /** The end-of-turn worker (workers/turn). */
-  turn_url: z.string().default("http://127.0.0.1:8006"),
+  /**
+   * The end-of-turn worker (workers/turn), for Smart Turn and Silero. Core's wiring makes it the
+   * static registry entry `voice.turn` (`turn` and `vad`); the module asks the registry. Not set:
+   * no static entry, the worker comes from a hostd (there is no default address any more).
+   */
+  turn_url: z.string().optional(),
   /** Silence before the model is asked. Default 200. */
   turn_stop_ms: z.number().int().positive().default(200),
   /** The model has this long to answer. Default 150. */

@@ -8,11 +8,21 @@ import {
 } from "@miyoria/contracts/workers";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
-import { bearerHeaders, idleTimer, joinUrl, parseSettings, post } from "./http.js";
+import {
+  bearerHeaders,
+  idleTimer,
+  joinUrl,
+  type PostTarget,
+  parseSettings,
+  post,
+  WorkerEndpoint,
+} from "./http.js";
 import { parseU32, pcmStream, rateFromContentType } from "./pcm.js";
 import {
   type AudioStream,
+  NO_ENV,
   type ProviderConfig,
+  type ProviderEnv,
   SpeechError,
   type TtsFactory,
   type TtsProvider,
@@ -33,7 +43,7 @@ function nonEmpty(s: string | null): string | null {
  * fine. `rateOf` picks the sample rate from the response (and may reject it).
  */
 async function streamPcm(
-  url: string,
+  to: string | PostTarget,
   headers: Record<string, string>,
   body: object,
   timeout: number,
@@ -43,7 +53,7 @@ async function streamPcm(
   const idle = idleTimer(timeout);
   let response: Response;
   try {
-    response = await post(url, {
+    response = await post(to, {
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify(body),
       idle,
@@ -79,35 +89,41 @@ function header(response: Response, name: string): string | null {
  * ```toml
  * [speech.tts.qwen]
  * kind = "http-worker"
- * url = "http://127.0.0.1:8102"
- * voice = "deepseek-chan"   # optional default voice
- * timeout_secs = 30         # optional, idle timeout
+ * url = "http://127.0.0.1:8102"   # optional: without it, any `tts` worker the registry knows
+ * voice = "deepseek-chan"         # optional default voice
+ * timeout_secs = 30               # optional, idle timeout
  * ```
  */
 export const HttpWorkerTtsConfigSchema = z.object({
-  /** Worker root; `POST {url}/tts`. */
-  url: z.string(),
+  /**
+   * Worker root; `POST {url}/tts`. Core's wiring makes it the static registry entry
+   * `speech.tts.<name>`, and the provider calls that entry. Left out: the registry's `tts`.
+   */
+  url: z.string().optional(),
   /** Used when the request names no voice. */
   voice: z.string().nullable().default(null),
   timeout_secs: timeoutSecs(),
 });
 export type HttpWorkerTtsConfig = z.output<typeof HttpWorkerTtsConfigSchema>;
 
-/** TTS client for an inference worker (see `docs/protocols/voice-link.md`). */
+/**
+ * TTS client for an inference worker (see `docs/protocols/voice-link.md`), reached through Core's
+ * endpoint registry.
+ */
 export class HttpWorkerTts implements TtsProvider {
   readonly name: string;
-  readonly #url: string;
+  readonly #worker: WorkerEndpoint;
   readonly #voice: string | null;
   readonly #timeoutSecs: number;
 
-  constructor(name: string, config: HttpWorkerTtsConfig) {
+  constructor(name: string, config: HttpWorkerTtsConfig, env: ProviderEnv = NO_ENV) {
     this.name = name;
-    this.#url = joinUrl(config.url, "tts");
+    this.#worker = new WorkerEndpoint("tts", name, config.url !== undefined, env.endpoints);
     this.#voice = nonEmpty(config.voice);
     this.#timeoutSecs = config.timeout_secs;
   }
 
-  synthesize(request: TtsRequest, signal?: AbortSignal): Promise<AudioStream> {
+  async synthesize(request: TtsRequest, signal?: AbortSignal): Promise<AudioStream> {
     // `None` fields are left out (`skip_serializing_if`).
     const body: WorkersTtsRequest = { text: request.text };
     if (request.language !== null) body.language = request.language;
@@ -117,7 +133,7 @@ export class HttpWorkerTts implements TtsProvider {
     if (voice !== null) body.voice = voice;
     if (request.priority !== undefined) body.priority = request.priority;
     return streamPcm(
-      this.#url,
+      this.#worker.target("tts"),
       {},
       body,
       this.#timeoutSecs,
@@ -139,8 +155,8 @@ export class HttpWorkerTts implements TtsProvider {
 export class HttpWorkerTtsFactory implements TtsFactory {
   readonly kinds = ["http-worker"] as const;
 
-  build(name: string, config: ProviderConfig): TtsProvider {
-    return new HttpWorkerTts(name, parseSettings(HttpWorkerTtsConfigSchema, config));
+  build(name: string, config: ProviderConfig, env: ProviderEnv = NO_ENV): TtsProvider {
+    return new HttpWorkerTts(name, parseSettings(HttpWorkerTtsConfigSchema, config), env);
   }
 }
 

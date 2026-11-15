@@ -24,6 +24,8 @@ import {
 import {
   type AsrHint,
   durationMs,
+  type EndpointSource,
+  firstEndpoint,
   isOffloaded,
   type SpeechService,
   type Transcript,
@@ -113,6 +115,8 @@ export interface ListenerDeps {
   gate: TurnGate | null;
   /** Keeps clips of what was said; `null` unless `clip_dir` is set. */
   clips: ClipRecorder | null;
+  /** Core's endpoint registry: where the Silero VAD runs (`vad`). */
+  endpoints: EndpointSource | null;
 }
 
 export class Listener {
@@ -234,7 +238,10 @@ export class Listener {
             sampleRate: info.sampleRate,
             sileroModel: config.vad_silero_model,
             sileroThreshold: config.vad_silero_threshold,
-            url: config.turn_url,
+            worker: () => {
+              const endpoint = firstEndpoint(this.#d.endpoints, "vad", { direct: true });
+              return endpoint === null ? null : { url: endpoint.url, headers: endpoint.headers };
+            },
           },
           (engine) =>
             ctx.log.warn({ engine }, "VAD engine is not available: using the energy detector"),

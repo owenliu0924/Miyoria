@@ -83,6 +83,7 @@ it("covers identity, config, the artifact store and the plugins that own their t
   expect(Object.keys(DRIZZLE_PLUGINS).sort()).toEqual([
     "artifact",
     "auth",
+    "cluster",
     "config",
     "directive",
     "economy",

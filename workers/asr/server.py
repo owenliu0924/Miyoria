@@ -86,6 +86,14 @@ except ImportError:  # the Docker image holds this folder and contracts.py only:
     class RemoteError(Exception):  # type: ignore[no-redef]
         pass
 
+try:
+    import service_auth
+except ImportError:  # never run open: with a token set, no check means no service
+    if os.environ.get("MIYORIA_SERVICE_TOKEN") or os.environ.get("MIYORIA_HOST_TOKEN"):
+        raise SystemExit("MIYORIA_SERVICE_TOKEN or MIYORIA_HOST_TOKEN is set but service_auth.py cannot be "
+                         "imported: refusing to start without the token check")
+    service_auth = None
+
 # The JSON bodies, generated from the JSON Schema of packages/contracts (gen_contracts.py).
 from contracts import WorkersOffloadRequest as OffloadRequest  # noqa: E402
 
@@ -393,6 +401,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Miyoria ASR worker", lifespan=lifespan)
+if service_auth is not None:
+    service_auth.install(app)  # every route needs the bearer token when hostd set one
 
 
 def _error(status: int, message: str) -> JSONResponse:

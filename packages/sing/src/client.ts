@@ -1,6 +1,8 @@
 // HTTP client of the song worker (`workers/sing/server.py`, docs/protocols/voice-link.md
 // 「歌曲 Worker」). Everything it returns about a song (title, artist, lyrics) comes from YouTube or
-// lrclib and is untrusted.
+// lrclib and is untrusted. Every request goes through Core's endpoint registry (`request`), which
+// adds the worker's token and relays it over a host's control link when the worker is not
+// reachable directly.
 
 import { createWriteStream } from "node:fs";
 import { mkdir, rename, rm } from "node:fs/promises";
@@ -20,6 +22,7 @@ import {
   type WorkersSingSongMeta,
   WorkersSingSongMetaSchema,
 } from "@miyoria/contracts/workers";
+import type { Endpoint, EndpointSource } from "./endpoints.js";
 
 export const SongMetaSchema = WorkersSingSongMetaSchema;
 export type SongMeta = WorkersSingSongMeta;
@@ -110,12 +113,31 @@ export interface SingWorker {
 /** Longest wait for the connection check after a submit timed out. */
 const PROBE_MS = 3000;
 
+/**
+ * The request never left Core: there is no relay (`RelayUnavailableError` of `@miyoria/cluster`),
+ * or the relay refused before sending (`RelayError` with `sent: false`: the host is not
+ * connected, or too many requests to it are open).
+ */
+function relayUnavailable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "RelayUnavailableError") return true;
+  return error.name === "RelayError" && (error as { sent?: unknown }).sent === false;
+}
+
+/** One song worker: an endpoint of Core's registry (`sing`). */
 export class HttpSingWorker implements SingWorker {
-  readonly #base: string;
+  readonly #endpoint: Endpoint;
+  readonly #source: EndpointSource;
+  readonly #where: string;
   readonly #timeoutMs: number;
 
-  constructor(url: string, timeoutMs: number) {
-    this.#base = url.replace(/\/+$/, "");
+  constructor(endpoint: Endpoint, timeoutMs: number, source: EndpointSource) {
+    this.#endpoint = endpoint;
+    this.#source = source;
+    this.#where =
+      endpoint.via === "direct"
+        ? endpoint.url.replace(/\/+$/, "")
+        : `${endpoint.service} on ${endpoint.host} (over its control link)`;
     this.#timeoutMs = timeoutMs;
   }
 
@@ -124,13 +146,13 @@ export class HttpSingWorker implements SingWorker {
     const all = signal ? AbortSignal.any([signal, timeout]) : timeout;
     let res: Response;
     try {
-      res = await fetch(`${this.#base}${path}`, { ...init, signal: all });
+      res = await this.#source.request(this.#endpoint, path, { ...init, signal: all });
     } catch (error) {
       if (signal?.aborted) throw error;
-      throw new SingWorkerError(`song worker unreachable at ${this.#base}: ${String(error)}`, {
+      throw new SingWorkerError(`song worker unreachable at ${this.#where}: ${String(error)}`, {
         cause: error,
         unreachable: true,
-        maybeReceived: !neverConnected(error),
+        maybeReceived: !neverConnected(error) && !relayUnavailable(error),
       });
     }
     if (!res.ok) {
@@ -167,10 +189,12 @@ export class HttpSingWorker implements SingWorker {
     } catch (error) {
       // Timed out: the worker may have taken the job, unless it cannot even be connected to now
       // (a computer that is off, or off the tailnet, often drops the connection attempt silently
-      // instead of refusing it, so the request timeout fires first).
+      // instead of refusing it, so the request timeout fires first). Only a direct endpoint can be
+      // probed; over a control link the relay's own error is the answer.
       if (
         error instanceof SingWorkerError &&
         error.maybeReceived &&
+        this.#endpoint.via === "direct" &&
         !(await this.#connects(Math.min(this.#timeoutMs, PROBE_MS)))
       ) {
         throw new SingWorkerError(error.message, { cause: error.cause, unreachable: true });
@@ -184,7 +208,12 @@ export class HttpSingWorker implements SingWorker {
    * worker is too busy to answer, so this tells "off" from "slow".
    */
   #connects(ms: number): Promise<boolean> {
-    const url = new URL(this.#base);
+    let url: URL;
+    try {
+      url = new URL(this.#endpoint.url);
+    } catch {
+      return Promise.resolve(false);
+    }
     const host = url.hostname.replace(/^\[|\]$/g, "");
     const port = Number(url.port) || (url.protocol === "https:" ? 443 : 80);
     return new Promise((resolve) => {

@@ -90,7 +90,7 @@ export {
   StageLinkError,
   StageLinkKey,
 } from "./link/link.js";
-export { GAME_SESSION_TOPIC, StageLinkModule } from "./link/module.js";
+export { GAME_SESSION_TOPIC, STAGE_LINK_PATH, StageLinkModule } from "./link/module.js";
 export {
   away,
   factsOf,
@@ -237,6 +237,7 @@ export {
   StageConfigSchema,
   type StageConfigSection,
   StageError,
+  stageLinkFromEnv,
 } from "./runtime.js";
 export { SongVideo, type SongVideoDeps, type SongVideoPlay, songVideoFile } from "./song-video.js";
 export {

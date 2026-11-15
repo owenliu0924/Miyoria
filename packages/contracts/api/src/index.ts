@@ -21,6 +21,7 @@ import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
 import { activity, arbiter } from "./body.js";
 import { channels } from "./channels.js";
+import { cluster } from "./cluster.js";
 import { game, songs, voiceControl } from "./control.js";
 import { decisions, events, llm, modules } from "./core.js";
 import { data } from "./data.js";
@@ -143,6 +144,36 @@ export {
   type SetChannelLevelRequest,
   SetChannelLevelRequestSchema,
 } from "./channels.js";
+export {
+  type ClusterApproveRequest,
+  ClusterApproveRequestSchema,
+  type ClusterCreatedHost,
+  ClusterCreatedHostSchema,
+  type ClusterCreateHostRequest,
+  ClusterCreateHostRequestSchema,
+  type ClusterEndpoints,
+  ClusterEndpointsSchema,
+  type ClusterEndpointView,
+  ClusterEndpointViewSchema,
+  type ClusterHostInfo,
+  ClusterHostInfoSchema,
+  type ClusterHostView,
+  ClusterHostViewSchema,
+  type ClusterInvite,
+  type ClusterInviteRequest,
+  ClusterInviteRequestSchema,
+  ClusterInviteSchema,
+  type ClusterJoinRequest,
+  ClusterJoinRequestSchema,
+  type ClusterJoinResult,
+  ClusterJoinResultSchema,
+  type ClusterServiceActionRequest,
+  ClusterServiceActionRequestSchema,
+  type ClusterServiceResult,
+  ClusterServiceResultSchema,
+  type ClusterServiceStatus,
+  ClusterServiceStatusSchema,
+} from "./cluster.js";
 export {
   type AddSongRequest,
   AddSongRequestSchema,
@@ -776,6 +807,7 @@ export const contract = {
   events,
   llm,
   channels,
+  cluster,
   mind: { ...mind, ...mindDigests, ...mindPlan },
   roles,
   extensions,

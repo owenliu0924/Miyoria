@@ -37,7 +37,7 @@ ENV HF_HOME=/home/worker/.cache/huggingface \
     ASR_BACKEND=${BACKEND} \
     HOST=0.0.0.0 PORT=8001
 
-COPY --chown=worker asr/server.py asr/tags.py contracts.py ./
+COPY --chown=worker asr/server.py asr/tags.py contracts.py service_auth.py ./
 EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=4).status == 200 else 1)"

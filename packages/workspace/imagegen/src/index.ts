@@ -22,6 +22,7 @@ export {
   type ModelOverride,
   parseHours,
 } from "./config.js";
+export type { Endpoint, EndpointQuery, EndpointSource, EndpointsOption } from "./endpoints.js";
 export { GraphBuilder, type Link, saveNodes } from "./graph.js";
 export {
   ANIMA,

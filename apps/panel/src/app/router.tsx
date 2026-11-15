@@ -41,6 +41,7 @@ const LifePage = lazyRouteComponent(() => import("@/pages/life/LifePage"), "Life
 const EconomyPage = lazyRouteComponent(() => import("@/pages/economy/EconomyPage"), "EconomyPage");
 const LlmPage = lazyRouteComponent(() => import("@/pages/llm/LlmPage"), "LlmPage");
 const SystemPage = lazyRouteComponent(() => import("@/pages/system/SystemPage"), "SystemPage");
+const MachinesPage = lazyRouteComponent(() => import("@/pages/machines/MachinesPage"), "MachinesPage");
 const RulesPage = lazyRouteComponent(() => import("@/pages/rules/RulesPage"), "RulesPage");
 const EvalPage = lazyRouteComponent(() => import("@/pages/eval/EvalPage"), "EvalPage");
 const AccessPage = lazyRouteComponent(() => import("@/pages/access/AccessPage"), "AccessPage");
@@ -161,6 +162,7 @@ const routeTree = rootRoute.addChildren([
   economyRoute,
   llmRoute,
   systemRoute,
+  createRoute({ getParentRoute: () => rootRoute, path: "/machines", component: MachinesPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/rules", component: RulesPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/eval", component: EvalPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/access", component: AccessPage }),

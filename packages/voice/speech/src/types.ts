@@ -16,6 +16,7 @@ import {
   metrics,
 } from "@miyoria/runtime/kernel";
 import { type JsonValue, serviceKey } from "@miyoria/types";
+import type { EndpointSource } from "./endpoints.js";
 
 const log = getLogger("speech");
 
@@ -115,16 +116,24 @@ export interface ProviderConfig {
   settings: Record<string, JsonValue>;
 }
 
+/** What a provider may use besides its settings. */
+export interface ProviderEnv {
+  /** Core's endpoint registry: where the `http-worker` providers' workers are. */
+  endpoints: EndpointSource | null;
+}
+
+export const NO_ENV: Readonly<ProviderEnv> = Object.freeze({ endpoints: null });
+
 export interface AsrFactory {
   readonly kinds: readonly string[];
   /** Throws on invalid settings. */
-  build(name: string, config: ProviderConfig): AsrProvider;
+  build(name: string, config: ProviderConfig, env?: ProviderEnv): AsrProvider;
 }
 
 export interface TtsFactory {
   readonly kinds: readonly string[];
   /** Throws on invalid settings. */
-  build(name: string, config: ProviderConfig): TtsProvider;
+  build(name: string, config: ProviderConfig, env?: ProviderEnv): TtsProvider;
 }
 
 export class SpeechError extends Error {

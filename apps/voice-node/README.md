@@ -20,7 +20,7 @@ Discord 語音 ⇄ (self 帳號) ⇄ voice-node ⇄ Voice Link(WebSocket) ⇄ Co
 ## 需求
 
 - Node ≥ 22.4(開發用 24)、pnpm 9
-- 不需要 ffmpeg(Opus 編解碼用純 WASM 的 `opusscript`;之後要省 CPU 可換 `@discordjs/opus`)
+- 語音(Opus 編解碼)不需要 ffmpeg:用純 WASM 的 `opusscript`,之後要省 CPU 可換 `@discordjs/opus`。**Go Live 要 ffmpeg 在 PATH 上**(`golive/encoder.ts` 用 `ffmpeg` 探測編碼器、做編碼和轉送)
 - Discord 語音會走 DAVE(端對端加密),由 `@discordjs/voice` + `@snazzah/davey` 處理;`pnpm report` 可以看依賴是否齊全
 
 ## 安裝與執行
@@ -43,6 +43,17 @@ pnpm --filter "@miyoria/voice-node..." build   # 先編 @miyoria/contracts,再 t
 pnpm start:dist                   # node dist/main.js
 ```
 
+### 用 hostd 跑(平常的做法)
+
+```bash
+miyoria add voice-node                  # 在 repository 裡;列出還要自己處理的事
+miyoria up voice-node                   # hostd 用 `pnpm start` 在這個資料夾跑它,在 Core 之後啟動
+```
+
+- `SELF_TOKEN` 永遠寫在 `apps/voice-node/.env`,hostd 不給。
+- **已經加入 Core 的電腦**(包括 `miyoria up` 自動連上本機 Core 的那台):`VOICE_LINK_URL` 和 `VOICE_LINK_TOKEN` 由 hostd 給(Core 把 voice link 的位址和 token 交給它),`.env` 裡不用填。hostd 給了值,`.env` 裡的同名變數不再用;Core 還沒送來、或這台沒有加入時,這兩個變數不會設,node 照舊讀自己的 `.env`。
+- 她在唱歌或直播時,`miyoria restart voice-node`、`down`、`update` 會拒絕重啟它(`--force` 才行)。
+
 `Ctrl+C`(SIGINT / SIGTERM)會:離開所有語音頻道 → 告訴 Core(`left`)→ 關掉 WebSocket → 登出 Discord。再按一次 `Ctrl+C` 直接強制結束。
 
 ## 設定(環境變數或 `.env`)
@@ -50,8 +61,8 @@ pnpm start:dist                   # node dist/main.js
 | 變數 | 預設 | 說明 |
 |---|---|---|
 | `SELF_TOKEN` | (必填) | self 帳號(專用小帳號)的 user token。**只放在本機 `.env`,不要 commit、不要貼到任何地方**。`.env` 已被 `.gitignore` 排除。 |
-| `VOICE_LINK_URL` | `ws://127.0.0.1:7879/voice-link` | Core 的 voice.link 位址(對應 Core 設定的 `[modules."voice.link"] bind`)。 |
-| `VOICE_LINK_TOKEN` | (空) | 跟 Core 約好的共用 token,hello 時送出。 |
+| `VOICE_LINK_URL` | `ws://127.0.0.1:7879/voice-link` | Core 的 voice.link 位址(對應 Core 設定的 `[modules."voice.link"] bind`)。已加入 Core 的電腦由 hostd 給,不用填;手動跑或沒加入時才寫。 |
+| `VOICE_LINK_TOKEN` | (空) | 跟 Core 約好的共用 token,hello 時送出。已加入 Core 的電腦由 hostd 給,不用填;手動跑或沒加入時要跟 Core 的 `.env` 一樣。 |
 | `LOG_LEVEL` | `info` | `error` / `warn` / `info` / `debug`。`debug` 會印出 `@discordjs/voice` 的連線與 DAVE 細節。 |
 | `SILENCE_MS` | `400` | 某人停止說話多久算一段串流結束(`stream_close`)。建議 300~500。 |
 | `PLAYBACK_MAX_BUFFER_S` | `60` | 單一播放最多緩衝幾秒音訊,超過回報 `failed`(避免 Core 一次灌太多吃光記憶體)。 |

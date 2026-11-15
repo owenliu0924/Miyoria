@@ -7,10 +7,16 @@
 // * Completion is read from `GET /history/{prompt_id}`; progress comes from the WebSocket
 //   (`/ws?clientId=`), which is optional: when it cannot be opened the job still finishes.
 // * `POST /free` unloads the models so the speech and song workers get the VRAM back.
+//
+// The server is the `imagegen` endpoint of Core's registry, and every request goes through the
+// registry (`request`: the token, or the relay over a host's control link). A job keeps to the
+// server it started on (`pin`). The progress socket needs a direct endpoint; over a control link
+// a job runs without progress.
 
 import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
+import { type Endpoint, type EndpointSource, firstEndpoint } from "./endpoints.js";
 
 /** A graph in ComfyUI's API format: node id → `{ class_type, inputs }`. */
 export type ComfyGraph = Record<string, ComfyNode>;
@@ -122,16 +128,18 @@ export type ComfyProgress =
 const WsMessageSchema = z.object({ type: z.string(), data: z.record(z.string(), z.unknown()) });
 
 export interface ComfyClientOptions {
-  /** Base URL, e.g. `http://127.0.0.1:8188`. */
-  url: string;
-  /** Extra headers on every request (a token for a reverse proxy in front of ComfyUI). */
-  headers?: Record<string, string>;
+  /**
+   * Core's endpoint registry: ComfyUI is its `imagegen` endpoint (the endpoint's headers carry a
+   * proxy's token). `null`: there is no ComfyUI.
+   */
+  endpoints: EndpointSource | null;
   /** Per-request timeout of the plain HTTP calls (not of a run). */
   timeoutMs?: number;
-  fetch?: typeof fetch;
   /** WebSocket constructor; `null` turns progress off (tests, servers behind a plain proxy). */
   webSocket?: typeof WebSocket | null;
 }
+
+const NO_COMFYUI = "no ComfyUI is known to the endpoint registry";
 
 const MB = 1024 * 1024;
 
@@ -171,32 +179,55 @@ function nodeErrorText(errors: Record<string, unknown>): string {
 }
 
 export class ComfyClient {
-  readonly url: string;
-  readonly #headers: Record<string, string>;
+  readonly #options: ComfyClientOptions;
+  readonly #source: EndpointSource | null;
+  /** The server of one job (`pin`); `null`: the registry's current one at each request. */
+  readonly #pinned: Endpoint | null;
   readonly #timeoutMs: number;
-  readonly #fetch: typeof fetch;
   readonly #webSocket: typeof WebSocket | null;
 
-  constructor(options: ComfyClientOptions) {
-    this.url = options.url.replace(/\/+$/, "");
-    this.#headers = options.headers ?? {};
+  constructor(options: ComfyClientOptions, pinned: Endpoint | null = null) {
+    this.#options = options;
+    this.#source = options.endpoints;
+    this.#pinned = pinned;
     this.#timeoutMs = options.timeoutMs ?? 30_000;
-    this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.#webSocket =
       options.webSocket === undefined ? (globalThis.WebSocket ?? null) : options.webSocket;
   }
 
+  /** The server's address now (for records and messages); `null` when there is none. */
+  get url(): string | null {
+    const endpoint = this.#pinned ?? firstEndpoint(this.#source, "imagegen");
+    return endpoint === null ? null : endpoint.url.replace(/\/+$/, "");
+  }
+
+  /**
+   * A client that keeps to the server there is now, for one job (its prompt id, uploads and
+   * pictures live there). Throws an `unreachable` `ComfyError` when there is none.
+   */
+  pin(): ComfyClient {
+    return new ComfyClient(this.#options, this.#endpoint());
+  }
+
+  #endpoint(): Endpoint {
+    const endpoint = this.#pinned ?? firstEndpoint(this.#source, "imagegen");
+    if (endpoint === null) throw new ComfyError(NO_COMFYUI, "unreachable");
+    return endpoint;
+  }
+
   async #request(path: string, init: RequestOptions = {}): Promise<Response> {
+    const endpoint = this.#endpoint();
+    const source = this.#source as EndpointSource;
     const signals = [AbortSignal.timeout(this.#timeoutMs)];
     if (init.signal) signals.push(init.signal);
-    const headers: Record<string, string> = { ...this.#headers };
+    const headers: Record<string, string> = {};
     let body = init.body;
     if (init.json !== undefined) {
       headers["content-type"] = "application/json";
       body = JSON.stringify(init.json);
     }
     try {
-      return await this.#fetch(`${this.url}${path}`, {
+      return await source.request(endpoint, path, {
         method: init.method ?? (body === undefined ? "GET" : "POST"),
         headers,
         ...(body === undefined ? {} : { body }),
@@ -204,6 +235,7 @@ export class ComfyClient {
       });
     } catch (error) {
       if (init.signal?.aborted) throw error;
+      source.failed(endpoint, error);
       throw new ComfyError(`ComfyUI is unreachable: ${errorMessage(error)}`, "unreachable", null, {
         cause: error,
       });
@@ -439,10 +471,23 @@ export class ComfyClient {
   ): { close(): void } | null {
     const Ws = this.#webSocket;
     if (Ws === null) return null;
-    const wsUrl = `${this.url.replace(/^http/, "ws")}/ws?clientId=${encodeURIComponent(clientId)}`;
+    let endpoint: Endpoint;
+    try {
+      endpoint = this.#endpoint();
+    } catch {
+      return null;
+    }
+    // A WebSocket cannot go over the control link: progress needs a direct endpoint.
+    if (endpoint.via !== "direct") return null;
+    const base = endpoint.url.replace(/\/+$/, "").replace(/^http/, "ws");
+    const wsUrl = `${base}/ws?clientId=${encodeURIComponent(clientId)}`;
     let ws: WebSocket;
     try {
-      ws = new Ws(wsUrl);
+      // Node's WebSocket takes `{ headers }` (the endpoint's token); without any, as before.
+      ws =
+        Object.keys(endpoint.headers).length > 0
+          ? new Ws(wsUrl, { headers: endpoint.headers } as never)
+          : new Ws(wsUrl);
     } catch {
       return null;
     }

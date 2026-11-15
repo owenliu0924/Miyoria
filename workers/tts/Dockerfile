@@ -37,7 +37,7 @@ ENV HF_HOME=/home/worker/.cache/huggingface \
     VOICES_DIR=/voices PROFILES_DIR=/profiles \
     HOST=0.0.0.0 PORT=8002
 
-COPY --chown=worker tts/server.py tts/text_split.py tts/design_voice.py contracts.py ./
+COPY --chown=worker tts/server.py tts/text_split.py tts/design_voice.py contracts.py service_auth.py ./
 EXPOSE 8002
 HEALTHCHECK --interval=30s --timeout=5s --start-period=240s --retries=3 \
     CMD python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=4).status == 200 else 1)"

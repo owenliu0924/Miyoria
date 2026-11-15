@@ -2,7 +2,7 @@
 // if a package exported something else, fix it here and nowhere else.
 //
 // Boot order (after `facts`, which every other module outlives, and `moderation`,
-// which is there before anything can say a word): llm, speech, voice.link, voice, scheduler, agent, commands,
+// which is there before anything can say a word): llm, cluster, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, social, mood, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
 // stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, Discord bot, Admin API, terminal chat, then the
@@ -17,6 +17,7 @@ import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
 import { ArbiterModule } from "@miyoria/brain/arbiter";
 import { DirectiveModule } from "@miyoria/brain/directive";
+import { ClusterModule } from "@miyoria/cluster";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
@@ -76,7 +77,12 @@ import {
   type ModuleDeps,
   STORE_PLUGINS,
 } from "./boot.js";
+import { clusterContext } from "./cluster-context.js";
+import { CLUSTER_GUARDS } from "./cluster-guards.js";
+import { clusterLinks } from "./cluster-links.js";
+import { clusterComplete } from "./cluster-llm.js";
 import { assertStartConfig, validateRevision } from "./config-schema.js";
+import { CoreEndpoints, legacyEndpoints } from "./endpoints.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
 
@@ -135,14 +141,21 @@ async function coreModules({
   store,
   baseDir,
 }: ModuleDeps): Promise<Module[]> {
+  // Where the modules' workers are: the cluster module's registry, with the address keys of the
+  // modules' own sections added as static entries (endpoints.ts).
+  const endpoints = new CoreEndpoints(legacyEndpoints(config)).option;
+  // Where the voice and stage links listen, for the hosts whose nodes dial them (cluster.links).
+  const links = clusterLinks(config);
   return [
     // First, so it stops last: it logs what the others say on their way down.
     new FactsModule(store, profileId, { names: profile.names() }),
     new ModerationModule(),
     llmModule(config, profile, baseDir),
-    SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema)),
+    // Before the modules that will ask its registry where their services are.
+    new ClusterModule({ guards: CLUSTER_GUARDS, complete: clusterComplete, links: () => links }),
+    SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema), { endpoints }),
     new VoiceLinkModule(),
-    new VoiceModule(profileId, profile.voice, profile.names()),
+    new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),
     new SchedulerModule(),
     new AgentModule(profile),
     new CommandsModule({ owners: authOwners(config) }),
@@ -177,13 +190,14 @@ async function coreModules({
     new QueueModule(),
     GameModule.fromProfile(profile),
     new GameChatModule(),
-    new SingModule(null, { baseDir }),
+    // Who listens goes to the song worker and, through the cluster, to the hosts' GPU arbiters.
+    new SingModule(null, { baseDir, endpoints, context: clusterContext }),
     McpModule.fromAppConfig(config),
     new StageLinkModule(),
     new EconomyModule(profileId),
     new WebModule(),
     new SandboxModule(profileId, { baseDir }),
-    new ImageGenModule({ baseDir }),
+    new ImageGenModule({ baseDir, endpoints }),
     new SkillsModule(),
     new LiveModule({ names: profile.names() }),
     new PartyModule(),

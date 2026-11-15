@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-query";
 import { isApiError } from "@/api/http";
 import type { DecisionsQuery, E2eRecord, FactEventsQuery, LlmCallsQuery, LlmThinkingQuery, MemoryQuery, ModuleAction, PeopleQuery } from "@/api/types";
-import type { AddDirectiveRequest, AdjustPersonRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpdatePersonRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
+import type { AddDirectiveRequest, ClusterInviteRequest, AdjustPersonRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpdatePersonRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
 import type { ContextKey, Timestamp } from "@miyoria/contracts/wire";
 import { type EvalData, loadEvalData } from "@/lib/eval-data";
 import { factEventsInput } from "@/lib/fact-events";
@@ -22,6 +22,10 @@ export { createQueryClient };
 
 export const queryKeys = {
   modules: ["modules"] as const,
+  cluster: ["cluster"] as const,
+  clusterHosts: ["cluster", "hosts"] as const,
+  clusterEndpoints: ["cluster", "endpoints"] as const,
+  clusterInfo: (host: string) => ["cluster", "info", host] as const,
   decisionsAll: ["decisions"] as const,
   decisions: (q: DecisionsQuery) => ["decisions", q] as const,
   usage: ["llm", "usage"] as const,
@@ -90,6 +94,8 @@ export const queryKeys = {
 };
 
 
+export type ClusterServiceAction = "start" | "stop" | "restart";
+
 /** Polls every `ms`, but stops once the route turned out not to exist or the token is bad. */
 const poll =
   (ms: number) =>
@@ -120,6 +126,64 @@ export function useModuleAction() {
       void qc.invalidateQueries({ queryKey: queryKeys.modules });
     },
   });
+}
+
+// --- cluster -----------------------------------------------------------------
+
+/** The cluster's answers change while the owner watches: poll, and retry only a dropped network. */
+const clusterRetry = (count: number, error: Error) => isApiError(error) && error.kind === "network" && count < 2;
+
+export function useClusterHosts() {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.clusterHosts,
+    queryFn: ({ signal }) => api.rpc.cluster.hosts(undefined, { signal }),
+    refetchInterval: poll(10_000),
+    retry: clusterRetry,
+  });
+}
+
+export function useClusterEndpoints(enabled = true) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.clusterEndpoints,
+    queryFn: ({ signal }) => api.rpc.cluster.endpoints(undefined, { signal }),
+    refetchInterval: poll(10_000),
+    retry: clusterRetry,
+    enabled,
+  });
+}
+
+/** What a connected host's daemon reports. `409` (not connected) is an error the part shows. */
+export function useClusterHostInfo(name: string, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.clusterInfo(name),
+    queryFn: ({ signal }) => api.rpc.cluster.info({ params: { name } }, { signal }),
+    refetchInterval: poll(10_000),
+    retry: clusterRetry,
+    enabled,
+  });
+}
+
+export function useClusterMutations() {
+  const api = useApi();
+  const qc = useQueryClient();
+  const refresh = () => void qc.invalidateQueries({ queryKey: queryKeys.cluster });
+  return {
+    invite: useMutation({ mutationFn: (req: ClusterInviteRequest) => api.rpc.cluster.invite({ body: req }) }),
+    approve: useMutation({
+      mutationFn: ({ name, capabilities }: { name: string; capabilities: string[] }) =>
+        api.rpc.cluster.approve({ params: { name }, body: { capabilities } }),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({ mutationFn: (name: string) => api.rpc.cluster.remove({ params: { name } }), onSuccess: refresh }),
+    service: useMutation({
+      mutationFn: ({ host, service, action, force }: { host: string; service: string; action: ClusterServiceAction; force?: boolean }) =>
+        api.rpc.cluster.service({ params: { name: host, service, action }, body: force ? { force: true } : {} }),
+      onSuccess: refresh,
+    }),
+  };
 }
 
 export function useExtensions() {

@@ -670,29 +670,28 @@ def test_coverage_of_a_line():
     assert coverage("あいうえおかきくけこ", "さしすせそたちつてと") < 0.2
 
 
-def test_llm_config_follows_core_and_its_provider_kind(tmp_path, monkeypatch):
+def test_llm_config_comes_from_hostd_or_the_worker_never_from_cores_files(tmp_path, monkeypatch):
     import lyricsllm
 
-    (tmp_path / "profiles" / "p").mkdir(parents=True)
-    (tmp_path / "profiles" / "p" / "profile.toml").write_text('[llm.purposes]\nfast = ["go:model-fast"]\n', "utf-8")
-    (tmp_path / "miyoria.toml").write_text(
-        '[core]\nprofile = "p"\n[llm.providers.go]\nkind = "opencode"\nbase_url = "https://x.test/v1"\n'
-        'api_key = "${LYRICS_TEST_KEY:-fallback}"\n[llm.purposes]\nchat = ["other:chat-model"]\n', "utf-8")
-    monkeypatch.delenv("SING_LYRICS_LLM_URL", raising=False)
-    monkeypatch.delenv("SING_LYRICS_LLM", raising=False)
-    monkeypatch.delenv("MIYORIA_CONFIG", raising=False)
-    monkeypatch.setenv("LYRICS_TEST_KEY", "k1")
-    cfg = lyricsllm.load_config(tmp_path)
-    assert cfg["model"] == "model-fast" and cfg["base_url"] == "https://x.test/v1" and cfg["api_key"] == "k1"
-    assert cfg["headers"] == {"x-opencode-session": "miyoria-sing-lyrics"} and cfg["body"]["thinking"]["type"] == "disabled"
-    monkeypatch.setenv("SING_LYRICS_LLM_URL", "http://127.0.0.1:1/v1")
+    for name in ("SING_LYRICS_LLM", "SING_LYRICS_LLM_URL", "SING_LYRICS_LLM_KEY", "SING_LYRICS_LLM_MODEL",
+                 "MIYORIA_HOSTD_URL", "MIYORIA_SERVICE_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    # Core's config next to the worker is not read any more.
+    (tmp_path / "miyoria.toml").write_text('[llm.providers.go]\nbase_url = "https://x.test/v1"\n'
+                                          '[llm.purposes]\nfast = ["go:m"]\n', "utf-8")
+    monkeypatch.setenv("MIYORIA_CONFIG", str(tmp_path / "miyoria.toml"))
+    monkeypatch.chdir(tmp_path)
+    assert lyricsllm.load_config() is None
+    monkeypatch.setenv("SING_LYRICS_LLM_URL", "http://127.0.0.1:1/v1/")
     monkeypatch.setenv("SING_LYRICS_LLM_MODEL", "mine")
-    assert lyricsllm.load_config(tmp_path)["model"] == "mine"  # the worker's own setting wins
+    assert lyricsllm.load_config() == {"base_url": "http://127.0.0.1:1/v1", "api_key": "", "model": "mine"}
+    # hostd runs the worker: Core's model through hostd, the worker's own kept for when hostd is not linked
+    monkeypatch.setenv("MIYORIA_HOSTD_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("MIYORIA_SERVICE_TOKEN", "t")
+    cfg = lyricsllm.load_config()
+    assert cfg["via"] == "hostd" and cfg["model"] == "core:fast" and cfg["fallback"]["model"] == "mine"
     monkeypatch.setenv("SING_LYRICS_LLM", "0")
-    assert lyricsllm.load_config(tmp_path) is None
-    monkeypatch.delenv("SING_LYRICS_LLM")
-    monkeypatch.delenv("SING_LYRICS_LLM_URL")
-    assert lyricsllm.load_config(tmp_path / "nowhere") is None
+    assert lyricsllm.load_config() is None
 
 
 def test_llm_answer_parsing_and_cache(tmp_path):

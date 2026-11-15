@@ -158,7 +158,7 @@ export class ImageGenService implements ImageGen {
   #loaded = false;
   #lastActive = 0;
   #lastSweep = 0;
-  #files: { at: number; folders: Map<string, Set<string>> } | null = null;
+  #files: { at: number; url: string | null; folders: Map<string, Set<string>> } | null = null;
 
   constructor(options: ImageGenServiceOptions) {
     this.config = options.config;
@@ -665,6 +665,11 @@ export class ImageGenService implements ImageGen {
     this.#loaded = false;
   }
 
+  /** Where ComfyUI is now (the registry's `imagegen`); `null` when there is none. */
+  comfyui(): string | null {
+    return this.#client.url;
+  }
+
   /** Deletes finished jobs older than `keep_days`, with their pictures. */
   async sweep(): Promise<number> {
     if (this.config.keep_days <= 0) return 0;
@@ -725,21 +730,29 @@ export class ImageGenService implements ImageGen {
   }
 
   /** The model files ComfyUI has, by folder (cached for a minute). */
-  async #comfyFiles(folder: string): Promise<Set<string>> {
+  async #comfyFiles(client: ComfyClient, folder: string): Promise<Set<string>> {
     const now = this.#clock.now();
-    if (this.#files === null || now - this.#files.at > FILES_TTL_MS) {
-      this.#files = { at: now, folders: new Map() };
+    if (
+      this.#files === null ||
+      now - this.#files.at > FILES_TTL_MS ||
+      this.#files.url !== client.url
+    ) {
+      this.#files = { at: now, url: client.url, folders: new Map() };
     }
     let set = this.#files.folders.get(folder);
     if (set === undefined) {
-      set = new Set((await this.#client.models(folder)).map((f) => f.replaceAll("\\", "/")));
+      set = new Set((await client.models(folder)).map((f) => f.replaceAll("\\", "/")));
       this.#files.folders.set(folder, set);
     }
     return set;
   }
 
   /** Throws `WorkflowError` (not retried) when a file the model needs is not in ComfyUI. */
-  async #checkFiles(model: ModelAdapter, request: ImageRequest): Promise<void> {
+  async #checkFiles(
+    client: ComfyClient,
+    model: ModelAdapter,
+    request: ImageRequest,
+  ): Promise<void> {
     if (!this.config.check_files) return;
     const files = variantFiles(model, request.variant ?? model.default_variant);
     const need: [string, string, string][] = [
@@ -752,7 +765,7 @@ export class ImageGenService implements ImageGen {
       ].map((l): [string, string, string] => ["loras", l.name, "lora"]),
     ];
     for (const [folder, file, what] of need) {
-      const have = await this.#comfyFiles(folder);
+      const have = await this.#comfyFiles(client, folder);
       if (!have.has(file.replaceAll("\\", "/"))) {
         this.#files = null;
         throw new WorkflowError(
@@ -764,13 +777,17 @@ export class ImageGenService implements ImageGen {
   }
 
   /** Uploads the start picture when it is a local file; returns the name `LoadImage` takes. */
-  async #uploadInit(job: ImageJob, signal: AbortSignal): Promise<string | null> {
+  async #uploadInit(
+    client: ComfyClient,
+    job: ImageJob,
+    signal: AbortSignal,
+  ): Promise<string | null> {
     const name = job.request.init_image;
     if (name === null) return null;
     const source = this.#initImageSource(name);
     if ("comfy" in source) return source.comfy;
     const bytes = await readFile(source.local);
-    return this.#client.upload(bytes, `${job.id}-${basename(source.local)}`, {
+    return client.upload(bytes, `${job.id}-${basename(source.local)}`, {
       subfolder: "miyoria",
       signal,
     });
@@ -778,6 +795,7 @@ export class ImageGenService implements ImageGen {
 
   /** The graph a job runs and the nodes whose pictures are its outputs. */
   async #graph(
+    client: ComfyClient,
     job: ImageJob,
     signal: AbortSignal,
   ): Promise<{ graph: ComfyGraph; outputs: string[] }> {
@@ -805,7 +823,7 @@ export class ImageGenService implements ImageGen {
       if (r.init_image !== null) {
         const image = Object.entries(wf.params).find(([, p]) => p.type === "image")?.[0];
         if (image === undefined) throw new WorkflowError(`workflow \`${wf.id}\` takes no picture`);
-        values[image] = (await this.#uploadInit(job, signal)) as string;
+        values[image] = (await this.#uploadInit(client, job, signal)) as string;
       }
       Object.assign(values, r.params);
       const graph = fillWorkflow(wf, values);
@@ -817,8 +835,8 @@ export class ImageGenService implements ImageGen {
     }
     const model = this.#models.get(r.model ?? "");
     if (model === undefined) throw new WorkflowError(`no image model \`${r.model}\` any more`);
-    await this.#checkFiles(model, r);
-    const initImage = await this.#uploadInit(job, signal);
+    await this.#checkFiles(client, model, r);
+    const initImage = await this.#uploadInit(client, job, signal);
     const { graph, save } = buildModelGraph(model, r, { prefix, initImage });
     return { graph, outputs: [save] };
   }
@@ -837,17 +855,20 @@ export class ImageGenService implements ImageGen {
     await this.#save(job);
     this.#emit(job);
     const clientId = `miyoria-${job.id}`;
+    // The job keeps to the ComfyUI it starts on: its uploads, prompt and pictures live there.
+    let client: ComfyClient | null = null;
     try {
-      const { graph, outputs } = await this.#graph(job, signal);
+      client = this.#client.pin();
+      const { graph, outputs } = await this.#graph(client, job, signal);
       let promptId = job.prompt_id;
-      if (promptId !== null && !(await this.#stillThere(promptId, signal))) promptId = null;
+      if (promptId !== null && !(await this.#stillThere(client, promptId, signal))) promptId = null;
       if (promptId === null) {
-        promptId = await this.#client.queue(graph, clientId, { promptId: randomUUID(), signal });
+        promptId = await client.queue(graph, clientId, { promptId: randomUUID(), signal });
         job.prompt_id = promptId;
         await this.#save(job);
       }
       this.#loaded = true;
-      const run = await this.#client.follow(promptId, clientId, {
+      const run = await client.follow(promptId, clientId, {
         signal,
         pollMs: this.config.poll_ms,
         onProgress: (p) => this.#onProgress(job, p),
@@ -862,21 +883,21 @@ export class ImageGenService implements ImageGen {
         await this.#finish(job, "failed", "the run saved no pictures");
         return;
       }
-      job.outputs = await this.#collect(job, graph, picked, signal);
+      job.outputs = await this.#collect(client, job, graph, picked, signal);
       this.#retryAt = 0;
       await this.#finish(job, "done", null);
     } catch (error) {
-      await this.#failed(job, error, running.reason, timeout.aborted, outer);
+      await this.#failed(client, job, error, running.reason, timeout.aborted, outer);
     } finally {
       this.#running = null;
     }
   }
 
   /** Whether ComfyUI still has a run we queued before (queued, running or in its history). */
-  async #stillThere(promptId: string, signal: AbortSignal): Promise<boolean> {
-    const run = await this.#client.run(promptId, signal);
+  async #stillThere(client: ComfyClient, promptId: string, signal: AbortSignal): Promise<boolean> {
+    const run = await client.run(promptId, signal);
     if (run !== null) return true;
-    const q = await this.#client.queueState(signal);
+    const q = await client.queueState(signal);
     return q.running.includes(promptId) || q.pending.includes(promptId);
   }
 
@@ -892,6 +913,7 @@ export class ImageGenService implements ImageGen {
   }
 
   async #failed(
+    client: ComfyClient | null,
     job: ImageJob,
     error: unknown,
     reason: StopReason | null,
@@ -900,9 +922,9 @@ export class ImageGenService implements ImageGen {
   ): Promise<void> {
     const promptId = job.prompt_id;
     const stopRun = async () => {
-      if (promptId === null) return;
-      await this.#client.dequeue([promptId]).catch(() => undefined);
-      await this.#client.interrupt(promptId).catch(() => undefined);
+      if (promptId === null || client === null) return;
+      await client.dequeue([promptId]).catch(() => undefined);
+      await client.interrupt(promptId).catch(() => undefined);
     };
     if (reason === "cancel") {
       await stopRun();
@@ -948,6 +970,7 @@ export class ImageGenService implements ImageGen {
 
   /** Copies the run's pictures to the output dir, with a sidecar holding the request and graph. */
   async #collect(
+    client: ComfyClient,
     job: ImageJob,
     graph: ComfyGraph,
     images: { node: string; image: import("./comfy.js").ComfyImageRef }[],
@@ -958,7 +981,7 @@ export class ImageGenService implements ImageGen {
     await mkdir(dir, { recursive: true });
     const outputs: ImageOutput[] = [];
     for (const [index, { image }] of images.entries()) {
-      const bytes = await this.#client.view(image, signal);
+      const bytes = await client.view(image, signal);
       const path = join(dir, `${job.id}-${index}.png`);
       await writeFile(path, bytes);
       const size = (await stat(path)).size;
@@ -977,7 +1000,7 @@ export class ImageGenService implements ImageGen {
       request: job.request,
       model_files: model ? variantFiles(model, job.request.variant ?? model.default_variant) : null,
       prompt_id: job.prompt_id,
-      comfyui: this.#client.url,
+      comfyui: client.url,
       graph,
       outputs: outputs.map((o) => o.file),
       made_at: toTimestamp(this.#clock.now()),

@@ -14,13 +14,16 @@ import {
 } from "@miyoria/types";
 import { ComfyClient } from "./comfy.js";
 import { ImageGenConfigSchema } from "./config.js";
+import type { EndpointsOption } from "./endpoints.js";
 import { ImageGenService } from "./service.js";
 
 /**
  * Module `imagegen` (docs/design/imagegen.md): pictures made on a ComfyUI server. Provides
  * `ImageGen` (`ImageGenKey`) for the other parts of her; it has no commands and nothing a member
  * can call. Off unless `[modules.imagegen] enabled = true`. Listens to the `sing` module's cues
- * so the GPU goes to her songs first.
+ * so the GPU goes to her songs first. ComfyUI is the `imagegen` endpoint of Core's registry
+ * (`endpoints`); `[modules.imagegen] url` and `headers` are read by Core's wiring, which makes them
+ * a static entry.
  */
 export class ImageGenModule implements Module {
   static readonly ID = "imagegen";
@@ -30,15 +33,17 @@ export class ImageGenModule implements Module {
     configSchema: ImageGenConfigSchema,
   });
   readonly #baseDir: string;
+  readonly #endpoints: EndpointsOption | null;
   #service: ImageGenService | null = null;
 
-  constructor(options: { baseDir?: string } = {}) {
+  constructor(options: { baseDir?: string; endpoints?: EndpointsOption } = {}) {
     this.#baseDir = options.baseDir ?? process.cwd();
+    this.#endpoints = options.endpoints ?? null;
   }
 
   async start(ctx: ModuleContext): Promise<void> {
     const config = ctx.config(ImageGenConfigSchema);
-    const client = new ComfyClient({ url: config.url, headers: config.headers });
+    const client = new ComfyClient({ endpoints: this.#endpoints?.(ctx.services) ?? null });
     const service = new ImageGenService({
       config,
       baseDir: this.#baseDir,
@@ -67,7 +72,7 @@ export class ImageGenModule implements Module {
     });
     ctx.spawn("jobs", (signal) => service.run(signal));
     ctx.log.info(
-      { url: config.url, models: service.models().map((m) => m.id) },
+      { url: service.comfyui(), models: service.models().map((m) => m.id) },
       "image generation ready",
     );
   }
@@ -76,8 +81,16 @@ export class ImageGenModule implements Module {
     const service = this.#service;
     if (service === null) return HEALTHY;
     const status = await service.status();
-    if (!status.reachable)
-      return { status: "degraded", reason: `ComfyUI is not answering at ${service.config.url}` };
+    if (!status.reachable) {
+      const url = service.comfyui();
+      return {
+        status: "degraded",
+        reason:
+          url === null
+            ? "no ComfyUI is known to the endpoint registry"
+            : `ComfyUI is not answering at ${url}`,
+      };
+    }
     return HEALTHY;
   }
 

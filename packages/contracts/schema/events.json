@@ -1348,6 +1348,154 @@
         "browse"
       ]
     },
+    "EventsClusterHostApproved": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "host",
+        "capabilities"
+      ]
+    },
+    "EventsClusterHostConnected": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "approved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host",
+        "platform",
+        "version",
+        "approved"
+      ]
+    },
+    "EventsClusterHostDisconnected": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "code": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "code",
+        "reason"
+      ]
+    },
+    "EventsClusterHostJoined": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "host",
+        "status"
+      ]
+    },
+    "EventsClusterHostRemoved": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "how": {
+          "type": "string",
+          "enum": [
+            "revoked",
+            "deleted"
+          ]
+        }
+      },
+      "required": [
+        "host",
+        "how"
+      ]
+    },
+    "EventsClusterServiceState": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/EventsClusterServiceStateKind"
+        },
+        "previous": {
+          "$ref": "#/$defs/EventsClusterServiceStateKind"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "host",
+        "service",
+        "state",
+        "previous",
+        "reason"
+      ]
+    },
+    "EventsClusterServiceStateKind": {
+      "type": "string",
+      "enum": [
+        "stopped",
+        "starting",
+        "running",
+        "stopping",
+        "backoff",
+        "failed",
+        "external",
+        "foreign",
+        "disabled"
+      ]
+    },
     "EventsCommissionAsked": {
       "type": "object",
       "properties": {

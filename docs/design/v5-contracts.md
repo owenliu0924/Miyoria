@@ -340,7 +340,7 @@ files, A-platform §5 for the overview]:
    `validate.ts`; `toml-patch.ts`).
 3. The CLI's `[stack]` schema (`packages/cli/src/stack/config.ts:59-118`).
 4. Top-level sections parsed ad hoc (`[core]`, `[llm]`, `[speech]`, ...).
-5. The lyrics service parses `miyoria.toml` `[llm]` itself in Python (`workers/sing/lyricsllm.py:24, 71-84`).
+5. The lyrics service parsed `miyoria.toml` `[llm]` itself in Python (`workers/sing/lyricsllm.py:24, 71-84`). Fixed (v5-hostd H8): a worker under hostd gets its completions from Core through `cluster.llm`, and without hostd it reads only `SING_LYRICS_LLM_URL` / `_KEY` / `_MODEL` from its environment; no worker reads `miyoria.toml` any more. The line numbers above are those of the old file.
 
 Other config worlds: the voice node's env-only loader (`apps/voice-node/src/config.ts`), worker
 env defaults, `deploy/miyoria.docker.toml`, and the extension `config.schema.json` files.

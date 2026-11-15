@@ -126,6 +126,9 @@ Environment
     SING_VIDEO_WAIT_S      wait for the video after the audio     (default 120)
     SING_GPU_POLICY        auto | share | offload | wait           (default auto, see gpu.py)
     SING_GPU_SHARE         the older switch, used when SING_GPU_POLICY is not set: 1 = auto, 0 = offload
+    SING_GPU_ARBITER       self | hostd: who takes the GPU decisions (default self; hostd: lease.py, the
+                           worker asks hostd and never calls the speech workers; it does not start
+                           without MIYORIA_HOSTD_URL and MIYORIA_SERVICE_TOKEN)
     SING_OFFLOAD_URLS      who can be asked to give up the GPU, comma separated (default none),
                            e.g. http://127.0.0.1:8002,http://127.0.0.1:8003
     SING_EXCLUSIVE_WAIT_S  wait this long for Core's go (exclusive_ack) (default 30)
@@ -136,7 +139,7 @@ Environment
     SING_SHARE_WAIT_S      wait this long for room before taking speech offline, also with nobody
                            listening                                (default 0)
     SING_DEFER_S           people listening: wait this long before a short silence (default 120)
-    SING_WAIT_MAX_S        longest wait for room in all; then windows, or the job fails (default 600)
+    SING_WAIT_MAX_S        longest wait for room in all; then windows (auto), or the job fails (default 600)
     SING_SILENCE_MAX_S     longest she is offline at a time while people listen, reload included (default 90)
     SING_SILENCE_GAP_S     back this long before the next window    (default 60)
     SING_OFFLOAD_LEASE_S   a window renews its offload; a worker that died leaves her voice
@@ -198,6 +201,7 @@ from contracts import WorkersSingPruneRequest as PruneRequest  # noqa: E402
 from engine import Cancelled, ConvertWork, JobError, Suspended, allowed_url, env_float, env_int, is_oom  # noqa: E402
 from exclusive import Exclusive, http_post, parse_urls  # noqa: E402
 from gpu import CPU_FALLBACK, CPU_STAGES, Action, Audience, GpuJob, Limits, Machine, Profile  # noqa: E402
+from lease import HostdArbitration, arbiter_from_env, hostd_available  # noqa: E402
 from yielding import SpeechYield, http_get  # noqa: E402
 from songs import (  # noqa: E402
     PLAY_RATE,
@@ -210,6 +214,14 @@ from songs import (  # noqa: E402
     short_hash,
     song_id,
 )
+
+try:
+    import service_auth
+except ImportError:  # never run open: with a token set, no check means no service
+    if os.environ.get("MIYORIA_SERVICE_TOKEN") or os.environ.get("MIYORIA_HOST_TOKEN"):
+        raise SystemExit("MIYORIA_SERVICE_TOKEN or MIYORIA_HOST_TOKEN is set but service_auth.py cannot be "
+                         "imported: refusing to start without the token check")
+    service_auth = None
 
 log = logging.getLogger("miyoria.sing")
 
@@ -632,6 +644,7 @@ class State:
     machine: Machine
     cache: Cache
     janitor: Janitor | None = None
+    arbitration: Any = None  # SelfArbitration or lease.HostdArbitration (SING_GPU_ARBITER)
     offload_post = staticmethod(http_post)  # replaced in tests
     busy_get = staticmethod(http_get)  # replaced in tests
 
@@ -1070,7 +1083,7 @@ def _open_window(job: Job) -> None:
         job.exclusive.begin(job.cancel.is_set, job.go if job.request.exclusive_ack else None)
     finally:
         job.stage = stage
-    g.window_opened()
+    g.window_opened(job.exclusive.offline_at)
 
 
 def _close_window(job: Job) -> None:
@@ -1080,7 +1093,7 @@ def _close_window(job: Job) -> None:
         return
     ex.end()
     ex.join()
-    g.window_closed(ex.timings.get("reload_s"))
+    g.window_closed(ex.timings.get("reload_s"), ex.asked_back_at)
 
 
 def _place(job: Job, stage: str) -> str:
@@ -1148,24 +1161,100 @@ def _arm(job: Job, stage: str, work: ConvertWork | None) -> None:
     b.gate = gate
 
 
+class SelfArbitration:
+    """``SING_GPU_ARBITER=self`` (the default): the worker decides by itself, as it always has
+    (gpu.py, exclusive.py, yielding.py and the functions above). Deleted, with ``_start_gpu``,
+    ``_place``, ``_open_window``, ``_close_window``, ``_act``, ``_arm``, ``_urgent`` and
+    ``_recover_speech``, once the song worker has run on hostd's arbiter live (lease.py)."""
+
+    name = "self"
+
+    def start(self, job: Job, audio_s: float | None) -> None:
+        _start_gpu(job, audio_s)
+
+    def place(self, job: Job, stage: str, resumed: bool) -> str:
+        return _place(job, stage)
+
+    def arm(self, job: Job, stage: str, work: ConvertWork | None) -> None:
+        _arm(job, stage, work)
+
+    def run_begins(self, job: Job, stage: str, device: str, resumed: bool) -> Callable[[], None] | None:
+        g = job.gpu
+        assert g is not None
+        g.started(stage, device, resumed)
+        # torch here cannot see a subprocess's VRAM, and it never calls the gate: read the card.
+        return g.watch() if device == "gpu" and not _stage_pauses(stage) else None
+
+    def run_ended(self, job: Job, stage: str, how: str) -> None:
+        g = job.gpu
+        assert g is not None
+        if how == "finished":
+            g.finished(stage)
+        else:
+            g.stopped(oom=how == "oom")
+
+    def close_window(self, job: Job) -> None:
+        _close_window(job)
+
+    def give_back(self, job: Job) -> None:
+        """Starts bringing her voice back; ``run_job`` waits for it. The song mixes meanwhile."""
+        if job.yielding is not None:
+            job.yielding.stop()
+        state.backend.gate = None
+        ex, g = job.exclusive, job.gpu
+        if ex is not None:
+            # The window ends when her voice is back, not when the job does: the gap before the next
+            # window, and the silence counted, start then (until 2026-11-16: at the job's end).
+            ex.end(after=None if g is None else lambda: g.window_closed(ex.timings.get("reload_s"),
+                                                                        ex.asked_back_at))
+
+    def finish(self, job: Job) -> dict[str, Any] | None:
+        if job.exclusive is not None:
+            job.exclusive.join()
+        if job.gpu is not None:
+            ex = job.exclusive
+            job.gpu.window_closed(ex.timings.get("reload_s") if ex else None, ex.asked_back_at if ex else None)
+        return None
+
+    def startup(self) -> None:
+        threading.Thread(target=_recover_speech, name="sing-recover", daemon=True).start()
+
+    def context(self, req: GpuContext) -> dict[str, Any]:
+        state.machine.audience.update(req.in_voice, req.listeners, req.live, req.urgent)
+        return {"ok": True}
+
+    def health(self, job: Job | None) -> dict[str, Any]:
+        info = state.machine.public(Limits.from_env())
+        info["arbiter"] = self.name
+        info["job"] = job.gpu.public() if job is not None and job.gpu is not None else None
+        return info
+
+
+_SELF = SelfArbitration()
+
+
+def _arbitration() -> Any:
+    """Who takes the GPU decisions (``SING_GPU_ARBITER``, chosen at start): ``SelfArbitration`` or
+    lease.py's ``HostdArbitration``, the same calls in the same places of the job loop."""
+    return getattr(state, "arbitration", None) or _SELF
+
+
 def _gpu_stage(job: Job, stage: str, wav: Path, duration_s: float | None, run: Callable[[str], Any],
                work: ConvertWork | None = None) -> Any:
     """Runs a stage where the machine has room for it, again from where it was when it had to let
     go: ``run`` gets the device. The first one to run starts the job's GPU bookkeeping."""
+    arb = _arbitration()
     if job.gpu is None:
-        _start_gpu(job, duration_s or _wav_seconds(wav))
-    g = job.gpu
-    assert g is not None
+        arb.start(job, duration_s or _wav_seconds(wav))
+    assert job.gpu is not None
     resumed = False
     while True:
         wait_warm = getattr(state.backend, "wait_warm", None)
         if wait_warm is not None and _stage_uses_gpu(stage):
             wait_warm()  # the RVC warm-up is not this stage's VRAM
-        device = _place(job, stage)
-        _arm(job, stage, work)
-        g.started(stage, device, resumed)
-        # torch here cannot see a subprocess's VRAM, and it never calls the gate: read the card.
-        unwatch = g.watch() if device == "gpu" and not _stage_pauses(stage) else None
+        device = arb.place(job, stage, resumed)
+        arb.arm(job, stage, work)
+        unwatch = arb.run_begins(job, stage, device, resumed)
         try:
             try:
                 out = run(device)
@@ -1174,29 +1263,53 @@ def _gpu_stage(job: Job, stage: str, wav: Path, duration_s: float | None, run: C
                     unwatch()  # before ``finished`` / ``stopped`` look at what it read
         except Suspended as e:
             log.info("job %s lets go of the GPU in %s: %s", job.id, stage, e.code)
-            g.stopped()
+            arb.run_ended(job, stage, "suspended")
         except Exception as e:
             if device == "cpu" or not is_oom(e):
                 raise
             log.warning("job %s ran out of VRAM in %s", job.id, stage)
-            g.stopped(oom=True)
+            arb.run_ended(job, stage, "oom")
         else:
-            g.finished(stage)
+            arb.run_ended(job, stage, "finished")
             return out
         finally:
             state.backend.gate = None
         state.backend.unload()
-        _close_window(job)
+        arb.close_window(job)
         resumed = True
 
 
 def _give_gpu_back(job: Job) -> None:
     """Starts bringing her voice back; ``run_job`` waits for it. The song mixes meanwhile."""
-    if job.yielding is not None:
-        job.yielding.stop()
-    state.backend.gate = None
-    if job.exclusive is not None:
-        job.exclusive.end()
+    _arbitration().give_back(job)
+
+
+def _convert_passes(job: Job, passes: list[Callable[[], Any]]) -> list[Any]:
+    """The conversion's passes on the card, one after the other: the lead (or the whole vocal stem)
+    and, with ``backing: "convert"``, the backing voices. Each is a GPU stage of its own, placed when
+    it starts; her voice is given back once, after the last. A window the first pass opened is still
+    open for the second, with the same silence limit (its clock runs on from the window's start) and
+    the same yielding, so she goes quiet once, not twice with a gap between. Until 2026-11-16 her
+    voice was given back after the first pass and the second ran on the card while it reloaded."""
+    out = []
+    try:
+        for run in passes:
+            out.append(run())
+    finally:
+        _give_gpu_back(job)
+    return out
+
+
+def _gpu_summary_to_meta(job: Job, summary: dict[str, Any]) -> None:
+    """hostd's summary of the job, known only once its lease ends, replaces what ``meta.json`` got."""
+    sid = job.song_id
+    meta = state.store.meta(sid) if sid else None
+    if meta is None or not isinstance(meta.get("gpu"), dict):
+        return
+    meta["gpu"] = summary
+    if summary.get("waited_s"):
+        meta.setdefault("timings", {})["gpu_wait_s"] = summary["waited_s"]
+    state.store.write_meta(sid, meta)
 
 
 def run_job(job: Job) -> None:
@@ -1211,11 +1324,11 @@ def run_job(job: Job) -> None:
         if job.video is not None:
             job.video.stop()
         # Also after a failure or a cancel; the job is only over once they are back.
-        _give_gpu_back(job)
-        if job.exclusive is not None:
-            job.exclusive.join()
-        if job.gpu is not None:
-            job.gpu.window_closed(job.exclusive.timings.get("reload_s") if job.exclusive else None)
+        arb = _arbitration()
+        arb.give_back(job)
+        summary = arb.finish(job)
+        if summary is not None and job.state != "cancelled" and not job.aborted:
+            _gpu_summary_to_meta(job, summary)
 
 
 _fetch_locks: dict[str, threading.Lock] = {}
@@ -1503,10 +1616,7 @@ def _run_job(job: Job) -> None:
             job.gpu.converted = f
 
     def convert() -> dict[str, Any]:
-        try:
-            return _gpu_stage(job, "convert", vocal, src.duration_s, convert_on_gpu, work)
-        finally:
-            _give_gpu_back(job)
+        return _gpu_stage(job, "convert", vocal, src.duration_s, convert_on_gpu, work)
 
     def settle_pitch(shift: int, auto_key: int, info: dict[str, Any]) -> int:
         """Records the pitch settings and starts the mix's instrumental; the vocal's shift."""
@@ -1545,22 +1655,19 @@ def _run_job(job: Job) -> None:
         b.convert(vocal, converted, pitch["vocal_shift"], converted_share, check, work)
         return pitch
 
-    pitch_info = timed("convert", convert)
+    passes: list[Callable[[], Any]] = [lambda: timed("convert", convert)]
     backing_conv: Path | None = None
     if req.backing == "convert" and lead["used"]:
         backing_conv = out / "_converted_backing.wav"
         backing_wav = sdir / "backing.wav"
+        backing_work = ConvertWork()  # its own: a suspended pass goes on from its last chunk
 
         def convert_backing_on_gpu(_device: str) -> None:
-            b.convert(backing_wav, backing_conv, pitch_info["vocal_shift"], converted_share, check, ConvertWork())
+            b.convert(backing_wav, backing_conv, pitch["vocal_shift"], converted_share, check, backing_work)
 
-        def convert_backing() -> None:
-            try:
-                _gpu_stage(job, "convert", backing_wav, src.duration_s, convert_backing_on_gpu)
-            finally:
-                _give_gpu_back(job)
-
-        timed("convert_backing", convert_backing)
+        passes.append(lambda: timed("convert_backing", lambda: _gpu_stage(
+            job, "convert", backing_wav, src.duration_s, convert_backing_on_gpu, backing_work)))
+    pitch_info = _convert_passes(job, passes)[0]
     job.converted.set()  # the card is the speech workers' again: the lyrics' ASR check may go on
     mixed = timed("mix", lambda: b.mix(sdir, converted, pitch_info["song_key"], out, lead["used"],
                                           req.backing, backing_conv))
@@ -1708,6 +1815,26 @@ def _recover_speech() -> None:
             log.info("cannot ask %s whether it is back: %s", url, e)
 
 
+def _queued_behind(job: Job) -> list[str]:
+    """The jobs queued behind ``job`` (hostd counts it urgent when one of them is)."""
+    with state.lock:
+        return [j for j in state.order if j != job.id and j in state.jobs and state.jobs[j].state == "queued"]
+
+
+def _choose_arbitration(profile: Profile) -> Any:
+    """``SING_GPU_ARBITER``: ``self`` (the default) or ``hostd``. Anything else, or ``hostd`` without
+    a hostd to ask, stops the start: a wrong switch must not quietly become self-arbitration."""
+    which = arbiter_from_env()
+    if which == "self":
+        return _SELF
+    if not hostd_available():
+        raise SystemExit("SING_GPU_ARBITER=hostd, but no hostd is configured for this worker "
+                         "(MIYORIA_HOSTD_URL and MIYORIA_SERVICE_TOKEN): start it under hostd, or unset "
+                         "SING_GPU_ARBITER to let the worker decide by itself")
+    return HostdArbitration(lambda: state.backend, profile, stage_pauses=_stage_pauses,
+                            stage_uses_gpu=_stage_uses_gpu, queued=_queued_behind)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     root = Path(os.environ.get("SING_DATA_DIR", REPO / "data" / "songs"))
@@ -1727,7 +1854,8 @@ async def lifespan(app: FastAPI):
         threading.Thread(target=preimport, name="sing-preimport", daemon=True).start()
     state.machine = Machine(lambda: state.backend, Profile(root), Audience(),
                             lambda url, timeout: state.busy_get(url, timeout))
-    threading.Thread(target=_recover_speech, name="sing-recover", daemon=True).start()
+    state.arbitration = _choose_arbitration(state.machine.profile)
+    state.arbitration.startup()
     state.cache = Cache(root, state.store.library, _protected, state.store.forget_sources)
     # The cache cleans up after itself on its own thread: now, after every job and every hour.
     state.janitor = Janitor(state.cache, env_float("SING_CACHE_EVERY_S", 3600.0)).start()
@@ -1742,6 +1870,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Miyoria song worker", lifespan=lifespan)
+if service_auth is not None:
+    service_auth.install(app)  # every route needs the bearer token when hostd set one
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -1909,8 +2039,7 @@ async def get_file(sid: str, name: str):
 
 @app.post("/gpu/context")
 async def gpu_context(req: GpuContext) -> dict[str, Any]:
-    state.machine.audience.update(req.in_voice, req.listeners, req.live, req.urgent)
-    return {"ok": True}
+    return _arbitration().context(req)
 
 
 @app.get("/cache")
@@ -1939,9 +2068,8 @@ async def health() -> dict[str, Any]:
     torch = sys.modules.get("torch")
     if torch is not None and torch.cuda.is_available():
         info["vram_allocated_mb"] = round(torch.cuda.memory_allocated() / 2**20)
-    info["gpu"] = state.machine.public(Limits.from_env())
     job = state.jobs.get(state.running or "")
-    info["gpu"]["job"] = job.gpu.public() if job is not None and job.gpu is not None else None
+    info["gpu"] = _arbitration().health(job)
     return info
 
 

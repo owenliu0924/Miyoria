@@ -5,6 +5,7 @@
 
 import { authTables } from "@miyoria/auth";
 import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
+import { clusterTables } from "@miyoria/cluster";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
@@ -83,6 +84,7 @@ const DIRECTIVE_MODULE = DirectiveModule.ID;
  */
 export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   authTables,
+  clusterTables,
   directiveTables,
   economyTables,
   memoryTables,

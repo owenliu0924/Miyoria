@@ -659,6 +659,7 @@ describe("the route table", () => {
       "GET /og/card/:file",
       "GET /og/default.png",
       "POST /api/auth/logout",
+      "POST /api/cluster/join",
     ]);
     expect(
       all

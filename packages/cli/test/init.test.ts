@@ -211,6 +211,7 @@ describe("init command", () => {
   it("scaffolds_a_runnable_install_into_an_empty_folder", async () => {
     const config = join(dir, "miyoria.toml");
     const p = new Scripted([
+      Enter, // what this machine is for: text only
       Enter, // profile
       Enter, // kind
       Enter, // base URL
@@ -225,6 +226,7 @@ describe("init command", () => {
       ".env",
       ".gitignore",
       "data",
+      "host.toml",
       "miyoria.toml",
       "profiles",
     ]);
@@ -250,12 +252,12 @@ describe("init command", () => {
 
   it("writes_nothing_when_cancelled_or_declined", async () => {
     const config = join(dir, "miyoria.toml");
-    const cancel = new Scripted([Enter, Enter, Enter, Cancel]);
+    const cancel = new Scripted([Enter, Enter, Enter, Enter, Cancel]);
     await expect(
       run(config, cancel, { bundledProfiles: BUNDLED, processEnv: NO_ENV }),
     ).rejects.toBeInstanceOf(CancelledError);
     expect(readdirSync(dir)).toEqual([]);
-    const decline = new Scripted([...enters(8), No, No]);
+    const decline = new Scripted([...enters(9), No, No]);
     await run(config, decline, { bundledProfiles: BUNDLED, processEnv: NO_ENV });
     expect(readdirSync(dir)).toEqual([]);
     expect(decline.printed).toContain("warn: 沒有寫入任何檔案");
