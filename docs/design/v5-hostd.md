@@ -588,7 +588,10 @@ keeps both in step with the Python. Decisions taken on the open points of that s
 - The worker keeps learning each stage's need and sends it. The sing descriptor's `vram_mb.peak`
   is 4096 to match.
 - The oddities the specification lists are reproduced as recorded. Each fix is its own later
-  change to the table and the arbiter together.
+  change to the table and the arbiter together. Fixed so far (2026-11-16, v5-gpu §10 items 3, 4
+  and 7): the endless wait under `yield`, the backing voices' pass running on the card while
+  speech reloads, and the last window closing only at the job's end. Each window's real silence
+  is recorded (item 6; the limit itself is unchanged).
 - Image generation is not moved in this phase: the module is closed until a model is chosen, and
   moving it changes when ComfyUI unloads. Core's existing wiring stays; the lease API leaves room
   for a `share`-only tenant.

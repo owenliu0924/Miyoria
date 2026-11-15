@@ -88,7 +88,7 @@ integer) silently gives the default. Table: `limits_from_env`.
 | `headroom_pct` | `SING_GPU_HEADROOM_PCT` | 12.0 | share of the card kept free |
 | `room_wait_s` | `SING_SHARE_WAIT_S` | 0.0 | `auto`, nobody listening: wait this long before a window |
 | `defer_s` | `SING_DEFER_S` | 120.0 | `auto`: wait before a short window; `share`/`offload`: wait after a spill |
-| `wait_max_s` | `SING_WAIT_MAX_S` | 600.0 | `auto`: total wait before windows regardless, or failing |
+| `wait_max_s` | `SING_WAIT_MAX_S` | 600.0 | `auto`: total wait before windows regardless, or failing; `yield`: total wait before failing when her voice cannot help |
 | `silence_max_s` | `SING_SILENCE_MAX_S` | 90.0 | a window's length while people listen ("reload included") |
 | `silence_gap_s` | `SING_SILENCE_GAP_S` | 60.0 | her voice's time back before the next window |
 | `lease_s` | `SING_OFFLOAD_LEASE_S` | 60.0 | `max_s` sent with `/offload` |
@@ -179,7 +179,7 @@ and, after a spill or OOM, `room ≥ crowded + 0.1 × need`. `separate` = the st
 | 10 | policy `yield`: `cpu_fallback and (not can or gap_s > 0)` | `cpu/no_room_cpu` |
 | 10b | … `gap_s > 0 and can` | `wait/gap` |
 | 10c | … `can` | `offload/urgent` when urgent, else `offload/no_room` |
-| 10d | … otherwise | `wait/no_room` (no time limit: never `give_up`) |
+| 10d | … otherwise: `waited_total_s ≥ wait_max_s` | `give_up/no_room` (since 2026-11-16), else `wait/no_room` |
 | 11 | `auto` from here. `helps` = `can` and (freed unknown or room unknown or `room + freed ≥ want`); `small` = `total < want` | |
 | 12 | `people is False and helps and waited_s ≥ room_wait_s` | `offload/nobody_listening` |
 | 13 | `separate` and (not urgent or not `can` or `gap_s > 0`) | `cpu/no_room_cpu` |
@@ -308,31 +308,44 @@ On their own:
   changes when ComfyUI unloads, which needs the owner, and the module stays closed until a model
   is chosen.
 
-## 10. Oddities and doc/code mismatches (not fixed)
+## 10. Oddities and doc/code mismatches
+
+Not fixed unless the item says so. A fix changes the Python, the recorded table and scenarios,
+and the arbiter together.
 
 1. `server.py`'s docstring lists `SING_GPU_POLICY auto | share | offload | wait (default auto)`.
    The code's default is `yield`, and `yield` is missing from the list.
 2. `gpu.py`'s docstring says that under `yield` "only Demucs' separation (`CPU_FALLBACK`) goes to
    the CPU instead" of taking her voice. The code sends a `CPU_FALLBACK` stage to the CPU only
    when speech cannot help (`not can`) or during a gap; otherwise it takes a window like any stage.
-3. Under `yield` there is no time limit and no `give_up`: a job whose window did not help
-   (`offload_useless`) waits for room for ever (scenario
-   `yield_spill_inside_a_window_waits_for_ever`). `yield` also ignores `freed_mb` (`helps`),
-   `people`, `defer_s`, `room_wait_s` and the silence estimate for opening a window.
-4. **Suspected bug**: after the conversion, `_give_gpu_back` starts the reload, but the job's
-   `window` flag stays set until the job ends. A `backing: "convert"` pass after a window is
-   therefore placed `exclusive/window` and runs on the GPU while TTS and ASR are reloading, with
-   yielding already stopped. (Not in the scenarios: the simulated pipeline has no backing pass.)
+3. **Fixed 2026-11-16**: under `yield` a job that her voice cannot help (`offload_useless`, or
+   speech already offline) waited for room for ever. It now fails with the reason after
+   `wait_max_s` of waiting in all, as `auto` does (scenarios
+   `yield_spill_inside_a_window_gives_up`, `yield_never_enough_room`). Still true: `yield`
+   ignores `freed_mb` (`helps`), `people`, `defer_s`, `room_wait_s` and the silence estimate for
+   opening a window.
+4. **Fixed 2026-11-16**: her voice was given back after the lead's conversion while the job's
+   `window` flag stayed set, so a `backing: "convert"` pass was placed `exclusive/window` and
+   ran on the GPU while TTS and ASR were reloading, with yielding already stopped. The passes
+   now run one after the other (`_convert_passes`), each placed as a stage of its own, and her
+   voice is given back once, after the last. A window the first pass opened holds the second
+   under the same silence limit; a pass stopped by the limit goes on from its step in the next
+   window (scenarios `backing_*`).
 5. Three different "how long to wait for go": `Exclusive`'s own default `ack_wait_s` 20 s, the
    server's `SING_EXCLUSIVE_WAIT_S` default 30 s (the one in effect), and Core's
    `announce_max_secs` 20 s plus up to 8 s before she starts.
 6. The silence clock of a window starts when the offload has finished (`window_opened`), but Core
    pauses her speech from `offloading` on; the ack wait and the offload (seconds; TTS may drain
    15 s) are not counted, and the reload is counted only by its learned estimate. With a reload
-   of 87 s (11-07) the real silence is about 45 + 87 s, not "90 s, reload included".
-7. `silenced_s` and the gap run from `window_opened` to `window_closed`, and for the last window
-   `window_closed` is called only at the end of the job (after mix, beats, lyrics and video), so
-   the next job's gap starts late.
+   of 87 s (11-07) the real silence is about 45 + 87 s, not "90 s, reload included". The limit
+   is unchanged; since 2026-11-16 each window's real silence is recorded next to it: the job's
+   summary has `windows`, one `{ offload_s, work_s, reload_s, silence_s, limit_s }` per window
+   (`work_s` is what the limit bounds, `silence_s` runs from the first offload asked to her
+   voice back, `limit_s` is null when nobody listened).
+7. **Fixed 2026-11-16**: `silenced_s` and the gap run from `window_opened` to `window_closed`,
+   and for the last window `window_closed` was called only at the end of the job (after mix,
+   beats, lyrics and video), so the next job's gap started late. The window now closes when her
+   voice is back after the conversion.
 8. Under policy `offload` a window has no silence limit at all, whoever listens.
 9. `Exclusive` counts any reply of `/offload` as offloaded, including `{"state": "reloading"}`
    from a worker with an in-process engine, which did not offload and set no lease.
@@ -365,7 +378,7 @@ each threshold, and every outcome code of `decide` and `tick` occurs.
 
 | Function | Cases | What varies |
 |---|---|---|
-| `decide` | 1733 | early exits × policy; fit boundary (want ± 1, own memory, crowded ± 0.4 MB, burst); `auto` people × urgent × speech × useless × gap × freed; waits around `defer_s`/`wait_max_s` × silence estimate around 90 s × small card; `room_wait_s`; `yield`; `share`/`offload`/`wait` |
+| `decide` | 1773 | early exits × policy; fit boundary (want ± 1, own memory, crowded ± 0.4 MB, burst); `auto` people × urgent × speech × useless × gap × freed; waits around `defer_s`/`wait_max_s` × silence estimate around 90 s × small card; `room_wait_s`; `yield`, with its waits around `wait_max_s`; `share`/`offload`/`wait` |
 | `tick` | 673 | spill detection (normal known or not, step window below/at/above the limit, free none/plenty/= headroom/< headroom/2, low reads); responses per stage × policy × window × reduced × speech × useless × gap × urgent/people; the silence limit around 45 s and 60 s |
 | `gather` | 53 | card (none, unreadable, raising, 12 GB, own memory), profile fresh or learned, speech loaded/offloaded/one down, `cpu_only`, `CPU_FALLBACK`, wait and gap state |
 | `headroom` | 108 | total × percent × learned, half-to-even cases |
@@ -379,7 +392,7 @@ each threshold, and every outcome code of `decide` and `tick` occurs.
 | `profile.note_step/spill/healthy` | 21, 30, 12 | learning arithmetic |
 | `server.urgent`, `yield_allowance`, `yield.hold` | 15, 12, 5 | |
 
-`gpu_scenarios.json`: 26 scenarios. The real `server.py` job loop (`run_job`, `_gpu_stage`,
+`gpu_scenarios.json`: 31 scenarios. The real `server.py` job loop (`run_job`, `_gpu_stage`,
 `_place`, the gate), `GpuJob`, `Exclusive` and `SpeechYield` run their own threads on a simulated
 clock, one at a time; the device, the speech workers (a model of §8 with made-up timings: TTS
 4700 MB, offload 3 s, reload 20 s; ASR 1500 MB, 1 s, 8 s), Core (context every 1.5 s, go 4 s after
@@ -392,8 +405,11 @@ windows with go, without go (30 s), long song with bounded windows and gaps, alo
 joins, Demucs separation; `auto` waiting then a short window, waiting the maximum, urgent, Core
 going quiet mid-wait, Core gone with a window open; a speech worker unreachable; the holder dying
 (restart after and before the lease); spills while sharing, in separation, inside a window under
-`auto` (fails) and under `yield` (waits for ever); out of memory then a window; yield patience
-urgent and not; policies `share`, `wait`, `offload`; no CUDA; the RVC stage and her voice's burst.
+`auto` and under `yield` (both fail after `wait_max_s`); `yield` with no room and nothing to
+offload; a `backing: "convert"` job (one window for both passes, the silence limit falling in
+the backing pass, `auto` with people, sharing while she speaks); out of memory then a window;
+yield patience urgent and not; policies `share`, `wait`, `offload`; no CUDA; the RVC stage and
+her voice's burst.
 
 **Not covered** by either file, and why:
 - `device_memory` (NVML through ctypes), `settled`, `report`, the torch readings
@@ -409,7 +425,6 @@ urgent and not; policies `share`, `wait`, `offload`; no CUDA; the RVC stage and 
 - Core's announcement logic (modelled as "go 4 s after waiting") and image generation (§9; no
   Python involved).
 - Cancellation paths (the cancel checks in the placement loop, the ack wait and the gate).
-- The `backing: "convert"` pass (see oddity 4).
 
 ## 12. Mapping to hostd
 
@@ -422,13 +437,13 @@ song request in a voice call on the new path.
 
 ### 12.1 Where each recorded function lives now
 
-Every row of `gpu_decisions.json` is reproduced exactly by `test/arbiter/table.test.ts` (3 172 of
-3 172, no tolerance). Worker-side functions stay in Python, where their rows keep guarding them;
+Every row of `gpu_decisions.json` is reproduced exactly by `test/arbiter/table.test.ts` (3 212 of
+3 212, no tolerance). Worker-side functions stay in Python, where their rows keep guarding them;
 the test also checks the TypeScript copies the scenario harness uses to play the worker.
 
 | Function | Lives in | Rows |
 |---|---|---|
-| `decide`, `tick`, `gather` (with the worker's values from the request) | hostd: `rules.ts`, `job.ts` | 1733, 673, 53 |
+| `decide`, `tick`, `gather` (with the worker's values from the request) | hostd: `rules.ts`, `job.ts` | 1773, 673, 53 |
 | `headroom`, `profile.note_spill`, `profile.note_healthy` | hostd: `CardProfile` | 108, 30, 12 |
 | `audience.people` | hostd: `Audience` | 98 |
 | `speech.read`, `speech.read_cache` | hostd: `SpeechReader` | 43, 8 |
@@ -470,10 +485,12 @@ it from the service token).
   step time and rate count. After `oom` hostd remembers the room (`crowded`). After a suspension
   or OOM with a window open: `gpu.release { window: "close" }` (speech back, waited for), then
   placement again.
-- **After the conversion** (`_give_gpu_back`): `gpu.release { window: "keep" }`, on its own
-  thread: speech comes back while the song is mixed, the job's window stays open (oddities 4 and
-  7, reproduced). **At the job's end** (done, failed or cancelled): wait for that, then
-  `gpu.release { window: "close", done: true }` → the job's summary for `meta.json`.
+- **After the conversion's last pass** (`_give_gpu_back`): `gpu.release { window: "close" }`, on
+  its own thread: speech comes back while the song is mixed, and the window ends when it is back
+  (until 2026-11-16: `keep`, the window stayed open to the job's end; oddities 4 and 7). The
+  answer's `window` is the record of the window it closed. **At the job's end** (done, failed or
+  cancelled): wait for that, then `gpu.release { window: "close", done: true }` → the job's
+  summary for `meta.json`, with `windows`.
 - **Keep-alive**: the job's lease ends after `max_s` (60) without a call; the worker sends a bare
   `gpu.renew { lease }` whenever 20 s passed since its last call of any kind (the ack wait, a long
   reload, the mix).
@@ -506,7 +523,7 @@ rule, written in the test's header too, as strict as it can be:
    states, what was learned about the card, the end time, the steps run per device. Not
    compared: how often `/health` and `/busy` were asked, and the new `gpu.*` exchanges.
 
-All 26 scenarios pass this rule. The two `holder_dies_*` scenarios are compared up to the death;
+All 31 scenarios pass this rule. The two `holder_dies_*` scenarios are compared up to the death;
 after it the behaviour changes on purpose (v5-hostd §8): hostd reloads both services at once when
 the holder exits (tts at the death, asr 20 s later), where the recording shows them offline until
 their own lease ran out (54 s later) or the worker restarted. The test asserts the new behaviour.
@@ -594,7 +611,7 @@ once). Core's go (`POST /jobs/{id}/exclusive`) works as before.
 
 ### 12.7 The cross-check between the Python client and the TypeScript arbiter
 
-`packages/hostd/test/arbiter/scenarios.test.ts` records, for each of the 26 scenarios, every
+`packages/hostd/test/arbiter/scenarios.test.ts` records, for each of the 31 scenarios, every
 `gpu.*` call its worker made to the real `Arbiter` and the answer, in simulated seconds, into
 `lease_exchanges.jsonl` (JSON Lines; `UPDATE_LEASE_EXCHANGES=1` rewrites it, otherwise the test
 fails when it is stale). `workers/tests/test_gpu_lease_replay.py` runs the song worker's real job
