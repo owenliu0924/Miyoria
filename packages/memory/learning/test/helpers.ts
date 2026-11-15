@@ -32,13 +32,14 @@ import {
   type ContextKey,
   contextKeyEquals,
   type Envelope,
-  type Event,
+  Events,
   type IncomingMessage,
   newId,
   type ProfileId,
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
+  type Publish,
   SocialSignalsKey,
   type Timestamp,
   toTimestamp,
@@ -130,7 +131,7 @@ export interface Rig {
   log: FakeLog;
   contributors: PromptContributors;
   tools: ToolRegistry;
-  publish(event: Event): void;
+  publish: Publish;
   /** Says a line: appended to the log and published like the recorder does. */
   say(context: ContextKey, author: AccountRef, name: string, text: string): Promise<void>;
   contribute(key: string, request: PromptRequest): Promise<string | null>;
@@ -218,7 +219,7 @@ export async function rig(options: RigOptions): Promise<Rig> {
     log,
     contributors,
     tools,
-    publish: (event) => sup.bus.publish("test", event),
+    publish: sup.bus.publisher("test"),
     say: async (context, author, name, text) => {
       const isSelf = author.id === HER.id;
       const msg: IncomingMessage = {
@@ -242,23 +243,20 @@ export async function rig(options: RigOptions): Promise<Rig> {
         turn: null,
       });
       if (context.kind === "voice" && !isSelf) {
-        sup.bus.publish("voice", {
-          type: "voice_utterance",
-          data: {
-            id: msg.id.id,
-            context,
-            speaker: msg.author,
-            text,
-            language: null,
-            emotion: null,
-            audio_events: [],
-            started_at: msg.ts,
-            ended_at: msg.ts,
-            asr_ms: 0,
-          },
+        sup.bus.publish("voice", Events.VoiceUtteranceEvent, {
+          id: msg.id.id,
+          context,
+          speaker: msg.author,
+          text,
+          language: null,
+          emotion: null,
+          audio_events: [],
+          started_at: msg.ts,
+          ended_at: msg.ts,
+          asr_ms: 0,
         });
       } else {
-        sup.bus.publish("discord", { type: "platform_message_created", data: msg });
+        sup.bus.publish("discord", Events.PlatformMessageCreated, msg);
       }
     },
     contribute: async (key, request) => {
@@ -268,7 +266,7 @@ export async function rig(options: RigOptions): Promise<Rig> {
     },
     events: (topic) => {
       drain();
-      return seen.filter((e) => e.event.type === "custom" && e.event.data.topic === topic);
+      return seen.filter((e) => e.type === topic);
     },
   };
 }

@@ -4,7 +4,7 @@ import { MemorySettingsStore, PeopleStoreKey } from "@miyoria/store";
 import {
   type AgendaInput,
   type CuratedNote,
-  customEvent,
+  Events,
   ephemeralHandlesIn,
   type InsightInput,
   KnowledgeKey,
@@ -348,69 +348,60 @@ describe("feedback signals", () => {
 
   it("are recorded per person and context from the bus", async () => {
     const r = await rig({ provider: new MockProvider("p").reply("{}"), modules: ["reflect"] });
-    r.publish({
-      type: "action_completed",
-      data: {
-        action: "a1",
-        turn: null,
-        ok: true,
-        error: null,
-        message: { context: TEXT, id: "her-1" },
+    r.publish(Events.ActionCompleted, {
+      action: "a1",
+      turn: null,
+      ok: true,
+      error: null,
+      message: { context: TEXT, id: "her-1" },
+    });
+    r.publish(Events.PlatformReaction, {
+      message: { context: { ...TEXT }, id: "her-1" },
+      account: { ...OWEN },
+      display_name: "Owen",
+      emoji: "❤️",
+      added: true,
+      at: toTimestamp(Date.now()),
+    });
+    // A reaction on someone else's message is not about her.
+    r.publish(Events.PlatformReaction, {
+      message: { context: { ...TEXT }, id: "not-hers" },
+      account: { ...OWEN },
+      display_name: "Owen",
+      emoji: "👎",
+      added: true,
+      at: toTimestamp(Date.now()),
+    });
+    // She opens a conversation that nobody answers.
+    r.publish(Events.AgentDecision, {
+      turn: "T1",
+      context: TEXT,
+      respond: true,
+      score: 0,
+      reasons: ["intent:chat.start"],
+    });
+    r.publish(Events.AgentTurnCompleted, { turn: "T1", context: TEXT, text: "大家好" });
+    await r.say(TEXT, AMY, "Amy", "小鯨好吵");
+    r.publish(Events.GateDecision, {
+      id: "d1",
+      at: toTimestamp(Date.now()),
+      capability: "voice.join",
+      risk: "low",
+      args: {},
+      why: null,
+      turn: null,
+      allowed: false,
+      reason: "對方不希望她這樣做。",
+      reviewer: null,
+      stage: "consent",
+      principal: {
+        kind: "self",
+        requester: null,
+        context: { ...TEXT },
+        override: false,
+        actor: null,
       },
     });
-    r.publish(
-      customEvent("platform.reaction", {
-        message: { context: { ...TEXT }, id: "her-1" },
-        account: { ...OWEN },
-        display_name: "Owen",
-        emoji: "❤️",
-        added: true,
-        at: toTimestamp(Date.now()),
-      }),
-    );
-    // A reaction on someone else's message is not about her.
-    r.publish(
-      customEvent("platform.reaction", {
-        message: { context: { ...TEXT }, id: "not-hers" },
-        account: { ...OWEN },
-        display_name: "Owen",
-        emoji: "👎",
-        added: true,
-        at: toTimestamp(Date.now()),
-      }),
-    );
-    // She opens a conversation that nobody answers.
-    r.publish({
-      type: "agent_decision",
-      data: { turn: "T1", context: TEXT, respond: true, score: 0, reasons: ["intent:chat.start"] },
-    });
-    r.publish({
-      type: "agent_turn_completed",
-      data: { turn: "T1", context: TEXT, text: "大家好" },
-    });
-    await r.say(TEXT, AMY, "Amy", "小鯨好吵");
-    r.publish(
-      customEvent("gate.decision", {
-        id: "d1",
-        at: toTimestamp(Date.now()),
-        capability: "voice.join",
-        risk: "low",
-        args: {},
-        why: null,
-        turn: null,
-        allowed: false,
-        reason: "對方不希望她這樣做。",
-        reviewer: null,
-        stage: "consent",
-        principal: {
-          kind: "self",
-          requester: null,
-          context: { ...TEXT },
-          override: false,
-          actor: null,
-        },
-      }),
-    );
     await wait(20 * 60_000);
     const tallies = r.sup.services.require(ReflectionKey).feedback(1);
     const owen = tallies.find((t) => t.subject === "person:p-owen");
@@ -435,20 +426,14 @@ describe("feedback signals", () => {
 
   it("count an ignored opening", async () => {
     const r = await rig({ provider: new MockProvider("p").reply("{}"), modules: ["reflect"] });
-    r.publish({
-      type: "agent_decision",
-      data: {
-        turn: "T2",
-        context: TEXT,
-        respond: true,
-        score: 0,
-        reasons: ["initiative:idle_channel"],
-      },
+    r.publish(Events.AgentDecision, {
+      turn: "T2",
+      context: TEXT,
+      respond: true,
+      score: 0,
+      reasons: ["initiative:idle_channel"],
     });
-    r.publish({
-      type: "agent_turn_completed",
-      data: { turn: "T2", context: TEXT, text: "有人在嗎" },
-    });
+    r.publish(Events.AgentTurnCompleted, { turn: "T2", context: TEXT, text: "有人在嗎" });
     await wait(12 * 60_000);
     const place = r.sup.services
       .require(ReflectionKey)

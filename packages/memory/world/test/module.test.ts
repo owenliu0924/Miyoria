@@ -2,17 +2,15 @@ import { CommandsModule } from "@miyoria/commands";
 import { exemptFromBusCheck, Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
-  customEvent,
+  Events,
   type JsonValue,
   newId,
-  PRESENCE_TOPIC,
   PresencePrivacyKey,
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
   SocialSignalsKey,
   toTimestamp,
-  VOICE_STATE_TOPIC,
   WorldStateKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,8 +42,10 @@ async function boot(store = new MemorySettingsStore(), config: JsonValue = { coa
   await sup.startAll();
   const salient = sup.bus.subscribe("world.salient");
   const world = sup.services.require(WorldStateKey);
-  const publish = (topic: string, payload: object) =>
-    sup.bus.publish("test", customEvent(topic, payload as unknown as JsonValue));
+  const publish = (
+    def: typeof Events.PlatformPresence | typeof Events.PlatformVoiceState,
+    payload: object,
+  ) => sup.bus.publish("test", def, payload as never);
   return { sup, store, social, contributors, salient, world, publish };
 }
 
@@ -64,18 +64,16 @@ const request = (context = textCtx("c1")): PromptRequest => ({
 describe("world module", () => {
   it("follows presence and voice from the bus and publishes salient changes", async () => {
     const h = await boot();
-    h.publish(PRESENCE_TOPIC, presence("1", "online", [], { initial: true }));
-    h.publish(PRESENCE_TOPIC, presence("1", "online", [playing("Minecraft")]));
-    h.publish(VOICE_STATE_TOPIC, voice("1", "v1"));
+    h.publish(Events.PlatformPresence, presence("1", "online", [], { initial: true }));
+    h.publish(Events.PlatformPresence, presence("1", "online", [playing("Minecraft")]));
+    h.publish(Events.PlatformVoiceState, voice("1", "v1"));
     // Not a valid payload: ignored.
-    h.publish(PRESENCE_TOPIC, { account: "nope" });
+    h.publish(Events.PlatformPresence, { account: "nope" });
 
     const kinds: string[] = [];
     await vi.waitFor(() => {
       for (let env = h.salient.tryRecv(); env; env = h.salient.tryRecv()) {
-        if (env.event.type === "custom") {
-          kinds.push(String((env.event.data.payload as { kind: string }).kind));
-        }
+        kinds.push(String((env.data as { kind: string }).kind));
       }
       expect(kinds).toEqual(["started_game", "joined_voice"]);
     });
@@ -96,23 +94,20 @@ describe("world module", () => {
 
   it("counts voice utterances from the bus as voice activity", async () => {
     const h = await boot();
-    h.publish(VOICE_STATE_TOPIC, voice("1", "v1"));
+    h.publish(Events.PlatformVoiceState, voice("1", "v1"));
     const context = { platform: "discord", scope: "100", channel: "v1", kind: "voice" } as const;
     for (const text of ["然後呢", "我挖到鑽石了", ""]) {
-      h.sup.bus.publish("test", {
-        type: "voice_utterance",
-        data: {
-          id: newId(),
-          context,
-          speaker: { account: acct("1"), display_name: "user1", is_bot: false },
-          text,
-          language: "zh",
-          emotion: null,
-          audio_events: [],
-          started_at: toTimestamp(Date.now()),
-          ended_at: toTimestamp(Date.now()),
-          asr_ms: 100,
-        },
+      h.sup.bus.publish("test", Events.VoiceUtteranceEvent, {
+        id: newId(),
+        context,
+        speaker: { account: acct("1"), display_name: "user1", is_bot: false },
+        text,
+        language: "zh",
+        emotion: null,
+        audio_events: [],
+        started_at: toTimestamp(Date.now()),
+        ended_at: toTimestamp(Date.now()),
+        asr_ms: 100,
       });
     }
     await vi.waitFor(() => {
@@ -130,7 +125,7 @@ describe("world module", () => {
     await store.set("_global", "privacy:discord:1", { dm: false });
     const h = await boot(store);
     const privacy = h.sup.services.require(PresencePrivacyKey);
-    h.publish(PRESENCE_TOPIC, presence("1", "online", [playing("Minecraft")]));
+    h.publish(Events.PlatformPresence, presence("1", "online", [playing("Minecraft")]));
     await vi.waitFor(() => expect(h.world.person(acct("1"))?.status).toBe("online"));
     expect(privacy.loaded).toBe(true);
     expect(privacy.presenceAllowed(acct("1"))).toBe(true);
@@ -140,7 +135,7 @@ describe("world module", () => {
     expect(privacy.presenceAllowed(acct("1"))).toBe(false);
     // What she knew is gone, and new presence is dropped.
     expect(h.world.person(acct("1"))?.status).toBeNull();
-    h.publish(PRESENCE_TOPIC, presence("1", "online", [playing("Minecraft")]));
+    h.publish(Events.PlatformPresence, presence("1", "online", [playing("Minecraft")]));
     await new Promise((r) => setTimeout(r, 20));
     expect(h.world.person(acct("1"))?.activities).toEqual([]);
 

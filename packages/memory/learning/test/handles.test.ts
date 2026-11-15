@@ -79,8 +79,8 @@ describe("conversation fold names people by handle", () => {
     ]);
 
     // Feedback goes to the right person by handle.
-    const feedback = r.events("feedback.signal")[0]?.event;
-    expect(feedback).toMatchObject({ data: { payload: { account: { id: "300" }, name: "Owen" } } });
+    const feedback = r.events("feedback.signal")[0];
+    expect(feedback).toMatchObject({ data: { account: { id: "300" }, name: "Owen" } });
 
     // A different order of arrival and a rename change nothing.
     await sayLines(r, [

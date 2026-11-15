@@ -83,10 +83,10 @@ describe("conversation compaction", () => {
     const saved = await r.store.get("p", stateKey(TEXT));
     expect(saved).toMatchObject({ recap: s.recap, folds: 1 });
     const folded = r.events(CONVERSATION_FOLDED_TOPIC);
-    expect(folded[0]?.event).toMatchObject({ data: { payload: { lines: 16, session_lines: 16 } } });
+    expect(folded[0]).toMatchObject({ data: { lines: 16, session_lines: 16 } });
     // Feedback she noticed goes to `reflect`; a document about Owen, attributed to him.
-    expect(r.events(FEEDBACK_TOPIC)[0]?.event).toMatchObject({
-      data: { payload: { tone: "positive", name: "Amy", person: "p-amy" } },
+    expect(r.events(FEEDBACK_TOPIC)[0]).toMatchObject({
+      data: { tone: "positive", name: "Amy", person: "p-amy" },
     });
     const doc = r.sup.services.require(KnowledgeKey).docs({ type: "person", person: "p-owen" })[0];
     expect(doc?.content).toEqual({ 最近在忙: "週三考數學" });
