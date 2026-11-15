@@ -109,6 +109,49 @@ function othersInVoice(
   return vc ? vc.members.filter((m) => !m.is_self).length : 0;
 }
 
+/** A channel name as people and she write it: no `#`, no quotes around it, case and width folded. */
+function channelName(raw: string): string {
+  return raw
+    .normalize("NFKC")
+    .trim()
+    .replace(/^#/, "")
+    .replace(/^[「『“"'‘]+|[」』”"'’]+$/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * The voice channel `raw` means in `guild`: an id, or the name of a voice channel the bot sees
+ * (she reads names in her context and writes them here). `unknown` is a name that fits no channel:
+ * on Discord an id is digits, so anything else that is not a known name cannot be joined, and
+ * sending it made Discord answer "not snowflake". The caller then joins as if no channel was given.
+ */
+export function wantedChannel(
+  raw: string | null | undefined,
+  guild: string,
+  principal: Principal,
+  world: WorldState | undefined,
+): { channel: string | null; unknown: string | null } {
+  if (raw == null) return { channel: null, unknown: null };
+  const voices = (world?.snapshot().voice_channels ?? []).filter((c) => c.guild === guild);
+  if (voices.some((c) => c.channel === raw)) return { channel: raw, unknown: null };
+  const wanted = channelName(raw);
+  const named = voices.filter((c) => c.name != null && channelName(c.name) === wanted);
+  if (named.length > 0) {
+    // Two channels may share a name: the one the person asking is in, else the fullest.
+    const asker = principal.requester ? (world?.person(principal.requester)?.voice ?? null) : null;
+    const people = (c: (typeof named)[number]) => c.members.filter((m) => !m.is_self).length;
+    const best =
+      named.find((c) => asker !== null && asker.guild === guild && asker.channel === c.channel) ??
+      [...named].sort((a, b) => people(b) - people(a))[0];
+    if (best) return { channel: best.channel, unknown: null };
+  }
+  if (platformOf(principal) === "discord" && !/^\d+$/.test(raw)) {
+    return { channel: null, unknown: raw };
+  }
+  return { channel: raw, unknown: null };
+}
+
 /**
  * Where to join for `principal`'s request in `guild`: the requester's current voice channel as the
  * bot sees it (`world`), else ask the voice node to look the requester up (`follow`).
@@ -183,7 +226,7 @@ export function voiceCapabilities(
       description:
         "進語音頻道。有 channel 就直接進那個頻道,裡面沒人也可以。channel 省略 = 跟你說話的人現在所在的語音頻道(對方要在語音裡)。",
       properties: {
-        channel: { type: "string", description: "語音頻道 id(通常省略)" },
+        channel: { type: "string", description: "語音頻道的名字或 id(通常省略)" },
         guild: GUILD_PROPERTY,
       },
     },
@@ -194,14 +237,17 @@ export function voiceCapabilities(
         type: "ensure_voice",
         platform,
         guild,
-        channel: args.channel ?? null,
+        // A name that fits no channel counts as no channel: the manager then leaves her where
+        // she is, or joins the person asking.
+        channel: wantedChannel(args.channel, guild, principal, world()).channel,
         follow: principal.requester,
       })),
     async execute(args, ctx) {
       const guild = requireGuild(args, ctx.principal);
       requireNode(link);
+      const wanted = wantedChannel(args.channel, guild, ctx.principal, world());
       const current = link.channel(guild);
-      if (current !== null && (args.channel == null || args.channel === current)) {
+      if (current !== null && (wanted.channel === null || wanted.channel === current)) {
         // Idempotent: already in voice here; asking again never moves her to another channel.
         return {
           text: `already in voice channel ${current}`,
@@ -209,15 +255,26 @@ export function voiceCapabilities(
         };
       }
       const target =
-        args.channel != null
-          ? { channel: args.channel, follow: null }
+        wanted.channel !== null
+          ? { channel: wanted.channel, follow: null }
           : joinTarget(guild, ctx.principal, world());
       if (target.channel === null && target.follow === null) {
-        throw new CapabilityError("no channel given and nobody to follow");
+        throw new CapabilityError(
+          wanted.unknown !== null
+            ? `no voice channel named "${wanted.unknown}" here and nobody to follow`
+            : "no channel given and nobody to follow",
+        );
       }
       const joined = await link.join(guild, target.channel, target.follow);
       if (ctx.principal.kind !== "self") invitedAt.set(guild, now());
-      return { text: `joined voice channel ${joined}`, data: { channel: joined, already: false } };
+      const note =
+        wanted.unknown !== null
+          ? ` (no voice channel named "${wanted.unknown}" here: joined the person asking instead)`
+          : "";
+      return {
+        text: `joined voice channel ${joined}${note}`,
+        data: { channel: joined, already: false },
+      };
     },
   });
 
