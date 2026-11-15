@@ -40,6 +40,11 @@ export interface HostApi {
   call(method: string, params: unknown, caller: Caller, signal?: AbortSignal): Promise<unknown>;
   /** Every service state change, for `service.event`. Returns the unsubscribe function. */
   onEvent(listener: (event: HostServiceEvent) => void): () => void;
+  /**
+   * Any change of what `report` returns (a state, health, a port), for `host.report`. Optional:
+   * added by H2 for health changes, which `onEvent` does not carry.
+   */
+  onChange?(listener: () => void): () => void;
   /** Log lines of one service as they are written, for `service.log`. */
   followLogs(service: string, listener: (line: string) => void): () => void;
   /** The control link sets this while it is connected; `null` puts the default source back. */

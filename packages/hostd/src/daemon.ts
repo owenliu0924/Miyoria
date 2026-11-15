@@ -1,0 +1,539 @@
+// The daemon: one per workspace folder (docs/design/v5-hostd.md §4). It loads `host.toml` and the
+// catalog, supervises the services, serves the local API, writes `run/hostd.json`, and is the
+// `HostApi` the control link talks to. `miyoria hostd`, `miyoria up` (detached) and
+// `miyoria up --foreground` all run this class; tests run it in-process.
+
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import type { Server } from "node:http";
+import { resolve } from "node:path";
+import type { Writable } from "node:stream";
+import {
+  HOST_ERROR_CODE,
+  HOST_METHOD,
+  HOST_PROTOCOL_VERSION,
+  type HostGuardState,
+  type HostInfo,
+  type HostReport,
+  type HostServiceControlResult,
+  HostServiceControlSchema,
+  type HostServiceEvent,
+  type HostServiceList,
+  type HostServiceLogsResult,
+  HostServiceLogsSchema,
+  type HostShutdownResult,
+  HostShutdownSchema,
+} from "@miyoria/contracts/host";
+import { type Logger, pino } from "pino";
+import type { RotatingFileStream } from "rotating-file-stream";
+import type { ZodType } from "zod";
+import {
+  type Caller,
+  type ClusterClient,
+  type GuardSource,
+  type HostApi,
+  HostRpcError,
+} from "./api.js";
+import { type Catalog, loadCatalog } from "./catalog.js";
+import { HostdClient } from "./client.js";
+import { GpuCache, type GpuReader, nvidiaSmiReader } from "./gpu.js";
+import { coreStatusGuard, guardedMessage, guardUnknownMessage } from "./guard.js";
+import { type LoadedHostConfig, loadHostConfig } from "./host-config.js";
+import { rotatingLog, ServiceLog } from "./logs.js";
+import { localUrl, offloadUrls, planServices, type ResolveContext } from "./resolve.js";
+import {
+  pidAlive,
+  type RunInfo,
+  readRunFile,
+  removeRunFile,
+  runFilePath,
+  writeRunFile,
+} from "./run-file.js";
+import { createLocalApi, JSON_RPC } from "./server.js";
+import { DEFAULT_TIMING, ManagedService, type ServiceHost, type Timing } from "./service.js";
+
+export interface DaemonOptions {
+  /** `host.toml`; its folder is the workspace. */
+  hostConfig: string;
+  /** The folder holding the catalog roots (`workers/*`, `apps/*`, …). */
+  catalogRoot: string;
+  /** The Core config path, `{config}`. */
+  configPath: string;
+  /**
+   * How this CLI is started, `{miyoria}`: the program and its leading arguments, e.g.
+   * `[process.execPath, ...process.execArgv, process.argv[1]]`.
+   */
+  miyoria: readonly string[];
+  /** The daemon's version in `host.info` and the run file. */
+  version?: string;
+  /** The environment services inherit from (default `process.env`). */
+  env?: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
+  /** Reads the graphics card (default `nvidia-smi`). */
+  readGpu?: GpuReader;
+  timing?: Partial<Timing>;
+  /**
+   * Called after `host.shutdown` stopped every service, once its answer is sent. The default
+   * stops the daemon (`stop()`); `miyoria hostd` also exits the process.
+   */
+  onShutdown?: () => void | Promise<void>;
+}
+
+/** Another daemon of the same workspace answers. */
+export class HostdRunningError extends Error {
+  override name = "HostdRunningError";
+  readonly info: RunInfo;
+
+  constructor(info: RunInfo) {
+    super(`hostd already runs for this workspace (pid ${info.pid}, port ${info.port})`);
+    this.info = info;
+  }
+}
+
+/** The methods the daemon serves now; the others of `HOST_METHOD` come in later steps. */
+const SERVED: ReadonlySet<string> = new Set([
+  HOST_METHOD.Info,
+  HOST_METHOD.ServiceList,
+  HOST_METHOD.ServiceStart,
+  HOST_METHOD.ServiceStop,
+  HOST_METHOD.ServiceRestart,
+  HOST_METHOD.ServiceLogs,
+  HOST_METHOD.HostShutdown,
+]);
+
+function allowed(caller: Caller, method: string): boolean {
+  switch (caller.kind) {
+    case "operator":
+      return true;
+    case "core":
+      return method !== HOST_METHOD.HostShutdown;
+    case "service":
+      // `gpu.*` and `cluster.*` come later; nothing that exists now is a service's to call.
+      return false;
+  }
+}
+
+function parseParams<T>(schema: ZodType<T>, params: unknown): T {
+  const parsed = schema.safeParse(params ?? {});
+  if (!parsed.success) {
+    throw new HostRpcError(
+      JSON_RPC.InvalidParams,
+      parsed.error.issues
+        .map((i) => `${i.path.map(String).join(".") || "params"}: ${i.message}`)
+        .join("; "),
+    );
+  }
+  return parsed.data;
+}
+
+function sameToken(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+export class Daemon implements HostApi {
+  readonly #options: DaemonOptions;
+  readonly #token = randomBytes(32).toString("base64url");
+  readonly #timing: Timing;
+  readonly #gpu: GpuCache;
+  readonly #events = new Set<(event: HostServiceEvent) => void>();
+  readonly #changes = new Set<() => void>();
+  readonly #services = new Map<string, ManagedService>();
+  /** Service names in the order their processes were first spawned. */
+  readonly #spawnOrder: string[] = [];
+  #host: LoadedHostConfig | null = null;
+  #catalog: Catalog | null = null;
+  #server: Server | null = null;
+  #port = 0;
+  #runFile = "";
+  #startedAt = "";
+  #log: Logger = pino({ enabled: false });
+  #logStream: RotatingFileStream | null = null;
+  #guard: GuardSource | null = null;
+  #defaultGuard: GuardSource;
+  #cluster: ClusterClient | null = null;
+  #stopping: Promise<void> | null = null;
+
+  constructor(options: DaemonOptions) {
+    this.#options = options;
+    this.#timing = { ...DEFAULT_TIMING, ...options.timing };
+    this.#gpu = new GpuCache(options.readGpu ?? nvidiaSmiReader);
+    this.#defaultGuard = coreStatusGuard(() => {
+      const core = this.#services.get("core");
+      const port = core?.port;
+      if (core === undefined || port === undefined || this.#host === null) return null;
+      return localUrl(this.#host.config.network.bind, port);
+    });
+  }
+
+  // ---- lifecycle -------------------------------------------------------------------------------
+
+  /**
+   * Loads `host.toml` and the catalog, listens, writes the run file. Starts no service: that is
+   * `startAll` or `service.start`. Throws `HostConfigError` or `HostdRunningError`.
+   */
+  async start(): Promise<void> {
+    const host = loadHostConfig(this.#options.hostConfig);
+    this.#host = host;
+    this.#runFile = runFilePath(host.state.root);
+    const existing = readRunFile(this.#runFile);
+    if (
+      existing !== null &&
+      pidAlive(existing.pid) &&
+      (await new HostdClient(existing).ping(2000))
+    ) {
+      throw new HostdRunningError(existing);
+    }
+
+    mkdirSync(host.state.logs, { recursive: true });
+    this.#logStream = rotatingLog(host.state.logs, "hostd.log");
+    (this.#logStream as Writable).on("error", () => {
+      // The daemon keeps running without its own log.
+    });
+    this.#log = pino(
+      { base: { pid: process.pid }, timestamp: pino.stdTimeFunctions.isoTime },
+      this.#logStream,
+    );
+
+    const catalog = loadCatalog(this.#options.catalogRoot);
+    this.#catalog = catalog;
+    for (const problem of catalog.problems) {
+      this.#log.warn({ file: problem.file, problem: problem.message }, "descriptor problem");
+    }
+    const ctx: ResolveContext = {
+      workspace: host.workspace,
+      state: host.state.root,
+      bind: host.config.network.bind,
+      configPath: resolve(this.#options.configPath),
+      miyoria: this.#options.miyoria,
+      node: process.execPath,
+      env: this.#options.env ?? process.env,
+      platform: this.#options.platform ?? process.platform,
+      ...(host.config.paths.ca_bundle !== undefined
+        ? { caBundle: resolve(host.workspace, host.config.paths.ca_bundle) }
+        : {}),
+    };
+    const serviceHost: ServiceHost = {
+      ctx,
+      advertise: host.config.network.advertise,
+      timing: this.#timing,
+      log: this.#log,
+      hostdUrl: () => `http://127.0.0.1:${this.#port}`,
+      offloadUrls: () =>
+        offloadUrls(
+          [...this.#services.values()].map((s) => s.plan),
+          (plan) => this.#services.get(plan.name)?.port,
+          ctx.bind,
+        ),
+      service: (name) => this.#services.get(name),
+      emit: (event) => {
+        for (const listener of this.#events) {
+          try {
+            listener(event);
+          } catch (error) {
+            this.#log.error({ err: error }, "event listener failed");
+          }
+        }
+      },
+      changed: () => {
+        for (const listener of this.#changes) {
+          try {
+            listener();
+          } catch (error) {
+            this.#log.error({ err: error }, "change listener failed");
+          }
+        }
+      },
+      spawned: (name) => {
+        if (!this.#spawnOrder.includes(name)) this.#spawnOrder.push(name);
+      },
+    };
+    for (const plan of planServices(catalog, host, ctx)) {
+      const logs = new ServiceLog(plan.name, host.state.logs, (error) =>
+        this.#log.warn({ service: plan.name, err: error }, "service log failed"),
+      );
+      this.#services.set(plan.name, new ManagedService(plan, logs, serviceHost));
+      if (plan.disabled !== null) {
+        this.#log.info({ service: plan.name, reason: plan.disabled }, "service disabled");
+      }
+    }
+
+    const server = createLocalApi({
+      authenticate: (token) => this.#authenticate(token),
+      call: (method, params, caller, signal) => this.call(method, params, caller, signal),
+      hasService: (name) => this.#services.has(name),
+      tailLogs: (name, lines) => this.#services.get(name)?.logs.tail(lines) ?? [],
+      followLogs: (name, listener) => this.followLogs(name, listener),
+      onError: (error) => this.#log.error({ err: error }, "local API failed"),
+    });
+    await new Promise<void>((done, fail) => {
+      server.once("error", fail);
+      server.listen({ host: "127.0.0.1", port: 0 }, () => {
+        server.off("error", fail);
+        done();
+      });
+    });
+    const address = server.address();
+    this.#port = typeof address === "object" && address !== null ? address.port : 0;
+    this.#server = server;
+    this.#startedAt = new Date().toISOString();
+    writeRunFile(this.#runFile, {
+      pid: process.pid,
+      port: this.#port,
+      token: this.#token,
+      started_at: this.#startedAt,
+      version: this.version,
+      workspace: host.workspace,
+    });
+
+    for (const service of this.#services.values()) service.watchExternal();
+    void this.#gpu.read();
+    this.#log.info(
+      { port: this.#port, workspace: host.workspace, services: [...this.#services.keys()] },
+      "hostd started",
+    );
+  }
+
+  /** Starts every service of this host in order (the `after` waits happen in the services). */
+  async startAll(): Promise<void> {
+    for (const service of this.#services.values()) {
+      if (service.plan.kind === "external" || !service.plan.override.enabled) continue;
+      await service.start();
+    }
+  }
+
+  /** Stops every service (reverse start order), the API, and removes the run file. */
+  stop(): Promise<void> {
+    this.#stopping ??= this.#stop();
+    return this.#stopping;
+  }
+
+  async #stop(): Promise<void> {
+    await this.#stopServices();
+    for (const service of this.#services.values()) service.close();
+    const server = this.#server;
+    this.#server = null;
+    if (server !== null) {
+      await new Promise<void>((done) => {
+        server.close(() => done());
+        server.closeAllConnections();
+      });
+    }
+    if (this.#runFile !== "") removeRunFile(this.#runFile, this.#token);
+    for (const service of this.#services.values()) await service.logs.close();
+    this.#log.info("hostd stopped");
+    const stream = this.#logStream;
+    this.#logStream = null;
+    if (stream !== null) await new Promise<void>((done) => stream.end(() => done()));
+  }
+
+  /** Stops the services: the started ones in reverse start order, then the rest. */
+  async #stopServices(): Promise<string[]> {
+    const order = [
+      ...[...this.#spawnOrder].reverse(),
+      ...[...this.#services.keys()].reverse().filter((n) => !this.#spawnOrder.includes(n)),
+    ];
+    const stopped: string[] = [];
+    for (const name of order) {
+      const service = this.#services.get(name);
+      if (service === undefined || !service.active) continue;
+      try {
+        await service.stop();
+        stopped.push(name);
+      } catch (error) {
+        this.#log.error({ service: name, err: error }, "stop failed");
+      }
+    }
+    return stopped;
+  }
+
+  // ---- accessors -------------------------------------------------------------------------------
+
+  get version(): string {
+    return this.#options.version ?? "0.0.0";
+  }
+
+  /** The local API's port (0 before `start`). */
+  get port(): number {
+    return this.#port;
+  }
+
+  /** The operator token, as the run file holds it. */
+  get token(): string {
+    return this.#token;
+  }
+
+  get runFile(): string {
+    return this.#runFile;
+  }
+
+  get hostConfig(): LoadedHostConfig {
+    if (this.#host === null) throw new Error("the daemon has not started");
+    return this.#host;
+  }
+
+  /** The service names in start order. */
+  serviceNames(): string[] {
+    return [...this.#services.keys()];
+  }
+
+  // ---- HostApi ---------------------------------------------------------------------------------
+
+  report(options: { withTokens: boolean }): HostReport {
+    if (this.#gpu.stale) void this.#gpu.read();
+    return this.#info(options.withTokens);
+  }
+
+  #info(withTokens: boolean): HostInfo {
+    const sample = this.#gpu.last;
+    return {
+      name: this.#host?.config.name ?? "",
+      version: this.version,
+      platform: process.platform,
+      protocol: HOST_PROTOCOL_VERSION,
+      gpu:
+        sample === null ? null : { ...sample, reserve_mb: this.#host?.config.gpu.reserve_mb ?? 0 },
+      services: [...this.#services.values()].map((s) => s.status(withTokens)),
+    };
+  }
+
+  onEvent(listener: (event: HostServiceEvent) => void): () => void {
+    this.#events.add(listener);
+    return () => {
+      this.#events.delete(listener);
+    };
+  }
+
+  onChange(listener: () => void): () => void {
+    this.#changes.add(listener);
+    return () => {
+      this.#changes.delete(listener);
+    };
+  }
+
+  followLogs(service: string, listener: (line: string) => void): () => void {
+    return this.#service(service).logs.follow(listener);
+  }
+
+  setGuardSource(source: GuardSource | null): void {
+    this.#guard = source;
+  }
+
+  setClusterClient(client: ClusterClient | null): void {
+    this.#cluster = client;
+  }
+
+  /** The `cluster.*` client while the control link is up (used from H5 on). */
+  get clusterClient(): ClusterClient | null {
+    return this.#cluster;
+  }
+
+  async call(
+    method: string,
+    params: unknown,
+    caller: Caller,
+    _signal?: AbortSignal,
+  ): Promise<unknown> {
+    if (!SERVED.has(method)) {
+      throw new HostRpcError(JSON_RPC.MethodNotFound, `method not found: ${method}`);
+    }
+    if (!allowed(caller, method)) {
+      throw new HostRpcError(HOST_ERROR_CODE.NotAllowed, `${caller.kind} may not call ${method}`);
+    }
+    switch (method) {
+      case HOST_METHOD.Info: {
+        await this.#gpu.read();
+        return this.#info(false);
+      }
+      case HOST_METHOD.ServiceList:
+        return {
+          services: [...this.#services.values()].map((s) => s.status(false)),
+        } satisfies HostServiceList;
+      case HOST_METHOD.ServiceStart: {
+        const { service } = parseParams(HostServiceControlSchema, params);
+        const managed = this.#service(service);
+        return { service, state: await managed.start() } satisfies HostServiceControlResult;
+      }
+      case HOST_METHOD.ServiceStop: {
+        const { service, force } = parseParams(HostServiceControlSchema, params);
+        const managed = this.#service(service);
+        await this.#checkGuard(managed, force === true);
+        return { service, state: await managed.stop() } satisfies HostServiceControlResult;
+      }
+      case HOST_METHOD.ServiceRestart: {
+        const { service, force } = parseParams(HostServiceControlSchema, params);
+        const managed = this.#service(service);
+        await this.#checkGuard(managed, force === true);
+        await managed.stop();
+        return { service, state: await managed.start() } satisfies HostServiceControlResult;
+      }
+      case HOST_METHOD.ServiceLogs: {
+        const { service, lines } = parseParams(HostServiceLogsSchema, params);
+        return { lines: this.#service(service).logs.tail(lines) } satisfies HostServiceLogsResult;
+      }
+      case HOST_METHOD.HostShutdown: {
+        const { force } = parseParams(HostShutdownSchema, params);
+        if (force !== true) {
+          for (const service of this.#services.values()) await this.#checkGuard(service, false);
+        }
+        const stopped = await this.#stopServices();
+        const done = this.#options.onShutdown ?? (() => this.stop());
+        setTimeout(() => {
+          Promise.resolve()
+            .then(done)
+            .catch((error: unknown) => this.#log.error({ err: error }, "shutdown failed"));
+        }, 50);
+        return { stopped } satisfies HostShutdownResult;
+      }
+      default:
+        throw new HostRpcError(JSON_RPC.MethodNotFound, `method not found: ${method}`);
+    }
+  }
+
+  // ---- helpers ---------------------------------------------------------------------------------
+
+  #service(name: string): ManagedService {
+    const service = this.#services.get(name);
+    if (service !== undefined) return service;
+    if (this.#catalog?.services.has(name)) {
+      throw new HostRpcError(
+        HOST_ERROR_CODE.NotInstalled,
+        `${name} 不是這台的服務(host.toml 沒有 [services.${name}])`,
+      );
+    }
+    throw new HostRpcError(HOST_ERROR_CODE.UnknownService, `沒有叫 ${name} 的服務`);
+  }
+
+  #authenticate(token: string): Caller | null {
+    if (sameToken(token, this.#token)) return { kind: "operator" };
+    for (const service of this.#services.values()) {
+      const own = service.token;
+      if (own !== undefined && service.active && sameToken(token, own)) {
+        return { kind: "service", service: service.name };
+      }
+    }
+    return null;
+  }
+
+  /** Refuses a stop or restart someone asked for while a guarded state is active. */
+  async #checkGuard(service: ManagedService, force: boolean): Promise<void> {
+    const guard: readonly HostGuardState[] = service.plan.entry?.descriptor.run?.guard ?? [];
+    if (force || guard.length === 0 || !service.active) return;
+    let states: HostGuardState[];
+    try {
+      states = await (this.#guard ?? this.#defaultGuard).states(AbortSignal.timeout(4000));
+    } catch (error) {
+      this.#log.info({ service: service.name, err: error }, "guard states unknown");
+      throw new HostRpcError(HOST_ERROR_CODE.Guarded, guardUnknownMessage(service.name, guard), {
+        states: null,
+      });
+    }
+    const active = guard.filter((s) => states.includes(s));
+    if (active.length > 0) {
+      throw new HostRpcError(HOST_ERROR_CODE.Guarded, guardedMessage(service.name, active), {
+        states: active,
+      });
+    }
+  }
+}

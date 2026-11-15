@@ -1,0 +1,268 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  expandService,
+  HostConfigError,
+  loadCatalog,
+  loadHostConfig,
+  matchesPassEnv,
+  offloadUrls,
+  parseNvidiaSmi,
+  placeholdersIn,
+  planServices,
+  pythonIn,
+  type ResolveContext,
+  workerBaseEnv,
+} from "../src/index.js";
+import { cleanup, type TestWorkspace, workspace, writeIn } from "./fakes.js";
+
+afterEach(cleanup);
+
+function ctxFor(ws: TestWorkspace, over: Partial<ResolveContext> = {}): ResolveContext {
+  return {
+    workspace: ws.root,
+    state: ws.state,
+    bind: "127.0.0.1",
+    configPath: join(ws.root, "miyoria.toml"),
+    miyoria: ["node", "--import", "tsx", "/src/main.ts"],
+    node: "/usr/bin/node",
+    env: { PATH: "/bin", SECRET_KEY: "no", HF_HOME: "/hf", FOO_A: "1", FOO_B: "2" },
+    platform: "linux",
+    ...over,
+  };
+}
+
+function descriptor(ws: TestWorkspace, name: string, body: string): void {
+  writeIn(ws, `workers/${name}/service.toml`, `name = "${name}"\nkind = "worker"\n${body}\n`);
+}
+
+function plans(ws: TestWorkspace, ctx: ResolveContext) {
+  return planServices(loadCatalog(ws.root), loadHostConfig(ws.hostToml), ctx);
+}
+
+const live = { port: 9100, offloadUrls: "", token: "tok", hostdUrl: "http://127.0.0.1:5000" };
+
+describe("placeholders", () => {
+  it("finds {env:NAME} and rejects unknown ones at load time", () => {
+    expect(placeholdersIn("{env:A_B} {port} {nope}")).toEqual(["env:A_B", "port", "nope"]);
+    const ws = workspace([]);
+    descriptor(ws, "bad", '[run]\ncommand = ["{nope}"]');
+    descriptor(
+      ws,
+      "good",
+      '[run]\ncommand = ["x"]\nenv = { S = "{env:SECRET}", U = "{offload_urls}" }\ncwd = "{workspace}"',
+    );
+    const catalog = loadCatalog(ws.root);
+    expect(catalog.services.has("good")).toBe(true);
+    expect(catalog.problems.map((p) => p.message)).toEqual([
+      "run.command[0]: unknown placeholder {nope}",
+    ]);
+  });
+
+  it("expands {miyoria} into several arguments and the rest in place", () => {
+    const ws = workspace([]);
+    descriptor(
+      ws,
+      "core",
+      '[run]\ncommand = ["{miyoria}", "core", "-c", "{config}", "--port={port}"]\ncwd = "{workspace}"\nport = 9100',
+    );
+    writeIn(ws, "host.toml", 'name = "h"\n[services.core]\n');
+    const ctx = ctxFor(ws);
+    const [plan] = plans(ws, ctx);
+    expect(plan?.disabled).toBeNull();
+    const spec = expandService(plan as NonNullable<typeof plan>, ctx, live);
+    expect(spec.file).toBe("node");
+    expect(spec.args).toEqual([
+      "--import",
+      "tsx",
+      "/src/main.ts",
+      "core",
+      "-c",
+      ctx.configPath,
+      "--port=9100",
+    ]);
+    expect(spec.cwd).toBe(ws.root);
+  });
+
+  it("refuses {miyoria} inside a longer argument", () => {
+    const ws = workspace([]);
+    descriptor(ws, "x", '[run]\ncommand = ["run:{miyoria}"]');
+    writeIn(ws, "host.toml", 'name = "h"\n[services.x]\n');
+    expect(plans(ws, ctxFor(ws))[0]?.disabled).toMatch(/\{miyoria\}/);
+  });
+
+  it("takes {env:NAME} from the daemon and disables the service without it", () => {
+    const ws = workspace([]);
+    descriptor(ws, "media", '[run]\ncommand = ["m"]\nenv = { MTX_SECRET = "{env:HLS_SECRET}" }');
+    writeIn(ws, "host.toml", 'name = "h"\n[services.media]\n');
+    const without = plans(ws, ctxFor(ws));
+    expect(without[0]?.disabled).toMatch(/HLS_SECRET/);
+    const ctx = ctxFor(ws, { env: { HLS_SECRET: "s3" } });
+    const [plan] = plans(ws, ctx);
+    expect(plan?.disabled).toBeNull();
+    expect(expandService(plan as NonNullable<typeof plan>, ctx, live).env.MTX_SECRET).toBe("s3");
+  });
+
+  it("finds the Python of host.toml's environment or of the state folder", () => {
+    const ws = workspace([]);
+    descriptor(ws, "asr", '[run]\ncommand = ["{python}", "server.py"]');
+    descriptor(ws, "tts", '[run]\ncommand = ["{python}", "server.py"]');
+    writeIn(ws, "host.toml", 'name = "h"\n[services.asr]\npython = "venvs/asr"\n[services.tts]\n');
+    const ctx = ctxFor(ws);
+    const before = plans(ws, ctx);
+    expect(before.find((p) => p.name === "asr")?.disabled).toMatch(/找不到 Python 環境/);
+    expect(before.find((p) => p.name === "tts")?.disabled).toMatch(/envs/);
+
+    for (const file of [
+      pythonIn(join(ws.root, "venvs", "asr"), "linux"),
+      pythonIn(join(ws.state, "envs", "tts"), "linux"),
+    ]) {
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "");
+    }
+    const after = plans(ws, ctx);
+    const asr = after.find((p) => p.name === "asr");
+    expect(asr?.disabled).toBeNull();
+    expect(expandService(asr as NonNullable<typeof asr>, ctx, live).file).toBe(
+      join(ws.root, "venvs", "asr", "bin", "python"),
+    );
+    expect(pythonIn("/e", "win32")).toBe(join("/e", "Scripts", "python.exe"));
+  });
+
+  it("disables what host.toml turns off, other platforms and unknown names", () => {
+    const ws = workspace([]);
+    descriptor(ws, "win", 'platforms = ["win32"]\n[run]\ncommand = ["x"]');
+    descriptor(ws, "off", '[run]\ncommand = ["x"]');
+    writeIn(
+      ws,
+      "host.toml",
+      'name = "h"\n[services.win]\n[services.off]\nenabled = false\n[services.ghost]\n',
+    );
+    const by = Object.fromEntries(plans(ws, ctxFor(ws)).map((p) => [p.name, p.disabled]));
+    expect(by.win).toMatch(/win32/);
+    expect(by.off).toMatch(/enabled = false/);
+    expect(by.ghost).toMatch(/service\.toml/);
+  });
+});
+
+describe("environment", () => {
+  it("layers the allowlist, pass_env, the descriptor, host.toml and hostd's own values", () => {
+    const ws = workspace([]);
+    descriptor(
+      ws,
+      "w",
+      '[run]\ncommand = ["x"]\nport = 9100\nhost_env = "HOST"\nport_env = "PORT"\npass_env = ["FOO_*"]\nenv = { A = "desc", B = "desc", MODELS = "{models}/hf" }',
+    );
+    writeIn(
+      ws,
+      "host.toml",
+      'name = "h"\n[paths]\nca_bundle = "certs/ca.pem"\n[services.w]\nenv = { B = "host", HF_HOME = "/other" }\n',
+    );
+    const ctx = ctxFor(ws, { caBundle: join(ws.root, "certs", "ca.pem") });
+    const [plan] = plans(ws, ctx);
+    const env = expandService(plan as NonNullable<typeof plan>, ctx, live).env;
+    expect(env).toEqual({
+      PATH: "/bin",
+      HF_HOME: "/other",
+      FOO_A: "1",
+      FOO_B: "2",
+      A: "desc",
+      B: "host",
+      MODELS: `${join(ws.state, "models")}/hf`,
+      HOST: "127.0.0.1",
+      PORT: "9100",
+      MIYORIA_SERVICE_TOKEN: "tok",
+      MIYORIA_HOSTD_URL: "http://127.0.0.1:5000",
+      SSL_CERT_FILE: join(ws.root, "certs", "ca.pem"),
+      REQUESTS_CA_BUNDLE: join(ws.root, "certs", "ca.pem"),
+    });
+    expect(env.SECRET_KEY).toBeUndefined();
+  });
+
+  it("keeps secrets and a stale ASR_MODEL out of the base allowlist", () => {
+    expect(
+      workerBaseEnv({
+        PATH: "/bin",
+        ASR_MODEL: "x",
+        OPENAI_API_KEY: "k",
+        CUDA_VISIBLE_DEVICES: "0",
+      }),
+    ).toEqual({
+      PATH: "/bin",
+      CUDA_VISIBLE_DEVICES: "0",
+    });
+  });
+
+  it("matches pass_env patterns", () => {
+    expect(matchesPassEnv("ANYTHING", "*")).toBe(true);
+    expect(matchesPassEnv("HF_HOME", "HF_*")).toBe(true);
+    expect(matchesPassEnv("XHF_HOME", "HF_*")).toBe(false);
+    expect(matchesPassEnv("hf_home", "HF_*", "win32")).toBe(true);
+    expect(matchesPassEnv("hf_home", "HF_*", "linux")).toBe(false);
+    expect(matchesPassEnv("MTX", "MTX")).toBe(true);
+  });
+
+  it("lists the evictable services for {offload_urls}, tts first, and drops an empty value", () => {
+    const ws = workspace([]);
+    descriptor(ws, "asr", '[run]\ncommand = ["x"]\nport = 8003\n[gpu]\npolicy = "evictable"');
+    descriptor(ws, "tts", '[run]\ncommand = ["x"]\nport = 8002\n[gpu]\npolicy = "evictable"');
+    descriptor(
+      ws,
+      "sing",
+      '[run]\ncommand = ["x"]\nport = 8005\nafter = ["asr", "tts"]\nenv = { SING_OFFLOAD_URLS = "{offload_urls}" }\n[gpu]\npolicy = "on_demand"',
+    );
+    writeIn(ws, "host.toml", 'name = "h"\n[services.sing]\n[services.asr]\n[services.tts]\n');
+    const ctx = ctxFor(ws);
+    const all = plans(ws, ctx);
+    expect(all.map((p) => p.name)).toEqual(["asr", "tts", "sing"]);
+    const urls = offloadUrls(
+      all,
+      (p) => (typeof p.port === "number" ? p.port : undefined),
+      "0.0.0.0",
+    );
+    expect(urls).toBe("http://127.0.0.1:8002,http://127.0.0.1:8003");
+    const sing = all.find((p) => p.name === "sing") as NonNullable<(typeof all)[number]>;
+    expect(expandService(sing, ctx, { ...live, offloadUrls: urls }).env.SING_OFFLOAD_URLS).toBe(
+      urls,
+    );
+    expect(expandService(sing, ctx, live).env).not.toHaveProperty("SING_OFFLOAD_URLS");
+
+    // host.toml can move a service out of the evictable group.
+    writeIn(
+      ws,
+      "host.toml",
+      'name = "h"\n[services.sing]\n[services.asr]\ngpu = { policy = "pinned" }\n[services.tts]\nenabled = false\n',
+    );
+    expect(offloadUrls(plans(ws, ctx), () => 1, "127.0.0.1")).toBe("");
+  });
+});
+
+describe("host.toml", () => {
+  it("resolves the state folder against the workspace", () => {
+    const ws = workspace([]);
+    writeIn(ws, "host.toml", 'name = "h"\n[paths]\nstate = "var/hostd"\n');
+    const host = loadHostConfig(ws.hostToml);
+    expect(host.workspace).toBe(ws.root);
+    expect(host.state.logs).toBe(join(ws.root, "var", "hostd", "logs"));
+    expect(host.state.run).toBe(join(ws.root, "var", "hostd", "run"));
+  });
+
+  it("reports a typo with its path", () => {
+    const ws = workspace([]);
+    writeIn(ws, "host.toml", 'name = "h"\n[network]\nbnd = "x"\n');
+    expect(() => loadHostConfig(ws.hostToml)).toThrow(HostConfigError);
+    expect(() => loadHostConfig(join(ws.root, "missing.toml"))).toThrow(/does not exist/);
+  });
+});
+
+describe("gpu", () => {
+  it("reads nvidia-smi's CSV", () => {
+    expect(parseNvidiaSmi("NVIDIA GeForce RTX 4070 SUPER, 12282, 3021\n")).toEqual({
+      name: "NVIDIA GeForce RTX 4070 SUPER",
+      total_mb: 12282,
+      used_mb: 3021,
+    });
+    expect(parseNvidiaSmi("")).toBeNull();
+  });
+});
