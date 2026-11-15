@@ -168,6 +168,20 @@ first choice for what they cover. Run `pnpm install` from the root (one `pnpm-lo
 - In `start`: `const cfg = ctx.config(MyConfigSchema)` (missing section = `{}`); an invalid
   config throws `ConfigError` and fails the start. Put the schema in the manifest
   (`configSchema`) so the panel gets a JSON Schema (`manifestJson`).
+- **One schema for the whole file.** A top-level section (`[llm]`, `[speech]`, `[mcp]`, ...) has
+  its zod schema next to the code that reads it, exported by that package; `[core]` is the
+  kernel's `CoreSectionSchema`, `[stack]` and `[machine]` are the CLI's. Core composes the root
+  (`rootConfigSchema` in `packages/core/src/config-schema.ts`, with the kernel's
+  `composeConfigSchema`): each section, and each module's own `configSchema` under
+  `modules.<id>` plus `enabled`. A new section or module goes into `CONFIG_SECTIONS` /
+  `MODULE_CONFIG_SCHEMAS` there (a test checks the second against the real manifests). Core
+  checks the file with it before anything starts, the store checks config revisions with it, and
+  `miyoria config set` and the prompts check values with it (the CLI adds its two sections).
+  Which problems stop the start is `startPolicy`'s: exactly what the readers stopped on before,
+  so a file that loads keeps loading. `configJsonSchema` is the one JSON Schema emitter, for a
+  module and for the whole file. A config schema follows the contract rules where they fit:
+  avoid `.refine` (the check runs it, the JSON Schema cannot show it), but defaults and a
+  `.transform` of the output are fine, since only the input is emitted.
 
 ## 7. Time
 
