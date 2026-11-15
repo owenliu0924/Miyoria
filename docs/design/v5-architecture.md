@@ -322,6 +322,7 @@ miyoria up                     # 啟動這台裝的全部
 | multilingual-e5-small | 0.12B | 低很多 | MIT | 現在 `local` 的預設,最快 |
 
 - 做法:階段 3 拿約 200 句真的記憶和 50 個問法(繁中、日文歌名、英文混著)比 recall@5 和 CPU 上每句的毫秒數,再定。沒有測之前的預設是 Qwen3-Embedding-0.6B。語音回合對延遲敏感,查詢那一句太慢的話改用小一號的模型或放到顯卡上。
+- **2026-11-15 更新:** 合成測試集上的試驗(`research_notes/v5/embedding-trial.md`)後,owner 選了 Harrier-OSS-v1 270M fp16(短查詢約 30 ms、帶三行上下文約 70 到 90 ms,2 執行緒)。`local` 依模型 pooling(Harrier 用模型自己的輸出),每個向量記著是哪個模型做的,換模型會重算;合併分數時 cosine 攤開在候選之間,`min_vector` 預設改成 0.5(見 ARCHITECTURE §5.3)。門檻要等 §7.7 的真資料標註再調。
 - 每次模型呼叫都落地保存,能從事件紀錄重建當時模型看到的一切。
 
 ### 7.6 主動

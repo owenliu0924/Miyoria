@@ -296,7 +296,12 @@ interface Stimulus {
 
 ### 5.3 讀取:混合檢索
 
-`score = w1·向量相似 + w2·全文(BM25) + w3·新近度 + w4·重要性 + w5·跟在場者相關`,取前 K 筆後可選 rerank。嵌入是可選的:任何 OpenAI 相容的 `/embeddings` 端點都行(例如 Ollama / LM Studio 跑 **bge-m3**,中日英多語,CPU 跑得動),沒設時只用全文 + 新近度 + 重要性。
+`score = w1·向量相似 + w2·全文(BM25) + w3·新近度 + w4·重要性 + w5·跟在場者相關`,取前 K 筆後可選 rerank。嵌入是可選的:任何 OpenAI 相容的 `/embeddings` 端點都行(例如 Ollama / LM Studio 跑 **bge-m3**,中日英多語,CPU 跑得動),或 `provider = "local"` 在這台機器的 CPU 上跑(目前選的是 Harrier-OSS-v1 270M fp16,模型檔自己放進 `models_dir`);沒設時只用全文 + 新近度 + 重要性。
+
+- **向量相似和全文一樣攤開在候選之間**:全文是「這筆的分數 ÷ 候選裡最好的」;向量是 cosine 從 `min_vector`(和向量搜尋找回來的最近鄰裡最遠的那個,取高的)算 0,到候選裡最高的算 1。好的模型把幾乎每筆記憶都放在 0.35 到 0.65 之間,直接拿 cosine 乘權重只差幾個百分點,共同字最多的那筆(常常是別人的)會贏;2026-11-15 的試驗裡,攤開後(加上 `min_vector` 0.5)Harrier 270M 的第一名命中從 0.59 到 0.74,向量單用是 0.67(新近度和重要性照舊)。
+- **`min_vector` 依模型設**:沒有共同的字時,cosine 要到這個值才算相關。Harrier 270M 0.5(預設)、Harrier 0.6B 和 bge-m3(CLS)0.55、Qwen3-Embedding fp16 0.45、multilingual-e5-small 約 0.85(它的分數全擠在 0.80 到 0.89,分不開)。要用真的回想資料再調。
+- **每個向量記著是哪個模型做的**(`embedding_model`:模型、權重型別、pooling、passage 前綴)。換了模型,舊的向量就當作沒有:不拿來比,背景的 backfill 用新模型重算。
+- **pooling 依模型**(`[memory.embedding] pooling`,空 = 依名稱):Harrier 讀模型自己輸出的 `sentence_embedding`,Qwen3-Embedding 取最後一個 token(並加它的查詢指令),bge-m3 取 CLS,e5 取平均;模型輸出對不上 pooling 時,載入時就關掉向量並記一次原因。
 
 ### 5.4 隱私範圍(很重要)
 
