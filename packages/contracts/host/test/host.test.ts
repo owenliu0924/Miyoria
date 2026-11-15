@@ -6,8 +6,10 @@ import {
   HOST_LINK_CLOSE,
   HOST_METHOD,
   HostConfigSchema,
+  HostFetchSchema,
   HostHelloSchema,
   HostInfoSchema,
+  HostLlmSchema,
   HostServiceInstallResultSchema,
   HostServiceInstallSchema,
   HostServiceLogsSchema,
@@ -249,5 +251,25 @@ describe("methods and constants", () => {
     const codes = Object.values(HOST_ERROR_CODE);
     expect(new Set(codes).size).toBe(codes.length);
     expect(HOST_LINK_CLOSE.UNAUTHORIZED).toBe(4401);
+  });
+
+  it("reads cluster.llm and cluster.fetch params", () => {
+    const llm = HostLlmSchema.parse({
+      purpose: "fast",
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 100,
+      json: true,
+    });
+    expect(llm.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(HostLlmSchema.safeParse({ purpose: "fast", messages: [] }).success).toBe(false);
+    expect(
+      HostLlmSchema.safeParse({ purpose: "fast", messages: [{ role: "tool", content: "x" }] })
+        .success,
+    ).toBe(false);
+    const fetch = { capability: "asr", method: "POST", path: "/asr", body: "AAEC" };
+    expect(HostFetchSchema.parse(fetch)).toEqual(fetch);
+    expect(HostFetchSchema.safeParse({ ...fetch, path: "asr" }).success).toBe(false);
+    expect(HostFetchSchema.safeParse({ ...fetch, path: "//evil/asr" }).success).toBe(false);
+    expect(HostFetchSchema.safeParse({ ...fetch, method: "post" }).success).toBe(false);
   });
 });

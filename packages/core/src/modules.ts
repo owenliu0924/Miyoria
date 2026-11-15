@@ -78,6 +78,7 @@ import {
   STORE_PLUGINS,
 } from "./boot.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
+import { clusterComplete } from "./cluster-llm.js";
 import { assertStartConfig, validateRevision } from "./config-schema.js";
 import { CoreEndpoints, legacyEndpoints } from "./endpoints.js";
 import type { ExtensionsCli } from "./ext-cli.js";
@@ -147,7 +148,7 @@ async function coreModules({
     new ModerationModule(),
     llmModule(config, profile, baseDir),
     // Before the modules that will ask its registry where their services are.
-    new ClusterModule({ guards: CLUSTER_GUARDS }),
+    new ClusterModule({ guards: CLUSTER_GUARDS, complete: clusterComplete }),
     SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema), { endpoints }),
     new VoiceLinkModule(),
     new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),

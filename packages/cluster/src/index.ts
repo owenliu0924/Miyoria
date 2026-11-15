@@ -3,6 +3,19 @@
 // registry of service endpoints, and the guarded states hosts ask about.
 
 export {
+  type CallerHost,
+  ClusterCalls,
+  type ClusterCallsOptions,
+  type ClusterCompleteFn,
+  type ClusterCompletion,
+  type ClusterRateLimit,
+  type ClusterUse,
+  type ClusterUses,
+  DEFAULT_CLUSTER_LLM_PURPOSES,
+  DEFAULT_CLUSTER_LLM_RATE,
+  DEFAULT_CLUSTER_USES,
+} from "./calls.js";
+export {
   type ClusterConfig,
   ClusterConfigSchema,
   DEFAULT_CLUSTER_BIND,
@@ -13,6 +26,7 @@ export { GuardRegistry, type GuardSourceFn } from "./guards.js";
 export { ClusterLink, type ClusterLinkOptions, closeSocket, type HostConnection } from "./link.js";
 export { clusterSchema } from "./migrations.js";
 export {
+  type ClusterComplete,
   type ClusterGuard,
   type ClusterHosts,
   ClusterKey,

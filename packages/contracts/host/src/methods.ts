@@ -1,6 +1,5 @@
-// Params and results of the methods the control link and the local API need first. The `gpu.*`,
-// `cluster.llm`, `cluster.context` and
-// `cluster.links` shapes are added by the steps that implement them.
+// Params and results of the methods of the control link and the local API. The `gpu.*`,
+// `cluster.context` and `cluster.links` shapes are added by the steps that implement them.
 
 import { z } from "zod";
 import { HostGpuPolicySchema, HostGuardStateSchema } from "./service.js";
@@ -223,7 +222,13 @@ export const HostEndpointSchema = z
 export type HostEndpoint = z.output<typeof HostEndpointSchema>;
 
 /** `cluster.resolve` params. */
-export const HostResolveSchema = z.object({ capability: z.string() }).meta({ id: "HostResolve" });
+export const HostResolveSchema = z
+  .object({
+    capability: z.string(),
+    /** Set by hostd: the service of the host that asked. Core does not use it for `resolve`. */
+    service: z.string().optional(),
+  })
+  .meta({ id: "HostResolve" });
 export type HostResolve = z.output<typeof HostResolveSchema>;
 
 /** `cluster.resolve` result. */
@@ -231,6 +236,75 @@ export const HostResolveResultSchema = z
   .object({ endpoints: z.array(HostEndpointSchema) })
   .meta({ id: "HostResolveResult" });
 export type HostResolveResult = z.output<typeof HostResolveResultSchema>;
+
+// ---- what a service asks Core for through its hostd (H8) ----------------------------------------
+
+/** One message of a `cluster.llm` conversation: text only. */
+export const HostLlmMessageSchema = z
+  .object({
+    role: z.enum(["system", "user", "assistant"]),
+    content: z.string(),
+  })
+  .meta({ id: "HostLlmMessage" });
+export type HostLlmMessage = z.output<typeof HostLlmMessageSchema>;
+
+/**
+ * `cluster.llm` params: one completion through Core's LLM, counted in the budget and written to
+ * the call log like any other call. `service` is set by hostd to the service that asked; what a
+ * service sends there itself is overwritten. Core decides what the service may use.
+ */
+export const HostLlmSchema = z
+  .object({
+    /** The model purpose (`fast`); Core allows only the purposes on its list. */
+    purpose: z.string().min(1),
+    messages: z.array(HostLlmMessageSchema).min(1),
+    max_tokens: z.number().int().positive().optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    /** Ask for a JSON object answer when the model supports it. */
+    json: z.boolean().optional(),
+    /** Set by hostd: the service of the host that asked. */
+    service: z.string().optional(),
+  })
+  .meta({ id: "HostLlm" });
+export type HostLlm = z.output<typeof HostLlmSchema>;
+
+/** `cluster.llm` result. */
+export const HostLlmResultSchema = z.object({ text: z.string() }).meta({ id: "HostLlmResult" });
+export type HostLlmResult = z.output<typeof HostLlmResultSchema>;
+
+/**
+ * `cluster.fetch` params: Core sends one HTTP request to the first usable endpoint of
+ * `capability` and returns the whole answer. For small calls (the ASR spot check: a short clip in a
+ * multipart form the caller builds itself). Each body is at most `HOST_FETCH_LIMITS.MAX_BODY_BYTES`.
+ */
+export const HostFetchSchema = z
+  .object({
+    capability: z.string().min(1),
+    /** An HTTP method in capitals (`GET`, `POST`). */
+    method: z.string().regex(/^[A-Z]{1,16}$/u, "an HTTP method in capitals"),
+    /** Appended to the endpoint's address: starts with one `/`. */
+    path: z.string().regex(/^\/(?!\/)\S*$/u, "a path that starts with one /"),
+    /** Request headers. `authorization`, `host`, `content-length` and hop-by-hop ones are not sent. */
+    headers: z.record(z.string(), z.string()).optional(),
+    /** The request body, base64. */
+    body: z.string().optional(),
+    /** Set by hostd: the service of the host that asked. */
+    service: z.string().optional(),
+  })
+  .meta({ id: "HostFetch" });
+export type HostFetch = z.output<typeof HostFetchSchema>;
+
+/** `cluster.fetch` result: the endpoint's answer, whatever its status. */
+export const HostFetchResultSchema = z
+  .object({
+    status: z.number().int(),
+    /** Lower-case names, without hop-by-hop ones. */
+    headers: z.record(z.string(), z.string()),
+    /** The response body, base64. */
+    body: z.string(),
+  })
+  .meta({ id: "HostFetchResult" });
+export type HostFetchResult = z.output<typeof HostFetchResultSchema>;
 
 // ---- installing (service.install, service.remove, host.update) ---------------------------------
 

@@ -30,7 +30,20 @@ export const HOST_METHOD = {
   GpuState: "gpu.state",
   ClusterGuard: "cluster.guard",
   ClusterResolve: "cluster.resolve",
+  /** A completion through Core's LLM, for a service of the host (H8). */
   ClusterLlm: "cluster.llm",
+  /** One small HTTP request to a capability's endpoint, made by Core, for a service of the host (H8). */
+  ClusterFetch: "cluster.fetch",
+} as const;
+
+/**
+ * Limits of `cluster.fetch`: the request body and the response body are each at most
+ * `MAX_BODY_BYTES` (before base64), and the endpoint's response head must arrive within
+ * `HEAD_TIMEOUT_MS` (the body then gets as long again).
+ */
+export const HOST_FETCH_LIMITS = {
+  MAX_BODY_BYTES: 8 * 1024 * 1024,
+  HEAD_TIMEOUT_MS: 60_000,
 } as const;
 
 /** Notifications. `host.report` and `service.*` go to Core, `cluster.*` come from it. */
@@ -71,6 +84,14 @@ export const HOST_ERROR_CODE = {
   Busy: -32013,
   /** The caller may not use this method or capability. */
   NotAllowed: -32014,
+  /** hostd has no control link to Core now (no `[cluster]`, no host key, or the link is down). */
+  NotLinked: -32015,
+  /** Nothing can serve the request now: no usable endpoint, no LLM, or the endpoint failed. */
+  Unavailable: -32016,
+  /** A body is over `HOST_FETCH_LIMITS.MAX_BODY_BYTES`. */
+  TooLarge: -32017,
+  /** The host sent more `cluster.llm` requests than Core allows per minute. */
+  RateLimited: -32018,
 } as const;
 
 /** Capability names the built-in services provide. A descriptor may list others. */

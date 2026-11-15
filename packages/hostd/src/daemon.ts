@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import {
   HOST_ERROR_CODE,
+  HOST_FETCH_LIMITS,
   HOST_METHOD,
   HOST_PROTOCOL_VERSION,
   type HostGuardState,
@@ -144,7 +145,26 @@ const SERVED: ReadonlySet<string> = new Set([
   HOST_METHOD.ServiceInstall,
   HOST_METHOD.ServiceRemove,
   HOST_METHOD.HostUpdate,
+  HOST_METHOD.ClusterResolve,
+  HOST_METHOD.ClusterLlm,
+  HOST_METHOD.ClusterFetch,
 ]);
+
+/**
+ * Methods Core serves that hostd passes on for the services of this machine (and the operator,
+ * for debugging), adding which service asked. Core's own calls never come back this way.
+ */
+const FORWARDED: ReadonlySet<string> = new Set([
+  HOST_METHOD.ClusterResolve,
+  HOST_METHOD.ClusterLlm,
+  HOST_METHOD.ClusterFetch,
+]);
+
+/** How long Core may take for a forwarded call: a completion, or a fetch's head and body. */
+const FORWARD_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  [HOST_METHOD.ClusterLlm]: 180_000,
+  [HOST_METHOD.ClusterFetch]: 2 * HOST_FETCH_LIMITS.HEAD_TIMEOUT_MS + 15_000,
+};
 
 /** Methods only the operator on this machine may call (they change what is installed here). */
 const OPERATOR_ONLY: ReadonlySet<string> = new Set([
@@ -160,10 +180,10 @@ function allowed(caller: Caller, method: string): boolean {
     case "operator":
       return true;
     case "core":
-      return !OPERATOR_ONLY.has(method);
+      return !OPERATOR_ONLY.has(method) && !FORWARDED.has(method);
     case "service":
-      // `gpu.*` and `cluster.*` come later; nothing that exists now is a service's to call.
-      return false;
+      // `gpu.*` comes with H7; of what exists now only the forwarded `cluster.*` are a service's.
+      return FORWARDED.has(method);
   }
 }
 
@@ -669,6 +689,10 @@ export class Daemon implements HostApi {
       }
       case HOST_METHOD.HostRelink:
         return await this.relink();
+      case HOST_METHOD.ClusterResolve:
+      case HOST_METHOD.ClusterLlm:
+      case HOST_METHOD.ClusterFetch:
+        return await this.#forward(method, params, caller, signal);
       case HOST_METHOD.HostShutdown: {
         const { force } = parseParams(HostShutdownSchema, params);
         if (force !== true) {
@@ -686,6 +710,39 @@ export class Daemon implements HostApi {
       default:
         throw new HostRpcError(JSON_RPC.MethodNotFound, `method not found: ${method}`);
     }
+  }
+
+  /**
+   * Passes a `cluster.*` call on to Core with the name of the service that asked: a service's own
+   * name, whatever it sent; the operator's `service` param as given (for debugging). Core decides
+   * what that service may use. Without a link: `NotLinked`.
+   */
+  async #forward(
+    method: string,
+    params: unknown,
+    caller: Caller,
+    signal: AbortSignal | undefined,
+  ): Promise<unknown> {
+    const client = this.#cluster;
+    if (client === null) {
+      throw new HostRpcError(
+        HOST_ERROR_CODE.NotLinked,
+        `hostd 沒有連上 Core,不能轉送 ${method}(沒有 [cluster] url、沒有 host.key,或連線中斷)`,
+      );
+    }
+    const given =
+      typeof params === "object" && params !== null && !Array.isArray(params)
+        ? (params as Record<string, unknown>)
+        : {};
+    const { service: asked, ...rest } = given;
+    const service =
+      caller.kind === "service" ? caller.service : typeof asked === "string" ? asked : undefined;
+    return await client.call(
+      method,
+      service === undefined ? rest : { ...rest, service },
+      signal,
+      FORWARD_TIMEOUT_MS[method],
+    );
   }
 
   // ---- installing ------------------------------------------------------------------------------

@@ -340,9 +340,9 @@ export class CoreLink {
     });
 
     api.setClusterClient({
-      call: async (method, params, signal) => {
+      call: async (method, params, signal, timeoutMs) => {
         try {
-          return await peer.request(method, params, undefined, signal);
+          return await peer.request(method, params, timeoutMs, signal);
         } catch (error) {
           throw hostError(error);
         }

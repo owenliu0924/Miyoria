@@ -136,6 +136,70 @@
         "version"
       ]
     },
+    "HostFetch": {
+      "type": "object",
+      "properties": {
+        "capability": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "pattern": "^[A-Z]{1,16}$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^\\/(?!\\/)\\S*$"
+        },
+        "headers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability",
+        "method",
+        "path"
+      ]
+    },
+    "HostFetchResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "headers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "headers",
+        "body"
+      ]
+    },
     "HostGpu": {
       "type": "object",
       "properties": {
@@ -502,6 +566,73 @@
         "stopped"
       ]
     },
+    "HostLlm": {
+      "type": "object",
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "messages": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostLlmMessage"
+          }
+        },
+        "max_tokens": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "json": {
+          "type": "boolean"
+        },
+        "service": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "purpose",
+        "messages"
+      ]
+    },
+    "HostLlmMessage": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "system",
+            "user",
+            "assistant"
+          ]
+        },
+        "content": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ]
+    },
+    "HostLlmResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
     "HostPort": {
       "anyOf": [
         {
@@ -620,6 +751,9 @@
       "type": "object",
       "properties": {
         "capability": {
+          "type": "string"
+        },
+        "service": {
           "type": "string"
         }
       },

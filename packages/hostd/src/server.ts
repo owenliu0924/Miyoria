@@ -22,7 +22,8 @@ export const JSON_RPC = {
   InternalError: -32603,
 } as const;
 
-const MAX_BODY = 1024 * 1024;
+/** Largest request: a `cluster.fetch` carries up to 8 MiB of body as base64. */
+const MAX_BODY = 16 * 1024 * 1024;
 
 export interface LocalApiHandler {
   /** The caller a bearer token stands for, or `null`. */

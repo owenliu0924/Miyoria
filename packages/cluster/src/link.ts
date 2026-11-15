@@ -9,6 +9,9 @@
 //
 // A pending host (joined, not approved) may connect and report; nothing it reports is used.
 //
+// What a service of a host asks Core for through its hostd (`cluster.llm`, `cluster.fetch`) is
+// checked and run by `ClusterCalls` (`calls.ts`) with what this link knows of the host.
+//
 // Binary frames after `welcome` are the relay's (§7.1, `relay.ts`): each connection has its
 // channel, and every stream of it fails when the connection ends.
 
@@ -32,6 +35,7 @@ import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
 import { RpcError, RpcPeer, WebSocketTransport } from "@miyoria/sdk";
 import { Events, type Publish } from "@miyoria/types";
 import WebSocket, { type RawData } from "ws";
+import type { CallerHost, ClusterCalls } from "./calls.js";
 import type { ClusterConfig } from "./config.js";
 import type { GuardRegistry } from "./guards.js";
 import type { EndpointRegistry } from "./registry.js";
@@ -70,6 +74,8 @@ export interface ClusterLinkOptions {
   now: () => number;
   /** The relay of HTTP requests over the link (v5-hostd §7.1). */
   relay?: RelayOptions;
+  /** Serves `cluster.llm` and `cluster.fetch`; without it they are not found. */
+  calls?: ClusterCalls;
 }
 
 interface Conn {
@@ -297,7 +303,7 @@ export class ClusterLink {
     const peer = new RpcPeer({
       transport: new WebSocketTransport(ws),
       role: "host",
-      onRequest: (method, params) => this.#onRequest(host.name, method, params),
+      onRequest: (method, params, signal) => this.#onRequest(host.name, method, params, signal),
       onNotification: (method, params) => {
         if (conn !== null) this.#onNotification(conn, method, params);
       },
@@ -417,9 +423,32 @@ export class ClusterLink {
     closeSocket(conn.ws, conn.closing.code, conn.closing.reason);
   }
 
-  async #onRequest(name: string, method: string, params: unknown): Promise<unknown> {
+  /** The caller as `ClusterCalls` needs it; refused when its connection is gone. */
+  #caller(name: string): CallerHost {
+    const conn = this.#conns.get(name);
+    if (conn === undefined) throw new RpcError(HOST_ERROR_CODE.NotAllowed, "not connected");
+    return {
+      name: conn.name,
+      approved: conn.approved,
+      capabilities: conn.capabilities,
+      services: conn.report?.services ?? null,
+    };
+  }
+
+  async #onRequest(
+    name: string,
+    method: string,
+    params: unknown,
+    signal: AbortSignal,
+  ): Promise<unknown> {
     const o = this.#o;
     switch (method) {
+      case HOST_METHOD.ClusterLlm:
+        if (o.calls === undefined) break;
+        return o.calls.llm(this.#caller(name), params, signal);
+      case HOST_METHOD.ClusterFetch:
+        if (o.calls === undefined) break;
+        return o.calls.fetch(this.#caller(name), params, signal);
       case HOST_METHOD.ClusterGuard: {
         const states = await o.guards.active((error) =>
           o.log.warn({ err: errorMessage(error) }, "a guard source failed"),
@@ -434,9 +463,8 @@ export class ClusterLink {
         }
         return { endpoints: o.registry.candidates(parsed.data.capability) };
       }
-      default:
-        throw new RpcError(EXT_ERROR_CODE.MethodNotFound, `unknown method "${method}"`);
     }
+    throw new RpcError(EXT_ERROR_CODE.MethodNotFound, `unknown method "${method}"`);
   }
 
   #onNotification(conn: Conn, method: string, params: unknown): void {

@@ -1,7 +1,13 @@
 import { existsSync } from "node:fs";
 import { HOST_ERROR_CODE, type HostServiceList } from "@miyoria/contracts/host";
 import { afterEach, describe, expect, it } from "vitest";
-import { HostdClient, HostdRunningError, readRunFile, runFilePath } from "../src/index.js";
+import {
+  HostdClient,
+  HostdRunningError,
+  HostRpcError,
+  readRunFile,
+  runFilePath,
+} from "../src/index.js";
 import { writeRunFile } from "../src/run-file.js";
 import { cleanup, daemonFor, fake, until, workspace } from "./fakes.js";
 
@@ -121,6 +127,78 @@ describe("local API", () => {
       await client.call("service.restart", { service: "svc" });
       await runningPort(client, "svc");
       expect((await rpc(daemon.port, token, "service.list")).status).toBe(401);
+    },
+  );
+
+  it(
+    "forwards a service's cluster calls to Core under its own name, never another",
+    T,
+    async () => {
+      const ws = workspace([fake("svc", "health.cjs")]);
+      const daemon = daemonFor(ws);
+      await daemon.start();
+      const client = (await HostdClient.connect(ws.state)) as HostdClient;
+      await client.call("service.start", { service: "svc" });
+      const port = await runningPort(client, "svc");
+      const env = (await (await fetch(`http://127.0.0.1:${port}/env`)).json()) as Record<
+        string,
+        string
+      >;
+      const token = env.MIYORIA_SERVICE_TOKEN as string;
+      const llm = {
+        purpose: "fast",
+        messages: [{ role: "user", content: "which song?" }],
+        service: "someone-else",
+      };
+
+      // No link to Core yet.
+      const unlinked = await rpc(daemon.port, token, "cluster.llm", llm);
+      expect(unlinked.body.error).toMatchObject({ code: HOST_ERROR_CODE.NotLinked });
+
+      const sent: Array<{ method: string; params: unknown; timeoutMs: number | undefined }> = [];
+      daemon.setClusterClient({
+        call: async (method, params, _signal, timeoutMs) => {
+          sent.push({ method, params, timeoutMs });
+          if (method === "cluster.fetch") {
+            throw new HostRpcError(HOST_ERROR_CODE.NotAllowed, "not for you");
+          }
+          return { text: "ok" };
+        },
+      });
+      const answered = await rpc(daemon.port, token, "cluster.llm", llm);
+      expect(answered.body).toMatchObject({ result: { text: "ok" } });
+      expect(sent[0]).toMatchObject({
+        method: "cluster.llm",
+        params: { ...llm, service: "svc" },
+      });
+      expect(sent[0]?.timeoutMs).toBeGreaterThan(30_000);
+      // Core's refusal reaches the service with its code.
+      const refused = await rpc(daemon.port, token, "cluster.fetch", {
+        capability: "asr",
+        method: "POST",
+        path: "/asr",
+      });
+      expect(refused.body.error).toMatchObject({ code: HOST_ERROR_CODE.NotAllowed });
+      expect(sent[1]?.params).toMatchObject({ service: "svc" });
+      await rpc(daemon.port, token, "cluster.resolve", { capability: "asr" });
+      expect(sent[2]).toMatchObject({
+        method: "cluster.resolve",
+        params: { capability: "asr", service: "svc" },
+      });
+
+      // The operator may ask in a service's name (debugging); Core's own calls never come back.
+      await rpc(daemon.port, daemon.token, "cluster.llm", { ...llm, service: "svc" });
+      expect(sent[3]?.params).toMatchObject({ service: "svc" });
+      await rpc(daemon.port, daemon.token, "cluster.resolve", { capability: "asr" });
+      expect(sent[4]?.params).toEqual({ capability: "asr" });
+      await expect(daemon.call("cluster.llm", llm, { kind: "core" })).rejects.toMatchObject({
+        code: HOST_ERROR_CODE.NotAllowed,
+      });
+      expect(sent).toHaveLength(5);
+
+      daemon.setClusterClient(null);
+      const dropped = await rpc(daemon.port, token, "cluster.resolve", { capability: "asr" });
+      expect(dropped.body.error).toMatchObject({ code: HOST_ERROR_CODE.NotLinked });
     },
   );
 

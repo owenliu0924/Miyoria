@@ -23,6 +23,7 @@ import {
   type ClusterGuard,
   ClusterKey,
   ClusterModule,
+  type ClusterModuleOptions,
   type ClusterService,
   clusterTables,
   type RelayOptions,
@@ -93,13 +94,20 @@ export class Harness {
 
   static async start(
     config: JsonObject = {},
-    options: { guards?: ClusterGuard[]; extra?: Module[]; relay?: RelayOptions } = {},
+    options: {
+      guards?: ClusterGuard[];
+      extra?: Module[];
+      relay?: RelayOptions;
+      /** More options of the module (`complete`, `uses`, `llmRate`, ...). */
+      module?: Omit<ClusterModuleOptions, "guards" | "version" | "relay">;
+    } = {},
   ): Promise<Harness> {
     const services = new ServiceRegistry();
     const store = await SqliteStore.open(":memory:", { plugins: [clusterTables] });
     services.provide("kernel", StoreKey, store);
     const sup = new Supervisor({ services });
     const module = new ClusterModule({
+      ...options.module,
       guards: options.guards ?? [],
       version: "9.9.9",
       ...(options.relay === undefined ? {} : { relay: options.relay }),

@@ -30,7 +30,8 @@ export interface GuardSource {
 
 /** The `cluster.*` methods Core serves. Present while the control link is up. */
 export interface ClusterClient {
-  call(method: string, params: unknown, signal?: AbortSignal): Promise<unknown>;
+  /** `timeoutMs`: how long Core may take; default the link's request timeout. */
+  call(method: string, params: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<unknown>;
 }
 
 export interface HostApi {

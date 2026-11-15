@@ -27,6 +27,12 @@ import {
 import { StoreKey } from "@miyoria/store";
 import { Events, type Publish, serviceKey } from "@miyoria/types";
 import { WebSocketServer } from "ws";
+import {
+  ClusterCalls,
+  type ClusterCompletion,
+  type ClusterRateLimit,
+  type ClusterUses,
+} from "./calls.js";
 import { ClusterConfigSchema } from "./config.js";
 import { GuardRegistry, type GuardSourceFn } from "./guards.js";
 import { ClusterLink, type HostConnection } from "./link.js";
@@ -83,6 +89,16 @@ export const ClusterKey = serviceKey<ClusterService>("Cluster");
 /** A guard source Core's wiring adds: it reads other modules through their service keys. */
 export type ClusterGuard = (services: ServiceLookup) => ReturnType<GuardSourceFn>;
 
+/**
+ * Runs a completion for a service of a host (`cluster.llm`) through Core's LLM. Core's wiring
+ * gives one that looks its LLM up through its service key, so this package needs no LLM package.
+ */
+export type ClusterComplete = (
+  services: ServiceLookup,
+  request: ClusterCompletion,
+  signal: AbortSignal,
+) => Promise<string>;
+
 export interface ClusterModuleOptions {
   /** Guard sources that stay for the module's whole life (Core's `singing` and `live`). */
   guards?: readonly ClusterGuard[];
@@ -90,6 +106,17 @@ export interface ClusterModuleOptions {
   version?: string;
   /** Limits of the relay over the control link (v5-hostd §7.1). */
   relay?: RelayOptions;
+  /** Runs `cluster.llm` completions; without it they fail with `Unavailable`. */
+  complete?: ClusterComplete;
+  /**
+   * By the capability a service provides: what it may use through `cluster.llm` and
+   * `cluster.fetch`. Default `DEFAULT_CLUSTER_USES` (`sing` and `lyrics`: LLM `fast`, fetch `asr`).
+   */
+  uses?: ClusterUses;
+  /** The LLM purposes any service may ask for at all. Default `["fast"]`. */
+  llmPurposes?: readonly string[];
+  /** Completions per host and time window. Default 30 a minute. */
+  llmRate?: ClusterRateLimit;
 }
 
 /** `host:port` / `[v6]:port`. */
@@ -181,6 +208,7 @@ export class ClusterModule implements Module {
   readonly guards = new GuardRegistry();
   readonly #version: string;
   readonly #relay: RelayOptions;
+  readonly #options: ClusterModuleOptions;
   #registry: EndpointRegistry | null = null;
   #services: ServiceLookup | null = null;
   #addr: AddressInfo | null = null;
@@ -189,6 +217,7 @@ export class ClusterModule implements Module {
   constructor(options: ClusterModuleOptions = {}) {
     this.#version = options.version ?? "0.0.0";
     this.#relay = options.relay ?? {};
+    this.#options = options;
     for (const guard of options.guards ?? []) {
       this.guards.add(() => (this.#services === null ? null : guard(this.#services)));
     }
@@ -225,6 +254,7 @@ export class ClusterModule implements Module {
       coreVersion: this.#version,
       now: () => ctx.clock.now(),
       relay: this.#relay,
+      calls: this.#calls(ctx, registry),
     });
     // `request` for an endpoint only a host's link reaches goes through that link.
     registry.setRelay(new ClusterRelay((name) => link.relayHost(name)));
@@ -286,6 +316,23 @@ export class ClusterModule implements Module {
         server.close();
         server.closeAllConnections();
       }
+    });
+  }
+
+  /** What serves `cluster.llm` and `cluster.fetch` for this run of the module. */
+  #calls(ctx: ModuleContext, registry: EndpointRegistry): ClusterCalls {
+    const o = this.#options;
+    const complete = o.complete;
+    return new ClusterCalls({
+      registry,
+      complete:
+        complete === undefined
+          ? null
+          : (request, signal) => complete(ctx.services, request, signal),
+      clock: ctx.clock,
+      ...(o.uses === undefined ? {} : { uses: o.uses }),
+      ...(o.llmPurposes === undefined ? {} : { purposes: o.llmPurposes }),
+      ...(o.llmRate === undefined ? {} : { llmRate: o.llmRate }),
     });
   }
 
