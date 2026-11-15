@@ -1,126 +1,27 @@
 import {
-  type ActionCompletedData,
-  type AgentInitiativeData,
   type AnyEventDefinition,
   type DecisionTraceData,
   type EventDraft,
   type EventPayload,
   familyCovers,
   type ModuleStateData,
-  type PlatformReadyData,
-  type PlatformTypingData,
-  type TurnCompletedData,
-  type TurnStartedData,
-  type VoiceJoinedData,
-  type VoiceLeftData,
-  type VoiceParticipantsData,
-  type VoicePlayback,
-  type VoiceSpeakingData,
 } from "@miyoria/contracts/events";
-import { type EventId, type ModuleId, newId, type TurnId } from "./ids.js";
-import type { JsonValue } from "./json.js";
-import type { IncomingMessage } from "./platform.js";
-import { type Timestamp, toTimestamp } from "./time.js";
-import type { VoiceUtterance } from "./voice.js";
+import { type ModuleId, newId } from "./ids.js";
+import { toTimestamp } from "./time.js";
 
-// The payload of every typed variant is a contract (`@miyoria/contracts/events`, one schema per
-// bus topic); the types here are inferred from those schemas.
+// Every bus payload is a contract (`@miyoria/contracts/events`, one schema per bus topic); the
+// types here are inferred from those schemas.
 
 export type ModuleStateKind = ModuleStateData["state"];
 
 /** Why the agent did or did not respond. Shown in the panel for debugging. */
 export type DecisionTrace = DecisionTraceData;
 
-/**
- * Every bus event. Adjacently tagged (snake_case type names):
- * `{"type": "platform_message_created", "data": {...}}`.
- *
- * Optional (`Option<T>`) fields are always present, `null` when unset.
- */
-export type Event =
-  /**
-   * A platform connection is up. `self_account` is one of her own accounts; messages from her
-   * own accounts are never treated as input.
-   */
-  | { type: "platform_ready"; data: PlatformReadyData }
-  | { type: "platform_message_created"; data: IncomingMessage }
-  /** Someone started typing (used to extend the reply debounce). */
-  | { type: "platform_typing"; data: PlatformTypingData }
-  | { type: "agent_turn_started"; data: TurnStartedData }
-  | { type: "agent_decision"; data: DecisionTrace }
-  | { type: "agent_turn_completed"; data: TurnCompletedData }
-  /** `message`: the message a successful `send_message` created (may be missing in old JSON). */
-  | { type: "action_completed"; data: ActionCompletedData }
-  /** She joined a voice channel (`context.kind === "voice"`). */
-  | { type: "voice_joined"; data: VoiceJoinedData }
-  | { type: "voice_left"; data: VoiceLeftData }
-  /** Who is in the voice channel changed. */
-  | { type: "voice_participants"; data: VoiceParticipantsData }
-  /** Someone started or stopped speaking (raw signal, before ASR). */
-  | { type: "voice_speaking"; data: VoiceSpeakingData }
-  | { type: "voice_utterance"; data: VoiceUtterance }
-  /**
-   * Her own speech playback. `emotion`, `heard_ms`, `total_ms` and `blocked` are missing from
-   * older publishers; `blocked`: moderation replaced what she meant (the rule), so this is not
-   * her line reaching anyone. (`speaker` is what the recorder adds when it stores the line.)
-   */
-  | { type: "voice_playback"; data: Omit<VoicePlayback, "speaker"> }
-  /** Asks the agent to start a turn on her own initiative (no new input). */
-  | { type: "agent_initiative"; data: AgentInitiativeData }
-  | { type: "module_state_changed"; data: ModuleStateData }
-  /** Escape hatch for extensions and experimental modules; `topic` is the bus topic. */
-  | { type: "custom"; data: { topic: string; payload: JsonValue } };
-
-export type EventType = Event["type"];
-/** The event variant with tag `T`. */
-export type EventOf<T extends EventType> = Extract<Event, { type: T }>;
-/** The `data` of the event variant with tag `T`. */
-export type EventData<T extends EventType> = EventOf<T>["data"];
-
-/** Dotted bus topic of every built-in variant (`custom` carries its own). */
-export const EVENT_TOPICS: Readonly<Record<Exclude<EventType, "custom">, string>> = {
-  platform_ready: "platform.ready",
-  platform_message_created: "platform.message.created",
-  platform_typing: "platform.typing",
-  agent_turn_started: "agent.turn.started",
-  agent_decision: "agent.decision",
-  agent_turn_completed: "agent.turn.completed",
-  action_completed: "action.completed",
-  voice_joined: "voice.joined",
-  voice_left: "voice.left",
-  voice_participants: "voice.participants",
-  voice_speaking: "voice.speaking",
-  voice_utterance: "voice.utterance",
-  voice_playback: "voice.playback",
-  agent_initiative: "agent.initiative",
-  module_state_changed: "system.module.state",
-};
-
-/** Dotted topic used for subscription filters, e.g. `platform.message.created`. */
-export function eventTopic(event: Event): string {
-  return event.type === "custom" ? event.data.topic : EVENT_TOPICS[event.type];
-}
-
-/** Narrows an event to one variant. */
-export function isEvent<T extends EventType>(event: Event, type: T): event is EventOf<T> {
-  return event.type === type;
-}
-
-/** A `custom` event. */
-export function customEvent(topic: string, payload: JsonValue): EventOf<"custom"> {
-  return { type: "custom", data: { topic, payload } };
-}
-
 // ---- the envelope ---------------------------------------------------------------------------
 //
 // The bus carries one envelope (K12b in docs/design/v5-contracts.md): the contract's event draft
 // (`EventDraft` in @miyoria/contracts/events) with every key present, plus the `source` the bus
 // stamps. `type` is the dotted topic and `data` the payload, for every event.
-//
-// Until the old forms are gone, every envelope also carries them as a view (`ts`, `causation`,
-// `correlation`, `event`), so code that reads `env.event` keeps working. The view is made once,
-// when the envelope is, and never changes; it is the only place the old `{type, data}` form is
-// derived from the new one inside the process.
 
 /** A bus topic's definition and the payload type it gives (re-exported from the contract). */
 export type { AnyEventDefinition, EventPayload };
@@ -136,38 +37,11 @@ export type BusEnvelope<Type extends string = string, Data = unknown> = Omit<
   data: Data;
 };
 
+/** Every event on the bus is wrapped in an envelope. Treat envelopes as immutable. */
+export type Envelope = BusEnvelope;
+
 /** The part of an envelope that says what happened: what a reader narrows with `is`. */
 export type BusEvent = Pick<BusEnvelope, "type" | "v" | "data">;
-
-/**
- * The old envelope form: what the admin event stream, extension notifications and the CLI carry
- * on the wire today (protocol 1). Built from a bus envelope by `toLegacyEnvelope`.
- */
-export interface LegacyEnvelope {
-  id: EventId;
-  ts: Timestamp;
-  source: ModuleId;
-  /** The event that caused this one. */
-  causation: EventId | null;
-  /** The agent turn this event belongs to. */
-  correlation: TurnId | null;
-  event: Event;
-}
-
-/** The old fields every envelope carries as a view of its new ones (removed with the old forms). */
-export interface LegacyEnvelopeView {
-  /** `at`. */
-  ts: Timestamp;
-  /** `parent`. */
-  causation: EventId | null;
-  /** `turn`. */
-  correlation: TurnId | null;
-  /** `type` and `data` as the old `{type, data}` event (`custom` for every other topic). */
-  event: Event;
-}
-
-/** Every event on the bus is wrapped in an envelope. Treat envelopes as immutable. */
-export interface Envelope extends BusEnvelope, LegacyEnvelopeView {}
 
 /** An envelope whose `data` is the payload of `D`. */
 export type EnvelopeOf<D extends AnyEventDefinition> = Envelope & { data: EventPayload<D> };
@@ -215,40 +89,6 @@ export type Publish = <D extends AnyEventDefinition>(
   ...meta: PublishMetaArgs<D>
 ) => void;
 
-/** Dotted topic -> old variant, for the view. */
-const VARIANT_OF_TOPIC: ReadonlyMap<string, Exclude<EventType, "custom">> = new Map(
-  (Object.entries(EVENT_TOPICS) as [Exclude<EventType, "custom">, string][]).map(([k, v]) => [
-    v,
-    k,
-  ]),
-);
-
-/**
- * The old `{type, data}` form of an event of dotted `type`: the typed variant for the 15 topics
- * that have one, else `custom` with the topic and payload.
- */
-export function legacyEvent(type: string, data: unknown): Event {
-  const variant = VARIANT_OF_TOPIC.get(type);
-  if (variant !== undefined) return { type: variant, data } as Event;
-  return { type: "custom", data: { topic: type, payload: data as JsonValue } };
-}
-
-/** The payload of an old-form event (`data`, or a custom event's `payload`). */
-export function eventPayload(event: Event): unknown {
-  return event.type === "custom" ? event.data.payload : event.data;
-}
-
-/** The envelope with its view; `event`: the old form to keep, when the publisher gave one. */
-function withView(base: BusEnvelope, event?: Event): Envelope {
-  return {
-    ...base,
-    ts: base.at,
-    causation: base.parent,
-    correlation: base.turn,
-    event: event ?? legacyEvent(base.type, base.data),
-  };
-}
-
 function stamped(
   source: ModuleId,
   type: string,
@@ -275,13 +115,6 @@ function stamped(
   };
 }
 
-/** Whether a value is an event definition rather than an old-form `Event`. */
-export function isEventDefinition(value: unknown): value is AnyEventDefinition {
-  if (typeof value !== "object" || value === null) return false;
-  const d = value as Partial<AnyEventDefinition>;
-  return typeof d.type === "string" && typeof d.v === "number" && typeof d.tier === "string";
-}
-
 /**
  * A fresh envelope of one event of `definition` from `source`. For a family, `meta.type` is the
  * concrete type; it must be one the family covers (a programming error otherwise: throws).
@@ -300,7 +133,7 @@ export function eventEnvelope<D extends AnyEventDefinition>(
     }
     type = m.type;
   }
-  return withView(stamped(source, type, definition.v, data, m)) as EnvelopeOf<D>;
+  return stamped(source, type, definition.v, data, m) as EnvelopeOf<D>;
 }
 
 /**
@@ -316,104 +149,6 @@ export function is<D extends AnyEventDefinition, E extends Pick<BusEnvelope, "ty
   return definition.type.includes("*")
     ? familyCovers(definition.type, envelope.type)
     : envelope.type === definition.type;
-}
-
-/** Topic of an envelope's event (its `type`). */
-export function envelopeTopic(envelope: Pick<BusEnvelope, "type">): string {
-  return envelope.type;
-}
-
-// ---- adapters of the old forms (K12b part 2 removes them) ------------------------------------
-
-export interface EnvelopeOptions {
-  causation?: EventId | null;
-  correlation?: TurnId | null;
-  /** Epoch ms for `ts`; defaults to `Date.now()`. */
-  now?: number;
-}
-
-/**
- * The envelope of an old-form event: `type` is its topic, `data` its payload, and the view keeps
- * `event` itself. Payload version 1 (every bus type is at 1).
- */
-export function newEnvelope(
-  source: ModuleId,
-  event: Event,
-  options: EnvelopeOptions = {},
-): Envelope {
-  const base = stamped(source, eventTopic(event), 1, eventPayload(event), {
-    parent: options.causation ?? null,
-    turn: options.correlation ?? null,
-    ...(options.now === undefined ? {} : { now: options.now }),
-  });
-  return withView(base, event);
-}
-
-/** A bus envelope read from the old wire form (`ts`, `causation`, `correlation`, `event`). */
-export function fromLegacyEnvelope(legacy: LegacyEnvelope): Envelope {
-  return withView(
-    {
-      id: legacy.id,
-      at: legacy.ts,
-      type: eventTopic(legacy.event),
-      v: 1,
-      source: legacy.source,
-      parent: legacy.causation,
-      turn: legacy.correlation,
-      session: null,
-      space_id: null,
-      room_id: null,
-      person_id: null,
-      account_id: null,
-      scope: null,
-      key: null,
-      data: eventPayload(legacy.event),
-    },
-    legacy.event,
-  );
-}
-
-/**
- * The old wire form of a bus envelope, with today's keys in today's order. The one function the
- * boundaries that still speak it (the admin event stream, extension notifications) build it with.
- */
-export function toLegacyEnvelope(envelope: BusEnvelope): LegacyEnvelope {
-  return {
-    id: envelope.id,
-    ts: envelope.at,
-    source: envelope.source,
-    causation: envelope.parent,
-    correlation: envelope.turn,
-    event: legacyEvent(envelope.type, envelope.data),
-  };
-}
-
-/**
- * Any envelope as the bus delivers it: an `Envelope` as it is (the same object), a bus envelope
- * without the view gets one, an old-form envelope is read with `fromLegacyEnvelope`.
- */
-export function toEnvelope(envelope: Envelope | BusEnvelope | LegacyEnvelope): Envelope {
-  if (!("at" in envelope)) return fromLegacyEnvelope(envelope);
-  if ("event" in envelope) return envelope;
-  return withView(envelope);
-}
-
-/**
- * A `Publish` that hands `fn` the old `{type, data}` form of each event: for tests that look at
- * what a part publishes in that form (until the old forms are gone).
- */
-export function publishVia(fn: (event: Event) => void): Publish {
-  return (definition, data, ...meta) => {
-    const type = (meta[0] as { type?: string } | undefined)?.type ?? definition.type;
-    fn(legacyEvent(type, data));
-  };
-}
-
-/** A `Publish` that appends the old form of each event to `events` (see `publishVia`). */
-export function publishInto(events: Event[]): Publish {
-  return publishVia((event) => {
-    events.push(event);
-  });
 }
 
 /** What a test sees of a published event: its `type` and `data`. */

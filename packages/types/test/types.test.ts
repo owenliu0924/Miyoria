@@ -4,16 +4,9 @@ import {
   comparePriority,
   contextKeyEquals,
   contextKeyString,
-  customEvent,
-  type Envelope,
-  EVENT_TOPICS,
-  type Event,
-  eventTopic,
   isActionExpired,
-  isEvent,
   isUlid,
   newAction,
-  newEnvelope,
   newId,
   type Priority,
   PromptContributors,
@@ -84,44 +77,12 @@ describe("Action", () => {
   });
 });
 
-describe("Event", () => {
-  it("adjacently tagged JSON", () => {
-    // Taken from docs/protocols/extension-rpc.md.
-    const wire = `{"type":"agent_turn_completed","data":{"turn":"01JC0000000000000000000000","context":{"platform":"discord","scope":"123","channel":"456","kind":"channel"},"text":"沒幹嘛啊"}}`;
-    const event = JSON.parse(wire) as Event;
-    expect(eventTopic(event)).toBe("agent.turn.completed");
-    expect(JSON.stringify(event)).toBe(wire);
-    expect(isEvent(event, "agent_turn_completed") && event.data.text).toBe("沒幹嘛啊");
-  });
-
-  it("topics of every variant", () => {
-    expect(EVENT_TOPICS.module_state_changed).toBe("system.module.state");
-    expect(EVENT_TOPICS.platform_message_created).toBe("platform.message.created");
-    expect(Object.keys(EVENT_TOPICS)).toHaveLength(15);
-    expect(eventTopic(customEvent("llm.budget", { state: "ok" }))).toBe("llm.budget");
-  });
-
-  it("envelopes carry ids, source and correlation", () => {
-    const env: Envelope = newEnvelope("agent", customEvent("x.y", null), {
-      correlation: "01JC0000000000000000000000",
-      now: 0,
-    });
-    expect(isUlid(env.id)).toBe(true);
-    expect(env).toMatchObject({
-      ts: "1970-01-01T00:00:00.000Z",
-      source: "agent",
-      causation: null,
-      correlation: "01JC0000000000000000000000",
-      event: { type: "custom", data: { topic: "x.y", payload: null } },
-    });
-  });
-});
-
 describe("ids and registries", () => {
   it("ULIDs sort in creation order", () => {
     const ids = Array.from({ length: 50 }, () => newId());
     expect([...ids].sort()).toEqual(ids);
     expect(new Set(ids).size).toBe(50);
+    expect(ids.every((id) => isUlid(id))).toBe(true);
   });
 
   it("service keys compare by identity", () => {

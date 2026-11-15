@@ -1,19 +1,12 @@
 import {
   type AnyEventDefinition,
-  type BusEnvelope,
   type Envelope,
   type EnvelopeOf,
-  type EnvelopeOptions,
-  type Event,
   type EventPayload,
   eventEnvelope,
-  isEventDefinition,
-  type LegacyEnvelope,
   type ModuleId,
-  newEnvelope,
   type Publish,
   type PublishMetaArgs,
-  toEnvelope,
 } from "@miyoria/types";
 import { getLogger } from "./log.js";
 import { type Counter, type MetricsRegistry, metrics } from "./metrics.js";
@@ -260,18 +253,13 @@ export class EventBus {
     });
   }
 
-  /**
-   * Publishes an envelope made elsewhere and returns the one subscribers receive: an `Envelope`
-   * is delivered as it is; a bus envelope without the old fields, or an old-form envelope (until
-   * the old forms are gone), is completed first (`toEnvelope`).
-   */
-  publishEnvelope(envelope: Envelope | BusEnvelope | LegacyEnvelope): Envelope {
-    const env = toEnvelope(envelope);
-    if (IN_TEST_RUN) runPublishHook(env);
-    this.#published.inc({ prefix: topicPrefix(env.type) });
+  /** Publishes an envelope made elsewhere and returns it: subscribers receive this same object. */
+  publishEnvelope(envelope: Envelope): Envelope {
+    if (IN_TEST_RUN) runPublishHook(envelope);
+    this.#published.inc({ prefix: topicPrefix(envelope.type) });
     // No subscribers is not an error.
-    for (const sub of this.#subscriptions) sub.deliver(env);
-    return env;
+    for (const sub of this.#subscriptions) sub.deliver(envelope);
+    return envelope;
   }
 
   /**
@@ -284,24 +272,10 @@ export class EventBus {
     definition: D,
     data: EventPayload<D>,
     ...meta: PublishMetaArgs<D>
-  ): EnvelopeOf<D>;
-  /** The old form (until it is gone): wraps `event` in a fresh envelope from `source`. */
-  publish(source: ModuleId, event: Event, options?: EnvelopeOptions): Envelope;
-  publish(
-    source: ModuleId,
-    event: AnyEventDefinition | Event,
-    dataOrOptions?: unknown,
-    meta?: unknown,
-  ): Envelope {
-    const envelope = isEventDefinition(event)
-      ? eventEnvelope(
-          source,
-          event,
-          dataOrOptions as EventPayload<typeof event>,
-          ...([meta] as PublishMetaArgs<typeof event>),
-        )
-      : newEnvelope(source, event, (dataOrOptions ?? {}) as EnvelopeOptions);
-    return this.publishEnvelope(envelope);
+  ): EnvelopeOf<D> {
+    const envelope = eventEnvelope(source, definition, data, ...meta);
+    this.publishEnvelope(envelope);
+    return envelope;
   }
 
   /** `publish` by definition with `source` fixed, for the parts a module hands it to. */

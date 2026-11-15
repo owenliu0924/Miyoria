@@ -1,4 +1,4 @@
-import { customEvent, type Envelope, type Event, Events, is, serviceKey } from "@miyoria/types";
+import { type Envelope, Events, eventEnvelope, is, serviceKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   EventBus,
@@ -111,74 +111,18 @@ describe("publishing by definition", () => {
     expect(is(Events.PlatformTyping, a as Envelope)).toBe(false);
   });
 
-  it("delivers an old-form envelope as the bus envelope it stands for", async () => {
+  it("delivers an envelope made elsewhere as it is", async () => {
     const bus = new EventBus();
     const sub = bus.subscribe("platform.typing");
-    const event: Event = {
-      type: "platform_typing",
-      data: { context, account: { platform: "discord", id: "1" } },
-    };
-    const delivered = bus.publishEnvelope({
-      id: "01JC0000000000000000000009",
-      ts: "2026-11-15T00:00:00.000Z",
-      source: "test",
-      causation: null,
-      correlation: "t",
-      event,
-    });
-    expect(await sub.recv()).toBe(delivered);
-    expect(delivered).toMatchObject({
-      type: "platform.typing",
-      turn: "t",
-      data: event.data,
-      event,
-    });
-  });
-});
-
-// What a reader of the old envelope form sees of an envelope it receives: the facts writer keeps
-// `event` as the origin of an observation, the CLI and the panel read the same fields off the wire.
-// These fields and their JSON must not change while the bus's own envelope does.
-describe("the old envelope fields a subscriber reads", () => {
-  const context = { platform: "discord", scope: "g", channel: "c", kind: "channel" } as const;
-  const old = (env: Envelope | null) =>
-    env === null
-      ? null
-      : JSON.stringify({
-          id: env.id,
-          ts: env.ts,
-          source: env.source,
-          causation: env.causation,
-          correlation: env.correlation,
-          event: env.event,
-        });
-
-  it("are the published event and its stamps, for a typed event and a custom one", async () => {
-    const bus = new EventBus();
-    const sub = bus.subscribe(["platform.typing", "stage.error"]);
-    const typing: Event = {
-      type: "platform_typing",
-      data: { context, account: { platform: "discord", id: "100" } },
-    };
-    const first = bus.publish("discord", typing, { now: Date.UTC(2026, 10, 15, 6, 0, 0, 7) });
-    const error = customEvent("stage.error", { message: "斷線" });
-    const second = bus.publish("stage", error, {
-      now: Date.UTC(2026, 10, 15, 6, 0, 1),
-      correlation: "01JC0000000000000000000000",
-      causation: first.id,
-    });
-    const a = await sub.recv();
-    const b = await sub.recv();
-    expect(old(a)).toBe(
-      `{"id":"${first.id}","ts":"2026-11-15T06:00:00.007Z","source":"discord","causation":null,"correlation":null,"event":{"type":"platform_typing","data":{"context":{"platform":"discord","scope":"g","channel":"c","kind":"channel"},"account":{"platform":"discord","id":"100"}}}}`,
+    const envelope = eventEnvelope(
+      "test",
+      Events.PlatformTyping,
+      { context, account: { platform: "discord", id: "1" } },
+      { turn: "t" },
     );
-    expect(old(b)).toBe(
-      `{"id":"${second.id}","ts":"2026-11-15T06:00:01.000Z","source":"stage","causation":"${first.id}","correlation":"01JC0000000000000000000000","event":{"type":"custom","data":{"topic":"stage.error","payload":{"message":"斷線"}}}}`,
-    );
-    // Every subscriber gets the envelope `publish` returned, carrying the published event itself.
-    expect(a).toBe(first);
-    expect(a?.event).toBe(typing);
-    expect(b?.event).toBe(error);
+    const delivered = bus.publishEnvelope(envelope);
+    expect(delivered).toBe(envelope);
+    expect(await sub.recv()).toBe(envelope);
   });
 });
 

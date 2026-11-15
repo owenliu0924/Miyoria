@@ -1,18 +1,13 @@
-import {
-  type AnyEventDefinition,
-  type Clock,
-  type Envelope,
-  type EnvelopeOf,
-  type Event,
-  type EventId,
-  type EventPayload,
-  isEventDefinition,
-  type JsonValue,
-  type ModuleId,
-  type Publish,
-  type PublishMetaArgs,
-  type ServiceKey,
-  type TurnId,
+import type {
+  AnyEventDefinition,
+  Clock,
+  EnvelopeOf,
+  EventPayload,
+  JsonValue,
+  ModuleId,
+  Publish,
+  PublishMetaArgs,
+  ServiceKey,
 } from "@miyoria/types";
 import type { z } from "zod";
 import { errorMessage } from "./async.js";
@@ -36,13 +31,6 @@ export interface ContextHost {
   readonly controller: AbortController;
   readonly tasks: Set<Promise<void>>;
   fail(generation: number, error: string): void;
-}
-
-export interface PublishOptions {
-  /** The agent turn this event belongs to (envelope `correlation`). */
-  turn?: TurnId | null;
-  /** The event that caused this one. */
-  causation?: EventId | null;
 }
 
 /**
@@ -104,23 +92,8 @@ export class ModuleContext {
     definition: D,
     data: EventPayload<D>,
     ...meta: PublishMetaArgs<D>
-  ): EnvelopeOf<D>;
-  /** The old form (until it is gone). */
-  publish(event: Event, options?: PublishOptions): Envelope;
-  publish(event: AnyEventDefinition | Event, dataOrOptions?: unknown, meta?: unknown): Envelope {
-    if (isEventDefinition(event)) {
-      return this.#host.bus.publish(
-        this.#host.id,
-        event,
-        dataOrOptions as EventPayload<typeof event>,
-        ...([meta] as PublishMetaArgs<typeof event>),
-      );
-    }
-    const options = (dataOrOptions ?? {}) as PublishOptions;
-    return this.#host.bus.publish(this.#host.id, event, {
-      correlation: options.turn ?? null,
-      causation: options.causation ?? null,
-    });
+  ): EnvelopeOf<D> {
+    return this.#host.bus.publish(this.#host.id, definition, data, ...meta);
   }
 
   /** `publish` by definition from this module, for the parts the module hands it to. */

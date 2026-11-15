@@ -57,7 +57,7 @@ export {
   moduleSectionSchema,
   schemaAt,
 } from "./config-schema.js";
-export { ModuleContext, type PublishOptions, type Task } from "./context.js";
+export { ModuleContext, type Task } from "./context.js";
 export {
   configureLogging,
   formatLogLine,
