@@ -72,6 +72,14 @@ export {
   RedactedDataSchema,
 } from "./envelope.js";
 export {
+  IdentityImported,
+  type IdentityImportedData,
+  IdentityImportedSchema,
+  ImportedAccountSchema,
+  ImportedPrefSchema,
+  LegacySnapshotSchema,
+} from "./identity.js";
+export {
   LlmCall,
   type LlmCallData,
   LlmCallFallbackSchema,

@@ -118,6 +118,33 @@ export {
   SettingsState,
 } from "./config/state.js";
 export {
+  importLinks,
+  importLinksFromFile,
+  LINK_IMPORT_SOURCE,
+  type LinkConflict,
+  type LinkFileImportResult,
+  type LinkImportCounts,
+  type LinkImportOptions,
+  type LinkImportResult,
+  type LinkTarget,
+  linkImportCounts,
+  type OpenedLinkTarget,
+  openLinkTarget,
+  type PlannedAccount,
+  type PlannedPerson,
+  type PlannedPref,
+  type PrefName,
+  v4TierName,
+} from "./cutover/links.js";
+export {
+  CutoverError,
+  type CutoverErrorCode,
+  type FileFacts,
+  fileFacts,
+  openReadOnly,
+  type ReadOnlyDatabase,
+} from "./cutover/old-file.js";
+export {
   type CategoryInventory,
   categoryModules,
   DATA_CATEGORIES,

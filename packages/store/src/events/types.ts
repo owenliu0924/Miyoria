@@ -42,6 +42,7 @@ import {
   defineEvent,
   type EventDefaults,
   EventRegistry,
+  IdentityImported,
   LlmCall,
   TURN_EVENTS,
 } from "@miyoria/contracts/events";
@@ -204,6 +205,7 @@ export function coreEventRegistry(): EventRegistry {
     ConfigRevised,
     SettingsChanged,
     ...ARTIFACT_EVENTS,
+    IdentityImported,
   );
 }
 

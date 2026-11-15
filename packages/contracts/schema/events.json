@@ -477,6 +477,103 @@
         "data"
       ]
     },
+    "EventsIdentityImported": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string"
+        },
+        "old_handle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsImportedAccount"
+          }
+        },
+        "prefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsImportedPref"
+          }
+        },
+        "legacy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsLegacySnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "handle",
+        "old_handle",
+        "name",
+        "accounts",
+        "prefs",
+        "legacy",
+        "from"
+      ]
+    },
+    "EventsImportedAccount": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform",
+        "external_id"
+      ]
+    },
+    "EventsImportedPref": {
+      "type": "string",
+      "enum": [
+        "privacy",
+        "voice_consent"
+      ]
+    },
+    "EventsLegacySnapshot": {
+      "type": "object",
+      "properties": {
+        "first_seen": {
+          "type": "string"
+        },
+        "old_tier": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cards": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "first_seen",
+        "old_tier",
+        "cards"
+      ]
+    },
     "EventsLlmCall": {
       "type": "object",
       "properties": {
