@@ -12,6 +12,10 @@
 // `search` (with the counter and the whole rows of the vector hits), `touch`, `listAbout`,
 // `dueFollowups`, and `list` / `count`. Every read and write runs on the store's connection; a
 // merge is one `Db.tx` (a savepoint inside a caller's).
+//
+// Each vector is stored with the model that made it (`embedding_model`). Once the engine has said
+// which model is in use (`useEmbeddingModel`), a vector of any other model is missing as far as
+// every read is concerned, and `missingEmbeddings` hands its record to the backfill.
 
 import type {
   CategoryData,
@@ -59,7 +63,11 @@ const ph = (name: string) => sql.placeholder(name);
  */
 const memoryFts = sqliteTable("memory_fts", { rowid: integer() });
 
-function recordOf(profile: ProfileId, row: MemoryRow): MemoryRecord {
+/**
+ * A row as a record. `model`: the embedding model in use (`useEmbeddingModel`); a vector another
+ * model made (or one of unknown origin) is left out, as if the record had none.
+ */
+function recordOf(profile: ProfileId, row: MemoryRow, model: string | null): MemoryRecord {
   const record: MemoryRecord = {
     id: row.id,
     profile,
@@ -84,7 +92,10 @@ function recordOf(profile: ProfileId, row: MemoryRow): MemoryRecord {
     superseded_by: row.superseded_by,
   };
   const bytes = row.embedding;
-  return bytes instanceof Uint8Array ? lazyEmbedding(record, () => decodeEmbedding(bytes)) : record;
+  const ours = model === null || row.embedding_model === model;
+  return bytes instanceof Uint8Array && ours
+    ? lazyEmbedding(record, () => decodeEmbedding(bytes))
+    : record;
 }
 
 /** `subjects` holds the person of placeholder `name`. */
@@ -131,10 +142,17 @@ const REPLACED = [
   "done",
   "superseded_by",
 ] as const satisfies readonly (keyof MemoryRow)[];
-const UPSERT_SET = Object.fromEntries(REPLACED.map((c) => [c, sql.raw(`excluded.${c}`)])) as Record<
-  (typeof REPLACED)[number],
-  SQL
->;
+const UPSERT_SET = {
+  ...(Object.fromEntries(REPLACED.map((c) => [c, sql.raw(`excluded.${c}`)])) as Record<
+    (typeof REPLACED)[number],
+    SQL
+  >),
+  // A writer that does not know the model in use (`useEmbeddingModel` not called) keeps the label
+  // of a vector it sends back unchanged; otherwise the vector is labelled with what was sent.
+  embedding_model: sql.raw(
+    "CASE WHEN excluded.embedding_model IS NULL AND memory_records.embedding IS excluded.embedding THEN memory_records.embedding_model ELSE excluded.embedding_model END",
+  ),
+};
 
 /** What vector search needs of a record, its vector decoded once. */
 interface VectorRow {
@@ -215,7 +233,7 @@ function prepared(db: Db) {
       })
       .from(R)
       .where(
-        sql`${R.superseded_by} IS NULL AND ${R.embedding} IS NOT NULL AND length(${R.embedding}) = ${ph("bytes")}`,
+        sql`${R.superseded_by} IS NULL AND ${R.embedding} IS NOT NULL AND length(${R.embedding}) = ${ph("bytes")} AND (${ph("model")} IS NULL OR ${R.embedding_model} = ${ph("model")})`,
       )
       .prepare(),
     bySeq: orm
@@ -275,10 +293,37 @@ export class MemoryTables implements MemoryRecordStore {
   #vectorVersion: number | null = null;
   /** The profile the last call named: what `get` reports (see the file comment). */
   #profile: ProfileId = "";
+  /** The embedding model in use (`useEmbeddingModel`); `null`: unknown, every vector counts. */
+  #model: string | null = null;
 
   constructor(db: Db) {
     this.#db = db;
     this.#q = prepared(db);
+  }
+
+  /**
+   * Says which model makes the vectors from now on (the engine's embedder, `embeddingModel`). New
+   * vectors are recorded with it; a vector recorded with another model, or with none, is treated
+   * as missing: records come back without it, search does not compare it, and
+   * `missingEmbeddings` lists the record so the backfill embeds it again. `null` (the default):
+   * the model is not known, every vector is compared by size alone and new ones are recorded
+   * without a model.
+   */
+  useEmbeddingModel(model: string | null): this {
+    if (model !== this.#model) {
+      this.#model = model;
+      this.#vectors.clear();
+    }
+    return this;
+  }
+
+  /** The embedding model in use, `null` when not known. */
+  get embeddingModel(): string | null {
+    return this.#model;
+  }
+
+  #record(profile: ProfileId, row: MemoryRow): MemoryRecord {
+    return recordOf(profile, row, this.#model);
   }
 
   /**
@@ -312,7 +357,7 @@ export class MemoryTables implements MemoryRecordStore {
       this.#vectors.set(dims, cached);
       return cached;
     }
-    const out = this.#q.vectors.all({ bytes: dims * 4 }).map((r): VectorRow => {
+    const out = this.#q.vectors.all({ bytes: dims * 4, model: this.#model }).map((r): VectorRow => {
       const values = decodeEmbedding(r.embedding as Uint8Array);
       let squares = 0;
       for (let i = 0; i < values.length; i++) {
@@ -354,6 +399,7 @@ export class MemoryTables implements MemoryRecordStore {
           content: record.content,
           tokens: record.tokens,
           embedding: embedding === null ? null : encodeEmbedding(embedding),
+          embedding_model: embedding === null ? null : this.#model,
           importance: record.importance,
           confidence: record.confidence,
           created_at: record.created_at,
@@ -379,7 +425,7 @@ export class MemoryTables implements MemoryRecordStore {
 
   async get(id: string): Promise<MemoryRecord | null> {
     const row = this.#db.orm.select().from(R).where(eq(R.id, id)).get();
-    return row ? recordOf(this.#profile, row) : null;
+    return row ? this.#record(this.#profile, row) : null;
   }
 
   async delete(id: string): Promise<boolean> {
@@ -407,7 +453,7 @@ export class MemoryTables implements MemoryRecordStore {
         throw new StoreError("memory text search failed", { cause });
       }
       for (const { score, ...row } of rows) {
-        hits.push({ record: recordOf(profile, row), text_score: score, vector_score: null });
+        hits.push({ record: this.#record(profile, row), text_score: score, vector_score: null });
       }
     }
 
@@ -451,7 +497,7 @@ export class MemoryTables implements MemoryRecordStore {
         }
         const whole = full.get(row.seq);
         if (whole) {
-          hits.push({ record: recordOf(profile, whole), text_score: 0, vector_score: score });
+          hits.push({ record: this.#record(profile, whole), text_score: 0, vector_score: score });
         }
       }
     }
@@ -461,7 +507,7 @@ export class MemoryTables implements MemoryRecordStore {
   async list(profile: ProfileId, filter: MemoryFilter): Promise<MemoryRecord[]> {
     this.#named(profile);
     const rows = this.#q.list.all({ ...listParams(filter), limit: limitParam(filter.limit) });
-    return rows.map((row) => recordOf(profile, row));
+    return rows.map((row) => this.#record(profile, row));
   }
 
   async count(profile: ProfileId, filter: MemoryFilter): Promise<number> {
@@ -478,7 +524,7 @@ export class MemoryTables implements MemoryRecordStore {
     if (people.length === 0 || limit === 0) return [];
     this.#named(profile);
     const rows = this.#q.about.all({ people: JSON.stringify([...new Set(people)]), limit });
-    return rows.map((row) => recordOf(profile, row));
+    return rows.map((row) => this.#record(profile, row));
   }
 
   async missingEmbeddings(profile: ProfileId, limit: number): Promise<MemoryRecord[]> {
@@ -486,11 +532,18 @@ export class MemoryTables implements MemoryRecordStore {
     const rows = this.#db.orm
       .select()
       .from(R)
-      .where(and(isNull(R.embedding), isNull(R.superseded_by)))
+      .where(
+        and(
+          this.#model === null
+            ? isNull(R.embedding)
+            : sql`(${R.embedding} IS NULL OR ${R.embedding_model} IS NOT ${this.#model})`,
+          isNull(R.superseded_by),
+        ),
+      )
       .orderBy(desc(R.created_at), desc(R.id))
       .limit(limitParam(limit))
       .all();
-    return rows.map((row) => recordOf(profile, row));
+    return rows.map((row) => this.#record(profile, row));
   }
 
   async touch(ids: readonly string[], at: Timestamp): Promise<void> {
@@ -510,7 +563,7 @@ export class MemoryTables implements MemoryRecordStore {
       now: nowMicros,
       since: maxAgeMs === null ? null : nowMicros - Math.round(maxAgeMs * 1000),
     });
-    return rows.map((row) => recordOf(profile, row));
+    return rows.map((row) => this.#record(profile, row));
   }
 
   async expireFollowups(profile: ProfileId, dueBefore: Timestamp): Promise<number> {

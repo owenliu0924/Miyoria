@@ -3,7 +3,8 @@
 // `profile_id` (one database is one character). `migrations.ts` holds the SQL drizzle-kit
 // generates from them, `STRICT` added, and after it the hand-written full-text index and triggers
 // Drizzle cannot declare; the store's drift test keeps the two together. Phase 3 redesigns these
-// tables with the brain (§8 "Wait for phase 3"), so they keep their old shape until then.
+// tables with the brain (§8 "Wait for phase 3"), so they keep their old shape until then, plus
+// `embedding_model` (migration 2): which model made a record's vector.
 //
 // - `memory_records`: episodes, facts, her own notes and followups. The privacy scope is kept both
 //   as JSON (readable) and as its canonical JSON text `scope_key` (exact-match filtering and
@@ -30,7 +31,8 @@ import {
 /**
  * A vector as little-endian float32 components (`stored.ts` `encodeEmbedding`), read as the bytes
  * the driver gives, so a record decodes it only when asked (`lazyEmbedding`). No fixed dimension:
- * the embedding model may change, and searches compare only rows of the query's dimension.
+ * the embedding model may change, and searches compare only rows of the query's dimension (and,
+ * when the tables know the embedder's model, only rows that model made).
  */
 const f32 = customType<{ data: Uint8Array; driverData: Uint8Array }>({
   dataType: () => "blob",
@@ -54,6 +56,11 @@ export const memoryRecords = sqliteTable(
     /** Space-separated, already segmented search tokens (the full-text index's column). */
     tokens: text().notNull(),
     embedding: f32(),
+    /**
+     * What made `embedding` (the embedder's `embeddingModel`: model, weights, pooling, passage
+     * prefix); `null` when unknown. Search treats a vector of another model as missing.
+     */
+    embedding_model: text(),
     importance: real().notNull(),
     confidence: real().notNull(),
     created_at: micros().notNull(),

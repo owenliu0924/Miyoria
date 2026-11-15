@@ -8,8 +8,10 @@
 // - `MEMORY_SEARCH_SQL`: what Drizzle cannot declare, by hand: the vector counter's one row, the
 //   FTS5 index over `tokens` with the triggers that keep it in step, and the triggers that bump the
 //   vector counter.
-// The store's drift test proves the migrated database and the Drizzle tables agree, and that
-// migration 1 is exactly the two parts.
+// Migration 2 adds `embedding_model` (generated the same way: what the migrated database lacks)
+// and remakes the vector counter's update trigger to watch it.
+// The store's drift test proves the migrated database (after every migration) and the Drizzle
+// tables agree.
 
 import type { PluginSchema } from "@miyoria/store";
 
@@ -103,8 +105,33 @@ BEGIN
 END;
 `;
 
+/**
+ * Migration 2: which model made a vector. The column is drizzle-kit's (`schema:sql memory`); the
+ * vector counter's update trigger is made again by hand to watch it too, so a record re-embedded
+ * by another model (the same bytes are not possible, the label is) drops the decoded vectors.
+ */
+export const MEMORY_EMBEDDING_MODEL_SQL = `ALTER TABLE \`memory_records\` ADD \`embedding_model\` text;
+
+DROP TRIGGER memory_records_vector_update;
+
+CREATE TRIGGER memory_records_vector_update AFTER UPDATE ON memory_records
+WHEN OLD.id IS NOT NEW.id
+    OR OLD.kind IS NOT NEW.kind
+    OR OLD.scope_key IS NOT NEW.scope_key
+    OR OLD.embedding IS NOT NEW.embedding
+    OR OLD.embedding_model IS NOT NEW.embedding_model
+    OR OLD.created_at IS NOT NEW.created_at
+    OR OLD.superseded_by IS NOT NEW.superseded_by
+BEGIN
+    UPDATE memory_vector_version SET n = n + 1 WHERE id = 1;
+END;
+`;
+
 /** Memory records, their full-text index and the vector counter. */
 export const memorySchema: PluginSchema = {
   plugin: "memory",
-  migrations: [{ version: 1, name: "init", sql: `${MEMORY_TABLES_SQL}\n${MEMORY_SEARCH_SQL}` }],
+  migrations: [
+    { version: 1, name: "init", sql: `${MEMORY_TABLES_SQL}\n${MEMORY_SEARCH_SQL}` },
+    { version: 2, name: "embedding_model", sql: MEMORY_EMBEDDING_MODEL_SQL },
+  ],
 };

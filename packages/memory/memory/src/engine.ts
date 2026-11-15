@@ -343,6 +343,15 @@ function staleState(record: MemoryRecord): boolean {
   return (record.kind === "fact" || record.kind === "self_note") && isPresentState(record.content);
 }
 
+/** A record store that keeps which model made each vector (`MemoryTables`). */
+interface EmbeddingModelAware {
+  useEmbeddingModel(model: string | null): unknown;
+}
+
+function modelAware(store: MemoryRecordStore): store is MemoryRecordStore & EmbeddingModelAware {
+  return typeof (store as Partial<EmbeddingModelAware>).useEmbeddingModel === "function";
+}
+
 /**
  * Cosine between `query` and a record's stored vector, read without decoding `record.embedding`
  * (which costs about a millisecond per thousand dimensions); null when the record has none.
@@ -432,6 +441,9 @@ export class MemoryEngine implements FollowupSource {
     this.#personData = options.personData ?? null;
     this.#clock = options.clock ?? systemClock;
     this.#repeats = new RepeatDamper(config.repeat);
+    // Vectors another model made are not compared with this one's, and get made again.
+    const model = this.embedder.enabled ? this.embedder.embeddingModel : undefined;
+    if (model !== undefined && modelAware(records)) records.useEmbeddingModel(model);
   }
 
   /**
@@ -467,7 +479,8 @@ export class MemoryEngine implements FollowupSource {
 
   /**
    * Gives vectors to up to `limit` records stored without one (written before embeddings were on,
-   * or while the embedder was down), newest first. Returns how many got one.
+   * or while the embedder was down) or with one another model made (the store treats that as
+   * none), newest first. Returns how many got one.
    */
   async backfillEmbeddings(limit: number, signal?: AbortSignal): Promise<number> {
     if (!this.embedder.enabled || limit === 0) return 0;
