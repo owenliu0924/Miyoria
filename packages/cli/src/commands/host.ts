@@ -159,7 +159,7 @@ const SETTLED: ReadonlySet<HostServiceState> = new Set([
 ]);
 
 /** Waits for each service to come up or fail and prints it; returns the ones that did not come up. */
-async function watchStarts(
+export async function watchStarts(
   client: HostdClient,
   names: readonly string[],
   logs: string,
@@ -210,7 +210,7 @@ async function watchStarts(
   return { failed, pending: [...left] };
 }
 
-function rpcText(error: unknown): string {
+export function rpcText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 

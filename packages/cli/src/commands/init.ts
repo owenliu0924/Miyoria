@@ -8,6 +8,7 @@ import { bundledProfilesDir, exampleConfig, exampleEnv } from "../assets.js";
 import { type MachinePreset, machineStep, pasteTokens } from "../machine-step.js";
 import type { Prompter } from "../prompt.js";
 import * as settings from "../settings.js";
+import { WORKER_SERVICES } from "../stack/roles.js";
 import { configSchema } from "../validate.js";
 import { Workspace, type WorkspaceOptions } from "../workspace.js";
 import { afterWrite, commit } from "./config.js";
@@ -24,8 +25,6 @@ export interface InitOptions {
    * config keeps whatever it has (old configs have no `[machine]` and behave as before).
    */
   machine?: MachinePreset & { ask: boolean };
-  /** Runs `install` for this computer's services; offered after the files are written (interactive only). */
-  offerInstall?: () => Promise<void>;
   /** Command prefix shown in the next steps (default: `commandPrefix()`, from how it was started). */
   command?: string;
 }
@@ -95,11 +94,13 @@ export async function run(
   let generated: string[];
   let hasCore = true;
   let picked = false;
+  let workers: string[] = [];
   const machine = options.machine;
   if (machine && (machine.ask || machine.roles !== undefined)) {
     p.section("這台電腦");
     const chosen = await machineStep(p, ws, machine);
     picked = true;
+    workers = chosen.services.filter((name) => WORKER_SERVICES.includes(name));
     hasCore = chosen.services.includes("core");
     if (hasCore) generated = await flow(p, ws);
     else {
@@ -125,12 +126,6 @@ export async function run(
     }
   }
 
-  if (picked && options.offerInstall && (changes !== null || ws.tomlExists)) {
-    if (await p.confirm("現在檢查這台電腦缺什麼,並安裝(會先列出清單和大小再問一次)?", true)) {
-      await options.offerInstall();
-    }
-  }
-
   const cmd = options.command ?? commandPrefix();
   const width = `${cmd} config`.length + 2;
   const line = (c: string, what: string) => `  ${`${cmd} ${c}`.padEnd(width)} ${what}`;
@@ -138,9 +133,10 @@ export async function run(
     (picked
       ? [
           "下一步:",
-          line("install", "安裝這台電腦需要的東西(套件、venv、建置)"),
+          ...(workers.length > 0
+            ? [line(`add ${workers.join(" ")}`, "把這台電腦的服務加進 host.toml 並安裝(uv 建環境)")]
+            : []),
           line("doctor", "檢查缺什麼"),
-          line("start", "在各自的分頁啟動這台電腦的服務"),
           line("config", "之後要改單一項目用這個"),
         ]
       : [

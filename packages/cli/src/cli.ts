@@ -9,10 +9,11 @@ import * as discordCmd from "./commands/discord.js";
 import * as doctor from "./commands/doctor.js";
 import * as host from "./commands/host.js";
 import * as init from "./commands/init.js";
-import * as install from "./commands/install.js";
 import * as migrate from "./commands/migrate.js";
+import * as modelsCmd from "./commands/models.js";
 import * as nodeCmd from "./commands/node.js";
 import * as remote from "./commands/remote.js";
+import * as servicesCmd from "./commands/services.js";
 import * as update from "./commands/update.js";
 import { captureProcessEnv } from "./process-env.js";
 import {
@@ -115,6 +116,17 @@ function hostTargetOf(ctx: RunContext): host.HostTarget {
   return host.hostTarget(ctx.config, str(ctx, "host-config"));
 }
 
+/** The installer's confirmation: `--yes` agrees, a script without a terminal refuses. */
+function serviceDepsOf(ctx: RunContext): servicesCmd.ServiceDeps {
+  return {
+    confirm: async (message) => {
+      if (ctx.yes) return true;
+      if (!isInteractive()) return false;
+      return interactivePrompter().confirm(message, false);
+    },
+  };
+}
+
 /** `{ [key]: value }` when there is a value; keeps optional properties out of exact types. */
 function optionalString<K extends string>(
   key: K,
@@ -181,16 +193,6 @@ export const COMMANDS: CommandSpec = {
         const inferenceHost = str(ctx, "inference-host");
         await init.run(ctx.config, p, {
           yes: ctx.yes,
-          ...(isInteractive()
-            ? {
-                offerInstall: () =>
-                  install.run(
-                    ctx.config,
-                    { targets: [] },
-                    install.defaultInstallDeps(async (m) => interactivePrompter().confirm(m, true)),
-                  ),
-              }
-            : {}),
           machine: {
             ask: isInteractive(),
             ...(roles !== undefined ? { roles } : {}),
@@ -263,16 +265,27 @@ export const COMMANDS: CommandSpec = {
     },
     {
       name: "doctor",
-      help: "檢查設定檔、角色、LLM、Discord 和資料庫連線;--deep 加查埠、建置、JDK、worker 設定和顯存",
+      help: "檢查設定檔、角色、LLM、Discord、資料庫,和 host.toml 啟用的每個服務(環境、系統程式、檔案、模型、hostd、Core 連線);--deep 加查匯入、埠、健康檢查、顯存、建置和暫存檔;--fix 只做安全的修復",
       options: [
         {
           name: "deep",
-          help: "加查部署:Windows 保留埠、dist / mod jar 是否過期、JDK 21、worker 設定一致、顯存、暫存檔、服務健康",
+          help: "加查:用環境的 Python 匯入 check_imports、Windows 保留埠、服務健康、顯存預算、dist / mod jar 是否過期、JDK 21、暫存檔",
         },
         { name: "deep-only", help: "只做 --deep 的部署檢查(不連 LLM、Discord、資料庫)" },
+        {
+          name: "fix",
+          help: "只做安全的修復:同步缺的或過期的環境、下載缺的 install.files;不裝系統程式、不改任何系統設定",
+        },
+        HOST_CONFIG_OPTION,
       ],
       run: (ctx) =>
-        doctor.run(ctx.config, { deep: flag(ctx, "deep"), stackOnly: flag(ctx, "deep-only") }),
+        doctor.run(ctx.config, {
+          deep: flag(ctx, "deep"),
+          stackOnly: flag(ctx, "deep-only"),
+          fix: flag(ctx, "fix"),
+          ...optionalString("hostConfig", str(ctx, "host-config")),
+          services: serviceDepsOf(ctx),
+        }),
     },
     {
       name: "db",
@@ -316,27 +329,82 @@ export const COMMANDS: CommandSpec = {
       ],
     },
     {
-      name: "install",
-      help: "安裝這台電腦需要的東西:node 套件和建置、每個 worker 的 venv 與 pip,最後列出還要手動下載的",
+      name: "add",
+      help: "把服務加進這台電腦:寫進 host.toml,用 uv 建好環境、下載缺的檔案,並列出還缺什麼;不給名字就列出目錄",
       args: [
         {
-          name: "target",
-          help: "角色(broadcast、core、inference)、all 或服務名稱;省略 = [machine] 設定的",
+          name: "service",
+          help: "服務名稱(asr、tts、sing、turn、lyrics ...)",
           optional: true,
           variadic: true,
         },
       ],
-      options: [{ name: "dry-run", help: "只列出會做的事" }],
+      options: [
+        { name: "no-install", help: "只寫進 host.toml,不建環境、不下載" },
+        {
+          name: "extra",
+          value: "NAME",
+          help: "要同步的 extras(逗號分隔,例如 sensevoice);寫進 [services.<名字>] extras,只能用在一個服務",
+        },
+        HOST_CONFIG_OPTION,
+      ],
+      run: (ctx) => {
+        const extra = str(ctx, "extra");
+        const extras =
+          extra === undefined
+            ? undefined
+            : extra
+                .split(",")
+                .map((e) => e.trim())
+                .filter((e) => e !== "");
+        return servicesCmd.add(
+          hostTargetOf(ctx),
+          {
+            services: ctx.args,
+            noInstall: flag(ctx, "no-install"),
+            ...(extras !== undefined ? { extras } : {}),
+          },
+          serviceDepsOf(ctx),
+        );
+      },
+    },
+    {
+      name: "remove",
+      help: "把服務從這台電腦拿掉:停止它、刪掉它的環境(下載的模型留著)、從 host.toml 移除",
+      args: [{ name: "service", help: "服務名稱", variadic: true }],
+      options: [{ name: "keep-env", help: "保留環境資料夾" }, FORCE_OPTION, HOST_CONFIG_OPTION],
       run: (ctx) =>
-        install.run(
-          ctx.config,
-          { targets: ctx.args, dryRun: flag(ctx, "dry-run") },
-          install.defaultInstallDeps(async (message) => {
-            if (ctx.yes) return true;
-            if (!isInteractive()) return false;
-            return interactivePrompter().confirm(message, true);
-          }),
+        servicesCmd.remove(
+          hostTargetOf(ctx),
+          { services: ctx.args, keepEnv: flag(ctx, "keep-env"), force: flag(ctx, "force") },
+          serviceDepsOf(ctx),
         ),
+    },
+    {
+      name: "models",
+      help: "這台電腦的模型:下載、列出、清掉沒人用的",
+      subcommands: [
+        {
+          name: "pull",
+          help: "下載服務 service.toml 列的 Hugging Face 模型;省略名字 = host.toml 啟用的全部",
+          args: [{ name: "service", help: "服務名稱", optional: true, variadic: true }],
+          options: [HOST_CONFIG_OPTION],
+          run: (ctx) =>
+            modelsCmd.pull(hostTargetOf(ctx), { services: ctx.args }, serviceDepsOf(ctx)),
+        },
+        {
+          name: "ls",
+          help: "列出模型資料夾裡的模型、大小,和哪個服務在用",
+          options: [HOST_CONFIG_OPTION],
+          run: async (ctx) => modelsCmd.ls(hostTargetOf(ctx)),
+        },
+        {
+          name: "gc",
+          help: "列出沒有任何啟用的服務用到的模型,確認後刪掉(-y 直接刪)",
+          options: [HOST_CONFIG_OPTION],
+          run: (ctx) => modelsCmd.gc(hostTargetOf(ctx), { yes: ctx.yes }, serviceDepsOf(ctx)),
+        },
+      ],
     },
     {
       name: "hostd",
@@ -542,12 +610,14 @@ export const COMMANDS: CommandSpec = {
     },
     {
       name: "update",
-      help: "git pull、安裝相依套件,只重建有變的:SDK、擴充 dist、面板、overlay、Minecraft mod jar",
+      help: "git pull(--ff-only)、安裝相依套件、只重建有變的(SDK、擴充 dist、面板、overlay、Minecraft mod jar)、重新同步過期的 Python 環境,並一個一個重啟跑著且有變的服務(她在唱歌或直播的先不動)",
       options: [
         { name: "no-pull", help: "不執行 git pull" },
         { name: "force", help: "不論有沒有變都全部重建" },
         { name: "skip-mod", help: "不建置也不安裝 Minecraft mod" },
         { name: "dry-run", help: "只列出會做的事" },
+        { name: "no-restart", help: "同步環境,但不重啟任何服務" },
+        HOST_CONFIG_OPTION,
       ],
       run: (ctx) =>
         update.run(
@@ -557,6 +627,8 @@ export const COMMANDS: CommandSpec = {
             force: flag(ctx, "force"),
             skipMod: flag(ctx, "skip-mod"),
             dryRun: flag(ctx, "dry-run"),
+            noRestart: flag(ctx, "no-restart"),
+            ...optionalString("hostConfig", str(ctx, "host-config")),
           },
           update.defaultUpdateDeps(async (message) => {
             if (ctx.yes) return true;

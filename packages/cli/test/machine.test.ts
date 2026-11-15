@@ -9,13 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exampleConfig, exampleEnv } from "../src/assets.js";
 import { parseArgs } from "../src/cli.js";
 import { run as initRun } from "../src/commands/init.js";
-import * as install from "../src/commands/install.js";
 import { machineStep } from "../src/machine-step.js";
 import { DefaultsPrompter } from "../src/prompt.js";
-import type { DeepDeps, DeepInput } from "../src/stack/checks.js";
 import { repoRoot, stackConfig } from "../src/stack/config.js";
 import { buildPlan } from "../src/stack/plan.js";
-import { addressChecks, manualItems, roleChecks } from "../src/stack/role-checks.js";
 import {
   expandTargets,
   machineConfig,
@@ -23,7 +20,6 @@ import {
   ROLES,
   servicesOfRoles,
 } from "../src/stack/roles.js";
-import type { Runner, RunResult } from "../src/stack/system.js";
 import { type Output, setOutput } from "../src/ui.js";
 import { Workspace } from "../src/workspace.js";
 import { Enter, Pick, Scripted, Text, Yes } from "./scripted.js";
@@ -40,7 +36,6 @@ vi.mock("../src/stack/config.js", async (original) => {
 });
 
 const NOENV = () => undefined;
-const OK: RunResult = { code: 0, stdout: "", stderr: "", missing: false, timedOut: false };
 
 let dir: string;
 let out: string[];
@@ -73,21 +68,6 @@ function repo(toml: string): string {
 
 const ALL = `[machine]\nroles = ["broadcast", "core", "inference"]\n[modules.voice]\nvad_engine = "silero"\n`;
 const cfg = (toml: string) => Config.fromToml(toml, NOENV);
-
-function deps(over: Partial<DeepDeps> = {}): DeepDeps {
-  return {
-    platform: "win32",
-    run: async () => OK,
-    probe: async () => "free",
-    fetchImpl: (async () => {
-      throw new Error("offline");
-    }) as typeof fetch,
-    env: {},
-    tmpdir: dir,
-    version: "0.1.0",
-    ...over,
-  };
-}
 
 describe("roles", () => {
   it("lists_every_role_with_its_services_in_start_order", () => {
@@ -242,117 +222,6 @@ describe("command line", () => {
     const p = parseArgs(["start", "core"]);
     expect(p.path).toHaveLength(1);
     expect(p.ctx.args).toEqual(["start", "core"]);
-  });
-});
-
-describe("miyoria install", () => {
-  it("chooses_pip_steps_per_worker", () => {
-    const s = stackConfig(cfg(`[machine]\nroles = ["inference"]\n`));
-    const steps = (n: string) => install.pipSteps(s.workers.find((w) => w.name === n) as never);
-    expect(steps("asr").map((x) => x.args[0])).toEqual(["torch", "-r"]);
-    expect(steps("asr")[1]?.args[1]).toBe("asr/requirements-qwen3.txt");
-    expect(steps("tts")[1]?.args[1]).toBe("tts/requirements-faster.txt");
-    expect(steps("sing")[0]?.args.slice(0, 2)).toEqual(["torch==2.11.0", "torchaudio==2.11.0"]);
-  });
-
-  it("plans_nothing_for_node_on_the_inference_computer", async () => {
-    const configPath = repo(`[machine]\nroles = ["inference"]\n`);
-    const calls: string[] = [];
-    const run: Runner = async (c, a) => {
-      calls.push([c, ...a].join(" "));
-      return c === "python" ? { ...OK, stdout: "Python 3.11.9" } : OK;
-    };
-    await install.run(
-      configPath,
-      { targets: [], dryRun: true },
-      { run, platform: "win32", confirm: async () => true },
-    );
-    const text = out.join("\n");
-    expect(text).toContain("建立 workers/.venv-asr-qwen");
-    expect(text).toContain("requirements-qwen3.txt");
-    expect(calls.some((c) => c.includes("pnpm"))).toBe(false);
-    expect(text).toContain("workers/voices/deepseek-chan/ref.wav");
-  });
-
-  it("needs_the_source_folder", async () => {
-    const configPath = join(dir, "x", "miyoria.toml");
-    mkdirSync(dirname(configPath), { recursive: true });
-    writeFileSync(configPath, ALL);
-    noSource.add(configPath);
-    await expect(
-      install.run(
-        configPath,
-        { targets: [] },
-        { run: async () => OK, platform: "win32", confirm: async () => true },
-      ),
-    ).rejects.toThrow(/原始碼資料夾/);
-  });
-});
-
-describe("role checks", () => {
-  function input(toml: string, d: DeepDeps = deps()): DeepInput {
-    const config = cfg(toml);
-    return { config, configDir: dir, root: dir, stack: stackConfig(config), deps: d };
-  }
-
-  it("lists_the_files_that_are_downloaded_by_hand", () => {
-    const s = stackConfig(cfg(ALL));
-    const items = manualItems(s).map((m) => `${m.service}:${m.path}`);
-    expect(items).toContain("tts:workers/voices/deepseek-chan/ref.wav");
-    expect(items).toContain("voice-node:apps/voice-node/.env");
-    expect(items).toContain("turn:workers/models/silero-vad/silero_vad.onnx");
-  });
-
-  it("fails_for_a_missing_voice_and_node_packages", async () => {
-    repo("");
-    const f = await roleChecks(input(`[machine]\nroles = ["core", "inference"]\n`));
-    const failed = f.filter((x) => x.level === "fail").map((x) => x.what);
-    expect(failed).toContain("node 套件");
-    expect(failed.some((w) => w.includes("聲音參考音"))).toBe(true);
-  });
-
-  it("needs_docker_only_when_the_sandbox_is_on", async () => {
-    repo("");
-    const off = await roleChecks(input(`[machine]\nroles = ["core"]\n`));
-    expect(off.find((x) => x.what === "Docker")?.level).toBe("ok");
-    const missing: Runner = async (c) =>
-      c === "docker" ? { ...OK, code: null, missing: true } : OK;
-    const on = await roleChecks(
-      input(
-        `[machine]\nroles = ["core"]\n[modules.sandbox]\nenabled = true\n`,
-        deps({ run: missing }),
-      ),
-    );
-    expect(on.find((x) => x.what === "Docker")?.level).toBe("fail");
-  });
-
-  it("warns_when_core_binds_loopback_for_a_broadcast_computer_elsewhere", async () => {
-    const toml = `[machine]\nroles = ["core"]\n[machine.hosts]\ncore = "192.168.1.10"\n`;
-    const f = await addressChecks(input(toml), ["core", "turn"]);
-    expect(f.map((x) => x.what)).toEqual(
-      expect.arrayContaining(["voice.link 綁定位址", "stage.link 綁定位址"]),
-    );
-    const fixed = await addressChecks(
-      input(
-        `${toml}[modules."voice.link"]\nbind = "192.168.1.10:7879"\n[modules."stage.link"]\nbind = "192.168.1.10:7882"\n`,
-      ),
-      ["core", "turn"],
-    );
-    expect(fixed).toEqual([]);
-  });
-
-  it("fails_when_asr_url_still_points_at_this_computer_but_inference_is_elsewhere", async () => {
-    const toml = `[machine]\nroles = ["core"]\n[machine.hosts]\ninference = "192.168.1.20"\n[speech.asr.local]\nkind = "http-worker"\nurl = "http://127.0.0.1:8003"\n`;
-    const f = await addressChecks(input(toml), ["core", "turn"]);
-    expect(f.some((x) => x.level === "fail" && x.what.includes("speech.asr.local.url"))).toBe(true);
-  });
-
-  it("checks_the_stage_core_url_and_reachability_on_the_broadcast_computer", async () => {
-    const toml = `[machine]\nroles = ["broadcast"]\n[machine.hosts]\ncore = "192.168.1.10"\n[stage]\ncore_url = "ws://127.0.0.1:7882/stage-link"\n`;
-    const d = deps({ connect: async () => false });
-    const f = await addressChecks(input(toml, d), ["voice-node", "stage"]);
-    expect(f.some((x) => x.level === "fail" && x.what === "設定不一致:stage.core_url")).toBe(true);
-    expect(f.filter((x) => x.level === "warn" && x.what.startsWith("連線 core"))).toHaveLength(2);
   });
 });
 
