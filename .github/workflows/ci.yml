@@ -53,6 +53,55 @@ jobs:
           npx --no-install miyoria --version
           npx --no-install miyoria init --yes
           npx --no-install miyoria profile validate
+      # The package carries the service catalog, so `add` works without a repository, and the
+      # voice node (which runs from source) answers with a message. Nothing is installed.
+      - name: The packed CLI finds the service catalog
+        working-directory: ${{ runner.temp }}/smoke
+        run: |
+          miyoria() { npx --no-install miyoria "$@"; }
+          miyoria add > catalog.txt
+          cat catalog.txt
+          for name in asr tts turn sing lyrics mediamtx core stage obs; do
+            grep -qE "^  $name +" catalog.txt || { echo "::error::$name is not in the packaged catalog"; exit 1; }
+          done
+          if grep -qE "^  voice-node +" catalog.txt; then echo "::error::voice-node must not be in the packaged catalog"; exit 1; fi
+          if miyoria add voice-node > voice-node.txt 2>&1; then echo "::error::add voice-node should fail on a package"; exit 1; fi
+          cat voice-node.txt
+          grep -q repository voice-node.txt
+      # A new person's first run: `init --yes` (text only), `up`, Core healthy, this machine linked
+      # to its own Core, `down`, nothing left. No Discord token (the module disables itself), and
+      # the LLM address points at nothing, so no call leaves the runner.
+      - name: Start the packed CLI (text only) and check it links itself
+        working-directory: ${{ runner.temp }}/smoke
+        timeout-minutes: 4
+        run: |
+          miyoria() { npx --no-install miyoria "$@"; }
+          miyoria config set --env LLM_BASE_URL http://127.0.0.1:9
+          miyoria up --timeout 90
+          for i in $(seq 1 60); do
+            miyoria status > status.txt 2>&1 || true
+            grep -qE "^core +running +✓" status.txt && break
+            sleep 1
+          done
+          cat status.txt
+          grep -qE "^core +running +✓" status.txt || { echo "::error::core is not running and healthy"; exit 1; }
+          for i in $(seq 1 30); do
+            miyoria host ls > hosts.txt 2>&1 || true
+            grep -E "approved" hosts.txt | grep -q "已連線" && break
+            sleep 1
+          done
+          cat hosts.txt
+          grep -E "approved" hosts.txt | grep -q "已連線" || { echo "::error::this machine did not link itself to Core"; exit 1; }
+          miyoria logs core -n 20
+          miyoria down
+          sleep 2
+          if pgrep -fa "node_modules/miyoria/dist/main.js"; then echo "::error::processes left after down"; exit 1; fi
+      - name: Logs of the packed CLI run
+        if: failure()
+        working-directory: ${{ runner.temp }}/smoke
+        run: |
+          tail -n 80 data/host/logs/*.log || true
+          npx --no-install miyoria down || true
       # The same with pnpm, which is what the docs show first.
       - name: Smoke-test the packed CLI with pnpm
         working-directory: ${{ runner.temp }}
