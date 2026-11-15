@@ -74,6 +74,7 @@ import {
   composeConfigSchema,
   configProblemsError,
   describeProblem,
+  errorMessage,
   getLogger,
 } from "@miyoria/runtime/kernel";
 import { ReplayConfigSchema, ReplayRecorderModule } from "@miyoria/runtime/replay-log";
@@ -247,12 +248,27 @@ export function checkStartConfig(config: Config): ConfigCheck {
 }
 
 /**
+ * Runs a check; a schema that throws instead of reporting an issue (a transform that throws) is
+ * logged and lets the document through, as the readers alone would have until that module ran.
+ */
+function tryCheck(check: () => ConfigCheck): ConfigCheck | null {
+  try {
+    return check();
+  } catch (error) {
+    log.warn({ err: errorMessage(error) }, "cannot check the config against its schema");
+    return null;
+  }
+}
+
+/**
  * Core's check when it loads the file, before anything is opened or started: logs each warning
  * (a module that will not start, an extension setting) and throws one `ConfigError` naming every
  * error with its path and what was expected.
  */
 export function assertStartConfig(config: Config): void {
-  const { errors, warnings, ignored } = checkStartConfig(config);
+  const found = tryCheck(() => checkStartConfig(config));
+  if (found === null) return;
+  const { errors, warnings, ignored } = found;
   for (const p of ignored) {
     log.debug({ path: p.path }, `config value not used as written: ${p.expected}`);
   }
@@ -273,11 +289,10 @@ export function assertStartConfig(config: Config): void {
  */
 export function validateRevision(doc: JsonObject): JsonObject {
   const config = Config.fromValue(doc);
-  const problems = checkConfig(coreRoot(), doc, {
-    policy: startPolicy(config),
-    skipEnvRefs: true,
-  });
-  const { errors } = split(problems);
+  const found = tryCheck(() =>
+    split(checkConfig(coreRoot(), doc, { policy: startPolicy(config), skipEnvRefs: true })),
+  );
+  const errors = found?.errors ?? [];
   if (errors.length > 0) throw configProblemsError(errors);
   return doc;
 }
