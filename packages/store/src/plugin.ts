@@ -23,6 +23,7 @@ import type { Db } from "./db.js";
 import type { EventStore } from "./events/log.js";
 import type { Identity } from "./identity/identity.js";
 import type { PluginSchema } from "./migrate.js";
+import type { PersonForget, PersonHookResult, PersonMerge } from "./person-data.js";
 import type { SettingsStore } from "./stores.js";
 
 /** What a plugin's code gets from the store it is attached to. */
@@ -52,6 +53,14 @@ export interface StorePlugin<T> {
    * store the plugin is attached to.
    */
   readonly data?: readonly CategoryData[];
+  /**
+   * What to do with a person's rows when they ask to be forgotten (`person-data.ts`): run with
+   * every other schema's in one transaction (synchronous, like `Db.tx`). Money and audit records
+   * are kept: a hook may decline (`declined`), saying why.
+   */
+  forgetPerson?(opened: T, request: PersonForget): PersonHookResult;
+  /** What to do with `absorb`'s rows when it is merged into `keep`, as `forgetPerson`. */
+  mergePerson?(opened: T, request: PersonMerge): PersonHookResult;
 }
 
 /**

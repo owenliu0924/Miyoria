@@ -148,6 +148,17 @@ export class Identity {
     return person == null ? null : this.person(person);
   }
 
+  /** The persons merged into `person` (a merge points every one it absorbed at the keeper). */
+  absorbedInto(person: PersonId): PersonId[] {
+    return this.#db.orm
+      .select({ id: persons.id })
+      .from(persons)
+      .where(eq(persons.merged_into, person))
+      .orderBy(asc(persons.id))
+      .all()
+      .map((r) => r.id as PersonId);
+  }
+
   /** A person's accounts, by first sight. */
   accountsOf(person: PersonId): AccountRow[] {
     return this.#db.orm

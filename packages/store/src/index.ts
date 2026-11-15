@@ -248,6 +248,8 @@ export {
   FactsSteer,
   FactsThought,
   FactsUtterance,
+  PersonForgotten,
+  PersonsMerged,
   PrivacyRedacted,
   SettingsChanged,
   typeDefaults,
@@ -319,6 +321,18 @@ export {
   type StoreLocation,
 } from "./open.js";
 export { micros } from "./orm.js";
+export {
+  declined,
+  hookCounts,
+  PersonData,
+  type PersonDataStore,
+  type PersonForget,
+  type PersonHookOutcome,
+  type PersonHookResult,
+  type PersonHooks,
+  type PersonMerge,
+  type PersonRequestResult,
+} from "./person-data.js";
 export {
   type PluginContext,
   RoutedSettings,

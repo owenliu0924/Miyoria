@@ -75,7 +75,14 @@ import {
 import { Identity } from "./identity/identity.js";
 import { identitySchema } from "./identity/migrations.js";
 import { legacySchema } from "./legacy-schema/index.js";
-import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
+import {
+  checkDatabaseFile,
+  migrate,
+  orderSchemas,
+  type PluginSchema,
+  schemaVersions,
+} from "./migrate.js";
+import { declined, PersonData } from "./person-data.js";
 import { type PluginContext, RoutedSettings, type StorePlugin } from "./plugin.js";
 import type { MemberCardRecord, Relationship, RelationshipDelta } from "./records.js";
 import type {
@@ -489,6 +496,8 @@ export class SqliteStore implements Store {
   readonly handles: PersonHandleDirectory;
   /** The files she makes (the `artifact` plugin's tables, bytes under the artifact root). */
   readonly artifacts: ArtifactStore | null;
+  /** Forgetting and merging people through every schema's hooks (`person-data.ts`). */
+  readonly personData: PersonData;
   readonly #db: Db;
   readonly #location: string;
   /** Every schema migrated on this database by this store (the store's own and plugins'). */
@@ -533,6 +542,49 @@ export class SqliteStore implements Store {
     this.audit = new AuditTrail(db, this.events, this.persons);
     this.llmCalls = new LlmCallTotals(db);
     this.cards = new SqliteMemberCards(db);
+    this.personData = new PersonData(db, this.events, this.persons, () => [
+      "core",
+      ...orderSchemas(this.#schemas).map((s) => s.plugin),
+    ]);
+    this.#ownPersonHooks();
+  }
+
+  /** The person hooks of the store's own schemas (`person-data.ts`). */
+  #ownPersonHooks(): void {
+    const { personData, persons, chat } = this;
+    personData.add({
+      plugin: "core",
+      // What they said keeps its envelope and loses its content: their chat lines and her
+      // observations of them, under every id they had.
+      forgetPerson: (r) => ({
+        counts: {
+          lines: r.ids.reduce((n, id) => n + chat.forgetPerson(id, r.reason, r.source), 0),
+        },
+      }),
+      mergePerson: () =>
+        declined(
+          "events are append-only: the absorbed id stays on its rows and resolves to the kept person",
+        ),
+    });
+    personData.add({
+      plugin: "identity",
+      forgetPerson: () =>
+        declined("the person and their accounts stay unless they ask to unlink (v5-data §2.4)"),
+      mergePerson: (r) => {
+        const moved = persons.accountsOf(r.absorb).length;
+        persons.merge(r.keep, r.absorb);
+        return { counts: { persons: 1, accounts: moved } };
+      },
+    });
+    personData.add({
+      plugin: "legacy",
+      forgetPerson: () =>
+        declined(
+          "her bond with them and what she calls them stay; the member page deletes their cards",
+        ),
+      mergePerson: () =>
+        declined("the social module merges the relationship through its cache before the people"),
+    });
   }
 
   /**
@@ -601,6 +653,14 @@ export class SqliteStore implements Store {
     if (plugin.data !== undefined) {
       this.#data.push(...plugin.data);
       this.profileData.declare(this.#data);
+    }
+    const { forgetPerson, mergePerson } = plugin;
+    if (forgetPerson !== undefined || mergePerson !== undefined) {
+      this.personData.add({
+        plugin: id,
+        ...(forgetPerson && { forgetPerson: (r) => forgetPerson(opened, r) }),
+        ...(mergePerson && { mergePerson: (r) => mergePerson(opened, r) }),
+      });
     }
     this.#plugins.set(id, { plugin: plugin as StorePlugin<unknown>, opened });
     return opened;

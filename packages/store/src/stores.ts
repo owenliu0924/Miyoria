@@ -24,6 +24,7 @@ import type { ChatLogStore } from "./events/chat.js";
 import type { LlmCallStore } from "./events/llm.js";
 import type { EventLogStore } from "./events/log.js";
 import type { PersonHandleDirectory } from "./handles.js";
+import type { PersonDataStore } from "./person-data.js";
 import type { StorePlugin } from "./plugin.js";
 import type {
   Account,
@@ -361,6 +362,11 @@ export interface Store {
    * `persons.handle`). Optional: without it the app keeps them in `settings`.
    */
   readonly handles?: PersonHandleDirectory;
+  /**
+   * Forgetting and merging a person through every installed schema's hooks, in one transaction
+   * (`person-data.ts`). Optional for test doubles.
+   */
+  readonly personData?: PersonDataStore;
   /**
    * A plugin's tables on this database and its code over them (`plugin.ts`): migrated when the
    * store opened with it, or the first time it is asked for; built once per store.
