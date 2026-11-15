@@ -10,13 +10,15 @@
 //     const auth = store.plugin(authTables);
 //
 // Core opens the store with every installed plugin, so their migrations run at start. A plugin a
-// store was not opened with is migrated the first time it is asked for (tests, tools).
+// store was not opened with is migrated the first time it is asked for (tests, tools); its data
+// categories (`data`) count from then on.
 //
 // `RoutedSettings` keeps old `SettingsStore` key families working while their owners keep them in
 // a table of their own (`StorePlugin.settings`); step 14 of §8 removes it with the key families.
 
 import type { JsonValue, ProfileId } from "@miyoria/types";
 import { StoreError } from "./common.js";
+import type { CategoryData } from "./data.js";
 import type { Db } from "./db.js";
 import type { EventStore } from "./events/log.js";
 import type { Identity } from "./identity/identity.js";
@@ -44,6 +46,12 @@ export interface StorePlugin<T> {
    * through `SettingsStore`. Temporary (§8 step 14).
    */
   settings?(opened: T): readonly SettingsFamily[];
+  /**
+   * The parts of the data categories its tables hold, with how to count, export and delete them
+   * (`data.ts`): the panel's data page, `/admin memory wipe` and the factory reset see them on a
+   * store the plugin is attached to.
+   */
+  readonly data?: readonly CategoryData[];
 }
 
 /**

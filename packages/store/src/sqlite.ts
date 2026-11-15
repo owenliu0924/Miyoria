@@ -22,6 +22,7 @@ import {
 } from "@miyoria/types";
 import { artifactSchema } from "./artifacts/migrations.js";
 import { ArtifactStore } from "./artifacts/store.js";
+import { storeRegistry } from "./categories.js";
 import {
   fromMicros,
   optionalMicros,
@@ -48,18 +49,15 @@ import {
 import { PluginState, SettingsState } from "./config/state.js";
 import {
   addCount,
+  type CategoryData,
   type DataCategoryId,
   type DataExport,
   type DataInventory,
-  type PartPresent,
-  partPresent,
-  readExport,
-  readInventory,
+  type DataRegistry,
   type SqlDialect,
   type Stmt,
   type WipeCounts,
   type WipeOptions,
-  wipeStatements,
 } from "./data.js";
 import { Db, type Params, type Row } from "./db.js";
 import { AuditTrail } from "./events/audit.js";
@@ -289,7 +287,11 @@ class SqliteMemberCards implements MemberCardStore {
 
 // ---- whole-profile export / wipe ----------------------------------------------------------
 
-class SqliteProfileData implements ProfileDataStore {
+/** Inventory, export and wipe of the categories this store's schemas declare. */
+export class SqliteProfileData implements ProfileDataStore {
+  /** The store's own declarations and those of the plugins attached so far (`declare`). */
+  #registry: DataRegistry = storeRegistry();
+
   constructor(
     private readonly db: Db,
     private readonly modules: ConfigModuleState,
@@ -297,20 +299,24 @@ class SqliteProfileData implements ProfileDataStore {
 
   #query = async (stmt: Stmt) => this.db.allStmt(stmt);
 
-  /** The parts whose tables exist: a plugin's are there once it is installed. */
-  #present(): PartPresent {
-    const rows = this.db.all("SELECT name FROM sqlite_schema WHERE type IN ('table', 'view')");
-    return partPresent(new Set(rows.map((r) => String(r.name))));
+  /** The categories as the store's schemas and its attached plugins make them up. */
+  get registry(): DataRegistry {
+    return this.#registry;
+  }
+
+  /** The attached plugins' declarations, in the order they were attached. */
+  declare(plugins: readonly CategoryData[]): void {
+    this.#registry = storeRegistry(plugins);
   }
 
   async inventory(profile: ProfileId): Promise<DataInventory> {
     const now = fromMicros(this.db.nowMicros());
-    return readInventory(SQLITE_DIALECT, this.#query, profile, now, this.#present());
+    return this.#registry.inventory(SQLITE_DIALECT, this.#query, profile, now);
   }
 
   async export(profile: ProfileId, categories: readonly DataCategoryId[]): Promise<DataExport> {
     const now = fromMicros(this.db.nowMicros());
-    return readExport(SQLITE_DIALECT, this.#query, profile, categories, now, this.#present());
+    return this.#registry.export(SQLITE_DIALECT, this.#query, profile, categories, now);
   }
 
   async wipe(
@@ -318,13 +324,7 @@ class SqliteProfileData implements ProfileDataStore {
     categories: readonly DataCategoryId[],
     options: WipeOptions = {},
   ): Promise<WipeCounts> {
-    const statements = wipeStatements(
-      SQLITE_DIALECT,
-      profile,
-      categories,
-      options,
-      this.#present(),
-    );
+    const statements = this.#registry.wipeStatements(SQLITE_DIALECT, profile, categories, options);
     try {
       return this.db.tx(() => {
         const counts: WipeCounts = {};
@@ -471,7 +471,7 @@ export class SqliteStore implements Store {
   readonly identity: IdentityStore;
   /** Audit entries on the event log. */
   readonly audit: AuditTrail;
-  readonly profileData: ProfileDataStore;
+  readonly profileData: SqliteProfileData;
   readonly events: EventStore;
   /** Chat lines on the event log; `messages` is the same object. */
   readonly chat: ChatLog;
@@ -495,6 +495,8 @@ export class SqliteStore implements Store {
   readonly #schemas: PluginSchema[];
   readonly #settings: RoutedSettings;
   readonly #plugins = new Map<string, { plugin: StorePlugin<unknown>; opened: unknown }>();
+  /** The attached plugins' data categories, in the order they were attached. */
+  readonly #data: CategoryData[] = [];
 
   private constructor(
     db: Db,
@@ -596,6 +598,10 @@ export class SqliteStore implements Store {
     const ctx: PluginContext = { db: this.#db, events: this.events, identity: this.persons };
     const opened = plugin.open(ctx);
     for (const family of plugin.settings?.(opened) ?? []) this.#settings.route(family);
+    if (plugin.data !== undefined) {
+      this.#data.push(...plugin.data);
+      this.profileData.declare(this.#data);
+    }
     this.#plugins.set(id, { plugin: plugin as StorePlugin<unknown>, opened });
     return opened;
   }

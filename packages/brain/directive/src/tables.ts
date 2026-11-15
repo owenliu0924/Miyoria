@@ -3,7 +3,14 @@
 // `store.plugin(directiveTables)` to the service. One database is one character, so the
 // `profile` the interface still takes is not part of any key.
 
-import { type Db, type DirectiveStore, StoreError, type StorePlugin } from "@miyoria/store";
+import {
+  type CategoryData,
+  type Db,
+  type DirectiveStore,
+  StoreError,
+  type StorePlugin,
+  tablePart,
+} from "@miyoria/store";
 import type { Directive, DirectiveRecord, ProfileId, Timestamp } from "@miyoria/types";
 import { and, asc, desc, eq, gt, isNull, lt, or } from "drizzle-orm";
 import { directiveSchema } from "./migrations.js";
@@ -93,8 +100,34 @@ export class DirectiveTables implements DirectiveStore {
   }
 }
 
+/**
+ * The owner's rules, the `directives` category. One database is one character, so every rule is
+ * this profile's.
+ */
+const directiveData: readonly CategoryData[] = [
+  {
+    category: "directives",
+    parts: [
+      tablePart("directives", "directive_rules", "node", "created_at", "created_at, id", {
+        id: "text",
+        issuer: "json",
+        authority: "text",
+        scope: "json",
+        effect: "text",
+        text: "text",
+        expires: "ts",
+        source_event: "text",
+        created_at: "ts",
+        revoked_at: "ts",
+        revoked_by: "text",
+      }),
+    ],
+  },
+];
+
 /** The `directive` plugin's table and code (`StorePlugin`). */
 export const directiveTables: StorePlugin<DirectiveTables> = {
   schema: directiveSchema,
   open: ({ db }) => new DirectiveTables(db),
+  data: directiveData,
 };

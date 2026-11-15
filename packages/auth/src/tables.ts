@@ -15,6 +15,7 @@ import {
   type AuthStore,
   accounts,
   authScopeKey,
+  type CategoryData,
   type Db,
   type Identity,
   type NodeOverride,
@@ -25,6 +26,7 @@ import {
   StoreError,
   type StorePlugin,
   spaces,
+  tablePart,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -403,6 +405,77 @@ export interface AuthPlugin {
   readonly sessions: AuthSessions;
 }
 
+/**
+ * The `roles` category (assignments name identity's `accounts.id` and mappings its `spaces.id`;
+ * they go with their account or space too), reset to the built-in roles a wipe is given, and the
+ * panel's logins (`panel_sessions`, by the hash of the token; kept, never exported).
+ */
+const authData: readonly CategoryData[] = [
+  {
+    category: "roles",
+    parts: [
+      tablePart("roles", "auth_roles", "node", null, "rank DESC, name", {
+        name: "text",
+        rank: "num",
+        grants: "json",
+        denies: "json",
+        builtin: "bool",
+      }),
+      tablePart(
+        "role_assignments",
+        "auth_assignments",
+        "node",
+        "at",
+        "at, account_id, role, scope",
+        {
+          account_id: "text",
+          role: "text",
+          scope: "json",
+          granted_by: "text",
+          at: "ts",
+        },
+      ),
+      tablePart("role_mappings", "auth_role_mappings", "node", null, "space_id, platform_role", {
+        space_id: "text",
+        platform_role: "text",
+        role: "text",
+      }),
+      tablePart("node_overrides", "auth_overrides", "node", null, "scope, role, node", {
+        scope: "json",
+        role: "text",
+        node: "text",
+        allow: "bool",
+      }),
+    ],
+    refill: (d, options) =>
+      (options.seedRoles ?? []).map((role) => ({
+        sql: "INSERT INTO auth_roles (name, rank, grants, denies, builtin) VALUES ($1, $2, $3, $4, $5)",
+        params: [
+          role.name,
+          role.rank,
+          d.list(role.grants),
+          d.list(role.denies),
+          d.bool(role.builtin),
+        ],
+      })),
+  },
+  {
+    category: "panel_sessions",
+    parts: [
+      tablePart("panel_sessions", "auth_sessions", "node", "created_at", "token_hash", {
+        token_hash: "text",
+        platform: "text",
+        external_id: "text",
+        name: "text",
+        avatar_url: "text",
+        tier: "text",
+        created_at: "ts",
+        expires_at: "ts",
+      }),
+    ],
+  },
+];
+
 /** The `auth` plugin's tables and code (`StorePlugin`). */
 export const authTables: StorePlugin<AuthPlugin> = {
   schema: authSchema,
@@ -411,4 +484,5 @@ export const authTables: StorePlugin<AuthPlugin> = {
     sessions: new AuthSessions(db),
   }),
   settings: (opened) => [opened.sessions.settingsFamily()],
+  data: authData,
 };

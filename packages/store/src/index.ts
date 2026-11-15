@@ -67,6 +67,7 @@ export {
   scopeAllows,
   type VisibleArtifact,
 } from "./artifacts/visibility.js";
+export { DATA_CATEGORIES, dataCategory, STORE_DATA, storeRegistry } from "./categories.js";
 export {
   authScopeKey,
   fromMicros,
@@ -163,23 +164,30 @@ export {
   type ReadOnlyDatabase,
 } from "./cutover/old-file.js";
 export {
+  CATEGORY_SPECS,
+  type CategoryData,
   type CategoryInventory,
+  type CategorySpec,
   categoryModules,
-  DATA_CATEGORIES,
   DATA_EXPORT_FORMAT,
   type DataCategory,
   type DataCategoryId,
   type DataExport,
   type DataInventory,
   type DataPart,
-  dataCategory,
+  DataRegistry,
   GLOBAL_SETTINGS_PROFILE,
   isDataCategoryId,
   type PartInventory,
+  prefsPart,
   RESET_CATEGORIES,
   resolveCategories,
   type SettingsPart,
+  type SqlDialect,
+  type Stmt,
+  settingsPart,
   type TablePart,
+  tablePart,
   type WipeCounts,
   type WipeOptions,
 } from "./data.js";

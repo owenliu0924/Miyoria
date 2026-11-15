@@ -1,41 +1,31 @@
-// Data categories: every kind of data the store holds for a profile, which tables / settings
-// keys make it up, and the SQL to count, export and delete it. One definition, shared by the
-// panel's data page (`/api/data/*`), the Discord `/admin memory wipe` and the factory reset.
+// Data categories (docs/design/v5-data.md §3.4): every kind of data she has, what makes it up, and
+// how to count, export and delete it. One definition, shared by the panel's data page
+// (`/api/data/*`), the Discord `/admin memory wipe` and the factory reset.
 //
-// Settings keys belong to other packages; they are repeated here as strings (the store cannot
-// depend on the modules), and `@miyoria/api`'s tests check them against the owners' constants.
-// They are rows of plugin `settings` in `plugin_state` (`config/state.ts`): one key space, whatever
-// profile their owners write them under, since one database belongs to one character.
+// Two halves:
+// - The catalog (`CATEGORY_SPECS`): the categories themselves, in display order, with what deleting
+//   one takes with it (`requires`), the modules caching it, and their flags (shared, kept, how a
+//   delete is confirmed). The panel, the API and the commands name categories by id, so the list is
+//   fixed here, one place; a schema adds parts to a category, never a category.
+// - The parts: each schema declares the parts its tables hold (`CategoryData`): the store's own
+//   (`categories.ts`) and every plugin's (`StorePlugin.data`). A `DataRegistry` collects the
+//   declarations of what a store has installed. A plugin that is not installed declares nothing,
+//   so its parts are not there to count, export or delete.
 //
-// Invariants kept by the shape of the registry:
+// Invariants kept by the shape of the declarations:
 // - Consolidation watermarks (`memory_watermark:*`) exist only inside `messages`, so they are
 //   never deleted without the log they point into (otherwise the log would be extracted into
 //   memories again).
 // - The audit log, LLM usage (the `llm.call` events) and panel sessions are `kept`: never deleted,
 //   also not by a reset.
-// - `roles` is reset, not emptied: the built-in roles are written again in the same
-//   transaction, and the config owners (not stored) keep `owner`.
+// - `roles` is reset, not emptied: the auth plugin writes the built-in roles again in the same
+//   transaction (`CategoryData.refill`), and the config owners (not stored) keep `owner`.
 
 import type { JsonObject, JsonValue, ProfileId, Timestamp } from "@miyoria/types";
 import { StoreError } from "./common.js";
-import { ConfigRevised, SettingsChanged } from "./events/types.js";
 import type { PersonPrefs } from "./identity/schema.js";
 import { type ExportColumn, exportValue } from "./profile-data.js";
 import type { RoleDefinition } from "./records.js";
-
-/** The `auth` plugin's role definitions (`@miyoria/auth` `schema.ts`). */
-const ROLES_TABLE = "auth_roles";
-/** The `economy` plugin's tables (`@miyoria/economy` `schema.ts`). */
-const LEDGER_TABLE = "economy_ledger";
-const WALLETS_TABLE = "economy_wallets";
-const DEALS_TABLE = "economy_deals";
-const FORTUNES_TABLE = "economy_fortunes";
-const GOALS_TABLE = "economy_goals";
-const PLEDGES_TABLE = "economy_goal_pledges";
-const BOUNTIES_TABLE = "economy_bounties";
-const DOCS_TABLE = "economy_docs";
-/** The `memory` plugin's records (`@miyoria/memory/memory` `schema.ts`). */
-const MEMORY_TABLE = "memory_records";
 
 /** Settings profile of node-wide settings (`arbiter:state`, `queue:state`, ...). */
 export const GLOBAL_SETTINGS_PROFILE: ProfileId = "_global";
@@ -144,6 +134,7 @@ function clears(part: DataPart): boolean {
 
 export interface DataCategory {
   id: DataCategoryId;
+  /** The parts the declarations of a store's schemas give it, in declaration order. */
   parts: readonly DataPart[];
   /** Deleting this category also deletes these (their data would point at nothing). */
   requires: readonly DataCategoryId[];
@@ -162,41 +153,136 @@ export interface DataCategory {
   exportable: boolean;
 }
 
-const MEMORY_COLUMNS = {
-  id: "text",
-  kind: "text",
-  scope: "json",
-  subjects: "json",
-  content: "text",
-  importance: "num",
-  confidence: "num",
-  created_at: "ts",
-  updated_at: "ts",
-  last_accessed: "ts",
-  access_count: "num",
-  source_context: "json",
-  source: "json",
-  origin: "text",
-  source_events: "json",
-  due: "ts",
-  done: "bool",
-  superseded_by: "text",
-} as const satisfies Record<string, ExportColumn>;
+/** A category of the catalog: everything but its parts. */
+export type CategorySpec = Omit<DataCategory, "parts">;
 
-const RELATIONSHIP_COLUMNS = {
-  person_id: "text",
-  affinity: "num",
-  trust: "num",
-  familiarity: "num",
-  tags: "json",
-  notes: "text",
-  call_name: "text",
-  interactions: "num",
-  last_interaction: "ts",
-  updated_at: "ts",
-} as const satisfies Record<string, ExportColumn>;
+/**
+ * What a schema declares for one category: the parts its tables hold, and how they are read and
+ * deleted beyond what a part says by itself.
+ */
+export interface CategoryData {
+  category: DataCategoryId;
+  parts: readonly DataPart[];
+  /** Counts by a sub-kind for the inventory (memories by `kind`): rows `{ kind, n }`. */
+  breakdown?: Stmt;
+  /** Statements run after the wipe's deletes when this category is wiped, in its transaction. */
+  refill?(d: SqlDialect, options: WipeOptions): Stmt[];
+}
 
-function table(
+function spec(id: DataCategoryId, options: Partial<Omit<CategorySpec, "id">> = {}): CategorySpec {
+  return {
+    id,
+    requires: options.requires ?? [],
+    modules: options.modules ?? [],
+    shared: options.shared ?? false,
+    confirm: options.confirm ?? "typed",
+    kept: options.kept ?? false,
+    exportable: options.exportable ?? true,
+  };
+}
+
+/**
+ * Every category, in display order. Which schema holds what is in the declarations: the store's
+ * own in `categories.ts` and the folders it names, the plugins' in their `tables.ts`.
+ */
+export const CATEGORY_SPECS: readonly CategorySpec[] = [
+  // The memory plugin's records, and its maintenance time (a settings key).
+  spec("memories", { modules: ["memory", "arbiter"] }),
+  // Relationships with their changes and member cards (`legacy`), and the economy plugin's tables:
+  // coins come from being with her; the wallet goes with the relationship, not with a forget.
+  spec("relationships", { modules: ["social", "agent"] }),
+  spec("call_names", { modules: ["social", "agent"], confirm: "simple" }),
+  // Her inner state, feelings and thoughts (settings keys).
+  spec("inner", { modules: ["self", "mind"] }),
+  spec("knowledge", { modules: ["knowledge"] }),
+  spec("learning", { modules: ["reflect"], confirm: "simple" }),
+  spec("conversation", { modules: ["conversation"], confirm: "simple" }),
+  spec("mood", { modules: ["mood"], confirm: "simple" }),
+  // Her conversation notes are made from the log, and the event log repeats what people said:
+  // they go with it.
+  spec("messages", { requires: ["conversation", "event_log"], modules: ["memory", "agent"] }),
+  spec("decisions", { confirm: "simple" }),
+  // The owner's rules: deleting them lifts every rule at once, so the profile id has to be typed.
+  spec("directives", { modules: ["directive"] }),
+  spec("event_log", { modules: ["facts"], confirm: "simple" }),
+  spec("initiative", { modules: ["arbiter"], confirm: "simple" }),
+  spec("artifacts"),
+  spec("people", {
+    // Relationships, feelings, documents, lessons and feedback are keyed by person; artifacts
+    // name the person they were made for and the place they were made in.
+    requires: ["relationships", "call_names", "inner", "knowledge", "learning", "artifacts"],
+    modules: ["social", "agent", "world", "memory"],
+    shared: true,
+  }),
+  spec("channels", { confirm: "simple" }),
+  spec("voice_consent", { shared: true }),
+  spec("privacy", { modules: ["world"], shared: true }),
+  spec("queue", { modules: ["queue"], shared: true, confirm: "simple" }),
+  spec("roles", { shared: true }),
+  spec("persona"),
+  spec("proposed_tools", { modules: ["sandbox"] }),
+  spec("extensions"),
+  spec("module_state", { shared: true, confirm: "simple" }),
+  spec("other_settings"),
+  spec("audit", { shared: true, kept: true }),
+  spec("llm_usage", { shared: true, kept: true }),
+  spec("panel_sessions", { shared: true, kept: true, exportable: false }),
+];
+
+const SPECS = new Map(CATEGORY_SPECS.map((c) => [c.id, c]));
+
+export function isDataCategoryId(id: string): id is DataCategoryId {
+  return SPECS.has(id as DataCategoryId);
+}
+
+function categorySpec(id: DataCategoryId): CategorySpec {
+  const found = SPECS.get(id);
+  if (!found) throw new StoreError(`unknown data category \`${id}\``);
+  return found;
+}
+
+/** Every category a factory reset deletes (everything but the kept ones). */
+export const RESET_CATEGORIES: readonly DataCategoryId[] = CATEGORY_SPECS.filter(
+  (c) => !c.kept,
+).map((c) => c.id);
+
+/**
+ * `ids` plus what they require (transitively), in catalog order. Kept categories are refused.
+ */
+export function resolveCategories(ids: Iterable<DataCategoryId>): DataCategoryId[] {
+  const want = new Set<DataCategoryId>();
+  const add = (id: DataCategoryId) => {
+    if (want.has(id)) return;
+    const c = categorySpec(id);
+    if (c.kept) throw new StoreError(`data category \`${id}\` is kept and cannot be deleted`);
+    want.add(id);
+    for (const r of c.requires) add(r);
+  };
+  for (const id of ids) add(id);
+  return CATEGORY_SPECS.filter((c) => want.has(c.id)).map((c) => c.id);
+}
+
+/** Modules to stop around deleting `ids`, in catalog order, without duplicates. */
+export function categoryModules(ids: Iterable<DataCategoryId>): string[] {
+  const set = new Set(ids);
+  const out: string[] = [];
+  for (const c of CATEGORY_SPECS) {
+    if (!set.has(c.id)) continue;
+    for (const m of c.modules) if (!out.includes(m)) out.push(m);
+  }
+  return out;
+}
+
+/** Exportable categories among `ids` (kept ones included, panel sessions not). */
+export function exportCategories(ids: Iterable<DataCategoryId>): DataCategoryId[] {
+  const set = new Set(ids);
+  return CATEGORY_SPECS.filter((c) => set.has(c.id) && c.exportable).map((c) => c.id);
+}
+
+// ---- declaring parts -------------------------------------------------------------------------
+
+/** A table part (`TablePart`); the options default to every row, exported from the table. */
+export function tablePart(
   id: string,
   name: string,
   rows: TablePart["rows"],
@@ -218,20 +304,7 @@ function table(
   };
 }
 
-/** The chat lines among `events` (`events/chat.ts`): the conversation log. */
-const CHAT_LINES = "type IN ('platform.message.created', 'voice.utterance', 'voice.playback')";
-/** Her decisions among `events` (`events/turns.ts`). */
-const DECISIONS = "type = 'agent.decision'";
-/** How her turns ended, among `events` (`events/turns.ts`). */
-const OUTCOMES = "type = 'agent.turn.outcome'";
-/** The audit entries among `events` (`events/audit.ts`). */
-const AUDIT = "type GLOB 'audit.*'";
-/** The LLM calls among `events` (`events/llm.ts`). */
-const LLM_CALLS = "type = 'llm.call'";
-/** Configuration changes among `events` (`config/revisions.ts`, `config/places.ts`). */
-const CONFIG_CHANGES = `type IN ('${ConfigRevised.type}', '${SettingsChanged.type}')`;
-
-function settings(
+export function settingsPart(
   id: string,
   profile: SettingsPart["profile"],
   keys: string[],
@@ -240,713 +313,8 @@ function settings(
   return { kind: "settings", id, profile, keys, prefixes };
 }
 
-function prefs(id: string, key: PrefsPart["key"]): PrefsPart {
+export function prefsPart(id: string, key: PrefsPart["key"]): PrefsPart {
   return { kind: "prefs", id, key };
-}
-
-function category(
-  id: DataCategoryId,
-  parts: DataPart[],
-  options: Partial<Omit<DataCategory, "id" | "parts">> = {},
-): DataCategory {
-  return {
-    id,
-    parts,
-    requires: options.requires ?? [],
-    modules: options.modules ?? [],
-    shared: options.shared ?? false,
-    confirm: options.confirm ?? "typed",
-    kept: options.kept ?? false,
-    exportable: options.exportable ?? true,
-  };
-}
-
-/** Every category, in display order. */
-export const DATA_CATEGORIES: readonly DataCategory[] = [
-  category(
-    "memories",
-    [
-      // The whole database's (one character). Its rows name people only inside `subjects`, with
-      // no foreign key: nothing cascades from identity.
-      table("memory_records", MEMORY_TABLE, "node", "updated_at", "created_at, id", {
-        ...MEMORY_COLUMNS,
-      }),
-      // @miyoria/memory/memory `MAINTENANCE_KEY`
-      settings("memory_maintenance", "active", ["memory_maintenance_last"]),
-    ],
-    { modules: ["memory", "arbiter"] },
-  ),
-  category(
-    "relationships",
-    [
-      table("relationships", "relationships", "profile", "updated_at", "person_id", {
-        ...RELATIONSHIP_COLUMNS,
-      }),
-      table("relationship_deltas", "relationship_deltas", "profile", "at", "seq", {
-        person_id: "text",
-        at: "ts",
-        affinity: "num",
-        trust: "num",
-        familiarity: "num",
-        reason: "text",
-      }),
-      // The member page's cards are snapshots of the relationship; they go with it.
-      table("member_cards", "member_cards", "profile", "issued_at", "issued_at, serial", {
-        serial: "text",
-        author_platform: "text",
-        author_id: "text",
-        person_id: "text",
-        issued_at: "ts",
-        snapshot: "json",
-      }),
-      // Coins come from being with her; the wallet goes with the relationship, not with a forget.
-      // From here to economy 2.0's documents, the `economy` plugin's tables (`@miyoria/economy`
-      // `schema.ts`): the whole database's (one character). The ledger is by person (no foreign
-      // key); a wallet row goes with its person, and what names an account with the account.
-      table("coin_ledger", LEDGER_TABLE, "node", "ts", "seq", {
-        id: "text",
-        person_id: "text",
-        delta: "num",
-        reason: "text",
-        ref: "text",
-        idem_key: "text",
-        ts: "ts",
-      }),
-      table("coin_wallets", WALLETS_TABLE, "node", "updated_at", "person_id", {
-        person_id: "text",
-        frame: "text",
-        off_board: "bool",
-        updated_at: "ts",
-      }),
-      // The fortune slips she wrote for them, kept like their cards.
-      table("fortunes", FORTUNES_TABLE, "node", "issued_at", "issued_at, id", {
-        id: "text",
-        account_id: "text",
-        person_id: "text",
-        day: "num",
-        issued_at: "ts",
-        entry_id: "text",
-        slip: "json",
-      }),
-      // Deals are promises between her and a member, kept like the wallet. By identity's
-      // `accounts.id`; they go with the account too.
-      table("deals", DEALS_TABLE, "node", "created_at", "created_at, id", {
-        id: "text",
-        account_id: "text",
-        reward_item: "text",
-        reward_count: "num",
-        reward_value: "num",
-        task: "text",
-        prepaid: "bool",
-        escrow_entry: "text",
-        status: "text",
-        created_at: "ts",
-        done_at: "ts",
-        due_at: "ts",
-        closed_at: "ts",
-      }),
-      // Her crowdfunding goals, the pledges to them and the bounties from her purse.
-      table("goals", GOALS_TABLE, "node", "created_at", "created_at, id", {
-        id: "text",
-        title: "text",
-        promise: "text",
-        target: "num",
-        status: "text",
-        created_at: "ts",
-        deadline: "ts",
-        closed_at: "ts",
-        fulfilled_at: "ts",
-        fulfilled_by: "text",
-      }),
-      table("goal_pledges", PLEDGES_TABLE, "node", "created_at", "created_at, id", {
-        id: "text",
-        goal_id: "text",
-        account_id: "text",
-        amount: "num",
-        created_at: "ts",
-      }),
-      table("bounties", BOUNTIES_TABLE, "node", "created_at", "created_at, id", {
-        id: "text",
-        task: "text",
-        reward: "num",
-        hold_entry: "text",
-        status: "text",
-        created_at: "ts",
-        expires_at: "ts",
-        closed_at: "ts",
-        winner_account_id: "text",
-      }),
-      // Economy 2.0: collection items, predictions and bets, commissions, her room.
-      table("economy_docs", DOCS_TABLE, "node", "updated_at", "created_at, kind, id", {
-        kind: "text",
-        id: "text",
-        owner_account_id: "text",
-        status: "text",
-        version: "num",
-        data: "json",
-        created_at: "ts",
-        updated_at: "ts",
-      }),
-    ],
-    { modules: ["social", "agent"] },
-  ),
-  category("call_names", [{ kind: "call_names", id: "call_names" }], {
-    modules: ["social", "agent"],
-    confirm: "simple",
-  }),
-  category(
-    "inner",
-    // @miyoria/heart/self `STATE_KEY`, `FEELING_PREFIX`; @miyoria/heart/mind's thought journal and its
-    // digests (`THOUGHT_PREFIX`, `DIGEST_PREFIX`), her goals and plan state (`GOAL_PREFIX`,
-    // `GOAL_MIGRATION_KEY` and `PLAN_STATE_KEY` under `mind:plan:`)
-    [
-      settings("self_state", "active", ["self:state"]),
-      settings("self_feelings", "active", [], ["self:feeling:"]),
-      settings("self_cards_migration", "active", ["self:cards:migration"]),
-      settings("mind_thoughts", "active", [], ["mind:thought:"]),
-      settings("mind_digests", "active", [], ["mind:digest:"]),
-      settings("mind_goals", "active", [], ["mind:goal:", "mind:plan:"]),
-    ],
-    { modules: ["self", "mind"] },
-  ),
-  // @miyoria/memory/learning `DOC_PREFIX`: her self-organized documents, whatever their shape.
-  category("knowledge", [settings("knowledge_docs", "active", [], ["knowledge:doc:"])], {
-    modules: ["knowledge"],
-  }),
-  // @miyoria/memory/learning `LESSON_PREFIX`, `RUN_PREFIX`, `REFLECT_STATE_KEY`, `FEEDBACK_PREFIX`
-  category(
-    "learning",
-    [
-      settings("lessons", "active", [], ["reflect:lesson:"]),
-      settings("reflections", "active", ["reflect:state"], ["reflect:run:"]),
-      settings("feedback", "active", [], ["feedback:day:"]),
-    ],
-    { modules: ["reflect"], confirm: "simple" },
-  ),
-  // @miyoria/memory/learning `STATE_PREFIX`: her running notes on each conversation (from the log).
-  category(
-    "conversation",
-    [settings("conversation_states", "active", [], ["conversation:state:"])],
-    {
-      modules: ["conversation"],
-      confirm: "simple",
-    },
-  ),
-  // The saved mood of the removed `mood` module (`@miyoria/heart/self` `migrate.ts` reads it).
-  category("mood", [settings("mood", "active", ["mood:last"])], {
-    modules: ["mood"],
-    confirm: "simple",
-  }),
-  category(
-    "messages",
-    [
-      // The chat lines of the event log, exported in the old `message_log` columns (`v_messages`)
-      // with their payload. One database is one character, so every line belongs to this profile.
-      table(
-        "message_log",
-        "events",
-        "node",
-        "at",
-        "seq",
-        {
-          id: "text",
-          type: "text",
-          platform: "text",
-          scope: "text",
-          channel: "text",
-          kind: "text",
-          author_platform: "text",
-          author_id: "text",
-          author_name: "text",
-          text: "text",
-          is_self: "bool",
-          ts: "ts",
-          turn_id: "text",
-          session: "text",
-          person_id: "text",
-          redacted_at: "ts",
-          data: "json",
-        },
-        { where: CHAT_LINES, exportFrom: "v_messages" },
-      ),
-      // @miyoria/memory/memory `WATERMARK_PREFIX`: only ever together with the log.
-      settings("memory_watermarks", "active", [], ["memory_watermark:"]),
-    ],
-    // Her conversation notes are made from the log, and the EventLog repeats what people said:
-    // they go with it.
-    { requires: ["conversation", "event_log"], modules: ["memory", "agent"] },
-  ),
-  category(
-    "decisions",
-    [
-      // Her decisions and how each turn ended, on the event log, exported in the old tables'
-      // columns (`v_decisions`, and `v_turns`: the latest outcome of each turn) with their place.
-      // One database is one character, so every row belongs to this profile. Counted and deleted
-      // as events: a turn whose outcome was written twice counts twice.
-      table(
-        "decision_log",
-        "events",
-        "node",
-        "at",
-        "ts, id",
-        { id: "text", ts: "ts", trace: "json", turn: "text", session: "text" },
-        { where: DECISIONS, exportFrom: "v_decisions" },
-      ),
-      table(
-        "turn_outcomes",
-        "events",
-        "node",
-        "at",
-        "ts, id",
-        { id: "text", ts: "ts", outcome: "text", record: "json", session: "text" },
-        { where: OUTCOMES, exportFrom: "v_turns" },
-      ),
-    ],
-    { confirm: "simple" },
-  ),
-  // The owner's rules: the `directive` plugin's table (`@miyoria/brain/directive` `schema.ts`). One
-  // database is one character, so every rule is this profile's. Deleting them lifts every rule at
-  // once, so the profile id has to be typed.
-  category(
-    "directives",
-    [
-      table("directives", "directive_rules", "node", "created_at", "created_at, id", {
-        id: "text",
-        issuer: "json",
-        authority: "text",
-        scope: "json",
-        effect: "text",
-        text: "text",
-        expires: "ts",
-        source_event: "text",
-        created_at: "ts",
-        revoked_at: "ts",
-        revoked_by: "text",
-      }),
-    ],
-    { modules: ["directive"] },
-  ),
-  // The event log (`events`): what she perceived, decided and said, and the counts of what
-  // compaction removed. One database is one character, so every row belongs to this profile. The
-  // chat lines are `messages`, her decisions and turn outcomes `decisions`, the audit entries and
-  // configuration changes `audit` and the LLM calls `llm_usage`, not here.
-  category(
-    "event_log",
-    [
-      table(
-        "events",
-        "events",
-        "node",
-        "at",
-        "seq",
-        {
-          seq: "num",
-          id: "text",
-          at: "ts",
-          type: "text",
-          v: "num",
-          source: "text",
-          parent: "text",
-          turn: "text",
-          session: "text",
-          space_id: "text",
-          room_id: "text",
-          person_id: "text",
-          account_id: "text",
-          scope: "text",
-          tier: "text",
-          key: "text",
-          data: "json",
-          redacted_at: "ts",
-        },
-        {
-          where: `NOT (${CHAT_LINES} OR ${DECISIONS} OR ${OUTCOMES} OR ${AUDIT} OR ${LLM_CALLS} OR ${CONFIG_CHANGES})`,
-        },
-      ),
-      table("event_rollups", "event_rollups", "node", "last_at", "day, type, source", {
-        day: "ts",
-        type: "text",
-        source: "text",
-        count: "num",
-        first_at: "ts",
-        last_at: "ts",
-      }),
-    ],
-    { modules: ["facts"], confirm: "simple" },
-  ),
-  // @miyoria/brain/arbiter `STATE_KEY` under `STATE_PROFILE` (her ledger: counters, backoff, topics,
-  // greetings), and the old @miyoria/initiative state it replaced
-  category(
-    "initiative",
-    [settings("initiative", "global", ["arbiter:state", "initiative:state"])],
-    {
-      modules: ["arbiter"],
-      confirm: "simple",
-    },
-  ),
-  // The files she makes (`artifacts/`): their records, their share tokens (never the token's hash)
-  // and their blobs' rows, dependents first. Deleting them leaves the bytes on disk to the sweep,
-  // which removes a blob file without a row once it is older than its grace. The inventory's
-  // breakdown is the live artifacts by kind, and `bytes`, the size of every stored blob.
-  category("artifacts", [
-    table("artifact_shares", "artifact_shares", "node", "created_at", "created_at, id", {
-      id: "text",
-      artifact_id: "text",
-      audience: "text",
-      person_id: "text",
-      space_id: "text",
-      mode: "text",
-      event_id: "text",
-      created_at: "ts",
-      expires_at: "ts",
-      revoked_at: "ts",
-      uses: "num",
-      max_uses: "num",
-      last_used_at: "ts",
-    }),
-    table("artifacts", "artifact_items", "node", "created_at", "created_at, id", {
-      id: "text",
-      sha256: "text",
-      size: "num",
-      mime: "text",
-      kind: "text",
-      filename: "text",
-      source: "text",
-      plugin: "text",
-      derived_from: "text",
-      turn: "text",
-      event_id: "text",
-      made_for: "text",
-      origin_session: "text",
-      space_id: "text",
-      room_id: "text",
-      scope: "text",
-      downloadable: "bool",
-      review: "text",
-      created_at: "ts",
-      expires_at: "ts",
-      kept_by: "text",
-      deleted_at: "ts",
-    }),
-    table("artifact_blobs", "artifact_blobs", "node", "stored_at", "stored_at, sha256", {
-      sha256: "text",
-      size: "num",
-      location: "text",
-      stored_at: "ts",
-    }),
-  ]),
-  category(
-    "people",
-    // The `identity` tables (docs/design/v5-data.md §4), dependents first: places name persons
-    // and accounts. Handles are `persons.handle`.
-    [
-      table("link_codes", "link_codes", "node", null, "code_hash", {
-        code_hash: "text",
-        account_id: "text",
-        expires_at: "ts",
-      }),
-      table("space_members", "space_members", "node", "last_seen", "space_id, account_id", {
-        space_id: "text",
-        account_id: "text",
-        nick: "text",
-        roles: "json",
-        joined_at: "ts",
-        left_at: "ts",
-        last_seen: "ts",
-      }),
-      table("sessions", "sessions", "node", "last_at", "key", {
-        key: "text",
-        space_id: "text",
-        room_id: "text",
-        person_id: "text",
-        lane: "text",
-        created_at: "ts",
-        last_at: "ts",
-      }),
-      table("rooms", "rooms", "node", "created_at", "created_at, id", {
-        id: "text",
-        platform: "text",
-        external_id: "text",
-        space_id: "text",
-        parent_id: "text",
-        kind: "text",
-        name: "text",
-        caps: "json",
-        dm_person: "text",
-        created_at: "ts",
-        archived_at: "ts",
-      }),
-      table("spaces", "spaces", "node", "joined_at", "joined_at, id", {
-        id: "text",
-        platform: "text",
-        external_id: "text",
-        name: "text",
-        joined_at: "ts",
-        left_at: "ts",
-      }),
-      table("accounts", "accounts", "node", "last_seen", "person_id, platform, external_id", {
-        id: "text",
-        platform: "text",
-        external_id: "text",
-        person_id: "text",
-        display_name: "text",
-        is_self: "bool",
-        first_seen: "ts",
-        last_seen: "ts",
-        linked_at: "ts",
-        linked_by: "text",
-      }),
-      table("people", "persons", "node", "created_at", "created_at, id", {
-        id: "text",
-        name: "text",
-        handle: "text",
-        prefs: "json",
-        created_at: "ts",
-        merged_into: "text",
-        legacy: "json",
-      }),
-      // V4 kept handles in settings (`handle:<platform>:<id>` under `_global`); a settings store
-      // that is not this database's (tests, fallbacks) still does.
-      settings("handles", "global", [], ["handle:"]),
-    ],
-    {
-      // Relationships, feelings, documents, lessons and feedback are keyed by person; artifacts
-      // name the person they were made for and the place they were made in.
-      requires: ["relationships", "call_names", "inner", "knowledge", "learning", "artifacts"],
-      modules: ["social", "agent", "world", "memory"],
-      shared: true,
-    },
-  ),
-  category(
-    "channels",
-    // @miyoria/brain/agent `MODE_PREFIX`, `ACTIVENESS_PREFIX`
-    [
-      settings("channel_modes", "active", [], ["channel_mode:"]),
-      settings("channel_activeness", "active", [], ["activeness:"]),
-    ],
-    { confirm: "simple" },
-  ),
-  // @miyoria/voice/voice `consentKey` under `CONSENT_PROFILE`, and @miyoria/types
-  // `PRIVACY_PREFIX` under `PRIVACY_PROFILE`: owners still read and write these settings keys,
-  // and the store keeps them in `persons.prefs` (`PrefsSettings`). The settings parts claim the
-  // keys, so no stray row counts as `other_settings`.
-  category(
-    "voice_consent",
-    [
-      prefs("voice_consent", "voice_consent"),
-      settings("voice_consent_keys", "global", [], ["voice_consent:"]),
-    ],
-    { shared: true },
-  ),
-  category(
-    "privacy",
-    [prefs("privacy", "privacy"), settings("privacy_keys", "global", [], ["privacy:"])],
-    { modules: ["world"], shared: true },
-  ),
-  // @miyoria/play/queue `STATE_KEY` under `STATE_PROFILE`
-  category("queue", [settings("queue", "global", ["queue:state"])], {
-    modules: ["queue"],
-    shared: true,
-    confirm: "simple",
-  }),
-  // The `auth` plugin's tables (`@miyoria/auth` `schema.ts`). Assignments name identity's
-  // `accounts.id` and mappings its `spaces.id`; they go with their account or space too.
-  category(
-    "roles",
-    [
-      table("roles", ROLES_TABLE, "node", null, "rank DESC, name", {
-        name: "text",
-        rank: "num",
-        grants: "json",
-        denies: "json",
-        builtin: "bool",
-      }),
-      table("role_assignments", "auth_assignments", "node", "at", "at, account_id, role, scope", {
-        account_id: "text",
-        role: "text",
-        scope: "json",
-        granted_by: "text",
-        at: "ts",
-      }),
-      table("role_mappings", "auth_role_mappings", "node", null, "space_id, platform_role", {
-        space_id: "text",
-        platform_role: "text",
-        role: "text",
-      }),
-      table("node_overrides", "auth_overrides", "node", null, "scope, role, node", {
-        scope: "json",
-        role: "text",
-        node: "text",
-        allow: "bool",
-      }),
-    ],
-    { shared: true },
-  ),
-  // Runtime persona edits (the `config` plugin's `config_persona_overrides`). One database is one
-  // character, so every edit is this profile's.
-  category("persona", [
-    table(
-      "persona_overrides",
-      "config_persona_overrides",
-      "node",
-      "edited_at",
-      "section_key, version",
-      {
-        section_key: "text",
-        version: "num",
-        body: "text",
-        edited_by: "text",
-        edited_at: "ts",
-      },
-    ),
-  ]),
-  // @miyoria/workspace/sandbox `TOOL_KEY_PREFIX`
-  category("proposed_tools", [settings("proposed_tools", "active", [], ["sandbox:tool:"])], {
-    modules: ["sandbox"],
-  }),
-  // @miyoria/plugin-host/ext-host `storageKey`
-  category("extensions", [settings("extension_storage", "active", [], ["ext:"])]),
-  // Module on/off, remembered across restarts: the `enabled` flags of the current config revision.
-  category("module_state", [{ kind: "module_flags", id: "module_state" }], {
-    shared: true,
-    confirm: "simple",
-  }),
-  category("other_settings", [{ kind: "other_settings", id: "other_settings" }]),
-  category(
-    "audit",
-    [
-      // The `audit.*` events, exported in the old `audit_log` columns (`v_audit`).
-      table(
-        "audit_log",
-        "events",
-        "node",
-        "at",
-        "at, id",
-        {
-          id: "text",
-          at: "ts",
-          actor: "text",
-          action: "text",
-          target: "text",
-          detail: "json",
-          ok: "bool",
-        },
-        { where: AUDIT, exportFrom: "v_audit" },
-      ),
-      // Who changed the configuration: a new config revision, a per-place setting.
-      table(
-        "config_changes",
-        "events",
-        "node",
-        "at",
-        "seq",
-        { id: "text", at: "ts", type: "text", data: "json" },
-        { where: CONFIG_CHANGES },
-      ),
-    ],
-    { shared: true, kept: true },
-  ),
-  // Spending, checked against the budget: the `llm.call` events (metadata and cost of each call,
-  // never the prompt or the response), exported in columns (`v_llm_calls`) with their payload.
-  category(
-    "llm_usage",
-    [
-      table(
-        "llm_calls",
-        "events",
-        "node",
-        "at",
-        "seq",
-        {
-          id: "text",
-          at: "ts",
-          call_id: "text",
-          log_day: "text",
-          purpose: "text",
-          module: "text",
-          model: "text",
-          provider: "text",
-          status: "text",
-          error_kind: "text",
-          prompt_tokens: "num",
-          completion_tokens: "num",
-          cached_prompt_tokens: "num",
-          reasoning_tokens: "num",
-          cost_usd: "num",
-          duration_ms: "num",
-          turn: "text",
-          data: "json",
-        },
-        { where: LLM_CALLS, exportFrom: "v_llm_calls" },
-      ),
-    ],
-    { shared: true, kept: true },
-  ),
-  // The panel's logins: `auth_sessions` (`@miyoria/auth`), by the hash of the token. The API
-  // still writes them as settings (`@miyoria/api` `STORE_PREFIX` under `STORE_PROFILE`), which
-  // the auth plugin routes to its table; a store without it keeps them as settings rows, which
-  // the settings part claims.
-  category(
-    "panel_sessions",
-    [
-      table("panel_sessions", "auth_sessions", "node", "created_at", "token_hash", {
-        token_hash: "text",
-        platform: "text",
-        external_id: "text",
-        name: "text",
-        avatar_url: "text",
-        tier: "text",
-        created_at: "ts",
-        expires_at: "ts",
-      }),
-      settings("panel_session_keys", "global", [], ["panel_session:"]),
-    ],
-    { shared: true, kept: true, exportable: false },
-  ),
-];
-
-const BY_ID = new Map(DATA_CATEGORIES.map((c) => [c.id, c]));
-
-export function isDataCategoryId(id: string): id is DataCategoryId {
-  return BY_ID.has(id as DataCategoryId);
-}
-
-export function dataCategory(id: DataCategoryId): DataCategory {
-  const found = BY_ID.get(id);
-  if (!found) throw new StoreError(`unknown data category \`${id}\``);
-  return found;
-}
-
-/** Every category a factory reset deletes (everything but the kept ones). */
-export const RESET_CATEGORIES: readonly DataCategoryId[] = DATA_CATEGORIES.filter(
-  (c) => !c.kept,
-).map((c) => c.id);
-
-/**
- * `ids` plus what they require (transitively), in registry order. Kept categories are refused.
- */
-export function resolveCategories(ids: Iterable<DataCategoryId>): DataCategoryId[] {
-  const want = new Set<DataCategoryId>();
-  const add = (id: DataCategoryId) => {
-    if (want.has(id)) return;
-    const c = dataCategory(id);
-    if (c.kept) throw new StoreError(`data category \`${id}\` is kept and cannot be deleted`);
-    want.add(id);
-    for (const r of c.requires) add(r);
-  };
-  for (const id of ids) add(id);
-  return DATA_CATEGORIES.filter((c) => want.has(c.id)).map((c) => c.id);
-}
-
-/** Modules to stop around deleting `ids`, in registry order, without duplicates. */
-export function categoryModules(ids: Iterable<DataCategoryId>): string[] {
-  const set = new Set(ids);
-  const out: string[] = [];
-  for (const c of DATA_CATEGORIES) {
-    if (!set.has(c.id)) continue;
-    for (const m of c.modules) if (!out.includes(m)) out.push(m);
-  }
-  return out;
 }
 
 // ---- results ------------------------------------------------------------------------------
@@ -1045,16 +413,21 @@ function settingsPartWhere(d: SqlDialect, p: Params, part: SettingsPart) {
   return `${SETTINGS_ROWS} AND ${selectorSql(d, p, part.keys, part.prefixes)}`;
 }
 
+/** What a statement builder needs besides the part. */
+interface PartScope {
+  d: SqlDialect;
+  profile: ProfileId;
+  /** Every settings part of the registry: `other_settings` is what none of them claims. */
+  claimed: readonly SettingsPart[];
+}
+
 /** Settings rows no settings part claims. */
-function otherSettingsWhere(d: SqlDialect, p: Params): string {
-  const parts = DATA_CATEGORIES.flatMap((c) => c.parts).filter(
-    (x): x is SettingsPart => x.kind === "settings",
-  );
+function otherSettingsWhere(s: PartScope, p: Params): string {
   const known = selectorSql(
-    d,
+    s.d,
     p,
-    parts.flatMap((x) => x.keys),
-    parts.flatMap((x) => x.prefixes),
+    s.claimed.flatMap((x) => x.keys),
+    s.claimed.flatMap((x) => x.prefixes),
   );
   return `${SETTINGS_ROWS} AND NOT ${known}`;
 }
@@ -1083,27 +456,27 @@ function prefsWhere(part: PrefsPart): string {
 }
 
 /** Count and last update of a part: one row `{ n, at }`. */
-export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): Stmt {
+function countStmt(s: PartScope, part: DataPart): Stmt {
   const p = new Params();
   switch (part.kind) {
     case "table": {
       const at = part.updated === null ? "NULL" : `MAX(${part.updated})`;
-      const sql = `SELECT COUNT(*) AS n, ${at} AS at FROM ${part.table} ${tableWhere(p, part, profile)}`;
+      const sql = `SELECT COUNT(*) AS n, ${at} AS at FROM ${part.table} ${tableWhere(p, part, s.profile)}`;
       return { sql, params: p.values };
     }
     case "settings":
       return {
-        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM plugin_state WHERE ${settingsPartWhere(d, p, part)}`,
+        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM plugin_state WHERE ${settingsPartWhere(s.d, p, part)}`,
         params: p.values,
       };
     case "call_names":
       return {
-        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM relationships WHERE profile_id = ${p.add(profile)} AND call_name IS NOT NULL`,
+        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM relationships WHERE profile_id = ${p.add(s.profile)} AND call_name IS NOT NULL`,
         params: p.values,
       };
     case "other_settings":
       return {
-        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM plugin_state WHERE ${otherSettingsWhere(d, p)}`,
+        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM plugin_state WHERE ${otherSettingsWhere(s, p)}`,
         params: p.values,
       };
     case "prefs":
@@ -1114,24 +487,6 @@ export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): St
     case "module_flags":
       return { sql: `SELECT COUNT(*) AS n, MAX(created_at) AS at ${MODULE_FLAGS}`, params: [] };
   }
-}
-
-/** Memories by kind: rows `{ kind, n }`. The whole database's (one character). */
-export function memoryKindsStmt(): Stmt {
-  return {
-    sql: `SELECT kind, COUNT(*) AS n FROM ${MEMORY_TABLE} GROUP BY kind`,
-    params: [],
-  };
-}
-
-/** Live artifacts by kind (rows `{ kind, n }`), and the bytes of every blob (a row of kind `bytes`). */
-export function artifactBreakdownStmt(): Stmt {
-  return {
-    sql:
-      "SELECT kind, COUNT(*) AS n FROM artifact_items WHERE deleted_at IS NULL GROUP BY kind " +
-      "UNION ALL SELECT 'bytes' AS kind, COALESCE(SUM(size), 0) AS n FROM artifact_blobs",
-    params: [],
-  };
 }
 
 const SETTINGS_COLUMNS: Record<string, ExportColumn> = {
@@ -1159,7 +514,8 @@ export function exportSpec(part: DataPart): Readonly<Record<string, ExportColumn
 }
 
 /** The rows of a part, with `exportSpec(part)` columns. */
-export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): Stmt {
+function exportStmt(s: PartScope, part: DataPart): Stmt {
+  const { d, profile } = s;
   const p = new Params();
   // One database is one character: every settings row is exported as the profile's.
   const settingsSelect = () =>
@@ -1185,7 +541,7 @@ export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
       };
     case "other_settings":
       return {
-        sql: `${settingsSelect()} WHERE ${otherSettingsWhere(d, p)} ORDER BY ${d.keyOrder}`,
+        sql: `${settingsSelect()} WHERE ${otherSettingsWhere(s, p)} ORDER BY ${d.keyOrder}`,
         params: p.values,
       };
     case "prefs":
@@ -1205,7 +561,8 @@ export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
  * What deletes (or clears) a part; its row count is the part's count. `null` for the module
  * flags, which the store clears in code (`ModuleFlagsPart`).
  */
-export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): Stmt | null {
+function deleteStmt(s: PartScope, part: DataPart): Stmt | null {
+  const { d, profile } = s;
   const p = new Params();
   switch (part.kind) {
     case "module_flags":
@@ -1224,7 +581,7 @@ export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
       };
     case "other_settings":
       return {
-        sql: `DELETE FROM plugin_state WHERE ${otherSettingsWhere(d, p)}`,
+        sql: `DELETE FROM plugin_state WHERE ${otherSettingsWhere(s, p)}`,
         params: p.values,
       };
     case "prefs":
@@ -1233,47 +590,6 @@ export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
         params: [],
       };
   }
-}
-
-export function seedRoleStmt(d: SqlDialect, role: RoleDefinition): Stmt {
-  return {
-    sql: `INSERT INTO ${ROLES_TABLE} (name, rank, grants, denies, builtin) VALUES ($1, $2, $3, $4, $5)`,
-    params: [role.name, role.rank, d.list(role.grants), d.list(role.denies), d.bool(role.builtin)],
-  };
-}
-
-/**
- * The statements of a wipe, in order, each with the part it counts toward (`null`: not
- * counted). Parts are deleted in reverse registry order, so dependents go first. A `null`
- * statement is the module flags' part, which the store clears in code.
- */
-export function wipeStatements(
-  d: SqlDialect,
-  profile: ProfileId,
-  ids: readonly DataCategoryId[],
-  options: WipeOptions = {},
-  has: PartPresent = everyPart,
-): { part: string | null; stmt: Stmt | null }[] {
-  const out: { part: string | null; stmt: Stmt | null }[] = [];
-  const resolved = resolveCategories(ids);
-  const set = new Set(resolved);
-  // Clearing categories first (`call_names`, a person's choices): they clear a column of rows
-  // another category may delete next (`relationships`, `people`). `people` last: other
-  // categories' rows name its accounts and spaces, and a plugin's go with them (role
-  // assignments), which would leave those categories nothing to count.
-  const rank = (id: DataCategoryId) =>
-    dataCategory(id).parts.some(clears) ? 0 : id === "people" ? 2 : 1;
-  const ordered = [...resolved].sort((a, b) => rank(a) - rank(b));
-  for (const id of ordered) {
-    for (const part of dataCategory(id).parts) {
-      if (has(part)) out.push({ part: part.id, stmt: deleteStmt(d, part, profile) });
-    }
-  }
-  if (set.has("roles") && dataCategory("roles").parts.every(has)) {
-    for (const role of options.seedRoles ?? [])
-      out.push({ part: null, stmt: seedRoleStmt(d, role) });
-  }
-  return out;
 }
 
 /** One `{ n, at }` row as a part's inventory. */
@@ -1288,7 +604,7 @@ export function partInventory(id: string, row: Record<string, unknown> | undefin
 
 /** Sums parts into a category's inventory. */
 export function categoryInventory(
-  category: DataCategory,
+  category: Pick<DataCategory, "id">,
   parts: PartInventory[],
   breakdown: Record<string, number> | null = null,
 ): CategoryInventory {
@@ -1316,89 +632,148 @@ export function exportPartRow(part: DataPart, row: Record<string, unknown>): Jso
   return out;
 }
 
-/** Exportable categories among `ids` (kept ones included, panel sessions not). */
-export function exportCategories(ids: Iterable<DataCategoryId>): DataCategoryId[] {
-  const set = new Set(ids);
-  return DATA_CATEGORIES.filter((c) => set.has(c.id) && c.exportable).map((c) => c.id);
-}
-
-// ---- backend-independent reads --------------------------------------------------------------
-
-export type RunQuery = (stmt: Stmt) => Promise<Record<string, unknown>[]>;
-
-/**
- * Whether a part's tables exist in the database. A plugin that is not installed has no tables:
- * its parts count nothing, export nothing and delete nothing.
- */
-export type PartPresent = (part: DataPart) => boolean;
-
-const everyPart: PartPresent = () => true;
-
-/** `PartPresent` over the names of the database's tables and views. */
-export function partPresent(names: ReadonlySet<string>): PartPresent {
-  return (part) =>
-    part.kind !== "table" ||
-    (names.has(part.table) && (part.exportFrom === null || names.has(part.exportFrom)));
-}
-
-export async function readInventory(
-  d: SqlDialect,
-  query: RunQuery,
-  profile: ProfileId,
-  now: Timestamp,
-  has: PartPresent = everyPart,
-): Promise<DataInventory> {
-  const categories: CategoryInventory[] = [];
-  for (const c of DATA_CATEGORIES) {
-    const parts: PartInventory[] = [];
-    for (const part of c.parts) {
-      const rows = has(part) ? await query(countStmt(d, part, profile)) : [];
-      parts.push(partInventory(part.id, rows[0]));
-    }
-    let breakdown: Record<string, number> | null = null;
-    if (c.id === "memories" || c.id === "artifacts") {
-      breakdown = {};
-      // A plugin that is not installed has no tables, and nothing to break down.
-      const installed = c.parts.every(has);
-      const stmt = c.id === "memories" ? memoryKindsStmt() : artifactBreakdownStmt();
-      for (const row of installed ? await query(stmt) : []) {
-        breakdown[String(row.kind)] = Number(row.n);
-      }
-    }
-    categories.push(categoryInventory(c, parts, breakdown));
-  }
-  return { profile, at: now, categories };
-}
-
-export async function readExport(
-  d: SqlDialect,
-  query: RunQuery,
-  profile: ProfileId,
-  ids: readonly DataCategoryId[],
-  now: Timestamp,
-  has: PartPresent = everyPart,
-): Promise<DataExport> {
-  for (const id of ids) dataCategory(id);
-  const categories = exportCategories(ids);
-  const parts: Record<string, JsonObject[]> = {};
-  for (const id of categories) {
-    for (const part of dataCategory(id).parts) {
-      const rows = has(part) ? await query(exportStmt(d, part, profile)) : [];
-      parts[part.id] = rows.map((row) => exportPartRow(part, row));
-    }
-  }
-  return {
-    format: DATA_EXPORT_FORMAT,
-    version: 1,
-    profile,
-    exported_at: now,
-    categories,
-    parts,
-  };
-}
-
 /** Adds one statement's row count to its part. */
 export function addCount(counts: WipeCounts, part: string | null, n: number): void {
   if (part === null) return;
   counts[part] = (counts[part] ?? 0) + n;
+}
+
+export type RunQuery = (stmt: Stmt) => Promise<Record<string, unknown>[]>;
+
+/** A step of a wipe: its statement and the part it counts toward (`null`: not counted). */
+export interface WipeStep {
+  part: string | null;
+  /** `null`: the module flags' part, which the store clears in code. */
+  stmt: Stmt | null;
+}
+
+// ---- the registry ---------------------------------------------------------------------------
+
+/**
+ * The categories as the declarations of a store's schemas make them up: every category of the
+ * catalog, with the parts the declarations give it (none, for a category whose schemas are not
+ * installed).
+ */
+export class DataRegistry {
+  /** Every category, in catalog order. */
+  readonly categories: readonly DataCategory[];
+  readonly #declarations: readonly CategoryData[];
+  readonly #byId: ReadonlyMap<DataCategoryId, DataCategory>;
+  readonly #settings: readonly SettingsPart[];
+
+  /** `declarations` in order; a category's parts are in the order they are declared. */
+  constructor(declarations: readonly CategoryData[]) {
+    const parts = new Map<DataCategoryId, DataPart[]>();
+    const ids = new Set<string>();
+    for (const declared of declarations) {
+      categorySpec(declared.category);
+      for (const part of declared.parts) {
+        if (ids.has(part.id)) throw new StoreError(`data part \`${part.id}\` is declared twice`);
+        ids.add(part.id);
+      }
+      parts.set(declared.category, [...(parts.get(declared.category) ?? []), ...declared.parts]);
+    }
+    this.#declarations = [...declarations];
+    this.categories = CATEGORY_SPECS.map((c) => ({ ...c, parts: parts.get(c.id) ?? [] }));
+    this.#byId = new Map(this.categories.map((c) => [c.id, c]));
+    this.#settings = this.categories
+      .flatMap((c) => c.parts)
+      .filter((x): x is SettingsPart => x.kind === "settings");
+  }
+
+  category(id: DataCategoryId): DataCategory {
+    const found = this.#byId.get(id);
+    if (!found) throw new StoreError(`unknown data category \`${id}\``);
+    return found;
+  }
+
+  #scope(d: SqlDialect, profile: ProfileId): PartScope {
+    return { d, profile, claimed: this.#settings };
+  }
+
+  async inventory(
+    d: SqlDialect,
+    query: RunQuery,
+    profile: ProfileId,
+    now: Timestamp,
+  ): Promise<DataInventory> {
+    const s = this.#scope(d, profile);
+    const categories: CategoryInventory[] = [];
+    for (const c of this.categories) {
+      const parts: PartInventory[] = [];
+      for (const part of c.parts) {
+        parts.push(partInventory(part.id, (await query(countStmt(s, part)))[0]));
+      }
+      let breakdown: Record<string, number> | null = null;
+      for (const declared of this.#declarations) {
+        if (declared.category !== c.id || declared.breakdown === undefined) continue;
+        breakdown ??= {};
+        for (const row of await query(declared.breakdown)) {
+          const kind = String(row.kind);
+          breakdown[kind] = (breakdown[kind] ?? 0) + Number(row.n);
+        }
+      }
+      categories.push(categoryInventory(c, parts, breakdown));
+    }
+    return { profile, at: now, categories };
+  }
+
+  async export(
+    d: SqlDialect,
+    query: RunQuery,
+    profile: ProfileId,
+    ids: readonly DataCategoryId[],
+    now: Timestamp,
+  ): Promise<DataExport> {
+    for (const id of ids) this.category(id);
+    const s = this.#scope(d, profile);
+    const categories = exportCategories(ids);
+    const parts: Record<string, JsonObject[]> = {};
+    for (const id of categories) {
+      for (const part of this.category(id).parts) {
+        const rows = await query(exportStmt(s, part));
+        parts[part.id] = rows.map((row) => exportPartRow(part, row));
+      }
+    }
+    return {
+      format: DATA_EXPORT_FORMAT,
+      version: 1,
+      profile,
+      exported_at: now,
+      categories,
+      parts,
+    };
+  }
+
+  /**
+   * The statements of a wipe of `ids` and what they require, in order. Clearing categories come
+   * first (`call_names`, a person's choices): they clear a column of rows another category may
+   * delete next (`relationships`, `people`). `people` last: other categories' rows name its
+   * accounts and spaces, and a plugin's go with them (role assignments), which would leave those
+   * categories nothing to count. Then each wiped category's `refill`.
+   */
+  wipeStatements(
+    d: SqlDialect,
+    profile: ProfileId,
+    ids: readonly DataCategoryId[],
+    options: WipeOptions = {},
+  ): WipeStep[] {
+    const s = this.#scope(d, profile);
+    const resolved = resolveCategories(ids);
+    const set = new Set(resolved);
+    const wiped = this.#declarations.filter((x) => set.has(x.category));
+    const rank = (id: DataCategoryId) =>
+      this.category(id).parts.some(clears) ? 0 : id === "people" ? 2 : 1;
+    const ordered = [...resolved].sort((a, b) => rank(a) - rank(b));
+    const out: WipeStep[] = [];
+    for (const id of ordered) {
+      for (const part of this.category(id).parts) {
+        out.push({ part: part.id, stmt: deleteStmt(s, part) });
+      }
+    }
+    for (const declared of wiped) {
+      for (const stmt of declared.refill?.(d, options) ?? []) out.push({ part: null, stmt });
+    }
+    return out;
+  }
 }

@@ -13,6 +13,7 @@
 
 import {
   accounts,
+  type CategoryData,
   type Db,
   EconomyPosted,
   type EconomyPostedData,
@@ -21,6 +22,7 @@ import {
   persons,
   StoreError,
   type StorePlugin,
+  tablePart,
   toMicros,
 } from "@miyoria/store";
 import {
@@ -1080,6 +1082,104 @@ export interface EconomyTables {
   readonly docs: DocTables;
 }
 
+/**
+ * The economy's parts of the `relationships` category: coins come from being with her, so the
+ * wallet goes with the relationship, not with a forget. The whole database's (one character). The
+ * ledger is by person (no foreign key); a wallet row goes with its person, and what names an
+ * account with the account.
+ */
+const economyData: readonly CategoryData[] = [
+  {
+    category: "relationships",
+    parts: [
+      tablePart("coin_ledger", "economy_ledger", "node", "ts", "seq", {
+        id: "text",
+        person_id: "text",
+        delta: "num",
+        reason: "text",
+        ref: "text",
+        idem_key: "text",
+        ts: "ts",
+      }),
+      tablePart("coin_wallets", "economy_wallets", "node", "updated_at", "person_id", {
+        person_id: "text",
+        frame: "text",
+        off_board: "bool",
+        updated_at: "ts",
+      }),
+      // The fortune slips she wrote for them, kept like their cards.
+      tablePart("fortunes", "economy_fortunes", "node", "issued_at", "issued_at, id", {
+        id: "text",
+        account_id: "text",
+        person_id: "text",
+        day: "num",
+        issued_at: "ts",
+        entry_id: "text",
+        slip: "json",
+      }),
+      // Deals are promises between her and a member, kept like the wallet. By identity's
+      // `accounts.id`; they go with the account too.
+      tablePart("deals", "economy_deals", "node", "created_at", "created_at, id", {
+        id: "text",
+        account_id: "text",
+        reward_item: "text",
+        reward_count: "num",
+        reward_value: "num",
+        task: "text",
+        prepaid: "bool",
+        escrow_entry: "text",
+        status: "text",
+        created_at: "ts",
+        done_at: "ts",
+        due_at: "ts",
+        closed_at: "ts",
+      }),
+      // Her crowdfunding goals, the pledges to them and the bounties from her purse.
+      tablePart("goals", "economy_goals", "node", "created_at", "created_at, id", {
+        id: "text",
+        title: "text",
+        promise: "text",
+        target: "num",
+        status: "text",
+        created_at: "ts",
+        deadline: "ts",
+        closed_at: "ts",
+        fulfilled_at: "ts",
+        fulfilled_by: "text",
+      }),
+      tablePart("goal_pledges", "economy_goal_pledges", "node", "created_at", "created_at, id", {
+        id: "text",
+        goal_id: "text",
+        account_id: "text",
+        amount: "num",
+        created_at: "ts",
+      }),
+      tablePart("bounties", "economy_bounties", "node", "created_at", "created_at, id", {
+        id: "text",
+        task: "text",
+        reward: "num",
+        hold_entry: "text",
+        status: "text",
+        created_at: "ts",
+        expires_at: "ts",
+        closed_at: "ts",
+        winner_account_id: "text",
+      }),
+      // Economy 2.0: collection items, predictions and bets, commissions, her room.
+      tablePart("economy_docs", "economy_docs", "node", "updated_at", "created_at, kind, id", {
+        kind: "text",
+        id: "text",
+        owner_account_id: "text",
+        status: "text",
+        version: "num",
+        data: "json",
+        created_at: "ts",
+        updated_at: "ts",
+      }),
+    ],
+  },
+];
+
 /** The `economy` plugin's tables and code (`StorePlugin`). */
 export const economyTables: StorePlugin<EconomyTables> = {
   schema: economySchema,
@@ -1091,4 +1191,5 @@ export const economyTables: StorePlugin<EconomyTables> = {
     bounties: new BountyTables(db, identity),
     docs: new DocTables(db, identity),
   }),
+  data: economyData,
 };

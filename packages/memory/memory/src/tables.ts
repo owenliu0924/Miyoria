@@ -14,6 +14,7 @@
 // merge is one `Db.tx` (a savepoint inside a caller's).
 
 import type {
+  CategoryData,
   Db,
   MemoryFilter,
   MemoryHit,
@@ -23,7 +24,7 @@ import type {
   PrunePolicy,
   StorePlugin,
 } from "@miyoria/store";
-import { StoreError, toMicros } from "@miyoria/store";
+import { StoreError, tablePart, toMicros } from "@miyoria/store";
 import type { PersonId, ProfileId, Timestamp } from "@miyoria/types";
 import { and, desc, eq, getColumns, isNull, lt, type SQL, sql } from "drizzle-orm";
 import { integer, sqliteTable } from "drizzle-orm/sqlite-core";
@@ -588,8 +589,43 @@ export class MemoryTables implements MemoryRecordStore {
   }
 }
 
+/**
+ * The `memories` category's records, broken down by kind. The whole database's (one character):
+ * its rows name people only inside `subjects`, with no foreign key, so nothing cascades from
+ * identity.
+ */
+const memoryData: readonly CategoryData[] = [
+  {
+    category: "memories",
+    parts: [
+      tablePart("memory_records", "memory_records", "node", "updated_at", "created_at, id", {
+        id: "text",
+        kind: "text",
+        scope: "json",
+        subjects: "json",
+        content: "text",
+        importance: "num",
+        confidence: "num",
+        created_at: "ts",
+        updated_at: "ts",
+        last_accessed: "ts",
+        access_count: "num",
+        source_context: "json",
+        source: "json",
+        origin: "text",
+        source_events: "json",
+        due: "ts",
+        done: "bool",
+        superseded_by: "text",
+      }),
+    ],
+    breakdown: { sql: "SELECT kind, COUNT(*) AS n FROM memory_records GROUP BY kind", params: [] },
+  },
+];
+
 /** The memory records as a plugin of the store: Core opens the store with it (`STORE_PLUGINS`). */
 export const memoryTables: StorePlugin<MemoryTables> = {
   schema: memorySchema,
   open: ({ db }) => new MemoryTables(db),
+  data: memoryData,
 };
