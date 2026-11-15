@@ -9,7 +9,10 @@ import {
 } from "../src/index.js";
 
 // These tests publish made-up topics.
-exemptFromBusCheck(["custom.a", "custom.b", "x.1", "x.2", "y.1", "t"]);
+exemptFromBusCheck(["ext.custom.a", "ext.custom.b", "ext.x.1", "ext.x.2", "ext.y.1", "ext.t"]);
+
+// A made-up topic is published under the extension namespace (`ext.**`).
+const ext = (type: string) => ({ type });
 
 describe("TopicFilter", () => {
   it("topic_filter", () => {
@@ -27,33 +30,38 @@ describe("TopicFilter", () => {
 describe("EventBus", () => {
   it("subscription_filters", async () => {
     const bus = new EventBus();
-    const sub = bus.subscribe(new TopicFilter(["custom.b"]));
-    for (const topic of ["custom.a", "custom.b"]) bus.publish("test", customEvent(topic, null));
+    const sub = bus.subscribe(new TopicFilter(["ext.custom.b"]));
+    for (const topic of ["ext.custom.a", "ext.custom.b"]) {
+      bus.publish("test", Events.ExtensionEvent, null, ext(topic));
+    }
     const env = await sub.recv();
-    expect(env?.event).toEqual(customEvent("custom.b", null));
+    expect(env).toMatchObject({ type: "ext.custom.b", data: null });
   });
 
   it("delivers in order to every subscriber, also to a waiting one", async () => {
     const bus = new EventBus();
     const a = bus.subscribe("*");
-    const b = bus.subscribe(["x.*"]);
+    const b = bus.subscribe(["ext.x.*"]);
     const waiting = b.recv();
-    bus.publish("m", customEvent("x.1", 1));
-    bus.publish("m", customEvent("y.1", 2), { correlation: "01JC0000000000000000000000" });
-    bus.publish("m", customEvent("x.2", 3));
-    expect((await waiting)?.event.data).toMatchObject({ topic: "x.1" });
-    expect((await b.recv())?.event.data).toMatchObject({ topic: "x.2" });
+    bus.publish("m", Events.ExtensionEvent, 1, ext("ext.x.1"));
+    bus.publish("m", Events.ExtensionEvent, 2, {
+      type: "ext.y.1",
+      turn: "01JC0000000000000000000000",
+    });
+    bus.publish("m", Events.ExtensionEvent, 3, ext("ext.x.2"));
+    expect((await waiting)?.type).toBe("ext.x.1");
+    expect((await b.recv())?.type).toBe("ext.x.2");
     const seen = [];
-    for (let i = 0; i < 3; i++) seen.push((await a.recv())?.correlation);
+    for (let i = 0; i < 3; i++) seen.push((await a.recv())?.turn);
     expect(seen).toEqual([null, "01JC0000000000000000000000", null]);
   });
 
   it("drops the oldest events of a lagging subscriber", async () => {
     const bus = new EventBus({ capacity: 2 });
     const sub = bus.subscribe("*");
-    for (const n of [1, 2, 3]) bus.publish("m", customEvent("t", n));
+    for (const n of [1, 2, 3]) bus.publish("m", Events.ExtensionEvent, n, ext("ext.t"));
     const first = await sub.recv();
-    expect(first?.event).toEqual(customEvent("t", 2));
+    expect(first).toMatchObject({ type: "ext.t", data: 2 });
   });
 
   it("closing ends iteration; an aborted signal closes the subscription", async () => {
@@ -62,9 +70,9 @@ describe("EventBus", () => {
     const sub = bus.subscribe("*", { signal: controller.signal });
     const seen: unknown[] = [];
     const loop = (async () => {
-      for await (const env of sub) seen.push(env.event.data);
+      for await (const env of sub) seen.push(env.data);
     })();
-    bus.publish("m", customEvent("t", 1));
+    bus.publish("m", Events.ExtensionEvent, 1, ext("ext.t"));
     await Promise.resolve();
     controller.abort();
     await loop;
@@ -98,7 +106,6 @@ describe("publishing by definition", () => {
     expect(a).toBe(published);
     expect(a?.data).toBe(data);
     expect(a).toMatchObject({ type: "stage.error", source: "stage", turn: "t1", parent: "p1" });
-    expect(a?.event).toEqual(customEvent("stage.error", data));
     expect(b).toMatchObject({ type: "worklane.task.failed", source: "worklane", data: failed });
     expect(is(Events.TaskFailed, b as Envelope)).toBe(true);
     expect(is(Events.PlatformTyping, a as Envelope)).toBe(false);

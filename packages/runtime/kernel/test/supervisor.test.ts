@@ -1,4 +1,4 @@
-import { type Envelope, type ModuleStateKind, serviceKey } from "@miyoria/types";
+import { type Envelope, Events, is, type ModuleStateKind, serviceKey } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../src/index.js";
 
 // A made-up topic.
-exemptFromBusCheck(["custom.hello"]);
+exemptFromBusCheck(["ext.hello"]);
 
 class TestModule implements Module {
   starts = 0;
@@ -259,15 +259,15 @@ describe("Supervisor", () => {
       async start(ctx) {
         const cfg = ctx.config(ConfigSchema);
         ctx.provide(Key, { value: cfg.value });
-        const sub = ctx.subscribe("custom.*");
+        const sub = ctx.subscribe("ext.*");
         ctx.spawn("listen", async (signal) => {
           taskSignal = signal;
           for await (const env of sub) seen.push(env);
         });
-        ctx.publish(
-          { type: "custom", data: { topic: "custom.hello", payload: cfg.value } },
-          { turn: "01JC0000000000000000000000" },
-        );
+        ctx.publish(Events.ExtensionEvent, cfg.value, {
+          type: "ext.hello",
+          turn: "01JC0000000000000000000000",
+        });
       },
     };
     const consumer: Module = {
@@ -283,7 +283,7 @@ describe("Supervisor", () => {
     await sup.startAll();
     expect(state(sup, "consumer")).toBe("running");
     expect(seen[0]?.source).toBe("provider");
-    expect(seen[0]?.correlation).toBe("01JC0000000000000000000000");
+    expect(seen[0]?.turn).toBe("01JC0000000000000000000000");
 
     await sup.disable("provider");
     expect(taskSignal?.aborted).toBe(true);
@@ -329,9 +329,9 @@ describe("Supervisor", () => {
     await sup.stopAll();
     const states: string[] = [];
     for (let env = sub.tryRecv(); env; env = sub.tryRecv()) {
-      if (env.event.type === "module_state_changed") {
+      if (is(Events.SystemModuleState, env)) {
         expect(env.source).toBe("kernel");
-        states.push(env.event.data.state);
+        states.push(env.data.state);
       }
     }
     expect(states).toEqual([

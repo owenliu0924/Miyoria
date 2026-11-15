@@ -1,4 +1,4 @@
-import { customEvent } from "@miyoria/types";
+import { Events } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   EventBus,
@@ -97,9 +97,9 @@ describe("metrics", () => {
     const r = new MetricsRegistry();
     const bus = new EventBus({ capacity: 1, metrics: r });
     const sub = bus.subscribe("*");
-    bus.publish("test", customEvent("voice.latency", null));
-    bus.publish("test", customEvent("voice.utterance", null));
-    bus.publish("test", customEvent("llm.budget", null));
+    bus.publish("test", Events.VoiceLatency, null as never);
+    bus.publish("test", Events.VoiceUtteranceEvent, null as never);
+    bus.publish("test", Events.LlmBudget, null as never);
     const published = r.counter("miyoria_bus_events_published_total", {
       help: "",
       labels: ["prefix"],
