@@ -140,7 +140,7 @@ class Harness {
     this.exec = new FakeExecutor((event) => this.sup.bus.publish("ext.miyoria.minecraft", event));
     this.executors = new FakeExecutors(this.exec);
     this.queue = new RequestQueue(undefined, {
-      publisher: (event) => this.sup.bus.publish("queue", event),
+      publisher: this.sup.bus.publisher("queue"),
     });
     // Her commentary: a proposal on the board (narration), or an impulse of source `game` for
     // the Arbiter (what she has to say).

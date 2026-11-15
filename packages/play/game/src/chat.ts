@@ -35,10 +35,11 @@ import {
   type ContextKey,
   contextKeyEquals,
   contextKeyString,
-  customEvent,
   type Envelope,
+  Events,
   inspectInput,
   inVoice,
+  is,
   isJsonObject,
   isLive,
   type JsonValue,
@@ -73,7 +74,7 @@ export const REPLY_ROUTES = ["auto", "chat", "voice", "both"] as const;
 export type ReplyRoute = (typeof REPLY_ROUTES)[number];
 
 /** Topic of link outcomes (`{game, account, outcome}`), for the panel / tests. */
-export const LINK_TOPIC = "game.chat.link";
+export const LINK_TOPIC = Events.GameChatLink.type;
 
 /** `[modules."game.chat"]`. */
 export const GameChatConfigSchema = z.object({
@@ -220,26 +221,21 @@ export class GameChat implements ChatHandled {
 
   /** Bus events: game chat, her voice channels, the stream state. */
   onEvent(env: Envelope): void {
-    const event = env.event;
-    switch (event.type) {
-      case "voice_joined":
-      case "voice_participants":
-        if (!this.#voices.some((v) => contextKeyEquals(v, event.data.context))) {
-          this.#voices.push(event.data.context);
-        }
-        return;
-      case "voice_left":
-        this.#voices = this.#voices.filter((v) => !contextKeyEquals(v, event.data.context));
-        return;
-      case "custom": {
-        this.#live.onEvent(env);
-        const { topic, payload } = event.data;
-        const m = /^game\.([a-z0-9_-]{1,32})\.chat$/.exec(topic);
-        if (m?.[1] && this.handles(m[1])) this.#onChat(m[1], payload);
-        return;
+    if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+      if (!this.#voices.some((v) => contextKeyEquals(v, env.data.context))) {
+        this.#voices.push(env.data.context);
       }
-      default:
-        return;
+      return;
+    } else if (is(Events.VoiceLeft, env)) {
+      this.#voices = this.#voices.filter((v) => !contextKeyEquals(v, env.data.context));
+      return;
+    } else {
+      this.#live.onEvent(env);
+      const topic = env.type;
+      const payload = env.data as JsonValue;
+      const m = /^game\.([a-z0-9_-]{1,32})\.chat$/.exec(topic);
+      if (m?.[1] && this.handles(m[1])) this.#onChat(m[1], payload);
+      return;
     }
   }
 
@@ -269,17 +265,14 @@ export class GameChat implements ChatHandled {
       context,
     });
     if (verdict?.action === "ignore") return;
-    this.#ctx.publish({
-      type: "platform_message_created",
-      data: {
-        id: { context, id },
-        author: { account, display_name: name, is_bot: false },
-        text,
-        mentions_self: this.#mentionsHer(text),
-        reply_to_self: false,
-        attachments: [],
-        ts: toTimestamp(this.#ctx.clock.now()),
-      },
+    this.#ctx.publish(Events.PlatformMessageCreated, {
+      id: { context, id },
+      author: { account, display_name: name, is_bot: false },
+      text,
+      mentions_self: this.#mentionsHer(text),
+      reply_to_self: false,
+      attachments: [],
+      ts: toTimestamp(this.#ctx.clock.now()),
     });
   }
 
@@ -319,7 +312,7 @@ export class GameChat implements ChatHandled {
       }
     }
     this.#ctx.log.info({ game, account: account.id, outcome }, "game account link");
-    this.#ctx.publish(customEvent(LINK_TOPIC, { game, account: account.id, outcome }));
+    this.#ctx.publish(Events.GameChatLink, { game, account: account.id, outcome });
     const reply = LINK_REPLY[outcome] ?? LINK_REPLY.unavailable ?? "";
     try {
       await this.#type(game, context, this.#safe(context, `${name} ${reply}`).text, signal);
@@ -502,9 +495,9 @@ export class GameChatModule implements Module {
     for (const game of config.games) {
       sinks?.register(new GameChatSink(game, chat));
       const self = config.username === "" ? "self" : playerId(config.username);
-      ctx.publish({
-        type: "platform_ready",
-        data: { platform: game, self_account: { platform: game, id: self } },
+      ctx.publish(Events.PlatformReady, {
+        platform: game,
+        self_account: { platform: game, id: self },
       });
     }
     const unregister = actuatorsFor(ctx).register(routeCapability(chat));
@@ -514,9 +507,9 @@ export class GameChatModule implements Module {
 
     const events = ctx.subscribe([
       "game.*",
-      "voice.joined",
-      "voice.left",
-      "voice.participants",
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
       LIVE_TOPICS.golive,
       LIVE_TOPICS.stage,
     ]);

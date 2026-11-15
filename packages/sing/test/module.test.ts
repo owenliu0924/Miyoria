@@ -360,7 +360,7 @@ class Harness {
     if (store) s.provide("store", SettingsStoreKey, store);
     this.registry = new ActuatorRegistry({ services: s, builtins: false });
     this.queue = new RequestQueue(undefined, {
-      publisher: (event) => this.sup.bus.publish("queue", event),
+      publisher: this.sup.bus.publisher("queue"),
     });
     s.provide("app", ActuatorRegistryKey, this.registry);
     s.provide("app", AuthorizerKey, new AllowAll());

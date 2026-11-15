@@ -42,7 +42,7 @@ export class QueueModule implements Module {
     const queue = new RequestQueue(config, {
       social: ctx.services.get(SocialSignalsKey) ?? null,
       store: ctx.services.get(SettingsStoreKey) ?? null,
-      publisher: (event) => ctx.publish(event),
+      publisher: ctx.publisher,
       clock: ctx.clock,
     });
     try {

@@ -10,12 +10,14 @@ import {
 import {
   ACTIVITY_CHANGED_TOPIC,
   type ActivitySnapshot,
+  type BusEvent,
   type ContextKey,
-  type Event,
   EventLogKey,
+  Events,
   holdsBack,
   incomingText,
   inspectInput,
+  is,
   isJsonObject,
   type JsonValue,
   PartyOverviewKey,
@@ -158,18 +160,18 @@ export class PartyModule implements Module {
     });
 
     const events = ctx.subscribe([
-      "platform.ready",
-      "platform.message.created",
-      "voice.joined",
-      "voice.left",
-      "voice.participants",
-      "voice.utterance",
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
+      Events.VoiceUtteranceEvent.type,
       ACTIVITY_CHANGED_TOPIC,
     ]);
     ctx.spawn("events", async () => {
       for await (const env of events) {
         try {
-          this.#onEvent(ctx, table, env.event);
+          this.#onEvent(ctx, table, env);
         } catch (error) {
           log.warn({ err: errorMessage(error) }, "party event failed");
         }
@@ -178,48 +180,32 @@ export class PartyModule implements Module {
     this.#running = { table, prompts, capabilities };
   }
 
-  #onEvent(ctx: ModuleContext, table: Table, event: Event): void {
-    switch (event.type) {
-      case "platform_ready":
-        table.self(event.data.self_account);
-        return;
-      case "voice_joined":
-      case "voice_participants":
-        table.members(event.data.context, event.data.participants);
-        return;
-      case "voice_left":
-        table.left(event.data.context);
-        return;
-      case "voice_utterance": {
-        const u = event.data;
-        if (u.speaker.is_bot) return;
-        const speaker = { account: u.speaker.account, name: u.speaker.display_name };
-        this.#heard(
-          ctx,
-          table,
-          u.context,
-          speaker,
-          u.text,
-          u.id,
-          "voice",
-          `voice:utterance:${u.id}`,
-        );
-        return;
-      }
-      case "platform_message_created": {
-        const m = event.data;
-        if (m.author.is_bot || table.session(m.id.context) === null) return;
-        const speaker = { account: m.author.account, name: m.author.display_name };
-        const origin = `msg:${m.id.context.platform}:${m.id.id}`;
-        this.#heard(ctx, table, m.id.context, speaker, incomingText(m), m.id.id, "chat", origin);
-        return;
-      }
-      case "custom":
-        if (event.data.topic === ACTIVITY_CHANGED_TOPIC)
-          this.#onActivity(table, event.data.payload);
-        return;
-      default:
-        return;
+  #onEvent(ctx: ModuleContext, table: Table, event: BusEvent): void {
+    if (is(Events.PlatformReady, event)) {
+      table.self(event.data.self_account);
+      return;
+    } else if (is(Events.VoiceJoined, event) || is(Events.VoiceParticipants, event)) {
+      table.members(event.data.context, event.data.participants);
+      return;
+    } else if (is(Events.VoiceLeft, event)) {
+      table.left(event.data.context);
+      return;
+    } else if (is(Events.VoiceUtteranceEvent, event)) {
+      const u = event.data;
+      if (u.speaker.is_bot) return;
+      const speaker = { account: u.speaker.account, name: u.speaker.display_name };
+      this.#heard(ctx, table, u.context, speaker, u.text, u.id, "voice", `voice:utterance:${u.id}`);
+      return;
+    } else if (is(Events.PlatformMessageCreated, event)) {
+      const m = event.data;
+      if (m.author.is_bot || table.session(m.id.context) === null) return;
+      const speaker = { account: m.author.account, name: m.author.display_name };
+      const origin = `msg:${m.id.context.platform}:${m.id.id}`;
+      this.#heard(ctx, table, m.id.context, speaker, incomingText(m), m.id.id, "chat", origin);
+      return;
+    } else {
+      if (event.type === ACTIVITY_CHANGED_TOPIC) this.#onActivity(table, event.data as JsonValue);
+      return;
     }
   }
 

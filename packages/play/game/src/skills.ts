@@ -4,10 +4,10 @@
 // director (`skill-store.ts`: her skill store, else the settings store through the work lane).
 // Pure apart from the clock values passed in.
 
-import type { GameSkillPayload } from "@miyoria/types";
+import { Events, type GameSkillPayload } from "@miyoria/types";
 
 /** Topic of a learned skill, `Skill`. */
-export const SKILL_TOPIC = "game.director.skill";
+export const SKILL_TOPIC = Events.GameDirectorSkill.type;
 
 /** A method sequence that worked (contract: `GameSkillSchema`). */
 export type Skill = GameSkillPayload;

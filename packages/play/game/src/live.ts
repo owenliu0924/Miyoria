@@ -1,10 +1,13 @@
 // Whether she is streaming, from the bus: Discord Go Live (`voice.golive`) in any guild, or OBS
 // (`stage.status`).
 
-import { type Envelope, isJsonObject } from "@miyoria/types";
+import { type BusEvent, Events, isJsonObject, type JsonValue } from "@miyoria/types";
 
 /** Topics `LiveState` reads. */
-export const LIVE_TOPICS = { golive: "voice.golive", stage: "stage.status" } as const;
+export const LIVE_TOPICS = {
+  golive: Events.VoiceGoLive.type,
+  stage: Events.StageStatus.type,
+} as const;
 
 export class LiveState {
   readonly #golive = new Map<string, string>();
@@ -18,9 +21,9 @@ export class LiveState {
     return false;
   }
 
-  onEvent(env: Envelope): void {
-    if (env.event.type !== "custom") return;
-    const { topic, payload } = env.event.data;
+  onEvent(env: BusEvent): void {
+    const topic = env.type;
+    const payload = env.data as JsonValue;
     const data = isJsonObject(payload) ? payload : {};
     if (topic === LIVE_TOPICS.golive && typeof data.state === "string") {
       const guild = typeof data.guild === "string" ? data.guild : "";

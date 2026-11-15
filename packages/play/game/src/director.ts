@@ -13,18 +13,18 @@ import { errorMessage, getLogger, type ModuleContext, withTimeout } from "@miyor
 import {
   type AccountRef,
   ActivityManagerKey,
-  ARBITER_IMPULSE_TOPIC,
   type ContextKey,
   contextKeyEquals,
   contextKeyString,
-  customEvent,
   type DirectorTracePayload,
   type DrivenWork,
   dataBlock,
   type Envelope,
+  Events,
   escapeData,
   type GoalEndPayload,
   gameTaskOwner,
+  is,
   type JsonObject,
   type JsonValue,
   newId,
@@ -44,7 +44,6 @@ import {
   type TaskId,
   type Timestamp,
   toTimestamp,
-  v2Event,
   WorkEndedError,
   WorkLaneKey,
 } from "@miyoria/types";
@@ -83,7 +82,7 @@ import { MethodGuard, methodKey, normalizeItem } from "./methods.js";
 import { type About, eventKey, goalKey, isNoted, matchesEvent, Narration } from "./narration.js";
 import { type Attempt, AttemptRecord, type AttemptResult, attemptLine } from "./record.js";
 import { SkillShelf } from "./skill-store.js";
-import { SKILL_TOPIC, type Skill, SkillBook } from "./skills.js";
+import { type Skill, SkillBook } from "./skills.js";
 import {
   budgetFor,
   codeOf,
@@ -103,7 +102,7 @@ const log = getLogger("game");
 const RESUMED_BY: AccountRef = { platform: "core", id: "resume" };
 
 /** Topic of the director's decision traces (for the panel / overlay). */
-export const DECISION_TOPIC = "game.director.decision";
+export const DECISION_TOPIC = Events.GameDirectorDecision.type;
 /** Initiative reason of commentary requests. */
 export const INITIATIVE_REASON = "game";
 /**
@@ -112,12 +111,12 @@ export const INITIATIVE_REASON = "game";
  * itself also carries `code` (`disconnected`, `crashed`) and `reason`; the ActivityManager turns
  * that into `failed(code)`.
  */
-export const SESSION_TOPIC = "game.director.session";
+export const SESSION_TOPIC = Events.GameDirectorSession.type;
 /**
  * Topic of a goal that ended, `GoalEnd`: every goal completion and failure carries a code
  * (`done` / `reported` when reached, a `TaskFailureCode` or `gave_up` when not).
  */
-export const GOAL_TOPIC = "game.director.goal";
+export const GOAL_TOPIC = Events.GameDirectorGoal.type;
 
 /** Why a goal ended. */
 export type GoalEndCode =
@@ -1074,15 +1073,13 @@ export class Director {
     s: Session,
     end: { code: TaskFailureCode; reason: string } | null = null,
   ): void {
-    this.#ctx.publish(
-      customEvent(SESSION_TOPIC, {
-        state,
-        game: s.game,
-        game_name: s.gameName,
-        context: { ...s.context },
-        ...(end !== null ? { code: end.code, reason: end.reason } : {}),
-      }),
-    );
+    this.#ctx.publish(Events.GameDirectorSession, {
+      state,
+      game: s.game,
+      game_name: s.gameName,
+      context: { ...s.context },
+      ...(end !== null ? { code: end.code, reason: end.reason } : {}),
+    });
   }
 
   /**
@@ -1188,52 +1185,41 @@ export class Director {
 
   onEvent(env: Envelope): void {
     if (this.#closed || env.source === this.#ctx.id) return;
-    const event = env.event;
-    switch (event.type) {
-      case "voice_joined":
-      case "voice_participants":
-        if (!this.#voices.some((v) => contextKeyEquals(v, event.data.context))) {
-          this.#voices.push(event.data.context);
-        }
-        break;
-      case "voice_left":
-        this.#voices = this.#voices.filter((v) => !contextKeyEquals(v, event.data.context));
-        break;
-      case "module_state_changed": {
-        // An extension that stopped or crashed takes the adapter's executor with it.
-        const s = this.#session;
-        const { module, state } = event.data;
-        if (s && module.startsWith("ext.") && (state === "failed" || state === "stopped")) {
-          if (!this.#executor(s.game)) {
-            this.#end("crashed", `遊戲的擴充套件停止了(${module})`);
-          }
-        }
-        break;
+    if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+      if (!this.#voices.some((v) => contextKeyEquals(v, env.data.context))) {
+        this.#voices.push(env.data.context);
       }
-      case "custom": {
-        const { topic, payload } = event.data;
-        if (topic === "queue.item_activated") {
-          this.#onQueueItem(payload);
-        } else {
-          const s = this.#session;
-          if (!s) return;
-          const owner = gameTaskOwner(s.game);
-          const task = parseTaskTopic(topic);
-          if (task !== null) {
-            if (task.owner !== owner) return;
-            const e = parseTaskEvent(payload);
-            if (e !== null) this.#onTask(e);
-            break;
-          }
-          const prefix = `${owner}.`;
-          if (!topic.startsWith(prefix)) return;
-          const kind = asObject(payload)?.type;
-          this.#onGameEvent(typeof kind === "string" ? kind : topic.slice(prefix.length), payload);
+    } else if (is(Events.VoiceLeft, env)) {
+      this.#voices = this.#voices.filter((v) => !contextKeyEquals(v, env.data.context));
+    } else if (is(Events.SystemModuleState, env)) {
+      // An extension that stopped or crashed takes the adapter's executor with it.
+      const s = this.#session;
+      const { module, state } = env.data;
+      if (s && module.startsWith("ext.") && (state === "failed" || state === "stopped")) {
+        if (!this.#executor(s.game)) {
+          this.#end("crashed", `遊戲的擴充套件停止了(${module})`);
         }
-        break;
       }
-      default:
-        return;
+    } else if (is(Events.QueueItemActivated, env)) {
+      this.#onQueueItem(env.data as JsonValue);
+    } else {
+      // Task events of her game and its adapter's events; nothing else she follows passes here.
+      const topic = env.type;
+      const payload = env.data as JsonValue;
+      const s = this.#session;
+      if (!s) return;
+      const owner = gameTaskOwner(s.game);
+      const task = parseTaskTopic(topic);
+      if (task !== null) {
+        if (task.owner !== owner) return;
+        const e = parseTaskEvent(payload);
+        if (e !== null) this.#onTask(e);
+      } else {
+        const prefix = `${owner}.`;
+        if (!topic.startsWith(prefix)) return;
+        const kind = asObject(payload)?.type;
+        this.#onGameEvent(typeof kind === "string" ? kind : topic.slice(prefix.length), payload);
+      }
     }
     this.#refreshView();
     this.#arm();
@@ -1617,7 +1603,7 @@ export class Director {
       at: toTimestamp(this.#now()),
       attention_key: goalKey(goal.text, goal.action),
     };
-    this.#ctx.publish(customEvent(GOAL_TOPIC, end as unknown as JsonValue));
+    this.#ctx.publish(Events.GameDirectorGoal, end);
     if (goal.source.type === "queue") {
       const queue = this.#ctx.services.get(RequestQueueKey);
       if (queue) {
@@ -1668,7 +1654,7 @@ export class Director {
       at: this.#now(),
     };
     if (this.#skills.learn(skill)) {
-      this.#ctx.publish(customEvent(SKILL_TOPIC, skill as unknown as JsonValue));
+      this.#ctx.publish(Events.GameDirectorSkill, skill);
       this.#saveSkills(s.game);
     }
   }
@@ -1783,7 +1769,7 @@ export class Director {
       },
       now,
     );
-    this.#ctx.publish(v2Event(ARBITER_IMPULSE_TOPIC, impulse));
+    this.#ctx.publish(Events.ArbiterImpulse, impulse);
     return true;
   }
 
@@ -1794,14 +1780,12 @@ export class Director {
   }
 
   #nudge(m: MoodNudge): void {
-    this.#ctx.publish(
-      customEvent("mood.nudge", {
-        valence: m.valence,
-        arousal: m.arousal,
-        energy: m.energy,
-        reason: m.reason,
-      }),
-    );
+    this.#ctx.publish(Events.MoodNudge, {
+      valence: m.valence,
+      arousal: m.arousal,
+      energy: m.energy,
+      reason: m.reason,
+    });
   }
 
   // ----- decisions -----
@@ -1874,7 +1858,7 @@ export class Director {
       want: null,
       held: s.methods.lines(this.#now()),
     };
-    this.#ctx.publish(customEvent(DECISION_TOPIC, trace as unknown as JsonValue));
+    this.#ctx.publish(Events.GameDirectorDecision, trace);
     return this.#actWork(s, action, verdict, plan.goal, null, true);
   }
 
@@ -2032,7 +2016,7 @@ export class Director {
       want: proposedWant,
       held: cur.methods.lines(now),
     };
-    this.#ctx.publish(customEvent(DECISION_TOPIC, trace as unknown as JsonValue));
+    this.#ctx.publish(Events.GameDirectorDecision, trace);
     if (!decision.action || !verdict) return null;
     if (verdict.type === "keep") {
       log.debug({ action: decision.action.display(), why: verdict.why }, "kept the current goal");

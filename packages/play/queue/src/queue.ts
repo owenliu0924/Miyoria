@@ -2,11 +2,12 @@ import { errorMessage, getLogger, interval, SerialQueue } from "@miyoria/runtime
 import type { SettingsStore } from "@miyoria/store";
 import {
   type AccountRef,
+  type AnyEventDefinition,
   type Clock,
-  customEvent,
-  type Event,
+  Events,
   type JsonObject,
   type JsonValue,
+  type Publish,
   type SocialSignals,
   systemClock,
   timestampMs,
@@ -36,7 +37,13 @@ export const STATE_PROFILE = "_global";
 export const STATE_KEY = "queue:state";
 
 /** Receives the queue's events (the module publishes them on the bus). */
-export type Publisher = (event: Event) => void;
+export type Publisher = Publish;
+
+/** One event a mutation publishes once it is applied. */
+interface QueueEvent {
+  definition: AnyEventDefinition;
+  data: JsonValue;
+}
 
 /** A new item and where it stands. */
 export interface Submitted {
@@ -224,12 +231,12 @@ function closeVote(st: State, now: number): VoteResult | null {
 /** What a mutation did: events to publish after it. */
 interface Change<R> {
   value: R;
-  events: Event[];
+  events: QueueEvent[];
   changed: boolean;
 }
 
 const none = <R>(value: R): Change<R> => ({ value, events: [], changed: false });
-const changed = <R>(value: R, ...events: Event[]): Change<R> => ({
+const changed = <R>(value: R, ...events: QueueEvent[]): Change<R> => ({
   value,
   events,
   changed: true,
@@ -344,10 +351,10 @@ export class RequestQueue {
       target.state = "active";
       const activated = structuredClone(target);
       setServed(st, activated.requester, servedOf(st, activated.requester) + 1);
-      return changed<QueueItem | null>(
-        activated,
-        customEvent("queue.item_activated", itemJson(activated, null)),
-      );
+      return changed<QueueItem | null>(activated, {
+        definition: Events.QueueItemActivated,
+        data: itemJson(activated, null),
+      });
     });
   }
 
@@ -568,14 +575,17 @@ export class RequestQueue {
 
   #finishVote(st: State, now: number): Change<VoteResult> {
     const result = closeVote(st, now) as VoteResult;
-    const event = customEvent("queue.vote_result", {
-      options: result.options,
-      tallies: result.tallies,
-      winner: result.winner,
-      winner_option: winnerOption(result),
-      total: result.total,
-      ended_at: result.ended_at,
-    });
+    const event: QueueEvent = {
+      definition: Events.QueueVoteResult,
+      data: {
+        options: result.options,
+        tallies: result.tallies,
+        winner: result.winner,
+        winner_option: winnerOption(result),
+        total: result.total,
+        ended_at: result.ended_at,
+      },
+    };
     const winner = winnerOption(result);
     if (this.config.vote_enqueue_winner && winner !== null) {
       push(
@@ -676,9 +686,9 @@ export class RequestQueue {
     return change.value;
   }
 
-  #emit(events: Event[]): void {
+  #emit(events: QueueEvent[]): void {
     if (!this.#publisher) return;
-    for (const event of events) this.#publisher(event);
+    for (const event of events) this.#publisher(event.definition, event.data);
   }
 
   #affinity(account: AccountRef): number {
@@ -770,7 +780,7 @@ export class RequestQueue {
     return out;
   }
 
-  #changedEvent(st: State): Event {
+  #changedEvent(st: State): QueueEvent {
     const items = this.#listing(st).map(([it, place]) => itemJson(it, place));
     const payload: JsonObject = { items, paused: st.paused };
     if (st.vote) {
@@ -782,7 +792,7 @@ export class RequestQueue {
         ends_at: st.vote.ends_at,
       };
     }
-    return customEvent("queue.changed", payload);
+    return { definition: Events.QueueChanged, data: payload };
   }
 }
 

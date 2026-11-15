@@ -1,5 +1,14 @@
 import { MemorySettingsStore } from "@miyoria/store";
-import type { AccountRef, Attitude, Clock, Event, JsonValue, SocialSignals } from "@miyoria/types";
+import {
+  type AccountRef,
+  type Attitude,
+  type Clock,
+  type Event,
+  type JsonValue,
+  publishInto,
+  publishVia,
+  type SocialSignals,
+} from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   guessKind,
@@ -362,7 +371,7 @@ describe("RequestQueue events", () => {
     const publisher = (event: Event): void => {
       if (event.type === "custom") events.push([event.data.topic, event.data.payload]);
     };
-    const q = queueWith(cfg(), new TestClock()).withPublisher(publisher);
+    const q = queueWith(cfg(), new TestClock()).withPublisher(publishVia(publisher));
     q.submit(req("a", "唱歌"));
     q.pause();
     q.pause(); // no change, no event
@@ -402,7 +411,7 @@ describe("RequestQueue events", () => {
 
   it("item_json_shape_matches_the_overlay_contract", () => {
     const events: Event[] = [];
-    const q = queueWith(cfg(), new TestClock()).withPublisher((e) => events.push(e));
+    const q = queueWith(cfg(), new TestClock()).withPublisher(publishInto(events));
     q.submit({
       ...req("a", "x"),
       context: { platform: "discord", scope: "1", channel: "2", kind: "channel" },

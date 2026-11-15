@@ -6,6 +6,7 @@ import {
   type AccountRef,
   ActivityManagerKey,
   type ContextKey,
+  Events,
   GameResumeKey,
   isLive,
   type PromptContributor,
@@ -223,13 +224,13 @@ export class GameModule implements Module {
 
     const events = ctx.subscribe([
       "game.*",
-      "queue.item_activated",
-      "voice.joined",
-      "voice.left",
-      "voice.participants",
+      Events.QueueItemActivated.type,
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
       LIVE_TOPICS.golive,
       LIVE_TOPICS.stage,
-      "system.module.state",
+      Events.SystemModuleState.type,
     ]);
     ctx.spawn("director", async () => {
       try {
