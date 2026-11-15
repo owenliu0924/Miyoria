@@ -25,9 +25,15 @@ what = "主唱與伴唱分離模型(BS-RoFormer karaoke,放在 becruily-bs/;沒�
 path = "workers/models/vocal-split"
 what = "人聲分離模型(MelBandRoformer.ckpt 和 .yaml;沒有就退回 Demucs)"
 
+# The worker refuses to start without these two, whichever voice chain is used
+# (workers/sing/engine.py).
 [[install.manual]]
 path = "workers/models/seed-vc"
-what = "Seed-VC 原始碼(只有 seedvc 轉換鏈用得到)"
+what = "Seed-VC 原始碼(啟動時一定要有;換位置設 SING_SEEDVC_DIR)"
+
+[[install.manual]]
+path = "workers/voices/deepseek-chan/ref.wav"
+what = "翻唱用的參考聲音(啟動時一定要有;換成別的檔案、清單或資料夾設 SING_REF)"
 
 [run]
 command = ["{python}", "server.py"]
