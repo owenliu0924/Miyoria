@@ -4,7 +4,7 @@
 // the series starts when the `api` module started.
 
 import { type MetricFamily, metrics } from "@miyoria/runtime/kernel";
-import { type Envelope, eventTopic, MindKey, SelfStateKey, toTimestamp } from "@miyoria/types";
+import { type BusEvent, Events, is, MindKey, SelfStateKey, toTimestamp } from "@miyoria/types";
 import { os } from "./contract.js";
 import { countOf } from "./extract.js";
 import type { ApiState } from "./state.js";
@@ -18,11 +18,11 @@ const DEFAULT_MINUTES = 6 * 60;
 
 /** Topics counted per sample, by the key they get in `TelemetryPoint.events`. */
 export const TELEMETRY_TOPICS: Readonly<Record<string, string>> = {
-  "platform.message.created": "messages",
-  "agent.turn.completed": "turns",
-  "agent.initiative": "initiatives",
-  "voice.utterance": "utterances",
-  "action.completed": "actions",
+  [Events.PlatformMessageCreated.type]: "messages",
+  [Events.AgentTurnCompleted.type]: "turns",
+  [Events.AgentInitiative.type]: "initiatives",
+  [Events.VoiceUtteranceEvent.type]: "utterances",
+  [Events.ActionCompleted.type]: "actions",
 };
 
 const FIRST_TOKEN = "miyoria_llm_first_token_seconds";
@@ -85,11 +85,11 @@ export class Telemetry {
   constructor(private readonly max = MAX_POINTS) {}
 
   /** Counts a bus envelope toward the next sample. */
-  handle(env: Envelope): void {
-    const key = TELEMETRY_TOPICS[eventTopic(env.event)];
+  handle(env: BusEvent): void {
+    const key = TELEMETRY_TOPICS[env.type];
     if (!key) return;
     // A turn she ended in silence, or that new messages cancelled, is no reply.
-    if (env.event.type === "agent_turn_completed" && env.event.data.text.trim() === "") return;
+    if (is(Events.AgentTurnCompleted, env) && env.data.text.trim() === "") return;
     this.#counts[key] = (this.#counts[key] ?? 0) + 1;
   }
 

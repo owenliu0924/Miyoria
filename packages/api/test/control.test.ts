@@ -195,11 +195,12 @@ describe("telemetry", () => {
       }),
     } as never);
     const t = new Telemetry(3);
-    t.handle({ event: { type: "platform_message_created" } } as never);
-    t.handle({ event: { type: "custom", data: { topic: "voice.latency" } } } as never);
+    // What the counter reads: the envelope's type, and the text of a completed turn.
+    t.handle({ type: "platform.message.created", v: 1 } as never);
+    t.handle({ type: "voice.latency", v: 1 } as never);
     // Only turns where she said something count as replies.
     const turn = (text: string) =>
-      t.handle({ event: { type: "agent_turn_completed", data: { turn: "t", text } } } as never);
+      t.handle({ type: "agent.turn.completed", v: 1, data: { turn: "t", text } } as never);
     turn("好啊");
     turn("");
     turn("  ");

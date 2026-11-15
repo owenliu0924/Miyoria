@@ -23,6 +23,7 @@ import {
   accountRefString,
   type Envelope,
   isJsonObject,
+  type JsonValue,
   type KnownName,
   ModerationKey,
   parseSongCue,
@@ -237,8 +238,8 @@ export class PublicStats {
 
   /** A bus envelope: a song she sang to the end counts. */
   handle(env: Envelope, now: number): void {
-    if (env.event.type !== "custom" || env.event.data.topic !== SONG_TOPIC) return;
-    const cue = parseSongCue(env.event.data.payload);
+    if (env.type !== SONG_TOPIC) return;
+    const cue = parseSongCue(env.data as JsonValue);
     if (cue?.state !== "ended" || cue.outcome !== "finished") return;
     this.#roll(now);
     this.#songs += 1;
