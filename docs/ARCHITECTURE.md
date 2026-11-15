@@ -129,21 +129,31 @@ export interface Module {
 ### 2.4 事件匯流排
 
 ```ts
-// @miyoria/types
-export interface Envelope {
+// 形狀定義在 @miyoria/contracts/events(BusEnvelopeSchema),型別由 @miyoria/types 轉出
+export interface BusEnvelope {
   id: EventId;                  // ULID
-  ts: Timestamp;                // RFC 3339
-  source: ModuleId;
-  causation: EventId | null;    // 由哪個事件引起
-  correlation: TurnId | null;   // 同一個「回合」貫穿整條鏈,方便追蹤
-  event: Event;                 // { type, data } 的 union
+  at: Timestamp;                // RFC 3339
+  type: string;                 // 事件的名字,例如 "platform.message.created"
+  v: number;                    // data 的版本
+  parent: EventId | null;       // 由哪個事件引起
+  turn: TurnId | null;          // 同一個「回合」貫穿整條鏈,方便追蹤
+  session: string | null;       // 場所:discord:<guild>:<channel>、discord:dm:<person>、home
+  space_id: string | null;
+  room_id: string | null;
+  person_id: PersonId | null;   // 做這件事的人
+  account_id: string | null;
+  key: string | null;           // 去重用的 key,例如 msg:discord:<id>
+  scope: EventScope | null;     // null:用這個型別的預設
+  source: ModuleId;             // 匯流排蓋上的發布者
+  data: unknown;                // 依 type 的 schema
 }
 ```
 
-- 程序內:`@miyoria/runtime/kernel` 的 `EventBus`,依 topic 過濾(`"*"`、`"prefix.*"`、完整名稱);每個訂閱者有自己的緩衝,落後太多就丟最舊的。事件是 tagged union,依主題分(`platform.*`、`voice.*`、`agent.*`、`stage.*`、`game.*`、`system.*`)。
+- 程序內:`@miyoria/runtime/kernel` 的 `EventBus`,依 topic 過濾(`"*"`、`"prefix.*"`、完整名稱);每個訂閱者有自己的緩衝,落後太多就丟最舊的。
+- 每個事件型別在 `@miyoria/contracts/events` 有一個定義(名字、版本、`data` 的 schema),集中登記在 `BUS_EVENTS`;`@miyoria/types` 把它們轉出成 `Events`。發布和讀取都用定義:`ctx.publish(Events.X, data)`、`is(Events.X, env)`。測試可以打開檢查(`MIYORIA_BUS_CHECK=strict`),發布沒登記的型別或不合 schema 的 `data` 就失敗。
 - 跨節點:voice link / stage link 只送各自協定定義的訊息,不轉送整條匯流排。
-- 擴充套件:JSON 序列化後轉送,依權限過濾 topic。
-- 事件類型集中定義在 `@miyoria/types`;`@miyoria/sdk` 帶一份給擴充用的對應型別。
+- 離開程序的地方送的是同一個信封的 JSON:管理 API 的事件串流(`GET /api/events`)、給擴充套件的通知(協定第 2 版,依權限過濾)、重播紀錄的每一行。擴充自己的事件放在 `ext.<擴充 id>.` 底下。
+- 存進資料庫的事件(`events` 表)是同一個信封再加上 `seq`、保留等級和遮蔽時間,見 [v5-data.md](design/v5-data.md)。
 
 ---
 

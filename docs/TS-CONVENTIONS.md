@@ -208,9 +208,9 @@ export class SchedulerModule implements Module {
     const sinks = ctx.services.require(PlatformSinksKey);      // throws ServiceUnavailableError
     const sub = ctx.subscribe(["platform.*", "agent.turn.completed"]); // closed on stop
     ctx.spawn("events", async (signal) => {
-      for await (const env of sub) { /* env.event is the Event union; narrow on .type */ }
+      for await (const env of sub) { /* narrow with is(Events.X, env); env.data is then typed */ }
     });
-    ctx.publish(customEvent("scheduler.ready", null), { turn: null });
+    ctx.publish(Events.ActionSettled, settled, { turn: action.turn });
   }
 
   async stop(): Promise<void> { /* optional; runs before tasks are aborted */ }
@@ -227,7 +227,10 @@ export class SchedulerModule implements Module {
   Every transition is published as `system.module.state` from source `kernel`. Never call the
   supervisor from inside `start` / `stop` (deadlock); from tasks is fine. The app provides it
   as `SupervisorKey` for admin modules.
-- `EventBus`: `publish(source, event, { correlation, causation })`, `subscribe(filter)`
+- `EventBus`: `publish(source, Events.X, data, { turn, parent, ... })` (a module uses
+  `ctx.publish(Events.X, data, meta)`; every type is a definition in `@miyoria/contracts/events`,
+  re-exported as `Events` by `@miyoria/types`; `is(Events.X, env)` narrows `env.data`),
+  `subscribe(filter)`
   (`"*"`, `"prefix.*"`, exact; string or list) → `Subscription` (`for await`, `recv()`,
   `tryRecv()`, `close()`); per-subscriber buffer of 4096, oldest dropped on lag.
 
