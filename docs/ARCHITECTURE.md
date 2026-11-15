@@ -60,10 +60,10 @@ flowchart LR
 
 | 節點 | 執行檔 | 責任 | 部署 |
 |---|---|---|---|
-| **Core** | `miyoria core` | 大腦:kernel、事件匯流排、agent、記憶、社交、排程、平台 adapter(文字)、Admin API、擴充宿主 | Server 上 Docker,或本機 |
-| **Stage** | `miyoria stage` | 「身體」:VTube Studio 控制與嘴型、OBS 控制、音訊播放、overlay(擴充和 game adapter 由 Core 的擴充宿主跑,不在 Stage 上) | 直播機原生執行(要直接碰 VTS/OBS/遊戲,不放 Docker) |
-| **Worker** | `workers/`(Python FastAPI)或第三方服務 | GPU 推論:ASR、TTS、(可選)本地 LLM、嵌入。Core 用 HTTP 呼叫它們 | 有 GPU 的機器;可 Docker |
-| **Self voice node** | `apps/voice-node`(TS / Node) | 用 self 帳號登入 Discord:進語音、分別接收每個人的音訊、播放 TTS、Go Live 推流。不處理文字 | 放在直播機,跟 ASR/TTS 與 OBS 同一台 |
+| **Core** | `miyoria up`(hostd 啟動);`miyoria core` 是前景跑一個 | 大腦:kernel、事件匯流排、agent、記憶、社交、排程、平台 adapter(文字)、Admin API、擴充宿主 | Server 上 Docker,或本機 |
+| **Stage** | `miyoria up`(hostd 啟動);`miyoria stage` 是前景跑一個 | 「身體」:VTube Studio 控制與嘴型、OBS 控制、音訊播放、overlay(擴充和 game adapter 由 Core 的擴充宿主跑,不在 Stage 上) | 直播機原生執行(要直接碰 VTS/OBS/遊戲,不放 Docker) |
+| **Worker** | `workers/`(Python FastAPI,hostd 啟動)或第三方服務 | GPU 推論:ASR、TTS、翻唱,和 CPU 的 turn / lyrics、(可選)本地 LLM、嵌入。Core 用 HTTP 呼叫它們 | 有 GPU 的機器;可 Docker |
+| **Self voice node** | `apps/voice-node`(TS / Node),hostd 啟動 | 用 self 帳號登入 Discord:進語音、分別接收每個人的音訊、播放 TTS、Go Live 推流。不處理文字 | 放在直播機,跟 ASR/TTS 與 OBS 同一台 |
 
 部署型態(步驟見 [OPERATIONS.md](OPERATIONS.md) §2):
 
@@ -81,7 +81,22 @@ flowchart LR
 | Extension ↔ 宿主 | **JSON-RPC 2.0** over stdio(只有 stdio;擴充是 Core 啟動的子行程) | 跟 LSP/MCP 同模式,TS 寫起來最簡單,與語言無關 |
 | Agent ↔ 外部工具 | **MCP**(`@modelcontextprotocol/sdk`) | 生態系現成工具 |
 
-節點認證:目前用共用 token(`VOICE_LINK_TOKEN`、`STAGE_LINK_TOKEN`,由 `miyoria init` 產生,節點與 Core 的 `.env` 填同一個);之後可以加一次性配對碼。斷線自動重連;節點在 `hello` 裡回報 **capabilities**(例如 `vts`、`obs`、`overlay`),Core 記下來給管理面板看。
+節點認證:共用 token(`VOICE_LINK_TOKEN`、`STAGE_LINK_TOKEN`,由 `miyoria init` 產生,Core 的 `.env` 有;已加入 Core 的電腦上,hostd 啟動 voice node 和 Stage 時由 Core 經 hostd 交給它們,不用手動貼)。加入別台電腦用的是一次性邀請碼(§1.3)。斷線自動重連;節點在 `hello` 裡回報 **capabilities**(例如 `vts`、`obs`、`overlay`),Core 記下來給管理面板看。
+
+### 1.3 hostd、登記處和控制連線
+
+每台電腦跑一個管家 **hostd**(`packages/hostd`,`miyoria hostd`,`miyoria up` 會在背景啟動它)。它讀兩種檔:
+
+- `host.toml`:這台電腦跑哪些服務、狀態資料夾、要不要讓別台直接連(`[network]`)、有沒有加入某個 Core(`[cluster] url`);
+- 每個服務資料夾的 `service.toml`(Core、voice node、Stage、各 worker、MediaMTX 都有):預設埠、健康檢查、怎麼安裝、怎麼啟動、顯示卡估計、她唱歌或直播時能不能被重啟(guard)。
+
+hostd 啟動服務、探測健康、當掉時依退避重啟、輪替日誌,並給每個服務 token(`MIYORIA_SERVICE_TOKEN`);Python worker 對每個請求檢查它(見 [workers/README.md](../workers/README.md))。`miyoria add` 用 uv 建環境;`up`、`down`、`restart`、`status`、`logs` 是對 hostd 說話。
+
+**登記處(endpoint registry)**在 Core 裡,記著「哪個能力(`asr`、`tts`、`sing` ...)在哪裡」。模組不寫死位址,向登記處要某個能力的端點;Core 依 `[modules.cluster.order]` 挑第一個健康的,失敗的先跳過一陣子。端點的來源有三種:這台電腦的 hostd、已加入的別台電腦的 hostd,和設定檔寫死的靜態項目(`[modules.cluster.static.<名字>]`、`speech.*.url` 等,給沒有 hostd 管的服務)。
+
+**控制連線(control link)**是別台電腦加入 Core 的方式:那台的 hostd **主動**撥一條 WebSocket 到 Core 的 `cluster` 模組(預設 `127.0.0.1:7880`,路徑 `/cluster-link`),用 `host.key` 認證。Core 的主人先 `miyoria host invite` 給一次性邀請碼,另一台 `miyoria host join`,Core 的主人再 `miyoria host approve`;核准之前它的服務不會被用。Core 要呼叫那台的服務時,HTTP 請求(包括做好的歌這樣的大檔)走同一條連線回去,所以那台不用開埠;登記處把這種端點標成「經連線」,Core 直接連的標成「直連」。即時語音(ASR、TTS、turn、VAD)只用直連端點,所以那些服務在別台時,那台要設 `[network] advertise`。反方向,別台的服務也能經 hostd 請 Core 代跑:翻唱 worker 問 LLM(`cluster.llm`)、請 ASR 辨識(`cluster.fetch`),金鑰不離開 Core。
+
+設計文件:[design/v5-hostd.md](design/v5-hostd.md)(hostd、`service.toml`、`host.toml`、主機協定、登記處、加入與 token)、[design/v5-contracts.md](design/v5-contracts.md)(契約)、[design/v5-gpu.md](design/v5-gpu.md)(顯示卡仲裁,還沒做完)。操作見 [OPERATIONS.md](OPERATIONS.md) §4。
 
 ---
 
@@ -935,12 +950,17 @@ extensions/minecraft/
 
 | 指令 | 用途 |
 |---|---|
-| `miyoria init` | 互動式設定精靈:LLM base URL / API key / 模型 id、Discord token、擁有者、資料庫、面板登入;寫 `miyoria.toml`、`.env`,複製內建角色到 `profiles/` |
+| `miyoria init` | 互動式設定精靈。第一題問這台電腦做什麼(文字聊天、文字加語音、只提供服務給別台的 Core),再問 LLM base URL / API key / 模型 id、Discord token、擁有者、資料庫、面板登入;寫 `host.toml`、`miyoria.toml`、`.env`,複製內建角色到 `profiles/`(只提供服務的那一項只寫 `host.toml`) |
+| `miyoria add [服務...]` / `remove <服務...>` / `models pull / ls / gc` | 把服務裝進這台電腦(`host.toml`、uv 環境、下載缺的檔案,列出還要自己放的東西)/ 拿掉 / 管理下載的模型 |
+| `miyoria hostd` / `up` / `down` / `restart` | 在前景執行這台電腦的 hostd / 請它啟動 `host.toml` 啟用的服務(hostd 沒在跑就先在背景啟動)/ 停止服務並結束 hostd / 重啟一個服務。她在唱歌或直播時,`restart`、`down`、`remove`、`update` 會拒絕動 Core、voice node 和 Stage,除非 `--force` |
+| `miyoria logs <服務>` | 看一個服務的日誌(`-f` 持續追蹤) |
+| `miyoria update` | `git pull`、安裝相依、重建過期的 SDK / 擴充 / 面板 / overlay / mod、同步過期的 Python 環境、一個一個重啟有變的服務 |
+| `miyoria host invite / join / ls / approve / remove / migrate / autostart` | 電腦之間的連線(邀請碼、加入、核准、移除)、從舊的 `[machine]` / `[stack]` 轉成 `host.toml`、登入時自動啟動 hostd |
 | `miyoria config` / `config list / get / set / unset / edit` | 改設定(不帶子指令時開互動選單) |
-| `miyoria doctor` | 檢查設定檔、角色、LLM、Discord、資料庫連線 |
-| `miyoria core` / `stage` | 啟動 Core 節點 / 直播機上的 Stage 節點 |
+| `miyoria doctor` | 檢查設定檔、角色、LLM、Discord、資料庫連線,和 `host.toml` 啟用的每個服務(環境、系統程式、檔案、模型、hostd、Core 連線);`--deep` 加查埠、健康、顯存、建置,`--fix` 做安全的修復 |
+| `miyoria core` / `stage` | 在前景啟動 Core 節點 / 直播機上的 Stage 節點(平常用 `up` 讓 hostd 啟動) |
 | `miyoria chat` | 終端機 REPL 直接跟她聊天(測試用,不需要 Discord) |
-| `miyoria status` | 執行中 Core 的模組狀態與 LLM 用量 |
+| `miyoria status` | 這台電腦的服務(狀態、健康、埠)和執行中 Core 的模組狀態與 LLM 用量;`--all` 再加 Core 知道的每一台電腦 |
 | `miyoria module list / enable / disable / restart` | 管理子系統 |
 | `miyoria decisions` / `events [topics]` | 決策紀錄 / 即時事件 |
 | `miyoria persona show / set` | 看 / 改執行期的人格段落 |
@@ -948,9 +968,9 @@ extensions/minecraft/
 | `miyoria ext new / list / install / validate / dev` | 擴充開發與管理 |
 | `miyoria discord commands reset` | 刪除 bot 在全域與所有伺服器的斜線指令(清掉重複的舊指令;core 下次啟動會重新註冊) |
 
-之後可能再加:`say`(測試 TTS + 嘴型)、`memory search / forget`、節點配對。資料庫備份 / 還原目前用 `scripts/backup.*`、`scripts/restore.*`(見 OPERATIONS §7)。
+之後可能再加:`say`(測試 TTS + 嘴型)、`memory search / forget`。資料庫備份 / 還原目前用 `scripts/backup.*`、`scripts/restore.*`(見 OPERATIONS §7)。
 
-CLI 透過 Admin API 操作正在跑的 Core,跟 Panel 用同一套權限。
+操作正在跑的 Core 的指令透過 Admin API,跟 Panel 用同一套權限;管服務的指令(`up`、`down`、`restart`、`logs` ...)對這台電腦的 hostd 說話。
 
 ---
 
