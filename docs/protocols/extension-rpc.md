@@ -197,6 +197,7 @@ agent 組 prompt 時,對每個已註冊的 prompt key 送出。逾時 `prompt_ti
 
 1. `type` 要是具體的 topic(點分隔、每段 `[a-z0-9_-]`),否則 `-32602`。
 2. 被任何內建定義涵蓋的型別**一律拒絕**(`-32001`),即使在自己的命名空間裡:例如 `platform.message.created`、`gate.decision`、`game.director.goal`,以及 `ext.<id>.task.done`、`game.<id>.task.*`(被任務事件的 family `**.task.*` 涵蓋;任務事件只能經 `task.event` 由宿主檢查後發佈)。
+   - 例外只有兩個,是設計給遊戲和擴充用的輸入:`self.nudge`(推她的慾望)和 `self.feel`(推她的情緒)。權限 `events` 裡有符合的 pattern(例如 `self.nudge`)才可以發,`data` 一樣要過 schema;每次的幅度由 self 模組限制。
 3. `game.<遊戲 id>.…`:只有宣告了這個遊戲的 game adapter 可以(不需要 `events` 權限,見〈Game adapter〉);別人即使有 `events = ["game.*"]` 也是 `-32001`。
 4. `ext.<id>.…`(自己的命名空間)永遠可以;其他型別要符合權限 `events` 的某個 pattern(例如 `ext.other.*` 讓它發佈到另一個擴充的命名空間,`source` 仍是自己),否則 `-32001`。
 5. **沒有人登錄的型別**(協定 1 的自訂 topic,例如 `custom.thing`)回 `-32602`:匯流排上的每個事件都要有登錄的 schema。擴充自己的事件放在 `ext.<id>.` 底下就有(`ext.**`),payload 任意 JSON。

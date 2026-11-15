@@ -6,7 +6,10 @@
 // to extensions (`ExtensionEvent`, `ext.**`, and `GameAdapterEvent`, `game.*.*`); every other
 // definition, fixed or family, is a built-in event, and an extension may never publish a type one
 // of them covers (`platform.message.created`, `gate.decision`, `ext.<id>.task.done`, which the
-// task families cover: task events come from `task.event` and the host's checks). Outside that:
+// task families cover: task events come from `task.event` and the host's checks). Two built-in
+// events are the exception: `self.nudge` and `self.feel` are inputs meant for games and
+// extensions (docs/design/autonomy.md), so one of them may be published with a granted `events`
+// pattern that matches it. Outside that:
 //
 // - `ext.<own id>.…` is always allowed;
 // - `game.<own game>.…` is allowed for the adapter that declares that game, and no one else;
@@ -24,6 +27,8 @@ import {
   ExtensionEvent,
   familyCovers,
   GameAdapterEvent,
+  SelfFeel,
+  SelfNudge,
 } from "@miyoria/contracts/events";
 import type { TopicFilter } from "@miyoria/runtime/kernel";
 import type { BusEnvelope, JsonValue } from "@miyoria/types";
@@ -40,9 +45,17 @@ export const OPEN_EVENT_NAMESPACES: readonly AnyEventDefinition[] = [
   GameAdapterEvent,
 ];
 
+/**
+ * Built-in events that are inputs meant for games and extensions: a nudge to her drives and one
+ * to her emotions (the self module caps each). An extension publishes one only with a granted
+ * `events` pattern that matches it; the payload is checked like any other.
+ */
+export const EXTENSION_INPUT_EVENTS: readonly AnyEventDefinition[] = [SelfNudge, SelfFeel];
+
 /** Every other definition: built-in events, which no extension may publish. */
 const BUILT_IN: readonly AnyEventDefinition[] = REGISTRY.list().filter(
-  (definition) => !OPEN_EVENT_NAMESPACES.includes(definition),
+  (definition) =>
+    !OPEN_EVENT_NAMESPACES.includes(definition) && !EXTENSION_INPUT_EVENTS.includes(definition),
 );
 
 /** The built-in definition that covers `type` (its own or a family's), or `null`. */

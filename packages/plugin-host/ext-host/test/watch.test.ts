@@ -95,6 +95,20 @@ describe("extension", () => {
       data: { type: "death" },
     });
     expect(code("ext.friend.x")).toBe(0);
+    // The two built-in inputs meant for games and extensions: only with a grant, and checked.
+    expect(code("self.nudge", { play: 0.2 })).toBe(-32001);
+    expect(code("self.feel", { emotion: "joy", amount: 0.2 })).toBe(-32001);
+    const granted = { ...who, grants: new TopicFilter(["self.*", "gate.*"]) };
+    expect(resolvePublish(granted, "self.nudge", { play: 0.2, reason: "won" })).toMatchObject({
+      definition: { type: "self.nudge" },
+      data: { play: 0.2, reason: "won" },
+    });
+    expect(resolvePublish(granted, "self.feel", { emotion: "joy", amount: 0.2 })).toMatchObject({
+      definition: { type: "self.feel" },
+    });
+    expect(() => resolvePublish(granted, "self.nudge", { play: "a lot" } as never)).toThrow();
+    // A grant never opens any other built-in event.
+    expect(() => resolvePublish(granted, "gate.decision", {} as never)).toThrow(/built-in/);
     expect(code("game.osu.death", { important: true })).toBe(-32602);
     expect(code("custom.thing")).toBe(-32602);
     expect(code("Bad Type")).toBe(-32602);
