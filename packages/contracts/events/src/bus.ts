@@ -17,6 +17,7 @@ import { LlmBudget, LlmCall } from "./llm.js";
 import { MEMORY_EVENTS } from "./memory.js";
 import { PLATFORM_EVENTS } from "./platform.js";
 import { type AnyEventDefinition, EventRegistry } from "./registry.js";
+import { STAGE_EVENTS } from "./stage.js";
 import { SYSTEM_EVENTS } from "./system.js";
 import { TASK_EVENTS } from "./task.js";
 import { TURN_EVENTS } from "./turn.js";
@@ -42,6 +43,7 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   LlmCall,
   LlmBudget,
   ...GATE_EVENTS,
+  ...STAGE_EVENTS,
 ];
 
 /** A new registry holding `BUS_EVENTS`. */

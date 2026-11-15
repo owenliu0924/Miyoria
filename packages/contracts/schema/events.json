@@ -3221,6 +3221,34 @@
         "cards"
       ]
     },
+    "EventsLivePart": {
+      "type": "string",
+      "enum": [
+        "head",
+        "face",
+        "body",
+        "screen"
+      ]
+    },
+    "EventsLiveTouch": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "part": {
+          "$ref": "#/$defs/EventsLivePart"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "part"
+      ]
+    },
     "EventsLlmBudget": {
       "type": "object",
       "properties": {
@@ -4885,6 +4913,100 @@
       "required": [
         "paused",
         "reason"
+      ]
+    },
+    "EventsStageClip": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "path"
+      ]
+    },
+    "EventsStageError": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ]
+    },
+    "EventsStageStatus": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "connected": {
+              "type": "boolean",
+              "const": true
+            },
+            "vts": {
+              "type": "boolean"
+            },
+            "obs": {
+              "type": "boolean"
+            },
+            "scene": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "streaming": {
+              "type": "boolean"
+            },
+            "scenes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "hotkeys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "overlay_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "connected",
+            "vts",
+            "obs",
+            "scene",
+            "streaming",
+            "scenes",
+            "hotkeys",
+            "overlay_url"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "connected": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": [
+            "connected"
+          ]
+        }
       ]
     },
     "EventsSteerOutcome": {

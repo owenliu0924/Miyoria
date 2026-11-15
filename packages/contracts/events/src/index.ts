@@ -364,6 +364,22 @@ export {
   readEventData,
 } from "./registry.js";
 export {
+  LivePartSchema,
+  LiveTouch,
+  type LiveTouchData,
+  LiveTouchSchema,
+  STAGE_EVENTS,
+  StageClip,
+  type StageClipData,
+  StageClipSchema,
+  StageError,
+  type StageErrorData,
+  StageErrorSchema,
+  StageStatus,
+  type StageStatusData,
+  StageStatusSchema,
+} from "./stage.js";
+export {
   ActionCompleted,
   type ActionCompletedData,
   ActionCompletedSchema,
