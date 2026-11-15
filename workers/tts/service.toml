@@ -11,6 +11,7 @@ python = ">=3.11,<3.14"
 # `qwen-tts` extra instead; the two extras conflict and never share an environment.
 project = "."
 extras = ["faster"]
+check_imports = ["torch", "faster_qwen3_tts"]
 
 [[install.models]]
 repo = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"   # downloaded by the worker itself on its first start (4-5 GB)

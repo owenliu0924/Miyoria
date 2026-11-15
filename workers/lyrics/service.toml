@@ -12,6 +12,7 @@ python = ">=3.11,<3.14"
 # Its own small project with what server.py and sing/lyrics.py import (no torch), not the sing
 # environment.
 project = "."
+check_imports = ["fastapi", "uvicorn", "soundfile"]
 
 [run]
 command = ["{python}", "server.py"]

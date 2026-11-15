@@ -10,6 +10,7 @@ python = ">=3.11,<3.14"
 system = ["ffmpeg"]
 # pyproject.toml and uv.lock here; torch and torchaudio 2.11.0 come from the CUDA 12.8 index.
 project = "."
+check_imports = ["torch", "demucs", "librosa"]
 
 # The first song downloads about 2 GB of models by itself; their repositories are not pinned yet.
 [[install.manual]]

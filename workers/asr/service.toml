@@ -11,6 +11,8 @@ python = ">=3.11,<3.14"
 # `sensevoice` extra instead, without torch.
 project = "."
 extras = ["qwen3"]
+# For the sensevoice variant the smoke test is ["sherpa_onnx"]; a host that switches extras checks that by hand.
+check_imports = ["torch", "qwen_asr"]
 
 [[install.models]]
 repo = "Qwen/Qwen3-ASR-0.6B"     # downloaded by the worker itself on its first start (about 2 GB)

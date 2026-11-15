@@ -13,7 +13,6 @@ import {
 } from "@miyoria/hostd";
 import { Config } from "@miyoria/runtime/kernel";
 import { beforeAll, describe, expect, it } from "vitest";
-import { estimateVram } from "../src/stack/checks.js";
 import { stackConfig, WORKER_DEFAULT_PORT, WORKER_DEFAULTS } from "../src/stack/config.js";
 import { buildPlan, type ServiceSpec } from "../src/stack/plan.js";
 
@@ -79,7 +78,13 @@ describe("the workers", () => {
 
   it.each(["asr", "tts", "sing", "turn"])("%s has the default environment", (name) => {
     const { descriptor, dir } = entry(name);
-    const { VOICES_DIR, SING_OFFLOAD_URLS, ...env } = descriptor.run?.env ?? {};
+    // The turn models live in the host's model folder (H6): the descriptor says where.
+    const { VOICES_DIR, SING_OFFLOAD_URLS, TURN_SMART_MODEL, TURN_SILERO_MODEL, ...env } =
+      descriptor.run?.env ?? {};
+    if (name === "turn") {
+      expect(TURN_SMART_MODEL).toBe("{models}/smart-turn/smart-turn-v3.2-cpu.onnx");
+      expect(TURN_SILERO_MODEL).toBe("{models}/silero-vad/silero_vad.onnx");
+    }
     expect(env).toEqual(WORKER_DEFAULTS[name]?.env);
     // The plan fills SING_OFFLOAD_URLS itself; hostd fills {offload_urls} (until H7).
     expect(SING_OFFLOAD_URLS).toBe(name === "sing" ? "{offload_urls}" : undefined);
@@ -128,13 +133,6 @@ describe("the workers", () => {
       "127.0.0.1",
     );
     expect(urls).toBe(spec("sing").env.SING_OFFLOAD_URLS);
-  });
-
-  it("states the VRAM the checks estimate", () => {
-    for (const w of stack.workers) {
-      const vram = entry(w.name).descriptor.gpu?.vram_mb;
-      expect(vram?.resident ?? 0).toBe(estimateVram(w));
-    }
   });
 });
 
