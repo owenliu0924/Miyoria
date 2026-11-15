@@ -61,3 +61,4 @@ apps/panel/public/*.local.*
 workers/mediamtx/mediamtx.exe
 workers/mediamtx/LICENSE
 workers/mediamtx/mediamtx.log
+.tmp-test

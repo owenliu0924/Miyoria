@@ -1,0 +1,167 @@
+// The catalog: every `service.toml` of a checkout, loaded and checked. A broken descriptor is a
+// problem to report, never an exception, so one bad file does not hide the others.
+
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { type HostService, HostServiceSchema } from "@miyoria/contracts/host";
+import { parse as parseToml } from "smol-toml";
+import type { ZodError } from "zod";
+
+/**
+ * Where descriptors live, relative to the workspace root. `dir/*` is every folder one level
+ * below `dir`; anything else is that folder itself. `extensions/*` joins later.
+ */
+export const CATALOG_ROOTS = [
+  "workers/*",
+  "apps/*",
+  "packages/core",
+  "packages/stage",
+  "services/*",
+] as const;
+
+/** The file name of a descriptor. */
+export const DESCRIPTOR_FILE = "service.toml";
+
+/**
+ * The `{name}` placeholders a descriptor may use in a command, an environment value or a path.
+ * They are substituted when a service starts, not by this module.
+ */
+export const PLACEHOLDERS = [
+  "python",
+  "node",
+  "miyoria",
+  "config",
+  "state",
+  "models",
+  "service",
+  "port",
+  "host",
+  "voice",
+] as const;
+
+export interface CatalogEntry {
+  name: string;
+  /** The folder of the descriptor, absolute. */
+  dir: string;
+  /** The descriptor file, absolute. */
+  file: string;
+  descriptor: HostService;
+}
+
+export interface CatalogProblem {
+  file: string;
+  message: string;
+}
+
+export interface Catalog {
+  services: Map<string, CatalogEntry>;
+  problems: CatalogProblem[];
+}
+
+const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_-]*)\}/g;
+
+/** The names of the `{placeholders}` in a text, in order, repeats included. */
+export function placeholdersIn(text: string): string[] {
+  return [...text.matchAll(PLACEHOLDER)].map((m) => m[1] as string);
+}
+
+/** The folders a root entry stands for that exist. */
+function foldersOf(root: string, entry: string): string[] {
+  if (!entry.endsWith("/*")) return [join(root, entry)];
+  const base = join(root, entry.slice(0, -2));
+  if (!existsSync(base)) return [];
+  return readdirSync(base, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => join(base, d.name))
+    .sort();
+}
+
+function describeIssues(error: ZodError): string[] {
+  return error.issues.map((issue) => {
+    const path = issue.path.map(String).join(".");
+    return path === "" ? issue.message : `${path}: ${issue.message}`;
+  });
+}
+
+/** Every text of a descriptor that may carry placeholders, with where it is. */
+function placeholderTexts(descriptor: HostService): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  const { run, launch, install } = descriptor;
+  if (run) {
+    run.command.forEach((part, i) => {
+      out.push([`run.command[${i}]`, part]);
+    });
+    out.push(["run.cwd", run.cwd]);
+    for (const [key, value] of Object.entries(run.env)) out.push([`run.env.${key}`, value]);
+  }
+  if (launch) {
+    launch.command.forEach((part, i) => {
+      out.push([`launch.command[${i}]`, part]);
+    });
+    out.push(["launch.cwd", launch.cwd]);
+  }
+  if (install.project !== undefined) out.push(["install.project", install.project]);
+  install.files.forEach((f, i) => {
+    out.push([`install.files[${i}].path`, f.path]);
+  });
+  install.manual.forEach((m, i) => {
+    out.push([`install.manual[${i}].path`, m.path]);
+  });
+  return out;
+}
+
+/** What a descriptor lacks for its kind, which the schema cannot say. */
+function kindProblems(descriptor: HostService): string[] {
+  if (descriptor.kind === "external") {
+    return descriptor.probe === undefined ? ["an external service needs [probe]"] : [];
+  }
+  return descriptor.run === undefined ? [`a ${descriptor.kind} needs [run]`] : [];
+}
+
+/** Loads every descriptor under the catalog roots of a workspace folder. */
+export function loadCatalog(root: string): Catalog {
+  const base = resolve(root);
+  const services = new Map<string, CatalogEntry>();
+  const problems: CatalogProblem[] = [];
+
+  for (const entry of CATALOG_ROOTS) {
+    for (const dir of foldersOf(base, entry)) {
+      const file = join(dir, DESCRIPTOR_FILE);
+      if (!existsSync(file)) continue;
+      const fail = (message: string) => problems.push({ file, message });
+
+      let raw: unknown;
+      try {
+        raw = parseToml(readFileSync(file, "utf8"));
+      } catch (error) {
+        fail(`not valid TOML: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+      const parsed = HostServiceSchema.safeParse(raw);
+      if (!parsed.success) {
+        for (const message of describeIssues(parsed.error)) fail(message);
+        continue;
+      }
+      const descriptor = parsed.data;
+      const found = [
+        ...kindProblems(descriptor),
+        ...placeholderTexts(descriptor).flatMap(([where, text]) =>
+          placeholdersIn(text)
+            .filter((name) => !(PLACEHOLDERS as readonly string[]).includes(name))
+            .map((name) => `${where}: unknown placeholder {${name}}`),
+        ),
+      ];
+      if (found.length > 0) {
+        for (const message of found) fail(message);
+        continue;
+      }
+      const other = services.get(descriptor.name);
+      if (other !== undefined) {
+        fail(`the name "${descriptor.name}" is already used by ${other.file}`);
+        continue;
+      }
+      services.set(descriptor.name, { name: descriptor.name, dir, file, descriptor });
+    }
+  }
+  return { services, problems };
+}
