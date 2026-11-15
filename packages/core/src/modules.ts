@@ -77,6 +77,7 @@ import {
   type ModuleDeps,
   STORE_PLUGINS,
 } from "./boot.js";
+import { clusterContext } from "./cluster-context.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
 import { clusterLinks } from "./cluster-links.js";
 import { clusterComplete } from "./cluster-llm.js";
@@ -189,7 +190,8 @@ async function coreModules({
     new QueueModule(),
     GameModule.fromProfile(profile),
     new GameChatModule(),
-    new SingModule(null, { baseDir, endpoints }),
+    // Who listens goes to the song worker and, through the cluster, to the hosts' GPU arbiters.
+    new SingModule(null, { baseDir, endpoints, context: clusterContext }),
     McpModule.fromAppConfig(config),
     new StageLinkModule(),
     new EconomyModule(profileId),
