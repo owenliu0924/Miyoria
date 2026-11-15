@@ -1,12 +1,12 @@
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
+  type AnyEventDefinition,
   type Clock,
-  customEvent,
-  type Event,
-  type JsonValue,
+  type EventPayload,
+  Events,
+  eventEnvelope,
   type Mood,
-  newEnvelope,
   PromptContributors,
   PromptContributorsKey,
   SelfStateKey,
@@ -19,8 +19,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { selfConfig } from "../src/config.js";
 import { eventDelta, SelfModule, STATE_KEY } from "../src/index.js";
 
-/** An old-form event as the bus delivers it. */
-const ev = (event: Event) => newEnvelope("test", event);
+/** An event as the bus delivers it. */
+const ev = <D extends AnyEventDefinition>(def: D, data: EventPayload<D>) =>
+  eventEnvelope("test", def, data, ...([] as never));
 
 const T0 = Date.parse("2026-11-02T12:00:00.000Z");
 const ctx = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
@@ -130,11 +131,8 @@ describe("self module", () => {
   it("is satisfied by what happens on the bus", async () => {
     const h = await boot();
     const before = h.self.drives();
-    h.sup.bus.publish("test", {
-      type: "agent_turn_completed",
-      data: { turn: "t", context: ctx, text: "哈囉" },
-    });
-    h.sup.bus.publish("test", customEvent("self.nudge", { play: 0.4, reason: "看到別人在玩" }));
+    h.sup.bus.publish("test", Events.AgentTurnCompleted, { turn: "t", context: ctx, text: "哈囉" });
+    h.sup.bus.publish("test", Events.SelfNudge, { play: 0.4, reason: "看到別人在玩" });
     await vi.waitFor(() => {
       const d = h.self.drives();
       expect(d.social).toBeCloseTo(before.social - 0.06);
@@ -158,41 +156,43 @@ describe("self module", () => {
 describe("eventDelta", () => {
   const config = selfConfig();
   const self = (id: string) => id === "me";
-  const message = (author: string, direct: boolean): Event => ({
-    type: "platform_message_created",
-    data: {
-      id: { context: ctx, id: "m" },
-      author: { account: { platform: "discord", id: author }, display_name: author, is_bot: false },
-      text: "hi",
-      mentions_self: direct,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(T0),
-    },
+  const message = (author: string, direct: boolean) => ({
+    id: { context: ctx, id: "m" },
+    author: { account: { platform: "discord", id: author }, display_name: author, is_bot: false },
+    text: "hi",
+    mentions_self: direct,
+    reply_to_self: false,
+    attachments: [],
+    ts: toTimestamp(T0),
   });
 
   it("maps events to satisfaction", () => {
-    expect(eventDelta(ev(message("a", true)), config, self)?.delta).toEqual({
+    expect(
+      eventDelta(ev(Events.PlatformMessageCreated, message("a", true)), config, self)?.delta,
+    ).toEqual({
       attention: -0.04,
       boredom: -0.02,
     });
-    expect(eventDelta(ev(message("a", false)), config, self)?.delta).toEqual({ boredom: -0.01 });
-    expect(eventDelta(ev(message("me", true)), config, self)).toBeNull();
+    expect(
+      eventDelta(ev(Events.PlatformMessageCreated, message("a", false)), config, self)?.delta,
+    ).toEqual({ boredom: -0.01 });
+    expect(
+      eventDelta(ev(Events.PlatformMessageCreated, message("me", true)), config, self),
+    ).toBeNull();
     expect(
       eventDelta(
-        ev({ type: "agent_turn_completed", data: { turn: "t", context: ctx, text: " " } }),
+        ev(Events.AgentTurnCompleted, { turn: "t", context: ctx, text: " " }),
         config,
         self,
       ),
     ).toBeNull();
-    expect(eventDelta(ev(customEvent("world.salient", {})), config, self)?.delta).toEqual({
+    expect(eventDelta(ev(Events.WorldSalient, {} as never), config, self)?.delta).toEqual({
       boredom: -0.05,
       curiosity: -0.02,
     });
     // Nudges are limited to ±0.5 per drive.
     expect(
-      eventDelta(ev(customEvent("self.nudge", { social: 3, bogus: 1 } as JsonValue)), config, self)
-        ?.delta,
+      eventDelta(ev(Events.SelfNudge, { social: 3, bogus: 1 } as never), config, self)?.delta,
     ).toEqual({ social: 0.5 });
   });
 });

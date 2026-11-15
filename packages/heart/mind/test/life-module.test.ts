@@ -4,9 +4,9 @@
 
 import { ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import {
-  ACTIVITY_CHANGED_TOPIC,
-  customEvent,
   DailyPostsKey,
+  type EventPayload,
+  Events,
   type JsonValue,
   LifeLogKey,
   type NewProposal,
@@ -28,8 +28,8 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 
 /** An `activity.changed` event with the whole snapshot, as the manager publishes it. */
-function activityChanged(activity: JsonValue) {
-  return customEvent(ACTIVITY_CHANGED_TOPIC, {
+function activityChanged(activity: JsonValue): EventPayload<typeof Events.ActivityChanged> {
+  return {
     version: 1,
     at: toTimestamp(Date.now()),
     presence: { type: "none" },
@@ -37,7 +37,7 @@ function activityChanged(activity: JsonValue) {
     activity,
     override: null,
     scene: null,
-  });
+  } as never;
 }
 
 beforeEach(() => {
@@ -115,22 +115,20 @@ describe("her own life in the mind module", () => {
       config: { daily_posts: { enabled: true, guild: "g1", channel: "posts" } } as JsonValue,
       extra: (sup) => sup.services.provide("agent", ProposalBoardKey, board),
     });
-    r.publish(
-      customEvent("gate.decision", {
-        id: "d1",
-        at: toTimestamp(Date.now()),
-        capability: "web.search",
-        risk: "low",
-        principal: JSON.parse(JSON.stringify(Principals.self(TEXT))) as JsonValue,
-        args: { query: "鯨魚的歌" },
-        why: null,
-        turn: null,
-        allowed: true,
-        stage: "review",
-        reason: "",
-        reviewer: null,
-      }),
-    );
+    r.publish(Events.GateDecision, {
+      id: "d1",
+      at: toTimestamp(Date.now()),
+      capability: "web.search",
+      risk: "low",
+      principal: JSON.parse(JSON.stringify(Principals.self(TEXT))) as never,
+      args: { query: "鯨魚的歌" },
+      why: null,
+      turn: null,
+      allowed: true,
+      stage: "review",
+      reason: "",
+      reviewer: null,
+    });
     await wait(10);
     expect(r.sup.services.require(LifeLogKey).summary()).toBe(
       "今天到 20:00 你做過的事:\n- 逛網路:查了「鯨魚的歌」",
@@ -160,6 +158,7 @@ describe("her own life in the mind module", () => {
     // She played for nine hours today.
     const since = toTimestamp(Date.now() - 9 * HOUR);
     r.publish(
+      Events.ActivityChanged,
       activityChanged({
         type: "game",
         target: "minecraft",
@@ -170,12 +169,15 @@ describe("her own life in the mind module", () => {
       }),
     );
     await wait(10);
-    r.publish(activityChanged({ type: "idle", since: toTimestamp(Date.now()) }));
+    r.publish(
+      Events.ActivityChanged,
+      activityChanged({ type: "idle", since: toTimestamp(Date.now()) }),
+    );
     await wait(10);
     expect(r.sup.services.require(LifeLogKey).today()).toMatchObject([
       { activity: "game", minutes: 540 },
     ]);
-    r.publish(salient("Owen 進了語音頻道"));
+    r.publish(Events.WorldSalient, salient("Owen 進了語音頻道"));
     await wait(60_000);
     const request = provider.requests("plan")[0];
     expect(request).toBeDefined();

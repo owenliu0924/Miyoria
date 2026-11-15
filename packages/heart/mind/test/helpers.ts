@@ -25,11 +25,13 @@ import {
   type Attitude,
   type ContextKey,
   type Envelope,
-  type Event,
+  type EventPayload,
+  Events,
   type Intent,
   type IntentOutcome,
   type IntentSink,
   IntentSinkKey,
+  is,
   type JsonObject,
   type JsonValue,
   type Mind,
@@ -39,6 +41,7 @@ import {
   type ProposalBoard,
   ProposalBoardKey,
   type ProposalOutcome,
+  type Publish,
   SocialSignalsKey,
   type TalkCeiling,
   toTimestamp,
@@ -272,7 +275,7 @@ export interface Rig {
   intents: FakeIntents;
   events: Subscription;
   mind(): Mind;
-  publish(event: Event): void;
+  publish: Publish;
   thoughts(): JsonValue[];
 }
 
@@ -368,13 +371,11 @@ export async function rig(provider: TestProvider, options: RigOptions = {}): Pro
     intents,
     events,
     mind: () => sup.services.require(MindKey),
-    publish: (event) => sup.bus.publish("test", event),
+    publish: sup.bus.publisher("test"),
     thoughts: () => {
       const out: JsonValue[] = [];
       for (let e: Envelope | null = events.tryRecv(); e !== null; e = events.tryRecv()) {
-        if (e.event.type === "custom" && e.event.data.topic === "mind.thought") {
-          out.push(e.event.data.payload);
-        }
+        if (is(Events.MindThought, e)) out.push(e.data as unknown as JsonValue);
       }
       return out;
     },
@@ -385,24 +386,21 @@ export function wait(ms: number): Promise<void> {
   return vi.advanceTimersByTimeAsync(ms).then(() => undefined);
 }
 
-export function salient(detail: string, account: AccountRef | null = OWEN): Event {
+export function salient(
+  detail: string,
+  account: AccountRef | null = OWEN,
+): EventPayload<typeof Events.WorldSalient> {
   return {
-    type: "custom",
-    data: {
-      topic: "world.salient",
-      payload: {
-        kind: "joined_voice",
-        key: `joined_voice:${account?.id ?? "x"}`,
-        account: account === null ? null : { ...account },
-        person: account ? "person-owen" : null,
-        display_name: account ? "Owen" : null,
-        context: VOICE as unknown as JsonValue,
-        detail,
-        score: 0.8,
-        count: 1,
-        first_at: toTimestamp(Date.now()),
-        at: toTimestamp(Date.now()),
-      },
-    },
-  };
+    kind: "joined_voice",
+    key: `joined_voice:${account?.id ?? "x"}`,
+    account: account === null ? null : { ...account },
+    person: account ? "person-owen" : null,
+    display_name: account ? "Owen" : null,
+    context: VOICE as unknown as JsonValue,
+    detail,
+    score: 0.8,
+    count: 1,
+    first_at: toTimestamp(Date.now()),
+    at: toTimestamp(Date.now()),
+  } as never;
 }

@@ -16,12 +16,12 @@ import {
   type AccountRef,
   accountRefString,
   type ContextKey,
-  type Event,
   type JsonValue,
   newId,
   type PersonId,
   type ProfileId,
-  publishVia,
+  type PublishedEvent,
+  publishedVia,
   toTimestamp,
 } from "@miyoria/types";
 import { type Observed, Social, type SocialConfig, socialConfig, TOPIC } from "../src/index.js";
@@ -180,7 +180,7 @@ export function close(a: number, b: number): boolean {
 }
 
 export class Harness {
-  readonly events: Event[] = [];
+  readonly events: PublishedEvent[] = [];
   readonly social: Social;
 
   constructor(
@@ -194,7 +194,7 @@ export class Harness {
       ["DS醬", "小鯨魚"],
       config,
       { people: store, relationships: store, identity: store, memories },
-      publishVia((e) => {
+      publishedVia((e) => {
         this.events.push(e);
       }),
     );
@@ -227,9 +227,7 @@ export class Harness {
   }
 
   topics(): JsonValue[] {
-    return this.events.flatMap((e) =>
-      e.type === "custom" && e.data.topic === TOPIC ? [e.data.payload] : [],
-    );
+    return this.events.flatMap((e) => (e.type === TOPIC ? [e.data as JsonValue] : []));
   }
 }
 

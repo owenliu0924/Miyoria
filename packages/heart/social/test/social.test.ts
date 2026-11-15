@@ -26,7 +26,7 @@ import {
   SqliteStore,
 } from "@miyoria/store";
 import {
-  type Event,
+  Events,
   type Mind,
   MindKey,
   newId,
@@ -34,7 +34,6 @@ import {
   PromptContributorsKey,
   type SelfState,
   SelfStateKey,
-  SOCIAL_APPRAISAL_TOPIC,
   SocialSignalsKey,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
@@ -206,8 +205,7 @@ describe("social engine", () => {
     await h.say("discord:2", "Amy", "嗨", dm(), t(1, 10));
     const p = h.person("discord:2");
     const start = h.rel("discord:2");
-    const events = () =>
-      h.events.filter((e) => e.type === "custom" && e.data.topic === "social.event").length;
+    const events = () => h.events.filter((e) => e.type === "social.event").length;
     const before = events();
     const treat = (now: number) =>
       h.social.gain(
@@ -804,18 +802,15 @@ describe("modules", () => {
       true,
     );
     await sup.startAll();
-    const appraisals = bus.subscribe([SOCIAL_APPRAISAL_TOPIC]);
-    bus.publish("platform.test", {
-      type: "platform_message_created",
-      data: {
-        id: { context: channel(), id: "m1" },
-        author: { account: acc("discord:2"), display_name: "Amy", is_bot: false },
-        text: "DS醬今天好可愛",
-        mentions_self: false,
-        reply_to_self: false,
-        attachments: [],
-        ts: new Date().toISOString(),
-      },
+    const appraisals = bus.subscribe([Events.SocialAppraisal.type]);
+    bus.publish("platform.test", Events.PlatformMessageCreated, {
+      id: { context: channel(), id: "m1" },
+      author: { account: acc("discord:2"), display_name: "Amy", is_bot: false },
+      text: "DS醬今天好可愛",
+      mentions_self: false,
+      reply_to_self: false,
+      attachments: [],
+      ts: new Date().toISOString(),
     });
     await eventually("the pass", () => mock.requests().length > 0);
     const asked = JSON.stringify(mock.requests()[0]?.messages);
@@ -859,27 +854,23 @@ describe("modules", () => {
     expect(registry.specs().map((s) => s.path.join(" "))).toContain("admin person adjust");
 
     const src = "platform.test";
-    bus.publish(src, {
-      type: "platform_ready",
-      data: { platform: "discord", self_account: acc("discord:999") },
+    bus.publish(src, Events.PlatformReady, {
+      platform: "discord",
+      self_account: acc("discord:999"),
     });
     for (const [who, text] of [
       ["discord:999", "我是她自己"],
       ["discord:2", "DS醬你送我的禮物好棒,謝謝"],
     ] as const) {
-      const event: Event = {
-        type: "platform_message_created",
-        data: {
-          id: { context: channel(), id: "m1" },
-          author: { account: acc(who), display_name: "Amy", is_bot: false },
-          text,
-          mentions_self: false,
-          reply_to_self: false,
-          attachments: [],
-          ts: new Date().toISOString(),
-        },
-      };
-      bus.publish(src, event);
+      bus.publish(src, Events.PlatformMessageCreated, {
+        id: { context: channel(), id: "m1" },
+        author: { account: acc(who), display_name: "Amy", is_bot: false },
+        text,
+        mentions_self: false,
+        reply_to_self: false,
+        attachments: [],
+        ts: new Date().toISOString(),
+      });
     }
     await eventually("attitude", () => (signals.attitude(acc("discord:2"))?.affinity ?? 0) > 2);
     expect(signals.attitude(acc("discord:999")), "her own account is skipped").toBeNull();

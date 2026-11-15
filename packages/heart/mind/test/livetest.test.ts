@@ -7,8 +7,7 @@ import { MockProvider } from "@miyoria/llm/llm";
 import {
   type ContextKey,
   contextKeyString,
-  customEvent,
-  type Event,
+  Events,
   type Thought,
   toTimestamp,
   type VoiceParticipant,
@@ -68,24 +67,24 @@ async function manual(
 
 /** Her intent turn `turn` opened and she said `text` in it. */
 function spoke(r: Rig, turn: string, context: ContextKey, text: string): void {
-  r.publish({
-    type: "agent_decision",
-    data: { turn, context, respond: true, score: 0, reasons: ["intent:chat.start"] },
+  r.publish(Events.AgentDecision, {
+    turn,
+    context,
+    respond: true,
+    score: 0,
+    reasons: ["intent:chat.start"],
   });
-  r.publish({ type: "agent_turn_completed", data: { turn, context, text } });
+  r.publish(Events.AgentTurnCompleted, { turn, context, text });
 }
 
 /** Someone addressed her in `context` (attention's decision on their message). */
 function addressed(r: Rig, context: ContextKey): void {
-  r.publish({
-    type: "agent_decision",
-    data: {
-      turn: `R${Date.now()}`,
-      context,
-      respond: true,
-      score: 0.8,
-      reasons: ["mode ambient", "direct: name `小鯨`"],
-    },
+  r.publish(Events.AgentDecision, {
+    turn: `R${Date.now()}`,
+    context,
+    respond: true,
+    score: 0.8,
+    reasons: ["mode ambient", "direct: name `小鯨`"],
   });
 }
 
@@ -95,13 +94,17 @@ describe("announcements (v2 §5 item 12)", () => {
   it("a song announcement nobody answers is no topic of hers", async () => {
     const r = await manual(new MockProvider("p"));
     for (const [i, reason] of ["initiative:song_start", "initiative:song_done"].entries()) {
-      r.publish({
-        type: "agent_decision",
-        data: { turn: `S${i}`, context: TEXT, respond: true, score: 0, reasons: [reason] },
+      r.publish(Events.AgentDecision, {
+        turn: `S${i}`,
+        context: TEXT,
+        respond: true,
+        score: 0,
+        reasons: [reason],
       });
-      r.publish({
-        type: "agent_turn_completed",
-        data: { turn: `S${i}`, context: TEXT, text: "下一首要開始囉" },
+      r.publish(Events.AgentTurnCompleted, {
+        turn: `S${i}`,
+        context: TEXT,
+        text: "下一首要開始囉",
       });
     }
     await wait(30 * 60_000);
@@ -210,31 +213,31 @@ describe("failed actions (no Arbiter running)", () => {
 
     // A game adapter merely publishing is not "the game runs" (a disconnect is not either).
     r.publish(
-      customEvent("game.minecraft.disconnected", { type: "disconnected", data: { reason: "eof" } }),
+      Events.GameAdapterEvent,
+      { type: "disconnected", data: { reason: "eof" } },
+      { type: "game.minecraft.disconnected" },
     );
     await wait(10);
     expect(status(await r.plan())[0]?.[2]).toContain("on hold");
 
     // The activity snapshot (the one owner of what she is doing) shows the game running.
     gameRunning = true;
-    r.publish(
-      customEvent("activity.changed", {
-        version: 2,
-        at: toTimestamp(Date.now()),
-        presence: { type: "none" },
-        broadcast: { type: "off" },
-        activity: {
-          type: "game",
-          target: "minecraft",
-          phase: "running",
-          task: null,
-          failure: null,
-          since: toTimestamp(Date.now()),
-        },
-        override: null,
-        scene: null,
-      }),
-    );
+    r.publish(Events.ActivityChanged, {
+      version: 2,
+      at: toTimestamp(Date.now()),
+      presence: { type: "none" },
+      broadcast: { type: "off" },
+      activity: {
+        type: "game",
+        target: "minecraft",
+        phase: "running",
+        task: null,
+        failure: null,
+        since: toTimestamp(Date.now()),
+      },
+      override: null,
+      scene: null,
+    });
     await wait(10);
     const third = await r.plan();
     expect(status(third)).toEqual([["game.start", "started", "開始玩 Minecraft"]]);
@@ -266,29 +269,23 @@ describe("a busy voice channel", () => {
     muted: false,
     deafened: false,
   });
-  const utterance = (who: { platform: string; id: string }, name: string): Event => ({
-    type: "voice_utterance",
-    data: {
-      id: `u${Date.now()}`,
-      context: VOICE,
-      speaker: { account: who, display_name: name, is_bot: false },
-      text: "然後我就把它挖掉了",
-      language: "zh",
-      emotion: null,
-      audio_events: [],
-      started_at: toTimestamp(Date.now()),
-      ended_at: toTimestamp(Date.now()),
-      asr_ms: 100,
-    },
+  const utterance = (who: { platform: string; id: string }, name: string) => ({
+    id: `u${Date.now()}`,
+    context: VOICE,
+    speaker: { account: who, display_name: name, is_bot: false },
+    text: "然後我就把它挖掉了",
+    language: "zh",
+    emotion: null,
+    audio_events: [],
+    started_at: toTimestamp(Date.now()),
+    ended_at: toTimestamp(Date.now()),
+    asr_ms: 100,
   });
   const join = (r: Rig) => {
-    r.publish({ type: "platform_ready", data: { platform: "discord", self_account: HER } });
-    r.publish({
-      type: "voice_joined",
-      data: {
-        context: VOICE,
-        participants: [member(OWEN.id, false), member(AQUA.id, false), member(HER.id, true)],
-      },
+    r.publish(Events.PlatformReady, { platform: "discord", self_account: HER });
+    r.publish(Events.VoiceJoined, {
+      context: VOICE,
+      participants: [member(OWEN.id, false), member(AQUA.id, false), member(HER.id, true)],
     });
   };
   const lulls = (r: Rig) =>
@@ -308,7 +305,10 @@ describe("a busy voice channel", () => {
     join(r);
     // Six minutes of continuous conversation, a line every 20 seconds.
     for (let i = 0; i < 18; i++) {
-      r.publish(utterance(i % 2 === 0 ? OWEN : AQUA, i % 2 === 0 ? "Owen" : "Aquatf"));
+      r.publish(
+        Events.VoiceUtteranceEvent,
+        utterance(i % 2 === 0 ? OWEN : AQUA, i % 2 === 0 ? "Owen" : "Aquatf"),
+      );
       await wait(20_000);
     }
     expect(lulls(r)).toEqual([]);
@@ -338,24 +338,18 @@ describe("a busy voice channel", () => {
     const r = await rig(provider, { config: { min_interval_secs: 0 } });
     join(r);
     const quiet = (context: typeof VOICE | typeof TEXT, detail: string) =>
-      r.publish({
-        type: "custom",
-        data: {
-          topic: "world.salient",
-          payload: {
-            kind: "channel_quiet",
-            key: `channel_quiet:${context.channel}`,
-            account: null,
-            person: null,
-            display_name: null,
-            context: { ...context },
-            detail,
-            score: 0.3,
-            count: 1,
-            first_at: toTimestamp(Date.now()),
-            at: toTimestamp(Date.now()),
-          },
-        },
+      r.publish(Events.WorldSalient, {
+        kind: "channel_quiet",
+        key: `channel_quiet:${context.channel}`,
+        account: null,
+        person: null,
+        display_name: null,
+        context: { ...context },
+        detail,
+        score: 0.3,
+        count: 1,
+        first_at: toTimestamp(Date.now()),
+        at: toTimestamp(Date.now()),
       });
     // A text channel going quiet stays below her wake score.
     quiet(TEXT, "剛剛很熱鬧的頻道安靜下來了");
@@ -370,12 +364,14 @@ describe("a busy voice channel", () => {
     const provider = new MockProvider("p").reply('{"thought": "嗯。"}');
     const r = await rig(provider);
     join(r);
-    r.publish(utterance(OWEN, "Owen"));
+    r.publish(Events.VoiceUtteranceEvent, utterance(OWEN, "Owen"));
     for (let i = 0; i < 3; i++) {
       await wait(5000);
-      r.publish({
-        type: "voice_playback",
-        data: { context: VOICE, turn: null, state: "started", text: "過來陪我玩麥塊" },
+      r.publish(Events.VoicePlaybackEvent, {
+        context: VOICE,
+        turn: null,
+        state: "started",
+        text: "過來陪我玩麥塊",
       });
     }
     await wait(60_000);
@@ -400,11 +396,14 @@ describe("after her turns", () => {
     expect(provider.requests()).toHaveLength(1);
     await wait(6 * MIN);
     spoke(r, "T1", TEXT, "嗨大家~");
-    r.publish({
-      type: "agent_decision",
-      data: { turn: "R1", context: TEXT, respond: true, score: 0.9, reasons: ["direct: mention"] },
+    r.publish(Events.AgentDecision, {
+      turn: "R1",
+      context: TEXT,
+      respond: true,
+      score: 0.9,
+      reasons: ["direct: mention"],
     });
-    r.publish({ type: "agent_turn_completed", data: { turn: "R1", context: TEXT, text: "好啊" } });
+    r.publish(Events.AgentTurnCompleted, { turn: "R1", context: TEXT, text: "好啊" });
     await wait(5000);
     expect(provider.requests()).toHaveLength(1);
   });

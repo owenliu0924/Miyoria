@@ -8,9 +8,11 @@ import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type AffectSnapshot,
   AffectStateKey,
-  customEvent,
+  type AnyEventDefinition,
   type Envelope,
-  type Event,
+  type EventPayload,
+  Events,
+  eventEnvelope,
   GoalAgendaKey,
   type JsonValue,
   type NewProposal,
@@ -37,8 +39,8 @@ function firedKey(data: string): string | null {
   return /- (G[0-9A-Z]{5}):[^\n]*(到了)/.exec(data)?.[1] ?? null;
 }
 
-function cameOnline(score: number): Event {
-  return customEvent("world.salient", {
+function cameOnline(score: number): EventPayload<typeof Events.WorldSalient> {
+  return {
     kind: "came_online",
     key: `came_online:${OWEN.id}`,
     account: { ...OWEN },
@@ -50,7 +52,7 @@ function cameOnline(score: number): Event {
     count: 1,
     first_at: toTimestamp(Date.now()),
     at: toTimestamp(Date.now()),
-  });
+  } as never;
 }
 
 describe("Owen 上線就去找他", () => {
@@ -109,7 +111,7 @@ describe("Owen 上線就去找他", () => {
     // 21:00: he comes online (a quiet presence change, not even salient enough on its own).
     r.world.online.add(OWEN.id);
     const at = Date.now();
-    r.publish(cameOnline(0.3));
+    r.publish(Events.WorldSalient, cameOnline(0.3));
     await wait(5000);
     const fired = provider.requests().filter((q) => firedKey(texts(q).data) !== null);
     expect(fired).toHaveLength(1);
@@ -276,17 +278,10 @@ describe("a synthetic day", () => {
       goals,
       store: null,
     });
-    const env = (event: Event): Envelope =>
-      ({
-        id: "e",
-        source: "test",
-        ts: toTimestamp(Date.now()),
-        correlation: null,
-        causation: null,
-        event,
-      }) as unknown as Envelope;
+    const env = <D extends AnyEventDefinition>(def: D, data: EventPayload<D>): Envelope =>
+      eventEnvelope("test", def, data, ...([] as never));
     const activity = (a: JsonValue) =>
-      customEvent("activity.changed", {
+      ({
         version: 1,
         at: toTimestamp(Date.now()),
         presence: { type: "none" },
@@ -294,7 +289,7 @@ describe("a synthetic day", () => {
         activity: a,
         override: null,
         scene: null,
-      });
+      }) as never;
     const controller = new AbortController();
     const running = loop.run(controller.signal);
     const until = async (hour: number, minute = 0) => {
@@ -305,6 +300,7 @@ describe("a synthetic day", () => {
     await until(13, 30);
     loop.observe(
       env(
+        Events.ActivityChanged,
         activity({
           type: "game",
           target: "minecraft",
@@ -316,10 +312,12 @@ describe("a synthetic day", () => {
       ),
     );
     await until(15);
-    loop.observe(env(activity({ type: "idle", since: toTimestamp(Date.now()) })));
+    loop.observe(
+      env(Events.ActivityChanged, activity({ type: "idle", since: toTimestamp(Date.now()) })),
+    );
     await until(21);
     world.online.add(OWEN.id);
-    loop.observe(env(cameOnline(0.9)));
+    loop.observe(env(Events.WorldSalient, cameOnline(0.9)));
     await until(5, 59); // the next morning, just before her next day plan
     controller.abort();
     await running;
@@ -375,7 +373,7 @@ describe("her Plan under the main line (pipeline v3)", () => {
         });
       },
     });
-    r.publish(salient("想做點事"));
+    r.publish(Events.WorldSalient, salient("想做點事"));
     await wait(10_000);
     expect(proposals).toHaveLength(1);
     expect(proposals[0]).toMatchObject({

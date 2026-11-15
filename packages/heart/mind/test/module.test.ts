@@ -2,13 +2,11 @@ import { MockProvider } from "@miyoria/llm/llm";
 import { MemorySettingsStore } from "@miyoria/store";
 import {
   AffectStateKey,
-  customEvent,
-  DIRECTIVE_CHANGED_TOPIC,
   type Directive,
   type DirectiveGoal,
   type Directives,
   DirectivesKey,
-  type Event,
+  Events,
   GoalAgendaKey,
   type JsonValue,
   SelfStateKey,
@@ -58,18 +56,15 @@ const PLAN = JSON.stringify({
   ],
 });
 
-function message(text: string, addressed: boolean): Event {
+function message(text: string, addressed: boolean) {
   return {
-    type: "platform_message_created",
-    data: {
-      id: { context: TEXT, id: `m${Date.now()}` },
-      author: { account: OWEN, display_name: "Owen", is_bot: false },
-      text,
-      mentions_self: addressed,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(Date.now()),
-    },
+    id: { context: TEXT, id: `m${Date.now()}` },
+    author: { account: OWEN, display_name: "Owen", is_bot: false },
+    text,
+    mentions_self: addressed,
+    reply_to_self: false,
+    attachments: [],
+    ts: toTimestamp(Date.now()),
   };
 }
 
@@ -78,7 +73,7 @@ describe("mind module: Plan", () => {
     const provider = new ScriptedProvider(() => PLAN);
     const r = await rig(provider);
     const goals = r.sup.bus.subscribe("plan.goal");
-    r.publish(salient("Owen 進了語音頻道「聊天室」"));
+    r.publish(Events.WorldSalient, salient("Owen 進了語音頻道「聊天室」"));
     await wait(2000);
     expect(provider.requests().length, "coalescing").toBe(0);
     await wait(2000);
@@ -110,7 +105,7 @@ describe("mind module: Plan", () => {
     expect(agenda.goals().map((g) => [g.what, g.trigger])).toEqual([
       ["問 Owen 報告的結果", { kind: "when_online", person: "Owen" }],
     ]);
-    expect(goals.tryRecv()?.event).toMatchObject({ data: { topic: "plan.goal" } });
+    expect(goals.tryRecv()).toMatchObject({ type: "plan.goal" });
     // She does not write emotions, drives or talkativeness from a plan.
     const self = r.sup.services.require(SelfStateKey);
     expect(Object.keys(self.snapshot().policy.talkativeness)).toEqual([]);
@@ -120,7 +115,7 @@ describe("mind module: Plan", () => {
     const provider = new ScriptedProvider(() => "{}");
     const r = await rig(provider);
     await r.registry.setPaused(true);
-    r.publish(salient("Owen 進了語音頻道"));
+    r.publish(Events.WorldSalient, salient("Owen 進了語音頻道"));
     await wait(30 * MIN);
     expect(provider.requests()).toHaveLength(0);
     expect(r.mind().stats().idle_reason).toBe("paused");
@@ -141,7 +136,7 @@ describe("mind module: Plan", () => {
     expect(provider.requests()[0]?.reasoning).toBe("high");
     const loop = r.mind() as unknown as MindLoop;
     expect(loop.dayPlan()).toBe("Owen 通常晚上來,等他再開台。");
-    r.publish(salient("Owen 上線了"));
+    r.publish(Events.WorldSalient, salient("Owen 上線了"));
     await wait(50_000);
     expect(provider.requests().map(callKind)).toEqual(["plan_daily", "plan"]);
     expect(texts(provider.requests()[1]).data).toContain("Owen 通常晚上來,等他再開台。");
@@ -166,7 +161,7 @@ describe("mind module: Plan", () => {
     expect(provider.requests()).toHaveLength(1);
     expect(loop.planStats().empty_streak).toBe(2);
     // Something happens: she plans again.
-    r.publish(salient("Owen 進了語音頻道"));
+    r.publish(Events.WorldSalient, salient("Owen 進了語音頻道"));
     await wait(5000);
     expect(provider.requests()).toHaveLength(2);
   });
@@ -183,33 +178,30 @@ describe("mind module: Plan", () => {
       expires: toTimestamp(Date.now() + 6 * 60 * MIN),
       source: "plan",
     });
-    const snapshot = (activity: JsonValue) => ({
-      version: 1,
-      at: toTimestamp(Date.now()),
-      presence: { type: "none" },
-      broadcast: { type: "off" },
-      activity,
-      override: null,
-      scene: null,
-    });
+    const snapshot = (activity: JsonValue) =>
+      ({
+        version: 1,
+        at: toTimestamp(Date.now()),
+        presence: { type: "none" },
+        broadcast: { type: "off" },
+        activity,
+        override: null,
+        scene: null,
+      }) as never;
     r.publish(
-      customEvent(
-        "activity.changed",
-        snapshot({
-          type: "game",
-          target: "minecraft",
-          phase: "running",
-          task: null,
-          failure: null,
-          since: toTimestamp(Date.now()),
-        }),
-      ),
+      Events.ActivityChanged,
+      snapshot({
+        type: "game",
+        target: "minecraft",
+        phase: "running",
+        task: null,
+        failure: null,
+        since: toTimestamp(Date.now()),
+      }),
     );
     await wait(1000);
     expect(provider.requests()).toHaveLength(0);
-    r.publish(
-      customEvent("activity.changed", snapshot({ type: "idle", since: toTimestamp(Date.now()) })),
-    );
+    r.publish(Events.ActivityChanged, snapshot({ type: "idle", since: toTimestamp(Date.now()) }));
     await wait(5000);
     expect(provider.requests()).toHaveLength(1);
     const { data } = texts(provider.requests()[0]);
@@ -222,19 +214,15 @@ describe("mind module: Plan", () => {
   it("is woken when her mood drops", async () => {
     const provider = new ScriptedProvider(() => "{}");
     const r = await rig(provider, { config: { min_interval_secs: 0 } });
-    r.publish(salient("Owen 上線了"));
+    r.publish(Events.WorldSalient, salient("Owen 上線了"));
     await wait(5000);
     expect(provider.requests()).toHaveLength(1);
     const snap = r.sup.services.require(AffectStateKey).snapshot();
     const mood = snap.mood;
-    r.publish(
-      customEvent("affect.changed", { ...snap, mood: { ...mood, valence: mood.valence - 0.1 } }),
-    );
+    r.publish(Events.AffectChanged, { ...snap, mood: { ...mood, valence: mood.valence - 0.1 } });
     await wait(5000);
     expect(provider.requests()).toHaveLength(1);
-    r.publish(
-      customEvent("affect.changed", { ...snap, mood: { ...mood, valence: mood.valence - 0.4 } }),
-    );
+    r.publish(Events.AffectChanged, { ...snap, mood: { ...mood, valence: mood.valence - 0.4 } });
     await wait(5000);
     expect(provider.requests()).toHaveLength(2);
     expect(texts(provider.requests()[1]).data).toContain("你的心情變了");
@@ -243,7 +231,7 @@ describe("mind module: Plan", () => {
   it("falls back to the chat chain and records failures in the journal", async () => {
     const provider = new MockProvider("p").fail("upstream down");
     const r = await rig(provider, { chatOnly: true });
-    r.publish(salient("Owen 進了語音頻道"));
+    r.publish(Events.WorldSalient, salient("Owen 進了語音頻道"));
     await wait(5000);
     expect(provider.requests()[0]?.model).toBe("chat");
     const [thought] = r.mind().thoughts();
@@ -253,7 +241,7 @@ describe("mind module: Plan", () => {
   it("asks once more when her reply has no JSON, then uses the fixed one", async () => {
     const provider = new MockProvider("p").reply("嗯……我想想").reply('{"thought": "好。"}');
     const r = await rig(provider);
-    r.publish(salient("Owen 進了語音頻道"));
+    r.publish(Events.WorldSalient, salient("Owen 進了語音頻道"));
     await wait(5000);
     expect(provider.requests()).toHaveLength(2);
     expect(texts(provider.requests()[1]).data).toContain("上面的回覆不能用");
@@ -264,7 +252,7 @@ describe("mind module: Plan", () => {
     const store = new MemorySettingsStore();
     const provider = new ScriptedProvider(() => '{"thought": "嗯。"}');
     const r = await rig(provider, { store });
-    r.publish(salient("Owen 進了語音頻道"));
+    r.publish(Events.WorldSalient, salient("Owen 進了語音頻道"));
     await wait(5000);
     expect((await store.list("p", THOUGHT_PREFIX)).size).toBe(1);
     const self = r.sup.services.require(SelfStateKey);
@@ -329,15 +317,12 @@ describe("mind module: Appraise", () => {
     );
     const r = await rig(provider);
     await wait(10);
-    r.publish(message("你今天唱得超好聽", true));
+    r.publish(Events.PlatformMessageCreated, message("你今天唱得超好聽", true));
     await wait(2000);
-    r.publish({
-      type: "agent_turn_completed",
-      data: { turn: "R1", context: TEXT, text: "哼,那當然" },
-    });
+    r.publish(Events.AgentTurnCompleted, { turn: "R1", context: TEXT, text: "哼,那當然" });
     await wait(2000);
-    r.publish(message("真的啦", false));
-    r.publish(message("再唱一首", true));
+    r.publish(Events.PlatformMessageCreated, message("真的啦", false));
+    r.publish(Events.PlatformMessageCreated, message("再唱一首", true));
     await wait(60_000);
     expect(provider.requests()).toHaveLength(0);
     // Her turn ending is not a reason to plan; the segment ends after two quiet minutes.
@@ -363,7 +348,8 @@ describe("mind module: Appraise", () => {
     const provider = new ScriptedProvider(() => "{}");
     const r = await rig(provider);
     await wait(10);
-    for (let i = 0; i < 6; i++) r.publish(message(`閒聊 ${i}`, false));
+    for (let i = 0; i < 6; i++)
+      r.publish(Events.PlatformMessageCreated, message(`閒聊 ${i}`, false));
     await wait(5 * MIN);
     expect(provider.requests().filter((q) => callKind(q) === "appraise")).toHaveLength(0);
     void VOICE;
@@ -386,7 +372,7 @@ describe("a rule on her goals (§9)", () => {
   }
 
   const added = (effect: string, text = "不要玩 Minecraft") =>
-    customEvent(DIRECTIVE_CHANGED_TOPIC, {
+    ({
       op: "add",
       text,
       directive: {
@@ -401,7 +387,7 @@ describe("a rule on her goals (§9)", () => {
         created_at: toTimestamp(Date.now()),
       },
       by: "discord:1",
-    });
+    }) as never;
 
   it("a deny drops what it forbids and nothing else, with why", async () => {
     const r = await ruled((goal) =>
@@ -410,7 +396,7 @@ describe("a rule on her goals (§9)", () => {
     const book = goals(r);
     const mc = book.add({ what: "玩 Minecraft", why: "想玩", ...later });
     book.add({ what: "找 Owen 聊天", why: "想他", ...later });
-    r.publish(added("deny"));
+    r.publish(Events.DirectiveChanged, added("deny"));
     await wait(10);
     expect(book.goals().map((g) => g.what)).toEqual(["找 Owen 聊天"]);
     expect(book.goal(mc.id)).toMatchObject({
@@ -423,10 +409,8 @@ describe("a rule on her goals (§9)", () => {
     const r = await ruled(() => ({ text: "x" }) as Directive);
     const book = goals(r);
     book.add({ what: "玩 Minecraft", why: "想玩", ...later });
-    r.publish(added("avoid"));
-    r.publish(
-      customEvent(DIRECTIVE_CHANGED_TOPIC, { op: "remove", text: "", directive: null, by: "x" }),
-    );
+    r.publish(Events.DirectiveChanged, added("avoid"));
+    r.publish(Events.DirectiveChanged, { op: "remove", text: "", directive: null, by: "x" });
     await wait(10);
     expect(book.goals()).toHaveLength(1);
   });

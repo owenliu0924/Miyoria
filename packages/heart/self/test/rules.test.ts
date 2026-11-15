@@ -7,8 +7,8 @@ import {
   type Attitude,
   type Clock,
   type ContextKey,
-  customEvent,
-  type Event,
+  type EventPayload,
+  Events,
   type JsonValue,
   PromptContributors,
   PromptContributorsKey,
@@ -125,14 +125,14 @@ async function boot(display: "open" | "tsundere" = "tsundere") {
   await sup.register(new SelfModule("p", { clock, temperament }), null, true);
   await sup.startAll();
   const self = sup.services.require(SelfStateKey) as SelfService;
-  const publish = (event: Event) => sup.bus.publish("test", event);
+  const publish = sup.bus.publisher("test");
   return { sup, clock, contributors, world, social, self, publish };
 }
 
 type Booted = Awaited<ReturnType<typeof boot>>;
 
 const socialEvent = (person: string, kind: string, extra: Record<string, JsonValue> = {}) =>
-  customEvent("social.event", {
+  ({
     person,
     name: `name-${person}`,
     kind,
@@ -140,28 +140,25 @@ const socialEvent = (person: string, kind: string, extra: Record<string, JsonVal
     scale: 1,
     context: null,
     ...extra,
-  });
+  }) as never;
 
 function message(
   author: string,
   opts: { direct?: boolean; replyTo?: string; context?: ContextKey } = {},
-): Event {
+): EventPayload<typeof Events.PlatformMessageCreated> {
   const context = opts.context ?? text;
   return {
-    type: "platform_message_created",
-    data: {
-      id: { context, id: `m${Math.random()}` },
-      author: { account: acc(author), display_name: `name-p${author}`, is_bot: false },
-      text: "…",
-      mentions_self: opts.direct ?? false,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(T0),
-      referenced:
-        opts.replyTo === undefined
-          ? null
-          : { author: acc(opts.replyTo), author_name: opts.replyTo, text: "…" },
-    },
+    id: { context, id: `m${Math.random()}` },
+    author: { account: acc(author), display_name: `name-p${author}`, is_bot: false },
+    text: "…",
+    mentions_self: opts.direct ?? false,
+    reply_to_self: false,
+    attachments: [],
+    ts: toTimestamp(T0),
+    referenced:
+      opts.replyTo === undefined
+        ? null
+        : { author: acc(opts.replyTo), author_name: opts.replyTo, text: "…" },
   };
 }
 
@@ -179,7 +176,7 @@ function makeCrush(h: Booted, person = "p1") {
 /** Waits until every event published before is handled (the bus keeps order). */
 async function settle(h: Booted) {
   const before = h.self.drives().curiosity;
-  h.publish(customEvent("self.nudge", { curiosity: 0.1 }));
+  h.publish(Events.SelfNudge, { curiosity: 0.1 });
   await vi.waitFor(() => expect(h.self.drives().curiosity).toBeGreaterThan(before));
 }
 
@@ -190,16 +187,19 @@ describe("rule triggers", () => {
   it("gift: joy and gratitude; food the giver counted itself takes only what it says", async () => {
     const h = await boot();
     h.self.adjust({ hunger: 0.9 - h.self.drives().hunger }, "test");
-    h.publish(socialEvent("p1", "gift", { source: "economy", scale: 0.36, hunger: 0 }));
+    h.publish(
+      Events.SocialEvent,
+      socialEvent("p1", "gift", { source: "economy", scale: 0.36, hunger: 0 }),
+    );
     await vi.waitFor(() => expect(value(h, "gratitude")).toBeGreaterThan(0));
     expect(h.self.drives().hunger).toBeCloseTo(0.9, 5);
-    h.publish(socialEvent("p2", "gift"));
+    h.publish(Events.SocialEvent, socialEvent("p2", "gift"));
     await vi.waitFor(() => expect(h.self.drives().hunger).toBeCloseTo(0.6, 5));
   });
 
   it("broken_promise: anger and resentment toward the person who did not pay", async () => {
     const h = await boot();
-    h.publish(socialEvent("p2", "broken_promise", { source: "economy" }));
+    h.publish(Events.SocialEvent, socialEvent("p2", "broken_promise", { source: "economy" }));
     await vi.waitFor(() =>
       expect(h.self.heart("p2")?.emotions.resentment ?? 0).toBeGreaterThan(0.3),
     );
@@ -209,7 +209,7 @@ describe("rule triggers", () => {
 
   it("praise: joy (medium) and, for a tsundere, a little shyness; attachment does not grow by itself", async () => {
     const h = await boot();
-    h.publish(socialEvent("p1", "praise"));
+    h.publish(Events.SocialEvent, socialEvent("p1", "praise"));
     await vi.waitFor(() => expect(value(h, "joy")).toBeGreaterThan(0.15));
     // shy weak 0.1 × her gain 1.8.
     expect(value(h, "shy")).toBeGreaterThan(0.15);
@@ -223,10 +223,10 @@ describe("rule triggers", () => {
 
   it("the same praise again within two hours counts for less (habituation)", async () => {
     const h = await boot();
-    h.publish(socialEvent("p1", "praise"));
+    h.publish(Events.SocialEvent, socialEvent("p1", "praise"));
     await vi.waitFor(() => expect(value(h, "joy")).toBeGreaterThan(0.15));
     const first = value(h, "joy");
-    h.publish(socialEvent("p1", "praise"));
+    h.publish(Events.SocialEvent, socialEvent("p1", "praise"));
     await vi.waitFor(() => expect(value(h, "joy")).toBeGreaterThan(first));
     const second = value(h, "joy") - first;
     // 0.2 × 0.8 of room first, then half of it.
@@ -235,7 +235,7 @@ describe("rule triggers", () => {
 
   it("insults are not capped but habituate: anger and 不爽 toward the person, never to the top", async () => {
     const h = await boot();
-    for (let i = 0; i < 6; i++) h.publish(socialEvent("p2", "insult"));
+    for (let i = 0; i < 6; i++) h.publish(Events.SocialEvent, socialEvent("p2", "insult"));
     await vi.waitFor(() =>
       expect(h.self.heart("p2")?.emotions.resentment ?? 0).toBeGreaterThan(0.4),
     );
@@ -244,8 +244,8 @@ describe("rule triggers", () => {
     expect(value(h, "anger")).toBeLessThan(0.8);
     // Her own mind's hints are not counted twice.
     const before = value(h, "joy");
-    h.publish(socialEvent("p1", "warm", { source: "mind" }));
-    h.publish(socialEvent("p1", "apology"));
+    h.publish(Events.SocialEvent, socialEvent("p1", "warm", { source: "mind" }));
+    h.publish(Events.SocialEvent, socialEvent("p1", "apology"));
     await settle(h);
     expect(value(h, "joy")).toBe(before);
   });
@@ -253,44 +253,48 @@ describe("rule triggers", () => {
   it("dying in a game: 不甘心 and 怒; an advancement: 得意", async () => {
     const h = await boot();
     h.publish(
-      customEvent("game.minecraft.death", { type: "death", data: { text: "被苦力怕炸死" } }),
+      Events.GameAdapterEvent,
+      { type: "death", data: { text: "被苦力怕炸死" } },
+      { type: "game.minecraft.death" },
     );
     await vi.waitFor(() => expect(value(h, "frustration")).toBeGreaterThan(0.15));
     expect(value(h, "anger")).toBeGreaterThan(0.05);
-    h.publish(customEvent("game.minecraft.event", { type: "advancement", data: {} }));
+    h.publish(
+      Events.GameAdapterEvent,
+      { type: "advancement", data: {} },
+      { type: "game.minecraft.event" },
+    );
     await vi.waitFor(() => expect(value(h, "pride")).toBeGreaterThan(0.25));
   });
 
   it("a song finished: 得意, and praise right after is pride in the song; a song cut off: 哀 / 不甘心", async () => {
     const h = await boot();
-    h.publish(customEvent("sing.cue", { state: "started", song: "s1", title: "t" }));
-    h.publish(customEvent("sing.cue", { state: "ended", song: "s1", outcome: "finished" }));
+    h.publish(Events.SingCue, { state: "started", song: "s1", title: "t" });
+    h.publish(Events.SingCue, { state: "ended", song: "s1", outcome: "finished" });
     await vi.waitFor(() => expect(value(h, "pride")).toBeGreaterThan(0.18));
     const afterSong = value(h, "pride");
-    h.publish(socialEvent("p3", "praise"));
+    h.publish(Events.SocialEvent, socialEvent("p3", "praise"));
     // Praise right after a song: the song applauded (medium).
     await vi.waitFor(() => expect(value(h, "pride")).toBeGreaterThan(afterSong + 0.1));
     expect(h.self.emotions(0).find((e) => e.name === "pride")?.cause).toContain("歌");
 
     // (Everything stirred in the last ten minutes counts against the budget: let it pass.)
     h.clock.at += 11 * MINUTE;
-    h.publish(customEvent("sing.cue", { state: "ended", song: "s2", outcome: "interrupted" }));
+    h.publish(Events.SingCue, { state: "ended", song: "s2", outcome: "interrupted" });
     await vi.waitFor(() => expect(value(h, "sorrow")).toBeGreaterThan(0.08));
     expect(value(h, "frustration")).toBeGreaterThan(0.15);
   });
 
   it("promises kept and broken, from the appraisal", async () => {
     const h = await boot();
-    h.publish(
-      customEvent("social.appraisal", {
-        context: { ...text },
-        her: { joy: 0.4, love: 1 },
-        people: [
-          { person: "p1", name: "A", toward_her: 0.5, romance: 0, others: 0, promise: "kept" },
-          { person: "p3", name: "C", toward_her: 0, romance: 0, others: 0, promise: "broken" },
-        ],
-      }),
-    );
+    h.publish(Events.SocialAppraisal, {
+      context: { ...text },
+      her: { joy: 0.4, love: 1 },
+      people: [
+        { person: "p1", name: "A", toward_her: 0.5, romance: 0, others: 0, promise: "kept" },
+        { person: "p3", name: "C", toward_her: 0, romance: 0, others: 0, promise: "broken" },
+      ],
+    });
     await vi.waitFor(() =>
       expect(h.self.heart("p3")?.emotions.resentment ?? 0).toBeGreaterThan(0.15),
     );
@@ -304,21 +308,23 @@ describe("rule triggers", () => {
   it("someone she likes keeps talking to others and ignores her: 嫉妒 (more for her crush)", async () => {
     const h = await boot();
     makeCrush(h);
-    for (let i = 0; i < 3; i++) h.publish(message("1", { replyTo: "9" }));
+    for (let i = 0; i < 3; i++)
+      h.publish(Events.PlatformMessageCreated, message("1", { replyTo: "9" }));
     await vi.waitFor(() =>
       expect(h.self.heart("p1")?.emotions.jealousy ?? 0).toBeGreaterThan(0.15),
     );
     expect(value(h, "jealousy")).toBeGreaterThan(0.15);
     expect(h.self.drives().longing).toBeGreaterThan(0);
     // Someone she does not care about: no jealousy.
-    for (let i = 0; i < 3; i++) h.publish(message("2", { replyTo: "9" }));
+    for (let i = 0; i < 3; i++)
+      h.publish(Events.PlatformMessageCreated, message("2", { replyTo: "9" }));
     await settle(h);
     expect(h.self.heart("p2")?.emotions.jealousy ?? 0).toBe(0);
   });
 
   it("someone she cares about away for days is missed; coming back turns it into joy", async () => {
     const h = await boot();
-    h.publish(message("3", { direct: true }));
+    h.publish(Events.PlatformMessageCreated, message("3", { direct: true }));
     await vi.waitFor(() => expect(h.self.heart("p3")?.last_seen).not.toBeNull());
     for (let hour = 1; hour <= 24 * 5; hour++) {
       h.clock.at = T0 + hour * HOUR;
@@ -329,7 +335,7 @@ describe("rule triggers", () => {
     expect(missing).toBeGreaterThan(0.2);
     expect(h.self.shown()?.style).toContain("裝作不在意");
 
-    h.publish(message("3", { direct: true }));
+    h.publish(Events.PlatformMessageCreated, message("3", { direct: true }));
     await vi.waitFor(() => expect(h.self.heart("p3")?.emotions.missing ?? 0).toBeLessThan(missing));
     expect(h.self.emotions(0).find((e) => e.name === "joy")?.cause).toContain("回來了");
   });
@@ -348,8 +354,8 @@ describe("rule triggers", () => {
 
   it("extensions can stir emotions with `self.feel`: the amount only picks a step", async () => {
     const h = await boot();
-    h.publish(customEvent("self.feel", { emotion: "surprise", amount: 3, cause: "嚇到" }));
-    h.publish(customEvent("self.feel", { toward: "gratitude", person: "p3", amount: 0.4 }));
+    h.publish(Events.SelfFeel, { emotion: "surprise", amount: 3, cause: "嚇到" });
+    h.publish(Events.SelfFeel, { toward: "gratitude", person: "p3", amount: 0.4 });
     // Clamped to 0.5, which reads as a strong step (0.35).
     await vi.waitFor(() => expect(value(h, "surprise")).toBeCloseTo(0.35, 2));
     await vi.waitFor(() => expect(h.self.heart("p3")?.emotions.gratitude ?? 0).toBeCloseTo(0.4, 2));

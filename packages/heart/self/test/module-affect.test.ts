@@ -3,15 +3,13 @@
 import { exemptFromBusCheck, Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
-  AFFECT_CHANGED_TOPIC,
-  AFFECT_EVENT_TOPIC,
   type AffectSnapshot,
   AffectStateKey,
   type Clock,
-  customEvent,
-  type Event,
+  Events,
   type HandleDirectory,
   HandleDirectoryKey,
+  is,
   SelfStateKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -65,15 +63,14 @@ async function boot(display: "open" | "tsundere" = "open") {
     true,
   );
   const changed: AffectSnapshot[] = [];
-  const sub = sup.bus.subscribe([AFFECT_CHANGED_TOPIC]);
+  const sub = sup.bus.subscribe([Events.AffectChanged.type]);
   void (async () => {
     for await (const env of sub) {
-      if (env.event.type === "custom")
-        changed.push(env.event.data.payload as unknown as AffectSnapshot);
+      if (is(Events.AffectChanged, env)) changed.push(env.data as unknown as AffectSnapshot);
     }
   })();
   await sup.startAll();
-  const publish = (event: Event) => sup.bus.publish("test", event);
+  const publish = sup.bus.publisher("test");
   return {
     sup,
     clock,
@@ -91,11 +88,11 @@ describe("<emo:…> tags never write back", () => {
     const h = await boot();
     const before = h.affect.snapshot();
     for (let i = 0; i < 20; i++) {
-      h.publish(customEvent("agent.emotion", { turn: "t1", context: CTX, emotion: "smug" }));
-      h.publish(customEvent("agent.emotion", { turn: "t1", context: CTX, emotion: "angry" }));
+      h.publish(Events.AgentEmotion, { turn: "t1", context: CTX, emotion: "smug" });
+      h.publish(Events.AgentEmotion, { turn: "t1", context: CTX, emotion: "angry" });
     }
     // Wait until the bus has delivered them (a later event is handled after them).
-    h.publish(customEvent("self.nudge", { curiosity: 0.1 }));
+    h.publish(Events.SelfNudge, { curiosity: 0.1 });
     await vi.waitFor(() => expect(h.self.drives().curiosity).toBeGreaterThan(0.3));
     const after = h.affect.snapshot();
     expect(after.mood).toEqual(before.mood);
@@ -107,26 +104,24 @@ describe("<emo:…> tags never write back", () => {
 describe("rule events on the bus", () => {
   it("`affect.event` (from the Arbiter and others) is mapped by the table", async () => {
     const h = await boot();
-    h.publish(
-      customEvent(AFFECT_EVENT_TOPIC, {
-        kind: "topic_ignored",
-        person: null,
-        handle: null,
-        context: null,
-        detail: "沒人接話",
-        key: "topic|1",
-        at: toTimestamp(T0),
-      }),
-    );
+    h.publish(Events.AffectEvent, {
+      kind: "topic_ignored",
+      person: null,
+      handle: null,
+      context: null,
+      detail: "沒人接話",
+      key: "topic|1",
+      at: toTimestamp(T0),
+    });
     await vi.waitFor(() => expect(h.self.emotions(0).map((e) => e.name)).toContain("lonely"));
     expect(h.self.emotions(0).find((e) => e.name === "frustration")?.intensity).toBeCloseTo(0.1, 2);
   });
 
   it("a malformed or unknown event is ignored", async () => {
     const h = await boot();
-    h.publish(customEvent(AFFECT_EVENT_TOPIC, { kind: "set_joy_to_one", amount: 1 }));
-    h.publish(customEvent(AFFECT_EVENT_TOPIC, "nonsense"));
-    h.publish(customEvent("self.nudge", { curiosity: 0.1 }));
+    h.publish(Events.AffectEvent, { kind: "set_joy_to_one", amount: 1 } as never);
+    h.publish(Events.AffectEvent, "nonsense" as never);
+    h.publish(Events.SelfNudge, { curiosity: 0.1 });
     await vi.waitFor(() => expect(h.self.drives().curiosity).toBeGreaterThan(0.3));
     expect(h.self.emotions(0)).toEqual([]);
   });
@@ -135,9 +130,11 @@ describe("rule events on the bus", () => {
     const h = await boot();
     const ctx = { platform: "discord", scope: "g", channel: "v", kind: "voice" } as const;
     const cut = () =>
-      h.publish({
-        type: "voice_playback",
-        data: { context: ctx, turn: null, state: "interrupted", text: "…" },
+      h.publish(Events.VoicePlaybackEvent, {
+        context: ctx,
+        turn: null,
+        state: "interrupted",
+        text: "…",
       });
     cut();
     await vi.waitFor(() => expect(h.self.emotions(0).map((e) => e.name)).toContain("frustration"));
@@ -157,36 +154,30 @@ describe("rule events on the bus", () => {
   it("an activity that failed is a weak frustration, one that is done a weak pride", async () => {
     const h = await boot();
     const ended = {
-      resource: "broadcast",
-      request: { type: "stop_live" },
+      resource: "broadcast" as const,
+      request: { type: "stop_live" } as never,
       turn: null,
       at: toTimestamp(T0),
     };
-    h.publish(
-      customEvent("activity.failed", {
-        type: "failed",
-        task: "t1",
-        ...ended,
-        code: "timeout",
-        detail: "",
-      }),
-    );
+    h.publish(Events.ActivityFailed, {
+      type: "failed",
+      task: "t1",
+      ...ended,
+      code: "timeout" as const,
+      detail: "",
+    });
     await vi.waitFor(() => expect(h.self.emotions(0).map((e) => e.name)).toContain("frustration"));
-    h.publish(
-      customEvent("activity.done", { type: "done", task: "t2", ...ended, detail: "", data: null }),
-    );
+    h.publish(Events.ActivityDone, { type: "done", task: "t2", ...ended, detail: "", data: null });
     await vi.waitFor(() => expect(h.self.emotions(0).map((e) => e.name)).toContain("pride"));
   });
 
   it("a social appraisal arrives as appraisals (a strength, never her reading as a level)", async () => {
     const h = await boot();
-    h.publish(
-      customEvent("social.appraisal", {
-        context: { platform: "discord", scope: "g", channel: "c", kind: "channel" },
-        her: { joy: 0.95, shy: 0.2, pride: 0.5, sorrow: 0.4 },
-        people: [],
-      }),
-    );
+    h.publish(Events.SocialAppraisal, {
+      context: { platform: "discord", scope: "g", channel: "c", kind: "channel" },
+      her: { joy: 0.95, shy: 0.2, pride: 0.5, sorrow: 0.4 },
+      people: [],
+    });
     await vi.waitFor(() => expect(h.self.emotions(0).length).toBeGreaterThan(0));
     const by = Object.fromEntries(h.self.emotions(0).map((e) => [e.name, e.intensity]));
     // The top three readings, as strong / medium / medium steps: 0.35, 0.2, 0.2 (not 0.95).
@@ -200,17 +191,15 @@ describe("rule events on the bus", () => {
 describe("affect.changed", () => {
   it("is published with the snapshot when her mood or strongest emotions move", async () => {
     const h = await boot();
-    h.publish(
-      customEvent(AFFECT_EVENT_TOPIC, {
-        kind: "game_won",
-        person: null,
-        handle: null,
-        context: null,
-        detail: "",
-        key: "w",
-        at: toTimestamp(T0),
-      }),
-    );
+    h.publish(Events.AffectEvent, {
+      kind: "game_won",
+      person: null,
+      handle: null,
+      context: null,
+      detail: "",
+      key: "w",
+      at: toTimestamp(T0),
+    });
     await vi.waitFor(() => expect(h.changed.length).toBeGreaterThan(0));
     const last = h.changed.at(-1);
     expect(last?.top.map((e) => e.name)).toEqual(expect.arrayContaining(["joy"]));

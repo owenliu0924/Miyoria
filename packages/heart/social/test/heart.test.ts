@@ -8,9 +8,7 @@ import { appraisalRequest, parseHeartAppraisal, socialConfig } from "../src/inde
 import { channel, dm, Harness, router, t } from "./helpers.js";
 
 function payloads(h: Harness, topic: string): JsonValue[] {
-  return h.events.flatMap((e) =>
-    e.type === "custom" && e.data.topic === topic ? [e.data.payload] : [],
-  );
+  return h.events.flatMap((e) => (e.type === topic ? [e.data as JsonValue] : []));
 }
 
 describe("social events for her emotions", () => {

@@ -3,11 +3,10 @@
 
 import { MemorySettingsStore } from "@miyoria/store";
 import {
-  ACTIVITY_CHANGED_TOPIC,
-  customEvent,
+  Events,
+  eventEnvelope,
   type JsonValue,
   type LifeEntry,
-  newEnvelope,
   type Principal,
   Principals,
   toTimestamp,
@@ -55,28 +54,22 @@ function decision(
   principal: Principal = Principals.self(CHAT),
   allowed = true,
 ) {
-  return newEnvelope(
-    "actions",
-    customEvent("gate.decision", {
-      capability,
-      args,
-      allowed,
-      at: toTimestamp(T0),
-      principal: JSON.parse(JSON.stringify(principal)) as JsonValue,
-    }),
-  );
+  return eventEnvelope("actions", Events.GateDecision, {
+    capability,
+    args,
+    allowed,
+    at: toTimestamp(T0),
+    principal: JSON.parse(JSON.stringify(principal)),
+  } as never);
 }
 
 function activity(type: string, target: string | null, since: number, phase = "running") {
-  return newEnvelope(
-    "activity",
-    customEvent(ACTIVITY_CHANGED_TOPIC, {
-      activity:
-        type === "idle"
-          ? { type: "idle", since: toTimestamp(since) }
-          : { type, target, phase, task: null, failure: null, since: toTimestamp(since) },
-    }),
-  );
+  return eventEnvelope("activity", Events.ActivityChanged, {
+    activity:
+      type === "idle"
+        ? { type: "idle", since: toTimestamp(since) }
+        : { type, target, phase, task: null, failure: null, since: toTimestamp(since) },
+  } as never);
 }
 
 describe("her life log", () => {
