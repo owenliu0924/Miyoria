@@ -165,6 +165,42 @@ describe("gate order", () => {
     expect(g.runs.filter((r) => r === "t.medium").length).toBe(4);
   });
 
+  it("a run whose executor failed starts no cooldown, and still counts toward the day", async () => {
+    vi.useFakeTimers();
+    const g = await gate();
+    g.registry.configure({
+      ...g.registry.config,
+      medium: { per_day: 3, per_person_per_day: 3, cooldown_ms: 10_000 },
+    });
+    let broken = true;
+    g.registry.register(
+      defineCapability({
+        name: "t.flaky",
+        summary: "fails until fixed",
+        risk: "medium",
+        args: z.object({}),
+        permission: null,
+        async execute() {
+          if (broken) throw new Error("wrong channel");
+          return "ok";
+        },
+      }),
+    );
+    expect((await g.registry.invoke(request("t.flaky", self()))).status).toBe("failed");
+    // The corrected try right after it is not held back by a cooldown.
+    broken = false;
+    expect((await g.registry.invoke(request("t.flaky", self()))).status).toBe("done");
+    // The one that worked starts the cooldown.
+    const cooling = await g.registry.invoke(request("t.flaky", self()));
+    expect(cooling.decision.reason).toContain("cooling down");
+    // The failed run was one of the day's three.
+    vi.advanceTimersByTime(10_000);
+    expect((await g.registry.invoke(request("t.flaky", self()))).status).toBe("done");
+    vi.advanceTimersByTime(10_000);
+    const daily = await g.registry.invoke(request("t.flaky", self()));
+    expect(daily.decision.reason).toContain("daily limit reached (3 per day)");
+  });
+
   it("budget: degraded tightens limits, exhausted stops autonomous actions", async () => {
     const g = await gate();
     g.registry.configure({

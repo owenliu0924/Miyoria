@@ -68,7 +68,7 @@ import { EmergencyStop } from "./emergency.js";
 import { Followups, followupHint } from "./followup.js";
 import { publishNotice, recordOutcome } from "./outcome.js";
 import { PRIVACY_PROFILE, Privacy } from "./privacy.js";
-import { effectiveLimits, RateLimiter, tightened } from "./rate.js";
+import { effectiveLimits, RateLimiter, type RateRun, tightened } from "./rate.js";
 import { approvalCard, Escalations, parseReview, reviewMessages } from "./review.js";
 import { CapabilityTool } from "./tools.js";
 
@@ -263,6 +263,8 @@ export class ActuatorRegistry implements ActuatorExecutor {
   #name = "她";
   #reviewFallbackLogged = false;
   readonly rate = new RateLimiter();
+  /** The counted run of each allowed decision, to mark it when its executor fails. */
+  readonly #counted = new WeakMap<GateDecision, RateRun>();
   readonly privacy: Privacy;
   readonly escalations: Escalations;
   /** Late outcomes of `followup` tools, delivered as follow-up turns. */
@@ -446,7 +448,10 @@ export class ActuatorRegistry implements ActuatorExecutor {
       }
       return denied;
     }
-    if (options.implied !== true) this.#count(capability, parsed.data, request);
+    if (options.implied !== true) {
+      const counted = this.#count(capability, parsed.data, request);
+      if (counted !== null) this.#counted.set(decision, counted);
+    }
     const args = parsed.data;
     const route = this.#routeFor(capability, args, request, options);
     const task = options.task ?? null;
@@ -473,6 +478,7 @@ export class ActuatorRegistry implements ActuatorExecutor {
       outcome = { status: "done", decision, result: this.#postReceipt(request, result) };
     } catch (error) {
       if (options.signal?.aborted) throw error;
+      this.#failed(decision);
       log.warn(
         { capability: capability.name, err: errorMessage(error) },
         "capability failed after the gate allowed it",
@@ -572,7 +578,15 @@ export class ActuatorRegistry implements ActuatorExecutor {
         decision,
         wait: run.route.wait,
         signal: run.route.signal,
-        execute: (direct) => this.#direct(capability, args, request, decision, direct),
+        // A task nobody waits for fails after `invoke` returned: its failure is seen here.
+        execute: async (direct) => {
+          try {
+            return await this.#direct(capability, args, request, decision, direct);
+          } catch (error) {
+            if (!direct.signal.aborted) this.#failed(decision);
+            throw error;
+          }
+        },
       });
     }
     const ctx: ExecContext = {
@@ -810,10 +824,20 @@ export class ActuatorRegistry implements ActuatorExecutor {
   }
 
   /** Rate limits count every medium / high run except overriding commands and the panel. */
-  #count(capability: Capability, args: unknown, request: ActionRequest): void {
-    if (capability.risk === "low" || request.principal.kind === "panel") return;
-    if (request.principal.kind === "command" && request.principal.override) return;
-    this.rate.record(capability.name, this.#person(capability, args, request), this.#clock.now());
+  #count(capability: Capability, args: unknown, request: ActionRequest): RateRun | null {
+    if (capability.risk === "low" || request.principal.kind === "panel") return null;
+    if (request.principal.kind === "command" && request.principal.override) return null;
+    return this.rate.record(
+      capability.name,
+      this.#person(capability, args, request),
+      this.#clock.now(),
+    );
+  }
+
+  /** The executor of an allowed request failed: no cooldown follows that run. */
+  #failed(decision: GateDecision): void {
+    const run = this.#counted.get(decision);
+    if (run) this.rate.failed(run);
   }
 
   async #gate(

@@ -223,6 +223,47 @@ describe("activity routing", () => {
     expect(outcome.status).toBe("denied");
     expect(calls).toEqual([]);
   });
+
+  it("a task that fails after her tool was answered starts no cooldown", async () => {
+    const g = await gate();
+    g.registry.configure({
+      ...g.registry.config,
+      medium: { per_day: 10, per_person_per_day: 10, cooldown_ms: 10_000 },
+    });
+    let broken = true;
+    g.registry.register(
+      defineCapability<{ guild?: string | null }>({
+        name: "voice.join",
+        summary: "加入語音頻道",
+        risk: "medium",
+        args: z.object({ guild: z.string().nullish() }),
+        permission: null,
+        tool: { name: "voice_join", description: "進語音。", properties: {} },
+        activity: (): ActivityRequest[] => [
+          { type: "ensure_voice", platform: "discord", guild: "g1", channel: null, follow: null },
+        ],
+        async execute() {
+          if (broken) throw new Error("channel not found");
+          return "joined";
+        },
+      }),
+    );
+    const { calls, router } = routed();
+    g.registry.setActivityRouter(router);
+    const tool = g.tools.get("voice_join");
+    const ctx = () => toolCtx(Principals.self(CTX), new AbortController().signal);
+    expect(await tool?.call(ctx(), {})).toBe("開始了(task ABC123)");
+    // While the task is still running, a second request waits out the cooldown.
+    await expect(tool?.call(ctx(), {})).rejects.toThrow(/cooling down/);
+    // The manager runs the step and it fails: she may try again at once.
+    await expect(
+      calls[0]?.execute({ signal: new AbortController().signal, task: "T1" }),
+    ).rejects.toThrow("channel not found");
+    broken = false;
+    expect(await tool?.call(ctx(), {})).toBe("開始了(task ABC123)");
+    await calls[1]?.execute({ signal: new AbortController().signal, task: "T2" });
+    await expect(tool?.call(ctx(), {})).rejects.toThrow(/cooling down/);
+  });
 });
 
 describe("implied steps", () => {
