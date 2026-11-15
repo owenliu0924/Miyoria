@@ -206,10 +206,17 @@ describe("the worker client", () => {
     return `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
   }
 
-  function judge(url: string, now: () => number = Date.now, warnings: string[] = []) {
+  // A generous timeout unless the test is about the timeout: the first request of a cold
+  // process can take longer than the real 150 ms on a busy machine.
+  function judge(
+    url: string,
+    now: () => number = Date.now,
+    warnings: string[] = [],
+    timeoutMs = 2_000,
+  ) {
     return new HttpTurnJudge({
       endpoints: new FakeEndpoints([{ name: "voice.turn", provides: ["turn", "vad"], url }]),
-      timeoutMs: 80,
+      timeoutMs,
       now,
       warn: (m) => warnings.push(m),
     });
@@ -235,7 +242,7 @@ describe("the worker client", () => {
   it("gives up after the timeout, without a rejection", async () => {
     const url = await worker(() => undefined);
     const t0 = Date.now();
-    expect(await judge(url).ask(Int16Array.of(1), 16_000, never)).toBeNull();
+    expect(await judge(url, Date.now, [], 80).ask(Int16Array.of(1), 16_000, never)).toBeNull();
     expect(Date.now() - t0).toBeLessThan(1_000);
     server?.closeAllConnections();
   });
