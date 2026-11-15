@@ -8,10 +8,10 @@ summary = "Miyoria Core(機器人本體、管理 API 與面板)"
 runtime = "node"
 
 [run]
-# {miyoria} is this CLI's own entry. Today it runs in the config file's folder; the folder of
-# this descriptor is used until hostd learns the workspace root.
+# {miyoria} is this CLI's own entry. It runs in the workspace folder (where host.toml and,
+# on this machine, miyoria.toml are), as the old launcher ran it in the config file's folder.
 command = ["{miyoria}", "core", "-c", "{config}"]
-cwd = "."
+cwd = "{workspace}"
 port = 7878                      # `[modules.api] bind`; Core reads its own bind, so no port_env
 # Core gets the whole environment, as `up` gives it today (keys and tokens come from .env).
 pass_env = ["*"]

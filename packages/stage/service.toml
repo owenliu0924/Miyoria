@@ -8,9 +8,9 @@ summary = "舞台(VTube Studio、OBS 與 overlay)"
 runtime = "node"
 
 [run]
-# Today it runs in the config file's folder; see core's service.toml.
+# It runs in the workspace folder; see core's service.toml.
 command = ["{miyoria}", "stage", "-c", "{config}"]
-cwd = "."
+cwd = "{workspace}"
 port = 7884                      # the overlay (`[stage] overlay_bind`)
 pass_env = ["*"]
 after = ["core"]

@@ -18,9 +18,9 @@ command = ["{service}/mediamtx.exe", "mediamtx.yml"]
 cwd = "."
 # The API address; the ports (RTMP 1935, LL-HLS 8888) are in mediamtx.yml, all on 127.0.0.1.
 port = 9997
-# MediaMTX reads its HLS secret from MTX_HLSCDNSECRET. start.ps1 fills it from Core's
-# MIYORIA_HLS_SECRET in .env; hostd must be given the same value under this name.
-pass_env = ["MTX_HLSCDNSECRET"]
+# MediaMTX reads its HLS secret from MTX_HLSCDNSECRET: Core's MIYORIA_HLS_SECRET from .env, which
+# the daemon has in its environment. Without it the service is disabled with the reason.
+env = { MTX_HLSCDNSECRET = "{env:MIYORIA_HLS_SECRET}" }
 
 # Plain TCP: the API path that answers 200 without a stream is not checked yet.
 [run.health]

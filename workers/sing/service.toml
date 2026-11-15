@@ -35,8 +35,11 @@ cwd = "."
 port = 8005
 host_env = "HOST"
 port_env = "PORT"
-# Today `up` starts it after asr and tts, and gives it their addresses as SING_OFFLOAD_URLS.
+# It starts after asr and tts and gets their addresses as SING_OFFLOAD_URLS: {offload_urls} is
+# this host's evictable services (tts, then asr); the variable is left out when there are none.
+# Until H7, when hostd arbitrates the card itself.
 after = ["asr", "tts"]
+env = { SING_OFFLOAD_URLS = "{offload_urls}" }
 
 [run.health]
 http = "/health"

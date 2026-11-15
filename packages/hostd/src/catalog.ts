@@ -24,20 +24,33 @@ export const DESCRIPTOR_FILE = "service.toml";
 
 /**
  * The `{name}` placeholders a descriptor may use in a command, an environment value or a path.
- * They are substituted when a service starts, not by this module.
+ * They are substituted when a service starts (`resolve.ts`), not by this module. `{env:NAME}`,
+ * the value of one of the daemon's environment variables, is allowed besides these.
  */
 export const PLACEHOLDERS = [
   "python",
   "node",
   "miyoria",
   "config",
+  "workspace",
   "state",
   "models",
   "service",
   "port",
   "host",
   "voice",
+  // Until H7: the base URLs of this host's evictable GPU services, for the sing worker.
+  "offload_urls",
 ] as const;
+
+/** The prefix of the `{env:NAME}` placeholder. */
+export const ENV_PLACEHOLDER_PREFIX = "env:";
+
+/** Whether a placeholder name, as `placeholdersIn` returns it, is one hostd knows. */
+export function isKnownPlaceholder(name: string): boolean {
+  if (name.startsWith(ENV_PLACEHOLDER_PREFIX)) return name.length > ENV_PLACEHOLDER_PREFIX.length;
+  return (PLACEHOLDERS as readonly string[]).includes(name);
+}
 
 export interface CatalogEntry {
   name: string;
@@ -58,9 +71,9 @@ export interface Catalog {
   problems: CatalogProblem[];
 }
 
-const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_-]*)\}/g;
+const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_-]*(?::[A-Za-z_][A-Za-z0-9_]*)?)\}/g;
 
-/** The names of the `{placeholders}` in a text, in order, repeats included. */
+/** The names of the `{placeholders}` in a text, in order, repeats included (`env:NAME` whole). */
 export function placeholdersIn(text: string): string[] {
   return [...text.matchAll(PLACEHOLDER)].map((m) => m[1] as string);
 }
@@ -147,7 +160,7 @@ export function loadCatalog(root: string): Catalog {
         ...kindProblems(descriptor),
         ...placeholderTexts(descriptor).flatMap(([where, text]) =>
           placeholdersIn(text)
-            .filter((name) => !(PLACEHOLDERS as readonly string[]).includes(name))
+            .filter((name) => !isKnownPlaceholder(name))
             .map((name) => `${where}: unknown placeholder {${name}}`),
         ),
       ];

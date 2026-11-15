@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadCatalog, PLACEHOLDERS, placeholdersIn } from "../src/index.js";
+import { isKnownPlaceholder, loadCatalog, PLACEHOLDERS, placeholdersIn } from "../src/index.js";
 
 // Temporary folders live inside the package, not in the system temp folder.
 const TMP = join(dirname(fileURLToPath(import.meta.url)), "..", ".tmp-test");
@@ -110,8 +110,20 @@ describe("placeholdersIn", () => {
     expect(placeholdersIn("{python} {service}/x {}  {1} {a b}")).toEqual(["python", "service"]);
   });
 
-  it("knows the ten placeholders of the design", () => {
-    expect([...PLACEHOLDERS]).toHaveLength(10);
+  it("knows the ten placeholders of the design, {workspace} and {offload_urls}", () => {
+    expect([...PLACEHOLDERS]).toHaveLength(12);
+    expect(PLACEHOLDERS).toContain("workspace");
+    expect(PLACEHOLDERS).toContain("offload_urls");
+  });
+
+  it("allows {env:NAME} and nothing else with a colon", () => {
+    expect(placeholdersIn("{env:MIYORIA_HLS_SECRET} {other:X}")).toEqual([
+      "env:MIYORIA_HLS_SECRET",
+      "other:X",
+    ]);
+    expect(isKnownPlaceholder("env:MIYORIA_HLS_SECRET")).toBe(true);
+    expect(isKnownPlaceholder("other:X")).toBe(false);
+    expect(isKnownPlaceholder("env:")).toBe(false);
   });
 });
 
