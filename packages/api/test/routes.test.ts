@@ -833,7 +833,15 @@ describe("routes", () => {
       type: "custom",
       data: {
         topic: "voice.latency",
-        payload: { stage: "asr", context: { ...voiceContext() }, asr_ms: 210 },
+        payload: {
+          stage: "asr",
+          context: { ...voiceContext() },
+          speaker: account("5678"),
+          provider: "test",
+          audio_ms: 1200,
+          transcribe_ms: 200,
+          asr_ms: 210,
+        },
       },
     });
     const state = await waitFor(async () => {

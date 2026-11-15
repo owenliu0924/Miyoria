@@ -424,9 +424,11 @@ describe("finished-tense lines (§10.1)", () => {
       customEvent(ACTIVITY_DONE_TOPIC, {
         type: "done",
         task: t.id,
+        resource: t.resource,
         request: t.request,
         turn: t.turn,
         detail: "進去了",
+        data: null,
         at: toTimestamp(Date.now()),
       } as unknown as JsonValue),
     );
@@ -540,9 +542,11 @@ describe("finished-tense lines (§10.1)", () => {
       customEvent(ACTIVITY_DONE_TOPIC, {
         type: "done",
         task: t.id,
+        resource: t.resource,
         request: t.request,
         turn: t.turn,
         detail: "進去了",
+        data: null,
         at: toTimestamp(Date.now()),
       } as unknown as JsonValue),
     );

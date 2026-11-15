@@ -61,9 +61,37 @@ describe("recorder", () => {
   it("appends her input (and her outcomes) as replayable lines", async () => {
     const lines = await record({ record: true, dir: "logs" }, (sup) => {
       sup.bus.publish("discord", message);
-      sup.bus.publish("agent", customEvent("agent.turn.outcome", { turn: "t" }));
+      const stamp = toTimestamp(Date.UTC(2026, 10, 3, 6, 0, 0));
+      const place = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
+      sup.bus.publish(
+        "agent",
+        customEvent("agent.turn.outcome", {
+          turn: "t",
+          context: place,
+          reason: "addressed",
+          outcome: { type: "silence" },
+          addressed_by: [],
+          focus: [],
+          restarts: 0,
+          reasoning: null,
+          latency_ms: null,
+          at: stamp,
+        }),
+      );
       // Not recorded: not in the topics.
-      sup.bus.publish("agent", customEvent("agent.prompt", { turn: "t" }));
+      sup.bus.publish(
+        "agent",
+        customEvent("agent.prompt", {
+          turn: "t",
+          context: place,
+          at: stamp,
+          purpose: "chat",
+          reasoning: "off",
+          blocks: [],
+          messages: [],
+          prompt_tokens: null,
+        }),
+      );
     });
     const log = parseReplayLog(lines.join("\n"));
     expect(log.entries.map((e) => [e.source, e.event.type])).toEqual([

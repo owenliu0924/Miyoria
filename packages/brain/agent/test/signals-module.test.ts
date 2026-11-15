@@ -3,6 +3,7 @@
 
 import { contentText, MockProvider } from "@miyoria/llm/llm";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
+import { exemptFromBusCheck } from "@miyoria/runtime/kernel";
 import {
   type AffectState,
   AffectStateKey,
@@ -36,6 +37,9 @@ import {
   ToolRegistry,
   wait,
 } from "./harness.js";
+
+// One budget state is unknown on purpose: the module ignores it.
+exemptFromBusCheck(["llm.budget"]);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -446,7 +450,19 @@ function speeches(h: Harness): [string, string][] {
 // ---------------------------------------------------------------- budget
 
 function budget(state: string): Event {
-  return { type: "custom", data: { topic: "llm.budget", payload: { state, spent_usd: 12.5 } } };
+  return {
+    type: "custom",
+    data: {
+      topic: "llm.budget",
+      payload: {
+        state,
+        spent_today_usd: 12.5,
+        daily_usd: 10,
+        spent_month_usd: 40,
+        monthly_usd: null,
+      },
+    },
+  };
 }
 
 describe("llm budget", () => {

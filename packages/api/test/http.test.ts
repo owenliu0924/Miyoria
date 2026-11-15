@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { PersonaHandle, PersonaHandleKey } from "@miyoria/brain/agent";
 import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
-import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
+import { exemptFromBusCheck, Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { PersonaOverrideStoreKey } from "@miyoria/store";
 import type { JsonValue } from "@miyoria/types";
@@ -22,6 +22,9 @@ import {
 } from "../src/index.js";
 import { call, errorOf, raw, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
+
+// test.ping is made up to test the event stream.
+exemptFromBusCheck(["test.ping"]);
 
 const TOKEN = "test-token";
 

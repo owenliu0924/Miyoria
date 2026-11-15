@@ -23,6 +23,7 @@ import {
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
+  toTimestamp,
   v2Payload,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -289,7 +290,22 @@ describe("party module", () => {
       type: "custom",
       data: {
         topic: "activity.changed",
-        payload: { activity: { type: "singing", phase: "starting" } } as JsonValue,
+        payload: {
+          version: 1,
+          at: toTimestamp(Date.now()),
+          presence: { type: "none" },
+          broadcast: { type: "off" },
+          activity: {
+            type: "singing",
+            target: "song",
+            phase: "starting",
+            task: null,
+            failure: null,
+            since: toTimestamp(Date.now()),
+          },
+          override: null,
+          scene: null,
+        } as JsonValue,
       },
     });
     const table = h.sup.services.require(PartyTableKey);

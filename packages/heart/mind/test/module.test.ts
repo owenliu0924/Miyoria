@@ -225,11 +225,16 @@ describe("mind module: Plan", () => {
     r.publish(salient("Owen 上線了"));
     await wait(5000);
     expect(provider.requests()).toHaveLength(1);
-    const mood = r.sup.services.require(AffectStateKey).snapshot().mood;
-    r.publish(customEvent("affect.changed", { mood: { ...mood, valence: mood.valence - 0.1 } }));
+    const snap = r.sup.services.require(AffectStateKey).snapshot();
+    const mood = snap.mood;
+    r.publish(
+      customEvent("affect.changed", { ...snap, mood: { ...mood, valence: mood.valence - 0.1 } }),
+    );
     await wait(5000);
     expect(provider.requests()).toHaveLength(1);
-    r.publish(customEvent("affect.changed", { mood: { ...mood, valence: mood.valence - 0.4 } }));
+    r.publish(
+      customEvent("affect.changed", { ...snap, mood: { ...mood, valence: mood.valence - 0.4 } }),
+    );
     await wait(5000);
     expect(provider.requests()).toHaveLength(2);
     expect(texts(provider.requests()[1]).data).toContain("你的心情變了");
@@ -384,7 +389,17 @@ describe("a rule on her goals (§9)", () => {
     customEvent(DIRECTIVE_CHANGED_TOPIC, {
       op: "add",
       text,
-      directive: { effect, text },
+      directive: {
+        id: "d1",
+        issuer: { platform: "discord", id: "1" },
+        authority: "owner",
+        scope: {},
+        effect,
+        text,
+        expires: "until_revoked",
+        source_event: "evt:1",
+        created_at: toTimestamp(Date.now()),
+      },
       by: "discord:1",
     });
 

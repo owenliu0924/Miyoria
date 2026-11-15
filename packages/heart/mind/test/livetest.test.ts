@@ -209,7 +209,9 @@ describe("failed actions (no Arbiter running)", () => {
     expect(r.intents.intents).toHaveLength(1);
 
     // A game adapter merely publishing is not "the game runs" (a disconnect is not either).
-    r.publish(customEvent("game.minecraft.disconnected", { reason: "eof" }));
+    r.publish(
+      customEvent("game.minecraft.disconnected", { type: "disconnected", data: { reason: "eof" } }),
+    );
     await wait(10);
     expect(status(await r.plan())[0]?.[2]).toContain("on hold");
 

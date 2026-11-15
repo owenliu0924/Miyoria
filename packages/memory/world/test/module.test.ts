@@ -1,5 +1,5 @@
 import { CommandsModule } from "@miyoria/commands";
-import { Supervisor } from "@miyoria/runtime/kernel";
+import { exemptFromBusCheck, Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   customEvent,
@@ -18,6 +18,9 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorldModule } from "../src/index.js";
 import { acct, FakeSocial, playing, presence, textCtx, voice } from "./helpers.js";
+
+// One presence update is junk on purpose: the module drops it.
+exemptFromBusCheck(["platform.presence"]);
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {

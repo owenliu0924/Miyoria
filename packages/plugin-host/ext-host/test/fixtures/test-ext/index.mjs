@@ -190,7 +190,7 @@ async function onRequest(method, params) {
           return { content: "bye" };
         case "try.publish":
           try {
-            await request("events.publish", { topic: args.topic, payload: {} });
+            await request("events.publish", { topic: args.topic, payload: { type: "fixture" } });
             return "ok";
           } catch (error) {
             return `denied: ${error.code}`;

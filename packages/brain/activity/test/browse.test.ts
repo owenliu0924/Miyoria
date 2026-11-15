@@ -9,8 +9,8 @@ import {
   Principals,
   toTimestamp,
 } from "@miyoria/types";
-import { describe, expect, it } from "vitest";
-import { CHAT, FakeWorld, OWEN, tick, until } from "./fake.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CHAT, FakeWorld, OWEN, until } from "./fake.js";
 
 const IDLE_MS = 60;
 const MC: ActivityRequest = { type: "start", activity: "game", target: "minecraft", goal: null };
@@ -42,15 +42,21 @@ function decided(
       why: null,
       turn: null,
       allowed,
-      stage: allowed ? "allowed" : "rate",
+      stage: allowed ? "review" : "rate",
       reason: "",
       reviewer: null,
     }),
   );
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("browsing", () => {
   it("her own search shows as browsing, and ends a while after her last page", async () => {
+    // A fake clock: with real timers a slow machine let the idle time pass between two steps.
+    vi.useFakeTimers();
     const w = world();
     decided(w, "web.search", { query: "Minecraft 1.22 新生物" });
     expect(w.service.snapshot().activity).toMatchObject({
@@ -58,12 +64,16 @@ describe("browsing", () => {
       target: "Minecraft 1.22 新生物",
       phase: "running",
     });
-    await tick(IDLE_MS / 2);
+    await vi.advanceTimersByTimeAsync(IDLE_MS / 2);
     // Reading a page keeps it going (and keeps what she was looking for).
     decided(w, "web.read", { url: "https://minecraft.wiki/w/Mob" });
-    await tick(IDLE_MS / 2 + 10);
+    await vi.advanceTimersByTimeAsync(IDLE_MS / 2 + 10);
     expect(w.service.snapshot().activity).toMatchObject({ type: "browse" });
-    await until(() => w.service.snapshot().activity.type === "idle");
+    for (let waited = 0; waited < 10 * IDLE_MS; waited += 5) {
+      if (w.service.snapshot().activity.type === "idle") break;
+      await vi.advanceTimersByTimeAsync(5);
+    }
+    expect(w.service.snapshot().activity.type).toBe("idle");
   });
 
   it("a search for someone else, a refused one, or one during a game is not her browsing", async () => {

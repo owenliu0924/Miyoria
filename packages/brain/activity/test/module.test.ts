@@ -59,7 +59,7 @@ describe("activity module", () => {
               state: "started",
               game: args.game ?? "minecraft",
               game_name: "Minecraft",
-              context: null,
+              context: CTX,
             }),
           );
           return "她開始玩 Minecraft 了";

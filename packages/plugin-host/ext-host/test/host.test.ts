@@ -18,6 +18,7 @@ import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/to
 import {
   Config,
   EventBus,
+  exemptFromBusCheck,
   ServiceRegistry,
   type Subscription,
   Supervisor,
@@ -40,6 +41,9 @@ import {
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { discover } from "../src/index.js";
+
+// The custom.* and other.thing topics are made up to test who may publish and receive.
+exemptFromBusCheck(["custom.no.b", "custom.ok.a", "custom.ok.c", "custom.ok.z"]);
 
 const EXT = "ext.test.fixture";
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   defineManifest,
+  exemptFromBusCheck,
   type Module,
   type ModuleContext,
   type ModuleManifest,
@@ -10,6 +11,9 @@ import {
   RequiredModuleError,
   Supervisor,
 } from "../src/index.js";
+
+// A made-up topic.
+exemptFromBusCheck(["custom.hello"]);
 
 class TestModule implements Module {
   starts = 0;

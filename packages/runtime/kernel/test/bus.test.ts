@@ -1,6 +1,15 @@
 import { customEvent, serviceKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { EventBus, ServiceRegistry, ServiceUnavailableError, TopicFilter } from "../src/index.js";
+import {
+  EventBus,
+  exemptFromBusCheck,
+  ServiceRegistry,
+  ServiceUnavailableError,
+  TopicFilter,
+} from "../src/index.js";
+
+// These tests publish made-up topics.
+exemptFromBusCheck(["custom.a", "custom.b", "x.1", "x.2", "y.1", "t"]);
 
 describe("TopicFilter", () => {
   it("topic_filter", () => {

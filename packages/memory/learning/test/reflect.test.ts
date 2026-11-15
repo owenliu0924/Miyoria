@@ -391,9 +391,16 @@ describe("feedback signals", () => {
     await r.say(TEXT, AMY, "Amy", "小鯨好吵");
     r.publish(
       customEvent("gate.decision", {
+        id: "d1",
+        at: toTimestamp(Date.now()),
         capability: "voice.join",
+        risk: "low",
+        args: {},
+        why: null,
+        turn: null,
         allowed: false,
         reason: "對方不希望她這樣做。",
+        reviewer: null,
         stage: "consent",
         principal: {
           kind: "self",

@@ -8,7 +8,13 @@ import {
   Permissions,
 } from "@miyoria/commands";
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
-import { EventBus, ServiceRegistry, type Subscription, Supervisor } from "@miyoria/runtime/kernel";
+import {
+  EventBus,
+  exemptFromBusCheck,
+  ServiceRegistry,
+  type Subscription,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   customEvent,
@@ -34,6 +40,9 @@ import {
   VOICE_GOLIVE_TOPIC,
 } from "../src/index.js";
 import { delay, type Json, WAIT_MS, waitUntil } from "./common.js";
+
+// A touch that carries a name is dropped on purpose: the stage forwards only x, y and part.
+exemptFromBusCheck(["live.touch"]);
 
 const TOKEN = "stage-secret";
 
@@ -192,6 +201,13 @@ class Node {
   }
 }
 
+const textCtx = (): ContextKey => ({
+  platform: "discord",
+  scope: "g1",
+  channel: "c1",
+  kind: "channel",
+});
+
 const voiceCtx = (): ContextKey => ({
   platform: "discord",
   scope: "g1",
@@ -278,7 +294,7 @@ describe("stage.link", () => {
     const turn = newId();
 
     // A text turn's emotion goes out at once.
-    h.publish(customEvent(EMOTION_TOPIC, { emotion: "smug" }));
+    h.publish(customEvent(EMOTION_TOPIC, { turn: newId(), context: textCtx(), emotion: "smug" }));
     expect(await node.recvJson()).toStrictEqual({ type: "emotion", name: "smug", intensity: 1 });
     // A voice turn's emotion waits for the sentence spoken with it.
     h.publish(
@@ -345,7 +361,15 @@ describe("stage.link", () => {
       elapsed_ms: null,
       duration_ms: null,
     });
-    h.publish(customEvent(SONG_PREPARE_TOPIC, { no: null }));
+    h.publish(
+      customEvent(SONG_PREPARE_TOPIC, {
+        no: null,
+        title: "",
+        stage: "",
+        progress: 0,
+        exclusive: null,
+      }),
+    );
     expect(await node.recvJson()).toMatchObject({ type: "activity", kind: null });
 
     // A voice turn that has not spoken yet: thinking, after the show delay (on the timer).
@@ -376,7 +400,15 @@ describe("stage.link", () => {
     await waitUntil(() => h.link().status()?.obs === true);
 
     // The voice node started Go Live: Stage presses OBS "Start Streaming".
-    h.publish(customEvent(VOICE_GOLIVE_TOPIC, { guild: "g1", state: "starting" }));
+    h.publish(
+      customEvent(VOICE_GOLIVE_TOPIC, {
+        platform: "discord",
+        guild: "g1",
+        state: "starting",
+        error: null,
+        reason: null,
+      }),
+    );
     const start = await node.recvJson();
     expect(start.type).toBe("stream");
     expect(start.action).toBe("start");
@@ -391,9 +423,25 @@ describe("stage.link", () => {
     await waitUntil(() => h.link().status()?.streaming === true);
 
     // "live" does not touch OBS again.
-    h.publish(customEvent(VOICE_GOLIVE_TOPIC, { guild: "g1", state: "live" }));
+    h.publish(
+      customEvent(VOICE_GOLIVE_TOPIC, {
+        platform: "discord",
+        guild: "g1",
+        state: "live",
+        error: null,
+        reason: null,
+      }),
+    );
     // Go Live ended: Stage presses OBS "Stop Streaming".
-    h.publish(customEvent(VOICE_GOLIVE_TOPIC, { guild: "g1", state: "stopped" }));
+    h.publish(
+      customEvent(VOICE_GOLIVE_TOPIC, {
+        platform: "discord",
+        guild: "g1",
+        state: "stopped",
+        error: null,
+        reason: null,
+      }),
+    );
     const stop = await node.recvJson();
     expect(stop.type).toBe("stream");
     expect(stop.action).toBe("stop");
@@ -628,12 +676,26 @@ describe("scene director on the link", () => {
     node.sendJson({ type: "status", ...SCENES, scene: "Talk", streaming: false });
     await waitUntil(() => h.link().status()?.scene === "Talk");
 
-    h.publish(customEvent("game.director.session", { state: "started", game: "minecraft" }));
+    h.publish(
+      customEvent("game.director.session", {
+        state: "started",
+        game: "minecraft",
+        game_name: "Minecraft",
+        context: textCtx(),
+      }),
+    );
     let req = await answer(node, { ...SCENES, scene: "Game", streaming: false });
     expect(req).toMatchObject({ type: "scene", name: "Game", transition: "Stinger" });
     expect(req.transition_ms).toBeUndefined();
 
-    h.publish(customEvent("game.director.session", { state: "stopped", game: "minecraft" }));
+    h.publish(
+      customEvent("game.director.session", {
+        state: "stopped",
+        game: "minecraft",
+        game_name: "Minecraft",
+        context: textCtx(),
+      }),
+    );
     req = await answer(node, { ...SCENES, scene: "Talk", streaming: false });
     expect(req).toMatchObject({
       type: "scene",

@@ -1,6 +1,6 @@
 // The affect service through the module and the bus: its inputs and what it publishes.
 
-import { Supervisor } from "@miyoria/runtime/kernel";
+import { exemptFromBusCheck, Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   AFFECT_CHANGED_TOPIC,
@@ -18,6 +18,9 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SelfModule } from "../src/index.js";
 import { T0 } from "./helpers.js";
+
+// One test sends malformed rule events on purpose (the module must ignore them).
+exemptFromBusCheck(["affect.event"]);
 
 class ManualClock implements Clock {
   constructor(public at = T0) {}
@@ -81,13 +84,15 @@ async function boot(display: "open" | "tsundere" = "open") {
   };
 }
 
+const CTX = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
+
 describe("<emo:…> tags never write back", () => {
   it("`agent.emotion` changes neither her emotions nor her mood (the loop that pinned arousal)", async () => {
     const h = await boot();
     const before = h.affect.snapshot();
     for (let i = 0; i < 20; i++) {
-      h.publish(customEvent("agent.emotion", { emotion: "smug", context: null }));
-      h.publish(customEvent("agent.emotion", { emotion: "angry", context: null }));
+      h.publish(customEvent("agent.emotion", { turn: "t1", context: CTX, emotion: "smug" }));
+      h.publish(customEvent("agent.emotion", { turn: "t1", context: CTX, emotion: "angry" }));
     }
     // Wait until the bus has delivered them (a later event is handled after them).
     h.publish(customEvent("self.nudge", { curiosity: 0.1 }));
@@ -151,9 +156,25 @@ describe("rule events on the bus", () => {
 
   it("an activity that failed is a weak frustration, one that is done a weak pride", async () => {
     const h = await boot();
-    h.publish(customEvent("activity.failed", { type: "failed", task: "t1" }));
+    const ended = {
+      resource: "broadcast",
+      request: { type: "stop_live" },
+      turn: null,
+      at: toTimestamp(T0),
+    };
+    h.publish(
+      customEvent("activity.failed", {
+        type: "failed",
+        task: "t1",
+        ...ended,
+        code: "timeout",
+        detail: "",
+      }),
+    );
     await vi.waitFor(() => expect(h.self.emotions(0).map((e) => e.name)).toContain("frustration"));
-    h.publish(customEvent("activity.done", { type: "done", task: "t2" }));
+    h.publish(
+      customEvent("activity.done", { type: "done", task: "t2", ...ended, detail: "", data: null }),
+    );
     await vi.waitFor(() => expect(h.self.emotions(0).map((e) => e.name)).toContain("pride"));
   });
 

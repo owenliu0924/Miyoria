@@ -14,6 +14,7 @@ import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   Config,
   EventBus,
+  exemptFromBusCheck,
   ServiceRegistry,
   Supervisor,
   SupervisorKey,
@@ -56,6 +57,9 @@ import {
   TIMEOUT,
   ToolDeclSchema,
 } from "../src/index.js";
+
+// The custom.* and other.thing topics are made up to test who may publish and receive.
+exemptFromBusCheck(["custom.hello", "other.thing"]);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

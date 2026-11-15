@@ -94,6 +94,13 @@ function expressionRequests(vts: FakeVts): [string, boolean][] {
     .map((r: Json) => [r.data.expressionFile, r.data.active]);
 }
 
+const textCtx = (): ContextKey => ({
+  platform: "discord",
+  scope: "g",
+  channel: "c",
+  kind: "channel",
+});
+
 const voiceCtx = (): ContextKey => ({
   platform: "discord",
   scope: "g",
@@ -164,7 +171,10 @@ describe("stage", () => {
     ).toBe(true);
     await expect(link.hotkey("Dance")).rejects.toThrow("Dance");
 
-    bus.publish("agent", customEvent(EMOTION_TOPIC, { emotion: "happy" }));
+    bus.publish(
+      "agent",
+      customEvent(EMOTION_TOPIC, { turn: newId(), context: textCtx(), emotion: "happy" }),
+    );
     const t0 = Date.now();
     await waitUntil(() => {
       const e = expressionRequests(vts);

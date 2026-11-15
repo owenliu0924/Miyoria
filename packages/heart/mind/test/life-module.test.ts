@@ -27,6 +27,19 @@ const T0 = Date.parse("2026-11-02T12:00:00.000Z"); // 20:00 at UTC+8
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
+/** An `activity.changed` event with the whole snapshot, as the manager publishes it. */
+function activityChanged(activity: JsonValue) {
+  return customEvent(ACTIVITY_CHANGED_TOPIC, {
+    version: 1,
+    at: toTimestamp(Date.now()),
+    presence: { type: "none" },
+    broadcast: { type: "off" },
+    activity,
+    override: null,
+    scene: null,
+  });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(T0);
@@ -104,11 +117,18 @@ describe("her own life in the mind module", () => {
     });
     r.publish(
       customEvent("gate.decision", {
-        capability: "web.search",
-        args: { query: "鯨魚的歌" },
-        allowed: true,
+        id: "d1",
         at: toTimestamp(Date.now()),
+        capability: "web.search",
+        risk: "low",
         principal: JSON.parse(JSON.stringify(Principals.self(TEXT))) as JsonValue,
+        args: { query: "鯨魚的歌" },
+        why: null,
+        turn: null,
+        allowed: true,
+        stage: "review",
+        reason: "",
+        reviewer: null,
       }),
     );
     await wait(10);
@@ -140,23 +160,17 @@ describe("her own life in the mind module", () => {
     // She played for nine hours today.
     const since = toTimestamp(Date.now() - 9 * HOUR);
     r.publish(
-      customEvent(ACTIVITY_CHANGED_TOPIC, {
-        activity: {
-          type: "game",
-          target: "minecraft",
-          phase: "running",
-          task: null,
-          failure: null,
-          since,
-        },
+      activityChanged({
+        type: "game",
+        target: "minecraft",
+        phase: "running",
+        task: null,
+        failure: null,
+        since,
       }),
     );
     await wait(10);
-    r.publish(
-      customEvent(ACTIVITY_CHANGED_TOPIC, {
-        activity: { type: "idle", since: toTimestamp(Date.now()) },
-      }),
-    );
+    r.publish(activityChanged({ type: "idle", since: toTimestamp(Date.now()) }));
     await wait(10);
     expect(r.sup.services.require(LifeLogKey).today()).toMatchObject([
       { activity: "game", minutes: 540 },

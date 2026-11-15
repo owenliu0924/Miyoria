@@ -2,7 +2,7 @@
 // decisions and how each turn ended, "do not remember this", and the people she meets. On a real
 // supervisor and an in-memory store.
 
-import { type Module, Supervisor } from "@miyoria/runtime/kernel";
+import { exemptFromBusCheck, type Module, Supervisor } from "@miyoria/runtime/kernel";
 import { openStore, type Store } from "@miyoria/store";
 import {
   type ContextKey,
@@ -20,6 +20,9 @@ import {
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { FactsModule } from "../src/module.js";
+
+// The second llm.call is not a call on purpose: the buffer leaves it out.
+exemptFromBusCheck(["llm.call"]);
 
 const CONFIG = { flush_ms: 5 };
 const discord: ContextKey = { platform: "discord", scope: "g", channel: "c", kind: "channel" };

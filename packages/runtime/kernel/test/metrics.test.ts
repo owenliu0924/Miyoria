@@ -2,12 +2,16 @@ import { customEvent } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   EventBus,
+  exemptFromBusCheck,
   MetricsError,
   MetricsRegistry,
   OVERFLOW_LABEL,
   renderMetrics,
   topicPrefix,
 } from "../src/index.js";
+
+// The bus is counted by topic prefix here; the payloads are not what is tested.
+exemptFromBusCheck(["voice.latency", "voice.utterance", "llm.budget"]);
 
 describe("metrics", () => {
   it("renders counters and gauges in the text format", () => {

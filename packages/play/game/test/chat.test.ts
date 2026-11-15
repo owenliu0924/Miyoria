@@ -147,7 +147,15 @@ class Chat {
   }
 
   async live(): Promise<void> {
-    await this.publish(customEvent("voice.golive", { guild: "g1", state: "live" }));
+    await this.publish(
+      customEvent("voice.golive", {
+        platform: "discord",
+        guild: "g1",
+        state: "live",
+        error: null,
+        reason: null,
+      }),
+    );
   }
 
   async stop(): Promise<void> {
