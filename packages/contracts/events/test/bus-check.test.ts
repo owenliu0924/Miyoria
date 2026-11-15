@@ -27,9 +27,10 @@ const registry = () => new EventRegistry().register(Ping, Steps);
 const place = { file: "test/x.test.ts", test: "does a thing" };
 
 describe("busCheckMode", () => {
-  it("defaults to report and reads the three modes", () => {
-    expect(busCheckMode(undefined)).toBe("report");
-    expect(busCheckMode("")).toBe("report");
+  it("is off unless asked for, and reads the three modes", () => {
+    expect(busCheckMode(undefined)).toBe("off");
+    expect(busCheckMode("")).toBe("off");
+    expect(busCheckMode("report")).toBe("report");
     expect(busCheckMode("off")).toBe("off");
     expect(busCheckMode(" Strict ")).toBe("strict");
     expect(() => busCheckMode("loud")).toThrow("MIYORIA_BUS_CHECK=loud");

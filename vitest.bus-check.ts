@@ -4,11 +4,11 @@
 // its topic must be registered and its payload must fit that topic's schema.
 //
 // `MIYORIA_BUS_CHECK` picks the mode:
-// - `report` (the default while K12a runs): problems are collected, and the run prints one
-//   summary at its end (`vitest.bus-check.global.ts`); no test fails because of them;
+// - `off` (the default): nothing is installed or loaded;
+// - `report`: problems are collected, and the run prints one summary at its end
+//   (`vitest.bus-check.global.ts`); no test fails because of them;
 // - `strict`: a test whose events have a problem fails, with the topic, the first failing path and
-//   the publishing module;
-// - `off`: nothing is installed or loaded.
+//   the publishing module.
 //
 // A test that publishes made-up topics on purpose says so with `exemptFromBusCheck("test.*")`
 // from @miyoria/runtime/kernel; the exemption ends with its file.

@@ -4,9 +4,9 @@
 // so tests run against source without building dependencies first. Vite replaces its default
 // conditions when `conditions` is set, so the defaults are listed again after ours.
 //
-// Every package's tests also run the bus check: each event published on a bus is checked against
-// its topic's payload schema (`vitest.bus-check.ts`; `MIYORIA_BUS_CHECK=off|report|strict`,
-// `report` by default), and each run prints one summary of what did not fit.
+// Every package's tests can also run the bus check: each event published on a bus is checked
+// against its topic's payload schema (`vitest.bus-check.ts`; `MIYORIA_BUS_CHECK=report|strict`,
+// off by default), and each run prints one summary of what did not fit.
 import { fileURLToPath } from "node:url";
 import { defineProject, mergeConfig, type ViteUserConfig } from "vitest/config";
 

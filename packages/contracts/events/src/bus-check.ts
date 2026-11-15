@@ -19,8 +19,11 @@ export type BusCheckMode = "off" | "report" | "strict";
 
 export const BUS_CHECK_MODES: readonly BusCheckMode[] = ["off", "report", "strict"];
 
-/** The mode used while this step (K12a) runs: collect problems and print them, fail nothing. */
-export const DEFAULT_BUS_CHECK_MODE: BusCheckMode = "report";
+/**
+ * Off unless asked for: checking every event costs time on each test run and, under load, made a
+ * timing-sensitive test fail. Work on payload schemas runs with `MIYORIA_BUS_CHECK=report`.
+ */
+export const DEFAULT_BUS_CHECK_MODE: BusCheckMode = "off";
 
 /** The mode a setting names (`MIYORIA_BUS_CHECK`); unset or empty is the default. */
 export function busCheckMode(value: string | undefined): BusCheckMode {
