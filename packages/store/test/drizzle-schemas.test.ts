@@ -24,19 +24,16 @@ function tablesOf(statements: readonly string[]): string[] {
 
 describe.each(Object.entries(DRIZZLE_PLUGINS))("the %s schema", (id, plugin) => {
   const { tables, schema } = plugin;
-  // The first migration is the whole schema. Once a second one exists, the first is frozen and
-  // the check is `pendingSql` below (what drizzle-kit would still change) plus the index
-  // comparison.
-  it.runIf(schema.migrations.length === 1)(
-    "is the SQL drizzle-kit generates from the Drizzle tables, STRICT added",
-    async () => {
-      const generated = firstMigrationSql(await createSql(tables), plugin.handWritten);
-      if (schema.migrations[0]?.sql !== generated) {
-        // The message is the migration to check in.
-        expect.fail(`${id} migration 1 differs from the Drizzle tables; generated:\n${generated}`);
-      }
-    },
-  );
+  it("is the SQL drizzle-kit generates from the Drizzle tables, STRICT added", async () => {
+    // The first migration is the whole schema. When a second one exists, this check moves to
+    // `pendingSql` below (what drizzle-kit would still change) plus the index comparison.
+    expect(schema.migrations).toHaveLength(1);
+    const generated = firstMigrationSql(await createSql(tables), plugin.handWritten);
+    if (schema.migrations[0]?.sql !== generated) {
+      // The message is the migration to check in.
+      expect.fail(`${id} migration 1 differs from the Drizzle tables; generated:\n${generated}`);
+    }
+  });
 
   it("migrates into a database drizzle-kit finds nothing to change in", async () => {
     const { raw, db } = migrated(schema);
