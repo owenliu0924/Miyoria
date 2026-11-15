@@ -128,6 +128,14 @@ export {
   MANIFEST_FILE,
 } from "./cutover/archive.js";
 export {
+  type DatabaseCounts,
+  type DatabaseLayout,
+  type DoctorOptions,
+  type DoctorReport,
+  inspectDatabase,
+  type MigrationReport,
+} from "./cutover/doctor.js";
+export {
   importLinks,
   importLinksFromFile,
   LINK_IMPORT_SOURCE,
@@ -281,6 +289,7 @@ export {
   checkDatabaseFile,
   checksum,
   coreSchema,
+  databaseRefusal,
   lintSchemas,
   type MigrateOptions,
   type Migration,

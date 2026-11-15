@@ -800,7 +800,8 @@ function targetState(path: string): "absent" | "blank" | "v5" {
   return "v5";
 }
 
-function memoryTarget(clock: Clock): OpenedLinkTarget {
+/** An empty new database in memory, to see what an import would bring without a target. */
+export function emptyLinkTarget(clock: Clock = systemClock): OpenedLinkTarget {
   const db = new Db(new DatabaseSync(":memory:", { enableForeignKeyConstraints: true }), clock);
   migrate(db, [identitySchema], { location: ":memory:" });
   const identity = new Identity(db);
@@ -820,7 +821,7 @@ export function openLinkTarget(
   const clock = options.clock ?? systemClock;
   const state = targetState(path);
   if (options.look) {
-    if (state !== "v5") return memoryTarget(clock);
+    if (state !== "v5") return emptyLinkTarget(clock);
     const ro = openReadOnly(path);
     const db = new Db(ro.db, clock);
     return {

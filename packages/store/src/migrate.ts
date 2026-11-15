@@ -308,23 +308,37 @@ function tableNames(rows: readonly Row[]): Set<string> {
 
 const TABLES = "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'";
 
-/** Throws when a database with these tables must not be migrated. */
-function refuseForeign(tables: ReadonlySet<string>, location: string): void {
+/**
+ * Why a database with these tables must not be migrated, or `null` when it may be. Pure, so
+ * `miyoria db doctor` can say what the guard would do without opening the file for writing.
+ */
+export function databaseRefusal(tables: ReadonlySet<string>, location: string): SchemaError | null {
   if (tables.has("schema_version")) {
-    throw new SchemaError(
+    return new SchemaError(
       "old_database",
       `${location} is a V4 database (it records migrations in \`schema_version\`). This build ` +
-        "starts from a new database and never changes an old one: point `core.database_url` " +
-        "at a new file (for example `sqlite:data/core.db`) and leave this one as it is",
+        "starts from a new database and never changes an old one. To move over, with V4 " +
+        "stopped: `miyoria db archive` (moves this file, its -wal and -shm to data/archive/ and " +
+        "makes a single-file copy), point `core.database_url` at a new file (for example " +
+        "`sqlite:data/core.db`), then `miyoria db import-links --from data/archive/" +
+        "<name>.single.db`. `miyoria db doctor <file>` tells what a file is",
     );
   }
   if (tables.size > 0 && !tables.has("_migrations")) {
-    throw new SchemaError(
+    return new SchemaError(
       "foreign_database",
       `${location} has tables but no \`_migrations\`: it is not a Miyoria database this ` +
-        "build can migrate. Point `core.database_url` at a new file",
+        "build can migrate. Point `core.database_url` at a new file " +
+        "(`miyoria db doctor <file>` tells what this one is)",
     );
   }
+  return null;
+}
+
+/** Throws when a database with these tables must not be migrated. */
+function refuseForeign(tables: ReadonlySet<string>, location: string): void {
+  const refusal = databaseRefusal(tables, location);
+  if (refusal !== null) throw refusal;
 }
 
 /**
