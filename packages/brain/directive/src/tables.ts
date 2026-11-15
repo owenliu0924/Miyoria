@@ -7,6 +7,7 @@ import {
   type CategoryData,
   type Db,
   type DirectiveStore,
+  declined,
   StoreError,
   type StorePlugin,
   tablePart,
@@ -132,4 +133,5 @@ export const directiveTables: StorePlugin<DirectiveTables> = {
   schema: directiveSchema,
   open: ({ db }) => new DirectiveTables(db),
   data: directiveData,
+  forgetPerson: () => declined("the rules someone set stay until they are revoked"),
 };

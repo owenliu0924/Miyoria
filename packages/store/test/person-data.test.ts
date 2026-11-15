@@ -9,6 +9,10 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { authTables } from "../../auth/src/tables.js";
+import { directiveTables } from "../../brain/directive/src/tables.js";
+import { economyTables } from "../../economy/src/tables.js";
+import { memoryTables } from "../../memory/memory/src/tables.js";
 import {
   type Db,
   declined,
@@ -219,5 +223,90 @@ describe("merging two people", () => {
     expect(() => store.personData.merge(owen, alt, { source: "social" })).toThrow(/the shop broke/);
     expect(items.of(alt)).toBe(1);
     expect((await store.people.personByAccount(OWEN_ALT))?.id).toBe(alt);
+  });
+});
+
+describe("the installed plugins' hooks", () => {
+  async function installed() {
+    const store = await SqliteStore.open(":memory:", {
+      plugins: [authTables, directiveTables, economyTables, memoryTables],
+    });
+    stores.push(store);
+    const owen = await store.people.upsertAccount(OWEN, "Owen");
+    const at = toTimestamp(Date.UTC(2026, 0, 1));
+    await store.plugin(economyTables).ledger.post({
+      id: newId(),
+      person: owen,
+      delta: 10,
+      reason: "checkin",
+      ref: null,
+      idem_key: "checkin:1",
+      ts: at,
+    });
+    await store.plugin(authTables).store.upsertRole({
+      name: "vip",
+      rank: 50,
+      grants: [],
+      denies: [],
+      builtin: false,
+    });
+    await store.plugin(authTables).store.assign({
+      account: OWEN,
+      role: "vip",
+      scope: { type: "global" },
+      granted_by: "test",
+      at,
+    });
+    await store.plugin(directiveTables).insert("p", {
+      id: "d1",
+      issuer: OWEN,
+      authority: "owner",
+      scope: { capability: "game.*", activity: "osu" },
+      effect: "deny",
+      text: "不要玩 osu",
+      expires: "until_revoked",
+      source_event: "msg:m1",
+      created_at: at,
+    });
+    await store.plugin(memoryTables).upsert({
+      id: newId(),
+      profile: "p",
+      kind: "fact",
+      scope: { type: "global" },
+      subjects: [owen],
+      content: "Owen 喜歡拉麵",
+      tokens: "owen 喜歡 拉麵",
+      embedding: null,
+      importance: 0.5,
+      confidence: 0.8,
+      created_at: at,
+      updated_at: at,
+      last_accessed: null,
+      access_count: 0,
+      source_context: null,
+      source: null,
+      due: null,
+      done: false,
+      superseded_by: null,
+    });
+    return { store, owen };
+  }
+
+  it("forget: memory forgets, money, roles and rules stay and say so", async () => {
+    const { store, owen } = await installed();
+    const result = store.personData.forget(owen, { reason: "forget me", source: "memory" });
+    expect(result.hooks.map((h) => [h.plugin, h.declined === null])).toEqual([
+      ["memory", true],
+      ["legacy", false],
+      ["economy", false],
+      ["directive", false],
+      ["auth", false],
+      ["identity", false],
+      ["core", true],
+    ]);
+    expect(hookCounts(result, "memory")).toEqual({ about: 1, derived: 0, unverified: 0 });
+    expect(await store.plugin(economyTables).ledger.balance("p", owen)).toBe(10);
+    expect(await store.plugin(authTables).store.assignmentsFor(OWEN)).toHaveLength(1);
+    expect(await store.plugin(directiveTables).all("p", 9)).toHaveLength(1);
   });
 });

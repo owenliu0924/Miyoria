@@ -21,6 +21,7 @@ import type {
   MemoryQuery,
   MemoryRecord,
   MemoryRecordStore,
+  PersonForget,
   PrunePolicy,
   StorePlugin,
 } from "@miyoria/store";
@@ -557,7 +558,58 @@ export class MemoryTables implements MemoryRecordStore {
     return Number(changes);
   }
 
+  /**
+   * "Forget me" (the plugin's `forgetPerson` hook, inside the store's transaction): deletes the
+   * records about the person (their subject, their `person` scope, a DM with one of their
+   * accounts: `about`), then those told by one of their accounts or resting on an event of theirs
+   * (`derived`), under every id they had. `unverified` counts the records left that rest on an
+   * event the log no longer holds (compacted away): nothing ties those to anyone any more. What
+   * `MemoryEngine.forget` did for one account, for all of the person's.
+   */
+  forgetPerson(request: PersonForget): { about: number; derived: number; unverified: number } {
+    const ids = JSON.stringify(request.ids);
+    const accounts = JSON.stringify(request.accounts.map((a) => [a.platform, a.id]));
+    const scopes = JSON.stringify([
+      ...request.ids.map((person) => memoryScopeKey({ type: "person", person })),
+      ...request.accounts.map((account) => memoryScopeKey({ type: "dm", account })),
+    ]);
+    // Plain event ids among `source_events` (a `msg:<line>` reference names a chat line).
+    const eventRef = sql.raw("substr(e.value, 1, 4) <> 'msg:'");
+    return this.#db.tx(() => {
+      const orm = this.#db.orm;
+      const about = orm
+        .delete(R)
+        .where(
+          sql`${R.scope_key} IN (SELECT value FROM json_each(${scopes})) OR EXISTS (SELECT 1 FROM json_each(${R.subjects}) WHERE value IN (SELECT value FROM json_each(${ids})))`,
+        )
+        .run();
+      const derived = orm
+        .delete(R)
+        .where(
+          sql`EXISTS (SELECT 1 FROM json_each(${accounts}) a WHERE json_extract(a.value, '$[0]') = json_extract(${R.source}, '$.account.platform') AND json_extract(a.value, '$[1]') = json_extract(${R.source}, '$.account.id')) OR EXISTS (SELECT 1 FROM json_each(${R.source_events}) e JOIN events ev ON ev.id = e.value WHERE ${eventRef} AND ev.person_id IN (SELECT value FROM json_each(${ids})))`,
+        )
+        .run();
+      const unverified = orm
+        .select({ n: sql<number>`count(*)`.mapWith(Number) })
+        .from(R)
+        .where(
+          sql`EXISTS (SELECT 1 FROM json_each(${R.source_events}) e WHERE ${eventRef} AND NOT EXISTS (SELECT 1 FROM events ev WHERE ev.id = e.value))`,
+        )
+        .get();
+      return {
+        about: Number(about.changes),
+        derived: Number(derived.changes),
+        unverified: unverified?.n ?? 0,
+      };
+    });
+  }
+
   async mergePerson(keep: PersonId, absorb: PersonId): Promise<number> {
+    return this.merge(keep, absorb);
+  }
+
+  /** `mergePerson`, synchronous: what the plugin's `mergePerson` hook runs. */
+  merge(keep: PersonId, absorb: PersonId): number {
     if (keep === absorb) return 0;
     const absorbScope = memoryScopeKey({ type: "person", person: absorb });
     const keepScope = canonicalMemoryScope({ type: "person", person: keep });
@@ -623,9 +675,14 @@ const memoryData: readonly CategoryData[] = [
   },
 ];
 
-/** The memory records as a plugin of the store: Core opens the store with it (`STORE_PLUGINS`). */
+/**
+ * The memory records as a plugin of the store: Core opens the store with it (`STORE_PLUGINS`).
+ * Forgetting a person deletes what she remembers about them and from them; merging two moves the
+ * absorbed person's records to the kept one.
+ */
 export const memoryTables: StorePlugin<MemoryTables> = {
   schema: memorySchema,
   open: ({ db }) => new MemoryTables(db),
   data: memoryData,
+  forgetPerson: (tables, request) => ({ counts: tables.forgetPerson(request) }),
 };

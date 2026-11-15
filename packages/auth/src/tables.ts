@@ -17,6 +17,7 @@ import {
   authScopeKey,
   type CategoryData,
   type Db,
+  declined,
   type Identity,
   type NodeOverride,
   type RoleAssignment,
@@ -485,4 +486,6 @@ export const authTables: StorePlugin<AuthPlugin> = {
   }),
   settings: (opened) => [opened.sessions.settingsFamily()],
   data: authData,
+  // What someone may do is not something she remembers about them.
+  forgetPerson: () => declined("roles and panel logins are permissions, kept like the audit log"),
 };

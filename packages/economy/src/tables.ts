@@ -15,6 +15,7 @@ import {
   accounts,
   type CategoryData,
   type Db,
+  declined,
   EconomyPosted,
   type EconomyPostedData,
   type EventStore,
@@ -1194,4 +1195,7 @@ export const economyTables: StorePlugin<EconomyTables> = {
     docs: new DocTables(db, identity),
   }),
   data: economyData,
+  // Money is kept (v5-data §2.5); the member page deletes their fortune slips itself.
+  forgetPerson: () =>
+    declined("coins, wallets, deals and bounties are kept; the member page deletes fortune slips"),
 };

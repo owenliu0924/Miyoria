@@ -16,6 +16,7 @@ import {
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type ChatLogStore,
+  hookCounts,
   type LogEntry,
   type MemoryFilter,
   type MemoryKind,
@@ -25,6 +26,7 @@ import {
   type MemorySource,
   type MessageLog,
   type PeopleStore,
+  type PersonDataStore,
   type SettingsStore,
   StoreKey,
 } from "@miyoria/store";
@@ -308,6 +310,11 @@ export interface MemoryEngineOptions {
    * redacted line is found. `attach` fills it in later (the `Store`'s).
    */
   chat?: ChatLogStore | null;
+  /**
+   * Forgetting a person in every schema at once (the `Store`'s `personData`): what "forget me"
+   * goes through when the memory plugin's tables are among them. `attach` fills it in later.
+   */
+  personData?: PersonDataStore | null;
   /** Source of "now" for writes without an explicit time (`markDone`). */
   clock?: Clock;
 }
@@ -396,6 +403,7 @@ export class MemoryEngine implements FollowupSource {
   #events: EventReader | null;
   #handles: HandleDirectory | null;
   #chat: ChatLogStore | null;
+  #personData: PersonDataStore | null;
   readonly #clock: Clock;
   readonly #watermarks = new Map<string, Watermark>();
   /** Contexts whose last batch was unusable and is being carried over once (key → true). */
@@ -421,6 +429,7 @@ export class MemoryEngine implements FollowupSource {
     this.#events = options.events ?? null;
     this.#handles = options.handles ?? null;
     this.#chat = options.chat ?? null;
+    this.#personData = options.personData ?? null;
     this.#clock = options.clock ?? systemClock;
     this.#repeats = new RepeatDamper(config.repeat);
   }
@@ -433,6 +442,7 @@ export class MemoryEngine implements FollowupSource {
     this.#events ??= services.get(EventLogKey) ?? null;
     this.#handles ??= services.get(HandleDirectoryKey) ?? null;
     this.#chat ??= services.get(StoreKey)?.chat ?? null;
+    this.#personData ??= services.get(StoreKey)?.personData ?? null;
   }
 
   /** The EventLog evidence is checked against, when there is one. */
@@ -1727,15 +1737,36 @@ export class MemoryEngine implements FollowupSource {
   /**
    * Forgets what she has of this person: the memories about them, the ones told by their
    * account and the ones derived from their events; with a `keyword` only those matching it.
-   * The EventLog and the chat history stay: they are the evidence, wiped on their own.
+   * Forgetting everything also takes the content out of their lines in the conversation log.
+   * Everything of a known person goes through the store's `personData`, which runs every
+   * schema's "forget me" in one transaction (the memory plugin's `forgetPerson` is this, for all
+   * of their accounts); without it (test doubles), the engine does the same itself.
    */
   async forget(
     person: PersonId | null,
     account: AccountRef,
     keyword: string | null,
   ): Promise<ForgetReport> {
-    const report: ForgetReport = { deleted: 0, about: 0, derived: 0, unverified: 0 };
     this.#version += 1;
+    const everywhere = this.#personData;
+    if (keyword === null && person !== null && everywhere?.participants().includes("memory")) {
+      // A line of theirs from just now is still in the EventLog's buffer.
+      await this.#events?.flush?.();
+      const done = everywhere.forget(person, { reason: "forget me", source: "memory" });
+      const memory = hookCounts(done, "memory");
+      const about = memory.about ?? 0;
+      const derived = memory.derived ?? 0;
+      const report: ForgetReport = {
+        deleted: about + derived,
+        about,
+        derived,
+        unverified: memory.unverified ?? 0,
+      };
+      const lines = hookCounts(done, "core").lines ?? 0;
+      if (lines > 0) report.lines = lines;
+      return report;
+    }
+    const report: ForgetReport = { deleted: 0, about: 0, derived: 0, unverified: 0 };
     const own = await this.memoriesOf(person, account, true);
     const ownIds = new Set(own.map((r) => r.id));
     const derived = await this.derivedFrom(person, account, ownIds);
