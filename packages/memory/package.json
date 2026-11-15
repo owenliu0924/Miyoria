@@ -46,6 +46,7 @@
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",
     "@node-rs/jieba": "^2.0.4",
+    "drizzle-orm": "1.0.0-rc.5",
     "opencc-js": "^1.4.2",
     "zod": "^4.6.7"
   },
