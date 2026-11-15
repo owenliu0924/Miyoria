@@ -32,9 +32,7 @@ afterEach(async () => {
 });
 
 function payloads<T>(events: Envelope[], topic: string): T[] {
-  return events.flatMap((e) =>
-    e.event.type === "custom" && e.event.data.topic === topic ? [e.event.data.payload as T] : [],
-  );
+  return events.flatMap((e) => (e.type === topic ? [e.data as T] : []));
 }
 
 const outcomes = (events: Envelope[]) =>

@@ -10,6 +10,7 @@ import {
   type Authorizer,
   AuthorizerKey,
   type ContextKey,
+  Events,
   type JsonValue,
   ModerationKey,
   MouthKey,
@@ -139,25 +140,22 @@ function joinVoice(h: Harness): void {
       deafened: false,
     },
   ];
-  h.publish({ type: "voice_joined", data: { context: VOICE, participants } });
+  h.publish(Events.VoiceJoined, { context: VOICE, participants });
 }
 
 function utter(h: Harness, text: string): void {
   const at = toTimestamp(Date.now());
-  h.publish({
-    type: "voice_utterance",
-    data: {
-      id: newId(),
-      context: VOICE,
-      speaker: { account: { platform: "test", id: "p0" }, display_name: "P0", is_bot: false },
-      text,
-      language: null,
-      emotion: null,
-      audio_events: [],
-      started_at: at,
-      ended_at: at,
-      asr_ms: 10,
-    },
+  h.publish(Events.VoiceUtteranceEvent, {
+    id: newId(),
+    context: VOICE,
+    speaker: { account: { platform: "test", id: "p0" }, display_name: "P0", is_bot: false },
+    text,
+    language: null,
+    emotion: null,
+    audio_events: [],
+    started_at: at,
+    ended_at: at,
+    asr_ms: 10,
   });
 }
 

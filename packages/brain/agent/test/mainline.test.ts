@@ -9,8 +9,6 @@ import { ToolRegistry } from "@miyoria/llm/tools";
 import { FactsModule } from "@miyoria/memory/facts";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
-  ACTION_SETTLED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
   type Action,
   type ActionSettled,
   type ActivityManager,
@@ -19,12 +17,12 @@ import {
   type ActivityTask,
   ArbiterKey,
   type ContextKey,
-  customEvent,
   type Delivery,
   DeliveryLedgerKey,
   type Directives,
   DirectivesKey,
   EventLogKey,
+  Events,
   FloorKey,
   type JsonValue,
   type LogEvent,
@@ -215,18 +213,17 @@ function settle(h: Harness, action: Action, ok = true, error: string | null = nu
     error,
     message: null,
   };
-  h.sup.bus.publish(
-    "scheduler",
-    customEvent(ACTION_SETTLED_TOPIC, settled as unknown as JsonValue),
-  );
+  h.sup.bus.publish("scheduler", Events.ActionSettled, settled);
 }
 
 function playback(h: Harness, action: Action, state: PlaybackState): void {
   const p = action.payload;
   if (p.type !== "speak") throw new Error("not speech");
-  h.publish({
-    type: "voice_playback",
-    data: { context: p.context, turn: action.turn, state, text: p.text },
+  h.publish(Events.VoicePlaybackEvent, {
+    context: p.context,
+    turn: action.turn,
+    state,
+    text: p.text,
   });
 }
 
@@ -238,29 +235,26 @@ function joinVoice(h: Harness, others = 1): void {
     muted: false,
     deafened: false,
   }));
-  h.publish({ type: "voice_joined", data: { context: VOICE, participants } });
+  h.publish(Events.VoiceJoined, { context: VOICE, participants });
 }
 
 function utter(h: Harness, text: string): void {
   const at = toTimestamp(Date.now());
-  h.publish({
-    type: "voice_utterance",
-    data: {
-      id: newId(),
-      context: VOICE,
-      speaker: {
-        account: { platform: "test", id: "p0" },
-        display_name: "P0",
-        is_bot: false,
-      },
-      text,
-      language: null,
-      emotion: null,
-      audio_events: [],
-      started_at: at,
-      ended_at: at,
-      asr_ms: 10,
+  h.publish(Events.VoiceUtteranceEvent, {
+    id: newId(),
+    context: VOICE,
+    speaker: {
+      account: { platform: "test", id: "p0" },
+      display_name: "P0",
+      is_bot: false,
     },
+    text,
+    language: null,
+    emotion: null,
+    audio_events: [],
+    started_at: at,
+    ended_at: at,
+    asr_ms: 10,
   });
 }
 
@@ -419,19 +413,16 @@ describe("finished-tense lines (§10.1)", () => {
     const t = task as unknown as ActivityTask;
     t.status = "done";
     t.ended_at = toTimestamp(Date.now());
-    h.sup.bus.publish(
-      "activity",
-      customEvent(ACTIVITY_DONE_TOPIC, {
-        type: "done",
-        task: t.id,
-        resource: t.resource,
-        request: t.request,
-        turn: t.turn,
-        detail: "進去了",
-        data: null,
-        at: toTimestamp(Date.now()),
-      } as unknown as JsonValue),
-    );
+    h.sup.bus.publish("activity", Events.ActivityDone, {
+      type: "done",
+      task: t.id,
+      resource: t.resource,
+      request: t.request,
+      turn: t.turn,
+      detail: "進去了",
+      data: null,
+      at: toTimestamp(Date.now()),
+    } as never);
     await wait(100);
     expect(h.sink.texts()).toEqual([STARTED_LINE, "我進語音了"]);
     expect(results(h).at(-1)).toMatchObject({ tool: "voice_join", state: "done" });
@@ -537,19 +528,16 @@ describe("finished-tense lines (§10.1)", () => {
     h.sup.services.require(TurnSilencerKey).silence("test");
     const t = task as unknown as ActivityTask;
     t.status = "done";
-    h.sup.bus.publish(
-      "activity",
-      customEvent(ACTIVITY_DONE_TOPIC, {
-        type: "done",
-        task: t.id,
-        resource: t.resource,
-        request: t.request,
-        turn: t.turn,
-        detail: "進去了",
-        data: null,
-        at: toTimestamp(Date.now()),
-      } as unknown as JsonValue),
-    );
+    h.sup.bus.publish("activity", Events.ActivityDone, {
+      type: "done",
+      task: t.id,
+      resource: t.resource,
+      request: t.request,
+      turn: t.turn,
+      detail: "進去了",
+      data: null,
+      at: toTimestamp(Date.now()),
+    } as never);
     await wait(100);
     expect(h.sink.texts()).toEqual([STARTED_LINE]);
   });
@@ -620,14 +608,16 @@ describe("finished-tense lines (§10.1)", () => {
 
     h.sup.bus.publish(
       "game",
-      customEvent("game.minecraft.task.steered", {
+      Events.TaskSteered,
+      {
         type: "steered",
         task: "t1",
         steer: steers[0]?.steer.id ?? "",
         outcome: "applied",
         detail: "換了",
         at: toTimestamp(Date.now()),
-      } as unknown as JsonValue),
+      } as unknown as JsonValue,
+      { type: "game.minecraft.task.steered" },
     );
     await wait(100);
     expect(h.sink.texts()).toEqual([STARTED_LINE, "改好了"]);
@@ -883,7 +873,7 @@ describe("lines belong to the main line", () => {
     await wait(10);
     utter(h, "DeepSeek 你好");
     await wait(2000);
-    h.publish({ type: "voice_left", data: { context: VOICE, reason: null } });
+    h.publish(Events.VoiceLeft, { context: VOICE, reason: null });
     await wait(10);
     expect(h.sup.services.require(FloorKey).holder(VOICE)).toBeNull();
   });
@@ -927,16 +917,13 @@ describe("lines belong to the main line", () => {
     const p = line.payload as Extract<Action["payload"], { type: "speak" }>;
     // Long after it started by the clock, but only 30% of the audio was audible.
     await wait(9000);
-    h.publish({
-      type: "voice_playback",
-      data: {
-        context: p.context,
-        turn: line.turn,
-        state: "interrupted",
-        text: p.text,
-        heard_ms: 660,
-        total_ms: 2200,
-      },
+    h.publish(Events.VoicePlaybackEvent, {
+      context: p.context,
+      turn: line.turn,
+      state: "interrupted",
+      text: p.text,
+      heard_ms: 660,
+      total_ms: 2200,
     });
     await wait(10);
     utter(h, "DeepSeek 再說");
@@ -1038,20 +1025,17 @@ describe("a line moderation stopped", () => {
     h.say(mention(channel("c"), "Alice", "嗨"));
     await wait(2000);
     const [action] = h.sink.actions.filter((a) => a.payload.type === "send_message") as [Action];
-    h.sup.bus.publish(
-      "scheduler",
-      customEvent(ACTION_SETTLED_TOPIC, {
-        action: action.id,
-        turn: action.turn,
-        type: "send_message",
-        context: { ...channel("c") },
-        text: "沒問題的話",
-        ok: true,
-        error: null,
-        message: null,
-        blocked: "sink.rule",
-      }),
-    );
+    h.sup.bus.publish("scheduler", Events.ActionSettled, {
+      action: action.id,
+      turn: action.turn,
+      type: "send_message",
+      context: { ...channel("c") },
+      text: "沒問題的話",
+      ok: true,
+      error: null,
+      message: null,
+      blocked: "sink.rule",
+    });
     await wait(10);
     expect(blocked(h).delivered).toEqual([]);
     expect(blocked(h).lines.map((e) => e.body)).toMatchObject([{ delivery: "blocked" }]);
@@ -1727,20 +1711,17 @@ describe("stage 0 of v4: follow-ups, an empty room, sentences out sooner", () =>
       playback(h, a, "finished");
     }
     // The one who asked put their headphones down.
-    h.publish({
-      type: "voice_participants",
-      data: {
-        context: VOICE,
-        participants: [
-          {
-            account: { platform: "test", id: "p0" },
-            display_name: "P0",
-            is_self: false,
-            muted: false,
-            deafened: true,
-          },
-        ],
-      },
+    h.publish(Events.VoiceParticipants, {
+      context: VOICE,
+      participants: [
+        {
+          account: { platform: "test", id: "p0" },
+          display_name: "P0",
+          is_self: false,
+          muted: false,
+          deafened: true,
+        },
+      ],
     });
     await wait(15_000);
     expect(llm.requests).toHaveLength(2);

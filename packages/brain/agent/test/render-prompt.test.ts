@@ -16,6 +16,7 @@ import {
   type AffectState,
   AffectStateKey,
   type ContextKey,
+  Events,
   type JsonValue,
   type LifeLog,
   LifeLogKey,
@@ -256,40 +257,34 @@ describe("the whole prompt of the shipped persona", () => {
   it("a voice turn, heard in Japanese", async () => {
     const llm = new Recorder();
     const h = await rig(llm, true);
-    h.publish({
-      type: "voice_joined",
-      data: {
-        context: VOICE,
-        participants: [
-          {
-            account: { platform: "discord", id: "amin" },
-            display_name: "阿明",
-            is_self: false,
-            muted: false,
-            deafened: false,
-          },
-        ],
-      },
-    });
-    const at = toTimestamp(nextTs());
-    h.publish({
-      type: "voice_utterance",
-      data: {
-        id: "u1",
-        context: VOICE,
-        speaker: {
+    h.publish(Events.VoiceJoined, {
+      context: VOICE,
+      participants: [
+        {
           account: { platform: "discord", id: "amin" },
           display_name: "阿明",
-          is_bot: false,
+          is_self: false,
+          muted: false,
+          deafened: false,
         },
-        text: "米優你今天在幹嘛",
-        language: "zh",
-        emotion: null,
-        audio_events: [],
-        started_at: at,
-        ended_at: at,
-        asr_ms: 200,
+      ],
+    });
+    const at = toTimestamp(nextTs());
+    h.publish(Events.VoiceUtteranceEvent, {
+      id: "u1",
+      context: VOICE,
+      speaker: {
+        account: { platform: "discord", id: "amin" },
+        display_name: "阿明",
+        is_bot: false,
       },
+      text: "米優你今天在幹嘛",
+      language: "zh",
+      emotion: null,
+      audio_events: [],
+      started_at: at,
+      ended_at: at,
+      asr_ms: 200,
     });
     await wait(3000);
     const request = llm.requests[0];

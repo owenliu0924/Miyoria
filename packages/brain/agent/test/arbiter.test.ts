@@ -8,19 +8,16 @@ import { ToolRegistry } from "@miyoria/llm/tools";
 import { FactsModule } from "@miyoria/memory/facts";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
-  ARBITER_DECISION_TOPIC,
-  ARBITER_IMPULSE_TOPIC,
   type ArbiterDecision,
   ArbiterKey,
   type ContextKey,
-  type Event,
+  Events,
   type Intent,
   IntentSinkKey,
   type JsonValue,
   newId,
   newImpulse,
   toTimestamp,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArbiterModule } from "../../arbiter/src/index.js";
@@ -31,6 +28,7 @@ import {
   incoming,
   mention,
   noCheck,
+  type Pub,
   SlowProvider,
   stopHarnesses,
   wait,
@@ -67,7 +65,7 @@ async function rig(
     before: [[new FactsModule(null, "p"), null]],
     modules: [[new ArbiterModule("p"), arbiter]],
   });
-  const decisions = h.sup.bus.subscribe(ARBITER_DECISION_TOPIC);
+  const decisions = h.sup.bus.subscribe(Events.ArbiterDecided.type);
   return {
     h,
     intents: h.sup.services.require(IntentSinkKey),
@@ -75,8 +73,7 @@ async function rig(
     decisions: (): ArbiterDecision[] => {
       const out: ArbiterDecision[] = [];
       for (let env = decisions.tryRecv(); env !== null; env = decisions.tryRecv()) {
-        if (env.event.type === "custom")
-          out.push(env.event.data.payload as unknown as ArbiterDecision);
+        out.push(env.data as ArbiterDecision);
       }
       return out;
     },
@@ -99,10 +96,10 @@ function intent(context: ContextKey, extra: Partial<Intent> = {}): Intent {
   };
 }
 
-const initiative = (context: ContextKey, reason: string, hint = ""): Event => ({
-  type: "agent_initiative",
-  data: { context, reason, hint, about: [] },
-});
+const initiative = (context: ContextKey, reason: string, hint = ""): Pub => [
+  Events.AgentInitiative,
+  { context, reason, hint, about: [] },
+];
 
 describe("the agent with the Arbiter", () => {
   it("her intents go through the Arbiter, which counts them and says when she may again", async () => {
@@ -138,7 +135,7 @@ describe("the agent with the Arbiter", () => {
     const r = await rig("quiet", noCheck(), chat);
     const c = channel("c");
     for (const _ of [1, 2, 3]) {
-      r.h.publish(initiative(c, "song_start", "下一首要開始了"));
+      r.h.publish(...initiative(c, "song_start", "下一首要開始了"));
       await wait(100);
     }
     expect(r.h.sink.texts()).toEqual(["我要唱囉", "下一首", "第三首"]);
@@ -165,7 +162,7 @@ describe("the agent with the Arbiter", () => {
     expect(again).toMatchObject({ status: "denied" });
     expect(again.detail).toMatch(/^ceiling: 這個頻道的等級限制/);
     // Live game commentary is not her starting a conversation.
-    r.h.publish(initiative(c, "game", "打到王了"));
+    r.h.publish(...initiative(c, "game", "打到王了"));
     await wait(100);
     expect(r.h.sink.texts()).toEqual(["欸大家", "這關好難"]);
   });
@@ -179,19 +176,17 @@ describe("the agent with the Arbiter", () => {
     expect(chat.calls).toBe(1);
     r.h.sup.bus.publish(
       "sing",
-      v2Event(
-        ARBITER_IMPULSE_TOPIC,
-        newImpulse(
-          {
-            source: "song",
-            context: c,
-            ttlMs: 60_000,
-            why: "報幕",
-            hint: "要唱了",
-            reason: "song_start",
-          },
-          Date.now(),
-        ),
+      Events.ArbiterImpulse,
+      newImpulse(
+        {
+          source: "song",
+          context: c,
+          ttlMs: 60_000,
+          why: "報幕",
+          hint: "要唱了",
+          reason: "song_start",
+        },
+        Date.now(),
       ),
     );
     await wait(100);
@@ -219,21 +214,19 @@ describe("the agent with the Arbiter", () => {
     const followup = (who: string, hint: string) =>
       r.h.sup.bus.publish(
         "memory",
-        v2Event(
-          ARBITER_IMPULSE_TOPIC,
-          newImpulse(
-            {
-              source: "followup",
-              context: c,
-              account: account(who),
-              about: [account(who)],
-              ttlMs: 5 * 60_000,
-              why: "之前說好要問的",
-              hint,
-              reason: "followup",
-            },
-            Date.now(),
-          ),
+        Events.ArbiterImpulse,
+        newImpulse(
+          {
+            source: "followup",
+            context: c,
+            account: account(who),
+            about: [account(who)],
+            ttlMs: 5 * 60_000,
+            why: "之前說好要問的",
+            hint,
+            reason: "followup",
+          },
+          Date.now(),
         ),
       );
     followup("Amy", "問 Amy 的貓");
@@ -258,9 +251,11 @@ describe("the agent with the Arbiter", () => {
     const c = channel("c");
     r.h.say(mention(c, "Owen", "幫我跑一下"));
     await wait(3000);
-    r.h.publish({
-      type: "agent_initiative",
-      data: { context: c, reason: "action_result", hint: "結果:42", about: [account("Owen")] },
+    r.h.publish(Events.AgentInitiative, {
+      context: c,
+      reason: "action_result",
+      hint: "結果:42",
+      about: [account("Owen")],
     });
     await wait(100);
     expect(r.h.sink.texts()).toEqual(["在啊", "跑完了,結果是 42"]);

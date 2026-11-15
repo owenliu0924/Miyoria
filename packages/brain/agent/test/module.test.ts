@@ -3,7 +3,7 @@
 import { CommandRegistryKey } from "@miyoria/commands";
 import { contentText, MockProvider } from "@miyoria/llm/llm";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
-import { type ContextKey, eventTopic, isJsonObject } from "@miyoria/types";
+import { type ContextKey, Events, is, isJsonObject } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonaHandleKey } from "../src/index.js";
 import { NOT_OFFERED } from "../src/mainline/loop.js";
@@ -108,34 +108,30 @@ describe("agent module", () => {
     expect(h.sink.typing()).toBe(1);
     const all = h.drain();
     const events = all.filter(
-      (e) =>
-        !["agent.turn.focus", "agent.prompt", "agent.turn.outcome"].includes(eventTopic(e.event)),
+      (e) => !["agent.turn.focus", "agent.prompt", "agent.turn.outcome"].includes(e.type),
     );
-    expect(events.map((e) => eventTopic(e.event))).toEqual([
+    expect(events.map((e) => e.type)).toEqual([
       "agent.turn.started",
       "agent.decision",
       "agent.emotion",
       "agent.emotion",
       "agent.turn.completed",
     ]);
-    const outcome = all.find((e) => eventTopic(e.event) === "agent.turn.outcome")?.event;
-    const record =
-      outcome?.type === "custom" ? (outcome.data.payload as Record<string, unknown>) : null;
+    const outcome = all.find((e) => e.type === "agent.turn.outcome");
+    const record = (outcome?.data ?? null) as Record<string, unknown> | null;
     expect(record?.outcome).toEqual({ type: "sent", parts: 1 });
     expect(record?.reason).toBe("addressed");
     expect(record?.addressed_by).toEqual(["Owen"]);
     expect(record?.reasoning).toBe("off");
-    const turn = events[0]?.correlation;
+    const turn = events[0]?.turn;
     expect(turn).toBeTruthy();
-    expect(events.every((e) => e.correlation === turn)).toBe(true);
+    expect(events.every((e) => e.turn === turn)).toBe(true);
     const emotions = events.flatMap((e) =>
-      e.event.type === "custom" && isJsonObject(e.event.data.payload)
-        ? [e.event.data.payload.emotion]
-        : [],
+      e.type === Events.AgentEmotion.type && isJsonObject(e.data) ? [e.data.emotion] : [],
     );
     expect(emotions).toEqual(["annoyed", "neutral"]);
-    const last = events[4]?.event;
-    expect(last?.type === "agent_turn_completed" && last.data.text).toBe(
+    const last = events[4];
+    expect(last !== undefined && is(Events.AgentTurnCompleted, last) && last.data.text).toBe(
       "現在都中午了好嗎……早啦。",
     );
   });
@@ -147,7 +143,7 @@ describe("agent module", () => {
     h.say(incoming(c, "Owen", "我跟你說"));
     for (let i = 0; i < 3; i++) {
       await wait(500);
-      h.publish({ type: "platform_typing", data: { context: c, account: account("Owen") } });
+      h.publish(Events.PlatformTyping, { context: c, account: account("Owen") });
     }
     // Without typing the turn would have started at 0.8s.
     await wait(1500);
@@ -195,7 +191,7 @@ describe("agent module", () => {
     const mock = new MockProvider("chat").reply("早啦").reply("又怎樣");
     const h = await Harness.create("always", noCheck(), mock);
     const c = channel("c");
-    h.publish({ type: "platform_ready", data: { platform: "test", self_account: account("her") } });
+    h.publish(Events.PlatformReady, { platform: "test", self_account: account("her") });
     h.say(incoming(c, "her", "我先說一句"));
     await wait(3000);
     expect(h.decisions()).toEqual([]);
@@ -228,15 +224,12 @@ describe("agent module", () => {
     await wait(3000);
     const action = h.sink.actions.find((a) => a.payload.type === "send_message");
     expect(action).toBeDefined();
-    h.publish({
-      type: "action_completed",
-      data: {
-        action: action?.id ?? "",
-        turn: action?.turn ?? null,
-        ok: false,
-        error: "expired",
-        message: null,
-      },
+    h.publish(Events.ActionCompleted, {
+      action: action?.id ?? "",
+      turn: action?.turn ?? null,
+      ok: false,
+      error: "expired",
+      message: null,
     });
     h.say(incoming(c, "Owen", "人呢"));
     await wait(3000);
@@ -278,10 +271,10 @@ describe("agent module", () => {
     expect(slow.requests[1]?.messages[1]?.content).toBe("Owen: 問妳喔\nOwen: 算了換個問題");
 
     const events = h.drain();
-    const firstTurn = events[0]?.correlation;
+    const firstTurn = events[0]?.turn;
     expect(h.sink.cancelled).toEqual([firstTurn]);
     const completed = events.flatMap((e) =>
-      e.event.type === "agent_turn_completed" ? [[e.event.data.turn, e.event.data.text]] : [],
+      is(Events.AgentTurnCompleted, e) ? [[e.data.turn, e.data.text]] : [],
     );
     expect(completed.length).toBe(2);
     expect(completed[0]).toEqual([firstTurn, ""]);
@@ -663,7 +656,5 @@ describe("agent module", () => {
 });
 
 function completedTexts(h: Harness): string[] {
-  return h
-    .drain()
-    .flatMap((e) => (e.event.type === "agent_turn_completed" ? [e.event.data.text] : []));
+  return h.drain().flatMap((e) => (is(Events.AgentTurnCompleted, e) ? [e.data.text] : []));
 }

@@ -6,10 +6,9 @@ import { MockProvider } from "@miyoria/llm/llm";
 import { FactsModule } from "@miyoria/memory/facts";
 import {
   type ContextKey,
-  customEvent,
-  type Event,
+  Events,
+  is,
   type JsonValue,
-  NOTICE_TOPIC,
   type PlaybackState,
   type TurnId,
   toTimestamp,
@@ -26,6 +25,7 @@ import {
   Harness,
   nextTs,
   Paced,
+  type Pub,
   stopHarnesses,
   textDelta,
   wait,
@@ -53,24 +53,24 @@ function member(id: string, isSelf: boolean): VoiceParticipant {
   return { account: account(id), display_name: id, is_self: isSelf, muted: false, deafened: false };
 }
 
-function joined(): Event {
-  return {
-    type: "voice_joined",
-    data: {
+function joined(): Pub {
+  return [
+    Events.VoiceJoined,
+    {
       context: voiceCtx(),
       participants: [member("Owen", false), member("阿明", false), member("her", true)],
     },
-  };
+  ] as const;
 }
 
 let nextUtterance = 0;
 
-function utterance(who: string, text: string): Event {
+function utterance(who: string, text: string): Pub {
   const n = nextUtterance++;
   const now = nextTs();
-  return {
-    type: "voice_utterance",
-    data: {
+  return [
+    Events.VoiceUtteranceEvent,
+    {
       id: `u${n}`,
       context: voiceCtx(),
       speaker: { account: account(who), display_name: who, is_bot: false },
@@ -82,18 +82,18 @@ function utterance(who: string, text: string): Event {
       ended_at: toTimestamp(now),
       asr_ms: 200,
     },
-  };
+  ] as const;
 }
 
-function speaking(who: string, on: boolean): Event {
-  return {
-    type: "voice_speaking",
-    data: { context: voiceCtx(), account: account(who), speaking: on },
-  };
+function speaking(who: string, on: boolean): Pub {
+  return [
+    Events.VoiceSpeaking,
+    { context: voiceCtx(), account: account(who), speaking: on },
+  ] as const;
 }
 
-function playback(turn: TurnId, state: PlaybackState, text: string): Event {
-  return { type: "voice_playback", data: { context: voiceCtx(), turn, state, text } };
+function playback(turn: TurnId, state: PlaybackState, text: string): Pub {
+  return [Events.VoicePlaybackEvent, { context: voiceCtx(), turn, state, text }] as const;
 }
 
 function texts(h: Harness): string[] {
@@ -105,42 +105,43 @@ function decisionReasons(h: Harness): [boolean, string[]][] {
 }
 
 function completedTexts(h: Harness): string[] {
-  return h
-    .drain()
-    .flatMap((e) => (e.event.type === "agent_turn_completed" ? [e.event.data.text] : []));
+  return h.drain().flatMap((e) => (is(Events.AgentTurnCompleted, e) ? [e.data.text] : []));
 }
 
-function notice(context: ContextKey): Event {
+function notice(context: ContextKey): Pub {
   const now = Date.now();
-  return customEvent(NOTICE_TOPIC, {
-    id: "n1",
-    at: toTimestamp(now),
-    source: "activity",
-    task: "t1",
-    turn: null,
-    context,
-    ok: false,
-    code: "timeout",
-    text: "開台失敗",
-    expires_at: toTimestamp(now + 600_000),
-  } as unknown as JsonValue);
+  return [
+    Events.AgentNotice,
+    {
+      id: "n1",
+      at: toTimestamp(now),
+      source: "activity",
+      task: "t1",
+      turn: null,
+      context,
+      ok: false,
+      code: "timeout",
+      text: "開台失敗",
+      expires_at: toTimestamp(now + 600_000),
+    } as unknown as JsonValue,
+  ] as const;
 }
 
 describe("the debounce after a turn a model judged over", () => {
-  function judged(who: string, text: string): Event {
-    const event = utterance(who, text);
-    if (event.type === "voice_utterance") {
-      event.data.turn = { ended_by: "turn", probability: 0.9 };
-    }
-    return event;
+  function judged(who: string, text: string): Pub {
+    const [definition, data] = utterance(who, text);
+    return [
+      definition,
+      { ...(data as object), turn: { ended_by: "turn", probability: 0.9 } },
+    ] as const;
   }
 
   it("starts her turn at once instead of waiting to see if they go on", async () => {
     const mock = new MockProvider("chat").reply("好啊。");
     const h = await Harness.create("always", voiceConfig("always"), mock);
-    h.publish(joined());
+    h.publish(...joined());
     await wait(50);
-    h.publish(judged("Owen", "你覺得這個怎麼樣"));
+    h.publish(...judged("Owen", "你覺得這個怎麼樣"));
     await wait(200);
     expect(mock.requests()).toHaveLength(1);
   });
@@ -148,9 +149,9 @@ describe("the debounce after a turn a model judged over", () => {
   it("a turn nobody judged waits the whole debounce", async () => {
     const mock = new MockProvider("chat").reply("好啊。");
     const h = await Harness.create("always", voiceConfig("always"), mock);
-    h.publish(joined());
+    h.publish(...joined());
     await wait(50);
-    h.publish(utterance("Owen", "你覺得這個怎麼樣"));
+    h.publish(...utterance("Owen", "你覺得這個怎麼樣"));
     await wait(200);
     expect(mock.requests()).toHaveLength(0);
     await wait(700);
@@ -160,13 +161,13 @@ describe("the debounce after a turn a model judged over", () => {
   it("the speaker who still talks keeps the turn open, for the short wait at a time", async () => {
     const mock = new MockProvider("chat").reply("好啊。");
     const h = await Harness.create("always", voiceConfig("always"), mock);
-    h.publish(joined());
+    h.publish(...joined());
     await wait(50);
-    h.publish(speaking("Owen", true));
-    h.publish(judged("Owen", "你覺得這個怎麼樣"));
+    h.publish(...speaking("Owen", true));
+    h.publish(...judged("Owen", "你覺得這個怎麼樣"));
     await wait(300);
     expect(mock.requests()).toHaveLength(0);
-    h.publish(speaking("Owen", false));
+    h.publish(...speaking("Owen", false));
     await wait(150);
     expect(mock.requests()).toHaveLength(1);
   });
@@ -184,9 +185,9 @@ describe("keep_in_voice", () => {
   it("a task result for a text channel is said in the voice channel she is in", async () => {
     const mock = new MockProvider("chat").reply("<emo:annoyed>開台失敗了。");
     const h = await withFloor(voiceConfig("always"), mock);
-    h.publish(joined());
+    h.publish(...joined());
     await wait(50);
-    h.publish(notice(general));
+    h.publish(...notice(general));
     await wait(300);
     expect(texts(h)).toEqual(["開台失敗了。"]);
     expect(h.sink.texts()).toEqual([]);
@@ -195,14 +196,14 @@ describe("keep_in_voice", () => {
   it("stays in the text channel when she is not in voice, or when it is turned off", async () => {
     const mock = new MockProvider("chat").reply("開台失敗了。").reply("開台失敗了。");
     const away = await withFloor(voiceConfig("always"), mock);
-    away.publish(notice(general));
+    away.publish(...notice(general));
     await wait(300);
     expect(away.sink.texts()).toEqual(["開台失敗了。"]);
 
     const off = await withFloor({ voice: { default_mode: "always", keep_in_voice: false } }, mock);
-    off.publish(joined());
+    off.publish(...joined());
     await wait(50);
-    off.publish(notice(general));
+    off.publish(...notice(general));
     await wait(300);
     expect(off.sink.texts()).toEqual(["開台失敗了。"]);
     expect(texts(off)).toEqual([]);
@@ -213,10 +214,10 @@ describe("voice", () => {
   it("utterances_are_debounced_and_merged", async () => {
     const mock = new MockProvider("chat").reply("<emo:happy>考完啦?辛苦了。");
     const h = await Harness.create("off", voiceConfig("always"), mock);
-    h.publish(joined());
-    h.publish(utterance("Owen", "我跟你說"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "我跟你說"));
     await wait(400);
-    h.publish(utterance("Owen", "今天考試考完了"));
+    h.publish(...utterance("Owen", "今天考試考完了"));
     await wait(500);
     expect(mock.requests(), "the speaker may continue").toEqual([]);
     await wait(400);
@@ -258,14 +259,14 @@ describe("voice", () => {
     const cfg = voiceConfig("normal");
     // She never joins in over someone (the voice prefilter; no interrupt scale any more).
     const h = await Harness.create("off", cfg, mock);
-    h.publish(joined());
+    h.publish(...joined());
 
     // Speaking extends the debounce: the turn waits for the transcript.
-    h.publish(utterance("Owen", "你們看過鯨魚嗎?"));
+    h.publish(...utterance("Owen", "你們看過鯨魚嗎?"));
     await wait(300);
-    h.publish(speaking("阿明", true));
+    h.publish(...speaking("阿明", true));
     await wait(900);
-    h.publish(speaking("阿明", false));
+    h.publish(...speaking("阿明", false));
     await wait(500);
     expect(decisionReasons(h), "turn started too early").toEqual([]);
     await wait(300);
@@ -275,8 +276,8 @@ describe("voice", () => {
     expect(texts(h)).toEqual(["我看過喔。"]);
 
     // Someone keeps talking: at the cap she still does not join in.
-    h.publish(speaking("阿明", true));
-    h.publish(utterance("Owen", "那海豚呢?"));
+    h.publish(...speaking("阿明", true));
+    h.publish(...utterance("Owen", "那海豚呢?"));
     await wait(2000);
     expect(decisionReasons(h)).toEqual([]);
     await wait(600);
@@ -290,13 +291,13 @@ describe("voice", () => {
   it("direct_address_by_nickname_in_transcript", async () => {
     const mock = new MockProvider("chat").reply("幹嘛啦。");
     const h = await Harness.create("always", voiceConfig("mention-only"), mock);
-    h.publish(joined());
+    h.publish(...joined());
     for (const [who, said] of [
       ["Owen", "今天好熱"],
       ["阿明", "小鯨魚妳覺得呢"],
       ["Owen", "deep seek 在嗎"],
     ] as const) {
-      h.publish(utterance(who, said));
+      h.publish(...utterance(who, said));
       await wait(3000);
     }
     expect(h.decisions()).toEqual([false, true, true]);
@@ -306,9 +307,9 @@ describe("voice", () => {
 
     // A question right after she spoke is for her too.
     const turn = actions[1]?.turn as TurnId;
-    h.publish(playback(turn, "started", "幹嘛啦。"));
-    h.publish(playback(turn, "finished", "幹嘛啦。"));
-    h.publish(utterance("Owen", "妳在幹嘛?"));
+    h.publish(...playback(turn, "started", "幹嘛啦。"));
+    h.publish(...playback(turn, "finished", "幹嘛啦。"));
+    h.publish(...utterance("Owen", "妳在幹嘛?"));
     await wait(3000);
     expect(h.decisions()).toEqual([true]);
     const last = mock.requests().at(-1);
@@ -326,8 +327,8 @@ describe("voice", () => {
       ],
     ]);
     const h = await Harness.create("off", voiceConfig("always"), paced);
-    h.publish(joined());
-    h.publish(utterance("Owen", "我回來了"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "我回來了"));
     // The turn starts at 0.7s; chunks at 0.7s, 1.7s and 2.7s; done at 7.7s.
     await wait(1200);
     expect(h.sink.speeches(), "the end mark may continue").toEqual([]);
@@ -338,7 +339,7 @@ describe("voice", () => {
     ]);
     await wait(1000);
     expect(h.sink.speeches().length, "held until more text or the end").toBe(2);
-    expect(h.drain().some((e) => e.event.type === "agent_turn_completed")).toBe(false);
+    expect(h.drain().some((e) => is(Events.AgentTurnCompleted, e))).toBe(false);
     await wait(5000);
     const all = h.sink.speeches();
     expect(all.length).toBe(3);
@@ -355,8 +356,8 @@ describe("voice", () => {
     };
     const mock = new MockProvider("chat").reply("<emo:smug>哼,才不是在等你呢。你回來啦?");
     const h = await Harness.build("off", voiceConfig("always"), mock, null, { voiceSink });
-    h.publish(joined());
-    h.publish(utterance("Owen", "我回來了"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "我回來了"));
     await wait(3000);
     expect(texts(h)).toEqual(["哼,才不是在等你呢。", "你回來啦?"]);
     expect(prepared.map(([, t]) => t)).toEqual(texts(h));
@@ -374,8 +375,8 @@ describe("voice", () => {
       "<voice>えっ、本当に?</voice><emo:happy>欸,真的嗎?<voice>じゃあ行こう!</voice>那走吧!最後一句沒有日文。",
     );
     const h = await Harness.build("off", voiceConfig("always"), mock, null, { voiceSink });
-    h.publish(joined());
-    h.publish(utterance("Owen", "我中樂透了"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "我中樂透了"));
     await wait(3000);
     // The written text only (subtitles, log); each spoken line goes with its text.
     expect(texts(h)).toEqual(["欸,真的嗎?", "那走吧!最後一句沒有日文。"]);
@@ -397,8 +398,8 @@ describe("voice", () => {
       "欸,真的嗎?好厲害!<voice>えっ、本当に?すごい!</voice><emo:happy>那走吧!<voice>じゃあ行こう!</voice><voice>誰も書いてない</voice>",
     );
     const h = await Harness.build("off", voiceConfig("always"), mock, null, { voiceSink });
-    h.publish(joined());
-    h.publish(utterance("Owen", "我中樂透了"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "我中樂透了"));
     await wait(3000);
     // Two written sentences share one line; a line nobody wrote down is not said.
     expect(prepared).toEqual([
@@ -420,8 +421,8 @@ describe("voice", () => {
     };
     const mock = new MockProvider("chat").reply("一。二。三。四。");
     const h = await Harness.build("off", voiceConfig("always"), mock, null, { voiceSink });
-    h.publish(joined());
-    h.publish(utterance("Owen", "數數看"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "數數看"));
     await wait(3000);
     expect(prepared).toEqual([
       ["一。", undefined],
@@ -442,25 +443,22 @@ describe("voice", () => {
     const h = await Harness.create("off", voiceConfig("always"), paced);
     const latency = h.sup.bus.subscribe("voice.latency");
     const responded = agentTurns.get({ decision: "responded" });
-    h.publish(joined());
-    h.publish(utterance("Owen", "要不要去吃飯"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "要不要去吃飯"));
     await wait(3000);
     expect(texts(h)).toEqual(["好啊。", "走吧。"]);
     const env = latency.tryRecv();
-    expect(env?.event).toEqual({
-      type: "custom",
+    expect({ type: env?.type, data: env?.data }).toEqual({
+      type: "voice.latency",
       data: {
-        topic: "voice.latency",
-        payload: {
-          stage: "llm",
-          context: voiceCtx(),
-          turn: env?.correlation ?? null,
-          model: "chat:m",
-          first_token_ms: 640,
-        },
+        stage: "llm",
+        context: voiceCtx(),
+        turn: env?.turn ?? null,
+        model: "chat:m",
+        first_token_ms: 640,
       },
     });
-    expect(env?.correlation).not.toBeNull();
+    expect(env?.turn).not.toBeNull();
     expect(latency.tryRecv(), "once per turn").toBeNull();
     expect(agentTurns.get({ decision: "responded" })).toBe(responded + 1);
     latency.close();
@@ -472,9 +470,9 @@ describe("voice", () => {
       .reply("<emo:sad>……")
       .reply("DeepSeek-chan: 好啦。");
     const h = await Harness.create("off", voiceConfig("always"), mock);
-    h.publish(joined());
+    h.publish(...joined());
     for (const said of ["一", "二", "三"]) {
-      h.publish(utterance("Owen", said));
+      h.publish(...utterance("Owen", said));
       await wait(3000);
     }
     expect(mock.requests().length).toBe(3);
@@ -488,13 +486,13 @@ describe("voice", () => {
       .reply("第二個回答。")
       .reply("第三個回答。");
     const h = await Harness.create("off", voiceConfig("always"), mock);
-    h.publish(joined());
-    h.publish(utterance("Owen", "我們晚餐吃什麼好"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "我們晚餐吃什麼好"));
     await wait(2000);
     const first = h.sink.speakActions()[0]?.turn as TurnId;
     // Her answer is queued but has not started playing yet: it is never regenerated, the new
     // utterance gets a turn of its own.
-    h.publish(utterance("Owen", "我想吃拉麵或是壽司"));
+    h.publish(...utterance("Owen", "我想吃拉麵或是壽司"));
     await wait(2000);
     expect(h.sink.cancelled).toEqual([]);
     let requests = mock.requests();
@@ -513,11 +511,11 @@ describe("voice", () => {
       ],
     ]);
     const h2 = await Harness.create("off", voiceConfig("always"), slow);
-    h2.publish(joined());
-    h2.publish(utterance("Owen", "妳覺得明天會下雨嗎"));
+    h2.publish(...joined());
+    h2.publish(...utterance("Owen", "妳覺得明天會下雨嗎"));
     await wait(1000);
-    h2.publish(utterance("Owen", "嗯"));
-    h2.publish(utterance("阿明", "我覺得會下雨耶"));
+    h2.publish(...utterance("Owen", "嗯"));
+    h2.publish(...utterance("阿明", "我覺得會下雨耶"));
     await wait(5000);
     expect(h2.sink.cancelled).toEqual([]);
     expect(slow.requests.length).toBe(2);
@@ -537,14 +535,14 @@ describe("voice", () => {
       ],
     ]);
     const h = await Harness.create("off", voiceConfig("always"), paced);
-    h.publish(joined());
-    h.publish(utterance("Owen", "講個故事"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "講個故事"));
     // Turn at 0.7s; "第一句。" is complete when the second chunk arrives (1.7s).
     await wait(1900);
     expect(texts(h)).toEqual(["第一句。"]);
     const turn = h.sink.speakActions()[0]?.turn as TurnId;
-    h.publish(playback(turn, "started", "第一句。"));
-    h.publish(playback(turn, "interrupted", "第一句。"));
+    h.publish(...playback(turn, "started", "第一句。"));
+    h.publish(...playback(turn, "interrupted", "第一句。"));
     await wait(5000);
     expect(texts(h)).toEqual(["第一句。"]);
     expect(h.sink.cancelled).toEqual([turn]);
@@ -553,14 +551,14 @@ describe("voice", () => {
   it("leaving_voice_clears_the_session", async () => {
     const mock = new MockProvider("chat").reply("嗯。");
     const h = await Harness.create("off", voiceConfig("always"), mock);
-    h.publish(joined());
-    h.publish(utterance("Owen", "舊的話"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "舊的話"));
     await wait(2000);
-    h.publish({ type: "voice_left", data: { context: voiceCtx(), reason: null } });
+    h.publish(Events.VoiceLeft, { context: voiceCtx(), reason: null });
     await wait(10);
     expect(h.handle().voiceContext("test", "guild")).toBeNull();
-    h.publish(joined());
-    h.publish(utterance("Owen", "新的話"));
+    h.publish(...joined());
+    h.publish(...utterance("Owen", "新的話"));
     await wait(2000);
     const requests = mock.requests();
     expect(requests.length).toBe(2);
@@ -579,7 +577,7 @@ describe("voice", () => {
     const notIn = await run(command("voice mode", "Owen"));
     expect(notIn.tone === "warn" && notIn.text.includes("語音"), notIn.text).toBe(true);
 
-    h.publish(joined());
+    h.publish(...joined());
     await wait(10);
     const shown = await run(command("voice mode", "Owen"));
     expect(shown.text).toContain("`normal`");
@@ -593,7 +591,7 @@ describe("voice", () => {
     expect(handle.channelMode(v)).toBe("mention-only");
     expect(handle.channelMode(channel("c"))).toBe("normal");
     // The mode applies to the voice context.
-    h.publish(utterance("Owen", "你們看過鯨魚嗎?"));
+    h.publish(...utterance("Owen", "你們看過鯨魚嗎?"));
     await wait(3000);
     expect(h.decisions()).toEqual([false]);
 
@@ -601,7 +599,7 @@ describe("voice", () => {
     expect(reset.text).toContain("`normal`");
     expect(handle.channelModeOverride(v)).toBeNull();
 
-    h.publish({ type: "voice_left", data: { context: v, reason: "kicked" } });
+    h.publish(Events.VoiceLeft, { context: v, reason: "kicked" });
     await wait(10);
     expect((await run(command("voice mode", "Owen"))).tone).toBe("warn");
   });

@@ -29,11 +29,13 @@ import {
   type Action,
   type ActionSink,
   ActionSinkKey,
+  type AnyEventDefinition,
   type ContextKey,
   type DecisionTrace,
   type Envelope,
-  type Event,
+  Events,
   type IncomingMessage,
+  is,
   type JsonValue,
   type MessageRef,
   type Priority,
@@ -44,6 +46,9 @@ import {
 } from "@miyoria/types";
 import { vi } from "vitest";
 import { type AgentHandle, AgentHandleKey, AgentModule, type FetchLike } from "../src/index.js";
+
+/** An event a test builder makes: spread into `Harness.publish(...pub)`. */
+export type Pub = readonly [definition: AnyEventDefinition, data: unknown];
 
 export class FakeSink implements ActionSink {
   readonly actions: Action[] = [];
@@ -299,12 +304,12 @@ export class Harness {
     return h;
   }
 
-  publish(event: Event): void {
-    this.sup.bus.publish("platform.test", event);
+  publish(definition: AnyEventDefinition, data: unknown): void {
+    this.sup.bus.publish("platform.test", definition, data);
   }
 
   say(msg: IncomingMessage): void {
-    this.publish({ type: "platform_message_created", data: msg });
+    this.publish(Events.PlatformMessageCreated, msg);
   }
 
   drain(): Envelope[] {
@@ -319,7 +324,7 @@ export class Harness {
 
   /** Every decision published so far. */
   traces(): DecisionTrace[] {
-    return this.drain().flatMap((e) => (e.event.type === "agent_decision" ? [e.event.data] : []));
+    return this.drain().flatMap((e) => (is(Events.AgentDecision, e) ? [e.data] : []));
   }
 
   /** `respond` of every decision published so far. */

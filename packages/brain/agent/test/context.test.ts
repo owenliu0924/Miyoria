@@ -7,7 +7,7 @@ import {
   type AccountRef,
   type Attachment,
   type ContextKey,
-  type Event,
+  Events,
   type HistoryQuery,
   type IncomingMessage,
   type MessageRef,
@@ -29,6 +29,7 @@ import {
   incoming,
   mention,
   noCheck,
+  type Pub,
   type Setup,
   stopHarnesses,
   textDelta,
@@ -106,10 +107,7 @@ describe("backfill", () => {
     ]);
     const mock = new MockProvider("chat").reply("嗯哼。");
     const h = await Harness.build("mention-only", noCheck(), mock, null, withHistory(history));
-    h.publish({
-      type: "platform_ready",
-      data: { platform: "test", self_account: account("DeepSeek-chan") },
-    });
+    h.publish(Events.PlatformReady, { platform: "test", self_account: account("DeepSeek-chan") });
     const trigger = mention(c, "Owen", "妳還記得嗎");
     h.say(trigger);
     await wait(2000);
@@ -210,10 +208,7 @@ describe("reply chains", () => {
     const c = channel("c");
     const mock = new MockProvider("chat").reply("哼。");
     const h = await Harness.build("mention-only", noCheck(), mock, null, {});
-    h.publish({
-      type: "platform_ready",
-      data: { platform: "test", self_account: account("DeepSeek-chan") },
-    });
+    h.publish(Events.PlatformReady, { platform: "test", self_account: account("DeepSeek-chan") });
     h.say({
       ...mention(c, "Owen", "妳上次說的"),
       reply_to: { context: c, id: "old" },
@@ -343,7 +338,7 @@ function voiceCtx(): ContextKey {
   return { platform: "test", scope: "guild", channel: "vc", kind: "voice" };
 }
 
-function joined(): Event {
+function joined(): Pub {
   const member = (id: string, isSelf: boolean) => ({
     account: account(id),
     display_name: id,
@@ -351,10 +346,10 @@ function joined(): Event {
     muted: false,
     deafened: false,
   });
-  return {
-    type: "voice_joined",
-    data: { context: voiceCtx(), participants: [member("Owen", false), member("her", true)] },
-  };
+  return [
+    Events.VoiceJoined,
+    { context: voiceCtx(), participants: [member("Owen", false), member("her", true)] },
+  ] as const;
 }
 
 describe("voice channel text chat", () => {
@@ -365,7 +360,7 @@ describe("voice channel text chat", () => {
       done(),
     ]);
     const h = await Harness.build("mention-only", noCheck(), mock, null, {});
-    h.publish(joined());
+    h.publish(...joined());
     // Typed in the voice channel's text chat (same channel id).
     const chat = channel("vc");
     h.say(mention(chat, "Owen", "給我網址"));

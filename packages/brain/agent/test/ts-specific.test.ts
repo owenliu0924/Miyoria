@@ -9,6 +9,7 @@ import {
   MockProvider,
 } from "@miyoria/llm/llm";
 import { manifestJson } from "@miyoria/runtime/kernel";
+import { Events, is } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentModule } from "../src/index.js";
 import {
@@ -66,7 +67,7 @@ describe("ts port", () => {
     expect(h.sink.texts()).toEqual(["late 2"]);
     const completed = h
       .drain()
-      .flatMap((e) => (e.event.type === "agent_turn_completed" ? [e.event.data.text] : []));
+      .flatMap((e) => (is(Events.AgentTurnCompleted, e) ? [e.data.text] : []));
     expect(completed).toEqual(["", "late 2"]);
   });
 
@@ -189,11 +190,7 @@ describe("ts port", () => {
     await wait(3000);
     const custom = h
       .drain()
-      .flatMap((e) =>
-        e.event.type === "custom" && ["agent.emotion", "agent.tool"].includes(e.event.data.topic)
-          ? [[e.event.data.topic, e.event.data.payload]]
-          : [],
-      );
+      .flatMap((e) => (["agent.emotion", "agent.tool"].includes(e.type) ? [[e.type, e.data]] : []));
     const turn = h.sink.actions[0]?.turn;
     expect(custom).toEqual([
       ["agent.emotion", { turn, context: c, emotion: "smug" }],

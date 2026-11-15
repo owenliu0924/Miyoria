@@ -11,7 +11,7 @@ import {
   ArbiterKey,
   type ContextKey,
   type EffectiveTalkativeness,
-  type Event,
+  Events,
   type Intent,
   type IntentSink,
   IntentSinkKey,
@@ -39,6 +39,7 @@ import {
   incoming,
   nextTs,
   noCheck,
+  type Pub,
   SlowProvider,
   stopHarnesses,
   toolCall,
@@ -184,22 +185,22 @@ function member(id: string, isSelf: boolean): VoiceParticipant {
   return { account: account(id), display_name: id, is_self: isSelf, muted: false, deafened: false };
 }
 
-function joined(): Event {
-  return {
-    type: "voice_joined",
-    // Two people besides her: a group, not a one-on-one (where everything is said to her).
-    data: {
+function joined(): Pub {
+  // Two people besides her: a group, not a one-on-one (where everything is said to her).
+  return [
+    Events.VoiceJoined,
+    {
       context: VOICE,
       participants: [member("Owen", false), member("阿明", false), member("her", true)],
     },
-  };
+  ] as const;
 }
 
-function utterance(who: string, text: string): Event {
+function utterance(who: string, text: string): Pub {
   const now = nextTs();
-  return {
-    type: "voice_utterance",
-    data: {
+  return [
+    Events.VoiceUtteranceEvent,
+    {
       id: newId(),
       context: VOICE,
       speaker: { account: account(who), display_name: who, is_bot: false },
@@ -211,7 +212,7 @@ function utterance(who: string, text: string): Event {
       ended_at: toTimestamp(now),
       asr_ms: 200,
     },
-  };
+  ] as const;
 }
 
 describe("intents", () => {
@@ -325,7 +326,7 @@ describe("intents", () => {
     expect(outcome).toMatchObject({ status: "started", detail: "joined voice channel vc" });
     await wait(100);
     expect(r.h.sink.speeches()).toEqual([]);
-    r.h.publish(joined());
+    r.h.publish(...joined());
     await wait(100);
     expect(r.h.sink.speeches().map(([t]) => t)).toEqual(["我只是剛好路過喔。"]);
     const data = JSON.stringify(chat.requests()[0]?.messages);
@@ -387,21 +388,21 @@ describe("talkativeness", () => {
     const r = await rig("ambient", config, chat);
     const self = new FakeSelf();
     r.h.sup.services.provide("self", SelfStateKey, self.asSelf());
-    r.h.publish(joined());
+    r.h.publish(...joined());
     await wait(10);
-    r.h.publish(utterance("Owen", "我們等一下要去吃飯"));
+    r.h.publish(...utterance("Owen", "我們等一下要去吃飯"));
     await wait(3000);
     expect(r.h.decisions(), "unset: 0.5 × the voice factor").toEqual([false]);
 
     // Someone asks her to liven up: she sets it herself, for this voice channel.
-    r.h.publish(utterance("Owen", "DeepSeek 你可以活躍一點嗎"));
+    r.h.publish(...utterance("Owen", "DeepSeek 你可以活躍一點嗎"));
     await wait(3000);
     expect(self.set.map(([scope, t]) => [scope, t.level])).toEqual([["test:guild:voice:vc", 0.85]]);
     // (Her reply never "plays" here; once its speech TTL passed it no longer counts as queued.)
     await wait(31_000);
     r.h.drain();
     // The scripted roll is 0.5; with her talkativeness up she now joins in.
-    r.h.publish(utterance("Owen", "我們等一下要去吃飯"));
+    r.h.publish(...utterance("Owen", "我們等一下要去吃飯"));
     await wait(3000);
     const decisions = r.h.traces();
     expect(decisions.at(-1)?.respond, decisions.at(-1)?.reasons.join("; ")).toBe(true);

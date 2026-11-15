@@ -9,6 +9,7 @@ import {
   type Action,
   type ContextKey,
   type Envelope,
+  Events,
   FloorKey,
   type IncomingMessage,
   type JsonValue,
@@ -321,7 +322,7 @@ describe("the context menus (MessageActionsKey)", () => {
     expect(llm.prompt(0)).not.toContain("hunter2");
     expect(llm.prompt(0)).toContain(EXCLUDED_LINE);
     const env: Envelope | null = events.tryRecv();
-    const payload = env?.event.type === "custom" ? (env.event.data.payload as JsonValue) : null;
+    const payload = env === null ? null : (env.data as JsonValue);
     expect(payload).toMatchObject({
       message: { id: secret.id.id },
       requested_by: { id: "Alice" },
@@ -342,14 +343,11 @@ describe("typing or speaking (§7.4)", () => {
   const chat: ContextKey = { ...VOICE, kind: "channel" };
 
   function join(h: Harness, deafened: boolean): void {
-    h.publish({
-      type: "voice_joined",
-      data: {
-        context: VOICE,
-        participants: [
-          { account: account("p0"), display_name: "P0", is_self: false, muted: false, deafened },
-        ],
-      },
+    h.publish(Events.VoiceJoined, {
+      context: VOICE,
+      participants: [
+        { account: account("p0"), display_name: "P0", is_self: false, muted: false, deafened },
+      ],
     });
   }
 

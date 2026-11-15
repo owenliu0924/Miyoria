@@ -121,11 +121,7 @@ function answering(name: string, text: string): Probe {
 }
 
 function outcomes(events: Envelope[]): CountedOutcome[] {
-  return events.flatMap((e) =>
-    e.event.type === "custom" && e.event.data.topic === "agent.turn.outcome"
-      ? [e.event.data.payload as unknown as CountedOutcome]
-      : [],
-  );
+  return events.flatMap((e) => (e.type === "agent.turn.outcome" ? [e.data as CountedOutcome] : []));
 }
 
 /** What was corrected in every turn so far (a turn may be followed by a result turn). */

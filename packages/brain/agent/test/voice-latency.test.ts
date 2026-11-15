@@ -8,6 +8,7 @@ import { FactsModule } from "@miyoria/memory/facts";
 import { type ServiceRegistry, sleep } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
+  Events,
   type JsonValue,
   type MessageRef,
   newId,
@@ -110,7 +111,7 @@ async function rig(
     muted: false,
     deafened: false,
   }));
-  h.publish({ type: "voice_joined", data: { context: VOICE, participants } });
+  h.publish(Events.VoiceJoined, { context: VOICE, participants });
   await wait(10);
   return h;
 }
@@ -119,20 +120,17 @@ async function rig(
 function utter(h: Harness, text: string, endedAgoMs = 0): string {
   const id = newId();
   const ended = toTimestamp(Date.now() - endedAgoMs);
-  h.publish({
-    type: "voice_utterance",
-    data: {
-      id,
-      context: VOICE,
-      speaker: { account: { platform: "test", id: "p0" }, display_name: "P0", is_bot: false },
-      text,
-      language: null,
-      emotion: null,
-      audio_events: [],
-      started_at: ended,
-      ended_at: ended,
-      asr_ms: 10,
-    },
+  h.publish(Events.VoiceUtteranceEvent, {
+    id,
+    context: VOICE,
+    speaker: { account: { platform: "test", id: "p0" }, display_name: "P0", is_bot: false },
+    text,
+    language: null,
+    emotion: null,
+    audio_events: [],
+    started_at: ended,
+    ended_at: ended,
+    asr_ms: 10,
   });
   return id;
 }
@@ -142,11 +140,7 @@ const said = (h: Harness) => h.sink.speeches().map(([t]) => t);
 function outcomes(h: Harness): (TurnOutcomeRecord & { voice_stages?: VoiceTurnStages })[] {
   return h
     .drain()
-    .flatMap((e) =>
-      e.event.type === "custom" && e.event.data.topic === "agent.turn.outcome"
-        ? [e.event.data.payload as unknown as TurnOutcomeRecord]
-        : [],
-    );
+    .flatMap((e) => (e.type === "agent.turn.outcome" ? [e.data as TurnOutcomeRecord] : []));
 }
 
 const promptText = (r: ChatRequest | undefined) => JSON.stringify(r?.messages ?? []);
@@ -232,9 +226,10 @@ describe("a turn someone called her in starts during the wait", () => {
     utter(h, "今天好熱");
     await wait(100);
     expect(llm.requests).toHaveLength(0);
-    h.publish({
-      type: "voice_speaking",
-      data: { context: VOICE, account: { platform: "test", id: "p0" }, speaking: true },
+    h.publish(Events.VoiceSpeaking, {
+      context: VOICE,
+      account: { platform: "test", id: "p0" },
+      speaking: true,
     });
     utter(h, "DeepSeek 你覺得呢");
     await wait(100);

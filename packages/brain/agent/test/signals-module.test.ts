@@ -10,7 +10,7 @@ import {
   type Attitude,
   type ContextKey,
   type DecisionTrace,
-  type Event,
+  Events,
   MoodSignalsKey,
   newId,
   type PromptContributor,
@@ -33,6 +33,7 @@ import {
   mention,
   noCheck,
   Probe,
+  type Pub,
   stopHarnesses,
   ToolRegistry,
   wait,
@@ -416,18 +417,18 @@ describe("mood signals", () => {
 
 // ---------------------------------------------------------------- initiative
 
-function initiative(context: ContextKey, hint: string): Event {
-  return {
-    type: "agent_initiative",
-    data: { context, reason: "idle_channel", hint, about: [account("Owen")] },
-  };
+function initiative(context: ContextKey, hint: string): Pub {
+  return [
+    Events.AgentInitiative,
+    { context, reason: "idle_channel", hint, about: [account("Owen")] },
+  ] as const;
 }
 
 function voiceCtx(): ContextKey {
   return { ...channel("vc"), kind: "voice" };
 }
 
-function voiceJoined(): Event {
+function voiceJoined(): Pub {
   const member = (id: string, isSelf: boolean): VoiceParticipant => ({
     account: account(id),
     display_name: id,
@@ -435,10 +436,10 @@ function voiceJoined(): Event {
     muted: false,
     deafened: false,
   });
-  return {
-    type: "voice_joined",
-    data: { context: voiceCtx(), participants: [member("Owen", false), member("her", true)] },
-  };
+  return [
+    Events.VoiceJoined,
+    { context: voiceCtx(), participants: [member("Owen", false), member("her", true)] },
+  ] as const;
 }
 
 function speeches(h: Harness): [string, string][] {
@@ -449,20 +450,17 @@ function speeches(h: Harness): [string, string][] {
 
 // ---------------------------------------------------------------- budget
 
-function budget(state: string): Event {
-  return {
-    type: "custom",
-    data: {
-      topic: "llm.budget",
-      payload: {
-        state,
-        spent_today_usd: 12.5,
-        daily_usd: 10,
-        spent_month_usd: 40,
-        monthly_usd: null,
-      },
+function budget(state: string): Pub {
+  return [
+    Events.LlmBudget,
+    {
+      state,
+      spent_today_usd: 12.5,
+      daily_usd: 10,
+      spent_month_usd: 40,
+      monthly_usd: null,
     },
-  };
+  ];
 }
 
 describe("llm budget", () => {
@@ -470,7 +468,7 @@ describe("llm budget", () => {
     const mock = new MockProvider("chat").reply("嗯");
     const config = { attention: { cooldown_ms: 0, keywords: ["鯨魚"] } };
     const h = await Harness.create("ambient", config, mock);
-    h.publish(budget("degraded"));
+    h.publish(...budget("degraded"));
     await wait(10);
     expect(h.handle().llmBudget()).toBe("degraded");
 
@@ -490,7 +488,7 @@ describe("llm budget", () => {
     expect(mock.requests().length).toBe(1);
 
     // Back to normal.
-    h.publish(budget("ok"));
+    h.publish(...budget("ok"));
     await wait(10);
     expect(h.handle().llmBudget()).toBe("ok");
     h.say(incoming(channel("d"), "Owen", "你們看過鯨魚嗎?"));
@@ -501,8 +499,8 @@ describe("llm budget", () => {
   it("exhausted_budget_stops_generation", async () => {
     const mock = new MockProvider("chat").reply("嗯");
     const h = await Harness.create("mention-only", noCheck(), mock);
-    h.publish(budget("broke"));
-    h.publish(budget("exhausted"));
+    h.publish(...budget("broke"));
+    h.publish(...budget("exhausted"));
     await wait(10);
     expect(h.handle().llmBudget()).toBe("exhausted");
 
@@ -529,11 +527,11 @@ describe("llm budget", () => {
     expect(h.sink.texts().length).toBe(3);
 
     // Not a single model call; initiative ignored.
-    h.publish(initiative(channel("x"), ""));
+    h.publish(...initiative(channel("x"), ""));
     await wait(100);
     expect(mock.requests()).toEqual([]);
 
-    h.publish(budget("ok"));
+    h.publish(...budget("ok"));
     await wait(10);
     h.say(mention(c, "Owen", "DeepSeek"));
     await wait(3000);
@@ -547,24 +545,21 @@ describe("llm budget", () => {
       voice: { default_mode: "mention-only", cooldown_ms: 0 },
     };
     const h = await Harness.create("mention-only", config, mock);
-    h.publish(voiceJoined());
-    h.publish(budget("exhausted"));
+    h.publish(...voiceJoined());
+    h.publish(...budget("exhausted"));
     await wait(100);
     const now = new Date().toISOString();
-    h.publish({
-      type: "voice_utterance",
-      data: {
-        id: "u1",
-        context: voiceCtx(),
-        speaker: { account: account("Owen"), display_name: "Owen", is_bot: false },
-        text: "deepseek 妳在嗎",
-        language: null,
-        emotion: null,
-        audio_events: [],
-        started_at: now,
-        ended_at: now,
-        asr_ms: 100,
-      },
+    h.publish(Events.VoiceUtteranceEvent, {
+      id: "u1",
+      context: voiceCtx(),
+      speaker: { account: account("Owen"), display_name: "Owen", is_bot: false },
+      text: "deepseek 妳在嗎",
+      language: null,
+      emotion: null,
+      audio_events: [],
+      started_at: now,
+      ended_at: now,
+      asr_ms: 100,
     });
     await wait(3000);
     expect(mock.requests()).toEqual([]);
@@ -573,7 +568,7 @@ describe("llm budget", () => {
 
   it("budget_state_survives_restarts", async () => {
     const h = await Harness.create("always", noCheck(), new MockProvider("chat").reply("嗯"));
-    h.publish(budget("degraded"));
+    h.publish(...budget("degraded"));
     await wait(10);
     await h.sup.restart("agent");
     expect(h.handle().llmBudget()).toBe("degraded");
