@@ -416,5 +416,29 @@ export function publishInto(events: Event[]): Publish {
   });
 }
 
+/** What a test sees of a published event: its `type` and `data`. */
+export interface PublishedEvent {
+  type: string;
+  data: unknown;
+}
+
+/**
+ * A `Publish` that hands `fn` the `{ type, data }` of each event (a family's concrete type from
+ * `meta.type`): for tests that look at what a part publishes.
+ */
+export function publishedVia(fn: (event: PublishedEvent) => void): Publish {
+  return (definition, data, ...meta) => {
+    const type = (meta[0] as { type?: string } | undefined)?.type ?? definition.type;
+    fn({ type, data });
+  };
+}
+
+/** A `Publish` that appends the `{ type, data }` of each event to `events` (see `publishedVia`). */
+export function publishedInto(events: PublishedEvent[]): Publish {
+  return publishedVia((event) => {
+    events.push(event);
+  });
+}
+
 /** Module id of the kernel itself: source of `system.module.state` events. */
 export const KERNEL_MODULE: ModuleId = "kernel";
