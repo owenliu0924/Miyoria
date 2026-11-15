@@ -2,7 +2,7 @@
 // if a package exported something else, fix it here and nowhere else.
 //
 // Boot order (after `facts`, which every other module outlives, and `moderation`,
-// which is there before anything can say a word): llm, speech, voice.link, voice, scheduler, agent, commands,
+// which is there before anything can say a word): llm, cluster, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, social, mood, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
 // stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, Discord bot, Admin API, terminal chat, then the
@@ -17,6 +17,7 @@ import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
 import { ArbiterModule } from "@miyoria/brain/arbiter";
 import { DirectiveModule } from "@miyoria/brain/directive";
+import { ClusterModule } from "@miyoria/cluster";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
@@ -76,6 +77,7 @@ import {
   type ModuleDeps,
   STORE_PLUGINS,
 } from "./boot.js";
+import { CLUSTER_GUARDS } from "./cluster-guards.js";
 import { assertStartConfig, validateRevision } from "./config-schema.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
@@ -140,6 +142,8 @@ async function coreModules({
     new FactsModule(store, profileId, { names: profile.names() }),
     new ModerationModule(),
     llmModule(config, profile, baseDir),
+    // Before the modules that will ask its registry where their services are.
+    new ClusterModule({ guards: CLUSTER_GUARDS }),
     SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema)),
     new VoiceLinkModule(),
     new VoiceModule(profileId, profile.voice, profile.names()),

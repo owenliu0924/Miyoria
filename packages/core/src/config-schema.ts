@@ -28,6 +28,7 @@ import { ActivityConfigSchema, ActivityModule } from "@miyoria/brain/activity";
 import { AgentConfigSchema, AgentModule } from "@miyoria/brain/agent";
 import { ArbiterConfigSchema, ArbiterModule } from "@miyoria/brain/arbiter";
 import { DirectiveConfigSchema, DirectiveModule } from "@miyoria/brain/directive";
+import { ClusterConfigSchema, ClusterModule } from "@miyoria/cluster";
 import { CommandsConfigSchema, CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule, DiscordConfigSchema } from "@miyoria/discord";
 import { EconomyConfigSchema, EconomyModule } from "@miyoria/economy";
@@ -110,6 +111,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [FactsModule.ID, FactsConfigSchema],
   [ModerationModule.ID, ModerationConfigSchema],
   [LlmModule.ID, null],
+  [ClusterModule.ID, ClusterConfigSchema],
   [SpeechModule.ID, null],
   [VoiceLinkModule.ID, VoiceLinkConfigSchema],
   [VoiceModule.ID, VoiceConfigSchema],

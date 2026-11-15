@@ -8,6 +8,7 @@ export const MODULE_IDS: readonly string[] = [
   "facts",
   "moderation",
   "llm",
+  "cluster",
   "speech",
   "voice.link",
   "voice",

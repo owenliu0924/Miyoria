@@ -260,6 +260,20 @@ token = "${MIYORIA_API_TOKEN:-}"
 # rate_total_per_minute = 3000     # 所有訪客加起來每分鐘的請求數
 # utc_offset_minutes = 480         # 「今天」從哪個時區的午夜開始算
 
+# 每台電腦的管家(hostd)連進來的控制連線:回報這台有哪些服務、位址和健康。預設開著;
+# 埠被占用時這個模組會失敗,Core 照常執行。
+# [modules.cluster]
+# bind = "127.0.0.1:7880"
+# retry_secs = 30                # 呼叫失敗的服務先跳過多久(秒)
+# 每種能力先找哪幾台(主機的名字,或下面靜態登記的名字);沒列到的排在後面,健康的排在前面
+# [modules.cluster.order]
+# sing = ["friend-pc", "main-pc"]
+# 沒有管家管的服務(例如還沒升級的朋友那台翻唱服務):服務的位址只能寫在這裡
+# [modules.cluster.static.friend-sing]
+# provides = ["sing"]
+# url = "http://100.83.26.41:8005"
+# token = "${FRIEND_SING_TOKEN}"  # 那個服務有檢查 token 時
+
 # Self 帳號語音節點(apps/voice-node)連進來的位址;token 由 `miyoria init` 產生
 [modules."voice.link"]
 bind = "127.0.0.1:7879"
