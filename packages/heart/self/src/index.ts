@@ -83,13 +83,6 @@ export {
 } from "./feelings.js";
 export { HeartBook } from "./heart.js";
 export {
-  MIGRATION_KEY,
-  type MigrationDeps,
-  type MigrationReport,
-  migrateCards,
-  seedAttachment,
-} from "./migrate.js";
-export {
   eventDelta,
   parseAffectEvent,
   SelfModule,

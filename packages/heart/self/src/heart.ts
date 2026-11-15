@@ -148,7 +148,7 @@ export class HeartBook {
     return r.romance - before;
   }
 
-  /** Gives someone no record yet an attachment (the migration). Returns whether it did. */
+  /** Gives someone with no record yet an attachment and a name. Returns whether it did. */
   seed(person: PersonId, attachment: number, name: string | null, now: number): boolean {
     if (this.#people.has(person)) return false;
     const r = this.#rec(person);

@@ -218,28 +218,23 @@ describe("buildCore", () => {
     expect(s.has(PlatformSinksKey)).toBe(true);
   });
 
-  it("provides_the_handle_table_and_repairs_stored_text_before_any_module_starts", async () => {
+  it("provides_the_handle_table_before_any_module_starts", async () => {
     const store = await openStore("memory://");
     await store.people.upsertAccount({ platform: "discord", id: "1" }, "Owen");
-    await store.settings.set("deepseek-chan", "reflect:lesson:L1", {
-      id: "L1",
-      text: "u7 一直嗆我",
-      person: null,
-    });
     const order: string[] = [];
     const base = catalog();
     core = await buildCoreWith(
       {
         ...base,
-        migrateStoredData: async (s, profile, handles) => {
+        provideServices: (services, deps) => {
+          const handles = services.get(HandleDirectoryKey);
           order.push(
-            `migrate:${profile}:${handles
+            `services:${handles
               ?.list()
               .map((e) => e.handle)
               .join(",")}`,
           );
-          const row = (await s.settings.get(profile, "reflect:lesson:L1")) as { text: string };
-          expect(row.text).toBe("u7 一直嗆我"); // not repaired yet: the hook runs first
+          base.provideServices?.(services, deps);
         },
         coreModules: async (deps) => {
           order.push("modules");
@@ -249,22 +244,10 @@ describe("buildCore", () => {
       config(),
       { store },
     );
-    expect(order).toEqual(["migrate:deepseek-chan:Owen", "modules"]);
+    expect(order).toEqual(["services:Owen", "modules"]);
     const handles = core.services.get(HandleDirectoryKey);
+    expect(handles?.list().map((e) => e.handle)).toEqual(["Owen"]);
     expect(handles?.ofAccount({ platform: "discord", id: "1" }, "Renamed")).toBe("Owen");
-    // A failing repair never stops her from starting.
-    await core.stop();
-    core = await buildCoreWith(
-      {
-        ...catalog(),
-        migrateStoredData: async () => {
-          throw new Error("boom");
-        },
-      },
-      config(),
-      { store: await openStore("memory://") },
-    );
-    expect(core.profileDisplayName).toBe("DeepSeek-chan");
   });
 
   it("disables_token_modules_without_a_token_and_remembers_runtime_toggles", async () => {

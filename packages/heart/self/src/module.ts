@@ -7,12 +7,7 @@ import {
   SerialQueue,
   withTimeout,
 } from "@miyoria/runtime/kernel";
-import {
-  PeopleStoreKey,
-  RelationshipStoreKey,
-  type SettingsStore,
-  SettingsStoreKey,
-} from "@miyoria/store";
+import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   AFFECT_EVENT_KINDS,
   type AffectEvent,
@@ -39,7 +34,6 @@ import { type SelfConfig, SelfConfigSchema } from "./config.js";
 import { type TemperamentInput, temperament } from "./emotions.js";
 import { type Circumstances, IDLE, SelfEngine } from "./engine.js";
 import { FeelingsBook } from "./feelings.js";
-import { migrateCards } from "./migrate.js";
 import { EmotionRules } from "./rules.js";
 import { SelfService } from "./state.js";
 
@@ -194,36 +188,6 @@ export class SelfModule implements Module {
     }
     const baseline = this.#options.baseline ?? DEFAULT_BASELINE;
     const directory = () => ctx.services.get(HandleDirectoryKey);
-
-    // One person card per person: fill them in from the older places (once, idempotent).
-    if (store) {
-      try {
-        const names = new Map<string, string>();
-        const people = ctx.services.get(PeopleStoreKey);
-        if (people) for (const p of await people.all()) names.set(p.id, p.display_name);
-        const report = await withTimeout(
-          migrateCards({
-            store,
-            profile,
-            feelings,
-            hearts: engine.hearts,
-            relationships: ctx.services.get(RelationshipStoreKey) ?? null,
-            handleOf: (person) => directory()?.ofPerson(person) ?? null,
-            names,
-            persist: async () => {
-              if (persist) await persist.set(profile, STATE_KEY, engine.toJson());
-            },
-            now: clock.now(),
-          }),
-          STORE_TIMEOUT_MS,
-        );
-        if (report !== undefined && report.migrated > 0) {
-          ctx.log.info(report, "person cards filled in from the older records");
-        }
-      } catch (error) {
-        ctx.log.warn({ err: errorMessage(error) }, "cannot migrate person cards");
-      }
-    }
 
     const social = () => ctx.services.get(SocialSignalsKey);
     const circumstances = (): Circumstances => {

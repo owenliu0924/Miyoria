@@ -1,24 +1,20 @@
 // Stable handles in what she writes down (docs/design/v2-architecture.md §1.6): the fold's
 // prompt and its notes use people's names, never `u1`; text with a code is rewritten or
-// refused; a style lesson is not a talkativeness knob; and the migration repairs old rows.
+// refused; and a style lesson is not a talkativeness knob.
 
 import { MockProvider } from "@miyoria/llm/llm";
-import { GLOBAL_SETTINGS_PROFILE, HANDLE_PREFIX, MemorySettingsStore } from "@miyoria/store";
+import { GLOBAL_SETTINGS_PROFILE, HANDLE_PREFIX } from "@miyoria/store";
 import {
   type AccountRef,
   ConversationStatesKey,
   ephemeralHandlesIn,
-  type JsonValue,
   type Lesson,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   dropStale,
-  LESSON_PREFIX,
   LessonStore,
   noteUnits,
-  repairEphemeralHandles,
-  STATE_PREFIX,
   similarity,
   stateKey,
   touchUnits,
@@ -253,137 +249,5 @@ describe("lessons", () => {
     expect(store.add(lesson({ id: "a", text: "u7 一直嗆我" }))).toBe(false);
     expect(store.add(lesson({ id: "b", text: "御坂(u1)不喜歡被打斷" }))).toBe(true);
     expect(store.all().map((l) => l.text)).toEqual(["御坂不喜歡被打斷"]);
-  });
-});
-
-describe("migration of already polluted data", () => {
-  const people: Record<string, string> = { "p-owen": "Owen", "p-amy": "Amy" };
-  const options = (settings: MemorySettingsStore) => ({
-    settings,
-    profile: "p",
-    handleOfPerson: (p: string) => people[p] ?? null,
-  });
-
-  async function fixture(): Promise<MemorySettingsStore> {
-    const s = new MemorySettingsStore();
-    const base = {
-      created_at: "2026-11-02T00:00:00.000Z",
-      expires_at: null,
-      scope: null,
-      talk: null,
-    };
-    const put = (id: string, text: string, person: string | null) =>
-      s.set("p", `${LESSON_PREFIX}${id}`, { ...base, id, text, person, source: "daily" });
-    await put("01", "u7 一直嗆我", "p-owen"); // recoverable: the lesson is about Owen
-    await put("02", "u7 一直嗆我,u8 也是。要有耐心。", "p-owen"); // two codes: no guessing
-    await put("03", "u9", null); // nothing left
-    await put("04", "Owen 不喜歡被打斷", "p-owen"); // clean
-    await put("05", "代號又洗牌一輪:u1=御坂。u1 嗆人時要冷靜", null); // defined in the text
-    const state = {
-      context: TEXT,
-      updated_at: "2026-11-02T09:00:00.000Z",
-      folded_up_to: null,
-      folds: 3,
-      lines: 40,
-      recap: "代號又洗牌一輪:u1=御坂,u2=Owen。u1 一直嗆 u2,u4 沒說話。",
-      notes: { 話題: ["u3 抱怨", "Owen 想玩 osu"], 氣氛: "輕鬆" },
-    };
-    await s.set("p", stateKey(TEXT), state as unknown as JsonValue);
-    await s.set("p", "self:state", {
-      emotions: { joy: 0.4 },
-      agenda: [
-        {
-          id: "a1",
-          text: "u7 的生日要記得",
-          why: "u7 說過",
-          person: "p-amy",
-          status: "open",
-        },
-        {
-          id: "a2",
-          text: "提醒御坂(u1)明天有活動。早點睡。",
-          why: "",
-          person: null,
-          status: "open",
-        },
-        { id: "a3", text: "學 Owen 喜歡的拉麵店", why: "想多聊", person: "p-owen", status: "open" },
-      ],
-    });
-    return s;
-  }
-
-  it("resolves what the record itself says, drops the rest, never guesses", async () => {
-    const s = await fixture();
-    const report = await repairEphemeralHandles(options(s));
-    expect(report).toEqual({
-      lessons_fixed: 3,
-      lessons_dropped: 1,
-      conversations: 1,
-      agenda: 2,
-      errors: 0,
-    });
-
-    const lessons = await s.list("p", LESSON_PREFIX);
-    const text = (id: string) =>
-      (lessons.get(`${LESSON_PREFIX}${id}`) as { text: string } | undefined)?.text;
-    expect(text("01")).toBe("Owen 一直嗆我"); // the one code of a lesson about Owen
-    expect(text("02")).toBe("要有耐心。"); // two codes: the sentence goes
-    expect(text("03")).toBeUndefined(); // only a code: the lesson goes
-    expect(text("04")).toBe("Owen 不喜歡被打斷");
-    expect(text("05")).toBe("代號又洗牌一輪:御坂。御坂 嗆人時要冷靜");
-
-    const state = (await s.get("p", stateKey(TEXT))) as {
-      recap: string;
-      notes: unknown;
-      folds: number;
-      touched: Record<string, string>;
-    };
-    // "u4 沒說話" has a code the text does not define: its whole sentence goes, nothing is guessed.
-    expect(state.recap).toBe("代號又洗牌一輪:御坂,Owen。");
-    expect(state.notes).toEqual({ 話題: ["Owen 想玩 osu"], 氣氛: "輕鬆" });
-    expect(state.folds).toBe(3);
-    // Ages follow the surviving threads.
-    expect(Object.keys(state.touched)).toHaveLength(2);
-
-    const self = (await s.get("p", "self:state")) as {
-      emotions: unknown;
-      agenda: { id: string; text: string; why: string; person: string | null }[];
-    };
-    expect(self.emotions).toEqual({ joy: 0.4 }); // shape and other fields untouched
-    expect(self.agenda.map((a) => a.text)).toEqual([
-      "某人 的生日要記得", // not guessed: marked
-      "提醒御坂明天有活動。早點睡。",
-      "學 Owen 喜歡的拉麵店",
-    ]);
-    expect(self.agenda[0]?.why).toBe(""); // the reason is only a code: gone
-    expect(self.agenda[0]?.person).toBe("p-amy"); // the (untrusted) person field is left alone
-
-    for (const [key, value] of [...(await s.list("p", ""))]) {
-      if (key.startsWith(STATE_PREFIX)) continue; // checked above (its context key is not text)
-      expect(ephemeralHandlesIn(JSON.stringify(value)), key).toEqual([]);
-    }
-  });
-
-  it("is idempotent: a second run changes nothing", async () => {
-    const s = await fixture();
-    await repairEphemeralHandles(options(s));
-    const snapshot = JSON.stringify([...(await s.list("p", ""))]);
-    const again = await repairEphemeralHandles(options(s));
-    expect(again).toEqual({
-      lessons_fixed: 0,
-      lessons_dropped: 0,
-      conversations: 0,
-      agenda: 0,
-      errors: 0,
-    });
-    expect(JSON.stringify([...(await s.list("p", ""))])).toBe(snapshot);
-  });
-
-  it("does nothing on an empty or clean store", async () => {
-    const s = new MemorySettingsStore();
-    await s.set("p", `${STATE_PREFIX}x`, { not: "a state" } as unknown as JsonValue);
-    expect((await repairEphemeralHandles(options(s))).errors).toBe(0);
-    expect(await s.get("p", "self:state")).toBeNull();
-    expect(await s.get("p", `${STATE_PREFIX}x`)).toEqual({ not: "a state" });
   });
 });

@@ -123,15 +123,6 @@ export interface ModuleCatalog {
    * `ActiveProfileKey`), provided right before the modules are built.
    */
   provideServices?(services: ServiceRegistry, deps: ModuleDeps): void;
-  /**
-   * One-time repairs of stored data that belong to module packages (idempotent), run after the
-   * store is open and before any module starts.
-   */
-  migrateStoredData?(
-    store: Store,
-    profile: ProfileId,
-    handles: PersonHandleDirectory | null,
-  ): Promise<void>;
 }
 
 export interface CoreOptions {
@@ -294,14 +285,6 @@ export async function buildCoreWith(
   services.provide(k, ProfileIdKey, profileId);
   // One database belongs to one character: a memory looked up by id reports this profile.
   store.plugin(memoryTables).forProfile(profileId);
-  // Lessons, recaps and agenda text written with per-call codes before handles were stable are
-  // repaired before any module caches them (idempotent; resolves what the record itself says,
-  // drops the rest).
-  try {
-    await catalog.migrateStoredData?.(store, profileId, handles);
-  } catch (error) {
-    log.warn({ err: errorMessage(error) }, "cannot repair per-call codes in stored text");
-  }
 
   // The rules hold from before the first module starts, and with the `directive` module off.
   const directives = new DirectiveService({

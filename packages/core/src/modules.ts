@@ -35,12 +35,7 @@ import {
   parseModelRef,
 } from "@miyoria/llm/llm";
 import { FactsModule } from "@miyoria/memory/facts";
-import {
-  ConversationModule,
-  KnowledgeModule,
-  ReflectModule,
-  repairEphemeralHandles,
-} from "@miyoria/memory/learning";
+import { ConversationModule, KnowledgeModule, ReflectModule } from "@miyoria/memory/learning";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldModule } from "@miyoria/memory/world";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/play/game";
@@ -64,12 +59,8 @@ import {
   SOURCES,
   StageLinkModule,
 } from "@miyoria/stage";
-import {
-  openStore as openStoreBackend,
-  type PersonHandleDirectory,
-  type Store,
-} from "@miyoria/store";
-import { isJsonObject, type ProfileId } from "@miyoria/types";
+import { openStore as openStoreBackend, type Store } from "@miyoria/store";
+import { isJsonObject } from "@miyoria/types";
 import { SpeechConfigSchema, SpeechModule } from "@miyoria/voice/speech";
 import { VoiceLinkModule, VoiceModule } from "@miyoria/voice/voice";
 import { ImageGenModule } from "@miyoria/workspace/imagegen";
@@ -204,28 +195,12 @@ async function discoverExtensions(config: Config, baseDir: string): Promise<Exte
   return { skipped: found.skipped, modules: found.modules };
 }
 
-/** Repairs lessons, recaps and agenda text that carry per-call codes (`u1`). */
-async function migrateStoredData(
-  store: Store,
-  profile: ProfileId,
-  handles: PersonHandleDirectory | null,
-): Promise<void> {
-  const people = await store.people.all();
-  const handleOf = new Map(people.map((p) => [p.id, handles?.ensurePerson(p) ?? null] as const));
-  await repairEphemeralHandles({
-    settings: store.settings,
-    profile,
-    handleOfPerson: (person) => handleOf.get(person) ?? null,
-  });
-}
-
 export const defaultCatalog: ModuleCatalog = {
   openStore,
   coreModules,
   discord: () => new DiscordBotModule(),
   api: (deps) => new ApiModule({ emotions: avatarEmotions(deps.profile.avatar) }),
   discoverExtensions,
-  migrateStoredData,
 };
 
 /**

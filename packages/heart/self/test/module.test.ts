@@ -116,6 +116,12 @@ describe("self module", () => {
       text: "Owen 最近常陪我聊天,有點在意他",
       by: "self",
     });
+    // A part of the person's card (her handle for them), as the affect service writes it.
+    const saved = (await store.get("p", "self:feeling:person-1")) as { card: object };
+    await store.set("p", "self:feeling:person-1", {
+      ...saved,
+      card: { ...saved.card, handle: "Owen" },
+    });
 
     const second = await boot(store, new ManualClock(T0 + 3_600_000));
     expect(second.self.initiative()).toBe(0.9);
