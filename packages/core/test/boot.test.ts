@@ -17,7 +17,9 @@ import { openStore, type Store, StoreKey } from "@miyoria/store";
 import {
   DirectivesKey,
   type Envelope,
+  Events,
   HandleDirectoryKey,
+  is,
   PlatformSinksKey,
   Principals,
   SYSTEM_SHUTDOWN_TOPIC,
@@ -432,13 +434,13 @@ describe("terminal chat", () => {
     const events: Envelope[] = [];
     await waitFor(() => {
       for (let e = sub.tryRecv(); e; e = sub.tryRecv()) events.push(e);
-      return events.some((e) => e.event.type === "platform_message_created");
+      return events.some((e) => e.type === "platform.message.created");
     });
-    const created = events.find((e) => e.event.type === "platform_message_created")?.event;
-    expect(created?.type === "platform_message_created" && created.data.text).toBe("你好");
-    expect(created?.type === "platform_message_created" && created.data.author.display_name).toBe(
-      "Owen",
-    );
+    const created = events.find((e) => is(Events.PlatformMessageCreated, e));
+    expect(created && is(Events.PlatformMessageCreated, created) && created.data.text).toBe("你好");
+    expect(
+      created && is(Events.PlatformMessageCreated, created) && created.data.author.display_name,
+    ).toBe("Owen");
     const sink = supervisor.services.require(PlatformSinksKey).get(CLI_PLATFORM);
     await sink?.send(
       { platform: CLI_PLATFORM, scope: null, channel: "repl", kind: "dm" },

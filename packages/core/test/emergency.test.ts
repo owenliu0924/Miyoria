@@ -17,7 +17,8 @@ import {
   ActivityManagerKey,
   ActuatorExecutorKey,
   type ContextKey,
-  customEvent,
+  Events,
+  is,
   MouthKey,
   newAction,
   newId,
@@ -58,14 +59,12 @@ class World implements Module {
   }
 
   session(state: "started" | "stopped"): void {
-    this.ctx?.publish(
-      customEvent("game.director.session", {
-        state,
-        game: "minecraft",
-        game_name: "Minecraft",
-        context: { ...VOICE },
-      }),
-    );
+    this.ctx?.publish(Events.GameDirectorSession, {
+      state,
+      game: "minecraft",
+      game_name: "Minecraft",
+      context: { ...VOICE },
+    });
   }
 }
 
@@ -238,8 +237,8 @@ describe("the stop, for real", () => {
     const completed = h.subscribe(["action.completed"]);
     const actions = h.services.require(ActionSinkKey);
     await actions.submit(line("還在講話"));
-    const muted = (await nextEvent(completed)).event;
-    expect(muted).toMatchObject({ type: "action_completed", data: { ok: false, error: "muted" } });
+    const muted = await nextEvent(completed);
+    expect(muted).toMatchObject({ type: "action.completed", data: { ok: false, error: "muted" } });
 
     await registry.emergency.resume("panel:test");
     node.sendJson({ type: "joined", guild: GUILD, channel: "vc1" });
@@ -262,8 +261,8 @@ describe("cutting one line short (§7.3)", () => {
     await actions.interruptTurn?.(turn);
     expect(await node.recvType("play_stop")).toMatchObject({ play: start.play });
     for (;;) {
-      const event = (await nextEvent(playback)).event;
-      if (event.type !== "voice_playback" || event.data.state === "started") continue;
+      const event = await nextEvent(playback);
+      if (!is(Events.VoicePlaybackEvent, event) || event.data.state === "started") continue;
       expect(event.data).toMatchObject({ state: "interrupted", turn, text: "這句會被切掉" });
       expect(event.data.heard_ms).toBeGreaterThanOrEqual(40);
       break;
