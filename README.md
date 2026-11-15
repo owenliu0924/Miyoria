@@ -16,43 +16,18 @@ Miyoria
 ![SQLite](https://img.shields.io/badge/Store-SQLite-003B57.svg?style=flat-square&logo=sqlite&logoColor=white)
 ![Discord](https://img.shields.io/badge/Platform-Discord-5865F2.svg?style=flat-square&logo=discord&logoColor=white)
 
-## From an empty folder to her first reply
+## Set up your own copy
 
-You need Node.js 24 and a Discord bot token. Everything else has a default.
-
-```bash
-pnpm dlx miyoria@latest init       # writes miyoria.toml, .env and profiles/: LLM endpoint, API key, model, Discord token
-pnpm dlx miyoria doctor            # checks the config, the character, the LLM, Discord and the database
-pnpm dlx miyoria chat              # talk to her in the terminal, no Discord needed
-pnpm dlx miyoria core              # the Discord bot, her mind loop and the admin panel at http://127.0.0.1:7878/
-pnpm dlx miyoria stage             # on the streaming PC: VTube Studio, OBS and the overlay
-pnpm dlx miyoria stage obs-setup   # builds her OBS scenes and sources (add --dry-run to preview)
-```
-
-With npm instead of pnpm, the same commands start with `npx` (`npx miyoria@latest init`).
-
-Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `pnpm dlx miyoria config` changes settings one at a time. `miyoria status`, `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `pnpm dlx miyoria --help` lists everything.
-
-## Quick start: from a fresh clone to the bot online and answering in your server
-
-You need Node.js 24 (`miyoria install` fills in pnpm, Python and ffmpeg), a Discord bot token (Developer Portal → Bot, with Message Content Intent turned on; by default she also needs the Presence and Server Members intents, and if you don't want them, run `miyoria config set modules."platform.discord.bot".presence_intents false` later), and an LLM API key (DeepSeek or any OpenAI-compatible service). **No GPU is needed**: speech recognition and synthesis, singing, VTube Studio, OBS and Minecraft are all optional and off by default, so out of the box she only chats in text.
+Start with [docs/SETUP.md](docs/SETUP.md) (Traditional Chinese): from an empty folder to her first reply in Discord, text only and no GPU, with voice, singing and a second machine as optional chapters. The npm package is not published yet; the page shows the repository path that works today.
 
 ```bash
 git clone <this repo> && cd Miyoria
-node scripts/setup.mjs        # checks pnpm (enables it through corepack if missing), runs pnpm install, then opens miyoria init
+node scripts/setup.mjs     # needs Node.js 24: checks pnpm, installs packages, then runs `miyoria init`
+pnpm build:web             # the admin panel (only when running from the repository)
+pnpm dev up                # `miyoria up`: starts hostd, which starts Core; the panel is at http://127.0.0.1:7878/
 ```
 
-`miyoria init` only asks what it needs: the LLM key, the Discord token and what this machine runs (the default is "core only", which is text chat with no GPU). At the end it asks once whether to install what this machine is missing now, with a list and the sizes. Then:
-
-```bash
-pnpm dev doctor               # checks Node, pnpm, the LLM, Discord, the database and what the chosen roles still lack
-pnpm dev start                # starts in Windows Terminal tabs (other systems: pnpm dev core)
-pnpm dev chat                 # or chat with her in the terminal first, no Discord needed
-```
-
-To add voice, singing or streaming, run `miyoria init` again to change the roles (`inference` = ASR, TTS and singing, needs an NVIDIA GPU; `broadcast` = voice node and stage), then run `miyoria install`.
-
-Windows only: the tabs of `miyoria start` (other systems use `miyoria up` or `miyoria core`), automatic installs through `winget` (macOS uses Homebrew; on Linux it prints the apt or dnf command and doesn't run sudo for you), and OBS, VTube Studio and the voice node's Go Live on the streaming PC (only tested on Windows). `miyoria install` doesn't install these, it only checks them and explains what to do: NVIDIA drivers and CUDA, Docker Desktop, OBS, VTube Studio, Minecraft and Prism Launcher. Workarounds for a particular machine (antivirus locking esbuild's temp files, ports reserved by WinNAT) are not default steps; `miyoria doctor --deep` only suggests them when something goes wrong.
+You need Node.js 24, a Discord bot token and an LLM API key; no GPU. In the repository `pnpm dev <command>` is the same as `miyoria <command>`. Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `miyoria config` changes settings one at a time. `miyoria status`, `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `miyoria --help` lists everything.
 
 ## Several machines: roles, install and start
 
