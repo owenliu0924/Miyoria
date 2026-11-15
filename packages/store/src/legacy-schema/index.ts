@@ -1,49 +1,74 @@
-// The `legacy` schema: the store's tables as V4 left them (migrations 0001-0018), wrapped as one
-// temporary schema so the V5 runner records them in `_migrations`. Its tables keep their names,
-// so it is exempt from the prefix lint. Later steps move each table into the plugin that owns it;
-// step 14 of docs/design/v5-data.md §8 deletes this schema.
+// The `legacy` schema: the V4 tables that are still read and written and have no plugin of their
+// own yet, as one migration. Its tables keep their V4 names, so it is exempt from the prefix lint.
+//
+// - `relationships`, `relationship_deltas`: the social module's bond with each person and its
+//   changes (`RelationshipStore`). Phase 4 replaces them with `heart_person` and `heart.changed`
+//   events (docs/design/v5-data.md §3.2).
+// - `member_cards`: the cards the member page issues (`MemberCardStore`). Phase 5's `cards`
+//   plugin replaces them.
+//
+// Until step 14 of v5-data §8 these came from the 18 V4-era migrations (0001-0018), most of which
+// had become comments as their tables moved to plugins; no V5 database existed outside tests, so
+// they were squashed into this one. `test/legacy-schema.test.ts` holds a dump of what the old chain
+// built and checks this migration builds the same.
+//
+// The tables keep `profile_id` (decision D6 drops it everywhere else): they are redesigned in the
+// phases named above, and taking the column out now would change every query and signature over
+// them for no lasting gain. No new table gets a `profile_id`.
 
 import type { PluginSchema } from "../migrate.js";
-import { m0001 } from "./0001-init.js";
-import { m0002 } from "./0002-decisions-settings.js";
-import { m0003 } from "./0003-memory-social-auth.js";
-import { m0004 } from "./0004-memory-source.js";
-import { m0005 } from "./0005-turn-outcomes.js";
-import { m0006 } from "./0006-event-log.js";
-import { m0007 } from "./0007-memory-provenance.js";
-import { m0008 } from "./0008-directives.js";
-import { m0009 } from "./0009-message-author.js";
-import { m0010 } from "./0010-member-card.js";
-import { m0011 } from "./0011-coin-ledger.js";
-import { m0012 } from "./0012-deals.js";
-import { m0013 } from "./0013-goals-bounties.js";
-import { m0014 } from "./0014-wallet-social.js";
-import { m0015 } from "./0015-off-board.js";
-import { m0016 } from "./0016-economy-docs.js";
-import { m0017 } from "./0017-goal-fulfilled.js";
-import { m0018 } from "./0018-memory-vector-version.js";
 
-/** The store's V4 tables. Temporary: see the file comment. */
+const INIT = `-- One profile's feelings about one person, plus the change history.
+CREATE TABLE relationships (
+    profile_id       TEXT    NOT NULL,
+    person_id        TEXT    NOT NULL,
+    affinity         REAL    NOT NULL,
+    trust            REAL    NOT NULL,
+    familiarity      REAL    NOT NULL,
+    tags             TEXT    NOT NULL DEFAULT '[]',
+    notes            TEXT    NOT NULL,
+    call_name        TEXT,
+    interactions     INTEGER NOT NULL DEFAULT 0,
+    last_interaction INTEGER,
+    updated_at       INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, person_id)
+);
+
+CREATE TABLE relationship_deltas (
+    seq         INTEGER PRIMARY KEY,
+    profile_id  TEXT    NOT NULL,
+    person_id   TEXT    NOT NULL,
+    at          INTEGER NOT NULL,
+    affinity    REAL    NOT NULL,
+    trust       REAL    NOT NULL,
+    familiarity REAL    NOT NULL,
+    reason      TEXT    NOT NULL
+);
+
+CREATE INDEX relationship_deltas_idx
+    ON relationship_deltas (profile_id, person_id, at, seq);
+
+-- Cards she gave people on the member page: what she thought of them when they asked, kept so the
+-- code on a card can be checked. They go when the person asks her to forget them.
+CREATE TABLE member_cards (
+    -- \`MYR-XXXX-XXXX-XXXX\`.
+    serial          TEXT    PRIMARY KEY,
+    profile_id      TEXT    NOT NULL,
+    -- The session account it was issued to.
+    author_platform TEXT    NOT NULL,
+    author_id       TEXT    NOT NULL,
+    person_id       TEXT,
+    issued_at       INTEGER NOT NULL,
+    -- JSON of what the card shows.
+    snapshot        TEXT    NOT NULL
+);
+
+CREATE INDEX member_cards_author_idx
+    ON member_cards (profile_id, author_platform, author_id, issued_at);
+`;
+
+/** The V4 tables still in use. Temporary: see the file comment. */
 export const legacySchema: PluginSchema = {
   plugin: "legacy",
-  migrations: [
-    { version: 1, name: "init", sql: m0001 },
-    { version: 2, name: "decisions_settings", sql: m0002 },
-    { version: 3, name: "memory_social_auth", sql: m0003 },
-    { version: 4, name: "memory_source", sql: m0004 },
-    { version: 5, name: "turn_outcomes", sql: m0005 },
-    { version: 6, name: "event_log", sql: m0006 },
-    { version: 7, name: "memory_provenance", sql: m0007 },
-    { version: 8, name: "directives", sql: m0008 },
-    { version: 9, name: "message_author", sql: m0009 },
-    { version: 10, name: "member_card", sql: m0010 },
-    { version: 11, name: "coin_ledger", sql: m0011 },
-    { version: 12, name: "deals", sql: m0012 },
-    { version: 13, name: "goals_bounties", sql: m0013 },
-    { version: 14, name: "wallet_social", sql: m0014 },
-    { version: 15, name: "off_board", sql: m0015 },
-    { version: 16, name: "economy_docs", sql: m0016 },
-    { version: 17, name: "goal_fulfilled", sql: m0017 },
-    { version: 18, name: "memory_vector_version", sql: m0018 },
-  ],
+  migrations: [{ version: 1, name: "init", sql: INIT }],
 };

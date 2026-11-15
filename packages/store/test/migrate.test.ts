@@ -80,7 +80,7 @@ describe("bookkeeping", () => {
         "core:3",
         "core:4",
         "core:5",
-        ...legacySchema.migrations.map((m) => `legacy:${m.version}`),
+        "legacy:1",
       ]);
       expect(rows[0]).toMatchObject({
         name: "bookkeeping",
@@ -138,19 +138,9 @@ describe("bookkeeping", () => {
     }
   });
 
-  it("the legacy SQL is the old files' text: 18 migrations, LF line ends", () => {
-    expect(legacySchema.migrations.map((m) => m.version)).toEqual(
-      Array.from({ length: 18 }, (_, i) => i + 1),
-    );
+  it("the legacy schema is one migration with LF line ends (what it builds: legacy-schema.test.ts)", () => {
+    expect(legacySchema.migrations.map((m) => [m.version, m.name])).toEqual([[1, "init"]]);
     for (const m of legacySchema.migrations) expect(m.sql).not.toContain("\r");
-    expect(checksum(legacySchema.migrations[8]?.sql ?? "")).toBe(
-      createHash("sha256")
-        .update(
-          "-- What someone wrote over time, for the member page's chart (docs/design/v3-architecture.md §17.1).\n" +
-            "-- The index on message_log went with the table: chat lines are events (core migration 3).\n",
-        )
-        .digest("hex"),
-    );
   });
 
   it("applies a plugin schema after core, and only its new migrations later", () => {
