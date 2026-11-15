@@ -14,7 +14,12 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { HOST_LINK_CLOSE, HOST_LINK_PATH, type HostLinks } from "@miyoria/contracts/host";
+import {
+  HOST_LINK_CLOSE,
+  HOST_LINK_PATH,
+  type HostClusterContext,
+  type HostLinks,
+} from "@miyoria/contracts/host";
 import {
   defineManifest,
   errorMessage,
@@ -82,6 +87,13 @@ export interface ClusterService {
   readonly address: AddressInfo;
   /** `[modules.cluster] public_url`: the link address to give a joining machine, when set. */
   readonly publicUrl: string | null;
+  /**
+   * Who listens to her and which songs are needed now, for the GPU arbiters of the hosts
+   * (`cluster.context`, to every approved host with a `sing`, `tts` or `asr` service). The
+   * `sing` module calls it on every poll while a song is prepared. Optional: stand-ins made
+   * before H7 leave it out.
+   */
+  context?(context: HostClusterContext): void;
 }
 
 export const ClusterKey = serviceKey<ClusterService>("Cluster");
@@ -310,6 +322,7 @@ export class ClusterModule implements Module {
       guards: this.guards,
       address: addr,
       publicUrl: config.public_url ?? null,
+      context: (context) => link.sendContext(context),
     });
 
     ctx.spawn("server", async (signal) => {

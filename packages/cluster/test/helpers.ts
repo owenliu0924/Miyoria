@@ -100,12 +100,17 @@ export class Harness {
       relay?: RelayOptions;
       /** More options of the module (`complete`, `uses`, `llmRate`, ...). */
       module?: Omit<ClusterModuleOptions, "guards" | "version" | "relay">;
+      /** The supervisor's clock (default the system's). */
+      clock?: { now(): number };
     } = {},
   ): Promise<Harness> {
     const services = new ServiceRegistry();
     const store = await SqliteStore.open(":memory:", { plugins: [clusterTables] });
     services.provide("kernel", StoreKey, store);
-    const sup = new Supervisor({ services });
+    const sup = new Supervisor({
+      services,
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+    });
     const module = new ClusterModule({
       ...options.module,
       guards: options.guards ?? [],

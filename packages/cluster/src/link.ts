@@ -17,6 +17,11 @@
 // connects, when it is approved and when the values change, so a node never needs its link
 // address and token written by hand on a machine that joined.
 //
+// Who listens to her and which songs are needed now (`cluster.context`, for the GPU arbiter of
+// v5-gpu.md §12) goes to every approved host that reports a service providing `sing`, `tts` or
+// `asr`, each time the `sing` module sends it (every poll while a song is prepared), and once to
+// such a host whose first report arrives while the last one is still fresh.
+//
 // Binary frames after `welcome` are the relay's (§7.1, `relay.ts`): each connection has its
 // channel, and every stream of it fails when the connection ends.
 
@@ -28,6 +33,7 @@ import {
   HOST_NOTIFICATION,
   HOST_PROTOCOL_VERSION,
   HOST_RELAY_PROTOCOL_ERROR,
+  type HostClusterContext,
   type HostHello,
   HostHelloSchema,
   type HostLinks,
@@ -52,6 +58,13 @@ import { ClusterError, type ClusterTables, type HostRecord } from "./tables.js";
 const CLOSE_GRACE_MS = 2_000;
 /** Default timeout of a request Core sends a host. */
 const CALL_TIMEOUT_MS = 30_000;
+/** The capabilities of the services a GPU arbiter shares the card between. */
+const CONTEXT_CAPABILITIES: ReadonlySet<string> = new Set(["sing", "tts", "asr"]);
+/**
+ * A context this recent is sent to a host that connects: the `sing` module sends one every poll
+ * (1.5 s by default) while a song is prepared and none otherwise.
+ */
+export const CONTEXT_FRESH_MS = 5_000;
 
 /** One connected host. */
 export interface HostConnection {
@@ -108,6 +121,8 @@ interface Conn {
   closing: { code: number; reason: string } | null;
   /** The last `cluster.links` it was sent, as JSON; `null` before the first. */
   sentLinks: string | null;
+  /** It was sent a `cluster.context` on this connection. */
+  contextSent: boolean;
 }
 
 /** Starts the close handshake; drops the socket if the other side does not answer in time. */
@@ -143,6 +158,8 @@ type HelloOutcome =
 export class ClusterLink {
   readonly #o: ClusterLinkOptions;
   readonly #conns = new Map<string, Conn>();
+  /** The last `cluster.context` and when it came (`now()`). */
+  #context: { value: HostClusterContext; at: number } | null = null;
 
   constructor(options: ClusterLinkOptions) {
     this.#o = options;
@@ -195,6 +212,37 @@ export class ClusterLink {
     conn.capabilities = conn.approved ? host.capabilities : [];
     this.#o.registry.setHost(host.name, conn.approved ? host.capabilities : null);
     this.#sendLinks(conn);
+    this.#catchUpContext(conn);
+  }
+
+  /**
+   * `cluster.context`: sent now to every connected, approved host that reports a service
+   * providing `sing`, `tts` or `asr` (the hosts that may run a GPU arbiter).
+   */
+  sendContext(context: HostClusterContext): void {
+    this.#context = { value: context, at: this.#o.now() };
+    for (const conn of this.#conns.values()) {
+      if (this.#wantsContext(conn)) this.#notifyContext(conn, context);
+    }
+  }
+
+  #wantsContext(conn: Conn): boolean {
+    if (!conn.approved || conn.report === null) return false;
+    return conn.report.services.some(
+      (s) => s.state !== "disabled" && s.provides.some((p) => CONTEXT_CAPABILITIES.has(p)),
+    );
+  }
+
+  #notifyContext(conn: Conn, context: HostClusterContext): void {
+    conn.contextSent = true;
+    conn.peer.tryNotify(HOST_NOTIFICATION.ClusterContext, context satisfies HostClusterContext);
+  }
+
+  /** A host that came (or became usable) while songs are prepared gets the last context now. */
+  #catchUpContext(conn: Conn): void {
+    const last = this.#context;
+    if (conn.contextSent || last === null || this.#o.now() - last.at > CONTEXT_FRESH_MS) return;
+    if (this.#wantsContext(conn)) this.#notifyContext(conn, last.value);
   }
 
   /** The node links' values may have changed: tells every connected host whose share changed. */
@@ -402,6 +450,7 @@ export class ClusterLink {
       relay,
       closing: null,
       sentLinks: null,
+      contextSent: false,
     };
     // Binary frames are the relay's; JSON-RPC reads the text frames.
     ws.on("message", (data: RawData, isBinary: boolean) => {
@@ -535,6 +584,7 @@ export class ClusterLink {
         if (this.#conns.get(conn.name) !== conn) return;
         conn.report = parsed.data;
         o.registry.report(conn.name, parsed.data);
+        this.#catchUpContext(conn);
         return;
       }
       case HOST_NOTIFICATION.ServiceEvent: {
