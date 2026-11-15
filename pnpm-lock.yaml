@@ -333,6 +333,9 @@ importers:
       '@miyoria/card-face':
         specifier: workspace:*
         version: link:../card-face
+      '@miyoria/cluster':
+        specifier: workspace:*
+        version: link:../cluster
       '@miyoria/contracts':
         specifier: workspace:*
         version: link:../contracts

@@ -43,6 +43,20 @@ describe("what is returned", () => {
     expect(reg.pick("vad")).toBeNull();
   });
 
+  it("lists the capabilities that have an endpoint now", () => {
+    const { reg } = registry({ static: { f: { provides: ["sing"], url: "http://f:1" } } });
+    reg.setHost("pc", ["asr", "tts"]);
+    reg.report(
+      "pc",
+      report([
+        service({ name: "asr", url: "http://pc:1" }),
+        service({ name: "tts", url: "http://pc:2", state: "failed" }),
+        service({ name: "turn", url: "http://pc:3" }),
+      ]),
+    );
+    expect(reg.capabilities()).toEqual(["asr", "sing"]);
+  });
+
   it("nothing of a pending host, and nothing of a host that is gone", () => {
     const { reg } = registry();
     reg.setHost("pc", null);

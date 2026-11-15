@@ -264,6 +264,7 @@ token = "${MIYORIA_API_TOKEN:-}"
 # 埠被占用時這個模組會失敗,Core 照常執行。
 # [modules.cluster]
 # bind = "127.0.0.1:7880"
+# public_url = "wss://core.example/cluster-link"  # Core 在反向代理後面時,join 給新機器的連線位址(沒設:用請求的主機名 + bind 的埠)
 # retry_secs = 30                # 呼叫失敗的服務先跳過多久(秒)
 # 每種能力先找哪幾台(主機的名字,或下面靜態登記的名字);沒列到的排在後面,健康的排在前面
 # [modules.cluster.order]

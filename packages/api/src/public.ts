@@ -70,6 +70,8 @@ const NAMES_TTL_MS = MINUTE_MS;
 
 /** Logins started per client and minute: each one holds a place among the logins in flight. */
 const LOGINS_PER_MINUTE = 20;
+/** Join attempts per client and minute: a code is the only credential, so guessing is slowed. */
+const JOINS_PER_MINUTE = 5;
 /** Requests per member and minute. */
 const MEMBER_PER_MINUTE = 60;
 /** Exports and forgets per member and hour: both walk every memory. */
@@ -338,6 +340,7 @@ export class PublicSide {
   readonly #clients: RateWindow;
   readonly #everyone: RateWindow;
   readonly #logins = new RateWindow(LOGINS_PER_MINUTE, MINUTE_MS);
+  readonly #joins = new RateWindow(JOINS_PER_MINUTE, MINUTE_MS);
   readonly #members = new RateWindow(MEMBER_PER_MINUTE, MINUTE_MS);
   readonly #heavy = new RateWindow(HEAVY_PER_HOUR, HOUR_MS);
   readonly #cardChecks = new RateWindow(CARD_CHECKS_PER_MINUTE, MINUTE_MS);
@@ -363,6 +366,11 @@ export class PublicSide {
 
   admitLogin(client: string): number | null {
     return this.#logins.hit(client, this.#now());
+  }
+
+  /** A machine joining the cluster with a code. */
+  admitJoin(client: string): number | null {
+    return this.#joins.hit(client, this.#now());
   }
 
   admitMember(account: string): number | null {

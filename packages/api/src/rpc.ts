@@ -52,6 +52,7 @@ import { boardRpc } from "./board.js";
 import { activityRpc, arbiterRpc } from "./body.js";
 import { cardCheckRpc } from "./card.js";
 import { channelRpc } from "./channels.js";
+import { clusterRpc } from "./cluster.js";
 import { os, type RpcContext } from "./contract.js";
 import { controlRpc } from "./control.js";
 import { coreRpc, eventsRpc, healthRpc, KEEP_ALIVE_MS, personaRpc } from "./core.js";
@@ -123,6 +124,7 @@ export const router = os.router({
   llm: { ...coreRpc.llm, ...llmCallsRpc },
   economy: { ...economyRpc, ...goalAdminRpc },
   channels: channelRpc,
+  cluster: clusterRpc,
   mind: { ...mindRpc, ...thoughtRpc, ...digestRpc, ...planRpc },
   roles: roleRpc,
   ...opsRpc,

@@ -151,6 +151,21 @@ export class EndpointRegistry {
 
   // ---- what modules ask ----------------------------------------------------------------------
 
+  /** Every capability that has an endpoint now (approved and serving, or static), sorted. */
+  capabilities(): string[] {
+    const found = new Set<string>();
+    for (const entry of this.#hosts.values()) {
+      if (entry.report === null) continue;
+      for (const service of entry.report.services) {
+        for (const capability of service.provides) {
+          if (entry.approved.has(capability)) found.add(capability);
+        }
+      }
+    }
+    for (const endpoint of this.#static) found.add(endpoint.capability);
+    return [...found].filter((c) => this.#all(c, {}).length > 0).sort();
+  }
+
   /** The first healthy endpoint that is not resting, in order; `null` when there is none. */
   pick(capability: string, options: PickOptions = {}): Endpoint | null {
     const now = this.#clock.now();

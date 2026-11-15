@@ -189,6 +189,27 @@ describe("reports and the registry", () => {
   });
 });
 
+describe("removing a host", () => {
+  it("closes its link, drops its endpoints and forgets its row", async () => {
+    const h = await start();
+    const cluster = h.cluster();
+    const { id, key } = approvedHost(cluster, "pc", ["asr"]);
+    const host = await FakeHost.connect(h.url(), { host: id, key });
+    host.peer.notify("host.report", report([service({ name: "asr", url: "http://pc:1" })]));
+    await waitUntil(() => cluster.registry.pick("asr") !== null);
+    expect(cluster.hosts.connected().map((c) => c.name)).toEqual(["pc"]);
+    const sub = h.bus.subscribe(["cluster.host.removed"]);
+    expect(cluster.hosts.remove("pc")?.name).toBe("pc");
+    expect(await host.closed).toBe(HOST_LINK_CLOSE.UNAUTHORIZED);
+    expect((await nextEvent(sub)).data).toEqual({ host: "pc", how: "deleted" });
+    await waitUntil(() => cluster.registry.pick("asr") === null);
+    expect(cluster.hosts.list()).toEqual([]);
+    expect(cluster.hosts.remove("pc")).toBeNull();
+    // Its key is gone: it cannot come back.
+    await expect(FakeHost.connect(h.url(), { host: id, key })).rejects.toThrow(/4401/);
+  });
+});
+
 describe("what Core serves and calls", () => {
   it("answers cluster.guard from every source", async () => {
     let singing = false;

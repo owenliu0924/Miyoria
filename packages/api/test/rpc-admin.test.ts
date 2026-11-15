@@ -334,6 +334,18 @@ const CASES: Case[] = [
   { name: "game.start", method: "POST", path: "/api/game/start" },
   { name: "game.stop", method: "POST", path: "/api/game/stop" },
   { name: "game.goal", method: "POST", path: "/api/game/goal" },
+  { name: "cluster.hosts", method: "GET", path: "/api/cluster/hosts" },
+  { name: "cluster.invite", method: "POST", path: "/api/cluster/invites" },
+  { name: "cluster.create", method: "POST", path: "/api/cluster/hosts" },
+  { name: "cluster.approve", method: "POST", path: "/api/cluster/hosts/:name/approve" },
+  { name: "cluster.remove", method: "DELETE", path: "/api/cluster/hosts/:name" },
+  { name: "cluster.info", method: "GET", path: "/api/cluster/hosts/:name/info" },
+  {
+    name: "cluster.service",
+    method: "POST",
+    path: "/api/cluster/hosts/:name/services/:service/:action",
+  },
+  { name: "cluster.endpoints", method: "GET", path: "/api/cluster/endpoints" },
   { name: "data.inventory", method: "GET", path: "/api/data" },
   {
     name: "data.wipe",

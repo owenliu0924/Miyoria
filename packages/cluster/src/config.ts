@@ -20,6 +20,15 @@ export type StaticEndpointConfig = z.output<typeof StaticEndpointConfigSchema>;
 export const ClusterConfigSchema = z.object({
   /** Listen address of the control link. */
   bind: z.string().default(DEFAULT_CLUSTER_BIND),
+  /**
+   * The link address `POST /api/cluster/join` gives a joining machine, for a Core behind a proxy
+   * (`wss://core.example/cluster-link`). Without it the address is built from the request's host
+   * and `bind`'s port.
+   */
+  public_url: z
+    .string()
+    .regex(/^wss?:\/\/\S+$/u, "must be a ws:// or wss:// address")
+    .optional(),
   /** Per capability, the hosts (or static entries) to try first, in order. */
   order: z.record(z.string(), z.array(z.string())).default({}),
   /** Services no hostd manages, by a name of their own. */

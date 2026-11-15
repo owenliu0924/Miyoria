@@ -73,6 +73,8 @@ export interface ClusterService {
   readonly guards: GuardRegistry;
   /** The address the control link listens on. */
   readonly address: AddressInfo;
+  /** `[modules.cluster] public_url`: the link address to give a joining machine, when set. */
+  readonly publicUrl: string | null;
 }
 
 export const ClusterKey = serviceKey<ClusterService>("Cluster");
@@ -256,6 +258,7 @@ export class ClusterModule implements Module {
       hosts: clusterHosts(tables, link, ctx.publisher),
       guards: this.guards,
       address: addr,
+      publicUrl: config.public_url ?? null,
     });
 
     ctx.spawn("server", async (signal) => {
