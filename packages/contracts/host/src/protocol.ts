@@ -19,6 +19,8 @@ export const HOST_METHOD = {
   ServiceInstall: "service.install",
   ServiceRemove: "service.remove",
   HostUpdate: "host.update",
+  /** Local API only: stop every service, then the daemon. */
+  HostShutdown: "host.shutdown",
   GpuAcquire: "gpu.acquire",
   GpuRenew: "gpu.renew",
   GpuRelease: "gpu.release",

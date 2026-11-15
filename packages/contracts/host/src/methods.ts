@@ -165,6 +165,24 @@ export const HostServiceLogLineSchema = z
   .meta({ id: "HostServiceLogLine" });
 export type HostServiceLogLine = z.output<typeof HostServiceLogLineSchema>;
 
+/** `host.shutdown` params (local API only). */
+export const HostShutdownSchema = z
+  .object({
+    /** Go ahead although a guarded state is active for a running service. */
+    force: z.boolean().optional(),
+  })
+  .meta({ id: "HostShutdown" });
+export type HostShutdown = z.output<typeof HostShutdownSchema>;
+
+/** `host.shutdown` result, sent before the daemon exits. */
+export const HostShutdownResultSchema = z
+  .object({
+    /** The services that were stopped, in the order they were stopped. */
+    stopped: z.array(z.string()),
+  })
+  .meta({ id: "HostShutdownResult" });
+export type HostShutdownResult = z.output<typeof HostShutdownResultSchema>;
+
 /** `cluster.guard` result: the guarded states that are active now. */
 export const HostGuardResultSchema = z
   .object({ states: z.array(HostGuardStateSchema) })

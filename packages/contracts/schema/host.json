@@ -1037,6 +1037,28 @@
         "restarts"
       ]
     },
+    "HostShutdown": {
+      "type": "object",
+      "properties": {
+        "force": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HostShutdownResult": {
+      "type": "object",
+      "properties": {
+        "stopped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "stopped"
+      ]
+    },
     "HostStop": {
       "type": "object",
       "properties": {
