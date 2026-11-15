@@ -16,6 +16,8 @@ export interface FakeEntry {
 export class FakeEndpoints implements EndpointSource {
   entries: FakeEntry[];
   readonly failures: { endpoint: Endpoint; error: unknown }[] = [];
+  /** When set, what a request to a link endpoint is rejected with. */
+  linkError: Error | null = null;
   readonly #watchers = new Set<() => void>();
 
   constructor(entries: FakeEntry[] = []) {
@@ -53,7 +55,10 @@ export class FakeEndpoints implements EndpointSource {
 
   request(endpoint: Endpoint, path: string, init: RequestInit = {}): Promise<Response> {
     if (endpoint.via === "link") {
-      const error = new Error("relaying is not available yet");
+      // What the registry throws for a link endpoint: by default "no relay"; a test may set what
+      // a running relay would throw instead.
+      if (this.linkError !== null) return Promise.reject(this.linkError);
+      const error = new Error("the cluster module's relay is not running");
       error.name = "RelayUnavailableError";
       return Promise.reject(error);
     }

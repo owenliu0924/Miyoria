@@ -501,6 +501,10 @@ describe("relay over the control link", () => {
     await expect(
       s.h.cluster().registry.request({ ...s.endpoint, host: "elsewhere" }, "/json"),
     ).rejects.toThrow(/not connected/);
+    // Nothing was sent for a host that is not there: a caller may go elsewhere.
+    await expect(
+      s.h.cluster().registry.request({ ...s.endpoint, host: "elsewhere" }, "/json"),
+    ).rejects.toMatchObject({ name: "RelayError", sent: false });
   });
 
   it("refuses a host that is not approved, until it is", async () => {

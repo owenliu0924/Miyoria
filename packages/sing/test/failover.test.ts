@@ -640,4 +640,19 @@ describe("HttpSingWorker through the registry", () => {
       /^song worker unreachable at sing on far \(over its control link\)/,
     );
   });
+
+  it("knows a relay error that sent nothing from one that may have reached the worker", async () => {
+    const source = new FakeEndpoints([
+      { name: "far", service: "sing", url: "link://far/sing", via: "link" },
+    ]);
+    const worker = new HttpSingWorker(source.candidates("sing")[0] as never, 2000, source);
+    const relayError = (sent: boolean) =>
+      Object.assign(new Error("host `far` is not connected"), { name: "RelayError", sent });
+
+    source.linkError = relayError(false);
+    expect((await rejection(worker.submit({ query: "a" }))).maybeReceived).toBe(false);
+
+    source.linkError = relayError(true);
+    expect((await rejection(worker.submit({ query: "a" }))).maybeReceived).toBe(true);
+  });
 });

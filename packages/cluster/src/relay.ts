@@ -64,10 +64,16 @@ export class RelayError extends ClusterError {
   override name = "RelayError";
   /** The host's JSON-RPC error code, when it answered with one. */
   readonly code: number | null;
+  /**
+   * False when nothing was sent to the host: the caller may safely send the request elsewhere.
+   * True whenever the service may have received it.
+   */
+  readonly sent: boolean;
 
-  constructor(message: string, options: { code?: number; cause?: unknown } = {}) {
+  constructor(message: string, options: { code?: number; cause?: unknown; sent?: boolean } = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.code = options.code ?? null;
+    this.sent = options.sent ?? true;
   }
 }
 
@@ -128,6 +134,7 @@ export class RelayChannel {
     if (this.#streams.size >= this.#max) {
       throw new RelayError(
         `${this.#max} relayed requests to host \`${host}\` are open already; try again later`,
+        { sent: false },
       );
     }
     // What `fetch` accepts, normalised: the method, the headers (form data's content type) and
@@ -148,6 +155,7 @@ export class RelayChannel {
     if (this.#streams.size >= this.#max) {
       throw new RelayError(
         `${this.#max} relayed requests to host \`${host}\` are open already; try again later`,
+        { sent: false },
       );
     }
 
@@ -355,16 +363,20 @@ export class ClusterRelay implements LinkRelay {
   async request(endpoint: Endpoint, path: string, init: RequestInit = {}): Promise<Response> {
     init.signal?.throwIfAborted();
     const host = this.#lookup(endpoint.host);
-    if (host === null) throw new RelayError(`host \`${endpoint.host}\` is not connected`);
+    if (host === null) {
+      throw new RelayError(`host \`${endpoint.host}\` is not connected`, { sent: false });
+    }
     if (!host.approved || !host.capabilities.includes(endpoint.capability)) {
       throw new RelayError(
         `host \`${endpoint.host}\` is not approved for \`${endpoint.capability}\``,
+        { sent: false },
       );
     }
     const service = host.services?.find((s) => s.name === endpoint.service);
     if (service === undefined || !service.provides.includes(endpoint.capability)) {
       throw new RelayError(
         `host \`${endpoint.host}\` reports no service \`${endpoint.service}\` for \`${endpoint.capability}\``,
+        { sent: false },
       );
     }
     return host.channel.request(endpoint.service, path, init);

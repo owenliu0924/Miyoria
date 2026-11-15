@@ -50,8 +50,8 @@ export interface StaticEndpointEntry {
 }
 
 /**
- * Sends an HTTP request through a host's control link (v5-hostd §7.1). Not implemented in this
- * step: the registry refuses `link` endpoints until one is set.
+ * Sends an HTTP request through a host's control link (v5-hostd §7.1). The cluster module sets
+ * one while it runs (`ClusterRelay`); without one a `link` endpoint cannot be called.
  */
 export interface LinkRelay {
   request(endpoint: Endpoint, path: string, init?: RequestInit): Promise<Response>;
@@ -313,7 +313,7 @@ export class EndpointRegistry {
       const relay = this.#relay;
       if (relay === null) {
         throw new RelayUnavailableError(
-          `\`${endpoint.service}\` on \`${endpoint.host}\` is reachable only through its control link, and relaying is not available yet`,
+          `\`${endpoint.service}\` on \`${endpoint.host}\` is reachable only through its control link, and the cluster module's relay is not running`,
         );
       }
       return relay.request(endpoint, path, init);

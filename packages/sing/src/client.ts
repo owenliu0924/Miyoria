@@ -113,9 +113,15 @@ export interface SingWorker {
 /** Longest wait for the connection check after a submit timed out. */
 const PROBE_MS = 3000;
 
-/** The relay could not be used at all (`RelayUnavailableError` of `@miyoria/cluster`). */
+/**
+ * The request never left Core: there is no relay (`RelayUnavailableError` of `@miyoria/cluster`),
+ * or the relay refused before sending (`RelayError` with `sent: false`: the host is not
+ * connected, or too many requests to it are open).
+ */
 function relayUnavailable(error: unknown): boolean {
-  return error instanceof Error && error.name === "RelayUnavailableError";
+  if (!(error instanceof Error)) return false;
+  if (error.name === "RelayUnavailableError") return true;
+  return error.name === "RelayError" && (error as { sent?: unknown }).sent === false;
 }
 
 /** One song worker: an endpoint of Core's registry (`sing`). */

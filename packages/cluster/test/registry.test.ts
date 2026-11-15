@@ -211,7 +211,7 @@ describe("request", () => {
     if (endpoint === null) throw new Error("no endpoint");
     await expect(reg.request(endpoint, "/songs")).rejects.toThrow(RelayUnavailableError);
     await expect(reg.request(endpoint, "/songs")).rejects.toThrow(
-      /reachable only through its control link, and relaying is not available yet/,
+      /reachable only through its control link, and the cluster module.s relay is not running/,
     );
     const asked: string[] = [];
     reg.setRelay({
