@@ -59,6 +59,13 @@ export {
 } from "./config-schema.js";
 export { ModuleContext, type Task } from "./context.js";
 export {
+  type Endpoint,
+  type EndpointQuery,
+  type EndpointSource,
+  type EndpointsOption,
+  firstEndpoint,
+} from "./endpoints.js";
+export {
   configureLogging,
   formatLogLine,
   getLogger,
