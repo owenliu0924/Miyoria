@@ -191,6 +191,12 @@ export const HostShutdownResultSchema = z
   .meta({ id: "HostShutdownResult" });
 export type HostShutdownResult = z.output<typeof HostShutdownResultSchema>;
 
+/** `host.relink` result: where the control link is after the daemon read its files again. */
+export const HostRelinkResultSchema = z
+  .object({ link: HostLinkStateSchema })
+  .meta({ id: "HostRelinkResult" });
+export type HostRelinkResult = z.output<typeof HostRelinkResultSchema>;
+
 /** `cluster.guard` result: the guarded states that are active now. */
 export const HostGuardResultSchema = z
   .object({ states: z.array(HostGuardStateSchema) })

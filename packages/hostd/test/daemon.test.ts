@@ -487,6 +487,55 @@ describe("control link", () => {
     expect(daemon.linkState).toBe("none");
   });
 
+  it("host.relink hangs up the link and dials again with what the files say now", T, async () => {
+    const ws = workspace([fake("a", "health.cjs")]);
+    const links = fakeLinks();
+    const daemon = daemonFor(ws, { linkFactory: links.factory });
+    await daemon.start();
+    expect(links.made).toEqual([]);
+    expect(await daemon.call("host.relink", {}, OP)).toEqual({ link: "none" });
+
+    // join wrote both files while the daemon ran
+    writeIn(ws, "host.toml", 'name = "joined"\n[cluster]\nurl = "ws://127.0.0.1:1/cluster-link"\n');
+    writeIn(ws, "data/host/host.key", JSON.stringify({ id: "h9", key: "k9" }));
+    expect(await daemon.call("host.relink", {}, OP)).toEqual({ link: "connecting" });
+    expect(links.made).toHaveLength(1);
+    expect(links.made[0]?.options).toMatchObject({
+      url: "ws://127.0.0.1:1/cluster-link",
+      hostId: "h9",
+      key: "k9",
+      name: "joined",
+    });
+    expect(links.made[0]?.started).toBe(1);
+
+    // a second call replaces the link: the old one is stopped, a new one started
+    writeIn(ws, "data/host/host.key", JSON.stringify({ id: "h9", key: "k10" }));
+    await daemon.call("host.relink", {}, OP);
+    expect(links.made).toHaveLength(2);
+    expect(links.made[0]?.stopped).toBe(1);
+    expect(links.made[1]?.options.key).toBe("k10");
+    expect(links.made[1]?.started).toBe(1);
+
+    // [cluster] removed: the link is hung up and none is made
+    writeIn(ws, "host.toml", 'name = "joined"\n');
+    expect(await daemon.call("host.relink", {}, OP)).toEqual({ link: "none" });
+    expect(links.made[1]?.stopped).toBe(1);
+    expect(links.made).toHaveLength(2);
+
+    // an unreadable host.toml leaves the daemon as it was
+    writeIn(ws, "host.toml", "name = [");
+    await expect(daemon.call("host.relink", {}, OP)).rejects.toMatchObject({ code: -32602 });
+  });
+
+  it("host.relink is for the operator only", T, async () => {
+    const ws = workspace([fake("a", "health.cjs")]);
+    const daemon = daemonFor(ws, { linkFactory: fakeLinks().factory });
+    await daemon.start();
+    await expect(daemon.call("host.relink", {}, { kind: "core" })).rejects.toMatchObject({
+      code: HOST_ERROR_CODE.NotAllowed,
+    });
+  });
+
   it("accepts and ignores follow in service.logs (the link follows itself)", T, async () => {
     const ws = workspace([fake("a", "health.cjs")]);
     const daemon = daemonFor(ws);

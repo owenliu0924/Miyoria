@@ -512,6 +512,17 @@
       },
       "additionalProperties": false
     },
+    "HostRelinkResult": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "$ref": "#/$defs/HostLinkState"
+        }
+      },
+      "required": [
+        "link"
+      ]
+    },
     "HostReport": {
       "$ref": "#/$defs/HostInfo"
     },

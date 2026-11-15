@@ -15,6 +15,7 @@ import {
   type HostGuardState,
   type HostInfo,
   type HostLinkState,
+  type HostRelinkResult,
   type HostReport,
   type HostServiceControlResult,
   HostServiceControlSchema,
@@ -124,6 +125,7 @@ const SERVED: ReadonlySet<string> = new Set([
   HOST_METHOD.ServiceRestart,
   HOST_METHOD.ServiceLogs,
   HOST_METHOD.HostShutdown,
+  HOST_METHOD.HostRelink,
 ]);
 
 function allowed(caller: Caller, method: string): boolean {
@@ -131,7 +133,7 @@ function allowed(caller: Caller, method: string): boolean {
     case "operator":
       return true;
     case "core":
-      return method !== HOST_METHOD.HostShutdown;
+      return method !== HOST_METHOD.HostShutdown && method !== HOST_METHOD.HostRelink;
     case "service":
       // `gpu.*` and `cluster.*` come later; nothing that exists now is a service's to call.
       return false;
@@ -182,6 +184,8 @@ export class Daemon implements HostApi {
   #cluster: ClusterClient | null = null;
   #link: LinkHandle | null = null;
   #stopping: Promise<void> | null = null;
+  /** Serialises `host.relink`: two calls at once would leave two links. */
+  #relinking: Promise<unknown> = Promise.resolve();
 
   constructor(options: DaemonOptions) {
     this.#options = options;
@@ -420,6 +424,55 @@ export class Daemon implements HostApi {
     this.#log.info({ url }, "dialling Core");
   }
 
+  /**
+   * `host.relink`: reads `[cluster]` of `host.toml` and `<state>/host.key` again, hangs up the
+   * current link and dials with what the files say now. Only the cluster address and the name are
+   * taken from the file; the services were planned at start.
+   */
+  relink(): Promise<HostRelinkResult> {
+    const run = this.#relinking.then(() => this.#relink());
+    this.#relinking = run.catch(() => undefined);
+    return run;
+  }
+
+  async #relink(): Promise<HostRelinkResult> {
+    const current = this.#host;
+    if (current === null || this.#stopping !== null) {
+      throw new HostRpcError(HOST_ERROR_CODE.Busy, "the daemon is not running");
+    }
+    let fresh: LoadedHostConfig;
+    try {
+      fresh = loadHostConfig(current.file);
+    } catch (error) {
+      throw new HostRpcError(
+        JSON_RPC.InvalidParams,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    const { cluster: _old, ...rest } = current.config;
+    const next: LoadedHostConfig = {
+      ...current,
+      config: {
+        ...rest,
+        name: fresh.config.name,
+        ...(fresh.config.cluster !== undefined ? { cluster: fresh.config.cluster } : {}),
+      },
+    };
+    this.#host = next;
+    const old = this.#link;
+    this.#link = null;
+    if (old !== null) {
+      try {
+        await old.stop();
+      } catch (error) {
+        this.#log.warn({ err: error }, "control link did not stop cleanly");
+      }
+    }
+    this.#startLink(next);
+    this.#log.info({ link: this.linkState }, "control link read again");
+    return { link: this.linkState };
+  }
+
   // ---- accessors -------------------------------------------------------------------------------
 
   /** The control link's state; `none` when the daemon has no link. */
@@ -550,6 +603,8 @@ export class Daemon implements HostApi {
         const { service, lines } = parseParams(HostServiceLogsSchema, params);
         return { lines: this.#service(service).logs.tail(lines) } satisfies HostServiceLogsResult;
       }
+      case HOST_METHOD.HostRelink:
+        return await this.relink();
       case HOST_METHOD.HostShutdown: {
         const { force } = parseParams(HostShutdownSchema, params);
         if (force !== true) {

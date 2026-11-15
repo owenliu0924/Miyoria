@@ -21,6 +21,8 @@ export const HOST_METHOD = {
   HostUpdate: "host.update",
   /** Local API only: stop every service, then the daemon. */
   HostShutdown: "host.shutdown",
+  /** Local API only: read `[cluster]` and `<state>/host.key` again and dial Core with them. */
+  HostRelink: "host.relink",
   GpuAcquire: "gpu.acquire",
   GpuRenew: "gpu.renew",
   GpuRelease: "gpu.release",
