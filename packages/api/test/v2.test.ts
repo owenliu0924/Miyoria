@@ -30,6 +30,7 @@ import {
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActiveProfileKey, ApiClient, ApiModule, summarizePrompt } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
@@ -272,7 +273,7 @@ async function harness() {
   await sup.startAll();
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  return { sup, base, client: new ApiClient(base, TOKEN) };
+  return { sup, base, client: new ApiClient(base, TOKEN), adm: adminCalls(base, TOKEN) };
 }
 
 const GET_ROUTES = [
@@ -300,9 +301,9 @@ describe("v2 routes", () => {
 
   it("are 503 while their modules are stopped", async () => {
     const h = await harness();
-    expect(await statusOf(h.client.activity())).toBe(503);
-    expect(await statusOf(h.client.activityTasks())).toBe(503);
-    expect(await statusOf(h.client.ledger())).toBe(503);
+    expect(await statusOf(h.adm.activity())).toBe(503);
+    expect(await statusOf(h.adm.activityTasks())).toBe(503);
+    expect(await statusOf(h.adm.ledger())).toBe(503);
     expect(await statusOf(h.client.affect())).toBe(503);
     expect(await statusOf(h.client.affectPeople())).toBe(503);
     expect(await statusOf(h.client.goals())).toBe(503);
@@ -313,15 +314,15 @@ describe("v2 routes", () => {
     const res = await raw(h.base, "GET", "/api/affect", { token: TOKEN });
     expect((res.body as { error: string }).error).toContain("affect module");
     // Decisions are only what the api module saw, so they work without the arbiter.
-    expect(await h.client.arbiterDecisions()).toEqual({ decisions: [] });
+    expect(await h.adm.arbiterDecisions()).toEqual({ decisions: [] });
   });
 
   it("serve the body state and its tasks", async () => {
     const h = await harness();
     h.sup.services.provide("activity", ActivityManagerKey, fakeActivity);
-    expect(await h.client.activity()).toEqual(SNAPSHOT);
-    expect(await h.client.activityTasks()).toEqual([TASK, { ...TASK, id: "T2" }]);
-    expect(await h.client.activityTasks(1)).toEqual([TASK]);
+    expect(await h.adm.activity()).toEqual(SNAPSHOT);
+    expect(await h.adm.activityTasks()).toEqual([TASK, { ...TASK, id: "T2" }]);
+    expect(await h.adm.activityTasks(1)).toEqual([TASK]);
     const bad = await raw(h.base, "GET", "/api/activity/tasks?limit=x", { token: TOKEN });
     expect(bad.status).toBe(400);
   });
@@ -329,9 +330,9 @@ describe("v2 routes", () => {
   it("serve the ledger per context", async () => {
     const h = await harness();
     h.sup.services.provide("arbiter", ArbiterKey, fakeArbiter);
-    expect(await h.client.ledger()).toEqual(LEDGER);
+    expect(await h.adm.ledger()).toEqual(LEDGER);
     expect(ledgerContexts.at(-1)).toBeNull();
-    const one = await h.client.ledger(text, 1);
+    const one = await h.adm.ledger(text, 1);
     expect(ledgerContexts.at(-1)).toEqual(text);
     expect(one.entries).toEqual([ENTRY]);
     expect(one.limits.blocked[0]?.reason).toBe("Minecraft 沒開");
@@ -348,7 +349,7 @@ describe("v2 routes", () => {
     publish(decision("I2", "accepted"));
     publish(decision("I3", "deferred"));
     const all = await waitFor(async () => {
-      const r = await h.client.arbiterDecisions();
+      const r = await h.adm.arbiterDecisions();
       return r.decisions.length === 3 ? r : null;
     });
     expect(all.decisions.map((d) => d.impulse)).toEqual(["I3", "I2", "I1"]);
@@ -357,15 +358,15 @@ describe("v2 routes", () => {
     // Joined with the ledger entry of the impulse.
     expect(first?.summary).toBe("找 Owen 聊報告");
     expect(first?.context).toEqual(text);
-    expect((await h.client.arbiterDecisions({ verdict: "rejected" })).decisions).toHaveLength(1);
+    expect((await h.adm.arbiterDecisions({ verdict: "rejected" })).decisions).toHaveLength(1);
     expect(
-      (await h.client.arbiterDecisions({ context: other })).decisions.map((d) => d.impulse),
+      (await h.adm.arbiterDecisions({ context: other })).decisions.map((d) => d.impulse),
     ).toEqual(["I2"]);
-    expect((await h.client.arbiterDecisions({ limit: 2 })).decisions).toHaveLength(2);
+    expect((await h.adm.arbiterDecisions({ limit: 2 })).decisions).toHaveLength(2);
     // A later verdict for the same impulse replaces the earlier one.
     publish(decision("I1", "accepted"));
     const replaced = await waitFor(async () => {
-      const r = await h.client.arbiterDecisions();
+      const r = await h.adm.arbiterDecisions();
       return r.decisions[0]?.impulse === "I1" ? r : null;
     });
     expect(replaced.decisions).toHaveLength(3);

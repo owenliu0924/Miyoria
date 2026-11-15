@@ -32,7 +32,7 @@ const first = (r: Rec, keys: string[]): string | undefined => {
   }
   return undefined;
 };
-const label = <T extends string>(table: Record<T, string>, key: string | undefined): string | undefined =>
+const label = <T extends string>(table: Partial<Record<T, string>>, key: string | undefined): string | undefined =>
   key === undefined ? undefined : ((table as Record<string, string>)[key] ?? key);
 
 /** What a task or an action did is 做; people and the world are 聽到. */

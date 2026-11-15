@@ -15,7 +15,7 @@ import { LlmRouterKey } from "@miyoria/llm/llm";
 import { MindKey } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { clampLimit } from "./extract.js";
+import { clampLimit, countOf } from "./extract.js";
 
 const DEFAULT_CALLS = 100;
 const MAX_CALLS_PAGE = 500;
@@ -25,9 +25,6 @@ const MAX_THINKING_PAGE = 200;
 /** `""` means "not given". */
 const given = (s: string | undefined) =>
   s === undefined || s.trim() === "" ? undefined : s.trim();
-
-/** A count of the query string, which the contract has checked to be digits. */
-const count = (s: string | undefined) => (s === undefined ? undefined : Number.parseInt(s, 10));
 
 /** The LLM call inspector's routes on the route table (`@miyoria/contracts/api`). */
 export const llmCallsRpc = {
@@ -47,7 +44,7 @@ export const llmCallsRpc = {
         until: given(q.until),
         q: given(q.q),
       },
-      clampLimit(count(q.limit), DEFAULT_CALLS, MAX_CALLS_PAGE),
+      clampLimit(countOf(q.limit), DEFAULT_CALLS, MAX_CALLS_PAGE),
       given(q.before),
     );
     return { ...page, kept: log.size };
@@ -69,7 +66,7 @@ export const llmCallsRpc = {
         since: given(q.since),
         q: given(q.q),
       },
-      clampLimit(count(q.limit), DEFAULT_THINKING, MAX_THINKING_PAGE),
+      clampLimit(countOf(q.limit), DEFAULT_THINKING, MAX_THINKING_PAGE),
       given(q.before),
     );
     return { ...page, kept: log.size };
@@ -77,7 +74,7 @@ export const llmCallsRpc = {
   stats: os.llm.stats.handler(({ input, context }) => {
     const q = input.query;
     const r = context.state.service(LlmRouterKey, "LLM router");
-    const minutes = count(q.minutes);
+    const minutes = countOf(q.minutes);
     const since = minutes ? new Date(context.state.now() - minutes * 60_000).toISOString() : null;
     const stats = r.calls.stats(since, { purpose: given(q.purpose), model: given(q.model) });
     return { ...stats, prices: r.prices() };

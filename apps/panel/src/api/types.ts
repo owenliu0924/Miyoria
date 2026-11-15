@@ -186,14 +186,46 @@ export type {
   AuthMethods,
   AuthScope,
   BountyView,
+  ActivitiesView,
+  ActivityFailure,
+  ActivityPhase,
+  ActivityRequest,
+  ActivityResource,
+  ActivitySnapshot,
+  ActivityTask,
+  ActivityType,
+  ActivityView,
+  ArbiterDecisionsView,
+  ArbiterDecisionView,
+  ArbiterReason,
+  ArbiterVerdict,
   CauseChain,
   CommissionKind,
   CommissionView,
   ContextBucket,
   ContextEntry,
+  ConversationNote,
   Delivery,
   EconomyHealth,
+  FeedbackTally,
+  FieldSource,
   HealthDay,
+  HerActivity,
+  HerBroadcast,
+  HerPresence,
+  KnowledgeDoc,
+  KnowledgeSubject,
+  KnowledgeVersion,
+  KnowledgeView,
+  LedgerEntry,
+  LedgerKind,
+  LedgerLimits,
+  LedgerOutcome,
+  LedgerView,
+  Lesson,
+  LifeActivityId,
+  LifeDayView,
+  LifeEntry,
   LlmCallDetail,
   LlmCallKind,
   LlmCallRecord,
@@ -209,9 +241,22 @@ export type {
   LogEventKind,
   PredictionView,
   QuestsView,
+  RaisedTopic,
   ReachedGoal,
+  ReflectionRun,
+  ReflectionView,
+  ReminderView,
+  RemindersView,
   RoomItem,
+  SceneOverride,
+  SkillFile,
+  SkillSummary,
+  SkillView,
+  SourceKind,
   SpokenLine,
+  ThoughtDigest,
+  WorkspaceFile,
+  WorkspaceView,
   ThoughtInput,
   BudgetState,
   ChannelLevelInfo,
@@ -644,135 +689,6 @@ export interface LlmThinkingQuery {
 // ---------------------------------------------------------------------------
 // what she organized and learned (phase G)
 
-/** `GET /api/mind/digests`: older thoughts condensed. */
-export interface ThoughtDigest {
-  id: string;
-  from: Timestamp;
-  to: Timestamp;
-  count: number;
-  summary: string;
-  intents: Record<string, number>;
-  by: "summarizer" | "rule";
-}
-
-export type KnowledgeSubject =
-  | { type: "person"; person: PersonId }
-  | { type: "guild"; platform: PlatformId; guild: string }
-  | { type: "self" }
-  | { type: "topic"; name: string };
-
-export type SourceKind = "self" | "inferred" | "said" | "panel";
-
-export interface FieldSource {
-  kind: SourceKind;
-  account: AccountRef | null;
-  name: string | null;
-  origin: string | null;
-  confidence: number;
-  at: Timestamp;
-}
-
-export interface KnowledgeVersion {
-  version: number;
-  at: Timestamp;
-  by: SourceKind;
-  name: string | null;
-  why: string;
-  ops: string[];
-}
-
-/** One of her documents: a fixed envelope around content of whatever shape she chose. */
-export interface KnowledgeDoc {
-  id: string;
-  subject: KnowledgeSubject;
-  kind: string;
-  title: string;
-  content: Record<string, unknown>;
-  /** JSON pointer → source. */
-  sources: Record<string, FieldSource>;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  version: number;
-  history: KnowledgeVersion[];
-  short_id: string;
-  subject_label: string;
-}
-
-/** `GET /api/knowledge`. */
-export interface KnowledgeView {
-  documents: KnowledgeDoc[];
-}
-
-/** `GET /api/knowledge/conversations`: her running notes on a conversation. */
-export interface ConversationNote {
-  context: ContextKey;
-  updated_at: Timestamp;
-  folded_up_to: { id: string; ts: Timestamp } | null;
-  folds: number;
-  lines: number;
-  recap: string;
-  notes: Record<string, unknown>;
-  label: string | null;
-}
-
-export interface Lesson {
-  id: string;
-  text: string;
-  person: PersonId | null;
-  scope: string | null;
-  talk: number | null;
-  created_at: Timestamp;
-  expires_at: Timestamp | null;
-  source: string;
-  display_name: string | null;
-}
-
-export interface FeedbackTally {
-  subject: string;
-  label: string;
-  reactions_pos: number;
-  reactions_neg: number;
-  replies: number;
-  started: number;
-  answered: number;
-  ignored: number;
-  positive: number;
-  negative: number;
-  denied: number;
-  examples: string[];
-}
-
-export interface ReflectionRun {
-  id: string;
-  at: Timestamp;
-  kind: "daily" | "light";
-  context: ContextKey | null;
-  summary: string;
-  insights: number;
-  superseded: number;
-  lessons: string[];
-  goals: string[];
-  documents: string[];
-  feelings: string[];
-  error: string | null;
-  tokens: number | null;
-  ms: number;
-}
-
-/** `GET /api/reflection?days=7`. */
-export interface ReflectionView {
-  stats: {
-    calls_today: number;
-    max_calls_per_day: number;
-    last_daily_at: Timestamp | null;
-    last_light_at: Timestamp | null;
-    idle_reason: string | null;
-  };
-  runs: ReflectionRun[];
-  lessons: Lesson[];
-  feedback: FeedbackTally[];
-}
-
 // ---------------------------------------------------------------------------
 // live controls and telemetry (`packages/api/src/control.ts`, `telemetry.ts`)
 
@@ -813,166 +729,6 @@ export interface TelemetryView {
 
 export type TaskId = string;
 export type Handle = string;
-
-export type ActivityResource = "presence" | "broadcast" | "activity";
-export type ActivityType = "idle" | "chatting" | "singing" | "game" | "browse";
-export type ActivityPhase = "starting" | "running" | "stopping" | "failed";
-
-export type HerPresence =
-  | { type: "none" }
-  | { type: "joining" | "in" | "leaving"; channel: ContextKey; task?: TaskId; since: Timestamp };
-
-export type HerBroadcast =
-  | { type: "off" }
-  | {
-      type: "starting" | "live" | "stopping";
-      guild: string;
-      golive: boolean;
-      obs: boolean;
-      task: TaskId | null;
-      since: Timestamp;
-    };
-
-export interface ActivityFailure {
-  code: string;
-  detail: string;
-  at: Timestamp;
-}
-
-export type HerActivity =
-  | { type: "idle"; since: Timestamp }
-  | {
-      type: Exclude<ActivityType, "idle">;
-      target: string | null;
-      phase: ActivityPhase;
-      task: TaskId | null;
-      failure: ActivityFailure | null;
-      since: Timestamp;
-    };
-
-export interface SceneOverride {
-  scene: string;
-  until: Timestamp;
-  by: string;
-}
-
-/** `GET /api/activity` (and the payload of `activity.changed`). */
-export interface ActivitySnapshot {
-  version: number;
-  at: Timestamp;
-  presence: HerPresence;
-  broadcast: HerBroadcast;
-  activity: HerActivity;
-  override: SceneOverride | null;
-  scene: string | null;
-}
-
-export type ActivityRequest =
-  | { type: "ensure_voice"; platform: string; guild: string; channel: string | null; follow: AccountRef | null }
-  | { type: "leave_voice" }
-  | { type: "ensure_live"; platform: string; guild: string; source: string | null }
-  | { type: "stop_live" }
-  | { type: "start"; activity: Exclude<ActivityType, "idle">; target: string | null; goal: string | null }
-  | { type: "stop"; activity: Exclude<ActivityType, "idle"> | null }
-  | { type: "scene_override"; scene: string; duration_ms: number }
-  | { type: "clear_override" };
-
-/** `GET /api/activity/tasks`, newest first. */
-export interface ActivityTask {
-  id: TaskId;
-  resource: ActivityResource;
-  request: ActivityRequest;
-  by: string;
-  turn: TurnId | null;
-  context: ContextKey | null;
-  status: "queued" | "running" | "done" | "failed";
-  created_at: Timestamp;
-  ended_at: Timestamp | null;
-  failure: ActivityFailure | null;
-  detail: string | null;
-}
-
-export type LedgerKind = "impulse" | "turn" | "task" | "notice";
-export type LedgerOutcome = "pending" | "ok" | "ignored" | "failed" | "denied";
-
-export interface LedgerEntry {
-  id: string;
-  at: Timestamp;
-  kind: LedgerKind;
-  source: string;
-  self_initiated: boolean;
-  context: ContextKey | null;
-  person: Handle | null;
-  summary: string;
-  outcome: LedgerOutcome;
-  detail: string | null;
-  impulse: string | null;
-  turn: TurnId | null;
-  task: TaskId | null;
-  updated_at: Timestamp;
-}
-
-export interface LedgerLimits {
-  initiatives_today: number;
-  initiative_cap: number | null;
-  unanswered_streak: number;
-  next_initiative_at: Timestamp | null;
-  quiet_hours: { start_hour: number; end_hour: number; active: boolean } | null;
-  paused: boolean;
-  blocked: { capability: string; reason: string; until: Timestamp | null }[];
-}
-
-export interface RaisedTopic {
-  /** What she said (her words, short). */
-  text: string;
-  context: ContextKey | null;
-  at: Timestamp;
-  status: "waiting" | "engaged" | "ignored";
-}
-
-/** `GET /api/arbiter/ledger`. */
-export interface LedgerView {
-  at: Timestamp;
-  entries: LedgerEntry[];
-  limits: LedgerLimits;
-  unanswered: RaisedTopic[];
-}
-
-export type ArbiterVerdict = "accepted" | "merged" | "deferred" | "rejected" | "preempted" | "expired";
-
-export type ArbiterReason =
-  | "budget"
-  | "rate"
-  | "cooldown"
-  | "quiet_hours"
-  | "consent"
-  | "paused"
-  | "ceiling"
-  | "busy"
-  | "unanswered"
-  | "superseded"
-  | "expired"
-  | "denied";
-
-/** One verdict of `GET /api/arbiter/decisions` (`data.decisions`). */
-export interface ArbiterDecisionView {
-  impulse: string;
-  source: string;
-  verdict: ArbiterVerdict;
-  reason: ArbiterReason | null;
-  detail: string;
-  retry_at: Timestamp | null;
-  merged_into: string | null;
-  turn: TurnId | null;
-  task: TaskId | null;
-  at: Timestamp;
-  context: ContextKey | null;
-  summary: string | null;
-}
-
-export interface ArbiterDecisionsView {
-  decisions: ArbiterDecisionView[];
-}
 
 export type EmotionName =
   | "joy"
@@ -1341,96 +1097,9 @@ export interface TurnMetrics {
 // (Timestamps are ISO strings.)
 // --- her life ---------------------------------------------------------------------
 
-export type LifeActivityId = "browse" | "diary" | "code" | "practice" | "game" | "recap" | "business" | "care" | "event" | "sing";
-
-export interface LifeEntry {
-  id: string;
-  activity: LifeActivityId;
-  what: string;
-  at: Timestamp;
-  /** `null`: a single act (a search, a post). */
-  minutes: number | null;
-  capability: string | null;
-}
-
-/** `GET /api/life/today`. */
-export interface LifeDayView {
-  today: LifeEntry[];
-  /** The last seven days, today included. */
-  lately: LifeEntry[];
-  summary_today: string | null;
-  summary_lately: string | null;
-}
-
-export interface ReminderView {
-  id: string;
-  /** The short key she and the panel use. */
-  key: string;
-  what: string;
-  due: Timestamp;
-  daily: boolean;
-  context: ContextKey | null;
-  person: string | null;
-  /** `null`: she set it for herself. */
-  for_account: AccountRef | null;
-  fired: number;
-  created_at: Timestamp;
-}
-
-/** `GET /api/life/reminders`. */
-export interface RemindersView {
-  reminders: ReminderView[];
-}
-
-export interface ActivityView {
-  id: LifeActivityId;
-  label: string;
-  does: string;
-  leaves: string;
-  people: "any" | "someone" | "group";
-  hours: [number, number] | null;
-  per_day: number | null;
-  share: number;
-  /** `false`: other desires cover it, it is only listed and logged. */
-  generic: boolean;
-  capabilities: { id: string; registered: boolean }[];
-  capability: string | null;
-  available: boolean;
-  done_today: number | null;
-}
-
-/** `GET /api/life/activities`. */
-export interface ActivitiesView {
-  activities: ActivityView[];
-}
-
 // --- economy 2.0 ----------------------------------------------------------------------
 
 // --- her workspace and skills ----------------------------------------------------------
-
-export interface WorkspaceFile {
-  path: string;
-  size: number;
-}
-
-/** `GET /api/workspace`. */
-export interface WorkspaceView {
-  files: WorkspaceFile[];
-  truncated: boolean;
-  usage: { files: number; bytes: number; overflow: boolean };
-  limits: { max_bytes: number; max_files: number; max_file_bytes: number };
-}
-
-export interface SkillSummary {
-  name: string;
-  description: string;
-}
-
-export interface SkillView extends SkillSummary {
-  body: string;
-  truncated: boolean;
-  files: (WorkspaceFile & { script: "approved" | "unapproved" | null })[];
-}
 
 // --- memory -----------------------------------------------------------------------------
 

@@ -27,7 +27,8 @@ import {
   ReflectionKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiClient, ApiModule } from "../src/index.js";
+import { ActiveProfileKey, ApiModule } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { statusOf } from "./support/http.js";
 
 const TOKEN = "test-token";
@@ -57,7 +58,7 @@ async function harness(provide: (sup: Supervisor) => void) {
   await sup.startAll();
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  return new ApiClient(base, TOKEN);
+  return adminCalls(base, TOKEN);
 }
 
 describe("learning routes", () => {

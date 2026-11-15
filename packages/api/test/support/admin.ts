@@ -4,11 +4,22 @@
 
 import type { PendingApproval } from "@miyoria/gate/actions";
 import type { DecisionRecord, RoleAssignment, RoleDefinition, RoleMapping } from "@miyoria/store";
-import type { ContextKey, PlatformId } from "@miyoria/types";
 import type {
+  ActivitySnapshot,
+  ActivityTask,
+  ArbiterVerdict,
+  ContextKey,
+  LedgerView,
+  PlatformId,
+  ThoughtDigest,
+} from "@miyoria/types";
+import type {
+  ArbiterDecisionsView,
   AssignRoleRequest,
+  ConversationNoteView,
   CostInfo,
   ExtensionInfo,
+  KnowledgeView,
   McpServerInfo,
   MindView,
   ModuleInfo,
@@ -16,6 +27,7 @@ import type {
   PersonDetail,
   PersonSummary,
   QueueState,
+  ReflectionView,
   RemoveMappingRequest,
   SayResponse,
   SceneRolesState,
@@ -104,6 +116,27 @@ export function adminCalls(base: string, token: string) {
       ),
     autonomyPause: (paused: boolean) =>
       send<MindView>("POST", `/api/mind/${paused ? "pause" : "resume"}`),
+
+    // ---- body, arbiter, what she organized and learned
+    activity: () => get<ActivitySnapshot>("/api/activity"),
+    activityTasks: (limit = 20) => get<ActivityTask[]>("/api/activity/tasks", { limit }),
+    ledger: (context: ContextKey | null = null, limit = 50) =>
+      get<LedgerView>("/api/arbiter/ledger", {
+        limit,
+        context: context ? JSON.stringify(context) : undefined,
+      }),
+    arbiterDecisions: (
+      q: { limit?: number; context?: ContextKey | null; verdict?: ArbiterVerdict } = {},
+    ) =>
+      get<ArbiterDecisionsView>("/api/arbiter/decisions", {
+        limit: q.limit,
+        context: q.context ? JSON.stringify(q.context) : undefined,
+        verdict: q.verdict,
+      }),
+    digests: (limit = 20) => get<ThoughtDigest[]>("/api/mind/digests", { limit }),
+    knowledge: () => get<KnowledgeView>("/api/knowledge"),
+    conversationNotes: () => get<ConversationNoteView[]>("/api/knowledge/conversations"),
+    reflection: (days = 7) => get<ReflectionView>("/api/reflection", { days }),
 
     // ---- extensions and MCP
     extensions: () => get<ExtensionInfo[]>("/api/extensions"),

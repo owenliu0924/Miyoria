@@ -18,6 +18,7 @@ import type {
 } from "@orpc/contract";
 import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
+import { activity, arbiter } from "./body.js";
 import { channels } from "./channels.js";
 import { game, songs, voiceControl } from "./control.js";
 import { decisions, llm, modules } from "./core.js";
@@ -25,6 +26,8 @@ import { data } from "./data.js";
 import { economy, peopleEconomy } from "./economy.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
+import { knowledge, mindDigests, reflection } from "./learning.js";
+import { life } from "./life.js";
 import { member } from "./member.js";
 import { mind } from "./mind.js";
 import { extensions, mcp, queue, stage, voiceMonitor } from "./ops.js";
@@ -32,7 +35,9 @@ import { people } from "./people.js";
 import { persona } from "./persona.js";
 import { publicView } from "./public.js";
 import { roles } from "./roles.js";
+import { sandbox } from "./sandbox.js";
 import { wallet } from "./wallet.js";
+import { skills, workspace } from "./workspace.js";
 
 export {
   type BountyList,
@@ -60,6 +65,54 @@ export {
   type SessionUser,
   SessionUserSchema,
 } from "./auth.js";
+export {
+  type ActivityFailure,
+  ActivityFailureSchema,
+  type ActivityPhase,
+  ActivityPhaseSchema,
+  type ActivityRequest,
+  ActivityRequestSchema,
+  type ActivityResource,
+  ActivityResourceSchema,
+  type ActivitySnapshot,
+  ActivitySnapshotSchema,
+  type ActivityTask,
+  ActivityTaskSchema,
+  type ActivityType,
+  ActivityTypeSchema,
+  type ArbiterDecisionsView,
+  ArbiterDecisionsViewSchema,
+  type ArbiterDecisionView,
+  ArbiterDecisionViewSchema,
+  type ArbiterReason,
+  ArbiterReasonSchema,
+  type ArbiterVerdict,
+  ArbiterVerdictSchema,
+  type HerActivity,
+  HerActivitySchema,
+  type HerBroadcast,
+  HerBroadcastSchema,
+  type HerPresence,
+  HerPresenceSchema,
+  type ImpulseSource,
+  ImpulseSourceSchema,
+  type LedgerEntry,
+  LedgerEntrySchema,
+  type LedgerKind,
+  LedgerKindSchema,
+  type LedgerLimits,
+  LedgerLimitsSchema,
+  type LedgerOutcome,
+  LedgerOutcomeSchema,
+  type LedgerView,
+  LedgerViewSchema,
+  type RaisedTopic,
+  RaisedTopicSchema,
+  type SceneOverride,
+  SceneOverrideSchema,
+  type TaskFailureCode,
+  TaskFailureCodeSchema,
+} from "./body.js";
 export {
   type ChannelLevelInfo,
   ChannelLevelInfoSchema,
@@ -206,6 +259,50 @@ export {
   type IssuedFortune,
   IssuedFortuneSchema,
 } from "./fortune.js";
+export {
+  type ConversationNote,
+  ConversationNoteSchema,
+  type FeedbackTally,
+  FeedbackTallySchema,
+  type FieldSource,
+  FieldSourceSchema,
+  type KnowledgeDoc,
+  KnowledgeDocSchema,
+  type KnowledgeSubject,
+  KnowledgeSubjectSchema,
+  type KnowledgeVersion,
+  KnowledgeVersionSchema,
+  type KnowledgeView,
+  KnowledgeViewSchema,
+  type Lesson,
+  LessonSchema,
+  type ReflectionRun,
+  ReflectionRunSchema,
+  type ReflectionStats,
+  ReflectionStatsSchema,
+  type ReflectionView,
+  ReflectionViewSchema,
+  type SourceKind,
+  SourceKindSchema,
+  type ThoughtDigest,
+  ThoughtDigestSchema,
+} from "./learning.js";
+export {
+  type ActivitiesView,
+  ActivitiesViewSchema,
+  type ActivityView,
+  ActivityViewSchema,
+  type LifeActivityId,
+  LifeActivityIdSchema,
+  type LifeDayView,
+  LifeDayViewSchema,
+  type LifeEntry,
+  LifeEntrySchema,
+  type RemindersView,
+  RemindersViewSchema,
+  type ReminderView,
+  ReminderViewSchema,
+} from "./life.js";
 export {
   type CardField,
   CardFieldSchema,
@@ -396,6 +493,20 @@ export {
   UpsertRoleRequestSchema,
 } from "./roles.js";
 export { type Audience, type RouteMeta, route, routeMeta } from "./route.js";
+export {
+  type ProposedTool,
+  ProposedToolSchema,
+  type ProposedToolStatus,
+  ProposedToolStatusSchema,
+  type ProposedToolSummary,
+  ProposedToolSummarySchema,
+  type ReviewToolRequest,
+  ReviewToolRequestSchema,
+  type SandboxHealth,
+  SandboxHealthSchema,
+  type SandboxTools,
+  SandboxToolsSchema,
+} from "./sandbox.js";
 export { type ContextKeyIn, ContextKeyInSchema } from "./shared.js";
 export {
   type BoardChoice,
@@ -441,6 +552,18 @@ export {
   type WalletView,
   WalletViewSchema,
 } from "./wallet.js";
+export {
+  type SkillFile,
+  SkillFileSchema,
+  type SkillSummary,
+  SkillSummarySchema,
+  type SkillView,
+  SkillViewSchema,
+  type WorkspaceFile,
+  WorkspaceFileSchema,
+  type WorkspaceView,
+  WorkspaceViewSchema,
+} from "./workspace.js";
 
 /** Every route that has moved, by group. A route's path here is its name in the clients. */
 export const contract = {
@@ -452,7 +575,7 @@ export const contract = {
   decisions,
   llm,
   channels,
-  mind,
+  mind: { ...mind, ...mindDigests },
   roles,
   extensions,
   mcp,
@@ -464,6 +587,14 @@ export const contract = {
   data,
   economy,
   facts,
+  activity,
+  arbiter,
+  knowledge,
+  reflection,
+  life,
+  sandbox,
+  workspace,
+  skills,
   public: publicView,
   member,
   wallet,

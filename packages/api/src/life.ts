@@ -9,21 +9,14 @@
 //   suggested to her (she cannot do it), which is the thing to see here.
 //
 // The module providing these is `mind`; they are looked up per request, so a stopped module is
-// a 503 that names it.
+// a 503 that names it. On the route table (`@miyoria/contracts/api`): `lifeRpc`.
 
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
-import {
-  type AccountRef,
-  type ContextKey,
-  type LifeActivityId,
-  type LifeEntry,
-  LifeLogKey,
-  ReminderDeskKey,
-  type Timestamp,
-} from "@miyoria/types";
+import { type LifeActivityId, type LifeEntry, LifeLogKey, ReminderDeskKey } from "@miyoria/types";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { json, param, type Route } from "./route.js";
-import type { ApiContext, ApiState } from "./state.js";
+import type { ApiState } from "./state.js";
+import type { ActivityView, LifeDayView, LifeEntryView, ReminderView } from "./types.js";
 
 const DAY_MS = 86_400_000;
 /** "Lately" in the day view. */
@@ -173,57 +166,6 @@ export const ACTIVITY_ROWS: readonly ActivityRow[] = [
   },
 ];
 
-export interface LifeEntryView {
-  id: string;
-  activity: LifeActivityId;
-  what: string;
-  at: Timestamp;
-  minutes: number | null;
-  capability: string | null;
-}
-
-export interface LifeDayView {
-  /** Today's entries (her local day), oldest first. */
-  today: LifeEntryView[];
-  /** The last `LATELY_DAYS` days, today included, oldest first. */
-  lately: LifeEntryView[];
-  /** What her prompt says of today / of the last days; `null`: nothing. */
-  summary_today: string | null;
-  summary_lately: string | null;
-}
-
-export interface ReminderView {
-  id: string;
-  key: string;
-  what: string;
-  due: Timestamp;
-  daily: boolean;
-  context: ContextKey | null;
-  person: string | null;
-  for_account: AccountRef | null;
-  fired: number;
-  created_at: Timestamp;
-}
-
-export interface ActivityView {
-  id: LifeActivityId;
-  label: string;
-  does: string;
-  leaves: string;
-  people: ActivityRow["people"];
-  hours: [number, number] | null;
-  per_day: number | null;
-  share: number;
-  generic: boolean;
-  capabilities: { id: string; registered: boolean }[];
-  /** The capability she would use: the first registered one; `null`: none is registered. */
-  capability: string | null;
-  /** At least one of its capabilities is registered. */
-  available: boolean;
-  /** How many times she did it today, `null` when the life log is not running. */
-  done_today: number | null;
-}
-
 const entryView = (e: LifeEntry): LifeEntryView => ({
   id: e.id,
   activity: e.activity,
@@ -233,45 +175,36 @@ const entryView = (e: LifeEntry): LifeEntryView => ({
   capability: e.capability,
 });
 
-function life(state: ApiState): Response {
+function life(state: ApiState): LifeDayView {
   const log = state.service(LifeLogKey, "mind module (her life log)");
   const since = state.now() - LATELY_DAYS * DAY_MS;
-  const view: LifeDayView = {
+  return {
     today: log.today().slice(-MAX_ENTRIES).map(entryView),
     lately: log.entries(since).slice(-MAX_ENTRIES).map(entryView),
     summary_today: log.summary("today"),
     summary_lately: log.summary("lately"),
   };
-  return json(view);
 }
 
-function reminders(state: ApiState): Response {
+function reminders(state: ApiState): { reminders: ReminderView[] } {
   const desk = state.service(ReminderDeskKey, "mind module (her timers)");
-  const list: ReminderView[] = desk.list().map((r) => ({
-    id: r.id,
-    key: r.key,
-    what: r.what,
-    due: r.due,
-    daily: r.daily,
-    context: r.context,
-    person: r.person,
-    for_account: r.for_account,
-    fired: r.fired,
-    created_at: r.created_at,
-  }));
-  return json({ reminders: list });
+  return {
+    reminders: desk.list().map((r) => ({
+      id: r.id,
+      key: r.key,
+      what: r.what,
+      due: r.due,
+      daily: r.daily,
+      context: r.context,
+      person: r.person,
+      for_account: r.for_account,
+      fired: r.fired,
+      created_at: r.created_at,
+    })),
+  };
 }
 
-async function cancel(state: ApiState, c: ApiContext): Promise<Response> {
-  const key = param(c, "key");
-  const desk = state.service(ReminderDeskKey, "mind module (her timers)");
-  const known = desk.cancel(key);
-  await state.audit(c, "life.reminder.cancel", key, {}, known);
-  if (!known) throw ApiError.notFound(`no open timer \`${key}\` (it came due, or was cancelled)`);
-  return json({ cancelled: true, key });
-}
-
-function activities(state: ApiState): Response {
+function activities(state: ApiState): { activities: ActivityView[] } {
   const registry = state.service(ActuatorRegistryKey, "actuator registry");
   const log = state.optional(LifeLogKey);
   const done = new Map<LifeActivityId, number>();
@@ -298,14 +231,21 @@ function activities(state: ApiState): Response {
       done_today: log ? (done.get(row.id) ?? 0) : null,
     };
   });
-  return json({ activities: rows });
+  return { activities: rows };
 }
 
-export function lifeRoutes(state: ApiState): Route[] {
-  return [
-    { method: "GET", path: "/api/life/today", handler: () => life(state) },
-    { method: "GET", path: "/api/life/reminders", handler: () => reminders(state) },
-    { method: "DELETE", path: "/api/life/reminders/:key", handler: (c) => cancel(state, c) },
-    { method: "GET", path: "/api/life/activities", handler: () => activities(state) },
-  ];
-}
+/** Her life on the route table (`@miyoria/contracts/api`). */
+export const lifeRpc = {
+  today: os.life.today.handler(({ context }) => life(context.state)),
+  reminders: os.life.reminders.handler(({ context }) => reminders(context.state)),
+  cancelReminder: os.life.cancelReminder.handler(async ({ input, context }) => {
+    const { state, c } = context;
+    const key = input.params.key;
+    const desk = state.service(ReminderDeskKey, "mind module (her timers)");
+    const known = desk.cancel(key);
+    await state.audit(c, "life.reminder.cancel", key, {}, known);
+    if (!known) throw ApiError.notFound(`no open timer \`${key}\` (it came due, or was cancelled)`);
+    return { cancelled: true as const, key };
+  }),
+  activities: os.life.activities.handler(({ context }) => activities(context.state)),
+};

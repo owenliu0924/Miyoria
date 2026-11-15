@@ -460,6 +460,20 @@
             "path": "/api/mind/resume"
           }
         }
+      },
+      "digests": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/mind/digests"
+          }
+        }
       }
     },
     "roles": {
@@ -1241,6 +1255,272 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/facts/retryable"
+          }
+        }
+      }
+    },
+    "activity": {
+      "snapshot": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/activity"
+          }
+        }
+      },
+      "tasks": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/activity/tasks"
+          }
+        }
+      }
+    },
+    "arbiter": {
+      "ledger": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/arbiter/ledger"
+          }
+        }
+      },
+      "decisions": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/arbiter/decisions"
+          }
+        }
+      }
+    },
+    "knowledge": {
+      "documents": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/knowledge"
+          }
+        }
+      },
+      "conversations": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/knowledge/conversations"
+          }
+        }
+      }
+    },
+    "reflection": {
+      "~orpc": {
+        "errorMap": {},
+        "meta": {
+          "audience": "admin",
+          "permission": null
+        },
+        "route": {
+          "inputStructure": "detailed",
+          "method": "GET",
+          "path": "/api/reflection"
+        }
+      }
+    },
+    "life": {
+      "today": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/life/today"
+          }
+        }
+      },
+      "reminders": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/life/reminders"
+          }
+        }
+      },
+      "cancelReminder": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "DELETE",
+            "path": "/api/life/reminders/{key}"
+          }
+        }
+      },
+      "activities": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/life/activities"
+          }
+        }
+      }
+    },
+    "sandbox": {
+      "tools": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/sandbox/tools"
+          }
+        }
+      },
+      "tool": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/sandbox/tools/{name}"
+          }
+        }
+      },
+      "approve": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "owner.autonomy.approve",
+            "refusal": "reviewing her tools needs `owner.autonomy.approve`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/sandbox/tools/{name}/approve"
+          }
+        }
+      },
+      "reject": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "owner.autonomy.approve",
+            "refusal": "reviewing her tools needs `owner.autonomy.approve`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/sandbox/tools/{name}/reject"
+          }
+        }
+      }
+    },
+    "workspace": {
+      "~orpc": {
+        "errorMap": {},
+        "meta": {
+          "audience": "admin",
+          "permission": null
+        },
+        "route": {
+          "inputStructure": "detailed",
+          "method": "GET",
+          "path": "/api/workspace"
+        }
+      }
+    },
+    "skills": {
+      "list": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/skills"
+          }
+        }
+      },
+      "get": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/skills/{name}"
           }
         }
       }

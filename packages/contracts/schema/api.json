@@ -2,6 +2,487 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/api",
   "$defs": {
+    "ApiActivitiesView": {
+      "type": "object",
+      "properties": {
+        "activities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiActivityView"
+          }
+        }
+      },
+      "required": [
+        "activities"
+      ]
+    },
+    "ApiActivityFailure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ApiTaskFailureCode"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "detail",
+        "at"
+      ]
+    },
+    "ApiActivityPhase": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "stopping",
+        "failed"
+      ]
+    },
+    "ApiActivityRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ensure_voice"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "guild": {
+              "type": "string"
+            },
+            "channel": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "follow": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/WireAccountRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "platform",
+            "guild",
+            "channel",
+            "follow"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "leave_voice"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ensure_live"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "guild": {
+              "type": "string"
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "platform",
+            "guild",
+            "source"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "stop_live"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "start"
+            },
+            "activity": {
+              "type": "string",
+              "enum": [
+                "chatting",
+                "singing",
+                "game",
+                "browse"
+              ]
+            },
+            "target": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "goal": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "activity",
+            "target",
+            "goal"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "stop"
+            },
+            "activity": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "chatting",
+                    "singing",
+                    "game",
+                    "browse"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "activity"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "scene_override"
+            },
+            "scene": {
+              "type": "string"
+            },
+            "duration_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "scene",
+            "duration_ms"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "clear_override"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "ApiActivityResource": {
+      "type": "string",
+      "enum": [
+        "presence",
+        "broadcast",
+        "activity"
+      ]
+    },
+    "ApiActivitySnapshot": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        },
+        "presence": {
+          "$ref": "#/$defs/ApiHerPresence"
+        },
+        "broadcast": {
+          "$ref": "#/$defs/ApiHerBroadcast"
+        },
+        "activity": {
+          "$ref": "#/$defs/ApiHerActivity"
+        },
+        "override": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSceneOverride"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scene": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "at",
+        "presence",
+        "broadcast",
+        "activity",
+        "override",
+        "scene"
+      ]
+    },
+    "ApiActivityTask": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "resource": {
+          "$ref": "#/$defs/ApiActivityResource"
+        },
+        "request": {
+          "$ref": "#/$defs/ApiActivityRequest"
+        },
+        "by": {
+          "type": "string"
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "done",
+            "failed"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "ended_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiActivityFailure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "resource",
+        "request",
+        "by",
+        "turn",
+        "context",
+        "status",
+        "created_at",
+        "ended_at",
+        "failure",
+        "detail"
+      ]
+    },
+    "ApiActivityType": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "chatting",
+        "singing",
+        "game",
+        "browse"
+      ]
+    },
+    "ApiActivityView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ApiLifeActivityId"
+        },
+        "label": {
+          "type": "string"
+        },
+        "does": {
+          "type": "string"
+        },
+        "leaves": {
+          "type": "string"
+        },
+        "people": {
+          "type": "string",
+          "enum": [
+            "any",
+            "someone",
+            "group"
+          ]
+        },
+        "hours": {
+          "anyOf": [
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "per_day": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "share": {
+          "type": "number"
+        },
+        "generic": {
+          "type": "boolean"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "registered": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "registered"
+            ]
+          }
+        },
+        "capability": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "done_today": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "does",
+        "leaves",
+        "people",
+        "hours",
+        "per_day",
+        "share",
+        "generic",
+        "capabilities",
+        "capability",
+        "available",
+        "done_today"
+      ]
+    },
     "ApiAddSongRequest": {
       "type": "object",
       "properties": {
@@ -36,6 +517,134 @@
       },
       "required": [
         "affinity"
+      ]
+    },
+    "ApiArbiterDecisionView": {
+      "type": "object",
+      "properties": {
+        "impulse": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ApiImpulseSource"
+        },
+        "verdict": {
+          "$ref": "#/$defs/ApiArbiterVerdict"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiArbiterReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "retry_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "merged_into": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "impulse",
+        "source",
+        "verdict",
+        "reason",
+        "detail",
+        "retry_at",
+        "merged_into",
+        "turn",
+        "task",
+        "at",
+        "context",
+        "summary"
+      ]
+    },
+    "ApiArbiterDecisionsView": {
+      "type": "object",
+      "properties": {
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiArbiterDecisionView"
+          }
+        }
+      },
+      "required": [
+        "decisions"
+      ]
+    },
+    "ApiArbiterReason": {
+      "type": "string",
+      "enum": [
+        "budget",
+        "rate",
+        "cooldown",
+        "quiet_hours",
+        "consent",
+        "paused",
+        "ceiling",
+        "busy",
+        "unanswered",
+        "repeat",
+        "nobody",
+        "superseded",
+        "expired",
+        "denied"
+      ]
+    },
+    "ApiArbiterVerdict": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "merged",
+        "deferred",
+        "rejected",
+        "preempted",
+        "expired"
       ]
     },
     "ApiAssignRoleRequest": {
@@ -558,6 +1167,82 @@
       },
       "required": [
         "text"
+      ]
+    },
+    "ApiConversationNote": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "folded_up_to": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "ts": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "ts"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "folds": {
+          "type": "number"
+        },
+        "lines": {
+          "type": "number"
+        },
+        "recap": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        "touched": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context",
+        "updated_at",
+        "folded_up_to",
+        "folds",
+        "lines",
+        "recap",
+        "notes",
+        "label"
       ]
     },
     "ApiCostReport": {
@@ -1273,6 +1958,108 @@
         "message"
       ]
     },
+    "ApiFeedbackTally": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "reactions_pos": {
+          "type": "number"
+        },
+        "reactions_neg": {
+          "type": "number"
+        },
+        "replies": {
+          "type": "number"
+        },
+        "started": {
+          "type": "number"
+        },
+        "answered": {
+          "type": "number"
+        },
+        "ignored": {
+          "type": "number"
+        },
+        "positive": {
+          "type": "number"
+        },
+        "negative": {
+          "type": "number"
+        },
+        "denied": {
+          "type": "number"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "subject",
+        "label",
+        "reactions_pos",
+        "reactions_neg",
+        "replies",
+        "started",
+        "answered",
+        "ignored",
+        "positive",
+        "negative",
+        "denied",
+        "examples"
+      ]
+    },
+    "ApiFieldSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ApiSourceKind"
+        },
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "account",
+        "name",
+        "origin",
+        "confidence",
+        "at"
+      ]
+    },
     "ApiForgetRequest": {
       "type": "object",
       "properties": {
@@ -1589,6 +2376,215 @@
         "version"
       ]
     },
+    "ApiHerActivity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "idle"
+            },
+            "since": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "since"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "chatting",
+                "singing",
+                "game",
+                "browse"
+              ]
+            },
+            "target": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "phase": {
+              "$ref": "#/$defs/ApiActivityPhase"
+            },
+            "task": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "failure": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ApiActivityFailure"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "since": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "target",
+            "phase",
+            "task",
+            "failure",
+            "since"
+          ]
+        }
+      ]
+    },
+    "ApiHerBroadcast": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "off"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "starting",
+                "live",
+                "stopping"
+              ]
+            },
+            "guild": {
+              "type": "string"
+            },
+            "golive": {
+              "type": "boolean"
+            },
+            "obs": {
+              "type": "boolean"
+            },
+            "task": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "since": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "guild",
+            "golive",
+            "obs",
+            "task",
+            "since"
+          ]
+        }
+      ]
+    },
+    "ApiHerPresence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "none"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "joining"
+            },
+            "channel": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "task": {
+              "type": "string"
+            },
+            "since": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "channel",
+            "task",
+            "since"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "in"
+            },
+            "channel": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "since": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "channel",
+            "since"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "leaving"
+            },
+            "channel": {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            "task": {
+              "type": "string"
+            },
+            "since": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "channel",
+            "task",
+            "since"
+          ]
+        }
+      ]
+    },
     "ApiHunger": {
       "type": "string",
       "enum": [
@@ -1596,6 +2592,21 @@
         "ok",
         "hungry",
         "starving"
+      ]
+    },
+    "ApiImpulseSource": {
+      "type": "string",
+      "enum": [
+        "message",
+        "plan",
+        "agenda",
+        "followup",
+        "notice",
+        "game",
+        "song",
+        "world",
+        "command",
+        "panel"
       ]
     },
     "ApiIntentStatus": {
@@ -1820,6 +2831,195 @@
         "guild"
       ]
     },
+    "ApiKnowledgeDoc": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "#/$defs/ApiKnowledgeSubject"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "content": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        "sources": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ApiFieldSource"
+          }
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiKnowledgeVersion"
+          }
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "subject_label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "kind",
+        "title",
+        "content",
+        "sources",
+        "created_at",
+        "updated_at",
+        "version",
+        "history",
+        "short_id",
+        "subject_label"
+      ]
+    },
+    "ApiKnowledgeSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "person"
+            },
+            "person": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "person"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "guild"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "guild": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "platform",
+            "guild"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "self"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "topic"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
+        }
+      ]
+    },
+    "ApiKnowledgeVersion": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "$ref": "#/$defs/ApiSourceKind"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "why": {
+          "type": "string"
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "at",
+        "by",
+        "name",
+        "why",
+        "ops"
+      ]
+    },
+    "ApiKnowledgeView": {
+      "type": "object",
+      "properties": {
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiKnowledgeDoc"
+          }
+        }
+      },
+      "required": [
+        "documents"
+      ]
+    },
     "ApiLatencyStats": {
       "type": "object",
       "properties": {
@@ -1862,6 +3062,189 @@
         }
       }
     },
+    "ApiLedgerEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiLedgerKind"
+        },
+        "source": {
+          "$ref": "#/$defs/ApiImpulseSource"
+        },
+        "self_initiated": {
+          "type": "boolean"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ApiLedgerOutcome"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "impulse": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "kind",
+        "source",
+        "self_initiated",
+        "context",
+        "person",
+        "summary",
+        "outcome",
+        "detail",
+        "impulse",
+        "turn",
+        "task",
+        "updated_at"
+      ]
+    },
+    "ApiLedgerKind": {
+      "type": "string",
+      "enum": [
+        "impulse",
+        "turn",
+        "task",
+        "notice"
+      ]
+    },
+    "ApiLedgerLimits": {
+      "type": "object",
+      "properties": {
+        "initiatives_today": {
+          "type": "number"
+        },
+        "initiative_cap": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unanswered_streak": {
+          "type": "number"
+        },
+        "next_initiative_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quiet_hours": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "start_hour": {
+                  "type": "number"
+                },
+                "end_hour": {
+                  "type": "number"
+                },
+                "active": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "start_hour",
+                "end_hour",
+                "active"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "capability": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "until": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "capability",
+              "reason",
+              "until"
+            ]
+          }
+        },
+        "waiting_for_response": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "initiatives_today",
+        "initiative_cap",
+        "unanswered_streak",
+        "next_initiative_at",
+        "quiet_hours",
+        "paused",
+        "blocked"
+      ]
+    },
     "ApiLedgerLine": {
       "type": "object",
       "properties": {
@@ -1881,6 +3264,103 @@
         "label"
       ]
     },
+    "ApiLedgerOutcome": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "ok",
+        "ignored",
+        "failed",
+        "denied"
+      ]
+    },
+    "ApiLedgerView": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLedgerEntry"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/ApiLedgerLimits"
+        },
+        "unanswered": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiRaisedTopic"
+          }
+        }
+      },
+      "required": [
+        "at",
+        "entries",
+        "limits",
+        "unanswered"
+      ]
+    },
+    "ApiLesson": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "talk": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "person",
+        "scope",
+        "talk",
+        "created_at",
+        "expires_at",
+        "source",
+        "display_name"
+      ]
+    },
     "ApiLetterRequest": {
       "type": "object",
       "properties": {
@@ -1893,6 +3373,93 @@
         "text"
       ],
       "additionalProperties": false
+    },
+    "ApiLifeActivityId": {
+      "type": "string",
+      "enum": [
+        "browse",
+        "diary",
+        "code",
+        "practice",
+        "game",
+        "recap",
+        "business",
+        "care",
+        "event",
+        "sing"
+      ]
+    },
+    "ApiLifeDayView": {
+      "type": "object",
+      "properties": {
+        "today": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLifeEntry"
+          }
+        },
+        "lately": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLifeEntry"
+          }
+        },
+        "summary_today": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary_lately": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "today",
+        "lately",
+        "summary_today",
+        "summary_lately"
+      ]
+    },
+    "ApiLifeEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "activity": {
+          "$ref": "#/$defs/ApiLifeActivityId"
+        },
+        "what": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "minutes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "capability": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "activity",
+        "what",
+        "at",
+        "minutes",
+        "capability"
+      ]
     },
     "ApiLineState": {
       "type": "string",
@@ -3806,6 +5373,184 @@
         "my_bet"
       ]
     },
+    "ApiProposedTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "python",
+            "node"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "args_schema": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/ApiProposedToolStatus"
+        },
+        "version": {
+          "type": "number"
+        },
+        "code_sha256": {
+          "type": "string"
+        },
+        "proposed_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "reviewed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "language",
+        "code",
+        "args_schema",
+        "status",
+        "version",
+        "code_sha256",
+        "proposed_by",
+        "reviewer",
+        "review_note",
+        "created_at",
+        "updated_at",
+        "reviewed_at"
+      ]
+    },
+    "ApiProposedToolStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "ApiProposedToolSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "python",
+            "node"
+          ]
+        },
+        "args_schema": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/ApiProposedToolStatus"
+        },
+        "version": {
+          "type": "number"
+        },
+        "code_sha256": {
+          "type": "string"
+        },
+        "proposed_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "reviewed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code_bytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "language",
+        "args_schema",
+        "status",
+        "version",
+        "code_sha256",
+        "proposed_by",
+        "reviewer",
+        "review_note",
+        "created_at",
+        "updated_at",
+        "reviewed_at",
+        "code_bytes"
+      ]
+    },
     "ApiPublicBoard": {
       "type": "object",
       "properties": {
@@ -4171,6 +5916,41 @@
         "items"
       ]
     },
+    "ApiRaisedTopic": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "waiting",
+            "engaged",
+            "ignored"
+          ]
+        }
+      },
+      "required": [
+        "text",
+        "context",
+        "at",
+        "status"
+      ]
+    },
     "ApiReachedGoal": {
       "type": "object",
       "properties": {
@@ -4221,6 +6001,166 @@
         "reached_at",
         "fulfilled_at",
         "fulfilled_by"
+      ]
+    },
+    "ApiReflectionRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "daily",
+            "light"
+          ]
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "insights": {
+          "type": "number"
+        },
+        "superseded": {
+          "type": "number"
+        },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "goals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "feelings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "kind",
+        "context",
+        "summary",
+        "insights",
+        "superseded",
+        "lessons",
+        "goals",
+        "documents",
+        "feelings",
+        "error",
+        "tokens",
+        "ms"
+      ]
+    },
+    "ApiReflectionStats": {
+      "type": "object",
+      "properties": {
+        "calls_today": {
+          "type": "number"
+        },
+        "max_calls_per_day": {
+          "type": "number"
+        },
+        "last_daily_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_light_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idle_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "calls_today",
+        "max_calls_per_day",
+        "last_daily_at",
+        "last_light_at",
+        "idle_reason"
+      ]
+    },
+    "ApiReflectionView": {
+      "type": "object",
+      "properties": {
+        "stats": {
+          "$ref": "#/$defs/ApiReflectionStats"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiReflectionRun"
+          }
+        },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLesson"
+          }
+        },
+        "feedback": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiFeedbackTally"
+          }
+        }
+      },
+      "required": [
+        "stats",
+        "runs",
+        "lessons",
+        "feedback"
       ]
     },
     "ApiRelationship": {
@@ -4310,6 +6250,84 @@
         "reason"
       ]
     },
+    "ApiReminderView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "due": {
+          "type": "string"
+        },
+        "daily": {
+          "type": "boolean"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireContextKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "for_account": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireAccountRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fired": {
+          "type": "number"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "what",
+        "due",
+        "daily",
+        "context",
+        "person",
+        "for_account",
+        "fired",
+        "created_at"
+      ]
+    },
+    "ApiRemindersView": {
+      "type": "object",
+      "properties": {
+        "reminders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiReminderView"
+          }
+        }
+      },
+      "required": [
+        "reminders"
+      ]
+    },
     "ApiRemoveMappingRequest": {
       "type": "object",
       "properties": {
@@ -4327,6 +6345,30 @@
         "platform",
         "guild",
         "platform_role"
+      ]
+    },
+    "ApiReviewToolRequest": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "version"
       ]
     },
     "ApiRoleAssignment": {
@@ -4456,6 +6498,63 @@
         "placed"
       ]
     },
+    "ApiSandboxHealth": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "server_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checked_at": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "server_version",
+        "error",
+        "checked_at"
+      ]
+    },
+    "ApiSandboxTools": {
+      "type": "object",
+      "properties": {
+        "sandbox": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSandboxHealth"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiProposedToolSummary"
+          }
+        }
+      },
+      "required": [
+        "sandbox",
+        "tools"
+      ]
+    },
     "ApiSayRequest": {
       "type": "object",
       "properties": {
@@ -4485,6 +6584,25 @@
       },
       "required": [
         "turn"
+      ]
+    },
+    "ApiSceneOverride": {
+      "type": "object",
+      "properties": {
+        "scene": {
+          "type": "string"
+        },
+        "until": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene",
+        "until",
+        "by"
       ]
     },
     "ApiSceneRoleState": {
@@ -4769,6 +6887,81 @@
         "why"
       ]
     },
+    "ApiSkillFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        },
+        "script": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "approved",
+                "unapproved"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "script"
+      ]
+    },
+    "ApiSkillSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ]
+    },
+    "ApiSkillView": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSkillFile"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "body",
+        "truncated",
+        "files"
+      ]
+    },
     "ApiSongView": {
       "type": "object",
       "properties": {
@@ -4913,6 +7106,15 @@
         "playing",
         "paused",
         "songs"
+      ]
+    },
+    "ApiSourceKind": {
+      "type": "string",
+      "enum": [
+        "self",
+        "inferred",
+        "said",
+        "panel"
       ]
     },
     "ApiSpendResult": {
@@ -5146,6 +7348,24 @@
         "stop"
       ]
     },
+    "ApiTaskFailureCode": {
+      "type": "string",
+      "enum": [
+        "timeout",
+        "cancelled",
+        "superseded",
+        "busy",
+        "invalid",
+        "not_found",
+        "unreachable",
+        "precondition",
+        "disconnected",
+        "crashed",
+        "died",
+        "denied",
+        "internal"
+      ]
+    },
     "ApiThought": {
       "type": "object",
       "properties": {
@@ -5298,6 +7518,51 @@
         "allowed",
         "stage",
         "reason"
+      ]
+    },
+    "ApiThoughtDigest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "count": {
+          "type": "number"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "intents": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "by": {
+          "type": "string",
+          "enum": [
+            "summarizer",
+            "rule"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "count",
+        "summary",
+        "intents",
+        "by"
       ]
     },
     "ApiThoughtEffects": {
@@ -6468,6 +8733,79 @@
         "recent",
         "deals",
         "on_board"
+      ]
+    },
+    "ApiWorkspaceFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "path",
+        "size"
+      ]
+    },
+    "ApiWorkspaceView": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiWorkspaceFile"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "number"
+            },
+            "bytes": {
+              "type": "number"
+            },
+            "overflow": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "files",
+            "bytes",
+            "overflow"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_bytes": {
+              "type": "number"
+            },
+            "max_files": {
+              "type": "number"
+            },
+            "max_file_bytes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "max_bytes",
+            "max_files",
+            "max_file_bytes"
+          ]
+        }
+      },
+      "required": [
+        "files",
+        "truncated",
+        "usage",
+        "limits"
       ]
     },
     "WireAccountRef": {

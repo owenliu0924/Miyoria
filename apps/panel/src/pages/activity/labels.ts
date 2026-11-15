@@ -163,7 +163,8 @@ export const VERDICT_TONE: Record<ArbiterVerdict, Tone> = {
   expired: "neutral",
 };
 
-export const REASON_LABEL: Record<ArbiterReason, string> = {
+/** `repeat` and `nobody` have no label yet: the pages show the reason as the server wrote it. */
+export const REASON_LABEL: Partial<Record<ArbiterReason, string>> = {
   budget: "預算用完",
   rate: "次數上限",
   cooldown: "冷卻中",

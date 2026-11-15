@@ -10,13 +10,15 @@
 // the skills module provides (so the file layout and the cleaning of a skill's text stay its
 // business). Without the sandbox module, or with its workspace off, the files are a 503 that says
 // which; without the skills module, so are the skills. Everything shown is text a program or she
-// may have written: it is data for a person to read, never instructions.
+// may have written: it is data for a person to read, never instructions. On the route table
+// (`@miyoria/contracts/api`): `workspaceRpc` and `skillsRpc`.
 
 import { type SkillShelf, SkillShelfKey, type SkillShelfPage } from "@miyoria/types";
 import { SandboxKey, type WorkspaceApi } from "@miyoria/workspace/sandbox";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { json, param, type Route } from "./route.js";
 import type { ApiState } from "./state.js";
+import type { SkillSummary, SkillView, WorkspaceView } from "./types.js";
 
 /** Most characters of one skill's body shown. */
 export const MAX_BODY_CHARS = 20_000;
@@ -25,36 +27,6 @@ const MAX_PAGES = 50;
 /** Most files listed in one answer. */
 const MAX_FILES = 2_000;
 
-export interface WorkspaceFileView {
-  path: string;
-  size: number;
-}
-
-export interface WorkspaceView {
-  files: WorkspaceFileView[];
-  /** The listing was cut (more files than it reads). */
-  truncated: boolean;
-  usage: { files: number; bytes: number; overflow: boolean };
-  limits: { max_bytes: number; max_files: number; max_file_bytes: number };
-}
-
-export interface SkillSummaryView {
-  name: string;
-  description: string;
-}
-
-export interface SkillFileView extends WorkspaceFileView {
-  /** `approved`: reviewed and unchanged, so she can run it; `unapproved`: not (a program wrote it). */
-  script: "approved" | "unapproved" | null;
-}
-
-export interface SkillView extends SkillSummaryView {
-  body: string;
-  /** The body was cut at `MAX_BODY_CHARS`. */
-  truncated: boolean;
-  files: SkillFileView[];
-}
-
 function workspace(state: ApiState): WorkspaceApi {
   const sandbox = state.service(SandboxKey, "sandbox module (her workspace)");
   const ws = sandbox.workspace;
@@ -62,11 +34,11 @@ function workspace(state: ApiState): WorkspaceApi {
   return ws;
 }
 
-async function files(state: ApiState): Promise<Response> {
+async function files(state: ApiState): Promise<WorkspaceView> {
   const ws = workspace(state);
   const [listing, usage] = await Promise.all([ws.list(), ws.usage()]);
   const sorted = [...listing.entries].sort((a, b) => a.path.localeCompare(b.path));
-  const view: WorkspaceView = {
+  return {
     files: sorted.slice(0, MAX_FILES).map((e) => ({ path: e.path, size: e.size })),
     truncated: listing.truncated || sorted.length > MAX_FILES,
     usage: { files: usage.files, bytes: usage.bytes, overflow: usage.overflow },
@@ -76,19 +48,18 @@ async function files(state: ApiState): Promise<Response> {
       max_file_bytes: ws.limits.maxFileBytes,
     },
   };
-  return json(view);
 }
 
 function shelf(state: ApiState): SkillShelf {
   return state.service(SkillShelfKey, "skills module (needs the sandbox workspace)");
 }
 
-async function skillList(state: ApiState): Promise<Response> {
+async function skillList(state: ApiState): Promise<{ skills: SkillSummary[] }> {
   const { skills } = await shelf(state).list();
-  return json({ skills: skills.map((s) => ({ name: s.name, description: s.description })) });
+  return { skills: skills.map((s) => ({ name: s.name, description: s.description })) };
 }
 
-async function skillShow(state: ApiState, name: string): Promise<Response> {
+async function skillShow(state: ApiState, name: string): Promise<SkillView> {
   const skills = shelf(state);
   const pages: string[] = [];
   let first: SkillShelfPage | null = null;
@@ -116,24 +87,20 @@ async function skillShow(state: ApiState, name: string): Promise<Response> {
   }
   if (first === null) throw ApiError.notFound(`no skill \`${name.slice(0, 60)}\``);
   const body = [...pages.join("")].slice(0, MAX_BODY_CHARS).join("");
-  const view: SkillView = {
+  return {
     name,
     description: first.description,
     body,
     truncated: cut || [...pages.join("")].length > MAX_BODY_CHARS,
     files: first.files.map((f) => ({ path: f.path, size: f.size, script: f.script })),
   };
-  return json(view);
 }
 
-export function workspaceRoutes(state: ApiState): Route[] {
-  return [
-    { method: "GET", path: "/api/workspace", handler: () => files(state) },
-    { method: "GET", path: "/api/skills", handler: () => skillList(state) },
-    {
-      method: "GET",
-      path: "/api/skills/:name",
-      handler: (c) => skillShow(state, param(c, "name")),
-    },
-  ];
-}
+/** `GET /api/workspace`. */
+export const workspaceRpc = os.workspace.handler(({ context }) => files(context.state));
+
+/** `GET /api/skills` and `GET /api/skills/{name}`. */
+export const skillsRpc = {
+  list: os.skills.list.handler(({ context }) => skillList(context.state)),
+  get: os.skills.get.handler(({ input, context }) => skillShow(context.state, input.params.name)),
+};

@@ -4,10 +4,14 @@
 // with those packages' types.
 
 import {
+  type ActivitySnapshot as ContractActivitySnapshot,
+  type ActivityTask as ContractActivityTask,
+  type ArbiterDecisionView as ContractArbiterDecisionView,
   type AuthScope as ContractAuthScope,
   type CauseChain as ContractCauseChain,
   type CommissionView as ContractCommissionView,
   type ContextBucket as ContractContextBucket,
+  type ConversationNote as ContractConversationNote,
   type CostReport as ContractCostReport,
   type DataCategoryId as ContractDataCategoryId,
   type DataCategoryView as ContractDataCategoryView,
@@ -18,6 +22,11 @@ import {
   type EconomyHealth as ContractEconomyHealth,
   type EmergencyReport as ContractEmergencyReport,
   type ExtensionInfo as ContractExtensionInfo,
+  type FeedbackTally as ContractFeedbackTally,
+  type KnowledgeDoc as ContractKnowledgeDoc,
+  type LedgerView as ContractLedgerView,
+  type Lesson as ContractLesson,
+  type LifeEntry as ContractLifeEntry,
   type LlmCallDetail as ContractLlmCallDetail,
   type LlmCallRecord as ContractLlmCallRecord,
   type LlmCallStats as ContractLlmCallStats,
@@ -29,20 +38,27 @@ import {
   type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
   type PredictionView as ContractPredictionView,
+  type ProposedTool as ContractProposedTool,
   type QuestsView as ContractQuestsView,
   type QueueItemInfo as ContractQueueItemInfo,
   type ReachedGoal as ContractReachedGoal,
+  type ReflectionRun as ContractReflectionRun,
+  type ReflectionStats as ContractReflectionStats,
   type Relationship as ContractRelationship,
   type RelationshipDelta as ContractRelationshipDelta,
+  type ReminderView as ContractReminderView,
   type RoleAssignment as ContractRoleAssignment,
   type RoleDefinition as ContractRoleDefinition,
   type RoleMapping as ContractRoleMapping,
   type RoomItem as ContractRoomItem,
+  type SandboxHealth as ContractSandboxHealth,
   type SceneRolesState as ContractSceneRolesState,
+  type SkillFile as ContractSkillFile,
   type SongView as ContractSongView,
   type SpokenLine as ContractSpokenLine,
   type StageState as ContractStageState,
   type Thought as ContractThought,
+  type ThoughtDigest as ContractThoughtDigest,
   type ThoughtSummary as ContractThoughtSummary,
   type VoiceSession as ContractVoiceSession,
   contract,
@@ -76,18 +92,33 @@ import type {
   RoleMapping,
 } from "@miyoria/store";
 import type {
+  ActivitySnapshot,
+  ActivityTask,
+  ArbiterDecision,
   CauseChain,
   ContextBucket,
   ContextKey,
+  ConversationState,
   Delivery,
   EmergencyReport,
+  FeedbackTally,
+  KnowledgeDoc,
+  LedgerView,
+  Lesson,
+  LifeEntry,
   LogEvent,
   MindStats,
   ModuleStateKind,
+  ReflectionRun,
+  ReflectionStats,
+  Reminder,
+  SkillShelfFile,
   SpokenLine,
   Thought,
+  ThoughtDigest,
   VoiceParticipant,
 } from "@miyoria/types";
+import type { ProposedTool, SandboxHealth } from "@miyoria/workspace/sandbox";
 import { describe, expect, it } from "vitest";
 import { NODE_DATA_MANAGE, type TOOLS_WORKSPACE } from "../src/data.js";
 import { rpcRoutes } from "../src/rpc.js";
@@ -105,6 +136,7 @@ interface Case {
 }
 
 const MANAGE = "owner.data.manage";
+const REVIEW_REFUSAL = "reviewing her tools needs `owner.autonomy.approve`";
 const MANAGE_REFUSAL = "managing her data needs `owner.data.manage`";
 
 const CASES: Case[] = [
@@ -193,6 +225,37 @@ const CASES: Case[] = [
     permission: "admin.economy.goals",
   },
   { name: "people.quests", method: "GET", path: "/api/people/:id/quests" },
+  { name: "activity.snapshot", method: "GET", path: "/api/activity" },
+  { name: "activity.tasks", method: "GET", path: "/api/activity/tasks" },
+  { name: "arbiter.ledger", method: "GET", path: "/api/arbiter/ledger" },
+  { name: "arbiter.decisions", method: "GET", path: "/api/arbiter/decisions" },
+  { name: "knowledge.documents", method: "GET", path: "/api/knowledge" },
+  { name: "knowledge.conversations", method: "GET", path: "/api/knowledge/conversations" },
+  { name: "reflection", method: "GET", path: "/api/reflection" },
+  { name: "mind.digests", method: "GET", path: "/api/mind/digests" },
+  { name: "life.today", method: "GET", path: "/api/life/today" },
+  { name: "life.reminders", method: "GET", path: "/api/life/reminders" },
+  { name: "life.cancelReminder", method: "DELETE", path: "/api/life/reminders/:key" },
+  { name: "life.activities", method: "GET", path: "/api/life/activities" },
+  { name: "workspace", method: "GET", path: "/api/workspace" },
+  { name: "skills.list", method: "GET", path: "/api/skills" },
+  { name: "skills.get", method: "GET", path: "/api/skills/:name" },
+  { name: "sandbox.tools", method: "GET", path: "/api/sandbox/tools" },
+  { name: "sandbox.tool", method: "GET", path: "/api/sandbox/tools/:name" },
+  {
+    name: "sandbox.approve",
+    method: "POST",
+    path: "/api/sandbox/tools/:name/approve",
+    permission: "owner.autonomy.approve",
+    refusal: REVIEW_REFUSAL,
+  },
+  {
+    name: "sandbox.reject",
+    method: "POST",
+    path: "/api/sandbox/tools/:name/reject",
+    permission: "owner.autonomy.approve",
+    refusal: REVIEW_REFUSAL,
+  },
   { name: "extensions.list", method: "GET", path: "/api/extensions" },
   { name: "extensions.action", method: "POST", path: "/api/extensions/:id/:action" },
   { name: "mcp.list", method: "GET", path: "/api/mcp" },
@@ -317,6 +380,47 @@ describe("the schemas agree with the types of the packages that own the shapes",
       true;
     const thought: Same<ContractThought, Thought> = true;
     expect([call, detail, thinking, stats, thought]).toEqual(Array(5).fill(true));
+  });
+
+  it("the body, the arbiter and what she organized and learned", () => {
+    const snapshot: Same<ContractActivitySnapshot, ActivitySnapshot> = true;
+    const task: Same<ContractActivityTask, ActivityTask> = true;
+    const ledger: Same<ContractLedgerView, LedgerView> = true;
+    // A decision with where its impulse was aimed and what it was.
+    type Decided = ArbiterDecision & { context: ContextKey | null; summary: string | null };
+    const decision: Same<ContractArbiterDecisionView, Decided> = true;
+    const doc: Same<
+      ContractKnowledgeDoc,
+      KnowledgeDoc & { short_id: string; subject_label: string }
+    > = true;
+    const note: Same<ContractConversationNote, ConversationState & { label: string | null }> = true;
+    const lesson: Same<ContractLesson, Lesson & { display_name: string | null }> = true;
+    const run: Same<ContractReflectionRun, ReflectionRun> = true;
+    const stats: Same<ContractReflectionStats, ReflectionStats> = true;
+    const tally: Same<ContractFeedbackTally, FeedbackTally> = true;
+    const digest: Same<ContractThoughtDigest, ThoughtDigest> = true;
+    expect([
+      snapshot,
+      task,
+      ledger,
+      decision,
+      doc,
+      note,
+      lesson,
+      run,
+      stats,
+      tally,
+      digest,
+    ]).toEqual(Array(11).fill(true));
+  });
+
+  it("her life, her skills and the tools she wrote", () => {
+    const entry: Same<ContractLifeEntry, LifeEntry> = true;
+    const reminder: Same<ContractReminderView, Reminder> = true;
+    const file: Same<ContractSkillFile, SkillShelfFile> = true;
+    const tool: Same<ContractProposedTool, ProposedTool> = true;
+    const health: Same<ContractSandboxHealth, SandboxHealth> = true;
+    expect([entry, reminder, file, tool, health]).toEqual(Array(5).fill(true));
   });
 
   it("the economy", () => {

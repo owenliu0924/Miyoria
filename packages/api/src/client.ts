@@ -2,32 +2,23 @@
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
 import type {
-  ActivitySnapshot,
-  ActivityTask,
   AffectSnapshot,
-  ArbiterVerdict,
   ContextKey,
   Envelope,
-  LedgerView,
   PersonCard,
   SavedPrompt,
-  ThoughtDigest,
   TurnOutcomeRecord,
 } from "@miyoria/types";
 import { statusText } from "./errors.js";
 import type {
-  ArbiterDecisionsView,
-  ConversationNoteView,
   DayPlanView,
   ErrorBody,
   GoalsView,
-  KnowledgeView,
   MemoryItem,
   MemoryListQuery,
   MemoryRecordView,
   Page,
   PromptSummary,
-  ReflectionView,
   SelfView,
   TurnOutcomeKind,
   UpdateMemoryRequest,
@@ -210,39 +201,6 @@ export class ApiClient {
 
   // ---- body, arbiter, affect, plan, prompts -----------------------------------------------
 
-  /** Her presence, broadcast, activity and scene. */
-  activity(o?: CallOptions): Promise<ActivitySnapshot> {
-    return this.#json("GET", ["activity"], o);
-  }
-
-  /** Recent activity transition tasks, newest first. */
-  activityTasks(limit = 20, o?: CallOptions): Promise<ActivityTask[]> {
-    return this.#json("GET", ["activity", "tasks"], { ...o, query: { limit: String(limit) } });
-  }
-
-  /** What she did or tried (`context`: entries there first), her limits, topics nobody took up. */
-  ledger(context: ContextKey | null = null, limit = 50, o?: CallOptions): Promise<LedgerView> {
-    return this.#json("GET", ["arbiter", "ledger"], {
-      ...o,
-      query: { limit: String(limit), context: context ? JSON.stringify(context) : undefined },
-    });
-  }
-
-  /** The arbiter's recent verdicts with reasons, newest first (`verdict`: only that kind). */
-  arbiterDecisions(
-    q: { limit?: number; context?: ContextKey | null; verdict?: ArbiterVerdict } = {},
-    o?: CallOptions,
-  ): Promise<ArbiterDecisionsView> {
-    return this.#json("GET", ["arbiter", "decisions"], {
-      ...o,
-      query: {
-        limit: q.limit === undefined ? undefined : String(q.limit),
-        context: q.context ? JSON.stringify(q.context) : undefined,
-        verdict: q.verdict,
-      },
-    });
-  }
-
   /** Her emotions, derived mood, drives and the behaviour biases they imply. */
   affect(o?: CallOptions): Promise<AffectSnapshot> {
     return this.#json("GET", ["affect"], o);
@@ -296,26 +254,6 @@ export class ApiClient {
         outcome: q.outcome,
       },
     });
-  }
-
-  /** Digests of her older thoughts, newest first. */
-  digests(limit = 20, o?: CallOptions): Promise<ThoughtDigest[]> {
-    return this.#json("GET", ["mind", "digests"], { ...o, query: { limit: String(limit) } });
-  }
-
-  /** Her self-organized documents. */
-  knowledge(o?: CallOptions): Promise<KnowledgeView> {
-    return this.#json("GET", ["knowledge"], o);
-  }
-
-  /** Her running notes on each conversation. */
-  conversationNotes(o?: CallOptions): Promise<ConversationNoteView[]> {
-    return this.#json("GET", ["knowledge", "conversations"], o);
-  }
-
-  /** Her reflections, lessons and the feedback of the last `days` days. */
-  reflection(days = 7, o?: CallOptions): Promise<ReflectionView> {
-    return this.#json("GET", ["reflection"], { ...o, query: { days: String(days) } });
   }
 
   /**

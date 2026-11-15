@@ -5,14 +5,11 @@ import { SettingsStoreKey } from "@miyoria/store";
 import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { affectRoutes } from "./affect.js";
-import { bodyRoutes } from "./body.js";
 import { coreRoutes } from "./core.js";
 import { dataRoutes } from "./data.js";
 import { directiveRoutes } from "./directives.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { innerRoutes } from "./inner.js";
-import { learningRoutes } from "./learning.js";
-import { lifeRoutes } from "./life.js";
 import { liveRoutes } from "./live.js";
 import { memberRoutes } from "./member.js";
 import { memoryRoutes } from "./memory.js";
@@ -28,7 +25,6 @@ import { promptRoutes } from "./prompts.js";
 import { clientKey, tooMany } from "./public.js";
 import type { Route } from "./route.js";
 import { type ResponseCheck, rpcRoutes } from "./rpc.js";
-import { sandboxRoutes } from "./sandbox.js";
 import {
   CSRF_HEADER,
   cookieToken,
@@ -41,7 +37,6 @@ import {
 } from "./session.js";
 import type { ApiContext, ApiEnv, ApiState } from "./state.js";
 import { telemetryRoutes } from "./telemetry.js";
-import { workspaceRoutes } from "./workspace.js";
 
 const log = getLogger("api.server");
 
@@ -138,18 +133,13 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...memoryRoutes(state),
     ...innerRoutes(state),
     ...dataRoutes(state),
-    ...sandboxRoutes(state),
     ...directiveRoutes(state),
     ...planRoutes(state),
-    ...bodyRoutes(state),
     ...affectRoutes(state),
     ...promptRoutes(state),
     ...turnMetricsRoutes(state),
-    ...learningRoutes(state),
     ...telemetryRoutes(state),
     ...liveRoutes(state),
-    ...lifeRoutes(state),
-    ...workspaceRoutes(state),
     ...notebookRoutes(state),
     ...partyRoutes(state),
 

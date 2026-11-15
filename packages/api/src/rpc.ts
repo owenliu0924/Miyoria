@@ -42,6 +42,7 @@ import { ResponseHeadersPlugin } from "@orpc/server/plugins";
 import { z } from "zod";
 import { agencyRpc } from "./agency.js";
 import { boardRpc } from "./board.js";
+import { activityRpc, arbiterRpc } from "./body.js";
 import { cardCheckRpc } from "./card.js";
 import { channelRpc } from "./channels.js";
 import { os, type RpcContext } from "./contract.js";
@@ -54,6 +55,8 @@ import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
 import { goalAdminRpc } from "./goals-admin.js";
+import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
+import { lifeRpc } from "./life.js";
 import { llmCallsRpc, thoughtRpc } from "./llmcalls.js";
 import { memberRpc } from "./member.js";
 import { mindRpc } from "./mind.js";
@@ -64,8 +67,10 @@ import { personWalletRpc } from "./people-wallet.js";
 import { limitMember, publicRpc } from "./public.js";
 import { roleRpc } from "./roles.js";
 import type { Method, Route } from "./route.js";
+import { sandboxRpc } from "./sandbox.js";
 import type { ApiContext, ApiState } from "./state.js";
 import { walletRpc } from "./wallet.js";
+import { skillsRpc, workspaceRpc } from "./workspace.js";
 
 const log = getLogger("api.rpc");
 
@@ -75,6 +80,14 @@ export const router = os.router({
   auth: authRpc,
   persona: personaRpc,
   facts: factsRpc,
+  activity: activityRpc,
+  arbiter: arbiterRpc,
+  knowledge: knowledgeRpc,
+  reflection: reflectionRpc,
+  life: lifeRpc,
+  sandbox: sandboxRpc,
+  workspace: workspaceRpc,
+  skills: skillsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },
   member: memberRpc,
   wallet: walletRpc,
@@ -85,7 +98,7 @@ export const router = os.router({
   llm: { ...coreRpc.llm, ...llmCallsRpc },
   economy: { ...economyRpc, ...goalAdminRpc },
   channels: channelRpc,
-  mind: { ...mindRpc, ...thoughtRpc },
+  mind: { ...mindRpc, ...thoughtRpc, ...digestRpc },
   roles: roleRpc,
   ...opsRpc,
   voice: { ...opsRpc.voice, ...controlRpc.voice },

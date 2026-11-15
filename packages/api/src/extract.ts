@@ -118,6 +118,11 @@ export function contextParam(raw: string | undefined): ContextKey | null {
   return key.data;
 }
 
+/** A count of the query string, which the contract has checked to be digits (`undefined`: absent). */
+export function countOf(raw: string | undefined): number | undefined {
+  return raw === undefined ? undefined : Number.parseInt(raw, 10);
+}
+
 /** `limit` clamped to `1..max`, `fallback` when absent. */
 export function clampLimit(limit: number | undefined, fallback: number, max: number): number {
   return Math.min(Math.max(limit ?? fallback, 1), max);

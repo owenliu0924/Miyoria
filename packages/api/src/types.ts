@@ -11,20 +11,13 @@ import type {
 import type { WalletExport } from "@miyoria/economy";
 import type { MemoryKind, MemoryScope } from "@miyoria/store";
 import type {
-  ArbiterDecision,
   ChannelActivity,
   ContextKey,
-  ConversationState,
-  FeedbackTally,
   Feeling,
   Goal,
-  KnowledgeDoc,
-  Lesson,
   PersonId,
   ProfileId,
   ReasoningLevel,
-  ReflectionRun,
-  ReflectionStats,
   SelfSnapshot,
   Timestamp,
   TurnId,
@@ -34,7 +27,11 @@ import type {
 
 // Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
 export type {
+  ActivitiesView,
+  ActivityView,
   AdjustPersonRequest,
+  ArbiterDecisionsView,
+  ArbiterDecisionView,
   AssignRoleRequest,
   AuthMethods,
   BudgetState,
@@ -45,6 +42,7 @@ export type {
   ChannelLevelsView,
   ChannelLevelView,
   ControlResult,
+  ConversationNote as ConversationNoteView,
   CostReport,
   CostReport as CostInfo,
   DataCategoryView,
@@ -60,7 +58,12 @@ export type {
   IssueCardRequest,
   IssuedCard,
   IssuedFortune,
+  KnowledgeDoc as KnowledgeDocView,
+  KnowledgeView,
   LatencyStats,
+  Lesson as LessonView,
+  LifeDayView,
+  LifeEntry as LifeEntryView,
   McpServerInfo,
   McpState,
   McpToolInfo,
@@ -82,6 +85,7 @@ export type {
   PersonDetail,
   PersonSummary,
   PersonWalletView,
+  ProposedToolSummary,
   PublicBoard,
   PublicDay,
   PublicSong,
@@ -92,7 +96,11 @@ export type {
   QueueAuthor,
   QueueItemInfo,
   QueueState,
+  ReflectionView,
+  RemindersView,
+  ReminderView,
   RemoveMappingRequest,
+  ReviewToolRequest,
   SayRequest,
   SayResponse,
   SceneRoleState,
@@ -103,6 +111,8 @@ export type {
   SetChannelLevelRequest,
   SetPersonaRequest,
   SetPersonaResponse,
+  SkillSummary,
+  SkillView,
   SongAccepted,
   SongsAnswer,
   SongsState,
@@ -121,6 +131,8 @@ export type {
   VoiceState,
   WalletAdjustRequest,
   WalletAdjustResult,
+  WorkspaceFile as WorkspaceFileView,
+  WorkspaceView,
 } from "@miyoria/contracts/api";
 
 /** `GET /api/member/export` (a file). */
@@ -232,34 +244,6 @@ export interface WorldView extends Omit<WorldSnapshot, "channels"> {
 
 // ---- what she organized and learned (phase G) -----------------------------------------------
 
-/** One of her documents, with its short id (as her prompts show it) and whom it is about. */
-export interface KnowledgeDocView extends KnowledgeDoc {
-  short_id: string;
-  subject_label: string;
-}
-
-/** `GET /api/knowledge`: every document, most recently updated first. */
-export interface KnowledgeView {
-  documents: KnowledgeDocView[];
-}
-
-/** `GET /api/knowledge/conversations`: her notes on a conversation, with the place's name. */
-export interface ConversationNoteView extends ConversationState {
-  label: string | null;
-}
-
-export interface LessonView extends Lesson {
-  display_name: string | null;
-}
-
-/** `GET /api/reflection?days=7`. */
-export interface ReflectionView {
-  stats: ReflectionStats;
-  runs: ReflectionRun[];
-  lessons: LessonView[];
-  feedback: FeedbackTally[];
-}
-
 // ---- live controls (`control.ts`) and telemetry (`telemetry.ts`) ----------------------------
 
 /** Process-wide LLM counters at a sample, summed over models and purposes. */
@@ -296,19 +280,6 @@ export interface TelemetryView {
 }
 
 // ---- body, arbiter, affect, plan, prompts (docs/design/v2-architecture.md §3) -------------
-
-/** One arbiter decision (`arbiter.decision`) with what the ledger knows about its impulse. */
-export interface ArbiterDecisionView extends ArbiterDecision {
-  /** Where the impulse was aimed (`null`: unknown or anywhere). */
-  context: ContextKey | null;
-  /** What it was, short zh-TW, when the ledger still has it. */
-  summary: string | null;
-}
-
-/** `GET /api/arbiter/decisions`: decisions seen since the `api` module started, newest first. */
-export interface ArbiterDecisionsView {
-  decisions: ArbiterDecisionView[];
-}
 
 /** `GET /api/mind/goals`. */
 export interface GoalsView {

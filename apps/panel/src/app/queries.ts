@@ -491,26 +491,26 @@ export function useThoughts(limit = 50) {
 
 export function useDigests(limit = 20) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.digests, queryFn: ({ signal }) => api.digests(limit, { signal }), refetchInterval: poll(60_000) });
+  return useQuery({ queryKey: queryKeys.digests, queryFn: ({ signal }) => api.rpc.mind.digests({ query: { limit } }, { signal }), refetchInterval: poll(60_000) });
 }
 
 export function useKnowledge() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.knowledge, queryFn: ({ signal }) => api.knowledge({ signal }), refetchInterval: poll(15_000) });
+  return useQuery({ queryKey: queryKeys.knowledge, queryFn: ({ signal }) => api.rpc.knowledge.documents(undefined, { signal }), refetchInterval: poll(15_000) });
 }
 
 export function useConversationNotes() {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.conversationNotes,
-    queryFn: ({ signal }) => api.conversationNotes({ signal }),
+    queryFn: ({ signal }) => api.rpc.knowledge.conversations(undefined, { signal }),
     refetchInterval: poll(15_000),
   });
 }
 
 export function useReflection(days = 7) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.reflection, queryFn: ({ signal }) => api.reflection(days, { signal }), refetchInterval: poll(30_000) });
+  return useQuery({ queryKey: queryKeys.reflection, queryFn: ({ signal }) => api.rpc.reflection({ query: { days } }, { signal }), refetchInterval: poll(30_000) });
 }
 
 export function useApprovals() {
@@ -709,14 +709,14 @@ export function usePeopleDetails(ids: string[]) {
 /** Presence, broadcast, activity and scene. Kept fresh by `activity.changed`. */
 export function useActivity() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.activity, queryFn: ({ signal }) => api.activity({ signal }), refetchInterval: poll(10_000) });
+  return useQuery({ queryKey: queryKeys.activity, queryFn: ({ signal }) => api.rpc.activity.snapshot(undefined, { signal }), refetchInterval: poll(10_000) });
 }
 
 export function useActivityTasks(limit = 20) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.activityTasks,
-    queryFn: ({ signal }) => api.activityTasks(limit, { signal }),
+    queryFn: ({ signal }) => api.rpc.activity.tasks({ query: { limit: String(limit) } }, { signal }),
     refetchInterval: poll(10_000),
   });
 }
@@ -725,7 +725,8 @@ export function useLedger(context?: ContextKey, limit = 50) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.ledger(context),
-    queryFn: ({ signal }) => api.ledger(context, limit, { signal }),
+    queryFn: ({ signal }) =>
+      api.rpc.arbiter.ledger({ query: { limit: String(limit), context: context ? JSON.stringify(context) : undefined } }, { signal }),
     refetchInterval: poll(10_000),
   });
 }
@@ -734,7 +735,11 @@ export function useArbiterDecisions(q: { limit?: number; verdict?: ArbiterVerdic
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.arbiterDecisions(q),
-    queryFn: ({ signal }) => api.arbiterDecisions(q, { signal }),
+    queryFn: ({ signal }) =>
+      api.rpc.arbiter.decisions(
+        { query: { limit: q.limit === undefined ? undefined : String(q.limit), verdict: q.verdict, context: q.context ? JSON.stringify(q.context) : undefined } },
+        { signal },
+      ),
     refetchInterval: poll(15_000),
   });
 }
@@ -933,26 +938,26 @@ const pollModule =
 
 export function useLifeToday() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.lifeToday, queryFn: ({ signal }) => api.lifeToday({ signal }), refetchInterval: pollModule(30_000), retry: false });
+  return useQuery({ queryKey: queryKeys.lifeToday, queryFn: ({ signal }) => api.rpc.life.today(undefined, { signal }), refetchInterval: pollModule(30_000), retry: false });
 }
 
 export function useReminders() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.reminders, queryFn: ({ signal }) => api.reminders({ signal }), refetchInterval: pollModule(15_000), retry: false });
+  return useQuery({ queryKey: queryKeys.reminders, queryFn: ({ signal }) => api.rpc.life.reminders(undefined, { signal }), refetchInterval: pollModule(15_000), retry: false });
 }
 
 export function useCancelReminder() {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (key: string) => api.cancelReminder(key),
+    mutationFn: (key: string) => api.rpc.life.cancelReminder({ params: { key } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.reminders }),
   });
 }
 
 export function useActivities() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.activities, queryFn: ({ signal }) => api.activities({ signal }), refetchInterval: pollModule(30_000), retry: false });
+  return useQuery({ queryKey: queryKeys.activities, queryFn: ({ signal }) => api.rpc.life.activities(undefined, { signal }), refetchInterval: pollModule(30_000), retry: false });
 }
 
 export function useReachedGoals() {
@@ -996,7 +1001,7 @@ export function usePersonQuests(id: string) {
 
 export function useWorkspace() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.workspace, queryFn: ({ signal }) => api.workspace({ signal }), refetchInterval: pollModule(60_000), retry: false });
+  return useQuery({ queryKey: queryKeys.workspace, queryFn: ({ signal }) => api.rpc.workspace(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
 }
 
 export function useParty() {
@@ -1006,12 +1011,12 @@ export function useParty() {
 
 export function useSkills() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.skills, queryFn: ({ signal }) => api.skills({ signal }), refetchInterval: pollModule(60_000), retry: false });
+  return useQuery({ queryKey: queryKeys.skills, queryFn: ({ signal }) => api.rpc.skills.list(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
 }
 
 export function useSkill(name: string | null) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.skill(name ?? ""), queryFn: ({ signal }) => api.skill(name as string, { signal }), enabled: name !== null, retry: false });
+  return useQuery({ queryKey: queryKeys.skill(name ?? ""), queryFn: ({ signal }) => api.rpc.skills.get({ params: { name: name as string } }, { signal }), enabled: name !== null, retry: false });
 }
 
 export function useNotebook() {

@@ -2,7 +2,8 @@
 // shape), `GET /api/knowledge/conversations` (her running notes on each conversation),
 // `GET /api/reflection` (her reflections, lessons and feedback signals) and
 // `GET /api/mind/digests` (condensed older thoughts). Changes are hers (or the data page's
-// delete), not these routes'.
+// delete), not these routes'. On the route table (`@miyoria/contracts/api`): `knowledgeRpc`,
+// `reflectionRpc` and `digestRpc`.
 
 import { SocialKey } from "@miyoria/heart/social";
 import {
@@ -14,7 +15,7 @@ import {
   PlatformSinksKey,
   ReflectionKey,
 } from "@miyoria/types";
-import { json, type Route } from "./route.js";
+import { os } from "./contract.js";
 import type { ApiState } from "./state.js";
 import type {
   ConversationNoteView,
@@ -85,31 +86,27 @@ function reflectionView(state: ApiState, days: number): ReflectionView {
   };
 }
 
-function intQuery(raw: string | undefined, fallback: number, max: number): number {
+/** A count of the query string; one that is not a number is `fallback`, as it always was. */
+function intQuery(raw: string | number | undefined, fallback: number, max: number): number {
   const n = Number(raw ?? fallback);
   return Number.isFinite(n) ? Math.min(Math.max(Math.trunc(n), 1), max) : fallback;
 }
 
-export function learningRoutes(state: ApiState): Route[] {
-  return [
-    { method: "GET", path: "/api/knowledge", handler: () => json(knowledgeView(state)) },
-    {
-      method: "GET",
-      path: "/api/knowledge/conversations",
-      handler: async () => json(await conversations(state)),
-    },
-    {
-      method: "GET",
-      path: "/api/reflection",
-      handler: (c) => json(reflectionView(state, intQuery(c.req.query("days"), 7, 14))),
-    },
-    {
-      method: "GET",
-      path: "/api/mind/digests",
-      handler: (c) => {
-        const mind = state.service(MindKey, "mind module");
-        return json(mind.digests?.(intQuery(c.req.query("limit"), 20, 100)) ?? []);
-      },
-    },
-  ];
-}
+/** `GET /api/knowledge` and `GET /api/knowledge/conversations`. */
+export const knowledgeRpc = {
+  documents: os.knowledge.documents.handler(({ context }) => knowledgeView(context.state)),
+  conversations: os.knowledge.conversations.handler(({ context }) => conversations(context.state)),
+};
+
+/** `GET /api/reflection?days=`. */
+export const reflectionRpc = os.reflection.handler(({ input, context }) =>
+  reflectionView(context.state, intQuery(input.query.days, 7, 14)),
+);
+
+/** `GET /api/mind/digests?limit=`: joins the mind group. */
+export const digestRpc = {
+  digests: os.mind.digests.handler(({ input, context }) => {
+    const mind = context.state.service(MindKey, "mind module");
+    return mind.digests?.(intQuery(input.query.limit, 20, 100)) ?? [];
+  }),
+};
