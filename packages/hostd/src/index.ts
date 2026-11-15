@@ -52,6 +52,7 @@ export {
   type StateLayout,
   stateLayout,
 } from "./host-config.js";
+export * from "./install/index.js";
 export { fileTail, MEMORY_LINES, ServiceLog } from "./logs.js";
 export {
   freePort,

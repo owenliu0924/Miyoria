@@ -308,6 +308,16 @@ function expandEnv(
 }
 
 /**
+ * What hostd gives a service before its descriptor and `host.toml` say anything: a Python service
+ * keeps its Hugging Face cache in the host's model folder, where `miyoria models pull` puts it.
+ * Both the descriptor's `env` and `host.toml`'s override it; the daemon's own environment does not.
+ */
+function defaultEnv(descriptor: HostService, ctx: ResolveContext): Record<string, string> {
+  if (descriptor.install.runtime !== "python") return {};
+  return { HF_HUB_CACHE: join(ctx.state, "models", "hf") };
+}
+
+/**
  * The program, arguments, folder and environment of one start. Throws `ResolveError` when a
  * placeholder has no value (no Python environment, an unset `{env:NAME}`).
  */
@@ -347,6 +357,7 @@ export function expandService(plan: ServicePlan, ctx: ResolveContext, live: Live
     [
       workerBaseEnv(ctx.env),
       passEnv(run.pass_env, ctx.env, ctx.platform),
+      defaultEnv(entry.descriptor, ctx),
       expandEnv(run.env, "run.env", plan, ctx, live),
       expandEnv(plan.override.env, `host.toml services.${plan.name}.env`, plan, ctx, live),
       added,

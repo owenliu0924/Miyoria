@@ -13,6 +13,8 @@ export interface CallOptions {
   signal?: AbortSignal;
   /** Default 30 s; a stop may wait out a service's grace period. */
   timeoutMs?: number;
+  /** Progress lines of a long method (an install) as the daemon sends them. */
+  onLine?: (line: string) => void;
 }
 
 export interface LogsOptions {
@@ -27,6 +29,31 @@ function signalOf(options: CallOptions, fallbackMs: number): AbortSignal {
   const signals = [AbortSignal.timeout(options.timeoutMs ?? fallbackMs)];
   if (options.signal !== undefined) signals.push(options.signal);
   return AbortSignal.any(signals);
+}
+
+/** Reads an NDJSON answer: the `{"line"}` objects go to `onLine`, the last object is returned. */
+async function readStream(res: Response, onLine: (line: string) => void): Promise<unknown> {
+  if (!(res.headers.get("content-type") ?? "").includes("ndjson") || res.body === null) {
+    return await res.json(); // an error before the stream started
+  }
+  const decoder = new TextDecoder();
+  let rest = "";
+  let last: unknown;
+  const take = (text: string) => {
+    if (text.trim() === "") return;
+    const value = JSON.parse(text) as { line?: unknown };
+    if (typeof value.line === "string" && !("jsonrpc" in value)) onLine(value.line);
+    else last = value;
+  };
+  for await (const chunk of res.body) {
+    rest += decoder.decode(chunk as Uint8Array, { stream: true });
+    const parts = rest.split("\n");
+    rest = parts.pop() ?? "";
+    for (const part of parts) take(part);
+  }
+  take(rest);
+  if (last === undefined) throw new Error("the stream ended without an answer");
+  return last;
 }
 
 export class HostdClient {
@@ -75,6 +102,7 @@ export class HostdClient {
         headers: {
           authorization: `Bearer ${this.info.token}`,
           "content-type": "application/json",
+          ...(options.onLine !== undefined ? { "x-miyoria-stream": "lines" } : {}),
         },
         body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
         signal: signalOf(options, 30_000),
@@ -87,7 +115,8 @@ export class HostdClient {
     }
     let body: unknown;
     try {
-      body = await res.json();
+      body =
+        options.onLine !== undefined ? await readStream(res, options.onLine) : await res.json();
     } catch (error) {
       throw new HostdUnavailableError(`hostd at ${this.baseUrl} sent no JSON (${res.status})`, {
         cause: error,

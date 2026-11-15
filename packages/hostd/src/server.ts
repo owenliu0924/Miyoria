@@ -1,6 +1,8 @@
 // The local API (docs/design/v5-hostd.md §5): `127.0.0.1` on a port the OS picks.
 //
-//   POST /rpc            one JSON-RPC 2.0 request, one response
+//   POST /rpc            one JSON-RPC 2.0 request, one response; with the header
+//                        `x-miyoria-stream: lines` the answer is NDJSON: `{"line":"..."}` objects as
+//                        the method makes progress (an install), then the JSON-RPC response
 //   GET  /logs/<service>?lines=N&follow=1
 //                        text lines: the last N, then new ones until the client disconnects
 //
@@ -25,7 +27,13 @@ const MAX_BODY = 1024 * 1024;
 export interface LocalApiHandler {
   /** The caller a bearer token stands for, or `null`. */
   authenticate(token: string): Caller | null;
-  call(method: string, params: unknown, caller: Caller, signal: AbortSignal): Promise<unknown>;
+  call(
+    method: string,
+    params: unknown,
+    caller: Caller,
+    signal: AbortSignal,
+    onLine?: (line: string) => void,
+  ): Promise<unknown>;
   hasService(name: string): boolean;
   tailLogs(name: string, lines: number): string[];
   followLogs(name: string, listener: (line: string) => void): () => void;
@@ -72,6 +80,14 @@ async function readBody(req: IncomingMessage): Promise<string | null> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function startStream(res: ServerResponse): void {
+  res.writeHead(200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+  });
+}
+
 async function handleRpc(
   req: IncomingMessage,
   res: ServerResponse,
@@ -105,17 +121,37 @@ async function handleRpc(
   res.on("close", () => {
     if (!res.writableFinished) controller.abort();
   });
+  const streaming = req.headers["x-miyoria-stream"] === "lines";
+  // A streamed answer is a series of JSON lines; the last one is the JSON-RPC message.
+  const send = (status: number, body: unknown) => {
+    if (!streaming) {
+      sendJson(res, status, body);
+      return;
+    }
+    if (!res.headersSent) startStream(res);
+    res.end(`${JSON.stringify(body)}\n`);
+  };
   try {
-    const result = await handler.call(method, params ?? {}, caller, controller.signal);
-    sendJson(res, 200, { jsonrpc: "2.0", id: rid, result: result ?? null });
+    const result = await handler.call(
+      method,
+      params ?? {},
+      caller,
+      controller.signal,
+      streaming
+        ? (line) => {
+            if (!res.headersSent) startStream(res);
+            if (!res.writableEnded) res.write(`${JSON.stringify({ line })}\n`);
+          }
+        : undefined,
+    );
+    send(200, { jsonrpc: "2.0", id: rid, result: result ?? null });
   } catch (error) {
     if (error instanceof HostRpcError) {
-      sendJson(res, 200, rpcError(rid, error.code, error.message, error.data));
+      send(200, rpcError(rid, error.code, error.message, error.data));
       return;
     }
     handler.onError(error);
-    sendJson(
-      res,
+    send(
       200,
       rpcError(rid, JSON_RPC.InternalError, error instanceof Error ? error.message : String(error)),
     );

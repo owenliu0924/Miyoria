@@ -20,11 +20,17 @@ import {
   type HostServiceControlResult,
   HostServiceControlSchema,
   type HostServiceEvent,
+  type HostServiceInstallResult,
+  HostServiceInstallSchema,
   type HostServiceList,
   type HostServiceLogsResult,
   HostServiceLogsSchema,
+  type HostServiceRemoveResult,
+  HostServiceRemoveSchema,
   type HostShutdownResult,
   HostShutdownSchema,
+  type HostUpdateResult,
+  HostUpdateSchema,
 } from "@miyoria/contracts/host";
 import { type Logger, pino } from "pino";
 import type { RotatingFileStream } from "rotating-file-stream";
@@ -41,9 +47,16 @@ import { HostdClient } from "./client.js";
 import { GpuCache, type GpuReader, nvidiaSmiReader } from "./gpu.js";
 import { coreStatusGuard, guardedMessage, guardUnknownMessage } from "./guard.js";
 import { type LoadedHostConfig, loadHostConfig } from "./host-config.js";
+import { type InstallDeps, installService, removeService } from "./install/index.js";
 import { CoreLink, type CoreLinkOptions, type CoreLinkState } from "./link/index.js";
 import { rotatingLog, ServiceLog } from "./logs.js";
-import { localUrl, offloadUrls, planServices, type ResolveContext } from "./resolve.js";
+import {
+  localUrl,
+  offloadUrls,
+  planServices,
+  type ResolveContext,
+  type ServicePlan,
+} from "./resolve.js";
 import {
   pidAlive,
   type RunInfo,
@@ -80,6 +93,8 @@ export interface DaemonOptions {
    * stops the daemon (`stop()`); `miyoria hostd` also exits the process.
    */
   onShutdown?: () => void | Promise<void>;
+  /** What installing needs from outside (the runner, the downloads, PATH); tests replace these. */
+  installDeps?: Omit<InstallDeps, "root">;
   /** Makes the control link (tests). Default a `CoreLink`. */
   linkFactory?: (api: HostApi, options: CoreLinkOptions) => LinkHandle;
 }
@@ -126,6 +141,18 @@ const SERVED: ReadonlySet<string> = new Set([
   HOST_METHOD.ServiceLogs,
   HOST_METHOD.HostShutdown,
   HOST_METHOD.HostRelink,
+  HOST_METHOD.ServiceInstall,
+  HOST_METHOD.ServiceRemove,
+  HOST_METHOD.HostUpdate,
+]);
+
+/** Methods only the operator on this machine may call (they change what is installed here). */
+const OPERATOR_ONLY: ReadonlySet<string> = new Set([
+  HOST_METHOD.HostShutdown,
+  HOST_METHOD.HostRelink,
+  HOST_METHOD.ServiceInstall,
+  HOST_METHOD.ServiceRemove,
+  HOST_METHOD.HostUpdate,
 ]);
 
 function allowed(caller: Caller, method: string): boolean {
@@ -133,7 +160,7 @@ function allowed(caller: Caller, method: string): boolean {
     case "operator":
       return true;
     case "core":
-      return method !== HOST_METHOD.HostShutdown && method !== HOST_METHOD.HostRelink;
+      return !OPERATOR_ONLY.has(method);
     case "service":
       // `gpu.*` and `cluster.*` come later; nothing that exists now is a service's to call.
       return false;
@@ -184,6 +211,10 @@ export class Daemon implements HostApi {
   #cluster: ClusterClient | null = null;
   #link: LinkHandle | null = null;
   #stopping: Promise<void> | null = null;
+  #ctx: ResolveContext | null = null;
+  #serviceHost: ServiceHost | null = null;
+  /** Serialises installs and updates: two `uv sync` into one cache and one environment do not mix. */
+  #installing: Promise<unknown> = Promise.resolve();
   /** Serialises `host.relink`: two calls at once would leave two links. */
   #relinking: Promise<unknown> = Promise.resolve();
 
@@ -282,11 +313,10 @@ export class Daemon implements HostApi {
         if (!this.#spawnOrder.includes(name)) this.#spawnOrder.push(name);
       },
     };
+    this.#ctx = ctx;
+    this.#serviceHost = serviceHost;
     for (const plan of planServices(catalog, host, ctx)) {
-      const logs = new ServiceLog(plan.name, host.state.logs, (error) =>
-        this.#log.warn({ service: plan.name, err: error }, "service log failed"),
-      );
-      this.#services.set(plan.name, new ManagedService(plan, logs, serviceHost));
+      this.#services.set(plan.name, this.#manage(plan));
       if (plan.disabled !== null) {
         this.#log.info({ service: plan.name, reason: plan.disabled }, "service disabled");
       }
@@ -294,7 +324,8 @@ export class Daemon implements HostApi {
 
     const server = createLocalApi({
       authenticate: (token) => this.#authenticate(token),
-      call: (method, params, caller, signal) => this.call(method, params, caller, signal),
+      call: (method, params, caller, signal, onLine) =>
+        this.call(method, params, caller, signal, onLine),
       hasService: (name) => this.#services.has(name),
       tailLogs: (name, lines) => this.#services.get(name)?.logs.tail(lines) ?? [],
       followLogs: (name, listener) => this.followLogs(name, listener),
@@ -574,11 +605,16 @@ export class Daemon implements HostApi {
     return this.#cluster;
   }
 
+  /**
+   * Runs one method. `onLine` receives the progress lines of the long ones (`service.install`,
+   * `host.update`); the local API sends them to the caller as they come.
+   */
   async call(
     method: string,
     params: unknown,
     caller: Caller,
-    _signal?: AbortSignal,
+    signal?: AbortSignal,
+    onLine?: (line: string) => void,
   ): Promise<unknown> {
     if (!SERVED.has(method)) {
       throw new HostRpcError(JSON_RPC.MethodNotFound, `method not found: ${method}`);
@@ -611,7 +647,21 @@ export class Daemon implements HostApi {
         const managed = this.#service(service);
         await this.#checkGuard(managed, force === true);
         await managed.stop();
-        return { service, state: await managed.start() } satisfies HostServiceControlResult;
+        // What a pull or an install changed (the command, the port, the environment) is read now.
+        const fresh = this.#replan([service]) ?? managed;
+        return { service, state: await fresh.start() } satisfies HostServiceControlResult;
+      }
+      case HOST_METHOD.ServiceInstall: {
+        const params_ = parseParams(HostServiceInstallSchema, params);
+        return await this.#exclusive(() => this.#install(params_, signal, onLine));
+      }
+      case HOST_METHOD.ServiceRemove: {
+        const params_ = parseParams(HostServiceRemoveSchema, params);
+        return await this.#exclusive(() => this.#remove(params_));
+      }
+      case HOST_METHOD.HostUpdate: {
+        const params_ = parseParams(HostUpdateSchema, params);
+        return await this.#exclusive(() => this.#update(params_, signal, onLine));
       }
       case HOST_METHOD.ServiceLogs: {
         const { service, lines } = parseParams(HostServiceLogsSchema, params);
@@ -636,6 +686,182 @@ export class Daemon implements HostApi {
       default:
         throw new HostRpcError(JSON_RPC.MethodNotFound, `method not found: ${method}`);
     }
+  }
+
+  // ---- installing ------------------------------------------------------------------------------
+
+  /** Runs `task` after the installs before it. */
+  #exclusive<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.#installing.then(task, task);
+    this.#installing = run.catch(() => undefined);
+    return run;
+  }
+
+  #installDeps(): InstallDeps {
+    return { ...this.#options.installDeps, root: this.#options.catalogRoot };
+  }
+
+  /** A managed service for a plan, with its own log. */
+  #manage(plan: ServicePlan, logs?: ServiceLog): ManagedService {
+    const host = this.#host;
+    const serviceHost = this.#serviceHost;
+    if (host === null || serviceHost === null) throw new Error("the daemon has not started");
+    const log =
+      logs ??
+      new ServiceLog(plan.name, host.state.logs, (error) =>
+        this.#log.warn({ service: plan.name, err: error }, "service log failed"),
+      );
+    return new ManagedService(plan, log, serviceHost);
+  }
+
+  /** Reads `host.toml` and the descriptors again. Returns `false` when `host.toml` does not load. */
+  #reload(): boolean {
+    const current = this.#host;
+    if (current === null) return false;
+    try {
+      const fresh = loadHostConfig(current.file);
+      this.#host = { ...current, config: { ...current.config, services: fresh.config.services } };
+    } catch (error) {
+      this.#log.warn({ err: error }, "host.toml does not load; the services keep their plans");
+      return false;
+    }
+    this.#catalog = loadCatalog(this.#options.catalogRoot);
+    return true;
+  }
+
+  /**
+   * Plans the named services again from `host.toml` and the descriptors as they are now. A service
+   * that is not running gets its new plan (it may be new, or startable now that its environment
+   * exists); one that is running keeps its plan until it restarts. Returns the service of the first
+   * name.
+   */
+  #replan(names: readonly string[]): ManagedService | undefined {
+    const host = this.#host;
+    const catalog = this.#catalog;
+    const ctx = this.#ctx;
+    if (host === null || catalog === null || ctx === null) return undefined;
+    this.#reload();
+    const fresh = this.#host as LoadedHostConfig;
+    const plans = planServices(this.#catalog ?? catalog, fresh, ctx);
+    const next = new Map<string, ManagedService>();
+    for (const plan of plans) {
+      const existing = this.#services.get(plan.name);
+      const replace =
+        names.includes(plan.name) &&
+        (existing === undefined || existing.state === "disabled" || existing.state === "stopped");
+      if (replace) {
+        existing?.close();
+        const managed = this.#manage(plan, existing?.logs);
+        managed.watchExternal();
+        next.set(plan.name, managed);
+      } else if (existing !== undefined) {
+        next.set(plan.name, existing);
+      }
+    }
+    // A service that left host.toml while it runs stays until it is stopped.
+    for (const [name, service] of this.#services) {
+      if (!next.has(name) && service.active) next.set(name, service);
+    }
+    this.#services.clear();
+    for (const [name, service] of next) this.#services.set(name, service);
+    this.#serviceHost?.changed();
+    return names[0] === undefined ? undefined : this.#services.get(names[0]);
+  }
+
+  async #install(
+    params: { service: string; extras?: string[]; only_stale?: boolean; no_files?: boolean },
+    signal: AbortSignal | undefined,
+    onLine: ((line: string) => void) | undefined,
+  ): Promise<HostServiceInstallResult> {
+    this.#reload();
+    const entry = this.#entryOf(params.service);
+    const host = this.hostConfig;
+    const result = await installService(entry, host, this.#installDeps(), {
+      ...(params.extras !== undefined ? { extras: params.extras } : {}),
+      ...(params.only_stale !== undefined ? { onlyStale: params.only_stale } : {}),
+      ...(params.no_files !== undefined ? { noFiles: params.no_files } : {}),
+      ...(onLine !== undefined ? { onLine } : {}),
+      ...(signal !== undefined ? { signal } : {}),
+    });
+    // The environment exists now: a disabled service becomes startable without a daemon restart.
+    this.#replan([params.service]);
+    this.#log.info(
+      { service: params.service, ok: result.ok, runtime: result.runtime.state },
+      "service installed",
+    );
+    return result;
+  }
+
+  /** Stops the service (the guard applies), deletes the environment hostd manages, forgets it. */
+  async #remove(params: {
+    service: string;
+    force?: boolean;
+    keep_env?: boolean;
+  }): Promise<HostServiceRemoveResult> {
+    const managed = this.#services.get(params.service);
+    let stopped = false;
+    if (managed?.active) {
+      await this.#checkGuard(managed, params.force === true);
+      await managed.stop();
+      stopped = true;
+    }
+    const host = this.hostConfig;
+    const removed = removeService(host, params.service, {
+      ...(params.keep_env !== undefined ? { keepEnv: params.keep_env } : {}),
+    });
+    if (managed !== undefined) {
+      managed.close();
+      this.#services.delete(params.service);
+      this.#serviceHost?.changed();
+    }
+    this.#log.info({ service: params.service, deleted: removed.deletedEnv }, "service removed");
+    return {
+      service: params.service,
+      stopped,
+      ...(removed.deletedEnv !== undefined ? { deleted_env: removed.deletedEnv } : {}),
+    };
+  }
+
+  /** Re-reads descriptors and `host.toml`, re-plans, and syncs the environments that are stale. */
+  async #update(
+    params: { services?: string[]; force?: boolean },
+    signal: AbortSignal | undefined,
+    onLine: ((line: string) => void) | undefined,
+  ): Promise<HostUpdateResult> {
+    this.#reload();
+    const host = this.hostConfig;
+    const names = (params.services ?? Object.keys(host.config.services)).filter(
+      (name) => host.config.services[name]?.enabled !== false,
+    );
+    const results: HostServiceInstallResult[] = [];
+    for (const name of names) {
+      const entry = this.#catalog?.services.get(name);
+      if (entry === undefined) continue;
+      if (entry.descriptor.install.runtime !== "python") continue;
+      results.push(
+        await installService(entry, host, this.#installDeps(), {
+          onlyStale: params.force !== true,
+          ...(onLine !== undefined ? { onLine } : {}),
+          ...(signal !== undefined ? { signal } : {}),
+        }),
+      );
+    }
+    this.#replan(names);
+    return { services: results };
+  }
+
+  #entryOf(name: string) {
+    const entry = this.#catalog?.services.get(name);
+    if (entry === undefined) {
+      throw new HostRpcError(HOST_ERROR_CODE.UnknownService, `沒有叫 ${name} 的服務`);
+    }
+    if (this.#host?.config.services[name] === undefined) {
+      throw new HostRpcError(
+        HOST_ERROR_CODE.NotInstalled,
+        `${name} 不是這台的服務(host.toml 沒有 [services.${name}])`,
+      );
+    }
+    return entry;
   }
 
   // ---- helpers ---------------------------------------------------------------------------------

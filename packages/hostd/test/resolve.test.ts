@@ -190,6 +190,36 @@ describe("environment", () => {
     expect(env.SECRET_KEY).toBeUndefined();
   });
 
+  it("gives a Python service the model cache of the state folder, which descriptor and host.toml override", () => {
+    const ws = workspace([]);
+    const cache = join(ws.state, "models", "hf");
+    const py = '[install]\nruntime = "python"\nproject = "."\n[run]\ncommand = ["{python}"]\n';
+    descriptor(ws, "py", py);
+    descriptor(ws, "pyd", `${py}env = { HF_HUB_CACHE = "/from-descriptor" }`);
+    descriptor(ws, "pyh", `${py}env = { HF_HUB_CACHE = "/from-descriptor" }`);
+    descriptor(ws, "node", '[install]\nruntime = "node"\n[run]\ncommand = ["x"]');
+    writeIn(
+      ws,
+      "host.toml",
+      'name = "h"\n[services.py]\n[services.pyd]\n[services.pyh]\nenv = { HF_HUB_CACHE = "/from-host" }\n[services.node]\n',
+    );
+    for (const name of ["py", "pyd", "pyh"]) {
+      const file = pythonIn(join(ws.state, "envs", name), "linux");
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "");
+    }
+    // The daemon's own variable does not win: pull and run must use one cache.
+    const ctx = ctxFor(ws, { env: { PATH: "/bin", HF_HUB_CACHE: "/users-own" } });
+    const envOf = (name: string) => {
+      const plan = plans(ws, ctx).find((p) => p.name === name);
+      return expandService(plan as NonNullable<typeof plan>, ctx, live).env;
+    };
+    expect(envOf("py").HF_HUB_CACHE).toBe(cache);
+    expect(envOf("pyd").HF_HUB_CACHE).toBe("/from-descriptor");
+    expect(envOf("pyh").HF_HUB_CACHE).toBe("/from-host");
+    expect(envOf("node").HF_HUB_CACHE).toBe("/users-own");
+  });
+
   it("keeps secrets and a stale ASR_MODEL out of the base allowlist", () => {
     expect(
       workerBaseEnv({
