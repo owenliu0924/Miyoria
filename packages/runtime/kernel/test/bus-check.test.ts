@@ -15,7 +15,11 @@ const vitest = join(
 );
 
 function run(mode: string): { status: number | null; out: string } {
-  const env: NodeJS.ProcessEnv = { ...process.env, MIYORIA_BUS_CHECK: mode };
+  // Plain output whatever runs this: a CI runner turns colours on, which splits the summary line
+  // with escape codes, and adds a reporter that would annotate the fixture's failures as real ones.
+  const env: NodeJS.ProcessEnv = { ...process.env, MIYORIA_BUS_CHECK: mode, NO_COLOR: "1" };
+  delete env.FORCE_COLOR;
+  delete env.GITHUB_ACTIONS;
   delete env.MIYORIA_BUS_CHECK_OUT;
   delete env.VITEST;
   delete env.VITEST_WORKER_ID;
