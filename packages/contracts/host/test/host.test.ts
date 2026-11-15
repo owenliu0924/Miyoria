@@ -98,6 +98,15 @@ describe("HostServiceSchema", () => {
     ).toThrow();
   });
 
+  it("no longer takes the pip fields that `project` replaced", () => {
+    const install = (extra: object) =>
+      HostServiceSchema.safeParse({ ...full, install: { ...full.install, ...extra } }).success;
+    expect(install({ requirements: ["requirements.txt"] })).toBe(false);
+    expect(install({ torch: { index: "https://example.test/cu128", packages: ["torch"] } })).toBe(
+      false,
+    );
+  });
+
   it("accepts a number and the literal auto for the port, nothing else", () => {
     const withPort = (port: unknown) =>
       HostServiceSchema.safeParse({ ...full, run: { ...full.run, port } }).success;

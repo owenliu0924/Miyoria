@@ -7,8 +7,7 @@ summary = "判斷講完與語音活動偵測(CPU)"
 [install]
 runtime = "python"
 python = ">=3.11,<3.14"
-# Until H6; replaced by `project`.
-requirements = ["requirements.txt"]
+project = "."
 
 # Without these two files the worker still runs and Core falls back to silence length.
 # Paths are under the workers' model folder (workers/models today).

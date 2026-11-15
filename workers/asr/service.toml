@@ -7,10 +7,10 @@ summary = "語音辨識(Qwen3-ASR 0.6B)"
 [install]
 runtime = "python"
 python = ">=3.11,<3.14"
-# Until H6; replaced by `project`. The other backend (ASR_BACKEND=sensevoice) installs
-# requirements-sensevoice.txt without torch.
-requirements = ["requirements-qwen3.txt"]
-torch = { index = "https://download.pytorch.org/whl/cu128", packages = ["torch"] }
+# pyproject.toml and uv.lock here. The other backend (ASR_BACKEND=sensevoice) syncs the
+# `sensevoice` extra instead, without torch.
+project = "."
+extras = ["qwen3"]
 
 [[install.models]]
 repo = "Qwen/Qwen3-ASR-0.6B"     # downloaded by the worker itself on its first start (about 2 GB)

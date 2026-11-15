@@ -8,9 +8,8 @@ summary = "翻唱(人聲分離、RVC 轉換、混音、歌詞)"
 runtime = "python"
 python = ">=3.11,<3.14"
 system = ["ffmpeg"]
-# Until H6; replaced by `project`.
-requirements = ["requirements.txt"]
-torch = { index = "https://download.pytorch.org/whl/cu128", packages = ["torch==2.11.0", "torchaudio==2.11.0"] }
+# pyproject.toml and uv.lock here; torch and torchaudio 2.11.0 come from the CUDA 12.8 index.
+project = "."
 
 # The first song downloads about 2 GB of models by itself; their repositories are not pinned yet.
 [[install.manual]]

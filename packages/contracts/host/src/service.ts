@@ -46,16 +46,6 @@ export const HostInstallManualSchema = z
   .meta({ id: "HostInstallManual" });
 export type HostInstallManual = z.output<typeof HostInstallManualSchema>;
 
-/** The torch step of a pip install: from a CUDA index, before the requirement files. */
-export const HostInstallTorchSchema = z
-  .object({
-    index: z.string().min(1),
-    packages: z.array(z.string()),
-  })
-  .strict()
-  .meta({ id: "HostInstallTorch" });
-export type HostInstallTorch = z.output<typeof HostInstallTorchSchema>;
-
 /** `[install]`: what a host needs to have before the service can run. */
 export const HostInstallSchema = z
   .object({
@@ -71,10 +61,6 @@ export const HostInstallSchema = z
     models: z.array(HostInstallModelSchema).default([]),
     files: z.array(HostInstallFileSchema).default([]),
     manual: z.array(HostInstallManualSchema).default([]),
-    /** Until H6; replaced by `project`. Requirement files, relative to the service folder. */
-    requirements: z.array(z.string()).default([]),
-    /** Until H6; replaced by `project`. Installed first, from a CUDA index. */
-    torch: HostInstallTorchSchema.optional(),
   })
   .strict()
   .meta({ id: "HostInstall" });
@@ -229,7 +215,6 @@ export const HostServiceSchema = z
       models: [],
       files: [],
       manual: [],
-      requirements: [],
     }),
     run: HostRunSchema.optional(),
     gpu: HostGpuSchema.optional(),

@@ -392,16 +392,6 @@
           "items": {
             "$ref": "#/$defs/HostInstallManual"
           }
-        },
-        "requirements": {
-          "default": [],
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "torch": {
-          "$ref": "#/$defs/HostInstallTorch"
         }
       },
       "additionalProperties": false
@@ -459,26 +449,6 @@
       },
       "required": [
         "repo"
-      ],
-      "additionalProperties": false
-    },
-    "HostInstallTorch": {
-      "type": "object",
-      "properties": {
-        "index": {
-          "type": "string",
-          "minLength": 1
-        },
-        "packages": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "index",
-        "packages"
       ],
       "additionalProperties": false
     },
@@ -756,8 +726,7 @@
             "system": [],
             "models": [],
             "files": [],
-            "manual": [],
-            "requirements": []
+            "manual": []
           },
           "$ref": "#/$defs/HostInstall"
         },
