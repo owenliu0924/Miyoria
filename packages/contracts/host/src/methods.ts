@@ -1,7 +1,8 @@
 // Params and results of the methods of the control link and the local API. The `gpu.*` and
-// `cluster.context` shapes are added by the steps that implement them.
+// `cluster.context` shapes are in `gpu.ts`.
 
 import { z } from "zod";
+import { HostGpuArbitrationSchema } from "./gpu.js";
 import { HostGpuPolicySchema, HostGuardStateSchema } from "./service.js";
 
 /** First message of the control link, host → Core. `host` is the id Core's `join` gave it. */
@@ -83,10 +84,58 @@ export const HostGpuReadingSchema = z
     name: z.string().optional(),
     total_mb: z.number(),
     used_mb: z.number(),
+    /** What the device has free, every process on it counted; older daemons leave it out. */
+    free_mb: z.number().optional(),
     reserve_mb: z.number(),
   })
   .meta({ id: "HostGpuReading" });
 export type HostGpuReading = z.output<typeof HostGpuReadingSchema>;
+
+/** One lease of the card, in short, for `host.info` (the whole state is `gpu.state`). */
+export const HostGpuLeaseStatusSchema = z
+  .object({
+    lease: z.string(),
+    /** The service that holds it. */
+    holder: z.string(),
+    stage: z.string(),
+    /** The job's last decision (`share`, `exclusive`, `wait`, `cpu`, `offload`), null before one. */
+    mode: z.string().nullable(),
+    code: z.string().nullable(),
+    /** Epoch milliseconds of the lease's first call. */
+    since: z.number(),
+    /** The job's window is open (speech was taken offline for it at some point). */
+    window: z.boolean(),
+    /** The services offline for it now, by name. */
+    evicted: z.array(z.string()),
+  })
+  .meta({ id: "HostGpuLeaseStatus" });
+export type HostGpuLeaseStatus = z.output<typeof HostGpuLeaseStatusSchema>;
+
+/** Who shares the card on this host, and what hostd decided last, for `host.info`. */
+export const HostGpuArbiterStatusSchema = z
+  .object({
+    /** `host.toml [gpu] arbiter`. */
+    mode: z.enum(["worker", "hostd"]),
+    /** hostd arbitrates now: mode `hostd`, a readable card and a service with a `[gpu]` policy. */
+    active: z.boolean(),
+    /** Why it does not, with mode `hostd`. */
+    reason: z.string().optional(),
+    policy: HostGpuArbitrationSchema.optional(),
+    leases: z.array(HostGpuLeaseStatusSchema),
+    /** The last decision that changed a job's mode or code. Epoch milliseconds. */
+    last: z
+      .object({
+        lease: z.string(),
+        stage: z.string(),
+        mode: z.string(),
+        code: z.string(),
+        reason: z.string(),
+        at: z.number(),
+      })
+      .nullable(),
+  })
+  .meta({ id: "HostGpuArbiterStatus" });
+export type HostGpuArbiterStatus = z.output<typeof HostGpuArbiterStatusSchema>;
 
 /** Where the daemon's control link to Core is; `none` without `[cluster]` or a host key. */
 export const HostLinkStateSchema = z
@@ -105,6 +154,8 @@ export const HostInfoSchema = z
     services: z.array(HostServiceStatusSchema),
     /** The control link's state; older daemons leave it out. */
     link: HostLinkStateSchema.optional(),
+    /** GPU arbitration on this host; older daemons leave it out. */
+    arbiter: HostGpuArbiterStatusSchema.optional(),
   })
   .meta({ id: "HostInfo" });
 export type HostInfo = z.output<typeof HostInfoSchema>;

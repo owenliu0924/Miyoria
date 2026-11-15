@@ -163,6 +163,12 @@ describe("HostConfigSchema", () => {
       },
     });
     expect(parsed.services.sing?.gpu?.policy).toBe("on_demand");
+    expect(parsed.gpu).toEqual({ reserve_mb: 2500, arbiter: "worker" });
+    expect(HostConfigSchema.parse({ name: "m", gpu: { arbiter: "hostd" } }).gpu).toEqual({
+      reserve_mb: 0,
+      arbiter: "hostd",
+    });
+    expect(HostConfigSchema.safeParse({ name: "m", gpu: { arbiter: "self" } }).success).toBe(false);
   });
 
   it("needs only a name, and defaults the rest", () => {
@@ -170,7 +176,7 @@ describe("HostConfigSchema", () => {
       name: "m",
       paths: { state: "data/host" },
       network: { bind: "127.0.0.1" },
-      gpu: { reserve_mb: 0 },
+      gpu: { reserve_mb: 0, arbiter: "worker" },
       services: {},
     });
     expect(HostConfigSchema.parse({ name: "m", services: { a: {} } }).services.a).toEqual({

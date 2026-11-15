@@ -12452,6 +12452,9 @@
         "used_mb": {
           "type": "number"
         },
+        "free_mb": {
+          "type": "number"
+        },
         "reserve_mb": {
           "type": "number"
         }

@@ -83,7 +83,8 @@
         },
         "gpu": {
           "default": {
-            "reserve_mb": 0
+            "reserve_mb": 0,
+            "arbiter": "worker"
           },
           "type": "object",
           "properties": {
@@ -91,6 +92,14 @@
               "default": 0,
               "type": "number",
               "minimum": 0
+            },
+            "arbiter": {
+              "default": "worker",
+              "type": "string",
+              "enum": [
+                "worker",
+                "hostd"
+              ]
             }
           },
           "additionalProperties": false
@@ -409,6 +418,77 @@
         "code",
         "reason",
         "steps"
+      ]
+    },
+    "HostGpuArbiterStatus": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "worker",
+            "hostd"
+          ]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/HostGpuArbitration"
+        },
+        "leases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostGpuLeaseStatus"
+          }
+        },
+        "last": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "lease": {
+                  "type": "string"
+                },
+                "stage": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "lease",
+                "stage",
+                "mode",
+                "code",
+                "reason",
+                "at"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "active",
+        "leases",
+        "last"
       ]
     },
     "HostGpuArbitration": {
@@ -836,6 +916,54 @@
         "note_rate"
       ]
     },
+    "HostGpuLeaseStatus": {
+      "type": "object",
+      "properties": {
+        "lease": {
+          "type": "string"
+        },
+        "holder": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "since": {
+          "type": "number"
+        },
+        "window": {
+          "type": "boolean"
+        },
+        "evicted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "lease",
+        "holder",
+        "stage",
+        "mode",
+        "code",
+        "since",
+        "window",
+        "evicted"
+      ]
+    },
     "HostGpuPolicy": {
       "type": "string",
       "enum": [
@@ -855,6 +983,9 @@
           "type": "number"
         },
         "used_mb": {
+          "type": "number"
+        },
+        "free_mb": {
           "type": "number"
         },
         "reserve_mb": {
@@ -1311,6 +1442,9 @@
         },
         "link": {
           "$ref": "#/$defs/HostLinkState"
+        },
+        "arbiter": {
+          "$ref": "#/$defs/HostGpuArbiterStatus"
         }
       },
       "required": [

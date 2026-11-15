@@ -51,9 +51,16 @@ export const HostConfigSchema = z
       .object({
         /** Memory left for OBS, VTube Studio and the desktop. */
         reserve_mb: z.number().nonnegative().default(0),
+        /**
+         * Who shares the card between speech and a song. `worker`: the song worker decides by
+         * itself and calls its neighbours (`{offload_urls}`), as before hostd. `hostd`: hostd
+         * decides (`gpu.*`) and the song worker is started with `SING_GPU_ARBITER=hostd`. A
+         * machine is switched over deliberately; `worker` goes once the new path was heard live.
+         */
+        arbiter: z.enum(["worker", "hostd"]).default("worker"),
       })
       .strict()
-      .default({ reserve_mb: 0 }),
+      .default({ reserve_mb: 0, arbiter: "worker" }),
     services: z.record(z.string(), HostServiceConfigSchema).default({}),
   })
   .strict()
