@@ -1,7 +1,8 @@
 // The data categories as the installed schemas declare them (`data.ts`, `categories.ts`): a
-// plugin's parts are there only on a store it is attached to.
+// plugin's parts are there only on a store it is attached to; the event log's keep-tier events go
+// only with the category they record.
 
-import { toTimestamp } from "@miyoria/types";
+import { newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { authTables } from "../../auth/src/tables.js";
 import { directiveTables } from "../../brain/directive/src/tables.js";
@@ -11,6 +12,7 @@ import {
   CATEGORY_SPECS,
   DATA_CATEGORIES,
   DataRegistry,
+  RESET_CATEGORIES,
   SqliteStore,
   STORE_DATA,
   type StorePlugin,
@@ -157,5 +159,54 @@ describe("the data registry", () => {
     expect(
       () => new DataRegistry([...STORE_DATA, { category: "nope" as never, parts: [] }]),
     ).toThrow(/unknown data category/);
+  });
+});
+
+describe("the event log's wipe", () => {
+  const TYPES = [
+    "facts.thought", // short: always goes with the log
+    "privacy.redacted", // keep: goes with the chat lines it was about
+    "economy.posted", // keep: goes with the ledger
+    "identity.imported", // keep: goes with the people
+    "artifact.created", // keep: goes with the artifacts
+    "facts.directive", // keep: goes with the rules
+  ];
+
+  async function seeded() {
+    const store = await open(PLUGINS);
+    for (const type of TYPES) {
+      store.events.appendNow({
+        draft: { id: newId(), at: toTimestamp(Date.UTC(2026, 0, 1)), type, data: {} },
+        source: "test",
+      });
+    }
+    return store;
+  }
+
+  const left = (store: SqliteStore) => store.events.query().map((e) => e.envelope.type);
+
+  it("keeps the keep-tier events of categories it does not delete", async () => {
+    const store = await seeded();
+    const inv = await store.profileData.inventory("p");
+    expect(inv.categories.find((c) => c.id === "event_log")?.count).toBe(TYPES.length);
+    // Deleting the chat history takes the log with it, not the record of a coin posting.
+    const counts = await store.profileData.wipe("p", ["messages"]);
+    expect(counts.events).toBe(2);
+    expect(left(store).sort()).toEqual([
+      "artifact.created",
+      "economy.posted",
+      "facts.directive",
+      "identity.imported",
+    ]);
+    // Asked for explicitly, a category takes its own records with the log.
+    await store.profileData.wipe("p", ["event_log", "directives"]);
+    expect(left(store).sort()).toEqual(["artifact.created", "economy.posted", "identity.imported"]);
+  });
+
+  it("deletes every one in a factory reset", async () => {
+    const store = await seeded();
+    const counts = await store.profileData.wipe("p", RESET_CATEGORIES);
+    expect(counts.events).toBe(TYPES.length);
+    expect(left(store)).toEqual([]);
   });
 });

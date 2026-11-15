@@ -122,6 +122,8 @@ const directiveData: readonly CategoryData[] = [
         revoked_by: "text",
       }),
     ],
+    // The facts writer's record of each change of the rules (`facts.directive`) goes with them.
+    keptEvents: "type = 'facts.directive'",
   },
 ];
 

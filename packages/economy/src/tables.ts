@@ -1177,6 +1177,8 @@ const economyData: readonly CategoryData[] = [
         updated_at: "ts",
       }),
     ],
+    // Each posting's record (`economy.posted`) goes with the ledger, not with the event log alone.
+    keptEvents: `type = '${EconomyPosted.type}'`,
   },
 ];
 

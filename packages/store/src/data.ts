@@ -20,6 +20,10 @@
 //   also not by a reset.
 // - `roles` is reset, not emptied: the auth plugin writes the built-in roles again in the same
 //   transaction (`CategoryData.refill`), and the config owners (not stored) keep `owner`.
+// - The event log keeps its keep-tier events (audit-like records: money posted, identity changes,
+//   redactions, artifacts) when it is wiped, unless the category they record is wiped too
+//   (`TablePart.spare`, `CategoryData.keptEvents`): deleting the chat history no longer takes the
+//   record of a coin posting with it, a factory reset still takes everything.
 
 import type { JsonObject, JsonValue, ProfileId, Timestamp } from "@miyoria/types";
 import { StoreError } from "./common.js";
@@ -75,6 +79,11 @@ export interface TablePart {
   where: string | null;
   /** Where the export reads `columns` from (a view over `table`); `null`: `table`. */
   exportFrom: string | null;
+  /**
+   * Rows a wipe leaves (a code constant), counted and exported all the same, unless a category
+   * being wiped claims them (`CategoryData.keptEvents`); `null`: a wipe deletes every row.
+   */
+  spare: string | null;
 }
 
 /**
@@ -165,6 +174,11 @@ export interface CategoryData {
   parts: readonly DataPart[];
   /** Counts by a sub-kind for the inventory (memories by `kind`): rows `{ kind, n }`. */
   breakdown?: Stmt;
+  /**
+   * The keep-tier events that record this category's rows (a `WHERE` over `events`, a code
+   * constant): a wipe of the event log deletes them only when this category is wiped too.
+   */
+  keptEvents?: string;
   /** Statements run after the wipe's deletes when this category is wiped, in its transaction. */
   refill?(d: SqlDialect, options: WipeOptions): Stmt[];
 }
@@ -289,7 +303,7 @@ export function tablePart(
   updated: string | null,
   order: string,
   columns: Record<string, ExportColumn>,
-  options: { where?: string; exportFrom?: string } = {},
+  options: { where?: string; exportFrom?: string; spare?: string } = {},
 ): TablePart {
   return {
     kind: "table",
@@ -301,6 +315,7 @@ export function tablePart(
     columns,
     where: options.where ?? null,
     exportFrom: options.exportFrom ?? null,
+    spare: options.spare ?? null,
   };
 }
 
@@ -432,10 +447,11 @@ function otherSettingsWhere(s: PartScope, p: Params): string {
   return `${SETTINGS_ROWS} AND NOT ${known}`;
 }
 
-function tableWhere(p: Params, part: TablePart, profile: ProfileId): string {
+function tableWhere(p: Params, part: TablePart, profile: ProfileId, extra: string[] = []): string {
   const terms = [
     ...(part.rows === "profile" ? [`profile_id = ${p.add(profile)}`] : []),
     ...(part.where === null ? [] : [`(${part.where})`]),
+    ...extra,
   ];
   return terms.length === 0 ? "" : `WHERE ${terms.join(" AND ")}`;
 }
@@ -559,16 +575,22 @@ function exportStmt(s: PartScope, part: DataPart): Stmt {
 
 /**
  * What deletes (or clears) a part; its row count is the part's count. `null` for the module
- * flags, which the store clears in code (`ModuleFlagsPart`).
+ * flags, which the store clears in code (`ModuleFlagsPart`). `claimed` is what the categories
+ * being wiped claim of the part's `spare` rows (`FALSE`: nothing).
  */
-function deleteStmt(s: PartScope, part: DataPart): Stmt | null {
+function deleteStmt(s: PartScope, part: DataPart, claimed: string): Stmt | null {
   const { d, profile } = s;
   const p = new Params();
   switch (part.kind) {
     case "module_flags":
       return null;
-    case "table":
-      return { sql: `DELETE FROM ${part.table} ${tableWhere(p, part, profile)}`, params: p.values };
+    case "table": {
+      const spared = part.spare === null ? [] : [`NOT ((${part.spare}) AND NOT (${claimed}))`];
+      return {
+        sql: `DELETE FROM ${part.table} ${tableWhere(p, part, profile, spared)}`,
+        params: p.values,
+      };
+    }
     case "settings":
       return {
         sql: `DELETE FROM plugin_state WHERE ${settingsPartWhere(d, p, part)}`,
@@ -750,7 +772,8 @@ export class DataRegistry {
    * first (`call_names`, a person's choices): they clear a column of rows another category may
    * delete next (`relationships`, `people`). `people` last: other categories' rows name its
    * accounts and spaces, and a plugin's go with them (role assignments), which would leave those
-   * categories nothing to count. Then each wiped category's `refill`.
+   * categories nothing to count. Then each wiped category's `refill`. A part's `spare` rows stay
+   * unless a wiped category claims them.
    */
   wipeStatements(
     d: SqlDialect,
@@ -762,13 +785,15 @@ export class DataRegistry {
     const resolved = resolveCategories(ids);
     const set = new Set(resolved);
     const wiped = this.#declarations.filter((x) => set.has(x.category));
+    const kept = wiped.flatMap((x) => (x.keptEvents === undefined ? [] : [`(${x.keptEvents})`]));
+    const claimed = kept.length === 0 ? "FALSE" : kept.join(" OR ");
     const rank = (id: DataCategoryId) =>
       this.category(id).parts.some(clears) ? 0 : id === "people" ? 2 : 1;
     const ordered = [...resolved].sort((a, b) => rank(a) - rank(b));
     const out: WipeStep[] = [];
     for (const id of ordered) {
       for (const part of this.category(id).parts) {
-        out.push({ part: part.id, stmt: deleteStmt(s, part) });
+        out.push({ part: part.id, stmt: deleteStmt(s, part, claimed) });
       }
     }
     for (const declared of wiped) {

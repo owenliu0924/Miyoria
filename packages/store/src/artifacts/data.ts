@@ -62,5 +62,7 @@ export const artifactData: readonly CategoryData[] = [
         "UNION ALL SELECT 'bytes' AS kind, COALESCE(SUM(size), 0) AS n FROM artifact_blobs",
       params: [],
     },
+    // `ARTIFACT_EVENTS`: what was made, expired, taken down, swept and shared.
+    keptEvents: "type GLOB 'artifact.*' OR type GLOB 'share.*'",
   },
 ];

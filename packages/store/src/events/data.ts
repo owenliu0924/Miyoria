@@ -2,12 +2,15 @@
 // decisions and turn outcomes (`decisions`), the audit entries and configuration changes
 // (`audit`), the LLM calls (`llm_usage`), and the rest of the log with compaction's counts
 // (`event_log`). One database is one character, so every row belongs to the profile.
+//
+// The rest of the log keeps its keep-tier events when it is wiped (`spare`), unless the category
+// they record is wiped too: each schema claims its own (`CategoryData.keptEvents`).
 
 import { type CategoryData, tablePart } from "../data.js";
 import { AUDIT_TYPES_SQL } from "./audit.js";
 import { CHAT_TYPES_SQL } from "./chat.js";
 import { LLM_CALL_TYPE_SQL } from "./llm.js";
-import { ConfigRevised, SettingsChanged } from "./types.js";
+import { ConfigRevised, PrivacyRedacted, SettingsChanged } from "./types.js";
 
 /** Her decisions among `events` (`turns.ts`). */
 const DECISIONS = "type = 'agent.decision'";
@@ -59,6 +62,8 @@ export const eventsData: readonly CategoryData[] = [
         { where: CHAT_TYPES_SQL, exportFrom: "v_messages" },
       ),
     ],
+    // A redaction's record goes with the lines it was about.
+    keptEvents: `type = '${PrivacyRedacted.type}'`,
   },
   {
     category: "decisions",
@@ -117,7 +122,7 @@ export const eventsData: readonly CategoryData[] = [
           data: "json",
           redacted_at: "ts",
         },
-        { where: `NOT (${CLAIMED.join(" OR ")})` },
+        { where: `NOT (${CLAIMED.join(" OR ")})`, spare: "tier = 'keep'" },
       ),
       tablePart("event_rollups", "event_rollups", "node", "last_at", "day, type, source", {
         day: "ts",
