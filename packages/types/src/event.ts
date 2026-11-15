@@ -394,14 +394,21 @@ export function toEnvelope(envelope: Envelope | BusEnvelope | LegacyEnvelope): E
 }
 
 /**
- * A `Publish` that appends the old `{type, data}` form of each event to `events`: for tests that
- * record what a part publishes (until the old forms are gone).
+ * A `Publish` that hands `fn` the old `{type, data}` form of each event: for tests that look at
+ * what a part publishes in that form (until the old forms are gone).
  */
-export function publishInto(events: Event[]): Publish {
+export function publishVia(fn: (event: Event) => void): Publish {
   return (definition, data, ...meta) => {
     const type = (meta[0] as { type?: string } | undefined)?.type ?? definition.type;
-    events.push(legacyEvent(type, data));
+    fn(legacyEvent(type, data));
   };
+}
+
+/** A `Publish` that appends the old form of each event to `events` (see `publishVia`). */
+export function publishInto(events: Event[]): Publish {
+  return publishVia((event) => {
+    events.push(event);
+  });
 }
 
 /** Module id of the kernel itself: source of `system.module.state` events. */

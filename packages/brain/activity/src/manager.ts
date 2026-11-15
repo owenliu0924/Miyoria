@@ -18,11 +18,6 @@
 import type { ActionResult, ActivityRouter, RoutedCall } from "@miyoria/gate/actions";
 import { errorMessage, getLogger, type ServiceLookup, sleep } from "@miyoria/runtime/kernel";
 import {
-  ACTIVITY_CHANGED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
-  ACTIVITY_RESTORE_TOPIC,
-  ACTIVITY_STARTED_TOPIC,
   type ActivityFailure,
   type ActivityManager,
   type ActivityRequest,
@@ -35,9 +30,8 @@ import {
   ArbiterKey,
   type Clock,
   type ContextKey,
-  customEvent,
   type Envelope,
-  type Event,
+  Events,
   GameResumeKey,
   type HerActivity,
   type HerBroadcast,
@@ -45,11 +39,11 @@ import {
   isJsonObject,
   type JsonObject,
   type JsonValue,
-  NOTICE_TOPIC,
   type Notice,
   newId,
   type Principal,
   Principals,
+  type Publish,
   parseTaskEvent,
   parseTaskTopic,
   principalActor,
@@ -68,7 +62,6 @@ import {
   type Timestamp,
   type TransitionResult,
   toTimestamp,
-  v2Event,
   voiceLane,
 } from "@miyoria/types";
 import { type ActivityConfig, defaultActivityConfig } from "./config.js";
@@ -165,7 +158,7 @@ export interface ActivityServiceOptions {
   config?: ActivityConfig;
   clock?: Clock;
   /** Publishes `activity.*` and `agent.notice` (the module publishes on the bus). */
-  publish?: (event: Event) => void;
+  publish?: Publish;
   /** For the Arbiter's ledger (`ArbiterKey`) and the stage's scene rule (`SceneRuleKey`). */
   services?: ServiceLookup | null;
 }
@@ -215,7 +208,7 @@ export class ActivityService implements ActivityManager, ActivityRouter, TaskSte
   readonly #port: ActivityPort;
   readonly #config: ActivityConfig;
   readonly #clock: Clock;
-  readonly #publish: (event: Event) => void;
+  readonly #publish: Publish;
   readonly #services: ServiceLookup | null;
   readonly facts = new Facts();
   /** Changing a running executor task's goal (v3 §10.6). */
@@ -1305,16 +1298,14 @@ export class ActivityService implements ActivityManager, ActivityRouter, TaskSte
   /** Feeds one bus event (the module subscribes to `FACT_TOPICS` and the task events). */
   observe(env: Envelope): void {
     if (this.#closed) return;
-    if (env.event.type === "custom") {
-      const task = parseTaskTopic(env.event.data.topic);
-      if (task !== null) {
-        const event = parseTaskEvent(env.event.data.payload);
-        if (event !== null) this.#steering.observeTask(task.owner, event);
-        return;
-      }
+    const task = parseTaskTopic(env.type);
+    if (task !== null) {
+      const event = parseTaskEvent(env.data as JsonValue);
+      if (event !== null) this.#steering.observeTask(task.owner, event);
+      return;
     }
-    if (env.event.type === "custom" && env.event.data.topic === GATE_DECISION_TOPIC) {
-      this.#decision(env.event.data.payload);
+    if (env.type === GATE_DECISION_TOPIC) {
+      this.#decision(env.data as JsonValue);
       return;
     }
     if (!this.facts.apply(env)) return;
@@ -1415,7 +1406,7 @@ export class ActivityService implements ActivityManager, ActivityRouter, TaskSte
     this.#restoring = null;
     restoring.controller.abort();
     const payload: ActivityRestore = { game: restoring.game.game, outcome };
-    this.#publish(customEvent(ACTIVITY_RESTORE_TOPIC, { ...payload }));
+    this.#publish(Events.ActivityRestored, { ...payload });
     this.#changed();
   }
 
@@ -1512,16 +1503,14 @@ export class ActivityService implements ActivityManager, ActivityRouter, TaskSte
 
   #emitStarted(entry: Entry): void {
     const r = entry.record;
-    this.#publish(
-      v2Event(ACTIVITY_STARTED_TOPIC, {
-        type: "started",
-        task: r.id,
-        resource: r.resource,
-        request: structuredClone(r.request),
-        turn: r.turn,
-        at: toTimestamp(this.#now()),
-      }),
-    );
+    this.#publish(Events.ActivityStarted, {
+      type: "started",
+      task: r.id,
+      resource: r.resource,
+      request: structuredClone(r.request),
+      turn: r.turn,
+      at: toTimestamp(this.#now()),
+    });
     const arbiter = this.#services?.get(ArbiterKey);
     if (arbiter) {
       try {
@@ -1548,31 +1537,27 @@ export class ActivityService implements ActivityManager, ActivityRouter, TaskSte
     const at = toTimestamp(this.#now());
     const failed = r.failure;
     if (failed === null) {
-      this.#publish(
-        v2Event(ACTIVITY_DONE_TOPIC, {
-          type: "done",
-          task: r.id,
-          resource: r.resource,
-          request: structuredClone(r.request),
-          turn: r.turn,
-          detail: r.detail ?? "",
-          data: entry.data,
-          at,
-        }),
-      );
+      this.#publish(Events.ActivityDone, {
+        type: "done",
+        task: r.id,
+        resource: r.resource,
+        request: structuredClone(r.request),
+        turn: r.turn,
+        detail: r.detail ?? "",
+        data: entry.data,
+        at,
+      });
     } else {
-      this.#publish(
-        v2Event(ACTIVITY_FAILED_TOPIC, {
-          type: "failed",
-          task: r.id,
-          resource: r.resource,
-          request: structuredClone(r.request),
-          turn: r.turn,
-          code: failed.code,
-          detail: failed.detail,
-          at,
-        }),
-      );
+      this.#publish(Events.ActivityFailed, {
+        type: "failed",
+        task: r.id,
+        resource: r.resource,
+        request: structuredClone(r.request),
+        turn: r.turn,
+        code: failed.code,
+        detail: failed.detail,
+        at,
+      });
     }
     const text =
       failed === null
@@ -1609,15 +1594,13 @@ export class ActivityService implements ActivityManager, ActivityRouter, TaskSte
 
   #notice(n: Omit<Notice, "id" | "at" | "source" | "expires_at">): void {
     const now = this.#now();
-    this.#publish(
-      v2Event(NOTICE_TOPIC, {
-        id: newId(),
-        at: toTimestamp(now),
-        source: "activity",
-        ...n,
-        expires_at: toTimestamp(now + this.#config.notice_ttl_ms),
-      }),
-    );
+    this.#publish(Events.AgentNotice, {
+      id: newId(),
+      at: toTimestamp(now),
+      source: "activity",
+      ...n,
+      expires_at: toTimestamp(now + this.#config.notice_ttl_ms),
+    });
   }
 
   // ---- the snapshot -----------------------------------------------------------------------
@@ -1765,7 +1748,7 @@ export class ActivityService implements ActivityManager, ActivityRouter, TaskSte
     const { at: _b, version: _v, ...b } = prev;
     if (same(a, b)) return;
     this.#snapshot = { ...next, version: prev.version + 1 };
-    this.#publish(v2Event(ACTIVITY_CHANGED_TOPIC, structuredClone(this.#snapshot)));
+    this.#publish(Events.ActivityChanged, structuredClone(this.#snapshot));
   }
 
   // ---- the router -------------------------------------------------------------------------

@@ -87,6 +87,7 @@ export {
   type Publish,
   type PublishMetaArgs,
   publishInto,
+  publishVia,
   toEnvelope,
   toLegacyEnvelope,
 } from "./event.js";

@@ -310,7 +310,7 @@ export async function buildCoreWith(
     services,
     store: store.plugin(directiveTables),
     profile: profileId,
-    publish: (event) => bus.publish(DIRECTIVE_MODULE, event),
+    publish: bus.publisher(DIRECTIVE_MODULE),
   });
   await directives.refresh();
   services.provide(k, DirectivesKey, directives);

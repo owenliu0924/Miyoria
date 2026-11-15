@@ -12,6 +12,7 @@ import {
   GameResumeKey,
   newEnvelope,
   Principals,
+  publishInto,
   type RestoredGame,
   toTimestamp,
 } from "@miyoria/types";
@@ -49,7 +50,7 @@ function harness(answer: GameResume["resume"] | null) {
     port,
     services,
     config: { ...defaultActivityConfig(), restore_grace_ms: 10_000, restore_poll_ms: 1_000 },
-    publish: (e) => events.push(e),
+    publish: publishInto(events),
   });
   const restores = () =>
     events.flatMap((e) =>

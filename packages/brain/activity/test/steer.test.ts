@@ -20,6 +20,8 @@ import {
   newId,
   type Principal,
   Principals,
+  publishInto,
+  publishVia,
   type RegisteredTaskExecutor,
   type SteerReceipt,
   type TaskEvent,
@@ -136,10 +138,10 @@ function harness(
     clock: { now: () => NOW },
     config: { ...defaultActivityConfig() },
     // What the module does: the bus brings the manager its own events back.
-    publish: (e) => {
+    publish: publishVia((e) => {
       events.push(e);
       queueMicrotask(() => service.observe(newEnvelope("activity", e)));
-    },
+    }),
   });
   return {
     service,
@@ -589,7 +591,7 @@ describe("steer: in-process routes (the song list)", () => {
       },
       services,
       clock: { now: () => NOW },
-      publish: (e) => events.push(e),
+      publish: publishInto(events),
     });
     service.registerRoute("sing", {
       capability: "sing.steer",

@@ -5,6 +5,8 @@
 import {
   type ContextKey,
   type Envelope,
+  Events,
+  is,
   isJsonObject,
   isTaskFailureCode,
   type JsonObject,
@@ -15,14 +17,14 @@ import {
 } from "@miyoria/types";
 
 /** `voice.golive` (published by `@miyoria/voice/voice`). */
-export const GOLIVE_TOPIC = "voice.golive";
+export const GOLIVE_TOPIC = Events.VoiceGoLive.type;
 /** `stage.status` (published by `stage.link`). */
-export const STAGE_STATUS_TOPIC = "stage.status";
+export const STAGE_STATUS_TOPIC = Events.StageStatus.type;
 /** `game.director.session` (published by the game director). */
-export const GAME_SESSION_TOPIC = "game.director.session";
+export const GAME_SESSION_TOPIC = Events.GameDirectorSession.type;
 
 /** `gate.decision` (published by the actuator registry): her own web calls mean she is browsing. */
-export const GATE_DECISION_TOPIC = "gate.decision";
+export const GATE_DECISION_TOPIC = Events.GateDecision.type;
 
 /** Capabilities that, called by her on her own, are browsing (v4 §8.1 逛網路). */
 export const BROWSE_CAPABILITIES: readonly string[] = ["web.search", "web.read"];
@@ -30,15 +32,15 @@ export const BROWSE_CAPABILITIES: readonly string[] = ["web.search", "web.read"]
 /** Every topic the manager follows. */
 export const FACT_TOPICS = [
   GATE_DECISION_TOPIC,
-  "voice.joined",
-  "voice.left",
-  "voice.participants",
+  Events.VoiceJoined.type,
+  Events.VoiceLeft.type,
+  Events.VoiceParticipants.type,
   GOLIVE_TOPIC,
   STAGE_STATUS_TOPIC,
   GAME_SESSION_TOPIC,
   SONG_TOPIC,
-  "agent.turn.started",
-  "agent.turn.completed",
+  Events.AgentTurnStarted.type,
+  Events.AgentTurnCompleted.type,
 ] as const;
 
 /**
@@ -119,33 +121,28 @@ export class Facts {
 
   /** Applies one event; returns whether a fact changed. */
   apply(env: Envelope): boolean {
-    const event = env.event;
-    switch (event.type) {
-      case "voice_joined":
-      case "voice_participants": {
-        const c = event.data.context;
-        if (c.scope === null) return false;
-        const before = this.voice.get(c.scope);
-        if (before?.channel === c.channel && before.platform === c.platform) return false;
-        this.voice.set(c.scope, { ...c, kind: "voice" });
-        return true;
-      }
-      case "voice_left": {
-        const c = event.data.context;
-        if (c.scope === null) return false;
-        return this.voice.delete(c.scope);
-      }
-      case "agent_turn_started":
-        this.#turn(event.data.turn, "running");
-        return false;
-      case "agent_turn_completed":
-        this.#turn(event.data.turn, "done");
-        return true;
-      case "custom":
-        return this.#custom(event.data.topic, event.data.payload);
-      default:
-        return false;
+    if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+      const c = env.data.context;
+      if (c.scope === null) return false;
+      const before = this.voice.get(c.scope);
+      if (before?.channel === c.channel && before.platform === c.platform) return false;
+      this.voice.set(c.scope, { ...c, kind: "voice" });
+      return true;
     }
+    if (is(Events.VoiceLeft, env)) {
+      const c = env.data.context;
+      if (c.scope === null) return false;
+      return this.voice.delete(c.scope);
+    }
+    if (is(Events.AgentTurnStarted, env)) {
+      this.#turn(env.data.turn, "running");
+      return false;
+    }
+    if (is(Events.AgentTurnCompleted, env)) {
+      this.#turn(env.data.turn, "done");
+      return true;
+    }
+    return this.#custom(env.type, env.data);
   }
 
   #custom(topic: string, payload: unknown): boolean {

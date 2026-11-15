@@ -12,6 +12,7 @@ import {
   newEnvelope,
   type Principal,
   Principals,
+  publishVia,
   v2Payload,
 } from "@miyoria/types";
 import { type ActivityConfig, defaultActivityConfig } from "../src/config.js";
@@ -93,10 +94,10 @@ export class FakeWorld implements ActivityPort {
     this.service = new ActivityService({
       port: this,
       config: { ...defaultActivityConfig(), obs_start_delay_ms: 10, ...(options.config ?? {}) },
-      publish: (e) => {
+      publish: publishVia((e) => {
         this.events.push(e);
         for (const listen of this.listeners) listen(e);
-      },
+      }),
     });
     this.#stageStatus();
   }

@@ -22,8 +22,6 @@ import {
   accountRefString,
   type Clock,
   type ContextKey,
-  customEvent,
-  DIRECTIVE_CHANGED_TOPIC,
   type Directive,
   type DirectiveActor,
   type DirectiveAuthority,
@@ -40,8 +38,8 @@ import {
   type Directives,
   type DirectiveVerdict,
   directiveLive,
-  type Event,
   EventLogKey,
+  Events,
   HandleDirectoryKey,
   type HerActivity,
   type JsonValue,
@@ -52,6 +50,7 @@ import {
   type Proposal,
   ProposalBoardKey,
   type ProposalResultBody,
+  type Publish,
   type Subject,
   sameAccount,
   systemClock,
@@ -136,7 +135,7 @@ export interface DirectiveServiceOptions {
   store: DirectiveStore;
   profile: ProfileId;
   clock?: Clock;
-  publish?: (event: Event) => void;
+  publish?: Publish;
   config?: DirectiveConfig;
 }
 
@@ -214,7 +213,7 @@ export class DirectiveService implements Directives {
   readonly #store: DirectiveStore;
   readonly #profile: ProfileId;
   readonly #clock: Clock;
-  readonly #publish: (event: Event) => void;
+  readonly #publish: Publish;
   #config: DirectiveConfig;
   /** What the store said last; `null` until it said anything. */
   #rules: readonly Directive[] | null = null;
@@ -828,7 +827,7 @@ export class DirectiveService implements Directives {
       this.#services
         .get(EventLogKey)
         ?.append({ kind: "directive", source: SOURCE, context, body: json });
-      this.#publish(customEvent(DIRECTIVE_CHANGED_TOPIC, json));
+      this.#publish(Events.DirectiveChanged, body);
     } catch (error) {
       log.debug({ err: errorMessage(error) }, "cannot report a rule change");
     }

@@ -31,7 +31,7 @@ export class ActivityModule implements Module {
       port: new GatePort(ctx.services),
       config,
       clock: ctx.clock,
-      publish: (event) => ctx.publish(event),
+      publish: ctx.publisher,
       services: ctx.services,
     });
     // Subscribe before anyone can route a request here, so no confirmation is missed.

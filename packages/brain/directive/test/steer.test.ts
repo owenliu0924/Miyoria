@@ -9,6 +9,7 @@ import {
   newEnvelope,
   newId,
   Principals,
+  publishVia,
   type RegisteredTaskExecutor,
   type SteerReceipt,
   TaskExecutorsKey,
@@ -68,10 +69,10 @@ async function desk(): Promise<Desk> {
     services: w.services,
     clock: { now: w.now },
     config: ActivityConfigSchema.parse({}),
-    publish: (e) => {
+    publish: publishVia((e) => {
       events.push(e);
       queueMicrotask(() => service.observe(newEnvelope("activity", e)));
-    },
+    }),
   });
   // A running task that gets ore, as the executor told it.
   service.track(OWNER_ID, { id: "t1", goal: "obtain", args: { item: "iron" }, budget_s: 240 });

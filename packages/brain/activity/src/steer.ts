@@ -25,16 +25,16 @@ import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/ke
 import {
   type ActivityRequest,
   ArbiterKey,
-  customEvent,
   DirectivesKey,
-  type Event,
   EventLogKey,
+  Events,
   isJsonObject,
   isSteerOutcome,
   isTaskSteer,
   type JsonObject,
   type JsonValue,
   type Principal,
+  type Publish,
   type SteerableTask,
   type SteerOutcome,
   type SteerReceipt,
@@ -100,7 +100,7 @@ interface Pending {
 export interface SteerDeskOptions {
   port: ActivityPort;
   services: ServiceLookup | null;
-  publish: (event: Event) => void;
+  publish: Publish;
   now: () => number;
   /** How long the executor may take to accept a steer. */
   timeoutMs: number;
@@ -436,7 +436,7 @@ export class SteerDesk implements TaskSteerService {
       detail,
       at: toTimestamp(this.#o.now()),
     };
-    this.#o.publish(customEvent(taskTopic(owner, "steered"), event as unknown as JsonValue));
+    this.#o.publish(Events.TaskSteered, event, { type: taskTopic(owner, "steered") });
     log.info({ steer, task, outcome, detail }, "steer ended");
   }
 
