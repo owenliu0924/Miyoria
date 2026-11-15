@@ -75,8 +75,9 @@ export const VoiceConfigSchema = z.object({
   /** A transcript that repeats her own words this long after she spoke is an echo. Default 5000. */
   self_echo_tail_ms: z.number().int().nonnegative().default(5_000),
   /**
-   * Voice activity detector: `energy` (default) or `silero` (runs in the end-of-turn worker at
-   * `turn_url`; the energy detector takes over whenever the worker cannot answer).
+   * Voice activity detector: `energy` (default) or `silero` (runs in the end-of-turn worker, the
+   * registry's direct `vad` endpoint; the energy detector takes over whenever there is none or
+   * it cannot answer).
    */
   vad_engine: z.enum(["energy", "silero"]).default("energy"),
   /** Model path for an engine of your own registered with `registerVadEngine`. */
