@@ -26,3 +26,4 @@ export {
   sleep,
   Watchdog,
 } from "./reconnect.js";
+export { HostRelay, type HostRelayLogger, type HostRelayOptions, relayUrl } from "./relay.js";

@@ -4,7 +4,9 @@
 // While connected it reports the host (`host.report`, with service tokens), forwards every
 // service state change (`service.event`, each followed by a fresh report, at most one report per
 // `reportMs`), serves Core's requests through `HostApi.call` as caller `core`, and gives the daemon
-// a cluster client and a guard source that ask Core. When the link drops both are taken away and
+// a cluster client and a guard source that ask Core. Requests Core relays to a service of this
+// machine (`relay.request` and the binary frames, §7.1) are served by `HostRelay`, whose fetches
+// are aborted when the link drops. When the link drops the client and the source are taken away and
 // it dials again with backoff; after `UNAUTHORIZED` or `BAD_HELLO` it stops for good, and after
 // `REPLACED` too (another daemon holds this host's key).
 
@@ -13,6 +15,8 @@ import {
   HOST_METHOD,
   HOST_NOTIFICATION,
   HOST_PROTOCOL_VERSION,
+  HOST_RELAY_METHOD,
+  HOST_RELAY_PROTOCOL_ERROR,
   HostGuardResultSchema,
   type HostGuardState,
   type HostHello,
@@ -24,6 +28,7 @@ import { RpcError, RpcPeer, WebSocketTransport } from "@miyoria/sdk";
 import WebSocket, { type RawData } from "ws";
 import { type Caller, type HostApi, HostRpcError } from "../api.js";
 import { mayRetry, reconnectLoop, type SessionEnd, Watchdog } from "./reconnect.js";
+import { HostRelay } from "./relay.js";
 
 /** Where the link is. */
 export type CoreLinkState = "connecting" | "connected" | "unauthorized" | "stopped";
@@ -81,9 +86,13 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function bytes(data: RawData): Buffer {
+  if (Array.isArray(data)) return Buffer.concat(data);
+  return data instanceof ArrayBuffer ? Buffer.from(data) : data;
+}
+
 function text(data: RawData): string {
-  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
-  return (data instanceof ArrayBuffer ? Buffer.from(data) : data).toString("utf8");
+  return bytes(data).toString("utf8");
 }
 
 /** A failure of a request to Core, as the daemon's API speaks it. */
@@ -287,11 +296,43 @@ export class CoreLink {
   #connected(socket: WebSocket, _welcome: HostWelcome): () => void {
     const api = this.#api;
     const timeout = this.#o.requestTimeoutMs ?? 30_000;
+    // Requests Core relays to a service of this machine; their bodies are the binary frames.
+    const relay = new HostRelay({
+      api,
+      sink: {
+        send: (frame) => {
+          if (socket.readyState !== WebSocket.OPEN) return false;
+          try {
+            socket.send(frame);
+          } catch {
+            return false;
+          }
+          return true;
+        },
+        get bufferedAmount() {
+          return socket.bufferedAmount;
+        },
+      },
+      onProtocolError: (reason) => {
+        this.#log.warn({ reason }, "Core broke the relay protocol; closing the link");
+        socket.close(HOST_RELAY_PROTOCOL_ERROR, "relay protocol error");
+      },
+      logger: this.#log,
+    });
+    const onBinary = (data: RawData, isBinary: boolean) => {
+      if (isBinary) relay.frame(bytes(data));
+    };
+    socket.on("message", onBinary);
     const peer: RpcPeer = new RpcPeer({
       transport: new WebSocketTransport(socket),
       role: "host",
       timeoutMs: timeout,
-      onRequest: (method, params, signal) => this.#serve(peer, method, params, signal),
+      onRequest: (method, params, signal) =>
+        method === HOST_RELAY_METHOD
+          ? relay.handle(params, signal).catch((error: unknown) => {
+              throw rpcError(error);
+            })
+          : this.#serve(peer, method, params, signal),
       onNotification: (method) =>
         this.#log.debug({ method }, "Core sent a notification hostd does not use yet"),
       onError: (what, error, method) =>
@@ -356,6 +397,8 @@ export class CoreLink {
       if (timer !== null) clearTimeout(timer);
       api.setClusterClient(null);
       api.setGuardSource(null);
+      socket.off("message", onBinary);
+      relay.close();
       peer.close();
     };
   }
