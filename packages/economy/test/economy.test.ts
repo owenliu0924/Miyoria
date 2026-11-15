@@ -17,9 +17,11 @@ import {
   type JsonValue,
   ModerationKey,
   NOTICE_TOPIC,
+  newEnvelope,
   ParticipationKey,
   type PersonId,
   Principals,
+  publishInto,
   RelationshipEffectsKey,
   type RelationshipGain,
   SelfStateKey,
@@ -39,6 +41,9 @@ import { giveCapability } from "../src/tools.js";
 import { EconomyError, EconomyKey, GIFT_TOPIC, SCREEN_TOPIC } from "../src/types.js";
 import { Economy2Key } from "../src/v2-types.js";
 import { ledgerOf, walletOf } from "./ledger.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 const DAY = 86_400_000;
 /** 2026-11-08 12:00 local (UTC+8). */
@@ -175,7 +180,7 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
     services,
     profile: "p",
     clock: { now: () => clock.at },
-    publish: (e) => bus.push(e),
+    publish: publishInto(bus),
     log: getLogger("test"),
   });
   const earnings = new Earnings(economy, economy.config, services, getLogger("test"));
@@ -291,16 +296,16 @@ describe("earning", () => {
         type: "platform_message_created",
         data: { author: { account: a, display_name: "x", is_bot: bot } },
       }) as never;
-    await r.earnings.onEvent(message(ALICE), r.clock.at);
-    await r.earnings.onEvent(message(ALICE), r.clock.at + 1000);
-    await r.earnings.onEvent(message(DAVE), r.clock.at);
-    await r.earnings.onEvent(message(CAROL), r.clock.at);
+    await r.earnings.onEvent(ev(message(ALICE)), r.clock.at);
+    await r.earnings.onEvent(ev(message(ALICE)), r.clock.at + 1000);
+    await r.earnings.onEvent(ev(message(DAVE)), r.clock.at);
+    await r.earnings.onEvent(ev(message(CAROL)), r.clock.at);
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(10);
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, CAROL))).toBe(0);
     // Local midnight is 16:00 UTC: a new day pays again.
     const tomorrow = Date.UTC(2026, 10, 8, 16, 0, 1);
     r.clock.at = tomorrow;
-    await r.earnings.onEvent(message(ALICE), tomorrow);
+    await r.earnings.onEvent(ev(message(ALICE)), tomorrow);
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(20);
   });
 
@@ -322,15 +327,15 @@ describe("earning", () => {
     const window = 10 * 60_000;
     const start = Math.ceil(T0 / window) * window;
     await r.earnings.onEvent(
-      {
+      ev({
         type: "voice_joined",
         data: { context: ctx, participants: [participant(ALICE), participant(BOB)] },
-      },
+      }),
       start,
     );
     for (let w = 0; w < 4; w++) {
       r.clock.at = start + w * window + 1000;
-      await r.earnings.onEvent(said(ALICE), r.clock.at);
+      await r.earnings.onEvent(ev(said(ALICE)), r.clock.at);
     }
     r.clock.at = start + 4 * window + 1000;
     await r.earnings.settleVoice(r.clock.at);
@@ -340,13 +345,13 @@ describe("earning", () => {
     // Gone before the window ended: nothing.
     const r2 = await rig();
     await r2.earnings.onEvent(
-      { type: "voice_joined", data: { context: ctx, participants: [participant(BOB)] } },
+      ev({ type: "voice_joined", data: { context: ctx, participants: [participant(BOB)] } }),
       start,
     );
     r2.clock.at = start + 1000;
-    await r2.earnings.onEvent(said(BOB), r2.clock.at);
+    await r2.earnings.onEvent(ev(said(BOB)), r2.clock.at);
     await r2.earnings.onEvent(
-      { type: "voice_participants", data: { context: ctx, participants: [] } },
+      ev({ type: "voice_participants", data: { context: ctx, participants: [] } }),
       r2.clock.at,
     );
     r2.clock.at = start + window + 1000;
@@ -375,9 +380,9 @@ describe("earning", () => {
         query: "q",
       });
     }
-    await r.earnings.onEvent(ended("s1", "interrupted"), r.clock.at);
-    for (let no = 1; no <= 5; no++) await r.earnings.onEvent(ended(`s${no}`), r.clock.at);
-    await r.earnings.onEvent(ended("s1"), r.clock.at);
+    await r.earnings.onEvent(ev(ended("s1", "interrupted")), r.clock.at);
+    for (let no = 1; no <= 5; no++) await r.earnings.onEvent(ev(ended(`s${no}`)), r.clock.at);
+    await r.earnings.onEvent(ev(ended("s1")), r.clock.at);
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, BOB))).toBe(15);
     const view = await r.economy.wallet(BOB);
     expect(view.earn.find((l) => l.reason === "song")).toMatchObject({ earned_today: 15, cap: 15 });

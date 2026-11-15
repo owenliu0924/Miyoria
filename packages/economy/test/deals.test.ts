@@ -27,6 +27,7 @@ import {
   type PersonId,
   PersonNoteWriterKey,
   Principals,
+  publishInto,
   RelationshipEffectsKey,
   type RelationshipGain,
   SelfStateKey,
@@ -214,7 +215,7 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
       services,
       profile: "p",
       clock: { now: () => clock.at },
-      publish: (e) => bus.push(e),
+      publish: publishInto(bus),
       log: getLogger("test"),
     });
   const economy = make();

@@ -21,6 +21,7 @@ import {
   newId,
   type PersonId,
   Principals,
+  publishInto,
   SelfStateKey,
   SocialSignalsKey,
   toTimestamp,
@@ -129,7 +130,7 @@ export async function rig(
     services,
     profile: "p",
     clock: { now: () => clock.at },
-    publish: (e) => bus.push(e),
+    publish: publishInto(bus),
     log: getLogger("test"),
     random: () =>
       dice.values.length === 0 ? 0.5 : (dice.values[n++ % dice.values.length] as number),

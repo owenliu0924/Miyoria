@@ -24,32 +24,32 @@ import { AuditLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {
   type AccountRef,
   AffectStateKey,
+  type AnyEventDefinition,
   AuthorizerKey,
   accountRefString,
   type Clock,
   type ContextKey,
-  customEvent,
-  type Event,
   EventLogKey,
+  type EventPayload,
+  Events,
   HandleDirectoryKey,
   holdsBack,
   inspectInput,
   type JsonValue,
   ModerationKey,
-  NOTICE_TOPIC,
   newId,
   type PersonId,
   Principals,
   type ProfileId,
+  type Publish,
+  type PublishMetaArgs,
   RelationshipEffectsKey,
   SelfStateKey,
-  SOCIAL_EVENT_TOPIC,
   SocialSignalsKey,
   safeName,
   sameAccount,
   type Timestamp,
   toTimestamp,
-  v2Event,
 } from "@miyoria/types";
 import { setBoard, sponsorBoard } from "./board.js";
 import { BountyBoard } from "./bounties.js";
@@ -83,7 +83,6 @@ import {
   type FeedResult,
   type FramesResult,
   GIFT_EXPRESSIONS,
-  GIFT_TOPIC,
   type GiftEvent,
   type GiftExpression,
   type GiftItem,
@@ -97,7 +96,6 @@ import {
   type PledgeResult,
   type Purchase,
   type ReachedGoalView,
-  SCREEN_TOPIC,
   type ShopItem,
   type SpendResult,
   type TransferResult,
@@ -279,7 +277,7 @@ export interface EconomyDeps {
   services: ServiceLookup;
   profile: ProfileId;
   clock: Clock;
-  publish: (event: Event) => void;
+  publish: Publish;
   log: Logger;
   /** A number in [0, 1) for draws; `Math.random` unless a test pins it. */
   random?: () => number;
@@ -422,8 +420,13 @@ export class EconomyService implements Economy {
     return this.#dayStart(this.#today());
   }
 
-  publish(event: Event): void {
-    this.#d.publish(event);
+  /** Publishes on the bus as the economy module. */
+  publish<D extends AnyEventDefinition>(
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): void {
+    this.#d.publish(definition, data, ...meta);
   }
 
   /** Runs `fn` in turn with every other spend of this process. */
@@ -1261,7 +1264,7 @@ export class EconomyService implements Economy {
     if (!("entry" in spent)) return spent;
     if (spent.fresh) {
       const name = plainName(who.name);
-      this.#d.publish(customEvent(SCREEN_TOPIC, screenEvent(name, body) as unknown as JsonValue));
+      this.#d.publish(Events.EconomyScreen, screenEvent(name, body));
       // Silent, like a letter: she may read it out when free, and a song is not interrupted.
       this.#perceive(who, spent.entry, `${safeName(who.name)}把一則留言放上了大螢幕:「${body}」`);
       this.#audit(who, "economy.screen_message", { charged: price, chars: [...body].length });
@@ -1426,7 +1429,7 @@ export class EconomyService implements Economy {
       context: null,
       hunger: 0,
     };
-    this.#d.publish(customEvent(SOCIAL_EVENT_TOPIC, payload));
+    this.#d.publish(Events.SocialEvent, payload as EventPayload<typeof Events.SocialEvent>);
     await this.#bond(who);
     this.#perceive(who, entry, `${safeName(who.name)}送了你${label}`);
     this.#announce(who, item ?? "expression", count, label);
@@ -1460,7 +1463,7 @@ export class EconomyService implements Economy {
 
   #announce(who: Member, item: GiftItem, count: number, label: string): void {
     const gift: GiftEvent = { name: plainName(who.name), item, count, label };
-    this.#d.publish(customEvent(GIFT_TOPIC, gift as unknown as JsonValue));
+    this.#d.publish(Events.EconomyGift, gift);
   }
 
   /** Something she knows from now on, silently (her working context, as data). */
@@ -1521,20 +1524,18 @@ export class EconomyService implements Economy {
     const summary = `${safeName(who.name)}寫了一封信給你:「${text}」`;
     if (this.#perceive(who, entry, summary)) return;
     const now = this.#d.clock.now();
-    this.#d.publish(
-      v2Event(NOTICE_TOPIC, {
-        id: newId(),
-        at: toTimestamp(now),
-        source: "economy",
-        task: null,
-        turn: null,
-        context: null,
-        ok: true,
-        code: null,
-        text: summary,
-        expires_at: toTimestamp(now + LETTER_TTL_MS),
-      }),
-    );
+    this.#d.publish(Events.AgentNotice, {
+      id: newId(),
+      at: toTimestamp(now),
+      source: "economy",
+      task: null,
+      turn: null,
+      context: null,
+      ok: true,
+      code: null,
+      text: summary,
+      expires_at: toTimestamp(now + LETTER_TTL_MS),
+    });
   }
 
   #handle(person: PersonId): string | null {

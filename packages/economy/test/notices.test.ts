@@ -11,6 +11,7 @@ import {
   customEvent,
   type Event,
   type JsonValue,
+  newEnvelope,
   SONG_TOPIC,
   toTimestamp,
 } from "@miyoria/types";
@@ -21,6 +22,9 @@ import { GoalStoreKey } from "../src/records.js";
 import { v2Capabilities } from "../src/v2-tools.js";
 import { economyOf, ledgerOf, walletOf } from "./ledger.js";
 import { ALICE, BOB, DAY, ERIN, fund, type Rig, rig, say, T0, TEXT } from "./rig.js";
+
+/** An old-form event as the bus delivers it. */
+const ev = (event: Event) => newEnvelope("test", event);
 
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };
 
@@ -157,9 +161,9 @@ describe("song notices", () => {
     await r.economy.v2.completeQuest(BOB, "play_game");
     await r.economy.v2.completeQuest(BOB, "new_topic", "他的貓");
     const earnings = new Earnings(r.economy, r.economy.config, r.services, getLogger("test"));
-    await earnings.onEvent(joined(ALICE, BOB, ERIN), T0);
-    await earnings.onEvent(cue("started", { title: "小星星" }), T0);
-    await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
+    await earnings.onEvent(ev(joined(ALICE, BOB, ERIN)), T0);
+    await earnings.onEvent(ev(cue("started", { title: "小星星" })), T0);
+    await earnings.onEvent(ev(cue("ended", { outcome: "finished" })), T0);
     expect(posted).toHaveLength(1);
     const [card] = posted;
     if (!card) throw new Error("no card");
@@ -179,8 +183,8 @@ describe("song notices", () => {
       "🏅 <@5> 解鎖「第一個每日任務」,稱號「跑腿」+10",
     ]);
     // The same song again pays nobody and posts nothing.
-    await earnings.onEvent(cue("started", { title: "小星星" }), T0);
-    await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
+    await earnings.onEvent(ev(cue("started", { title: "小星星" })), T0);
+    await earnings.onEvent(ev(cue("ended", { outcome: "finished" })), T0);
     expect(posted).toHaveLength(1);
   });
 
@@ -189,8 +193,8 @@ describe("song notices", () => {
     const posted = sink(r);
     singer(r);
     const earnings = new Earnings(r.economy, r.economy.config, r.services, getLogger("test"));
-    await earnings.onEvent(cue("started", { title: "小星星" }), T0);
-    await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
+    await earnings.onEvent(ev(cue("started", { title: "小星星" })), T0);
+    await earnings.onEvent(ev(cue("ended", { outcome: "finished" })), T0);
     // The requester is still paid; nobody is told where it would be a guess.
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBeGreaterThan(0);
     expect(posted).toEqual([]);

@@ -20,14 +20,14 @@ import {
   type AccountRef,
   AuthorizerKey,
   type ContextKey,
-  customEvent,
   DirectivesKey,
+  type EventPayload,
+  Events,
   type JsonValue,
   newId,
   PersonNoteWriterKey,
   Principals,
   RelationshipEffectsKey,
-  SOCIAL_EVENT_TOPIC,
   safeName,
   type Timestamp,
   toTimestamp,
@@ -570,7 +570,7 @@ export class DealDesk {
       scale: Math.round(Math.min(0.4 + 0.2 * earlier, 1) * 100) / 100,
       context: null,
     };
-    this.e.publish(customEvent(SOCIAL_EVENT_TOPIC, payload));
+    this.e.publish(Events.SocialEvent, payload as EventPayload<typeof Events.SocialEvent>);
     // A memory of it, through the normal path: she recalls it when they are next here.
     const writer = this.e.services.get(PersonNoteWriterKey);
     if (writer) {

@@ -8,7 +8,13 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { SongPaymentsKey } from "@miyoria/sing";
-import { ParticipationKey, PartyRewardsKey, type ProfileId, SONG_TOPIC } from "@miyoria/types";
+import {
+  Events,
+  ParticipationKey,
+  PartyRewardsKey,
+  type ProfileId,
+  SONG_TOPIC,
+} from "@miyoria/types";
 import { agencyCapabilities } from "./agency-tools.js";
 import { EconomyCommands } from "./commands.js";
 import { EconomyConfigSchema } from "./config.js";
@@ -69,7 +75,7 @@ export class EconomyModule implements Module {
       services: ctx.services,
       profile: this.#profile,
       clock: ctx.clock,
-      publish: (event) => ctx.publish(event),
+      publish: ctx.publisher,
       log: ctx.log,
     });
     const earnings = new Earnings(economy, config, ctx.services, ctx.log);
@@ -100,16 +106,16 @@ export class EconomyModule implements Module {
     mount();
 
     const events = ctx.subscribe([
-      "platform.ready",
-      "platform.message.created",
-      "voice.joined",
-      "voice.participants",
-      "voice.left",
-      "voice.utterance",
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.VoiceJoined.type,
+      Events.VoiceParticipants.type,
+      Events.VoiceLeft.type,
+      Events.VoiceUtteranceEvent.type,
       SONG_TOPIC,
     ]);
     ctx.spawn("earn", async () => {
-      for await (const env of events) await earnings.onEvent(env.event, ctx.clock.now());
+      for await (const env of events) await earnings.onEvent(env, ctx.clock.now());
     });
     // Deals she is owed run out here: a promise not kept becomes broken, escrow times out.
     // Her goals and bounties run out here too; her purse note is written once at the start.
