@@ -916,8 +916,19 @@ describe("the module", () => {
       expect(s.require(ParticipationKey)).toBeDefined();
       sup.bus.publish("test", {
         type: "platform_message_created",
-        data: { author: { account: ALICE, display_name: "Alice", is_bot: false } },
-      } as never);
+        data: {
+          id: {
+            context: { platform: "discord", scope: "g1", channel: "c1", kind: "channel" },
+            id: "m1",
+          },
+          author: { account: ALICE, display_name: "Alice", is_bot: false },
+          text: "hi",
+          mentions_self: false,
+          reply_to_self: false,
+          attachments: [],
+          ts: "2026-11-07T08:00:00.000Z",
+        },
+      });
       await vi.waitFor(async () => expect((await economy.wallet(ALICE)).balance).toBe(7));
       expect((await economy.wallet(ALICE)).earn.find((l) => l.reason === "talked")).toMatchObject({
         earned_today: 7,
