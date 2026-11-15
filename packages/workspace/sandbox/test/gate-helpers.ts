@@ -25,14 +25,14 @@ import {
   AuthorizerKey,
   BaseAuthorizer,
   type ContextKey,
-  type Event,
+  type Impulse,
   impulseReason,
   type MessageRef,
   type Principal,
   Principals,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   type Subject,
-  v2Payload,
 } from "@miyoria/types";
 import {
   type PersistentWorkspace,
@@ -174,7 +174,7 @@ export interface Harness {
   router: ScriptedRouter;
   cards: Cards;
   grants: Grants;
-  events: Event[];
+  events: PublishedEvent[];
   gate: SandboxGate;
 }
 
@@ -197,11 +197,11 @@ export function harness(real: Sandbox | null = null): Harness {
   );
   const tools = new ToolRegistry();
   services.provide(k, ToolRegistryKey, tools);
-  const events: Event[] = [];
+  const events: PublishedEvent[] = [];
   const registry = new ActuatorRegistry({
     services,
     tools,
-    publish: publishInto(events),
+    publish: publishedInto(events),
     builtins: false,
   });
   services.provide(k, ActuatorRegistryKey, registry);
@@ -260,10 +260,10 @@ export function proposal(over: Partial<ToolProposal> = {}): ToolProposal {
 }
 
 /** The follow-up impulses published so far (in the old `agent_initiative` shape). */
-export function initiatives(events: readonly Event[]) {
+export function initiatives(events: readonly PublishedEvent[]) {
   return events.flatMap((e) => {
-    const impulse = v2Payload(e, ARBITER_IMPULSE_TOPIC);
-    if (!impulse) return [];
+    if (e.type !== ARBITER_IMPULSE_TOPIC) return [];
+    const impulse = e.data as Impulse;
     return [
       {
         context: impulse.target.context,

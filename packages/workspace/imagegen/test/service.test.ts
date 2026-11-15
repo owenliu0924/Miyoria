@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getLogger } from "@miyoria/runtime/kernel";
-import { type Event, type ImageJob, publishInto } from "@miyoria/types";
+import { type ImageJob, type PublishedEvent, publishedInto } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ComfyClient } from "../src/comfy.js";
 import { ImageGenConfigSchema } from "../src/config.js";
@@ -14,7 +14,7 @@ import { FakeComfy, PNG } from "./fake-comfy.js";
 let comfy: FakeComfy;
 let dir: string;
 let stop: AbortController;
-let events: Event[];
+let events: PublishedEvent[];
 let now: number;
 let runs: Promise<void>[];
 
@@ -31,7 +31,7 @@ function service(extra: Record<string, unknown> = {}): ImageGenService {
     client: new ComfyClient({ url: comfy.url, webSocket: null }),
     clock: { now: () => now },
     log: getLogger("imagegen.test"),
-    publish: publishInto(events),
+    publish: publishedInto(events),
     random: () => 1234,
   });
 }
@@ -100,7 +100,7 @@ describe("ImageGenService", () => {
     expect(sidecar.model_files.diffusion_model).toBe("krea2_turbo_fp8_scaled.safetensors");
     expect(comfy.runs[0]?.client).toBe(`miyoria-${job.id}`);
     const states = events.map((e) =>
-      e.type === "custom" ? (e.data.payload as { state: string }).state : "",
+      e.type === "imagegen.job" ? (e.data as { state: string }).state : "",
     );
     expect(states).toEqual(["queued", "running", "done"]);
   });
