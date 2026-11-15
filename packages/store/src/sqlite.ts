@@ -18,7 +18,6 @@ import {
   type Directive,
   type DirectiveRecord,
   type JsonObject,
-  type ModuleId,
   type PersonId,
   type PlatformId,
   type ProfileId,
@@ -51,7 +50,8 @@ import {
   walletWith,
 } from "./common.js";
 import { configSchema } from "./config/migrations.js";
-import { SettingsState } from "./config/state.js";
+import { ConfigModuleState, ConfigRevisions } from "./config/revisions.js";
+import { PluginState, SettingsState } from "./config/state.js";
 import {
   addCount,
   type DataCategoryId,
@@ -133,7 +133,6 @@ import type {
   MemberCardStore,
   MemoryRecordStore,
   MessageLog,
-  ModuleStateStore,
   PeopleStore,
   PersonaOverrideStore,
   ProfileDataStore,
@@ -1146,33 +1145,6 @@ class SqliteEconomyDocs implements EconomyDocStore {
   }
 }
 
-// ---- module state -------------------------------------------------------------------------
-
-class SqliteModuleState implements ModuleStateStore {
-  constructor(private readonly db: Db) {}
-
-  async get(module: ModuleId): Promise<boolean | null> {
-    const row = this.db.get("SELECT enabled FROM module_state WHERE module_id = $module", {
-      module,
-    });
-    return row ? bool(row, "enabled") : null;
-  }
-
-  async set(module: ModuleId, enabled: boolean): Promise<void> {
-    this.db.run(
-      "INSERT INTO module_state (module_id, enabled, updated_at) VALUES ($module, $enabled, " +
-        "$at) ON CONFLICT (module_id) DO UPDATE SET enabled = excluded.enabled, " +
-        "updated_at = excluded.updated_at",
-      { module, enabled: enabled ? 1 : 0, at: this.db.nowMicros() },
-    );
-  }
-
-  async list(): Promise<Map<ModuleId, boolean>> {
-    const rows = this.db.all("SELECT module_id, enabled FROM module_state ORDER BY module_id");
-    return new Map(rows.map((r) => [str(r, "module_id"), bool(r, "enabled")]));
-  }
-}
-
 // ---- persona overrides --------------------------------------------------------------------
 
 class SqlitePersonaOverrides implements PersonaOverrideStore {
@@ -1221,7 +1193,10 @@ class SqlitePersonaOverrides implements PersonaOverrideStore {
 // ---- whole-profile export / wipe ----------------------------------------------------------
 
 class SqliteProfileData implements ProfileDataStore {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly modules: ConfigModuleState,
+  ) {}
 
   #query = async (stmt: Stmt) => this.db.allStmt(stmt);
 
@@ -1243,7 +1218,10 @@ class SqliteProfileData implements ProfileDataStore {
     try {
       return this.db.tx(() => {
         const counts: WipeCounts = {};
-        for (const { part, stmt } of statements) addCount(counts, part, this.db.runStmt(stmt));
+        for (const step of statements) {
+          const n = step.stmt === null ? this.modules.clear("wipe") : this.db.runStmt(step.stmt);
+          addCount(counts, step.part, n);
+        }
         return counts;
       });
     } catch (cause) {
@@ -2068,7 +2046,8 @@ class SqliteDirectives implements DirectiveStore {
 /** Every storage area on one SQLite database. */
 export class SqliteStore implements Store {
   readonly messages: MessageLog;
-  readonly moduleState: ModuleStateStore;
+  /** Module on/off: the `enabled` flags of the current config revision. */
+  readonly moduleState: ConfigModuleState;
   readonly personaOverrides: PersonaOverrideStore;
   readonly people: PeopleStore;
   /** Decisions and turn outcomes on the event log. */
@@ -2096,13 +2075,18 @@ export class SqliteStore implements Store {
   readonly economyDocs: EconomyDocStore;
   /** Persons, accounts and places (the `identity` plugin's tables). */
   readonly persons: Identity;
+  /** Config revisions and plugin state (the `config` plugin's tables). */
+  readonly config: { readonly revisions: ConfigRevisions; readonly state: PluginState };
   readonly handles: PersonHandleDirectory;
   readonly #db: Db;
 
   private constructor(db: Db) {
     this.#db = db;
     this.persons = new Identity(db);
-    this.moduleState = new SqliteModuleState(db);
+    this.events = new EventStore(db, { identity: this.persons });
+    const revisions = new ConfigRevisions(db, this.events);
+    this.config = { revisions, state: new PluginState(db) };
+    this.moduleState = new ConfigModuleState(db, revisions);
     this.personaOverrides = new SqlitePersonaOverrides(db);
     this.people = new IdentityPeople(this.persons);
     this.settings = new PrefsSettings(new SettingsState(db), this.persons);
@@ -2111,8 +2095,7 @@ export class SqliteStore implements Store {
     this.identity = new IdentityLinks(this.persons);
     this.handles = new IdentityHandles(this.persons);
     this.auth = new SqliteAuth(db);
-    this.profileData = new SqliteProfileData(db);
-    this.events = new EventStore(db, { identity: this.persons });
+    this.profileData = new SqliteProfileData(db, this.moduleState);
     this.chat = new ChatLog(db, this.events, this.persons);
     this.messages = this.chat;
     this.decisions = new TurnLog(db, this.events, this.persons);

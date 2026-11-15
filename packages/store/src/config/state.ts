@@ -85,6 +85,7 @@ export class PluginState {
 
   /** The value of `key`, or `null` when it was never set (or deleted). */
   get(pluginId: string, name: string): PluginStateValue | null {
+    this.#db.ensureOpen();
     return this.#stmts.get.get({ plugin: pluginId, key: name }) ?? null;
   }
 
@@ -107,6 +108,7 @@ export class PluginState {
 
   /** Deletes `key`; `false` when it was not there. */
   delete(pluginId: string, name: string): boolean {
+    this.#db.ensureOpen();
     return this.#stmts.delete.run({ plugin: pluginId, key: name }).changes > 0;
   }
 }
@@ -125,10 +127,12 @@ export class SettingsState implements SettingsStore {
   }
 
   async get(_profile: string, name: string): Promise<JsonValue | null> {
+    this.#db.ensureOpen();
     return this.#stmts.get.get({ plugin: SETTINGS_PLUGIN, key: name })?.value ?? null;
   }
 
   async set(_profile: string, name: string, value: JsonValue | null): Promise<void> {
+    this.#db.ensureOpen();
     if (value === null) {
       this.#stmts.delete.run({ plugin: SETTINGS_PLUGIN, key: name });
       return;
@@ -137,11 +141,13 @@ export class SettingsState implements SettingsStore {
   }
 
   async list(_profile: string, start: string): Promise<Map<string, JsonValue>> {
+    this.#db.ensureOpen();
     const rows = this.#stmts.list.all({ plugin: SETTINGS_PLUGIN, prefix: start });
     return new Map(rows.map((r) => [r.key, r.value]));
   }
 
   async deletePrefix(_profile: string, start: string): Promise<number> {
+    this.#db.ensureOpen();
     return Number(this.#stmts.deletePrefix.run({ plugin: SETTINGS_PLUGIN, prefix: start }).changes);
   }
 }

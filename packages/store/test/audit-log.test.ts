@@ -123,7 +123,11 @@ describe("the audit log", () => {
     const inventory = await store.profileData.inventory(P);
     const audit = inventory.categories.find((c) => c.id === "audit");
     expect(audit?.count).toBe(1);
-    expect(audit?.parts.map((p) => [p.id, p.count])).toEqual([["audit_log", 1]]);
+    // Configuration changes are kept beside the audit entries (none here).
+    expect(audit?.parts.map((p) => [p.id, p.count])).toEqual([
+      ["audit_log", 1],
+      ["config_changes", 0],
+    ]);
     expect(audit?.updated_at).toBe(at(2));
     const backup = await store.profileData.export(P, ["audit"]);
     expect(backup.parts.audit_log).toEqual([

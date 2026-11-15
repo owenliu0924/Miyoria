@@ -261,13 +261,21 @@ describe("data categories", () => {
     const after = await store.profileData.inventory(P);
     for (const c of after.categories) {
       const expected =
-        c.id === "audit" || c.id === "llm_usage" || c.id === "panel_sessions"
+        c.id === "llm_usage" || c.id === "panel_sessions"
           ? 1
-          : c.id === "roles"
-            ? BUILTINS.length
-            : 0;
+          : c.id === "audit"
+            ? 3 // the entry, and two config revisions: the seeded module flag and its wipe
+            : c.id === "roles"
+              ? BUILTINS.length
+              : 0;
       expect(c.count, c.id).toBe(expected);
     }
+    expect(
+      after.categories.find((c) => c.id === "audit")?.parts.map((p) => [p.id, p.count]),
+    ).toEqual([
+      ["audit_log", 1],
+      ["config_changes", 2],
+    ]);
     // Built-in roles as given, nothing else.
     expect(await store.auth.roles()).toEqual(BUILTINS);
     expect(await store.auth.allAssignments()).toEqual([]);

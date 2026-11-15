@@ -24,6 +24,10 @@
 // Each routed LLM call is one `llm.call` (§8 step 7), metadata and cost only, for the owner, kept
 // 90 days; the facts writer records it from the bus.
 //
+// A change of configuration (§6, §8 step 8) is one event, for the owner, kept: a new config revision
+// (`config.revised`) or a per-place setting written or removed (`settings.changed`), so the panel's
+// "who changed what" comes from the log.
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
@@ -143,6 +147,30 @@ export const PrivacyRedacted = defineEvent({
   tier: "keep",
 });
 
+/**
+ * A new config revision. `data` is `{ version, created_by, note, changed }`, `changed` the dotted
+ * paths (TOML-style, quoted where needed) that differ from the revision before.
+ */
+export const ConfigRevised = defineEvent({
+  type: "config.revised",
+  v: 1,
+  data: JsonValueSchema,
+  scope: "owner",
+  tier: "keep",
+});
+
+/**
+ * A per-place setting written or removed. `data` is `{ scope, scope_id, plugin, key, value, by }`,
+ * `value` `null` when it was removed.
+ */
+export const SettingsChanged = defineEvent({
+  type: "settings.changed",
+  v: 1,
+  data: JsonValueSchema,
+  scope: "owner",
+  tier: "keep",
+});
+
 /** Every `facts.*` definition. */
 export const FACTS_EVENTS = [
   FactsObservation,
@@ -168,6 +196,8 @@ export function coreEventRegistry(): EventRegistry {
     AuditRecorded,
     LlmCall,
     PrivacyRedacted,
+    ConfigRevised,
+    SettingsChanged,
   );
 }
 

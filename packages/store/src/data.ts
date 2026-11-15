@@ -18,6 +18,7 @@
 
 import type { JsonObject, JsonValue, ProfileId, Timestamp } from "@miyoria/types";
 import { StoreError } from "./common.js";
+import { ConfigRevised, SettingsChanged } from "./events/types.js";
 import type { PersonPrefs } from "./identity/schema.js";
 import { type ExportColumn, exportValue } from "./profile-data.js";
 import type { RoleDefinition } from "./records.js";
@@ -103,7 +104,23 @@ export interface PrefsPart {
   key: keyof PersonPrefs;
 }
 
-export type DataPart = TablePart | SettingsPart | CallNamesPart | OtherSettingsPart | PrefsPart;
+/**
+ * The modules' `enabled` flags in the current config revision (`config/revisions.ts`). Cleared by
+ * writing the next revision without them (`ConfigModuleState.clear`), not by a statement; earlier
+ * revisions keep theirs, as config history.
+ */
+export interface ModuleFlagsPart {
+  kind: "module_flags";
+  id: string;
+}
+
+export type DataPart =
+  | TablePart
+  | SettingsPart
+  | CallNamesPart
+  | OtherSettingsPart
+  | PrefsPart
+  | ModuleFlagsPart;
 
 /** Parts that clear a column of rows another part may delete; they run first. */
 function clears(part: DataPart): boolean {
@@ -196,6 +213,8 @@ const OUTCOMES = "type = 'agent.turn.outcome'";
 const AUDIT = "type GLOB 'audit.*'";
 /** The LLM calls among `events` (`events/llm.ts`). */
 const LLM_CALLS = "type = 'llm.call'";
+/** Configuration changes among `events` (`config/revisions.ts`, `config/places.ts`). */
+const CONFIG_CHANGES = `type IN ('${ConfigRevised.type}', '${SettingsChanged.type}')`;
 
 function settings(
   id: string,
@@ -492,8 +511,8 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   ),
   // The event log (`events`): what she perceived, decided and said, and the counts of what
   // compaction removed. One database is one character, so every row belongs to this profile. The
-  // chat lines are `messages`, her decisions and turn outcomes `decisions`, the audit entries
-  // `audit` and the LLM calls `llm_usage`, not here.
+  // chat lines are `messages`, her decisions and turn outcomes `decisions`, the audit entries and
+  // configuration changes `audit` and the LLM calls `llm_usage`, not here.
   category(
     "event_log",
     [
@@ -523,7 +542,9 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
           data: "json",
           redacted_at: "ts",
         },
-        { where: `NOT (${CHAT_LINES} OR ${DECISIONS} OR ${OUTCOMES} OR ${AUDIT} OR ${LLM_CALLS})` },
+        {
+          where: `NOT (${CHAT_LINES} OR ${DECISIONS} OR ${OUTCOMES} OR ${AUDIT} OR ${LLM_CALLS} OR ${CONFIG_CHANGES})`,
+        },
       ),
       table("event_rollups", "event_rollups", "node", "last_at", "day, type, source", {
         day: "ts",
@@ -721,17 +742,11 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   }),
   // @miyoria/plugin-host/ext-host `storageKey`
   category("extensions", [settings("extension_storage", "active", [], ["ext:"])]),
-  category(
-    "module_state",
-    [
-      table("module_state", "module_state", "node", "updated_at", "module_id", {
-        module_id: "text",
-        enabled: "bool",
-        updated_at: "ts",
-      }),
-    ],
-    { shared: true, confirm: "simple" },
-  ),
+  // Module on/off, remembered across restarts: the `enabled` flags of the current config revision.
+  category("module_state", [{ kind: "module_flags", id: "module_state" }], {
+    shared: true,
+    confirm: "simple",
+  }),
   category("other_settings", [{ kind: "other_settings", id: "other_settings" }]),
   category(
     "audit",
@@ -753,6 +768,16 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
           ok: "bool",
         },
         { where: AUDIT, exportFrom: "v_audit" },
+      ),
+      // Who changed the configuration: a new config revision, a per-place setting.
+      table(
+        "config_changes",
+        "events",
+        "node",
+        "at",
+        "seq",
+        { id: "text", at: "ts", type: "text", data: "json" },
+        { where: CONFIG_CHANGES },
       ),
     ],
     { shared: true, kept: true },
@@ -963,6 +988,16 @@ function tableWhere(p: Params, part: TablePart, profile: ProfileId): string {
   return terms.length === 0 ? "" : `WHERE ${terms.join(" AND ")}`;
 }
 
+/**
+ * The modules of the current config revision that carry an `enabled` flag: `FROM ... WHERE ...`
+ * with `module_id`, `enabled` and the revision's `created_at`.
+ */
+const MODULE_FLAGS =
+  "FROM (SELECT key AS module_id, json_extract(value, '$.enabled') AS enabled, created_at, " +
+  "CASE WHEN type = 'object' THEN json_type(value, '$.enabled') END AS flag " +
+  "FROM (SELECT doc, created_at FROM config_revisions ORDER BY version DESC LIMIT 1), " +
+  "json_each(doc, '$.modules')) WHERE flag IN ('true', 'false')";
+
 /** `persons` rows that hold entry `key` of `prefs` (a code constant, never input). */
 function prefsWhere(part: PrefsPart): string {
   return `json_type(prefs, '$.${part.key}') IS NOT NULL`;
@@ -997,6 +1032,8 @@ export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): St
         sql: `SELECT COUNT(*) AS n, NULL AS at FROM persons WHERE ${prefsWhere(part)}`,
         params: [],
       };
+    case "module_flags":
+      return { sql: `SELECT COUNT(*) AS n, MAX(created_at) AS at ${MODULE_FLAGS}`, params: [] };
   }
 }
 
@@ -1024,6 +1061,8 @@ export function exportSpec(part: DataPart): Readonly<Record<string, ExportColumn
       return { person_id: "text", call_name: "text" };
     case "prefs":
       return { person_id: "text", value: "json" };
+    case "module_flags":
+      return { module_id: "text", enabled: "bool", updated_at: "ts" };
     case "settings":
     case "other_settings":
       return SETTINGS_COLUMNS;
@@ -1065,13 +1104,23 @@ export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
         sql: `SELECT id AS person_id, prefs -> '$.${part.key}' AS value FROM persons WHERE ${prefsWhere(part)} ORDER BY id`,
         params: [],
       };
+    case "module_flags":
+      return {
+        sql: `SELECT module_id, enabled, created_at AS updated_at ${MODULE_FLAGS} ORDER BY module_id`,
+        params: [],
+      };
   }
 }
 
-/** What deletes (or clears) a part; its row count is the part's count. */
-export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): Stmt {
+/**
+ * What deletes (or clears) a part; its row count is the part's count. `null` for the module
+ * flags, which the store clears in code (`ModuleFlagsPart`).
+ */
+export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): Stmt | null {
   const p = new Params();
   switch (part.kind) {
+    case "module_flags":
+      return null;
     case "table":
       return { sql: `DELETE FROM ${part.table} ${tableWhere(p, part, profile)}`, params: p.values };
     case "settings":
@@ -1106,15 +1155,16 @@ export function seedRoleStmt(d: SqlDialect, role: RoleDefinition): Stmt {
 
 /**
  * The statements of a wipe, in order, each with the part it counts toward (`null`: not
- * counted). Parts are deleted in reverse registry order, so dependents go first.
+ * counted). Parts are deleted in reverse registry order, so dependents go first. A `null`
+ * statement is the module flags' part, which the store clears in code.
  */
 export function wipeStatements(
   d: SqlDialect,
   profile: ProfileId,
   ids: readonly DataCategoryId[],
   options: WipeOptions = {},
-): { part: string | null; stmt: Stmt }[] {
-  const out: { part: string | null; stmt: Stmt }[] = [];
+): { part: string | null; stmt: Stmt | null }[] {
+  const out: { part: string | null; stmt: Stmt | null }[] = [];
   const resolved = resolveCategories(ids);
   const set = new Set(resolved);
   // Clearing categories first (`call_names`, a person's choices): they clear a column of rows

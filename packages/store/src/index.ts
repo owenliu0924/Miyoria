@@ -11,6 +11,18 @@ export {
 } from "./common.js";
 export { configSchema } from "./config/migrations.js";
 export {
+  CONFIG_SOURCE,
+  ConfigConflictError,
+  ConfigModuleState,
+  type ConfigRevision,
+  ConfigRevisions,
+  type ConfigRevisionsOptions,
+  type ConfigWriteOptions,
+  changedPaths,
+  MODULE_TOGGLE_AUTHOR,
+  moduleFlags,
+} from "./config/revisions.js";
+export {
   type ConfigRevisionRow,
   PLACE_SCOPES,
   type PlaceScope,
@@ -84,6 +96,7 @@ export {
 export { CHAT_SQL, EVENTS_SQL, LLM_CALLS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
 export { TurnLog } from "./events/turns.js";
 export {
+  ConfigRevised,
   coreEventRegistry,
   FACTS_EVENTS,
   FACTS_TYPE_PREFIX,
@@ -100,6 +113,7 @@ export {
   FactsThought,
   FactsUtterance,
   PrivacyRedacted,
+  SettingsChanged,
   typeDefaults,
 } from "./events/types.js";
 export {

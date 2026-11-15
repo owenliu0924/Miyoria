@@ -4,17 +4,14 @@
 // §8 took out `people` and `accounts` (and `link_codes` from migration 3). The `identity` schema
 // owns `persons`, `accounts` and `link_codes` now, and it migrates before `legacy`. Step 5 took
 // out `message_log` (and its index from migration 9): chat lines are events (`events/chat.ts`).
+// Step 8 took out `module_state`: module on/off is the `enabled` flag in the current config
+// revision (the `config` schema).
 
 export const m0001 = `-- Phase-1 schema (SQLite port of migrations/postgres/0001_init.sql). Ids are ULIDs stored as
 -- text. Data that belongs to one character carries \`profile_id\`. Timestamps are INTEGER
 -- microseconds since the Unix epoch (PostgreSQL's precision); booleans are 0 / 1.
 
--- Runtime enabled / disabled flag per module (node-wide, not per profile).
-CREATE TABLE module_state (
-    module_id   TEXT    PRIMARY KEY,
-    enabled     INTEGER NOT NULL,
-    updated_at  INTEGER NOT NULL
-);
+-- Module on/off is the enabled flag in the current config revision (config migration 1).
 
 -- Versioned runtime edits of persona sections.
 CREATE TABLE persona_overrides (

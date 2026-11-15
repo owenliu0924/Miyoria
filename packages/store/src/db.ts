@@ -78,6 +78,14 @@ export class Db {
     this.#db.exec(sql);
   }
 
+  /**
+   * Throws a `StoreError` once the store is closed. Prepared Drizzle queries run on their own
+   * statements, past `orm`'s check: callers that keep them check here first.
+   */
+  ensureOpen(): void {
+    if (!this.#open) throw new StoreError("the store is closed");
+  }
+
   /** Whether a transaction is open (what it wrote may still be rolled back). */
   get inTransaction(): boolean {
     return this.#db.isTransaction;
