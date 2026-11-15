@@ -208,6 +208,7 @@ describe("data categories", () => {
       "inner",
       "knowledge",
       "learning",
+      "artifacts",
       "people",
     ]);
     expect(categoryModules(resolveCategories(["people"]))).toEqual([
@@ -229,7 +230,15 @@ describe("data categories", () => {
     const { owen, ctx } = await seed(store);
     const before = await store.profileData.inventory(P);
     for (const c of before.categories) {
-      const unseeded = ["decisions", "event_log", "directives", "proposed_tools", "extensions"];
+      // Artifacts need a blob root (`artifact-data.test.ts` covers their wipe).
+      const unseeded = [
+        "decisions",
+        "event_log",
+        "directives",
+        "proposed_tools",
+        "extensions",
+        "artifacts",
+      ];
       if (unseeded.includes(c.id)) continue;
       expect(c.count, c.id).toBeGreaterThan(0);
     }

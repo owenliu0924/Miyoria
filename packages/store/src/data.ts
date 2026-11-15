@@ -40,6 +40,7 @@ export type DataCategoryId =
   | "event_log"
   | "directives"
   | "initiative"
+  | "artifacts"
   | "people"
   | "channels"
   | "voice_consent"
@@ -567,6 +568,57 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
       confirm: "simple",
     },
   ),
+  // The files she makes (`artifacts/`): their records, their share tokens (never the token's hash)
+  // and their blobs' rows, dependents first. Deleting them leaves the bytes on disk to the sweep,
+  // which removes a blob file without a row once it is older than its grace. The inventory's
+  // breakdown is the live artifacts by kind, and `bytes`, the size of every stored blob.
+  category("artifacts", [
+    table("artifact_shares", "artifact_shares", "node", "created_at", "created_at, id", {
+      id: "text",
+      artifact_id: "text",
+      audience: "text",
+      person_id: "text",
+      space_id: "text",
+      mode: "text",
+      event_id: "text",
+      created_at: "ts",
+      expires_at: "ts",
+      revoked_at: "ts",
+      uses: "num",
+      max_uses: "num",
+      last_used_at: "ts",
+    }),
+    table("artifacts", "artifact_items", "node", "created_at", "created_at, id", {
+      id: "text",
+      sha256: "text",
+      size: "num",
+      mime: "text",
+      kind: "text",
+      filename: "text",
+      source: "text",
+      plugin: "text",
+      derived_from: "text",
+      turn: "text",
+      event_id: "text",
+      made_for: "text",
+      origin_session: "text",
+      space_id: "text",
+      room_id: "text",
+      scope: "text",
+      downloadable: "bool",
+      review: "text",
+      created_at: "ts",
+      expires_at: "ts",
+      kept_by: "text",
+      deleted_at: "ts",
+    }),
+    table("artifact_blobs", "artifact_blobs", "node", "stored_at", "stored_at, sha256", {
+      sha256: "text",
+      size: "num",
+      location: "text",
+      stored_at: "ts",
+    }),
+  ]),
   category(
     "people",
     // The `identity` tables (docs/design/v5-data.md §4), dependents first: places name persons
@@ -642,8 +694,9 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
       settings("handles", "global", [], ["handle:"]),
     ],
     {
-      // Relationships, feelings, documents, lessons and feedback are keyed by person.
-      requires: ["relationships", "call_names", "inner", "knowledge", "learning"],
+      // Relationships, feelings, documents, lessons and feedback are keyed by person; artifacts
+      // name the person they were made for and the place they were made in.
+      requires: ["relationships", "call_names", "inner", "knowledge", "learning", "artifacts"],
       modules: ["social", "agent", "world", "memory"],
       shared: true,
     },
@@ -1045,6 +1098,16 @@ export function memoryKindsStmt(profile: ProfileId): Stmt {
   };
 }
 
+/** Live artifacts by kind (rows `{ kind, n }`), and the bytes of every blob (a row of kind `bytes`). */
+export function artifactBreakdownStmt(): Stmt {
+  return {
+    sql:
+      "SELECT kind, COUNT(*) AS n FROM artifact_items WHERE deleted_at IS NULL GROUP BY kind " +
+      "UNION ALL SELECT 'bytes' AS kind, COALESCE(SUM(size), 0) AS n FROM artifact_blobs",
+    params: [],
+  };
+}
+
 const SETTINGS_COLUMNS: Record<string, ExportColumn> = {
   profile_id: "text",
   key: "text",
@@ -1247,9 +1310,10 @@ export async function readInventory(
       parts.push(partInventory(part.id, rows[0]));
     }
     let breakdown: Record<string, number> | null = null;
-    if (c.id === "memories") {
+    if (c.id === "memories" || c.id === "artifacts") {
       breakdown = {};
-      for (const row of await query(memoryKindsStmt(profile))) {
+      const stmt = c.id === "memories" ? memoryKindsStmt(profile) : artifactBreakdownStmt();
+      for (const row of await query(stmt)) {
         breakdown[String(row.kind)] = Number(row.n);
       }
     }
