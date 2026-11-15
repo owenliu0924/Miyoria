@@ -3,6 +3,71 @@
 // URL names.
 
 export {
+  ArtifactTypeError,
+  decideType,
+  MEDIA_TYPES,
+  type MediaType,
+  normalizeMime,
+  sniff,
+} from "./artifacts/media.js";
+export { artifactSchema } from "./artifacts/migrations.js";
+export {
+  ArtifactPathError,
+  BlobLayout,
+  cleanFilename,
+  FILENAME_MAX_BYTES,
+  isSha256,
+} from "./artifacts/paths.js";
+export {
+  ARTIFACT_KINDS,
+  ARTIFACT_SCOPES,
+  ARTIFACT_SOURCES,
+  type ArtifactBlobRow,
+  type ArtifactRow,
+  type ArtifactShareRow,
+  KEPT_BY,
+  REVIEW_STATES,
+  type ReviewState,
+  SHARE_AUDIENCES,
+  SHARE_MODES,
+  SONG_COVER_SOURCE,
+} from "./artifacts/schema.js";
+export {
+  type ArtifactShare,
+  ArtifactShareError,
+  ArtifactShares,
+  DEFAULT_SHARE_TTL_MS,
+  type ShareInput,
+  type ShareLookup,
+  type ShareRefusal,
+  shareTokenHash,
+} from "./artifacts/shares.js";
+export {
+  ARTIFACT_EVENT_SOURCE,
+  type Artifact,
+  ArtifactBlobMissingError,
+  type ArtifactFilter,
+  ArtifactHashMismatchError,
+  type ArtifactInput,
+  ArtifactInputError,
+  ArtifactNotFoundError,
+  type ArtifactPlace,
+  ArtifactStore,
+  type ArtifactStoreOptions,
+  ArtifactTooLargeError,
+  DEFAULT_GRACE_MS,
+  DEFAULT_LIFETIME_MS,
+  DEFAULT_SIZE_LIMITS,
+  type SweepResult,
+} from "./artifacts/store.js";
+export {
+  type ArtifactViewer,
+  isLive,
+  maySee,
+  scopeAllows,
+  type VisibleArtifact,
+} from "./artifacts/visibility.js";
+export {
   embeddingValues,
   fromMicros,
   normalizeTimestamp,

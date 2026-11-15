@@ -28,10 +28,15 @@
 // (`config.revised`) or a per-place setting written or removed (`settings.changed`), so the panel's
 // "who changed what" comes from the log.
 //
+// The artifact store (§5, §8 step 10) records each stored artifact (`artifact.created`, in the
+// artifact's own scope), each expiry, take-down and collection run, and each share token made,
+// revoked and first used (`ARTIFACT_EVENTS`).
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
 import {
+  ARTIFACT_EVENTS,
   AuditRecorded,
   CHAT_EVENTS,
   defineEvent,
@@ -198,6 +203,7 @@ export function coreEventRegistry(): EventRegistry {
     PrivacyRedacted,
     ConfigRevised,
     SettingsChanged,
+    ...ARTIFACT_EVENTS,
   );
 }
 

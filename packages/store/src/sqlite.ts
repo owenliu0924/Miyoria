@@ -9,7 +9,7 @@
 // little-endian float32 BLOBs (cosine computed in JS), full text uses FTS5 over `tokens`.
 
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   type AccountRef,
@@ -24,6 +24,8 @@ import {
   systemClock,
   type Timestamp,
 } from "@miyoria/types";
+import { artifactSchema } from "./artifacts/migrations.js";
+import { ArtifactStore } from "./artifacts/store.js";
 import {
   allowedDelta,
   authScopeKey,
@@ -154,6 +156,11 @@ export interface SqliteStoreOptions {
   busyTimeoutMs?: number;
   /** Plugin schemas to migrate besides the store's own (`core`, `identity`, `config`, `legacy`). */
   schemas?: readonly PluginSchema[];
+  /**
+   * Where the artifact store keeps its bytes. Default: `artifacts` beside a database file; none
+   * for `:memory:` (then `artifacts` is `null`).
+   */
+  artifactRoot?: string | null;
 }
 
 // ---- row accessors ----------------------------------------------------------------------
@@ -2088,12 +2095,16 @@ export class SqliteStore implements Store {
     readonly state: PluginState;
   };
   readonly handles: PersonHandleDirectory;
+  /** The files she makes (the `artifact` plugin's tables, bytes under the artifact root). */
+  readonly artifacts: ArtifactStore | null;
   readonly #db: Db;
 
-  private constructor(db: Db) {
+  private constructor(db: Db, artifactRoot: string | null) {
     this.#db = db;
     this.persons = new Identity(db);
     this.events = new EventStore(db, { identity: this.persons });
+    this.artifacts =
+      artifactRoot === null ? null : new ArtifactStore(db, this.events, { root: artifactRoot });
     const revisions = new ConfigRevisions(db, this.events);
     this.config = {
       revisions,
@@ -2151,14 +2162,17 @@ export class SqliteStore implements Store {
         db.exec("PRAGMA synchronous = NORMAL");
       }
       db.exec("PRAGMA foreign_keys = ON");
-      migrate(db, [identitySchema, configSchema, legacySchema, ...(options.schemas ?? [])], {
-        location: path,
-      });
+      migrate(
+        db,
+        [identitySchema, configSchema, legacySchema, artifactSchema, ...(options.schemas ?? [])],
+        { location: path },
+      );
     } catch (error) {
       db.close();
       throw error;
     }
-    return new SqliteStore(db);
+    const root = options.artifactRoot ?? (memory ? null : join(dirname(path), "artifacts"));
+    return new SqliteStore(db, root);
   }
 
   /**
