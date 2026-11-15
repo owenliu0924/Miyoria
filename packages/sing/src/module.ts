@@ -7,6 +7,7 @@ import {
   type Health,
   type Module,
   type ModuleContext,
+  type ServiceLookup,
 } from "@miyoria/runtime/kernel";
 import {
   Events,
@@ -20,7 +21,7 @@ import {
   VoicePlayerKey,
 } from "@miyoria/types";
 import { singCapabilities } from "./actions.js";
-import { HttpSingWorker, type SingWorker } from "./client.js";
+import { type GpuContext, HttpSingWorker, type SingWorker } from "./client.js";
 import { SingClips } from "./clips.js";
 import { registerCommands } from "./commands.js";
 import { SingConfigSchema } from "./config.js";
@@ -53,6 +54,13 @@ export type SingWorkerFactory = (
   source: EndpointSource,
 ) => SingWorker;
 
+/**
+ * Where else who listens and which songs are needed now go, each time the song worker is told
+ * (every poll while a song is prepared): Core's wiring sends them to the hosts' GPU arbiters
+ * (`cluster.context`), so this package needs no cluster package.
+ */
+export type GpuContextSink = (services: ServiceLookup, context: GpuContext) => void;
+
 /** What stays the same when a worker restarts elsewhere: its host and service. */
 function endpointId(endpoint: Endpoint): string {
   return `${endpoint.host}/${endpoint.service}`;
@@ -84,20 +92,23 @@ export class SingModule implements Module {
   readonly #worker: SingWorkerFactory | null;
   readonly #baseDir: string;
   readonly #endpoints: EndpointsOption | null;
+  readonly #context: GpuContextSink | null;
   #running: Running | null = null;
 
   /**
    * `worker`: replaces the HTTP client (tests). `baseDir`: what a relative `video_dir` is
    * relative to (the directory of `miyoria.toml`; default the working directory). `endpoints`:
-   * Core's endpoint registry, where the song workers are.
+   * Core's endpoint registry, where the song workers are. `context`: where else the audience
+   * context goes (`GpuContextSink`).
    */
   constructor(
     worker: SingWorkerFactory | null = null,
-    options: { baseDir?: string; endpoints?: EndpointsOption } = {},
+    options: { baseDir?: string; endpoints?: EndpointsOption; context?: GpuContextSink } = {},
   ) {
     this.#worker = worker;
     this.#baseDir = options.baseDir ?? process.cwd();
     this.#endpoints = options.endpoints ?? null;
+    this.#context = options.context ?? null;
   }
 
   async start(ctx: ModuleContext): Promise<void> {
@@ -138,7 +149,14 @@ export class SingModule implements Module {
     const unwatch = source?.watch("sing", follow) ?? null;
     if (source === null) ctx.log.warn("no endpoint registry: there is no song worker");
     const videoDir = cfg.video ? resolve(this.#baseDir, cfg.video_dir) : null;
-    const singer = new Singer(cfg, ctx, worker, videoDir);
+    const sink = this.#context;
+    const singer = new Singer(
+      cfg,
+      ctx,
+      worker,
+      videoDir,
+      sink === null ? null : (context) => sink(ctx.services, context),
+    );
     const actuators = actuatorsFor(ctx);
     const capabilities = singCapabilities(singer, cfg.permissions).map((c) =>
       actuators.register(c),

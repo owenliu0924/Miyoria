@@ -25,7 +25,13 @@ export {
 } from "./config.js";
 export type { Endpoint, EndpointQuery, EndpointSource, EndpointsOption } from "./endpoints.js";
 export { type FailoverEntry, type FailoverOptions, FailoverSingWorker } from "./failover.js";
-export { SingerKey, SingModule, type SingWorkerFactory, workerUrls } from "./module.js";
+export {
+  type GpuContextSink,
+  SingerKey,
+  SingModule,
+  type SingWorkerFactory,
+  workerUrls,
+} from "./module.js";
 export {
   dedicationProblem,
   MAX_DEDICATION_CHARS,

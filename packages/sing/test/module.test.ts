@@ -127,8 +127,9 @@ class FakeWorker implements SingWorker {
   readonly cancelled: string[] = [];
   /** Jobs told to take the GPU. */
   readonly gone: string[] = [];
-  /** What the worker was last told about who is listening. */
+  /** What the worker was last told about who is listening, and how often it was told. */
   told: GpuContext | null = null;
+  toldTimes = 0;
   readonly jobs = new Map<string, WorkerJob>();
   #next = 1;
   cacheHit = false;
@@ -191,6 +192,7 @@ class FakeWorker implements SingWorker {
 
   async context(context: GpuContext): Promise<void> {
     this.told = context;
+    this.toldTimes += 1;
   }
 
   exclusive(id: string, state: WorkerJob["exclusive"]): void {
@@ -352,6 +354,8 @@ class Harness {
   readonly queue: RequestQueue;
   readonly registry: ActuatorRegistry;
   readonly events: PublishedEvent[] = [];
+  /** What went to Core's other sink for the audience context (the hosts' GPU arbiters). */
+  readonly sent: GpuContext[] = [];
 
   private constructor(withMind: boolean, store: MemorySettingsStore | null) {
     const s = this.sup.services;
@@ -381,7 +385,13 @@ class Harness {
     const h = new Harness(withMind, restart?.store ?? null);
     if (restart?.worker) h.worker = restart.worker;
     await h.sup.register(
-      new SingModule(() => h.worker, { endpoints: oneWorker() }),
+      new SingModule(() => h.worker, {
+        endpoints: oneWorker(),
+        context: (services, context) => {
+          expect(services).toBe(h.sup.services);
+          h.sent.push(context);
+        },
+      }),
       { poll_ms: 100, quiet_ms: 200, lead_ms: 300, announce_max_secs: 5, ...(config as object) },
       true,
     );
@@ -696,12 +706,17 @@ describe("sing module", () => {
     await h.invoke(Principals.user(AMY, TEXT), "sing.request", { query: "Later", by: "Amy" });
     await settle(2000);
     expect(h.worker.told).toEqual({ in_voice: true, listeners: 2, live: true, urgent: ["j1"] });
+    // The same, at the same moments, for the hosts' GPU arbiters.
+    expect(h.sent.at(-1)).toEqual(h.worker.told);
+    expect(h.sent.length).toBe(h.worker.toldTimes);
+    expect(h.sent.length).toBeGreaterThan(5);
   });
 
   it("does not bother the worker when no song is being prepared", async () => {
     h = await Harness.create();
     await settle(2000);
     expect(h.worker.told).toBeNull();
+    expect(h.sent).toEqual([]);
   });
 
   it("the start cue carries the song's video inside the worker's cache", async () => {

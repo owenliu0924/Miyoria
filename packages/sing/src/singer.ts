@@ -209,13 +209,15 @@ export class Singer implements VoiceFloor, SpeechPause {
 
   /**
    * `videoDir`: the worker's cache dir (absolute) when song videos are shown on stream
-   * (`[modules.sing] video`), else `null`.
+   * (`[modules.sing] video`), else `null`. `tellContext`: also gets who listens and which songs
+   * are needed now, each time the worker is told (Core sends it on to the hosts' GPU arbiters).
    */
   constructor(
     private readonly cfg: SingConfig,
     private readonly ctx: ModuleContext,
     private readonly worker: SingWorker,
     private readonly videoDir: string | null = null,
+    private readonly tellContext: ((context: GpuContext) => void) | null = null,
   ) {
     this.list = new SetList(cfg);
   }
@@ -1110,8 +1112,16 @@ export class Singer implements VoiceFloor, SpeechPause {
   async poll(signal?: AbortSignal): Promise<void> {
     if (this.list.preparing().length > 0) {
       // Without this the worker assumes people are listening, which is the careful answer.
+      const context = this.#gpuContext();
+      // The hosts whose hostd shares the card hear it too; a worker that asks its hostd ignores
+      // the push, one that decides by itself (or runs where no hostd joined) still needs it.
+      try {
+        this.tellContext?.(context);
+      } catch (e) {
+        log.debug({ err: errorMessage(e) }, "could not tell the hosts who listens");
+      }
       await this.worker
-        .context(this.#gpuContext(), signal)
+        .context(context, signal)
         .catch((e: unknown) => log.debug({ err: errorMessage(e) }, "could not update the worker"));
     }
     for (const entry of this.list.preparing()) {
