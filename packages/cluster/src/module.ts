@@ -14,7 +14,7 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { HOST_LINK_CLOSE, HOST_LINK_PATH } from "@miyoria/contracts/host";
+import { HOST_LINK_CLOSE, HOST_LINK_PATH, type HostLinks } from "@miyoria/contracts/host";
 import {
   defineManifest,
   errorMessage,
@@ -99,6 +99,9 @@ export type ClusterComplete = (
   signal: AbortSignal,
 ) => Promise<string>;
 
+/** Core's wiring: the node links (`voice.link`, `stage.link`) that are on, with their tokens. */
+export type ClusterLinksSource = (services: ServiceLookup) => HostLinks["links"];
+
 export interface ClusterModuleOptions {
   /** Guard sources that stay for the module's whole life (Core's `singing` and `live`). */
   guards?: readonly ClusterGuard[];
@@ -117,6 +120,11 @@ export interface ClusterModuleOptions {
   llmPurposes?: readonly string[];
   /** Completions per host and time window. Default 30 a minute. */
   llmRate?: ClusterRateLimit;
+  /**
+   * Where Core's node links listen and their tokens, for `cluster.links`. Read when a host
+   * connects or is approved, and on `refreshLinks`. Without it hosts are told nothing.
+   */
+  links?: ClusterLinksSource;
 }
 
 /** `host:port` / `[v6]:port`. */
@@ -255,6 +263,9 @@ export class ClusterModule implements Module {
       now: () => ctx.clock.now(),
       relay: this.#relay,
       calls: this.#calls(ctx, registry),
+      ...(this.#options.links === undefined
+        ? {}
+        : { links: () => (this.#options.links as ClusterLinksSource)(ctx.services) }),
     });
     // `request` for an endpoint only a host's link reaches goes through that link.
     registry.setRelay(new ClusterRelay((name) => link.relayHost(name)));
@@ -317,6 +328,14 @@ export class ClusterModule implements Module {
         server.closeAllConnections();
       }
     });
+  }
+
+  /**
+   * The node links' values (option `links`) may have changed: every connected host whose share
+   * changed is told (`cluster.links`). Does nothing while the module is not running.
+   */
+  refreshLinks(): void {
+    this.#link?.refreshLinks();
   }
 
   /** What serves `cluster.llm` and `cluster.fetch` for this run of the module. */

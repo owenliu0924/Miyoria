@@ -30,6 +30,7 @@ export {
   type ClusterGuard,
   type ClusterHosts,
   ClusterKey,
+  type ClusterLinksSource,
   ClusterModule,
   type ClusterModuleOptions,
   type ClusterService,

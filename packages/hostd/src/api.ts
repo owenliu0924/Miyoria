@@ -2,7 +2,12 @@
 // this machine) and the control link to Core. The daemon implements `HostApi`; the transports
 // only move messages (docs/design/v5-hostd.md §5).
 
-import type { HostGuardState, HostReport, HostServiceEvent } from "@miyoria/contracts/host";
+import type {
+  HostGuardState,
+  HostLinks,
+  HostReport,
+  HostServiceEvent,
+} from "@miyoria/contracts/host";
 
 /** Who is calling. Decides which methods are allowed. */
 export type Caller =
@@ -57,4 +62,6 @@ export interface HostApi {
   setGuardSource(source: GuardSource | null): void;
   /** The control link sets this while it is connected. */
   setClusterClient(client: ClusterClient | null): void;
+  /** Where Core's node links are (`cluster.links`), each time Core sends them. Optional (H4b). */
+  setLinks?(links: HostLinks["links"]): void;
 }

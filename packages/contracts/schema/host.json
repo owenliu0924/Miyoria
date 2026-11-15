@@ -566,6 +566,49 @@
         "stopped"
       ]
     },
+    "HostLinkValues": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "path": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "port",
+        "path",
+        "token"
+      ]
+    },
+    "HostLinks": {
+      "type": "object",
+      "properties": {
+        "links": {
+          "type": "object",
+          "properties": {
+            "voice": {
+              "$ref": "#/$defs/HostLinkValues"
+            },
+            "stage": {
+              "$ref": "#/$defs/HostLinkValues"
+            }
+          }
+        }
+      },
+      "required": [
+        "links"
+      ]
+    },
     "HostLlm": {
       "type": "object",
       "properties": {

@@ -4,7 +4,8 @@
 // While connected it reports the host (`host.report`, with service tokens), forwards every
 // service state change (`service.event`, each followed by a fresh report, at most one report per
 // `reportMs`), serves Core's requests through `HostApi.call` as caller `core`, and gives the daemon
-// a cluster client and a guard source that ask Core. Requests Core relays to a service of this
+// a cluster client and a guard source that ask Core; where Core's node links are (`cluster.links`)
+// goes to `HostApi.setLinks`. Requests Core relays to a service of this
 // machine (`relay.request` and the binary frames, §7.1) are served by `HostRelay`, whose fetches
 // are aborted when the link drops. When the link drops the client and the source are taken away and
 // it dials again with backoff; after `UNAUTHORIZED` or `BAD_HELLO` it stops for good, and after
@@ -20,6 +21,7 @@ import {
   HostGuardResultSchema,
   type HostGuardState,
   type HostHello,
+  HostLinksSchema,
   HostServiceLogsSchema,
   type HostWelcome,
   HostWelcomeSchema,
@@ -333,8 +335,7 @@ export class CoreLink {
               throw rpcError(error);
             })
           : this.#serve(peer, method, params, signal),
-      onNotification: (method) =>
-        this.#log.debug({ method }, "Core sent a notification hostd does not use yet"),
+      onNotification: (method, params) => this.#notified(method, params),
       onError: (what, error, method) =>
         this.#log.debug({ what, method, err: messageOf(error) }, "Core link"),
     });
@@ -401,6 +402,20 @@ export class CoreLink {
       relay.close();
       peer.close();
     };
+  }
+
+  /** One of Core's notifications. */
+  #notified(method: string, params: unknown): void {
+    if (method === HOST_NOTIFICATION.ClusterLinks) {
+      const parsed = HostLinksSchema.safeParse(params);
+      if (!parsed.success) {
+        this.#log.warn({ err: parsed.error.message }, "Core sent bad cluster.links");
+        return;
+      }
+      this.#api.setLinks?.(parsed.data.links);
+      return;
+    }
+    this.#log.debug({ method }, "Core sent a notification hostd does not use yet");
   }
 
   /** Answers one of Core's requests. */

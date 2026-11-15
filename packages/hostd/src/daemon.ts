@@ -16,6 +16,7 @@ import {
   type HostGuardState,
   type HostInfo,
   type HostLinkState,
+  type HostLinks,
   type HostRelinkResult,
   type HostReport,
   type HostServiceControlResult,
@@ -43,13 +44,14 @@ import {
   type HostApi,
   HostRpcError,
 } from "./api.js";
-import { type Catalog, loadCatalog } from "./catalog.js";
+import { type Catalog, type LinkPlaceholder, loadCatalog } from "./catalog.js";
 import { HostdClient } from "./client.js";
 import { GpuCache, type GpuReader, nvidiaSmiReader } from "./gpu.js";
 import { coreStatusGuard, guardedMessage, guardUnknownMessage } from "./guard.js";
 import { type LoadedHostConfig, loadHostConfig } from "./host-config.js";
 import { type InstallDeps, installService, removeService } from "./install/index.js";
 import { CoreLink, type CoreLinkOptions, type CoreLinkState } from "./link/index.js";
+import { linkValues } from "./links.js";
 import { rotatingLog, ServiceLog } from "./logs.js";
 import {
   localUrl,
@@ -106,6 +108,9 @@ export interface LinkHandle {
   start(): void;
   stop(): Promise<void>;
 }
+
+/** The status reason of a node that runs with older link values than Core's (H4b). */
+export const LINKS_CHANGED_REASON = "連線資訊已更新,需要重啟";
 
 /** The file Core's join writes into the state folder (H5). */
 export const HOST_KEY_FILE = "host.key";
@@ -237,6 +242,10 @@ export class Daemon implements HostApi {
   #installing: Promise<unknown> = Promise.resolve();
   /** Serialises `host.relink`: two calls at once would leave two links. */
   #relinking: Promise<unknown> = Promise.resolve();
+  /** What Core last told this host about its node links (`cluster.links`); kept across redials. */
+  #links: HostLinks["links"] = {};
+  /** Serialises the restarts new link values cause. */
+  #linkChecks: Promise<unknown> = Promise.resolve();
 
   constructor(options: DaemonOptions) {
     this.#options = options;
@@ -304,6 +313,7 @@ export class Daemon implements HostApi {
       log: this.#log,
       hostdUrl: () => `http://127.0.0.1:${this.#port}`,
       hostToken: () => this.#hostToken,
+      links: () => this.linkValues(),
       offloadUrls: () =>
         offloadUrls(
           [...this.#services.values()].map((s) => s.plan),
@@ -312,6 +322,8 @@ export class Daemon implements HostApi {
         ),
       service: (name) => this.#services.get(name),
       emit: (event) => {
+        // A node that came up with older link values than Core's latest gets them now.
+        if (event.state === "running") this.#queueLinkCheck([event.service]);
         for (const listener of this.#events) {
           try {
             listener(event);
@@ -623,6 +635,62 @@ export class Daemon implements HostApi {
   /** The `cluster.*` client while the control link is up (used from H5 on). */
   get clusterClient(): ClusterClient | null {
     return this.#cluster;
+  }
+
+  /**
+   * `cluster.links`: where Core's node links are now. A node service whose process runs with
+   * other (or no) values from hostd is restarted once to take them, unless one of its guarded
+   * states is active (or unknown): then it keeps running and its status says it needs a restart.
+   */
+  setLinks(links: HostLinks["links"]): void {
+    this.#links = links;
+    this.#log.info({ links: Object.keys(links) }, "Core sent the node links");
+    this.#queueLinkCheck([...this.#services.keys()]);
+  }
+
+  /** The `{link:...}` values now: what Core sent, with the address built from `[cluster] url`. */
+  linkValues(): Partial<Record<LinkPlaceholder, string>> {
+    return linkValues(this.#links, this.#host?.config.cluster?.url);
+  }
+
+  /** Runs the link check of these services after the ones before it. */
+  #queueLinkCheck(names: readonly string[]): void {
+    if (Object.keys(this.#links).length === 0) return;
+    const run = this.#linkChecks.then(() => this.#checkLinks(names));
+    this.#linkChecks = run.catch((error: unknown) =>
+      this.#log.error({ err: error }, "applying the node links failed"),
+    );
+  }
+
+  /** Restarts the running services among `names` whose link values are out of date. */
+  async #checkLinks(names: readonly string[]): Promise<void> {
+    if (this.#stopping !== null) return;
+    const now = this.linkValues();
+    for (const name of names) {
+      const service = this.#services.get(name);
+      if (service === undefined || service.state !== "running") continue;
+      const used = service.usedLinks;
+      const stale = (Object.keys(used) as LinkPlaceholder[]).filter((key) => {
+        const value = now[key];
+        return value !== undefined && value !== used[key];
+      });
+      if (stale.length === 0) continue;
+      try {
+        await this.#checkGuard(service, false);
+      } catch (error) {
+        if (!(error instanceof HostRpcError)) throw error;
+        this.#log.warn(
+          { service: name, links: stale, reason: error.message },
+          "node links changed; not restarting it now",
+        );
+        service.note(LINKS_CHANGED_REASON);
+        continue;
+      }
+      this.#log.info({ service: name, links: stale }, "node links changed; restarting it");
+      await service.stop();
+      const fresh = this.#replan([name]) ?? service;
+      await fresh.start();
+    }
   }
 
   /**

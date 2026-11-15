@@ -49,6 +49,9 @@ import { SceneRoles, SceneRolesKey } from "./scenes.js";
 /** Topic of the game director's session events (`{state: "started" | "stopped", game}`). */
 export const GAME_SESSION_TOPIC = Events.GameDirectorSession.type;
 
+/** WebSocket path of the endpoint. */
+export const STAGE_LINK_PATH = "/stage-link";
+
 const GOLIVE_STATES: readonly GoLiveState[] = ["starting", "live", "stopped", "failed"];
 
 /**
@@ -145,7 +148,9 @@ export class StageLinkModule implements Module {
     }
     const link = new StageLink(ctx.id, ctx.bus, config, ctx.signal);
     const server = await HttpServer.listen(config.bind, "stage link", {
-      ws: [{ path: "/stage-link", maxPayload: MAX_MESSAGE, onConnection: (ws) => link.serve(ws) }],
+      ws: [
+        { path: STAGE_LINK_PATH, maxPayload: MAX_MESSAGE, onConnection: (ws) => link.serve(ws) },
+      ],
     });
     const addr = server.address;
     if (!isLoopback(addr.host)) {

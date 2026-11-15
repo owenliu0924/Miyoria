@@ -1,5 +1,5 @@
-// Params and results of the methods of the control link and the local API. The `gpu.*`,
-// `cluster.context` and `cluster.links` shapes are added by the steps that implement them.
+// Params and results of the methods of the control link and the local API. The `gpu.*` and
+// `cluster.context` shapes are added by the steps that implement them.
 
 import { z } from "zod";
 import { HostGpuPolicySchema, HostGuardStateSchema } from "./service.js";
@@ -305,6 +305,36 @@ export const HostFetchResultSchema = z
   })
   .meta({ id: "HostFetchResult" });
 export type HostFetchResult = z.output<typeof HostFetchResultSchema>;
+
+// ---- where the nodes dial Core (H4b) ---------------------------------------------------------------
+
+/** One of Core's node links (`voice.link`, `stage.link`): where it listens and its token. */
+export const HostLinkValuesSchema = z
+  .object({
+    /** The whole address, when Core's config gives a public one; else the host builds it. */
+    url: z.string().optional(),
+    port: z.number().int().min(1).max(65_535),
+    /** The WebSocket path (`/voice-link`). */
+    path: z.string(),
+    token: z.string(),
+  })
+  .meta({ id: "HostLinkValues" });
+export type HostLinkValues = z.output<typeof HostLinkValuesSchema>;
+
+/**
+ * `cluster.links` notification params, Core → hostd: sent when the host connects, when it is
+ * approved, and when the values change. `voice` only to a host approved for `voice-room`, `stage`
+ * only to one approved for `renderer`; a link whose module is off is left out.
+ */
+export const HostLinksSchema = z
+  .object({
+    links: z.object({
+      voice: HostLinkValuesSchema.optional(),
+      stage: HostLinkValuesSchema.optional(),
+    }),
+  })
+  .meta({ id: "HostLinks" });
+export type HostLinks = z.output<typeof HostLinksSchema>;
 
 // ---- installing (service.install, service.remove, host.update) ---------------------------------
 

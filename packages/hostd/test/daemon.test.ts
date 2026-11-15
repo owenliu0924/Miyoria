@@ -13,6 +13,7 @@ import {
   type Daemon,
   type HostApi,
   HostRpcError,
+  LINKS_CHANGED_REASON,
   type LinkHandle,
   pidAlive,
 } from "../src/index.js";
@@ -365,6 +366,133 @@ describe("guard", () => {
     expect(refused.code).toBe(HOST_ERROR_CODE.Guarded);
     expect(refused.data).toEqual({ states: ["singing", "live"] });
     await daemon.call("service.stop", { service: "core", force: true }, OP);
+  });
+});
+
+describe("node links", () => {
+  const LINK_ENV = { LINK_URL: "{link:voice.url}", LINK_TOKEN: "{link:voice.token}" };
+  const VOICE = { port: 7879, path: "/voice-link", token: "tok-1" };
+
+  async function envOf(daemon: Daemon, name: string): Promise<Record<string, string>> {
+    const s = await stateIs(daemon, name, "running");
+    return (await (await fetch(`http://127.0.0.1:${s.port}/env`)).json()) as Record<string, string>;
+  }
+
+  it(
+    "gives a node Core's link values, restarting it once when they arrive or change",
+    T,
+    async () => {
+      const ws = workspace(
+        [fake("node", "health.cjs", { env: LINK_ENV }), fake("plain", "health.cjs")],
+        '[cluster]\nurl = "wss://core.tailnet:7880/cluster-link"\n',
+      );
+      const daemon = daemonFor(ws);
+      await daemon.start();
+      await daemon.startAll();
+      const before = await envOf(daemon, "node");
+      expect(before.LINK_URL).toBeUndefined();
+      expect(before.LINK_TOKEN).toBeUndefined();
+      const firstPid = (await one(daemon, "node")).pid;
+      const plainPid = (await stateIs(daemon, "plain", "running")).pid;
+
+      daemon.setLinks({ voice: VOICE });
+      const after = await until(async () => {
+        const s = await one(daemon, "node");
+        if (s.state !== "running" || s.pid === firstPid) return undefined;
+        return envOf(daemon, "node");
+      });
+      expect(after.LINK_URL).toBe("wss://core.tailnet:7879/voice-link");
+      expect(after.LINK_TOKEN).toBe("tok-1");
+      // A service that uses no link is left alone.
+      expect((await one(daemon, "plain")).pid).toBe(plainPid);
+
+      // The same values again: nothing happens.
+      const secondPid = (await one(daemon, "node")).pid;
+      daemon.setLinks({ voice: VOICE });
+      await new Promise((r) => setTimeout(r, 500));
+      expect((await one(daemon, "node")).pid).toBe(secondPid);
+
+      // A new token: one more restart.
+      daemon.setLinks({ voice: { ...VOICE, token: "tok-2" } });
+      const changed = await until(async () => {
+        const s = await one(daemon, "node");
+        if (s.state !== "running" || s.pid === secondPid) return undefined;
+        return envOf(daemon, "node");
+      });
+      expect(changed.LINK_TOKEN).toBe("tok-2");
+    },
+  );
+
+  it(
+    "does not restart a node while its guard is active; its status says it needs one",
+    T,
+    async () => {
+      const ws = workspace(
+        [fake("node", "health.cjs", { env: LINK_ENV, run: 'guard = ["live", "singing"]' })],
+        '[cluster]\nurl = "ws://core:7880/cluster-link"\n',
+      );
+      const daemon = daemonFor(ws);
+      await daemon.start();
+      daemon.setGuardSource({ states: async () => ["live"] });
+      await daemon.startAll();
+      const pid = (await stateIs(daemon, "node", "running")).pid;
+
+      daemon.setLinks({ voice: VOICE });
+      const noted = await until(async () => {
+        const s = await one(daemon, "node");
+        return s.reason === LINKS_CHANGED_REASON ? s : undefined;
+      });
+      expect(noted.state).toBe("running");
+      expect(noted.pid).toBe(pid);
+      expect((await envOf(daemon, "node")).LINK_URL).toBeUndefined();
+
+      // The operator restarts it (the guard is over): it starts with the values, the note is gone.
+      daemon.setGuardSource({ states: async () => [] });
+      await daemon.call("service.restart", { service: "node" }, OP);
+      const env = await until(async () => {
+        const s = await one(daemon, "node");
+        if (s.state !== "running" || s.pid === pid) return undefined;
+        return envOf(daemon, "node");
+      });
+      expect(env.LINK_URL).toBe("ws://core:7879/voice-link");
+      expect((await one(daemon, "node")).reason).toBeUndefined();
+
+      // Without a guard state active, a change restarts it by itself.
+      const now = (await one(daemon, "node")).pid;
+      daemon.setLinks({ voice: { ...VOICE, token: "tok-9" } });
+      const next = await until(async () => {
+        const s = await one(daemon, "node");
+        if (s.state !== "running" || s.pid === now) return undefined;
+        return envOf(daemon, "node");
+      });
+      expect(next.LINK_TOKEN).toBe("tok-9");
+    },
+  );
+
+  it("passes cluster.links from the control link to the daemon", T, async () => {
+    const ws = workspace([fake("node", "health.cjs", { env: LINK_ENV })]);
+    let api: HostApi | null = null;
+    writeIn(ws, "data/host/host.key", JSON.stringify({ id: "h1", key: "k1" }));
+    writeIn(
+      ws,
+      "host.toml",
+      `name = "test-host"\n[cluster]\nurl = "ws://core:7880/cluster-link"\n[services.node]\nenabled = true\n`,
+    );
+    const daemon = daemonFor(ws, {
+      linkFactory: (a) => {
+        api = a;
+        return { state: "connecting", start: () => {}, stop: async () => {} };
+      },
+    });
+    await daemon.start();
+    expect(api).toBe(daemon);
+    (api as unknown as HostApi).setLinks?.({
+      stage: { port: 7882, path: "/stage-link", token: "s" },
+    });
+    expect(daemon.linkValues()).toEqual({
+      "stage.url": "ws://core:7882/stage-link",
+      "stage.token": "s",
+    });
   });
 });
 

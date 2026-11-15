@@ -13,6 +13,10 @@ command = ["{miyoria}", "stage", "-c", "{config}"]
 cwd = "{workspace}"
 port = 7884                      # the overlay (`[stage] overlay_bind`)
 pass_env = ["*"]
+# Where Core's stage link is and its token, from Core (cluster.links, to a host approved for
+# renderer); they win over [stage] core_url and token. Until Core has sent them, or on a machine
+# that has not joined, the variables are not set and [stage] is used as before.
+env = { STAGE_LINK_URL = "{link:stage.url}", STAGE_LINK_TOKEN = "{link:stage.token}" }
 after = ["core"]
 guard = ["live"]
 

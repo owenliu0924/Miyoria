@@ -26,10 +26,12 @@ import { type ExitInfo, type ServiceProcess, spawnService } from "./process.js";
 import {
   checkPlan,
   expandService,
+  type LiveValues,
   localUrl,
   type ResolveContext,
   ResolveError,
   type ServicePlan,
+  type UsedLinks,
 } from "./resolve.js";
 
 /** Timings that tests shorten. */
@@ -61,6 +63,8 @@ export interface ServiceHost {
   hostdUrl(): string;
   hostToken(): string;
   offloadUrls(): string;
+  /** What Core told this host about its node links now (`{link:...}`). */
+  links(): LiveValues["links"];
   service(name: string): ManagedService | undefined;
   emit(event: HostServiceEvent): void;
   /** Called on every change of what `status` returns. */
@@ -108,6 +112,8 @@ export class ManagedService {
   #healthy = false;
   #port: number | undefined;
   #token: string | undefined;
+  /** The `{link:...}` values the running process was started with. */
+  #links: UsedLinks = {};
   #child: ServiceProcess | null = null;
   /** Epoch ms of failures within the give-up window. */
   #failures: number[] = [];
@@ -150,6 +156,16 @@ export class ManagedService {
 
   get token(): string | undefined {
     return this.#token;
+  }
+
+  /** The `{link:...}` values its process was started with (empty when it uses none). */
+  get usedLinks(): UsedLinks {
+    return this.#links;
+  }
+
+  /** Sets the reason shown in its status without changing its state (until the next change). */
+  note(reason: string | undefined): void {
+    this.#set(this.#state, reason);
   }
 
   /** Whether a process of ours runs (or is about to) for this service. */
@@ -390,6 +406,7 @@ export class ManagedService {
         token,
         hostToken: this.#host.hostToken(),
         hostdUrl: this.#host.hostdUrl(),
+        links: this.#host.links(),
       });
     } catch (error) {
       if (!(error instanceof ResolveError)) throw error;
@@ -399,6 +416,7 @@ export class ManagedService {
     }
 
     this.#token = token;
+    this.#links = spec.links;
     this.logs.line(
       `--- ${new Date().toISOString()} hostd 啟動 ${this.name}${port !== undefined ? `(埠 ${port})` : ""} ---`,
     );

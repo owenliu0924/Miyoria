@@ -17,6 +17,7 @@ import {
   type ResolveContext,
   workerBaseEnv,
 } from "../src/index.js";
+import { linkUrl, linkValues } from "../src/links.js";
 import { rotatingLog } from "../src/logs.js";
 import { cleanup, type TestWorkspace, workspace, writeIn } from "./fakes.js";
 
@@ -111,6 +112,77 @@ describe("placeholders", () => {
     const [plan] = plans(ws, ctx);
     expect(plan?.disabled).toBeNull();
     expect(expandService(plan as NonNullable<typeof plan>, ctx, live).env.MTX_SECRET).toBe("s3");
+  });
+
+  it("sets {link:...} variables hostd knows, leaves out the others, and never disables for them", () => {
+    const ws = workspace([]);
+    descriptor(
+      ws,
+      "node",
+      '[run]\ncommand = ["n"]\nenv = { LINK_URL = "{link:voice.url}", LINK_TOKEN = "{link:voice.token}", BOTH = "{link:voice.url}#{link:voice.token}", PLAIN = "p" }',
+    );
+    writeIn(ws, "host.toml", 'name = "h"\n[services.node]\n');
+    const ctx = ctxFor(ws, { env: { PATH: "/bin", LINK_URL: "from the daemon" } });
+    const [plan] = plans(ws, ctx);
+    expect(plan?.disabled).toBeNull();
+    const p = plan as NonNullable<typeof plan>;
+
+    const none = expandService(p, ctx, live);
+    expect(none.env).not.toHaveProperty("LINK_URL");
+    expect(none.env).not.toHaveProperty("LINK_TOKEN");
+    expect(none.env).not.toHaveProperty("BOTH");
+    expect(none.env.PLAIN).toBe("p");
+    expect(none.links).toEqual({ "voice.url": null, "voice.token": null });
+
+    // Only the token known: the URL variable and the one needing both stay out.
+    const half = expandService(p, ctx, { ...live, links: { "voice.token": "t1" } });
+    expect(half.env.LINK_TOKEN).toBe("t1");
+    expect(half.env).not.toHaveProperty("LINK_URL");
+    expect(half.env).not.toHaveProperty("BOTH");
+
+    const all = expandService(p, ctx, {
+      ...live,
+      links: { "voice.url": "ws://core:7879/voice-link", "voice.token": "t1" },
+    });
+    expect(all.env).toMatchObject({
+      LINK_URL: "ws://core:7879/voice-link",
+      LINK_TOKEN: "t1",
+      BOTH: "ws://core:7879/voice-link#t1",
+    });
+    expect(all.links).toEqual({ "voice.url": "ws://core:7879/voice-link", "voice.token": "t1" });
+  });
+
+  it("builds a link's address from the cluster URL unless Core sent one", () => {
+    expect(linkUrl("ws://core.tailnet:7880/cluster-link", 7879, "/voice-link")).toBe(
+      "ws://core.tailnet:7879/voice-link",
+    );
+    expect(linkUrl("wss://core.example/cluster-link", 7882, "/stage-link")).toBe(
+      "wss://core.example:7882/stage-link",
+    );
+    expect(linkUrl("ws://[fd7a::1]:7880/cluster-link", 7879, "/voice-link")).toBe(
+      "ws://[fd7a::1]:7879/voice-link",
+    );
+    expect(linkUrl(undefined, 7879, "/voice-link")).toBeNull();
+    expect(linkUrl("not a url", 7879, "/voice-link")).toBeNull();
+
+    const voice = { port: 7879, path: "/voice-link", token: "v" };
+    expect(linkValues({ voice }, "ws://core:7880/cluster-link")).toEqual({
+      "voice.url": "ws://core:7879/voice-link",
+      "voice.token": "v",
+    });
+    expect(
+      linkValues(
+        {
+          voice,
+          stage: { url: "wss://pub.example:7882/stage-link", port: 7882, path: "/x", token: "s" },
+        },
+        undefined,
+      ),
+    ).toEqual({
+      "voice.token": "v",
+      "stage.url": "wss://pub.example:7882/stage-link",
+      "stage.token": "s",
+    });
   });
 
   it("finds the Python of host.toml's environment or of the state folder", () => {

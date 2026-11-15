@@ -14,6 +14,9 @@ export {
   DESCRIPTOR_FILE,
   ENV_PLACEHOLDER_PREFIX,
   isKnownPlaceholder,
+  LINK_PLACEHOLDER_PREFIX,
+  LINK_PLACEHOLDERS,
+  type LinkPlaceholder,
   loadCatalog,
   PLACEHOLDERS,
   placeholdersIn,
@@ -31,6 +34,7 @@ export {
   HostdRunningError,
   type HostKey,
   HostKeySchema,
+  LINKS_CHANGED_REASON,
   type LinkHandle,
   readHostKey,
 } from "./daemon.js";
@@ -53,6 +57,7 @@ export {
   stateLayout,
 } from "./host-config.js";
 export * from "./install/index.js";
+export { linkUrl, linkValues } from "./links.js";
 export { fileTail, MEMORY_LINES, ServiceLog } from "./logs.js";
 export {
   freePort,
@@ -74,6 +79,7 @@ export {
   ResolveError,
   type ServicePlan,
   type SpawnSpec,
+  type UsedLinks,
 } from "./resolve.js";
 export {
   pidAlive,

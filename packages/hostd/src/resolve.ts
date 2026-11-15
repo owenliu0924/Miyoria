@@ -17,6 +17,8 @@ import {
   type CatalogEntry,
   ENV_PLACEHOLDER_PREFIX,
   isKnownPlaceholder,
+  LINK_PLACEHOLDER_PREFIX,
+  type LinkPlaceholder,
   placeholdersIn,
 } from "./catalog.js";
 import { mergeEnv, passEnv, workerBaseEnv } from "./env.js";
@@ -74,7 +76,15 @@ export interface LiveValues {
   hostToken: string;
   /** `MIYORIA_HOSTD_URL`. */
   hostdUrl: string;
+  /**
+   * `{link:voice.url}` and the others: what Core told this host about its node links. One that is
+   * missing leaves its environment variable out (the node falls back to its own settings).
+   */
+  links?: Readonly<Partial<Record<LinkPlaceholder, string>>>;
 }
+
+/** The `{link:...}` values a start used, by name; `null` for one that had no value then. */
+export type UsedLinks = Partial<Record<LinkPlaceholder, string | null>>;
 
 /** A program to spawn: no shell, an argument list. */
 export interface SpawnSpec {
@@ -82,6 +92,8 @@ export interface SpawnSpec {
   args: string[];
   cwd: string;
   env: Record<string, string>;
+  /** The `{link:...}` placeholders its environment refers to, with the values it got. */
+  links: UsedLinks;
 }
 
 export class ResolveError extends Error {
@@ -225,6 +237,12 @@ function placeholderValue(
   ctx: ResolveContext,
   live: LiveValues,
 ): string {
+  if (name.startsWith(LINK_PLACEHOLDER_PREFIX)) {
+    // `expandEnv` leaves out a variable whose link value is missing before it gets here.
+    const value = live.links?.[name.slice(LINK_PLACEHOLDER_PREFIX.length) as LinkPlaceholder];
+    if (value === undefined) throw new ResolveError(`${where}:{${name}} 還沒有值`);
+    return value;
+  }
   if (name.startsWith(ENV_PLACEHOLDER_PREFIX)) {
     const variable = name.slice(ENV_PLACEHOLDER_PREFIX.length);
     const value = ctx.env[variable];
@@ -285,21 +303,34 @@ function substitute(
 ): string {
   if (placeholdersIn(text).length === 0) return text;
   return text.replace(
-    /\{([A-Za-z_][A-Za-z0-9_-]*(?::[A-Za-z_][A-Za-z0-9_]*)?)\}/g,
+    /\{([A-Za-z_][A-Za-z0-9_-]*(?::[A-Za-z_][A-Za-z0-9_.]*)?)\}/g,
     (_m, name: string) => placeholderValue(name, where, plan, ctx, live),
   );
 }
 
-/** An environment table with its placeholders substituted; `{offload_urls}` empty drops the key. */
+/**
+ * An environment table with its placeholders substituted; `{offload_urls}` empty drops the key,
+ * and so does a `{link:...}` hostd has no value for yet. The link values it used go into `used`.
+ */
 function expandEnv(
   table: Record<string, string>,
   where: string,
   plan: ServicePlan,
   ctx: ResolveContext,
   live: LiveValues,
+  used: UsedLinks,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, raw] of Object.entries(table)) {
+    let missing = false;
+    for (const name of placeholdersIn(raw)) {
+      if (!name.startsWith(LINK_PLACEHOLDER_PREFIX)) continue;
+      const link = name.slice(LINK_PLACEHOLDER_PREFIX.length) as LinkPlaceholder;
+      const value = live.links?.[link];
+      used[link] = value ?? null;
+      if (value === undefined || value === "") missing = true;
+    }
+    if (missing) continue;
     const value = substitute(raw, `${where}.${key}`, plan, ctx, live);
     if (value === "" && placeholdersIn(raw).includes("offload_urls")) continue;
     out[key] = value;
@@ -353,18 +384,19 @@ export function expandService(plan: ServicePlan, ctx: ResolveContext, live: Live
     added.SSL_CERT_FILE = ctx.caBundle;
     added.REQUESTS_CA_BUNDLE = ctx.caBundle;
   }
+  const links: UsedLinks = {};
   const env = mergeEnv(
     [
       workerBaseEnv(ctx.env),
       passEnv(run.pass_env, ctx.env, ctx.platform),
       defaultEnv(entry.descriptor, ctx),
-      expandEnv(run.env, "run.env", plan, ctx, live),
-      expandEnv(plan.override.env, `host.toml services.${plan.name}.env`, plan, ctx, live),
+      expandEnv(run.env, "run.env", plan, ctx, live, links),
+      expandEnv(plan.override.env, `host.toml services.${plan.name}.env`, plan, ctx, live, links),
       added,
     ],
     ctx.platform,
   );
-  return { file, args, cwd, env };
+  return { file, args, cwd, env, links };
 }
 
 /** The base URL a local client uses for a service on `port`. */

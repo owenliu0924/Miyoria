@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { isKnownPlaceholder, loadCatalog, PLACEHOLDERS, placeholdersIn } from "../src/index.js";
+import {
+  isKnownPlaceholder,
+  LINK_PLACEHOLDERS,
+  loadCatalog,
+  PLACEHOLDERS,
+  placeholdersIn,
+} from "../src/index.js";
 
 // Temporary folders live inside the package, not in the system temp folder.
 const TMP = join(dirname(fileURLToPath(import.meta.url)), "..", ".tmp-test");
@@ -124,6 +130,35 @@ describe("placeholdersIn", () => {
     expect(isKnownPlaceholder("env:MIYORIA_HLS_SECRET")).toBe(true);
     expect(isKnownPlaceholder("other:X")).toBe(false);
     expect(isKnownPlaceholder("env:")).toBe(false);
+  });
+
+  it("knows the four {link:...} placeholders, and only in run.env", () => {
+    expect(placeholdersIn("{link:voice.url}/{link:stage.token}")).toEqual([
+      "link:voice.url",
+      "link:stage.token",
+    ]);
+    for (const name of LINK_PLACEHOLDERS) expect(isKnownPlaceholder(`link:${name}`)).toBe(true);
+    expect(isKnownPlaceholder("link:voice.port")).toBe(false);
+    expect(isKnownPlaceholder("link:")).toBe(false);
+
+    const node = (name: string, run: string) => `name = "${name}"\nkind = "node"\n[run]\n${run}\n`;
+    const root = workspace({
+      "apps/ok/service.toml": node(
+        "ok",
+        'command = ["x"]\nenv = { U = "{link:voice.url}", T = "{link:voice.token}" }',
+      ),
+      "apps/in-command/service.toml": node("in-command", 'command = ["x", "{link:voice.url}"]'),
+      "apps/unknown/service.toml": node(
+        "unknown",
+        'command = ["x"]\nenv = { U = "{link:voice.port}" }',
+      ),
+    });
+    const catalog = loadCatalog(root);
+    expect(catalog.services.has("ok")).toBe(true);
+    expect(catalog.problems.map((p) => p.message).sort()).toEqual([
+      "run.command[1]: {link:voice.url} may only be used in run.env",
+      "run.env.U: unknown placeholder {link:voice.port}",
+    ]);
   });
 });
 

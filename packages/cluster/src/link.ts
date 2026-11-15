@@ -12,6 +12,11 @@
 // What a service of a host asks Core for through its hostd (`cluster.llm`, `cluster.fetch`) is
 // checked and run by `ClusterCalls` (`calls.ts`) with what this link knows of the host.
 //
+// Core tells each approved host where its node links are (`cluster.links`: the voice link for a
+// host approved for `voice-room`, the stage link for one approved for `renderer`) when it
+// connects, when it is approved and when the values change, so a node never needs its link
+// address and token written by hand on a machine that joined.
+//
 // Binary frames after `welcome` are the relay's (§7.1, `relay.ts`): each connection has its
 // channel, and every stream of it fails when the connection ends.
 
@@ -25,6 +30,7 @@ import {
   HOST_RELAY_PROTOCOL_ERROR,
   type HostHello,
   HostHelloSchema,
+  type HostLinks,
   type HostReport,
   HostReportSchema,
   HostResolveSchema,
@@ -76,6 +82,11 @@ export interface ClusterLinkOptions {
   relay?: RelayOptions;
   /** Serves `cluster.llm` and `cluster.fetch`; without it they are not found. */
   calls?: ClusterCalls;
+  /**
+   * Where Core's node links listen and their tokens (`cluster.links`); read whenever a host
+   * connects or is approved, and on `refreshLinks`. Without it nothing is sent.
+   */
+  links?: () => HostLinks["links"];
 }
 
 interface Conn {
@@ -95,6 +106,8 @@ interface Conn {
   readonly relay: RelayChannel;
   /** The first close code wins. */
   closing: { code: number; reason: string } | null;
+  /** The last `cluster.links` it was sent, as JSON; `null` before the first. */
+  sentLinks: string | null;
 }
 
 /** Starts the close handshake; drops the socket if the other side does not answer in time. */
@@ -181,6 +194,47 @@ export class ClusterLink {
     conn.approved = host.status === "approved";
     conn.capabilities = conn.approved ? host.capabilities : [];
     this.#o.registry.setHost(host.name, conn.approved ? host.capabilities : null);
+    this.#sendLinks(conn);
+  }
+
+  /** The node links' values may have changed: tells every connected host whose share changed. */
+  refreshLinks(): void {
+    for (const conn of this.#conns.values()) this.#sendLinks(conn);
+  }
+
+  /**
+   * Sends `cluster.links` when what this host should know differs from what it was last sent:
+   * `voice` for a host approved for `voice-room`, `stage` for one approved for `renderer`. A host
+   * that was never sent anything and should know nothing (pending) gets nothing.
+   */
+  #sendLinks(conn: Conn): void {
+    const source = this.#o.links;
+    if (source === undefined) return;
+    let all: HostLinks["links"];
+    try {
+      all = source();
+    } catch (error) {
+      this.#o.log.warn({ err: errorMessage(error) }, "cannot read the node links' values");
+      return;
+    }
+    const links: HostLinks["links"] = {};
+    if (conn.approved) {
+      if (all.voice !== undefined && conn.capabilities.includes("voice-room")) {
+        links.voice = all.voice;
+      }
+      if (all.stage !== undefined && conn.capabilities.includes("renderer")) {
+        links.stage = all.stage;
+      }
+    }
+    const text = JSON.stringify(links);
+    if (text === conn.sentLinks) return;
+    if (conn.sentLinks === null && Object.keys(links).length === 0) return;
+    conn.sentLinks = text;
+    conn.peer.notify(HOST_NOTIFICATION.ClusterLinks, { links } satisfies HostLinks);
+    this.#o.log.info(
+      { host: conn.name, links: Object.keys(links) },
+      "told a host where the node links are",
+    );
   }
 
   /** Closes a host's link (revoked, removed). */
@@ -347,6 +401,7 @@ export class ClusterLink {
       peer,
       relay,
       closing: null,
+      sentLinks: null,
     };
     // Binary frames are the relay's; JSON-RPC reads the text frames.
     ws.on("message", (data: RawData, isBinary: boolean) => {
@@ -366,6 +421,7 @@ export class ClusterLink {
       version: hello.version,
       approved,
     });
+    this.#sendLinks(conn);
     const stopBeat = this.#heartbeat(conn);
     const current = conn;
     ws.on("close", (code: number, reason: Buffer) => {

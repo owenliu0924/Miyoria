@@ -25,7 +25,8 @@ export const DESCRIPTOR_FILE = "service.toml";
 /**
  * The `{name}` placeholders a descriptor may use in a command, an environment value or a path.
  * They are substituted when a service starts (`resolve.ts`), not by this module. `{env:NAME}`,
- * the value of one of the daemon's environment variables, is allowed besides these.
+ * the value of one of the daemon's environment variables, is allowed besides these, and in
+ * `run.env` only, `{link:voice.url}` and the others of `LINK_PLACEHOLDERS`.
  */
 export const PLACEHOLDERS = [
   "python",
@@ -46,9 +47,23 @@ export const PLACEHOLDERS = [
 /** The prefix of the `{env:NAME}` placeholder. */
 export const ENV_PLACEHOLDER_PREFIX = "env:";
 
+/** The prefix of the `{link:...}` placeholders. */
+export const LINK_PLACEHOLDER_PREFIX = "link:";
+
+/**
+ * Where Core's node links are, as Core tells this host (`cluster.links`), for a node's `run.env`.
+ * A value hostd does not have yet leaves the variable out; it never disables the service.
+ */
+export const LINK_PLACEHOLDERS = ["voice.url", "voice.token", "stage.url", "stage.token"] as const;
+export type LinkPlaceholder = (typeof LINK_PLACEHOLDERS)[number];
+
 /** Whether a placeholder name, as `placeholdersIn` returns it, is one hostd knows. */
 export function isKnownPlaceholder(name: string): boolean {
   if (name.startsWith(ENV_PLACEHOLDER_PREFIX)) return name.length > ENV_PLACEHOLDER_PREFIX.length;
+  if (name.startsWith(LINK_PLACEHOLDER_PREFIX)) {
+    const link = name.slice(LINK_PLACEHOLDER_PREFIX.length);
+    return (LINK_PLACEHOLDERS as readonly string[]).includes(link);
+  }
   return (PLACEHOLDERS as readonly string[]).includes(name);
 }
 
@@ -71,9 +86,12 @@ export interface Catalog {
   problems: CatalogProblem[];
 }
 
-const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_-]*(?::[A-Za-z_][A-Za-z0-9_]*)?)\}/g;
+const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_-]*(?::[A-Za-z_][A-Za-z0-9_.]*)?)\}/g;
 
-/** The names of the `{placeholders}` in a text, in order, repeats included (`env:NAME` whole). */
+/**
+ * The names of the `{placeholders}` in a text, in order, repeats included (`env:NAME` and
+ * `link:voice.url` whole).
+ */
 export function placeholdersIn(text: string): string[] {
   return [...text.matchAll(PLACEHOLDER)].map((m) => m[1] as string);
 }
@@ -159,9 +177,13 @@ export function loadCatalog(root: string): Catalog {
       const found = [
         ...kindProblems(descriptor),
         ...placeholderTexts(descriptor).flatMap(([where, text]) =>
-          placeholdersIn(text)
-            .filter((name) => !isKnownPlaceholder(name))
-            .map((name) => `${where}: unknown placeholder {${name}}`),
+          placeholdersIn(text).flatMap((name) => {
+            if (!isKnownPlaceholder(name)) return [`${where}: unknown placeholder {${name}}`];
+            if (name.startsWith(LINK_PLACEHOLDER_PREFIX) && !where.startsWith("run.env.")) {
+              return [`${where}: {${name}} may only be used in run.env`];
+            }
+            return [];
+          }),
         ),
       ];
       if (found.length > 0) {

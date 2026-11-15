@@ -9,6 +9,7 @@ import {
   HostFetchSchema,
   HostHelloSchema,
   HostInfoSchema,
+  HostLinksSchema,
   HostLlmSchema,
   HostServiceInstallResultSchema,
   HostServiceInstallSchema,
@@ -271,5 +272,15 @@ describe("methods and constants", () => {
     expect(HostFetchSchema.safeParse({ ...fetch, path: "asr" }).success).toBe(false);
     expect(HostFetchSchema.safeParse({ ...fetch, path: "//evil/asr" }).success).toBe(false);
     expect(HostFetchSchema.safeParse({ ...fetch, method: "post" }).success).toBe(false);
+  });
+
+  it("reads cluster.links: each link optional, a port in range", () => {
+    const voice = { port: 7879, path: "/voice-link", token: "t" };
+    expect(HostLinksSchema.parse({ links: { voice } })).toEqual({ links: { voice } });
+    expect(HostLinksSchema.parse({ links: {} })).toEqual({ links: {} });
+    expect(HostLinksSchema.safeParse({ links: { voice: { ...voice, port: 0 } } }).success).toBe(
+      false,
+    );
+    expect(HostLinksSchema.safeParse({}).success).toBe(false);
   });
 });
