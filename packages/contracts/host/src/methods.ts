@@ -291,7 +291,7 @@ export const HostServiceInstallResultSchema = z
     files: z.array(
       z.object({
         path: z.string(),
-        state: z.enum(["present", "downloaded", "skipped", "failed"]),
+        state: z.enum(["present", "downloaded", "missing", "failed"]),
         detail: z.string().optional(),
       }),
     ),

@@ -977,7 +977,7 @@
                 "enum": [
                   "present",
                   "downloaded",
-                  "skipped",
+                  "missing",
                   "failed"
                 ]
               },
