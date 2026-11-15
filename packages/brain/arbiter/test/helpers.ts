@@ -3,14 +3,14 @@ import {
   type ContextKey,
   type ConversationFacts,
   contextKeyString,
-  type Event,
   type Impulse,
   type ImpulseHost,
   type ImpulseInput,
   type ImpulseRun,
   newId,
   newImpulse,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   type TurnOutcomeRecord,
   toTimestamp,
 } from "@miyoria/types";
@@ -81,14 +81,14 @@ export class FakeHost implements ImpulseHost {
 export interface Rig {
   clock: ManualClock;
   host: FakeHost;
-  events: Event[];
+  events: PublishedEvent[];
   arbiter: ArbiterCore;
   env: { paused: boolean; budget: "ok" | "degraded" | "exhausted"; blocked: Set<string> };
 }
 
 export function rig(overrides: Partial<ArbiterConfig> = {}, clock = new ManualClock()): Rig {
   const host = new FakeHost();
-  const events: Event[] = [];
+  const events: PublishedEvent[] = [];
   const env = {
     paused: false,
     budget: "ok" as "ok" | "degraded" | "exhausted",
@@ -96,7 +96,7 @@ export function rig(overrides: Partial<ArbiterConfig> = {}, clock = new ManualCl
   };
   const deps: ArbiterEnv = {
     now: () => clock.now(),
-    publish: publishInto(events),
+    publish: publishedInto(events),
     paused: () => env.paused,
     budget: () => env.budget,
     blocked: (a) => env.blocked.has(a.id),
@@ -112,11 +112,9 @@ export function impulse(
   return newImpulse({ ttlMs: 10 * MIN, why: "想聊天", hint: "聊點什麼", ...input }, clock.now());
 }
 
-/** Payloads of the custom events of `topic`. */
-export function payloads<T>(events: readonly Event[], topic: string): T[] {
-  return events.flatMap((e) =>
-    e.type === "custom" && e.data.topic === topic ? [e.data.payload as unknown as T] : [],
-  );
+/** Payloads of the events of `topic`. */
+export function payloads<T>(events: readonly PublishedEvent[], topic: string): T[] {
+  return events.flatMap((e) => (e.type === topic ? [e.data as T] : []));
 }
 
 export function outcome(

@@ -6,16 +6,15 @@
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
   type ActivityRequest,
   type ArbiterDecision,
   ArbiterKey,
+  type EventPayload,
+  Events,
   ImpulseHostKey,
   type ImpulseSource,
   newImpulse,
   toTimestamp,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArbiterModule } from "../src/index.js";
@@ -44,8 +43,8 @@ async function build() {
 
 const STOP_GAME: ActivityRequest = { type: "stop", activity: "game" };
 
-function done(request: ActivityRequest) {
-  return v2Event(ACTIVITY_DONE_TOPIC, {
+function done(request: ActivityRequest): EventPayload<typeof Events.ActivityDone> {
+  return {
     type: "done",
     task: "t1",
     resource: "activity",
@@ -54,11 +53,14 @@ function done(request: ActivityRequest) {
     detail: "",
     data: null,
     at: toTimestamp(Date.now()),
-  });
+  };
 }
 
-function failed(request: ActivityRequest, code: "crashed") {
-  return v2Event(ACTIVITY_FAILED_TOPIC, {
+function failed(
+  request: ActivityRequest,
+  code: "crashed",
+): EventPayload<typeof Events.ActivityFailed> {
+  return {
     type: "failed",
     task: "t2",
     resource: "activity",
@@ -67,7 +69,7 @@ function failed(request: ActivityRequest, code: "crashed") {
     code,
     detail: "",
     at: toTimestamp(Date.now()),
-  });
+  };
 }
 
 function startGame(source: ImpulseSource) {
@@ -88,7 +90,7 @@ describe("a game that was stopped stays stopped", () => {
   it("after a finished stop she cannot start it herself for an hour, people still can", async () => {
     const { sup, arbiter } = await build();
     expect(arbiter.held?.("game.start")).toBeNull();
-    sup.bus.publish("activity", done(STOP_GAME));
+    sup.bus.publish("activity", Events.ActivityDone, done(STOP_GAME));
     await vi.advanceTimersByTimeAsync(10);
 
     expect(arbiter.held?.("game.start")).not.toBeNull();
@@ -109,9 +111,9 @@ describe("a game that was stopped stays stopped", () => {
 
   it("a crash, or stopping something else, does not hold the game", async () => {
     const { sup, arbiter } = await build();
-    sup.bus.publish("activity", failed(STOP_GAME, "crashed"));
-    sup.bus.publish("activity", done({ type: "stop", activity: "browse" }));
-    sup.bus.publish("activity", done({ type: "leave_voice" }));
+    sup.bus.publish("activity", Events.ActivityFailed, failed(STOP_GAME, "crashed"));
+    sup.bus.publish("activity", Events.ActivityDone, done({ type: "stop", activity: "browse" }));
+    sup.bus.publish("activity", Events.ActivityDone, done({ type: "leave_voice" }));
     await vi.advanceTimersByTimeAsync(10);
     expect(arbiter.held?.("game.start")).toBeNull();
     expect(JSON.stringify(await arbiter.submit(startGame("plan")))).not.toContain(HOLD_TEXT);

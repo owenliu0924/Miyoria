@@ -3,18 +3,16 @@
 
 import { defineCapability } from "@miyoria/gate/actions";
 import {
-  customEvent,
-  type Event,
+  eventEnvelope,
   type JsonObject,
-  newEnvelope,
   newId,
   Principals,
-  publishVia,
+  type Publish,
+  publishTaskEvent,
   type RegisteredTaskExecutor,
   type SteerReceipt,
   TaskExecutorsKey,
   type TaskSteer,
-  taskTopic,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -62,31 +60,26 @@ async function desk(): Promise<Desk> {
       },
     }),
   );
-  const events: Event[] = [];
   let service!: ActivityService;
   service = new ActivityService({
     port: new GatePort(w.services),
     services: w.services,
     clock: { now: w.now },
     config: ActivityConfigSchema.parse({}),
-    publish: publishVia((e) => {
-      events.push(e);
-      queueMicrotask(() => service.observe(newEnvelope("activity", e)));
-    }),
+    publish: (definition, data, ...meta) => {
+      queueMicrotask(() => service.observe(eventEnvelope("activity", definition, data, ...meta)));
+    },
   });
   // A running task that gets ore, as the executor told it.
   service.track(OWNER_ID, { id: "t1", goal: "obtain", args: { item: "iron" }, budget_s: 240 });
-  service.observe(
-    newEnvelope(
-      "ext",
-      customEvent(taskTopic(OWNER_ID, "started"), {
-        type: "started",
-        task: "t1",
-        goal: "obtain",
-        at: toTimestamp(w.now()),
-      }),
-    ),
-  );
+  const observe: Publish = (definition, data, ...meta) =>
+    service.observe(eventEnvelope("ext", definition, data, ...meta));
+  publishTaskEvent(observe, OWNER_ID, {
+    type: "started",
+    task: "t1",
+    goal: "obtain",
+    at: toTimestamp(w.now()),
+  });
   return {
     w,
     service,

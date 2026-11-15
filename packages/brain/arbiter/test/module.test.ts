@@ -5,15 +5,15 @@ import {
   type AccountRef,
   type AffectState,
   AffectStateKey,
-  ARBITER_DECISION_TOPIC,
-  ARBITER_IMPULSE_TOPIC,
+  type AnyEventDefinition,
   type ArbiterDecision,
   ArbiterKey,
   type Attitude,
   type ContextKey,
   contextKeyString,
-  type Event,
   EventLogKey,
+  Events,
+  eventEnvelope,
   FloorKey,
   type Followup,
   type FollowupSource,
@@ -21,7 +21,6 @@ import {
   ImpulseHostKey,
   type JsonValue,
   type NewProposal,
-  newEnvelope,
   newImpulse,
   ProposalBoardKey,
   type SelfState,
@@ -30,14 +29,13 @@ import {
   SocialSignalsKey,
   toTimestamp,
   type VoiceParticipant,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArbiterModule, arbiterConfig, Producers, STATE_KEY, STATE_PROFILE } from "../src/index.js";
 import { acct, FakeHost, MIN, T0, textCtx, voiceCtx } from "./helpers.js";
 
-/** An old-form event as the bus delivers it. */
-const ev = (event: Event) => newEnvelope("test", event);
+const ev = (definition: AnyEventDefinition, data: unknown) =>
+  eventEnvelope("test", definition, data);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -72,20 +70,20 @@ class FakeFollowups implements FollowupSource {
   }
 }
 
-function message(ctx: ContextKey, who: string, at: number, mentions = false): Event {
+function messageData(ctx: ContextKey, who: string, at: number, mentions = false) {
   return {
-    type: "platform_message_created",
-    data: {
-      id: { context: ctx, id: `${who}-${at}` },
-      author: { account: acct(who), display_name: who, is_bot: who === "me" },
-      text: "hi",
-      mentions_self: mentions,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(at),
-    },
+    id: { context: ctx, id: `${who}-${at}` },
+    author: { account: acct(who), display_name: who, is_bot: who === "me" },
+    text: "hi",
+    mentions_self: mentions,
+    reply_to_self: false,
+    attachments: [],
+    ts: toTimestamp(at),
   };
 }
+
+const message = (ctx: ContextKey, who: string, at: number, mentions = false) =>
+  ev(Events.PlatformMessageCreated, messageData(ctx, who, at, mentions));
 
 function participant(id: string): VoiceParticipant {
   return {
@@ -104,15 +102,15 @@ describe("Producers", () => {
     social.set("a", "朋友", 60);
     social.set("b", "普通", 10);
     const here = textCtx("c1");
-    const first = p.observe(T0, ev(message(here, "a", T0)), social);
+    const first = p.observe(T0, message(here, "a", T0), social);
     expect(first).toHaveLength(1);
     expect(first[0]).toMatchObject({
       source: "world",
       hint: "跟他打招呼",
       args: { reason: "greeting" },
     });
-    expect(p.observe(T0 + MIN, ev(message(here, "a", T0 + MIN)), social)).toEqual([]);
-    expect(p.observe(T0, ev(message(here, "b", T0)), social)).toEqual([]);
+    expect(p.observe(T0 + MIN, message(here, "a", T0 + MIN), social)).toEqual([]);
+    expect(p.observe(T0, message(here, "b", T0), social)).toEqual([]);
   });
 
   it("greets people with good affinity who join her voice channel", () => {
@@ -122,14 +120,14 @@ describe("Producers", () => {
     const v = voiceCtx("v1");
     p.observe(
       T0,
-      ev({ type: "voice_joined", data: { context: v, participants: [participant("me")] } }),
+      ev(Events.VoiceJoined, { context: v, participants: [participant("me")] }),
       social,
     );
     const out = p.observe(
       T0 + MIN,
-      ev({
-        type: "voice_participants",
-        data: { context: v, participants: [participant("me"), participant("a")] },
+      ev(Events.VoiceParticipants, {
+        context: v,
+        participants: [participant("me"), participant("a")],
       }),
       social,
     );
@@ -143,7 +141,7 @@ describe("Producers", () => {
     const social = new FakeSocial();
     social.set("a", "朋友", 60, "person-a");
     const here = textCtx("c1");
-    p.observe(T0, ev(message(here, "a", T0)), social);
+    p.observe(T0, message(here, "a", T0), social);
     const f: Followup = {
       id: "f1",
       profile: "p",
@@ -172,7 +170,7 @@ describe("ArbiterModule", () => {
     sup.services.provide("app", SocialSignalsKey, social);
     sup.services.provide("app", FollowupSourceKey, followups);
     sup.services.provide("app", SettingsStoreKey, store);
-    const decisions = sup.bus.subscribe(ARBITER_DECISION_TOPIC);
+    const decisions = sup.bus.subscribe(Events.ArbiterDecided.type);
     await sup.register(new ArbiterModule("p"), config, true);
     await sup.startAll();
     return { sup, host, social, followups, store, decisions };
@@ -186,13 +184,14 @@ describe("ArbiterModule", () => {
       { source: "song", context: textCtx("c1"), ttlMs: MIN, why: "報幕", reason: "song_start" },
       Date.now(),
     );
-    h.sup.bus.publish("sing", v2Event(ARBITER_IMPULSE_TOPIC, imp));
+    h.sup.bus.publish("sing", Events.ArbiterImpulse, imp);
     await vi.advanceTimersByTimeAsync(10);
     expect(h.host.opened.map((i) => i.id)).toEqual([imp.id]);
     const env = h.decisions.tryRecv();
-    expect(
-      env?.event.type === "custom" && (env.event.data.payload as unknown as ArbiterDecision),
-    ).toMatchObject({ impulse: imp.id, verdict: "accepted" });
+    expect(env?.data as ArbiterDecision | undefined).toMatchObject({
+      impulse: imp.id,
+      verdict: "accepted",
+    });
     await h.sup.stopAll();
   });
 });
@@ -256,11 +255,8 @@ describe("the Floor's module", () => {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
     const r = await floorRig();
-    r.sup.bus.publish("t", {
-      type: "platform_ready",
-      data: { platform: "test", self_account: acct("me") },
-    });
-    r.sup.bus.publish("t", message(textCtx("c1"), "a", T0));
+    r.sup.bus.publish("t", Events.PlatformReady, { platform: "test", self_account: acct("me") });
+    r.sup.bus.publish("t", Events.PlatformMessageCreated, messageData(textCtx("c1"), "a", T0));
     await vi.advanceTimersByTimeAsync(10);
     const seen = r.log.recent(50).filter((e) => e.source === "world.greeting");
     expect(seen).toHaveLength(1);
@@ -279,7 +275,7 @@ describe("the Floor's module", () => {
       about: "問他報告",
       due_at: toTimestamp(T0),
     } as unknown as Followup);
-    r.sup.bus.publish("t", message(textCtx("c1"), "b", T0));
+    r.sup.bus.publish("t", Events.PlatformMessageCreated, messageData(textCtx("c1"), "b", T0));
     await vi.advanceTimersByTimeAsync(1500);
     expect(r.proposals.map((p) => [p.source, p.what])).toEqual([["memory", "問他報告"]]);
     expect(r.followups.done).toEqual(["f1"]);
