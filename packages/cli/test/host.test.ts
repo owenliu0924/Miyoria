@@ -91,13 +91,12 @@ describe("host migrate", () => {
 
   function migrated(toml: string) {
     const configPath = write("miyoria.toml", toml);
-    const { text: written, notes } = hostTomlFrom(
-      Config.fromToml(toml, NOENV),
-      configPath,
-      join(dir, "host.toml"),
-      "main-pc",
-    );
-    return { text: written, notes, host: parseHostConfig("host.toml", written) };
+    const {
+      text: written,
+      notes,
+      review,
+    } = hostTomlFrom(Config.fromToml(toml, NOENV), configPath, join(dir, "host.toml"), "main-pc");
+    return { text: written, notes, review, host: parseHostConfig("host.toml", written) };
   }
 
   it("keeps_the_environments_ports_and_services_of_a_single_pc", () => {
@@ -128,8 +127,8 @@ describe("host migrate", () => {
     expect(notes).toEqual([]);
   });
 
-  it("writes_worker_overrides_the_core_port_and_the_voice_link_of_a_split_setup", () => {
-    const { host: h } = migrated(`[machine]
+  it("writes_worker_overrides_and_the_core_port_but_no_voice_link_of_a_split_setup", () => {
+    const { host: h, text: written } = migrated(`[machine]
 roles = ["broadcast", "inference"]
 [machine.hosts]
 core = "192.168.1.10"
@@ -142,9 +141,9 @@ overlay_bind = "0.0.0.0:7990"
     expect(h.network).toEqual({ bind: "192.168.1.20", advertise: "192.168.1.20" });
     expect(h.services.asr).toMatchObject({ python: "envs/asr", env: { ASR_QWEN_SIZE: "1.7B" } });
     expect(h.services.core).toBeUndefined();
-    expect(h.services["voice-node"]?.env).toEqual({
-      VOICE_LINK_URL: "ws://192.168.1.10:7879/voice-link",
-    });
+    // hostd gives a node Core's link address and token; a value here would override them.
+    expect(h.services["voice-node"]).toEqual({ enabled: true, env: {} });
+    expect(written).not.toContain("VOICE_LINK_URL");
     expect(h.services.stage?.port).toBe(7990);
   });
 
@@ -167,6 +166,30 @@ bind = "127.0.0.1:7999"
     expect(notes.join("\n")).toMatch(/start_timeout_secs = 300/);
     expect(notes.join("\n")).toMatch(/vram_mb = 2000/);
     expect(written).toMatch(/# Not carried over:/);
+  });
+
+  it("lists_the_old_values_the_person_must_look_at", async () => {
+    const some = migrated(`[machine]
+roles = ["inference"]
+[stack.workers]
+sing = { env = { SING_VRAM_RESERVE_MB = "1500", SING_X = "1" } }
+[modules.sing]
+url = "http://192.168.1.20:8005"
+`);
+    const lines = some.review.join("\n");
+    expect(lines).toMatch(/sing:SING_VRAM_RESERVE_MB、SING_X 留在 \[services\.sing\] env/);
+    expect(lines).toMatch(/\[modules\.sing\] url:舊設定有寫/);
+    expect(lines).toMatch(/\[modules\.voice\] turn_url:舊設定沒有寫/);
+    expect(lines).toMatch(/\[modules\.imagegen\] url:舊設定沒有寫/);
+    expect(some.text).toContain("SING_VRAM_RESERVE_MB");
+
+    const none = migrated(ALL).review.join("\n");
+    expect(none).not.toMatch(/SING_/);
+
+    write("miyoria.toml", ALL);
+    await migrate(host.hostTarget(join(dir, "miyoria.toml")), { dryRun: true, name: "pc" });
+    expect(text()).toContain("請看:[modules.voice] turn_url");
+    expect(text()).toContain("miyoria host join");
   });
 
   it("never_overwrites_without_force_and_writes_nothing_on_a_dry_run", async () => {
