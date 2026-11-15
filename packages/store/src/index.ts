@@ -118,6 +118,15 @@ export {
   SettingsState,
 } from "./config/state.js";
 export {
+  type ArchivedFile,
+  type ArchiveOptions,
+  type ArchiveResult,
+  archiveDatabase,
+  archiveDate,
+  heldFiles,
+  MANIFEST_FILE,
+} from "./cutover/archive.js";
+export {
   importLinks,
   importLinksFromFile,
   LINK_IMPORT_SOURCE,
