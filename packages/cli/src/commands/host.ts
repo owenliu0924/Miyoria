@@ -7,6 +7,7 @@ import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   HOST_ERROR_CODE,
+  type HostGpuArbiterStatus,
   type HostInfo,
   type HostLinkState,
   type HostServiceControlResult,
@@ -228,6 +229,13 @@ export async function hostd(target: HostTarget, options: { start?: boolean } = {
     await daemon.start();
   } catch (error) {
     if (error instanceof HostdRunningError) {
+      if (options.start === true) {
+        // The logon entry found a daemon already there (someone ran `up` first). Its job is
+        // done once the enabled services are asked to start; ending in an error would make a
+        // supervisor such as systemd start this again and again.
+        await startEnabledThrough(target, error.info.pid);
+        return;
+      }
       throw new HostCommandError(
         `這個工作資料夾的 hostd 已在執行(pid ${error.info.pid});不會再開一個`,
       );
@@ -260,6 +268,24 @@ export async function hostd(target: HostTarget, options: { start?: boolean } = {
     shutdown = stop;
   });
   await daemon.stop();
+}
+
+/** Asks the daemon that already runs for this workspace to start what host.toml enables. */
+async function startEnabledThrough(target: HostTarget, pid: number): Promise<void> {
+  const host = loadHost(target);
+  const client = await HostdClient.connect(host.state.root);
+  if (client === null) {
+    warn(`hostd 已在執行(pid ${pid}),但連不上它的本機 API;沒有另外啟動服務`);
+    return;
+  }
+  const { services: listed } = await client.call<HostServiceList>("service.list");
+  const names = enabledNames(host, listed);
+  for (const service of names) {
+    await client
+      .call<HostServiceControlResult>("service.start", { service })
+      .catch((error: unknown) => warn(`${service}  ${rpcText(error)}`));
+  }
+  note(`hostd 已在執行(pid ${pid});已請它啟動 ${names.length} 個啟用的服務`);
 }
 
 // ---- up ------------------------------------------------------------------------------------
@@ -520,6 +546,43 @@ export async function restart(
 // ---- status ------------------------------------------------------------------------------
 
 /** The control link's state as `status` says it. */
+/**
+ * Who decides how the card is shared, for `status`: nothing when the daemon says nothing about
+ * it (an older one), one line for the mode, one per lease, and the last decision.
+ */
+export function arbiterLines(
+  arbiter: HostGpuArbiterStatus | undefined,
+  now = Date.now(),
+): string[] {
+  if (arbiter === undefined) return [];
+  if (arbiter.mode === "worker")
+    return [`仲裁   ${dim('由翻唱服務自己決定(host.toml [gpu] arbiter = "worker")')}`];
+  if (!arbiter.active) {
+    return [
+      `仲裁   ${yellow("hostd,但沒有在運作")}${arbiter.reason === undefined ? "" : `:${arbiter.reason}`}`,
+    ];
+  }
+  const lines = [
+    `仲裁   hostd${arbiter.policy === undefined ? "" : `(政策 ${arbiter.policy})`},${
+      arbiter.leases.length === 0 ? "沒有服務佔用顯卡" : `${arbiter.leases.length} 個租約`
+    }`,
+  ];
+  for (const lease of arbiter.leases) {
+    const what = [lease.mode, lease.code].filter((part) => part !== null).join(" / ");
+    const evicted = lease.evicted.length > 0 ? `,讓出:${lease.evicted.join("、")}` : "";
+    lines.push(
+      `       ${bold(lease.holder)} 在 ${lease.stage} 階段${what === "" ? "" : `(${what})`},已 ${ago(now - lease.since)}${evicted}`,
+    );
+  }
+  if (arbiter.last !== null) {
+    lines.push(
+      dim(
+        `       上次判斷:${arbiter.last.stage} ${arbiter.last.mode} / ${arbiter.last.code},${ago(now - arbiter.last.at)}前:${arbiter.last.reason}`,
+      ),
+    );
+  }
+  return lines;
+}
 export function linkText(state: HostLinkState | undefined): string {
   switch (state) {
     case "connected":
@@ -638,9 +701,12 @@ export async function status(target: HostTarget, options: StatusOptions = {}): P
       );
       println(
         info.gpu === null
-          ? `顯卡   ${dim("讀不到(沒有 nvidia-smi)")}`
-          : `顯卡   ${info.gpu.name ?? ""}  已用 ${info.gpu.used_mb} / ${info.gpu.total_mb} MB,保留 ${info.gpu.reserve_mb} MB`,
+          ? `顯卡   ${dim("讀不到(NVML 和 nvidia-smi 都沒有回應)")}`
+          : `顯卡   ${info.gpu.name ?? ""}  已用 ${info.gpu.used_mb} / ${info.gpu.total_mb} MB${
+              info.gpu.free_mb === undefined ? "" : `,可用 ${info.gpu.free_mb} MB`
+            },保留 ${info.gpu.reserve_mb} MB`,
       );
+      for (const line of arbiterLines(info.arbiter)) println(line);
       println();
       if (info.services.length === 0) println(dim("host.toml 沒有任何服務"));
       for (const line of serviceTable(info.services)) println(line);

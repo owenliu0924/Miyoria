@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HostServiceStatus } from "@miyoria/contracts/host";
-import { Daemon, parseHostConfig } from "@miyoria/hostd";
+import { Daemon, HostdClient, parseHostConfig } from "@miyoria/hostd";
 import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseArgs } from "../src/cli.js";
@@ -235,6 +235,53 @@ describe("status table", () => {
     // The columns start at the same place in every row.
     expect(lines[1]?.indexOf("running")).toBe(lines[2]?.indexOf("failed"));
   });
+
+  it("says who decides how the card is shared", () => {
+    expect(host.arbiterLines(undefined)).toEqual([]);
+    expect(host.arbiterLines({ mode: "worker", active: false, leases: [], last: null })[0]).toMatch(
+      /由翻唱服務自己決定/,
+    );
+    expect(
+      host.arbiterLines({
+        mode: "hostd",
+        active: false,
+        reason: "讀不到顯卡",
+        leases: [],
+        last: null,
+      })[0],
+    ).toMatch(/hostd,但沒有在運作:讀不到顯卡/);
+    const lines = host.arbiterLines(
+      {
+        mode: "hostd",
+        active: true,
+        policy: "yield",
+        leases: [
+          {
+            lease: "job-1",
+            holder: "sing",
+            stage: "convert",
+            mode: "exclusive",
+            code: "window",
+            since: 1_000,
+            window: true,
+            evicted: ["tts", "asr"],
+          },
+        ],
+        last: {
+          lease: "job-1",
+          stage: "convert",
+          mode: "exclusive",
+          code: "window",
+          reason: "沒有人在聽",
+          at: 31_000,
+        },
+      },
+      61_000,
+    );
+    expect(lines[0]).toContain("hostd(政策 yield),1 個租約");
+    expect(lines[1]).toContain("sing 在 convert 階段(exclusive / window),已 1 分,讓出:tts、asr");
+    expect(lines[2]).toContain("上次判斷:convert exclusive / window,30 秒前:沒有人在聽");
+  });
 });
 
 describe("up, status, logs, restart and down against a daemon", () => {
@@ -266,6 +313,19 @@ http.createServer((req, res) => { res.writeHead(200, { "content-type": "applicat
     await daemon.start();
     return target;
   }
+
+  it("hostd --start with a daemon already there asks it to start the services and ends well", {
+    timeout: 60_000,
+  }, async () => {
+    const target = await running();
+    // A plain second `hostd` is refused; with --start (the logon entry) it is not an error.
+    await expect(host.hostd(target)).rejects.toThrow(/已在執行/);
+    await host.hostd(target, { start: true });
+    expect(text()).toMatch(/已請它啟動 1 個啟用的服務/);
+    const client = await HostdClient.connect(host.loadHost(target).state.root);
+    const { services } = (await client?.call("service.list")) as { services: HostServiceStatus[] };
+    expect(services.find((x) => x.name === "fake")?.state).toMatch(/starting|running/);
+  });
 
   it("starts_shows_tails_restarts_and_stops", { timeout: 60_000 }, async () => {
     const target = await running();
