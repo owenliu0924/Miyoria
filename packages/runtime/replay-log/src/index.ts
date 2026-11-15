@@ -3,6 +3,7 @@
 
 export {
   DEFAULT_RECORD_TOPICS,
+  entryOf,
   entryTopic,
   formatEntry,
   isReplayInput,

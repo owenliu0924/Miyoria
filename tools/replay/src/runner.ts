@@ -23,10 +23,10 @@ import {
 } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import {
-  entryTopic,
   isReplayInput,
   type ReplayEntry,
   type ReplayLog,
+  ReplayLogError,
 } from "@miyoria/runtime/replay-log";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
@@ -35,7 +35,10 @@ import {
   ActivityManagerKey,
   type ActivitySnapshot,
   type ActivityTask,
-  type Envelope,
+  type AnyEventDefinition,
+  type BusEnvelope,
+  Events,
+  is,
   isJsonObject,
   type JsonValue,
   type Mouth,
@@ -70,7 +73,7 @@ export interface ReplayRun {
   /** The input events replayed. */
   inputs: ReplayEntry[];
   /** Everything published on the bus while it ran, in order. */
-  events: Envelope[];
+  events: BusEnvelope[];
   sink: ReplaySink;
   llm: ScriptedLlm;
   /** `v3`: the mouth, to ask whose lines the sink saw. */
@@ -146,12 +149,43 @@ function profileOf(log: ReplayLog): Profile {
 
 /** Her own messages and speech in a recorded log are her output: recomputed, not replayed. */
 function isHers(entry: ReplayEntry, self: readonly AccountRef[]): boolean {
-  const e = entry.event;
-  if (e.type === "platform_message_created") {
-    return self.some((a) => sameAccount(a, e.data.author.account));
+  if (is(Events.PlatformMessageCreated, entry)) {
+    return self.some((a) => sameAccount(a, entry.data.author.account));
   }
-  if (e.type === "voice_utterance") return self.some((a) => sameAccount(a, e.data.speaker.account));
+  if (is(Events.VoiceUtteranceEvent, entry)) {
+    return self.some((a) => sameAccount(a, entry.data.speaker.account));
+  }
   return false;
+}
+
+/** Every bus topic's definition. */
+const DEFINITIONS: readonly AnyEventDefinition[] = Object.values(Events);
+
+/** The definition a line is published by: its type's own, else the family that covers it. */
+function definitionOf(entry: ReplayEntry): AnyEventDefinition {
+  const own = DEFINITIONS.find((d) => d.type === entry.type && d.v === entry.v);
+  const definition = own ?? DEFINITIONS.find((d) => d.type.includes("*") && is(d, entry));
+  if (definition === undefined) {
+    throw new ReplayLogError(`no bus event definition for \`${entry.type}\` v${entry.v}`);
+  }
+  return definition;
+}
+
+/**
+ * Publishes a recorded line again: the same type, payload and place, from the same module, now.
+ * Its `id`, `parent` and `turn` name events of the recorded run, which the replay recomputes.
+ */
+function republish(sup: Supervisor, entry: ReplayEntry): void {
+  sup.bus.publish(entry.source, definitionOf(entry), entry.data, {
+    type: entry.type,
+    session: entry.session,
+    space_id: entry.space_id,
+    room_id: entry.room_id,
+    person_id: entry.person_id,
+    account_id: entry.account_id,
+    key: entry.key,
+    scope: entry.scope,
+  });
 }
 
 /** Runs `log` and returns everything it produced. */
@@ -163,7 +197,7 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
   const now = () => Date.now();
 
   const sup = new Supervisor();
-  const events: Envelope[] = [];
+  const events: BusEnvelope[] = [];
   const all: Subscription = sup.bus.subscribe("*");
   const drain = () => {
     for (let env = all.tryRecv(); env !== null; env = all.tryRecv()) events.push(env);
@@ -229,16 +263,15 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
     for (const entry of log.entries) {
       const delay = Date.parse(entry.at) - now();
       if (delay > 0) await advance(delay);
-      const e = entry.event;
       if (
-        e.type === "platform_ready" &&
-        !selfAccounts.some((a) => sameAccount(a, e.data.self_account))
+        is(Events.PlatformReady, entry) &&
+        !selfAccounts.some((a) => sameAccount(a, entry.data.self_account))
       ) {
-        selfAccounts.push(e.data.self_account);
+        selfAccounts.push(entry.data.self_account);
       }
-      if (!isReplayInput(entryTopic(entry), entry.source) || isHers(entry, selfAccounts)) continue;
+      if (!isReplayInput(entry.type, entry.source) || isHers(entry, selfAccounts)) continue;
       inputs.push(entry);
-      sup.bus.publish(entry.source, entry.event);
+      republish(sup, entry);
       await clock.advance(0);
       drain();
     }

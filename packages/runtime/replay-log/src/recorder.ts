@@ -8,12 +8,12 @@
 // ```
 //
 // Off by default: a log holds what people said (messages and voice transcripts), so it is kept
-// only when the owner turns it on, on the owner's disk, and never leaves it. Lines are the
-// `ReplayEntry` shape (log.ts); `pnpm replay <file>` replays one.
+// only when the owner turns it on, on the owner's disk, and never leaves it. Each line is one bus
+// envelope as JSON (`ReplayEntry`, log.ts); `pnpm replay <file>` replays one.
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { legacyEvent, toTimestamp } from "@miyoria/types";
+import { toTimestamp } from "@miyoria/types";
 import { z } from "zod";
 import {
   defineManifest,
@@ -65,12 +65,7 @@ export class ReplayRecorderModule implements Module {
     ctx.log.info({ dir }, "recording events for replay");
     ctx.spawn("record", async () => {
       for await (const env of sub) {
-        // The log keeps the old event form (`{type, data}`).
-        const line = formatEntry({
-          at: env.at,
-          source: env.source,
-          event: legacyEvent(env.type, env.data),
-        });
+        const line = formatEntry(env);
         const file = logFileFor(dir, Date.parse(env.at));
         try {
           await writes.run(() => appendFile(file, `${line}\n`, "utf8"));

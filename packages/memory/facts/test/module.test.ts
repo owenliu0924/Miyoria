@@ -346,16 +346,31 @@ describe("for the replay", () => {
   it("gives the bus events back, in order", async () => {
     const store = await SqliteStore.open(":memory:");
     const sup = await run(store);
-    const first = sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("一", "u1"));
+    const first = sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("一", "u1"), {
+      turn: "T1",
+    });
     sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("二", "u2"));
     await settle();
     const log = sup.services.require(EventLogKey);
     const lines = toReplayLines(await log.query({ sources: ["voice.asr"] }));
     expect(lines).toHaveLength(2);
+    // The envelope as published, but for what the observation does not keep (`parent`, places).
     expect(lines[0]).toEqual({
+      id: first.id,
       at: first.at,
+      type: "voice.utterance",
+      v: 1,
+      parent: null,
+      turn: "T1",
+      session: null,
+      space_id: null,
+      room_id: null,
+      person_id: null,
+      account_id: null,
+      key: null,
+      scope: null,
       source: "voice.link",
-      event: { type: "voice_utterance", data: first.data },
+      data: first.data,
     });
     await sup.stopAll();
     await store.close();

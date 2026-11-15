@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseReplayLog, type ReplayLog } from "@miyoria/runtime/replay-log";
-import { type ArbiterDecision, type Impulse, isJsonObject } from "@miyoria/types";
+import { type ArbiterDecision, Events, type Impulse, is } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildReport,
@@ -61,20 +61,11 @@ function verdicts(r: ReplayRun): Verdict[] {
   const start = Date.parse(r.inputs[0]?.at ?? "");
   const last = new Map<string, ArbiterDecision>();
   for (const env of r.events) {
-    const e = env.event;
-    if (
-      e.type === "custom" &&
-      e.data.topic === "arbiter.decision" &&
-      isJsonObject(e.data.payload)
-    ) {
-      const d = e.data.payload as unknown as ArbiterDecision;
-      last.set(d.impulse, d);
-    }
+    if (is(Events.ArbiterDecided, env)) last.set(env.data.impulse, env.data);
   }
   return r.inputs.flatMap((entry) => {
-    const e = entry.event;
-    if (e.type !== "custom" || e.data.topic !== "arbiter.impulse") return [];
-    const impulse = e.data.payload as unknown as Impulse;
+    if (!is(Events.ArbiterImpulse, entry)) return [];
+    const impulse: Impulse = entry.data;
     const decision = last.get(impulse.id);
     if (!decision) throw new Error(`no decision for ${impulse.id}`);
     return [{ impulse, decision, at: (Date.parse(entry.at) - start) / MIN }];

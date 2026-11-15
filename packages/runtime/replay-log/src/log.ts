@@ -1,10 +1,15 @@
 // The replay log: one JSON object per line.
 //
-// * `{"at": "<RFC 3339>", "source": "<module id>", "event": <Event>}`: one bus event as it was
-//   published (the `Envelope` without ids). `at` orders the replay; the gap between two lines is
-//   replayed as (fake) time passing.
+// * A bus envelope (`BusEnvelopeSchema` in @miyoria/contracts/events): one event as it was
+//   published, every key present: `{"id", "at", "type", "v", "parent", "turn", "session",
+//   "space_id", "room_id", "person_id", "account_id", "key", "scope", "source", "data"}`. `at`
+//   orders the replay; the gap between two lines is replayed as (fake) time passing.
 // * `{"meta": {...}}` (optional, first line by convention): what the log is (`name`, `notes`)
 //   and how to replay it (`ReplayMeta`: her names, the scripted LLM, config overrides).
+//
+// Blank lines and `//` comment lines are skipped. A line in the old form (`{"at", "source",
+// "event": {"type", "data"}}`, written before the bus carried one envelope) is refused with an
+// error that says so; there is no reader for it.
 //
 // Only what she perceives is replayed (`isReplayInput`): messages, voice, presence, game and
 // song events. What the replayed modules produce themselves (her turns, the Arbiter, the
@@ -12,20 +17,16 @@
 // carry it for reference.
 
 import {
-  type Event,
-  eventTopic,
+  type BusEnvelope,
+  type BusEnvelopeJson,
+  BusEnvelopeSchema,
   isJsonObject,
   type JsonObject,
   type JsonValue,
-  type Timestamp,
 } from "@miyoria/types";
 
-/** One recorded bus event. */
-export interface ReplayEntry {
-  at: Timestamp;
-  source: string;
-  event: Event;
-}
+/** One recorded bus event: the envelope as JSON. */
+export type ReplayEntry = BusEnvelopeJson;
 
 /** How the scripted LLM answers (every field optional). */
 export interface ScriptedLlmConfig {
@@ -122,24 +123,23 @@ export const DEFAULT_RECORD_TOPICS: readonly string[] = [
 ];
 
 function parseEntry(value: JsonObject, line: number): ReplayEntry {
-  const { at, source, event } = value;
-  if (typeof at !== "string" || Number.isNaN(Date.parse(at))) {
+  if ("event" in value && !("type" in value)) {
+    throw new ReplayLogError(
+      `line ${line}: an old-format replay line ({at, source, event}); this reader takes one bus envelope per line (BusEnvelopeSchema)`,
+    );
+  }
+  const parsed = BusEnvelopeSchema.safeParse(value);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const path = issue?.path.join(".") || "(line)";
+    throw new ReplayLogError(
+      `line ${line}: not a bus envelope: \`${path}\`: ${issue?.message ?? "invalid"}`,
+    );
+  }
+  if (Number.isNaN(Date.parse(parsed.data.at))) {
     throw new ReplayLogError(`line ${line}: \`at\` is not a timestamp`);
   }
-  if (!isJsonObject(event) || typeof event.type !== "string") {
-    throw new ReplayLogError(`line ${line}: \`event\` is not an event`);
-  }
-  if (event.type === "custom") {
-    const data = event.data;
-    if (!isJsonObject(data) || typeof data.topic !== "string") {
-      throw new ReplayLogError(`line ${line}: a custom event needs \`data.topic\``);
-    }
-  }
-  return {
-    at,
-    source: typeof source === "string" && source !== "" ? source : "replay",
-    event: event as unknown as Event,
-  };
+  return parsed.data;
 }
 
 /** Parses a JSONL replay log (blank lines and `//` comment lines are skipped). */
@@ -166,12 +166,36 @@ export function parseReplayLog(text: string): ReplayLog {
   return { meta, entries };
 }
 
-/** One log line for `entry`. */
-export function formatEntry(entry: ReplayEntry): string {
-  return JSON.stringify({ at: entry.at, source: entry.source, event: entry.event });
+/**
+ * The entry of a bus envelope: its keys in the schema's order and nothing else (an envelope on
+ * the bus may carry more, such as the old view's fields until they are gone).
+ */
+export function entryOf(envelope: BusEnvelope | ReplayEntry): ReplayEntry {
+  return {
+    id: envelope.id,
+    at: envelope.at,
+    type: envelope.type,
+    v: envelope.v,
+    parent: envelope.parent,
+    turn: envelope.turn,
+    session: envelope.session,
+    space_id: envelope.space_id,
+    room_id: envelope.room_id,
+    person_id: envelope.person_id,
+    account_id: envelope.account_id,
+    key: envelope.key,
+    scope: envelope.scope,
+    source: envelope.source,
+    data: envelope.data as JsonValue,
+  };
 }
 
-/** The topic of an entry's event. */
-export function entryTopic(entry: ReplayEntry): string {
-  return eventTopic(entry.event);
+/** One log line for a bus envelope (or an entry). */
+export function formatEntry(envelope: BusEnvelope | ReplayEntry): string {
+  return JSON.stringify(entryOf(envelope));
+}
+
+/** The topic of an entry's event (its `type`). */
+export function entryTopic(entry: Pick<ReplayEntry, "type">): string {
+  return entry.type;
 }

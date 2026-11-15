@@ -2,22 +2,19 @@
 // her (and only them), how often she spoke when called in voice, what the Arbiter blocked and
 // why, and what the ActivityManager was left holding.
 
+import type { ReplayEntry } from "@miyoria/runtime/replay-log";
 import {
   type AccountRef,
-  ARBITER_DECISION_TOPIC,
   type ArbiterDecision,
   type ContextKey,
-  type Event,
+  Events,
   type IncomingMessage,
-  isJsonObject,
+  is,
   isSelfInitiated,
   type MessageRef,
   sameAccount,
-  TURN_FOCUS_TOPIC,
-  TURN_OUTCOME_TOPIC,
   type TurnOutcomeRecord,
   type VoiceUtterance,
-  v2Payload,
 } from "@miyoria/types";
 import type { ReplayRun } from "./runner.js";
 
@@ -118,9 +115,9 @@ function calledBy(text: string, names: readonly string[]): boolean {
   return names.some((n) => n.trim() !== "" && t.includes(n.toLowerCase()));
 }
 
-function addressOf(event: Event, names: readonly string[]): Omit<Address, "answered"> | null {
-  if (event.type === "platform_message_created") {
-    const m: IncomingMessage = event.data;
+function addressOf(entry: ReplayEntry, names: readonly string[]): Omit<Address, "answered"> | null {
+  if (is(Events.PlatformMessageCreated, entry)) {
+    const m: IncomingMessage = entry.data;
     const direct =
       m.mentions_self || m.reply_to_self || m.id.context.kind === "dm" || calledBy(m.text, names);
     if (!direct) return null;
@@ -133,8 +130,8 @@ function addressOf(event: Event, names: readonly string[]): Omit<Address, "answe
       text: m.text,
     };
   }
-  if (event.type === "voice_utterance") {
-    const u: VoiceUtterance = event.data;
+  if (is(Events.VoiceUtteranceEvent, entry)) {
+    const u: VoiceUtterance = entry.data;
     if (!calledBy(u.text, names)) return null;
     return {
       id: u.id,
@@ -152,9 +149,11 @@ function addressOf(event: Event, names: readonly string[]): Omit<Address, "answe
 function authorsOf(run: ReplayRun): Map<string, AccountRef> {
   const out = new Map<string, AccountRef>();
   for (const entry of run.inputs) {
-    const e = entry.event;
-    if (e.type === "platform_message_created") out.set(e.data.id.id, e.data.author.account);
-    else if (e.type === "voice_utterance") out.set(e.data.id, e.data.speaker.account);
+    if (is(Events.PlatformMessageCreated, entry)) {
+      out.set(entry.data.id.id, entry.data.author.account);
+    } else if (is(Events.VoiceUtteranceEvent, entry)) {
+      out.set(entry.data.id, entry.data.speaker.account);
+    }
   }
   return out;
 }
@@ -188,17 +187,15 @@ function focusCorrect(
 
 /** The report of a replay. */
 export function buildReport(run: ReplayRun): ReplayReport {
-  const records = run.events.flatMap((env) => {
-    const r = v2Payload(env.event, TURN_OUTCOME_TOPIC);
-    return r ? [r] : [];
-  });
-  const decisions = run.events.flatMap((env) => {
-    const d = v2Payload(env.event, ARBITER_DECISION_TOPIC);
-    return d ? [d as ArbiterDecision] : [];
-  });
+  const records: TurnOutcomeRecord[] = run.events.flatMap((env) =>
+    is(Events.AgentTurnOutcome, env) ? [env.data] : [],
+  );
+  const decisions: ArbiterDecision[] = run.events.flatMap((env) =>
+    is(Events.ArbiterDecided, env) ? [env.data] : [],
+  );
 
   const addressList = run.inputs.flatMap((e) => {
-    const a = addressOf(e.event, run.names);
+    const a = addressOf(e, run.names);
     return a ? [a] : [];
   });
   const addressById = new Map(addressList.map((a) => [a.id, a] as const));
@@ -212,8 +209,7 @@ export function buildReport(run: ReplayRun): ReplayReport {
   // Each turn's background input (the last `agent.turn.focus` of the turn).
   const background = new Map<string, MessageRef[]>();
   for (const env of run.events) {
-    const f = v2Payload(env.event, TURN_FOCUS_TOPIC);
-    if (f) background.set(f.turn, f.background);
+    if (is(Events.AgentTurnFocus, env)) background.set(env.data.turn, env.data.background);
   }
 
   // The messages each turn's text replies quoted.
@@ -290,15 +286,9 @@ export function buildReport(run: ReplayRun): ReplayReport {
       by_verdict: count(decisions, (d) => d.verdict),
       blocked_by_reason: count(blocked, (d) => d.reason ?? d.verdict),
       self_initiated_block_rate: rate(ownBlocked.length, own.length),
-      topics_ignored: run.events.filter((env) => {
-        const e = env.event;
-        return (
-          e.type === "custom" &&
-          e.data.topic === "affect.event" &&
-          isJsonObject(e.data.payload) &&
-          e.data.payload.kind === "topic_ignored"
-        );
-      }).length,
+      topics_ignored: run.events.filter(
+        (env) => is(Events.AffectEvent, env) && env.data.kind === "topic_ignored",
+      ).length,
       self_initiated_blocked: ownBlocked.map((d) => ({
         at: d.at,
         source: d.source,

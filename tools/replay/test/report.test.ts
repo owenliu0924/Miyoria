@@ -2,13 +2,13 @@
 // block of her own, and as residual activity state.
 
 import type { EventBus } from "@miyoria/runtime/kernel";
-import type { ReplayEntry } from "@miyoria/runtime/replay-log";
+import { entryOf, type ReplayEntry } from "@miyoria/runtime/replay-log";
 import {
+  type ArbiterDecision,
+  type BusEnvelope,
   type ContextKey,
-  customEvent,
-  type Envelope,
-  type Event,
-  fromLegacyEnvelope,
+  Events,
+  eventEnvelope,
   type TurnOutcome,
   toTimestamp,
 } from "@miyoria/types";
@@ -17,46 +17,42 @@ import { ReplaySink } from "../src/fakes.js";
 import { buildReport, type ReplayRun, ScriptedLlm } from "../src/index.js";
 
 const VOICE: ContextKey = { platform: "t", scope: "g", channel: "v", kind: "voice" };
-const AT = toTimestamp(Date.UTC(2026, 10, 3, 6));
+const NOW = Date.UTC(2026, 10, 3, 6);
+const AT = toTimestamp(NOW);
 
 function utterance(id: string, who: string, text: string): ReplayEntry {
-  return {
-    at: AT,
-    source: "voice",
-    event: {
-      type: "voice_utterance",
-      data: {
-        id,
-        context: VOICE,
-        speaker: { account: { platform: "t", id: who }, display_name: who, is_bot: false },
-        text,
-        language: "zh",
-        emotion: null,
-        audio_events: [],
-        started_at: AT,
-        ended_at: AT,
-        asr_ms: 1,
-      },
+  const env = eventEnvelope(
+    "voice",
+    Events.VoiceUtteranceEvent,
+    {
+      id,
+      context: VOICE,
+      speaker: { account: { platform: "t", id: who }, display_name: who, is_bot: false },
+      text,
+      language: "zh",
+      emotion: null,
+      audio_events: [],
+      started_at: AT,
+      ended_at: AT,
+      asr_ms: 1,
     },
-  };
+    { now: NOW },
+  );
+  return entryOf(env);
 }
 
-function env(event: Event): Envelope {
-  return fromLegacyEnvelope({
-    id: "e",
-    ts: AT,
-    source: "agent",
-    causation: null,
-    correlation: null,
-    event,
-  });
-}
-
-function outcome(turn: string, outcome: TurnOutcome, focus: string[], background: string[] = []) {
+function outcome(
+  turn: string,
+  outcome: TurnOutcome,
+  focus: string[],
+  background: string[] = [],
+): BusEnvelope[] {
   const refs = (ids: string[]) => ids.map((id) => ({ context: VOICE, id }));
   return [
-    env(
-      customEvent("agent.turn.focus", {
+    eventEnvelope(
+      "agent",
+      Events.AgentTurnFocus,
+      {
         turn,
         context: VOICE,
         reason: "addressed",
@@ -68,10 +64,13 @@ function outcome(turn: string, outcome: TurnOutcome, focus: string[], background
         restarts: 0,
         started_at: AT,
         updated_at: AT,
-      } as never),
+      },
+      { now: NOW },
     ),
-    env(
-      customEvent("agent.turn.outcome", {
+    eventEnvelope(
+      "agent",
+      Events.AgentTurnOutcome,
+      {
         turn,
         context: VOICE,
         reason: "addressed",
@@ -82,14 +81,22 @@ function outcome(turn: string, outcome: TurnOutcome, focus: string[], background
         reasoning: null,
         latency_ms: null,
         at: AT,
-      } as never),
+      },
+      { now: NOW },
     ),
   ];
 }
 
-function decision(impulse: string, source: string, verdict: string, reason: string | null) {
-  return env(
-    customEvent("arbiter.decision", {
+function decision(
+  impulse: string,
+  source: ArbiterDecision["source"],
+  verdict: ArbiterDecision["verdict"],
+  reason: ArbiterDecision["reason"],
+): BusEnvelope {
+  return eventEnvelope(
+    "arbiter",
+    Events.ArbiterDecided,
+    {
       impulse,
       source,
       verdict,
@@ -100,11 +107,12 @@ function decision(impulse: string, source: string, verdict: string, reason: stri
       turn: null,
       task: null,
       at: AT,
-    }),
+    },
+    { now: NOW },
   );
 }
 
-function run(events: Envelope[], inputs: ReplayEntry[]): ReplayRun {
+function run(events: BusEnvelope[], inputs: ReplayEntry[]): ReplayRun {
   return {
     name: "t",
     names: ["Miyoria", "米優"],
