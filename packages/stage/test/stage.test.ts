@@ -214,11 +214,9 @@ describe("stage", () => {
     const turn = newId();
     bus.publish(
       "agent",
-      {
-        type: "voice_playback",
-        data: { context: voiceCtx(), turn, state: "started", text: "早安。" },
-      },
-      { correlation: turn },
+      Events.VoicePlaybackEvent,
+      { context: voiceCtx(), turn, state: "started", text: "早安。" },
+      { turn },
     );
     await waitUntil(() => obs.state.texts.some(([s, t]) => s === "Subtitle" && t === "早安。"));
 
