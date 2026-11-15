@@ -12,8 +12,8 @@ import {
   type AccountRef,
   type Attitude,
   type ContextKey,
-  type Event,
   EventLogKey,
+  Events,
   type Followup,
   type FollowupSource,
   FollowupSourceKey,
@@ -74,18 +74,15 @@ const handles = {
   resolve: (h: string) => (h === HANDLE ? { handle: HANDLE, person: PERSON } : null),
 } as unknown as HandleDirectory;
 
-function said(at: number): Event {
+function said(at: number) {
   return {
-    type: "platform_message_created",
-    data: {
-      id: { context: C, id: `a-${at}` },
-      author: { account: acct("a"), display_name: HANDLE, is_bot: false },
-      text: "早安",
-      mentions_self: false,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(at),
-    },
+    id: { context: C, id: `a-${at}` },
+    author: { account: acct("a"), display_name: HANDLE, is_bot: false },
+    text: "早安",
+    mentions_self: false,
+    reply_to_self: false,
+    attachments: [],
+    ts: toTimestamp(at),
   };
 }
 
@@ -131,7 +128,7 @@ describe("a birthday followup is one wish, said once", () => {
 
     // He speaks first on his birthday: the greeter's followup is due at once.
     followups.due_.push(followup("f-birthday", BIRTHDAY));
-    sup.bus.publish("t", said(T0));
+    sup.bus.publish("t", Events.PlatformMessageCreated, said(T0);
     await vi.advanceTimersByTimeAsync(1500);
     expect(board.map((b) => [b.proposal.source, b.proposal.person, b.raised])).toEqual([
       ["memory", HANDLE, true],
@@ -147,7 +144,7 @@ describe("a birthday followup is one wish, said once", () => {
     // already said, so it is not raised again.
     vi.setSystemTime(T0 + 30 * MIN);
     followups.due_.push(followup("f-consolidated", `祝${HANDLE}生日快樂`));
-    sup.bus.publish("t", said(T0 + 30 * MIN));
+    sup.bus.publish("t", Events.PlatformMessageCreated, said(T0 + 30 * MIN);
     await vi.advanceTimersByTimeAsync(1500);
     expect(board.map((b) => b.raised)).toEqual([true, false]);
     expect(wishes.of(wishHolder("proposal", "p2"))?.key).toBe(wish?.key);
