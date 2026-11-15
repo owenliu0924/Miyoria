@@ -8,7 +8,10 @@ import {
   HostConfigSchema,
   HostHelloSchema,
   HostInfoSchema,
+  HostServiceInstallResultSchema,
+  HostServiceInstallSchema,
   HostServiceLogsSchema,
+  HostServiceRemoveSchema,
   HostServiceSchema,
   HostServiceStatusSchema,
 } from "../src/index.js";
@@ -28,6 +31,7 @@ const full = {
     models: [{ repo: "Qwen/Qwen3-ASR-0.6B", revision: "abc" }],
     files: [{ url: "https://example.test/a.onnx", sha256: "0".repeat(64), path: "models/a.onnx" }],
     manual: [{ path: "voices/{voice}", what: "參考聲音的資料夾" }],
+    check_imports: ["torch", "qwen_asr"],
   },
   run: {
     command: ["{python}", "server.py"],
@@ -70,6 +74,7 @@ describe("HostServiceSchema", () => {
       run: { command: ["x"] },
     });
     expect(parsed.install.runtime).toBe("none");
+    expect(parsed.install.check_imports).toEqual([]);
     expect(parsed.run).toMatchObject({
       cwd: ".",
       env: {},
@@ -201,6 +206,28 @@ describe("methods and constants", () => {
       services: [status],
     };
     expect(HostInfoSchema.parse(info).gpu).toBeNull();
+  });
+
+  it("parses the install, remove and update shapes", () => {
+    expect(HostServiceInstallSchema.parse({ service: "asr", extras: ["sensevoice"] })).toEqual({
+      service: "asr",
+      extras: ["sensevoice"],
+    });
+    expect(() => HostServiceInstallSchema.parse({})).toThrow();
+    expect(HostServiceRemoveSchema.parse({ service: "asr", keep_env: true }).keep_env).toBe(true);
+    const result = HostServiceInstallResultSchema.parse({
+      service: "asr",
+      ok: true,
+      runtime: { state: "synced", dir: "/x", extras: ["qwen3"] },
+      system: [{ program: "ffmpeg", found: false, hint: "winget install" }],
+      files: [],
+      manual: [],
+      models: [{ repo: "a/b", present: false }],
+    });
+    expect(result.runtime.state).toBe("synced");
+    expect(() =>
+      HostServiceInstallResultSchema.parse({ ...result, runtime: { state: "bogus" } }),
+    ).toThrow();
   });
 
   it("bounds the log request", () => {

@@ -61,6 +61,8 @@ export const HostInstallSchema = z
     models: z.array(HostInstallModelSchema).default([]),
     files: z.array(HostInstallFileSchema).default([]),
     manual: z.array(HostInstallManualSchema).default([]),
+    /** Modules `miyoria doctor --deep` imports with the environment's Python: the smoke test. */
+    check_imports: z.array(z.string().min(1)).default([]),
   })
   .strict()
   .meta({ id: "HostInstall" });
@@ -215,6 +217,7 @@ export const HostServiceSchema = z
       models: [],
       files: [],
       manual: [],
+      check_imports: [],
     }),
     run: HostRunSchema.optional(),
     gpu: HostGpuSchema.optional(),

@@ -392,6 +392,14 @@
           "items": {
             "$ref": "#/$defs/HostInstallManual"
           }
+        },
+        "check_imports": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "additionalProperties": false
@@ -451,6 +459,18 @@
         "repo"
       ],
       "additionalProperties": false
+    },
+    "HostInstallRuntimeState": {
+      "type": "string",
+      "enum": [
+        "synced",
+        "current",
+        "user-managed",
+        "none",
+        "unsupported",
+        "uv-missing",
+        "failed"
+      ]
     },
     "HostLaunch": {
       "type": "object",
@@ -737,7 +757,8 @@
             "system": [],
             "models": [],
             "files": [],
-            "manual": []
+            "manual": [],
+            "check_imports": []
           },
           "$ref": "#/$defs/HostInstall"
         },
@@ -867,6 +888,163 @@
         "at"
       ]
     },
+    "HostServiceInstall": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "extras": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "only_stale": {
+          "type": "boolean"
+        },
+        "no_files": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service"
+      ]
+    },
+    "HostServiceInstallResult": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "runtime": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/HostInstallRuntimeState"
+            },
+            "dir": {
+              "type": "string"
+            },
+            "extras": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ]
+        },
+        "system": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "program": {
+                "type": "string"
+              },
+              "found": {
+                "type": "boolean"
+              },
+              "hint": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "program",
+              "found"
+            ]
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "present",
+                  "downloaded",
+                  "skipped",
+                  "failed"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "state"
+            ]
+          }
+        },
+        "manual": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "what": {
+                "type": "string"
+              },
+              "present": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path",
+              "what",
+              "present"
+            ]
+          }
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "present": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "repo",
+              "present"
+            ]
+          }
+        }
+      },
+      "required": [
+        "service",
+        "ok",
+        "runtime",
+        "system",
+        "files",
+        "manual",
+        "models"
+      ]
+    },
     "HostServiceList": {
       "type": "object",
       "properties": {
@@ -929,6 +1107,41 @@
       },
       "required": [
         "lines"
+      ]
+    },
+    "HostServiceRemove": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "force": {
+          "type": "boolean"
+        },
+        "keep_env": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service"
+      ]
+    },
+    "HostServiceRemoveResult": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "stopped": {
+          "type": "boolean"
+        },
+        "deleted_env": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "service",
+        "stopped"
       ]
     },
     "HostServiceState": {
@@ -1062,6 +1275,34 @@
         }
       },
       "additionalProperties": false
+    },
+    "HostUpdate": {
+      "type": "object",
+      "properties": {
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "force": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HostUpdateResult": {
+      "type": "object",
+      "properties": {
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostServiceInstallResult"
+          }
+        }
+      },
+      "required": [
+        "services"
+      ]
     },
     "HostWelcome": {
       "type": "object",

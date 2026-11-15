@@ -1,5 +1,5 @@
 // Params and results of the methods the control link and the local API need first. The `gpu.*`,
-// `cluster.llm`, `service.install`, `service.remove`, `host.update`, `cluster.context` and
+// `cluster.llm`, `cluster.context` and
 // `cluster.links` shapes are added by the steps that implement them.
 
 import { z } from "zod";
@@ -231,3 +231,123 @@ export const HostResolveResultSchema = z
   .object({ endpoints: z.array(HostEndpointSchema) })
   .meta({ id: "HostResolveResult" });
 export type HostResolveResult = z.output<typeof HostResolveResultSchema>;
+
+// ---- installing (service.install, service.remove, host.update) ---------------------------------
+
+/** What happened to the Python environment of one service. */
+export const HostInstallRuntimeStateSchema = z
+  .enum([
+    /** `uv sync` ran and finished. */
+    "synced",
+    /** The install record already matched; nothing ran (`only_stale`). */
+    "current",
+    /** `host.toml` names an environment the user manages (`python = ...`); never touched. */
+    "user-managed",
+    /** The runtime needs no environment here (`node`, `binary`, `none`, or no `project`). */
+    "none",
+    /** The descriptor does not support this platform. */
+    "unsupported",
+    /** `uv` is not installed; `detail` says how to install it. */
+    "uv-missing",
+    /** `uv sync` ran and failed. */
+    "failed",
+  ])
+  .meta({ id: "HostInstallRuntimeState" });
+export type HostInstallRuntimeState = z.output<typeof HostInstallRuntimeStateSchema>;
+
+/** `service.install` params: build the environment of one service and check the rest of `[install]`. */
+export const HostServiceInstallSchema = z
+  .object({
+    service: z.string(),
+    /** Replaces the extras of the descriptor and of `host.toml` for this run. */
+    extras: z.array(z.string()).optional(),
+    /** Run `uv sync` only when the install record differs from the lock, extras and descriptor. */
+    only_stale: z.boolean().optional(),
+    /** Do not download `install.files`. */
+    no_files: z.boolean().optional(),
+  })
+  .meta({ id: "HostServiceInstall" });
+export type HostServiceInstall = z.output<typeof HostServiceInstallSchema>;
+
+/** `service.install` result, and one item of `host.update`'s. */
+export const HostServiceInstallResultSchema = z
+  .object({
+    service: z.string(),
+    /** False when something failed (a sync, a download); missing items to place by hand do not. */
+    ok: z.boolean(),
+    runtime: z.object({
+      state: HostInstallRuntimeStateSchema,
+      /** The environment folder, when there is one. */
+      dir: z.string().optional(),
+      /** The extras that were synced. */
+      extras: z.array(z.string()).optional(),
+      /** The reason, or what to do (the `uv` install command). */
+      detail: z.string().optional(),
+    }),
+    /** `install.system`: programs on PATH. `hint` is how to install a missing one. */
+    system: z.array(
+      z.object({ program: z.string(), found: z.boolean(), hint: z.string().optional() }),
+    ),
+    files: z.array(
+      z.object({
+        path: z.string(),
+        state: z.enum(["present", "downloaded", "skipped", "failed"]),
+        detail: z.string().optional(),
+      }),
+    ),
+    manual: z.array(z.object({ path: z.string(), what: z.string(), present: z.boolean() })),
+    /** `install.models` and whether each is in the host's model cache. */
+    models: z.array(
+      z.object({
+        repo: z.string(),
+        revision: z.string().optional(),
+        present: z.boolean(),
+      }),
+    ),
+  })
+  .meta({ id: "HostServiceInstallResult" });
+export type HostServiceInstallResult = z.output<typeof HostServiceInstallResultSchema>;
+
+/** `service.remove` params: stop the service, delete the environment hostd manages, forget it. */
+export const HostServiceRemoveSchema = z
+  .object({
+    service: z.string(),
+    /** Stop it although a guarded state is active. */
+    force: z.boolean().optional(),
+    /** Keep the environment folder. */
+    keep_env: z.boolean().optional(),
+  })
+  .meta({ id: "HostServiceRemove" });
+export type HostServiceRemove = z.output<typeof HostServiceRemoveSchema>;
+
+/** `service.remove` result. */
+export const HostServiceRemoveResultSchema = z
+  .object({
+    service: z.string(),
+    stopped: z.boolean(),
+    /** The environment folder that was deleted; absent when there was none, it is the user's, or it was kept. */
+    deleted_env: z.string().optional(),
+  })
+  .meta({ id: "HostServiceRemoveResult" });
+export type HostServiceRemoveResult = z.output<typeof HostServiceRemoveResultSchema>;
+
+/**
+ * `host.update` params: read the descriptors and `host.toml` again (a `git pull` changed them),
+ * re-plan the services, and sync the environments whose install record is stale. It restarts
+ * nothing: the caller asks for each restart through the guard.
+ */
+export const HostUpdateSchema = z
+  .object({
+    /** Only these; default every enabled service. */
+    services: z.array(z.string()).optional(),
+    /** Sync even when the install record matches. */
+    force: z.boolean().optional(),
+  })
+  .meta({ id: "HostUpdate" });
+export type HostUpdate = z.output<typeof HostUpdateSchema>;
+
+/** `host.update` result: one install result per service that was looked at. */
+export const HostUpdateResultSchema = z
+  .object({ services: z.array(HostServiceInstallResultSchema) })
+  .meta({ id: "HostUpdateResult" });
+export type HostUpdateResult = z.output<typeof HostUpdateResultSchema>;
