@@ -27,15 +27,13 @@ declare module "vitest" {
 const mode = busCheckMode(process.env.MIYORIA_BUS_CHECK);
 
 if (mode !== "off") {
-  const [{ BusCheck }, { busEventRegistry }, kernel, { envelopeTopic }, fs, path] =
-    await Promise.all([
-      import("./packages/contracts/events/src/bus-check.ts"),
-      import("./packages/contracts/events/src/bus.ts"),
-      import("./packages/runtime/kernel/src/bus.ts"),
-      import("./packages/types/src/event.ts"),
-      import("node:fs"),
-      import("node:path"),
-    ]);
+  const [{ BusCheck }, { busEventRegistry }, kernel, fs, path] = await Promise.all([
+    import("./packages/contracts/events/src/bus-check.ts"),
+    import("./packages/contracts/events/src/bus.ts"),
+    import("./packages/runtime/kernel/src/bus.ts"),
+    import("node:fs"),
+    import("node:path"),
+  ]);
   const check = new BusCheck(busEventRegistry(), mode);
   const file = (testPath: string | undefined): string | null =>
     testPath === undefined ? null : relative(process.cwd(), testPath).replaceAll("\\", "/");
@@ -43,13 +41,8 @@ if (mode !== "off") {
   kernel.setBusPublishHook({
     published(envelope) {
       const state = expect.getState();
-      const event = envelope.event;
       check.published(
-        {
-          topic: envelopeTopic(envelope),
-          source: envelope.source,
-          payload: event.type === "custom" ? event.data.payload : event.data,
-        },
+        { topic: envelope.type, source: envelope.source, payload: envelope.data },
         { file: file(state.testPath), test: state.currentTestName ?? null },
       );
     },

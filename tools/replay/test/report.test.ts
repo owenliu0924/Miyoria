@@ -8,6 +8,7 @@ import {
   customEvent,
   type Envelope,
   type Event,
+  fromLegacyEnvelope,
   type TurnOutcome,
   toTimestamp,
 } from "@miyoria/types";
@@ -41,7 +42,14 @@ function utterance(id: string, who: string, text: string): ReplayEntry {
 }
 
 function env(event: Event): Envelope {
-  return { id: "e", ts: AT, source: "agent", causation: null, correlation: null, event };
+  return fromLegacyEnvelope({
+    id: "e",
+    ts: AT,
+    source: "agent",
+    causation: null,
+    correlation: null,
+    event,
+  });
 }
 
 function outcome(turn: string, outcome: TurnOutcome, focus: string[], background: string[] = []) {

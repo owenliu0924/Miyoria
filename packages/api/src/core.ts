@@ -11,7 +11,7 @@ import {
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
 import { DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";
-import type { JsonValue, ModuleId } from "@miyoria/types";
+import { type JsonValue, type ModuleId, toLegacyEnvelope } from "@miyoria/types";
 import { z } from "zod";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
@@ -255,7 +255,8 @@ function events(state: ApiState, c: ApiContext): Response {
         }
         let data: string;
         try {
-          data = JSON.stringify(env);
+          // The stream still speaks the old envelope form (protocol 1).
+          data = JSON.stringify(toLegacyEnvelope(env));
         } catch (error) {
           log.warn({ error: errorMessage(error) }, "failed to serialize event for SSE");
           continue;

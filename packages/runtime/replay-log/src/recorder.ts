@@ -13,7 +13,7 @@
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { eventTopic, toTimestamp } from "@miyoria/types";
+import { legacyEvent, toTimestamp } from "@miyoria/types";
 import { z } from "zod";
 import {
   defineManifest,
@@ -65,15 +65,17 @@ export class ReplayRecorderModule implements Module {
     ctx.log.info({ dir }, "recording events for replay");
     ctx.spawn("record", async () => {
       for await (const env of sub) {
-        const line = formatEntry({ at: env.ts, source: env.source, event: env.event });
-        const file = logFileFor(dir, Date.parse(env.ts));
+        // The log keeps the old event form (`{type, data}`).
+        const line = formatEntry({
+          at: env.at,
+          source: env.source,
+          event: legacyEvent(env.type, env.data),
+        });
+        const file = logFileFor(dir, Date.parse(env.at));
         try {
           await writes.run(() => appendFile(file, `${line}\n`, "utf8"));
         } catch (error) {
-          ctx.log.warn(
-            { err: errorMessage(error), topic: eventTopic(env.event) },
-            "cannot write a replay line",
-          );
+          ctx.log.warn({ err: errorMessage(error), topic: env.type }, "cannot write a replay line");
         }
       }
     });

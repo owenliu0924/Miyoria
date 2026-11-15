@@ -1,10 +1,18 @@
 import {
+  type AnyEventDefinition,
+  type BusEnvelope,
   type Envelope,
+  type EnvelopeOf,
   type EnvelopeOptions,
   type Event,
-  envelopeTopic,
+  type EventPayload,
+  eventEnvelope,
+  isEventDefinition,
+  type LegacyEnvelope,
   type ModuleId,
   newEnvelope,
+  type PublishMetaArgs,
+  toEnvelope,
 } from "@miyoria/types";
 import { getLogger } from "./log.js";
 import { type Counter, type MetricsRegistry, metrics } from "./metrics.js";
@@ -85,7 +93,7 @@ export class Subscription implements AsyncIterableIterator<Envelope> {
 
   /** @internal */
   deliver(envelope: Envelope): void {
-    if (this.#closed || !this.filter.matches(envelopeTopic(envelope))) return;
+    if (this.#closed || !this.filter.matches(envelope.type)) return;
     const waiter = this.#waiters.shift();
     if (waiter) {
       waiter({ value: envelope, done: false });
@@ -177,7 +185,7 @@ function hookState(): PublishHookState {
 function runPublishHook(envelope: Envelope): void {
   const state = (globalThis as { [HOOK_STATE]?: PublishHookState })[HOOK_STATE];
   if (state?.hook == null) return;
-  const topic = envelopeTopic(envelope);
+  const topic = envelope.type;
   if (state.exempt.some((filter) => filter.matches(topic))) return;
   try {
     state.hook.published(envelope);
@@ -251,18 +259,48 @@ export class EventBus {
     });
   }
 
-  publishEnvelope(envelope: Envelope): void {
-    if (IN_TEST_RUN) runPublishHook(envelope);
-    this.#published.inc({ prefix: topicPrefix(envelopeTopic(envelope)) });
+  /**
+   * Publishes an envelope made elsewhere and returns the one subscribers receive: an `Envelope`
+   * is delivered as it is; a bus envelope without the old fields, or an old-form envelope (until
+   * the old forms are gone), is completed first (`toEnvelope`).
+   */
+  publishEnvelope(envelope: Envelope | BusEnvelope | LegacyEnvelope): Envelope {
+    const env = toEnvelope(envelope);
+    if (IN_TEST_RUN) runPublishHook(env);
+    this.#published.inc({ prefix: topicPrefix(env.type) });
     // No subscribers is not an error.
-    for (const sub of this.#subscriptions) sub.deliver(envelope);
+    for (const sub of this.#subscriptions) sub.deliver(env);
+    return env;
   }
 
-  /** Wraps `event` in a fresh envelope from `source`, publishes it and returns the envelope. */
-  publish(source: ModuleId, event: Event, options: EnvelopeOptions = {}): Envelope {
-    const envelope = newEnvelope(source, event, options);
-    this.publishEnvelope(envelope);
-    return envelope;
+  /**
+   * Publishes one event of `definition` from `source` in a fresh envelope and returns it:
+   * `bus.publish("discord", Events.PlatformTyping, { context, account }, { turn })`. A family
+   * takes the concrete type in `meta.type` (`{ type: "worklane.task.done" }`).
+   */
+  publish<D extends AnyEventDefinition>(
+    source: ModuleId,
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): EnvelopeOf<D>;
+  /** The old form (until it is gone): wraps `event` in a fresh envelope from `source`. */
+  publish(source: ModuleId, event: Event, options?: EnvelopeOptions): Envelope;
+  publish(
+    source: ModuleId,
+    event: AnyEventDefinition | Event,
+    dataOrOptions?: unknown,
+    meta?: unknown,
+  ): Envelope {
+    const envelope = isEventDefinition(event)
+      ? eventEnvelope(
+          source,
+          event,
+          dataOrOptions as EventPayload<typeof event>,
+          ...([meta] as PublishMetaArgs<typeof event>),
+        )
+      : newEnvelope(source, event, (dataOrOptions ?? {}) as EnvelopeOptions);
+    return this.publishEnvelope(envelope);
   }
 
   subscribe(filter: TopicFilterLike, options: SubscribeOptions = {}): Subscription {

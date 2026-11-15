@@ -37,7 +37,6 @@ import {
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   customEvent,
-  envelopeTopic,
   type JsonObject,
   type JsonValue,
   type ModuleId,
@@ -45,6 +44,7 @@ import {
   PromptContributorsKey,
   TaskExecutorsKey,
   taskTopic,
+  toLegacyEnvelope,
   V2_TOPIC_PREFIXES,
 } from "@miyoria/types";
 import { z } from "zod";
@@ -427,9 +427,10 @@ class Session implements RpcHandler {
     const me = this.ctx.id;
     for await (const env of sub) {
       if (env.source === me) continue;
-      const topic = envelopeTopic(env);
+      const topic = env.type;
       if (!this.grants.matches(topic) || !this.#filter.matches(topic)) continue;
-      const value = { ...env, topic } as unknown as JsonValue;
+      // Protocol 1: the old envelope form, plus the topic.
+      const value = { ...toLegacyEnvelope(env), topic } as unknown as JsonValue;
       if (!this.peer.tryNotify("event", value)) {
         this.ctx.log.warn({ ext: this.id, topic }, "extension is not keeping up; event dropped");
       }

@@ -1,7 +1,7 @@
 // Typed client for the admin API, used by the CLI. The routes on the route table
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
-import type { Envelope } from "@miyoria/types";
+import type { LegacyEnvelope } from "@miyoria/types";
 import { statusText } from "./errors.js";
 import type { ErrorBody } from "./types.js";
 
@@ -49,7 +49,7 @@ export interface CallOptions {
 }
 
 /** Bus envelopes from `GET /api/events`. Iterate with `for await`; `close()` ends it early. */
-export interface EventStream extends AsyncIterableIterator<Envelope> {
+export interface EventStream extends AsyncIterableIterator<LegacyEnvelope> {
   close(): void;
 }
 
@@ -160,12 +160,12 @@ export class ApiClient {
       void reader.cancel().catch(() => undefined);
     };
     const stream: EventStream = {
-      async next(): Promise<IteratorResult<Envelope>> {
+      async next(): Promise<IteratorResult<LegacyEnvelope>> {
         for (;;) {
           const data = pending.shift();
           if (data !== undefined) {
             try {
-              return { value: JSON.parse(data) as Envelope, done: false };
+              return { value: JSON.parse(data) as LegacyEnvelope, done: false };
             } catch (error) {
               throw ClientError.decode(error instanceof Error ? error.message : String(error));
             }
@@ -189,7 +189,7 @@ export class ApiClient {
           pending.push(...parser.feed(chunk.value));
         }
       },
-      async return(): Promise<IteratorResult<Envelope>> {
+      async return(): Promise<IteratorResult<LegacyEnvelope>> {
         finish();
         pending.length = 0;
         return { value: undefined, done: true };

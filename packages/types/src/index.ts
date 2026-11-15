@@ -44,6 +44,7 @@ export {
   BaseAuthorizer,
   type Subject,
 } from "./auth.js";
+export * as Events from "./bus-events.js";
 export type {
   ActionOutcomePayload,
   DirectorTracePayload,
@@ -54,21 +55,38 @@ export type {
   MoodNudgePayload,
 } from "./bus-payloads.js";
 export {
+  type AnyEventDefinition,
+  type BusEnvelope,
   customEvent,
   type DecisionTrace,
   type Envelope,
+  type EnvelopeOf,
   type EnvelopeOptions,
   EVENT_TOPICS,
   type Event,
   type EventData,
+  type EventMeta,
   type EventOf,
+  type EventPayload,
   type EventType,
   envelopeTopic,
+  eventEnvelope,
+  eventPayload,
   eventTopic,
+  fromLegacyEnvelope,
+  type IsEventFamily,
+  is,
   isEvent,
+  isEventDefinition,
   KERNEL_MODULE,
+  type LegacyEnvelope,
+  type LegacyEnvelopeView,
+  legacyEvent,
   type ModuleStateKind,
   newEnvelope,
+  type PublishMetaArgs,
+  toEnvelope,
+  toLegacyEnvelope,
 } from "./event.js";
 export {
   type FileDeclineCode,

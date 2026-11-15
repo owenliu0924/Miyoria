@@ -23,8 +23,8 @@ import {
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   customEvent,
-  type Envelope,
   type JsonValue,
+  type LegacyEnvelope,
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
@@ -625,7 +625,7 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
         if (Date.now() > deadline) throw new Error("recorder did not start");
         await sleep(25);
       }
-      const envelope: Envelope = {
+      const envelope: LegacyEnvelope = {
         id: "01JC0000000000000000000001",
         ts: "2026-11-14T00:00:01.123Z",
         source: "test",
@@ -634,7 +634,7 @@ describe("the whole handshake against a recording extension", { timeout: 30_000 
         event: customEvent("custom.hello", { n: 1 }),
       };
       bus.publishEnvelope(envelope);
-      const unrelated: Envelope = { ...envelope, event: customEvent("other.thing", 1) };
+      const unrelated: LegacyEnvelope = { ...envelope, event: customEvent("other.thing", 1) };
       bus.publishEnvelope(unrelated);
       typed = bus.publish(
         "agent",

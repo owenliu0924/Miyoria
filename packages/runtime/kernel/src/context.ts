@@ -1,12 +1,17 @@
-import type {
-  Clock,
-  Envelope,
-  Event,
-  EventId,
-  JsonValue,
-  ModuleId,
-  ServiceKey,
-  TurnId,
+import {
+  type AnyEventDefinition,
+  type Clock,
+  type Envelope,
+  type EnvelopeOf,
+  type Event,
+  type EventId,
+  type EventPayload,
+  isEventDefinition,
+  type JsonValue,
+  type ModuleId,
+  type PublishMetaArgs,
+  type ServiceKey,
+  type TurnId,
 } from "@miyoria/types";
 import type { z } from "zod";
 import { errorMessage } from "./async.js";
@@ -90,7 +95,27 @@ export class ModuleContext {
     return parseSection(schema, this.#host.config ?? undefined, `modules.${this.#host.id}`);
   }
 
-  publish(event: Event, options: PublishOptions = {}): Envelope {
+  /**
+   * Publishes one event of `definition` from this module: `ctx.publish(Events.SingCue, cue,
+   * { turn })`. A family takes the concrete type in `meta.type`.
+   */
+  publish<D extends AnyEventDefinition>(
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): EnvelopeOf<D>;
+  /** The old form (until it is gone). */
+  publish(event: Event, options?: PublishOptions): Envelope;
+  publish(event: AnyEventDefinition | Event, dataOrOptions?: unknown, meta?: unknown): Envelope {
+    if (isEventDefinition(event)) {
+      return this.#host.bus.publish(
+        this.#host.id,
+        event,
+        dataOrOptions as EventPayload<typeof event>,
+        ...([meta] as PublishMetaArgs<typeof event>),
+      );
+    }
+    const options = (dataOrOptions ?? {}) as PublishOptions;
     return this.#host.bus.publish(this.#host.id, event, {
       correlation: options.turn ?? null,
       causation: options.causation ?? null,
