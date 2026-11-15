@@ -152,6 +152,7 @@ describe("HostConfigSchema", () => {
     expect(HostConfigSchema.parse({ name: "m" })).toEqual({
       name: "m",
       paths: { state: "data/host" },
+      network: { bind: "127.0.0.1" },
       gpu: { reserve_mb: 0 },
       services: {},
     });

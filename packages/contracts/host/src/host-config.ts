@@ -35,6 +35,18 @@ export const HostConfigSchema = z
       })
       .strict()
       .default({ state: "data/host" }),
+    network: z
+      .object({
+        /** The address services listen on. */
+        bind: z.string().default("127.0.0.1"),
+        /**
+         * The name or address other machines reach this one by. Without it nothing here is
+         * called directly: Core reaches the services through the control link.
+         */
+        advertise: z.string().optional(),
+      })
+      .strict()
+      .default({ bind: "127.0.0.1" }),
     gpu: z
       .object({
         /** Memory left for OBS, VTube Studio and the desktop. */

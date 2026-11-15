@@ -1,6 +1,6 @@
 # V5 管家:階段 2 的設計
 
-> 2026-11-15。兩份唯讀盤點(CLI 和啟動邏輯、服務之間的連線)寫成的設計,還沒有實作。前半是結論、要 owner 決定的事和工作順序;「Design detail」之後是實作用的細節(英文)。上層的規劃見 [v5-architecture.md](v5-architecture.md) 的 §4、§5、§15 和 §16 第 20 項;套件的選擇見 [v5-packages.md](v5-packages.md) §12、§13。
+> 2026-11-15。兩份唯讀盤點(CLI 和啟動邏輯、服務之間的連線)寫成的設計,還沒有實作。前半是結論、owner 的決定和工作順序;「Design detail」之後是實作用的細節(英文)。上層的規劃見 [v5-architecture.md](v5-architecture.md) 的 §4、§5、§15 和 §16 第 20 項;套件的選擇見 [v5-packages.md](v5-packages.md) §12、§13。
 
 ## 現在的樣子
 
@@ -27,19 +27,17 @@
 - **別人從零架一套**:`npm i -g miyoria`、`miyoria init`、`miyoria up`。沒有顯卡時是只有文字的模式(只跑 Core)。worker 的原始碼跟著 npm 套件走,所以不用 clone repo。
 - **階段結束時刪掉**:`start`、`up` 自己的啟動器、`install` 的 pip 步驟、`[stack]` 和 `[machine]`、各模組設定裡的位址、`SING_OFFLOAD_URLS`、Core 對唱歌 worker 的 `/gpu/context` 推送、生圖模組自己叫 ComfyUI 釋放的接線、lyrics 讀設定檔的程式。
 
-## 要 owner 決定的事
+## owner 的決定(2026-11-15)
 
-每一項都有建議。沒有回答之前照建議做的部分不會卡住前面幾步(H1 到 H3)。
-
-| # | 事 | 建議 | 為什麼 |
+| # | 事 | 決定 | 影響 |
 |---|---|---|---|
-| P1 | 不在你 tailnet 裡的電腦,工作要不要經控制連線中繼(§5.4 寫的那條路) | 這個階段先不做。朋友那台已經在 Tailscale 上,直接連加 token 就夠。協定留好位置,真的有連不到的電腦時再做 | 中繼要把歌曲檔案也經那條線搬,是獨立的一塊工作,現在沒有人需要 |
-| P2 | Python 環境改用 uv 和 lock 檔 | 新安裝一律用 uv。這台現有的環境(包含 Applio 自己的)先照舊,在 `host.toml` 指過去;等新的方式在乾淨的資料夾裝起來驗證過,再由你決定哪天換 | 現在這台是能唱能說的狀態,重裝 torch 是整個階段風險最高的一步 |
-| P3 | 給別人用的版本要不要有語音 | 預設只有文字。語音寫成進階章節,明白寫出它用的是使用者自己的 Discord 帳號和這件事的風險,由架設的人自己決定 | 語音走 self 帳號是你為自己承擔的風險,不該替別人預設 |
-| P4 | 給別人用的版本附哪個角色 | 現在 npm 套件裡附的是 deepseek-chan 的人設。建議改附一個中性的範例角色;她的人設、聲音模型、Live2D 都不放進去 | 別人架的那一套不該預設就是她;聲音和模型的授權也不允許散布 |
-| P5 | Cluster 設定搬進資料庫(§5.6 第 1 點) | 不在階段 2。這個階段只把每台自己的東西拆到 `host.toml`,並把位址從模組設定拿掉;`miyoria.toml` 繼續是 Cluster 的設定檔 | 搬進資料庫會改變你平常改設定的方式,和每個 Space 的設定(階段 6)一起做比較完整 |
-| P6 | 發佈到 npm 的時機 | 這個階段只做到「打包檔裝得起來、CI 會測」。真的 `npm publish` 等你說 | 發佈是公開的動作 |
-| P7 | 顯卡仲裁搬多少進 hostd | 全搬,包含「什麼時候可以請語音讓出」的判斷。先把唱歌 worker 現有的判斷錄成一張對照表,hostd 的實作要和它逐格相同;舊的路在你實際聽過一次語音中點歌之後才刪 | 只搬一半會留下兩個主人;這套判斷是實際調出來的,不能憑印象重寫 |
+| P1 | 不在 tailnet 裡的電腦,工作要不要經控制連線中繼 | **做**(「聽起來會比較 clean」) | 加入的電腦預設就是走中繼,不用設任何網路;要即時語音的服務才另外設直接連的位址。多一步 H5b |
+| P2 | Python 環境改用 uv 和 lock 檔 | **改用 uv,這台之後也換** | 新的方式先在乾淨的資料夾裝起來驗證;這台在切換那一步換過去,換之前舊環境留著當退路 |
+| P3 | 給別人用的版本要不要有語音 | **要有**。提醒風險,建議用小號 | 安裝文件的語音章節寫明它用的是 self 帳號、可能被停權,建議另外開一個帳號 |
+| P4 | 給別人用的版本附哪個角色 | **照舊附 deepseek-chan** | npm 套件不用改。聲音模型和 Live2D 現在本來就不在套件裡,要不要另外提供沒有決定 |
+| P5 | Cluster 設定搬進資料庫(§5.6 第 1 點) | **之後的階段做** | 階段 2 只拆出 `host.toml` 並把位址從模組設定拿掉。搬進資料庫排在階段 6,和每個 Space 的設定一起 |
+| P6 | 發佈到 npm | **晚點** | 這個階段做到「打包檔裝得起來、CI 會測」為止 |
+| P7 | 顯卡仲裁搬多少進 hostd | **全搬**,照建議的做法 | 先把唱歌 worker 現有的判斷錄成對照表,hostd 要逐格相同;舊的路等實際聽過一次語音中點歌才刪 |
 
 ## 工作順序
 
@@ -52,6 +50,7 @@
 | H3 | Core 的 `cluster` 模組:控制連線的伺服端、host 資料表、登記處、靜態登記、事件。JSON-RPC 加 WebSocket 傳輸和共用的連線輔助;hostd 這邊的連線 | `packages/cluster`、`packages/sdk`、`packages/core` | 大 |
 | H4 | 各模組改問登記處:語音辨識和合成、斷句和 VAD、唱歌(保留歌跟著 worker 的邏輯)、生圖、直播影像;語音節點和舞台的連線資訊由 hostd 給。刪設定裡的位址 | `packages/voice`、`packages/sing`、`packages/workspace`、`packages/live`、`packages/stage`、`apps/voice-node` | 中 |
 | H5 | `host invite / join / ls / approve / remove`;host 金鑰;服務 token(Python 這邊一個共用的檢查,Core 的每個 client 帶上) | `packages/cluster`、`packages/api`、`packages/cli`、`workers` | 中 |
+| H5b | 中繼:Core 對某台服務的 HTTP 請求可以改走那台的控制連線(包含大檔案的串流)。加入的電腦沒設對外位址時自動用這條路;唱歌、生圖、歌詞適用,即時語音不適用 | `packages/cluster`、`packages/hostd` | 中 |
 | H6 | 安裝:每個 worker 一個 uv 專案和 lock、`add / remove`、`models pull / ls / gc`、`update`(只重裝變了的,一次重啟一個)、`doctor` 的新檢查 | `packages/hostd`、`packages/cli`、`workers/*` | 大 |
 | H7 | 顯卡仲裁:(a)對照表;(b)hostd 的租約和 Core 的情境推送,唱歌和生圖改成向 hostd 要;(c)刪 worker 那邊的判斷和 Core 的接線 | `packages/hostd`、`workers/sing`、`packages/workspace/imagegen`、`packages/sing` | 大 |
 | H8 | lyrics 變成被管理的服務,LLM 經 Core 代跑;刪讀設定檔的程式 | `workers/lyrics`、`workers/sing`、`packages/cluster` | 小 |
@@ -59,12 +58,12 @@
 | H10 | 登入時自動啟動(明確的指令才會設定);`update` 和手動重啟會先問 Core 現在能不能打斷 | `packages/hostd`、`packages/cli` | 小 |
 | H11 | 從零架一套:npm 套件帶 worker 原始碼、`init` 改寫(寫 `host.toml`、只有文字的模式)、給外人看的安裝文件、CI 裝起來跑一次 | `packages/cli`、`docs` | 中 |
 | H12 | 收尾:刪除清單、`OPERATIONS.md`、`workers/README.md`、朋友那台的升級教學改成 `host join`、backlog | 全部 | 小 |
-| 切換 | 這台線上的服務改由 hostd 管;朋友那台加入。和階段 1 一樣要你在場,動手前給清單 | | |
+| 切換 | 這台線上的服務改由 hostd 管,Python 環境換成 uv 管的(舊環境先留著);朋友那台加入。和階段 1 一樣要你在場,動手前給清單 | | |
 
 ## 風險
 
 - **hostd 壞了整台都受影響**。它要小;`up --foreground` 是不經它的退路;切換前線上那套照舊能用 `start` 啟動(H2 刪 `start` 是在分支上,線上換過去是切換那一步)。
-- **重裝 Python 環境**可能讓現在能跑的顯卡環境壞掉。見 P2:先在別的資料夾驗證,線上的環境不動。
+- **重裝 Python 環境**可能讓現在能跑的顯卡環境壞掉。見 P2:先在別的資料夾驗證;這台換過去時舊環境不刪,`host.toml` 一行就能指回去。
 - **顯卡仲裁重寫**可能讓語音中點歌時卡住或爆記憶體。見 P7:對照表加一次實際測試。
 - **token 上線的順序**:Core 和 worker 要同時認得 token。worker 這邊是「有設環境變數才檢查」,所以可以先上 worker、再上 Core,不會有一段時間互相連不上。朋友那台在升級前是靜態登記,沒有 token,和今天一樣只靠 Tailscale。
 - **Windows 以外的路沒人跑過**。描述檔和 hostd 不寫死 Windows 的東西(`taskkill`、`wt`、PowerShell 只在平台分支裡),CI 在 Linux 上跑 hostd 的測試;但真的在 Linux 上裝 worker 這個階段不會驗證。
@@ -206,6 +205,10 @@ url = "ws://127.0.0.1:7880/cluster-link"
 [paths]
 state = "data/host"              # envs/, models/, logs/, run/
 
+[network]
+bind = "127.0.0.1"               # the address services listen on
+# advertise = "main-pc.tailnet"  # set only when other machines should call this one directly
+
 [gpu]
 reserve_mb = 2500                # left for OBS, VTube Studio and the desktop
 
@@ -218,6 +221,11 @@ env = { HF_HUB_CACHE = "C:/.../data/models/hf", HF_HUB_OFFLINE = "1" }
 enabled = true
 python = "workers/.venv-sing"
 ```
+
+Without `advertise`, no service of this machine is called directly from outside: Core reaches
+them through the control link (§7.1). That is the default for a machine that joins, so joining
+needs no network setup. A machine that serves real-time speech to a Core on another machine sets
+`bind` and `advertise` to its tailnet address.
 
 State folder layout: `envs/<service>/` (uv-managed), `models/` (with `hf/` as the Hugging Face
 cache), `logs/<service>.log` (rotated by size, a fixed number kept), `run/hostd.json`
@@ -270,16 +278,18 @@ command reports it and waits, or goes ahead with `--force`.
 
 ## 5. Host protocol
 
-JSON-RPC 2.0, the same `Peer` as the extension protocol (`packages/sdk/src/rpc.ts`). H3 gives
+JSON-RPC 2.0. On the control link it is the same `Peer` as the extension protocol
+(`packages/sdk/src/rpc.ts`); local callers send one request per HTTP call. H3 gives
 `Peer` a message transport interface with two implementations: the existing `Content-Length`
 framing over streams, and one JSON text frame per message over a WebSocket. Requests in both
 directions, `$/cancelRequest`, per-request timeouts stay as they are.
 
-Three kinds of caller reach hostd, all with the same method table:
+Three kinds of caller reach hostd, all with the same method table (the daemon implements it once,
+`HostApi` in `packages/hostd/src/api.ts`):
 
 | Caller | Transport | Authenticated by | May call |
 |---|---|---|---|
-| CLI on this machine | WebSocket to the local API | the token in `run/hostd.json` | everything |
+| CLI on this machine | HTTP `POST /rpc` on the local API; `GET /logs/<service>` streams log lines | the token in `run/hostd.json` | everything |
 | A service on this machine | HTTP `POST /rpc` on the local API | its `MIYORIA_SERVICE_TOKEN` | `gpu.*`, `cluster.resolve`, `cluster.llm` |
 | Core | the control link (hostd dialled it) | the host key, in `hello` | `host.*`, `service.*` |
 
@@ -318,8 +328,9 @@ Core serves `/cluster-link` on its own bind (`[modules.cluster] bind`, default
 `127.0.0.1:7880`), like the voice and stage links. The first message is
 `hello { protocol, host, key, name, platform, version }`; Core answers `welcome` or closes with
 the codes the other links use (4400 bad hello, 4401 unauthorized, 4408 timeout, 4409 replaced).
-H3 extracts one link helper (backoff 1 s to 30 s, heartbeat, close-code policy) used by the voice
-node, the stage node and hostd, instead of a fourth copy (v5-packages §6).
+H3 writes the link helper (backoff 1 s to 30 s, heartbeat, close-code policy) for hostd in a form
+the voice node and the stage node can adopt (v5-packages §6). Moving those two working clients
+onto it is not part of H3; it is listed for H12.
 
 ### 6.2 Data
 
@@ -344,14 +355,20 @@ interface Endpoint {
   service: string;
   url: string;
   headers: Record<string, string>;   // the bearer token, when the endpoint has one
+  via: "direct" | "link";            // link: requests travel over the host's control link (§7.1)
   healthy: boolean;
   version: string | null;
 }
 pick(capability: string): Endpoint | null;        // the first healthy one in order
 candidates(capability: string): Endpoint[];       // all, in order, for callers with their own failover
+request(endpoint: Endpoint, path: string, init?: RequestInit): Promise<Response>;  // direct fetch, or through the link
 failed(endpoint: Endpoint, error: unknown): void; // rests it for a retry period
 watch(capability: string, onChange: () => void): Disposable;
 ```
+
+Module clients call `request` and never build a URL themselves, so the relay of §7.1 needs no
+change in them. A WebSocket service (VAD) is direct only: `pick` can be asked for direct
+endpoints only.
 
 Order: `[modules.cluster.order] <capability> = ["host-a", "host-b"]`; hosts not listed come after,
 healthy before unhealthy. An endpoint from a host that is not `approved` for that capability is
@@ -405,6 +422,25 @@ miyoria host ls | approve <name> [capability...] | remove <name>
   when `MIYORIA_SERVICE_TOKEN` is set, and does nothing when it is not (a worker run by hand).
   hostd's own probes send the token.
 - `remove` revokes the key, closes the link, drops the host's endpoints.
+
+### 7.1 Relay over the control link (H5b)
+
+Owner decision P1. An endpoint with `via: "link"` is one Core cannot call directly: the host has
+no `advertise` address. `request` then sends the HTTP request through that host's control link:
+
+- `relay.request { service, method, path, headers }` from Core to hostd answers with the status
+  and headers. Request and response bodies travel as binary WebSocket frames tagged with the
+  request id, in chunks, with a window so a slow side does not fill memory. The song files a
+  remote sing worker returns (tens of MB) go this way.
+- hostd performs the request against the local service with that service's token, so the token
+  never leaves the host.
+- Cancellation is `$/cancelRequest`; a dropped link fails the request, and the caller's own
+  failover applies.
+- Only request and response HTTP is relayed. Real-time speech (ASR, TTS, the VAD socket) is not
+  offered over the link: its endpoints are returned only when they are direct.
+
+This also covers the other direction of files: nothing on the host needs to reach Core except
+the link it already dialled.
 
 ## 8. GPU arbitration (H7)
 
@@ -478,7 +514,10 @@ The parser stays hand-written (v5-packages §12). `core`, `stage`, `chat`, `conf
   environments, and `services/`. hostd reads descriptors from the package when there is no repo.
 - **Text only**: a machine with no GPU runs one service, `core`. `init` offers this first:
   Discord bot token, LLM provider and key, profile. Nothing about workers is asked.
-- **Adding voice later**: `miyoria add asr tts turn`, then `voice-node` (see P3).
+- **Adding voice later**: `miyoria add asr tts turn voice-node`. The setup page says plainly that
+  the voice node logs in as a user account, that Discord may suspend such an account, and that a
+  separate account made for this is the sensible choice (P3).
+- **Character**: the package keeps shipping the deepseek-chan profile (P4).
 - **Docs**: one public page, `docs/SETUP.md`: text only in five steps, then optional chapters
   (voice, singing, a second machine).
 - **Check**: the CI job that installs the packed tarball also runs `miyoria up --foreground` with

@@ -178,7 +178,10 @@ export const HostEndpointSchema = z
     /** The host name, or the static entry's name. */
     host: z.string(),
     service: z.string(),
+    /** With `via: "link"` this is the address on the host itself, not one Core can call. */
     url: z.string(),
+    /** `direct`: call `url`. `link`: the request travels over the host's control link. */
+    via: z.enum(["direct", "link"]).default("direct"),
     /** What to send with each request, such as the bearer token. */
     headers: z.record(z.string(), z.string()),
     healthy: z.boolean(),

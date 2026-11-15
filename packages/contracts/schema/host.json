@@ -38,6 +38,22 @@
           },
           "additionalProperties": false
         },
+        "network": {
+          "default": {
+            "bind": "127.0.0.1"
+          },
+          "type": "object",
+          "properties": {
+            "bind": {
+              "default": "127.0.0.1",
+              "type": "string"
+            },
+            "advertise": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
         "gpu": {
           "default": {
             "reserve_mb": 0
@@ -82,6 +98,14 @@
         },
         "url": {
           "type": "string"
+        },
+        "via": {
+          "default": "direct",
+          "type": "string",
+          "enum": [
+            "direct",
+            "link"
+          ]
         },
         "headers": {
           "type": "object",
