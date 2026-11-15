@@ -127,7 +127,7 @@ describe("only the main line acts", () => {
     const director = readFileSync(join(ROOT, "packages/play/game/src/director.ts"), "utf8");
     const board = director.indexOf("ProposalBoardKey);");
     expect(board).toBeGreaterThan(-1);
-    expect(board).toBeLessThan(director.indexOf("v2Event(ARBITER_IMPULSE_TOPIC"));
+    expect(board).toBeLessThan(director.indexOf("Events.ArbiterImpulse,"));
     expect(director).toContain("commentary dropped: the agent module is not running");
   });
 });

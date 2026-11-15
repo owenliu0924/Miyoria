@@ -53,9 +53,10 @@ import {
 } from "@miyoria/store";
 import {
   ActuatorExecutorKey,
-  customEvent,
   DirectivesKey,
+  Events,
   HandleDirectoryKey,
+  is,
   type JsonValue,
   KERNEL_MODULE,
   PlatformHistories,
@@ -66,7 +67,6 @@ import {
   ProfileIdKey,
   PromptContributors,
   PromptContributorsKey,
-  SYSTEM_SHUTDOWN_TOPIC,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { moduleEnabled, NEEDS_TOKEN, REQUIRED_MODULES } from "./module-ids.js";
@@ -194,7 +194,7 @@ export class Core {
   /** Stops every module and closes the store. */
   async stop(): Promise<void> {
     // What modules say from here on is the core going down, not something that happened.
-    this.bus.publish(KERNEL_MODULE, customEvent(SYSTEM_SHUTDOWN_TOPIC, {}));
+    this.bus.publish(KERNEL_MODULE, Events.SystemShutdown, {});
     await this.supervisor.stopAll();
     this.#persist.abort();
     await this.#persistTask;
@@ -382,10 +382,10 @@ async function persistModuleState(
   wanted: (module: string) => boolean,
   signal: AbortSignal,
 ): Promise<void> {
-  const sub = bus.subscribe("system.module.state", { signal });
+  const sub = bus.subscribe(Events.SystemModuleState.type, { signal });
   for await (const env of sub) {
-    if (env.event.type !== "module_state_changed") continue;
-    const { module, state } = env.event.data;
+    if (!is(Events.SystemModuleState, env)) continue;
+    const { module, state } = env.data;
     let enabled: boolean;
     if (state === "disabled") {
       if (!wanted(module)) continue;

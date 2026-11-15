@@ -166,7 +166,9 @@ describe("every line of hers is reviewed", () => {
 
 describe("everything people write is judged", () => {
   it("whoever turns a message into something she knows asks the input defence", () => {
-    const readers = using(/type === "platform_message_created"|case "platform_message_created"/);
+    const readers = using(
+      /type === "platform_message_created"|case "platform_message_created"|is\(Events\.PlatformMessageCreated,/,
+    );
     // Only counters and presence: no text of a message goes anywhere from these.
     const counting = [
       "packages/brain/arbiter/src/module.ts",
@@ -206,7 +208,9 @@ describe("everything people write is judged", () => {
   it("the publishers that know more than the bus judge it themselves", () => {
     const chat = bodyOf(read("packages/play/game/src/chat.ts"), "#onChat(");
     expect(chat.indexOf("inspectInput(")).toBeGreaterThan(-1);
-    expect(chat.indexOf("inspectInput(")).toBeLessThan(chat.indexOf("platform_message_created"));
+    expect(chat.indexOf("inspectInput(")).toBeLessThan(
+      chat.indexOf("Events.PlatformMessageCreated"),
+    );
     expect(chat).toContain('source: "game_chat"');
   });
 
