@@ -3,30 +3,25 @@
 
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
-  ACTIVITY_CHANGED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
-  ACTIVITY_STARTED_TOPIC,
   type ActivitySnapshot,
   type ActivityTaskEvent,
+  type AnyEventDefinition,
+  type BusEnvelope,
   type ContextKey,
-  customEvent,
-  type Envelope,
-  type Event,
+  type EventPayload,
+  Events,
+  eventEnvelope,
+  type IncomingMessage,
   type InputCheck,
   type InputVerdict,
   type JsonValue,
   type LogEvent,
   ModerationKey,
   type ModerationService,
-  NOTICE_TOPIC,
   type Notice,
-  newEnvelope,
   type Observation,
-  SONG_TOPIC,
-  SYSTEM_SHUTDOWN_TOPIC,
-  TURN_FOCUS_TOPIC,
-  TURN_OUTCOME_TOPIC,
+  type PublishMetaArgs,
+  type TaskEvent,
   type TurnFocus,
   type TurnOutcomeRecord,
   taskTopic,
@@ -67,20 +62,25 @@ beforeEach(async () => {
     config: defaultFactsConfig(),
     names: ["Miyoria", "米優"],
   });
-  send("voice.link", {
-    type: "platform_ready",
-    data: { platform: "discord", self_account: HER },
-  });
+  send("voice.link", Events.PlatformReady, { platform: "discord", self_account: HER });
 });
 
-function send(source: string, event: Event, turn: string | null = null): Envelope {
-  const env = newEnvelope(source, event, { now, correlation: turn });
+/** Hands the facts one event of `definition` from `source`, published now. */
+function send<D extends AnyEventDefinition>(
+  source: string,
+  definition: D,
+  data: EventPayload<D>,
+  meta: { turn?: string | null; type?: string } = {},
+): BusEnvelope {
+  const env = eventEnvelope(
+    source,
+    definition,
+    data,
+    ...([{ now, ...meta }] as PublishMetaArgs<D>),
+  );
   bus.handle(env);
   return env;
 }
-
-const custom = (source: string, topic: string, payload: unknown, turn: string | null = null) =>
-  send(source, customEvent(topic, payload as JsonValue), turn);
 
 const observations = (): Observation[] =>
   log.recent(10_000).flatMap((e) => {
@@ -109,19 +109,16 @@ function utterance(text: string, id = "u1"): VoiceUtterance {
   };
 }
 
-function message(text: string, over: object = {}) {
+function message(text: string, over: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
-    type: "platform_message_created" as const,
-    data: {
-      id: { context: TEXT, id: "m1" },
-      author: { account: OWEN, display_name: "Owen", is_bot: false },
-      text,
-      mentions_self: false,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(now),
-      ...over,
-    },
+    id: { context: TEXT, id: "m1" },
+    author: { account: OWEN, display_name: "Owen", is_bot: false },
+    text,
+    mentions_self: false,
+    reply_to_self: false,
+    attachments: [],
+    ts: toTimestamp(now),
+    ...over,
   };
 }
 
@@ -142,12 +139,40 @@ function focus(turn: string, ids: string[], context_ = VOICE): TurnFocus {
 }
 
 function gameEvent(kind: string, data: object | null, important = false) {
-  return custom("ext.minecraft", `game.minecraft.${kind}`, { type: kind, data, important });
+  return send(
+    "ext.minecraft",
+    Events.GameAdapterEvent,
+    { type: kind, data: data as JsonValue, important },
+    { type: `game.minecraft.${kind}` },
+  );
+}
+
+/** `send` with a payload that holds only what the writer reads, not all its schema asks for. */
+function loose(
+  source: string,
+  definition: AnyEventDefinition,
+  data: unknown,
+  meta: { turn?: string | null; type?: string } = {},
+): BusEnvelope {
+  return send(source, definition, data, meta);
+}
+
+const TASK_EVENTS = {
+  started: Events.TaskStarted,
+  progress: Events.TaskProgress,
+  done: Events.TaskDone,
+  failed: Events.TaskFailed,
+  steered: Events.TaskSteered,
+} as const;
+
+/** One of the minecraft executor's task events, on `topic`. */
+function task(topic: string, event: TaskEvent): BusEnvelope {
+  return send("ext.minecraft", TASK_EVENTS[event.type], event as never, { type: topic });
 }
 
 describe("what people say", () => {
   it("a voice transcript nobody addressed to her stays silent", () => {
-    send("voice.link", { type: "voice_utterance", data: utterance("今天好冷") });
+    send("voice.link", Events.VoiceUtteranceEvent, utterance("今天好冷"));
     expect(last()).toMatchObject({
       source: "voice.asr",
       silent: true,
@@ -165,19 +190,23 @@ describe("what people say", () => {
   });
 
   it("saying her name addresses her", () => {
-    send("voice.link", { type: "voice_utterance", data: utterance("米優你在嗎") });
+    send("voice.link", Events.VoiceUtteranceEvent, utterance("米優你在嗎"));
     expect(last()).toMatchObject({ silent: false, salience: "notable", addressed_to_her: true });
   });
 
   it("a mention, a reply and a DM address her", () => {
-    send("discord", message("嗨", { mentions_self: true }));
+    send("discord", Events.PlatformMessageCreated, message("嗨", { mentions_self: true }));
     expect(last().addressed_to_her).toBe(true);
-    send("discord", message("嗨", { reply_to_self: true }));
+    send("discord", Events.PlatformMessageCreated, message("嗨", { reply_to_self: true }));
     expect(last().addressed_to_her).toBe(true);
     const dm: ContextKey = { platform: "discord", scope: null, channel: "d", kind: "dm" };
-    send("discord", message("嗨", { id: { context: dm, id: "m2" } }));
+    send(
+      "discord",
+      Events.PlatformMessageCreated,
+      message("嗨", { id: { context: dm, id: "m2" } }),
+    );
     expect(last().addressed_to_her).toBe(true);
-    send("discord", message("大家好"));
+    send("discord", Events.PlatformMessageCreated, message("大家好"));
     expect(last()).toMatchObject({
       addressed_to_her: false,
       silent: true,
@@ -189,21 +218,23 @@ describe("what people say", () => {
   it("her own messages and empty transcripts are not perceived", () => {
     send(
       "discord",
+      Events.PlatformMessageCreated,
       message("我說的", { author: { account: HER, display_name: "M", is_bot: true } }),
     );
-    send("voice.link", { type: "voice_utterance", data: utterance("   ") });
+    send("voice.link", Events.VoiceUtteranceEvent, utterance("   "));
     expect(observations()).toEqual([]);
   });
 
   it("keeps the bus event, for the replay", () => {
-    const env = send("discord", message("嗨"));
+    const env = send("discord", Events.PlatformMessageCreated, message("嗨"));
     const event = log.recent().at(-1) as LogEvent;
     expect(event.id).toBe(env.id);
-    expect(event.at).toBe(env.ts);
-    expect(observationBody(event)?.origin).toMatchObject({
+    expect(event.at).toBe(env.at);
+    expect(observationBody(event)?.origin).toEqual({
       module: "discord",
       topic: "platform.message.created",
-      event: { type: "platform_message_created" },
+      event: { type: "platform.message.created", v: 1, data: env.data },
+      turn: null,
     });
   });
 });
@@ -266,7 +297,7 @@ describe("games", () => {
   });
 
   it("notable events go into the game's bucket, and the session's end empties it", () => {
-    custom("game", "game.director.session", {
+    send("game", Events.GameDirectorSession, {
       state: "started",
       game: "minecraft",
       game_name: "Minecraft",
@@ -276,7 +307,7 @@ describe("games", () => {
     gameEvent("advancement", { title: "石器時代", text: "達成石器時代" });
     expect(context.bucket("game.minecraft")?.entries[0]?.text).toBe("達成石器時代");
     expect(context.bucket("game.session")?.entries[0]?.text).toBe("正在玩 Minecraft");
-    custom("game", "game.director.session", {
+    send("game", Events.GameDirectorSession, {
       state: "stopped",
       game: "minecraft",
       game_name: "Minecraft",
@@ -288,7 +319,7 @@ describe("games", () => {
   });
 
   it("a reached goal is notable under the key the director gives it", () => {
-    custom("game", "game.director.goal", {
+    loose("game", Events.GameDirectorGoal, {
       game: "minecraft",
       goal: "做一把石鎬",
       status: "done",
@@ -303,15 +334,16 @@ describe("games", () => {
   });
 
   it("the director's decisions are thoughts", () => {
-    custom("game", "game.director.decision", { game: "minecraft", commentary: "去挖礦" });
+    loose("game", Events.GameDirectorDecision, { game: "minecraft", commentary: "去挖礦" });
     expect(lines("thought").at(-1)).toMatchObject({ source: "game.director" });
   });
 
   it("a module that goes away takes its buckets along", () => {
     gameEvent("advancement", { title: "x" });
-    send("kernel", {
-      type: "module_state_changed",
-      data: { module: "ext.minecraft", state: "failed", reason: "crashed" },
+    send("kernel", Events.SystemModuleState, {
+      module: "ext.minecraft",
+      state: "failed",
+      reason: "crashed",
     });
     expect(context.bucket("game.minecraft")).toBeNull();
   });
@@ -349,13 +381,13 @@ describe("activity and tasks", () => {
   }
 
   it("the snapshot replaces, and an unchanged one is not a fact", () => {
-    custom("activity", ACTIVITY_CHANGED_TOPIC, snapshot());
+    send("activity", Events.ActivityChanged, snapshot());
     const count = observations().length;
-    custom("activity", ACTIVITY_CHANGED_TOPIC, snapshot({ version: 2 }));
+    send("activity", Events.ActivityChanged, snapshot({ version: 2 }));
     expect(observations()).toHaveLength(count);
-    custom(
+    send(
       "activity",
-      ACTIVITY_CHANGED_TOPIC,
+      Events.ActivityChanged,
       snapshot({ presence: { type: "in", channel: VOICE, since: toTimestamp(now) } }),
     );
     expect(last()).toMatchObject({ attention_key: "activity:state", revision: 2, silent: true });
@@ -363,17 +395,17 @@ describe("activity and tasks", () => {
   });
 
   it("a task's lines follow each other", async () => {
-    custom("activity", ACTIVITY_STARTED_TOPIC, activityTask("started"));
+    loose("activity", Events.ActivityStarted, activityTask("started"));
     expect(last()).toMatchObject({ salience: "ambient", attention_key: "task:k1", revision: 1 });
-    const done = custom("activity", ACTIVITY_DONE_TOPIC, activityTask("done"));
+    const done = loose("activity", Events.ActivityDone, activityTask("done"));
     expect(last()).toMatchObject({ salience: "ambient", revision: 2 });
     expect((await log.chain(done.id)).events).toHaveLength(2);
   });
 
   it("a failure, and a result someone waits for, are notable", () => {
-    custom("activity", ACTIVITY_FAILED_TOPIC, activityTask("failed"));
+    loose("activity", Events.ActivityFailed, activityTask("failed"));
     expect(last()).toMatchObject({ salience: "notable", silent: false });
-    custom("activity", ACTIVITY_DONE_TOPIC, activityTask("done", "t1"));
+    loose("activity", Events.ActivityDone, activityTask("done", "t1"));
     expect(last().salience).toBe("notable");
   });
 
@@ -381,8 +413,8 @@ describe("activity and tasks", () => {
     const owner = "game.minecraft";
     const at = toTimestamp(now);
     const topic = (t: "started" | "progress" | "done" | "failed") => taskTopic(owner, t);
-    custom("ext.minecraft", topic("started"), { type: "started", task: "k", goal: "mine", at });
-    custom("ext.minecraft", topic("progress"), {
+    task(topic("started"), { type: "started", task: "k", goal: "mine", at });
+    task(topic("progress"), {
       type: "progress",
       task: "k",
       progress: 0.5,
@@ -391,7 +423,7 @@ describe("activity and tasks", () => {
     });
     expect(last()).toMatchObject({ source: owner, attention_key: "task:k", revision: 2 });
     expect(context.bucket(`${owner}.task`)?.entries.map((e) => e.text)).toEqual(["走到礦脈"]);
-    custom("ext.minecraft", topic("failed"), {
+    task(topic("failed"), {
       type: "failed",
       task: "k",
       code: "unreachable",
@@ -405,20 +437,20 @@ describe("activity and tasks", () => {
   it("a steered event is a steer line on the steer's cause chain, not the end of the task", async () => {
     const owner = "game.minecraft";
     const at = toTimestamp(now);
-    custom("ext.minecraft", taskTopic(owner, "started"), {
+    task(taskTopic(owner, "started"), {
       type: "started",
       task: "k",
       goal: "mine",
       at,
     });
-    custom("ext.minecraft", taskTopic(owner, "progress"), {
+    task(taskTopic(owner, "progress"), {
       type: "progress",
       task: "k",
       progress: 0.5,
       detail: "走到礦脈",
       at,
     });
-    custom("ext.minecraft", taskTopic(owner, "steered"), {
+    task(taskTopic(owner, "steered"), {
       type: "steered",
       task: "k",
       steer: "s1",
@@ -436,7 +468,7 @@ describe("activity and tasks", () => {
     // The task is still running: its bucket stays and nothing says it ended.
     expect(context.bucket(`${owner}.task`)?.entries.map((e) => e.text)).toEqual(["走到礦脈"]);
     expect(observations().some((o) => o.summary.startsWith("任務完成"))).toBe(false);
-    custom("ext.minecraft", taskTopic(owner, "steered"), {
+    task(taskTopic(owner, "steered"), {
       type: "steered",
       task: "k",
       steer: "s2",
@@ -448,7 +480,7 @@ describe("activity and tasks", () => {
   });
 
   it("a notice is notable and hangs on its task", async () => {
-    const started = custom("activity", ACTIVITY_STARTED_TOPIC, activityTask("started"));
+    const started = loose("activity", Events.ActivityStarted, activityTask("started"));
     const notice: Notice = {
       id: "n1",
       at: toTimestamp(now),
@@ -461,7 +493,7 @@ describe("activity and tasks", () => {
       text: "Minecraft 開好了",
       expires_at: toTimestamp(now + 1000),
     };
-    const env = custom("activity", NOTICE_TOPIC, notice);
+    const env = send("activity", Events.AgentNotice, notice);
     expect(last()).toMatchObject({ source: "notice.activity", salience: "notable" });
     expect((await log.chain(env.id)).events[0]?.id).toBe(started.id);
   });
@@ -478,55 +510,55 @@ describe("voice, stage and songs", () => {
 
   it("who is in voice is state; leaving removes it", () => {
     const people = [participant("Owen", "100"), participant("Miyoria", "999", true)];
-    send("voice.link", { type: "voice_joined", data: { context: VOICE, participants: people } });
+    send("voice.link", Events.VoiceJoined, { context: VOICE, participants: people });
     expect(context.bucket("voice.members")?.entries[0]?.text).toBe("語音頻道裡有:Owen");
     const count = observations().length;
-    send("voice.link", {
-      type: "voice_participants",
-      data: { context: VOICE, participants: [...people].reverse() },
+    send("voice.link", Events.VoiceParticipants, {
+      context: VOICE,
+      participants: [...people].reverse(),
     });
     expect(observations()).toHaveLength(count);
-    send("voice.link", { type: "voice_left", data: { context: VOICE, reason: null } });
+    send("voice.link", Events.VoiceLeft, { context: VOICE, reason: null });
     expect(context.bucket("voice.members")).toBeNull();
   });
 
   it("the stage is state", () => {
     const status = { connected: true, obs: true, streaming: true, scene: "game" };
-    custom("stage.link", "stage.status", status);
+    loose("stage.link", Events.StageStatus, status);
     expect(last()).toMatchObject({ source: "stage", attention_key: "stage:status" });
     const count = observations().length;
-    custom("stage.link", "stage.status", { ...status, hotkeys: ["a"] });
+    loose("stage.link", Events.StageStatus, { ...status, hotkeys: ["a"] });
     expect(observations()).toHaveLength(count);
-    custom("stage.link", "stage.status", { connected: false });
+    send("stage.link", Events.StageStatus, { connected: false });
     expect(context.bucket("stage")).toBeNull();
   });
 
   it("Go Live is state, a failure notable", () => {
-    custom("voice.link", "voice.golive", { state: "live", guild: "g" });
+    loose("voice.link", Events.VoiceGoLive, { state: "live", guild: "g" });
     expect(context.bucket("stream")).not.toBeNull();
-    custom("voice.link", "voice.golive", { state: "failed", guild: "g", error: "x" });
+    loose("voice.link", Events.VoiceGoLive, { state: "failed", guild: "g", error: "x" });
     expect(last().salience).toBe("notable");
     expect(context.bucket("stream")).toBeNull();
   });
 
   it("a song is state while it plays; its lines are not news", () => {
-    custom("sing", SONG_TOPIC, { state: "started", song: "s1", title: "夜に駆ける" });
+    send("sing", Events.SingCue, { state: "started", song: "s1", title: "夜に駆ける" });
     expect(last()).toMatchObject({ source: "sing", attention_key: "song:s1" });
     expect(context.bucket("song")?.entries[0]?.text).toBe("正在唱:夜に駆ける");
     const count = observations().length;
-    custom("sing", SONG_TOPIC, { state: "line", song: "s1", index: 1, text: "la" });
+    send("sing", Events.SingCue, { state: "line", song: "s1", index: 1, text: "la" });
     expect(observations()).toHaveLength(count);
-    custom("sing", SONG_TOPIC, { state: "ended", song: "s1", outcome: "finished" });
+    send("sing", Events.SingCue, { state: "ended", song: "s1", outcome: "finished" });
     expect(context.bucket("song")).toBeNull();
   });
 
   it("preparing a song follows its stages, not its progress", () => {
     const prepare = { no: 1, title: "x", stage: "download", progress: 0.1, exclusive: null };
-    custom("sing", "sing.prepare", prepare);
+    send("sing", Events.SingPrepare, prepare);
     const count = observations().length;
-    custom("sing", "sing.prepare", { ...prepare, progress: 0.2 });
+    send("sing", Events.SingPrepare, { ...prepare, progress: 0.2 });
     expect(observations()).toHaveLength(count);
-    custom("sing", "sing.prepare", {
+    send("sing", Events.SingPrepare, {
       no: null,
       title: "",
       stage: "",
@@ -537,19 +569,16 @@ describe("voice, stage and songs", () => {
   });
 
   it("the shutdown line is written", () => {
-    custom("kernel", SYSTEM_SHUTDOWN_TOPIC, {});
+    send("kernel", Events.SystemShutdown, {});
     expect(last()).toMatchObject({ source: "core.lifecycle", attention_key: "system:shutdown" });
   });
 
   it("leaves out what is noise", () => {
     const before = log.recent(10_000).length;
-    send("voice.link", {
-      type: "voice_speaking",
-      data: { context: VOICE, account: OWEN, speaking: true },
-    });
-    send("discord", { type: "platform_typing", data: { context: TEXT, account: OWEN } });
-    custom("llm", "llm.budget", { state: "ok" });
-    custom("agent", "agent.prompt", { text: "很長" });
+    send("voice.link", Events.VoiceSpeaking, { context: VOICE, account: OWEN, speaking: true });
+    send("discord", Events.PlatformTyping, { context: TEXT, account: OWEN });
+    loose("llm", Events.LlmBudget, { state: "ok" });
+    loose("agent", Events.AgentPrompt, { text: "很長" });
     expect(log.recent(10_000)).toHaveLength(before);
   });
 });
@@ -562,9 +591,9 @@ describe("cause chains", () => {
   }
 
   it("an action hangs on its turn, and the task on the action", async () => {
-    send("discord", message("米優開麥塊"));
-    custom("agent", TURN_FOCUS_TOPIC, focus("t1", ["m1"], TEXT), "t1");
-    custom("actions", "gate.decision", {
+    send("discord", Events.PlatformMessageCreated, message("米優開麥塊"));
+    send("agent", Events.AgentTurnFocus, focus("t1", ["m1"], TEXT), { turn: "t1" });
+    loose("actions", Events.GateDecision, {
       capability: "game.start",
       allowed: true,
       stage: "allowed",
@@ -572,7 +601,7 @@ describe("cause chains", () => {
       why: "他叫我開",
       turn: "t1",
     });
-    const task = custom("activity", ACTIVITY_STARTED_TOPIC, {
+    const task = send("activity", Events.ActivityStarted, {
       type: "started",
       task: "k",
       resource: "activity",
@@ -590,7 +619,7 @@ describe("cause chains", () => {
   });
 
   it("a refused action is a result", () => {
-    custom("actions", "gate.decision", { capability: "x", allowed: false, turn: null });
+    loose("actions", Events.GateDecision, { capability: "x", allowed: false, turn: null });
     expect(lines("result").at(-1)).toMatchObject({
       source: "gate",
       body: { capability: "x", allowed: false },
@@ -598,9 +627,12 @@ describe("cause chains", () => {
   });
 
   it("the turn's outcome is a result of its last decision", async () => {
-    send("agent", {
-      type: "agent_decision",
-      data: { turn: "t1", context: VOICE, respond: false, score: 0, reasons: [] },
+    send("agent", Events.AgentDecision, {
+      turn: "t1",
+      context: VOICE,
+      respond: false,
+      score: 0,
+      reasons: [],
     });
     const record: TurnOutcomeRecord = {
       turn: "t1",
@@ -614,22 +646,27 @@ describe("cause chains", () => {
       latency_ms: null,
       at: toTimestamp(now),
     };
-    custom("agent", TURN_OUTCOME_TOPIC, record, "t1");
+    send("agent", Events.AgentTurnOutcome, record, { turn: "t1" });
     const result = lines("result").at(-1) as LogEvent;
     expect(result.body).toMatchObject({ turn_outcome: { outcome: { type: "silence" } } });
     expect(await kinds(result)).toEqual(["decision:agent", "result:agent"]);
   });
 
   it("a focus event that only changes the phase is not a new decision", () => {
-    send("voice.link", { type: "voice_utterance", data: utterance("米優") });
-    custom("agent", TURN_FOCUS_TOPIC, focus("t1", ["u1"]), "t1");
-    custom("agent", TURN_FOCUS_TOPIC, { ...focus("t1", ["u1"]), phase: "speaking" }, "t1");
+    send("voice.link", Events.VoiceUtteranceEvent, utterance("米優"));
+    send("agent", Events.AgentTurnFocus, focus("t1", ["u1"]), { turn: "t1" });
+    send(
+      "agent",
+      Events.AgentTurnFocus,
+      { ...focus("t1", ["u1"]), phase: "speaking" },
+      { turn: "t1" },
+    );
     expect(lines("decision")).toHaveLength(1);
   });
 
   it("keeps the end-to-end latency of a reply with its turn, and no other measurement", () => {
-    send("voice.link", { type: "voice_utterance", data: utterance("米優") });
-    custom("agent", TURN_FOCUS_TOPIC, focus("t1", ["u1"]), "t1");
+    send("voice.link", Events.VoiceUtteranceEvent, utterance("米優"));
+    send("agent", Events.AgentTurnFocus, focus("t1", ["u1"]), { turn: "t1" });
     const e2e = {
       stage: "e2e",
       context: VOICE,
@@ -645,10 +682,15 @@ describe("cause chains", () => {
         playback: 100,
       },
     };
-    custom("voice", "voice.latency", e2e, "t1");
-    custom("voice", "voice.latency", { stage: "llm", turn: "t1", first_token_ms: 300 }, "t1");
-    custom("voice", "voice.latency", { ...e2e, stage: "e2e", turn: null });
-    send("voice", { type: "voice_speaking", data: { context: VOICE, speaking: true } } as never);
+    loose("voice", Events.VoiceLatency, e2e, { turn: "t1" });
+    loose(
+      "voice",
+      Events.VoiceLatency,
+      { stage: "llm", turn: "t1", first_token_ms: 300 },
+      { turn: "t1" },
+    );
+    loose("voice", Events.VoiceLatency, { ...e2e, stage: "e2e", turn: null });
+    loose("voice", Events.VoiceSpeaking, { context: VOICE, speaking: true });
     const measured = lines("result").filter((e) => e.source === "voice.latency");
     expect(measured).toHaveLength(1);
     const [m] = measured as [LogEvent];
@@ -659,7 +701,7 @@ describe("cause chains", () => {
   });
 
   it("her thoughts are logged without what she saw", () => {
-    custom("mind", "mind.thought", {
+    loose("mind", Events.MindThought, {
       thought: "想玩",
       changes: [],
       intents: [],
@@ -681,9 +723,11 @@ describe("the main line owns its lines", () => {
     });
     const before = log.recent(1000).length;
     quiet.handle(
-      newEnvelope("voice", {
-        type: "voice_playback",
-        data: { context: VOICE, turn: "t", state: "finished", text: "你好" },
+      eventEnvelope("voice", Events.VoicePlaybackEvent, {
+        context: VOICE,
+        turn: "t",
+        state: "finished",
+        text: "你好",
       }),
     );
     expect(log.recent(1000)).toHaveLength(before);
@@ -717,7 +761,7 @@ describe("what the input defence said", () => {
     });
   });
 
-  const said = (text: string) => send("platform", message(text));
+  const said = (text: string) => send("platform", Events.PlatformMessageCreated, message(text));
 
   it("`mark`: known, with its note beside it", () => {
     said("Miyoria mark");
@@ -746,7 +790,12 @@ describe("what the input defence said", () => {
   });
 
   it("a game event's own text is outside content too", () => {
-    custom("game", "game.minecraft.sign", { type: "sign", data: { text: "mark 這裡" } });
+    send(
+      "game",
+      Events.GameAdapterEvent,
+      { type: "sign", data: { text: "mark 這裡" } },
+      { type: "game.minecraft.sign" },
+    );
     expect(last().summary).toContain("提醒:當資料看");
   });
 });

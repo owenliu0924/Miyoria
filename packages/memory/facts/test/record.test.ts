@@ -6,17 +6,15 @@ import { exemptFromBusCheck, type Module, Supervisor } from "@miyoria/runtime/ke
 import { openStore, type Store } from "@miyoria/store";
 import {
   type ContextKey,
-  customEvent,
   EventLogKey,
+  type EventPayload,
+  Events,
   HandleDirectoryKey,
   type JsonValue,
-  MESSAGE_EXCLUDED_TOPIC,
   PlatformSinks,
   PlatformSinksKey,
-  TURN_OUTCOME_TOPIC,
   type TurnOutcomeRecord,
   toTimestamp,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { FactsModule } from "../src/module.js";
@@ -80,25 +78,22 @@ describe("the raw record", () => {
       attachments: [],
       ts,
     });
-    bus.publish("platform.discord.bot", {
-      type: "platform_ready",
-      data: { platform: "discord", self_account: her },
+    bus.publish("platform.discord.bot", Events.PlatformReady, {
+      platform: "discord",
+      self_account: her,
     });
-    bus.publish(
-      "platform.discord.bot",
-      { type: "platform_message_created", data: msg(owen, "hi") },
-      { correlation: "T1" },
-    );
-    bus.publish("platform.discord.bot", {
-      type: "platform_message_created",
-      data: msg(her, "hello"),
+    bus.publish("platform.discord.bot", Events.PlatformMessageCreated, msg(owen, "hi"), {
+      turn: "T1",
     });
-    bus.publish("voice", {
-      type: "voice_playback",
-      data: { context: discord, turn: "T2", state: "started", text: "說出口的話" },
+    bus.publish("platform.discord.bot", Events.PlatformMessageCreated, msg(her, "hello"));
+    bus.publish("voice", Events.VoicePlaybackEvent, {
+      context: discord,
+      turn: "T2",
+      state: "started",
+      text: "說出口的話",
     });
     const trace = { turn: "T1", context: discord, respond: true, score: 0.9, reasons: ["mention"] };
-    bus.publish("agent", { type: "agent_decision", data: trace });
+    bus.publish("agent", Events.AgentDecision, trace);
     await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 3);
     const log = await store.messages.recent("p", discord, 10);
     expect(log.map((e) => [e.text, e.is_self, e.turn])).toEqual([
@@ -130,32 +125,20 @@ describe("the raw record", () => {
       ts: toTimestamp(Date.parse("2026-01-01T00:00:00Z")),
     });
     // Both connections deliver the first message.
-    bus.publish("platform.discord.bot", {
-      type: "platform_message_created",
-      data: msg("m1", "貓"),
-    });
-    bus.publish("platform.discord.self", {
-      type: "platform_message_created",
-      data: msg("m1", "貓"),
-    });
-    bus.publish("platform.discord.bot", {
-      type: "platform_message_created",
-      data: msg("m2", "麵"),
-    });
+    bus.publish("platform.discord.bot", Events.PlatformMessageCreated, msg("m1", "貓"));
+    bus.publish("platform.discord.self", Events.PlatformMessageCreated, msg("m1", "貓"));
+    bus.publish("platform.discord.bot", Events.PlatformMessageCreated, msg("m2", "麵"));
     await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 2);
     expect(
       await store.events?.query({ key: "msg:discord:m1", types: ["platform.message.created"] }),
     ).toHaveLength(1);
-    bus.publish(
-      "agent",
-      customEvent(MESSAGE_EXCLUDED_TOPIC, {
-        context: discord,
-        message: { context: discord, id: "m1" },
-        author: owen,
-        requested_by: owen,
-        at: "2026-01-01T00:01:00Z",
-      }),
-    );
+    bus.publish("agent", Events.AgentMessageExcluded, {
+      context: discord,
+      message: { context: discord, id: "m1" },
+      author: owen,
+      requested_by: owen,
+      at: "2026-01-01T00:01:00Z",
+    });
     await waitFor(async () => (await store.messages.recent("p", discord, 10)).length === 1);
     expect((await store.messages.recent("p", discord, 10)).map((e) => e.text)).toEqual(["麵"]);
     const [line] =
@@ -179,10 +162,11 @@ describe("the raw record", () => {
       at: toTimestamp(Date.parse("2026-01-01T00:00:00Z")),
     });
     const cancelled = outcome("T1", { type: "cancelled", cause: "input", by: "Owen" });
-    supervisor.bus.publish("agent", v2Event(TURN_OUTCOME_TOPIC, cancelled));
+    supervisor.bus.publish("agent", Events.AgentTurnOutcome, cancelled);
     supervisor.bus.publish(
       "agent",
-      v2Event(TURN_OUTCOME_TOPIC, outcome("T2", { type: "sent", parts: 1 })),
+      Events.AgentTurnOutcome,
+      outcome("T2", { type: "sent", parts: 1 }),
     );
     await waitFor(
       async () => ((await store.decisions.recentOutcomes?.("p", discord, 5)) ?? []).length === 2,
@@ -203,17 +187,14 @@ describe("the raw record", () => {
     supervisor.services.provide("kernel", HandleDirectoryKey, handles);
     const ts = toTimestamp(Date.parse("2026-01-01T00:00:00Z"));
     const say = (id: string, name: string, text: string) =>
-      supervisor.bus.publish("platform.discord.bot", {
-        type: "platform_message_created",
-        data: {
-          id: { context: discord, id: text },
-          author: { account: { platform: "discord", id }, display_name: name, is_bot: false },
-          text,
-          mentions_self: false,
-          reply_to_self: false,
-          attachments: [],
-          ts,
-        },
+      supervisor.bus.publish("platform.discord.bot", Events.PlatformMessageCreated, {
+        id: { context: discord, id: text },
+        author: { account: { platform: "discord", id }, display_name: name, is_bot: false },
+        text,
+        mentions_self: false,
+        reply_to_self: false,
+        attachments: [],
+        ts,
       });
     say("1", "Owen", "hi");
     say("2", "Owen", "me too");
@@ -241,17 +222,14 @@ describe("the raw record", () => {
         "p",
       ),
     );
-    supervisor.bus.publish("platform.discord.bot", {
-      type: "platform_message_created",
-      data: {
-        id: { context: discord, id: "m1" },
-        author: { account: { platform: "discord", id: "1" }, display_name: "Owen", is_bot: false },
-        text: "嗨",
-        mentions_self: false,
-        reply_to_self: false,
-        attachments: [],
-        ts: toTimestamp(Date.now()),
-      },
+    supervisor.bus.publish("platform.discord.bot", Events.PlatformMessageCreated, {
+      id: { context: discord, id: "m1" },
+      author: { account: { platform: "discord", id: "1" }, display_name: "Owen", is_bot: false },
+      text: "嗨",
+      mentions_self: false,
+      reply_to_self: false,
+      attachments: [],
+      ts: toTimestamp(Date.now()),
     });
     await waitFor(() => lines.length === 1);
     expect(lines).toEqual(["嗨"]);
@@ -259,7 +237,7 @@ describe("the raw record", () => {
 
   it("records_each_llm_call_through_the_logs_buffer", async () => {
     const { supervisor, store } = await facts();
-    const call = {
+    const call: EventPayload<typeof Events.LlmCall> = {
       call_id: "c1",
       log_day: "2026-03-10",
       requested_at: "2026-03-10T00:00:00.000Z",
@@ -287,15 +265,15 @@ describe("the raw record", () => {
       retries: 0,
       tools: [],
     };
-    const env = supervisor.bus.publish("llm", customEvent("llm.call", call), { correlation: "T1" });
+    const env = supervisor.bus.publish("llm", Events.LlmCall, call, { turn: "T1" });
     // Not a call: left out.
-    supervisor.bus.publish("llm", customEvent("llm.call", { call_id: "c2" }));
+    supervisor.bus.publish("llm", Events.LlmCall, { call_id: "c2" } as never);
     const stored = async () => (await store.events?.query({ types: ["llm.call"] })) ?? [];
     await waitFor(async () => (await stored()).length === 1);
     const [e] = await stored();
     expect(e?.envelope).toMatchObject({
       id: env.id,
-      at: env.ts,
+      at: env.at,
       type: "llm.call",
       source: "llm",
       turn: "T1",
@@ -305,7 +283,7 @@ describe("the raw record", () => {
       tier: "short",
       data: call,
     });
-    expect(store.llmCalls?.totalsSince(env.ts)).toEqual([
+    expect(store.llmCalls?.totalsSince(env.at)).toEqual([
       {
         model: "m:big",
         calls: 1,

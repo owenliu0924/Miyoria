@@ -21,8 +21,8 @@ import {
 import type { EventCompaction, EventLogStore, Store } from "@miyoria/store";
 import {
   ActivityRecoveryKey,
+  type BusEnvelope,
   DeliveryLedgerKey,
-  type Envelope,
   EventLogKey,
   type JsonValue,
   type LogEvent,
@@ -181,14 +181,14 @@ export class FactsModule implements Module {
   }
 
   /** An LLM call goes to the store as it is; everything else to the bus facts. */
-  static #route(log: EventLogService, bus: BusFacts, env: Envelope): void {
+  static #route(log: EventLogService, bus: BusFacts, env: BusEnvelope): void {
     const call = llmCallWrite(env);
     if (call !== null) log.record(call);
     else bus.handle(env);
   }
 
   /** One bad event costs that event. */
-  #take(ctx: ModuleContext, log: EventLogService, bus: BusFacts, env: Envelope): void {
+  #take(ctx: ModuleContext, log: EventLogService, bus: BusFacts, env: BusEnvelope): void {
     try {
       FactsModule.#route(log, bus, env);
     } catch (error) {

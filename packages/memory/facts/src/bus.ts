@@ -4,32 +4,37 @@
 //
 // Each topic gets an `attention_key`, a `revision` and a `salience` decided here by rules, never by
 // a model (§6). Causes are stitched together from what V2 events share: message ids (a turn's
-// focus), impulse ids, turn ids and task ids. `Envelope.causation` is hardly ever set in V2.
+// focus), impulse ids, turn ids and task ids. An envelope's `parent` is hardly ever set in V2.
+//
+// What is read of a bus envelope: its own fields (`id`, `at`, `type`, `v`, `source`, `parent`,
+// `turn`, `data`), never the old view. An observation is stored under the bus event's `id` and
+// `at`, and keeps where it came from as `origin`: the publishing module, the topic, the turn, and
+// as `origin.event` the bus event's `type`, `v` and `data` (the payload as it was published). That
+// is the part of the envelope that says what happened; the rest is already on the line (`id`,
+// `at`) or beside it in `origin` (`module`, `turn`), and the place fields are the line's own.
+// It replaces the old `{type, data}` form, which named 15 topics by a variant tag and wrapped every
+// other payload as `{topic, payload}`: the payload is now `origin.event.data` for every topic, so
+// the readers that look into it (`authorOf` in envelope.ts, `recovery.ts`, the arbiter's wishes,
+// the memory's recent log, `toReplayLines`) read one form. No stored row has the old form: the
+// V5 event log starts empty at the cut-over.
 //
 // Nothing here may touch the disk or wait: it runs on every event on the bus.
 
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
-  ACTIVITY_CHANGED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
-  ACTIVITY_RESTORE_TOPIC,
-  ACTIVITY_STARTED_TOPIC,
   type AccountRef,
   type ActivityRestore,
   type ActivitySnapshot,
   type ActivityTaskEvent,
-  ARBITER_DECISION_TOPIC,
-  ARBITER_IMPULSE_TOPIC,
   type ArbiterDecision,
   type Author,
   type BucketWrite,
+  type BusEnvelope,
   type ContextKey,
   contextKeyString,
-  type Envelope,
-  type EventData,
   type EventLog,
-  envelopeTopic,
+  type EventPayload,
+  Events,
   GOAL_TOPIC,
   gameEventKey,
   gameGoalKey,
@@ -42,13 +47,12 @@ import {
   type InputVerdict,
   incomingText,
   inspectInput,
+  is,
   isJsonObject,
   type JsonObject,
   type JsonValue,
-  MIND_THOUGHT_TOPIC,
   type MindThoughtBody,
   NOTED_GAME_EVENTS,
-  NOTICE_TOPIC,
   type Notice,
   parseSongCue,
   parseSongPrepare,
@@ -62,13 +66,10 @@ import {
   sameAccount,
   type TaskEvent,
   type Thought,
-  TURN_FOCUS_TOPIC,
-  TURN_OUTCOME_TOPIC,
   type TurnFocus,
   type TurnId,
   type TurnOutcomeRecord,
   timestampMs,
-  VOICE_BARGE_IN_TOPIC,
   type VoiceBargeIn,
   type VoiceParticipant,
   type VoiceUtterance,
@@ -227,7 +228,7 @@ export class BusFacts {
     return turn === null ? null : (this.#turns.get(turn)?.head ?? null);
   }
 
-  #observe(env: Envelope, draft: Draft): string {
+  #observe(env: BusEnvelope, draft: Draft): string {
     const addressed = draft.addressed ?? false;
     const event = this.#log.observe(
       {
@@ -243,15 +244,15 @@ export class BusFacts {
       },
       {
         id: env.id,
-        at: env.ts,
-        cause: draft.cause ?? env.causation ?? null,
+        at: env.at,
+        cause: draft.cause ?? env.parent ?? null,
         buckets: draft.buckets ?? [],
         speech: draft.speech ?? false,
         origin: {
           module: env.source,
-          topic: envelopeTopic(env),
-          event: env.event as unknown as JsonValue,
-          turn: env.correlation,
+          topic: env.type,
+          event: { type: env.type, v: env.v, data: env.data as JsonValue },
+          turn: env.turn,
         },
       },
     );
@@ -260,51 +261,64 @@ export class BusFacts {
   }
 
   /** A state that may not have changed: nothing is logged when it did not. */
-  #state(env: Envelope, fingerprint: string, draft: Omit<Draft, "revision">): void {
-    const { revision, fresh } = this.#revisions.state(draft.key, fingerprint, timestampMs(env.ts));
+  #state(env: BusEnvelope, fingerprint: string, draft: Omit<Draft, "revision">): void {
+    const { revision, fresh } = this.#revisions.state(draft.key, fingerprint, timestampMs(env.at));
     if (fresh) this.#observe(env, { ...draft, revision });
   }
 
   // ---- the bus ------------------------------------------------------------------------------
 
   /** Takes one bus event in. */
-  handle(env: Envelope): void {
-    const event = env.event;
-    switch (event.type) {
-      case "platform_ready":
-        if (!this.#isOwn(event.data.self_account)) this.#own.push(event.data.self_account);
-        break;
-      case "platform_message_created":
-        this.#message(env, event.data);
-        break;
-      case "voice_utterance":
-        this.#utterance(env, event.data);
-        break;
-      case "voice_joined":
-      case "voice_participants":
-        this.#participants(env, event.data.context, event.data.participants);
-        break;
-      case "voice_left":
-        this.#voiceLeft(env, event.data.context, event.data.reason);
-        break;
-      case "agent_decision":
-        this.#agentDecision(env, event.data);
-        break;
-      case "agent_initiative":
-        this.#initiative(env, event.data);
-        break;
-      case "module_state_changed":
-        this.#moduleState(env, event.data);
-        break;
-      case "custom":
-        this.#custom(env, event.data.topic, event.data.payload);
-        break;
-      default:
-        break;
+  handle(env: BusEnvelope): void {
+    if (is(Events.PlatformReady, env)) {
+      if (!this.#isOwn(env.data.self_account)) this.#own.push(env.data.self_account);
+    } else if (is(Events.PlatformMessageCreated, env)) {
+      this.#message(env, env.data);
+    } else if (is(Events.VoiceUtteranceEvent, env)) {
+      this.#utterance(env, env.data);
+    } else if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+      this.#participants(env, env.data.context, env.data.participants);
+    } else if (is(Events.VoiceLeft, env)) {
+      this.#voiceLeft(env, env.data.context, env.data.reason);
+    } else if (is(Events.AgentDecision, env)) {
+      this.#agentDecision(env, env.data);
+    } else if (is(Events.AgentInitiative, env)) {
+      this.#initiative(env, env.data);
+    } else if (is(Events.SystemModuleState, env)) {
+      this.#moduleState(env, env.data);
+    } else if (is(Events.ActivityRestored, env)) {
+      this.#restore(env, env.data);
+    } else if (is(Events.ActivityChanged, env)) {
+      this.#activity(env, env.data);
+    } else if (
+      is(Events.ActivityStarted, env) ||
+      is(Events.ActivityDone, env) ||
+      is(Events.ActivityFailed, env)
+    ) {
+      this.#activityTask(env, env.data);
+    } else if (is(Events.AgentNotice, env)) {
+      this.#notice(env, env.data);
+    } else if (is(Events.ArbiterImpulse, env)) {
+      this.#impulse(env.data);
+    } else if (is(Events.ArbiterDecided, env)) {
+      this.#arbiterDecision(env.data);
+    } else if (is(Events.AgentTurnFocus, env)) {
+      this.#focus(env.data);
+    } else if (is(Events.AgentTurnOutcome, env)) {
+      this.#outcome(env.data);
+    } else if (is(Events.MindThought, env)) {
+      this.#thought(env.data);
+    } else if (is(Events.VoiceBargeIn, env)) {
+      this.#bargeIn(env, env.data);
+    } else {
+      this.#topic(env);
     }
   }
 
-  #custom(env: Envelope, topic: string, payload: JsonValue): void {
+  /** Every other topic, by its type. */
+  #topic(env: BusEnvelope): void {
+    const topic = env.type;
+    const payload = env.data as JsonValue;
     const data = isJsonObject(payload) ? payload : {};
     switch (topic) {
       case SYSTEM_SHUTDOWN_TOPIC:
@@ -316,40 +330,11 @@ export class BusFacts {
           summary: "核心要關閉了",
         });
         return;
-      case ACTIVITY_RESTORE_TOPIC:
-        this.#restore(env, data as unknown as ActivityRestore);
-        return;
-      case ACTIVITY_CHANGED_TOPIC:
-        this.#activity(env, data as unknown as ActivitySnapshot);
-        return;
-      case ACTIVITY_STARTED_TOPIC:
-      case ACTIVITY_DONE_TOPIC:
-      case ACTIVITY_FAILED_TOPIC:
-        this.#activityTask(env, data as unknown as ActivityTaskEvent);
-        return;
-      case NOTICE_TOPIC:
-        this.#notice(env, data as unknown as Notice);
-        return;
-      case ARBITER_IMPULSE_TOPIC:
-        this.#impulse(data as unknown as Impulse);
-        return;
-      case ARBITER_DECISION_TOPIC:
-        this.#arbiterDecision(data as unknown as ArbiterDecision);
-        return;
-      case TURN_FOCUS_TOPIC:
-        this.#focus(data as unknown as TurnFocus);
-        return;
-      case TURN_OUTCOME_TOPIC:
-        this.#outcome(data as unknown as TurnOutcomeRecord);
-        return;
       case GATE_DECISION_TOPIC:
         this.#gate(data);
         return;
       case VOICE_LATENCY_TOPIC:
         this.#latency(data);
-        return;
-      case MIND_THOUGHT_TOPIC:
-        this.#thought(data as unknown as Thought);
         return;
       case GOAL_TOPIC:
         this.#log.append({ kind: "proposal", source: "plan", body: data });
@@ -364,7 +349,7 @@ export class BusFacts {
         this.#observe(env, {
           source: "stage",
           key: "stage:error",
-          revision: this.#revisions.event("stage:error", timestampMs(env.ts), NO_REPEAT).revision,
+          revision: this.#revisions.event("stage:error", timestampMs(env.at), NO_REPEAT).revision,
           salience: "notable",
           summary: `直播機出錯:${typeof data.message === "string" ? data.message : "不明"}`,
         });
@@ -374,9 +359,6 @@ export class BusFacts {
         return;
       case SONG_PREPARE_TOPIC:
         this.#songPrepare(env, payload);
-        return;
-      case VOICE_BARGE_IN_TOPIC:
-        this.#bargeIn(env, data as unknown as VoiceBargeIn);
         return;
       case GAME_SESSION_TOPIC:
         this.#gameSession(env, data);
@@ -404,7 +386,7 @@ export class BusFacts {
 
   // ---- what people say ----------------------------------------------------------------------
 
-  #message(env: Envelope, message: IncomingMessage): void {
+  #message(env: BusEnvelope, message: IncomingMessage): void {
     const { author, id } = message;
     // Her own messages are not something she perceives: the ledger has them.
     if (this.#isOwn(author.account)) return;
@@ -437,7 +419,7 @@ export class BusFacts {
     return inspectInput(this.#services, { id, text, source, author, context });
   }
 
-  #utterance(env: Envelope, u: VoiceUtterance): void {
+  #utterance(env: BusEnvelope, u: VoiceUtterance): void {
     if (this.#isOwn(u.speaker.account) || u.text.trim() === "") return;
     this.#said(env, "voice.asr", "voice.asr", {
       id: u.id,
@@ -451,7 +433,7 @@ export class BusFacts {
   }
 
   #said(
-    env: Envelope,
+    env: BusEnvelope,
     source: string,
     writer: string,
     said: {
@@ -499,7 +481,7 @@ export class BusFacts {
 
   // ---- voice --------------------------------------------------------------------------------
 
-  #participants(env: Envelope, context: ContextKey, participants: VoiceParticipant[]): void {
+  #participants(env: BusEnvelope, context: ContextKey, participants: VoiceParticipant[]): void {
     const names: Handle[] = [];
     for (const p of participants) {
       if (!p.is_self) names.push(this.#handle(p.account, p.display_name));
@@ -518,13 +500,13 @@ export class BusFacts {
     });
   }
 
-  #voiceLeft(env: Envelope, context: ContextKey, reason: string | null): void {
+  #voiceLeft(env: BusEnvelope, context: ContextKey, reason: string | null): void {
     const place = contextKeyString(context);
     const key = `voice:members:${place}`;
     this.#observe(env, {
       source: "voice.presence",
       key,
-      revision: this.#revisions.state(key, "left", timestampMs(env.ts)).revision,
+      revision: this.#revisions.state(key, "left", timestampMs(env.at)).revision,
       salience: "ambient",
       summary: reason === null ? "她離開了語音頻道" : `她離開了語音頻道(${reason})`,
       context,
@@ -532,7 +514,7 @@ export class BusFacts {
     });
   }
 
-  #bargeIn(env: Envelope, barge: VoiceBargeIn): void {
+  #bargeIn(env: BusEnvelope, barge: VoiceBargeIn): void {
     this.#observe(env, {
       source: "voice.barge",
       key: `voice:barge:${barge.turn ?? "none"}`,
@@ -576,14 +558,14 @@ export class BusFacts {
    * Her attention decision: the `agent.decision` record itself (`envelope.ts`), under the bus
    * event's id and time, answering the turn's focus.
    */
-  #agentDecision(env: Envelope, trace: EventData<"agent_decision">): void {
+  #agentDecision(env: BusEnvelope, trace: EventPayload<typeof Events.AgentDecision>): void {
     const facts = this.#turn(trace.turn);
     const event = this.#log.append({
       id: env.id,
-      at: env.ts,
+      at: env.at,
       kind: "decision",
       source: TURN_SOURCE,
-      cause: facts.head ?? env.causation,
+      cause: facts.head ?? env.parent,
       context: trace.context,
       person: facts.person,
       body: trace as unknown as JsonValue,
@@ -604,11 +586,11 @@ export class BusFacts {
     });
   }
 
-  #initiative(env: Envelope, data: EventData<"agent_initiative">): void {
+  #initiative(env: BusEnvelope, data: EventPayload<typeof Events.AgentInitiative>): void {
     this.#log.append({
       kind: "proposal",
       source: "agent.initiative",
-      cause: env.causation,
+      cause: env.parent,
       context: data.context,
       body: { reason: data.reason, hint: data.hint },
     });
@@ -698,7 +680,7 @@ export class BusFacts {
 
   // ---- activity and tasks -------------------------------------------------------------------
 
-  #activity(env: Envelope, snapshot: ActivitySnapshot): void {
+  #activity(env: BusEnvelope, snapshot: ActivitySnapshot): void {
     const { presence, broadcast, activity } = snapshot;
     const doing =
       activity.type === "idle"
@@ -714,9 +696,9 @@ export class BusFacts {
     });
   }
 
-  #activityTask(env: Envelope, task: ActivityTaskEvent): void {
+  #activityTask(env: BusEnvelope, task: ActivityTaskEvent): void {
     const key = `task:${task.task}`;
-    const at = timestampMs(env.ts);
+    const at = timestampMs(env.at);
     const facts = task.turn === null ? undefined : this.#turns.get(task.turn);
     const failed = task.type === "failed";
     const waited = task.type === "done" && task.turn !== null;
@@ -741,14 +723,14 @@ export class BusFacts {
    * the activity manager under the steer's id), and an Observation so she hears about a refusal
    * or a steer that came too late. It is not a task state: the task goes on (or ended on its own).
    */
-  #steered(env: Envelope, owner: string, task: Extract<TaskEvent, { type: "steered" }>): void {
+  #steered(env: BusEnvelope, owner: string, task: Extract<TaskEvent, { type: "steered" }>): void {
     const label =
       task.outcome === "applied" ? "已套用" : task.outcome === "rejected" ? "被拒絕" : "來不及";
     const detail = task.detail === "" ? "" : `:${task.detail}`;
     const line = this.#log.append({
       kind: "steer",
       source: owner,
-      at: env.ts,
+      at: env.at,
       cause: task.steer,
       body: {
         phase: "outcome",
@@ -762,7 +744,7 @@ export class BusFacts {
     this.#observe(env, {
       source: owner,
       key,
-      revision: this.#revisions.event(key, timestampMs(env.ts), NO_REPEAT).revision,
+      revision: this.#revisions.event(key, timestampMs(env.at), NO_REPEAT).revision,
       salience: task.outcome === "applied" ? "ambient" : "notable",
       summary: `任務調整${label}${detail}`,
       cause: line.id,
@@ -772,13 +754,13 @@ export class BusFacts {
     });
   }
 
-  #task(env: Envelope, owner: string, task: TaskEvent): void {
+  #task(env: BusEnvelope, owner: string, task: TaskEvent): void {
     if (task.type === "steered") {
       this.#steered(env, owner, task);
       return;
     }
     const key = `task:${task.task}`;
-    const at = timestampMs(env.ts);
+    const at = timestampMs(env.at);
     const writer = `${owner}.task`;
     const failed = task.type === "failed";
     const summary =
@@ -804,12 +786,12 @@ export class BusFacts {
     this.#tasks.set(task.task, event);
   }
 
-  #notice(env: Envelope, notice: Notice): void {
+  #notice(env: BusEnvelope, notice: Notice): void {
     const key = `notice:${notice.task ?? notice.id}`;
     this.#observe(env, {
       source: `notice.${notice.source}`,
       key,
-      revision: this.#revisions.event(key, timestampMs(env.ts), NO_REPEAT).revision,
+      revision: this.#revisions.event(key, timestampMs(env.at), NO_REPEAT).revision,
       salience: "notable",
       summary: notice.text,
       context: notice.context,
@@ -819,7 +801,7 @@ export class BusFacts {
     });
   }
 
-  #moduleState(env: Envelope, data: EventData<"module_state_changed">): void {
+  #moduleState(env: BusEnvelope, data: EventPayload<typeof Events.SystemModuleState>): void {
     const { module, state, reason } = data;
     const left = state === "stopped" || state === "failed" || state === "disabled";
     if (!left && state !== "running") return;
@@ -832,7 +814,7 @@ export class BusFacts {
     });
   }
 
-  #restore(env: Envelope, restore: ActivityRestore): void {
+  #restore(env: BusEnvelope, restore: ActivityRestore): void {
     this.#observe(env, {
       source: LIFECYCLE_SOURCE,
       key: `${RESTORE_KEY_PREFIX}${restore.game}`,
@@ -844,7 +826,7 @@ export class BusFacts {
 
   // ---- stage and songs ----------------------------------------------------------------------
 
-  #golive(env: Envelope, data: JsonObject): void {
+  #golive(env: BusEnvelope, data: JsonObject): void {
     const state = typeof data.state === "string" ? data.state : "unknown";
     const guild = typeof data.guild === "string" ? data.guild : "";
     const ended = state === "stopped" || state === "failed";
@@ -859,7 +841,7 @@ export class BusFacts {
     });
   }
 
-  #stage(env: Envelope, data: JsonObject): void {
+  #stage(env: BusEnvelope, data: JsonObject): void {
     const connected = data.connected === true;
     const scene = typeof data.scene === "string" ? data.scene : null;
     const fingerprint = JSON.stringify([connected, data.obs, data.streaming, scene]);
@@ -877,7 +859,7 @@ export class BusFacts {
     });
   }
 
-  #song(env: Envelope, payload: JsonValue): void {
+  #song(env: BusEnvelope, payload: JsonValue): void {
     const cue = parseSongCue(payload);
     // A lyrics line is not news: `line` cues are left out.
     if (cue === null || cue.state === "line") return;
@@ -887,7 +869,7 @@ export class BusFacts {
     this.#observe(env, {
       source: "sing",
       key,
-      revision: this.#revisions.state(key, cue.state, timestampMs(env.ts)).revision,
+      revision: this.#revisions.state(key, cue.state, timestampMs(env.at)).revision,
       salience: "ambient",
       summary: started ? `正在唱:${name}` : `唱完了:${name}`,
       buckets: started
@@ -896,7 +878,7 @@ export class BusFacts {
     });
   }
 
-  #songPrepare(env: Envelope, payload: JsonValue): void {
+  #songPrepare(env: BusEnvelope, payload: JsonValue): void {
     const prepare = parseSongPrepare(payload);
     if (prepare === null) return;
     const idle = prepare.no === null;
@@ -914,7 +896,7 @@ export class BusFacts {
 
   // ---- games --------------------------------------------------------------------------------
 
-  #gameSession(env: Envelope, data: JsonObject): void {
+  #gameSession(env: BusEnvelope, data: JsonObject): void {
     const game = typeof data.game === "string" ? data.game : null;
     if (game === null) return;
     const name = typeof data.game_name === "string" ? data.game_name : game;
@@ -924,7 +906,7 @@ export class BusFacts {
     this.#observe(env, {
       source: GAME_SESSION_SOURCE,
       key,
-      revision: this.#revisions.state(key, String(data.state), timestampMs(env.ts)).revision,
+      revision: this.#revisions.state(key, String(data.state), timestampMs(env.at)).revision,
       salience: started || failed ? "notable" : "ambient",
       summary: started ? `正在玩 ${name}` : `不玩 ${name} 了`,
       context: parseContext(data.context),
@@ -938,12 +920,12 @@ export class BusFacts {
     });
   }
 
-  #gameGoal(env: Envelope, data: JsonObject): void {
+  #gameGoal(env: BusEnvelope, data: JsonObject): void {
     const goal = typeof data.goal === "string" ? data.goal : "";
     const reached = data.status === "done";
     const key =
       typeof data.attention_key === "string" ? data.attention_key : gameGoalKey(goal, null);
-    const at = timestampMs(env.ts);
+    const at = timestampMs(env.at);
     this.#observe(env, {
       source: "game.director",
       key,
@@ -980,7 +962,7 @@ export class BusFacts {
     return "ambient";
   }
 
-  #gameEvent(env: Envelope, game: string, topicKind: string, payload: JsonObject): void {
+  #gameEvent(env: BusEnvelope, game: string, topicKind: string, payload: JsonObject): void {
     const kind = typeof payload.type === "string" ? payload.type : topicKind;
     const data = isJsonObject(payload.data) ? payload.data : null;
     const key = gameEventKey(kind, data);
@@ -990,7 +972,7 @@ export class BusFacts {
       : hazards.includes(kind)
         ? hazardSecs * 1000
         : this.#config.event_repeat_mins * 60_000;
-    const { revision, fresh } = this.#revisions.event(key, timestampMs(env.ts), repeat);
+    const { revision, fresh } = this.#revisions.event(key, timestampMs(env.at), repeat);
     const salience = this.#gameSalience(kind, data, payload.important === true, fresh);
     const text = typeof data?.text === "string" ? data.text : null;
     const verdict = text === null ? null : this.#inspect(null, text, "game_chat", null, null);

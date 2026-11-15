@@ -8,13 +8,13 @@ import { Supervisor } from "@miyoria/runtime/kernel";
 import { type EventLogStore, SqliteStore } from "@miyoria/store";
 import {
   ActivityRecoveryKey,
-  customEvent,
   DeliveryLedgerKey,
   EventLogKey,
+  Events,
   type JsonValue,
   type LogEvent,
-  SYSTEM_SHUTDOWN_TOPIC,
   toTimestamp,
+  type VoiceUtterance,
   WorkingContextKey,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,8 +49,9 @@ async function run(store: { events?: EventLogStore } | null, config: object = CO
 /** Lets the module's tasks run. */
 const settle = (ms = 25) => new Promise<void>((r) => setTimeout(r, ms));
 
-const session = (state: "started" | "stopped", extra: object = {}) =>
-  customEvent("game.director.session", {
+/** The game director's session event, published by `game`. */
+const session = (sup: Supervisor, state: "started" | "stopped", extra: object = {}) =>
+  sup.bus.publish("game", Events.GameDirectorSession, {
     state,
     game: "minecraft",
     game_name: "Minecraft",
@@ -58,26 +59,23 @@ const session = (state: "started" | "stopped", extra: object = {}) =>
     ...extra,
   });
 
-function utterance(text: string, id: string) {
+function utterance(text: string, id: string): VoiceUtterance {
   const at = toTimestamp(Date.now());
   return {
-    type: "voice_utterance" as const,
-    data: {
-      id,
-      context: VOICE,
-      speaker: {
-        account: { platform: "discord", id: "100" },
-        display_name: "Owen",
-        is_bot: false,
-      },
-      text,
-      language: null,
-      emotion: null,
-      audio_events: [],
-      started_at: at,
-      ended_at: at,
-      asr_ms: 1,
+    id,
+    context: VOICE,
+    speaker: {
+      account: { platform: "discord", id: "100" },
+      display_name: "Owen",
+      is_bot: false,
     },
+    text,
+    language: null,
+    emotion: null,
+    audio_events: [],
+    started_at: at,
+    ended_at: at,
+    asr_ms: 1,
   };
 }
 
@@ -85,7 +83,11 @@ describe("beside V2", () => {
   it("writes what goes over the bus to the store", async () => {
     const store = await SqliteStore.open(join(dir, "a.db"));
     const sup = await run(store);
-    const env = sup.bus.publish("voice.link", utterance("大家好", "u1"));
+    const env = sup.bus.publish(
+      "voice.link",
+      Events.VoiceUtteranceEvent,
+      utterance("大家好", "u1"),
+    );
     await settle();
     const event = await store.events.get(env.id);
     expect(event).toMatchObject({
@@ -111,7 +113,7 @@ describe("beside V2", () => {
     const sup = await run(store);
     const seen: string[] = [];
     const sub = sup.bus.subscribe("*");
-    sup.bus.publish("voice.link", utterance("嗨", "u1"));
+    sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("嗨", "u1"));
     await settle();
     for (let env = sub.tryRecv(); env !== null; env = sub.tryRecv()) seen.push(env.source);
     expect(seen).toEqual(["voice.link"]);
@@ -121,7 +123,7 @@ describe("beside V2", () => {
 
   it("works without an event log in the store", async () => {
     const sup = await run(null);
-    sup.bus.publish("voice.link", utterance("嗨", "u1"));
+    sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("嗨", "u1"));
     await settle();
     const log = sup.services.require(EventLogKey);
     expect((await log.query({ sources: ["voice.asr"] })).length).toBe(1);
@@ -133,7 +135,8 @@ describe("beside V2", () => {
     const failing: EventLogStore = Object.create(store.events);
     failing.append = () => Promise.reject(new Error("disk full"));
     const sup = await run({ events: failing });
-    for (let i = 0; i < 50; i++) sup.bus.publish("voice.link", utterance(`第 ${i} 句`, `u${i}`));
+    for (let i = 0; i < 50; i++)
+      sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance(`第 ${i} 句`, `u${i}`));
     await settle(40);
     const status = sup.list().find((s) => s.id === "facts");
     expect(status?.state).toBe("running");
@@ -152,9 +155,9 @@ describe("beside V2", () => {
         release = () => resolve([]);
       });
     const sup = await run({ events: slow });
-    sup.bus.publish("voice.link", utterance("一", "u1"));
+    sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("一", "u1"));
     await settle();
-    sup.bus.publish("voice.link", utterance("二", "u2"));
+    sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("二", "u2"));
     await settle();
     const log = sup.services.require(EventLogKey);
     expect(log.recent(100).filter((e) => e.source === "voice.asr")).toHaveLength(2);
@@ -168,7 +171,11 @@ describe("beside V2", () => {
   it("gets what is still in the queue into the store when it stops", async () => {
     const store = await SqliteStore.open(":memory:");
     const sup = await run(store, { flush_ms: 60_000 });
-    const env = sup.bus.publish("voice.link", utterance("最後一句", "u1"));
+    const env = sup.bus.publish(
+      "voice.link",
+      Events.VoiceUtteranceEvent,
+      utterance("最後一句", "u1"),
+    );
     await sup.stopAll();
     expect(await store.events.get(env.id)).not.toBeNull();
     await store.close();
@@ -192,7 +199,7 @@ describe("beside V2", () => {
     const sup = new Supervisor();
     await sup.register(module, CONFIG as unknown as JsonValue, true);
     await sup.startAll();
-    sup.bus.publish("voice.link", utterance("嗨", "u1"));
+    sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("嗨", "u1"));
     await vi.waitFor(async () => expect((await module.health()).status).toBe("degraded"));
     await sup.stopAll();
     await store.close();
@@ -220,7 +227,7 @@ describe("after a restart", () => {
       context: VOICE,
       said: "天黑了",
     });
-    sup.bus.publish("game", session("started"));
+    session(sup, "started");
     await settle();
     // Killed: nothing stops in order, what was flushed is all there is.
     await sup.services.require(EventLogKey).flush();
@@ -277,12 +284,12 @@ describe("after a restart", () => {
     let store = await SqliteStore.open(path);
     let sup = await run(store);
     expect(sup.services.require(ActivityRecoveryKey).game()).toBeNull();
-    sup.bus.publish("game", session("started"));
+    session(sup, "started");
     await settle();
     // What `Core.stop` publishes, then the extension and the director going down.
-    sup.bus.publish("kernel", customEvent(SYSTEM_SHUTDOWN_TOPIC, {}));
-    sup.bus.publish("game", session("stopped", { code: "crashed", reason: "擴充套件停止了" }));
-    sup.bus.publish("game", session("stopped"));
+    sup.bus.publish("kernel", Events.SystemShutdown, {});
+    session(sup, "stopped", { code: "crashed", reason: "擴充套件停止了" });
+    session(sup, "stopped");
     await sup.stopAll();
     await store.close();
 
@@ -293,9 +300,9 @@ describe("after a restart", () => {
       name: "Minecraft",
       context: VOICE,
     });
-    sup.bus.publish("game", session("started"));
+    session(sup, "started");
     await settle();
-    sup.bus.publish("game", session("stopped"));
+    session(sup, "stopped");
     await settle();
     await sup.stopAll();
     await store.close();
@@ -311,17 +318,20 @@ describe("after a restart", () => {
     const path = join(dir, "revisions.db");
     let store = await SqliteStore.open(path);
     let sup = await run(store);
-    const craft = customEvent("game.minecraft.craft_finished", {
-      type: "craft_finished",
-      data: { item: "stone_pickaxe" },
-    });
-    sup.bus.publish("ext.minecraft", craft);
+    const craft = () =>
+      sup.bus.publish(
+        "ext.minecraft",
+        Events.GameAdapterEvent,
+        { type: "craft_finished", data: { item: "stone_pickaxe" } },
+        { type: "game.minecraft.craft_finished" },
+      );
+    craft();
     await settle();
     await sup.stopAll();
     await store.close();
     store = await SqliteStore.open(path);
     sup = await run(store);
-    sup.bus.publish("ext.minecraft", craft);
+    craft();
     await settle();
     const log = sup.services.require(EventLogKey);
     const seen = await log.query({ attention_key: "game:craft:stone_pickaxe", order: "asc" });
@@ -336,13 +346,17 @@ describe("for the replay", () => {
   it("gives the bus events back, in order", async () => {
     const store = await SqliteStore.open(":memory:");
     const sup = await run(store);
-    const first = sup.bus.publish("voice.link", utterance("一", "u1"));
-    sup.bus.publish("voice.link", utterance("二", "u2"));
+    const first = sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("一", "u1"));
+    sup.bus.publish("voice.link", Events.VoiceUtteranceEvent, utterance("二", "u2"));
     await settle();
     const log = sup.services.require(EventLogKey);
     const lines = toReplayLines(await log.query({ sources: ["voice.asr"] }));
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toEqual({ at: first.ts, source: "voice.link", event: first.event });
+    expect(lines[0]).toEqual({
+      at: first.at,
+      source: "voice.link",
+      event: { type: "voice_utterance", data: first.data },
+    });
     await sup.stopAll();
     await store.close();
   });

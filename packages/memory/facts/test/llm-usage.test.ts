@@ -16,7 +16,7 @@ import {
 } from "@miyoria/llm/llm";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { openStore, SettingsStoreKey, type Store, StoreKey } from "@miyoria/store";
-import { type JsonValue, PlatformSinks, PlatformSinksKey } from "@miyoria/types";
+import { Events, is, type JsonValue, PlatformSinks, PlatformSinksKey } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FactsModule } from "../src/module.js";
 
@@ -99,7 +99,7 @@ async function start(now: string): Promise<Run> {
   await supervisor.startAll();
   const announced: Record<string, JsonValue>[] = [];
   for (let env = budget.tryRecv(); env !== null; env = budget.tryRecv()) {
-    if (env.event.type === "custom") announced.push(env.event.data.payload as never);
+    if (is(Events.LlmBudget, env)) announced.push(env.data as never);
   }
   budget.close();
   return { supervisor, router: supervisor.services.require(LlmRouterKey), announced };

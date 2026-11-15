@@ -23,11 +23,12 @@ import { errorMessage, type ModuleContext, type Subscription } from "@miyoria/ru
 import { type EventWrite, logEntryFromIncoming, type Store } from "@miyoria/store";
 import {
   type AccountRef,
-  type Envelope,
+  type BusEnvelope,
+  Events,
   HandleDirectoryKey,
   type IncomingMessage,
+  is,
   isJsonObject,
-  MESSAGE_EXCLUDED_TOPIC,
   type MessageRef,
   newId,
   type ProfileId,
@@ -44,7 +45,7 @@ export const CHAT_RECORD_TOPICS: readonly string[] = [
   "platform.message.created",
   "voice.utterance",
   "voice.playback",
-  MESSAGE_EXCLUDED_TOPIC,
+  Events.AgentMessageExcluded.type,
 ];
 
 /** Writes every chat line `sub` delivers, one at a time, until it ends. */
@@ -56,82 +57,67 @@ export async function recordChat(
 ): Promise<void> {
   const own: AccountRef[] = [];
   for await (const env of sub) {
-    const event = env.event;
-    switch (event.type) {
-      case "platform_ready": {
-        const account = event.data.self_account;
-        if (!own.some((a) => sameAccount(a, account))) own.push(account);
-        break;
-      }
-      case "platform_message_created": {
-        const msg = event.data;
-        const isSelf = own.some((a) => sameAccount(a, msg.author.account));
-        await line(ctx, async () => {
-          const options = { self: isSelf, turn: env.correlation, source: env.source };
-          if (store.chat) await store.chat.message(msg, options);
-          else await store.messages?.append(entry(profile, msg, isSelf, env.correlation));
-        });
-        if (!isSelf) await person(ctx, store, msg);
-        break;
-      }
-      case "voice_utterance": {
-        const u = event.data;
+    if (is(Events.PlatformReady, env)) {
+      const account = env.data.self_account;
+      if (!own.some((a) => sameAccount(a, account))) own.push(account);
+    } else if (is(Events.PlatformMessageCreated, env)) {
+      const msg = env.data;
+      const isSelf = own.some((a) => sameAccount(a, msg.author.account));
+      await line(ctx, async () => {
+        const options = { self: isSelf, turn: env.turn, source: env.source };
+        if (store.chat) await store.chat.message(msg, options);
+        else await store.messages?.append(entry(profile, msg, isSelf, env.turn));
+      });
+      if (!isSelf) await person(ctx, store, msg);
+    } else if (is(Events.VoiceUtteranceEvent, env)) {
+      const u = env.data;
+      const msg: IncomingMessage = {
+        id: { context: u.context, id: u.id },
+        author: u.speaker,
+        text: u.text,
+        mentions_self: false,
+        reply_to_self: false,
+        attachments: [],
+        ts: u.ended_at,
+      };
+      await line(ctx, async () => {
+        const options = { turn: env.turn, source: env.source };
+        if (store.chat) await store.chat.utterance(u, options);
+        else await store.messages?.append(entry(profile, msg, false, env.turn));
+      });
+      await person(ctx, store, msg);
+    } else if (is(Events.VoicePlaybackEvent, env)) {
+      const playback = env.data;
+      if (playback.state !== "started") continue;
+      const account = own.find((a) => a.platform === playback.context.platform);
+      if (!account) continue;
+      const speaker = { account, display_name: "", is_bot: true };
+      await line(ctx, async () => {
+        if (store.chat) {
+          const options = { at: env.at, turn: playback.turn, source: env.source };
+          await store.chat.playback({ ...playback, speaker }, options);
+          return;
+        }
         const msg: IncomingMessage = {
-          id: { context: u.context, id: u.id },
-          author: u.speaker,
-          text: u.text,
+          id: { context: playback.context, id: newId() },
+          author: speaker,
+          text: playback.text,
           mentions_self: false,
           reply_to_self: false,
           attachments: [],
-          ts: u.ended_at,
+          ts: env.at,
         };
-        await line(ctx, async () => {
-          const options = { turn: env.correlation, source: env.source };
-          if (store.chat) await store.chat.utterance(u, options);
-          else await store.messages?.append(entry(profile, msg, false, env.correlation));
-        });
-        await person(ctx, store, msg);
-        break;
+        await store.messages?.append(entry(profile, msg, true, playback.turn));
+      });
+    } else if (is(Events.AgentMessageExcluded, env)) {
+      const message = excludedMessage(env.data);
+      if (message === null || !store.chat) continue;
+      try {
+        const ids = await store.chat.redactMessage(message, "do not remember", env.source);
+        ctx.log.info({ events: ids.length }, "a message she was asked not to remember");
+      } catch (error) {
+        ctx.log.warn({ err: errorMessage(error) }, "failed to redact an excluded message");
       }
-      case "voice_playback": {
-        const playback = event.data;
-        if (playback.state !== "started") break;
-        const account = own.find((a) => a.platform === playback.context.platform);
-        if (!account) break;
-        const speaker = { account, display_name: "", is_bot: true };
-        await line(ctx, async () => {
-          if (store.chat) {
-            const options = { at: env.ts, turn: playback.turn, source: env.source };
-            await store.chat.playback({ ...playback, speaker }, options);
-            return;
-          }
-          const msg: IncomingMessage = {
-            id: { context: playback.context, id: newId() },
-            author: speaker,
-            text: playback.text,
-            mentions_self: false,
-            reply_to_self: false,
-            attachments: [],
-            ts: env.ts,
-          };
-          await store.messages?.append(entry(profile, msg, true, playback.turn));
-        });
-        break;
-      }
-      case "custom": {
-        if (event.data.topic !== MESSAGE_EXCLUDED_TOPIC) break;
-        const message = excludedMessage(event.data.payload);
-        if (message === null || !store.chat) break;
-        try {
-          const ids = await store.chat.redactMessage(message, "do not remember", env.source);
-          ctx.log.info({ events: ids.length }, "a message she was asked not to remember");
-        } catch (error) {
-          ctx.log.warn({ err: errorMessage(error) }, "failed to redact an excluded message");
-        }
-        break;
-      }
-      default:
-        break;
     }
   }
 }
@@ -182,19 +168,18 @@ function excludedMessage(payload: unknown): MessageRef | null {
  * event's id and time (when the call ended) and the turn it belongs to. `null` for any other bus
  * event, or a payload that does not fit the type.
  */
-export function llmCallWrite(env: Envelope): EventWrite | null {
-  const event = env.event;
-  if (event.type !== "custom" || event.data.topic !== LlmCall.type) return null;
-  const data = LlmCallSchema.safeParse(event.data.payload);
+export function llmCallWrite(env: BusEnvelope): EventWrite | null {
+  if (!is(LlmCall, env)) return null;
+  const data = LlmCallSchema.safeParse(env.data);
   if (!data.success) return null;
   return {
     draft: {
       id: env.id,
-      at: env.ts,
+      at: env.at,
       type: LlmCall.type,
       v: LlmCall.v,
-      parent: env.causation,
-      turn: env.correlation,
+      parent: env.parent,
+      turn: env.turn,
       data: data.data,
     },
     source: env.source,

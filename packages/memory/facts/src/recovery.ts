@@ -37,12 +37,11 @@ export function parseContext(value: JsonValue | undefined): ContextKey | null {
   return { platform, scope: typeof scope === "string" ? scope : null, channel, kind };
 }
 
-/** The `custom` payload an observation came from, or `null`. */
+/** The payload of the bus event an observation came from (`origin.event.data`), or `null`. */
 function payloadOf(event: LogEvent): JsonObject | null {
   const origin = observationBody(event)?.origin?.event;
-  if (!isJsonObject(origin) || !isJsonObject(origin.data)) return null;
-  const payload = origin.data.payload;
-  return isJsonObject(payload) ? payload : null;
+  if (!isJsonObject(origin)) return null;
+  return isJsonObject(origin.data) ? origin.data : null;
 }
 
 function keyOf(event: LogEvent): string | null {

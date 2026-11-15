@@ -3,7 +3,13 @@
 // event}`, in time order). Which of them count as input stays the replay's call
 // (`isReplayInput`); `formatEntry` from `@miyoria/replay` writes them as JSONL.
 
-import type { Event, LogEvent, Timestamp } from "@miyoria/types";
+import {
+  type Event,
+  isJsonObject,
+  type LogEvent,
+  legacyEvent,
+  type Timestamp,
+} from "@miyoria/types";
 import { observationBody } from "./context.js";
 
 /** The shape of `ReplayEntry` (this package does not depend on the replay). */
@@ -19,8 +25,10 @@ export function toReplayLines(events: readonly LogEvent[]): ReplayLine[] {
   // Ids sort in creation order, also inside one millisecond.
   for (const event of [...events].sort((a, b) => (a.id < b.id ? -1 : 1))) {
     const origin = observationBody(event)?.origin;
-    if (!origin) continue;
-    lines.push({ at: event.at, source: origin.module, event: origin.event as unknown as Event });
+    if (!origin || !isJsonObject(origin.event) || typeof origin.event.type !== "string") continue;
+    // The replay log still reads the old form until it moves to the bus envelope.
+    const bus = legacyEvent(origin.event.type, origin.event.data);
+    lines.push({ at: event.at, source: origin.module, event: bus });
   }
   return lines;
 }

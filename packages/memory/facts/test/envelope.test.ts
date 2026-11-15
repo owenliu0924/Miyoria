@@ -5,18 +5,16 @@
 import type { EventEnvelope } from "@miyoria/contracts/events";
 import { SqliteStore } from "@miyoria/store";
 import {
+  type AnyEventDefinition,
+  type BusEnvelope,
   type ContextKey,
-  customEvent,
-  type Envelope,
-  type Event,
-  GOAL_TOPIC,
-  type JsonValue,
+  type EventPayload,
+  Events,
+  eventEnvelope,
+  type IncomingMessage,
   LOG_EVENT_KINDS,
   type LogEvent,
-  MIND_THOUGHT_TOPIC,
-  newEnvelope,
-  TURN_FOCUS_TOPIC,
-  TURN_OUTCOME_TOPIC,
+  type PublishMetaArgs,
   type TurnFocus,
   type TurnOutcomeRecord,
   taskTopic,
@@ -52,34 +50,49 @@ beforeEach(async () => {
   const revisions = new RevisionBook();
   for (const p of [revisions, ledger]) await log.project(p);
   bus = new BusFacts({ log, revisions, config: defaultFactsConfig(), names: ["米優"] });
-  send("discord", { type: "platform_ready", data: { platform: "discord", self_account: HER } });
+  send("discord", Events.PlatformReady, { platform: "discord", self_account: HER });
 });
 
 afterEach(async () => {
   await store.close();
 });
 
-function send(source: string, event: Event, turn: string | null = null): Envelope {
-  const env = newEnvelope(source, event, { now, correlation: turn });
+/** Hands the facts one event of `definition` from `source`, published now. */
+function send<D extends AnyEventDefinition>(
+  source: string,
+  definition: D,
+  data: EventPayload<D>,
+  meta: { turn?: string | null; type?: string } = {},
+): BusEnvelope {
+  const env = eventEnvelope(
+    source,
+    definition,
+    data,
+    ...([{ now, ...meta }] as PublishMetaArgs<D>),
+  );
   bus.handle(env);
   return env;
 }
 
-const custom = (source: string, topic: string, payload: unknown, turn: string | null = null) =>
-  send(source, customEvent(topic, payload as JsonValue), turn);
+/** `send` with a payload that holds only what the writer reads, not all its schema asks for. */
+function loose(
+  source: string,
+  definition: AnyEventDefinition,
+  data: unknown,
+  meta: { turn?: string | null; type?: string } = {},
+): BusEnvelope {
+  return send(source, definition, data, meta);
+}
 
-function message(text: string, context = TEXT, id = "m1"): Event {
+function message(text: string, context = TEXT, id = "m1"): IncomingMessage {
   return {
-    type: "platform_message_created",
-    data: {
-      id: { context, id },
-      author: { account: OWEN, display_name: "Owen", is_bot: false },
-      text,
-      mentions_self: false,
-      reply_to_self: false,
-      attachments: [],
-      ts: toTimestamp(now),
-    },
+    id: { context, id },
+    author: { account: OWEN, display_name: "Owen", is_bot: false },
+    text,
+    mentions_self: false,
+    reply_to_self: false,
+    attachments: [],
+    ts: toTimestamp(now),
   };
 }
 
@@ -121,7 +134,7 @@ function never(): never {
 
 describe("each line written today, as an envelope", () => {
   it("a chat line: said, kept 365 days, in its room, by its author", async () => {
-    const env = send("discord", message("今天好冷"));
+    const env = send("discord", Events.PlatformMessageCreated, message("今天好冷"));
     const e = await stored(env.id);
     expect(e).toMatchObject({
       type: "facts.observation.said",
@@ -143,7 +156,7 @@ describe("each line written today, as an envelope", () => {
   });
 
   it("a DM line: scope dm, the person's session", async () => {
-    const e = await stored(send("discord", message("在嗎", DM)).id);
+    const e = await stored(send("discord", Events.PlatformMessageCreated, message("在嗎", DM)).id);
     expect(e).toMatchObject({
       type: "facts.observation.said",
       scope: "dm",
@@ -154,20 +167,17 @@ describe("each line written today, as an envelope", () => {
   });
 
   it("a voice line: said, on the voice lane", async () => {
-    const env = send("voice.link", {
-      type: "voice_utterance",
-      data: {
-        id: "u1",
-        context: VOICE,
-        speaker: { account: OWEN, display_name: "Owen", is_bot: false },
-        text: "米優你好",
-        language: null,
-        emotion: null,
-        audio_events: [],
-        started_at: toTimestamp(now),
-        ended_at: toTimestamp(now),
-        asr_ms: 1,
-      },
+    const env = send("voice.link", Events.VoiceUtteranceEvent, {
+      id: "u1",
+      context: VOICE,
+      speaker: { account: OWEN, display_name: "Owen", is_bot: false },
+      text: "米優你好",
+      language: null,
+      emotion: null,
+      audio_events: [],
+      started_at: toTimestamp(now),
+      ended_at: toTimestamp(now),
+      asr_ms: 1,
     });
     expect(await stored(env.id)).toMatchObject({
       type: "facts.observation.said",
@@ -184,10 +194,7 @@ describe("each line written today, as an envelope", () => {
     const participants = [
       { account: OWEN, display_name: "Owen", is_self: false, muted: false, deafened: false },
     ];
-    const env = send("voice.link", {
-      type: "voice_joined",
-      data: { context: VOICE, participants },
-    });
+    const env = send("voice.link", Events.VoiceJoined, { context: VOICE, participants });
     expect(await stored(env.id)).toMatchObject({
       type: "facts.observation.ambient",
       tier: "ambient",
@@ -199,7 +206,12 @@ describe("each line written today, as an envelope", () => {
   });
 
   it("a notable observation with no place: kept 90 days, her own", async () => {
-    const env = custom("ext.minecraft", "game.minecraft.death", { type: "death", data: null });
+    const env = send(
+      "ext.minecraft",
+      Events.GameAdapterEvent,
+      { type: "death", data: null },
+      { type: "game.minecraft.death" },
+    );
     expect(await stored(env.id)).toMatchObject({
       type: "facts.observation",
       source: "game.minecraft",
@@ -226,8 +238,8 @@ describe("each line written today, as an envelope", () => {
   });
 
   it("a decision, the action it allowed, and the turn's result", async () => {
-    const heard = send("discord", message("米優開麥塊"));
-    custom("agent", TURN_FOCUS_TOPIC, focus("t1", ["m1"], TEXT), "t1");
+    const heard = send("discord", Events.PlatformMessageCreated, message("米優開麥塊"));
+    send("agent", Events.AgentTurnFocus, focus("t1", ["m1"], TEXT), { turn: "t1" });
     const decision = newest("decision");
     expect(await stored(decision.id)).toMatchObject({
       type: "facts.decision",
@@ -240,7 +252,7 @@ describe("each line written today, as an envelope", () => {
       // `addressed_by` names a handle: the store finds its person.
       person_id: owen()?.id,
     });
-    custom("actions", "gate.decision", { capability: "game.start", allowed: true, turn: "t1" });
+    loose("actions", Events.GateDecision, { capability: "game.start", allowed: true, turn: "t1" });
     const action = newest("action");
     expect(await stored(action.id)).toMatchObject({
       type: "facts.action",
@@ -261,7 +273,7 @@ describe("each line written today, as an envelope", () => {
       latency_ms: null,
       at: toTimestamp(now),
     };
-    custom("agent", TURN_OUTCOME_TOPIC, record, "t1");
+    send("agent", Events.AgentTurnOutcome, record, { turn: "t1" });
     // How the turn ended is the bus event's record: its topic, its payload, at the time it names.
     const result = newest("result");
     expect(result.body).toEqual({ turn_outcome: record });
@@ -282,12 +294,12 @@ describe("each line written today, as an envelope", () => {
   });
 
   it("her attention decision is the bus event's record, answering the turn's focus", async () => {
-    const heard = send("discord", message("米優在嗎"));
-    custom("agent", TURN_FOCUS_TOPIC, focus("t2", ["m1"], TEXT), "t2");
+    const heard = send("discord", Events.PlatformMessageCreated, message("米優在嗎"));
+    send("agent", Events.AgentTurnFocus, focus("t2", ["m1"], TEXT), { turn: "t2" });
     const focused = newest("decision");
     now += 1_000;
     const trace = { turn: "t2", context: TEXT, respond: true, score: 0.9, reasons: ["mention"] };
-    const env = send("agent", { type: "agent_decision", data: trace }, "t2");
+    const env = send("agent", Events.AgentDecision, trace, { turn: "t2" });
     const decision = newest("decision");
     // Under the bus event's id and time.
     expect(decision.id).toBe(env.id);
@@ -301,7 +313,7 @@ describe("each line written today, as an envelope", () => {
       session: "discord:g:c",
       // The person the turn's focus answers.
       person_id: owen()?.id,
-      at: env.ts,
+      at: env.at,
       data: trace,
     });
     expect(heard.id).not.toBe(decision.id);
@@ -313,12 +325,12 @@ describe("each line written today, as an envelope", () => {
     ]);
     // `DecisionLog` reads the same event.
     expect(await store.decisions.recent("p", TEXT, 5)).toEqual([
-      { id: env.id, profile: "p", ts: env.ts, trace },
+      { id: env.id, profile: "p", ts: env.at, trace },
     ]);
   });
 
   it("a thought and a proposal", async () => {
-    custom("mind", MIND_THOUGHT_TOPIC, {
+    loose("mind", Events.MindThought, {
       thought: "想去散步",
       changes: [],
       intents: [],
@@ -330,7 +342,7 @@ describe("each line written today, as an envelope", () => {
       tier: "short",
       scope: "self",
     });
-    custom("plan", GOAL_TOPIC, { goal: "練歌" });
+    loose("plan", Events.PlanGoal, { goal: "練歌" });
     expect(await stored(newest("proposal").id)).toMatchObject({
       type: "facts.proposal",
       source: "plan",
@@ -364,14 +376,19 @@ describe("each line written today, as an envelope", () => {
   });
 
   it("a steer line", async () => {
-    custom("ext.minecraft", taskTopic("game.minecraft", "steered"), {
-      type: "steered",
-      task: "k",
-      steer: "s1",
-      outcome: "applied",
-      detail: "",
-      at: toTimestamp(now),
-    });
+    send(
+      "ext.minecraft",
+      Events.TaskSteered,
+      {
+        type: "steered",
+        task: "k",
+        steer: "s1",
+        outcome: "applied",
+        detail: "",
+        at: toTimestamp(now),
+      },
+      { type: taskTopic("game.minecraft", "steered") },
+    );
     expect(await stored(newest("steer").id)).toMatchObject({
       type: "facts.steer",
       source: "game.minecraft",
@@ -402,7 +419,7 @@ describe("the buffered writer", () => {
 
   it("returns what the store committed, equal to what it reads back", async () => {
     const append = vi.spyOn(store.events, "append");
-    const env = send("discord", message("嗨"));
+    const env = send("discord", Events.PlatformMessageCreated, message("嗨"));
     await log.flush();
     const committed = append.mock.results[0]?.value as EventEnvelope[];
     expect(committed.map((e) => e.id)).toEqual([env.id]);
@@ -412,8 +429,8 @@ describe("the buffered writer", () => {
 
 describe("reading back", () => {
   it("a stored line is the line that was written", async () => {
-    const env = send("discord", message("嗨"));
-    custom("agent", TURN_FOCUS_TOPIC, focus("t1", ["m1"], TEXT), "t1");
+    const env = send("discord", Events.PlatformMessageCreated, message("嗨"));
+    send("agent", Events.AgentTurnFocus, focus("t1", ["m1"], TEXT), { turn: "t1" });
     await log.flush();
     for (const line of log.recent(10)) {
       const found = store.events.get(line.id);
@@ -462,8 +479,8 @@ describe("reading back", () => {
   });
 
   it("filters by context and by handle through the session and the person", async () => {
-    send("discord", message("文字", TEXT, "m1"));
-    send("discord", message("私訊", DM, "m2"));
+    send("discord", Events.PlatformMessageCreated, message("文字", TEXT, "m1"));
+    send("discord", Events.PlatformMessageCreated, message("私訊", DM, "m2"));
     log.append({ kind: "thought", source: "mind", body: null });
     await log.flush();
     const cold = new EventLogService({ store: store.events, clock, hotEvents: 1 });
@@ -477,7 +494,7 @@ describe("reading back", () => {
   });
 
   it("a redacted line keeps its kind, place and person, and loses its content", async () => {
-    const env = send("discord", message("別記得這句"));
+    const env = send("discord", Events.PlatformMessageCreated, message("別記得這句"));
     await log.flush();
     expect(store.events.redact(env.id, "do_not_remember", "memory")).not.toBeNull();
     const cold = new EventLogService({ store: store.events, clock, hotEvents: 1 });

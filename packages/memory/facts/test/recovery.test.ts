@@ -8,7 +8,7 @@ import type {
   ObservationBody,
   RestoredGame,
 } from "@miyoria/types";
-import { customEvent, toTimestamp } from "@miyoria/types";
+import { toTimestamp } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   BOOT_KEY,
@@ -43,7 +43,7 @@ function line(source: string, key: string, payload: JsonValue, extra: object = {
     origin: {
       module: "game",
       topic: "t",
-      event: customEvent("t", payload) as unknown as JsonValue,
+      event: { type: "t", v: 1, data: payload },
       turn: null,
     },
   };
