@@ -371,6 +371,10 @@ async function persistModuleState(
     } else if (state === "running") enabled = true;
     else continue;
     try {
+      // A module that runs with nothing remembered about it follows the config file already:
+      // there is nothing to record, and recording it would write one config revision per module
+      // at every first start.
+      if (enabled && (await store.moduleState.get(module)) !== false) continue;
       await store.moduleState.set(module, enabled);
     } catch (error) {
       log.warn({ module, err: errorMessage(error) }, "failed to persist module state");

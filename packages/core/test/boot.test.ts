@@ -292,6 +292,8 @@ describe("buildCore", () => {
     // Off only because of the config: turning it on there must be enough.
     expect(await store.moduleState.get("mcp")).toBeNull();
     expect(await store.moduleState.get("sandbox")).toBeNull();
+    // A module that simply started has nothing remembered about it either: only `llm` is listed.
+    expect(await store.moduleState.list()).toEqual(new Map([["llm", false]]));
   });
 
   it("applies_persona_overrides_from_the_store", async () => {
