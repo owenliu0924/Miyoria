@@ -5,9 +5,8 @@
 
 import { type MetricFamily, metrics } from "@miyoria/runtime/kernel";
 import { type Envelope, eventTopic, MindKey, SelfStateKey, toTimestamp } from "@miyoria/types";
-import { z } from "zod";
-import { readQuery, usizeParam } from "./extract.js";
-import { json, type Route } from "./route.js";
+import { os } from "./contract.js";
+import { countOf } from "./extract.js";
 import type { ApiState } from "./state.js";
 import type { TelemetryLlm, TelemetryPoint, TelemetryView } from "./types.js";
 
@@ -128,18 +127,12 @@ export class Telemetry {
   }
 }
 
-const TelemetryQuerySchema = z.object({ minutes: usizeParam.optional() });
-
-export function telemetryRoutes(state: ApiState): Route[] {
-  return [
-    {
-      method: "GET",
-      path: "/api/telemetry",
-      handler: (c) => {
-        const q = readQuery(c, TelemetryQuerySchema);
-        const minutes = Math.min(Math.max(q.minutes ?? DEFAULT_MINUTES, 1), MAX_POINTS);
-        return json(state.telemetry.view(state.now(), minutes));
-      },
-    },
-  ];
-}
+/** `GET /api/telemetry`, on the route table. */
+export const telemetryRpc = os.telemetry.handler(({ input, context }) => {
+  const { state } = context;
+  const minutes = Math.min(
+    Math.max(countOf(input.query.minutes) ?? DEFAULT_MINUTES, 1),
+    MAX_POINTS,
+  );
+  return state.telemetry.view(state.now(), minutes);
+});

@@ -1302,6 +1302,51 @@
         "note"
       ]
     },
+    "ApiCompiledBlock": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "authority": {
+          "type": "string",
+          "enum": [
+            "self",
+            "data"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "chars_in": {
+          "type": "number"
+        },
+        "chars_out": {
+          "type": "number"
+        },
+        "budget_chars": {
+          "type": "number"
+        },
+        "fate": {
+          "type": "string",
+          "enum": [
+            "kept",
+            "summarized",
+            "truncated",
+            "dropped"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "authority",
+        "source",
+        "chars_in",
+        "chars_out",
+        "budget_chars",
+        "fate"
+      ]
+    },
     "ApiContextBucket": {
       "type": "object",
       "properties": {
@@ -1499,6 +1544,108 @@
         "recap",
         "notes",
         "label"
+      ]
+    },
+    "ApiCorrectionCount": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "number"
+        },
+        "turns": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "events",
+        "turns"
+      ]
+    },
+    "ApiCorrectionKind": {
+      "type": "string",
+      "enum": [
+        "claim_held",
+        "claim_parked",
+        "claim_dropped",
+        "claim_reask",
+        "tool_text_reask",
+        "tool_text_commit",
+        "promise_commit",
+        "leak_dropped",
+        "wait_line",
+        "fallback_line",
+        "keep_hint",
+        "ground_args",
+        "repeat_cut",
+        "noted_callback",
+        "self_talk_cut",
+        "prohibition_written"
+      ]
+    },
+    "ApiCorrectionStat": {
+      "type": "object",
+      "properties": {
+        "voice": {
+          "$ref": "#/$defs/ApiCorrectionCount"
+        },
+        "text": {
+          "$ref": "#/$defs/ApiCorrectionCount"
+        }
+      },
+      "required": [
+        "voice",
+        "text"
+      ]
+    },
+    "ApiCorrectionsBucket": {
+      "type": "object",
+      "properties": {
+        "measured": {
+          "type": "object",
+          "properties": {
+            "voice": {
+              "type": "number"
+            },
+            "text": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "voice",
+            "text"
+          ]
+        },
+        "kinds": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ApiCorrectionKind"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ApiCorrectionStat"
+          },
+          "required": [
+            "claim_held",
+            "claim_parked",
+            "claim_dropped",
+            "claim_reask",
+            "tool_text_reask",
+            "tool_text_commit",
+            "promise_commit",
+            "leak_dropped",
+            "wait_line",
+            "fallback_line",
+            "keep_hint",
+            "ground_args",
+            "repeat_cut",
+            "noted_callback",
+            "self_talk_cut",
+            "prohibition_written"
+          ]
+        }
+      },
+      "required": [
+        "measured",
+        "kinds"
       ]
     },
     "ApiCostReport": {
@@ -2485,6 +2632,37 @@
         "origin",
         "confidence",
         "at"
+      ]
+    },
+    "ApiFollowupStopReasons": {
+      "type": "object",
+      "properties": {
+        "anti_spam": {
+          "type": "number"
+        },
+        "low_score": {
+          "type": "number"
+        },
+        "lost_roll": {
+          "type": "number"
+        },
+        "floor": {
+          "type": "number"
+        },
+        "passed_silent": {
+          "type": "number"
+        },
+        "other": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "anti_spam",
+        "low_score",
+        "lost_roll",
+        "floor",
+        "passed_silent",
+        "other"
       ]
     },
     "ApiForgetRequest": {
@@ -5392,6 +5570,28 @@
         "forget"
       ]
     },
+    "ApiMetricRatio": {
+      "type": "object",
+      "properties": {
+        "sent": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        },
+        "rate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sent",
+        "total",
+        "rate"
+      ]
+    },
     "ApiMindStats": {
       "type": "object",
       "properties": {
@@ -5625,6 +5825,143 @@
       },
       "required": [
         "position"
+      ]
+    },
+    "ApiPartyPlayerView": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "her": {
+          "type": "boolean"
+        },
+        "score": {
+          "type": "number"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "active": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "her",
+        "score",
+        "present",
+        "active"
+      ]
+    },
+    "ApiPartyResultView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "game": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "ended_at": {
+          "type": "string"
+        },
+        "scored": {
+          "type": "boolean"
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPartyPlayerView"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "game",
+        "title",
+        "context",
+        "reason",
+        "started_at",
+        "ended_at",
+        "scored",
+        "players"
+      ]
+    },
+    "ApiPartySessionView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "game": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "state": {
+          "type": "string",
+          "const": "running"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "scored": {
+          "type": "boolean"
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPartyPlayerView"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "game",
+        "title",
+        "context",
+        "state",
+        "started_at",
+        "scored",
+        "players"
+      ]
+    },
+    "ApiPartySnapshot": {
+      "type": "object",
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPartySessionView"
+          }
+        },
+        "recent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPartyResultView"
+          }
+        }
+      },
+      "required": [
+        "sessions",
+        "recent"
       ]
     },
     "ApiPendingApproval": {
@@ -6335,6 +6672,52 @@
         "offline"
       ]
     },
+    "ApiPromptSummary": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "at": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ApiReasoningLevel"
+        },
+        "prompt_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "blocks": {
+          "type": "number"
+        },
+        "messages": {
+          "type": "number"
+        },
+        "chars": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "at",
+        "purpose",
+        "reasoning",
+        "prompt_tokens",
+        "blocks",
+        "messages",
+        "chars"
+      ]
+    },
     "ApiProposedTool": {
       "type": "object",
       "properties": {
@@ -6965,6 +7348,15 @@
         "fulfilled_by"
       ]
     },
+    "ApiReasoningLevel": {
+      "type": "string",
+      "enum": [
+        "off",
+        "low",
+        "medium",
+        "high"
+      ]
+    },
     "ApiReflectionRun": {
       "type": "object",
       "properties": {
@@ -7539,6 +7931,71 @@
       "required": [
         "sandbox",
         "tools"
+      ]
+    },
+    "ApiSavedPrompt": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "at": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ApiReasoningLevel"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCompiledBlock"
+          }
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "system",
+                  "user",
+                  "assistant"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "text"
+            ]
+          }
+        },
+        "prompt_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "at",
+        "purpose",
+        "reasoning",
+        "blocks",
+        "messages",
+        "prompt_tokens"
       ]
     },
     "ApiSayRequest": {
@@ -8504,6 +8961,182 @@
         "died",
         "denied",
         "internal"
+      ]
+    },
+    "ApiTelemetryLlm": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "errors": {
+          "type": "number"
+        },
+        "first_token": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "sum_s": {
+              "type": "number"
+            },
+            "buckets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "le_s": {
+                    "type": "number"
+                  },
+                  "count": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "le_s",
+                  "count"
+                ]
+              }
+            }
+          },
+          "required": [
+            "count",
+            "sum_s",
+            "buckets"
+          ]
+        }
+      },
+      "required": [
+        "calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_prompt_tokens",
+        "cost_usd",
+        "errors",
+        "first_token"
+      ]
+    },
+    "ApiTelemetryPoint": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "mood": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiMood"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boredom": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "drives": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiDrives"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initiative": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "llm": {
+          "$ref": "#/$defs/ApiTelemetryLlm"
+        },
+        "mind": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "calls_total": {
+                  "type": "number"
+                },
+                "tokens_total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "calls_total",
+                "tokens_total"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "voice_sessions": {
+          "type": "number"
+        },
+        "speaking": {
+          "type": "boolean"
+        },
+        "events": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "at",
+        "mood",
+        "boredom",
+        "drives",
+        "initiative",
+        "llm",
+        "mind",
+        "voice_sessions",
+        "speaking",
+        "events"
+      ]
+    },
+    "ApiTelemetryView": {
+      "type": "object",
+      "properties": {
+        "interval_ms": {
+          "type": "number"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiTelemetryPoint"
+          }
+        }
+      },
+      "required": [
+        "interval_ms",
+        "points"
       ]
     },
     "ApiThought": {
@@ -9535,6 +10168,398 @@
         "to"
       ]
     },
+    "ApiTurnCancelCause": {
+      "type": "string",
+      "enum": [
+        "input",
+        "barge_in",
+        "superseded",
+        "expired",
+        "floor",
+        "shutdown"
+      ]
+    },
+    "ApiTurnMetrics": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "number"
+        },
+        "from": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "overall": {
+          "$ref": "#/$defs/ApiTurnMetricsBucket"
+        },
+        "daily": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiTurnMetricsDay"
+          }
+        }
+      },
+      "required": [
+        "days",
+        "from",
+        "truncated",
+        "overall",
+        "daily"
+      ]
+    },
+    "ApiTurnMetricsBucket": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "number"
+        },
+        "followup": {
+          "$ref": "#/$defs/ApiMetricRatio"
+        },
+        "ambient": {
+          "$ref": "#/$defs/ApiMetricRatio"
+        },
+        "addressed": {
+          "$ref": "#/$defs/ApiMetricRatio"
+        },
+        "voice_latency": {
+          "type": "object",
+          "properties": {
+            "p50_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "p90_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "samples": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "p50_ms",
+            "p90_ms",
+            "samples"
+          ]
+        },
+        "voice_origin": {
+          "type": "object",
+          "properties": {
+            "self_started": {
+              "type": "number"
+            },
+            "answering": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "self_started",
+            "answering"
+          ]
+        },
+        "outcomes": {
+          "type": "object",
+          "properties": {
+            "sent": {
+              "type": "number"
+            },
+            "silence": {
+              "type": "number"
+            },
+            "cancelled": {
+              "type": "number"
+            },
+            "error": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "sent",
+            "silence",
+            "cancelled",
+            "error"
+          ]
+        },
+        "followup_stopped": {
+          "$ref": "#/$defs/ApiFollowupStopReasons"
+        },
+        "corrections": {
+          "$ref": "#/$defs/ApiCorrectionsBucket"
+        }
+      },
+      "required": [
+        "turns",
+        "followup",
+        "ambient",
+        "addressed",
+        "voice_latency",
+        "voice_origin",
+        "outcomes",
+        "followup_stopped",
+        "corrections"
+      ]
+    },
+    "ApiTurnMetricsDay": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "number"
+        },
+        "followup": {
+          "$ref": "#/$defs/ApiMetricRatio"
+        },
+        "ambient": {
+          "$ref": "#/$defs/ApiMetricRatio"
+        },
+        "addressed": {
+          "$ref": "#/$defs/ApiMetricRatio"
+        },
+        "voice_latency": {
+          "type": "object",
+          "properties": {
+            "p50_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "p90_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "samples": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "p50_ms",
+            "p90_ms",
+            "samples"
+          ]
+        },
+        "voice_origin": {
+          "type": "object",
+          "properties": {
+            "self_started": {
+              "type": "number"
+            },
+            "answering": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "self_started",
+            "answering"
+          ]
+        },
+        "outcomes": {
+          "type": "object",
+          "properties": {
+            "sent": {
+              "type": "number"
+            },
+            "silence": {
+              "type": "number"
+            },
+            "cancelled": {
+              "type": "number"
+            },
+            "error": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "sent",
+            "silence",
+            "cancelled",
+            "error"
+          ]
+        },
+        "followup_stopped": {
+          "$ref": "#/$defs/ApiFollowupStopReasons"
+        },
+        "corrections": {
+          "$ref": "#/$defs/ApiCorrectionsBucket"
+        },
+        "day": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "turns",
+        "followup",
+        "ambient",
+        "addressed",
+        "voice_latency",
+        "voice_origin",
+        "outcomes",
+        "followup_stopped",
+        "corrections",
+        "day"
+      ]
+    },
+    "ApiTurnOutcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "sent"
+            },
+            "parts": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "parts"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "silence"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "cancelled"
+            },
+            "cause": {
+              "$ref": "#/$defs/ApiTurnCancelCause"
+            },
+            "by": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "cause",
+            "by"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "error"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "error"
+          ]
+        }
+      ]
+    },
+    "ApiTurnOutcomeRecord": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "reason": {
+          "$ref": "#/$defs/ApiTurnReason"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ApiTurnOutcome"
+        },
+        "addressed_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "focus": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireMessageRef"
+          }
+        },
+        "restarts": {
+          "type": "number"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiReasoningLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "corrections": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ApiCorrectionKind"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "reason",
+        "outcome",
+        "addressed_by",
+        "focus",
+        "restarts",
+        "reasoning",
+        "latency_ms",
+        "at"
+      ]
+    },
+    "ApiTurnReason": {
+      "type": "string",
+      "enum": [
+        "addressed",
+        "reply_to_her",
+        "ambient",
+        "initiative",
+        "notice"
+      ]
+    },
     "ApiUpdatePersonRequest": {
       "type": "object",
       "properties": {
@@ -10256,6 +11281,21 @@
             "$ref": "#/$defs/WireJsonValue"
           }
         }
+      ]
+    },
+    "WireMessageRef": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "id"
       ]
     },
     "WireVoiceParticipant": {

@@ -8,18 +8,9 @@
 // not in the snapshot.
 
 import { PartyOverviewKey } from "@miyoria/types";
-import { json, type Route } from "./route.js";
-import type { ApiState } from "./state.js";
+import { os } from "./contract.js";
 
-export function partyRoutes(state: ApiState): Route[] {
-  return [
-    {
-      method: "GET",
-      path: "/api/party",
-      handler: async () => {
-        const party = state.service(PartyOverviewKey, "party module");
-        return json(party.snapshot());
-      },
-    },
-  ];
-}
+/** `GET /api/party`, on the route table. */
+export const partyRpc = os.party.handler(({ context }) =>
+  context.state.service(PartyOverviewKey, "party module").snapshot(),
+);

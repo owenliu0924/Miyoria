@@ -37,6 +37,7 @@ import {
   type McpServerInfo as ContractMcpServerInfo,
   type MindStats as ContractMindStats,
   type ModuleInfo as ContractModuleInfo,
+  type PartySnapshot as ContractPartySnapshot,
   type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
   type PersonCard as ContractPersonCard,
@@ -55,6 +56,7 @@ import {
   type RoleMapping as ContractRoleMapping,
   type RoomItem as ContractRoomItem,
   type SandboxHealth as ContractSandboxHealth,
+  type SavedPrompt as ContractSavedPrompt,
   type SceneRolesState as ContractSceneRolesState,
   type SelfView as ContractSelfView,
   type SkillFile as ContractSkillFile,
@@ -64,6 +66,7 @@ import {
   type Thought as ContractThought,
   type ThoughtDigest as ContractThoughtDigest,
   type ThoughtSummary as ContractThoughtSummary,
+  type TurnOutcomeRecord as ContractTurnOutcomeRecord,
   type VoiceSession as ContractVoiceSession,
   type WorldView as ContractWorldView,
   contract,
@@ -106,6 +109,7 @@ import type {
   ContextBucket,
   ContextKey,
   ConversationState,
+  CountedOutcome,
   Delivery,
   EmergencyReport,
   FeedbackTally,
@@ -118,10 +122,12 @@ import type {
   LogEvent,
   MindStats,
   ModuleStateKind,
+  PartySnapshot,
   PersonCard,
   ReflectionRun,
   ReflectionStats,
   Reminder,
+  SavedPrompt,
   SelfSnapshot,
   SkillShelfFile,
   SpokenLine,
@@ -274,6 +280,12 @@ const CASES: Case[] = [
   { name: "affect.people", method: "GET", path: "/api/affect/people" },
   { name: "mind.goals", method: "GET", path: "/api/mind/goals" },
   { name: "mind.plan", method: "GET", path: "/api/mind/plan" },
+  { name: "prompts.list", method: "GET", path: "/api/prompts" },
+  { name: "prompts.get", method: "GET", path: "/api/prompts/:turn" },
+  { name: "turns.outcomes", method: "GET", path: "/api/turns/outcomes" },
+  { name: "turns.metrics", method: "GET", path: "/api/turns/metrics" },
+  { name: "telemetry", method: "GET", path: "/api/telemetry" },
+  { name: "party", method: "GET", path: "/api/party" },
   { name: "extensions.list", method: "GET", path: "/api/extensions" },
   { name: "extensions.action", method: "POST", path: "/api/extensions/:id/:action" },
   { name: "mcp.list", method: "GET", path: "/api/mcp" },
@@ -468,6 +480,14 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const card: Same<ContractPersonCard, PersonCard> = true;
     const goal: Same<ContractGoal, Goal> = true;
     expect([self, world, affect, card, goal]).toEqual(Array(5).fill(true));
+  });
+
+  it("the saved prompts, how turns ended and the party games", () => {
+    const prompt: Same<ContractSavedPrompt, SavedPrompt> = true;
+    // A row of the log may carry the corrections that fired in the turn.
+    const outcome: Same<ContractTurnOutcomeRecord, CountedOutcome> = true;
+    const party: Same<ContractPartySnapshot, PartySnapshot> = true;
+    expect([prompt, outcome, party]).toEqual([true, true, true]);
   });
 
   it("extensions, MCP servers, the queue, the stage and the voice monitor", () => {

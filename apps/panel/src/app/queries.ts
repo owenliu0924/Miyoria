@@ -584,7 +584,7 @@ export function useTelemetry(minutes: number) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.telemetry(minutes),
-    queryFn: ({ signal }) => api.telemetry(minutes, { signal }),
+    queryFn: ({ signal }) => api.rpc.telemetry({ query: { minutes: String(minutes) } }, { signal }),
     refetchInterval: poll(60_000),
     placeholderData: (prev) => prev,
   });
@@ -772,7 +772,7 @@ export function usePrompts(limit = 30) {
   const api = useApi();
   return useQuery({
     queryKey: [...queryKeys.prompts, "list", limit],
-    queryFn: ({ signal }) => api.prompts(limit, undefined, { signal }),
+    queryFn: ({ signal }) => api.rpc.prompts.list({ query: { limit: String(limit) } }, { signal }),
     refetchInterval: poll(15_000),
   });
 }
@@ -782,7 +782,7 @@ export function usePrompt(turn: string | undefined) {
   const api = useApi();
   return useQuery({
     queryKey: [...queryKeys.prompts, "one", turn ?? ""],
-    queryFn: ({ signal }) => api.prompt(turn ?? "", { signal }),
+    queryFn: ({ signal }) => api.rpc.prompts.get({ params: { turn: turn ?? "" } }, { signal }),
     enabled: Boolean(turn),
     retry: false,
   });
@@ -792,7 +792,11 @@ export function useTurnOutcomes(q: { limit?: number; outcome?: TurnOutcomeKind; 
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.turnOutcomes(q),
-    queryFn: ({ signal }) => api.turnOutcomes(q, { signal }),
+    queryFn: ({ signal }) =>
+      api.rpc.turns.outcomes(
+        { query: { limit: q.limit === undefined ? undefined : String(q.limit), outcome: q.outcome, context: q.context ? JSON.stringify(q.context) : undefined } },
+        { signal },
+      ),
     refetchInterval: poll(15_000),
   });
 }
@@ -802,7 +806,7 @@ export function useTurnMetrics(days: number) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.turnMetrics(days),
-    queryFn: ({ signal }) => api.turnMetrics(days, { signal }),
+    queryFn: ({ signal }) => api.rpc.turns.metrics({ query: { days: String(days) } }, { signal }),
     refetchInterval: poll(60_000),
     placeholderData: (prev) => prev,
     retry: false,
@@ -1006,7 +1010,7 @@ export function useWorkspace() {
 
 export function useParty() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.party, queryFn: ({ signal }) => api.party({ signal }), refetchInterval: pollModule(10_000), retry: false });
+  return useQuery({ queryKey: queryKeys.party, queryFn: ({ signal }) => api.rpc.party(undefined, { signal }), refetchInterval: pollModule(10_000), retry: false });
 }
 
 export function useSkills() {

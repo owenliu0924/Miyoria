@@ -15,16 +15,8 @@ import type {
   MemoryRecordView,
   Page,
   UpdateMemoryRequest,
-
-  TelemetryView,
-  PromptSummary,
-  SavedPrompt,
-  TurnMetrics,
-  TurnOutcomeKind,
-  TurnOutcomeRecord,
   NotebookEntry,
   NotebookPage,
-  PartySnapshot,
   RecentView,
 } from "./types";
 
@@ -59,30 +51,10 @@ export function createApi(client: ApiClient) {
       client.download("GET", "/api/data/export", { query: { categories: categories?.join(",") } }),
     /** The full backup a reset needs; its `x-miyoria-backup-token` header unlocks the reset. */
     dataBackup: () => client.download("POST", "/api/data/backup"),
-    // body, arbiter, affect, plan, prompts
-    prompts: (limit: number, context?: ContextKey, o?: Opts) =>
-      client.get<PromptSummary[]>("/api/prompts", {
-        ...o,
-        query: { limit, context: context ? JSON.stringify(context) : undefined },
-      }),
-    prompt: (turn: string, o?: Opts) => client.get<SavedPrompt>(`/api/prompts/${seg(turn)}`, o),
-    turnOutcomes: (q: { limit?: number; outcome?: TurnOutcomeKind; context?: ContextKey }, o?: Opts) =>
-      client.get<TurnOutcomeRecord[]>("/api/turns/outcomes", {
-        ...o,
-        query: { limit: q.limit, outcome: q.outcome, context: q.context ? JSON.stringify(q.context) : undefined },
-      }),
-
-    turnMetrics: (days: number, o?: Opts) => client.get<TurnMetrics>("/api/turns/metrics", { ...o, query: { days } }),
-
     directives: (history: boolean, o?: Opts) =>
       client.get<DirectivesView>("/api/directives", { ...o, query: { history: history ? "1" : undefined } }),
     addDirective: (req: AddDirectiveRequest) => client.post<DirectiveChange>("/api/directives", req),
     removeDirective: (id: string) => client.delete<DirectiveChange>(`/api/directives/${seg(id)}`),
-    telemetry: (minutes: number, o?: Opts) =>
-      client.get<TelemetryView>("/api/telemetry", { ...o, query: { minutes } }),
-
-    party: (o?: Opts) => client.get<PartySnapshot>("/api/party", o),
-
     notebook: (o?: Opts) => client.get<{ pages: NotebookEntry[] }>("/api/notebook", o),
     notebookPage: (path: string, o?: Opts) => client.get<NotebookPage>("/api/notebook/page", { ...o, query: { path } }),
     recent: (context: ContextKey, o?: Opts) => client.get<RecentView>("/api/recent", { ...o, query: { context: JSON.stringify(context) } }),

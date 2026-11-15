@@ -61,17 +61,21 @@ import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
 import { lifeRpc } from "./life.js";
 import { llmCallsRpc, thoughtRpc } from "./llmcalls.js";
 import { memberRpc } from "./member.js";
+import { turnMetricsRpc } from "./metrics-turns.js";
 import { mindRpc } from "./mind.js";
 import { authRpc } from "./oauth.js";
 import { opsRpc } from "./ops.js";
+import { partyRpc } from "./party.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
 import { planRpc } from "./plan.js";
+import { outcomesRpc, promptsRpc } from "./prompts.js";
 import { limitMember, publicRpc } from "./public.js";
 import { roleRpc } from "./roles.js";
 import type { Method, Route } from "./route.js";
 import { sandboxRpc } from "./sandbox.js";
 import type { ApiContext, ApiState } from "./state.js";
+import { telemetryRpc } from "./telemetry.js";
 import { walletRpc } from "./wallet.js";
 import { skillsRpc, workspaceRpc } from "./workspace.js";
 
@@ -85,6 +89,10 @@ export const router = os.router({
   self: selfRpc,
   world: worldRpc,
   affect: affectRpc,
+  prompts: promptsRpc,
+  turns: { ...outcomesRpc, ...turnMetricsRpc },
+  telemetry: telemetryRpc,
+  party: partyRpc,
   facts: factsRpc,
   activity: activityRpc,
   arbiter: arbiterRpc,

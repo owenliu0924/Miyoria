@@ -14,6 +14,7 @@ const bucket = (over: Partial<TurnMetricsBucket> = {}): TurnMetricsBucket => ({
   voice_origin: { self_started: 0, answering: 0 },
   outcomes: { sent: 0, silence: 0, cancelled: 0, error: 0 },
   followup_stopped: { anti_spam: 0, low_score: 0, lost_roll: 0, floor: 0, passed_silent: 0, other: 0 },
+  corrections: { measured: { voice: 0, text: 0 }, kinds: {} as TurnMetricsBucket["corrections"]["kinds"] },
   ...over,
 });
 

@@ -33,12 +33,16 @@ import { life } from "./life.js";
 import { member } from "./member.js";
 import { mind } from "./mind.js";
 import { extensions, mcp, queue, stage, voiceMonitor } from "./ops.js";
+import { party } from "./party.js";
 import { people } from "./people.js";
 import { persona } from "./persona.js";
 import { mindPlan } from "./plan.js";
+import { prompts } from "./prompts.js";
 import { publicView } from "./public.js";
 import { roles } from "./roles.js";
 import { sandbox } from "./sandbox.js";
+import { telemetry } from "./telemetry.js";
+import { turns } from "./turns.js";
 import { wallet } from "./wallet.js";
 import { skills, workspace } from "./workspace.js";
 
@@ -492,6 +496,16 @@ export {
   VoiceStateSchema,
 } from "./ops.js";
 export {
+  type PartyPlayerView,
+  PartyPlayerViewSchema,
+  type PartyResultView,
+  PartyResultViewSchema,
+  type PartySessionView,
+  PartySessionViewSchema,
+  type PartySnapshot,
+  PartySnapshotSchema,
+} from "./party.js";
+export {
   type AdjustPersonRequest,
   AdjustPersonRequestSchema,
   type Person,
@@ -540,6 +554,16 @@ export {
   GoalTriggerSchema,
 } from "./plan.js";
 export {
+  type CompiledBlock,
+  CompiledBlockSchema,
+  type PromptSummary,
+  PromptSummarySchema,
+  type ReasoningLevel,
+  ReasoningLevelSchema,
+  type SavedPrompt,
+  SavedPromptSchema,
+} from "./prompts.js";
+export {
   type PublicBoard,
   PublicBoardSchema,
   type PublicDay,
@@ -587,6 +611,43 @@ export {
   SandboxToolsSchema,
 } from "./sandbox.js";
 export { type ContextKeyIn, ContextKeyInSchema } from "./shared.js";
+export {
+  type TelemetryLlm,
+  TelemetryLlmSchema,
+  type TelemetryPoint,
+  TelemetryPointSchema,
+  type TelemetryView,
+  TelemetryViewSchema,
+} from "./telemetry.js";
+export {
+  type CorrectionCount,
+  CorrectionCountSchema,
+  type CorrectionKind,
+  CorrectionKindSchema,
+  type CorrectionStat,
+  CorrectionStatSchema,
+  type CorrectionsBucket,
+  CorrectionsBucketSchema,
+  type FollowupStopReasons,
+  FollowupStopReasonsSchema,
+  type MetricRatio,
+  MetricRatioSchema,
+  type TurnCancelCause,
+  TurnCancelCauseSchema,
+  type TurnMetrics,
+  type TurnMetricsBucket,
+  TurnMetricsBucketSchema,
+  type TurnMetricsDay,
+  TurnMetricsDaySchema,
+  TurnMetricsSchema,
+  type TurnOutcome,
+  type TurnOutcomeKind,
+  type TurnOutcomeRecord,
+  TurnOutcomeRecordSchema,
+  TurnOutcomeSchema,
+  type TurnReason,
+  TurnReasonSchema,
+} from "./turns.js";
 export {
   type BoardChoice,
   BoardChoiceSchema,
@@ -652,6 +713,10 @@ export const contract = {
   self,
   world,
   affect,
+  prompts,
+  turns,
+  telemetry,
+  party,
   people: { ...people, ...peopleEconomy },
   modules,
   decisions,

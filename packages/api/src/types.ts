@@ -10,15 +10,7 @@ import type {
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
 import type { MemoryKind, MemoryScope } from "@miyoria/store";
-import type {
-  ContextKey,
-  PersonId,
-  ProfileId,
-  ReasoningLevel,
-  Timestamp,
-  TurnId,
-  TurnOutcome,
-} from "@miyoria/types";
+import type { ContextKey, PersonId, ProfileId, Timestamp } from "@miyoria/types";
 
 // Shapes of the routes on the route table (`@miyoria/contracts/api`), under their old names.
 export type {
@@ -77,6 +69,7 @@ export type {
   MindView,
   ModelUsage,
   ModuleInfo,
+  PartySnapshot,
   PendingApproval,
   PeriodReport,
   PersonaOverride,
@@ -84,6 +77,7 @@ export type {
   PersonDetail,
   PersonSummary,
   PersonWalletView,
+  PromptSummary,
   ProposedToolSummary,
   PublicBoard,
   PublicDay,
@@ -120,7 +114,11 @@ export type {
   StageLinkState,
   StageState,
   StreamAction,
+  TelemetryLlm,
+  TelemetryPoint,
+  TelemetryView,
   ThoughtSummary,
+  TurnOutcomeKind,
   UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
@@ -222,59 +220,3 @@ export interface UpdateMemoryRequest {
   importance?: number;
   done?: boolean;
 }
-
-// ---- what she organized and learned (phase G) -----------------------------------------------
-
-// ---- live controls (`control.ts`) and telemetry (`telemetry.ts`) ----------------------------
-
-/** Process-wide LLM counters at a sample, summed over models and purposes. */
-export interface TelemetryLlm {
-  calls: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  cached_prompt_tokens: number;
-  cost_usd: number;
-  errors: number;
-  /** `miyoria_llm_first_token_seconds`: cumulative counts at each finite upper bound. */
-  first_token: { count: number; sum_s: number; buckets: { le_s: number; count: number }[] };
-}
-
-/** One sample. Counters are totals since the process started; `events` count since the last one. */
-export interface TelemetryPoint {
-  at: string;
-  mood: { valence: number; arousal: number; energy: number } | null;
-  boredom: number | null;
-  drives: Record<string, number> | null;
-  initiative: number | null;
-  llm: TelemetryLlm;
-  mind: { calls_total: number; tokens_total: number } | null;
-  voice_sessions: number;
-  speaking: boolean;
-  /** `messages`, `turns`, `initiatives`, `utterances`, `actions` since the previous sample. */
-  events: Record<string, number>;
-}
-
-/** `GET /api/telemetry?minutes=360`: samples, oldest first. */
-export interface TelemetryView {
-  interval_ms: number;
-  points: TelemetryPoint[];
-}
-
-// ---- body, arbiter, affect, plan, prompts (docs/design/v2-architecture.md §3) -------------
-
-/** One saved prompt without its blocks and messages (`GET /api/prompts`). */
-export interface PromptSummary {
-  turn: TurnId;
-  context: ContextKey;
-  at: Timestamp;
-  purpose: string;
-  reasoning: ReasoningLevel;
-  prompt_tokens: number | null;
-  blocks: number;
-  messages: number;
-  /** Characters of all kept messages. */
-  chars: number;
-}
-
-/** The outcome kinds of a turn (`TurnOutcome["type"]`). */
-export type TurnOutcomeKind = TurnOutcome["type"];

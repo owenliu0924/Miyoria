@@ -1,7 +1,7 @@
 // Typed client for the admin API, used by the CLI. The routes on the route table
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
-import type { ContextKey, Envelope, SavedPrompt, TurnOutcomeRecord } from "@miyoria/types";
+import type { Envelope } from "@miyoria/types";
 import { statusText } from "./errors.js";
 import type {
   ErrorBody,
@@ -9,8 +9,6 @@ import type {
   MemoryListQuery,
   MemoryRecordView,
   Page,
-  PromptSummary,
-  TurnOutcomeKind,
   UpdateMemoryRequest,
 } from "./types.js";
 
@@ -174,38 +172,6 @@ export class ApiClient {
 
   deleteMemory(id: string, o?: CallOptions): Promise<void> {
     return this.#empty("DELETE", ["memory", id], o);
-  }
-
-  /** The saved prompts of recent turns (no text), newest first. */
-  prompts(
-    context: ContextKey | null = null,
-    limit = 30,
-    o?: CallOptions,
-  ): Promise<PromptSummary[]> {
-    return this.#json("GET", ["prompts"], {
-      ...o,
-      query: { limit: String(limit), context: context ? JSON.stringify(context) : undefined },
-    });
-  }
-
-  /** The saved prompt of one turn, in full. */
-  prompt(turn: string, o?: CallOptions): Promise<SavedPrompt> {
-    return this.#json("GET", ["prompts", turn], o);
-  }
-
-  /** How turns ended, newest first. */
-  turnOutcomes(
-    q: { limit?: number; context?: ContextKey | null; outcome?: TurnOutcomeKind } = {},
-    o?: CallOptions,
-  ): Promise<TurnOutcomeRecord[]> {
-    return this.#json("GET", ["turns", "outcomes"], {
-      ...o,
-      query: {
-        limit: q.limit === undefined ? undefined : String(q.limit),
-        context: q.context ? JSON.stringify(q.context) : undefined,
-        outcome: q.outcome,
-      },
-    });
   }
 
   /**

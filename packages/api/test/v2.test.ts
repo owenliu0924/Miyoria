@@ -29,7 +29,7 @@ import {
   v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiClient, ApiModule, summarizePrompt } from "../src/index.js";
+import { ActiveProfileKey, ApiModule, summarizePrompt } from "../src/index.js";
 import { adminCalls } from "./support/admin.js";
 import { raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
@@ -273,7 +273,7 @@ async function harness() {
   await sup.startAll();
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  return { sup, base, client: new ApiClient(base, TOKEN), adm: adminCalls(base, TOKEN) };
+  return { sup, base, adm: adminCalls(base, TOKEN) };
 }
 
 const GET_ROUTES = [
@@ -308,9 +308,9 @@ describe("v2 routes", () => {
     expect(await statusOf(h.adm.affectPeople())).toBe(503);
     expect(await statusOf(h.adm.goals())).toBe(503);
     expect(await statusOf(h.adm.dayPlan())).toBe(503);
-    expect(await statusOf(h.client.prompts())).toBe(503);
-    expect(await statusOf(h.client.prompt("T"))).toBe(503);
-    expect(await statusOf(h.client.turnOutcomes())).toBe(503);
+    expect(await statusOf(h.adm.prompts())).toBe(503);
+    expect(await statusOf(h.adm.prompt("T"))).toBe(503);
+    expect(await statusOf(h.adm.turnOutcomes())).toBe(503);
     const res = await raw(h.base, "GET", "/api/affect", { token: TOKEN });
     expect((res.body as { error: string }).error).toContain("affect module");
     // Decisions are only what the api module saw, so they work without the arbiter.
@@ -407,7 +407,7 @@ describe("v2 routes", () => {
   it("serve saved prompts as a list and in full", async () => {
     const h = await harness();
     h.sup.services.provide("agent", SavedPromptsKey, fakeSaved as never);
-    const list = await h.client.prompts();
+    const list = await h.adm.prompts();
     expect(list).toHaveLength(2);
     expect(list[0]).toEqual({
       turn: PROMPT.turn,
@@ -422,9 +422,9 @@ describe("v2 routes", () => {
     });
     expect(summarizePrompt(PROMPT)).toEqual(list[0]);
     expect(list[0]).not.toHaveProperty("messages", PROMPT.messages);
-    expect((await h.client.prompts(other)).map((p) => p.turn)).toEqual(["T02"]);
-    expect(await h.client.prompt(PROMPT.turn)).toEqual(PROMPT);
-    expect(await statusOf(h.client.prompt("nope"))).toBe(404);
+    expect((await h.adm.prompts(other)).map((p) => p.turn)).toEqual(["T02"]);
+    expect(await h.adm.prompt(PROMPT.turn)).toEqual(PROMPT);
+    expect(await statusOf(h.adm.prompt("nope"))).toBe(404);
   });
 
   it("serve turn outcomes filtered by context and kind", async () => {
@@ -438,15 +438,10 @@ describe("v2 routes", () => {
         ),
     });
     h.sup.services.provide("kernel", DecisionLogKey, log);
-    expect((await h.client.turnOutcomes()).map((o) => o.turn)).toEqual(["O1", "O2", "O3"]);
-    expect((await h.client.turnOutcomes({ limit: 1 })).map((o) => o.turn)).toEqual(["O1"]);
-    expect((await h.client.turnOutcomes({ outcome: "cancelled" })).map((o) => o.turn)).toEqual([
-      "O3",
-    ]);
-    expect((await h.client.turnOutcomes({ context: text })).map((o) => o.turn)).toEqual([
-      "O1",
-      "O2",
-    ]);
+    expect((await h.adm.turnOutcomes()).map((o) => o.turn)).toEqual(["O1", "O2", "O3"]);
+    expect((await h.adm.turnOutcomes({ limit: 1 })).map((o) => o.turn)).toEqual(["O1"]);
+    expect((await h.adm.turnOutcomes({ outcome: "cancelled" })).map((o) => o.turn)).toEqual(["O3"]);
+    expect((await h.adm.turnOutcomes({ context: text })).map((o) => o.turn)).toEqual(["O1", "O2"]);
     const bad = await raw(h.base, "GET", "/api/turns/outcomes?outcome=lost", { token: TOKEN });
     expect(bad.status).toBe(400);
   });

@@ -13,7 +13,9 @@ import type {
   LedgerView,
   PersonCard,
   PlatformId,
+  SavedPrompt,
   ThoughtDigest,
+  TurnOutcomeRecord,
 } from "@miyoria/types";
 import type {
   ArbiterDecisionsView,
@@ -30,6 +32,7 @@ import type {
   Page,
   PersonDetail,
   PersonSummary,
+  PromptSummary,
   QueueState,
   ReflectionView,
   RemoveMappingRequest,
@@ -37,6 +40,7 @@ import type {
   SceneRolesState,
   SelfView,
   StageState,
+  TurnOutcomeKind,
   UpdatePersonRequest,
   UpsertRoleRequest,
   UsageInfo,
@@ -152,6 +156,22 @@ export function adminCalls(base: string, token: string) {
     goals: (closed = false) =>
       get<GoalsView>("/api/mind/goals", { closed: closed ? "true" : undefined }),
     dayPlan: () => get<DayPlanView>("/api/mind/plan"),
+
+    // ---- what she was told and how her turns ended
+    prompts: (context: ContextKey | null = null, limit = 30) =>
+      get<PromptSummary[]>("/api/prompts", {
+        limit,
+        context: context ? JSON.stringify(context) : undefined,
+      }),
+    prompt: (turn: string) => get<SavedPrompt>(`/api/prompts/${seg(turn)}`),
+    turnOutcomes: (
+      q: { limit?: number; context?: ContextKey | null; outcome?: TurnOutcomeKind } = {},
+    ) =>
+      get<TurnOutcomeRecord[]>("/api/turns/outcomes", {
+        limit: q.limit,
+        context: q.context ? JSON.stringify(q.context) : undefined,
+        outcome: q.outcome,
+      }),
 
     // ---- extensions and MCP
     extensions: () => get<ExtensionInfo[]>("/api/extensions"),

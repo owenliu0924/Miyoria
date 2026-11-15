@@ -12,13 +12,10 @@ import { liveRoutes } from "./live.js";
 import { memberRoutes } from "./member.js";
 import { memoryRoutes } from "./memory.js";
 import { metricsRoutes } from "./metrics.js";
-import { turnMetricsRoutes } from "./metrics-turns.js";
 import { notebookRoutes } from "./notebook.js";
 import * as oauth from "./oauth.js";
 import { ogRoutes, rewriteHtml } from "./og.js";
 import { servePanel } from "./panel.js";
-import { partyRoutes } from "./party.js";
-import { promptRoutes } from "./prompts.js";
 import { clientKey, tooMany } from "./public.js";
 import type { Route } from "./route.js";
 import { type ResponseCheck, rpcRoutes } from "./rpc.js";
@@ -33,7 +30,6 @@ import {
   tokenMatches,
 } from "./session.js";
 import type { ApiContext, ApiEnv, ApiState } from "./state.js";
-import { telemetryRoutes } from "./telemetry.js";
 
 const log = getLogger("api.server");
 
@@ -130,12 +126,8 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...memoryRoutes(state),
     ...dataRoutes(state),
     ...directiveRoutes(state),
-    ...promptRoutes(state),
-    ...turnMetricsRoutes(state),
-    ...telemetryRoutes(state),
     ...liveRoutes(state),
     ...notebookRoutes(state),
-    ...partyRoutes(state),
 
     ...metricsRoutes(state, { public: options.metricsPublic ?? false }),
 

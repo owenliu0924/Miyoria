@@ -4,7 +4,6 @@
 
 import type {
   DriveName as ContractDriveName,
-  Mood,
   DecisionTrace,
   E2eSegmentName,
   LlmCallKind,
@@ -379,24 +378,45 @@ export type {
   ChannelActivityView as ChannelActivity,
   DayPlanView,
   EmotionName,
+  CompiledBlock,
   EmotionReading,
   FeelingView,
   Goal,
   GoalsView,
   GoalStatus,
   GoalTrigger,
+  FollowupStopReasons,
   HerStatus,
+  MetricRatio,
   Mood,
+  PartyPlayerView,
+  PartyResultView,
+  PartySessionView,
+  PartySnapshot,
   PersonCard,
   PersonPresence,
   PresenceActivity,
   PresenceStatus,
+  PromptSummary,
+  ReasoningLevel,
   RelationshipLabel,
+  SavedPrompt,
   SelfPolicy,
   SelfView,
   ShownEmotion,
   Talkativeness,
+  TelemetryLlm,
+  TelemetryPoint,
+  TelemetryView,
   TimeContext,
+  TurnCancelCause,
+  TurnMetrics,
+  TurnMetricsBucket,
+  TurnMetricsDay,
+  TurnOutcome,
+  TurnOutcomeKind,
+  TurnOutcomeRecord,
+  TurnReason,
   VoiceChannelState,
   VoiceMember,
   VoiceSpot,
@@ -582,106 +602,11 @@ export interface LlmThinkingQuery {
 // ---------------------------------------------------------------------------
 // live controls and telemetry (`packages/api/src/control.ts`, `telemetry.ts`)
 
-export interface TelemetryLlm {
-  calls: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  cached_prompt_tokens: number;
-  cost_usd: number;
-  errors: number;
-  /** Cumulative counts at each finite upper bound (seconds). */
-  first_token: { count: number; sum_s: number; buckets: { le_s: number; count: number }[] };
-}
-
-/** One minute's sample. Counters are process totals; `events` count since the previous sample. */
-export interface TelemetryPoint {
-  at: Timestamp;
-  mood: Mood | null;
-  boredom: number | null;
-  drives: Record<DriveName, number> | null;
-  initiative: number | null;
-  llm: TelemetryLlm;
-  mind: { calls_total: number; tokens_total: number } | null;
-  voice_sessions: number;
-  speaking: boolean;
-  /** `messages`, `turns`, `initiatives`, `utterances`, `actions`. */
-  events: Record<string, number>;
-}
-
-/** `GET /api/telemetry?minutes=`. */
-export interface TelemetryView {
-  interval_ms: number;
-  points: TelemetryPoint[];
-}
-
 // ---------------------------------------------------------------------------
 // body, arbiter, affect, plan, prompts (`packages/api/src/{body,affect,plan,prompts}.ts`)
 
 export type TaskId = string;
 export type Handle = string;
-
-export type ReasoningLevel = string;
-
-export interface CompiledBlock {
-  key: string;
-  authority: string;
-  source: string;
-  chars_in: number;
-  chars_out: number;
-  budget_chars: number;
-  fate: "kept" | "summarized" | "truncated" | "dropped";
-}
-
-/** `GET /api/prompts/{turn}`. */
-export interface SavedPrompt {
-  turn: TurnId;
-  context: ContextKey;
-  at: Timestamp;
-  purpose: string;
-  reasoning: ReasoningLevel;
-  blocks: CompiledBlock[];
-  messages: { role: "system" | "user" | "assistant"; text: string }[];
-  prompt_tokens: number | null;
-}
-
-/** `GET /api/prompts` items. */
-export interface PromptSummary {
-  turn: TurnId;
-  context: ContextKey;
-  at: Timestamp;
-  purpose: string;
-  reasoning: ReasoningLevel;
-  prompt_tokens: number | null;
-  blocks: number;
-  messages: number;
-  chars: number;
-}
-
-export type TurnReason = "addressed" | "reply_to_her" | "ambient" | "initiative" | "notice";
-
-export type TurnCancelCause = "input" | "barge_in" | "superseded" | "expired" | "floor" | "shutdown";
-
-export type TurnOutcome =
-  | { type: "sent"; parts: number }
-  | { type: "silence" }
-  | { type: "cancelled"; cause: TurnCancelCause; by: Handle | null }
-  | { type: "error"; error: string };
-
-export type TurnOutcomeKind = TurnOutcome["type"];
-
-/** `GET /api/turns/outcomes` items, newest first. */
-export interface TurnOutcomeRecord {
-  turn: TurnId;
-  context: ContextKey;
-  reason: TurnReason;
-  outcome: TurnOutcome;
-  addressed_by: Handle[];
-  focus: MessageRef[];
-  restarts: number;
-  reasoning: ReasoningLevel | null;
-  latency_ms: number | null;
-  at: Timestamp;
-}
 
 // ---------------------------------------------------------------------------
 // The fact layer (`GET /api/facts/*`; `packages/types` log-event.ts)
@@ -807,49 +732,6 @@ export type DirectiveChange =
   | { status: "removed"; directive: DirectiveRecord }
   | { status: "question"; question: string };
 
-// ---- turn metrics (`GET /api/turns/metrics`, mirrors packages/api/src/metrics-turns.ts) -------
-
-/** `sent / total`; `rate` is `null` with no samples, never 0. */
-export interface MetricRatio {
-  sent: number;
-  total: number;
-  rate: number | null;
-}
-
-export interface FollowupStopReasons {
-  anti_spam: number;
-  low_score: number;
-  lost_roll: number;
-  floor: number;
-  passed_silent: number;
-  other: number;
-}
-
-export interface TurnMetricsBucket {
-  turns: number;
-  followup: MetricRatio;
-  ambient: MetricRatio;
-  addressed: MetricRatio;
-  voice_latency: { p50_ms: number | null; p90_ms: number | null; samples: number };
-  voice_origin: { self_started: number; answering: number };
-  outcomes: { sent: number; silence: number; cancelled: number; error: number };
-  followup_stopped: FollowupStopReasons;
-}
-
-export interface TurnMetricsDay extends TurnMetricsBucket {
-  /** Local date, `YYYY-MM-DD`. */
-  day: string;
-}
-
-export interface TurnMetrics {
-  days: number;
-  from: string;
-  /** The read cap was hit inside the window: its oldest day may be partial. */
-  truncated: boolean;
-  overall: TurnMetricsBucket;
-  daily: TurnMetricsDay[];
-}
-
 // --- the admin routes V4 added: her life, economy, workspace, party games, notebook ---
 // (Timestamps are ISO strings.)
 // --- her life ---------------------------------------------------------------------
@@ -889,42 +771,3 @@ export interface RecentView {
   private_hidden: number;
 }
 
-// --- party games -------------------------------------------------------------------------
-
-export interface PartyPlayerView {
-  name: string;
-  her: boolean;
-  score: number;
-  present: boolean;
-  active: boolean;
-}
-
-export interface PartySessionView {
-  id: string;
-  game: string;
-  title: string;
-  context: ContextKey;
-  state: "running";
-  started_at: Timestamp;
-  scored: boolean;
-  players: PartyPlayerView[];
-}
-
-export interface PartyResultView {
-  id: string;
-  game: string;
-  title: string;
-  context: ContextKey;
-  /** `done`, `host`, `stop`, `idle`, `empty`, `left`, `away`. */
-  reason: string;
-  started_at: Timestamp;
-  ended_at: Timestamp;
-  scored: boolean;
-  players: PartyPlayerView[];
-}
-
-/** `GET /api/party` (503 when the party module is off). */
-export interface PartySnapshot {
-  sessions: PartySessionView[];
-  recent: PartyResultView[];
-}

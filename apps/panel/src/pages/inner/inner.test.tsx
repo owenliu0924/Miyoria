@@ -312,7 +312,7 @@ describe("Inner", () => {
       at: new Date(now - minsAgo * 60_000).toISOString(),
       mood: { valence: 0.1, arousal: 0.4, energy: 0.6 },
       boredom: 0.3,
-      drives: { social, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4 },
+      drives: { social, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4, esteem: 0.4, hunger: 0.3, longing: 0 },
       initiative: 0.5,
       llm: { calls: 0, prompt_tokens: 0, completion_tokens: 0, cached_prompt_tokens: 0, cost_usd: 0, errors: 0, first_token: { count: 0, sum_s: 0, buckets: [] } },
       mind: null,
