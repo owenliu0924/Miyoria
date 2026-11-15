@@ -10,7 +10,7 @@ import {
   SupervisorKey,
   sleep,
 } from "@miyoria/runtime/kernel";
-import { type AccountRef, AuthorizerKey, type ModuleId } from "@miyoria/types";
+import { type AccountRef, AuthorizerKey, Events, type ModuleId } from "@miyoria/types";
 import { z } from "zod";
 import {
   type AnyComponentRoute,
@@ -132,7 +132,7 @@ export class CommandsModule implements Module {
     const perms = registry.permissions();
     provideFallback(ctx, perms);
 
-    const events = ctx.subscribe("system.module.state");
+    const events = ctx.subscribe(Events.SystemModuleState.type);
     ctx.spawn("authorizer-fallback", async () => {
       for await (const _ of events) provideFallback(ctx, perms);
     });
