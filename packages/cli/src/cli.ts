@@ -165,18 +165,17 @@ export const COMMANDS: CommandSpec = {
   subcommands: [
     {
       name: "init",
-      help: "設定精靈:這台電腦跑哪些服務、LLM、Discord、資料庫、面板登入;可重複執行,Enter 保留現值",
+      help: "設定精靈:先問這台電腦要做什麼(文字聊天、文字加語音,或只提供服務給別台的 Core),再問 LLM、Discord、資料庫、面板登入;可重複執行,Enter 保留現值",
       options: [
         {
-          name: "roles",
-          value: "LIST",
-          help: "這台電腦跑什麼:all、broadcast、core、inference(可逗號分隔),或服務名稱(asr,tts,...);省略 = 互動選擇",
+          name: "mode",
+          value: "MODE",
+          help: "這台電腦要做什麼,跳過第一個問題:text(文字聊天,預設)、voice(文字加語音)、service(只提供服務給別台的 Core)",
         },
-        { name: "core-host", value: "HOST", help: "跑 core 那台電腦的區網位址(預設 127.0.0.1)" },
         {
-          name: "inference-host",
-          value: "HOST",
-          help: "跑 asr / tts / sing 那台電腦的區網位址(預設 127.0.0.1)",
+          name: "services",
+          value: "LIST",
+          help: "mode 是 service 時這台提供的服務(逗號分隔,例如 asr,tts);省略 = 互動選擇",
         },
       ],
       run: async (ctx) => {
@@ -188,17 +187,25 @@ export const COMMANDS: CommandSpec = {
             "在腳本裡請用 `miyoria init --yes`(全部採用預設值),或 `miyoria config set <key> <value>`",
           );
         }
-        const roles = str(ctx, "roles");
-        const coreHost = str(ctx, "core-host");
-        const inferenceHost = str(ctx, "inference-host");
+        const mode = str(ctx, "mode");
+        if (mode !== undefined && !(init.INIT_MODES as readonly string[]).includes(mode)) {
+          throw new Error(`--mode 要是 ${init.INIT_MODES.join("、")} 其中一個`);
+        }
+        const services = str(ctx, "services");
+        if (services !== undefined && mode !== "service") {
+          throw new Error("--services 只能和 --mode service 一起用");
+        }
         await init.run(ctx.config, p, {
           yes: ctx.yes,
-          machine: {
-            ask: isInteractive(),
-            ...(roles !== undefined ? { roles } : {}),
-            ...(coreHost !== undefined ? { coreHost } : {}),
-            ...(inferenceHost !== undefined ? { inferenceHost } : {}),
-          },
+          ...(mode !== undefined ? { mode: mode as init.InitMode } : {}),
+          ...(services !== undefined
+            ? {
+                services: services
+                  .split(",")
+                  .map((name) => name.trim())
+                  .filter((name) => name !== ""),
+              }
+            : {}),
         });
       },
     },
@@ -435,14 +442,21 @@ export const COMMANDS: CommandSpec = {
           help: "最多等幾秒(hostd 會繼續啟動,用 status 查看);預設等到每個服務有結果",
         },
         { name: "no-wait", help: "交給 hostd 後就結束,不等健康檢查" },
+        {
+          name: "no-link",
+          help: "Core 起來後,不要自動把這台電腦連到本機的 Core(預設:這台沒有 host.key 也沒有 [cluster] 時會連,等於 `host join --local`)",
+        },
       ],
-      run: (ctx) =>
-        host.up(hostTargetOf(ctx), {
+      run: (ctx) => {
+        const target = hostTargetOf(ctx);
+        return host.up(target, {
           services: ctx.args,
           foreground: flag(ctx, "foreground"),
           noWait: flag(ctx, "no-wait"),
+          ...(flag(ctx, "no-link") ? {} : { selfLink: (h) => cluster.selfLink(target, h) }),
           ...timeoutOf(ctx),
-        }),
+        });
+      },
     },
     {
       name: "down",

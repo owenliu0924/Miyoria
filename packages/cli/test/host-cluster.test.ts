@@ -498,7 +498,12 @@ describe("host join --local", () => {
     const call = core.calls_to("POST", "/api/cluster/hosts")[0];
     expect(call?.authorization).toBe(`Bearer ${ADMIN}`);
     expect(call?.body).toEqual({ name: "main-pc", capabilities: ["asr", "tts", "tts.clone"] });
-    expect(JSON.parse(read("data/host/host.key"))).toEqual({ id: "h-local", key: KEY });
+    // Marked local: `up` may approve a host made this way again when the services change.
+    expect(JSON.parse(read("data/host/host.key"))).toEqual({
+      id: "h-local",
+      key: KEY,
+      local: true,
+    });
     const toml = read("host.toml");
     expect(toml).toContain("# kept");
     expect(toml).toContain('[cluster]\nurl = "ws://127.0.0.1:7999/cluster-link"');

@@ -53,10 +53,11 @@ export function hostTarget(configPath: string, hostConfig?: string): HostTarget 
 
 /**
  * Where the descriptors are: the source checkout around the workspace, else the one around this
- * CLI, else the installed package (which carries the catalog from H11 on).
+ * CLI, else the installed package, which carries the catalog at the same relative paths
+ * (`workers/*`, `services/*`, `packages/core` ...; scripts/build.mjs copies them).
  */
-export function catalogRoot(hostToml: string): string {
-  return repoRoot(hostToml) ?? repoRoot(join(PACKAGE_ROOT, "package.json")) ?? PACKAGE_ROOT;
+export function catalogRoot(hostToml: string, packageRoot: string = PACKAGE_ROOT): string {
+  return repoRoot(hostToml) ?? repoRoot(join(packageRoot, "package.json")) ?? packageRoot;
 }
 
 /**
@@ -257,6 +258,11 @@ export interface UpOptions {
   foreground?: boolean;
   timeoutSecs?: number;
   noWait?: boolean;
+  /**
+   * Once `core` of this machine answers: links this machine to it (`cluster.selfLink`; passed in
+   * because that module imports this one). Absent with `--no-link`.
+   */
+  selfLink?: (host: LoadedHostConfig) => Promise<void>;
 }
 
 /** The services `up` starts without names: every one `host.toml` enables, in start order. */
@@ -357,6 +363,12 @@ export async function up(target: HostTarget, options: UpOptions): Promise<void> 
   if (pending.length > 0) {
     warn(`還在啟動:${pending.join("、")}(hostd 會繼續;用 \`miyoria status\` 看)`);
   }
+  if (options.selfLink !== undefined && asked.includes("core") && !pending.includes("core")) {
+    const { services } = await client.call<HostServiceList>("service.list");
+    if (services.find((s) => s.name === "core")?.state === "running") {
+      await options.selfLink(host);
+    }
+  }
   const bad = failed.length + refused;
   if (bad > 0) throw new HostCommandError(`${bad} 個服務沒有起來`);
   if (pending.length === 0) println(`\n${green("全部就緒")}。\`miyoria down\` 停止全部服務。`);
@@ -398,9 +410,27 @@ async function foreground(
       fail(rpcText(error));
     }
   }
+  let stopping = false;
+  if (options.selfLink !== undefined && names.includes("core")) {
+    // Core takes a while: link in the background once it answers, without holding Ctrl+C back.
+    const link = options.selfLink;
+    void (async () => {
+      const until = Date.now() + 5 * 60_000;
+      while (!stopping && Date.now() < until) {
+        const state = daemon.report({ withTokens: false }).services.find((s) => s.name === "core");
+        if (state?.state === "running") {
+          await link(host);
+          return;
+        }
+        if (state?.state === "failed") return;
+        await sleep(500);
+      }
+    })();
+  }
   await untilSignal((stop) => {
     shutdown = stop;
   });
+  stopping = true;
   section("停止服務");
   await daemon.stop();
 }

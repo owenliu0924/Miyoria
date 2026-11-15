@@ -72,9 +72,17 @@ export interface Installer {
 /** Long enough for a CUDA torch sync on a slow line. */
 const INSTALL_TIMEOUT_MS = 2 * 60 * 60_000;
 
+/** What `add voice-node` says on an install that has no repository around it. */
+export const VOICE_NODE_NEEDS_REPOSITORY =
+  "語音節點目前還沒有跟著 miyoria 套件發行,要用它需要 repository:clone 專案後在裡面執行 `miyoria add voice-node`(之後的版本會把它放進套件)";
+
 function entryOf(catalog: Catalog, name: string): CatalogEntry {
   const entry = catalog.services.get(name);
-  if (entry === undefined) throw new HostCommandError(unknownService(catalog, name));
+  if (entry === undefined) {
+    // The voice node runs from source: the package's catalog does not list it.
+    if (name === "voice-node") throw new HostCommandError(VOICE_NODE_NEEDS_REPOSITORY);
+    throw new HostCommandError(unknownService(catalog, name));
+  }
   return entry;
 }
 

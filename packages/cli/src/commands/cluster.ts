@@ -259,11 +259,21 @@ function stateRootOf(target: HostTarget): { root: string; host: LoadedHostConfig
   return { root: stateLayout(resolve(dirname(target.hostToml), DEFAULT_STATE)).root, host: null };
 }
 
-/** `<state>/host.key`, as JSON `{ id, key }`, readable by this user only where the platform can. */
-export function writeHostKey(stateRoot: string, id: string, key: string): string {
+/**
+ * `<state>/host.key`, as JSON `{ id, key }`, readable by this user only where the platform can.
+ * `local: true` marks a host made through the admin API for the machine Core runs on (`join
+ * --local`, or `up` on its own): only those are approved again by `up` when the services change.
+ */
+export function writeHostKey(
+  stateRoot: string,
+  id: string,
+  key: string,
+  options: { local?: boolean } = {},
+): string {
   const file = join(stateRoot, HOST_KEY_FILE);
   mkdirSync(stateRoot, { recursive: true });
-  writeFileSync(file, `${JSON.stringify({ id, key })}\n`, { mode: 0o600 });
+  const body = options.local === true ? { id, key, local: true } : { id, key };
+  writeFileSync(file, `${JSON.stringify(body)}\n`, { mode: 0o600 });
   if (process.platform !== "win32") chmodSync(file, 0o600);
   return file;
 }
@@ -288,29 +298,46 @@ export function writeClusterToml(hostToml: string, url: string, name: string): v
   writeFileSync(hostToml, doc.toString(), "utf8");
 }
 
-/** What `host join` says when hostd answers `host.relink`, or when it cannot. */
-async function relinkDaemon(stateRoot: string): Promise<void> {
+/** What asking hostd to dial Core came to. */
+export type RelinkResult =
+  | { kind: "no-daemon" }
+  | { kind: "old-daemon" }
+  | { kind: "failed"; reason: string }
+  | { kind: "link"; link: HostLinkState };
+
+/** Asks the hostd of `stateRoot` to dial Core now (`host.relink`) and waits for the answer. */
+export async function relink(stateRoot: string): Promise<RelinkResult> {
   const daemon = await HostdClient.connect(stateRoot);
-  if (daemon === null) {
-    note("這台的 hostd 沒有在執行:`miyoria up` 啟動時會連上 Core");
-    return;
-  }
-  let link: HostLinkState;
+  if (daemon === null) return { kind: "no-daemon" };
   try {
-    link = (await daemon.call<HostRelinkResult>("host.relink")).link;
+    let link = (await daemon.call<HostRelinkResult>("host.relink")).link;
     for (let i = 0; i < 25 && link === "connecting"; i++) {
       await sleep(300);
       link = (await daemon.call<HostInfo>("host.info")).link ?? "none";
     }
+    return { kind: "link", link };
   } catch (error) {
-    if (error instanceof HostRpcError && error.code === -32601) {
+    if (error instanceof HostRpcError && error.code === -32601) return { kind: "old-daemon" };
+    return { kind: "failed", reason: errorText(error) };
+  }
+}
+
+/** What `host join` says when hostd answers `host.relink`, or when it cannot. */
+async function relinkDaemon(stateRoot: string): Promise<void> {
+  const result = await relink(stateRoot);
+  switch (result.kind) {
+    case "no-daemon":
+      note("這台的 hostd 沒有在執行:`miyoria up` 啟動時會連上 Core");
+      return;
+    case "old-daemon":
       warn("這個 hostd 不認得 host.relink(版本太舊):`miyoria down` 之後再 `miyoria up`");
       return;
-    }
-    warn(`請 hostd 連上 Core 失敗:${errorText(error)}(\`miyoria down\` 再 \`miyoria up\` 也可以)`);
-    return;
+    case "failed":
+      warn(`請 hostd 連上 Core 失敗:${result.reason}(\`miyoria down\` 再 \`miyoria up\` 也可以)`);
+      return;
+    case "link":
+      println(`hostd 與 Core 的連線:${linkText(result.link)}`);
   }
-  println(`hostd 與 Core 的連線:${linkText(link)}`);
 }
 
 /** The key and `[cluster]` are in place: say so, tell hostd, say what is left. */
@@ -451,18 +478,24 @@ export function localLinkUrl(config: Config): string {
   return `ws://127.0.0.1:${parts?.port ?? "7880"}${HOST_LINK_PATH}`;
 }
 
-/** `miyoria host join --local`: the machine Core runs on; the admin token is the credential. */
-async function joinLocal(target: HostTarget, options: JoinOptions): Promise<void> {
-  if (options.code !== undefined) throw new HostCommandError("--local 不用邀請碼");
-  const host = loadHost(target);
-  const keyFile = join(host.state.root, HOST_KEY_FILE);
-  if (existsSync(keyFile) && options.force !== true) {
-    throw new HostCommandError(
-      `這台已經加入過 Core(${keyFile} 存在)。要重做,先 \`miyoria host remove <名字>\`,再加 --force`,
-    );
-  }
+/** What creating this machine's host on a local Core left behind. */
+interface LocalHost {
+  name: string;
+  capabilities: string[];
+  keyFile: string;
+}
+
+/**
+ * Makes this machine's host on Core through the admin API, already approved for what its enabled
+ * services provide, and writes `host.key` (marked local) and `[cluster] url`. Shared by `join
+ * --local` and by `up`.
+ */
+async function createLocalHost(
+  target: HostTarget,
+  host: LoadedHostConfig,
+  name: string,
+): Promise<LocalHost> {
   const { config, client } = await coreOf(target);
-  const name = options.name ?? host.config.name;
   const capabilities = localCapabilities(target, host);
   let created: { id: string; name: string; key: string };
   try {
@@ -475,15 +508,104 @@ async function joinLocal(target: HostTarget, options: JoinOptions): Promise<void
     }
     throw coreProblem(error);
   }
-  const file = writeHostKey(host.state.root, created.id, created.key);
+  const keyFile = writeHostKey(host.state.root, created.id, created.key, { local: true });
   writeClusterToml(target.hostToml, localLinkUrl(config), name);
-  ok(`這台電腦已加入本機的 Core,名字 ${bold(name)}`);
-  note(`金鑰寫在 ${file}(不要給別人)`);
-  await finishJoin(host.state.root, name, capabilities);
+  return { name, capabilities, keyFile };
+}
+
+/** `miyoria host join --local`: the machine Core runs on; the admin token is the credential. */
+async function joinLocal(target: HostTarget, options: JoinOptions): Promise<void> {
+  if (options.code !== undefined) throw new HostCommandError("--local 不用邀請碼");
+  const host = loadHost(target);
+  const keyFile = join(host.state.root, HOST_KEY_FILE);
+  if (existsSync(keyFile) && options.force !== true) {
+    throw new HostCommandError(
+      `這台已經加入過 Core(${keyFile} 存在)。要重做,先 \`miyoria host remove <名字>\`,再加 --force`,
+    );
+  }
+  const made = await createLocalHost(target, host, options.name ?? host.config.name);
+  ok(`這台電腦已加入本機的 Core,名字 ${bold(made.name)}`);
+  note(`金鑰寫在 ${made.keyFile}(不要給別人)`);
+  await finishJoin(host.state.root, made.name, made.capabilities);
 }
 
 export function joinHost(target: HostTarget, options: JoinOptions): Promise<void> {
   return options.local === true ? joinLocal(target, options) : joinRemote(target, options);
+}
+
+// ---- the machine Core runs on links itself (`up`) ---------------------------------------------
+
+/** `host.key` of this machine, when it can be read. */
+function readKeyFile(file: string): { id: string; local: boolean } | null {
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8")) as { id?: unknown; local?: unknown };
+    return typeof raw.id === "string" ? { id: raw.id, local: raw.local === true } : null;
+  } catch {
+    return null;
+  }
+}
+
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((x) => b.includes(x));
+}
+
+/** The one line `up` prints about the link state, as a clause. */
+function linkClause(result: RelinkResult): string {
+  switch (result.kind) {
+    case "link":
+      return result.link === "connected" ? "已連上" : `連線狀態:${result.link}`;
+    case "no-daemon":
+      return "hostd 沒有在執行";
+    case "old-daemon":
+      return "這個 hostd 不認得 host.relink,`miyoria down` 再 `miyoria up` 就會連上";
+    case "failed":
+      return `請 hostd 連上失敗:${result.reason}`;
+  }
+}
+
+/**
+ * `miyoria up` on the machine Core runs on, once Core answers. Without a `host.key` and without a
+ * `[cluster] url` it does what `host join --local` does; a host it made itself (`"local": true` in
+ * `host.key`) is approved again when the services of `host.toml` changed. A host that joined with a
+ * code, or was linked by hand, is never touched. One line says what happened; a problem is a
+ * line too, never an error: `up` goes on.
+ */
+export async function selfLink(target: HostTarget, host: LoadedHostConfig): Promise<void> {
+  const keyFile = join(host.state.root, HOST_KEY_FILE);
+  try {
+    if (!existsSync(keyFile)) {
+      if (host.config.cluster?.url !== undefined) return; // pointed at a Core by hand
+      const made = await createLocalHost(target, host, host.config.name);
+      const link = await relink(host.state.root);
+      ok(
+        `這台電腦已連上本機的 Core(名字 ${made.name},核准:${made.capabilities.join("、") || "沒有"});${linkClause(link)}`,
+      );
+      return;
+    }
+    const key = readKeyFile(keyFile);
+    if (key === null || !key.local) return; // joined with a code: somebody else's business
+    const { client } = await coreOf(target);
+    const hosts = await viaCore(() => client.rpc.cluster.hosts());
+    const mine = hosts.find((h) => h.id === key.id);
+    if (mine === undefined) {
+      warn(
+        `Core 裡沒有這台電腦了(${key.id}):\`miyoria host join --local --force\` 重新加入,沒有自動連上`,
+      );
+      return;
+    }
+    const wanted = localCapabilities(target, host);
+    if (mine.status === "revoked") {
+      warn(`${mine.name} 在 Core 裡被撤銷了,沒有自動核准`);
+      return;
+    }
+    if (mine.status === "approved" && sameSet(mine.capabilities, wanted)) return;
+    const view = await viaCore(() =>
+      client.rpc.cluster.approve({ params: { name: mine.name }, body: { capabilities: wanted } }),
+    );
+    ok(`已重新核准這台電腦(${view.name}):${view.capabilities.join("、") || "沒有"}`);
+  } catch (error) {
+    warn(`這台沒有自動連上本機的 Core:${errorText(error)}`);
+  }
 }
 
 // ---- ls --------------------------------------------------------------------------------------
