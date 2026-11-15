@@ -42,7 +42,8 @@ describe("task topics", () => {
       expect(registry.familyOf(`${owner}.task.done`)).toBe("**.task.done");
       expect(registry.familyOf(`${owner}.task.steered`)).toBe("**.task.steered");
     }
-    expect(registry.resolve("game.minecraft.death")).toBeNull();
+    // A game's own events are the game adapter family, not a task topic.
+    expect(registry.familyOf("game.minecraft.death")).toBe("game.*.*");
   });
 
   it("carry only their own event type", () => {

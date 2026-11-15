@@ -187,6 +187,13 @@ export {
   RedactedDataSchema,
 } from "./envelope.js";
 export {
+  EXTENSION_EVENTS,
+  ExtensionEvent,
+  GameAdapterEvent,
+  type GameAdapterEventData,
+  GameAdapterEventSchema,
+} from "./extension.js";
+export {
   type ActionOutcomeData,
   ActionOutcomeSchema,
   ActionsOutcome,

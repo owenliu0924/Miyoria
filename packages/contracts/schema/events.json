@@ -2125,6 +2125,23 @@
         "ts"
       ]
     },
+    "EventsGameAdapterEvent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/WireJsonValue"
+        },
+        "important": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
     "EventsGameChatLink": {
       "type": "object",
       "properties": {

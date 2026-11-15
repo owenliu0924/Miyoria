@@ -11,6 +11,7 @@ import { AGENT_EVENTS } from "./agent.js";
 import { ARBITER_EVENTS } from "./arbiter.js";
 import { CHAT_EVENTS } from "./chat.js";
 import { DIRECTIVE_EVENTS } from "./directive.js";
+import { EXTENSION_EVENTS } from "./extension.js";
 import { GATE_EVENTS } from "./gate.js";
 import { HEART_EVENTS } from "./heart.js";
 import { LlmBudget, LlmCall } from "./llm.js";
@@ -46,6 +47,7 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   LlmCall,
   LlmBudget,
   ...GATE_EVENTS,
+  ...EXTENSION_EVENTS,
   ...WORKSPACE_EVENTS,
   ...SING_EVENTS,
   ...PLAY_EVENTS,
