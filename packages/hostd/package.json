@@ -30,6 +30,7 @@
     "@miyoria/contracts": "workspace:*",
     "@miyoria/sdk": "workspace:*",
     "execa": "^10.2.1",
+    "koffi": "^3.3.8",
     "pino": "^10.4.0",
     "rotating-file-stream": "^4.0.0",
     "smol-toml": "^1.9.1",

@@ -54,6 +54,7 @@
     "drizzle-orm": "1.0.0-rc.5",
     "execa": "^10.2.1",
     "hono": "^4.13.16",
+    "koffi": "^3.3.8",
     "obs-websocket-js": "^5.0.6",
     "opencc-js": "^1.4.2",
     "pino": "^10.4.0",
