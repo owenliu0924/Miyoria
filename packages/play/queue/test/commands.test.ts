@@ -285,17 +285,14 @@ describe("QueueModule", () => {
 
     const env = await sub.recv();
     expect(env?.source).toBe("queue");
-    expect(env?.event.type).toBe("custom");
-    if (env?.event.type === "custom") {
-      expect(env.event.data.topic).toBe("queue.changed");
-      const payload = env.event.data.payload as { items: Array<{ kind: string }> };
-      expect(payload.items[0]?.kind).toBe("game_goal");
-    }
+    expect(env?.type).toBe("queue.changed");
+    const payload = env?.data as { items: Array<{ kind: string }> };
+    expect(payload.items[0]?.kind).toBe("game_goal");
     queue.next();
     let sawActivation = false;
     for (let i = 0; i < 2; i++) {
       const e = await sub.recv();
-      if (e?.event.type === "custom" && e.event.data.topic === "queue.item_activated") {
+      if (e?.type === "queue.item_activated") {
         sawActivation = true;
       }
     }

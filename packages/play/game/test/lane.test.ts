@@ -160,25 +160,17 @@ class H {
     readonly llm: Script,
     readonly lane: FakeLane | null,
   ) {
-    this.exec = new FakeExecutor(
-      (e) => this.sup.bus.publish("ext.miyoria.minecraft", e),
-      Date.now,
-      {
-        goals: [
-          ...MINECRAFT_GOALS,
-          { name: "farm", description: "收成", parameters: null, budget_s: 120 },
-          { name: "hunt", description: "打獵", parameters: null, budget_s: 120 },
-        ],
-      },
-    );
+    this.exec = new FakeExecutor(this.sup.bus.publisher("ext.miyoria.minecraft"), Date.now, {
+      goals: [
+        ...MINECRAFT_GOALS,
+        { name: "farm", description: "收成", parameters: null, budget_s: 120 },
+        { name: "hunt", description: "打獵", parameters: null, budget_s: 120 },
+      ],
+    });
     const sub = this.sup.bus.subscribe("*");
     void (async () => {
-      for await (const env of sub as AsyncIterable<{ event: { type: string; data: unknown } }>) {
-        const e = env.event;
-        if (e.type === "custom") {
-          const data = e.data as { topic: string; payload: JsonValue };
-          this.payloads.push({ topic: data.topic, payload: data.payload });
-        }
+      for await (const env of sub) {
+        this.payloads.push({ topic: env.type, payload: env.data as JsonValue });
       }
     })();
   }

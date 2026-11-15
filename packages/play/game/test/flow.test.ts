@@ -15,14 +15,18 @@ import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  type AnyEventDefinition,
   ARBITER_IMPULSE_TOPIC,
   type ContextKey,
-  type Event,
+  type EventPayload,
+  Events,
+  type Impulse,
   type JsonObject,
   type JsonValue,
   type Principal,
   Principals,
-  v2Payload,
+  type PublishedEvent,
+  type PublishMetaArgs,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -54,7 +58,7 @@ class Flow {
   readonly tools = new ToolRegistry();
   readonly registry: ActuatorRegistry;
   readonly gate: GateDecision[] = [];
-  readonly events: Event[] = [];
+  readonly events: PublishedEvent[] = [];
   readonly streams: { principal: Principal; args: JsonValue }[] = [];
   readonly exec: FakeExecutor;
 
@@ -67,17 +71,13 @@ class Flow {
         if (definition.type === "gate.decision") this.gate.push(data as unknown as GateDecision);
       },
     });
-    this.exec = new FakeExecutor(
-      (e) => this.sup.bus.publish("ext.miyoria.minecraft", e),
-      Date.now,
-      {
-        goals: [
-          ...MINECRAFT_GOALS,
-          { name: "launch", description: "開遊戲", parameters: null, budget_s: null },
-          { name: "quit", description: "關遊戲", parameters: null, budget_s: 10 },
-        ],
-      },
-    );
+    this.exec = new FakeExecutor(this.sup.bus.publisher("ext.miyoria.minecraft"), Date.now, {
+      goals: [
+        ...MINECRAFT_GOALS,
+        { name: "launch", description: "開遊戲", parameters: null, budget_s: null },
+        { name: "quit", description: "關遊戲", parameters: null, budget_s: 10 },
+      ],
+    });
     this.exec.state = READY;
     // Go Live, faked: the real one is the voice module's.
     this.registry.register(
@@ -96,7 +96,7 @@ class Flow {
     );
     const sub = this.sup.bus.subscribe("*");
     void (async () => {
-      for await (const env of sub) this.events.push(env.event);
+      for await (const env of sub) this.events.push({ type: env.type, data: env.data });
     })();
   }
 
@@ -127,8 +127,12 @@ class Flow {
     return f;
   }
 
-  async publish(event: Event): Promise<void> {
-    this.sup.bus.publish("test", event);
+  async publish<D extends AnyEventDefinition>(
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): Promise<void> {
+    this.sup.bus.publish("test", definition, data, ...meta);
     await settle();
   }
 
@@ -164,9 +168,7 @@ class Flow {
   }
 
   sessions(): JsonValue[] {
-    return this.events.flatMap((e) =>
-      e.type === "custom" && e.data.topic === SESSION_TOPIC ? [e.data.payload] : [],
-    );
+    return this.events.flatMap((e) => (e.type === SESSION_TOPIC ? [e.data as JsonValue] : []));
   }
 
   async stop(): Promise<void> {
@@ -208,7 +210,7 @@ describe("去玩 Minecraft", () => {
 
   it("starts, sets the goal, goes live through the gate and plays as the director", async () => {
     const f = await Flow.create();
-    await f.publish({ type: "voice_joined", data: { context: VOICE, participants: [] } });
+    await f.publish(Events.VoiceJoined, { context: VOICE, participants: [] });
     const text = await f.startTool({ goal: "去挖鐵礦", stream: true });
     expect(text).toContain("她開始玩 Minecraft 了，實況會在語音頻道進行。");
     expect(text).toContain("已設定新目標：去挖鐵礦");
@@ -246,8 +248,7 @@ describe("去玩 Minecraft", () => {
     const task = f.exec.last();
     expect(f.sup.services.require(GameHandleKey).status()?.last_action).toContain("開始了");
     expect(f.exec.running.has(task.id)).toBe(true);
-    const ends = () =>
-      f.events.filter((e) => e.type === "custom" && e.data.topic === GOAL_TOPIC).length;
+    const ends = () => f.events.filter((e) => e.type === GOAL_TOPIC).length;
     const before = ends();
     f.exec.emit({
       type: "steered",
@@ -281,7 +282,7 @@ describe("去玩 Minecraft", () => {
   it("does not go live when the gate refuses it", async () => {
     const f = await Flow.create();
     f.registry.configure({ ...f.registry.config, forbidden: ["stream.*"] });
-    await f.publish({ type: "voice_joined", data: { context: VOICE, participants: [] } });
+    await f.publish(Events.VoiceJoined, { context: VOICE, participants: [] });
     const text = await f.startTool({ stream: true });
     expect(text).toContain("她開始玩 Minecraft 了");
     expect(text).toContain("沒有開台");
@@ -294,27 +295,25 @@ describe("去玩 Minecraft", () => {
     let handled = true;
     f.sup.services.provide("chat", GameChatKey, { handles: () => handled });
     // In voice, where her commentary goes.
-    await f.publish({ type: "voice_joined", data: { context: VOICE, participants: [] } });
+    await f.publish(Events.VoiceJoined, { context: VOICE, participants: [] });
     await f.startTool({});
     await vi.advanceTimersByTimeAsync(100);
     const hints = () =>
       f.events.flatMap((e) => {
-        const hint = v2Payload(e, ARBITER_IMPULSE_TOPIC)?.hint;
+        const hint = e.type === ARBITER_IMPULSE_TOPIC ? (e.data as Impulse).hint : null;
         return hint ? [hint] : [];
       });
     const before = hints().length;
     const chat = (message: string, system = false) =>
-      f.publish({
-        type: "custom",
-        data: {
-          topic: "game.minecraft.chat",
-          payload: {
-            type: "chat",
-            data: { sender: "Steve", message, system, text: `Steve 在遊戲裡說:${message}` },
-            important: true,
-          },
+      f.publish(
+        Events.GameAdapterEvent,
+        {
+          type: "chat",
+          data: { sender: "Steve", message, system, text: `Steve 在遊戲裡說:${message}` },
+          important: true,
         },
-      });
+        { type: "game.minecraft.chat" },
+      );
     await chat("妳好");
     expect(hints().length, "no commentary on player chat").toBe(before);
     // Without `game.chat` the director reacts to it as before.

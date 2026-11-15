@@ -19,10 +19,13 @@ import {
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  type AnyEventDefinition,
   ARBITER_IMPULSE_TOPIC,
   type ContextKey,
-  type Event,
+  type EventPayload,
+  Events,
   GameResumeKey,
+  type Impulse,
   type ImpulseAttention,
   impulseReason,
   type JsonValue,
@@ -31,8 +34,9 @@ import {
   PromptContributorsKey,
   type PromptRequest,
   ProposalBoardKey,
+  type PublishedEvent,
+  type PublishMetaArgs,
   type RestoredGame,
-  v2Payload,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RequestQueue, RequestQueueKey } from "../../queue/src/index.js";
@@ -97,11 +101,14 @@ async function secs(n: number): Promise<void> {
 
 type Log<T> = { items: T[]; take(): T[] };
 
-function collect<T>(sub: AsyncIterable<unknown>, pick: (event: Event) => T | null): Log<T> {
+function collect<T>(
+  sub: AsyncIterable<{ type: string; data: unknown }>,
+  pick: (event: PublishedEvent) => T | null,
+): Log<T> {
   const items: T[] = [];
   void (async () => {
-    for await (const env of sub as AsyncIterable<{ event: Event }>) {
-      const v = pick(env.event);
+    for await (const env of sub) {
+      const v = pick({ type: env.type, data: env.data });
       if (v !== null) items.push(v);
     }
   })();
@@ -137,7 +144,7 @@ class Harness {
   readonly goalLog: Log<Record<string, JsonValue>>;
 
   private constructor() {
-    this.exec = new FakeExecutor((event) => this.sup.bus.publish("ext.miyoria.minecraft", event));
+    this.exec = new FakeExecutor(this.sup.bus.publisher("ext.miyoria.minecraft"));
     this.executors = new FakeExecutors(this.exec);
     this.queue = new RequestQueue(undefined, {
       publisher: this.sup.bus.publisher("queue"),
@@ -149,8 +156,7 @@ class Harness {
     this.hintContexts = this.tap((line) => line.context);
     void (async () => {
       for await (const env of this.sup.bus.subscribe(ARBITER_IMPULSE_TOPIC)) {
-        const impulse = v2Payload(env.event, ARBITER_IMPULSE_TOPIC);
-        if (!impulse) continue;
+        const impulse = env.data as Impulse;
         expect(impulse.source).toBe("game");
         expect(impulseReason(impulse)).toBe("game");
         this.emit({
@@ -162,14 +168,17 @@ class Harness {
         });
       }
     })();
-    this.nudgeLog = collect(this.sup.bus.subscribe("mood.nudge"), (e) =>
-      e.type === "custom" ? (e.data.payload as Record<string, JsonValue>) : null,
+    this.nudgeLog = collect(
+      this.sup.bus.subscribe("mood.nudge"),
+      (e) => e.data as Record<string, JsonValue>,
     );
-    this.traceLog = collect(this.sup.bus.subscribe(DECISION_TOPIC), (e) =>
-      e.type === "custom" ? (e.data.payload as Record<string, JsonValue>) : null,
+    this.traceLog = collect(
+      this.sup.bus.subscribe(DECISION_TOPIC),
+      (e) => e.data as Record<string, JsonValue>,
     );
-    this.goalLog = collect(this.sup.bus.subscribe(GOAL_TOPIC), (e) =>
-      e.type === "custom" ? (e.data.payload as Record<string, JsonValue>) : null,
+    this.goalLog = collect(
+      this.sup.bus.subscribe(GOAL_TOPIC),
+      (e) => e.data as Record<string, JsonValue>,
     );
   }
 
@@ -252,8 +261,12 @@ class Harness {
     return this.command("game start", { where: "here" });
   }
 
-  async publish(event: Event): Promise<void> {
-    this.sup.bus.publish("test", event);
+  async publish<D extends AnyEventDefinition>(
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): Promise<void> {
+    this.sup.bus.publish("test", definition, data, ...meta);
     await settle();
   }
 
@@ -263,13 +276,11 @@ class Harness {
     important: boolean,
     extra: Record<string, JsonValue> = {},
   ): Promise<void> {
-    await this.publish({
-      type: "custom",
-      data: {
-        topic: `game.minecraft.${kind}`,
-        payload: { type: kind, data: { text, ...extra }, important },
-      },
-    });
+    await this.publish(
+      Events.GameAdapterEvent,
+      { type: kind, data: { text, ...extra }, important },
+      { type: `game.minecraft.${kind}` },
+    );
   }
 
   acts(): Array<Record<string, JsonValue>> {
@@ -357,9 +368,7 @@ describe("picking a session back up after a restart", () => {
     expect(await resume.resume(left())).toBe("resumed");
     expect(h.status()).toMatchObject({ game: "minecraft", game_name: "Minecraft" });
     expect(h.status()?.context).toEqual(voiceCtx());
-    expect(sessions.tryRecv()?.event).toMatchObject({
-      data: { payload: { state: "started", game: "minecraft" } },
-    });
+    expect(sessions.tryRecv()?.data).toMatchObject({ state: "started", game: "minecraft" });
     await h.stop();
   });
 
@@ -609,7 +618,7 @@ describe("game director", () => {
     await secs(5);
     expect(h.hintContexts.take()).toEqual([]);
     // ...until she joins a voice channel; then she comments there.
-    await h.publish({ type: "voice_joined", data: { context: voiceCtx(), participants: [] } });
+    await h.publish(Events.VoiceJoined, { context: voiceCtx(), participants: [] });
     await secs(20);
     expect(h.hintContexts.take().at(-1)).toEqual(voiceCtx());
     await h.stop();
@@ -619,7 +628,7 @@ describe("game director", () => {
     const llm = new MockProvider("mock").reply(decision("閒晃", null, "看看四周"));
     const h = await Harness.create(llm, { decide_secs: 5 });
     await h.command("game start");
-    await h.publish({ type: "voice_joined", data: { context: voiceCtx(), participants: [] } });
+    await h.publish(Events.VoiceJoined, { context: voiceCtx(), participants: [] });
     await secs(20);
     expect(h.proposed.at(-1)).toMatchObject({ source: "game.director", context: voiceCtx() });
     await h.stop();
@@ -629,7 +638,7 @@ describe("game director", () => {
     const llm = new MockProvider("mock").reply(decision("閒晃", null, "看看四周"));
     const h = await Harness.create(llm, { decide_secs: 5 }, null, { board: false });
     await h.command("game start");
-    await h.publish({ type: "voice_joined", data: { context: voiceCtx(), participants: [] } });
+    await h.publish(Events.VoiceJoined, { context: voiceCtx(), participants: [] });
     await secs(20);
     expect(h.proposed).toEqual([]);
     expect(h.hintContexts.take()).toEqual([]);
@@ -763,12 +772,12 @@ describe("game director", () => {
     await h.command("game stop");
 
     // In a voice channel, `auto` uses it.
-    await h.publish({ type: "voice_joined", data: { context: voiceCtx(), participants: [] } });
+    await h.publish(Events.VoiceJoined, { context: voiceCtx(), participants: [] });
     await h.command("game start");
     expect(h.status()?.context).toEqual(voiceCtx());
     await h.command("game stop");
 
-    await h.publish({ type: "voice_left", data: { context: voiceCtx(), reason: null } });
+    await h.publish(Events.VoiceLeft, { context: voiceCtx(), reason: null });
     const reply = await h.command("game start", { where: "voice" });
     expect(reply).toContain("不在語音頻道中");
     await h.stop();
@@ -1251,7 +1260,7 @@ describe("GameModule", () => {
       personaPrompt: () => "傲嬌的鯨魚女孩",
     };
     const sup = new Supervisor();
-    new FakeExecutors(new FakeExecutor((e) => sup.bus.publish("ext", e))).provide(sup.services);
+    new FakeExecutors(new FakeExecutor(sup.bus.publisher("ext"))).provide(sup.services);
     sup.services.provide(
       "app",
       LlmRouterKey,
@@ -1275,8 +1284,9 @@ describe("session end and gated tools", () => {
   it("a disconnect ends the session with its code, without commentary", async () => {
     const llm = new MockProvider("mock").reply(decision("閒晃", null));
     const h = await Harness.create(llm);
-    const sessions = collect(h.sup.bus.subscribe(SESSION_TOPIC), (e) =>
-      e.type === "custom" ? (e.data.payload as Record<string, JsonValue>) : null,
+    const sessions = collect(
+      h.sup.bus.subscribe(SESSION_TOPIC),
+      (e) => e.data as Record<string, JsonValue>,
     );
     await h.start();
     h.hints();
@@ -1299,7 +1309,7 @@ describe("session end and gated tools", () => {
   it("only games with goals are directed; Threads stays out", async () => {
     const llm = new MockProvider("mock").reply(decision("閒晃", null));
     const h = await Harness.create(llm);
-    const threads = new FakeExecutor((e) => h.sup.bus.publish("ext", e), Date.now, {
+    const threads = new FakeExecutor(h.sup.bus.publisher("ext"), Date.now, {
       owner: "game.threads",
       name: "Threads",
     });
@@ -1315,8 +1325,9 @@ describe("session end and gated tools", () => {
       decision("挖鐵礦", { name: "mine", args: { block: "iron_ore" } }),
     );
     const h = await Harness.create(llm);
-    const sessions = collect(h.sup.bus.subscribe(SESSION_TOPIC), (e) =>
-      e.type === "custom" ? (e.data.payload as Record<string, JsonValue>) : null,
+    const sessions = collect(
+      h.sup.bus.subscribe(SESSION_TOPIC),
+      (e) => e.data as Record<string, JsonValue>,
     );
     await h.start();
     await h.taskFailed("crashed", "擴充套件結束了(exit code: 1)");

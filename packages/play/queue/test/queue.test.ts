@@ -3,10 +3,10 @@ import {
   type AccountRef,
   type Attitude,
   type Clock,
-  type Event,
   type JsonValue,
-  publishInto,
-  publishVia,
+  type PublishedEvent,
+  publishedInto,
+  publishedVia,
   type SocialSignals,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -368,10 +368,10 @@ describe("RequestQueue voting", () => {
 describe("RequestQueue events", () => {
   it("publishes_events", () => {
     const events: Array<[string, JsonValue]> = [];
-    const publisher = (event: Event): void => {
-      if (event.type === "custom") events.push([event.data.topic, event.data.payload]);
+    const publisher = (event: PublishedEvent): void => {
+      events.push([event.type, event.data as JsonValue]);
     };
-    const q = queueWith(cfg(), new TestClock()).withPublisher(publishVia(publisher));
+    const q = queueWith(cfg(), new TestClock()).withPublisher(publishedVia(publisher));
     q.submit(req("a", "唱歌"));
     q.pause();
     q.pause(); // no change, no event
@@ -410,16 +410,15 @@ describe("RequestQueue events", () => {
   });
 
   it("item_json_shape_matches_the_overlay_contract", () => {
-    const events: Event[] = [];
-    const q = queueWith(cfg(), new TestClock()).withPublisher(publishInto(events));
+    const events: PublishedEvent[] = [];
+    const q = queueWith(cfg(), new TestClock()).withPublisher(publishedInto(events));
     q.submit({
       ...req("a", "x"),
       context: { platform: "discord", scope: "1", channel: "2", kind: "channel" },
     });
     const first = events[0];
-    expect(first?.type).toBe("custom");
-    if (first?.type !== "custom") return;
-    const payload = first.data.payload as { items: Array<Record<string, JsonValue>> };
+    expect(first?.type).toBe("queue.changed");
+    const payload = first?.data as { items: Array<Record<string, JsonValue>> };
     expect(Object.keys(payload.items[0] ?? {}).sort()).toEqual(
       [
         "context",

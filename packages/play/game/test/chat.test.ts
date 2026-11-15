@@ -8,11 +8,13 @@ import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/to
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  type AnyEventDefinition,
   type ContextKey,
-  customEvent,
-  type Event,
+  type EventPayload,
+  Events,
   type IncomingMessage,
   type InputCheck,
+  is,
   type JsonValue,
   ModerationKey,
   type ModerationService,
@@ -25,6 +27,7 @@ import {
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
+  type PublishMetaArgs,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -70,14 +73,13 @@ class Chat {
         if (definition.type === "gate.decision") this.gate.push(data as unknown as GateDecision);
       },
     });
-    this.exec = new FakeExecutor((e) => this.sup.bus.publish("ext.miyoria.minecraft", e));
+    this.exec = new FakeExecutor(this.sup.bus.publisher("ext.miyoria.minecraft"));
     const sub = this.sup.bus.subscribe("*");
     void (async () => {
       for await (const env of sub) {
-        const e = env.event;
-        if (e.type === "platform_message_created") this.messages.push(e.data);
-        if (e.type === "platform_ready") this.ready.push(e.data.self_account);
-        if (e.type === "custom" && e.data.topic === LINK_TOPIC) this.links.push(e.data.payload);
+        if (is(Events.PlatformMessageCreated, env)) this.messages.push(env.data);
+        if (is(Events.PlatformReady, env)) this.ready.push(env.data.self_account);
+        if (env.type === LINK_TOPIC) this.links.push(env.data as JsonValue);
       }
     })();
   }
@@ -129,31 +131,35 @@ class Chat {
       .map((t) => ({ message: (t.args.message as JsonValue) ?? null }));
   }
 
-  async publish(event: Event): Promise<void> {
-    this.sup.bus.publish("test", event);
+  async publish<D extends AnyEventDefinition>(
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): Promise<void> {
+    this.sup.bus.publish("test", definition, data, ...meta);
     await settle();
   }
 
   async chat(sender: string | null, message: string, extra: Record<string, JsonValue> = {}) {
     await this.publish(
-      customEvent("game.minecraft.chat", {
+      Events.GameAdapterEvent,
+      {
         type: "chat",
         data: { sender, message, system: false, self: false, ...extra },
         important: true,
-      }),
+      },
+      { type: "game.minecraft.chat" },
     );
   }
 
   async live(): Promise<void> {
-    await this.publish(
-      customEvent("voice.golive", {
-        platform: "discord",
-        guild: "g1",
-        state: "live",
-        error: null,
-        reason: null,
-      }),
-    );
+    await this.publish(Events.VoiceGoLive, {
+      platform: "discord",
+      guild: "g1",
+      state: "live",
+      error: null,
+      reason: null,
+    });
   }
 
   async stop(): Promise<void> {
@@ -232,10 +238,12 @@ describe("game chat module", () => {
     await c.chat("Alex", "deepseekchan 妳在幹嘛");
     await c.chat(null, "Steve joined the game");
     await c.publish(
-      customEvent("game.minecraft.chat", {
+      Events.GameAdapterEvent,
+      {
         type: "chat",
         data: { sender: "Steve", message: "系統訊息", system: true },
-      }),
+      },
+      { type: "game.minecraft.chat" },
     );
     await c.chat("Steve", "另一個伺服器", { server: "smp.example" });
 
@@ -318,7 +326,7 @@ describe("game chat module", () => {
     const c = await Chat.create(null, { mouth: false });
     const sink = c.sinks.get("minecraft");
     await c.live();
-    await c.publish({ type: "voice_joined", data: { context: VOICE, participants: [] } });
+    await c.publish(Events.VoiceJoined, { context: VOICE, participants: [] });
     await expect(sink?.send(MC, { text: "哈囉大家", reply_to: null })).rejects.toThrow(
       /agent module is not running/,
     );
@@ -332,7 +340,7 @@ describe("game chat module", () => {
   it("also speaks while live and in voice, and follows her chosen route", async () => {
     const c = await Chat.create();
     const sink = c.sinks.get("minecraft");
-    await c.publish({ type: "voice_joined", data: { context: VOICE, participants: [] } });
+    await c.publish(Events.VoiceJoined, { context: VOICE, participants: [] });
     await sink?.send(MC, { text: "哈囉", reply_to: null });
     expect(c.spoken).toEqual([]);
 
@@ -364,7 +372,7 @@ describe("game chat module", () => {
     await expect(tool?.call(ctx(discord), { mode: "chat" })).rejects.toThrow(/game chat/);
 
     // Leaving voice falls back to typing.
-    await c.publish({ type: "voice_left", data: { context: VOICE, reason: null } });
+    await c.publish(Events.VoiceLeft, { context: VOICE, reason: null });
     await sink?.send(MC, { text: "我還在", reply_to: null });
     expect(c.typed.at(-1)?.message).toBe("我還在");
     await c.stop();

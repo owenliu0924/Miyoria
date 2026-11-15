@@ -5,12 +5,14 @@
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
+  type AnyEventDefinition,
   ARBITER_IMPULSE_TOPIC,
   AuthorizerKey,
   BaseAuthorizer,
-  type Event,
   type EventLog,
   EventLogKey,
+  type EventPayload,
+  Events,
   type InputVerdict,
   type JsonValue,
   ModerationKey,
@@ -23,8 +25,9 @@ import {
   PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
+  type PublishedEvent,
+  type PublishMetaArgs,
   toTimestamp,
-  v2Payload,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PartyModule, PartyTableKey } from "../src/module.js";
@@ -78,7 +81,7 @@ class Harness {
   readonly log = new FakeLog();
   readonly prompts = new PromptContributors();
   readonly registry: ActuatorRegistry;
-  readonly events: Event[] = [];
+  readonly events: PublishedEvent[] = [];
 
   constructor() {
     const s = this.sup.services;
@@ -90,7 +93,7 @@ class Harness {
     s.provide("moderation", ModerationKey, moderation());
     const sub = this.sup.bus.subscribe("*");
     void (async () => {
-      for await (const env of sub) this.events.push(env.event);
+      for await (const env of sub) this.events.push({ type: env.type, data: env.data });
     })();
   }
 
@@ -98,45 +101,43 @@ class Harness {
     const h = new Harness();
     await h.sup.register(new PartyModule({ random: () => 0 }), config, true);
     await h.sup.startAll();
-    await h.publish({ type: "voice_joined", data: { context: VOICE, participants: ROOM } });
+    await h.publish(Events.VoiceJoined, { context: VOICE, participants: ROOM });
     return h;
   }
 
-  async publish(event: Event): Promise<void> {
-    this.sup.bus.publish("test", event);
+  async publish<D extends AnyEventDefinition>(
+    definition: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): Promise<void> {
+    this.sup.bus.publish("test", definition, data, ...meta);
     await settle();
   }
 
   async say(account: typeof AMY, name: string, text: string): Promise<void> {
-    await this.publish({
-      type: "voice_utterance",
-      data: {
-        id: `u-${text}`,
-        context: VOICE,
-        speaker: { account, display_name: name, is_bot: false },
-        text,
-        language: "zh",
-        emotion: null,
-        audio_events: [],
-        started_at: "2026-11-10T00:00:00Z",
-        ended_at: "2026-11-10T00:00:01Z",
-        asr_ms: 100,
-      },
+    await this.publish(Events.VoiceUtteranceEvent, {
+      id: `u-${text}`,
+      context: VOICE,
+      speaker: { account, display_name: name, is_bot: false },
+      text,
+      language: "zh",
+      emotion: null,
+      audio_events: [],
+      started_at: "2026-11-10T00:00:00Z",
+      ended_at: "2026-11-10T00:00:01Z",
+      asr_ms: 100,
     });
   }
 
   async type(account: typeof AMY, name: string, text: string): Promise<void> {
-    await this.publish({
-      type: "platform_message_created",
-      data: {
-        id: { context: VOICE_CHAT, id: `m-${text}` },
-        author: { account, display_name: name, is_bot: false },
-        text,
-        mentions_self: false,
-        reply_to_self: false,
-        attachments: [],
-        ts: "2026-11-10T00:00:00Z",
-      },
+    await this.publish(Events.PlatformMessageCreated, {
+      id: { context: VOICE_CHAT, id: `m-${text}` },
+      author: { account, display_name: name, is_bot: false },
+      text,
+      mentions_self: false,
+      reply_to_self: false,
+      attachments: [],
+      ts: "2026-11-10T00:00:00Z",
     });
   }
 
@@ -237,7 +238,7 @@ describe("party module", () => {
     expect(h.sup.services.require(PartyTableKey).session(VOICE)).toBeNull();
     expect(h.observations().at(-1)?.summary).toContain("最後分數:Amy 1、Bob 1");
     // Nothing of hers went out on the bus: no line, no impulse.
-    expect(h.events.some((e) => v2Payload(e, ARBITER_IMPULSE_TOPIC) !== null)).toBe(false);
+    expect(h.events.some((e) => e.type === ARBITER_IMPULSE_TOPIC)).toBe(false);
   });
 
   it("shows the game in the voice channel and its chat, not in other channels", async () => {
@@ -272,7 +273,7 @@ describe("party module", () => {
 
   it("ignores what the input defence holds back, and her own account", async () => {
     h = await Harness.create();
-    await h.publish({ type: "platform_ready", data: { platform: "discord", self_account: HER } });
+    await h.publish(Events.PlatformReady, { platform: "discord", self_account: HER });
     await h.invoke("party.start", { game: "quiz", questions: QUESTIONS });
     await h.invoke("party.host", { action: "next" });
     const before = h.observations().length;
@@ -286,32 +287,26 @@ describe("party module", () => {
   it("ends the game when she leaves voice or goes off to sing", async () => {
     h = await Harness.create();
     await h.invoke("party.start", { game: "chain" });
-    await h.publish({
-      type: "custom",
-      data: {
-        topic: "activity.changed",
-        payload: {
-          version: 1,
-          at: toTimestamp(Date.now()),
-          presence: { type: "none" },
-          broadcast: { type: "off" },
-          activity: {
-            type: "singing",
-            target: "song",
-            phase: "starting",
-            task: null,
-            failure: null,
-            since: toTimestamp(Date.now()),
-          },
-          override: null,
-          scene: null,
-        } as JsonValue,
+    await h.publish(Events.ActivityChanged, {
+      version: 1,
+      at: toTimestamp(Date.now()),
+      presence: { type: "none" },
+      broadcast: { type: "off" },
+      activity: {
+        type: "singing",
+        target: "song",
+        phase: "starting",
+        task: null,
+        failure: null,
+        since: toTimestamp(Date.now()),
       },
-    });
+      override: null,
+      scene: null,
+    } as never);
     const table = h.sup.services.require(PartyTableKey);
     expect(table.session(VOICE)).toBeNull();
     await h.invoke("party.start", { game: "chain" });
-    await h.publish({ type: "voice_left", data: { context: VOICE, reason: null } });
+    await h.publish(Events.VoiceLeft, { context: VOICE, reason: null });
     expect(table.session(VOICE)).toBeNull();
     expect(await h.section()).toBe("");
   });

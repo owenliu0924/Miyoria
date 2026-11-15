@@ -9,6 +9,8 @@ import {
   BaseAuthorizer,
   type ContextKey,
   Principals,
+  type PublishedEvent,
+  publishedInto,
   type Subject,
   type TaskSpec,
   TaskSteerKey,
@@ -212,8 +214,8 @@ describe("game capabilities", () => {
 
   it("game.act starts one task; waiting answers with its end and its code", async () => {
     const s = setup([]);
-    const published: unknown[] = [];
-    const exec = new FakeExecutor((e) => published.push(e));
+    const published: PublishedEvent[] = [];
+    const exec = new FakeExecutor(publishedInto(published));
     new FakeExecutors(exec).provide(s.services);
     const act = (args: Record<string, unknown>, signal?: AbortSignal) =>
       s.registry.invoke(

@@ -4,10 +4,10 @@
 
 import type { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
-  customEvent,
-  type Event,
   type JsonObject,
   type JsonValue,
+  type Publish,
+  publishTaskEvent,
   type RegisteredTaskExecutor,
   type StructuredState,
   type TaskEvent,
@@ -19,7 +19,6 @@ import {
   type TaskId,
   type TaskSpec,
   type TaskSteer,
-  taskTopic,
   toTimestamp,
 } from "@miyoria/types";
 
@@ -65,7 +64,7 @@ export class FakeExecutor implements RegisteredTaskExecutor {
   readonly #streams = new Set<(e: TaskEvent) => void>();
 
   constructor(
-    readonly publish: (event: Event) => void,
+    readonly publish: Publish,
     readonly now: () => number = Date.now,
     info: Partial<TaskExecutorInfo> = {},
   ) {
@@ -94,9 +93,7 @@ export class FakeExecutor implements RegisteredTaskExecutor {
   }
 
   emit(event: TaskEvent): void {
-    this.publish(
-      customEvent(taskTopic(this.info.owner, event.type), event as unknown as JsonValue),
-    );
+    publishTaskEvent(this.publish, this.info.owner, event);
     for (const push of this.#streams) push(event);
   }
 

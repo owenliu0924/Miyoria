@@ -14,7 +14,7 @@ import {
   parseModelRef,
 } from "@miyoria/llm/llm";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import type { ContextKey, Event, JsonObject, JsonValue } from "@miyoria/types";
+import { type ContextKey, Events, type JsonObject, type JsonValue } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DECISION_TOPIC,
@@ -70,24 +70,18 @@ class H {
   readonly payloads: { topic: string; payload: JsonValue }[] = [];
 
   private constructor(readonly llm: Script) {
-    this.exec = new FakeExecutor(
-      (e) => this.sup.bus.publish("ext.miyoria.minecraft", e),
-      Date.now,
-      {
-        goals: [
-          ...MINECRAFT_GOALS,
-          { name: "hunt", description: "打獵", parameters: null, budget_s: 120 },
-          { name: "shelter", description: "躲起來過夜", parameters: null, budget_s: 540 },
-          { name: "recover", description: "回去撿東西", parameters: null, budget_s: 120 },
-        ],
-      },
-    );
+    this.exec = new FakeExecutor(this.sup.bus.publisher("ext.miyoria.minecraft"), Date.now, {
+      goals: [
+        ...MINECRAFT_GOALS,
+        { name: "hunt", description: "打獵", parameters: null, budget_s: 120 },
+        { name: "shelter", description: "躲起來過夜", parameters: null, budget_s: 540 },
+        { name: "recover", description: "回去撿東西", parameters: null, budget_s: 120 },
+      ],
+    });
     const sub = this.sup.bus.subscribe("*");
     void (async () => {
-      for await (const env of sub as AsyncIterable<{ event: Event }>) {
-        const e = env.event;
-        if (e.type === "custom")
-          this.payloads.push({ topic: e.data.topic, payload: e.data.payload });
+      for await (const env of sub) {
+        this.payloads.push({ topic: env.type, payload: env.data as JsonValue });
       }
     })();
   }
@@ -118,13 +112,12 @@ class H {
     important = false,
     extra: JsonObject = {},
   ): Promise<void> {
-    this.sup.bus.publish("test", {
-      type: "custom",
-      data: {
-        topic: `game.minecraft.${kind}`,
-        payload: { type: kind, data: { text, ...extra }, important },
-      },
-    });
+    this.sup.bus.publish(
+      "test",
+      Events.GameAdapterEvent,
+      { type: kind, data: { text, ...extra }, important },
+      { type: `game.minecraft.${kind}` },
+    );
     await vi.advanceTimersByTimeAsync(5);
   }
 
