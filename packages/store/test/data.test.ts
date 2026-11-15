@@ -273,7 +273,8 @@ describe("data categories", () => {
       queue: 1,
       voice_consent: 1,
       privacy: 1,
-      persona_overrides: 1,
+      // One edit from each profile: two versions of the database's one `style` section.
+      persona_overrides: 2,
       // `zzz:unknown` of the profile and `future:thing` of `_global`.
       other_settings: 2,
     });
@@ -310,10 +311,11 @@ describe("data categories", () => {
     }
 
     // The other profile keeps its own data (people are shared and gone, and so are the
-    // conversation log and the settings: one database belongs to one character).
+    // conversation log, the settings and the persona edits: one database belongs to one
+    // character).
     expect(await store.messages.recent(OTHER, ctx, 9)).toEqual([]);
     expect((await store.relationships.get(OTHER, owen))?.call_name).toBe("歐文");
-    expect((await store.personaOverrides.current(OTHER)).size).toBe(1);
+    expect((await store.personaOverrides.current(OTHER)).size).toBe(0);
   });
 
   it("is all or nothing", async () => {

@@ -7,7 +7,16 @@
 
 import type { PluginSchema } from "../migrate.js";
 
-const INIT = `CREATE TABLE \`config_revisions\` (
+const INIT = `CREATE TABLE \`config_persona_overrides\` (
+	\`section_key\` text NOT NULL,
+	\`version\` integer NOT NULL,
+	\`body\` text NOT NULL,
+	\`edited_by\` text NOT NULL,
+	\`edited_at\` integer NOT NULL,
+	CONSTRAINT \`config_persona_overrides_pk\` PRIMARY KEY(\`section_key\`, \`version\`)
+) STRICT;
+
+CREATE TABLE \`config_revisions\` (
 	\`version\` integer PRIMARY KEY,
 	\`doc\` text NOT NULL,
 	\`created_at\` integer NOT NULL,

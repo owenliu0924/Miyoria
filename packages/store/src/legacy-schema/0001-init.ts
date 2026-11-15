@@ -5,7 +5,8 @@
 // owns `persons`, `accounts` and `link_codes` now, and it migrates before `legacy`. Step 5 took
 // out `message_log` (and its index from migration 9): chat lines are events (`events/chat.ts`).
 // Step 8 took out `module_state`: module on/off is the `enabled` flag in the current config
-// revision (the `config` schema).
+// revision (the `config` schema). Step 9a took out `persona_overrides`: runtime persona edits are
+// the `config` schema's `config_persona_overrides`.
 
 export const m0001 = `-- Phase-1 schema (SQLite port of migrations/postgres/0001_init.sql). Ids are ULIDs stored as
 -- text. Data that belongs to one character carries \`profile_id\`. Timestamps are INTEGER
@@ -13,14 +14,5 @@ export const m0001 = `-- Phase-1 schema (SQLite port of migrations/postgres/0001
 
 -- Module on/off is the enabled flag in the current config revision (config migration 1).
 
--- Versioned runtime edits of persona sections.
-CREATE TABLE persona_overrides (
-    profile_id  TEXT    NOT NULL,
-    section_key TEXT    NOT NULL,
-    version     INTEGER NOT NULL,
-    body        TEXT    NOT NULL,
-    edited_by   TEXT    NOT NULL,
-    edited_at   INTEGER NOT NULL,
-    PRIMARY KEY (profile_id, section_key, version)
-);
+-- Runtime persona edits are config_persona_overrides (config migration 1).
 `;

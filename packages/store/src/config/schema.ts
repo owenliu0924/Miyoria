@@ -5,6 +5,8 @@
 // - `place_settings`: per Space and per Room overrides, one JSON value per (plugin, key), resolved
 //   room, then space, then the cluster config, then the schema default.
 // - `plugin_state`: each plugin's small persistent state, one JSON value per (plugin, key).
+// - `config_persona_overrides`: the edits of her persona sections made at runtime (the panel),
+//   every version kept; the latest version of a section is the one in force.
 //
 // Like identity's, these tables carry no prefix: `config` is a core plugin that always runs, right
 // after identity (§3.1), and `plugin_state` holds every plugin's rows. `migrations.ts` holds the
@@ -64,6 +66,22 @@ export const pluginState = sqliteTable(
     updated_at: micros().notNull(),
   },
   (t) => [primaryKey({ name: "plugin_state_pk", columns: [t.plugin, t.key] })],
+);
+
+/** One version of one persona section, as edited at runtime. */
+export const configPersonaOverrides = sqliteTable(
+  "config_persona_overrides",
+  {
+    /** The persona section, e.g. `identity` or `style`. */
+    section_key: text().notNull(),
+    /** 1, 2, 3, ... per section. */
+    version: integer().notNull(),
+    body: text().notNull(),
+    /** Who made the edit, e.g. `panel:owen` or `discord:1234`. */
+    edited_by: text().notNull(),
+    edited_at: micros().notNull(),
+  },
+  (t) => [primaryKey({ name: "config_persona_overrides_pk", columns: [t.section_key, t.version] })],
 );
 
 export type ConfigRevisionRow = typeof configRevisions.$inferSelect;

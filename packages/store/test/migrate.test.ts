@@ -112,6 +112,8 @@ describe("bookkeeping", () => {
         "role_mappings",
         "node_overrides",
         "directives",
+        // Runtime persona edits are config's `config_persona_overrides`.
+        "persona_overrides",
       ]) {
         expect(tables).not.toContain(gone);
       }

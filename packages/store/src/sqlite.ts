@@ -53,6 +53,7 @@ import {
   importConfigToml,
 } from "./config/import.js";
 import { configSchema } from "./config/migrations.js";
+import { PersonaOverrides } from "./config/persona.js";
 import { PlaceSettings } from "./config/places.js";
 import { ConfigModuleState, ConfigRevisions } from "./config/revisions.js";
 import { PluginState, SettingsState } from "./config/state.js";
@@ -117,7 +118,6 @@ import type {
   MemoryRecord,
   MemoryScope,
   MemorySource,
-  PersonaOverride,
   PrunePolicy,
   Relationship,
   RelationshipDelta,
@@ -1152,51 +1152,6 @@ class SqliteEconomyDocs implements EconomyDocStore {
   }
 }
 
-// ---- persona overrides --------------------------------------------------------------------
-
-class SqlitePersonaOverrides implements PersonaOverrideStore {
-  constructor(private readonly db: Db) {}
-
-  async set(profile: ProfileId, key: string, body: string, editedBy: string): Promise<number> {
-    // One statement: the next version is computed under SQLite's write lock.
-    const row = this.db.get(
-      "INSERT INTO persona_overrides (profile_id, section_key, version, body, edited_by, " +
-        "edited_at) SELECT $profile, $key, COALESCE(MAX(version), 0) + 1, $body, $by, $at " +
-        "FROM persona_overrides WHERE profile_id = $profile AND section_key = $key " +
-        "RETURNING version",
-      { profile, key, body, by: editedBy, at: this.db.nowMicros() },
-    );
-    if (!row) throw new StoreError("cannot store persona override");
-    return num(row, "version");
-  }
-
-  async current(profile: ProfileId): Promise<Map<string, string>> {
-    const rows = this.db.all(
-      "SELECT section_key, body FROM persona_overrides o WHERE profile_id = $profile AND " +
-        "version = (SELECT MAX(version) FROM persona_overrides WHERE profile_id = " +
-        "o.profile_id AND section_key = o.section_key) ORDER BY section_key",
-      { profile },
-    );
-    return new Map(rows.map((r) => [str(r, "section_key"), str(r, "body")]));
-  }
-
-  async history(profile: ProfileId, key: string): Promise<PersonaOverride[]> {
-    const rows = this.db.all(
-      "SELECT version, body, edited_by, edited_at FROM persona_overrides " +
-        "WHERE profile_id = $profile AND section_key = $key ORDER BY version ASC",
-      { profile, key },
-    );
-    return rows.map((r) => ({
-      profile,
-      key,
-      version: num(r, "version"),
-      body: str(r, "body"),
-      edited_by: str(r, "edited_by"),
-      edited_at: ts(r, "edited_at"),
-    }));
-  }
-}
-
 // ---- whole-profile export / wipe ----------------------------------------------------------
 
 class SqliteProfileData implements ProfileDataStore {
@@ -1890,7 +1845,7 @@ export class SqliteStore implements Store {
       state: new PluginState(db),
     };
     this.moduleState = new ConfigModuleState(db, revisions);
-    this.personaOverrides = new SqlitePersonaOverrides(db);
+    this.personaOverrides = new PersonaOverrides(db);
     this.people = new IdentityPeople(this.persons);
     this.#settings = new RoutedSettings(new PrefsSettings(new SettingsState(db), this.persons));
     this.settings = this.#settings;

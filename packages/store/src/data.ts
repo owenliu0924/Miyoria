@@ -771,11 +771,13 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
     ],
     { shared: true },
   ),
+  // Runtime persona edits (the `config` plugin's `config_persona_overrides`). One database is one
+  // character, so every edit is this profile's.
   category("persona", [
     table(
       "persona_overrides",
-      "persona_overrides",
-      "profile",
+      "config_persona_overrides",
+      "node",
       "edited_at",
       "section_key, version",
       {

@@ -85,6 +85,7 @@ export {
   importConfigToml,
 } from "./config/import.js";
 export { configSchema } from "./config/migrations.js";
+export { PersonaOverrides } from "./config/persona.js";
 export {
   type PlaceSetting,
   type PlaceSettingFilter,

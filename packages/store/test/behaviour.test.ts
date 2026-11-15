@@ -309,30 +309,40 @@ function behaviour(open: () => Promise<Store>): void {
     expect(keys).toEqual([...keys].sort());
   });
 
+  // Persona edits are one set per database, whatever profile a caller names (one database is one
+  // character), and the file runs share one database: these cases use sections of their own.
   it("persona_overrides", async () => {
     const overrides = store.personaOverrides;
     const profile = unique("profile");
     const other = unique("profile");
-    expect((await overrides.current(profile)).size).toBe(0);
-    expect(await overrides.history(profile, "style")).toEqual([]);
+    const style = unique("style");
+    const identity = unique("identity");
+    const mine = async (p: string) =>
+      [...(await overrides.current(p))].filter(([k]) => k === style || k === identity);
+    expect(await mine(profile)).toEqual([]);
+    expect(await overrides.history(profile, style)).toEqual([]);
 
-    expect(await overrides.set(profile, "style", "v1", "panel:owen")).toBe(1);
-    expect(await overrides.set(profile, "style", "v2", "discord:1")).toBe(2);
-    expect(await overrides.set(profile, "identity", "id", "panel:owen")).toBe(1);
-    expect(await overrides.set(other, "style", "else", "panel:owen")).toBe(1);
+    expect(await overrides.set(profile, style, "v1", "panel:owen")).toBe(1);
+    expect(await overrides.set(profile, style, "v2", "discord:1")).toBe(2);
+    expect(await overrides.set(profile, identity, "id", "panel:owen")).toBe(1);
 
-    const current = await overrides.current(profile);
-    expect([...current]).toEqual([
-      ["identity", "id"],
-      ["style", "v2"],
+    expect(await mine(profile)).toEqual([
+      [identity, "id"],
+      [style, "v2"],
+    ]);
+    // Another profile edits the same sections.
+    expect(await overrides.set(other, style, "v3", "panel:owen")).toBe(3);
+    expect(await mine(profile)).toEqual([
+      [identity, "id"],
+      [style, "v3"],
     ]);
 
-    const history = await overrides.history(profile, "style");
+    const history = (await overrides.history(profile, style)).slice(0, 2);
     expect(history.map((o) => [o.version, o.body, o.edited_by])).toEqual([
       [1, "v1", "panel:owen"],
       [2, "v2", "discord:1"],
     ]);
-    expect(history.every((o) => o.profile === profile && o.key === "style")).toBe(true);
+    expect(history.every((o) => o.profile === profile && o.key === style)).toBe(true);
     const [first, second] = history;
     expect(Date.parse(first?.edited_at ?? "")).toBeLessThanOrEqual(
       Date.parse(second?.edited_at ?? ""),
@@ -341,9 +351,10 @@ function behaviour(open: () => Promise<Store>): void {
 
   it("persona_overrides_concurrent", async () => {
     const profile = unique("profile");
+    const style = unique("style");
     const versions = await Promise.all(
       Array.from({ length: 8 }, (_, i) =>
-        store.personaOverrides.set(profile, "style", `edit ${i}`, "test"),
+        store.personaOverrides.set(profile, style, `edit ${i}`, "test"),
       ),
     );
     expect(versions.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -2117,7 +2128,8 @@ function behaviour(open: () => Promise<Store>): void {
         ?.count,
     ).toBeGreaterThanOrEqual(2);
     expect(count("channels")).toBe(2);
-    expect(count("persona")).toBe(1);
+    // The whole database's: other cases edit persona sections on the file.
+    expect(count("persona")).toBeGreaterThanOrEqual(1);
     expect(count("proposed_tools")).toBe(1);
     expect(count("extensions")).toBe(1);
     const messages = inventory.categories.find((c) => c.id === "messages");
@@ -2189,7 +2201,7 @@ function behaviour(open: () => Promise<Store>): void {
       turn_outcomes: expect.any(Number),
       channel_modes: 1,
       channel_activeness: 1,
-      persona_overrides: 1,
+      persona_overrides: expect.any(Number),
       proposed_tools: 1,
       extension_storage: 1,
     });
