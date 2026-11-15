@@ -9,7 +9,14 @@ import {
   type HostServiceStatus,
 } from "@miyoria/contracts/host";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Daemon, HostRpcError, pidAlive } from "../src/index.js";
+import {
+  type Daemon,
+  type HostApi,
+  HostRpcError,
+  type LinkHandle,
+  pidAlive,
+} from "../src/index.js";
+import type { CoreLinkOptions } from "../src/link/index.js";
 import { cleanup, daemonFor, fake, trackPidFile, until, workspace, writeIn } from "./fakes.js";
 
 afterEach(cleanup);
@@ -410,5 +417,84 @@ describe("errors", () => {
     await expect(daemon.call("service.start", {}, OP)).rejects.toMatchObject({ code: -32602 });
     await expect(daemon.call("gpu.acquire", {}, OP)).rejects.toMatchObject({ code: -32601 });
     await expect(daemon.call("nope", {}, OP)).rejects.toMatchObject({ code: -32601 });
+  });
+});
+
+describe("control link", () => {
+  function fakeLinks() {
+    const made: Array<{
+      options: CoreLinkOptions;
+      api: HostApi;
+      started: number;
+      stopped: number;
+    }> = [];
+    const factory = (api: HostApi, options: CoreLinkOptions): LinkHandle => {
+      const record = { options, api, started: 0, stopped: 0 };
+      made.push(record);
+      return {
+        get state() {
+          return record.stopped > 0 ? "stopped" : record.started > 0 ? "connecting" : "stopped";
+        },
+        start: () => {
+          record.started += 1;
+        },
+        stop: async () => {
+          record.stopped += 1;
+        },
+      };
+    };
+    return { made, factory };
+  }
+
+  it("dials Core only with [cluster] url and a host key, and hangs up on shutdown", T, async () => {
+    const ws = workspace(
+      [fake("a", "health.cjs")],
+      '[cluster]\nurl = "ws://127.0.0.1:1/cluster-link"\n',
+    );
+    const none = fakeLinks();
+    const without = daemonFor(ws, { linkFactory: none.factory });
+    await without.start();
+    expect(none.made).toEqual([]);
+    expect(((await without.call("host.info", {}, OP)) as { link?: string }).link).toBe("none");
+    await without.stop();
+
+    writeIn(ws, "data/host/host.key", JSON.stringify({ id: "h1", key: "k1" }));
+    const links = fakeLinks();
+    const daemon = daemonFor(ws, { linkFactory: links.factory });
+    await daemon.start();
+    expect(links.made).toHaveLength(1);
+    expect(links.made[0]?.options).toMatchObject({
+      url: "ws://127.0.0.1:1/cluster-link",
+      hostId: "h1",
+      key: "k1",
+      name: "test-host",
+      version: "test",
+    });
+    expect(links.made[0]?.api).toBe(daemon);
+    expect(links.made[0]?.started).toBe(1);
+    expect(daemon.report({ withTokens: false }).link).toBe("connecting");
+    await daemon.stop();
+    expect(links.made[0]?.stopped).toBe(1);
+  });
+
+  it("does not dial without [cluster], even with a key", T, async () => {
+    const ws = workspace([fake("a", "health.cjs")]);
+    writeIn(ws, "data/host/host.key", JSON.stringify({ id: "h1", key: "k1" }));
+    const links = fakeLinks();
+    const daemon = daemonFor(ws, { linkFactory: links.factory });
+    await daemon.start();
+    expect(links.made).toEqual([]);
+    expect(daemon.linkState).toBe("none");
+  });
+
+  it("accepts and ignores follow in service.logs (the link follows itself)", T, async () => {
+    const ws = workspace([fake("a", "health.cjs")]);
+    const daemon = daemonFor(ws);
+    await daemon.start();
+    expect(await daemon.call("service.logs", { service: "a", lines: 5, follow: true }, OP)).toEqual(
+      {
+        lines: [],
+      },
+    );
   });
 });

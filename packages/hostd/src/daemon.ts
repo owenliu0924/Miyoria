@@ -4,9 +4,9 @@
 // `miyoria up --foreground` all run this class; tests run it in-process.
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import type { Server } from "node:http";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import {
   HOST_ERROR_CODE,
@@ -14,6 +14,7 @@ import {
   HOST_PROTOCOL_VERSION,
   type HostGuardState,
   type HostInfo,
+  type HostLinkState,
   type HostReport,
   type HostServiceControlResult,
   HostServiceControlSchema,
@@ -26,7 +27,7 @@ import {
 } from "@miyoria/contracts/host";
 import { type Logger, pino } from "pino";
 import type { RotatingFileStream } from "rotating-file-stream";
-import type { ZodType } from "zod";
+import { type ZodType, z } from "zod";
 import {
   type Caller,
   type ClusterClient,
@@ -39,6 +40,7 @@ import { HostdClient } from "./client.js";
 import { GpuCache, type GpuReader, nvidiaSmiReader } from "./gpu.js";
 import { coreStatusGuard, guardedMessage, guardUnknownMessage } from "./guard.js";
 import { type LoadedHostConfig, loadHostConfig } from "./host-config.js";
+import { CoreLink, type CoreLinkOptions, type CoreLinkState } from "./link/index.js";
 import { rotatingLog, ServiceLog } from "./logs.js";
 import { localUrl, offloadUrls, planServices, type ResolveContext } from "./resolve.js";
 import {
@@ -77,6 +79,29 @@ export interface DaemonOptions {
    * stops the daemon (`stop()`); `miyoria hostd` also exits the process.
    */
   onShutdown?: () => void | Promise<void>;
+  /** Makes the control link (tests). Default a `CoreLink`. */
+  linkFactory?: (api: HostApi, options: CoreLinkOptions) => LinkHandle;
+}
+
+/** What the daemon needs of its control link; `CoreLink` is one. */
+export interface LinkHandle {
+  readonly state: CoreLinkState;
+  start(): void;
+  stop(): Promise<void>;
+}
+
+/** The file Core's join writes into the state folder (H5). */
+export const HOST_KEY_FILE = "host.key";
+
+/** `<state>/host.key`: the id Core gave this host and its key. */
+export const HostKeySchema = z.object({ id: z.string().min(1), key: z.string().min(1) });
+export type HostKey = z.output<typeof HostKeySchema>;
+
+/** The host key of a state folder; `null` when there is none. Throws when it is unreadable. */
+export function readHostKey(stateDir: string): HostKey | null {
+  const file = join(stateDir, HOST_KEY_FILE);
+  if (!existsSync(file)) return null;
+  return HostKeySchema.parse(JSON.parse(readFileSync(file, "utf8")));
 }
 
 /** Another daemon of the same workspace answers. */
@@ -153,6 +178,7 @@ export class Daemon implements HostApi {
   #guard: GuardSource | null = null;
   #defaultGuard: GuardSource;
   #cluster: ClusterClient | null = null;
+  #link: LinkHandle | null = null;
   #stopping: Promise<void> | null = null;
 
   constructor(options: DaemonOptions) {
@@ -288,6 +314,7 @@ export class Daemon implements HostApi {
     });
 
     for (const service of this.#services.values()) service.watchExternal();
+    this.#startLink(host);
     void this.#gpu.read();
     this.#log.info(
       { port: this.#port, workspace: host.workspace, services: [...this.#services.keys()] },
@@ -312,6 +339,15 @@ export class Daemon implements HostApi {
   async #stop(): Promise<void> {
     await this.#stopServices();
     for (const service of this.#services.values()) service.close();
+    const link = this.#link;
+    this.#link = null;
+    if (link !== null) {
+      try {
+        await link.stop();
+      } catch (error) {
+        this.#log.warn({ err: error }, "control link did not stop cleanly");
+      }
+    }
     const server = this.#server;
     this.#server = null;
     if (server !== null) {
@@ -348,7 +384,45 @@ export class Daemon implements HostApi {
     return stopped;
   }
 
+  /**
+   * Dials Core when `host.toml` has `[cluster] url` and `<state>/host.key` exists. Without either
+   * the daemon runs on its own; that is not an error.
+   */
+  #startLink(host: LoadedHostConfig): void {
+    const url = host.config.cluster?.url;
+    if (url === undefined) return;
+    let key: HostKey | null;
+    try {
+      key = readHostKey(host.state.root);
+    } catch (error) {
+      this.#log.warn({ err: error }, "host.key is unreadable; not dialling Core");
+      return;
+    }
+    if (key === null) {
+      this.#log.info({ url }, "no host.key yet; not dialling Core (miyoria host join writes it)");
+      return;
+    }
+    const options: CoreLinkOptions = {
+      url,
+      hostId: key.id,
+      key: key.key,
+      name: host.config.name,
+      platform: process.platform,
+      version: this.version,
+      logger: this.#log,
+    };
+    const link = (this.#options.linkFactory ?? ((api, o) => new CoreLink(api, o)))(this, options);
+    this.#link = link;
+    link.start();
+    this.#log.info({ url }, "dialling Core");
+  }
+
   // ---- accessors -------------------------------------------------------------------------------
+
+  /** The control link's state; `none` when the daemon has no link. */
+  get linkState(): HostLinkState {
+    return this.#link?.state ?? "none";
+  }
 
   get version(): string {
     return this.#options.version ?? "0.0.0";
@@ -395,6 +469,7 @@ export class Daemon implements HostApi {
       gpu:
         sample === null ? null : { ...sample, reserve_mb: this.#host?.config.gpu.reserve_mb ?? 0 },
       services: [...this.#services.values()].map((s) => s.status(withTokens)),
+      link: this.linkState,
     };
   }
 

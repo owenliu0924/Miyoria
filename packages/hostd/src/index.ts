@@ -24,7 +24,16 @@ export {
   HostdUnavailableError,
   type LogsOptions,
 } from "./client.js";
-export { Daemon, type DaemonOptions, HostdRunningError } from "./daemon.js";
+export {
+  Daemon,
+  type DaemonOptions,
+  HOST_KEY_FILE,
+  HostdRunningError,
+  type HostKey,
+  HostKeySchema,
+  type LinkHandle,
+  readHostKey,
+} from "./daemon.js";
 export { matchesPassEnv, mergeEnv, passEnv, workerBaseEnv } from "./env.js";
 export {
   GpuCache,
