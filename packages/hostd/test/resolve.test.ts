@@ -339,6 +339,22 @@ describe("environment", () => {
       urls,
     );
     expect(expandService(sing, ctx, live).env).not.toHaveProperty("SING_OFFLOAD_URLS");
+    expect(expandService(sing, ctx, { ...live, offloadUrls: urls }).env).not.toHaveProperty(
+      "SING_GPU_ARBITER",
+    );
+
+    // hostd arbitrates: the holder asks it and learns no neighbour; the others are unchanged.
+    const hostd = expandService(sing, ctx, { ...live, offloadUrls: urls, gpuArbiter: "hostd" });
+    expect(hostd.env.SING_GPU_ARBITER).toBe("hostd");
+    expect(hostd.env).not.toHaveProperty("SING_OFFLOAD_URLS");
+    const tts = all.find((p) => p.name === "tts") as NonNullable<(typeof all)[number]>;
+    expect(
+      expandService(tts, ctx, { ...live, port: 8002, gpuArbiter: "hostd" }).env,
+    ).not.toHaveProperty("SING_GPU_ARBITER");
+    expect(
+      expandService(sing, ctx, { ...live, offloadUrls: urls, gpuArbiter: "worker" }).env
+        .SING_OFFLOAD_URLS,
+    ).toBe(urls);
 
     // host.toml can move a service out of the evictable group.
     writeIn(
@@ -370,10 +386,11 @@ describe("host.toml", () => {
 
 describe("gpu", () => {
   it("reads nvidia-smi's CSV", () => {
-    expect(parseNvidiaSmi("NVIDIA GeForce RTX 4070 SUPER, 12282, 3021\n")).toEqual({
+    expect(parseNvidiaSmi("0, NVIDIA GeForce RTX 4070 SUPER, 12282, 10438, 1560\r\n")).toEqual({
       name: "NVIDIA GeForce RTX 4070 SUPER",
       total_mb: 12282,
-      used_mb: 3021,
+      used_mb: 10722,
+      free_mb: 1560,
     });
     expect(parseNvidiaSmi("")).toBeNull();
   });

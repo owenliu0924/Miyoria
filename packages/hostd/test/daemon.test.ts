@@ -543,7 +543,10 @@ describe("errors", () => {
       code: HOST_ERROR_CODE.NotInstalled,
     });
     await expect(daemon.call("service.start", {}, OP)).rejects.toMatchObject({ code: -32602 });
-    await expect(daemon.call("gpu.acquire", {}, OP)).rejects.toMatchObject({ code: -32601 });
+    await expect(daemon.call("gpu.acquire", {}, OP)).rejects.toMatchObject({
+      code: HOST_ERROR_CODE.NotAllowed,
+    });
+    await expect(daemon.call("gpu.nope", {}, OP)).rejects.toMatchObject({ code: -32601 });
     await expect(daemon.call("nope", {}, OP)).rejects.toMatchObject({ code: -32601 });
   });
 });

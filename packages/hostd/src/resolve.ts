@@ -77,6 +77,12 @@ export interface LiveValues {
   /** `MIYORIA_HOSTD_URL`. */
   hostdUrl: string;
   /**
+   * `host.toml [gpu] arbiter`. With `hostd`, a service whose GPU policy is `on_demand` (the song
+   * worker) gets `SING_GPU_ARBITER=hostd` and no `{offload_urls}`: it asks hostd for the card and
+   * never calls its neighbours. Default `worker`: nothing changes.
+   */
+  gpuArbiter?: "worker" | "hostd";
+  /**
    * `{link:voice.url}` and the others: what Core told this host about its node links. One that is
    * missing leaves its environment variable out (the node falls back to its own settings).
    */
@@ -352,8 +358,15 @@ function defaultEnv(descriptor: HostService, ctx: ResolveContext): Record<string
  * The program, arguments, folder and environment of one start. Throws `ResolveError` when a
  * placeholder has no value (no Python environment, an unset `{env:NAME}`).
  */
-export function expandService(plan: ServicePlan, ctx: ResolveContext, live: LiveValues): SpawnSpec {
+export function expandService(
+  plan: ServicePlan,
+  ctx: ResolveContext,
+  given: LiveValues,
+): SpawnSpec {
   const entry = plan.entry;
+  // hostd arbitrates the card: the holder does not learn its neighbours' addresses.
+  const asksHostd = given.gpuArbiter === "hostd" && plan.gpuPolicy === "on_demand";
+  const live: LiveValues = asksHostd ? { ...given, offloadUrls: "" } : given;
   const run = entry?.descriptor.run;
   if (entry === null || run === undefined) {
     throw new ResolveError(`${plan.name} 沒有 [run],hostd 不能啟動它`);
@@ -376,6 +389,7 @@ export function expandService(plan: ServicePlan, ctx: ResolveContext, live: Live
     MIYORIA_HOST_TOKEN: live.hostToken,
     MIYORIA_HOSTD_URL: live.hostdUrl,
   };
+  if (asksHostd) added.SING_GPU_ARBITER = "hostd";
   if (run.host_env !== undefined) added[run.host_env] = ctx.bind;
   if (run.port_env !== undefined && live.port !== undefined) {
     added[run.port_env] = String(live.port);
@@ -405,7 +419,7 @@ export function localUrl(bind: string, port: number): string {
 }
 
 /**
- * `{offload_urls}` (until H7): the services of this host with the effective GPU policy
+ * `{offload_urls}` (while `[gpu] arbiter = "worker"`): the services of this host with the effective GPU policy
  * `evictable` that host.toml enables, tts first, then asr, then the others in start order.
  */
 export function offloadUrls(

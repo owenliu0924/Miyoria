@@ -3,6 +3,7 @@
 // only move messages (docs/design/v5-hostd.md §5).
 
 import type {
+  HostClusterContext,
   HostGuardState,
   HostLinks,
   HostReport,
@@ -64,4 +65,9 @@ export interface HostApi {
   setClusterClient(client: ClusterClient | null): void;
   /** Where Core's node links are (`cluster.links`), each time Core sends them. Optional (H4b). */
   setLinks?(links: HostLinks["links"]): void;
+  /**
+   * Who listens and which songs are needed now (`cluster.context`), each time Core sends it, for
+   * the GPU arbiter. Optional (H7).
+   */
+  setContext?(context: HostClusterContext): void;
 }

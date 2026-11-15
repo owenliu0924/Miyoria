@@ -5,7 +5,7 @@
 // service state change (`service.event`, each followed by a fresh report, at most one report per
 // `reportMs`), serves Core's requests through `HostApi.call` as caller `core`, and gives the daemon
 // a cluster client and a guard source that ask Core; where Core's node links are (`cluster.links`)
-// goes to `HostApi.setLinks`. Requests Core relays to a service of this
+// goes to `HostApi.setLinks`, who listens (`cluster.context`) to `HostApi.setContext`. Requests Core relays to a service of this
 // machine (`relay.request` and the binary frames, §7.1) are served by `HostRelay`, whose fetches
 // are aborted when the link drops. When the link drops the client and the source are taken away and
 // it dials again with backoff; after `UNAUTHORIZED` or `BAD_HELLO` it stops for good, and after
@@ -18,6 +18,7 @@ import {
   HOST_PROTOCOL_VERSION,
   HOST_RELAY_METHOD,
   HOST_RELAY_PROTOCOL_ERROR,
+  HostClusterContextSchema,
   HostGuardResultSchema,
   type HostGuardState,
   type HostHello,
@@ -413,6 +414,15 @@ export class CoreLink {
         return;
       }
       this.#api.setLinks?.(parsed.data.links);
+      return;
+    }
+    if (method === HOST_NOTIFICATION.ClusterContext) {
+      const parsed = HostClusterContextSchema.safeParse(params);
+      if (!parsed.success) {
+        this.#log.warn({ err: parsed.error.message }, "Core sent bad cluster.context");
+        return;
+      }
+      this.#api.setContext?.(parsed.data);
       return;
     }
     this.#log.debug({ method }, "Core sent a notification hostd does not use yet");

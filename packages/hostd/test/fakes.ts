@@ -65,8 +65,49 @@ if (process.env.IGNORE_TERM) process.on("SIGTERM", () => console.log("ignoring S
 setInterval(() => {}, 1000);
 `;
 
+/**
+ * A speech service of the GPU peer protocol (docs/design/v5-gpu.md §8): `/offload`, `/reload`,
+ * `/busy`, `/health`, each requiring the service's own token. Every offload and reload is kept,
+ * with its body and whether the token was right, and served on `/calls` (no token needed).
+ * `BUSY` is what `/busy` answers.
+ */
+const SPEECH = `
+const http = require("node:http");
+const token = process.env.MIYORIA_SERVICE_TOKEN;
+const calls = [];
+let offloaded = false;
+let reason = null;
+const server = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (c) => { body += c; });
+  req.on("end", () => {
+    const send = (status, obj) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+    const auth = token !== undefined && req.headers.authorization === "Bearer " + token;
+    if (req.url === "/calls") return send(200, calls);
+    if (req.url === "/env") return send(200, process.env);
+    if (req.method === "POST") calls.push({ path: req.url, body: body === "" ? null : JSON.parse(body), auth, at: Date.now() });
+    if (!auth) return send(401, { error: "unauthorized" });
+    if (req.url === "/health") return send(200, { status: "ok", offloaded, loading: false, released_mb: null, ...(offloaded ? { reason } : {}) });
+    if (req.url === "/busy") return send(200, { busy: Number(process.env.BUSY || 0) });
+    if (req.method === "POST" && req.url === "/offload") {
+      offloaded = true;
+      reason = JSON.parse(body || "{}").reason ?? null;
+      return send(200, { state: "offloaded", offload_ms: 5, released_mb: 1000 });
+    }
+    if (req.method === "POST" && req.url === "/reload") {
+      offloaded = false;
+      reason = null;
+      return send(200, { state: "ready", reload_ms: 5 });
+    }
+    send(404, { error: "not found" });
+  });
+});
+server.listen(Number(process.env.PORT), process.env.HOST || "127.0.0.1", () => console.log("speech on " + process.env.PORT));
+`;
+
 export const SCRIPTS = {
   "health.cjs": HEALTH,
+  "speech.cjs": SPEECH,
   "exit.cjs": EXIT,
   "never.cjs": NEVER,
   "spawner.cjs": SPAWNER,

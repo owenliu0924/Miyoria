@@ -63,6 +63,10 @@ export interface ServiceHost {
   hostdUrl(): string;
   hostToken(): string;
   offloadUrls(): string;
+  /** `host.toml [gpu] arbiter`: who shares the card (`SING_GPU_ARBITER` for the holder). */
+  gpuArbiter(): "worker" | "hostd";
+  /** Whether the service holds a lease of the card now. */
+  leased(name: string): boolean;
   /** What Core told this host about its node links now (`{link:...}`). */
   links(): LiveValues["links"];
   service(name: string): ManagedService | undefined;
@@ -204,7 +208,7 @@ export class ManagedService {
             gpu: {
               policy: gpuPolicy,
               ...(resident !== undefined ? { resident_mb: resident } : {}),
-              leased: false,
+              leased: this.#host.leased(this.name),
             },
           }
         : {}),
@@ -403,6 +407,7 @@ export class ManagedService {
       spec = expandService(this.plan, this.#host.ctx, {
         port,
         offloadUrls: this.#host.offloadUrls(),
+        gpuArbiter: this.#host.gpuArbiter(),
         token,
         hostToken: this.#host.hostToken(),
         hostdUrl: this.#host.hostdUrl(),

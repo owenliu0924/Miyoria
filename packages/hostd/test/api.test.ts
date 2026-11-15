@@ -66,8 +66,11 @@ describe("local API", () => {
 
       const ok = await rpc(daemon.port, daemon.token, "service.list");
       expect(ok.body).toMatchObject({ jsonrpc: "2.0", id: 7 });
-      const notFound = await rpc(daemon.port, daemon.token, "gpu.acquire");
+      const notFound = await rpc(daemon.port, daemon.token, "gpu.nope");
       expect(notFound.body.error).toMatchObject({ code: -32601 });
+      // The leases are the holder services' own; the operator may only read gpu.state.
+      const lease = await rpc(daemon.port, daemon.token, "gpu.acquire");
+      expect(lease.body.error).toMatchObject({ code: HOST_ERROR_CODE.NotAllowed });
       const parse = await fetch(`http://127.0.0.1:${daemon.port}/rpc`, {
         method: "POST",
         headers: { authorization: `Bearer ${daemon.token}` },

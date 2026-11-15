@@ -40,12 +40,31 @@ export {
 } from "./daemon.js";
 export { matchesPassEnv, mergeEnv, passEnv, workerBaseEnv } from "./env.js";
 export {
+  CardReader,
+  type CardReaderOptions,
+  cudaIndex,
+  type DeviceReading,
+  deviceReader,
+  freeOf,
+  fromNvml,
   GpuCache,
   type GpuReader,
   type GpuSample,
+  loadNvml,
+  type NvmlBinding,
+  type NvmlRaw,
   nvidiaSmiReader,
+  nvmlLibraries,
   parseNvidiaSmi,
 } from "./gpu.js";
+export {
+  type ArbiterService,
+  GPU_PROFILE_FILE,
+  GpuArbitration,
+  type GpuArbitrationOptions,
+  jsonProfileStore,
+  realTimers,
+} from "./gpu-arbiter.js";
 export { coreStatusGuard, GuardUnknownError, guardStatesOf } from "./guard.js";
 export {
   HOST_CONFIG_FILE,
@@ -59,6 +78,7 @@ export {
 export * from "./install/index.js";
 export { linkUrl, linkValues } from "./links.js";
 export { fileTail, MEMORY_LINES, ServiceLog } from "./logs.js";
+export { HttpPeerClient, PeerError, type ServiceTarget } from "./peers.js";
 export {
   freePort,
   localAddress,

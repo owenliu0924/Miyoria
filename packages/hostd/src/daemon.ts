@@ -13,6 +13,7 @@ import {
   HOST_FETCH_LIMITS,
   HOST_METHOD,
   HOST_PROTOCOL_VERSION,
+  type HostClusterContext,
   type HostGuardState,
   type HostInfo,
   type HostLinkState,
@@ -44,9 +45,10 @@ import {
   type HostApi,
   HostRpcError,
 } from "./api.js";
-import { type Catalog, type LinkPlaceholder, loadCatalog } from "./catalog.js";
+import { type Catalog, type LinkPlaceholder, loadCatalog, placeholdersIn } from "./catalog.js";
 import { HostdClient } from "./client.js";
-import { GpuCache, type GpuReader, nvidiaSmiReader } from "./gpu.js";
+import { CardReader, cudaIndex, freeOf, GpuCache, type GpuReader, type GpuSample } from "./gpu.js";
+import { type ArbiterService, GPU_PROFILE_FILE, GpuArbitration } from "./gpu-arbiter.js";
 import { coreStatusGuard, guardedMessage, guardUnknownMessage } from "./guard.js";
 import { type LoadedHostConfig, loadHostConfig } from "./host-config.js";
 import { type InstallDeps, installService, removeService } from "./install/index.js";
@@ -88,7 +90,10 @@ export interface DaemonOptions {
   /** The environment services inherit from (default `process.env`). */
   env?: Record<string, string | undefined>;
   platform?: NodeJS.Platform;
-  /** Reads the graphics card (default `nvidia-smi`). */
+  /**
+   * Reads the graphics card, for `host.info` and the GPU arbiter (default NVML through `koffi`,
+   * else `nvidia-smi`). `null` from it means the card cannot be read.
+   */
   readGpu?: GpuReader;
   timing?: Partial<Timing>;
   /**
@@ -153,7 +158,23 @@ const SERVED: ReadonlySet<string> = new Set([
   HOST_METHOD.ClusterResolve,
   HOST_METHOD.ClusterLlm,
   HOST_METHOD.ClusterFetch,
+  HOST_METHOD.GpuAcquire,
+  HOST_METHOD.GpuRenew,
+  HOST_METHOD.GpuRelease,
+  HOST_METHOD.GpuBusy,
+  HOST_METHOD.GpuState,
 ]);
+
+/** The lease methods: a holder service's only (`gpu.state` may be read by the operator and Core). */
+const GPU_LEASE: ReadonlySet<string> = new Set([
+  HOST_METHOD.GpuAcquire,
+  HOST_METHOD.GpuRenew,
+  HOST_METHOD.GpuRelease,
+  HOST_METHOD.GpuBusy,
+]);
+
+/** Service states in which its process is gone: a lease it held is over. */
+const GONE: ReadonlySet<string> = new Set(["stopped", "backoff", "failed", "disabled"]);
 
 /**
  * Methods Core serves that hostd passes on for the services of this machine (and the operator,
@@ -183,12 +204,12 @@ const OPERATOR_ONLY: ReadonlySet<string> = new Set([
 function allowed(caller: Caller, method: string): boolean {
   switch (caller.kind) {
     case "operator":
-      return true;
+      return !GPU_LEASE.has(method);
     case "core":
-      return !OPERATOR_ONLY.has(method) && !FORWARDED.has(method);
+      return !OPERATOR_ONLY.has(method) && !FORWARDED.has(method) && !GPU_LEASE.has(method);
     case "service":
-      // `gpu.*` comes with H7; of what exists now only the forwarded `cluster.*` are a service's.
-      return FORWARDED.has(method);
+      // A service may use `gpu.*` only when it may hold the card; the call checks that.
+      return FORWARDED.has(method) || GPU_LEASE.has(method) || method === HOST_METHOD.GpuState;
   }
 }
 
@@ -218,6 +239,11 @@ export class Daemon implements HostApi {
   readonly #hostToken = randomBytes(24).toString("base64url");
   readonly #timing: Timing;
   readonly #gpu: GpuCache;
+  /** How the card is read; set at start unless the options gave one. */
+  #readCard: GpuReader | null;
+  #cardReader: CardReader | null = null;
+  /** GPU arbitration (H7); made at start. */
+  #arbitration: GpuArbitration | null = null;
   readonly #events = new Set<(event: HostServiceEvent) => void>();
   readonly #changes = new Set<() => void>();
   readonly #services = new Map<string, ManagedService>();
@@ -250,7 +276,8 @@ export class Daemon implements HostApi {
   constructor(options: DaemonOptions) {
     this.#options = options;
     this.#timing = { ...DEFAULT_TIMING, ...options.timing };
-    this.#gpu = new GpuCache(options.readGpu ?? nvidiaSmiReader);
+    this.#readCard = options.readGpu ?? null;
+    this.#gpu = new GpuCache(() => this.#readGpu());
     this.#defaultGuard = coreStatusGuard(() => {
       const core = this.#services.get("core");
       const port = core?.port;
@@ -320,10 +347,17 @@ export class Daemon implements HostApi {
           (plan) => this.#services.get(plan.name)?.port,
           ctx.bind,
         ),
+      gpuArbiter: () => this.#arbitration?.mode ?? host.config.gpu.arbiter,
+      leased: (name) => this.#arbitration?.holds(name) ?? false,
       service: (name) => this.#services.get(name),
       emit: (event) => {
         // A node that came up with older link values than Core's latest gets them now.
         if (event.state === "running") this.#queueLinkCheck([event.service]);
+        this.#syncArbiter();
+        // A holder whose process is gone holds nothing: speech comes back now.
+        if (GONE.has(event.state) && this.#arbitration?.isHolder(event.service)) {
+          this.#arbitration.holderGone(event.service);
+        }
         for (const listener of this.#events) {
           try {
             listener(event);
@@ -333,6 +367,7 @@ export class Daemon implements HostApi {
         }
       },
       changed: () => {
+        this.#syncArbiter();
         for (const listener of this.#changes) {
           try {
             listener();
@@ -353,6 +388,25 @@ export class Daemon implements HostApi {
         this.#log.info({ service: plan.name, reason: plan.disabled }, "service disabled");
       }
     }
+
+    if (this.#readCard === null) {
+      const card = new CardReader({
+        index: cudaIndex(this.#cardEnv(ctx)),
+        platform: ctx.platform,
+        env: ctx.env,
+      });
+      this.#cardReader = card;
+      this.#readCard = card.read;
+    }
+    this.#arbitration = new GpuArbitration({
+      mode: host.config.gpu.arbiter,
+      read: () => this.#readGpu(),
+      target: (name) => this.target(name),
+      profileFile: join(host.state.root, GPU_PROFILE_FILE),
+      log: this.#log,
+      changed: () => serviceHost.changed(),
+    });
+    this.#syncArbiter();
 
     const server = createLocalApi({
       authenticate: (token) => this.#authenticate(token),
@@ -386,6 +440,7 @@ export class Daemon implements HostApi {
     for (const service of this.#services.values()) service.watchExternal();
     this.#startLink(host);
     void this.#gpu.read();
+    if (this.#arbitration.mode === "hostd") await this.#arbitration.ensure();
     this.#log.info(
       { port: this.#port, workspace: host.workspace, services: [...this.#services.keys()] },
       "hostd started",
@@ -407,6 +462,8 @@ export class Daemon implements HostApi {
   }
 
   async #stop(): Promise<void> {
+    // Before the services: a holder stopping now gives nothing back by itself.
+    this.#arbitration?.close();
     await this.#stopServices();
     for (const service of this.#services.values()) service.close();
     const link = this.#link;
@@ -427,6 +484,7 @@ export class Daemon implements HostApi {
       });
     }
     if (this.#runFile !== "") removeRunFile(this.#runFile, this.#token);
+    await this.#cardReader?.close().catch(() => undefined);
     for (const service of this.#services.values()) await service.logs.close();
     this.#log.info("hostd stopped");
     const stream = this.#logStream;
@@ -441,6 +499,10 @@ export class Daemon implements HostApi {
       ...[...this.#services.keys()].reverse().filter((n) => !this.#spawnOrder.includes(n)),
     ];
     const stopped: string[] = [];
+    // A service waiting to be restarted must not come back while the others are being stopped.
+    for (const service of this.#services.values()) {
+      if (service.state === "backoff") service.close();
+    }
     for (const name of order) {
       const service = this.#services.get(name);
       if (service === undefined || !service.active) continue;
@@ -485,6 +547,11 @@ export class Daemon implements HostApi {
     this.#link = link;
     link.start();
     this.#log.info({ url }, "dialling Core");
+  }
+
+  /** `cluster.context`: who listens and which songs are needed now, for the GPU arbiter. */
+  setContext(context: HostClusterContext): void {
+    this.#arbitration?.context(context);
   }
 
   /**
@@ -586,9 +653,18 @@ export class Daemon implements HostApi {
       platform: process.platform,
       protocol: HOST_PROTOCOL_VERSION,
       gpu:
-        sample === null ? null : { ...sample, reserve_mb: this.#host?.config.gpu.reserve_mb ?? 0 },
+        sample === null
+          ? null
+          : {
+              name: sample.name,
+              total_mb: sample.total_mb,
+              used_mb: sample.used_mb,
+              free_mb: freeOf(sample),
+              reserve_mb: this.#host?.config.gpu.reserve_mb ?? 0,
+            },
       services: [...this.#services.values()].map((s) => s.status(withTokens)),
       link: this.linkState,
+      ...(this.#arbitration === null ? {} : { arbiter: this.#arbitration.status() }),
     };
   }
 
@@ -761,11 +837,18 @@ export class Daemon implements HostApi {
       case HOST_METHOD.ClusterLlm:
       case HOST_METHOD.ClusterFetch:
         return await this.#forward(method, params, caller, signal);
+      case HOST_METHOD.GpuAcquire:
+      case HOST_METHOD.GpuRenew:
+      case HOST_METHOD.GpuRelease:
+      case HOST_METHOD.GpuBusy:
+      case HOST_METHOD.GpuState:
+        return await this.#gpuCall(method, params, caller);
       case HOST_METHOD.HostShutdown: {
         const { force } = parseParams(HostShutdownSchema, params);
         if (force !== true) {
           for (const service of this.#services.values()) await this.#checkGuard(service, false);
         }
+        this.#arbitration?.close();
         const stopped = await this.#stopServices();
         const done = this.#options.onShutdown ?? (() => this.stop());
         setTimeout(() => {
@@ -811,6 +894,76 @@ export class Daemon implements HostApi {
       signal,
       FORWARD_TIMEOUT_MS[method],
     );
+  }
+
+  // ---- GPU arbitration (H7) --------------------------------------------------------------------
+
+  /** One read of the card; `null` when it cannot be read. */
+  #readGpu(): Promise<GpuSample | null> {
+    const read = this.#readCard;
+    return read === null ? Promise.resolve(null) : read().catch(() => null);
+  }
+
+  /**
+   * Where the card's index comes from: the daemon's environment, then the song worker's own
+   * `CUDA_VISIBLE_DEVICES` from its descriptor and `host.toml`, as the worker itself reads it.
+   */
+  #cardEnv(ctx: ResolveContext): Record<string, string | undefined> {
+    const env: Record<string, string | undefined> = { ...ctx.env };
+    for (const service of this.#services.values()) {
+      if (service.plan.gpuPolicy !== "on_demand" || !service.plan.override.enabled) continue;
+      Object.assign(env, settingsOf(service.plan));
+      break;
+    }
+    return env;
+  }
+
+  /** Tells the arbitration what runs where now. */
+  #syncArbiter(): void {
+    const arbitration = this.#arbitration;
+    if (arbitration === null) return;
+    const services: ArbiterService[] = [];
+    for (const managed of this.#services.values()) {
+      const plan = managed.plan;
+      const descriptor = plan.entry?.descriptor;
+      if (descriptor === undefined) continue;
+      const policy = plan.gpuPolicy;
+      const service =
+        policy === undefined ? descriptor : { ...descriptor, gpu: { ...descriptor.gpu, policy } };
+      services.push({
+        service,
+        enabled: plan.override.enabled,
+        url: this.target(plan.name)?.url ?? null,
+        settings: settingsOf(plan),
+      });
+    }
+    arbitration.update(services);
+  }
+
+  /** `gpu.*`: a holder service's lease calls, or `gpu.state`. */
+  async #gpuCall(method: string, params: unknown, caller: Caller): Promise<unknown> {
+    const arbitration = this.#arbitration;
+    if (arbitration === null || this.#stopping !== null) {
+      throw new HostRpcError(HOST_ERROR_CODE.Busy, "the daemon is not running");
+    }
+    let holder: string | null = null;
+    if (caller.kind === "service") {
+      if (!arbitration.isHolder(caller.service)) {
+        throw new HostRpcError(
+          HOST_ERROR_CODE.NotAllowed,
+          `${caller.service} 不能借用顯卡(它的 [gpu] policy 不是 on_demand)`,
+        );
+      }
+      holder = caller.service;
+    }
+    const arbiter = await arbitration.ensure();
+    if (arbiter === null) {
+      throw new HostRpcError(
+        HOST_ERROR_CODE.Unavailable,
+        `hostd 沒有在分配顯卡:${arbitration.reason}`,
+      );
+    }
+    return await arbitration.call(arbiter, method, params, holder);
   }
 
   // ---- installing ------------------------------------------------------------------------------
@@ -1034,4 +1187,19 @@ export class Daemon implements HostApi {
       });
     }
   }
+}
+
+/**
+ * A service's own settings for the GPU arbiter: descriptor `[run] env`, then `host.toml` env, as
+ * the service would see them. Values with a placeholder are left out (the `SING_*` tuning is
+ * plain numbers and names).
+ */
+function settingsOf(plan: ServicePlan): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const table of [plan.entry?.descriptor.run?.env ?? {}, plan.override.env]) {
+    for (const [key, value] of Object.entries(table)) {
+      if (placeholdersIn(value).length === 0) out[key] = value;
+    }
+  }
+  return out;
 }
