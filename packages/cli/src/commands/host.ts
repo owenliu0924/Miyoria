@@ -217,8 +217,11 @@ export function rpcText(error: unknown): string {
 
 // ---- hostd -------------------------------------------------------------------------------
 
-/** `miyoria hostd`: the daemon in this terminal until Ctrl+C or `down`. */
-export async function hostd(target: HostTarget): Promise<void> {
+/**
+ * `miyoria hostd`: the daemon in this terminal until Ctrl+C or `down`. It starts no service by
+ * itself unless `start` (`--start`, what the logon entry passes) asks for the enabled ones.
+ */
+export async function hostd(target: HostTarget, options: { start?: boolean } = {}): Promise<void> {
   let shutdown: () => void = () => {};
   const daemon = daemonFor(target, () => shutdown());
   try {
@@ -244,6 +247,14 @@ export async function hostd(target: HostTarget): Promise<void> {
         (name) => daemon.report({ withTokens: false }).services.find((s) => s.name === name)?.url,
       ),
     );
+  }
+  if (options.start === true) {
+    // The logon entry (`host autostart`): bring back what host.toml enables, as `up` would.
+    try {
+      await daemon.startAll();
+    } catch (error) {
+      fail(`啟動服務時出錯:${rpcText(error)}`);
+    }
   }
   await untilSignal((stop) => {
     shutdown = stop;

@@ -2,6 +2,7 @@
 
 import { loadDotenv } from "@miyoria/runtime/kernel";
 import { cliVersion } from "./assets.js";
+import * as autostart from "./commands/autostart.js";
 import * as cluster from "./commands/cluster.js";
 import * as configCmd from "./commands/config.js";
 import * as dbCmd from "./commands/db.js";
@@ -125,6 +126,13 @@ function serviceDepsOf(ctx: RunContext): servicesCmd.ServiceDeps {
       return interactivePrompter().confirm(message, false);
     },
   };
+}
+
+function autostartDepsOf(ctx: RunContext): autostart.AutostartDeps {
+  return autostart.defaultAutostartDeps({
+    yes: ctx.yes,
+    confirm: isInteractive() ? (message) => interactivePrompter().confirm(message, false) : null,
+  });
 }
 
 /** `{ [key]: value }` when there is a value; keeps optional properties out of exact types. */
@@ -416,8 +424,14 @@ export const COMMANDS: CommandSpec = {
     {
       name: "hostd",
       help: "在這個終端機執行這台電腦的管家 hostd(`up` 會在背景啟動它);Ctrl+C 停止全部服務",
-      options: [HOST_CONFIG_OPTION],
-      run: (ctx) => host.hostd(hostTargetOf(ctx)),
+      options: [
+        HOST_CONFIG_OPTION,
+        {
+          name: "start",
+          help: "起來後馬上啟動 host.toml 啟用的全部服務(登入時自動啟動用的就是這個;不加則只啟動管家本身)",
+        },
+      ],
+      run: (ctx) => host.hostd(hostTargetOf(ctx), { start: flag(ctx, "start") }),
     },
     {
       name: "up",
@@ -605,6 +619,30 @@ export const COMMANDS: CommandSpec = {
                 ? (message) => interactivePrompter().confirm(message, false)
                 : null,
             }),
+        },
+        {
+          name: "autostart",
+          help: "這台電腦登入時自動啟動 hostd(再由它啟動 host.toml 啟用的服務):on 登錄、off 取消、status 查看",
+          subcommands: [
+            {
+              name: "on",
+              help: "登錄:這個帳號登入時啟動 hostd(Windows:工作排程器的個人工作;Linux:systemd 使用者單元)。會先印出要執行的指令並確認",
+              options: [HOST_CONFIG_OPTION],
+              run: (ctx) => autostart.autostartOn(hostTargetOf(ctx), autostartDepsOf(ctx)),
+            },
+            {
+              name: "off",
+              help: "取消登錄;沒有登錄時什麼也不做",
+              options: [HOST_CONFIG_OPTION],
+              run: (ctx) => autostart.autostartOff(hostTargetOf(ctx), autostartDepsOf(ctx)),
+            },
+            {
+              name: "status",
+              help: "有沒有登錄、執行的指令、hostd 現在有沒有在跑",
+              options: [HOST_CONFIG_OPTION],
+              run: (ctx) => autostart.autostartStatus(hostTargetOf(ctx), autostartDepsOf(ctx)),
+            },
+          ],
         },
         {
           name: "migrate",
