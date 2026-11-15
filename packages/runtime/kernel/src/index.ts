@@ -39,6 +39,24 @@ export {
   parseTomlJson,
   processEnv,
 } from "./config.js";
+export {
+  type ConfigCheckOptions,
+  type ConfigPolicy,
+  type ConfigProblem,
+  type ConfigSchema,
+  type ConfigSchemaParts,
+  type ConfigSection,
+  type ConfigSeverity,
+  CoreSectionSchema,
+  checkConfig,
+  composeConfigSchema,
+  configJsonSchema,
+  configPath,
+  configProblemsError,
+  describeProblem,
+  moduleSectionSchema,
+  schemaAt,
+} from "./config-schema.js";
 export { ModuleContext, type PublishOptions, type Task } from "./context.js";
 export {
   configureLogging,

@@ -92,6 +92,21 @@ export interface ExtensionSettings {
 const EnvSchema = z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string());
 const EnvPassSchema = z.array(z.string());
 
+/**
+ * The top-level `[extensions]` section, one `[extensions."<id>"]` per extension, as
+ * `extensionSettings` reads it: an `enabled` that is not a boolean counts as unset, and every
+ * other key is the extension's own config, described by its `config.schema.json`.
+ */
+export const ExtensionsSectionSchema = z.record(
+  z.string(),
+  z.looseObject({
+    enabled: z.boolean().optional(),
+    permissions: PermissionOverrideSchema.optional(),
+    env: EnvSchema.optional(),
+    env_pass: EnvPassSchema.optional(),
+  }),
+);
+
 function parseSetting<S extends z.ZodType>(
   schema: S,
   value: unknown,

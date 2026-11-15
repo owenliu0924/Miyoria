@@ -25,6 +25,7 @@ export {
 } from "./cli.js";
 export {
   type ExtensionSettings,
+  ExtensionsSectionSchema,
   extensionSettings,
   grantedPermissions,
   HOST_CONFIG_SECTION,

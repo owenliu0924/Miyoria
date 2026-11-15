@@ -1,5 +1,6 @@
 import type { JsonValue, ModuleId } from "@miyoria/types";
-import { z } from "zod";
+import type { z } from "zod";
+import { configJsonSchema } from "./config-schema.js";
 import type { ModuleContext } from "./context.js";
 
 export interface ModuleManifest {
@@ -54,12 +55,7 @@ export function manifestJson(manifest: ModuleManifest): ModuleManifestJson {
     description: manifest.description,
     requires: [...manifest.requires],
     optional: [...manifest.optional],
-    config_schema: manifest.configSchema
-      ? (z.toJSONSchema(manifest.configSchema, {
-          io: "input",
-          unrepresentable: "any",
-        }) as JsonValue)
-      : null,
+    config_schema: manifest.configSchema ? configJsonSchema(manifest.configSchema) : null,
   };
 }
 
