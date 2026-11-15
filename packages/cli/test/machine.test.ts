@@ -1,16 +1,12 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: the tests use literal ${VAR} references
-// Roles and services: `[machine]`, `miyoria start` / `install`, the init question and the checks.
+// Roles and services: `[machine]`, `miyoria start` / `install` (the old setup `host migrate` converts) and the checks.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { exampleConfig, exampleEnv } from "../src/assets.js";
 import { parseArgs } from "../src/cli.js";
-import { run as initRun } from "../src/commands/init.js";
-import { machineStep } from "../src/machine-step.js";
-import { DefaultsPrompter } from "../src/prompt.js";
 import { repoRoot, stackConfig } from "../src/stack/config.js";
 import { buildPlan } from "../src/stack/plan.js";
 import {
@@ -21,8 +17,6 @@ import {
   servicesOfRoles,
 } from "../src/stack/roles.js";
 import { type Output, setOutput } from "../src/ui.js";
-import { Workspace } from "../src/workspace.js";
-import { Enter, Pick, Scripted, Text, Yes } from "./scripted.js";
 
 // Folders the tests declare to have no source checkout above them, wherever the temp folder is
 // (a TMP inside the repo would otherwise find the repo's own `pnpm-workspace.yaml`).
@@ -212,104 +206,12 @@ describe("stack from [machine]", () => {
 });
 
 describe("command line", () => {
-  it("parses_the_init_options", () => {
-    expect(
-      parseArgs(["init", "--roles", "core", "--core-host", "1.2.3.4"]).ctx.options["core-host"],
-    ).toBe("1.2.3.4");
-  });
-
   it("has_no_start_command_any_more", () => {
     const p = parseArgs(["start", "core"]);
     expect(p.path).toHaveLength(1);
     expect(p.ctx.args).toEqual(["start", "core"]);
   });
 });
-
-describe("init: which services run here", () => {
-  function workspace(): Workspace {
-    return Workspace.openOrCreate(join(dir, "miyoria.toml"), exampleConfig(), exampleEnv());
-  }
-
-  it("writes_roles_and_loopback_hosts_for_a_single_pc", async () => {
-    const ws = workspace();
-    await machineStep(new Scripted([Pick(0), Enter, Enter]), ws);
-    expect(ws.item("machine.roles")).toEqual(["broadcast", "core", "inference"]);
-    expect(ws.item("machine.hosts.core")).toBe("127.0.0.1");
-    expect(ws.effective("stage.core_url")).toBe("ws://127.0.0.1:7882/stage-link");
-    expect(ws.lookup("ASR_URL")?.[0]).toBe("http://127.0.0.1:8003");
-  });
-
-  it("splits_the_roles_and_fills_the_lan_addresses", async () => {
-    const ws = workspace();
-    // role: only core (index 2), core address, inference address
-    const r = await machineStep(
-      new Scripted([Pick(2), Text("192.168.1.10"), Text("192.168.1.20")]),
-      ws,
-    );
-    expect(r.services).toEqual(["turn", "core"]);
-    expect(ws.item("machine.roles")).toEqual(["core"]);
-    expect(ws.effective("modules.api.bind")).toBe("192.168.1.10:7878");
-    expect(ws.effective('modules."voice.link".bind')).toBe("192.168.1.10:7879");
-    expect(ws.effective('modules."stage.link".bind')).toBe("192.168.1.10:7882");
-    expect(ws.lookup("ASR_URL")?.[0]).toBe("http://192.168.1.20:8003");
-    expect(ws.lookup("TTS_URL")?.[0]).toBe("http://192.168.1.20:8002");
-    expect(ws.effective("modules.sing.url")).toBe("http://192.168.1.20:8005");
-  });
-
-  it("points_stage_at_core_on_the_broadcast_computer", async () => {
-    const ws = workspace();
-    await machineStep(new Scripted([Pick(1), Text("192.168.1.10"), Text("192.168.1.20")]), ws);
-    expect(ws.effective("stage.core_url")).toBe("ws://192.168.1.10:7882/stage-link");
-    expect(ws.item("machine.roles")).toEqual(["broadcast"]);
-    expect(ws.effective("modules.api.bind")).toBe("127.0.0.1:7878");
-  });
-
-  it("takes_a_custom_service_pick", async () => {
-    const ws = workspace();
-    // custom: asr yes, tts yes, sing no, turn no, core no, voice-node no, stage no
-    const answers = [
-      Pick(4),
-      Yes,
-      Yes,
-      "no",
-      "no",
-      "no",
-      "no",
-      "no",
-      Text("127.0.0.1"),
-      Text("127.0.0.1"),
-    ] as never[];
-    const r = await machineStep(new Scripted(answers), ws);
-    expect(r.custom).toBe(true);
-    expect(ws.item("machine.services")).toEqual(["asr", "tts"]);
-  });
-
-  it("applies_the_roles_flag_without_asking_in_a_script", async () => {
-    const configPath = join(dir, "miyoria.toml");
-    await initRun(configPath, new DefaultsPrompter({ ...noopReporter }), {
-      yes: true,
-      bundledProfiles: null,
-      processEnv: new Map(),
-      machine: { ask: false, roles: "inference", inferenceHost: "192.168.1.20" },
-    });
-    const text = readFileSync(configPath, "utf8");
-    expect(text).toMatch(/\[machine\][\s\S]*roles = \["inference"\]/);
-    expect(text).toContain('inference = "192.168.1.20"');
-    // no core here: no LLM questions, no tokens generated
-    expect(readFileSync(join(dir, ".env"), "utf8")).not.toMatch(/MIYORIA_API_TOKEN=\w{20}/);
-  });
-});
-
-const noopReporter = {
-  intro() {},
-  outro() {},
-  section() {},
-  note() {},
-  ok() {},
-  warn() {},
-  fail() {},
-  box() {},
-};
 
 describe("doctor: Discord intents", () => {
   const reply = (flags: number) =>

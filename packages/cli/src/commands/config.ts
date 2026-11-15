@@ -53,22 +53,38 @@ export function changeLines(ws: Workspace, changes: readonly Change[]): string[]
   return lines;
 }
 
+/** A file besides the workspace's own (`init` writes `host.toml`): shown, confirmed and written with it. */
+export interface ExtraWrite {
+  /** Lines of the summary; none = nothing to write. */
+  lines: string[];
+  /** Writes it; returns what to report as written. */
+  save(): string[];
+}
+
 /**
  * Shows what will change, asks (unless `yes`) and writes. `null` when nothing was written.
+ * `ws` is `null` when only `extra` is written.
  */
-export async function commit(p: Prompter, yes: boolean, ws: Workspace): Promise<Change[] | null> {
-  for (const w of ws.warnings.splice(0)) p.warn(w);
-  const changes = ws.changes();
-  if (changes.length === 0 && ws.missingFiles().length === 0) {
+export async function commit(
+  p: Prompter,
+  yes: boolean,
+  ws: Workspace | null,
+  extra?: ExtraWrite,
+): Promise<Change[] | null> {
+  for (const w of ws?.warnings.splice(0) ?? []) p.warn(w);
+  const changes = ws?.changes() ?? [];
+  const extraLines = extra?.lines ?? [];
+  if (changes.length === 0 && (ws?.missingFiles().length ?? 0) === 0 && extraLines.length === 0) {
     p.note("沒有變更");
     return null;
   }
-  p.box("將變更", changeLines(ws, changes));
+  p.box("將變更", [...(ws ? changeLines(ws, changes) : []), ...extraLines]);
   if (!yes && !(await p.confirm("寫入這些變更?", true))) {
     p.warn("沒有寫入任何檔案");
     return null;
   }
-  for (const path of ws.save()) p.ok(`已寫入 ${ws.shown(path)}`);
+  for (const path of ws?.save() ?? []) p.ok(`已寫入 ${ws?.shown(path)}`);
+  for (const path of extra?.save() ?? []) p.ok(`已寫入 ${path}`);
   return changes;
 }
 
