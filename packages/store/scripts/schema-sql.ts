@@ -18,6 +18,8 @@ import { authSchema } from "../../auth/src/migrations.js";
 import * as authTables from "../../auth/src/schema.js";
 import { directiveSchema } from "../../brain/directive/src/migrations.js";
 import * as directiveTables from "../../brain/directive/src/schema.js";
+import { clusterSchema } from "../../cluster/src/migrations.js";
+import * as clusterTables from "../../cluster/src/schema.js";
 import { economySchema } from "../../economy/src/migrations.js";
 import * as economyTables from "../../economy/src/schema.js";
 import { MEMORY_SEARCH_SQL, memorySchema } from "../../memory/memory/src/migrations.js";
@@ -89,6 +91,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   config: { tables: configTables, schema: configSchema },
   artifact: { tables: artifactTables, schema: artifactSchema },
   auth: { tables: authTables, schema: authSchema },
+  cluster: { tables: clusterTables, schema: clusterSchema },
   directive: { tables: directiveTables, schema: directiveSchema },
   economy: { tables: economyTables, schema: economySchema },
   memory: { tables: memoryTables, schema: memorySchema, handWritten: MEMORY_SEARCH_SQL },
