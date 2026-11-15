@@ -189,6 +189,10 @@ describe("ImageGenService", () => {
       await new Promise((r) => setTimeout(r, 20));
     }
     expect(await s.get(job.id)).toMatchObject({ state: "queued", attempts: 0, prompt_id: null });
+    // The unload follows the interrupt a moment later: wait for it rather than for a fixed time.
+    for (let i = 0; i < 50 && comfy.frees.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
     expect(comfy.interrupts.length).toBeGreaterThan(0);
     expect(comfy.frees.length).toBeGreaterThan(0);
     expect(await held(s)).toBe("singing");
