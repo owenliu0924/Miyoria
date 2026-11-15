@@ -145,6 +145,11 @@
 - `miyoria config set` 現在要載入所有模組的設定 schema,打包後的 CLI 量起來約 1.7 到 2.0 秒(`--version` 約 0.9 秒),比改之前多了大約 0.7 秒。要更快的話,可以在打包時先把整份 schema 算好。
 - 線上 `miyoria.toml` 的三處修改還沒做(剩下的設定相容層要先改它才能拿掉);`/api/facts/context` 和 `/api/facts/retryable` 有沒有人手動在用,還沒問到答案。
 
+- **第 14 步留下的**(2026-11-16):舊的 store 介面大多還在(呼叫的地方多,跟著各套件重寫再換);五個已經沒人呼叫的方法還掛在介面上(`MessageLog.purge`、`IdentityStore.setPersonName`、`DecisionLog.appendOutcome`、`MemberCardStore.countSince`、`SettingsStore.deletePrefix`);人物卡不再於啟動時替羈絆超過 25 的人種依附(原本是 V4 搬移程式順便做的),階段 4 決定依附從哪來。詳見 [v5-data.md](v5-data.md)。
+- **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。
+- **只在機器很忙時失敗的測試**:`apps/voice-node` 的 `link.test.ts`(「sends hello… answers ping」)在同時跑很多東西時失敗過一次,單獨跑會過。再出現就改成等條件成立。
+- **範例擴充的端對端測試在 CI 被跳過**:它要先 build 才會跑,CI 是先測試;本機的整體檢查會跑。要不要讓 CI 也跑,等決定。
+
 ## 4. 自我修復與自我改進(備忘)
 
 三層,越下面風險越高:
