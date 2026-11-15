@@ -32,6 +32,7 @@ export const DataCategoryIdSchema = z
     "event_log",
     "directives",
     "initiative",
+    "artifacts",
     "people",
     "channels",
     "voice_consent",

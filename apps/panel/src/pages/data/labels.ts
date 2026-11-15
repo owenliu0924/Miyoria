@@ -13,6 +13,7 @@ export const CATEGORY_LABEL: Record<DataCategoryId, string> = {
   messages: "聊天紀錄",
   decisions: "決策紀錄",
   initiative: "主動發話狀態",
+  artifacts: "她做的檔案",
   people: "人物與帳號連結",
   channels: "頻道設定",
   voice_consent: "語音同意",

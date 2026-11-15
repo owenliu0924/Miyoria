@@ -225,6 +225,7 @@ describe("data routes", () => {
       "inner",
       "knowledge",
       "learning",
+      "artifacts",
     ]);
     expect(inv.categories.find((c) => c.id === "audit")?.kept).toBe(true);
     // Without a sandbox there is no tools workspace.
