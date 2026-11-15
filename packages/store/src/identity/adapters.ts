@@ -1,7 +1,7 @@
 // The store's older interfaces over the `identity` tables, so every caller keeps working while
 // it moves (docs/design/v5-data.md §8 step 4): `PeopleStore`, `IdentityStore`, the
-// `HandleDirectory`, and the settings keys of a person's choices (`privacy:*`, `voice_consent:*`
-// under `_global`), which now live in `persons.prefs`.
+// `HandleDirectory`, and the settings keys of a person's choices (`privacy:*`, `voice_consent:*`,
+// which callers write under `_global`), which now live in `persons.prefs`.
 
 import {
   type AccountRef,
@@ -13,7 +13,6 @@ import {
   type ProfileId,
   type Timestamp,
 } from "@miyoria/types";
-import { GLOBAL_SETTINGS_PROFILE } from "../data.js";
 import type { PersonHandleDirectory } from "../handles.js";
 import type { Account, Person } from "../records.js";
 import type { IdentityStore, PeopleStore, SettingsStore } from "../stores.js";
@@ -164,9 +163,10 @@ function prefKey(key: string): { pref: PrefKey; account: AccountRef } | null {
 }
 
 /**
- * A `SettingsStore` that keeps `privacy:<platform>:<id>` and `voice_consent:<platform>:<id>` of
- * `_global` in `persons.prefs` and everything else in `inner`. The choice belongs to the person,
- * so every account of a person reads the same value.
+ * A `SettingsStore` that keeps `privacy:<platform>:<id>` and `voice_consent:<platform>:<id>` in
+ * `persons.prefs` and everything else in `inner`. The choice belongs to the person, so every
+ * account of a person reads the same value. One database is one character, so the profile a
+ * caller names does not matter (callers name `_global`).
  */
 export class PrefsSettings implements SettingsStore {
   constructor(
@@ -174,18 +174,14 @@ export class PrefsSettings implements SettingsStore {
     private readonly identity: Identity,
   ) {}
 
-  #routed(profile: ProfileId, key: string) {
-    return profile === GLOBAL_SETTINGS_PROFILE ? prefKey(key) : null;
-  }
-
   async get(profile: ProfileId, key: string): Promise<JsonValue | null> {
-    const routed = this.#routed(profile, key);
+    const routed = prefKey(key);
     if (routed === null) return this.inner.get(profile, key);
     return this.identity.pref(routed.account, routed.pref) ?? null;
   }
 
   async set(profile: ProfileId, key: string, value: JsonValue | null): Promise<void> {
-    const routed = this.#routed(profile, key);
+    const routed = prefKey(key);
     if (routed === null) return this.inner.set(profile, key, value);
     this.identity.setPref(routed.account, routed.pref, value);
   }
@@ -205,7 +201,6 @@ export class PrefsSettings implements SettingsStore {
 
   async list(profile: ProfileId, prefix: string): Promise<Map<string, JsonValue>> {
     const stored = await this.inner.list(profile, prefix);
-    if (profile !== GLOBAL_SETTINGS_PROFILE) return stored;
     const prefs = this.#prefs(prefix);
     if (prefs.size === 0) return stored;
     const keys = [...new Set([...stored.keys(), ...prefs.keys()])].sort((a, b) =>
@@ -216,7 +211,6 @@ export class PrefsSettings implements SettingsStore {
 
   async deletePrefix(profile: ProfileId, prefix: string): Promise<number> {
     let n = await this.inner.deletePrefix(profile, prefix);
-    if (profile !== GLOBAL_SETTINGS_PROFILE) return n;
     for (const key of this.#prefs(prefix).keys()) {
       const routed = prefKey(key);
       if (routed === null) continue;

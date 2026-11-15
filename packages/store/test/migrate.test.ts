@@ -97,8 +97,14 @@ describe("bookkeeping", () => {
       expect(tables).toEqual(expect.arrayContaining(["memory_records", "economy_docs"]));
       expect(tables).not.toContain("schema_version");
       // Chat lines are events (core migration 3); so are decisions, turn outcomes and audit
-      // entries (core migration 4).
-      for (const gone of ["message_log", "decision_log", "turn_outcomes", "audit_log"]) {
+      // entries (core migration 4). Settings are rows of `plugin_state` (config migration 1).
+      for (const gone of [
+        "message_log",
+        "decision_log",
+        "turn_outcomes",
+        "audit_log",
+        "profile_settings",
+      ]) {
         expect(tables).not.toContain(gone);
       }
       // Re-running is a no-op.

@@ -304,12 +304,15 @@ describe("the old interfaces over identity", () => {
     expect(s.persons.person(owen)?.prefs).toEqual({ privacy: { presence: false } });
     // Choosing before speaking made a person for account 3.
     expect(s.persons.personOf(acct("3"))?.prefs).toEqual({ voice_consent: false });
-    // Only `queue:state` went to the settings table; the profile's keys are not routed.
+    // Only `queue:state` went to the settings rows.
     const rows = await s.profileData.export("p", ["other_settings", "queue"]);
     expect(rows.parts.queue?.map((r) => r.key)).toEqual(["queue:state"]);
-    await s.settings.set("p", "privacy:discord:1", 1);
-    expect(await s.settings.get("p", "privacy:discord:1")).toBe(1);
-    expect(s.persons.person(owen)?.prefs).toEqual({ privacy: { presence: false } });
+    // Whatever profile a caller names: one database is one character.
+    await s.settings.set("p", "privacy:discord:1", { presence: true });
+    expect(await s.settings.get(GLOBAL_SETTINGS_PROFILE, "privacy:discord:2")).toEqual({
+      presence: true,
+    });
+    expect(s.persons.person(owen)?.prefs).toEqual({ privacy: { presence: true } });
 
     expect([...(await s.settings.list(GLOBAL_SETTINGS_PROFILE, "")).keys()]).toEqual([
       "privacy:discord:1",

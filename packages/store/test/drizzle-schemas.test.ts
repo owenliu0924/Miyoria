@@ -1,0 +1,72 @@
+// Every plugin whose tables are Drizzle definitions (`scripts/schema-sql.ts` `DRIZZLE_PLUGINS`):
+// its checked-in migrations and its Drizzle tables cannot drift apart. What each schema's own
+// constraints do is tested beside it (`identity-schema.test.ts`, `config.test.ts`).
+
+import { describe, expect, it } from "vitest";
+import { createSql, DRIZZLE_PLUGINS, migrated, pendingSql } from "../scripts/schema-sql.js";
+import { coreSchema, lintSchemas, migrate, orderSchemas } from "../src/index.js";
+
+/** The table names a plugin's generated SQL creates. */
+function tablesOf(statements: readonly string[]): string[] {
+  return statements
+    .map((s) => /^CREATE TABLE `([^`]+)`/.exec(s)?.[1])
+    .filter((name): name is string => name !== undefined)
+    .sort();
+}
+
+describe.each(Object.entries(DRIZZLE_PLUGINS))("the %s schema", (id, { tables, schema }) => {
+  it("is the SQL drizzle-kit generates from the Drizzle tables, STRICT added", async () => {
+    // The first migration is the whole schema. When a second one exists, this check moves to
+    // `pendingSql` below (what drizzle-kit would still change) plus the index comparison.
+    expect(schema.migrations).toHaveLength(1);
+    const generated = (await createSql(tables)).join("\n");
+    if (schema.migrations[0]?.sql !== generated) {
+      // The message is the migration to check in.
+      expect.fail(`${id} migration 1 differs from the Drizzle tables; generated:\n${generated}`);
+    }
+  });
+
+  it("migrates into a database drizzle-kit finds nothing to change in", async () => {
+    const { raw, db } = migrated(schema);
+    try {
+      expect(await pendingSql(raw, tables)).toEqual([]);
+      // What drizzle-kit does not compare: STRICT, and the text of every index (a partial
+      // index's WHERE, an index on an expression).
+      const generated = await createSql(tables);
+      const names = tablesOf(generated);
+      expect(names.length).toBeGreaterThan(0);
+      const list = raw.prepare("PRAGMA table_list").all() as { name: string; strict: number }[];
+      for (const name of names) {
+        expect(list.find((t) => t.name === name)?.strict, name).toBe(1);
+      }
+      // The plugin's own indexes: core's event log is in every database.
+      const indexes = (
+        raw
+          .prepare(
+            "SELECT name, sql, tbl_name FROM sqlite_schema WHERE type = 'index' AND sql IS NOT NULL",
+          )
+          .all() as { name: string; sql: string; tbl_name: string }[]
+      ).filter((i) => names.includes(i.tbl_name));
+      const wanted = generated
+        .filter((s) => /^CREATE (UNIQUE )?INDEX/.test(s))
+        .map((s) => s.trim().replace(/;$/, ""));
+      expect(indexes.map((i) => i.sql).sort()).toEqual([...wanted].sort());
+    } finally {
+      db.close();
+    }
+  });
+
+  it("passes the naming lint, and re-running is a no-op", () => {
+    expect(lintSchemas(orderSchemas([coreSchema, schema]))).toEqual([]);
+    const { db } = migrated(schema);
+    try {
+      expect(migrate(db, [schema])).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+it("covers identity and config", () => {
+  expect(Object.keys(DRIZZLE_PLUGINS).sort()).toEqual(["config", "identity"]);
+});

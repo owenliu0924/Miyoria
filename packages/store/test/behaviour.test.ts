@@ -535,53 +535,59 @@ function behaviour(open: () => Promise<Store>): void {
     expect(await store.coins.dailyTotals(unique("profile"), since, 0)).toEqual([]);
   });
 
+  // Settings are one key space per database, whatever profile a caller names (one database is
+  // one character), so these cases keep their keys under a prefix of their own.
   it("settings", async () => {
     const settings = store.settings;
     const profile = unique("profile");
     const other = unique("profile");
-    expect(await settings.get(profile, "mode:general")).toBeNull();
-    expect((await settings.list(profile, "")).size).toBe(0);
+    const ns = `${unique("settings")}/`;
+    expect(await settings.get(profile, `${ns}mode:general`)).toBeNull();
+    expect((await settings.list(profile, ns)).size).toBe(0);
 
     const chatty = { mode: "chatty", n: 2 };
-    await settings.set(profile, "mode:general", "quiet");
-    await settings.set(profile, "mode:general", chatty);
-    await settings.set(profile, "mode:dm", [null]);
-    await settings.set(other, "mode:general", "other");
-    expect(await settings.get(profile, "mode:general")).toEqual(chatty);
-    expect(await settings.get(profile, "mode:dm")).toEqual([null]);
+    await settings.set(profile, `${ns}mode:general`, "quiet");
+    await settings.set(profile, `${ns}mode:general`, chatty);
+    await settings.set(profile, `${ns}mode:dm`, [null]);
+    expect(await settings.get(profile, `${ns}mode:general`)).toEqual(chatty);
+    expect(await settings.get(profile, `${ns}mode:dm`)).toEqual([null]);
+    // Another profile reads the same key.
+    expect(await settings.get(other, `${ns}mode:general`)).toEqual(chatty);
 
-    // Deleting (`null`; the TS interface has no stored JSON `null`), also of a missing key,
-    // leaves other profiles alone.
-    await settings.set(profile, "mode:dm", null);
-    await settings.set(profile, "mode:missing", null);
-    expect(await settings.get(profile, "mode:dm")).toBeNull();
-    expect(await settings.get(other, "mode:general")).toBe("other");
+    // Deleting (`null`; the TS interface has no stored JSON `null`), also of a missing key.
+    await settings.set(profile, `${ns}mode:dm`, null);
+    await settings.set(profile, `${ns}mode:missing`, null);
+    expect(await settings.get(profile, `${ns}mode:dm`)).toBeNull();
+    expect(await settings.get(other, `${ns}mode:general`)).toEqual(chatty);
   });
 
   it("settings_list_prefix", async () => {
     const settings = store.settings;
     const profile = unique("profile");
+    const ns = `${unique("settings")}/`;
     const keys = ["mode:b", "mode:a", "mode_x", "modeX:y", "mo%de:1", "other", "MODE:c"];
-    for (const [i, key] of keys.entries()) await settings.set(profile, key, i);
-    await settings.set(unique("profile"), "mode:z", 0);
+    for (const [i, key] of keys.entries()) await settings.set(profile, `${ns}${key}`, i);
+    // Written under another profile, listed with the rest.
+    await settings.set(unique("profile"), `${ns}mode:z`, 0);
 
     const listed: string[][] = [];
     for (const prefix of ["mode:", "mode_", "mo%", "mo", "mode:a", "nothing", ""]) {
-      listed.push([...(await settings.list(profile, prefix)).keys()]);
+      const found = [...(await settings.list(profile, `${ns}${prefix}`)).keys()];
+      listed.push(found.map((k) => k.slice(ns.length)));
     }
     // `_` and `%` are literal, and matching is case-sensitive.
     expect(listed).toEqual([
-      ["mode:a", "mode:b"],
+      ["mode:a", "mode:b", "mode:z"],
       ["mode_x"],
       ["mo%de:1"],
-      ["mo%de:1", "mode:a", "mode:b", "modeX:y", "mode_x"],
+      ["mo%de:1", "mode:a", "mode:b", "mode:z", "modeX:y", "mode_x"],
       ["mode:a"],
       [],
-      ["MODE:c", "mo%de:1", "mode:a", "mode:b", "modeX:y", "mode_x", "other"],
+      ["MODE:c", "mo%de:1", "mode:a", "mode:b", "mode:z", "modeX:y", "mode_x", "other"],
     ]);
-    const list = await settings.list(profile, "mode:");
-    expect(list.get("mode:a")).toBe(1);
-    expect(list.get("mode:b")).toBe(0);
+    const list = await settings.list(profile, `${ns}mode:`);
+    expect(list.get(`${ns}mode:a`)).toBe(1);
+    expect(list.get(`${ns}mode:b`)).toBe(0);
   });
 
   it("from_url_memory", async () => {
@@ -2189,15 +2195,28 @@ function behaviour(open: () => Promise<Store>): void {
     expect(await store.relationships.get(profile, person)).toBeNull();
     expect(await store.decisions.recent(profile, null, 9)).toEqual([]);
     expect((await store.personaOverrides.current(profile)).size).toBe(0);
-    expect([...(await store.settings.list(profile, "")).keys()]).toEqual([]);
+    // The file runs share one database: only this case's keys are looked at.
+    const seeded = [
+      "memory_maintenance_last",
+      "memory_watermark:",
+      "mood:last",
+      "self:",
+      "channel_mode:discord:g:c",
+      "activeness:discord:g:c",
+      "sandbox:tool:t",
+      "ext:hello:k",
+    ];
+    for (const prefix of seeded) {
+      expect([...(await store.settings.list(profile, prefix)).keys()], prefix).toEqual([]);
+    }
     const after = await store.profileData.inventory(profile);
     for (const c of after.categories) {
       if (!dataCategory(c.id).shared && c.id !== "other_settings") expect(c.count, c.id).toBe(0);
     }
 
-    // Other profiles are untouched.
+    // Other profiles are untouched, but for the settings: one key space per database.
     expect(await store.memories.list(other, { ...baseFilter, limit: 9 })).toHaveLength(2);
-    expect((await store.settings.list(other, "")).size).toBe(10);
+    expect((await store.settings.list(other, "self:")).size).toBe(0);
     expect((await store.relationships.get(other, person))?.call_name).toBe("歐文");
 
     // Kept categories cannot be wiped; unknown ones are refused.
@@ -2208,11 +2227,12 @@ function behaviour(open: () => Promise<Store>): void {
   it("deletes settings by prefix", async () => {
     // Purging the message log (the whole database's) is in message-log.test.ts.
     const profile = unique("profile");
-    await store.settings.set(profile, "a%:1", 1);
-    await store.settings.set(profile, "a%:2", 2);
-    await store.settings.set(profile, "ab:3", 3);
-    expect(await store.settings.deletePrefix(profile, "a%:")).toBe(2);
-    expect([...(await store.settings.list(profile, "")).keys()]).toEqual(["ab:3"]);
+    const ns = `${unique("settings")}/`;
+    await store.settings.set(profile, `${ns}a%:1`, 1);
+    await store.settings.set(profile, `${ns}a%:2`, 2);
+    await store.settings.set(profile, `${ns}ab:3`, 3);
+    expect(await store.settings.deletePrefix(profile, `${ns}a%:`)).toBe(2);
+    expect([...(await store.settings.list(profile, ns)).keys()]).toEqual([`${ns}ab:3`]);
   });
 
   it("scopes match whatever their key order", async () => {

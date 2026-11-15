@@ -14,6 +14,8 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { systemClock } from "@miyoria/types";
 import { generateDrizzleJson, generateMigration, pushSchema } from "drizzle-kit/payload/sqlite";
+import { configSchema } from "../src/config/migrations.js";
+import * as configTables from "../src/config/schema.js";
 import { Db } from "../src/db.js";
 import { identitySchema } from "../src/identity/migrations.js";
 import * as identityTables from "../src/identity/schema.js";
@@ -33,6 +35,7 @@ function dropsCore(statement: string): boolean {
 /** The Drizzle tables of each plugin that declares its tables with Drizzle. */
 export const DRIZZLE_PLUGINS: Record<string, { tables: object; schema: PluginSchema }> = {
   identity: { tables: identityTables, schema: identitySchema },
+  config: { tables: configTables, schema: configSchema },
 };
 
 /** `CREATE TABLE ... );` as `CREATE TABLE ... ) STRICT;`. */

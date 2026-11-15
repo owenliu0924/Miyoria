@@ -14,7 +14,9 @@
 //   migration that already ran);
 // - a new migration sorts before one that was already applied;
 // - a schema fails the naming lint: a plugin's tables, indexes, triggers and views start with
-//   `<plugin>_`, and it declares foreign keys only to its own, core and identity tables.
+//   `<plugin>_`, and it declares foreign keys only to its own, core and identity tables. Core and
+//   the two core plugins that always run (`identity`, `config`) name their tables without a
+//   prefix, as the design does (`persons`, `place_settings`, `plugin_state`); so does `legacy`.
 
 import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
@@ -106,8 +108,11 @@ export const coreSchema: PluginSchema = {
 /** Core plugins that always run, in this order, right after `core`. */
 const PINNED = ["identity", "config"] as const;
 
-/** Schemas whose table names carry no prefix: core, its identity plugin, and `legacy`. */
-const UNPREFIXED = new Set(["core", "identity", "legacy"]);
+/**
+ * Schemas whose table names carry no prefix: core, its two always-on plugins (`identity`,
+ * `config`), and `legacy`.
+ */
+const UNPREFIXED = new Set(["core", "identity", "config", "legacy"]);
 
 /** Schemas every plugin may point a foreign key at. */
 const SHARED = new Set(["core", "identity"]);
@@ -257,8 +262,8 @@ export function sqlNames(sql: string): SqlNames {
 
 /**
  * Problems with the names in `schemas` (already ordered), as messages; empty when they pass.
- * Core, identity and `legacy` are exempt from the prefix; every other schema's names start with
- * `<plugin>_`, and its foreign keys point only at its own, core or identity tables.
+ * Core, identity, config and `legacy` are exempt from the prefix; every other schema's names
+ * start with `<plugin>_`, and its foreign keys point only at its own, core or identity tables.
  */
 export function lintSchemas(schemas: readonly PluginSchema[]): string[] {
   const shared = new Set<string>();

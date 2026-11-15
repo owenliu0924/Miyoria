@@ -9,6 +9,21 @@ export {
   StoreError,
   toMicros,
 } from "./common.js";
+export { configSchema } from "./config/migrations.js";
+export {
+  type ConfigRevisionRow,
+  PLACE_SCOPES,
+  type PlaceScope,
+  type PlaceSettingRow,
+  type PluginStateRow,
+} from "./config/schema.js";
+export {
+  PLUGIN_STATE_MAX_BYTES,
+  PluginState,
+  type PluginStateValue,
+  SETTINGS_PLUGIN,
+  SettingsState,
+} from "./config/state.js";
 export {
   type CategoryInventory,
   categoryModules,

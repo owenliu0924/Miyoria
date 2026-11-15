@@ -4,6 +4,8 @@
 //
 // Settings keys belong to other packages; they are repeated here as strings (the store cannot
 // depend on the modules), and `@miyoria/api`'s tests check them against the owners' constants.
+// They are rows of plugin `settings` in `plugin_state` (`config/state.ts`): one key space, whatever
+// profile their owners write them under, since one database belongs to one character.
 //
 // Invariants kept by the shape of the registry:
 // - Consolidation watermarks (`memory_watermark:*`) exist only inside `messages`, so they are
@@ -69,7 +71,11 @@ export interface TablePart {
   exportFrom: string | null;
 }
 
-/** Settings keys of the profile (`active`) or of `_global` (`global`). */
+/**
+ * Settings keys (rows of plugin `settings` in `plugin_state`). `profile` says which profile their
+ * owners write them under, the profile's (`active`) or `_global` (`global`); both are one key
+ * space now.
+ */
 export interface SettingsPart {
   kind: "settings";
   id: string;
@@ -84,7 +90,7 @@ export interface CallNamesPart {
   id: string;
 }
 
-/** Settings of the profile and of `_global` that no other part covers. */
+/** Settings keys that no other part covers. */
 export interface OtherSettingsPart {
   kind: "other_settings";
   id: string;
@@ -862,7 +868,10 @@ export interface DataInventory {
   categories: CategoryInventory[];
 }
 
-/** A backup: the rows of each part, as plain JSON. Settings rows are `{profile_id, key, value}`. */
+/**
+ * A backup: the rows of each part, as plain JSON. Settings rows are `{profile_id, key, value,
+ * updated_at}`, `profile_id` the profile the backup was made for.
+ */
 export interface DataExport {
   format: typeof DATA_EXPORT_FORMAT;
   version: 1;
@@ -911,7 +920,7 @@ class Params {
   }
 }
 
-/** `profile_settings` rows of one settings profile matching keys / prefixes. */
+/** Settings rows matching keys / prefixes. */
 function selectorSql(
   d: SqlDialect,
   p: Params,
@@ -925,30 +934,25 @@ function selectorSql(
   return terms.length === 0 ? "FALSE" : `(${terms.join(" OR ")})`;
 }
 
-function settingsPartWhere(d: SqlDialect, p: Params, part: SettingsPart, profile: ProfileId) {
-  const who = part.profile === "active" ? profile : GLOBAL_SETTINGS_PROFILE;
-  return `profile_id = ${p.add(who)} AND ${selectorSql(d, p, part.keys, part.prefixes)}`;
+/** The settings rows of `plugin_state` (`config/state.ts` `SETTINGS_PLUGIN`). */
+const SETTINGS_ROWS = "plugin = 'settings'";
+
+function settingsPartWhere(d: SqlDialect, p: Params, part: SettingsPart) {
+  return `${SETTINGS_ROWS} AND ${selectorSql(d, p, part.keys, part.prefixes)}`;
 }
 
-/** Settings rows no settings part claims (in the profile and in `_global`). */
-function otherSettingsWhere(d: SqlDialect, p: Params, profile: ProfileId): string {
-  const known = (which: SettingsPart["profile"]) => {
-    const parts = DATA_CATEGORIES.flatMap((c) => c.parts).filter(
-      (x): x is SettingsPart => x.kind === "settings" && x.profile === which,
-    );
-    return selectorSql(
-      d,
-      p,
-      parts.flatMap((x) => x.keys),
-      parts.flatMap((x) => x.prefixes),
-    );
-  };
-  const active = p.add(profile);
-  const global = p.add(GLOBAL_SETTINGS_PROFILE);
-  return (
-    `((profile_id = ${active} AND NOT ${known("active")}) OR ` +
-    `(profile_id = ${global} AND NOT ${known("global")}))`
+/** Settings rows no settings part claims. */
+function otherSettingsWhere(d: SqlDialect, p: Params): string {
+  const parts = DATA_CATEGORIES.flatMap((c) => c.parts).filter(
+    (x): x is SettingsPart => x.kind === "settings",
   );
+  const known = selectorSql(
+    d,
+    p,
+    parts.flatMap((x) => x.keys),
+    parts.flatMap((x) => x.prefixes),
+  );
+  return `${SETTINGS_ROWS} AND NOT ${known}`;
 }
 
 function tableWhere(p: Params, part: TablePart, profile: ProfileId): string {
@@ -975,7 +979,7 @@ export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): St
     }
     case "settings":
       return {
-        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM profile_settings WHERE ${settingsPartWhere(d, p, part, profile)}`,
+        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM plugin_state WHERE ${settingsPartWhere(d, p, part)}`,
         params: p.values,
       };
     case "call_names":
@@ -985,7 +989,7 @@ export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): St
       };
     case "other_settings":
       return {
-        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM profile_settings WHERE ${otherSettingsWhere(d, p, profile)}`,
+        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM plugin_state WHERE ${otherSettingsWhere(d, p)}`,
         params: p.values,
       };
     case "prefs":
@@ -1029,7 +1033,9 @@ export function exportSpec(part: DataPart): Readonly<Record<string, ExportColumn
 /** The rows of a part, with `exportSpec(part)` columns. */
 export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): Stmt {
   const p = new Params();
-  const settingsSelect = `SELECT profile_id, key, ${d.jsonText("value")} AS value, updated_at FROM profile_settings`;
+  // One database is one character: every settings row is exported as the profile's.
+  const settingsSelect = () =>
+    `SELECT ${p.add(profile)} AS profile_id, key, ${d.jsonText("value")} AS value, updated_at FROM plugin_state`;
   switch (part.kind) {
     case "table": {
       const cols = Object.keys(part.columns)
@@ -1041,7 +1047,7 @@ export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
     }
     case "settings":
       return {
-        sql: `${settingsSelect} WHERE ${settingsPartWhere(d, p, part, profile)} ORDER BY ${d.keyOrder}`,
+        sql: `${settingsSelect()} WHERE ${settingsPartWhere(d, p, part)} ORDER BY ${d.keyOrder}`,
         params: p.values,
       };
     case "call_names":
@@ -1051,7 +1057,7 @@ export function exportStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
       };
     case "other_settings":
       return {
-        sql: `${settingsSelect} WHERE ${otherSettingsWhere(d, p, profile)} ORDER BY profile_id, ${d.keyOrder}`,
+        sql: `${settingsSelect()} WHERE ${otherSettingsWhere(d, p)} ORDER BY ${d.keyOrder}`,
         params: p.values,
       };
     case "prefs":
@@ -1070,7 +1076,7 @@ export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
       return { sql: `DELETE FROM ${part.table} ${tableWhere(p, part, profile)}`, params: p.values };
     case "settings":
       return {
-        sql: `DELETE FROM profile_settings WHERE ${settingsPartWhere(d, p, part, profile)}`,
+        sql: `DELETE FROM plugin_state WHERE ${settingsPartWhere(d, p, part)}`,
         params: p.values,
       };
     case "call_names":
@@ -1080,7 +1086,7 @@ export function deleteStmt(d: SqlDialect, part: DataPart, profile: ProfileId): S
       };
     case "other_settings":
       return {
-        sql: `DELETE FROM profile_settings WHERE ${otherSettingsWhere(d, p, profile)}`,
+        sql: `DELETE FROM plugin_state WHERE ${otherSettingsWhere(d, p)}`,
         params: p.values,
       };
     case "prefs":

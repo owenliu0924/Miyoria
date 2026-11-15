@@ -274,16 +274,17 @@ describe("data categories", () => {
     expect(await store.people.all()).toEqual([]);
     expect(await store.moduleState.list()).toEqual(new Map());
     expect((await store.audit.recent(9, null)).map((e) => e.action)).toEqual(["seed"]);
-    expect([...(await store.settings.list(GLOBAL_SETTINGS_PROFILE, "")).keys()]).toEqual([
-      "panel_session:abc",
-    ]);
-    expect((await store.settings.list(P, "")).size).toBe(0);
+    // One key space, whatever profile is named: one database is one character.
+    for (const profile of [GLOBAL_SETTINGS_PROFILE, P, OTHER]) {
+      expect([...(await store.settings.list(profile, "")).keys()], profile).toEqual([
+        "panel_session:abc",
+      ]);
+    }
 
-    // The other profile keeps its own data (people are shared and gone, and so is the
-    // conversation log: one database belongs to one character).
+    // The other profile keeps its own data (people are shared and gone, and so are the
+    // conversation log and the settings: one database belongs to one character).
     expect(await store.messages.recent(OTHER, ctx, 9)).toEqual([]);
     expect((await store.relationships.get(OTHER, owen))?.call_name).toBe("歐文");
-    expect((await store.settings.list(OTHER, "")).size).toBe(9);
     expect((await store.personaOverrides.current(OTHER)).size).toBe(1);
   });
 
@@ -322,8 +323,9 @@ describe("data categories", () => {
     expect(backup.parts.module_state).toEqual([
       { module_id: "agent", enabled: false, updated_at: expect.any(String) },
     ]);
+    // Settings rows are the profile's the backup was made for.
     expect(backup.parts.other_settings?.map((r) => [r.profile_id, r.key])).toEqual([
-      [GLOBAL_SETTINGS_PROFILE, "future:thing"],
+      [P, "future:thing"],
       [P, "zzz:unknown"],
     ]);
     expect(backup.parts.audit_log?.[0]).toMatchObject({ action: "seed", ok: true, detail: {} });

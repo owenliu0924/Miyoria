@@ -6,6 +6,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { type Clock, systemClock } from "@miyoria/types";
+import { configSchema } from "./config/migrations.js";
 import { Db } from "./db.js";
 import { EventStore } from "./events/log.js";
 import { Identity } from "./identity/identity.js";
@@ -18,6 +19,8 @@ export interface OpenTestDbOptions {
   plugins?: readonly PluginSchema[];
   /** Also apply the `identity` schema and return its operations. Default false. */
   identity?: boolean;
+  /** Also apply the `config` schema (config revisions, place settings, plugin state). */
+  config?: boolean;
   /** Also apply the store's V4 tables (the temporary `legacy` schema). Default false. */
   legacy?: boolean;
   /** "Now" for `_migrations.applied_at` and anything the test stamps through `db`. */
@@ -42,6 +45,7 @@ export function openTestDb(options: OpenTestDbOptions = {}): TestDb {
   try {
     const schemas = [
       ...(options.identity ? [identitySchema] : []),
+      ...(options.config ? [configSchema] : []),
       ...(options.legacy ? [legacySchema] : []),
       ...(options.plugins ?? []),
     ];

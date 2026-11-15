@@ -18,7 +18,6 @@ import {
   type Directive,
   type DirectiveRecord,
   type JsonObject,
-  type JsonValue,
   type ModuleId,
   type PersonId,
   type PlatformId,
@@ -51,6 +50,8 @@ import {
   u32,
   walletWith,
 } from "./common.js";
+import { configSchema } from "./config/migrations.js";
+import { SettingsState } from "./config/state.js";
 import {
   addCount,
   type DataCategoryId,
@@ -146,7 +147,7 @@ export interface SqliteStoreOptions {
   clock?: Clock;
   /** How long a write waits for another process's lock. Default 5000 ms. */
   busyTimeoutMs?: number;
-  /** Plugin schemas to migrate besides the store's own (`core` and `legacy`). */
+  /** Plugin schemas to migrate besides the store's own (`core`, `identity`, `config`, `legacy`). */
   schemas?: readonly PluginSchema[];
 }
 
@@ -1217,54 +1218,6 @@ class SqlitePersonaOverrides implements PersonaOverrideStore {
   }
 }
 
-// ---- settings -----------------------------------------------------------------------------
-
-class SqliteSettings implements SettingsStore {
-  constructor(private readonly db: Db) {}
-
-  async get(profile: ProfileId, key: string): Promise<JsonValue | null> {
-    const row = this.db.get(
-      "SELECT value FROM profile_settings WHERE profile_id = $profile AND key = $key",
-      { profile, key },
-    );
-    return row ? json<JsonValue>(row, "value", "setting") : null;
-  }
-
-  async set(profile: ProfileId, key: string, value: JsonValue | null): Promise<void> {
-    if (value === null) {
-      this.db.run("DELETE FROM profile_settings WHERE profile_id = $profile AND key = $key", {
-        profile,
-        key,
-      });
-      return;
-    }
-    this.db.run(
-      "INSERT INTO profile_settings (profile_id, key, value, updated_at) VALUES ($profile, " +
-        "$key, $value, $at) ON CONFLICT (profile_id, key) DO UPDATE SET value = " +
-        "excluded.value, updated_at = excluded.updated_at",
-      { profile, key, value: JSON.stringify(value), at: this.db.nowMicros() },
-    );
-  }
-
-  async list(profile: ProfileId, prefix: string): Promise<Map<string, JsonValue>> {
-    // `substr` instead of `LIKE`, so `%` and `_` in the prefix are literal (and case matters).
-    const rows = this.db.all(
-      "SELECT key, value FROM profile_settings WHERE profile_id = $profile AND " +
-        "substr(key, 1, length($prefix)) = $prefix ORDER BY key",
-      { profile, prefix },
-    );
-    return new Map(rows.map((r) => [str(r, "key"), json<JsonValue>(r, "value", "setting")]));
-  }
-
-  async deletePrefix(profile: ProfileId, prefix: string): Promise<number> {
-    return this.db.run(
-      "DELETE FROM profile_settings WHERE profile_id = $profile AND " +
-        "substr(key, 1, length($prefix)) = $prefix",
-      { profile, prefix },
-    );
-  }
-}
-
 // ---- whole-profile export / wipe ----------------------------------------------------------
 
 class SqliteProfileData implements ProfileDataStore {
@@ -2152,7 +2105,7 @@ export class SqliteStore implements Store {
     this.moduleState = new SqliteModuleState(db);
     this.personaOverrides = new SqlitePersonaOverrides(db);
     this.people = new IdentityPeople(this.persons);
-    this.settings = new PrefsSettings(new SqliteSettings(db), this.persons);
+    this.settings = new PrefsSettings(new SettingsState(db), this.persons);
     this.memories = new SqliteMemories(db);
     this.relationships = new SqliteRelationships(db);
     this.identity = new IdentityLinks(this.persons);
@@ -2201,7 +2154,9 @@ export class SqliteStore implements Store {
         db.exec("PRAGMA synchronous = NORMAL");
       }
       db.exec("PRAGMA foreign_keys = ON");
-      migrate(db, [identitySchema, legacySchema, ...(options.schemas ?? [])], { location: path });
+      migrate(db, [identitySchema, configSchema, legacySchema, ...(options.schemas ?? [])], {
+        location: path,
+      });
     } catch (error) {
       db.close();
       throw error;

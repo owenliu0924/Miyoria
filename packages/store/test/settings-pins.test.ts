@@ -180,34 +180,36 @@ describe("settings: a person's choices under the global profile", () => {
   });
 });
 
-// What only existed to keep one profile's settings apart from another's.
+// What only existed to keep one profile's settings apart from another's. One database belongs to
+// one character (decision D6, v5-data §8 step 8), so the profile a caller names is not part of the
+// key any more: each case below pinned the separation, and now pins that it is gone.
 describe("settings: profiles", () => {
-  it("a key set under one profile is not seen under another", async () => {
+  it("a key set under one profile is seen under every other", async () => {
     await settings.set(NAMED, "queue:state", { items: [1] });
-    expect(await settings.get(GLOBAL_SETTINGS_PROFILE, "queue:state")).toBeNull();
-    expect(await settings.get("someone-else", "queue:state")).toBeNull();
-    expect(await keysOf(GLOBAL_SETTINGS_PROFILE, "")).toEqual([]);
+    expect(await settings.get(GLOBAL_SETTINGS_PROFILE, "queue:state")).toEqual({ items: [1] });
+    expect(await settings.get("someone-else", "queue:state")).toEqual({ items: [1] });
+    expect(await keysOf(GLOBAL_SETTINGS_PROFILE, "")).toEqual(["queue:state"]);
   });
 
-  it("the same key holds a value per profile", async () => {
+  it("the same key holds one value: the last write wins", async () => {
     await settings.set(NAMED, "mode:general", "named");
     await settings.set(GLOBAL_SETTINGS_PROFILE, "mode:general", "global");
-    expect(await settings.get(NAMED, "mode:general")).toBe("named");
+    expect(await settings.get(NAMED, "mode:general")).toBe("global");
     expect(await settings.get(GLOBAL_SETTINGS_PROFILE, "mode:general")).toBe("global");
     await settings.set(NAMED, "mode:general", null);
-    expect(await settings.get(GLOBAL_SETTINGS_PROFILE, "mode:general")).toBe("global");
+    expect(await settings.get(GLOBAL_SETTINGS_PROFILE, "mode:general")).toBeNull();
   });
 
-  it("deletePrefix leaves other profiles alone", async () => {
+  it("deletePrefix deletes the keys whatever profile wrote them", async () => {
     await settings.set(NAMED, "x:1", 1);
     await settings.set(GLOBAL_SETTINGS_PROFILE, "x:2", 2);
-    expect(await settings.deletePrefix(NAMED, "x:")).toBe(1);
-    expect(await keysOf(GLOBAL_SETTINGS_PROFILE, "x:")).toEqual(["x:2"]);
+    expect(await settings.deletePrefix(NAMED, "x:")).toBe(2);
+    expect(await keysOf(GLOBAL_SETTINGS_PROFILE, "x:")).toEqual([]);
   });
 
-  it("a person's choice under a named profile is an ordinary key", async () => {
+  it("a person's choice is the person's under any profile", async () => {
     await settings.set(NAMED, "privacy:discord:1", 1);
     expect(await settings.get(NAMED, "privacy:discord:1")).toBe(1);
-    expect(await settings.get(GLOBAL_SETTINGS_PROFILE, "privacy:discord:1")).toBeNull();
+    expect(await settings.get(GLOBAL_SETTINGS_PROFILE, "privacy:discord:1")).toBe(1);
   });
 });
