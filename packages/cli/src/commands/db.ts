@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { databaseUrl, profileId } from "@miyoria/core/light";
-import type { Config } from "@miyoria/runtime/kernel";
+import { type Config, configureLogging } from "@miyoria/runtime/kernel";
 import type {
   ArchiveOptions,
   ArchiveResult,
@@ -47,6 +47,14 @@ const REASONS: Record<CutoverErrorCode, string> = {
 const loadStore = () => import("@miyoria/store");
 
 /** Rethrows a store refusal in the CLI's words (the store's English detail after them). */
+/**
+ * These commands print a report; the store's own log lines (each migration it applies) would land
+ * in the middle of it. Warnings and errors still show; `MIYORIA_LOG_LEVEL` overrides.
+ */
+function quietLogs(): void {
+  if (!process.env.MIYORIA_LOG_LEVEL) configureLogging({ level: "warn" });
+}
+
 async function explained(error: unknown): Promise<never> {
   const { CutoverError } = await loadStore();
   if (error instanceof CutoverError) {
@@ -135,6 +143,7 @@ export async function importLinksCommand(
   configPath: string,
   options: ImportLinksCommandOptions,
 ): Promise<void> {
+  quietLogs();
   if (options.from === undefined || options.from === "") {
     throw new DbCommandError("需要 --from <FILE>:V4 的資料庫(通常是 db archive 做的 .single.db)");
   }
@@ -252,6 +261,7 @@ export async function archiveCommand(
   options: ArchiveCommandOptions,
   prompter: Prompter | null,
 ): Promise<void> {
+  quietLogs();
   const path =
     options.file !== undefined
       ? resolve(options.file)
@@ -328,6 +338,7 @@ function range(versions: readonly number[]): string {
 
 /** `miyoria db doctor [file]`. Throws when a check failed. */
 export async function doctorCommand(configPath: string, file: string | undefined): Promise<void> {
+  quietLogs();
   let path: string;
   let profile: string | null = null;
   if (file !== undefined) {
