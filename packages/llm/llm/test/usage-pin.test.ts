@@ -108,10 +108,8 @@ function rig(cfg: BudgetConfig, start: string): Rig {
     { tracker: new CostTracker(PRICES, cfg, clock), clock },
   );
   const budget: Record<string, JsonValue>[] = [];
-  router.setEventSink((ev) => {
-    if (ev.type === "custom" && ev.data.topic === "llm.budget") {
-      budget.push(ev.data.payload as Record<string, JsonValue>);
-    }
+  router.setEventSink((definition, data, ..._meta) => {
+    if (definition.type === "llm.budget") budget.push(data as Record<string, JsonValue>);
   });
   return { router, a, b, c, clock, budget };
 }

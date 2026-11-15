@@ -151,12 +151,9 @@ function setup(cost: number, cfg: BudgetConfig, start: number): Setup {
     { tracker },
   );
   const events: Record<string, JsonValue>[] = [];
-  router.setEventSink((ev) => {
-    expect(ev.type).toBe("custom");
-    if (ev.type === "custom") {
-      expect(ev.data.topic).toBe("llm.budget");
-      events.push(ev.data.payload as Record<string, JsonValue>);
-    }
+  router.setEventSink((definition, data, ..._meta) => {
+    expect(definition.type).toBe("llm.budget");
+    events.push(data as Record<string, JsonValue>);
   });
   return { router, a, b, clock, events };
 }

@@ -7,9 +7,9 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { StoreKey } from "@miyoria/store";
-import { customEvent, type JsonValue, REASONING_LEVELS, serviceKey } from "@miyoria/types";
+import { Events, type JsonValue, REASONING_LEVELS, serviceKey } from "@miyoria/types";
 import { z } from "zod";
-import { LLM_CALL_TOPIC, llmCallPayload } from "./call-event.js";
+import { llmCallPayload } from "./call-event.js";
 import {
   CALL_LOG_PRUNE_INTERVAL_MS,
   CallLogConfigSchema,
@@ -215,8 +215,9 @@ export class LlmModule implements Module {
         writer?.write(call);
         try {
           const day = writer ? utcDay(ctx.clock.now()) : null;
-          const event = customEvent(LLM_CALL_TOPIC, llmCallPayload(call.record, day));
-          ctx.publish(event, { turn: call.record.turn });
+          ctx.publish(Events.LlmCall, llmCallPayload(call.record, day), {
+            turn: call.record.turn,
+          });
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "cannot publish an LLM call");
         }
@@ -229,7 +230,7 @@ export class LlmModule implements Module {
       ctx.clock,
     );
     const router = this.buildRouter(sink, this.#tracker);
-    router.setEventSink((event) => ctx.publish(event));
+    router.setEventSink(ctx.publisher);
     const calls = ctx.services.get(StoreKey)?.llmCalls;
     if (fresh && calls) {
       try {

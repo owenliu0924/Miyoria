@@ -8,10 +8,11 @@
 // events at start (`CostTracker.restore`).
 
 import type { LlmCallData } from "@miyoria/store";
+import { Events } from "@miyoria/types";
 import type { LlmCallRecord } from "./calls.js";
 
 /** The bus topic and event type of a finished call. */
-export const LLM_CALL_TOPIC = "llm.call";
+export const LLM_CALL_TOPIC = Events.LlmCall.type;
 
 /** The `llm.call` payload of a finished call; `logDay`: the UTC day of its JSONL line, if any. */
 export function llmCallPayload(record: LlmCallRecord, logDay: string | null): LlmCallData {

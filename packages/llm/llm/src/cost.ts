@@ -10,9 +10,9 @@ import { getLogger } from "@miyoria/runtime/kernel";
 import type { LlmCallStore, LlmModelTotals } from "@miyoria/store";
 import {
   type Clock,
-  customEvent,
-  type Event,
+  Events,
   type LlmBudgetPayload,
+  type Publish,
   systemClock,
   toTimestamp,
 } from "@miyoria/types";
@@ -22,10 +22,10 @@ import { BudgetExhaustedError, type ModelRef, ModelRefSchema, type Usage } from 
 const log = getLogger("llm.cost");
 
 /** Topic of the budget state event. */
-export const BUDGET_TOPIC = "llm.budget";
+export const BUDGET_TOPIC = Events.LlmBudget.type;
 
 /** Receives events the router wants to publish (set by the module). */
-export type EventSink = (event: Event) => void;
+export type EventSink = Publish;
 
 /**
  * Price of a model in USD per million tokens (`[llm.pricing."provider:model"]`).
@@ -292,7 +292,7 @@ export class CostTracker {
   }
 
   #emit(payload: BudgetEventPayload): void {
-    this.#sink?.(customEvent(BUDGET_TOPIC, { ...payload }));
+    this.#sink?.(Events.LlmBudget, { ...payload });
   }
 
   /**
