@@ -6,8 +6,8 @@
 // Applying a revision is writing it: "live reload is the next revision". The TOML file stays what
 // Core reads at start until the cut-over (§7) switches it to the current revision, so nothing
 // here reloads modules. A document is a JSON object as the TOML file holds it, env references
-// (`${NAME}`) unexpanded; secrets never go in (§6). The combined zod schema of every plugin's
-// config does not exist yet: a caller may pass a `validate` hook, and Core will pass that schema.
+// (`${NAME}`) unexpanded; secrets never go in (§6). A caller may pass a `validate` hook: Core
+// passes the root schema of the whole file (`@miyoria/core` `validateRevision`).
 //
 // Module on/off is the `enabled` flag of `modules.<id>` in the current revision (§6: "one place
 // for is it on"); `ConfigModuleState` is the `ModuleStateStore` Core's boot reads it through.

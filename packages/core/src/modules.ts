@@ -85,19 +85,22 @@ import {
   type ModuleDeps,
   STORE_PLUGINS,
 } from "./boot.js";
-import { assertStartConfig } from "./config-schema.js";
+import { assertStartConfig, validateRevision } from "./config-schema.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
 
 /**
  * Opens the store for `url`: `sqlite:<path>` (default, the parent directory is created) or
- * `memory://`, with the installed plugins' tables (`STORE_PLUGINS`). Any other scheme fails with a
- * message that names the supported ones.
+ * `memory://`, with the installed plugins' tables (`STORE_PLUGINS`) and config revisions checked
+ * by the root schema. Any other scheme fails with a message that names the supported ones.
  */
 export async function openStore(url: string): Promise<Store> {
   const path = sqlitePath(url);
   if (path !== null && path !== ":memory:") await mkdir(dirname(path), { recursive: true });
-  return openStoreBackend(url, { sqlite: { plugins: STORE_PLUGINS } });
+  return openStoreBackend(url, {
+    // A config revision Core would not start with is refused, as the file would be.
+    sqlite: { plugins: STORE_PLUGINS, config: { validate: validateRevision } },
+  });
 }
 
 /**

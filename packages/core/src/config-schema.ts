@@ -183,6 +183,14 @@ export function rootConfigSchema(
   });
 }
 
+let root: ConfigSchema | undefined;
+
+/** Core's own root schema (without other programs' sections), built once. */
+function coreRoot(): ConfigSchema {
+  root ??= rootConfigSchema();
+  return root;
+}
+
 /** Sections whose reader throws while Core is built, so a problem there stops the start. */
 const FATAL_SECTIONS = new Set(["llm", "speech", "mcp"]);
 
@@ -235,7 +243,7 @@ function split(problems: readonly ConfigProblem[]): ConfigCheck {
 
 /** Checks the loaded file (env references expanded) against the root schema with `startPolicy`. */
 export function checkStartConfig(config: Config): ConfigCheck {
-  return split(checkConfig(rootConfigSchema(), config.raw, { policy: startPolicy(config) }));
+  return split(checkConfig(coreRoot(), config.raw, { policy: startPolicy(config) }));
 }
 
 /**
@@ -265,7 +273,7 @@ export function assertStartConfig(config: Config): void {
  */
 export function validateRevision(doc: JsonObject): JsonObject {
   const config = Config.fromValue(doc);
-  const problems = checkConfig(rootConfigSchema(), doc, {
+  const problems = checkConfig(coreRoot(), doc, {
     policy: startPolicy(config),
     skipEnvRefs: true,
   });

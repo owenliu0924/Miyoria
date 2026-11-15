@@ -6,7 +6,7 @@ import { LlmConfigSchema } from "@miyoria/llm/llm";
 import { ExtensionsModule } from "@miyoria/plugin-host/ext-host";
 import { Config, ConfigError, parseSection } from "@miyoria/runtime/kernel";
 import { ReplayRecorderModule } from "@miyoria/runtime/replay-log";
-import { openStore } from "@miyoria/store";
+import { openStore, SqliteStore } from "@miyoria/store";
 import type { JsonObject } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { CliPlatform } from "../src/cli-platform.js";
@@ -17,7 +17,7 @@ import {
   validateRevision,
 } from "../src/config-schema.js";
 import { MODULE_IDS } from "../src/module-ids.js";
-import { buildCore, defaultCatalog } from "../src/modules.js";
+import { buildCore, defaultCatalog, openStore as openCoreStore } from "../src/modules.js";
 import { loadProfile } from "../src/settings.js";
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
@@ -253,6 +253,25 @@ describe("a config revision", () => {
     ];
     for (const doc of docs) {
       expect(validateRevision(doc)).toBe(doc);
+    }
+  });
+});
+
+describe("the store Core opens", () => {
+  it("refuses a revision Core would not start with, and takes the rest", async () => {
+    const store = await openCoreStore("memory://");
+    try {
+      if (!(store instanceof SqliteStore)) throw new Error("not the SQLite store");
+      const revisions = store.config.revisions;
+      expect(() => revisions.write({ llm: { budget: { daily_usd: "two" } } }, "cli")).toThrow(
+        "invalid config at `llm.budget.daily_usd`: Invalid input: expected number, received string",
+      );
+      expect(revisions.current()).toBeNull();
+      // A runtime toggle writes a revision of module flags only.
+      await store.moduleState.set("mind", false);
+      expect(revisions.current()?.doc).toEqual({ modules: { mind: { enabled: false } } });
+    } finally {
+      await store.close();
     }
   });
 });

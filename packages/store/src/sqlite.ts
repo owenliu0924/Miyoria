@@ -53,7 +53,11 @@ import {
 import { configSchema } from "./config/migrations.js";
 import { PersonaOverrides } from "./config/persona.js";
 import { PlaceSettings } from "./config/places.js";
-import { ConfigModuleState, ConfigRevisions } from "./config/revisions.js";
+import {
+  ConfigModuleState,
+  ConfigRevisions,
+  type ConfigRevisionsOptions,
+} from "./config/revisions.js";
 import { PluginState, SettingsState } from "./config/state.js";
 import {
   addCount,
@@ -127,6 +131,8 @@ export interface SqliteStoreOptions {
    * for `:memory:` (then `artifacts` is `null`).
    */
   artifactRoot?: string | null;
+  /** The config revisions' options: Core passes the root config schema as `validate`. */
+  config?: ConfigRevisionsOptions;
 }
 
 // ---- row accessors ----------------------------------------------------------------------
@@ -982,6 +988,7 @@ export class SqliteStore implements Store {
     artifactRoot: string | null,
     schemas: readonly PluginSchema[],
     location: string,
+    config: ConfigRevisionsOptions = {},
   ) {
     this.#db = db;
     this.#location = location;
@@ -990,7 +997,7 @@ export class SqliteStore implements Store {
     this.events = new EventStore(db, { identity: this.persons });
     this.artifacts =
       artifactRoot === null ? null : new ArtifactStore(db, this.events, { root: artifactRoot });
-    const revisions = new ConfigRevisions(db, this.events);
+    const revisions = new ConfigRevisions(db, this.events, config);
     this.config = {
       revisions,
       places: new PlaceSettings(db, this.events),
@@ -1051,7 +1058,7 @@ export class SqliteStore implements Store {
       ];
       migrate(db, schemas, { location: path });
       const root = options.artifactRoot ?? (memory ? null : join(dirname(path), "artifacts"));
-      const store = new SqliteStore(db, root, schemas, path);
+      const store = new SqliteStore(db, root, schemas, path, options.config);
       for (const plugin of plugins) store.plugin(plugin);
       return store;
     } catch (error) {
