@@ -7,8 +7,6 @@
 // got accepted. The task's end decides. Anything else is done when it answers.
 
 import {
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
   type AccountRef,
   type ActionState,
   type ActivityManager,
@@ -17,6 +15,7 @@ import {
   contextKeyEquals,
   contextKeyString,
   type EventLog,
+  Events,
   isJsonObject,
   type JsonValue,
   type MainActionBody,
@@ -368,9 +367,9 @@ export class Hands {
   activityEnded(topic: string, event: ActivityTaskEvent): void {
     const job = this.#byTask.get(event.task);
     if (!job) return;
-    if (topic === ACTIVITY_DONE_TOPIC && event.type === "done") {
+    if (topic === Events.ActivityDone.type && event.type === "done") {
       this.#end(job, "done", event.detail);
-    } else if (topic === ACTIVITY_FAILED_TOPIC && event.type === "failed") {
+    } else if (topic === Events.ActivityFailed.type && event.type === "failed") {
       this.#end(job, "failed", event.detail);
     }
   }

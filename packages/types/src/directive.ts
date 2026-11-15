@@ -183,8 +183,5 @@ export interface Directives {
 
 export const DirectivesKey = serviceKey<Directives>("Directives");
 
-/** Bus topic: a rule was added or removed (`DirectiveChangedBody`). */
-export const DIRECTIVE_CHANGED_TOPIC = "directive.changed";
-
-/** The `body` of a `directive` log line, and the payload of `DIRECTIVE_CHANGED_TOPIC`. */
+/** The `body` of a `directive` log line, and the payload of `Events.DirectiveChanged`. */
 export type DirectiveChangedBody = DirectiveChangedData;

@@ -9,7 +9,7 @@ import {
   EMOTION_NAMES,
   EMOTION_OUTPUTS,
   type EmotionName,
-  MOOD_CHANGED_TOPIC,
+  Events,
   MoodSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -241,7 +241,7 @@ describe("her mood belongs to the Affect module", () => {
 
   it("publishes `mood.changed` when the mood moved, and not for the first reading", () => {
     const r = rig();
-    const moods = () => r.published.filter((p) => p.topic === MOOD_CHANGED_TOPIC);
+    const moods = () => r.published.filter((p) => p.topic === Events.MoodChanged.type);
     r.affect.publishIfChanged();
     expect(moods()).toEqual([]);
     r.affect.publishIfChanged();

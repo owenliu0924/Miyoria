@@ -31,7 +31,6 @@ import WebSocket from "ws";
 import { z } from "zod";
 import {
   formatAddress,
-  STATUS_TOPIC,
   STREAM_COMMAND_PATHS,
   type StageLink,
   StageLinkKey,
@@ -262,7 +261,7 @@ describe("stage.link", () => {
     expect(await silent.expectClose()).toBe(4400);
     expect(h.link().isConnected()).toBe(false);
 
-    const status = h.subscribe([STATUS_TOPIC]);
+    const status = h.subscribe([Events.StageStatus.type]);
     const first = await h.node();
     const link = h.link();
     expect(link.node()).toStrictEqual(["test-stage", ["vts", "obs"]]);

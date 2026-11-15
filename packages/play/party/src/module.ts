@@ -8,7 +8,6 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import {
-  ACTIVITY_CHANGED_TOPIC,
   type ActivitySnapshot,
   type BusEvent,
   type ContextKey,
@@ -166,7 +165,7 @@ export class PartyModule implements Module {
       Events.VoiceLeft.type,
       Events.VoiceParticipants.type,
       Events.VoiceUtteranceEvent.type,
-      ACTIVITY_CHANGED_TOPIC,
+      Events.ActivityChanged.type,
     ]);
     ctx.spawn("events", async () => {
       for await (const env of events) {
@@ -204,7 +203,8 @@ export class PartyModule implements Module {
       this.#heard(ctx, table, m.id.context, speaker, incomingText(m), m.id.id, "chat", origin);
       return;
     } else {
-      if (event.type === ACTIVITY_CHANGED_TOPIC) this.#onActivity(table, event.data as JsonValue);
+      if (event.type === Events.ActivityChanged.type)
+        this.#onActivity(table, event.data as JsonValue);
       return;
     }
   }

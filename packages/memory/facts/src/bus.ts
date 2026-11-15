@@ -35,7 +35,6 @@ import {
   type EventLog,
   type EventPayload,
   Events,
-  GOAL_TOPIC,
   gameEventKey,
   gameGoalKey,
   type Handle,
@@ -59,10 +58,7 @@ import {
   parseTaskEvent,
   parseTaskTopic,
   type Salience,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
   type SteerOutcomeBody,
-  SYSTEM_SHUTDOWN_TOPIC,
   sameAccount,
   type TaskEvent,
   type Thought,
@@ -84,16 +80,6 @@ import {
   SHUTDOWN_KEY,
 } from "./recovery.js";
 import type { RevisionBook } from "./revisions.js";
-
-// Topics declared by packages this one does not depend on.
-const GOLIVE_TOPIC = "voice.golive";
-const STAGE_STATUS_TOPIC = "stage.status";
-const STAGE_ERROR_TOPIC = "stage.error";
-const GAME_SESSION_TOPIC = "game.director.session";
-const GAME_GOAL_TOPIC = "game.director.goal";
-const GAME_DECISION_TOPIC = "game.director.decision";
-const GATE_DECISION_TOPIC = "gate.decision";
-const VOICE_LATENCY_TOPIC = "voice.latency";
 
 /** A death is always a new one, however soon after the last. */
 const ALWAYS_NEW = new Set(["death"]);
@@ -321,7 +307,7 @@ export class BusFacts {
     const payload = env.data as JsonValue;
     const data = isJsonObject(payload) ? payload : {};
     switch (topic) {
-      case SYSTEM_SHUTDOWN_TOPIC:
+      case Events.SystemShutdown.type:
         this.#observe(env, {
           source: LIFECYCLE_SOURCE,
           key: SHUTDOWN_KEY,
@@ -330,22 +316,22 @@ export class BusFacts {
           summary: "核心要關閉了",
         });
         return;
-      case GATE_DECISION_TOPIC:
+      case Events.GateDecision.type:
         this.#gate(data);
         return;
-      case VOICE_LATENCY_TOPIC:
+      case Events.VoiceLatency.type:
         this.#latency(data);
         return;
-      case GOAL_TOPIC:
+      case Events.PlanGoal.type:
         this.#log.append({ kind: "proposal", source: "plan", body: data });
         return;
-      case GOLIVE_TOPIC:
+      case Events.VoiceGoLive.type:
         this.#golive(env, data);
         return;
-      case STAGE_STATUS_TOPIC:
+      case Events.StageStatus.type:
         this.#stage(env, data);
         return;
-      case STAGE_ERROR_TOPIC:
+      case Events.StageError.type:
         this.#observe(env, {
           source: "stage",
           key: "stage:error",
@@ -354,19 +340,19 @@ export class BusFacts {
           summary: `直播機出錯:${typeof data.message === "string" ? data.message : "不明"}`,
         });
         return;
-      case SONG_TOPIC:
+      case Events.SingCue.type:
         this.#song(env, payload);
         return;
-      case SONG_PREPARE_TOPIC:
+      case Events.SingPrepare.type:
         this.#songPrepare(env, payload);
         return;
-      case GAME_SESSION_TOPIC:
+      case Events.GameDirectorSession.type:
         this.#gameSession(env, data);
         return;
-      case GAME_GOAL_TOPIC:
+      case Events.GameDirectorGoal.type:
         this.#gameGoal(env, data);
         return;
-      case GAME_DECISION_TOPIC:
+      case Events.GameDirectorDecision.type:
         this.#log.append({ kind: "thought", source: "game.director", body: data });
         return;
       default:
@@ -658,7 +644,7 @@ export class BusFacts {
     const { stage: _stage, ...measurement } = data;
     this.#log.append({
       kind: "result",
-      source: VOICE_LATENCY_TOPIC,
+      source: Events.VoiceLatency.type,
       cause: this.#head(data.turn),
       context: isJsonObject(data.context) ? (data.context as unknown as ContextKey) : null,
       body: { turn: data.turn, e2e: measurement },

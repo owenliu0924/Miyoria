@@ -6,12 +6,11 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import {
+  Events,
   ImageGenKey,
   type JsonValue,
   parseSongCue,
   parseSongPrepare,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
 } from "@miyoria/types";
 import { ComfyClient } from "./comfy.js";
 import { ImageGenConfigSchema } from "./config.js";
@@ -52,15 +51,15 @@ export class ImageGenModule implements Module {
     this.#service = service;
     ctx.provide(ImageGenKey, service);
 
-    const songs = ctx.subscribe([SONG_TOPIC, SONG_PREPARE_TOPIC]);
+    const songs = ctx.subscribe([Events.SingCue.type, Events.SingPrepare.type]);
     ctx.spawn("songs", async () => {
       for await (const env of songs) {
         const topic = env.type;
         const payload = env.data as JsonValue;
-        if (topic === SONG_TOPIC) {
+        if (topic === Events.SingCue.type) {
           const cue = parseSongCue(payload);
           if (cue) service.onSongCue(cue);
-        } else if (topic === SONG_PREPARE_TOPIC) {
+        } else if (topic === Events.SingPrepare.type) {
           const prepare = parseSongPrepare(payload);
           if (prepare) service.onSongPrepare(prepare);
         }

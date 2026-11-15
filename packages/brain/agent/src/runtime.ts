@@ -80,7 +80,7 @@ import { type Chain, heardPart, heardShare, MainLine } from "./mainline/main.js"
 import { agentTurns } from "./metrics.js";
 import type { PersonaHandle } from "./persona.js";
 import { type HistoryEntry, Session } from "./session.js";
-import { BUDGET_TOPIC, parseBudgetState } from "./signals.js";
+import { parseBudgetState } from "./signals.js";
 import { ReactTool } from "./tools.js";
 import { accountId, contextId } from "./util.js";
 import { type FetchLike, ImageLoader } from "./vision.js";
@@ -90,8 +90,6 @@ const COMMANDS_MODULE = "commands";
 const MINUTE_MS = 60_000;
 /** How long the Arbiter waits for a coordinator to take (or refuse) an impulse's turn. */
 const OPEN_TIMEOUT_MS = 5_000;
-/** Topic of the voice module's barge-in reports (`packages/voice/voice/src/topics.ts`, W2). */
-export const BARGE_IN_TOPIC = Events.VoiceBargeIn.type;
 /** Notices kept per context while nobody reads them. */
 const MAX_NOTICES = 10;
 /** Barge-ins remembered (by turn). */
@@ -325,7 +323,7 @@ export class Agent {
       Events.SystemModuleState.type,
       Events.AgentInitiative.type,
       Events.AgentNotice.type,
-      BUDGET_TOPIC,
+      Events.LlmBudget.type,
     ];
   }
 
@@ -392,11 +390,11 @@ export class Agent {
       const { context, reason, hint, about } = env.data;
       this.#onInitiative(context, { reason, hint, about: [...about] });
     } else {
-      // Every other topic it follows (they travelled as `custom` events).
+      // Every other topic it follows.
       const payload = env.data as JsonValue;
       if (this.mainline.custom(env.type, payload)) return;
-      if (env.type === BUDGET_TOPIC) this.#onBudget(payload);
-      else if (env.type === BARGE_IN_TOPIC) this.#onBargeIn(payload);
+      if (env.type === Events.LlmBudget.type) this.#onBudget(payload);
+      else if (env.type === Events.VoiceBargeIn.type) this.#onBargeIn(payload);
       else if (is(Events.AgentNotice, env) && isJsonObject(payload)) this.#onNotice(env.data);
     }
   }

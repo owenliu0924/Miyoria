@@ -9,7 +9,7 @@
 // * `LlmCallWriter` appends every finished call to `[llm.call_log] dir` as daily JSONL, and the
 //   module publishes each as an `llm.call` event (metadata and cost) for the event log.
 
-export { LLM_CALL_TOPIC, llmCallPayload } from "./call-event.js";
+export { llmCallPayload } from "./call-event.js";
 export {
   CALL_LOG_MAX_QUEUE,
   CALL_LOG_PRELOAD_MAX_BYTES,
@@ -53,7 +53,6 @@ export {
   redactSecrets,
 } from "./calls.js";
 export {
-  BUDGET_TOPIC,
   type BudgetConfig,
   BudgetConfigSchema,
   type BudgetEventPayload,

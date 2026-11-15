@@ -21,10 +21,10 @@ import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
-  ARBITER_IMPULSE_TOPIC,
   AuthorizerKey,
   BaseAuthorizer,
   type ContextKey,
+  Events,
   type Impulse,
   impulseReason,
   type MessageRef,
@@ -259,10 +259,10 @@ export function proposal(over: Partial<ToolProposal> = {}): ToolProposal {
   };
 }
 
-/** The follow-up impulses published so far (in the old `agent_initiative` shape). */
+/** The follow-up impulses published so far (in the old `agent.initiative` shape). */
 export function initiatives(events: readonly PublishedEvent[]) {
   return events.flatMap((e) => {
-    if (e.type !== ARBITER_IMPULSE_TOPIC) return [];
+    if (e.type !== Events.ArbiterImpulse.type) return [];
     const impulse = e.data as Impulse;
     return [
       {

@@ -2,10 +2,10 @@
 // and bond changes.
 
 import {
-  AFFECT_BOND_TOPIC,
   AFFECT_EVENT_KINDS,
   APPRAISAL_STRENGTH,
   type EmotionReading,
+  Events,
   relationshipLabel,
   renderAffectMood,
   toTimestamp,
@@ -553,14 +553,14 @@ describe("bond changes", () => {
       { affinity: 10, trust: 10, familiarity: 10, why: "他很照顧我" },
       "reflect",
     );
-    const sent = r.published.filter((p) => p.topic === AFFECT_BOND_TOPIC);
+    const sent = r.published.filter((p) => p.topic === Events.AffectBond.type);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.payload).toMatchObject({ person: "p1", affinity: 2, trust: 1, familiarity: 2 });
     // The day's cap on affinity is 4: only 2 more.
     await r.affect.adjustBond("p1", { affinity: 10, why: "x" }, "reflect");
     await r.affect.adjustBond("p1", { affinity: 10, why: "x" }, "reflect");
     const total = r.published
-      .filter((p) => p.topic === AFFECT_BOND_TOPIC)
+      .filter((p) => p.topic === Events.AffectBond.type)
       .reduce((a, p) => a + ((p.payload as { affinity: number }).affinity ?? 0), 0);
     expect(total).toBe(4);
   });

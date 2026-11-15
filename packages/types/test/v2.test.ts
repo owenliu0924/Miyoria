@@ -3,7 +3,6 @@ import {
   type ActivitySnapshot,
   asPromptBlock,
   assignHandle,
-  customEvent,
   DEFAULT_REASONING,
   ephemeralHandlesIn,
   type Goal,
@@ -17,7 +16,6 @@ import {
   isSelfInitiated,
   isShortReply,
   isTaskFailureCode,
-  isV2Topic,
   isValidHandle,
   type NewInputFacts,
   parseTaskTopic,
@@ -26,19 +24,12 @@ import {
   relationshipLabel,
   requestResource,
   runningActivity,
-  TURN_OUTCOME_TOPIC,
-  type TurnOutcomeRecord,
   taskTopic,
   triggerFires,
-  V2_TOPIC_PREFIXES,
-  V2_TOPICS,
-  v2Event,
-  v2Payload,
 } from "../src/index.js";
 
 const NOW = Date.parse("2026-11-04T12:00:00.000Z");
 const voice = { platform: "discord", scope: "g1", channel: "v1", kind: "voice" } as const;
-const text = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
 
 describe("handles", () => {
   it("per-call codes are ephemeral, names are not", () => {
@@ -243,35 +234,5 @@ describe("prompt blocks", () => {
     const section = { key: "memory", title: "你記得的事", body: "…", order: 10 };
     expect(isPromptBlock(section)).toBe(false);
     expect(asPromptBlock(section)).toMatchObject({ authority: "data", source: "memory" });
-  });
-});
-
-describe("v2 topics", () => {
-  it("custom events with typed payloads", () => {
-    const record: TurnOutcomeRecord = {
-      turn: "T",
-      context: text,
-      reason: "addressed",
-      outcome: { type: "cancelled", cause: "input", by: "Owen" },
-      addressed_by: ["Owen"],
-      focus: [{ context: text, id: "m1" }],
-      restarts: 1,
-      reasoning: "off",
-      latency_ms: null,
-      at: "2026-11-04T12:00:00.000Z",
-    };
-    const event = v2Event(TURN_OUTCOME_TOPIC, record);
-    expect(JSON.parse(JSON.stringify(event))).toEqual({
-      type: "custom",
-      data: { topic: "agent.turn.outcome", payload: record },
-    });
-    expect(v2Payload(event, TURN_OUTCOME_TOPIC)).toEqual(record);
-    expect(v2Payload(customEvent("activity.changed", null), "activity.changed")).toBeNull();
-    expect(V2_TOPICS.every(isV2Topic)).toBe(true);
-    // Every new topic lives under a reserved prefix (agent.* already is).
-    for (const topic of V2_TOPICS) {
-      const head = topic.split(".")[0] as string;
-      expect(head === "agent" || V2_TOPIC_PREFIXES.includes(head)).toBe(true);
-    }
   });
 });

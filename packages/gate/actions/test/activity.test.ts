@@ -9,8 +9,8 @@ import {
   ActionSinkKey,
   type ActivityRequest,
   ArbiterKey,
+  Events,
   type LedgerRecord,
-  NOTICE_TOPIC,
   type Principal,
   Principals,
   type TurnId,
@@ -257,8 +257,10 @@ describe("outcomes she can see", () => {
     g.router.replies.push('{"verdict": "allow", "reason": "ok"}');
     const ctx = toolCtx(Principals.user(OWEN, CTX), new AbortController().signal);
     expect(await g.tools.get("t_high")?.call(ctx, {})).toBe(REVIEW_PENDING);
-    await vi.waitFor(() => expect(g.events.some((e) => e.type === NOTICE_TOPIC)).toBe(true));
-    const notice = g.events.find((e) => e.type === NOTICE_TOPIC)?.data;
+    await vi.waitFor(() =>
+      expect(g.events.some((e) => e.type === Events.AgentNotice.type)).toBe(true),
+    );
+    const notice = g.events.find((e) => e.type === Events.AgentNotice.type)?.data;
     expect(notice).toMatchObject({
       source: "actions",
       ok: true,

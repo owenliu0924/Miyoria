@@ -1,7 +1,7 @@
 // The social side of the affect layer: one label scale and the bond changes Reflect proposes.
 
 import type { Relationship } from "@miyoria/store";
-import { AFFECT_BOND_TOPIC, relationshipLabel } from "@miyoria/types";
+import { Events, relationshipLabel } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { applyBond, label, socialConfig } from "../src/index.js";
 import { acc, dm, Harness, t } from "./helpers.js";
@@ -60,6 +60,6 @@ describe("bond changes proposed by Reflect", () => {
     await applyBond(h.social, { person: "x" }, t(1, 11));
     await applyBond(h.social, { person: h.person("discord:2") }, t(1, 11));
     expect(JSON.stringify(h.rel("discord:2"))).toBe(before);
-    expect(AFFECT_BOND_TOPIC).toBe("affect.bond");
+    expect(Events.AffectBond.type).toBe("affect.bond");
   });
 });

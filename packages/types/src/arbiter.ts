@@ -3,12 +3,12 @@
 // which limits apply (so she plans with the rules in view instead of hitting them blind).
 //
 // Every source sends an `Impulse` (directly through `ArbiterKey`, or as an
-// `ARBITER_IMPULSE_TOPIC` custom event for modules that only publish). The Arbiter applies the
+// `Events.ArbiterImpulse` for modules that only publish). The Arbiter applies the
 // floors (budget, rate, quiet hours, consent, pause), orders / merges / preempts (addressed >
 // ongoing conversation > her own wishes), records the result and publishes an
-// `ArbiterDecision` (`ARBITER_DECISION_TOPIC`).
+// `ArbiterDecision` (`Events.ArbiterDecided`).
 //
-// Until the Arbiter lands, sources keep publishing `agent_initiative` as today; the Arbiter
+// Until the Arbiter lands, sources keep publishing `agent.initiative` as today; the Arbiter
 // takes those over source by source (see docs/design/v2-implementation.md).
 
 import type { ArbiterDecisionData, ImpulseData, LedgerEntryData } from "@miyoria/contracts/events";
@@ -197,13 +197,6 @@ export interface LedgerRecord {
 }
 
 // ---- service and topics ---------------------------------------------------------------------
-
-/** Payload: `Impulse`. For sources that only publish; the Arbiter subscribes. */
-export const ARBITER_IMPULSE_TOPIC = "arbiter.impulse";
-/** Payload: `ArbiterDecision`, for every impulse. */
-export const ARBITER_DECISION_TOPIC = "arbiter.decision";
-/** Payload: `LedgerEntry`, for every new or updated entry. */
-export const LEDGER_TOPIC = "arbiter.ledger";
 
 /** Provided by the `arbiter` module. Reads answer from memory. */
 export interface Arbiter {

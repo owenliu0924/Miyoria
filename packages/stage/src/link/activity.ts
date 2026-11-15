@@ -2,10 +2,10 @@
 // to the Stage node as `activity` messages.
 //
 // Highest priority first:
-//   singing       a song plays (`SONG_TOPIC` started .. ended); progress runs on the overlay's
+//   singing       a song plays (`Events.SingCue` started .. ended); progress runs on the overlay's
 //                 clock from `elapsed_ms` / `duration_ms`
-//   song_prepare  the song worker prepares one (`SONG_PREPARE_TOPIC`), with its stage and progress
-//   synthesizing  a line of hers is at TTS (`SPEECH_SYNTH_TOPIC`) and her turn has not spoken yet
+//   song_prepare  the song worker prepares one (`Events.SingPrepare`), with its stage and progress
+//   synthesizing  a line of hers is at TTS (`Events.VoiceSynthesis`) and her turn has not spoken
 //   thinking      a turn runs (`agent.turn.started` .. completed) and has not spoken yet
 //   (hidden)      otherwise
 //
@@ -20,10 +20,7 @@ import {
   type JsonValue,
   parseSongCue,
   parseSongPrepare,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
   type SongPrepare,
-  SPEECH_SYNTH_TOPIC,
   safeName,
   type TurnId,
 } from "@miyoria/types";
@@ -161,15 +158,15 @@ export class ActivityTracker {
     } else {
       const topic = event.type;
       const payload = event.data as JsonValue;
-      if (topic === SPEECH_SYNTH_TOPIC) {
+      if (topic === Events.VoiceSynthesis.type) {
         const p = isJsonObject(payload) ? payload : {};
         const turn = typeof p.turn === "string" && p.turn !== "" ? p.turn : null;
         if (this.#synths.length >= MAX_TRACKED) this.#synths.shift();
         this.#synths.push({ turn, since: now });
-      } else if (topic === SONG_PREPARE_TOPIC) {
+      } else if (topic === Events.SingPrepare.type) {
         const p = parseSongPrepare(payload);
         if (p !== null) this.#prepare = p.no === null ? null : p;
-      } else if (topic === SONG_TOPIC) {
+      } else if (topic === Events.SingCue.type) {
         this.#onSong(payload, now);
       }
       return;

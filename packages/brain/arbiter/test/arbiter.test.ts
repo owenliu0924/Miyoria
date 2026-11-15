@@ -1,10 +1,8 @@
 import {
-  AFFECT_EVENT_TOPIC,
   type AffectEvent,
-  ARBITER_DECISION_TOPIC,
   type ArbiterDecision,
+  Events,
   isSelfInitiated,
-  LEDGER_TOPIC,
   type LedgerEntry,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
@@ -206,7 +204,7 @@ describe("ordering, merging, preemption, expiry", () => {
     await r.arbiter.pump();
     // The song went; her own wish waiting there was preempted by it.
     expect(r.host.opened.map((i) => i.source)).toEqual(["song"]);
-    const decisions = payloads<ArbiterDecision>(r.events, ARBITER_DECISION_TOPIC);
+    const decisions = payloads<ArbiterDecision>(r.events, Events.ArbiterDecided.type);
     expect(decisions.find((d) => d.impulse === mine.id && d.verdict === "preempted")).toMatchObject(
       { reason: "superseded" },
     );
@@ -242,7 +240,7 @@ describe("ordering, merging, preemption, expiry", () => {
     await r.arbiter.submit(a);
     await r.arbiter.submit(b);
     expect(r.arbiter.queued().map((i) => i.id)).toEqual([b.id]);
-    const merged = payloads<ArbiterDecision>(r.events, ARBITER_DECISION_TOPIC).find(
+    const merged = payloads<ArbiterDecision>(r.events, Events.ArbiterDecided.type).find(
       (d) => d.verdict === "merged",
     );
     expect(merged).toMatchObject({ impulse: a.id, merged_into: b.id });
@@ -258,7 +256,7 @@ describe("ordering, merging, preemption, expiry", () => {
     r.clock.advance(6_000);
     await r.arbiter.pump();
     expect(r.arbiter.queued()).toHaveLength(0);
-    const last = payloads<ArbiterDecision>(r.events, ARBITER_DECISION_TOPIC).at(-1);
+    const last = payloads<ArbiterDecision>(r.events, Events.ArbiterDecided.type).at(-1);
     expect(last).toMatchObject({ impulse: short.id, verdict: "expired" });
   });
 });
@@ -269,7 +267,7 @@ describe("ledger", () => {
     await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE, hint: "週末要幹嘛" }));
     const blocked = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
     expect(blocked.verdict).toBe("rejected");
-    const entries = payloads<LedgerEntry>(r.events, LEDGER_TOPIC);
+    const entries = payloads<LedgerEntry>(r.events, Events.ArbiterLedger.type);
     const denied = entries.filter((e) => e.outcome === "denied");
     expect(denied).toHaveLength(1);
     expect(denied[0]?.detail).toMatch(/^rate: /);
@@ -313,7 +311,7 @@ describe("ledger", () => {
     r.arbiter.turnOutcome(outcome(turn, HERE, "sent"));
     r.clock.advance(11 * MIN);
     await r.arbiter.tick();
-    const ignored = payloads<AffectEvent>(r.events, AFFECT_EVENT_TOPIC);
+    const ignored = payloads<AffectEvent>(r.events, Events.AffectEvent.type);
     expect(ignored).toHaveLength(1);
     expect(ignored[0]).toMatchObject({ kind: "topic_ignored", context: HERE });
     expect(ignored[0]?.detail).toContain("週末要幹嘛");
@@ -333,7 +331,7 @@ describe("ledger", () => {
     r.arbiter.turnOutcome(outcome("t2", HERE, "silence", "reply_to_her"));
     r.clock.advance(20 * MIN);
     await r.arbiter.tick();
-    expect(payloads(r.events, AFFECT_EVENT_TOPIC)).toHaveLength(0);
+    expect(payloads(r.events, Events.AffectEvent.type)).toHaveLength(0);
     const mine = r.arbiter.ledger(HERE).entries.find((e) => e.turn === turn);
     expect(mine).toMatchObject({ outcome: "ok" });
   });
@@ -345,7 +343,7 @@ describe("ledger", () => {
     r.arbiter.turnOutcome(outcome(d.turn as string, HERE, "silence"));
     r.clock.advance(20 * MIN);
     await r.arbiter.tick();
-    expect(payloads(r.events, AFFECT_EVENT_TOPIC)).toHaveLength(0);
+    expect(payloads(r.events, Events.AffectEvent.type)).toHaveLength(0);
     expect(r.arbiter.ledger(HERE).limits.unanswered_streak).toBe(0);
   });
 
@@ -356,7 +354,7 @@ describe("ledger", () => {
     r.arbiter.turnOutcome(outcome(d.turn as string, HERE, "sent"));
     r.clock.advance(30 * MIN);
     await r.arbiter.tick();
-    expect(payloads(r.events, AFFECT_EVENT_TOPIC)).toHaveLength(0);
+    expect(payloads(r.events, Events.AffectEvent.type)).toHaveLength(0);
     expect(r.arbiter.ledger().limits.unanswered_streak).toBe(0);
   });
 

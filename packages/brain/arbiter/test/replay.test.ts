@@ -4,13 +4,7 @@
 // (it respects `next_initiative_at`, the daily cap, quiet hours and `waiting_for_response`) and
 // is compared with a Plan that plans blind, as the old mind did.
 
-import {
-  ARBITER_DECISION_TOPIC,
-  type ArbiterDecision,
-  type ContextKey,
-  LEDGER_TOPIC,
-  type LedgerEntry,
-} from "@miyoria/types";
+import { type ArbiterDecision, type ContextKey, Events, type LedgerEntry } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   acct,
@@ -134,8 +128,8 @@ async function day(seeing: boolean, seed: number): Promise<Result> {
     attempts,
     blocked,
     started,
-    decisions: payloads<ArbiterDecision>(r.events, ARBITER_DECISION_TOPIC),
-    entries: payloads<LedgerEntry>(r.events, LEDGER_TOPIC),
+    decisions: payloads<ArbiterDecision>(r.events, Events.ArbiterDecided.type),
+    entries: payloads<LedgerEntry>(r.events, Events.ArbiterLedger.type),
   };
 }
 

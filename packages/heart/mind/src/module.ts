@@ -16,13 +16,8 @@ import {
 } from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
-  ACTIVITY_CHANGED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
-  AFFECT_CHANGED_TOPIC,
   type Clock,
   DailyPostsKey,
-  DIRECTIVE_CHANGED_TOPIC,
   dataBlock,
   EventLogKey,
   Events,
@@ -35,7 +30,6 @@ import {
   type ProfileId,
   type Reminder,
   ReminderDeskKey,
-  SALIENT_TOPIC,
   type Thought,
   type ThoughtDigest,
   toTimestamp,
@@ -75,7 +69,7 @@ export interface MindModuleOptions {
 export const MIND_TOPICS = [
   Events.PlatformReady.type,
   Events.PlatformMessageCreated.type,
-  SALIENT_TOPIC,
+  Events.WorldSalient.type,
   Events.AgentTurnCompleted.type,
   Events.AgentDecision.type,
   Events.GateDecision.type,
@@ -84,11 +78,11 @@ export const MIND_TOPICS = [
   Events.VoiceUtteranceEvent.type,
   Events.LlmBudget.type,
   // What she is doing (the one owner of it): a game coming up, an activity ending.
-  ACTIVITY_CHANGED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
-  AFFECT_CHANGED_TOPIC,
-  DIRECTIVE_CHANGED_TOPIC,
+  Events.ActivityChanged.type,
+  Events.ActivityDone.type,
+  Events.ActivityFailed.type,
+  Events.AffectChanged.type,
+  Events.DirectiveChanged.type,
 ];
 
 /**

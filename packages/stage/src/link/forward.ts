@@ -1,7 +1,6 @@
 // Turns bus events into Core → Stage messages.
 
 import {
-  AFFECT_CHANGED_TOPIC,
   type BusEvent,
   Events,
   is,
@@ -9,10 +8,7 @@ import {
   type JsonValue,
   type PlaybackState,
   parseSongCue,
-  SONG_TOPIC,
-  SPEECH_PAUSE_TOPIC,
   type TurnId,
-  VOICE_UPCOMING_TOPIC,
 } from "@miyoria/types";
 import {
   type CoreMessage,
@@ -88,7 +84,7 @@ const clampIntensity = (i: unknown): number =>
  *
  * Subtitles follow her speech: every started playback appends its text and sends a non-final
  * `subtitle`; once the turn completed and no playback of it is running, the text is sent again
- * with `final: true`. A line announced as upcoming (`VOICE_UPCOMING_TOPIC`, a little before it
+ * with `final: true`. A line announced as upcoming (`Events.VoiceUpcoming`, a little before it
  * plays, so the subtitle lands with her voice where the picture runs late) is appended then, and
  * its start appends nothing; one that never starts is taken out again when the turn's subtitle
  * is final. Turns outside voice contexts produce one final subtitle when `textTurns` is set.
@@ -103,7 +99,7 @@ const clampIntensity = (i: unknown): number =>
  * it changes, also while she says nothing: what she feels reaches her face without a tag. A line
  * spoken in it without a marker of its own shows it as strongly as she feels it.
  *
- * Songs (`SONG_TOPIC`) with a video also send `song_video` `play` when they start and `stop`
+ * Songs (`Events.SingCue`) with a video also send `song_video` `play` when they start and `stop`
  * when they end; a node that connects mid-song gets the `play` again (`resumeSongVideo`). Songs
  * with a known beat send `beat` the same way (empty `times_ms` at the end; `resumeBeat`).
  */
@@ -244,13 +240,14 @@ export class Forwarder {
       }
       return [];
     } else {
-      if (event.type === SONG_TOPIC) return this.#onSong(event.data as JsonValue);
-      if (event.type === SPEECH_PAUSE_TOPIC) return pauseNotice(event.data as JsonValue);
-      if (event.type === VOICE_UPCOMING_TOPIC) return this.#onUpcoming(event.data as JsonValue);
+      if (event.type === Events.SingCue.type) return this.#onSong(event.data as JsonValue);
+      if (event.type === Events.SpeechPause.type) return pauseNotice(event.data as JsonValue);
+      if (event.type === Events.VoiceUpcoming.type)
+        return this.#onUpcoming(event.data as JsonValue);
       if (event.type === GIFT_TOPIC) return giftMessage(event.data as JsonValue);
       if (event.type === TOUCH_TOPIC) return touchMessage(event.data as JsonValue);
       if (event.type === SCREEN_TOPIC) return screenMessage(event.data as JsonValue);
-      if (event.type === AFFECT_CHANGED_TOPIC) return this.#onAffect(event.data as JsonValue);
+      if (event.type === Events.AffectChanged.type) return this.#onAffect(event.data as JsonValue);
       return event.type === EMOTION_TOPIC ? this.#onEmotion(event.data as JsonValue) : [];
     }
   }
@@ -305,7 +302,7 @@ export class Forwarder {
   }
 
   /**
-   * A line about to play (`VOICE_UPCOMING_TOPIC`): its subtitle goes up now. Its `started`
+   * A line about to play (`Events.VoiceUpcoming`): its subtitle goes up now. Its `started`
    * then appends nothing.
    */
   #onUpcoming(payload: JsonValue): CoreMessage[] {

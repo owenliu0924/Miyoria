@@ -31,13 +31,9 @@ import {
 } from "@miyoria/runtime/kernel";
 import { MessageLogKey, type SettingsStore } from "@miyoria/store";
 import {
-  ACTIVITY_CHANGED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
   type AccountRef,
   ActivityManagerKey,
   type ActivitySnapshot,
-  AFFECT_CHANGED_TOPIC,
   type AffectSnapshot,
   AffectStateKey,
   ArbiterKey,
@@ -49,7 +45,6 @@ import {
   characterCore,
   contextKeyString,
   type Desire,
-  DIRECTIVE_CHANGED_TOPIC,
   type DirectiveChangedBody,
   DirectivesKey,
   type Envelope,
@@ -83,7 +78,6 @@ import {
   ReflectionKey,
   repairHandleText,
   runningActivity,
-  SALIENT_TOPIC,
   type SalientEvent,
   SelfStateKey,
   type Thought,
@@ -657,10 +651,10 @@ export class MindLoop implements Mind {
 
   #custom(topic: string, payload: JsonValue, now: number): void {
     switch (topic) {
-      case DIRECTIVE_CHANGED_TOPIC:
+      case Events.DirectiveChanged.type:
         this.#ruleChanged(payload);
         return;
-      case SALIENT_TOPIC: {
+      case Events.WorldSalient.type: {
         const salient = parseSalient(payload);
         if (!salient) return;
         const arrival = salient.kind === "came_online" || salient.kind === "joined_voice";
@@ -702,7 +696,7 @@ export class MindLoop implements Mind {
       case "llm.budget":
         this.#wake?.();
         return;
-      case ACTIVITY_CHANGED_TOPIC: {
+      case Events.ActivityChanged.type: {
         const running = runningOf(payload);
         const prev = this.#activity;
         this.#activity = running;
@@ -719,11 +713,11 @@ export class MindLoop implements Mind {
         }
         return;
       }
-      case ACTIVITY_DONE_TOPIC:
-      case ACTIVITY_FAILED_TOPIC: {
+      case Events.ActivityDone.type:
+      case Events.ActivityFailed.type: {
         if (!isJsonObject(payload) || payload.resource !== "activity") return;
         const request = isJsonObject(payload.request) ? payload.request : null;
-        const failed = topic === ACTIVITY_FAILED_TOPIC;
+        const failed = topic === Events.ActivityFailed.type;
         const detail = typeof payload.detail === "string" ? payload.detail : "";
         // A stop that finished, or an activity that failed while it ran (it ended early).
         const prev = this.#activity;
@@ -736,7 +730,7 @@ export class MindLoop implements Mind {
         }
         return;
       }
-      case AFFECT_CHANGED_TOPIC: {
+      case Events.AffectChanged.type: {
         if (!isJsonObject(payload) || !isJsonObject(payload.mood)) return;
         const valence = payload.mood.valence;
         if (typeof valence !== "number" || this.#valence === null || this.#moodWoke) return;

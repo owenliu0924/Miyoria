@@ -11,7 +11,6 @@ import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   type AnyEventDefinition,
-  ARBITER_IMPULSE_TOPIC,
   AuthorizerKey,
   BaseAuthorizer,
   type ContextKey,
@@ -33,12 +32,9 @@ import {
   type PromptRequest,
   type PublishedEvent,
   type PublishMetaArgs,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
   SongClipsKey,
   type SongCue,
   type SongPrepare,
-  SPEECH_PAUSE_TOPIC,
   SpeechPauseKey,
   VoiceFloorKey,
   type VoiceParticipant,
@@ -330,12 +326,14 @@ const playback = (state: "started" | "finished") =>
   ] as const;
 
 function prepares(h: Harness): SongPrepare[] {
-  return h.events.flatMap((e) => (e.type === SONG_PREPARE_TOPIC ? [e.data as SongPrepare] : []));
+  return h.events.flatMap((e) =>
+    e.type === Events.SingPrepare.type ? [e.data as SongPrepare] : [],
+  );
 }
 
 function pauses(h: Harness): boolean[] {
   return h.events.flatMap((e) =>
-    e.type === SPEECH_PAUSE_TOPIC ? [(e.data as { paused: boolean }).paused] : [],
+    e.type === Events.SpeechPause.type ? [(e.data as { paused: boolean }).paused] : [],
   );
 }
 
@@ -440,14 +438,14 @@ class Harness {
   }
 
   cues(): SongCue[] {
-    return this.events.filter((e) => e.type === SONG_TOPIC).map((e) => e.data as SongCue);
+    return this.events.filter((e) => e.type === Events.SingCue.type).map((e) => e.data as SongCue);
   }
 
   /** Her announcements: impulses of source `song` for the Arbiter (never `agent.initiative`). */
   initiatives() {
     expect(this.events.some((e) => e.type === "agent.initiative")).toBe(false);
     return this.events.flatMap((e) => {
-      if (e.type !== ARBITER_IMPULSE_TOPIC) return [];
+      if (e.type !== Events.ArbiterImpulse.type) return [];
       const impulse = e.data as Impulse;
       expect(impulse.source).toBe("song");
       return [

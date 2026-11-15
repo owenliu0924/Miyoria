@@ -22,7 +22,6 @@ import {
   is,
   PlatformSinksKey,
   Principals,
-  SYSTEM_SHUTDOWN_TOPIC,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -103,7 +102,7 @@ describe("going down", () => {
     const seen: string[] = [];
     class Listening extends Fake {
       override async start(ctx: ModuleContext): Promise<void> {
-        const sub = ctx.subscribe(SYSTEM_SHUTDOWN_TOPIC);
+        const sub = ctx.subscribe(Events.SystemShutdown.type);
         ctx.spawn("listen", async () => {
           for await (const _ of sub) seen.push("shutdown");
         });

@@ -1,9 +1,9 @@
 // Perception (docs/design/autonomy.md §3): what platforms report about people (presence, voice
 // states, members) and the `WorldState` service that turns it into a queryable snapshot.
 //
-// Platform modules publish the `PRESENCE_TOPIC`, `VOICE_STATE_TOPIC` and `MEMBER_TOPIC` custom
-// events with the payloads below; the `world` module consumes them and publishes
-// `SALIENT_TOPIC` events for changes worth her attention.
+// Platform modules publish `Events.PlatformPresence`, `Events.PlatformVoiceState` and
+// `Events.PlatformMember` with the payloads below; the `world` module consumes them and publishes
+// `Events.WorldSalient` for changes worth her attention.
 
 import type {
   MemberUpdateData,
@@ -15,15 +15,6 @@ import type { PersonId, PlatformId } from "./ids.js";
 import type { AccountRef, ContextKey } from "./platform.js";
 import { serviceKey } from "./service-key.js";
 import type { Timestamp } from "./time.js";
-
-/** Someone's presence changed (`PresenceUpdate`). */
-export const PRESENCE_TOPIC = "platform.presence";
-/** Someone's voice state changed (`VoiceStateUpdate`). */
-export const VOICE_STATE_TOPIC = "platform.voice_state";
-/** A guild member was seen, changed or left (`MemberUpdate`). */
-export const MEMBER_TOPIC = "platform.member";
-/** A change worth her attention (`SalientEvent`), from the `world` module. */
-export const SALIENT_TOPIC = "world.salient";
 
 export type PresenceStatus = "online" | "idle" | "dnd" | "offline";
 

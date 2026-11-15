@@ -73,9 +73,6 @@ import { LIVE_TOPICS, LiveState } from "./live.js";
 export const REPLY_ROUTES = ["auto", "chat", "voice", "both"] as const;
 export type ReplyRoute = (typeof REPLY_ROUTES)[number];
 
-/** Topic of link outcomes (`{game, account, outcome}`), for the panel / tests. */
-export const LINK_TOPIC = Events.GameChatLink.type;
-
 /** `[modules."game.chat"]`. */
 export const GameChatConfigSchema = z.object({
   /** Game adapters whose chat is a conversation. */

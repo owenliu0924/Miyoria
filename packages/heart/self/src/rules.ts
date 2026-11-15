@@ -28,10 +28,6 @@ import {
   type PersonEmotionName,
   type PersonId,
   parseSongCue,
-  SALIENT_TOPIC,
-  SOCIAL_APPRAISAL_TOPIC,
-  SOCIAL_EVENT_TOPIC,
-  SONG_TOPIC,
   toTimestamp,
 } from "@miyoria/types";
 import type { AffectService } from "./affect.js";
@@ -39,10 +35,6 @@ import type { SelfConfig } from "./config.js";
 import { strengthOf } from "./events.js";
 import type { SelfService } from "./state.js";
 
-/** Bus topic of emotion nudges from games and extensions (see `feelEffects`). */
-export const FEEL_TOPIC = Events.SelfFeel.type;
-/** Bus topic of the LLM budget (`@miyoria/llm/llm` `BUDGET_TOPIC`). */
-const BUDGET_TOPIC = "llm.budget";
 const MINUTE_MS = 60_000;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
@@ -151,12 +143,12 @@ export class EmotionRules {
   }
 
   #custom(topic: string, payload: JsonValue, now: number): boolean {
-    if (topic === SOCIAL_EVENT_TOPIC) return this.#social(payload, now);
-    if (topic === SOCIAL_APPRAISAL_TOPIC) return this.#appraisal(payload, now);
-    if (topic === FEEL_TOPIC) return this.#feelEvent(payload);
-    if (topic === SALIENT_TOPIC) return this.#salient(payload);
-    if (topic === SONG_TOPIC) return this.#songCue(payload, now);
-    if (topic === BUDGET_TOPIC) return this.#budgetState(payload);
+    if (topic === Events.SocialEvent.type) return this.#social(payload, now);
+    if (topic === Events.SocialAppraisal.type) return this.#appraisal(payload, now);
+    if (topic === Events.SelfFeel.type) return this.#feelEvent(payload);
+    if (topic === Events.WorldSalient.type) return this.#salient(payload);
+    if (topic === Events.SingCue.type) return this.#songCue(payload, now);
+    if (topic === Events.LlmBudget.type) return this.#budgetState(payload);
     if (topic === "activity.done" || topic === "activity.failed") {
       return this.#task(topic === "activity.done", payload, now);
     }

@@ -1,13 +1,10 @@
 // Skills (docs/design/v4-plan.md §11.2 item 8, §8.3): when a goal with a success condition is
 // reached, the methods that made progress on the way are kept as "how I got X", and the next
-// goal for X shows them to her. Published on `SKILL_TOPIC`, and kept across restarts by the
-// director (`skill-store.ts`: her skill store, else the settings store through the work lane).
-// Pure apart from the clock values passed in.
+// goal for X shows them to her. Published as `Events.GameDirectorSkill`, and kept across restarts
+// by the director (`skill-store.ts`: her skill store, else the settings store through the work
+// lane). Pure apart from the clock values passed in.
 
-import { Events, type GameSkillPayload } from "@miyoria/types";
-
-/** Topic of a learned skill, `Skill`. */
-export const SKILL_TOPIC = Events.GameDirectorSkill.type;
+import type { GameSkillPayload } from "@miyoria/types";
 
 /** A method sequence that worked (contract: `GameSkillSchema`). */
 export type Skill = GameSkillPayload;

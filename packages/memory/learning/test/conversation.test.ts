@@ -1,9 +1,9 @@
 import { MockProvider } from "@miyoria/llm/llm";
 import { MemorySettingsStore } from "@miyoria/store";
 import {
-  CONVERSATION_FOLDED_TOPIC,
   type ConversationState,
   ConversationStatesKey,
+  Events,
   KnowledgeKey,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -82,7 +82,7 @@ describe("conversation compaction", () => {
     expect(s.lines).toBe(16);
     const saved = await r.store.get("p", stateKey(TEXT));
     expect(saved).toMatchObject({ recap: s.recap, folds: 1 });
-    const folded = r.events(CONVERSATION_FOLDED_TOPIC);
+    const folded = r.events(Events.ConversationFolded.type);
     expect(folded[0]).toMatchObject({ data: { lines: 16, session_lines: 16 } });
     // Feedback she noticed goes to `reflect`; a document about Owen, attributed to him.
     expect(r.events(FEEDBACK_TOPIC)[0]).toMatchObject({
@@ -213,7 +213,7 @@ describe("conversation compaction", () => {
     expect(provider.requests()).toHaveLength(2);
     expect(provider.requests()[1]?.messages.at(-1)?.content).toContain("不能用");
     expect(r.sup.services.require(ConversationStatesKey).get(TEXT)).toBeNull();
-    expect(r.events(CONVERSATION_FOLDED_TOPIC)).toHaveLength(0);
+    expect(r.events(Events.ConversationFolded.type)).toHaveLength(0);
   });
 
   it("notes still over their limit after one repair are cut, not thrown away", async () => {
@@ -242,7 +242,7 @@ describe("conversation compaction", () => {
     expect(kept.at(-1)).toContain("第 37 件事");
     expect(kept[0]).not.toContain("第 0 件事");
     expect(state?.notes.現在).toBe("在聊晚餐");
-    expect(r.events(CONVERSATION_FOLDED_TOPIC)).toHaveLength(1);
+    expect(r.events(Events.ConversationFolded.type)).toHaveLength(1);
   });
 
   it("a fold that keeps failing waits twice as long each time", async () => {

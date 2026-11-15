@@ -1,5 +1,4 @@
 import {
-  ACTION_SETTLED_TOPIC,
   type Action,
   type ActionSettled,
   type ActionSink,
@@ -328,7 +327,7 @@ describe("scheduler (TS specifics)", () => {
 
   it("says which line of hers an action was once it settled", async () => {
     const h = await harness();
-    const settled = h.sup.bus.subscribe(ACTION_SETTLED_TOPIC);
+    const settled = h.sup.bus.subscribe(Events.ActionSettled.type);
     const turn = newId();
     const action = send("hi", "direct", { turn });
     await h.actions.submit(action);
@@ -344,14 +343,14 @@ describe("scheduler (TS specifics)", () => {
       error: null,
       message: { context: context("fake"), id: "m" },
     };
-    expect(env?.type).toBe(ACTION_SETTLED_TOPIC);
+    expect(env?.type).toBe(Events.ActionSettled.type);
     expect(env?.data).toEqual(payload);
     await h.sup.stopAll();
   });
 
   it("says when a line never went out, and nothing about what is no line", async () => {
     const h = await harness();
-    const settled = h.sup.bus.subscribe(ACTION_SETTLED_TOPIC);
+    const settled = h.sup.bus.subscribe(Events.ActionSettled.type);
     const ctx = context("fake");
     const speak = newAction("voice:fake:g", "direct", {
       type: "speak",
@@ -603,7 +602,7 @@ describe("the emergency stop", () => {
   const settledOf = (sub: Subscription): ActionSettled[] => {
     const out: ActionSettled[] = [];
     for (let e = sub.tryRecv(); e !== null; e = sub.tryRecv()) {
-      if (e.type === ACTION_SETTLED_TOPIC) out.push(e.data as ActionSettled);
+      if (e.type === Events.ActionSettled.type) out.push(e.data as ActionSettled);
     }
     return out;
   };
@@ -649,7 +648,7 @@ describe("the emergency stop", () => {
       dropped: () => undefined,
     };
     h.sup.services.provide("app", ActuatorExecutorKey, executor);
-    const settled = h.sup.bus.subscribe(ACTION_SETTLED_TOPIC);
+    const settled = h.sup.bus.subscribe(Events.ActionSettled.type);
     await h.actions.submit(send("還在講", "direct"));
     await h.actions.submit(
       newAction(actLane("x"), "system", {
@@ -668,7 +667,7 @@ describe("the emergency stop", () => {
 
   it("says when moderation replaced a line, from the turn or from the sink", async () => {
     const h = await harness();
-    const settled = h.sup.bus.subscribe(ACTION_SETTLED_TOPIC);
+    const settled = h.sup.bus.subscribe(Events.ActionSettled.type);
     await h.actions.submit(send("Filtered.", "direct", { blocked: "test.word" }));
     await vi.advanceTimersByTimeAsync(20);
     h.sink.send = async (ctx) => ({ context: ctx, id: "m", blocked: "sink.rule" });

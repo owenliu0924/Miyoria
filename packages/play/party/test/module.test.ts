@@ -6,7 +6,6 @@ import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AnyEventDefinition,
-  ARBITER_IMPULSE_TOPIC,
   AuthorizerKey,
   BaseAuthorizer,
   type EventLog,
@@ -238,7 +237,7 @@ describe("party module", () => {
     expect(h.sup.services.require(PartyTableKey).session(VOICE)).toBeNull();
     expect(h.observations().at(-1)?.summary).toContain("最後分數:Amy 1、Bob 1");
     // Nothing of hers went out on the bus: no line, no impulse.
-    expect(h.events.some((e) => e.type === ARBITER_IMPULSE_TOPIC)).toBe(false);
+    expect(h.events.some((e) => e.type === Events.ArbiterImpulse.type)).toBe(false);
   });
 
   it("shows the game in the voice channel and its chat, not in other channels", async () => {

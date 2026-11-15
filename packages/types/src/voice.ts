@@ -111,7 +111,7 @@ export const VoiceFloorKey = serviceKey<VoiceFloor>("VoiceFloor");
  * Her speech is off for a while because something else has the GPU (the song worker converts a
  * song, and the TTS / ASR workers dropped their models for it). Meanwhile the voice module does
  * not send her lines to TTS nor utterances to ASR, and failures that say `offloaded` are
- * expected. Provided by `sing`; changes are published as `SPEECH_PAUSE_TOPIC`
+ * expected. Provided by `sing`; changes are published as `Events.SpeechPause`
  * (`{paused, reason}`).
  */
 export interface SpeechPause {
@@ -120,20 +120,3 @@ export interface SpeechPause {
 }
 
 export const SpeechPauseKey = serviceKey<SpeechPause>("SpeechPause");
-
-/** Topic of `{paused: boolean, reason: string | null}` custom events. */
-export const SPEECH_PAUSE_TOPIC = "speech.pause";
-
-/**
- * Topic of `{context, turn}` custom events: a line of hers was sent to TTS. Its `voice_playback`
- * `started` (first audio playing) or `failed` follows.
- */
-export const SPEECH_SYNTH_TOPIC = "voice.synthesis";
-
-/**
- * Topic of `{context, turn, text, emotion}` custom events: a line of hers is about to play, about
- * `subtitle_lead_ms` from now (`[modules.voice]`). Its subtitle goes up now, so that where the
- * picture runs late (Go Live) it still arrives with her voice. Its `voice_playback` `started`
- * follows, or nothing if it is dropped first (a barge-in).
- */
-export const VOICE_UPCOMING_TOPIC = "voice.upcoming";

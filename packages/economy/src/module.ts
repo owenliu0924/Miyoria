@@ -8,13 +8,7 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { SongPaymentsKey } from "@miyoria/sing";
-import {
-  Events,
-  ParticipationKey,
-  PartyRewardsKey,
-  type ProfileId,
-  SONG_TOPIC,
-} from "@miyoria/types";
+import { Events, ParticipationKey, PartyRewardsKey, type ProfileId } from "@miyoria/types";
 import { agencyCapabilities } from "./agency-tools.js";
 import { EconomyCommands } from "./commands.js";
 import { EconomyConfigSchema } from "./config.js";
@@ -112,7 +106,7 @@ export class EconomyModule implements Module {
       Events.VoiceParticipants.type,
       Events.VoiceLeft.type,
       Events.VoiceUtteranceEvent.type,
-      SONG_TOPIC,
+      Events.SingCue.type,
     ]);
     ctx.spawn("earn", async () => {
       for await (const env of events) await earnings.onEvent(env, ctx.clock.now());

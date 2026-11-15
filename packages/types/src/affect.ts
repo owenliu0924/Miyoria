@@ -48,7 +48,7 @@ export interface AppraisalEvent {
 export type AffectSource = "rule" | "appraise" | "reflect" | "drive" | "panel";
 
 /**
- * Rule events (cheap, immediate), published by whoever sees them as `AFFECT_EVENT_TOPIC`; the
+ * Rule events (cheap, immediate), published by whoever sees them as `Events.AffectEvent`; the
  * affect module maps each kind to emotions (the §3.6 table).
  */
 export const AFFECT_EVENT_KINDS = [
@@ -320,13 +320,6 @@ export interface AffectBiases {
 
 /** Her state of feeling (contract: `AffectSnapshotSchema` in @miyoria/contracts/events). */
 export type AffectSnapshot = AffectSnapshotData;
-
-/** Payload of `AFFECT_EVENT_TOPIC`: `AffectEvent`. */
-export const AFFECT_EVENT_TOPIC = "affect.event";
-/** Payload: `AffectSnapshot`, published when it changed noticeably. */
-export const AFFECT_CHANGED_TOPIC = "affect.changed";
-/** Payload: `{valence, arousal, energy, reason}`, published when her mood moved. */
-export const MOOD_CHANGED_TOPIC = "mood.changed";
 
 /** Provided by the affect owner (`self`). Reads answer from memory. */
 export interface AffectState {

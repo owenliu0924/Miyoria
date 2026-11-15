@@ -6,9 +6,6 @@
 import type { EmergencyReportData } from "@miyoria/contracts/events";
 import { serviceKey } from "./service-key.js";
 
-/** Bus topic: one `EmergencyReport`. */
-export const EMERGENCY_TOPIC = "autonomy.emergency";
-
 /** The steps, in the order they run. */
 export const EMERGENCY_STEPS = [
   /** The pause flag: the gate closes, every output path is muted. */

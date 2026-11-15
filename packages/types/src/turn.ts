@@ -7,8 +7,8 @@
 // * `inputDisposition`: the one cancellation rule (the §3.9 table), shared by the agent's
 //   coordinator and anything else that has to tell "worth stopping for" from chatter.
 // * `TurnFocusView` (provided by the agent) lets voice barge-in ask, on its hot path, whom the
-//   turn in flight is for. Focus changes are also published as `TURN_FOCUS_TOPIC`.
-// * `TurnOutcomeRecord` (`TURN_OUTCOME_TOPIC`): sent / silence / cancelled (by whom) / error,
+//   turn in flight is for. Focus changes are also published as `Events.AgentTurnFocus`.
+// * `TurnOutcomeRecord` (`Events.AgentTurnOutcome`): sent / silence / cancelled (by whom) / error,
 //   for the decision trace ("決定回了但沒發" must have a reason).
 //
 // Messages are `MessageRef`s; a voice utterance is `{context, id: utterance.id}` (that is how
@@ -40,9 +40,6 @@ export type TurnPhase = "debounce" | "generating" | "speaking" | "done";
 
 /** Whom a turn answers (contract: `TurnFocusSchema` in @miyoria/contracts/events). */
 export type TurnFocus = TurnFocusData;
-
-/** Payload: `TurnFocus`, whenever a turn's focus or phase changes. */
-export const TURN_FOCUS_TOPIC = "agent.turn.focus";
 
 /** Provided by the agent. Answers from memory (safe on the voice hot path). */
 export interface TurnFocusView {
@@ -142,8 +139,5 @@ export type TurnOutcome =
   | { type: "cancelled"; cause: TurnCancelCause; by: Handle | null }
   | { type: "error"; error: string };
 
-/** Payload of `TURN_OUTCOME_TOPIC`, one per turn. */
+/** Payload of `Events.AgentTurnOutcome`, one per turn. */
 export type TurnOutcomeRecord = TurnOutcomeData;
-
-/** Payload: `TurnOutcomeRecord`. */
-export const TURN_OUTCOME_TOPIC = "agent.turn.outcome";

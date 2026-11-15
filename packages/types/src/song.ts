@@ -1,16 +1,10 @@
-// Her songs on the bus: the `sing` module publishes `SONG_TOPIC` custom events while she sings,
+// Her songs on the bus: the `sing` module publishes `Events.SingCue` while she sings,
 // the stage forwards them to the overlay (lyrics as subtitles), the avatar (speaking) and OBS
-// (the song's original video, muted, while she sings). `SONG_PREPARE_TOPIC` reports the song the
+// (the song's original video, muted, while she sings). `Events.SingPrepare` reports the song the
 // worker is preparing, for the overlay's activity line.
 
 import type { SongCueData, SongPrepareData } from "@miyoria/contracts/events";
 import { isJsonObject, type JsonValue } from "./json.js";
-
-/** Topic of `SongCue` custom events. */
-export const SONG_TOPIC = "sing.cue";
-
-/** Topic of `SongPrepare` custom events. */
-export const SONG_PREPARE_TOPIC = "sing.prepare";
 
 /** Longest video path a cue carries. */
 const MAX_PATH = 1024;

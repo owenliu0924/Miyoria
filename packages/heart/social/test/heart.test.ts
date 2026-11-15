@@ -2,7 +2,7 @@
 // appraisal reading her feelings (`social.appraisal`).
 
 import { contentText, MockProvider } from "@miyoria/llm/llm";
-import { type JsonValue, SOCIAL_APPRAISAL_TOPIC, SOCIAL_EVENT_TOPIC } from "@miyoria/types";
+import { Events, type JsonValue } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { appraisalRequest, parseHeartAppraisal, socialConfig } from "../src/index.js";
 import { channel, dm, Harness, router, t } from "./helpers.js";
@@ -16,7 +16,7 @@ describe("social events for her emotions", () => {
     const h = new Harness();
     for (let i = 0; i < 8; i++) await h.say("discord:5", "Troll", "你這個白痴", dm(), t(1, 10));
     const person = h.person("discord:5");
-    const insults = payloads(h, SOCIAL_EVENT_TOPIC).filter(
+    const insults = payloads(h, Events.SocialEvent.type).filter(
       (p) => (p as { kind: string }).kind === "insult",
     );
     expect(insults).toHaveLength(8);
@@ -74,7 +74,7 @@ describe("the appraisal reads her feelings", () => {
     await h.say("discord:3", "Bob", "Carol 我們去吃飯", channel(), t(1, 10));
     expect(await h.social.appraise(router(mock), channel(), t(1, 10))).toBe(2);
     expect(contentText(mock.requests()[0]?.messages[1]?.content ?? "")).toContain("Alice");
-    const [payload] = payloads(h, SOCIAL_APPRAISAL_TOPIC) as {
+    const [payload] = payloads(h, Events.SocialAppraisal.type) as {
       her: Record<string, number>;
       people: { person: string; name: string; romance: number; others: number }[];
     }[];
@@ -103,6 +103,6 @@ describe("the appraisal reads her feelings", () => {
     const mock2 = new MockProvider("mock").reply('{"people":[]}');
     await plain.say("discord:2", "Alice", "嗨", channel(), t(1, 10));
     await plain.social.appraise(router(mock2), channel(), t(1, 10));
-    expect(payloads(plain, SOCIAL_APPRAISAL_TOPIC)).toEqual([]);
+    expect(payloads(plain, Events.SocialAppraisal.type)).toEqual([]);
   });
 });

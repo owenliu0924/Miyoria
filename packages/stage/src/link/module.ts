@@ -14,9 +14,7 @@ import {
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
-  ACTIVITY_CHANGED_TOPIC,
   ActivityManagerKey,
-  AFFECT_CHANGED_TOPIC,
   contextKeyString,
   type Envelope,
   Events,
@@ -27,12 +25,7 @@ import {
   Principals,
   parseSongCue,
   SceneRuleKey,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
-  SPEECH_PAUSE_TOPIC,
-  SPEECH_SYNTH_TOPIC,
   StreamCurtainKey,
-  VOICE_UPCOMING_TOPIC,
 } from "@miyoria/types";
 import { type BoundAddress, formatAddress, HttpServer, isLoopback } from "../net.js";
 import { TOUCH_TOPIC } from "../touch.js";
@@ -90,7 +83,7 @@ function direct(director: SceneDirector, env: Envelope): void {
       if (state) director.onGoLive(typeof data.guild === "string" ? data.guild : "", state);
     } else if (topic === GAME_SESSION_TOPIC) {
       director.onGame(data.state === "started", typeof data.game === "string" ? data.game : null);
-    } else if (topic === SONG_TOPIC) {
+    } else if (topic === Events.SingCue.type) {
       const cue = parseSongCue(payload);
       if (cue?.state === "started") director.onSong(true);
       else if (cue?.state === "ended") director.onSong(false);
@@ -250,21 +243,21 @@ export class StageLinkModule implements Module {
 
     const events = ctx.subscribe([
       EMOTION_TOPIC,
-      AFFECT_CHANGED_TOPIC,
+      Events.AffectChanged.type,
       GIFT_TOPIC,
       TOUCH_TOPIC,
       SCREEN_TOPIC,
-      SONG_TOPIC,
-      SPEECH_PAUSE_TOPIC,
+      Events.SingCue.type,
+      Events.SpeechPause.type,
       Events.AgentTurnStarted.type,
       Events.AgentTurnCompleted.type,
       Events.VoicePlaybackEvent.type,
-      SPEECH_SYNTH_TOPIC,
-      VOICE_UPCOMING_TOPIC,
-      SONG_PREPARE_TOPIC,
+      Events.VoiceSynthesis.type,
+      Events.VoiceUpcoming.type,
+      Events.SingPrepare.type,
       VOICE_GOLIVE_TOPIC,
       GAME_SESSION_TOPIC,
-      ACTIVITY_CHANGED_TOPIC,
+      Events.ActivityChanged.type,
       Events.VoiceJoined.type,
       Events.VoiceLeft.type,
       Events.VoiceParticipants.type,
@@ -346,7 +339,7 @@ export class StageLinkModule implements Module {
           direct(director, env);
           activity.onEvent(env, ctx.clock.now());
           if (env.type === GAME_SESSION_TOPIC) continue;
-          if (env.type === ACTIVITY_CHANGED_TOPIC) continue;
+          if (env.type === Events.ActivityChanged.type) continue;
           if (env.type === VOICE_GOLIVE_TOPIC) {
             followGoLive(env.data as JsonValue);
             continue;

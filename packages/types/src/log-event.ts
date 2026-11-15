@@ -167,7 +167,7 @@ export interface ObservationOrigin {
   /** The module that published it. */
   module: ModuleId;
   topic: string;
-  /** The bus `Event`, as published (JSON). */
+  /** The bus event's `type`, `v` and `data` (the payload as it was published). */
   event: JsonValue;
   turn: TurnId | null;
 }
@@ -363,9 +363,3 @@ export interface DeliveryLedger {
 export const DeliveryLedgerKey = serviceKey<DeliveryLedger>("DeliveryLedger");
 
 // ---- lifecycle ------------------------------------------------------------------------------
-
-/**
- * Published by the core right before it stops its modules. What modules say while going down
- * (a game session "ending" with its extension) is not something that happened out there.
- */
-export const SYSTEM_SHUTDOWN_TOPIC = "system.shutdown";

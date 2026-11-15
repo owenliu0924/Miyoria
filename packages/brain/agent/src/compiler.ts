@@ -28,7 +28,6 @@ import {
   type CompiledBlock,
   type ContextKey,
   dataBlock,
-  Events,
   escapeData,
   type PromptBlock,
   type PromptSection,
@@ -302,9 +301,6 @@ function sameContext(a: ContextKey, b: ContextKey): boolean {
 
 /** Provided by the agent: the compressed prompts of recent turns, for the panel. */
 export const SavedPromptsKey = serviceKey<SavedPrompts>("SavedPrompts");
-
-/** Topic of the `custom` event carrying each saved prompt (payload: `SavedPrompt`). */
-export const PROMPT_TOPIC = Events.AgentPrompt.type;
 
 /** A `SavedPrompt` for `turn`. */
 export function savedPrompt(init: {

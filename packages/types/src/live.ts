@@ -79,10 +79,10 @@ export interface LiveSpot {
   y: number;
 }
 
-/** Custom bus topic of one accepted touch from the picture; the stage draws a hand there. */
-export const LIVE_TOUCH_TOPIC = "live.touch";
-
-/** Payload of `LIVE_TOUCH_TOPIC`: where and on what, never who (contract: `LiveTouchSchema` in @miyoria/contracts/events). */
+/**
+ * Payload of `Events.LiveTouch`: where and on what, never who (contract: `LiveTouchSchema` in
+ * @miyoria/contracts/events).
+ */
 export type LiveTouch = LiveTouchData;
 
 export interface LiveSnapshot {

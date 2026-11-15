@@ -10,8 +10,6 @@ import {
   type JsonValue,
 } from "@miyoria/types";
 
-/** Topic the trail follows. */
-export const TRAIL_TOPIC = Events.ArbiterDecided.type;
 /** Decisions kept. */
 export const TRAIL_CAPACITY = 500;
 

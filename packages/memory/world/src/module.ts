@@ -17,15 +17,12 @@ import {
   Events,
   is,
   type JsonValue,
-  MEMBER_TOPIC,
   type PersonId,
   type PersonPresence,
-  PRESENCE_TOPIC,
   PresencePrivacyKey,
   type PromptContributors,
   PromptContributorsKey,
   SocialSignalsKey,
-  VOICE_STATE_TOPIC,
   type WorldSnapshot,
   type WorldState,
   WorldStateKey,
@@ -180,9 +177,9 @@ export class WorldModule implements Module {
     const sub = ctx.subscribe([
       Events.PlatformReady.type,
       Events.PlatformMessageCreated.type,
-      PRESENCE_TOPIC,
-      VOICE_STATE_TOPIC,
-      MEMBER_TOPIC,
+      Events.PlatformPresence.type,
+      Events.PlatformVoiceState.type,
+      Events.PlatformMember.type,
       Events.AgentTurnCompleted.type,
       Events.VoiceJoined.type,
       Events.VoiceLeft.type,
@@ -257,15 +254,15 @@ export function handle(
   }
   const payload = event.data as JsonValue;
   switch (event.type) {
-    case PRESENCE_TOPIC: {
+    case Events.PlatformPresence.type: {
       const u = parsePresence(payload);
       return u ? engine.presence(u, now, sig) : [];
     }
-    case VOICE_STATE_TOPIC: {
+    case Events.PlatformVoiceState.type: {
       const u = parseVoiceState(payload);
       return u ? engine.voiceState(u, now, sig) : [];
     }
-    case MEMBER_TOPIC: {
+    case Events.PlatformMember.type: {
       const u = parseMember(payload);
       if (u) engine.member(u);
       return [];

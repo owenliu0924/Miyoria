@@ -1,6 +1,6 @@
 import type { ToolContext } from "@miyoria/llm/tools";
 import {
-  ARBITER_IMPULSE_TOPIC,
+  Events,
   type Impulse,
   impulseReason,
   Principals,
@@ -27,10 +27,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** The follow-up impulses published (in the old `agent_initiative` shape). */
+/** The follow-up impulses published (in the old `agent.initiative` shape). */
 const initiatives = (events: readonly PublishedEvent[]) =>
   events.flatMap((e) => {
-    if (e.type !== ARBITER_IMPULSE_TOPIC) return [];
+    if (e.type !== Events.ArbiterImpulse.type) return [];
     const impulse = e.data as Impulse;
     expect(impulse.source).toBe("followup");
     return [

@@ -5,10 +5,10 @@
 // consolidation, reflection, person notes) can leave it out as well. The event names the message;
 // it never repeats its text.
 
-import type { MessageExcludedData } from "@miyoria/contracts/events";
+import { AgentMessageExcluded, type MessageExcludedData } from "@miyoria/contracts/events";
 
-/** Topic of `MessageExcluded` (a `custom` event). */
-export const MESSAGE_EXCLUDED_TOPIC = "agent.message.excluded";
+/** `Events.AgentMessageExcluded.type`, for the memory module that still names it this way. */
+export const MESSAGE_EXCLUDED_TOPIC = AgentMessageExcluded.type;
 
-/** The payload of `MESSAGE_EXCLUDED_TOPIC` (contract: `MessageExcludedSchema`). */
+/** The payload of `Events.AgentMessageExcluded` (contract: `MessageExcludedSchema`). */
 export type MessageExcluded = MessageExcludedData;

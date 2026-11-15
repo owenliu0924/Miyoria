@@ -15,9 +15,6 @@ import type { AccountRef, ContextKey } from "./platform.js";
 import { serviceKey } from "./service-key.js";
 import type { Timestamp } from "./time.js";
 
-/** Published for every new or updated journal entry (`Thought`). */
-export const MIND_THOUGHT_TOPIC = "mind.thought";
-
 /** The capability of an intent that only means "start talking there". */
 export const CHAT_START = "chat.start";
 /** The capability of an intent that means "DM this person and talk". */

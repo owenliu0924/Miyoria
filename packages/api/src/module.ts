@@ -32,7 +32,7 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
-import { ActivityManagerKey, KeepsakesKey, SONG_TOPIC } from "@miyoria/types";
+import { ActivityManagerKey, Events, KeepsakesKey } from "@miyoria/types";
 import { z } from "zod";
 import { KeepsakeService } from "./keepsakes.js";
 import { MONITOR_TOPICS, Monitor } from "./monitor.js";
@@ -43,7 +43,6 @@ import { createApp } from "./server.js";
 import { Sessions } from "./session.js";
 import { ApiState, type PanelAuth, type Tokenizer } from "./state.js";
 import { SAMPLE_EVERY_MS, TELEMETRY_TOPICS } from "./telemetry.js";
-import { TRAIL_TOPIC } from "./trail.js";
 
 /** How often expired panel sessions are dropped. */
 export const PRUNE_EVERY_MS = 60 * 60_000;
@@ -274,7 +273,7 @@ export class ApiModule implements Module {
     ctx.spawn("telemetry.events", async () => {
       for await (const env of counted) state.telemetry.handle(env);
     });
-    const decided = ctx.subscribe([TRAIL_TOPIC]);
+    const decided = ctx.subscribe([Events.ArbiterDecided.type]);
     ctx.spawn("arbiter.trail", async () => {
       for await (const env of decided) state.trail.handle(env);
     });
@@ -285,7 +284,7 @@ export class ApiModule implements Module {
 
     if (config.public.enabled) {
       const store = () => ctx.services.get(SettingsStoreKey);
-      const sung = ctx.subscribe([SONG_TOPIC]);
+      const sung = ctx.subscribe([Events.SingCue.type]);
       ctx.spawn("public.songs", async () => {
         for await (const env of sung) {
           publicSide.stats.handle(env, ctx.clock.now());

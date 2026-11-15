@@ -26,7 +26,6 @@ import {
   is,
   type JsonValue,
   parseSongCue,
-  SONG_TOPIC,
   type VoiceParticipant,
 } from "@miyoria/types";
 import type { EconomyConfig } from "./config.js";
@@ -125,7 +124,7 @@ export class Earnings {
       await this.#saw(speaker.account, now);
       return;
     } else {
-      if (event.type === SONG_TOPIC) await this.#song(event.data as JsonValue);
+      if (event.type === Events.SingCue.type) await this.#song(event.data as JsonValue);
       return;
     }
   }

@@ -21,9 +21,6 @@ import { BudgetExhaustedError, type ModelRef, ModelRefSchema, type Usage } from 
 
 const log = getLogger("llm.cost");
 
-/** Topic of the budget state event. */
-export const BUDGET_TOPIC = Events.LlmBudget.type;
-
 /** Receives events the router wants to publish (set by the module). */
 export type EventSink = Publish;
 

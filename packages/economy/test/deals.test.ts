@@ -19,6 +19,7 @@ import {
   type ContextKey,
   DirectivesKey,
   EventLogKey,
+  Events,
   HandleDirectoryKey,
   type JsonValue,
   ModerationKey,
@@ -31,7 +32,6 @@ import {
   RelationshipEffectsKey,
   type RelationshipGain,
   SelfStateKey,
-  SOCIAL_EVENT_TOPIC,
   SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -305,7 +305,7 @@ const live = async (r: Rig, who: AccountRef): Promise<Deal[]> =>
 
 const events = (r: Rig, kind: string) =>
   r.bus.flatMap((e) =>
-    e.type === SOCIAL_EVENT_TOPIC && (e.data as { kind?: string }).kind === kind
+    e.type === Events.SocialEvent.type && (e.data as { kind?: string }).kind === kind
       ? [e.data as Record<string, JsonValue>]
       : [],
   );

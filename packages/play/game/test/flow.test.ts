@@ -16,7 +16,6 @@ import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type AnyEventDefinition,
-  ARBITER_IMPULSE_TOPIC,
   type ContextKey,
   type EventPayload,
   Events,
@@ -300,7 +299,7 @@ describe("去玩 Minecraft", () => {
     await vi.advanceTimersByTimeAsync(100);
     const hints = () =>
       f.events.flatMap((e) => {
-        const hint = e.type === ARBITER_IMPULSE_TOPIC ? (e.data as Impulse).hint : null;
+        const hint = e.type === Events.ArbiterImpulse.type ? (e.data as Impulse).hint : null;
         return hint ? [hint] : [];
       });
     const before = hints().length;

@@ -11,9 +11,9 @@
 //   the prompt and the planner all read that from the same snapshot.
 // * The scene is a pure function of the snapshot plus her timed override.
 //
-// Bus topics (custom events): `ACTIVITY_CHANGED_TOPIC` (the whole `ActivitySnapshot`, on every
-// change), `ACTIVITY_STARTED_TOPIC` / `ACTIVITY_DONE_TOPIC` / `ACTIVITY_FAILED_TOPIC`
-// (`ActivityTaskEvent`), and `NOTICE_TOPIC` (`Notice`, for her conversation).
+// Bus topics: `Events.ActivityChanged` (the whole `ActivitySnapshot`, on every
+// change), `Events.ActivityStarted` / `Events.ActivityDone` / `Events.ActivityFailed`
+// (`ActivityTaskEvent`), and `Events.AgentNotice` (`Notice`, for her conversation).
 
 import type {
   ActivityDoneData,
@@ -211,22 +211,10 @@ export interface ActivityTask {
 
 // ---- events ---------------------------------------------------------------------------------
 
-/** Payload: the whole `ActivitySnapshot`, published on every change. */
-export const ACTIVITY_CHANGED_TOPIC = "activity.changed";
-/** Payload: `ActivityTaskEvent` (`type: "started"`). */
-export const ACTIVITY_STARTED_TOPIC = "activity.started";
-/** Payload: `ActivityTaskEvent` (`type: "done"`). */
-export const ACTIVITY_DONE_TOPIC = "activity.done";
-/** Payload: `ActivityTaskEvent` (`type: "failed"`). */
-export const ACTIVITY_FAILED_TOPIC = "activity.failed";
-
 /** Lifecycle of one transition task (the `TaskEvent` shape plus what it was about). */
 export type ActivityTaskEvent = ActivityStartedData | ActivityDoneData | ActivityFailedData;
 
 // ---- notices --------------------------------------------------------------------------------
-
-/** Payload: `Notice`. The agent consumes it; the ledger records it. */
-export const NOTICE_TOPIC = "agent.notice";
 
 /**
  * Something that happened that she should know about in a conversation, which is *not*
@@ -286,9 +274,6 @@ export interface GameResume {
 }
 
 export const GameResumeKey = serviceKey<GameResume>("GameResume");
-
-/** Payload: `ActivityRestore`, once a session the last run left open is settled. */
-export const ACTIVITY_RESTORE_TOPIC = "activity.restore";
 
 /**
  * `resumed`: it was still there and runs again. `gone`: it did not come back in time. `dropped`:

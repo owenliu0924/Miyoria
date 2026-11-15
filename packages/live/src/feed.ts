@@ -8,7 +8,6 @@
 import { ActivityTracker, EMOTION_TOPIC, Forwarder } from "@miyoria/stage";
 import {
   type ActivitySnapshot,
-  AFFECT_CHANGED_TOPIC,
   type BusEvent,
   type ContextKey,
   Events,
@@ -25,10 +24,6 @@ import {
   type LiveSnapshot,
   type LiveSpot,
   type LiveVideo,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
-  SPEECH_SYNTH_TOPIC,
-  VOICE_UPCOMING_TOPIC,
 } from "@miyoria/types";
 import { isPublicPlace, mayShow, payloadContext, payloadTurn, type Screen } from "./privacy.js";
 
@@ -38,11 +33,11 @@ export const LIVE_TOPICS: readonly string[] = [
   Events.AgentTurnCompleted.type,
   Events.VoicePlaybackEvent.type,
   EMOTION_TOPIC,
-  VOICE_UPCOMING_TOPIC,
-  SPEECH_SYNTH_TOPIC,
-  AFFECT_CHANGED_TOPIC,
-  SONG_TOPIC,
-  SONG_PREPARE_TOPIC,
+  Events.VoiceUpcoming.type,
+  Events.VoiceSynthesis.type,
+  Events.AffectChanged.type,
+  Events.SingCue.type,
+  Events.SingPrepare.type,
 ];
 
 /** Longest line shown, in code points; a longer one shows its end. */
@@ -293,12 +288,12 @@ export class LiveState {
     } else {
       const topic = event.type;
       const payload = event.data as JsonValue;
-      if (topic === AFFECT_CHANGED_TOPIC) return "pass";
-      if (topic === SONG_TOPIC || topic === SONG_PREPARE_TOPIC) return "track";
+      if (topic === Events.AffectChanged.type) return "pass";
+      if (topic === Events.SingCue.type || topic === Events.SingPrepare.type) return "track";
       if (
         topic === EMOTION_TOPIC ||
-        topic === VOICE_UPCOMING_TOPIC ||
-        topic === SPEECH_SYNTH_TOPIC
+        topic === Events.VoiceUpcoming.type ||
+        topic === Events.VoiceSynthesis.type
       ) {
         return this.#place(payloadContext(payload), payloadTurn(payload)) ? "pass" : "drop";
       }

@@ -20,7 +20,6 @@ import { Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   type AnyEventDefinition,
-  ARBITER_IMPULSE_TOPIC,
   type ContextKey,
   type EventPayload,
   Events,
@@ -155,7 +154,7 @@ class Harness {
     this.lineLog = this.tap((line) => line);
     this.hintContexts = this.tap((line) => line.context);
     void (async () => {
-      for await (const env of this.sup.bus.subscribe(ARBITER_IMPULSE_TOPIC)) {
+      for await (const env of this.sup.bus.subscribe(Events.ArbiterImpulse.type)) {
         const impulse = env.data as Impulse;
         expect(impulse.source).toBe("game");
         expect(impulseReason(impulse)).toBe("game");

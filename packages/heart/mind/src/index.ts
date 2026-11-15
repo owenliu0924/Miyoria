@@ -98,7 +98,6 @@ export {
   parseAt,
   REMIND_NODE,
   REMINDER_PREFIX,
-  REMINDER_TOPIC,
   RETRY_MS,
   ReminderBook,
   type ReminderBookOptions,

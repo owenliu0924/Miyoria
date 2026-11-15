@@ -13,9 +13,6 @@ import type { JsonValue } from "./json.js";
 import { serviceKey } from "./service-key.js";
 import type { Timestamp } from "./time.js";
 
-/** Topic of `ImageJobEvent` custom events: one per state change of a job. */
-export const IMAGEGEN_TOPIC = "imagegen.job";
-
 export type ImageJobState = "queued" | "running" | "done" | "failed" | "cancelled";
 
 /**
@@ -110,7 +107,7 @@ export interface ImageJob {
   finished_at: Timestamp | null;
 }
 
-/** Payload of `IMAGEGEN_TOPIC` (contract: `ImageJobSchema` in @miyoria/contracts/events). */
+/** Payload of `Events.ImagegenJob` (contract: `ImageJobSchema` in @miyoria/contracts/events). */
 export type ImageJobEvent = ImageJobData;
 
 export interface ImageJobFilter {

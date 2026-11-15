@@ -60,14 +60,11 @@ export type ActionPayload =
 
 /** Platform the payload goes to (`core` for an `actuate` without a context). */
 /**
- * Payload of `ACTION_SETTLED_TOPIC`: how a line of hers left the scheduler. `action_completed`
+ * Payload of `Events.ActionSettled`: how a line of hers left the scheduler. `action.completed`
  * says an action ended; this says which line it was, so "sent" can be told from a dropped typing
  * indicator (`error`: `expired`, `cancelled` and `coalesced` mean it never went out).
  */
 export type ActionSettled = ActionSettledData;
-
-/** Published next to `action_completed` for every `send_message` and `speak` action. */
-export const ACTION_SETTLED_TOPIC = "action.settled";
 
 export function actionPlatform(payload: ActionPayload): string {
   if (payload.type === "react") return payload.message.context.platform;

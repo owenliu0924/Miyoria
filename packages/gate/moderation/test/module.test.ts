@@ -2,13 +2,7 @@
 // the bus without its text, the admin token from the environment is protected.
 
 import { Supervisor } from "@miyoria/runtime/kernel";
-import {
-  type Envelope,
-  MODERATION_BLOCK_TOPIC,
-  MODERATION_INPUT_TOPIC,
-  type ModerationBlockRecord,
-  ModerationKey,
-} from "@miyoria/types";
+import { type Envelope, Events, type ModerationBlockRecord, ModerationKey } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModerationModule, secretsFromEnv } from "../src/index.js";
 import { fake } from "./helpers.js";
@@ -27,7 +21,7 @@ async function start(config: Record<string, unknown> | null = null) {
   const sup = new Supervisor();
   sups.push(sup);
   const seen: Envelope[] = [];
-  const sub = sup.bus.subscribe([MODERATION_BLOCK_TOPIC, MODERATION_INPUT_TOPIC]);
+  const sub = sup.bus.subscribe([Events.ModerationBlocked.type, Events.ModerationInput.type]);
   void (async () => {
     for await (const env of sub) seen.push(env);
   })();

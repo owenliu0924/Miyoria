@@ -4,10 +4,10 @@
 //   (`docs/protocols/voice-link.md`) the self voice node connects to, and provides `VoiceLink`
 //   (`VoiceLinkKey`): join / leave, participants, playback, Go Live and captured audio.
 // * Module `voice` (`VoiceModule`) listens (consent filter → `Segmenter` with an energy `Vad` →
-//   ASR → Traditional Chinese → `voice_utterance`) and speaks (provides `VoiceSink`: TTS →
+//   ASR → Traditional Chinese → `voice.utterance`) and speaks (provides `VoiceSink`: TTS →
 //   playback, with barge-in). It registers `join`, `leave` and `voice consent <on|off>`.
 //
-// Latency measurements are published as `custom` events on `voice.latency` with `stage` =
+// Latency measurements are published as `voice.latency` with `stage` =
 // `asr` (`asr_ms`, `transcribe_ms`), `tts` (`first_audio_ms`), `filler` (a short sound of hers
 // filled a silence) or `e2e` (`speech_end → first_audio_played`, split into `endpoint`, `asr`,
 // `prepare`, `llm_first`, `tts_queue`, `tts_first` and `playback`, with the agent's `parts`); the
@@ -123,7 +123,6 @@ export {
   stripTags,
   toTraditional,
 } from "./text.js";
-export { LATENCY_TOPIC, VOICE_BARGE_IN_TOPIC } from "./topics.js";
 export { HttpTurnJudge, type TurnAnswer, TurnGate, type TurnJudge } from "./turn.js";
 export { BoundedQueue, Semaphore, Watch } from "./util.js";
 export {

@@ -26,7 +26,6 @@ export {
   GameChatConfigSchema,
   GameChatModule,
   gameChatContext,
-  LINK_TOPIC,
   playerId,
   REPLY_ROUTES,
   type ReplyRoute,
@@ -101,7 +100,7 @@ export {
   PROMPT_KEY,
 } from "./module.js";
 export { type Attempt, AttemptRecord, type AttemptResult } from "./record.js";
-export { SKILL_TOPIC, type Skill, SkillBook } from "./skills.js";
+export { type Skill, SkillBook } from "./skills.js";
 export {
   budgetFor,
   codeOf,

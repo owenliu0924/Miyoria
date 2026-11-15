@@ -22,11 +22,6 @@ import {
 import { type ServiceKey, serviceKey } from "./service-key.js";
 import { filterOutgoing } from "./untrusted.js";
 
-/** Bus topic of one blocked output. Its payload (`ModerationBlockRecord`) never holds the text. */
-export const MODERATION_BLOCK_TOPIC = "moderation.block";
-/** Bus topic of an input that was not passed as it is (`InputVerdictRecord`, no text either). */
-export const MODERATION_INPUT_TOPIC = "moderation.input";
-
 /** What a rule is about. `custom` is the owner's own. */
 export const MODERATION_CATEGORIES = [
   "hate",
@@ -159,7 +154,10 @@ export interface InputVerdict {
   owner: boolean;
 }
 
-/** What is published on `MODERATION_INPUT_TOPIC` (contract: `InputVerdictSchema` in @miyoria/contracts/events). */
+/**
+ * What is published as `Events.ModerationInput` (contract: `InputVerdictSchema` in
+ * @miyoria/contracts/events).
+ */
 export type InputVerdictRecord = InputVerdictData;
 
 // ---- service --------------------------------------------------------------------------------

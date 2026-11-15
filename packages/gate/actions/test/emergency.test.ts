@@ -12,7 +12,7 @@ import {
   type ActivitySnapshot,
   type ActivityTask,
   type ActivityTransition,
-  EMERGENCY_TOPIC,
+  Events,
   type PublishedEvent,
   publishedInto,
   type TransitionResult,
@@ -268,7 +268,7 @@ describe("the emergency stop", () => {
     expect(first).toBe(second);
     expect(body.requests).toHaveLength(3);
     expect(registry.emergency.last).toBe(first);
-    expect(events.filter((e) => e.type === EMERGENCY_TOPIC)).toHaveLength(1);
+    expect(events.filter((e) => e.type === Events.AutonomyEmergency.type)).toHaveLength(1);
   });
 
   it("the flag outlives a restart", async () => {

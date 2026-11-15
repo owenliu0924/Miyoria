@@ -25,7 +25,6 @@ import {
   type AccountRef,
   type BusEvent,
   type Clock,
-  CONVERSATION_FOLDED_TOPIC,
   ConversationStatesKey,
   contextKeyString,
   Events,
@@ -45,7 +44,6 @@ import {
   type ProfileId,
   PromptContributorsKey,
   type PromptRequest,
-  REACTION_TOPIC,
   ReflectionKey,
   type ReflectionRun,
   SocialSignalsKey,
@@ -70,8 +68,6 @@ const STORE_TIMEOUT_MS = 5_000;
 export const CONVERSATION_CONTRIBUTOR = "conversation";
 export const KNOWLEDGE_CONTRIBUTOR = "knowledge";
 export const LESSONS_CONTRIBUTOR = "lessons";
-/** Published after each document change (`{doc, deleted}`). */
-export const KNOWLEDGE_CHANGED_TOPIC = Events.KnowledgeChanged.type;
 
 function budgetOf(services: ServiceLookup): BudgetState {
   return services.get(LlmRouterKey)?.budgetState() ?? "ok";
@@ -439,12 +435,12 @@ export class ReflectModule implements Module {
       Events.PlatformMessageCreated.type,
       Events.VoiceUtteranceEvent.type,
       Events.ActionCompleted.type,
-      REACTION_TOPIC,
+      Events.PlatformReaction.type,
       Events.AgentDecision.type,
       Events.AgentTurnCompleted.type,
       Events.GateDecision.type,
       FEEDBACK_TOPIC,
-      CONVERSATION_FOLDED_TOPIC,
+      Events.ConversationFolded.type,
     ]);
     // One event of those it follows: what it says about how she is received.
     const signal = (env: BusEvent): void => {
@@ -490,7 +486,7 @@ export class ReflectModule implements Module {
         const topic = env.type;
         const payload = env.data as JsonValue;
         if (!isJsonObject(payload)) return;
-        if (topic === REACTION_TOPIC) {
+        if (topic === Events.PlatformReaction.type) {
           const msg = isJsonObject(payload.message) ? payload.message : null;
           const account = isJsonObject(payload.account) ? payload.account : null;
           if (!msg || !account || typeof msg.id !== "string") return;
@@ -524,7 +520,7 @@ export class ReflectModule implements Module {
             payload.tone === "negative" ? "negative" : "positive",
             typeof payload.quote === "string" ? payload.quote : "",
           );
-        } else if (topic === CONVERSATION_FOLDED_TOPIC) {
+        } else if (topic === Events.ConversationFolded.type) {
           const context = parseCtx(payload.context);
           if (context && typeof payload.session_lines === "number") {
             reflector.folded(context, payload.session_lines);

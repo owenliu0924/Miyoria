@@ -119,4 +119,4 @@ export {
   STORE_PROFILE as SESSION_STORE_PROFILE,
 } from "./session.js";
 export type { Tokenizer } from "./state.js";
-export { DecisionTrail, TRAIL_CAPACITY, TRAIL_TOPIC } from "./trail.js";
+export { DecisionTrail, TRAIL_CAPACITY } from "./trail.js";

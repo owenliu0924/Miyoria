@@ -11,7 +11,6 @@
 import { errorMessage, getLogger, SerialQueue } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
-  ACTIVITY_CHANGED_TOPIC,
   type Clock,
   type Envelope,
   Events,
@@ -240,7 +239,7 @@ export class LifeBook implements LifeLog {
   observe(env: Envelope): void {
     const payload = env.data as JsonValue;
     if (env.type === GATE_DECISION_TOPIC) this.#decision(payload);
-    else if (env.type === ACTIVITY_CHANGED_TOPIC) this.#activity(payload);
+    else if (env.type === Events.ActivityChanged.type) this.#activity(payload);
   }
 
   #decision(payload: JsonValue): void {

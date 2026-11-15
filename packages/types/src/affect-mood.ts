@@ -12,13 +12,7 @@ import type { Affect, Drives, EmotionReading } from "./self.js";
 import { EMOTION_LABELS } from "./self.js";
 import type { Mood } from "./social.js";
 
-/**
- * Bus topic of a bond change the affect module applied to the numbers the social module owns
- * (`AffectBondPayload`); the social module applies it (capped, small) to the relationship.
- */
-export const AFFECT_BOND_TOPIC = "affect.bond";
-
-/** Payload of `AFFECT_BOND_TOPIC` (contract: `AffectBondSchema` in @miyoria/contracts/events). */
+/** Payload of `Events.AffectBond` (contract: `AffectBondSchema` in @miyoria/contracts/events). */
 export type AffectBondPayload = AffectBondData;
 
 /** Sleepiness per local hour (0 = awake, 1 = deepest night), interpolated. */

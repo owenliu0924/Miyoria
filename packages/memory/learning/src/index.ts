@@ -84,7 +84,6 @@ export { isTalkLesson, LESSON_PREFIX, LessonStore } from "./lessons.js";
 export {
   CONVERSATION_CONTRIBUTOR,
   ConversationModule,
-  KNOWLEDGE_CHANGED_TOPIC,
   KNOWLEDGE_CONTRIBUTOR,
   KnowledgeModule,
   LESSONS_CONTRIBUTOR,

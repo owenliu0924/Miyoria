@@ -121,6 +121,3 @@ export interface GoalAgenda {
 }
 
 export const GoalAgendaKey = serviceKey<GoalAgenda>("GoalAgenda");
-
-/** Payload: `Goal`, for every new or changed goal. */
-export const GOAL_TOPIC = "plan.goal";

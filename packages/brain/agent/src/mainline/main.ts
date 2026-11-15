@@ -10,9 +10,6 @@
 
 import { errorMessage, interval } from "@miyoria/runtime/kernel";
 import {
-  ACTION_SETTLED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
   type Action,
   type ActionSettled,
   type ActionSink,
@@ -30,6 +27,7 @@ import {
   DeliveryLedgerKey,
   DirectivesKey,
   EventLogKey,
+  Events,
   type FixedLine,
   type Floor,
   type FloorClaimKind,
@@ -149,7 +147,7 @@ function claimKey(attention: ImpulseAttention): string {
 /** Tools that are done the moment they are called: nothing to wait for. */
 const INSTANT_TOOLS: ReadonlySet<string> = new Set([ReactTool.NAME, ...NOTE_TOOLS]);
 
-const ACTIVITY_TOPICS = [ACTIVITY_DONE_TOPIC, ACTIVITY_FAILED_TOPIC];
+const ACTIVITY_TOPICS: readonly string[] = [Events.ActivityDone.type, Events.ActivityFailed.type];
 const TURNS_REMEMBERED = 512;
 const CAUSES_REMEMBERED = 512;
 /** How long a result stays worth saying while the place is busy. */
@@ -461,7 +459,7 @@ export class MainLine implements Mouth {
 
   /** A bus event the main line follows. Returns whether it was one. */
   custom(topic: string, payload: JsonValue): boolean {
-    if (topic === ACTION_SETTLED_TOPIC) {
+    if (topic === Events.ActionSettled.type) {
       this.lines.settled(payload as unknown as ActionSettled);
       return true;
     }

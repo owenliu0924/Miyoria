@@ -91,11 +91,10 @@ export {
 } from "./migrate.js";
 export {
   eventDelta,
-  NUDGE_TOPIC,
   parseAffectEvent,
   SelfModule,
   type SelfModuleOptions,
   STATE_KEY,
 } from "./module.js";
-export { EmotionRules, FEEL_TOPIC, type RuleDeps } from "./rules.js";
+export { EmotionRules, type RuleDeps } from "./rules.js";
 export { SelfService, type SelfServiceDeps } from "./state.js";

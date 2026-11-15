@@ -24,7 +24,6 @@ import {
   type GameStatus,
   GOAL_TOPIC,
 } from "../src/index.js";
-import { SKILL_TOPIC } from "../src/skills.js";
 import { FakeExecutor, FakeExecutors, MINECRAFT_GOALS } from "./fake-executor.js";
 
 const TEXT: ContextKey = { platform: "discord", scope: "g1", channel: "text1", kind: "channel" };
@@ -456,7 +455,7 @@ describe("skills", () => {
     await secs(4);
     h.exec.done("烤好了", h.exec.last().id, outcome(true, { cooked_beef: 1 }));
     await vi.advanceTimersByTimeAsync(5);
-    const skills = h.of(SKILL_TOPIC);
+    const skills = h.of(Events.GameDirectorSkill.type);
     expect(skills).toEqual([
       expect.objectContaining({
         target: "cooked_beef",

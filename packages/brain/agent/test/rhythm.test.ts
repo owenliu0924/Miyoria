@@ -13,7 +13,6 @@ import {
   FloorKey,
   type IncomingMessage,
   type JsonValue,
-  MESSAGE_EXCLUDED_TOPIC,
   MessageActionsKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -306,7 +305,7 @@ describe("the context menus (MessageActionsKey)", () => {
   it("不要記住這個: gone from her prompts, and the rest of her memory is told", async () => {
     const llm = new Scripted([reply("嗯")]);
     const h = await rig(llm);
-    const events = h.sup.bus.subscribe(MESSAGE_EXCLUDED_TOPIC);
+    const events = h.sup.bus.subscribe(Events.AgentMessageExcluded.type);
     const secret = incoming(C, "Alice", "我的密碼是 hunter2");
     h.say(secret);
     await wait(3000);

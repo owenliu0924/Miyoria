@@ -14,11 +14,12 @@
 // Everything here may be derived from what other people said: prompts show it as untrusted
 // data blocks, never in the system role.
 
-import type {
-  ConversationFoldedData,
-  KnowledgeDocData,
-  PlatformReactionData,
-  ReflectionRunData,
+import {
+  type ConversationFoldedData,
+  ConversationFolded as ConversationFoldedEvent,
+  type KnowledgeDocData,
+  type PlatformReactionData,
+  type ReflectionRunData,
 } from "@miyoria/contracts/events";
 import type { PersonId, PlatformId } from "./ids.js";
 import type { JsonObject, JsonValue } from "./json.js";
@@ -28,8 +29,8 @@ import type { Timestamp } from "./time.js";
 
 // ---- conversation state -------------------------------------------------------------------
 
-/** Published after a stretch of a conversation was folded into its state. */
-export const CONVERSATION_FOLDED_TOPIC = "conversation.folded";
+/** `Events.ConversationFolded.type`, for the memory module that still names it this way. */
+export const CONVERSATION_FOLDED_TOPIC = ConversationFoldedEvent.type;
 
 /** The last message-log line folded into a state. */
 export interface FoldMark {
@@ -312,9 +313,6 @@ export interface MemoryCurator {
 }
 
 export const MemoryCuratorKey = serviceKey<MemoryCurator>("MemoryCurator");
-
-/** Published for reactions on messages (`platform.reaction`). */
-export const REACTION_TOPIC = "platform.reaction";
 
 /** `platform.reaction` payload. */
 export type ReactionEvent = PlatformReactionData;

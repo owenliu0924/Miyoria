@@ -30,12 +30,12 @@ import {
   type ActivitySnapshot,
   accountRefString,
   type Envelope,
+  Events,
   isJsonObject,
   type JsonValue,
   type KnownName,
   ModerationKey,
   parseSongCue,
-  SONG_TOPIC,
 } from "@miyoria/types";
 import { z } from "zod";
 import { os, type RpcContext } from "./contract.js";
@@ -238,7 +238,7 @@ export class PublicStats {
 
   /** A bus envelope: a song she sang to the end counts. */
   handle(env: Envelope, now: number): void {
-    if (env.type !== SONG_TOPIC) return;
+    if (env.type !== Events.SingCue.type) return;
     const cue = parseSongCue(env.data as JsonValue);
     if (cue?.state !== "ended" || cue.outcome !== "finished") return;
     this.#roll(now);

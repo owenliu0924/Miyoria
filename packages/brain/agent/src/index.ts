@@ -53,7 +53,6 @@ export {
   fairShares,
   fitBody,
   ordered,
-  PROMPT_TOPIC,
   renderSections,
   SavedPrompts,
   SavedPromptsKey,
@@ -184,7 +183,6 @@ export {
   transcriptLine,
   VOICE_PRESENT_TITLE,
 } from "./prompt.js";
-export { BARGE_IN_TOPIC } from "./runtime.js";
 export { toTraditional } from "./script.js";
 export {
   activityBlock,
@@ -208,7 +206,6 @@ export {
   type SessionParticipant,
 } from "./session.js";
 export {
-  BUDGET_TOPIC,
   type BudgetState,
   EXHAUSTED_LINE,
   herStatusHint,

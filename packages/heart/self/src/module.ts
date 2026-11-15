@@ -30,11 +30,7 @@ import {
   type Mood,
   MoodSignalsKey,
   type ProfileId,
-  SALIENT_TOPIC,
   SelfStateKey,
-  SOCIAL_APPRAISAL_TOPIC,
-  SOCIAL_EVENT_TOPIC,
-  SONG_TOPIC,
   SocialSignalsKey,
   WorldStateKey,
 } from "@miyoria/types";
@@ -44,13 +40,11 @@ import { type TemperamentInput, temperament } from "./emotions.js";
 import { type Circumstances, IDLE, SelfEngine } from "./engine.js";
 import { FeelingsBook } from "./feelings.js";
 import { migrateCards } from "./migrate.js";
-import { EmotionRules, FEEL_TOPIC } from "./rules.js";
+import { EmotionRules } from "./rules.js";
 import { SelfService } from "./state.js";
 
 /** Settings key of the persisted state (drives, boredom, policy, agenda). */
 export const STATE_KEY = "self:state";
-/** Bus topic of drive nudges from games and extensions (`{social?, ..., boredom?, reason}`). */
-export const NUDGE_TOPIC = Events.SelfNudge.type;
 
 const STORE_TIMEOUT_MS = 5_000;
 
@@ -101,13 +95,13 @@ export function eventDelta(
     return { delta: { boredom: -s.ambient_boredom }, reason: "voice" };
   }
   const payload = event.data as JsonValue;
-  if (event.type === SALIENT_TOPIC) {
+  if (event.type === Events.WorldSalient.type) {
     return {
       delta: { boredom: -s.salient_boredom, curiosity: -s.salient_curiosity },
       reason: "salient",
     };
   }
-  if (event.type === NUDGE_TOPIC && isJsonObject(payload)) {
+  if (event.type === Events.SelfNudge.type && isJsonObject(payload)) {
     const delta: Partial<Drives> & { boredom?: number } = {};
     for (const key of [...DRIVE_NAMES, "boredom"] as const) {
       const v = payload[key];
@@ -335,12 +329,12 @@ export class SelfModule implements Module {
       Events.PlatformMessageCreated.type,
       Events.VoiceUtteranceEvent.type,
       Events.AgentTurnCompleted.type,
-      SALIENT_TOPIC,
-      NUDGE_TOPIC,
-      FEEL_TOPIC,
-      SOCIAL_EVENT_TOPIC,
-      SOCIAL_APPRAISAL_TOPIC,
-      SONG_TOPIC,
+      Events.WorldSalient.type,
+      Events.SelfNudge.type,
+      Events.SelfFeel.type,
+      Events.SocialEvent.type,
+      Events.SocialAppraisal.type,
+      Events.SingCue.type,
       Events.LlmBudget.type,
       "game.*",
       Events.VoicePlaybackEvent.type,

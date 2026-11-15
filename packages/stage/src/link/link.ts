@@ -26,16 +26,6 @@ import { ScenesConfigSchema } from "./scenes.js";
 
 const log = getLogger("stage.link");
 
-/**
- * Topic of status updates published by `stage.link`
- * (`{connected, vts, obs, scene, streaming, scenes, hotkeys, overlay_url}`).
- */
-export const STATUS_TOPIC = Events.StageStatus.type;
-/** Topic of errors reported by the Stage node (`{message}`). */
-export const ERROR_TOPIC = Events.StageError.type;
-/** Topic of a highlight the Stage node saved (`{reason, path}`; the path is on the streaming PC). */
-export const CLIP_TOPIC = Events.StageClip.type;
-
 export const DEFAULT_BIND = "127.0.0.1:7882";
 
 /** `[modules."stage.link"]` config section. */
@@ -172,7 +162,7 @@ export class StageLink {
 
   /**
    * Saves a highlight (OBS's replay buffer) with `reason` noted next to it. Resolves once saved
-   * (the file arrives as a `CLIP_TOPIC` event); rejects when OBS saved nothing.
+   * (the file arrives as a `Events.StageClip` event); rejects when OBS saved nothing.
    */
   clip(reason: string): Promise<StageStatus> {
     const text = [...reason.trim()].slice(0, CLIP_REASON_MAX).join("");

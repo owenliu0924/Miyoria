@@ -9,9 +9,6 @@
 
 import type { VoiceBargeInData } from "@miyoria/contracts/events";
 
-/** Payload: `VoiceBargeIn`, on every change of what the interruption does to her speech. */
-export const VOICE_BARGE_IN_TOPIC = "voice.barge_in";
-
 /**
  * `duck`: her volume went down (somebody else is talking); `pause`: she holds her breath, the
  * rest of her line waits; `resume`: back to normal volume / the paused line goes on; `stop`:

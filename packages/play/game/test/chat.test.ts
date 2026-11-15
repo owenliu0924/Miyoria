@@ -37,7 +37,6 @@ import {
   GameChatModule,
   GameModule,
   gameChatContext,
-  LINK_TOPIC,
   playerId,
   sanitizeGameChat,
 } from "../src/index.js";
@@ -79,7 +78,7 @@ class Chat {
       for await (const env of sub) {
         if (is(Events.PlatformMessageCreated, env)) this.messages.push(env.data);
         if (is(Events.PlatformReady, env)) this.ready.push(env.data.self_account);
-        if (env.type === LINK_TOPIC) this.links.push(env.data as JsonValue);
+        if (env.type === Events.GameChatLink.type) this.links.push(env.data as JsonValue);
       }
     })();
   }

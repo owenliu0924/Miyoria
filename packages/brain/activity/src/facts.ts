@@ -11,7 +11,6 @@ import {
   isTaskFailureCode,
   type JsonObject,
   parseSongCue,
-  SONG_TOPIC,
   type TaskFailureCode,
   type TurnId,
 } from "@miyoria/types";
@@ -38,7 +37,7 @@ export const FACT_TOPICS = [
   GOLIVE_TOPIC,
   STAGE_STATUS_TOPIC,
   GAME_SESSION_TOPIC,
-  SONG_TOPIC,
+  Events.SingCue.type,
   Events.AgentTurnStarted.type,
   Events.AgentTurnCompleted.type,
 ] as const;
@@ -192,7 +191,7 @@ export class Facts {
         }
         return true;
       }
-      case SONG_TOPIC: {
+      case Events.SingCue.type: {
         const cue = parseSongCue(payload as never);
         if (cue?.state === "started") this.song = cue.title || cue.song;
         else if (cue?.state === "ended") this.song = null;

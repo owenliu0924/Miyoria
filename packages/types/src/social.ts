@@ -69,21 +69,8 @@ export interface RelationshipEffects {
 
 export const RelationshipEffectsKey = serviceKey<RelationshipEffects>("RelationshipEffects");
 
-/**
- * Bus topic of every social event someone caused toward her (`SocialEvent`), published by the
- * social module whether or not the daily caps let it change the numbers: her emotions react
- * to all of them.
- */
-export const SOCIAL_EVENT_TOPIC = "social.event";
-
 /** Payload of `social.event` (contract: `SocialEventSchema` in @miyoria/contracts/events). */
 export type SocialEvent = SocialEventData;
-
-/**
- * Bus topic of what the social appraisal (the batched `fast` LLM pass) read about her feelings
- * in a conversation (`SocialAppraisal`), for her emotions.
- */
-export const SOCIAL_APPRAISAL_TOPIC = "social.appraisal";
 
 /** One person in a `SocialAppraisal`. */
 export interface AppraisedPerson {
