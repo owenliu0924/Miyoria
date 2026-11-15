@@ -34,7 +34,7 @@ vision_model = "deepseek-v4.1-flash"
 env = { MIYORIA_THREADS_VISION_KEY = "${OPENCODE_API_KEY:-}" }   # 沿用 .env 裡已經有的 key
 ```
 
-然後 `npx miyoria stage obs-setup` 會建好 Threads 場景:背景、她的瀏覽器視窗(OBS 視窗擷取「Miyoria Threads」)、站在右邊的她、overlay。
+然後 `pnpm dlx miyoria stage obs-setup` 會建好 Threads 場景:背景、她的瀏覽器視窗(OBS 視窗擷取「Miyoria Threads」)、站在右邊的她、overlay。
 
 第一次:叫她去滑 Threads(或 `/game start threads`),瀏覽器視窗出現後,在視窗裡登入她的帳號。登入前她不會開始滑。
 

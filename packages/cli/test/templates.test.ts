@@ -3,7 +3,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import { exampleConfig } from "../src/assets.js";
 
@@ -29,7 +29,6 @@ describe("config template", () => {
     ]) {
       expect(text).toContain(section);
     }
-    expect(text).toContain('# pipeline = "v3"');
     expect(text).toContain("turn = { venv");
   });
 });

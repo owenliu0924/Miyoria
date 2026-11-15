@@ -7,7 +7,7 @@ import {
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
-import type { LlmCallKind } from "@/api/types";
+import type { LlmCallKind } from "@miyoria/contracts/api";
 import { NotFoundPage } from "@/pages/NotFound";
 import {
   ACTIVITY_TABS,

@@ -108,7 +108,7 @@ describe("mapping", () => {
     expect(displayName(user("1", "bob", null))).toBe("bob");
     expect(displayName(user("1", "bob", null), "Bobby")).toBe("Bobby");
     expect(displayName(user("1", "bob", "Bob!"))).toBe("Bob!");
-    // A blank nickname does not fall through to the global name (like the legacy filter).
+    // A blank nickname does not fall through to the global name.
     expect(displayName(user("1", "bob", "Bob!"), " ")).toBe("bob");
   });
 

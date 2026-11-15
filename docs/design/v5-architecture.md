@@ -10,7 +10,7 @@ V5 做七件事,前三件是地基:
 
 1. **一份契約、一個登記處**:平台、worker、遊戲、渲染器、擴充都是「能力的提供者」,用同一份 schema 向 Core 報到。Core 不再認識任何功能。
 2. **每台電腦一個管家(hostd)**:一個指令裝這台要的服務、一個指令全部啟動、一個指令加入別台的 Core。位址不再寫進設定。
-3. **整併**:`packages/` 底下 45 個套件收成 20 個,V2 管線和重複的層刪掉,設定只有一份 schema,資料庫重開。
+3. **整併**:`packages/` 底下 45 個套件收成 22 個左右(第一步已經到 26 個,§12),V2 管線和重複的層刪掉,設定只有一份 schema,資料庫重開。
 4. **大腦**:一個決定者(Self loop)。程式只管護欄和成本,要不要說、說什麼、做什麼都在同一次模型呼叫裡決定,拒絕會回給她看。把 harness 給模型的東西給她:足夠的思考、留得住的對話和工具紀錄、找得到的工具、子代理。
 5. **心**:羈絆為主,加八個細分數值和文字印象。變動由她提出、程式限速,每一筆都有原因。面板用環狀進度顯示。
 6. **玩**:卡照 owner 的企劃分成每日卡和生圖卡,每日卡先做,生圖卡等模型選定;經濟補上去處;每個互動都要有看得見的下文。
@@ -114,7 +114,7 @@ V5 做七件事,前三件是地基:
 | `asr` · `tts` · `turn` · `embed` | Python worker | `workers/*` |
 | `sing` · `imagegen` | 排隊型的 GPU 工作 | `workers/sing`、ComfyUI |
 | `renderer` | VTube Studio、overlay,以後的 VRM | `packages/stage` |
-| `activity` | Minecraft、osu、Neuro SDK 遊戲、派對遊戲 | `packages/game`、`extensions/*` |
+| `activity` | Minecraft、osu、Neuro SDK 遊戲、派對遊戲 | `packages/play/game`、`extensions/*` |
 | `tool` | MCP、擴充的工具 | `mcp`、`ext-host` |
 | `panel` | 外掛自己的面板頁 | 有寫沒做 |
 
@@ -322,6 +322,7 @@ miyoria up                     # 啟動這台裝的全部
 | multilingual-e5-small | 0.12B | 低很多 | MIT | 現在 `local` 的預設,最快 |
 
 - 做法:階段 3 拿約 200 句真的記憶和 50 個問法(繁中、日文歌名、英文混著)比 recall@5 和 CPU 上每句的毫秒數,再定。沒有測之前的預設是 Qwen3-Embedding-0.6B。語音回合對延遲敏感,查詢那一句太慢的話改用小一號的模型或放到顯卡上。
+- **2026-11-15 更新:** 合成測試集上的試驗(`research_notes/v5/embedding-trial.md`)後,owner 選了 Harrier-OSS-v1 270M fp16(短查詢約 30 ms、帶三行上下文約 70 到 90 ms,2 執行緒)。`local` 依模型 pooling(Harrier 用模型自己的輸出),每個向量記著是哪個模型做的,換模型會重算;合併分數時 cosine 攤開在候選之間,`min_vector` 預設改成 0.5(見 ARCHITECTURE §5.3)。門檻要等 §7.7 的真資料標註再調。
 - 每次模型呼叫都落地保存,能從事件紀錄重建當時模型看到的一切。
 
 ### 7.6 主動
@@ -508,30 +509,49 @@ miyoria up                     # 啟動這台裝的全部
 
 ## 12. 套件整併
 
-| V5 | 收進來的 |
+**已經做的(2026-11-14,`v5` 分支)**:十組機械式合併,`packages/` 從 45 個變成 26 個,行為沒有改。每一組是一個套件,裡面每個部分一個資料夾(各有自己的 `src/` 和 `test/`),對外用 `@miyoria/<組>/<部分>` 匯入,組內互相用相對路徑。工具是 `scripts/merge-packages.py`。
+
+| 套件 | 裡面的部分 |
 |---|---|
-| `contracts` | `types` 的基礎部分、SDK 型別、所有連線協定、API 路由表 |
-| `runtime` | `kernel`、`tools`、`profile`、`scheduler`、設定組裝、外掛載入(不再有寫死的模組清單) |
-| `store` | 只剩連線、遷移、事件紀錄、產物庫(§11.2);各外掛自己的表;只留一種 SQL 寫法 |
-| `access` | `auth`、`commands` 裡的第二套權限、主人名單 |
-| `interaction` | `commands` 的平台中性部分 |
-| `platform-discord` | `discord`、Discord 的指令繪製 |
-| `brain` | `agent`、`arbiter`、`activity`、`actions`、`directive`、`moderation`、`llm` |
-| `memory` | `memory`、`facts`、`learning`、`world`、`self` 的文件部分 |
-| `heart` | `mind` 的情緒、`social`、`self` 的情感 |
+| `runtime` | `kernel`、`profile`、`scheduler` |
+| `llm` | `llm`、`tools` |
+| `gate` | `actions`、`moderation` |
+| `brain` | `agent`、`arbiter`、`activity`、`directive` |
+| `memory` | `memory`、`facts`、`learning`、`world` |
+| `heart` | `mind`、`social`、`self` |
 | `voice` | `voice`、`speech` |
-| `stage` | stage 連線的 Core 端、表演者(情緒 → 表情意圖);渲染器搬到 stage app |
-| `economy` · `cards` · `sing` · `live` | 各自一個外掛;`cards` 收 `card-face` |
-| `play` | `party`、`game`、`queue` |
 | `workspace` | `sandbox`、`skills`、`web`、`imagegen` |
-| `plugin-host` | `ext-host`、`mcp`,加上 WebSocket 和遠端放置 |
-| `sdk` · `http` | SDK(型別由 `contracts` 產生);`api` 的殼 |
+| `play` | `party`、`game`、`queue` |
+| `plugin-host` | `ext-host`、`mcp` |
 
-Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admin`、`web`、`overlay`。`replay`、`eval`、`card-studio` 搬到 `tools/`,Core 不依賴它們。
+和原本規劃不同的三處,都是算過相依圖之後改的,不這樣會有循環相依:
 
-一起刪:V2 管線和它的開關、`/api/economy` 與 `economy2` 併一、`api/v4-*.ts`、30 個舊設定鍵的相容層、兩種事件形式併一、88 處 Rust 時代的註解、`spikes/`、沒被 ignore 的暫存資料夾(`workers/pip-*`、`pytest-of-*`、`torchinductor_*`)。
+- `tools`(工具登記表)依賴 `llm` 的工具型別,所以和 `llm` 一組,不放 `runtime`。
+- `actions`(能力登記表和風險閘門)被 `learning`、`mind`、`social`、`stage` 用到,所以不能放在 `brain` 裡。它和 `moderation` 合成 `gate`,位置在 `brain` 下面。
+- `directive`(主人規則)放在 `brain`:它的測試要用到 `activity` 和事件紀錄,放在 `gate` 會讓 `gate` 和 `brain` 在測試上互相依賴,pnpm 就排不出建置順序。
+
+**還沒做的**:
+
+| 之後的名字 | 現在 | 什麼時候 |
+|---|---|---|
+| `contracts` | `types` 裡的連線形狀,加上各條連線協定和 API 路由表 | 階段 1 的契約那一步,設計在 [v5-contracts.md](v5-contracts.md) |
+| `store` | `store`:只剩連線、遷移、事件紀錄、產物庫;各外掛自己的表 | 階段 1 的資料庫那一步 |
+| `access` | `auth`,加上 `commands` 裡的第二套權限 | 做權限時 |
+| `interaction` | `commands` 的平台中性部分 | 階段 6 |
+| `platform-discord` | `discord`、Discord 的指令繪製 | 階段 6 |
+| `cards` | `card-face`,加上立繪卡和收藏品 | 階段 5 |
+| `http` | `api` 變成殼,路由由外掛貢獻 | 階段 1 的契約之後 |
+| `stage`、`sing`、`live`、`economy`、`sdk` | 不動 | |
+
+Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admin`、`web`、`overlay`。`replay`、`eval`、`card-studio` 已搬到 `tools/`,Core 不再依賴它們(錄製用的 `replay` 模組和紀錄格式是執行期的東西,留在 `runtime` 的 `replay-log`)。
+
+一起刪,已做完的:V2 管線和它的開關、`/api/economy` 與 `economy2` 併一、`api/v4-*.ts` 改成一般檔名、只會警告的舊設定鍵相容層、Rust 時代的註解、`spikes/`。還沒做的:兩種事件形式併一(在契約那一步)、剩下幾個要先改線上設定檔才能拿掉的設定相容層。
 
 ## 13. 資料
+
+資料層的完整設計(事件紀錄、外掛自己的表、身分和場所、產物庫、切換步驟和工作順序)在 [v5-data.md](v5-data.md),裡面有八件要 owner 決定的事。
+
+契約層的設計(手抄的契約清單、`contracts` 套件、路由表、工作順序)在 [v5-contracts.md](v5-contracts.md),裡面有五件要 owner 決定的事。
 
 建議 V5 從空的資料庫開始:外掛各自的表、一份只增的事件紀錄,訊息、決策、回合紀錄從它導出(取代今天的五份),人物模型一處存放。
 
@@ -559,7 +579,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 |---|---|---|---|
 | **0 清場** | 合併現有 PR、CI 轉綠;修面板 ±100;ignore 並清掉暫存資料夾;確認 `*.local.*` 圖沒被公開;移除 `boundaries.md`、把界線寫進人設;弄清楚思考開關、落地保存模型呼叫紀錄;修文件裡錯的埠號表 | 小 | — |
 | **1 契約與瘦身** | `contracts`;套件整併(機械式搬移);刪 V2 管線和相容層;一份設定 schema;新的資料庫、事件紀錄和產物庫;匯出匯入 | 大 | 0 |
-| **2 管家** | `service.toml`;hostd;登記處;CLI;VRAM 仲裁;join;worker token;面板的「電腦」頁 | 大 | 1 |
+| **2 管家** | `service.toml`;hostd;登記處;CLI;VRAM 仲裁;join;worker token;面板的「電腦」頁;別人從零架一套的路(§16 第 20 項) | 大 | 1 |
 | **3 大腦** | 真模型評測;Self loop;提示詞版面;工具登記表和 `find_tools`;子代理;L1–L3 和 embedding;模型分流;`share` 和附件 / 連結(先只給本人);逐一刪補丁 | 大 | 1 |
 | **4 心** | 人物模型;`feel`;每晚反思;人物頁和環;公開頁的環 | 中 | 3 |
 | **5 玩** | `cards`(每日卡:Live2D 算圖和部件;生圖卡等模型選定);經濟的去處;每日任務;文字遊戲和預測;貼圖 | 大 | 4 |
@@ -585,13 +605,23 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 | 9 | 順序 | 0 → 1 → 2 和 3 同時 |
 | 10 | Minecraft 的 PR | 等階段 7;#39 已請對方 rebase 並拆開 |
 | 11 | 她做的檔案 | 另一個子網域;翻唱不開放下載;預設留 7 天,進相簿的不過期 |
+| 12 | 資料層的八件事(D1 到 D8) | 全部照 [v5-data.md](v5-data.md) 的建議:只留 SQLite、原始聊天留 365 天、隱私和語音同意跟著帳號連結走、存紀念卡要的資料、階段 1 結束時切換、拿掉 `profile_id`、提示詞留在 JSONL、錢的帳本是外掛自己的表 |
+| 13 | 契約層的五件事(C1 到 C5) | 全部照 [v5-contracts.md](v5-contracts.md) 的建議:`contracts` 和 `types` 並排、Python 模型用產生器、public 和 member 路由嚴格驗證回應、現有事件沿用 topic 名稱、`@miyoria/contracts` 也發佈 |
+| 14 | `agent` 和 `arbiter` 模組 | 必要模組,不能停用;它們不在的時候沒有任何東西會替她說話 |
+| 15 | 現成套件 | 套件做得比手寫好的地方就用套件(規則在 TS-CONVENTIONS §1)。資料層:一般的外掛資料表全面用 Drizzle(2026-11-15 決定,試用結果在 [v5-data.md](v5-data.md));事件表、全文搜尋和 trigger 維持手寫 SQL。LLM 這邊等階段 3 重建大腦時評估 Vercel AI SDK。其餘手寫的基礎設施逐項盤點 |
+| 16 | 套件管理 | pnpm;文件裡給使用者看的指令也用 pnpm |
+| 17 | API 的路由層 | 用 oRPC 1.x(2026-11-15 決定):路由只在 `contracts` 裡定義一次,伺服器和面板、CLI 的 client 都從它來。K8 試驗的四道關卡過了才逐組搬;過不了就回來重談 |
+| 18 | embedding(語意搜尋) | 確定要開(2026-11-15)。用本機跑的模型;用哪一個由實測決定,候選在 §7.5,owner 的朋友推薦 Qwen 系列。新資料庫是空的,所以從切換那天起每筆記憶都帶向量 |
+| 19 | embedding 用哪個模型 | Harrier-OSS-v1 270M(fp16,MIT),owner 2026-11-15 選的。實測(人造的 200 筆記憶、71 個問法,CPU 2 執行緒):前 5 筆命中 95%,一次查詢 28 到 67 ms,記憶體 0.8 GB。同系列的 0.6B 是 98%、152 到 311 ms;Qwen3-Embedding-0.6B 是 97%、195 到 551 ms,量化版掉到 87%。選小的是因為每一回合(含語音)都要付這筆延遲,而前 5 筆的差距在雜訊內。換模型只要改設定,舊向量會重算 |
+| 20 | 安裝給誰用 | 兩種都要(owner 2026-11-16):(一)別台電腦加入這個 Cluster,照 §5.4;(二)別人從零架一套自己的。第二種在 §5 原本沒寫,階段 2 設計時補上;初步想到的缺口是不用 clone repo 的安裝、第一次啟動的引導(Discord、LLM 金鑰、角色包)、沒有顯卡也能跑的最小模式(只有文字)、給外人看的安裝文件。語音現在走自己的帳號,對外的版本怎麼給還沒定,到時候問 owner |
 
 **還沒定的**:
 
-- embedding:用本機的模型;哪一個等階段 3 實測(§7.5 的候選),owner 的朋友推薦 Qwen 系列。
 - 十二月:生圖的模型、ComfyUI 跑在哪一台、她的 LoRA 的授權。
 - 「玩」的大部分已決定,剩下的(水族箱、交易所的幾個細節):[v5-play.md](v5-play.md) §8。
 - Minecraft 原設計的三個決定(志向清單和權重、誰算主人、AltoClef),階段 7 之前。
+- 套件盤點的結論在 [v5-packages.md](v5-packages.md),「一般資料表全面用 Drizzle」和「路由層用 oRPC」已決定,擴充協定照建議維持手寫並已做完(K5);還剩一件:階段 3 要不要換成 AI SDK 的 provider(換之前先對 OpenCode 實測)。
+- 線上 `miyoria.toml` 的三處修改(拿掉剩下的設定相容層要先改),以及 `/api/facts/context`、`/api/facts/retryable` 兩條路由有沒有人手動在用。
 
 ## 17. 風險和不做的事
 

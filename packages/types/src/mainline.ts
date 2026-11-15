@@ -1,7 +1,5 @@
 // The main line of V3 (docs/design/v3-architecture.md §4, §7, §10): the one foreground decider.
 //
-// * `Pipeline`: which of the two brains runs (`[core] pipeline`). `v2` keeps every old path; one
-//   setting rolls back.
 // * `TurnOutput`: what one call of the main line produces. What she says and what she does are the
 //   same decision (§10), so they come out of the same response.
 // * `Floor` (§7): whether she may take the mic now, what her budget is, how hard a claim may
@@ -17,32 +15,8 @@ import type { Handle } from "./handle.js";
 import type { TurnId } from "./ids.js";
 import type { JsonValue } from "./json.js";
 import type { AccountRef, ContextKey } from "./platform.js";
-import { type ServiceKey, serviceKey } from "./service-key.js";
+import { serviceKey } from "./service-key.js";
 import type { Timestamp } from "./time.js";
-
-// ---- the switch -----------------------------------------------------------------------------
-
-export const PIPELINES = ["v3", "v2"] as const;
-
-export type Pipeline = (typeof PIPELINES)[number];
-
-/** What `[core] pipeline` means when the config says nothing. */
-export const DEFAULT_PIPELINE: Pipeline = "v3";
-
-export function isPipeline(value: unknown): value is Pipeline {
-  return typeof value === "string" && (PIPELINES as readonly string[]).includes(value);
-}
-
-export const PipelineKey = serviceKey<{ pipeline: Pipeline }>("Pipeline");
-
-/**
- * The pipeline in use. The core always provides it (`DEFAULT_PIPELINE` unless the config says
- * otherwise); only a module wired up by hand, as in a package's own tests, runs without one, and
- * that module then keeps its V2 behaviour.
- */
-export function pipelineOf(services: { get<T>(key: ServiceKey<T>): T | undefined }): Pipeline {
-  return services.get(PipelineKey)?.pipeline ?? "v2";
-}
 
 // ---- one turn of the main line ----------------------------------------------------------------
 
@@ -182,7 +156,7 @@ export interface FloorBudget {
   performing: boolean;
 }
 
-/** Provided by the `arbiter` module under `pipeline = "v3"`. Answers from memory. */
+/** Provided by the `arbiter` module. Answers from memory. */
 export interface Floor {
   /** Takes the mic for `turn`. A context may have more than one: an old line can still be playing. */
   hold(turn: TurnId, context: ContextKey, kind: FloorClaimKind): void;
@@ -281,7 +255,7 @@ export interface ProposalResultBody {
   turn: TurnId | null;
 }
 
-/** Provided by the agent under `pipeline = "v3"`: the only door the background has. */
+/** Provided by the agent: the only door the background has. */
 export interface ProposalBoard {
   /**
    * Writes `proposal` to the log and asks for the floor for it. Resolves when the Floor said
@@ -308,7 +282,7 @@ export interface FixedLine {
   blocked?: string | null;
 }
 
-/** Provided by the agent under `pipeline = "v3"`. */
+/** Provided by the agent. */
 export interface Mouth {
   /** Whether `turn` is one of the main line's: what the scheduler checks before it sends a line. */
   owns(turn: TurnId | null): boolean;
@@ -320,6 +294,3 @@ export const MouthKey = serviceKey<Mouth>("Mouth");
 
 /** The error of a line the scheduler refused for going around the main line. */
 export const NOT_MAIN_LINE = "not the main line";
-
-/** Bus topic: one `MainResultBody`, for whoever follows actions without reading the log. */
-export const MAIN_RESULT_TOPIC = "mainline.result";

@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import {
   buildTargets,
@@ -696,41 +696,6 @@ export async function healthChecks(input: DeepInput): Promise<Finding[]> {
   return findings;
 }
 
-// ---- leftovers from older setups ---------------------------------------------------------
-
-const V2_AGENT_VOICE_KEYS = ["ambient_factor", "cooldown_ms", "min_cooldown_ms", "interrupt_scale"];
-
-/** Old values that still parse but no longer do anything. Keys only; values are not printed. */
-export function legacyConfigNotes(config: Config): string[] {
-  const notes: string[] = [];
-  const agent = config.module("agent").config;
-  if (isJsonObject(agent)) {
-    const voice = agent.voice;
-    if (isJsonObject(voice)) {
-      for (const key of V2_AGENT_VOICE_KEYS) {
-        if (key in voice) {
-          notes.push(`[modules.agent.voice] ${key} 已經拿掉(留著只會警告),可以刪除`);
-        }
-      }
-    }
-    const modes = [
-      agent.default_mode,
-      ...(isJsonObject(agent.channels) ? Object.values(agent.channels) : []),
-    ];
-    if (modes.includes("ambient")) {
-      notes.push('[modules.agent] 的聊天等級 "ambient" 已改名為 "normal"');
-    }
-  }
-  return notes;
-}
-
-export function legacyChecks(input: DeepInput): Finding[] {
-  const notes = legacyConfigNotes(input.config);
-  return notes.length === 0
-    ? [ok("舊設定", "沒有 V2 留下的舊值")]
-    : notes.map((n) => warn("舊設定", n, ["`miyoria config unset <key>` 或直接編輯 miyoria.toml"]));
-}
-
 // ---- all ---------------------------------------------------------------------------------
 
 export async function deepChecks(input: DeepInput): Promise<Finding[]> {
@@ -742,7 +707,6 @@ export async function deepChecks(input: DeepInput): Promise<Finding[]> {
     () => tempChecks(input),
     () => vramChecks(input),
     () => healthChecks(input),
-    () => legacyChecks(input),
   ];
   const out: Finding[] = [];
   for (const group of groups) {

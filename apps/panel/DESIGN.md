@@ -182,7 +182,7 @@ Navigation is four levels, each visible at once:
 
 What V4 added, in the same blocks as everything else: `Page`, `Card` with a named section,
 hairline rows, `ChartBlock` for the one chart, no tiles. Every one reads through `ModuleQuery`
-(`app/v4-queries.ts`, `api/v4-endpoints.ts`): loading is a skeleton, a 503 is one `OffLine` row
+(`app/queries.ts`, `api/endpoints.ts`): loading is a skeleton, a 503 is one `OffLine` row
 ("<module>沒有啟動") with 重新檢查, a 404 on the route is "這個 Core 還沒有這項功能", and an empty
 answer is one plain line. Nothing here is invented: a number the Core does not send is not shown.
 

@@ -13,7 +13,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import {
   type BuildTarget,
   buildTargets,
@@ -24,7 +24,6 @@ import {
   modFreshness,
   modInfo,
 } from "../stack/builds.js";
-import { legacyConfigNotes } from "../stack/checks.js";
 import { repoRoot } from "../stack/config.js";
 import { defaultRunner, type Runner, tailLines } from "../stack/system.js";
 import { dim, fail, note, ok, println, section, warn } from "../ui.js";
@@ -304,12 +303,6 @@ export async function run(
   }
 
   if (!options.skipMod && !(await updateMod(root, config, deps, options))) failures++;
-
-  const notes = legacyConfigNotes(config);
-  if (notes.length > 0) {
-    section("設定裡 V2 留下的舊值(沒有自動改寫)");
-    for (const n of notes) warn(n);
-  }
 
   if (failures > 0) throw new UpdateError(`${failures} 項沒有完成,見上面的訊息`);
   if (!options.dryRun) {

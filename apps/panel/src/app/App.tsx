@@ -2,7 +2,7 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { describeError, isApiError } from "@/api/http";
-import type { AuthMethods } from "@/api/types";
+import type { AuthMethods } from "@miyoria/contracts/api";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -39,7 +39,7 @@ function pathOf(router: AppRouter): string {
 
 function OwnPage({ onLogout, onBack }: { onLogout: () => void; onBack: () => void }) {
   const { api } = useConnection();
-  const member = useQuery({ queryKey: ["member", "session"], queryFn: ({ signal }) => api.memberSession({ signal }) });
+  const member = useQuery({ queryKey: ["member", "session"], queryFn: ({ signal }) => api.rpc.member.session(undefined, { signal }) });
   if (member.data) return <PublicSite member={member.data} onLogout={onLogout} onBack={onBack} />;
   return (
     <div className="flex min-h-svh items-center justify-center px-4">

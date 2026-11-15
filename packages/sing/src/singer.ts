@@ -16,33 +16,30 @@
 // * When the worker takes the whole GPU to convert (its TTS / ASR go away for a minute or two),
 //   she first says she is off to prepare it, and only then does the worker go ahead
 //   (`exclusive: "waiting"` → `goExclusive`). Meanwhile speech is paused (`SpeechPauseKey`,
-//   `SPEECH_PAUSE_TOPIC`): the voice module neither speaks nor transcribes, the overlay says so.
+//   `Events.SpeechPause`): the voice module neither speaks nor transcribes, the overlay says so.
 // * The song being prepared, its worker stage and progress are published as
-//   `SONG_PREPARE_TOPIC` whenever they change (the overlay's activity line).
+//   `Events.SingPrepare` whenever they change (the overlay's activity line).
 
 import { randomUUID } from "node:crypto";
-import { CapabilityError } from "@miyoria/actions";
-import { errorMessage, getLogger, type ModuleContext } from "@miyoria/kernel";
-import { type RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { CapabilityError } from "@miyoria/gate/actions";
+import { type RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
+import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
-  ARBITER_IMPULSE_TOPIC,
+  type BusEvent,
   type ContextKey,
   contextKeyEquals,
-  customEvent,
-  type Event,
+  Events,
+  is,
   isJsonObject,
   type JsonValue,
   MindKey,
   newImpulse,
   type PlaybackState,
   type SetlistLine,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
   type SongCue,
   type SongPrepare,
-  SPEECH_PAUSE_TOPIC,
   type SpeechPause,
   type SteerableTask,
   type SteerOutcome,
@@ -55,7 +52,6 @@ import {
   toTimestamp,
   type VoiceFloor,
   VoicePlayerKey,
-  v2Event,
   WorldStateKey,
 } from "@miyoria/types";
 import {
@@ -114,9 +110,6 @@ export interface SongRequest
   /** A paid dedication (screened and charged here); needs a requester. */
   dedication?: string | null;
 }
-
-/** Topic of the stream overlay's screen line (the economy's `SCREEN_TOPIC`, kept as text here). */
-const SCREEN_TOPIC = "economy.screen";
 
 const LINK = /https?:\/\/[^\s<>"'「」]+/i;
 /** A link pasted without its scheme (`www.bilibili.com/video/BV…/`, `youtu.be/…`): one of the usual hosts. */
@@ -211,7 +204,7 @@ export class Singer implements VoiceFloor, SpeechPause {
   #paused = false;
   /** What the worker last said about preparing songs (not stored). */
   readonly #jobs = new Map<SongNo, { title: string; exclusive: string | null }>();
-  /** JSON of the `SONG_PREPARE_TOPIC` payload last published. */
+  /** JSON of the `Events.SingPrepare` payload last published. */
   #prepareSent = JSON.stringify(NOT_PREPARING);
 
   /**
@@ -559,9 +552,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     if (paused === this.#paused) return;
     this.#paused = paused;
     log.info({ paused }, paused ? "speech paused: the song worker has the GPU" : "speech is back");
-    this.ctx.publish(
-      customEvent(SPEECH_PAUSE_TOPIC, { paused, reason: paused ? "song" : null } as JsonValue),
-    );
+    this.ctx.publish(Events.SpeechPause, { paused, reason: paused ? "song" : null });
   }
 
   #fail(entry: SongEntry, why: string, tell = true): void {
@@ -813,14 +804,12 @@ export class Singer implements VoiceFloor, SpeechPause {
   #showDedication(entry: SongEntry): void {
     if (!entry.dedication || !entry.dedication_entry) return;
     const title = entry.song?.title?.trim() || entry.query;
-    this.ctx.publish(
-      customEvent(SCREEN_TOPIC, {
-        kind: "dedication",
-        name: safeName(entry.requester_name, 32),
-        text: entry.dedication,
-        song: safeName(title, 60),
-      } as JsonValue),
-    );
+    this.ctx.publish(Events.EconomyScreen, {
+      kind: "dedication",
+      name: safeName(entry.requester_name, 32),
+      text: entry.dedication,
+      song: safeName(title, 60),
+    });
   }
 
   #ended(entry: SongEntry, guild: string, outcome: PlaybackState | "error"): void {
@@ -1037,45 +1026,39 @@ export class Singer implements VoiceFloor, SpeechPause {
 
   // ----- events -----
 
-  onEvent(event: Event): void {
-    switch (event.type) {
-      case "voice_joined": {
-        const c = event.data.context;
-        this.#voices = [c, ...this.#voices.filter((v) => !contextKeyEquals(v, c))];
-        // Now she can sing: ready songs she decides about are brought up again.
-        for (const e of this.list.ready()) {
-          if (this.#mindDecides(e) && this.#remindsMore(e, false)) this.#remind(e);
-        }
-        this.#autoStart();
-        return;
+  onEvent(event: BusEvent): void {
+    if (is(Events.VoiceJoined, event)) {
+      const c = event.data.context;
+      this.#voices = [c, ...this.#voices.filter((v) => !contextKeyEquals(v, c))];
+      // Now she can sing: ready songs she decides about are brought up again.
+      for (const e of this.list.ready()) {
+        if (this.#mindDecides(e) && this.#remindsMore(e, false)) this.#remind(e);
       }
-      case "voice_left": {
-        const c = event.data.context;
-        this.#voices = this.#voices.filter((v) => !contextKeyEquals(v, c));
-        if (c.scope !== null) this.#speaking.delete(c.scope);
-        return;
-      }
-      case "voice_participants":
-        // Someone came back: a song that waited for them may start now.
-        this.#autoStart();
-        return;
-      case "voice_playback": {
-        const guild = event.data.context.scope;
-        if (guild === null) return;
-        const n = this.#speaking.get(guild) ?? 0;
-        if (event.data.state === "started") this.#speaking.set(guild, n + 1);
-        else this.#speaking.set(guild, Math.max(0, n - 1));
-        return;
-      }
-      case "agent_turn_completed":
-        this.#turnsDone.push(event.data.turn);
-        if (this.#turnsDone.length > TURNS_REMEMBERED) this.#turnsDone.shift();
-        return;
-      case "custom":
-        if (event.data.topic === "queue.item_activated") this.#onQueueItem(event.data.payload);
-        return;
-      default:
-        return;
+      this.#autoStart();
+      return;
+    } else if (is(Events.VoiceLeft, event)) {
+      const c = event.data.context;
+      this.#voices = this.#voices.filter((v) => !contextKeyEquals(v, c));
+      if (c.scope !== null) this.#speaking.delete(c.scope);
+      return;
+    } else if (is(Events.VoiceParticipants, event)) {
+      // Someone came back: a song that waited for them may start now.
+      this.#autoStart();
+      return;
+    } else if (is(Events.VoicePlaybackEvent, event)) {
+      const guild = event.data.context.scope;
+      if (guild === null) return;
+      const n = this.#speaking.get(guild) ?? 0;
+      if (event.data.state === "started") this.#speaking.set(guild, n + 1);
+      else this.#speaking.set(guild, Math.max(0, n - 1));
+      return;
+    } else if (is(Events.AgentTurnCompleted, event)) {
+      this.#turnsDone.push(event.data.turn);
+      if (this.#turnsDone.length > TURNS_REMEMBERED) this.#turnsDone.shift();
+      return;
+    } else {
+      if (is(Events.QueueItemActivated, event)) this.#onQueueItem(event.data as JsonValue);
+      return;
     }
   }
 
@@ -1173,7 +1156,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     };
   }
 
-  /** Publishes the song being prepared (`SONG_PREPARE_TOPIC`) when it changed. */
+  /** Publishes the song being prepared (`Events.SingPrepare`) when it changed. */
   #publishPrepare(): void {
     const preparing = this.#closed ? [] : this.list.preparing();
     for (const no of this.#jobs.keys()) {
@@ -1200,7 +1183,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     const json = JSON.stringify(payload);
     if (json === this.#prepareSent) return;
     this.#prepareSent = json;
-    this.ctx.publish(customEvent(SONG_PREPARE_TOPIC, payload as unknown as JsonValue));
+    this.ctx.publish(Events.SingPrepare, payload);
   }
 
   async #resubmit(entry: SongEntry, signal?: AbortSignal): Promise<void> {
@@ -1303,11 +1286,11 @@ export class Singer implements VoiceFloor, SpeechPause {
       },
       this.ctx.clock.now(),
     );
-    this.ctx.publish(v2Event(ARBITER_IMPULSE_TOPIC, impulse));
+    this.ctx.publish(Events.ArbiterImpulse, impulse);
   }
 
   #cue(cue: SongCue): void {
-    this.ctx.publish(customEvent(SONG_TOPIC, cue as unknown as JsonValue));
+    this.ctx.publish(Events.SingCue, cue);
   }
 }
 

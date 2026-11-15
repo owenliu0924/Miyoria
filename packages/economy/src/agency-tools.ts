@@ -5,13 +5,13 @@
 // calls them with `on_own`. Whoever she treats or pays is the person talking to her (the
 // requester of the turn), never a name in the arguments.
 
+import type { CommandReply } from "@miyoria/commands";
 import {
   type Capability,
   CapabilityError,
   defineCapability,
   type ExecContext,
-} from "@miyoria/actions";
-import type { CommandReply } from "@miyoria/commands";
+} from "@miyoria/gate/actions";
 import type { AccountRef, ContextKey, JsonObject } from "@miyoria/types";
 import { z } from "zod";
 import { NO_BOUNTY } from "./bounties.js";

@@ -1,3 +1,4 @@
+import type { SocialAppraisalData, SocialEventData } from "@miyoria/contracts/events";
 import type { PersonId, ProfileId } from "./ids.js";
 import type { AccountRef, ContextKey } from "./platform.js";
 import { serviceKey } from "./service-key.js";
@@ -68,32 +69,8 @@ export interface RelationshipEffects {
 
 export const RelationshipEffectsKey = serviceKey<RelationshipEffects>("RelationshipEffects");
 
-/**
- * Bus topic of every social event someone caused toward her (`SocialEvent`), published by the
- * social module whether or not the daily caps let it change the numbers: her emotions react
- * to all of them.
- */
-export const SOCIAL_EVENT_TOPIC = "social.event";
-
-/** Payload of `social.event`. */
-export interface SocialEvent {
-  person: PersonId;
-  /** Display name (untrusted). */
-  name: string | null;
-  /** `praise`, `insult`, `warm`, ... (the social module's event kinds). */
-  kind: string;
-  /** `rule` (keywords), `appraisal` (the LLM) or `mind` (her own hint). */
-  source: string;
-  /** Strength for `warm` / `cold` (0..1), 1 otherwise. */
-  scale: number;
-  context: ContextKey | null;
-}
-
-/**
- * Bus topic of what the social appraisal (the batched `fast` LLM pass) read about her feelings
- * in a conversation (`SocialAppraisal`), for her emotions.
- */
-export const SOCIAL_APPRAISAL_TOPIC = "social.appraisal";
+/** Payload of `social.event` (contract: `SocialEventSchema` in @miyoria/contracts/events). */
+export type SocialEvent = SocialEventData;
 
 /** One person in a `SocialAppraisal`. */
 export interface AppraisedPerson {
@@ -109,13 +86,8 @@ export interface AppraisedPerson {
   promise: "kept" | "broken" | null;
 }
 
-/** Payload of `social.appraisal`. */
-export interface SocialAppraisal {
-  context: ContextKey;
-  /** Her emotions (`self` emotion names, 0..1) the conversation stirred, as the model read it. */
-  her: Record<string, number>;
-  people: AppraisedPerson[];
-}
+/** Payload of `social.appraisal` (contract: `SocialAppraisalSchema` in @miyoria/contracts/events). */
+export type SocialAppraisal = SocialAppraisalData;
 
 /** Global emotional state of the active profile. */
 export interface Mood {

@@ -1,20 +1,11 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type {
-  ChannelLevelsView,
-  ChannelLevelView,
-  Envelope,
-  ModuleInfo,
-  PersonDetail,
-  SongsState,
-  SongView,
-  StageState,
-  VoiceState,
-  WorldView,
-} from "@/api/types";
+import type { VoiceState } from "@/api/types";
+import type { ChannelLevelsView, ChannelLevelView, ModuleInfo, PersonDetail, SongsState, SongView, StageState, WorldView } from "@miyoria/contracts/api";
 import { ConnectionProvider, STORAGE_TOKEN } from "@/app/connection";
 import { EventStore } from "@/app/events-store";
+import { envelope as busEnvelope } from "@/test/envelope";
 import { mockFetch, renderPage, renderRoute } from "@/test/render";
 import { EventsTab } from "./activity/EventsTab";
 import { MemoryTab } from "./character/MemoryTab";
@@ -662,14 +653,11 @@ describe("Access", () => {
   });
 });
 
-const envelope = (i: number, event: Envelope["event"]): Envelope => ({
-  id: `E${String(i).padStart(3, "0")}`,
-  ts: new Date(Date.UTC(2026, 10, 1, 10, 0, i)).toISOString(),
-  source: "agent",
-  causation: null,
-  correlation: null,
-  event,
-});
+const envelope = (i: number, type: string, data: unknown) =>
+  busEnvelope(type, data, {
+    id: `E${String(i).padStart(3, "0")}`,
+    at: new Date(Date.UTC(2026, 10, 1, 10, 0, i)).toISOString(),
+  });
 const ctx = { platform: "discord", scope: "1", channel: "42", kind: "channel" as const };
 
 describe("Events", () => {
@@ -681,8 +669,8 @@ describe("Events", () => {
     expect(await screen.findByText("尚未連線")).toBeInTheDocument();
 
     act(() => {
-      store.push(envelope(1, { type: "agent_turn_completed", data: { turn: "T", context: ctx, text: "哼,拉麵啦" } }));
-      store.push(envelope(2, { type: "custom", data: { topic: "voice.latency", payload: { stage: "asr", asr_ms: 200 } } }));
+      store.push(envelope(1, "agent.turn.completed", { turn: "T", context: ctx, text: "哼,拉麵啦" }));
+      store.push(envelope(2, "voice.latency", { stage: "asr", asr_ms: 200 }));
       store.flush();
     });
     expect(screen.getByText("她說:哼,拉麵啦")).toBeInTheDocument();
@@ -694,7 +682,7 @@ describe("Events", () => {
 
     await user.click(screen.getByRole("button", { name: "暫停" }));
     act(() => {
-      store.push(envelope(3, { type: "agent_turn_completed", data: { turn: "T", context: ctx, text: "新的一句" } }));
+      store.push(envelope(3, "agent.turn.completed", { turn: "T", context: ctx, text: "新的一句" }));
       store.flush();
     });
     expect(screen.queryByText("她說:新的一句")).not.toBeInTheDocument();
@@ -705,7 +693,7 @@ describe("Events", () => {
     await user.click(screen.getByText("她說:新的一句"));
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByText("E003")).toBeInTheDocument();
-    expect(within(sheet).getByLabelText("Envelope").textContent).toContain('"agent_turn_completed"');
+    expect(within(sheet).getByLabelText("Envelope").textContent).toContain('"agent.turn.completed"');
   });
 });
 

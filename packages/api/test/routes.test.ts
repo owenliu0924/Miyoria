@@ -1,25 +1,31 @@
 // Route groups added for the admin panel: a real supervisor running the `api` module, in-memory
 // stores, the real auth service and request queue, and fakes for the services of packages that
-// are ported separately (`tests/routes.rs`).
+// are tested elsewhere.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { ExtensionCatalog, ExtensionCatalogKey, ExtensionManifest } from "@miyoria/ext-host";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
-import { LlmRouter, LlmRouterKey } from "@miyoria/llm";
-import { McpStatus, McpStatusKey, newServerStatus } from "@miyoria/mcp";
+import type { AssignRoleRequest } from "@miyoria/contracts/api";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { Social, SocialKey, socialConfig } from "@miyoria/heart/social";
+import { LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   type Embedder,
   MemoryEngine,
   MemoryEngineKey,
   memoryConfig,
+  memoryTables,
   tokenString,
-} from "@miyoria/memory";
-import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
-import { Social, SocialKey, socialConfig } from "@miyoria/social";
+} from "@miyoria/memory/memory";
+import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
+import {
+  ExtensionCatalog,
+  ExtensionCatalogKey,
+  ExtensionManifest,
+} from "@miyoria/plugin-host/ext-host";
+import { McpStatus, McpStatusKey, newServerStatus } from "@miyoria/plugin-host/mcp";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   defaultStageStatus,
   SceneRoles,
@@ -46,7 +52,9 @@ import {
 import {
   type AccountRef,
   type ContextKey,
+  Events,
   type JsonValue,
+  MouthKey,
   newId,
   type PersonId,
   type PlatformSink,
@@ -57,12 +65,11 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ActiveProfileKey,
-  ApiClient,
   ApiModule,
   type ApiModuleOptions,
-  type AssignRoleRequest,
   avatarEmotions,
 } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { FakeSink, Idle } from "./support/fakes.js";
 import { errorOf, raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
@@ -76,7 +83,6 @@ interface Harness {
   social: Social;
   queue: RequestQueue;
   sink: FakeSink;
-  client: ApiClient;
   base: string;
 }
 
@@ -123,6 +129,14 @@ async function harness(
   s.provide("extensions", ExtensionCatalogKey, catalog());
   const sink = new FakeSink();
   s.provide("voice", VoiceSinkKey, sink);
+  // The main line's mouth (the agent module is not part of this rig): a line it is given goes
+  // straight to the voice sink.
+  s.provide("agent", MouthKey, {
+    owns: () => true,
+    say: async (line) => {
+      await sink.speak(line.context, line.text, line.emotion ?? null, line.turn ?? null);
+    },
+  });
   // The app's gate (with the built-in `speak`); the panel's say goes through it.
   s.provide(k, ActuatorRegistryKey, new ActuatorRegistry({ services: s }));
 
@@ -133,7 +147,7 @@ async function harness(
 
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  const h = { sup, store, social, queue, sink, client: new ApiClient(base, TOKEN), base };
+  const h = { sup, store, social, queue, sink, base };
   harnesses.push(h);
   return h;
 }
@@ -212,13 +226,14 @@ function memory(
 describe("routes", () => {
   it("fallback_and_unavailable_shapes", async () => {
     const h = await harness();
+    const adm = adminCalls(h.base, TOKEN);
     for (const path of ["/api/nope", "/api", "/api/people/x/nope", "/"]) {
       const r = await raw(h.base, "GET", path, { token: TOKEN });
       expect(r.status, path).toBe(404);
       expect(r.body, path).toEqual({ error: "no such endpoint" });
     }
     // New routes are protected like the old ones.
-    const anon = new ApiClient(h.base, "wrong");
+    const anon = adminCalls(h.base, "wrong");
     expect(await statusOf(anon.queue())).toBe(401);
 
     // A stopped module's service yields 503 with a JSON error.
@@ -226,7 +241,7 @@ describe("routes", () => {
     expect(stage.status).toBe(503);
     expect((stage.body as { error: string }).error).toContain("stage link");
     h.sup.services.removeOwnedBy("llm");
-    expect(await statusOf(h.client.cost())).toBe(503);
+    expect(await statusOf(adm.cost())).toBe(503);
     h.sup.services.removeOwnedBy("queue");
     const queue = await raw(h.base, "GET", "/api/queue", { token: TOKEN });
     expect(queue.status).toBe(503);
@@ -235,7 +250,8 @@ describe("routes", () => {
 
   it("llm_cost_report", async () => {
     const h = await harness();
-    const cost = await h.client.cost();
+    const adm = adminCalls(h.base, TOKEN);
+    const cost = await adm.cost();
     expect(cost.today.calls).toBe(0);
     expect(cost.today.period).toHaveLength("2026-11-01".length);
     expect(cost.month.period).toHaveLength("2026-11".length);
@@ -250,7 +266,7 @@ describe("routes", () => {
 
   it("people_list_detail_and_changes", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
     const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
@@ -259,10 +275,10 @@ describe("routes", () => {
     await h.social.adjust(mika, -3, "test", now);
     await h.store.memories.upsert(memory(owen, "fact", "Owen 喜歡拉麵", 0));
 
-    let page = await c.people();
+    let page = await adm.people();
     expect(page.items).toHaveLength(2);
     expect(page.next_cursor).toBeNull();
-    page = await c.people({ q: "owe" });
+    page = await adm.people({ q: "owe" });
     expect(page.items).toHaveLength(1);
     const summary = page.items[0];
     expect(summary?.person.id).toBe(owen);
@@ -271,15 +287,15 @@ describe("routes", () => {
     expect(summary?.relationship?.affinity).toBe(15);
     expect(summary?.label).not.toBeNull();
     expect(summary?.blocked).toBe(false);
-    page = await c.people({ limit: 1 });
+    page = await adm.people({ limit: 1 });
     expect(page.items).toHaveLength(1);
     const cursor = page.next_cursor;
     expect(cursor, "a second page").not.toBeNull();
-    page = await c.people({ limit: 1, cursor: cursor ?? "" });
+    page = await adm.people({ limit: 1, cursor: cursor ?? "" });
     expect(page.items).toHaveLength(1);
     expect(page.next_cursor).toBeNull();
 
-    const detail = await c.person(owen);
+    const detail = await adm.person(owen);
     expect(
       detail.history.map((d) => d.affinity),
       "absolute levels, oldest first",
@@ -289,7 +305,7 @@ describe("routes", () => {
     expect(flat.body, "flattened").toHaveProperty("person");
     expect(flat.body).toHaveProperty("history");
 
-    const updated = await c.updatePerson(owen, {
+    const updated = await adm.updatePerson(owen, {
       tags: ["常客", " Minecraft ", "常客"],
       notes: "喜歡拉麵",
       call_name: "歐文",
@@ -322,33 +338,33 @@ describe("routes", () => {
     expect(body.relationship.tags).toEqual(["常客"]);
     expect(body.blocked).toBe(false);
 
-    const adjusted = await c.adjustPerson(mika, 20);
+    const adjusted = await adm.adjustPerson(mika, 20);
     expect(adjusted.relationship?.affinity).toBe(17);
     await audited(h, "person.adjust");
 
     for (const id of [newId(), "nope"]) {
-      const err = await errorOf(c.person(id));
+      const err = await errorOf(adm.person(id));
       expect(err.status).toBe(404);
       expect(err.message).toContain("unknown person");
     }
-    expect(await statusOf(c.updatePerson(newId(), {}))).toBe(404);
+    expect(await statusOf(adm.updatePerson(newId(), {}))).toBe(404);
 
     h.sup.services.removeOwnedBy("social");
-    expect(await statusOf(c.updatePerson(owen, {}))).toBe(503);
+    expect(await statusOf(adm.updatePerson(owen, {}))).toBe(503);
     // Reads still work from the stores.
-    expect((await c.people()).items).toHaveLength(2);
+    expect((await adm.people()).items).toHaveLength(2);
   });
 
   it("people_list_includes_people_without_a_relationship", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
     const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
     const lurker = await h.store.people.upsertAccount(account("3"), "Lurker");
     await h.social.adjust(owen, 10, "test", now);
 
-    let page = await c.people();
+    let page = await adm.people();
     const order = page.items.map((i) => i.person.id);
     expect(order[0], "with a relationship first").toBe(owen);
     expect([...order].sort()).toEqual([owen, mika, lurker].sort());
@@ -360,28 +376,28 @@ describe("routes", () => {
     expect(stranger?.person.accounts.map((a) => a.account)).toEqual([account("2")]);
     expect(page.items[0]?.relationship?.affinity).toBe(10);
 
-    page = await c.people({ q: "mik" });
+    page = await adm.people({ q: "mik" });
     expect(page.items.map((i) => i.person.id)).toEqual([mika]);
-    page = await c.people({ q: "discord" });
+    page = await adm.people({ q: "discord" });
     expect(page.items, "account ids are not matched by platform").toHaveLength(0);
-    page = await c.people({ q: "3" });
+    page = await adm.people({ q: "3" });
     expect(
       page.items.map((i) => i.person.id),
       "account id",
     ).toEqual([lurker]);
 
-    page = await c.people({ limit: 2 });
+    page = await adm.people({ limit: 2 });
     expect(page.items.map((i) => i.person.id)).toEqual(order.slice(0, 2));
     expect(page.next_cursor).toBe("2");
-    page = await c.people({ limit: 2, cursor: "2" });
+    page = await adm.people({ limit: 2, cursor: "2" });
     expect(page.items.map((i) => i.person.id)).toEqual(order.slice(2));
     expect(page.next_cursor).toBeNull();
 
     // A relationship the engine has not written yet still shows.
     await h.social.adjust(mika, 1, "test", now);
-    page = await c.people();
+    page = await adm.people();
     expect(page.items.find((i) => i.person.id === mika)?.relationship?.affinity).toBe(1);
-    const detail = await c.person(lurker);
+    const detail = await adm.person(lurker);
     expect(detail.relationship).toBeNull();
     expect(detail.label).toBe("陌生人");
     expect(detail.memory_count).toBe(0);
@@ -389,7 +405,7 @@ describe("routes", () => {
 
   it("memory_search_uses_hybrid_recall", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
     const sqlite = await SqliteStore.open(":memory:");
     try {
       const embedder = new TableEmbedder(
@@ -401,12 +417,14 @@ describe("routes", () => {
           ["Minecraft", [0, 1, 0]],
         ]),
       );
-      const engine = new MemoryEngine(PROFILE, memoryConfig(), sqlite.memories, { embedder });
+      const engine = new MemoryEngine(PROFILE, memoryConfig(), sqlite.plugin(memoryTables), {
+        embedder,
+      });
       h.sup.services.provide("memory", MemoryEngineKey, engine);
       const owen = newId();
       const withVector = async (r: MemoryRecord) => {
         r.embedding = (await embedder.embed([r.content]))[0] ?? null;
-        await sqlite.memories.upsert(r);
+        await sqlite.plugin(memoryTables).upsert(r);
         return r;
       };
       const ramen = await withVector(memory(owen, "fact", "Owen 喜歡 豚骨 拉麵", 1));
@@ -420,7 +438,7 @@ describe("routes", () => {
       await withVector(old);
 
       // No shared words: found by the vector, ranked by the hybrid score.
-      let page = await c.memory({ q: "他愛吃什麼" });
+      let page = await adm.memory({ q: "他愛吃什麼" });
       const first = page.items[0];
       expect(first?.record.id).toBe(ramen.id);
       expect(first?.text_score).toBe(0);
@@ -436,24 +454,26 @@ describe("routes", () => {
       expect(page.next_cursor).toBeNull();
 
       // Every scope (DM too) and done followups are visible to the admin; filters apply.
-      page = await c.memory({ q: "牙醫" });
+      page = await adm.memory({ q: "牙醫" });
       expect(page.items[0]?.record.id).toBe(dentist.id);
       expect(page.items[0]?.text_score ?? 0).toBeGreaterThan(0);
-      page = await c.memory({ q: "拉麵", kind: "episode" });
+      page = await adm.memory({ q: "拉麵", kind: "episode" });
       expect(page.items.every((i) => i.record.kind === "episode")).toBe(true);
-      page = await c.memory({ q: "拉麵", subject: owen });
+      page = await adm.memory({ q: "拉麵", subject: owen });
       expect(page.items.every((i) => i.record.subjects.includes(owen))).toBe(true);
       expect(page.items.map((i) => i.record.id)).toContain(ramen.id);
-      page = await c.memory({ q: "Minecraft", limit: 1 });
+      page = await adm.memory({ q: "Minecraft", limit: 1 });
       expect(page.items.map((i) => i.record.id)).toEqual([game.id]);
-      page = await c.memory({ q: "拉麵", before: "2026-10-01T12:00:30Z" });
+      page = await adm.memory({ q: "拉麵", before: "2026-10-01T12:00:30Z" });
       expect(page.items, "only records created before").toEqual([]);
 
-      expect((await sqlite.memories.get(ramen.id))?.access_count, "not touched").toBe(0);
+      expect((await sqlite.plugin(memoryTables).get(ramen.id))?.access_count, "not touched").toBe(
+        0,
+      );
 
       // Without the memory module the store's full-text search answers.
       h.sup.services.removeOwnedBy("memory");
-      page = await c.memory({ q: "他愛吃什麼" });
+      page = await adm.memory({ q: "他愛吃什麼" });
       expect(page.items).toEqual([]);
     } finally {
       await sqlite.close();
@@ -462,14 +482,14 @@ describe("routes", () => {
 
   it("memory_list_search_edit_delete", async () => {
     const h = await harness();
-    const c = h.client;
+    const adm = adminCalls(h.base, TOKEN);
     const owen = newId();
     const ramen = memory(owen, "fact", "Owen 喜歡 豚骨 拉麵", 1);
     const game = memory(null, "episode", "大家 一起 玩 Minecraft", 2);
     const note = memory(null, "self_note", "我 想 學 拉麵 的 做法", 3);
     for (const r of [ramen, game, note]) await h.store.memories.upsert(r);
 
-    let page = await c.memory();
+    let page = await adm.memory();
     expect(
       page.items.map((i) => i.record.id),
       "newest first",
@@ -485,20 +505,20 @@ describe("routes", () => {
     expect(first?.record).not.toHaveProperty("embedding");
     expect(first?.record?.scope).toEqual({ type: "global" });
 
-    page = await c.memory({ limit: 2 });
+    page = await adm.memory({ limit: 2 });
     expect(page.items).toHaveLength(2);
     const before = page.next_cursor;
     expect(before, "more").not.toBeNull();
     expect(Number.isNaN(Date.parse(before ?? ""))).toBe(false);
-    page = await c.memory({ before: before ?? "" });
+    page = await adm.memory({ before: before ?? "" });
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.record.id).toBe(ramen.id);
 
-    expect((await c.memory({ kind: "fact" })).items).toHaveLength(1);
-    expect((await c.memory({ subject: owen })).items).toHaveLength(1);
+    expect((await adm.memory({ kind: "fact" })).items).toHaveLength(1);
+    expect((await adm.memory({ subject: owen })).items).toHaveLength(1);
 
     // Search across all scopes (person and global), with scores.
-    const hits = await c.memory({ q: "拉麵" });
+    const hits = await adm.memory({ q: "拉麵" });
     expect(hits.items.map((i) => i.record.id).sort()).toEqual([ramen.id, note.id].sort());
     expect(hits.items.every((i) => (i.text_score ?? 0) > 0)).toBe(true);
     const mc = await raw(h.base, "GET", "/api/memory?q=Minecraft", { token: TOKEN });
@@ -507,7 +527,7 @@ describe("routes", () => {
     expect(mcItems[0]?.text_score as number).toBeGreaterThan(0);
     expect(mcItems[0]?.vector_score).toBeNull();
 
-    const updated = await c.updateMemory(ramen.id, {
+    const updated = await adm.updateMemory(ramen.id, {
       content: "Owen 喜歡 豚骨 拉麵,不吃 香菜",
       importance: 0.7,
     });
@@ -517,55 +537,55 @@ describe("routes", () => {
     const stored = await h.store.memories.get(ramen.id);
     expect(stored?.tokens, "re-tokenized").toContain("香菜");
     await audited(h, "memory.update");
-    expect(await statusOf(c.updateMemory(ramen.id, { importance: 3 }))).toBe(400);
+    expect(await statusOf(adm.updateMemory(ramen.id, { importance: 3 }))).toBe(400);
 
-    await c.deleteMemory(game.id);
+    await adm.deleteMemory(game.id);
     expect(await h.store.memories.get(game.id)).toBeNull();
     const entry = await audited(h, "memory.delete");
     expect(entry.target).toBe(game.id);
     expect((entry.detail as { content: string }).content).toBe("大家 一起 玩 Minecraft");
-    const err = await errorOf(c.deleteMemory(game.id));
+    const err = await errorOf(adm.deleteMemory(game.id));
     expect(err.status).toBe(404);
     expect(err.message).toContain("unknown memory");
   });
 
   it("roles_assignments_and_mappings", async () => {
     const h = await harness();
-    const c = h.client;
-    const roles = await c.roles();
+    const adm = adminCalls(h.base, TOKEN);
+    const roles = await adm.roles();
     expect(roles[0]?.name).toBe("owner");
     expect(roles.every((r) => r.builtin)).toBe(true);
-    expect((await c.role("moderator")).rank).toBe(60);
-    expect(await statusOf(c.role("ghost"))).toBe(404);
+    expect((await adm.role("moderator")).rank).toBe(60);
+    expect(await statusOf(adm.role("ghost"))).toBe(404);
 
     const request: AssignRoleRequest = {
       account: account("123"),
       role: "moderator",
       scope: { type: "guild", platform: "discord", guild: "g1" },
     };
-    const created = await c.assignRole(request);
+    const created = await adm.assignRole(request);
     expect(created.granted_by).toBe("api");
     expect(created.role).toBe("moderator");
-    expect(await statusOf(c.assignRole(request))).toBe(409);
-    expect(await statusOf(c.assignRole({ ...request, role: "ghost" }))).toBe(404);
-    expect(await c.assignments()).toHaveLength(1);
+    expect(await statusOf(adm.assignRole(request))).toBe(409);
+    expect(await statusOf(adm.assignRole({ ...request, role: "ghost" }))).toBe(404);
+    expect(await adm.assignments()).toHaveLength(1);
     const all = await raw(h.base, "GET", "/api/auth/assignments", { token: TOKEN });
     expect((all.body as Array<{ scope: { type: string } }>)[0]?.scope.type).toBe("guild");
     await audited(h, "role.assign");
 
-    await c.revokeRole(request);
-    expect(await c.assignments()).toHaveLength(0);
-    expect(await statusOf(c.revokeRole(request))).toBe(404);
+    await adm.revokeRole(request);
+    expect(await adm.assignments()).toHaveLength(0);
+    expect(await statusOf(adm.revokeRole(request))).toBe(404);
     await audited(h, "role.revoke");
 
-    const custom = await c.upsertRole("dj", { rank: 30, grants: ["queue.*"], denies: [] });
+    const custom = await adm.upsertRole("dj", { rank: 30, grants: ["queue.*"], denies: [] });
     expect(custom.builtin).toBe(false);
     expect(
-      await statusOf(c.upsertRole("bad", { rank: 1, grants: ["not a node!"], denies: [] })),
+      await statusOf(adm.upsertRole("bad", { rank: 1, grants: ["not a node!"], denies: [] })),
     ).toBe(400);
-    expect(await statusOf(c.deleteRole("owner"))).toBe(409);
-    await c.deleteRole("dj");
-    expect(await statusOf(c.deleteRole("dj"))).toBe(404);
+    expect(await statusOf(adm.deleteRole("owner"))).toBe(409);
+    await adm.deleteRole("dj");
+    expect(await statusOf(adm.deleteRole("dj"))).toBe(404);
 
     const mapping: RoleMapping = {
       platform: "discord",
@@ -573,19 +593,20 @@ describe("routes", () => {
       platform_role: "555",
       role: "trusted",
     };
-    await c.setMapping(mapping);
-    expect(await c.mappings("discord", "g1")).toEqual([mapping]);
+    await adm.setMapping(mapping);
+    expect(await adm.mappings("discord", "g1")).toEqual([mapping]);
     await audited(h, "role.map");
     const remove = { platform: "discord", guild: "g1", platform_role: "555" };
-    await c.removeMapping(remove);
-    expect(await statusOf(c.removeMapping(remove))).toBe(404);
+    await adm.removeMapping(remove);
+    expect(await statusOf(adm.removeMapping(remove))).toBe(404);
     const missing = await raw(h.base, "GET", "/api/auth/mappings", { token: TOKEN });
     expect(missing.status, "platform and guild required").toBe(400);
   });
 
   it("extensions_and_mcp", async () => {
     const h = await harness();
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
+    const adm = adminCalls(h.base, TOKEN);
     const list = await c.extensions();
     expect(list).toHaveLength(1);
     let ext = list[0];
@@ -602,9 +623,9 @@ describe("routes", () => {
     expect(await statusOf(c.extensionAction("ghost", "enable"))).toBe(404);
 
     // Module actions are audited too, and `api` still refuses to stop itself.
-    await c.moduleAction("ext.demo", "restart");
+    await adm.moduleAction("ext.demo", "restart");
     await audited(h, "module.restart");
-    expect(await statusOf(c.moduleAction("api", "disable"))).toBe(409);
+    expect(await statusOf(adm.moduleAction("api", "disable"))).toBe(409);
 
     expect(await c.mcpServers()).toEqual([]);
     expect(await statusOf(c.mcpAction("filesystem", "restart"))).toBe(404);
@@ -612,7 +633,7 @@ describe("routes", () => {
 
   it("queue_listing_and_actions", async () => {
     const h = await harness();
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     for (const [who, text] of [
       ["1", "唱千本櫻"],
       ["2", "去挖鑽石"],
@@ -656,7 +677,7 @@ describe("routes", () => {
       true,
     );
     await h.sup.enable(StageLinkModule.ID);
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     const stage = await c.stage();
     expect(stage.vts.connected || stage.obs.connected).toBe(false);
     expect(stage.node).toBeNull();
@@ -700,7 +721,7 @@ describe("routes", () => {
       },
     };
     h.sup.services.provide("stage.link", StageLinkKey, fake as unknown as StageLink);
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     const stage = await c.stage();
     expect(stage.node).toBe("stage-pc");
     expect(stage.scenes).toEqual(["Talk", "Game"]);
@@ -731,7 +752,7 @@ describe("routes", () => {
     roles.observe(["Just Chatting", "Gameplay", "Bye"]);
     await roles.idle();
     h.sup.services.provide("stage.link", SceneRolesKey, roles);
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     const view = await c.sceneRoles();
     expect(view.scenes).toEqual(["Just Chatting", "Gameplay", "Bye"]);
     expect(view.classified_by).toBe("heuristic");
@@ -758,7 +779,7 @@ describe("routes", () => {
     const h = await harness();
     const status = h.sup.services.require(McpStatusKey);
     status.insert(newServerStatus("files", "stdio", "tools.mcp.files", "npx -y srv C:/data"));
-    const [server] = await h.client.mcpServers();
+    const [server] = await adminCalls(h.base, TOKEN).mcpServers();
     expect(server?.target).toBe("npx -y srv C:/data");
   });
 
@@ -778,46 +799,42 @@ describe("routes", () => {
     const sinks = new PlatformSinks();
     sinks.register(sink);
     h.sup.services.provide("kernel", PlatformSinksKey, sinks);
-    h.sup.bus.publish("voice", {
-      type: "voice_joined",
-      data: { context: voiceContext(), participants: [] },
-    });
+    h.sup.bus.publish("voice", Events.VoiceJoined, { context: voiceContext(), participants: [] });
     const state = await waitFor(async () => {
-      const s = await h.client.voice();
+      const s = await adminCalls(h.base, TOKEN).voice();
       return s.sessions.length === 1 ? s : null;
     });
     expect(state.sessions[0]?.label).toBe("Miyoria / 雜談");
-    await h.client.voice();
+    await adminCalls(h.base, TOKEN).voice();
     expect(asked, "cached").toBe(1);
   });
 
   it("voice_monitor_and_say", async () => {
     const h = await harness();
-    const c = h.client;
+    const c = adminCalls(h.base, TOKEN);
     expect((await c.voice()).sessions).toEqual([]);
     expect(await statusOf(c.stageSay("哼")), "not in voice yet").toBe(409);
 
-    h.sup.bus.publish("voice", {
-      type: "voice_joined",
-      data: {
-        context: voiceContext(),
-        participants: [
-          {
-            account: account("5678"),
-            display_name: "Mika",
-            is_self: false,
-            muted: false,
-            deafened: false,
-          },
-        ],
-      },
+    h.sup.bus.publish("voice", Events.VoiceJoined, {
+      context: voiceContext(),
+      participants: [
+        {
+          account: account("5678"),
+          display_name: "Mika",
+          is_self: false,
+          muted: false,
+          deafened: false,
+        },
+      ],
     });
-    h.sup.bus.publish("voice", {
-      type: "custom",
-      data: {
-        topic: "voice.latency",
-        payload: { stage: "asr", context: { ...voiceContext() }, asr_ms: 210 },
-      },
+    h.sup.bus.publish("voice", Events.VoiceLatency, {
+      stage: "asr",
+      context: { ...voiceContext() },
+      speaker: account("5678"),
+      provider: "test",
+      audio_ms: 1200,
+      transcribe_ms: 200,
+      asr_ms: 210,
     });
     const state = await waitFor(async () => {
       const s = await c.voice();

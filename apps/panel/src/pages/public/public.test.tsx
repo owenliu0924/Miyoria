@@ -2,17 +2,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  GoalView,
-  IssuedCard,
-  IssuedFortune,
-  MemberSession,
-  MemberView,
-  PublicSongs,
-  PublicStatus,
-  SessionInfo,
-  WalletView,
-} from "@/api/types";
+import type { GoalView, IssuedCard, IssuedFortune, MemberSession, MemberView, PublicSongs, PublicStatus, SessionInfo, WalletView } from "@miyoria/contracts/api";
 import { App } from "@/app/App";
 import { STORAGE_BASE_URL, STORAGE_TOKEN } from "@/app/connection";
 import { createAppRouter } from "@/app/router";
@@ -72,6 +62,7 @@ const STRANGER: MemberView = {
   },
   memories: [],
   songs: [],
+  activity: [],
   can_request_song: false,
   forget: ME.forget,
 };
@@ -110,6 +101,7 @@ const WALLET: WalletView = {
     { ts: "2026-11-08T03:00:00Z", delta: 10, label: "每日簽到" },
     { ts: "2026-11-08T02:00:00Z", delta: -10, label: "餵了一碗白飯" },
   ],
+  deals: [],
   on_board: false,
 };
 
@@ -133,6 +125,7 @@ const GOAL: GoalView = {
   my_pledge: 0,
   deadline: "2099-01-01T00:00:00Z",
   status: "open",
+  fulfilled: false,
 };
 
 const OFFERS_FOR_REROLL = {
@@ -176,7 +169,13 @@ const CARD: IssuedCard = {
   trust: "信任",
   familiarity: "熟",
   public_feeling: "妳總是記得跟我打招呼。",
+  line: null,
+  stamp: null,
+  fields: [],
   pose: "blush",
+  frame: null,
+  foil: false,
+  voided_at: null,
 };
 
 function core(o: Options = {}) {

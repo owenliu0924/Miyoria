@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { PersonCard } from "@/api/types";
+import type { PersonCard } from "@miyoria/contracts/api";
 import { useAffectPeople } from "@/app/queries";
 import { BondBar, Meter, StatusBadge, type Tone } from "@/components/status";
 import { Badge } from "@/components/ui/badge";
@@ -32,9 +32,10 @@ const LABEL_TONE: Record<string, Tone> = {
 
 /**
  * Her stance toward them, with the level it was written at when that is not the level now (she
- * rewrites it every 5 levels, at her daily reflection): `嘴硬但會照顧他(Lv.30 時寫的)`.
+ * rewrites it every 5 levels, at her daily reflection): `嘴硬但會照顧他(Lv.30 時寫的)`. A card from a
+ * Core older than the bond levels has no `level`.
  */
-export function stanceText(card: PersonCard): string | null {
+export function stanceText(card: Omit<PersonCard, "level"> & { level?: number }): string | null {
   const stance = card.stance?.trim();
   if (!stance) return null;
   const at = card.stance_level;

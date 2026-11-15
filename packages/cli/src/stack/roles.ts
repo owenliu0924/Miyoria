@@ -10,7 +10,7 @@
 //   core = "127.0.0.1"                # address of the computer running core, as the others see it
 //   inference = "127.0.0.1"           # address of the computer running asr / tts / sing
 
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import { z } from "zod";
 
@@ -96,7 +96,8 @@ export function expandTargets(words: readonly string[]): ServiceName[] {
 
 export const LOOPBACK = "127.0.0.1";
 
-const MachineSchema = z
+/** `[machine]`; also composed into the root schema of the whole file (`validate.ts`). */
+export const MachineSchema = z
   .object({
     roles: z.array(z.enum(ROLE_NAMES as [Role, ...Role[]])).default([]),
     /** Hand-picked services; when present it replaces `roles`. */

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Music } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
-import type { MemberCard, MemberDay, MemberForgetResult, MemberSession, MemberSong } from "@/api/types";
+import type { MemberCard, MemberDay, MemberForgetResult, MemberSession, MemberSong } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import { ChartBlock, ChartEmpty, ColumnChart } from "@/components/charts/charts";
 import { ConfirmDialog } from "@/components/confirm";
@@ -36,7 +36,7 @@ function useMe() {
   const api = useApi();
   return useQuery({
     queryKey: ME,
-    queryFn: ({ signal }) => api.memberMe({ signal }),
+    queryFn: ({ signal }) => api.rpc.member.me(undefined, { signal }),
     refetchInterval: POLL_MS,
   });
 }
@@ -236,7 +236,7 @@ function RequestSong() {
   const [query, setQuery] = useState("");
   const id = useId();
   const request = useMutation({
-    mutationFn: (text: string) => api.memberRequestSong(text),
+    mutationFn: (text: string) => api.rpc.member.requestSong({ body: { query: text } }),
     onSuccess: () => {
       setQuery("");
       notify.ok("已經交給她了,唱不唱由她決定");
@@ -286,7 +286,7 @@ function YourData() {
   const me = useMe();
   const [asking, setAsking] = useState(false);
   const forget = useMutation({
-    mutationFn: () => api.memberForget(),
+    mutationFn: () => api.rpc.member.forget({ body: { confirm: true } }),
     onSuccess: (r) => {
       setAsking(false);
       notify.ok(forgotten(r));

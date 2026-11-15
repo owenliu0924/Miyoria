@@ -9,8 +9,8 @@
 // tool, a command, the panel) is a timed override (`scene_override`, `manual_hold_ms` long) the
 // director follows instead of fighting it.
 
-import { type Capability, CapabilityError, defineCapability } from "@miyoria/actions";
-import { SerialQueue } from "@miyoria/kernel";
+import { type Capability, CapabilityError, defineCapability } from "@miyoria/gate/actions";
+import { SerialQueue } from "@miyoria/runtime/kernel";
 import { actLane, type StreamCurtain } from "@miyoria/types";
 import { z } from "zod";
 import { GIFT_EXPRESSION_MAX_S, GIFT_EXPRESSIONS, type SceneTransition } from "../protocol.js";

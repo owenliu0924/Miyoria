@@ -6,9 +6,21 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { EconomyConfigSchema, EconomyKey, EconomyService } from "@miyoria/economy";
+import type { IssuedCard } from "@miyoria/contracts/api";
+import {
+  BountyStoreKey,
+  CoinLedgerStoreKey,
+  DealStoreKey,
+  EconomyConfigSchema,
+  EconomyKey,
+  EconomyService,
+  FortuneStoreKey,
+  GoalStoreKey,
+} from "@miyoria/economy";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
+import { LlmRouterKey } from "@miyoria/llm/llm";
+import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
   defineManifest,
   getLogger,
@@ -16,25 +28,17 @@ import {
   type ModuleContext,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
-import { LlmRouterKey } from "@miyoria/llm";
-import { MemoryEngineKey } from "@miyoria/memory";
+} from "@miyoria/runtime/kernel";
 import { SingerKey, type SongEntry } from "@miyoria/sing";
 import {
   AuditLogKey,
   AuthStoreKey,
-  BountyStoreKey,
-  CoinLedgerStoreKey,
-  DealStoreKey,
-  FortuneStoreKey,
-  GoalStoreKey,
   MemberCardStoreKey,
   type MemoryRecord,
   MemorySettingsStore,
   MessageLogKey,
   PeopleStoreKey,
   SettingsStoreKey,
-  SqliteStore,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -45,17 +49,16 @@ import {
   AuthorizerKey,
   type BondChange,
   type ContextKey,
-  customEvent,
   DirectivesKey,
   type Envelope,
+  Events,
+  eventEnvelope,
   type JsonValue,
   KeepsakesKey,
   ModerationKey,
-  newEnvelope,
   type PersonCard,
   type PersonId,
   SelfStateKey,
-  SONG_TOPIC,
   SocialSignalsKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -78,7 +81,7 @@ import {
 import { routes } from "../src/server.js";
 import { Sessions } from "../src/session.js";
 import { ApiState } from "../src/state.js";
-import type { IssuedCard } from "../src/types.js";
+import { economyStore } from "./support/economy.js";
 import { listenFetchable, type RawResponse, raw } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
@@ -1022,7 +1025,7 @@ describe("rate limits", () => {
 describe("today's numbers", () => {
   const T = Date.parse("2026-11-07T01:00:00.000Z");
   const ended = (outcome: string): Envelope =>
-    newEnvelope("sing", customEvent(SONG_TOPIC, { state: "ended", song: "s", outcome }));
+    eventEnvelope("sing", Events.SingCue, { state: "ended", song: "s", outcome });
 
   it("counts songs sung to the end and hours in tenths", () => {
     const stats = new PublicStats(480, T);
@@ -1825,12 +1828,13 @@ describe("the wallet", () => {
   /** The rig with a real wallet on an in-memory ledger, and her hunger. */
   async function walletRig(config: Record<string, JsonValue> = {}) {
     const r = await rig();
-    const coins = await SqliteStore.open(":memory:");
+    const tables = await economyStore(r.store.people);
+    const coins = tables.store;
     cleanups.push(() => coins.close());
     const hunger = { value: 0.8 };
     const s = r.sup.services;
-    s.provide("economy", CoinLedgerStoreKey, coins.coins);
-    s.provide("economy", DealStoreKey, coins.deals);
+    s.provide("economy", CoinLedgerStoreKey, tables.economy.ledger);
+    s.provide("economy", DealStoreKey, tables.economy.deals);
     s.provide("self", SelfStateKey, {
       drives: () => ({ hunger: hunger.value }),
       adjust: (d: { hunger?: number }) => {
@@ -1862,21 +1866,19 @@ describe("the wallet", () => {
           ...(key === undefined ? {} : { "idempotency-key": key }),
         },
       });
-    const fund = (id: string, delta: number) =>
-      coins.coins.post(
-        {
-          id: `seed-${id}-${delta}`,
-          profile: "p",
-          account: discord(id),
-          delta,
-          reason: "checkin",
-          ref: null,
-          idem_key: null,
-          ts: "2026-01-01T00:00:00Z",
-        },
-        { wallet: [] },
-      );
-    return { ...r, coins, hunger, spend, fund };
+    const fund = async (id: string, delta: number) =>
+      tables.economy.ledger.post({
+        id: `seed-${id}-${delta}`,
+        person: await tables.wallet(discord(id)),
+        delta,
+        reason: "checkin",
+        ref: null,
+        idem_key: null,
+        ts: "2026-01-01T00:00:00Z",
+      });
+    const balanceOf = async (id: string) =>
+      tables.economy.ledger.balance("p", await tables.wallet(discord(id)));
+    return { ...r, coins, economy: tables.economy, hunger, spend, fund, balanceOf };
   }
 
   it("shows their own wallet, field by field", async () => {
@@ -1900,9 +1902,8 @@ describe("the wallet", () => {
   it("shows her deals with them: what she said she would do, the reward, where it stands", async () => {
     const r = await walletRig();
     const cookie = await r.login("alice");
-    await r.coins.deals.create({
+    await r.economy.deals.create({
       id: "deal-1",
-      profile: "p",
       account: discord(ALICE),
       item: "rice",
       count: 2,
@@ -1916,9 +1917,8 @@ describe("the wallet", () => {
       due_at: "2026-01-01T00:15:00Z",
       closed_at: null,
     });
-    await r.coins.deals.create({
+    await r.economy.deals.create({
       id: "deal-2",
-      profile: "p",
       account: discord(BOB),
       item: "dessert",
       count: 1,
@@ -1955,12 +1955,11 @@ describe("the wallet", () => {
 
   it("shows her goals and bounties, takes pledges and keeps strangers out of them", async () => {
     const r = await walletRig();
-    r.sup.services.provide("economy", GoalStoreKey, r.coins.goals);
-    r.sup.services.provide("economy", BountyStoreKey, r.coins.bounties);
+    r.sup.services.provide("economy", GoalStoreKey, r.economy.goals);
+    r.sup.services.provide("economy", BountyStoreKey, r.economy.bounties);
     const now = Date.now();
-    await r.coins.goals.create({
+    await r.economy.goals.create({
       id: "goal-1",
-      profile: "p",
       title: "新麥克風",
       promise: "學三種貓叫",
       target: 50,
@@ -1969,9 +1968,8 @@ describe("the wallet", () => {
       deadline: new Date(now + 86_400_000).toISOString() as never,
       closed_at: null,
     });
-    await r.coins.bounties.create({
+    await r.economy.bounties.create({
       id: "bounty-1",
-      profile: "p",
       task: "猜她的幸運數字",
       reward: 30,
       hold: "hold-1",
@@ -2031,7 +2029,7 @@ describe("the wallet", () => {
     });
     const same = await r.spend("/api/member/goals/goal-1/pledge", alice, { amount: 20 }, "p-1");
     expect(same.body).toMatchObject({ pledged: 20, duplicate: true, balance: 80 });
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(80);
+    expect(await r.balanceOf(ALICE)).toBe(80);
     expect(
       ((await r.get("/api/member/goals", alice)).body as { goals: unknown[] }).goals[0],
     ).toMatchObject({
@@ -2071,7 +2069,7 @@ describe("the wallet", () => {
     expect(
       (await r.spend("/api/member/goals/goal-1/pledge", bob, { amount: 5 }, "p-c")).status,
     ).toBe(409);
-    expect(await r.coins.goals.get("goal-1")).toMatchObject({ status: "reached" });
+    expect(await r.economy.goals.get("goal-1")).toMatchObject({ status: "reached" });
 
     // The owner sees it owed and marks it kept, once; a member cannot.
     const owed = await raw(r.base, "GET", "/api/economy/goals", { token: TOKEN });
@@ -2136,7 +2134,7 @@ describe("the wallet", () => {
       expect((await r.spend("/api/member/feed", cookie, bad, "c-4")).status).toBe(422);
     }
     expect((await r.spend("/api/member/feed", cookie, { item: "rice" }, "a b")).status).toBe(400);
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(15);
+    expect(await r.balanceOf(ALICE)).toBe(15);
   });
 
   it("answers a stranger and every blocked person alike, and charges nothing", async () => {
@@ -2164,7 +2162,7 @@ describe("the wallet", () => {
     }
     expect(bodies.size).toBe(1);
     for (const id of [CAROL, ERIN, FRANK]) {
-      expect(await r.coins.coins.balance("p", [discord(id)])).toBe(500);
+      expect(await r.balanceOf(id)).toBe(500);
     }
     expect(r.hunger.value).toBe(0.8);
   });
@@ -2203,7 +2201,7 @@ describe("the wallet", () => {
     expect(
       (await r.spend("/api/member/screen", cookie, { text: "字".repeat(61) }, "s-3")).status,
     ).toBe(400);
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(100);
+    expect(await r.balanceOf(ALICE)).toBe(100);
   });
 
   it("buys a frame, puts it on the next card and keeps the wallet in the export", async () => {
@@ -2223,13 +2221,13 @@ describe("the wallet", () => {
     expect(exported.wallet.ledger[0]?.label).toBe("買卡框「櫻花」");
     // Forgetting leaves the wallet.
     await r.post("/api/member/forget", cookie, { confirm: true });
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(20);
+    expect(await r.balanceOf(ALICE)).toBe(20);
   });
 
   describe("card extras", () => {
     type Card = Record<string, unknown> & { serial: string; pose: string; number: number };
     type WRig = Awaited<ReturnType<typeof walletRig>>;
-    const balance = (r: WRig) => r.coins.coins.balance("p", [discord(ALICE)]);
+    const balance = (r: WRig) => r.balanceOf(ALICE);
     const anyone = (r: WRig, serial: string) =>
       r.get(`/api/public/card/${serial}`, undefined, { "cf-connecting-ip": "203.0.113.21" });
     const failIssue = (r: WRig) => {
@@ -2469,12 +2467,13 @@ describe("between people, the sponsor board and fortune slips", () => {
   /** The rig with a real wallet and fortune store, and a model she writes with. */
   async function socialRig(publicConfig: Record<string, JsonValue> = {}) {
     const r = await rig({ cache_secs: 1, ...publicConfig });
-    const coins = await SqliteStore.open(":memory:");
+    const tables = await economyStore(r.store.people);
+    const coins = tables.store;
     cleanups.push(() => coins.close());
     const s = r.sup.services;
-    s.provide("economy", CoinLedgerStoreKey, coins.coins);
-    s.provide("economy", DealStoreKey, coins.deals);
-    s.provide("economy", FortuneStoreKey, coins.fortunes);
+    s.provide("economy", CoinLedgerStoreKey, tables.economy.ledger);
+    s.provide("economy", DealStoreKey, tables.economy.deals);
+    s.provide("economy", FortuneStoreKey, tables.economy.fortunes);
     s.provide("self", SelfStateKey, {
       drives: () => ({ hunger: 0.8 }),
       adjust: () => undefined,
@@ -2509,22 +2508,19 @@ describe("between people, the sponsor board and fortune slips", () => {
           ...(key === undefined ? {} : { "idempotency-key": key }),
         },
       });
-    const row = (id: string, delta: number, reason: string) =>
-      coins.coins.post(
-        {
-          id: `seed-${id}-${reason}-${delta}`,
-          profile: "p",
-          account: discord(id),
-          delta,
-          reason,
-          ref: null,
-          idem_key: null,
-          ts: new Date().toISOString(),
-        },
-        { wallet: [] },
-      );
+    const row = async (id: string, delta: number, reason: string) =>
+      tables.economy.ledger.post({
+        id: `seed-${id}-${reason}-${delta}`,
+        person: await tables.wallet(discord(id)),
+        delta,
+        reason,
+        ref: null,
+        idem_key: null,
+        ts: new Date().toISOString(),
+      });
     const fund = (id: string, delta: number) => row(id, delta, "checkin");
-    const balance = (id: string) => coins.coins.balance("p", [discord(id)]);
+    const balance = async (id: string) =>
+      tables.economy.ledger.balance("p", await tables.wallet(discord(id)));
     return { ...r, coins, model, spend, row, fund, balance };
   }
 

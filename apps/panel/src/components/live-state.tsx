@@ -3,7 +3,7 @@
 import { Link } from "@tanstack/react-router";
 import { OctagonPause, Play } from "lucide-react";
 import type { ReactNode } from "react";
-import type { EmergencyReport, EmergencyStep, MindView } from "@/api/types";
+import type { EmergencyReport, EmergencyStep, MindView } from "@miyoria/contracts/api";
 import { useMind, useMindMutations, useQueue, useSongs, useStage, useVoice, useWorld } from "@/app/queries";
 import { Dot, type Tone } from "@/components/status";
 import { Button } from "@/components/ui/button";

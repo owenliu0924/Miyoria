@@ -4,36 +4,33 @@
 // heartbeat. A new emotion, or a row that no longer reaches anything, fails here.
 
 import { fileURLToPath } from "node:url";
-import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/arbiter";
-import { EventLogService } from "@miyoria/facts";
-import { Supervisor } from "@miyoria/kernel";
-import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/mind";
-import { Profile } from "@miyoria/profile";
-import { computeBiases, MAX_BIAS, SelfModule, shownEmotion } from "@miyoria/self";
-import { MoodModule } from "@miyoria/social";
+import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/brain/arbiter";
+import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/heart/mind";
+import { computeBiases, MAX_BIAS, SelfModule, shownEmotion } from "@miyoria/heart/self";
+import { EventLogService } from "@miyoria/memory/facts";
+import { Supervisor } from "@miyoria/runtime/kernel";
+import { Profile } from "@miyoria/runtime/profile";
 import { Forwarder } from "@miyoria/stage";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AffectSnapshot,
   AffectStateKey,
   type ContextKey,
-  customEvent,
   type Drives,
   EMOTION_NAMES,
   EMOTION_OUTPUTS,
   type EmotionName,
   EventLogKey,
+  Events,
+  eventEnvelope,
   FLOOR_CLAIMS,
   FloorKey,
-  type JsonValue,
   MoodSignalsKey,
   PERSON_EMOTION_NAMES,
   type PersonCard,
-  type Pipeline,
-  PipelineKey,
   toTimestamp,
 } from "@miyoria/types";
-import { VoiceProfile } from "@miyoria/voice";
+import { VoiceProfile } from "@miyoria/voice/voice";
 import { afterEach, describe, expect, it } from "vitest";
 
 const NOW = Date.UTC(2026, 10, 7, 6);
@@ -131,7 +128,7 @@ function reached(
   const clip = tag === null ? null : voice.referenceFor(tag);
   if (clip !== null && clip !== "neutral") out.push("voice");
   const stage = new Forwarder(false).onEvent(
-    customEvent("affect.changed", now as unknown as JsonValue),
+    eventEnvelope("test", Events.AffectChanged, now as never),
   );
   if (stage.some((m) => m.type === "emotion" && m.resting === true && m.name !== "neutral")) {
     out.push("expression");
@@ -220,71 +217,55 @@ describe("an extreme state", () => {
   });
 });
 
-describe.each(["v2", "v3"] as const)(
-  "the Affect module under pipeline %s",
-  (pipeline: Pipeline) => {
-    const running: Supervisor[] = [];
-    afterEach(async () => {
-      for (const sup of running.splice(0)) await sup.stopAll();
-    });
+describe("the Affect module", () => {
+  const running: Supervisor[] = [];
+  afterEach(async () => {
+    for (const sup of running.splice(0)) await sup.stopAll();
+  });
 
-    async function boot() {
-      const sup = new Supervisor();
-      running.push(sup);
-      sup.services.provide("app", PipelineKey, { pipeline });
-      sup.services.provide("app", SettingsStoreKey, new MemorySettingsStore());
-      if (pipeline === "v3") {
-        sup.services.provide(
-          "app",
-          EventLogKey,
-          new EventLogService({ profile: "p", store: null }),
-        );
-      }
-      const baseline = { valence: 0, arousal: 0.5, energy: 0.8 };
-      // The order of the catalog.
-      await sup.register(new MoodModule("p", baseline), null, true);
-      await sup.register(new SelfModule("p", { baseline }), null, true);
-      await sup.register(new ArbiterModule("p"), null, true);
-      await sup.startAll();
-      return sup;
-    }
+  async function boot() {
+    const sup = new Supervisor();
+    running.push(sup);
+    sup.services.provide("app", SettingsStoreKey, new MemorySettingsStore());
+    sup.services.provide("app", EventLogKey, new EventLogService({ profile: "p", store: null }));
+    const baseline = { valence: 0, arousal: 0.5, energy: 0.8 };
+    // The order of the catalog.
+    await sup.register(new SelfModule("p", { baseline }), null, true);
+    await sup.register(new ArbiterModule("p"), null, true);
+    await sup.startAll();
+    return sup;
+  }
 
-    it("owns her mood; `mood` is running and idle, whichever pipeline runs", async () => {
-      const sup = await boot();
-      expect(sup.services.ownerOf(MoodSignalsKey)).toBe("self");
-      const affect = sup.services.require(AffectStateKey);
-      expect(sup.services.require(MoodSignalsKey).mood()).toEqual(affect.snapshot().mood);
-      expect(sup.list().find((m) => m.id === "mood")?.state).toBe("running");
-    });
+  it("owns her mood", async () => {
+    const sup = await boot();
+    expect(sup.services.ownerOf(MoodSignalsKey)).toBe("self");
+    const affect = sup.services.require(AffectStateKey);
+    expect(sup.services.require(MoodSignalsKey).mood()).toEqual(affect.snapshot().mood);
+  });
 
-    it("gives the panel the same snapshot", async () => {
-      const sup = await boot();
-      const snapshot = sup.services.require(AffectStateKey).snapshot();
-      expect(Object.keys(snapshot).sort()).toEqual([
-        "at",
-        "biases",
-        "boredom",
-        "drives",
-        "mood",
-        "mood_line",
-        "shown",
-        "top",
-      ]);
-      expect(Object.keys(snapshot.biases).sort()).toEqual(["initiative", "talkativeness", "wants"]);
-    });
+  it("gives the panel the same snapshot", async () => {
+    const sup = await boot();
+    const snapshot = sup.services.require(AffectStateKey).snapshot();
+    expect(Object.keys(snapshot).sort()).toEqual([
+      "at",
+      "biases",
+      "boredom",
+      "drives",
+      "mood",
+      "mood_line",
+      "shown",
+      "top",
+    ]);
+    expect(Object.keys(snapshot.biases).sort()).toEqual(["initiative", "talkativeness", "wants"]);
+  });
 
-    it("reaches the Floor only where there is one", async () => {
-      const sup = await boot();
-      const floor = sup.services.get(FloorKey);
-      if (pipeline === "v2") {
-        expect(floor).toBeUndefined();
-        return;
-      }
-      expect(floor?.budget(ROOM).allowed).toBe(6);
-      sup.services.provide("app", AffectStateKey, {
-        snapshot: () => ({ biases: { talkativeness: -MAX_BIAS } }),
-      } as never);
-      expect(floor?.budget(ROOM).allowed).toBe(3);
-    });
-  },
-);
+  it("reaches the Floor", async () => {
+    const sup = await boot();
+    const floor = sup.services.get(FloorKey);
+    expect(floor?.budget(ROOM).allowed).toBe(6);
+    sup.services.provide("app", AffectStateKey, {
+      snapshot: () => ({ biases: { talkativeness: -MAX_BIAS } }),
+    } as never);
+    expect(floor?.budget(ROOM).allowed).toBe(3);
+  });
+});

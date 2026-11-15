@@ -2,11 +2,11 @@
 // and `GET /api/world` (what she perceives). Changes go through her own decisions (and, later,
 // the action gate), not through these routes.
 
-import { SocialKey } from "@miyoria/social";
+import type { FeelingView, SelfView, WorldView } from "@miyoria/contracts/api";
+import { SocialKey } from "@miyoria/heart/social";
 import { PlatformSinksKey, SelfStateKey, WorldStateKey } from "@miyoria/types";
-import { json, type Route } from "./route.js";
+import { os } from "./contract.js";
 import type { ApiState } from "./state.js";
-import type { FeelingView, SelfView, WorldView } from "./types.js";
 
 function selfView(state: ApiState): SelfView {
   const self = state.service(SelfStateKey, "self module");
@@ -35,9 +35,8 @@ async function worldView(state: ApiState): Promise<WorldView> {
   return { ...snapshot, channels };
 }
 
-export function innerRoutes(state: ApiState): Route[] {
-  return [
-    { method: "GET", path: "/api/self", handler: () => json(selfView(state)) },
-    { method: "GET", path: "/api/world", handler: async () => json(await worldView(state)) },
-  ];
-}
+/** `GET /api/self`, on the route table. */
+export const selfRpc = os.self.handler(({ context }) => selfView(context.state));
+
+/** `GET /api/world`, on the route table. */
+export const worldRpc = os.world.handler(({ context }) => worldView(context.state));

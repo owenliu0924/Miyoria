@@ -2,10 +2,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadProfile } from "@miyoria/core/light";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { exampleConfig, PACKAGE_ROOT } from "../src/assets.js";
-import { flow, openForInit, run } from "../src/commands/init.js";
+import { commandPrefix, flow, openForInit, run } from "../src/commands/init.js";
 import { CancelledError, DefaultsPrompter } from "../src/prompt.js";
 import { DEFAULT_SQLITE_URL, LLM_KINDS } from "../src/settings.js";
 import { type Output, setOutput } from "../src/ui.js";
@@ -187,6 +187,23 @@ describe("init flow", () => {
     expect(again.changes()).toEqual([]);
     again.save();
     expect(token(read(".env"))).toBe(first);
+  });
+});
+
+describe("the command shown in the next steps", () => {
+  it("names the package manager that started the CLI", () => {
+    const pnpm = "pnpm/9.15.0 npm/? node/v24.2.0 win32 x64";
+    const npm = "npm/11.3.0 node/v24.2.0 win32 x64 workspaces/false";
+    expect(commandPrefix({ npm_command: "exec", npm_config_user_agent: pnpm })).toBe(
+      "pnpm exec miyoria",
+    );
+    expect(commandPrefix({ npm_config_user_agent: pnpm })).toBe("pnpm dlx miyoria");
+    expect(commandPrefix({ npm_command: "exec", npm_config_user_agent: npm })).toBe("npx miyoria");
+    // A script of the repository (`pnpm dev init`) and a global install: the plain name.
+    expect(commandPrefix({ npm_command: "run-script", npm_config_user_agent: pnpm })).toBe(
+      "miyoria",
+    );
+    expect(commandPrefix({})).toBe("miyoria");
   });
 });
 

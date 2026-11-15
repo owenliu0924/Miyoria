@@ -2,9 +2,10 @@ import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { AffectSnapshot, DayPlanView, Envelope, Goal, GoalsView, PersonCard, SelfView, WorldView } from "@/api/types";
+import type { AffectSnapshot, DayPlanView, Goal, GoalsView, PersonCard, SelfView, WorldView } from "@miyoria/contracts/api";
 import { applyCustomEvent } from "@/app/events-store";
 import { queryKeys } from "@/app/queries";
+import { envelope } from "@/test/envelope";
 import { mockFetch, renderRoute } from "@/test/render";
 import { emotionsText, stanceText } from "./PersonCards";
 import { triggerText } from "./GoalsTab";
@@ -57,7 +58,7 @@ const SELF: SelfView = {
   at: AT,
   mood: { valence: 0.2, arousal: 0.5, energy: 0.7 },
   boredom: 0.4,
-  drives: { social: 0.7, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.6 },
+  drives: { social: 0.7, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.6, esteem: 0.4, hunger: 0.3, longing: 0 },
   policy: { talkativeness: {}, initiative: 0.5, initiative_why: "" },
   agenda: [],
   feelings: [{ person: "p1", display_name: "Owen", text: "有點在意他", updated_at: AT, by: "self" }],
@@ -232,8 +233,7 @@ describe("Inner: what she is doing", () => {
 });
 
 describe("live updates", () => {
-  const custom = (topic: string, payload: unknown): Envelope =>
-    ({ id: "E1", ts: AT, source: "test", event: { type: "custom", data: { topic, payload } } }) as unknown as Envelope;
+  const custom = (topic: string, payload: unknown) => envelope(topic, payload, { at: AT, source: "test" });
 
   it("writes the new body and affect state straight into the cache", () => {
     const qc = new QueryClient();

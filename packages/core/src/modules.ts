@@ -1,36 +1,30 @@
-// The one place that imports the module packages. Names mirror the legacy Rust constructors
-// (camelCased); if a package exported something else, fix it here and nowhere else.
+// The one place that imports the module packages. Names are the camelCased constructors;
+// if a package exported something else, fix it here and nowhere else.
 //
-// Boot order (legacy `boot.rs`, after `facts`, which every other module outlives, and `moderation`,
+// Boot order (after `facts`, which every other module outlives, and `moderation`,
 // which is there before anything can say a word): llm, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, social, mood, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
-// stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, recorder, Discord bot, Admin API, terminal chat, then the
-// extension host and one `ext.<id>` per extension.
+// stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, Discord bot, Admin API, terminal chat, then the
+// extension host and one `ext.<id>` per extension. `facts` also writes the raw record (chat lines,
+// her decisions, how each turn ended) from the bus.
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { ActionsModule } from "@miyoria/actions";
-import { ActivityModule } from "@miyoria/activity";
-import { AgentModule, PersonaHandleKey } from "@miyoria/agent";
 import { ApiModule, avatarEmotions } from "@miyoria/api";
-import { ArbiterModule } from "@miyoria/arbiter";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
+import { ActivityModule } from "@miyoria/brain/activity";
+import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
+import { ArbiterModule } from "@miyoria/brain/arbiter";
+import { DirectiveModule } from "@miyoria/brain/directive";
 import { CommandsModule } from "@miyoria/commands";
-import { DirectiveModule } from "@miyoria/directive";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
-import * as extHost from "@miyoria/ext-host";
-import { FactsModule } from "@miyoria/facts";
-import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/game";
-import { ImageGenModule } from "@miyoria/imagegen";
-import type { Config, Module } from "@miyoria/kernel";
-import {
-  ConversationModule,
-  KnowledgeModule,
-  ReflectModule,
-  repairEphemeralHandles,
-} from "@miyoria/learning";
+import { ActionsModule } from "@miyoria/gate/actions";
+import { ModerationModule } from "@miyoria/gate/moderation";
+import { MindModule } from "@miyoria/heart/mind";
+import { SelfModule } from "@miyoria/heart/self";
+import { SocialModule } from "@miyoria/heart/social";
 import { LiveModule } from "@miyoria/live";
 import {
   type LlmConfig,
@@ -39,21 +33,20 @@ import {
   type ModelRef,
   OpenAiFactory,
   parseModelRef,
-} from "@miyoria/llm";
-import { McpModule } from "@miyoria/mcp";
-import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory";
-import { MindModule } from "@miyoria/mind";
-import { ModerationModule } from "@miyoria/moderation";
-import { PartyModule } from "@miyoria/party";
-import type { Profile } from "@miyoria/profile";
-import { QueueModule } from "@miyoria/queue";
-import { SandboxModule } from "@miyoria/sandbox";
-import { SchedulerModule } from "@miyoria/scheduler";
-import { SelfModule } from "@miyoria/self";
+} from "@miyoria/llm/llm";
+import { FactsModule } from "@miyoria/memory/facts";
+import { ConversationModule, KnowledgeModule, ReflectModule } from "@miyoria/memory/learning";
+import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
+import { WorldModule } from "@miyoria/memory/world";
+import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/play/game";
+import { PartyModule } from "@miyoria/play/party";
+import { QueueModule } from "@miyoria/play/queue";
+import * as extHost from "@miyoria/plugin-host/ext-host";
+import { McpModule } from "@miyoria/plugin-host/mcp";
+import type { Config, Module } from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
+import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import { SingModule } from "@miyoria/sing";
-import { SkillsModule } from "@miyoria/skills";
-import { MoodModule, SocialModule } from "@miyoria/social";
-import { SpeechConfigSchema, SpeechModule } from "@miyoria/speech";
 import {
   AvatarProfile,
   applyObsSetup,
@@ -66,15 +59,14 @@ import {
   SOURCES,
   StageLinkModule,
 } from "@miyoria/stage";
-import {
-  openStore as openStoreBackend,
-  type Store,
-  type StoredHandleDirectory,
-} from "@miyoria/store";
-import { isJsonObject, type ProfileId } from "@miyoria/types";
-import { VoiceLinkModule, VoiceModule } from "@miyoria/voice";
-import { WebModule } from "@miyoria/web";
-import { WorldModule } from "@miyoria/world";
+import { openStore as openStoreBackend, type Store } from "@miyoria/store";
+import { isJsonObject } from "@miyoria/types";
+import { SpeechConfigSchema, SpeechModule } from "@miyoria/voice/speech";
+import { VoiceLinkModule, VoiceModule } from "@miyoria/voice/voice";
+import { ImageGenModule } from "@miyoria/workspace/imagegen";
+import { SandboxModule } from "@miyoria/workspace/sandbox";
+import { SkillsModule } from "@miyoria/workspace/skills";
+import { WebModule } from "@miyoria/workspace/web";
 import {
   buildCoreWith,
   type Core,
@@ -82,18 +74,24 @@ import {
   type ExtensionDiscovery,
   type ModuleCatalog,
   type ModuleDeps,
+  STORE_PLUGINS,
 } from "./boot.js";
+import { assertStartConfig, validateRevision } from "./config-schema.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
 
 /**
- * Opens the store for `url`: `sqlite:<path>` (default, the parent directory is created),
- * `memory://`, or `postgres://...`.
+ * Opens the store for `url`: `sqlite:<path>` (default, the parent directory is created) or
+ * `memory://`, with the installed plugins' tables (`STORE_PLUGINS`) and config revisions checked
+ * by the root schema. Any other scheme fails with a message that names the supported ones.
  */
 export async function openStore(url: string): Promise<Store> {
   const path = sqlitePath(url);
   if (path !== null && path !== ":memory:") await mkdir(dirname(path), { recursive: true });
-  return openStoreBackend(url);
+  return openStoreBackend(url, {
+    // A config revision Core would not start with is refused, as the file would be.
+    sqlite: { plugins: STORE_PLUGINS, config: { validate: validateRevision } },
+  });
 }
 
 /**
@@ -153,7 +151,6 @@ async function coreModules({
     new DirectiveModule(),
     new ActivityModule(),
     SocialModule.fromProfile(profile),
-    new MoodModule(profileId, profile.manifest.mood),
     new WorldModule({
       interests: profile.manifest.interests,
       game: (services) => services.get(GameHandleKey)?.status()?.game_name ?? null,
@@ -163,8 +160,7 @@ async function coreModules({
       baseline: profile.manifest.mood,
     }),
     new MemoryModule(profileId, config.get("memory.embedding", EmbeddingConfigSchema)),
-    // Replaces `initiative` (an old `[modules.initiative]` section is read with a warning).
-    new ArbiterModule(profileId, { legacyInitiative: config.module("initiative").config }),
+    new ArbiterModule(profileId),
     new MindModule(profileId, {
       name: profile.displayName,
       persona: (services) =>
@@ -199,32 +195,20 @@ async function discoverExtensions(config: Config, baseDir: string): Promise<Exte
   return { skipped: found.skipped, modules: found.modules };
 }
 
-/** Repairs lessons, recaps and agenda text that carry per-call codes (`u1`). */
-async function migrateStoredData(
-  store: Store,
-  profile: ProfileId,
-  handles: StoredHandleDirectory | null,
-): Promise<void> {
-  const people = await store.people.all();
-  const handleOf = new Map(people.map((p) => [p.id, handles?.ensurePerson(p) ?? null] as const));
-  await repairEphemeralHandles({
-    settings: store.settings,
-    profile,
-    handleOfPerson: (person) => handleOf.get(person) ?? null,
-  });
-}
-
 export const defaultCatalog: ModuleCatalog = {
   openStore,
   coreModules,
   discord: () => new DiscordBotModule(),
   api: (deps) => new ApiModule({ emotions: avatarEmotions(deps.profile.avatar) }),
   discoverExtensions,
-  migrateStoredData,
 };
 
-/** Builds a core node from `config` with every module package. */
-export function buildCore(config: Config, options: CoreOptions = {}): Promise<Core> {
+/**
+ * Builds a core node from `config` with every module package, once the whole file fits the root
+ * schema (`assertStartConfig`: every problem that would stop the start, at once).
+ */
+export async function buildCore(config: Config, options: CoreOptions = {}): Promise<Core> {
+  assertStartConfig(config);
   return buildCoreWith(defaultCatalog, config, options);
 }
 
@@ -304,7 +288,7 @@ export async function setupStageObs(
   }
 }
 
-/** Offline extension tools for `miyoria ext ...` (legacy `miyoria_ext_host::cli`). */
+/** Offline extension tools for `miyoria ext ...`. */
 export const extensionsCli: ExtensionsCli = {
   newExtension: async (parent, name, options) => extHost.newExtension(parent, name, options),
   list: async (config, base) => extHost.list(config, base),

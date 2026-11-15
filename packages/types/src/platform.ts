@@ -1,15 +1,32 @@
+import type {
+  AccountRef,
+  Attachment,
+  ContextKey,
+  Embed,
+  IncomingMessage,
+  MessageRef,
+  Sticker,
+} from "@miyoria/contracts/wire";
 import type { PlatformId } from "./ids.js";
 import { serviceKey } from "./service-key.js";
-import type { Timestamp } from "./time.js";
 
-/**
- * An account on a platform. Platform user ids are globally unique per platform, so the bot and
- * self accounts on Discord resolve the same person to the same `AccountRef`.
- */
-export interface AccountRef {
-  platform: PlatformId;
-  id: string;
-}
+// The shapes of accounts, contexts and messages are contracts (`@miyoria/contracts/wire`). What
+// is here works on them: the text forms, the equality checks, and the in-process services a
+// platform provides.
+export type {
+  AccountRef,
+  Attachment,
+  Author,
+  ContextKey,
+  ContextKind,
+  Embed,
+  ForwardedMessage,
+  IncomingMessage,
+  MentionedAccount,
+  MessageRef,
+  QuotedMessage,
+  Sticker,
+} from "@miyoria/contracts/wire";
 
 /** `"<platform>:<id>"`, e.g. `"discord:1234"` (the form used in config and `edited_by` fields). */
 export function accountRefString(account: AccountRef): string {
@@ -18,20 +35,6 @@ export function accountRefString(account: AccountRef): string {
 
 export function sameAccount(a: AccountRef, b: AccountRef): boolean {
   return a.platform === b.platform && a.id === b.id;
-}
-
-export type ContextKind = "channel" | "thread" | "dm" | "voice";
-
-/**
- * Identifies one conversation context. It is independent of which connection (bot or self
- * account) observed it.
- */
-export interface ContextKey {
-  platform: PlatformId;
-  /** Guild / server id. `null` for DMs. */
-  scope: string | null;
-  channel: string;
-  kind: ContextKind;
 }
 
 /**
@@ -51,106 +54,6 @@ export function contextKeyEquals(a: ContextKey, b: ContextKey): boolean {
   return (
     a.platform === b.platform && a.scope === b.scope && a.channel === b.channel && a.kind === b.kind
   );
-}
-
-export interface MessageRef {
-  context: ContextKey;
-  id: string;
-}
-
-export interface Author {
-  account: AccountRef;
-  display_name: string;
-  is_bot: boolean;
-}
-
-export interface Attachment {
-  url: string;
-  filename: string;
-  content_type: string | null;
-  /** Platform id of the attachment (stable, unlike signed CDN URLs); the download cache key. */
-  id?: string | null;
-  /** Size in bytes, when the platform reports it. */
-  size?: number | null;
-  /** Alt text the author wrote. */
-  description?: string | null;
-}
-
-/** A sticker sent with a message. */
-export interface Sticker {
-  id: string;
-  name: string;
-}
-
-/** A rich embed (link preview, bot card): only the parts worth reading. */
-export interface Embed {
-  title: string | null;
-  description: string | null;
-  url: string | null;
-}
-
-/** The message another one replies to, as far as the platform delivered it with the reply. */
-export interface QuotedMessage {
-  author: AccountRef | null;
-  author_name: string;
-  text: string;
-}
-
-/** A forwarded message's snapshot (the forwarder's message itself is usually empty). */
-export interface ForwardedMessage {
-  text: string;
-  attachments: Attachment[];
-  stickers: Sticker[];
-  embeds: Embed[];
-}
-
-/** Someone other than her that a message @-mentions (people and bots, never roles). */
-export interface MentionedAccount {
-  account: AccountRef;
-  display_name: string;
-  is_bot: boolean;
-}
-
-/**
- * A message as the platform delivered it.
- *
- * The fields after `ts` were added later (autonomy phase E). They are optional so producers
- * that predate them (extensions, the CLI platform, stored events) stay valid; consumers treat
- * a missing field as `null` / empty.
- */
-export interface IncomingMessage {
-  id: MessageRef;
-  author: Author;
-  /** Text with mentions and custom emoji resolved to names by the platform adapter. */
-  text: string;
-  /** The message @-mentions one of her accounts. */
-  mentions_self: boolean;
-  /** The message replies to one of her messages. */
-  reply_to_self: boolean;
-  attachments: Attachment[];
-  ts: Timestamp;
-  /** The message this one replies to. */
-  reply_to?: MessageRef | null;
-  /** Author and text of `reply_to`, when the platform had it at hand. */
-  referenced?: QuotedMessage | null;
-  stickers?: Sticker[];
-  embeds?: Embed[];
-  forwarded?: ForwardedMessage[];
-  /**
-   * Accounts other than her that the text @-mentions, in order of appearance. Reply pings that
-   * are not written in the text are not listed. Together with `reply_to_self` it tells
-   * "a reply to her" apart from "a reply to her that talks to someone else".
-   */
-  mentions_others?: MentionedAccount[];
-  /** The text opens with a mention of someone other than her: it is probably said to them. */
-  opens_with_other_mention?: boolean;
-  /** Voice: a model judged the speaker done, so there is no need to wait and see if they go on. */
-  turn_complete?: boolean;
-  /**
-   * A card: its text is in components, with no plain content (Discord Components V2). Her own
-   * cards are notices, receipts and panels the system posts in her name, not lines she said.
-   */
-  card?: boolean;
 }
 
 /** Image types she can look at. */

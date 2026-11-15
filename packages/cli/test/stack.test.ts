@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Config } from "@miyoria/kernel";
+import { Config } from "@miyoria/runtime/kernel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../src/cli.js";
 import * as up from "../src/commands/up.js";
@@ -21,7 +21,6 @@ import {
   type DeepDeps,
   type DeepInput,
   healthChecks,
-  legacyConfigNotes,
   portChecks,
   workerChecks,
 } from "../src/stack/checks.js";
@@ -375,19 +374,6 @@ describe("doctor --deep: builds", () => {
     expect(jdk?.detail).toContain("8");
     expect(f.find((x) => x.what === "遊戲裡的 mod")?.level).toBe("fail");
     expect(existsSync(mods)).toBe(true);
-  });
-});
-
-describe("legacy config", () => {
-  it("lists_v2_leftovers_by_key_only", () => {
-    const notes = legacyConfigNotes(
-      Config.fromToml(
-        '[modules.agent]\ndefault_mode = "ambient"\n[modules.agent.voice]\ncooldown_ms = 5\ninterrupt_scale = 2',
-        NOENV,
-      ),
-    );
-    expect(notes).toHaveLength(3);
-    expect(notes.join("\n")).not.toContain("= 5");
   });
 });
 

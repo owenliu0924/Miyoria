@@ -40,7 +40,7 @@ in a thread pool (so several uploads can be decoded in parallel and the event lo
 blocked); the model call itself is serialised with a lock, so the GPU sees one job at a time. The
 lock serves ``now`` before ``ahead``, first come first served within each.
 
-Output text is raw model output (usually Simplified for Chinese). The Rust side runs OpenCC
+Output text is raw model output (usually Simplified for Chinese). The caller runs OpenCC
 (s2tw) on it, so this worker deliberately does not convert.
 """
 
@@ -66,7 +66,6 @@ from typing import Any, Iterator
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tags import parse_sensevoice, to_language_code, to_language_name
@@ -77,7 +76,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 try:
     import device_memory
     from engine_process import EngineGone, EngineProcess, RemoteError
-except ImportError:  # the Docker image holds this folder only: the model stays in this process
+except ImportError:  # the Docker image holds this folder and contracts.py only: the model stays in this process
     device_memory = None
     EngineProcess = None
 
@@ -86,6 +85,9 @@ except ImportError:  # the Docker image holds this folder only: the model stays 
 
     class RemoteError(Exception):  # type: ignore[no-redef]
         pass
+
+# The JSON bodies, generated from the JSON Schema of packages/contracts (gen_contracts.py).
+from contracts import WorkersOffloadRequest as OffloadRequest  # noqa: E402
 
 TARGET_SR = 16_000
 MAX_UPLOAD_BYTES = int(os.environ.get("ASR_MAX_UPLOAD_MB", "32")) * 1024 * 1024
@@ -500,11 +502,6 @@ def _drop() -> None:
     if torch is not None and torch.cuda.is_available():
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
-
-
-class OffloadRequest(BaseModel):
-    reason: str | None = None
-    max_s: float | None = None
 
 
 def _released(before: Any, remember: bool = True) -> dict[str, Any]:

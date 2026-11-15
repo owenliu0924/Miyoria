@@ -4,17 +4,17 @@
 // here over the event bus, or call the service interfaces defined here through the kernel's
 // service registry (each interface has a `...Key` constant).
 //
-// Every data type mirrors the legacy Rust serde JSON exactly: snake_case field names,
-// `Option<T>` as `T | null` (key always present), timestamps as RFC 3339 strings.
+// Every data type is the JSON wire form exactly: snake_case field names,
+// optional values as `T | null` (key always present), timestamps as RFC 3339 strings.
 
+// The bus envelope as JSON (live readers, the replay log) and the schema that parses it.
+export { type BusEnvelopeJson, BusEnvelopeSchema } from "@miyoria/contracts/events";
 export {
-  ACTION_SETTLED_TOPIC,
   type Action,
   type ActionPayload,
   type ActionSettled,
   type ActionSink,
   ActionSinkKey,
-  AVATAR_LANE,
   actionPlatform,
   actLane,
   comparePriority,
@@ -33,7 +33,6 @@ export {
   type ActuatorExecutor,
   ActuatorExecutorKey,
   isAutonomous,
-  PRINCIPAL_KINDS,
   type Principal,
   type PrincipalKind,
   Principals,
@@ -46,22 +45,35 @@ export {
   BaseAuthorizer,
   type Subject,
 } from "./auth.js";
+export * as Events from "./bus-events.js";
+export type {
+  ActionOutcomePayload,
+  DirectorTracePayload,
+  GameSkillPayload,
+  GateDecisionPayload,
+  GoalEndPayload,
+  LlmBudgetPayload,
+  MoodNudgePayload,
+} from "./bus-payloads.js";
 export {
-  customEvent,
+  type AnyEventDefinition,
+  type BusEnvelope,
+  type BusEvent,
   type DecisionTrace,
   type Envelope,
-  type EnvelopeOptions,
-  EVENT_TOPICS,
-  type Event,
-  type EventData,
-  type EventOf,
-  type EventType,
-  envelopeTopic,
-  eventTopic,
-  isEvent,
+  type EnvelopeOf,
+  type EventMeta,
+  type EventPayload,
+  eventEnvelope,
+  type IsEventFamily,
+  is,
   KERNEL_MODULE,
   type ModuleStateKind,
-  newEnvelope,
+  type Publish,
+  type PublishedEvent,
+  type PublishMetaArgs,
+  publishedInto,
+  publishedVia,
 } from "./event.js";
 export {
   type FileDeclineCode,
@@ -83,7 +95,6 @@ export {
   type TurnId,
 } from "./ids.js";
 export {
-  IMAGEGEN_TOPIC,
   type ImageGen,
   ImageGenKey,
   type ImageGenStatus,
@@ -127,7 +138,6 @@ export {
   type MemoryCurator,
   MemoryCuratorKey,
   type PatchOp,
-  REACTION_TOPIC,
   type ReactionEvent,
   type Reflection,
   ReflectionKey,
@@ -159,7 +169,6 @@ export {
   type IntentSink,
   IntentSinkKey,
   type IntentStatus,
-  MIND_THOUGHT_TOPIC,
   type Mind,
   MindKey,
   type MindStats,
@@ -269,8 +278,6 @@ export {
   type RelationshipEffects,
   RelationshipEffectsKey,
   type RelationshipGain,
-  SOCIAL_APPRAISAL_TOPIC,
-  SOCIAL_EVENT_TOPIC,
   type SocialAppraisal,
   type SocialEvent,
   type SocialSignals,
@@ -281,8 +288,6 @@ export {
   parseSongBeats,
   parseSongCue,
   parseSongPrepare,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
   type SongBeats,
   type SongCue,
   type SongPrepare,
@@ -309,12 +314,9 @@ export {
   type PlayChunk,
   type PlayHandle,
   type SetlistLine,
-  SPEECH_PAUSE_TOPIC,
-  SPEECH_SYNTH_TOPIC,
   type SpeakOutcome,
   type SpeechPause,
   SpeechPauseKey,
-  VOICE_UPCOMING_TOPIC,
   type VoiceFloor,
   VoiceFloorKey,
   type VoiceParticipant,
@@ -328,20 +330,16 @@ export {
   type ActivityKind,
   type ChannelActivity,
   type HerStatus,
-  MEMBER_TOPIC,
   type MemberUpdate,
   type PersonPresence,
-  PRESENCE_TOPIC,
   type PresenceActivity,
   type PresencePrivacy,
   PresencePrivacyKey,
   type PresenceStatus,
   type PresenceUpdate,
-  SALIENT_TOPIC,
   type SalienceKind,
   type SalientEvent,
   type TimeContext,
-  VOICE_STATE_TOPIC,
   type VoiceActivity,
   type VoiceChannelState,
   type VoiceMember,
@@ -394,7 +392,6 @@ export {
   SALIENCES,
   type Salience,
   type SpokenLine,
-  SYSTEM_SHUTDOWN_TOPIC,
   type UndeliveredBody,
   type UndeliveredState,
   type UtteranceBody,
@@ -408,7 +405,6 @@ export {
   type CommitmentBody,
   type CommitmentDraft,
   type CommitmentStatus,
-  DEFAULT_PIPELINE,
   type FixedLine,
   FLOOR_CLAIMS,
   type Floor,
@@ -419,17 +415,12 @@ export {
   floorRank,
   INTERRUPT_LEVELS,
   type InterruptLevel,
-  isPipeline,
-  MAIN_RESULT_TOPIC,
   type MainActionBody,
   type MainResultBody,
   type Mouth,
   MouthKey,
   type NewProposal,
   NOT_MAIN_LINE,
-  PIPELINES,
-  type Pipeline,
-  PipelineKey,
   type Proposal,
   type ProposalBoard,
   ProposalBoardKey,
@@ -437,7 +428,6 @@ export {
   type ProposalOutcome,
   type ProposalResultBody,
   type ProposalState,
-  pipelineOf,
   type SaySegment,
   spendsBudget,
   type TurnDecision,
@@ -467,13 +457,6 @@ export {
 // ---- v2 contracts (docs/design/v2-architecture.md, docs/design/v2-implementation.md) ----------
 
 export {
-  ACTIVITY_CHANGED_TOPIC,
-  ACTIVITY_DONE_TOPIC,
-  ACTIVITY_FAILED_TOPIC,
-  ACTIVITY_RESOURCES,
-  ACTIVITY_RESTORE_TOPIC,
-  ACTIVITY_STARTED_TOPIC,
-  ACTIVITY_TYPES,
   type ActivityFailure,
   type ActivityManager,
   ActivityManagerKey,
@@ -496,7 +479,6 @@ export {
   type HerPresence,
   inVoice,
   isLive,
-  NOTICE_TOPIC,
   type Notice,
   type RestoredGame,
   requestResource,
@@ -505,9 +487,7 @@ export {
   type TransitionResult,
 } from "./activity.js";
 export {
-  AFFECT_CHANGED_TOPIC,
   AFFECT_EVENT_KINDS,
-  AFFECT_EVENT_TOPIC,
   AFFINITY_FULL,
   AFFINITY_LEVEL_MAX,
   AFFINITY_LEVEL_MIN,
@@ -533,7 +513,6 @@ export {
   BOND_TIERS,
   type BondChange,
   clampAffinity,
-  MOOD_CHANGED_TOPIC,
   type PersonCard,
   RELATIONSHIP_LABELS,
   type RelationshipLabel,
@@ -542,7 +521,6 @@ export {
   stanceStale,
 } from "./affect.js";
 export {
-  AFFECT_BOND_TOPIC,
   type AffectBondPayload,
   circadianEnergy,
   deriveMood,
@@ -565,8 +543,6 @@ export {
   voiceClips,
 } from "./affect-outputs.js";
 export {
-  ARBITER_DECISION_TOPIC,
-  ARBITER_IMPULSE_TOPIC,
   type Arbiter,
   type ArbiterDecision,
   ArbiterKey,
@@ -580,7 +556,6 @@ export {
   type ImpulseTarget,
   isImpulseExpired,
   isSelfInitiated,
-  LEDGER_TOPIC,
   type LedgerEntry,
   type LedgerKind,
   type LedgerLimits,
@@ -591,7 +566,6 @@ export {
 } from "./arbiter.js";
 export {
   DIRECTIVE_AUTHORITIES,
-  DIRECTIVE_CHANGED_TOPIC,
   DIRECTIVE_EFFECTS,
   type Directive,
   type DirectiveActor,
@@ -610,12 +584,10 @@ export {
   DirectivesKey,
   type DirectiveVerdict,
   directiveLive,
-  isDirectiveAuthority,
   isDirectiveEffect,
 } from "./directive.js";
 export {
   EMERGENCY_STEPS,
-  EMERGENCY_TOPIC,
   type EmergencyReport,
   type EmergencyStep,
   type EmergencyStepName,
@@ -666,7 +638,6 @@ export {
   type KeepsakeWho,
 } from "./keepsakes.js";
 export {
-  LIVE_TOUCH_TOPIC,
   type LiveActivity,
   type LiveActivityKind,
   type LiveEmotion,
@@ -706,9 +677,7 @@ export {
   type InputVerdictRecord,
   inspectInput,
   isOwnerAccount,
-  MODERATION_BLOCK_TOPIC,
   MODERATION_CATEGORIES,
-  MODERATION_INPUT_TOPIC,
   type ModerationBlock,
   type ModerationBlockRecord,
   type ModerationCategory,
@@ -729,7 +698,6 @@ export {
   type Participation,
   ParticipationKey,
   PLAY_ACTIVITIES,
-  type PlayActivity,
   type PlayAward,
   type PlayStatus,
 } from "./participation.js";
@@ -755,7 +723,6 @@ export {
 export { CORE_CHARS, CORE_SENTENCES, characterCore } from "./persona-core.js";
 export {
   type Desire,
-  GOAL_TOPIC,
   type Goal,
   type GoalAgenda,
   GoalAgendaKey,
@@ -777,7 +744,6 @@ export {
   type PromptBlock,
   type SavedPrompt,
   SELF_BLOCK_KEYS,
-  type SelfBlockKey,
 } from "./prompt-block.js";
 export {
   type PartyGameStatus,
@@ -789,7 +755,6 @@ export {
 export { type KnownName, mentionsAnother, type NameSplit, splitNames } from "./public-text.js";
 export {
   DEFAULT_REASONING,
-  isReasoningLevel,
   REASONING_LEVELS,
   REASONING_PURPOSES,
   type ReasoningLevel,
@@ -840,6 +805,7 @@ export {
   isTaskFailureCode,
   isTerminalTaskEvent,
   parseTaskTopic,
+  publishTaskEvent,
   STEER_OUTCOMES,
   type SteerOutcome,
   type StructuredState,
@@ -886,8 +852,6 @@ export {
   MAX_TURN_RESTARTS,
   type NewInputFacts,
   SHORT_REPLY_MAX_CHARS,
-  TURN_FOCUS_TOPIC,
-  TURN_OUTCOME_TOPIC,
   type TurnCancelCause,
   type TurnFocus,
   type TurnFocusView,
@@ -897,20 +861,10 @@ export {
   type TurnPhase,
   type TurnReason,
 } from "./turn.js";
-export {
-  isV2Topic,
-  V2_TOPIC_PREFIXES,
-  V2_TOPICS,
-  type V2Topic,
-  type V2TopicPayloads,
-  v2Event,
-  v2Payload,
-} from "./v2-topics.js";
-export {
-  VOICE_BARGE_IN_TOPIC,
-  type VoiceBargeIn,
-  type VoiceBargeInAction,
-  type VoiceBargeInReason,
+export type {
+  VoiceBargeIn,
+  VoiceBargeInAction,
+  VoiceBargeInReason,
 } from "./voice-barge.js";
 export {
   VOICE_TURN_MARKS,
@@ -939,7 +893,6 @@ export {
   type DrivenStep,
   type DrivenWork,
   type DrivenWorkSpec,
-  isWorkEnd,
   WORK_ENDS,
   WORK_LIST,
   WORK_OWNER,

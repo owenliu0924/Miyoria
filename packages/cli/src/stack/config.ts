@@ -3,7 +3,7 @@
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 import { z } from "zod";
 import {
   isLoopback,
@@ -75,7 +75,8 @@ const WorkerSchema = z
   })
   .strict();
 
-const StackSchema = z
+/** `[stack]`; also composed into the root schema of the whole file (`validate.ts`). */
+export const StackSchema = z
   .object({
     core: z.boolean().default(true),
     voice_node: z.boolean().default(false),

@@ -12,19 +12,12 @@
 // The existing `Drives`, `DriveName`, `EmotionName`, `PersonEmotionName`, `EmotionReading` and
 // `ShownEmotion` (self.ts) and `Mood` (social.ts) are reused as they are.
 
+import type { AffectEventData, AffectSnapshotData } from "@miyoria/contracts/events";
 import type { Handle } from "./handle.js";
 import type { PersonId } from "./ids.js";
 import type { ContextKey } from "./platform.js";
-import type {
-  DriveName,
-  Drives,
-  EmotionName,
-  EmotionReading,
-  PersonEmotionName,
-  ShownEmotion,
-} from "./self.js";
+import type { DriveName, EmotionName, EmotionReading, PersonEmotionName } from "./self.js";
 import { serviceKey } from "./service-key.js";
-import type { Mood } from "./social.js";
 import type { Timestamp } from "./time.js";
 
 // ---- appraisal ------------------------------------------------------------------------------
@@ -55,7 +48,7 @@ export interface AppraisalEvent {
 export type AffectSource = "rule" | "appraise" | "reflect" | "drive" | "panel";
 
 /**
- * Rule events (cheap, immediate), published by whoever sees them as `AFFECT_EVENT_TOPIC`; the
+ * Rule events (cheap, immediate), published by whoever sees them as `Events.AffectEvent`; the
  * affect module maps each kind to emotions (the §3.6 table).
  */
 export const AFFECT_EVENT_KINDS = [
@@ -85,19 +78,8 @@ export const AFFECT_EVENT_KINDS = [
 
 export type AffectEventKind = (typeof AFFECT_EVENT_KINDS)[number];
 
-/** Payload of `AFFECT_EVENT_TOPIC`. */
-export interface AffectEvent {
-  kind: AffectEventKind;
-  /** Who it involves, when someone. */
-  person: PersonId | null;
-  handle: Handle | null;
-  context: ContextKey | null;
-  /** Short neutral zh-TW detail (the cause she remembers). */
-  detail: string;
-  /** Repeats with the same key within the habituation window count as the same cause. */
-  key: string;
-  at: Timestamp;
-}
+/** A rule event for her emotions (contract: `AffectEventSchema` in @miyoria/contracts/events). */
+export type AffectEvent = AffectEventData;
 
 /** A promise made to her that was kept or broken: it counts toward the person. */
 export interface AppraisedPromise {
@@ -336,27 +318,8 @@ export interface AffectBiases {
   }[];
 }
 
-export interface AffectSnapshot {
-  at: Timestamp;
-  drives: Drives;
-  /** 0..1 */
-  boredom: number;
-  /** The strongest 2–3 emotions only (what prompts show). */
-  top: EmotionReading[];
-  /** Derived (never stored on its own). */
-  mood: Mood;
-  /** One line for the prompt (`"心情不錯、有點累"`): the only mood renderer. */
-  mood_line: string;
-  shown: ShownEmotion | null;
-  biases: AffectBiases;
-}
-
-/** Payload of `AFFECT_EVENT_TOPIC`: `AffectEvent`. */
-export const AFFECT_EVENT_TOPIC = "affect.event";
-/** Payload: `AffectSnapshot`, published when it changed noticeably. */
-export const AFFECT_CHANGED_TOPIC = "affect.changed";
-/** Payload: `{valence, arousal, energy, reason}`, published when her mood moved. */
-export const MOOD_CHANGED_TOPIC = "mood.changed";
+/** Her state of feeling (contract: `AffectSnapshotSchema` in @miyoria/contracts/events). */
+export type AffectSnapshot = AffectSnapshotData;
 
 /** Provided by the affect owner (`self`). Reads answer from memory. */
 export interface AffectState {
@@ -365,7 +328,7 @@ export interface AffectState {
   emotions(min?: number): EmotionReading[];
   /**
    * The only write path for what an interaction meant: events in, numbers computed here. The one
-   * reader that calls it for a conversation is Appraise (packages/mind/src/appraise.ts).
+   * reader that calls it for a conversation is Appraise (packages/heart/mind/src/appraise.ts).
    */
   appraise(input: AffectInput): AppliedAppraisal[];
   /** A drive was satisfied (`amount` < 0) or frustrated (> 0) by something she did. */

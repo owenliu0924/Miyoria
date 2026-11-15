@@ -13,7 +13,7 @@ Miyoria
 ![Node.js 24](https://img.shields.io/badge/Node.js-24-339933.svg?style=flat-square&logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/Core-TypeScript-3178C6.svg?style=flat-square&logo=typescript&logoColor=white)
 ![Python](https://img.shields.io/badge/Workers-Python-3776AB.svg?style=flat-square&logo=python&logoColor=white)
-![SQLite](https://img.shields.io/badge/Store-SQLite%20%7C%20Postgres-003B57.svg?style=flat-square&logo=sqlite&logoColor=white)
+![SQLite](https://img.shields.io/badge/Store-SQLite-003B57.svg?style=flat-square&logo=sqlite&logoColor=white)
 ![Discord](https://img.shields.io/badge/Platform-Discord-5865F2.svg?style=flat-square&logo=discord&logoColor=white)
 
 ## From an empty folder to her first reply
@@ -21,15 +21,17 @@ Miyoria
 You need Node.js 24 and a Discord bot token. Everything else has a default.
 
 ```bash
-npx miyoria@latest init       # writes miyoria.toml, .env and profiles/: LLM endpoint, API key, model, Discord token
-npx miyoria doctor            # checks the config, the character, the LLM, Discord and the database
-npx miyoria chat              # talk to her in the terminal, no Discord needed
-npx miyoria core              # the Discord bot, her mind loop and the admin panel at http://127.0.0.1:7878/
-npx miyoria stage             # on the streaming PC: VTube Studio, OBS and the overlay
-npx miyoria stage obs-setup   # builds her OBS scenes and sources (add --dry-run to preview)
+pnpm dlx miyoria@latest init       # writes miyoria.toml, .env and profiles/: LLM endpoint, API key, model, Discord token
+pnpm dlx miyoria doctor            # checks the config, the character, the LLM, Discord and the database
+pnpm dlx miyoria chat              # talk to her in the terminal, no Discord needed
+pnpm dlx miyoria core              # the Discord bot, her mind loop and the admin panel at http://127.0.0.1:7878/
+pnpm dlx miyoria stage             # on the streaming PC: VTube Studio, OBS and the overlay
+pnpm dlx miyoria stage obs-setup   # builds her OBS scenes and sources (add --dry-run to preview)
 ```
 
-Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `npx miyoria config` changes settings one at a time. `miyoria status`, `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `npx miyoria --help` lists everything.
+With npm instead of pnpm, the same commands start with `npx` (`npx miyoria@latest init`).
+
+Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `pnpm dlx miyoria config` changes settings one at a time. `miyoria status`, `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `pnpm dlx miyoria --help` lists everything.
 
 ## Quick start: from a fresh clone to the bot online and answering in your server
 
@@ -136,6 +138,7 @@ apps/overlay      OBS browser-source overlay, served by the Stage node on :7884
 apps/voice-node   Self-account voice node: Discord voice and Go Live streaming
 workers/          Python GPU workers: asr (:8003), tts (:8002), sing (:8005), plus fakes for testing
 extensions/       The Minecraft bridge mod and adapter, and example extensions
+tools/            Developer tools that Core does not load: the incident eval set, the replay harness, the card renderer
 profiles/         Characters: persona, voice, avatar mapping (the first one is DeepSeek-chan)
 deploy/           Dockerfile and Compose files for Core and the speech workers
 docs/             Architecture, design notes, protocols, decisions and the roadmap

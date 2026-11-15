@@ -6,12 +6,9 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ActuatorRegistry, CapabilityTool, messageDm } from "@miyoria/actions";
 import {
-  buildMessages,
   COMMIT_SPEC,
   contextData,
-  dataMessage,
   fitHistory,
   type HistoryEntry,
   MainLineConfigSchema,
@@ -20,15 +17,14 @@ import {
   pinnedSection,
   promptTokens,
   proposalData,
-  rulesPrompt,
   STEER_SPEC,
   slimTool,
   tailSection,
-} from "@miyoria/agent";
-
-import { ServiceRegistry } from "@miyoria/kernel";
-import type { ToolSpec } from "@miyoria/llm";
-import { Profile } from "@miyoria/profile";
+} from "@miyoria/brain/agent";
+import { ActuatorRegistry, CapabilityTool, messageDm } from "@miyoria/gate/actions";
+import type { ToolSpec } from "@miyoria/llm/llm";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
+import { Profile } from "@miyoria/runtime/profile";
 import { singCapabilities } from "@miyoria/sing";
 import { stageCapabilities } from "@miyoria/stage";
 import {
@@ -41,8 +37,8 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { gameCapabilities } from "../../game/src/actions.js";
-import { voiceCapabilities } from "../../voice/src/actions.js";
+import { gameCapabilities } from "../../play/game/src/actions.js";
+import { voiceCapabilities } from "../../voice/voice/src/actions.js";
 
 const PROFILE = join(fileURLToPath(new URL("../../..", import.meta.url)), "profiles/deepseek-chan");
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };
@@ -223,31 +219,9 @@ async function mainPrompt() {
   return { raw, tools, build, lines, persona, data, tail };
 }
 
-/** The V2 prompt of the same moment, with its budgets. */
-function v2Tokens(persona: string, raw: ToolSpec[], speaksIn: string): number {
-  const data = dataMessage([
-    dataBlock("people", "語音頻道裡的人", chat(800)),
-    dataBlock("memory", "記憶", chat(1000)),
-    dataBlock("world", "世界", chat(500)),
-    dataBlock("game", "遊戲", chat(700)),
-    dataBlock("lessons", "學到的事", chat(500)),
-    dataBlock("conversation", "對話筆記", chat(500)),
-  ]);
-  const messages = buildMessages(
-    `${persona}\n\n${rulesPrompt(true, speaksIn)}`,
-    chat(1600),
-    history(30, 120),
-    data,
-    { maxChars: 16_000, maxEntryChars: 2000, gapMs: 0 },
-    [],
-    chat(1000),
-  );
-  return promptTokens(messages, raw);
-}
-
 describe("the prompt budget (§10.4)", () => {
   it("a full turn stays within the target, tools included", async () => {
-    const { raw, tools, build, lines, persona } = await mainPrompt();
+    const { raw, tools, build, lines } = await mainPrompt();
     const whole = build(lines);
     const fitted = fitHistory(build, lines, tools, target);
     const toolTokens = promptTokens([], tools);
@@ -265,7 +239,6 @@ describe("the prompt budget (§10.4)", () => {
       history: promptTokens(whole.slice(2, -2)),
       data: promptTokens(whole.slice(-2, -1)),
       tail: promptTokens(whole.slice(-1)),
-      v2_total: v2Tokens(persona, raw, SPEAKS_IN),
     };
     if (process.env.MIYORIA_PROMPT_REPORT) {
       writeFileSync(process.env.MIYORIA_PROMPT_REPORT, JSON.stringify(parts, null, 2));

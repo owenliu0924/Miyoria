@@ -1,14 +1,15 @@
 import { resolve } from "node:path";
-import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import {
   defineManifest,
   HEALTHY,
   type Health,
   type Module,
   type ModuleContext,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import {
+  Events,
   type PromptContributors,
   PromptContributorsKey,
   SongClipsKey,
@@ -137,17 +138,17 @@ export class SingModule implements Module {
     }
 
     const events = ctx.subscribe([
-      "voice.joined",
-      "voice.left",
-      "voice.participants",
-      "voice.playback",
-      "agent.turn.completed",
-      "queue.item_activated",
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
+      Events.VoicePlaybackEvent.type,
+      Events.AgentTurnCompleted.type,
+      Events.QueueItemActivated.type,
     ]);
     ctx.spawn("events", async () => {
       for await (const env of events) {
-        room.onEvent(env.event);
-        singer.onEvent(env.event);
+        room.onEvent(env);
+        singer.onEvent(env);
       }
     });
     await singer.restore();

@@ -2,12 +2,9 @@
 # 字串可以用 ${ENV_VAR} 或 ${ENV_VAR:-預設值} 引用環境變數 / .env。
 
 [core]
-# 誰決定她開口和動手:v3 = 一條主線(只有主線能讓她說話或動作,預設);v2 = 舊路徑(回話、計畫、
-# 遊戲導演各自決定)。出問題時改這一行、重開就退回去
-# pipeline = "v3"
 profile = "deepseek-chan"          # profiles/<id>/
 profiles_dir = "profiles"
-database_url = "${DATABASE_URL:-sqlite:data/miyoria.db}"
+database_url = "${DATABASE_URL:-sqlite:data/miyoria.db}"   # 只支援 SQLite:sqlite:<路徑> 或 memory://
 log = "info,miyoria=debug"
 
 # ---- LLM ----------------------------------------------------------------
@@ -92,15 +89,23 @@ reflect = "high"
 # provider = "openai-compatible"
 # base_url = "http://127.0.0.1:11434/v1"
 # model = "bge-m3"
-# 或在這台機器上用 CPU 跑小型多語模型(預設 Xenova/multilingual-e5-small),成員說的話不會離開這台機器。
-# 不搶 GPU;需要另外安裝 @huggingface/transformers,第一次會下載模型檔(只下載模型)
+# 或在這台機器上用 CPU 跑多語模型,成員說的話不會離開這台機器。不搶 GPU;需要另外安裝
+# @huggingface/transformers。下面是 Harrier-OSS-v1 270M(fp16):模型檔自己放進 models_dir
+# (models_dir/onnx-community/harrier-oss-v1-270m-ONNX/ 底下的 config.json、tokenizer.json、
+# tokenizer_config.json 和 onnx/model_fp16.onnx、onnx/model_fp16.onnx_data),不連網路下載。
+# 換成 0.6B 只改 model(= "onnx-community/harrier-oss-v1-0.6b-ONNX")和下面的 min_vector(0.55)。
+# 換模型後舊的向量不再拿來比,背景會用新模型重算。
 # [memory.embedding]
 # provider = "local"             # none(預設,不用 embedding)| local | openai-compatible
-# model = ""                     # 空 = Xenova/multilingual-e5-small
-# dtype = "q8"                   # 權重型別;q8 大約是 fp32 的四分之一,品質差不多
+# model = "onnx-community/harrier-oss-v1-270m-ONNX"   # 空 = Xenova/multilingual-e5-small
+# dtype = "fp16"                 # 權重型別(模型檔的後綴);Harrier、Qwen3 用 fp16,q8 對 Qwen3 損失明顯、對 Harrier 慢很多
+# pooling = ""                   # 空 = 依模型名稱(Harrier 用模型自己輸出的向量,Qwen3 last_token,bge-m3 cls,e5 mean)
+#                                # 也可以指定 mean | cls | last_token | model;前綴(query_prefix / passage_prefix)同樣依模型預設
 # threads = 2                    # worker 用的 CPU 執行緒;留給語音用的核心不要佔
-# allow_download = true          # 模型檔不在本機時下載一次;false = 只用本機已有的檔案,不連網路
-# models_dir = ""                # 模型檔放哪裡(空 = 執行環境自己的快取)
+# models_dir = "D:/models"       # 模型檔放哪裡(空 = 執行環境自己的快取)
+# allow_download = false         # false = 只用本機已有的檔案,不連網路(連不上 Hugging Face 時就這樣用)
+# batch_size = 1                 # CPU 上一次一句最快
+# timeout_secs = 30              # 第一次呼叫要先載入模型
 
 # ---- MCP 工具 --------------------------------------------------------------
 # [mcp.servers.files]
@@ -167,6 +172,7 @@ voice = "deepseek-chan"
 
 # ---- 子系統 --------------------------------------------------------------
 # 每個 [modules.<id>] 都可以加 enabled = false 關掉
+# (agent 和 arbiter 例外:她的嘴和發言權都在這兩個模組,不能關,寫了會讓啟動失敗)
 
 # 擁有者只在這裡設定(舊設定檔的 [modules.auth] owners 仍然有效,兩邊會合併)
 [modules.commands]
@@ -339,7 +345,6 @@ dirs = ["extensions"]
 # hazard_repeat_secs = 120   # hazard_events 的同一件事:隔一陣子再遇到就算新的
 # method_repeat_limit = 2    # 同一個方法(動作加物品,例如 obtain:bread)用同一個錯誤碼連續失敗這麼多次就擱置;0 = 不擱置
 # method_hold_secs = 600     # 擱置多久(method_release = "time" 時才用來解除)
-#                            # 舊名 repeat_failure_limit / repeat_guard_secs 也認得(兩個都寫時以 method_ 開頭的為準)
 # method_release = "changed" # 擱置的方法什麼時候可以回來。changed:要有東西變了(缺的物品進了背包、別的方法帶她到了別處)才回來,
 #                            # 回來又失敗就馬上再擱置 | time:過了 method_hold_secs 就回來(2026-11-10 之前的舊行為,要退回才用)
 # director_lane = true       # 導演的每個決定是工作線裡一個任務的步驟(每個 session 一個,有自己的紀錄:看到什麼、決定什麼、結果如何);
@@ -593,14 +598,12 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 
 [modules.agent]
 # 文字頻道的聊天等級:off(關閉)| mention-only(只回提及)| quiet(安靜)| normal(一般)| lively(活躍)
-# (always = 每則都回,測試用;舊的 ambient = normal)。等級是上限:她在等級之內自己決定要多話,
+# (always = 每則都回,測試用)。等級是上限:她在等級之內自己決定要多話,
 # 有人請她安靜點她也會自己調。沒設定的頻道用 profile 的 default_channel_mode(預設 quiet)。
 # 也可以在 Discord 用 /channel mode 或面板「內心 → 世界」即時切換
 # default_mode = "quiet"
 # channels = { "<channel id>" = "lively", "discord:<guild id>" = "mention-only" }
-# 對話紀錄:最多幾個字進 prompt(舊的先丟)、單則上限;她寫 @名字 會變成真的 tag
-# max_prompt_chars = 16000
-# max_entry_chars = 2000
+# 她寫 @名字 會變成真的 tag
 # mention_users = true
 # 回合:最後一則訊息後等多久才開始回(打字中會延長);回覆會引用叫她的那則訊息;
 # 對話整理過後至少留幾則原文
@@ -621,17 +624,12 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # max_share_of_recent = 0.3      # 預設不設,用 profile 的 behavior.max_share_of_recent;要蓋掉它才寫
 # keywords = []                  # 讓訊息對她更有意思的話題
 # gray_low = 0.3                 # 沒叫她的訊息分數低於這個就不理
-# gray_high = 0.6                # 到這個分數就不問模型直接過
 # direct_probability = 1.0       # 有人直接叫她時回的機率
-# llm_check = true               # 灰色區問 fast 模型
-# llm_check_timeout_ms = 8000
-# llm_yes_probability = 0.9      # 模型說要回之後真的回的機率
 # talk_floor = 0.15
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
-# × 佔比上限;有人還在講話時她不插嘴。舊的 ambient_factor、cooldown_ms、min_cooldown_ms、
-# interrupt_scale 已經拿掉(留著也能讀,只會警告);她自己多久開一次口由 [modules.arbiter] 決定
-# pipeline = "v3" 的主線:一次呼叫同時決定說什麼和做什麼(v4 §4.1)。prompt 預設沒有 token 上限,各部分各有字數預算。
+# × 佔比上限;有人還在講話時她不插嘴。她自己多久開一次口由 [modules.arbiter] 決定
+# 主線:一次呼叫同時決定說什麼和做什麼(v4 §4.1)。prompt 預設沒有 token 上限,各部分各有字數預算。
 # 對話紀錄放在快取前綴裡,所以放得長也不貴;超過預算時一次砍到 history_trim 的比例(不是每回合丟一則),
 # 這樣紀錄的第一行和快取前綴能留很多回合。下面都是預設值
 # [modules.agent.mainline]
@@ -733,7 +731,6 @@ text_aside = true          # 用說的回時,網址和程式碼改貼到語音�
 keep_in_voice = true       # 她在語音時,自己的事(做事的結果、遊戲實況)用說的,不發到文字頻道;回別人的話還是留在原處
 direct_debounce_ms = 400   # 有人叫她(名字、她剛講完就問她)時只等這麼久
 # turn_debounce_ms = 100   # Smart Turn 判定講完時只等這麼久(turn_engine = "smart-turn" 才會用到)
-# voice_first = true       # 雙語語音:先寫 <voice> 那句,寫完馬上送 TTS,中文字幕後補(false = 等中文寫完一起送)
 # debounce_from_speech_end = true  # 上面的等待從對方最後一個聲音算起,不是從轉錄送到才算(語音節點的靜音偵測和 ASR 本來就等了約一秒);false = 從轉錄算
 # speculate = true         # 有人叫她、等待還沒結束時,回合先開始跑(記憶、prompt、模型),等待結束前不說也不做任何事;對方接著講就丟掉重來(次數在 agent_voice_speculation_total)
 # speculate_max_per_min = 4  # 每個語音頻道每分鐘最多丟掉幾次提早開始,超過就照舊等
@@ -746,7 +743,6 @@ direct_debounce_ms = 400   # 有人叫她(名字、她剛講完就問她)時只�
 # max_share_of_recent = 0.2  # 沒人叫她時,她佔最近語音紀錄的比例上限
 # question_window_ms = 8000  # 她講完後這麼久內有人問問題,算是在問她
 # gray_low = 0.15          # 沒叫她的語音低於這個分數就不理(語音沒有文字的線索,比文字低)
-# llm_check = false        # 灰色區問 fast 模型(會多一段延遲)
 # speak_ttl_ms = 30000     # 句子這麼久還沒開始播就丟掉
 
 # 她沒親眼看到的上下文:重開後(或很久沒人講話後)補抓頻道之前的訊息、回覆鏈。
@@ -772,10 +768,9 @@ enabled = true
 max_files = 2              # 每回合最多讀幾個檔案
 
 # prompt 編譯器:每一段參考資料有自己的字數上限(超過就留整行、標「還有幾行略過」),
-# 其他模組附上的段落加起來不超過 max_context_chars(超過時公平分配,不是後面的直接被砍)
+# 其他模組附上的段落加起來不超過 [modules.agent.mainline] data_chars(超過時公平分配,不是後面的直接被砍)
 [modules.agent.prompt]
 default_budget = 600       # 沒列在 budgets 的段落
-self_chars = 1600          # 她自己的狀態(心情、在做什麼、方針、議程、限制)
 save_every = 1             # 每幾個回合存一份壓縮過的實際 prompt(面板看;0 = 不存)
 # budgets = { conversation = 900, memory = 1000, knowledge = 700, lessons = 500, world = 500, game = 700, sing = 400, people = 800, examples = 2500 }
 
@@ -819,9 +814,7 @@ boredom_per_hour = 0.15          # 沒事做時無聊上升的速度
 # [modules.self.mood]            # 心情不單獨存,是從慾望、情緒和時段算出來的
 # night_dip = 0.4                # 深夜精力最多掉這麼多
 # emotion_weight = 1             # 情緒對心情的影響(0 = 只看基準值、時段與慾望)
-# [modules.self.heart]           # 心動與暗戀:只從她喜歡的人的互動自己長出來,沒有人能設定
-# min_affinity = 25              # 好感至少這麼多才會心動
-# daily_gain = 0.06              # 每人每天最多長這麼多
+# [modules.self.heart]           # 暗戀:在意程度([modules.self.bond])最高的人,沒有人能設定
 # crush_threshold = 0.35         # 心動最高、而且超過這個的人就是她暗戀的人(可能沒有)
 # crush_margin = 0.08            # 別人要多這麼多才會換人
 
@@ -873,8 +866,6 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # channel = "123456789012345678" # 唯一能貼的文字頻道 id(要加引號);沒設 = 不貼
 # max_per_day = 3                # 0 到 10
 # min_gap_mins = 120             # 兩次之間至少隔多久
-# quiet_start_hour / quiet_end_hour / voice_quiet_secs 已移除(留著會警告):安靜時段只有
-# [modules.arbiter] 一份,語音冷場只有 [modules.world] 的 voice_quiet_secs 一個偵測器
 
 # ---- 反思與學習(自主層階段 G)-------------------------------------------------
 
@@ -919,7 +910,8 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # 長期記憶的新鮮度:回想時只放真的相關的事,舊的、現在式的、一直重複的會被淘汰。
 # [modules.memory]
 # min_score = 0.25               # 低於這個分數不回想(原本 0.05,幾乎什麼都放)
-# min_vector = 0.3               # 沒有共同的字時,向量至少這麼像才算相關(在場的人的記憶也一樣要相關)
+# min_vector = 0.5               # 沒有共同的字時,向量至少這麼像(cosine)才算相關,也是向量分數從 0 起算的地方。
+#                                # 依模型:Harrier 270M 0.5、Harrier 0.6B 和 bge-m3 0.55、Qwen3 0.45、e5-small 約 0.85
 # episode_recency_tau_days = 1.5 # 事件記憶(episode)的新近度衰減:小時到幾天,不是幾週
 # state_note_hours = 12          # 「已經開台」「正在下載」這類現在式的筆記多久後失效(0 = 不失效)
 # followup_max_age_hours = 6     # 追問過了時間這麼久沒人提就自動關掉;先挑最新的(0 = 不自動關)
@@ -1037,7 +1029,7 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # 遊戲實況、追問、打招呼都先到這裡;規則只有這一份(取代舊的 [modules.initiative]、心智迴圈的
 # 第二套安靜時段和 chat.start 的次數限制),而且會寫進她的帳本,讓她看得到:「你今天主動開了
 # 5 次話題,最近 3 次沒人接;下次可主動在 21:40 之後」。報幕、實況、追問不算她主動開的話題。
-# pipeline = "v3" 時,發言權(Floor)也看這裡。有人叫她、回她、等結果和緊急的事一定拿麥;
+# 發言權(Floor)也看這裡。有人叫她、回她、等結果和緊急的事一定拿麥;
 # 下面的額度只管她自己想說的話,而且只算真的送達的台詞,跑工具、開任務都不會重置
 # [modules.arbiter.floor]
 # text_presence_mins = 30        # 文字頻道裡這麼久內有人說過話才算有人在場(語音看頻道裡的人)
@@ -1100,7 +1092,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # 預設關閉,要明確寫 enabled = true 才會啟動;Docker 沒開時模組顯示 degraded,不影響其他功能。
 # Docker 可用時她會多出工具 code_run(跑程式)、tool_propose(把寫好的程式提出成工具)與已核准的
 # sbx_<name>;前兩個是高風險,她自己審核,有疑慮才私訊你確認。/admin autonomy status 看狀態,
-# GET /api/sandbox/tools 看她寫的工具。安全說明見 packages/sandbox/README.md。
+# GET /api/sandbox/tools 看她寫的工具。安全說明見 packages/workspace/sandbox/README.md。
 # [modules.sandbox]
 # enabled = true
 # root = "data/sandbox"          # runs/<id>(每次執行)與 profiles/<profile>/tools(她留下的腳本)
@@ -1348,7 +1340,8 @@ record = false
 # compact_every_mins = 60        # 多久壓縮一次舊資料
 # compact_max_rows = 2000        # 每次壓縮最多刪幾筆
 # fold_after_days = 14           # 背景事實(ambient)過多久合併成每日統計
-# retain_days = 180              # 所有事件留多久(0 = 永久);還有後續事件指向的不會被刪
+# short_days = 90                # 回合內部、動作這類事件留多久(0 = 永久);還有後續事件指向的不會被刪
+# long_days = 365                # 大家說過的話和她說的話留多久(0 = 永久)
 # bucket_entries = 20            # 事件類 bucket 最多幾筆
 # bucket_chars = 400             # 一筆最多幾個字
 # answer_window_secs = 60        # 她講完多久內有人開口算回應她

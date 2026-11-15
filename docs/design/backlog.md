@@ -10,6 +10,7 @@
 | 生圖卡池開放([image-cards.md](image-cards.md):主題池、底片庫、覺醒、分解、SSR「和你」)和你畫我猜 | 生圖經 ComfyUI 的 API;模型等十二月的新模型再選。設計已寫完,和模型無關的部分階段 5 先做、旗標關著 | [v5-play.md](v5-play.md) §3 |
 | Minecraft 幾乎不能玩(任務迴圈、技能庫、狀態快照、食物動作、生存反射) | 調查做一半暫停,原因還沒對照程式碼確認 | [minecraft-findings.md](minecraft-findings.md) |
 | 自我修復、自我改進(失敗後換方法、改動要過評測才留下、在沙箱寫修正開 PR) | owner 說先不做;沙箱要先有 Docker | 本文件 §4 |
+| 大家線上唱 K(她當主持人的 KTV 房) | owner 2026-11-15 提的想法,還沒決定做不做。**做到的時候先問 owner 細節,不要照下面的草稿自己做**(owner 2026-11-16);以下只是當時的初步看法。不把舊的 `karaoke` 專案(SUMI,單人桌面練歌室,Tauri)整個搬進來;要拿的是三塊:參考音符的擷取(ROSVOT,加進唱歌 worker)、瀏覽器端的即時音高和評分、歌詞和音高導引的畫面。下載、分離伴奏、歌詞對時、點歌佇列、派對遊戲的框架這邊已經有。難的是延遲:伴奏要在唱的人自己的瀏覽器播、在本機評分,別人聽到的要是混好的一軌。最早放在階段 5(玩)或階段 7(活動契約),要先有階段 6 的公開站拆分。版權要先想清楚(把伴奏和歌詞送到每個人的瀏覽器) | 這一列 |
 | 經濟系統:點歌券、她自己的錢包、她的訊息上附「餵她」按鈕 | 刻意不做 | [economy.md](economy.md) §9.1 |
 | 檔案附件的後續:音檔(轉文字)、掃描或中日韓字型的 PDF(要 OCR 或帶套件的沙箱映像)、舊版 .doc/.xls/.ppt、壓縮檔、一次傳很多檔、讓她把讀過的檔案記進筆記 | 第一版只做文字/程式碼/csv/json/pdf(純文字層、簡單字型)/docx/xlsx/pptx | [file-attachments.md](file-attachments.md) §6 |
 | RVC 唱歌的咬字 | 2026-11-09 測完:RVC 轉她自己的說話幾乎不掉字(7.9%,原音 5.3%),轉別人的歌聲就糊(《雪は何色》對真歌詞 45%,原唱 27%)。試過 48k 頻寬擴展、加 YingMusic 產的歌聲資料、Rigel 底模(含日文和歌聲)、檢索率 0、protect、第 1–40 epoch,都沒有明顯改善;原因是 ContentVec 聽不清日文歌聲加上她只有說話資料。目前最好的是 YingMusic → RVC 串接(38.7%)。試驗在 `data/rvc-test/`、`data/rvc-train-songs/` | [backlog 本節下方](#唱歌轉換還沒做的) |
@@ -73,23 +74,21 @@
 
 ## 已知但還沒修
 
-- **主人規則沒寫進去**(2026-11-10 加了保險):回合裡有人明說「不要玩 <她有的遊戲>」而她這回合沒自己呼叫 `directive_add` 時,回合結束前用說這句話的人的身分替她寫一條 deny(`packages/agent/src/prohibition.ts`、`turn.ts` 的 `keepRules`;規則服務照樣判斷這個人能不能立規則;「先 / 今天」是 6 小時)。只認得 Minecraft、osu 和幾個別名;事故評測 `mc-owner-rule-never-written` 要重新錄才會翻成通過。
-- **她把自己的盤算講出來**(2026-11-10 先用規則擋):送出前把「第三人稱講對方 + 對自己下指令」的那一行拿掉(`packages/agent/src/leak.ts` 的 `isSelfTalk`,只拿掉那行、其他照送,有「你」的不算)。還沒做事故評測題、也還沒看真實頻率;規則抓不到的說法要再補。
+- **主人規則沒寫進去**(2026-11-10 加了保險):回合裡有人明說「不要玩 <她有的遊戲>」而她這回合沒自己呼叫 `directive_add` 時,回合結束前用說這句話的人的身分替她寫一條 deny(`packages/brain/agent/src/prohibition.ts`、`turn.ts` 的 `keepRules`;規則服務照樣判斷這個人能不能立規則;「先 / 今天」是 6 小時)。只認得 Minecraft、osu 和幾個別名;事故評測 `mc-owner-rule-never-written` 要重新錄才會翻成通過。
+- **她把自己的盤算講出來**(2026-11-10 先用規則擋):送出前把「第三人稱講對方 + 對自己下指令」的那一行拿掉(`packages/brain/agent/src/leak.ts` 的 `isSelfTalk`,只拿掉那行、其他照送,有「你」的不算)。還沒做事故評測題、也還沒看真實頻率;規則抓不到的說法要再補。
 - **抓被回覆的訊息為什麼會失敗**:2026-11-08 14:19、14:22 兩次回覆都沒帶到被回覆的那句。已改成先用 Discord 隨回覆送來的引用內容、抓到再換成完整的,失敗會記 `could not fetch reply parents` 警告;原本為什麼抓不到(逾時、權限或 Discord 錯誤)還沒查,重啟後看警告。
   - 2026-11-10:找到一個會讓它抓不到的情況並修掉:被回覆的是她自己的卡片(斜線指令的回覆、收據,Components V2、`content` 是空的)時,以前算「沒內容」直接丟掉;現在讀卡片上的文字(`componentsText`),指令回覆也算可以回覆的訊息。抓取失敗改記 warning(`cannot fetch the replied-to message`,帶頻道和錯誤),拿到但沒內容記 info 和訊息類型。14:19 那兩次是不是這個原因還沒對照。
   - 2026-11-11 再查程式:引用內容先從 gateway 快取拿、沒有就 `fetchReference`,兩邊都失敗時才會沒有被回覆的那句;最可能是那個頻道沒給 bot「讀取訊息歷史」(Read Message History,`docs/OPERATIONS.md` 的邀請權限有列),快取裡沒有的舊訊息就抓不到。重啟後看 `cannot fetch the replied-to message` 警告裡的錯誤:`Missing Access` / `Missing Permissions` 就是權限。
-  - 同一天修掉相關的看圖問題:14:22 她把對方之前貼的截圖當成答案,原因是同一個人 2 分鐘內的圖會一起給她看,而每張圖都只標「某某傳的圖片」。現在每張圖標明是這則訊息附的、被回覆的那則裡的、還是幾秒前另外傳的(不是這則訊息附的);回覆別人的訊息時不再帶同一個人更早的圖(`packages/agent/src/vision.ts`)。
+  - 同一天修掉相關的看圖問題:14:22 她把對方之前貼的截圖當成答案,原因是同一個人 2 分鐘內的圖會一起給她看,而每張圖都只標「某某傳的圖片」。現在每張圖標明是這則訊息附的、被回覆的那則裡的、還是幾秒前另外傳的(不是這則訊息附的);回覆別人的訊息時不再帶同一個人更早的圖(`packages/brain/agent/src/vision.ts`)。
 - **主線提示詞的「新東西別說不存在」只有一句短的**:主線固定提示詞已貼著 4000 token 的上限(`prompt-budget` 測試),完整版(產品、版本、事件、日期)只在 V2 規則裡。要放完整版得先騰出空間。
 - 語音視窗跑到 92.5 秒,超過 90 秒的上限。2026-11-11 查過:程式裡找不到叫「語音視窗」、上限 90 秒的東西(`speech_hold_max_ms` 是 90 秒,但每 250 ms 檢查一次,不會超過 2.5 秒),這一行也沒附記錄;下次看到時記下是哪一行記錄。
 - 網頁的直播卡「OBS 推流」只控制 OBS。
-- 經濟系統的 Postgres 版本沒測過(這台是 SQLite)。
 - Discord 指令拿不到互動 ID,錢包操作防不了網路重送造成的重複扣款(面板有防)。
 - 事故評測還有 9 題標成已知失敗,修好、重新錄製後才會翻成通過:`pnpm eval`。
 - **經濟 §13 還沒做或沒驗證的**(2026-11-08):
   - Discord 不能指定立繪(選圖要看著圖挑,留在會員頁)。籤詩(`/me fortune`)、今天的卡(`/me card`)早就有;2026-11-12 `/me card` 加了 `action:再發一張`(可加 `foil` 做成閃卡)和 `action:重抽`,價錢和次數跟會員頁一樣。
   - 已經聽得到的歌被中途跳過,點歌券和獻詞的錢不退;要不要改成「沒唱完就退」等 owner 決定。
   - 面板新區塊(閃卡、籤詩、目標、懸賞、轉帳、排行榜)只跑了測試,還沒在瀏覽器裡實際看過;overlay 留言卡看過了。
-  - 新表(0013、0014)的 Postgres 版本沒測過。
 - **檔案附件沒在真的 Docker 跑過**:這台的 Docker 沒開,所以她現在會婉拒所有非圖片檔(zip 本來就不支援);容器裡的寫入權限、刪檔、`python:3.12-slim` 的實際行為沒驗證。
 - **好感等級的「相處方式」還沒看過她實際寫什麼**:要等她下一次反省。面板的人物卡從 2026-11-12 起顯示等級(Lv.)和相處方式(寫的等級和現在不同時註明「Lv.N 時寫的」),可以在那裡看。
 - **`accept_food` 沒有人跟她說話時被擋**(`she claimed without doing`,info):她說了「開動了」這類話卻沒呼叫工具,防線照設計要她重做一次;沒有說話的人時那次重做也收不下(工具要有說話的人)。要省掉那次重做,得讓能力標明「要有說話的人」、沒有時不提供,牽涉 actions / agent / economy,沒有記錄能確認情況,先不做。
@@ -99,9 +98,10 @@
 - **MelBand karaoke 模型的原始授權**沒確認。
 - **becruily BS-RoFormer karaoke 的授權**:HF 上沒標(`becruily/bs-roformer-karaoke`);現在是唱歌預設的主唱模型,只在本機跑、沒散布。
 - **「伴唱也轉」(`backing=convert`)**沒實測:伴唱常是好幾個聲音疊在一起,RVC 的 RMVPE 只抓一條音高,可能轉得很怪。
-- **推理外洩的源頭沒查實**:2026-11-09 15:29 她在一回合(`reasoning` off、4.9 秒、23 則)把整段思考當回覆一行一行發出去。DB 的訊息和 `turn_outcomes` 看得出推理在 content 裡(provider 已把 `reasoning_content` 分開,不是它併進來的),但 LLM 呼叫的原始回應只存在 Core 記憶體,查不到;最可能是 opencode 上的 `deepseek-v4.1-flash` 收了 `thinking: disabled` 卻仍把思考寫在 content。已加的是送出前的防線(`packages/agent/src/leak.ts`)和提示詞一行;要根治得在 Core 重啟後的面板呼叫檢視器看原始回應,再決定是換模型、改 `thinking_off`,還是讓 `chat_text` 開 `low`。防線擋不住不含「情緒標記 / 回覆要短 / 可以說:」這類字眼的純驗算自言自語(要兩行以上才算外洩)。
+- **推理外洩的源頭沒查實**:2026-11-09 15:29 她在一回合(`reasoning` off、4.9 秒、23 則)把整段思考當回覆一行一行發出去。DB 的訊息和 `turn_outcomes` 看得出推理在 content 裡(provider 已把 `reasoning_content` 分開,不是它併進來的),但 LLM 呼叫的原始回應只存在 Core 記憶體,查不到;最可能是 opencode 上的 `deepseek-v4.1-flash` 收了 `thinking: disabled` 卻仍把思考寫在 content。已加的是送出前的防線(`packages/brain/agent/src/leak.ts`)和提示詞一行;要根治得在 Core 重啟後的面板呼叫檢視器看原始回應,再決定是換模型、改 `thinking_off`,還是讓 `chat_text` 開 `low`。防線擋不住不含「情緒標記 / 回覆要短 / 可以說:」這類字眼的純驗算自言自語(要兩行以上才算外洩)。
 - **連結預覽的圖沒用 Geist 字型**:resvg 吃不了 woff2,預覽圖用系統的中文字型(Windows 微軟正黑體),和面板上的卡字型略有差;要一致得把 Geist 的 ttf 放進 repo。另外 Discord 對同一個圖片網址的快取時間沒實測:網址帶 `?v=` 版本,卡變了網址就變,但已經貼出去的舊訊息可能還是舊圖。
 - **Core 從 `/` 起的非公開頁(`/me`、管理頁)只有靜態標題**,沒有各自的預覽;要的話在 `meta.ts` 的 `pageMeta` 加。
+- **叫了這回合沒提供的工具,她說「等我一下」就沒下文**:那個工具不在現在的範圍、也不是迴圈裡的工具時,工具沒有執行,她卻已經說了等一下的話(`稍等喔。` 這類),後面沒有任何結果或下一句(`packages/brain/agent/test/tool-scope.test.ts` 的 `refuses a call of a tool that is not offered now` 照現在的樣子寫)。V5 階段 3 做工具迴圈時一起修。
 
 ### V4 實作(分支 `v4-int`)留下的
 
@@ -113,10 +113,42 @@
 - **本機向量檢索**:介面和背景補向量的工作做了,套件和模型(約 120 MB)沒裝,預設關。
 - **Minecraft**:打獵要動物剛好在準星上,Java 模組的 `nearby_entities` 要加座標才能直接瞄準(模組沒改);導演在工作車道上的行為沒進過遊戲。
 - **沙箱網路白名單**:代理和設定做了,沒在真的 Docker 上跑過(`MIYORIA_LIVE_WORKSPACE_TESTS=1`)。
-- **經濟 2.0 的 Postgres 那一半**沒有資料庫可測。
-- **面板的活動表是 API 裡的一份複本**(有測試防它走樣),`packages/mind` 還沒有可讀的服務。
+- **面板的活動表是 API 裡的一份複本**(有測試防它走樣),`packages/heart/mind` 還沒有可讀的服務。
 - **網頁現場的角色是另外畫的**,不是她的樣子;她的 Live2D 能不能放上網頁要先確認授權。
 - **PR 8 還沒收**:`v4-int` 只挑了它的兩個 CI 修復。它的資料表遷移編號和 `turn.ts` 會和 `v4-int` 衝突。
+
+### V5 階段 1 做的過程中留下的(2026-11-15)
+
+**等階段 1 做完再做(owner 決定)**
+
+- **landing 頁的細節打磨**,不是重新設計:owner 覺得現在的樣子不錯,但有些地方的細節可以更好。動手前先把整頁看過一遍,列出要改的細節給 owner 挑。
+- **kcy3f0 的三個 Minecraft PR(#44、#45、#46)**:全部做完之後再看怎麼處理。`v5` 合進 `main` 之後它們會因為資料夾搬動而衝突,要請對方 rebase。草稿 PR #30(自主遊玩的 P0、P1)到階段 7 重新套到新的結構上再接著做;它和那三個 PR 動的是同一塊,到時候先讀完再決定順序。
+
+**上線前要做的**
+
+- voice link 改成契約之後沒有對真的 Discord 測過:進出語音頻道、對話、打斷、唱歌(嘴型)、Go Live、重啟 Core。
+- Python worker 的請求模型改成由契約產生之後,沒有跑過真的 worker:各 worker 啟動、唱一首歌、一次 offload 和 reload。
+- 這個分支沒有 push 過,CI 一次都沒跑(包括新加的 pnpm 安裝測試和 Python 的產生檢查)。
+- 拿線上資料庫的複本演練匯入(`miyoria db doctor`、`db import-links --dry-run`),確認人數和帳號數。
+- 主 checkout 裡沒進版控的 `apps/card-studio/vendor/` 要手動搬到 `tools/card-studio/vendor/`。
+
+**小的、還沒做**
+
+- 面板少了兩個「她為什麼沒說話」的原因標籤(`repeat`、`nobody`),現在直接顯示英文。
+- 產物庫每天的清理還沒有排程去跑它;對外提供檔案的路由和她的「分享」動作是之後的步驟。
+- overlay 的嘴型音量最多接受 16 個頻帶,契約允許 32 個;現在 Core 送的沒有超過。
+- 「忘了我」不會去改 LLM 呼叫的 JSONL 檔(那些檔 14 天後過期)。
+- 她在一個還沒有人說過話的私訊裡的第一句話,存的時候沒有場所。
+- lyrics 服務和 turn worker 的錯誤回應是 FastAPI 預設的格式,和其他 worker 不一樣(測試裡標成已知)。
+- `@miyoria/contracts` 依賴 `@orpc/contract`,所以裝 SDK 的擴充作者也會裝到它;之後可以把路由那一部分拆出去或改成 peer 相依。
+- 路由搬到 oRPC 之後幾個使用者碰不到的差別:同一個查詢參數重複出現會回 400(以前取最後一個);幾個 `limit` 格式錯誤的訊息文字不同(狀態碼一樣)。
+- `miyoria config set` 現在要載入所有模組的設定 schema,打包後的 CLI 量起來約 1.7 到 2.0 秒(`--version` 約 0.9 秒),比改之前多了大約 0.7 秒。要更快的話,可以在打包時先把整份 schema 算好。
+- 線上 `miyoria.toml` 的三處修改還沒做(剩下的設定相容層要先改它才能拿掉);`/api/facts/context` 和 `/api/facts/retryable` 有沒有人手動在用,還沒問到答案。
+
+- **第 14 步留下的**(2026-11-16):舊的 store 介面大多還在(呼叫的地方多,跟著各套件重寫再換);五個已經沒人呼叫的方法還掛在介面上(`MessageLog.purge`、`IdentityStore.setPersonName`、`DecisionLog.appendOutcome`、`MemberCardStore.countSince`、`SettingsStore.deletePrefix`);人物卡不再於啟動時替羈絆超過 25 的人種依附(原本是 V4 搬移程式順便做的),階段 4 決定依附從哪來。詳見 [v5-data.md](v5-data.md)。
+- **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。
+- **只在機器很忙時失敗的測試**:`apps/voice-node` 的 `link.test.ts`(「sends hello… answers ping」)在同時跑很多東西時失敗過一次,單獨跑會過。再出現就改成等條件成立。
+- **範例擴充的端對端測試在 CI 被跳過**:它要先 build 才會跑,CI 是先測試;本機的整體檢查會跑。要不要讓 CI 也跑,等決定。
 
 ## 4. 自我修復與自我改進(備忘)
 
@@ -126,4 +158,4 @@
 2. **自我改進**:她提出的改動(教訓、技能、設定)先跑事故評測,分數變好、沒有退步才留下;提示詞和人設要 owner 在面板看過。
 3. **改程式碼**:只由她自己的失敗紀錄觸發,在沙箱寫修正、跑測試和評測、開 PR,由 owner merge;絕不直接改正在跑的 Core。
 
-前提是評測要可靠(已有 `packages/eval` 的事故題庫),第 3 層要先有 Docker 沙箱。
+前提是評測要可靠(已有 `tools/eval` 的事故題庫),第 3 層要先有 Docker 沙箱。

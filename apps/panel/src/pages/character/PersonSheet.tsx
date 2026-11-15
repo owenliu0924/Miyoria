@@ -1,7 +1,7 @@
 import { Ban, Save } from "lucide-react";
 import { useId, useState } from "react";
 import { isApiError } from "@/api/http";
-import type { PersonDetail, RelationshipDelta } from "@/api/types";
+import type { PersonDetail, RelationshipDelta } from "@miyoria/contracts/api";
 import { READ_ONLY_HINT, useCanWrite } from "@/app/session";
 import { useAdjustPerson, useAdjustWallet, usePerson, usePersonWallet, useUpdatePerson } from "@/app/queries";
 import { TimeChart } from "@/components/charts/charts";

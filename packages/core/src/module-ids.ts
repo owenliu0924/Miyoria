@@ -1,7 +1,7 @@
-// Module ids the core knows about, in boot order (legacy `boot.rs` `MODULES`). Kept free of
+// Module ids the core knows about, in boot order. Kept free of
 // imports so the CLI can list configured modules without loading any module package.
 
-import type { Config } from "@miyoria/kernel";
+import type { Config } from "@miyoria/runtime/kernel";
 
 /** Every module the core knows about, for `miyoria module list`. */
 export const MODULE_IDS: readonly string[] = [
@@ -19,7 +19,6 @@ export const MODULE_IDS: readonly string[] = [
   "directive",
   "activity",
   "social",
-  "mood",
   "world",
   "self",
   "memory",
@@ -34,6 +33,7 @@ export const MODULE_IDS: readonly string[] = [
   "sing",
   "mcp",
   "stage.link",
+  "economy",
   "web",
   "sandbox",
   "imagegen",
@@ -42,7 +42,6 @@ export const MODULE_IDS: readonly string[] = [
   "party",
   "extensions",
   "platform.discord.bot",
-  "recorder",
   "replay",
   "api",
 ];
@@ -54,6 +53,12 @@ export const NEEDS_TOKEN: readonly string[] = [
   "voice.link",
   "stage.link",
 ];
+
+/**
+ * Modules that cannot be turned off in the config file: the agent owns her mouth and the arbiter
+ * decides when she speaks, so nothing speaks while either is down.
+ */
+export const REQUIRED_MODULES: readonly string[] = ["agent", "arbiter"];
 
 /**
  * Modules that are off unless their section says `enabled = true` (a missing section or a

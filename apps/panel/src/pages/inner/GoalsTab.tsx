@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Goal, GoalTrigger } from "@/api/types";
+import type { Goal, GoalTrigger } from "@miyoria/contracts/api";
 import { useDayPlan, useGoals } from "@/app/queries";
 import { EmptyLine, QueryView } from "@/components/query-state";
 import { StatusBadge } from "@/components/status";

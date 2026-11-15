@@ -1,8 +1,8 @@
 // The v2 read-only routes: `/api/activity*`, `/api/arbiter/*`, `/api/affect*`, `/api/mind/goals`,
 // `/api/mind/plan`, `/api/prompts*` and `/api/turns/outcomes`, against fake services.
 
-import { SavedPromptsKey } from "@miyoria/agent";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
+import { SavedPromptsKey } from "@miyoria/brain/agent";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { DecisionLogKey } from "@miyoria/store";
 import {
   type ActivityManager,
@@ -16,6 +16,7 @@ import {
   type ArbiterDecision,
   ArbiterKey,
   type ContextKey,
+  Events,
   type Goal,
   type GoalAgenda,
   GoalAgendaKey,
@@ -26,10 +27,10 @@ import {
   type PersonCard,
   type SavedPrompt,
   type TurnOutcomeRecord,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiClient, ApiModule, summarizePrompt } from "../src/index.js";
+import { ActiveProfileKey, ApiModule, summarizePrompt } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
 import { raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
@@ -272,7 +273,7 @@ async function harness() {
   await sup.startAll();
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  return { sup, base, client: new ApiClient(base, TOKEN) };
+  return { sup, base, adm: adminCalls(base, TOKEN) };
 }
 
 const GET_ROUTES = [
@@ -300,28 +301,28 @@ describe("v2 routes", () => {
 
   it("are 503 while their modules are stopped", async () => {
     const h = await harness();
-    expect(await statusOf(h.client.activity())).toBe(503);
-    expect(await statusOf(h.client.activityTasks())).toBe(503);
-    expect(await statusOf(h.client.ledger())).toBe(503);
-    expect(await statusOf(h.client.affect())).toBe(503);
-    expect(await statusOf(h.client.affectPeople())).toBe(503);
-    expect(await statusOf(h.client.goals())).toBe(503);
-    expect(await statusOf(h.client.dayPlan())).toBe(503);
-    expect(await statusOf(h.client.prompts())).toBe(503);
-    expect(await statusOf(h.client.prompt("T"))).toBe(503);
-    expect(await statusOf(h.client.turnOutcomes())).toBe(503);
+    expect(await statusOf(h.adm.activity())).toBe(503);
+    expect(await statusOf(h.adm.activityTasks())).toBe(503);
+    expect(await statusOf(h.adm.ledger())).toBe(503);
+    expect(await statusOf(h.adm.affect())).toBe(503);
+    expect(await statusOf(h.adm.affectPeople())).toBe(503);
+    expect(await statusOf(h.adm.goals())).toBe(503);
+    expect(await statusOf(h.adm.dayPlan())).toBe(503);
+    expect(await statusOf(h.adm.prompts())).toBe(503);
+    expect(await statusOf(h.adm.prompt("T"))).toBe(503);
+    expect(await statusOf(h.adm.turnOutcomes())).toBe(503);
     const res = await raw(h.base, "GET", "/api/affect", { token: TOKEN });
     expect((res.body as { error: string }).error).toContain("affect module");
     // Decisions are only what the api module saw, so they work without the arbiter.
-    expect(await h.client.arbiterDecisions()).toEqual({ decisions: [] });
+    expect(await h.adm.arbiterDecisions()).toEqual({ decisions: [] });
   });
 
   it("serve the body state and its tasks", async () => {
     const h = await harness();
     h.sup.services.provide("activity", ActivityManagerKey, fakeActivity);
-    expect(await h.client.activity()).toEqual(SNAPSHOT);
-    expect(await h.client.activityTasks()).toEqual([TASK, { ...TASK, id: "T2" }]);
-    expect(await h.client.activityTasks(1)).toEqual([TASK]);
+    expect(await h.adm.activity()).toEqual(SNAPSHOT);
+    expect(await h.adm.activityTasks()).toEqual([TASK, { ...TASK, id: "T2" }]);
+    expect(await h.adm.activityTasks(1)).toEqual([TASK]);
     const bad = await raw(h.base, "GET", "/api/activity/tasks?limit=x", { token: TOKEN });
     expect(bad.status).toBe(400);
   });
@@ -329,9 +330,9 @@ describe("v2 routes", () => {
   it("serve the ledger per context", async () => {
     const h = await harness();
     h.sup.services.provide("arbiter", ArbiterKey, fakeArbiter);
-    expect(await h.client.ledger()).toEqual(LEDGER);
+    expect(await h.adm.ledger()).toEqual(LEDGER);
     expect(ledgerContexts.at(-1)).toBeNull();
-    const one = await h.client.ledger(text, 1);
+    const one = await h.adm.ledger(text, 1);
     expect(ledgerContexts.at(-1)).toEqual(text);
     expect(one.entries).toEqual([ENTRY]);
     expect(one.limits.blocked[0]?.reason).toBe("Minecraft 沒開");
@@ -342,13 +343,12 @@ describe("v2 routes", () => {
   it("keep the arbiter's verdicts with their reasons", async () => {
     const h = await harness();
     h.sup.services.provide("arbiter", ArbiterKey, fakeArbiter);
-    const publish = (d: ArbiterDecision) =>
-      h.sup.bus.publish("arbiter", v2Event("arbiter.decision", d));
+    const publish = (d: ArbiterDecision) => h.sup.bus.publish("arbiter", Events.ArbiterDecided, d);
     publish(decision("I1", "rejected"));
     publish(decision("I2", "accepted"));
     publish(decision("I3", "deferred"));
     const all = await waitFor(async () => {
-      const r = await h.client.arbiterDecisions();
+      const r = await h.adm.arbiterDecisions();
       return r.decisions.length === 3 ? r : null;
     });
     expect(all.decisions.map((d) => d.impulse)).toEqual(["I3", "I2", "I1"]);
@@ -357,15 +357,15 @@ describe("v2 routes", () => {
     // Joined with the ledger entry of the impulse.
     expect(first?.summary).toBe("找 Owen 聊報告");
     expect(first?.context).toEqual(text);
-    expect((await h.client.arbiterDecisions({ verdict: "rejected" })).decisions).toHaveLength(1);
+    expect((await h.adm.arbiterDecisions({ verdict: "rejected" })).decisions).toHaveLength(1);
     expect(
-      (await h.client.arbiterDecisions({ context: other })).decisions.map((d) => d.impulse),
+      (await h.adm.arbiterDecisions({ context: other })).decisions.map((d) => d.impulse),
     ).toEqual(["I2"]);
-    expect((await h.client.arbiterDecisions({ limit: 2 })).decisions).toHaveLength(2);
+    expect((await h.adm.arbiterDecisions({ limit: 2 })).decisions).toHaveLength(2);
     // A later verdict for the same impulse replaces the earlier one.
     publish(decision("I1", "accepted"));
     const replaced = await waitFor(async () => {
-      const r = await h.client.arbiterDecisions();
+      const r = await h.adm.arbiterDecisions();
       return r.decisions[0]?.impulse === "I1" ? r : null;
     });
     expect(replaced.decisions).toHaveLength(3);
@@ -377,36 +377,36 @@ describe("v2 routes", () => {
   it("serve affect with its biases and the person cards", async () => {
     const h = await harness();
     h.sup.services.provide("self", AffectStateKey, fakeAffect);
-    const affect = await h.client.affect();
+    const affect = await h.adm.affect();
     expect(affect).toEqual(AFFECT);
     expect(affect.biases.wants[0]?.want).toBe("chat_with");
-    expect(await h.client.affectPeople()).toEqual([CARD]);
+    expect(await h.adm.affectPeople()).toEqual([CARD]);
   });
 
   it("serve goals and the day plan", async () => {
     const h = await harness();
     h.sup.services.provide("mind", GoalAgendaKey, new FakeAgenda() as unknown as GoalAgenda);
-    expect(await h.client.goals()).toEqual({ goals: [GOAL], closed_included: false });
-    expect(await h.client.goals(true)).toEqual({ goals: [GOAL, DONE], closed_included: true });
+    expect(await h.adm.goals()).toEqual({ goals: [GOAL], closed_included: false });
+    expect(await h.adm.goals(true)).toEqual({ goals: [GOAL, DONE], closed_included: true });
     // The mind does not know the day plan yet.
-    expect(await statusOf(h.client.dayPlan())).toBe(503);
+    expect(await statusOf(h.adm.dayPlan())).toBe(503);
     const mind = { accepting: true, dayPlan: () => "下午玩 MC,晚上陪 Owen" } as unknown as Mind;
     h.sup.services.provide("mind", MindKey, mind);
-    expect(await h.client.dayPlan()).toEqual({ day_plan: "下午玩 MC,晚上陪 Owen" });
+    expect(await h.adm.dayPlan()).toEqual({ day_plan: "下午玩 MC,晚上陪 Owen" });
     h.sup.services.provide("mind", MindKey, { accepting: true } as unknown as Mind);
-    expect(await h.client.dayPlan()).toEqual({ day_plan: null });
+    expect(await h.adm.dayPlan()).toEqual({ day_plan: null });
   });
 
   it("an agenda without a closed list still answers", async () => {
     const h = await harness();
     h.sup.services.provide("mind", GoalAgendaKey, { goals: () => [GOAL] } as unknown as GoalAgenda);
-    expect(await h.client.goals(true)).toEqual({ goals: [GOAL], closed_included: false });
+    expect(await h.adm.goals(true)).toEqual({ goals: [GOAL], closed_included: false });
   });
 
   it("serve saved prompts as a list and in full", async () => {
     const h = await harness();
     h.sup.services.provide("agent", SavedPromptsKey, fakeSaved as never);
-    const list = await h.client.prompts();
+    const list = await h.adm.prompts();
     expect(list).toHaveLength(2);
     expect(list[0]).toEqual({
       turn: PROMPT.turn,
@@ -421,9 +421,9 @@ describe("v2 routes", () => {
     });
     expect(summarizePrompt(PROMPT)).toEqual(list[0]);
     expect(list[0]).not.toHaveProperty("messages", PROMPT.messages);
-    expect((await h.client.prompts(other)).map((p) => p.turn)).toEqual(["T02"]);
-    expect(await h.client.prompt(PROMPT.turn)).toEqual(PROMPT);
-    expect(await statusOf(h.client.prompt("nope"))).toBe(404);
+    expect((await h.adm.prompts(other)).map((p) => p.turn)).toEqual(["T02"]);
+    expect(await h.adm.prompt(PROMPT.turn)).toEqual(PROMPT);
+    expect(await statusOf(h.adm.prompt("nope"))).toBe(404);
   });
 
   it("serve turn outcomes filtered by context and kind", async () => {
@@ -437,15 +437,10 @@ describe("v2 routes", () => {
         ),
     });
     h.sup.services.provide("kernel", DecisionLogKey, log);
-    expect((await h.client.turnOutcomes()).map((o) => o.turn)).toEqual(["O1", "O2", "O3"]);
-    expect((await h.client.turnOutcomes({ limit: 1 })).map((o) => o.turn)).toEqual(["O1"]);
-    expect((await h.client.turnOutcomes({ outcome: "cancelled" })).map((o) => o.turn)).toEqual([
-      "O3",
-    ]);
-    expect((await h.client.turnOutcomes({ context: text })).map((o) => o.turn)).toEqual([
-      "O1",
-      "O2",
-    ]);
+    expect((await h.adm.turnOutcomes()).map((o) => o.turn)).toEqual(["O1", "O2", "O3"]);
+    expect((await h.adm.turnOutcomes({ limit: 1 })).map((o) => o.turn)).toEqual(["O1"]);
+    expect((await h.adm.turnOutcomes({ outcome: "cancelled" })).map((o) => o.turn)).toEqual(["O3"]);
+    expect((await h.adm.turnOutcomes({ context: text })).map((o) => o.turn)).toEqual(["O1", "O2"]);
     const bad = await raw(h.base, "GET", "/api/turns/outcomes?outcome=lost", { token: TOKEN });
     expect(bad.status).toBe(400);
   });

@@ -5,9 +5,7 @@
 export { singCapabilities } from "./actions.js";
 export {
   type GpuContext,
-  type GpuStatus,
   HttpSingWorker,
-  type LyricLine,
   type SingWorker,
   SingWorkerError,
   type SongMeta,
@@ -20,7 +18,6 @@ export {
 export { type ClipDeps, clipStartOf, SingClips, sliceClip } from "./clips.js";
 export { backingOf, listCard, registerCommands } from "./commands.js";
 export {
-  defaultSingConfig,
   type SingConfig,
   SingConfigSchema,
   type SingPermissions,
@@ -61,4 +58,4 @@ export {
   skipVotesNeeded,
   workerQuery,
 } from "./singer.js";
-export { KEY_RANGE, parseSongPatch, type SongPatch, songNo, songTask } from "./steer.js";
+export { KEY_RANGE, parseSongPatch, type SongPatch, songNo } from "./steer.js";

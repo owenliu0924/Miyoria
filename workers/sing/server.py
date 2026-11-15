@@ -179,17 +179,22 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(1, str(Path(__file__).resolve().parent.parent))  # contracts.py, shared by the workers
 
 from cache import Cache, Janitor, Protected  # noqa: E402
+# The JSON bodies, generated from the JSON Schema of packages/contracts (gen_contracts.py).
+from contracts import WorkersSingGpuContext as GpuContext  # noqa: E402
+from contracts import WorkersSingJobRequest as JobRequest  # noqa: E402
+from contracts import WorkersSingLyricsRequest as LyricsRequest  # noqa: E402
+from contracts import WorkersSingPruneRequest as PruneRequest  # noqa: E402
 from engine import Cancelled, ConvertWork, JobError, Suspended, allowed_url, env_float, env_int, is_oom  # noqa: E402
 from exclusive import Exclusive, http_post, parse_urls  # noqa: E402
 from gpu import CPU_FALLBACK, CPU_STAGES, Action, Audience, GpuJob, Limits, Machine, Profile  # noqa: E402
@@ -558,21 +563,6 @@ class _RealAdapter:
 
 
 # ── jobs ─────────────────────────────────────────────────────────────────────
-
-
-class JobRequest(BaseModel):
-    query: str | None = Field(None, max_length=200)
-    url: str | None = Field(None, max_length=500)
-    path: str | None = Field(None, max_length=300)
-    title: str | None = Field(None, max_length=120)
-    artist: str | None = Field(None, max_length=120)
-    pitch: int | None = Field(None, ge=-24, le=24)
-    key: int = Field(0, ge=-12, le=12)
-    # The song's own backing voices (harmonies, chorus): songs.BACKING_MODES.
-    backing: Literal["keep", "drop", "convert", "acapella"] = "keep"
-    force: bool = False
-    # Wait for POST /jobs/{id}/exclusive before taking the GPU (Core lets her speak first).
-    exclusive_ack: bool = False
 
 
 @dataclass
@@ -1851,12 +1841,6 @@ async def get_song(sid: str) -> JSONResponse:
     return JSONResponse({"song": meta})
 
 
-class LyricsRequest(BaseModel):
-    title: str | None = Field(None, max_length=200)  # the owner's own reading of the song, tried first
-    artist: str | None = Field(None, max_length=200)
-    fresh: bool = False  # ask the language model again instead of using its cached answer
-
-
 @app.post("/songs/{sid}/lyrics")
 def refetch_lyrics(sid: str, req: LyricsRequest | None = None) -> JSONResponse:
     """Look the lyrics of a cached song up again, without touching its audio.
@@ -1923,13 +1907,6 @@ async def get_file(sid: str, name: str):
     return FileResponse(p, media_type=media, headers=headers)
 
 
-class GpuContext(BaseModel):
-    in_voice: bool = False
-    listeners: int = Field(0, ge=0)
-    live: bool = False
-    urgent: list[str] = Field(default_factory=list, max_length=200)
-
-
 @app.post("/gpu/context")
 async def gpu_context(req: GpuContext) -> dict[str, Any]:
     state.machine.audience.update(req.in_voice, req.listeners, req.live, req.urgent)
@@ -1940,10 +1917,6 @@ async def gpu_context(req: GpuContext) -> dict[str, Any]:
 def cache_status() -> dict[str, Any]:
     """The song cache: its size, songs and downloads, the limits, and what the last cleanup did."""
     return state.cache.status()
-
-
-class PruneRequest(BaseModel):
-    dry_run: bool = False  # only say what would go
 
 
 @app.post("/cache/prune")

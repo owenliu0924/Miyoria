@@ -1,25 +1,15 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type {
-  ChannelLevelsView,
-  ConversationNote,
-  KnowledgeView,
-  MindView,
-  PendingApproval,
-  ReflectionView,
-  SelfView,
-  TelemetryPoint,
-  Thought,
-  WorldView,
-} from "@/api/types";
+import type { Thought } from "@/api/types";
+import type { ChannelLevelsView, ConversationNote, KnowledgeView, MindView, PendingApproval, ReflectionView, SelfView, TelemetryPoint, WorldView } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 
 const SELF: SelfView = {
   at: "2026-11-02T12:00:00.000Z",
   mood: { valence: 0.3, arousal: 0.4, energy: 0.8 },
   boredom: 0.62,
-  drives: { social: 0.8, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4 },
+  drives: { social: 0.8, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4, esteem: 0.4, hunger: 0.3, longing: 0 },
   policy: {
     talkativeness: {
       "discord:g1:voice:v1": { level: 0.7, until: null, why: "大家在玩遊戲很熱鬧", set_at: "2026-11-02T11:00:00.000Z" },
@@ -202,6 +192,7 @@ function mindView(paused: boolean, approvals: number): MindView {
       idle_reason: paused ? "paused" : null,
     },
     pending_approvals: approvals,
+    emergency: null,
   };
 }
 
@@ -311,7 +302,7 @@ describe("Inner", () => {
       at: new Date(now - minsAgo * 60_000).toISOString(),
       mood: { valence: 0.1, arousal: 0.4, energy: 0.6 },
       boredom: 0.3,
-      drives: { social, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4 },
+      drives: { social, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4, esteem: 0.4, hunger: 0.3, longing: 0 },
       initiative: 0.5,
       llm: { calls: 0, prompt_tokens: 0, completion_tokens: 0, cached_prompt_tokens: 0, cost_usd: 0, errors: 0, first_token: { count: 0, sum_s: 0, buckets: [] } },
       mind: null,
