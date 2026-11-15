@@ -7,6 +7,7 @@ import {
   type Envelope,
   type EventLog,
   EventLogKey,
+  Events,
   type LiveEvent,
   type LiveFeed,
   LiveFeedKey,
@@ -309,11 +310,9 @@ describe("module live with video", () => {
     const account = { platform: "discord", id: "1" } as const;
     await feed.pat({ account, name: "x" });
     await feed.pat({ account, name: "x", spot: { x: 0.7, y: 0.3 } });
-    const touches = () =>
-      published.filter((e) => e.event.type === "custom" && e.event.data.topic === "live.touch");
+    const touches = () => published.filter((e) => e.type === Events.LiveTouch.type);
     await expect.poll(() => touches().length).toBe(1);
-    const event = touches()[0]?.event;
-    expect(event?.type === "custom" && event.data.payload).toEqual({
+    expect(touches()[0]?.data).toEqual({
       x: 0.7,
       y: 0.3,
       part: "face",
