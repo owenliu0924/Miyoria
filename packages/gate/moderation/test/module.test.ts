@@ -13,9 +13,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModerationModule, secretsFromEnv } from "../src/index.js";
 import { fake } from "./helpers.js";
 
-/** Payload of a `custom` event. */
+/** Payload of an event. */
 function payloadOf(env: Envelope | undefined): unknown {
-  return env?.event.type === "custom" ? env.event.data.payload : undefined;
+  return env?.data;
 }
 
 const sups: Supervisor[] = [];

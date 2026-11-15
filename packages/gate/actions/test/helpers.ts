@@ -26,9 +26,9 @@ import {
   BaseAuthorizer,
   type ContextKey,
   type Envelope,
-  type Event,
   type MessageRef,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   SocialSignalsKey,
   type Subject,
 } from "@miyoria/types";
@@ -138,7 +138,7 @@ export interface Gate {
   replies: FakeReplySink;
   social: FakeSocial;
   store: Store;
-  events: Event[];
+  events: PublishedEvent[];
   /** Runs of the test capabilities, by name. */
   runs: string[];
 }
@@ -161,8 +161,8 @@ export async function gate(): Promise<Gate> {
   const commands = new CommandRegistry(new Permissions([OWNER]), { services });
   services.provide(k, CommandRegistryKey, commands);
   const tools = new ToolRegistry();
-  const events: Event[] = [];
-  const registry = new ActuatorRegistry({ services, tools, publish: publishInto(events) });
+  const events: PublishedEvent[] = [];
+  const registry = new ActuatorRegistry({ services, tools, publish: publishedInto(events) });
   const runs: string[] = [];
   for (const c of testCapabilities(runs)) registry.register(c);
   return { services, registry, tools, authorizer, router, replies, social, store, events, runs };
@@ -195,11 +195,9 @@ export function testCapabilities(runs: string[]): Capability[] {
 }
 
 /** The `gate.decision` payloads published so far. */
-export function decisions(events: readonly Event[]): Record<string, unknown>[] {
+export function decisions(events: readonly PublishedEvent[]): Record<string, unknown>[] {
   return events.flatMap((e) =>
-    e.type === "custom" && e.data.topic === "gate.decision"
-      ? [e.data.payload as Record<string, unknown>]
-      : [],
+    e.type === "gate.decision" ? [e.data as Record<string, unknown>] : [],
   );
 }
 

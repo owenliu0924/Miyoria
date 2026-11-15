@@ -1,11 +1,11 @@
 import type { ToolContext } from "@miyoria/llm/tools";
 import {
   ARBITER_IMPULSE_TOPIC,
-  type Event,
+  type Impulse,
   impulseReason,
   Principals,
-  publishInto,
-  v2Payload,
+  type PublishedEvent,
+  publishedInto,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -28,10 +28,10 @@ afterEach(() => {
 });
 
 /** The follow-up impulses published (in the old `agent_initiative` shape). */
-const initiatives = (events: readonly Event[]) =>
+const initiatives = (events: readonly PublishedEvent[]) =>
   events.flatMap((e) => {
-    const impulse = v2Payload(e, ARBITER_IMPULSE_TOPIC);
-    if (!impulse) return [];
+    if (e.type !== ARBITER_IMPULSE_TOPIC) return [];
+    const impulse = e.data as Impulse;
     expect(impulse.source).toBe("followup");
     return [
       {
@@ -128,8 +128,8 @@ describe("followup tools", () => {
 describe("Followups", () => {
   it("retries_skipped_deliveries_until_they_are_too_old", () => {
     vi.useFakeTimers();
-    const events: Event[] = [];
-    const f = new Followups(publishInto(events), () => Date.now());
+    const events: PublishedEvent[] = [];
+    const f = new Followups(publishedInto(events), () => Date.now());
     f.deliver(CTX, "result", [AMY]);
     expect(initiatives(events)).toHaveLength(1);
     const skipped = {

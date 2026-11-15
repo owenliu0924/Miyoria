@@ -13,8 +13,8 @@ import {
   type ActivityTask,
   type ActivityTransition,
   EMERGENCY_TOPIC,
-  type Event,
-  publishInto,
+  type PublishedEvent,
+  publishedInto,
   type TransitionResult,
   TurnSilencerKey,
   toTimestamp,
@@ -107,7 +107,7 @@ class Body {
 function rig(options: { silence?: boolean } = {}) {
   const services = new ServiceRegistry();
   const order: string[] = [];
-  const events: Event[] = [];
+  const events: PublishedEvent[] = [];
   const body = new Body();
   const settings = new MemorySettingsStore();
   services.provide("app", SettingsStoreKey, settings);
@@ -135,7 +135,7 @@ function rig(options: { silence?: boolean } = {}) {
   const registry = new ActuatorRegistry({
     services,
     builtins: false,
-    publish: publishInto(events),
+    publish: publishedInto(events),
   });
   registry.configure({ ...registry.config, emergency_step_ms: 200 });
   const stop = () => registry.emergency.stop("panel:test", "test");
@@ -268,9 +268,7 @@ describe("the emergency stop", () => {
     expect(first).toBe(second);
     expect(body.requests).toHaveLength(3);
     expect(registry.emergency.last).toBe(first);
-    expect(
-      events.filter((e) => e.type === "custom" && e.data.topic === EMERGENCY_TOPIC),
-    ).toHaveLength(1);
+    expect(events.filter((e) => e.type === EMERGENCY_TOPIC)).toHaveLength(1);
   });
 
   it("the flag outlives a restart", async () => {

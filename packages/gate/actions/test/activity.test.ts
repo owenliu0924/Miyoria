@@ -14,7 +14,6 @@ import {
   type Principal,
   Principals,
   type TurnId,
-  v2Payload,
 } from "@miyoria/types";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -258,10 +257,8 @@ describe("outcomes she can see", () => {
     g.router.replies.push('{"verdict": "allow", "reason": "ok"}');
     const ctx = toolCtx(Principals.user(OWEN, CTX), new AbortController().signal);
     expect(await g.tools.get("t_high")?.call(ctx, {})).toBe(REVIEW_PENDING);
-    await vi.waitFor(() =>
-      expect(g.events.some((e) => v2Payload(e, NOTICE_TOPIC) !== null)).toBe(true),
-    );
-    const notice = g.events.map((e) => v2Payload(e, NOTICE_TOPIC)).find((n) => n !== null);
+    await vi.waitFor(() => expect(g.events.some((e) => e.type === NOTICE_TOPIC)).toBe(true));
+    const notice = g.events.find((e) => e.type === NOTICE_TOPIC)?.data;
     expect(notice).toMatchObject({
       source: "actions",
       ok: true,
@@ -284,7 +281,7 @@ describe("outcomes she can see", () => {
     plain.authorizer.grant(OWEN, "test.medium");
     await ask(plain);
     const published = plain.events.flatMap((e) =>
-      e.type === "custom" && e.data.topic === ACTION_OUTCOME_TOPIC ? [e.data.payload] : [],
+      e.type === ACTION_OUTCOME_TOPIC ? [e.data] : [],
     );
     expect(published).toEqual([
       expect.objectContaining({
@@ -318,9 +315,7 @@ describe("outcomes she can see", () => {
       expect.objectContaining({ kind: "task", summary: "test medium", outcome: "denied" }),
       expect.objectContaining({ kind: "task", summary: "test medium", outcome: "ok" }),
     ]);
-    expect(g.events.some((e) => e.type === "custom" && e.data.topic === ACTION_OUTCOME_TOPIC)).toBe(
-      false,
-    );
+    expect(g.events.some((e) => e.type === ACTION_OUTCOME_TOPIC)).toBe(false);
     // Low risk stays quiet.
     g.authorizer.grant(OWEN, "test.low");
     await g.registry.invoke({
