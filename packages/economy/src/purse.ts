@@ -14,7 +14,7 @@
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
-import { AuditLogKey, BountyStoreKey, GoalStoreKey } from "@miyoria/store";
+import { AuditLogKey } from "@miyoria/store";
 import {
   type AccountRef,
   accountRefString,
@@ -26,7 +26,14 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import type { EconomyService, Member } from "./economy.js";
-import { type CoinEntry, type CoinPost, DealStoreKey, PURSE } from "./records.js";
+import {
+  BountyStoreKey,
+  type CoinEntry,
+  type CoinPost,
+  DealStoreKey,
+  GoalStoreKey,
+  PURSE,
+} from "./records.js";
 import { EconomyError, GIFT_EXPRESSIONS, type GiftExpression } from "./types.js";
 
 /** The platform of the purse's account. */

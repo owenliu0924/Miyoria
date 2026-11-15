@@ -5,7 +5,6 @@
 import { CommandRegistry, type CommandReply, Permissions, ReplySinkKey } from "@miyoria/commands";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
-import { GoalStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   type ContextKey,
@@ -18,8 +17,9 @@ import {
 import { describe, expect, it } from "vitest";
 import { EconomyCommands } from "../src/commands.js";
 import { Earnings } from "../src/earn.js";
+import { GoalStoreKey } from "../src/records.js";
 import { v2Capabilities } from "../src/v2-tools.js";
-import { ledgerOf, walletOf } from "./ledger.js";
+import { economyOf, ledgerOf, walletOf } from "./ledger.js";
 import { ALICE, BOB, DAY, ERIN, fund, type Rig, rig, say, T0, TEXT } from "./rig.js";
 
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };
@@ -221,11 +221,10 @@ describe("game notices", () => {
 
 describe("goal notices", () => {
   async function goal(r: Rig, target = 50): Promise<string> {
-    r.services.provide("test", GoalStoreKey, r.store.goals);
+    r.services.provide("test", GoalStoreKey, economyOf(r.store).goals);
     const id = `g${target}`;
-    await r.store.goals.create({
+    await economyOf(r.store).goals.create({
       id,
-      profile: "p",
       title: "新麥克風",
       promise: "學三種貓叫",
       target,

@@ -8,7 +8,7 @@
 // (`PURSE`). Callers that start from an account resolve its person through identity first
 // (`EconomyService.member`).
 
-import type { AccountRef, PersonId, ProfileId, Timestamp } from "@miyoria/types";
+import type { AccountRef, JsonObject, PersonId, ProfileId, Timestamp } from "@miyoria/types";
 import { serviceKey } from "@miyoria/types";
 
 /** The wallet of her purse: no person, reserved. */
@@ -198,7 +198,221 @@ export interface DealStore {
   ): Promise<Deal[]>;
 }
 
+// ---- fortunes ---------------------------------------------------------------------------
+
+/** A fortune slip she wrote for someone (docs/design/economy.md §13), at most one per local day. */
+export interface FortuneRecord {
+  /** ULID. */
+  id: string;
+  /** The session account it was written for. */
+  account: AccountRef;
+  person: PersonId | null;
+  /** The local day number it belongs to (the API's `utc_offset_minutes`). */
+  day: number;
+  issued_at: Timestamp;
+  /** The `fortune` ledger row that paid for it, to refund or to find it again. */
+  entry: string | null;
+  /** The slip itself; the store does not look inside. */
+  slip: JsonObject;
+}
+
+/**
+ * Fortune slips she wrote on the member page (docs/design/economy.md §13), at most one per person
+ * per local day. "Theirs" are the slips of any of `accounts`.
+ */
+export interface FortuneStore {
+  /** Stores a slip; `false` when one of these `accounts` already has one for that `day`. */
+  put(record: FortuneRecord, accounts: readonly AccountRef[]): Promise<boolean>;
+  /** The slip of `day` of any of `accounts`, or `null`. */
+  forDay(
+    profile: ProfileId,
+    accounts: readonly AccountRef[],
+    day: number,
+  ): Promise<FortuneRecord | null>;
+  /** The slips of `accounts`, newest first, at most `limit`. */
+  listFor(
+    profile: ProfileId,
+    accounts: readonly AccountRef[],
+    limit: number,
+  ): Promise<FortuneRecord[]>;
+  /** Deletes every slip of `accounts`; returns how many. */
+  deleteFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
+}
+
+// ---- goals and bounties -----------------------------------------------------------------
+
+/**
+ * `open`: people may pledge; `reached`: the target was met and the pledges are hers (a promise);
+ * `expired`: the deadline passed short, every pledge was returned; `cancelled`: she withdrew it,
+ * every pledge was returned.
+ */
+export type GoalStatus = "open" | "reached" | "expired" | "cancelled";
+
+/** A crowdfunding goal of hers (docs/design/economy.md §13): what she will do if it is met. */
+export interface Goal {
+  /** ULID. */
+  id: string;
+  title: string;
+  /** What she will do when the target is reached. */
+  promise: string;
+  target: number;
+  status: GoalStatus;
+  created_at: Timestamp;
+  deadline: Timestamp;
+  closed_at: Timestamp | null;
+  /** A reached goal whose promise she kept: when it was marked done. Absent while it is owed. */
+  fulfilled_at?: Timestamp;
+  /** Who marked it: `owner` (the panel) or `self` (she said she did it). */
+  fulfilled_by?: GoalFulfiller;
+}
+
+export type GoalFulfiller = "owner" | "self";
+
+/** What `GoalStore.transition` changes besides the status. */
+export interface GoalPatch {
+  status: GoalStatus;
+  closed_at?: Timestamp | null;
+}
+
+/** Coins held for a goal; `id` is the escrow's coin ledger row. */
+export interface GoalPledge {
+  id: string;
+  goal: string;
+  account: AccountRef;
+  amount: number;
+  created_at: Timestamp;
+}
+
+/**
+ * `open`: posted, the reward is held; `awarded`: paid to someone; `cancelled` / `expired`: the held
+ * coins went back to her purse.
+ */
+export type BountyStatus = "open" | "awarded" | "cancelled" | "expired";
+
+/** A task she pays for out of her own purse (docs/design/economy.md §13). */
+export interface Bounty {
+  /** ULID. */
+  id: string;
+  task: string;
+  reward: number;
+  /** The purse's hold row in the coin ledger. */
+  hold: string;
+  status: BountyStatus;
+  created_at: Timestamp;
+  expires_at: Timestamp;
+  closed_at: Timestamp | null;
+  /** The account it was paid to, once awarded. */
+  winner: AccountRef | null;
+}
+
+/** What `BountyStore.transition` changes besides the status. */
+export interface BountyPatch {
+  status: BountyStatus;
+  closed_at?: Timestamp | null;
+  winner?: AccountRef | null;
+}
+
+/** Her crowdfunding goals and what people pledged (docs/design/economy.md §13). */
+export interface GoalStore {
+  create(goal: Goal): Promise<void>;
+  get(id: string): Promise<Goal | null>;
+  /** Changes the goal only while its status is one of `from`; `false` when it was not. */
+  transition(id: string, from: readonly GoalStatus[], patch: GoalPatch): Promise<boolean>;
+  /** Goals newest first; `statuses` narrows them. */
+  list(
+    profile: ProfileId,
+    filter: { statuses?: readonly GoalStatus[]; limit: number },
+  ): Promise<Goal[]>;
+  /**
+   * Marks a reached goal's promise kept; `false` when the goal is not reached or was marked
+   * already (the first mark stands).
+   */
+  fulfill(id: string, by: GoalFulfiller, at: Timestamp): Promise<boolean>;
+  addPledge(pledge: GoalPledge): Promise<void>;
+  /** Every pledge of a goal, oldest first. */
+  pledges(goal: string): Promise<GoalPledge[]>;
+}
+
+/** Bounties she posted from her purse (docs/design/economy.md §13). */
+export interface BountyStore {
+  create(bounty: Bounty): Promise<void>;
+  get(id: string): Promise<Bounty | null>;
+  /** Changes the bounty only while its status is one of `from`; `false` when it was not. */
+  transition(id: string, from: readonly BountyStatus[], patch: BountyPatch): Promise<boolean>;
+  /** Bounties newest first; `statuses` narrows them. */
+  list(
+    profile: ProfileId,
+    filter: { statuses?: readonly BountyStatus[]; limit: number },
+  ): Promise<Bounty[]>;
+}
+
+// ---- economy documents ------------------------------------------------------------------
+
+/**
+ * One document of economy 2.0 (docs/design/v4-plan.md §10): a collection item, a prediction and
+ * its bets, a commission, what the audience funded of her room. Coins are never kept here; every
+ * balance change is a row of the coin ledger.
+ */
+export interface EconomyDoc {
+  /** ULID, or a deterministic id that makes `create` idempotent (a card trait: `card:<n>:<trait>`). */
+  id: string;
+  /** `item`, `prediction`, `bet`, `commission`, `room`. */
+  kind: string;
+  /** Who it belongs to; `null` for what belongs to nobody in particular (a prediction, a room item). */
+  owner: AccountRef | null;
+  /** Kind-specific state word (`open`, `held`, `unlocked`, ...). */
+  status: string;
+  /** Starts at 1; `update` bumps it. */
+  version: number;
+  data: JsonObject;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface DocFilter {
+  /** Only documents owned by one of these accounts. */
+  owners?: readonly AccountRef[];
+  statuses?: readonly string[];
+  limit: number;
+}
+
+/** What `EconomyDocStore.update` writes. */
+export interface DocUpdate {
+  status: string;
+  data: JsonObject;
+  /** Replaces the owner when given (`null` included). */
+  owner?: AccountRef | null;
+  at: Timestamp;
+}
+
+/**
+ * The versioned documents of economy 2.0: collection items, predictions and bets, commissions and
+ * her room (docs/design/v4-plan.md §10). One table, keyed by (kind, id).
+ */
+export interface EconomyDocStore {
+  /** Stores `doc`; `false` when the id already exists (nothing changes). */
+  create(doc: EconomyDoc): Promise<boolean>;
+  get(profile: ProfileId, kind: string, id: string): Promise<EconomyDoc | null>;
+  /**
+   * Compare and set: replaces status, data (and the owner when `next.owner` is given, `null`
+   * included) and bumps the version, only when the stored version is `expected`. `false` otherwise.
+   */
+  update(
+    profile: ProfileId,
+    kind: string,
+    id: string,
+    expected: number,
+    next: DocUpdate,
+  ): Promise<boolean>;
+  /** Newest first (by creation, the id breaking a tie), at most `filter.limit`. */
+  list(profile: ProfileId, kind: string, filter: DocFilter): Promise<EconomyDoc[]>;
+}
+
 // Service keys: Core provides the economy plugin's tables under them (`store.plugin`).
 export const CoinLedgerStoreKey = serviceKey<CoinLedgerStore>("CoinLedgerStore");
 export const LedgerStatsKey = serviceKey<LedgerStatsStore>("LedgerStats");
 export const DealStoreKey = serviceKey<DealStore>("DealStore");
+export const FortuneStoreKey = serviceKey<FortuneStore>("FortuneStore");
+export const GoalStoreKey = serviceKey<GoalStore>("GoalStore");
+export const BountyStoreKey = serviceKey<BountyStore>("BountyStore");
+export const EconomyDocsKey = serviceKey<EconomyDocStore>("EconomyDocs");

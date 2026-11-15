@@ -21,13 +21,9 @@ import { authTables } from "../../auth/src/tables.js";
 import {
   type AuditEntry,
   type AuthScope,
-  type Bounty,
   type DecisionRecord,
   dataCategory,
-  type EconomyDoc,
   embeddingValues,
-  type Goal,
-  type GoalPledge,
   type LogEntry,
   type MemberCardRecord,
   type MemoryFilter,
@@ -428,75 +424,9 @@ function behaviour(open: () => Promise<Store>): void {
   // Reading decisions and turn outcomes back per place and since a time is pinned in
   // decision-log.test.ts on fresh databases: they are the whole database's (one character).
 
-  it("economy documents: create once, compare-and-set update, list by kind, owner and status", async () => {
-    const docs = store.economyDocs;
-    const profile = unique("profile");
-    const mine = account(unique("acct"));
-    const theirs = account(unique("acct"));
-    const doc = (kind: string, id: string, owner: typeof mine | null, ms: number): EconomyDoc => ({
-      id,
-      profile,
-      kind,
-      owner,
-      status: "open",
-      version: 1,
-      data: { title: id, nested: { n: [1, 2] } },
-      created_at: at(ms),
-      updated_at: at(ms),
-    });
-    const a = doc("item", "a", mine, 1_000);
-    const b = doc("item", "b", theirs, 2_000);
-    const c = doc("item", "c", null, 3_000);
-    const p = doc("prediction", "a", null, 1_000);
-    for (const d of [a, b, c, p]) expect(await docs.create(d)).toBe(true);
-
-    // The same id twice changes nothing; the same id of another kind is another document.
-    expect(await docs.create({ ...a, status: "gone", data: {} })).toBe(false);
-    expect(await docs.get(profile, "item", "a")).toEqual(a);
-    expect(await docs.get(profile, "prediction", "a")).toEqual(p);
-    expect(await docs.get(profile, "item", "zzz")).toBeNull();
-    expect(await docs.get(unique("profile"), "item", "a")).toBeNull();
-
-    // Compare and set on the version.
-    const next = { status: "held", data: { title: "a", held: true }, at: at(5_000) };
-    expect(await docs.update(profile, "item", "a", 2, next)).toBe(false);
-    expect(await docs.update(profile, "item", "a", 1, next)).toBe(true);
-    expect(await docs.update(profile, "item", "a", 1, next)).toBe(false);
-    expect(await docs.get(profile, "item", "a")).toEqual({
-      ...a,
-      status: "held",
-      data: { title: "a", held: true },
-      version: 2,
-      updated_at: at(5_000),
-    });
-    expect(await docs.update(profile, "item", "nope", 1, next)).toBe(false);
-
-    // The owner changes only when given, `null` included.
-    expect(await docs.update(profile, "item", "c", 1, { ...next, owner: theirs })).toBe(true);
-    expect((await docs.get(profile, "item", "c"))?.owner).toEqual(theirs);
-    expect(await docs.update(profile, "item", "c", 2, { ...next, owner: null })).toBe(true);
-    expect((await docs.get(profile, "item", "c"))?.owner).toBeNull();
-    expect(await docs.update(profile, "item", "b", 1, next)).toBe(true);
-    expect((await docs.get(profile, "item", "b"))?.owner).toEqual(theirs);
-
-    // Newest first by creation, narrowed by owner and status, limited.
-    const ids = async (kind: string, filter: Parameters<typeof docs.list>[2]) =>
-      (await docs.list(profile, kind, filter)).map((d) => d.id);
-    expect(await ids("item", { limit: 9 })).toEqual(["c", "b", "a"]);
-    expect(await ids("item", { limit: 2 })).toEqual(["c", "b"]);
-    expect(await ids("item", { limit: 0 })).toEqual([]);
-    expect(await ids("item", { owners: [mine], limit: 9 })).toEqual(["a"]);
-    expect(await ids("item", { owners: [mine, theirs], limit: 9 })).toEqual(["b", "a"]);
-    expect(await ids("item", { owners: [], limit: 9 })).toEqual([]);
-    expect(await ids("item", { statuses: ["held"], limit: 9 })).toEqual(["c", "b", "a"]);
-    expect(await ids("item", { statuses: ["open"], limit: 9 })).toEqual([]);
-    expect(await ids("item", { statuses: [], limit: 9 })).toEqual([]);
-    expect(await ids("prediction", { limit: 9 })).toEqual(["a"]);
-    expect(await docs.list(unique("profile"), "item", { limit: 9 })).toEqual([]);
-  });
-
-  // The coin ledger, the wallets and the deals are the economy plugin's tables (v5-data §8 step
-  // 9a): `packages/economy/test/tables.test.ts` pins them.
+  // The coin ledger, the wallets, the deals, fortune slips, goals, bounties and economy 2.0's
+  // documents are the economy plugin's tables (v5-data §8 step 9a):
+  // `packages/economy/test/tables.test.ts` pins them.
 
   // Settings are one key space per database, whatever profile a caller names (one database is
   // one character), so these cases keep their keys under a prefix of their own.
@@ -1633,104 +1563,6 @@ function behaviour(open: () => Promise<Store>): void {
     expect(await store.cards.bySerial(profile, other.serial)).not.toBeNull();
   });
 
-  it("goals and bounties: pledges kept per goal, statuses move once and only from where they were", async () => {
-    const profile = unique("profile");
-    const goal = (ms: number, title: string): Goal => ({
-      id: newId(),
-      profile,
-      title,
-      promise: "meow",
-      target: 50,
-      status: "open",
-      created_at: at(ms),
-      deadline: at(ms + 5_000),
-      closed_at: null,
-    });
-    const first = goal(1_000, "mic");
-    const second = goal(2_000, "lamp");
-    for (const g of [first, second]) await store.goals.create(g);
-    expect(await store.goals.get(first.id)).toEqual(first);
-    expect(await store.goals.get(newId())).toBeNull();
-    expect((await store.goals.list(profile, { limit: 9 })).map((g) => g.title)).toEqual([
-      "lamp",
-      "mic",
-    ]);
-    expect(await store.goals.list(profile, { statuses: [], limit: 9 })).toEqual([]);
-    expect(await store.goals.list(unique("profile"), { limit: 9 })).toEqual([]);
-
-    const pledge = (g: Goal, who: string, amount: number, ms: number): GoalPledge => ({
-      id: newId(),
-      goal: g.id,
-      profile,
-      account: account(who),
-      amount,
-      created_at: at(ms),
-    });
-    const a = pledge(first, unique("acct"), 20, 1_100);
-    const b = pledge(first, unique("acct"), 5, 1_200);
-    for (const p of [b, a]) await store.goals.addPledge(p);
-    await store.goals.addPledge(pledge(second, unique("acct"), 1, 2_100));
-    expect(await store.goals.pledges(first.id)).toEqual([a, b]);
-    await expect(store.goals.addPledge(a)).rejects.toThrow();
-
-    const closed = at(3_000);
-    expect(
-      await store.goals.transition(first.id, ["open"], { status: "reached", closed_at: closed }),
-    ).toBe(true);
-    expect(await store.goals.transition(first.id, ["open"], { status: "expired" })).toBe(false);
-    expect(await store.goals.transition(first.id, [], { status: "open" })).toBe(false);
-    expect(await store.goals.get(first.id)).toMatchObject({ status: "reached", closed_at: closed });
-    expect(
-      (await store.goals.list(profile, { statuses: ["open"], limit: 9 })).map((g) => g.title),
-    ).toEqual(["lamp"]);
-    // A kept promise: only a reached goal, and the first mark stands.
-    expect(await store.goals.get(first.id)).not.toHaveProperty("fulfilled_at");
-    expect(await store.goals.fulfill(second.id, "owner", at(3_500))).toBe(false);
-    expect(await store.goals.fulfill(first.id, "self", at(4_000))).toBe(true);
-    expect(await store.goals.fulfill(first.id, "owner", at(5_000))).toBe(false);
-    expect(await store.goals.get(first.id)).toMatchObject({
-      fulfilled_at: at(4_000),
-      fulfilled_by: "self",
-    });
-    expect(await store.goals.get(second.id)).not.toHaveProperty("fulfilled_at");
-
-    const bounty = (ms: number, task: string): Bounty => ({
-      id: newId(),
-      profile,
-      task,
-      reward: 30,
-      hold: newId(),
-      status: "open",
-      created_at: at(ms),
-      expires_at: at(ms + 5_000),
-      closed_at: null,
-      winner: null,
-    });
-    const one = bounty(1_000, "guess");
-    const two = bounty(2_000, "draw");
-    for (const x of [one, two]) await store.bounties.create(x);
-    expect(await store.bounties.get(one.id)).toEqual(one);
-    expect((await store.bounties.list(profile, { limit: 9 })).map((x) => x.task)).toEqual([
-      "draw",
-      "guess",
-    ]);
-    const winner = account(unique("acct"));
-    expect(
-      await store.bounties.transition(one.id, ["open"], {
-        status: "awarded",
-        closed_at: closed,
-        winner,
-      }),
-    ).toBe(true);
-    expect(await store.bounties.transition(one.id, ["open"], { status: "cancelled" })).toBe(false);
-    expect(await store.bounties.get(one.id)).toMatchObject({ status: "awarded", winner });
-    expect(
-      (await store.bounties.list(profile, { statuses: ["open"], limit: 9 })).map((x) => x.task),
-    ).toEqual(["draw"]);
-    expect(await store.bounties.transition(two.id, ["open"], { status: "expired" })).toBe(true);
-    expect(await store.bounties.get(two.id)).toMatchObject({ status: "expired", winner: null });
-  });
-
   // ---- TS-specific ------------------------------------------------------------------------
 
   it("timestamps keep microseconds and are normalized to UTC", async () => {
@@ -1886,13 +1718,8 @@ function behaviour(open: () => Promise<Store>): void {
       relationships: 1,
       relationship_deltas: 1,
       member_cards: 1,
-      // The coin ledger, the wallets and the deals are the economy plugin's, which this store was
-      // not opened with: no tables, nothing to count.
-      fortunes: 0,
-      goals: 0,
-      goal_pledges: 0,
-      bounties: 0,
-      economy_docs: 0,
+      // The coins, deals, slips, goals, bounties and documents are the economy plugin's, which
+      // this store was not opened with: no tables, nothing to count.
       self_state: 1,
       self_feelings: 1,
       self_cards_migration: 0,

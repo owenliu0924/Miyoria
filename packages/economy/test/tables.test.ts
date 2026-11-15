@@ -12,7 +12,16 @@ import {
 } from "@miyoria/store";
 import { type AccountRef, newId, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { type CoinEntry, type Deal, PURSE } from "../src/records.js";
+import {
+  type Bounty,
+  type CoinEntry,
+  type Deal,
+  type EconomyDoc,
+  type FortuneRecord,
+  type Goal,
+  type GoalPledge,
+  PURSE,
+} from "../src/records.js";
 import { type EconomyTables, economyTables } from "../src/tables.js";
 
 const SECOND = 1000;
@@ -442,5 +451,201 @@ describe("as data", () => {
     ]);
     // People go after what names them.
     expect(resolveCategories(["people"])).toContain("relationships");
+  });
+});
+
+describe("goals and bounties", () => {
+  it("keep pledges per goal, and statuses move once and only from where they were", async () => {
+    const { economy, person } = await rig();
+    const { goals, bounties } = economy;
+    const goal = (ms: number, title: string): Goal => ({
+      id: newId(),
+      title,
+      promise: "meow",
+      target: 50,
+      status: "open",
+      created_at: at(ms),
+      deadline: at(ms + 5_000),
+      closed_at: null,
+    });
+    const first = goal(1_000, "mic");
+    const second = goal(2_000, "lamp");
+    for (const g of [first, second]) await goals.create(g);
+    expect(await goals.get(first.id)).toEqual(first);
+    expect(await goals.get(newId())).toBeNull();
+    expect((await goals.list("p", { limit: 9 })).map((g) => g.title)).toEqual(["lamp", "mic"]);
+    expect(await goals.list("p", { statuses: [], limit: 9 })).toEqual([]);
+    // One database is one character: another profile sees the same goals.
+    expect(await goals.list("other", { limit: 9 })).toHaveLength(2);
+
+    const pledge = (g: Goal, who: AccountRef, amount: number, ms: number): GoalPledge => ({
+      id: newId(),
+      goal: g.id,
+      account: who,
+      amount,
+      created_at: at(ms),
+    });
+    const a = pledge(first, discord("a"), 20, 1_100);
+    const b = pledge(first, discord("b"), 5, 1_200);
+    person(discord("a"));
+    for (const p of [b, a]) await goals.addPledge(p);
+    await goals.addPledge(pledge(second, discord("c"), 1, 2_100));
+    expect(await goals.pledges(first.id)).toEqual([a, b]);
+    await expect(goals.addPledge(a)).rejects.toThrow();
+    // A pledge is for a goal that exists.
+    await expect(
+      goals.addPledge({ ...pledge(first, discord("a"), 1, 1), goal: "none" }),
+    ).rejects.toThrow(StoreError);
+
+    const closed = at(3_000);
+    expect(
+      await goals.transition(first.id, ["open"], { status: "reached", closed_at: closed }),
+    ).toBe(true);
+    expect(await goals.transition(first.id, ["open"], { status: "expired" })).toBe(false);
+    expect(await goals.transition(first.id, [], { status: "open" })).toBe(false);
+    expect(await goals.get(first.id)).toMatchObject({ status: "reached", closed_at: closed });
+    expect((await goals.list("p", { statuses: ["open"], limit: 9 })).map((g) => g.title)).toEqual([
+      "lamp",
+    ]);
+    // A kept promise: only a reached goal, and the first mark stands.
+    expect(await goals.get(first.id)).not.toHaveProperty("fulfilled_at");
+    expect(await goals.fulfill(second.id, "owner", at(3_500))).toBe(false);
+    expect(await goals.fulfill(first.id, "self", at(4_000))).toBe(true);
+    expect(await goals.fulfill(first.id, "owner", at(5_000))).toBe(false);
+    expect(await goals.get(first.id)).toMatchObject({
+      fulfilled_at: at(4_000),
+      fulfilled_by: "self",
+    });
+    expect(await goals.get(second.id)).not.toHaveProperty("fulfilled_at");
+
+    const bounty = (ms: number, task: string): Bounty => ({
+      id: newId(),
+      task,
+      reward: 30,
+      hold: newId(),
+      status: "open",
+      created_at: at(ms),
+      expires_at: at(ms + 5_000),
+      closed_at: null,
+      winner: null,
+    });
+    const one = bounty(1_000, "guess");
+    const two = bounty(2_000, "draw");
+    for (const x of [one, two]) await bounties.create(x);
+    expect(await bounties.get(one.id)).toEqual(one);
+    expect((await bounties.list("p", { limit: 9 })).map((x) => x.task)).toEqual(["draw", "guess"]);
+    const winner = discord("w");
+    expect(
+      await bounties.transition(one.id, ["open"], { status: "awarded", closed_at: closed, winner }),
+    ).toBe(true);
+    expect(await bounties.transition(one.id, ["open"], { status: "cancelled" })).toBe(false);
+    expect(await bounties.get(one.id)).toMatchObject({ status: "awarded", winner });
+    expect((await bounties.list("p", { statuses: ["open"], limit: 9 })).map((x) => x.task)).toEqual(
+      ["draw"],
+    );
+    expect(await bounties.transition(two.id, ["open"], { status: "expired" })).toBe(true);
+    expect(await bounties.get(two.id)).toMatchObject({ status: "expired", winner: null });
+  });
+});
+
+describe("fortune slips", () => {
+  it("are one per person per local day, theirs across their accounts", async () => {
+    const { economy, person } = await rig();
+    const { fortunes } = economy;
+    const owen = person(discord("1"));
+    const wallet = [discord("1"), discord("1b")];
+    const slip = (account: AccountRef, day: number, ms: number): FortuneRecord => ({
+      id: newId(),
+      account,
+      person: owen,
+      day,
+      issued_at: at(ms),
+      entry: newId(),
+      slip: { rank: "大吉", poem: ["一", "二"] },
+    });
+    const today = slip(discord("1"), 10, 1_000);
+    expect(await fortunes.put(today, wallet)).toBe(true);
+    // The same day from their other account is taken; another day is not.
+    expect(await fortunes.put(slip(discord("1b"), 10, 2_000), wallet)).toBe(false);
+    const tomorrow = slip(discord("1b"), 11, 3_000);
+    expect(await fortunes.put(tomorrow, wallet)).toBe(true);
+    expect(await fortunes.forDay("p", wallet, 10)).toEqual(today);
+    expect(await fortunes.forDay("p", [discord("1")], 11)).toBeNull();
+    expect(await fortunes.forDay("p", [], 10)).toBeNull();
+    expect((await fortunes.listFor("p", wallet, 9)).map((f) => f.id)).toEqual([
+      tomorrow.id,
+      today.id,
+    ]);
+    expect(await fortunes.listFor("p", wallet, 1)).toHaveLength(1);
+    expect(await fortunes.deleteFor("p", wallet)).toBe(2);
+    expect(await fortunes.listFor("p", wallet, 9)).toEqual([]);
+  });
+});
+
+describe("economy documents", () => {
+  it("are created once, updated by compare and set, and listed by kind, owner and status", async () => {
+    const { economy } = await rig();
+    const docs = economy.docs;
+    const mine = discord("mine");
+    const theirs = discord("theirs");
+    const doc = (kind: string, id: string, owner: AccountRef | null, ms: number): EconomyDoc => ({
+      id,
+      kind,
+      owner,
+      status: "open",
+      version: 1,
+      data: { title: id, nested: { n: [1, 2] } },
+      created_at: at(ms),
+      updated_at: at(ms),
+    });
+    const a = doc("item", "a", mine, 1_000);
+    const b = doc("item", "b", theirs, 2_000);
+    const c = doc("item", "c", null, 3_000);
+    const p = doc("prediction", "a", null, 1_000);
+    for (const d of [a, b, c, p]) expect(await docs.create(d)).toBe(true);
+
+    // The same id twice changes nothing; the same id of another kind is another document.
+    expect(await docs.create({ ...a, status: "gone", data: {} })).toBe(false);
+    expect(await docs.get("p", "item", "a")).toEqual(a);
+    expect(await docs.get("p", "prediction", "a")).toEqual(p);
+    expect(await docs.get("p", "item", "zzz")).toBeNull();
+    // One database is one character: another profile reads the same document.
+    expect(await docs.get("other", "item", "a")).toEqual(a);
+
+    // Compare and set on the version.
+    const next = { status: "held", data: { title: "a", held: true }, at: at(5_000) };
+    expect(await docs.update("p", "item", "a", 2, next)).toBe(false);
+    expect(await docs.update("p", "item", "a", 1, next)).toBe(true);
+    expect(await docs.update("p", "item", "a", 1, next)).toBe(false);
+    expect(await docs.get("p", "item", "a")).toEqual({
+      ...a,
+      status: "held",
+      data: { title: "a", held: true },
+      version: 2,
+      updated_at: at(5_000),
+    });
+    expect(await docs.update("p", "item", "nope", 1, next)).toBe(false);
+
+    // The owner changes only when given, `null` included.
+    expect(await docs.update("p", "item", "c", 1, { ...next, owner: theirs })).toBe(true);
+    expect((await docs.get("p", "item", "c"))?.owner).toEqual(theirs);
+    expect(await docs.update("p", "item", "c", 2, { ...next, owner: null })).toBe(true);
+    expect((await docs.get("p", "item", "c"))?.owner).toBeNull();
+    expect(await docs.update("p", "item", "b", 1, next)).toBe(true);
+    expect((await docs.get("p", "item", "b"))?.owner).toEqual(theirs);
+
+    // Newest first by creation, narrowed by owner and status, limited.
+    const ids = async (kind: string, filter: Parameters<typeof docs.list>[2]) =>
+      (await docs.list("p", kind, filter)).map((d) => d.id);
+    expect(await ids("item", { limit: 9 })).toEqual(["c", "b", "a"]);
+    expect(await ids("item", { limit: 2 })).toEqual(["c", "b"]);
+    expect(await ids("item", { limit: 0 })).toEqual([]);
+    expect(await ids("item", { owners: [mine], limit: 9 })).toEqual(["a"]);
+    expect(await ids("item", { owners: [mine, theirs], limit: 9 })).toEqual(["b", "a"]);
+    expect(await ids("item", { owners: [], limit: 9 })).toEqual([]);
+    expect(await ids("item", { statuses: ["held"], limit: 9 })).toEqual(["c", "b", "a"]);
+    expect(await ids("item", { statuses: ["open"], limit: 9 })).toEqual([]);
+    expect(await ids("item", { statuses: [], limit: 9 })).toEqual([]);
+    expect(await ids("prediction", { limit: 9 })).toEqual(["a"]);
   });
 });

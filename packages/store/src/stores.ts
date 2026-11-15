@@ -30,19 +30,7 @@ import type {
   AuditEntry,
   AuthoredEntry,
   AuthScope,
-  Bounty,
-  BountyPatch,
-  BountyStatus,
   DecisionRecord,
-  DocFilter,
-  DocUpdate,
-  EconomyDoc,
-  FortuneRecord,
-  Goal,
-  GoalFulfiller,
-  GoalPatch,
-  GoalPledge,
-  GoalStatus,
   LogEntry,
   MemberCardRecord,
   MemoryFilter,
@@ -113,86 +101,6 @@ export interface MemberCardStore {
   countFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
   /** Deletes every card of `accounts`; returns how many. */
   deleteFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
-}
-
-/**
- * The versioned documents of economy 2.0: collection items, predictions and bets, commissions and
- * her room (docs/design/v4-plan.md §10). One table, keyed by (profile, kind, id).
- */
-export interface EconomyDocStore {
-  /** Stores `doc`; `false` when the id already exists (nothing changes). */
-  create(doc: EconomyDoc): Promise<boolean>;
-  get(profile: ProfileId, kind: string, id: string): Promise<EconomyDoc | null>;
-  /**
-   * Compare and set: replaces status, data (and the owner when `next.owner` is given, `null`
-   * included) and bumps the version, only when the stored version is `expected`. `false` otherwise.
-   */
-  update(
-    profile: ProfileId,
-    kind: string,
-    id: string,
-    expected: number,
-    next: DocUpdate,
-  ): Promise<boolean>;
-  /** Newest first (by creation, the id breaking a tie), at most `filter.limit`. */
-  list(profile: ProfileId, kind: string, filter: DocFilter): Promise<EconomyDoc[]>;
-}
-
-/**
- * Fortune slips she wrote on the member page (docs/design/economy.md §13), at most one per person
- * per local day. "Theirs" are the slips of any of `accounts`.
- */
-export interface FortuneStore {
-  /** Stores a slip; `false` when one of these `accounts` already has one for that `day`. */
-  put(record: FortuneRecord, accounts: readonly AccountRef[]): Promise<boolean>;
-  /** The slip of `day` of any of `accounts`, or `null`. */
-  forDay(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    day: number,
-  ): Promise<FortuneRecord | null>;
-  /** The slips of `accounts`, newest first, at most `limit`. */
-  listFor(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    limit: number,
-  ): Promise<FortuneRecord[]>;
-  /** Deletes every slip of `accounts`; returns how many. */
-  deleteFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
-}
-
-/** Her crowdfunding goals and what people pledged (docs/design/economy.md §13). */
-export interface GoalStore {
-  create(goal: Goal): Promise<void>;
-  get(id: string): Promise<Goal | null>;
-  /** Changes the goal only while its status is one of `from`; `false` when it was not. */
-  transition(id: string, from: readonly GoalStatus[], patch: GoalPatch): Promise<boolean>;
-  /** Goals newest first; `statuses` narrows them. */
-  list(
-    profile: ProfileId,
-    filter: { statuses?: readonly GoalStatus[]; limit: number },
-  ): Promise<Goal[]>;
-  /**
-   * Marks a reached goal's promise kept; `false` when the goal is not reached or was marked
-   * already (the first mark stands).
-   */
-  fulfill(id: string, by: GoalFulfiller, at: Timestamp): Promise<boolean>;
-  addPledge(pledge: GoalPledge): Promise<void>;
-  /** Every pledge of a goal, oldest first. */
-  pledges(goal: string): Promise<GoalPledge[]>;
-}
-
-/** Bounties she posted from her purse (docs/design/economy.md §13). */
-export interface BountyStore {
-  create(bounty: Bounty): Promise<void>;
-  get(id: string): Promise<Bounty | null>;
-  /** Changes the bounty only while its status is one of `from`; `false` when it was not. */
-  transition(id: string, from: readonly BountyStatus[], patch: BountyPatch): Promise<boolean>;
-  /** Bounties newest first; `statuses` narrows them. */
-  list(
-    profile: ProfileId,
-    filter: { statuses?: readonly BountyStatus[]; limit: number },
-  ): Promise<Bounty[]>;
 }
 
 /** Persisted runtime enabled / disabled flag per module. */
@@ -445,10 +353,6 @@ export interface Store {
    */
   readonly llmCalls?: LlmCallStore;
   readonly cards: MemberCardStore;
-  readonly fortunes: FortuneStore;
-  readonly goals: GoalStore;
-  readonly bounties: BountyStore;
-  readonly economyDocs: EconomyDocStore;
   /**
    * Her stable names for people, kept by the backend itself (the SQLite store's are
    * `persons.handle`). Optional: without it the app keeps them in `settings`.
@@ -477,8 +381,4 @@ export const AuthStoreKey = serviceKey<AuthStore>("AuthStore");
 export const AuditLogKey = serviceKey<AuditLog>("AuditLog");
 export const ProfileDataStoreKey = serviceKey<ProfileDataStore>("ProfileDataStore");
 export const MemberCardStoreKey = serviceKey<MemberCardStore>("MemberCardStore");
-export const FortuneStoreKey = serviceKey<FortuneStore>("FortuneStore");
-export const GoalStoreKey = serviceKey<GoalStore>("GoalStore");
-export const BountyStoreKey = serviceKey<BountyStore>("BountyStore");
-export const EconomyDocsKey = serviceKey<EconomyDocStore>("EconomyDocs");
 export const StoreKey = serviceKey<Store>("Store");

@@ -56,7 +56,6 @@ export class RoomDesk {
     const at = toTimestamp(this.e.now());
     const doc: EconomyDoc = {
       id,
-      profile: this.e.profile,
       kind: KIND,
       owner: null,
       status: "funding",

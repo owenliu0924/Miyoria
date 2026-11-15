@@ -184,7 +184,6 @@ export class CommissionDesk {
     };
     const doc: EconomyDoc = {
       id,
-      profile: this.e.profile,
       kind: KIND,
       owner: who.account,
       status: "open",

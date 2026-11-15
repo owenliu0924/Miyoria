@@ -153,7 +153,6 @@ export class PredictionDesk {
       };
       const doc: EconomyDoc = {
         id: newId(),
-        profile: this.e.profile,
         kind: PREDICTION,
         owner: null,
         status: "open",
@@ -211,7 +210,6 @@ export class PredictionDesk {
       const at = toTimestamp(this.e.now());
       const bet: EconomyDoc = {
         id: betId,
-        profile: this.e.profile,
         kind: BET,
         owner: who.account,
         status: "open",

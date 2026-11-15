@@ -3,7 +3,7 @@
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { EconomyDocsKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
+import { PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   AuthorizerKey,
   type JsonValue,
@@ -13,9 +13,9 @@ import {
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyModule } from "../src/module.js";
-import { CoinLedgerStoreKey, LedgerStatsKey } from "../src/records.js";
+import { CoinLedgerStoreKey, EconomyDocsKey, LedgerStatsKey } from "../src/records.js";
 import { EconomyKey } from "../src/types.js";
-import { ledgerOf, walletOf } from "./ledger.js";
+import { economyOf, ledgerOf, walletOf } from "./ledger.js";
 import { ALICE, BOB, balance, rig as baseRig, CAROL, DAVE, DAY, fund, TEXT } from "./rig.js";
 
 /** Quests, achievements and plain play rewards are not what these sums are about. */
@@ -78,7 +78,7 @@ describe("a restart", () => {
       s.provide("kernel", PeopleStoreKey, store.people);
       s.provide("kernel", SocialSignalsKey, { attitude: () => ({ blocked: false }) as never });
       s.provide("kernel", AuthorizerKey, { allows: () => true } as never);
-      s.provide("kernel", EconomyDocsKey, store.economyDocs);
+      s.provide("kernel", EconomyDocsKey, economyOf(store).docs);
       s.provide("kernel", LedgerStatsKey, ledgerOf(store));
       s.provide("app", ActuatorRegistryKey, new ActuatorRegistry({ services: s, builtins: false }));
       await sup.register(new EconomyModule("p"), {}, true);

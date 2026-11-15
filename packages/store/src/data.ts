@@ -29,6 +29,11 @@ const ROLES_TABLE = "auth_roles";
 const LEDGER_TABLE = "economy_ledger";
 const WALLETS_TABLE = "economy_wallets";
 const DEALS_TABLE = "economy_deals";
+const FORTUNES_TABLE = "economy_fortunes";
+const GOALS_TABLE = "economy_goals";
+const PLEDGES_TABLE = "economy_goal_pledges";
+const BOUNTIES_TABLE = "economy_bounties";
+const DOCS_TABLE = "economy_docs";
 
 /** Settings profile of node-wide settings (`arbiter:state`, `queue:state`, ...). */
 export const GLOBAL_SETTINGS_PROFILE: ProfileId = "_global";
@@ -291,8 +296,9 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         snapshot: "json",
       }),
       // Coins come from being with her; the wallet goes with the relationship, not with a forget.
-      // The `economy` plugin's tables (`@miyoria/economy` `schema.ts`), by person: the whole
-      // database's (one character). A wallet row goes with its person too.
+      // From here to economy 2.0's documents, the `economy` plugin's tables (`@miyoria/economy`
+      // `schema.ts`): the whole database's (one character). The ledger is by person (no foreign
+      // key); a wallet row goes with its person, and what names an account with the account.
       table("coin_ledger", LEDGER_TABLE, "node", "ts", "seq", {
         id: "text",
         person_id: "text",
@@ -309,10 +315,9 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         updated_at: "ts",
       }),
       // The fortune slips she wrote for them, kept like their cards.
-      table("fortunes", "fortunes", "profile", "issued_at", "issued_at, id", {
+      table("fortunes", FORTUNES_TABLE, "node", "issued_at", "issued_at, id", {
         id: "text",
-        author_platform: "text",
-        author_id: "text",
+        account_id: "text",
         person_id: "text",
         day: "num",
         issued_at: "ts",
@@ -337,7 +342,7 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         closed_at: "ts",
       }),
       // Her crowdfunding goals, the pledges to them and the bounties from her purse.
-      table("goals", "goals", "profile", "created_at", "created_at, id", {
+      table("goals", GOALS_TABLE, "node", "created_at", "created_at, id", {
         id: "text",
         title: "text",
         promise: "text",
@@ -346,16 +351,17 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         created_at: "ts",
         deadline: "ts",
         closed_at: "ts",
+        fulfilled_at: "ts",
+        fulfilled_by: "text",
       }),
-      table("goal_pledges", "goal_pledges", "profile", "created_at", "created_at, id", {
+      table("goal_pledges", PLEDGES_TABLE, "node", "created_at", "created_at, id", {
         id: "text",
         goal_id: "text",
-        author_platform: "text",
-        author_id: "text",
+        account_id: "text",
         amount: "num",
         created_at: "ts",
       }),
-      table("bounties", "bounties", "profile", "created_at", "created_at, id", {
+      table("bounties", BOUNTIES_TABLE, "node", "created_at", "created_at, id", {
         id: "text",
         task: "text",
         reward: "num",
@@ -364,15 +370,13 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         created_at: "ts",
         expires_at: "ts",
         closed_at: "ts",
-        winner_platform: "text",
-        winner_id: "text",
+        winner_account_id: "text",
       }),
       // Economy 2.0: collection items, predictions and bets, commissions, her room.
-      table("economy_docs", "economy_docs", "profile", "updated_at", "created_at, id", {
+      table("economy_docs", DOCS_TABLE, "node", "updated_at", "created_at, kind, id", {
         kind: "text",
         id: "text",
-        owner_platform: "text",
-        owner_id: "text",
+        owner_account_id: "text",
         status: "text",
         version: "num",
         data: "json",

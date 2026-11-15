@@ -1,5 +1,8 @@
 // The `economy` plugin's tables on the store's database (`schema.ts`): the coin ledger and the
-// wallets (`CoinLedgerStore`), the deals (`DealStore`). Core opens the store with
+// wallets (`CoinLedgerStore`), the deals (`DealStore`), the fortune slips (`FortuneStore`), her
+// goals and bounties (`GoalStore`, `BountyStore`) and economy 2.0's documents (`EconomyDocStore`).
+// What names an account keeps the `AccountRef` in its record and identity's `accounts.id` in its
+// row, made on first use like a link code's account. Core opens the store with
 // `economyTables` and provides `store.plugin(economyTables)` under the economy's service keys
 // (`records.ts`). Every read and write runs on the store's connection; a posting and its checks are
 // one `Db.tx` (a savepoint inside a caller's).
@@ -18,9 +21,13 @@ import {
   toMicros,
 } from "@miyoria/store";
 import type { AccountRef, PersonId, ProfileId, Timestamp } from "@miyoria/types";
-import { and, asc, desc, eq, getColumns, gte, inArray, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getColumns, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { economySchema } from "./migrations.js";
 import {
+  type Bounty,
+  type BountyPatch,
+  type BountyStatus,
+  type BountyStore,
   type CoinCap,
   type CoinEntry,
   type CoinLedgerStore,
@@ -30,10 +37,36 @@ import {
   type DealPatch,
   type DealStatus,
   type DealStore,
+  type DocFilter,
+  type DocUpdate,
+  type EconomyDoc,
+  type EconomyDocStore,
+  type FortuneRecord,
+  type FortuneStore,
+  type Goal,
+  type GoalFulfiller,
+  type GoalPatch,
+  type GoalPledge,
+  type GoalStatus,
+  type GoalStore,
   type LedgerDayTotal,
   PURSE,
 } from "./records.js";
-import { type DealRow, economyDeals, economyLedger, economyWallets } from "./schema.js";
+import {
+  type BountyRow,
+  type DealRow,
+  type DocRow,
+  economyBounties,
+  economyDeals,
+  economyDocs,
+  economyFortunes,
+  economyGoalPledges,
+  economyGoals,
+  economyLedger,
+  economyWallets,
+  type FortuneRow,
+  type GoalRow,
+} from "./schema.js";
 
 /** `limit` as SQLite's `LIMIT`: a negative one is none (the store's `sqlLimit`). */
 function limitOf(limit: number): number {
@@ -526,10 +559,486 @@ export class DealTables implements DealStore {
   }
 }
 
+// ---- accounts -------------------------------------------------------------------------------
+
+/** The rows of `refs` that exist, without repeats; an account never seen owns nothing. */
+function accountIds(identity: Identity, refs: readonly AccountRef[]): string[] {
+  const out = new Set<string>();
+  for (const r of refs) {
+    const id = identity.account(r)?.id;
+    if (id !== undefined) out.add(id);
+  }
+  return [...out];
+}
+
+const accountOf = (platform: string | null, id: string | null): AccountRef | null =>
+  platform === null || id === null ? null : { platform, id };
+
+/** The account columns a row names it by, from a join on `accounts` under `alias`. */
+function accountColumns(alias: typeof accounts) {
+  return { platform: alias.platform, external_id: alias.external_id };
+}
+
+// ---- fortunes -------------------------------------------------------------------------------
+
+const F = economyFortunes;
+
+function fortuneOf(row: FortuneRow & { platform: string; external_id: string }): FortuneRecord {
+  return {
+    id: row.id,
+    account: { platform: row.platform, id: row.external_id },
+    person: row.person_id,
+    day: row.day,
+    issued_at: row.issued_at,
+    entry: row.entry_id,
+    slip: row.slip,
+  };
+}
+
+/** The fortune slips (`FortuneStore`) on `economy_fortunes`. */
+export class FortuneTables implements FortuneStore {
+  readonly #db: Db;
+  readonly #identity: Identity;
+
+  constructor(db: Db, identity: Identity) {
+    this.#db = db;
+    this.#identity = identity;
+  }
+
+  #select() {
+    return this.#db.orm
+      .select({ ...getColumns(F), ...accountColumns(accounts) })
+      .from(F)
+      .innerJoin(accounts, eq(accounts.id, F.account_id));
+  }
+
+  async put(record: FortuneRecord, refs: readonly AccountRef[]): Promise<boolean> {
+    try {
+      return this.#db.tx((): boolean => {
+        const account = this.#identity.ensureAccount(record.account);
+        const wallet = [...new Set([account.id, ...accountIds(this.#identity, refs)])];
+        const taken = this.#db.orm
+          .select({ id: F.id })
+          .from(F)
+          .where(and(eq(F.day, record.day), inArray(F.account_id, wallet)))
+          .limit(1)
+          .get();
+        if (taken) return false;
+        this.#db.orm
+          .insert(F)
+          .values({
+            id: record.id,
+            account_id: account.id,
+            person_id: record.person,
+            day: record.day,
+            issued_at: record.issued_at,
+            entry_id: record.entry,
+            slip: record.slip,
+          })
+          .run();
+        return true;
+      });
+    } catch (cause) {
+      if (cause instanceof StoreError) throw cause;
+      throw new StoreError("cannot store the fortune", { cause });
+    }
+  }
+
+  async forDay(
+    _profile: ProfileId,
+    refs: readonly AccountRef[],
+    day: number,
+  ): Promise<FortuneRecord | null> {
+    const ids = accountIds(this.#identity, refs);
+    if (ids.length === 0) return null;
+    const row = this.#select()
+      .where(and(eq(F.day, day), inArray(F.account_id, ids)))
+      .orderBy(desc(F.issued_at), sql`${F}.rowid DESC`)
+      .limit(1)
+      .get();
+    return row ? fortuneOf(row) : null;
+  }
+
+  async listFor(
+    _profile: ProfileId,
+    refs: readonly AccountRef[],
+    limit: number,
+  ): Promise<FortuneRecord[]> {
+    const ids = accountIds(this.#identity, refs);
+    if (ids.length === 0) return [];
+    return this.#select()
+      .where(inArray(F.account_id, ids))
+      .orderBy(desc(F.issued_at), sql`${F}.rowid DESC`)
+      .limit(limitOf(limit))
+      .all()
+      .map(fortuneOf);
+  }
+
+  async deleteFor(_profile: ProfileId, refs: readonly AccountRef[]): Promise<number> {
+    const ids = accountIds(this.#identity, refs);
+    if (ids.length === 0) return 0;
+    return Number(this.#db.orm.delete(F).where(inArray(F.account_id, ids)).run().changes);
+  }
+}
+
+// ---- goals and bounties ---------------------------------------------------------------------
+
+const G = economyGoals;
+const P = economyGoalPledges;
+const B = economyBounties;
+
+function goalOf(row: GoalRow): Goal {
+  const goal: Goal = {
+    id: row.id,
+    title: row.title,
+    promise: row.promise,
+    target: row.target,
+    status: row.status,
+    created_at: row.created_at,
+    deadline: row.deadline,
+    closed_at: row.closed_at,
+  };
+  // The kept promise only once it was kept.
+  if (row.fulfilled_at === null) return goal;
+  return {
+    ...goal,
+    fulfilled_at: row.fulfilled_at,
+    fulfilled_by: row.fulfilled_by === "self" ? "self" : "owner",
+  };
+}
+
+/** Her goals and their pledges (`GoalStore`) on `economy_goals` and `economy_goal_pledges`. */
+export class GoalTables implements GoalStore {
+  readonly #db: Db;
+  readonly #identity: Identity;
+
+  constructor(db: Db, identity: Identity) {
+    this.#db = db;
+    this.#identity = identity;
+  }
+
+  async create(goal: Goal): Promise<void> {
+    try {
+      this.#db.orm
+        .insert(G)
+        .values({
+          id: goal.id,
+          title: goal.title,
+          promise: goal.promise,
+          target: goal.target,
+          status: goal.status,
+          created_at: goal.created_at,
+          deadline: goal.deadline,
+          closed_at: goal.closed_at,
+          fulfilled_at: goal.fulfilled_at ?? null,
+          fulfilled_by: goal.fulfilled_by ?? null,
+        })
+        .run();
+    } catch (cause) {
+      throw new StoreError("cannot write the goal", { cause });
+    }
+  }
+
+  async get(id: string): Promise<Goal | null> {
+    const row = this.#db.orm.select().from(G).where(eq(G.id, id)).get();
+    return row ? goalOf(row) : null;
+  }
+
+  async transition(id: string, from: readonly GoalStatus[], patch: GoalPatch): Promise<boolean> {
+    if (from.length === 0) return false;
+    const set: Partial<typeof G.$inferInsert> = { status: patch.status };
+    if (patch.closed_at !== undefined) set.closed_at = patch.closed_at;
+    const changed = this.#db.orm
+      .update(G)
+      .set(set)
+      .where(and(eq(G.id, id), inArray(G.status, [...from])))
+      .run();
+    return changed.changes > 0;
+  }
+
+  async list(
+    _profile: ProfileId,
+    filter: { statuses?: readonly GoalStatus[]; limit: number },
+  ): Promise<Goal[]> {
+    if (filter.statuses?.length === 0) return [];
+    return this.#db.orm
+      .select()
+      .from(G)
+      .where(filter.statuses ? inArray(G.status, [...filter.statuses]) : undefined)
+      .orderBy(desc(G.created_at), sql`${G}.rowid DESC`)
+      .limit(limitOf(filter.limit))
+      .all()
+      .map(goalOf);
+  }
+
+  async fulfill(id: string, by: GoalFulfiller, at: Timestamp): Promise<boolean> {
+    const changed = this.#db.orm
+      .update(G)
+      .set({ fulfilled_at: at, fulfilled_by: by })
+      .where(and(eq(G.id, id), eq(G.status, "reached"), isNull(G.fulfilled_at)))
+      .run();
+    return changed.changes > 0;
+  }
+
+  async addPledge(pledge: GoalPledge): Promise<void> {
+    try {
+      this.#db.tx(() => {
+        const account = this.#identity.ensureAccount(pledge.account);
+        this.#db.orm
+          .insert(P)
+          .values({
+            id: pledge.id,
+            goal_id: pledge.goal,
+            account_id: account.id,
+            amount: pledge.amount,
+            created_at: pledge.created_at,
+          })
+          .run();
+      });
+    } catch (cause) {
+      throw new StoreError("cannot write the pledge", { cause });
+    }
+  }
+
+  async pledges(goal: string): Promise<GoalPledge[]> {
+    return this.#db.orm
+      .select({ ...getColumns(P), ...accountColumns(accounts) })
+      .from(P)
+      .innerJoin(accounts, eq(accounts.id, P.account_id))
+      .where(eq(P.goal_id, goal))
+      .orderBy(asc(P.created_at), sql`${P}.rowid`)
+      .all()
+      .map((row) => ({
+        id: row.id,
+        goal: row.goal_id,
+        account: { platform: row.platform, id: row.external_id },
+        amount: row.amount,
+        created_at: row.created_at,
+      }));
+  }
+}
+
+function bountyOf(
+  row: BountyRow & { platform: string | null; external_id: string | null },
+): Bounty {
+  return {
+    id: row.id,
+    task: row.task,
+    reward: row.reward,
+    hold: row.hold_entry,
+    status: row.status,
+    created_at: row.created_at,
+    expires_at: row.expires_at,
+    closed_at: row.closed_at,
+    winner: accountOf(row.platform, row.external_id),
+  };
+}
+
+/** Her bounties (`BountyStore`) on `economy_bounties`. */
+export class BountyTables implements BountyStore {
+  readonly #db: Db;
+  readonly #identity: Identity;
+
+  constructor(db: Db, identity: Identity) {
+    this.#db = db;
+    this.#identity = identity;
+  }
+
+  #select() {
+    return this.#db.orm
+      .select({ ...getColumns(B), ...accountColumns(accounts) })
+      .from(B)
+      .leftJoin(accounts, eq(accounts.id, B.winner_account_id));
+  }
+
+  async create(bounty: Bounty): Promise<void> {
+    try {
+      this.#db.tx(() => {
+        const winner = bounty.winner ? this.#identity.ensureAccount(bounty.winner).id : null;
+        this.#db.orm
+          .insert(B)
+          .values({
+            id: bounty.id,
+            task: bounty.task,
+            reward: bounty.reward,
+            hold_entry: bounty.hold,
+            status: bounty.status,
+            created_at: bounty.created_at,
+            expires_at: bounty.expires_at,
+            closed_at: bounty.closed_at,
+            winner_account_id: winner,
+          })
+          .run();
+      });
+    } catch (cause) {
+      throw new StoreError("cannot write the bounty", { cause });
+    }
+  }
+
+  async get(id: string): Promise<Bounty | null> {
+    const row = this.#select().where(eq(B.id, id)).get();
+    return row ? bountyOf(row) : null;
+  }
+
+  async transition(
+    id: string,
+    from: readonly BountyStatus[],
+    patch: BountyPatch,
+  ): Promise<boolean> {
+    if (from.length === 0) return false;
+    return this.#db.tx(() => {
+      const set: Partial<typeof B.$inferInsert> = { status: patch.status };
+      if (patch.closed_at !== undefined) set.closed_at = patch.closed_at;
+      if (patch.winner !== undefined) {
+        set.winner_account_id = patch.winner ? this.#identity.ensureAccount(patch.winner).id : null;
+      }
+      const changed = this.#db.orm
+        .update(B)
+        .set(set)
+        .where(and(eq(B.id, id), inArray(B.status, [...from])))
+        .run();
+      return changed.changes > 0;
+    });
+  }
+
+  async list(
+    _profile: ProfileId,
+    filter: { statuses?: readonly BountyStatus[]; limit: number },
+  ): Promise<Bounty[]> {
+    if (filter.statuses?.length === 0) return [];
+    return this.#select()
+      .where(filter.statuses ? inArray(B.status, [...filter.statuses]) : undefined)
+      .orderBy(desc(B.created_at), sql`${B}.rowid DESC`)
+      .limit(limitOf(filter.limit))
+      .all()
+      .map(bountyOf);
+  }
+}
+
+// ---- economy documents ----------------------------------------------------------------------
+
+const X = economyDocs;
+
+function docOf(row: DocRow & { platform: string | null; external_id: string | null }): EconomyDoc {
+  return {
+    id: row.id,
+    kind: row.kind,
+    owner: accountOf(row.platform, row.external_id),
+    status: row.status,
+    version: row.version,
+    data: row.data,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/** Economy 2.0's documents (`EconomyDocStore`) on `economy_docs`. */
+export class DocTables implements EconomyDocStore {
+  readonly #db: Db;
+  readonly #identity: Identity;
+
+  constructor(db: Db, identity: Identity) {
+    this.#db = db;
+    this.#identity = identity;
+  }
+
+  #select() {
+    return this.#db.orm
+      .select({ ...getColumns(X), ...accountColumns(accounts) })
+      .from(X)
+      .leftJoin(accounts, eq(accounts.id, X.owner_account_id));
+  }
+
+  #owner(owner: AccountRef | null): string | null {
+    return owner === null ? null : this.#identity.ensureAccount(owner).id;
+  }
+
+  async create(doc: EconomyDoc): Promise<boolean> {
+    try {
+      return this.#db.tx(
+        () =>
+          this.#db.orm
+            .insert(X)
+            .values({
+              kind: doc.kind,
+              id: doc.id,
+              owner_account_id: this.#owner(doc.owner),
+              status: doc.status,
+              version: doc.version,
+              data: doc.data,
+              created_at: doc.created_at,
+              updated_at: doc.updated_at,
+            })
+            .onConflictDoNothing()
+            .run().changes > 0,
+      );
+    } catch (cause) {
+      throw new StoreError("cannot write the economy document", { cause });
+    }
+  }
+
+  async get(_profile: ProfileId, kind: string, id: string): Promise<EconomyDoc | null> {
+    const row = this.#select()
+      .where(and(eq(X.kind, kind), eq(X.id, id)))
+      .get();
+    return row ? docOf(row) : null;
+  }
+
+  async update(
+    _profile: ProfileId,
+    kind: string,
+    id: string,
+    expected: number,
+    next: DocUpdate,
+  ): Promise<boolean> {
+    try {
+      return this.#db.tx(() => {
+        const set: Partial<typeof X.$inferInsert> = {
+          status: next.status,
+          data: next.data,
+          version: sql`${X.version} + 1` as never,
+          updated_at: next.at,
+        };
+        if (next.owner !== undefined) set.owner_account_id = this.#owner(next.owner);
+        const changed = this.#db.orm
+          .update(X)
+          .set(set)
+          .where(and(eq(X.kind, kind), eq(X.id, id), eq(X.version, expected)))
+          .run();
+        return changed.changes > 0;
+      });
+    } catch (cause) {
+      throw new StoreError("cannot update the economy document", { cause });
+    }
+  }
+
+  async list(_profile: ProfileId, kind: string, filter: DocFilter): Promise<EconomyDoc[]> {
+    if (filter.statuses?.length === 0 || filter.owners?.length === 0) return [];
+    const owners = filter.owners ? accountIds(this.#identity, filter.owners) : null;
+    if (owners !== null && owners.length === 0) return [];
+    return this.#select()
+      .where(
+        and(
+          eq(X.kind, kind),
+          filter.statuses ? inArray(X.status, [...filter.statuses]) : undefined,
+          owners ? inArray(X.owner_account_id, owners) : undefined,
+        ),
+      )
+      .orderBy(desc(X.created_at), desc(X.id))
+      .limit(limitOf(filter.limit))
+      .all()
+      .map(docOf);
+  }
+}
+
 /** The economy plugin's code over its tables. */
 export interface EconomyTables {
   readonly ledger: LedgerTables;
   readonly deals: DealTables;
+  readonly fortunes: FortuneTables;
+  readonly goals: GoalTables;
+  readonly bounties: BountyTables;
+  readonly docs: DocTables;
 }
 
 /** The `economy` plugin's tables and code (`StorePlugin`). */
@@ -538,5 +1047,9 @@ export const economyTables: StorePlugin<EconomyTables> = {
   open: ({ db, identity }) => ({
     ledger: new LedgerTables(db, identity),
     deals: new DealTables(db, identity),
+    fortunes: new FortuneTables(db, identity),
+    goals: new GoalTables(db, identity),
+    bounties: new BountyTables(db, identity),
+    docs: new DocTables(db, identity),
   }),
 };

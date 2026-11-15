@@ -136,7 +136,6 @@ export class ShopDesk {
     const at = toTimestamp(this.e.now());
     await this.e.docs().create({
       id: `title:${who.person.id}:${item.id}`,
-      profile: this.e.profile,
       kind: TITLE,
       owner: who.account,
       status: "held",

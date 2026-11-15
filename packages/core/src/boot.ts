@@ -5,7 +5,16 @@
 
 import { authTables } from "@miyoria/auth";
 import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
-import { CoinLedgerStoreKey, DealStoreKey, economyTables, LedgerStatsKey } from "@miyoria/economy";
+import {
+  BountyStoreKey,
+  CoinLedgerStoreKey,
+  DealStoreKey,
+  EconomyDocsKey,
+  economyTables,
+  FortuneStoreKey,
+  GoalStoreKey,
+  LedgerStatsKey,
+} from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -24,11 +33,7 @@ import { ReplayRecorderModule } from "@miyoria/runtime/replay-log";
 import {
   AuditLogKey,
   AuthStoreKey,
-  BountyStoreKey,
   DecisionLogKey,
-  EconomyDocsKey,
-  FortuneStoreKey,
-  GoalStoreKey,
   IdentityStoreKey,
   MemberCardStoreKey,
   MemoryRecordStoreKey,
@@ -245,10 +250,10 @@ export async function buildCoreWith(
   services.provide(k, CoinLedgerStoreKey, economy.ledger);
   services.provide(k, LedgerStatsKey, economy.ledger);
   services.provide(k, DealStoreKey, economy.deals);
-  services.provide(k, EconomyDocsKey, store.economyDocs);
-  services.provide(k, FortuneStoreKey, store.fortunes);
-  services.provide(k, GoalStoreKey, store.goals);
-  services.provide(k, BountyStoreKey, store.bounties);
+  services.provide(k, EconomyDocsKey, economy.docs);
+  services.provide(k, FortuneStoreKey, economy.fortunes);
+  services.provide(k, GoalStoreKey, economy.goals);
+  services.provide(k, BountyStoreKey, economy.bounties);
   services.provide(k, PeopleStoreKey, store.people);
   services.provide(k, MemoryRecordStoreKey, store.memories);
   services.provide(k, RelationshipStoreKey, store.relationships);

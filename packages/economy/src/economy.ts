@@ -20,13 +20,7 @@ import {
   type ServiceLookup,
 } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
-import {
-  AuditLogKey,
-  type Goal,
-  type GoalFulfiller,
-  PeopleStoreKey,
-  type Person,
-} from "@miyoria/store";
+import { AuditLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {
   type AccountRef,
   AffectStateKey,
@@ -70,6 +64,8 @@ import {
   type CoinLedgerStore,
   CoinLedgerStoreKey,
   type CoinRule,
+  type Goal,
+  type GoalFulfiller,
 } from "./records.js";
 import { MAX_SCREEN_CHARS, screenEvent, screenText, screenWait, waitMinutes } from "./screen.js";
 import { otherName, sendCoins } from "./transfer.js";

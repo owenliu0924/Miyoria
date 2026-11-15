@@ -122,7 +122,7 @@ export async function rig(
   const dice = { values: [] as number[] };
   let n = 0;
   const docs = new MemoryDocs();
-  services.provide(k, EconomyDocsKey, options.durable ? store.economyDocs : docs);
+  services.provide(k, EconomyDocsKey, options.durable ? economyOf(store).docs : docs);
   if (options.durable) services.provide(k, LedgerStatsKey, ledgerOf(store));
   const economy = new EconomyService({
     config: EconomyConfigSchema.parse(config),

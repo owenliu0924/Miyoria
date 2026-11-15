@@ -11,10 +11,9 @@
 // Only a person she knows and has not blocked may draw (403, as everywhere); the slip is built
 // from what the page shows them (`fortune.ts`).
 
-import { EconomyError, EconomyKey, STRANGER } from "@miyoria/economy";
+import { EconomyError, EconomyKey, FortuneStoreKey, STRANGER } from "@miyoria/economy";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import { FortuneStoreKey } from "@miyoria/store";
 import { type AccountRef, accountRefString } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";

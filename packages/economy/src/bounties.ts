@@ -8,12 +8,12 @@
 // * Bounties persist in `BountyStore`; a sweep ends what ran out.
 
 import { errorMessage } from "@miyoria/runtime/kernel";
-import { type Bounty, BountyStoreKey } from "@miyoria/store";
 import { type AccountRef, type ContextKey, newId, safeName, toTimestamp } from "@miyoria/types";
 import { cleanTask, guardTask } from "./deals.js";
 import type { EconomyService } from "./economy.js";
 import { STRANGER } from "./economy.js";
 import { PURSE_PLATFORM, pickById } from "./purse.js";
+import { type Bounty, BountyStoreKey } from "./records.js";
 import { type BountyView, EconomyError } from "./types.js";
 
 export const NO_BOUNTY = "沒有這個懸賞";
@@ -60,7 +60,6 @@ export class BountyBoard {
       const now = this.e.now();
       const made: Bounty = {
         id,
-        profile: this.e.profile,
         task,
         reward: req.reward,
         hold: held.entry.id,

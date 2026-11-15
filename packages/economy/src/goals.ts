@@ -14,13 +14,13 @@
 //   or by her when she says she did it. Until then her purse block reminds her; after, it does not.
 
 import { errorMessage } from "@miyoria/runtime/kernel";
-import { type Goal, type GoalFulfiller, GoalStoreKey } from "@miyoria/store";
 import { type AccountRef, type ContextKey, newId, toTimestamp } from "@miyoria/types";
 import { cleanText, guardTask } from "./deals.js";
 import type { EconomyService } from "./economy.js";
 import { STRANGER } from "./economy.js";
 import { postCard } from "./notices.js";
 import { receipt } from "./receipt.js";
+import { type Goal, type GoalFulfiller, GoalStoreKey } from "./records.js";
 import { EconomyError, type GoalView, type PledgeResult } from "./types.js";
 
 export const MAX_TITLE_CHARS = 30;
@@ -84,7 +84,6 @@ export class GoalDesk {
       const now = this.e.now();
       const made: Goal = {
         id: newId(),
-        profile: this.e.profile,
         title,
         promise,
         target: req.target,
@@ -160,7 +159,7 @@ export class GoalDesk {
     const store = this.#store();
     const out = await this.e.serial(async () => {
       const goal = await store.get(goalId);
-      if (!goal || goal.profile !== this.e.profile) throw new EconomyError(400, "沒有這個目標");
+      if (!goal) throw new EconomyError(400, "沒有這個目標");
       const idem = `pledge:${key}`;
       const first = await this.e.ledger().byKey(this.e.profile, who.wallet, idem);
       if (first) {
@@ -196,7 +195,6 @@ export class GoalDesk {
         await store.addPledge({
           id: spent.entry.id,
           goal: goal.id,
-          profile: this.e.profile,
           account: who.account,
           amount: pledged,
           created_at: toTimestamp(this.e.now()),
@@ -284,7 +282,7 @@ export class GoalDesk {
         goalId === null
           ? ((await this.reached()).find((g) => g.fulfilled_at === undefined) ?? null)
           : await store.get(goalId);
-      if (!goal || goal.profile !== this.e.profile || goal.status !== "reached") {
+      if (goal?.status !== "reached") {
         throw new EconomyError(409, NOT_OWED);
       }
       if (goal.fulfilled_at !== undefined) throw new EconomyError(409, ALREADY_KEPT);

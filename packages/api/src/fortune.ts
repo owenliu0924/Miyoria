@@ -9,6 +9,7 @@
 // they can look at it again, export it and have it forgotten with their cards.
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
+import { type FortuneRecord, FortuneStoreKey } from "@miyoria/economy";
 import {
   completeJson,
   LlmRouterKey,
@@ -17,7 +18,6 @@ import {
   withLlmTag,
 } from "@miyoria/llm/llm";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import { type FortuneRecord, FortuneStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   AffectStateKey,
@@ -312,7 +312,6 @@ export async function keepFortune(
   if (!store) return null;
   const record: FortuneRecord = {
     id: newId(),
-    profile: state.profile(),
     account: holder.account,
     person: holder.person,
     day,

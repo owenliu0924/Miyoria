@@ -94,7 +94,7 @@ describe("bookkeeping", () => {
       const tables = t.db
         .all("SELECT name FROM sqlite_schema WHERE type = 'table'")
         .map((r) => r.name);
-      expect(tables).toEqual(expect.arrayContaining(["memory_records", "economy_docs"]));
+      expect(tables).toEqual(expect.arrayContaining(["memory_records", "member_cards"]));
       expect(tables).not.toContain("schema_version");
       // Chat lines are events (core migration 3); so are decisions, turn outcomes and audit
       // entries (core migration 4). Settings are rows of `plugin_state`, and module on/off is a
@@ -118,6 +118,11 @@ describe("bookkeeping", () => {
         "coin_ledger",
         "coin_wallets",
         "deals",
+        "fortunes",
+        "goals",
+        "goal_pledges",
+        "bounties",
+        "economy_docs",
       ]) {
         expect(tables).not.toContain(gone);
       }

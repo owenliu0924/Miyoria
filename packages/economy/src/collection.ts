@@ -190,7 +190,6 @@ export class Collection {
     const data: ItemData = { item: id, rarity: found.item.rarity, source };
     return this.e.docs().create({
       id: docId,
-      profile: this.e.profile,
       kind: KIND,
       owner: who.account,
       status: "held",
@@ -429,7 +428,6 @@ export class Collection {
       const note = (owner: AccountRef, dir: "out" | "in", id2: string) =>
         docs.create({
           id: id2,
-          profile: this.e.profile,
           kind: GIFT,
           owner,
           status: "done",

@@ -8,11 +8,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import {
+  BountyStoreKey,
   CoinLedgerStoreKey,
   DealStoreKey,
   EconomyConfigSchema,
   EconomyKey,
   EconomyService,
+  FortuneStoreKey,
+  GoalStoreKey,
 } from "@miyoria/economy";
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
@@ -29,9 +32,6 @@ import { SingerKey, type SongEntry } from "@miyoria/sing";
 import {
   AuditLogKey,
   AuthStoreKey,
-  BountyStoreKey,
-  FortuneStoreKey,
-  GoalStoreKey,
   MemberCardStoreKey,
   type MemoryRecord,
   MemorySettingsStore,
@@ -1956,12 +1956,11 @@ describe("the wallet", () => {
 
   it("shows her goals and bounties, takes pledges and keeps strangers out of them", async () => {
     const r = await walletRig();
-    r.sup.services.provide("economy", GoalStoreKey, r.coins.goals);
-    r.sup.services.provide("economy", BountyStoreKey, r.coins.bounties);
+    r.sup.services.provide("economy", GoalStoreKey, r.economy.goals);
+    r.sup.services.provide("economy", BountyStoreKey, r.economy.bounties);
     const now = Date.now();
-    await r.coins.goals.create({
+    await r.economy.goals.create({
       id: "goal-1",
-      profile: "p",
       title: "新麥克風",
       promise: "學三種貓叫",
       target: 50,
@@ -1970,9 +1969,8 @@ describe("the wallet", () => {
       deadline: new Date(now + 86_400_000).toISOString() as never,
       closed_at: null,
     });
-    await r.coins.bounties.create({
+    await r.economy.bounties.create({
       id: "bounty-1",
-      profile: "p",
       task: "猜她的幸運數字",
       reward: 30,
       hold: "hold-1",
@@ -2072,7 +2070,7 @@ describe("the wallet", () => {
     expect(
       (await r.spend("/api/member/goals/goal-1/pledge", bob, { amount: 5 }, "p-c")).status,
     ).toBe(409);
-    expect(await r.coins.goals.get("goal-1")).toMatchObject({ status: "reached" });
+    expect(await r.economy.goals.get("goal-1")).toMatchObject({ status: "reached" });
 
     // The owner sees it owed and marks it kept, once; a member cannot.
     const owed = await raw(r.base, "GET", "/api/economy/goals", { token: TOKEN });
@@ -2476,7 +2474,7 @@ describe("between people, the sponsor board and fortune slips", () => {
     const s = r.sup.services;
     s.provide("economy", CoinLedgerStoreKey, tables.economy.ledger);
     s.provide("economy", DealStoreKey, tables.economy.deals);
-    s.provide("economy", FortuneStoreKey, coins.fortunes);
+    s.provide("economy", FortuneStoreKey, tables.economy.fortunes);
     s.provide("self", SelfStateKey, {
       drives: () => ({ hunger: 0.8 }),
       adjust: () => undefined,
