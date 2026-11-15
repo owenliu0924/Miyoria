@@ -31,11 +31,22 @@ export function hfRevisions(modelsDir: string, repo: string): string[] {
 
 /** Whether the cache has the repository, at `revision` when one is given. */
 export function hfCacheHas(modelsDir: string, repo: string, revision?: string): boolean {
-  const revisions = hfRevisions(modelsDir, repo);
+  return hfCacheHasIn(hfDir(modelsDir), repo, revision);
+}
+
+/**
+ * The same for a cache folder given as it is: a service whose environment sets its own
+ * `HF_HUB_CACHE` (a machine that kept its models where they were) reads that one, not the host's.
+ */
+export function hfCacheHasIn(cacheDir: string, repo: string, revision?: string): boolean {
+  const base = join(cacheDir, hfCacheName(repo));
+  const snapshots = join(base, "snapshots");
+  const revisions = existsSync(snapshots)
+    ? readdirSync(snapshots, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+    : [];
   if (revision === undefined) return revisions.length > 0;
   // A commit is a snapshot folder; a branch or tag is a file in refs/ that names the commit.
-  return (
-    revisions.includes(revision) ||
-    existsSync(join(hfDir(modelsDir), hfCacheName(repo), "refs", ...revision.split("/")))
-  );
+  return revisions.includes(revision) || existsSync(join(base, "refs", ...revision.split("/")));
 }

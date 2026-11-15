@@ -10,7 +10,7 @@ import type { CatalogEntry } from "../catalog.js";
 import type { LoadedHostConfig } from "../host-config.js";
 import { pythonIn } from "../resolve.js";
 import { downloadFile, type Fetch } from "./download.js";
-import { hfCacheHas } from "./hf.js";
+import { hfCacheHasIn, hfDir } from "./hf.js";
 import {
   type EnvironmentState,
   environmentState,
@@ -188,9 +188,20 @@ export function inspectService(
     models: install.models.map((model) => ({
       repo: model.repo,
       ...(model.revision !== undefined ? { revision: model.revision } : {}),
-      present: hfCacheHas(host.state.models, model.repo, model.revision),
+      present: hfCacheHasIn(hfCacheOf(entry, host), model.repo, model.revision),
     })),
   };
+}
+
+/**
+ * The Hugging Face cache a service reads: its own `HF_HUB_CACHE` when `host.toml` or the
+ * descriptor sets one (relative to the workspace), else the host's.
+ */
+export function hfCacheOf(entry: CatalogEntry, host: LoadedHostConfig): string {
+  const own =
+    host.config.services[entry.name]?.env.HF_HUB_CACHE ?? entry.descriptor.run?.env.HF_HUB_CACHE;
+  if (own === undefined || own === "" || own.includes("{")) return hfDir(host.state.models);
+  return resolve(host.workspace, own);
 }
 
 // ---- installing --------------------------------------------------------------------------------

@@ -336,6 +336,22 @@ describe("uv sync", () => {
     });
     expect(inspectService(entry, host, deps()).models[0]?.present).toBe(true);
   });
+
+  it("looks for a model in the cache the service itself reads", () => {
+    // A machine that kept its models where they were: host.toml points the service at them.
+    const { host, catalog } = workspace(
+      'name = "h"\n[services.asr]\nenv = { HF_HUB_CACHE = "data/models/hf" }\n',
+    );
+    const entry = entryOf(catalog, "asr");
+    expect(inspectService(entry, host, deps()).models[0]?.present).toBe(false);
+    mkdirSync(
+      join(root, "data", "models", "hf", "models--Qwen--Qwen3-ASR-0.6B", "snapshots", "abc"),
+      {
+        recursive: true,
+      },
+    );
+    expect(inspectService(entry, host, deps()).models[0]?.present).toBe(true);
+  });
 });
 
 // ---- files -------------------------------------------------------------------------------------
