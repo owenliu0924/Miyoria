@@ -88,10 +88,14 @@ function ServiceRow({ s, now, onAction }: { s: ServiceStatus; now: number; onAct
             ))}
             {s.provides.length === 0 && <span className="text-xs text-muted-foreground">{SERVICE_KIND[s.kind]}</span>}
           </span>
-          <span className="text-xs text-muted-foreground tabular-nums lg:hidden">
+          <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground tabular-nums lg:hidden">
             {[s.port ? `埠 ${s.port}` : null, s.pid ? `pid ${s.pid}` : null, s.restarts > 0 ? `重啟 ${s.restarts}` : null]
-              .filter(Boolean)
-              .join(" · ")}
+              .filter((part): part is string => part !== null)
+              .map((part) => (
+                <span key={part} className="whitespace-nowrap">
+                  {part}
+                </span>
+              ))}
           </span>
         </div>
       </TableCell>
