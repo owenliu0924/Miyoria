@@ -33,6 +33,8 @@ export class Db {
   #open = true;
   #depth = 0;
   #orm: Orm | null = null;
+  /** What `afterCommit` queued in the open transaction. */
+  readonly #committed: (() => void)[] = [];
 
   constructor(db: DatabaseSync, clock: Clock) {
     this.#db = db;
@@ -98,29 +100,44 @@ export class Db {
   tx<T>(fn: () => T): T {
     if (this.#db.isTransaction) return this.#savepoint(fn);
     this.#db.exec("BEGIN IMMEDIATE");
+    let result: T;
     try {
-      const result = fn();
+      result = fn();
       this.#db.exec("COMMIT");
-      return result;
     } catch (error) {
+      this.#committed.length = 0;
       if (this.#db.isTransaction) this.#db.exec("ROLLBACK");
       throw error;
     }
+    for (const told of this.#committed.splice(0)) told();
+    return result;
   }
 
   #savepoint<T>(fn: () => T): T {
     const name = `tx${++this.#depth}`;
+    const queued = this.#committed.length;
     this.#db.exec(`SAVEPOINT ${name}`);
     try {
       const result = fn();
       this.#db.exec(`RELEASE ${name}`);
       return result;
     } catch (error) {
+      this.#committed.length = queued;
       if (this.#db.isTransaction) this.#db.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);
       throw error;
     } finally {
       this.#depth--;
     }
+  }
+
+  /**
+   * Runs `fn` once what was just written is committed: at once outside a transaction, after the
+   * outermost `tx` commits inside one, and never when that transaction (or the savepoint `fn` was
+   * queued in) rolls back. For telling in-memory listeners about a write; `fn` must not throw.
+   */
+  afterCommit(fn: () => void): void {
+    if (this.#db.isTransaction) this.#committed.push(fn);
+    else fn();
   }
 
   /**

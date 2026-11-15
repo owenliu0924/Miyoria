@@ -604,15 +604,31 @@ export class EventStore implements EventLogStore {
     return records;
   }
 
+  /**
+   * Tells the listeners once the redaction is committed: inside a larger transaction (forgetting a
+   * person runs every schema's hook in one) that is when the whole of it is, and never when it
+   * rolls back.
+   */
   #told(redaction: Redaction): void {
     if (redaction.ids.length === 0 && redaction.keys.length === 0) return;
-    for (const listener of this.#listeners) {
-      try {
-        listener(redaction);
-      } catch (error) {
-        log.warn({ err: errorMessage(error) }, "a redaction listener failed");
+    this.#db.afterCommit(() => {
+      for (const key of redaction.keys) {
+        this.#redactedKeys.delete(key);
+        this.#redactedKeys.add(key);
       }
-    }
+      while (this.#redactedKeys.size > REDACTED_KEYS) {
+        const oldest = this.#redactedKeys.values().next().value;
+        if (oldest === undefined) break;
+        this.#redactedKeys.delete(oldest);
+      }
+      for (const listener of this.#listeners) {
+        try {
+          listener(redaction);
+        } catch (error) {
+          log.warn({ err: errorMessage(error) }, "a redaction listener failed");
+        }
+      }
+    });
   }
 
   redact(id: string, reason: string, source: string): EventEnvelope | null {
@@ -668,17 +684,7 @@ export class EventStore implements EventLogStore {
       if (cause instanceof StoreError) throw cause;
       throw new StoreError("cannot redact the events", { cause });
     }
-    const keys: string[] = [];
-    if (filter.key !== undefined) {
-      keys.push(filter.key);
-      this.#redactedKeys.delete(filter.key);
-      this.#redactedKeys.add(filter.key);
-      while (this.#redactedKeys.size > REDACTED_KEYS) {
-        const oldest = this.#redactedKeys.values().next().value;
-        if (oldest === undefined) break;
-        this.#redactedKeys.delete(oldest);
-      }
-    }
+    const keys = filter.key === undefined ? [] : [filter.key];
     const ids = records.flatMap((r) => {
       const data = r.data;
       return isJsonObject(data) && typeof data.target === "string" ? [data.target] : [];
