@@ -152,8 +152,8 @@ describe("text only", () => {
     // A host.toml without core starts the question on "services for somebody else's Core": pick text.
     const p = new Scripted([Pick(0), ...AFTER_MODE, Yes]);
     await run(configPath(), p, { bundledProfiles: BUNDLED, processEnv: NO_ENV });
-    // The worker address of the example stays in a file the owner made.
-    expect(read("miyoria.toml")).toContain("ASR_URL");
+    // A config that exists is not touched.
+    expect(read("miyoria.toml")).toBe(exampleConfig());
     const text = read("host.toml");
     expect(text).toContain("# keep me");
     expect(text).toContain('name = "mine"');

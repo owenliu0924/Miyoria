@@ -95,23 +95,6 @@ export function commandPrefix(env: NodeJS.ProcessEnv = process.env): string {
   return "miyoria";
 }
 
-/** The `${VAR}` default of the template's worker address: what the registry replaces. */
-const WORKER_ADDRESS_KEYS = ["speech.asr.local.url", "speech.tts.local.url"] as const;
-
-/**
- * A new config keeps no address of a worker: hostd reports the services and Core's registry finds
- * them. Text-only needs nothing else switched off: with no worker the voice, speech and sing
- * modules start quietly and wait for one, so adding voice later is `add` and `up`, no config edit.
- * An existing config is left as its owner has it.
- */
-export function dropWorkerAddresses(ws: Workspace, fresh: boolean): void {
-  if (!fresh) return;
-  for (const key of WORKER_ADDRESS_KEYS) {
-    const value = ws.item(key);
-    if (typeof value === "string" && /\$\{(ASR|TTS)_URL/.test(value)) ws.unset(key);
-  }
-}
-
 /** The catalog's services a machine can offer to a Core elsewhere, with what each costs. */
 function offered(catalog: Catalog): Array<{ name: string; label: string }> {
   return [...catalog.services.values()]
@@ -225,7 +208,6 @@ export async function run(
   if (scaffold.length > 0) p.note(`會複製內建角色:${scaffold.join("、")}`);
 
   const generated = await flow(p, ws);
-  dropWorkerAddresses(ws, fresh);
   if (generated.length > 0) p.note(`會產生新的 token:${generated.join("、")}`);
 
   const services = ["core", ...(mode === "voice" ? VOICE_SERVICES : [])];
