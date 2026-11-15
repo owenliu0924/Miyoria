@@ -407,6 +407,33 @@ Docker:資料在 `core-data` volume 的 `/data/miyoria.db`。停掉 core 再把 
 
 **備份要放到另一台機器或雲端**(`rsync`、`rclone`、NAS),同一顆硬碟上的備份擋不住硬碟故障。**還原演練**:至少做過一次,才算有備份。
 
+### 從 V4 切換到新的資料庫(`miyoria db`)
+
+V5 從一個新的資料庫檔開始,從不打開也不改 V4 的檔案(Core 遇到 V4 的檔案會拒絕啟動,訊息裡會列出下面的指令)。只帶過去「誰是誰」:人和他們的 id、帳號、她對每個人的稱呼(handle)、隱私和語音同意的選擇、紀念卡要用的資料(第一次見到的時間、舊的羈絆分級名稱、舊卡張數)。羈絆、記憶、魚幣、卡片、聊天紀錄都不帶。設計見 [design/v5-data.md](design/v5-data.md) §4.3、§7。
+
+| 指令 | 做什麼 |
+|---|---|
+| `miyoria db doctor [檔案]` | 只讀檢查一個檔案:V4 / V5 / 空的 / 不是資料庫、Core 會不會拒絕、遷移、`integrity_check` 和 `foreign_key_check`、人數 / 帳號數 / 事件數和最新事件的時間;V4 的檔案另列 `import-links` 會帶過來的數量。省略檔案 = `core.database_url` |
+| `miyoria db archive [檔案] [--dry-run]` | Core 停掉之後:檔案還被開著就拒絕(Windows 用「把檔案改名成自己」測試,SQLite 開著的檔案改不了名;Linux 看 `/proc`;其他系統用 `lsof`),把 `.db`、`-wal`、`-shm` **三個一起**改名搬進 `data/archive/miyoria-v4-<日期>.db*`,用 `VACUUM INTO` 做一份單一檔案的 `.single.db`,把雜湊寫進 `data/archive/MANIFEST.txt`,最後印出接下來要打的指令。不刪任何檔案;要輸入 `archive` 確認(或加 `--yes`)。中途失敗(或被中斷)可以直接重跑:它會照 `.plan.json` 接著做,資料夾和計畫對不上就拒絕 |
+| `miyoria db import-links --from <檔案> [--dry-run]` | 從 V4 的檔案(只讀)匯入 `core.database_url` 的資料庫,新檔不存在就建立。一個交易;重跑不會重複(已經有的人會略過並計數)。新資料庫裡已經有人用了某個帳號就整個拒絕,所以要在 V5 跟任何人說話之前匯入。`--dry-run` 只列出數量和前幾筆 |
+
+切換的順序(先拿現行檔案的**複本**演練一次第 1 步):
+
+```bash
+miyoria db doctor <複本>                         # 1. 演練:V4、integrity ok
+miyoria db import-links --from <複本> --dry-run  #    數量對嗎(人、帳號、handle、選擇)
+# 2. 停掉 Core(miyoria down,或關掉前景的 miyoria core)
+miyoria db doctor data/miyoria.db                # 3. 停機後再看一次
+miyoria db archive                               # 4. 封存(輸入 archive 確認)
+miyoria config set core.database_url sqlite:data/core.db   # 5. 指向新檔
+miyoria db import-links --from data/archive/miyoria-v4-<日期>.single.db --dry-run
+miyoria db import-links --from data/archive/miyoria-v4-<日期>.single.db   # 6. 匯入
+miyoria db doctor data/core.db                   # 7. V5、人數對
+miyoria core                                     # 8. 第一次啟動:其餘的遷移
+```
+
+匯入放在第一次啟動之前,這樣沒有人能先跟 V5 說話。新舊兩個 Core 不能同時連 Discord(同一個帳號會回兩次)。要退回 V4:停掉 V5,把 `data/archive/` 裡的三個 `miyoria-v4-<日期>.db*` 改名回 `data/miyoria.db*`,再啟動舊版;V5 試跑期間的東西舊版看不到。
+
 ### 資料管理(面板「資料」頁)
 
 管理面板的「資料」頁列出她的每一類資料(資料表與設定 key 的對應見 [ARCHITECTURE.md](ARCHITECTURE.md) §16「資料類別」),分成三張表:
