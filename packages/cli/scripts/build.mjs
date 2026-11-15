@@ -196,6 +196,12 @@ function copyCatalog() {
 
   // Workers: the Python ones with sources and the locked project, the others with their config.
   const workersDir = join(repo, "workers");
+  // The Core image is built without `workers/` in its context (.dockerignore): it runs Core only
+  // and needs no worker catalog. The packed npm package is checked for these files in CI.
+  if (!existsSync(workersDir)) {
+    console.warn("build: no workers/ folder here; the package will not carry the worker catalog");
+    return copied;
+  }
   const shared = readdirSync(workersDir)
     .filter((f) => f.endsWith(".py") && f !== "gen_contracts.py")
     .map((f) => f.slice(0, -3));
