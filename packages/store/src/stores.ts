@@ -11,7 +11,6 @@ import {
   type DirectiveRecord,
   type JsonObject,
   type JsonValue,
-  type ModuleId,
   type PersonId,
   type PlatformId,
   type ProfileId,
@@ -19,6 +18,7 @@ import {
   type Timestamp,
   type TurnOutcomeRecord,
 } from "@miyoria/types";
+import type { ConfigModuleState } from "./config/revisions.js";
 import type { DataCategoryId, DataExport, DataInventory, WipeCounts, WipeOptions } from "./data.js";
 import type { ChatLogStore } from "./events/chat.js";
 import type { LlmCallStore } from "./events/llm.js";
@@ -102,14 +102,6 @@ export interface MemberCardStore {
   countFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
   /** Deletes every card of `accounts`; returns how many. */
   deleteFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
-}
-
-/** Persisted runtime enabled / disabled flag per module. */
-export interface ModuleStateStore {
-  /** `null` when the flag was never set (the config default applies). */
-  get(module: ModuleId): Promise<boolean | null>;
-  set(module: ModuleId, enabled: boolean): Promise<void>;
-  list(): Promise<Map<ModuleId, boolean>>;
 }
 
 /** Runtime edits of persona sections, with full version history. */
@@ -336,7 +328,8 @@ export interface DirectiveStore {
  */
 export interface Store {
   readonly messages: MessageLog;
-  readonly moduleState: ModuleStateStore;
+  /** Module on/off: the `enabled` flags of the current config revision. */
+  readonly moduleState: ConfigModuleState;
   readonly personaOverrides: PersonaOverrideStore;
   readonly people: PeopleStore;
   readonly decisions: DecisionLog;
@@ -379,7 +372,6 @@ export interface Store {
 
 // Service keys: the app provides each area (owner `"kernel"`) so modules can look them up.
 export const MessageLogKey = serviceKey<MessageLog>("MessageLog");
-export const ModuleStateStoreKey = serviceKey<ModuleStateStore>("ModuleStateStore");
 export const PersonaOverrideStoreKey = serviceKey<PersonaOverrideStore>("PersonaOverrideStore");
 export const PeopleStoreKey = serviceKey<PeopleStore>("PeopleStore");
 export const DecisionLogKey = serviceKey<DecisionLog>("DecisionLog");

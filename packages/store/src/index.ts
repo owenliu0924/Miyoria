@@ -254,16 +254,9 @@ export {
 } from "./events/types.js";
 export {
   HANDLE_PREFIX,
-  handleKey,
   type PersonHandleDirectory,
   StoredHandleDirectory,
 } from "./handles.js";
-export {
-  IdentityHandles,
-  IdentityLinks,
-  IdentityPeople,
-  PrefsSettings,
-} from "./identity/adapters.js";
 export {
   HOME_SESSION,
   Identity,
@@ -335,12 +328,7 @@ export {
   type PersonMerge,
   type PersonRequestResult,
 } from "./person-data.js";
-export {
-  type PluginContext,
-  RoutedSettings,
-  type SettingsFamily,
-  type StorePlugin,
-} from "./plugin.js";
+export type { PluginContext, SettingsFamily, StorePlugin } from "./plugin.js";
 export {
   type Account,
   type AuditEntry,
@@ -384,8 +372,6 @@ export {
   MemoryRecordStoreKey,
   type MessageLog,
   MessageLogKey,
-  type ModuleStateStore,
-  ModuleStateStoreKey,
   type PeopleStore,
   PeopleStoreKey,
   type PersonaOverrideStore,

@@ -10,7 +10,7 @@
 // passes the root schema of the whole file (`@miyoria/core` `validateRevision`).
 //
 // Module on/off is the `enabled` flag of `modules.<id>` in the current revision (§6: "one place
-// for is it on"); `ConfigModuleState` is the `ModuleStateStore` Core's boot reads it through.
+// for is it on"); Core's boot reads it through `ConfigModuleState` (`Store.moduleState`).
 
 import { JsonObjectSchema } from "@miyoria/contracts/wire";
 import {
@@ -26,7 +26,6 @@ import { StoreError } from "../common.js";
 import type { Db } from "../db.js";
 import type { EventStore } from "../events/log.js";
 import { ConfigRevised } from "../events/types.js";
-import type { ModuleStateStore } from "../stores.js";
 import { type ConfigRevisionRow, configRevisions } from "./schema.js";
 
 /** One version of the cluster config. */
@@ -225,12 +224,12 @@ export function moduleFlags(doc: JsonObject | undefined): Map<ModuleId, boolean>
 export const MODULE_TOGGLE_AUTHOR = "runtime";
 
 /**
- * `ModuleStateStore` over the config revisions: a module's remembered on/off is the `enabled`
+ * Module on/off over the config revisions: a module's remembered on/off is the `enabled`
  * flag of `modules.<id>` in the current revision, and a toggle writes the next revision. Setting
  * the value it already has writes nothing. Core's boot decides what to follow (a required
  * module's flag is not).
  */
-export class ConfigModuleState implements ModuleStateStore {
+export class ConfigModuleState {
   readonly #db: Db;
   readonly #revisions: ConfigRevisions;
 
@@ -239,6 +238,7 @@ export class ConfigModuleState implements ModuleStateStore {
     this.#revisions = revisions;
   }
 
+  /** `null` when the flag was never set (the config default applies). */
   async get(module: ModuleId): Promise<boolean | null> {
     return moduleFlags(this.#revisions.current()?.doc).get(module) ?? null;
   }

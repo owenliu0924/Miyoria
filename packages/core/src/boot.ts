@@ -39,7 +39,6 @@ import {
   MemberCardStoreKey,
   MemoryRecordStoreKey,
   MessageLogKey,
-  ModuleStateStoreKey,
   PeopleStoreKey,
   PersonaOverrideStoreKey,
   type PersonHandleDirectory,
@@ -263,7 +262,6 @@ export async function buildCoreWith(
   services.provide(k, IdentityStoreKey, store.identity);
   services.provide(k, AuthStoreKey, store.plugin(authTables).store);
   services.provide(k, AuditLogKey, store.audit);
-  services.provide(k, ModuleStateStoreKey, store.moduleState);
   services.provide(k, ProfileDataStoreKey, store.profileData);
   // Her stable names for people (`Owen`, `Owen#2`): never per-call codes (`u1`).
   let handles: PersonHandleDirectory | null = null;
