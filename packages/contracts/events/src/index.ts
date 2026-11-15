@@ -170,6 +170,7 @@ export {
   DirectiveSchema,
   DirectiveScopeSchema,
 } from "./directive.js";
+export { EconomyPosted, type EconomyPostedData, EconomyPostedSchema } from "./economy.js";
 export {
   type CommissionAskedData,
   CommissionAskedSchema,

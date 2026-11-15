@@ -32,6 +32,9 @@
 // artifact's own scope), each expiry, take-down and collection run, and each share token made,
 // revoked and first used (`ARTIFACT_EVENTS`).
 //
+// Every row the economy plugin's coin ledger posts is one `economy.posted` (§3.3, decision D8),
+// appended in the posting's transaction: for the owner, kept like the ledger.
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
@@ -40,6 +43,8 @@ import {
   AuditRecorded,
   CHAT_EVENTS,
   defineEvent,
+  EconomyPosted,
+  type EconomyPostedData,
   type EventDefaults,
   EventRegistry,
   IdentityImported,
@@ -47,6 +52,8 @@ import {
   TURN_EVENTS,
 } from "@miyoria/contracts/events";
 import { JsonValueSchema } from "@miyoria/contracts/wire";
+
+export { EconomyPosted, type EconomyPostedData };
 
 /** Prefix of every type the facts writer records. */
 export const FACTS_TYPE_PREFIX = "facts.";
@@ -206,6 +213,7 @@ export function coreEventRegistry(): EventRegistry {
     SettingsChanged,
     ...ARTIFACT_EVENTS,
     IdentityImported,
+    EconomyPosted,
   );
 }
 

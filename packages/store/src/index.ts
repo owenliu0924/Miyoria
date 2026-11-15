@@ -225,6 +225,8 @@ export { TurnLog } from "./events/turns.js";
 export {
   ConfigRevised,
   coreEventRegistry,
+  EconomyPosted,
+  type EconomyPostedData,
   FACTS_EVENTS,
   FACTS_TYPE_PREFIX,
   FactsAction,

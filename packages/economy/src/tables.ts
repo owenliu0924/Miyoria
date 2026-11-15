@@ -14,13 +14,22 @@
 import {
   accounts,
   type Db,
+  EconomyPosted,
+  type EconomyPostedData,
+  type EventStore,
   type Identity,
   persons,
   StoreError,
   type StorePlugin,
   toMicros,
 } from "@miyoria/store";
-import type { AccountRef, PersonId, ProfileId, Timestamp } from "@miyoria/types";
+import {
+  type AccountRef,
+  newId,
+  type PersonId,
+  type ProfileId,
+  type Timestamp,
+} from "@miyoria/types";
 import { and, asc, desc, eq, getColumns, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { economySchema } from "./migrations.js";
 import {
@@ -119,10 +128,17 @@ const ENTRY = {
   ts: L.ts,
 };
 
-/** The coin ledger and the wallets (`CoinLedgerStore`) on `economy_ledger` and `economy_wallets`. */
+/** What the ledger's events name as their source. */
+export const LEDGER_SOURCE = "economy";
+
+/**
+ * The coin ledger and the wallets (`CoinLedgerStore`) on `economy_ledger` and `economy_wallets`.
+ * Every row posted is also one `economy.posted` event, appended in the posting's transaction.
+ */
 export class LedgerTables implements CoinLedgerStore {
   readonly #db: Db;
   readonly #identity: Identity;
+  readonly #events: EventStore;
   // The hottest reads, prepared once: every spend and earning runs them in its transaction.
   readonly #balance;
   readonly #byKey;
@@ -130,9 +146,10 @@ export class LedgerTables implements CoinLedgerStore {
   readonly #capOf;
   readonly #capAll;
 
-  constructor(db: Db, identity: Identity) {
+  constructor(db: Db, identity: Identity, events: EventStore) {
     this.#db = db;
     this.#identity = identity;
+    this.#events = events;
     const orm = db.orm;
     this.#balance = orm
       .select({ n: sql<number>`COALESCE(SUM(${L.delta}), 0)` })
@@ -236,6 +253,28 @@ export class LedgerTables implements CoinLedgerStore {
             ts: posted.ts,
           })
           .run();
+        // Its record on the event log, in this transaction: both are written, or neither.
+        const data: EconomyPostedData = {
+          entry_id: posted.id,
+          person_id: wallet,
+          delta,
+          reason: posted.reason,
+          ref: posted.ref,
+          idem_key: posted.idem_key,
+          balance: balance + delta,
+        };
+        this.#events.appendNow({
+          draft: {
+            id: newId(),
+            at: posted.ts,
+            type: EconomyPosted.type,
+            v: EconomyPosted.v,
+            person_id: wallet === PURSE ? null : wallet,
+            key: `ledger:${posted.id}`,
+            data,
+          },
+          source: LEDGER_SOURCE,
+        });
         return { status: "posted", entry: posted, balance: balance + delta };
       });
     } catch (cause) {
@@ -1044,8 +1083,8 @@ export interface EconomyTables {
 /** The `economy` plugin's tables and code (`StorePlugin`). */
 export const economyTables: StorePlugin<EconomyTables> = {
   schema: economySchema,
-  open: ({ db, identity }) => ({
-    ledger: new LedgerTables(db, identity),
+  open: ({ db, events, identity }) => ({
+    ledger: new LedgerTables(db, identity, events),
     deals: new DealTables(db, identity),
     fortunes: new FortuneTables(db, identity),
     goals: new GoalTables(db, identity),

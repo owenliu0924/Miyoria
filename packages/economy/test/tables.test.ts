@@ -4,6 +4,7 @@
 // of any key.
 
 import {
+  EconomyPosted,
   type PluginContext,
   resolveCategories,
   SqliteStore,
@@ -647,5 +648,66 @@ describe("economy documents", () => {
     expect(await ids("item", { statuses: ["open"], limit: 9 })).toEqual([]);
     expect(await ids("item", { statuses: [], limit: 9 })).toEqual([]);
     expect(await ids("prediction", { limit: 9 })).toEqual(["a"]);
+  });
+});
+
+describe("economy.posted", () => {
+  it("is one event per posted row, in its transaction, for the owner and kept", async () => {
+    const { economy, person, store } = await rig();
+    const id = person(discord("1"));
+    const posted = (await store.events.query({ types: [EconomyPosted.type], order: "asc" })).map(
+      (e) => e.envelope,
+    );
+    expect(posted).toEqual([]);
+    const first = await economy.ledger.post({
+      ...coin(id, 10, "checkin", "checkin:1", 1_000),
+      ref: "r",
+    });
+    // A repeat of the key, a short spend and a full cap post nothing, and record nothing.
+    await economy.ledger.post(coin(id, 10, "checkin", "checkin:1", 2_000));
+    await economy.ledger.post(coin(id, -50, "feed", "f:1", 2_000), { covered: true });
+    const cap = { wallet: id, reasons: ["checkin"], since: at(0), limit: 10 };
+    await economy.ledger.post(coin(id, 5, "checkin", null, 2_000), { caps: [cap] });
+    await economy.ledger.post(coin(PURSE, 3, "her_share", "share:x", 3_000));
+
+    const events = (await store.events.query({ types: [EconomyPosted.type], order: "asc" })).map(
+      (e) => e.envelope,
+    );
+    expect(events).toHaveLength(2);
+    const entry = first.status === "posted" ? first.entry : null;
+    expect(events[0]).toMatchObject({
+      type: "economy.posted",
+      scope: "owner",
+      tier: "keep",
+      source: "economy",
+      person_id: id,
+      key: `ledger:${entry?.id}`,
+      data: {
+        entry_id: entry?.id,
+        person_id: id,
+        delta: 10,
+        reason: "checkin",
+        ref: "r",
+        idem_key: "checkin:1",
+        balance: 10,
+      },
+    });
+    expect(Date.parse(events[0]?.at ?? "")).toBe(1_000);
+    // Her purse is no person: the wallet is in the payload, the envelope names nobody.
+    expect(events[1]).toMatchObject({ person_id: null, data: { person_id: PURSE, balance: 3 } });
+    for (const e of events) expect(EconomyPosted.data.safeParse(e.data).success).toBe(true);
+  });
+
+  it("goes with its row when the transaction does not commit", async () => {
+    const { economy, person, ctx, store } = await rig();
+    const id = person(discord("1"));
+    expect(() =>
+      ctx.db.tx(() => {
+        void economy.ledger.post(coin(id, 10, "checkin", null, 1_000));
+        throw new Error("the caller failed");
+      }),
+    ).toThrow(/the caller failed/);
+    expect(await economy.ledger.balance("p", id)).toBe(0);
+    expect(await store.events.query({ types: [EconomyPosted.type] })).toEqual([]);
   });
 });

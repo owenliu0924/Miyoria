@@ -1922,6 +1922,51 @@
         "playback"
       ]
     },
+    "EventsEconomyPosted": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "string"
+        },
+        "person_id": {
+          "type": "string"
+        },
+        "delta": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "reason": {
+          "type": "string"
+        },
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idem_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "balance": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "entry_id",
+        "person_id",
+        "delta",
+        "reason",
+        "ref",
+        "idem_key",
+        "balance"
+      ]
+    },
     "EventsEmergencyReport": {
       "type": "object",
       "properties": {
