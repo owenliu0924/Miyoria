@@ -12,11 +12,16 @@ export {
   withTimeout,
 } from "./async.js";
 export {
+  type BusPublishHook,
+  busPublishHook,
+  clearBusCheckExemptions,
   DEFAULT_BUS_CAPACITY,
   EventBus,
   type EventBusOptions,
+  exemptFromBusCheck,
   type SubscribeOptions,
   Subscription,
+  setBusPublishHook,
   TopicFilter,
   type TopicFilterLike,
   topicPrefix,

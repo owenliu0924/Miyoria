@@ -145,6 +145,77 @@ export class Subscription implements AsyncIterableIterator<Envelope> {
   }
 }
 
+// The publish hook: tests only. The repository's test setup (`vitest.bus-check.ts`) installs one
+// that checks every published payload against its schema (K12a in docs/design/v5-contracts.md).
+// It is honoured only when the process is a Vitest run (`VITEST` set when this module loads);
+// anywhere else `setBusPublishHook` throws and `publishEnvelope` skips it on a constant. Its state
+// sits on a global symbol so that every copy of this module in a process sees the same hook.
+
+/** Sees every envelope published on any bus while installed. */
+export interface BusPublishHook {
+  /** Called before delivery. Must not throw; whatever it throws is dropped. */
+  published(envelope: Envelope): void;
+}
+
+/** Whether this process is a test run. Read once, so production pays one constant check. */
+const IN_TEST_RUN = typeof process !== "undefined" && process.env.VITEST !== undefined;
+
+const HOOK_STATE = Symbol.for("miyoria.kernel.bus.publishHook");
+
+interface PublishHookState {
+  hook: BusPublishHook | null;
+  /** Topics a test publishes on purpose that no schema covers (made-up topics). */
+  exempt: TopicFilter[];
+}
+
+function hookState(): PublishHookState {
+  const global = globalThis as { [HOOK_STATE]?: PublishHookState };
+  global[HOOK_STATE] ??= { hook: null, exempt: [] };
+  return global[HOOK_STATE];
+}
+
+function runPublishHook(envelope: Envelope): void {
+  const state = (globalThis as { [HOOK_STATE]?: PublishHookState })[HOOK_STATE];
+  if (state?.hook == null) return;
+  const topic = envelopeTopic(envelope);
+  if (state.exempt.some((filter) => filter.matches(topic))) return;
+  try {
+    state.hook.published(envelope);
+  } catch {
+    // The publisher must not notice the hook.
+  }
+}
+
+/**
+ * Installs the publish hook (`null` removes it). Tests only: throws outside a Vitest run, so
+ * production code cannot switch it on.
+ */
+export function setBusPublishHook(hook: BusPublishHook | null): void {
+  if (!IN_TEST_RUN) {
+    throw new Error("the bus publish hook is for tests only: this process is not a Vitest run");
+  }
+  hookState().hook = hook;
+}
+
+/** The installed publish hook, if any. */
+export function busPublishHook(): BusPublishHook | null {
+  return IN_TEST_RUN ? hookState().hook : null;
+}
+
+/**
+ * Keeps matching topics away from the publish hook until `clearBusCheckExemptions` (the test
+ * setup calls it after each test file). For a test that publishes made-up topics on purpose:
+ * `exemptFromBusCheck("test.*")` at the top of the file. Does nothing outside a Vitest run.
+ */
+export function exemptFromBusCheck(filter: TopicFilterLike): void {
+  if (IN_TEST_RUN) hookState().exempt.push(TopicFilter.from(filter));
+}
+
+/** Ends every `exemptFromBusCheck`. */
+export function clearBusCheckExemptions(): void {
+  if (IN_TEST_RUN) hookState().exempt = [];
+}
+
 /** Distinct topic prefixes counted before the rest collapse into `"other"`. */
 const MAX_TOPIC_PREFIXES = 64;
 
@@ -181,6 +252,7 @@ export class EventBus {
   }
 
   publishEnvelope(envelope: Envelope): void {
+    if (IN_TEST_RUN) runPublishHook(envelope);
     this.#published.inc({ prefix: topicPrefix(envelopeTopic(envelope)) });
     // No subscribers is not an error.
     for (const sub of this.#subscriptions) sub.deliver(envelope);

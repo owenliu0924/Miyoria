@@ -1,6 +1,12 @@
 // Event types: `defineEvent` names a type, the version of its payload and the payload's schema,
 // with the type's default scope and its tier; `EventRegistry` holds the definitions Core knows.
 // No bus, no store, no I/O: this runs in a browser bundle as well as in Core.
+//
+// A type may be a family: a pattern whose `*` words stand for any word, for types built from
+// parts (`audit.<area>.<action>`, `game.<id>.task.<type>`). A `*` in the middle stands for exactly
+// one word; a `*` at the end for one word or more, as in a bus topic filter (`audit.*` covers
+// `audit.admin.memory.wipe`). `EventRegistry.resolve` finds a type's own definition, else the most
+// specific family that covers it.
 
 import type { z } from "zod";
 import type { EventId, Timestamp } from "../../wire/src/index.js";
@@ -66,6 +72,17 @@ export function defineEvent<const Type extends string, Data extends z.ZodType>(
   if (spec.type.trim() === "" || /\s/.test(spec.type)) {
     throw new EventDefinitionError(`event type \`${spec.type}\` is empty or has whitespace`);
   }
+  if (spec.type.includes("*")) {
+    const words = spec.type.split(".");
+    if (words.some((word) => word === "" || (word.includes("*") && word !== "*"))) {
+      throw new EventDefinitionError(
+        `event family \`${spec.type}\`: a \`*\` must be a whole word, and no word may be empty`,
+      );
+    }
+    if (words.every((word) => word === "*")) {
+      throw new EventDefinitionError(`event family \`${spec.type}\` has no fixed word`);
+    }
+  }
   if (!Number.isInteger(spec.v) || spec.v < 1) {
     throw new EventDefinitionError(`event \`${spec.type}\`: version ${spec.v} is not 1 or more`);
   }
@@ -76,6 +93,47 @@ export function defineEvent<const Type extends string, Data extends z.ZodType>(
     scope: spec.scope ?? null,
     tier: spec.tier ?? DEFAULT_EVENT_TIER,
   });
+}
+
+/** Whether `type` is a family pattern (it has a `*` word). */
+export function isEventFamily(type: string): boolean {
+  return type.split(".").includes("*");
+}
+
+/**
+ * Whether the family `pattern` covers `type`. A `*` in the middle matches exactly one word, a `*`
+ * at the end one word or more; every other word must be equal. A pattern without `*` covers only
+ * itself.
+ */
+export function familyCovers(pattern: string, type: string): boolean {
+  const p = pattern.split(".");
+  const t = type.split(".");
+  const open = p[p.length - 1] === "*";
+  if (open ? t.length < p.length : t.length !== p.length) return false;
+  return p.every((word, i) => word === "*" || word === t[i]);
+}
+
+/**
+ * Orders two families that both cover a type, the more specific first: more fixed words, then more
+ * words, then the one without an open end, then the one whose first difference is a fixed word
+ * (`game.*.*` before `*.task.*`), then by name.
+ */
+function moreSpecific(a: string, b: string): number {
+  const fixed = (words: string[]) => words.filter((word) => word !== "*").length;
+  const wa = a.split(".");
+  const wb = b.split(".");
+  if (fixed(wa) !== fixed(wb)) return fixed(wb) - fixed(wa);
+  if (wa.length !== wb.length) return wb.length - wa.length;
+  const openA = wa[wa.length - 1] === "*";
+  const openB = wb[wb.length - 1] === "*";
+  if (openA !== openB) return openA ? 1 : -1;
+  for (let i = 0; i < wa.length; i++) {
+    if (wa[i] === wb[i]) continue;
+    if (wa[i] === "*") return 1;
+    if (wb[i] === "*") return -1;
+    break;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /** The scope and tier Core uses for a type when the producer does not say. */
@@ -117,6 +175,25 @@ export class EventRegistry {
     return versions.get(Math.max(...versions.keys())) ?? null;
   }
 
+  /**
+   * The definition that governs `type`: its own, else the most specific registered family that
+   * covers it (`game.minecraft.task.done` takes `game.*.task.*` over `game.*.*`). `v` as in `get`.
+   * `null` when neither exists.
+   */
+  resolve(type: string, v?: number): AnyEventDefinition | null {
+    if (this.#types.has(type)) return this.get(type, v);
+    const family = this.familyOf(type);
+    return family === null ? null : this.get(family, v);
+  }
+
+  /** The most specific registered family that covers `type` (never `type` itself), or `null`. */
+  familyOf(type: string): string | null {
+    const covering = [...this.#types.keys()].filter(
+      (pattern) => pattern !== type && isEventFamily(pattern) && familyCovers(pattern, type),
+    );
+    return covering.sort(moreSpecific)[0] ?? null;
+  }
+
   /** Every definition, by type, then version. */
   list(): AnyEventDefinition[] {
     return [...this.#types.keys()]
@@ -125,11 +202,12 @@ export class EventRegistry {
   }
 
   /**
-   * The default scope and the tier of `type`, from its newest version. A type nobody registered
-   * gets no default scope and `DEFAULT_EVENT_TIER`.
+   * The default scope and the tier of `type`, from the newest version of the definition that
+   * governs it (`resolve`). A type nobody registered and no family covers gets no default scope
+   * and `DEFAULT_EVENT_TIER`.
    */
   defaults(type: string): EventDefaults {
-    const definition = this.get(type);
+    const definition = this.resolve(type);
     if (definition === null) return { scope: null, tier: DEFAULT_EVENT_TIER };
     return { scope: definition.scope, tier: definition.tier };
   }
