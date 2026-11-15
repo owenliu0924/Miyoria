@@ -35,8 +35,17 @@
 // worker left it offline until the services' own lease ran out or it restarted. What hostd does
 // instead is asserted separately.
 
-import { readFileSync } from "node:fs";
-import type { HostGpuAcquire, HostGpuAcquireResult, HostGpuRenew } from "@miyoria/contracts/host";
+import { readFileSync, writeFileSync } from "node:fs";
+import type {
+  HostGpuAcquire,
+  HostGpuAcquireResult,
+  HostGpuBusy,
+  HostGpuBusyResult,
+  HostGpuRelease,
+  HostGpuReleaseResult,
+  HostGpuRenew,
+  HostGpuRenewResult,
+} from "@miyoria/contracts/host";
 import { describe, expect, it } from "vitest";
 import {
   Arbiter,
@@ -102,6 +111,21 @@ const FILE = new URL("../../../../workers/sing/gpu_scenarios.json", import.meta.
 const RECORDED = JSON.parse(readFileSync(FILE, "utf8")) as { scenarios: Recorded[] };
 const TAIL_S = 5.0;
 const HOLDER = "sing";
+/** lease.py `KEEPALIVE_S`. */
+const KEEPALIVE_S = 20.0;
+
+/** One `gpu.*` call of the worker and hostd's answer, in simulated seconds. */
+interface Exchange {
+  t: number;
+  method: string;
+  params: Json;
+  result: unknown;
+  t_end: number;
+}
+
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
+}
 
 class Suspended extends Error {
   constructor(readonly code: string) {
@@ -278,6 +302,10 @@ class Scenario {
   yieldStopped = false;
   dead = false;
   summary: Json | null = null;
+  readonly exchanges: Exchange[] = [];
+  lastCall = 0;
+  gpuStarted = false;
+  readonly keepAliveStop: SimEvent;
   progress = new Map<string, number>();
   oomLeft = new Map<string, boolean>();
   goDue = false;
@@ -305,6 +333,7 @@ class Scenario {
       this.profile.noteStep(stage, step);
     this.go = new SimEvent(this.sim);
     this.done = new SimEvent(this.sim);
+    this.keepAliveStop = new SimEvent(this.sim);
     for (const st of s.stages) this.oomLeft.set(st.stage, Boolean(st.oom_once));
     const tenants: Tenant[] = [...this.peers.keys()].map((name) => ({
       name,
@@ -445,21 +474,68 @@ class Scenario {
     };
   }
 
-  acquire(stage: string, resumed: boolean, announced: boolean): Promise<HostGpuAcquireResult> {
-    return this.w(this.arbiter.acquire(HOLDER, this.params(stage, resumed, announced)));
+  /**
+   * Every `gpu.*` call of the worker goes through here: it is recorded (time asked, params,
+   * answer, time answered) for the Python lease client's cross-check (lease_exchanges.jsonl).
+   */
+  async rpc<T>(method: string, params: Json): Promise<T> {
+    const exchange: Exchange = {
+      t: this.sim.now,
+      method,
+      params: clone(params),
+      result: null,
+      t_end: 0,
+    };
+    this.exchanges.push(exchange);
+    this.lastCall = this.sim.now;
+    const a = this.arbiter;
+    const answer: Promise<unknown> =
+      method === "gpu.acquire"
+        ? a.acquire(HOLDER, params as unknown as HostGpuAcquire)
+        : method === "gpu.renew"
+          ? a.renew(params as unknown as HostGpuRenew)
+          : method === "gpu.release"
+            ? a.release(params as unknown as HostGpuRelease)
+            : method === "gpu.busy"
+              ? Promise.resolve(a.busy(params as unknown as HostGpuBusy))
+              : Promise.resolve(a.state());
+    const result = await answer;
+    exchange.result = clone(result);
+    exchange.t_end = this.sim.now;
+    return this.w(Promise.resolve(result as T));
   }
 
-  renew(p: Partial<HostGpuRenew>) {
-    return this.w(
-      this.arbiter.renew({
-        lease: this.jobId,
-        own_mb: this.card.own(),
-        queued: [],
-        step: null,
-        end: null,
-        ...p,
-      }),
-    );
+  acquire(stage: string, resumed: boolean, announced: boolean): Promise<HostGpuAcquireResult> {
+    return this.rpc("gpu.acquire", this.params(stage, resumed, announced) as unknown as Json);
+  }
+
+  renew(p: Partial<HostGpuRenew>): Promise<HostGpuRenewResult> {
+    const params = {
+      lease: this.jobId,
+      own_mb: this.card.own(),
+      queued: [],
+      step: null,
+      end: null,
+      ...p,
+    };
+    return this.rpc("gpu.renew", params as unknown as Json);
+  }
+
+  release(window: "keep" | "close", done: boolean): Promise<HostGpuReleaseResult> {
+    return this.rpc("gpu.release", { lease: this.jobId, window, done });
+  }
+
+  /** A bare `gpu.renew` when 20 s passed without any call (lease.py `_keepalive`). */
+  async keepAlive(): Promise<void> {
+    for (;;) {
+      const due = this.lastCall + KEEPALIVE_S;
+      const now = this.sim.now;
+      if (now >= due) {
+        await this.renew({});
+        continue;
+      }
+      if (await this.w(this.keepAliveStop.wait(due - now))) return;
+    }
   }
 
   /** `_place`. */
@@ -539,21 +615,18 @@ class Scenario {
     )
       return;
     ex.state = "reloading";
-    ex.reloading = this.w(this.arbiter.release({ lease: this.jobId, window, done: false })).then(
-      (r) => {
-        ex.errors.push(...r.errors);
-        if (r.reload_s !== null) ex.timings.reload_s = r.reload_s;
-        ex.state = "done";
-      },
-    );
+    ex.reloading = this.release(window, false).then((r) => {
+      ex.errors.push(...r.errors);
+      if (r.reload_s !== null) ex.timings.reload_s = r.reload_s;
+      ex.state = "done";
+    });
   }
 
-  /** `_close_window`. */
+  /** `_close_window`: one `close` release brings speech back and ends the window. */
   async closeWindow(): Promise<void> {
     if (this.exclusive === null || !this.arbiter.windowOf(this.jobId)) return;
     this.endExclusive("close");
     await this.exclusive.reloading;
-    await this.w(this.arbiter.release({ lease: this.jobId, window: "close", done: false }));
   }
 
   /** `_give_gpu_back`. */
@@ -564,7 +637,7 @@ class Scenario {
   }
 
   async busy(): Promise<boolean> {
-    return (await this.w(Promise.resolve(this.arbiter.busy({ lease: this.jobId })))).busy;
+    return (await this.rpc<HostGpuBusyResult>("gpu.busy", { lease: this.jobId })).busy;
   }
 
   /** `SpeechYield.wait`. */
@@ -583,7 +656,7 @@ class Scenario {
   arm(stage: string, work: { steps: number | null } | null): void {
     this.gate = async () => {
       this.meter.step(this.sim.now);
-      const b = await this.w(Promise.resolve(this.arbiter.busy({ lease: this.jobId })));
+      const b = await this.rpc<HostGpuBusyResult>("gpu.busy", { lease: this.jobId });
       if (b.busy) {
         this.yieldMaxS = b.allowance_s;
         await this.yieldWait();
@@ -610,6 +683,15 @@ class Scenario {
     run: (device: "gpu" | "cpu") => Promise<void>,
     work: { steps: number | null } | null,
   ): Promise<void> {
+    if (!this.gpuStarted) {
+      // lease.py `start`: the policy for what the job shows, then the keep-alive.
+      this.gpuStarted = true;
+      await this.rpc("gpu.state", {});
+      this.sim.spawn(
+        () => this.keepAlive(),
+        (e) => this.errors.push(e),
+      );
+    }
     let resumed = false;
     for (;;) {
       const device = await this.place(stage, resumed);
@@ -719,9 +801,8 @@ class Scenario {
       } finally {
         this.giveGpuBack();
         await this.exclusive?.reloading;
-        const r = await this.w(
-          this.arbiter.release({ lease: this.jobId, window: "close", done: true }),
-        );
+        const r = await this.release("close", true);
+        this.keepAliveStop.set();
         this.summary = r.summary as unknown as Json;
       }
       this.outcome = { state: "done" };
@@ -940,6 +1021,7 @@ describe("the recorded scenarios, against the arbiter", () => {
     it(`${rec.name}: ${rec.about}`, { timeout: 60_000 }, async () => {
       const sc = new Scenario(rec.setup);
       const result = await sc.play();
+      EXCHANGES.set(rec.name, compress(sc.exchanges));
       const upToDeath = (es: Event[]): Event[] =>
         dies === null ? es : es.filter((e) => e.t < dies);
       expect(normal(view(upToDeath(sc.events)))).toEqual(normal(view(upToDeath(rec.events))));
@@ -959,4 +1041,86 @@ describe("the recorded scenarios, against the arbiter", () => {
       expect(sc.arbiter.windowOf(sc.jobId)).toBe(false);
     });
   }
+
+  it("has written down what the worker asked and hostd answered (lease_exchanges.jsonl)", () => {
+    const text = exchangesText(RECORDED.scenarios.map((rec) => rec.name));
+    if (process.env.UPDATE_LEASE_EXCHANGES === "1") {
+      writeFileSync(EXCHANGES_FILE, text);
+      return;
+    }
+    const old = readFileSync(EXCHANGES_FILE, "utf8").replaceAll("\r\n", "\n");
+    expect(old === text, "lease_exchanges.jsonl is stale: run with UPDATE_LEASE_EXCHANGES=1").toBe(
+      true,
+    );
+  });
 });
+
+// ── the exchanges, for the Python lease client's cross-check ──────────────
+//
+// workers/tests/test_gpu_lease_replay.py runs the song worker's real job loop with
+// SING_GPU_ARBITER=hostd against a hostd that answers from this file, and requires the worker to
+// ask the same, at the same simulated times. Stored compactly: `gpu.busy` as runs of equal answers
+// `[first t, last t, count, busy, allowance_s]`; every other call in order, a run of consecutive
+// equal calls answered at once (same params and answer, no time between asking and answer) as one
+// entry with its count and first and last time, a call answered later on its own with `t_end`.
+
+const EXCHANGES_FILE = new URL("./lease_exchanges.jsonl", import.meta.url);
+const EXCHANGES = new Map<string, { busy: unknown[]; calls: Json[] }>();
+
+function compress(xs: Exchange[]): { busy: unknown[]; calls: Json[] } {
+  const busy: [number, number, number, boolean, number][] = [];
+  const calls: (Json & { key?: string })[] = [];
+  for (const x of xs) {
+    if (x.method === "gpu.busy") {
+      const r = x.result as HostGpuBusyResult;
+      const last = busy.at(-1);
+      if (last !== undefined && last[3] === r.busy && last[4] === r.allowance_s) {
+        last[1] = x.t;
+        last[2] += 1;
+      } else busy.push([x.t, x.t, 1, r.busy, r.allowance_s]);
+      continue;
+    }
+    const instant = x.t_end === x.t;
+    const key = instant
+      ? JSON.stringify([x.method, normal(x.params), normal(x.result)])
+      : undefined;
+    const last = calls.at(-1);
+    if (key !== undefined && last !== undefined && last.key === key) {
+      last.n = (last.n as number) + 1;
+      last.t1 = x.t;
+      continue;
+    }
+    calls.push({
+      key,
+      method: x.method,
+      n: 1,
+      t0: x.t,
+      t1: x.t,
+      t_end: x.t_end,
+      params: x.params,
+      result: x.result,
+    });
+  }
+  return {
+    busy,
+    calls: calls.map(({ key: _, ...c }) => c),
+  };
+}
+
+/**
+ * JSON Lines (one JSON value per line, so a diff shows one call per line, and the formatter, which
+ * would spread a .json file over thirty thousand lines, leaves it alone): an `about` line, then per
+ * scenario a line with its `busy` runs and one line per call.
+ */
+function exchangesText(names: string[]): string {
+  const about =
+    "What the song worker (the scenario harness's port of server.py, as lease.py does it) asked hostd's arbiter and what it answered, per recorded scenario, in simulated seconds. Written by packages/hostd/test/arbiter/scenarios.test.ts (UPDATE_LEASE_EXCHANGES=1); replayed by workers/tests/test_gpu_lease_replay.py.";
+  const out = [JSON.stringify({ about })];
+  for (const name of names) {
+    const x = EXCHANGES.get(name);
+    if (x === undefined) throw new Error(`no exchanges for ${name}: run the whole file`);
+    out.push(JSON.stringify({ scenario: name, busy: x.busy }));
+    for (const c of x.calls) out.push(JSON.stringify({ scenario: name, call: normal(c) }));
+  }
+  return `${out.join("\n")}\n`;
+}
