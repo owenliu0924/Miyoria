@@ -118,6 +118,7 @@ describe("shapes", () => {
       models_dir: "",
       allow_download: true,
       dtype: "q8",
+      pooling: "",
       threads: 2,
       query_prefix: null,
       passage_prefix: null,

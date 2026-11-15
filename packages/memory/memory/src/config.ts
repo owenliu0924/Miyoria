@@ -322,6 +322,10 @@ export function memoryConfig(overrides: z.input<typeof MemoryConfigSchema> = {})
   return MemoryConfigSchema.parse(overrides);
 }
 
+/** `[memory.embedding] pooling`; empty: by model name. */
+export const PoolingSchema = z.enum(["", "mean", "cls", "last_token", "model"]);
+export type Pooling = Exclude<z.output<typeof PoolingSchema>, "">;
+
 /** The model `provider = "local"` uses when `model` is empty: small, multilingual, CPU-friendly. */
 export const DEFAULT_LOCAL_MODEL = "Xenova/multilingual-e5-small";
 
@@ -352,11 +356,27 @@ export const EmbeddingConfigSchema = z.object({
   models_dir: z.string().default(""),
   /** `local`: fetch the model files once when they are not there (only the model comes in). */
   allow_download: z.boolean().default(true),
-  /** `local`: weight type (`q8` is about a quarter of `fp32` and close enough). */
+  /**
+   * `local`: weight type, the suffix of the model file (`fp32`, `fp16`, `q8`, `q4`, ...). What is
+   * close enough depends on the model (embedding trial, 2026-11-15): `q8` is fine for e5-small and
+   * Harrier (weight-only, but 6 to 9 times slower than `fp16` on the CPU), and costs Qwen3 ten
+   * points of recall. Use `fp16` for Harrier and Qwen3-Embedding.
+   */
   dtype: z.string().default("q8"),
+  /**
+   * `local`: how one vector is made of the model's output. `mean` (of the tokens), `cls` (the first
+   * token), `last_token`, or `model` (the pooled `sentence_embedding` the model's graph outputs
+   * itself). Empty: by model name, as the prefixes are (`local-embed.ts` `modelSettings`: Harrier
+   * `model`, Qwen3-Embedding `last_token`, bge-m3 `cls`, e5 `mean`; any other model `model` when
+   * it has that output, otherwise `mean`).
+   */
+  pooling: PoolingSchema.default(""),
   /** `local`: CPU threads of the worker (keep it off the cores voice needs). */
   threads: uint().default(2),
-  /** Prepended to texts searched for (e5 models: `query: `). Default by model for `local`. */
+  /**
+   * Prepended to texts searched for (e5 models: `query: `; Harrier and Qwen3-Embedding: their web
+   * search instruction). Default by model for `local`.
+   */
   query_prefix: z.string().nullable().default(null),
   /** Prepended to texts stored (e5 models: `passage: `). Default by model for `local`. */
   passage_prefix: z.string().nullable().default(null),

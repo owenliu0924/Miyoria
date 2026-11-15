@@ -9,6 +9,13 @@ export interface Embedder {
   readonly name: string;
   /** `false` when this embedder never produces vectors. */
   readonly enabled: boolean;
+  /**
+   * What makes its vectors, recorded with each stored one (the model and whatever else changes a
+   * vector, e.g. `local|<model>|<dtype>|<pooling>|<passage prefix>`): a vector recorded with
+   * another value is treated as missing, so search never compares vectors of two models and the
+   * backfill makes them again. Absent: unknown, vectors are compared whenever their sizes match.
+   */
+  readonly embeddingModel?: string;
   /** One vector per input text, in order. */
   embed(texts: readonly string[], signal?: AbortSignal): Promise<number[][]>;
   /**
@@ -67,6 +74,10 @@ export class OpenAiCompatibleEmbedder implements Embedder {
     this.dimensions = config.dimensions;
     this.batchSize = Math.max(1, config.batch_size);
     this.timeoutMs = Math.max(1, config.timeout_secs) * 1000;
+  }
+
+  get embeddingModel(): string {
+    return ["openai-compatible", this.model, this.dimensions ?? ""].join("|");
   }
 
   async embed(texts: readonly string[], signal?: AbortSignal): Promise<number[][]> {

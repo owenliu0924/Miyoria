@@ -52,6 +52,8 @@ export {
   NotebookConfigSchema,
   type PinnedConfig,
   PinnedConfigSchema,
+  type Pooling,
+  PoolingSchema,
   type ProfilesConfig,
   ProfilesConfigSchema,
   type RecentConfig,
@@ -142,7 +144,13 @@ export {
 } from "./extract.js";
 export { sameMatter } from "./followups.js";
 // v4 §5: what she can find and connect.
-export { LocalEmbedder, prefixesOf, resolveRuntime } from "./local-embed.js";
+export {
+  LocalEmbedder,
+  type ModelSettings,
+  modelSettings,
+  prefixesOf,
+  resolveRuntime,
+} from "./local-embed.js";
 export { MEMORY_SEARCH_SQL, MEMORY_TABLES_SQL, memorySchema } from "./migrations.js";
 export {
   type Activity,
