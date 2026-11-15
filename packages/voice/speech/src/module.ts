@@ -9,6 +9,7 @@ import {
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
 import { HttpWorkerAsrFactory, OpenAiAsrFactory } from "./asr.js";
+import type { EndpointsOption } from "./endpoints.js";
 import {
   GptSovitsFactory,
   HttpWorkerTtsFactory,
@@ -18,7 +19,9 @@ import {
 import {
   type AsrFactory,
   type AsrProvider,
+  NO_ENV,
   type ProviderConfig,
+  type ProviderEnv,
   SpeechError,
   SpeechService,
   SpeechServiceKey,
@@ -41,7 +44,7 @@ export const ProviderConfigSchema = z.looseObject({ kind: z.string() }).transfor
  * ```toml
  * [speech.asr.local]
  * kind = "http-worker"
- * url = "http://127.0.0.1:8101"
+ * url = "http://127.0.0.1:8101"   # a static entry of the endpoint registry; left out: any `asr`
  *
  * [speech.asr.groq]
  * kind = "openai"
@@ -116,7 +119,15 @@ function buildChain<P>(
   });
 }
 
-/** Module `speech`: provides `SpeechService` (`SpeechServiceKey`). */
+export interface SpeechModuleOptions {
+  /** Core's endpoint registry, where the `http-worker` providers' workers are. */
+  endpoints?: EndpointsOption;
+}
+
+/**
+ * Module `speech`: provides `SpeechService` (`SpeechServiceKey`). The `http-worker` providers find
+ * their worker in Core's endpoint registry (`endpoints`) at each call.
+ */
 export class SpeechModule implements Module {
   static readonly ID = "speech";
   readonly manifest = defineManifest(SpeechModule.ID, "Speech", {
@@ -125,24 +136,30 @@ export class SpeechModule implements Module {
   readonly #config: SpeechConfig;
   readonly #asrFactories: readonly AsrFactory[];
   readonly #ttsFactories: readonly TtsFactory[];
+  readonly #endpoints: EndpointsOption | null;
 
   constructor(
     config: SpeechConfig,
     asrFactories: readonly AsrFactory[],
     ttsFactories: readonly TtsFactory[],
+    options: SpeechModuleOptions = {},
   ) {
     this.#config = config;
     this.#asrFactories = asrFactories;
     this.#ttsFactories = ttsFactories;
+    this.#endpoints = options.endpoints ?? null;
   }
 
   /** Registers every built-in provider kind. */
-  static withDefaultFactories(config: SpeechConfig): SpeechModule {
-    return new SpeechModule(config, defaultAsrFactories(), defaultTtsFactories());
+  static withDefaultFactories(
+    config: SpeechConfig,
+    options: SpeechModuleOptions = {},
+  ): SpeechModule {
+    return new SpeechModule(config, defaultAsrFactories(), defaultTtsFactories(), options);
   }
 
   /** Builds every configured provider and assembles the chains. */
-  buildService(): SpeechService {
+  buildService(env: ProviderEnv = NO_ENV): SpeechService {
     const asr = buildChain<AsrProvider>(
       "asr",
       this.#config.asr,
@@ -150,7 +167,7 @@ export class SpeechModule implements Module {
       (name, cfg) => {
         const f = this.#asrFactories.find((f) => f.kinds.includes(cfg.kind));
         if (!f) throw new SpeechError(`unknown ASR kind \`${cfg.kind}\``);
-        return f.build(name, cfg);
+        return f.build(name, cfg, env);
       },
     );
     const tts = buildChain<TtsProvider>(
@@ -160,14 +177,14 @@ export class SpeechModule implements Module {
       (name, cfg) => {
         const f = this.#ttsFactories.find((f) => f.kinds.includes(cfg.kind));
         if (!f) throw new SpeechError(`unknown TTS kind \`${cfg.kind}\``);
-        return f.build(name, cfg);
+        return f.build(name, cfg, env);
       },
     );
     return new SpeechService(asr, tts);
   }
 
   async start(ctx: ModuleContext): Promise<void> {
-    const service = this.buildService();
+    const service = this.buildService({ endpoints: this.#endpoints?.(ctx.services) ?? null });
     ctx.log.info({ asr: service.hasAsr(), tts: service.hasTts() }, "speech ready");
     ctx.provide(SpeechServiceKey, service);
   }

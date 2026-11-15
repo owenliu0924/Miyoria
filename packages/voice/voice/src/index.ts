@@ -135,5 +135,6 @@ export {
   type Vad,
   type VadFactory,
   type VadSettings,
+  type VadWorker,
   zeroCrossingRate,
 } from "./vad.js";

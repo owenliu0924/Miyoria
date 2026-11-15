@@ -11,7 +11,14 @@ export {
   OpenAiAsrConfigSchema,
   OpenAiAsrFactory,
 } from "./asr.js";
-export { SpeechHttpError } from "./http.js";
+export {
+  type Endpoint,
+  type EndpointQuery,
+  type EndpointSource,
+  type EndpointsOption,
+  firstEndpoint,
+} from "./endpoints.js";
+export { SpeechHttpError, speechEntryName } from "./http.js";
 export {
   defaultAsrFactories,
   defaultTtsFactories,
@@ -19,6 +26,7 @@ export {
   type SpeechConfig,
   SpeechConfigSchema,
   SpeechModule,
+  type SpeechModuleOptions,
 } from "./module.js";
 export { type Carry, decodeChunk, pcmStream, rateFromContentType } from "./pcm.js";
 export {
@@ -49,8 +57,10 @@ export {
   type AudioStream,
   durationMs,
   isOffloaded,
+  NO_ENV,
   NO_HINT,
   type ProviderConfig,
+  type ProviderEnv,
   SpeechError,
   type SpeechPriority,
   SpeechService,

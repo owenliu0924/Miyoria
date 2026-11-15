@@ -90,8 +90,12 @@ export const VoiceConfigSchema = z.object({
    * `turn_timeout_ms` that utterance falls back to `end_silence_ms`.
    */
   turn_engine: z.enum(["silence", "smart-turn"]).default("silence"),
-  /** The end-of-turn worker (workers/turn). */
-  turn_url: z.string().default("http://127.0.0.1:8006"),
+  /**
+   * The end-of-turn worker (workers/turn), for Smart Turn and Silero. Core's wiring makes it the
+   * static registry entry `voice.turn` (`turn` and `vad`); the module asks the registry. Not set:
+   * no static entry, the worker comes from a hostd (there is no default address any more).
+   */
+  turn_url: z.string().optional(),
   /** Silence before the model is asked. Default 200. */
   turn_stop_ms: z.number().int().positive().default(200),
   /** The model has this long to answer. Default 150. */

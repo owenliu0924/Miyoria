@@ -3,10 +3,11 @@
 // `Vad.isSpeech` is synchronous and sits on the frame path, so nothing here waits: a frame is sent
 // and the decision comes from the newest answer, one or two frames (32 ms each) behind. That lag
 // is far below the 200 ms the end of a turn needs. The energy detector runs along on every frame:
-// it keeps its noise floor up to date and answers whenever the worker does not.
+// it keeps its noise floor up to date and answers whenever the worker does not. The worker is
+// looked up again at every (re)connect (`worker`), so it can move or come and go.
 
 import WebSocket from "ws";
-import type { Vad, VadSettings } from "./vad.js";
+import type { Vad, VadSettings, VadWorker } from "./vad.js";
 import { EnergyVad } from "./vad.js";
 
 /** What the model takes at 16 kHz. */
@@ -32,10 +33,11 @@ export interface SileroSocket {
 }
 
 export interface SileroOptions {
-  url: string;
+  /** Where the worker is now (asked at every connect); `null`: nowhere, the energy one answers. */
+  worker: () => VadWorker | null;
   threshold: number;
   now?: () => number;
-  connect?: (url: string) => SileroSocket;
+  connect?: (url: string, headers: Record<string, string>) => SileroSocket;
 }
 
 function vadUrl(url: string): string {
@@ -46,7 +48,7 @@ export class SileroVad implements Vad {
   readonly frameLen = FRAME;
   readonly #o: SileroOptions;
   readonly #now: () => number;
-  readonly #connect: (url: string) => SileroSocket;
+  readonly #connect: (url: string, headers: Record<string, string>) => SileroSocket;
   readonly #energy = new EnergyVad({ sampleRate: SAMPLE_RATE, frameMs: 32 });
   #socket: SileroSocket | null = null;
   #retryMs = RETRY_MIN_MS;
@@ -58,7 +60,13 @@ export class SileroVad implements Vad {
   constructor(options: SileroOptions) {
     this.#o = options;
     this.#now = options.now ?? Date.now;
-    this.#connect = options.connect ?? ((url) => new WebSocket(url) as unknown as SileroSocket);
+    this.#connect =
+      options.connect ??
+      ((url, headers) =>
+        new WebSocket(
+          url,
+          Object.keys(headers).length > 0 ? { headers } : undefined,
+        ) as unknown as SileroSocket);
     this.#open();
   }
 
@@ -85,7 +93,12 @@ export class SileroVad implements Vad {
     if (this.#closed) return;
     let socket: SileroSocket;
     try {
-      socket = this.#connect(vadUrl(this.#o.url));
+      const worker = this.#o.worker();
+      if (worker === null) {
+        this.#lost(null);
+        return;
+      }
+      socket = this.#connect(vadUrl(worker.url), worker.headers);
     } catch {
       this.#lost(null);
       return;
@@ -121,6 +134,6 @@ export function sileroVad(settings: VadSettings): Vad {
   if (settings.sampleRate !== SAMPLE_RATE) {
     throw new Error(`silero runs at ${SAMPLE_RATE} Hz, not ${settings.sampleRate}`);
   }
-  if (settings.url === undefined) throw new Error("no worker url for silero");
-  return new SileroVad({ url: settings.url, threshold: settings.sileroThreshold });
+  if (settings.worker === undefined) throw new Error("no worker for silero");
+  return new SileroVad({ worker: settings.worker, threshold: settings.sileroThreshold });
 }

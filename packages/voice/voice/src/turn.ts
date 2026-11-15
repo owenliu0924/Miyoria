@@ -3,6 +3,8 @@
 // The segmenter asks `TurnJudge` once a speaker has been quiet for `turn_stop_ms`. Its answer is a
 // suggestion with a deadline: no answer in time, and the silence decides as it always did. After
 // a failure the worker is left alone for a while, so a dead worker costs nothing per utterance.
+// The worker is the `turn` endpoint of Core's registry, found at each question; with none, the
+// silence decides too.
 //
 // `TurnGate` is docs/design/v3-architecture.md §13.4 "LLM first, TTS after the turn is confirmed":
 // an utterance goes to ASR and the LLM as soon as the model says the speaker is done, but that
@@ -13,6 +15,7 @@
 import { WORKERS_SAMPLE_RATE_HEADER, WorkersTurnReplySchema } from "@miyoria/contracts/workers";
 import { errorMessage, sleep } from "@miyoria/runtime/kernel";
 import { type AccountRef, accountRefString } from "@miyoria/types";
+import { type EndpointSource, firstEndpoint } from "../../speech/src/index.js";
 import { deferred } from "./util.js";
 
 /** What the model says about the end of a turn. */
@@ -27,8 +30,8 @@ export interface TurnJudge {
 }
 
 export interface HttpTurnJudgeOptions {
-  /** Worker root. */
-  url: string;
+  /** Core's endpoint registry: the worker is its direct `turn` endpoint. */
+  endpoints: EndpointSource | null;
   /** Longest wait for an answer. */
   timeoutMs: number;
   /** After a failure the worker is not asked for this long. Default 30 000. */
@@ -40,16 +43,14 @@ export interface HttpTurnJudgeOptions {
 
 const DEFAULT_RETRY_MS = 30_000;
 
-/** `POST {url}/turn` with the raw PCM. */
+/** `POST {worker}/turn` with the raw PCM. */
 export class HttpTurnJudge implements TurnJudge {
   readonly #o: HttpTurnJudgeOptions;
-  readonly #url: string;
   #downUntil = 0;
   #warned = false;
 
   constructor(options: HttpTurnJudgeOptions) {
     this.#o = options;
-    this.#url = `${options.url.replace(/\/+$/, "")}/turn`;
   }
 
   async ask(
@@ -58,8 +59,15 @@ export class HttpTurnJudge implements TurnJudge {
     signal: AbortSignal,
   ): Promise<TurnAnswer | null> {
     if (this.#o.now() < this.#downUntil) return null;
+    const source = this.#o.endpoints;
+    const endpoint = firstEndpoint(source, "turn", { direct: true });
+    if (source === null || endpoint === null) {
+      this.#warnOnce("no end-of-turn worker is known, using the silence");
+      return null;
+    }
+    let sent = false;
     try {
-      const response = await fetch(this.#url, {
+      const response = await source.request(endpoint, "/turn", {
         method: "POST",
         headers: {
           "content-type": "application/octet-stream",
@@ -68,6 +76,7 @@ export class HttpTurnJudge implements TurnJudge {
         body: new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength),
         signal: AbortSignal.any([signal, AbortSignal.timeout(this.#o.timeoutMs)]),
       });
+      sent = true;
       if (!response.ok) throw new Error(`end-of-turn worker answered ${response.status}`);
       const body = WorkersTurnReplySchema.safeParse(await response.json());
       if (!body.success) throw new Error("end-of-turn worker sent a bad answer");
@@ -75,13 +84,19 @@ export class HttpTurnJudge implements TurnJudge {
       return { complete: body.data.complete, probability: body.data.probability };
     } catch (error) {
       if (signal.aborted) return null;
+      // No answer at all: the registry passes over this worker for a while too.
+      if (!sent) source.failed(endpoint, error);
       this.#downUntil = this.#o.now() + (this.#o.retryMs ?? DEFAULT_RETRY_MS);
-      if (!this.#warned) {
-        this.#warned = true;
-        this.#o.warn(`Smart Turn is not answering, using the silence: ${errorMessage(error)}`);
-      }
+      this.#warnOnce(`Smart Turn is not answering, using the silence: ${errorMessage(error)}`);
       return null;
     }
+  }
+
+  /** Once per outage: an answer clears it. */
+  #warnOnce(message: string): void {
+    if (this.#warned) return;
+    this.#warned = true;
+    this.#o.warn(message);
   }
 }
 

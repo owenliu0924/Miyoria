@@ -4,13 +4,15 @@
 import { WORKERS_ASR_FORM_FIELDS, WorkersAsrReplySchema } from "@miyoria/contracts/workers";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { z } from "zod";
-import { bearerHeaders, joinUrl, parseSettings, post } from "./http.js";
+import { bearerHeaders, joinUrl, parseSettings, post, WorkerEndpoint } from "./http.js";
 import {
   type AsrFactory,
   type AsrHint,
   type AsrProvider,
   type AudioBuf,
+  NO_ENV,
   type ProviderConfig,
+  type ProviderEnv,
   SpeechError,
   type Transcript,
 } from "./types.js";
@@ -48,26 +50,32 @@ async function readJson<S extends z.ZodType>(
  * ```toml
  * [speech.asr.local]
  * kind = "http-worker"
- * url = "http://127.0.0.1:8101"
- * timeout_secs = 20   # optional
+ * url = "http://127.0.0.1:8101"   # optional: without it, any `asr` worker the registry knows
+ * timeout_secs = 20               # optional
  * ```
  */
 export const HttpWorkerAsrConfigSchema = z.object({
-  /** Worker root; `POST {url}/asr`. */
-  url: z.string(),
+  /**
+   * Worker root; `POST {url}/asr`. Core's wiring makes it the static registry entry
+   * `speech.asr.<name>`, and the provider calls that entry. Left out: the registry's `asr`.
+   */
+  url: z.string().optional(),
   timeout_secs: z.number().int().nonnegative().default(DEFAULT_TIMEOUT_SECS),
 });
 export type HttpWorkerAsrConfig = z.output<typeof HttpWorkerAsrConfigSchema>;
 
-/** ASR client for an inference worker (see `docs/protocols/voice-link.md`). */
+/**
+ * ASR client for an inference worker (see `docs/protocols/voice-link.md`), reached through Core's
+ * endpoint registry.
+ */
 export class HttpWorkerAsr implements AsrProvider {
   readonly name: string;
-  readonly #url: string;
+  readonly #worker: WorkerEndpoint;
   readonly #timeoutMs: number;
 
-  constructor(name: string, config: HttpWorkerAsrConfig) {
+  constructor(name: string, config: HttpWorkerAsrConfig, env: ProviderEnv = NO_ENV) {
     this.name = name;
-    this.#url = joinUrl(config.url, "asr");
+    this.#worker = new WorkerEndpoint("asr", name, config.url !== undefined, env.endpoints);
     this.#timeoutMs = Math.max(1, config.timeout_secs * 1000);
   }
 
@@ -78,7 +86,7 @@ export class HttpWorkerAsr implements AsrProvider {
     if (hint.language !== null) form.append(field.language, hint.language);
     if (hint.prompt !== null) form.append(field.prompt, hint.prompt);
     if (hint.priority === "ahead") form.append(field.priority, "ahead");
-    const response = await post(this.#url, {
+    const response = await post(this.#worker.target("asr"), {
       body: form,
       timeoutMs: this.#timeoutMs,
       ...(signal ? { signal } : {}),
@@ -97,8 +105,8 @@ export class HttpWorkerAsr implements AsrProvider {
 export class HttpWorkerAsrFactory implements AsrFactory {
   readonly kinds = ["http-worker"] as const;
 
-  build(name: string, config: ProviderConfig): AsrProvider {
-    return new HttpWorkerAsr(name, parseSettings(HttpWorkerAsrConfigSchema, config));
+  build(name: string, config: ProviderConfig, env: ProviderEnv = NO_ENV): AsrProvider {
+    return new HttpWorkerAsr(name, parseSettings(HttpWorkerAsrConfigSchema, config), env);
   }
 }
 

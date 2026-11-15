@@ -55,6 +55,7 @@ import {
   type TtsProvider,
   type TtsRequest,
 } from "../../speech/src/index.js";
+import { FakeEndpoints } from "../../speech/test/endpoints.js";
 import { VoiceModule } from "../src/index.js";
 import {
   deepseekVoice,
@@ -216,7 +217,16 @@ async function boot(
   asr.text = "这个游戏好难";
   const tts = new FakeTts();
   const settings = new MemorySettingsStore();
-  const module = new VoiceModule("deepseek-chan", deepseekVoice());
+  // `turn_url` as Core's wiring hands it over: a static entry of the endpoint registry.
+  const turnUrl = voiceConfig.turn_url;
+  const endpoints = new FakeEndpoints(
+    typeof turnUrl === "string"
+      ? [{ name: "voice.turn", provides: ["turn", "vad"], url: turnUrl }]
+      : [],
+  );
+  const module = new VoiceModule("deepseek-chan", deepseekVoice(), [], {
+    endpoints: () => endpoints,
+  });
   const h = await Harness.start(
     {},
     [

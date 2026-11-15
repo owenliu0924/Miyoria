@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AccountRef } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { FakeEndpoints } from "../../speech/test/endpoints.js";
 import { ClipRecorder } from "../src/clips.js";
 import { segmenterConfig, turnTiming } from "../src/config.js";
 import {
@@ -207,7 +208,7 @@ describe("the worker client", () => {
 
   function judge(url: string, now: () => number = Date.now, warnings: string[] = []) {
     return new HttpTurnJudge({
-      url,
+      endpoints: new FakeEndpoints([{ name: "voice.turn", provides: ["turn", "vad"], url }]),
       timeoutMs: 80,
       now,
       warn: (m) => warnings.push(m),
@@ -380,7 +381,7 @@ describe("silero", () => {
   function vad(now: () => number = Date.now): { vad: SileroVad; sockets: FakeSocket[] } {
     const sockets: FakeSocket[] = [];
     const v = new SileroVad({
-      url: "http://127.0.0.1:8006",
+      worker: () => ({ url: "http://127.0.0.1:8006", headers: {} }),
       threshold: 0.5,
       now,
       connect: (url) => {
