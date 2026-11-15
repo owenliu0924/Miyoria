@@ -13,6 +13,7 @@ import {
   type Daemon,
   type HostApi,
   HostRpcError,
+  isLoopbackUrl,
   LINKS_CHANGED_REASON,
   type LinkHandle,
   pidAlive,
@@ -63,6 +64,48 @@ afterEach(async () => {
   for (const s of servers.splice(0)) await new Promise((r) => s.close(() => r(undefined)));
 });
 
+describe("what Core may call directly", () => {
+  it("knows a cluster address on this machine from one elsewhere", () => {
+    expect(isLoopbackUrl("ws://127.0.0.1:7880/cluster-link")).toBe(true);
+    expect(isLoopbackUrl("ws://localhost:7880/cluster-link")).toBe(true);
+    expect(isLoopbackUrl("ws://[::1]:7880/cluster-link")).toBe(true);
+    expect(isLoopbackUrl("wss://core.tailnet:7880/cluster-link")).toBe(false);
+    expect(isLoopbackUrl("ws://192.168.1.10:7880/cluster-link")).toBe(false);
+    expect(isLoopbackUrl("not a url")).toBe(false);
+    expect(isLoopbackUrl(undefined)).toBe(false);
+  });
+
+  it(
+    "advertises its own address to a Core on this machine, and none to one elsewhere",
+    T,
+    async () => {
+      const started = async (hostExtra: string) => {
+        const daemon = daemonFor(workspace([fake("a", "health.cjs")], hostExtra));
+        await daemon.start();
+        await daemon.call("service.start", { service: "a" }, OP);
+        return stateIs(daemon, "a", "running");
+      };
+      const cluster = (url: string) => ["[cluster]", `url = "${url}"`, ""].join("\n");
+      const near = await started(cluster("ws://127.0.0.1:1/cluster-link"));
+      expect(near.advertised).toBe(near.url);
+
+      const far = await started(cluster("wss://core.tailnet:7880/cluster-link"));
+      expect(far.url).toBe(`http://127.0.0.1:${far.port}`);
+      expect(far.advertised).toBeUndefined();
+
+      const shown = await started(
+        [
+          cluster("wss://core.tailnet:7880/cluster-link"),
+          "[network]",
+          'advertise = "gpu-pc.tailnet"',
+          "",
+        ].join("\n"),
+      );
+      expect(shown.advertised).toBe(`http://gpu-pc.tailnet:${shown.port}`);
+    },
+  );
+});
+
 describe("start and health", () => {
   it("starts a service, reports it running and healthy, and stops it", T, async () => {
     const ws = workspace([fake("a", "health.cjs")]);
@@ -75,6 +118,8 @@ describe("start and health", () => {
     expect(running.port).toBeGreaterThan(0);
     expect(running.pid).toBeGreaterThan(0);
     expect(running.url).toBe(`http://127.0.0.1:${running.port}`);
+    // No cluster and no advertised address: nothing Core could call directly.
+    expect(running.advertised).toBeUndefined();
     const info = HostInfoSchema.parse(await daemon.call("host.info", {}, OP));
     expect(info).toMatchObject({ name: "test-host", version: "test", gpu: null });
 

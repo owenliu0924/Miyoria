@@ -57,8 +57,14 @@ export const HostServiceStatusSchema = z
     since: z.number(),
     pid: z.number().int().optional(),
     port: z.number().int().optional(),
-    /** The base URL other machines should use. */
+    /** Where the service listens, as seen on its own machine. */
     url: z.string().optional(),
+    /**
+     * The base URL Core can call directly: present when the host advertises an address, or when
+     * the Core it reports to runs on the same machine. Without it Core reaches the service
+     * through the host's control link.
+     */
+    advertised: z.string().optional(),
     healthy: z.boolean(),
     /** Restarts within the current give-up window. */
     restarts: z.number().int().nonnegative(),

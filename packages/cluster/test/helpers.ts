@@ -70,6 +70,9 @@ export function service(fields: Partial<HostServiceStatus> & { name: string }): 
     since: 0,
     healthy: true,
     restarts: 0,
+    // A `url` in these tests is an address Core can call, as a host that advertises one (or shares
+    // Core's machine) reports it. Pass `advertised: undefined` for a host reachable by link only.
+    ...(fields.url !== undefined && !("advertised" in fields) ? { advertised: fields.url } : {}),
     ...fields,
   };
 }

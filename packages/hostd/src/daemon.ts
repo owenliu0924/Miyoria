@@ -336,6 +336,7 @@ export class Daemon implements HostApi {
     const serviceHost: ServiceHost = {
       ctx,
       advertise: host.config.network.advertise,
+      coreIsLocal: () => isLoopbackUrl(this.#host?.config.cluster?.url),
       timing: this.#timing,
       log: this.#log,
       hostdUrl: () => `http://127.0.0.1:${this.#port}`,
@@ -1202,4 +1203,20 @@ function settingsOf(plan: ServicePlan): Record<string, string> {
     }
   }
   return out;
+}
+
+/** Whether `url` names this machine itself: `localhost`, `127.x.x.x` or `::1`. */
+export function isLoopbackUrl(url: string | undefined): boolean {
+  if (url === undefined) return false;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === "localhost" || host === "[::1]" || host === "::1") return true;
+  const parts = host.split(".");
+  return (
+    parts.length === 4 && parts[0] === "127" && parts.every((part) => /^[0-9]{1,3}$/.test(part))
+  );
 }

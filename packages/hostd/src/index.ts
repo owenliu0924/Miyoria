@@ -34,6 +34,7 @@ export {
   HostdRunningError,
   type HostKey,
   HostKeySchema,
+  isLoopbackUrl,
   LINKS_CHANGED_REASON,
   type LinkHandle,
   readHostKey,

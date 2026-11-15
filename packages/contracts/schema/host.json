@@ -2497,6 +2497,9 @@
         "url": {
           "type": "string"
         },
+        "advertised": {
+          "type": "string"
+        },
         "healthy": {
           "type": "boolean"
         },

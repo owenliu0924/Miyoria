@@ -365,13 +365,15 @@ export class EndpointRegistry {
       if (!entry.approved.has(capability) || entry.report === null) continue;
       for (const service of entry.report.services) {
         if (!service.provides.includes(capability) || !SERVING.has(service.state)) continue;
-        const direct = service.url !== undefined && service.url !== "";
+        // Only an address the host says Core can call is direct; `url` alone is the address on
+        // the host itself.
+        const direct = service.advertised !== undefined && service.advertised !== "";
         out.push({
           endpoint: {
             capability,
             host: name,
             service: service.name,
-            url: direct ? (service.url as string) : `link://${name}/${service.name}`,
+            url: direct ? (service.advertised as string) : `link://${name}/${service.name}`,
             via: direct ? "direct" : "link",
             headers: bearer(service.token),
             healthy: service.healthy,

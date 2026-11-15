@@ -58,6 +58,8 @@ export interface ServiceHost {
   readonly ctx: ResolveContext;
   /** `[network] advertise`. */
   readonly advertise: string | undefined;
+  /** The Core this host reports to runs on this machine (the cluster address is loopback). */
+  coreIsLocal(): boolean;
   readonly timing: Timing;
   readonly log: Logger;
   hostdUrl(): string;
@@ -188,7 +190,10 @@ export class ManagedService {
 
   status(withToken: boolean): HostServiceStatus {
     const port = this.#port;
-    const host = this.#host.advertise ?? localAddress(this.#host.ctx.bind);
+    const local = localAddress(this.#host.ctx.bind);
+    // What Core may call directly: the advertised address, or this machine's own when Core is
+    // here too. A joined machine with neither is reached through the control link only.
+    const reach = this.#host.advertise ?? (this.#host.coreIsLocal() ? local : undefined);
     const gpuPolicy = this.plan.gpuPolicy;
     const resident = this.plan.entry?.descriptor.gpu?.vram_mb?.resident;
     return {
@@ -198,7 +203,10 @@ export class ManagedService {
       state: this.#state,
       since: this.#since,
       ...(this.pid !== undefined ? { pid: this.pid } : {}),
-      ...(port !== undefined ? { port, url: `http://${urlHost(host)}:${port}` } : {}),
+      ...(port !== undefined ? { port, url: `http://${urlHost(local)}:${port}` } : {}),
+      ...(port !== undefined && reach !== undefined
+        ? { advertised: `http://${urlHost(reach)}:${port}` }
+        : {}),
       healthy: this.#healthy,
       restarts: this.#recentFailures().length,
       ...(this.#reason !== undefined ? { reason: this.#reason } : {}),

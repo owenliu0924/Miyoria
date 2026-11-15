@@ -81,6 +81,19 @@ describe("what is returned", () => {
     expect(reg.candidates("sing", { direct: true })).toEqual([]);
   });
 
+  it("an address on the host itself is not one Core can call", () => {
+    // A joined machine that advertises nothing still says where its service listens
+    // (`http://127.0.0.1:...`): calling that from Core would hit Core's own machine.
+    const { reg } = registry();
+    reg.setHost("far", ["sing"]);
+    reg.report(
+      "far",
+      report([service({ name: "sing", url: "http://127.0.0.1:8005", advertised: undefined })]),
+    );
+    expect(reg.pick("sing")).toMatchObject({ via: "link", url: "link://far/sing" });
+    expect(reg.pick("sing", { direct: true })).toBeNull();
+  });
+
   it("static entries, always direct, with their token as a header", () => {
     const { reg } = registry({
       static: {
