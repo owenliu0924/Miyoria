@@ -523,7 +523,7 @@ function stateColor(state: HostServiceState, text: string): string {
 }
 
 /** Terminal columns of a text: CJK and full-width characters take two. */
-function displayWidth(text: string): number {
+export function displayWidth(text: string): number {
   let width = 0;
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;
@@ -570,7 +570,12 @@ export function serviceTable(services: readonly HostServiceStatus[], now = Date.
   return lines;
 }
 
-export async function status(target: HostTarget): Promise<void> {
+export interface StatusOptions {
+  /** `--all`: after this machine's table, what shows every host of Core (`cluster.hostsSection`). */
+  hosts?: (core: remote.Remote) => Promise<void>;
+}
+
+export async function status(target: HostTarget, options: StatusOptions = {}): Promise<void> {
   const host = existsSync(target.hostToml) ? loadHostConfig(target.hostToml) : null;
   if (host === null) {
     note(`沒有 ${target.hostToml}(\`miyoria host migrate\` 可以從 [machine] 和 [stack] 轉出)`);
@@ -614,6 +619,7 @@ export async function status(target: HostTarget): Promise<void> {
     println(`\n${dim("core 的管理 API 沒有回應")}`);
     return;
   }
+  await options.hosts?.(core);
   section("Core");
   await remote.status(core);
 }

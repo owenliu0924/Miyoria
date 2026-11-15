@@ -40,18 +40,32 @@ export function rpcClient(baseUrl: string, token: string): ApiRpc {
   return createORPCClient(link);
 }
 
-/** Client for the core described by `config` (`[modules.api]`). */
-export function clientFor(config: Config): Remote {
+/** Where `config` says the admin API listens, and the token it takes. */
+export interface ApiEndpoint {
+  /** `[modules.api] bind` as written (default `127.0.0.1:7878`). */
+  bind: string;
+  /** The token; `""` when none is set. */
+  token: string;
+  /** The base URL this machine reaches it by (a wildcard bind goes through loopback). */
+  local: string;
+}
+
+export function apiEndpoint(config: Config): ApiEndpoint {
   const section = config.module("api").config;
   const obj =
     section !== null && typeof section === "object" && !Array.isArray(section) ? section : {};
   const bind = typeof obj.bind === "string" && obj.bind !== "" ? obj.bind : DEFAULT_API_BIND;
   const token = typeof obj.token === "string" ? obj.token : "";
-  if (token === "") throw new RemoteError("沒有設定 MIYORIA_API_TOKEN(執行 `miyoria init` 產生)");
   // A wildcard bind address is reachable locally through loopback.
   const host = bind.replace("0.0.0.0", "127.0.0.1").replace("[::]", "[::1]");
-  const base = `http://${host}`;
-  return { rpc: rpcClient(base, token) };
+  return { bind, token, local: `http://${host}` };
+}
+
+/** Client for the core described by `config` (`[modules.api]`). */
+export function clientFor(config: Config): Remote {
+  const { token, local } = apiEndpoint(config);
+  if (token === "") throw new RemoteError("沒有設定 MIYORIA_API_TOKEN(執行 `miyoria init` 產生)");
+  return { rpc: rpcClient(local, token) };
 }
 
 /** `true` when a core answers `/api/health` within `timeoutMs`. */

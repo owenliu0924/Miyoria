@@ -2,6 +2,7 @@
 
 import { loadDotenv } from "@miyoria/runtime/kernel";
 import { cliVersion } from "./assets.js";
+import * as cluster from "./commands/cluster.js";
 import * as configCmd from "./commands/config.js";
 import * as dbCmd from "./commands/db.js";
 import * as discordCmd from "./commands/discord.js";
@@ -112,6 +113,22 @@ const FORCE_OPTION: OptionSpec = { name: "force", help: "她在唱歌或直播�
 
 function hostTargetOf(ctx: RunContext): host.HostTarget {
   return host.hostTarget(ctx.config, str(ctx, "host-config"));
+}
+
+/** `{ [key]: value }` when there is a value; keeps optional properties out of exact types. */
+function optionalString<K extends string>(
+  key: K,
+  value: string | undefined,
+): { [P in K]?: string } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]?: string });
+}
+
+/** An integer option; a text that is not one is an error (the range is the command's). */
+function integerOption(ctx: RunContext, name: string, fallback: number): number {
+  const text = str(ctx, name);
+  if (text === undefined) return fallback;
+  if (!/^\d+$/.test(text)) throw new Error(`--${name} 要是整數`);
+  return Number.parseInt(text, 10);
 }
 
 /** `--timeout SECS`, checked. */
@@ -391,9 +408,13 @@ export const COMMANDS: CommandSpec = {
     },
     {
       name: "status",
-      help: "這台電腦的服務(hostd)和執行中 core 的狀態:模組和 LLM 用量",
-      options: [HOST_CONFIG_OPTION],
-      run: (ctx) => host.status(hostTargetOf(ctx)),
+      help: "這台電腦的服務(hostd)和執行中 core 的狀態:模組和 LLM 用量;--all 加上 Core 知道的每一台電腦",
+      options: [
+        HOST_CONFIG_OPTION,
+        { name: "all", help: "也列出 Core 裡每一台電腦,和已連線那些的服務(經 Core 的管理 API)" },
+      ],
+      run: (ctx) =>
+        host.status(hostTargetOf(ctx), flag(ctx, "all") ? { hosts: cluster.hostsSection } : {}),
     },
     {
       name: "logs",
@@ -417,8 +438,92 @@ export const COMMANDS: CommandSpec = {
     },
     {
       name: "host",
-      help: "這台電腦的設定(host.toml)",
+      help: "這台電腦的設定(host.toml),和電腦之間的連線:加入 Core、邀請、核准、移除",
       subcommands: [
+        {
+          name: "invite",
+          help: "在跑 Core 的電腦上:產生一組邀請碼(一次性、預設 10 分鐘),並印出另一台電腦要執行的 join 指令",
+          options: [
+            { name: "name", value: "NAME", help: "指定用這組碼加入的電腦的名字" },
+            {
+              name: "ttl",
+              value: "MINUTES",
+              help: "邀請碼有效幾分鐘(1 到 10080)",
+              default: "10",
+            },
+          ],
+          run: (ctx) =>
+            cluster.invite(hostTargetOf(ctx), {
+              ...optionalString("name", str(ctx, "name")),
+              ttlMinutes: integerOption(ctx, "ttl", 10),
+            }),
+        },
+        {
+          name: "join",
+          help: "把這台電腦加入一個 Core:用邀請碼(別台電腦),或 --local(Core 跑在這台)",
+          args: [
+            {
+              name: "core-url",
+              help: "Core 管理 API 的位址,例如 http://192.168.1.10:7878",
+              optional: true,
+            },
+          ],
+          options: [
+            HOST_CONFIG_OPTION,
+            { name: "code", value: "CODE", help: "`host invite` 給的邀請碼" },
+            {
+              name: "name",
+              value: "NAME",
+              help: "這台電腦在 Core 裡的名字(預設:host.toml 的 name,否則作業系統的主機名稱)",
+            },
+            {
+              name: "local",
+              help: "Core 跑在這台:不用邀請碼,由管理 API 直接建立並核准這台(能力取自 host.toml 啟用的服務)",
+            },
+            { name: "force", help: "這台已經有 host.key 時也重新加入" },
+          ],
+          conflicts: ["local", "core-url"],
+          run: (ctx) =>
+            cluster.joinHost(hostTargetOf(ctx), {
+              ...optionalString("coreUrl", ctx.args[0]),
+              ...optionalString("code", str(ctx, "code")),
+              ...optionalString("name", str(ctx, "name")),
+              local: flag(ctx, "local"),
+              force: flag(ctx, "force"),
+            }),
+        },
+        {
+          name: "ls",
+          help: "列出 Core 知道的電腦:狀態、連線、核准的能力、平台、版本、最後上線",
+          run: (ctx) => cluster.ls(hostTargetOf(ctx)),
+        },
+        {
+          name: "approve",
+          help: "核准一台電腦使用它的服務;不列能力時,核准它目前回報的全部",
+          args: [
+            { name: "name", help: "電腦的名字" },
+            {
+              name: "capability",
+              help: "要核准的能力(asr、tts、sing ...)",
+              optional: true,
+              variadic: true,
+            },
+          ],
+          run: (ctx) =>
+            cluster.approve(hostTargetOf(ctx), ctx.args[0] as string, ctx.args.slice(1)),
+        },
+        {
+          name: "remove",
+          help: "把一台電腦從 Core 移除:金鑰失效、連線斷開、它的服務不再被使用",
+          args: [{ name: "name", help: "電腦的名字" }],
+          run: (ctx) =>
+            cluster.removeHost(hostTargetOf(ctx), ctx.args[0] as string, {
+              yes: ctx.yes,
+              confirm: isInteractive()
+                ? (message) => interactivePrompter().confirm(message, false)
+                : null,
+            }),
+        },
         {
           name: "migrate",
           help: "從 miyoria.toml 的 [machine] 和 [stack] 寫出 host.toml:沿用現有的 Python 環境、埠和 worker 環境變數",
