@@ -20,6 +20,8 @@ import { directiveSchema } from "../../brain/directive/src/migrations.js";
 import * as directiveTables from "../../brain/directive/src/schema.js";
 import { economySchema } from "../../economy/src/migrations.js";
 import * as economyTables from "../../economy/src/schema.js";
+import { MEMORY_SEARCH_SQL, memorySchema } from "../../memory/memory/src/migrations.js";
+import * as memoryTables from "../../memory/memory/src/schema.js";
 import { artifactSchema } from "../src/artifacts/migrations.js";
 import * as artifactTables from "../src/artifacts/schema.js";
 import { configSchema } from "../src/config/migrations.js";
@@ -33,8 +35,25 @@ import { coreSchema, migrate, type PluginSchema, sqlNames } from "../src/migrate
 const CORE_NAMES = new Set(coreSchema.migrations.flatMap((m) => sqlNames(m.sql).created));
 
 /**
- * Whether drizzle-kit's statement drops a table or index that `tables` does not own: core's, or
- * one of another Drizzle plugin's that the migrated database carries because `tables` requires it.
+ * The names `sql` creates by hand, with the shadow tables SQLite keeps for each virtual table
+ * (an FTS5 table `x` stores itself in `x_data`, `x_idx`, `x_content`, `x_docsize`, `x_config`).
+ */
+function handWrittenNames(sql: string): (name: string) => boolean {
+  const created = new Set(sqlNames(sql).created.map((n) => n.toLowerCase()));
+  const virtual = [...sql.matchAll(/\bCREATE\s+VIRTUAL\s+TABLE\s+[`"]?(\w+)/gi)].map((m) =>
+    String(m[1]).toLowerCase(),
+  );
+  return (name) => {
+    const lower = name.toLowerCase();
+    return created.has(lower) || virtual.some((v) => lower.startsWith(`${v}_`));
+  };
+}
+
+/**
+ * Whether drizzle-kit's statement drops a table or index that `tables` does not own: core's, one
+ * of another Drizzle plugin's that the migrated database carries because `tables` requires it,
+ * or one of the plugin's own that its migration writes by hand (`handWritten`: full-text indexes
+ * and triggers drizzle-kit cannot declare, so it takes them for tables nobody declared).
  */
 function dropsOthers(statement: string, tables: object): boolean {
   const name = /^DROP\s+(?:TABLE|INDEX|TRIGGER|VIEW)\s+(?:IF\s+EXISTS\s+)?[`"]?([^`"\s;]+)/i.exec(
@@ -42,11 +61,22 @@ function dropsOthers(statement: string, tables: object): boolean {
   )?.[1];
   if (name === undefined) return false;
   if (CORE_NAMES.has(name)) return true;
-  return Object.values(DRIZZLE_PLUGINS).some(
-    (other) =>
-      other.tables !== tables &&
-      other.schema.migrations.some((m) => sqlNames(m.sql).created.includes(name)),
+  return Object.values(DRIZZLE_PLUGINS).some((other) =>
+    other.tables !== tables
+      ? other.schema.migrations.some((m) => sqlNames(m.sql).created.includes(name))
+      : other.handWritten !== undefined && handWrittenNames(other.handWritten)(name),
   );
+}
+
+/** A plugin whose tables are Drizzle definitions. */
+export interface DrizzlePlugin {
+  tables: object;
+  schema: PluginSchema;
+  /**
+   * What migration 1 adds by hand after the generated SQL (and a blank line): full-text search,
+   * triggers, seed rows. drizzle-kit neither generates nor compares it.
+   */
+  handWritten?: string;
 }
 
 /**
@@ -54,14 +84,21 @@ function dropsOthers(statement: string, tables: object): boolean {
  * those of the packages that own theirs (`<package>/src/schema.ts` and `migrations.ts`), by
  * relative path. This file and the drift test are tooling: nothing the store ships imports them.
  */
-export const DRIZZLE_PLUGINS: Record<string, { tables: object; schema: PluginSchema }> = {
+export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   identity: { tables: identityTables, schema: identitySchema },
   config: { tables: configTables, schema: configSchema },
   artifact: { tables: artifactTables, schema: artifactSchema },
   auth: { tables: authTables, schema: authSchema },
   directive: { tables: directiveTables, schema: directiveSchema },
   economy: { tables: economyTables, schema: economySchema },
+  memory: { tables: memoryTables, schema: memorySchema, handWritten: MEMORY_SEARCH_SQL },
 };
+
+/** Migration 1 of a plugin: the generated statements, then its hand-written SQL, if any. */
+export function firstMigrationSql(generated: readonly string[], handWritten?: string): string {
+  const tables = generated.join("\n");
+  return handWritten === undefined ? tables : `${tables}\n${handWritten}`;
+}
 
 /** `CREATE TABLE ... );` as `CREATE TABLE ... ) STRICT;`. */
 export function strict(statement: string): string {

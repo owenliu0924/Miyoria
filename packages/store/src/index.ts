@@ -69,7 +69,6 @@ export {
 } from "./artifacts/visibility.js";
 export {
   authScopeKey,
-  embeddingValues,
   fromMicros,
   normalizeTimestamp,
   StoreError,

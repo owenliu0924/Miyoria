@@ -5,8 +5,8 @@
 // in this process: read-modify-write sequences run inside one `BEGIN IMMEDIATE` transaction
 // without awaiting. Other processes on the same file are handled by WAL and the busy timeout.
 //
-// Timestamps are INTEGER microseconds since the epoch, JSON values are text, embeddings are
-// little-endian float32 BLOBs (cosine computed in JS), full text uses FTS5 over `tokens`.
+// Timestamps are INTEGER microseconds since the epoch, JSON values are text. The plugins' tables
+// (memory, economy, auth, ...) are their packages' (`plugin.ts`).
 
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,7 +14,6 @@ import { DatabaseSync } from "node:sqlite";
 import {
   type AccountRef,
   type Clock,
-  type ContextKey,
   type JsonObject,
   type PersonId,
   type ProfileId,
@@ -24,23 +23,11 @@ import {
 import { artifactSchema } from "./artifacts/migrations.js";
 import { ArtifactStore } from "./artifacts/store.js";
 import {
-  canonicalMemoryScope,
-  cleanEmbedding,
-  contextLookupKey,
-  decodeEmbedding,
-  encodeEmbedding,
   fromMicros,
-  lazyEmbedding,
-  memoryKind,
-  memoryOrigin,
-  memoryScopeKey,
-  memorySourceJson,
   optionalMicros,
   optionalTimestamp,
   parseJson,
-  queryTokens,
   StoreError,
-  sourceEvents,
   sqlLimit,
   toMicros,
   u32,
@@ -92,22 +79,10 @@ import { identitySchema } from "./identity/migrations.js";
 import { legacySchema } from "./legacy-schema/index.js";
 import { checkDatabaseFile, migrate, type PluginSchema, schemaVersions } from "./migrate.js";
 import { type PluginContext, RoutedSettings, type StorePlugin } from "./plugin.js";
-import type {
-  MemberCardRecord,
-  MemoryFilter,
-  MemoryHit,
-  MemoryQuery,
-  MemoryRecord,
-  MemoryScope,
-  MemorySource,
-  PrunePolicy,
-  Relationship,
-  RelationshipDelta,
-} from "./records.js";
+import type { MemberCardRecord, Relationship, RelationshipDelta } from "./records.js";
 import type {
   IdentityStore,
   MemberCardStore,
-  MemoryRecordStore,
   MessageLog,
   PeopleStore,
   PersonaOverrideStore,
@@ -158,10 +133,6 @@ function num(row: Row, column: string): number {
 function optNum(row: Row, column: string): number | null {
   const v = row[column];
   return v === null || v === undefined ? null : num(row, column);
-}
-
-function bool(row: Row, column: string): boolean {
-  return num(row, column) !== 0;
 }
 
 function json<T>(row: Row, column: string, what: string): T {
@@ -370,463 +341,6 @@ class SqliteProfileData implements ProfileDataStore {
   }
 }
 
-// ---- memory records -----------------------------------------------------------------------
-
-function memoryFromRow(row: Row): MemoryRecord {
-  const embedding = row.embedding;
-  const sourceContext = optStr(row, "source_context");
-  const source = optStr(row, "source");
-  const record: MemoryRecord = {
-    id: str(row, "id"),
-    profile: str(row, "profile_id"),
-    kind: memoryKind(str(row, "kind")),
-    scope: json<MemoryScope>(row, "scope", "memory scope"),
-    subjects: json<PersonId[]>(row, "subjects", "memory subjects"),
-    content: str(row, "content"),
-    tokens: str(row, "tokens"),
-    embedding: null,
-    importance: num(row, "importance"),
-    confidence: num(row, "confidence"),
-    created_at: ts(row, "created_at"),
-    updated_at: ts(row, "updated_at"),
-    last_accessed: optTs(row, "last_accessed"),
-    access_count: u32(num(row, "access_count")),
-    source_context:
-      sourceContext === null ? null : parseJson<ContextKey>(sourceContext, "memory source context"),
-    source: source === null ? null : parseJson<MemorySource>(source, "memory source"),
-    origin: memoryOrigin(str(row, "origin")),
-    source_events: sourceEvents(json<unknown>(row, "source_events", "memory source events")),
-    due: optTs(row, "due"),
-    done: bool(row, "done"),
-    superseded_by: optStr(row, "superseded_by"),
-  };
-  return embedding instanceof Uint8Array
-    ? lazyEmbedding(record, () => decodeEmbedding(embedding))
-    : record;
-}
-
-/** An FTS5 query string matching any of the tokens (each one a quoted phrase). */
-function ftsMatch(tokens: readonly string[]): string {
-  return tokens.map((t) => `"${t.replaceAll('"', '""')}"`).join(" OR ");
-}
-
-const SEARCH_FILTER =
-  "m.profile_id = $profile AND m.scope_key IN (SELECT value FROM json_each($scopes)) " +
-  "AND ($kinds IS NULL OR m.kind IN (SELECT value FROM json_each($kinds))) " +
-  "AND m.superseded_by IS NULL";
-
-/** What `list` and `count` select (`listParams`). */
-const LIST_FILTER =
-  "profile_id = $profile " +
-  "AND ($subject IS NULL OR EXISTS (SELECT 1 FROM json_each(subjects) WHERE value = " +
-  "$subject)) AND ($scope IS NULL OR scope_key = $scope) " +
-  "AND ($kind IS NULL OR kind = $kind) AND ($before IS NULL OR created_at < $before) " +
-  "AND ($all = 1 OR superseded_by IS NULL)";
-
-function listParams(profile: ProfileId, filter: MemoryFilter): Params {
-  return {
-    profile,
-    subject: filter.subject,
-    scope: filter.scope === null ? null : memoryScopeKey(filter.scope),
-    kind: filter.kind,
-    before: optionalMicros(filter.before),
-    all: filter.include_superseded ? 1 : 0,
-  };
-}
-
-/** What vector search needs of a record, its vector decoded once. */
-interface VectorRow {
-  seq: number;
-  id: string;
-  /** Microseconds, as stored. */
-  created_at: number;
-  scope_key: string;
-  kind: string;
-  values: Float32Array;
-  /** `sqrt` of the sum of squares of `values`. */
-  norm: number;
-}
-
-interface Scored {
-  row: VectorRow;
-  score: number;
-}
-
-/** Profiles and dimensions whose vectors are kept at once. */
-const VECTOR_SETS = 4;
-
-/** Higher score first, then newest, then id descending. */
-function scoredBefore(a: Scored, b: Scored): number {
-  if (a.score !== b.score) return b.score - a.score;
-  if (a.row.created_at !== b.row.created_at) return b.row.created_at - a.row.created_at;
-  return a.row.id < b.row.id ? 1 : a.row.id > b.row.id ? -1 : 0;
-}
-
-/**
- * The first `k` of `items` in `before` order (all of them when `k` is null), without sorting
- * the rest: what `sort(before).slice(0, k)` gives, for an order with no ties.
- */
-function firstK(items: Iterable<Scored>, k: number | null): Scored[] {
-  if (k === null) return [...items].sort(scoredBefore);
-  const best: Scored[] = [];
-  for (const item of items) {
-    if (best.length === k && scoredBefore(item, best[k - 1] as Scored) >= 0) continue;
-    let lo = 0;
-    let hi = best.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (scoredBefore(best[mid] as Scored, item) <= 0) lo = mid + 1;
-      else hi = mid;
-    }
-    best.splice(lo, 0, item);
-    if (best.length > k) best.pop();
-  }
-  return best;
-}
-
-class SqliteMemories implements MemoryRecordStore {
-  /**
-   * Decoded vectors of the live records, per profile and dimension, valid while
-   * `memory_vector_version` (bumped by triggers on every relevant write, by anyone) is `version`.
-   */
-  readonly #vectors = new Map<string, VectorRow[]>();
-  #vectorVersion: number | null = null;
-
-  constructor(private readonly db: Db) {}
-
-  /** The live records of `profile` with a vector of `dims` values, from memory when unchanged. */
-  #vectorRows(profile: ProfileId, dims: number): VectorRow[] {
-    const row = this.db.get("SELECT n FROM memory_vector_version WHERE id = 1", {});
-    const version = row ? num(row, "n") : null;
-    if (version === null || version !== this.#vectorVersion) {
-      this.#vectors.clear();
-      this.#vectorVersion = version;
-    }
-    const key = `${profile}\n${dims}`;
-    const cached = this.#vectors.get(key);
-    if (cached !== undefined) {
-      // Most recently used last.
-      this.#vectors.delete(key);
-      this.#vectors.set(key, cached);
-      return cached;
-    }
-    const rows = this.db.all(
-      "SELECT seq, id, created_at, scope_key, kind, embedding FROM memory_records " +
-        "WHERE profile_id = $profile AND superseded_by IS NULL AND embedding IS NOT NULL " +
-        "AND length(embedding) = $bytes",
-      { profile, bytes: dims * 4 },
-    );
-    const out = rows.map((r): VectorRow => {
-      const values = decodeEmbedding(r.embedding as Uint8Array);
-      let squares = 0;
-      for (let i = 0; i < values.length; i++) {
-        const x = values[i] as number;
-        squares += x * x;
-      }
-      return {
-        seq: num(r, "seq"),
-        id: str(r, "id"),
-        created_at: num(r, "created_at"),
-        scope_key: str(r, "scope_key"),
-        kind: str(r, "kind"),
-        values,
-        norm: Math.sqrt(squares),
-      };
-    });
-    // Inside a transaction the counter may be rolled back to a number another write then reuses.
-    if (version !== null && !this.db.inTransaction) {
-      this.#vectors.set(key, out);
-      const oldest = this.#vectors.keys().next().value;
-      if (this.#vectors.size > VECTOR_SETS && oldest !== undefined) this.#vectors.delete(oldest);
-    }
-    return out;
-  }
-
-  async upsert(record: MemoryRecord): Promise<void> {
-    const embedding = cleanEmbedding(record.embedding);
-    const scope = canonicalMemoryScope(record.scope);
-    try {
-      this.db.run(
-        "INSERT INTO memory_records (id, profile_id, kind, scope, scope_key, subjects, " +
-          "content, tokens, embedding, importance, confidence, created_at, updated_at, " +
-          "last_accessed, access_count, source_context, source, origin, source_events, due, done, " +
-          "superseded_by) " +
-          "VALUES ($id, $profile, $kind, $scope, $scope_key, $subjects, $content, $tokens, " +
-          "$embedding, $importance, $confidence, $created_at, $updated_at, $last_accessed, " +
-          "$access_count, $source_context, $source, $origin, $source_events, $due, $done, " +
-          "$superseded_by) " +
-          "ON CONFLICT (id) DO UPDATE SET " +
-          "profile_id = excluded.profile_id, kind = excluded.kind, scope = excluded.scope, " +
-          "scope_key = excluded.scope_key, subjects = excluded.subjects, content = " +
-          "excluded.content, tokens = excluded.tokens, embedding = excluded.embedding, " +
-          "importance = excluded.importance, confidence = excluded.confidence, created_at = " +
-          "excluded.created_at, updated_at = excluded.updated_at, last_accessed = " +
-          "excluded.last_accessed, access_count = excluded.access_count, source_context = " +
-          "excluded.source_context, source = excluded.source, origin = excluded.origin, " +
-          "source_events = excluded.source_events, due = excluded.due, " +
-          "done = excluded.done, superseded_by = excluded.superseded_by",
-        {
-          id: record.id,
-          profile: record.profile,
-          kind: memoryKind(record.kind),
-          scope: JSON.stringify(scope),
-          scope_key: JSON.stringify(scope),
-          subjects: JSON.stringify(record.subjects),
-          content: record.content,
-          tokens: record.tokens,
-          embedding: embedding === null ? null : encodeEmbedding(embedding),
-          importance: record.importance,
-          confidence: record.confidence,
-          created_at: toMicros(record.created_at),
-          updated_at: toMicros(record.updated_at),
-          last_accessed: optionalMicros(record.last_accessed),
-          access_count: u32(record.access_count),
-          source_context:
-            record.source_context === null ? null : contextLookupKey(record.source_context),
-          source: memorySourceJson(record.source),
-          origin: memoryOrigin(record.origin ?? "unknown"),
-          source_events: JSON.stringify(sourceEvents(record.source_events)),
-          due: optionalMicros(record.due),
-          done: record.done ? 1 : 0,
-          superseded_by: record.superseded_by,
-        },
-      );
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      throw new StoreError("cannot store memory record", { cause });
-    }
-  }
-
-  async get(id: string): Promise<MemoryRecord | null> {
-    const row = this.db.get("SELECT * FROM memory_records WHERE id = $id", { id });
-    return row ? memoryFromRow(row) : null;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.db.run("DELETE FROM memory_records WHERE id = $id", { id }) > 0;
-  }
-
-  async search(query: MemoryQuery): Promise<MemoryHit[]> {
-    const embedding = cleanEmbedding(query.embedding);
-    const limit = sqlLimit(query.limit);
-    if (limit === 0) return [];
-    const filter = {
-      profile: query.profile,
-      scopes: JSON.stringify(query.scopes.map(memoryScopeKey)),
-      kinds: query.kinds === null ? null : JSON.stringify(query.kinds),
-    };
-    const hits: MemoryHit[] = [];
-
-    // Full text: OR of the tokens; relevance is FTS5's BM25 (negated, so higher is better).
-    const tokens = queryTokens(query.tokens);
-    if (tokens.length > 0) {
-      let rows: Row[];
-      try {
-        rows = this.db.all(
-          "SELECT m.*, -bm25(memory_fts) AS score FROM memory_fts " +
-            "JOIN memory_records m ON m.seq = memory_fts.rowid " +
-            `WHERE memory_fts MATCH $match AND ${SEARCH_FILTER} ` +
-            "ORDER BY score DESC, m.created_at DESC, m.id DESC LIMIT $limit",
-          { ...filter, match: ftsMatch(tokens), limit: limit ?? -1 },
-        );
-      } catch (cause) {
-        if (cause instanceof StoreError) throw cause;
-        throw new StoreError("memory text search failed", { cause });
-      }
-      for (const row of rows) {
-        hits.push({
-          record: memoryFromRow(row),
-          text_score: num(row, "score"),
-          vector_score: null,
-        });
-      }
-    }
-
-    // Nearest neighbours: exact cosine over the rows with the query's dimension, their vectors
-    // kept decoded between searches (`#vectorRows`). The whole row is read only for the ones kept.
-    if (embedding !== null) {
-      const query32 = Float32Array.from(embedding);
-      let squares = 0;
-      for (let i = 0; i < query32.length; i++) {
-        const y = query32[i] as number;
-        squares += y * y;
-      }
-      const queryNorm = Math.sqrt(squares);
-      const scopes = new Set(query.scopes.map(memoryScopeKey));
-      const kinds = query.kinds === null ? null : new Set<string>(query.kinds);
-      const rows = this.#vectorRows(query.profile, query32.length);
-      const candidates = function* (): Generator<Scored> {
-        for (const row of rows) {
-          if (!scopes.has(row.scope_key) || (kinds !== null && !kinds.has(row.kind))) continue;
-          const v = row.values;
-          let dot = 0;
-          for (let i = 0; i < v.length; i++) dot += (v[i] as number) * (query32[i] as number);
-          // As `cosine` computes it.
-          const score = row.norm === 0 || queryNorm === 0 ? 0 : dot / (row.norm * queryNorm);
-          yield { row, score };
-        }
-      };
-      const scored = firstK(candidates(), limit);
-      const byId = new Map(hits.map((h) => [h.record.id, h]));
-      const missing = scored.filter(({ row }) => !byId.has(row.id));
-      const full = new Map<number, Row>();
-      if (missing.length > 0) {
-        const fullRows = this.db.all(
-          "SELECT * FROM memory_records WHERE seq IN (SELECT value FROM json_each($seqs))",
-          { seqs: JSON.stringify(missing.map(({ row }) => row.seq)) },
-        );
-        for (const row of fullRows) full.set(num(row, "seq"), row);
-      }
-      for (const { row, score } of scored) {
-        const hit = byId.get(row.id);
-        if (hit) {
-          hit.vector_score = score;
-          continue;
-        }
-        const whole = full.get(row.seq);
-        if (whole) hits.push({ record: memoryFromRow(whole), text_score: 0, vector_score: score });
-      }
-    }
-    return hits;
-  }
-
-  async list(profile: ProfileId, filter: MemoryFilter): Promise<MemoryRecord[]> {
-    const rows = this.db.all(
-      `SELECT * FROM memory_records WHERE ${LIST_FILTER} ` +
-        "ORDER BY created_at DESC, id DESC LIMIT $limit",
-      { ...listParams(profile, filter), limit: limitParam(filter.limit) },
-    );
-    return rows.map(memoryFromRow);
-  }
-
-  async count(profile: ProfileId, filter: MemoryFilter): Promise<number> {
-    const row = this.db.get(
-      `SELECT count(*) AS n FROM memory_records WHERE ${LIST_FILTER}`,
-      listParams(profile, filter),
-    );
-    return row ? num(row, "n") : 0;
-  }
-
-  async listAbout(
-    profile: ProfileId,
-    people: readonly PersonId[],
-    limitEach: number,
-  ): Promise<MemoryRecord[]> {
-    const limit = sqlLimit(limitEach);
-    if (people.length === 0 || limit === 0) return [];
-    // One pass over the profile's rows (there is no index on `subjects`), not one per person.
-    const rows = this.db.all(
-      "WITH about AS (SELECT DISTINCT m.seq, m.created_at, m.id, p.value AS person " +
-        "FROM memory_records m, json_each(m.subjects) p WHERE m.profile_id = $profile " +
-        "AND m.superseded_by IS NULL AND p.value IN (SELECT value FROM json_each($people))), " +
-        "ranked AS (SELECT seq, row_number() OVER (PARTITION BY person " +
-        "ORDER BY created_at DESC, id DESC) AS rn FROM about) " +
-        "SELECT * FROM memory_records WHERE seq IN " +
-        "(SELECT seq FROM ranked WHERE $limit IS NULL OR rn <= $limit) " +
-        "ORDER BY created_at DESC, id DESC",
-      { profile, people: JSON.stringify([...new Set(people)]), limit },
-    );
-    return rows.map(memoryFromRow);
-  }
-
-  async missingEmbeddings(profile: ProfileId, limit: number): Promise<MemoryRecord[]> {
-    const rows = this.db.all(
-      "SELECT * FROM memory_records WHERE profile_id = $profile AND embedding IS NULL " +
-        "AND superseded_by IS NULL ORDER BY created_at DESC, id DESC LIMIT $limit",
-      { profile, limit: limitParam(limit) },
-    );
-    return rows.map(memoryFromRow);
-  }
-
-  async touch(ids: readonly string[], at: Timestamp): Promise<void> {
-    if (ids.length === 0) return;
-    this.db.run(
-      "UPDATE memory_records SET access_count = min(access_count + 1, 4294967295), " +
-        "last_accessed = $at WHERE id IN (SELECT value FROM json_each($ids))",
-      { ids: JSON.stringify([...new Set(ids)]), at: toMicros(at) },
-    );
-  }
-
-  async dueFollowups(
-    profile: ProfileId,
-    now: Timestamp,
-    maxAgeMs: number | null = null,
-  ): Promise<MemoryRecord[]> {
-    const rows = this.db.all(
-      "SELECT * FROM memory_records WHERE profile_id = $profile AND kind = 'followup' AND " +
-        "NOT done AND due IS NOT NULL AND superseded_by IS NULL AND due <= $now AND " +
-        "($since IS NULL OR due >= $since) ORDER BY due DESC, id DESC",
-      {
-        profile,
-        now: toMicros(now),
-        since: maxAgeMs === null ? null : toMicros(now) - Math.round(maxAgeMs * 1000),
-      },
-    );
-    return rows.map(memoryFromRow);
-  }
-
-  async expireFollowups(profile: ProfileId, dueBefore: Timestamp): Promise<number> {
-    return this.db.run(
-      "UPDATE memory_records SET done = 1 WHERE profile_id = $profile AND kind = 'followup' " +
-        "AND NOT done AND due IS NOT NULL AND due < $before",
-      { profile, before: toMicros(dueBefore) },
-    );
-  }
-
-  async prune(profile: ProfileId, policy: PrunePolicy): Promise<number> {
-    return this.db.run(
-      "DELETE FROM memory_records WHERE profile_id = $profile AND kind = 'episode' AND " +
-        "created_at < $before AND importance <= $max AND (last_accessed IS NULL OR " +
-        "last_accessed < $since)",
-      {
-        profile,
-        before: toMicros(policy.created_before),
-        max: policy.max_importance,
-        since: toMicros(policy.not_accessed_since),
-      },
-    );
-  }
-
-  async deleteBySubject(profile: ProfileId, person: PersonId): Promise<number> {
-    return this.db.run(
-      "DELETE FROM memory_records WHERE profile_id = $profile AND (EXISTS (SELECT 1 FROM " +
-        "json_each(subjects) WHERE value = $person) OR scope_key = $scope)",
-      { profile, person, scope: memoryScopeKey({ type: "person", person }) },
-    );
-  }
-
-  async mergePerson(keep: PersonId, absorb: PersonId): Promise<number> {
-    if (keep === absorb) return 0;
-    const absorbScope = memoryScopeKey({ type: "person", person: absorb });
-    const keepScope = memoryScopeKey({ type: "person", person: keep });
-    // `tokens` is untouched, so the FTS triggers do not fire and `seq` (the FTS rowid) stays.
-    return this.db.tx(() => {
-      const rows = this.db.all(
-        "SELECT id, subjects, scope_key FROM memory_records WHERE EXISTS (SELECT 1 FROM " +
-          "json_each(subjects) WHERE value = $absorb) OR scope_key = $scope",
-        { absorb, scope: absorbScope },
-      );
-      for (const row of rows) {
-        const subjects = json<PersonId[]>(row, "subjects", "memory subjects");
-        const moved = [...new Set(subjects.map((s) => (s === absorb ? keep : s)))];
-        const rescoped = str(row, "scope_key") === absorbScope;
-        this.db.run(
-          "UPDATE memory_records SET subjects = $subjects, " +
-            "scope = CASE WHEN $rescope THEN $scope ELSE scope END, " +
-            "scope_key = CASE WHEN $rescope THEN $scope ELSE scope_key END WHERE id = $id",
-          {
-            id: str(row, "id"),
-            subjects: JSON.stringify(moved),
-            rescope: rescoped ? 1 : 0,
-            scope: keepScope,
-          },
-        );
-      }
-      return rows.length;
-    });
-  }
-}
-
 // ---- relationships ------------------------------------------------------------------------
 
 function relationshipFromRow(row: Row): Relationship {
@@ -953,7 +467,6 @@ export class SqliteStore implements Store {
   /** Decisions and turn outcomes on the event log. */
   readonly decisions: TurnLog;
   readonly settings: SettingsStore;
-  readonly memories: MemoryRecordStore;
   readonly relationships: RelationshipStore;
   readonly identity: IdentityStore;
   /** Audit entries on the event log. */
@@ -1008,7 +521,6 @@ export class SqliteStore implements Store {
     this.people = new IdentityPeople(this.persons);
     this.#settings = new RoutedSettings(new PrefsSettings(new SettingsState(db), this.persons));
     this.settings = this.#settings;
-    this.memories = new SqliteMemories(db);
     this.relationships = new SqliteRelationships(db);
     this.identity = new IdentityLinks(this.persons);
     this.handles = new IdentityHandles(this.persons);

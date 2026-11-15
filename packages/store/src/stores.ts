@@ -172,7 +172,11 @@ export interface SettingsStore {
   deletePrefix(profile: ProfileId, prefix: string): Promise<number>;
 }
 
-/** Long-term memory records (episodes, facts, her own notes, followups). */
+/**
+ * Long-term memory records (episodes, facts, her own notes, followups). On SQLite the `memory`
+ * plugin's tables (`@miyoria/memory/memory` `memoryTables`, provided as `MemoryRecordStoreKey`);
+ * the interface stays here because the social module and the panel use it too.
+ */
 export interface MemoryRecordStore {
   upsert(record: MemoryRecord): Promise<void>;
   get(id: string): Promise<MemoryRecord | null>;
@@ -335,7 +339,6 @@ export interface Store {
   readonly people: PeopleStore;
   readonly decisions: DecisionLog;
   readonly settings: SettingsStore;
-  readonly memories: MemoryRecordStore;
   readonly relationships: RelationshipStore;
   readonly identity: IdentityStore;
   readonly audit: AuditLog;

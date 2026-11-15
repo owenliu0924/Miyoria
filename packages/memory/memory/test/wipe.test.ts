@@ -38,7 +38,7 @@ import {
   wipeModules,
   wipePlan,
 } from "../src/index.js";
-import { acct, guildCtx, profile, router } from "./helpers.js";
+import { acct, guildCtx, profile, router, tablesOf } from "./helpers.js";
 
 class LlmStub implements Module {
   readonly manifest = defineManifest("llm", "LLM stub");
@@ -89,7 +89,7 @@ async function setup() {
     await store.close();
   });
   services.provide("app", SupervisorKey, sup);
-  services.provide("app", MemoryRecordStoreKey, store.memories);
+  services.provide("app", MemoryRecordStoreKey, tablesOf(store));
   services.provide("app", MessageLogKey, store.messages);
   services.provide("app", PeopleStoreKey, store.people);
   services.provide("app", SettingsStoreKey, store.settings);
@@ -106,28 +106,29 @@ async function setup() {
   const owen = await store.people.upsertAccount(acct("2"), "Owen");
   const ctx = guildCtx("g1", "c1");
   const now = toTimestamp(Date.now());
+  // The memories are the character's (one database each): one record, not one per profile.
+  await tablesOf(store).upsert({
+    id: newId(),
+    profile: profile(),
+    kind: "fact",
+    scope: { type: "global" },
+    subjects: [owen],
+    content: "Owen 喜歡拉麵",
+    tokens: "owen 喜歡 拉麵",
+    embedding: null,
+    importance: 0.5,
+    confidence: 0.8,
+    created_at: now,
+    updated_at: now,
+    last_accessed: null,
+    access_count: 0,
+    source_context: null,
+    source: null,
+    due: null,
+    done: false,
+    superseded_by: null,
+  });
   for (const p of [profile(), "other"]) {
-    await store.memories.upsert({
-      id: newId(),
-      profile: p,
-      kind: "fact",
-      scope: { type: "global" },
-      subjects: [owen],
-      content: "Owen 喜歡拉麵",
-      tokens: "owen 喜歡 拉麵",
-      embedding: null,
-      importance: 0.5,
-      confidence: 0.8,
-      created_at: now,
-      updated_at: now,
-      last_accessed: null,
-      access_count: 0,
-      source_context: null,
-      source: null,
-      due: null,
-      done: false,
-      superseded_by: null,
-    });
     await store.settings.set(p, `${WATERMARK_PREFIX}x`, { at: now });
     await store.settings.set(p, "mood:last", { valence: 0.2 });
     await store.settings.set(p, "channel_mode:x", "always");
@@ -289,11 +290,11 @@ describe("memory wipe", () => {
       include_superseded: true,
       limit: 9,
     };
-    expect(await store.memories.list(profile(), filter)).toEqual([]);
+    expect(await tablesOf(store).list(profile(), filter)).toEqual([]);
     expect(await store.messages.recent(profile(), ctx, 9)).toEqual([]);
     expect([...(await store.settings.list(profile(), "")).keys()]).toEqual(["channel_mode:x"]);
-    expect(await store.memories.list("other", filter)).toHaveLength(1);
-    // The log went with it: one database belongs to one character.
+    // The memories and the log went with it: one database belongs to one character.
+    expect(await tablesOf(store).list("other", filter)).toEqual([]);
     expect(await store.messages.recent("other", ctx, 9)).toEqual([]);
 
     // Audited, and the caching modules were restarted (fresh engine).

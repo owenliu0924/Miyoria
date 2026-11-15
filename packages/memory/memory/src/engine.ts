@@ -16,7 +16,6 @@ import {
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type ChatLogStore,
-  embeddingValues,
   type LogEntry,
   type MemoryFilter,
   type MemoryKind,
@@ -100,6 +99,7 @@ import {
   signals,
   tokenOverlap,
 } from "./score.js";
+import { embeddingValues } from "./stored.js";
 import { textSimilarity, tokenize, tokenString } from "./tokenize.js";
 
 const log = getLogger("memory");

@@ -140,8 +140,9 @@ describe("importLinks", () => {
         .filter((line) => !changed.has(line.slice(0, line.indexOf(":"))))
         .join("\n");
     expect(unchanged(dump(t))).toBe(unchanged(before));
-    // Coins are not imported either: they are the economy plugin's tables, not opened here.
-    for (const table of ["member_cards", "relationships", "memory_records"]) {
+    // Coins and memories are not imported either: they are the economy and memory plugins'
+    // tables, not opened here.
+    for (const table of ["member_cards", "relationships"]) {
       expect(count(t, table)).toBe(0);
     }
     expect(count(t, "link_codes")).toBe(0);

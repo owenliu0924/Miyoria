@@ -65,6 +65,7 @@ import { PersonNotes } from "./person-note.js";
 import { PinnedReader } from "./pinned.js";
 import { RecentPast } from "./recent-install.js";
 import { MemoryRetriever } from "./retrieval.js";
+import { memoryTables } from "./tables.js";
 import { RECALL, REMEMBER, RecallTool, RememberTool } from "./tools.js";
 
 /** Delay before the first maintenance check, and the interval of later checks. */
@@ -89,7 +90,8 @@ export interface MemoryModuleOptions {
 /**
  * Module `memory` (requires `llm`, optional `commands`).
  *
- * Services used: `LlmRouterKey`, `MemoryRecordStoreKey` (else `StoreKey.memories`), and
+ * Services used: `LlmRouterKey`, `MemoryRecordStoreKey` (else the `StoreKey` store's
+ * `memoryTables`), and
  * optionally `MessageLogKey`, `PeopleStoreKey`, `SettingsStoreKey` (each else the `Store`
  * field), `PromptContributorsKey`, `ToolRegistryKey`, `CommandRegistryKey`, and for
  * `/admin memory wipe` `ProfileDataStoreKey`, `SupervisorKey` and `AuditLogKey`.
@@ -134,7 +136,8 @@ export class MemoryModule implements Module {
     const services = ctx.services;
     const store = services.get(StoreKey);
     const router = services.require(LlmRouterKey);
-    const records = this.#records ?? services.get(MemoryRecordStoreKey) ?? store?.memories;
+    const records =
+      this.#records ?? services.get(MemoryRecordStoreKey) ?? store?.plugin(memoryTables);
     if (!records) {
       throw new MemoryModuleError("no memory record store (`dyn MemoryRecordStore`)");
     }

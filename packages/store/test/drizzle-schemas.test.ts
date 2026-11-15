@@ -1,9 +1,17 @@
 // Every plugin whose tables are Drizzle definitions (`scripts/schema-sql.ts` `DRIZZLE_PLUGINS`):
 // its checked-in migrations and its Drizzle tables cannot drift apart. What each schema's own
-// constraints do is tested beside it (`identity-schema.test.ts`, `config.test.ts`).
+// constraints do is tested beside it (`identity-schema.test.ts`, `config.test.ts`). What a plugin
+// writes by hand after its generated SQL (`handWritten`: full-text indexes, triggers) is checked
+// to follow it unchanged; drizzle-kit does not see it, and the drift check leaves it alone.
 
 import { describe, expect, it } from "vitest";
-import { createSql, DRIZZLE_PLUGINS, migrated, pendingSql } from "../scripts/schema-sql.js";
+import {
+  createSql,
+  DRIZZLE_PLUGINS,
+  firstMigrationSql,
+  migrated,
+  pendingSql,
+} from "../scripts/schema-sql.js";
 import { coreSchema, lintSchemas, migrate, orderSchemas } from "../src/index.js";
 
 /** The table names a plugin's generated SQL creates. */
@@ -14,12 +22,13 @@ function tablesOf(statements: readonly string[]): string[] {
     .sort();
 }
 
-describe.each(Object.entries(DRIZZLE_PLUGINS))("the %s schema", (id, { tables, schema }) => {
+describe.each(Object.entries(DRIZZLE_PLUGINS))("the %s schema", (id, plugin) => {
+  const { tables, schema } = plugin;
   it("is the SQL drizzle-kit generates from the Drizzle tables, STRICT added", async () => {
     // The first migration is the whole schema. When a second one exists, this check moves to
     // `pendingSql` below (what drizzle-kit would still change) plus the index comparison.
     expect(schema.migrations).toHaveLength(1);
-    const generated = (await createSql(tables)).join("\n");
+    const generated = firstMigrationSql(await createSql(tables), plugin.handWritten);
     if (schema.migrations[0]?.sql !== generated) {
       // The message is the migration to check in.
       expect.fail(`${id} migration 1 differs from the Drizzle tables; generated:\n${generated}`);
@@ -78,5 +87,6 @@ it("covers identity, config, the artifact store and the plugins that own their t
     "directive",
     "economy",
     "identity",
+    "memory",
   ]);
 });

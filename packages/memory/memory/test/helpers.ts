@@ -10,6 +10,7 @@ import {
   type PeopleStore,
   type SettingsStore,
   SqliteStore,
+  type Store,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -30,6 +31,7 @@ import {
   memoryFilter,
   storedId,
 } from "../src/index.js";
+import { type MemoryTables, memoryTables } from "../src/tables.js";
 import { FakeStore } from "./fake-store.js";
 
 export const SECOND = 1000;
@@ -103,10 +105,26 @@ export async function closeAll(): Promise<void> {
   for (const areas of open.splice(0)) await areas.close();
 }
 
+/** The memory plugin's tables on `store` (migrated on first use, the same object every time). */
+export function tablesOf(store: Store): MemoryTables {
+  return store.plugin(memoryTables);
+}
+
 export async function openAreas(backend: Backend): Promise<Areas> {
-  const areas = backend === "sqlite" ? await SqliteStore.open(":memory:") : fakeAreas();
+  const areas = backend === "sqlite" ? await sqliteAreas() : fakeAreas();
   open.push(areas);
   return areas;
+}
+
+async function sqliteAreas(): Promise<Areas> {
+  const store = await SqliteStore.open(":memory:", { plugins: [memoryTables] });
+  return {
+    messages: store.messages,
+    people: store.people,
+    settings: store.settings,
+    memories: tablesOf(store),
+    close: () => store.close(),
+  };
 }
 
 function fakeAreas(): Areas {

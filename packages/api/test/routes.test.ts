@@ -14,6 +14,7 @@ import {
   MemoryEngine,
   MemoryEngineKey,
   memoryConfig,
+  memoryTables,
   tokenString,
 } from "@miyoria/memory/memory";
 import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
@@ -417,12 +418,14 @@ describe("routes", () => {
           ["Minecraft", [0, 1, 0]],
         ]),
       );
-      const engine = new MemoryEngine(PROFILE, memoryConfig(), sqlite.memories, { embedder });
+      const engine = new MemoryEngine(PROFILE, memoryConfig(), sqlite.plugin(memoryTables), {
+        embedder,
+      });
       h.sup.services.provide("memory", MemoryEngineKey, engine);
       const owen = newId();
       const withVector = async (r: MemoryRecord) => {
         r.embedding = (await embedder.embed([r.content]))[0] ?? null;
-        await sqlite.memories.upsert(r);
+        await sqlite.plugin(memoryTables).upsert(r);
         return r;
       };
       const ramen = await withVector(memory(owen, "fact", "Owen 喜歡 豚骨 拉麵", 1));
@@ -465,7 +468,9 @@ describe("routes", () => {
       page = await adm.memory({ q: "拉麵", before: "2026-10-01T12:00:30Z" });
       expect(page.items, "only records created before").toEqual([]);
 
-      expect((await sqlite.memories.get(ramen.id))?.access_count, "not touched").toBe(0);
+      expect((await sqlite.plugin(memoryTables).get(ramen.id))?.access_count, "not touched").toBe(
+        0,
+      );
 
       // Without the memory module the store's full-text search answers.
       h.sup.services.removeOwnedBy("memory");

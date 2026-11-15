@@ -5,7 +5,7 @@ import { AuthService, AuthServiceKey, authTables } from "@miyoria/auth";
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
 import * as arbiter from "@miyoria/brain/arbiter";
 import * as self from "@miyoria/heart/self";
-import { MAINTENANCE_KEY, WATERMARK_PREFIX } from "@miyoria/memory/memory";
+import { MAINTENANCE_KEY, memoryTables, WATERMARK_PREFIX } from "@miyoria/memory/memory";
 import * as queue from "@miyoria/play/queue";
 import {
   defineManifest,
@@ -143,7 +143,7 @@ async function harness(options: { sandbox?: boolean } = {}) {
   // Some of everything.
   const now = toTimestamp(Date.UTC(2026, 10, 2));
   const owen = await store.people.upsertAccount({ platform: "discord", id: "2" }, "Owen");
-  await store.memories.upsert({
+  await store.plugin(memoryTables).upsert({
     id: newId(),
     profile: P,
     kind: "fact",

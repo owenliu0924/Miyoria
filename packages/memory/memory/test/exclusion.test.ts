@@ -32,7 +32,7 @@ import {
   memoryFilter,
   parseWindow,
 } from "../src/index.js";
-import { acct, guildCtx, plus, profile, router, t0 } from "./helpers.js";
+import { acct, guildCtx, plus, profile, router, t0, tablesOf } from "./helpers.js";
 
 const ctx = guildCtx("g1", "c1");
 const OWEN = acct("2");
@@ -96,7 +96,7 @@ async function rig(llm: MockProvider | null = null) {
   const cat = say("m1", "我養了一隻貓", t0());
   const fine = say("m2", "我喜歡拉麵", plus(t0(), 1000));
   await log.flush();
-  const engine = new MemoryEngine(profile(), memoryConfig(), store.memories, {
+  const engine = new MemoryEngine(profile(), memoryConfig(), tablesOf(store), {
     people: store.people,
     messages: store.messages,
     settings: store.settings,
@@ -151,9 +151,9 @@ describe("excluded messages", () => {
     const gone = await r.engine.excludeMessage(excludedBody("m1"));
     r.redact("m1");
     expect(gone).toEqual({ deleted: 2, trimmed: 1 });
-    const ids = (await r.store.memories.list(profile(), memoryFilter(50))).map((x) => x.id);
+    const ids = (await tablesOf(r.store).list(profile(), memoryFilter(50))).map((x) => x.id);
     expect(ids).toHaveLength(2);
-    const kept = await r.store.memories.get((both as { id: string }).id);
+    const kept = await tablesOf(r.store).get((both as { id: string }).id);
     expect(kept?.source_events).toEqual([r.fine.seen.id]);
     expect(alone.type).not.toBe("refused");
     expect(byLine.type).not.toBe("refused");
@@ -173,10 +173,10 @@ describe("excluded messages", () => {
       t0(),
     );
     expect(stored.type).not.toBe("refused");
-    const record = await r.store.memories.get((stored as { id: string }).id);
+    const record = await tablesOf(r.store).get((stored as { id: string }).id);
     expect(record?.source_events).toEqual([r.fine.seen.id]);
     // A new engine knows from the log itself: no list is kept anywhere.
-    const second = new MemoryEngine(profile(), memoryConfig(), r.store.memories, {
+    const second = new MemoryEngine(profile(), memoryConfig(), tablesOf(r.store), {
       settings: r.store.settings,
       chat: r.store.chat,
     });
@@ -235,7 +235,7 @@ describe("excluded messages", () => {
         customEvent(MESSAGE_EXCLUDED_TOPIC, excludedBody("m1") as unknown as JsonValue),
       );
       const deadline = Date.now() + 5000;
-      while ((await r.store.memories.get(id)) !== null) {
+      while ((await tablesOf(r.store).get(id)) !== null) {
         expect(Date.now() < deadline, "not taken out").toBe(true);
         await new Promise((resolve) => setTimeout(resolve, 50));
       }

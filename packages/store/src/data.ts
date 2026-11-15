@@ -34,6 +34,8 @@ const GOALS_TABLE = "economy_goals";
 const PLEDGES_TABLE = "economy_goal_pledges";
 const BOUNTIES_TABLE = "economy_bounties";
 const DOCS_TABLE = "economy_docs";
+/** The `memory` plugin's records (`@miyoria/memory/memory` `schema.ts`). */
+const MEMORY_TABLE = "memory_records";
 
 /** Settings profile of node-wide settings (`arbiter:state`, `queue:state`, ...). */
 export const GLOBAL_SETTINGS_PROFILE: ProfileId = "_global";
@@ -264,7 +266,9 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
   category(
     "memories",
     [
-      table("memory_records", "memory_records", "profile", "updated_at", "created_at, id", {
+      // The whole database's (one character). Its rows name people only inside `subjects`, with
+      // no foreign key: nothing cascades from identity.
+      table("memory_records", MEMORY_TABLE, "node", "updated_at", "created_at, id", {
         ...MEMORY_COLUMNS,
       }),
       // @miyoria/memory/memory `MAINTENANCE_KEY`
@@ -1112,11 +1116,11 @@ export function countStmt(d: SqlDialect, part: DataPart, profile: ProfileId): St
   }
 }
 
-/** Memories by kind: rows `{ kind, n }`. */
-export function memoryKindsStmt(profile: ProfileId): Stmt {
+/** Memories by kind: rows `{ kind, n }`. The whole database's (one character). */
+export function memoryKindsStmt(): Stmt {
   return {
-    sql: "SELECT kind, COUNT(*) AS n FROM memory_records WHERE profile_id = $1 GROUP BY kind",
-    params: [profile],
+    sql: `SELECT kind, COUNT(*) AS n FROM ${MEMORY_TABLE} GROUP BY kind`,
+    params: [],
   };
 }
 
@@ -1354,8 +1358,10 @@ export async function readInventory(
     let breakdown: Record<string, number> | null = null;
     if (c.id === "memories" || c.id === "artifacts") {
       breakdown = {};
-      const stmt = c.id === "memories" ? memoryKindsStmt(profile) : artifactBreakdownStmt();
-      for (const row of await query(stmt)) {
+      // A plugin that is not installed has no tables, and nothing to break down.
+      const installed = c.parts.every(has);
+      const stmt = c.id === "memories" ? memoryKindsStmt() : artifactBreakdownStmt();
+      for (const row of installed ? await query(stmt) : []) {
         breakdown[String(row.kind)] = Number(row.n);
       }
     }

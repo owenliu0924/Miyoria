@@ -6,8 +6,10 @@
 import { LlmCallSchema } from "@miyoria/contracts/events";
 import { newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-// The roles and panel sessions are the auth plugin's tables (v5-data §8 step 9a).
+// The roles and panel sessions are the auth plugin's tables (v5-data §8 step 9a), the memories the
+// memory plugin's (step 9b).
 import { authTables } from "../../auth/src/tables.js";
+import { memoryTables } from "../../memory/memory/src/tables.js";
 import {
   categoryModules,
   DATA_CATEGORIES,
@@ -30,7 +32,7 @@ afterEach(async () => {
 });
 
 async function open(): Promise<Store> {
-  const store = await SqliteStore.open(":memory:", { plugins: [authTables] });
+  const store = await SqliteStore.open(":memory:", { plugins: [authTables, memoryTables] });
   stores.push(store);
   return store;
 }
@@ -45,28 +47,29 @@ async function seed(store: Store) {
   const owen = await store.people.upsertAccount({ platform: "discord", id: "2" }, "Owen");
   await store.identity.createLinkCode("ABC123", { platform: "discord", id: "2" }, toTimestamp(T0));
   const ctx = { platform: "discord", scope: "g", channel: "c", kind: "channel" as const };
+  // The memories are the character's (one database, no profile column): one record.
+  await store.plugin(memoryTables).upsert({
+    id: newId(),
+    profile: P,
+    kind: "fact",
+    scope: { type: "global" },
+    subjects: [owen],
+    content: "Owen 喜歡拉麵",
+    tokens: "owen 喜歡 拉麵",
+    embedding: null,
+    importance: 0.5,
+    confidence: 0.8,
+    created_at: toTimestamp(T0),
+    updated_at: toTimestamp(T0),
+    last_accessed: null,
+    access_count: 0,
+    source_context: null,
+    source: null,
+    due: null,
+    done: false,
+    superseded_by: null,
+  });
   for (const p of [P, OTHER]) {
-    await store.memories.upsert({
-      id: newId(),
-      profile: p,
-      kind: "fact",
-      scope: { type: "global" },
-      subjects: [owen],
-      content: "Owen 喜歡拉麵",
-      tokens: "owen 喜歡 拉麵",
-      embedding: null,
-      importance: 0.5,
-      confidence: 0.8,
-      created_at: toTimestamp(T0),
-      updated_at: toTimestamp(T0),
-      last_accessed: null,
-      access_count: 0,
-      source_context: null,
-      source: null,
-      due: null,
-      done: false,
-      superseded_by: null,
-    });
     await store.relationships.upsert({
       profile: p,
       person: owen,

@@ -143,6 +143,7 @@ export {
 export { sameMatter } from "./followups.js";
 // v4 §5: what she can find and connect.
 export { LocalEmbedder, prefixesOf, resolveRuntime } from "./local-embed.js";
+export { MEMORY_SEARCH_SQL, MEMORY_TABLES_SQL, memorySchema } from "./migrations.js";
 export {
   type Activity,
   ActivityTracker,
@@ -208,6 +209,7 @@ export {
 } from "./recent-log.js";
 export { RepeatDamper } from "./repeat.js";
 export { MemoryRetriever } from "./retrieval.js";
+export { type MemoryRow, memoryRecords, memoryVectorVersion } from "./schema.js";
 export {
   hasScope,
   isPrivate,
@@ -238,6 +240,8 @@ export {
   signals,
   tokenOverlap,
 } from "./score.js";
+export { embeddingValues } from "./stored.js";
+export { MemoryTables, memoryTables } from "./tables.js";
 export {
   questionLine,
   questionOf,

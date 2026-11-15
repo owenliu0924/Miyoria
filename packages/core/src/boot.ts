@@ -17,6 +17,7 @@ import {
 } from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
+import { memoryTables } from "@miyoria/memory/memory";
 import {
   type Config,
   ConfigError,
@@ -85,6 +86,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   authTables,
   directiveTables,
   economyTables,
+  memoryTables,
 ];
 
 /** What the module factories get. */
@@ -255,7 +257,8 @@ export async function buildCoreWith(
   services.provide(k, GoalStoreKey, economy.goals);
   services.provide(k, BountyStoreKey, economy.bounties);
   services.provide(k, PeopleStoreKey, store.people);
-  services.provide(k, MemoryRecordStoreKey, store.memories);
+  // The memory plugin's tables (`@miyoria/memory/memory` `tables.ts`).
+  services.provide(k, MemoryRecordStoreKey, store.plugin(memoryTables));
   services.provide(k, RelationshipStoreKey, store.relationships);
   services.provide(k, IdentityStoreKey, store.identity);
   services.provide(k, AuthStoreKey, store.plugin(authTables).store);

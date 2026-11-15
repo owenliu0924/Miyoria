@@ -1,13 +1,11 @@
 // Legacy migration 7 (was `0007_memory_provenance.sql`). Never edit it: its checksum is recorded.
+//
+// One exception, before any V5 database existed outside tests: step 9b of docs/design/v5-data.md
+// §8 took out the columns it added to `memory_records` and the rows it marked: the table is the
+// `memory` plugin's (`packages/memory/memory/src/schema.ts`), with `origin` and `source_events`,
+// and V5 starts from an empty database. It stays, as a comment, so the versions keep their
+// numbers.
 
-export const m0007 = `-- Memory provenance (docs/design/v3-architecture.md §11): every memory says whether she lived it
--- or was told it, and which EventLog events it came from.
---
--- Existing rows are not guessed at. A note someone asked her to write down (\`source\` is set)
--- really was told to her; everything else stays 'unknown' and keeps working as before.
-ALTER TABLE memory_records ADD COLUMN origin TEXT NOT NULL DEFAULT 'unknown';
--- JSON array of EventLog ids (or \`msg:<id>\` of a chat line the log has no event for).
-ALTER TABLE memory_records ADD COLUMN source_events TEXT NOT NULL DEFAULT '[]';
-
-UPDATE memory_records SET origin = 'told' WHERE source IS NOT NULL;
+export const m0007 = `-- Memory provenance (docs/design/v3-architecture.md §11): whether she lived it or was told it.
+-- The columns are the memory plugin's memory_records.origin and memory_records.source_events.
 `;

@@ -38,6 +38,8 @@ import {
   SocialSignalsKey,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
+// The memory plugin's tables (v5-data §8 step 9b); social reaches them by `MemoryRecordStoreKey`.
+import { memoryTables } from "../../../memory/memory/src/tables.js";
 import {
   baseChange,
   DayLedger,
@@ -476,7 +478,8 @@ describe("social engine", () => {
   it("link_moves_memories_to_the_kept_person", async () => {
     const store = await SqliteStore.open(":memory:");
     try {
-      const h = new Harness(socialConfig(), new FakeStore(), store.memories);
+      const memories = store.plugin(memoryTables);
+      const h = new Harness(socialConfig(), new FakeStore(), memories);
       const a = acc("discord:1");
       const b = acc("twitch:9");
       const keep = (await h.social.resolve(a, "Owen", t(1, 10))) ?? "";
@@ -517,13 +520,13 @@ describe("social engine", () => {
       const elsewhere = memory("fact", { type: "global" }, [absorb, keep], "tall", "other-chan");
       const unrelated = memory("fact", { type: "person", person: other }, [other], "cats");
       const all = [episode, fact, followup, note, elsewhere, unrelated];
-      for (const r of all) await store.memories.upsert(r);
+      for (const r of all) await memories.upsert(r);
 
       const code = (await h.social.issueLinkCode(a, "Owen", t(1, 10))) ?? "";
       const outcome = await h.social.redeemLinkCode(b, "owen_tw", code, t(1, 10));
       expect(outcome).toEqual({ type: "linked", keep, absorbed: absorb });
 
-      const read = async (r: MemoryRecord) => (await store.memories.get(r.id)) as MemoryRecord;
+      const read = async (r: MemoryRecord) => (await memories.get(r.id)) as MemoryRecord;
       expect((await read(episode)).subjects).toEqual([keep, other]);
       expect((await read(fact)).scope).toEqual({ type: "person", person: keep });
       expect((await read(fact)).subjects).toEqual([keep]);
@@ -538,7 +541,7 @@ describe("social engine", () => {
 
       // Full text and vectors still find them under the kept person.
       const keepScope: MemoryScope = { type: "person", person: keep };
-      const hits = await store.memories.search({
+      const hits = await memories.search({
         profile: profile(),
         scopes: [keepScope],
         kinds: null,
@@ -556,7 +559,7 @@ describe("social engine", () => {
         include_superseded: true,
         limit: 100,
       };
-      expect(await store.memories.list(profile(), filter)).toEqual([]);
+      expect(await memories.list(profile(), filter)).toEqual([]);
     } finally {
       await store.close();
     }

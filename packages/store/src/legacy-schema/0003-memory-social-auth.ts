@@ -2,73 +2,15 @@
 // Step 4 of docs/design/v5-data.md §8 took `link_codes` out (see `0001-init.ts`). Step 6 took out
 // `audit_log` and its indexes: audit entries are events (`events/audit.ts`). Step 9a took out
 // `roles`, `role_assignments`, `role_mappings` and `node_overrides`: they are the `auth` plugin's
-// tables (`packages/auth/src/schema.ts`).
+// tables (`packages/auth/src/schema.ts`). Step 9b took out `memory_records` with its indexes, the
+// full-text index `memory_fts` and its triggers: they are the `memory` plugin's tables
+// (`packages/memory/memory/src/schema.ts`, `migrations.ts`).
 
 export const m0003 = `-- Long-term memory, relationships, identity linking and roles.
 -- Ids are ULIDs stored as text. Per-character data carries \`profile_id\`.
 -- Arrays (\`subjects\`, \`tags\`, \`grants\`, \`denies\`) are JSON text arrays.
 
--- Memory records. The privacy scope is kept both as JSON (readable) and as a
--- canonical JSON string \`scope_key\` (exact-match filtering and deletion).
-CREATE TABLE memory_records (
-    -- Stable integer key for the full-text index (upserts keep it).
-    seq           INTEGER PRIMARY KEY,
-    id            TEXT    NOT NULL UNIQUE,
-    profile_id    TEXT    NOT NULL,
-    kind          TEXT    NOT NULL,
-    scope         TEXT    NOT NULL,
-    scope_key     TEXT    NOT NULL,
-    subjects      TEXT    NOT NULL DEFAULT '[]',
-    content       TEXT    NOT NULL,
-    -- Space-separated, already segmented search tokens.
-    tokens        TEXT    NOT NULL,
-    -- Little-endian float32 components. No fixed dimension: the embedding
-    -- model may change. Searches only compare rows with the query's
-    -- dimension (\`length(embedding) = 4 * dims\`).
-    embedding     BLOB,
-    importance    REAL    NOT NULL,
-    confidence    REAL    NOT NULL,
-    created_at    INTEGER NOT NULL,
-    updated_at    INTEGER NOT NULL,
-    last_accessed INTEGER,
-    access_count  INTEGER NOT NULL DEFAULT 0,
-    source_context TEXT,
-    due           INTEGER,
-    done          INTEGER NOT NULL DEFAULT 0,
-    superseded_by TEXT
-);
-
-CREATE INDEX memory_records_list_idx
-    ON memory_records (profile_id, created_at DESC, id DESC);
-CREATE INDEX memory_records_scope_idx
-    ON memory_records (profile_id, scope_key);
--- Open followups only.
-CREATE INDEX memory_records_due_idx
-    ON memory_records (profile_id, due)
-    WHERE kind = 'followup' AND NOT done AND due IS NOT NULL;
-
--- Full-text index over \`tokens\` (the counterpart of PostgreSQL's
--- \`to_tsvector('simple', tokens)\`): unicode61 folds case and keeps CJK words
--- whole; diacritics are kept, like the \`simple\` configuration.
-CREATE VIRTUAL TABLE memory_fts USING fts5(
-    tokens,
-    content = 'memory_records',
-    content_rowid = 'seq',
-    tokenize = 'unicode61 remove_diacritics 0'
-);
-
-CREATE TRIGGER memory_records_fts_insert AFTER INSERT ON memory_records BEGIN
-    INSERT INTO memory_fts (rowid, tokens) VALUES (new.seq, new.tokens);
-END;
-
-CREATE TRIGGER memory_records_fts_delete AFTER DELETE ON memory_records BEGIN
-    INSERT INTO memory_fts (memory_fts, rowid, tokens) VALUES ('delete', old.seq, old.tokens);
-END;
-
-CREATE TRIGGER memory_records_fts_update AFTER UPDATE OF tokens ON memory_records BEGIN
-    INSERT INTO memory_fts (memory_fts, rowid, tokens) VALUES ('delete', old.seq, old.tokens);
-    INSERT INTO memory_fts (rowid, tokens) VALUES (new.seq, new.tokens);
-END;
+-- Memory records and their full-text index are the memory plugin's tables.
 
 -- One profile's feelings about one person, plus the change history.
 CREATE TABLE relationships (

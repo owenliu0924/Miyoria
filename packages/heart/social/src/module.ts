@@ -87,7 +87,8 @@ function stores(ctx: ModuleContext): SocialStores {
   if (!relationships) throw new SocialError("social needs a `dyn RelationshipStore` service");
   const identity = services.get(IdentityStoreKey) ?? bundle?.identity ?? null;
   if (!identity) ctx.log.warn("no identity store: `/me link` is unavailable");
-  const memories = services.get(MemoryRecordStoreKey) ?? bundle?.memories ?? null;
+  // The memory plugin's tables: the `Store` bundle holds no memories of its own.
+  const memories = services.get(MemoryRecordStoreKey) ?? null;
   if (identity && !memories) {
     ctx.log.warn("no memory record store: `/me link` does not move memories");
   }
