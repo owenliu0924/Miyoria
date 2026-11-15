@@ -8,13 +8,14 @@ import {
   type AccountRef,
   BaseAuthorizer,
   type ContextKey,
-  newEnvelope,
+  Events,
+  eventEnvelope,
   newId,
   PlatformSinks,
   type Subject,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { ApiClient, ApiConfigSchema, parseBind, SseParser } from "../src/index.js";
+import { ApiClient, ApiConfigSchema, parseBind } from "../src/index.js";
 import { ContextLabels, LABEL_MISS_TTL_MS } from "../src/labels.js";
 import { Monitor, percentile } from "../src/monitor.js";
 import {
@@ -222,28 +223,38 @@ describe("monitor", () => {
     const m = new Monitor();
     const context: ContextKey = { platform: "discord", scope: "g", channel: "vc", kind: "voice" };
     const me: AccountRef = { platform: "discord", id: "1" };
-    const send = (event: Parameters<typeof newEnvelope>[1]) =>
-      m.handle(newEnvelope("voice", event));
-    send({
-      type: "voice_joined",
-      data: {
+    m.handle(
+      eventEnvelope("voice", Events.VoiceJoined, {
         context,
         participants: [
           { account: me, display_name: "Mika", is_self: false, muted: false, deafened: false },
         ],
-      },
-    });
-    send({ type: "voice_speaking", data: { context, account: me, speaking: true } });
+      }),
+    );
+    m.handle(
+      eventEnvelope("voice", Events.VoiceSpeaking, { context, account: me, speaking: true }),
+    );
     for (const ms of [100, 300, 200]) {
-      send({
-        type: "custom",
-        data: {
-          topic: "voice.latency",
-          payload: { stage: "asr", context: { ...context }, asr_ms: ms },
-        },
-      });
+      m.handle(
+        eventEnvelope("voice", Events.VoiceLatency, {
+          stage: "asr",
+          context: { ...context },
+          speaker: me,
+          provider: "test",
+          audio_ms: 1_000,
+          transcribe_ms: ms,
+          asr_ms: ms,
+        }),
+      );
     }
-    send({ type: "voice_playback", data: { context, turn: null, state: "started", text: "hi" } });
+    m.handle(
+      eventEnvelope("voice", Events.VoicePlaybackEvent, {
+        context,
+        turn: null,
+        state: "started",
+        text: "hi",
+      }),
+    );
     expect(m.speaking()).toBe(true);
     const state = m.voice(Date.now());
     expect(state.sessions).toHaveLength(1);
@@ -253,7 +264,7 @@ describe("monitor", () => {
     expect(s?.latency.asr.p50_ms).toBe(200);
     expect(s?.latency.tts_first_audio.p50_ms).toBeNull();
 
-    send({ type: "voice_left", data: { context, reason: null } });
+    m.handle(eventEnvelope("voice", Events.VoiceLeft, { context, reason: null }));
     expect(m.speaking()).toBe(false);
     expect(m.voice(Date.now()).sessions).toEqual([]);
     expect(m.voiceContext()).toBeNull();
@@ -262,16 +273,15 @@ describe("monitor", () => {
   it("reads p50 and p90 per end-to-end segment, counting incomplete replies apart", () => {
     const m = new Monitor();
     const context: ContextKey = { platform: "discord", scope: "g", channel: "vc", kind: "voice" };
-    m.handle(newEnvelope("voice", { type: "voice_joined", data: { context, participants: [] } }));
+    m.handle(eventEnvelope("voice", Events.VoiceJoined, { context, participants: [] }));
+    // The fields the monitor reads; the rest of an `e2e` sample does not matter here.
     const e2e = (payload: Record<string, unknown>) =>
       m.handle(
-        newEnvelope("voice", {
-          type: "custom",
-          data: {
-            topic: "voice.latency",
-            payload: { stage: "e2e", context: { ...context }, ...payload } as never,
-          },
-        }),
+        eventEnvelope("voice", Events.VoiceLatency, {
+          stage: "e2e",
+          context: { ...context },
+          ...payload,
+        } as never),
       );
     for (let i = 1; i <= 10; i++) {
       e2e({
@@ -304,16 +314,19 @@ describe("monitor", () => {
   it("drops latency samples outside the 15 minute window", () => {
     const m = new Monitor();
     const context: ContextKey = { platform: "discord", scope: "g", channel: "vc", kind: "voice" };
-    m.handle(newEnvelope("voice", { type: "voice_joined", data: { context, participants: [] } }));
+    m.handle(eventEnvelope("voice", Events.VoiceJoined, { context, participants: [] }));
     m.handle(
-      newEnvelope(
+      eventEnvelope(
         "voice",
+        Events.VoiceLatency,
         {
-          type: "custom",
-          data: {
-            topic: "voice.latency",
-            payload: { stage: "tts", context: { ...context }, first_audio_ms: 90 },
-          },
+          stage: "tts",
+          context: { ...context },
+          turn: null,
+          provider: null,
+          chars: 2,
+          first_audio_ms: 90,
+          prefetched: false,
         },
         { now: 0 },
       ),
@@ -365,22 +378,6 @@ describe("panel", () => {
 // ---- client ---
 
 describe("client", () => {
-  const bytes = (s: string) => new TextEncoder().encode(s);
-
-  it("sse_parser_handles_split_chunks_and_comments", () => {
-    const p = new SseParser();
-    expect(p.feed(bytes(": keep-alive\n\nid: 1\nda"))).toEqual([]);
-    expect(p.feed(bytes('ta: {"a":\r\ndata: 1}\r\n\r\n'))).toEqual(['{"a":\n1}']);
-    expect(p.feed(bytes("data:x\n\ndata\n\n"))).toEqual(["x", ""]);
-  });
-
-  it("sse_parser_keeps_utf8_split_across_chunks", () => {
-    const p = new SseParser();
-    const all = bytes("data: 哈囉\n\n");
-    expect(p.feed(all.slice(0, 8))).toEqual([]);
-    expect(p.feed(all.slice(8))).toEqual(["哈囉"]);
-  });
-
   it("builds_urls_under_api", () => {
     const c = new ApiClient("http://127.0.0.1:7878/", "t");
     expect(c.url(["modules", "platform.discord.bot", "enable"]).href).toBe(

@@ -2,7 +2,13 @@
 // server's shell reads (who may call the route, which permission it needs) and the "detailed"
 // input structure, so a handler gets `{ params, query, body }` apart instead of one merged object.
 
-import { isContractProcedure, oc } from "@orpc/contract";
+import {
+  type AnySchema,
+  type EventIteratorSchemaDetails,
+  getEventIteratorSchemaDetails,
+  isContractProcedure,
+  oc,
+} from "@orpc/contract";
 import { z } from "zod";
 
 /**
@@ -45,6 +51,16 @@ export function routeMeta(router: object, path: readonly string[]): RouteMeta | 
     at = (at as Record<string, unknown>)[key];
   }
   return isContractProcedure(at) ? (at["~orpc"].meta as RouteMeta) : null;
+}
+
+/**
+ * The schemas of an event stream route's output (`eventIterator(yields, returns)`): what each
+ * event is, and what the stream ends with. `undefined` for a route that answers once.
+ */
+export function eventRouteSchemas(
+  output: AnySchema | undefined,
+): EventIteratorSchemaDetails | undefined {
+  return getEventIteratorSchemaDetails(output);
 }
 
 /**

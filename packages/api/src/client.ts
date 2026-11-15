@@ -1,11 +1,10 @@
 // Typed client for the admin API, used by the CLI. The routes on the route table
 // (`@miyoria/contracts/api`) are not here: the CLI calls those through the contract's client.
 
-import type { LegacyEnvelope } from "@miyoria/types";
 import { statusText } from "./errors.js";
 import type { ErrorBody } from "./types.js";
 
-export type ClientErrorKind = "invalid_url" | "transport" | "api" | "decode";
+export type ClientErrorKind = "invalid_url" | "transport" | "api";
 
 /** Every failure of `ApiClient`. `status` is set for `api` errors (non-success answers). */
 export class ClientError extends Error {
@@ -37,57 +36,11 @@ export class ClientError extends Error {
   static api(status: number, message: string): ClientError {
     return new ClientError("api", `admin API returned ${statusText(status)}: ${message}`, status);
   }
-
-  static decode(reason: string): ClientError {
-    return new ClientError("decode", `invalid event from the admin API: ${reason}`, null);
-  }
 }
 
 /** Options every call accepts. */
 export interface CallOptions {
   signal?: AbortSignal;
-}
-
-/** Bus envelopes from `GET /api/events`. Iterate with `for await`; `close()` ends it early. */
-export interface EventStream extends AsyncIterableIterator<LegacyEnvelope> {
-  close(): void;
-}
-
-/** Minimal Server-Sent Events parser: yields the `data` of each event. */
-export class SseParser {
-  #line: number[] = [];
-  #data = "";
-  #hasData = false;
-  readonly #decoder = new TextDecoder("utf-8", { fatal: false });
-
-  feed(chunk: Uint8Array): string[] {
-    const out: string[] = [];
-    for (const byte of chunk) {
-      if (byte !== 0x0a) {
-        this.#line.push(byte);
-        continue;
-      }
-      if (this.#line[this.#line.length - 1] === 0x0d) this.#line.pop();
-      const line = this.#decoder.decode(Uint8Array.from(this.#line));
-      this.#line = [];
-      if (line === "") {
-        if (this.#hasData) {
-          out.push(this.#data);
-          this.#data = "";
-          this.#hasData = false;
-        }
-      } else if (line.startsWith("data")) {
-        // Other fields (`id`, `event`, `retry`) and `:` comments are ignored.
-        let value = line.slice(4);
-        if (value.startsWith(":")) value = value.slice(1);
-        else if (value !== "") continue;
-        if (this.#hasData) this.#data += "\n";
-        this.#data += value.startsWith(" ") ? value.slice(1) : value;
-        this.#hasData = true;
-      }
-    }
-    return out;
-  }
 }
 
 /** The `ClientError` of a response that is not ok, with the server's message when it sent one. */
@@ -133,76 +86,6 @@ export class ApiClient {
     }
     this.#base = base;
     this.#token = token;
-  }
-
-  /**
-   * Streams bus envelopes matching `topics` (e.g. `["platform.*", "agent.*"]`; empty means
-   * everything). The subscription is active once this resolves; the stream ends when the
-   * server stops, `close()` is called or `signal` aborts.
-   */
-  async events(topics: readonly string[] = [], o?: CallOptions): Promise<EventStream> {
-    const controller = new AbortController();
-    const signal = o?.signal ? AbortSignal.any([o.signal, controller.signal]) : controller.signal;
-    const response = await this.#send("GET", ["events"], {
-      signal,
-      query: { topics: topics.length > 0 ? topics.join(",") : undefined },
-    });
-    const body = response.body;
-    if (!body) throw ClientError.transport(new Error("the event stream has no body"));
-    const reader = body.getReader();
-    const parser = new SseParser();
-    const pending: string[] = [];
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      controller.abort();
-      void reader.cancel().catch(() => undefined);
-    };
-    const stream: EventStream = {
-      async next(): Promise<IteratorResult<LegacyEnvelope>> {
-        for (;;) {
-          const data = pending.shift();
-          if (data !== undefined) {
-            try {
-              return { value: JSON.parse(data) as LegacyEnvelope, done: false };
-            } catch (error) {
-              throw ClientError.decode(error instanceof Error ? error.message : String(error));
-            }
-          }
-          if (finished) return { value: undefined, done: true };
-          let chunk: Awaited<ReturnType<typeof reader.read>>;
-          try {
-            chunk = await reader.read();
-          } catch (error) {
-            if (finished || signal.aborted) {
-              finish();
-              return { value: undefined, done: true };
-            }
-            finish();
-            throw ClientError.transport(error);
-          }
-          if (chunk.done) {
-            finish();
-            continue;
-          }
-          pending.push(...parser.feed(chunk.value));
-        }
-      },
-      async return(): Promise<IteratorResult<LegacyEnvelope>> {
-        finish();
-        pending.length = 0;
-        return { value: undefined, done: true };
-      },
-      close: () => {
-        finish();
-        pending.length = 0;
-      },
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-    };
-    return stream;
   }
 
   /** `<base>/api/<segments...>` with each segment percent-encoded. */

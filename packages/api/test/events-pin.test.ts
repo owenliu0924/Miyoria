@@ -1,10 +1,10 @@
 // `GET /api/events`: the exact bytes the admin event stream writes for a bus envelope (the panel's
-// event list and `miyoria tail` read them). The expected strings are today's wire form
-// (`{id, ts, source, causation, correlation, event}`, `event` being `{type, data}`); they must not
-// change while the bus's own envelope does.
+// event list and `miyoria tail` read them): `event: message`, the envelope's id, and the bus
+// envelope itself (`BusEnvelopeSchema` in @miyoria/contracts/events) with every key present, in
+// the schema's order.
 
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
-import { type ContextKey, customEvent, type Event, toTimestamp } from "@miyoria/types";
+import { type ContextKey, Events, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActiveProfileKey, ApiModule } from "../src/index.js";
 
@@ -53,41 +53,46 @@ async function frames(body: ReadableStream<Uint8Array>, count: number): Promise<
   return out;
 }
 
+/** The keys an envelope has besides its id, time, type, source and payload, all unset. */
+const UNSET =
+  '"session":null,"space_id":null,"room_id":null,"person_id":null,"account_id":null,"key":null,"scope":null';
+
 describe("the admin event stream", () => {
-  it("writes a typed event and a custom one exactly as before", async () => {
+  it("writes each bus envelope as it is, filtered by topic", async () => {
     const { sup, base } = await harness();
     const res = await fetch(`${base}/api/events?topics=platform.*,agent.turn.completed,stage.*`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
     if (res.body === null) throw new Error("no body");
-    const typing: Event = {
-      type: "platform_typing",
-      data: { context: TEXT, account: { platform: "discord", id: "100" } },
-    };
-    const first = sup.bus.publish("discord", typing, { now: T0 });
-    const done: Event = {
-      type: "agent_turn_completed",
-      data: { turn: "01JC0000000000000000000000", context: TEXT, text: '嗨\n"你好"' },
-    };
-    const second = sup.bus.publish("agent", done, {
-      now: T0 + 1,
-      correlation: "01JC0000000000000000000000",
-      causation: first.id,
-    });
+    const first = sup.bus.publish(
+      "discord",
+      Events.PlatformTyping,
+      { context: TEXT, account: { platform: "discord", id: "100" } },
+      { now: T0 },
+    );
+    const second = sup.bus.publish(
+      "agent",
+      Events.AgentTurnCompleted,
+      { turn: "01JC0000000000000000000000", context: TEXT, text: '嗨\n"你好"' },
+      { now: T0 + 1, turn: "01JC0000000000000000000000", parent: first.id },
+    );
     // Not asked for: filtered out by the stream.
-    sup.bus.publish("core", customEvent("system.shutdown", {}), { now: T0 + 2 });
-    const third = sup.bus.publish("stage", customEvent("stage.error", { message: "斷線" }), {
-      now: T0 + 3,
-      correlation: "01JC0000000000000000000000",
-      causation: second.id,
-    });
+    sup.bus.publish("core", Events.SystemShutdown, {}, { now: T0 + 2 });
+    const third = sup.bus.publish(
+      "stage",
+      Events.StageError,
+      { message: "斷線" },
+      { now: T0 + 3, turn: "01JC0000000000000000000000", parent: second.id },
+    );
     const got = await frames(res.body, 3);
-    const ts = (ms: number) => toTimestamp(ms);
+    const at = (ms: number) => toTimestamp(ms);
     expect(got).toEqual([
-      `id: ${first.id}\ndata: {"id":"${first.id}","ts":"${ts(T0)}","source":"discord","causation":null,"correlation":null,"event":{"type":"platform_typing","data":{"context":{"platform":"discord","scope":"g1","channel":"c1","kind":"channel"},"account":{"platform":"discord","id":"100"}}}}\n\n`,
-      `id: ${second.id}\ndata: {"id":"${second.id}","ts":"${ts(T0 + 1)}","source":"agent","causation":"${first.id}","correlation":"01JC0000000000000000000000","event":{"type":"agent_turn_completed","data":{"turn":"01JC0000000000000000000000","context":{"platform":"discord","scope":"g1","channel":"c1","kind":"channel"},"text":"嗨\\n\\"你好\\""}}}\n\n`,
-      `id: ${third.id}\ndata: {"id":"${third.id}","ts":"${ts(T0 + 3)}","source":"stage","causation":"${second.id}","correlation":"01JC0000000000000000000000","event":{"type":"custom","data":{"topic":"stage.error","payload":{"message":"斷線"}}}}\n\n`,
+      `event: message\nid: ${first.id}\ndata: {"id":"${first.id}","at":"${at(T0)}","type":"platform.typing","v":1,"parent":null,"turn":null,${UNSET},"source":"discord","data":{"context":{"platform":"discord","scope":"g1","channel":"c1","kind":"channel"},"account":{"platform":"discord","id":"100"}}}\n\n`,
+      `event: message\nid: ${second.id}\ndata: {"id":"${second.id}","at":"${at(T0 + 1)}","type":"agent.turn.completed","v":1,"parent":"${first.id}","turn":"01JC0000000000000000000000",${UNSET},"source":"agent","data":{"turn":"01JC0000000000000000000000","context":{"platform":"discord","scope":"g1","channel":"c1","kind":"channel"},"text":"嗨\\n\\"你好\\""}}\n\n`,
+      `event: message\nid: ${third.id}\ndata: {"id":"${third.id}","at":"${at(T0 + 3)}","type":"stage.error","v":1,"parent":"${second.id}","turn":"01JC0000000000000000000000",${UNSET},"source":"stage","data":{"message":"斷線"}}\n\n`,
     ]);
   });
 });

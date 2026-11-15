@@ -48,17 +48,16 @@ import {
   AuthorizerKey,
   type BondChange,
   type ContextKey,
-  customEvent,
   DirectivesKey,
   type Envelope,
+  Events,
+  eventEnvelope,
   type JsonValue,
   KeepsakesKey,
   ModerationKey,
-  newEnvelope,
   type PersonCard,
   type PersonId,
   SelfStateKey,
-  SONG_TOPIC,
   SocialSignalsKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1026,7 +1025,7 @@ describe("rate limits", () => {
 describe("today's numbers", () => {
   const T = Date.parse("2026-11-07T01:00:00.000Z");
   const ended = (outcome: string): Envelope =>
-    newEnvelope("sing", customEvent(SONG_TOPIC, { state: "ended", song: "s", outcome }));
+    eventEnvelope("sing", Events.SingCue, { state: "ended", song: "s", outcome });
 
   it("counts songs sung to the end and hours in tenths", () => {
     const stats = new PublicStats(480, T);

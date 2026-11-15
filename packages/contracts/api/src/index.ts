@@ -22,7 +22,7 @@ import { auth, health } from "./auth.js";
 import { activity, arbiter } from "./body.js";
 import { channels } from "./channels.js";
 import { game, songs, voiceControl } from "./control.js";
-import { decisions, llm, modules } from "./core.js";
+import { decisions, events, llm, modules } from "./core.js";
 import { data } from "./data.js";
 import { directives } from "./directives.js";
 import { economy, peopleEconomy } from "./economy.js";
@@ -648,7 +648,7 @@ export {
   type UpsertRoleRequest,
   UpsertRoleRequestSchema,
 } from "./roles.js";
-export { type Audience, type RouteMeta, route, routeMeta } from "./route.js";
+export { type Audience, eventRouteSchemas, type RouteMeta, route, routeMeta } from "./route.js";
 export {
   type ProposedTool,
   ProposedToolSchema,
@@ -773,6 +773,7 @@ export const contract = {
   people: { ...people, ...peopleEconomy },
   modules,
   decisions,
+  events,
   llm,
   channels,
   mind: { ...mind, ...mindDigests, ...mindPlan },

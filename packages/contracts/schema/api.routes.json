@@ -378,6 +378,20 @@
         }
       }
     },
+    "events": {
+      "~orpc": {
+        "errorMap": {},
+        "meta": {
+          "audience": "admin",
+          "permission": null
+        },
+        "route": {
+          "inputStructure": "detailed",
+          "method": "GET",
+          "path": "/api/events"
+        }
+      }
+    },
     "llm": {
       "usage": {
         "~orpc": {

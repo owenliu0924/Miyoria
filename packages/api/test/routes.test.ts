@@ -51,6 +51,7 @@ import {
 import {
   type AccountRef,
   type ContextKey,
+  Events,
   type JsonValue,
   MouthKey,
   newId,
@@ -800,10 +801,7 @@ describe("routes", () => {
     const sinks = new PlatformSinks();
     sinks.register(sink);
     h.sup.services.provide("kernel", PlatformSinksKey, sinks);
-    h.sup.bus.publish("voice", {
-      type: "voice_joined",
-      data: { context: voiceContext(), participants: [] },
-    });
+    h.sup.bus.publish("voice", Events.VoiceJoined, { context: voiceContext(), participants: [] });
     const state = await waitFor(async () => {
       const s = await adminCalls(h.base, TOKEN).voice();
       return s.sessions.length === 1 ? s : null;
@@ -819,35 +817,26 @@ describe("routes", () => {
     expect((await c.voice()).sessions).toEqual([]);
     expect(await statusOf(c.stageSay("哼")), "not in voice yet").toBe(409);
 
-    h.sup.bus.publish("voice", {
-      type: "voice_joined",
-      data: {
-        context: voiceContext(),
-        participants: [
-          {
-            account: account("5678"),
-            display_name: "Mika",
-            is_self: false,
-            muted: false,
-            deafened: false,
-          },
-        ],
-      },
-    });
-    h.sup.bus.publish("voice", {
-      type: "custom",
-      data: {
-        topic: "voice.latency",
-        payload: {
-          stage: "asr",
-          context: { ...voiceContext() },
-          speaker: account("5678"),
-          provider: "test",
-          audio_ms: 1200,
-          transcribe_ms: 200,
-          asr_ms: 210,
+    h.sup.bus.publish("voice", Events.VoiceJoined, {
+      context: voiceContext(),
+      participants: [
+        {
+          account: account("5678"),
+          display_name: "Mika",
+          is_self: false,
+          muted: false,
+          deafened: false,
         },
-      },
+      ],
+    });
+    h.sup.bus.publish("voice", Events.VoiceLatency, {
+      stage: "asr",
+      context: { ...voiceContext() },
+      speaker: account("5678"),
+      provider: "test",
+      audio_ms: 1200,
+      transcribe_ms: 200,
+      asr_ms: 210,
     });
     const state = await waitFor(async () => {
       const s = await c.voice();

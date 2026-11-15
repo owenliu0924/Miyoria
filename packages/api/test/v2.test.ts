@@ -16,6 +16,7 @@ import {
   type ArbiterDecision,
   ArbiterKey,
   type ContextKey,
+  Events,
   type Goal,
   type GoalAgenda,
   GoalAgendaKey,
@@ -26,7 +27,6 @@ import {
   type PersonCard,
   type SavedPrompt,
   type TurnOutcomeRecord,
-  v2Event,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActiveProfileKey, ApiModule, summarizePrompt } from "../src/index.js";
@@ -343,8 +343,7 @@ describe("v2 routes", () => {
   it("keep the arbiter's verdicts with their reasons", async () => {
     const h = await harness();
     h.sup.services.provide("arbiter", ArbiterKey, fakeArbiter);
-    const publish = (d: ArbiterDecision) =>
-      h.sup.bus.publish("arbiter", v2Event("arbiter.decision", d));
+    const publish = (d: ArbiterDecision) => h.sup.bus.publish("arbiter", Events.ArbiterDecided, d);
     publish(decision("I1", "rejected"));
     publish(decision("I2", "accepted"));
     publish(decision("I3", "deferred"));

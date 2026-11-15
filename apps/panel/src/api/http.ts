@@ -156,16 +156,26 @@ export class ApiClient {
 
   /**
    * A request whose body is already JSON text, answered with a response whose body is JSON (or
-   * empty): the route table's client (`orpc.ts`) sends through this, so its calls carry the same
-   * headers and fail with the same `ApiError` as `request`.
+   * empty), or an event stream, passed on as it arrives: the route table's client (`orpc.ts`)
+   * sends through this, so its calls carry the same headers and fail with the same `ApiError` as
+   * `request`.
    */
   async send(method: string, path: string, opts: Omit<RequestOptions, "body" | "query"> = {}, json?: string): Promise<Response> {
-    const { status, value } = await this.exchange(method, path, opts, json);
+    const res = await this.respond(method, path, opts, json);
+    if (res.headers.get("content-type")?.startsWith("text/event-stream")) {
+      return new Response(res.body, { status: res.status, headers: { "content-type": "text/event-stream" } });
+    }
+    const { status, value } = await this.decode(res, path);
     const body = value === undefined ? null : JSON.stringify(value);
     return new Response(status === 204 ? null : body, { status, headers: { "content-type": "application/json" } });
   }
 
   private async exchange(method: string, path: string, opts: RequestOptions, json: string | undefined): Promise<{ status: number; value: unknown }> {
+    return this.decode(await this.respond(method, path, opts, json), path);
+  }
+
+  /** The response to one request, once it is known to be a success. */
+  private async respond(method: string, path: string, opts: RequestOptions, json: string | undefined): Promise<Response> {
     const init: RequestInit = {
       method,
       headers: this.headers({ ...(json !== undefined ? { "Content-Type": "application/json" } : {}), ...opts.headers }, opts.public),
@@ -185,6 +195,11 @@ export class ApiClient {
       const { message, json } = await readError(res);
       throw new ApiError(classify(res.status, message, json), res.status, path, message);
     }
+    return res;
+  }
+
+  /** A successful response's JSON body. */
+  private async decode(res: Response, path: string): Promise<{ status: number; value: unknown }> {
     if (res.status === 204) return { status: 204, value: undefined };
     const text = await res.text();
     if (!text) return { status: res.status, value: undefined };

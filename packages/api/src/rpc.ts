@@ -11,6 +11,11 @@
 // it the way it answers an old route (`{ "error": "..." }`, `WWW-Authenticate`, the member
 // wrapper), so a client cannot tell the two kinds of route apart.
 //
+// A route whose output is an `eventIterator` is a Server-Sent Events stream: oRPC writes each
+// event (`event: message`, `id:` when the handler set one, `data:`) and a comment after
+// `KEEP_ALIVE_MS` without one; the shell answers its `HEAD` itself, without starting the stream,
+// and marks the answer `no-cache`. Each event is checked like a response.
+//
 // Responses are checked against their schema (decision C3):
 //
 // * `public` and `member` routes: always validated and stripped to the schema; a mismatch is 500.
@@ -23,12 +28,13 @@
 // `production`), else `strict` while running from the TypeScript sources (tests, `pnpm dev`) and
 // `production` from a build.
 
-import type { RouteMeta } from "@miyoria/contracts/api";
+import { eventRouteSchemas, type RouteMeta } from "@miyoria/contracts/api";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, AuthorizerKey } from "@miyoria/types";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import {
   type AnyRouter,
+  eventIterator,
   isProcedure,
   type Meta,
   ORPCError,
@@ -48,7 +54,7 @@ import { cardCheckRpc } from "./card.js";
 import { channelRpc } from "./channels.js";
 import { os, type RpcContext } from "./contract.js";
 import { controlRpc } from "./control.js";
-import { coreRpc, healthRpc, personaRpc } from "./core.js";
+import { coreRpc, eventsRpc, healthRpc, KEEP_ALIVE_MS, personaRpc } from "./core.js";
 import { dataRpc } from "./data.js";
 import { directivesRpc } from "./directives.js";
 import { economyRpc, personQuestsRpc } from "./economy.js";
@@ -113,6 +119,7 @@ export const router = os.router({
   fortune: fortuneRpc,
   people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
+  events: eventsRpc,
   llm: { ...coreRpc.llm, ...llmCallsRpc },
   economy: { ...economyRpc, ...goalAdminRpc },
   channels: channelRpc,
@@ -205,6 +212,22 @@ function adminOutput(schema: Schema<unknown, unknown>, check: ResponseCheck, nam
   return checked;
 }
 
+/**
+ * An admin route's output schema under `check`. An event stream's schema checks each event as it
+ * is sent, so the policy goes on its events (a mismatch in `strict` ends the stream with an
+ * `event: error`; in `production` it is logged and the event goes out).
+ */
+function checkedOutput(schema: Schema<unknown, unknown>, check: ResponseCheck, path: string[]) {
+  const name = path.join(".");
+  const stream = eventRouteSchemas(schema);
+  if (stream === undefined) return adminOutput(schema, check, name);
+  const { yields, returns } = stream;
+  return eventIterator(
+    adminOutput(yields, check, name),
+    returns === undefined ? undefined : adminOutput(returns, check, name),
+  );
+}
+
 /** `router` with each admin route's response schema set for `check`. */
 function withResponseCheck<T extends object>(table: T, check: ResponseCheck, at: string[] = []): T {
   const out: Record<string, unknown> = {};
@@ -215,10 +238,7 @@ function withResponseCheck<T extends object>(table: T, check: ResponseCheck, at:
       const meta = def.meta as RouteMeta;
       out[key] =
         meta.audience === "admin" && def.outputSchema
-          ? new Procedure({
-              ...def,
-              outputSchema: adminOutput(def.outputSchema, check, path.join(".")),
-            })
+          ? new Procedure({ ...def, outputSchema: checkedOutput(def.outputSchema, check, path) })
           : value;
     } else {
       out[key] = withResponseCheck(value as object, check, path);
@@ -305,6 +325,9 @@ async function serve(handler: Handler, state: ApiState, c: ApiContext, body: boo
   return new Response(response.body, { status, headers: response.headers });
 }
 
+/** What an event stream route answers with besides its body. */
+const STREAM_HEADERS = { "content-type": "text/event-stream", "cache-control": "no-cache" };
+
 /** The `{name}` of an OpenAPI path as Hono's `:name`. */
 const honoPath = (path: string) => path.replace(/\{([^}]+)\}/g, ":$1");
 
@@ -323,6 +346,9 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
   const handler: Handler = new OpenAPIHandler(withResponseCheck(table, check), {
     plugins: [new ResponseHeadersPlugin()],
     clientInterceptors: [remember],
+    // An event stream says nothing until its first event, then a comment after each quiet spell.
+    eventIteratorInitialCommentEnabled: false,
+    eventIteratorKeepAliveInterval: KEEP_ALIVE_MS,
   });
   const routes: Route[] = [];
   traverseContractProcedures({ router: table, path: [] }, ({ contract: procedure, path }) => {
@@ -331,6 +357,7 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
     const meta = def.meta as RouteMeta;
     const input = def.inputSchema;
     const body = input instanceof z.ZodObject && "body" in input.shape;
+    const stream = eventRouteSchemas(def.outputSchema) !== undefined;
     routes.push({
       method: (def.route.method ?? "POST") as Method,
       path: honoPath(def.route.path ?? ""),
@@ -339,7 +366,14 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
       handler: async (c) => {
         if (meta.permission !== null) requirePermission(state, c, meta.permission, meta.refusal);
         if (meta.limited) limitMember(state, c);
-        return serve(handler, state, c, body);
+        if (!stream) return serve(handler, state, c, body);
+        // A HEAD gets the headers only: no subscription is left behind for it.
+        if (c.req.method === "HEAD") {
+          return new Response(null, { status: 200, headers: STREAM_HEADERS });
+        }
+        const response = await serve(handler, state, c, body);
+        response.headers.set("cache-control", STREAM_HEADERS["cache-control"]);
+        return response;
       },
     });
   });

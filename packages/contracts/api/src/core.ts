@@ -1,6 +1,9 @@
-// The Core's own state: its modules, why she did or did not reply, and what the LLM calls cost.
+// The Core's own state: its modules, why she did or did not reply, what the LLM calls cost, and
+// the live event stream.
 
+import { eventIterator } from "@orpc/contract";
 import { z } from "zod";
+import { BusEnvelopeSchema } from "../../events/src/envelope.js";
 import { ContextKeySchema, TimestampSchema } from "../../wire/src/index.js";
 import { route } from "./route.js";
 import { DigitsQuery, FlagQuery, UsizeQuery } from "./shared.js";
@@ -136,6 +139,20 @@ export const decisions = route
     z.object({ query: z.object({ limit: UsizeQuery.optional(), context: z.string().optional() }) }),
   )
   .output(z.array(DecisionRecordSchema));
+
+/**
+ * `GET /api/events`: the bus as Server-Sent Events, one bus envelope per event (`id:` is the
+ * envelope's id), from the moment the stream opens; nothing is replayed, so `Last-Event-ID` is
+ * not read. `topics` is a comma-separated list of topic patterns (`platform.*,agent.turn.completed`);
+ * none or empty: everything. A comment line comes after 15 s without an event. A reader that falls
+ * far behind skips the oldest events; the stream ends when the API module stops. `HEAD` answers
+ * the headers without subscribing.
+ */
+export const events = route
+  .meta({ audience: "admin", permission: null })
+  .route({ method: "GET", path: "/api/events" })
+  .input(z.object({ query: z.object({ topics: z.string().optional() }) }))
+  .output(eventIterator(BusEnvelopeSchema));
 
 /** What a call was for, broadly: her inner thoughts, a text or voice reply, and so on. */
 export const LlmCallKindSchema = z

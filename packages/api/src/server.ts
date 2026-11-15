@@ -4,7 +4,6 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
-import { coreRoutes } from "./core.js";
 import { dataRoutes } from "./data.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { liveRoutes } from "./live.js";
@@ -116,7 +115,6 @@ export interface AppOptions {
 /** Every route of the API. */
 export function routes(state: ApiState, options: AppOptions = {}): Route[] {
   return [
-    ...coreRoutes(state),
     ...publicRoutes(state),
     ...ogRoutes(state),
     ...memberRoutes(state),

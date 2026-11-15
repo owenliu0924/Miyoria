@@ -7,7 +7,7 @@
 // `pnpm contracts:gen`) and zod stays out of the bundle. The panel does not check responses.
 //
 // oRPC's link builds each request from the table (method, path, query, JSON body) and decodes the
-// answer. The request itself goes through `ApiClient.send`, so it carries the same headers as
+// answer (JSON, or an event stream as an async iterator of its events). The request itself goes through `ApiClient.send`, so it carries the same headers as
 // every other call (the bearer token unless the route is open to non-admins, the CSRF header,
 // same-origin credentials) and fails with the same `ApiError` kinds.
 
@@ -39,13 +39,14 @@ export function createRpc(client: ApiClient): ApiRpc {
       const method = request.method;
       const json = method === "GET" || method === "HEAD" ? "" : await request.text();
       const isPublic = metaAt(path)?.audience !== "admin";
-      // The one header a route declares in its input: a spend's key, one per click.
+      // The one header a route declares in its input: a spend's key, one per click. An event
+      // stream followed again says which event it saw last.
+      const headers: Record<string, string> = {};
       const key = request.headers.get("idempotency-key");
-      const opts = {
-        signal: request.signal,
-        public: isPublic,
-        ...(key ? { headers: { "Idempotency-Key": key } } : {}),
-      };
+      if (key) headers["Idempotency-Key"] = key;
+      const lastEventId = request.headers.get("last-event-id");
+      if (lastEventId) headers["Last-Event-ID"] = lastEventId;
+      const opts = { signal: request.signal, public: isPublic, headers };
       return client.send(method, url.pathname + url.search, opts, json === "" ? undefined : json);
     },
   });

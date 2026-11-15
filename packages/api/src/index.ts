@@ -73,9 +73,7 @@ export {
   type CallOptions,
   ClientError,
   type ClientErrorKind,
-  type EventStream,
   responseError,
-  SseParser,
 } from "./client.js";
 export {
   BACKUP_TOKEN_HEADER,

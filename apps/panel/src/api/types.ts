@@ -4,7 +4,6 @@
 
 import type {
   DriveName as ContractDriveName,
-  DecisionTrace,
   E2eSegmentName,
   LlmCallKind,
   LlmCallStatus,
@@ -128,55 +127,6 @@ export const MODULE_STATES: readonly ModuleStateKind[] = [
   "stopped",
   "disabled",
 ];
-
-/** A bus event: `{ type, data }`, adjacently tagged. */
-export type BusEvent =
-  | { type: "platform_ready"; data: { platform: PlatformId; self_account: AccountRef } }
-  | { type: "platform_message_created"; data: IncomingMessage }
-  | { type: "platform_typing"; data: { context: ContextKey; account: AccountRef } }
-  | { type: "agent_turn_started"; data: { turn: TurnId; context: ContextKey } }
-  | { type: "agent_decision"; data: DecisionTrace }
-  | { type: "agent_turn_completed"; data: { turn: TurnId; context: ContextKey; text: string } }
-  | {
-      type: "action_completed";
-      data: {
-        action: ActionId;
-        turn: TurnId | null;
-        ok: boolean;
-        error: string | null;
-        message?: MessageRef | null;
-      };
-    }
-  | { type: "voice_joined"; data: { context: ContextKey; participants: VoiceParticipant[] } }
-  | { type: "voice_left"; data: { context: ContextKey; reason: string | null } }
-  | { type: "voice_participants"; data: { context: ContextKey; participants: VoiceParticipant[] } }
-  | { type: "voice_speaking"; data: { context: ContextKey; account: AccountRef; speaking: boolean } }
-  | { type: "voice_utterance"; data: VoiceUtterance }
-  | {
-      type: "voice_playback";
-      data: { context: ContextKey; turn: TurnId | null; state: PlaybackState; text: string };
-    }
-  | {
-      type: "agent_initiative";
-      data: { context: ContextKey; reason: string; hint: string; about: AccountRef[] };
-    }
-  | {
-      type: "module_state_changed";
-      data: { module: ModuleId; state: ModuleStateKind; reason: string | null };
-    }
-  | { type: "custom"; data: { topic: string; payload: unknown } };
-
-export type BusEventType = BusEvent["type"];
-
-/** Every event on the bus, as streamed by `GET /api/events`. */
-export interface Envelope {
-  id: EventId;
-  ts: Timestamp;
-  source: ModuleId;
-  causation: EventId | null;
-  correlation: TurnId | null;
-  event: BusEvent;
-}
 
 // ---------------------------------------------------------------------------
 // core routes

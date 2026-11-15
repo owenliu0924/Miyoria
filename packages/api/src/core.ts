@@ -1,7 +1,8 @@
 // The original routes: health, modules, decisions, LLM usage and cost, persona, events (SSE).
-// All but the event stream are on the route table (`healthRpc`, `personaRpc`, `coreRpc`).
+// All on the route table (`healthRpc`, `personaRpc`, `coreRpc`, `eventsRpc`).
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
+import type { BusEnvelopeJson } from "@miyoria/contracts/events";
 import { LlmRouterKey, MIYORIA_VERSION } from "@miyoria/llm/llm";
 import {
   errorMessage,
@@ -11,12 +12,11 @@ import {
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
 import { DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";
-import { type JsonValue, type ModuleId, toLegacyEnvelope } from "@miyoria/types";
-import { z } from "zod";
+import type { BusEnvelope, JsonValue, ModuleId } from "@miyoria/types";
+import { withEventMeta } from "@orpc/server";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { contextParam, readQuery } from "./extract.js";
-import type { Route } from "./route.js";
+import { contextParam } from "./extract.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
 import type {
   CostReport,
@@ -212,68 +212,66 @@ export const coreRpc = {
   },
 };
 
-const EventsQuerySchema = z.object({
-  /** Comma-separated topic patterns; empty means everything. */
-  topics: z.string().optional(),
-});
+/** The envelope's own fields, in the schema's order: the old-form view an `Envelope` carries stays home. */
+function wireEnvelope(env: BusEnvelope): BusEnvelope {
+  return {
+    id: env.id,
+    at: env.at,
+    type: env.type,
+    v: env.v,
+    parent: env.parent,
+    turn: env.turn,
+    session: env.session,
+    space_id: env.space_id,
+    room_id: env.room_id,
+    person_id: env.person_id,
+    account_id: env.account_id,
+    key: env.key,
+    scope: env.scope,
+    source: env.source,
+    data: env.data,
+  };
+}
 
-/** `GET /api/events?topics=platform.*,agent.*`: Server-Sent Events of bus envelopes. */
-function events(state: ApiState, c: ApiContext): Response {
-  const q = readQuery(c, EventsQuerySchema);
-  const patterns = (q.topics ?? "")
+/**
+ * The bus envelopes matching `topics` (comma-separated patterns; none: everything), each with its
+ * id as the SSE `id:`, until the client goes away or the module stops. An event that does not
+ * serialize is skipped. The subscription is made when the stream starts and closed in `finally`.
+ */
+async function* busEvents(
+  state: ApiState,
+  topics: string | undefined,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<BusEnvelopeJson, void, unknown> {
+  const patterns = (topics ?? "")
     .split(",")
     .map((p) => p.trim())
     .filter((p) => p !== "");
-  const headers = { "content-type": "text/event-stream", "cache-control": "no-cache" };
-  // A `HEAD` gets the headers only; don't leave a subscription behind for it.
-  if (c.req.method === "HEAD") return new Response(null, { status: 200, headers });
   // Closed when the module stops, which ends the stream.
   const sub = state.ctx.subscribe(patterns.length === 0 ? "*" : patterns);
-  const encoder = new TextEncoder();
-  let keepAlive: ReturnType<typeof setInterval> | undefined;
-  const requestSignal = c.req.raw.signal;
-  const onClientGone = () => sub.close();
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      keepAlive = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(":\n\n"));
-        } catch {
-          sub.close();
-        }
-      }, KEEP_ALIVE_MS);
-      requestSignal.addEventListener("abort", onClientGone, { once: true });
-    },
-    async pull(controller) {
-      for (;;) {
-        const env = await sub.recv();
-        if (env === null) {
-          clearInterval(keepAlive);
-          requestSignal.removeEventListener("abort", onClientGone);
-          controller.close();
-          return;
-        }
-        let data: string;
-        try {
-          // The stream still speaks the old envelope form (protocol 1).
-          data = JSON.stringify(toLegacyEnvelope(env));
-        } catch (error) {
-          log.warn({ error: errorMessage(error) }, "failed to serialize event for SSE");
-          continue;
-        }
-        controller.enqueue(encoder.encode(`id: ${env.id}\ndata: ${data}\n\n`));
-        return;
+  // A generator waiting for the next event cannot be returned from; closing the subscription
+  // ends that wait.
+  const close = () => sub.close();
+  signal?.addEventListener("abort", close, { once: true });
+  try {
+    for await (const env of sub) {
+      let wire: BusEnvelopeJson;
+      try {
+        // As JSON reads it, so what the schema checks is what is sent.
+        wire = JSON.parse(JSON.stringify(wireEnvelope(env))) as BusEnvelopeJson;
+      } catch (error) {
+        log.warn({ error: errorMessage(error) }, "failed to serialize event for SSE");
+        continue;
       }
-    },
-    cancel() {
-      clearInterval(keepAlive);
-      requestSignal.removeEventListener("abort", onClientGone);
-      sub.close();
-    },
-  });
-  return new Response(stream, { status: 200, headers });
+      yield withEventMeta(wire, { id: env.id });
+    }
+  } finally {
+    signal?.removeEventListener("abort", close);
+    sub.close();
+  }
 }
 
-export function coreRoutes(state: ApiState): Route[] {
-  return [{ method: "GET", path: "/api/events", handler: (c) => events(state, c) }];
-}
+/** `GET /api/events`: Server-Sent Events of bus envelopes (`HEAD` is answered by the shell). */
+export const eventsRpc = os.events.handler(({ input, context, signal }) =>
+  busEvents(context.state, input.query.topics, signal),
+);

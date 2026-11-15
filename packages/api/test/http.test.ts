@@ -1,5 +1,5 @@
 // TS-specific HTTP behaviour: axum's extractor rejections, 405s, HEAD, client errors, closing
-// the event stream from the client, and panel file edge cases.
+// the event stream, and panel file edge cases.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -8,23 +8,14 @@ import { join } from "node:path";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { PersonaHandle, PersonaHandleKey } from "@miyoria/brain/agent";
 import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
-import { exemptFromBusCheck, Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import { Profile, ProfileManifestSchema } from "@miyoria/runtime/profile";
 import { PersonaOverrideStoreKey } from "@miyoria/store";
-import type { JsonValue } from "@miyoria/types";
+import { Events, type JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  ActiveProfileKey,
-  ApiClient,
-  ApiModule,
-  ClientError,
-  type ModuleInfo,
-} from "../src/index.js";
-import { call, errorOf, raw, waitFor } from "./support/http.js";
+import { ActiveProfileKey, ApiModule, ClientError, type ModuleInfo } from "../src/index.js";
+import { call, errorOf, nextEvent, openEvents, raw, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
-
-// test.ping is made up to test the event stream.
-exemptFromBusCheck(["test.ping"]);
 
 const TOKEN = "test-token";
 
@@ -93,7 +84,7 @@ async function start(config: Record<string, JsonValue> = {}) {
   await sup.startAll();
   cleanups.push(() => sup.stopAll());
   const base = api.url() ?? "";
-  return { sup, base, client: new ApiClient(base, TOKEN) };
+  return { sup, base };
 }
 
 describe("http", () => {
@@ -179,30 +170,31 @@ describe("http", () => {
     });
   });
 
-  it("closing the client's event stream ends the server subscription", async () => {
-    const { sup, client } = await start();
+  it("closing the event stream ends the server subscription", async () => {
+    const { sup, base } = await start();
     const before = sup.bus.subscriberCount;
-    const events = await client.events();
+    const events = await openEvents(base, TOKEN);
     expect(sup.bus.subscriberCount).toBe(before + 1);
-    sup.bus.publish("test", { type: "custom", data: { topic: "test.ping", payload: 1 } });
-    const first = await events.next();
-    expect(first.value?.event).toEqual({
-      type: "custom",
-      data: { topic: "test.ping", payload: 1 },
+    sup.bus.publish("test", Events.StageError, { message: "ping" });
+    expect(await nextEvent(events)).toMatchObject({
+      type: "stage.error",
+      source: "test",
+      data: { message: "ping" },
     });
-    events.close();
-    expect((await events.next()).done).toBe(true);
+    await events.cancel();
     await waitFor(() => (sup.bus.subscriberCount === before ? true : null));
   });
 
-  it("an aborted signal ends the event stream", async () => {
-    const { sup, client } = await start();
+  it("an aborted request ends the server subscription", async () => {
+    const { sup, base } = await start();
+    const before = sup.bus.subscriberCount;
     const controller = new AbortController();
-    const events = await client.events(["test.*"], { signal: controller.signal });
-    const next = events.next();
+    const events = await openEvents(base, TOKEN, "?topics=test.*", controller.signal);
+    expect(sup.bus.subscriberCount).toBe(before + 1);
+    const next = events.read();
     controller.abort();
-    expect((await next).done).toBe(true);
-    void sup;
+    await expect(next).rejects.toThrow();
+    await waitFor(() => (sup.bus.subscriberCount === before ? true : null));
   });
 
   it("panel files: directories, traversal, conditional requests", async () => {

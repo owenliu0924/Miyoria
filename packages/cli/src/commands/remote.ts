@@ -1,9 +1,8 @@
 // CLI commands that talk to a running core through the Admin API.
 
-import { ApiClient, type ApiRpc, ClientError, contract, responseError } from "@miyoria/api";
+import { type ApiRpc, ClientError, contract, responseError } from "@miyoria/api";
 import type { Config } from "@miyoria/runtime/kernel";
 import type { ModuleStateKind } from "@miyoria/types";
-import { eventTopic } from "@miyoria/types";
 import { createORPCClient } from "@orpc/client";
 import { OpenAPILink } from "@orpc/openapi-client/fetch";
 import { cyan, dim, green, println, red, yellow } from "../ui.js";
@@ -15,12 +14,10 @@ export class RemoteError extends Error {
 }
 
 /**
- * A running core's API: the routes on the route table through the contract's typed client
- * (`rpc`), the rest through `ApiClient` until they move. Both send the token, and both fail
- * with a `ClientError`.
+ * A running core's API: the route table through the contract's typed client (`rpc`), which sends
+ * the token and fails with a `ClientError`.
  */
 export interface Remote {
-  api: ApiClient;
   rpc: ApiRpc;
 }
 
@@ -54,7 +51,7 @@ export function clientFor(config: Config): Remote {
   // A wildcard bind address is reachable locally through loopback.
   const host = bind.replace("0.0.0.0", "127.0.0.1").replace("[::]", "[::1]");
   const base = `http://${host}`;
-  return { api: new ApiClient(base, token), rpc: rpcClient(base, token) };
+  return { rpc: rpcClient(base, token) };
 }
 
 /** `true` when a core answers `/api/health` within `timeoutMs`. */
@@ -145,22 +142,24 @@ export async function personaSet(client: Remote, key: string, body: string): Pro
   println(`${green("✓")} \`${key}\` 已更新為第 ${version} 版,下一輪對話生效`);
 }
 
+/** `miyoria tail`: one line per bus event (time, type, payload) until `signal` aborts. */
 export async function events(
   client: Remote,
   topics: string[],
   signal?: AbortSignal,
 ): Promise<void> {
   const filter = topics.length === 0 ? ["*"] : topics;
-  const stream = await client.api.events(filter, signal ? { signal } : {});
+  const stream = await client.rpc.events(
+    { query: { topics: filter.join(",") } },
+    signal ? { signal } : {},
+  );
   try {
     for await (const env of stream) {
-      println(
-        `${localStamp(env.ts, false)} ${eventTopic(env.event).padEnd(26)} ${JSON.stringify(env.event)}`,
-      );
+      println(`${localStamp(env.at, false)} ${env.type.padEnd(26)} ${JSON.stringify(env.data)}`);
     }
   } catch (error) {
     if (!signal?.aborted) throw error;
   } finally {
-    stream.close();
+    await stream.return?.().catch(() => undefined);
   }
 }

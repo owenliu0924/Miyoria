@@ -1,5 +1,5 @@
 // End-to-end tests: a real supervisor running the `api` module on a random port, in-memory
-// stores and a persona loaded from a temp profile dir, driven through `ApiClient`.
+// stores and a persona loaded from a temp profile dir, driven over HTTP.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -19,7 +19,6 @@ import { type ContextKey, newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ActiveProfileKey,
-  ApiClient,
   ApiModule,
   type HealthInfo,
   type PersonaSectionInfo,
@@ -27,7 +26,7 @@ import {
 } from "../src/index.js";
 import { adminCalls } from "./support/admin.js";
 import { Idle } from "./support/fakes.js";
-import { call, raw, statusOf, waitFor } from "./support/http.js";
+import { call, nextEvent, openEvents, raw, statusOf, waitFor } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
 const TOKEN = "test-token";
@@ -37,7 +36,6 @@ interface Harness {
   sup: Supervisor;
   store: TestStore;
   persona: PersonaHandle;
-  client: ApiClient;
   base: string;
   dir: string;
 }
@@ -82,7 +80,7 @@ async function harness(): Promise<Harness> {
 
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  const h = { sup, store, persona, client: new ApiClient(base, TOKEN), base, dir };
+  const h = { sup, store, persona, base, dir };
   harnesses.push(h);
   return h;
 }
@@ -233,19 +231,18 @@ describe("api", () => {
   it("events_stream_until_stop", async () => {
     const h = await harness();
     const adm = adminCalls(h.base, TOKEN);
-    const events = await h.client.events(["system.*"]);
+    const events = await openEvents(h.base, TOKEN, "?topics=system.*");
 
     await adm.moduleAction("dummy", "disable");
-    const first = await events.next();
-    expect(first.done).toBe(false);
-    expect(first.value?.event).toMatchObject({
-      type: "module_state_changed",
+    expect(await nextEvent(events)).toMatchObject({
+      type: "system.module.state",
+      source: "kernel",
       data: { module: "dummy" },
     });
 
     // Stopping the module ends the stream (and lets the server shut down).
     const drained = (async () => {
-      for await (const _ of events) {
+      while ((await nextEvent(events)) !== null) {
         // drain
       }
       return true;
