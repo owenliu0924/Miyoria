@@ -1,5 +1,4 @@
 import {
-  ACTION_SETTLED_TOPIC,
   type Action,
   type ActionPayload,
   type ActionSettled,
@@ -7,9 +6,8 @@ import {
   type ActuatorExecutor,
   ActuatorExecutorKey,
   actionPlatform,
-  customEvent,
+  Events,
   isActionExpired,
-  type JsonValue,
   type LaneKey,
   MouthKey,
   MUTED,
@@ -370,15 +368,13 @@ export class Scheduler implements ActionSink {
       }
     }
     this.#ctx.publish(
+      Events.ActionCompleted,
       {
-        type: "action_completed",
-        data: {
-          action: action.id,
-          turn: action.turn,
-          ok: result.ok,
-          error: result.ok ? null : result.error,
-          message: result.ok ? result.message : null,
-        },
+        action: action.id,
+        turn: action.turn,
+        ok: result.ok,
+        error: result.ok ? null : result.error,
+        message: result.ok ? result.message : null,
       },
       { turn: action.turn },
     );
@@ -404,9 +400,7 @@ export class Scheduler implements ActionSink {
       message: result.ok ? result.message : null,
       ...(blocked === null ? {} : { blocked }),
     };
-    this.#ctx.publish(customEvent(ACTION_SETTLED_TOPIC, settled as unknown as JsonValue), {
-      turn: action.turn,
-    });
+    this.#ctx.publish(Events.ActionSettled, settled, { turn: action.turn });
   }
 }
 

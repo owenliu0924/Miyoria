@@ -1,5 +1,6 @@
 import {
   type Clock,
+  Events,
   type JsonValue,
   KERNEL_MODULE,
   type ModuleId,
@@ -395,10 +396,7 @@ export class Supervisor {
   }
 
   #emit(id: ModuleId, state: ModuleStateKind, reason: string | null): void {
-    this.bus.publish(KERNEL_MODULE, {
-      type: "module_state_changed",
-      data: { module: id, state, reason },
-    });
+    this.bus.publish(KERNEL_MODULE, Events.SystemModuleState, { module: id, state, reason });
   }
 
   /** Dependency order over `requires` + `optional` among registered modules. */
