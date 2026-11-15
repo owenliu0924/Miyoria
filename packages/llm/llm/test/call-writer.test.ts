@@ -349,7 +349,7 @@ describe("LlmModule call log", () => {
       const r = sup.services.require(LlmRouterKey);
       await r.complete("chat", { messages: [userMessage("hi")] });
       for (let env = events.tryRecv(); env !== null; env = events.tryRecv()) {
-        if (env.event.type === "custom") published.push(env.event.data.payload);
+        published.push(env.data as never);
       }
       await sup.stopAll();
     };

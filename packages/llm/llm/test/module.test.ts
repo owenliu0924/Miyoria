@@ -63,47 +63,44 @@ describe("LlmModule", () => {
 
     const announced = budgetEvents.tryRecv();
     expect(announced?.source).toBe("llm");
-    expect(announced?.event).toMatchObject({
-      type: "custom",
-      data: { topic: "llm.budget", payload: { state: "ok", daily_usd: 100 } },
+    expect(announced).toMatchObject({
+      type: "llm.budget",
+      data: { state: "ok", daily_usd: 100 },
     });
 
     // One `llm.call` per call, under its turn: metadata and cost, never the text.
     const first = callEvents.tryRecv();
     expect(first?.source).toBe("llm");
-    expect(first?.correlation).toBe("T1");
-    expect(first?.event).toMatchObject({
-      type: "custom",
+    expect(first?.turn).toBe("T1");
+    expect(first).toMatchObject({
+      type: "llm.call",
       data: {
-        topic: "llm.call",
-        payload: {
-          log_day: null,
-          purpose: "chat",
-          chain: "chat",
-          module: "agent",
-          label: "reply",
-          model: "m:model-a",
-          provider: "m",
-          status: "ok",
-          error_kind: null,
-          finish_reason: "stop",
-          usage: {
-            prompt_tokens: 10,
-            completion_tokens: 5,
-            cached_prompt_tokens: 0,
-            reasoning_tokens: null,
-          },
-          cost_usd: 5,
-          fallbacks: [],
-          retries: 0,
+        log_day: null,
+        purpose: "chat",
+        chain: "chat",
+        module: "agent",
+        label: "reply",
+        model: "m:model-a",
+        provider: "m",
+        status: "ok",
+        error_kind: null,
+        finish_reason: "stop",
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 5,
+          cached_prompt_tokens: 0,
+          reasoning_tokens: null,
         },
+        cost_usd: 5,
+        fallbacks: [],
+        retries: 0,
       },
     });
-    expect(JSON.stringify(first?.event)).not.toContain("嗨");
+    expect(JSON.stringify(first)).not.toContain("嗨");
     const second = callEvents.tryRecv();
-    expect(second?.correlation).toBeNull();
-    expect(second?.event).toMatchObject({
-      data: { payload: { purpose: "fast", model: "m:model-fast", cost_usd: 0 } },
+    expect(second?.turn).toBeNull();
+    expect(second).toMatchObject({
+      data: { purpose: "fast", model: "m:model-fast", cost_usd: 0 },
     });
 
     // A restart keeps the spending in memory and does not read it again.
