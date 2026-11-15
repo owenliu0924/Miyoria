@@ -33,12 +33,6 @@ import type {
   Bounty,
   BountyPatch,
   BountyStatus,
-  CoinEntry,
-  CoinPost,
-  CoinRule,
-  Deal,
-  DealPatch,
-  DealStatus,
   DecisionRecord,
   DocFilter,
   DocUpdate,
@@ -49,7 +43,6 @@ import type {
   GoalPatch,
   GoalPledge,
   GoalStatus,
-  LedgerDayTotal,
   LogEntry,
   MemberCardRecord,
   MemoryFilter,
@@ -122,72 +115,6 @@ export interface MemberCardStore {
   deleteFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
 }
 
-/** Totals over the whole coin ledger, for the economy's health table (docs/design/v4-plan.md §10). */
-export interface LedgerStatsStore {
-  /**
-   * Coins issued (positive rows) and recovered (negative rows) per local day and reason, from
-   * `since` on, all accounts, her purse included. One `GROUP BY`; `offsetMinutes` is the local
-   * time zone as minutes east of UTC.
-   */
-  dailyTotals(
-    profile: ProfileId,
-    since: Timestamp,
-    offsetMinutes: number,
-  ): Promise<LedgerDayTotal[]>;
-}
-
-/**
- * The coin ledger (docs/design/economy.md §6): append-only, the balance is a sum. "A wallet" is
- * the rows of any of `accounts`, so a person with several linked accounts has one.
- */
-export interface CoinLedgerStore extends LedgerStatsStore {
-  /**
-   * Appends `entry` in one transaction with the checks of `rule`: the key (once per wallet), the
-   * caps, the balance.
-   */
-  post(entry: CoinEntry, rule: CoinRule): Promise<CoinPost>;
-  balance(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
-  /** Rows of the wallet, newest first, at most `limit`; `reasons` and `since` narrow them. */
-  entries(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    filter: { reasons?: readonly string[]; since?: Timestamp; limit: number },
-  ): Promise<CoinEntry[]>;
-  /** The first row of the wallet with this key, or `null`. */
-  byKey(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    key: string,
-  ): Promise<CoinEntry | null>;
-  /** The card frame chosen last by any of `accounts`, or `null`. */
-  selectedFrame(profile: ProfileId, accounts: readonly AccountRef[]): Promise<string | null>;
-  selectFrame(
-    profile: ProfileId,
-    account: AccountRef,
-    frame: string | null,
-    at: Timestamp,
-  ): Promise<void>;
-  /** Whether `accounts` are on the sponsor board: yes unless one of them left it. */
-  onBoard(profile: ProfileId, accounts: readonly AccountRef[]): Promise<boolean>;
-  /**
-   * Puts every one of `accounts` on the board or takes them off, so a person is on it as a whole.
-   * It never touches the frame choice.
-   */
-  setOnBoard(profile: ProfileId, accounts: readonly AccountRef[], on: boolean): Promise<void>;
-  /** The accounts that left the board, at most `limit`. */
-  offBoardAccounts(profile: ProfileId, limit: number): Promise<AccountRef[]>;
-  /**
-   * What each account spent since `since` on `reasons`, biggest first, at most `limit`: negative
-   * rows that were not refunded. `deal_escrow` counts only for a settled deal (released to her).
-   */
-  spent(
-    profile: ProfileId,
-    reasons: readonly string[],
-    since: Timestamp,
-    limit: number,
-  ): Promise<{ account: AccountRef; spent: number }[]>;
-}
-
 /**
  * The versioned documents of economy 2.0: collection items, predictions and bets, commissions and
  * her room (docs/design/v4-plan.md §10). One table, keyed by (profile, kind, id).
@@ -232,29 +159,6 @@ export interface FortuneStore {
   ): Promise<FortuneRecord[]>;
   /** Deletes every slip of `accounts`; returns how many. */
   deleteFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
-}
-
-/** Deals she accepted (docs/design/economy.md §12): they outlive restarts. */
-export interface DealStore {
-  create(deal: Deal): Promise<void>;
-  get(id: string): Promise<Deal | null>;
-  /**
-   * Changes the deal only while its status is one of `from`; `false` when it was not (another
-   * writer got there first, or it is gone). The one place a status moves.
-   */
-  transition(id: string, from: readonly DealStatus[], patch: DealPatch): Promise<boolean>;
-  /** Deals of any of `accounts`, newest first; `statuses` and `since` (created) narrow them. */
-  forAccounts(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    filter: { statuses?: readonly DealStatus[]; since?: Timestamp; limit: number },
-  ): Promise<Deal[]>;
-  /** Deals of everyone in these statuses, oldest first (the sweep, her context). */
-  byStatus(
-    profile: ProfileId,
-    statuses: readonly DealStatus[],
-    filter: { since?: Timestamp; limit: number },
-  ): Promise<Deal[]>;
 }
 
 /** Her crowdfunding goals and what people pledged (docs/design/economy.md §13). */
@@ -541,8 +445,6 @@ export interface Store {
    */
   readonly llmCalls?: LlmCallStore;
   readonly cards: MemberCardStore;
-  readonly coins: CoinLedgerStore;
-  readonly deals: DealStore;
   readonly fortunes: FortuneStore;
   readonly goals: GoalStore;
   readonly bounties: BountyStore;
@@ -575,11 +477,8 @@ export const AuthStoreKey = serviceKey<AuthStore>("AuthStore");
 export const AuditLogKey = serviceKey<AuditLog>("AuditLog");
 export const ProfileDataStoreKey = serviceKey<ProfileDataStore>("ProfileDataStore");
 export const MemberCardStoreKey = serviceKey<MemberCardStore>("MemberCardStore");
-export const CoinLedgerStoreKey = serviceKey<CoinLedgerStore>("CoinLedgerStore");
-export const DealStoreKey = serviceKey<DealStore>("DealStore");
 export const FortuneStoreKey = serviceKey<FortuneStore>("FortuneStore");
 export const GoalStoreKey = serviceKey<GoalStore>("GoalStore");
 export const BountyStoreKey = serviceKey<BountyStore>("BountyStore");
 export const EconomyDocsKey = serviceKey<EconomyDocStore>("EconomyDocs");
-export const LedgerStatsKey = serviceKey<LedgerStatsStore>("LedgerStats");
 export const StoreKey = serviceKey<Store>("Store");

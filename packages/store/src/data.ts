@@ -25,6 +25,10 @@ import type { RoleDefinition } from "./records.js";
 
 /** The `auth` plugin's role definitions (`@miyoria/auth` `schema.ts`). */
 const ROLES_TABLE = "auth_roles";
+/** The `economy` plugin's tables (`@miyoria/economy` `schema.ts`). */
+const LEDGER_TABLE = "economy_ledger";
+const WALLETS_TABLE = "economy_wallets";
+const DEALS_TABLE = "economy_deals";
 
 /** Settings profile of node-wide settings (`arbiter:state`, `queue:state`, ...). */
 export const GLOBAL_SETTINGS_PROFILE: ProfileId = "_global";
@@ -287,21 +291,20 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         snapshot: "json",
       }),
       // Coins come from being with her; the wallet goes with the relationship, not with a forget.
-      table("coin_ledger", "coin_ledger", "profile", "ts", "ts, id", {
+      // The `economy` plugin's tables (`@miyoria/economy` `schema.ts`), by person: the whole
+      // database's (one character). A wallet row goes with its person too.
+      table("coin_ledger", LEDGER_TABLE, "node", "ts", "seq", {
         id: "text",
-        author_platform: "text",
-        author_id: "text",
+        person_id: "text",
         delta: "num",
         reason: "text",
         ref: "text",
         idem_key: "text",
         ts: "ts",
       }),
-      table("coin_wallets", "coin_wallets", "profile", "updated_at", "author_platform, author_id", {
-        author_platform: "text",
-        author_id: "text",
+      table("coin_wallets", WALLETS_TABLE, "node", "updated_at", "person_id", {
+        person_id: "text",
         frame: "text",
-        on_board: "bool",
         off_board: "bool",
         updated_at: "ts",
       }),
@@ -316,11 +319,11 @@ export const DATA_CATEGORIES: readonly DataCategory[] = [
         entry_id: "text",
         slip: "json",
       }),
-      // Deals are promises between her and a member, kept like the wallet.
-      table("deals", "deals", "profile", "created_at", "created_at, id", {
+      // Deals are promises between her and a member, kept like the wallet. By identity's
+      // `accounts.id`; they go with the account too.
+      table("deals", DEALS_TABLE, "node", "created_at", "created_at, id", {
         id: "text",
-        author_platform: "text",
-        author_id: "text",
+        account_id: "text",
         reward_item: "text",
         reward_count: "num",
         reward_value: "num",

@@ -114,6 +114,10 @@ describe("bookkeeping", () => {
         "directives",
         // Runtime persona edits are config's `config_persona_overrides`.
         "persona_overrides",
+        // The economy plugin's tables (v5-data §8 step 9a).
+        "coin_ledger",
+        "coin_wallets",
+        "deals",
       ]) {
         expect(tables).not.toContain(gone);
       }

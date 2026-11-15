@@ -24,7 +24,6 @@ import {
 import { artifactSchema } from "./artifacts/migrations.js";
 import { ArtifactStore } from "./artifacts/store.js";
 import {
-  allowedDelta,
   canonicalMemoryScope,
   cleanEmbedding,
   contextLookupKey,
@@ -45,7 +44,6 @@ import {
   sqlLimit,
   toMicros,
   u32,
-  walletWith,
 } from "./common.js";
 import {
   type ConfigImportOptions,
@@ -94,13 +92,6 @@ import type {
   Bounty,
   BountyPatch,
   BountyStatus,
-  CoinCap,
-  CoinEntry,
-  CoinPost,
-  CoinRule,
-  Deal,
-  DealPatch,
-  DealStatus,
   DocFilter,
   DocUpdate,
   EconomyDoc,
@@ -110,7 +101,6 @@ import type {
   GoalPatch,
   GoalPledge,
   GoalStatus,
-  LedgerDayTotal,
   MemberCardRecord,
   MemoryFilter,
   MemoryHit,
@@ -124,8 +114,6 @@ import type {
 } from "./records.js";
 import type {
   BountyStore,
-  CoinLedgerStore,
-  DealStore,
   EconomyDocStore,
   FortuneStore,
   GoalStore,
@@ -338,256 +326,15 @@ class SqliteMemberCards implements MemberCardStore {
   }
 }
 
-// ---- coins ---------------------------------------------------------------------------------
-
-function coinFromRow(row: Row): CoinEntry {
-  return {
-    id: str(row, "id"),
-    profile: str(row, "profile_id"),
-    account: { platform: str(row, "author_platform"), id: str(row, "author_id") },
-    delta: num(row, "delta"),
-    reason: str(row, "reason"),
-    ref: optStr(row, "ref"),
-    idem_key: optStr(row, "idem_key"),
-    ts: ts(row, "ts"),
-  };
-}
-
-/** `reason IN (…)` over `reasons`, its parameters added to `params`. */
-function reasonsIn(reasons: readonly string[], params: Params): string {
-  const names = reasons.map((r, i) => {
-    params[`r${i}`] = r;
-    return `$r${i}`;
-  });
-  return `reason IN (${names.join(", ")})`;
-}
-
-class SqliteCoins implements CoinLedgerStore {
-  constructor(private readonly db: Db) {}
-
-  #balance(profile: ProfileId, accounts: readonly AccountRef[]): number {
-    if (accounts.length === 0) return 0;
-    const params: Params = { profile };
-    const row = this.db.get(
-      "SELECT COALESCE(SUM(delta), 0) AS n FROM coin_ledger WHERE profile_id = $profile AND " +
-        `(${authorsWhere(accounts, params)})`,
-      params,
-    );
-    return row ? num(row, "n") : 0;
-  }
-
-  #sum(profile: ProfileId, cap: CoinCap): number {
-    if (cap.reasons.length === 0 || cap.accounts?.length === 0) return 0;
-    const params: Params = { profile, since: toMicros(cap.since) };
-    const who = cap.accounts === null ? "" : ` AND (${authorsWhere(cap.accounts, params)})`;
-    const row = this.db.get(
-      "SELECT COALESCE(SUM(delta), 0) AS n FROM coin_ledger WHERE profile_id = $profile AND " +
-        `ts >= $since AND ${reasonsIn(cap.reasons, params)}${who}`,
-      params,
-    );
-    return row ? num(row, "n") : 0;
-  }
-
-  #byKey(profile: ProfileId, accounts: readonly AccountRef[], key: string): CoinEntry | null {
-    if (accounts.length === 0) return null;
-    const params: Params = { profile, key };
-    const row = this.db.get(
-      "SELECT * FROM coin_ledger WHERE profile_id = $profile AND idem_key = $key AND " +
-        `(${authorsWhere(accounts, params)}) ORDER BY ts, rowid LIMIT 1`,
-      params,
-    );
-    return row ? coinFromRow(row) : null;
-  }
-
-  async post(entry: CoinEntry, rule: CoinRule): Promise<CoinPost> {
-    if (!Number.isSafeInteger(entry.delta)) throw new StoreError("a coin delta must be whole");
-    const wallet = walletWith(entry.account, rule.wallet);
-    const profile = entry.profile;
-    try {
-      return this.db.tx((): CoinPost => {
-        if (entry.idem_key !== null) {
-          const first = this.#byKey(profile, wallet, entry.idem_key);
-          if (first) {
-            return { status: "duplicate", entry: first, balance: this.#balance(profile, wallet) };
-          }
-        }
-        const balance = this.#balance(profile, wallet);
-        const delta = allowedDelta(entry.delta, rule, (cap) => this.#sum(profile, cap));
-        if (delta === null) return { status: "capped", balance };
-        if (rule.covered && balance + delta < 0) return { status: "short", balance };
-        this.db.run(
-          "INSERT INTO coin_ledger (id, profile_id, author_platform, author_id, delta, reason, " +
-            "ref, idem_key, ts) VALUES ($id, $profile, $platform, $account, $delta, $reason, " +
-            "$ref, $key, $ts)",
-          {
-            id: entry.id,
-            profile,
-            platform: entry.account.platform,
-            account: entry.account.id,
-            delta,
-            reason: entry.reason,
-            ref: entry.ref,
-            key: entry.idem_key,
-            ts: toMicros(entry.ts),
-          },
-        );
-        return { status: "posted", entry: { ...entry, delta }, balance: balance + delta };
-      });
-    } catch (cause) {
-      if (cause instanceof StoreError) throw cause;
-      throw new StoreError("cannot write to the coin ledger", { cause });
-    }
-  }
-
-  async balance(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number> {
-    return this.#balance(profile, accounts);
-  }
-
-  async entries(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    filter: { reasons?: readonly string[]; since?: Timestamp; limit: number },
-  ): Promise<CoinEntry[]> {
-    if (accounts.length === 0 || filter.reasons?.length === 0) return [];
-    const params: Params = { profile, limit: limitParam(filter.limit) };
-    let where = `profile_id = $profile AND (${authorsWhere(accounts, params)})`;
-    if (filter.reasons) where += ` AND ${reasonsIn(filter.reasons, params)}`;
-    if (filter.since !== undefined) {
-      params.since = toMicros(filter.since);
-      where += " AND ts >= $since";
-    }
-    const rows = this.db.all(
-      `SELECT * FROM coin_ledger WHERE ${where} ORDER BY ts DESC, rowid DESC LIMIT $limit`,
-      params,
-    );
-    return rows.map(coinFromRow);
-  }
-
-  async byKey(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    key: string,
-  ): Promise<CoinEntry | null> {
-    return this.#byKey(profile, accounts, key);
-  }
-
-  async selectedFrame(profile: ProfileId, accounts: readonly AccountRef[]): Promise<string | null> {
-    if (accounts.length === 0) return null;
-    const params: Params = { profile };
-    const row = this.db.get(
-      "SELECT frame FROM coin_wallets WHERE profile_id = $profile AND " +
-        `(${authorsWhere(accounts, params)}) ORDER BY updated_at DESC LIMIT 1`,
-      params,
-    );
-    return row ? optStr(row, "frame") : null;
-  }
-
-  async selectFrame(
-    profile: ProfileId,
-    account: AccountRef,
-    frame: string | null,
-    at: Timestamp,
-  ): Promise<void> {
-    this.db.run(
-      "INSERT INTO coin_wallets (profile_id, author_platform, author_id, frame, updated_at) " +
-        "VALUES ($profile, $platform, $id, $frame, $at) ON CONFLICT (profile_id, " +
-        "author_platform, author_id) DO UPDATE SET frame = excluded.frame, updated_at = " +
-        "excluded.updated_at",
-      { profile, platform: account.platform, id: account.id, frame, at: toMicros(at) },
-    );
-  }
-
-  async onBoard(profile: ProfileId, accounts: readonly AccountRef[]): Promise<boolean> {
-    if (accounts.length === 0) return true;
-    const params: Params = { profile };
-    const row = this.db.get(
-      "SELECT 1 AS x FROM coin_wallets WHERE profile_id = $profile AND off_board = 1 AND " +
-        `(${authorsWhere(accounts, params)}) LIMIT 1`,
-      params,
-    );
-    return !row;
-  }
-
-  async setOnBoard(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    on: boolean,
-  ): Promise<void> {
-    // A row made only for the board is the oldest, so it never hides a chosen frame.
-    this.db.tx(() => {
-      for (const account of accounts) {
-        this.db.run(
-          "INSERT INTO coin_wallets (profile_id, author_platform, author_id, frame, updated_at, " +
-            "off_board) VALUES ($profile, $platform, $id, NULL, 0, $off) ON CONFLICT (profile_id, " +
-            "author_platform, author_id) DO UPDATE SET off_board = excluded.off_board",
-          { profile, platform: account.platform, id: account.id, off: on ? 0 : 1 },
-        );
-      }
-    });
-  }
-
-  async offBoardAccounts(profile: ProfileId, limit: number): Promise<AccountRef[]> {
-    const rows = this.db.all(
-      "SELECT author_platform, author_id FROM coin_wallets WHERE profile_id = $profile AND " +
-        "off_board = 1 ORDER BY author_platform, author_id LIMIT $limit",
-      { profile, limit: limitParam(limit) },
-    );
-    return rows.map((r) => ({ platform: str(r, "author_platform"), id: str(r, "author_id") }));
-  }
-
-  async spent(
-    profile: ProfileId,
-    reasons: readonly string[],
-    since: Timestamp,
-    limit: number,
-  ): Promise<{ account: AccountRef; spent: number }[]> {
-    if (reasons.length === 0) return [];
-    const params: Params = { profile, since: toMicros(since), limit: limitParam(limit) };
-    const names = reasons.map((r, i) => {
-      params[`r${i}`] = r;
-      return `$r${i}`;
-    });
-    const rows = this.db.all(
-      "SELECT l.author_platform AS author_platform, l.author_id AS author_id, " +
-        "-SUM(l.delta) AS n FROM coin_ledger l WHERE l.profile_id = $profile AND l.ts >= $since " +
-        `AND l.delta < 0 AND l.reason IN (${names.join(", ")}) AND (l.reason <> 'deal_escrow' ` +
-        "OR EXISTS (SELECT 1 FROM deals d WHERE d.escrow_entry = l.id AND d.status = 'settled')) " +
-        "AND NOT EXISTS (SELECT 1 FROM coin_ledger r WHERE r.profile_id = l.profile_id AND " +
-        "r.reason = 'refund' AND r.ref = l.id) GROUP BY l.author_platform, l.author_id " +
-        "HAVING SUM(l.delta) < 0 ORDER BY n DESC, l.author_platform, l.author_id LIMIT $limit",
-      params,
-    );
-    return rows.map((r) => ({
-      account: { platform: str(r, "author_platform"), id: str(r, "author_id") },
-      spent: num(r, "n"),
-    }));
-  }
-
-  async dailyTotals(
-    profile: ProfileId,
-    since: Timestamp,
-    offsetMinutes: number,
-  ): Promise<LedgerDayTotal[]> {
-    // Microseconds since the epoch, moved to local time, divided into whole days (ts is positive;
-    // the casts keep the division integral however the driver binds a JS number).
-    const rows = this.db.all(
-      "SELECT CAST((ts + CAST($offset AS INTEGER)) / 86400000000 AS INTEGER) AS day, reason, " +
-        "COALESCE(SUM(CASE WHEN delta > 0 THEN delta ELSE 0 END), 0) AS positive, " +
-        "COALESCE(-SUM(CASE WHEN delta < 0 THEN delta ELSE 0 END), 0) AS negative " +
-        "FROM coin_ledger WHERE profile_id = $profile AND ts >= $since " +
-        "GROUP BY day, reason ORDER BY day, reason",
-      { profile, since: toMicros(since), offset: Math.round(offsetMinutes) * 60_000_000 },
-    );
-    return rows.map((r) => ({
-      day: num(r, "day"),
-      reason: str(r, "reason"),
-      positive: num(r, "positive"),
-      negative: num(r, "negative"),
-    }));
-  }
-}
-
 // ---- fortunes ------------------------------------------------------------------------------
+
+/** `accounts` without repeats, with `account` in it. */
+function walletWith(account: AccountRef, accounts: readonly AccountRef[]): AccountRef[] {
+  const same = (a: AccountRef, b: AccountRef) => a.platform === b.platform && a.id === b.id;
+  const out = accounts.filter((a, i) => accounts.findIndex((b) => same(a, b)) === i);
+  if (!out.some((a) => same(a, account))) out.push(account);
+  return out;
+}
 
 function fortuneFromRow(row: Row): FortuneRecord {
   return {
@@ -680,26 +427,7 @@ class SqliteFortunes implements FortuneStore {
   }
 }
 
-// ---- deals ---------------------------------------------------------------------------------
-
-function dealFromRow(row: Row): Deal {
-  return {
-    id: str(row, "id"),
-    profile: str(row, "profile_id"),
-    account: { platform: str(row, "author_platform"), id: str(row, "author_id") },
-    item: str(row, "reward_item"),
-    count: num(row, "reward_count"),
-    value: num(row, "reward_value"),
-    task: str(row, "task"),
-    prepaid: bool(row, "prepaid"),
-    escrow: optStr(row, "escrow_entry"),
-    status: str(row, "status") as DealStatus,
-    created_at: ts(row, "created_at"),
-    done_at: optTs(row, "done_at"),
-    due_at: optTs(row, "due_at"),
-    closed_at: optTs(row, "closed_at"),
-  };
-}
+// ---- statuses ------------------------------------------------------------------------------
 
 /** `status IN (...)` over `statuses`, its parameters added to `params`. */
 function statusIn(statuses: readonly string[], params: Params): string {
@@ -708,105 +436,6 @@ function statusIn(statuses: readonly string[], params: Params): string {
     return `$s${i}`;
   });
   return `status IN (${names.join(", ")})`;
-}
-
-class SqliteDeals implements DealStore {
-  constructor(private readonly db: Db) {}
-
-  async create(deal: Deal): Promise<void> {
-    try {
-      this.db.run(
-        "INSERT INTO deals (id, profile_id, author_platform, author_id, reward_item, " +
-          "reward_count, reward_value, task, prepaid, escrow_entry, status, created_at, " +
-          "done_at, due_at, closed_at) VALUES ($id, $profile, $platform, $account, $item, " +
-          "$count, $value, $task, $prepaid, $escrow, $status, $created, $done, $due, $closed)",
-        {
-          id: deal.id,
-          profile: deal.profile,
-          platform: deal.account.platform,
-          account: deal.account.id,
-          item: deal.item,
-          count: deal.count,
-          value: deal.value,
-          task: deal.task,
-          prepaid: deal.prepaid ? 1 : 0,
-          escrow: deal.escrow,
-          status: deal.status,
-          created: toMicros(deal.created_at),
-          done: optionalMicros(deal.done_at),
-          due: optionalMicros(deal.due_at),
-          closed: optionalMicros(deal.closed_at),
-        },
-      );
-    } catch (cause) {
-      throw new StoreError("cannot write the deal", { cause });
-    }
-  }
-
-  async get(id: string): Promise<Deal | null> {
-    const row = this.db.get("SELECT * FROM deals WHERE id = $id", { id });
-    return row ? dealFromRow(row) : null;
-  }
-
-  async transition(id: string, from: readonly DealStatus[], patch: DealPatch): Promise<boolean> {
-    if (from.length === 0) return false;
-    const params: Params = { id, status: patch.status };
-    const sets = ["status = $status"];
-    for (const [column, value] of [
-      ["done_at", patch.done_at],
-      ["due_at", patch.due_at],
-      ["closed_at", patch.closed_at],
-    ] as const) {
-      if (value === undefined) continue;
-      params[column] = optionalMicros(value);
-      sets.push(`${column} = $${column}`);
-    }
-    return (
-      this.db.run(
-        `UPDATE deals SET ${sets.join(", ")} WHERE id = $id AND ${statusIn(from, params)}`,
-        params,
-      ) > 0
-    );
-  }
-
-  async forAccounts(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    filter: { statuses?: readonly DealStatus[]; since?: Timestamp; limit: number },
-  ): Promise<Deal[]> {
-    if (accounts.length === 0 || filter.statuses?.length === 0) return [];
-    const params: Params = { profile, limit: limitParam(filter.limit) };
-    let where = `profile_id = $profile AND (${authorsWhere(accounts, params)})`;
-    if (filter.statuses) where += ` AND ${statusIn(filter.statuses, params)}`;
-    if (filter.since !== undefined) {
-      params.since = toMicros(filter.since);
-      where += " AND created_at >= $since";
-    }
-    const rows = this.db.all(
-      `SELECT * FROM deals WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT $limit`,
-      params,
-    );
-    return rows.map(dealFromRow);
-  }
-
-  async byStatus(
-    profile: ProfileId,
-    statuses: readonly DealStatus[],
-    filter: { since?: Timestamp; limit: number },
-  ): Promise<Deal[]> {
-    if (statuses.length === 0) return [];
-    const params: Params = { profile, limit: limitParam(filter.limit) };
-    let where = `profile_id = $profile AND ${statusIn(statuses, params)}`;
-    if (filter.since !== undefined) {
-      params.since = toMicros(filter.since);
-      where += " AND created_at >= $since";
-    }
-    const rows = this.db.all(
-      `SELECT * FROM deals WHERE ${where} ORDER BY created_at, rowid LIMIT $limit`,
-      params,
-    );
-    return rows.map(dealFromRow);
-  }
 }
 
 // ---- goals and bounties --------------------------------------------------------------------
@@ -1801,8 +1430,6 @@ export class SqliteStore implements Store {
   /** LLM calls on the event log, as cost and usage totals. */
   readonly llmCalls: LlmCallTotals;
   readonly cards: MemberCardStore;
-  readonly coins: CoinLedgerStore;
-  readonly deals: DealStore;
   readonly fortunes: FortuneStore;
   readonly goals: GoalStore;
   readonly bounties: BountyStore;
@@ -1860,8 +1487,6 @@ export class SqliteStore implements Store {
     this.audit = new AuditTrail(db, this.events, this.persons);
     this.llmCalls = new LlmCallTotals(db);
     this.cards = new SqliteMemberCards(db);
-    this.coins = new SqliteCoins(db);
-    this.deals = new SqliteDeals(db);
     this.fortunes = new SqliteFortunes(db);
     this.goals = new SqliteGoals(db);
     this.bounties = new SqliteBounties(db);

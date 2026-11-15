@@ -22,11 +22,6 @@ import {
 import { SingerKey } from "@miyoria/sing";
 import {
   AuditLogKey,
-  type CoinCap,
-  type CoinEntry,
-  type CoinLedgerStore,
-  CoinLedgerStoreKey,
-  type CoinRule,
   type Goal,
   type GoalFulfiller,
   PeopleStoreKey,
@@ -69,6 +64,13 @@ import { DealDesk } from "./deals.js";
 import { type EconomyDocStore, EconomyDocsKey, MemoryDocs } from "./docs.js";
 import { GoalDesk } from "./goals.js";
 import { Purse } from "./purse.js";
+import {
+  type CoinCap,
+  type CoinEntry,
+  type CoinLedgerStore,
+  CoinLedgerStoreKey,
+  type CoinRule,
+} from "./records.js";
 import { MAX_SCREEN_CHARS, screenEvent, screenText, screenWait, waitMinutes } from "./screen.js";
 import { otherName, sendCoins } from "./transfer.js";
 import {
@@ -251,10 +253,29 @@ export interface Spent {
 export interface Member {
   account: AccountRef;
   person: Person;
+  /** Their wallet in the ledger: the person (`records.ts`). */
+  wallet: PersonId;
   /** Every account of the person, `account` included. */
-  wallet: AccountRef[];
+  accounts: AccountRef[];
   /** The display name of `account` (untrusted). */
   name: string;
+}
+
+/**
+ * `account` as a member of `person` (the person identity resolved it to): the wallet is the
+ * person, the accounts every account of theirs.
+ */
+export function memberOf(account: AccountRef, person: Person): Member {
+  const accounts = person.accounts.map((a) => a.account);
+  if (!accounts.some((a) => sameAccount(a, account))) accounts.push(account);
+  const own = person.accounts.find((a) => sameAccount(a.account, account));
+  return {
+    account,
+    person,
+    wallet: person.id,
+    accounts,
+    name: own?.display_name ?? person.display_name,
+  };
 }
 
 export interface EconomyDeps {
@@ -352,14 +373,13 @@ export class EconomyService implements Economy {
     if (amount <= 0) return { status: "capped", entry: null, paid: 0 };
     const caps: CoinCap[] = [
       {
-        accounts: who.wallet,
+        wallet: who.wallet,
         reasons: cap.reasons,
         since: this.#dayStart(this.#today()),
         limit: cap.limit,
       },
     ];
     const post = await this.#ledger().post(this.#entry(who, amount, reason, ref, key), {
-      wallet: who.wallet,
       caps,
       partial,
     });
@@ -522,10 +542,7 @@ export class EconomyService implements Economy {
     const authorizer = s.get(AuthorizerKey);
     if ((!social && !affect) || !authorizer?.allows(account, WALLET_NODE)) return null;
     if (social?.attitude(account)?.blocked || affect?.card(person.id)?.blocked) return null;
-    const wallet = person.accounts.map((a) => a.account);
-    if (!wallet.some((a) => sameAccount(a, account))) wallet.push(account);
-    const own = person.accounts.find((a) => sameAccount(a.account, account));
-    return { account, person, wallet, name: own?.display_name ?? person.display_name };
+    return memberOf(account, person);
   }
 
   async #known(account: AccountRef): Promise<Member> {
@@ -561,8 +578,7 @@ export class EconomyService implements Economy {
   ): CoinEntry {
     return {
       id: newId(),
-      profile: this.#d.profile,
-      account: who.account,
+      person: who.wallet,
       delta,
       reason,
       ref,
@@ -615,14 +631,13 @@ export class EconomyService implements Economy {
     if (!who) return null;
     const since = this.#dayStart(this.#today());
     const cap: CoinCap = {
-      accounts: who.wallet,
+      wallet: who.wallet,
       reasons: [reason],
       since,
       limit: this.#cap(reason, false),
     };
     const post = await this.#turns.run(() =>
       this.#ledger().post(this.#entry(who, amount, reason, ref, key), {
-        wallet: who.wallet,
         caps: [cap],
         partial: true,
       }),
@@ -942,7 +957,7 @@ export class EconomyService implements Economy {
           streak % 7 === 0 ? `streak:${streak}` : null,
           `checkin:${day}`,
         ),
-        { wallet: who.wallet },
+        {},
       );
       if (post.status !== "posted") throw new EconomyError(409, ALREADY_CHECKED_IN);
       return { gained, streak, balance: post.balance };
@@ -966,11 +981,10 @@ export class EconomyService implements Economy {
     const c = this.#d.config;
     const since = this.#dayStart(this.#today());
     const rule: CoinRule = {
-      wallet: who.wallet,
       partial: true,
       caps: [
-        { accounts: who.wallet, reasons: ["her_gift"], since, limit: c.her_gift_per_person },
-        { accounts: null, reasons: ["her_gift"], since, limit: c.her_gift_total },
+        { wallet: who.wallet, reasons: ["her_gift"], since, limit: c.her_gift_per_person },
+        { wallet: null, reasons: ["her_gift"], since, limit: c.her_gift_total },
       ],
     };
     const ref = [...reason.trim()].slice(0, 100).join("") || null;
@@ -992,7 +1006,6 @@ export class EconomyService implements Economy {
     key: string,
   ): Promise<Spent> {
     const post = await this.#ledger().post(this.#entry(who, -price, reason, ref, key), {
-      wallet: who.wallet,
       covered: true,
     });
     if (post.status === "short") throw new EconomyError(402, `${this.#d.config.currency}不夠`);
@@ -1014,7 +1027,7 @@ export class EconomyService implements Economy {
   async #refund(who: Member, entry: CoinEntry): Promise<number> {
     const post = await this.#ledger().post(
       this.#entry(who, -entry.delta, "refund", entry.id, `refund:${entry.id}`),
-      { wallet: who.wallet },
+      {},
     );
     // What she was given of it goes back too.
     await this.purse.claw(entry);
@@ -1135,7 +1148,6 @@ export class EconomyService implements Economy {
       const first = await this.#first(who, idem);
       if (first) return { entry_id: first.entry.id, balance: first.balance, duplicate: true };
       const post = await this.#ledger().post(this.#entry(who, amount, "admin_adjust", text, idem), {
-        wallet: who.wallet,
         covered: amount < 0,
       });
       if (post.status === "short") {
@@ -1166,10 +1178,7 @@ export class EconomyService implements Economy {
     const people = this.#d.services.get(PeopleStoreKey);
     const person = people ? await people.personByAccount(account) : null;
     if (!person) throw new EconomyError(403, STRANGER);
-    const wallet = person.accounts.map((a) => a.account);
-    if (!wallet.some((a) => sameAccount(a, account))) wallet.push(account);
-    const own = person.accounts.find((a) => sameAccount(a.account, account));
-    return { account, person, wallet, name: own?.display_name ?? person.display_name };
+    return memberOf(account, person);
   }
 
   async refund(account: AccountRef, entryId: string): Promise<boolean> {
@@ -1376,7 +1385,7 @@ export class EconomyService implements Economy {
         }
         await this.#ledger().selectFrame(
           this.#d.profile,
-          who.account,
+          who.wallet,
           req.select,
           toTimestamp(this.#d.clock.now()),
         );

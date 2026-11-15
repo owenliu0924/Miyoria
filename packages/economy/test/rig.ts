@@ -8,13 +8,7 @@ import {
   CapabilityTool,
 } from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
-import {
-  CoinLedgerStoreKey,
-  DealStoreKey,
-  LedgerStatsKey,
-  PeopleStoreKey,
-  SqliteStore,
-} from "@miyoria/store";
+import { PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
   AffectStateKey,
@@ -35,7 +29,9 @@ import { afterEach, expect } from "vitest";
 import { EconomyConfigSchema } from "../src/config.js";
 import { EconomyDocsKey, MemoryDocs } from "../src/docs.js";
 import { EconomyService } from "../src/economy.js";
+import { CoinLedgerStoreKey, DealStoreKey, LedgerStatsKey } from "../src/records.js";
 import { EconomyError, EconomyKey } from "../src/types.js";
+import { economyOf, ledgerOf, walletOf } from "./ledger.js";
 
 /** 2026-11-08 12:00 local (UTC+8). */
 export const T0 = Date.UTC(2026, 10, 8, 4, 0, 0);
@@ -83,9 +79,9 @@ export async function rig(
   if (!options.store) stores.push(store);
   const services = new ServiceRegistry();
   const k = "test";
-  services.provide(k, CoinLedgerStoreKey, store.coins);
+  services.provide(k, CoinLedgerStoreKey, ledgerOf(store));
   services.provide(k, PeopleStoreKey, store.people);
-  services.provide(k, DealStoreKey, store.deals);
+  services.provide(k, DealStoreKey, economyOf(store).deals);
   const ids = new Map<string, PersonId>();
   for (const [a, name] of [
     [ALICE, "Alice"],
@@ -127,7 +123,7 @@ export async function rig(
   let n = 0;
   const docs = new MemoryDocs();
   services.provide(k, EconomyDocsKey, options.durable ? store.economyDocs : docs);
-  if (options.durable) services.provide(k, LedgerStatsKey, store.coins);
+  if (options.durable) services.provide(k, LedgerStatsKey, ledgerOf(store));
   const economy = new EconomyService({
     config: EconomyConfigSchema.parse(config),
     services,
@@ -144,22 +140,19 @@ export async function rig(
 
 /** Gives coins that count as nothing (a plain `talked` row, so no cap or achievement sees it). */
 export async function fund(r: Rig, account: AccountRef, amount: number): Promise<void> {
-  await r.store.coins.post(
-    {
-      id: newId(),
-      profile: "p",
-      account,
-      delta: amount,
-      reason: "admin_adjust",
-      ref: "test",
-      idem_key: null,
-      ts: toTimestamp(r.clock.at),
-    },
-    { wallet: [account] },
-  );
+  await ledgerOf(r.store).post({
+    id: newId(),
+    person: walletOf(r.store, account),
+    delta: amount,
+    reason: "admin_adjust",
+    ref: "test",
+    idem_key: null,
+    ts: toTimestamp(r.clock.at),
+  });
 }
 
-export const balance = (r: Rig, a: AccountRef) => r.store.coins.balance("p", [a]);
+export const balance = (r: Rig, a: AccountRef) =>
+  ledgerOf(r.store).balance("p", walletOf(r.store, a));
 
 export async function rejects(p: Promise<unknown>, status: number, message?: string | RegExp) {
   const error = await p.then(

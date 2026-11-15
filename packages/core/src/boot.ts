@@ -5,6 +5,7 @@
 
 import { authTables } from "@miyoria/auth";
 import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
+import { CoinLedgerStoreKey, DealStoreKey, economyTables, LedgerStatsKey } from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -24,14 +25,11 @@ import {
   AuditLogKey,
   AuthStoreKey,
   BountyStoreKey,
-  CoinLedgerStoreKey,
-  DealStoreKey,
   DecisionLogKey,
   EconomyDocsKey,
   FortuneStoreKey,
   GoalStoreKey,
   IdentityStoreKey,
-  LedgerStatsKey,
   MemberCardStoreKey,
   MemoryRecordStoreKey,
   MessageLogKey,
@@ -78,7 +76,11 @@ const DIRECTIVE_MODULE = DirectiveModule.ID;
  * The plugins whose tables live in the store (docs/design/v5-data.md §3): the catalog opens the
  * store with them, so their migrations run at start whether the module is on or off.
  */
-export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [authTables, directiveTables];
+export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
+  authTables,
+  directiveTables,
+  economyTables,
+];
 
 /** What the module factories get. */
 export interface ModuleDeps {
@@ -238,10 +240,12 @@ export async function buildCoreWith(
   services.provide(k, PersonaOverrideStoreKey, store.personaOverrides);
   services.provide(k, MessageLogKey, store.messages);
   services.provide(k, MemberCardStoreKey, store.cards);
-  services.provide(k, CoinLedgerStoreKey, store.coins);
-  services.provide(k, LedgerStatsKey, store.coins);
+  // The economy plugin's tables (`@miyoria/economy` `tables.ts`).
+  const economy = store.plugin(economyTables);
+  services.provide(k, CoinLedgerStoreKey, economy.ledger);
+  services.provide(k, LedgerStatsKey, economy.ledger);
+  services.provide(k, DealStoreKey, economy.deals);
   services.provide(k, EconomyDocsKey, store.economyDocs);
-  services.provide(k, DealStoreKey, store.deals);
   services.provide(k, FortuneStoreKey, store.fortunes);
   services.provide(k, GoalStoreKey, store.goals);
   services.provide(k, BountyStoreKey, store.bounties);

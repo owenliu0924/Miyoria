@@ -1,11 +1,11 @@
 // Legacy migration 14 (was `0014_wallet_social.sql`). Never edit it: its checksum is recorded.
+//
+// One exception, before any V5 database existed outside tests: step 9a of docs/design/v5-data.md
+// §8 took out `coin_wallets` (migration 11), so its `on_board` column went with it (it was no
+// longer read since migration 15).
 
 export const m0014 = `-- People with each other (docs/design/economy.md §13): who is on the sponsor board, and the
 -- fortune slips she writes. Transfers need no table; they are two ledger rows.
-
--- Opted in to the sponsor board. Off unless someone turns it on. A person's accounts are one
--- wallet: any of them on is on.
-ALTER TABLE coin_wallets ADD COLUMN on_board INTEGER NOT NULL DEFAULT 0;
 
 -- A fortune slip, at most one per person per local day. They go when the person asks her to
 -- forget them.

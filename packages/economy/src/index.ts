@@ -18,9 +18,43 @@ export {
   WALLET_NODE,
 } from "./economy.js";
 export { GoalDesk } from "./goals.js";
+export { economySchema } from "./migrations.js";
 export { EconomyModule } from "./module.js";
 export { PURSE_PLATFORM, Purse } from "./purse.js";
+export {
+  type CoinCap,
+  type CoinEntry,
+  type CoinLedgerStore,
+  CoinLedgerStoreKey,
+  type CoinPost,
+  type CoinRule,
+  type Deal,
+  type DealPatch,
+  type DealStatus,
+  type DealStore,
+  DealStoreKey,
+  type LedgerDayTotal,
+  LedgerStatsKey,
+  type LedgerStatsStore,
+  PURSE,
+} from "./records.js";
+export {
+  DEAL_STATUSES,
+  type DealRow,
+  economyDeals,
+  economyLedger,
+  economyWallets,
+  type LedgerRow,
+  type WalletRow,
+} from "./schema.js";
 export { MAX_SCREEN_CHARS, screenText } from "./screen.js";
+export {
+  allowedDelta,
+  DealTables,
+  type EconomyTables,
+  economyTables,
+  LedgerTables,
+} from "./tables.js";
 export { NO_RECEIVER, NO_TRANSFERS, OWN_ACCOUNT } from "./transfer.js";
 export {
   type AdjustResult,

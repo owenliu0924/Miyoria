@@ -15,13 +15,7 @@
 
 import { ActuatorRegistryKey, capabilityMatches } from "@miyoria/gate/actions";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import {
-  type CoinEntry,
-  type Deal,
-  type DealStatus,
-  DealStoreKey,
-  PeopleStoreKey,
-} from "@miyoria/store";
+import { PeopleStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   AuthorizerKey,
@@ -39,7 +33,8 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import type { EconomyService, Member } from "./economy.js";
-import { feedLabel, MAX_FEED_COUNT, STRANGER } from "./economy.js";
+import { feedLabel, MAX_FEED_COUNT, memberOf, STRANGER } from "./economy.js";
+import { type CoinEntry, type Deal, type DealStatus, DealStoreKey } from "./records.js";
 import { type DealView, EconomyError, FEED_ITEMS, type FeedItem } from "./types.js";
 
 /** A deal the screen refuses (not the speaker's money or luck: what it is about). */
@@ -208,9 +203,12 @@ export class DealDesk {
   /** One open deal per person, a few per day. */
   async #limits(who: Member): Promise<void> {
     const store = this.#store();
-    const live = await store.forAccounts(this.e.profile, who.wallet, { statuses: LIVE, limit: 1 });
+    const live = await store.forAccounts(this.e.profile, who.accounts, {
+      statuses: LIVE,
+      limit: 1,
+    });
     if (live.length > 0) throw new EconomyError(409, OPEN_DEAL);
-    const today = await store.forAccounts(this.e.profile, who.wallet, {
+    const today = await store.forAccounts(this.e.profile, who.accounts, {
       since: this.e.todayStart(),
       limit: MAX_DAY_DEALS,
     });
@@ -247,7 +245,6 @@ export class DealDesk {
       }
       const deal: Deal = {
         id,
-        profile: this.e.profile,
         account: who.account,
         item: req.item,
         count: req.count,
@@ -393,7 +390,7 @@ export class DealDesk {
 
   /** The speaker's deal that is not over yet. */
   async #live(who: Member): Promise<Deal | null> {
-    const rows = await this.#store().forAccounts(this.e.profile, who.wallet, {
+    const rows = await this.#store().forAccounts(this.e.profile, who.accounts, {
       statuses: LIVE,
       limit: 1,
     });
@@ -406,7 +403,7 @@ export class DealDesk {
   async paid(who: Member): Promise<void> {
     const store = this.e.services.get(DealStoreKey);
     if (!store) return;
-    const rows = await store.forAccounts(this.e.profile, who.wallet, {
+    const rows = await store.forAccounts(this.e.profile, who.accounts, {
       statuses: ["owed"],
       limit: 1,
     });
@@ -544,7 +541,7 @@ export class DealDesk {
     const c = this.e.config;
     const store = this.#store();
     const earlier = (
-      await store.forAccounts(this.e.profile, who.wallet, { statuses: ["broken"], limit: 50 })
+      await store.forAccounts(this.e.profile, who.accounts, { statuses: ["broken"], limit: 50 })
     ).filter((d) => d.id !== deal.id).length;
     const times = Math.min(c.broken_growth ** earlier, c.broken_cap);
     const now = this.e.now();
@@ -602,15 +599,7 @@ export class DealDesk {
     if (known) return { member: known };
     const person = await this.e.services.get(PeopleStoreKey)?.personByAccount(account);
     if (!person) return null;
-    const own = person.accounts.find((a) => a.account.id === account.id);
-    return {
-      member: {
-        account,
-        person,
-        wallet: person.accounts.map((a) => a.account),
-        name: own?.display_name ?? person.display_name,
-      },
-    };
+    return { member: memberOf(account, person) };
   }
 
   async #known(account: AccountRef): Promise<Member> {
@@ -629,7 +618,7 @@ export class DealDesk {
   async view(who: Member): Promise<DealView[]> {
     const store = this.e.services.get(DealStoreKey);
     if (!store) return [];
-    const rows = await store.forAccounts(this.e.profile, who.wallet, { limit: VIEW_LIMIT * 2 });
+    const rows = await store.forAccounts(this.e.profile, who.accounts, { limit: VIEW_LIMIT * 2 });
     return rows
       .filter((d) => d.status !== "cancelled")
       .slice(0, VIEW_LIMIT)

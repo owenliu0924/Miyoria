@@ -110,19 +110,15 @@ export class BountyBoard {
       if (!moved) throw new EconomyError(409, NO_BOUNTY);
       const won: Bounty = { ...open, status: "awarded", closed_at: closed, winner: who.account };
       try {
-        await this.e.ledger().post(
-          {
-            id: newId(),
-            profile: this.e.profile,
-            account: who.account,
-            delta: open.reward,
-            reason: "bounty",
-            ref: open.id,
-            idem_key: `bounty:${open.id}`,
-            ts: closed,
-          },
-          { wallet: who.wallet },
-        );
+        await this.e.ledger().post({
+          id: newId(),
+          person: who.wallet,
+          delta: open.reward,
+          reason: "bounty",
+          ref: open.id,
+          idem_key: `bounty:${open.id}`,
+          ts: closed,
+        });
       } catch (error) {
         await this.e.purse.credit(open.reward, "bounty_return", open.id, `bounty-back:${open.id}`);
         throw error;

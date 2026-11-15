@@ -334,9 +334,7 @@ export class PredictionDesk {
           const who = await this.e.holder(owner);
           await this.e
             .ledger()
-            .post(this.e.entryFor(who, payout, "bet_win", pred.id, `betwin:${bet.id}`), {
-              wallet: who.wallet,
-            });
+            .post(this.e.entryFor(who, payout, "bet_win", pred.id, `betwin:${bet.id}`));
           await this.#close(bet, "won", payout);
         } else {
           await this.#close(bet, "lost", 0);

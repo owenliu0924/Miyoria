@@ -18,6 +18,8 @@ import { authSchema } from "../../auth/src/migrations.js";
 import * as authTables from "../../auth/src/schema.js";
 import { directiveSchema } from "../../brain/directive/src/migrations.js";
 import * as directiveTables from "../../brain/directive/src/schema.js";
+import { economySchema } from "../../economy/src/migrations.js";
+import * as economyTables from "../../economy/src/schema.js";
 import { artifactSchema } from "../src/artifacts/migrations.js";
 import * as artifactTables from "../src/artifacts/schema.js";
 import { configSchema } from "../src/config/migrations.js";
@@ -58,6 +60,7 @@ export const DRIZZLE_PLUGINS: Record<string, { tables: object; schema: PluginSch
   artifact: { tables: artifactTables, schema: artifactSchema },
   auth: { tables: authTables, schema: authSchema },
   directive: { tables: directiveTables, schema: directiveSchema },
+  economy: { tables: economyTables, schema: economySchema },
 };
 
 /** `CREATE TABLE ... );` as `CREATE TABLE ... ) STRICT;`. */

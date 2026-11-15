@@ -11,13 +11,7 @@ import {
   defineCapability,
 } from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
-import {
-  CoinLedgerStoreKey,
-  type Deal,
-  DealStoreKey,
-  PeopleStoreKey,
-  SqliteStore,
-} from "@miyoria/store";
+import { PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
   AffectStateKey,
@@ -45,8 +39,10 @@ import { z } from "zod";
 import { EconomyConfigSchema } from "../src/config.js";
 import { DealRefusal } from "../src/deals.js";
 import { EconomyService } from "../src/economy.js";
+import { CoinLedgerStoreKey, type Deal, DealStoreKey } from "../src/records.js";
 import { speakerCapabilities, VOICE_CONFIRM_MS } from "../src/tools.js";
 import { EconomyKey } from "../src/types.js";
+import { economyOf, ledgerOf, walletOf } from "./ledger.js";
 
 /** 2026-11-08 12:00 local (UTC+8). */
 const T0 = Date.UTC(2026, 10, 8, 4, 0, 0);
@@ -96,8 +92,8 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
   stores.push(store);
   const services = new ServiceRegistry();
   const k = "test";
-  services.provide(k, CoinLedgerStoreKey, store.coins);
-  services.provide(k, DealStoreKey, store.deals);
+  services.provide(k, CoinLedgerStoreKey, ledgerOf(store));
+  services.provide(k, DealStoreKey, economyOf(store).deals);
   services.provide(k, PeopleStoreKey, store.people);
   const people = new Map<string, PersonId>();
   for (const [a, name] of [
@@ -256,22 +252,18 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
 }
 
 async function fund(r: Rig, account: AccountRef, amount: number) {
-  await r.store.coins.post(
-    {
-      id: newId(),
-      profile: "p",
-      account,
-      delta: amount,
-      reason: "talked",
-      ref: null,
-      idem_key: null,
-      ts: toTimestamp(r.clock.at),
-    },
-    { wallet: [account] },
-  );
+  await ledgerOf(r.store).post({
+    id: newId(),
+    person: walletOf(r.store, account),
+    delta: amount,
+    reason: "talked",
+    ref: null,
+    idem_key: null,
+    ts: toTimestamp(r.clock.at),
+  });
 }
 
-const balance = (r: Rig, a: AccountRef) => r.store.coins.balance("p", [a]);
+const balance = (r: Rig, a: AccountRef) => ledgerOf(r.store).balance("p", walletOf(r.store, a));
 
 /** A tool call in a reactive turn: `speaker` wrote message `id` in `context`. */
 async function say(
@@ -308,7 +300,7 @@ const deal = (task = "喵喵叫", extra: Record<string, JsonValue> = {}) => ({
 });
 
 const live = async (r: Rig, who: AccountRef): Promise<Deal[]> =>
-  r.store.deals.forAccounts("p", [who], { limit: 20 });
+  economyOf(r.store).deals.forAccounts("p", [who], { limit: 20 });
 
 const events = (r: Rig, kind: string) =>
   r.bus.flatMap((e) =>
@@ -389,7 +381,7 @@ describe("making a deal", () => {
       const out = await say(r, "make_deal", who, `s-${who.id}`, deal());
       expect(out.data).toMatchObject({ accepted: false, reason: "stranger" });
     }
-    expect(await r.store.deals.byStatus("p", ["open"], { limit: 10 })).toEqual([]);
+    expect(await economyOf(r.store).deals.byStatus("p", ["open"], { limit: 10 })).toEqual([]);
   });
 });
 
@@ -424,7 +416,7 @@ describe("who is party to a deal", () => {
         expect((await invoke(principal, name)).status).toBe("denied");
       }
     }
-    expect(await r.store.deals.byStatus("p", ["open"], { limit: 10 })).toEqual([]);
+    expect(await economyOf(r.store).deals.byStatus("p", ["open"], { limit: 10 })).toEqual([]);
   });
 
   it("charges only the speaker's own wallet, and only the speaker can finish or cancel the deal", async () => {
@@ -506,19 +498,15 @@ describe("payment", () => {
     await owed(r);
     // A row of the ledger the feed path never saw (a retried write, another process).
     r.clock.at += 100_000;
-    await r.store.coins.post(
-      {
-        id: newId(),
-        profile: "p",
-        account: ALICE,
-        delta: -20,
-        reason: "feed",
-        ref: "rice:2",
-        idem_key: "feed:other",
-        ts: toTimestamp(r.clock.at),
-      },
-      { wallet: [ALICE] },
-    );
+    await ledgerOf(r.store).post({
+      id: newId(),
+      person: walletOf(r.store, ALICE),
+      delta: -20,
+      reason: "feed",
+      ref: "rice:2",
+      idem_key: "feed:other",
+      ts: toTimestamp(r.clock.at),
+    });
     r.clock.at += 600_000;
     await r.economy.deals.sweep();
     expect((await live(r, ALICE))[0]?.status).toBe("settled");
@@ -531,26 +519,22 @@ describe("payment", () => {
     r.clock.at += 1_000;
     const fed = {
       id: newId(),
-      profile: "p",
-      account: ALICE,
+      person: walletOf(r.store, ALICE),
       delta: -20,
       reason: "feed",
       ref: "rice:2",
       idem_key: "feed:x",
       ts: toTimestamp(r.clock.at),
     };
-    await r.store.coins.post(fed, { wallet: [ALICE] });
-    await r.store.coins.post(
-      {
-        ...fed,
-        id: newId(),
-        delta: 20,
-        reason: "refund",
-        ref: fed.id,
-        idem_key: `refund:${fed.id}`,
-      },
-      { wallet: [ALICE] },
-    );
+    await ledgerOf(r.store).post(fed);
+    await ledgerOf(r.store).post({
+      ...fed,
+      id: newId(),
+      delta: 20,
+      reason: "refund",
+      ref: fed.id,
+      idem_key: `refund:${fed.id}`,
+    });
     r.clock.at += 600_000;
     await r.economy.deals.sweep();
     expect((await live(r, ALICE))[0]?.status).toBe("broken");
@@ -640,7 +624,10 @@ describe("escrow (prepaid)", () => {
     expect(out.data).toMatchObject({ accepted: true, prepaid: true });
     expect(out.text).toContain("託管");
     expect(await balance(r, ALICE)).toBe(80);
-    const rows = await r.store.coins.entries("p", [ALICE], { reasons: ["deal_escrow"], limit: 5 });
+    const rows = await ledgerOf(r.store).entries("p", walletOf(r.store, ALICE), {
+      reasons: ["deal_escrow"],
+      limit: 5,
+    });
     expect(rows).toMatchObject([{ delta: -20, ref: expect.any(String) }]);
     expect(r.hunger.value).toBeCloseTo(0.9, 5);
     expect(r.gains).toEqual([]);

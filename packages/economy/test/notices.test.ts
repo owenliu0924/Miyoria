@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { EconomyCommands } from "../src/commands.js";
 import { Earnings } from "../src/earn.js";
 import { v2Capabilities } from "../src/v2-tools.js";
+import { ledgerOf, walletOf } from "./ledger.js";
 import { ALICE, BOB, DAY, ERIN, fund, type Rig, rig, say, T0, TEXT } from "./rig.js";
 
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };
@@ -191,7 +192,7 @@ describe("song notices", () => {
     await earnings.onEvent(cue("started", { title: "小星星" }), T0);
     await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
     // The requester is still paid; nobody is told where it would be a guess.
-    expect(await r.store.coins.balance("p", [ALICE])).toBeGreaterThan(0);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBeGreaterThan(0);
     expect(posted).toEqual([]);
   });
 });

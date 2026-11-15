@@ -49,7 +49,7 @@ export class ShopDesk {
   }
 
   async #titles(who: Member): Promise<EconomyDoc[]> {
-    return this.e.docs().list(this.e.profile, TITLE, { owners: who.wallet, limit: 100 });
+    return this.e.docs().list(this.e.profile, TITLE, { owners: who.accounts, limit: 100 });
   }
 
   /** The titles a person bought. */

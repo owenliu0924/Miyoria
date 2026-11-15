@@ -7,7 +7,13 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { EconomyConfigSchema, EconomyKey, EconomyService } from "@miyoria/economy";
+import {
+  CoinLedgerStoreKey,
+  DealStoreKey,
+  EconomyConfigSchema,
+  EconomyKey,
+  EconomyService,
+} from "@miyoria/economy";
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { MemoryEngineKey } from "@miyoria/memory/memory";
@@ -24,8 +30,6 @@ import {
   AuditLogKey,
   AuthStoreKey,
   BountyStoreKey,
-  CoinLedgerStoreKey,
-  DealStoreKey,
   FortuneStoreKey,
   GoalStoreKey,
   MemberCardStoreKey,
@@ -34,7 +38,6 @@ import {
   MessageLogKey,
   PeopleStoreKey,
   SettingsStoreKey,
-  SqliteStore,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -79,6 +82,7 @@ import { routes } from "../src/server.js";
 import { Sessions } from "../src/session.js";
 import { ApiState } from "../src/state.js";
 import type { IssuedCard } from "../src/types.js";
+import { economyStore } from "./support/economy.js";
 import { listenFetchable, type RawResponse, raw } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
@@ -1825,12 +1829,13 @@ describe("the wallet", () => {
   /** The rig with a real wallet on an in-memory ledger, and her hunger. */
   async function walletRig(config: Record<string, JsonValue> = {}) {
     const r = await rig();
-    const coins = await SqliteStore.open(":memory:");
+    const tables = await economyStore(r.store.people);
+    const coins = tables.store;
     cleanups.push(() => coins.close());
     const hunger = { value: 0.8 };
     const s = r.sup.services;
-    s.provide("economy", CoinLedgerStoreKey, coins.coins);
-    s.provide("economy", DealStoreKey, coins.deals);
+    s.provide("economy", CoinLedgerStoreKey, tables.economy.ledger);
+    s.provide("economy", DealStoreKey, tables.economy.deals);
     s.provide("self", SelfStateKey, {
       drives: () => ({ hunger: hunger.value }),
       adjust: (d: { hunger?: number }) => {
@@ -1862,21 +1867,19 @@ describe("the wallet", () => {
           ...(key === undefined ? {} : { "idempotency-key": key }),
         },
       });
-    const fund = (id: string, delta: number) =>
-      coins.coins.post(
-        {
-          id: `seed-${id}-${delta}`,
-          profile: "p",
-          account: discord(id),
-          delta,
-          reason: "checkin",
-          ref: null,
-          idem_key: null,
-          ts: "2026-01-01T00:00:00Z",
-        },
-        { wallet: [] },
-      );
-    return { ...r, coins, hunger, spend, fund };
+    const fund = async (id: string, delta: number) =>
+      tables.economy.ledger.post({
+        id: `seed-${id}-${delta}`,
+        person: await tables.wallet(discord(id)),
+        delta,
+        reason: "checkin",
+        ref: null,
+        idem_key: null,
+        ts: "2026-01-01T00:00:00Z",
+      });
+    const balanceOf = async (id: string) =>
+      tables.economy.ledger.balance("p", await tables.wallet(discord(id)));
+    return { ...r, coins, economy: tables.economy, hunger, spend, fund, balanceOf };
   }
 
   it("shows their own wallet, field by field", async () => {
@@ -1900,9 +1903,8 @@ describe("the wallet", () => {
   it("shows her deals with them: what she said she would do, the reward, where it stands", async () => {
     const r = await walletRig();
     const cookie = await r.login("alice");
-    await r.coins.deals.create({
+    await r.economy.deals.create({
       id: "deal-1",
-      profile: "p",
       account: discord(ALICE),
       item: "rice",
       count: 2,
@@ -1916,9 +1918,8 @@ describe("the wallet", () => {
       due_at: "2026-01-01T00:15:00Z",
       closed_at: null,
     });
-    await r.coins.deals.create({
+    await r.economy.deals.create({
       id: "deal-2",
-      profile: "p",
       account: discord(BOB),
       item: "dessert",
       count: 1,
@@ -2031,7 +2032,7 @@ describe("the wallet", () => {
     });
     const same = await r.spend("/api/member/goals/goal-1/pledge", alice, { amount: 20 }, "p-1");
     expect(same.body).toMatchObject({ pledged: 20, duplicate: true, balance: 80 });
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(80);
+    expect(await r.balanceOf(ALICE)).toBe(80);
     expect(
       ((await r.get("/api/member/goals", alice)).body as { goals: unknown[] }).goals[0],
     ).toMatchObject({
@@ -2136,7 +2137,7 @@ describe("the wallet", () => {
       expect((await r.spend("/api/member/feed", cookie, bad, "c-4")).status).toBe(422);
     }
     expect((await r.spend("/api/member/feed", cookie, { item: "rice" }, "a b")).status).toBe(400);
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(15);
+    expect(await r.balanceOf(ALICE)).toBe(15);
   });
 
   it("answers a stranger and every blocked person alike, and charges nothing", async () => {
@@ -2164,7 +2165,7 @@ describe("the wallet", () => {
     }
     expect(bodies.size).toBe(1);
     for (const id of [CAROL, ERIN, FRANK]) {
-      expect(await r.coins.coins.balance("p", [discord(id)])).toBe(500);
+      expect(await r.balanceOf(id)).toBe(500);
     }
     expect(r.hunger.value).toBe(0.8);
   });
@@ -2203,7 +2204,7 @@ describe("the wallet", () => {
     expect(
       (await r.spend("/api/member/screen", cookie, { text: "字".repeat(61) }, "s-3")).status,
     ).toBe(400);
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(100);
+    expect(await r.balanceOf(ALICE)).toBe(100);
   });
 
   it("buys a frame, puts it on the next card and keeps the wallet in the export", async () => {
@@ -2223,13 +2224,13 @@ describe("the wallet", () => {
     expect(exported.wallet.ledger[0]?.label).toBe("買卡框「櫻花」");
     // Forgetting leaves the wallet.
     await r.post("/api/member/forget", cookie, { confirm: true });
-    expect(await r.coins.coins.balance("p", [discord(ALICE)])).toBe(20);
+    expect(await r.balanceOf(ALICE)).toBe(20);
   });
 
   describe("card extras", () => {
     type Card = Record<string, unknown> & { serial: string; pose: string; number: number };
     type WRig = Awaited<ReturnType<typeof walletRig>>;
-    const balance = (r: WRig) => r.coins.coins.balance("p", [discord(ALICE)]);
+    const balance = (r: WRig) => r.balanceOf(ALICE);
     const anyone = (r: WRig, serial: string) =>
       r.get(`/api/public/card/${serial}`, undefined, { "cf-connecting-ip": "203.0.113.21" });
     const failIssue = (r: WRig) => {
@@ -2469,11 +2470,12 @@ describe("between people, the sponsor board and fortune slips", () => {
   /** The rig with a real wallet and fortune store, and a model she writes with. */
   async function socialRig(publicConfig: Record<string, JsonValue> = {}) {
     const r = await rig({ cache_secs: 1, ...publicConfig });
-    const coins = await SqliteStore.open(":memory:");
+    const tables = await economyStore(r.store.people);
+    const coins = tables.store;
     cleanups.push(() => coins.close());
     const s = r.sup.services;
-    s.provide("economy", CoinLedgerStoreKey, coins.coins);
-    s.provide("economy", DealStoreKey, coins.deals);
+    s.provide("economy", CoinLedgerStoreKey, tables.economy.ledger);
+    s.provide("economy", DealStoreKey, tables.economy.deals);
     s.provide("economy", FortuneStoreKey, coins.fortunes);
     s.provide("self", SelfStateKey, {
       drives: () => ({ hunger: 0.8 }),
@@ -2509,22 +2511,19 @@ describe("between people, the sponsor board and fortune slips", () => {
           ...(key === undefined ? {} : { "idempotency-key": key }),
         },
       });
-    const row = (id: string, delta: number, reason: string) =>
-      coins.coins.post(
-        {
-          id: `seed-${id}-${reason}-${delta}`,
-          profile: "p",
-          account: discord(id),
-          delta,
-          reason,
-          ref: null,
-          idem_key: null,
-          ts: new Date().toISOString(),
-        },
-        { wallet: [] },
-      );
+    const row = async (id: string, delta: number, reason: string) =>
+      tables.economy.ledger.post({
+        id: `seed-${id}-${reason}-${delta}`,
+        person: await tables.wallet(discord(id)),
+        delta,
+        reason,
+        ref: null,
+        idem_key: null,
+        ts: new Date().toISOString(),
+      });
     const fund = (id: string, delta: number) => row(id, delta, "checkin");
-    const balance = (id: string) => coins.coins.balance("p", [discord(id)]);
+    const balance = async (id: string) =>
+      tables.economy.ledger.balance("p", await tables.wallet(discord(id)));
     return { ...r, coins, model, spend, row, fund, balance };
   }
 

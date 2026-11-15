@@ -185,7 +185,7 @@ export class GoalDesk {
       const raised = pledges.reduce((n, p) => n + p.amount, 0);
       const mine = pledges
         .filter((p) =>
-          who.wallet.some((a) => a.platform === p.account.platform && a.id === p.account.id),
+          who.accounts.some((a) => a.platform === p.account.platform && a.id === p.account.id),
         )
         .reduce((n, p) => n + p.amount, 0);
       const room = Math.min(c.goal_pledge_max - mine, goal.target - raised);
@@ -344,7 +344,7 @@ export class GoalDesk {
     const store = this.e.services.get(GoalStoreKey);
     if (!store) return [];
     const who = await this.e.member(account);
-    const mine = who ? who.wallet : [account];
+    const mine = who ? who.accounts : [account];
     const keep = this.e.now() - this.e.config.goal_keep_days * DAY_MS;
     const rows = (await store.list(this.e.profile, { limit: VIEW_LIMIT * 2 }))
       .filter(

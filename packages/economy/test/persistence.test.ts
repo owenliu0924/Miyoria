@@ -3,13 +3,7 @@
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import {
-  CoinLedgerStoreKey,
-  EconomyDocsKey,
-  LedgerStatsKey,
-  PeopleStoreKey,
-  SqliteStore,
-} from "@miyoria/store";
+import { EconomyDocsKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   AuthorizerKey,
   type JsonValue,
@@ -19,7 +13,9 @@ import {
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyModule } from "../src/module.js";
+import { CoinLedgerStoreKey, LedgerStatsKey } from "../src/records.js";
 import { EconomyKey } from "../src/types.js";
+import { ledgerOf, walletOf } from "./ledger.js";
 import { ALICE, BOB, balance, rig as baseRig, CAROL, DAVE, DAY, fund, TEXT } from "./rig.js";
 
 /** Quests, achievements and plain play rewards are not what these sums are about. */
@@ -78,12 +74,12 @@ describe("a restart", () => {
     try {
       const sup = new Supervisor();
       const s = sup.services;
-      s.provide("kernel", CoinLedgerStoreKey, store.coins);
+      s.provide("kernel", CoinLedgerStoreKey, ledgerOf(store));
       s.provide("kernel", PeopleStoreKey, store.people);
       s.provide("kernel", SocialSignalsKey, { attitude: () => ({ blocked: false }) as never });
       s.provide("kernel", AuthorizerKey, { allows: () => true } as never);
       s.provide("kernel", EconomyDocsKey, store.economyDocs);
-      s.provide("kernel", LedgerStatsKey, store.coins);
+      s.provide("kernel", LedgerStatsKey, ledgerOf(store));
       s.provide("app", ActuatorRegistryKey, new ActuatorRegistry({ services: s, builtins: false }));
       await sup.register(new EconomyModule("p"), {}, true);
       await sup.startAll();
@@ -121,7 +117,7 @@ describe("party rewards", () => {
     );
     expect(await balance(r, ALICE)).toBe(12);
     expect(await balance(r, BOB)).toBe(8);
-    const rows = await r.store.coins.entries("p", [ALICE], { limit: 9 });
+    const rows = await ledgerOf(r.store).entries("p", walletOf(r.store, ALICE), { limit: 9 });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ reason: "play", delta: 12, idem_key: "play:party:party:1" });
 

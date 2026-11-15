@@ -353,7 +353,7 @@ export class CommissionDesk {
   async mine(account: AccountRef): Promise<CommissionView[]> {
     const who = await this.e.member(account);
     if (!who) return [];
-    const rows = await this.#docs().list(this.e.profile, KIND, { owners: who.wallet, limit: 20 });
+    const rows = await this.#docs().list(this.e.profile, KIND, { owners: who.accounts, limit: 20 });
     return rows.map((d) => this.#view(d));
   }
 }

@@ -5,7 +5,7 @@
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
-import { AuditLogKey, CoinLedgerStoreKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
+import { AuditLogKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
   AffectStateKey,
@@ -33,10 +33,12 @@ import { EconomyConfigSchema } from "../src/config.js";
 import { Earnings } from "../src/earn.js";
 import { EconomyService, STRANGER, streakOf } from "../src/economy.js";
 import { EconomyModule } from "../src/module.js";
+import { CoinLedgerStoreKey } from "../src/records.js";
 import { songPayments } from "../src/songs.js";
 import { giveCapability } from "../src/tools.js";
 import { EconomyError, EconomyKey, GIFT_TOPIC, SCREEN_TOPIC } from "../src/types.js";
 import { Economy2Key } from "../src/v2-types.js";
+import { ledgerOf, walletOf } from "./ledger.js";
 
 const DAY = 86_400_000;
 /** 2026-11-08 12:00 local (UTC+8). */
@@ -83,7 +85,7 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
   rigs.push(store);
   const services = new ServiceRegistry();
   const k = "test";
-  services.provide(k, CoinLedgerStoreKey, store.coins);
+  services.provide(k, CoinLedgerStoreKey, ledgerOf(store));
   services.provide(k, PeopleStoreKey, store.people);
   const people = new Map<string, PersonId>();
   for (const [a, name] of [
@@ -212,19 +214,15 @@ async function rejects(p: Promise<unknown>, status: number, message?: string | R
 }
 
 async function funded(r: Rig, account: AccountRef, coins: number) {
-  await r.store.coins.post(
-    {
-      id: `seed-${account.id}-${r.clock.at}-${coins}`,
-      profile: "p",
-      account,
-      delta: coins,
-      reason: "checkin",
-      ref: null,
-      idem_key: null,
-      ts: new Date(r.clock.at - DAY * 30).toISOString(),
-    },
-    { wallet: [] },
-  );
+  await ledgerOf(r.store).post({
+    id: `seed-${account.id}-${r.clock.at}-${coins}`,
+    person: walletOf(r.store, account),
+    delta: coins,
+    reason: "checkin",
+    ref: null,
+    idem_key: null,
+    ts: new Date(r.clock.at - DAY * 30).toISOString(),
+  });
 }
 
 describe("strangers and the blocked", () => {
@@ -245,7 +243,7 @@ describe("strangers and the blocked", () => {
       expect(await r.economy.exportWallet(who)).toEqual({ balance: 0, ledger: [] });
     }
     // The coins Carol had are still in the ledger: nothing was charged.
-    expect(await r.store.coins.balance("p", [CAROL])).toBe(500);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, CAROL))).toBe(500);
     expect(r.hunger.value).toBe(0.8);
   });
 
@@ -297,13 +295,13 @@ describe("earning", () => {
     await r.earnings.onEvent(message(ALICE), r.clock.at + 1000);
     await r.earnings.onEvent(message(DAVE), r.clock.at);
     await r.earnings.onEvent(message(CAROL), r.clock.at);
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(10);
-    expect(await r.store.coins.balance("p", [CAROL])).toBe(0);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(10);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, CAROL))).toBe(0);
     // Local midnight is 16:00 UTC: a new day pays again.
     const tomorrow = Date.UTC(2026, 10, 8, 16, 0, 1);
     r.clock.at = tomorrow;
     await r.earnings.onEvent(message(ALICE), tomorrow);
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(20);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(20);
   });
 
   it("pays voice time only to those who spoke in the window and are still there, up to the cap", async () => {
@@ -337,8 +335,8 @@ describe("earning", () => {
     r.clock.at = start + 4 * window + 1000;
     await r.earnings.settleVoice(r.clock.at);
     // Four windows of 2, capped at 4; Bob sat in silence. Alice also earned `talked` once.
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(4 + 10);
-    expect(await r.store.coins.balance("p", [BOB])).toBe(0);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(4 + 10);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, BOB))).toBe(0);
     // Gone before the window ended: nothing.
     const r2 = await rig();
     await r2.earnings.onEvent(
@@ -354,7 +352,12 @@ describe("earning", () => {
     r2.clock.at = start + window + 1000;
     await r2.earnings.settleVoice(r2.clock.at);
     expect(
-      (await r2.store.coins.entries("p", [BOB], { reasons: ["voice"], limit: 9 })).length,
+      (
+        await ledgerOf(r2.store).entries("p", walletOf(r2.store, BOB), {
+          reasons: ["voice"],
+          limit: 9,
+        })
+      ).length,
     ).toBe(0);
   });
 
@@ -375,7 +378,7 @@ describe("earning", () => {
     await r.earnings.onEvent(ended("s1", "interrupted"), r.clock.at);
     for (let no = 1; no <= 5; no++) await r.earnings.onEvent(ended(`s${no}`), r.clock.at);
     await r.earnings.onEvent(ended("s1"), r.clock.at);
-    expect(await r.store.coins.balance("p", [BOB])).toBe(15);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, BOB))).toBe(15);
     const view = await r.economy.wallet(BOB);
     expect(view.earn.find((l) => l.reason === "song")).toMatchObject({ earned_today: 15, cap: 15 });
   });
@@ -424,7 +427,7 @@ describe("feeding her", () => {
     const first = await r.economy.feed(ALICE, "rice", 2, "same");
     const again = await r.economy.feed(ALICE, "rice", 2, "same");
     expect(again).toEqual(first);
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(80);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(80);
     expect(topics(r, SOCIAL_EVENT_TOPIC)).toHaveLength(1);
     expect(r.hunger.value).toBeCloseTo(0.5, 5);
     // Concurrent clicks with one key are one feed.
@@ -433,7 +436,7 @@ describe("feeding her", () => {
       r.economy.feed(ALICE, "rice", 1, "twice"),
     ]);
     expect(both[0]).toEqual(both[1]);
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(70);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(70);
   });
 
   it("is refused when she is full, and what she cannot eat is not bought", async () => {
@@ -474,7 +477,7 @@ describe("feeding her", () => {
     expect(fed).toMatchObject({ accepted: true, charged: 40, balance: 60 });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(r.stage.calls).toEqual([{ expression: "big_bowl", seconds: 5 }]);
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(60);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(60);
   });
 
   it("is refused without her inner state, without charging", async () => {
@@ -482,7 +485,7 @@ describe("feeding her", () => {
     await funded(r, ALICE, 100);
     r.services.provide("x", SelfStateKey, undefined as never);
     await rejects(r.economy.feed(ALICE, "rice", 1, "k"), 503);
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(100);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(100);
   });
 });
 
@@ -672,7 +675,7 @@ describe("expressions", () => {
     r.singing.now = false;
     r.registry.unregister("stage.expression");
     expect(await r.economy.expression(ALICE, "squint", "k3")).toMatchObject({ accepted: false });
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(100);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(100);
   });
 });
 
@@ -714,7 +717,7 @@ describe("screen messages", () => {
     await rejects(r.economy.screenMessage(ALICE, "字".repeat(61), "k4"), 400);
     r.registry.unregister("stage.expression");
     await rejects(r.economy.screenMessage(ALICE, "嗨", "k"), 409, "她現在沒有開台");
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(100);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(100);
     expect(topics(r, SCREEN_TOPIC)).toEqual([]);
   });
 
@@ -736,7 +739,10 @@ describe("screen messages", () => {
     await rejects(r.economy.screenMessage(ALICE_TWO, "二", "k2b"), 429);
     expect((await r.economy.screenMessage(BOB, "二", "k2c")).accepted).toBe(true);
     const row = (
-      await r.store.coins.entries("p", [ALICE], { reasons: ["screen_message"], limit: 5 })
+      await ledgerOf(r.store).entries("p", walletOf(r.store, ALICE), {
+        reasons: ["screen_message"],
+        limit: 5,
+      })
     )[0];
     expect(await r.economy.refund(ALICE, row?.id ?? "")).toBe(true);
     expect((await r.economy.screenMessage(ALICE, "三", "k3")).accepted).toBe(true);
@@ -836,8 +842,11 @@ describe("her give_coins", () => {
     expect(bob.status === "done" && bob.result.data).toEqual({ given: 10 });
     const none = await give(r, "Bob", 5);
     expect(none.status === "done" && none.result.data).toEqual({ given: 0 });
-    expect(await r.store.coins.balance("p", [ALICE])).toBe(30);
-    const her = await r.store.coins.entries("p", [ALICE], { reasons: ["her_gift"], limit: 9 });
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(30);
+    const her = await ledgerOf(r.store).entries("p", walletOf(r.store, ALICE), {
+      reasons: ["her_gift"],
+      limit: 9,
+    });
     expect(her.map((e) => e.ref)).toEqual(["陪我玩", "陪我玩"]);
     expect((await r.economy.wallet(ALICE)).recent[0]?.label).toBe("她送你的");
   });
@@ -848,7 +857,7 @@ describe("her give_coins", () => {
     expect((await give(r, "Nobody", 5)).status).toBe("failed");
     // The gate already keeps her from acting toward someone blocked.
     expect((await give(r, "Carol", 5)).status).not.toBe("done");
-    expect(await r.store.coins.balance("p", [CAROL])).toBe(0);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, CAROL))).toBe(0);
   });
 
   it("is not something a person can ask for in her name", async () => {
@@ -871,7 +880,7 @@ describe("the module", () => {
     rigs.push(store);
     const sup = new Supervisor();
     const s = sup.services;
-    s.provide("kernel", CoinLedgerStoreKey, store.coins);
+    s.provide("kernel", CoinLedgerStoreKey, ledgerOf(store));
     s.provide("kernel", PeopleStoreKey, store.people);
     s.provide("kernel", SocialSignalsKey, { attitude: () => ({ blocked: false }) as never });
     s.provide("kernel", AuthorizerKey, { allows: () => true } as never);

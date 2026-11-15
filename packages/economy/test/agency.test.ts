@@ -10,13 +10,7 @@ import {
 } from "@miyoria/gate/actions";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
-import {
-  BountyStoreKey,
-  CoinLedgerStoreKey,
-  GoalStoreKey,
-  PeopleStoreKey,
-  SqliteStore,
-} from "@miyoria/store";
+import { BountyStoreKey, GoalStoreKey, PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
   AffectStateKey,
@@ -40,7 +34,9 @@ import { agencyCapabilities } from "../src/agency-tools.js";
 import { EconomyConfigSchema } from "../src/config.js";
 import { EconomyService } from "../src/economy.js";
 import { shortId } from "../src/purse.js";
+import { CoinLedgerStoreKey, PURSE } from "../src/records.js";
 import { EconomyKey } from "../src/types.js";
+import { ledgerOf, walletOf } from "./ledger.js";
 
 /** 2026-11-08 12:00 local (UTC+8). */
 const T0 = Date.UTC(2026, 10, 8, 4, 0, 0);
@@ -80,7 +76,7 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
   stores.push(store);
   const services = new ServiceRegistry();
   const k = "test";
-  services.provide(k, CoinLedgerStoreKey, store.coins);
+  services.provide(k, CoinLedgerStoreKey, ledgerOf(store));
   services.provide(k, GoalStoreKey, store.goals);
   services.provide(k, BountyStoreKey, store.bounties);
   services.provide(k, PeopleStoreKey, store.people);
@@ -194,22 +190,18 @@ async function rig(config: Record<string, JsonValue> = {}): Promise<Rig> {
 }
 
 async function fund(r: Rig, account: AccountRef, amount: number) {
-  await r.store.coins.post(
-    {
-      id: newId(),
-      profile: "p",
-      account,
-      delta: amount,
-      reason: "talked",
-      ref: null,
-      idem_key: null,
-      ts: toTimestamp(r.clock.at),
-    },
-    { wallet: [account] },
-  );
+  await ledgerOf(r.store).post({
+    id: newId(),
+    person: walletOf(r.store, account),
+    delta: amount,
+    reason: "talked",
+    ref: null,
+    idem_key: null,
+    ts: toTimestamp(r.clock.at),
+  });
 }
 
-const balance = (r: Rig, a: AccountRef) => r.store.coins.balance("p", [a]);
+const balance = (r: Rig, a: AccountRef) => ledgerOf(r.store).balance("p", walletOf(r.store, a));
 const purse = (r: Rig) => r.economy.purse.balance();
 
 /** One of her tools, called in a turn where `speaker` wrote message `id`; always `on_own`. */
@@ -261,7 +253,7 @@ describe("her share of gifts", () => {
     await r.economy.purchase(ALICE, "fortune", "k4");
     await r.economy.frame(ALICE, { buy: "sakura" }, "k5");
     expect(await purse(r)).toBe(11);
-    const rows = await r.store.coins.entries("p", [r.economy.purse.account], {
+    const rows = await ledgerOf(r.store).entries("p", PURSE, {
       reasons: ["her_share"],
       limit: 20,
     });
@@ -563,7 +555,10 @@ describe("crowdfunding goals", () => {
     expect(await balance(r, ALICE)).toBe(100);
     expect(await balance(r, BOB)).toBe(100);
     expect(await purse(r)).toBe(0);
-    const refunds = await r.store.coins.entries("p", [ALICE], { reasons: ["refund"], limit: 10 });
+    const refunds = await ledgerOf(r.store).entries("p", walletOf(r.store, ALICE), {
+      reasons: ["refund"],
+      limit: 10,
+    });
     expect(refunds).toHaveLength(1);
     // Too late to pledge, and a new goal may be proposed.
     await expect(r.economy.pledge(ALICE, goal.id, 5, "late")).rejects.toMatchObject({
