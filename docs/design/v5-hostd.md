@@ -387,13 +387,24 @@ This is the only place a service address may appear in the cluster config.
 
 ### 6.4 What modules change (H4)
 
+During the move the address keys stay in the config and Core's wiring registers them in the
+registry as static entries (v5-architecture §4: the TOML addresses are the static fallback), so
+the live config keeps working on the day of the cut-over. Modules never read an address
+themselves. A reported endpoint and a static one with the same URL count as one, the reported
+one. A default address that the config does not state is not registered: no phantom local
+endpoints. The keys and the seeding are deleted in H12, when hostd reports every managed service
+and the rest is written under `[modules.cluster.static]`.
+
+MediaMTX is the exception in this phase: it has three ports (API, HLS, RTMP) and the voice
+node's encoder uses one of them, so `[modules.live.video]` keeps its addresses. hostd still runs
+and probes the process.
+
 | Module | Today | After |
 |---|---|---|
 | speech (`http-worker` providers) | `speech.asr.<name>.url`, `speech.tts.<name>.url` | the provider names a capability; `url` is removed. The chain order and the "failed provider goes last" rule stay in `SpeechService`; a provider with no endpoint counts as failed |
 | voice (turn, VAD) | `modules.voice.turn_url` | `turn` and `vad` from the registry; the silence and energy fallbacks stay |
 | sing | `modules.sing.url`, `fallback_urls` | `candidates("sing")`. `FailoverSingWorker` keeps the song-stays-with-its-worker rules and takes its endpoint list from the registry instead of config |
 | imagegen | `modules.imagegen.url`, `headers` | `imagegen` from the registry; a proxy token becomes a static entry's token |
-| live video | `modules.live.video.hls`, `api` | `media` from the registry |
 | voice node | `VOICE_LINK_URL`, `VOICE_LINK_TOKEN` in its `.env` | hostd passes them; Core sends `cluster.links` to hosts approved for `voice-room` |
 | stage node | `[stage] core_url`, `token` | the same, for `renderer` |
 
