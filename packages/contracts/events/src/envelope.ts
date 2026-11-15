@@ -169,6 +169,27 @@ export type EventDraft = z.output<typeof EventDraftSchema>;
 /** A draft as a producer may write it: fields with a default can be left out. */
 export type EventDraftInput = z.input<typeof EventDraftSchema>;
 
+/**
+ * An event as the bus carries it and as live readers receive it (the admin event stream,
+ * extension notifications, replay log lines): a draft with every key present, plus the module the
+ * bus stamped as its publisher. It has no `seq`, `tier` or `redacted_at`: those belong to the
+ * stored event, and what is on the bus may never be stored.
+ */
+export const BusEnvelopeSchema = z
+  .object({
+    ...produced,
+    v: version,
+    ...context,
+    /** `null`: the type's default scope, then the session's. */
+    scope: EventScopeSchema.nullable(),
+    /** The module that published it. */
+    source: ModuleIdSchema,
+    data: JsonValueSchema,
+  })
+  .meta({ id: "EventsBusEnvelope" });
+/** A bus envelope as JSON: what `BusEnvelopeSchema` parses. */
+export type BusEnvelopeJson = z.output<typeof BusEnvelopeSchema>;
+
 /** Whether `redact()` replaced the event's content. */
 export function isRedacted(envelope: Pick<EventEnvelope, "redacted_at">): boolean {
   return envelope.redacted_at !== null;

@@ -192,6 +192,8 @@ export {
   ScreenLineSchema,
 } from "./economy-topics.js";
 export {
+  type BusEnvelopeJson,
+  BusEnvelopeSchema,
   DEFAULT_EVENT_TIER,
   type EventDraft,
   type EventDraftInput,
