@@ -157,10 +157,29 @@ def test_an_announced_window_without_ack_goes_ahead_at_once():
     assert [(t, p["announced"]) for t, p in acq] == [(0.0, False), (0.0, True)]
     assert states(got, "exclusive") == [None, "offloading", "active", "reloading", "done"]
     assert states(got, "window") == [False, True, False]
-    # After the conversion speech comes back (keep), then the job's end closes the window.
-    assert [p["window"] for _, p in h.of("gpu.release")] == ["keep", "close"]
+    # After the conversion speech comes back and the window ends with it; the job's end then
+    # only ends the lease.
+    assert [(p["window"], p["done"]) for _, p in h.of("gpu.release")] == [("close", False), ("close", True)]
     ex = got["result"]["exclusive"]
     assert ex["offloaded"] == ["http://tts", "http://asr"] and ex["released_mb"] == 6200.0 and ex["offload_s"] == 4.0
+
+
+def test_the_backing_pass_is_placed_in_the_open_window_and_speech_comes_back_once():
+    def acquire(h: Scripted, p: dict[str, Any]) -> Any:
+        if p["announced"]:
+            return window_grant(h)
+        if len(h.of("gpu.acquire")) == 1:
+            return wait(announce=True)
+        return granted("exclusive", code="window")  # the window is still open: hostd says so
+
+    got, h = run(lambda h, m, p: ordinary(h, m, p, acquire=acquire),
+                 stages=[CONVERT, {"stage": "convert", "backing": True, "steps": 4, "step_s": 1.0}])
+    acq = h.of("gpu.acquire")
+    assert [(t, p["announced"]) for t, p in acq] == [(0.0, False), (0.0, True), (10.0, False)]
+    assert [(t, p["window"], p["done"]) for t, p in h.of("gpu.release")] == [(14.0, "close", False),
+                                                                           (14.0, "close", True)]
+    assert states(got, "window") == [False, True, False]
+    assert got["result"]["steps"] == {"convert steps on gpu": 6, "backing steps on gpu": 4}
 
 
 def test_an_announced_window_with_ack_waits_for_cores_go():
@@ -269,9 +288,9 @@ def test_the_keep_alive_renews_while_the_song_is_mixed():
         return window_grant(h) if p["announced"] else wait(announce=True)
 
     def answer(h: Scripted, m: str, p: dict[str, Any]) -> Any:
-        if m == "gpu.release" and p["window"] == "keep":
+        if m == "gpu.release" and not p["done"]:
             h.later(50.0)
-            return {"reloaded": [], "errors": [], "reload_s": 50.0, "closed": False, "summary": None}
+            return {"reloaded": [], "errors": [], "reload_s": 50.0, "closed": True, "summary": None, "window": None}
         return ordinary(h, m, p, acquire=acquire)
 
     got, h = run(answer)

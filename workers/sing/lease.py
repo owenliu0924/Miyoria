@@ -12,8 +12,9 @@ where it used to decide (server.py ``_gpu_stage``):
     gpu.busy     before every step, and while giving way to her
     gpu.renew    before every step (``step``: its last step times; hostd answers what to do), once
                  when a stage run ends (``end``), and on its own every 20 s without other calls
-    gpu.release  ``close`` when a window ends inside a stage or at the job's end (``done``),
-                 ``keep`` after the conversion (speech comes back while the song is mixed)
+    gpu.release  ``close`` when a window ends: inside a stage, after the conversion's last pass
+                 (speech comes back while the song is mixed; the window ends when it is back), and
+                 at the job's end (``done``)
 
 In this mode the worker makes no call to the speech workers, does not run ``_recover_speech`` (hostd
 recovers at its own start) and ignores ``POST /gpu/context`` (Core tells hostd).
@@ -174,6 +175,7 @@ class LeaseJob:
         self.wait_from: float | None = None
         self.peak_allocated_mb: int | None = None
         self.decisions: list[dict[str, Any]] = []
+        self.windows: list[dict[str, Any]] = []  # hostd's record of each window it closed
         self.hostd_summary: dict[str, Any] | None = None
         self.last_call = time.monotonic()
         self.stop = threading.Event()
@@ -197,10 +199,12 @@ class LeaseJob:
         self.window = True
         self.window_at = time.monotonic()
 
-    def window_closed(self) -> None:
+    def window_closed(self, record: dict[str, Any] | None = None) -> None:
         if self.window:
             self.window = False
             self.silenced_s += time.monotonic() - self.window_at
+        if record is not None:
+            self.windows.append(record)
 
     def public(self) -> dict[str, Any]:
         return {
@@ -232,7 +236,7 @@ class LeaseJob:
             return self.hostd_summary
         return {"policy": self.policy, "policy_source": self.policy_source, "decisions": self.decisions,
                 "spills": self.spills, "steps": self.reduced_to, "waited_s": round(self.waited_total_s, 1),
-                "silenced_s": round(self.silenced_s, 1)}
+                "silenced_s": round(self.silenced_s, 1), "windows": list(self.windows)}
 
 
 class HostdArbitration:
@@ -569,11 +573,13 @@ class HostdArbitration:
             return
         if ex._reload is None and ex.state not in (None, "done", "shared"):
             ex.state = "reloading"
-            self._apply_release(ex, self._release(job, "close", False))
+            r = self._release(job, "close", False)
+            self._apply_release(ex, r)
             ex.state = "done"
+            g.window_closed(r.get("window") if isinstance(r, dict) else None)
         else:
             ex.join()
-        g.window_closed()
+            g.window_closed()
 
     @staticmethod
     def _apply_release(ex: LeaseWindow, r: Any) -> None:
@@ -585,7 +591,8 @@ class HostdArbitration:
             ex.timings["reload_s"] = float(r["reload_s"])
 
     def give_back(self, job: Any) -> None:
-        """After the conversion: speech starts coming back while the song is mixed."""
+        """After the conversion: speech starts coming back while the song is mixed, and the window
+        ends when it is back (a ``close`` release: no GPU work is done under it any more)."""
         if job.yielding is not None:
             job.yielding.stop()
         self._backend().gate = None
@@ -595,8 +602,10 @@ class HostdArbitration:
         ex.state = "reloading"
 
         def reload() -> None:
-            self._apply_release(ex, self._release(job, "keep", False))
+            r = self._release(job, "close", False)
+            self._apply_release(ex, r)
             ex.state = "done"
+            job.gpu.window_closed(r.get("window") if isinstance(r, dict) else None)
 
         ex._reload = threading.Thread(target=reload, name="sing-release", daemon=True)
         ex._reload.start()
@@ -610,7 +619,7 @@ class HostdArbitration:
             job.exclusive.join()
         r = self._release(job, "close", True)
         g.stop.set()
-        g.window_closed()
+        g.window_closed(r.get("window") if isinstance(r, dict) else None)
         summary = r.get("summary") if isinstance(r, dict) else None
         if isinstance(summary, dict):
             g.hostd_summary = summary

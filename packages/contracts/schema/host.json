@@ -843,6 +843,13 @@
         },
         "silenced_s": {
           "type": "number"
+        },
+        "windows": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostGpuWindow"
+          }
         }
       },
       "required": [
@@ -1070,6 +1077,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/HostGpuJobSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostGpuWindow"
             },
             {
               "type": "null"
@@ -1318,6 +1336,36 @@
         "reason",
         "announce",
         "evict"
+      ]
+    },
+    "HostGpuWindow": {
+      "type": "object",
+      "properties": {
+        "offload_s": {
+          "type": "number"
+        },
+        "work_s": {
+          "type": "number"
+        },
+        "reload_s": {
+          "type": "number"
+        },
+        "silence_s": {
+          "type": "number"
+        },
+        "limit_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "offload_s",
+        "work_s",
+        "reload_s",
+        "silence_s",
+        "limit_s"
       ]
     },
     "HostGuardResult": {

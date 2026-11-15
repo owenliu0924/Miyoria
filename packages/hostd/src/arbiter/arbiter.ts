@@ -77,6 +77,9 @@ interface Eviction {
   reloaded: string[];
   reloadErrors: string[];
   reloadS: number | null;
+  /** When the first offload was asked, and when the reload was: the window's real silence. */
+  offlineAt: number;
+  askedBackAt: number | null;
 }
 
 interface Lease {
@@ -320,6 +323,8 @@ export class Arbiter {
       reloaded: [],
       reloadErrors: [],
       reloadS: null,
+      offlineAt: this.#now,
+      askedBackAt: null,
     };
     lease.eviction = ev;
     const maxS = this.limits.lease_s;
@@ -342,7 +347,7 @@ export class Arbiter {
     ev.offloadS = pyRound(this.#now - t0, 2);
     ev.state = "active";
     if (ev.asked.length > 0 && maxS > 0) void this.#renewSpeech(ev, lease.holder, maxS);
-    await lease.job.windowOpened();
+    await lease.job.windowOpened(ev.offlineAt);
     return ev;
   }
 
@@ -372,6 +377,7 @@ export class Arbiter {
     ev.state = "reloading";
     ev.reloading = (async () => {
       const t0 = this.#now;
+      ev.askedBackAt = t0;
       for (const t of ev.asked) {
         try {
           await this.#o.peers.reload(t, this.#o.reloadTimeoutS ?? 300.0);
@@ -443,14 +449,22 @@ export class Arbiter {
   async release(p: HostGpuRelease): Promise<HostGpuReleaseResult> {
     const lease = this.#leases.get(p.lease);
     if (lease === undefined)
-      return { reloaded: [], errors: [], reload_s: null, closed: false, summary: null };
+      return {
+        reloaded: [],
+        errors: [],
+        reload_s: null,
+        closed: false,
+        summary: null,
+        window: null,
+      };
     lease.lastContact = this.#now;
     const ev = lease.eviction;
     if (ev !== null) await this.#endEviction(ev);
     let closed = false;
+    let window: HostGpuReleaseResult["window"] = null;
     if (p.window === "close") {
       closed = lease.job.window;
-      lease.job.windowClosed(ev ? ev.reloadS : null);
+      window = lease.job.windowClosed(ev ? ev.reloadS : null, ev ? ev.askedBackAt : null);
     }
     const summary = p.done ? lease.job.summary() : null;
     if (p.done) this.#forget(lease);
@@ -460,6 +474,7 @@ export class Arbiter {
       reload_s: ev ? ev.reloadS : null,
       closed,
       summary,
+      window,
     };
   }
 
@@ -487,7 +502,7 @@ export class Arbiter {
     this.#o.onEvent?.({ type: "holder_gone", job: lease.job.id, holder: lease.holder, why });
     const ev = lease.eviction;
     if (ev !== null) await this.#endEviction(ev);
-    lease.job.windowClosed(ev ? ev.reloadS : null);
+    lease.job.windowClosed(ev ? ev.reloadS : null, ev ? ev.askedBackAt : null);
   }
 
   async #expiry(lease: Lease): Promise<void> {

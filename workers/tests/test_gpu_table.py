@@ -250,6 +250,11 @@ def decide_inputs() -> Iterator[dict[str, Any]]:
     yield from grid(policy=["share", "offload", "wait"], stage=list(STAGES), speech_loaded=[True, False],
                     offload_useless=[False, True], crowded_mb=[None, 6000], waited_s=[0.0, 120.0],
                     free_mb=[2500, None, 9000])
+    # 8. ``yield`` with nothing to offload, or offloading that did not help: bounded by SING_WAIT_MAX_S
+    for g in grid(policy=["yield"], stage=["separate", "convert"], can=["nothing", "useless"],
+                  waited_total_s=[0.0, 599.5, 600.0], total_mb=[12288, 5000], cpu_fallback=[False, True]):
+        can = g.pop("can")
+        yield {**g, "speech_loaded": can != "nothing", "offload_useless": can == "useless"}
 
 
 def t_decide(t: Table) -> None:
@@ -996,7 +1001,7 @@ SCENARIO_DEFAULTS: dict[str, Any] = dict(
     env={}, total=12288, others=4500, peers={"tts": [4700, 3.0, 20.0], "asr": [1500, 1.0, 8.0]}, unreachable=[],
     job_mb=3500, cuda=True, spill_under=0, profile={}, ack=False, go_after=4.0, people=[[0.0, True, 2, False]],
     urgent=False, core_gone=None, core_back=None, busy={}, card_changes=[], audio_s=180.0, rvc=False,
-    cpu_fallback=[], die_at=None, restart_at=None, horizon=2400.0, tail=5.0,
+    cpu_fallback=[], die_at=None, restart_at=None, horizon=2400.0, tail=5.0, offline_from_start=[],
     stages=[{"stage": "convert", "steps": 40, "step_s": 1.0}],
 )
 
@@ -1089,11 +1094,41 @@ SCENARIO_LIST: list[dict[str, Any]] = [
                "and with nothing that helps the job fails after SING_WAIT_MAX_S (here 200 s)",
          env={"SING_GPU_POLICY": "auto", "SING_WAIT_MAX_S": "200"}, urgent=True, spill_under=100000,
          profile={"step_s": {"convert": 1.0}}, stages=[{"stage": "convert", "steps": 60, "step_s": 1.0}]),
-    dict(name="yield_spill_inside_a_window_waits_for_ever",
-         about="The same under the default policy yield: no SING_WAIT_MAX_S applies, the job waits for room "
-               "with no end (cut off at the horizon)",
+    dict(name="yield_spill_inside_a_window_gives_up",
+         about="The same under the default policy yield: offloading did not help, so the job waits for room, "
+               "and after SING_WAIT_MAX_S (600 s of waiting in all) it fails saying how much it needed and "
+               "how much was free (until 2026-11-16 it waited for ever)",
          urgent=True, spill_under=100000, horizon=900.0,
          profile={"step_s": {"convert": 1.0}}, stages=[{"stage": "convert", "steps": 60, "step_s": 1.0}]),
+    dict(name="yield_never_enough_room",
+         about="yield, 12 GB with 9 GB taken by other programs and her voice already offline for another "
+               "holder: nothing to offload, no room; the job waits SING_WAIT_MAX_S and fails with the reason",
+         others=9000, offline_from_start=["tts", "asr"],
+         stages=[{"stage": "convert", "steps": 20, "step_s": 1.0}]),
+    dict(name="backing_yield_one_window",
+         about="yield, people listening, backing: convert: the backing voices' pass runs in the window the "
+               "lead's conversion opened, under the same silence limit, and her voice is given back once, "
+               "after it (until 2026-11-16 it was given back after the lead and the backing pass ran on the "
+               "card while TTS and ASR reloaded)",
+         ack=True, stages=[{"stage": "convert", "steps": 30, "step_s": 1.0},
+                           {"stage": "convert", "backing": True, "steps": 20, "step_s": 1.0}]),
+    dict(name="backing_yield_silence_limit_in_the_backing_pass",
+         about="yield, people listening: the window's silence limit falls in the backing pass; it stops, her "
+               "voice comes back, and after the gap a new window lets it go on from its step",
+         stages=[{"stage": "convert", "steps": 40, "step_s": 1.0},
+                 {"stage": "convert", "backing": True, "steps": 40, "step_s": 1.0}]),
+    dict(name="backing_auto_people_short_silence",
+         about="auto, people listening: the conversion waits SING_DEFER_S, then one short window holds both "
+               "passes",
+         env={"SING_GPU_POLICY": "auto"},
+         stages=[{"stage": "convert", "steps": 30, "step_s": 1.0},
+                 {"stage": "convert", "backing": True, "steps": 15, "step_s": 1.0}]),
+    dict(name="backing_share_yields_to_her_in_the_backing_pass",
+         about="24 GB, both passes share the card; she speaks during the backing pass and it gives way, as "
+               "the first pass would",
+         total=24576, busy={"tts": [[25.0, 31.0]]},
+         stages=[{"stage": "convert", "steps": 20, "step_s": 1.0},
+                 {"stage": "convert", "backing": True, "steps": 20, "step_s": 1.0}]),
     dict(name="auto_oom_then_window_nobody_listening",
          about="auto, nobody listening, room by the estimate, but the first step runs out of VRAM: the room "
                "then is remembered (crowded), and the job takes a window",
@@ -1137,6 +1172,70 @@ SCENARIO_LIST: list[dict[str, Any]] = [
 ]
 
 
+def make_pipeline(s: dict[str, Any], mod: Any, sim: "Sim", card: "SimCard", backend: "SimBackend") -> Callable[[Any], None]:
+    """The scenario's stages through the worker's real job loop: each GPU stage through
+    ``_gpu_stage``, and consecutive ``convert`` stages (the lead, then with ``"backing": true`` the
+    backing voices' pass) through ``_convert_passes``, as ``_run_job`` runs them. A stage takes
+    ``steps`` of ``step_s`` on the card (ten times longer under ``card.spill_under`` free), or of
+    ``cpu_step_s`` on the CPU; a conversion pass goes on from its last finished step."""
+    progress: dict[str, int] = {}
+    oom_left = {st["stage"]: bool(st.get("oom_once")) for st in s["stages"]}
+
+    def make_run(st: dict[str, Any], work: Any, job: Any) -> Callable[[str], None]:
+        name = st["stage"]
+        key = "backing" if st.get("backing") else name  # what is counted, and where a pass goes on from
+
+        def run(device: str) -> None:
+            card.running = device
+            try:
+                if device == "gpu" and name == "convert" and backend.rvc:
+                    card.extra += st.get("rvc_mb", 0)
+                    try:
+                        sim.sleep(st["steps"] * st["step_s"])
+                    finally:
+                        card.extra -= st.get("rvc_mb", 0)
+                    sim.counts[f"{key} steps on gpu"] += st["steps"]
+                    return
+                for i in range(progress.get(key, 0) if name == "convert" else 0, st["steps"]):
+                    if backend.gate is not None:
+                        backend.gate()
+                    if device == "gpu" and oom_left[name] and not (job.gpu and job.gpu.window):
+                        oom_left[name] = False
+                        raise RuntimeError("CUDA out of memory (simulated)")
+                    if device == "gpu":
+                        fewer = (work.steps or 30) / 30 if work is not None and name == "convert" else 1.0
+                        slow = card.slow_factor if card.free() < card.spill_under else 1.0
+                        sim.sleep(st["step_s"] * slow * fewer)
+                    else:
+                        sim.sleep(st.get("cpu_step_s", st["step_s"] * 20))
+                    if name == "convert":
+                        progress[key] = i + 1
+                    sim.counts[f"{key} steps on {device}"] += 1
+            finally:
+                card.running = None
+
+        return run
+
+    def pipeline(job: Any) -> None:
+        stages = s["stages"]
+        i = 0
+        while i < len(stages):
+            st = stages[i]
+            if st["stage"] != "convert":
+                mod._gpu_stage(job, st["stage"], Path("sim.wav"), s["audio_s"], make_run(st, None, job))
+                i += 1
+                continue
+            passes = []
+            while i < len(stages) and stages[i]["stage"] == "convert":
+                work = mod.ConvertWork()
+                passes.append(lambda st=stages[i], work=work: mod._gpu_stage(
+                    job, "convert", Path("sim.wav"), s["audio_s"], make_run(st, work, job), work))
+                i += 1
+            mod._convert_passes(job, passes)
+
+    return pipeline
+
+
 def run_scenario(spec: dict[str, Any]) -> dict[str, Any]:
     s = {**SCENARIO_DEFAULTS, **spec}
     mod = load_server()
@@ -1144,6 +1243,8 @@ def run_scenario(spec: dict[str, Any]) -> dict[str, Any]:
     peers = {name: Peer(sim, name, *vals) for name, vals in s["peers"].items()}
     for name in s["unreachable"]:
         peers[name].reachable = False
+    for name in s["offline_from_start"]:  # offloaded by another holder: no lease of ours, never back
+        peers[name].state, peers[name].reason, peers[name].released = "offloaded", "other", None
     for name, spans in s["busy"].items():
         peers[name].busy = [tuple(x) for x in spans]
     card = SimCard(s["total"], s["others"], peers, s["job_mb"])
@@ -1186,53 +1287,7 @@ def run_scenario(spec: dict[str, Any]) -> dict[str, Any]:
     machine = Machine(lambda: backend, p, audience, get, clock=sim.clock)
     state = types.SimpleNamespace(machine=machine, backend=backend, offload_post=post, busy_get=get,
                                   jobs={job.id: job}, order=[job.id], lock=threading.Lock(), running=job.id)
-    progress: dict[str, int] = {}
-    oom_left = {st["stage"]: bool(st.get("oom_once")) for st in s["stages"]}
-
-    def make_run(st: dict[str, Any], work: Any) -> Callable[[str], None]:
-        name = st["stage"]
-
-        def run(device: str) -> None:
-            card.running = device
-            try:
-                if device == "gpu" and name == "convert" and backend.rvc:
-                    card.extra += st.get("rvc_mb", 0)
-                    try:
-                        sim.sleep(st["steps"] * st["step_s"])
-                    finally:
-                        card.extra -= st.get("rvc_mb", 0)
-                    sim.counts[f"{name} steps on gpu"] += st["steps"]
-                    return
-                for i in range(progress.get(name, 0) if name == "convert" else 0, st["steps"]):
-                    if backend.gate is not None:
-                        backend.gate()
-                    if device == "gpu" and oom_left[name] and not (job.gpu and job.gpu.window):
-                        oom_left[name] = False
-                        raise RuntimeError("CUDA out of memory (simulated)")
-                    if device == "gpu":
-                        fewer = (work.steps or 30) / 30 if work is not None and name == "convert" else 1.0
-                        slow = card.slow_factor if card.free() < card.spill_under else 1.0
-                        sim.sleep(st["step_s"] * slow * fewer)
-                    else:
-                        sim.sleep(st.get("cpu_step_s", st["step_s"] * 20))
-                    if name == "convert":
-                        progress[name] = i + 1
-                    sim.counts[f"{name} steps on {device}"] += 1
-            finally:
-                card.running = None
-
-        return run
-
-    def pipeline(job: Any) -> None:
-        work = mod.ConvertWork()
-        for st in s["stages"]:
-            if st["stage"] == "convert":
-                try:
-                    mod._gpu_stage(job, "convert", Path("sim.wav"), s["audio_s"], make_run(st, work), work)
-                finally:
-                    mod._give_gpu_back(job)
-            else:
-                mod._gpu_stage(job, st["stage"], Path("sim.wav"), s["audio_s"], make_run(st, None))
+    pipeline = make_pipeline(s, mod, sim, card, backend)
 
     outcome: dict[str, Any] = {"state": "running at the horizon"}
 

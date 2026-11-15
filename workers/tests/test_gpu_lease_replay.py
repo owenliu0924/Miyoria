@@ -1,6 +1,6 @@
 """The song worker as hostd's lease client, cross-checked against hostd's real arbiter.
 
-packages/hostd/test/arbiter/lease_exchanges.jsonl holds, for each of the 26 recorded scenarios, every
+packages/hostd/test/arbiter/lease_exchanges.jsonl holds, for each recorded scenario, every
 ``gpu.*`` call the TypeScript scenario harness made to the real TypeScript ``Arbiter`` and what it
 answered, in simulated seconds (that harness also reproduces each scenario as the Python worker
 recorded it, workers/sing/gpu_scenarios.json). Here the song worker's real job loop
@@ -53,6 +53,7 @@ from test_gpu_table import (
     SimThread,
     clean_env,
     load_server,
+    make_pipeline,
     patched,
     profile,
     r3,
@@ -143,54 +144,7 @@ def run_lease_scenario(spec: dict[str, Any], make_hostd: Callable[[Sim], Any]) -
                   cancel=FakeEvent(sim), go=FakeEvent(sim))
     state = types.SimpleNamespace(backend=backend, jobs={job.id: job}, order=[job.id], lock=threading.Lock(),
                                   running=job.id, arbitration=None)
-    progress: dict[str, int] = {}
-    oom_left = {st["stage"]: bool(st.get("oom_once")) for st in s["stages"]}
-
-    # The stages and the pipeline exactly as test_gpu_table.run_scenario has them.
-    def make_run(st: dict[str, Any], work: Any) -> Callable[[str], None]:
-        name = st["stage"]
-
-        def run(device: str) -> None:
-            card.running = device
-            try:
-                if device == "gpu" and name == "convert" and backend.rvc:
-                    card.extra += st.get("rvc_mb", 0)
-                    try:
-                        sim.sleep(st["steps"] * st["step_s"])
-                    finally:
-                        card.extra -= st.get("rvc_mb", 0)
-                    sim.counts[f"{name} steps on gpu"] += st["steps"]
-                    return
-                for i in range(progress.get(name, 0) if name == "convert" else 0, st["steps"]):
-                    if backend.gate is not None:
-                        backend.gate()
-                    if device == "gpu" and oom_left[name] and not (job.gpu and job.gpu.window):
-                        oom_left[name] = False
-                        raise RuntimeError("CUDA out of memory (simulated)")
-                    if device == "gpu":
-                        fewer = (work.steps or 30) / 30 if work is not None and name == "convert" else 1.0
-                        slow = card.slow_factor if card.free() < card.spill_under else 1.0
-                        sim.sleep(st["step_s"] * slow * fewer)
-                    else:
-                        sim.sleep(st.get("cpu_step_s", st["step_s"] * 20))
-                    if name == "convert":
-                        progress[name] = i + 1
-                    sim.counts[f"{name} steps on {device}"] += 1
-            finally:
-                card.running = None
-
-        return run
-
-    def pipeline(job: Any) -> None:
-        work = mod.ConvertWork()
-        for st in s["stages"]:
-            if st["stage"] == "convert":
-                try:
-                    mod._gpu_stage(job, "convert", Path("sim.wav"), s["audio_s"], make_run(st, work), work)
-                finally:
-                    mod._give_gpu_back(job)
-            else:
-                mod._gpu_stage(job, st["stage"], Path("sim.wav"), s["audio_s"], make_run(st, None))
+    pipeline = make_pipeline(s, mod, sim, card, backend)  # as test_gpu_table.run_scenario has it
 
     outcome: dict[str, Any] = {"state": "running at the horizon"}
 

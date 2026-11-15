@@ -139,7 +139,7 @@ Environment
     SING_SHARE_WAIT_S      wait this long for room before taking speech offline, also with nobody
                            listening                                (default 0)
     SING_DEFER_S           people listening: wait this long before a short silence (default 120)
-    SING_WAIT_MAX_S        longest wait for room in all; then windows, or the job fails (default 600)
+    SING_WAIT_MAX_S        longest wait for room in all; then windows (auto), or the job fails (default 600)
     SING_SILENCE_MAX_S     longest she is offline at a time while people listen, reload included (default 90)
     SING_SILENCE_GAP_S     back this long before the next window    (default 60)
     SING_OFFLOAD_LEASE_S   a window renews its offload; a worker that died leaves her voice
@@ -1083,7 +1083,7 @@ def _open_window(job: Job) -> None:
         job.exclusive.begin(job.cancel.is_set, job.go if job.request.exclusive_ack else None)
     finally:
         job.stage = stage
-    g.window_opened()
+    g.window_opened(job.exclusive.offline_at)
 
 
 def _close_window(job: Job) -> None:
@@ -1093,7 +1093,7 @@ def _close_window(job: Job) -> None:
         return
     ex.end()
     ex.join()
-    g.window_closed(ex.timings.get("reload_s"))
+    g.window_closed(ex.timings.get("reload_s"), ex.asked_back_at)
 
 
 def _place(job: Job, stage: str) -> str:
@@ -1201,14 +1201,19 @@ class SelfArbitration:
         if job.yielding is not None:
             job.yielding.stop()
         state.backend.gate = None
-        if job.exclusive is not None:
-            job.exclusive.end()
+        ex, g = job.exclusive, job.gpu
+        if ex is not None:
+            # The window ends when her voice is back, not when the job does: the gap before the next
+            # window, and the silence counted, start then (until 2026-11-16: at the job's end).
+            ex.end(after=None if g is None else lambda: g.window_closed(ex.timings.get("reload_s"),
+                                                                        ex.asked_back_at))
 
     def finish(self, job: Job) -> dict[str, Any] | None:
         if job.exclusive is not None:
             job.exclusive.join()
         if job.gpu is not None:
-            job.gpu.window_closed(job.exclusive.timings.get("reload_s") if job.exclusive else None)
+            ex = job.exclusive
+            job.gpu.window_closed(ex.timings.get("reload_s") if ex else None, ex.asked_back_at if ex else None)
         return None
 
     def startup(self) -> None:
@@ -1277,6 +1282,22 @@ def _gpu_stage(job: Job, stage: str, wav: Path, duration_s: float | None, run: C
 def _give_gpu_back(job: Job) -> None:
     """Starts bringing her voice back; ``run_job`` waits for it. The song mixes meanwhile."""
     _arbitration().give_back(job)
+
+
+def _convert_passes(job: Job, passes: list[Callable[[], Any]]) -> list[Any]:
+    """The conversion's passes on the card, one after the other: the lead (or the whole vocal stem)
+    and, with ``backing: "convert"``, the backing voices. Each is a GPU stage of its own, placed when
+    it starts; her voice is given back once, after the last. A window the first pass opened is still
+    open for the second, with the same silence limit (its clock runs on from the window's start) and
+    the same yielding, so she goes quiet once, not twice with a gap between. Until 2026-11-16 her
+    voice was given back after the first pass and the second ran on the card while it reloaded."""
+    out = []
+    try:
+        for run in passes:
+            out.append(run())
+    finally:
+        _give_gpu_back(job)
+    return out
 
 
 def _gpu_summary_to_meta(job: Job, summary: dict[str, Any]) -> None:
@@ -1595,10 +1616,7 @@ def _run_job(job: Job) -> None:
             job.gpu.converted = f
 
     def convert() -> dict[str, Any]:
-        try:
-            return _gpu_stage(job, "convert", vocal, src.duration_s, convert_on_gpu, work)
-        finally:
-            _give_gpu_back(job)
+        return _gpu_stage(job, "convert", vocal, src.duration_s, convert_on_gpu, work)
 
     def settle_pitch(shift: int, auto_key: int, info: dict[str, Any]) -> int:
         """Records the pitch settings and starts the mix's instrumental; the vocal's shift."""
@@ -1637,22 +1655,19 @@ def _run_job(job: Job) -> None:
         b.convert(vocal, converted, pitch["vocal_shift"], converted_share, check, work)
         return pitch
 
-    pitch_info = timed("convert", convert)
+    passes: list[Callable[[], Any]] = [lambda: timed("convert", convert)]
     backing_conv: Path | None = None
     if req.backing == "convert" and lead["used"]:
         backing_conv = out / "_converted_backing.wav"
         backing_wav = sdir / "backing.wav"
+        backing_work = ConvertWork()  # its own: a suspended pass goes on from its last chunk
 
         def convert_backing_on_gpu(_device: str) -> None:
-            b.convert(backing_wav, backing_conv, pitch_info["vocal_shift"], converted_share, check, ConvertWork())
+            b.convert(backing_wav, backing_conv, pitch["vocal_shift"], converted_share, check, backing_work)
 
-        def convert_backing() -> None:
-            try:
-                _gpu_stage(job, "convert", backing_wav, src.duration_s, convert_backing_on_gpu)
-            finally:
-                _give_gpu_back(job)
-
-        timed("convert_backing", convert_backing)
+        passes.append(lambda: timed("convert_backing", lambda: _gpu_stage(
+            job, "convert", backing_wav, src.duration_s, convert_backing_on_gpu, backing_work)))
+    pitch_info = _convert_passes(job, passes)[0]
     job.converted.set()  # the card is the speech workers' again: the lyrics' ASR check may go on
     mixed = timed("mix", lambda: b.mix(sdir, converted, pitch_info["song_key"], out, lead["used"],
                                           req.backing, backing_conv))

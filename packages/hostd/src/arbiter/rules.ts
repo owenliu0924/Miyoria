@@ -155,6 +155,14 @@ export function decide(f: Facts): Decision {
         reason: `${why}顯示卡放不下(${have}),語音暫時離線,最多 ${f0(limits.silence_max_s)} 秒`,
       };
     }
+    // Bounded like `auto`'s wait (since 2026-11-16; before, it waited for ever).
+    if (f.waited_total_s >= limits.wait_max_s) {
+      return {
+        mode: "give_up",
+        code: "no_room",
+        reason: `等了 ${f0(f.waited_total_s / 60)} 分鐘顯示卡還是放不下這首(${have})`,
+      };
+    }
     return {
       mode: "wait",
       code: "no_room",

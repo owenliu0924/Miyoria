@@ -129,6 +129,16 @@ describe("the arbiter", () => {
         await arbiter.release({ lease: "j1", window: "close", done: true }),
       );
       expect(released).toMatchObject({ reloaded: ["http://tts", "http://asr"], closed: true });
+      // The real silence (offload asked to reload done) next to the work time the limit bounds;
+      // no context and no `ack`: nobody listened, so no limit applied.
+      expect(released.window).toEqual({
+        offload_s: 0,
+        work_s: 0,
+        reload_s: 0,
+        silence_s: 0,
+        limit_s: null,
+      });
+      expect(released.summary?.windows).toEqual([released.window]);
       expect(released.summary?.decisions.map((d) => d.code)).toEqual(["no_room"]);
     });
     expect(calls.filter((c) => !c.includes("busy"))).toEqual([
@@ -199,6 +209,7 @@ describe("the arbiter", () => {
       reload_s: null,
       closed: false,
       summary: null,
+      window: null,
     });
   });
 

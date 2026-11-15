@@ -3,6 +3,7 @@
 // each call; everything else (the card, her voice, who listens, the windows, the waits, the spill
 // response) is here.
 
+import type { HostGpuWindow } from "@miyoria/contracts/host";
 import { CPU_STAGES, type Limits, type Policy, type PolicySource } from "./limits.js";
 import { median, pyFixed, pyRepr, pyRound } from "./num.js";
 import {
@@ -111,6 +112,10 @@ export class JobState {
   waitedTotalS = 0;
   waitFrom: number | null = null;
   windowAt = 0;
+  /** When the first offload of the open window was asked: her voice went then. */
+  offlineAt = 0;
+  /** Each closed window: its real silence next to the work time the limit bounds. */
+  windows: HostGpuWindow[] = [];
   quietFrom: number | null = null;
   freeBefore: number | null = null;
   checked = 0;
@@ -522,10 +527,12 @@ export class JobState {
     this.freeBefore = (await this.machine.card(this.client.own_mb)).free_mb;
   }
 
-  async windowOpened(): Promise<void> {
+  /** `offlineAt`: when the first offload was asked. */
+  async windowOpened(offlineAt: number | null = null): Promise<void> {
     const now = this.clock.now();
     this.window = true;
     this.windowAt = now;
+    this.offlineAt = offlineAt ?? now;
     this.quietFrom = this.people() === false ? null : now;
     this.speech.forget();
     const free = (await this.machine.card(this.client.own_mb)).free_mb;
@@ -537,17 +544,31 @@ export class JobState {
     this.machine.profile.save();
   }
 
-  /** Her voice is back (or was asked back and could not be reached). */
-  windowClosed(reloadS: number | null): void {
-    if (!this.window) return;
+  /**
+   * Her voice is back (or was asked back and could not be reached). `askedBackAt`: when the
+   * reload was asked. The window's record, or null when no window was open.
+   */
+  windowClosed(reloadS: number | null, askedBackAt: number | null = null): HostGpuWindow | null {
+    if (!this.window) return null;
     this.window = false;
     const now = this.clock.now();
     this.silencedS += now - this.windowAt;
+    const asked = askedBackAt ?? now;
+    const record: HostGpuWindow = {
+      offload_s: pyRound(this.windowAt - this.offlineAt, 1),
+      work_s: pyRound(asked - this.windowAt, 1),
+      reload_s: pyRound(now - asked, 1),
+      silence_s: pyRound(now - this.offlineAt, 1),
+      // What `silence_max_s` bounded: the work time, while people could hear (else none).
+      limit_s: this.quietFrom !== null ? this.limits.silence_max_s : null,
+    };
+    this.windows.push(record);
     if (this.quietFrom !== null) this.machine.gapUntil = now + this.limits.silence_gap_s;
     this.quietFrom = null;
     this.speech.forget();
     this.machine.profile.noteOffload(null, reloadS);
     this.machine.profile.save();
+    return record;
   }
 
   // ── what is shown ────────────────────────────────────────────────────
@@ -560,6 +581,7 @@ export class JobState {
     steps: number | null;
     waited_s: number;
     silenced_s: number;
+    windows: HostGpuWindow[];
   } {
     return {
       policy: this.policy,
@@ -569,6 +591,7 @@ export class JobState {
       steps: this.reducedTo,
       waited_s: pyRound(this.waitedTotalS, 1),
       silenced_s: pyRound(this.silencedS, 1),
+      windows: [...this.windows],
     };
   }
 }

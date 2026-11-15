@@ -70,6 +70,8 @@ interface StageSpec {
   cpu_step_s?: number;
   rvc_mb?: number;
   oom_once?: boolean;
+  /** The backing voices' pass of a `backing: "convert"` job (a second conversion pass). */
+  backing?: boolean;
 }
 
 interface Setup {
@@ -97,6 +99,8 @@ interface Setup {
   restart_at: number | null;
   horizon: number;
   stages: StageSpec[];
+  /** Speech offloaded by another holder before the job: no lease of ours, never back. */
+  offline_from_start?: string[];
 }
 
 interface Recorded {
@@ -320,6 +324,10 @@ class Scenario {
       const [mb, off, rel] = s.peers[name] as [number, number, number];
       const p = new Peer(this.sim, (e) => this.note(e), name, mb, off, rel);
       p.reachable = !s.unreachable.includes(name);
+      if ((s.offline_from_start ?? []).includes(name)) {
+        p.state = "offloaded";
+        p.reason = "other";
+      }
       p.busy = s.busy[name] ?? [];
       this.peers.set(name, p);
     }
@@ -633,7 +641,8 @@ class Scenario {
   giveGpuBack(): void {
     this.yieldStopped = true;
     this.gate = null;
-    this.endExclusive("keep");
+    // The window ends when her voice is back (server.py `give_back`, lease.py: a `close` release).
+    this.endExclusive("close");
   }
 
   async busy(): Promise<boolean> {
@@ -743,6 +752,7 @@ class Scenario {
     work: { steps: number | null } | null,
   ): (device: "gpu" | "cpu") => Promise<void> {
     const name = st.stage;
+    const key = st.backing ? "backing" : name; // what is counted, and where a pass goes on from
     return async (device) => {
       this.card.running = device;
       try {
@@ -753,10 +763,10 @@ class Scenario {
           } finally {
             this.card.extra -= st.rvc_mb ?? 0;
           }
-          this.count(`${name} steps on gpu`, st.steps);
+          this.count(`${key} steps on gpu`, st.steps);
           return;
         }
-        for (let i = name === "convert" ? (this.progress.get(name) ?? 0) : 0; i < st.steps; i++) {
+        for (let i = name === "convert" ? (this.progress.get(key) ?? 0) : 0; i < st.steps; i++) {
           if (this.gate !== null) await this.gate();
           if (device === "gpu" && this.oomLeft.get(name) && !this.arbiter.windowOf(this.jobId)) {
             this.oomLeft.set(name, false);
@@ -769,8 +779,8 @@ class Scenario {
           } else {
             await this.sleep(st.cpu_step_s ?? st.step_s * 20);
           }
-          if (name === "convert") this.progress.set(name, i + 1);
-          this.count(`${name} steps on ${device}`);
+          if (name === "convert") this.progress.set(key, i + 1);
+          this.count(`${key} steps on ${device}`);
         }
       } finally {
         this.card.running = null;
@@ -778,17 +788,27 @@ class Scenario {
     };
   }
 
+  /** The stages; consecutive conversion passes as `_convert_passes` runs them. */
   async pipeline(): Promise<void> {
-    const work = { steps: null as number | null };
-    for (const st of this.s.stages) {
-      if (st.stage === "convert") {
-        try {
-          await this.gpuStage("convert", this.makeRun(st, work), work);
-        } finally {
-          this.giveGpuBack();
-        }
-      } else {
+    const stages = this.s.stages;
+    let i = 0;
+    while (i < stages.length) {
+      const st = stages[i] as StageSpec;
+      if (st.stage !== "convert") {
         await this.gpuStage(st.stage, this.makeRun(st, null), null);
+        i += 1;
+        continue;
+      }
+      // One pass after the other, each a stage placed on its own; her voice back after the last.
+      try {
+        while (i < stages.length && (stages[i] as StageSpec).stage === "convert") {
+          const pass = stages[i] as StageSpec;
+          i += 1;
+          const work = { steps: null as number | null };
+          await this.gpuStage("convert", this.makeRun(pass, work), work);
+        }
+      } finally {
+        this.giveGpuBack();
       }
     }
   }
@@ -1012,8 +1032,8 @@ function recordedResult(r: Json): Json {
 }
 
 describe("the recorded scenarios, against the arbiter", () => {
-  it("has the 26 recorded scenarios", () => {
-    expect(RECORDED.scenarios.length).toBe(26);
+  it("has the 31 recorded scenarios", () => {
+    expect(RECORDED.scenarios.length).toBe(31);
   });
 
   for (const rec of RECORDED.scenarios) {

@@ -204,9 +204,10 @@ export const HostGpuRenewResultSchema = z
 export type HostGpuRenewResult = z.output<typeof HostGpuRenewResultSchema>;
 
 /**
- * `gpu.release`: brings the speech this job took offline back and waits for it. `window: "keep"`
- * leaves the job's window open (her voice is coming back while the song is mixed); `close` ends
- * it, which starts the gap before the next window. `done`: the job is over.
+ * `gpu.release`: brings the speech this job took offline back and waits for it. `close` ends the
+ * job's window, which starts the gap before the next one; `window: "keep"` leaves it open (the
+ * song worker sent it after the conversion until 2026-11-16, and sends `close` since). `done`:
+ * the job is over.
  */
 export const HostGpuReleaseSchema = z
   .object({
@@ -234,6 +235,24 @@ export const HostGpuDecisionSchema = z
   .meta({ id: "HostGpuDecision" });
 export type HostGpuDecision = z.output<typeof HostGpuDecisionSchema>;
 
+/**
+ * One window of a job, once her voice is back: how long she was really silent (from the first
+ * offload asked to the last reload done) next to the work time that `SING_SILENCE_MAX_S` bounds.
+ * The limit does not count the offload and the reload, so the real silence is longer.
+ */
+export const HostGpuWindowSchema = z
+  .object({
+    offload_s: z.number(),
+    /** From the window's opening to her voice being asked back: what the limit bounds. */
+    work_s: z.number(),
+    reload_s: z.number(),
+    silence_s: z.number(),
+    /** The limit, when it applied (people could hear); null when nobody listened. */
+    limit_s: z.number().nullable(),
+  })
+  .meta({ id: "HostGpuWindow" });
+export type HostGpuWindow = z.output<typeof HostGpuWindowSchema>;
+
 /** What stays with the song: the job's decisions and what it cost. */
 export const HostGpuJobSummarySchema = z
   .object({
@@ -245,6 +264,8 @@ export const HostGpuJobSummarySchema = z
     steps: z.number().int().nullable(),
     waited_s: z.number(),
     silenced_s: z.number(),
+    /** Each window, in order (added 2026-11-16). */
+    windows: z.array(HostGpuWindowSchema).default([]),
   })
   .meta({ id: "HostGpuJobSummary" });
 export type HostGpuJobSummary = z.output<typeof HostGpuJobSummarySchema>;
@@ -258,6 +279,8 @@ export const HostGpuReleaseResultSchema = z
     closed: z.boolean(),
     /** With `done`: the job's summary. */
     summary: HostGpuJobSummarySchema.nullable(),
+    /** The window this call closed (added 2026-11-16). */
+    window: HostGpuWindowSchema.nullable().default(null),
   })
   .meta({ id: "HostGpuReleaseResult" });
 export type HostGpuReleaseResult = z.output<typeof HostGpuReleaseResultSchema>;
