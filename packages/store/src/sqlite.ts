@@ -49,7 +49,13 @@ import {
   u32,
   walletWith,
 } from "./common.js";
+import {
+  type ConfigImportOptions,
+  type ConfigImportResult,
+  importConfigToml,
+} from "./config/import.js";
 import { configSchema } from "./config/migrations.js";
+import { PlaceSettings } from "./config/places.js";
 import { ConfigModuleState, ConfigRevisions } from "./config/revisions.js";
 import { PluginState, SettingsState } from "./config/state.js";
 import {
@@ -2075,8 +2081,12 @@ export class SqliteStore implements Store {
   readonly economyDocs: EconomyDocStore;
   /** Persons, accounts and places (the `identity` plugin's tables). */
   readonly persons: Identity;
-  /** Config revisions and plugin state (the `config` plugin's tables). */
-  readonly config: { readonly revisions: ConfigRevisions; readonly state: PluginState };
+  /** Config revisions, per-place settings and plugin state (the `config` plugin's tables). */
+  readonly config: {
+    readonly revisions: ConfigRevisions;
+    readonly places: PlaceSettings;
+    readonly state: PluginState;
+  };
   readonly handles: PersonHandleDirectory;
   readonly #db: Db;
 
@@ -2085,7 +2095,11 @@ export class SqliteStore implements Store {
     this.persons = new Identity(db);
     this.events = new EventStore(db, { identity: this.persons });
     const revisions = new ConfigRevisions(db, this.events);
-    this.config = { revisions, state: new PluginState(db) };
+    this.config = {
+      revisions,
+      places: new PlaceSettings(db, this.events),
+      state: new PluginState(db),
+    };
     this.moduleState = new ConfigModuleState(db, revisions);
     this.personaOverrides = new SqlitePersonaOverrides(db);
     this.people = new IdentityPeople(this.persons);
@@ -2145,6 +2159,19 @@ export class SqliteStore implements Store {
       throw error;
     }
     return new SqliteStore(db);
+  }
+
+  /**
+   * Imports the text of `miyoria.toml` as config revision 1, its per-channel levels as place
+   * settings (`config/import.ts`). For the cut-over's first start; once only.
+   */
+  importConfig(text: string, options: ConfigImportOptions = {}): ConfigImportResult {
+    const { revisions, places } = this.config;
+    return importConfigToml(
+      { db: this.#db, revisions, places, identity: this.persons },
+      text,
+      options,
+    );
   }
 
   /** Versions of the `legacy` schema recorded in `_migrations`, ascending. */

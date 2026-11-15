@@ -9,7 +9,23 @@ export {
   StoreError,
   toMicros,
 } from "./common.js";
+export {
+  CONFIG_IMPORT_AUTHOR,
+  ConfigImportError,
+  type ConfigImportOptions,
+  type ConfigImportResult,
+  type ConfigImportTarget,
+  type ImportedPlaceSetting,
+  importConfigToml,
+} from "./config/import.js";
 export { configSchema } from "./config/migrations.js";
+export {
+  type PlaceSetting,
+  type PlaceSettingFilter,
+  PlaceSettings,
+  type PlaceSettingsOptions,
+  type ResolvedPlaceSetting,
+} from "./config/places.js";
 export {
   CONFIG_SOURCE,
   ConfigConflictError,

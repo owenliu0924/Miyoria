@@ -471,6 +471,29 @@ export class Identity {
     return { ...found, ...change };
   }
 
+  /** The id of the space `(platform, externalId)`, created on first sight (named by its id). */
+  ensureSpace(platform: string, externalId: string): string {
+    return this.#db.tx(() => this.#space(platform, externalId, null, this.#now()));
+  }
+
+  /**
+   * The room `(platform, externalId)` of a space, created with the space on first sight (named
+   * by nothing yet): for a setting given before anyone spoke there, such as the config import's.
+   */
+  ensureRoom(
+    platform: string,
+    spaceExternalId: string,
+    externalId: string,
+    kind: "text" | "voice",
+  ): RoomRow {
+    return this.#db.tx(() => {
+      const at = this.#now();
+      const spaceId = this.#space(platform, spaceExternalId, null, at);
+      const fields = { kind, space_id: spaceId, parent_id: null, dm_person: null, name: null };
+      return this.#room(platform, externalId, fields, at);
+    });
+  }
+
   #roomExternalId(id: string): string | null {
     const row = this.#db.orm
       .select({ external_id: rooms.external_id })
