@@ -11,6 +11,11 @@
       "@miyoria/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./link": {
+      "@miyoria/source": "./src/link/index.ts",
+      "types": "./dist/link/index.d.ts",
+      "default": "./dist/link/index.js"
     }
   },
   "files": [

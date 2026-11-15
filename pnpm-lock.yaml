@@ -660,6 +660,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@miyoria/hostd':
+        specifier: workspace:*
+        version: link:../hostd
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
