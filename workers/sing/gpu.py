@@ -174,6 +174,25 @@ class Profile:
     def use(self, name: str, total_mb: int | None) -> None:
         self._key = f"{name}/{total_mb}" if total_mb else name
 
+    def use_key(self, key: str) -> None:
+        """The card by the key hostd names it by (``name/total_mb``, as ``use`` makes it)."""
+        self._key = key
+
+    def by_card(self, fn: Callable[[], Any]) -> dict[str, Any]:
+        """``fn()`` with the profile on each card it has a record of, by card key; ``None`` is left
+        out. For a lease client: only hostd reads the card, so it sends what it knows of each."""
+        here = self._key
+        out: dict[str, Any] = {}
+        try:
+            for key in sorted(self._data["devices"]):
+                self._key = key
+                value = fn()
+                if value is not None:
+                    out[key] = value
+        finally:
+            self._key = here
+        return out
+
     def _device(self) -> dict[str, Any]:
         return self._data["devices"].setdefault(self._key, {"stages": {}})
 
