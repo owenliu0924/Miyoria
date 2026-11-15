@@ -14,11 +14,9 @@ import {
 } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
 import {
-  customEvent,
   EventLogKey,
+  Events,
   type IncomingMessage,
-  type JsonValue,
-  MESSAGE_EXCLUDED_TOPIC,
   type MessageExcluded,
   type Timestamp,
 } from "@miyoria/types";
@@ -230,10 +228,7 @@ describe("excluded messages", () => {
       const engine = services.require(MemoryEngineKey);
       const stored = await engine.store(fact("Owen 養了一隻貓", [r.cat.seen.id]), t0());
       const id = (stored as { id: string }).id;
-      sup.bus.publish(
-        "agent",
-        customEvent(MESSAGE_EXCLUDED_TOPIC, excludedBody("m1") as unknown as JsonValue),
-      );
+      sup.bus.publish("agent", Events.AgentMessageExcluded, excludedBody("m1"));
       const deadline = Date.now() + 5000;
       while ((await tablesOf(r.store).get(id)) !== null) {
         expect(Date.now() < deadline, "not taken out").toBe(true);
