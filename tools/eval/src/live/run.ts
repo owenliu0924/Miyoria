@@ -2,8 +2,6 @@
 // file per run and one summary line appended to `history.jsonl` beside it, so runs of different
 // subjects and commits can be put next to each other.
 
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Judge } from "./judge.js";
 import type { Meter } from "./meter.js";
 import type { ModelUsage, Subject } from "./subject.js";
@@ -11,6 +9,15 @@ import { SuiteRegistry, type SuiteResult } from "./suite.js";
 import { runPersona } from "./suites/persona.js";
 import { runRelationship } from "./suites/relationship.js";
 import { runTools } from "./suites/tools.js";
+
+export {
+  HISTORY_FILE,
+  type HistoryLine,
+  HistoryLineSchema,
+  historyLine,
+  rebuildHistory,
+  writeRun,
+} from "./history.js";
 
 /** The live suites. `memory` is a slot: its runner comes from the recall harness. */
 export function defaultSuites(): SuiteRegistry {
@@ -38,6 +45,8 @@ export interface LiveRunOptions {
   seed?: string;
   /** The git commit the run is of (`null`: unknown). */
   commit?: string | null;
+  /** The `chat` chain the run is routed through, first choice first (`provider:model`). */
+  chain?: readonly string[];
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -52,6 +61,8 @@ export interface LiveRun {
   /** Every model call of the run: the subject's and the judge's. */
   usage: ModelUsage;
   models: Record<string, ModelUsage>;
+  /** The `chat` chain the run was routed through; a run file from before it was recorded has none. */
+  chain?: string[];
   /** Estimated cost in USD of the calls whose model has a price. */
   usd: number;
   /** Models with no `[llm.pricing]` entry: their cost is unknown and not in `usd`. */
@@ -106,53 +117,12 @@ export async function runLive(options: LiveRunOptions): Promise<LiveRun> {
     suites,
     usage: options.meter.usage(),
     models: options.meter.models(),
+    ...(options.chain === undefined ? {} : { chain: [...options.chain] }),
     usd: options.meter.usd(),
     unpriced: options.meter.unpriced(),
     duration_ms: Math.max(0, now() - start),
     ...(stopped ? { stopped: "budget" as const } : {}),
   };
-}
-
-/** The summary line of a run in `history.jsonl`. */
-export interface HistoryLine {
-  at: string;
-  commit: string | null;
-  subject: string;
-  /** Headline numbers per suite that ran. */
-  suites: Record<string, Record<string, number | null>>;
-  tokens: ModelUsage;
-  /** `null`: a model that answered has no price, so the cost is unknown. */
-  usd: number | null;
-  duration_ms: number;
-  stopped?: "budget";
-}
-
-export function historyLine(run: LiveRun): HistoryLine {
-  return {
-    at: run.at,
-    commit: run.commit,
-    subject: run.subject,
-    suites: Object.fromEntries(
-      run.suites.filter((s) => s.skipped === undefined).map((s) => [s.suite, s.headline]),
-    ),
-    tokens: run.usage,
-    usd: run.unpriced.length > 0 ? null : run.usd,
-    duration_ms: run.duration_ms,
-    ...(run.stopped ? { stopped: run.stopped } : {}),
-  };
-}
-
-export const HISTORY_FILE = "history.jsonl";
-
-/** Writes the run's JSON file into `dir` (created on demand) and appends its history line. */
-export function writeRun(run: LiveRun, dir: string): { file: string; history: string } {
-  mkdirSync(dir, { recursive: true });
-  const stamp = run.at.replace(/[^0-9A-Za-z]+/g, "-").replace(/-$/, "");
-  const file = join(dir, `${stamp}-${run.subject}.json`);
-  writeFileSync(file, `${JSON.stringify(run, null, 2)}\n`);
-  const history = join(dir, HISTORY_FILE);
-  appendFileSync(history, `${JSON.stringify(historyLine(run))}\n`);
-  return { file, history };
 }
 
 const pct = (n: number | null): string => (n === null ? "  n/a" : n.toFixed(3));

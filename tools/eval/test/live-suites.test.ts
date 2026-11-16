@@ -467,10 +467,19 @@ describe("a live run", () => {
     expect(lines).toHaveLength(2);
     const line = JSON.parse(lines[0] ?? "");
     expect(line).toEqual({
+      v: 1,
       at: run.at,
       commit: "abc123",
       subject: "stub",
-      suites: { relationship: { told_apart: 1, line_held: 1 } },
+      repeat: 1,
+      suites: {
+        relationship: {
+          headline: { told_apart: 1, line_held: 1 },
+          items: RELATIONSHIP_PAIRS.length,
+          unsupported: 0,
+          stopped: false,
+        },
+      },
       tokens: {
         calls: 20,
         prompt_tokens: 2000,
@@ -480,6 +489,9 @@ describe("a live run", () => {
       },
       usd: 20,
       duration_ms: expect.any(Number),
+      // No chain was given: the models that answered.
+      models: ["scripted:m"],
+      stopped: null,
     });
   });
 

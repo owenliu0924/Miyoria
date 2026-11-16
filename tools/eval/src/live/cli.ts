@@ -5,16 +5,27 @@
 // `data/eval/live/`): one JSON file and one line of `history.jsonl`. `--max-usd` is a hard stop:
 // the estimated cost is checked before every model call, and the run ends with what finished.
 // Paths are taken from where the command was typed (`INIT_CWD`, which pnpm sets).
+//
+// `pnpm eval --live --rebuild-history [--out <dir>]` runs nothing: it writes `history.jsonl` again
+// from the run files in the folder, for lines written before the record had a version.
 
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LlmRouter } from "@miyoria/llm/llm";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
 import { routerJudge } from "./judge.js";
 import type { Meter } from "./meter.js";
 import { setupLiveModel } from "./model.js";
-import { defaultSuites, formatRun, runLive, runnableSuites, writeRun } from "./run.js";
+import {
+  defaultSuites,
+  formatRun,
+  rebuildHistory,
+  runLive,
+  runnableSuites,
+  writeRun,
+} from "./run.js";
 import type { Subject } from "./subject.js";
 import type { SuiteRegistry } from "./suite.js";
 
@@ -26,7 +37,8 @@ const DEFAULT_MAX_USD = 0.5;
 
 const USAGE =
   "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship] " +
-  "[--subject current] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>]\n";
+  "[--subject current] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>]\n" +
+  "       pnpm eval --live --rebuild-history [--out <dir>]\n";
 
 export interface SubjectDeps {
   router: LlmRouter;
@@ -63,6 +75,18 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
     return i >= 0 ? argv[i + 1] : undefined;
   };
   const base = process.env.INIT_CWD ?? process.cwd();
+  if (argv.includes("--rebuild-history")) {
+    const dir = resolve(base, opt("out") ?? DEFAULT_OUT);
+    try {
+      const { runs, skipped } = rebuildHistory(dir);
+      out(`${runs} runs written to history.jsonl in ${dir}\n`);
+      if (skipped.length > 0) err(`not a run, left out: ${skipped.join(", ")}\n`);
+      return 0;
+    } catch (error) {
+      err(`cannot rebuild the history in ${dir}: ${errorMessage(error)}\n`);
+      return 2;
+    }
+  }
   const configArg = opt("config");
   const repeat = Number(opt("repeat") ?? 1);
   const maxUsd = Number(opt("max-usd") ?? DEFAULT_MAX_USD);
@@ -118,6 +142,7 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
       repeat,
       ...(seed === undefined ? {} : { seed }),
       commit: commitOf(REPO),
+      chain: model.chain.split(" > "),
       log: (line) => err(`  ${line}\n`),
     });
     const written = writeRun(run, resolve(base, opt("out") ?? DEFAULT_OUT));
