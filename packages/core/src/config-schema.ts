@@ -22,7 +22,7 @@
 // | `[stage]`, `[stack]`, `[machine]`| not read by Core                        | ignored    |
 // | a section or key nobody names    | not read                                | let through|
 
-import { ApiConfigSchema, ApiModule } from "@miyoria/api";
+import { ApiConfigSchema, ApiModule, EvalConfigSchema, EvalModule } from "@miyoria/api";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
 import { ActivityConfigSchema, ActivityModule } from "@miyoria/brain/activity";
 import { AgentConfigSchema, AgentModule } from "@miyoria/brain/agent";
@@ -144,6 +144,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [SkillsModule.ID, SkillsConfigSchema],
   [LiveModule.ID, LiveConfigSchema],
   [PartyModule.ID, PartyConfigSchema],
+  [EvalModule.ID, EvalConfigSchema],
   [ExtensionsModule.ID, HostConfigSchema],
   [DiscordBotModule.ID, DiscordConfigSchema],
   [ReplayRecorderModule.ID, ReplayConfigSchema],

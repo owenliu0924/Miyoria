@@ -60,6 +60,7 @@ import { dataRpc } from "./data.js";
 import { directivesRpc } from "./directives.js";
 import { economyRpc, personQuestsRpc } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
+import { evalRpc } from "./eval/route.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
@@ -111,6 +112,7 @@ export const router = os.router({
   reflection: reflectionRpc,
   life: lifeRpc,
   sandbox: sandboxRpc,
+  eval: evalRpc,
   workspace: workspaceRpc,
   skills: skillsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },

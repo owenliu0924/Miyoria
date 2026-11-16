@@ -41,6 +41,7 @@ export const MODULE_IDS: readonly string[] = [
   "skills",
   "live",
   "party",
+  "eval",
   "extensions",
   "platform.discord.bot",
   "replay",

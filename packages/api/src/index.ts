@@ -61,6 +61,8 @@
 //   notes), `GET /api/reflection?days=7` (reflections, lessons, feedback),
 //   `GET /api/mind/digests?limit=20`; read-only
 // * `GET /api/events?topics=platform.*,agent.*` (Server-Sent Events of bus envelopes)
+// * `GET /api/eval/live?limit=90` (the live evaluation's runs and the nightly run's state; see
+//   `eval/`, which also holds the `eval` module that starts the nightly run)
 // * `GET /api/public/status|songs` (anyone; see `public.ts`), `GET /api/public/card/{serial}`
 //   (checks a card's code; see `card.ts`)
 // * `GET /api/member/session|me|export|card`, `POST /api/member/forget|songs|card` (a logged-in
@@ -82,6 +84,27 @@ export {
   TOOLS_WORKSPACE,
 } from "./data.js";
 export { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
+export { EVAL_HISTORY_FILE, parseEvalHistory, readEvalHistory } from "./eval/history.js";
+export {
+  type EvalChild,
+  type EvalCommand,
+  type EvalConfig,
+  EvalConfigSchema,
+  type EvalExit,
+  EvalModule,
+  type EvalModuleOptions,
+  EvalNightlyKey,
+  type EvalNightlyService,
+  type EvalSpawner,
+  evalCommand,
+  evalHoldback,
+  findEvalCheckout,
+  type NightlyOptions,
+  type NightlyOutcome,
+  NightlyRunner,
+  nextRunAt,
+  spawnEval,
+} from "./eval/nightly.js";
 export { ContextLabels, LABEL_MISS_TTL_MS, LABEL_TIMEOUT_MS, LABEL_TTL_MS } from "./labels.js";
 export { METRICS_PATH } from "./metrics.js";
 export {
