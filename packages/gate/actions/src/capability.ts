@@ -3,6 +3,7 @@
 // director) goes through `ActuatorRegistry.invoke`, which runs the gate first.
 
 import type { CommandReply, ReplyFile } from "@miyoria/commands";
+import type { ToolMeta } from "@miyoria/llm/tools";
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import type {
   AccountRef,
@@ -51,6 +52,12 @@ export interface CapabilityTool {
    * around them (`Tool.framed`): the agent passes it on as it is.
    */
   framed?: boolean;
+  /**
+   * What it does to the world, for the tool registry (`Tool.meta`); the risk is the
+   * capability's own. Every capability a module ships says it; without it the registry takes
+   * its defaults.
+   */
+  meta?: Omit<ToolMeta, "risk">;
 }
 
 /** What the owners' approval card shows instead of the raw arguments. */

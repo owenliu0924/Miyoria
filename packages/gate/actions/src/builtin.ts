@@ -87,6 +87,7 @@ export function dmCapability(names: NameLookup | null = null): Capability<DmArgs
     consent: "dm",
     tool: {
       name: "message_dm",
+      meta: { effect: "say", speed: "instant", group: "chat", core: true },
       description:
         "私訊某個人(Discord DM)。to 省略或填 speaker = 正在跟你說話的人;也可以填對方的名字(你看到的那個)" +
         "或 mention(<@id>)。已經在跟對方私訊時直接說就好,不用這個工具。不要私訊陌生人,也不要一直傳。",
@@ -193,6 +194,7 @@ export const testHigh: Capability<NoteArgs> = defineCapability<NoteArgs>({
   permission: "admin.autonomy.test",
   tool: {
     name: "test_high_risk",
+    meta: { effect: "act", speed: "instant", group: "test" },
     description: "測試用的高風險動作:只會留下一筆紀錄,用來試審核流程。只有被要求測試時才用。",
     properties: { note: { type: "string", description: "要留下的紀錄" } },
     required: ["note"],
