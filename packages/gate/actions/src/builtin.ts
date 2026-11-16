@@ -114,8 +114,23 @@ export function dmCapability(names: NameLookup | null = null): Capability<DmArgs
       });
       if (text === "") throw new CapabilityError("nothing left to send after filtering");
       const context = await sink.openDm(to, ctx.signal);
+      const mouth = ctx.services.get(MouthKey);
       const actions = ctx.services.get(ActionSinkKey);
-      if (actions) {
+      if (mouth) {
+        // Through the main line like every line of hers: its moderation, the Floor of the DM, and
+        // the delivery record with the recipient as its audience (the wish book reads it).
+        const name = (args.to ?? "").trim();
+        const label = name === "" || name === "speaker" || /^<@!?\d+>$/.test(name) ? to.id : name;
+        const audience = ctx.services.get(HandleDirectoryKey)?.ofAccount(to, label);
+        await mouth.say({
+          context,
+          text,
+          turn: newId(),
+          source: "self",
+          blocked,
+          ...(audience === undefined ? {} : { audience: [audience] }),
+        });
+      } else if (actions) {
         await actions.submit(
           newAction(
             textLane(context),

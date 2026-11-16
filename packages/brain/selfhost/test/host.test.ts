@@ -296,6 +296,32 @@ describe("tools", () => {
   });
 });
 
+describe("a DM she sent with no run behind it (message_dm)", () => {
+  it("is in the DM's transcript once it is sent, and a DM of a run is not written twice", async () => {
+    const rig = await Rig.create();
+    rig.sup.bus.publish("scheduler", Events.ActionSettled, {
+      action: "a1",
+      turn: "dm-turn",
+      type: "send_message",
+      context: DM,
+      text: "期末報告怎麼樣了?",
+      ok: true,
+      error: null,
+      message: { context: DM, id: "sent-9" },
+      blocked: null,
+    });
+    await until(() => rig.entries(DM).length === 1, 3_000, "the entry");
+    expect(rig.entries(DM).map((e) => [e.kind, e.content, e.message_id])).toEqual([
+      ["self", "期末報告怎麼樣了?", "sent-9"],
+    ]);
+    rig.model.push(says("嗨 Owen"));
+    rig.say(line(DM, "owen", "在嗎"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "the reply");
+    await rig.host?.settled();
+    expect(rig.entries(DM).map((e) => e.content)).toEqual(["期末報告怎麼樣了?", "在嗎", "嗨 Owen"]);
+  });
+});
+
 describe("what comes back", () => {
   it("a long tool's result wakes her in the place she started it", async () => {
     const long = defineTool({

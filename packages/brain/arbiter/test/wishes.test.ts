@@ -59,17 +59,23 @@ async function rig(threads: PersonThreads | null = null) {
         },
         { speech: true },
       ),
-    /** The hands sent S a DM. */
+    /** She sent S a DM (`message_dm` goes through the main line: a delivered line for S). */
     dm: (text: string) => {
       log.append({
-        kind: "action",
-        source: "mainline.hands",
-        body: { turn: "t", call: `call-${now}`, tool: "message_dm", args: { to: "S", text } },
-      });
-      log.append({
-        kind: "result",
-        source: "mainline.hands",
-        body: { turn: "t", call: `call-${now}`, tool: "message_dm", state: "done", detail: "" },
+        kind: "delivered",
+        source: "delivery.text",
+        context: DM,
+        body: {
+          attention_key: `dm:${now}`,
+          revision: 1,
+          channel: "text",
+          context: DM,
+          said: text,
+          delivered_at: toTimestamp(now),
+          audience: ["S"],
+          answered_by: [],
+          line: `line-${now}`,
+        },
       });
     },
   };

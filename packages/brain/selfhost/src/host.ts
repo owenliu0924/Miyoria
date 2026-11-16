@@ -1165,6 +1165,18 @@ export class SelfHost implements TextRunner {
         const place = this.#places.get(contextKeyString(env.data.context));
         if (place !== undefined) this.transcript.heard(place.session, { turn }, "");
       }
+      // A DM she sent through the main line with no run of the host behind it (`message_dm`): her
+      // line belongs in that DM's transcript, where the person's answer will find it.
+      const data = env.data;
+      if (
+        !taken &&
+        data.ok &&
+        data.type === "send_message" &&
+        data.context.kind === "dm" &&
+        (turn === null || !this.#turns.has(turn))
+      ) {
+        this.#saidElsewhere(data.context, data.text, turn ?? newId(), data.message?.id ?? null);
+      }
       return;
     }
     if (is(Events.ActivityDone, env) || is(Events.ActivityFailed, env)) {
