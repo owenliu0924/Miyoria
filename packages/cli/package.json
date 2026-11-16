@@ -40,6 +40,8 @@
     "dev": "tsx --conditions=@miyoria/source src/main.ts"
   },
   "dependencies": {
+    "@ai-sdk/deepseek": "3.0.87",
+    "@ai-sdk/openai-compatible": "3.0.92",
     "@clack/prompts": "^1.8.1",
     "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -50,6 +52,7 @@
     "@orpc/openapi-client": "~1.16.2",
     "@orpc/server": "~1.16.2",
     "@resvg/resvg-js": "^2.6.2",
+    "ai": "7.0.173",
     "discord.js": "^14.26.0",
     "drizzle-orm": "1.0.0-rc.5",
     "execa": "^10.2.1",

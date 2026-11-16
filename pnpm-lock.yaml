@@ -517,6 +517,12 @@ importers:
 
   packages/cli:
     dependencies:
+      '@ai-sdk/deepseek':
+        specifier: 3.0.87
+        version: 3.0.87(zod@4.6.7)
+      '@ai-sdk/openai-compatible':
+        specifier: 3.0.92
+        version: 3.0.92(zod@4.6.7)
       '@clack/prompts':
         specifier: ^1.8.1
         version: 1.8.1
@@ -547,6 +553,9 @@ importers:
       '@resvg/resvg-js':
         specifier: ^2.6.2
         version: 2.6.2
+      ai:
+        specifier: 7.0.173
+        version: 7.0.173(zod@4.6.7)
       discord.js:
         specifier: ^14.26.0
         version: 14.28.0
