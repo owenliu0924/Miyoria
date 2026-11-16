@@ -431,6 +431,8 @@ export {
   MouthKey,
   type NewProposal,
   NOT_MAIN_LINE,
+  type PromiseBook,
+  PromiseBookKey,
   type Proposal,
   type ProposalBoard,
   ProposalBoardKey,

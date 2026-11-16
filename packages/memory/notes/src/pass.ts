@@ -1,8 +1,11 @@
 // The segment pass: the one writer of her memory (docs/design/v5-brain.md, 設計的結論). One model
 // call reads a segment of a session's transcript together with what she already has about the
 // people, the place and the topics in it, and answers with an episode, explicit edits of her
-// documents and follow-ups. Because the model sees the lines it could contradict, a contradiction
-// comes back as `replace` or `outdate` of a line it names, never as a second line beside it.
+// documents, follow-ups and her promises. Because the model sees the lines it could contradict, a
+// contradiction comes back as `replace` or `outdate` of a line it names, never as a second line
+// beside it. In the same way it sees the follow-ups still open about these people and her promises
+// still open in this place, so it closes what the segment answered or she did (`close`), changes a
+// follow-up whose matter moved (`update`), and does not write one of them a second time.
 //
 // Before anything is written, code checks every edit (each rule is tested):
 //
@@ -24,9 +27,18 @@
 // 7. Every write records the segment (session and sequences) on the line, and the quoted entry
 //    (its sequence and message id) as evidence, so a redaction of that message finds it.
 //
+// After that, for what is still open:
+//
+// 8. A close or an update names an item shown (`f1`, `c1`); any other id is ignored. Closing a
+//    follow-up closes the open ones about the same person and matter with it (the memory engine's
+//    `sameMatter`); keeping a promise keeps the open ones of the same matter in that place.
+// 9. A new follow-up or promise that is the same matter as one shown (or one made in this reply)
+//    is not written; the sink also refuses a follow-up it holds already in other words.
+//
 // The documents are written in one transaction with the session's position (`cursor`); the
-// episode and the follow-ups go to the `EpisodeSink` after. A reply that is not usable after one
-// repair (`completeJson`) abandons the pass: nothing is written and the position stays.
+// episode, the closes, the follow-ups and the promises go to the `EpisodeSink` and the
+// `PromiseLedger` after. A reply that is not usable after one repair (`completeJson`) abandons the
+// pass: nothing is written and the position stays.
 
 import {
   type ChatRequest,
@@ -39,21 +51,30 @@ import {
   withLlmTag,
 } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import { type PersonId, type Timestamp, timestampMs, toTimestamp } from "@miyoria/types";
+import {
+  type ContextKey,
+  type PersonId,
+  type Timestamp,
+  timestampMs,
+  toTimestamp,
+} from "@miyoria/types";
 import { z } from "zod";
 import { type EvidenceConfig, EvidenceConfigSchema } from "../../memory/src/config.js";
 import { type EvidenceLine, nameWords, supporting } from "../../memory/src/evidence.js";
 import { isPresentState } from "../../memory/src/expiry.js";
+import { sameMatter } from "../../memory/src/followups.js";
 import { textSimilarity } from "../../memory/src/tokenize.js";
 import type { TranscriptEntry } from "../../transcript/src/types.js";
-import type { EpisodeSink } from "./episodes.js";
+import type { EpisodeSink, OpenFollowup } from "./episodes.js";
 import {
   type PromptDocument,
+  type PromptOpen,
   type PromptPerson,
   SOURCE_LABELS,
   segmentPassMessage,
   segmentPassPrompt,
 } from "./pass-prompt.js";
+import type { OpenPromise, PromiseLedger } from "./promises.js";
 import type { DocumentKind, Provenance } from "./schema.js";
 import {
   type NotePlace,
@@ -118,6 +139,25 @@ const OutdateSchema = z.object({
   seq: seq.default(null),
 });
 
+/** Hours from now, up to 90 days; a numeric string is read. */
+const hours = z.preprocess(
+  (v) => (typeof v === "string" ? Number(v) : v),
+  z
+    .number()
+    .min(0)
+    .max(24 * 90),
+);
+
+/** An id the message showed (`f1`, `c1`); `"[f1]"` and a bare string are read too. */
+const shownId = z.preprocess(
+  (v) => (typeof v === "string" ? v.trim().replace(/^\[|\]$/g, "") : v),
+  text,
+);
+const CloseSchema = z.preprocess(
+  (v) => (typeof v === "string" ? { id: v } : v),
+  z.object({ id: shownId, reason: z.string().default("") }),
+);
+
 /** The pass's reply. Keys it does not know (a score of any kind among them) are dropped. */
 export const SegmentReplySchema = z.object({
   episode: z
@@ -135,15 +175,27 @@ export const SegmentReplySchema = z.object({
       z.object({
         who: z.string().nullable().default(null),
         about: text,
-        due_in_hours: z
-          .preprocess(
-            (v) => (typeof v === "string" ? Number(v) : v),
-            z
-              .number()
-              .min(0)
-              .max(24 * 90),
-          )
-          .default(24),
+        due_in_hours: hours.default(24),
+      }),
+    )
+    .default([]),
+  close: z.array(CloseSchema).default([]),
+  update: z
+    .array(
+      z.object({
+        id: shownId,
+        about: z.string().nullable().default(null),
+        due_in_hours: hours.nullable().default(null),
+      }),
+    )
+    .default([]),
+  promises: z
+    .array(
+      z.object({
+        to: z.string().nullable().default(null),
+        what: text,
+        due_in_hours: hours.nullable().default(null),
+        seq: seq.default(null),
       }),
     )
     .default([]),
@@ -173,6 +225,8 @@ export interface SegmentPassInput {
   people: readonly SegmentPerson[];
   /** Topics the caller knows the segment touches; the documents found by its words are added. */
   topics?: readonly string[];
+  /** The platform context of the session: where her promises are recorded. `null`: none are. */
+  context?: ContextKey | null;
 }
 
 /** How much one pass may change. */
@@ -183,9 +237,19 @@ export interface PassCaps {
   /** Edits of one document. */
   perDocument: number;
   followups: number;
+  promises: number;
+  /** Open follow-ups shown, and open promises shown, each. */
+  open: number;
 }
 
-export const DEFAULT_PASS_CAPS: PassCaps = { adds: 8, changes: 8, perDocument: 5, followups: 3 };
+export const DEFAULT_PASS_CAPS: PassCaps = {
+  adds: 8,
+  changes: 8,
+  perDocument: 5,
+  followups: 3,
+  promises: 3,
+  open: 8,
+};
 
 export interface SegmentPassDeps {
   router: Completer;
@@ -195,8 +259,13 @@ export interface SegmentPassDeps {
    * same `notes`; absent: by words.
    */
   search?: NotesSearch | null;
-  /** Where the episode and the follow-ups go; none: they are only returned. */
+  /**
+   * Where the episode and the follow-ups go, and where the open follow-ups are read from and
+   * closed; none: they are only returned.
+   */
   episodes?: EpisodeSink | null;
+  /** Her promises (`promises.ts`); none, or no `context` in the input: they are only returned. */
+  promises?: PromiseLedger | null;
   /** The session's position, moved to the segment's end with the documents. */
   cursor?: SegmentCursor | null;
   now: () => number;
@@ -250,7 +319,31 @@ export interface PassFollowup {
   about: string;
   person: PersonId | null;
   due: Timestamp;
-  /** The id the sink stored it as; `null`: not stored (no sink, refused). */
+  /** The open follow-up shown that is the same matter: not written again. */
+  same: string | null;
+  /** The id the sink stored it as; `null`: not stored (no sink, refused, held already). */
+  stored: string | null;
+}
+
+/** A follow-up or a promise the reply closed. */
+export interface PassClosed {
+  kind: "followup" | "promise";
+  id: string;
+  /** What it asked or promised. */
+  about: string;
+  reason: string;
+  /** Records closed, itself and the open ones of the same matter; 0: none (already closed). */
+  count: number;
+}
+
+/** A promise of hers found in the segment. */
+export interface PassPromise {
+  what: string;
+  to: PersonId | null;
+  due: Timestamp | null;
+  /** The open promise shown that is the same matter: not recorded again. */
+  same: string | null;
+  /** The id it was recorded as; `null`: not recorded. */
   stored: string | null;
 }
 
@@ -269,6 +362,10 @@ export interface SegmentPassResult {
   applied: PassEdit[];
   dropped: PassDrop[];
   followups: PassFollowup[];
+  closed: PassClosed[];
+  /** Ids of the follow-ups reworded or moved. */
+  updated: string[];
+  promises: PassPromise[];
   usage: PassUsage;
 }
 
@@ -375,6 +472,9 @@ export async function runSegmentPass(
     applied: [],
     dropped: [],
     followups: [],
+    closed: [],
+    updated: [],
+    promises: [],
     usage,
   };
   const spoken = entries.filter(
@@ -466,6 +566,50 @@ export async function runSegmentPass(
     })),
   }));
 
+  // What is still open here: her follow-ups about these people, her promises made in this place.
+  const sink = deps.episodes ?? null;
+  const context = input.context ?? null;
+  const ledger = context === null ? null : (deps.promises ?? null);
+  let openFollowups: OpenFollowup[] = [];
+  if (sink?.openFollowups) {
+    try {
+      openFollowups = await sink.openFollowups(
+        {
+          people: people.map((p) => p.person),
+          scope: here,
+          session: input.session,
+          limit: Math.max(0, caps.open),
+          at: toTimestamp(deps.now()),
+        },
+        deps.signal,
+      );
+    } catch {
+      openFollowups = [];
+    }
+  }
+  const openPromises: OpenPromise[] =
+    ledger === null || context === null ? [] : ledger.open(context);
+  const followupRefs = new Map(openFollowups.map((f, i) => [`f${i + 1}`, f]));
+  const promiseRefs = new Map(
+    openPromises.slice(-Math.max(0, caps.open)).map((p, i) => [`c${i + 1}`, p]),
+  );
+  const nameOfPerson = (person: PersonId | null) =>
+    person === null ? null : (people.find((p) => p.person === person)?.name ?? null);
+  const open: PromptOpen[] = [
+    ...[...followupRefs].map(([ref, f]) => ({
+      ref,
+      kind: "followup" as const,
+      text: f.about,
+      who: nameOfPerson(f.person),
+    })),
+    ...[...promiseRefs].map(([ref, p]) => ({
+      ref,
+      kind: "promise" as const,
+      text: p.what,
+      who: null,
+    })),
+  ];
+
   const placeLabel =
     input.place.dm !== null
       ? "私訊(一對一)"
@@ -479,6 +623,7 @@ export async function runSegmentPass(
           people,
           entries,
           documents,
+          open,
           self: notes.readSelf({ budget: deps.selfChars ?? 500 }),
         }),
       ),
@@ -882,21 +1027,82 @@ export async function runSegmentPass(
       }
     }
   }
+  // ---- what is still open ---------------------------------------------------------------------
+
+  const allNames = people.flatMap((p) => p.names);
+  const hoursAfter = (from: Timestamp, h: number) =>
+    toTimestamp(timestampMs(from) + Math.round(h * 3_600_000));
+  /** Two items about the same people (either naming nobody counts) and the same matter. */
+  const same = (a: PersonId | null, aText: string, b: PersonId | null, bText: string) =>
+    (a === null || b === null || a === b) && sameMatter(aText, bText, allNames);
+
+  // Closed first: answered just now, it is not written again below.
+  const closedIds = new Set<string>();
+  for (const c of reply.close) {
+    const ref = c.id.toLowerCase();
+    const reason = cleanLine(namesForCodes(c.reason, people));
+    const f = followupRefs.get(ref);
+    if (f !== undefined) {
+      if (closedIds.has(f.id)) continue;
+      closedIds.add(f.id);
+      let count = 0;
+      try {
+        count = (await sink?.closeFollowup?.(f.id, at, allNames)) ?? 0;
+      } catch {
+        count = 0;
+      }
+      result.closed.push({ kind: "followup", id: f.id, about: f.about, reason, count });
+      continue;
+    }
+    const p = promiseRefs.get(ref);
+    if (p === undefined || ledger === null || context === null || closedIds.has(p.id)) continue;
+    // Kept once is all of them: an open promise here of the same matter is kept with it.
+    let count = 0;
+    for (const o of ledger.open(context)) {
+      if (o.id !== p.id && !sameMatter(p.what, o.what, allNames)) continue;
+      closedIds.add(o.id);
+      if (ledger.keep(o.id)) count += 1;
+    }
+    result.closed.push({ kind: "promise", id: p.id, about: p.what, reason, count });
+  }
+
+  for (const u of reply.update) {
+    const f = followupRefs.get(u.id.toLowerCase());
+    if (f === undefined || closedIds.has(f.id) || !sink?.updateFollowup) continue;
+    const about = u.about === null ? "" : cleanLine(namesForCodes(u.about, people));
+    const due = u.due_in_hours === null ? null : hoursAfter(at, u.due_in_hours);
+    if (about === "" && due === null) continue;
+    try {
+      const changed = await sink.updateFollowup(
+        f.id,
+        { about: about === "" ? null : about, due },
+        at,
+        deps.signal,
+      );
+      if (changed) result.updated.push(f.id);
+    } catch {
+      // left as it was
+    }
+  }
+
   for (const f of reply.followups.slice(0, caps.followups)) {
     const about = cleanLine(namesForCodes(f.about, people));
     if (about === "") continue;
+    const person = personOf(f.who);
+    const twin = [...followupRefs.values()].find((o) => same(o.person, o.about, person, about));
     const followup: PassFollowup = {
       about,
-      person: personOf(f.who),
-      due: toTimestamp(timestampMs(at) + Math.round(f.due_in_hours * 3_600_000)),
+      person,
+      due: hoursAfter(at, f.due_in_hours),
+      same: twin?.id ?? null,
       stored: null,
     };
     result.followups.push(followup);
-    const sink = deps.episodes?.followup;
-    if (sink) {
+    const write = sink?.followup;
+    if (twin === undefined && write) {
       try {
-        followup.stored = await sink.call(
-          deps.episodes,
+        followup.stored = await write.call(
+          sink,
           {
             about,
             person: followup.person,
@@ -904,12 +1110,37 @@ export async function runSegmentPass(
             scope: here,
             session: input.session,
             at,
+            names: allNames,
           },
           deps.signal,
         );
       } catch {
         followup.stored = null;
       }
+    }
+  }
+
+  const made: OpenPromise[] = [];
+  for (const p of reply.promises.slice(0, caps.promises)) {
+    const what = cleanLine(namesForCodes(p.what, people));
+    if (what === "") continue;
+    // From when she said it: the line it cites, else the segment's last.
+    const said = entries.find((e) => e.seq === p.seq && e.kind === "self") ?? entries.at(-1);
+    const due = p.due_in_hours === null ? null : hoursAfter(said?.at ?? at, p.due_in_hours);
+    const known = ledger === null || context === null ? [] : ledger.open(context);
+    const twin = [...known, ...made].find((o) => sameMatter(o.what, what, allNames));
+    const promise: PassPromise = {
+      what,
+      to: personOf(p.to),
+      due,
+      same: twin?.id ?? null,
+      stored: null,
+    };
+    result.promises.push(promise);
+    if (twin !== undefined || ledger === null || context === null) continue;
+    promise.stored = ledger.make({ what, to: promise.to, due, context });
+    if (promise.stored !== null) {
+      made.push({ id: promise.stored, what, due: due ?? at, made_at: at });
     }
   }
   return result;

@@ -11,6 +11,7 @@ import type { Profile } from "@miyoria/runtime/profile";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   MouthKey,
+  PromiseBookKey,
   PromptContributorsKey,
   SelfStateKey,
   TurnFocusViewKey,
@@ -56,8 +57,8 @@ const SETTINGS_LOAD_TIMEOUT_MS = 5_000;
  * `drop_note` tools are registered while running, and the capability `channel.activeness` (her
  * talkativeness here for a while, offered as the `channel_activeness` tool) in the actuator
  * registry. Provides `TurnFocusViewKey` (whom each turn in flight answers, for voice barge-in),
- * `SavedPromptsKey` (the prompt archive the panel reads), `TurnSilencerKey` (the emergency stop)
- * and, with `[modules.agent.work] enabled`, `WorkLaneKey`: the game director's driven tasks.
+ * `SavedPromptsKey` (the prompt archive the panel reads), `TurnSilencerKey` (the emergency stop),
+ * `PromiseBookKey` (her commitments, which the memory's segment pass records) and, with `[modules.agent.work] enabled`, `WorkLaneKey`: the game director's driven tasks.
  */
 export class AgentModule implements Module {
   static readonly ID = "agent";
@@ -186,6 +187,8 @@ export class AgentModule implements Module {
     this.#agent = agent;
     if (config.work.enabled) this.#startLane(ctx);
     ctx.provide(MouthKey, agent.mainline);
+    // Her promises from conversation are recorded by the memory's segment pass.
+    ctx.provide(PromiseBookKey, agent.mainline.commitments);
     await agent.mainline.start();
     if (config.runner !== undefined) {
       ctx.log.info("`modules.agent.runner` is no longer read: the new turn runner always answers");

@@ -205,6 +205,31 @@ export interface CommitmentBody {
   commitment: Commitment;
 }
 
+/**
+ * Her promises as a writer outside the main line sees them (the memory's segment pass records what
+ * she promised in a conversation and closes what she did). Provided by the agent (its
+ * `CommitmentBook`); the `commitment` opportunity reads the same book.
+ */
+export interface PromiseBook {
+  /** What she still owes, oldest first (`context`: made there). */
+  open(context?: ContextKey): Commitment[];
+  /**
+   * A new promise. `person`: whom it is to, when it is one to ask or tell someone something.
+   * `null`: not made.
+   */
+  add(
+    draft: CommitmentDraft,
+    context: ContextKey,
+    turn: TurnId | null,
+    cause: string | null,
+    person?: Handle | null,
+  ): Commitment | null;
+  /** `commitment` is kept. */
+  said(commitment: Commitment, cause: string | null): void;
+}
+
+export const PromiseBookKey = serviceKey<PromiseBook>("PromiseBook");
+
 // ---- proposals --------------------------------------------------------------------------------
 
 /** §10.5, and where it belongs. */

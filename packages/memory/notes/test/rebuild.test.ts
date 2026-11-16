@@ -277,6 +277,45 @@ describe("running a rebuild", () => {
     expect(second).toMatchObject({ status: "done", segments: 2 });
   });
 
+  it("closes in the order of history a follow-up a later segment answered", async () => {
+    const store = await open();
+    seed(store);
+    const notes = store.plugin(notesTables);
+    const cursors = notes.cursors();
+    if (cursors === null) throw new Error("no cursors");
+    const plan = await planRebuild(store.events, cursors, { since: SINCE });
+    const replies = [
+      { followups: [{ who: "p1", about: "問 Owen 有沒有去吃那家拉麵", due_in_hours: 48 }] },
+      { close: [{ id: "f1", reason: "他說昨天又去吃了" }] },
+      {},
+    ];
+    const asked: ChatRequest[] = [];
+    const router: Completer = {
+      async complete(_purpose: string, request: ChatRequest): Promise<ChatResponse> {
+        asked.push(request);
+        return {
+          text: JSON.stringify(replies.shift() ?? {}),
+          reasoning: "",
+          tool_calls: [],
+          finish_reason: "stop",
+          usage: { prompt_tokens: 100, completion_tokens: 40, cached_prompt_tokens: null },
+        };
+      },
+    };
+    const report = await run(store, plan, 100, { router, asked });
+    expect(report.status).toBe("done");
+    expect(String(asked[1]?.messages[1]?.content)).toContain("f1 追問:問 Owen 有沒有去吃那家拉麵");
+    const followups = (await records(store)).filter((r) => r.kind === "followup");
+    expect(followups).toEqual([
+      expect.objectContaining({
+        content: "問 Owen 有沒有去吃那家拉麵",
+        done: true,
+        created_at: toTimestamp(T0 + 4 * MIN),
+        updated_at: toTimestamp(T0 + 32 * MIN),
+      }),
+    ]);
+  });
+
   it("never deletes or supersedes what was there", async () => {
     const store = await open();
     seed(store);

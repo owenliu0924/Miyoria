@@ -1955,6 +1955,63 @@ export class MemoryEngine implements FollowupSource {
   }
 
   /**
+   * Closes the followup `id` because a conversation answered it or it was done, with the open
+   * ones about the same person and matter (`#closeFollowup`). `names`: names of the people in
+   * that conversation. Returns how many were closed; 0 for an id that is not a followup.
+   */
+  async closeFollowupById(
+    id: string,
+    now: Timestamp,
+    names: readonly string[] = [],
+  ): Promise<number> {
+    const record = await this.records.get(id);
+    if (!record || record.profile !== this.profile || record.kind !== "followup") return 0;
+    return this.#closeFollowup(record, now, names);
+  }
+
+  /**
+   * Rewords an open followup or moves its time. Returns whether it was open and changed.
+   */
+  async updateFollowup(
+    id: string,
+    change: { content: string | null; due: Timestamp | null },
+    now: Timestamp,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const record = await this.records.get(id);
+    if (!record || record.profile !== this.profile || record.kind !== "followup") return false;
+    if (record.done || record.superseded_by !== null) return false;
+    const next = { ...record };
+    const content = change.content === null ? "" : storedContent(change.content);
+    if (content !== "" && content !== record.content) {
+      next.content = content;
+      next.tokens = tokenString(content);
+      next.embedding = await this.#embedOne(content, signal);
+    }
+    if (change.due !== null) next.due = change.due;
+    if (next.content === record.content && next.due === record.due) return false;
+    next.updated_at = now;
+    await this.records.upsert(next);
+    this.#version += 1;
+    return true;
+  }
+
+  /**
+   * Whether a followup about `subjects` asking `about` is held already (`#twin`): one still open,
+   * or one brought up or answered lately. `context`: where it would come from (`null`: unknown,
+   * so one that names nobody is never the same).
+   */
+  async followupTwin(
+    subjects: readonly PersonId[],
+    about: string,
+    context: ContextKey | null,
+    names: readonly string[],
+    now: Timestamp,
+  ): Promise<boolean> {
+    return this.#twin(await this.#followups(), subjects, about, context, names, now) !== null;
+  }
+
+  /**
    * Closes `record` and the open followups about the same person and matter (`sameMatter`),
    * whatever their wording, scope or place: one question asked or answered is all of them
    * (2026-11-10: answered in a DM, still asked seven times in the channel). A followup that names
@@ -2022,7 +2079,7 @@ export class MemoryEngine implements FollowupSource {
     known: readonly FollowupLike[],
     subjects: readonly PersonId[],
     about: string,
-    context: ContextKey,
+    context: ContextKey | null,
     names: readonly string[],
     now: Timestamp,
   ): FollowupLike | null {
@@ -2036,7 +2093,9 @@ export class MemoryEngine implements FollowupSource {
       const same =
         subjects.length > 0 && r.subjects.length > 0
           ? r.subjects.some((p) => subjects.includes(p))
-          : r.source_context !== null && contextKeyEquals(r.source_context, context);
+          : context !== null &&
+            r.source_context !== null &&
+            contextKeyEquals(r.source_context, context);
       if (same && sameMatter(r.content, about, names)) return r;
     }
     return null;
@@ -2053,15 +2112,39 @@ export class MemoryEngine implements FollowupSource {
     dmPartner: AccountRef | null,
     now: Timestamp,
   ): Promise<MemoryRecord[]> {
-    const persons = speakers.flatMap((s) => (s.person !== null ? [s.person] : []));
-    const scopes = visibleScopes(
-      context,
-      speakers.map((s) => s.account),
-      persons,
+    return this.openFollowupsAbout(
+      {
+        context,
+        persons: speakers.flatMap((s) => (s.person !== null ? [s.person] : [])),
+        accounts: speakers.map((s) => s.account),
+        dm: dmPartner === null ? null : { account: dmPartner, person: speakers[0]?.person ?? null },
+        limit: PENDING_FOLLOWUPS,
+      },
+      now,
     );
+  }
+
+  /**
+   * Open followups about `persons` that may be shown in `context` (in a DM, `dm`: what may be
+   * shown to its one person), newest first, at most `limit`; ones that name nobody count when
+   * they come from the same place. What the summarizer and the segment pass are shown.
+   */
+  async openFollowupsAbout(
+    where: {
+      context: ContextKey;
+      persons: readonly PersonId[];
+      accounts: readonly AccountRef[];
+      dm: { account: AccountRef; person: PersonId | null } | null;
+      limit: number;
+    },
+    now: Timestamp,
+  ): Promise<MemoryRecord[]> {
+    const { context, persons } = where;
+    const scopes = visibleScopes(context, where.accounts, persons);
     const hours = this.config.followup_max_age_hours;
     const oldest = hours > 0 ? ms(now) - hours * HOUR_MS : null;
-    const partner = dmPartner === null ? null : (speakers[0]?.person ?? null);
+    const dmPartner = where.dm?.account ?? null;
+    const partner = where.dm?.person ?? null;
     const shown = (r: MemoryRecord): boolean => {
       if (r.subjects.length === 0) {
         return r.source_context !== null && contextKeyEquals(r.source_context, context);
@@ -2077,9 +2160,11 @@ export class MemoryEngine implements FollowupSource {
           !r.done &&
           r.superseded_by === null &&
           (oldest === null || r.due === null || ms(r.due) >= oldest) &&
+          // A replay of history (the rebuild) does not see what was written after its time.
+          ms(r.created_at) <= ms(now) &&
           shown(r),
       )
-      .slice(0, PENDING_FOLLOWUPS);
+      .slice(0, Math.max(0, where.limit));
   }
 }
 

@@ -151,8 +151,8 @@
 - **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。筆記本的行用同一組門檻和權重,沒有另外調過;`--memory-target notes` 可以拿同一組題目量筆記。語音回合等查詢向量的 150 ms(`notes_vector_voice_wait_ms`)是估的:背景補向量和查詢共用同一個 worker,一批 8 行還沒算完時查詢會排在後面,實際會不會常常等不到要上線後看 log。
 - **段落整理上線後留下的**(2026-11-16,見 [v5-brain.md](v5-brain.md)「段落整理上線」):
   - 切換要 `miyoria memory rebuild --apply` 整個跑完一次;新裝的機器沒有舊記憶也一樣要跑一次(沒有事件時很快、不花錢),不然一直停在舊的整理。
-  - 追問(followup)由段落整理寫進 `memory_records`,但舊的整理會在對話回答了追問時把它關掉、同一個人同一件事不重寫(`followups.ts` 的 `sameMatter`),段落整理都沒有:只靠 `followup_max_age_hours` 過期,和寫入時字面相似的合併。她可能追問已經回答過的事。
-  - 她自己的承諾、經歷(舊的 `self_note`)不再從對話寫;她自己的文件只由每晚的反思改寫。
+  - 追問的關閉、去重和她的承諾已經接回段落整理(見 v5-brain.md「段落整理上線」)。還沒做的:承諾的期限超過一天時,Core 重啟後讀不回來(`CommitmentBook` 只從 log 重建最近 24 小時);沒說期限的承諾從段落整理記下時算 120 秒(段落結束至少 5 分鐘後),所以通常一記下就快過期;過期 30 分鐘還沒做的記成沒做到,不等下一段整理;她說了不做的承諾不會被關掉,只等過期。這些都沒有接真的模型跑過。
+  - 她自己的經歷、決定(舊的 `self_note`)不再從對話寫;只經情節進每晚反思,由反思改寫她自己的文件。私訊的情節不進每晚反思(`curatable`,和以前私訊的 `self_note` 一樣)。
   - 舊的 prompt contributor `memory`(`MemoryContributor`,第 6 區之前的寫法)還是只讀 `memory_records`;新的跑者讀的是 `MemoryRetrievalKey`,不經過它。
   - 段落整理沒有自己的花費上限:用 `[modules.memory] purpose`(預設 `summarizer`)經 router,算在 router 的每日預算裡;用了多少只在 log 和 `LiveSegments.stats`,沒有進面板。
   - 一段落後太久(壓縮後的行在 `sweep` 前,預設 30 天)沒整理到,就整理不到了。

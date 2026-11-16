@@ -34,6 +34,7 @@ import type { TranscriptStore } from "../../transcript/src/store.js";
 import type { TranscriptEntry } from "../../transcript/src/types.js";
 import type { EpisodeSink } from "./episodes.js";
 import { type PassUsage, runSegmentPass, type SegmentPerson } from "./pass.js";
+import type { PromiseLedger } from "./promises.js";
 import { type NotePlace, placeScope, type ScopeResolver } from "./scope.js";
 import {
   entriesAfter,
@@ -75,8 +76,10 @@ export interface LiveSegmentDeps {
   notes: NotesStore;
   /** Related documents by meaning too; absent: by words. */
   search?: NotesSearch | null;
-  /** Where episodes and follow-ups go. */
+  /** Where episodes and follow-ups go, and open follow-ups are read and closed. */
   episodes: EpisodeSink | null;
+  /** Her promises (the agent's commitment book); absent: not recorded. */
+  promises?: PromiseLedger | null;
   /** `EventCursors`, or a fake. */
   cursor: SegmentCursor;
   router: Completer;
@@ -324,12 +327,19 @@ export class LiveSegments implements SegmentFlush {
     const nameOf = d.nameOf ?? (() => null);
     try {
       const result = await runSegmentPass(
-        { session, entries: segment.entries, place, people: peopleOf(segment.entries, nameOf) },
+        {
+          session,
+          entries: segment.entries,
+          place,
+          people: peopleOf(segment.entries, nameOf),
+          context,
+        },
         {
           router: d.router,
           notes: d.notes,
           ...(d.search ? { search: d.search } : {}),
           episodes: d.episodes,
+          promises: d.promises ?? null,
           cursor: d.cursor,
           now: d.now,
           purpose: config.purpose,
@@ -359,7 +369,12 @@ export class LiveSegments implements SegmentFlush {
       this.#backoff.delete(session);
       if (result.status === "empty") this.stats.empty += 1;
       else this.stats.passed += 1;
-      if (result.applied.length > 0 || result.episode !== null) {
+      if (
+        result.applied.length > 0 ||
+        result.episode !== null ||
+        result.closed.length > 0 ||
+        result.promises.length > 0
+      ) {
         log.info(
           {
             session,
@@ -369,6 +384,8 @@ export class LiveSegments implements SegmentFlush {
             dropped: result.dropped.length,
             episode: result.episode?.stored ?? null,
             followups: result.followups.length,
+            closed: result.closed.length,
+            promises: result.promises.filter((p) => p.stored !== null).length,
           },
           "segment passed",
         );

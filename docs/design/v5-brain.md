@@ -259,7 +259,7 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 - mind 的 Plan 還會要她寫衝動,`selfstart.ts` 還在(`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
 - Arbiter 的 ledger 裡只算她自己起頭的部分(`book`、`raise`、每日上限、時間規則)還在:Arbiter 已經不接她自己起頭的事,這些不會再被用到,但 ledger view 的形狀面板和 mind 還在讀。
 - `SavedPromptsKey` 還提供,但新跑者不存 prompt,面板的 prompt 頁會是空的。
-- `CommitmentBook`:沒有人寫新的承諾了(那是修正 8),從 log 重建的舊承諾一天後就沒了;initiative 和第 7 區還讀它。
+- `CommitmentBook`:回合裡沒有人寫新的承諾了(那是修正 8),從 log 重建的舊承諾一天後就沒了;initiative 和第 7 區還讀它。之後由段落整理從對話記下(見「段落整理上線」)。
 - `agent.initiative` 事件還在(擴充可以發):理由是 game、notice、`song_*` 以外的,Arbiter 當成 `world` 拒絕(第一步起就是這樣)。
 
 和以前不同的:
@@ -290,7 +290,9 @@ B7 原本該包含、但漏掉的一塊:筆記(L3)只用關鍵字找。現在和
 - **壓縮前**:跑者壓縮逐字稿時,選好切點後先經 `SegmentFlushKey`(`@miyoria/types`)請段落整理把切點以前的段落整理完,最多等 `compaction_wait_ms`(20 秒);等不到、失敗、或這個 session 還在重試的冷卻裡,就先壓縮,記一筆 log 和次數(`LiveSegments.stats.missed`)。不會漏:被摘要的行在 `sweep` 前還在磁碟上,背景之後照樣整理。
 - **失敗**:模型出錯的段落等 `retry_secs`(60 秒)再試,每失敗一次加倍,最多 `retry_max_secs`(1 小時);回覆連續 `abandon_limit`(3)次不能用就跳過那一段。用的模型用途是 `[modules.memory] purpose`(預設 `summarizer`,線上設定的 `[llm.reasoning] summarizer = "medium"` 跟著走),花費經 router 算在每日預算裡。
 - **舊的寫入**:換過之後 consolidation 不再整理任何對話(fold 叫它也不整理),`memory_records` 只剩「活的」寫入:段落整理的情節和追問(經 `memoryEpisodeSink`)、`remember`、`PersonNoteWriter`。consolidation 的程式留著,因為換之前還要用;換完穩定後可以刪。fold 本身(`conversation` 模組的前情提要)沒動,它不寫 `memory_records`。
-- **追問和承諾**:段落整理的回覆本來就有 `followups`,寫成 `memory_records` 的 `followup`,所以她主動的 `followup` 機會(`FollowupSourceKey.due`)和提示詞裡釘選層的「還沒兌現的事」(`openCommitments`)照樣有來源。主動的 `commitment` 機會讀的是 `CommitmentBook`,不是記憶,和這一步無關。少掉的:舊的整理會在對話回答了追問時關掉它、同一件事不重寫,段落整理沒有(見 backlog)。
+- **追問和承諾**:段落整理的回覆本來就有 `followups`,寫成 `memory_records` 的 `followup`,所以她主動的 `followup` 機會(`FollowupSourceKey.due`)和提示詞裡釘選層的「還沒兌現的事」(`openCommitments`)照樣有來源。輸入帶著「還沒了結的事」:這段的人、這個地方看得到的追問(最多 8 條,`f1`…,和舊的整理同一個篩法,`openFollowupsAbout`)和她在這個地方答應過、還沒做到的事(最多 8 條,`c1`…)。回覆的 `close` 用編號關掉問過了、回答了或已經結束的追問(和舊的整理一樣記成 `done`,同一個人同一件事的其他追問一起關),和她做到了的承諾;`update` 改追問的說法或時間;和看到的哪一條是同一件事(`sameMatter`)的新追問、新承諾不寫,沒看到的追問由引擎照舊的規則擋(`followupTwin`)。關掉的追問不會再叫醒她。
+- **她的承諾**:回合裡記承諾的程式(修正 8)刪掉之後,`CommitmentBook` 沒有人寫。現在段落整理的 `promises`(對誰、什麼、說了多久)經 `PromiseBookKey`(agent 提供的就是那本 `CommitmentBook`,`notes/src/promises.ts`)記進去,主動的 `commitment` 機會和第 7 區讀的都是它,過期會叫醒她。期限從她說那句話的時間算;沒說期限的用 `commitment_due_secs`(120 秒),從記下的時候算。rebuild 不記承諾(沒有 agent,歷史上的承諾早就過期);追問照時間順序重播,每一段只看得到在它之前寫的追問。
+- **每晚的反思**:看得到當天的事:段落整理的情節經 `memoryEpisodeSink` 寫進 `memory_records`,每晚反思的「最近的記憶」(`MemoryCuratorKey.notes`:1.5 天內、不含私訊和追問、最多 `max_notes` 60 筆)讀那裡,改寫她自己的文件時也帶著同一份資料。舊的 `self_note` 不再從對話寫。
 - **`recall` 和第 6 區讀什麼**(`memory/src/notes-recall.ts`,`MemoryRetrievalKey` 和 `recall` 工具都是它):換之前讀 `memory_records`,和以前一樣。換之後:筆記的行(`NotesSearch`,開了 embedding 是字加意思,沒開只用字;語音回合只等 150 ms 的向量),先找在場的人、跟她說話的人、名字被講到的人和這個地方的文件(最多 `scoped_limit` 6 行),再找這裡看得到的其他文件,範圍內的行排在前面;加上 `memory_records` 裡 rebuild 開始之後寫的紀錄(紀錄 id 是 ULID,開頭就是寫入時間)和比 rebuild 起點(2026-11-15)更早的情節。rebuild 起點之後、舊的整理寫的紀錄不讀,因為 rebuild 已經把同一段時間重寫成行和情節。
 - **沒答案的問題**(`notes/src/precision.ts`,`[modules.memory.notes_recall]`):(1) 分數低於 `min_score`(0.3)的行不回;(2) 和這句沒有共同字、只靠意思像的行,cosine 要到 `min_vector` 加 `vector_alone_margin`(0.5 + 0.1),有共同字的不用;(3) 第一名沒有比第 `gap_rank`(5)名(不到 5 行就和 0.3 比)高出 `min_gap`(0.05),就算沒有特別相關的:第 6 區一行都不放,`recall` 照樣回,最後加一句「不一定有關」。
 - **評測**:`--memory-target notes` 照這三條切,headline 多了沒答案的題平均拿到幾行(`nothing_mean_returned`,`recall` 的)和第 6 區會放幾行(`block_nothing_mean_returned`),以及第 6 區的 `block_recall@5`。

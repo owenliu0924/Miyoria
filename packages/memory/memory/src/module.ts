@@ -40,6 +40,7 @@ import {
   PersonNoteWriterKey,
   PinnedMemoryKey,
   type ProfileId,
+  PromiseBookKey,
   type PromptContributors,
   PromptContributorsKey,
   SegmentFlushKey,
@@ -49,6 +50,7 @@ import { memoryEpisodeSink } from "../../notes/src/episodes.js";
 import { importLegacyOnce } from "../../notes/src/legacy.js";
 import { type LiveSegmentConfig, LiveSegments } from "../../notes/src/live.js";
 import { NotesNotebook } from "../../notes/src/notebook.js";
+import { commitmentLedger } from "../../notes/src/promises.js";
 import { rankingOf } from "../../notes/src/rank.js";
 import { notesTables } from "../../notes/src/store.js";
 import { NotesIndex, NotesSearch, NotesSearchKey } from "../../notes/src/vectors.js";
@@ -224,6 +226,11 @@ export class MemoryModule implements Module {
           episodes: memoryEpisodeSink(engine, {
             resolver,
             contextOf: (session) => transcripts.contextOf(session),
+          }),
+          // The agent's book, looked up on each use: the agent may start after this module.
+          promises: commitmentLedger(() => services.get(PromiseBookKey) ?? null, {
+            now: () => ctx.clock.now(),
+            handleOf: (person) => engine.handles?.ofPerson(person) ?? null,
           }),
           cursor: cursors,
           router,

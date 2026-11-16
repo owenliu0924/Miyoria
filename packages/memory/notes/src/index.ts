@@ -7,9 +7,11 @@
 export {
   type EpisodeSink,
   episodeText,
+  type FollowupQuery,
   type MemorySinkOptions,
   type MemoryWriter,
   memoryEpisodeSink,
+  type OpenFollowup,
   type SegmentEpisode,
   type SegmentFollowup,
 } from "./episodes.js";
@@ -37,9 +39,11 @@ export {
   DEFAULT_PASS_CAPS,
   type DropReason,
   type PassCaps,
+  type PassClosed,
   type PassDrop,
   type PassEdit,
   type PassFollowup,
+  type PassPromise,
   type PassUsage,
   runSegmentPass,
   type SegmentPassDeps,
@@ -51,6 +55,7 @@ export {
 } from "./pass.js";
 export {
   entryLine,
+  type PromptOpen,
   SELF_LABEL,
   SOURCE_LABELS,
   segmentPassMessage,
@@ -63,6 +68,13 @@ export {
   precise,
   separated,
 } from "./precision.js";
+export {
+  type CommitmentLedgerOptions,
+  commitmentLedger,
+  type NewPromise,
+  type OpenPromise,
+  type PromiseLedger,
+} from "./promises.js";
 export {
   DEFAULT_RANKING,
   type QueryVector,
