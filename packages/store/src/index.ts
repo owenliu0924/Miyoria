@@ -202,6 +202,15 @@ export {
   utteranceKey,
 } from "./events/chat.js";
 export {
+  type CursorFilter,
+  type CursorRead,
+  type DrainOptions,
+  type DrainResult,
+  EVENT_CURSORS_SQL,
+  type EventCursor,
+  EventCursors,
+} from "./events/cursors.js";
+export {
   LLM_CALL_TYPE_SQL,
   LlmCall,
   type LlmCallData,
