@@ -58,12 +58,13 @@ import {
   type GpuContext,
   type SingWorker,
   SingWorkerError,
+  type SongMeta,
   type SongQuery,
   type WorkerJob,
 } from "./client.js";
 import type { SingConfig } from "./config.js";
 import { dedicationProblem, type SongPayments, SongPaymentsKey } from "./payments.js";
-import { singSong, sleep } from "./player.js";
+import { ensureVideo, singSong, sleep } from "./player.js";
 import {
   type BackingMode,
   dedicationNote,
@@ -135,7 +136,10 @@ interface Playing {
   entry: SongEntry;
   guild: string;
   stop: AbortController;
-  /** The song itself started streaming (before that she is still saying her opening). */
+  /**
+   * The voice node reported the song itself as playing. Before that she is still saying her
+   * opening, or the audio is on its way from the worker: nothing of the song was heard.
+   */
   audible: boolean;
 }
 
@@ -443,6 +447,7 @@ export class Singer implements VoiceFloor, SpeechPause {
         entry.progress = 1;
         entry.ready_at = toTimestamp(this.ctx.clock.now());
         log.info({ no: entry.no, song: job.song.id, cached: job.cached }, "song ready");
+        this.#fetchVideo(job.song);
         this.#onReady(entry);
         return;
       case "failed":
@@ -452,6 +457,12 @@ export class Singer implements VoiceFloor, SpeechPause {
       default:
         return;
     }
+  }
+
+  /** Brings a ready song's video over now, so that it is here by the time she sings it. */
+  #fetchVideo(song: SongMeta): void {
+    if (this.videoDir === null || this.#closed) return;
+    void ensureVideo({ worker: this.worker, videoDir: this.videoDir }, song, this.ctx.signal);
   }
 
   // ----- the GPU to the worker -----
@@ -731,9 +742,12 @@ export class Singer implements VoiceFloor, SpeechPause {
         if (!both.aborted) outcome = await this.#sing(entry, guild, both);
       } catch (error) {
         if (isGone(error) && !both.aborted && (await this.#prepareAgain(entry))) return;
-        log.warn({ no: entry.no, err: errorMessage(error) }, "could not sing");
-        outcome = "error";
-        entry.error = errorMessage(error);
+        // Stopped while the audio was on its way: a skip like any other, not a failure.
+        if (!both.aborted) {
+          log.warn({ no: entry.no, err: errorMessage(error) }, "could not sing");
+          outcome = "error";
+          entry.error = errorMessage(error);
+        }
       }
       this.#ended(entry, guild, outcome);
     });
@@ -782,8 +796,6 @@ export class Singer implements VoiceFloor, SpeechPause {
     const song = entry.song;
     if (!song) throw new SingError("the song has no audio");
     log.info({ no: entry.no, song: song.id, guild }, "singing");
-    if (this.#playing?.entry === entry) this.#playing.audible = true;
-    this.#showDedication(entry);
     return singSong(
       {
         worker: this.worker,
@@ -795,6 +807,13 @@ export class Singer implements VoiceFloor, SpeechPause {
         lyrics: this.cfg.lyrics,
         lipSyncVocals: this.cfg.lip_sync_vocals,
         videoDir: this.videoDir,
+        videoSignal: this.ctx.signal,
+        // Only from here on does a skip keep the charges, and the dedication go up.
+        heard: () => {
+          if (this.#playing?.entry !== entry || this.#playing.audible) return;
+          this.#playing.audible = true;
+          this.#showDedication(entry);
+        },
       },
       song,
       guild,

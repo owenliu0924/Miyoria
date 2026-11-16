@@ -216,7 +216,15 @@ class FakeWorker implements SingWorker {
   /** Songs its cache cleaned out (`/songs/{id}/files/*` answers 404). */
   readonly cleaned = new Set<string>();
 
-  async audio(song: string, track: SongTrack): Promise<Int16Array> {
+  /** The audio never arrives: the fetch ends only when its signal aborts. */
+  audioHeld = false;
+
+  async audio(song: string, track: SongTrack, signal?: AbortSignal): Promise<Int16Array> {
+    if (this.audioHeld) {
+      await new Promise<never>((_, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
     if (this.cleaned.has(song)) {
       throw new SingWorkerError(`song ${song} has no ${track}`, { status: 404 });
     }
@@ -739,9 +747,16 @@ describe("sing module", () => {
     });
     expect(started[1]).not.toHaveProperty("video");
     // The worker may be on another machine: Core fetched the video into its own cache dir.
-    expect(h.worker.downloaded).toEqual([
-      { song: "s-j1", file: "video.mp4", dest: join(dir, "s-j1", "video.mp4") },
-    ]);
+    // It is fetched as soon as the song is ready; this stand-in writes no file, so the start
+    // asks once more.
+    expect(h.worker.downloaded.length).toBeGreaterThanOrEqual(1);
+    for (const fetched of h.worker.downloaded) {
+      expect(fetched).toEqual({
+        song: "s-j1",
+        file: "video.mp4",
+        dest: join(dir, "s-j1", "video.mp4"),
+      });
+    }
   });
 
   it("sings without a video when the worker cannot give it", async () => {
@@ -1236,6 +1251,22 @@ describe("sing module", () => {
       await settle(50);
       expect(pay.refunds).toEqual(["e1"]);
       expect(h.events.some((e) => e.type === "economy.screen")).toBe(false);
+    });
+
+    it("a song skipped while its audio is on its way is refunded, and is no failure", async () => {
+      const pay = await paid({});
+      await asAmy(h, { query: "Song A", dedication: "加油" });
+      h.worker.audioHeld = true;
+      h.worker.finish("j1", "Song A", 1);
+      await settle(6000 + 400);
+      expect(h.singer.list.playing()?.no).toBe(1);
+      await h.singer.stop(false);
+      await settle(50);
+      // Nothing of it was heard: the charge goes back and the dedication never went up.
+      expect(pay.refunds).toEqual(["e1"]);
+      expect(h.events.some((e) => e.type === "economy.screen")).toBe(false);
+      expect(h.singer.list.get(1)?.state).toBe("done");
+      expect(h.singer.list.get(1)?.error).toBeNull();
     });
 
     it("tells her about the dedication before the song, and keeps it in her prompt", async () => {
