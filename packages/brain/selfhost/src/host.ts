@@ -30,7 +30,13 @@
 // records.
 
 import { actuatorsFor } from "@miyoria/gate/actions";
-import { type ContentPart, type LlmRouter, LlmRouterKey, withLlmTag } from "@miyoria/llm/llm";
+import {
+  type ContentPart,
+  currentLlmTag,
+  type LlmRouter,
+  LlmRouterKey,
+  withLlmTag,
+} from "@miyoria/llm/llm";
 import {
   type EntryInput,
   entryOfIncoming,
@@ -116,6 +122,7 @@ import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
 import { outletClaims } from "./repeat.js";
+import { PromptKeeper } from "./saved.js";
 import { askedLine, SAY_DM } from "./texts.js";
 import { VoiceHost } from "./voice.js";
 
@@ -197,6 +204,8 @@ export class SelfHost implements TextRunner {
   readonly #settlements = new Settlements();
   readonly #outlet: MouthOutlet;
   readonly #around: LookAround;
+  /** The prompts of recent runs, for the panel (`SavedPromptsKey`). */
+  readonly #saved: PromptKeeper;
   readonly #replied: ReplyContext;
   readonly #places = new Map<string, Place>();
   readonly #turns = new Map<string, TurnState>();
@@ -219,6 +228,7 @@ export class SelfHost implements TextRunner {
     if (transcript === null) throw new Error("the text runner needs the store's transcripts");
     this.transcript = transcript;
     this.#around = new LookAround(agent, transcript);
+    this.#saved = new PromptKeeper(agent);
     this.#replied = new ReplyContext(agent, transcript, this.#around.recent);
     const sessionOf = (context: ContextKey) => this.#sessionFor(context);
     this.prompt = new HostPrompt(agent, {
@@ -233,6 +243,7 @@ export class SelfHost implements TextRunner {
     this.voice = new VoiceHost(agent, {
       transcript,
       prompt: this.prompt,
+      saved: this.#saved,
       runner: () => this.runner,
       sessionOf,
       triage: (context, line) =>
@@ -270,11 +281,19 @@ export class SelfHost implements TextRunner {
       complete: (purpose, request, signal) => router().complete(purpose, request, signal),
       prices: () => services.get(LlmRouterKey)?.prices() ?? {},
     };
+    // The runner's calls only: a sub-agent's are not the prompt of a run.
+    const runModel: RunModel = {
+      ...model,
+      stream: (purpose, request, signal) => {
+        this.#saved.sent(currentLlmTag()?.turn, request);
+        return model.stream(purpose, request, signal);
+      },
+    };
     this.runner = new SelfRunner(
       {
         transcript,
         tools: agent.tools,
-        model,
+        model: runModel,
         prompt: this.voice.prompt(this.prompt),
         guard: composeGuards(
           this.voice.guard,
@@ -286,6 +305,7 @@ export class SelfHost implements TextRunner {
         onEvent: (event) => {
           this.#onRunEvent(event);
           this.voice.onRunEvent(event);
+          this.#saved.event(event);
         },
         selfAccount: (platform) => agent.selfAccount(platform),
         // Her memory reads the lines before they are summarised (the segment pass).
@@ -871,6 +891,7 @@ export class SelfHost implements TextRunner {
     floor?.hold(turn, context, kind);
     agent.mainline.holdsFloor(turn, true);
     this.#turns.set(turn, state);
+    this.#saved.begin(turn, context);
     agent.ctx.publish(
       Events.AgentDecision,
       {
@@ -908,6 +929,7 @@ export class SelfHost implements TextRunner {
     } finally {
       typing.abort();
       this.#outlet.ended(turn);
+      this.#saved.end(turn);
       this.prompt.ended(turn);
       this.#turns.delete(turn);
       // Freed once its lines settled (`Floor.turnEnded`), cancelled or not.

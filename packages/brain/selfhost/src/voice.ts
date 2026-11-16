@@ -91,6 +91,7 @@ import {
 } from "../../self/src/index.js";
 import type { AdmittedInput } from "./lane.js";
 import type { HostPrompt, SlowReads } from "./prompt.js";
+import type { PromptKeeper } from "./saved.js";
 import { VoiceLane, type VoiceLaneHost, type VoiceRun } from "./voice-lane.js";
 import { PlaceOutlet, until, VoiceOutlet } from "./voice-outlet.js";
 import { VoicePrompt, voiceReads, WarmValues } from "./voice-prompt.js";
@@ -124,6 +125,8 @@ export interface VoiceHostDeps {
   transcript: TranscriptStore;
   /** The text host's prompt: its blocks, and what a run read is forgotten when it ends. */
   prompt: HostPrompt;
+  /** The prompts of recent runs, for the panel: a run begins and ends here. */
+  saved: PromptKeeper;
   runner: () => SelfRunner;
   /** The session a voice channel's transcript is under. */
   sessionOf(context: ContextKey): string;
@@ -837,6 +840,7 @@ export class VoiceHost implements VoiceRunner {
     agent.focusBoard.start(this.#focus(state));
     this.#mark(state, "decided");
     this.#expect(state);
+    this.#d.saved.begin(turn, context);
     let result: RunResult | null = null;
     let error: string | null = null;
     try {
@@ -853,6 +857,8 @@ export class VoiceHost implements VoiceRunner {
       error = errorMessage(e);
       agent.log.warn({ turn, err: error }, "the voice run failed");
     } finally {
+      // An early start that was dropped never was: no prompt of it.
+      this.#d.saved.end(turn, !run.dropped);
       this.#d.prompt.ended(turn);
       this.#forget(state);
       agent.mainline.holdsFloor(turn, false);
