@@ -89,6 +89,7 @@ it("covers identity, config, the artifact store and the plugins that own their t
     "economy",
     "identity",
     "memory",
+    "notes",
     "transcript",
   ]);
 });

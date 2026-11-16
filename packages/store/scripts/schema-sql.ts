@@ -24,6 +24,8 @@ import { economySchema } from "../../economy/src/migrations.js";
 import * as economyTables from "../../economy/src/schema.js";
 import { MEMORY_SEARCH_SQL, memorySchema } from "../../memory/memory/src/migrations.js";
 import * as memoryTables from "../../memory/memory/src/schema.js";
+import { notesSchema } from "../../memory/notes/src/migrations.js";
+import * as notesTables from "../../memory/notes/src/schema.js";
 import { transcriptSchema } from "../../memory/transcript/src/migrations.js";
 import * as transcriptTables from "../../memory/transcript/src/schema.js";
 import { artifactSchema } from "../src/artifacts/migrations.js";
@@ -97,6 +99,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   directive: { tables: directiveTables, schema: directiveSchema },
   economy: { tables: economyTables, schema: economySchema },
   memory: { tables: memoryTables, schema: memorySchema, handWritten: MEMORY_SEARCH_SQL },
+  notes: { tables: notesTables, schema: notesSchema },
   transcript: { tables: transcriptTables, schema: transcriptSchema },
 };
 
