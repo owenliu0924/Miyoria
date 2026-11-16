@@ -1,11 +1,12 @@
 // What the text path on the new runner keeps of the old one (docs/design/v5-brain.md B4).
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
-import type { ChatRequest } from "@miyoria/llm/llm";
+import { type ChatRequest, contentText } from "@miyoria/llm/llm";
 import {
   type Attachment,
   type Attitude,
   AuthorizerKey,
+  type ContextEntry,
   type ContextKey,
   type DecisionTrace,
   Events,
@@ -19,8 +20,21 @@ import {
   FloorKey,
   type GateDecisionPayload,
   type InterruptLevel,
+  type LifeLog,
+  LifeLogKey,
+  type PartyStatus,
+  PartyStatusKey,
+  type PromptContributor,
+  PromptContributors,
+  PromptContributorsKey,
+  type PromptSection,
+  type SkillIndex,
+  SkillIndexKey,
   SocialSignalsKey,
   type TurnOutcomeRecord,
+  toTimestamp,
+  type WorkingContext,
+  WorkingContextKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FetchLike } from "../../agent/src/index.js";
@@ -35,6 +49,7 @@ import {
   Rig,
   says,
   stopRigs,
+  textOf,
   until,
 } from "./harness.js";
 
@@ -149,6 +164,129 @@ describe("the Floor", () => {
       `hold ${next?.turn} c1 addressed`,
       `ended ${next?.turn}`,
     ]);
+  });
+});
+
+// ---- the prompt's sections ----------------------------------------------------------------------
+
+function section(key: string, title: string, body: () => string): PromptContributor {
+  return {
+    key,
+    async contribute(): Promise<PromptSection[]> {
+      return [{ key, title, body: body(), order: 0 }];
+    },
+  };
+}
+
+function contextEntry(text: string, untrusted: boolean): ContextEntry {
+  return {
+    event: "e",
+    at: toTimestamp(Date.now()),
+    text,
+    attention_key: text,
+    revision: 1,
+    context: null,
+    from: null,
+    untrusted,
+    restored: false,
+  };
+}
+
+describe("the prompt's sections", () => {
+  async function rigWithSections() {
+    let justNow = 0;
+    const contributors = new PromptContributors();
+    contributors.register(section("server_emoji", "伺服器表情", () => ":wave: :cat:"));
+    contributors.register(section("notebook", "你的筆記本", () => "- 料理筆記"));
+    contributors.register(section("just_now", "剛剛", () => `剛剛的事 ${++justNow}`));
+    const skills: SkillIndex = { index: async () => "- 煮咖哩:照步驟煮" };
+    const life: LifeLog = {
+      entries: () => [],
+      today: () => [
+        {
+          id: "l1",
+          at: toTimestamp(Date.now()),
+          kind: "activity",
+          text: "早上去散步",
+          minutes: 30,
+          capability: null,
+        } as never,
+      ],
+      summary: () => "- 早上去散步",
+    };
+    const working: WorkingContext = {
+      buckets: () => [
+        {
+          writer: "world",
+          mode: "replace" as never,
+          owner: null,
+          entries: [contextEntry("外面在下雨", false), contextEntry("有人說明天停電", true)],
+          updated_at: toTimestamp(Date.now()),
+        },
+      ],
+      bucket: () => null,
+    };
+    const party: PartyStatus = { running: () => ({ game: "quiz", title: "問答" }) };
+    const rig = await Rig.create({
+      provide: (sup) => {
+        sup.services.provide("app", PromptContributorsKey, contributors);
+        sup.services.provide("app", SkillIndexKey, skills);
+        sup.services.provide("app", LifeLogKey, life);
+        sup.services.provide("app", WorkingContextKey, working);
+        sup.services.provide("app", PartyStatusKey, party);
+      },
+    });
+    return rig;
+  }
+
+  it("puts each source in its block: slow ones before the transcript, the rest after", async () => {
+    const rig = await rigWithSections();
+    rig.model.push(says("嗨"), says("又見面了"));
+    rig.sup.bus.publish("actions", Events.AgentNotice, {
+      id: "n1",
+      at: toTimestamp(Date.now()),
+      source: "actions",
+      task: null,
+      turn: null,
+      context: DM_AMY,
+      ok: true,
+      code: null,
+      text: "幫 amy 訂好位子了",
+      expires_at: toTimestamp(Date.now() + 60_000),
+    });
+    rig.say(line(DM_AMY, "amy", "在嗎"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the first run");
+    const first = rig.model.requests[0];
+    const texts = (first?.messages ?? []).map((m) => contentText(m.content));
+    const history = texts.indexOf("amy: 在嗎");
+    const at = (needle: string) => texts.findIndex((t) => t.includes(needle));
+    // Block 4, before the transcript: skills, emoji, notebook, 「今天的你」.
+    for (const slow of ["煮咖哩", ":wave: :cat:", "料理筆記", "早上去散步"]) {
+      expect(at(slow)).toBeGreaterThan(-1);
+      expect(at(slow)).toBeLessThan(history);
+    }
+    // Block 6 after it: just now, the working context's data, the notice.
+    for (const recalled of ["剛剛的事 1", "有人說明天停電", "幫 amy 訂好位子了"]) {
+      expect(at(recalled)).toBeGreaterThan(history);
+    }
+    // Block 7: what she trusts, the party game, the style note.
+    const last = texts.at(-1) ?? "";
+    expect(last).toContain("外面在下雨");
+    expect(last).toContain("「問答」正在進行");
+    expect(last).toMatch(/<\/now>\n<style_note>\n- 回覆開頭先放這一刻的 <emo:名稱>/);
+    expect(last.indexOf("<style_note>")).toBeLessThan(last.indexOf("<turn>"));
+
+    // The next run: the same prefix up to the end of the transcript, though block 6 changed.
+    rig.say(line(DM_AMY, "amy", "我回來了"));
+    await until(() => outcomes(rig).length === 2, 3_000, "the second run");
+    const second = rig.model.requests[1];
+    const end = history + 1;
+    expect(serialiseMessages(second?.messages ?? []).slice(0, end)).toEqual(
+      serialiseMessages(first?.messages ?? []).slice(0, end),
+    );
+    expect(contentText(second?.messages.at(-2)?.content ?? "")).toContain("剛剛的事 2");
+    // A notice is told once.
+    expect(textOf(second)).not.toContain("幫 amy 訂好位子了");
   });
 });
 

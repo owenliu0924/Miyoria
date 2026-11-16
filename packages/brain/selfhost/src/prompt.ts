@@ -1,19 +1,26 @@
 // The blocks around the transcript (`PromptSource`), read from the services today's turn reads
-// (agent/turn.ts `#extras`, `#mainPrompt`); no new memory:
+// (agent/turn.ts `#extras`, `#mainSlow`, `#mainPrompt`, `#styleNote`); no new memory:
 //
 //   1 fixed     the persona core (`PersonaHandle.corePrompt`); the runner adds its rules
 //   3 pinned    the owner's rules (`MainLine.ownerRules`: directives, capabilities on hold)
-//   4 place     the recap of this place (`ConversationStates`), the people here as person cards
-//               (`PersonProfiles.render`, else today's `<person/>` lines, `peopleBody`) and the
-//               persona's example dialogues, rotated per session. Rendered again only when the
-//               people here change or the transcript was compacted
+//   4 place     her skills (`SkillIndex`), the server's emoji and her notebook's index (the
+//               contributors' slow sections), 「今天的你」 (`LifeLog`), the recap of this place
+//               (`ConversationStates`), the people here as person cards (`PersonProfiles.render`,
+//               else today's `<person/>` lines, `peopleBody`) and the persona's example
+//               dialogues, rotated per session. Rendered again only when the people here change,
+//               the transcript was compacted or one of the slow parts reads differently
 //   6 recalled  what memory retrieval finds for this run (`MemoryRetrieval`), the contributors'
-//               sections (just now, elsewhere, ...: everything but the memory contributor and the
-//               recap), and the flagged messages the transcript points to, each under its title
-//   7 now       time and place, her state (`selfBlocks`), what she promised and by when
+//               sections (just now, elsewhere, her working notes, a game's chat, ...: everything
+//               but the memory contributor, the recap and the slow ones), the cause of her mood,
+//               the commitments memory pins, what people wrote in her working context, results
+//               of things done with nobody there (the hands), the viewers' wishes, the notices
+//               that came back, and the flagged messages the transcript points to
+//   7 now       time and place, her state (`selfBlocks`), what the outside told her, the party
+//               game running here, the tasks in flight, what she promised and by when; then the
+//               `<style_note>` (`styleNote`: lorebook entries, a few kaomoji)
 //
-// Each source keeps today's limit (`contributor_timeout_ms`); a source that fails or is slow is
-// left out, the run goes on.
+// Each source keeps today's budget and limit (`contributor_timeout_ms`); a source that fails or is
+// slow is left out, the run goes on. The contributors are asked once per run, for blocks 4 and 6.
 
 import type { ContentPart } from "@miyoria/llm/llm";
 import {
@@ -30,42 +37,69 @@ import {
   ArbiterKey,
   type ContextKey,
   ConversationStatesKey,
+  contextKeyString,
+  DATA_OPEN,
+  DirectivesKey,
   dataBlock,
   GoalAgendaKey,
+  LifeLogKey,
   MemoryRetrievalKey,
   MindKey,
   type Participant,
+  PartyStatusKey,
   PersonProfilesKey,
   PromptContributorsKey,
   type PromptRequest,
+  type PromptSection,
   SelfStateKey,
+  SkillIndexKey,
   safeName,
   sameAccount,
   type TurnRetrievalQuery,
   toTimestamp,
+  WorkingContextKey,
   WorldStateKey,
 } from "@miyoria/types";
 import {
+  ACTING_ALONE,
   type Agent,
   budgetBlocks,
   budgetSelf,
+  contextData,
+  contextState,
   contributedData,
   exampleDialogues,
   examplesBlock,
+  FEELING_TITLE,
+  feelingCauseBody,
+  type Gathered,
   gather,
+  type Job,
+  LIFE_TITLE,
   levelHint,
+  MOOD_MIN,
+  noticesBlock,
   PRESENT_TITLE,
   type PresentPerson,
+  partyLine,
   peopleBody,
+  pickKaomoji,
   pinnedSection,
+  RECENT_OWN_LINES,
+  resultData,
+  resultsFor,
   rotatedExamples,
+  SCAN_LINES,
   selfBlocks,
   stableHash,
+  styleNote,
   timeout,
+  triggeredEntries,
   truncate,
   whenAndWhere,
 } from "../../agent/src/index.js";
 import { type PromptInput, type PromptSource, wakeAuthor } from "../../self/src/index.js";
+import { NOTICES_TITLE, TASKS_HEAD, VIEWERS_TITLE } from "./texts.js";
 
 /** People shown in block 4 at most (today's `MAX_PEOPLE`). */
 const MAX_PEOPLE = 10;
@@ -78,8 +112,12 @@ const QUERY_LINES = 3;
 /** Contributors whose words come from elsewhere here: memory (retrieval), the recap (block 4). */
 const MEMORY_CONTRIBUTOR = "memory";
 const RECAP_CONTRIBUTOR = "conversation";
-/** Contributor sections today's turn puts before the history; the runner leaves them out. */
-const SLOW_SECTIONS: ReadonlySet<string> = new Set(["server_emoji", "notebook"]);
+/** Contributor sections of block 4 (today's `SLOW_ORDER`), the most stable first. */
+const SLOW_ORDER: readonly string[] = ["server_emoji", "notebook"];
+const SLOW_SECTIONS: ReadonlySet<string> = new Set(SLOW_ORDER);
+/** No budget but the blocks' own. */
+const UNLIMITED = Number.MAX_SAFE_INTEGER;
+const DAY_MS = 86_400_000;
 /** The recap's title (the conversation contributor's). */
 export const RECAP_TITLE = "這段對話的前情提要";
 
@@ -111,9 +149,30 @@ function lineText(e: TranscriptEntry, her: string): string | null {
   return null;
 }
 
+/** The entries after her last line: what a run is about. */
+function sinceHerLast(entries: readonly TranscriptEntry[]): TranscriptEntry[] {
+  let since = entries.length;
+  while (since > 0) {
+    const e = entries[since - 1] as TranscriptEntry;
+    if (e.kind === "self" || e.kind === "tool_calls") break;
+    since -= 1;
+  }
+  return entries.slice(since).filter((e) => e.kind === "other" && e.redacted_at === null);
+}
+
 interface PlaceCache {
   key: string;
   text: string | null;
+}
+
+/** What one run reads once for several blocks. */
+interface RunRead {
+  request: PromptRequest;
+  /** The lines the run answers (the waking author's newest, since her last line). */
+  asked: TranscriptEntry[];
+  gathered: Promise<Gathered | null>;
+  /** Results block 6 showed: told once the run got to its end. */
+  telling: Job[];
 }
 
 export interface HostPromptOptions {
@@ -129,6 +188,10 @@ export class HostPrompt implements PromptSource {
   readonly #o: HostPromptOptions;
   /** Block 4 of each session as last rendered. */
   readonly #places = new Map<string, PlaceCache>();
+  /** What each run in flight read, by turn. */
+  readonly #runs = new Map<string, RunRead>();
+  /** 「今天的你」 as last written, with what it was written from. */
+  #life: PlaceCache | null = null;
 
   constructor(agent: Agent, options: HostPromptOptions) {
     this.#agent = agent;
@@ -157,6 +220,38 @@ export class HostPrompt implements PromptSource {
     }));
   }
 
+  /** What the run of `input` reads once: the contributors' request and their sections. */
+  #run(input: PromptInput): RunRead {
+    const known = this.#runs.get(input.turn);
+    if (known !== undefined) return known;
+    const entries = this.#o.transcript.tail(input.session.id).entries;
+    const { request, asked } = this.#request(input, entries);
+    const registry = this.#services.get(PromptContributorsKey);
+    const skip = [
+      RECAP_CONTRIBUTOR,
+      ...(this.#services.has(MemoryRetrievalKey) ? [MEMORY_CONTRIBUTOR] : []),
+    ];
+    const gathered =
+      registry && registry.all().length > 0
+        ? gather(registry, request, this.#limit(), this.#agent.ctx.signal, skip).catch(() => null)
+        : Promise.resolve(null);
+    const read: RunRead = { request, asked, gathered, telling: [] };
+    this.#runs.set(input.turn, read);
+    return read;
+  }
+
+  /**
+   * The run of `turn` ended; what it read is forgotten. `told`: it got to its end (not cut), so
+   * the results block 6 showed count as told (`Hands.toldOf`, as the old turn's conclusion did).
+   */
+  ended(turn: string, told: boolean): void {
+    const read = this.#runs.get(turn);
+    this.#runs.delete(turn);
+    if (told && read !== undefined && read.telling.length > 0) {
+      this.#agent.mainline.hands.toldOf(read.telling);
+    }
+  }
+
   // ---- block 1 ---------------------------------------------------------------------------------
 
   async fixed(): Promise<string | null> {
@@ -181,10 +276,11 @@ export class HostPrompt implements PromptSource {
       .map((s) => `${s.account.platform}:${s.account.id}`)
       .sort()
       .join(",");
-    const key = `${roster}|${tail.summary?.id ?? 0}`;
+    const slow = await this.#slow(input);
+    const key = `${roster}|${tail.summary?.id ?? 0}|${stableHash(slow.join("\n"))}`;
     const cached = this.#places.get(session);
     if (cached !== undefined && cached.key === key) return cached.text;
-    const text = await this.#renderPlace(input, speakers);
+    const text = await this.#renderPlace(input, speakers, slow);
     this.#places.set(session, { key, text });
     return text;
   }
@@ -194,10 +290,14 @@ export class HostPrompt implements PromptSource {
     this.#places.delete(session);
   }
 
-  async #renderPlace(input: PromptInput, speakers: readonly Speaker[]): Promise<string | null> {
+  async #renderPlace(
+    input: PromptInput,
+    speakers: readonly Speaker[],
+    slow: readonly string[],
+  ): Promise<string | null> {
     const agent = this.#agent;
     const context = input.session.context;
-    const parts: string[] = [];
+    const parts: string[] = [...slow];
     const recap = this.#services.get(ConversationStatesKey)?.get(context)?.recap?.trim() ?? "";
     if (recap !== "") parts.push(dataBlock(RECAP_CONTRIBUTOR, RECAP_TITLE, recap));
     const people = await this.#people(input, speakers);
@@ -210,6 +310,75 @@ export class HostPrompt implements PromptSource {
       if (examples !== null) parts.push(examples);
     }
     return parts.length === 0 ? null : parts.join("\n\n");
+  }
+
+  /**
+   * The slow parts of block 4 (the old turn's `#mainSlow`), each within its own budget: her
+   * skills, the server's emoji, her notebook's index, 「今天的你」.
+   */
+  async #slow(input: PromptInput): Promise<string[]> {
+    const m = this.#agent.config.mainline;
+    const [skills, gathered] = await Promise.all([this.#skills(), this.#run(input).gathered]);
+    const out: string[] = [];
+    if (skills !== null) {
+      // The skill index comes as a data block; anything else is made one.
+      out.push(skills.includes(DATA_OPEN) ? skills : dataBlock("skills", "你的技能", skills));
+    }
+    const sections: PromptSection[] = (gathered?.sections ?? [])
+      .filter((s) => SLOW_SECTIONS.has(s.key))
+      .sort((a, b) => SLOW_ORDER.indexOf(a.key) - SLOW_ORDER.indexOf(b.key))
+      .map((s, i) => ({ ...s, order: i }));
+    const life = this.#lifeText(input.now);
+    if (life !== null) {
+      sections.push({ key: "life", title: LIFE_TITLE, body: life, order: sections.length });
+    }
+    const { data } = contributedData(sections);
+    const budgeted = budgetBlocks(data, {
+      total: UNLIMITED,
+      budgets: { server_emoji: m.emoji_chars, notebook: m.notebook_chars, life: m.life_chars },
+      defaultBudget: m.notebook_chars,
+    });
+    out.push(...budgeted.blocks);
+    return out;
+  }
+
+  /** Her skills, a name and a line each (`SkillIndex`); `null` when none or too slow. */
+  async #skills(): Promise<string | null> {
+    const agent = this.#agent;
+    const index = this.#services.get(SkillIndexKey);
+    const chars = agent.config.mainline.skills_chars;
+    if (index === undefined || chars <= 0) return null;
+    try {
+      const text = await timeout(this.#limit(), agent.ctx.signal, () => index.index(chars));
+      return text.trim() === "" ? null : text;
+    } catch (error) {
+      agent.log.debug({ err: errorMessage(error) }, "no skill index for the runner");
+      return null;
+    }
+  }
+
+  /**
+   * 「今天的你」 (the old turn's `#mainLife`): what she did today, or the last days when nothing yet
+   * today. Written again only when what she did changes.
+   */
+  #lifeText(now: number): string | null {
+    const agent = this.#agent;
+    const life = this.#services.get(LifeLogKey);
+    if (life === undefined || agent.config.mainline.life_chars <= 0) return null;
+    try {
+      const today = life.today();
+      const scope = today.length > 0 ? "today" : "lately";
+      const entries = today.length > 0 ? today : life.entries(now - 3 * DAY_MS);
+      const key = `${scope}|${entries.map((e) => e.id).join(",")}`;
+      if (this.#life !== null && this.#life.key === key) return this.#life.text;
+      const text = life.summary(scope);
+      const body = text === null || text.trim() === "" ? null : text;
+      this.#life = { key, text: body };
+      return body;
+    } catch (error) {
+      agent.log.debug({ err: errorMessage(error) }, "no life log for the runner");
+      return null;
+    }
   }
 
   async #people(input: PromptInput, speakers: readonly Speaker[]): Promise<string | null> {
@@ -249,33 +418,89 @@ export class HostPrompt implements PromptSource {
   async recalled(input: PromptInput): Promise<string | null> {
     const agent = this.#agent;
     const cfg = agent.config;
+    const m = cfg.mainline;
     const services = this.#services;
+    const context = input.session.context;
     const tail = this.#o.transcript.tail(input.session.id);
-    const request = this.#request(input, tail.entries);
-    const retrieval = services.get(MemoryRetrievalKey);
-    const skip = [RECAP_CONTRIBUTOR, ...(retrieval ? [MEMORY_CONTRIBUTOR] : [])];
-    const registry = services.get(PromptContributorsKey);
-    const gathering =
-      registry && registry.all().length > 0
-        ? gather(registry, request, this.#limit(), agent.ctx.signal, skip)
-        : null;
-    gathering?.catch(() => undefined);
+    const read = this.#run(input);
+    const { request } = read;
     const blocks: string[] = [];
-    const memory = await this.#memory(input, request);
+    const [memory, pinned] = await Promise.all([
+      this.#memory(input, request),
+      this.#pinnedMemory(input, request),
+    ]);
     if (memory !== null) blocks.push(memory);
-    const gathered = gathering === null ? null : await gathering.catch(() => null);
+    const gathered = await read.gathered;
     const sections = (gathered?.sections ?? []).filter((s) => !SLOW_SECTIONS.has(s.key));
     const { data } = contributedData(sections);
-    const m = cfg.mainline;
     const contributed = budgetBlocks(data, {
       total: m.data_chars,
       budgets: { ...cfg.prompt.budgets, just_now: m.just_now_chars, elsewhere: m.elsewhere_chars },
       defaultBudget: cfg.prompt.default_budget,
     });
     blocks.push(...contributed.blocks);
+    const present = this.#present(speakersOf(tail.entries));
+    const feeling = feelingCauseBody({
+      context,
+      now: input.now,
+      affect: services.get(AffectStateKey) ?? null,
+      self: services.get(SelfStateKey) ?? null,
+      presentPeople: present.flatMap((p) => (p.person === null ? [] : [p.person])),
+    });
+    if (feeling !== "") blocks.push(dataBlock("feeling", FEELING_TITLE, feeling));
+    blocks.push(...pinned);
+    const buckets = services.get(WorkingContextKey)?.buckets(context) ?? [];
+    const working = contextData(buckets, m.context_entries);
+    if (working !== null) blocks.push(working);
+    const results = this.#results(input, read);
+    if (results !== null) blocks.push(results);
+    const wishes = services.get(DirectivesKey)?.wishes(context) ?? [];
+    if (wishes.length > 0) blocks.push(dataBlock("viewers", VIEWERS_TITLE, wishes.join("\n")));
+    const notices = noticesBlock({ context, now: input.now, notices: agent.takeNotices(context) });
+    const noticed = notices.split("\n").slice(1).join("\n");
+    if (noticed !== "") blocks.push(dataBlock("notices", NOTICES_TITLE, noticed));
     const flagged = flaggedBody(tail.entries.slice(-FLAGGED_LINES));
     if (flagged !== "") blocks.push(dataBlock("flagged", FLAGGED_TITLE, flagged));
     return blocks.length === 0 ? null : blocks.join("\n\n");
+  }
+
+  /**
+   * What she did with nobody there, and what came back here, that she was not told of yet (the
+   * hands, `resultData`): a run answering someone tells theirs and her own, not someone else's.
+   */
+  #results(input: PromptInput, read: RunRead): string | null {
+    const hands = this.#agent.mainline.hands;
+    const context = input.session.context;
+    const author = wakeAuthor(input.wake);
+    const answering = input.wake.kind === "addressed" && author !== null;
+    read.telling = resultsFor(
+      [...hands.peekResults(ACTING_ALONE), ...hands.peekResults(context)],
+      answering ? [author.account] : null,
+    );
+    return resultData(read.telling);
+  }
+
+  /** The commitments memory pins for the people here (`PinnedMemory`, the old `#mainMemory`). */
+  async #pinnedMemory(input: PromptInput, request: PromptRequest): Promise<string[]> {
+    const agent = this.#agent;
+    const pinned = agent.mainline.pinned();
+    if (pinned === null) return [];
+    try {
+      const read = await timeout(this.#limit(), agent.ctx.signal, () =>
+        pinned.pinned({
+          context: input.session.context,
+          present: request.participants.flatMap((p) => (p.person === null ? [] : [p.person])),
+          accounts: request.participants.map((p) => p.account),
+          now: toTimestamp(input.now),
+        }),
+      );
+      return read.sections
+        .filter((s) => s.key === "commitments" && s.lines.length > 0)
+        .map((s) => dataBlock(`pinned.${s.key}`, s.title, s.lines.join("\n")));
+    } catch (error) {
+      agent.log.debug({ err: errorMessage(error) }, "no pinned memory for the runner");
+      return [];
+    }
   }
 
   async #memory(input: PromptInput, request: PromptRequest): Promise<string | null> {
@@ -311,8 +536,11 @@ export class HostPrompt implements PromptSource {
     }
   }
 
-  /** What the contributors are told of this run (today's `#promptRequest`). */
-  #request(input: PromptInput, entries: readonly TranscriptEntry[]): PromptRequest {
+  /** What the contributors are told of this run (today's `#promptRequest`), and what it answers. */
+  #request(
+    input: PromptInput,
+    entries: readonly TranscriptEntry[],
+  ): { request: PromptRequest; asked: TranscriptEntry[] } {
     const agent = this.#agent;
     const her = agent.persona.displayName();
     const speakers = speakersOf(entries);
@@ -329,14 +557,7 @@ export class HostPrompt implements PromptSource {
         person: agent.attitude(author.account)?.person ?? null,
       });
     }
-    // Since her last line: what the run is about.
-    let since = entries.length;
-    while (since > 0) {
-      const e = entries[since - 1] as TranscriptEntry;
-      if (e.kind === "self" || e.kind === "tool_calls") break;
-      since -= 1;
-    }
-    const fresh = entries.slice(since).filter((e) => e.kind === "other" && e.redacted_at === null);
+    const fresh = sinceHerLast(entries);
     const wake = input.wake;
     let query: string;
     let asked: TranscriptEntry[];
@@ -361,7 +582,7 @@ export class HostPrompt implements PromptSource {
     const before = (first === undefined ? entries : entries.slice(0, entries.indexOf(first)))
       .map((e) => lineText(e, her))
       .filter((l): l is string => l !== null);
-    return {
+    const request: PromptRequest = {
       profile: agent.persona.read((p) => p.id),
       turn: input.turn,
       context: input.session.context,
@@ -372,6 +593,7 @@ export class HostPrompt implements PromptSource {
       voice: false,
       now: toTimestamp(input.now),
     };
+    return { request, asked };
   }
 
   async attachments(input: PromptInput): Promise<ContentPart[]> {
@@ -403,12 +625,69 @@ export class HostPrompt implements PromptSource {
       notices: [],
     });
     const lines = [whenAndWhere(context, new Date(input.now), offset)];
-    for (const note of budgetSelf(own, agent.config.mainline.self_chars).notes) {
+    // What the outside told her and she trusts (the working context's state), then her own.
+    const buckets = services.get(WorkingContextKey)?.buckets(context) ?? [];
+    const notes = [
+      ...contextState(buckets),
+      ...budgetSelf(own, agent.config.mainline.self_chars).notes,
+    ];
+    for (const note of notes) {
       const block = note.trim();
       if (block !== "") lines.push(block);
+    }
+    // A party game's verdicts are the program's: her state, not data.
+    const party = services.get(PartyStatusKey)?.running(context) ?? null;
+    if (party !== null) lines.push(partyLine(party));
+    const tasks = agent.mainline.tasks();
+    if (tasks.length > 0) {
+      lines.push(
+        `${TASKS_HEAD}\n${tasks.map((t) => `- ${t.task}(${t.owner}):${t.text}`).join("\n")}`,
+      );
     }
     const promised = pinnedSection([], agent.mainline.commitments.open(context), input.now, offset);
     if (promised !== null) lines.push(promised);
     return lines.join("\n");
+  }
+
+  /**
+   * `<style_note>` (the old turn's `#styleNote`): the lorebook entries what was just said or her
+   * mood brings up, and a few kaomoji for her mood she has not used lately.
+   */
+  async style(input: PromptInput): Promise<string | null> {
+    const agent = this.#agent;
+    const book = agent.persona.lorebook();
+    const moods = this.#moods();
+    const entries = this.#o.transcript.tail(input.session.id).entries;
+    const { asked } = this.#run(input);
+    const others = entries
+      .filter((e) => e.kind === "other" && e.redacted_at === null && !asked.includes(e))
+      .slice(-SCAN_LINES);
+    const scan = [...others, ...asked].map((e) => e.content).join("\n");
+    const lore = triggeredEntries(book, scan, moods, false);
+    const own = entries
+      .filter((e) => (e.kind === "self" || e.kind === "tool_calls") && e.content !== "")
+      .slice(-RECENT_OWN_LINES)
+      .map((e) => e.content);
+    const last = entries.at(-1)?.seq ?? 0;
+    const seed = stableHash(`${contextKeyString(input.session.context)}:${input.now}:${last}`);
+    return styleNote(false, pickKaomoji(book, moods, own, seed), lore);
+  }
+
+  /** Her emotions now, by name: the tag she shows and the strongest ones she feels. */
+  #moods(): Set<string> {
+    const services = this.#services;
+    const moods = new Set<string>();
+    try {
+      const snap = services.get(AffectStateKey)?.snapshot() ?? null;
+      const self = services.get(SelfStateKey) ?? null;
+      const shown = snap !== null ? snap.shown : (self?.shown() ?? null);
+      if (shown !== null) moods.add(shown.tag);
+      const felt = snap !== null ? snap.top : (self?.emotions() ?? []);
+      for (const e of felt.slice(0, 2)) if (e.intensity >= MOOD_MIN) moods.add(e.name);
+    } catch (error) {
+      this.#agent.log.debug({ err: errorMessage(error) }, "no mood for the lorebook");
+    }
+    if (moods.size === 0) moods.add("neutral");
+    return moods;
   }
 }

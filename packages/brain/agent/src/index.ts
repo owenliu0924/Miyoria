@@ -110,9 +110,13 @@ export {
 } from "./expression.js";
 export { type FileCandidate, fileParts, selectFiles } from "./files.js";
 export {
+  type CallFor,
   type CallKind,
+  callFor,
   callKind,
   callsHer,
+  FOR_ARG,
+  FOR_PROPERTY,
   type FocusSelection,
   focusVerb,
   oneCaller,
@@ -142,6 +146,14 @@ export {
   paceMs,
 } from "./levels.js";
 export {
+  pickKaomoji,
+  RECENT_OWN_LINES,
+  SCAN_LINES,
+  styleNote,
+  triggeredEntries,
+} from "./lorebook.js";
+export { type Job, resultsFor } from "./mainline/hands.js";
+export {
   ACTING_ALONE,
   FALLBACK_LINES,
   MainLine,
@@ -151,6 +163,7 @@ export {
 export { COMMIT_SPEC, STEER_SPEC, slimTool } from "./mainline/output.js";
 export {
   contextData,
+  contextState,
   entryCost,
   estimateTokens,
   exampleDialogues,
@@ -159,9 +172,11 @@ export {
   historyWindow,
   mainMessages,
   mainRules,
+  partyLine,
   pinnedSection,
   promptTokens,
   proposalData,
+  resultData,
   rotatedExamples,
   stableHash,
   tailSection,
@@ -176,6 +191,7 @@ export {
   buildMessages,
   cleanReply,
   DEFAULT_TRANSCRIPT,
+  FEELING_TITLE,
   FOCUS_HEAD,
   focusMessage,
   gapLine,
@@ -244,6 +260,8 @@ export {
 export { ReactTool, ToolArgumentError } from "./tools.js";
 export {
   focusVerbs,
+  LIFE_TITLE,
+  MOOD_MIN,
   markCurrent,
   TurnError,
   type TurnPlan,

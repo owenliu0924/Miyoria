@@ -581,6 +581,7 @@ export class SelfHost implements TextRunner {
     } finally {
       typing.abort();
       this.#outlet.ended(turn);
+      this.prompt.ended(turn, result !== null && result.outcome !== "cancelled");
       this.#turns.delete(turn);
       // Freed once its lines settled (`Floor.turnEnded`), cancelled or not.
       floor?.turnEnded(turn);

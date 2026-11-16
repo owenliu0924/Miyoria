@@ -138,6 +138,11 @@ export interface PromptSource {
   attachments?(input: PromptInput): Promise<ContentPart[]>;
   /** Block 7: the inside of `<now>`: time, place, state, mood, what she has going on. */
   now(input: PromptInput): Promise<string | null>;
+  /**
+   * Block 7, after `<now>`: the inside of `<style_note>`, this run's reminders of how she sounds
+   * (the lorebook entries what was just said brings up, a few kaomoji). Unset: none.
+   */
+  style?(input: PromptInput): Promise<string | null>;
 }
 
 // ---- the guard ---------------------------------------------------------------------------------

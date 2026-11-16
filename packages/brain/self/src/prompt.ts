@@ -9,7 +9,7 @@
 //                     reasoning (`toMessages`)
 //     [user]       6  what was retrieved, her inbox, as data; the      every run
 //                     files and images of the lines that woke her
-//     [system]     7  <now> and what woke her                          every run
+//     [system]     7  <now>, <style_note> and what woke her            every run
 //     ...             what the run itself adds: her steps, their results
 //
 // Everything that changes from run to run comes after the transcript, so the request of the next
@@ -38,11 +38,13 @@ export interface PromptBlocks {
   place: string | null;
   recalled: string | null;
   now: string | null;
+  /** Block 7's `<style_note>` (`PromptSource.style`). */
+  style?: string | null;
   /** Block 6's files and images (`PromptSource.attachments`); empty: none. */
   attached?: readonly ContentPart[];
 }
 
-type TextBlock = Exclude<keyof PromptBlocks, "attached">;
+type TextBlock = Exclude<keyof PromptBlocks, "attached" | "style">;
 
 const blank = (text: string | null): string | null =>
   text === null || text.trim() === "" ? null : text.trim();
@@ -69,15 +71,24 @@ export async function gatherBlocks(
       return [];
     }
   };
-  const [fixed, pinned, place, recalled, now, attached] = await Promise.all([
+  const styled = async (): Promise<string | null> => {
+    try {
+      return blank((await source.style?.(input)) ?? null);
+    } catch (error) {
+      onError("style", error);
+      return null;
+    }
+  };
+  const [fixed, pinned, place, recalled, now, style, attached] = await Promise.all([
     ask("fixed"),
     ask("pinned"),
     ask("place"),
     ask("recalled"),
     ask("now"),
+    styled(),
     attach(),
   ]);
-  return { fixed, pinned, place, recalled, now, attached };
+  return { fixed, pinned, place, recalled, now, style, attached };
 }
 
 /** Block 7's last part: what this run is. */
@@ -138,7 +149,8 @@ export function runMessages(
     tail.push(userMessage(data.join("\n\n")));
   }
   const now = blocks.now === null ? "" : `<now>\n${blocks.now}\n</now>\n`;
-  tail.push(systemMessage(`${now}<turn>${wakeLine(wake)}</turn>`));
+  const style = blocks.style ? `<style_note>\n${blocks.style}\n</style_note>\n` : "";
+  tail.push(systemMessage(`${now}${style}<turn>${wakeLine(wake)}</turn>`));
 
   return { head, history: toMessages(transcript), tail };
 }

@@ -283,9 +283,9 @@ const FLAGGED_HISTORY = 12;
 const SLOW_ORDER: readonly string[] = ["server_emoji", "notebook"];
 const SLOW_SECTIONS: ReadonlySet<string> = new Set(SLOW_ORDER);
 /** Title of 「今天的她」 (v4 §6.2). */
-const LIFE_TITLE = "今天的你";
+export const LIFE_TITLE = "今天的你";
 /** An emotion she feels at least this much counts as her mood for the lorebook. */
-const MOOD_MIN = 0.3;
+export const MOOD_MIN = 0.3;
 const DAY_MS = 86_400_000;
 /**
  * The party tools that act in a running game, with the game they are for (`null`: any). Offered
