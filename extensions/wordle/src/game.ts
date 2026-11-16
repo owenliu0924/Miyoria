@@ -13,18 +13,18 @@ const SQUARE: Record<Mark, string> = { correct: "🟩", present: "🟨", absent:
 export function score(guess: string, answer: string): Mark[] {
   const marks: Mark[] = Array.from({ length: guess.length }, () => "absent");
   const left = new Map<string, number>();
-  for (let i = 0; i < answer.length; i++) {
-    if (guess[i] === answer[i]) marks[i] = "correct";
-    else left.set(answer[i]!, (left.get(answer[i]!) ?? 0) + 1);
-  }
-  for (let i = 0; i < guess.length; i++) {
-    if (marks[i] === "correct") continue;
-    const n = left.get(guess[i]!) ?? 0;
+  [...answer].forEach((a, i) => {
+    if (guess[i] === a) marks[i] = "correct";
+    else left.set(a, (left.get(a) ?? 0) + 1);
+  });
+  [...guess].forEach((g, i) => {
+    if (marks[i] === "correct") return;
+    const n = left.get(g) ?? 0;
     if (n > 0) {
       marks[i] = "present";
-      left.set(guess[i]!, n - 1);
+      left.set(g, n - 1);
     }
-  }
+  });
   return marks;
 }
 
@@ -39,7 +39,8 @@ export interface Dictionary {
 }
 
 export type GuessResult =
-  | { ok: false; reason: string }
+  /** `counted`: the word was typed into the game (refused, but on screen); not for a finished game. */
+  | { ok: false; reason: string; counted: boolean }
   | { ok: true; line: string; won: boolean; lost: boolean };
 
 export type GameState = "playing" | "won" | "lost" | "gave_up";
@@ -50,11 +51,17 @@ export interface Board {
   max_guesses: number;
   state: GameState;
   answer: string | null;
+  /** Every word typed this game, refused ones too. */
+  attempts: number;
+  /** The word just refused (letters in capitals, at most 12), `null` after a real guess. */
+  rejected: string | null;
 }
 
 export class Game {
   readonly guesses: Array<{ word: string; marks: Mark[] }> = [];
   #state: GameState = "playing";
+  #attempts = 0;
+  #rejected: string | null = null;
 
   constructor(
     private readonly answer: string,
@@ -81,6 +88,8 @@ export class Game {
       max_guesses: this.maxGuesses,
       state: this.#state,
       answer: this.reveal(),
+      attempts: this.#attempts,
+      rejected: this.#rejected,
     };
   }
 
@@ -89,14 +98,25 @@ export class Game {
   }
 
   guess(raw: string): GuessResult {
-    if (this.finished) return { ok: false, reason: "這局已經結束了,用 wordle.start 開新的一局" };
+    if (this.finished)
+      return { ok: false, reason: "這局已經結束了,用 wordle.start 開新的一局", counted: false };
     const word = raw.trim().toLowerCase();
+    this.#attempts += 1;
+    const refuse = (reason: string): GuessResult => {
+      // What the screen shows being typed: the letters only, as many as fit.
+      this.#rejected = word
+        .replace(/[^a-z]/g, "")
+        .slice(0, 12)
+        .toUpperCase();
+      return { ok: false, reason, counted: true };
+    };
     if (!/^[a-z]+$/.test(word) || word.length !== WORD_LENGTH)
-      return { ok: false, reason: `要剛好 ${WORD_LENGTH} 個英文字母(不算次數)` };
+      return refuse(`要剛好 ${WORD_LENGTH} 個英文字母(不算次數)`);
     if (!this.dictionary.allowed.has(word))
-      return { ok: false, reason: `${word.toUpperCase()} 不在單字表裡(不算次數)` };
+      return refuse(`${word.toUpperCase()} 不在單字表裡(不算次數)`);
     if (this.guesses.some((g) => g.word === word))
-      return { ok: false, reason: `${word.toUpperCase()} 已經猜過了(不算次數)` };
+      return refuse(`${word.toUpperCase()} 已經猜過了(不算次數)`);
+    this.#rejected = null;
     const marks = score(word, this.answer);
     this.guesses.push({ word, marks });
     const won = word === this.answer;
@@ -117,10 +137,11 @@ export class Game {
     const best = new Map<string, Mark>();
     const rank: Record<Mark, number> = { absent: 0, present: 1, correct: 2 };
     for (const g of this.guesses)
-      for (let i = 0; i < g.word.length; i++) {
-        const prev = best.get(g.word[i]!);
-        if (prev === undefined || rank[g.marks[i]!] > rank[prev]) best.set(g.word[i]!, g.marks[i]!);
-      }
+      [...g.word].forEach((letter, i) => {
+        const mark = g.marks[i] ?? "absent";
+        const prev = best.get(letter);
+        if (prev === undefined || rank[mark] > rank[prev]) best.set(letter, mark);
+      });
     const pick = (mark: Mark) =>
       [...best]
         .filter(([, m]) => m === mark)

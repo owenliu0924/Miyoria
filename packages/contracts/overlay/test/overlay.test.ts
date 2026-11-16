@@ -35,6 +35,8 @@ const messages: OverlayMessage[] = [
       max_guesses: 6,
       state: "playing",
       answer: null,
+      attempts: 2,
+      rejected: "XQZ",
     },
   },
   { type: "wordle", board: null },

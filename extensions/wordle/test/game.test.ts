@@ -46,6 +46,20 @@ describe("Game", () => {
     expect(second.guess("crane")).toMatchObject({ ok: true, won: true });
   });
 
+  it("counts every word typed and keeps the one just refused", () => {
+    const game = new Game("crane", 6, dictionary);
+    game.guess("ab1c!");
+    expect(game.toBoard()).toMatchObject({ attempts: 1, rejected: "ABC", rows: [] });
+    game.guess("slate");
+    expect(game.toBoard()).toMatchObject({ attempts: 2, rejected: null });
+    game.guess("slate");
+    expect(game.toBoard()).toMatchObject({ attempts: 3, rejected: "SLATE" });
+    game.guess("crane");
+    // A finished game takes nothing more.
+    expect(game.guess("eerie")).toMatchObject({ ok: false, counted: false });
+    expect(game.toBoard()).toMatchObject({ attempts: 4, state: "won", answer: "CRANE" });
+  });
+
   it("sums up the letters", () => {
     const game = new Game("crane", 6, dictionary);
     game.guess("slate");

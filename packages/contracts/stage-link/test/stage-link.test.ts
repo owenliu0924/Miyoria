@@ -51,6 +51,8 @@ const coreMessages: CoreMessageIn[] = [
       max_guesses: 6,
       state: "won",
       answer: "CRANE",
+      attempts: 1,
+      rejected: null,
     },
   },
   {
@@ -186,7 +188,17 @@ describe("CoreMessage", () => {
     ["touch", { type: "touch", x: 1.5, y: 0, part: "head" }],
     [
       "wordle",
-      { type: "wordle", board: { rows: [], max_guesses: 6, state: "playing", answer: "crane" } },
+      {
+        type: "wordle",
+        board: {
+          rows: [],
+          max_guesses: 6,
+          state: "playing",
+          answer: null,
+          attempts: 0,
+          rejected: "lower",
+        },
+      },
     ],
     ["beat", { type: "beat", song: "S", bpm: 401, times_ms: [], offset_ms: 0 }],
     ["activity", { type: "activity", kind: "singing", progress: 2 }],

@@ -268,4 +268,10 @@ export {
   VtsConfigSchema,
   VtsError,
 } from "./vts.js";
-export { parseWordle, WORDLE_TOPIC, type WordleBoard } from "./wordle.js";
+export {
+  parseWordle,
+  WORDLE_LINGER_MS,
+  WORDLE_TOPIC,
+  type WordleBoard,
+  WordleOnStream,
+} from "./wordle.js";

@@ -288,6 +288,7 @@ export async function setupStageObs(
         chat: role("chat") ?? DEFAULT_SCENES.chat,
         game: role("game"),
         threads: role("threads"),
+        wordle: role("wordle"),
       },
       relayout: options.relayout ?? false,
     });

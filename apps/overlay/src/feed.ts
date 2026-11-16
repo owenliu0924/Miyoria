@@ -18,8 +18,10 @@
 //   {"type":"touch","x":0..1,"y":0..1,"part":"head"|"face"|"body"|"screen"}
 //                                               a viewer touched the stream; drawn at (x·W, y·H), not kept in state
 //   {"type":"wordle","board":{"rows":[{"word":"CRANE","marks":["correct"|"present"|"absent",…]}],
-//    "max_guesses":6,"state":"playing"|"won"|"lost"|"gave_up","answer":null|"CRANE"}|null}
-//                                               her Wordle game; null takes the board away
+//    "max_guesses":6,"state":"playing"|"won"|"lost"|"gave_up","answer":null|"CRANE",
+//    "attempts":3,"rejected":null|"CRANX"}|null}
+//                                               her Wordle game, drawn by the Wordle page (?layer=wordle);
+//                                               the overlay itself ignores it
 
 import type { OverlayMessage } from "@miyoria/contracts/overlay";
 import { parseTouch } from "./touch.js";
@@ -85,13 +87,23 @@ export interface ScreenCard {
 export type WordleMark = "correct" | "present" | "absent";
 export type WordleState = "playing" | "won" | "lost" | "gave_up";
 
+export interface WordleRow {
+  /** Five capitals. */
+  word: string;
+  marks: WordleMark[];
+}
+
 /** Her Wordle game: guesses so far (capitals, a mark per letter) out of `maxGuesses`. */
 export interface WordleBoard {
-  rows: { word: string; marks: WordleMark[] }[];
+  rows: WordleRow[];
   maxGuesses: number;
   state: WordleState;
   /** Only once the game is over. */
   answer: string | null;
+  /** Every word she typed this game, refused ones too. */
+  attempts: number;
+  /** The word just refused (capitals, up to 12 letters, may be empty), else null. */
+  rejected: string | null;
 }
 
 export interface OverlayState {
@@ -115,10 +127,6 @@ export interface OverlayState {
   screens: ScreenCard[];
   /** The id the next card gets. */
   screenSeq: number;
-  /** Her Wordle game, or null. */
-  wordle: WordleBoard | null;
-  /** Bumped on every board; a finished board is taken away by `wordle_done` with its number. */
-  wordleSeq: number;
 }
 
 /**
@@ -170,8 +178,7 @@ export type FeedMessage = Parsed[keyof Parsed] | DemoQueueMessage;
 export type Action =
   | FeedMessage
   | { type: "connection"; connected: boolean }
-  | { type: "screen_done"; id: number }
-  | { type: "wordle_done"; seq: number };
+  | { type: "screen_done"; id: number };
 
 export const MAX_QUEUE_ITEMS = 12;
 /** Cards on the screen plus waiting; past this the oldest waiting one is dropped. */
@@ -202,8 +209,6 @@ export function initialState(): OverlayState {
     gift: null,
     screens: [],
     screenSeq: 0,
-    wordle: null,
-    wordleSeq: 0,
   };
 }
 
@@ -354,7 +359,11 @@ export function parseWordleBoard(raw: unknown): WordleBoard | null {
   if (typeof state !== "string" || !WORDLE_STATES.includes(state)) return null;
   const answer = raw.answer === null ? null : typeof raw.answer === "string" && WORDLE_WORD.test(raw.answer) ? raw.answer : undefined;
   if (answer === undefined || (state === "playing") !== (answer === null)) return null;
-  return { rows, maxGuesses, state: state as WordleState, answer };
+  const attempts = raw.attempts;
+  if (typeof attempts !== "number" || !Number.isInteger(attempts) || attempts < 0) return null;
+  const rejected = raw.rejected === null ? null : typeof raw.rejected === "string" && /^[A-Z]{0,12}$/.test(raw.rejected) ? raw.rejected : undefined;
+  if (rejected === undefined) return null;
+  return { rows, maxGuesses, state: state as WordleState, answer, attempts, rejected };
 }
 
 /** The demo's queue frame: loose on purpose ("items":[…]); see `DemoQueueMessage`. */
@@ -433,7 +442,7 @@ export function reduce(state: OverlayState, action: Action): OverlayState {
       // A dropped feed means nobody is driving the overlay: stop claiming she is talking.
       return action.connected
         ? { ...state, connected: true }
-        : { ...state, connected: false, speaking: false, activity: null, gift: null, screens: [], wordle: null };
+        : { ...state, connected: false, speaking: false, activity: null, gift: null, screens: [] };
     case "speaking":
       return { ...state, speaking: action.state === "started" };
     case "emotion":
@@ -457,29 +466,13 @@ export function reduce(state: OverlayState, action: Action): OverlayState {
       const [head, ...rest] = state.screens;
       return head !== undefined && head.id === action.id ? { ...state, screens: rest } : state;
     }
-    case "wordle":
-      // The Stage sends the game in progress again to a new client: same board, nothing new.
-      if (sameBoard(state.wordle, action.board)) return state;
-      return { ...state, wordle: action.board, wordleSeq: state.wordleSeq + 1 };
-    case "wordle_done":
-      return action.seq === state.wordleSeq && state.wordle !== null ? { ...state, wordle: null } : state;
     case "subtitle":
       return reduceSubtitle(state, action);
     case "levels":
     case "touch":
+    case "wordle":
       return state;
   }
-}
-
-function sameBoard(a: WordleBoard | null, b: WordleBoard | null): boolean {
-  if (a === null || b === null) return a === b;
-  return (
-    a.state === b.state &&
-    a.answer === b.answer &&
-    a.maxGuesses === b.maxGuesses &&
-    a.rows.length === b.rows.length &&
-    a.rows.every((r, i) => r.word === b.rows[i]?.word)
-  );
 }
 
 /** Queues the card; over the cap the oldest one that is only waiting goes (never the one on screen). */

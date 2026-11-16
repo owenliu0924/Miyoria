@@ -29,7 +29,7 @@ import {
 } from "@miyoria/types";
 import { type BoundAddress, formatAddress, HttpServer, isLoopback } from "../net.js";
 import { TOUCH_TOPIC } from "../touch.js";
-import { WORDLE_TOPIC } from "../wordle.js";
+import { parseWordle, WORDLE_TOPIC, WordleOnStream } from "../wordle.js";
 import { stageCapabilities } from "./actions.js";
 import { ActivityTracker } from "./activity.js";
 import { registerStreamCommands, unregisterStreamCommands } from "./commands.js";
@@ -335,8 +335,14 @@ export class StageLinkModule implements Module {
         goliveTimer.unref?.();
       };
 
+      // Her Wordle board on the stream: its scene (role `wordle`) while it is up.
+      const wordle = new WordleOnStream((on) => director.onWordle(on));
       try {
         for await (const env of events) {
+          if (env.type === WORDLE_TOPIC) {
+            const board = parseWordle(env.data as JsonValue);
+            if (board !== undefined) wordle.board(board);
+          }
           // Chat lines only count towards highlights (nothing of their text is used).
           if (is(Events.PlatformMessageCreated, env)) {
             if (!env.data.author.is_bot) clip(highlights.message(ctx.clock.now()));
@@ -359,6 +365,7 @@ export class StageLinkModule implements Module {
           sendActivity();
         }
       } finally {
+        wordle.stop();
         wantStreaming = false;
         clearTimer();
       }

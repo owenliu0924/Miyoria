@@ -167,7 +167,8 @@ export class SceneDirector implements StreamCurtain, SceneRule {
    */
   onSnapshot(snapshot: ActivitySnapshot): void {
     this.#managed = true;
-    this.#apply(factsOf(snapshot, this.#now()));
+    // The snapshot does not know about Wordle: that fact stays the stage's.
+    this.#apply({ ...factsOf(snapshot, this.#now()), wordle: this.#facts.wordle });
   }
 
   /** `voice.golive` for `guild` (without the ActivityManager). */
@@ -219,6 +220,12 @@ export class SceneDirector implements StreamCurtain, SceneRule {
     this.#apply({ ...this.#facts, playing, game: playing ? game : null });
   }
 
+  /** Her Wordle game went on (`true`) or off (`false`) the stream; with or without the ActivityManager. */
+  onWordle(on: boolean): void {
+    if (this.#facts.wordle === on) return;
+    this.#apply({ ...this.#facts, wordle: on });
+  }
+
   /** Her voice node joined (`true`) or left (`false`) voice channel `id`. */
   onVoice(id: string, joined: boolean): void {
     if (this.#managed) return;
@@ -265,7 +272,8 @@ export class SceneDirector implements StreamCurtain, SceneRule {
     if (
       prev.playing !== next.playing ||
       prev.game !== next.game ||
-      prev.browsing !== next.browsing
+      prev.browsing !== next.browsing ||
+      prev.wordle !== next.wordle
     ) {
       this.#situation += 1;
       this.#memory.returnTo = null;
@@ -470,6 +478,7 @@ export class SceneDirector implements StreamCurtain, SceneRule {
       if (
         after > 0 &&
         !this.#facts.playing &&
+        !this.#facts.wordle &&
         !away(this.#facts, this.#memory, this.#config, now)
       ) {
         times.push(this.#memory.lastActivity + after);

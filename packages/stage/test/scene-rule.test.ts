@@ -284,4 +284,21 @@ describe("director on snapshots", () => {
     expect(t.director.scene(snap(), T0)).toBe("Just Chatting");
     t.director.stop();
   });
+  it("goes to the wordle scene while her board is up, through later snapshots, and back", async () => {
+    const t = await rig(config({ roles: { wordle: "Camera" }, starting_ms: 0 }));
+    t.director.onSnapshot(snap({ broadcast: LIVE }));
+    await vi.advanceTimersByTimeAsync(2_000);
+    const before = t.current();
+    t.director.onWordle(true);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(t.current()).toBe("Camera");
+    // A snapshot knows nothing of Wordle: the scene stays.
+    t.director.onSnapshot(snap({ broadcast: LIVE }));
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(t.current()).toBe("Camera");
+    t.director.onWordle(false);
+    // Automatic switches keep `min_switch_ms` apart.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(t.current()).toBe(before);
+  });
 });

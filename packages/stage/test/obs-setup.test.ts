@@ -231,6 +231,24 @@ describe("obs-setup", () => {
     expect(none.scenes.has("Threads")).toBe(false);
   });
 
+  it("builds a Wordle scene when the wordle role has one", async () => {
+    const obs = new FakeObs();
+    await run(obs, { scenes: { ...OPTIONS.scenes, wordle: "Wordle" } });
+    expect(obs.order("Wordle")).toEqual([
+      SOURCES.backdrop,
+      SOURCES.wordle,
+      SOURCES.model,
+      SOURCES.overlay,
+    ]);
+    expect(obs.inputs.get(SOURCES.wordle)).toMatchObject({
+      kind: "browser_source",
+      settings: { url: `${OPTIONS.overlayUrl}?layer=wordle` },
+    });
+    const none = new FakeObs();
+    await run(none);
+    expect(none.scenes.has("Wordle")).toBe(false);
+  });
+
   it("scales the layout to OBS's base resolution", async () => {
     const obs = new FakeObs();
     obs.base = { width: 1280, height: 720 };

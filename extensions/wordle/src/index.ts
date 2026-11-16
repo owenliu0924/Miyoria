@@ -58,7 +58,8 @@ export default defineExtension({
         const key = keyOf(call.context);
         const current = games.get(key);
         if (current && !current.finished) return `這個頻道已經有一局在玩了。\n${current.board()}`;
-        const answer = dictionary.answers[Math.floor(Math.random() * dictionary.answers.length)]!;
+        const answer =
+          dictionary.answers[Math.floor(Math.random() * dictionary.answers.length)] ?? "crane";
         const game = new Game(answer, maxGuesses, dictionary);
         games.set(key, game);
         show(game);
@@ -75,8 +76,9 @@ export default defineExtension({
         const game = games.get(keyOf(call.context));
         if (!game) return "還沒開局,先用 wordle.start";
         const r = game.guess(String(word ?? ""));
+        // A refused word is typed on screen too (it shakes there); a finished game shows nothing new.
+        if (r.ok || r.counted) show(game);
         if (!r.ok) return `失敗:${r.reason}`;
-        show(game);
         if (r.won) return `${r.line}\n答對了!用了 ${game.guesses.length}/${game.maxGuesses} 次。`;
         if (r.lost) return `${r.line}\n次數用完了,沒猜到。答案是 ${game.reveal()}。`;
         return `${r.line}\n${game.board()}`;

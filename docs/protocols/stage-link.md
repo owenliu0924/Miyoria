@@ -36,7 +36,7 @@ Stage 節點(`miyoria stage`,跑在直播機)和 Core 的 `stage.link` 模組之
 | `clip` | `reason`, `id?` | 存一段精華:Stage 叫 OBS 存 replay buffer(直播最後幾十秒,長度和資料夾在 OBS 設定),在檔案旁邊寫 `<檔名>.json`(`reason`、`at`)。成功時回 `status`,並另外送 `clip_saved`;OBS 沒存到(replay buffer 沒開)回 `error`。Core 在直播中、唱完歌 / 她情緒很強 / 聊天室突然很多訊息時送(`[modules."stage.link".highlights]`) |
 | `activity` | `kind`, `label`, `detail`, `progress`, `elapsed_ms`, `duration_ms` | 她現在在做什麼(overlay 左下的活動膠囊,見下面「活動」)。`kind`:`thinking` / `synthesizing` / `song_prepare` / `singing`,`null` = 隱藏(其他欄位為空);`label` 是短的中文狀態(≤ 40);`detail` 是歌名(已跳脫、≤ 49 字)或 `null`;`progress` 0..1 或 `null`(不確定);唱歌時 `elapsed_ms`(送出時唱到哪)與 `duration_ms`(歌多長),進度由收到的一方自己的時鐘推進 |
 | `touch` | `x`, `y`(0..1,畫面左上為原點), `part`(`head` / `face` / `body` / `screen`) | 觀眾在網站摸了直播畫面(`live.touch`)。overlay 在 (x·寬, y·高) 畫手印和愛心(每秒最多送 8 個、不重送給新連線);頭 / 臉 / 身體讓她小小反應(`[stage.touch]`,`screen` 不反應),見 `miyoria.example.toml` 的 stage 區 |
-| `wordle` | `board`:`rows`(每列 `word` 五個大寫字母、`marks` 五個 `correct` / `present` / `absent`)、`max_guesses`(1..12)、`state`(`playing` / `won` / `lost` / `gave_up`)、`answer`(結束才有,否則 `null`);`board: null` 拿掉盤面 | 她玩的 Wordle(`miyoria.wordle` 擴充發的 `ext.miyoria.wordle.board`)。overlay 畫出格子,新猜的字一格一格翻開;結束的盤面停 15 秒再淡出。進行中的那局會重送給新連線,結束的不會 |
+| `wordle` | `board`:`rows`(每列 `word` 五個大寫字母、`marks` 五個 `correct` / `present` / `absent`)、`max_guesses`(1..12)、`state`(`playing` / `won` / `lost` / `gave_up`)、`answer`(結束才有,否則 `null`)、`attempts`(這局打過幾個字,被退回的也算)、`rejected`(剛被退回的字,大寫字母最多 12 個,否則 `null`);`board: null` 拿掉盤面 | 她玩的 Wordle(`miyoria.wordle` 擴充發的 `ext.miyoria.wordle.board`),由 Wordle 頁面(`/overlay/?layer=wordle`)畫。進行中的那局會重送給新連線,結束的不會。Core 端的導演在有盤面時想要 `wordle` 用途的場景,結束 15 秒後放掉 |
 | `status_request` | `id?` | 要一份最新的 `status` |
 | `ping` / `pong` | | |
 

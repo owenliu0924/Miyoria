@@ -324,9 +324,14 @@ export const StageLinkWordleRowSchema = z
   })
   .meta({ id: "StageLinkWordleRow" });
 
+/** Longest refused input a board carries (letters only, code units). */
+export const WORDLE_REJECTED_MAX = 12;
+
 /**
  * The Wordle game she plays (the `miyoria.wordle` extension's `ext.miyoria.wordle.board`): her
  * guesses so far, out of `max_guesses`. `answer` is only there once the game is over.
+ * `attempts` counts every word she typed this game, refused ones too, so each board is new;
+ * `rejected` is the word just refused (its letters, in capitals), `null` after a real guess.
  */
 export const StageLinkWordleBoardSchema = z
   .object({
@@ -336,6 +341,12 @@ export const StageLinkWordleBoardSchema = z
     answer: z
       .string()
       .regex(/^[A-Z]{5}$/)
+      .nullable(),
+    attempts: z.number().int().min(0).max(1000),
+    rejected: z
+      .string()
+      .regex(/^[A-Z]*$/)
+      .max(WORDLE_REJECTED_MAX)
       .nullable(),
   })
   .meta({ id: "StageLinkWordleBoard" });

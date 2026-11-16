@@ -24,6 +24,11 @@ export interface SceneFacts {
    * not a game name, so it never picks a role by name.
    */
   browsing: boolean;
+  /**
+   * A Wordle game is on the stream (the `miyoria.wordle` board, until a while after it ends).
+   * The stage's own fact: the ActivityManager's snapshot does not carry it.
+   */
+  wordle: boolean;
   singing: boolean;
   /** Her timed override (`stage.scene`), `null` when none or expired. */
   override: { scene: string; until: number } | null;
@@ -60,6 +65,7 @@ export const NO_FACTS: SceneFacts = {
   playing: false,
   game: null,
   browsing: false,
+  wordle: false,
   singing: false,
   override: null,
 };
@@ -82,6 +88,7 @@ export function factsOf(input: SceneRuleInput, now: number): SceneFacts {
     playing: running && (a.type === "game" || a.type === "browse"),
     game: running && a.type === "game" ? a.target : null,
     browsing: running && a.type === "browse",
+    wordle: false,
     singing: running && a.type === "singing",
     override:
       input.override !== null && until > now ? { scene: input.override.scene, until } : null,
@@ -95,7 +102,7 @@ export function away(
   config: ScenesConfig,
   now: number,
 ): boolean {
-  if (!facts.live || facts.playing || facts.singing) return false;
+  if (!facts.live || facts.playing || facts.wordle || facts.singing) return false;
   if (config.brb_on_voice_leave && memory.voiceThisLive && !facts.inVoice) return true;
   const after = config.brb_after_ms;
   return after > 0 && now - memory.lastActivity >= after;
@@ -134,6 +141,8 @@ export function sceneWants(
   if (away(facts, memory, config, now)) {
     out.push({ role: "brb", why: "暫時沒有人在講話或她離開了語音", urgent: false });
   }
+  // Her Wordle board has a scene of its own when the owner gave it one (role `wordle`).
+  if (facts.wordle) out.push({ role: "wordle", why: "玩 Wordle", urgent: false });
   if (facts.playing && facts.game !== null && ROLE_NAME.test(facts.game)) {
     out.push({ role: facts.game, why: `開始${facts.game}`, urgent: false });
   }

@@ -17,7 +17,7 @@
 | `{"type":"activity","kind","label","detail","progress","elapsed_ms","duration_ms"}` | 活動膠囊(見下面)。`kind`:`thinking`(思考中…)、`synthesizing`(產生語音…)、`song_prepare`(下載中 / 讓出顯示卡中 / 分離人聲 / 轉換歌聲 / 混音 / 找歌詞,`detail` 是歌名,`progress` 是 worker 的進度)、`singing`(正在唱,`elapsed_ms` + `duration_ms` 由 overlay 自己的時鐘推進度);`kind: null` 隱藏。不認得的 `kind` 當成沒有進度的狀態顯示。 |
 | `{"type":"gift","text"}` | 禮物那一行(上方中間的小膠囊,例如「Owen 餵了她一碗白飯」)。Stage 把 60 秒內同一種禮物合併成一行(「Owen 和另外 3 人餵了她 5 碗白飯」),送出最新的一行,`text: ""` 表示淡出(最後一份禮物後約 8 秒)。 |
 | `{"type":"touch","x","y","part"}` | 觀眾在網站上摸了直播畫面(Core 的 `live.touch`,Stage 每秒最多轉 8 個)。`x`、`y` 是 0..1(左上為原點),`part` 是 `head` / `face` / `body` / `screen`。overlay 在畫面的 (x·寬, y·高) 畫一圈小小的波紋和一顆往上飄的愛心,約 1.3 秒淡出,同時最多 12 個(超過時最舊的立刻拿掉);`prefers-reduced-motion` 時不動、只淡入淡出。範圍外或型別不對的整則略過。`?demo=1` 會隨機在她的頭、臉、身體和空白處摸。她本人的反應由 Stage 驅動(`[stage.touch]`),不在 overlay。 |
-| `{"type":"wordle","board"}` | 她玩的 Wordle(`miyoria.wordle` 擴充)。`board` 是 `rows`(`word` + 五個 `marks`:`correct` / `present` / `absent`)、`max_guesses`、`state`(`playing` / `won` / `lost` / `gave_up`)、`answer`(結束才有);`null` 拿掉。畫在左邊、垂直置中:`max_guesses` 列、每列五格,新猜的字一格一格翻開,翻到一半才露出顏色(綠 = 位置對、黃 = 有但位置不對、灰 = 沒有)。結束後下面多一行結果(猜中了 / 答案是…),停 15 秒淡出。格式不對(小寫、長度不對、還沒結束就有答案…)的整則略過。`?demo=1` 每輪會玩一局。 |
+| `{"type":"wordle","board"}` | 她玩的 Wordle(`miyoria.wordle` 擴充)。overlay 本身不畫,由 Wordle 頁面(`?layer=wordle`,見下面)畫。`board` 是 `rows`(`word` + 五個 `marks`:`correct` / `present` / `absent`)、`max_guesses`、`state`(`playing` / `won` / `lost` / `gave_up`)、`answer`(結束才有)、`attempts`(這局打過幾個字,被退回的也算)、`rejected`(剛被退回的字,否則 `null`);`null` 拿掉。格式不對的整則略過。 |
 | `{"type":"notice","text"}` | 舊版 Core 的一行狀態(「準備歌曲中…」,`""` 清掉)。沒有 `activity` 時顯示在活動膠囊裡(沒有進度)。 |
 | `{"type":"levels","rms","bands"?}` | 她的聲音音量(0..1,和嘴型同一份、同樣延遲),每個 avatar frame 一次(約 60/s),停下時送一次 `rms: 0`。畫成左側邊緣從上到下一整排固定不動的橫條(貼齊畫面左緣、前端圓角、半透明):每條只改長度和透明度,中間的跟低頻、上下兩端的跟高頻,顏色跟著情緒點;她開口時淡入、停下時淡出。唱歌時跟著她的人聲。 |
 
@@ -40,13 +40,24 @@ OBS:新增「瀏覽器」來源,網址 `http://127.0.0.1:7884/overlay/`,寬 1920
 | 參數 | 預設 | 說明 |
 |---|---|---|
 | `ws` | 跟頁面同一個主機的 `…/overlay/ws`(file:// 開啟時 `ws://127.0.0.1:7884/overlay/ws`) | 推送位址,只接受 `ws://` / `wss://`。 |
-| `show` | `subtitles,emotion,status,queue,wave,activity,gifts,screen,touches,wordle` | 要顯示哪些部分,逗號分隔。例如 `?show=subtitles,queue`。沒有任何有效名稱時視為預設。 |
+| `show` | `subtitles,emotion,status,queue,wave,activity,gifts,screen,touches` | 要顯示哪些部分,逗號分隔。例如 `?show=subtitles,queue`。沒有任何有效名稱時視為預設。 |
 | `cps` | `14` | 打字機基本速度(每秒字數,2~200)。字幕來得比顯示快時會自動加速追上;`200` = 不做打字效果。 |
 | `scale` | `1` | 整體縮放(0.4~3)。1 是以 1080p 為準,版面隨畫面寬高等比,720p / 4K 看起來一樣。 |
 | `demo` | 關 | `?demo=1` 播一段內建的假資料,不用連 Stage,設計和預覽用。 |
 | `debug` | 關 | 推送斷線時在左下角顯示 "feed offline"(預設不顯示,避免上了直播畫面)。 |
-| `layer` | `overlay` | `backdrop`:這頁變成整個場景最底下的背景層(見下面),不連推送。 |
+| `layer` | `overlay` | `backdrop`:這頁變成整個場景最底下的背景層(見下面),不連推送。`wordle`:她的 Wordle 遊戲(見下面)。 |
 | `layout` | `default` | `sing`:唱歌場景的版面。影片在左上(1080p 時 48,48 起、1504×846),她的模型站在右下角、蓋住影片一角;字幕移到影片下緣、活動膠囊在影片正下方、聲音條改成橫的貼在畫面底部、側邊面板對齊同樣的邊距。 |
+
+### Wordle 頁面
+
+`?layer=wordle` 是她玩 Wordle 的畫面,長得跟一般的 Wordle 一樣(深色):上面標題、6×5 格子、下面鍵盤,遊戲站在左邊(`--wp-x`,1080p 時中心約在 x = 544),右邊留給她的模型。沒有遊戲時整頁透明,開局時淡入。
+
+- 每個字一個字母一個字母打進去(格子彈一下、鍵盤那顆鍵亮一下),按 Enter 後一格一格翻開,翻到一半才變色;翻完鍵盤跟著變色(每個字母取最好的結果)。
+- 被退回的字:打進去、整列抖動、上面跳出原因(「不在單字表裡」/「要 5 個字母」/「已經猜過了」),再用退格一個一個刪掉。
+- 猜中時那一列跳一下,跳出「天才!」「太神了!」「厲害!」「漂亮!」「不錯!」「好險!」(第 1~6 次);沒猜到或放棄跳出答案。結束 15 秒後淡出。
+- 一次只播一個動作:動作還沒播完又來新的盤面就排隊;新的一局或盤面被拿掉時,還沒播的直接丟掉。第一次看到的盤面(頁面晚開、重新整理)直接畫出結果,不重播打字。
+- `max_guesses` 超過 6 時格子縮小,整體高度不變。`prefers-reduced-motion` 時不動畫。
+- `?layer=wordle&demo=1` 輪流玩一局猜中(中間有一個被退回的字)和一局沒猜到的,不用連 Stage。
 
 ### 背景層與唱歌場景
 

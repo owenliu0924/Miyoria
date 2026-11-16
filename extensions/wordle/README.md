@@ -15,16 +15,28 @@
 
 ## 直播畫面
 
-開局、每猜一個字、放棄時,擴充都會發出 `ext.miyoria.wordle.board` 事件。Core 的 stage link 把它轉給 Stage,overlay(`apps/overlay`)就在畫面左邊畫出盤面:
+畫面跟一般的 Wordle 一樣:上面標題、中間 6×5 的格子、下面鍵盤,只是打字的是她。
 
-- 六列五格(`max_guesses` 是幾就幾列,超過 6 列時格子會縮小);
-- 新猜的字一格一格翻開,翻到一半才露出顏色:綠 = 位置對、黃 = 有但位置不對、灰 = 沒有;
-- 結束後下面多一行「第 N 次就猜中了!」或「答案是 …」,停 15 秒再淡出;
-- OBS 的來源晚開或重新整理,也會補上正在玩的那一局(已經結束的不補)。
+- 她猜的每個字都一個字母一個字母打進去(鍵盤上那顆鍵會亮),再按 Enter;
+- 格子一格一格翻開,翻到一半才露出顏色:綠 = 位置對、黃 = 有但位置不對、灰 = 沒有;鍵盤跟著變色;
+- 被退回的字(不在單字表、不到 5 個字母、已經猜過)那一列會抖,上面跳出原因,字母再一個一個刪掉;
+- 猜中時那一列會跳一下,跳出「天才!」到「好險!」(看猜了幾次);沒猜到或放棄就跳出答案;
+- 結束後停 15 秒再淡出。OBS 來源晚開或重新整理,會直接畫出正在玩的那一局。
 
-她邊猜邊講話,字幕照常出現在下面,觀眾看得到她怎麼想。好幾個頻道同時在玩時,畫面上是最後有動靜的那一局。不想上畫面就設 `show_on_stream = false`;overlay 那邊也可以用 `?show=` 拿掉 `wordle`。
+運作方式:開局、每次輸入、放棄時,擴充都會發出 `ext.miyoria.wordle.board` 事件。Core 的 stage link 轉給 Stage,Stage 轉給 Wordle 頁面(`http://127.0.0.1:7884/overlay/?layer=wordle`,在 `apps/overlay`)。
 
-要看效果不用開直播:在 `apps/overlay` 跑 `pnpm dev`,打開 `http://localhost:5173/?demo=1`,demo 每輪會玩一局。
+### 場景
+
+Wordle 頁面是全螢幕的,遊戲在左邊,右邊留給她的模型。給它一個場景:
+
+1. `miyoria.toml` 的 `[modules."stage.link".scenes]` 加上 `roles = { …, wordle = "Wordle" }`;
+2. 跑 `miyoria stage obs-setup`:會建好「Wordle」場景(背景、Wordle 頁面、她的模型站在右邊、overlay 在最上面)。
+
+之後她一開局,導演就切到 Wordle 場景;結束 15 秒後切回原本該在的場景(聊天、遊戲…)。沒設 `wordle` 這個用途就不會切,頁面還是可以自己放進任何場景。
+
+她邊猜邊講話,字幕照常出現,觀眾聽得到她怎麼想。好幾個頻道同時在玩時,畫面上是最後有動靜的那一局。不想上畫面就設 `show_on_stream = false`。
+
+要看效果不用開直播:在 `apps/overlay` 跑 `pnpm dev`,打開 `http://localhost:5173/?layer=wordle&demo=1`,demo 會輪流玩一局猜中的和一局沒猜到的。
 
 單字表是公開的 Wordle 清單:`words/answers.txt`(2314 個答案)和 `words/guesses.txt`(另外 10656 個可以猜的字)。
 

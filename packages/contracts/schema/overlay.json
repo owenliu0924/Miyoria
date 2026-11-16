@@ -351,13 +351,24 @@
             "string",
             "null"
           ]
+        },
+        "attempts": {
+          "type": "number"
+        },
+        "rejected": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "rows",
         "max_guesses",
         "state",
-        "answer"
+        "answer",
+        "attempts",
+        "rejected"
       ]
     },
     "OverlayWordleMark": {

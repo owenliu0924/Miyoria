@@ -1064,13 +1064,32 @@
               "type": "null"
             }
           ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "rejected": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 12,
+              "pattern": "^[A-Z]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "rows",
         "max_guesses",
         "state",
-        "answer"
+        "answer",
+        "attempts",
+        "rejected"
       ]
     },
     "StageLinkWordleMark": {

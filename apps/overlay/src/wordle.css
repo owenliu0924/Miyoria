@@ -1,0 +1,297 @@
+/*
+ * The Wordle page (?layer=wordle): the original's dark look, full screen. The game stands in a
+ * column on the left (--wp-x is its centre), clear of her model on the right of the Wordle scene.
+ * Sizes are in rem, which follows the frame (16px at 1920x1080). Transparent until a game starts.
+ */
+
+.wp {
+  --wp-x: 34rem;
+  --wp-rows: 6;
+  --wp-bg: #121213;
+  --wp-ink: #f8f8f8;
+  --wp-edge: #3a3a3c;
+  --wp-edge-typed: #565758;
+  --wp-correct: #538d4e;
+  --wp-present: #b59f3b;
+  --wp-absent: #3a3a3c;
+  --wp-key: #818384;
+  /* Six rows at 4.6rem a tile; more rows share the same height. */
+  --wp-tile: calc(4.6rem * 6 / var(--wp-rows));
+  position: fixed;
+  inset: 0;
+  background: var(--wp-bg);
+  color: var(--wp-ink);
+  font-family: "Helvetica Neue", Arial, "Noto Sans TC", "Microsoft JhengHei UI", sans-serif;
+  opacity: 1;
+  transition: opacity 400ms ease-out;
+}
+
+.wp.is-out {
+  opacity: 0;
+}
+
+.wp__col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--wp-x);
+  width: 37rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  transform: translateX(-50%);
+}
+
+.wp__head {
+  align-self: stretch;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--wp-edge);
+  text-align: center;
+}
+
+.wp__title {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* The grid, with toasts floating over its top. */
+.wp__stage {
+  position: relative;
+}
+
+.wp__board {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.wp__row {
+  display: grid;
+  grid-template-columns: repeat(5, var(--wp-tile));
+  gap: 0.35rem;
+}
+
+.wp__tile {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--wp-tile);
+  height: var(--wp-tile);
+  border: 2px solid var(--wp-edge);
+  font-size: calc(var(--wp-tile) * 0.5);
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.wp__tile[data-state="tbd"] {
+  border-color: var(--wp-edge-typed);
+}
+
+.wp__tile[data-state="correct"],
+.wp__tile[data-state="present"],
+.wp__tile[data-state="absent"] {
+  border: none;
+}
+
+.wp__tile[data-state="correct"] {
+  background: var(--wp-correct);
+}
+
+.wp__tile[data-state="present"] {
+  background: var(--wp-present);
+}
+
+.wp__tile[data-state="absent"] {
+  background: var(--wp-absent);
+}
+
+/* A letter typed in. */
+.wp__tile.is-pop {
+  animation: wp-pop 100ms ease-out;
+}
+
+@keyframes wp-pop {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+/* Turned over; the page sets the colour halfway, when the tile is edge-on. */
+.wp__tile.is-flip {
+  animation: wp-flip 520ms ease-in-out;
+}
+
+@keyframes wp-flip {
+  0% {
+    transform: rotateX(0);
+  }
+  50% {
+    transform: rotateX(-90deg);
+  }
+  100% {
+    transform: rotateX(0);
+  }
+}
+
+.wp__tile.is-bounce {
+  animation: wp-bounce 500ms ease-out;
+}
+
+@keyframes wp-bounce {
+  0%,
+  20% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-30%);
+  }
+  50% {
+    transform: translateY(5%);
+  }
+  60% {
+    transform: translateY(-15%);
+  }
+  80% {
+    transform: translateY(2%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* A refused word. */
+.wp__row.is-shake {
+  animation: wp-shake 600ms;
+}
+
+@keyframes wp-shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
+}
+
+/* Toasts sit just above the grid, over the gap under the title. */
+.wp__toasts {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 0.5rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.wp__toast {
+  padding: 0.6rem 1.1rem;
+  border-radius: 0.3rem;
+  background: var(--wp-ink);
+  color: #000;
+  font-size: 1.15rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: opacity 300ms ease-in;
+}
+
+.wp__toast.is-out {
+  opacity: 0;
+}
+
+.wp__keys {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.wp__keyrow {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.wp__key {
+  display: grid;
+  place-items: center;
+  width: 3.05rem;
+  height: 3.9rem;
+  border-radius: 0.25rem;
+  background: var(--wp-key);
+  font-size: 1.3rem;
+  font-weight: 700;
+  user-select: none;
+  transition: background-color 300ms ease;
+}
+
+.wp__key--wide {
+  width: 4.7rem;
+  font-size: 0.95rem;
+}
+
+.wp__key[data-state="correct"] {
+  background: var(--wp-correct);
+}
+
+.wp__key[data-state="present"] {
+  background: var(--wp-present);
+}
+
+.wp__key[data-state="absent"] {
+  background: var(--wp-absent);
+}
+
+/* The key she just pressed. */
+.wp__key.is-pressed {
+  animation: wp-press 180ms ease-out;
+}
+
+@keyframes wp-press {
+  0% {
+    filter: brightness(1.6);
+    transform: scale(0.94);
+  }
+  100% {
+    filter: none;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp,
+  .wp__toast,
+  .wp__key {
+    transition: none;
+  }
+  .wp__tile.is-pop,
+  .wp__tile.is-flip,
+  .wp__tile.is-bounce,
+  .wp__row.is-shake,
+  .wp__key.is-pressed {
+    animation: none;
+  }
+}

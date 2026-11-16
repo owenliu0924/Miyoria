@@ -24,7 +24,6 @@ import {
 } from "./typewriter.js";
 import { MAX_TOUCHES, type Touch, TouchSet } from "./touch.js";
 import { Wave } from "./wave.js";
-import { WORDLE_LINGER_MS, WordleView } from "./wordle.js";
 
 const QUEUE_SHOWN = 5;
 /** How long one paid message / dedication stays up before the next one comes. */
@@ -101,10 +100,6 @@ export class Overlay {
   /** The card whose time is running, and its timer. */
   private screenShown: number | null = null;
   private screenTimer: ReturnType<typeof setTimeout> | undefined;
-  private readonly wordle: WordleView;
-  /** The finished board whose time is running, and its timer. */
-  private wordleLinger: number | null = null;
-  private wordleTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     root: HTMLElement,
@@ -177,9 +172,6 @@ export class Overlay {
     this.screen.hidden = true;
     this.screen.setAttribute("role", "status");
     this.screenBody = new Swap(el("div", "shout__body", this.screen));
-
-    // Her Wordle game (left, clear of the model on the right and the subtitles at the bottom).
-    this.wordle = new WordleView(main);
 
     // Where viewers touched the stream on the website: a ripple and a small heart, at the same
     // place of this 1920x1080 canvas as on their picture.
@@ -339,24 +331,6 @@ export class Overlay {
     this.screenTimer = setTimeout(() => this.dispatch({ type: "screen_done", id: card.id }), SCREEN_SHOW_MS);
   }
 
-  // ── Wordle ───────────────────────────────────────────────────────────────
-
-  /** Draws the board; a finished one stays up for `WORDLE_LINGER_MS`, then the reducer drops it. */
-  private renderWordle(): void {
-    const board = this.cfg.show.has("wordle") ? this.state.wordle : null;
-    this.wordle.render(board);
-    const seq = this.state.wordleSeq;
-    if (board === null || board.state === "playing") {
-      clearTimeout(this.wordleTimer);
-      this.wordleLinger = null;
-      return;
-    }
-    if (this.wordleLinger === seq) return;
-    this.wordleLinger = seq;
-    clearTimeout(this.wordleTimer);
-    this.wordleTimer = setTimeout(() => this.dispatch({ type: "wordle_done", seq }), WORDLE_LINGER_MS);
-  }
-
   // ── side panel and activity ──────────────────────────────────────────────
 
   private renderPanel(): void {
@@ -375,7 +349,6 @@ export class Overlay {
     present(this.gift, gift !== null);
 
     this.renderScreen();
-    this.renderWordle();
 
     // A panel that is fading in opens its sections at once instead of unfolding them behind the fade.
     const instant = !isPresent(this.panel);

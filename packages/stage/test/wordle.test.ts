@@ -2,22 +2,32 @@
 // overlay; the hub keeps a game in progress for clients that connect later, not a finished one.
 
 import { type Envelope, Events, eventEnvelope } from "@miyoria/types";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   Forwarder,
   OverlayHub,
   parseCoreMessage,
   parseWordle,
   WORDLE_TOPIC,
+  WordleOnStream,
 } from "../src/index.js";
 
 const row = { word: "SLATE", marks: ["absent", "absent", "correct", "absent", "absent"] };
-const playing = { rows: [row], max_guesses: 6, state: "playing", answer: null };
+const playing = {
+  rows: [row],
+  max_guesses: 6,
+  state: "playing",
+  answer: null,
+  attempts: 1,
+  rejected: null,
+};
 const won = {
   rows: [row, { ...row, word: "CRANE", marks: Array(5).fill("correct") }],
   max_guesses: 6,
   state: "won",
   answer: "CRANE",
+  attempts: 2,
+  rejected: null,
 };
 
 const ev = (data: unknown): Envelope =>
@@ -73,5 +83,33 @@ describe("wordle", () => {
     hub.wordle(playing as never);
     hub.wordle(null);
     expect(hub.initial().some((t) => t.includes('"wordle"'))).toBe(false);
+  });
+});
+
+describe("wordle on stream", () => {
+  it("is on while a game is played, for a while after it ends, and off at once without a board", () => {
+    vi.useFakeTimers();
+    try {
+      const seen: boolean[] = [];
+      const w = new WordleOnStream((on) => seen.push(on), 15_000);
+      w.board(playing as never);
+      w.board(playing as never);
+      expect(seen).toEqual([true]);
+      w.board(won as never);
+      vi.advanceTimersByTime(14_000);
+      expect(w.on).toBe(true);
+      // A new game before the time is up keeps it on.
+      w.board(playing as never);
+      vi.advanceTimersByTime(20_000);
+      expect(w.on).toBe(true);
+      w.board(won as never);
+      vi.advanceTimersByTime(15_000);
+      expect(seen).toEqual([true, false]);
+      w.board(playing as never);
+      w.board(null);
+      expect(seen).toEqual([true, false, true, false]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -99,25 +99,19 @@ describe("extension", () => {
   it("puts the board on the stream after every change, the answer only at the end", async () => {
     const { call, published } = await start();
     vi.spyOn(Math, "random").mockReturnValue(0); // "aback"
+    const slate = { word: "SLATE", marks: ["absent", "absent", "correct", "absent", "absent"] };
     await call("wordle.start", {});
-    await call("wordle.guess", { word: "zzzzz" }); // refused: no new board
+    await call("wordle.guess", { word: "zzzzz" }); // refused, but typed on screen
     await call("wordle.guess", { word: "slate" });
     await call("wordle.give_up", {});
-    expect(published.map((p) => p.type)).toEqual([BOARD_TOPIC, BOARD_TOPIC, BOARD_TOPIC]);
+    await call("wordle.guess", { word: "crane" }); // the game is over: nothing new
+    expect(published.map((p) => p.type)).toEqual(Array(4).fill(BOARD_TOPIC));
+    const base = { max_guesses: 6, state: "playing", answer: null };
     expect(published.map((p) => p.data.board)).toEqual([
-      { rows: [], max_guesses: 6, state: "playing", answer: null },
-      {
-        rows: [{ word: "SLATE", marks: ["absent", "absent", "correct", "absent", "absent"] }],
-        max_guesses: 6,
-        state: "playing",
-        answer: null,
-      },
-      {
-        rows: [{ word: "SLATE", marks: ["absent", "absent", "correct", "absent", "absent"] }],
-        max_guesses: 6,
-        state: "gave_up",
-        answer: "ABACK",
-      },
+      { ...base, rows: [], attempts: 0, rejected: null },
+      { ...base, rows: [], attempts: 1, rejected: "ZZZZZ" },
+      { ...base, rows: [slate], attempts: 2, rejected: null },
+      { ...base, rows: [slate], attempts: 2, rejected: null, state: "gave_up", answer: "ABACK" },
     ]);
   });
 

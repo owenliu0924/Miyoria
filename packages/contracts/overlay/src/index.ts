@@ -93,13 +93,18 @@ export const OverlayWordleRowSchema = z
   .object({ word: z.string(), marks: z.array(OverlayWordleMarkSchema) })
   .meta({ id: "OverlayWordleRow" });
 
-/** Her Wordle game: guesses so far out of `max_guesses`; `answer` once it is over. */
+/**
+ * Her Wordle game: guesses so far out of `max_guesses`; `answer` once it is over; `attempts`
+ * counts every word typed (refused ones too); `rejected` is the word just refused, else `null`.
+ */
 export const OverlayWordleBoardSchema = z
   .object({
     rows: z.array(OverlayWordleRowSchema),
     max_guesses: z.number(),
     state: OverlayWordleStateSchema,
     answer: z.string().nullable(),
+    attempts: z.number(),
+    rejected: z.string().nullable(),
   })
   .meta({ id: "OverlayWordleBoard" });
 

@@ -1,7 +1,7 @@
 // Scripted feed for `?demo=1`: lets the overlay be designed, previewed in OBS and screenshotted
 // without the Stage. It speaks the same messages the Stage sends, and walks through every activity
 // (thinking, getting a line ready, preparing a song stage by stage, singing it) and queue change.
-import type { Activity, FeedMessage, QueueItem, WordleBoard, WordleMark } from "./feed.js";
+import type { Activity, FeedMessage, QueueItem } from "./feed.js";
 
 interface Line {
   emotion: string;
@@ -35,24 +35,6 @@ const LATER: QueueItem[] = [
   { title: "Minecraft:挖到鑽石", by: "小明" },
   { title: "講一個鬼故事", by: "阿翔" },
 ];
-
-/** A Wordle game she plays through, over and over: the answer and her guesses. */
-const WORDLE_ANSWER = "CRANE";
-const WORDLE_GUESSES = ["STARE", "GRAND", "CRANE"];
-
-/** Marks one guess (greens first, then a yellow per letter the answer still has). */
-function wordleMarks(guess: string, answer: string): WordleMark[] {
-  const marks: WordleMark[] = Array.from(guess, (c, i) => (c === answer[i] ? "correct" : "absent"));
-  const left = Array.from(answer).filter((c, i) => guess[i] !== c);
-  Array.from(guess).forEach((c, i) => {
-    const at = left.indexOf(c);
-    if (marks[i] === "absent" && at >= 0) {
-      marks[i] = "present";
-      left.splice(at, 1);
-    }
-  });
-  return marks;
-}
 
 const busy = (kind: string, label: string): Activity => ({
   kind,
@@ -172,26 +154,6 @@ export function startDemo(emit: (m: FeedMessage) => void): () => void {
     [0.76, 0.62, "body"],
     [0.3, 0.45, "screen"],
   ];
-  // Her Wordle game: a guess every few seconds, then the board stays up a while and fades.
-  void (async () => {
-    while (!stopped) {
-      await wait(3000);
-      const board: WordleBoard = { rows: [], maxGuesses: 6, state: "playing", answer: null };
-      emit({ type: "wordle", board });
-      for (const guess of WORDLE_GUESSES) {
-        await wait(4500);
-        if (stopped) return;
-        board.rows = [...board.rows, { word: guess, marks: wordleMarks(guess, WORDLE_ANSWER) }];
-        if (guess === WORDLE_ANSWER) {
-          board.state = "won";
-          board.answer = WORDLE_ANSWER;
-        }
-        emit({ type: "wordle", board: { ...board } });
-      }
-      await wait(18_000);
-    }
-  })();
-
   const touches = setInterval(() => {
     const [x, y, part] = SPOTS[Math.floor(Math.random() * SPOTS.length)] as (typeof SPOTS)[number];
     const jitter = () => (Math.random() - 0.5) * 0.04;
