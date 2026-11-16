@@ -1,8 +1,4 @@
-import {
-  ActionDeniedError,
-  APPROVE_ROUTE,
-  RESULT_PENDING,
-} from "@miyoria/gate/actions";
+import { ActionDeniedError, APPROVE_ROUTE, RESULT_PENDING } from "@miyoria/gate/actions";
 import { DATA_CLOSE, DATA_OPEN, Events, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
