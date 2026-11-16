@@ -25,8 +25,8 @@ import {
 } from "@miyoria/llm/llm";
 import type { ToolEntry } from "@miyoria/llm/tools";
 import { type TranscriptTail, toMessages } from "@miyoria/memory/transcript";
-import { dataBlock } from "@miyoria/types";
-import { slimTool } from "../../agent/src/index.js";
+import { dataBlock, isJsonObject } from "@miyoria/types";
+import { FOR_ARG, FOR_PROPERTY, slimTool } from "../../agent/src/index.js";
 import type { ProfileName } from "./profiles.js";
 import { RESULT_TITLE, rulesFor, WAKE_LINES } from "./rules.js";
 import type { PromptInput, PromptSource, Wake } from "./types.js";
@@ -157,10 +157,33 @@ export function runMessages(
 
 /**
  * The tools as the model is offered them, in the order given: each spec once, without the
- * request rule every capability repeats (the rules say it once; `slimTool`).
+ * request rule every capability repeats (the rules say it once; `slimTool`). A tool that acts for
+ * whoever asked (`actsFor`) always has an optional `for_whom` argument, used when several people
+ * called her at once: always there, so the list reads the same from run to run (the old turn
+ * added it, required, only in such a turn, which changed the tools' prefix).
  */
 export function toolSpecs(offered: readonly ToolEntry[]): ToolSpec[] {
-  return offered.map((entry) => slimTool(entry.tool.spec, { description: 0, argument: 0 }));
+  return offered.map((entry) => {
+    const spec = slimTool(entry.tool.spec, { description: 0, argument: 0 });
+    return entry.tool.actsFor === true ? withFor(spec) : spec;
+  });
+}
+
+/** `withFor` per spec: the same object for the same spec. */
+const WITH_FOR = new WeakMap<ToolSpec, ToolSpec>();
+
+/** `spec` with an optional `for_whom` (`FOR_ARG`). */
+function withFor(spec: ToolSpec): ToolSpec {
+  const known = WITH_FOR.get(spec);
+  if (known !== undefined) return known;
+  const params = isJsonObject(spec.parameters) ? spec.parameters : { type: "object" };
+  const properties = isJsonObject(params.properties) ? params.properties : {};
+  const out: ToolSpec = {
+    ...spec,
+    parameters: { ...params, properties: { ...properties, [FOR_ARG]: { ...FOR_PROPERTY } } },
+  };
+  WITH_FOR.set(spec, out);
+  return out;
 }
 
 /** One line per message: equal lines are equal messages, so a shared prefix can be counted. */

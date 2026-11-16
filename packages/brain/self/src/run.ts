@@ -43,6 +43,7 @@ import {
   type AccountRef,
   type ContextKey,
   contextKeyString,
+  type IncomingMessage,
   isJsonObject,
   type JsonValue,
   type MessageRef,
@@ -51,7 +52,14 @@ import {
   type Priority,
   toTimestamp,
 } from "@miyoria/types";
-import { EXHAUSTED_LINE, FALLBACK_LINES, TimeoutError, timeout } from "../../agent/src/index.js";
+import {
+  callFor,
+  EXHAUSTED_LINE,
+  FALLBACK_LINES,
+  FOR_ARG,
+  TimeoutError,
+  timeout,
+} from "../../agent/src/index.js";
 import type { LimitName, RunLimits, RunProfile } from "./profiles.js";
 import { gatherBlocks, type RunMessages, runMessages, toolSpecs } from "./prompt.js";
 import {
@@ -80,6 +88,7 @@ import {
   type RunUsage,
   someoneWaits,
   type Wake,
+  type WakeAuthor,
   wakeAuthor,
 } from "./types.js";
 
@@ -138,6 +147,9 @@ export class SelfRunner {
     }
   }
 }
+
+/** One of the people a run answers, with their line. */
+type Caller = { from: WakeAuthor; message: MessageRef };
 
 /** A step's stream, folded. */
 interface Step {
@@ -877,6 +889,9 @@ class Run {
         REFUSALS.badArguments(errorMessage(error)),
       );
     }
+    // Whom it is for, before anything runs: never silently the wrong one of several askers.
+    const target = this.#forWhom(entry, args);
+    if (!target.ok) return this.#refused(call, "refused", "for_whom", target.error);
     const ctx = this.#guardContext();
     let result: ToolResult;
     let job: string | null = null;
@@ -886,9 +901,13 @@ class Run {
       result = await timeout(this.#limits.toolMs, this.#signal, (signal) =>
         this.#p.tools.run(
           call.name,
-          this.#toolContext(signal, (data) => {
-            job = reportedJob(data) ?? job;
-          }),
+          this.#toolContext(
+            signal,
+            (data) => {
+              job = reportedJob(data) ?? job;
+            },
+            target.caller,
+          ),
           args,
         ),
       );
@@ -937,21 +956,75 @@ class Run {
     return record;
   }
 
-  #toolContext(signal: AbortSignal, report: (data: JsonValue) => void): ToolContext {
+  /**
+   * Whom a call acts for (`callFor` of the old turn): with several people calling her at once, a
+   * tool that acts for someone says whom in `for_whom`, which is taken off `args` here; one that
+   * does not say, or names nobody of them, is refused with the choices. `caller`: the one it is
+   * for when that is not the run's first caller; `null`: the default.
+   */
+  #forWhom(
+    entry: ToolEntry,
+    args: JsonValue,
+  ): { ok: true; caller: Caller | null } | { ok: false; error: string } {
+    let pick: unknown;
+    if (isJsonObject(args) && FOR_ARG in args) {
+      pick = args[FOR_ARG];
+      delete args[FOR_ARG];
+    }
+    const callers = this.#wake.kind === "addressed" ? (this.#wake.callers ?? []) : [];
+    if (callers.length <= 1) return { ok: true, caller: null };
+    const focus: IncomingMessage[] = callers.map((c) => ({
+      id: c.message,
+      author: { account: c.from.account, display_name: c.from.name, is_bot: false },
+      text: "",
+      mentions_self: true,
+      reply_to_self: false,
+      attachments: [],
+      ts: toTimestamp(0),
+    }));
+    const targets = callers.map((c) => ({ id: c.message.id, account: c.from.account }));
+    const found = callFor(
+      focus,
+      targets,
+      pick,
+      entry.tool.actsFor === true,
+      () => true,
+      () => focus[0],
+    );
+    if (!found.ok) return found;
+    const m = found.message;
+    return {
+      ok: true,
+      caller:
+        m === undefined
+          ? null
+          : { from: { account: m.author.account, name: m.author.display_name }, message: m.id },
+    };
+  }
+
+  #toolContext(
+    signal: AbortSignal,
+    report: (data: JsonValue) => void,
+    caller: Caller | null = null,
+  ): ToolContext {
     const context = this.#session.context;
     const wake = this.#wake;
-    const author = wakeAuthor(wake);
+    const author = caller?.from ?? wakeAuthor(wake);
     const message: MessageRef =
-      wake.kind === "addressed" ? wake.message : { context, id: this.turn };
+      caller?.message ?? (wake.kind === "addressed" ? wake.message : { context, id: this.turn });
     const priority: Priority =
       wake.kind === "addressed" ? "direct" : wake.kind === "result" ? "request" : "initiative";
     if (author !== null) {
+      const askers =
+        wake.kind === "addressed" && wake.callers !== undefined && wake.callers.length > 0
+          ? wake.callers.map((c) => c.from.account)
+          : [author.account];
       return {
         turn: this.turn,
         context,
         account: author.account,
         principal: Principals.user(author.account, context),
-        askers: [author.account],
+        askers,
         message,
         priority,
         signal,

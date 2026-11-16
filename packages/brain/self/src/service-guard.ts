@@ -102,7 +102,13 @@ export function serviceGuard(options: ServiceGuardOptions): Guard {
       if (node !== null) {
         const asker = wakeAuthor(ctx.wake);
         if (asker === null) return refuse("permission", REFUSALS.permissionNobody);
-        if (services.get(AuthorizerKey)?.allows(asker.account, node) !== true) {
+        // Several people asking at once: the weakest of them decides (the old turn's rule).
+        const askers =
+          ctx.wake.kind === "addressed" && ctx.wake.callers !== undefined
+            ? ctx.wake.callers.map((c) => c.from.account)
+            : [asker.account];
+        const authorizer = services.get(AuthorizerKey);
+        if (authorizer === undefined || !askers.every((a) => authorizer.allows(a, node))) {
           return refuse("permission", REFUSALS.permissionAsker);
         }
       }

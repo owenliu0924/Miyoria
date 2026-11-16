@@ -2,6 +2,7 @@
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type ChatRequest, contentText } from "@miyoria/llm/llm";
+import { defineTool } from "@miyoria/llm/tools";
 import {
   type Attachment,
   type Attitude,
@@ -21,6 +22,7 @@ import {
   type GateDecisionPayload,
   type IncomingMessage,
   type InterruptLevel,
+  type JsonValue,
   type LifeLog,
   LifeLogKey,
   MessageActionsKey,
@@ -41,6 +43,7 @@ import {
   WorkingContextKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import type { FetchLike } from "../../agent/src/index.js";
 import { serialiseMessages } from "../../self/src/index.js";
 import {
@@ -386,6 +389,56 @@ describe("「要她回這則」", () => {
       });
     expect(await ask("sent-1")).toEqual({ ok: false, reason: "這是她自己說的話。" });
     expect(await ask("nowhere")).toEqual({ ok: false, reason: "她現在看不到這則訊息。" });
+  });
+});
+
+// ---- several askers -----------------------------------------------------------------------------
+
+describe("several askers", () => {
+  it("a tool that acts for someone says whom; the argument is always in its schema", async () => {
+    const paid: { account: string; args: JsonValue }[] = [];
+    const pay = defineTool({
+      name: "pay_rice",
+      description: "替人付飯錢。",
+      parameters: z.object({ amount: z.number().optional() }),
+      effect: "act",
+      speed: "instant",
+      risk: "low",
+      group: "test",
+      core: true,
+      next: true,
+      actsFor: true,
+      async call(ctx, args) {
+        paid.push({ account: ctx.account.id, args });
+        return "付好了";
+      },
+    });
+    const rig = await Rig.create({
+      config: { one_caller_per_turn: false },
+      provide: (_sup, tools) => tools.register(pay),
+    });
+    rig.model.push(says("嗨"));
+    rig.say(mention(C1, "amy", "@她 嗨"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the first run");
+    rig.model.push(
+      calls("pay_rice", { amount: 50 }, "c1"),
+      calls("pay_rice", { amount: 50, for_whom: "bob" }, "c2"),
+      says("幫 bob 付了"),
+    );
+    rig.say(mention(C1, "amy", "@她 幫我付"));
+    rig.say(mention(C1, "bob", "@她 幫我付飯錢"));
+    await until(() => outcomes(rig).length === 2, 3_000, "the second run");
+    const [refused] = toolResults(rig, 2);
+    expect(refused).toContain("好幾個人同時叫你");
+    expect(refused).toContain("for_whom");
+    expect(paid).toEqual([{ account: "bob", args: { amount: 50 } }]);
+    // The same schema in a run with one asker and in one with two: the prefix keeps.
+    const spec = (i: number) =>
+      JSON.stringify(rig.model.requests[i]?.tools?.find((t) => t.name === "pay_rice"));
+    expect(spec(0)).toBe(spec(1));
+    const parameters = JSON.parse(spec(0)).parameters;
+    expect(Object.keys(parameters.properties)).toContain("for_whom");
+    expect(parameters.required ?? []).not.toContain("for_whom");
   });
 });
 
