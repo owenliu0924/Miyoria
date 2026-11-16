@@ -681,8 +681,9 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # commitment_sweep_ms = 5000     # 多久找一次逾期的承諾
 # ms_per_char = 180              # 講一個字要多久(被打斷時推算她講到哪)
 
-# 工作線(v4 §4.3):好幾步、要用工具的事(查資料、寫程式、整理筆記本、改進技能)是一個任務,在背景自己做,
-# 不佔發言權;結束時主線收到結論和「做了什麼」,由她決定怎麼告訴人。預設開著,下面都是預設值
+# 工作線(v4 §4.3):現在只給遊戲導演一步一步做決定用(它的紀錄、每天的 token 額度、它記住的技能);
+# 她自己好幾步的事交給小幫手(下面的 delegate)。舊的鍵照樣讀得進來,用到的只有 enabled、daily_tokens、
+# result_chars、did_lines、keep_ended。下面都是預設值
 # [modules.agent.work]
 # enabled = true
 # max_running = 1                # 同時跑幾個任務(1 到 4);多的排隊
@@ -707,7 +708,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 #          "notebook_read", "notebook_write"]
 
 # 小幫手:她用 delegate 交代出去的工作(research 上網查、curator 整理筆記本)。
-# work_start、work_list、work_steer 也是開這些工作(語音頻道裡的除外)。
+# 語音頻道裡也可以交代,結果回到她還在的那個語音頻道。
 # 小幫手不會講話、不花錢、不寫工作區;結果回到交代的那個地方叫她。額度都在這裡,和她自己的額度分開記
 # [modules.agent.delegate]
 # enabled = true

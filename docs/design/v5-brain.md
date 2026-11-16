@@ -226,9 +226,9 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 
 沒驗證的事:題目和偵測都沒有接真的模型跑過;失敗率的高低要等第一次對 `current` 和 `self` 各跑一次才知道,題目可能太容易(全過)或偵測抓錯(誤報),要看第一次的結果再調。
 
-## B10 的刪除(2026-11-16,只做了一部分)
+## B10 的刪除(2026-11-16)
 
-**做了的**:
+**第一步做了的**:
 
 - `[modules.agent] runner` 不再讀:Core 一定裝新的跑者,舊的設定檔寫著 `runner` 照樣能載入(啟動時一行 log)。範例設定檔拿掉這個鍵。
 - 她自己起頭的事只走新跑者:Arbiter 對 `plan`、`agenda`、`world`、`followup` 的衝動一律拒絕;打招呼和追問的產生器(`producers.ts`)、Runner 的 `#followups`、`#propose`、`#observe` 刪了;`[modules.arbiter]` 的 `greeting`、`voice_join`、`followup`、`friend_labels`、`voice_join_min_affinity`、`voice_join_cooldown_secs`、`followup_active_secs` 不再讀(舊檔照樣載入)。存起來的 Arbiter 狀態裡舊的 `producers` 那一段讀的時候略過。
@@ -236,13 +236,38 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 - 評測的 `current` 受測對象(`tools/eval/src/live/current.ts`)刪了,`self` 是預設。
 - 只測舊路徑的測試刪了(Arbiter 的主動規則、她自己的開口、結果回合、提案板上她自己的願望)。
 
-**沒做、為什麼**:舊的回合(`turn.ts`、coordinator、`MainTurn`、手、提案板、注意力、`AgentIntents`)現在還是活的,不是只有舊的文字和語音回合在用。新跑者沒有接 Arbiter 開的回合,下面這些還是由 `turn.ts` 產生台詞:
+第一步沒能刪舊的回合:遊戲實況、唱歌的報幕、`agent.notice`、`chat.start` / `chat.dm` 經 Arbiter → `AgentIntents` → `Agent.openInitiative` → coordinator → `turn.ts` 產生台詞,語音裡的 `work_start` 和遊戲導演的任務在舊的工作車道上。
 
-- 遊戲實況:`game.*` 觀察和遊戲導演的 `arbiter.impulse` → Arbiter → `ImpulseHostKey`(`AgentIntents`)→ `Agent.openInitiative` → coordinator → `turn.ts`。遊戲導演的評論提案經 `ProposalBoardKey`(`mainline/proposals.ts`)走同一條路。
-- 唱歌的報幕(`sing` 的 `arbiter.impulse`)、`agent.notice` 的通知、`chat.start` / `chat.dm` 能力(`AgentIntents`)。
-- 工作車道:語音頻道裡的 `work_start` 和遊戲導演的任務還在舊車道上(`jobs.ts` 寫的)。
+**第二步:Arbiter 接受的事也在新跑者上跑,舊的回合刪掉**
 
-所以這一步沒有刪 `turn.ts`、手、工作車道、注意力、提案板,也沒有刪 Q8 不帶的修正(它們在 `turn.ts` 裡,遊戲實況還會經過)。要刪它們,得先讓新跑者接 Arbiter 開的回合(一個 `ImpulseHost` 在新跑者上叫醒那個地方),那是新的接線,不是刪除,要另外決定。mind 的 Plan 還會要她寫衝動(提示詞和回覆那一半沒拆,`selfstart.ts` 也還在:`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
+現在誰在哪裡跑:
+
+- Arbiter 的 host(`ImpulseHostKey`)是 selfhost 的 `ImpulseDesk`(`selfhost/src/impulses.ts`)。要不要、什麼時候還是 Arbiter 決定(底線、Floor 的 claim、地方忙時稍後再試、最急的先);接受之後是那個地方的 lane 跑一次新跑者,turn id 就是 Arbiter 記帳的那個。她的消息(遊戲、唱歌、通知)在她進了那個伺服器的語音頻道時到語音裡,和以前一樣。
+- 遊戲實況(log 的 `game.*` 觀察、導演的 `arbiter.impulse`):`world` wake,內容是「你正在玩的遊戲:…」,帶著 Arbiter 接受時的 Floor 行(`world` 多了一個 `claim`:urgent、notable;導演的實況是 `wish`,和以前經提案板一樣)。這一次跑的台詞記在那個觀察的 attention key 下,delivery ledger 照樣擋同一件事在 repeat 視窗內再講。
+- 唱歌的報幕(`sing` 的 `arbiter.impulse`):`world` wake,「唱歌的事:…」,claim `result`。
+- `agent.notice`:Arbiter(source `notice`)接受後,那個地方等著的通知收成一個 `result` wake(工具名「通知」,資料是「- 成功:…」);要開跑時才拿走,所以第 6 區不會再出現一次,已經沒有通知可講時回 Arbiter `repeat`。新跑者自己開的工作(它記著的 job)的通知不再另外講,結果 wake 已經講了。
+- `chat.start` / `chat.dm`:搬到 selfhost,能力的閘門照舊(同意、權限、次數),頻道等級和預算也照舊;執行時在那個地方(私訊是開好的 DM)放一個 `self` wake,說她想主動聊聊。
+- 時間要緊的(遊戲實況、唱歌前的報幕):lane 不把它排隊,地方空就馬上開,不空就回 busy,Arbiter 每 `retry_ms`(3 秒)再試,和舊的 coordinator 一樣。她自己起頭、還沒說出一句的那一次(看一眼、計時、`self`、`world`)讓位給 Arbiter 接受的事(舊路徑上她自己起頭的事在 Arbiter 裡排在這些後面);有人叫她時 `world` 也和看一眼一樣讓位。Floor 要打斷她說話時(`yieldTo`)照舊先打斷。
+- 工作車道:`work_start`、`work_list`、`work_steer` 拿掉,`delegate` 和它的三個工具做同樣的事;語音的工具清單加了 `delegate`,結果回到她還在的那個語音頻道。遊戲導演一步一步的決策(`WorkLane.open`)和它記住的技能(`keep`、`kept`)還在 `worklane/lane.ts`,檔案只剩這部分:那不是一個有工具、自己跑完的子代理,也不是叫醒她,要搬到新跑者得讓子代理跑者支援「由擁有者一步一步推」的 job(保留每一步的紀錄、共用每日額度、擁有者結束它),這一步沒做。
+
+刪掉的(約 24,600 行,其中測試約 12,000 行):`turn.ts`、`coordinator.ts`、`attention.ts`(判斷一句話對誰說的部分搬到 `address.ts`)、`intents.ts`、`claims.ts`、`prohibition.ts`、`session.ts`、`tool-scope.ts`、`mentions.ts`;`mainline/` 的 `hands.ts`、`proposals.ts`、`gate.ts`、`loop.ts`、`output.ts`(`slimTool` 搬到 `slim.ts`),`main.ts` 只剩嘴、line book 和承諾;`worklane/` 的 `capabilities.ts`、`initiative.ts`、`allow.ts`;舊的 prompt builder(`prompt.ts` 和 `mainline/prompt.ts` 只剩 selfhost 讀的)。Q8 不帶的修正 1 到 8、12 到 14、16、17、20 跟著 `turn.ts` 一起刪了。agent 不再提供 `ImpulseHostKey`、`IntentSinkKey`、`ProposalBoardKey`;directive 看提案板的 sweep 拿掉(它對寫進 log 的提案的檢查還在)。replay 改跑 selfhost。
+
+留著的:
+
+- `ProposalBoardKey` / `ProposalBoard`、`IntentSinkKey` / `IntentSink` 的型別還在 `@miyoria/types`,沒有人提供:mind 的每日貼文(`life/posts.ts`)、mind 的快照(頻道等級)和 mind、arbiter 的測試替身還讀它們。每日貼文從第一步起就不會貼(Arbiter 拒絕 `plan`),現在是「沒有 board」;要恢復得接到新跑者的 initiative。
+- `[modules.agent.mainline]`、`[modules.agent.attention]` 和 `[modules.agent.work]` 大部分的鍵沒有程式讀了,留在 schema 裡讓舊設定檔照樣載入。
+- mind 的 Plan 還會要她寫衝動,`selfstart.ts` 還在(`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
+- Arbiter 的 ledger 裡只算她自己起頭的部分(`book`、`raise`、每日上限、時間規則)還在:Arbiter 已經不接她自己起頭的事,這些不會再被用到,但 ledger view 的形狀面板和 mind 還在讀。
+- `SavedPromptsKey` 還提供,但新跑者不存 prompt,面板的 prompt 頁會是空的。
+- `CommitmentBook`:沒有人寫新的承諾了(那是修正 8),從 log 重建的舊承諾一天後就沒了;initiative 和第 7 區還讀它。
+- `agent.initiative` 事件還在(擴充可以發):理由是 game、notice、`song_*` 以外的,Arbiter 當成 `world` 拒絕(第一步起就是這樣)。
+
+和以前不同的:
+
+- 「要她回這則」對語音頻道文字區的訊息回「看不到」(以前是語音裡的舊回合回)。
+- 遊戲實況、報幕的內容放在第 7 區的 wake 那一句(neutralize 過),以前是資料區塊;遊戲裡別人的名字因此不在資料區塊裡。
+- 報幕和遊戲實況占 Floor 的那一行跟著 Arbiter 接受時的 claim,但跑完之前有人叫她時,`world` 會讓位(以前 Arbiter 開的回合也會)。
+- agent 不再為語音頻道留對話紀錄,只記誰在、她最後什麼時候說話。
 
 ## 筆記的 embedding(2026-11-16)
 
