@@ -13,20 +13,11 @@ import {
   EventLogKey,
   FloorKey,
   ImpulseHostKey,
-  newImpulse,
   PartyStatusKey,
   ProposalBoardKey,
-  toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ArbiterCore,
-  ArbiterModule,
-  arbiterConfig,
-  FloorConfigSchema,
-  FloorCore,
-  type StartFacts,
-} from "../src/index.js";
+import { ArbiterModule, FloorConfigSchema, FloorCore, type StartFacts } from "../src/index.js";
 import { FakeHost, MIN, T0, textCtx, voiceCtx } from "./helpers.js";
 
 const TEXT = textCtx("c");
@@ -113,30 +104,6 @@ describe("the waits on her own starts are one decision", () => {
     });
     expect(f.startsAt(ROOM, all)).toBe(now + 9 * MIN);
     expect(f.check("notable", ROOM, null, all)).toBeNull();
-  });
-
-  it("the Arbiter asks the Floor for her gaps, and says when she may start again", async () => {
-    let t = T0;
-    const host = new FakeHost();
-    const f = floor(() => t);
-    const arbiter = new ArbiterCore(arbiterConfig({ quiet_start_hour: 0, quiet_end_hour: 0 }), {
-      now: () => t,
-      publish: () => undefined,
-      host: () => host,
-      floor: f,
-    });
-    const wish = () =>
-      newImpulse(
-        { source: "plan", context: ROOM, ttlMs: 10 * MIN, why: "想聊天", hint: "聊點什麼" },
-        t,
-      );
-    expect((await arbiter.submit(wish())).verdict).toBe("accepted");
-    t += 30_000;
-    const again = await arbiter.submit(wish());
-    expect(again).toMatchObject({ verdict: "rejected", reason: "cooldown" });
-    // One time, the Floor's: the place gap of a voice channel (300 s) after her last start there.
-    expect(again.retry_at).toBe(toTimestamp(T0 + 5 * MIN));
-    expect(arbiter.ledger(ROOM).limits.next_initiative_at).toBe(toTimestamp(T0 + 5 * MIN));
   });
 });
 

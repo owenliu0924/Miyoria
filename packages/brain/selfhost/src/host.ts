@@ -1,4 +1,4 @@
-// The text conversations on the phase-3 turn runner (`[modules.agent] runner = "self"`): the
+// The text conversations on the phase-3 turn runner: the
 // agent hands every line of a channel, thread or DM here instead of to its coordinators.
 //
 // Intake. Each line goes into the transcript of its place as it comes (`entryOfIncoming`): her

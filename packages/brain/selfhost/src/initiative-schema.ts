@@ -1,6 +1,6 @@
 // The tables of the `initiative` plugin: what wakes her when nobody spoke to her, on the phase-3
 // turn runner (docs/design/v5-architecture.md §7.3 「排程」, §7.6 「主動」; docs/design/v5-brain.md
-// B6). Only `[modules.agent] runner = "self"` writes them.
+// B6).
 //
 // - `initiative_schedules`: the times she set herself (`schedule`, and `remind_me` while the new
 //   runner serves it): one-off or daily at a local clock time, with the place to wake her in

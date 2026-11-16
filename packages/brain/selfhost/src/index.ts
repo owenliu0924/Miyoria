@@ -1,6 +1,6 @@
 // @miyoria/brain/selfhost: the text and voice conversations on the phase-3 turn runner
 // (`@miyoria/brain/self`), wired to today's services. Core installs `selfHost()` on the agent
-// module; it runs only with `[modules.agent] runner = "self"`, beside the main line.
+// module.
 
 export {
   GateBook,

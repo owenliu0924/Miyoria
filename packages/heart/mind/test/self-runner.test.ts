@@ -1,5 +1,5 @@
-// With `[modules.agent] runner = "self"` her Plan still keeps her goals and her day plan, but its
-// impulses start nothing: no proposal reaches the board.
+// Her Plan still keeps her goals and her day plan, but its impulses start nothing: no proposal
+// reaches the board (her own starts are the new runner's).
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { LlmRouter, LlmRouterKey, parseModelRef } from "@miyoria/llm/llm";
@@ -27,7 +27,7 @@ import {
 import { ScriptedProvider } from "./fakes.js";
 import { rig, stopRigs, TEXT } from "./helpers.js";
 
-async function plan(proposes: boolean): Promise<{ proposals: NewProposal[]; loop: MindLoop }> {
+async function plan(): Promise<{ proposals: NewProposal[]; loop: MindLoop }> {
   const services = new ServiceRegistry();
   const proposals: NewProposal[] = [];
   services.provide("app", ProposalBoardKey, {
@@ -79,7 +79,6 @@ async function plan(proposes: boolean): Promise<{ proposals: NewProposal[]; loop
     }),
     goals: new GoalBook({ store: null, profile: "p", clock, maxDays: 14, defaultDays: 3 }),
     store: null,
-    proposes,
   });
   await loop.plan([{ kind: "manual", detail: "", context: null }]);
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -130,7 +129,7 @@ describe("remind_me on the new runner", () => {
   it("keeps the same tool and keeps its timers in the new runner's schedules", async () => {
     const schedules = new Schedules();
     const r = await rig(new ScriptedProvider(() => "{}"), {
-      module: { selfRunner: { reminders: () => schedules } },
+      module: { reminders: () => schedules },
     });
     expect(r.registry.get("self.remind")?.tool?.name).toBe("remind_me");
     const set = await r.registry.invoke({
@@ -152,18 +151,13 @@ describe("remind_me on the new runner", () => {
   });
 });
 
-describe("runner = self", () => {
+describe("her Plan", () => {
   it("her Plan's impulses reach no board; the journal says why", async () => {
-    const { proposals, loop } = await plan(false);
+    const { proposals, loop } = await plan();
     expect(proposals).toEqual([]);
     const intents = loop.thoughts()[0]?.intents ?? [];
     expect(intents.map((i) => [i.capability, i.status, i.detail])).toEqual([
       ["game.start", "dropped", "the new runner decides on its own"],
     ]);
-  });
-
-  it("runner = mainline: as today, they are proposed", async () => {
-    const { proposals } = await plan(true);
-    expect(proposals.map((p) => p.capability)).toEqual(["game.start"]);
   });
 });

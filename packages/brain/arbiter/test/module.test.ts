@@ -10,7 +10,6 @@ import {
   ArbiterKey,
   type Attitude,
   type ContextKey,
-  contextKeyString,
   EventLogKey,
   Events,
   eventEnvelope,
@@ -31,7 +30,7 @@ import {
   type VoiceParticipant,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArbiterModule, arbiterConfig, Producers, STATE_KEY, STATE_PROFILE } from "../src/index.js";
+import { type ArbiterCore, ArbiterModule, STATE_KEY, STATE_PROFILE } from "../src/index.js";
 import { acct, FakeHost, MIN, T0, textCtx, voiceCtx } from "./helpers.js";
 
 const ev = (definition: AnyEventDefinition, data: unknown) =>
@@ -82,10 +81,10 @@ function messageData(ctx: ContextKey, who: string, at: number, mentions = false)
   };
 }
 
-const message = (ctx: ContextKey, who: string, at: number, mentions = false) =>
+const _message = (ctx: ContextKey, who: string, at: number, mentions = false) =>
   ev(Events.PlatformMessageCreated, messageData(ctx, who, at, mentions));
 
-function participant(id: string): VoiceParticipant {
+function _participant(id: string): VoiceParticipant {
   return {
     account: acct(id),
     display_name: id,
@@ -94,68 +93,6 @@ function participant(id: string): VoiceParticipant {
     deafened: false,
   };
 }
-
-describe("Producers", () => {
-  it("greets a friend once a day, not strangers", () => {
-    const p = new Producers(arbiterConfig());
-    const social = new FakeSocial();
-    social.set("a", "朋友", 60);
-    social.set("b", "普通", 10);
-    const here = textCtx("c1");
-    const first = p.observe(T0, message(here, "a", T0), social);
-    expect(first).toHaveLength(1);
-    expect(first[0]).toMatchObject({
-      source: "world",
-      hint: "跟他打招呼",
-      args: { reason: "greeting" },
-    });
-    expect(p.observe(T0 + MIN, message(here, "a", T0 + MIN), social)).toEqual([]);
-    expect(p.observe(T0, message(here, "b", T0), social)).toEqual([]);
-  });
-
-  it("greets people with good affinity who join her voice channel", () => {
-    const p = new Producers(arbiterConfig());
-    const social = new FakeSocial();
-    social.set("a", "普通", 40);
-    const v = voiceCtx("v1");
-    p.observe(
-      T0,
-      ev(Events.VoiceJoined, { context: v, participants: [participant("me")] }),
-      social,
-    );
-    const out = p.observe(
-      T0 + MIN,
-      ev(Events.VoiceParticipants, {
-        context: v,
-        participants: [participant("me"), participant("a")],
-      }),
-      social,
-    );
-    expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ source: "world", args: { reason: "voice_join" } });
-    expect(out[0]?.target.context).toEqual(v);
-  });
-
-  it("brings up a followup where the person is around", () => {
-    const p = new Producers(arbiterConfig());
-    const social = new FakeSocial();
-    social.set("a", "朋友", 60, "person-a");
-    const here = textCtx("c1");
-    p.observe(T0, message(here, "a", T0), social);
-    const f: Followup = {
-      id: "f1",
-      profile: "p",
-      person: "person-a",
-      context: null,
-      about: "考試考得怎樣?",
-      due: toTimestamp(T0),
-    };
-    const imp = p.followup(T0 + MIN, f, social);
-    expect(imp).toMatchObject({ source: "followup", hint: "考試考得怎樣?" });
-    expect(imp?.target.context).toEqual(here);
-    expect(p.followup(T0 + 30 * MIN, f, social)).toBeNull();
-  });
-});
 
 describe("ArbiterModule", () => {
   async function build(config: JsonValue | null = null) {
@@ -251,38 +188,6 @@ describe("the Floor's module", () => {
     await r.sup.stopAll();
   });
 
-  it("a greeting is an Observation: it reaches her through the Floor, not as an impulse", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(T0);
-    const r = await floorRig();
-    r.sup.bus.publish("t", Events.PlatformReady, { platform: "test", self_account: acct("me") });
-    r.sup.bus.publish("t", Events.PlatformMessageCreated, messageData(textCtx("c1"), "a", T0));
-    await vi.advanceTimersByTimeAsync(10);
-    const seen = r.log.recent(50).filter((e) => e.source === "world.greeting");
-    expect(seen).toHaveLength(1);
-    expect(r.host.opened.map((i) => i.claim)).toEqual(["notable"]);
-    await r.sup.stopAll();
-  });
-
-  it("a due followup is a Proposal", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(T0);
-    const r = await floorRig({ tick_secs: 1 });
-    r.followups.due_.push({
-      id: "f1",
-      person: null,
-      context: textCtx("c1"),
-      about: "問他報告",
-      due_at: toTimestamp(T0),
-    } as unknown as Followup);
-    r.sup.bus.publish("t", Events.PlatformMessageCreated, messageData(textCtx("c1"), "b", T0));
-    await vi.advanceTimersByTimeAsync(1500);
-    expect(r.proposals.map((p) => [p.source, p.what])).toEqual([["memory", "問他報告"]]);
-    expect(r.followups.done).toEqual(["f1"]);
-    expect(r.host.opened).toEqual([]);
-    await r.sup.stopAll();
-  });
-
   it("a notable game observation asks for the mic; an ambient one does not", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
@@ -326,29 +231,36 @@ describe("the Floor's module", () => {
     await r.sup.stopAll();
   });
 
-  it("saves her state on stop and reads it back on start: today's starts survive a restart", async () => {
+  it("saves her state on stop and reads it back on start: a hold survives a restart", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
     const store = new MemorySettingsStore();
-    const here = textCtx("c1");
     const first = await floorRig(null, store);
-    first.host.set(here, { humans: 2 });
-    const started = await first.sup.services
-      .require(ArbiterKey)
-      .submit(newImpulse({ source: "plan", context: here, ttlMs: MIN, why: "想聊天" }, T0));
-    expect(started.verdict).toBe("accepted");
-    expect(first.sup.services.require(ArbiterKey).ledger(here).limits.initiatives_today).toBe(1);
+    (first.sup.services.require(ArbiterKey) as ArbiterCore).gameClosed();
+    expect(first.sup.services.require(ArbiterKey).held?.("game.start")).not.toBeNull();
     // No tick has passed (30 s): what is saved is written by the stop.
     expect(await store.get(STATE_PROFILE, STATE_KEY)).toBeNull();
     await first.sup.stopAll();
     const saved = (await store.get(STATE_PROFILE, STATE_KEY)) as {
-      ledger: { starts: { place: string }[] };
+      holds: { capability: string }[];
     };
-    expect(saved.ledger.starts.map((s) => s.place)).toEqual([contextKeyString(here)]);
+    expect(saved.holds.map((h) => h.capability)).toEqual(["game.start"]);
 
     await vi.advanceTimersByTimeAsync(MIN);
     const second = await floorRig(null, store);
-    expect(second.sup.services.require(ArbiterKey).ledger(here).limits.initiatives_today).toBe(1);
+    expect(second.sup.services.require(ArbiterKey).held?.("game.start")).not.toBeNull();
     await second.sup.stopAll();
+  });
+
+  it("an older saved state with the producers' part still loads", async () => {
+    const store = new MemorySettingsStore();
+    await store.set(STATE_PROFILE, STATE_KEY, {
+      ledger: {},
+      producers: { seen: [[{ platform: "test", id: "a" }, 3]] },
+      holds: [{ capability: "game.start", reason: "x", until: Date.now() + 10 * MIN }],
+    });
+    const r = await floorRig(null, store);
+    expect(r.sup.services.require(ArbiterKey).held?.("game.start")).not.toBeNull();
+    await r.sup.stopAll();
   });
 });

@@ -1,33 +1,20 @@
-// `remind_me` (v4 §8.3): timers that survive a restart, are capped and cancellable, and come back
-// as a proposal to the main line with a stable attention key; nothing in the background speaks.
+// `remind_me` (v4 §8.3): timers that survive a restart, are capped and cancellable; a due one is
+// published (`mind.reminder`), her inbox on the new runner; nothing in the background speaks.
 
 import { ActuatorRegistry } from "@miyoria/gate/actions";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore } from "@miyoria/store";
-import {
-  type AccountRef,
-  ArbiterKey,
-  type ContextKey,
-  type NewProposal,
-  Principals,
-  type ProposalBoard,
-  ProposalBoardKey,
-  type ProposalOutcome,
-  type Reminder,
-} from "@miyoria/types";
+import { type AccountRef, type ContextKey, Principals, type Reminder } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type DeliveryOutcome,
-  deliverer,
   parseAt,
   REMINDER_PREFIX,
   RETRY_MS,
   ReminderBook,
   type ReminderLimits,
   remindCapability,
-  reminderText,
 } from "../src/index.js";
-import { FakeArbiter, limits as ledgerLimits } from "./fakes.js";
 
 const T0 = Date.parse("2026-11-10T07:00:00.000Z"); // 15:00 at UTC+8
 const MIN = 60_000;
@@ -190,97 +177,6 @@ describe("her timers", () => {
     expect(delivered).toEqual(["九十秒"]);
     stop.abort();
     await running;
-  });
-});
-
-class FakeBoard implements ProposalBoard {
-  readonly proposals: NewProposal[] = [];
-  state: ProposalOutcome["state"] = "open";
-  async propose(p: NewProposal): Promise<ProposalOutcome> {
-    this.proposals.push(structuredClone(p));
-    return {
-      id: "P1",
-      state: this.state,
-      detail: this.state === "dropped" ? "主人規則" : "",
-      turn: null,
-    };
-  }
-  open() {
-    return [];
-  }
-}
-
-describe("delivery", () => {
-  const due = (p: Partial<Reminder> = {}): Reminder => ({
-    id: "01JREMINDER0000000000ABCDE",
-    key: "RABCDE",
-    what: "問 Owen 考試考得怎樣",
-    due: new Date(T0).toISOString(),
-    daily: false,
-    context: CHAT,
-    person: "Owen",
-    for_account: null,
-    fired: 0,
-    created_at: new Date(T0 - DAY).toISOString(),
-    ...p,
-  });
-
-  it("is a proposal for the main line, not a line: she decides what to say", async () => {
-    const services = new ServiceRegistry();
-    const board = new FakeBoard();
-    services.provide("agent", ProposalBoardKey, board);
-    const deliver = deliverer(services, clock, LIMITS, 480);
-    expect(await deliver(due(), 0)).toEqual({ status: "delivered", detail: "" });
-    expect(board.proposals[0]).toMatchObject({
-      what: "你自己設的提醒到了:問 Owen 考試考得怎樣。要不要說、怎麼說由你決定。",
-      source: "agenda",
-      context: CHAT,
-      person: "Owen",
-      attention: {
-        key: "reminder:01JREMINDER0000000000ABCDE",
-        revision: 1,
-        repeat_after_ms: 120 * MIN,
-      },
-    });
-    expect(board.proposals[0]?.capability).toBeUndefined();
-    board.state = "dropped";
-    expect(await deliver(due({ fired: 3 }), 0)).toEqual({ status: "dropped", detail: "主人規則" });
-    expect(board.proposals[1]?.attention?.revision).toBe(4);
-  });
-
-  it("waits out quiet hours and a pause", async () => {
-    const services = new ServiceRegistry();
-    const arbiter = new FakeArbiter();
-    const board = new FakeBoard();
-    services.provide("arbiter", ArbiterKey, arbiter);
-    services.provide("agent", ProposalBoardKey, board);
-    const deliver = deliverer(services, clock, LIMITS, 480);
-    arbiter.view = {
-      limits: ledgerLimits({ quiet_hours: { start_hour: 1, end_hour: 7, active: true } }),
-    };
-    expect((await deliver(due(), 0)).status).toBe("held");
-    arbiter.view = { limits: ledgerLimits({ paused: true }) };
-    expect((await deliver(due(), 0)).status).toBe("held");
-    expect(board.proposals).toEqual([]);
-  });
-
-  it("without the main line the timer is held: nothing is said, nothing goes to the Arbiter", async () => {
-    const services = new ServiceRegistry();
-    const arbiter = new FakeArbiter();
-    services.provide("arbiter", ArbiterKey, arbiter);
-    const deliver = deliverer(services, clock, LIMITS, 480);
-    expect((await deliver(due({ for_account: OWEN }), 7)).status).toBe("held");
-    expect(arbiter.impulses).toEqual([]);
-    expect((await deliverer(new ServiceRegistry(), clock, LIMITS, 480)(due(), 0)).status).toBe(
-      "held",
-    );
-  });
-
-  it("says whose timer it is and how late", () => {
-    expect(reminderText(due({ for_account: OWEN }), 2, 480)).toBe(
-      "有人請你設的提醒到了:問 Owen 考試考得怎樣。要不要說、怎麼說由你決定。",
-    );
-    expect(reminderText(due(), 30, 480)).toContain("(本來是 11/10 15:00,晚了 30 分鐘)");
   });
 });
 

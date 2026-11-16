@@ -117,7 +117,7 @@ export class AgentModule implements Module {
     this.#tools = this.#ownTools;
   }
 
-  /** What answers text conversations when `[modules.agent] runner = "self"`. */
+  /** What answers text and voice conversations (Core installs `@miyoria/brain/selfhost`). */
   withTextRunner(factory: TextRunnerFactory): this {
     this.#textRunners = factory;
     return this;
@@ -240,16 +240,14 @@ export class AgentModule implements Module {
         : workBoard(proposals, () => !ctx.signal.aborted),
     );
     await agent.mainline.start();
-    if (config.runner === "self") {
-      if (this.#textRunners === null) {
-        ctx.log.warn(
-          'runner = "self" but no text runner is installed: text stays on the main line',
-        );
-      } else {
-        this.#textRunner = this.#textRunners(agent);
-        agent.textRunner = this.#textRunner;
-        ctx.log.info("text conversations run on the new turn runner");
-      }
+    if (config.runner !== undefined) {
+      ctx.log.info("`modules.agent.runner` is no longer read: the new turn runner always answers");
+    }
+    if (this.#textRunners === null) {
+      ctx.log.warn("no text runner is installed: text stays on the main line");
+    } else {
+      this.#textRunner = this.#textRunners(agent);
+      agent.textRunner = this.#textRunner;
     }
     ctx.spawn("events", () => agent.run(events));
   }

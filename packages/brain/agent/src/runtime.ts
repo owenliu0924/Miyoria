@@ -240,8 +240,8 @@ export interface TextLineMarks {
 }
 
 /**
- * Where the text conversations go with `[modules.agent] runner = "self"`
- * (`@miyoria/brain/selfhost`), and the voice ones when it has `voice`.
+ * Where the text conversations go (`@miyoria/brain/selfhost`), and the voice ones when it has
+ * `voice`.
  */
 export interface TextRunner {
   /** A line of a channel, thread or DM, after the agent's own checks (blocked users, `ignore`). */
@@ -291,7 +291,7 @@ const REPLY_REFUSALS: Readonly<Record<Exclude<TextReplyOutcome, "ok">, string>> 
   failed: "沒有成功,請稍後再試。",
 };
 
-/** Makes the text runner of an agent (Core passes one; the module calls it only for `"self"`). */
+/** Makes the text runner of an agent (Core passes one). */
 export type TextRunnerFactory = (agent: Agent) => TextRunner;
 
 /** State shared by the event loop, the per-context coordinators and turns. */
@@ -323,7 +323,7 @@ export class Agent {
   /** Messages people asked her not to remember, by context id (bounded). */
   readonly #excluded = new Map<string, Set<string>>();
   /**
-   * The text conversations' runner with `runner = "self"`; `null`: every context is the agent's.
+   * The text conversations' runner; `null` (none installed): every context is the agent's.
    * Set once, before the events loop starts.
    */
   textRunner: TextRunner | null = null;
@@ -381,7 +381,7 @@ export class Agent {
     this.textRunner?.halt();
   }
 
-  /** `context` is a text conversation of the text runner (`runner = "self"`). */
+  /** `context` is a text conversation of the text runner. */
   #runsText(context: ContextKey): boolean {
     return this.textRunner !== null && context.kind !== "voice";
   }

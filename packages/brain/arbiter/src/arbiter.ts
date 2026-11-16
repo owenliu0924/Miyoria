@@ -55,7 +55,7 @@ import {
   toTimestamp,
   type Wishes,
 } from "@miyoria/types";
-import { type ArbiterConfig, isContextDisabled } from "./config.js";
+import type { ArbiterConfig } from "./config.js";
 import type { FloorCore, StartFacts } from "./floor.js";
 import { Ledger, type Place, placeOf } from "./ledger.js";
 import { clockText, hasQuietHours, inQuietHours, nextDayStart, quietEndsAt } from "./time.js";
@@ -85,11 +85,6 @@ export interface ArbiterEnv {
   floor?: FloorCore;
   /** What she wants to ask whom, and whether it was asked or answered (`wishes.ts`). */
   wishes?: Wishes;
-  /**
-   * `false` with `[modules.agent] runner = "self"`: what she starts herself (`plan`, `agenda`,
-   * `world`, `followup`) is the new runner's initiative, and nothing of it is opened here.
-   */
-  selfStarts?: boolean;
 }
 
 /** A capability she may not use on her own until `until` (epoch ms). */
@@ -135,12 +130,8 @@ interface Block {
 
 /** Sources the owner drives: only expiry applies. */
 const OWNER = new Set(["command", "panel", "message"]);
-/** Sources that are chatter: they also stop while the budget is degraded. */
-const CHATTER = new Set(["plan", "agenda", "world"]);
-/** Sources that wait a moment after she spoke (her own starts have it in their rules). */
-const AFTER_SPEECH = new Set(["world"]);
-/** Sources that the context opt-out list stops. */
-const OPT_OUT = new Set(["plan", "agenda", "world", "followup"]);
+/** Her own starts: the new runner's initiative (`@miyoria/brain/selfhost`), never opened here. */
+const OWN_STARTS = new Set(["plan", "agenda", "world", "followup"]);
 
 const NO_FACTS: ConversationFacts = {
   mode: null,
@@ -346,7 +337,7 @@ export class ArbiterCore implements Arbiter {
     }
     const facts =
       impulse.target.context === null ? NO_FACTS : this.#factsFor(impulse.target.context);
-    const floor = this.#floor(impulse, facts, now);
+    const floor = this.#floor(impulse, facts);
     if (floor !== null) {
       if (floor.defer && floor.retryAt !== null) return this.#defer(impulse, signal, floor, queued);
       if (floor.quiet) {
@@ -593,7 +584,7 @@ export class ArbiterCore implements Arbiter {
 
   // ---- floors -----------------------------------------------------------------------------------
 
-  #floor(impulse: Impulse, facts: ConversationFacts, now: number): Floor | null {
+  #floor(impulse: Impulse, facts: ConversationFacts): Floor | null {
     const source = impulse.source;
     if (OWNER.has(source)) return null;
     const no = (reason: ArbiterReason, detail: string, retryAt: number | null = null): Floor => ({
@@ -602,25 +593,12 @@ export class ArbiterCore implements Arbiter {
       retryAt,
       defer: false,
     });
-    if (this.#env.selfStarts === false && OPT_OUT.has(source)) {
-      return no("denied", "她自己起頭的事由新的回合跑者決定");
-    }
+    if (OWN_STARTS.has(source)) return no("denied", "她自己起頭的事由新的回合跑者決定");
     if (this.#env.paused?.()) return no("paused", "主人暫停了你的自主行動");
-    if (impulse.kind === "act" && impulse.capability !== null && isSelfInitiated(impulse.source)) {
-      const hold = this.held(impulse.capability);
-      if (hold !== null) return no("denied", hold);
-    }
     const budget = this.#env.budget?.() ?? "ok";
     if (budget === "exhausted") return no("budget", "今天的能量(LLM 預算)用完了");
-    if (budget === "degraded" && CHATTER.has(source)) {
-      return no("budget", "今天的能量(LLM 預算)快用完了,先不主動");
-    }
     const account = impulse.target.account;
     if (account !== null && this.#env.blocked?.(account)) return no("consent", "對方不想被打擾");
-    const context = impulse.target.context;
-    if (context !== null && OPT_OUT.has(source) && isContextDisabled(this.#cfg, context)) {
-      return no("ceiling", "這裡設定成不主動說話");
-    }
     if (facts.mode === "off" || facts.mode === "mention-only") {
       const label = facts.mode === "off" ? "關閉" : "只回提及";
       return no("ceiling", `這個頻道的等級是「${label}」,不能自己開口`);
@@ -630,23 +608,6 @@ export class ArbiterCore implements Arbiter {
     if (this.#env.floor) {
       const refused = this.#floorClaim(impulse, this.#env.floor, facts);
       if (refused !== null) return refused;
-    }
-    const self = isSelfInitiated(source);
-    if (self) {
-      // The gaps are part of the Floor's one decision (`#floorClaim`).
-      const rules = this.#timeRules(
-        this.#placeOf(impulse),
-        personKey(impulse),
-        now,
-        isSelfTalk(impulse),
-      );
-      if (rules !== null) return rules;
-    }
-    if (impulse.kind === "speak" && AFTER_SPEECH.has(source)) {
-      const until = this.#afterSpeech(context, facts);
-      if (until !== null && now < until) {
-        return { reason: "cooldown", detail: "你剛講完話", retryAt: until, defer: true };
-      }
     }
     return null;
   }

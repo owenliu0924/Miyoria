@@ -169,7 +169,7 @@ describe("the registry behind them", () => {
     }
   });
 
-  it("has the always-on tools of the new runner, two of them not for the current turn", () => {
+  it("has the always-on tools of the new runner, some of them only on the new runner", () => {
     const tools = core.services.require(ToolRegistryKey);
     const always = tools
       .entries()
@@ -177,6 +177,7 @@ describe("the registry behind them", () => {
       .map((e) => e.name);
     expect(always).toEqual([
       "code_run",
+      "delegate",
       "find_tools",
       "keep_note",
       "message_dm",
@@ -186,12 +187,25 @@ describe("the registry behind them", () => {
       "recall",
       "remember",
       "remind_me",
+      "say",
+      "schedule",
       "skill",
       "web_read",
       "web_search",
     ]);
     const next = tools.entries().filter((e) => e.next);
-    expect(next.map((e) => e.name)).toEqual(["find_tools", "skill"]);
+    expect(next.map((e) => e.name)).toEqual([
+      "delegate",
+      "delegate_cancel",
+      "delegate_list",
+      "delegate_read",
+      "find_tools",
+      "say",
+      "schedule",
+      "schedule_cancel",
+      "schedule_list",
+      "skill",
+    ]);
     for (const { name } of next) {
       expect(tools.names()).not.toContain(name);
       expect(tools.get(name)).toBeUndefined();
@@ -200,6 +214,7 @@ describe("the registry behind them", () => {
     // What starts something that ends later.
     const long = tools.entries().filter((e) => e.speed === "long");
     expect(long.map((e) => e.name)).toEqual([
+      "delegate",
       "game_start",
       "party_start",
       "sing_request",

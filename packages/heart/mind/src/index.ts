@@ -93,7 +93,6 @@ export { DailyPostDesk, type DailyPostDeskOptions, POSTS_PREFIX } from "./life/p
 export {
   type Deliver,
   type DeliveryOutcome,
-  deliverer,
   localWhen,
   parseAt,
   REMIND_NODE,
@@ -107,7 +106,6 @@ export {
   type ReminderLimits,
   remindCapability,
   reminderKey,
-  reminderText,
 } from "./life/reminders.js";
 export {
   applyTurnEvent,

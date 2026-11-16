@@ -1,6 +1,6 @@
-// With `[modules.agent] runner = "self"` her own starts are the new runner's initiative: the
-// Arbiter opens nothing of them, writes no greeting, proposes no followup and claims no greeting
-// or overdue promise. What is not hers (a game's narration) goes on as before.
+// Her own starts are the new runner's initiative: the Arbiter opens nothing of them, writes no
+// greeting, proposes no followup and claims no greeting or overdue promise. What is not hers (a
+// game's narration) goes on as before.
 
 import { EventLogService } from "@miyoria/memory/facts";
 import { Supervisor } from "@miyoria/runtime/kernel";
@@ -58,7 +58,7 @@ class Followups implements FollowupSource {
   }
 }
 
-async function rig(selfStarts: boolean) {
+async function rig() {
   const sup = new Supervisor();
   const log = new EventLogService({ profile: "p", store: null });
   const proposals: NewProposal[] = [];
@@ -77,7 +77,7 @@ async function rig(selfStarts: boolean) {
     },
     open: () => [],
   });
-  await sup.register(new ArbiterModule("p", { selfStarts }), { tick_secs: 1 }, true);
+  await sup.register(new ArbiterModule("p"), { tick_secs: 1 }, true);
   await sup.startAll();
   return { sup, log, proposals, followups, host };
 }
@@ -108,11 +108,11 @@ function observation(source: string, key: string) {
   };
 }
 
-describe("runner = self: her own starts are not the Arbiter's", () => {
+describe("her own starts are not the Arbiter's", () => {
   it("refuses her own impulses, opens a game's", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
-    const r = await rig(false);
+    const r = await rig();
     const arbiter = r.sup.services.require(ArbiterKey);
     for (const source of ["plan", "agenda", "world", "followup"] as const) {
       const d = await arbiter.submit(
@@ -131,7 +131,7 @@ describe("runner = self: her own starts are not the Arbiter's", () => {
   it("writes no greeting, proposes no followup, claims no promise", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
-    const r = await rig(false);
+    const r = await rig();
     r.sup.bus.publish("t", Events.PlatformReady, { platform: "test", self_account: acct("me") });
     r.sup.bus.publish("t", Events.PlatformMessageCreated, message(textCtx("c1"), "a"));
     r.log.observe(observation("mainline.commitment", "commitment:c1"));
@@ -141,20 +141,6 @@ describe("runner = self: her own starts are not the Arbiter's", () => {
     expect(r.proposals).toEqual([]);
     expect(r.followups.done).toEqual([]);
     expect(r.host.opened.map((i) => i.attention?.key)).toEqual(["game:craft:stone_pickaxe"]);
-    await r.sup.stopAll();
-  });
-
-  it("the default is today's: a greeting, a followup proposal, a claimed promise", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(T0);
-    const r = await rig(true);
-    r.sup.bus.publish("t", Events.PlatformReady, { platform: "test", self_account: acct("me") });
-    r.sup.bus.publish("t", Events.PlatformMessageCreated, message(textCtx("c1"), "a"));
-    r.log.observe(observation("mainline.commitment", "commitment:c1"));
-    await vi.advanceTimersByTimeAsync(1500);
-    expect(r.log.recent(50).filter((e) => e.source === "world.greeting")).toHaveLength(1);
-    expect(r.proposals.map((p) => p.what)).toEqual(["問他報告"]);
-    expect(r.host.opened.map((i) => i.attention?.key)).toContain("commitment:c1");
     await r.sup.stopAll();
   });
 });

@@ -44,7 +44,6 @@ import { type Condense, intentCounts, Journal, ruleDigest } from "./journal.js";
 import { LifeBook } from "./life/log.js";
 import { DailyPostDesk } from "./life/posts.js";
 import {
-  deliverer,
   type ReminderBackend,
   ReminderBook,
   type ReminderLimits,
@@ -65,10 +64,11 @@ export interface MindModuleOptions {
   /** Replaces the time source (default: the module context's clock). */
   clock?: Clock;
   /**
-   * With `[modules.agent] runner = "self"`: her impulses start nothing, and `remind_me` keeps its
-   * timers in the new runner's schedules (`reminders`, looked up per call; `null`: not running).
+   * Where `remind_me` keeps new timers: the new runner's schedules (looked up per call; `null` or
+   * unset: not running, and `remind_me set` says so). Her impulses start nothing: her own starts
+   * are the new runner's.
    */
-  selfRunner?: { reminders: (services: ServiceLookup) => ReminderBackend | null };
+  reminders?: (services: ServiceLookup) => ReminderBackend | null;
 }
 
 /** Bus topics the mind follows. */
@@ -196,7 +196,6 @@ export class MindModule implements Module {
       goals,
       store,
       life,
-      proposes: this.#options.selfRunner === undefined,
     });
     ctx.provide(MindKey, loop);
     const sub = ctx.subscribe(MIND_TOPICS);
@@ -248,19 +247,16 @@ export class MindModule implements Module {
       maxDays: config.reminder_max_days,
       holdMins: config.reminder_hold_mins,
     };
-    const selfRunner = this.#options.selfRunner;
+    const served = this.#options.reminders ?? (() => null);
     const reminders = new ReminderBook({
       store,
       profile: this.#profile,
       clock,
       limits,
       offsetMinutes: offset,
-      // On the new runner a timer kept here from before only fires: its `mind.reminder` is her
-      // inbox there, and her initiative decides whether it wakes her.
-      deliver:
-        selfRunner === undefined
-          ? deliverer(ctx.services, clock, limits, offset)
-          : async () => ({ status: "delivered", detail: "the new runner's inbox" }),
+      // A timer kept here from before only fires: its `mind.reminder` is her inbox on the new
+      // runner, and her initiative decides whether it wakes her.
+      deliver: async () => ({ status: "delivered", detail: "the new runner's inbox" }),
       publish: (reminder, state) =>
         ctx.publish(Events.MindReminder, {
           state,
@@ -301,14 +297,11 @@ export class MindModule implements Module {
     posts = desk;
     this.#life = life;
     this.#reminders = reminders;
-    const served =
-      selfRunner === undefined
-        ? reminders
-        : bothBooks(() => selfRunner.reminders(ctx.services), reminders);
+    const book = bothBooks(() => served(ctx.services), reminders);
     ctx.provide(LifeLogKey, life);
-    ctx.provide(ReminderDeskKey, served);
+    ctx.provide(ReminderDeskKey, book);
     ctx.provide(DailyPostsKey, desk);
-    this.#unregister = actuatorsFor(ctx).register(remindCapability(served));
+    this.#unregister = actuatorsFor(ctx).register(remindCapability(book));
     ctx.spawn("reminders", (signal) => reminders.run(signal));
     return life;
   }

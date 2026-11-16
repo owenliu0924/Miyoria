@@ -600,9 +600,6 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # notice_ttl_ms = 600000         # 通知多久後就不用再告訴她
 
 [modules.agent]
-# 文字對話(頻道、討論串、私訊)由誰回:mainline(現在的回合)或 self(第 3 階段的新回合跑者,
-# 開發中)。語音、她自己起頭的話和工作車道兩種都走現在的路。只在啟動時讀一次
-# runner = "mainline"
 # 文字頻道的聊天等級:off(關閉)| mention-only(只回提及)| quiet(安靜)| normal(一般)| lively(活躍)
 # (always = 每則都回,測試用)。等級是上限:她在等級之內自己決定要多話,
 # 有人請她安靜點她也會自己調。沒設定的頻道用 profile 的 default_channel_mode(預設 quiet)。
@@ -705,8 +702,8 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 #          "workspace_run", "workspace_save_script", "skill_list", "skill_read", "skill_write",
 #          "notebook_read", "notebook_write"]
 
-# 小幫手:她用 delegate 交代出去的工作(research 上網查、curator 整理筆記本),在新的回合執行器上跑
-# ([modules.agent] runner = "self")。work_start、work_list、work_steer 在那時也改成開這些工作。
+# 小幫手:她用 delegate 交代出去的工作(research 上網查、curator 整理筆記本)。
+# work_start、work_list、work_steer 也是開這些工作(語音頻道裡的除外)。
 # 小幫手不會講話、不花錢、不寫工作區;結果回到交代的那個地方叫她。額度都在這裡,和她自己的額度分開記
 # [modules.agent.delegate]
 # enabled = true
@@ -745,7 +742,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # pace_min_ms = 300              # 但最短
 # pace_max_ms = 1800             # 最長
 
-# 她自己起頭的事(只在 [modules.agent] runner = "self"):她設的時間到了、外面發生的事、該追問的事、答應過
+# 她自己起頭的事:她設的時間到了、外面發生的事、該追問的事、答應過
 # 還沒做的事、這裡安靜了、想念某人、早上醒來,都先過程式的關卡,過了才叫醒她,說不說由她決定。
 # 每天幾次、每個地方幾次、每個人幾次、間隔、沒人回時拉長的間隔、安靜時段都照 [modules.arbiter];
 # 早上幾點和「在意的人」照 [modules.mind] 的 daily_hour、cared_attachment;面板的暫停也停這些。
@@ -1109,17 +1106,10 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # after_speech_voice_secs = 20
 # game_hold_mins = 60            # 遊戲被關掉後,她這麼久內不能自己重開(有人明確叫她開可以;0 = 不鎖)
 # disabled_contexts = []         # 這些頻道她不主動說話(discord:<guild>:<channel> 或頻道 id)
-# greeting = true                # 朋友當天第一次說話時打招呼
-# voice_join = true              # 好感夠的人進她的語音頻道時打招呼
-# followup = true                # 之前說好要問的事,對方在的時候提出來
 # backoff_decay_hours = 24       # 沒人接的加倍間隔,每隔這麼多小時沒有新的沒人接就忘掉一次加倍
 # blocked_mins = 30              # 被拒絕或失敗的能力,這麼久內顯示為暫停
-# friend_labels = ["朋友", "好朋友", "好友", "摯友", "親友", "戀人", "家人"]   # 算「朋友以上」的關係稱呼
-# voice_join_min_affinity = 30   # 好感到這裡的人進語音才會被打招呼(friend_labels 裡的也算)
-# voice_join_cooldown_secs = 1800  # 同一個人兩次語音招呼至少隔多久
-# followup_active_secs = 600     # 這麼久內有動靜的人才算「在」(追問才會提)
-# impulse_ttl_secs = 120         # 打招呼和追問在地方忙的時候,多久內還值得說
-# tick_secs = 30                 # 多久檢查一次追問、結算沒人接的話題、存狀態
+# impulse_ttl_secs = 120         # 遊戲的話在地方忙的時候,多久內還值得說
+# tick_secs = 30                 # 多久結算一次沒人接的話題、存狀態
 # retry_ms = 3000                # 地方正忙(回合進行中、她的話排著)時,衝動多久重試一次
 # max_queued = 50                # 排隊的衝動最多幾個(最舊、最低優先的先丟)
 # ledger_keep = 200              # 帳本在記憶體裡留幾筆

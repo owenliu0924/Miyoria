@@ -2,7 +2,6 @@
 // stale topics and retrying `game.start` while Minecraft was not running), reproduced against
 // Plan. Without the Arbiter her own floor applies (these tests); with it, the Arbiter decides.
 
-import { defineCapability } from "@miyoria/gate/actions";
 import { MockProvider } from "@miyoria/llm/llm";
 import {
   type ContextKey,
@@ -13,7 +12,6 @@ import {
   type VoiceParticipant,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
 import type { MindLoop } from "../src/index.js";
 import { texts } from "./fakes.js";
 import { HER, OWEN, type Rig, rig, stopRigs, TEXT, VOICE, wait } from "./helpers.js";
@@ -78,7 +76,7 @@ function spoke(r: Rig, turn: string, context: ContextKey, text: string): void {
 }
 
 /** Someone addressed her in `context` (attention's decision on their message). */
-function addressed(r: Rig, context: ContextKey): void {
+function _addressed(r: Rig, context: ContextKey): void {
   r.publish(Events.AgentDecision, {
     turn: `R${Date.now()}`,
     context,
@@ -88,7 +86,7 @@ function addressed(r: Rig, context: ContextKey): void {
   });
 }
 
-const status = (t: Thought) => t.intents.map((i) => [i.capability, i.status, i.detail]);
+const _status = (t: Thought) => t.intents.map((i) => [i.capability, i.status, i.detail]);
 
 describe("announcements (v2 §5 item 12)", () => {
   it("a song announcement nobody answers is no topic of hers", async () => {
@@ -109,155 +107,6 @@ describe("announcements (v2 §5 item 12)", () => {
     }
     await wait(30 * 60_000);
     expect(r.mind().unanswered?.(TEXT)).toEqual([]);
-  });
-});
-
-describe("self-started conversations (no Arbiter running)", () => {
-  it("backs off, doubling, when nobody responds, and resets after a real exchange", async () => {
-    const same = reply([speak("大家在幹嘛", "想聊天")]);
-    const provider = new MockProvider("p")
-      .reply(same)
-      .reply(same)
-      .reply(same)
-      .reply(reply([speak("晚餐吃啥", "換個話題")]))
-      .reply(reply([speak("週末要幹嘛", "再聊")]));
-    const r = await manual(provider);
-    const first = await r.plan();
-    expect(status(first)).toEqual([["chat.start", "started", "queued"]]);
-    spoke(r, "T1", TEXT, "大家在幹嘛~");
-    await wait(10);
-
-    // Within the 10-minute text gap; she sees the wait in her limits.
-    await wait(5 * MIN);
-    expect(status(await r.plan())[0]?.[2]).toMatch(/^backoff: .*next in 5 min$/);
-    expect(texts(provider.requests()[1]).system).toContain(`在 ${HERE} 要再等 5 分鐘才能主動開口`);
-    // Nobody responded within the window: the gap doubled to 20 minutes.
-    await wait(6 * MIN);
-    expect(status(await r.plan())[0]?.[2]).toMatch(/1 ignored in a row; next in 9 min$/);
-    expect(texts(provider.requests()[2]).system).toContain("最近連續 1 次主動開口沒人接");
-    await wait(10 * MIN);
-    expect(status(await r.plan())).toEqual([["chat.start", "started", "queued"]]);
-    expect(r.intents.intents).toHaveLength(2);
-    // Someone answers her this time: back to the base gap.
-    spoke(r, "T2", TEXT, "你們晚餐吃什麼?");
-    await wait(2 * MIN);
-    addressed(r, TEXT);
-    await wait(9 * MIN);
-    expect(status(await r.plan())).toEqual([["chat.start", "started", "queued"]]);
-  });
-
-  it("does not bring up a topic again that nobody picked up, and tells her so", async () => {
-    const provider = new MockProvider("p")
-      .reply(reply([speak("bypass 別找了", "提醒他")]))
-      .reply(reply([speak("你那個 bypass 找不到就先放著啦", "再提醒")]))
-      .reply(reply([speak("今天天氣怎樣", "好奇")]));
-    const r = await manual(provider);
-    await r.plan();
-    spoke(r, "T1", TEXT, "那個 bypass 別找了啦");
-    await wait(25 * MIN);
-    const again = await r.plan();
-    expect(status(again)[0]?.[2]).toContain("already raised there and nobody picked it up");
-    expect(r.intents.intents).toHaveLength(1);
-    const { data } = texts(provider.requests()[1]);
-    expect(data).toContain("你最近自己提過、沒人接的話題");
-    expect(data).toContain("「那個 bypass 別找了啦」");
-    expect(
-      r
-        .mind()
-        .unanswered?.(TEXT)
-        .map((t) => t.text),
-    ).toEqual(["那個 bypass 別找了啦"]);
-    // A different topic is fine.
-    expect(status(await r.plan())).toEqual([["chat.start", "started", "queued"]]);
-  });
-});
-
-describe("failed actions (no Arbiter running)", () => {
-  it("holds a failed game.start until the activity snapshot shows the game", async () => {
-    const provider = new MockProvider("p").reply(
-      reply([{ kind: "act", capability: "game.start", place: HERE, why: "想玩麥塊" }]),
-    );
-    const r = await manual(provider);
-    r.registry.register(
-      defineCapability({
-        name: "game.start",
-        summary: "開始玩遊戲",
-        risk: "medium",
-        args: z.looseObject({}),
-        permission: null,
-        async execute() {
-          return "ok";
-        },
-      }),
-    );
-    let gameRunning = false;
-    let n = 0;
-    r.intents.outcome = (intent) =>
-      intent.capability === "game.start" && !gameRunning
-        ? { status: "failed", detail: "Minecraft 還沒開,沒辦法開始玩。", turn: `G${++n}` }
-        : { status: "done", detail: "開始玩 Minecraft", turn: `G${++n}` };
-
-    const first = await r.plan();
-    expect(status(first)).toEqual([["game.start", "failed", "Minecraft 還沒開,沒辦法開始玩。"]]);
-    expect(first.changes).toContain("暫停 game.start(Minecraft 還沒開,沒辦法開始玩。)");
-
-    // Not retried while nothing changed; she sees it is on hold, and why.
-    await wait(2 * MIN);
-    const second = await r.plan();
-    expect(status(second)[0]?.[1]).toBe("dropped");
-    expect(status(second)[0]?.[2]).toContain("on hold until things change");
-    const { system, data } = texts(provider.requests()[1]);
-    expect(system).toContain("game.start 暫時做不到");
-    expect(data).toContain("game.start 暫時做不到:Minecraft 還沒開");
-    expect(r.intents.intents).toHaveLength(1);
-
-    // A game adapter merely publishing is not "the game runs" (a disconnect is not either).
-    r.publish(
-      Events.GameAdapterEvent,
-      { type: "disconnected", data: { reason: "eof" } },
-      { type: "game.minecraft.disconnected" },
-    );
-    await wait(10);
-    expect(status(await r.plan())[0]?.[2]).toContain("on hold");
-
-    // The activity snapshot (the one owner of what she is doing) shows the game running.
-    gameRunning = true;
-    r.publish(Events.ActivityChanged, {
-      version: 2,
-      at: toTimestamp(Date.now()),
-      presence: { type: "none" },
-      broadcast: { type: "off" },
-      activity: {
-        type: "game",
-        target: "minecraft",
-        phase: "running",
-        task: null,
-        failure: null,
-        since: toTimestamp(Date.now()),
-      },
-      override: null,
-      scene: null,
-    });
-    await wait(10);
-    const third = await r.plan();
-    expect(status(third)).toEqual([["game.start", "started", "開始玩 Minecraft"]]);
-    expect(r.intents.intents).toHaveLength(2);
-  });
-
-  it("lifts the hold after blocked_retry_mins even if nothing visible changed", async () => {
-    const provider = new MockProvider("p").reply(
-      reply([
-        { kind: "act", capability: "voice.join", place: contextKeyString(VOICE), why: "想進語音" },
-      ]),
-    );
-    const r = await manual(provider);
-    r.intents.outcome = () => ({ status: "failed", detail: "voice node offline", turn: null });
-    r.world.voiceMembers = [{ account: OWEN, name: "Owen" }];
-    await r.plan(VOICE);
-    await wait(10 * MIN);
-    expect(status(await r.plan(VOICE))[0]?.[2]).toContain("on hold");
-    await wait(21 * MIN);
-    expect(status(await r.plan(VOICE))[0]?.[1]).toBe("failed");
   });
 });
 
@@ -410,24 +259,21 @@ describe("after her turns", () => {
 });
 
 describe("channel levels", () => {
-  it("are shown with the place, and a level that blocks her start drops the chat.start", async () => {
+  it("are shown with the place", async () => {
     const start = reply([speak("大家好", "想聊天")]);
     const provider = new MockProvider("p").reply(start).reply(start);
     const r = await manual(provider);
     let blocked: string | null = null;
     r.intents.levels = (c) =>
       c.kind === "voice" ? null : { mode: "quiet", label: "安靜", blocked };
-    expect(status(await r.plan())).toEqual([["chat.start", "started", "queued"]]);
+    await r.plan();
     expect(texts(provider.requests()[0]).data).toContain("聊天等級「安靜」");
     expect(texts(provider.requests()[0]).system).toContain("「安靜」的頻道很少主動開口");
 
     blocked = "level quiet: she started talking here 0 min ago; next in 180 min";
-    r.intents.intents.length = 0;
-    // Past her own backoff, still inside the level's gap.
     await wait(11 * MIN);
-    const second = await r.plan();
+    await r.plan();
     expect(texts(provider.requests()[1]).data).toContain("聊天等級「安靜」,現在不能主動開口");
-    expect(status(second)).toEqual([["chat.start", "dropped", blocked]]);
     expect(r.intents.intents).toEqual([]);
   });
 });

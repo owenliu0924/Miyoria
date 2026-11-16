@@ -1,11 +1,9 @@
-// The sub-agent jobs on today's services (`[modules.agent] runner = "self"`; the engine is
-// `Delegator` in `@miyoria/brain/self`).
+// The sub-agent jobs on today's services (the engine is `Delegator` in `@miyoria/brain/self`).
 //
 // Her tools. `delegate` (core), `delegate_list`, `delegate_cancel` and `delegate_read` are
 // registered for the new runner only. `work_start`, `work_list` and `work_steer` keep their names
 // and specs (the tool list of the current turn does not change) but start, list and stop the same
-// jobs, except in a voice channel, which stays on the old work lane, as do the game director and
-// her own starts (`runner = "mainline"` leaves all three exactly as they were).
+// jobs, except in a voice channel, which stays on the old work lane, as does the game director.
 //
 // Results. A job that ends wakes the place that started it as a `result`, with the job's id,
 // kind, goal and summary as the data of the wake (the runner frames it); one a restart cut is told

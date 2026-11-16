@@ -38,7 +38,6 @@ import {
   TaskSteerKey,
   TurnSilencerKey,
   toTimestamp,
-  VoiceFloorKey,
   VoiceSinkKey,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +46,7 @@ import { ArbiterModule } from "../../arbiter/src/index.js";
 import { MainLineConfigSchema } from "../src/config.js";
 import { STARTED_LINE } from "../src/mainline/gate.js";
 import { Hands, type Job } from "../src/mainline/hands.js";
-import { HANDED_OVER, NOT_OFFERED, OUT_OF_TIME } from "../src/mainline/loop.js";
+import { OUT_OF_TIME } from "../src/mainline/loop.js";
 import {
   FALLBACK_LINES,
   heardPart,
@@ -289,41 +288,6 @@ describe("one call", () => {
     expect(h.sink.texts()).toEqual(["哈囉"]);
   });
 
-  it("the mouth does not wait for the hands; the result comes back in a turn of its own", async () => {
-    const slow = new Probe("slow", null, 5000);
-    const llm = new Scripted([reply("我查一下", ["slow", "{}"]), reply("查到了")]);
-    const h = await rig(llm, { tools: [slow], config: { tool_timeout_ms: 20_000 } });
-    h.say(mention(channel("c"), "Alice", "查一下"));
-    await wait(1500);
-    expect(h.sink.texts()).toEqual(["我查一下"]);
-    expect(llm.requests).toHaveLength(1);
-    await wait(10_000);
-    expect(h.sink.texts()).toEqual(["我查一下", "查到了"]);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("slow 完成");
-  });
-
-  it("a result someone asked for in text is told there, even while she is in voice", async () => {
-    // 2026-11-08 14:46: 「我有多少魚幣」 got 「等我一下」; the wallet came back, but the turn that
-    // tells it opened in the voice channel (keep_in_voice), found no result there and talked
-    // about the song. The wallet runs inside the turn since v4 §4.2; this keeps the hands' way of
-    // telling a result in the right place, which the tools that stay with them still take.
-    const wallet = new Probe("check_coins", null, 5000);
-    const llm = new Scripted([reply("等我一下", ["check_coins", "{}"]), reply("你有 10 魚幣")]);
-    const h = await rig(llm, {
-      tools: [wallet],
-      config: { tool_timeout_ms: 20_000, mainline: { loop_tools: [] } },
-    });
-    joinVoice(h);
-    await wait(50);
-    h.say(mention(channel("c"), "Alice", "我有多少魚幣"));
-    await wait(1500);
-    expect(h.sink.texts()).toEqual(["等我一下"]);
-    await wait(10_000);
-    expect(h.sink.texts()).toEqual(["等我一下", "你有 10 魚幣"]);
-    expect(h.sink.speeches()).toEqual([]);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("check_coins 完成");
-  });
-
   it("an output that only acts still tells someone waiting that she heard them", async () => {
     const tool = new Probe("slow", null, 5000);
     const llm = new Scripted([reply("", ["slow", "{}"]), reply("<silence/>")]);
@@ -346,26 +310,6 @@ describe("one call", () => {
     expect(food.calls).toHaveLength(1);
     expect(h.sink.texts()).toEqual(["吃了,好香"]);
     expect(llm.requests).toHaveLength(2);
-  });
-
-  it("a result turn that only keeps a note is called back to say it, with no wait line", async () => {
-    // 2026-11-09 21:06: the lyrics came back, she kept them as a note and said nothing; the code
-    // filled in 「等我一下。」 and nothing called her back, so the answer never came. Notes run inside
-    // the turn since v4 §4.2; this is the hands' way, for when they get a note (no loop round left).
-    const slow = new Probe("slow", null, 2000);
-    const llm = new Scripted([
-      reply("我查一下", ["slow", "{}"]),
-      reply("", ["keep_note", '{"text":"歌詞:喔愛 什麼是愛"}']),
-      reply("查到了,下一句是「我對你的感情」"),
-    ]);
-    const h = await rig(llm, {
-      tools: [slow],
-      config: { tool_timeout_ms: 20_000, mainline: { loop_tools: [] } },
-    });
-    h.say(mention(channel("c"), "Alice", "查歌詞"));
-    await wait(10_000);
-    expect(h.sink.texts()).toEqual(["我查一下", "查到了,下一句是「我對你的感情」"]);
-    expect(JSON.stringify(llm.requests[2]?.messages)).toContain("keep_note 完成");
   });
 
   it("the wait line fits what she does, and is not always the same words", () => {
@@ -426,21 +370,6 @@ describe("finished-tense lines (§10.1)", () => {
     await wait(100);
     expect(h.sink.texts()).toEqual([STARTED_LINE, "我進語音了"]);
     expect(results(h).at(-1)).toMatchObject({ tool: "voice_join", state: "done" });
-  });
-
-  it("when the result is failed the line is never said, and she hears why", async () => {
-    const body = new Body();
-    const tool = voiceJoin();
-    const llm = new Scripted([reply("我進語音了", ["voice_join", "{}"]), reply("進不去,抱歉")]);
-    const h = await rig(llm, { tools: [tool], body });
-    tool.call = async () => {
-      throw new Error("頻道滿了");
-    };
-    h.say(mention(channel("c"), "Alice", "進語音"));
-    await wait(5000);
-    expect(h.sink.texts()).not.toContain("我進語音了");
-    expect(h.sink.texts()).toContain("進不去,抱歉");
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("頻道滿了");
   });
 
   it("with no action behind it she is reminded once and may do it", async () => {
@@ -622,49 +551,6 @@ describe("finished-tense lines (§10.1)", () => {
     await wait(100);
     expect(h.sink.texts()).toEqual([STARTED_LINE, "改好了"]);
   });
-
-  it("a steer that came too late goes back to her context", async () => {
-    const llm = new Scripted([
-      reply("好", ["steer_task", '{"task":"t1","patch":{"item":"oak"},"why":"換"}']),
-      reply("來不及了耶"),
-    ]);
-    const h = await rig(llm, {
-      provide: (services) => {
-        services.provide("app", TaskSteerKey, {
-          steer: async (request) => ({
-            status: "too_late",
-            steer: request.steer.id,
-            task: "t1",
-            detail: "任務已經結束",
-          }),
-          track: () => undefined,
-          registerRoute: () => () => undefined,
-        });
-      },
-    });
-    h.sup.services.require(EventLogKey).observe(
-      {
-        source: "game.minecraft",
-        silent: true,
-        salience: "ambient",
-        attention_key: "task:t1",
-        revision: 1,
-        summary: "任務開始",
-        addressed_to_her: false,
-        from: null,
-        context: null,
-      },
-      {
-        buckets: [
-          { op: "replace-self", writer: "game.minecraft.task", owner: null, untrusted: true },
-        ],
-      },
-    );
-    h.say(mention(channel("c"), "Alice", "換"));
-    await wait(5000);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("任務已經結束");
-    expect(h.sink.texts()).toContain("來不及了耶");
-  });
 });
 
 describe("commitments (§10.2)", () => {
@@ -691,23 +577,6 @@ describe("commitments (§10.2)", () => {
     expect(made?.body).toMatchObject({
       commitment: { capability: "voice_join", status: "open" },
     });
-  });
-
-  it("overdue, it comes back: in the prompt and as a turn of its own", async () => {
-    const llm = new Scripted([
-      reply("晚點幫你", ["commit", '{"what":"進語音","due_secs":30}']),
-      reply("抱歉我還沒做"),
-    ]);
-    const h = await rig(llm);
-    h.say(mention(channel("c"), "Alice", "進語音"));
-    await wait(2000);
-    settle(h, h.sink.actions.find((a) => a.payload.type === "send_message") as Action);
-    await wait(40_000);
-    expect(llm.requests.length).toBeGreaterThanOrEqual(2);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("逾期");
-    expect(h.sink.texts()).toContain("抱歉我還沒做");
-    const last = log(h).findLast((e) => e.source === "mainline.commitment");
-    expect(last?.body).toMatchObject({ commitment: { status: "broken" } });
   });
 
   it("doing it keeps it", async () => {
@@ -1056,39 +925,6 @@ describe("a line moderation stopped", () => {
   });
 });
 
-describe("interrupts", () => {
-  it("someone calling her wraps up what she says on her own", async () => {
-    const llm = new Scripted([reply("今天天氣真好。我們來聊聊吧。"), reply("怎麼了?")]);
-    const h = await rig(llm);
-    joinVoice(h);
-    await wait(10);
-    await h.sup.services.require(ProposalBoardKey).propose({
-      what: "聊天氣",
-      why: "想聊",
-      capability: "chat.start",
-      expires: toTimestamp(Date.now() + 60_000),
-      source: "plan",
-      context: VOICE,
-      about: null,
-      person: null,
-      goal: null,
-    });
-    await wait(2000);
-    const speech = h.sink.speakActions();
-    expect(speech).toHaveLength(2);
-    playback(h, speech[0] as Action, "started");
-    await wait(10);
-    utter(h, "DeepSeek 等一下");
-    await wait(10);
-    expect(h.sink.cancelled).toContain(speech[0]?.turn);
-    const floor = h.sup.services.require(FloorKey);
-    expect(floor.holder(VOICE)?.lines).toBe(1);
-    playback(h, speech[0] as Action, "finished");
-    await wait(2000);
-    expect(h.sink.speeches().map(([t]) => t)).toContain("怎麼了?");
-  });
-});
-
 describe("autonomy (§21 失去主動)", () => {
   function registry(ran: string[]): ActuatorRegistry {
     const tools = new ToolRegistry();
@@ -1124,89 +960,6 @@ describe("autonomy (§21 失去主動)", () => {
     goal: null,
   };
 
-  it("what her Plan wants, the main line carries out, by her own decision", async () => {
-    const tool = new Probe("chess_play");
-    const llm = new Scripted([reply("我去開麥塊!", ["chess_play", "{}"]), reply("<silence/>")]);
-    const ran: string[] = [];
-    const h = await rig(llm, { tools: [tool], actuators: registry(ran) });
-    h.say(incoming(channel("c"), "Alice", "嗨"));
-    await wait(2000);
-    const c = channel("c");
-    const outcome = await h.sup.services.require(ProposalBoardKey).propose({
-      ...proposal,
-      context: c,
-      expires: toTimestamp(Date.now() + 120_000),
-    });
-    expect(outcome.state).toBe("taken");
-    await wait(3000);
-    // The capability only ran through the turn's own action.
-    expect(ran).toEqual([]);
-    expect(tool.calls).toHaveLength(1);
-    expect(JSON.stringify(llm.requests.at(-2)?.messages)).toContain("好久沒玩了");
-    const board = h.sup.services.require(ProposalBoardKey);
-    expect(board.open()).toEqual([]);
-    expect(h.sink.texts()).toContain("我去開麥塊!");
-  });
-
-  it("she can decline: nothing runs, and the turn says so", async () => {
-    const tool = new Probe("chess_play");
-    const llm = new Scripted([reply("<silence/>")]);
-    const h = await rig(llm, { tools: [tool], actuators: registry([]) });
-    h.say(incoming(channel("c"), "Alice", "嗨"));
-    await wait(2000);
-    await h.sup.services.require(ProposalBoardKey).propose({
-      ...proposal,
-      context: channel("c"),
-      expires: toTimestamp(Date.now() + 120_000),
-    });
-    await wait(3000);
-    expect(tool.calls).toEqual([]);
-    const ended = log(h).findLast((e) => e.kind === "result" && e.source === "mainline");
-    expect(ended?.body).toMatchObject({ state: "declined" });
-  });
-
-  it("with nobody there she still acts, and says nothing", async () => {
-    const tool = new Probe("chess_play");
-    const llm = new Scripted([reply("開麥塊!", ["chess_play", "{}"])]);
-    const h = await rig(llm, { tools: [tool], actuators: registry([]) });
-    await h.sup.services.require(ProposalBoardKey).propose({
-      ...proposal,
-      context: null,
-      expires: toTimestamp(Date.now() + 120_000),
-    });
-    await wait(3000);
-    expect(tool.calls).toHaveLength(1);
-    expect(h.sink.actions).toEqual([]);
-    expect(llm.requests).toHaveLength(1);
-  });
-
-  it("a wish that may not talk now stays on the board and she sees it next time", async () => {
-    const llm = new Scripted([reply("嗯")]);
-    const h = await rig(llm);
-    joinVoice(h, 0);
-    await wait(10);
-    const board = h.sup.services.require(ProposalBoardKey);
-    const outcome = await board.propose({
-      what: "想問大家晚餐吃什麼",
-      why: "好奇",
-      capability: "chat.start",
-      expires: toTimestamp(Date.now() + 600_000),
-      source: "plan",
-      context: VOICE,
-      about: null,
-      person: null,
-      goal: null,
-    });
-    expect(outcome.state).not.toBe("taken");
-    expect(board.open(VOICE)).toHaveLength(1);
-    h.say(mention(channel("c"), "Alice", "嗨"));
-    await wait(2000);
-    expect(JSON.stringify(llm.requests[0]?.messages)).not.toContain("想問大家晚餐吃什麼");
-    utter(h, "DeepSeek 在嗎");
-    await wait(2000);
-    expect(JSON.stringify(llm.requests.at(-1)?.messages)).toContain("想問大家晚餐吃什麼");
-  });
-
   it("a rule on her game drops the proposal, in the log", async () => {
     const llm = new Scripted([reply("嗯")]);
     const h = await rig(llm, { tools: [new Probe("chess_play")], actuators: registry([]) });
@@ -1225,37 +978,6 @@ describe("autonomy (§21 失去主動)", () => {
 });
 
 describe("mute (§21 她變啞巴)", () => {
-  it("being called always gets an answer: budget spent, room unanswered", async () => {
-    const llm = new Scripted([reply("嗯?")]);
-    const h = await rig(llm, {
-      arbiter: { max_unanswered: 1, quiet_start_hour: 0, quiet_end_hour: 0 },
-    });
-    joinVoice(h);
-    await wait(10);
-    await h.sup.services.require(ProposalBoardKey).propose({
-      what: "聊聊",
-      why: "想",
-      capability: "chat.start",
-      expires: toTimestamp(Date.now() + 60_000),
-      source: "plan",
-      context: VOICE,
-      about: null,
-      person: null,
-      goal: null,
-    });
-    await wait(2000);
-    const first = h.sink.speakActions()[0] as Action;
-    playback(h, first, "started");
-    playback(h, first, "finished");
-    await wait(10);
-    const floor = h.sup.services.require(FloorKey);
-    expect(floor.budget(VOICE).waiting_for_response).toBe(true);
-    expect(floor.refuses("notable", VOICE)).not.toBeNull();
-    utter(h, "DeepSeek 你在嗎");
-    await wait(2000);
-    expect(h.sink.speakActions().length).toBeGreaterThanOrEqual(2);
-  });
-
   it("she keeps joining in when the room is alive: ambient talk is not shut out", async () => {
     const h = await rig(new Scripted([reply("真的嗎")]), { config: { default_mode: "lively" } });
     h.say(incoming(channel("c"), "Alice", "今天天氣真好,大家覺得呢?"));
@@ -1379,25 +1101,6 @@ describe("a tool written as text (11-08: `<sing_request>` in her reply)", () => 
     expect(commitments(h)).toEqual([]);
   });
 
-  it("not called after all, it is a promise she has to keep or take back", async () => {
-    const tool = new Probe("sing_request");
-    const llm = new Scripted([reply("好,我幫你點<sing_request>"), reply("嗯嗯"), reply("抱歉")]);
-    const h = await rig(llm, { tools: [tool] });
-    h.say(mention(channel("c"), "Alice", "點一首"));
-    await wait(3000);
-    expect(llm.requests).toHaveLength(2);
-    expect(tool.calls).toEqual([]);
-    expect(commitments(h).at(-1)).toMatchObject({
-      capability: "sing_request",
-      status: "open",
-      what: expect.stringContaining("我幫你點"),
-    });
-    for (const a of h.sink.actions) if (a.payload.type === "send_message") settle(h, a);
-    await wait(130_000);
-    const overdue = llm.requests.slice(2).map((r) => JSON.stringify(r.messages));
-    expect(overdue.some((m) => m.includes("逾期") && m.includes("sing_request"))).toBe(true);
-  });
-
   it("in voice a correction that does not start soon is given up; what she said stands", async () => {
     const tool = new Probe("sing_start");
     const llm = new Scripted([reply("好喔,我來唱。<sing_start>"), "hang", reply("<silence/>")]);
@@ -1422,109 +1125,6 @@ describe("a tool written as text (11-08: `<sing_request>` in her reply)", () => 
     await wait(3000);
     expect(llm.requests).toHaveLength(1);
     expect(commitments(h).at(-1)).toMatchObject({ capability: "sing_request" });
-  });
-});
-
-describe("what she started and did not get done (§10.1)", () => {
-  it("a failure comes back with its reason for her to explain in her own words", async () => {
-    const tool = new Probe("sing_request");
-    tool.call = async () => {
-      throw new Error("already 2 songs requested by this person");
-    };
-    const llm = new Scripted([
-      reply("好,我幫你點", ["sing_request", '{"query":"x"}']),
-      reply("啊,你已經點兩首了,等唱完再點喔"),
-    ]);
-    const h = await rig(llm, { tools: [tool] });
-    h.say(mention(channel("c"), "Alice", "點 x"));
-    await wait(5000);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain(
-      "already 2 songs requested by this person",
-    );
-    expect(h.sink.texts()).toEqual(["好,我幫你點", "啊,你已經點兩首了,等唱完再點喔"]);
-  });
-
-  it("what failed while nobody was there is in her next prompt, with why", async () => {
-    const tool = new Probe("chess_play");
-    tool.call = async () => {
-      throw new Error("stage node did not answer in time");
-    };
-    const llm = new Scripted([reply("", ["chess_play", "{}"]), reply("嗯")]);
-    const actuators = new ActuatorRegistry({
-      services: new ServiceRegistry(),
-      tools: new ToolRegistry(),
-      publish: () => undefined,
-    });
-    actuators.register(
-      defineCapability({
-        name: "chess.play",
-        summary: "下棋",
-        risk: "low",
-        args: z.object({}),
-        permission: null,
-        async execute() {
-          return { text: "開始了", data: null };
-        },
-      }),
-    );
-    const h = await rig(llm, { tools: [tool], actuators });
-    await h.sup.services.require(ProposalBoardKey).propose({
-      what: "想下棋",
-      why: "無聊",
-      capability: "chess.play",
-      args: {},
-      source: "plan",
-      about: null,
-      person: null,
-      goal: null,
-      context: null,
-      expires: toTimestamp(Date.now() + 120_000),
-    });
-    await wait(3000);
-    expect(results(h).at(-1)).toMatchObject({ tool: "chess_play", state: "failed" });
-    // Nobody was there: no turn of its own.
-    expect(llm.requests).toHaveLength(1);
-    h.say(mention(channel("c"), "Alice", "嗨"));
-    await wait(3000);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain(
-      "stage node did not answer in time",
-    );
-  });
-
-  it("a song holds the voice channel: the result waits for it, then she hears why", async () => {
-    let song: string | null = "song";
-    const tool = new Probe("sing_request");
-    tool.call = async () => {
-      throw new Error("already 2 songs requested by this person");
-    };
-    const llm = new Scripted([
-      reply("好喔,點了。", ["sing_request", '{"query":"x"}']),
-      reply("剛剛那首沒點成,你已經點兩首了。"),
-    ]);
-    const h = await rig(llm, {
-      tools: [tool],
-      body: new Body(),
-      provide: (services) => {
-        services.provide("app", VoiceFloorKey, { holder: () => song });
-      },
-    });
-    joinVoice(h);
-    await wait(10);
-    utter(h, "DeepSeek 幫我點 x");
-    await wait(2000);
-    // Her line is over (the mic is free): only the song is in the way now.
-    for (const a of h.sink.actions) {
-      if (a.payload.type !== "speak") continue;
-      playback(h, a, "started");
-      playback(h, a, "finished");
-    }
-    await wait(20_000);
-    // No turn while she sings: it would wait behind the song and be dropped.
-    expect(llm.requests).toHaveLength(1);
-    song = null;
-    await wait(12_000);
-    expect(llm.requests).toHaveLength(2);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("already 2 songs");
   });
 });
 
@@ -1692,43 +1292,6 @@ describe("stage 0 of v4: follow-ups, an empty room, sentences out sooner", () =>
     expect(h.sink.texts()).toEqual(["早啊"]);
   });
 
-  it("with nobody in the voice channel who can hear, a result is not said out loud", async () => {
-    const slow = new Probe("slow", null, 5000);
-    const llm = new Scripted([reply("我查一下。", ["slow", "{}"]), reply("查到了。")]);
-    const h = await rig(llm, {
-      tools: [slow],
-      body: new Body(),
-      config: { tool_timeout_ms: 20_000 },
-    });
-    joinVoice(h);
-    await wait(10);
-    utter(h, "DeepSeek 查一下");
-    await wait(1500);
-    const said = () => h.sink.speeches().map(([t]) => t);
-    expect(said()).toEqual(["我查一下。"]);
-    for (const a of h.sink.speakActions()) {
-      playback(h, a, "started");
-      playback(h, a, "finished");
-    }
-    // The one who asked put their headphones down.
-    h.publish(Events.VoiceParticipants, {
-      context: VOICE,
-      participants: [
-        {
-          account: { platform: "test", id: "p0" },
-          display_name: "P0",
-          is_self: false,
-          muted: false,
-          deafened: true,
-        },
-      ],
-    });
-    await wait(15_000);
-    expect(llm.requests).toHaveLength(2);
-    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("現在沒有人在聽");
-    expect(said()).toEqual(["我查一下。"]);
-  });
-
   describe("in voice, heard in another language", () => {
     const voiceSink = { speaksIn: "Japanese", speak: async () => "completed" as const };
     const bilingual = (chat: ChatProvider, tools: Probe[] = []) =>
@@ -1788,44 +1351,6 @@ describe("stage 0 of v4: follow-ups, an empty room, sentences out sooner", () =>
 });
 
 describe("stage 1 of v4: the prompt keeps its prefix (§4.1)", () => {
-  /** Everything of a request before what changes every turn: the data, the focus, the tail. */
-  function prefix(request: ChatRequest | undefined): string {
-    const messages = [...(request?.messages ?? [])];
-    messages.pop();
-    const last = messages.at(-1);
-    const text = JSON.stringify(last?.content ?? "");
-    if (last?.role === "user" && text.includes("<data source=")) messages.pop();
-    // Up to the end of the newest history line: a line merged into it later only adds after it.
-    const json = JSON.stringify(messages);
-    return json.slice(0, json.lastIndexOf('","name":'));
-  }
-
-  it("with no line edited in between, two turns in a row share their prompt up to the newest line", async () => {
-    const slow = new Probe("slow", null, 3000);
-    const llm = new Scripted([
-      reply("我查一下", ["slow", "{}"]),
-      reply("查到了,明天是晴天"),
-      reply("不客氣"),
-    ]);
-    const h = await rig(llm, { tools: [slow], config: { tool_timeout_ms: 20_000 } });
-    h.say(mention(channel("c"), "Alice", "幫我查明天天氣"));
-    await wait(10_000);
-    h.say(mention(channel("c"), "Alice", "謝啦"));
-    await wait(5000);
-    expect(llm.requests).toHaveLength(3);
-    // The turn in the middle is the result turn: its data has the result, the others' do not.
-    const [first, second, third] = llm.requests.map((r) => JSON.stringify(r.messages));
-    expect(second).toContain("slow 完成");
-    expect(first).not.toContain("slow 完成");
-    expect(third).not.toContain("slow 完成");
-    for (let i = 0; i + 1 < llm.requests.length; i++) {
-      const before = prefix(llm.requests[i]);
-      expect(before).toContain("幫我查明天天氣");
-      const after = JSON.stringify(llm.requests[i + 1]?.messages);
-      expect(after.startsWith(before)).toBe(true);
-    }
-  });
-
   it("the data of the turn comes after the history, the owner's rules before it", async () => {
     const llm = new Scripted([reply("嗯")]);
     const h = await rig(llm, {
@@ -1938,43 +1463,6 @@ describe("stage 1 of v4: the tool loop inside a turn (§4.2)", () => {
     expect(h.sink.speeches().map(([t]) => t)).toEqual(["我查一下。", "查到了。"]);
   });
 
-  it("an activity in the same response stays with the hands and is told when it is done", async () => {
-    const search = tool("web_search");
-    const sing = tool("sing_start", 3000);
-    const llm = new Scripted([
-      reply("我查一下歌詞", ["web_search", "{}"], ["sing_start", "{}"]),
-      reply("找到了,我開始唱"),
-      reply("唱完了"),
-    ]);
-    const h = await rig(llm, { tools: [search, sing], config: { tool_timeout_ms: 20_000 } });
-    h.say(mention(channel("c"), "Alice", "唱首歌"));
-    await wait(1000);
-    const second = llm.requests[1]?.messages ?? [];
-    const handed = second.filter((m) => m.role === "tool").map((m) => m.content);
-    expect(handed[0]).toContain("<data source=");
-    expect(handed[1]).toBe(HANDED_OVER);
-    await wait(10_000);
-    expect(sing.calls).toHaveLength(1);
-    expect(h.sink.texts()).toEqual(["我查一下歌詞", "找到了,我開始唱", "唱完了"]);
-    expect(JSON.stringify(llm.requests[2]?.messages)).toContain("sing_start 完成");
-    expect(decisions(h)[0]?.actions).toEqual(["web_search", "sing_start"]);
-  });
-
-  it("past max_tool_steps rounds, a lookup goes to the hands and comes back in a turn", async () => {
-    const search = tool("web_search");
-    const llm = new Scripted([
-      reply("我查一下", ["web_search", "{}"]),
-      reply("再查一次", ["web_search", "{}"]),
-      reply("查到了"),
-    ]);
-    const h = await rig(llm, { tools: [search], config: { max_tool_steps: 1 } });
-    h.say(mention(channel("c"), "Alice", "查一下"));
-    await wait(10_000);
-    expect(search.calls).toHaveLength(2);
-    expect(llm.requests).toHaveLength(3);
-    expect(JSON.stringify(llm.requests[2]?.messages)).toContain("web_search 完成");
-  });
-
   it("a tool someone may not use is refused inside the loop too, and she hears why", async () => {
     const search = new Probe("web_search", "tools.web");
     const llm = new Scripted([reply("我查一下", ["web_search", "{}"]), reply("我不能查欸")]);
@@ -2033,20 +1521,6 @@ describe("stage 1 of v4: every way out of the tool loop (review of 2026-11-10)",
   const tool = (name: string, delay = 0) => new Probe(name, null, delay);
   const toolMessages = (request: ChatRequest | undefined) =>
     (request?.messages ?? []).filter((m) => m.role === "tool").map((m) => String(m.content));
-
-  it("the call after the tools fails: what they found comes back in a result turn", async () => {
-    const llm = new Scripted([
-      reply("我查一下", ["web_search", "{}"]),
-      "fail",
-      reply("查到了,明天是晴天"),
-    ]);
-    const h = await rig(llm, { tools: [tool("web_search")] });
-    h.say(mention(channel("c"), "Alice", "明天天氣怎樣"));
-    await wait(10_000);
-    expect(llm.requests).toHaveLength(3);
-    expect(JSON.stringify(llm.requests[2]?.messages)).toContain("web_search 完成");
-    expect(h.sink.texts()).toEqual(["我查一下", "查到了,明天是晴天"]);
-  });
 
   it("the call after the tools fails: what she was told went to the hands goes there", async () => {
     const sing = tool("sing_start");
@@ -2131,29 +1605,5 @@ describe("stage 1 of v4: every way out of the tool loop (review of 2026-11-10)",
     h.say(mention(channel("c"), "Alice", "幫我弄"));
     await wait(5000);
     expect(h.sink.texts()).toEqual(["搞定了。"]);
-  });
-
-  it("a tool the owner's rules took off the list does not run, in the loop or in the hands", async () => {
-    const sing = tool("sing_start");
-    const llm = new Scripted([
-      reply("我查一下", ["web_search", "{}"], ["sing_start", "{}"]),
-      reply("好,我唱", ["sing_start", "{}"]),
-      reply("不能唱欸"),
-    ]);
-    const h = await rig(llm, {
-      tools: [tool("web_search"), sing],
-      provide: (services) =>
-        services.provide("app", DirectivesKey, {
-          inject: () => ["不准唱歌"],
-          filterTools: (tools: { name: string }[]) => tools.filter((t) => t.name !== "sing_start"),
-          wishes: () => [],
-        } as unknown as Directives),
-    });
-    h.say(mention(channel("c"), "Alice", "唱首歌"));
-    await wait(10_000);
-    expect(sing.calls).toHaveLength(0);
-    expect(toolMessages(llm.requests[1])[1]).toBe(NOT_OFFERED);
-    // The hands refuse it too, and she hears why.
-    expect(JSON.stringify(llm.requests[2]?.messages)).toContain("這個工具現在不能用");
   });
 });

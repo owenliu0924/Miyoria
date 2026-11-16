@@ -71,8 +71,6 @@ import {
   type PersonId,
   type PlanWake,
   type ProfileId,
-  type ProposalBoard,
-  ProposalBoardKey,
   type Publish,
   type RaisedTopic,
   ReflectionKey,
@@ -186,11 +184,6 @@ export interface MindDeps {
   store?: SettingsStore | null;
   /** What she did today (v4 §8.2: variety, and wants that lead to her own activities). */
   life?: LifeBook | null;
-  /**
-   * `false` with `[modules.agent] runner = "self"`: her impulses start nothing (the new runner's
-   * initiative wakes her); Plan still keeps her goals and her day plan. Default `true`.
-   */
-  proposes?: boolean;
 }
 
 /** A turn she started herself: what it was about, and whom (for a DM). */
@@ -1863,24 +1856,12 @@ export class MindLoop implements Mind {
     for (const [p] of planned) {
       if (p === null || signal?.aborted) continue;
       const arbiter = this.#d.services.get(ArbiterKey);
-      const board = this.#d.services.get(ProposalBoardKey);
-      let outcome: IntentOutcome;
-      if (this.#d.proposes === false) {
-        outcome = { status: "dropped", detail: "the new runner decides on its own", turn: null };
-      } else if (board) {
-        outcome = await this.#propose(board, p, signal);
-      } else {
-        // Without the agent module there is nobody to take a proposal: she does not act alone.
-        this.#d.log.debug(
-          { capability: p.intent.capability },
-          "intent dropped: the agent module is not running",
-        );
-        outcome = {
-          status: "dropped",
-          detail: "the agent module is not running",
-          turn: null,
-        };
-      }
+      // Her impulses start nothing: the new runner's initiative wakes her.
+      const outcome: IntentOutcome = {
+        status: "dropped",
+        detail: "the new runner decides on its own",
+        turn: null,
+      };
       const intent = p.intent;
       if (outcome.turn !== null) {
         this.#own(outcome.turn);
@@ -1921,41 +1902,6 @@ export class MindLoop implements Mind {
           applyTurnEvent(record, e, toTimestamp(this.#now()));
         }
       });
-    }
-  }
-
-  /**
-   * V3 (docs/design/v3-architecture.md §10.5): she still decides what she wants, here. Whether and
-   * how it happens is the main line's: this writes a `Proposal`, and that is all it can do.
-   */
-  async #propose(
-    board: ProposalBoard,
-    planned: Planned,
-    signal: AbortSignal | undefined,
-  ): Promise<IntentOutcome> {
-    const { impulse, intent } = planned;
-    try {
-      const outcome = await board.propose(
-        {
-          id: impulse.id,
-          what: impulse.hint ?? impulse.why,
-          why: impulse.why,
-          capability: intent.capability,
-          args: intent.args,
-          expires: intent.expires_at,
-          source: impulse.source,
-          context: intent.context,
-          about: intent.about,
-          person: impulse.target.person,
-          goal: impulse.goal,
-        },
-        signal,
-      );
-      const status =
-        outcome.state === "taken" ? "started" : outcome.state === "open" ? "pending" : "dropped";
-      return { status, detail: outcome.detail, turn: outcome.turn };
-    } catch (error) {
-      return { status: "failed", detail: errorMessage(error), turn: null };
     }
   }
 

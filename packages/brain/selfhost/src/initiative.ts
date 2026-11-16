@@ -1,7 +1,7 @@
 // Her own initiative on the new runner (docs/design/v5-architecture.md §7.6, docs/design/
-// v5-brain.md B6): opportunity → code gates → her run → what came of it. It replaces, for
-// `[modules.agent] runner = "self"`, the chain of the mind's Plan call, the proposal board, the
-// Arbiter's rules and the main line deciding again.
+// v5-brain.md B6): opportunity → code gates → her run → what came of it. It replaces the chain
+// of the mind's Plan call, the proposal board, the Arbiter's rules and the main line deciding
+// again.
 //
 // Her inbox. What is for her but is not a line of a conversation is an item of the `initiative`
 // table: a due schedule of hers, a salient world event, a due followup of memory, an overdue

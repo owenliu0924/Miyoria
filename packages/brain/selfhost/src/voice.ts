@@ -1,4 +1,4 @@
-// The voice conversations on the new runner (`[modules.agent] runner = "self"`): the agent hands
+// The voice conversations on the new runner: the agent hands
 // over what is said in a voice channel (`VoiceRunner`), and each channel's runs go through the one
 // `SelfRunner` on the voice profile (reasoning off, two rounds, the calls of `VOICE_TOOLS`).
 //

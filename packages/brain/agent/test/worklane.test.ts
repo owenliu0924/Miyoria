@@ -19,15 +19,12 @@ import {
   type ContextKey,
   type Directives,
   DirectivesKey,
-  EventLogKey,
   isJsonObject,
   type JsonValue,
-  ProposalBoardKey,
   type TaskEvent,
   toTimestamp,
   WORK_PURPOSE,
   WorkEndedError,
-  WorkLaneKey,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArbiterModule } from "../../arbiter/src/index.js";
@@ -37,7 +34,6 @@ import { asWork } from "../src/worklane/initiative.js";
 import { RESTART_REASON, shortId, TASK_PREFIX, WorkLaneService } from "../src/worklane/lane.js";
 import { NOT_ALLOWED } from "../src/worklane/prompt.js";
 import {
-  account,
   channel,
   done,
   Harness,
@@ -578,109 +574,6 @@ async function rig(provider: ChatProvider, tools: Tool[], store?: MemorySettings
     modules: [[new ArbiterModule("p"), { quiet_start_hour: 0, quiet_end_hour: 0 }]],
   });
 }
-
-describe("through the main line", () => {
-  it("she starts it, the mouth does not wait, and the result is told once, in her words", async () => {
-    const { search, read } = webTools();
-    const provider = new Lanes(
-      [
-        reply("好,我去查一下,等等跟你說", [
-          "work_start",
-          '{"goal":"查 1.22 的新生物","for":"Alice"}',
-        ]),
-        reply("查到了!1.22 有螢火蟲,只在沼澤晚上出現。"),
-      ],
-      [
-        reply("", ["web_search", '{"query":"1.22 新生物"}']),
-        reply("", ["web_read", '{"url":"https://a.example/news"}']),
-        reply("", ["web_read", '{"url":"https://b.example/wiki"}']),
-        reply("1.22 有螢火蟲,只在沼澤晚上出現。"),
-      ],
-    );
-    const h = await rig(provider, [search, read]);
-    h.say(mention(C, "Alice", "幫我查 Minecraft 1.22 的新生物,多看幾個地方"));
-    await wait(3000);
-    expect(h.sink.texts()[0]).toBe("好,我去查一下,等等跟你說");
-    await wait(10_000);
-    expect(provider.work).toHaveLength(4);
-    expect(read.calls).toHaveLength(2);
-    // The task ran as the person who asked.
-    expect(search.calls[0]?.[0].principal).toMatchObject({
-      kind: "user",
-      requester: account("Alice"),
-    });
-    const told = JSON.stringify(provider.chat.at(-1)?.messages);
-    expect(told).toContain("work_start 完成");
-    expect(told).toContain("結論:1.22 有螢火蟲");
-    expect(told).toContain("讀了 b.example 的網頁");
-    expect(h.sink.texts().join("")).toBe(
-      "好,我去查一下,等等跟你說查到了!1.22 有螢火蟲,只在沼澤晚上出現。",
-    );
-    // Told once: nothing more comes of it.
-    await wait(60_000);
-    expect(provider.chat).toHaveLength(2);
-    // It is in her state while it runs, and the lane keeps it.
-    const lane = h.sup.services.require(WorkLaneKey);
-    expect(lane.tasks()[0]).toMatchObject({ state: "done", for: "Alice", steps: 4 });
-    const log = h.sup.services.require(EventLogKey).recent(500);
-    expect(
-      log.some((e) => e.source === "worklane" && JSON.stringify(e.body).includes("任務開始")),
-    ).toBe(true);
-  });
-
-  it("her own wish to browse is proposed as a task, and the turn that takes it starts one", async () => {
-    const provider = new Lanes(
-      [
-        reply("", ["work_start", '{"goal":"查最近的動畫新聞","activity":"browse"}']),
-        reply("<silence/>"),
-      ],
-      [reply("今年秋天有三部續作。")],
-    );
-    const h = await rig(provider, [webTools().search]);
-    const board = h.sup.services.require(ProposalBoardKey);
-    await board.propose({
-      what: "查最近的動畫新聞",
-      why: "好奇",
-      capability: "web.search",
-      args: { query: "動畫" },
-      expires: toTimestamp(Date.now() + 120_000),
-      source: "plan",
-      context: null,
-      about: null,
-      person: null,
-      goal: null,
-    });
-    await wait(5000);
-    expect(JSON.stringify(provider.chat[0]?.messages)).toContain("work.start");
-    expect(provider.work).toHaveLength(1);
-    const lane = h.sup.services.require(WorkLaneKey);
-    expect(lane.tasks()[0]).toMatchObject({ state: "done", for: null });
-    // Nobody waited: nothing was said, and what it found is in her next prompt.
-    expect(h.sink.texts()).toEqual([]);
-    h.say(mention(C, "Bob", "你剛剛在幹嘛"));
-    await wait(3000);
-    expect(JSON.stringify(provider.chat.at(-1)?.messages)).toContain("今年秋天有三部續作");
-  });
-
-  it("after a restart, the task someone waited for is told once, where they asked", async () => {
-    const store = new MemorySettingsStore();
-    await store.set("test-chan", `${TASK_PREFIX}01TASK`, {
-      id: "01TASK",
-      goal: "查 1.22 的新生物",
-      for: "Alice",
-      context: C as unknown as JsonValue,
-      requester: account("Alice") as unknown as JsonValue,
-    });
-    const provider = new Lanes([reply("抱歉,剛剛重開機,查到一半斷掉了,我再查一次?")], []);
-    const h = await rig(provider, [], store);
-    await wait(10_000);
-    expect(JSON.stringify(provider.chat[0]?.messages)).toContain(RESTART_REASON);
-    expect(h.sink.texts()).toEqual(["抱歉,剛剛重開機,查到一半斷掉了,我再查一次?"]);
-    await wait(60_000);
-    expect(provider.chat).toHaveLength(1);
-    expect([...(await store.list("test-chan", TASK_PREFIX)).keys()]).toEqual([]);
-  });
-});
 
 describe("a page read inside a turn (v4 §4.2)", () => {
   it("is not cut at 4,000 any more; a round still adds at most loop_round_chars", async () => {

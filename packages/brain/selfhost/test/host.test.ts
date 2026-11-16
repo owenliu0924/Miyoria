@@ -413,18 +413,13 @@ describe("a restart", () => {
 });
 
 describe("the switch", () => {
-  it('with runner = "mainline" nothing of the new path runs', async () => {
+  it("a config that still names `runner` loads, and the new runner answers", async () => {
     const rig = await Rig.create({ config: { runner: "mainline" } });
-    rig.model.push(says("舊的回合"));
-    rig.say(line(DM, "owen", "在嗎"));
-    await until(() => rig.model.requests.length >= 1, 3_000, "the old turn");
-    expect(rig.factoryCalls).toBe(0);
-    expect(rig.host).toBeNull();
-    const transcripts = await import("@miyoria/memory/transcript");
-    expect(rig.store.plugin(transcripts.transcriptTables).sessions()).toEqual([]);
+    expect(rig.factoryCalls).toBe(1);
+    expect(rig.host).not.toBeNull();
   });
 
-  it('voice goes to the new runner too with runner = "self"', async () => {
+  it("voice goes to the new runner too", async () => {
     const rig = await Rig.create();
     const voice: ContextKey = { platform: "test", scope: "guild", channel: "v", kind: "voice" };
     const now = Date.now();

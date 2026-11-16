@@ -19,7 +19,6 @@ import {
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { REMINDER_PREFIX } from "../src/index.js";
 import { callKind, ScriptedProvider, texts } from "./fakes.js";
 import { rig, salient, stopRigs, TEXT, wait } from "./helpers.js";
 
@@ -81,32 +80,6 @@ describe("her own life in the mind module", () => {
     expect(r.sup.services.get(ReminderDeskKey)?.list()).toEqual([]);
     expect(r.sup.services.get(DailyPostsKey)?.channel()).toBeNull();
     expect(r.registry.get("self.remind")?.tool?.name).toBe("remind_me");
-  });
-
-  it("a timer she set comes back as a proposal for the main line, and survives a restart", async () => {
-    const board = new FakeBoard();
-    const r = await rig(new ScriptedProvider(() => "{}"), {
-      extra: (sup) => sup.services.provide("agent", ProposalBoardKey, board),
-    });
-    const set = await r.registry.invoke({
-      principal: Principals.self(TEXT),
-      capability: "self.remind",
-      args: { what: "看一下烤箱", in_minutes: 20 },
-      why: null,
-      turn: null,
-    });
-    expect(set.status).toBe("done");
-    expect((await r.store.list("p", REMINDER_PREFIX)).size).toBe(1);
-    await wait(19 * MIN);
-    expect(board.proposals).toEqual([]);
-    await wait(2 * MIN);
-    expect(board.proposals).toHaveLength(1);
-    expect(board.proposals[0]).toMatchObject({
-      source: "agenda",
-      context: TEXT,
-      what: "你自己設的提醒到了:看一下烤箱。要不要說、怎麼說由你決定。",
-    });
-    expect(r.sup.services.require(ReminderDeskKey).list()).toEqual([]);
   });
 
   it("logs her own search and offers a post only once daily posts are configured", async () => {

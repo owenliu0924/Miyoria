@@ -188,7 +188,7 @@ export class SettlingSink implements ActionSink {
 // ---- the rig -------------------------------------------------------------------------------
 
 export interface RigOptions {
-  /** `[modules.agent]` (runner `self` and short waits unless set). */
+  /** `[modules.agent]` (short waits unless set). */
   config?: Record<string, JsonValue>;
   /** The profile's default channel mode. */
   mode?: string;
@@ -256,7 +256,6 @@ export class Rig {
     await sup.register(
       agent,
       {
-        runner: "self",
         debounce_ms: 40,
         max_debounce_ms: 400,
         typing_extend_ms: 150,

@@ -23,7 +23,6 @@ import { notInVoice } from "../src/voice-texts.js";
 import {
   account,
   calls,
-  done,
   mention,
   Rig,
   type RigOptions,
@@ -416,23 +415,5 @@ describe("her inbox in voice", () => {
     hear(rig, "owen", "小鯨魚你還在嗎");
     await until(() => speeches(rig).length === 2, 3_000, "the second answer");
     expect(textOf(rig.model.requests[1])).not.toContain("Owen 在別的伺服器得獎了");
-  });
-});
-
-describe("the switch", () => {
-  it('with runner = "mainline" voice runs on the old path and nothing of this runs', async () => {
-    const rig = await voiceRig({}, { config: { runner: "mainline" } });
-    rig.model.push(says("舊的路。"), [done()]);
-    hear(rig, "owen", "小鯨魚你在嗎");
-    await until(
-      () =>
-        rig.of<DecisionTrace>(Events.AgentDecision.type).some((d) => d.context.kind === "voice"),
-      3_000,
-      "the old path's decision",
-    );
-    expect(rig.host).toBeNull();
-    expect(rig.factoryCalls).toBe(0);
-    const decisions = rig.of<DecisionTrace>(Events.AgentDecision.type);
-    expect(decisions.every((d) => !d.reasons.includes("runner self"))).toBe(true);
   });
 });

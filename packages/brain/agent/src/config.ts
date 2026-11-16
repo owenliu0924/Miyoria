@@ -511,8 +511,8 @@ export const WorkConfigSchema = z.object({
 export type WorkConfig = z.output<typeof WorkConfigSchema>;
 
 /**
- * `[modules.agent.delegate]`: the sub-agents of the phase-3 runner (docs/design/v5-brain.md, only
- * with `runner = "self"`). The per-kind limits are in `packages/brain/self/src/subagents.ts`.
+ * `[modules.agent.delegate]`: the sub-agents of the phase-3 runner (docs/design/v5-brain.md). The
+ * per-kind limits are in `packages/brain/self/src/subagents.ts`.
  */
 export const DelegateConfigSchema = z.object({
   enabled: z.boolean().default(true),
@@ -575,12 +575,8 @@ export type CorrectionsConfig = z.output<typeof CorrectionsConfigSchema>;
 
 /** `[modules.agent]` config section. */
 export const AgentConfigSchema = z.object({
-  /**
-   * Who answers text conversations (channels, threads, DMs): `mainline`, today's turn, or `self`,
-   * the phase-3 turn runner (`@miyoria/brain/selfhost`). Voice, her own starts and the work lane
-   * stay on the main line either way. Read once at start; a development switch of the rebuild.
-   */
-  runner: z.enum(["mainline", "self"]).default("mainline"),
+  /** No longer read: the phase-3 turn runner always answers (a line at start says so). */
+  runner: z.unknown().optional(),
   /** Quiet time after the last message before a turn starts. */
   debounce_ms: z.number().int().nonnegative().default(800),
   /** A typing notification pushes the turn start to at least this far out. */
@@ -643,7 +639,7 @@ export const AgentConfigSchema = z.object({
   mainline: MainLineConfigSchema.prefault({}),
   /** The work lane (v4 §4.3). */
   work: WorkConfigSchema.prefault({}),
-  /** The sub-agents (`runner = "self"`). */
+  /** The sub-agents. */
   delegate: DelegateConfigSchema.prefault({}),
   /** The after-the-fact corrections that may be switched off once measured (v4 §4.5). */
   corrections: CorrectionsConfigSchema.prefault({}),

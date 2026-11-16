@@ -335,14 +335,3 @@ describe("longing", () => {
     expect(stopped).toMatchObject({ verdict: "rejected", reason: "consent" });
   });
 });
-
-describe("runner = mainline", () => {
-  it("has none of it: no host, no schedule tools, no records", async () => {
-    const rig = await Rig.create({ config: { runner: "mainline" } });
-    expect(rig.host).toBeNull();
-    expect(rig.tools.entry("schedule")).toBeUndefined();
-    rig.sup.bus.publish("world", Events.WorldSalient, salient(C1, "頻道突然熱鬧起來"));
-    await sleep(100);
-    expect(decisions(rig)).toEqual([]);
-  });
-});

@@ -28,7 +28,6 @@ export {
   placeOf,
 } from "./ledger.js";
 export { ArbiterModule, type ArbiterModuleOptions, STATE_KEY, STATE_PROFILE } from "./module.js";
-export { type ProducerSnapshot, ProducerSnapshotSchema, Producers } from "./producers.js";
 export {
   clockText,
   dayIndex,

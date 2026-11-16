@@ -170,7 +170,6 @@ describe("everything people write is judged", () => {
     // Only counters and presence: no text of a message goes anywhere from these.
     const counting = [
       "packages/brain/arbiter/src/module.ts",
-      "packages/brain/arbiter/src/producers.ts",
       "packages/brain/arbiter/src/unanswered.ts",
       "packages/economy/src/earn.ts",
       // The raw record of each line (the store), not something she knows.

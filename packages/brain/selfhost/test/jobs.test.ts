@@ -224,19 +224,6 @@ describe("work_start and its friends", () => {
     expect(old.ok && old.text).not.toContain("小幫手");
     expect(rig.host?.jobs?.delegator.jobs()).toHaveLength(2);
   });
-
-  it('are the old tools, untouched, with runner = "mainline"', async () => {
-    const rig = await Rig.create({
-      config: { runner: "mainline" },
-      ...tools([tool("web_search", "read", () => "x")]),
-    });
-    expect(rig.host).toBeNull();
-    const start = rig.tools.get("work_start") as Tool;
-    const out = await (start.result as NonNullable<Tool["result"]>)(ctxOf(C1), { goal: "查" });
-    expect(out.ok && out.text).toContain("交給工作車道了");
-    expect(out.ok && out.text).not.toContain("小幫手");
-    expect(rig.tools.entry("delegate")).toBeUndefined();
-  });
 });
 
 describe("a restart", () => {
@@ -308,7 +295,5 @@ describe("the nightly reflection", () => {
     const off = await Rig.create({ config: { delegate: { enabled: false } } });
     expect(off.host?.jobs).toBeNull();
     expect(off.sup.services.get(ReflectGuardKey)).toBeUndefined();
-    const old = await Rig.create({ config: { runner: "mainline" } });
-    expect(old.sup.services.get(ReflectGuardKey)).toBeUndefined();
   });
 });

@@ -141,12 +141,6 @@ export function arbiterClock(config: Config): LocalTime | null {
   return parsed.success ? parsed.data : null;
 }
 
-/** `[modules.agent] runner = "self"`: her own starts are the new runner's initiative too. */
-export function runsSelf(config: Config): boolean {
-  const agent = config.module(AgentModule.ID).config;
-  return isJsonObject(agent) && agent.runner === "self";
-}
-
 async function coreModules({
   config,
   profile,
@@ -170,7 +164,7 @@ async function coreModules({
     new VoiceLinkModule(),
     new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),
     new SchedulerModule(),
-    // Text conversations go to the new turn runner only with `[modules.agent] runner = "self"`.
+    // Text and voice conversations, her own starts and her helpers run on the new turn runner.
     new AgentModule(profile).withTextRunner(
       selfHost({
         quiet: arbiterClock(config),
@@ -192,14 +186,12 @@ async function coreModules({
       baseline: profile.manifest.mood,
     }),
     new MemoryModule(profileId, config.get("memory.embedding", EmbeddingConfigSchema)),
-    new ArbiterModule(profileId, { selfStarts: !runsSelf(config) }),
+    new ArbiterModule(profileId),
     new MindModule(profileId, {
       name: profile.displayName,
       persona: (services) =>
         services.get(PersonaHandleKey)?.corePrompt() ?? profile.personaPrompt(),
-      ...(runsSelf(config)
-        ? { selfRunner: { reminders: (services) => services.get(ScheduleRemindersKey) ?? null } }
-        : {}),
+      reminders: (services) => services.get(ScheduleRemindersKey) ?? null,
     }),
     new KnowledgeModule(profileId),
     new ConversationModule(profileId),

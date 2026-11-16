@@ -108,12 +108,12 @@ describe("only the main line acts", () => {
     );
   });
 
-  it("the Arbiter has no hands and her Plan no way but the board", () => {
+  it("the Arbiter has no hands and her Plan none at all", () => {
     const arbiter = readFileSync(join(ROOT, "packages/brain/arbiter/src/module.ts"), "utf8");
     expect(arbiter).not.toContain("actThroughGate");
     const mind = readFileSync(join(ROOT, "packages/heart/mind/src/mind.ts"), "utf8");
     const act = mind.slice(mind.indexOf("async #act("));
-    expect(act).toContain("if (board)");
+    expect(act).not.toContain(".propose(");
     expect(act).not.toContain("arbiter.submit");
     expect(act).not.toContain("registry.invoke");
     const intents = readFileSync(join(ROOT, "packages/brain/agent/src/intents.ts"), "utf8");
