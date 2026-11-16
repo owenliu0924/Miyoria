@@ -188,8 +188,6 @@ export interface Setup {
   voiceSink?: VoiceSink;
   /** Provided by the "app" as the actuator registry. */
   actuators?: ActuatorRegistry;
-  /** `[llm.thinking]` of the router. */
-  thinking?: Map<string, boolean>;
   /** `[llm.image_input]` of the router. */
   imageInput?: Map<string, boolean>;
   /** Image downloads of the agent (default: none allowed). */
@@ -275,7 +273,6 @@ export class Harness {
       purposes.set("fast", [parseModelRef("fast:m")]);
     }
     const router = new LlmRouter(providers, purposes, {
-      ...(setup.thinking ? { thinking: setup.thinking } : {}),
       ...(setup.imageInput ? { imageInput: setup.imageInput } : {}),
     });
     await sup.register(new Stub("llm", (ctx) => ctx.provide(LlmRouterKey, router)), null, true);

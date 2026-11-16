@@ -38,7 +38,7 @@ export function traceKeepHint(chars: number): string {
 /**
  * The keep_note reminder for a result of the tool loop (v4 §4.5 step 1), `null` for none. The
  * reminder said a result is gone next turn; since v4 §4.2 a trace of the call stays beside her
- * reply, with the head of what came back (`[modules.agent.mainline] trace_result_chars`). So:
+ * reply, with the head of what came back. So:
  *
  * * a receipt (the tool only got something started) gets none: the real result comes back
  *   through the hands, in a turn whose result block carries `KEEP_HINT` itself;

@@ -57,11 +57,6 @@ export interface LlmRouterOptions {
   metrics?: MetricsRegistry;
   /** Clock of the first-token latency. Default: the system clock. */
   clock?: Clock;
-  /**
-   * `[llm.thinking]` (legacy): whether reasoning models think, per purpose. Used for purposes
-   * `[llm.reasoning]` does not list (`true` = `medium`).
-   */
-  thinking?: ReadonlyMap<string, boolean>;
   /** `[llm.reasoning]`: the reasoning level per (reasoning) purpose. */
   reasoning?: ReadonlyMap<string, ReasoningLevel>;
   /**
@@ -154,7 +149,6 @@ export class LlmRouter {
   readonly #cost: CostTracker;
   readonly #metrics: LlmMetrics;
   readonly #clock: Clock;
-  readonly #thinking: ReadonlyMap<string, boolean>;
   readonly #reasoning: ReadonlyMap<string, ReasoningLevel>;
   readonly #imageInput: ReadonlyMap<string, boolean>;
   /** Models that refused image parts in this run (`provider:model`); they get text from now on. */
@@ -173,7 +167,6 @@ export class LlmRouter {
       options.tracker ?? new CostTracker(options.pricing, options.budget ?? budgetConfig());
     this.#metrics = llmMetrics(options.metrics);
     this.#clock = options.clock ?? systemClock;
-    this.#thinking = options.thinking ?? new Map();
     this.#reasoning = options.reasoning ?? new Map();
     this.#imageInput = options.imageInput ?? new Map();
     this.#calls = options.calls ?? new LlmCallLog();
@@ -203,8 +196,7 @@ export class LlmRouter {
    * The reasoning level of a request for `purpose`: `request.reasoning` when set; an explicit
    * `request.thinking` (older callers: `false` = `off`, `true` = the configured level, at least
    * `medium`); else for its reasoning purpose (`request.reasoning_purpose`, default `purpose`)
-   * `[llm.reasoning]`, then the legacy `[llm.thinking]` (`true` = `medium`), then the §3.10
-   * defaults; purposes nobody lists do not reason.
+   * `[llm.reasoning]`, then the §3.10 defaults; purposes nobody lists do not reason.
    */
   reasoningFor(purpose: string, request: ChatRequest): ReasoningLevel {
     if (request.reasoning != null) return request.reasoning;
@@ -218,8 +210,6 @@ export class LlmRouter {
   #configuredLevel(key: string): ReasoningLevel {
     const set = this.#reasoning.get(key);
     if (set !== undefined) return set;
-    const legacy = this.#thinking.get(key);
-    if (legacy !== undefined) return legacy ? "medium" : "off";
     return reasoningFor(key);
   }
 

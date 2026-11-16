@@ -35,8 +35,6 @@ export const MindConfigSchema = z.object({
   timeout_ms: count().default(90_000),
   /** Output tokens of a Plan call. */
   max_tokens: count().default(3000),
-  /** Unused: her Plan has no impulses any more. Kept so an old config still loads. */
-  max_intents: count().default(2),
   /** Thoughts kept raw in her journal (the panel's timeline). */
   journal_keep: count().default(200),
   /**

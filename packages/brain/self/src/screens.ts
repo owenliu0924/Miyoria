@@ -44,10 +44,39 @@ export function asideLine(text: string): boolean {
   return (t.startsWith("```") && t.endsWith("```")) || /^https?:\/\/\S+$/.test(t);
 }
 
+/**
+ * The output checks the runner keeps, each of them switchable for debugging
+ * (`[modules.agent.corrections]`). All on is how she runs.
+ */
+export interface OutputChecks {
+  /** #9: a text response that turns out to be reasoning is dropped. */
+  leakScreen: boolean;
+  /** #10: a spoken sentence that is reasoning is not said. */
+  leakScreenSpoken: boolean;
+  /** #11: `<emo:thinking>…</emo:thinking>` is never shown. */
+  thinkingBlock: boolean;
+  /** #15: someone left waiting gets one fixed line when the run gave them nothing. */
+  fallbackLine: boolean;
+  /** #18: tools written as tags, DeepSeek's markup and HTML tags are taken out. */
+  tagStrip: boolean;
+  /** #19: a line she wrote to herself about how to answer is left out. */
+  selfTalk: boolean;
+}
+
+export const ALL_CHECKS: OutputChecks = {
+  leakScreen: true,
+  leakScreenSpoken: true,
+  thinkingBlock: true,
+  fallbackLine: true,
+  tagStrip: true,
+  selfTalk: true,
+};
+
 export class StepText {
-  readonly #parser = new ExpressionParser();
+  readonly #checks: OutputChecks;
+  readonly #parser: ExpressionParser;
   readonly #fence = new FenceSplitter();
-  readonly #screen = new ReplyScreen<ScreenedLine>();
+  readonly #screen: ReplyScreen<ScreenedLine>;
   readonly #sentences: boolean;
   readonly #splitter = new SentenceSplitter();
   readonly #links = new LinkSplitter();
@@ -61,7 +90,13 @@ export class StepText {
   /** Tools written as tags that were taken out of her text. */
   tagsStripped = 0;
 
-  constructor(unit: TextUnit = "line") {
+  constructor(unit: TextUnit = "line", checks: OutputChecks = ALL_CHECKS) {
+    this.#checks = checks;
+    this.#parser = new ExpressionParser({
+      thinkingBlock: checks.thinkingBlock,
+      tagStrip: checks.tagStrip,
+    });
+    this.#screen = new ReplyScreen<ScreenedLine>(checks.leakScreen, checks.selfTalk);
     this.#sentences = unit === "sentence";
   }
 
@@ -191,11 +226,11 @@ export class StepText {
   #sentence(raw: string): ScreenedLine[] {
     const text = raw.trim();
     if (!isSpeakable(text)) return [];
-    if (isSelfTalk(text)) {
+    if (this.#checks.selfTalk && isSelfTalk(text)) {
       this.#selfTalkSentences += 1;
       return [];
     }
-    if (looksLikeReasoning(text)) {
+    if (this.#checks.leakScreenSpoken && looksLikeReasoning(text)) {
       this.#leakSentences += 1;
       return [];
     }

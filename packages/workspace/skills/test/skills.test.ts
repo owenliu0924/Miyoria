@@ -298,8 +298,7 @@ describe("SkillsModule", () => {
 });
 
 describe("defaults", () => {
-  it("give a skill body back up to the main line tool result size", () => {
-    // `[modules.agent] max_tool_result_chars` is 4000; a read stays just under it.
+  it("give a skill body back 3900 characters at a time", () => {
     expect(SkillsConfigSchema.parse({}).read_chars).toBe(3900);
   });
 });

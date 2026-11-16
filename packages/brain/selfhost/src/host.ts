@@ -74,6 +74,7 @@ import {
   asideOf,
   backfillLimit,
   type CallKind,
+  type CorrectionsConfig,
   CorrectionTally,
   callKind,
   callsHer,
@@ -95,6 +96,7 @@ import {
   floorKind,
   noteGlance,
   type OutgoingLine,
+  type OutputChecks,
   PROFILES,
   type RunEvent,
   type RunModel,
@@ -148,6 +150,18 @@ export interface SelfHostOptions {
   delegate?: JobsHostOptions;
   /** Her own initiative: its numbers, `remind_me`'s time parser, its tables. */
   initiative?: InitiativeOptions;
+}
+
+/** `[modules.agent.corrections]` as the runner's output checks. */
+function checksOf(c: CorrectionsConfig): OutputChecks {
+  return {
+    leakScreen: c.leak_screen,
+    leakScreenSpoken: c.leak_screen_spoken,
+    thinkingBlock: c.thinking_block,
+    fallbackLine: c.fallback_line,
+    tagStrip: c.tag_strip,
+    selfTalk: c.self_talk,
+  };
 }
 
 /** The factory Core installs on the agent module (`AgentModule.withTextRunner`). */
@@ -312,7 +326,10 @@ export class SelfHost implements TextRunner {
         beforeCompaction: async (session, upto) =>
           services.get(SegmentFlushKey)?.beforeCompaction(session, upto),
       },
-      options.runner ?? {},
+      {
+        ...options.runner,
+        checks: { ...checksOf(agent.config.corrections), ...options.runner?.checks },
+      },
     );
     agent.tools.register(
       sayTool({

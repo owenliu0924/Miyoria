@@ -15,7 +15,7 @@ const count = () => z.number().int().nonnegative();
  * ```
  */
 export const ConversationConfigSchema = z.object({
-  /** LLM purpose of a fold (thinking on via `[llm.thinking]`). */
+  /** LLM purpose of a fold (its reasoning level is `[llm.reasoning]`'s `summarizer`). */
   purpose: z.string().default("summarizer"),
   /** Fold as soon as this many new lines arrived in a context ... */
   fold_every_messages: count().default(16),

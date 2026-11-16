@@ -22,7 +22,7 @@ describe("thinking switch", () => {
         ["chat", chain],
         ["fast", chain],
       ]),
-      { thinking: new Map([["chat", true]]) },
+      { reasoning: new Map([["chat", "medium" as const]]) },
     );
     await collectResponse(await router.stream("fast", request()));
     await collectResponse(await router.stream("chat", request()));

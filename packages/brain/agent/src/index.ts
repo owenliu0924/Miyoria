@@ -47,12 +47,12 @@ export {
   type AgentConfig,
   AgentConfigSchema,
   AMBIENT_MODES,
-  type AttentionConfig,
-  AttentionConfigSchema,
   activenessFor,
   CHANNEL_MODES,
   type ChannelMode,
   ChannelModeSchema,
+  type CorrectionsConfig,
+  CorrectionsConfigSchema,
   type DelegateConfig,
   DelegateConfigSchema,
   defaultAgentConfig,
@@ -60,7 +60,6 @@ export {
   FilesConfigSchema,
   type HistoryConfig,
   HistoryConfigSchema,
-  LOOP_TOOLS,
   MainLineConfigSchema,
   maxDebounceMs,
   modeFor,
@@ -75,7 +74,6 @@ export {
   type VoiceConfig,
   VoiceConfigSchema,
   voiceMaxDebounceMs,
-  WORK_TOOLS,
   type WorkConfig,
   WorkConfigSchema,
 } from "./config.js";
@@ -93,6 +91,7 @@ export {
   Expression,
   ExpressionParser,
   MAX_PAUSE_MS,
+  type ParserChecks,
   type Segment,
 } from "./expression.js";
 export { type FileCandidate, fileParts, selectFiles } from "./files.js";
@@ -193,7 +192,7 @@ export {
   shownHint,
   unansweredHint,
 } from "./signals.js";
-export { slimTool, type ToolLimits } from "./slim.js";
+export { DEFAULT_TOOL_LIMITS, slimTool, type ToolLimits } from "./slim.js";
 export {
   type FencedPiece,
   FenceSplitter,

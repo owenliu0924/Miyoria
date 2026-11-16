@@ -73,7 +73,7 @@ import {
   REFUSALS,
 } from "./rules.js";
 import type { Spoken } from "./say.js";
-import { type ScreenedLine, StepText } from "./screens.js";
+import { ALL_CHECKS, type OutputChecks, type ScreenedLine, StepText } from "./screens.js";
 import { SpendLedger, stepCost } from "./spend.js";
 import { modelSummarise } from "./summarise.js";
 import {
@@ -108,6 +108,8 @@ export interface RunnerOptions {
   compaction?: CompactionBudget | null;
   /** A new turn id. Default `newId`. */
   newId?: () => string;
+  /** Output checks to switch off (`[modules.agent.corrections]`); default: all on. */
+  checks?: Partial<OutputChecks>;
 }
 
 /** Runs her turns. One per process; runs of different sessions may go on at the same time. */
@@ -116,6 +118,7 @@ export class SelfRunner {
   readonly #spend: SpendLedger;
   readonly #compaction: CompactionBudget | null;
   readonly #newId: () => string;
+  readonly #checks: OutputChecks;
   /** The runs going on, by turn: what `say` speaks through. */
   readonly #active = new Map<string, Run>();
 
@@ -124,6 +127,7 @@ export class SelfRunner {
     this.#spend = options.spend ?? new SpendLedger();
     this.#compaction = options.compaction === undefined ? DEFAULT_COMPACTION : options.compaction;
     this.#newId = options.newId ?? newId;
+    this.#checks = { ...ALL_CHECKS, ...options.checks };
   }
 
   get spend(): SpendLedger {
@@ -138,7 +142,7 @@ export class SelfRunner {
     (await this.#active.get(turn)?.speakElsewhere(place, text)) ?? null;
 
   async run(input: RunInput): Promise<RunResult> {
-    const run = new Run(this.#ports, input, input.turn ?? this.#newId(), this.#spend);
+    const run = new Run(this.#ports, input, input.turn ?? this.#newId(), this.#spend, this.#checks);
     this.#active.set(run.turn, run);
     try {
       return await run.execute(this.#compaction);
@@ -232,6 +236,7 @@ function reportedJob(data: JsonValue): string | null {
 
 class Run {
   readonly turn: string;
+  readonly #checks: OutputChecks;
   readonly #p: RunPorts;
   readonly #in: RunInput;
   readonly #profile: RunProfile;
@@ -258,8 +263,15 @@ class Run {
   /** Call ids of the transcript's tail and of this run. */
   readonly #callIds = new Set<string>();
 
-  constructor(ports: RunPorts, input: RunInput, turn: string, spend: SpendLedger) {
+  constructor(
+    ports: RunPorts,
+    input: RunInput,
+    turn: string,
+    spend: SpendLedger,
+    checks: OutputChecks,
+  ) {
     this.turn = turn;
+    this.#checks = checks;
     this.#p = ports;
     this.#in = input;
     this.#profile = input.profile;
@@ -581,7 +593,7 @@ class Run {
   // ---- one step ---------------------------------------------------------------------------
 
   async #step(request: ChatRequest, final: boolean): Promise<Step> {
-    const screen = new StepText(this.#profile.unit);
+    const screen = new StepText(this.#profile.unit, this.#checks);
     const step: Step = {
       lines: [],
       ids: [],
@@ -778,7 +790,7 @@ class Run {
 
   /** A `say` of this run: her words for another place, screened like her written lines. */
   async speakElsewhere(place: ContextKey, raw: string): Promise<Spoken> {
-    const screen = new StepText();
+    const screen = new StepText("line", this.#checks);
     const lines = [...screen.push(raw), ...screen.finish()];
     const text = lines.map((l) => l.text).join("\n");
     if (text === "") return { ok: false, code: "empty", reason: LINE_REFUSALS.empty };
@@ -791,6 +803,7 @@ class Run {
   /** The fixed line for someone left waiting (#15); whether it went out. */
   async #fallback(failure: unknown): Promise<boolean> {
     const owed =
+      this.#checks.fallbackLine &&
       this.#profile.speaks &&
       someoneWaits(this.#wake) &&
       this.#lines.length === 0 &&

@@ -1,5 +1,5 @@
 // `[llm.reasoning]` levels (docs/design/v2-architecture.md §3.10): per reasoning purpose,
-// falling back to the legacy `[llm.thinking]` switch and the defaults, and how a level reaches
+// falling back to the defaults, and how a level reaches
 // the wire (an effort parameter, or on / off plus a `max_tokens` cap).
 
 import type { ReasoningLevel } from "@miyoria/types";
@@ -20,10 +20,7 @@ import { wireBody } from "./support.js";
 
 const request = (): ChatRequest => ({ messages: [userMessage("hi")] });
 
-function router(
-  reasoning: Map<string, ReasoningLevel>,
-  thinking: Map<string, boolean> = new Map(),
-): [LlmRouter, MockProvider] {
+function router(reasoning: Map<string, ReasoningLevel>): [LlmRouter, MockProvider] {
   const provider = new MockProvider("p").reply("a");
   const chain = [parseModelRef("p:m")];
   const purposes = new Map([
@@ -31,25 +28,19 @@ function router(
     ["fast", chain],
     ["mind", chain],
   ]);
-  return [new LlmRouter(new Map([["p", provider]]), purposes, { reasoning, thinking }), provider];
+  return [new LlmRouter(new Map([["p", provider]]), purposes, { reasoning }), provider];
 }
 
 describe("reasoning levels", () => {
-  it("resolve_per_reasoning_purpose_then_legacy_then_defaults", async () => {
-    const [r, provider] = router(
-      new Map<string, ReasoningLevel>([["chat_text", "low"]]),
-      new Map([
-        ["chat", true],
-        ["mind", true],
-      ]),
-    );
+  it("resolve_per_reasoning_purpose_then_defaults", async () => {
+    const [r, provider] = router(new Map<string, ReasoningLevel>([["chat_text", "low"]]));
     const sent: [string, Partial<ChatRequest>][] = [
       // Configured level for the reasoning purpose.
       ["chat", { reasoning_purpose: "chat_text" }],
       // Unlisted reasoning purposes: their defaults (voice replies never think).
       ["chat", { reasoning_purpose: "chat_voice" }],
-      ["chat", { reasoning_purpose: "chat_intent" }],
-      // Legacy `[llm.thinking] mind = true` = medium; `fast` defaults to off.
+      ["chat", { reasoning_purpose: "appraise" }],
+      // Purposes nobody lists do not reason; `fast` defaults to off.
       ["mind", {}],
       ["fast", {}],
       // Explicit values win.
@@ -65,7 +56,7 @@ describe("reasoning levels", () => {
       ["low", true],
       ["off", false],
       ["low", true],
-      ["medium", true],
+      ["off", false],
       ["off", false],
       ["off", false],
       ["medium", true],
@@ -76,11 +67,10 @@ describe("reasoning levels", () => {
     expect(calls.at(-1)?.reasoning).toBe("low");
   });
 
-  it("chat_replies_do_not_reason_by_default_even_with_legacy_chat_thinking", () => {
-    const [r] = router(new Map(), new Map([["chat", true]]));
+  it("chat_replies_do_not_reason_by_default", () => {
+    const [r] = router(new Map());
     expect(r.reasoningFor("chat", { ...request(), reasoning_purpose: "chat_text" })).toBe("off");
-    // Callers without a reasoning purpose keep the legacy switch.
-    expect(r.reasoningFor("chat", request())).toBe("medium");
+    expect(r.reasoningFor("chat", request())).toBe("off");
     expect(r.reasoningFor("review", request())).toBe("medium");
     expect(r.reasoningFor("plan_daily", request())).toBe("high");
     expect(r.reasoningFor("game", request())).toBe("off");

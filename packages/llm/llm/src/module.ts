@@ -71,9 +71,6 @@ export const ProviderConfigSchema = z
  * chat_text = "off"
  * plan = "medium"
  *
- * [llm.thinking]   # legacy on / off per purpose, for purposes [llm.reasoning] does not list
- * mind = true
- *
  * [llm.image_input]   # which models take images; unlisted: yes
  * "ollama" = false
  *
@@ -92,16 +89,9 @@ export const LlmConfigSchema = z.object({
   pricing: z.record(z.string(), PricingSchema).default({}),
   budget: BudgetConfigSchema.prefault({}),
   /**
-   * Whether reasoning models think before answering, per purpose. Unlisted purposes do not:
-   * thinking adds seconds before the first word, which matters more for her than depth.
-   */
-  thinking: z.record(z.string(), z.boolean()).default({}),
-  /**
-   * How deeply reasoning models think, per reasoning purpose (`chat_voice`, `chat_text`,
-   * `chat_intent`, `fast`, `appraise`, `plan`, `plan_daily`, `reflect`, `review`,
-   * `summarizer`, or any model purpose). Unlisted ones use `[llm.thinking]`, then the defaults
-   * (`DEFAULT_REASONING`: chat off, `chat_intent` / `appraise` low, `plan` / `review` medium,
-   * `plan_daily` / `reflect` high).
+   * How deeply reasoning models think, per reasoning purpose (see `REASONING_PURPOSES`, or any
+   * model purpose). Unlisted ones use the defaults (`DEFAULT_REASONING`). Thinking adds seconds
+   * before the first word, which matters more for her than depth, so chat defaults to off.
    */
   reasoning: z.record(z.string(), z.enum(REASONING_LEVELS)).default({}),
   /**
@@ -187,7 +177,6 @@ export class LlmModule implements Module {
     const router = new LlmRouter(providers, new Map(Object.entries(this.#config.purposes)), {
       pricing: new Map(Object.entries(this.#config.pricing)),
       budget: this.#config.budget,
-      thinking: new Map(Object.entries(this.#config.thinking)),
       reasoning: new Map(Object.entries(this.#config.reasoning)),
       imageInput: new Map(Object.entries(this.#config.image_input)),
       calls: this.#calls,

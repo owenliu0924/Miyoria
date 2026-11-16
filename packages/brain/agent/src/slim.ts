@@ -1,11 +1,11 @@
 // A tool's spec as she is offered it: the text every capability repeats left out, the rest within
-// `[modules.agent.mainline]` `tool_chars` and `tool_arg_chars`.
+// the limits of `ToolLimits`.
 
 import { REQUEST_RULE } from "@miyoria/gate/actions";
 import type { ToolSpec } from "@miyoria/llm/llm";
 import { isJsonObject, type JsonObject, type JsonValue } from "@miyoria/types";
 
-/** How much of a tool's text is offered (`[modules.agent.mainline]` `tool_chars`, `tool_arg_chars`). */
+/** How much of a tool's text is offered. */
 export interface ToolLimits {
   /** Characters of the description (0: no limit). */
   description: number;

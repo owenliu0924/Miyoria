@@ -136,7 +136,6 @@ export async function modelOfConfig(
   const pricing = new Map(Object.entries(llm.pricing));
   const router = new LlmRouter(providers, new Map(Object.entries(llm.purposes)), {
     pricing,
-    thinking: new Map(Object.entries(llm.thinking)),
     reasoning: new Map(Object.entries(llm.reasoning)),
     imageInput: new Map(Object.entries(llm.image_input)),
   });

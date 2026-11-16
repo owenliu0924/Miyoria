@@ -48,7 +48,6 @@ export async function setupLiveModel(
   }
   const router = new LlmRouter(providers, new Map(Object.entries(llm.purposes)), {
     pricing: new Map(Object.entries(llm.pricing)),
-    thinking: new Map(Object.entries(llm.thinking)),
     reasoning: new Map(Object.entries(llm.reasoning)),
     imageInput: new Map(Object.entries(llm.image_input)),
   });

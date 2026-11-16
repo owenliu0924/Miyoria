@@ -6,7 +6,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MainLineConfigSchema, slimTool } from "@miyoria/brain/agent";
+import { DEFAULT_TOOL_LIMITS, slimTool } from "@miyoria/brain/agent";
 import { ActuatorRegistryKey, CapabilityTool, isGatedToolName } from "@miyoria/gate/actions";
 import {
   searchTools,
@@ -108,8 +108,7 @@ function offered(): Tool[] {
 
 describe("the tools of a run", () => {
   it("are offered with the same specs as before", async () => {
-    const limits = MainLineConfigSchema.parse({});
-    const slim = { description: limits.tool_chars, argument: limits.tool_arg_chars };
+    const slim = DEFAULT_TOOL_LIMITS;
     const tools = offered();
     const snapshot = {
       tools: tools.map(view),
