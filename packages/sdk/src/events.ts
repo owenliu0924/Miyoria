@@ -44,6 +44,7 @@ export {
   ClusterServiceState,
   ConversationFolded,
   DirectiveChanged,
+  EvalRun,
   EconomyCommission,
   EconomyCommissionDone,
   EconomyGift,

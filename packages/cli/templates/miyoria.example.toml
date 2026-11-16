@@ -1326,6 +1326,18 @@ password = "${OBS_PASSWORD:-}"
 record = false
 # dir = "data/replay"
 
+# 真模型評測(v5-brain B1):每天在這個時間把 `pnpm eval --live` 當成子行程跑一次,結果寫進
+# <out>/history.jsonl,面板的「評測」頁畫成趨勢。只有在原始碼的資料夾(有 tools/eval)裡才會跑;
+# 她在唱歌、直播中,或當天的 LLM 預算已經降級 / 用完時,那一天就跳過。預設不排程。
+[modules.eval]
+# nightly = "04:30"              # 本地時間 HH:MM;空字串 = 不排程
+# max_usd = 0.5                  # 一次評測最多花多少(到了就停)
+# suites = []                    # 要跑哪些:persona、tools、relationship、memory;空 = 能跑的都跑
+# memory_set = ""                # 記憶題組的路徑(相對於這個檔案);空 = 不跑記憶
+# out = "data/eval/live"
+# config = "miyoria.toml"        # 評測讀模型設定的檔案(相對於這個檔案)
+# timeout_min = 30               # 跑超過這麼久就中止
+
 # 事實層(V3):她感知、決定、說出口的每件事都寫進一條事件日誌,跟 V2 並存,目前只記錄不影響她的行為。
 # 日誌裡有大家說過的話;資料頁的「事件日誌」可以匯出或刪除,刪聊天紀錄時會一起刪。
 [modules.facts]
