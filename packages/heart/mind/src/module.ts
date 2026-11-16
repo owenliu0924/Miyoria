@@ -94,9 +94,8 @@ export const MIND_TOPICS = [
 /**
  * Module `mind`: her Deliberate calls. Appraise after an interaction segment ends (into
  * `AffectStateKey`); Plan on goal triggers, activity ends, salient changes, her mood dropping,
- * suggestions (`MindKey.suggest`) and an adaptive heartbeat, producing goal changes and
- * impulses for the Arbiter (`ArbiterKey`; until it runs, intents for the agent's
- * `IntentSinkKey`). Provides her goals (`GoalAgendaKey`, settings `mind:goal:<id>`, topic
+ * suggestions (`MindKey.suggest`) and an adaptive heartbeat, producing goal changes and her day
+ * plan (it starts nothing itself). Provides her goals (`GoalAgendaKey`, settings `mind:goal:<id>`, topic
  * `plan.goal`) and `MindKey`; keeps her thought journal (settings `mind:thought:<id>`) and
  * publishes `mind.thought`. Paused with autonomy.
  */

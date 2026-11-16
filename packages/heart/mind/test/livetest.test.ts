@@ -268,7 +268,6 @@ describe("channel levels", () => {
       c.kind === "voice" ? null : { mode: "quiet", label: "安靜", blocked };
     await r.plan();
     expect(texts(provider.requests()[0]).data).toContain("聊天等級「安靜」");
-    expect(texts(provider.requests()[0]).system).toContain("「安靜」的頻道很少主動開口");
 
     blocked = "level quiet: she started talking here 0 min ago; next in 180 min";
     await wait(11 * MIN);

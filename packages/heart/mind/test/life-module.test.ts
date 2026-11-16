@@ -113,7 +113,7 @@ describe("her own life in the mind module", () => {
     expect(r.sup.services.require(DailyPostsKey).left()).toBe(2);
   });
 
-  it("Plan sees where wanting something new leads, and a game past its share is not started", async () => {
+  it("Plan sees where wanting something new leads, and a game past its share starts nothing", async () => {
     const plan = JSON.stringify({
       thought: "再玩一下好了。",
       impulses: [
@@ -155,9 +155,7 @@ describe("her own life in the mind module", () => {
     const request = provider.requests("plan")[0];
     expect(request).toBeDefined();
     const [thought] = r.mind().thoughts();
-    expect(thought?.intents.map((i) => [i.capability, i.status, i.detail])).toEqual([
-      ["game.start", "dropped", "variety: 今天玩遊戲已經 9 小時,超過今天的 35%"],
-    ]);
+    expect(thought?.intents).toEqual([]);
     expect(texts(request).data).not.toContain("找點新鮮事");
   });
 });

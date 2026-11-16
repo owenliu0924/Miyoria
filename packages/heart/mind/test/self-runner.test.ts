@@ -152,12 +152,9 @@ describe("remind_me on the new runner", () => {
 });
 
 describe("her Plan", () => {
-  it("her Plan's impulses reach no board; the journal says why", async () => {
+  it("an old impulse in her reply reaches no board and is not journaled", async () => {
     const { proposals, loop } = await plan();
     expect(proposals).toEqual([]);
-    const intents = loop.thoughts()[0]?.intents ?? [];
-    expect(intents.map((i) => [i.capability, i.status, i.detail])).toEqual([
-      ["game.start", "dropped", "the new runner decides on its own"],
-    ]);
+    expect(loop.thoughts()[0]?.intents ?? []).toEqual([]);
   });
 });

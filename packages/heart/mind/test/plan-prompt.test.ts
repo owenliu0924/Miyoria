@@ -46,7 +46,6 @@ function input(p: Partial<PlanInput> = {}): PlanInput {
     affect,
     self: null,
     capabilities: [{ name: "game.start", summary: "開始玩遊戲", risk: "medium", params: ["game"] }],
-    maxImpulses: 2,
     limits: {
       source: "arbiter",
       limits: limits({
@@ -197,23 +196,10 @@ describe("her Plan reply", () => {
           done: ["GGOAL01", ""],
           drop: [{ goal: "GX", why: "不想了" }, "GY"],
         },
-        impulses: [
-          {
-            kind: "speak",
-            capability: "chat.dm",
-            person: "Owen",
-            why: "想他",
-            hint: "報告怎樣",
-            goal: "GGOAL01",
-            expires_in_min: 99,
-          },
-          { kind: "", capability: "", place: null },
-          { kind: "act", capability: "game.start", args: { game: "minecraft" }, why: "想玩" },
-          { kind: "act", capability: "sing.request" },
-        ],
+        // An old reply may still carry impulses; they are ignored.
+        impulses: [{ kind: "act", capability: "game.start", args: { game: "minecraft" } }],
         day_plan: "",
       })}`,
-      2,
     );
     expect(reply.thought).toBe("Owen 上線了,去找他。");
     expect(reply.add.map((g) => [g.what, g.trigger, g.expiresInHours])).toEqual([
@@ -235,17 +221,24 @@ describe("her Plan reply", () => {
       { goal: "GX", why: "不想了" },
       { goal: "GY", why: "" },
     ]);
-    expect(reply.impulses.map((i) => [i.kind, i.capability, i.expiresInMin])).toEqual([
-      ["speak", "chat.dm", 15],
-      ["act", "game.start", 2],
-    ]);
+    expect(reply).not.toHaveProperty("impulses");
     expect(reply.dayPlan).toBeNull();
     expect(isEmptyPlan(reply)).toBe(false);
   });
 
   it("copying the format's empty values is an empty plan", () => {
-    expect(isEmptyPlan(parsePlanReply(PLAN_FORMAT, 2))).toBe(true);
-    expect(isEmptyPlan(parsePlanReply("{}", 2))).toBe(true);
-    expect(() => parsePlanReply("我不知道", 2)).toThrow(MindReplyError);
+    expect(isEmptyPlan(parsePlanReply(PLAN_FORMAT))).toBe(true);
+    expect(isEmptyPlan(parsePlanReply("{}"))).toBe(true);
+    expect(
+      isEmptyPlan(parsePlanReply('{"impulses":[{"kind":"speak","capability":"chat.dm"}]}')),
+    ).toBe(true);
+    expect(() => parsePlanReply("我不知道")).toThrow(MindReplyError);
+  });
+
+  it("the prompt no longer offers impulses or actions", () => {
+    const system = textOf(input()).system;
+    expect(PLAN_FORMAT).not.toContain("impulses");
+    expect(system).not.toContain("impulses");
+    expect(system).not.toContain("act 的 capability");
   });
 });

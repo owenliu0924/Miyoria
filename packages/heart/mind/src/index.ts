@@ -7,8 +7,8 @@
 //   and small feeling edits), into `AffectStateKey`.
 // * Plan, on goal triggers (checked by cheap code), an activity ending, a cared-about person
 //   coming online, her mood dropping, salient changes, suggestions and an adaptive heartbeat:
-//   goal changes and 0–2 impulses for the Arbiter (`ArbiterKey`; until it runs, intents for the
-//   agent). The first Plan of a day writes her day plan.
+//   goal changes and her day plan (the first Plan of a day writes it). It starts nothing: her own
+//   starts are the new runner's.
 //
 // Reflect lives in `@miyoria/memory/learning`. Provides `MindKey` (the journal) and `GoalAgendaKey`.
 
@@ -131,7 +131,6 @@ export {
 export {
   type GoalDraft,
   type GoalEditDraft,
-  type ImpulseDraft,
   isEmptyPlan,
   MAX_THOUGHT,
   MindReplyError,
