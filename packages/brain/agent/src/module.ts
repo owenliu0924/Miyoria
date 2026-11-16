@@ -1,4 +1,4 @@
-import { type ActuatorRegistry, ActuatorRegistryKey, actuatorsFor } from "@miyoria/gate/actions";
+import { type ActuatorRegistry, actuatorsFor } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -12,8 +12,6 @@ import type { Profile } from "@miyoria/runtime/profile";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   DirectivesKey,
-  ImpulseHostKey,
-  IntentSinkKey,
   MouthKey,
   PromptContributorsKey,
   ProposalBoardKey,
@@ -23,7 +21,7 @@ import {
   WorkLaneKey,
 } from "@miyoria/types";
 
-import { activenessCapability, chatCapabilities } from "./actions.js";
+import { activenessCapability } from "./actions.js";
 import { type RandomSource, SeededRandom } from "./attention.js";
 import { AgentCommands } from "./commands.js";
 import { SavedPromptsKey } from "./compiler.js";
@@ -36,7 +34,6 @@ import {
   type Overrides,
   type VoiceRooms,
 } from "./handle.js";
-import { AgentIntents } from "./intents.js";
 import { ACTING_ALONE } from "./mainline/main.js";
 import { WorkingNotes } from "./notes.js";
 import { PersonaHandle, PersonaHandleKey } from "./persona.js";
@@ -216,15 +213,6 @@ export class AgentModule implements Module {
       this.#commands,
       this.#fetchImage,
     );
-    const intents = new AgentIntents(
-      agent,
-      () => ctx.services.get(ActuatorRegistryKey) ?? actuators,
-    );
-    for (const capability of chatCapabilities(agent, intents)) {
-      this.#unregister.push(actuators.register(capability));
-    }
-    ctx.provide(IntentSinkKey, intents);
-    ctx.provide(ImpulseHostKey, intents);
     ctx.provide(TurnSilencerKey, agent);
     ctx.provide(TurnFocusViewKey, agent.focusBoard);
     ctx.provide(SavedPromptsKey, agent.prompts);

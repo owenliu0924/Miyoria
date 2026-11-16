@@ -30,6 +30,7 @@ import {
 } from "@miyoria/types";
 import { AgentModule, type FetchLike, type TextRunnerFactory } from "../../agent/src/index.js";
 import { profile, Stub } from "../../agent/test/harness.js";
+import { ArbiterModule } from "../../arbiter/src/index.js";
 import { SelfHost, type SelfHostOptions } from "../src/index.js";
 
 export const HER: AccountRef = { platform: "test", id: "her" };
@@ -200,6 +201,8 @@ export interface RigOptions {
   fetchImage?: FetchLike;
   /** The scripted model takes image parts. Default `true`. */
   images?: boolean;
+  /** Runs the Arbiter module (`[modules.arbiter]` as given) after the agent. */
+  arbiter?: Record<string, JsonValue>;
 }
 
 const running: Rig[] = [];
@@ -263,6 +266,9 @@ export class Rig {
       },
       true,
     );
+    if (options.arbiter !== undefined) {
+      await sup.register(new ArbiterModule("test"), options.arbiter, true);
+    }
     await sup.startAll();
     sup.bus.publish("platform.test", Events.PlatformReady, { platform: "test", self_account: HER });
     running.push(rig);

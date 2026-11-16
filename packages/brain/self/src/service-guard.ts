@@ -64,7 +64,7 @@ export function floorKind(wake: Wake): FloorClaimKind {
     case "result":
       return "result";
     case "world":
-      return "notable";
+      return wake.claim ?? "notable";
     case "glance":
       return "ambient";
     case "timer":

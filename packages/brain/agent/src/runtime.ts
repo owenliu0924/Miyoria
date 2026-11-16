@@ -256,6 +256,8 @@ export interface TextRunner {
    * the menu does not reach its places.
    */
   replyTo?(message: MessageRef): TextReplyOutcome;
+  /** Whether one of its runs started `task` and is woken by its end. Unset: none. */
+  follows?(task: string | null): boolean;
   /**
    * The voice conversations, when the runner takes them too. The agent still keeps each voice
    * channel's session (who is there, her own starts there) and hands over what is said in it.
@@ -884,6 +886,8 @@ export class Agent {
    */
   #onNotice(notice: Notice): void {
     if (Date.parse(notice.expires_at) <= this.ctx.clock.now()) return;
+    // A run that started the task hears its end as a result already.
+    if (this.textRunner?.follows?.(notice.task) === true) return;
     const context = notice.context === null ? null : this.ownLinesContext(notice.context);
     const id = context === null ? "" : contextId(context);
     const list = this.#notices.get(id) ?? [];

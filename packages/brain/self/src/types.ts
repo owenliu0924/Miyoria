@@ -24,6 +24,7 @@ import type {
   AccountRef,
   Clock,
   ContextKey,
+  FloorClaimKind,
   JsonValue,
   MessageRef,
   Timestamp,
@@ -76,8 +77,11 @@ export type Wake =
     }
   /** A time she set came. */
   | { kind: "timer"; note: string }
-  /** Something happened in the world that is worth a look. */
-  | { kind: "world"; what: string }
+  /**
+   * Something happened in the world that is worth a look. `claim`: the Floor row the Arbiter
+   * admitted it under (a game's narration, a song's announcement); unset: `notable`.
+   */
+  | { kind: "world"; what: string; claim?: FloorClaimKind }
   /** Nobody called her: a look at what people said here lately. */
   | { kind: "glance"; lines: number }
   /** Her own time: nobody spoke and nothing came back. */

@@ -89,6 +89,7 @@ import {
   type WakeAuthor,
   wakeAuthor,
 } from "../../self/src/index.js";
+import type { AdmittedInput } from "./lane.js";
 import type { HostPrompt, SlowReads } from "./prompt.js";
 import { VoiceLane, type VoiceLaneHost, type VoiceRun } from "./voice-lane.js";
 import { PlaceOutlet, until, VoiceOutlet } from "./voice-outlet.js";
@@ -499,6 +500,18 @@ export class VoiceHost implements VoiceRunner {
     const place = this.#places.get(contextKeyString(context));
     if (place === undefined || place.lane.ended) return false;
     return place.lane.push({ type: "wake", wake });
+  }
+
+  /** Hands what the Arbiter admitted to the voice lane of `context`; `false`: no such lane. */
+  admit(context: ContextKey, input: AdmittedInput): boolean {
+    const place = this.#places.get(contextKeyString(context));
+    if (place === undefined || place.lane.ended) return false;
+    return place.lane.push(input);
+  }
+
+  /** Whether a voice run started `task` and will be woken by its end. */
+  follows(task: string): boolean {
+    return this.#jobs.has(task);
   }
 
   #ended(task: string, ok: boolean, detail: string): void {

@@ -16,6 +16,9 @@
 // .task.done|failed`, `activity.done|failed` of the job the call reported) wakes her as `result`.
 // What wakes her on her own (a due schedule, a salient world event, her inbox, someone she
 // misses, her morning) is her initiative's (`initiative.ts`): an inbox, code gates, then a wake.
+// What another module asks her to say (a game's narration, a song's announcement, a notice) comes
+// through the Arbiter, whose host this is (`ImpulseHostKey`, `impulses.ts`), as do `chat.start`
+// and `chat.dm`.
 //
 // A run. One `SelfRunner` for the process, the text profile, the blocks of `HostPrompt` with the
 // files and images of its lines (`LookAround`), the service guard over the real services
@@ -26,6 +29,7 @@
 // scheduler failed late is marked as not heard. What a run did is published as today's turn
 // records.
 
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { type ContentPart, type LlmRouter, LlmRouterKey, withLlmTag } from "@miyoria/llm/llm";
 import {
   type EntryInput,
@@ -44,6 +48,7 @@ import {
   type Envelope,
   Events,
   holdsBack,
+  ImpulseHostKey,
   type IncomingMessage,
   is,
   type MessageRef,
@@ -101,9 +106,10 @@ import {
   wakeAuthor,
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
+import { chatCapabilities, ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
-import { Lane, type LaneHost, type LaneRun } from "./lane.js";
+import { type AdmittedInput, Lane, type LaneHost, type LaneRun } from "./lane.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
@@ -183,7 +189,10 @@ export class SelfHost implements TextRunner {
   readonly jobs: JobsHost | null;
   /** Her inbox, her schedules and what wakes her on her own (`initiative.ts`). */
   readonly initiative: Initiative;
+  /** What the Arbiter admits, run here (`ImpulseHostKey`). */
+  readonly impulses: ImpulseDesk;
   readonly #stopInitiative: () => void;
+  readonly #unregister: (() => void)[] = [];
   readonly #settlements = new Settlements();
   readonly #outlet: MouthOutlet;
   readonly #around: LookAround;
@@ -339,6 +348,17 @@ export class SelfHost implements TextRunner {
     );
     this.initiative = started.initiative;
     this.#stopInitiative = started.stop;
+    const desk = {
+      agent,
+      admit: (context: ContextKey, input: AdmittedInput) => this.#admit(context, input),
+      wake: (context: ContextKey, wake: Wake) => this.#wake(context, wake),
+    };
+    this.impulses = new ImpulseDesk(desk);
+    agent.ctx.provide(ImpulseHostKey, this.impulses);
+    const actuators = actuatorsFor(agent.ctx);
+    for (const capability of chatCapabilities(desk)) {
+      this.#unregister.push(actuators.register(capability));
+    }
     // Every topic: task events come from any owner (`<owner>.task.done`).
     const sub = agent.ctx.subscribe("*");
     this.#subscription = sub;
@@ -392,7 +412,13 @@ export class SelfHost implements TextRunner {
     this.voice.stop();
     this.jobs?.stop();
     this.#stopInitiative();
+    for (const unregister of this.#unregister.splice(0)) unregister();
     this.#agent.tools.unregister("say");
+  }
+
+  /** Whether a run started `task` and will be woken by its end (a notice of it tells nothing new). */
+  follows(task: string | null): boolean {
+    return task !== null && (this.#jobs.has(task) || this.voice.follows(task));
   }
 
   /** The session of `context` on the runner. */
@@ -437,6 +463,13 @@ export class SelfHost implements TextRunner {
   #wake(context: ContextKey, wake: Wake): boolean {
     if (this.voice.wake(context, wake)) return true;
     return this.#place(context).lane.push({ type: "wake", wake });
+  }
+
+  /** What the Arbiter admitted goes to the lane of `context`, the voice one when she is there. */
+  #admit(context: ContextKey, input: AdmittedInput): boolean {
+    if (this.voice.admit(context, input)) return true;
+    if (context.kind === "voice") return false;
+    return this.#place(context).lane.push(input);
   }
 
   #place(context: ContextKey): Place {

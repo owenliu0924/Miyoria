@@ -17,7 +17,10 @@
 //   stops too). A claim from elsewhere (`yield`) and a barge-in (her speech `interrupted`) end the
 //   run that speaks;
 // - a glance (triage said one is due) waits for the same quiet; results wait until nothing runs,
-//   nobody is talking and her last speech has played.
+//   nobody is talking and her last speech has played;
+// - what the Arbiter admitted (a game's narration, a song's announcement, a notice) starts at once
+//   in that same quiet or is answered `busy` (the Arbiter tries again), never queued; a run she
+//   started herself that has handed nothing to the mouth gives way to it.
 
 import type { IncomingMessage } from "@miyoria/types";
 import {
@@ -33,7 +36,7 @@ import {
 } from "@miyoria/types";
 import { type CallKind, callsHer, type VoiceConfig } from "../../agent/src/index.js";
 import type { Wake } from "../../self/src/index.js";
-import type { LaneRun } from "./lane.js";
+import { type AdmittedInput, type LaneRun, selfStarted } from "./lane.js";
 
 /** What a voice lane is told. */
 export type VoiceInput =
@@ -45,6 +48,8 @@ export type VoiceInput =
   | { type: "playback"; turn: string; state: PlaybackState }
   /** Something she started came back. */
   | { type: "wake"; wake: Wake }
+  /** What the Arbiter admitted, as its turn. */
+  | AdmittedInput
   /** A claim from elsewhere cuts into her speech here. */
   | { type: "yield"; level: InterruptLevel }
   /** The emergency stop. */
@@ -155,6 +160,8 @@ interface Running {
   authors: AccountRef[];
   /** She started it herself (a glance, a timer): someone calling her supersedes it. */
   selfStarted: boolean;
+  /** The Arbiter admitted it: another admitted claim does not cut it. */
+  admitted: boolean;
   /** Started before the wait was over and not confirmed yet. */
   early: { confirm: () => void; startedAt: number } | null;
 }
@@ -345,6 +352,34 @@ export class VoiceLane {
               case "wake":
                 queued.push(input.wake);
                 break;
+              case "admitted": {
+                let why: string | null = null;
+                if (pending.length > 0 || window !== null) why = "lines are waiting for a run";
+                else if (queued.length > 0) why = "something she started waits here";
+                else if (unplayed !== null) why = "her speech is still queued";
+                else if (host.someoneSpeaking()) why = "someone is speaking";
+                else if (running !== null && !running.done) {
+                  const r = running;
+                  if (r.selfStarted && !r.admitted && !host.queued(r.run.turn)) {
+                    await this.#abort(r, "superseded", null);
+                    running = null;
+                  } else {
+                    why = "a run is in flight";
+                  }
+                }
+                if (why !== null) {
+                  input.answer({ status: "busy", why });
+                  break;
+                }
+                const wake = input.wake();
+                if (wake === null) {
+                  input.answer({ status: "empty" });
+                  break;
+                }
+                running = this.#start(wake, [], null, false, input.turn, true);
+                input.answer({ status: "started" });
+                break;
+              }
               case "yield": {
                 const holder = host.holder();
                 if (holder !== null && running !== null && running.run.turn === holder.turn) {
@@ -403,7 +438,14 @@ export class VoiceLane {
     return dropped.length < cfg.speculate_max_per_min;
   }
 
-  #start(wake: Wake, inputs: IncomingMessage[], heardAt: number | null, early: boolean): Running {
+  #start(
+    wake: Wake,
+    inputs: IncomingMessage[],
+    heardAt: number | null,
+    early: boolean,
+    turn: string | null = null,
+    admitted = false,
+  ): Running {
     const host = this.#host;
     let confirm: () => void = () => undefined;
     const hold = early
@@ -412,7 +454,7 @@ export class VoiceLane {
         })
       : null;
     const run: VoiceRun = {
-      turn: host.newTurn(),
+      turn: turn ?? host.newTurn(),
       wake,
       inputs,
       restarts: 0,
@@ -431,7 +473,8 @@ export class VoiceLane {
       promise: Promise.resolve(),
       done: false,
       authors,
-      selfStarted: wake.kind === "glance" || wake.kind === "timer" || wake.kind === "self",
+      selfStarted: selfStarted(wake),
+      admitted,
       early: early ? { confirm, startedAt: host.now() } : null,
     };
     running.promise = host

@@ -14,7 +14,12 @@
 //   for the next run. Once a line of the run reached someone, nothing restarts it;
 // - a glance (triage said one is due) waits for the same quiet as a line said to her, and a run
 //   for someone who called her takes it along;
-// - results and due timers wait until nothing runs and nobody is waiting for an answer.
+// - results and due timers wait until nothing runs and nobody is waiting for an answer;
+// - what the Arbiter admitted (a game's narration, a song's announcement, a notice) is never
+//   queued: it starts at once when the place is free, or is answered `busy` and the Arbiter tries
+//   again, most urgent first, as the old coordinator answered it. A run she started herself (a
+//   glance, a timer, a world event) that has said nothing yet gives way to it, as the old path
+//   ordered her own starts after these.
 //
 // The lines themselves are in the transcript already (the host appends them as they come); a run
 // reads them there.
@@ -42,8 +47,36 @@ export type LaneInput =
   | { type: "typing" }
   /** Something she started came back, or a timer of hers is due. */
   | { type: "wake"; wake: Wake }
+  /** What the Arbiter admitted, as `turn` (`AdmittedInput`). */
+  | AdmittedInput
   /** The emergency stop. */
   | { type: "halt" };
+
+/**
+ * Something the Arbiter admitted that wants a run here now, as `turn`. `wake` is asked only when
+ * it starts (`null`: nothing is left to say); `answer` is called once.
+ */
+export interface AdmittedInput {
+  type: "admitted";
+  turn: string;
+  wake: () => Wake | null;
+  answer: (answer: AdmittedAnswer) => void;
+}
+
+/** How a lane took what the Arbiter admitted. */
+export type AdmittedAnswer =
+  | { status: "started" }
+  /** The place cannot take it now: the Arbiter tries again. */
+  | { status: "busy"; why: string }
+  /** It had nothing left to say by the time it could start. */
+  | { status: "empty" };
+
+/** Whether `wake` is a start of hers that someone calling her (or an admitted claim) may cut. */
+export function selfStarted(wake: Wake): boolean {
+  return (
+    wake.kind === "glance" || wake.kind === "timer" || wake.kind === "self" || wake.kind === "world"
+  );
+}
 
 /** A run the lane started. */
 export interface LaneRun {
@@ -142,6 +175,8 @@ interface Running {
   authors: AccountRef[];
   /** She started it herself (a glance, a timer): someone calling her cuts it. */
   selfStarted: boolean;
+  /** The Arbiter admitted it: another admitted claim does not cut it. */
+  admitted: boolean;
 }
 
 interface Window {
@@ -280,6 +315,32 @@ export class Lane {
               case "wake":
                 queued.push(input.wake);
                 break;
+              case "admitted": {
+                let why: string | null = null;
+                if (pending.length > 0 || window !== null) why = "lines are waiting for a run";
+                else if (queued.length > 0) why = "something she started waits here";
+                else if (running !== null && !running.done) {
+                  const r = running;
+                  if (r.selfStarted && !r.admitted && host.delivered(r.run.turn) === 0) {
+                    await this.#abort(r, "superseded", null);
+                    running = null;
+                  } else {
+                    why = "a run is in flight";
+                  }
+                }
+                if (why !== null) {
+                  input.answer({ status: "busy", why });
+                  break;
+                }
+                const wake = input.wake();
+                if (wake === null) {
+                  input.answer({ status: "empty" });
+                  break;
+                }
+                running = this.#start(wake, [], 0, [], input.turn, true);
+                input.answer({ status: "started" });
+                break;
+              }
               case "halt":
                 if (running !== null && !running.done) await this.#abort(running, "shutdown", null);
                 running = null;
@@ -312,9 +373,11 @@ export class Lane {
     inputs: IncomingMessage[],
     restarts: number,
     callers: readonly IncomingMessage[],
+    turn: string | null = null,
+    admitted = false,
   ): Running {
     const run: LaneRun = {
-      turn: this.#host.newTurn(),
+      turn: turn ?? this.#host.newTurn(),
       wake,
       inputs,
       restarts,
@@ -330,7 +393,8 @@ export class Lane {
       promise: Promise.resolve(),
       done: false,
       authors,
-      selfStarted: wake.kind === "glance" || wake.kind === "timer" || wake.kind === "self",
+      selfStarted: selfStarted(wake),
+      admitted,
     };
     running.promise = this.#host
       .execute(run)
