@@ -60,7 +60,9 @@ export const KIND_LABEL: Readonly<Record<DocumentKind, string>> = {
 function sourceKind(line: NoteLine): FieldSource["kind"] {
   if (line.author === "reflect") return "self";
   if (line.author === "panel") return "panel";
-  return line.provenance === "told_by_subject" || line.provenance === "told_by_other" ? "said" : "inferred";
+  return line.provenance === "told_by_subject" || line.provenance === "told_by_other"
+    ? "said"
+    : "inferred";
 }
 
 /** A document that is none of the subjects of a change, or the reason it cannot be one. */
@@ -463,7 +465,8 @@ export class NotesKnowledge {
     const sources: Record<string, FieldSource> = {};
     for (const l of lines) {
       const label = sectionLabel(doc.kind, l.section);
-      const list = (content[label] ??= []);
+      const list = content[label] ?? [];
+      content[label] = list;
       sources[`/${label}/${list.length}`] = {
         kind: sourceKind(l),
         account: null,
