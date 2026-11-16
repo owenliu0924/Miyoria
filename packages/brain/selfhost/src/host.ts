@@ -73,6 +73,7 @@ import {
   addressedReason,
   composeGuards,
   DEFAULT_TRIAGE,
+  floorKind,
   noteGlance,
   PROFILES,
   type RunEvent,
@@ -136,6 +137,8 @@ interface TurnState {
   ids: (string | null)[];
   lines: number;
   firstLineAt: number | null;
+  /** A line of the run carried the platform's reply reference already. */
+  quoted: boolean;
   tally: CorrectionTally;
 }
 
@@ -505,11 +508,34 @@ export class SelfHost implements TextRunner {
       ids: [],
       lines: 0,
       firstLineAt: null,
+      quoted: false,
       tally: new CorrectionTally(false),
     };
-    this.#turns.set(turn, state);
     agent.mainline.own(turn);
     agent.ctx.publish(Events.AgentTurnStarted, { turn, context }, { turn });
+    // The Floor, once for the whole run (the old turn's `MainTurn.take`): a glance the Floor
+    // refuses is no run at all; any other run holds the mic until it ends.
+    const floor = agent.mainline.floor();
+    const kind = floorKind(run.wake);
+    const refused = kind === "ambient" ? (floor?.refuses("ambient", context) ?? null) : null;
+    if (refused !== null) {
+      agent.ctx.publish(
+        Events.AgentDecision,
+        {
+          turn,
+          context,
+          respond: false,
+          score: 0,
+          reasons: [...decisionReasons(run.wake), `floor: ${refused}`],
+        },
+        { turn },
+      );
+      agentTurns.inc({ decision: "ignored" });
+      this.#publish(state, null, null, { type: "silence" });
+      return;
+    }
+    floor?.hold(turn, context, kind);
+    this.#turns.set(turn, state);
     agent.ctx.publish(
       Events.AgentDecision,
       { turn, context, respond: true, score: 0, reasons: decisionReasons(run.wake) },
@@ -539,6 +565,8 @@ export class SelfHost implements TextRunner {
       typing.abort();
       this.#outlet.ended(turn);
       this.#turns.delete(turn);
+      // Freed once its lines settled (`Floor.turnEnded`), cancelled or not.
+      floor?.turnEnded(turn);
     }
     this.#confirm(state);
     if (result?.compacted) this.prompt.forget(place.session);
@@ -643,8 +671,16 @@ export class SelfHost implements TextRunner {
     }
   }
 
-  /** `agent.tool`, `agent.turn.completed` and `agent.turn.outcome` of a run. */
-  #publish(state: TurnState, result: RunResult | null, error: string | null): void {
+  /**
+   * `agent.tool`, `agent.turn.completed` and `agent.turn.outcome` of a run; `decided`: the outcome
+   * of a run that never started (the Floor refused it).
+   */
+  #publish(
+    state: TurnState,
+    result: RunResult | null,
+    error: string | null,
+    decided: TurnOutcome | null = null,
+  ): void {
     const agent = this.#agent;
     const { run } = state;
     const turn = run.turn;
@@ -656,26 +692,12 @@ export class SelfHost implements TextRunner {
         { turn },
       );
     }
-    const said = state.lines;
     agent.ctx.publish(
       Events.AgentTurnCompleted,
       { turn, context, text: result?.lines.join("\n") ?? "" },
       { turn },
     );
-    const outcome: TurnOutcome =
-      result === null
-        ? { type: "error", error: error ?? "the run failed" }
-        : result.outcome === "cancelled"
-          ? {
-              type: "cancelled",
-              cause: run.cancel?.cause ?? "shutdown",
-              by: run.cancel?.by ?? null,
-            }
-          : said > 0 || result.outcome === "said"
-            ? { type: "sent", parts: Math.max(said, result.lines.length) }
-            : result.outcome === "silent"
-              ? { type: "silence" }
-              : { type: "error", error: result.outcome };
+    const outcome: TurnOutcome = decided ?? runOutcome(state, result, error);
     const wake = run.wake;
     const lastInput = run.inputs.at(-1);
     agent.publishOutcome({
@@ -758,6 +780,20 @@ export class SelfHost implements TextRunner {
       wake: { kind: "result", tool: job.tool, job: task, ok, text: detail, from: job.from },
     });
   }
+}
+
+/** How a run that started ended, as today's turn records say it. */
+function runOutcome(state: TurnState, result: RunResult | null, error: string | null): TurnOutcome {
+  if (result === null) return { type: "error", error: error ?? "the run failed" };
+  if (result.outcome === "cancelled") {
+    const cancel = state.run.cancel;
+    return { type: "cancelled", cause: cancel?.cause ?? "shutdown", by: cancel?.by ?? null };
+  }
+  if (state.lines > 0 || result.outcome === "said") {
+    return { type: "sent", parts: Math.max(state.lines, result.lines.length) };
+  }
+  if (result.outcome === "silent") return { type: "silence" };
+  return { type: "error", error: result.outcome };
 }
 
 function describe(decision: TriageDecision): string {

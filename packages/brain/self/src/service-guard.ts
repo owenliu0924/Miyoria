@@ -58,7 +58,7 @@ export interface ServiceGuardOptions {
 export function floorKind(wake: Wake): FloorClaimKind {
   switch (wake.kind) {
     case "addressed":
-      return "addressed";
+      return wake.reason === "reply" ? "reply" : "addressed";
     case "result":
       return "result";
     case "world":

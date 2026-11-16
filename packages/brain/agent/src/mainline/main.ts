@@ -39,6 +39,7 @@ import {
   isJsonObject,
   type JsonObject,
   type JsonValue,
+  type MessageRef,
   ModerationKey,
   type Mouth,
   newAction,
@@ -203,6 +204,14 @@ export function heardShare(text: string, heardMs: number, totalMs: number): stri
 }
 
 export { sentences } from "./loop.js";
+
+/** How a line of `MainLine.say` goes beyond what `FixedLine` says. */
+export interface SayOptions {
+  /** The turn holds the Floor already (for its whole run): the line takes no hold of its own. */
+  held?: boolean;
+  /** The message a text line answers (the platform's reply reference). */
+  replyTo?: MessageRef | null;
+}
 
 interface LineInfo {
   attention(said: string): { key: string; revision: number };
@@ -404,7 +413,11 @@ export class MainLine implements Mouth {
     };
   }
 
-  async say(line: FixedLine): Promise<void> {
+  /**
+   * `options` (the text runner's lines): `held`, the turn holds the Floor for its whole run, so
+   * the line takes no hold of its own; `replyTo`, the message a text line answers.
+   */
+  async say(line: FixedLine, options: SayOptions = {}): Promise<void> {
     const agent = this.#agent;
     if (agent.muted) return;
     const turn = line.turn ?? newId();
@@ -419,7 +432,7 @@ export class MainLine implements Mouth {
     });
     const { text } = safe;
     const blocked = safe.blocked ?? line.blocked ?? null;
-    const floor = this.floor();
+    const floor = options.held === true ? null : this.floor();
     floor?.hold(turn, context, "result");
     const sink = agent.ctx.services.get(ActionSinkKey);
     try {
@@ -445,7 +458,7 @@ export class MainLine implements Mouth {
       const action = newAction(
         textLane(context),
         priority,
-        { type: "send_message", context, message: { text, reply_to: null } },
+        { type: "send_message", context, message: { text, reply_to: options.replyTo ?? null } },
         { ttl: agent.config.reply_ttl_ms, turn, blocked },
       );
       agent.noteOwnText(context, text, action.id);

@@ -141,7 +141,13 @@ export {
   modeLabel,
   paceMs,
 } from "./levels.js";
-export { ACTING_ALONE, FALLBACK_LINES, MainLine, MainTurn } from "./mainline/main.js";
+export {
+  ACTING_ALONE,
+  FALLBACK_LINES,
+  MainLine,
+  MainTurn,
+  type SayOptions,
+} from "./mainline/main.js";
 export { COMMIT_SPEC, STEER_SPEC, slimTool } from "./mainline/output.js";
 export {
   contextData,

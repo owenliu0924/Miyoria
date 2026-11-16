@@ -1,7 +1,9 @@
 // How a line of hers leaves: through the mouth (`MainLine.say`), so the one-mouth rule, the
-// output review, the Floor's hold and the delivery ledger stay what they are, then the scheduler
-// and the platform. The outlet waits for `action.settled` of the line to tell the runner whether it
-// reached anyone and under which platform id.
+// output review and the delivery ledger stay what they are, then the scheduler and the platform.
+// The run holds the Floor for all its lines (`SelfHost`), so a line takes no hold of its own. A
+// line may carry the platform's reply reference (the host says which, `replyTo`). The outlet waits
+// for `action.settled` of the line to tell the runner whether it reached anyone and under which
+// platform id.
 //
 // In the place of the run, the second and later lines wait about as long as typing them takes
 // (`paceMs`, today's `#pace`), with the typing indicator shown.
@@ -12,6 +14,7 @@ import {
   ActionSinkKey,
   type ContextKey,
   contextKeyString,
+  type MessageRef,
   newAction,
   textLane,
 } from "@miyoria/types";
@@ -105,15 +108,19 @@ export class MouthOutlet implements Outlet {
   readonly #lastAt = new Map<string, number>();
   /** A line of hers in another place went out (`say`). */
   readonly #elsewhere: (line: OutgoingLine, messageId: string | null) => void;
+  /** The platform reply reference a line carries, if any. */
+  readonly #replyTo: (line: OutgoingLine) => MessageRef | null;
 
   constructor(
     agent: Agent,
     settlements: Settlements,
     elsewhere: (line: OutgoingLine, messageId: string | null) => void,
+    replyTo: (line: OutgoingLine) => MessageRef | null = () => null,
   ) {
     this.#agent = agent;
     this.#settlements = settlements;
     this.#elsewhere = elsewhere;
+    this.#replyTo = replyTo;
   }
 
   /** The turn ended: its pace is forgotten. */
@@ -131,13 +138,17 @@ export class MouthOutlet implements Outlet {
     const ms = Math.min(cfg.reply_ttl_ms + SETTLE_SLACK_MS, SETTLE_MAX_MS);
     const settled = this.#settlements.wait(line.turn, line.place, line.text, ms, signal);
     settled.catch(() => undefined);
-    await agent.mainline.say({
-      context: line.place,
-      text: line.text,
-      emotion: line.emotion,
-      turn: line.turn,
-      source: "self",
-    });
+    // The run holds the Floor for all its lines (`SelfHost`): none takes a hold of its own.
+    await agent.mainline.say(
+      {
+        context: line.place,
+        text: line.text,
+        emotion: line.emotion,
+        turn: line.turn,
+        source: "self",
+      },
+      { held: true, replyTo: this.#replyTo(line) },
+    );
     const end = await settled;
     if (line.focus) this.#lastAt.set(line.turn, agent.ctx.clock.now());
     if (end === null) {
