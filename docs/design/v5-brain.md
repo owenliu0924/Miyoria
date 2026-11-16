@@ -256,7 +256,7 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 
 - `ProposalBoardKey` / `ProposalBoard`、`IntentSinkKey` / `IntentSink` 的型別還在 `@miyoria/types`,沒有人提供:mind 的每日貼文(`life/posts.ts`)、mind 的快照(頻道等級)和 mind、arbiter 的測試替身還讀它們。每日貼文從第一步起就不會貼(Arbiter 拒絕 `plan`),現在是「沒有 board」;要恢復得接到新跑者的 initiative。
 - `[modules.agent.mainline]`、`[modules.agent.attention]` 和 `[modules.agent.work]` 大部分的鍵沒有程式讀了,留在 schema 裡讓舊設定檔照樣載入。
-- mind 的 Plan 還會要她寫衝動,`selfstart.ts` 還在(`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
+- mind 的 Plan 不再寫衝動(見下面「2026-11-16 的檢查」第 8 點),`selfstart.ts` 還在(`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
 - Arbiter 的 ledger 裡只算她自己起頭的部分(`book`、`raise`、每日上限、時間規則)還在:Arbiter 已經不接她自己起頭的事,這些不會再被用到,但 ledger view 的形狀面板和 mind 還在讀。
 - `SavedPromptsKey` 還提供,但新跑者不存 prompt,面板的 prompt 頁會是空的。
 - `CommitmentBook`:回合裡沒有人寫新的承諾了(那是修正 8),從 log 重建的舊承諾一天後就沒了;initiative 和第 7 區還讀它。之後由段落整理從對話記下(見「段落整理上線」)。
@@ -268,6 +268,17 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 - 遊戲實況、報幕的內容放在第 7 區的 wake 那一句(neutralize 過),以前是資料區塊;遊戲裡別人的名字因此不在資料區塊裡。
 - 報幕和遊戲實況占 Floor 的那一行跟著 Arbiter 接受時的 claim,但跑完之前有人叫她時,`world` 會讓位(以前 Arbiter 開的回合也會)。
 - agent 不再為語音頻道留對話紀錄,只記誰在、她最後什麼時候說話。
+
+**2026-11-16 的檢查**:逐項對過「零件在、但正式的路徑沒走到」的地方,修了這些(段落整理會關掉追問這件事,上面「段落整理上線」已經寫對,不用再改):
+
+1. 她自己的文件整份放進第 3 區(釘選層),在擁有者的規則後面,有自己的標題,上限是 `[modules.agent.prompt] self_chars`(預設 2000 字)。經 `SelfDocumentKey` 讀,依文件版本快取;「你整理的資料」不再放 `self` 那張卡,避免重複。
+2. `PersonProfiles`(她對這個人的認識)換過之後讀這個人的筆記文件,換之前讀舊的事實;換之後只再加上 rebuild 開始之後寫的事實。
+3. consolidation 的 `replaced()` 跟著即時的段落整理真的有沒有在跑;換過之後段落整理被關掉時,啟動記一行警告,舊的整理就不會被一起停掉而沒人接手。
+4. 逐字稿由 facts 的維護迴圈定期清(`[modules.facts] transcript_sweep_hours` 24、`transcript_covered_days` 30、`transcript_idle_days` 90);`host.ts` 不再為了知道 session 有沒有開始而讀整段 tail;閒置超過壓縮門檻的 session 會被壓縮(安靜 30 分鐘後,每 10 分鐘看一次)。
+5. 她自己的開口經 `ArbiterKey.record()` 和 `resolve()` 記進 Arbiter 的 ledger,不只發事件。
+6. 每晚反思數「被忽略的開口」時,看每一種決定理由(`intent:` 和 `initiative:`)。
+7. `Events.AgentTool` 寫進 facts 的事件紀錄,保留期和回合結果同一級,面板的「回合」頁讀它。
+8. mind 的 Plan 沒有衝動了:提示詞、回覆格式和解析都拿掉,舊回覆裡的 `impulses` 欄位直接忽略;目標和今天的計畫照舊,存下來的舊想法(有 `intents`)仍能載入。`max_intents` 留在 schema 讓舊設定檔能讀,不再使用。
 
 ## 筆記的 embedding(2026-11-16)
 
