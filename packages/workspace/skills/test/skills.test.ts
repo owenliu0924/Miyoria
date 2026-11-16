@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ActuatorRegistry, ActuatorRegistryKey, type Capability } from "@miyoria/gate/actions";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { DATA_CLOSE, DATA_OPEN, SkillShelfKey } from "@miyoria/types";
+import { DATA_CLOSE, DATA_OPEN, SkillIndexKey, SkillShelfKey } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PersistentWorkspace, type Sandbox, SandboxKey } from "../../sandbox/src/index.js";
 import {
@@ -15,7 +15,6 @@ import {
   SKILL_WRITE,
   SkillError,
   SkillStore,
-  SkillStoreKey,
   SkillsConfigSchema,
   SkillsModule,
   skillCapabilities,
@@ -272,8 +271,7 @@ describe("SkillsModule", () => {
       expect(registry.get(name), name).toBeDefined();
     }
     expect(tools.get("skill_write")).toBeDefined();
-    const skills = sup.services.get(SkillStoreKey);
-    await skills?.write("a", "做 A", "b");
+    await workspace.write("skills/a/SKILL.md", "description: 做 A\n\nb");
     // The admin API reads the same store through the port in `@miyoria/types`.
     const shelf = sup.services.get(SkillShelfKey);
     expect((await shelf?.list())?.skills).toEqual([{ name: "a", description: "做 A" }]);
@@ -290,7 +288,7 @@ describe("SkillsModule", () => {
       await sup.register(new SkillsModule(), {}, true);
       await sup.startAll();
       expect(registry.get(SKILL_WRITE)).toBeUndefined();
-      expect(sup.services.get(SkillStoreKey)).toBeUndefined();
+      expect(sup.services.get(SkillIndexKey)).toBeUndefined();
       expect(sup.services.get(SkillShelfKey)).toBeUndefined();
       await sup.stopAll();
     }

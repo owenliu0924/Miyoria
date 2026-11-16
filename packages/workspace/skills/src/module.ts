@@ -7,17 +7,15 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { SkillIndexKey, SkillShelfKey, serviceKey } from "@miyoria/types";
+import { SkillIndexKey, SkillShelfKey } from "@miyoria/types";
 import { SandboxKey } from "../../sandbox/src/index.js";
 import { SKILL_TOOL, skillCapabilities, skillTool } from "./capabilities.js";
 import { SkillsConfigSchema } from "./config.js";
 import { SkillStore } from "./store.js";
 
-/** Her skills; the agent asks it for `index()` to put names and descriptions in the prompt. */
-export const SkillStoreKey = serviceKey<SkillStore>("SkillStore");
-
 /**
- * Module `skills`: provides `SkillStoreKey` and registers `skill.list`, `skill.read`,
+ * Module `skills`: provides `SkillIndexKey` (the prompt's index of names and descriptions) and
+ * `SkillShelfKey` (the admin API's list and read), and registers `skill.list`, `skill.read`,
  * `skill.write` and `skill.delete` in the app's actuator registry, and the tool `skill` (for the
  * new turn runner) in its tool registry. Skills live in the sandbox's
  * persistent workspace, so without module `sandbox` (opt-in) and its workspace the module idles:
@@ -43,8 +41,7 @@ export class SkillsModule implements Module {
     }
     this.#idle = null;
     const store = new SkillStore(workspace, ctx.config(SkillsConfigSchema));
-    ctx.provide(SkillStoreKey, store);
-    // The same store under the key the main line reads its prompt index from.
+    // The store under the key the main line reads its prompt index from.
     ctx.provide(SkillIndexKey, store);
     // And the one the admin API lists and reads skills through.
     ctx.provide(SkillShelfKey, store);

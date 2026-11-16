@@ -5,7 +5,7 @@
 //   games, voice, Go Live, notices, people who talked to her and what she answered, and her
 //   questions to people with whether they answered. Before this, what she sang ten minutes ago was
 //   visible only while it was still in the transcript.
-// * `OtherPlaces` (`ElsewhereKey`): what is going on in the other places she is in right now,
+// * `OtherPlaces`: what is going on in the other places she is in right now,
 //   her recap of each (conversation states) and its last lines, so a voice turn knows what the
 //   text channel is on about and the other way round. DMs are never among them.
 //

@@ -9,7 +9,6 @@ import {
   AffectStateKey,
   type Clock,
   ConversationStatesKey,
-  ElsewhereKey,
   JustNowKey,
   KnowledgeKey,
   type Notebook,
@@ -123,7 +122,6 @@ export class RecentPast {
   /** What the module provides. */
   provide(provide: <T>(key: ServiceKey<T>, value: T) => void): void {
     provide(JustNowKey, this.timeline);
-    provide(ElsewhereKey, this.elsewhere);
     provide(PersonThreadsKey, this.threads);
     provide(PersonProfilesKey, this.profiles);
     const pages = this.notebook;

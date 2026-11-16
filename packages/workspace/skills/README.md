@@ -4,4 +4,4 @@
 
 - 工具:`skill_list`、`skill_read`(低風險);`skill_write`、`skill_delete`(中風險,權限節點 `skills.use`)。
 - 設定 `[modules.skills]`:`max_skills = 50`、`max_body_chars = 6000`、`max_description_chars = 140`、`read_chars = 700`、`index_chars = 1500`。
-- 整合:agent 應把 `SkillStore.index()`(服務 `SkillStoreKey`)放進提示詞。
+- 整合:agent 應把 `SkillStore.index()`(服務 `SkillIndexKey`)放進提示詞。

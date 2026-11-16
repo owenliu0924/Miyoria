@@ -12,7 +12,7 @@ export {
   skillTool,
 } from "./capabilities.js";
 export { type SkillsConfig, SkillsConfigSchema } from "./config.js";
-export { SkillStoreKey, SkillsModule } from "./module.js";
+export { SkillsModule } from "./module.js";
 export {
   MAX_SKILL_TOOLS,
   SKILL_FILE,

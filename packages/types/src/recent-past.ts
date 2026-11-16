@@ -98,13 +98,11 @@ export interface PlaceSummary {
   last_at: Timestamp;
 }
 
-/** Provided by the `memory` module. DMs are never among the places. */
+/** What the `memory` module reads of the other places. DMs are never among them. */
 export interface Elsewhere {
   places(where: Whereabouts, signal?: AbortSignal): Promise<PlaceSummary[]>;
   render(where: Whereabouts, maxChars: number, signal?: AbortSignal): Promise<string>;
 }
-
-export const ElsewhereKey = serviceKey<Elsewhere>("Elsewhere");
 
 // ---- threads with a person --------------------------------------------------------------------
 

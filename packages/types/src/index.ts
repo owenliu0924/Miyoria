@@ -777,7 +777,6 @@ export {
   type AskedQuestion,
   type Asking,
   type Elsewhere,
-  ElsewhereKey,
   type JustNow,
   type JustNowEntry,
   JustNowKey,
