@@ -161,19 +161,19 @@ export class CapabilityTool implements Tool {
 
   /**
    * A `followup` tool: the outcome when it is ready within `inline_wait_ms`, otherwise
-   * `RESULT_PENDING` now and the outcome as a follow-up turn later.
+   * `RESULT_PENDING` now and the outcome as a notice later (`notifyLate`).
    */
   async #waitOrFollowUp(
     ctx: ToolContext,
     request: ActionRequest,
     running: Promise<ActionOutcome>,
   ): Promise<string | ActionOutcome> {
-    // Decided exactly once: answered inline, or late (then the outcome becomes a follow-up).
+    // Decided exactly once: answered inline, or late (then the outcome becomes a notice).
     let state: "waiting" | "inline" | "late" = "waiting";
     const settled = running.then(
       (outcome) => {
         log.info({ capability: this.capability.name, status: outcome.status }, "reviewed action");
-        if (state === "late") this.registry.followup(this.capability, request, outcome);
+        if (state === "late") this.registry.notifyLate(this.capability, request, outcome);
         else state = "inline";
         return outcome;
       },

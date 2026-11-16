@@ -89,13 +89,12 @@ export interface Initiative {
 
 /**
  * The Arbiter's source for an `agent.initiative` reason (publishers that were not converted to
- * impulses yet, extensions): game commentary, a song, a result or notice, else a reaction to
+ * impulses yet, extensions): game commentary, a song, a notice, else a reaction to
  * the world. None of them is her own initiative.
  */
 export function initiativeSource(reason: string): ImpulseSource {
   if (reason === "game") return "game";
   if (reason === "notice") return "notice";
-  if (reason === "action_result" || reason === "followup") return "followup";
   if (reason.startsWith("song_")) return "song";
   return "world";
 }
@@ -633,7 +632,7 @@ export class Agent {
           source,
           context,
           account: initiative.about.length === 1 ? (initiative.about[0] ?? null) : null,
-          ttlMs: source === "followup" || source === "notice" ? RESULT_TTL_MS : INITIATIVE_TTL_MS,
+          ttlMs: source === "notice" ? RESULT_TTL_MS : INITIATIVE_TTL_MS,
           why: initiative.reason,
           hint: initiative.hint,
           about: initiative.about,

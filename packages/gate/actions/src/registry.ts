@@ -65,7 +65,6 @@ import {
 } from "./capability.js";
 import { type ActionsConfig, capabilityMatches, defaultActionsConfig } from "./config.js";
 import { EmergencyStop } from "./emergency.js";
-import { Followups, followupHint } from "./followup.js";
 import { publishNotice, recordOutcome } from "./outcome.js";
 import { PRIVACY_PROFILE, Privacy } from "./privacy.js";
 import { effectiveLimits, RateLimiter, type RateRun, tightened } from "./rate.js";
@@ -268,8 +267,6 @@ export class ActuatorRegistry implements ActuatorExecutor {
   readonly #counted = new WeakMap<GateDecision, RateRun>();
   readonly privacy: Privacy;
   readonly escalations: Escalations;
-  /** Late outcomes of `followup` tools, delivered as follow-up turns. */
-  readonly followups: Followups;
   /** The one button of §16: what `/admin autonomy pause` and `/api/mind/pause` run. */
   readonly emergency: EmergencyStop;
 
@@ -280,10 +277,6 @@ export class ActuatorRegistry implements ActuatorExecutor {
     this.#clock = options.clock ?? systemClock;
     this.privacy = new Privacy(options.services);
     this.escalations = new Escalations(this.#clock);
-    this.followups = new Followups(
-      (definition, data, ...meta) => this.#publish(definition, data, ...meta),
-      () => this.#clock.now(),
-    );
     this.emergency = new EmergencyStop({
       services: options.services,
       clock: this.#clock,
@@ -721,27 +714,6 @@ export class ActuatorRegistry implements ActuatorExecutor {
       throw error;
     }
     return abortable(done, signal);
-  }
-
-  /**
-   * Tells her the late outcome of a `followup` request: a follow-up turn in the context she
-   * asked from (nothing without one, e.g. a mind turn without a chat).
-   */
-  followup(capability: Capability, request: ActionRequest, outcome: ActionOutcome): void {
-    const context = request.principal.context;
-    if (context === null) {
-      log.info(
-        { capability: capability.name, status: outcome.status },
-        "no context for the follow-up of a late result",
-      );
-      return;
-    }
-    const requester = request.principal.requester;
-    this.followups.deliver(
-      context,
-      followupHint(capability, request, outcome),
-      requester === null ? [] : [requester],
-    );
   }
 
   /** `ActuatorExecutor`: the scheduler runs a queued request. */
