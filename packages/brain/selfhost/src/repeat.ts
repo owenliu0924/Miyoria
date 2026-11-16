@@ -35,6 +35,9 @@ import type { OutletClaims } from "./outlet.js";
 import { speakersOf } from "./prompt.js";
 import { REPEATED_LINE } from "./texts.js";
 
+/** How many of the people who spoke in a place `@name` may link. */
+const KNOWN_PEOPLE = 50;
+
 /** What the host knows that the outlet's claims need. */
 export interface ClaimsHost {
   /** What woke the text run of `turn`; `null`: no text run of the host. */
@@ -60,6 +63,16 @@ export function outletClaims(agent: Agent, host: ClaimsHost): OutletClaims {
       const to = asked.length > 0 ? asked : named.length > 0 ? [] : here;
       const handles = [...to, ...named].map((s) => agent.handleOf(s.account, s.name));
       return [...new Set(handles)];
+    },
+    people(line: OutgoingLine): { account: AccountRef; name: string }[] {
+      const out = speakersOf(host.entries(line.place), KNOWN_PEOPLE);
+      const wake = host.wakeOf(line.turn);
+      for (const from of wake === null ? [] : askers(wake)) {
+        if (!out.some((o) => sameAccount(o.account, from.account))) {
+          out.push({ account: from.account, name: from.name });
+        }
+      }
+      return out.filter((p) => !agent.isBlocked(p.account));
     },
   };
 }

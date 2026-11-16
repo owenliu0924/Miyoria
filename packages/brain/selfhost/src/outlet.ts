@@ -15,6 +15,7 @@
 
 import { sleep } from "@miyoria/runtime/kernel";
 import {
+  type AccountRef,
   type ActionSettled,
   ActionSinkKey,
   type ContextKey,
@@ -24,11 +25,17 @@ import {
   type MessageRef,
   newAction,
   newId,
+  PlatformSinksKey,
   textLane,
 } from "@miyoria/types";
 import { type Agent, paceMs } from "../../agent/src/index.js";
 import type { Delivery, OutgoingLine, Outlet } from "../../self/src/index.js";
+import { linkMentions, type MentionTarget } from "./mentions.js";
 import { lineRefusal } from "./repeat.js";
+import { splitLine } from "./split.js";
+
+/** A line's longest part when `max_message_chars` is 0: Discord's limit. */
+const MAX_LINE = 2_000;
 
 /** How a typing indicator lasts. */
 export const TYPING_TTL_MS = 10_000;
@@ -123,6 +130,8 @@ export interface OutletClaims {
    * not a run of the host.
    */
   audience(line: OutgoingLine): Handle[] | null;
+  /** The people known in the line's place whom an `@name` in it may mention (not blocked ones). */
+  people(line: OutgoingLine): { account: AccountRef; name: string }[];
 }
 
 /** The outlet of the host: `MainLine.say`, then the scheduler's word on it. */
@@ -175,7 +184,7 @@ export class MouthOutlet implements Outlet {
       floor.hold(turn, line.place, kind);
     }
     try {
-      return await this.#say(line, turn, audience, signal);
+      return await this.#sayAll(line, turn, audience, signal);
     } finally {
       if (turn !== line.turn) {
         if (signal.aborted) {
@@ -188,24 +197,67 @@ export class MouthOutlet implements Outlet {
     }
   }
 
-  /** `line` to the mouth under `turn`, and how it left the scheduler. */
+  /**
+   * What is sent of `line`: `@name` of the people known in the place as real mentions
+   * (`mention_users`), then cut into messages under `max_message_chars`. The line itself, and so
+   * the transcript, keeps what she wrote.
+   */
+  #parts(line: OutgoingLine): string[] {
+    const cfg = this.#agent.config;
+    let text = line.text;
+    const sink = this.#agent.ctx.services.get(PlatformSinksKey)?.get(line.place.platform);
+    if (cfg.mention_users && sink?.mention !== undefined && this.#claims !== null) {
+      const targets: MentionTarget[] = [];
+      for (const person of this.#claims.people(line)) {
+        const markup = sink.mention(person.account);
+        if (markup !== null) targets.push({ name: person.name, markup });
+      }
+      text = linkMentions(text, targets);
+    }
+    const parts = splitLine(text, cfg.max_message_chars > 0 ? cfg.max_message_chars : MAX_LINE);
+    return parts.length === 0 ? [text] : parts;
+  }
+
+  /** Every part of `line` to the mouth in turn; the first one's id stands for the line. */
+  async #sayAll(
+    line: OutgoingLine,
+    turn: string,
+    audience: readonly Handle[] | null,
+    signal: AbortSignal,
+  ): Promise<Delivery> {
+    let first: Delivery | null = null;
+    for (const [index, text] of this.#parts(line).entries()) {
+      const delivery = await this.#say(line, text, index === 0, turn, audience, signal);
+      if (delivery.status === "blocked") {
+        if (first === null) return delivery;
+        break;
+      }
+      first ??= delivery;
+    }
+    if (first?.status === "delivered" && !line.focus) this.#elsewhere(line, first.message_id);
+    return first ?? { status: "blocked", reason: "nothing to send" };
+  }
+
+  /** `text`, a part of `line`, to the mouth under `turn`, and how it left the scheduler. */
   async #say(
     line: OutgoingLine,
+    text: string,
+    first: boolean,
     turn: string,
     audience: readonly Handle[] | null,
     signal: AbortSignal,
   ): Promise<Delivery> {
     const agent = this.#agent;
     agent.mainline.own(turn);
-    if (line.focus) await this.#pace(line, signal);
+    if (line.focus) await this.#pace(line, text, signal);
     const cfg = agent.config;
     const ms = Math.min(cfg.reply_ttl_ms + SETTLE_SLACK_MS, SETTLE_MAX_MS);
-    const settled = this.#settlements.wait(turn, line.place, line.text, ms, signal);
+    const settled = this.#settlements.wait(turn, line.place, text, ms, signal);
     settled.catch(() => undefined);
-    agent.mainline.replyNext(turn, line.place, this.#replyTo(line));
+    if (first) agent.mainline.replyNext(turn, line.place, this.#replyTo(line));
     await agent.mainline.say({
       context: line.place,
-      text: line.text,
+      text,
       emotion: line.emotion,
       turn,
       source: "self",
@@ -216,20 +268,18 @@ export class MouthOutlet implements Outlet {
     if (end === null) {
       // The scheduler did not say in time: the line was queued, and is taken as said.
       agent.log.debug({ turn: line.turn }, "no word from the scheduler on a line");
-      if (!line.focus) this.#elsewhere(line, null);
       return { status: "delivered", message_id: null };
     }
     if (!end.ok) return { status: "blocked", reason: end.error ?? "failed" };
     if (end.blocked !== null) return { status: "blocked", reason: end.blocked };
-    if (!line.focus) this.#elsewhere(line, end.message_id);
     return { status: "delivered", message_id: end.message_id };
   }
 
-  async #pace(line: OutgoingLine, signal: AbortSignal): Promise<void> {
+  async #pace(line: OutgoingLine, text: string, signal: AbortSignal): Promise<void> {
     const last = this.#lastAt.get(line.turn);
     if (last === undefined) return;
     const agent = this.#agent;
-    const wait = paceMs(agent.rhythm.config, line.text) - (agent.ctx.clock.now() - last);
+    const wait = paceMs(agent.rhythm.config, text) - (agent.ctx.clock.now() - last);
     if (wait <= 0) return;
     await submitTyping(agent, line.place, line.turn);
     await sleep(wait, signal);
