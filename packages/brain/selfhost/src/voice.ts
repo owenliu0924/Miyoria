@@ -136,6 +136,8 @@ export interface VoiceHostDeps {
   takeGlance(context: ContextKey): boolean;
   /** Her initiative's side of a run (`Initiative.runStarted` / `runEnded`); unset: none. */
   initiative?: {
+    /** A person spoke at `context` (`answered`: to her): the gates' view of who spoke lately. */
+    line(context: ContextKey, answered: boolean): void;
     started(wake: Wake, turn: string, context: ContextKey): string[];
     ended(
       wake: Wake,
@@ -505,6 +507,12 @@ export class VoiceHost implements VoiceRunner {
     return place.lane.push({ type: "wake", wake });
   }
 
+  /** Whether she is in the voice channel `context` (it has a running lane). */
+  in(context: ContextKey): boolean {
+    const place = this.#places.get(contextKeyString(context));
+    return place !== undefined && !place.lane.ended;
+  }
+
   /** Hands what the Arbiter admitted to the voice lane of `context`; `false`: no such lane. */
   admit(context: ContextKey, input: AdmittedInput): boolean {
     const place = this.#places.get(contextKeyString(context));
@@ -630,6 +638,7 @@ export class VoiceHost implements VoiceRunner {
       },
       "voice line triaged",
     );
+    if (!marks.bot) this.#d.initiative?.line(place.context, callsHer(call));
     this.#place(place.context).lane.push({
       type: "line",
       msg,

@@ -256,6 +256,7 @@ export class SelfHost implements TextRunner {
         ),
       takeGlance: (context) => this.#takeGlance(context),
       initiative: {
+        line: (context, answered) => this.initiative.line(context, answered),
         started: (wake, turn, context) => this.initiative.runStarted(wake, turn, context),
         ended: (wake, turn, context, outcome, spoke) =>
           this.initiative.runEnded(wake, turn, context, outcome, spoke),
@@ -364,6 +365,7 @@ export class SelfHost implements TextRunner {
         sessionOf,
         wake: (context, wake) => this.#wake(context, wake),
         places: () => [...this.#places.values()].map((p) => p.context),
+        inVoice: (context) => this.voice.in(context),
         resolve: async (name, from) =>
           resolvePlace(
             {
