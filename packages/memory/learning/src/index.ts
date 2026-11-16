@@ -82,6 +82,7 @@ export {
 } from "./knowledge.js";
 export { isTalkLesson, LESSON_PREFIX, LessonStore } from "./lessons.js";
 export {
+  CachedSelfDocument,
   CONVERSATION_CONTRIBUTOR,
   ConversationModule,
   KNOWLEDGE_CONTRIBUTOR,

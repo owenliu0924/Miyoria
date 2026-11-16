@@ -145,6 +145,8 @@ export {
   ReflectionKey,
   type ReflectionRun,
   type ReflectionStats,
+  type SelfDocument,
+  SelfDocumentKey,
   type SourceKind,
   subjectKey,
 } from "./learning.js";

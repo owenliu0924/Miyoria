@@ -57,6 +57,7 @@ import {
   PromptContributorsKey,
   type PromptRequest,
   type PromptSection,
+  SelfDocumentKey,
   SelfStateKey,
   SkillIndexKey,
   safeName,
@@ -241,6 +242,9 @@ export interface SlowReads {
 /** What is made in the background for a later run may take this long (the old `WARM_LOAD_MS`). */
 const WARM_LOAD_MS = 10_000;
 
+/** Heading of her own document in the pinned block (she writes it herself, each night). */
+const SELF_TITLE = "# 你自己(你每晚寫給自己的,最近的你)";
+
 export interface HostPromptOptions {
   transcript: TranscriptStore;
   /** The session a place's transcript is under. */
@@ -335,7 +339,14 @@ export class HostPrompt implements PromptSource {
   async pinned(input: PromptInput): Promise<string | null> {
     const context = input.session.context;
     const rules = this.#agent.mainline.ownerRules(context);
-    return pinnedSection(rules, [], input.now, this.#offset(input.now));
+    const pinned = pinnedSection(rules, [], input.now, this.#offset(input.now));
+    const self = this.#services
+      .get(SelfDocumentKey)
+      ?.read(this.#agent.config.prompt.self_chars)
+      .trim();
+    if (self === undefined || self === "") return pinned;
+    const own = `${SELF_TITLE}\n${self}`;
+    return pinned === null ? own : `${pinned}\n\n${own}`;
   }
 
   // ---- block 4 ---------------------------------------------------------------------------------

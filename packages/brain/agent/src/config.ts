@@ -280,6 +280,8 @@ export const PromptConfigSchema = z.object({
     examples: 2500,
   }),
   default_budget: z.number().int().nonnegative().default(600),
+  /** Characters of her document about herself in the pinned block (it is never cut by a section's budget). */
+  self_chars: z.number().int().nonnegative().default(2000),
   /** Keep a compressed copy of every n-th turn's prompt (`agent.prompt`); 0 = none. */
   save_every: z.number().int().nonnegative().default(1),
   /** Saved prompts kept in memory. */

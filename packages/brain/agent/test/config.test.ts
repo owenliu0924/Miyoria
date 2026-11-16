@@ -175,6 +175,7 @@ describe("config", () => {
           examples: 2500,
         },
         default_budget: 600,
+        self_chars: 2000,
         save_every: 1,
         saved: 50,
         saved_message_chars: 800,

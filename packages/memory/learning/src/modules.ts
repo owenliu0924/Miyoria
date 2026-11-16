@@ -49,10 +49,12 @@ import {
   ReflectGuardKey,
   ReflectionKey,
   type ReflectionRun,
+  type SelfDocument,
+  SelfDocumentKey,
   SocialSignalsKey,
 } from "@miyoria/types";
 import { NotesKnowledge } from "../../notes/src/knowledge.js";
-import { notesTables } from "../../notes/src/store.js";
+import { type NotesStore, notesTables, SELF_SUBJECT } from "../../notes/src/store.js";
 import { NotesSearchKey } from "../../notes/src/vectors.js";
 import type { BudgetState } from "./caps.js";
 import {
@@ -288,6 +290,7 @@ export class KnowledgeModule implements Module {
         : new NotesKnowledge({ notes: notesStore, resolver: notesStore.resolver() });
     const base: KnowledgeBase = notes === null ? kb : notes.base();
     ctx.provide(KnowledgeKey, base);
+    if (notes !== null) ctx.provide(SelfDocumentKey, new CachedSelfDocument(notes.notes));
     const topics = (request: PromptRequest) =>
       notes === null
         ? kb
@@ -305,7 +308,8 @@ export class KnowledgeModule implements Module {
       key: KNOWLEDGE_CONTRIBUTOR,
       contribute: async (request: PromptRequest, signal?: AbortSignal) => {
         const people = peopleInPrompt(config.prompt_people, s.get(PersonProfilesKey) !== undefined);
-        const subjects = subjectsFor(topics(request), request, people);
+        // Where her documents are in the notes, her own document is in the pinned block.
+        const subjects = subjectsFor(topics(request), request, people, notes === null);
         const section = (body: string) =>
           body === ""
             ? []
@@ -336,8 +340,7 @@ export class KnowledgeModule implements Module {
               ranking: search.ranking,
             })
             .map((hit): KnowledgeSubject => ({ type: "topic", name: hit.document.title }));
-          // Before herself, which `subjectsFor` puts last.
-          subjects.splice(Math.max(0, subjects.length - 1), 0, ...found);
+          subjects.push(...found);
         }
         return section(
           notes.render(subjects, viewer, config.prompt_chars, {
@@ -372,13 +375,35 @@ export class KnowledgeModule implements Module {
 }
 
 /**
+ * Her self document as the pinned block reads it: kept as read for as long as the document keeps
+ * its version, so the block's text changes only when she rewrites it.
+ */
+export class CachedSelfDocument implements SelfDocument {
+  #at: { version: string; budget: number; text: string } | null = null;
+
+  constructor(private readonly notes: NotesStore) {}
+
+  read(budget: number): string {
+    const doc = this.notes.document(SELF_SUBJECT);
+    const version = doc === null ? "" : `${doc.version}@${doc.updated_at}`;
+    const kept = this.#at;
+    if (kept !== null && kept.version === version && kept.budget === budget) return kept.text;
+    const text = this.notes.readSelf({ budget });
+    this.#at = { version, budget, text };
+    return text;
+  }
+}
+
+/**
  * The people of the turn (speakers first, unless `people` is off: the person profiles carry
- * them), this server, topics named in the input, herself.
+ * them), this server, topics named in the input, herself (unless `self` is off: the pinned block
+ * has her document).
  */
 export function subjectsFor(
   kb: { docs(): readonly Pick<KnowledgeDoc, "subject" | "title">[] },
   request: PromptRequest,
   people = true,
+  self = true,
 ): KnowledgeSubject[] {
   const out: KnowledgeSubject[] = [];
   const speakers = request.participants.filter((p) =>
@@ -398,7 +423,7 @@ export function subjectsFor(
       out.push(doc.subject);
     }
   }
-  out.push({ type: "self" });
+  if (self) out.push({ type: "self" });
   return out;
 }
 

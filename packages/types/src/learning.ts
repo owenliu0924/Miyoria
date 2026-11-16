@@ -192,6 +192,18 @@ export interface KnowledgeBase {
 
 export const KnowledgeKey = serviceKey<KnowledgeBase>("KnowledgeBase");
 
+/**
+ * Her document about herself, whole, for the prompt's pinned block. Provided by the `knowledge`
+ * module where her documents live in the notes. The text is the same until the document is
+ * rewritten.
+ */
+export interface SelfDocument {
+  /** The document within `budget` characters (the seed lines before she has written it). */
+  read(budget: number): string;
+}
+
+export const SelfDocumentKey = serviceKey<SelfDocument>("SelfDocument");
+
 // ---- lessons ------------------------------------------------------------------------------
 
 /** Something she learned about how to behave ("阿明不喜歡被打斷"). */

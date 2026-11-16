@@ -815,6 +815,7 @@ max_files = 2              # 每回合最多讀幾個檔案
 # 其他模組附上的段落加起來不超過 [modules.agent.mainline] data_chars(超過時公平分配,不是後面的直接被砍)
 [modules.agent.prompt]
 default_budget = 600       # 沒列在 budgets 的段落
+self_chars = 2000          # 她寫給自己的那份文件放進固定區塊的字數上限(不受 budgets 限制)
 save_every = 1             # 每幾個回合存一份壓縮過的實際 prompt(面板看;0 = 不存)
 # budgets = { conversation = 900, memory = 1000, knowledge = 700, lessons = 500, world = 500, game = 700, sing = 400, people = 800, examples = 2500 }
 
