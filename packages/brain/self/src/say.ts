@@ -14,7 +14,12 @@ export type Spoken = { ok: true } | { ok: false; code: string; reason: string };
 
 export interface SayDeps {
   /** The place she named, from where she is; `null`: she knows no such place. */
-  resolve(place: string, from: ContextKey): ContextKey | null;
+  resolve(place: string, from: ContextKey): ContextKey | null | Promise<ContextKey | null>;
+  /**
+   * Why `say` may not go to `place` at all (a DM, which has a tool of its own with its own
+   * checks); `null`: it may. Unset: every place may.
+   */
+  refuses?(place: ContextKey): string | null;
   /** Checks and delivers the line for the run of `turn`; `null`: no such run is going on. */
   sayIn(turn: string, place: ContextKey, text: string): Promise<Spoken | null>;
 }
@@ -35,11 +40,13 @@ export function sayTool(deps: SayDeps): Tool {
       return { ok: false, code: "failed", stage: null, text: SAY_TOOL.empty };
     }
     const name = args.data.place.trim();
-    const place = deps.resolve(name, ctx.context);
+    const place = await deps.resolve(name, ctx.context);
     if (place === null) return refused("place", SAY_TOOL.unknownPlace(name));
     if (contextKeyString(place) === contextKeyString(ctx.context)) {
       return refused("place", SAY_TOOL.here);
     }
+    const refusal = deps.refuses?.(place) ?? null;
+    if (refusal !== null) return refused("place", SAY_TOOL.blocked(refusal));
     const spoken = await deps.sayIn(ctx.turn, place, args.data.text.trim());
     if (spoken === null) return refused("run", SAY_TOOL.noRun);
     return spoken.ok

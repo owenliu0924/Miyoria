@@ -94,6 +94,7 @@ import { Lane, type LaneHost, type LaneRun } from "./lane.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
+import { SAY_DM } from "./texts.js";
 
 /** Lines of a place before the first one the backfill fetches at most. */
 const MAX_BACKFILL = 50;
@@ -212,6 +213,8 @@ export class SelfHost implements TextRunner {
             name,
             from,
           ),
+        // A DM goes through `message_dm` only: one path for consent, permission and its limits.
+        refuses: (place) => (place.kind === "dm" ? SAY_DM : null),
         sayIn: this.runner.sayIn,
       }),
     );
