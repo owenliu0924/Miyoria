@@ -1081,11 +1081,14 @@ class Run {
   // ---- after the run ----------------------------------------------------------------------
 
   async #compact(budget: CompactionBudget): Promise<boolean> {
+    const session = this.#session.id;
+    const before = this.#p.beforeCompaction;
     try {
-      const made = await compactIfNeeded(this.#p.transcript, this.#session.id, {
+      const made = await compactIfNeeded(this.#p.transcript, session, {
         ...budget,
         summarise: modelSummarise(this.#p.model),
         turn: this.turn,
+        ...(before ? { before: (upto: number) => before(session, upto) } : {}),
       });
       return made !== null;
     } catch (error) {

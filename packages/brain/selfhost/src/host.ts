@@ -57,6 +57,7 @@ import {
   PlatformSinksKey,
   parseTaskEvent,
   parseTaskTopic,
+  SegmentFlushKey,
   sameAccount,
   type TurnOutcome,
   type TurnReason,
@@ -287,6 +288,9 @@ export class SelfHost implements TextRunner {
           this.voice.onRunEvent(event);
         },
         selfAccount: (platform) => agent.selfAccount(platform),
+        // Her memory reads the lines before they are summarised (the segment pass).
+        beforeCompaction: async (session, upto) =>
+          services.get(SegmentFlushKey)?.beforeCompaction(session, upto),
       },
       options.runner ?? {},
     );

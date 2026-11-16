@@ -672,6 +672,33 @@ describe("the prompt across runs", () => {
     expect(r.events.at(-1)).toMatchObject({ type: "finished", compacted: true });
   });
 
+  it("lets her memory read the lines up to the cut before they are summarised", async () => {
+    const order: string[] = [];
+    const r = await rig([say("好")], {
+      runner: { compaction: { thresholdTokens: 60, keepTokens: 10 } },
+      beforeCompaction: async (session, upto) => {
+        order.push(`memory ${session} ${upto}`);
+        expect(r.model.summarised).toHaveLength(0);
+      },
+    });
+    for (let i = 0; i < 12; i++) r.line("Owen", `第 ${i} 句,隨便聊聊今天發生的事情`);
+    expect((await r.run()).compacted).toBe(true);
+    const upto = r.transcript.tail(SESSION.id).summary?.upto_seq;
+    expect(order).toEqual([`memory ${SESSION.id} ${upto}`]);
+    expect(r.model.summarised).toHaveLength(1);
+  });
+
+  it("compacts all the same when her memory's read fails", async () => {
+    const r = await rig([say("好")], {
+      runner: { compaction: { thresholdTokens: 60, keepTokens: 10 } },
+      beforeCompaction: async () => {
+        throw new Error("memory down");
+      },
+    });
+    for (let i = 0; i < 12; i++) r.line("Owen", `第 ${i} 句,隨便聊聊今天發生的事情`);
+    expect((await r.run()).compacted).toBe(true);
+  });
+
   it("does not compact below the threshold", async () => {
     const r = await rig([say("好")], {
       runner: { compaction: { thresholdTokens: 100_000, keepTokens: 10 } },

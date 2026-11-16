@@ -366,6 +366,11 @@ export interface RunPorts {
   selfAccount?: (platform: string) => AccountRef;
   /** Picks the fixed line (0..1). Default `Math.random`. */
   random?: () => number;
+  /**
+   * Called with a session and the cut before its transcript is compacted, so her memory reads the
+   * lines first (`SegmentFlushKey`). It bounds its own wait; the compaction goes ahead after it.
+   */
+  beforeCompaction?: (session: string, uptoSeq: number) => Promise<unknown>;
 }
 
 export interface RunInput {

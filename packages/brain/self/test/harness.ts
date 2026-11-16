@@ -31,6 +31,7 @@ import type {
   PromptSource,
   RunEvent,
   RunModel,
+  RunPorts,
   RunResult,
   RunSession,
   Wake,
@@ -228,6 +229,7 @@ export interface RigOptions {
   runner?: RunnerOptions;
   store?: SqliteStore;
   tools?: ToolRegistry;
+  beforeCompaction?: RunPorts["beforeCompaction"];
 }
 
 export const PROMPT: PromptSource = {
@@ -265,6 +267,7 @@ export async function rig(script: readonly ScriptStep[], options: RigOptions = {
       log: getLogger("brain.self.test"),
       onEvent: (e) => events.push(e),
       random: () => 0,
+      ...(options.beforeCompaction ? { beforeCompaction: options.beforeCompaction } : {}),
     },
     options.runner ?? { compaction: null },
   );
