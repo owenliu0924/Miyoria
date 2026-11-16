@@ -1,6 +1,12 @@
 import type { ToolEntry } from "@miyoria/llm/tools";
 import { describe, expect, it } from "vitest";
-import { PROFILE_NAMES, PROFILES, VOICE_TOOLS, withLimits } from "../src/profiles.js";
+import {
+  PREFIX_PROFILE,
+  PROFILE_NAMES,
+  PROFILES,
+  VOICE_TOOLS,
+  withLimits,
+} from "../src/profiles.js";
 import { LIMIT_NOTE_QUIET, LIMIT_NOTES, PROFILE_NOTES, RULES, rulesFor } from "../src/rules.js";
 import { addressed, calls, fakeTool, rig, say } from "./harness.js";
 
@@ -30,11 +36,14 @@ describe("profiles", () => {
     }
   });
 
-  it("offers: voice a short list; subagent and reflect nothing that speaks", () => {
+  it("offers: voice what text does (its calls a short list); subagent and reflect nothing that speaks", () => {
     expect(PROFILES.text.offers(entry("say", "say"))).toBe(true);
     expect(PROFILES.voice.offers(entry("web_search", "read"))).toBe(true);
-    expect(PROFILES.voice.offers(entry("sing_start", "act"))).toBe(false);
+    expect(PROFILES.voice.offers(entry("react", "say"))).toBe(true);
+    expect(PREFIX_PROFILE.voice).toBe("text");
     expect([...VOICE_TOOLS]).toContain("find_tools");
+    expect([...VOICE_TOOLS]).toContain("sing_start");
+    expect([...VOICE_TOOLS]).not.toContain("react");
     for (const name of ["subagent", "reflect"] as const) {
       expect(PROFILES[name].offers(entry("say", "say"))).toBe(false);
       expect(PROFILES[name].offers(entry("react", "say"))).toBe(false);

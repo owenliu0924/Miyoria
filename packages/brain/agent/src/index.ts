@@ -100,7 +100,15 @@ export {
   type WorkConfig,
   WorkConfigSchema,
 } from "./config.js";
-export { Gathered, gather } from "./contributors.js";
+export {
+  Gathered,
+  gather,
+  mergeGathered,
+  readWarm,
+  Warm,
+  WarmContext,
+  type WarmRead,
+} from "./contributors.js";
 export {
   DEFAULT_PAUSE_MS,
   Expression,
@@ -134,7 +142,7 @@ export {
 } from "./handle.js";
 export { awaitBackfill, backfillLimit, replyParents, startBackfill } from "./history.js";
 export { AgentIntents } from "./intents.js";
-export { isSelfTalk, ReplyScreen } from "./leak.js";
+export { isSelfTalk, looksLikeReasoning, ReplyScreen } from "./leak.js";
 export {
   CEILINGS,
   type Ceiling,

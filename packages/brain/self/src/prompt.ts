@@ -9,7 +9,8 @@
 //                     reasoning (`toMessages`)
 //     [user]       6  what was retrieved, her inbox, as data; the      every run
 //                     files and images of the lines that woke her
-//     [system]     7  <now>, <style_note> and what woke her            every run
+//     [system]     7  <now>, <style_note>, the profile's note when it   every run
+//                     opens like another (voice), what woke her
 //     ...             what the run itself adds: her steps, their results
 //
 // Everything that changes from run to run comes after the transcript, so the request of the next
@@ -27,8 +28,8 @@ import type { ToolEntry } from "@miyoria/llm/tools";
 import { type TranscriptTail, toMessages } from "@miyoria/memory/transcript";
 import { dataBlock, isJsonObject } from "@miyoria/types";
 import { FOR_ARG, FOR_PROPERTY, slimTool } from "../../agent/src/index.js";
-import type { ProfileName } from "./profiles.js";
-import { RESULT_TITLE, rulesFor, WAKE_LINES } from "./rules.js";
+import { PREFIX_PROFILE, type ProfileName } from "./profiles.js";
+import { PROFILE_NOTES, RESULT_TITLE, rulesFor, WAKE_LINES } from "./rules.js";
 import type { PromptInput, PromptSource, Wake } from "./types.js";
 
 /** The text of each block around the transcript; `null`: the block is left out. */
@@ -131,7 +132,11 @@ export function runMessages(
   wake: Wake,
   profile: ProfileName,
 ): RunMessages {
-  const rules = rulesFor(profile);
+  // A profile that opens like another (voice like text) keeps that one's block 1; its own note
+  // is read in block 7, after everything the cache holds.
+  const opens = PREFIX_PROFILE[profile];
+  const rules = rulesFor(opens);
+  const note = opens === profile ? null : PROFILE_NOTES[profile];
   const head: ChatMessage[] = [
     systemMessage(blocks.fixed === null ? rules : `${blocks.fixed}\n\n${rules}`),
   ];
@@ -150,7 +155,8 @@ export function runMessages(
   }
   const now = blocks.now === null ? "" : `<now>\n${blocks.now}\n</now>\n`;
   const style = blocks.style ? `<style_note>\n${blocks.style}\n</style_note>\n` : "";
-  tail.push(systemMessage(`${now}${style}<turn>${wakeLine(wake)}</turn>`));
+  const own = note === null ? "" : `${note}\n`;
+  tail.push(systemMessage(`${now}${style}${own}<turn>${wakeLine(wake)}</turn>`));
 
   return { head, history: toMessages(transcript), tail };
 }

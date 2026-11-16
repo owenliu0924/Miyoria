@@ -5,11 +5,13 @@
 export { composeGuards, permissiveGuard } from "./guard.js";
 export {
   type LimitName,
+  PREFIX_PROFILE,
   PROFILE_NAMES,
   PROFILES,
   type ProfileName,
   type RunLimits,
   type RunProfile,
+  SILENT_WAIT_MS,
   VOICE_TOOLS,
   withLimits,
 } from "./profiles.js";
@@ -26,7 +28,7 @@ export {
 export * as rules from "./rules.js";
 export { DEFAULT_COMPACTION, type RunnerOptions, SelfRunner, STATE_VERSION } from "./run.js";
 export { SAY, type SayDeps, type Spoken, sayTool } from "./say.js";
-export { type ScreenedLine, StepText } from "./screens.js";
+export { asideLine, type ScreenedLine, StepText, type TextUnit } from "./screens.js";
 export { floorKind, type ServiceGuardOptions, serviceGuard } from "./service-guard.js";
 export { type HourSpend, SpendLedger, stepCost } from "./spend.js";
 export { modelSummarise, summaryText } from "./summarise.js";

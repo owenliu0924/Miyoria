@@ -4,6 +4,7 @@
 
 import type { ToolEntry } from "@miyoria/llm/tools";
 import type { ReasoningLevel } from "@miyoria/types";
+import type { TextUnit } from "./screens.js";
 
 export type ProfileName = "text" | "voice" | "subagent" | "reflect";
 
@@ -47,23 +48,67 @@ export interface RunProfile {
   maxStepTokens: number | null;
   /** Whether this profile offers `tool` at all. */
   offers(tool: ToolEntry): boolean;
+  /** What one line of her text is: a message, or a sentence said as soon as it is written. */
+  unit: TextUnit;
+  /**
+   * Count the rounds whose tools ran this long while nothing of hers had gone out in the run
+   * (`silent_waits` of the run's `finished`); `null`: not counted.
+   */
+  silentWaitMs: number | null;
 }
 
 const everything = (): boolean => true;
 /** Not a tool that puts her words in front of people. */
 const quiet = (tool: ToolEntry): boolean => tool.effect !== "say";
 
-/** What a voice turn may reach for: it answers within a breath. */
+/**
+ * The profile whose block 1 and tool list a profile's requests open with. Voice opens like text,
+ * so the provider's prefix cache holds across both; its own note goes to block 7 instead.
+ */
+export const PREFIX_PROFILE: Readonly<Record<ProfileName, ProfileName>> = {
+  text: "text",
+  voice: "text",
+  subagent: "subagent",
+  reflect: "reflect",
+};
+
+/**
+ * What a voice run may call, by name, of the tools it is offered (the text profile's, so the
+ * prefix holds): it answers within a breath. A call of anything else is refused at call time and
+ * she reads why (the host's guard). Long actions (voice, songs, games, party games, going live)
+ * only start something and come back with a receipt, as in text.
+ */
 export const VOICE_TOOLS: ReadonlySet<string> = new Set([
   "find_tools",
   "recall",
   "remember",
   "web_search",
   "check_coins",
-  "voice_status",
+  "set_call_name",
   "remind_me",
   "say",
+  "voice_status",
+  "voice_join",
+  "voice_leave",
+  "sing_request",
+  "sing_start",
+  "sing_stop",
+  "game_start",
+  "game_goal",
+  "game_stop",
+  "party_start",
+  "party_host",
+  "party_play",
+  "party_ask",
+  "stream_start",
+  "stream_stop",
 ]);
+
+/**
+ * A voice run's tools ran this long with nothing of hers said yet: the stretch the old turn filled
+ * with a fixed wait line (「我查一下。」, owner decision Q8 #12, not kept) is counted instead.
+ */
+export const SILENT_WAIT_MS = 1_000;
 
 const HOUR_USD = 1;
 /** About what 1 USD buys of a flash model's cached input; only used when no price is known. */
@@ -87,6 +132,8 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
     },
     maxStepTokens: null,
     offers: everything,
+    unit: "line",
+    silentWaitMs: null,
   },
   voice: {
     name: "voice",
@@ -104,7 +151,9 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
       sessionTokensPerHour: HOUR_TOKENS,
     },
     maxStepTokens: 600,
-    offers: (tool) => VOICE_TOOLS.has(tool.name),
+    offers: everything,
+    unit: "sentence",
+    silentWaitMs: SILENT_WAIT_MS,
   },
   subagent: {
     name: "subagent",
@@ -123,6 +172,8 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
     },
     maxStepTokens: null,
     offers: quiet,
+    unit: "line",
+    silentWaitMs: null,
   },
   reflect: {
     name: "reflect",
@@ -141,6 +192,8 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
     },
     maxStepTokens: null,
     offers: quiet,
+    unit: "line",
+    silentWaitMs: null,
   },
 };
 

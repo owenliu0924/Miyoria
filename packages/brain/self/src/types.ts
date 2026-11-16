@@ -224,7 +224,16 @@ export interface OutgoingLine {
 }
 
 export type Delivery =
-  | { status: "delivered"; message_id: string | null }
+  | {
+      status: "delivered";
+      message_id: string | null;
+      /**
+       * The outlet puts the line in the transcript itself, once it is heard (a spoken line: when
+       * it starts playing, and only the part heard when she is cut off). The run's own next steps
+       * still read it. Unset: the runner writes it when the step ends.
+       */
+      later?: boolean;
+    }
   | { status: "blocked"; reason: string };
 
 /** Puts one line of hers in a place. The focus place gets them one by one as she writes. */
@@ -329,6 +338,12 @@ export type RunEvent =
       limits: LimitName[];
       ms: number;
       compacted: boolean;
+      /**
+       * Rounds whose tools ran at least the profile's `silentWaitMs` while nothing of hers had gone
+       * out in the run: where the old turn said a fixed wait line (owner decision Q8, #12, not kept).
+       * Only for a profile that sets `silentWaitMs`.
+       */
+      silent_waits?: number;
     };
 
 // ---- a run -------------------------------------------------------------------------------------

@@ -157,6 +157,8 @@ interface Step {
   lines: string[];
   /** The platform id of each of `lines` (a speaking profile), `null` when the outlet gave none. */
   ids: (string | null)[];
+  /** Each of `lines` the outlet writes into the transcript itself (`Delivery.later`). */
+  later: boolean[];
   /** Reasons of the lines the guard or the outlet did not let out. */
   blocked: string[];
   reasoning: string;
@@ -242,6 +244,8 @@ class Run {
   #rounds = 0;
   /** A tool of effect `say` reached someone (a `say`, a reaction). */
   #spokeViaTool = false;
+  /** Rounds of tools that ran `silentWaitMs` or longer with nothing of hers out yet. */
+  #silentWaits = 0;
   /** The last step's text of a profile that does not speak. */
   #text = "";
   /** Call ids of the transcript's tail and of this run. */
@@ -343,6 +347,7 @@ class Run {
       limits: [...this.#hit],
       ms: Math.max(0, this.#now() - this.#startedAt),
       compacted,
+      ...(this.#profile.silentWaitMs !== null && { silent_waits: this.#silentWaits }),
     });
     return result;
   }
@@ -428,12 +433,16 @@ class Run {
         ...(step.reasoning !== "" && { reasoning: step.reasoning }),
       };
       if (step.calls.length > 0) {
+        const quiet = this.#lines.length === 0 && !this.#spokeViaTool;
+        const callsAt = this.#now();
         const records =
           limit !== null
             ? step.calls.map((call) =>
                 this.#refused(call, "refused", "no_more_calls", NO_MORE_CALLS),
               )
             : await this.#runCalls(step.calls, offered);
+        const wait = this.#profile.silentWaitMs;
+        if (wait !== null && quiet && this.#now() - callsAt >= wait) this.#silentWaits += 1;
         this.#record(assistant, records, step.blocked, step);
         if (this.#signal.aborted) throw new Cancelled();
         if (limit !== null) break;
@@ -501,31 +510,37 @@ class Run {
    * With `sent` (a speaking profile's lines that went out, and their platform ids), each line is
    * an entry of its own with its id, and her calls and reasoning follow in an entry without text;
    * with no calls, the reasoning is on the first line. Her lines in a row without reasoning read
-   * as one message again (`toMessages`).
+   * as one message again (`toMessages`). A line the outlet writes itself (`Delivery.later`) is
+   * read by the run's next steps only.
    */
   #record(
     assistant: ChatMessage,
     records: readonly CallRecord[],
     blocked: readonly string[],
-    sent: Pick<Step, "lines" | "ids"> | null = null,
+    sent: Pick<Step, "lines" | "ids" | "later"> | null = null,
   ): void {
     const spoken = this.#profile.name === "voice";
     const results = records.map((r) => toolResultMessage(r.id, r.text));
     let entries: EntryInput[];
+    const outlets = new Set<EntryInput>();
     if (sent === null || !this.#profile.speaks || sent.lines.length === 0) {
       entries = entriesOfMessages([assistant, ...results], { turn: this.turn, spoken });
     } else {
       const reasoning =
         assistant.reasoning == null || assistant.reasoning === "" ? null : assistant.reasoning;
       const calls = assistant.tool_calls.length > 0;
-      entries = sent.lines.map((content, i) => ({
-        kind: "self" as const,
-        content,
-        reasoning: !calls && i === 0 ? reasoning : null,
-        turn: this.turn,
-        message_id: sent.ids[i] ?? null,
-        spoken,
-      }));
+      entries = sent.lines.map((content, i) => {
+        const entry: EntryInput = {
+          kind: "self" as const,
+          content,
+          reasoning: !calls && i === 0 ? reasoning : null,
+          turn: this.turn,
+          message_id: sent.ids[i] ?? null,
+          spoken,
+        };
+        if (sent.later[i] === true) outlets.add(entry);
+        return entry;
+      });
       if (calls) {
         entries.push(
           ...entriesOfMessages([{ ...assistant, content: "" }, ...results], {
@@ -543,22 +558,27 @@ class Run {
         turn: this.turn,
       });
     }
-    this.#append(entries);
+    this.#append(entries, outlets);
   }
 
-  #append(entries: EntryInput[]): void {
+  /** Appends `entries` to the transcript, but those the outlet writes itself, and to the run's own. */
+  #append(entries: EntryInput[], outlets: ReadonlySet<EntryInput> = new Set()): void {
     if (entries.length === 0) return;
-    this.#p.transcript.append(this.#session.id, entries, { context: this.#session.context });
+    const kept = entries.filter((e) => !outlets.has(e));
+    if (kept.length > 0) {
+      this.#p.transcript.append(this.#session.id, kept, { context: this.#session.context });
+    }
     this.#entries.push(...entries);
   }
 
   // ---- one step ---------------------------------------------------------------------------
 
   async #step(request: ChatRequest, final: boolean): Promise<Step> {
-    const screen = new StepText();
+    const screen = new StepText(this.#profile.unit);
     const step: Step = {
       lines: [],
       ids: [],
+      later: [],
       blocked: [],
       reasoning: "",
       calls: [],
@@ -575,6 +595,7 @@ class Run {
         if (out.ok) {
           step.lines.push(line.text);
           step.ids.push(out.message_id);
+          step.later.push(out.later);
         } else {
           step.blocked.push(out.reason);
         }
@@ -596,6 +617,8 @@ class Run {
             step.reasoning += ev.text;
             break;
           case "tool_call_delta": {
+            // What she wrote before her calls is said before their arguments stream in.
+            if (calls.length === 0) await take(screen.settle());
             while (calls.length <= ev.index) calls.push({ id: "", name: "", arguments: "" });
             const call = calls[ev.index] as ToolCall;
             if (ev.id !== null) call.id = ev.id;
@@ -707,7 +730,8 @@ class Run {
     emotion: string | null,
     via: "text" | "say" | "fixed",
   ): Promise<
-    { ok: true; message_id: string | null } | { ok: false; code: string; reason: string }
+    | { ok: true; message_id: string | null; later: boolean }
+    | { ok: false; code: string; reason: string }
   > {
     const blocked = (code: string, reason: string) => {
       this.#emit({ type: "refusal", turn: this.turn, what: "line", name: null, code });
@@ -742,7 +766,7 @@ class Run {
       via,
       message_id: delivery.message_id,
     });
-    return { ok: true, message_id: delivery.message_id };
+    return { ok: true, message_id: delivery.message_id, later: delivery.later === true };
   }
 
   /** A `say` of this run: her words for another place, screened like her written lines. */
@@ -775,7 +799,14 @@ class Run {
     try {
       const out = await this.#deliver(this.#session.context, line, null, "fixed");
       if (!out.ok) return false;
-      this.#append([{ kind: "self", content: line, turn: this.turn, message_id: out.message_id }]);
+      const entry: EntryInput = {
+        kind: "self",
+        content: line,
+        turn: this.turn,
+        message_id: out.message_id,
+        spoken: this.#profile.name === "voice",
+      };
+      this.#append([entry], new Set(out.later ? [entry] : []));
       this.#emit({ type: "screened", turn: this.turn, kind: "fallback_line", count: 1 });
       return true;
     } catch (error) {
