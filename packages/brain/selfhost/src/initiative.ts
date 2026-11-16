@@ -149,6 +149,8 @@ interface State {
   gates: GateSnapshot | null;
   woken: string[];
   morning: number | null;
+  /** The day her morning was last recorded as having no place to wake her in. */
+  morningNoPlace?: number | null;
   /** The entry of her last start at each place, while it waits for an answer. */
   waiting: Record<string, LedgerEntry>;
 }
@@ -164,6 +166,7 @@ export class Initiative {
   readonly #stops = new Map<string, GateName>();
   #waiting: Record<string, LedgerEntry> = {};
   #morning: number | null = null;
+  #morningNoPlace: number | null = null;
   #ticking: Promise<void> | null = null;
   #loaded: Promise<void> = Promise.resolve();
   #dirty = false;
@@ -669,6 +672,13 @@ export class Initiative {
 
   #stopped(o: Opportunity, gate: GateName, detail: string, retryAt: number | null): void {
     if (this.#stops.get(o.id) === gate) return;
+    if (o.kind === "morning" && gate === "no_place") {
+      // Without a home place this is so every day: said once a day, restarts included.
+      const day = this.#day(this.#now);
+      if (this.#morningNoPlace === day) return;
+      this.#morningNoPlace = day;
+      this.#dirty = true;
+    }
     this.#stops.set(o.id, gate);
     while (this.#stops.size > MAX_STOPS) {
       const oldest = this.#stops.keys().next().value;
@@ -743,6 +753,7 @@ export class Initiative {
       }
       this.#woken.push(...(Array.isArray(state.woken) ? state.woken.slice(-MAX_WOKEN) : []));
       this.#morning = typeof state.morning === "number" ? state.morning : null;
+      this.#morningNoPlace = typeof state.morningNoPlace === "number" ? state.morningNoPlace : null;
       this.#waiting = isJsonObject(state.waiting as unknown as JsonValue) ? state.waiting : {};
     } catch (error) {
       this.#h.agent.log.warn({ err: errorMessage(error) }, "cannot load her initiative state");
@@ -763,6 +774,7 @@ export class Initiative {
       gates: this.gates.snapshot(),
       woken: [...this.#woken],
       morning: this.#morning,
+      morningNoPlace: this.#morningNoPlace,
       waiting: this.#waiting,
     };
     const value = JSON.parse(JSON.stringify(state)) as JsonValue;

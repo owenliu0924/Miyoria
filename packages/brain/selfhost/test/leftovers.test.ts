@@ -1,7 +1,9 @@
 // Small closes of her initiative on the new runner: the count she reads in block 7, the morning's
 // stop record.
 
-import { sleep } from "@miyoria/runtime/kernel";
+import { transcriptTables } from "@miyoria/memory/transcript";
+import { type Supervisor, sleep } from "@miyoria/runtime/kernel";
+import { SettingsStoreKey, SqliteStore } from "@miyoria/store";
 import {
   type Arbiter,
   type ArbiterDecision,
@@ -11,7 +13,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import type { SelfHost } from "../src/index.js";
+import { initiativeTables, type SelfHost } from "../src/index.js";
 import { channel, mention, Rig, says, stopRigs, textOf, until } from "./harness.js";
 
 afterEach(async () => {
@@ -92,5 +94,33 @@ describe("the morning without a home place", () => {
       await sleep(20);
     }
     expect(decisions().map((d) => d.reason)).toEqual(["nobody"]);
+  });
+
+  it("is not said again after a restart the same day, but is the next day", async () => {
+    const db = await SqliteStore.open(":memory:", {
+      plugins: [transcriptTables, initiativeTables],
+    });
+    const provide = (sup: Supervisor) => sup.services.provide("app", SettingsStoreKey, db.settings);
+    const morning = (rig: Rig) =>
+      rig
+        .of<ArbiterDecision>(Events.ArbiterDecided.type)
+        .filter((d) => d.impulse.startsWith("morning:"));
+    const first = await Rig.create({ store: db, provide });
+    first.shift = 3 * 60 * MIN;
+    await host(first).initiative.tick();
+    await sleep(20);
+    expect(morning(first)).toHaveLength(1);
+    await first.stop();
+
+    const again = await Rig.create({ store: db, provide });
+    again.shift = 3 * 60 * MIN;
+    await host(again).initiative.tick();
+    await sleep(20);
+    expect(morning(again)).toHaveLength(0);
+    again.shift += 24 * 60 * MIN;
+    await host(again).initiative.tick();
+    await sleep(20);
+    expect(morning(again)).toHaveLength(1);
+    await db.close();
   });
 });
