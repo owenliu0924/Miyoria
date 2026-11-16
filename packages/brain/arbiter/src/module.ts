@@ -89,7 +89,16 @@ const StateSchema = z.object({
 export interface ArbiterModuleOptions {
   /** Replaces the time source (default: the module context's clock). */
   clock?: Clock;
+  /**
+   * `false` with `[modules.agent] runner = "self"`: her own starts are the new runner's. No
+   * greetings, no followups, no claim of a greeting or an overdue promise, and the impulses of
+   * her own sources are refused. Default `true`.
+   */
+  selfStarts?: boolean;
 }
+
+/** Observations that are her own starts: the new runner's when it has them. */
+const OWN_START = /^(?:world\.greeting|mainline\.commitment)$/;
 
 /**
  * Module `arbiter`: the one gate for everything that wants her to speak or act without being
@@ -111,11 +120,13 @@ export class ArbiterModule implements Module {
   });
   readonly #profile: ProfileId;
   readonly #clock: Clock | undefined;
+  readonly #selfStarts: boolean;
   #stopFollowing: (() => void)[] = [];
 
   constructor(profile: ProfileId, options: ArbiterModuleOptions = {}) {
     this.#profile = profile;
     this.#clock = options.clock;
+    this.#selfStarts = options.selfStarts ?? true;
   }
 
   async start(ctx: ModuleContext): Promise<void> {
@@ -138,6 +149,7 @@ export class ArbiterModule implements Module {
       blocked: (account) => services.get(SocialSignalsKey)?.attitude(account)?.blocked ?? false,
       host: () => services.get(ImpulseHostKey) ?? null,
       floor,
+      selfStarts: this.#selfStarts,
     });
     const producers = new Producers(config);
     const store = services.get(SettingsStoreKey);
@@ -148,6 +160,7 @@ export class ArbiterModule implements Module {
     await this.#followWishes(ctx, config, clock, wishes);
 
     const runner = new Runner(ctx, core, producers, this.#profile, clock, store, floor);
+    runner.selfStarts = this.#selfStarts;
     await this.#follow(ctx, config, clock, floor, runner);
     const events = ctx.subscribe([
       Events.PlatformReady.type,
@@ -280,6 +293,8 @@ class Runner {
   readonly #failedMarks = new Set<string>();
   /** V3: the claims behind observations written here, by event id. */
   readonly #observed = new Map<string, Impulse>();
+  /** `false`: her own starts are the new runner's (`ArbiterModuleOptions.selfStarts`). */
+  selfStarts = true;
 
   constructor(
     private readonly ctx: ModuleContext,
@@ -328,6 +343,7 @@ class Runner {
     if (event.kind !== "observation" || !isJsonObject(event.body)) return;
     const { observation: o } = event.body as unknown as ObservationBody;
     if (o === undefined || o.silent || o.addressed_to_her || !CLAIMING.test(o.source)) return;
+    if (!this.selfStarts && OWN_START.test(o.source)) return;
     // Tasks of a game are the hands' business: what they say comes back as results.
     if (o.attention_key.startsWith("task:")) return;
     const ledger = this.ctx.services.get(DeliveryLedgerKey);
@@ -370,8 +386,10 @@ class Runner {
   onEvent(env: Envelope): void {
     const now = this.clock.now();
     const social = this.ctx.services.get(SocialSignalsKey) ?? null;
-    for (const impulse of this.producers.observe(now, env, social)) {
-      this.#observe(impulse);
+    if (this.selfStarts) {
+      for (const impulse of this.producers.observe(now, env, social)) {
+        this.#observe(impulse);
+      }
     }
     const response = humanResponse(env, (account) => this.producers.isSelf(account));
     if (response) this.core.heard(response.context, response.account);
@@ -411,7 +429,8 @@ class Runner {
       const now = this.clock.now();
       this.producers.prune(now);
       await this.core.tick();
-      await this.#followups(now);
+      // Due followups are the new runner's inbox when it has her own starts.
+      if (this.selfStarts) await this.#followups(now);
       await this.#persist();
     });
   }

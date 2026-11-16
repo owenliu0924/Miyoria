@@ -54,7 +54,7 @@ import { vi } from "vitest";
 import { z } from "zod";
 import { SelfModule } from "../../self/src/index.js";
 import { type Social, SocialKey } from "../../social/src/index.js";
-import { MindModule } from "../src/index.js";
+import { MindModule, type MindModuleOptions } from "../src/index.js";
 import type { FakeArbiter } from "./fakes.js";
 
 export const GUILD = "g1";
@@ -289,6 +289,8 @@ export interface RigOptions {
   extra?: (sup: Supervisor) => void;
   /** An Arbiter to provide (none: `arbiter` is not running). */
   arbiter?: FakeArbiter;
+  /** More options of the mind module. */
+  module?: Partial<MindModuleOptions>;
 }
 
 const running: Supervisor[] = [];
@@ -355,7 +357,11 @@ export async function rig(provider: TestProvider, options: RigOptions = {}): Pro
   await sup.register(new SelfModule("p"), null, true);
   const events = sup.bus.subscribe("mind.*");
   await sup.register(
-    new MindModule("p", { name: "DeepSeek-chan", persona: () => "你是住在深海的鯨魚娘。" }),
+    new MindModule("p", {
+      name: "DeepSeek-chan",
+      persona: () => "你是住在深海的鯨魚娘。",
+      ...options.module,
+    }),
     // Her day plan is past by default (20:00 local in most tests): tests ask for it.
     { daily_hour: 23, ...((options.config as object | null) ?? {}) } as JsonValue,
     true,

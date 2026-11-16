@@ -494,8 +494,23 @@ function line(r: Reminder, offsetMinutes: number): string {
   return `${r.key} ${when}${r.daily ? "(每天)" : ""}:${r.what}`;
 }
 
+/**
+ * What `remind_me` reads and writes: this module's `ReminderBook`, or, with `[modules.agent]
+ * runner = "self"`, the new runner's schedules. `set` throws a `ReminderError` or a
+ * `CapabilityError` in her words.
+ */
+export interface ReminderBackend {
+  readonly offsetMinutes: number;
+  now(): number;
+  list(): Reminder[];
+  of(account: AccountRef): Reminder[];
+  get(idOrKey: string): Reminder | null;
+  cancel(idOrKey: string): boolean;
+  set(input: ReminderInput): Reminder;
+}
+
 /** `self.remind`, tool `remind_me`. */
-export function remindCapability(book: ReminderBook): Capability {
+export function remindCapability(book: ReminderBackend): Capability {
   return defineCapability<RemindArgs>({
     name: REMIND_CAPABILITY,
     summary: "設提醒",

@@ -99,6 +99,7 @@ export {
   REMIND_NODE,
   REMINDER_PREFIX,
   RETRY_MS,
+  type ReminderBackend,
   ReminderBook,
   type ReminderBookOptions,
   ReminderError,

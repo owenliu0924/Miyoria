@@ -85,6 +85,11 @@ export interface ArbiterEnv {
   floor?: FloorCore;
   /** What she wants to ask whom, and whether it was asked or answered (`wishes.ts`). */
   wishes?: Wishes;
+  /**
+   * `false` with `[modules.agent] runner = "self"`: what she starts herself (`plan`, `agenda`,
+   * `world`, `followup`) is the new runner's initiative, and nothing of it is opened here.
+   */
+  selfStarts?: boolean;
 }
 
 /** A capability she may not use on her own until `until` (epoch ms). */
@@ -597,6 +602,9 @@ export class ArbiterCore implements Arbiter {
       retryAt,
       defer: false,
     });
+    if (this.#env.selfStarts === false && OPT_OUT.has(source)) {
+      return no("denied", "她自己起頭的事由新的回合跑者決定");
+    }
     if (this.#env.paused?.()) return no("paused", "主人暫停了你的自主行動");
     if (impulse.kind === "act" && impulse.capability !== null && isSelfInitiated(impulse.source)) {
       const hold = this.held(impulse.capability);

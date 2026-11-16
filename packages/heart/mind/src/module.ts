@@ -1,4 +1,4 @@
-import { actuatorsFor } from "@miyoria/gate/actions";
+import { actuatorsFor, CapabilityError } from "@miyoria/gate/actions";
 import {
   completeJson,
   LlmRouterKey,
@@ -45,6 +45,7 @@ import { LifeBook } from "./life/log.js";
 import { DailyPostDesk } from "./life/posts.js";
 import {
   deliverer,
+  type ReminderBackend,
   ReminderBook,
   type ReminderLimits,
   remindCapability,
@@ -63,6 +64,11 @@ export interface MindModuleOptions {
   persona?: (services: ServiceLookup) => string;
   /** Replaces the time source (default: the module context's clock). */
   clock?: Clock;
+  /**
+   * With `[modules.agent] runner = "self"`: her impulses start nothing, and `remind_me` keeps its
+   * timers in the new runner's schedules (`reminders`, looked up per call; `null`: not running).
+   */
+  selfRunner?: { reminders: (services: ServiceLookup) => ReminderBackend | null };
 }
 
 /** Bus topics the mind follows. */
@@ -190,6 +196,7 @@ export class MindModule implements Module {
       goals,
       store,
       life,
+      proposes: this.#options.selfRunner === undefined,
     });
     ctx.provide(MindKey, loop);
     const sub = ctx.subscribe(MIND_TOPICS);
@@ -241,13 +248,19 @@ export class MindModule implements Module {
       maxDays: config.reminder_max_days,
       holdMins: config.reminder_hold_mins,
     };
+    const selfRunner = this.#options.selfRunner;
     const reminders = new ReminderBook({
       store,
       profile: this.#profile,
       clock,
       limits,
       offsetMinutes: offset,
-      deliver: deliverer(ctx.services, clock, limits, offset),
+      // On the new runner a timer kept here from before only fires: its `mind.reminder` is her
+      // inbox there, and her initiative decides whether it wakes her.
+      deliver:
+        selfRunner === undefined
+          ? deliverer(ctx.services, clock, limits, offset)
+          : async () => ({ status: "delivered", detail: "the new runner's inbox" }),
       publish: (reminder, state) =>
         ctx.publish(Events.MindReminder, {
           state,
@@ -288,10 +301,14 @@ export class MindModule implements Module {
     posts = desk;
     this.#life = life;
     this.#reminders = reminders;
+    const served =
+      selfRunner === undefined
+        ? reminders
+        : bothBooks(() => selfRunner.reminders(ctx.services), reminders);
     ctx.provide(LifeLogKey, life);
-    ctx.provide(ReminderDeskKey, reminders);
+    ctx.provide(ReminderDeskKey, served);
     ctx.provide(DailyPostsKey, desk);
-    this.#unregister = actuatorsFor(ctx).register(remindCapability(reminders));
+    this.#unregister = actuatorsFor(ctx).register(remindCapability(served));
     ctx.spawn("reminders", (signal) => reminders.run(signal));
     return life;
   }
@@ -384,5 +401,31 @@ function condenser(ctx: ModuleContext, config: MindConfig, name: string): Conden
       intents: intentCounts(thoughts),
       by: "summarizer",
     };
+  };
+}
+
+/**
+ * `remind_me` on the new runner: new timers go to its schedules (`served`, looked up per call);
+ * those kept here from before stay listed and cancellable until they end.
+ */
+function bothBooks(served: () => ReminderBackend | null, kept: ReminderBook): ReminderBackend {
+  const book = (): ReminderBackend => {
+    const b = served();
+    if (b === null) throw new CapabilityError("提醒現在不能用");
+    return b;
+  };
+  return {
+    get offsetMinutes() {
+      return kept.offsetMinutes;
+    },
+    now: () => kept.now(),
+    list: () =>
+      [...(served()?.list() ?? []), ...kept.list()].sort(
+        (a, b) => Date.parse(a.due) - Date.parse(b.due),
+      ),
+    of: (account) => [...(served()?.of(account) ?? []), ...kept.of(account)],
+    get: (idOrKey) => served()?.get(idOrKey) ?? kept.get(idOrKey),
+    cancel: (idOrKey) => (served()?.cancel(idOrKey) ?? false) || kept.cancel(idOrKey),
+    set: (input) => book().set(input),
   };
 }

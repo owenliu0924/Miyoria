@@ -186,6 +186,11 @@ export interface MindDeps {
   store?: SettingsStore | null;
   /** What she did today (v4 §8.2: variety, and wants that lead to her own activities). */
   life?: LifeBook | null;
+  /**
+   * `false` with `[modules.agent] runner = "self"`: her impulses start nothing (the new runner's
+   * initiative wakes her); Plan still keeps her goals and her day plan. Default `true`.
+   */
+  proposes?: boolean;
 }
 
 /** A turn she started herself: what it was about, and whom (for a DM). */
@@ -1860,7 +1865,9 @@ export class MindLoop implements Mind {
       const arbiter = this.#d.services.get(ArbiterKey);
       const board = this.#d.services.get(ProposalBoardKey);
       let outcome: IntentOutcome;
-      if (board) {
+      if (this.#d.proposes === false) {
+        outcome = { status: "dropped", detail: "the new runner decides on its own", turn: null };
+      } else if (board) {
         outcome = await this.#propose(board, p, signal);
       } else {
         // Without the agent module there is nobody to take a proposal: she does not act alone.
