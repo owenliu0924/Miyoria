@@ -633,7 +633,7 @@ Apps:`core`、`cli`、`hostd`(新)、`voice-node`、`stage`(搬出 Core)、`admi
 - 「玩」的大部分已決定,剩下的(水族箱、交易所的幾個細節):[v5-play.md](v5-play.md) §8。
 - Minecraft 原設計的三個決定(志向清單和權重、誰算主人、AltoClef),階段 7 之前。
 - 套件盤點的結論在 [v5-packages.md](v5-packages.md),「一般資料表全面用 Drizzle」和「路由層用 oRPC」已決定,擴充協定照建議維持手寫並已做完(K5);還剩一件:階段 3 要不要換成 AI SDK 的 provider(換之前先對 OpenCode 實測)。
-- 線上 `miyoria.toml` 的三處修改(拿掉剩下的設定相容層要先改),以及 `/api/facts/context`、`/api/facts/retryable` 兩條路由有沒有人手動在用。
+- 線上 `miyoria.toml` 的三處修改(拿掉剩下的設定相容層要先改)。`/api/facts/context`、`/api/facts/retryable` 兩條路由擁有者確認沒人在用,已經刪掉。
 
 ## 17. 風險和不做的事
 

@@ -1725,20 +1725,6 @@
           }
         }
       },
-      "context": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/facts/context"
-          }
-        }
-      },
       "deliveries": {
         "~orpc": {
           "errorMap": {},
@@ -1750,20 +1736,6 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/facts/deliveries"
-          }
-        }
-      },
-      "retryable": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/facts/retryable"
           }
         }
       }

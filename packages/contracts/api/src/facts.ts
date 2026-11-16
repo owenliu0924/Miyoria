@@ -1,5 +1,4 @@
-// The fact layer, read-only: lines of the EventLog, what she knows right now and what really
-// reached someone.
+// The fact layer, read-only: lines of the EventLog and what really reached someone.
 
 import { z } from "zod";
 import { ContextKeySchema, JsonValueSchema, TimestampSchema } from "../../wire/src/index.js";
@@ -51,41 +50,6 @@ export const CauseChainSchema = z
   .meta({ id: "ApiCauseChain" });
 export type CauseChain = z.output<typeof CauseChainSchema>;
 
-export const BucketModeSchema = z
-  .enum(["replace-self", "append-self"])
-  .meta({ id: "ApiBucketMode" });
-
-/** One entry of a bucket of what she knows right now. */
-export const ContextEntrySchema = z
-  .object({
-    /** The observation it came from. */
-    event: z.string(),
-    at: TimestampSchema,
-    text: z.string(),
-    attention_key: z.string(),
-    revision: z.number(),
-    context: ContextKeySchema.nullable(),
-    from: z.string().nullable(),
-    /** Comes from people or the outside: goes into a prompt as data, never as instructions. */
-    untrusted: z.boolean(),
-    /** Written before the last start: the writer has not confirmed it since. */
-    restored: z.boolean(),
-  })
-  .meta({ id: "ApiContextEntry" });
-export type ContextEntry = z.output<typeof ContextEntrySchema>;
-
-export const ContextBucketSchema = z
-  .object({
-    writer: z.string(),
-    mode: BucketModeSchema,
-    /** The module that writes it; it is removed when that module leaves. */
-    owner: z.string().nullable(),
-    entries: z.array(ContextEntrySchema),
-    updated_at: TimestampSchema,
-  })
-  .meta({ id: "ApiContextBucket" });
-export type ContextBucket = z.output<typeof ContextBucketSchema>;
-
 export const DeliveryChannelSchema = z.enum(["voice", "text"]).meta({ id: "ApiDeliveryChannel" });
 
 /** One line that really reached someone (it exists only once it was acked). */
@@ -106,32 +70,6 @@ export const DeliverySchema = z
   })
   .meta({ id: "ApiDelivery" });
 export type Delivery = z.output<typeof DeliverySchema>;
-
-export const LineStateSchema = z
-  .enum(["pending", "delivered", "interrupted", "failed", "cancelled", "blocked"])
-  .meta({ id: "ApiLineState" });
-
-/** One attempt to say something that did not arrive (and was not delivered by a later attempt). */
-export const SpokenLineSchema = z
-  .object({
-    /** Its `utterance` event. */
-    line: z.string(),
-    attention_key: z.string(),
-    revision: z.number(),
-    channel: DeliveryChannelSchema,
-    context: ContextKeySchema,
-    said: z.string(),
-    audience: z.array(z.string()),
-    turn: z.string().nullable(),
-    state: LineStateSchema,
-    at: TimestampSchema,
-    /** When it reached a final state. */
-    settled_at: TimestampSchema.nullable(),
-    /** Why it did not arrive. */
-    reason: z.string().nullable(),
-  })
-  .meta({ id: "ApiSpokenLine" });
-export type SpokenLine = z.output<typeof SpokenLineSchema>;
 
 /**
  * `limit`: how many lines at most; the server floors it and clamps it to 1..500 (default 100).
@@ -196,26 +134,10 @@ export const facts = {
     .route({ method: "GET", path: "/api/facts/events/{id}/effects" })
     .input(z.object({ params: z.object({ id: z.string() }), query: LimitQuery }))
     .output(z.array(LogEventSchema)),
-  /** What she knows right now, by writer (`context`: only the entries of that place, or of none). */
-  context: route
-    .meta({ audience: "admin", permission: null })
-    .route({ method: "GET", path: "/api/facts/context" })
-    .input(
-      z.object({
-        query: z.object({ context: z.string().optional(), context_kind: z.string().optional() }),
-      }),
-    )
-    .output(z.array(ContextBucketSchema)),
   /** What really reached someone, newest first. */
   deliveries: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/facts/deliveries" })
     .input(z.object({ query: DeliveriesQuery }))
     .output(z.array(DeliverySchema)),
-  /** Lines that did not arrive and were not said again, newest first. */
-  retryable: route
-    .meta({ audience: "admin", permission: null })
-    .route({ method: "GET", path: "/api/facts/retryable" })
-    .input(z.object({ query: DeliveriesQuery }))
-    .output(z.array(SpokenLineSchema)),
 };

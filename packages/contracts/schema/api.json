@@ -1042,13 +1042,6 @@
         "expires_at"
       ]
     },
-    "ApiBucketMode": {
-      "type": "string",
-      "enum": [
-        "replace-self",
-        "append-self"
-      ]
-    },
     "ApiBudgetState": {
       "type": "string",
       "enum": [
@@ -1812,92 +1805,6 @@
         "chars_out",
         "budget_chars",
         "fate"
-      ]
-    },
-    "ApiContextBucket": {
-      "type": "object",
-      "properties": {
-        "writer": {
-          "type": "string"
-        },
-        "mode": {
-          "$ref": "#/$defs/ApiBucketMode"
-        },
-        "owner": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "entries": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiContextEntry"
-          }
-        },
-        "updated_at": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "writer",
-        "mode",
-        "owner",
-        "entries",
-        "updated_at"
-      ]
-    },
-    "ApiContextEntry": {
-      "type": "object",
-      "properties": {
-        "event": {
-          "type": "string"
-        },
-        "at": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "attention_key": {
-          "type": "string"
-        },
-        "revision": {
-          "type": "number"
-        },
-        "context": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WireContextKey"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "from": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "untrusted": {
-          "type": "boolean"
-        },
-        "restored": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "event",
-        "at",
-        "text",
-        "attention_key",
-        "revision",
-        "context",
-        "from",
-        "untrusted",
-        "restored"
       ]
     },
     "ApiContextKeyIn": {
@@ -5224,17 +5131,6 @@
         "at",
         "minutes",
         "capability"
-      ]
-    },
-    "ApiLineState": {
-      "type": "string",
-      "enum": [
-        "pending",
-        "delivered",
-        "interrupted",
-        "failed",
-        "cancelled",
-        "blocked"
       ]
     },
     "ApiLlmCallDetail": {
@@ -10378,73 +10274,6 @@
         "charged",
         "balance",
         "message"
-      ]
-    },
-    "ApiSpokenLine": {
-      "type": "object",
-      "properties": {
-        "line": {
-          "type": "string"
-        },
-        "attention_key": {
-          "type": "string"
-        },
-        "revision": {
-          "type": "number"
-        },
-        "channel": {
-          "$ref": "#/$defs/ApiDeliveryChannel"
-        },
-        "context": {
-          "$ref": "#/$defs/WireContextKey"
-        },
-        "said": {
-          "type": "string"
-        },
-        "audience": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "turn": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "state": {
-          "$ref": "#/$defs/ApiLineState"
-        },
-        "at": {
-          "type": "string"
-        },
-        "settled_at": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "reason": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "line",
-        "attention_key",
-        "revision",
-        "channel",
-        "context",
-        "said",
-        "audience",
-        "turn",
-        "state",
-        "at",
-        "settled_at",
-        "reason"
       ]
     },
     "ApiStageExpressionRequest": {

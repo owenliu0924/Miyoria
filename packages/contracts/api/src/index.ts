@@ -316,18 +316,12 @@ export {
 export {
   type CauseChain,
   CauseChainSchema,
-  type ContextBucket,
-  ContextBucketSchema,
-  type ContextEntry,
-  ContextEntrySchema,
   type Delivery,
   DeliverySchema,
   type LogEvent,
   type LogEventKind,
   LogEventKindSchema,
   LogEventSchema,
-  type SpokenLine,
-  SpokenLineSchema,
 } from "./facts.js";
 export {
   type FortuneDraw,
