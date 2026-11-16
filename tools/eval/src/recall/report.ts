@@ -27,6 +27,14 @@ export function formatRecallReport(result: RecallResult): string {
     `nothing to recall: returned nothing ${num(result.nothing_returned_rate)}, ` +
       `mean returned ${num(result.nothing_mean_returned)}  (${result.nothing} queries)`,
   );
+  const block = result.block;
+  if (block !== undefined) {
+    lines.push(
+      `prompt block: recall@5 ${num(block.recall_at?.["5"] ?? null)}  MRR ${num(block.mrr)}  ` +
+        `nothing to recall: returned nothing ${num(block.nothing_returned_rate)}, ` +
+        `mean returned ${num(block.nothing_mean_returned)}`,
+    );
+  }
   lines.push(`scope leaks: ${result.leaks}${result.leaks === 0 ? "" : "  (must be 0)"}`);
   if (result.embedding_failures > 0) {
     lines.push(`embedding failures: ${result.embedding_failures}`);
@@ -100,6 +108,17 @@ export async function memorySuite(
   if (result.mrr !== null) headline.mrr = result.mrr;
   if (result.nothing_returned_rate !== null) {
     headline.nothing_returned_rate = result.nothing_returned_rate;
+  }
+  if (result.nothing_mean_returned !== null) {
+    headline.nothing_mean_returned = result.nothing_mean_returned;
+  }
+  const block = result.block;
+  if (block !== undefined) {
+    const blockRecall5 = block.recall_at?.["5"];
+    if (blockRecall5 !== undefined) headline["block_recall@5"] = blockRecall5;
+    if (block.nothing_mean_returned !== null) {
+      headline.block_nothing_mean_returned = block.nothing_mean_returned;
+    }
   }
   headline.leaks = result.leaks;
   return { headline, detail: result };

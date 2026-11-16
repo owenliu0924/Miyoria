@@ -9,8 +9,12 @@
 //   the same person. A superseded memory is added and then marked outdated.
 // - The query is the line answered alone (`text`), as the knowledge section searches; the lines
 //   before it are not used.
-// - The ranking is the notes' (`rank.ts`) with the run's `[modules.memory]` overrides, and
-//   `min_score` cuts as it does for the records.
+// - The ranking is the notes' (`rank.ts`) with the run's `[modules.memory]` overrides; what comes
+//   back is cut by the precision rules of `[modules.memory.notes_recall]` (`precision.ts`): the
+//   floor and the stricter bar for meaning alone give what `recall` returns (the top-level
+//   numbers), and the separation check too gives what the prompt's memory block shows (`block`).
+// - The documents of the people present are not searched first, as `recall` does (`NotesRecall`):
+//   every query searches every document the place may see.
 //
 // Not covered: a DM place with several accounts is read as the DM of the first one.
 
@@ -22,6 +26,7 @@ import {
   type NotesViewer,
   notesTables,
   personSubject,
+  precise,
   type QueryVector,
   rankingOf,
 } from "@miyoria/memory/notes";
@@ -156,8 +161,10 @@ export async function runNotesRecall(
       }
     }
 
-    const ranking = rankingOf(config, config.min_score);
+    // No cut in the search itself: the notes' own precision rules decide what comes back.
+    const ranking = rankingOf(config);
     const returned = new Map<string, Returned[]>();
+    const shown = new Map<string, Returned[]>();
     for (const query of set.queries) {
       let vector: QueryVector | null = null;
       if (embedder !== null) {
@@ -174,14 +181,15 @@ export async function runNotesRecall(
         now: toTimestamp(Date.parse(query.at)),
         ...(vector === null ? {} : { vector }),
       });
-      returned.set(
-        query.id,
-        hits.flatMap((h) => {
-          const id = memoryOf.get(h.line.id);
-          return id === undefined ? [] : [{ id, score: h.score }];
-        }),
-      );
+      const kept = precise(hits, config.notes_recall, config.min_vector);
+      const found = kept.hits.flatMap((h) => {
+        const id = memoryOf.get(h.line.id);
+        return id === undefined ? [] : [{ id, score: h.score }];
+      });
+      returned.set(query.id, found);
+      shown.set(query.id, kept.weak ? [] : found);
     }
+    const block = scoreRecall(set, shown, ks);
 
     return {
       set: set.name,
@@ -191,12 +199,18 @@ export async function runNotesRecall(
       embedding_failures: embedder === null ? 0 : embedder.failures - failuresBefore,
       limit,
       config: {
-        min_score: config.min_score,
+        min_score: config.notes_recall.min_score,
         min_vector: config.min_vector,
         recall_limit: config.recall_limit,
         weights: { ...config.weights },
       },
       ...scoreRecall(set, returned, ks),
+      block: {
+        recall_at: block.recall_at,
+        mrr: block.mrr,
+        nothing_returned_rate: block.nothing_returned_rate,
+        nothing_mean_returned: block.nothing_mean_returned,
+      },
     };
   } finally {
     await store.close();

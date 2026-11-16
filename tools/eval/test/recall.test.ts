@@ -438,6 +438,7 @@ describe("recall harness on the example set", () => {
     expect(Object.keys(headline).sort()).toEqual([
       "leaks",
       "mrr",
+      "nothing_mean_returned",
       "nothing_returned_rate",
       "recall@5",
     ]);
@@ -490,5 +491,32 @@ describe("recall harness on her notes", () => {
     expect(headline.leaks).toBe(0);
     expect(headline["recall@5"]).toBeGreaterThan(0);
     expect((detail as RecallResult).target).toBe("notes");
+    // How many lines the "nothing to recall" questions get, from `recall` and in the prompt.
+    expect(headline.nothing_mean_returned).toBeGreaterThanOrEqual(0);
+    expect(headline.block_nothing_mean_returned).toBeLessThanOrEqual(
+      headline.nothing_mean_returned ?? 0,
+    );
+    expect(headline["block_recall@5"]).toBeLessThanOrEqual(headline["recall@5"] ?? 0);
+  });
+
+  it("cuts by the precision rules: the floor, and the block's separation check", async () => {
+    const open = await runRecall(set, {
+      target: "notes",
+      config: { notes_recall: { min_score: 0, min_gap: 0 } },
+    });
+    const floor = await runRecall(set, {
+      target: "notes",
+      config: { notes_recall: { min_score: 2 } },
+    });
+    expect(floor.per_query.every((q) => q.returned.length === 0)).toBe(true);
+    expect(open.block?.nothing_mean_returned).toBe(open.nothing_mean_returned);
+    const strict = await runRecall(set, {
+      target: "notes",
+      config: { notes_recall: { min_score: 0, min_gap: 5 } },
+    });
+    expect(strict.block?.nothing_mean_returned).toBe(0);
+    expect(strict.block?.recall_at?.["5"]).toBe(0);
+    expect(strict.recall_at).toEqual(open.recall_at);
+    expect(formatRecallReport(strict)).toContain("prompt block:");
   });
 });

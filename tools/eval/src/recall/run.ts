@@ -68,6 +68,14 @@ export interface RecallResult extends RecallMetrics {
     recall_limit: number;
     weights: Record<string, number>;
   };
+  /**
+   * The notes only: what the prompt's memory block would show (`[modules.memory.notes_recall]`
+   * rule 3 too: weak hits are none), scored the same way. The top-level numbers are `recall`'s.
+   */
+  block?: Pick<
+    RecallMetrics,
+    "recall_at" | "mrr" | "nothing_returned_rate" | "nothing_mean_returned"
+  >;
 }
 
 const iso = (at: string): string => new Date(at).toISOString();
@@ -246,6 +254,8 @@ export interface SweepRow {
   nothing_returned_rate: number | null;
   nothing_mean_returned: number | null;
   leaks: number;
+  /** The notes: lines the prompt's block would show for the "nothing to recall" queries. */
+  block_nothing_mean_returned?: number | null;
 }
 
 /**
@@ -278,6 +288,7 @@ export async function sweepRecall(
       nothing_returned_rate: result.nothing_returned_rate,
       nothing_mean_returned: result.nothing_mean_returned,
       leaks: result.leaks,
+      ...(result.block ? { block_nothing_mean_returned: result.block.nothing_mean_returned } : {}),
     });
   }
   return rows;
