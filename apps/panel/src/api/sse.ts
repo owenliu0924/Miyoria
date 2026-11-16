@@ -33,12 +33,17 @@ export interface StreamOptions {
 
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => {
+    const done = () => {
       clearTimeout(t);
+      signal.removeEventListener("abort", done);
       resolve();
-    }, { once: true });
+    };
+    const t = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
   });
+
+/** A stream that stayed open this long counts as working: the next reconnect starts over. */
+const STABLE_MS = 10_000;
 
 /** Exponential backoff with jitter: 1 s, 2 s, 4 s … capped. */
 export function backoff(attempt: number, maxMs = 30_000): number {
@@ -62,13 +67,14 @@ export async function streamEvents(rpc: ApiRpc, opts: StreamOptions): Promise<vo
     onStatus?.({ state: "connecting", attempt });
     let retry: number | undefined;
     let error: string;
+    let openedAt: number | null = null;
     try {
       const stream = await rpc.events(
         { query: topics ? { topics } : {} },
         { signal, ...(lastId ? { lastEventId: lastId } : {}) },
       );
       onStatus?.({ state: "open" });
-      attempt = 0;
+      openedAt = Date.now();
       const stop = () => void stream.return().catch(() => undefined);
       signal.addEventListener("abort", stop, { once: true });
       try {
@@ -91,6 +97,8 @@ export async function streamEvents(rpc: ApiRpc, opts: StreamOptions): Promise<vo
       error = describeError(e);
     }
     if (signal.aborted) break;
+    // A stream that is closed as soon as it opens backs off like one that never opens.
+    if (openedAt !== null && Date.now() - openedAt >= STABLE_MS) attempt = 0;
     const inMs = retry ?? backoff(Math.max(1, attempt), opts.maxDelayMs);
     onStatus?.({ state: "retrying", attempt, inMs, error });
     await sleep(inMs, signal);
