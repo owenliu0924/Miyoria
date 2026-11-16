@@ -279,7 +279,22 @@ B7 原本該包含、但漏掉的一塊:筆記(L3)只用關鍵字找。現在和
 - **怎麼找**:和 `score.ts` 同一套:候選是有共同字的行加上 cosine 最近的 `candidate_limit` 行;cosine 攤開在候選之間(從 `min_vector` 起算);分數是 `weights` 加權的字、意思、新近度、這行的信心、是不是在場的人的文件。沒有共同字的行 cosine 要到 `min_vector` 才算。開了之後:卡裡意思接近的行排前面;意思接近的主題文件(最多兩份)就算名字沒被講到也會進「你整理的資料」;段落整理的相關文件也用意思找。
 - **退回**:查詢那一句的向量只等 `notes_vector_wait_ms`(500 ms),語音回合等 `notes_vector_voice_wait_ms`(150 ms,在 `live_context_ms` 400 ms 之內);等不到就只用字,晚到的向量留給下一次同一句。`provider = "none"` 或本機模型載不起來時,什麼都不排、不等,每個搜尋都和原本一模一樣。
 - **評測**:`pnpm eval --live --config <miyoria.toml> --suite memory --memory-set <題組> --memory-target notes` 把同一組題目問筆記(紀錄成 `memory-notes`,不和記憶紀錄的趨勢混在一起)。
-- **沒做的**:`recall` 工具和第 6 區的記憶還是只讀 `memory_records`(要不要讓它們也讀筆記是另外的決定,見 backlog);即時的段落整理還沒接上(只有 rebuild 會跑),所以它的「相關文件」現在只在 rebuild 用到。沒有用真的模型跑過。
+- **沒做的**(當時):`recall` 和第 6 區只讀 `memory_records`,即時的段落整理沒接上。這兩件在下一節做了。沒有用真的模型跑過。
+
+## 段落整理上線(2026-11-16)
+
+「記憶收成兩個寫入點」原本只做了一半:`runSegmentPass` 只有 rebuild 在跑,線上的記憶還是 fold 加 consolidation 寫進 `memory_records`,`recall` 和第 6 區也只讀那裡。現在:
+
+- **什麼時候換**:看 rebuild 有沒有在這台跑完(設定 `notes:rebuild`,`notes/src/switch.ts`)。`miyoria memory rebuild --apply` 第一次開始時記下開始時間,某一次把整份計畫做完時記下完成時間和讀到的最後一句的時間。完成之後(Core 每 30 秒重讀一次)筆記是記憶的來源;之前一切照舊,她不會醒來沒有記憶。不從表裡有沒有東西去猜。
+- **誰寫、什麼時候**(`notes/src/live.ts`,memory 模組的背景工作 `segment`):每 `tick_secs`(30 秒)看每個有地點的逐字稿 session,`nextSegment` 切出已經結束的段落(停頓 `idle_secs` 300 秒、或 `max_lines` 40 句、或整個 session 安靜了 300 秒),一段跑一次 `runSegmentPass`。位置是 `event_cursors` 的 `notes.segment`(key 是 session),和文件同一個交易移動,所以重啟不重做也不漏;一個 session 第一次被讀時從 rebuild 讀到的最後一句之後開始。沒有地點的 session(子代理的)不讀;私訊裡認不出對方的段落略過。
+- **壓縮前**:跑者壓縮逐字稿時,選好切點後先經 `SegmentFlushKey`(`@miyoria/types`)請段落整理把切點以前的段落整理完,最多等 `compaction_wait_ms`(20 秒);等不到、失敗、或這個 session 還在重試的冷卻裡,就先壓縮,記一筆 log 和次數(`LiveSegments.stats.missed`)。不會漏:被摘要的行在 `sweep` 前還在磁碟上,背景之後照樣整理。
+- **失敗**:模型出錯的段落等 `retry_secs`(60 秒)再試,每失敗一次加倍,最多 `retry_max_secs`(1 小時);回覆連續 `abandon_limit`(3)次不能用就跳過那一段。用的模型用途是 `[modules.memory] purpose`(預設 `summarizer`,線上設定的 `[llm.reasoning] summarizer = "medium"` 跟著走),花費經 router 算在每日預算裡。
+- **舊的寫入**:換過之後 consolidation 不再整理任何對話(fold 叫它也不整理),`memory_records` 只剩「活的」寫入:段落整理的情節和追問(經 `memoryEpisodeSink`)、`remember`、`PersonNoteWriter`。consolidation 的程式留著,因為換之前還要用;換完穩定後可以刪。fold 本身(`conversation` 模組的前情提要)沒動,它不寫 `memory_records`。
+- **追問和承諾**:段落整理的回覆本來就有 `followups`,寫成 `memory_records` 的 `followup`,所以她主動的 `followup` 機會(`FollowupSourceKey.due`)和提示詞裡釘選層的「還沒兌現的事」(`openCommitments`)照樣有來源。主動的 `commitment` 機會讀的是 `CommitmentBook`,不是記憶,和這一步無關。少掉的:舊的整理會在對話回答了追問時關掉它、同一件事不重寫,段落整理沒有(見 backlog)。
+- **`recall` 和第 6 區讀什麼**(`memory/src/notes-recall.ts`,`MemoryRetrievalKey` 和 `recall` 工具都是它):換之前讀 `memory_records`,和以前一樣。換之後:筆記的行(`NotesSearch`,開了 embedding 是字加意思,沒開只用字;語音回合只等 150 ms 的向量),先找在場的人、跟她說話的人、名字被講到的人和這個地方的文件(最多 `scoped_limit` 6 行),再找這裡看得到的其他文件,範圍內的行排在前面;加上 `memory_records` 裡 rebuild 開始之後寫的紀錄(紀錄 id 是 ULID,開頭就是寫入時間)和比 rebuild 起點(2026-11-15)更早的情節。rebuild 起點之後、舊的整理寫的紀錄不讀,因為 rebuild 已經把同一段時間重寫成行和情節。
+- **沒答案的問題**(`notes/src/precision.ts`,`[modules.memory.notes_recall]`):(1) 分數低於 `min_score`(0.3)的行不回;(2) 和這句沒有共同字、只靠意思像的行,cosine 要到 `min_vector` 加 `vector_alone_margin`(0.5 + 0.1),有共同字的不用;(3) 第一名沒有比第 `gap_rank`(5)名(不到 5 行就和 0.3 比)高出 `min_gap`(0.05),就算沒有特別相關的:第 6 區一行都不放,`recall` 照樣回,最後加一句「不一定有關」。
+- **評測**:`--memory-target notes` 照這三條切,headline 多了沒答案的題平均拿到幾行(`nothing_mean_returned`,`recall` 的)和第 6 區會放幾行(`block_nothing_mean_returned`),以及第 6 區的 `block_recall@5`。
+- **沒驗證的**:沒有接真的模型跑過段落整理;三條規則的數字沒有用真的題組調過;切換沒有在線上的資料庫上跑過。
 
 ## 風險
 

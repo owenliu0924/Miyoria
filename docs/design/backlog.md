@@ -149,8 +149,16 @@
 
 - **第 14 步留下的**(2026-11-16):舊的 store 介面大多還在(呼叫的地方多,跟著各套件重寫再換);五個已經沒人呼叫的方法還掛在介面上(`MessageLog.purge`、`IdentityStore.setPersonName`、`DecisionLog.appendOutcome`、`MemberCardStore.countSince`、`SettingsStore.deletePrefix`);人物卡不再於啟動時替羈絆超過 25 的人種依附(原本是 V4 搬移程式順便做的),階段 4 決定依附從哪來。詳見 [v5-data.md](v5-data.md)。
 - **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。筆記本的行用同一組門檻和權重,沒有另外調過;`--memory-target notes` 可以拿同一組題目量筆記。語音回合等查詢向量的 150 ms(`notes_vector_voice_wait_ms`)是估的:背景補向量和查詢共用同一個 worker,一批 8 行還沒算完時查詢會排在後面,實際會不會常常等不到要上線後看 log。
-- **`recall` 和第 6 區的記憶不讀筆記本**:兩者都只找 `memory_records`;筆記本只經「你整理的資料」(卡片、意思接近的主題)進提示詞。要不要讓 `recall` 也找筆記本的行(`NotesSearch.lines` 已經有,評測用的就是它)要 owner 決定:會改變關掉 embedding 時 `recall` 回傳的內容。
-- **即時的段落整理沒接上**:`runSegmentPass` 只有 `miyoria memory rebuild` 在跑,所以它用意思找相關文件也只在 rebuild 時有用。
+- **段落整理上線後留下的**(2026-11-16,見 [v5-brain.md](v5-brain.md)「段落整理上線」):
+  - 切換要 `miyoria memory rebuild --apply` 整個跑完一次;新裝的機器沒有舊記憶也一樣要跑一次(沒有事件時很快、不花錢),不然一直停在舊的整理。
+  - 追問(followup)由段落整理寫進 `memory_records`,但舊的整理會在對話回答了追問時把它關掉、同一個人同一件事不重寫(`followups.ts` 的 `sameMatter`),段落整理都沒有:只靠 `followup_max_age_hours` 過期,和寫入時字面相似的合併。她可能追問已經回答過的事。
+  - 她自己的承諾、經歷(舊的 `self_note`)不再從對話寫;她自己的文件只由每晚的反思改寫。
+  - 舊的 prompt contributor `memory`(`MemoryContributor`,第 6 區之前的寫法)還是只讀 `memory_records`;新的跑者讀的是 `MemoryRetrievalKey`,不經過它。
+  - 段落整理沒有自己的花費上限:用 `[modules.memory] purpose`(預設 `summarizer`)經 router,算在 router 的每日預算裡;用了多少只在 log 和 `LiveSegments.stats`,沒有進面板。
+  - 一段落後太久(壓縮後的行在 `sweep` 前,預設 30 天)沒整理到,就整理不到了。
+  - 評測(`--memory-target notes`)每題都搜所有文件,沒有照 `recall` 先找在場的人和這個地方;題組的記憶也不是段落整理寫的。
+  - 精準度的三個數字(`[modules.memory.notes_recall]`)是預設值,沒有用真實的題組調過。
+  - 切換後讀哪些舊紀錄是看紀錄 id(ULID)裡的時間和 rebuild 開始的時間;rebuild 要在寫那些紀錄的機器上跑,兩台時鐘差很多會讀錯。
 - **只在機器很忙時失敗的測試**:`apps/voice-node` 的 `link.test.ts`(「sends hello… answers ping」)在同時跑很多東西時失敗過一次,單獨跑會過。再出現就改成等條件成立。
 - **範例擴充的端對端測試在 CI 被跳過**:它要先 build 才會跑,CI 是先測試;本機的整體檢查會跑。要不要讓 CI 也跑,等決定。
 
