@@ -1131,6 +1131,73 @@
         "text"
       ]
     },
+    "EventsArtifactShared": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mime": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/EventsArtifactSource"
+        },
+        "requested_by": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "message_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata_stripped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "sha256",
+        "size",
+        "mime",
+        "filename",
+        "source",
+        "requested_by",
+        "person_id",
+        "turn",
+        "context",
+        "message_id",
+        "metadata_stripped"
+      ]
+    },
     "EventsArtifactSource": {
       "type": "string",
       "enum": [
@@ -2435,6 +2502,142 @@
         "tier",
         "redacted_at",
         "data"
+      ]
+    },
+    "EventsEvalLiveRun": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "number",
+          "const": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subject": {
+          "type": "string"
+        },
+        "repeat": {
+          "type": "number"
+        },
+        "suites": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/EventsEvalLiveSuite"
+          }
+        },
+        "tokens": {
+          "$ref": "#/$defs/EventsEvalLiveTokens"
+        },
+        "usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "type": "number"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stopped": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "budget"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "v",
+        "at",
+        "commit",
+        "subject",
+        "repeat",
+        "suites",
+        "tokens",
+        "usd",
+        "duration_ms",
+        "models",
+        "stopped"
+      ]
+    },
+    "EventsEvalLiveSuite": {
+      "type": "object",
+      "properties": {
+        "headline": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "items": {
+          "type": "number"
+        },
+        "unsupported": {
+          "type": "number"
+        },
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "headline",
+        "items",
+        "unsupported",
+        "stopped"
+      ]
+    },
+    "EventsEvalLiveTokens": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        },
+        "reasoning_tokens": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_prompt_tokens",
+        "reasoning_tokens"
       ]
     },
     "EventsFeedbackSignal": {

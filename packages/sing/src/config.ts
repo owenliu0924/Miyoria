@@ -80,6 +80,12 @@ export const SingConfigSchema = z.object({
    */
   announce_max_secs: z.number().nonnegative().default(20),
   quiet_ms: z.number().int().nonnegative().default(700),
+  /**
+   * A song that starts on its own waits this long for the Arbiter's word on her opening line (the
+   * turn that says it, which it then waits for, or a refusal); past it the line is expired, the
+   * song starts and nothing is said late.
+   */
+  opening_window_ms: z.number().int().positive().default(6000),
   /** How far ahead of real time the song is streamed to the voice node (it buffers a minute). */
   lead_ms: z.number().int().positive().default(2000),
   /**

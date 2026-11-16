@@ -75,8 +75,6 @@ export const CoreSectionSchema = z.object({
   profiles_dir: z.string().optional(),
   /** `info`, or a filter list like `info,miyoria=debug`. */
   log: z.string().optional(),
-  /** No longer read: the main line always runs (a warning at start says so). */
-  pipeline: z.unknown().optional(),
 });
 
 function sectionSchema(section: ConfigSection): z.ZodType {

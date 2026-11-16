@@ -50,6 +50,7 @@ describe("the table", () => {
       "core:3:chat",
       "core:4:turns_audit",
       "core:5:llm_calls",
+      "core:6:event_cursors",
     ]);
     const strict = db.all("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'event%'");
     expect(strict).toEqual(

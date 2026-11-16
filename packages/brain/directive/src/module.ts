@@ -74,8 +74,6 @@ export class DirectiveModule implements Module {
         },
       });
     }
-    // What survived a restart on the board meets the rules of today.
-    service.sweep();
     ctx.spawn("refresh", async () => {
       while (!ctx.signal.aborted) {
         await sleep(config.refresh_secs * 1000, ctx.signal);

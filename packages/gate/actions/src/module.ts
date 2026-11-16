@@ -10,7 +10,7 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
-import { Events, is, PresencePrivacyKey } from "@miyoria/types";
+import { PresencePrivacyKey } from "@miyoria/types";
 import { testHigh } from "./builtin.js";
 import { registerCommands, unregisterCommands } from "./commands.js";
 import { ActionsConfigSchema } from "./config.js";
@@ -86,13 +86,6 @@ export class ActionsModule implements Module {
     );
     commands.attach(ctx);
     this.#commands = commands;
-    // Skipped follow-ups (a turn in flight, her cooldown) are tried again.
-    const decisions = ctx.subscribe([Events.AgentDecision.type]);
-    ctx.spawn("followups", async () => {
-      for await (const env of decisions) {
-        if (is(Events.AgentDecision, env)) registry.followups.onDecision(env.data);
-      }
-    });
   }
 
   async stop(): Promise<void> {

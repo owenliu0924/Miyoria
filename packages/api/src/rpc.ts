@@ -60,6 +60,7 @@ import { dataRpc } from "./data.js";
 import { directivesRpc } from "./directives.js";
 import { economyRpc, personQuestsRpc } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
+import { evalRpc } from "./eval/route.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
@@ -74,6 +75,7 @@ import { memoryRpc } from "./memory.js";
 import { turnMetricsRpc } from "./metrics-turns.js";
 import { mindRpc } from "./mind.js";
 import { notebookRpc, recentRpc } from "./notebook.js";
+import { notesRpc } from "./notes.js";
 import { authRpc } from "./oauth.js";
 import { opsRpc } from "./ops.js";
 import { partyRpc } from "./party.js";
@@ -111,6 +113,7 @@ export const router = os.router({
   reflection: reflectionRpc,
   life: lifeRpc,
   sandbox: sandboxRpc,
+  eval: evalRpc,
   workspace: workspaceRpc,
   skills: skillsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },
@@ -135,6 +138,7 @@ export const router = os.router({
   directives: directivesRpc,
   memory: memoryRpc,
   notebook: notebookRpc,
+  notes: notesRpc,
   recent: recentRpc,
 });
 

@@ -7,7 +7,7 @@
 //   by cheap code), an activity ending, a cared-about person coming online, her mood dropping,
 //   salient changes and suggestions, and by an adaptive heartbeat. Sees the world, her affect,
 //   her goals, the ledger with its limits and the ranked desire list; changes her goals and
-//   produces 0–2 impulses for the Arbiter (or, until it runs, intents for the agent).
+//   writes her day plan. It starts nothing: her own starts are the new runner's.
 // * Reflect lives with her lessons in `@miyoria/memory/learning` (the `reflect` module).
 //
 // Plan never writes emotions; nothing here writes drives or talkativeness any more. Everything
@@ -53,10 +53,6 @@ import {
   type Handle,
   HandleDirectoryKey,
   holdsBack,
-  type Impulse,
-  type Intent,
-  type IntentOutcome,
-  IntentSinkKey,
   incomingText,
   inspectInput,
   is,
@@ -71,8 +67,6 @@ import {
   type PersonId,
   type PlanWake,
   type ProfileId,
-  type ProposalBoard,
-  ProposalBoardKey,
   type Publish,
   type RaisedTopic,
   ReflectionKey,
@@ -105,12 +99,7 @@ import { rankDesires, type Whereabouts } from "./desire.js";
 import { describeTrigger, type GoalBook, GoalError, goalKey, TriggerWatch } from "./goals.js";
 import type { Journal } from "./journal.js";
 import { fromLedger, type PlanLimits } from "./ledger.js";
-import {
-  activityOfCapability,
-  type LifeSituation,
-  NO_TALLY,
-  overShare,
-} from "./life/activities.js";
+import type { LifeSituation } from "./life/activities.js";
 import type { LifeBook } from "./life/log.js";
 import { type BudgetState, CallLog, heartbeatMs, localDay, urgeOf } from "./pace.js";
 import { PresenceStats, renderHabit } from "./presence.js";
@@ -118,7 +107,6 @@ import { type PersonRef, type PlanInput, planMessages, type WakeReason } from ".
 import { clipReasoning, noEffects, thoughtInput } from "./record.js";
 import {
   type GoalDraft,
-  type ImpulseDraft,
   isEmptyPlan,
   MindReplyError,
   type PlanReply,
@@ -128,9 +116,7 @@ import {
 import {
   type Block,
   blockLifted,
-  conditionOf,
   kindOf,
-  type PlaceKind,
   placeKey,
   SelfStarts,
   type Situation,
@@ -198,14 +184,6 @@ type TurnEvent =
   | { type: "decision"; decision: ThoughtDecision }
   | { type: "skipped"; why: string }
   | { type: "completed"; text: string };
-
-/** One impulse of a Plan, resolved against the snapshot. */
-interface Planned {
-  impulse: Impulse;
-  /** The same thing as an intent, for the agent while the Arbiter does not run. */
-  intent: Intent;
-  goal: Goal | null;
-}
 
 /** Her day plan as written by her first Plan of a day. */
 interface DayPlan {
@@ -813,22 +791,6 @@ export class MindLoop implements Mind {
     };
   }
 
-  /** Puts `intent`'s capability on hold after it failed. */
-  #block(thoughtId: string, intent: Intent, reason: string): void {
-    const now = this.#now();
-    const cap = intent.capability;
-    const why = [...reason.replace(/\s+/g, " ").trim()].slice(0, 160).join("");
-    this.#blocks.set(cap, {
-      capability: cap,
-      reason: why,
-      at: now,
-      condition: conditionOf(cap, this.#situation()),
-    });
-    this.#d.journal.update(thoughtId, (t) => {
-      t.changes.push(`暫停 ${cap}(${clean(why)})`);
-    });
-  }
-
   /** Lifts holds whose situation changed (or that waited long enough). */
   #liftBlocks(now: number): void {
     const s = this.#situation();
@@ -854,14 +816,6 @@ export class MindLoop implements Mind {
     const at = toTimestamp(this.#now());
     this.#d.journal.updateByTurn(turn, (_t, intent) => applyTurnEvent(intent, e, at));
     return true;
-  }
-
-  #own(turn: TurnId): void {
-    this.#ownTurns.add(turn);
-    if (this.#ownTurns.size > MAX_TURN_EVENTS) {
-      const oldest = this.#ownTurns.values().next().value;
-      if (oldest !== undefined) this.#ownTurns.delete(oldest);
-    }
   }
 
   /**
@@ -1154,16 +1108,6 @@ export class MindLoop implements Mind {
       budgetOk: this.#budget() === "ok",
       doing: this.#doing()?.type ?? null,
     };
-  }
-
-  /** Why her own Plan may not start `capability` now: its row had its share of today. */
-  #variety(capability: string, now: number): string | null {
-    const life = this.#d.life;
-    const activity = activityOfCapability(capability);
-    if (!life || activity === null) return null;
-    const tally = life.tally(now).get(activity.id) ?? NO_TALLY;
-    const over = overShare(activity, tally, life.awakeMinutes(now), this.#d.config.game_share);
-    return over === null ? null : `variety: ${over}`;
   }
 
   #desires(affect: AffectSnapshot | null, goals: Goal[], fired: ReadonlySet<string>): Desire[] {
@@ -1475,7 +1419,6 @@ export class MindLoop implements Mind {
         affect,
         self,
         capabilities: capabilityInfo(d.services.get(ActuatorRegistryKey)),
-        maxImpulses: cfg.max_intents,
         limits,
         now: started,
         utcOffsetMinutes: cfg.utc_offset_minutes,
@@ -1524,7 +1467,7 @@ export class MindLoop implements Mind {
           planMessages(input),
           daily ? "plan_daily" : "plan",
           cfg.max_tokens,
-          (text) => parsePlanReply(text, cfg.max_intents),
+          (text) => parsePlanReply(text),
           signal,
         );
         reply = out.value;
@@ -1551,11 +1494,7 @@ export class MindLoop implements Mind {
       }
       thought.changes = changes.map(clean).filter((c) => c !== "");
       thought.effects = effects;
-      const planned = this.#impulses(reply.impulses, snap, fired, started);
-      thought.intents = planned.map(([, record]) => record);
-      const acted = planned.filter(([p]) => p !== null).length;
-      const empty = thought.changes.length === 0 && acted === 0;
-      if (empty || isEmptyPlan(reply)) {
+      if (thought.changes.length === 0 || isEmptyPlan(reply)) {
         this.#emptyStreak += 1;
         this.#emptyPlans += 1;
       } else {
@@ -1563,10 +1502,6 @@ export class MindLoop implements Mind {
       }
       this.#lastPrint = this.#fingerprint();
       await d.journal.add(thought);
-      // Acting can take a while (the Arbiter, the scheduler's lanes): the loop goes on.
-      void this.#act(thought.id, planned, signal).catch((error: unknown) => {
-        d.log.warn({ err: errorMessage(error) }, "acting on her impulses failed");
-      });
       return thought;
     } finally {
       this.#thinking = false;
@@ -1654,138 +1589,6 @@ export class MindLoop implements Mind {
     return changes;
   }
 
-  /** Her impulses resolved against the snapshot: `[planned, journal record]`. */
-  #impulses(
-    drafts: readonly ImpulseDraft[],
-    snap: Gathered,
-    fired: ReadonlySet<string>,
-    now: number,
-  ): [Planned | null, ThoughtIntent][] {
-    const registry = this.#d.services.get(ActuatorRegistryKey);
-    const arbiter = this.#d.services.get(ArbiterKey);
-    const world = this.#d.services.get(WorldStateKey)?.snapshot() ?? null;
-    return drafts.map((draft) => {
-      const place = draft.place === null ? undefined : placeByRef(snap.places, draft.place);
-      const goal = draft.goal === null ? null : this.#d.goals.byKey(draft.goal);
-      let who = draft.person === null ? undefined : personByRef(snap.people, draft.person);
-      if (!who && draft.person !== null) who = this.#personOutside(draft.person);
-      if (!who && goal?.person)
-        who = personByRef(snap.people, goal.person) ?? this.#personOutside(goal.person);
-      let capability: string;
-      if (draft.kind === "speak") {
-        capability =
-          draft.capability === CHAT_DM || (draft.capability !== CHAT_START && !place && who)
-            ? CHAT_DM
-            : CHAT_START;
-      } else {
-        capability = draft.capability ?? "";
-      }
-      const args = { ...draft.args };
-      let problem: string | null = null;
-      if (draft.kind === "act") {
-        if (capability === "") problem = "no capability";
-        else if (registry?.get(capability) === undefined || NOT_FOR_HER.includes(capability)) {
-          problem = "not something she can do";
-        } else problem = this.#variety(capability, now);
-      }
-      let context: ContextKey | null = place?.context ?? goal?.context ?? snap.focus;
-      if (capability === CHAT_DM) {
-        if (!who) problem ??= "nobody to DM";
-        else args.to = who.account.id;
-      }
-      if (capability === "voice.join") {
-        const spot =
-          place?.context.kind === "voice"
-            ? place.context
-            : who
-              ? (() => {
-                  const v = world?.voice_channels.find((c) =>
-                    c.members.some((m) => m.account.id === who?.account.id),
-                  );
-                  return v
-                    ? ({
-                        platform: v.platform,
-                        scope: v.guild,
-                        channel: v.channel,
-                        kind: "voice",
-                      } as ContextKey)
-                    : null;
-                })()
-              : null;
-        if (spot) {
-          args.channel = spot.channel;
-          if (spot.scope !== null) args.guild = spot.scope;
-          context = spot;
-        }
-        if (args.channel === undefined) problem ??= "no voice channel to join";
-      }
-      if (capability === CHAT_START && context === null) problem ??= "no place to talk";
-      if (context?.kind === "dm") context = null;
-      const why = clean(draft.why);
-      const hint = draft.hint === null ? null : clean(draft.hint) || null;
-      // Without the Arbiter her own floor applies (the backoff, topics nobody picked up, the
-      // channel's level, actions on hold); with it, the Arbiter decides and records why.
-      if (!arbiter && problem === null)
-        problem = this.#floor(capability, context, who, hint, why, now);
-      const expiresAt = toTimestamp(now + draft.expiresInMin * MINUTE_MS);
-      const target = {
-        context,
-        person: who?.ref ?? goal?.person ?? null,
-        account: who?.account ?? null,
-      };
-      const impulse: Impulse = {
-        id: newId(),
-        source: goal !== null && fired.has(goal.id) ? "agenda" : "plan",
-        kind: draft.kind,
-        target,
-        capability,
-        args: JSON.parse(JSON.stringify(args)),
-        priority: "initiative",
-        expires_at: expiresAt,
-        why,
-        hint,
-        about: who ? [who.account] : [],
-        coalesce_key: `${capability}:${context ? contextKeyString(context) : (target.person ?? "")}`,
-        goal: goal?.id ?? null,
-        created_at: toTimestamp(now),
-      };
-      const intent: Intent = {
-        id: impulse.id,
-        capability,
-        args: impulse.args,
-        why,
-        opening: hint,
-        context,
-        about: who?.account ?? null,
-        created_at: impulse.created_at,
-        expires_at: expiresAt,
-      };
-      const record: ThoughtIntent = {
-        id: impulse.id,
-        capability,
-        args: impulse.args,
-        why,
-        opening: hint,
-        context,
-        about: intent.about,
-        expires_at: expiresAt,
-        status: problem === null ? "pending" : "dropped",
-        detail: problem,
-        turn: null,
-        decisions: [],
-        said: null,
-        history: [
-          {
-            at: toTimestamp(now),
-            status: problem === null ? "pending" : "dropped",
-            detail: problem,
-          },
-        ],
-      };
-      return [problem === null ? { impulse, intent, goal } : null, record];
-    });
-  }
-
   /** Someone she named who is not in the snapshot (the handle table or the world knows them). */
   #personOutside(handle: string): PersonRef | undefined {
     const h = handle.trim();
@@ -1807,149 +1610,6 @@ export class MindLoop implements Mind {
       feeling: null,
       doing: null,
     };
-  }
-
-  /** Her own floor while the Arbiter does not run; `null` when nothing stops her. */
-  #floor(
-    capability: string,
-    context: ContextKey | null,
-    who: PersonRef | undefined,
-    hint: string | null,
-    why: string,
-    now: number,
-  ): string | null {
-    if (capability === CHAT_START || capability === CHAT_DM) {
-      const place =
-        capability === CHAT_DM
-          ? who
-            ? `dm:${who.account.platform}:${who.account.id}`
-            : null
-          : context === null
-            ? null
-            : this.#placeOf(context);
-      const kind: PlaceKind = capability === CHAT_DM ? "dm" : kindOf(context);
-      if (place !== null) {
-        const wait = this.#starts.wait(place, kind, now);
-        if (wait.ms > 0) {
-          const mins = Math.max(1, Math.ceil(wait.ms / MINUTE_MS));
-          const ignored = wait.misses > 0 ? `, ${wait.misses} ignored in a row` : "";
-          return `backoff: she started talking there recently${ignored}; next in ${mins} min`;
-        }
-        const again = this.#starts.repeats(place, `${hint ?? ""} ${why}`, now);
-        if (again !== null) {
-          return `already raised there and nobody picked it up: 「${[...again].slice(0, 40).join("")}」`;
-        }
-      }
-      if (capability === CHAT_START && context !== null) {
-        return this.#d.services.get(IntentSinkKey)?.ceiling?.(context)?.blocked ?? null;
-      }
-      return null;
-    }
-    const held = this.#blocks.get(capability);
-    return held ? `on hold until things change: ${held.reason}` : null;
-  }
-
-  /** Submits her impulses one by one (the Arbiter, else the agent) and follows their outcome. */
-  async #act(
-    thoughtId: string,
-    planned: [Planned | null, ThoughtIntent][],
-    signal: AbortSignal | undefined,
-  ): Promise<void> {
-    for (const [p] of planned) {
-      if (p === null || signal?.aborted) continue;
-      const arbiter = this.#d.services.get(ArbiterKey);
-      const board = this.#d.services.get(ProposalBoardKey);
-      let outcome: IntentOutcome;
-      if (board) {
-        outcome = await this.#propose(board, p, signal);
-      } else {
-        // Without the agent module there is nobody to take a proposal: she does not act alone.
-        this.#d.log.debug(
-          { capability: p.intent.capability },
-          "intent dropped: the agent module is not running",
-        );
-        outcome = {
-          status: "dropped",
-          detail: "the agent module is not running",
-          turn: null,
-        };
-      }
-      const intent = p.intent;
-      if (outcome.turn !== null) {
-        this.#own(outcome.turn);
-        this.#intentTurns.set(outcome.turn, {
-          about: `${intent.opening ?? ""} ${intent.why}`.trim(),
-          dm: intent.capability === CHAT_DM ? intent.about : null,
-        });
-        if (this.#intentTurns.size > MAX_TURN_EVENTS) {
-          const oldest = this.#intentTurns.keys().next().value;
-          if (oldest !== undefined) this.#intentTurns.delete(oldest);
-        }
-      }
-      const talkOnly = intent.capability === CHAT_START || intent.capability === CHAT_DM;
-      if (!arbiter && outcome.status === "failed" && !talkOnly) {
-        this.#block(thoughtId, intent, outcome.detail);
-      }
-      // A goal without steps is done once its impulse went through.
-      if (
-        p.goal &&
-        p.goal.steps.length === 0 &&
-        (outcome.status === "started" || outcome.status === "done")
-      ) {
-        if (this.#d.goals.setStatus(p.goal.id, "done", "做了")) {
-          this.#d.journal.update(thoughtId, (t) => {
-            t.changes.push(`完成目標「${p.goal?.what ?? ""}」`);
-          });
-        }
-      }
-      this.#d.journal.update(thoughtId, (t) => {
-        const record = t.intents.find((i) => i.id === intent.id);
-        if (!record) return;
-        record.status = outcome.status;
-        record.detail = outcome.detail;
-        record.turn = outcome.turn;
-        noteStatus(record, toTimestamp(this.#now()));
-        // Events of the turn that arrived before its outcome.
-        for (const e of outcome.turn === null ? [] : (this.#turnEvents.get(outcome.turn) ?? [])) {
-          applyTurnEvent(record, e, toTimestamp(this.#now()));
-        }
-      });
-    }
-  }
-
-  /**
-   * V3 (docs/design/v3-architecture.md §10.5): she still decides what she wants, here. Whether and
-   * how it happens is the main line's: this writes a `Proposal`, and that is all it can do.
-   */
-  async #propose(
-    board: ProposalBoard,
-    planned: Planned,
-    signal: AbortSignal | undefined,
-  ): Promise<IntentOutcome> {
-    const { impulse, intent } = planned;
-    try {
-      const outcome = await board.propose(
-        {
-          id: impulse.id,
-          what: impulse.hint ?? impulse.why,
-          why: impulse.why,
-          capability: intent.capability,
-          args: intent.args,
-          expires: intent.expires_at,
-          source: impulse.source,
-          context: intent.context,
-          about: intent.about,
-          person: impulse.target.person,
-          goal: impulse.goal,
-        },
-        signal,
-      );
-      const status =
-        outcome.state === "taken" ? "started" : outcome.state === "open" ? "pending" : "dropped";
-      return { status, detail: outcome.detail, turn: outcome.turn };
-    } catch (error) {
-      return { status: "failed", detail: errorMessage(error), turn: null };
-    }
   }
 
   // ---- the day plan's material --------------------------------------------------------------

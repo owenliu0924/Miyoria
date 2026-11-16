@@ -24,6 +24,7 @@ import {
   UNMEASURED,
 } from "@/lib/metrics";
 import { readStorage, writeStorage } from "@/lib/storage";
+import { LiveEval } from "./LiveEval";
 import { Participation } from "./Participation";
 
 const HOUR = 3_600_000;
@@ -265,6 +266,7 @@ export function EvalPage() {
         </>
       )}
       <Participation />
+      <LiveEval />
     </Page>
   );
 }

@@ -463,16 +463,16 @@ async function reopened(path: string): Promise<number[]> {
 }
 
 describe("a background proposal", () => {
-  it("that hits a rule is dropped, written back to the log, and leaves the board", async () => {
+  it("that hits a rule is dropped and written back to the log", async () => {
     const w = await world();
     const rule = await ownerRule(w, NO_MINECRAFT);
-    const outcome = await w.board.propose({
+    const first = {
       ...proposal(w, { what: "想玩遊戲", capability: "game.start", args: gameArgs() }),
       id: "p1",
-    });
-    expect(outcome).toMatchObject({ state: "dropped" });
-    expect(outcome.detail).toContain("不要玩 Minecraft");
-    expect(w.board.open()).toEqual([]);
+    };
+    const verdict = w.rules.screen(first as never);
+    expect(verdict).toMatchObject({ outcome: "deny" });
+    expect(verdict.outcome === "allow" ? "" : verdict.reason).toContain("不要玩 Minecraft");
     const sameAgain = { ...proposal(w, { what: "想玩", capability: "game.start" }), id: "p2" };
     expect(w.rules.screen(sameAgain as never)).toMatchObject({
       outcome: "deny",
@@ -484,7 +484,7 @@ describe("a background proposal", () => {
     const results = w.log.recent().filter((e) => e.kind === "result");
     const result = results[0];
     expect(result?.body).toMatchObject({ proposal: "p1", state: "dropped" });
-    // The board has nothing left to settle: one result per proposal.
+    // One result per proposal.
     expect(results.filter((e) => (e.body as { proposal?: string }).proposal === "p1")).toHaveLength(
       1,
     );
@@ -501,19 +501,6 @@ describe("a background proposal", () => {
     expect(ruleLines(w).filter((l) => l.op === "proposal_dropped")).toHaveLength(1);
   });
 
-  it("waiting on the board goes as soon as a rule against it is made", async () => {
-    const w = await world();
-    await w.board.propose({ ...proposal(w, { what: "想去玩 Minecraft" }), id: "talk" });
-    await w.board.propose({
-      ...proposal(w, { what: "想開台", capability: "stream.start" }),
-      id: "s",
-    });
-    await w.board.propose({ ...proposal(w, { what: "想聊音樂" }), id: "other" });
-    await ownerRule(w, NO_MINECRAFT);
-    await ownerRule(w, { text: "不要開台", capability: "stream.*" });
-    expect(w.board.open().map((p) => p.id)).toEqual(["other"]);
-  });
-
   it("that would need the owner's approval is dropped too: the background cannot wait", async () => {
     const w = await world();
     await ownerRule(w, { text: "開台要先問", capability: "stream.start" }, "require_approval");
@@ -525,9 +512,8 @@ describe("a background proposal", () => {
   it("that hits nothing stays", async () => {
     const w = await world();
     await ownerRule(w, NO_MINECRAFT);
-    expect(await w.board.propose({ ...proposal(w, { what: "想聊音樂" }), id: "p1" })).toMatchObject(
-      { state: "open" },
-    );
-    expect(w.board.open()).toHaveLength(1);
+    const p = { ...proposal(w, { what: "想聊音樂" }), id: "p1" };
+    expect(w.rules.screen(p as never)).toMatchObject({ outcome: "allow" });
+    expect(ruleLines(w).some((l) => l.op === "proposal_dropped")).toBe(false);
   });
 });

@@ -5,6 +5,7 @@
 
 import { authTables } from "@miyoria/auth";
 import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
+import { initiativeTables } from "@miyoria/brain/selfhost";
 import { clusterTables } from "@miyoria/cluster";
 import {
   BountyStoreKey,
@@ -19,6 +20,8 @@ import {
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { memoryTables } from "@miyoria/memory/memory";
+import { notesTables } from "@miyoria/memory/notes";
+import { transcriptTables } from "@miyoria/memory/transcript";
 import {
   type Config,
   ConfigError,
@@ -33,6 +36,8 @@ import {
 import type { Profile } from "@miyoria/runtime/profile";
 import { ReplayRecorderModule } from "@miyoria/runtime/replay-log";
 import {
+  ArtifactAttachments,
+  ArtifactStoreKey,
   AuditLogKey,
   AuthStoreKey,
   DecisionLogKey,
@@ -53,6 +58,7 @@ import {
 } from "@miyoria/store";
 import {
   ActuatorExecutorKey,
+  AttachmentSourceKey,
   DirectivesKey,
   Events,
   HandleDirectoryKey,
@@ -87,7 +93,10 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   clusterTables,
   directiveTables,
   economyTables,
+  initiativeTables,
   memoryTables,
+  notesTables,
+  transcriptTables,
 ];
 
 /** What the module factories get. */
@@ -226,10 +235,6 @@ export async function buildCoreWith(
   }
 
   const k = KERNEL_MODULE;
-  // `[core] pipeline` chose between the main line and the V2 paths; only the main line is left.
-  if (config.section("core.pipeline") !== undefined) {
-    log.warn("`core.pipeline` is no longer read: the main line always runs");
-  }
   services.provide(k, PlatformSinksKey, new PlatformSinks());
   services.provide(k, PlatformHistoriesKey, new PlatformHistories());
   services.provide(k, SupervisorKey, supervisor);
@@ -255,6 +260,10 @@ export async function buildCoreWith(
   services.provide(k, IdentityStoreKey, store.identity);
   services.provide(k, AuthStoreKey, store.plugin(authTables).store);
   services.provide(k, AuditLogKey, store.audit);
+  if (store.artifacts) {
+    services.provide(k, ArtifactStoreKey, store.artifacts);
+    services.provide(k, AttachmentSourceKey, new ArtifactAttachments(store.artifacts));
+  }
   services.provide(k, ProfileDataStoreKey, store.profileData);
   // Her stable names for people (`Owen`, `Owen#2`): never per-call codes (`u1`).
   let handles: PersonHandleDirectory | null = null;

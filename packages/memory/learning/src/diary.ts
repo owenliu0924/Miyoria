@@ -187,6 +187,7 @@ export function diaryCapability(
     permission: null,
     tool: {
       name: DIARY_TOOL,
+      meta: { effect: "say", speed: "instant", group: "diary" },
       description:
         "寫一篇日記貼到日記頻道,用你每天回顧時想過的事寫(一次回顧一篇;還沒回顧過的就不能寫)。" +
         "會公開給大家看,私訊裡的事不會寫進去。",

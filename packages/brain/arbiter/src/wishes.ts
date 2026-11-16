@@ -6,8 +6,9 @@
 // "whenever S speaks, ask about X". She had asked by DM at 11:07 and S had answered at 11:22 and
 // 11:33; nothing knew. This book is what knows: it follows the EventLog, so a restart keeps it.
 //
-// * She asked: a line delivered to an audience with the person in it, or a `message_dm` the hands
-//   finished for them, about the same topic; or the main line says a turn raised it.
+// * She asked: a line delivered to an audience with the person in it (a DM she sends, `message_dm`,
+//   goes through the main line with the recipient as its audience), about the same topic; or the
+//   main line says a turn raised it.
 // * They answered: anything the person said after she asked, in any place (what the memory's
 //   `PersonThreads` counts as an answer too). They said "you asked already" or "stop asking":
 //   every wish of theirs closes for good.
@@ -26,8 +27,6 @@ import {
   isJsonObject,
   type JsonValue,
   type LogEvent,
-  type MainActionBody,
-  type MainResultBody,
   newId,
   type ObservationBody,
   type PersonThreads,
@@ -49,10 +48,6 @@ const HOUR_MS = 3_600_000;
 const TOPIC_CHARS = 80;
 /** Wishes remembered at most (the oldest closed ones go first). */
 const MAX_WISHES = 500;
-/** Source of the hands' `action` and `result` events (`@miyoria/brain/agent`'s `HANDS_SOURCE`). */
-const HANDS = "mainline.hands";
-/** Tools that say something to one person. */
-const TALK_TOOLS = new Set(["message_dm", "message.dm"]);
 
 export interface WishConfig {
   /** One follow-up on an unanswered question, no sooner than this after she asked. */
@@ -95,8 +90,6 @@ export class WishBook implements Wishes, Projection {
   readonly #env: WishEnv;
   readonly #wishes = new Map<string, Wish>();
   readonly #holders = new Map<string, string>();
-  /** `message_dm` calls of the hands in flight: call id → who and what. */
-  readonly #dms = new Map<string, { to: string; text: string }>();
   #applying = 0;
 
   constructor(config: WishConfig, env: WishEnv) {
@@ -323,31 +316,6 @@ export class WishBook implements Wishes, Projection {
       case "delivered":
         this.#delivered(event.body as unknown as Delivery, timestampMs(event.at));
         return;
-      case "action": {
-        if (event.source !== HANDS || !isJsonObject(event.body)) return;
-        const body = event.body as unknown as MainActionBody;
-        if (!TALK_TOOLS.has(body.tool) || !isJsonObject(body.args)) return;
-        const { to, text } = body.args;
-        if (typeof to === "string" && typeof text === "string") {
-          this.#dms.set(body.call, { to, text });
-          while (this.#dms.size > 100) {
-            const first = this.#dms.keys().next().value;
-            if (first === undefined) break;
-            this.#dms.delete(first);
-          }
-        }
-        return;
-      }
-      case "result": {
-        if (event.source !== HANDS || !isJsonObject(event.body)) return;
-        const body = event.body as unknown as MainResultBody;
-        const dm = this.#dms.get(body.call);
-        if (dm === undefined || body.state === "accepted") return;
-        this.#dms.delete(body.call);
-        if (body.state === "done")
-          this.#reached(dm.to, dm.text, timestampMs(event.at), DM_SAME_WISH);
-        return;
-      }
       default:
         return;
     }
@@ -364,7 +332,9 @@ export class WishBook implements Wishes, Projection {
 
   #delivered(delivery: Delivery, at: number): void {
     if (!Array.isArray(delivery?.audience) || typeof delivery.said !== "string") return;
-    for (const person of delivery.audience) this.#reached(person, delivery.said, at);
+    // A DM is for them alone: it is held to the looser share (`DM_SAME_WISH`).
+    const min = delivery.context?.kind === "dm" ? DM_SAME_WISH : 0.5;
+    for (const person of delivery.audience) this.#reached(person, delivery.said, at, min);
   }
 
   /** A person said something: an answer to what she asked them, or "stop asking". */

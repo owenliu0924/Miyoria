@@ -11,6 +11,7 @@
 | Minecraft 幾乎不能玩(任務迴圈、技能庫、狀態快照、食物動作、生存反射) | 調查做一半暫停,原因還沒對照程式碼確認 | [minecraft-findings.md](minecraft-findings.md) |
 | 自我修復、自我改進(失敗後換方法、改動要過評測才留下、在沙箱寫修正開 PR) | owner 說先不做;沙箱要先有 Docker | 本文件 §4 |
 | 大家線上唱 K(她當主持人的 KTV 房) | owner 2026-11-15 提的想法,還沒決定做不做。**做到的時候先問 owner 細節,不要照下面的草稿自己做**(owner 2026-11-16);以下只是當時的初步看法。不把舊的 `karaoke` 專案(SUMI,單人桌面練歌室,Tauri)整個搬進來;要拿的是三塊:參考音符的擷取(ROSVOT,加進唱歌 worker)、瀏覽器端的即時音高和評分、歌詞和音高導引的畫面。下載、分離伴奏、歌詞對時、點歌佇列、派對遊戲的框架這邊已經有。難的是延遲:伴奏要在唱的人自己的瀏覽器播、在本機評分,別人聽到的要是混好的一軌。最早放在階段 5(玩)或階段 7(活動契約),要先有階段 6 的公開站拆分。版權要先想清楚(把伴奏和歌詞送到每個人的瀏覽器) | 這一列 |
+| 每日貼文(她做完自己想做的事之後,在 owner 指定的一個頻道貼一則,一天幾則,內容只能是真的做過的事) | owner 2026-11-16 決定先擱置,不是壞掉。程式、`[modules.mind.daily_posts]` 和 `DailyPostsKey` 都刪了;舊設定檔裡還有這一段會被忽略並在啟動時警告。它是走提案板和舊主線送出去的,兩個都在 V5 刪了,所以從第一步起就沒貼過。要重做就接到新跑者的 initiative(`packages/brain/selfhost/src/initiative.ts`),當成多一種機會:由 `LifeBook`(她做過什麼的日誌,留著)餵,設定一個專屬頻道和每日上限 | [v4-plan.md](v4-plan.md) §8.4、§16 第 8 列(舊設計) |
 | 經濟系統:點歌券、她自己的錢包、她的訊息上附「餵她」按鈕 | 刻意不做 | [economy.md](economy.md) §9.1 |
 | 檔案附件的後續:音檔(轉文字)、掃描或中日韓字型的 PDF(要 OCR 或帶套件的沙箱映像)、舊版 .doc/.xls/.ppt、壓縮檔、一次傳很多檔、讓她把讀過的檔案記進筆記 | 第一版只做文字/程式碼/csv/json/pdf(純文字層、簡單字型)/docx/xlsx/pptx | [file-attachments.md](file-attachments.md) §6 |
 | RVC 唱歌的咬字 | 2026-11-09 測完:RVC 轉她自己的說話幾乎不掉字(7.9%,原音 5.3%),轉別人的歌聲就糊(《雪は何色》對真歌詞 45%,原唱 27%)。試過 48k 頻寬擴展、加 YingMusic 產的歌聲資料、Rigel 底模(含日文和歌聲)、檢索率 0、protect、第 1–40 epoch,都沒有明顯改善;原因是 ContentVec 聽不清日文歌聲加上她只有說話資料。目前最好的是 YingMusic → RVC 串接(38.7%)。試驗在 `data/rvc-test/`、`data/rvc-train-songs/` | [backlog 本節下方](#唱歌轉換還沒做的) |
@@ -56,7 +57,7 @@
 
 ## 等 owner 決定
 
-- V5 還沒定的:embedding 用哪個本機模型(階段 3 實測);十二月的生圖模型、ComfyUI 跑在哪一台、她的 LoRA 的授權;「玩」剩下的([v5-play.md](v5-play.md) §8:水族箱要先看示意圖;交易所的開戶門檻、持有上限、指數基金、放空);圖片訊息的背景暫時沿用遊戲美術那一張,之後要換;Minecraft 的志向清單 / 誰算主人 / AltoClef。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
+- V5 還沒定的:十二月的生圖模型、ComfyUI 跑在哪一台、她的 LoRA 的授權;「玩」剩下的([v5-play.md](v5-play.md) §8:水族箱要先看示意圖;交易所的開戶門檻、持有上限、指數基金、放空);圖片訊息的背景暫時沿用遊戲美術那一張,之後要換;Minecraft 的志向清單 / 誰算主人 / AltoClef。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
 - 貨幣系統 §9 的問題已先用建議值上線,隨時可改:[economy.md](economy.md) §9.1。
 - 人設要不要加一句:肚子餓時可以被零食收買,不情願地配合可愛的小要求(現在人設寫著『現在你是一隻貓』這類要求要吐槽回去)。
 - `ambient_text` 怎麼設。
@@ -112,7 +113,7 @@
 - **「不要記住這個」擋不乾淨**:訊息紀錄的編號不是平台的訊息編號,只能靠內容雜湊比對;人物筆記沒有記來源,篩不掉;之後有人引用那則訊息回覆,引用的文字還是會進來。
 - **推理外洩的根因沒找到**:外洩的文字是模型直接寫在回覆欄位裡的。剩三種可能,現有紀錄分不出來;下次發生時該查什麼寫在 [v4-patches.md](v4-patches.md) §5。 2026-11-14 補:在現在的端點上,關掉思考的五個請求都乾淨(沒有推理欄位、推理 token 是 0),所以「該關的時候其實還開著」這個可能性變小;沒有重現外洩。
 - **事後修正還在**:18 處只收窄 2 處,4 處有開關。等上線後面板上的觸發次數接近零再關。
-- **本機向量檢索**:介面和背景補向量的工作做了,套件和模型(約 120 MB)沒裝,預設關。
+- **本機向量檢索**:記憶紀錄和筆記本(每一行,2026-11-16,見 [v5-brain.md](v5-brain.md)「筆記的 embedding」)都接上了,背景補向量也做了;執行環境(`@huggingface/transformers`)和選定的模型(Harrier-OSS-v1 270M fp16)沒裝,預設關。開的步驟在範例設定檔的「長期記憶」那段。沒有用真的模型跑過。
 - **Minecraft**:打獵要動物剛好在準星上,Java 模組的 `nearby_entities` 要加座標才能直接瞄準(模組沒改);導演在工作車道上的行為沒進過遊戲。
 - **沙箱網路白名單**:代理和設定做了,沒在真的 Docker 上跑過(`MIYORIA_LIVE_WORKSPACE_TESTS=1`)。
 - **面板的活動表是 API 裡的一份複本**(有測試防它走樣),`packages/heart/mind` 還沒有可讀的服務。
@@ -145,10 +146,20 @@
 - `@miyoria/contracts` 依賴 `@orpc/contract`,所以裝 SDK 的擴充作者也會裝到它;之後可以把路由那一部分拆出去或改成 peer 相依。
 - 路由搬到 oRPC 之後幾個使用者碰不到的差別:同一個查詢參數重複出現會回 400(以前取最後一個);幾個 `limit` 格式錯誤的訊息文字不同(狀態碼一樣)。
 - `miyoria config set` 現在要載入所有模組的設定 schema,打包後的 CLI 量起來約 1.7 到 2.0 秒(`--version` 約 0.9 秒),比改之前多了大約 0.7 秒。要更快的話,可以在打包時先把整份 schema 算好。
-- 線上 `miyoria.toml` 的三處修改還沒做(剩下的設定相容層要先改它才能拿掉);`/api/facts/context` 和 `/api/facts/retryable` 有沒有人手動在用,還沒問到答案。
+- 線上 `miyoria.toml` 的三處修改還沒做(剩下的設定相容層要先改它才能拿掉);`/api/facts/context` 和 `/api/facts/retryable` 擁有者確認沒人在用,兩條路由已經刪掉。
 
 - **第 14 步留下的**(2026-11-16):舊的 store 介面大多還在(呼叫的地方多,跟著各套件重寫再換);五個已經沒人呼叫的方法還掛在介面上(`MessageLog.purge`、`IdentityStore.setPersonName`、`DecisionLog.appendOutcome`、`MemberCardStore.countSince`、`SettingsStore.deletePrefix`);人物卡不再於啟動時替羈絆超過 25 的人種依附(原本是 V4 搬移程式順便做的),階段 4 決定依附從哪來。詳見 [v5-data.md](v5-data.md)。
-- **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。
+- **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。筆記本的行用同一組門檻和權重,沒有另外調過;`--memory-target notes` 可以拿同一組題目量筆記。語音回合等查詢向量的 150 ms(`notes_vector_voice_wait_ms`)是估的:背景補向量和查詢共用同一個 worker,一批 8 行還沒算完時查詢會排在後面,實際會不會常常等不到要上線後看 log。
+- **段落整理上線後留下的**(2026-11-16,見 [v5-brain.md](v5-brain.md)「段落整理上線」):
+  - 切換要 `miyoria memory rebuild --apply` 整個跑完一次;新裝的機器沒有舊記憶也一樣要跑一次(沒有事件時很快、不花錢),不然一直停在舊的整理。
+  - 追問的關閉、去重和她的承諾已經接回段落整理(見 v5-brain.md「段落整理上線」)。還沒做的:承諾的期限超過一天時,Core 重啟後讀不回來(`CommitmentBook` 只從 log 重建最近 24 小時);沒說期限的承諾從段落整理記下時算 120 秒(段落結束至少 5 分鐘後),所以通常一記下就快過期;過期 30 分鐘還沒做的記成沒做到,不等下一段整理;她說了不做的承諾不會被關掉,只等過期。這些都沒有接真的模型跑過。
+  - 她自己的經歷、決定(舊的 `self_note`)不再從對話寫;只經情節進每晚反思,由反思改寫她自己的文件。私訊的情節不進每晚反思(`curatable`,和以前私訊的 `self_note` 一樣)。
+  - 舊的 prompt contributor `memory`(`MemoryContributor`,第 6 區之前的寫法)還是只讀 `memory_records`;新的跑者讀的是 `MemoryRetrievalKey`,不經過它。
+  - 段落整理沒有自己的花費上限:用 `[modules.memory] purpose`(預設 `summarizer`)經 router,算在 router 的每日預算裡;用了多少只在 log 和 `LiveSegments.stats`,沒有進面板。
+  - 一段落後太久(壓縮後的行在 `sweep` 前,預設 30 天)沒整理到,就整理不到了。
+  - 評測(`--memory-target notes`)每題都搜所有文件,沒有照 `recall` 先找在場的人和這個地方;題組的記憶也不是段落整理寫的。
+  - 精準度的三個數字(`[modules.memory.notes_recall]`)是預設值,沒有用真實的題組調過。
+  - 切換後讀哪些舊紀錄是看紀錄 id(ULID)裡的時間和 rebuild 開始的時間;rebuild 要在寫那些紀錄的機器上跑,兩台時鐘差很多會讀錯。
 - **只在機器很忙時失敗的測試**:`apps/voice-node` 的 `link.test.ts`(「sends hello… answers ping」)在同時跑很多東西時失敗過一次,單獨跑會過。再出現就改成等條件成立。
 - **範例擴充的端對端測試在 CI 被跳過**:它要先 build 才會跑,CI 是先測試;本機的整體檢查會跑。要不要讓 CI 也跑,等決定。
 
@@ -175,6 +186,20 @@
 - **舊的 Python 環境還在**:`workers/.venv-asr`、`.venv-tts`、`.venv-turn` 是換成 uv 之前的環境,留著當退路;`data/backups/host.toml.old-venvs-20261116` 有換回去要用的那幾行。uv 的環境穩定一陣子之後可以刪。
 - **她的聲音少一個檔**:`workers/voices/deepseek-chan/ref.txt`(參考音實際說的內容)不在,語音合成因此用只看音色的模式載入,`doctor` 會提醒。切換前就是這樣。
 - **npm 還沒發佈**(owner 2026-11-15:晚點)。
+
+### 設定鍵清理之後留下的(2026-11-16)
+
+舊的主線和舊的工作線被新跑者換掉之後,沒有人讀的設定鍵和服務鍵清掉了(哪些見 [v5-brain.md](v5-brain.md) 「2026-11-16 的檢查」最後一段)。下面是清的時候發現、但不屬於清理的:
+
+- **`PlaceAccessKey` 沒有人提供**:「別的地方」(`elsewhere`)和「剛才」(`just_now`)問它哪些地方她看得到,沒有人提供時每個地方都算看得到。要不要有真正的存取規則,還沒決定;有之前不要把它刪掉,讀它的地方是對的。
+- **`ImageGenKey` 沒有工具**:生圖服務有、鍵有人提供,但新跑者沒有生圖的工具,她叫不到。要等生圖開放(見上面「生圖卡池開放」)。
+- **遊戲導演還在縮減過的工作線上**:`[modules.agent.work]` 只剩 `enabled`、`daily_tokens`、`result_chars`、`did_lines`、`keep_ended`,只有遊戲導演一步一步做決定時用。要把它搬到小幫手(delegate)的跑者上,才能刪掉整條工作線和這一節設定。
+- **mind 的主動開口間隔還在**:`self_start_gap_*` 和 `self_start_max_backoff`(`[modules.mind]`)的帳本 `SelfStarts` 沒有人餵(日誌的 `intent` 和 `intent:` 理由都沒了),所以那幾個鍵沒有作用。要刪就得改 `mind.ts` 和 `selfstart.test.ts`,這次沒有動。
+- **`GameControlKey`、`PartyTableKey` 只有測試在讀**:正式程式沒有人用,測試靠它們控制導演和派對。要刪就得先換測試的做法。
+- **舊的 `KnowledgeStore` 在 `learning` 模組裡還會載入和寫回**:沒有資料庫時(測試用的空架子)它是整個知識庫,有資料庫時只有匯入工具會讀。要拿掉就得先決定沒有資料庫的情況怎麼辦。
+- **`agent.initiative` 事件沒有人發**:agent 和 facts 還訂閱它,事件的 schema 在 SDK 和面板的型別裡,SDK 的相容性測試也列著它。要拿掉是改公開的事件合約,另外決定。
+- **`[llm.reasoning]` 的 `chat_voice` 和 `work` 沒有作用**:語音這一輪和小幫手都在 profile 裡固定了推理等級,不看這兩個鍵。範例檔已經這樣註明,鍵本身留著。
+- **移除 `[llm.thinking]` 的行為差異**:舊設定檔裡有 `[llm.thinking]` 的,現在那些用途改用 `[llm.reasoning]` 或預設值(例如 `mind = true` 以前等於 `medium`,現在是沒列的用途 = 不思考)。啟動時會警告,但要不要在 `[llm.reasoning]` 補上,要 owner 看自己的設定檔。
 
 
 ## 4. 自我修復與自我改進(備忘)

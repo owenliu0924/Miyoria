@@ -40,10 +40,21 @@ import {
   PersonNoteWriterKey,
   PinnedMemoryKey,
   type ProfileId,
+  PromiseBookKey,
   type PromptContributors,
   PromptContributorsKey,
+  SegmentFlushKey,
   toTimestamp,
 } from "@miyoria/types";
+import { memoryEpisodeSink } from "../../notes/src/episodes.js";
+import { importLegacyOnce } from "../../notes/src/legacy.js";
+import { type LiveSegmentConfig, LiveSegments } from "../../notes/src/live.js";
+import { NotesNotebook } from "../../notes/src/notebook.js";
+import { commitmentLedger } from "../../notes/src/promises.js";
+import { rankingOf } from "../../notes/src/rank.js";
+import { notesTables } from "../../notes/src/store.js";
+import { NotesIndex, NotesSearch, NotesSearchKey } from "../../notes/src/vectors.js";
+import { transcriptTables } from "../../transcript/src/store.js";
 import { MemoryCommands } from "./commands.js";
 import {
   type EmbeddingConfig,
@@ -63,6 +74,7 @@ import {
 } from "./dates.js";
 import { buildEmbedder, type Embedder } from "./embed.js";
 import { MemoryEngine, MemoryEngineKey } from "./engine.js";
+import { NotesRecall, NotesSourceState } from "./notes-recall.js";
 import { PersonNotes } from "./person-note.js";
 import { PinnedReader } from "./pinned.js";
 import { RecentPast } from "./recent-install.js";
@@ -98,7 +110,11 @@ export interface MemoryModuleOptions {
  * field), `PromptContributorsKey`, `ToolRegistryKey`, `CommandRegistryKey`, and for
  * `/admin memory wipe` `ProfileDataStoreKey`, `SupervisorKey` and `AuditLogKey`.
  *
- * Provides `MemoryEngineKey` and `FollowupSourceKey`; registers the prompt contributor `memory`,
+ * Provides `MemoryEngineKey`, `FollowupSourceKey` and, over a store with the notes, `NotesSearchKey`
+ * (her documents searched by words, and by meaning with embeddings on), `SegmentFlushKey` (the
+ * live segment pass, which replaces consolidation once `miyoria memory rebuild` has finished) and
+ * a `MemoryRetrievalKey` that reads the notes from then on; registers the prompt
+ * contributor `memory`,
  * the tools `remember` / `recall` and the `memory` commands (re-checked periodically, so start
  * order does not matter).
  */
@@ -119,6 +135,7 @@ export class MemoryModule implements Module {
   readonly #installer = new Installer();
   #engine: MemoryEngine | null = null;
   #embedderInUse: Embedder | null = null;
+  #notesIndex: NotesIndex | null = null;
   #degraded: string | null = null;
 
   /** `embedding` is the top-level `[memory.embedding]` section. */
@@ -162,16 +179,100 @@ export class MemoryModule implements Module {
     this.#engine = engine;
     this.#embedderInUse = embedder;
     engine.attach(services);
-    const recent = new RecentPast(engine, services, ctx.clock);
+    const notes = store?.plugin(notesTables) ?? null;
+    // Whether the notes are her memory's source yet (`notes/src/switch.ts`).
+    const source = new NotesSourceState(settings, this.profile);
+    try {
+      await source.refresh();
+    } catch (error) {
+      ctx.log.warn({ error: errorMessage(error) }, "cannot read the rebuild's state");
+    }
+    const notebook =
+      notes === null
+        ? null
+        : new NotesNotebook({
+            notes,
+            resolver: notes.resolver(),
+            config: () => engine.config.notebook,
+            handles: () => engine.handles,
+            clock: ctx.clock,
+          });
+    // Her documents' lines get vectors from the same embedder (`notes/src/vectors.ts`).
+    const notesIndex =
+      notes !== null && embedder.enabled ? new NotesIndex({ notes, embedder }) : null;
+    this.#notesIndex = notesIndex;
+    let recall: NotesRecall | null = null;
+    let live: LiveSegments | null = null;
+    if (notes !== null) {
+      const search = new NotesSearch({
+        notes,
+        index: notesIndex,
+        ranking: () => rankingOf(engine.config),
+        wait: () => ({
+          text: engine.config.notes_vector_wait_ms,
+          voice: engine.config.notes_vector_voice_wait_ms,
+        }),
+      });
+      ctx.provide(NotesSearchKey, search);
+      recall = new NotesRecall({ engine, notes, search, source });
+      const cursors = notes.cursors();
+      if (store && cursors !== null) {
+        const transcripts = store.plugin(transcriptTables);
+        const resolver = notes.resolver();
+        live = new LiveSegments({
+          transcripts,
+          notes,
+          search,
+          episodes: memoryEpisodeSink(engine, {
+            resolver,
+            contextOf: (session) => transcripts.contextOf(session),
+          }),
+          // The agent's book, looked up on each use: the agent may start after this module.
+          promises: commitmentLedger(() => services.get(PromiseBookKey) ?? null, {
+            now: () => ctx.clock.now(),
+            handleOf: (person) => engine.handles?.ofPerson(person) ?? null,
+          }),
+          cursor: cursors,
+          router,
+          resolver,
+          nameOf: (person) => engine.handles?.ofPerson(person) ?? null,
+          now: () => ctx.clock.now(),
+          config: () => liveSegmentConfig(engine.config),
+          state: () => source.state,
+        });
+        ctx.provide(SegmentFlushKey, live);
+      }
+    }
+    this.#installer.recall = recall;
+    const recent = new RecentPast(engine, services, ctx.clock, notebook, recall);
     try {
       await recent.notebook.load();
     } catch (error) {
       ctx.log.warn({ error: errorMessage(error) }, "cannot load her notebook: it starts empty");
     }
+    if (notes !== null && settings !== null) {
+      try {
+        const report = await importLegacyOnce({
+          notes,
+          resolver: notes.resolver(),
+          settings,
+          profile: this.profile,
+          clock: ctx.clock,
+        });
+        if (report !== null) {
+          ctx.log.info(
+            { documents: report.documents, added: report.added, unmapped: report.unmapped.length },
+            "notebook and knowledge moved into the notes",
+          );
+        }
+      } catch (error) {
+        ctx.log.warn({ error: errorMessage(error) }, "cannot move the old notebook into the notes");
+      }
+    }
     recent.provide((key, value) => ctx.provide(key, value));
     ctx.provide(MemoryEngineKey, engine);
     ctx.provide(PinnedMemoryKey, new PinnedReader(engine, ctx.clock));
-    ctx.provide(MemoryRetrievalKey, new MemoryRetriever(engine));
+    ctx.provide(MemoryRetrievalKey, recall ?? new MemoryRetriever(engine));
     ctx.provide(FollowupSourceKey, engine);
     ctx.provide(MemoryCuratorKey, new Curator(engine));
     ctx.provide(PersonNoteWriterKey, new PersonNotes(engine));
@@ -197,19 +298,37 @@ export class MemoryModule implements Module {
         ctx.log.warn({ error: errorMessage(error) }, "cannot check today's dates");
       });
     };
+    if (live !== null && source.switched && !live.running) warnSegmentOff(ctx);
+    // Once the notes are the source and the segment pass runs, it writes her memory and
+    // consolidation stops. With the pass off, consolidation goes on: nothing else writes.
     ctx.spawn("consolidate", (signal) =>
-      consolidationLoop(ctx, engine, installer, sub, signal, () => recent.log.invalidate(), seen),
+      consolidationLoop(
+        ctx,
+        engine,
+        installer,
+        sub,
+        signal,
+        () => recent.log.invalidate(),
+        seen,
+        () => live?.running ?? false,
+      ),
     );
+    const segments = live;
+    if (segments !== null) {
+      ctx.spawn("segment", (signal) => segmentLoop(ctx, engine, segments, source, signal));
+    }
     if (config.forgetting.enabled) {
       ctx.spawn("forget", (signal) => maintenanceLoop(ctx, engine, signal));
     }
     if (embedder.enabled) {
-      ctx.spawn("embed", (signal) => backfillLoop(ctx, engine, signal));
+      ctx.spawn("embed", (signal) => backfillLoop(ctx, engine, signal, notesIndex));
     }
   }
 
   async stop(): Promise<void> {
     this.#installer.uninstall();
+    this.#notesIndex?.close();
+    this.#notesIndex = null;
     const embedder = this.#embedderInUse as (Embedder & { close?: () => Promise<void> }) | null;
     this.#embedderInUse = null;
     await embedder?.close?.();
@@ -237,6 +356,8 @@ class Installer {
   #recentTools: string[] = [];
   /** The dates book of `remember_date` / `forget_date` (set at start). */
   book: DateBook | null = null;
+  /** What `recall` reads once the notes are the source (set at start; `null`: no notes). */
+  recall: NotesRecall | null = null;
   readonly #commands = new MemoryCommands();
 
   install(ctx: ModuleContext, engine: MemoryEngine): void {
@@ -255,7 +376,7 @@ class Installer {
       if (this.#tools) this.#unregisterTools(this.#tools);
       try {
         tools.register(new RememberTool(engine, ctx.clock));
-        tools.register(new RecallTool(engine, ctx.clock));
+        tools.register(new RecallTool(engine, ctx.clock, this.recall));
         if (this.book !== null) {
           tools.register(new RememberDateTool(this.book, engine, ctx.clock));
           tools.register(new ForgetDateTool(this.book, engine));
@@ -383,6 +504,11 @@ async function consolidationLoop(
   excluded: () => void = () => {},
   /** Someone spoke (birthdays and other dates of theirs are checked). */
   seen: (account: AccountRef, context: ContextKey, nowMs: number) => void = () => undefined,
+  /**
+   * Whether the segment pass writes her memory (the notes are the source): then no context is
+   * consolidated and nothing is written to the memory records from the conversation here.
+   */
+  replaced: () => boolean = () => false,
 ): Promise<void> {
   const config = engine.config;
   const tracker = new ActivityTracker();
@@ -408,13 +534,14 @@ async function consolidationLoop(
       const env = wake.env;
       if (env === null) return;
       const nowMs = ctx.clock.now();
+      const tracking = !replaced();
       if (is(Events.PlatformMessageCreated, env)) {
         const data = env.data;
-        tracker.message(data.id.context, nowMs);
+        if (tracking) tracker.message(data.id.context, nowMs);
         if (!data.author.is_bot) seen(data.author.account, data.id.context, nowMs);
       } else if (is(Events.VoiceUtteranceEvent, env)) {
         const data = env.data;
-        tracker.message(data.context, nowMs);
+        if (tracking) tracker.message(data.context, nowMs);
         if (!data.speaker.is_bot) seen(data.speaker.account, data.context, nowMs);
       } else if (env.type === MESSAGE_EXCLUDED_TOPIC) {
         const body = parseExcluded(env.data as JsonValue);
@@ -430,14 +557,14 @@ async function consolidationLoop(
       } else if (env.type === CONVERSATION_FOLDED_TOPIC) {
         const payload = env.data as JsonValue;
         const c = isJsonObject(payload) ? parseFolded(payload.context) : null;
-        if (c) tracker.force(c, nowMs);
+        if (c && tracking) tracker.force(c, nowMs);
       }
       event = sub.recv().then((e): Wake => ({ kind: "event", env: e }));
       continue;
     }
 
     installer.install(ctx, engine);
-    if (engine.canConsolidate) {
+    if (engine.canConsolidate && !replaced()) {
       const nowMs = ctx.clock.now();
       for (const context of tracker.due(nowMs, config)) {
         if (signal.aborted) return;
@@ -481,6 +608,61 @@ function parseFolded(value: JsonValue | undefined): ContextKey | null {
   return { platform, scope: typeof scope === "string" ? scope : null, channel, kind };
 }
 
+/** `[modules.memory.segment]` as the live pass reads it. */
+export function liveSegmentConfig(config: MemoryConfig): LiveSegmentConfig {
+  const s = config.segment;
+  return {
+    enabled: s.enabled,
+    idleMs: s.idle_secs * 1000,
+    maxLines: s.max_lines,
+    compactionWaitMs: s.compaction_wait_ms,
+    retryMs: s.retry_secs * 1000,
+    retryMaxMs: s.retry_max_secs * 1000,
+    abandonLimit: s.abandon_limit,
+    perTick: s.per_tick,
+    purpose: config.purpose,
+  };
+}
+
+function warnSegmentOff(ctx: ModuleContext): void {
+  ctx.log.warn(
+    "the notes are her memory's source but [modules.memory.segment] is disabled: the segment pass does not write her memory, so the old consolidation keeps running",
+  );
+}
+
+/**
+ * Reads the rebuild's state and passes the segments that have ended, every `tick_secs`. A tick
+ * that throws is logged; the next one tries again.
+ */
+async function segmentLoop(
+  ctx: ModuleContext,
+  engine: MemoryEngine,
+  live: LiveSegments,
+  source: NotesSourceState,
+  signal: AbortSignal,
+): Promise<void> {
+  for (;;) {
+    try {
+      await sleep(Math.max(1, engine.config.segment.tick_secs) * 1000, signal);
+    } catch {
+      return;
+    }
+    try {
+      const was = source.switched;
+      await source.refresh();
+      if (!was && source.switched) {
+        if (live.running) {
+          ctx.log.info("the notes are her memory's source now: the segment pass runs live");
+        } else warnSegmentOff(ctx);
+      }
+      await live.tick(signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      ctx.log.warn({ error: errorMessage(error) }, "segment pass tick failed");
+    }
+  }
+}
+
 async function maintenanceLoop(
   ctx: ModuleContext,
   engine: MemoryEngine,
@@ -507,11 +689,15 @@ async function maintenanceLoop(
   }
 }
 
-/** Gives vectors to records stored without one, a batch at a time, while the embedder is on. */
+/**
+ * Gives vectors to records stored without one, and to lines of her documents without one, a
+ * batch at a time, while the embedder is on.
+ */
 async function backfillLoop(
   ctx: ModuleContext,
   engine: MemoryEngine,
   signal: AbortSignal,
+  notes: NotesIndex | null = null,
 ): Promise<void> {
   for (;;) {
     try {
@@ -526,6 +712,14 @@ async function backfillLoop(
     } catch (error) {
       if (signal.aborted) return;
       ctx.log.warn({ error: errorMessage(error) }, "embedding backfill failed");
+    }
+    if (notes === null) continue;
+    try {
+      const n = await notes.backfill(BACKFILL_BATCH, signal);
+      if (n > 0) ctx.log.info({ lines: n }, "note lines given vectors");
+    } catch (error) {
+      if (signal.aborted) return;
+      ctx.log.warn({ error: errorMessage(error) }, "notes embedding backfill failed");
     }
   }
 }

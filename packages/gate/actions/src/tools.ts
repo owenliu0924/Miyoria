@@ -2,11 +2,12 @@
 // person she is talking to (principal `user`); with `on_own` she does it as herself (principal
 // `self`, her own limits, no permission of the person needed). Either way the gate decides.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import type { Tool, ToolContext, ToolMeta, ToolResult, ToolSpec } from "@miyoria/llm/tools";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, type JsonObject, type JsonValue, Principals } from "@miyoria/types";
 import {
   ActionDeniedError,
+  ActionDroppedError,
   type ActionOutcome,
   type ActionRequest,
   type Capability,
@@ -62,6 +63,8 @@ export class CapabilityTool implements Tool {
   readonly actsFor = true;
   readonly readOnly: boolean;
   readonly framed: boolean;
+  /** What the capability said its tool does, with the capability's risk. */
+  readonly meta: ToolMeta | undefined;
 
   constructor(
     readonly registry: ActuatorRegistry,
@@ -71,9 +74,45 @@ export class CapabilityTool implements Tool {
     // Medium and high risk count against limits or wait for a review: never side by side.
     this.readOnly = capability.risk === "low" && capability.tool?.readOnly === true;
     this.framed = capability.tool?.framed === true;
+    const meta = capability.tool?.meta;
+    this.meta = meta === undefined ? undefined : { ...meta, risk: capability.risk };
   }
 
   async call(ctx: ToolContext, raw: JsonValue): Promise<string> {
+    const run = await this.#run(ctx, raw);
+    return typeof run === "string" ? run : answer(run);
+  }
+
+  /**
+   * `call` with the gate's refusal as a value: `denied` with the stage it was refused at, and
+   * the text `call` would have thrown. A request still under review answers its pending text.
+   */
+  async result(ctx: ToolContext, raw: JsonValue): Promise<ToolResult> {
+    let run: string | ActionOutcome;
+    try {
+      run = await this.#run(ctx, raw);
+    } catch (error) {
+      if (!(error instanceof ActionDroppedError)) throw error;
+      return { ok: false, code: "dropped", stage: null, text: error.message };
+    }
+    if (typeof run === "string") return { ok: true, text: run };
+    switch (run.status) {
+      case "done":
+        return { ok: true, text: run.result.text };
+      case "denied":
+        return {
+          ok: false,
+          code: "denied",
+          stage: run.decision.stage,
+          text: new ActionDeniedError(run.decision).message,
+        };
+      case "failed":
+        return { ok: false, code: "failed", stage: null, text: run.error };
+    }
+  }
+
+  /** The outcome, or the text a request still under review answers with. */
+  async #run(ctx: ToolContext, raw: JsonValue): Promise<string | ActionOutcome> {
     const args: JsonObject = isJsonObject(raw) ? { ...raw } : {};
     const why = typeof args.why === "string" && args.why.trim() !== "" ? args.why.trim() : null;
     const onOwn = args.on_own === true;
@@ -117,24 +156,24 @@ export class CapabilityTool implements Tool {
       activity: "detach",
     });
     if (outcome.status === "done") ctx.report?.(outcome.result.data);
-    return answer(outcome);
+    return outcome;
   }
 
   /**
    * A `followup` tool: the outcome when it is ready within `inline_wait_ms`, otherwise
-   * `RESULT_PENDING` now and the outcome as a follow-up turn later.
+   * `RESULT_PENDING` now and the outcome as a notice later (`notifyLate`).
    */
   async #waitOrFollowUp(
     ctx: ToolContext,
     request: ActionRequest,
     running: Promise<ActionOutcome>,
-  ): Promise<string> {
-    // Decided exactly once: answered inline, or late (then the outcome becomes a follow-up).
+  ): Promise<string | ActionOutcome> {
+    // Decided exactly once: answered inline, or late (then the outcome becomes a notice).
     let state: "waiting" | "inline" | "late" = "waiting";
     const settled = running.then(
       (outcome) => {
         log.info({ capability: this.capability.name, status: outcome.status }, "reviewed action");
-        if (state === "late") this.registry.followup(this.capability, request, outcome);
+        if (state === "late") this.registry.notifyLate(this.capability, request, outcome);
         else state = "inline";
         return outcome;
       },
@@ -160,7 +199,7 @@ export class CapabilityTool implements Tool {
     });
     try {
       const outcome = await Promise.race([settled, pending]);
-      return outcome === null ? RESULT_PENDING : answer(outcome);
+      return outcome === null ? RESULT_PENDING : outcome;
     } finally {
       clearTimeout(timer);
       if (onAbort) ctx.signal.removeEventListener("abort", onAbort);

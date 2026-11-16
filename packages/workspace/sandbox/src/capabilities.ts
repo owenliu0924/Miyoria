@@ -47,6 +47,7 @@ export const WORKSPACE_WRITE = "workspace.write";
 export const WORKSPACE_DELETE = "workspace.delete";
 export const WORKSPACE_RUN = "workspace.run";
 export const WORKSPACE_SAVE_SCRIPT = "workspace.save_script";
+export const WORKSPACE_EXPORT = "workspace.export";
 
 /** Longest text one `workspace.write` takes, in characters (the byte quota applies as well). */
 export const MAX_WRITE_CHARS = 200_000;
@@ -63,6 +64,8 @@ export const WorkspaceWriteArgsSchema = z.object({
   append: z.boolean().optional(),
 });
 export const WorkspaceDeleteArgsSchema = z.object({ path: WorkspacePath });
+export const WorkspaceExportArgsSchema = z.object({ path: WorkspacePath });
+export type WorkspaceExportArgs = z.output<typeof WorkspaceExportArgsSchema>;
 export const WorkspaceSaveScriptArgsSchema = z.object({
   path: WorkspacePath.describe("A .py or .mjs path"),
   content: z.string().min(1).max(MAX_WRITE_CHARS),

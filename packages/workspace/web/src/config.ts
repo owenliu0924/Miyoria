@@ -42,8 +42,6 @@ export const WebConfigSchema = z.object({
   read_chars: z.number().int().min(200).max(20_000).default(12_000),
   /**
    * The most characters one `web_read` answer takes, block markers included (§4.2: 12,000).
-   * Keep it at or under the agent's `max_tool_result_chars`, or the agent's cut falls inside the
-   * block: the agent's own default (4000) allows 4000 until it is raised to match.
    */
   result_chars: z.number().int().min(300).max(20_000).default(12_000),
   /** The most characters one `web_search` answer takes, block markers included. */

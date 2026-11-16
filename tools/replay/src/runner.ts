@@ -1,18 +1,20 @@
-// Replays a log through the real pipeline: the agent (coordinator, attention, turns, prompt
-// compiler), the gate (`actions`), the Arbiter, the ActivityManager, world, self and the mind,
-// on one supervisor and one bus, as the core runs them. Only the edges are fake: the LLM
+// Replays a log through the real pipeline: the agent with the conversations' runner
+// (`@miyoria/brain/selfhost`), the gate (`actions`), the Arbiter, the ActivityManager, world,
+// self and the mind, on one supervisor and one bus, as the core runs them. Only the edges are fake: the LLM
 // (`ScriptedLlm`), the scheduler and the platforms (`ReplaySink`), and time (`ReplayClock`, the
 // caller's fake timers: the kernel's timers and `Date.now()` are the global ones).
 
 import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule } from "@miyoria/brain/agent";
 import { ArbiterModule } from "@miyoria/brain/arbiter";
+import { selfHost } from "@miyoria/brain/selfhost";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { MindModule } from "@miyoria/heart/mind";
 import { SelfModule } from "@miyoria/heart/self";
 import { LlmRouter, LlmRouterKey, type ModelRef, parseModelRef } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { FactsModule } from "@miyoria/memory/facts";
+import { transcriptTables } from "@miyoria/memory/transcript";
 import { WorldModule } from "@miyoria/memory/world";
 import {
   defineManifest,
@@ -28,7 +30,7 @@ import {
   type ReplayLog,
   ReplayLogError,
 } from "@miyoria/runtime/replay-log";
-import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
+import { MemorySettingsStore, SettingsStoreKey, SqliteStore, StoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   ActionSinkKey,
@@ -59,7 +61,7 @@ export interface ReplayClock {
 
 export interface ReplayRunOptions {
   clock: ReplayClock;
-  /** Seed of her attention's dice (default 1). */
+  /** Kept for callers that still pass one: nothing is left to the dice. */
   seed?: number;
 }
 
@@ -106,20 +108,6 @@ class Stub implements Module {
   async start(ctx: ModuleContext): Promise<void> {
     this.provide(ctx);
   }
-}
-
-/** A small deterministic PRNG (mulberry32), so a replay is repeatable. */
-function seeded(seed: number): { nextF32(): number } {
-  let a = seed >>> 0;
-  return {
-    nextF32() {
-      a = (a + 0x6d2b79f5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    },
-  };
 }
 
 function merge(base: JsonValue | undefined, over: JsonValue | undefined): JsonValue {
@@ -227,7 +215,10 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
 
   await sup.register(new Stub("llm", (ctx) => ctx.provide(LlmRouterKey, router)), null, true);
   await sup.register(new Stub("scheduler", (ctx) => ctx.provide(ActionSinkKey, sink)), null, true);
-  const agent = new AgentModule(profile).withRandom(seeded(options.seed ?? 1));
+  // The conversations' runner keeps its transcripts in the store, as in the core.
+  const store = await SqliteStore.open(":memory:", { plugins: [transcriptTables] });
+  services.provide("app", StoreKey, store);
+  const agent = new AgentModule(profile).withTextRunner(selfHost());
   const modules: Module[] = [
     // First, as in the core: the main line and the Floor read the log.
     new FactsModule(null, PROFILE_ID, { names: profile.names() }),
@@ -292,6 +283,7 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
     };
   } finally {
     await sup.stopAll();
+    await store.close();
     all.close();
   }
 }

@@ -30,7 +30,7 @@ export interface Ceiling {
    * never above `maxTalk`).
    */
   defaultTalk: number;
-  /** Ambient turns scoring below this are ignored (on top of `gray_low`). */
+  /** Ambient turns scoring below this are ignored. */
   minScore: number;
   /** Upper bound of her share of recent messages for ambient turns (with the profile's). */
   maxShare: number;
@@ -39,10 +39,7 @@ export interface Ceiling {
    * Arbiter applies it as one of its rules).
    */
   startGapMs: number;
-  /**
-   * Multiplier of `rhythm.looks_per_hour` here (then × her `talkFactor`): with the defaults about
-   * 2 looks an hour in `quiet`, 6 in `normal`, 18 in `lively`.
-   */
+  /** How many looks an hour she takes here, relative to `normal` (1). */
   looks: number;
 }
 
@@ -171,17 +168,6 @@ export function modeDescription(mode: ChannelMode): string {
  * Read on its own section by the agent (`Agent.rhythm`).
  */
 export const RhythmConfigSchema = z.object({
-  /**
-   * Looks an hour per channel at the `normal` level, as usual talkative (× the level's `looks`,
-   * × her `talkFactor`). Each look is a model call on the cached prefix; 0: none.
-   */
-  looks_per_hour: z.number().nonnegative().default(6),
-  /** A question standing this long (s) with nobody answering is worth a look. */
-  question_secs: z.number().int().positive().default(20),
-  /** The first line after this long a silence (minutes) starts a new topic: worth a look. */
-  topic_gap_mins: z.number().positive().default(15),
-  /** Someone she likes at least this much (affinity, -100..100) talking is worth a look. */
-  close_affinity: z.number().min(-100).max(100).default(40),
   /** Emoji reactions per channel per hour (they are not lines: the Floor's budget skips them). */
   reactions_per_hour: z.number().int().nonnegative().default(20),
   /** At least this long between two of her reactions in one channel. */

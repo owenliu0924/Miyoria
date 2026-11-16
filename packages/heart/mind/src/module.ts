@@ -1,4 +1,4 @@
-import { actuatorsFor } from "@miyoria/gate/actions";
+import { actuatorsFor, CapabilityError } from "@miyoria/gate/actions";
 import {
   completeJson,
   LlmRouterKey,
@@ -17,7 +17,6 @@ import {
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type Clock,
-  DailyPostsKey,
   dataBlock,
   EventLogKey,
   Events,
@@ -42,9 +41,8 @@ import { type MindConfig, MindConfigSchema } from "./config.js";
 import { GoalBook } from "./goals.js";
 import { type Condense, intentCounts, Journal, ruleDigest } from "./journal.js";
 import { LifeBook } from "./life/log.js";
-import { DailyPostDesk } from "./life/posts.js";
 import {
-  deliverer,
+  type ReminderBackend,
   ReminderBook,
   type ReminderLimits,
   remindCapability,
@@ -63,6 +61,12 @@ export interface MindModuleOptions {
   persona?: (services: ServiceLookup) => string;
   /** Replaces the time source (default: the module context's clock). */
   clock?: Clock;
+  /**
+   * Where `remind_me` keeps new timers: the new runner's schedules (looked up per call; `null` or
+   * unset: not running, and `remind_me set` says so). Her impulses start nothing: her own starts
+   * are the new runner's.
+   */
+  reminders?: (services: ServiceLookup) => ReminderBackend | null;
 }
 
 /** Bus topics the mind follows. */
@@ -88,9 +92,8 @@ export const MIND_TOPICS = [
 /**
  * Module `mind`: her Deliberate calls. Appraise after an interaction segment ends (into
  * `AffectStateKey`); Plan on goal triggers, activity ends, salient changes, her mood dropping,
- * suggestions (`MindKey.suggest`) and an adaptive heartbeat, producing goal changes and
- * impulses for the Arbiter (`ArbiterKey`; until it runs, intents for the agent's
- * `IntentSinkKey`). Provides her goals (`GoalAgendaKey`, settings `mind:goal:<id>`, topic
+ * suggestions (`MindKey.suggest`) and an adaptive heartbeat, producing goal changes and her day
+ * plan (it starts nothing itself). Provides her goals (`GoalAgendaKey`, settings `mind:goal:<id>`, topic
  * `plan.goal`) and `MindKey`; keeps her thought journal (settings `mind:thought:<id>`) and
  * publishes `mind.thought`. Paused with autonomy.
  */
@@ -209,7 +212,7 @@ export class MindModule implements Module {
   /**
    * Her own life (docs/design/v4-plan.md §8): the life log (`LifeLogKey`), her timers
    * (`ReminderDeskKey`, capability `self.remind` / tool `remind_me`, delivered while the module
-   * runs) and her daily posts (`DailyPostsKey`, off unless configured).
+   * runs).
    */
   async #startLife(
     ctx: ModuleContext,
@@ -218,7 +221,6 @@ export class MindModule implements Module {
   ): Promise<LifeBook> {
     const clock = this.#options.clock ?? ctx.clock;
     const offset = config.utc_offset_minutes;
-    let posts: DailyPostDesk | null = null;
     const life = new LifeBook({
       store,
       profile: this.#profile,
@@ -226,14 +228,6 @@ export class MindModule implements Module {
       offsetMinutes: offset,
       dayStartHour: config.daily_hour,
       keepDays: config.life_keep_days,
-      onRecord: (entry) => {
-        const desk = posts;
-        if (desk === null) return;
-        void desk.offer(entry).then(
-          (result) => ctx.log.debug({ result, activity: entry.activity }, "daily post"),
-          (error: unknown) => ctx.log.warn({ err: errorMessage(error) }, "daily post failed"),
-        );
-      },
     });
     const limits: ReminderLimits = {
       max: config.reminders_max,
@@ -241,13 +235,16 @@ export class MindModule implements Module {
       maxDays: config.reminder_max_days,
       holdMins: config.reminder_hold_mins,
     };
+    const served = this.#options.reminders ?? (() => null);
     const reminders = new ReminderBook({
       store,
       profile: this.#profile,
       clock,
       limits,
       offsetMinutes: offset,
-      deliver: deliverer(ctx.services, clock, limits, offset),
+      // A timer kept here from before only fires: its `mind.reminder` is her inbox on the new
+      // runner, and her initiative decides whether it wakes her.
+      deliver: async () => ({ status: "delivered", detail: "the new runner's inbox" }),
       publish: (reminder, state) =>
         ctx.publish(Events.MindReminder, {
           state,
@@ -255,24 +252,10 @@ export class MindModule implements Module {
         }),
       wishes: () => ctx.services.get(WishesKey) ?? null,
     });
-    const desk = new DailyPostDesk({
-      config: config.daily_posts,
-      store,
-      profile: this.#profile,
-      clock,
-      services: ctx.services,
-      dayOf: (at) => life.dayOf(at),
-    });
-    if (config.daily_posts.enabled && desk.channel() === null) {
-      ctx.log.warn(
-        "[modules.mind.daily_posts] is enabled without guild and channel: posts stay off",
-      );
-    }
     if (store) {
       for (const [what, load] of [
         ["her life log", () => life.load()],
         ["her timers", () => reminders.load()],
-        ["her daily posts", () => desk.load()],
       ] as const) {
         try {
           const loaded = await withTimeout(
@@ -285,13 +268,12 @@ export class MindModule implements Module {
         }
       }
     }
-    posts = desk;
     this.#life = life;
     this.#reminders = reminders;
+    const book = bothBooks(() => served(ctx.services), reminders);
     ctx.provide(LifeLogKey, life);
-    ctx.provide(ReminderDeskKey, reminders);
-    ctx.provide(DailyPostsKey, desk);
-    this.#unregister = actuatorsFor(ctx).register(remindCapability(reminders));
+    ctx.provide(ReminderDeskKey, book);
+    this.#unregister = actuatorsFor(ctx).register(remindCapability(book));
     ctx.spawn("reminders", (signal) => reminders.run(signal));
     return life;
   }
@@ -384,5 +366,31 @@ function condenser(ctx: ModuleContext, config: MindConfig, name: string): Conden
       intents: intentCounts(thoughts),
       by: "summarizer",
     };
+  };
+}
+
+/**
+ * `remind_me` on the new runner: new timers go to its schedules (`served`, looked up per call);
+ * those kept here from before stay listed and cancellable until they end.
+ */
+function bothBooks(served: () => ReminderBackend | null, kept: ReminderBook): ReminderBackend {
+  const book = (): ReminderBackend => {
+    const b = served();
+    if (b === null) throw new CapabilityError("提醒現在不能用");
+    return b;
+  };
+  return {
+    get offsetMinutes() {
+      return kept.offsetMinutes;
+    },
+    now: () => kept.now(),
+    list: () =>
+      [...(served()?.list() ?? []), ...kept.list()].sort(
+        (a, b) => Date.parse(a.due) - Date.parse(b.due),
+      ),
+    of: (account) => [...(served()?.of(account) ?? []), ...kept.of(account)],
+    get: (idOrKey) => served()?.get(idOrKey) ?? kept.get(idOrKey),
+    cancel: (idOrKey) => (served()?.cancel(idOrKey) ?? false) || kept.cancel(idOrKey),
+    set: (input) => book().set(input),
   };
 }

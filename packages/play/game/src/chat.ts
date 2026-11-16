@@ -418,6 +418,7 @@ function routeCapability(chat: GameChat): Capability<RouteArgs> {
     permission: null,
     tool: {
       name: "game_chat_reply",
+      meta: { effect: "say", speed: "instant", group: "game" },
       description:
         "選擇你在遊戲聊天室怎麼回話:chat = 在遊戲聊天室打字,voice = 用語音說(直播 / 語音中,有字幕)," +
         "both = 兩者,auto = 自動。只有在遊戲聊天室裡有用,選了會一直維持到你再改。",

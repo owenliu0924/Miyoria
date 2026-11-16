@@ -1510,6 +1510,64 @@
         }
       }
     },
+    "notes": {
+      "documents": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/notes/documents"
+          }
+        }
+      },
+      "document": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/notes/documents/{id}"
+          }
+        }
+      },
+      "history": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/notes/documents/{id}/history"
+          }
+        }
+      },
+      "revert": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/notes/documents/{id}/revert"
+          }
+        }
+      }
+    },
     "recent": {
       "~orpc": {
         "errorMap": {},
@@ -1667,20 +1725,6 @@
           }
         }
       },
-      "context": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/facts/context"
-          }
-        }
-      },
       "deliveries": {
         "~orpc": {
           "errorMap": {},
@@ -1692,20 +1736,6 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/facts/deliveries"
-          }
-        }
-      },
-      "retryable": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/facts/retryable"
           }
         }
       }
@@ -2365,6 +2395,22 @@
             "inputStructure": "detailed",
             "method": "POST",
             "path": "/api/member/fortune"
+          }
+        }
+      }
+    },
+    "eval": {
+      "live": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/eval/live"
           }
         }
       }

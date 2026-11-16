@@ -34,6 +34,7 @@ import {
 import type { ProfilesConfig } from "./config.js";
 import { readable } from "./contributor.js";
 import { type MemoryEngine, memoryFilter } from "./engine.js";
+import type { NotesRecall } from "./notes-recall.js";
 import { disclose, PRIVATE_MARK, placeRef, quotable, type Viewer, withheldTalk } from "./places.js";
 import { clockOf, type RecentDeps, viewerFor } from "./recent.js";
 import { parseWindow, type RecentLog, type Said } from "./recent-log.js";
@@ -51,6 +52,8 @@ export interface ProfileSources {
   knowledge: () => KnowledgeBase | null;
   events: () => Pick<EventLog, "query"> | null;
   handles: () => HandleDirectory | null;
+  /** Where the notes are the source (`NotesRecall`); unset or `null`: the facts are the points. */
+  notes?: () => Pick<NotesRecall, "personPoints"> | null;
 }
 
 const cut = (text: string, max: number): string => {
@@ -145,9 +148,23 @@ export class Profiles implements PersonProfiles {
     }
 
     const points: PersonProfile["points"] = [];
+    // Once the notes are the source the segment pass writes lines into the person's document, not
+    // facts: those are the points, then the facts written since (`remember`).
+    const noted = this.#src.notes?.()?.personPoints(person, {
+      context: where.context,
+      accounts: where.accounts ?? [],
+      present: where.present,
+    });
+    for (const line of noted?.lines ?? []) {
+      if (points.length >= cfg.points) break;
+      if (exclude.includes(line.id) || repeats(line.text, exclude)) continue;
+      if (points.some((p) => textSimilarity(p.text, line.text) >= 0.6)) continue;
+      points.push({ text: line.text, origin: line.origin, said_by: line.said_by });
+    }
     const facts = await this.#engine.factsAbout(person, scopes, where.now, cfg.points * 2);
     for (const fact of facts) {
       if (points.length >= cfg.points) break;
+      if (noted !== null && noted !== undefined && !noted.recordKept(fact.id)) continue;
       if (exclude.includes(fact.id) || repeats(fact.content, exclude)) continue;
       const r = readable(fact);
       points.push({ text: r.content, origin: r.origin, said_by: r.said_by });

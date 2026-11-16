@@ -1,4 +1,4 @@
-import { type ActuatorRegistry, ActuatorRegistryKey, actuatorsFor } from "@miyoria/gate/actions";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -6,25 +6,20 @@ import {
   errorMessage,
   type Module,
   type ModuleContext,
-  sleep,
 } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
-  DirectivesKey,
-  ImpulseHostKey,
-  IntentSinkKey,
   MouthKey,
+  PromiseBookKey,
   PromptContributorsKey,
-  ProposalBoardKey,
   SelfStateKey,
   TurnFocusViewKey,
   TurnSilencerKey,
   WorkLaneKey,
 } from "@miyoria/types";
 
-import { activenessCapability, chatCapabilities } from "./actions.js";
-import { type RandomSource, SeededRandom } from "./attention.js";
+import { activenessCapability } from "./actions.js";
 import { AgentCommands } from "./commands.js";
 import { SavedPromptsKey } from "./compiler.js";
 import { AgentConfigSchema } from "./config.js";
@@ -36,59 +31,40 @@ import {
   type Overrides,
   type VoiceRooms,
 } from "./handle.js";
-import { AgentIntents } from "./intents.js";
-import { ACTING_ALONE } from "./mainline/main.js";
 import { WorkingNotes } from "./notes.js";
 import { PersonaHandle, PersonaHandleKey } from "./persona.js";
-import { Agent } from "./runtime.js";
+import { Agent, type TextRunner, type TextRunnerFactory } from "./runtime.js";
 import { DropNoteTool, KeepNoteTool, ReactTool } from "./tools.js";
 import { TimeoutError, timeout } from "./util.js";
 import type { FetchLike } from "./vision.js";
-import { WORK_START_TOOL, workCapabilities } from "./worklane/capabilities.js";
-import { workBoard } from "./worklane/initiative.js";
 import { WorkLaneService } from "./worklane/lane.js";
 
 /** Loading persisted settings must not hold up startup for long. */
 const SETTINGS_LOAD_TIMEOUT_MS = 5_000;
-/** How long after start the work tasks a restart cut are told (the Floor must be up). */
-const RECOVER_DELAY_MS = 5_000;
 
 /**
  * Module `agent`: requires `llm` and `scheduler`, optionally uses `commands`.
  *
- * Turns `platform.*` and `voice.*` events into replies: each conversation context (text
- * channel, DM or voice channel) keeps a `Session`, a coordinator debounces messages into turns,
- * attention decides whether to respond, and the reply is generated through the `chat` LLM
- * purpose (with an optional tool loop), parsed by the expression parser and submitted to the
- * scheduler. In voice channels the reply is cut into sentences that are spoken (`speak`
- * actions) while the model is still generating.
+ * Hands `platform.*` and `voice.*` events to the conversations' runner Core installs
+ * (`withTextRunner`, `@miyoria/brain/selfhost`), after the checks every line goes through, and
+ * keeps what it and the other modules share: the persona, the channels' levels, who is in each
+ * voice channel she is in, and the mouth (`MouthKey`, mainline/main.ts) every line of hers goes
+ * through.
  *
  * Provides `PersonaHandleKey` and `AgentHandleKey`. Uses the `ToolRegistryKey` service when the
  * app provides one at start; otherwise it provides its own (which keeps tools registered by
- * other modules across agent restarts). Either way the built-in `react` tool is registered
- * while running, and the capabilities `channel.activeness` (her talkativeness here for a while,
- * offered as the `channel_activeness` tool), `chat.start` and `chat.dm` (talking on her own) in
- * the actuator registry. Provides `IntentSinkKey`: her mind loop's intents become turns she
- * starts herself (principal `self`, with tools). Provides `ImpulseHostKey`: the Arbiter's
- * accepted impulses open her turns here (and her intents go through the Arbiter while it runs).
- * Her turns are turns of the main line (mainline/main.ts), which also provides `MouthKey` and
- * `ProposalBoardKey`.
- * Provides `TurnFocusViewKey` (whom each turn in
- * flight answers, for voice barge-in) and `SavedPromptsKey` (compressed prompts of recent turns,
- * also published as `agent.prompt`); every turn ends with an `agent.turn.outcome`.
- *
- * Uses the optional services `SettingsStoreKey` (persisting runtime settings), `AuthorizerKey`
- * (tool permissions), `CommandRegistryKey`, `PromptContributorsKey` (per-turn context),
- * `SocialSignalsKey` and `MoodSignalsKey`; they are looked up per turn, so they may come and
- * go. `llm.budget` events make her save tokens (see `BudgetState`). `PlatformHistoriesKey`
- * (else `MessageLogKey`) fills cold sessions and reply chains, `PlatformSinksKey` turns her
- * `@name` into mentions; images are downloaded only when the chat model takes them.
+ * other modules across agent restarts). Either way the built-in `react`, `keep_note` and
+ * `drop_note` tools are registered while running, and the capability `channel.activeness` (her
+ * talkativeness here for a while, offered as the `channel_activeness` tool) in the actuator
+ * registry. Provides `TurnFocusViewKey` (whom each turn in flight answers, for voice barge-in),
+ * `SavedPromptsKey` (the prompt archive the panel reads), `TurnSilencerKey` (the emergency stop),
+ * `PromiseBookKey` (her commitments, which the memory's segment pass records) and, with `[modules.agent.work] enabled`, `WorkLaneKey`: the game director's driven tasks.
  */
 export class AgentModule implements Module {
   static readonly ID = "agent";
 
   readonly manifest = defineManifest(AgentModule.ID, "Agent", {
-    description: "Attention, conversation and reply generation",
+    description: "Conversations: what reaches her, and the mouth her lines leave through",
     requires: ["llm", "scheduler"],
     // `facts`: the main line follows the log from the start.
     optional: ["commands", "facts"],
@@ -96,7 +72,6 @@ export class AgentModule implements Module {
   });
 
   readonly #persona: PersonaHandle;
-  #random: RandomSource | null = null;
   #fetchImage: FetchLike | undefined;
   /** Used when the app provides no registry. */
   readonly #ownTools = new ToolRegistry();
@@ -109,15 +84,17 @@ export class AgentModule implements Module {
   #unregister: (() => void)[] = [];
   #agent: Agent | null = null;
   #lane: WorkLaneService | null = null;
+  #textRunners: TextRunnerFactory | null = null;
+  #textRunner: TextRunner | null = null;
 
   constructor(profile: Profile) {
     this.#persona = new PersonaHandle(profile);
     this.#tools = this.#ownTools;
   }
 
-  /** Replaces the decision sampler (default: seeded from config or entropy). */
-  withRandom(random: RandomSource): this {
-    this.#random = random;
+  /** What answers text and voice conversations (Core installs `@miyoria/brain/selfhost`). */
+  withTextRunner(factory: TextRunnerFactory): this {
+    this.#textRunners = factory;
     return this;
   }
 
@@ -154,9 +131,6 @@ export class AgentModule implements Module {
 
   async start(ctx: ModuleContext): Promise<void> {
     const config = ctx.config(AgentConfigSchema);
-    const random =
-      this.#random ??
-      (config.seed !== null ? new SeededRandom(config.seed) : SeededRandom.fromEntropy());
     const store = ctx.services.get(SettingsStoreKey) ?? null;
     const handle = new AgentHandle(
       config,
@@ -178,7 +152,7 @@ export class AgentModule implements Module {
     if (!own) ctx.log.info("using the app's tool registry");
     this.#tools = tools;
     tools.register(new ReactTool(ctx));
-    // What she keeps from a turn's tool results for the rest of the conversation (notes.ts).
+    // What she keeps from a run's tool results for the rest of the conversation (notes.ts).
     const notes = new WorkingNotes(() => ctx.clock.now());
     tools.register(new KeepNoteTool(notes));
     tools.register(new DropNoteTool(notes));
@@ -202,98 +176,56 @@ export class AgentModule implements Module {
       ctx,
       config,
       this.#persona,
-      random,
       handle,
       tools,
       this.#commands,
       this.#fetchImage,
     );
-    const intents = new AgentIntents(
-      agent,
-      () => ctx.services.get(ActuatorRegistryKey) ?? actuators,
-    );
-    for (const capability of chatCapabilities(agent, intents)) {
-      this.#unregister.push(actuators.register(capability));
-    }
-    ctx.provide(IntentSinkKey, intents);
-    ctx.provide(ImpulseHostKey, intents);
     ctx.provide(TurnSilencerKey, agent);
     ctx.provide(TurnFocusViewKey, agent.focusBoard);
     ctx.provide(SavedPromptsKey, agent.prompts);
     this.#agent = agent;
-    const lane = config.work.enabled ? this.#startLane(ctx, agent, tools, actuators) : null;
+    if (config.work.enabled) this.#startLane(ctx);
     ctx.provide(MouthKey, agent.mainline);
-    // Her own wishes to work become work-lane tasks on the same board (worklane/initiative.ts).
-    const proposals = agent.mainline.proposals;
-    ctx.provide(
-      ProposalBoardKey,
-      lane === null || !config.work.initiative
-        ? proposals
-        : workBoard(proposals, () => !ctx.signal.aborted),
-    );
+    // Her promises from conversation are recorded by the memory's segment pass.
+    ctx.provide(PromiseBookKey, agent.mainline.commitments);
     await agent.mainline.start();
+    if (this.#textRunners === null) {
+      ctx.log.warn("no text runner is installed: nothing answers her conversations");
+    } else {
+      this.#textRunner = this.#textRunners(agent);
+      agent.textRunner = this.#textRunner;
+    }
     ctx.spawn("events", () => agent.run(events));
   }
 
   /**
-   * The work lane (v4 §4.3): provided as `WorkLaneKey` (the game director drives its tasks
-   * there); under the main line also its three capabilities, and its results reach her through
-   * the hands. Tasks a restart cut are told once, after the other modules are up.
+   * The work lane (v4 §4.3), provided as `WorkLaneKey`: the game director drives its tasks there
+   * step by step and keeps what it learned in it. Her own long tasks are the new runner's
+   * sub-agent jobs (`delegate`).
    */
-  #startLane(
-    ctx: ModuleContext,
-    agent: Agent,
-    tools: ToolRegistry,
-    actuators: ActuatorRegistry,
-  ): WorkLaneService {
+  #startLane(ctx: ModuleContext): void {
     const persona = this.#persona;
-    const main = agent.mainline;
     const lane = new WorkLaneService({
       config: ctx.config(AgentConfigSchema).work,
       now: () => ctx.clock.now(),
       router: () => ctx.services.get(LlmRouterKey) ?? null,
-      tools: () => tools,
-      services: ctx.services,
       publish: ctx.publisher,
-      follow: (topic, payload) => {
-        main.custom(topic, payload);
-      },
       store: () => ctx.services.get(SettingsStoreKey) ?? null,
       profile: () => persona.read((p) => p.id),
-      self: (platform) => agent.selfAccount(platform),
-      persona: () => ({
-        name: persona.read((p) => p.displayName),
-        text: persona.corePrompt(),
-      }),
-      rules: (context) => ctx.services.get(DirectivesKey)?.inject(context) ?? [],
-      retell: ({ context, requester, detail }) => {
-        main.hands.report({
-          context: context ?? ACTING_ALONE,
-          tool: WORK_START_TOOL,
-          state: "failed",
-          detail,
-          requester,
-          report: requester === null ? "prompt" : "turn",
-        });
-      },
       log: ctx.log,
     });
     this.#lane = lane;
     ctx.provide(WorkLaneKey, lane);
-    main.hands.lookUpEnded((task) => lane.ended(task));
-    for (const capability of workCapabilities({ lane, tools: () => tools })) {
-      this.#unregister.push(actuators.register(capability));
-    }
-    ctx.spawn("work-recover", async (signal) => {
-      // After the Floor and the Arbiter are up: telling her opens a turn through them.
-      await sleep(RECOVER_DELAY_MS, signal);
+    ctx.spawn("work-recover", async () => {
       const n = await lane.recover();
-      if (n > 0) ctx.log.info({ count: n }, "work tasks cut by the restart were told");
+      if (n > 0) ctx.log.info({ count: n }, "work tasks a restart cut were ended");
     });
-    return lane;
   }
 
   async stop(): Promise<void> {
+    this.#textRunner?.stop();
+    this.#textRunner = null;
     this.#lane?.close();
     this.#lane = null;
     this.#commands.uninstall();

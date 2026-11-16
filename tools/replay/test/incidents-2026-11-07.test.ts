@@ -168,7 +168,7 @@ describe("the main line", () => {
       ]);
     });
 
-    it("never limits what nobody can wait for: a death, low health, a result she must report, a song", async () => {
+    it("never limits what nobody can wait for: a death, low health, a song", async () => {
       const { run: r } = await run(load("empty-room.jsonl"));
       const all = verdicts(r);
       const unkeyed = all.filter((v) => keyOf(v) === null);
@@ -176,7 +176,10 @@ describe("the main line", () => {
       // They come while she is stopped: the narration just before and after is held.
       const around = all.filter((v) => keyOf(v) === "game:thing:6" || keyOf(v) === "game:thing:7");
       expect(around.map((v) => v.decision.reason)).toEqual(["unanswered", "unanswered"]);
-      for (const v of unkeyed) {
+      // A result to report is the new runner's (her inbox), not the Arbiter's.
+      const result = unkeyed.find((v) => v.impulse.source === "followup");
+      expect(result?.decision).toMatchObject({ verdict: "rejected", reason: "denied" });
+      for (const v of unkeyed.filter((u) => u.impulse.source !== "followup")) {
         expect(v.decision.verdict, v.impulse.why).toBe("accepted");
         // And she said it: a line of hers in voice right after it came in.
         const at = Date.parse(r.inputs[0]?.at ?? "") + v.at * MIN;
@@ -203,11 +206,12 @@ describe("the main line", () => {
   });
 
   describe("2026-11-07: her own lines stay where she is", () => {
-    it("game commentary and a task result meant for a text channel are said in voice", async () => {
+    it("game commentary meant for a text channel is said in voice", async () => {
       const { run: r } = await run(load("own-lines-stay-in-voice.jsonl"));
       expect(r.sink.messages()).toEqual([]);
       const spoken = r.sink.speeches();
-      expect(spoken).toHaveLength(2);
+      // The task result is the new runner's (a `followup` impulse is refused here).
+      expect(spoken).toHaveLength(1);
       for (const s of spoken) {
         expect(s.action.payload.type === "speak" && s.action.payload.context).toMatchObject({
           kind: "voice",
@@ -216,13 +220,13 @@ describe("the main line", () => {
       }
     });
 
-    it("with keep_in_voice off the same lines are posted to the text channel", async () => {
+    it("with keep_in_voice off the same line is posted to the text channel", async () => {
       const log = load("own-lines-stay-in-voice.jsonl");
       log.meta.modules = { agent: { voice: { keep_in_voice: false } } };
       const { run: r } = await run(log);
       expect(r.sink.speeches()).toEqual([]);
       const posted = r.sink.messages();
-      expect(posted).toHaveLength(2);
+      expect(posted).toHaveLength(1);
       for (const m of posted) {
         expect(m.action.payload.type === "send_message" && m.action.payload.context).toMatchObject({
           kind: "channel",

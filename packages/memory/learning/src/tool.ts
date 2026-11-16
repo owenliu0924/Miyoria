@@ -4,23 +4,24 @@
 // speaker (`said`: they may add things and change what is theirs or about them), in a turn she
 // started herself it is `inferred` (she concluded it from a conversation), never privileged.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import type { Tool, ToolContext, ToolMeta, ToolSpec } from "@miyoria/llm/tools";
 import {
   isJsonObject,
   type JsonObject,
   type JsonValue,
+  type KnowledgeBase,
   type KnowledgeChange,
   type KnowledgeSubject,
   type KnowledgeWriter,
   type PersonId,
 } from "@miyoria/types";
 import { PatchError, parseOps } from "./json-doc.js";
-import { type KnowledgeStore, shortId } from "./knowledge.js";
+import { shortId } from "./knowledge.js";
 
 export const KNOWLEDGE_TOOL = "knowledge_note";
 
 export interface ToolDeps {
-  store: KnowledgeStore;
+  store: Pick<KnowledgeBase, "apply">;
   personOf: (ctx: ToolContext) => PersonId | null;
   nameOf: (ctx: ToolContext) => string | null;
 }
@@ -31,6 +32,7 @@ function str(args: JsonObject, key: string): string | null {
 }
 
 export class KnowledgeTool implements Tool {
+  readonly meta: ToolMeta = { effect: "act", speed: "instant", risk: "low", group: "memory" };
   readonly spec: ToolSpec = {
     name: KNOWLEDGE_TOOL,
     description:

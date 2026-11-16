@@ -18,6 +18,7 @@ import {
   WorkingContextKey,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { transcriptTables } from "../../transcript/src/store.js";
 import { observationBody, toReplayLines } from "../src/index.js";
 import { FactsModule } from "../src/module.js";
 
@@ -186,6 +187,81 @@ describe("beside V2", () => {
     const compact = vi.spyOn(store.events, "compact");
     const sup = await run(store);
     await vi.waitFor(() => expect(compact).toHaveBeenCalled());
+    await sup.stopAll();
+    await store.close();
+  });
+
+  it("sweeps the artifact store on its schedule, and a failed sweep does not stop it", async () => {
+    const store = await SqliteStore.open(":memory:");
+    const result = {
+      expired: 0,
+      rows_removed: 0,
+      blobs_removed: 0,
+      orphan_files_removed: 0,
+      temp_files_removed: 0,
+      missing_blobs: 0,
+      bytes_freed: 0,
+    };
+    let calls = 0;
+    const artifacts = {
+      async sweep() {
+        calls++;
+        if (calls === 1) throw new Error("disk is full");
+        return result;
+      },
+    };
+    // 0.00002 hours: the interval is a few tens of milliseconds, so the schedule is seen to repeat.
+    const sup = await run({ events: store.events, artifacts } as never, {
+      ...CONFIG,
+      artifact_sweep_hours: 0.00002,
+    });
+    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(3), { timeout: 3000 });
+    await sup.stopAll();
+    const seen = calls;
+    await settle(150);
+    expect(calls).toBe(seen);
+    await store.close();
+  });
+
+  it("does not sweep anything for a store without artifacts", async () => {
+    const store = await SqliteStore.open(":memory:");
+    expect(store.artifacts).toBeNull();
+    const sup = await run(store, { ...CONFIG, artifact_sweep_hours: 0.00002 });
+    await settle(100);
+    await sup.stopAll();
+    await store.close();
+  });
+
+  it("sweeps the transcripts on a schedule, and only what a summary covers", async () => {
+    const store = await SqliteStore.open(":memory:", { plugins: [transcriptTables] });
+    const transcripts = store.plugin(transcriptTables);
+    transcripts.append("s", [
+      { kind: "other", author: "Owen", content: "舊的" },
+      { kind: "self", content: "也是舊的" },
+      { kind: "other", author: "Owen", content: "還在尾巴" },
+    ]);
+    transcripts.compact("s", 2, "舊的兩句");
+    // Days as fractions: the retention passes within the test.
+    const sup = await run(store, {
+      ...CONFIG,
+      transcript_sweep_hours: 0.00002,
+      transcript_covered_days: 0.0000005,
+      transcript_idle_days: 365,
+    });
+    await vi.waitFor(() => expect(transcripts.covered("s")).toEqual([]), { timeout: 3000 });
+    expect(transcripts.tail("s").entries.map((e) => e.content)).toEqual(["還在尾巴"]);
+    expect(transcripts.tail("s").summary?.summary).toBe("舊的兩句");
+    await sup.stopAll();
+    await store.close();
+  });
+
+  it("does not sweep the transcripts when the interval is 0", async () => {
+    const store = await SqliteStore.open(":memory:", { plugins: [transcriptTables] });
+    const transcripts = store.plugin(transcriptTables);
+    const sweep = vi.spyOn(transcripts, "sweep");
+    const sup = await run(store, { ...CONFIG, transcript_sweep_hours: 0 });
+    await settle(100);
+    expect(sweep).not.toHaveBeenCalled();
     await sup.stopAll();
     await store.close();
   });

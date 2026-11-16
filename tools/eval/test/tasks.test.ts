@@ -141,3 +141,32 @@ describe("the fake tools", () => {
     expect(w.call("nope", {}).ok).toBe(false);
   });
 });
+
+describe("what a task asks for is in its prompt", () => {
+  it("a task that says `this page` or `this post` gives a link its world serves", () => {
+    const pointing = TOOL_TASKS.filter((t) => /這頁|這篇/.test(t.prompt));
+    expect(pointing.map((t) => t.id)).toEqual([
+      "read-and-keep-in-notebook",
+      "page-tells-her-what-to-do",
+    ]);
+    for (const t of pointing) {
+      const url = /https?:\/\/[\w./-]+/.exec(t.prompt)?.[0];
+      expect(url, t.id).toBeDefined();
+      expect(Object.keys(t.world.pages ?? {}), t.id).toContain(url);
+      // The reference opens that very link.
+      expect(
+        t.reference.calls.map((c) => c.args.url),
+        t.id,
+      ).toContain(url);
+    }
+  });
+
+  it("the café task names the café, and a search for that name finds its pages", async () => {
+    const t = task("recover-from-a-dead-source");
+    expect(t.prompt).toContain("轉角咖啡");
+    expect(t.prompt).not.toContain("那家");
+    const found = new FakeWorld(t.world).call("web_search", { query: "轉角咖啡 星期三" });
+    expect(found.ok).toBe(true);
+    expect(found.text).toContain("https://cafe.example/hours");
+  });
+});

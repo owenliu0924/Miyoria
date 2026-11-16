@@ -4,7 +4,9 @@
 import { MemorySettingsStore } from "@miyoria/store";
 import type { PromptRequest } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
+import { rig } from "../../notes/test/helpers.js";
 import {
+  CachedSelfDocument,
   KnowledgeConfigSchema,
   KnowledgeStore,
   knowledgeConfig,
@@ -46,6 +48,31 @@ describe("documents about people and the person profiles", () => {
       "self",
     ]);
     expect(subjectsFor(kb, request, false).map((s) => s.type)).toEqual(["guild", "self"]);
+    expect(subjectsFor(kb, request, true, false).map((s) => s.type)).toEqual([
+      "person",
+      "person",
+      "guild",
+    ]);
+  });
+});
+
+describe("her self document for the pinned block", () => {
+  it("is read whole and changes only when the document is rewritten", async () => {
+    const open = await rig();
+    try {
+      const self = new CachedSelfDocument(open.notes);
+      const seed = self.read(2000);
+      expect(seed).not.toBe("");
+      open.notes.rewriteSelf("最近很喜歡聊天\n想做的事:學畫畫");
+      const written = self.read(2000);
+      expect(written).toContain("學畫畫");
+      expect(self.read(2000)).toBe(written);
+      open.clock.tick(1000);
+      open.notes.rewriteSelf("最近很喜歡聊天\n想做的事:存錢買耳機");
+      expect(self.read(2000)).toContain("存錢買耳機");
+    } finally {
+      open.store.close();
+    }
   });
 });
 

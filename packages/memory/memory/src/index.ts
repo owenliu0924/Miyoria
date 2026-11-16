@@ -50,6 +50,8 @@ export {
   memoryConfig,
   type NotebookConfig,
   NotebookConfigSchema,
+  type NotesRecallConfig,
+  NotesRecallConfigSchema,
   type PinnedConfig,
   PinnedConfigSchema,
   type Pooling,
@@ -60,6 +62,8 @@ export {
   RecentConfigSchema,
   type RepeatConfig,
   RepeatConfigSchema,
+  type SegmentConfig,
+  SegmentConfigSchema,
   type Weights,
   WeightsSchema,
 } from "./config.js";
@@ -155,6 +159,7 @@ export { MEMORY_SEARCH_SQL, MEMORY_TABLES_SQL, memorySchema } from "./migrations
 export {
   type Activity,
   ActivityTracker,
+  liveSegmentConfig,
   MemoryModule,
   MemoryModuleError,
   type MemoryModuleOptions,
@@ -183,6 +188,13 @@ export {
   NotebookReadTool,
   NotebookWriteTool,
 } from "./notebook-tools.js";
+export {
+  NotesRecall,
+  type NotesRecallDeps,
+  NotesSourceState,
+  type RecallAsk,
+  type Recollection,
+} from "./notes-recall.js";
 export { PersonNotes } from "./person-note.js";
 export { PINNED_TITLE, PinnedReader } from "./pinned.js";
 export { type Disclosure, disclose, PRIVATE_MARK, placeRef, type Viewer } from "./places.js";
@@ -261,4 +273,12 @@ export {
   visibleQuestion,
 } from "./threads.js";
 export { normalizeForCompare, textSimilarity, tokenize, tokenString } from "./tokenize.js";
-export { MemoryToolError, RECALL, REMEMBER, RecallTool, RememberTool } from "./tools.js";
+export {
+  MemoryToolError,
+  RECALL,
+  RECALL_NOTHING,
+  RECALL_WEAK,
+  REMEMBER,
+  RecallTool,
+  RememberTool,
+} from "./tools.js";

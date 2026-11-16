@@ -9,7 +9,7 @@
 //   (`GET /api/events` is the live bus stream.)
 // * `GET /api/facts/events/:id`, `.../:id/chain` (its causes, oldest first), `.../:id/effects`
 //   (what it caused).
-// * `GET /api/facts/context`, `GET /api/facts/deliveries`, `GET /api/facts/retryable`.
+// * `GET /api/facts/deliveries`: what really reached someone.
 
 import {
   type ContextKey,
@@ -21,7 +21,6 @@ import {
   isLogEventKind,
   type LogEvent,
   type LogEventFilter,
-  WorkingContextKey,
 } from "@miyoria/types";
 import { os } from "./contract.js";
 import { parseContextKeyString } from "./data.js";
@@ -156,21 +155,10 @@ export const factsRpc = {
     const log = context.state.service(EventLogKey, "facts module");
     return log.effects(input.params.id, { limit: clampLimit(input.query.limit) });
   }),
-  context: os.facts.context.handler(({ input, context }) =>
-    context.state.service(WorkingContextKey, "facts module").buckets(contextOf(input.query)),
-  ),
   deliveries: os.facts.deliveries.handler(({ input, context }) => {
     const ledger = context.state.service(DeliveryLedgerKey, "facts module");
     const where = contextOf(input.query);
     return ledger.recent({
-      limit: limitOf(input.query.limit),
-      ...(where ? { context: where } : {}),
-    });
-  }),
-  retryable: os.facts.retryable.handler(({ input, context }) => {
-    const ledger = context.state.service(DeliveryLedgerKey, "facts module");
-    const where = contextOf(input.query);
-    return ledger.retryable({
       limit: limitOf(input.query.limit),
       ...(where ? { context: where } : {}),
     });

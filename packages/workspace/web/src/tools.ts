@@ -50,6 +50,7 @@ export function searchCapability(web: WebService): Capability {
     permission: WEB_NODE,
     tool: {
       name: "web_search",
+      meta: { effect: "read", speed: "instant", group: "web", core: true },
       framed: true,
       readOnly: true,
       description:
@@ -80,6 +81,7 @@ export function readCapability(web: WebService): Capability {
     permission: WEB_NODE,
     tool: {
       name: "web_read",
+      meta: { effect: "read", speed: "instant", group: "web", core: true },
       framed: true,
       readOnly: true,
       description:

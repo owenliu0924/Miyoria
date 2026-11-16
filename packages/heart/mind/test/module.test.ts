@@ -91,15 +91,10 @@ describe("mind module: Plan", () => {
     expect(data).toContain(`${VOICE_REF}:語音頻道 v1`);
 
     await wait(10);
-    // voice.join went to the agent (no Arbiter here) with the channel from the place.
-    expect(r.intents.intents.map((i) => [i.capability, i.args, i.opening])).toEqual([
-      ["voice.join", { channel: "v1", guild: "g1" }, "假裝路過"],
-    ]);
+    // Her Plan has no impulses (the old field in this reply is ignored): her own starts are the
+    // new runner's.
     const [thought] = r.mind().thoughts();
-    expect(thought?.intents.map((i) => [i.capability, i.status])).toEqual([
-      ["voice.join", "started"],
-      ["speak", "dropped"],
-    ]);
+    expect(thought?.intents).toEqual([]);
     expect(thought?.changes).toEqual(["目標 +「問 Owen 報告的結果」(Owen 上線時)"]);
     const agenda = r.sup.services.require(GoalAgendaKey);
     expect(agenda.goals().map((g) => [g.what, g.trigger])).toEqual([

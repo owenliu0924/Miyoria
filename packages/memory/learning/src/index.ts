@@ -82,6 +82,7 @@ export {
 } from "./knowledge.js";
 export { isTalkLesson, LESSON_PREFIX, LessonStore } from "./lessons.js";
 export {
+  CachedSelfDocument,
   CONVERSATION_CONTRIBUTOR,
   ConversationModule,
   KNOWLEDGE_CONTRIBUTOR,
@@ -89,6 +90,7 @@ export {
   LESSONS_CONTRIBUTOR,
   type LearningModuleOptions,
   ReflectModule,
+  reflectUnder,
   subjectsFor,
 } from "./modules.js";
 export { RECAP_STALE_MINS, recapAgeNote } from "./recap-age.js";

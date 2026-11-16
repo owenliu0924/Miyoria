@@ -203,6 +203,7 @@ export class SingModule implements Module {
       Events.VoiceParticipants.type,
       Events.VoicePlaybackEvent.type,
       Events.AgentTurnCompleted.type,
+      Events.ArbiterDecided.type,
       Events.QueueItemActivated.type,
     ]);
     ctx.spawn("events", async () => {

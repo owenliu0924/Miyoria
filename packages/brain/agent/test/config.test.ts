@@ -1,6 +1,6 @@
 import type { ContextKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { MainLineConfigSchema, WorkConfigSchema } from "../src/config.js";
+import { DelegateConfigSchema, MainLineConfigSchema, WorkConfigSchema } from "../src/config.js";
 import {
   AgentConfigSchema,
   activenessFor,
@@ -67,10 +67,21 @@ describe("config", () => {
     expect(cfg.debounce_ms).toBe(10);
     expect(cfg.channels.c).toBe("always");
     expect(cfg.max_debounce_ms).toBe(4000);
-    expect(cfg.tools_enabled).toBe(true);
-    expect(cfg.max_tool_steps).toBe(3);
     expect(cfg.contributor_timeout_ms).toBe(800);
-    expect(cfg.budget_notice_interval_ms).toBe(3_600_000);
+  });
+
+  it("the_six_output_checks_are_on_by_default", () => {
+    expect(defaultAgentConfig().corrections).toEqual({
+      leak_screen: true,
+      leak_screen_spoken: true,
+      thinking_block: true,
+      fallback_line: true,
+      tag_strip: true,
+      self_talk: true,
+    });
+    const off = AgentConfigSchema.parse({ corrections: { self_talk: false } }).corrections;
+    expect(off.self_talk).toBe(false);
+    expect(off.leak_screen).toBe(true);
   });
 
   it("defaults", () => {
@@ -78,12 +89,11 @@ describe("config", () => {
       debounce_ms: 800,
       typing_extend_ms: 2500,
       max_debounce_ms: 4000,
-      history_after_fold: 25,
       mainline: MainLineConfigSchema.parse({}),
       work: WorkConfigSchema.parse({}),
+      delegate: DelegateConfigSchema.parse({}),
       history_limit: 240,
       prompt_history: 30,
-      time_gap_ms: 1_800_000,
       mention_users: true,
       default_mode: null,
       channels: {},
@@ -95,31 +105,17 @@ describe("config", () => {
       reply_reference: true,
       one_caller_per_turn: true,
       typing_refresh_ms: 8000,
-      tools_enabled: true,
-      max_tool_steps: 3,
-      tool_timeout_ms: 10_000,
-      max_tool_result_chars: 12_500,
       temperature: null,
       max_tokens: null,
       session_idle_ms: 21_600_000,
-      seed: null,
       contributor_timeout_ms: 800,
-      budget_notice_interval_ms: 3_600_000,
       corrections: {
-        tool_text_reask: true,
-        promise_commit: true,
-        claims: true,
         leak_screen: true,
+        leak_screen_spoken: true,
+        thinking_block: true,
+        fallback_line: true,
+        tag_strip: true,
         self_talk: true,
-        prohibition_write: true,
-      },
-      attention: {
-        recent_window: 20,
-        max_share_of_recent: null,
-        keywords: [],
-        gray_low: 0.3,
-        direct_probability: 1.0,
-        talk_floor: 0.15,
       },
       voice: {
         debounce_ms: 700,
@@ -127,9 +123,7 @@ describe("config", () => {
         turn_debounce_ms: 100,
         max_debounce_ms: 2500,
         default_mode: "normal",
-        max_share_of_recent: 0.2,
         question_window_ms: 8000,
-        gray_low: 0.15,
         speak_ttl_ms: 30_000,
         text_chat: true,
         text_aside: true,
@@ -174,6 +168,7 @@ describe("config", () => {
           examples: 2500,
         },
         default_budget: 600,
+        self_chars: 2000,
         save_every: 1,
         saved: 50,
         saved_message_chars: 800,

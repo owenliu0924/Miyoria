@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { Thought } from "@/api/types";
-import type { ChannelLevelsView, ConversationNote, KnowledgeView, MindView, PendingApproval, ReflectionView, SelfView, TelemetryPoint, WorldView } from "@miyoria/contracts/api";
+import type { ChannelLevelsView, ConversationNote, MindView, PendingApproval, ReflectionView, SelfView, TelemetryPoint, WorldView } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 
 const SELF: SelfView = {
@@ -395,47 +395,7 @@ describe("Inner", () => {
     expect(await screen.findByRole("table", { name: "在線的人" })).toBeInTheDocument();
   });
 
-  it("shows her documents of any shape, grouped by subject, with where fields came from", async () => {
-    const source = (kind: "self" | "said", name: string | null, confidence = 0.8) => ({
-      kind,
-      account: null,
-      name,
-      origin: null,
-      confidence,
-      at: "2026-11-02T11:00:00.000Z",
-    });
-    const KNOWLEDGE: KnowledgeView = {
-      documents: [
-        {
-          id: "01JC00000000000000000ABC12",
-          subject: { type: "person", person: "p1" },
-          kind: "人物卡",
-          title: "Owen",
-          content: { 喜歡: ["拉麵", "貓"], 最近在忙: "期末考\n**週三**考數學", 怎麼相處: { 稱呼: "歐文" } },
-          sources: { "": source("self", null), "/喜歡/1": source("said", "Owen") },
-          created_at: "2026-11-01T00:00:00.000Z",
-          updated_at: "2026-11-02T11:00:00.000Z",
-          version: 3,
-          history: [{ version: 3, at: "2026-11-02T11:00:00.000Z", by: "said", name: "Owen", why: "他說的", ops: ["add /喜歡/1"] }],
-          short_id: "#abc12",
-          subject_label: "Owen",
-        },
-        {
-          id: "01JC00000000000000000DEF34",
-          subject: { type: "topic", name: "Minecraft 建築計畫" },
-          kind: "計畫",
-          title: "城堡",
-          content: { 進度: [{ 階段: "地基", 完成: true }] },
-          sources: { "": source("self", null) },
-          created_at: "2026-11-01T00:00:00.000Z",
-          updated_at: "2026-11-02T10:00:00.000Z",
-          version: 1,
-          history: [],
-          short_id: "#def34",
-          subject_label: "Minecraft 建築計畫",
-        },
-      ],
-    };
+  it("shows her conversation notes next to her documents", async () => {
     const NOTES: ConversationNote[] = [
       {
         context: { platform: "discord", scope: "g1", channel: "c1", kind: "channel" },
@@ -449,22 +409,11 @@ describe("Inner", () => {
       },
     ];
     mockFetch((_m, url) => {
-      if (url.pathname === "/api/knowledge") return { body: KNOWLEDGE };
+      if (url.pathname === "/api/notes/documents") return { body: { documents: [], counts: [] } };
       if (url.pathname === "/api/knowledge/conversations") return { body: NOTES };
       return undefined;
     });
     renderRoute("/inner?tab=knowledge");
-    const owen = await screen.findByRole("region", { name: "Owen" });
-    const card = within(owen).getByRole("article", { name: "人物卡「Owen」" });
-    expect(within(card).getByText("拉麵")).toBeInTheDocument();
-    expect(within(card).getByText("(Owen 說)")).toBeInTheDocument();
-    expect(within(card).getByText("稱呼")).toBeInTheDocument();
-    expect(within(card).getByText(/週三/)).toBeInTheDocument();
-    expect(within(card).getByText("#abc12")).toBeInTheDocument();
-    expect(within(card).getByText("改過 1 次")).toBeInTheDocument();
-    const topic = screen.getByRole("region", { name: "Minecraft 建築計畫" });
-    expect(within(topic).getByText("地基")).toBeInTheDocument();
-    expect(within(topic).getByText("是")).toBeInTheDocument();
     const notes = await screen.findByRole("list", { name: "對話筆記" });
     expect(within(notes).getByText("Miyoria / 雜談")).toBeInTheDocument();
     expect(within(notes).getByText("大家在聊海豚,Owen 週三要考試。")).toBeInTheDocument();

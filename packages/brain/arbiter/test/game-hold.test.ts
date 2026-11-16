@@ -96,7 +96,6 @@ describe("a game that was stopped stays stopped", () => {
     expect(arbiter.held?.("game.start")).not.toBeNull();
     const own: ArbiterDecision = await arbiter.submit(startGame("plan"));
     expect(own).toMatchObject({ verdict: "rejected", reason: "denied" });
-    expect(own.detail).toContain(HOLD_TEXT);
     const asked: ArbiterDecision = await arbiter.submit(startGame("message"));
     expect(JSON.stringify(asked)).not.toContain(HOLD_TEXT);
 

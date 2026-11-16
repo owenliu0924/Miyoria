@@ -48,7 +48,6 @@ import {
   Principals,
   type ProfileId,
   type Proposal,
-  ProposalBoardKey,
   type ProposalResultBody,
   type Publish,
   type Subject,
@@ -534,13 +533,6 @@ export class DirectiveService implements Directives {
     }
   }
 
-  /** Every proposal waiting on the board goes through the rules again (a rule just changed). */
-  sweep(): void {
-    const board = this.#services.get(ProposalBoardKey);
-    if (board === undefined) return;
-    for (const proposal of board.open()) this.screen(proposal);
-  }
-
   // ---- authority ------------------------------------------------------------------------------
 
   /** What `subject` is to the rules, from its account and roles alone. */
@@ -697,8 +689,6 @@ export class DirectiveService implements Directives {
     await this.refresh();
     this.#tell("add", `新規則:${text}`, directive, request.by);
     await this.#audit(request.by, "directive.add", directive.id, toJson(directive), true);
-    // What a new rule forbids is off the board at once (§9), not when someone next looks.
-    if (enforced(directive)) this.sweep();
     const stopped = effect === "deny" ? await this.#enforce(directive) : null;
     return { status: "added", directive, note: [note, stopped].filter(Boolean).join(" ") || null };
   }

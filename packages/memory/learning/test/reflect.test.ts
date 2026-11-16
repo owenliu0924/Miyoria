@@ -441,6 +441,33 @@ describe("feedback signals", () => {
       .find((t) => t.subject === "discord:g1:c1");
     expect(place).toMatchObject({ started: 1, ignored: 1, answered: 0 });
   });
+
+  it("counts an opening of the turn runner, whose reasons start with its own", async () => {
+    const r = await rig({ provider: new MockProvider("p").reply("{}"), modules: ["reflect"] });
+    r.publish(Events.AgentDecision, {
+      turn: "T3",
+      context: TEXT,
+      respond: true,
+      score: 0,
+      reasons: ["runner self", "initiative: quiet"],
+    });
+    r.publish(Events.AgentTurnCompleted, { turn: "T3", context: TEXT, text: "有人在嗎" });
+    // A line of someone she was asked about is not an opening.
+    r.publish(Events.AgentDecision, {
+      turn: "T4",
+      context: TEXT,
+      respond: true,
+      score: 0,
+      reasons: ["runner self", "addressed: mention"],
+    });
+    r.publish(Events.AgentTurnCompleted, { turn: "T4", context: TEXT, text: "在" });
+    await wait(12 * 60_000);
+    const place = r.sup.services
+      .require(ReflectionKey)
+      .feedback(1)
+      .find((t) => t.subject === "discord:g1:c1");
+    expect(place).toMatchObject({ started: 1, ignored: 1, answered: 0 });
+  });
 });
 
 describe("reflection writes only stable names", () => {

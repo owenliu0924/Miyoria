@@ -98,13 +98,11 @@ export interface PlaceSummary {
   last_at: Timestamp;
 }
 
-/** Provided by the `memory` module. DMs are never among the places. */
+/** What the `memory` module reads of the other places. DMs are never among them. */
 export interface Elsewhere {
   places(where: Whereabouts, signal?: AbortSignal): Promise<PlaceSummary[]>;
   render(where: Whereabouts, maxChars: number, signal?: AbortSignal): Promise<string>;
 }
-
-export const ElsewhereKey = serviceKey<Elsewhere>("Elsewhere");
 
 // ---- threads with a person --------------------------------------------------------------------
 
@@ -238,6 +236,8 @@ export interface TurnRetrievalQuery extends RetrievalQuery {
   recent?: readonly string[];
   /** The people she is talking with: a few of their key memories come back without a shared word. */
   talking_with?: readonly PersonId[];
+  /** A spoken turn: a search waits for its query's vector only the voice wait. */
+  voice?: boolean;
 }
 
 // ---- place access ----------------------------------------------------------------------------

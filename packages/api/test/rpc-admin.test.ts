@@ -11,7 +11,6 @@ import {
   type AuthScope as ContractAuthScope,
   type CauseChain as ContractCauseChain,
   type CommissionView as ContractCommissionView,
-  type ContextBucket as ContractContextBucket,
   type ConversationNote as ContractConversationNote,
   type CostReport as ContractCostReport,
   type DataCategoryId as ContractDataCategoryId,
@@ -66,7 +65,6 @@ import {
   type SelfView as ContractSelfView,
   type SkillFile as ContractSkillFile,
   type SongView as ContractSongView,
-  type SpokenLine as ContractSpokenLine,
   type StageState as ContractStageState,
   type Thought as ContractThought,
   type ThoughtDigest as ContractThoughtDigest,
@@ -112,7 +110,6 @@ import type {
   ArbiterDecision,
   CauseChain,
   ChannelActivity,
-  ContextBucket,
   ContextKey,
   ConversationState,
   CountedOutcome,
@@ -140,7 +137,6 @@ import type {
   SavedPrompt,
   SelfSnapshot,
   SkillShelfFile,
-  SpokenLine,
   Thought,
   ThoughtDigest,
   VoiceParticipant,
@@ -237,10 +233,8 @@ const CASES: Case[] = [
   { name: "facts.event", method: "GET", path: "/api/facts/events/:id" },
   { name: "facts.chain", method: "GET", path: "/api/facts/events/:id/chain" },
   { name: "facts.effects", method: "GET", path: "/api/facts/events/:id/effects" },
-  // No client in this repository calls the next two; only the tests do.
-  { name: "facts.context", method: "GET", path: "/api/facts/context" },
+  // No client in this repository calls the next one; only the tests do.
   { name: "facts.deliveries", method: "GET", path: "/api/facts/deliveries" },
-  { name: "facts.retryable", method: "GET", path: "/api/facts/retryable" },
   { name: "economy.health", method: "GET", path: "/api/economy/health" },
   { name: "economy.commissions", method: "GET", path: "/api/economy/commissions" },
   { name: "economy.predictions", method: "GET", path: "/api/economy/predictions" },
@@ -426,10 +420,8 @@ describe("the schemas agree with the types of the packages that own the shapes",
   it("the fact layer", () => {
     const event: Same<ContractLogEvent, LogEvent> = true;
     const chain: Same<ContractCauseChain, CauseChain> = true;
-    const bucket: Same<ContractContextBucket, ContextBucket> = true;
     const delivery: Same<ContractDelivery, Delivery> = true;
-    const line: Same<ContractSpokenLine, SpokenLine> = true;
-    expect([event, chain, bucket, delivery, line]).toEqual(Array(5).fill(true));
+    expect([event, chain, delivery]).toEqual(Array(3).fill(true));
   });
 
   it("the call inspector and a thought in full", () => {

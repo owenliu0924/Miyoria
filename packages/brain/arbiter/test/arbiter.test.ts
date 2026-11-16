@@ -1,10 +1,4 @@
-import {
-  type AffectEvent,
-  type ArbiterDecision,
-  Events,
-  isSelfInitiated,
-  type LedgerEntry,
-} from "@miyoria/types";
+import { type ArbiterDecision, Events, isSelfInitiated } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   acct,
@@ -14,7 +8,6 @@ import {
   outcome,
   payloads,
   rig,
-  T0,
   textCtx,
   voiceCtx,
 } from "./helpers.js";
@@ -46,32 +39,21 @@ describe("source classification", () => {
     expect(limits.unanswered_streak).toBe(0);
     expect(r.host.opened).toHaveLength(5);
     expect(r.host.opened[0]?.args.reason).toBe("song_start");
-    // Her own start is still held to quiet hours.
-    const own = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    expect(own).toMatchObject({ verdict: "rejected", reason: "quiet_hours" });
   });
 });
 
-describe("her own act impulses", () => {
-  it("are not topics she opens: no caps or gaps, but quiet hours", async () => {
-    const r = rig({ max_per_day: 1 });
-    for (const _ of [1, 2, 3]) {
-      const d = await r.arbiter.submit(
-        impulse(r.clock, { source: "plan", kind: "act", capability: "sing.play", context: HERE }),
-      );
-      expect(d.verdict).toBe("accepted");
+describe("her own starts", () => {
+  it("are the new runner's: every one of them is refused here", async () => {
+    const r = rig();
+    for (const source of ["plan", "agenda", "world", "followup"] as const) {
+      for (const kind of ["speak", "act"] as const) {
+        const d = await r.arbiter.submit(
+          impulse(r.clock, { source, kind, capability: "voice.join", context: HERE }),
+        );
+        expect(d).toMatchObject({ verdict: "rejected", reason: "denied" });
+      }
     }
-    expect(r.arbiter.ledger().limits.initiatives_today).toBe(0);
-    const night = rig({}, new ManualClock(Date.UTC(2026, 10, 2, 18, 0, 0)));
-    const d = await night.arbiter.submit(
-      impulse(night.clock, {
-        source: "plan",
-        kind: "act",
-        capability: "voice.join",
-        context: HERE,
-      }),
-    );
-    expect(d).toMatchObject({ verdict: "rejected", reason: "quiet_hours" });
+    expect(r.host.opened).toEqual([]);
   });
 });
 
@@ -80,7 +62,7 @@ describe("floors", () => {
     const r = rig();
     r.env.paused = true;
     expect(
-      await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE })),
+      await r.arbiter.submit(impulse(r.clock, { source: "game", context: HERE })),
     ).toMatchObject({ verdict: "rejected", reason: "paused" });
     // The owner's own sources are not held by the pause.
     expect(
@@ -88,9 +70,6 @@ describe("floors", () => {
     ).toBe("accepted");
     r.env.paused = false;
     r.env.budget = "degraded";
-    expect(
-      (await r.arbiter.submit(impulse(r.clock, { source: "world", context: HERE }))).reason,
-    ).toBe("budget");
     // A song someone asked for still goes while the budget is only degraded.
     expect(
       (await r.arbiter.submit(impulse(r.clock, { source: "song", context: HERE }))).verdict,
@@ -104,7 +83,7 @@ describe("floors", () => {
     expect(
       (
         await r.arbiter.submit(
-          impulse(r.clock, { source: "followup", context: HERE, account: acct("bad") }),
+          impulse(r.clock, { source: "game", context: HERE, account: acct("bad") }),
         )
       ).reason,
     ).toBe("consent");
@@ -131,107 +110,9 @@ describe("floors", () => {
     r.clock.advance(61 * MIN);
     expect(r.arbiter.held("game.start")).toBeNull();
   });
-
-  it("does not need her in a voice channel to go there", async () => {
-    const r = rig();
-    r.host.set(voiceCtx("v"), { present: false });
-    const join = impulse(r.clock, {
-      source: "plan",
-      kind: "act",
-      capability: "voice.join",
-      context: voiceCtx("v"),
-    });
-    expect((await r.arbiter.submit(join)).reason).not.toBe("denied");
-  });
-
-  it("daily, per-place and per-person caps", async () => {
-    const r = rig({
-      min_gap_secs: 0,
-      gap_text_secs: 0,
-      max_per_day: 3,
-      max_per_context_per_day: 2,
-    });
-    const plan = (ctx = HERE, who: string | null = null) =>
-      r.arbiter.submit(
-        impulse(r.clock, { source: "plan", context: ctx, account: who ? acct(who) : null }),
-      );
-    expect((await plan()).verdict).toBe("accepted");
-    expect((await plan()).verdict).toBe("accepted");
-    const third = await plan();
-    expect(third).toMatchObject({ verdict: "rejected", reason: "rate" });
-    expect(third.detail).toContain("今天在這裡主動開了 2 次");
-    expect((await plan(THERE)).verdict).toBe("accepted");
-    const cap = await plan(textCtx("c3"));
-    expect(cap).toMatchObject({ verdict: "rejected", reason: "rate" });
-    expect(cap.detail).toContain("今天主動開了 3 次話題(上限 3)");
-    // Next local day (04:00).
-    expect(Date.parse(cap.retry_at as string)).toBe(Date.UTC(2026, 10, 3, 20, 0, 0));
-
-    const p = rig({ min_gap_secs: 0, gap_text_secs: 0, max_per_person_per_day: 1 });
-    const first = await p.arbiter.submit(
-      impulse(p.clock, { source: "plan", context: HERE, account: acct("owen") }),
-    );
-    expect(first.verdict).toBe("accepted");
-    const again = await p.arbiter.submit(
-      impulse(p.clock, { source: "plan", context: THERE, account: acct("owen") }),
-    );
-    expect(again).toMatchObject({ verdict: "rejected", reason: "rate" });
-  });
-
-  it("greetings wait a moment after she spoke (deferred, then retried)", async () => {
-    const r = rig({ after_speech_text_secs: 5 });
-    r.host.set(HERE, { last_spoke_at: T0 - 2_000 });
-    const d = await r.arbiter.submit(impulse(r.clock, { source: "world", context: HERE }));
-    expect(d).toMatchObject({ verdict: "deferred", reason: "cooldown" });
-    expect(r.arbiter.queued()).toHaveLength(1);
-    r.clock.advance(4_000);
-    await r.arbiter.pump();
-    expect(r.host.opened).toHaveLength(1);
-  });
 });
 
-describe("ordering, merging, preemption, expiry", () => {
-  it("a busy place defers; the most urgent goes first once it is free", async () => {
-    const r = rig({ retry_ms: 1000 });
-    r.host.busy.add("discord:g:c1");
-    const mine = impulse(r.clock, { source: "plan", context: HERE });
-    const song = impulse(r.clock, { source: "song", context: HERE });
-    expect((await r.arbiter.submit(mine)).verdict).toBe("deferred");
-    expect((await r.arbiter.submit(song)).verdict).toBe("deferred");
-    expect(r.arbiter.queued().map((i) => i.source)).toEqual(["song", "plan"]);
-    r.host.busy.clear();
-    r.clock.advance(1000);
-    await r.arbiter.pump();
-    // The song went; her own wish waiting there was preempted by it.
-    expect(r.host.opened.map((i) => i.source)).toEqual(["song"]);
-    const decisions = payloads<ArbiterDecision>(r.events, Events.ArbiterDecided.type);
-    expect(decisions.find((d) => d.impulse === mine.id && d.verdict === "preempted")).toMatchObject(
-      { reason: "superseded" },
-    );
-    expect(r.arbiter.queued()).toHaveLength(0);
-  });
-
-  it("someone addressing her preempts her own wishes waiting there", async () => {
-    const r = rig();
-    r.host.busy.add("discord:g:c1");
-    await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    await r.arbiter.submit(impulse(r.clock, { source: "followup", context: HERE }));
-    r.arbiter.turnFocus({
-      turn: "t-owen",
-      context: HERE,
-      reason: "addressed",
-      phase: "generating",
-      addressed_by: ["Owen"],
-      addressed_accounts: [acct("owen")],
-      focus: [],
-      background: [],
-      restarts: 0,
-      started_at: "",
-      updated_at: "",
-    });
-    expect(r.arbiter.queued().map((i) => i.source)).toEqual(["followup"]);
-  });
-
+describe("ordering, merging, expiry", () => {
   it("the same coalesce key merges (the newest wins)", async () => {
     const r = rig();
     r.host.busy.add("discord:g:c1");
@@ -262,28 +143,6 @@ describe("ordering, merging, preemption, expiry", () => {
 });
 
 describe("ledger", () => {
-  it("every block is recorded with its reason; limits show what applies", async () => {
-    const r = rig({ max_per_day: 5, max_per_context_per_day: 1 });
-    await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE, hint: "週末要幹嘛" }));
-    const blocked = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    expect(blocked.verdict).toBe("rejected");
-    const entries = payloads<LedgerEntry>(r.events, Events.ArbiterLedger.type);
-    const denied = entries.filter((e) => e.outcome === "denied");
-    expect(denied).toHaveLength(1);
-    expect(denied[0]?.detail).toMatch(/^rate: /);
-    expect(denied[0]?.self_initiated).toBe(true);
-    const view = r.arbiter.ledger(HERE);
-    expect(view.limits.initiatives_today).toBe(1);
-    expect(view.limits.initiative_cap).toBe(5);
-    // The rule that blocked her lets go when her day turns (04:00 local, UTC+8), and her quiet
-    // hours push that to their end (07:00 local).
-    expect(blocked.retry_at).toBe("2026-11-03T20:00:00.000Z");
-    expect(view.limits.next_initiative_at).toBe("2026-11-03T23:00:00.000Z");
-    // Elsewhere she may start now.
-    expect(r.arbiter.ledger(THERE).limits.next_initiative_at).toBeNull();
-    expect(view.entries[0]?.context).toEqual(HERE);
-  });
-
   it("record and resolve (ActivityManager / agent entries)", () => {
     const r = rig();
     const id = r.arbiter.record({
@@ -301,50 +160,6 @@ describe("ledger", () => {
     expect(r.arbiter.resolve(id, "failed", "OBS 沒開")).toBe(true);
     expect(r.arbiter.resolve("nope", "ok", null)).toBe(false);
     expect(r.arbiter.ledger().entries[0]).toMatchObject({ outcome: "failed", detail: "OBS 沒開" });
-  });
-
-  it("a topic nobody picked up: topic_ignored and the streak", async () => {
-    const r = rig({ min_gap_secs: 0, gap_text_secs: 600, reply_window_text_secs: 600 });
-    const d = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    const turn = d.turn as string;
-    r.arbiter.turnCompleted(turn, HERE, "欸你們週末要幹嘛");
-    r.arbiter.turnOutcome(outcome(turn, HERE, "sent"));
-    r.clock.advance(11 * MIN);
-    await r.arbiter.tick();
-    const ignored = payloads<AffectEvent>(r.events, Events.AffectEvent.type);
-    expect(ignored).toHaveLength(1);
-    expect(ignored[0]).toMatchObject({ kind: "topic_ignored", context: HERE });
-    expect(ignored[0]?.detail).toContain("週末要幹嘛");
-    const view = r.arbiter.ledger(HERE);
-    expect(view.limits.unanswered_streak).toBe(1);
-    expect(view.unanswered.map((t) => t.text)).toEqual(["欸你們週末要幹嘛"]);
-  });
-
-  it("someone answering resolves the topic and resets the backoff", async () => {
-    const r = rig({ min_gap_secs: 0 });
-    const d = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    const turn = d.turn as string;
-    r.arbiter.turnCompleted(turn, HERE, "有人在嗎");
-    r.arbiter.turnOutcome(outcome(turn, HERE, "sent"));
-    r.clock.advance(MIN);
-    // Someone else's turn that answers her.
-    r.arbiter.turnOutcome(outcome("t2", HERE, "silence", "reply_to_her"));
-    r.clock.advance(20 * MIN);
-    await r.arbiter.tick();
-    expect(payloads(r.events, Events.AffectEvent.type)).toHaveLength(0);
-    const mine = r.arbiter.ledger(HERE).entries.find((e) => e.turn === turn);
-    expect(mine).toMatchObject({ outcome: "ok" });
-  });
-
-  it("her turn that stayed silent is no raised topic", async () => {
-    const r = rig({ min_gap_secs: 0 });
-    const d = await r.arbiter.submit(impulse(r.clock, { source: "plan", context: HERE }));
-    r.arbiter.turnCompleted(d.turn as string, HERE, "");
-    r.arbiter.turnOutcome(outcome(d.turn as string, HERE, "silence"));
-    r.clock.advance(20 * MIN);
-    await r.arbiter.tick();
-    expect(payloads(r.events, Events.AffectEvent.type)).toHaveLength(0);
-    expect(r.arbiter.ledger(HERE).limits.unanswered_streak).toBe(0);
   });
 
   it("an announcement nobody answers never raises the streak", async () => {

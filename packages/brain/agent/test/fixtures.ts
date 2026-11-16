@@ -7,7 +7,6 @@ import {
   type IncomingMessage,
   toTimestamp,
 } from "@miyoria/types";
-import type { HistoryEntry } from "../src/index.js";
 
 export function tctx(kind: ContextKind = "channel"): ContextKey {
   return { platform: "t", scope: kind === "dm" ? null : "g", channel: "c", kind };
@@ -36,24 +35,5 @@ export function tmsg(
     reply_to_self: false,
     attachments: [],
     ts: toTimestamp(options.ts ?? Date.now()),
-  };
-}
-
-export function entry(author: string, text: string, isSelf: boolean): HistoryEntry {
-  return {
-    id: null,
-    replyTo: null,
-    parents: [],
-    author,
-    account: tacc(author),
-    isBot: false,
-    text,
-    attachments: [],
-    ts: Date.now(),
-    isSelf,
-    pending: null,
-    spoken: false,
-    interrupted: false,
-    turn: null,
   };
 }

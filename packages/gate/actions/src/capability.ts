@@ -3,6 +3,7 @@
 // director) goes through `ActuatorRegistry.invoke`, which runs the gate first.
 
 import type { CommandReply, ReplyFile } from "@miyoria/commands";
+import type { ToolMeta } from "@miyoria/llm/tools";
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import type {
   AccountRef,
@@ -39,9 +40,8 @@ export interface CapabilityTool {
   /**
    * High risk only: the result matters to her (e.g. program output). The tool waits up to
    * `[modules.actions] inline_wait_ms` for the review and the run; when that is not enough it
-   * answers "pending" and the outcome comes back later as a follow-up turn (an impulse of source
-   * `followup`, reason `action_result`). Without it a high-risk tool only says the request is
-   * under review.
+   * answers "pending" and the outcome comes back later as a notice (`agent.notice`). Without it
+   * a high-risk tool only says the request is under review.
    */
   followup?: boolean;
   /** Low risk only: it only looks, so it may run next to other such calls (`Tool.readOnly`). */
@@ -51,6 +51,12 @@ export interface CapabilityTool {
    * around them (`Tool.framed`): the agent passes it on as it is.
    */
   framed?: boolean;
+  /**
+   * What it does to the world, for the tool registry (`Tool.meta`); the risk is the
+   * capability's own. Every capability a module ships says it; without it the registry takes
+   * its defaults.
+   */
+  meta?: Omit<ToolMeta, "risk">;
 }
 
 /** What the owners' approval card shows instead of the raw arguments. */

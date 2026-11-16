@@ -301,4 +301,72 @@ describe("the raw record", () => {
         .some((l) => l.id === env.id),
     ).toBe(false);
   });
+
+  it("records_eval_runs_and_shared_artifacts_for_the_owner_and_keeps_them", async () => {
+    const { supervisor, store } = await facts();
+    const run: EventPayload<typeof Events.EvalRun> = {
+      v: 1,
+      at: toTimestamp(Date.parse("2026-03-10T03:00:00Z")),
+      commit: "abc1234",
+      subject: "current",
+      repeat: 1,
+      suites: {
+        persona: { headline: { pass: 0.9 }, items: 10, unsupported: 0, stopped: false },
+      },
+      tokens: {
+        calls: 3,
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        cached_prompt_tokens: 0,
+        reasoning_tokens: 0,
+      },
+      usd: 0.05,
+      duration_ms: 4000,
+      models: ["m:big"],
+      stopped: null,
+    };
+    const shared: EventPayload<typeof Events.ArtifactShared> = {
+      artifact_id: "01JABCDEFGHJKMNPQRSTVWXYZ0",
+      sha256: "a".repeat(64),
+      size: 12,
+      mime: "text/plain",
+      filename: "report.txt",
+      source: "sandbox",
+      requested_by: { platform: "discord", id: "100" },
+      person_id: null,
+      turn: "T7",
+      context: discord,
+      message_id: "m1",
+      metadata_stripped: false,
+    };
+    const evalEnv = supervisor.bus.publish("eval", Events.EvalRun, run);
+    const sharedEnv = supervisor.bus.publish("gate", Events.ArtifactShared, shared, {
+      turn: "T7",
+    });
+    // Not a payload of the type: left out.
+    supervisor.bus.publish("gate", Events.ArtifactShared, { artifact_id: "x" } as never);
+    const stored = async (type: string) => (await store.events?.query({ types: [type] })) ?? [];
+    await waitFor(async () => (await stored("eval.run")).length === 1);
+    await waitFor(async () => (await stored("artifact.shared")).length === 1);
+    const [a] = await stored("eval.run");
+    expect(a?.envelope).toMatchObject({
+      id: evalEnv.id,
+      type: "eval.run",
+      source: "eval",
+      scope: "owner",
+      tier: "keep",
+      data: run,
+    });
+    const [b] = await stored("artifact.shared");
+    expect(b?.envelope).toMatchObject({
+      id: sharedEnv.id,
+      type: "artifact.shared",
+      source: "gate",
+      turn: "T7",
+      scope: "owner",
+      tier: "keep",
+      data: shared,
+    });
+    expect(await stored("artifact.shared")).toHaveLength(1);
+  });
 });

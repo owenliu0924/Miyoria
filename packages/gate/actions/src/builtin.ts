@@ -87,6 +87,7 @@ export function dmCapability(names: NameLookup | null = null): Capability<DmArgs
     consent: "dm",
     tool: {
       name: "message_dm",
+      meta: { effect: "say", speed: "instant", group: "chat", core: true },
       description:
         "私訊某個人(Discord DM)。to 省略或填 speaker = 正在跟你說話的人;也可以填對方的名字(你看到的那個)" +
         "或 mention(<@id>)。已經在跟對方私訊時直接說就好,不用這個工具。不要私訊陌生人,也不要一直傳。",
@@ -113,8 +114,23 @@ export function dmCapability(names: NameLookup | null = null): Capability<DmArgs
       });
       if (text === "") throw new CapabilityError("nothing left to send after filtering");
       const context = await sink.openDm(to, ctx.signal);
+      const mouth = ctx.services.get(MouthKey);
       const actions = ctx.services.get(ActionSinkKey);
-      if (actions) {
+      if (mouth) {
+        // Through the main line like every line of hers: its moderation, the Floor of the DM, and
+        // the delivery record with the recipient as its audience (the wish book reads it).
+        const name = (args.to ?? "").trim();
+        const label = name === "" || name === "speaker" || /^<@!?\d+>$/.test(name) ? to.id : name;
+        const audience = ctx.services.get(HandleDirectoryKey)?.ofAccount(to, label);
+        await mouth.say({
+          context,
+          text,
+          turn: newId(),
+          source: "self",
+          blocked,
+          ...(audience === undefined ? {} : { audience: [audience] }),
+        });
+      } else if (actions) {
         await actions.submit(
           newAction(
             textLane(context),
@@ -193,6 +209,7 @@ export const testHigh: Capability<NoteArgs> = defineCapability<NoteArgs>({
   permission: "admin.autonomy.test",
   tool: {
     name: "test_high_risk",
+    meta: { effect: "act", speed: "instant", group: "test" },
     description: "測試用的高風險動作:只會留下一筆紀錄,用來試審核流程。只有被要求測試時才用。",
     properties: { note: { type: "string", description: "要留下的紀錄" } },
     required: ["note"],

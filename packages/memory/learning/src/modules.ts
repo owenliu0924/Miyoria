@@ -33,6 +33,7 @@ import {
   is,
   isJsonObject,
   type JsonValue,
+  type KnowledgeBase,
   type KnowledgeDoc,
   KnowledgeKey,
   type KnowledgeSubject,
@@ -44,10 +45,17 @@ import {
   type ProfileId,
   PromptContributorsKey,
   type PromptRequest,
+  type ReflectGuard,
+  ReflectGuardKey,
   ReflectionKey,
   type ReflectionRun,
+  type SelfDocument,
+  SelfDocumentKey,
   SocialSignalsKey,
 } from "@miyoria/types";
+import { NotesKnowledge } from "../../notes/src/knowledge.js";
+import { type NotesStore, notesTables, SELF_SUBJECT } from "../../notes/src/store.js";
+import { NotesSearchKey } from "../../notes/src/vectors.js";
 import type { BudgetState } from "./caps.js";
 import {
   ConversationConfigSchema,
@@ -68,6 +76,8 @@ const STORE_TIMEOUT_MS = 5_000;
 export const CONVERSATION_CONTRIBUTOR = "conversation";
 export const KNOWLEDGE_CONTRIBUTOR = "knowledge";
 export const LESSONS_CONTRIBUTOR = "lessons";
+/** Topic documents the knowledge section adds when they are close in meaning to the line. */
+const TOPICS_BY_MEANING = 2;
 
 function budgetOf(services: ServiceLookup): BudgetState {
   return services.get(LlmRouterKey)?.budgetState() ?? "ok";
@@ -89,6 +99,20 @@ async function handlesOf(
   } catch {
     return new StoredHandleDirectory(null, clock);
   }
+}
+
+/**
+ * Runs a reflection that is due: under `guard` (the text runner's accounting of the nightly
+ * reflection) when there is one, else as it is. `skipped` says why the guard let nothing run.
+ */
+export async function reflectUnder(
+  guard: ReflectGuard | undefined,
+  reflect: (signal: AbortSignal) => Promise<ReflectionRun | null>,
+  signal: AbortSignal,
+): Promise<{ run: ReflectionRun | null; skipped: string | null }> {
+  if (guard === undefined) return { run: await reflect(signal), skipped: null };
+  const out = await guard.run(reflect, signal);
+  return { run: out.result, skipped: out.ran ? null : (out.why ?? "") };
 }
 
 function personOf(services: ServiceLookup, account: AccountRef): PersonId | null {
@@ -257,26 +281,80 @@ export class KnowledgeModule implements Module {
     );
     await loadWithTimeout(ctx, "her documents", () => kb.load());
     this.#store = kb;
-    ctx.provide(KnowledgeKey, kb);
+    // Her documents live in the notes, for reading and writing. The old store is the whole of it
+    // only where there is no database (a bare test rig); nothing live reads it but the importer.
+    const notesStore = s.get(StoreKey)?.plugin(notesTables) ?? null;
+    const notes =
+      notesStore === null
+        ? null
+        : new NotesKnowledge({ notes: notesStore, resolver: notesStore.resolver() });
+    const base: KnowledgeBase = notes === null ? kb : notes.base();
+    ctx.provide(KnowledgeKey, base);
+    if (notes !== null) ctx.provide(SelfDocumentKey, new CachedSelfDocument(notes.notes));
+    const topics = (request: PromptRequest) =>
+      notes === null
+        ? kb
+        : {
+            docs: () =>
+              notes.notes
+                .list(notes.viewerFor(request.context, request.speakers), { kind: "topic" })
+                .map((e) => ({
+                  subject: { type: "topic" as const, name: e.document.title },
+                  title: e.document.title,
+                })),
+          };
     const contributors = s.get(PromptContributorsKey);
     contributors?.register({
       key: KNOWLEDGE_CONTRIBUTOR,
-      contribute: async (request: PromptRequest) => {
+      contribute: async (request: PromptRequest, signal?: AbortSignal) => {
         const people = peopleInPrompt(config.prompt_people, s.get(PersonProfilesKey) !== undefined);
-        const body = kb.render(subjectsFor(kb, request, people), {
-          context: request.context,
-          maxChars: config.prompt_chars,
-        });
-        return body === ""
-          ? []
-          : [{ key: KNOWLEDGE_CONTRIBUTOR, title: "你整理的資料", body, order: 25 }];
+        // Where her documents are in the notes, her own document is in the pinned block.
+        const subjects = subjectsFor(topics(request), request, people, notes === null);
+        const section = (body: string) =>
+          body === ""
+            ? []
+            : [{ key: KNOWLEDGE_CONTRIBUTOR, title: "你整理的資料", body, order: 25 }];
+        if (notes === null) {
+          return section(
+            kb.render(subjects, { context: request.context, maxChars: config.prompt_chars }),
+          );
+        }
+        const viewer = notes.viewerFor(request.context, request.speakers);
+        // With embeddings on and the line's vector there in time (a voice turn waits less):
+        // lines close to it in meaning come first in each card, and topics it is about come in
+        // even when their names are not said. Otherwise words alone, as without embeddings.
+        const search = s.get(NotesSearchKey) ?? null;
+        const vector =
+          search === null
+            ? null
+            : await search.vector(request.query, {
+                voice: request.voice,
+                ...(signal === undefined ? {} : { signal }),
+              });
+        if (search !== null && vector !== null) {
+          const found = notes.notes
+            .search(request.query, viewer, {
+              kind: "topic",
+              limit: TOPICS_BY_MEANING,
+              vector,
+              ranking: search.ranking,
+            })
+            .map((hit): KnowledgeSubject => ({ type: "topic", name: hit.document.title }));
+          subjects.push(...found);
+        }
+        return section(
+          notes.render(subjects, viewer, config.prompt_chars, {
+            query: request.query,
+            ...(search === null ? {} : search.cardOptions(vector)),
+          }),
+        );
       },
     });
     const tools = s.get(ToolRegistryKey);
     if (config.tool && tools) {
       tools.register(
         new KnowledgeTool({
-          store: kb,
+          store: base,
           personOf: (tc) => personOf(s, tc.account),
           nameOf: () => null,
         }),
@@ -297,13 +375,35 @@ export class KnowledgeModule implements Module {
 }
 
 /**
+ * Her self document as the pinned block reads it: kept as read for as long as the document keeps
+ * its version, so the block's text changes only when she rewrites it.
+ */
+export class CachedSelfDocument implements SelfDocument {
+  #at: { version: string; budget: number; text: string } | null = null;
+
+  constructor(private readonly notes: NotesStore) {}
+
+  read(budget: number): string {
+    const doc = this.notes.document(SELF_SUBJECT);
+    const version = doc === null ? "" : `${doc.version}@${doc.updated_at}`;
+    const kept = this.#at;
+    if (kept !== null && kept.version === version && kept.budget === budget) return kept.text;
+    const text = this.notes.readSelf({ budget });
+    this.#at = { version, budget, text };
+    return text;
+  }
+}
+
+/**
  * The people of the turn (speakers first, unless `people` is off: the person profiles carry
- * them), this server, topics named in the input, herself.
+ * them), this server, topics named in the input, herself (unless `self` is off: the pinned block
+ * has her document).
  */
 export function subjectsFor(
-  kb: KnowledgeStore,
+  kb: { docs(): readonly Pick<KnowledgeDoc, "subject" | "title">[] },
   request: PromptRequest,
   people = true,
+  self = true,
 ): KnowledgeSubject[] {
   const out: KnowledgeSubject[] = [];
   const speakers = request.participants.filter((p) =>
@@ -323,7 +423,7 @@ export function subjectsFor(
       out.push(doc.subject);
     }
   }
-  out.push({ type: "self" });
+  if (self) out.push({ type: "self" });
   return out;
 }
 
@@ -382,6 +482,7 @@ export class ReflectModule implements Module {
       feedback,
       lessons,
       handles: await handlesOf(s, settings, clock),
+      notes: s.get(StoreKey)?.plugin(notesTables) ?? null,
     });
     await loadWithTimeout(ctx, "feedback", () => feedback.load());
     await loadWithTimeout(ctx, "lessons", () => lessons.load());
@@ -468,8 +569,11 @@ export class ReflectModule implements Module {
         }
         return;
       } else if (is(Events.AgentDecision, env)) {
-        const first = env.data.reasons[0] ?? "";
-        if (env.data.respond && (first.startsWith("intent:") || first.startsWith("initiative:"))) {
+        // The runner's own reason comes first (`runner self`), the start's after it.
+        const own = env.data.reasons.some(
+          (r) => r.startsWith("intent:") || r.startsWith("initiative:"),
+        );
+        if (env.data.respond && own) {
           startedTurns.add(env.data.turn);
           if (startedTurns.size > 200) {
             const oldest = startedTurns.values().next().value;
@@ -586,11 +690,13 @@ export class ReflectModule implements Module {
         if (idle() !== null) continue;
         const due = reflector.due(clock.now(), budgetOf(s));
         if (due === null) continue;
-        const run = await reflector.reflect(
-          due.kind,
-          due.kind === "light" ? due.context : null,
+        const { run, skipped } = await reflectUnder(
+          due.kind === "daily" ? ctx.services.get(ReflectGuardKey) : undefined,
+          (within) =>
+            reflector.reflect(due.kind, due.kind === "light" ? due.context : null, within),
           signal,
         );
+        if (skipped !== null) ctx.log.info({ why: skipped }, "the nightly reflection did not run");
         if (run) {
           ctx.publish(Events.ReflectRun, JSON.parse(JSON.stringify(run)) as ReflectionRun);
           if (run.kind === "daily") {

@@ -10,7 +10,11 @@
 //
 // Each LLM call's metadata and cost (`llm.call`, published by the `llm` module as the call ends)
 // is recorded here too, as it is on the bus: through the log's buffer, so it reaches the store in
-// the next flush with the lines, and nothing about a call ever waits on the database.
+// the next flush with the lines, and nothing about a call ever waits on the database. Two more
+// topics are recorded the same way, under their own types with the scope and tier their
+// definitions give them (for the owner, kept): a live evaluation run (`eval.run`, published by the
+// `eval` module after a nightly run) and each hand-over of an artifact as an attachment
+// (`artifact.shared`, published by the gate's `share` capability).
 //
 // Also here, as they go with the lines:
 // - "do not remember this" (`agent.message.excluded`): the message's events (its line and her
@@ -18,7 +22,13 @@
 // - the people table: whoever wrote or spoke is recorded, and her stable name for them is fixed
 //   the first time she sees them.
 
-import { LlmCall, LlmCallSchema } from "@miyoria/contracts/events";
+import {
+  type AnyEventDefinition,
+  ArtifactShared,
+  EvalRun,
+  LlmCall,
+  LlmCallSchema,
+} from "@miyoria/contracts/events";
 import { errorMessage, type ModuleContext, type Subscription } from "@miyoria/runtime/kernel";
 import { type EventWrite, logEntryFromIncoming, type Store } from "@miyoria/store";
 import {
@@ -29,6 +39,7 @@ import {
   type IncomingMessage,
   is,
   isJsonObject,
+  type JsonValue,
   type MessageRef,
   newId,
   type ProfileId,
@@ -181,6 +192,36 @@ export function llmCallWrite(env: BusEnvelope): EventWrite | null {
       parent: env.parent,
       turn: env.turn,
       data: data.data,
+    },
+    source: env.source,
+  };
+}
+
+/** Bus topics the event log records as they are, besides `llm.call`. */
+export const RECORDED_TOPICS: readonly AnyEventDefinition[] = [EvalRun, ArtifactShared];
+
+/**
+ * What the event log appends for a bus event it records as it is (`llm.call`, `eval.run`,
+ * `artifact.shared`): the payload under the bus event's id and time, with its parent and turn.
+ * The store stamps the scope and tier of the type's definition. `null` for any other bus event,
+ * or a payload that does not fit its type.
+ */
+export function recordedWrite(env: BusEnvelope): EventWrite | null {
+  const call = llmCallWrite(env);
+  if (call !== null) return call;
+  const definition = RECORDED_TOPICS.find((d) => d.type === env.type && d.v === env.v);
+  if (definition === undefined) return null;
+  const data = definition.data.safeParse(env.data);
+  if (!data.success) return null;
+  return {
+    draft: {
+      id: env.id,
+      at: env.at,
+      type: definition.type,
+      v: definition.v,
+      parent: env.parent,
+      turn: env.turn,
+      data: data.data as JsonValue,
     },
     source: env.source,
   };

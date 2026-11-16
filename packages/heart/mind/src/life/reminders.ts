@@ -22,17 +22,10 @@ import {
   defineCapability,
   type ExecContext,
 } from "@miyoria/gate/actions";
-import {
-  errorMessage,
-  getLogger,
-  SerialQueue,
-  type ServiceLookup,
-  sleep,
-} from "@miyoria/runtime/kernel";
+import { errorMessage, getLogger, SerialQueue, sleep } from "@miyoria/runtime/kernel";
 import type { SettingsStore } from "@miyoria/store";
 import {
   type AccountRef,
-  ArbiterKey,
   type Clock,
   type ContextKey,
   isJsonObject,
@@ -40,7 +33,6 @@ import {
   type JsonValue,
   newId,
   type ProfileId,
-  ProposalBoardKey,
   REMIND_CAPABILITY,
   type Reminder,
   type ReminderDesk,
@@ -417,60 +409,6 @@ export class ReminderBook implements ReminderDesk {
   }
 }
 
-// ---- delivery -----------------------------------------------------------------------------------
-
-/** What the main line reads when a timer is due (her words decide what is said). */
-export function reminderText(r: Reminder, late: number, offsetMinutes: number): string {
-  const whose = r.for_account === null ? "你自己設的提醒" : "有人請你設的提醒";
-  const when =
-    late >= 5 ? `(本來是 ${localWhen(Date.parse(r.due), offsetMinutes)},晚了 ${late} 分鐘)` : "";
-  return `${whose}到了:${r.what}${when}。要不要說、怎麼說由你決定。`;
-}
-
-/**
- * The real delivery: held while quiet hours apply or autonomy is paused; else a proposal to the
- * main line. Nothing speaks from here.
- */
-export function deliverer(
-  services: ServiceLookup,
-  clock: Clock,
-  limits: ReminderLimits,
-  offsetMinutes: number,
-): Deliver {
-  return async (r, late) => {
-    const now = clock.now();
-    const arbiter = services.get(ArbiterKey);
-    const held = arbiter?.ledger(null).limits ?? null;
-    if (held?.paused) return { status: "held", detail: "自主行動暫停中" };
-    if (held?.quiet_hours?.active) return { status: "held", detail: "安靜時段" };
-    const holdMs = limits.holdMins * MINUTE_MS;
-    const what = reminderText(r, late, offsetMinutes);
-    const why = `remind_me ${r.key}`;
-    const attention = { key: `reminder:${r.id}`, revision: r.fired + 1, repeat_after_ms: holdMs };
-    const board = services.get(ProposalBoardKey);
-    if (board) {
-      const outcome = await board.propose({
-        what,
-        why,
-        expires: toTimestamp(now + holdMs),
-        // Her own agenda coming due: the same row as a goal trigger firing.
-        source: "agenda",
-        context: r.context,
-        about: r.for_account,
-        person: r.person,
-        goal: null,
-        attention,
-      });
-      return outcome.state === "dropped"
-        ? { status: "dropped", detail: outcome.detail }
-        : { status: "delivered", detail: outcome.detail };
-    }
-    // Nobody to hand it to (the agent module is not running): kept for the next try, not said.
-    log.debug({ reminder: r.key }, "a timer is held: the agent module is not running");
-    return { status: "held", detail: "主線沒有在跑" };
-  };
-}
-
 // ---- the capability -----------------------------------------------------------------------------
 
 const RemindArgs = z.object({
@@ -494,8 +432,23 @@ function line(r: Reminder, offsetMinutes: number): string {
   return `${r.key} ${when}${r.daily ? "(每天)" : ""}:${r.what}`;
 }
 
+/**
+ * What `remind_me` reads and writes: the new runner's schedules, with the timers this module's
+ * `ReminderBook` kept from before. `set` throws a `ReminderError` or a `CapabilityError` in her
+ * words.
+ */
+export interface ReminderBackend {
+  readonly offsetMinutes: number;
+  now(): number;
+  list(): Reminder[];
+  of(account: AccountRef): Reminder[];
+  get(idOrKey: string): Reminder | null;
+  cancel(idOrKey: string): boolean;
+  set(input: ReminderInput): Reminder;
+}
+
 /** `self.remind`, tool `remind_me`. */
-export function remindCapability(book: ReminderBook): Capability {
+export function remindCapability(book: ReminderBackend): Capability {
   return defineCapability<RemindArgs>({
     name: REMIND_CAPABILITY,
     summary: "設提醒",
@@ -504,6 +457,7 @@ export function remindCapability(book: ReminderBook): Capability {
     permission: REMIND_NODE,
     tool: {
       name: "remind_me",
+      meta: { effect: "act", speed: "instant", group: "schedule", core: true },
       description:
         "設一個提醒給自己:時間到了你會再想起這件事,到時候要不要說、怎麼說由你決定。" +
         "例如「二十分鐘後看一下烤箱」「明天 09:00 問 Owen 考試考得怎樣」,或別人請你提醒他的事。" +

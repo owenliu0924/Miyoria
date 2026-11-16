@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/eval",
   "version": "0.1.0",
-  "description": "Evaluation set built from real incidents: fixtures, rule-based checks, pass^k scorecard",
+  "description": "Evaluation: incident fixtures with rule-based checks and a pass^k scorecard, and live suites (persona, tools, relationship) against the real model",
   "private": true,
   "type": "module",
   "engines": {
@@ -24,8 +24,11 @@
     "@miyoria/brain": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
+    "@miyoria/memory": "workspace:*",
     "@miyoria/play": "workspace:*",
     "@miyoria/runtime": "workspace:*",
+    "@miyoria/store": "workspace:*",
+    "@miyoria/types": "workspace:*",
     "zod": "^4.6.7"
   },
   "devDependencies": {

@@ -27,23 +27,13 @@ import {
   type Envelope,
   type EventPayload,
   Events,
-  type Intent,
-  type IntentOutcome,
-  type IntentSink,
-  IntentSinkKey,
   is,
-  type JsonObject,
   type JsonValue,
   type Mind,
   MindKey,
-  type NewProposal,
   type PersonPresence,
-  type ProposalBoard,
-  ProposalBoardKey,
-  type ProposalOutcome,
   type Publish,
   SocialSignalsKey,
-  type TalkCeiling,
   toTimestamp,
   type VoiceActivity,
   type WorldSnapshot,
@@ -54,7 +44,7 @@ import { vi } from "vitest";
 import { z } from "zod";
 import { SelfModule } from "../../self/src/index.js";
 import { type Social, SocialKey } from "../../social/src/index.js";
-import { MindModule } from "../src/index.js";
+import { MindModule, type MindModuleOptions } from "../src/index.js";
 import type { FakeArbiter } from "./fakes.js";
 
 export const GUILD = "g1";
@@ -206,62 +196,6 @@ export class FakeSocial {
   }
 }
 
-/** The agent's intent sink: records intents and answers with `outcome`. */
-export class FakeIntents implements IntentSink {
-  readonly intents: Intent[] = [];
-  outcome: (intent: Intent) => IntentOutcome = () => ({
-    status: "started",
-    detail: "her turn is queued",
-    turn: "01JCTURN000000000000000000",
-  });
-
-  /** The channel levels the agent would report (none by default). */
-  levels: (context: ContextKey) => TalkCeiling | null = () => null;
-
-  async submit(intent: Intent): Promise<IntentOutcome> {
-    this.intents.push(structuredClone(intent));
-    return this.outcome(intent);
-  }
-
-  ceiling(context: ContextKey): TalkCeiling | null {
-    return this.levels(context);
-  }
-}
-
-/**
- * The agent's board as the tests see it: every proposal becomes an `Intent` for `FakeIntents`,
- * and its scripted outcome comes back as the proposal's (`failed` is a board that throws).
- */
-export class IntentsBoard implements ProposalBoard {
-  constructor(private readonly intents: FakeIntents) {}
-
-  async propose(p: NewProposal): Promise<ProposalOutcome> {
-    const outcome = await this.intents.submit({
-      id: p.id ?? `P${this.intents.intents.length + 1}`,
-      capability: p.capability ?? "",
-      args: (p.args ?? {}) as JsonObject,
-      why: p.why,
-      opening: p.what,
-      context: p.context,
-      about: p.about,
-      created_at: toTimestamp(Date.now()),
-      expires_at: p.expires,
-    });
-    if (outcome.status === "failed") throw new Error(outcome.detail);
-    const state =
-      outcome.status === "started" || outcome.status === "done"
-        ? "taken"
-        : outcome.status === "pending"
-          ? "open"
-          : "dropped";
-    return { id: p.id ?? "x", state, detail: outcome.detail, turn: outcome.turn };
-  }
-
-  open(): [] {
-    return [];
-  }
-}
-
 /** A provider that records its requests (`MockProvider`, `ScriptedProvider`). */
 export type TestProvider = ChatProvider & { requests(): ChatRequest[] };
 
@@ -272,7 +206,6 @@ export interface Rig {
   registry: ActuatorRegistry;
   world: FakeWorld;
   social: FakeSocial;
-  intents: FakeIntents;
   events: Subscription;
   mind(): Mind;
   publish: Publish;
@@ -284,11 +217,12 @@ export interface RigOptions {
   /** Only a `chat` chain (the mind purpose falls back). */
   chatOnly?: boolean;
   store?: MemorySettingsStore;
-  withIntents?: boolean;
   /** Provides more app services before start. */
   extra?: (sup: Supervisor) => void;
   /** An Arbiter to provide (none: `arbiter` is not running). */
   arbiter?: FakeArbiter;
+  /** More options of the mind module. */
+  module?: Partial<MindModuleOptions>;
 }
 
 const running: Supervisor[] = [];
@@ -326,7 +260,6 @@ export async function rig(provider: TestProvider, options: RigOptions = {}): Pro
   options.extra?.(sup);
   const world = new FakeWorld();
   const social = new FakeSocial();
-  const intents = new FakeIntents();
   const purposes = new Map<string, ModelRef[]>([["chat", [parseModelRef("p:chat")]]]);
   if (!options.chatOnly) purposes.set("mind", [parseModelRef("p:mind")]);
   const router = new LlmRouter(new Map([["p", provider]]), purposes);
@@ -340,22 +273,14 @@ export async function rig(provider: TestProvider, options: RigOptions = {}): Pro
     null,
     true,
   );
-  if (options.withIntents ?? true) {
-    // A test that brings its own board keeps it.
-    const own = sup.services.get(ProposalBoardKey) !== undefined;
-    await sup.register(
-      new Stub("agent", (ctx) => {
-        ctx.provide(IntentSinkKey, intents);
-        if (!own) ctx.provide(ProposalBoardKey, new IntentsBoard(intents));
-      }),
-      null,
-      true,
-    );
-  }
   await sup.register(new SelfModule("p"), null, true);
   const events = sup.bus.subscribe("mind.*");
   await sup.register(
-    new MindModule("p", { name: "DeepSeek-chan", persona: () => "你是住在深海的鯨魚娘。" }),
+    new MindModule("p", {
+      name: "DeepSeek-chan",
+      persona: () => "你是住在深海的鯨魚娘。",
+      ...options.module,
+    }),
     // Her day plan is past by default (20:00 local in most tests): tests ask for it.
     { daily_hour: 23, ...((options.config as object | null) ?? {}) } as JsonValue,
     true,
@@ -368,7 +293,6 @@ export async function rig(provider: TestProvider, options: RigOptions = {}): Pro
     registry,
     world,
     social,
-    intents,
     events,
     mind: () => sup.services.require(MindKey),
     publish: sup.bus.publisher("test"),

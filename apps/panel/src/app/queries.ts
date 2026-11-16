@@ -6,6 +6,7 @@ import {
   useQuery,
   skipToken,
   useQueryClient,
+  keepPreviousData,
 } from "@tanstack/react-query";
 import { isApiError } from "@/api/http";
 import type { DecisionsQuery, E2eRecord, FactEventsQuery, LlmCallsQuery, LlmThinkingQuery, MemoryQuery, ModuleAction, PeopleQuery } from "@/api/types";
@@ -52,6 +53,9 @@ export const queryKeys = {
   approvals: ["mind", "approvals"] as const,
   digests: ["mind", "digests"] as const,
   knowledge: ["knowledge"] as const,
+  notes: ["notes"] as const,
+  noteDocument: (id: string, outdated: boolean) => ["notes", "document", id, outdated] as const,
+  noteHistory: (id: string) => ["notes", "history", id] as const,
   conversationNotes: ["knowledge", "conversations"] as const,
   reflection: ["reflection"] as const,
   songs: ["songs"] as const,
@@ -75,6 +79,7 @@ export const queryKeys = {
   directives: (history: boolean) => ["directives", history] as const,
   directivesAll: ["directives"] as const,
   evalData: (windowMs: number) => ["facts", "eval", windowMs] as const,
+  evalLive: ["eval", "live"] as const,
   lifeToday: ["life", "today"] as const,
   reminders: ["life", "reminders"] as const,
   activities: ["life", "activities"] as const,
@@ -540,9 +545,39 @@ export function useDigests(limit = 20) {
   return useQuery({ queryKey: queryKeys.digests, queryFn: ({ signal }) => api.rpc.mind.digests({ query: { limit } }, { signal }), refetchInterval: poll(60_000) });
 }
 
-export function useKnowledge() {
+export function useNoteDocuments() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.knowledge, queryFn: ({ signal }) => api.rpc.knowledge.documents(undefined, { signal }), refetchInterval: poll(15_000) });
+  return useQuery({ queryKey: queryKeys.notes, queryFn: ({ signal }) => api.rpc.notes.documents({ query: {} }, { signal }), refetchInterval: poll(15_000) });
+}
+
+export function useNoteDocument(id: string | null, outdated: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.noteDocument(id ?? "", outdated),
+    queryFn: ({ signal }) => api.rpc.notes.document({ params: { id: id as string }, query: outdated ? { outdated: "true" } : {} }, { signal }),
+    enabled: id !== null,
+    placeholderData: keepPreviousData,
+    refetchInterval: poll(15_000),
+  });
+}
+
+export function useNoteHistory(id: string | null) {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.noteHistory(id ?? ""),
+    queryFn: ({ signal }) => api.rpc.notes.history({ params: { id: id as string } }, { signal }),
+    enabled: id !== null,
+  });
+}
+
+/** Rolls a document back to a version; every note query is stale afterwards. */
+export function useRevertNote() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, version }: { id: string; version: number }) => api.rpc.notes.revert({ params: { id }, body: { version } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.notes }),
+  });
 }
 
 export function useConversationNotes() {
@@ -966,6 +1001,16 @@ export function useEvalData(windowMs: number) {
     refetchInterval: poll(60_000),
     placeholderData: (prev) => prev,
     retry: false,
+  });
+}
+
+/** The live suites' runs (`history.jsonl`, the last 90) and the nightly run's state. */
+export function useEvalLive() {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.evalLive,
+    queryFn: ({ signal }) => api.rpc.eval.live({ query: {} }, { signal }),
+    refetchInterval: poll(60_000),
   });
 }
 

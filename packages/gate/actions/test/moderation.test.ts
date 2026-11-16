@@ -3,9 +3,12 @@
 
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
+  type AccountRef,
   type Action,
   ActionSinkKey,
   type FixedLine,
+  type HandleDirectory,
+  HandleDirectoryKey,
   ModerationKey,
   type ModerationService,
   MouthKey,
@@ -88,7 +91,11 @@ function rig(moderation: ModerationService | null) {
         said.push(line);
       },
     });
-  return { queued, spoken, said, dm, speak, mouth };
+  const handles = () =>
+    services.provide("app", HandleDirectoryKey, {
+      ofAccount: (account: AccountRef) => `handle-of-${account.id}`,
+    } as unknown as HandleDirectory);
+  return { queued, spoken, said, dm, speak, mouth, handles };
 }
 
 describe("message.dm", () => {
@@ -105,6 +112,17 @@ describe("message.dm", () => {
     await r.dm(`我的金鑰 ${SECRET}`);
     expect(asked[0]?.visible).toContain(SECRET);
     expect(r.queued[0]?.payload).toMatchObject({ message: { text: "Filtered." } });
+  });
+
+  it("goes through the main line with the recipient as the audience, not around it", async () => {
+    const r = rig(review());
+    r.mouth();
+    r.handles();
+    await r.dm("期末報告怎麼樣了?");
+    expect(r.queued).toEqual([]);
+    expect(r.said).toMatchObject([
+      { context: CTX, text: "期末報告怎麼樣了?", source: "self", audience: ["handle-of-100"] },
+    ]);
   });
 
   it("without the service the old filter still runs", async () => {

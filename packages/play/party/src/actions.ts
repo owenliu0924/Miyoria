@@ -67,6 +67,7 @@ export function partyCapabilities(table: Table, perms: PartyPermissions): Capabi
     permission: perms.start,
     tool: {
       name: "party_start",
+      meta: { effect: "act", speed: "long", group: "party" },
       description:
         "在你所在的語音頻道開一場派對遊戲,你當主持人(有的也下場玩)。語音裡有人想玩、或大家冷場時你想帶動氣氛時用;一次只能玩一個。" +
         "game:soup 海龜湯(你念湯面,大家問是非題,裁判判定)、song 猜歌(放你唱過的歌的片段搶答)、" +
@@ -129,6 +130,7 @@ export function partyCapabilities(table: Table, perms: PartyPermissions): Capabi
     permission: perms.host,
     tool: {
       name: "party_host",
+      meta: { effect: "act", speed: "instant", group: "party" },
       description:
         "主持正在玩的派對遊戲。action:next 下一題 / 下一首 / 新的一串(還沒人答對的會先公布答案)、hint 給一個提示、" +
         "accept 算「很接近」的那個答案對(多半是語音辨識錯字)、reject 不算(接龍會收回上一個詞)、end 結束遊戲。" +
@@ -180,6 +182,7 @@ export function partyCapabilities(table: Table, perms: PartyPermissions): Capabi
     permission: perms.play,
     tool: {
       name: "party_play",
+      meta: { effect: "act", speed: "instant", group: "party" },
       description:
         "你自己在正在玩的派對遊戲裡出一手:猜歌、問答搶答、接龍接一個詞、故事接龍說你的那句。" +
         "text 是你要出的內容,程式會判定算不算,照結果講。",
@@ -206,6 +209,7 @@ export function partyCapabilities(table: Table, perms: PartyPermissions): Capabi
     permission: perms.play,
     tool: {
       name: "party_ask",
+      meta: { effect: "act", speed: "instant", group: "party" },
       description:
         "海龜湯專用:有人問了是非題,或說出他猜的真相,就把那句話交給裁判(湯底只有裁判知道)。" +
         "回傳「是 / 不是 / 不重要 / 很接近了」或猜中了,照結果回答,不要自己加料。",

@@ -61,16 +61,29 @@ export type Segment =
   /** Markup nobody should see (`<span>`, `</span>`): dropped. */
   | { type: "markup" };
 
+/** What the parser takes out of the text; each is a check that can be switched off. */
+export interface ParserChecks {
+  /** `<emo:thinking>…</emo:thinking>` is her reasoning and is never shown. */
+  thinkingBlock: boolean;
+  /** Tools written as tags, DeepSeek's tool-call markup and HTML tags are taken out. */
+  tagStrip: boolean;
+}
+
 /**
  * Incremental parser: feed chunks with `push`, then call `finish` once the stream ends.
  */
 export class ExpressionParser {
+  readonly #checks: ParserChecks;
   /** Unconsumed input that may be the start of a tag. */
   #held = "";
   /** The `<voice>` span being held was announced (`spoken_start`). */
   #announced = false;
   /** A DSML tool call began: everything after it is dropped. */
   #dropRest = false;
+
+  constructor(checks: Partial<ParserChecks> = {}) {
+    this.#checks = { thinkingBlock: true, tagStrip: true, ...checks };
+  }
 
   push(chunk: string): Segment[] {
     this.#held += chunk;
@@ -128,19 +141,19 @@ export class ExpressionParser {
         this.#announced = false;
       }
       const rest = lower.slice(start);
-      const closing = EMO_CLOSE.exec(rest);
+      const closing = this.#checks.thinkingBlock ? EMO_CLOSE.exec(rest) : null;
       if (closing !== null) {
         // What came before it in this stretch was written inside a block that ends here.
         text = "";
         pos = start + closing[0].length;
         continue;
       }
-      if (!eof && EMO_CLOSE_PARTIAL.test(rest)) {
+      if (this.#checks.thinkingBlock && !eof && EMO_CLOSE_PARTIAL.test(rest)) {
         flush();
         this.#held = input.slice(start);
         return out;
       }
-      const thinking = THINK_OPEN.exec(rest);
+      const thinking = this.#checks.thinkingBlock ? THINK_OPEN.exec(rest) : null;
       if (thinking !== null) {
         const from = start + thinking[0].length;
         const close = lower.indexOf(`</emo:${thinking[1]}>`, from);
@@ -157,7 +170,14 @@ export class ExpressionParser {
         // No closing tag in sight: the emotion it names.
       }
       const scan = scanTag(input.slice(start));
-      if (scan.kind === "tag") {
+      if (
+        scan.kind === "tag" &&
+        !this.#checks.tagStrip &&
+        (scan.segment.type === "markup" || scan.segment.type === "tool")
+      ) {
+        text += input.slice(start, start + scan.len);
+        pos = start + scan.len;
+      } else if (scan.kind === "tag") {
         flush();
         if (scan.segment.type !== "markup") out.push(scan.segment);
         // A tool call written out in DeepSeek's syntax: what follows is its arguments, not words.

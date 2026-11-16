@@ -1,8 +1,8 @@
 // 2026-11-09: a model with thinking off wrote its reasoning as the reply, and every line went to
-// Discord as a message (23 in one turn). The net at the send boundary (leak.ts, turn.ts).
+// Discord as a message (23 in one turn). The net the runner's screens use (leak.ts; the runner's
+// send boundary is tested in `@miyoria/brain/self`).
 
-import { MockProvider } from "@miyoria/llm/llm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   isSelfTalk,
   looksLikeReasoning,
@@ -10,16 +10,6 @@ import {
   ReplyScreen,
   reasoningScore,
 } from "../src/leak.js";
-import { FALLBACK_LINES } from "../src/mainline/main.js";
-import { channel, Harness, mention, noCheck } from "./harness.js";
-
-beforeEach(() => {
-  vi.useFakeTimers();
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 const INCIDENT = [
   "好，驗收通過。A = (2, 8)。",
@@ -118,34 +108,5 @@ describe("notes to herself", () => {
     expect(sent).toEqual(["上面寫的是「明天見」。", "就這樣～"]);
     expect(screen.selfTalk).toBe(1);
     expect(screen.dropped).toBe(false);
-  });
-});
-
-describe("the send boundary", () => {
-  it("a reply that is her reasoning reaches nobody, the innocent first line included", async () => {
-    const mock = new MockProvider("chat").reply(INCIDENT.join("\n"));
-    const h = await Harness.build("always", noCheck(), mock, null, { tools: [] });
-    h.say(mention(channel("c"), "Alice", "A 是 (2,8) 嗎"));
-    await vi.advanceTimersByTimeAsync(3000);
-    // None of it goes out; she was asked, so the fixed line answers instead (§21).
-    const sent = h.sink.texts();
-    expect(sent).toHaveLength(1);
-    expect(FALLBACK_LINES).toContain(sent[0]);
-  });
-
-  it("a normal reply of several lines goes out whole", async () => {
-    const mock = new MockProvider("chat").reply("嗯，對了。\n聯立那兩行沒偷懶。\n過關。");
-    const h = await Harness.build("always", noCheck(), mock, null, { tools: [] });
-    h.say(mention(channel("c"), "Alice", "A 是 (2,8) 嗎"));
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(h.sink.texts()).toEqual(["嗯，對了。", "聯立那兩行沒偷懶。", "過關。"]);
-  });
-
-  it("a one-line reply still goes out", async () => {
-    const mock = new MockProvider("chat").reply("嗯，對了。");
-    const h = await Harness.build("always", noCheck(), mock, null, { tools: [] });
-    h.say(mention(channel("c"), "Alice", "A 是 (2,8) 嗎"));
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(h.sink.texts()).toEqual(["嗯，對了。"]);
   });
 });

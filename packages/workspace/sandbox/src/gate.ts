@@ -58,6 +58,7 @@ import {
   type SandboxHealth,
   SessionClosedError,
 } from "./types.js";
+import { workspaceExportCapability } from "./workspace-export.js";
 import {
   type WorkspaceGateOptions,
   workspaceFileCapabilities,
@@ -169,6 +170,7 @@ export function codeRunCapability(o: SandboxGateOptions): Capability<CodeRunArgs
     guidance: CODE_RUN_GUIDANCE,
     tool: {
       name: "code_run",
+      meta: { effect: "external", speed: "instant", group: "code", core: true },
       framed: true,
       description:
         "寫一段 Python 或 Node 程式,在離線的沙箱容器裡執行(沒有網路、沒有你的檔案,只能用標準函式庫)," +
@@ -292,6 +294,7 @@ export function codeSessionCapability(o: SandboxGateOptions): Capability<CodeSes
     permission: NODE_CODE_RUN,
     tool: {
       name: "code_session",
+      meta: { effect: "external", speed: "instant", group: "code" },
       description:
         "管理你用 code_run 開的工作階段。action=list:列出開著的工作階段(名稱、語言、跑了幾次、佔用空間、多久後自動關掉);" +
         "action=close:關掉 name 那個,裡面的檔案會一起刪掉。多步驟的工作做完就關掉,把名額留給下一件事。",
@@ -353,6 +356,7 @@ export function toolProposeCapability(
     guidance: TOOL_PROPOSE_GUIDANCE,
     tool: {
       name: "tool_propose",
+      meta: { effect: "act", speed: "instant", group: "code" },
       description:
         "把你寫好、想以後重複使用的小程式提出成工具:程式從 stdin 讀 JSON 參數(依 args_schema)," +
         "把結果印到 stdout;一樣在離線沙箱裡跑。審核通過後就會多一個工具 sbx_<name> 給你用。" +
@@ -436,6 +440,7 @@ export function proposedToolCapability(
     permission: `${NODE_PROPOSED_PREFIX}${spec.name}`,
     tool: {
       name: `${PROPOSED_TOOL_PREFIX}${spec.name}`,
+      meta: { effect: "external", speed: "instant", group: "code" },
       framed: true,
       description: `(你自己寫、已核准的工具,第 ${spec.version} 版,在離線沙箱裡執行)${description}`,
       properties,
@@ -511,6 +516,9 @@ export class SandboxGate {
     for (const capability of workspaceFileCapabilities(this.#workspaceOptions(workspace))) {
       this.#files.push(this.#registry.register(capability as Capability));
     }
+    this.#files.push(
+      this.#registry.register(workspaceExportCapability({ workspace }) as Capability),
+    );
   }
 
   /** Offers (Docker available) or withdraws every capability. */

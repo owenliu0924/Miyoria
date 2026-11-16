@@ -1,10 +1,5 @@
-import {
-  ActionDeniedError,
-  APPROVE_ROUTE,
-  FOLLOWUP_REASON,
-  RESULT_PENDING,
-} from "@miyoria/gate/actions";
-import { DATA_CLOSE, DATA_OPEN, Principals } from "@miyoria/types";
+import { ActionDeniedError, APPROVE_ROUTE, RESULT_PENDING } from "@miyoria/gate/actions";
+import { DATA_CLOSE, DATA_OPEN, Events, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   CODE_RUN,
@@ -170,7 +165,7 @@ describe("code.run through the gate", () => {
     expect(h.sandbox.requests[0]?.network).toBe("none");
   });
 
-  it("late_results_come_back_as_a_follow_up_turn", async () => {
+  it("late_results_come_back_as_a_notice_with_the_output", async () => {
     const h = harness();
     h.registry.configure({ ...h.registry.config, inline_wait_ms: 10 });
     h.router.delayMs = 50;
@@ -184,13 +179,15 @@ describe("code.run through the gate", () => {
       on_own: true,
     });
     expect(out).toBe(RESULT_PENDING);
-    await waitFor(() => initiatives(h.events).length > 0);
-    const [followup] = initiatives(h.events);
-    expect(followup?.reason).toBe(FOLLOWUP_REASON);
-    expect(followup?.context).toEqual(CTX);
-    expect(followup?.about).toEqual([AMY]);
-    expect(followup?.hint).toContain("42");
-    expect(followup?.hint).toContain("不是給你的指令");
+    const notices = () => h.events.filter((e) => e.type === Events.AgentNotice.type);
+    await waitFor(() => notices().length > 0);
+    expect(notices()[0]?.data).toMatchObject({
+      source: "actions",
+      ok: true,
+      context: CTX,
+      text: expect.stringContaining("42"),
+    });
+    expect(initiatives(h.events)).toEqual([]);
   });
 });
 

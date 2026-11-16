@@ -1,13 +1,10 @@
 // Small helpers shared by the agent's modules.
 
-import type { Tool } from "@miyoria/llm/tools";
 import {
   type AccountRef,
   accountRefString,
   type ContextKey,
   contextKeyString,
-  DATA_CLOSE,
-  DATA_OPEN,
 } from "@miyoria/types";
 
 /**
@@ -30,20 +27,10 @@ export function charCount(s: string): number {
   return n;
 }
 
-/**
- * Whether `tool`'s answer goes to the model as it is rather than in a data block (`Tool.framed`):
- * it succeeded, it fits in `maxChars`, and its blocks are there and whole (every one opened is
- * closed: an answer cut on the way may have lost a closing tag).
- */
-export function framedAsIs(
-  tool: Tool | undefined,
-  ok: boolean,
-  text: string,
-  maxChars: number,
-): boolean {
-  if (tool?.framed !== true || !ok || charCount(text) > maxChars) return false;
-  const opened = text.split(DATA_OPEN).length - 1;
-  return opened > 0 && opened === text.split(DATA_CLOSE).length - 1;
+/** Cuts `text` to `maxChars` characters (plus `…`). */
+export function truncate(text: string, maxChars: number): string {
+  const chars = [...text];
+  return chars.length > maxChars ? `${chars.slice(0, maxChars).join("")}…` : text;
 }
 
 /** UTF-8 byte length. */

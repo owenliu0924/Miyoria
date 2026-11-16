@@ -1,48 +1,26 @@
-// @miyoria/brain/agent: the cognition core (module `agent`).
+// @miyoria/brain/agent: the conversations' module (`agent`).
 //
-// Turns `platform.*` and `voice.*` events into replies: each conversation context keeps a
-// `Session`, a coordinator debounces messages into turns, attention decides whether to respond,
-// and the reply is generated through the `chat` LLM purpose (with an optional tool loop),
-// parsed by the expression parser and submitted to the scheduler. In voice channels the reply
-// is cut into sentences that are spoken while the model is still generating.
-//
-// Other modules shape her turns through optional services: prompt contributors
-// (`PromptContributorsKey`) add per-turn context, `SocialSignalsKey` and `MoodSignalsKey` steer
-// attention and tone, and `agent.initiative` events let her start conversations. `llm.budget`
-// events make her save tokens (see `BudgetState`).
+// Hands `platform.*` and `voice.*` events to the runner Core installs (`@miyoria/brain/selfhost`),
+// after the checks every line goes through, and keeps what the runner and the other modules share:
+// the persona, the channels' levels and her talkativeness there, who is in each voice channel she
+// is in, the mouth her lines leave through (`MainLine`, `MouthKey`) and the game director's work
+// lane. The pieces of the old turn the runner reuses are here too: who a line is for, the expression
+// parser and sentence splitters, the screens of her output, images and files of a line, her state
+// blocks and the persona's lorebook.
 
 export { type Tool, type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
+export { ACTIVENESS_CAPABILITY, activenessCapability, LEVEL_TALKATIVENESS } from "./actions.js";
 export {
-  ACTIVENESS_CAPABILITY,
-  activenessCapability,
-  chatCapabilities,
-  LEVEL_TALKATIVENESS,
-} from "./actions.js";
-export {
-  ACTIVENESS_SHIFT,
-  type Assessment,
-  type AttentionInput,
-  ambientScale,
-  answersHer,
-  assess,
-  conversing,
-  decide,
+  type Aside,
+  aboutHerInThirdPerson,
+  asideOf,
   directReason,
-  effectiveTalk,
-  flooredTalk,
-  followsHerLine,
-  type Gate,
   isQuestion,
-  mentionsTopic,
-  type RandomSource,
-  SeededRandom,
-  SILENT_TALKATIVENESS,
-  type TalkLevel,
-  talkFactor,
-  USUAL_TALKATIVENESS,
-  type VoiceAttention,
+  openingCall,
+  reactionOnly,
+  saidToOthers,
   vocativeName,
-} from "./attention.js";
+} from "./address.js";
 export { activenessLabel } from "./commands.js";
 export {
   type Budgeted,
@@ -69,18 +47,19 @@ export {
   type AgentConfig,
   AgentConfigSchema,
   AMBIENT_MODES,
-  type AttentionConfig,
-  AttentionConfigSchema,
   activenessFor,
   CHANNEL_MODES,
   type ChannelMode,
   ChannelModeSchema,
+  type CorrectionsConfig,
+  CorrectionsConfigSchema,
+  type DelegateConfig,
+  DelegateConfigSchema,
   defaultAgentConfig,
   type FilesConfig,
   FilesConfigSchema,
   type HistoryConfig,
   HistoryConfigSchema,
-  LOOP_TOOLS,
   MainLineConfigSchema,
   maxDebounceMs,
   modeFor,
@@ -95,25 +74,36 @@ export {
   type VoiceConfig,
   VoiceConfigSchema,
   voiceMaxDebounceMs,
-  WORK_TOOLS,
   type WorkConfig,
   WorkConfigSchema,
 } from "./config.js";
-export { Gathered, gather } from "./contributors.js";
+export {
+  Gathered,
+  gather,
+  mergeGathered,
+  readWarm,
+  Warm,
+  WarmContext,
+  type WarmRead,
+} from "./contributors.js";
 export {
   DEFAULT_PAUSE_MS,
   Expression,
   ExpressionParser,
   MAX_PAUSE_MS,
+  type ParserChecks,
   type Segment,
 } from "./expression.js";
 export { type FileCandidate, fileParts, selectFiles } from "./files.js";
 export {
+  type CallFor,
   type CallKind,
+  callFor,
   callKind,
-  type FocusSelection,
-  focusVerb,
-  selectFocus,
+  callsHer,
+  FOR_ARG,
+  FOR_PROPERTY,
+  oneCaller,
   TurnFocusBoard,
   type TurnFocusInit,
   type VoiceCallFacts,
@@ -125,8 +115,8 @@ export {
   MODE_PREFIX,
   voiceScope,
 } from "./handle.js";
-export { awaitBackfill, backfillLimit, replyParents, startBackfill } from "./history.js";
-export { AgentIntents } from "./intents.js";
+export { backfillLimit } from "./history.js";
+export { isSelfTalk, looksLikeReasoning, ReplyScreen } from "./leak.js";
 export {
   CEILINGS,
   type Ceiling,
@@ -135,54 +125,50 @@ export {
   levelHint,
   modeDescription,
   modeLabel,
+  paceMs,
 } from "./levels.js";
-export { ACTING_ALONE, MainLine, MainTurn } from "./mainline/main.js";
-export { COMMIT_SPEC, STEER_SPEC, slimTool } from "./mainline/output.js";
+export {
+  pickKaomoji,
+  RECENT_OWN_LINES,
+  SCAN_LINES,
+  styleNote,
+  triggeredEntries,
+} from "./lorebook.js";
+export { FALLBACK_LINES, MainLine } from "./mainline/main.js";
 export {
   contextData,
-  entryCost,
-  estimateTokens,
+  contextState,
   exampleDialogues,
-  fitHistory,
-  historyWindow,
-  mainMessages,
-  mainRules,
+  examplesBlock,
+  partyLine,
   pinnedSection,
-  promptTokens,
-  proposalData,
   rotatedExamples,
   stableHash,
-  tailSection,
-  type WindowBudget,
 } from "./mainline/prompt.js";
-export { linkMentions, type MentionTarget } from "./mentions.js";
+export {
+  agentTurns,
+  CorrectionTally,
+  speculations,
+  speculationWaste,
+} from "./metrics.js";
 export { AgentModule } from "./module.js";
 export { PersonaHandle, PersonaHandleKey } from "./persona.js";
 export {
-  BOT_TAG,
-  buildMessages,
   cleanReply,
-  DEFAULT_TRANSCRIPT,
-  FOCUS_HEAD,
-  focusMessage,
-  gapLine,
-  INITIATIVE_TITLE,
-  INTENT_TITLE,
-  INTERRUPTED,
-  type IntentData,
-  intentBody,
-  MAX_PARENT_CHARS,
+  FEELING_TITLE,
+  LIFE_TITLE,
+  MOOD_MIN,
   PRESENT_TITLE,
-  replyTag,
-  SELF_QUOTE_NAME,
-  SPOKEN_TAG,
-  speaksReminder,
-  speaksRule,
-  splitMessage,
-  type TranscriptOptions,
-  transcriptLine,
-  VOICE_PRESENT_TITLE,
+  whenAndWhere,
 } from "./prompt.js";
+export {
+  Agent,
+  type TextLineMarks,
+  type TextReplyOutcome,
+  type TextRunner,
+  type TextRunnerFactory,
+  type VoiceRunner,
+} from "./runtime.js";
 export { toTraditional } from "./script.js";
 export {
   activityBlock,
@@ -199,13 +185,6 @@ export {
   selfBlocks,
 } from "./self-block.js";
 export {
-  type HistoryEntry,
-  historyEntry,
-  messageText,
-  Session,
-  type SessionParticipant,
-} from "./session.js";
-export {
   type BudgetState,
   EXHAUSTED_LINE,
   herStatusHint,
@@ -213,6 +192,7 @@ export {
   shownHint,
   unansweredHint,
 } from "./signals.js";
+export { DEFAULT_TOOL_LIMITS, slimTool, type ToolLimits } from "./slim.js";
 export {
   type FencedPiece,
   FenceSplitter,
@@ -222,13 +202,7 @@ export {
   SentenceSplitter,
 } from "./speech.js";
 export { ReactTool, ToolArgumentError } from "./tools.js";
-export {
-  focusVerbs,
-  markCurrent,
-  TurnError,
-  type TurnPlan,
-  truncate,
-} from "./turn.js";
+export { TimeoutError, timeout, truncate } from "./util.js";
 export {
   allowedUrl,
   type FetchLike,
@@ -236,22 +210,5 @@ export {
   ImageLoader,
   imageParts,
   type LoadedImage,
-  selectImages,
 } from "./vision.js";
-export { allowance, talks } from "./worklane/allow.js";
-export {
-  WORK_LIST_TOOL,
-  WORK_START_TOOL,
-  WORK_STEER_TOOL,
-  workCapabilities,
-} from "./worklane/capabilities.js";
-export { ACTIVITY_TOOLS, asWork, WORK_ACTIVITIES, workBoard } from "./worklane/initiative.js";
-export {
-  type LaneDeps,
-  RESTART_REASON,
-  type StartOutcome,
-  type StartSpec,
-  type SteerSpec,
-  shortId,
-  WorkLaneService,
-} from "./worklane/lane.js";
+export { type LaneDeps, RESTART_REASON, WorkLaneService } from "./worklane/lane.js";

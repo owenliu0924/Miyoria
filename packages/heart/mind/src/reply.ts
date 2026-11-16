@@ -4,7 +4,6 @@
 // resolved against the snapshot later.
 
 import { extractJsonObject } from "@miyoria/llm/llm";
-import type { JsonObject } from "@miyoria/types";
 import { z } from "zod";
 
 export class MindReplyError extends Error {
@@ -16,10 +15,6 @@ export const MAX_THOUGHT = 600;
 export const MAX_GOAL_ADD = 3;
 export const MAX_GOAL_EDIT = 3;
 export const MAX_DAY_PLAN = 600;
-/** Impulses expire after 1 to 15 minutes (default 2). */
-export const MIN_IMPULSE_MINS = 1;
-export const MAX_IMPULSE_MINS = 15;
-export const DEFAULT_IMPULSE_MINS = 2;
 /** Goals last an hour to two weeks. */
 export const MIN_GOAL_HOURS = 1;
 export const MAX_GOAL_HOURS = 14 * 24;
@@ -51,25 +46,12 @@ export interface GoalEditDraft {
   expiresInHours: number | null;
 }
 
-export interface ImpulseDraft {
-  kind: "speak" | "act";
-  capability: string | null;
-  place: string | null;
-  person: string | null;
-  args: JsonObject;
-  why: string;
-  hint: string | null;
-  goal: string | null;
-  expiresInMin: number;
-}
-
 export interface PlanReply {
   thought: string;
   add: GoalDraft[];
   edit: GoalEditDraft[];
   done: string[];
   drop: { goal: string; why: string }[];
-  impulses: ImpulseDraft[];
   dayPlan: string | null;
 }
 
@@ -161,22 +143,6 @@ const GoalEdit = z.object({
 
 const Drop = z.object({ goal: ref.refine((v) => v !== null), why: optText(160) });
 
-const Impulse = z.object({
-  kind: z
-    .string()
-    .trim()
-    .transform((k) => k.toLowerCase())
-    .refine((k) => k === "speak" || k === "act"),
-  capability: ref,
-  place: ref,
-  person: ref,
-  args: z.unknown().optional(),
-  why: optText(200),
-  hint: optText(200),
-  goal: ref,
-  expires_in_min: optPositive,
-});
-
 /** Each item of `value` that parses; the rest are dropped. */
 function items<T>(value: unknown, schema: z.ZodType<T>, max: number): T[] {
   if (!Array.isArray(value)) return [];
@@ -198,8 +164,11 @@ function refs(value: unknown): string[] {
 
 const hours = (h: number | null) => (h === null ? null : clamp(h, MIN_GOAL_HOURS, MAX_GOAL_HOURS));
 
-/** Extracts and validates her Plan reply (tolerates text around the JSON object). */
-export function parsePlanReply(raw: string, maxImpulses: number): PlanReply {
+/**
+ * Extracts and validates her Plan reply (tolerates text around the JSON object). An `impulses`
+ * field, which older replies and prompts had, is ignored.
+ */
+export function parsePlanReply(raw: string): PlanReply {
   const value = extractJsonObject(raw);
   if (value === null) throw new MindReplyError("no JSON object in her plan");
   const obj = value as Record<string, unknown>;
@@ -231,26 +200,11 @@ export function parsePlanReply(raw: string, maxImpulses: number): PlanReply {
           : [];
       })
     : [];
-  const impulses = items(obj.impulses, Impulse, Math.max(maxImpulses, 0)).map((i) => ({
-    kind: i.kind as "speak" | "act",
-    capability: i.capability,
-    place: i.place,
-    person: i.person,
-    args: isRecord(i.args) ? { ...(i.args as JsonObject) } : {},
-    why: i.why ?? "",
-    hint: i.hint,
-    goal: i.goal,
-    expiresInMin: clamp(
-      Math.round(i.expires_in_min ?? DEFAULT_IMPULSE_MINS),
-      MIN_IMPULSE_MINS,
-      MAX_IMPULSE_MINS,
-    ),
-  }));
   const dayPlan =
     typeof obj.day_plan === "string" && obj.day_plan.trim() !== ""
       ? cut(obj.day_plan, MAX_DAY_PLAN)
       : null;
-  return { thought, add, edit, done: refs(goals.done), drop, impulses, dayPlan };
+  return { thought, add, edit, done: refs(goals.done), drop, dayPlan };
 }
 
 /** True when the reply changes nothing and asks for nothing. */
@@ -260,7 +214,6 @@ export function isEmptyPlan(reply: PlanReply): boolean {
     reply.edit.length === 0 &&
     reply.done.length === 0 &&
     reply.drop.length === 0 &&
-    reply.impulses.length === 0 &&
     reply.dayPlan === null
   );
 }

@@ -30,7 +30,6 @@ import {
   newId,
   newImpulse,
   Principals,
-  ProposalBoardKey,
   parseGameOutcome,
   parseTaskEvent,
   parseTaskTopic,
@@ -1728,33 +1727,10 @@ export class Director {
     const text = urgent
       ? `(你正在直播玩 ${s.gameName})${hint}`
       : `(你正在直播玩 ${s.gameName})實況:${hint}`;
-    // Game events are Observations already and what the director would add is a proposal
-    // (docs/design/v3-architecture.md §4). Only what cannot wait still claims the mic here.
-    if (about !== null) {
-      const board = this.#ctx.services.get(ProposalBoardKey);
-      if (board === undefined) {
-        log.debug({ hint }, "commentary dropped: the agent module is not running");
-        return false;
-      }
-      void board
-        .propose({
-          what: text,
-          why: `${s.gameName} 實況`,
-          expires: toTimestamp(now + this.#secs(cfg.commentary_min_secs)),
-          source: "game.director",
-          context: s.context,
-          about: null,
-          person: null,
-          goal: null,
-          attention: about,
-        })
-        .catch((error: unknown) => {
-          log.debug({ error: errorMessage(error) }, "could not propose a line");
-        });
-      return true;
-    }
     // Commentary is an impulse of source `game` (never her own topic); newer narration replaces
-    // one still waiting for a free moment.
+    // one still waiting for a free moment. Game events are Observations already and narration
+    // the director adds is only a wish of hers (docs/design/v3-architecture.md §4): the Floor's
+    // `wish` row. Only what cannot wait claims more.
     const narrationTtl = urgent ? cfg.urgent_commentary_min_secs : cfg.commentary_min_secs;
     const impulse = newImpulse(
       {
@@ -1766,6 +1742,7 @@ export class Director {
         reason: INITIATIVE_REASON,
         coalesce_key: about === null ? null : `game:${contextKeyString(s.context)}`,
         attention: about,
+        ...(about === null ? {} : { claim: "wish" as const }),
       },
       now,
     );

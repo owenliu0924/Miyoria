@@ -1,12 +1,10 @@
-// Her mind loop (docs/design/autonomy.md §5): the thoughts the `mind` module has, the intents
-// they produce and how those reach the agent.
+// Her mind loop (docs/design/autonomy.md §5): the thoughts the `mind` module has and the intents
+// they produce.
 //
 // * The `mind` module provides `MindKey`: its journal (thoughts, intents, outcomes) and an
 //   inbox for suggestions from other modules (initiative's idle channels, greetings, voice
 //   joins, followups), which become reasons to think instead of direct `agent.initiative`
 //   turns.
-// * The agent provides `IntentSinkKey`: an intent opens a turn she starts herself (principal
-//   `self`, with tools) in the right context, after the action it names passed the gate.
 
 import type { ThoughtData } from "@miyoria/contracts/events";
 import type { TurnId } from "./ids.js";
@@ -53,28 +51,6 @@ export interface IntentOutcome {
   /** The turn she opened (or that the action ran in), when there is one. */
   turn: TurnId | null;
 }
-
-/**
- * The owner's level for a text channel, the ceiling on her talking there
- * (docs/design/autonomy.md §21).
- */
-export interface TalkCeiling {
-  /** `off`, `mention-only`, `quiet`, `normal`, `lively` or `always`. */
-  mode: string;
-  /** In words (`安靜`). */
-  label: string;
-  /** Why she may not start a conversation there on her own now (`null`: she may). */
-  blocked: string | null;
-}
-
-/** Provided by the agent: runs her intents (gate first, then her own turn). */
-export interface IntentSink {
-  submit(intent: Intent, signal?: AbortSignal): Promise<IntentOutcome>;
-  /** The level of the text channel `context` (`null` for voice channels and DMs). */
-  ceiling?(context: ContextKey): TalkCeiling | null;
-}
-
-export const IntentSinkKey = serviceKey<IntentSink>("IntentSink");
 
 // ---- journal --------------------------------------------------------------------------------
 

@@ -9,8 +9,8 @@
 //   (`@miyoria/types`): her tools (`user` / `self`), slash commands (`command`, with override),
 //   the panel (`panel`) and the game director (`director`).
 // * Capabilities with a `tool` are offered to the model as tools in reactive turns. High-risk
-//   tools whose result matters (`tool.followup`) wait briefly and otherwise report back in a
-//   follow-up turn (`Followups`).
+//   tools whose result matters (`tool.followup`) wait briefly and otherwise report back as a
+//   notice (`notifyLate`).
 // * Module `actions` applies `[modules.actions]` and serves `/admin autonomy ...` and
 //   `/me privacy`.
 
@@ -57,17 +57,11 @@ export {
   capabilityMatches,
   defaultActionsConfig,
   type Limit,
+  type ShareConfig,
+  ShareConfigSchema,
   type TierLimit,
 } from "./config.js";
 export { type EmergencyDeps, EmergencyStop } from "./emergency.js";
-export {
-  FOLLOWUP_MAX_AGE_MS,
-  FOLLOWUP_REASON,
-  FOLLOWUP_RETRY_MS,
-  Followups,
-  followupHint,
-  MAX_FOLLOWUP_CHARS,
-} from "./followup.js";
 export { GatedToolsKey, isGatedToolName } from "./gated.js";
 export { ActionsModule, actuatorsFor } from "./module.js";
 export {
@@ -114,4 +108,13 @@ export {
   type ReviewVerdict,
   reviewMessages,
 } from "./review.js";
+export {
+  activeText,
+  type ContentVerdict,
+  checkContent,
+  SHARE,
+  type ShareOptions,
+  type ShareRefusalCode,
+  shareCapability,
+} from "./share.js";
 export { CapabilityTool, REQUEST_RULE, RESULT_PENDING, REVIEW_PENDING } from "./tools.js";

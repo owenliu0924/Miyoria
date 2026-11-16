@@ -22,7 +22,7 @@
 // | `[stage]`, `[stack]`, `[machine]`| not read by Core                        | ignored    |
 // | a section or key nobody names    | not read                                | let through|
 
-import { ApiConfigSchema, ApiModule } from "@miyoria/api";
+import { ApiConfigSchema, ApiModule, EvalConfigSchema, EvalModule } from "@miyoria/api";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
 import { ActivityConfigSchema, ActivityModule } from "@miyoria/brain/activity";
 import { AgentConfigSchema, AgentModule } from "@miyoria/brain/agent";
@@ -96,6 +96,7 @@ import { SkillsConfigSchema, SkillsModule } from "@miyoria/workspace/skills";
 import { WebConfigSchema, WebModule } from "@miyoria/workspace/web";
 import { CliPlatform } from "./cli-platform.js";
 import { moduleEnabled, NEEDS_TOKEN } from "./module-ids.js";
+import { warnRemovedKeys } from "./removed-config.js";
 
 const log = getLogger("core.config");
 
@@ -144,6 +145,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [SkillsModule.ID, SkillsConfigSchema],
   [LiveModule.ID, LiveConfigSchema],
   [PartyModule.ID, PartyConfigSchema],
+  [EvalModule.ID, EvalConfigSchema],
   [ExtensionsModule.ID, HostConfigSchema],
   [DiscordBotModule.ID, DiscordConfigSchema],
   [ReplayRecorderModule.ID, ReplayConfigSchema],
@@ -282,6 +284,7 @@ export function assertStartConfig(config: Config): void {
     );
   }
   if (errors.length > 0) throw configProblemsError(errors);
+  warnRemovedKeys(config, (message) => log.warn(message));
 }
 
 /**

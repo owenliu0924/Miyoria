@@ -92,7 +92,6 @@ export interface PlanInput {
   /** Without the affect service: the old inner state. */
   self: SelfSnapshot | null;
   capabilities: CapabilityInfo[];
-  maxImpulses: number;
   limits: PlanLimits;
   /** Epoch ms (for the limits' times). */
   now: number;
@@ -165,7 +164,6 @@ export const PLAN_FORMAT = `{
     "done": [],
     "drop": [{"goal": "", "why": ""}]
   },
-  "impulses": [{"kind": "", "capability": "", "place": null, "person": null, "args": {}, "why": "", "hint": "", "goal": null, "expires_in_min": 0}],
   "day_plan": ""
 }`;
 
@@ -205,9 +203,9 @@ function rules(input: PlanInput): string {
     '  {"kind": "after_activity", "activity": "game"}(某個活動結束後:game、singing、browse、chatting)、',
     '  {"kind": "whenever"}(有空的時候;不會自己叫你,只是你計畫時會看到)。',
     "- expires_in_hours:目標多久後就不重要了(一定會過期,過期自動放棄);steps 是粗的步驟,可以空著。",
-    `- impulses:現在就想做的事,最多 ${input.maxImpulses} 個。kind 是 "speak"(開口:capability "chat.start" 在某個地點說話,或 "chat.dm" 私訊某個人)或 "act"(做某件事,capability 填下面列的動作);hint 是想聊什麼,goal 是為了哪個目標。`,
-    "- 「想做的事」清單是依你現在的感受、需求、在意的人和誰在線算出來的,附了原因:可以從裡面選,也可以自己提別的,或什麼都不做。",
-    "- 沒有想做的事就讓 goals 和 impulses 都是空的,這很正常;範例裡的 0 和空字串只是格式,不是建議。",
+    "- 這裡只排計畫,不直接開口或動手:到了該做的時候,你自己會決定。",
+    "- 「想做的事」清單是依你現在的感受、需求、在意的人和誰在線算出來的,附了原因:可以參考,想做的可以寫成目標,也可以什麼都不做。",
+    "- 沒有要改的就讓 goals 是空的,這很正常;範例裡的 0 和空字串只是格式,不是建議。",
     "- 人一律用名字(資料裡寫的那樣,例如 小明、小明#2),地點用資料裡的整串(例如 discord:123:456),不要自己編代號。",
     "- 情緒不用寫:你的情緒由系統依發生的事計算。",
     "- 知道不等於要說出來:別人在不在線、在玩什麼,只能自然地參考,不要像在監視人一樣說出來。",
@@ -221,18 +219,6 @@ function rules(input: PlanInput): string {
     lines.push("- day_plan 留空,除非你想改今天的計畫(那就整段重寫)。");
   }
   lines.push(
-    "",
-    "# 你能做的事(act 的 capability)",
-    "- chat.start:在某個地點主動開口(place 填文字頻道,或你所在的語音頻道);文字頻道的「聊天等級」是擁有者設的上限,「安靜」的頻道很少主動開口,寫著「現在不能主動開口」的就不要",
-    "- chat.dm:主動私訊某個人(person 必填;只找跟你熟、你真的想找的人)",
-  );
-  for (const c of input.capabilities) {
-    const params = c.params.length > 0 ? `(args:${c.params.join("、")})` : "";
-    lines.push(`- ${c.name}:${c.summary}${params}`);
-  }
-  lines.push(
-    "- voice.join 的 place 填要進的語音頻道;其他動作的 place 是在哪裡做。",
-    "- args 寫成「名稱=a|b」的,值只能是其中之一,不能自己寫別的。",
     "",
     "# 限制(系統會照這些擋下你的行動,計畫時就先考慮)",
     ...renderLimits(input.limits, input.now, input.utcOffsetMinutes),

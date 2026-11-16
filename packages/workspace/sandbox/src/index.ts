@@ -43,6 +43,7 @@ export {
   summarizeRun,
   TOOL_PROPOSE,
   WORKSPACE_DELETE,
+  WORKSPACE_EXPORT,
   WORKSPACE_LIST,
   WORKSPACE_READ,
   WORKSPACE_RUN,
@@ -192,6 +193,7 @@ export {
   walkWork,
   writeInputs,
 } from "./workspace.js";
+export { type WorkspaceExportOptions, workspaceExportCapability } from "./workspace-export.js";
 export {
   NODE_WORKSPACE,
   type WorkspaceGateOptions,

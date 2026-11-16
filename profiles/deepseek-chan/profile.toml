@@ -49,5 +49,5 @@ chat       = ["deepseek:deepseek-v4.1-flash"]
 fast       = ["deepseek:deepseek-v4.1-flash"]
 summarizer = ["deepseek:deepseek-v4.1-flash"]
 game       = ["deepseek:deepseek-v4.1-flash"]
-review     = ["deepseek:deepseek-v4.1-flash"]   # 高風險動作的自我審核(thinking 見 [llm.thinking])
+review     = ["deepseek:deepseek-v4.1-flash"]   # 高風險動作的自我審核(推理等級見 [llm.reasoning])
 mind       = ["deepseek:deepseek-v4.1-flash"]   # 她的內心獨白(心智迴圈,thinking 開)

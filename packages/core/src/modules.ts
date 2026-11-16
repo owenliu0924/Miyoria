@@ -5,25 +5,26 @@
 // which is there before anything can say a word): llm, cluster, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, social, mood, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
-// stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, Discord bot, Admin API, terminal chat, then the
+// stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, eval, Discord bot, Admin API, terminal chat, then the
 // extension host and one `ext.<id>` per extension. `facts` also writes the raw record (chat lines,
 // her decisions, how each turn ended) from the bus.
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { ApiModule, avatarEmotions } from "@miyoria/api";
+import { ApiModule, avatarEmotions, EvalModule } from "@miyoria/api";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
 import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
-import { ArbiterModule } from "@miyoria/brain/arbiter";
+import { ArbiterConfigSchema, ArbiterModule, type LocalTime } from "@miyoria/brain/arbiter";
 import { DirectiveModule } from "@miyoria/brain/directive";
+import { initiativeFromConfig, ScheduleRemindersKey, selfHost } from "@miyoria/brain/selfhost";
 import { ClusterModule } from "@miyoria/cluster";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
 import { ActionsModule } from "@miyoria/gate/actions";
 import { ModerationModule } from "@miyoria/gate/moderation";
-import { MindModule } from "@miyoria/heart/mind";
+import { MindModule, parseAt } from "@miyoria/heart/mind";
 import { SelfModule } from "@miyoria/heart/self";
 import { SocialModule } from "@miyoria/heart/social";
 import { LiveModule } from "@miyoria/live";
@@ -134,6 +135,12 @@ export function authOwners(config: Config): string[] {
   return parsed.success ? parsed.data.owners : [];
 }
 
+/** `[modules.arbiter]`'s clock: the quiet hours the text runner's guard keeps. */
+export function arbiterClock(config: Config): LocalTime | null {
+  const parsed = ArbiterConfigSchema.safeParse(config.module(ArbiterModule.ID).config ?? {});
+  return parsed.success ? parsed.data : null;
+}
+
 async function coreModules({
   config,
   profile,
@@ -157,7 +164,13 @@ async function coreModules({
     new VoiceLinkModule(),
     new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),
     new SchedulerModule(),
-    new AgentModule(profile),
+    // Text and voice conversations, her own starts and her helpers run on the new turn runner.
+    new AgentModule(profile).withTextRunner(
+      selfHost({
+        quiet: arbiterClock(config),
+        initiative: { settings: initiativeFromConfig(config), parseAt },
+      }),
+    ),
     new CommandsModule({ owners: authOwners(config) }),
     new AuthModule(),
     new ActionsModule(profile.displayName),
@@ -178,6 +191,7 @@ async function coreModules({
       name: profile.displayName,
       persona: (services) =>
         services.get(PersonaHandleKey)?.corePrompt() ?? profile.personaPrompt(),
+      reminders: (services) => services.get(ScheduleRemindersKey) ?? null,
     }),
     new KnowledgeModule(profileId),
     new ConversationModule(profileId),
@@ -201,6 +215,7 @@ async function coreModules({
     new SkillsModule(),
     new LiveModule({ names: profile.names() }),
     new PartyModule(),
+    new EvalModule({ baseDir }),
   ];
 }
 

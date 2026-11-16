@@ -3,6 +3,11 @@
 // workflow files are exported for tests and tools.
 
 export {
+  ImageArtifactError,
+  type ImageArtifactOptions,
+  ingestImageOutput,
+} from "./artifact.js";
+export {
   ComfyClient,
   type ComfyClientOptions,
   ComfyError,

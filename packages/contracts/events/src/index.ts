@@ -95,6 +95,9 @@ export {
   ArtifactKeptBySchema,
   type ArtifactKind,
   ArtifactKindSchema,
+  ArtifactShared,
+  type ArtifactSharedData,
+  ArtifactSharedSchema,
   type ArtifactSource,
   ArtifactSourceSchema,
   ArtifactSwept,
@@ -231,6 +234,17 @@ export {
   type RedactedData,
   RedactedDataSchema,
 } from "./envelope.js";
+export {
+  EVAL_EVENTS,
+  EVAL_LIVE_RUN_VERSION,
+  type EvalLiveRun,
+  EvalLiveRunSchema,
+  type EvalLiveSuite,
+  EvalLiveSuiteSchema,
+  type EvalLiveTokens,
+  EvalLiveTokensSchema,
+  EvalRun,
+} from "./eval.js";
 export {
   EXTENSION_EVENTS,
   ExtensionEvent,

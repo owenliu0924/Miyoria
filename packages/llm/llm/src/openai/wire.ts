@@ -1,12 +1,21 @@
-// Chat Completions wire format.
+// What of the Chat Completions request body is ours: the provider kinds, how reasoning levels
+// are sent, and the last pass over the body the AI SDK wrote.
 
 import type { JsonValue, ReasoningLevel } from "@miyoria/types";
-import { z } from "zod";
-import type { ChatMessage, ChatRequest, ContentPart, Usage } from "../types.js";
+import type { ImageDetail } from "../types.js";
 
-/** How a provider expresses reasoning levels (`OpenAiConfig.reasoningEffort` and caps). */
+/** The provider kinds `OpenAiFactory` builds. */
+export const PROVIDER_KINDS = ["openai-compatible", "openai", "deepseek", "opencode"] as const;
+export type ProviderKind = (typeof PROVIDER_KINDS)[number];
+
+/** Whether the kind speaks DeepSeek's dialect (`thinking`, `reasoning_content`). */
+export function isDeepSeekKind(kind: ProviderKind): boolean {
+  return kind === "deepseek" || kind === "opencode";
+}
+
+/** How a provider expresses reasoning levels (`OpenAiConfig.reasoning`). */
 export interface ReasoningWire {
-  /** Send `reasoning_effort: "low" | "medium" | "high"` (APIs that have it). */
+  /** Send `reasoning_effort` (APIs that have it). */
   effort: boolean;
   /**
    * Without `effort`: `max_tokens` cap per level, the stand-in for "think less" on APIs that
@@ -23,6 +32,14 @@ export const DEFAULT_REASONING_MAX_TOKENS: Readonly<Record<ReasoningLevel, numbe
   high: null,
 };
 
+/** What the request needs in its body that the AI SDK has no option for. */
+export interface BodyPatch {
+  /** Top-level fields, written over the SDK's (`response_format`, the `thinking_off` fields). */
+  fields: Record<string, JsonValue>;
+  /** `detail` of every image part, in the order the images appear in the messages. */
+  imageDetails: ImageDetail[];
+}
+
 /** Half of a surrogate pair: what cutting text by UTF-16 units leaves of an emoji. */
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
@@ -38,133 +55,31 @@ export function bodyJson(body: Record<string, JsonValue>): string {
 }
 
 /**
- * Request body. Only `content` / `tool_calls` are ever sent for assistant messages, so
- * reasoning output (e.g. DeepSeek `reasoning_content`) never goes back. The session id is
- * never part of the body.
+ * The body that is sent: the SDK's (`raw`, JSON) with the patch applied. `tool_choice` is
+ * dropped: a request never sets one, and the SDK's explicit `"auto"` is the API's default.
  */
-export function requestBody(
-  req: ChatRequest,
-  /** Merged into the body when `req.thinking === false` (the provider's switch). */
-  thinkingOff: Readonly<Record<string, JsonValue>> | null = null,
-  /** How `req.reasoning` is sent (`null`: not at all, only the on / off switch). */
-  reasoning: ReasoningWire | null = null,
-): Record<string, JsonValue> {
-  const body: Record<string, JsonValue> = {
-    model: req.model ?? "",
-    messages: req.messages.map(wireMessage),
-    stream: true,
-    stream_options: { include_usage: true },
-  };
-  const tools = req.tools ?? [];
-  if (tools.length > 0) {
-    body.tools = tools.map((t) => ({
-      type: "function",
-      function: { name: t.name, description: t.description, parameters: t.parameters },
-    }));
-  }
-  if (req.temperature != null) body.temperature = req.temperature;
-  if (req.max_tokens != null) body.max_tokens = req.max_tokens;
-  if (req.stop && req.stop.length > 0) body.stop = req.stop;
-  if (req.json_mode) body.response_format = { type: "json_object" };
-  if (req.thinking === false && thinkingOff) Object.assign(body, thinkingOff);
-  const level = req.reasoning ?? null;
-  if (reasoning !== null && level !== null && level !== "off" && req.thinking !== false) {
-    if (reasoning.effort) {
-      body.reasoning_effort = level;
-    } else {
-      const cap = reasoning.maxTokens[level] ?? null;
-      if (cap !== null) {
-        const asked = typeof body.max_tokens === "number" ? body.max_tokens : cap;
-        body.max_tokens = Math.min(asked, cap);
-      }
+export function finalBody(raw: string, patch: BodyPatch): string {
+  const body = JSON.parse(raw) as Record<string, JsonValue>;
+  delete body.tool_choice;
+  Object.assign(body, patch.fields);
+  if (patch.imageDetails.length > 0 && Array.isArray(body.messages)) {
+    let image = 0;
+    for (const part of body.messages.flatMap(contentParts)) {
+      const url = part.type === "image_url" ? part.image_url : null;
+      const detail = patch.imageDetails[image];
+      if (!isRecord(url)) continue;
+      if (detail !== undefined) url.detail = detail;
+      image++;
     }
   }
-  return body;
+  return bodyJson(body);
 }
 
-function wireMessage(m: ChatMessage): Record<string, JsonValue> {
-  const toolCalls =
-    m.role === "assistant"
-      ? m.tool_calls.map((c) => ({
-          id: c.id,
-          type: "function",
-          function: { name: c.name, arguments: c.arguments },
-        }))
-      : [];
-  // `null` for assistant messages that only carry tool calls.
-  const content: JsonValue =
-    typeof m.content !== "string"
-      ? m.content.map(wirePart)
-      : m.content !== "" || toolCalls.length === 0
-        ? m.content
-        : null;
-  const out: Record<string, JsonValue> = { role: m.role, content };
-  if (m.name !== null) out.name = m.name;
-  if (toolCalls.length > 0) out.tool_calls = toolCalls;
-  if (m.role === "tool" && m.tool_call_id !== null) out.tool_call_id = m.tool_call_id;
-  return out;
+function contentParts(message: JsonValue): Record<string, JsonValue>[] {
+  const content = isRecord(message) ? message.content : null;
+  return Array.isArray(content) ? content.filter(isRecord) : [];
 }
 
-/** A content part as the API takes it (`alt` is ours and stays out). */
-function wirePart(p: ContentPart): JsonValue {
-  return p.type === "text"
-    ? { type: "text", text: p.text }
-    : { type: "image_url", image_url: { url: p.image_url.url, detail: p.image_url.detail } };
-}
-
-const opt = <T extends z.ZodType>(schema: T) => schema.nullable().optional();
-
-const WireUsageSchema = z.object({
-  prompt_tokens: opt(z.number()),
-  completion_tokens: opt(z.number()),
-  /** DeepSeek. */
-  prompt_cache_hit_tokens: opt(z.number()),
-  /** OpenAI. */
-  prompt_tokens_details: opt(z.object({ cached_tokens: opt(z.number()) })),
-  /** OpenAI, OpenRouter, DeepSeek reasoners. */
-  completion_tokens_details: opt(z.object({ reasoning_tokens: opt(z.number()) })),
-});
-
-/** One streamed chunk; unknown fields are ignored. */
-export const ChunkSchema = z.object({
-  choices: opt(
-    z.array(
-      z.object({
-        delta: opt(
-          z.object({
-            content: opt(z.string()),
-            /** DeepSeek. */
-            reasoning_content: opt(z.string()),
-            /** OpenRouter and some local servers. */
-            reasoning: opt(z.string()),
-            tool_calls: opt(
-              z.array(
-                z.object({
-                  index: opt(z.number()),
-                  id: opt(z.string()),
-                  function: opt(z.object({ name: opt(z.string()), arguments: opt(z.string()) })),
-                }),
-              ),
-            ),
-          }),
-        ),
-        finish_reason: opt(z.string()),
-      }),
-    ),
-  ),
-  usage: opt(WireUsageSchema),
-  error: z.unknown().optional(),
-});
-export type Chunk = z.output<typeof ChunkSchema>;
-
-export function wireUsage(u: z.output<typeof WireUsageSchema>): Usage {
-  return {
-    prompt_tokens: u.prompt_tokens ?? 0,
-    completion_tokens: u.completion_tokens ?? 0,
-    cached_prompt_tokens:
-      u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens ?? null,
-    ...(u.completion_tokens_details?.reasoning_tokens != null
-      ? { reasoning_tokens: u.completion_tokens_details.reasoning_tokens }
-      : {}),
-  };
+function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

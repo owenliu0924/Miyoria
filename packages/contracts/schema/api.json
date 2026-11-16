@@ -1042,13 +1042,6 @@
         "expires_at"
       ]
     },
-    "ApiBucketMode": {
-      "type": "string",
-      "enum": [
-        "replace-self",
-        "append-self"
-      ]
-    },
     "ApiBudgetState": {
       "type": "string",
       "enum": [
@@ -1812,92 +1805,6 @@
         "chars_out",
         "budget_chars",
         "fate"
-      ]
-    },
-    "ApiContextBucket": {
-      "type": "object",
-      "properties": {
-        "writer": {
-          "type": "string"
-        },
-        "mode": {
-          "$ref": "#/$defs/ApiBucketMode"
-        },
-        "owner": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "entries": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiContextEntry"
-          }
-        },
-        "updated_at": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "writer",
-        "mode",
-        "owner",
-        "entries",
-        "updated_at"
-      ]
-    },
-    "ApiContextEntry": {
-      "type": "object",
-      "properties": {
-        "event": {
-          "type": "string"
-        },
-        "at": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "attention_key": {
-          "type": "string"
-        },
-        "revision": {
-          "type": "number"
-        },
-        "context": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WireContextKey"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "from": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "untrusted": {
-          "type": "boolean"
-        },
-        "restored": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "event",
-        "at",
-        "text",
-        "attention_key",
-        "revision",
-        "context",
-        "from",
-        "untrusted",
-        "restored"
       ]
     },
     "ApiContextKeyIn": {
@@ -3140,6 +3047,61 @@
       "type": "object",
       "properties": {},
       "additionalProperties": false
+    },
+    "ApiEvalLiveHistory": {
+      "type": "object",
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsEvalLiveRun"
+          }
+        },
+        "nightly": {
+          "$ref": "#/$defs/ApiEvalNightly"
+        }
+      },
+      "required": [
+        "runs",
+        "nightly"
+      ]
+    },
+    "ApiEvalNightly": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ApiEvalNightlyState"
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "running": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "state",
+        "time",
+        "next_at",
+        "running"
+      ]
+    },
+    "ApiEvalNightlyState": {
+      "type": "string",
+      "enum": [
+        "off",
+        "scheduled",
+        "no_checkout"
+      ]
     },
     "ApiExpressionRequest": {
       "type": "object",
@@ -5171,17 +5133,6 @@
         "capability"
       ]
     },
-    "ApiLineState": {
-      "type": "string",
-      "enum": [
-        "pending",
-        "delivered",
-        "interrupted",
-        "failed",
-        "cancelled",
-        "blocked"
-      ]
-    },
     "ApiLlmCallDetail": {
       "type": "object",
       "properties": {
@@ -6882,6 +6833,400 @@
         "position"
       ]
     },
+    "ApiNoteAuthor": {
+      "type": "string",
+      "enum": [
+        "segment",
+        "reflect",
+        "tool",
+        "import",
+        "panel",
+        "system"
+      ]
+    },
+    "ApiNoteChange": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "add",
+            "outdate",
+            "restore",
+            "redact"
+          ]
+        },
+        "line_id": {
+          "type": "string"
+        },
+        "section": {
+          "type": "string"
+        },
+        "section_label": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "line_id",
+        "section",
+        "section_label",
+        "text"
+      ]
+    },
+    "ApiNoteDocumentEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiNoteKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "short_id",
+        "subject",
+        "kind",
+        "label",
+        "lines",
+        "version",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "ApiNoteDocumentView": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/ApiNoteDocumentEntry"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteSection"
+          }
+        },
+        "outdated": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "document",
+        "sections",
+        "outdated"
+      ]
+    },
+    "ApiNoteEvidence": {
+      "type": "object",
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "redacted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "quote",
+        "person_id",
+        "person_name",
+        "at",
+        "redacted"
+      ]
+    },
+    "ApiNoteHistory": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/ApiNoteDocumentEntry"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteVersion"
+          }
+        }
+      },
+      "required": [
+        "document",
+        "versions"
+      ]
+    },
+    "ApiNoteKind": {
+      "type": "string",
+      "enum": [
+        "person",
+        "place",
+        "topic",
+        "self"
+      ]
+    },
+    "ApiNoteKindCount": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ApiNoteKind"
+        },
+        "documents": {
+          "type": "number"
+        },
+        "lines": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "documents",
+        "lines"
+      ]
+    },
+    "ApiNoteLine": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ApiNoteProvenance"
+        },
+        "told_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "told_by_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "public",
+                "self",
+                "space",
+                "room",
+                "dm",
+                "person"
+              ]
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "label"
+          ]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "author": {
+          "$ref": "#/$defs/ApiNoteAuthor"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteEvidence"
+          }
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "outdated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outdated_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "short_id",
+        "text",
+        "provenance",
+        "told_by",
+        "told_by_name",
+        "scope",
+        "confidence",
+        "author",
+        "evidence",
+        "created_at",
+        "updated_at",
+        "outdated_at",
+        "outdated_reason"
+      ]
+    },
+    "ApiNoteProvenance": {
+      "type": "string",
+      "enum": [
+        "told_by_subject",
+        "told_by_other",
+        "observed",
+        "concluded"
+      ]
+    },
+    "ApiNoteRevertRequest": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "ApiNoteRevertResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/ApiNoteDocumentEntry"
+        },
+        "version": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "restored": {
+          "type": "number"
+        },
+        "outdated": {
+          "type": "number"
+        },
+        "gone": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "document",
+        "version",
+        "restored",
+        "outdated",
+        "gone"
+      ]
+    },
+    "ApiNoteSection": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteLine"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "lines"
+      ]
+    },
+    "ApiNoteVersion": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "#/$defs/ApiNoteAuthor"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteChange"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "at",
+        "author",
+        "reason",
+        "changes"
+      ]
+    },
     "ApiNotebookEntry": {
       "type": "object",
       "properties": {
@@ -6954,6 +7299,27 @@
         "about",
         "body",
         "created_at"
+      ]
+    },
+    "ApiNotesList": {
+      "type": "object",
+      "properties": {
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteDocumentEntry"
+          }
+        },
+        "counts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteKindCount"
+          }
+        }
+      },
+      "required": [
+        "documents",
+        "counts"
       ]
     },
     "ApiPartyPlayerView": {
@@ -9910,73 +10276,6 @@
         "message"
       ]
     },
-    "ApiSpokenLine": {
-      "type": "object",
-      "properties": {
-        "line": {
-          "type": "string"
-        },
-        "attention_key": {
-          "type": "string"
-        },
-        "revision": {
-          "type": "number"
-        },
-        "channel": {
-          "$ref": "#/$defs/ApiDeliveryChannel"
-        },
-        "context": {
-          "$ref": "#/$defs/WireContextKey"
-        },
-        "said": {
-          "type": "string"
-        },
-        "audience": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "turn": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "state": {
-          "$ref": "#/$defs/ApiLineState"
-        },
-        "at": {
-          "type": "string"
-        },
-        "settled_at": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "reason": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "line",
-        "attention_key",
-        "revision",
-        "channel",
-        "context",
-        "said",
-        "audience",
-        "turn",
-        "state",
-        "at",
-        "settled_at",
-        "reason"
-      ]
-    },
     "ApiStageExpressionRequest": {
       "type": "object",
       "properties": {
@@ -12432,6 +12731,142 @@
         "people",
         "voice_channels",
         "channels"
+      ]
+    },
+    "EventsEvalLiveRun": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "number",
+          "const": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subject": {
+          "type": "string"
+        },
+        "repeat": {
+          "type": "number"
+        },
+        "suites": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/EventsEvalLiveSuite"
+          }
+        },
+        "tokens": {
+          "$ref": "#/$defs/EventsEvalLiveTokens"
+        },
+        "usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "type": "number"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stopped": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "budget"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "v",
+        "at",
+        "commit",
+        "subject",
+        "repeat",
+        "suites",
+        "tokens",
+        "usd",
+        "duration_ms",
+        "models",
+        "stopped"
+      ]
+    },
+    "EventsEvalLiveSuite": {
+      "type": "object",
+      "properties": {
+        "headline": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "items": {
+          "type": "number"
+        },
+        "unsupported": {
+          "type": "number"
+        },
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "headline",
+        "items",
+        "unsupported",
+        "stopped"
+      ]
+    },
+    "EventsEvalLiveTokens": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        },
+        "reasoning_tokens": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_prompt_tokens",
+        "reasoning_tokens"
       ]
     },
     "HostGpuPolicy": {

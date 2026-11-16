@@ -3,7 +3,7 @@
 
 import type { CommandReply, CommandSpec, Invocation } from "@miyoria/commands";
 import { ExtCommandReplySchema, ExtPromptContributeResultSchema } from "@miyoria/contracts/ext";
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import type { Tool, ToolContext, ToolMeta, ToolSpec } from "@miyoria/llm/tools";
 import type { JsonValue, PromptContributor, PromptRequest, PromptSection } from "@miyoria/types";
 import { isJsonObject } from "@miyoria/types";
 import { z } from "zod";
@@ -42,6 +42,14 @@ export function toolResultText(result: JsonValue): string {
 }
 
 export class ProxyTool implements Tool {
+  /** An extension is a program of its own: what its tool does is not known here. */
+  readonly meta: ToolMeta = {
+    effect: "external",
+    speed: "instant",
+    risk: "medium",
+    group: "extension",
+  };
+
   constructor(
     readonly peer: Peer,
     /** Name the extension registered (may contain dots). */

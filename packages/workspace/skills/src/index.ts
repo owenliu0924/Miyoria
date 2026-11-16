@@ -6,12 +6,15 @@ export {
   SKILL_DELETE,
   SKILL_LIST,
   SKILL_READ,
+  SKILL_TOOL,
   SKILL_WRITE,
   skillCapabilities,
+  skillTool,
 } from "./capabilities.js";
 export { type SkillsConfig, SkillsConfigSchema } from "./config.js";
-export { SkillStoreKey, SkillsModule } from "./module.js";
+export { SkillsModule } from "./module.js";
 export {
+  MAX_SKILL_TOOLS,
   SKILL_FILE,
   SKILLS_DIR,
   SkillError,
@@ -19,4 +22,6 @@ export {
   type SkillPage,
   SkillStore,
   type SkillSummary,
+  splitTools,
+  toolNames,
 } from "./store.js";

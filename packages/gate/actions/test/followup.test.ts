@@ -1,12 +1,5 @@
 import type { ToolContext } from "@miyoria/llm/tools";
-import {
-  Events,
-  type Impulse,
-  impulseReason,
-  Principals,
-  type PublishedEvent,
-  publishedInto,
-} from "@miyoria/types";
+import { Events, type Notice, Principals, type PublishedEvent } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -15,10 +8,6 @@ import {
   type Capability,
   type CapabilityTool,
   defineCapability,
-  FOLLOWUP_MAX_AGE_MS,
-  FOLLOWUP_REASON,
-  FOLLOWUP_RETRY_MS,
-  Followups,
   RESULT_PENDING,
 } from "../src/index.js";
 import { AMY, CTX, gate } from "./helpers.js";
@@ -27,21 +16,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** The follow-up impulses published (in the old `agent.initiative` shape). */
-const initiatives = (events: readonly PublishedEvent[]) =>
-  events.flatMap((e) => {
-    if (e.type !== Events.ArbiterImpulse.type) return [];
-    const impulse = e.data as Impulse;
-    expect(impulse.source).toBe("followup");
-    return [
-      {
-        context: impulse.target.context,
-        reason: impulseReason(impulse),
-        hint: impulse.hint ?? "",
-        about: impulse.about,
-      },
-    ];
-  });
+/** The notices published, and no impulse of any source (a late result is told as a notice). */
+const notices = (events: readonly PublishedEvent[]) => {
+  expect(events.filter((e) => e.type === Events.ArbiterImpulse.type)).toEqual([]);
+  return events.filter((e) => e.type === Events.AgentNotice.type).map((e) => e.data as Notice);
+};
 
 function context(): ToolContext {
   return {
@@ -84,13 +63,13 @@ describe("followup tools", () => {
     expect(await tool.call(context(), { code: "1+1" })).toBe("output of 1+1");
     expect(runs).toEqual(["1+1 by self"]);
     expect(JSON.stringify(g.router.requests[0]?.[1].messages)).toContain("only harmless code");
-    expect(initiatives(g.events)).toEqual([]);
+    expect(notices(g.events)).toEqual([]);
 
     g.router.replies.push('{"verdict": "deny", "reason": "no"}');
     await expect(tool.call(context(), { code: "x" })).rejects.toBeInstanceOf(ActionDeniedError);
   });
 
-  it("report_back_in_a_follow_up_turn_when_late", async () => {
+  it("report_back_as_a_notice_when_late", async () => {
     const g = await gate();
     // The review hangs and times out (deny) after the tool answered; the refusal comes back.
     g.registry.configure({ ...g.registry.config, inline_wait_ms: 0, review_timeout_ms: 30 });
@@ -98,14 +77,12 @@ describe("followup tools", () => {
     g.router.hang = true;
     const tool = g.tools.get("t_result") as CapabilityTool;
     expect(await tool.call(context(), { code: "2+2", why: "test" })).toBe(RESULT_PENDING);
-    expect(initiatives(g.events)).toEqual([]);
-    await vi.waitFor(() => expect(initiatives(g.events)).toHaveLength(1));
-    const [f] = initiatives(g.events);
-    expect(f?.reason).toBe(FOLLOWUP_REASON);
-    expect(f?.context).toEqual(CTX);
-    expect(f?.about).toEqual([AMY]);
-    expect(f?.hint).toContain("沒有執行");
-    expect(f?.hint).toContain("test");
+    expect(notices(g.events)).toEqual([]);
+    await vi.waitFor(() => expect(notices(g.events)).toHaveLength(1));
+    const [n] = notices(g.events);
+    expect(n?.context).toEqual(CTX);
+    expect(n?.ok).toBe(false);
+    expect(n?.text).toContain("沒有做成");
   });
 
   it("owners_see_the_capability_view_with_attachments", () => {
@@ -122,41 +99,6 @@ describe("followup tools", () => {
     expect(card.files).toEqual([{ name: "main.py", data: "print(1)" }]);
     expect(card.text).toContain("code: print(1)");
     expect(card.text).not.toContain("參數：");
-  });
-});
-
-describe("Followups", () => {
-  it("retries_skipped_deliveries_until_they_are_too_old", () => {
-    vi.useFakeTimers();
-    const events: PublishedEvent[] = [];
-    const f = new Followups(publishedInto(events), () => Date.now());
-    f.deliver(CTX, "result", [AMY]);
-    expect(initiatives(events)).toHaveLength(1);
-    const skipped = {
-      turn: "t",
-      context: CTX,
-      respond: false,
-      score: 0,
-      reasons: [`initiative:${FOLLOWUP_REASON}`, "skipped: a turn is in flight"],
-    };
-    // A long busy stretch (her own long turn, people talking) does not lose the result.
-    const tries = Math.floor(FOLLOWUP_MAX_AGE_MS / FOLLOWUP_RETRY_MS);
-    for (let i = 1; i <= tries; i++) {
-      f.onDecision(skipped);
-      vi.advanceTimersByTime(FOLLOWUP_RETRY_MS);
-      expect(initiatives(events)).toHaveLength(i + 1);
-    }
-    // Gives up once it is too old to matter.
-    f.onDecision(skipped);
-    vi.advanceTimersByTime(FOLLOWUP_RETRY_MS * 2);
-    expect(initiatives(events)).toHaveLength(tries + 1);
-    // Other initiatives and other contexts are not its business.
-    f.deliver(CTX, "again");
-    f.onDecision({ ...skipped, reasons: ["initiative:idle_channel", "skipped"] });
-    f.onDecision({ ...skipped, context: { ...CTX, channel: "c2" } });
-    vi.advanceTimersByTime(FOLLOWUP_RETRY_MS);
-    expect(initiatives(events)).toHaveLength(tries + 2);
-    f.close();
   });
 });
 

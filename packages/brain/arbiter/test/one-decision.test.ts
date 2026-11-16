@@ -8,25 +8,14 @@
 import { EventLogService } from "@miyoria/memory/facts";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
-  type ContextKey,
   type DeliveryLedger,
   EventLogKey,
   FloorKey,
   ImpulseHostKey,
-  newImpulse,
   PartyStatusKey,
-  ProposalBoardKey,
-  toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ArbiterCore,
-  ArbiterModule,
-  arbiterConfig,
-  FloorConfigSchema,
-  FloorCore,
-  type StartFacts,
-} from "../src/index.js";
+import { ArbiterModule, FloorConfigSchema, FloorCore, type StartFacts } from "../src/index.js";
 import { FakeHost, MIN, T0, textCtx, voiceCtx } from "./helpers.js";
 
 const TEXT = textCtx("c");
@@ -36,7 +25,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function floor(now: () => number, env: { postsTo?: (c: ContextKey) => boolean } = {}) {
+function floor(now: () => number) {
   return new FloorCore(FloorConfigSchema.parse({}), 3, {
     now,
     ledger: () =>
@@ -46,7 +35,6 @@ function floor(now: () => number, env: { postsTo?: (c: ContextKey) => boolean } 
         saidLately: () => null,
       }) as unknown as DeliveryLedger,
     humans: (c) => (c.kind === "voice" ? 2 : null),
-    ...env,
   });
 }
 
@@ -114,37 +102,11 @@ describe("the waits on her own starts are one decision", () => {
     expect(f.startsAt(ROOM, all)).toBe(now + 9 * MIN);
     expect(f.check("notable", ROOM, null, all)).toBeNull();
   });
-
-  it("the Arbiter asks the Floor for her gaps, and says when she may start again", async () => {
-    let t = T0;
-    const host = new FakeHost();
-    const f = floor(() => t);
-    const arbiter = new ArbiterCore(arbiterConfig({ quiet_start_hour: 0, quiet_end_hour: 0 }), {
-      now: () => t,
-      publish: () => undefined,
-      host: () => host,
-      floor: f,
-    });
-    const wish = () =>
-      newImpulse(
-        { source: "plan", context: ROOM, ttlMs: 10 * MIN, why: "想聊天", hint: "聊點什麼" },
-        t,
-      );
-    expect((await arbiter.submit(wish())).verdict).toBe("accepted");
-    t += 30_000;
-    const again = await arbiter.submit(wish());
-    expect(again).toMatchObject({ verdict: "rejected", reason: "cooldown" });
-    // One time, the Floor's: the place gap of a voice channel (300 s) after her last start there.
-    expect(again.retry_at).toBe(toTimestamp(T0 + 5 * MIN));
-    expect(arbiter.ledger(ROOM).limits.next_initiative_at).toBe(toTimestamp(T0 + 5 * MIN));
-  });
 });
 
 describe("what other modules asked of the Floor", () => {
-  it("a wish for the daily-post channel needs nobody there; another text channel does", () => {
-    const posts = textCtx("posts");
-    const f = floor(() => T0, { postsTo: (c) => c.channel === "posts" });
-    expect(f.check("wish", posts)).toBeNull();
+  it("a wish for a text channel nobody is in is refused", () => {
+    const f = floor(() => T0);
     expect(f.check("wish", TEXT)?.reason).toBe("nobody");
   });
 
@@ -159,10 +121,6 @@ describe("what other modules asked of the Floor", () => {
     sup.services.provide("app", ImpulseHostKey, host);
     sup.services.provide("app", PartyStatusKey, {
       running: (c) => (playing.has(c.channel) ? { game: "quiz", title: "問答" } : null),
-    });
-    sup.services.provide("app", ProposalBoardKey, {
-      propose: async () => ({ id: "x", state: "open", detail: "", turn: null }),
-      open: () => [],
     });
     await sup.register(new ArbiterModule("p"), {}, true);
     await sup.startAll();

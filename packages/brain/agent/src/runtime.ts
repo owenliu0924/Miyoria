@@ -1,12 +1,12 @@
-// The agent's event loop: turns bus events into session updates and coordinator input, and
-// keeps the state shared by the per-context coordinators and their turns: the focus of every
-// turn in flight (`TurnFocusBoard`, provided as `TurnFocusViewKey`), turn outcomes
-// (`agent.turn.outcome`), saved prompts and notices waiting to be told.
+// The agent's event loop: hands every line of a conversation to the text runner (Core installs
+// `@miyoria/brain/selfhost`), after the checks every line goes through (her own accounts, blocked
+// people, the input defence), and keeps what the runner and the other modules ask of it: who is in
+// each voice channel she is in, the focus of every turn in flight (`TurnFocusBoard`, provided as
+// `TurnFocusViewKey`), turn outcomes (`agent.turn.outcome`) and notices waiting to be told.
 //
-// It also keeps her rhythm in text channels (`Rhythm`, levels.ts: looks, reactions, pacing) and
-// provides `MessageActionsKey` for the context menus: "要她回這則" opens an addressed turn on that
-// message, "不要記住這個" hides it from her prompts and tells the rest of her memory
-// (`agent.message.excluded`).
+// It also keeps her rhythm in text channels (`Rhythm`, levels.ts: reactions, pacing) and provides
+// `MessageActionsKey` for the context menus: "要她回這則" asks the text runner for a run on that
+// message, "不要記住這個" tells the rest of her (`agent.message.excluded`).
 
 import type { Tool, ToolContext, ToolRegistry } from "@miyoria/llm/tools";
 import {
@@ -17,7 +17,6 @@ import {
 } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
-  type ActionId,
   ActuatorExecutorKey,
   ArbiterKey,
   type Attitude,
@@ -29,13 +28,9 @@ import {
   type FloorClaimKind,
   type Handle,
   HandleDirectoryKey,
-  holdsBack,
-  type ImpulseAttention,
-  type ImpulseRun,
   type ImpulseSource,
   type IncomingMessage,
   type InputVerdict,
-  type Intent,
   type InterruptLevel,
   incomingText,
   inspectInput,
@@ -54,32 +49,24 @@ import {
   newId,
   newImpulse,
   type PlatformId,
-  type PlaybackState,
-  type SavedPrompt,
-  SelfStateKey,
   type SocialSignals,
   SocialSignalsKey,
   safeName,
   sameAccount,
   type TurnId,
   type TurnOutcomeRecord,
-  toTimestamp,
   type VoiceParticipant,
   type VoiceUtterance,
 } from "@miyoria/types";
-import type { RandomSource, TalkLevel } from "./attention.js";
 import type { AgentCommands } from "./commands.js";
 import { SavedPrompts } from "./compiler.js";
 import type { AgentConfig } from "./config.js";
-import { Coordinator } from "./coordinator.js";
 import { TurnFocusBoard } from "./focus.js";
 import type { AgentHandle } from "./handle.js";
-import { startBackfill } from "./history.js";
-import { type Ceiling, ceilingFor, Rhythm, RhythmSectionSchema } from "./levels.js";
-import { type Chain, heardPart, heardShare, MainLine } from "./mainline/main.js";
+import { ceilingFor, Rhythm, RhythmSectionSchema } from "./levels.js";
+import { heardPart, heardShare, MainLine } from "./mainline/main.js";
 import { agentTurns } from "./metrics.js";
 import type { PersonaHandle } from "./persona.js";
-import { type HistoryEntry, Session } from "./session.js";
 import { parseBudgetState } from "./signals.js";
 import { ReactTool } from "./tools.js";
 import { accountId, contextId } from "./util.js";
@@ -88,43 +75,28 @@ import { type FetchLike, ImageLoader } from "./vision.js";
 /** Module whose restart means the agent commands must be registered again. */
 const COMMANDS_MODULE = "commands";
 const MINUTE_MS = 60_000;
-/** How long the Arbiter waits for a coordinator to take (or refuse) an impulse's turn. */
-const OPEN_TIMEOUT_MS = 5_000;
 /** Notices kept per context while nobody reads them. */
 const MAX_NOTICES = 10;
 /** Barge-ins remembered (by turn). */
 const MAX_REMEMBERED = 64;
 
-/** An `agent.initiative` request. */
+/** An `agent.initiative` request (or a notice to tell). */
 export interface Initiative {
   reason: string;
   hint: string;
   about: AccountRef[];
-  /** Main line: what the claim is about, its row of §7.1 and what it continues. */
-  attention?: ImpulseAttention | null;
-  claim?: FloorClaimKind;
-  chain?: Chain | null;
-  proposal?: { id: string; tool: string | null } | null;
 }
 
 /**
  * The Arbiter's source for an `agent.initiative` reason (publishers that were not converted to
- * impulses yet, extensions): game commentary, a song, a result or notice, else a reaction to
+ * impulses yet, extensions): game commentary, a song, a notice, else a reaction to
  * the world. None of them is her own initiative.
  */
 export function initiativeSource(reason: string): ImpulseSource {
   if (reason === "game") return "game";
   if (reason === "notice") return "notice";
-  if (reason === "action_result" || reason === "followup") return "followup";
   if (reason.startsWith("song_")) return "song";
   return "world";
-}
-
-/** Whether an `agent.initiative` is about her own doings, not a reaction to someone there. */
-function aboutHerself(reason: string): boolean {
-  if (reason === "action_result") return true;
-  const source = initiativeSource(reason);
-  return source === "game" || source === "notice" || source === "song";
 }
 
 /** How long a converted `agent.initiative` stays worth saying while the place is busy. */
@@ -132,129 +104,103 @@ const INITIATIVE_TTL_MS = 2 * MINUTE_MS;
 /** Results someone waits for stay longer (the old follow-up retry window). */
 const RESULT_TTL_MS = 10 * MINUTE_MS;
 
-/** One of her intents (from her mind loop), to be opened as a turn she starts herself. */
-export interface IntentTurn {
-  intent: Intent;
-  /** The turn's id (chosen up front so gate decisions and outcomes can be linked to it). */
-  turn: TurnId;
-  /** What the action she already took returned (`null`: she only wants to talk). */
-  done: string | null;
-  /** Summary of the capability she used, for the prompt. */
-  summary: string | null;
+/** What the agent knows of a text line it hands to a `TextRunner`. */
+export interface TextLineMarks {
+  /** Her own line (the platform's echo of what she sent). */
+  own: boolean;
+  /** A bot's line she does not answer (`respond_to_bots` off). */
+  bot: boolean;
+  /** What the input defence said of it (an `ignore` verdict never reaches the runner). */
+  verdict: InputVerdict | null;
+  /** The emergency stop is on: she keeps what she hears and answers nothing. */
+  muted: boolean;
+}
+
+/** Where the conversations go (`@miyoria/brain/selfhost`): text, and voice when it has `voice`. */
+export interface TextRunner {
+  /** A line of a channel, thread or DM, after the agent's own checks (blocked users, `ignore`). */
+  line(msg: IncomingMessage, marks: TextLineMarks): void;
+  /** Someone types in a text place. */
+  typing(context: ContextKey): void;
+  /** The emergency stop: what runs ends, what waits is dropped. */
+  halt(): void;
+  stop(): void;
   /**
-   * The Arbiter already decided on it: no level gap or budget check here (it booked her start
-   * itself, so checking again would see that start).
+   * "要她回這則" on a line of a place it runs: a run on that line as if it had called her. Unset:
+   * the menu does not reach its places.
    */
-  gated?: boolean;
-  /** Main line: the tool that would carry the proposal out. */
-  tool?: string | null;
-  /** Main line: she may act on it but not talk (nobody is there, or her budget is spent). */
-  muted?: boolean;
-}
-
-export type Input =
-  /** A platform message or a voice utterance (as a message). */
-  | { type: "message"; message: IncomingMessage }
-  | { type: "typing" }
-  /** Someone in the voice channel started or stopped speaking. */
-  | { type: "speaking" }
-  /** Playback of her speech for `turn` changed. */
-  | { type: "playback"; turn: TurnId; state: PlaybackState }
+  replyTo?(message: MessageRef): TextReplyOutcome;
+  /** Whether one of its runs started `task` and is woken by its end. Unset: none. */
+  follows?(task: string | null): boolean;
   /**
-   * Start a turn on her own (no new input), if the context is quiet. `reply`: the Arbiter's
-   * impulse (it decided the rules; the coordinator only says whether the place is free).
+   * The voice conversations. The agent still keeps who is in each voice channel she is in and
+   * hands over what is said in it.
    */
-  | { type: "initiative"; initiative: Initiative; reply: (run: ImpulseRun) => void }
-  /** Start a turn she decided on (principal `self`, with tools) once the context is free. */
-  | { type: "intent"; intent: IntentTurn }
-  /** Main line: a claim cuts into her speech here, this hard (§7.3). */
-  | { type: "yield"; level: InterruptLevel }
-  /** The emergency stop: the turn in flight and everything waiting here ends. */
-  | { type: "halt" };
-
-/** Unbounded queue from the event loop to one coordinator. */
-export class Inbox {
-  readonly #items: Input[] = [];
-  #waiter: (() => void) | null = null;
-  #closed = false;
-
-  get closed(): boolean {
-    return this.#closed;
-  }
-
-  get isEmpty(): boolean {
-    return this.#items.length === 0;
-  }
-
-  /** `false` once closed (the coordinator is gone). */
-  push(item: Input): boolean {
-    if (this.#closed) return false;
-    this.#items.push(item);
-    this.#wake();
-    return true;
-  }
-
-  shift(): Input | undefined {
-    return this.#items.shift();
-  }
-
-  close(): void {
-    this.#closed = true;
-    this.#wake();
-  }
-
-  /** Resolves once there is an item or the inbox is closed. */
-  ready(): Promise<void> {
-    if (this.#items.length > 0 || this.#closed) return Promise.resolve();
-    return new Promise((resolve) => {
-      const previous = this.#waiter;
-      this.#waiter = () => {
-        previous?.();
-        resolve();
-      };
-    });
-  }
-
-  #wake(): void {
-    const waiter = this.#waiter;
-    this.#waiter = null;
-    waiter?.();
-  }
+  voice?: VoiceRunner;
 }
 
-interface ContextHandle {
-  session: Session;
-  inbox: Inbox;
+/** What the agent hands a text runner that runs voice conversations (`TextRunner.voice`). */
+export interface VoiceRunner {
+  /** An utterance (`spoken`), or a line typed in the voice channel's chat, after the agent's checks. */
+  line(msg: IncomingMessage, marks: TextLineMarks, spoken: boolean): void;
+  /** Who is in the voice channel `context` now, her not included. */
+  members(context: ContextKey, members: readonly VoiceParticipant[]): void;
+  /** Someone started or stopped speaking there. */
+  speaking(context: ContextKey, account: AccountRef, speaking: boolean): void;
+  /** A sentence of hers started, ended, was cut off or failed; `heard`: what of one cut off was heard. */
+  playback(playback: EventPayload<typeof Events.VoicePlaybackEvent>, heard: string | null): void;
+  /** A claim cuts into her speech in `context`, this hard (§7.3). */
+  yieldTo(context: ContextKey, level: InterruptLevel): void;
+  /** She left the voice channel `context`. */
+  left(context: ContextKey): void;
 }
 
-/** State shared by the event loop, the per-context coordinators and turns. */
+/** How a text runner took a "要她回這則" (`ok`: a run is on its way). */
+export type TextReplyOutcome = "ok" | "unseen" | "own" | "blocked" | "off" | "failed";
+
+/** What the menu says when "要她回這則" cannot be done. */
+const REPLY_REFUSALS: Readonly<Record<Exclude<TextReplyOutcome, "ok">, string>> = {
+  unseen: "她現在看不到這則訊息。",
+  own: "這是她自己說的話。",
+  blocked: "這個功能現在不能用。",
+  off: "她在這個頻道不說話。",
+  failed: "沒有成功,請稍後再試。",
+};
+
+/** Makes the text runner of an agent (Core passes one). */
+export type TextRunnerFactory = (agent: Agent) => TextRunner;
+
+/** A voice channel she is in: who is there, and when she was last heard there. */
+interface VoiceRoom {
+  context: ContextKey;
+  /** Everyone there but her. */
+  members: VoiceParticipant[];
+  lastSelfAt: number | null;
+}
+
+/** State shared by the event loop, the text runner and the main line. */
 export class Agent {
   readonly #selfAccounts = new Map<string, AccountRef>();
-  readonly #contexts = new Map<string, ContextHandle>();
-  /** Her submitted messages awaiting `action.completed`. */
-  readonly #pendingActions = new Map<ActionId, Session>();
-  /** When she last said she is out of energy (budget exhausted), per context (clock ms). */
-  readonly #budgetNotices = new Map<string, number>();
+  /** The voice channels she is in, by context id. */
+  readonly #rooms = new Map<string, VoiceRoom>();
   /** Downloads the images she looks at (cached by attachment id). */
   readonly images: ImageLoader;
-  /** Intents waiting for her to arrive in a voice channel (after `voice.join`), by context. */
-  readonly #arrivals = new Map<string, IntentTurn>();
   /** The focus of every turn in flight (`TurnFocusViewKey`). */
   readonly focusBoard: TurnFocusBoard;
   /** Compressed prompts of recent turns (`SavedPromptsKey`). */
   readonly prompts: SavedPrompts;
-  /** Turns seen so far, for `[modules.agent.prompt] save_every`. */
-  #promptCount = 0;
   /** Notices not shown to her yet, by context id (`""`: wherever she talks next). */
   readonly #notices = new Map<string, Notice[]>();
   /** Who barged in on her speech, by turn (`voice.barge_in` with `stop`). */
   readonly #barges = new Map<TurnId, Handle | null>();
-  /** The one foreground decider. */
+  /** The mouth and what it keeps. */
   readonly mainline: MainLine;
-  /** Her rhythm in text channels: looks, reactions, pacing (`[modules.agent.rhythm]`). */
+  /** Her rhythm in text channels: reactions, pacing (`[modules.agent.rhythm]`). */
   readonly rhythm: Rhythm;
   /** Messages people asked her not to remember, by context id (bounded). */
   readonly #excluded = new Map<string, Set<string>>();
+  /** The conversations' runner; `null`: none installed, nothing answers. Set before `run`. */
+  textRunner: TextRunner | null = null;
   /** The context menus' requests (`MessageActionsKey`). */
   readonly messageActions: MessageActions = {
     replyTo: (request) => Promise.resolve(this.#replyTo(request)),
@@ -265,7 +211,6 @@ export class Agent {
     readonly ctx: ModuleContext,
     readonly config: AgentConfig,
     readonly persona: PersonaHandle,
-    readonly random: RandomSource,
     readonly handle: AgentHandle,
     readonly tools: ToolRegistry,
     readonly commands: AgentCommands,
@@ -300,26 +245,17 @@ export class Agent {
   /** `TurnSilencer`. */
   silence(why: string): void {
     const floor = this.mainline.floor();
-    for (const handle of this.#contexts.values()) {
-      handle.inbox.push({ type: "halt" });
-      floor?.releaseContext(handle.session.context, why);
-    }
-    this.#arrivals.clear();
-    this.mainline.silence();
+    for (const room of this.#rooms.values()) floor?.releaseContext(room.context, why);
+    this.textRunner?.halt();
   }
 
   static topics(): string[] {
     return [
       Events.ActionSettled.type,
-      Events.ActivityDone.type,
-      Events.ActivityFailed.type,
-      "game.*",
-      "sing.*",
       Events.PlatformReady.type,
       Events.PlatformMessageCreated.type,
       Events.PlatformTyping.type,
       "voice.*",
-      Events.ActionCompleted.type,
       Events.SystemModuleState.type,
       Events.AgentInitiative.type,
       Events.AgentNotice.type,
@@ -343,12 +279,10 @@ export class Agent {
       this.log.debug({ platform: account.platform, id: account.id }, "self account ready");
       this.#selfAccounts.set(accountId(account), account);
     } else if (is(Events.PlatformMessageCreated, env)) {
-      this.mainline.noteCause(env.data.id.id, env.id);
       this.#onMessage(env.data);
     } else if (is(Events.PlatformTyping, env)) {
-      if (!this.isSelf(env.data.account)) {
-        this.#contexts.get(contextId(env.data.context))?.inbox.push({ type: "typing" });
-      }
+      const { context, account } = env.data;
+      if (!this.isSelf(account) && context.kind !== "voice") this.textRunner?.typing(context);
     } else if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
       if (this.#isVoice(env.data.context)) {
         this.#onVoiceMembers(env.data.context, env.data.participants);
@@ -356,32 +290,20 @@ export class Agent {
     } else if (is(Events.VoiceLeft, env)) {
       const { context, reason } = env.data;
       if (!this.#isVoice(context)) return;
-      this.log.debug({ context: contextId(context), reason }, "left voice, session dropped");
+      this.log.debug({ context: contextId(context), reason }, "left voice");
       this.handle.setVoiceRoom(context, false);
       this.mainline.lines.dropContext(context, "she left the voice channel");
       this.mainline.floor()?.releaseContext(context, "she left the voice channel");
-      // Closing the inbox stops the coordinator (and its turn).
-      const id = contextId(context);
-      this.#contexts.get(id)?.inbox.close();
-      this.#contexts.delete(id);
+      this.#rooms.delete(contextId(context));
+      this.textRunner?.voice?.left(context);
     } else if (is(Events.VoiceSpeaking, env)) {
       const { context, account, speaking } = env.data;
       if (!this.#isVoice(context) || this.isSelf(account)) return;
-      const h = this.#contexts.get(contextId(context));
-      if (h) {
-        h.session.setSpeaking(account, speaking);
-        h.inbox.push({ type: "speaking" });
-      }
+      this.textRunner?.voice?.speaking(context, account, speaking);
     } else if (is(Events.VoiceUtteranceEvent, env)) {
-      this.mainline.noteCause(env.data.id, env.id);
       if (this.#isVoice(env.data.context)) this.#onUtterance(env.data);
     } else if (is(Events.VoicePlaybackEvent, env)) {
       if (this.#isVoice(env.data.context)) this.#onPlayback(env.data);
-    } else if (is(Events.ActionCompleted, env)) {
-      const { action, ok } = env.data;
-      const session = this.#pendingActions.get(action);
-      this.#pendingActions.delete(action);
-      if (session && !ok) session.forgetAction(action);
     } else if (is(Events.SystemModuleState, env)) {
       if (env.data.state === "running" && env.data.module === COMMANDS_MODULE) {
         this.commands.install(this.ctx.services, this.handle, this.persona);
@@ -399,27 +321,6 @@ export class Agent {
     }
   }
 
-  /** The context's handle, creating the context (session and coordinator) if needed. */
-  #context(key: ContextKey): ContextHandle {
-    const id = contextId(key);
-    let handle = this.#contexts.get(id);
-    if (!handle) {
-      const session = new Session(key, this.config.history_limit, this.ctx.clock);
-      const inbox = new Inbox();
-      const created: ContextHandle = { session, inbox };
-      handle = created;
-      this.#contexts.set(id, created);
-      const coordinator = new Coordinator(this, key, session, inbox);
-      this.ctx.spawn("context", (signal) => coordinator.run(signal));
-    }
-    return handle;
-  }
-
-  /** The context's handle if it exists (a stray signal must not bring a session back). */
-  #existing(key: ContextKey): ContextHandle | undefined {
-    return this.#contexts.get(contextId(key));
-  }
-
   #onMessage(incoming: IncomingMessage): void {
     const msg = this.#voiceTextChat(incoming);
     if (this.isBlocked(msg.author.account)) {
@@ -429,15 +330,20 @@ export class Agent {
       );
       return;
     }
-    const isSelf = this.isSelf(msg.author.account);
-    const ignored = isSelf || (msg.author.is_bot && !this.config.respond_to_bots);
-    const verdict = isSelf ? null : this.#inspect(msg, "chat");
+    const own = this.isSelf(msg.author.account);
+    const verdict = own ? null : this.#inspect(msg, "chat");
     if (verdict?.action === "ignore") return;
-    const cold = this.#existing(msg.id.context) === undefined;
-    const handle = this.#context(msg.id.context);
-    if (cold) startBackfill(this, handle.session, msg);
-    handle.session.recordMessage(msg, isSelf);
-    this.#take(handle, msg, verdict, ignored);
+    const marks: TextLineMarks = {
+      own,
+      bot: msg.author.is_bot && !this.config.respond_to_bots,
+      verdict,
+      muted: this.muted,
+    };
+    if (msg.id.context.kind === "voice") {
+      this.textRunner?.voice?.line(msg, marks, false);
+      return;
+    }
+    this.textRunner?.line(msg, marks);
   }
 
   /** What the input defence says of `msg` (the same verdict wherever it is asked). */
@@ -449,18 +355,6 @@ export class Agent {
       author: msg.author.account,
       context: msg.id.context,
     });
-  }
-
-  /** A recorded message: flagged as the verdict says, and whether it may start a turn. */
-  #take(
-    handle: ContextHandle,
-    msg: IncomingMessage,
-    verdict: InputVerdict | null,
-    ignored: boolean,
-  ): void {
-    if (verdict?.note) handle.session.flag(msg.id.id, verdict.note);
-    if (ignored || holdsBack(verdict) || this.muted) return;
-    handle.inbox.push({ type: "message", message: msg });
   }
 
   /**
@@ -484,62 +378,40 @@ export class Agent {
     }
     const room = this.handle.voiceContext(context.platform, context.scope);
     if (room === null || room.channel !== context.channel) return null;
-    const session = this.#existing(room)?.session;
-    if (session !== undefined && session.voiceMembers().length > 0) {
-      if (session.listeners().length === 0) return null;
-    }
+    const members = this.#rooms.get(contextId(room))?.members ?? [];
+    if (members.length > 0 && listeners(members).length === 0) return null;
     return room;
   }
 
   // ---- the context menus (`MessageActionsKey`) ------------------------------------------------
 
-  /** Where she knows the message `ref` names: its session and entry, if she has it. */
-  #find(ref: MessageRef): { handle: ContextHandle; entry: HistoryEntry } | null {
-    for (const context of [this.#roomOf(ref.context), ref.context]) {
-      if (context === null) continue;
-      const handle = this.#existing(context);
-      const entry = handle?.session.entry(ref.id);
-      if (handle !== undefined && entry !== undefined) return { handle, entry };
-    }
-    return null;
-  }
-
   /**
-   * "要她回這則": a turn on that message as if it had called her. The channel's mode still holds
-   * (`off`: she does not talk there), and so do the owner's rules, her budget and the Floor: the
-   * turn is an addressed one like any other and she may still choose silence.
+   * "要她回這則": a run on that message as if it had called her (the text runner's). The channel's
+   * mode still holds, and so do the owner's rules, her budget and the Floor. A line of a voice
+   * channel's chat is the voice conversation's, which the menu does not reach.
    */
   #replyTo(request: MessageActionRequest): MessageActionOutcome {
     if (this.muted) return { ok: false, reason: "她現在暫停中。" };
-    if (this.isBlocked(request.requested_by)) return { ok: false, reason: "這個功能現在不能用。" };
-    const found = this.#find(request.message);
-    if (found === null) return { ok: false, reason: "她現在看不到這則訊息。" };
-    const { handle, entry } = found;
-    if (entry.isSelf) return { ok: false, reason: "這是她自己說的話。" };
-    if (this.isBlocked(entry.account)) return { ok: false, reason: "這個功能現在不能用。" };
-    if (this.#isExcluded(handle.session.context, request.message.id)) {
+    if (this.isBlocked(request.requested_by)) return { ok: false, reason: REPLY_REFUSALS.blocked };
+    const ref = request.message;
+    const runner = this.textRunner;
+    if (runner?.replyTo === undefined || this.#roomOf(ref.context) !== null) {
+      return { ok: false, reason: REPLY_REFUSALS.unseen };
+    }
+    if (this.#isExcluded(ref.context, ref.id)) {
       return { ok: false, reason: "這則訊息已經請她不要記住了。" };
     }
-    const context = handle.session.context;
-    if (this.handle.channelMode(context) === "off") {
-      return { ok: false, reason: "她在這個頻道不說話。" };
-    }
-    this.log.debug(
-      { context: contextId(context), message: request.message.id, by: request.requested_by.id },
-      "asked to answer a message",
-    );
-    const pushed = handle.inbox.push({ type: "message", message: entryMessage(context, entry) });
-    return pushed ? { ok: true } : { ok: false, reason: "沒有成功,請稍後再試。" };
+    const taken = runner.replyTo(ref);
+    return taken === "ok" ? { ok: true } : { ok: false, reason: REPLY_REFUSALS[taken] };
   }
 
   /**
-   * "不要記住這個": what lives in the agent. The message (and every quote of it) reads as
-   * `EXCLUDED_LINE` in the conversation her prompts show from now on, a turn cannot be opened on
-   * it, and `agent.message.excluded` tells the rest of her (the facts module redacts its events).
+   * "不要記住這個": it is remembered as excluded here (the menu cannot ask for a run on it any
+   * more) and `agent.message.excluded` tells the rest of her (the text runner redacts it from its
+   * transcript, the facts module its events).
    */
   #dontRemember(request: MessageActionRequest): MessageActionOutcome {
-    const found = this.#find(request.message);
-    const context = found?.handle.session.context ?? request.message.context;
+    const context = this.#roomOf(request.message.context) ?? request.message.context;
     const id = request.message.id;
     let set = this.#excluded.get(contextId(context));
     if (set === undefined) {
@@ -552,16 +424,10 @@ export class Agent {
       if (oldest === undefined) break;
       set.delete(oldest);
     }
-    if (found !== null) {
-      for (const entry of found.handle.session.history()) {
-        if (entry.id === id) hideEntry(entry);
-        for (const parent of entry.parents) if (parent.id === id) hideEntry(parent);
-      }
-    }
     const body: MessageExcluded = {
       context,
       message: { context, id },
-      author: request.author ?? found?.entry.account ?? null,
+      author: request.author ?? null,
       requested_by: request.requested_by,
       at: new Date(this.ctx.clock.now()).toISOString(),
     };
@@ -591,117 +457,27 @@ export class Agent {
       if (m.is_self) this.#selfAccounts.set(accountId(m.account), m.account);
     }
     const others = members.filter((m) => !m.is_self);
-    const handle = this.#context(context);
-    handle.session.setVoiceMembers(others);
+    this.#room(context).members = others;
+    this.textRunner?.voice?.members(context, others);
+  }
+
+  /** The voice channel `context` she is in, kept from now on. */
+  #room(context: ContextKey): VoiceRoom {
     const id = contextId(context);
-    const arrival = this.#arrivals.get(id);
-    if (arrival) {
-      this.#arrivals.delete(id);
-      handle.inbox.push({ type: "intent", intent: arrival });
+    let room = this.#rooms.get(id);
+    if (room === undefined) {
+      room = { context, members: [], lastSelfAt: null };
+      this.#rooms.set(id, room);
     }
-  }
-
-  /**
-   * Hands one of her intents to `context`'s coordinator, which opens her turn once the context
-   * is free. Returns why it cannot, or `null` when delivered.
-   */
-  deliverIntent(context: ContextKey, input: IntentTurn): string | null {
-    const why = this.muted
-      ? "the emergency stop"
-      : input.gated
-        ? null
-        : this.#intentBlocked(context);
-    if (why !== null) {
-      this.intentSkipped(context, input, why);
-      return why;
-    }
-    if (context.kind === "voice") {
-      // Only where she is: a stray intent must not create a voice session.
-      const delivered = this.#existing(context)?.inbox.push({ type: "intent", intent: input });
-      if (delivered) return null;
-      this.intentSkipped(context, input, "not in this voice channel");
-      return "not in this voice channel";
-    }
-    this.#context(context).inbox.push({ type: "intent", intent: input });
-    return null;
-  }
-
-  /** Opens `input` in the voice `context` once she is there (right away if she already is). */
-  deliverOnArrival(context: ContextKey, input: IntentTurn): void {
-    if (this.#existing(context)) {
-      this.deliverIntent(context, input);
-      return;
-    }
-    this.#arrivals.set(contextId(context), input);
+    return room;
   }
 
   /** She is in the voice channel `context`. */
   inVoice(context: ContextKey): boolean {
-    return context.kind === "voice" && this.#existing(context) !== undefined;
+    return context.kind === "voice" && this.#rooms.has(contextId(context));
   }
 
-  #intentBlocked(context: ContextKey): string | null {
-    // The owner's channel mode stays a guardrail; a DM she opens herself has no mode.
-    const why = this.startBlocked(context);
-    if (why !== null) return why;
-    const budget = this.handle.llmBudget();
-    return budget === "ok" ? null : `llm budget ${budget}`;
-  }
-
-  /** The owner's level for `context` as a ceiling (`null`: voice, DMs, off / mention-only). */
-  ceiling(context: ContextKey): Ceiling | null {
-    return ceilingFor(this.handle.channelMode(context), context);
-  }
-
-  /**
-   * Why the channel's mode or the Arbiter's ledger does not let her start a conversation in
-   * `context` now (`off` / `mention-only`, or the level's gap since her last start there), or
-   * `null`. DMs she opens herself have no mode. The Arbiter's ledger says when she may start
-   * there next (its one rule set includes the level's gap).
-   */
-  startBlocked(context: ContextKey): string | null {
-    if (context.kind !== "dm") {
-      const mode = this.handle.channelMode(context);
-      if (mode === "off" || mode === "mention-only") return `mode ${mode}`;
-    }
-    // Before the Arbiter has started (the agent comes first) there is no gap to read.
-    const arbiter = this.ctx.services.get(ArbiterKey);
-    if (!arbiter) return null;
-    const limits = arbiter.ledger(context).limits;
-    if (limits.waiting_for_response) return "the arbiter: nobody answered her here yet";
-    const next = limits.next_initiative_at;
-    const left = next === null ? 0 : Date.parse(next) - this.ctx.clock.now();
-    if (left <= 0) return null;
-    return `the arbiter: next in ${Math.max(Math.ceil(left / MINUTE_MS), 1)} min`;
-  }
-
-  /** Her lines went unanswered in `context`: she starts nothing there until someone speaks. */
-  waitingForResponse(context: ContextKey): boolean {
-    const arbiter = this.ctx.services.get(ArbiterKey);
-    return arbiter?.ledger(context).limits.waiting_for_response ?? false;
-  }
-
-  /** Publishes the decision not to open (or to drop) one of her intents. */
-  intentSkipped(context: ContextKey, input: IntentTurn, why: string): void {
-    this.log.debug(
-      { context: contextId(context), capability: input.intent.capability, why },
-      "intent skipped",
-    );
-    agentTurns.inc({ decision: "ignored" });
-    this.ctx.publish(
-      Events.AgentDecision,
-      {
-        turn: input.turn,
-        context,
-        respond: false,
-        score: 0,
-        reasons: [`intent:${input.intent.capability}`, `skipped: ${why}`],
-      },
-      { turn: input.turn },
-    );
-  }
-
-  // ---- v2: focus, outcomes, prompts, notices, subtitles --------------------------------------
+  // ---- focus, outcomes, notices ---------------------------------------------------------------
 
   /**
    * The stable handle of `account` (`HandleDirectoryKey`; without one, the cleaned display
@@ -725,18 +501,6 @@ export class Agent {
     this.ctx.publish(Events.AgentTurnOutcome, record, { turn: record.turn });
   }
 
-  /** Keeps (every `save_every`-th) saved prompt and publishes it as `agent.prompt`. */
-  savePrompt(prompt: SavedPrompt): void {
-    const every = this.config.prompt.save_every;
-    if (every <= 0) return;
-    this.#promptCount += 1;
-    if ((this.#promptCount - 1) % every !== 0) return;
-    this.prompts.push(prompt);
-    this.ctx.publish(Events.AgentPrompt, prompt, {
-      turn: prompt.turn,
-    });
-  }
-
   /** Who stopped her speech of `turn` by talking over her, if voice reported it. */
   bargedBy(turn: TurnId): Handle | null {
     return this.#barges.get(turn) ?? null;
@@ -754,10 +518,8 @@ export class Agent {
       typeof account.id === "string"
     ) {
       const ref = { platform: account.platform, id: account.id };
-      const name =
-        [...this.#contexts.values()]
-          .flatMap((h) => h.session.voiceMembers())
-          .find((m) => sameAccount(m.account, ref))?.display_name ?? ref.id;
+      const members = [...this.#rooms.values()].flatMap((r) => r.members);
+      const name = members.find((m) => sameAccount(m.account, ref))?.display_name ?? ref.id;
       by = this.handleOf(ref, name);
     }
     this.#barges.set(turn, by);
@@ -769,19 +531,19 @@ export class Agent {
   }
 
   /**
-   * A task outcome for her: kept until a turn in its context (or any, without one) shows it.
-   * When nobody is talking with her there, a short turn of her own tells it (reason `notice`).
+   * A task outcome for her: kept until a run in its context (or any, without one) shows it. When
+   * it names a place, a run of hers there may tell it (an impulse of source `notice`).
    */
   #onNotice(notice: Notice): void {
     if (Date.parse(notice.expires_at) <= this.ctx.clock.now()) return;
+    // A run that started the task hears its end as a result already.
+    if (this.textRunner?.follows?.(notice.task) === true) return;
     const context = notice.context === null ? null : this.ownLinesContext(notice.context);
     const id = context === null ? "" : contextId(context);
     const list = this.#notices.get(id) ?? [];
     list.push({ ...notice, context });
     while (list.length > MAX_NOTICES) list.shift();
     this.#notices.set(id, list);
-    // What the hands follow they report themselves, with the line that may be waiting for it.
-    if (this.mainline.hands.follows(notice.task)) return;
     if (context !== null) {
       this.#onInitiative(context, { reason: "notice", hint: "", about: [] });
     }
@@ -800,12 +562,6 @@ export class Agent {
     return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   }
 
-  /** Her own talkativeness for `context` (`SelfState`), if she set one. */
-  talkativeness(context: ContextKey): TalkLevel | null {
-    const t = this.ctx.services.get(SelfStateKey)?.talkativeness(context) ?? null;
-    return t === null ? null : { level: t.level, scope: t.scope };
-  }
-
   #onUtterance(utterance: VoiceUtterance): void {
     if (
       utterance.text.trim() === "" ||
@@ -815,41 +571,32 @@ export class Agent {
       return;
     }
     this.handle.setVoiceRoom(utterance.context, true);
+    this.#room(utterance.context);
     const msg = utteranceMessage(utterance);
-    const ignored = msg.author.is_bot && !this.config.respond_to_bots;
     const verdict = this.#inspect(msg, "voice");
     if (verdict?.action === "ignore") return;
-    const handle = this.#context(utterance.context);
-    handle.session.recordUtterance(msg);
-    this.#take(handle, msg, verdict, ignored);
+    this.textRunner?.voice?.line(
+      msg,
+      {
+        own: false,
+        bot: msg.author.is_bot && !this.config.respond_to_bots,
+        verdict,
+        muted: this.muted,
+      },
+      true,
+    );
   }
 
-  /** Her own speech enters history once it starts playing. */
+  /** Her own speech: the line book closes its lines; the runner keeps what was heard. */
   #onPlayback(playback: EventPayload<typeof Events.VoicePlaybackEvent>): void {
     const { context, turn, state, text, blocked = null } = playback;
     const heardMs = this.mainline.lines.playback(context, turn, state, text, blocked) ?? 0;
-    const h = this.#existing(context);
-    if (!h) return;
-    const name = this.persona.displayName();
-    const me = this.selfAccount(context.platform);
-    const now = this.ctx.clock.now();
-    switch (state) {
-      case "started":
-        h.session.recordSpeech(name, me, text, turn, now);
-        break;
-      case "interrupted":
-        h.session.recordInterruption(name, me, text, turn, now);
-        // History keeps what was really heard (§7.3), not what she meant to say.
-        h.session.keepHeard(turn, text, this.#heard(text, playback, heardMs));
-        break;
-      case "finished":
-        h.session.noteSelfSpoke(now);
-        break;
-      case "failed":
-        h.session.keepHeard(turn, text, "");
-        break;
-    }
-    if (turn !== null) h.inbox.push({ type: "playback", turn, state });
+    this.textRunner?.voice?.playback(
+      playback,
+      state === "interrupted" ? this.#heard(text, playback, heardMs) : null,
+    );
+    const room = this.#rooms.get(contextId(context));
+    if (room !== undefined && state !== "failed") room.lastSelfAt = this.ctx.clock.now();
   }
 
   /**
@@ -869,7 +616,7 @@ export class Agent {
 
   /**
    * An `agent.initiative` request (or a notice to tell): an impulse for the Arbiter, the one
-   * gate.
+   * gate. What it admits is run by the text runner (`ImpulseHostKey`).
    */
   #onInitiative(context: ContextKey, initiative: Initiative): void {
     if (this.muted) {
@@ -885,7 +632,7 @@ export class Agent {
           source,
           context,
           account: initiative.about.length === 1 ? (initiative.about[0] ?? null) : null,
-          ttlMs: source === "followup" || source === "notice" ? RESULT_TTL_MS : INITIATIVE_TTL_MS,
+          ttlMs: source === "notice" ? RESULT_TTL_MS : INITIATIVE_TTL_MS,
           why: initiative.reason,
           hint: initiative.hint,
           about: initiative.about,
@@ -906,17 +653,8 @@ export class Agent {
 
   /** The people who hear a line in `context` now. */
   audience(context: ContextKey): Handle[] {
-    const members = this.#existing(context)?.session.voiceMembers() ?? [];
+    const members = this.#rooms.get(contextId(context))?.members ?? [];
     return members.map((m) => this.handleOf(m.account, m.display_name));
-  }
-
-  /** A line that needed no turn was written in `context`. */
-  noteOwnText(context: ContextKey, text: string, action: ActionId): void {
-    const h = this.#existing(context);
-    if (!h) return;
-    const me = this.selfAccount(context.platform);
-    h.session.recordOwn(this.persona.displayName(), me, text, action, this.ctx.clock.now());
-    this.trackAction(action, h.session);
   }
 
   /** A claim of `kind` is coming in `context`: what speaks there gives way as far as it must. */
@@ -926,55 +664,21 @@ export class Agent {
     if (!floor || holder === null) return;
     const level = floor.interruptLevel(kind, holder.kind);
     if (level === "queue") return;
-    this.#existing(context)?.inbox.push({ type: "yield", level });
+    this.textRunner?.voice?.yieldTo(context, level);
   }
 
   /** Conversation facts for the Arbiter's floors (`ImpulseHost.facts`). */
   facts(context: ContextKey): ConversationFacts {
     const text = context.kind !== "voice" && context.kind !== "dm";
     const mode = text ? this.handle.channelMode(context) : null;
+    const room = context.kind === "voice" ? this.#rooms.get(contextId(context)) : undefined;
     return {
       mode,
       start_gap_ms: mode === null ? 0 : (ceilingFor(mode, context)?.startGapMs ?? 0),
-      present: context.kind !== "voice" || this.inVoice(context),
-      last_spoke_at: this.#existing(context)?.session.lastSelfAt() ?? null,
-      humans:
-        context.kind === "voice" && this.inVoice(context)
-          ? (this.#existing(context)?.session.listeners().length ?? 0)
-          : null,
+      present: context.kind !== "voice" || room !== undefined,
+      last_spoke_at: room?.lastSelfAt ?? null,
+      humans: room === undefined ? null : listeners(room.members).length,
     };
-  }
-
-  /**
-   * Opens a turn of hers for an impulse the Arbiter accepted (not one of her own intents):
-   * resolves once the context's coordinator started it or found the place busy.
-   */
-  openInitiative(target: ContextKey, initiative: Initiative): Promise<ImpulseRun> {
-    if (this.muted) {
-      return Promise.resolve({ status: "refused", reason: "denied", detail: "緊急停止中" });
-    }
-    // A result someone asked for is told where they asked: only her own news follows her to voice.
-    const asked = initiative.chain?.requester !== undefined && initiative.chain.requester !== null;
-    const context =
-      aboutHerself(initiative.reason) && !asked ? this.ownLinesContext(target) : target;
-    if (context.kind === "voice" && !this.inVoice(context)) {
-      return Promise.resolve({ status: "refused", reason: "denied", detail: "不在那個語音頻道" });
-    }
-    return new Promise<ImpulseRun>((resolve) => {
-      let settled = false;
-      const reply = (run: ImpulseRun): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(run);
-      };
-      const timer = setTimeout(
-        () => reply({ status: "busy", detail: "the context did not answer" }),
-        OPEN_TIMEOUT_MS,
-      );
-      const pushed = this.#context(context).inbox.push({ type: "initiative", initiative, reply });
-      if (!pushed) reply({ status: "busy", detail: "the context is closing" });
-    });
   }
 
   /** Publishes the decision not to act on an initiative request. */
@@ -1010,22 +714,6 @@ export class Agent {
     }
     const before = this.handle.setLlmBudget(state);
     if (before !== state) this.log.info({ before, state }, "llm budget state changed");
-    if (state !== "exhausted") this.#budgetNotices.clear();
-  }
-
-  /**
-   * Whether she may say she is out of energy in `context` now; records it if so (at most once
-   * per `budget_notice_interval_ms`).
-   */
-  takeBudgetNotice(context: ContextKey): boolean {
-    const now = this.ctx.clock.now();
-    const id = contextId(context);
-    const last = this.#budgetNotices.get(id);
-    if (last !== undefined && Math.max(now - last, 0) < this.config.budget_notice_interval_ms) {
-      return false;
-    }
-    this.#budgetNotices.set(id, now);
-    return true;
   }
 
   social(): SocialSignals | undefined {
@@ -1057,23 +745,6 @@ export class Agent {
     return ids[0] ?? { platform, id: "self" };
   }
 
-  trackAction(action: ActionId, session: Session): void {
-    this.#pendingActions.set(action, session);
-  }
-
-  untrackAction(action: ActionId): void {
-    this.#pendingActions.delete(action);
-  }
-
-  /** Removes an idle context unless input is waiting for it. */
-  retire(key: ContextKey, inbox: Inbox): boolean {
-    if (!inbox.isEmpty) return false;
-    const id = contextId(key);
-    if (this.#contexts.get(id)?.inbox === inbox) this.#contexts.delete(id);
-    inbox.close();
-    return true;
-  }
-
   #isVoice(context: ContextKey): boolean {
     if (context.kind === "voice") return true;
     this.log.debug({ context: contextId(context) }, "ignoring voice event for a non-voice context");
@@ -1081,9 +752,16 @@ export class Agent {
   }
 }
 
+/** Those in a voice channel who can hear her. */
+function listeners(members: readonly VoiceParticipant[]): VoiceParticipant[] {
+  return members.filter((m) => !m.deafened);
+}
+
 /** `react` with its own limit per channel (`Rhythm.takeReaction`): she hears why when it is spent. */
 class LimitedReact implements Tool {
   readonly spec;
+  readonly meta;
+  readonly parameters;
   readonly permission;
 
   constructor(
@@ -1091,6 +769,8 @@ class LimitedReact implements Tool {
     readonly rhythm: Rhythm,
   ) {
     this.spec = inner.spec;
+    this.meta = inner.meta;
+    this.parameters = inner.parameters;
     this.permission = inner.permission ?? null;
   }
 
@@ -1101,33 +781,8 @@ class LimitedReact implements Tool {
   }
 }
 
-/** What stands in her history for a message someone asked her not to remember. */
-export const EXCLUDED_LINE = "[這則訊息有人請你不要記住]";
-
 /** Excluded message ids remembered per context (the event log redacts the message itself). */
 const MAX_EXCLUDED = 500;
-
-/** The entry keeps its place (the cached prefix moves once) but says nothing of what it said. */
-function hideEntry(entry: HistoryEntry): void {
-  entry.text = EXCLUDED_LINE;
-  entry.attachments = [];
-  entry.flagged = null;
-  entry.parents = [];
-}
-
-/** A history entry as turn input again (the "要她回這則" menu): it calls her now. */
-function entryMessage(context: ContextKey, entry: HistoryEntry): IncomingMessage {
-  return {
-    id: { context, id: entry.id ?? "" },
-    author: { account: entry.account, display_name: entry.author, is_bot: entry.isBot },
-    text: entry.text,
-    mentions_self: true,
-    reply_to_self: false,
-    attachments: [...entry.attachments],
-    ts: toTimestamp(entry.ts),
-    reply_to: entry.replyTo === null ? null : { context, id: entry.replyTo },
-  };
-}
 
 /** A voice utterance as turn input. Its `MessageRef` names the utterance, not a message. */
 function utteranceMessage(u: VoiceUtterance): IncomingMessage {

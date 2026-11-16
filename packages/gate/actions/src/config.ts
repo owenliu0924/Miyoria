@@ -23,6 +23,20 @@ export const TierLimitSchema = z.object({
 export type TierLimit = z.output<typeof TierLimitSchema>;
 
 /**
+ * `[modules.actions.share]`: the `share` capability, which hands a file she made to the person who
+ * asked, as an attachment.
+ */
+export const ShareConfigSchema = z.object({
+  /** The largest file she shares, in bytes (the platform's own limit applies as well). */
+  max_bytes: z.number().int().positive().default(10_485_760),
+  /** Files shared in any rolling 24 hours, all people together. */
+  per_day: z.number().int().nonnegative().default(60),
+  /** Files shared to one person in any rolling 24 hours. */
+  per_person_per_day: z.number().int().nonnegative().default(10),
+});
+export type ShareConfig = z.output<typeof ShareConfigSchema>;
+
+/**
  * ```toml
  * [modules.actions]
  * paused = false
@@ -50,6 +64,8 @@ export const ActionsConfigSchema = z.object({
   stranger_familiarity: z.number().default(10),
   /** Defaults for medium / high risk capabilities without their own `limits`. */
   medium: TierLimitSchema.prefault({}),
+  /** The `share` capability (files as attachments). */
+  share: ShareConfigSchema.prefault({}),
   /** Per-capability limits, by capability name. */
   limits: z.record(z.string(), LimitSchema.prefault({})).default({}),
   /** LLM purpose of the self-review of high-risk actions (falls back to `chat`). */
@@ -59,8 +75,7 @@ export const ActionsConfigSchema = z.object({
   escalation_timeout_ms: z.number().int().positive().default(600_000),
   /**
    * How long a high-risk tool whose result matters (`followup`, e.g. `code.run`) waits for the
-   * review and the run before answering "pending"; the result then comes back as a follow-up
-   * turn. Keep it below `[modules.agent] tool_timeout_ms` (10 000).
+   * review and the run before answering "pending"; the result then comes back as a notice.
    */
   inline_wait_ms: z.number().int().nonnegative().default(8000),
   /** Register the placeholder high-risk capability `test.high` (for trying the review flow). */

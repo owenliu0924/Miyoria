@@ -23,9 +23,6 @@ export function formatScorecard(card: Scorecard): string {
     `pass^${card.k} on code that can run: ${card.passingK}/${card.runnable}` +
       `  (incidents caught by their checks: ${card.results.filter((r) => r.caught.length > 0).length}/${card.results.length})`,
   );
-  if (card.live) {
-    lines.push("live: no harness calls a model yet, every run above used the recorded behaviour");
-  }
   lines.push(card.ok ? "suite: green" : "suite: RED (FAIL, XPASS or BROKEN above)");
   return lines.join("\n");
 }

@@ -36,6 +36,7 @@ import {
   type SongCue,
   type SongPrepare,
   SpeechPauseKey,
+  toTimestamp,
   VoiceFloorKey,
   type VoiceParticipant,
   type VoicePlayer,
@@ -951,30 +952,94 @@ describe("sing module", () => {
     expect(h.worker.gone).toEqual(["j1"]);
   });
 
-  it("starts after her opening line instead of over it", async () => {
-    h = await Harness.create();
-    await h.join();
-    h.worker.cacheHit = true;
-    expect(await h.command("queue song request", { song: "Cached" })).toContain("她馬上就唱");
-    await settle(1000);
-    await h.publish(Events.VoicePlaybackEvent, {
-      context: VOICE,
-      turn: "t",
-      state: "started",
-      text: "要唱囉",
-      emotion: null,
+  describe("her announcement of a song that starts on its own", () => {
+    const decided = (h: Harness, verdict: "accepted" | "expired", turn: string | null) => {
+      const impulse = h.events.filter((e) => e.type === Events.ArbiterImpulse.type).at(-1)
+        ?.data as Impulse;
+      return h.publish(Events.ArbiterDecided, {
+        impulse: impulse.id,
+        source: "song",
+        verdict,
+        reason: verdict === "expired" ? "expired" : null,
+        detail: "",
+        retry_at: null,
+        merged_into: null,
+        turn,
+        task: null,
+        at: toTimestamp(Date.now()),
+      });
+    };
+    const playback = (h: Harness, turn: string, state: "started" | "finished") =>
+      h.publish(Events.VoicePlaybackEvent, {
+        context: VOICE,
+        turn,
+        state,
+        text: "要唱囉",
+        emotion: null,
+      });
+    const ready = async (): Promise<Harness> => {
+      const h = await Harness.create({ opening_window_ms: 600 });
+      await h.join();
+      h.worker.cacheHit = true;
+      await h.command("queue song request", { song: "Cached" });
+      return h;
+    };
+
+    it("starts after her opening line instead of over it", async () => {
+      h = await Harness.create();
+      await h.join();
+      h.worker.cacheHit = true;
+      expect(await h.command("queue song request", { song: "Cached" })).toContain("她馬上就唱");
+      await settle(1000);
+      await decided(h, "accepted", "t");
+      await playback(h, "t", "started");
+      await settle(3000);
+      expect(h.voice.plays).toHaveLength(0);
+      await h.publish(Events.AgentTurnCompleted, { turn: "t", context: VOICE, text: "要唱囉" });
+      await playback(h, "t", "finished");
+      await settle(400);
+      expect(h.voice.plays).toHaveLength(1);
     });
-    await settle(3000);
-    expect(h.voice.plays).toHaveLength(0);
-    await h.publish(Events.VoicePlaybackEvent, {
-      context: VOICE,
-      turn: "t",
-      state: "finished",
-      text: "要唱囉",
-      emotion: null,
+
+    it("waits for it behind an answer of hers, and for what it says", async () => {
+      h = await ready();
+      // She is finishing an answer; the announcement waits for its turn.
+      await playback(h, "answer", "started");
+      await settle(100);
+      await playback(h, "answer", "finished");
+      await settle(300);
+      expect(h.voice.plays).toHaveLength(0);
+      await decided(h, "accepted", "opening");
+      await playback(h, "opening", "started");
+      await settle(500);
+      expect(h.voice.plays).toHaveLength(0);
+      await h.publish(Events.AgentTurnCompleted, {
+        turn: "opening",
+        context: VOICE,
+        text: "要唱囉",
+      });
+      await playback(h, "opening", "finished");
+      await settle(400);
+      expect(h.voice.plays).toHaveLength(1);
     });
-    await settle(400);
-    expect(h.voice.plays).toHaveLength(1);
+
+    it("is not waited for once it expired: the song starts, nothing is said late", async () => {
+      h = await ready();
+      await settle(300);
+      expect(h.voice.plays).toHaveLength(0);
+      await decided(h, "expired", null);
+      await settle(400);
+      expect(h.voice.plays).toHaveLength(1);
+      expect(h.initiatives()).toHaveLength(1);
+    });
+
+    it("starts at the end of the window when nothing was decided", async () => {
+      h = await ready();
+      await settle(500);
+      expect(h.voice.plays).toHaveLength(0);
+      await settle(500);
+      expect(h.voice.plays).toHaveLength(1);
+    });
   });
 
   it("without a mind, ready songs start on their own", async () => {

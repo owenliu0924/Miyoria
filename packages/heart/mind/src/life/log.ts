@@ -127,8 +127,6 @@ export interface LifeBookOptions {
   dayStartHour: number;
   /** Days kept. */
   keepDays: number;
-  /** Every entry as it is written (her daily posts follow it). */
-  onRecord?: (entry: LifeEntry) => void;
 }
 
 /** Her life log: `LifeLogKey`. Reads answer from memory; writes persist in the background. */
@@ -210,7 +208,6 @@ export class LifeBook implements LifeLog {
     this.#days.set(day, list);
     this.#prune();
     this.#persist(day);
-    this.#o.onRecord?.({ ...kept });
     return { ...kept };
   }
 

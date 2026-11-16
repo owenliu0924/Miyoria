@@ -134,44 +134,10 @@ export const ArbiterConfigSchema = z.object({
    */
   disabled_contexts: z.array(z.string()).default([]),
 
-  // --- impulse producers (were `[modules.initiative]`) ---
-  /** Greet friends on their first message of the day (source `world`). */
-  greeting: z.boolean().default(true),
-  /** Greet people with good affinity who join her voice channel (source `world`). */
-  voice_join: z.boolean().default(true),
-  /** Bring up due memory followups when the person is around (source `followup`). */
-  followup: z.boolean().default(true),
-  /** Attitude labels that count as "friend or closer". */
-  friend_labels: z
-    .array(z.string())
-    .default([
-      "朋友",
-      "好朋友",
-      "好友",
-      "摯友",
-      "親友",
-      "戀人",
-      "家人",
-      "知心",
-      "知己",
-      "至交",
-      "莫逆之交",
-      "心有靈犀",
-      "形影不離",
-      "家人般",
-      "生死之交",
-      "命運相連",
-      "無可取代",
-      "心之所歸",
-      "永恆羈絆",
-    ]),
-  /** Affinity at which someone joining voice gets greeted (labels in `friend_labels` qualify too). */
-  voice_join_min_affinity: z.number().default(30),
-  /** Minimum time between voice greetings of the same person. */
-  voice_join_cooldown_secs: count().default(30 * 60),
-  /** A person counts as around if they were active this recently. */
-  followup_active_secs: count().default(10 * 60),
-  /** How long a greeting / followup stays worth saying while the place is busy. */
+  // The greeting and followup producers' keys (`greeting`, `voice_join`, `followup`,
+  // `friend_labels`, `voice_join_min_affinity`, `voice_join_cooldown_secs`,
+  // `followup_active_secs`) are no longer read: her own starts are the new runner's.
+  /** How long a game's line stays worth saying while the place is busy. */
   impulse_ttl_secs: count().default(120),
   /** How often followups are polled, unanswered topics settled and the state saved. */
   tick_secs: z.number().int().positive().default(30),

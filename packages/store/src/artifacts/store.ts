@@ -52,7 +52,14 @@ import {
   type EventScope,
 } from "@miyoria/contracts/events";
 import { getLogger } from "@miyoria/runtime/kernel";
-import { isUlid, newId, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
+import {
+  isUlid,
+  newId,
+  type PersonId,
+  serviceKey,
+  type Timestamp,
+  toTimestamp,
+} from "@miyoria/types";
 import { and, desc, eq, gt, gte, isNotNull, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import { StoreError } from "../common.js";
 import type { Db } from "../db.js";
@@ -61,6 +68,7 @@ import { HOME_SESSION } from "../identity/identity.js";
 import { rooms, sessions } from "../identity/schema.js";
 import { ArtifactTypeError, decideType, SNIFF_BYTES, sniff, TextCheck } from "./media.js";
 import { BlobLayout, cleanFilename, isSha256 } from "./paths.js";
+import { ArtifactPlaces } from "./places.js";
 import {
   ARTIFACT_SOURCES,
   type ArtifactRow,
@@ -263,6 +271,8 @@ export class ArtifactStore {
   readonly layout: BlobLayout;
   /** Share tokens of these artifacts. */
   readonly shares: ArtifactShares;
+  /** Contexts as places and viewers (`places.ts`). */
+  readonly places: ArtifactPlaces;
   readonly #db: Db;
   readonly #events: EventStore;
   readonly #limits: Record<ArtifactKind, number>;
@@ -306,6 +316,7 @@ export class ArtifactStore {
       .from(artifactItems)
       .where(eq(artifactItems.id, sql.placeholder("id")))
       .prepare();
+    this.places = new ArtifactPlaces(db);
     this.shares = new ArtifactShares(db, events, {
       get: (id) => this.get(id),
       isLive: (artifact) => this.#isLive(artifact),
@@ -757,6 +768,29 @@ export class ArtifactStore {
     return createReadStream(path);
   }
 
+  /** Whether `artifact` is still there to be seen now: not deleted, expired or withdrawn. */
+  isLive(artifact: Artifact): boolean {
+    return this.#isLive(artifact);
+  }
+
+  /**
+   * All the bytes of an artifact, with no visibility check (for callers that checked already).
+   * Throws `ArtifactBlobMissingError` when the file is missing.
+   */
+  async readContent(artifact: Artifact, signal?: AbortSignal): Promise<Uint8Array> {
+    const stream = await this.openContent(artifact);
+    const chunks: Buffer[] = [];
+    try {
+      for await (const chunk of stream) {
+        signal?.throwIfAborted();
+        chunks.push(chunk as Buffer);
+      }
+    } finally {
+      stream.destroy();
+    }
+    return Buffer.concat(chunks);
+  }
+
   /** Artifacts matching `filter`, newest first. */
   list(filter: ArtifactFilter = {}): Artifact[] {
     const limit = Math.min(Math.max(1, Math.floor(filter.limit ?? 50)), 500);
@@ -1103,3 +1137,6 @@ export class ArtifactStore {
     return removed;
   }
 }
+
+/** The app's artifact store, when its database has one (a file database; not `:memory:`). */
+export const ArtifactStoreKey = serviceKey<ArtifactStore>("ArtifactStore");

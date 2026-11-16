@@ -293,6 +293,35 @@ describe("each line written today, as an envelope", () => {
     expect(fromLogged(store.events.get(result.id) ?? never())).toEqual(result);
   });
 
+  it("a tool call of a turn is the bus event's record, kept as long as the turn's outcome", async () => {
+    send("discord", Events.PlatformMessageCreated, message("米優在嗎"));
+    send("agent", Events.AgentTurnFocus, focus("t3", ["m1"], TEXT), { turn: "t3" });
+    now += 1_000;
+    const data = {
+      turn: "t3",
+      context: TEXT,
+      tool: "web_search",
+      ok: true,
+      result: "找到三個結果",
+    };
+    send("agent", Events.AgentTool, data, { turn: "t3" });
+    const call = newest("action");
+    expect(call.source).toBe("agent.tool");
+    expect(call.body).toEqual(data);
+    expect(await stored(call.id)).toMatchObject({
+      type: "agent.tool",
+      source: "agent.tool",
+      tier: "short",
+      turn: "t3",
+      session: "discord:g:c",
+      data,
+    });
+    // It reads back as the line it was, and a query for the turn finds it among its lines.
+    expect(fromLogged(store.events.get(call.id) ?? never())).toEqual(call);
+    const found = await store.events?.query({ turn: "t3", types: typesOf(["action"]) });
+    expect(found?.map((e) => e.envelope.id)).toContain(call.id);
+  });
+
   it("her attention decision is the bus event's record, answering the turn's focus", async () => {
     const heard = send("discord", Events.PlatformMessageCreated, message("米優在嗎"));
     send("agent", Events.AgentTurnFocus, focus("t2", ["m1"], TEXT), { turn: "t2" });

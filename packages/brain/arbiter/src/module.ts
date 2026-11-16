@@ -12,6 +12,7 @@ import {
 } from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
+  type AccountRef,
   ActivityManagerKey,
   AffectStateKey,
   ArbiterKey,
@@ -19,13 +20,11 @@ import {
   type ContextKey,
   contextKeyEquals,
   contextKeyString,
-  DailyPostsKey,
   DeliveryLedgerKey,
   type Envelope,
   EventLogKey,
   Events,
   FloorKey,
-  FollowupSourceKey,
   HandleDirectoryKey,
   type Impulse,
   ImpulseHostKey,
@@ -34,14 +33,12 @@ import {
   isJsonObject,
   type JsonValue,
   type LogEvent,
-  newId,
   newImpulse,
   type Observation,
   type ObservationBody,
   PartyStatusKey,
   PersonThreadsKey,
   type ProfileId,
-  ProposalBoardKey,
   runningActivity,
   SelfStateKey,
   SocialSignalsKey,
@@ -53,13 +50,12 @@ import { ArbiterCore } from "./arbiter.js";
 import { type ArbiterConfig, ArbiterConfigSchema } from "./config.js";
 import { FloorCore } from "./floor.js";
 import { LedgerSnapshotSchema } from "./ledger.js";
-import { ProducerSnapshotSchema, Producers } from "./producers.js";
 import { humanResponse } from "./unanswered.js";
 import { WishBook } from "./wishes.js";
 
 const log = getLogger("arbiter");
 
-/** Settings key of the persisted state (counters, backoff, topics, greetings). */
+/** Settings key of the persisted state (the ledger and the holds). */
 export const STATE_KEY = "arbiter:state";
 /** Profile under which the state is stored. */
 export const STATE_PROFILE = "_global";
@@ -67,20 +63,20 @@ export const STATE_PROFILE = "_global";
 const STORE_TIMEOUT_MS = 5_000;
 /** The queue is looked at least this often. */
 const PUMP_MS = 1_000;
-const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 /** Her talkativeness that means the budget as configured. */
 const USUAL_TALK = 0.5;
 /**
- * Writers of observations that may ask for the mic (§6). Everything else she only knows. Pats
- * from the live page only claim when `[modules.live] pat_salience = "notable"`: an ambient batch
- * is written silent and never gets here.
+ * Writers of observations that may ask for the mic (§6). Everything else she only knows (a
+ * greeting or an overdue promise is her own start: the new runner's). Pats from the live page
+ * only claim when `[modules.live] pat_salience = "notable"`: an ambient batch is written silent
+ * and never gets here.
  */
-const CLAIMING = /^(?:game\.|world\.greeting$|mainline\.commitment$|live\.pat$)/;
+const CLAIMING = /^(?:game\.|live\.pat$)/;
 
+/** The stored state; a `producers` key written before is no longer read. */
 const StateSchema = z.object({
   ledger: LedgerSnapshotSchema.prefault({}),
-  producers: ProducerSnapshotSchema.prefault({}),
   holds: z
     .array(z.object({ capability: z.string(), reason: z.string(), until: z.number() }))
     .default([]),
@@ -92,15 +88,16 @@ export interface ArbiterModuleOptions {
 }
 
 /**
- * Module `arbiter`: the one gate for everything that wants her to speak or act without being
- * asked (docs/design/v2-architecture.md §3.3). Provides `ArbiterKey`; publishes
- * `arbiter.decision`, `arbiter.ledger` and `affect.event` `topic_ignored`; takes impulses from
- * `ArbiterKey.submit` and the `arbiter.impulse` topic. Accepted speak impulses are opened by the
- * agent (`ImpulseHostKey`). Greets friends and brings up due followups (`FollowupSourceKey`).
+ * Module `arbiter`: the one gate for what wants her to speak without being asked that is not her
+ * own start (docs/design/v2-architecture.md §3.3): a game's narration, a song, a notice. Provides
+ * `ArbiterKey`; publishes `arbiter.decision`, `arbiter.ledger` and `affect.event`
+ * `topic_ignored`; takes impulses from `ArbiterKey.submit` and the `arbiter.impulse` topic.
+ * Accepted speak impulses are opened by the agent (`ImpulseHostKey`). Her own starts (greetings,
+ * followups, overdue promises, her plans) are the new runner's initiative
+ * (`@miyoria/brain/selfhost`): their impulses are refused here.
  *
- * It is the Floor (`FloorKey`, docs/design/v3-architecture.md §7): the greetings become
- * Observations and the due followups Proposals, nothing here runs an action, and every non-silent
- * observation of a game, a greeting or a commitment asks for the mic from the log.
+ * It is the Floor (`FloorKey`, docs/design/v3-architecture.md §7): nothing here runs an action,
+ * and every non-silent observation of a game asks for the mic from the log.
  */
 export class ArbiterModule implements Module {
   static readonly ID = "arbiter";
@@ -109,12 +106,11 @@ export class ArbiterModule implements Module {
     optional: ["facts", "agent", "actions", "llm", "social", "memory"],
     configSchema: ArbiterConfigSchema,
   });
-  readonly #profile: ProfileId;
   readonly #clock: Clock | undefined;
   #stopFollowing: (() => void)[] = [];
 
-  constructor(profile: ProfileId, options: ArbiterModuleOptions = {}) {
-    this.#profile = profile;
+  /** `_profile`: kept for the callers; her state is stored under `STATE_PROFILE`. */
+  constructor(_profile: ProfileId, options: ArbiterModuleOptions = {}) {
     this.#clock = options.clock;
   }
 
@@ -139,15 +135,14 @@ export class ArbiterModule implements Module {
       host: () => services.get(ImpulseHostKey) ?? null,
       floor,
     });
-    const producers = new Producers(config);
     const store = services.get(SettingsStoreKey);
-    if (store) await restore(store, core, producers, clock.now());
+    if (store) await restore(store, core, clock.now());
     ctx.provide(ArbiterKey, core);
     ctx.provide(WishesKey, wishes);
     ctx.provide(FloorKey, floor);
     await this.#followWishes(ctx, config, clock, wishes);
 
-    const runner = new Runner(ctx, core, producers, this.#profile, clock, store, floor);
+    const runner = new Runner(ctx, core, clock, store, floor);
     await this.#follow(ctx, config, clock, floor, runner);
     const events = ctx.subscribe([
       Events.PlatformReady.type,
@@ -239,19 +234,10 @@ function floorOf(ctx: ModuleContext, config: ArbiterConfig, clock: Clock): Floor
     talk: (context) =>
       (services.get(SelfStateKey)?.talkativeness(context)?.level ?? USUAL_TALK) / USUAL_TALK,
     feeling: () => services.get(AffectStateKey)?.snapshot().biases.talkativeness ?? 0,
-    postsTo: (context) => {
-      const posts = services.get(DailyPostsKey)?.channel() ?? null;
-      return posts !== null && contextKeyEquals(posts, context);
-    },
   });
 }
 
-async function restore(
-  store: SettingsStore,
-  core: ArbiterCore,
-  producers: Producers,
-  now: number,
-): Promise<void> {
+async function restore(store: SettingsStore, core: ArbiterCore, now: number): Promise<void> {
   try {
     const value = await withTimeout(store.get(STATE_PROFILE, STATE_KEY), STORE_TIMEOUT_MS);
     if (value === undefined) {
@@ -261,7 +247,6 @@ async function restore(
     if (value === null) return;
     const state = StateSchema.parse(value);
     core.book.restore(state.ledger, now);
-    producers.restore(state.producers);
     core.restoreHolds(state.holds, now);
     log.info("restored arbiter ledger");
   } catch (error) {
@@ -269,23 +254,14 @@ async function restore(
   }
 }
 
-/** The local day of `now` as a key part; greetings are once a day. */
-function dayStamp(now: number): number {
-  return Math.floor(now / DAY_MS);
-}
-
 class Runner {
   readonly #queue = new SerialQueue();
-  /** Followups submitted whose `markDone` failed; never brought up twice. */
-  readonly #failedMarks = new Set<string>();
-  /** V3: the claims behind observations written here, by event id. */
-  readonly #observed = new Map<string, Impulse>();
+  /** Her own accounts (`platform.ready`): her lines are no response to her. */
+  readonly #selfAccounts = new Set<string>();
 
   constructor(
     private readonly ctx: ModuleContext,
     private readonly core: ArbiterCore,
-    private readonly producers: Producers,
-    private readonly profile: ProfileId,
     private readonly clock: Clock,
     private readonly store: SettingsStore | undefined,
     private readonly floor: FloorCore,
@@ -297,30 +273,8 @@ class Runner {
     });
   }
 
-  /** V3: a greeting is something she notices. Whether she says it is the Floor's and hers. */
-  #observe(impulse: Impulse): void {
-    const log = this.ctx.services.get(EventLogKey);
-    const context = impulse.target.context;
-    if (!log || context === null) return;
-    const id = newId();
-    const key = `greeting:${impulse.coalesce_key ?? id}:${dayStamp(this.clock.now())}`;
-    this.#observed.set(id, {
-      ...impulse,
-      claim: "notable",
-      attention: { key, repeat_after_ms: DAY_MS, revision: 1 },
-    });
-    const observation: Observation = {
-      source: "world.greeting",
-      silent: false,
-      salience: "notable",
-      attention_key: key,
-      revision: 1,
-      summary: impulse.hint ?? impulse.why,
-      addressed_to_her: false,
-      from: impulse.target.person,
-      context,
-    };
-    log.observe(observation, { id });
+  #isSelf(account: AccountRef): boolean {
+    return this.#selfAccounts.has(`${account.platform}:${account.id}`);
   }
 
   /** V3: an observation that may ask for the mic does. */
@@ -332,9 +286,7 @@ class Runner {
     if (o.attention_key.startsWith("task:")) return;
     const ledger = this.ctx.services.get(DeliveryLedgerKey);
     if (ledger && !ledger.mayClaim(o)) return;
-    const stashed = this.#observed.get(event.id);
-    this.#observed.delete(event.id);
-    const impulse = stashed ?? this.#claimOf(o);
+    const impulse = this.#claimOf(o);
     if (impulse === null) return;
     // Out of the log's append: a decision writes to the log itself.
     queueMicrotask(() => this.#submit(impulse));
@@ -358,7 +310,7 @@ class Runner {
         ttlMs: this.core.config.impulse_ttl_secs * 1000,
         why: o.source,
         hint: o.summary,
-        reason: o.source === "mainline.commitment" ? "commitment" : "game",
+        reason: "game",
         attention: { key: o.attention_key, repeat_after_ms: 0, revision: o.revision },
         claim: urgent ? "urgent" : "notable",
         coalesce_key: urgent ? null : `floor:${contextKeyString(context)}`,
@@ -369,15 +321,15 @@ class Runner {
 
   onEvent(env: Envelope): void {
     const now = this.clock.now();
-    const social = this.ctx.services.get(SocialSignalsKey) ?? null;
-    for (const impulse of this.producers.observe(now, env, social)) {
-      this.#observe(impulse);
+    if (is(Events.PlatformReady, env)) {
+      const account = env.data.self_account;
+      this.#selfAccounts.add(`${account.platform}:${account.id}`);
     }
-    const response = humanResponse(env, (account) => this.producers.isSelf(account));
+    const response = humanResponse(env, (account) => this.#isSelf(account));
     if (response) this.core.heard(response.context, response.account);
     if (is(Events.PlatformMessageCreated, env)) {
       const m = env.data;
-      if (m.author.is_bot || this.producers.isSelf(m.author.account)) return;
+      if (m.author.is_bot || this.#isSelf(m.author.account)) return;
       const dm = m.id.context.kind === "dm";
       if (dm || m.mentions_self || m.reply_to_self) {
         this.core.engaged(m.id.context, dm ? m.author.account : null, now);
@@ -408,10 +360,7 @@ class Runner {
 
   onTick(): Promise<void> {
     return this.#queue.run(async () => {
-      const now = this.clock.now();
-      this.producers.prune(now);
       await this.core.tick();
-      await this.#followups(now);
       await this.#persist();
     });
   }
@@ -420,62 +369,11 @@ class Runner {
     return this.#queue.run(() => this.#persist());
   }
 
-  async #followups(now: number): Promise<void> {
-    const source = this.ctx.services.get(FollowupSourceKey);
-    if (!source) return;
-    let due: Awaited<ReturnType<typeof source.due>> | undefined;
-    try {
-      due = await withTimeout(source.due(this.profile, toTimestamp(now)), STORE_TIMEOUT_MS);
-    } catch (error) {
-      log.warn({ error: errorMessage(error) }, "could not fetch due followups");
-      return;
-    }
-    if (due === undefined) {
-      log.warn("fetching due followups timed out");
-      return;
-    }
-    const social = this.ctx.services.get(SocialSignalsKey) ?? null;
-    const handles = this.ctx.services.get(HandleDirectoryKey) ?? null;
-    for (const followup of due) {
-      if (this.#failedMarks.has(followup.id)) continue;
-      // About someone: one wish with the same topic held elsewhere (a birthday of memory's dates
-      // and a followup written in consolidation are said once, not by each).
-      const person = followup.person === null ? null : (handles?.ofPerson(followup.person) ?? null);
-      const impulse = this.producers.followup(now, followup, social, person);
-      if (!impulse) continue;
-      await this.#propose(impulse, followup.id);
-    }
-  }
-
-  /** Memory work only proposes. She is told of it next time she has the floor. */
-  async #propose(impulse: Impulse, followup: string): Promise<void> {
-    const board = this.ctx.services.get(ProposalBoardKey);
-    const source = this.ctx.services.get(FollowupSourceKey);
-    if (!board || !source) return;
-    await board.propose({
-      what: impulse.hint ?? impulse.why,
-      why: impulse.why,
-      expires: impulse.expires_at,
-      source: "memory",
-      context: impulse.target.context,
-      about: impulse.target.account,
-      person: impulse.target.person,
-      goal: null,
-    });
-    try {
-      await source.markDone(followup);
-    } catch (error) {
-      log.warn({ id: followup, error: errorMessage(error) }, "could not mark followup done");
-      this.#failedMarks.add(followup);
-    }
-  }
-
   async #persist(): Promise<void> {
     if (!this.store) return;
-    if (!this.core.book.dirty && !this.producers.dirty && !this.core.holdsDirty) return;
+    if (!this.core.book.dirty && !this.core.holdsDirty) return;
     const value = {
       ledger: this.core.book.snapshot(this.clock.now()),
-      producers: this.producers.snapshot(),
       holds: this.core.holds(),
     };
     try {

@@ -27,6 +27,7 @@ import { decisions, events, llm, modules } from "./core.js";
 import { data } from "./data.js";
 import { directives } from "./directives.js";
 import { economy, peopleEconomy } from "./economy.js";
+import { evalRoutes } from "./eval.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { self, world } from "./inner.js";
@@ -36,6 +37,7 @@ import { member } from "./member.js";
 import { memory } from "./memory.js";
 import { mind } from "./mind.js";
 import { notebook, recent } from "./notebook.js";
+import { notes } from "./notes.js";
 import { extensions, mcp, queue, stage, voiceMonitor } from "./ops.js";
 import { party } from "./party.js";
 import { people } from "./people.js";
@@ -50,6 +52,7 @@ import { turns } from "./turns.js";
 import { wallet } from "./wallet.js";
 import { skills, workspace } from "./workspace.js";
 
+export type { EvalLiveRun, EvalLiveSuite, EvalLiveTokens } from "../../events/src/eval.js";
 export {
   type AffectBiases,
   AffectBiasesSchema,
@@ -303,20 +306,22 @@ export {
   RoomItemSchema,
 } from "./economy.js";
 export {
+  type EvalLiveHistory,
+  EvalLiveHistorySchema,
+  type EvalNightly,
+  EvalNightlySchema,
+  type EvalNightlyState,
+  EvalNightlyStateSchema,
+} from "./eval.js";
+export {
   type CauseChain,
   CauseChainSchema,
-  type ContextBucket,
-  ContextBucketSchema,
-  type ContextEntry,
-  ContextEntrySchema,
   type Delivery,
   DeliverySchema,
   type LogEvent,
   type LogEventKind,
   LogEventKindSchema,
   LogEventSchema,
-  type SpokenLine,
-  SpokenLineSchema,
 } from "./facts.js";
 export {
   type FortuneDraw,
@@ -525,6 +530,38 @@ export {
   type RecentView,
   RecentViewSchema,
 } from "./notebook.js";
+export {
+  type NoteAuthor,
+  NoteAuthorSchema,
+  type NoteChange,
+  NoteChangeSchema,
+  type NoteDocumentEntry,
+  NoteDocumentEntrySchema,
+  type NoteDocumentView,
+  NoteDocumentViewSchema,
+  type NoteEvidenceView,
+  NoteEvidenceViewSchema,
+  type NoteHistory,
+  NoteHistorySchema,
+  type NoteKind,
+  type NoteKindCount,
+  NoteKindCountSchema,
+  NoteKindSchema,
+  type NoteLineView,
+  NoteLineViewSchema,
+  type NoteProvenance,
+  NoteProvenanceSchema,
+  type NoteRevertRequest,
+  NoteRevertRequestSchema,
+  type NoteRevertResult,
+  NoteRevertResultSchema,
+  type NoteSectionView,
+  NoteSectionViewSchema,
+  type NotesList,
+  NotesListSchema,
+  type NoteVersion,
+  NoteVersionSchema,
+} from "./notes.js";
 export {
   type E2eSegmentName,
   E2eSegmentNameSchema,
@@ -821,6 +858,7 @@ export const contract = {
   directives,
   memory,
   notebook,
+  notes,
   recent,
   economy,
   facts,
@@ -837,6 +875,7 @@ export const contract = {
   wallet,
   agency,
   fortune,
+  eval: evalRoutes,
 };
 
 export type ApiContract = typeof contract;

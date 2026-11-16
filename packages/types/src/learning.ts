@@ -192,6 +192,18 @@ export interface KnowledgeBase {
 
 export const KnowledgeKey = serviceKey<KnowledgeBase>("KnowledgeBase");
 
+/**
+ * Her document about herself, whole, for the prompt's pinned block. Provided by the `knowledge`
+ * module where her documents live in the notes. The text is the same until the document is
+ * rewritten.
+ */
+export interface SelfDocument {
+  /** The document within `budget` characters (the seed lines before she has written it). */
+  read(budget: number): string;
+}
+
+export const SelfDocumentKey = serviceKey<SelfDocument>("SelfDocument");
+
 // ---- lessons ------------------------------------------------------------------------------
 
 /** Something she learned about how to behave ("阿明不喜歡被打斷"). */
@@ -272,6 +284,22 @@ export interface Reflection {
 }
 
 export const ReflectionKey = serviceKey<Reflection>("Reflection");
+
+/**
+ * What the new text runner puts around her daily reflection when sub-agents are on (`selfhost`
+ * `runReflect`): the reflection runs under the nightly figure's accounting. Provided by the host;
+ * the `reflect` module looks it up each time it is due, and runs the reflection itself when it is
+ * not there.
+ */
+export interface ReflectGuard {
+  /** Runs `run`; `ran` is `false` when nothing ran, with `why` (the nightly figure is used up). */
+  run<T>(
+    run: (signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<{ ran: boolean; result: T | null; why: string | null }>;
+}
+
+export const ReflectGuardKey = serviceKey<ReflectGuard>("ReflectGuard");
 
 // ---- memory curation ----------------------------------------------------------------------
 

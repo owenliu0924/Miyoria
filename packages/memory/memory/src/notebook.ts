@@ -52,7 +52,7 @@ export type PageOrigin =
   | { type: "guild"; platform: string; guild: string }
   | { type: "dm"; platform: string; account: string };
 
-interface StoredPage {
+export interface StoredPage {
   id: string;
   path: string;
   body: string;
@@ -116,7 +116,7 @@ export function cleanBody(raw: string): string {
   return (repairHandleText(masked) ?? masked).trim();
 }
 
-function parsePage(value: JsonValue): StoredPage | null {
+export function parsePage(value: JsonValue): StoredPage | null {
   if (!isJsonObject(value)) return null;
   const { id, path, body, about, created_at, updated_at } = value;
   if (typeof id !== "string" || typeof path !== "string" || typeof body !== "string") return null;

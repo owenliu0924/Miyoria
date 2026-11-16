@@ -79,8 +79,7 @@ const ServerConfigSchema = z.object({
   /** Timeout for connecting and listing tools. */
   connect_timeout_ms: z.number().int().nonnegative().default(20_000),
   /**
-   * Tool results longer than this many characters are cut here, before the agent's own cut
-   * (`[modules.agent] max_tool_result_chars`); the shorter of the two wins (0 = no limit here).
+   * Tool results longer than this many characters are cut here (0 = no limit here).
    */
   max_result_chars: z.number().int().nonnegative().default(8_000),
   /**

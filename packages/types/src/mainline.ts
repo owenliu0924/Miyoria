@@ -205,6 +205,31 @@ export interface CommitmentBody {
   commitment: Commitment;
 }
 
+/**
+ * Her promises as a writer outside the main line sees them (the memory's segment pass records what
+ * she promised in a conversation and closes what she did). Provided by the agent (its
+ * `CommitmentBook`); the `commitment` opportunity reads the same book.
+ */
+export interface PromiseBook {
+  /** What she still owes, oldest first (`context`: made there). */
+  open(context?: ContextKey): Commitment[];
+  /**
+   * A new promise. `person`: whom it is to, when it is one to ask or tell someone something.
+   * `null`: not made.
+   */
+  add(
+    draft: CommitmentDraft,
+    context: ContextKey,
+    turn: TurnId | null,
+    cause: string | null,
+    person?: Handle | null,
+  ): Commitment | null;
+  /** `commitment` is kept. */
+  said(commitment: Commitment, cause: string | null): void;
+}
+
+export const PromiseBookKey = serviceKey<PromiseBook>("PromiseBook");
+
 // ---- proposals --------------------------------------------------------------------------------
 
 /** §10.5, and where it belongs. */
@@ -255,19 +280,6 @@ export interface ProposalResultBody {
   turn: TurnId | null;
 }
 
-/** Provided by the agent: the only door the background has. */
-export interface ProposalBoard {
-  /**
-   * Writes `proposal` to the log and asks for the floor for it. Resolves when the Floor said
-   * whether the main line takes it up now; it stays on the board until it expires either way.
-   */
-  propose(proposal: NewProposal, signal?: AbortSignal): Promise<ProposalOutcome>;
-  /** What is waiting (`context`: there, or anywhere). */
-  open(context?: ContextKey | null): Proposal[];
-}
-
-export const ProposalBoardKey = serviceKey<ProposalBoard>("ProposalBoard");
-
 // ---- the mouth --------------------------------------------------------------------------------
 
 /** A line that needs no model: what the owner typed in the panel, a reply she already wrote. */
@@ -280,6 +292,8 @@ export interface FixedLine {
   source: string;
   /** `text` is the filtered line already (`safeOutgoing`'s `blocked`). */
   blocked?: string | null;
+  /** Who the line is for, as the delivery ledger records it. Unset: the people in the voice channel. */
+  audience?: readonly Handle[];
 }
 
 /** Provided by the agent. */

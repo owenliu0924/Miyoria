@@ -20,7 +20,7 @@
 // (`agent.decision`, the trace) and how a turn ended (`agent.turn.outcome`, the record a result
 // line keeps as `turn_outcome`). `DecisionLog` reads the same events.
 
-import { AgentDecision, AgentTurnOutcome } from "@miyoria/contracts/events";
+import { AgentDecision, AgentTool, AgentTurnOutcome } from "@miyoria/contracts/events";
 import {
   type EventQuery,
   type EventWrite,
@@ -59,11 +59,15 @@ const OBSERVATION_TYPES: readonly string[] = [
 /** The source of her decision and of a turn's outcome, as the bus facts write them. */
 export const TURN_SOURCE = "agent";
 
+/** The source of a tool call of a turn (`agent.tool`), kept like the turn's outcome. */
+export const TOOL_SOURCE = "agent.tool";
+
 /** Every type the facts writer records. */
 export const FACTS_TYPES: readonly string[] = [
   ...FACTS_EVENTS.map((d) => d.type),
   AgentDecision.type,
   AgentTurnOutcome.type,
+  AgentTool.type,
 ];
 
 /** The record a turn's result line keeps (`body.turn_outcome`), if it is one. */
@@ -94,6 +98,7 @@ export function turnOf(event: LogEvent): string | null {
 export function lineType(event: LogEvent): string {
   if (event.kind === "decision" && event.source === TURN_SOURCE) return AgentDecision.type;
   if (turnOutcome(event) !== null) return AgentTurnOutcome.type;
+  if (event.kind === "action" && event.source === TOOL_SOURCE) return AgentTool.type;
   if (event.kind !== "observation") return `${FACTS_TYPE_PREFIX}${event.kind}`;
   const body = event.body;
   if (!isJsonObject(body) || !isJsonObject(body.observation)) return FactsObservation.type;
@@ -112,6 +117,7 @@ export function lineKind(type: string): LogEventKind | null {
   if (OBSERVATION_TYPES.includes(type)) return "observation";
   if (type === AgentDecision.type) return "decision";
   if (type === AgentTurnOutcome.type) return "result";
+  if (type === AgentTool.type) return "action";
   if (!type.startsWith(FACTS_TYPE_PREFIX)) return null;
   const kind = type.slice(FACTS_TYPE_PREFIX.length);
   return isLogEventKind(kind) && kind !== "observation" ? kind : null;
@@ -124,6 +130,7 @@ export function typesOf(kinds?: readonly LogEventKind[]): string[] {
     if (k === "observation") return OBSERVATION_TYPES;
     if (k === "decision") return [`${FACTS_TYPE_PREFIX}${k}`, AgentDecision.type];
     if (k === "result") return [`${FACTS_TYPE_PREFIX}${k}`, AgentTurnOutcome.type];
+    if (k === "action") return [`${FACTS_TYPE_PREFIX}${k}`, AgentTool.type];
     return [`${FACTS_TYPE_PREFIX}${k}`];
   });
 }
