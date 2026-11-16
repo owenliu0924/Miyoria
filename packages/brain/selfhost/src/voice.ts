@@ -130,6 +130,17 @@ export interface VoiceHostDeps {
   triage(context: ContextKey, line: VoiceLineFacts): TriageDecision;
   /** Whether a glance at `context` is still due; counted when it is. */
   takeGlance(context: ContextKey): boolean;
+  /** Her initiative's side of a run (`Initiative.runStarted` / `runEnded`); unset: none. */
+  initiative?: {
+    started(wake: Wake, turn: string, context: ContextKey): string[];
+    ended(
+      wake: Wake,
+      turn: string,
+      context: ContextKey,
+      outcome: string | null,
+      spoke: boolean,
+    ): void;
+  };
 }
 
 /** A voice channel on the runner. */
@@ -803,11 +814,12 @@ export class VoiceHost implements VoiceRunner {
       agentTurns.inc({ decision: "ignored" });
       this.#forget(state);
       this.#publish(state, null, null, { type: "silence" });
+      this.#d.initiative?.ended(run.wake, turn, context, null, false);
       return;
     }
     floor?.hold(turn, context, kind);
     agent.mainline.holdsFloor(turn, true);
-    this.#decision(state, true, []);
+    this.#decision(state, true, this.#d.initiative?.started(run.wake, turn, context) ?? []);
     agentTurns.inc({ decision: "responded" });
     agent.focusBoard.start(this.#focus(state));
     this.#mark(state, "decided");
@@ -843,6 +855,8 @@ export class VoiceHost implements VoiceRunner {
       }
     }
     if (result?.compacted) this.#d.prompt.forget(place.session);
+    const outcome = result?.outcome ?? (error === null ? null : "failed");
+    this.#d.initiative?.ended(run.wake, turn, context, outcome, state.lines > 0);
     if (run.dropped) {
       // It started early and they went on: it never was.
       agent.ctx.publish(Events.AgentTurnCompleted, { turn, context, text: "" }, { turn });

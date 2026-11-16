@@ -391,6 +391,34 @@ describe("a wake of her own in voice", () => {
   });
 });
 
+describe("her inbox in voice", () => {
+  it("is shown in a voice run and seen once that run finished, not before", async () => {
+    const rig = await voiceRig();
+    rig.sup.bus.publish("world", Events.WorldSalient, {
+      kind: "channel_active",
+      key: "k1",
+      account: null,
+      person: null,
+      display_name: null,
+      context: null,
+      detail: "Owen 在別的伺服器得獎了",
+      score: 0.8,
+      count: 1,
+      first_at: toTimestamp(Date.now()),
+      at: toTimestamp(Date.now()),
+    } as never);
+    await sleep(50);
+    rig.model.push(says("在喔!"), says("還在喔!"));
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => speeches(rig).length === 1, 3_000, "the first answer");
+    expect(textOf(rig.model.requests[0])).toContain("Owen 在別的伺服器得獎了");
+    await until(() => outcomes(rig).length === 1, 3_000, "the first outcome");
+    hear(rig, "owen", "小鯨魚你還在嗎");
+    await until(() => speeches(rig).length === 2, 3_000, "the second answer");
+    expect(textOf(rig.model.requests[1])).not.toContain("Owen 在別的伺服器得獎了");
+  });
+});
+
 describe("the switch", () => {
   it('with runner = "mainline" voice runs on the old path and nothing of this runs', async () => {
     const rig = await voiceRig({}, { config: { runner: "mainline" } });

@@ -227,6 +227,11 @@ export class SelfHost implements TextRunner {
           this.#now,
         ),
       takeGlance: (context) => this.#takeGlance(context),
+      initiative: {
+        started: (wake, turn, context) => this.initiative.runStarted(wake, turn, context),
+        ended: (wake, turn, context, outcome, spoke) =>
+          this.initiative.runEnded(wake, turn, context, outcome, spoke),
+      },
     });
     this.#outlet = new MouthOutlet(
       agent,
