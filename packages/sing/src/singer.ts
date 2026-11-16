@@ -27,6 +27,7 @@ import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/ke
 import { SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
+  type ArbiterDecision,
   type BusEvent,
   type ContextKey,
   contextKeyEquals,
@@ -81,9 +82,9 @@ const TICK_MS = 100;
 /** Settings key (profile `_global`) of the stored set list. */
 export const SETLIST_KEY = "sing:setlist";
 const STORE_PROFILE = "_global";
-/** After a song is started without a turn, she gets this long to start an opening line. */
-const EXPECT_OPENING_MS = 6000;
 const TURNS_REMEMBERED = 64;
+/** Announcement impulses followed (their decisions are kept until the song has started). */
+const ANNOUNCEMENTS_REMEMBERED = 32;
 
 /** An announcement no longer makes sense after this. */
 const ANNOUNCE_TTL_MS = 2 * 60_000;
@@ -185,6 +186,8 @@ export class Singer implements VoiceFloor, SpeechPause {
   /** Song clips of a party game playing per guild: not her singing, but nothing starts over them. */
   readonly #clips = new Map<string, number>();
   readonly #turnsDone: TurnId[] = [];
+  /** What the Arbiter decided on each announcement impulse of a song start (`null`: not yet). */
+  readonly #announced = new Map<string, ArbiterDecision | null>();
   #closed = false;
   /**
    * Whether someone is in her voice channel of `guild`: `true` / `false`, or `null` when that is
@@ -656,13 +659,13 @@ export class Singer implements VoiceFloor, SpeechPause {
     if (!next) return;
     const where = this.voiceContext(next.context?.scope ?? null) ?? this.voiceContext();
     if (where === null || where.scope === null) return;
-    this.#tell(
+    const announcement = this.#tell(
       where,
       REASONS.start,
       `你要開始唱${songLabel(next)}了(${next.requester_name} 點的${dedicationNote(next)})。用一句話開場,說完就開始。`,
       next,
     );
-    this.#begin(next, where.scope, null, EXPECT_OPENING_MS);
+    this.#begin(next, where.scope, null, this.cfg.opening_window_ms, announcement);
   }
 
   /** Periodic work: reminders and songs that should start on their own. */
@@ -719,7 +722,18 @@ export class Singer implements VoiceFloor, SpeechPause {
     return any?.scope != null && voice.channel(any.scope) !== null ? any.scope : null;
   }
 
-  #begin(entry: SongEntry, guild: string, turn: TurnId | null, expectMs: number): void {
+  /**
+   * Starts `entry` once her announcement is over. `announcement` is the id of the impulse that asks
+   * her for it: the song waits for the Arbiter's word on it (the turn it opened, which it then
+   * waits for, or a refusal or expiry), at most `expectMs`; nothing said after that is waited for.
+   */
+  #begin(
+    entry: SongEntry,
+    guild: string,
+    turn: TurnId | null,
+    expectMs: number,
+    announcement: string | null = null,
+  ): void {
     const stop = new AbortController();
     entry.state = "playing";
     this.#playing = { entry, guild, stop, audible: false };
@@ -727,7 +741,12 @@ export class Singer implements VoiceFloor, SpeechPause {
       const both = AbortSignal.any([signal, stop.signal]);
       let outcome: PlaybackState | "error" = "interrupted";
       try {
-        await this.waitQuiet(guild, turn, expectMs, both);
+        if (announcement === null) {
+          await this.waitQuiet(guild, turn, expectMs, both);
+        } else {
+          const said = await this.#announcement(announcement, expectMs, both);
+          await this.waitQuiet(guild, said.turn, 0, both);
+        }
         if (!both.aborted) outcome = await this.#sing(entry, guild, both);
       } catch (error) {
         if (isGone(error) && !both.aborted && (await this.#prepareAgain(entry))) return;
@@ -993,6 +1012,30 @@ export class Singer implements VoiceFloor, SpeechPause {
   // ----- her speech, so a song starts after she finished talking -----
 
   /**
+   * Waits up to `windowMs` for the Arbiter's word on the announcement `id`: `turn` is the turn it
+   * opened (she is saying it), `null` when it was refused or expired, or when nothing was decided
+   * within the window (past it the impulse is expired and nothing is said).
+   */
+  async #announcement(
+    id: string,
+    windowMs: number,
+    signal: AbortSignal,
+  ): Promise<{ turn: TurnId | null }> {
+    const clock = this.ctx.clock;
+    const until = clock.now() + windowMs;
+    try {
+      for (;;) {
+        const decision = this.#announced.get(id) ?? null;
+        if (decision !== null) return { turn: decision.turn };
+        if (signal.aborted || clock.now() >= until) return { turn: null };
+        await sleep(TICK_MS, signal);
+      }
+    } finally {
+      this.#announced.delete(id);
+    }
+  }
+
+  /**
    * Resolves once the turn `turn` is over (when given) and her speech in `guild` had a quiet
    * moment: right after she spoke, or when she did not start within `expectMs`. `false` when
    * `signal` aborted or `announce_max_secs` ran out first.
@@ -1053,6 +1096,12 @@ export class Singer implements VoiceFloor, SpeechPause {
       const n = this.#speaking.get(guild) ?? 0;
       if (event.data.state === "started") this.#speaking.set(guild, n + 1);
       else this.#speaking.set(guild, Math.max(0, n - 1));
+      return;
+    } else if (is(Events.ArbiterDecided, event)) {
+      // A word on one of her song announcements: the turn it opened, or that nothing will be said.
+      const d = event.data;
+      if (d.verdict !== "deferred" && this.#announced.has(d.impulse))
+        this.#announced.set(d.impulse, d);
       return;
     } else if (is(Events.AgentTurnCompleted, event)) {
       this.#turnsDone.push(event.data.turn);
@@ -1276,7 +1325,7 @@ export class Singer implements VoiceFloor, SpeechPause {
    * of source `song` for the Arbiter, never her own topic (it does not count toward what she
    * raised on her own, nor its backoff).
    */
-  #tell(where: ContextKey, reason: string, hint: string, entry: SongEntry): void {
+  #tell(where: ContextKey, reason: string, hint: string, entry: SongEntry): string {
     const about: AccountRef[] = entry.requester ? [entry.requester] : [];
     const impulse = newImpulse(
       {
@@ -1286,7 +1335,7 @@ export class Singer implements VoiceFloor, SpeechPause {
         // A song about to start, or her voice about to go away, needs her words now or never.
         ttlMs:
           reason === REASONS.start || reason === REASONS.prepare
-            ? EXPECT_OPENING_MS
+            ? this.cfg.opening_window_ms
             : ANNOUNCE_TTL_MS,
         why: `${songLabel(entry)}(${reason})`,
         hint,
@@ -1296,7 +1345,16 @@ export class Singer implements VoiceFloor, SpeechPause {
       },
       this.ctx.clock.now(),
     );
+    if (reason === REASONS.start) {
+      this.#announced.set(impulse.id, null);
+      while (this.#announced.size > ANNOUNCEMENTS_REMEMBERED) {
+        const oldest = this.#announced.keys().next().value;
+        if (oldest === undefined) break;
+        this.#announced.delete(oldest);
+      }
+    }
     this.ctx.publish(Events.ArbiterImpulse, impulse);
+    return impulse.id;
   }
 
   #cue(cue: SongCue): void {
