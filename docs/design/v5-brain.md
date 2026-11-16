@@ -278,7 +278,7 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 5. 她自己的開口經 `ArbiterKey.record()` 和 `resolve()` 記進 Arbiter 的 ledger,不只發事件。
 6. 每晚反思數「被忽略的開口」時,看每一種決定理由(`intent:` 和 `initiative:`)。
 7. `Events.AgentTool` 寫進 facts 的事件紀錄,保留期和回合結果同一級,面板的「回合」頁讀它。
-8. mind 的 Plan 沒有衝動了:提示詞、回覆格式和解析都拿掉,舊回覆裡的 `impulses` 欄位直接忽略;目標和今天的計畫照舊,存下來的舊想法(有 `intents`)仍能載入。`max_intents` 留在 schema 讓舊設定檔能讀,不再使用。
+8. mind 的 Plan 沒有衝動了:提示詞、回覆格式和解析都拿掉,舊回覆裡的 `impulses` 欄位直接忽略;目標和今天的計畫照舊,存下來的舊想法(有 `intents`)仍能載入。`max_intents` 後來也從 schema 拿掉了(舊設定檔裡有的會被警告並忽略)。
 9. 活動類的長工具(唱歌、開遊戲、進語音、開台、派對)回報的是陣列,`reportedJob` 以前只收物件,工作代號因此丟掉、做完不會叫醒她;現在兩種都收,文字和語音都有用真實形狀的測試。
 10. `@名字` 變成真的 tag:`linkMentions` 跟著舊回合被刪掉,現在在 `MouthOutlet.deliver` 對文字訊息做(`selfhost/src/mentions.ts`);語音不做,逐字稿留她寫的原樣。
 11. 審核過的高風險工具晚到的結果走通知(`notifyLate`),不再發 Arbiter 一定會拒絕的 `followup` 衝動;通知保留結果的前 2000 字。
@@ -289,7 +289,13 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 16. 她的訊息超過 `max_message_chars` 時,在送出前照段落和句子切開(`selfhost/src/split.ts`),不切在 tag 或程式碼區塊中間。
 17. 沒有人呼叫的 `chat.start` / `chat.dm` 刪掉。
 
-這次檢查之後還留著的:約六十個讀了但沒有作用的設定鍵(`[modules.agent.attention]`、`[modules.agent.corrections]`、`[modules.agent.mainline]` 的大部分等)、沒有人提供的 `ProposalBoardKey` / `IntentSinkKey` / `PlaceAccessKey`、沒有人讀的 `ElsewhereKey` / `GameControlKey` / `PartyTableKey` / `SkillStoreKey` / `ImageGenKey`、依賴 `ProposalBoardKey` 的 `DailyPostDesk`、`PROFILES.reflect`。都不影響行為。
+這次檢查之後清掉的(同一天):
+
+- 讀了但沒有作用的設定鍵:`[modules.agent]` 的工具迴圈和整理鍵(`max_tool_steps`、`tool_timeout_ms`、`max_tool_result_chars`、`history_after_fold`、`time_gap_ms`、`tools_enabled`、`seed`、`budget_notice_interval_ms`)、整節 `[modules.agent.attention]`、語音的 `gray_low` 和 `max_share_of_recent`、`[modules.agent.mainline]` 的 22 個鍵、`[modules.agent.work]` 的 12 個鍵、`[modules.agent.corrections]` 的四個舊修正、`[modules.agent.rhythm]` 的四個「看一眼」鍵、`[modules.mind] max_intents`、`[llm.thinking]`,以及推理用途 `chat_intent` / `chat_tools` / `chat_question`。舊設定檔照樣讀得進來,啟動時用一行警告列出檔案裡還有的(`packages/core/src/removed-config.ts` 一張表)。
+- `[modules.agent.corrections]` 現在是六個預設全開的開關,對應新跑者留下的六個輸出檢查(#9、#10、#11、#15、#18、#19)。
+- 沒有人提供或讀的服務鍵:`ProposalBoardKey`、`IntentSinkKey`、`ElsewhereKey`、`SkillStoreKey`,和依賴前兩個的每日貼文(`DailyPostDesk`;owner 決定先擱置,見 `backlog.md`)。
+
+還留著的:`PlaceAccessKey` 沒有人提供(每個地方都算看得到)、`ImageGenKey` 沒有工具、遊戲導演還在縮減過的工作線上、mind 的 `SelfStarts` 帳本沒有人餵、只有測試讀的 `GameControlKey` / `PartyTableKey`、`KnowledgeStore` 的載入和寫回、沒有人發的 `agent.initiative` 事件。`PROFILES.reflect` 有人讀(`subagents.ts`),留著。都不影響行為,見 `backlog.md` 「設定鍵清理之後留下的」。
 
 ## 筆記的 embedding(2026-11-16)
 

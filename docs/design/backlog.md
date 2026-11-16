@@ -187,6 +187,20 @@
 - **她的聲音少一個檔**:`workers/voices/deepseek-chan/ref.txt`(參考音實際說的內容)不在,語音合成因此用只看音色的模式載入,`doctor` 會提醒。切換前就是這樣。
 - **npm 還沒發佈**(owner 2026-11-15:晚點)。
 
+### 設定鍵清理之後留下的(2026-11-16)
+
+舊的主線和舊的工作線被新跑者換掉之後,沒有人讀的設定鍵和服務鍵清掉了(哪些見 [v5-brain.md](v5-brain.md) 「2026-11-16 的檢查」最後一段)。下面是清的時候發現、但不屬於清理的:
+
+- **`PlaceAccessKey` 沒有人提供**:「別的地方」(`elsewhere`)和「剛才」(`just_now`)問它哪些地方她看得到,沒有人提供時每個地方都算看得到。要不要有真正的存取規則,還沒決定;有之前不要把它刪掉,讀它的地方是對的。
+- **`ImageGenKey` 沒有工具**:生圖服務有、鍵有人提供,但新跑者沒有生圖的工具,她叫不到。要等生圖開放(見上面「生圖卡池開放」)。
+- **遊戲導演還在縮減過的工作線上**:`[modules.agent.work]` 只剩 `enabled`、`daily_tokens`、`result_chars`、`did_lines`、`keep_ended`,只有遊戲導演一步一步做決定時用。要把它搬到小幫手(delegate)的跑者上,才能刪掉整條工作線和這一節設定。
+- **mind 的主動開口間隔還在**:`self_start_gap_*` 和 `self_start_max_backoff`(`[modules.mind]`)的帳本 `SelfStarts` 沒有人餵(日誌的 `intent` 和 `intent:` 理由都沒了),所以那幾個鍵沒有作用。要刪就得改 `mind.ts` 和 `selfstart.test.ts`,這次沒有動。
+- **`GameControlKey`、`PartyTableKey` 只有測試在讀**:正式程式沒有人用,測試靠它們控制導演和派對。要刪就得先換測試的做法。
+- **舊的 `KnowledgeStore` 在 `learning` 模組裡還會載入和寫回**:沒有資料庫時(測試用的空架子)它是整個知識庫,有資料庫時只有匯入工具會讀。要拿掉就得先決定沒有資料庫的情況怎麼辦。
+- **`agent.initiative` 事件沒有人發**:agent 和 facts 還訂閱它,事件的 schema 在 SDK 和面板的型別裡,SDK 的相容性測試也列著它。要拿掉是改公開的事件合約,另外決定。
+- **`[llm.reasoning]` 的 `chat_voice` 和 `work` 沒有作用**:語音這一輪和小幫手都在 profile 裡固定了推理等級,不看這兩個鍵。範例檔已經這樣註明,鍵本身留著。
+- **移除 `[llm.thinking]` 的行為差異**:舊設定檔裡有 `[llm.thinking]` 的,現在那些用途改用 `[llm.reasoning]` 或預設值(例如 `mind = true` 以前等於 `medium`,現在是沒列的用途 = 不思考)。啟動時會警告,但要不要在 `[llm.reasoning]` 補上,要 owner 看自己的設定檔。
+
 
 ## 4. 自我修復與自我改進(備忘)
 
