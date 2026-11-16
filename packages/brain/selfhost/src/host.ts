@@ -45,6 +45,7 @@ import {
   type MessageRef,
   newId,
   PlatformHistoriesKey,
+  PlatformSinksKey,
   parseTaskEvent,
   parseTaskTopic,
   sameAccount,
@@ -170,6 +171,8 @@ export class SelfHost implements TextRunner {
   readonly #jobs = new Map<string, Job>();
   /** Lines someone asked her to answer from their menu, until a run takes them. */
   readonly #asked = new Set<string>();
+  /** The platform's names of places, by `contextKeyString`. */
+  readonly #names = new Map<string, string>();
   /** When she glanced at each place (`contextKeyString`). */
   #glances = new Map<string, readonly number[]>();
   #day = { key: "", count: 0 };
@@ -230,6 +233,7 @@ export class SelfHost implements TextRunner {
               transcript,
               live: () => [...this.#places.values()].map((p) => p.context),
               sessionOf,
+              describe: (context) => this.#describe(context),
             },
             name,
             from,
@@ -299,6 +303,27 @@ export class SelfHost implements TextRunner {
   #sessionFor(context: ContextKey): string {
     const key = contextKeyString(context);
     return this.#places.get(key)?.session ?? this.transcript.sessionFor(context) ?? key;
+  }
+
+  /** The platform's name of a place (`server / channel`), asked once and kept. */
+  async #describe(context: ContextKey): Promise<string | null> {
+    const key = contextKeyString(context);
+    const known = this.#names.get(key);
+    if (known !== undefined) return known;
+    const agent = this.#agent;
+    const sink = agent.ctx.services.get(PlatformSinksKey)?.get(context.platform);
+    const describe = sink?.describe?.bind(sink);
+    if (describe === undefined) return null;
+    try {
+      const name = await timeout(agent.config.history.timeout_ms, agent.ctx.signal, (signal) =>
+        describe(context, signal),
+      );
+      if (name !== null) this.#names.set(key, name);
+      return name;
+    } catch (error) {
+      agent.log.debug({ err: errorMessage(error) }, "no name for a place");
+      return null;
+    }
   }
 
   /** Waits until every line handed over so far is in its transcript (tests). */

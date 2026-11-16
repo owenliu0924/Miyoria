@@ -30,6 +30,8 @@ import {
   PartyStatusKey,
   PlatformHistories,
   PlatformHistoriesKey,
+  PlatformSinks,
+  PlatformSinksKey,
   type PromptContributor,
   PromptContributors,
   PromptContributorsKey,
@@ -684,6 +686,45 @@ describe("files", () => {
     expect(partsOf(rig.model.requests[0])).toContain(
       "user: (amy 傳了檔案 notes.txt,我沒有讀它:我現在沒辦法安全地打開檔案)",
     );
+  });
+});
+
+describe("`say` by a channel's name", () => {
+  it("finds a channel of the space she is in by the name the platform gives it", async () => {
+    const C2 = channel("c2");
+    const ELSEWHERE: ContextKey = { platform: "test", scope: "g2", channel: "c9", kind: "channel" };
+    const sinks = new PlatformSinks();
+    sinks.register({
+      platform: "test",
+      send: async () => ({ id: "x" }) as never,
+      react: async () => undefined,
+      typing: async () => undefined,
+      describe: async (c) =>
+        ({ c2: "伺服器 / 雜談", c9: "別的伺服器 / 公告" })[c.channel] ?? "伺服器 / 大廳",
+    });
+    const rig = await Rig.create({
+      mode: "mention-only",
+      provide: (sup) => sup.services.provide("app", PlatformSinksKey, sinks),
+    });
+    rig.say(line(C2, "bob", "這裡是雜談"));
+    rig.say(line(ELSEWHERE, "dan", "這裡是別的伺服器"));
+    await until(() => rig.entries(ELSEWHERE).length === 1, 3_000, "the other places");
+    rig.model.push(
+      calls("say", { place: "#雜談", text: "大家好" }, "s1"),
+      calls("say", { place: "公告", text: "嗨" }, "s2"),
+      says("講好了"),
+    );
+    rig.say(mention(C1, "amy", "@她 去雜談打招呼"));
+    await until(() => rig.sink.texts().length === 2, 3_000, "her lines");
+    expect(rig.sink.sent()).toEqual([
+      ["c2", "大家好"],
+      ["c1", "講好了"],
+    ]);
+    // A channel of another space is not hers to name from here.
+    expect(toolResults(rig, 2)).toEqual([
+      expect.stringContaining("已經在 #雜談 說了"),
+      expect.stringContaining("找不到「公告」這個地方"),
+    ]);
   });
 });
 

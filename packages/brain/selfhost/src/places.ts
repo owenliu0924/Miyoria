@@ -1,12 +1,12 @@
 // Where `say` may go: a place she knows, named the way she can see it.
 //
 // - a channel or thread by its mention (`<#id>`), `#id` or bare id;
+// - a channel or thread of the space she is in by its name (`#雜談` or `雜談`), as the platform
+//   describes it (`PlatformSink.describe`, the panel's "server / channel");
 // - a DM by `私訊:名字` (or `dm:名字`, `@名字`): the DM whose other person goes by that name.
 //
 // She knows a place when it has a transcript (she was there) or a place on the runner this
 // process. Voice channels are never a `say` target: speaking there is the voice path's.
-// Names of channels are not known here (the platform's room names are not exposed), so a channel
-// is only found by its id or mention.
 
 import type { TranscriptStore } from "@miyoria/memory/transcript";
 import { type ContextKey, contextKeyEquals, safeName } from "@miyoria/types";
@@ -18,6 +18,8 @@ export interface PlaceBook {
   live(): readonly ContextKey[];
   /** The session of a place. */
   sessionOf(context: ContextKey): string;
+  /** The platform's name of a place (`server / channel`), `null` when unknown. Unset: none. */
+  describe?(context: ContextKey): Promise<string | null>;
 }
 
 const DM_PREFIX = /^(?:私訊|dm|DM)\s*[:：]\s*/;
@@ -36,8 +38,17 @@ function sameName(a: string, b: string): boolean {
   return n(a) !== "" && n(a) === n(b);
 }
 
+/** A channel's name as she may write it: no `#`, any case and width. */
+function channelName(name: string): string {
+  return name.normalize("NFKC").replace(/^#/, "").replace(/\s+/g, "").toLowerCase();
+}
+
 /** The place `name` means seen from `from`, or `null`. */
-export function resolvePlace(book: PlaceBook, name: string, from: ContextKey): ContextKey | null {
+export async function resolvePlace(
+  book: PlaceBook,
+  name: string,
+  from: ContextKey,
+): Promise<ContextKey | null> {
   const raw = name.trim();
   if (raw === "") return null;
   const places = known(book);
@@ -52,12 +63,39 @@ export function resolvePlace(book: PlaceBook, name: string, from: ContextKey): C
     return null;
   }
   const id = /^<#([^>\s]+)>$/.exec(raw)?.[1] ?? /^#?([^<>\s]+)$/.exec(raw)?.[1] ?? null;
-  if (id === null) return null;
-  const matches = places.filter((p) => p.kind !== "dm" && p.channel === id);
-  return (
-    matches.find((p) => p.platform === from.platform && p.scope === from.scope) ??
-    matches.find((p) => p.platform === from.platform) ??
-    matches[0] ??
-    null
+  if (id !== null) {
+    const matches = places.filter((p) => p.kind !== "dm" && p.channel === id);
+    const found =
+      matches.find((p) => p.platform === from.platform && p.scope === from.scope) ??
+      matches.find((p) => p.platform === from.platform) ??
+      matches[0] ??
+      null;
+    if (found !== null) return found;
+  }
+  return await byName(book, places, raw, from);
+}
+
+/** A channel or thread of `from`'s space whose name the platform gives as `raw`. */
+async function byName(
+  book: PlaceBook,
+  places: readonly ContextKey[],
+  raw: string,
+  from: ContextKey,
+): Promise<ContextKey | null> {
+  const describe = book.describe;
+  const want = channelName(raw);
+  if (describe === undefined || from.scope === null || want === "") return null;
+  const here = places.filter(
+    (p) => p.kind !== "dm" && p.platform === from.platform && p.scope === from.scope,
   );
+  const names = await Promise.all(here.map((p) => describe(p).catch(() => null)));
+  const found = here.filter((_, i) => {
+    const described = names[i] ?? null;
+    if (described === null) return false;
+    // `server / channel`: the channel's part.
+    const own = described.split(" / ").at(-1) ?? described;
+    return channelName(own) === want;
+  });
+  // Two places of the same name: she has to say which.
+  return found.length === 1 ? (found[0] ?? null) : null;
 }
