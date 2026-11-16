@@ -480,6 +480,16 @@ export class VoiceHost implements VoiceRunner {
     }
   }
 
+  /**
+   * Puts a wake that was not started here (her initiative, a sub-agent's result) in the voice
+   * lane of `context`; `false` when she is in no voice conversation there.
+   */
+  wake(context: ContextKey, wake: Wake): boolean {
+    const place = this.#places.get(contextKeyString(context));
+    if (place === undefined || place.lane.ended) return false;
+    return place.lane.push({ type: "wake", wake });
+  }
+
   #ended(task: string, ok: boolean, detail: string): void {
     const job = this.#jobs.get(task);
     if (job === undefined) return;

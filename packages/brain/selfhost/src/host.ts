@@ -292,7 +292,7 @@ export class SelfHost implements TextRunner {
             model,
             quiet: options.quiet ?? null,
             wake: (context, wake) => {
-              this.#place(context).lane.push({ type: "wake", wake });
+              this.#wake(context, wake);
             },
           },
           options.delegate ?? {},
@@ -304,7 +304,7 @@ export class SelfHost implements TextRunner {
         transcript,
         quiet: options.quiet ?? null,
         sessionOf,
-        wake: (context, wake) => this.#place(context).lane.push({ type: "wake", wake }),
+        wake: (context, wake) => this.#wake(context, wake),
         places: () => [...this.#places.values()].map((p) => p.context),
         resolve: async (name, from) =>
           resolvePlace(
@@ -417,6 +417,12 @@ export class SelfHost implements TextRunner {
   }
 
   // ---- places ----------------------------------------------------------------------------------
+
+  /** A wake of her own goes to the voice conversation of `context` when she is in one. */
+  #wake(context: ContextKey, wake: Wake): boolean {
+    if (this.voice.wake(context, wake)) return true;
+    return this.#place(context).lane.push({ type: "wake", wake });
+  }
 
   #place(context: ContextKey): Place {
     const key = contextKeyString(context);

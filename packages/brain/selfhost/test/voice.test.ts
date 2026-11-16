@@ -378,6 +378,19 @@ describe("the prefix", () => {
   });
 });
 
+describe("a wake of her own in voice", () => {
+  it("runs in the voice conversation and is said aloud; a place with no voice declines it", async () => {
+    const rig = await voiceRig();
+    rig.model.push(says("對了,蛋糕該出爐了。"));
+    expect(rig.host?.voice.wake(VC, { kind: "timer", note: "蛋糕" })).toBe(true);
+    await until(() => speeches(rig).length === 1, 3_000, "her line");
+    expect(speeches(rig)[0]?.[0]).toBe("對了,蛋糕該出爐了。");
+    expect(rig.sink.texts()).toEqual([]);
+    expect(rig.model.requests[0]?.reasoning_purpose).toBe("chat_voice");
+    expect(rig.host?.voice.wake(VC_CHAT, { kind: "timer", note: "蛋糕" })).toBe(false);
+  });
+});
+
 describe("the switch", () => {
   it('with runner = "mainline" voice runs on the old path and nothing of this runs', async () => {
     const rig = await voiceRig({}, { config: { runner: "mainline" } });
