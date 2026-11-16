@@ -129,13 +129,23 @@ class Harness {
     const response = await fetch(url, { redirect: "manual" });
     await response.arrayBuffer();
     expect(response.status).toBe(302);
+    // What the browser keeps from here to the callback.
+    const held = /miyoria_login=([^;]+)/.exec(response.headers.get("set-cookie") ?? "")?.[1];
+    this.loginCookieHeld = held ?? null;
     return new URL(response.headers.get("location") ?? "");
   }
+
+  /** The login cookie of the last `startLogin`; `null`: the callback comes from another browser. */
+  loginCookieHeld: string | null = null;
 
   async callback(query: Array<[string, string]>): Promise<Callback> {
     const url = new URL(`${this.base()}/api/auth/oauth/callback`);
     for (const [k, v] of query) url.searchParams.append(k, v);
-    const response = await fetch(url, { redirect: "manual" });
+    const held = this.loginCookieHeld;
+    const response = await fetch(url, {
+      redirect: "manual",
+      ...(held === null ? {} : { headers: { cookie: `miyoria_login=${held}` } }),
+    });
     await response.arrayBuffer();
     expect(response.status).toBe(302);
     const setCookie = response.headers.get("set-cookie");
@@ -332,6 +342,34 @@ describe("oauth", () => {
     });
     await response.arrayBuffer();
     expect(response.status).toBe(401);
+  });
+
+  it("a_callback_is_only_taken_from_the_browser_that_started_the_login", async () => {
+    const h = await harnessWith(true);
+
+    // Someone starts a login and hands the callback link to another browser.
+    let authorize = await h.startLogin();
+    expect(h.loginCookieHeld).not.toBeNull();
+    h.loginCookieHeld = null;
+    const other = await h.callback([
+      ["code", "owner-code"],
+      ["state", param(authorize, "state")],
+    ]);
+    expect(other.location).toBe("/login?error=state");
+    expect(other.cookie).toBeNull();
+
+    // Another login's cookie is no better than none.
+    authorize = await h.startLogin();
+    h.loginCookieHeld = "x".repeat(24);
+    const wrong = await h.callback([
+      ["code", "owner-code"],
+      ["state", param(authorize, "state")],
+    ]);
+    expect(wrong.location).toBe("/login?error=state");
+    expect(wrong.cookie).toBeNull();
+
+    // The browser that started it gets in.
+    expect((await h.login("owner-code")).cookie).not.toBeNull();
   });
 
   it("bad_state_cancel_exchange_failure_and_open_redirects", async () => {

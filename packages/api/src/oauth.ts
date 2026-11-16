@@ -6,7 +6,7 @@
 // Failures redirect to `/login?error=<code>` and never carry details: `disabled`,
 // `cancelled`, `state`, `exchange`, `discord`, `denied`, `unavailable`. Details go to the log.
 
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { AuthMethods, SessionInfo } from "@miyoria/contracts/api";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
@@ -18,7 +18,9 @@ import {
   COOKIE,
   cookieHeader,
   cookieToken,
+  cookieValue,
   hasCsrfHeader,
+  LOGIN_COOKIE,
   PANEL_ACCESS,
   randomToken,
 } from "./session.js";
@@ -79,6 +81,8 @@ export interface PendingLogin {
   next: string;
   /** Where Discord sends this login back: the token exchange must name the same address. */
   redirect: URL;
+  /** What the browser that started this login holds in `LOGIN_COOKIE`; `null`: not tied to one. */
+  binding: string | null;
   /** Epoch ms. */
   at: number;
 }
@@ -258,13 +262,16 @@ export class OAuth {
     return new URL(path, this.#discord);
   }
 
-  /** Starts a login: remembers `state` and the PKCE verifier, returns the authorize URL. */
-  begin(next: string, host: string | null = null): URL {
+  /**
+   * Starts a login: remembers `state`, the PKCE verifier and the browser's `binding`, returns
+   * the authorize URL.
+   */
+  begin(next: string, host: string | null = null, binding: string | null = null): URL {
     const state = randomToken(32);
     const verifier = randomToken(32);
     const now = this.#clock.now();
     const redirect = this.#redirectFor(host);
-    this.pending.insert(state, { verifier, next, redirect, at: now }, now);
+    this.pending.insert(state, { verifier, next, redirect, binding, at: now }, now);
     const url = this.#endpoint("oauth2/authorize");
     const q = url.searchParams;
     q.append("response_type", "code");
@@ -395,7 +402,26 @@ export function login(state: ApiState, c: ApiContext): Response {
   const next = c.req.query("next");
   const target = next !== undefined && safeNext(next) !== null ? next : DEFAULT_NEXT;
   const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? null;
-  return found(oauth.begin(target, host).href);
+  const binding = randomToken(18);
+  const url = oauth.begin(target, host, binding);
+  const https = url.searchParams.get("redirect_uri")?.startsWith("https:") === true;
+  return found(url.href, loginCookie(binding, state.auth.cookieSecure || https));
+}
+
+/** `Set-Cookie` value tying a login to this browser, for as long as the login may take. */
+function loginCookie(binding: string, secure: boolean): string {
+  const maxAge = Math.floor(STATE_TTL_MS / 1000);
+  return `${LOGIN_COOKIE}=${binding}; Max-Age=${maxAge}; Path=/api/auth/oauth; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+/** Whether the browser asking is the one that started `pending`. */
+function sameBrowser(pending: PendingLogin, c: ApiContext): boolean {
+  if (pending.binding === null) return true;
+  const held = cookieValue(requestCookies(c), LOGIN_COOKIE);
+  if (held === null) return false;
+  const a = Buffer.from(held, "utf8");
+  const b = Buffer.from(pending.binding, "utf8");
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export async function callback(state: ApiState, c: ApiContext): Promise<Response> {
@@ -405,6 +431,10 @@ export async function callback(state: ApiState, c: ApiContext): Promise<Response
   const pending = stateParam !== undefined ? oauth.take(stateParam) : null;
   if (c.req.query("error") !== undefined) return loginError("cancelled");
   if (!pending) return loginError("state");
+  if (!sameBrowser(pending, c)) {
+    log.info("a Discord login came back in a browser that did not start it");
+    return loginError("state");
+  }
   const code = c.req.query("code");
   if (!code) return loginError("exchange");
   const user = await oauth.fetchUser(code, pending.verifier, pending.redirect, state.ctx.signal);
