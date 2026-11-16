@@ -71,7 +71,7 @@ import {
   type VoiceUtterance,
 } from "@miyoria/types";
 import type { FactsConfig } from "./config.js";
-import { TURN_SOURCE } from "./envelope.js";
+import { TOOL_SOURCE, TURN_SOURCE } from "./envelope.js";
 import {
   GAME_SESSION_SOURCE,
   LIFECYCLE_SOURCE,
@@ -292,6 +292,8 @@ export class BusFacts {
       this.#focus(env.data);
     } else if (is(Events.AgentTurnOutcome, env)) {
       this.#outcome(env.data);
+    } else if (is(Events.AgentTool, env)) {
+      this.#tool(env, env.data);
     } else if (is(Events.MindThought, env)) {
       this.#thought(env.data);
     } else if (is(Events.VoiceBargeIn, env)) {
@@ -569,6 +571,19 @@ export class BusFacts {
       context: record.context,
       person: record.addressed_by[0] ?? null,
       body: { turn_outcome: record as unknown as JsonValue },
+    });
+  }
+
+  /** A tool call of a turn: the `agent.tool` record itself, answering the turn's head. */
+  #tool(env: BusEnvelope, data: EventPayload<typeof Events.AgentTool>): void {
+    this.#log.append({
+      at: env.at,
+      kind: "action",
+      source: TOOL_SOURCE,
+      cause: this.#head(data.turn),
+      context: data.context,
+      person: null,
+      body: data as unknown as JsonValue,
     });
   }
 

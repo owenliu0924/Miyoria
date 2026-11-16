@@ -148,8 +148,14 @@ export function describe(e: LogEvent): Described {
       return { title: text(body.said) ?? e.source, detail: label(CHANNEL_LABEL, text(body.channel)) ?? null };
     case "delivered":
       return { title: text(body.said) ?? e.source, detail: `已送達${text(body.channel) ? ` · ${label(CHANNEL_LABEL, text(body.channel))}` : ""}` };
-    case "action":
+    case "action": {
+      // A tool call of a turn (`agent.tool`): the tool, and what it answered.
+      const tool = e.source === "agent.tool" ? text(body.tool) : undefined;
+      if (tool !== undefined) {
+        return { title: `${body.ok === false ? "工具失敗 · " : ""}${tool}`, detail: text(body.result) ?? null };
+      }
       return { title: text(body.capability) ?? e.source, detail: text(body.why) ?? null };
+    }
     case "steer": {
       const s = steerBody(e);
       if (s === null) return { title: "改方向", detail: null };
