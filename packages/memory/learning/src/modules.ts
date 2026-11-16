@@ -569,8 +569,11 @@ export class ReflectModule implements Module {
         }
         return;
       } else if (is(Events.AgentDecision, env)) {
-        const first = env.data.reasons[0] ?? "";
-        if (env.data.respond && (first.startsWith("intent:") || first.startsWith("initiative:"))) {
+        // The runner's own reason comes first (`runner self`), the start's after it.
+        const own = env.data.reasons.some(
+          (r) => r.startsWith("intent:") || r.startsWith("initiative:"),
+        );
+        if (env.data.respond && own) {
           startedTurns.add(env.data.turn);
           if (startedTurns.size > 200) {
             const oldest = startedTurns.values().next().value;
