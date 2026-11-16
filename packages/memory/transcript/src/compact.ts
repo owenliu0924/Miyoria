@@ -6,6 +6,7 @@
 // the caller's (`Summarise`). The caller is also the one to write what is worth keeping into the
 // longer-lived memory layers before the entries are summarised (v5-architecture §7.4).
 
+import { timestampMs } from "@miyoria/types";
 import { splitsPair } from "./pairing.js";
 import type { TranscriptStore } from "./store.js";
 import type { TranscriptEntry, TranscriptSummary, TranscriptTail } from "./types.js";
@@ -79,6 +80,55 @@ export interface CompactOptions extends CompactionBudget {
    * ignored and the compaction goes ahead.
    */
   before?: (uptoSeq: number) => Promise<unknown>;
+}
+
+export interface IdleCompactOptions extends Omit<CompactOptions, "before"> {
+  /** `CompactOptions.before`, told which session it is for. */
+  before?: (session: string, uptoSeq: number) => Promise<unknown>;
+  /** A session nothing was appended to for this long is idle. */
+  idleMs: number;
+  /** The time now (epoch ms). */
+  now: number;
+  signal?: AbortSignal;
+  /** Called for each session that fails; the others go on. */
+  failed?: (session: string, error: unknown) => void;
+}
+
+/**
+ * Compacts every idle session that has grown past the threshold (or whose summary is stale), the
+ * ones nobody runs in: a run compacts its own session afterwards, and no other session would be
+ * compacted at all. Returns the sessions compacted.
+ */
+export async function compactIdle(
+  store: TranscriptStore,
+  options: IdleCompactOptions,
+): Promise<string[]> {
+  const idleBefore = options.now - options.idleMs;
+  const done: string[] = [];
+  for (const head of store.heads()) {
+    if (options.signal?.aborted) break;
+    if (head.last_seq <= 0 || timestampMs(head.last_at) > idleBefore) continue;
+    const stale = store.tail(head.session).summary?.stale === true;
+    if (!stale && store.tokens(head.session) <= options.thresholdTokens) continue;
+    try {
+      const {
+        before,
+        idleMs: _idle,
+        now: _now,
+        signal: _signal,
+        failed: _failed,
+        ...rest
+      } = options;
+      const made = await compactIfNeeded(store, head.session, {
+        ...rest,
+        ...(before ? { before: (upto: number) => before(head.session, upto) } : {}),
+      });
+      if (made !== null) done.push(head.session);
+    } catch (error) {
+      options.failed?.(head.session, error);
+    }
+  }
+  return done;
 }
 
 /**

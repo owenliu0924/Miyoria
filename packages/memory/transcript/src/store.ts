@@ -245,6 +245,16 @@ export class TranscriptStore {
     return row?.context ?? null;
   }
 
+  /** Whether anything was ever appended to `session` (one cheap read, not the tail). */
+  started(session: string): boolean {
+    const row = this.#db.orm
+      .select({ next: S.next_seq })
+      .from(S)
+      .where(eq(S.session, session))
+      .get();
+    return row !== undefined && row.next > 1;
+  }
+
   /** The sessions that have a transcript, most recently written first. */
   sessions(): string[] {
     return this.#db.orm

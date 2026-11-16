@@ -18,6 +18,7 @@ import {
   WorkingContextKey,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { transcriptTables } from "../../transcript/src/store.js";
 import { observationBody, toReplayLines } from "../src/index.js";
 import { FactsModule } from "../src/module.js";
 
@@ -227,6 +228,40 @@ describe("beside V2", () => {
     expect(store.artifacts).toBeNull();
     const sup = await run(store, { ...CONFIG, artifact_sweep_hours: 0.00002 });
     await settle(100);
+    await sup.stopAll();
+    await store.close();
+  });
+
+  it("sweeps the transcripts on a schedule, and only what a summary covers", async () => {
+    const store = await SqliteStore.open(":memory:", { plugins: [transcriptTables] });
+    const transcripts = store.plugin(transcriptTables);
+    transcripts.append("s", [
+      { kind: "other", author: "Owen", content: "舊的" },
+      { kind: "self", content: "也是舊的" },
+      { kind: "other", author: "Owen", content: "還在尾巴" },
+    ]);
+    transcripts.compact("s", 2, "舊的兩句");
+    // Days as fractions: the retention passes within the test.
+    const sup = await run(store, {
+      ...CONFIG,
+      transcript_sweep_hours: 0.00002,
+      transcript_covered_days: 0.0000005,
+      transcript_idle_days: 365,
+    });
+    await vi.waitFor(() => expect(transcripts.covered("s")).toEqual([]), { timeout: 3000 });
+    expect(transcripts.tail("s").entries.map((e) => e.content)).toEqual(["還在尾巴"]);
+    expect(transcripts.tail("s").summary?.summary).toBe("舊的兩句");
+    await sup.stopAll();
+    await store.close();
+  });
+
+  it("does not sweep the transcripts when the interval is 0", async () => {
+    const store = await SqliteStore.open(":memory:", { plugins: [transcriptTables] });
+    const transcripts = store.plugin(transcriptTables);
+    const sweep = vi.spyOn(transcripts, "sweep");
+    const sup = await run(store, { ...CONFIG, transcript_sweep_hours: 0 });
+    await settle(100);
+    expect(sweep).not.toHaveBeenCalled();
     await sup.stopAll();
     await store.close();
   });

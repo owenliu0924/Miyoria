@@ -5,7 +5,9 @@
 export {
   type CompactionBudget,
   type CompactOptions,
+  compactIdle,
   compactIfNeeded,
+  type IdleCompactOptions,
   pickCut,
   type Summarise,
 } from "./compact.js";
@@ -28,6 +30,7 @@ export {
 } from "./convert.js";
 export { transcriptSchema } from "./migrations.js";
 export { pairedEntries, splitsPair } from "./pairing.js";
+export { type SweepScheduleOptions, TranscriptSweepSchedule } from "./schedule.js";
 export {
   ENTRY_KINDS,
   type TranscriptEntryRow,

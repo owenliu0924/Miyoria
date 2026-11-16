@@ -43,6 +43,8 @@ import {
   toTimestamp,
   WorkingContextKey,
 } from "@miyoria/types";
+import { TranscriptSweepSchedule } from "../../transcript/src/schedule.js";
+import { type TranscriptStore, transcriptTables } from "../../transcript/src/store.js";
 import { BusFacts } from "./bus.js";
 import { type FactsConfig, FactsConfigSchema } from "./config.js";
 import { WorkingContextView } from "./context.js";
@@ -82,6 +84,7 @@ export class FactsModule implements Module {
   readonly #events: EventLogStore | null;
   readonly #chat: ChatRecordStore | null;
   readonly #artifacts: Sweepable | null;
+  readonly #plugin: Store["plugin"] | null;
   readonly #profile: ProfileId;
   readonly #names: readonly string[];
   #running: Running | null = null;
@@ -92,11 +95,15 @@ export class FactsModule implements Module {
    * character (v5-data decision D6). `artifacts`: the artifact store, swept once a day.
    */
   constructor(
-    store: (Pick<Store, "events"> & ChatRecordStore & { artifacts?: Sweepable | null }) | null,
+    store:
+      | (Pick<Store, "events"> &
+          ChatRecordStore & { artifacts?: Sweepable | null; plugin?: Store["plugin"] })
+      | null,
     profile: ProfileId,
     options: FactsModuleOptions = {},
   ) {
     this.#events = store?.events ?? null;
+    this.#plugin = store?.plugin?.bind(store) ?? null;
     this.#chat = store?.chat || store?.messages ? store : null;
     this.#artifacts = store?.artifacts ?? null;
     this.#profile = profile;
@@ -200,7 +207,40 @@ export class FactsModule implements Module {
         }
       });
     }
+    const transcripts = config.transcript_sweep_hours > 0 ? this.#transcripts(ctx) : null;
+    if (transcripts) {
+      const schedule = new TranscriptSweepSchedule(transcripts, ctx.clock, {
+        everyMs: config.transcript_sweep_hours * 3_600_000,
+        retention: {
+          coveredDays: config.transcript_covered_days,
+          idleDays: config.transcript_idle_days,
+        },
+      });
+      ctx.spawn("transcripts", async (signal) => {
+        for await (const _ of interval(schedule.checkMs, signal)) {
+          try {
+            const result = schedule.tick();
+            if (result !== null && (result.entries > 0 || result.sessions > 0)) {
+              ctx.log.info({ ...result }, "swept the transcripts");
+            }
+          } catch (error) {
+            if (signal.aborted) return;
+            ctx.log.warn({ err: errorMessage(error) }, "cannot sweep the transcripts");
+          }
+        }
+      });
+    }
     this.#running = { log, sub, bus };
+  }
+
+  /** The store's transcripts, where it has them. */
+  #transcripts(ctx: ModuleContext): TranscriptStore | null {
+    try {
+      return this.#plugin?.(transcriptTables) ?? null;
+    } catch (error) {
+      ctx.log.warn({ err: errorMessage(error) }, "no transcripts to sweep");
+      return null;
+    }
   }
 
   /**

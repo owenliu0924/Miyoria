@@ -93,6 +93,7 @@ import type { LocalTime } from "../../arbiter/src/index.js";
 import {
   addressedReason,
   composeGuards,
+  DEFAULT_COMPACTION,
   floorKind,
   noteGlance,
   type OutgoingLine,
@@ -113,6 +114,7 @@ import {
   wakeAuthor,
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
+import { startIdleCompaction } from "./idle-compaction.js";
 import { chatCapabilities, ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
@@ -332,6 +334,14 @@ export class SelfHost implements TextRunner {
         sayIn: this.runner.sayIn,
       }),
     );
+    // Places she only hears are never compacted by a run.
+    startIdleCompaction(agent, {
+      transcript,
+      model,
+      budget:
+        options.runner?.compaction === undefined ? DEFAULT_COMPACTION : options.runner.compaction,
+      signal: this.#stop.signal,
+    });
     this.jobs = agent.config.delegate.enabled
       ? new JobsHost(
           agent,
@@ -551,8 +561,8 @@ export class SelfHost implements TextRunner {
   async #take(place: Place, msg: IncomingMessage, marks: TextLineMarks): Promise<void> {
     const agent = this.#agent;
     const { session, context } = place;
-    const tail = this.transcript.tail(session);
-    if (tail.entries.length === 0 && tail.summary === null) {
+    // Not the whole tail: only whether the place has a transcript at all.
+    if (!this.transcript.started(session)) {
       await this.#backfill(place, msg);
     }
     const entry = entryOfIncoming(msg, {

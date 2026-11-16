@@ -19,6 +19,16 @@ export const FactsConfigSchema = z.object({
    * revoked, and rows, blobs and stray files past the store's grace are removed.
    */
   artifact_sweep_hours: z.number().positive().default(24),
+  /**
+   * How often the transcripts are swept (0: never): entries a compaction summary covers are
+   * deleted once past `transcript_covered_days`, and a session nothing was said in for
+   * `transcript_idle_days` goes whole. The entries after the summary in use are never swept.
+   */
+  transcript_sweep_hours: z.number().nonnegative().default(24),
+  /** Entries a summary covers are kept this long (the raw lines stay in the event log). */
+  transcript_covered_days: z.number().positive().default(30),
+  /** A session's whole transcript is deleted after this many days without a line. */
+  transcript_idle_days: z.number().positive().default(90),
   /** Ambient observations (tier `ambient`) older than this are folded into per-day counts. */
   fold_after_days: z.number().positive().default(14),
   /** Turn internals and the rest of tier `short` older than this go (0: never). */

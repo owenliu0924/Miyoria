@@ -3,13 +3,14 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  compactIdle,
   compactIfNeeded,
   pickCut,
   type Summarise,
   type TranscriptEntry,
   type TranscriptTail,
 } from "../src/index.js";
-import { called, entries, own, type Rig, ROOM, rig, said } from "./helpers.js";
+import { called, entries, MINUTE, own, type Rig, ROOM, rig, said } from "./helpers.js";
 
 const tail = (list: TranscriptEntry[]): TranscriptTail => ({
   session: ROOM,
@@ -186,5 +187,65 @@ describe("compactIfNeeded", () => {
     };
     expect(await compactIfNeeded(t, ROOM, { ...budget, summarise: raced })).toBeNull();
     expect(t.tail(ROOM).summary?.summary).toBe("別人先做了");
+  });
+});
+
+describe("compactIdle", () => {
+  const rigs: Rig[] = [];
+  afterEach(async () => {
+    for (const r of rigs.splice(0)) await r.store.close();
+  });
+  const budget = { thresholdTokens: 50, keepTokens: 20 };
+  const grow = (t: Rig["t"], session: string, lines: number) =>
+    t.append(
+      session,
+      Array.from({ length: lines }, (_, i) => said("Owen", `${i}`, { tokens: 10 })),
+      { context: null },
+    );
+
+  it("compacts only the sessions that are idle and over the threshold", async () => {
+    const r = await rig();
+    rigs.push(r);
+    grow(r.t, "quiet", 10);
+    grow(r.t, "small", 2);
+    r.clock.tick(2 * 60 * MINUTE);
+    grow(r.t, "busy", 10);
+    const summarise = vi.fn<Summarise>(async () => "摘要");
+    const done = await compactIdle(r.t, {
+      ...budget,
+      summarise,
+      idleMs: 30 * MINUTE,
+      now: r.clock.now(),
+    });
+    expect(done).toEqual(["quiet"]);
+    expect(r.t.tail("quiet").summary?.summary).toBe("摘要");
+    expect(r.t.tail("busy").summary).toBeNull();
+    expect(r.t.tail("small").summary).toBeNull();
+    // Again: nothing is over the threshold any more.
+    expect(
+      await compactIdle(r.t, { ...budget, summarise, idleMs: 30 * MINUTE, now: r.clock.now() }),
+    ).toEqual([]);
+  });
+
+  it("goes on with the other sessions when one fails", async () => {
+    const r = await rig();
+    rigs.push(r);
+    grow(r.t, "a", 10);
+    grow(r.t, "b", 10);
+    r.clock.tick(60 * MINUTE);
+    const failed: string[] = [];
+    const summarise: Summarise = async (_old, _previous) => {
+      if (r.t.tail("a").summary === null && failed.length === 0) throw new Error("down");
+      return "摘要";
+    };
+    const done = await compactIdle(r.t, {
+      ...budget,
+      summarise,
+      idleMs: 30 * MINUTE,
+      now: r.clock.now(),
+      failed: (session) => failed.push(session),
+    });
+    expect(failed).toHaveLength(1);
+    expect(done).toHaveLength(1);
   });
 });
