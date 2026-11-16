@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/memory",
   "version": "0.1.0",
-  "description": "memory: Long-term memory: consolidation, hybrid retrieval, privacy scopes, followups, memory tools and commands; facts: The V3 fact layer: EventLog, Observation adapters, Working Context and the DeliveryLedger; learning: Reflection and learning: continuous conversation compaction, her self-organized knowledge, feedback signals, lessons and daily reflection (modules `conversation`, `knowledge`, `reflect`); world: What she perceives (module `world`): presence, voice states, channel activity, her own status and salient changes",
+  "description": "memory: Long-term memory: consolidation, hybrid retrieval, privacy scopes, followups, memory tools and commands; facts: The V3 fact layer: EventLog, Observation adapters, Working Context and the DeliveryLedger; learning: Reflection and learning: continuous conversation compaction, her self-organized knowledge, feedback signals, lessons and daily reflection (modules `conversation`, `knowledge`, `reflect`); transcript: Session transcripts kept on disk in the model's message form, with compaction; world: What she perceives (module `world`): presence, voice states, channel activity, her own status and salient changes",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -21,6 +21,11 @@
       "@miyoria/source": "./learning/src/index.ts",
       "types": "./dist/learning/src/index.d.ts",
       "default": "./dist/learning/src/index.js"
+    },
+    "./transcript": {
+      "@miyoria/source": "./transcript/src/index.ts",
+      "types": "./dist/transcript/src/index.d.ts",
+      "default": "./dist/transcript/src/index.js"
     },
     "./world": {
       "@miyoria/source": "./world/src/index.ts",
