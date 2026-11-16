@@ -102,6 +102,7 @@ import {
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
+import { JobsHost, type JobsHostOptions } from "./jobs.js";
 import { Lane, type LaneHost, type LaneRun } from "./lane.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { resolvePlace } from "./places.js";
@@ -127,6 +128,8 @@ export interface SelfHostOptions {
   runner?: RunnerOptions;
   /** The transcripts; default: the store's (`StoreKey`, `transcriptTables`). */
   transcript?: TranscriptStore;
+  /** The sub-agent jobs (tests); the config is `[modules.agent.delegate]`. */
+  delegate?: JobsHostOptions;
   /** Her own initiative: its numbers, `remind_me`'s time parser, its tables. */
   initiative?: InitiativeOptions;
 }
@@ -174,6 +177,8 @@ export class SelfHost implements TextRunner {
   readonly prompt: HostPrompt;
   /** The voice conversations (`TextRunner.voice`). */
   readonly voice: VoiceHost;
+  /** The sub-agents; `null`: `[modules.agent.delegate] enabled = false`. */
+  readonly jobs: JobsHost | null;
   /** Her inbox, her schedules and what wakes her on her own (`initiative.ts`). */
   readonly initiative: Initiative;
   readonly #stopInitiative: () => void;
@@ -279,6 +284,20 @@ export class SelfHost implements TextRunner {
         sayIn: this.runner.sayIn,
       }),
     );
+    this.jobs = agent.config.delegate.enabled
+      ? new JobsHost(
+          agent,
+          {
+            transcript,
+            model,
+            quiet: options.quiet ?? null,
+            wake: (context, wake) => {
+              this.#place(context).lane.push({ type: "wake", wake });
+            },
+          },
+          options.delegate ?? {},
+        )
+      : null;
     const started = startInitiative(
       agent,
       {
@@ -356,6 +375,7 @@ export class SelfHost implements TextRunner {
     for (const place of this.#places.values()) place.lane.close();
     this.#places.clear();
     this.voice.stop();
+    this.jobs?.stop();
     this.#stopInitiative();
     this.#agent.tools.unregister("say");
   }

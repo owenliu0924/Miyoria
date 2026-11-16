@@ -2,6 +2,38 @@
 // her, a profile, and ports for everything outside (transcript, tools, model, prompt blocks,
 // guard, outlet). Not wired into the running system yet.
 
+export {
+  DayPool,
+  type DayState,
+  DEFAULT_DELEGATE_LIMITS,
+  type DelegateEvent,
+  type DelegateLimits,
+  Delegator,
+  type DelegatorPorts,
+  ENDED_STATES,
+  isEnded,
+  type JobRow,
+  type JobState,
+  type JobStore,
+  type JobUsage,
+  MAX_GOAL_CHARS,
+  MemoryJobStore,
+  noUsage,
+  PoolLedger,
+  type StartOutcome,
+  type StartSpec,
+} from "./delegate.js";
+export * as delegateTexts from "./delegate-texts.js";
+export {
+  askerOf,
+  DELEGATE,
+  DELEGATE_CANCEL,
+  DELEGATE_LIST,
+  DELEGATE_READ,
+  DELEGATE_TOOLS,
+  type DelegateToolDeps,
+  delegateTools,
+} from "./delegate-tools.js";
 export { composeGuards, permissiveGuard } from "./guard.js";
 export {
   type LimitName,
@@ -31,6 +63,23 @@ export { SAY, type SayDeps, type Spoken, sayTool } from "./say.js";
 export { asideLine, type ScreenedLine, StepText, type TextUnit } from "./screens.js";
 export { floorKind, type ServiceGuardOptions, serviceGuard } from "./service-guard.js";
 export { type HourSpend, SpendLedger, stepCost } from "./spend.js";
+export {
+  CALLABLE_KINDS,
+  fixedTools,
+  helperGuard,
+  helperPrompt,
+  isolatedTranscript,
+  isSubagentKind,
+  jobBudget,
+  jobTools,
+  KINDS,
+  type KindSpec,
+  noMouth,
+  profileOf,
+  SUBAGENT_KINDS,
+  type SubagentKind,
+  TOKENS_PER_USD,
+} from "./subagents.js";
 export { modelSummarise, summaryText } from "./summarise.js";
 export {
   addressedReason,

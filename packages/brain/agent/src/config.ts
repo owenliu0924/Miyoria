@@ -511,6 +511,32 @@ export const WorkConfigSchema = z.object({
 export type WorkConfig = z.output<typeof WorkConfigSchema>;
 
 /**
+ * `[modules.agent.delegate]`: the sub-agents of the phase-3 runner (docs/design/v5-brain.md, only
+ * with `runner = "self"`). The per-kind limits are in `packages/brain/self/src/subagents.ts`.
+ */
+export const DelegateConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Jobs running at once; more wait in the queue. */
+  max_running: z.number().int().min(1).max(4).default(2),
+  /** Jobs waiting at most; a start past it is refused (she hears so). */
+  max_queued: z.number().int().nonnegative().default(4),
+  /** What all sub-agents together may spend in a day, from the router's price table (USD). */
+  daily_usd: z.number().positive().default(3),
+  /** The same cap in tokens, for calls of a model that has no price. */
+  daily_tokens: z.number().int().positive().default(9_000_000),
+  /** What the nightly reflection may spend in a day (USD). */
+  reflect_daily_usd: z.number().positive().default(0.5),
+  reflect_daily_tokens: z.number().int().positive().default(1_500_000),
+  /** Characters of a job's summary she is told when it ends; the rest is for `delegate_read`. */
+  result_chars: z.number().int().positive().default(1500),
+  /** Characters one `delegate_read` gives. */
+  read_chars: z.number().int().positive().default(8000),
+  /** Ended jobs kept for the lists and `delegate_read`. */
+  keep_ended: z.number().int().nonnegative().default(20),
+});
+export type DelegateConfig = z.output<typeof DelegateConfigSchema>;
+
+/**
  * `[modules.agent.corrections]`: the after-the-fact corrections of her output that v4 §4.5 steps
  * 2 to 4 retire once they are measured (docs/design/v4-patches.md says what count over what
  * period justifies switching each off). Every one is on by default; switching one off removes
@@ -617,6 +643,8 @@ export const AgentConfigSchema = z.object({
   mainline: MainLineConfigSchema.prefault({}),
   /** The work lane (v4 §4.3). */
   work: WorkConfigSchema.prefault({}),
+  /** The sub-agents (`runner = "self"`). */
+  delegate: DelegateConfigSchema.prefault({}),
   /** The after-the-fact corrections that may be switched off once measured (v4 §4.5). */
   corrections: CorrectionsConfigSchema.prefault({}),
   /** Offer registered tools to the model. */

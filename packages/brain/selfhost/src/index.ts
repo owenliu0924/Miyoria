@@ -37,6 +37,17 @@ export {
   initiativeTables,
   type ScheduleRow,
 } from "./initiative-store.js";
+export {
+  DELEGATE_OWNER,
+  JobsHost,
+  type JobsHostDeps,
+  type JobsHostOptions,
+  kindOfWork,
+  type RunReflectDeps,
+  runReflect,
+  settingsJobStore,
+  taskEventOf,
+} from "./jobs.js";
 export { Lane, type LaneHost, type LaneInput, type LaneRun } from "./lane.js";
 export { MouthOutlet, type Settled, Settlements, submitTyping, TYPING_TTL_MS } from "./outlet.js";
 export { type PlaceBook, resolvePlace } from "./places.js";

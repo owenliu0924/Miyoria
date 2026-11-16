@@ -705,6 +705,21 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 #          "workspace_run", "workspace_save_script", "skill_list", "skill_read", "skill_write",
 #          "notebook_read", "notebook_write"]
 
+# 小幫手:她用 delegate 交代出去的工作(research 上網查、curator 整理筆記本),在新的回合執行器上跑
+# ([modules.agent] runner = "self")。work_start、work_list、work_steer 在那時也改成開這些工作。
+# 小幫手不會講話、不花錢、不寫工作區;結果回到交代的那個地方叫她。額度都在這裡,和她自己的額度分開記
+# [modules.agent.delegate]
+# enabled = true
+# max_running = 2                # 同時跑幾個(1 到 4);多的排隊
+# max_queued = 4                 # 最多排幾個,更多的 delegate 被拒絕(她會知道)
+# daily_usd = 3                  # 所有小幫手一天(以一天的開始算)加起來最多花多少美元,依模型價目表;用完就不再開
+# daily_tokens = 9000000         # 模型沒有價目時改用 token 算的一天上限
+# reflect_daily_usd = 0.5        # 每晚的反思一天最多花多少美元,另外記
+# reflect_daily_tokens = 1500000 # 反思在模型沒有價目時的 token 上限
+# result_chars = 1500            # 結果叫醒她時放進去的字數;更長的用 delegate_read 讀
+# read_chars = 8000              # delegate_read 一次給她的字數
+# keep_ended = 20                # 結束的工作留幾個給 delegate_list 和面板
+
 # 事後修正:v4 §4.5 的第 2 到 4 步,量測夠了才能退掉的、對她輸出的修補。四個預設都開;關掉一個只是拿掉
 # 那一個修正,外層的牆(主人規則、行動閘門、送達帳本、輸出審查、Floor 的限額)不受影響。
 # 什麼時候可以關:看面板「評測」頁每個修正被觸發的次數(同一個 turn 指標),觸發數在足夠長的期間內夠低

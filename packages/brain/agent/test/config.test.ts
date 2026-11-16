@@ -1,6 +1,6 @@
 import type { ContextKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { MainLineConfigSchema, WorkConfigSchema } from "../src/config.js";
+import { DelegateConfigSchema, MainLineConfigSchema, WorkConfigSchema } from "../src/config.js";
 import {
   AgentConfigSchema,
   activenessFor,
@@ -82,6 +82,7 @@ describe("config", () => {
       history_after_fold: 25,
       mainline: MainLineConfigSchema.parse({}),
       work: WorkConfigSchema.parse({}),
+      delegate: DelegateConfigSchema.parse({}),
       history_limit: 240,
       prompt_history: 30,
       time_gap_ms: 1_800_000,

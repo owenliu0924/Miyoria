@@ -76,6 +76,8 @@ export {
   CHANNEL_MODES,
   type ChannelMode,
   ChannelModeSchema,
+  type DelegateConfig,
+  DelegateConfigSchema,
   defaultAgentConfig,
   type FilesConfig,
   FilesConfigSchema,
