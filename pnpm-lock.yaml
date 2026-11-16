@@ -452,6 +452,9 @@ importers:
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../llm
+      '@miyoria/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -471,9 +474,6 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@miyoria/memory':
-        specifier: workspace:*
-        version: link:../memory
       '@miyoria/stage':
         specifier: workspace:*
         version: link:../stage
