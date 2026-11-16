@@ -83,17 +83,16 @@ reflect = "high"
 # bodies = true              # false = 一律不記訊息和回覆內容
 
 # ---- 長期記憶 --------------------------------------------------------------
-# DeepSeek 沒有 embeddings;不設也能用(全文檢索 + 新舊 + 重要度)。
-# 有 Ollama / LM Studio / OpenAI 等 /embeddings 端點時可以打開:
-# [memory.embedding]
-# provider = "openai-compatible"
-# base_url = "http://127.0.0.1:11434/v1"
-# model = "bge-m3"
-# 或在這台機器上用 CPU 跑多語模型,成員說的話不會離開這台機器。不搶 GPU;需要另外安裝
-# @huggingface/transformers。下面是 Harrier-OSS-v1 270M(fp16):模型檔自己放進 models_dir
-# (models_dir/onnx-community/harrier-oss-v1-270m-ONNX/ 底下的 config.json、tokenizer.json、
-# tokenizer_config.json 和 onnx/model_fp16.onnx、onnx/model_fp16.onnx_data),不連網路下載。
-# 換成 0.6B 只改 model(= "onnx-community/harrier-oss-v1-0.6b-ONNX")和下面的 min_vector(0.55)。
+# embedding:讓記憶(情節、事實)和筆記本的每一行也能用「意思」找,不只用共同的字。預設關著
+# (provider = "none":全文檢索 + 新舊 + 重要度,和沒有這段一樣)。
+# 選定的是 Harrier-OSS-v1 270M(fp16),在這台機器的 CPU 上跑,成員說的話不會離開這台機器,不搶 GPU。
+# 要開的話:
+#   1. 裝執行環境(一次):pnpm --filter @miyoria/memory add @huggingface/transformers
+#   2. 模型檔放進 models_dir/onnx-community/harrier-oss-v1-270m-ONNX/:config.json、tokenizer.json、
+#      tokenizer_config.json、onnx/model_fp16.onnx、onnx/model_fp16.onnx_data(下面 allow_download = false,不連網路)
+#   3. 把下面這段取消註解,重開 Core。舊的記憶和筆記在背景補向量(每兩分鐘一批);
+#      `miyoria memory rebuild --apply` 最後也會一次補完並說還剩幾行
+# 換成 0.6B 只改 model(= "onnx-community/harrier-oss-v1-0.6b-ONNX")和 [modules.memory] 的 min_vector(0.55)。
 # 換模型後舊的向量不再拿來比,背景會用新模型重算。
 # [memory.embedding]
 # provider = "local"             # none(預設,不用 embedding)| local | openai-compatible
@@ -106,6 +105,11 @@ reflect = "high"
 # allow_download = false         # false = 只用本機已有的檔案,不連網路(連不上 Hugging Face 時就這樣用)
 # batch_size = 1                 # CPU 上一次一句最快
 # timeout_secs = 30              # 第一次呼叫要先載入模型
+# 不在這台機器上跑的話,也可以接 Ollama / LM Studio / OpenAI 這類 /embeddings 端點(取代上面那段):
+# [memory.embedding]
+# provider = "openai-compatible"
+# base_url = "http://127.0.0.1:11434/v1"
+# model = "bge-m3"
 
 # ---- MCP 工具 --------------------------------------------------------------
 # [mcp.servers.files]
@@ -951,6 +955,8 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # min_score = 0.25               # 低於這個分數不回想(原本 0.05,幾乎什麼都放)
 # min_vector = 0.5               # 沒有共同的字時,向量至少這麼像(cosine)才算相關,也是向量分數從 0 起算的地方。
 #                                # 依模型:Harrier 270M 0.5、Harrier 0.6B 和 bge-m3 0.55、Qwen3 0.45、e5-small 約 0.85
+# notes_vector_wait_ms = 500     # 開了 embedding 時,找筆記本最多等這句的向量這麼久,等不到就只用關鍵字(晚到的留給下一次)
+# notes_vector_voice_wait_ms = 150 # 語音回合等的時間;要比 [modules.agent.voice] live_context_ms(400)短很多
 # episode_recency_tau_days = 1.5 # 事件記憶(episode)的新近度衰減:小時到幾天,不是幾週
 # state_note_hours = 12          # 「已經開台」「正在下載」這類現在式的筆記多久後失效(0 = 不失效)
 # followup_max_age_hours = 6     # 追問過了時間這麼久沒人提就自動關掉;先挑最新的(0 = 不自動關)

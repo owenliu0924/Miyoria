@@ -175,6 +175,51 @@ describe("miyoria memory rebuild", () => {
     expect(text()).toContain("段落:0");
   });
 
+  it("ends --apply with vectors for her documents' lines, and says how many wait", async () => {
+    const store = await SqliteStore.open(db, { plugins: [notesTables, memoryTables] });
+    store.plugin(notesTables).add(
+      "topic:拉麵",
+      {
+        section: "重點",
+        text: "車站前的拉麵很好吃",
+        provenance: "observed",
+        scope: { type: "public" },
+      },
+      { author: "tool" },
+    );
+    await store.close();
+    const embedded: string[] = [];
+    const embedder = {
+      name: "fake",
+      enabled: true,
+      embeddingModel: "fake|1",
+      embed: async (texts: readonly string[]) => {
+        embedded.push(...texts);
+        return texts.map((t) => [t.length, 1]);
+      },
+    };
+    const seams = { model: async () => model(PRICE).model, held: free };
+
+    const withEmbedder = { ...seams, embedder: async () => embedder };
+    await rebuildCommand(cfg, { ...options, file: db }, withEmbedder);
+    expect(text()).toContain("向量:1 行還沒有(共 1 行)");
+    expect(embedded).toEqual([]);
+
+    out = [];
+    await rebuildCommand(cfg, { ...options, file: db, apply: true }, withEmbedder);
+    expect(text()).toContain("向量:補上 1 行");
+    expect(embedded).toContain("車站前的拉麵很好吃");
+
+    out = [];
+    await rebuildCommand(cfg, { ...options, file: db }, withEmbedder);
+    expect(text()).toContain("向量:0 行還沒有(共 1 行)");
+
+    // `[memory.embedding]` not set: the report says so.
+    out = [];
+    await rebuildCommand(cfg, { ...options, file: db }, seams);
+    expect(text()).toContain("向量:沒開");
+  });
+
   it("rejects a bad --since and a bad --max-usd", async () => {
     const seams = { model: async () => model(PRICE).model, held: free };
     await expect(

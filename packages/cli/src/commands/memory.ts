@@ -10,6 +10,9 @@
 // - `--apply` is refused while another process holds the database file open (a Core running on
 //   it), unless `--force`. That check is the operating system's view of the file (`heldFiles`),
 //   not a lock of the Core's own.
+// - With `[memory.embedding]` on, `--apply` ends by giving every line of her documents a vector
+//   (`rebuildVectors`), and the pass finds related documents by meaning too; either way the
+//   report says how many lines still wait for one (the running Core's backfill does the rest).
 //
 // The notes package is imported by relative path (and lazily): the CLI has no dependency on
 // `@miyoria/memory` yet.
@@ -29,7 +32,7 @@ import {
   PricingSchema,
   parseModelRef,
 } from "@miyoria/llm/llm";
-import { type Config, configureLogging } from "@miyoria/runtime/kernel";
+import { type Config, configureLogging, parseSection } from "@miyoria/runtime/kernel";
 import { toTimestamp } from "@miyoria/types";
 import { bold, dim, note, ok, println, section, warn } from "../ui.js";
 import { configuredDatabase } from "./db.js";
@@ -43,6 +46,8 @@ export class MemoryCommandError extends Error {
 export const DEFAULT_MAX_USD = 2;
 /** The model purpose of the segment pass. */
 export const REBUILD_PURPOSE = "summarizer";
+/** How long the pass waits for a query's vector in a rebuild. */
+const REBUILD_VECTOR_WAIT_MS = 10_000;
 
 /** The model of a run: what answers, and what a token costs (`null`: no price in the config). */
 export interface RebuildModel {
@@ -63,10 +68,21 @@ export interface RebuildCommandOptions {
   force: boolean;
 }
 
-/** What tests replace: the model, and the check for a process holding the file. */
+/** What makes vectors for the end of a run (`Embedder` of the memory package). */
+export interface RebuildEmbedder {
+  readonly name: string;
+  readonly enabled: boolean;
+  readonly embeddingModel?: string;
+  embed(texts: readonly string[], signal?: AbortSignal): Promise<number[][]>;
+  embedQuery?(texts: readonly string[], signal?: AbortSignal): Promise<number[][]>;
+  close?(): Promise<void>;
+}
+
+/** What tests replace: the model, the check for a process holding the file, the embedder. */
 export interface RebuildSeams {
   model?: (config: Config, apply: boolean) => Promise<RebuildModel>;
   held?: (files: readonly string[]) => string[];
+  embedder?: (config: Config) => Promise<RebuildEmbedder>;
 }
 
 /** Silences the store's migration log lines in the middle of the report. */
@@ -77,7 +93,22 @@ function quietLogs(): void {
 const loadNotes = async () => ({
   ...(await import("../../../memory/notes/src/rebuild.js")),
   ...(await import("../../../memory/notes/src/store.js")),
+  ...(await import("../../../memory/notes/src/vectors.js")),
+  ...(await import("../../../memory/notes/src/rank.js")),
 });
+
+/** The embedder `[memory.embedding]` names (nothing is loaded until it embeds). */
+async function embedderOfConfig(config: Config): Promise<RebuildEmbedder> {
+  const { EmbeddingConfigSchema } = await import("../../../memory/memory/src/config.js");
+  const { buildEmbedder } = await import("../../../memory/memory/src/embed.js");
+  return buildEmbedder(config.get("memory.embedding", EmbeddingConfigSchema));
+}
+
+/** `[modules.memory]`, for how the pass ranks related documents by meaning. */
+async function memoryConfigOf(config: Config) {
+  const { MemoryConfigSchema } = await import("../../../memory/memory/src/config.js");
+  return parseSection(MemoryConfigSchema, config.module("memory").config ?? {}, "modules.memory");
+}
 
 /**
  * The router of the config, as the Core builds it (the profile's `[llm.purposes]` over the global
@@ -176,8 +207,18 @@ export async function rebuildCommand(
   const { SqliteStore } = await import("@miyoria/store");
   const { memoryTables } = await import("../../../memory/memory/src/tables.js");
   const store = await SqliteStore.open(path, { plugins: [notes.notesTables, memoryTables] });
+  const embedder = await (seams.embedder ?? embedderOfConfig)(config);
   try {
     const store_ = store.plugin(notes.notesTables);
+    const vectorModel = embedder.enabled ? notes.modelOf(embedder) : null;
+    /** How many lines wait for a vector, as one line of the report. */
+    const waitingLine = () => {
+      if (vectorModel === null) {
+        return "  向量:沒開([memory.embedding] provider = none),筆記只用關鍵字找";
+      }
+      const c = store_.vectorCounts(vectorModel);
+      return `  向量:${count(c.waiting)} 行還沒有(共 ${count(c.lines)} 行)${dim(`(${vectorModel})`)}`;
+    };
     const cursors = store_.cursors();
     if (cursors === null) throw new MemoryCommandError("這個資料庫沒有事件紀錄,沒有東西可以重建");
     const plan = await notes.planRebuild(store.events, cursors, { since });
@@ -198,6 +239,7 @@ export async function rebuildCommand(
     println(
       `  預估費用:${estimate.usd === null ? "價格未知" : usd(estimate.usd)}${model.label === "" ? "" : dim(`(${model.label})`)}`,
     );
+    println(waitingLine());
     if (!options.apply) {
       println();
       println(
@@ -216,10 +258,20 @@ export async function rebuildCommand(
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.once("SIGINT", stop);
+    const index = embedder.enabled ? new notes.NotesIndex({ notes: store_, embedder }) : null;
     try {
+      const memory = await memoryConfigOf(config);
+      const search = new notes.NotesSearch({
+        notes: store_,
+        index,
+        ranking: () => notes.rankingOf(memory),
+        // Nobody waits on a rebuild: the first query also waits for the model to load.
+        wait: () => ({ text: REBUILD_VECTOR_WAIT_MS, voice: REBUILD_VECTOR_WAIT_MS }),
+      });
       const report = await notes.applyRebuild(plan, {
         router: model.router,
         notes: store_,
+        search,
         episodes: notes.rebuildEpisodeSink(store, profile, store_.resolver(), plan),
         cursor: cursors,
         price: model.price,
@@ -238,6 +290,25 @@ export async function rebuildCommand(
       println(
         `  模型 ${report.usage.calls} 次、輸入 ${count(report.usage.prompt_tokens)}、輸出 ${count(report.usage.completion_tokens)} tokens、花費 ${usd(report.usd)}`,
       );
+      if (index !== null && (report.status === "done" || report.status === "budget")) {
+        const v = await notes.rebuildVectors(index, {
+          signal: controller.signal,
+          onBatch: (done, waiting) => println(dim(`  向量 ${done} 行,還有 ${waiting} 行`)),
+        });
+        const why =
+          v.status === "off"
+            ? "embedding 沒辦法載入(原因在上面的 log)"
+            : v.status === "stalled"
+              ? "embedding 出錯(原因在上面的 log)"
+              : v.status === "aborted"
+                ? "中斷"
+                : "";
+        println(
+          `  向量:補上 ${count(v.done)} 行${v.waiting > 0 ? `,還有 ${count(v.waiting)} 行沒有${why === "" ? "" : `(${why};Core 開著時背景會再補)`}` : ""}`,
+        );
+      } else {
+        println(waitingLine());
+      }
       if (report.status === "done") ok("完成");
       else if (report.status === "budget") warn("到上限停下來;再跑一次會從這裡繼續");
       else if (report.status === "aborted") warn("中斷;再跑一次會從這裡繼續");
@@ -248,8 +319,10 @@ export async function rebuildCommand(
       }
     } finally {
       process.off("SIGINT", stop);
+      index?.close();
     }
   } finally {
+    await embedder.close?.();
     store.close();
   }
 }
