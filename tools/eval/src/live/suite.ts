@@ -29,6 +29,8 @@ export interface SuiteResult {
   items: unknown[];
   /** Items the subject cannot be shown, with the reason; never counted as pass or fail. */
   unsupported: { id: string; reason: string }[];
+  /** Lines the report prints under the suite's own (a table of the suite's parts). */
+  report?: string[];
   /** The run's limit was reached: what is here is what finished before it. */
   stopped?: "budget";
   /** The suite did not run, and why. */

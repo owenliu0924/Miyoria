@@ -94,4 +94,35 @@ export const FAKE_TOOL_SPECS: Readonly<Record<string, FakeToolSpec>> = {
       id: { type: "string", description: "cancel 時要取消的提醒" },
     }),
   },
+  // The tools below are answered by the `corrections` suite, not by the fake world (tasks/world.ts).
+  voice_join: {
+    description: "進語音頻道。",
+    parameters: object({
+      guild: { type: "string", description: "伺服器 id(省略 = 你現在所在的伺服器)" },
+      channel: { type: "string", description: "語音頻道的名稱或 id(省略 = 被叫去的那個語音頻道)" },
+    }),
+  },
+  voice_leave: {
+    description: "離開現在所在的語音頻道。",
+    parameters: object({}),
+  },
+  game_start: {
+    description: "開始玩遊戲。",
+    parameters: object(
+      { game: { type: "string", enum: ["minecraft", "osu"], description: "遊戲" } },
+      ["game"],
+    ),
+  },
+  directive_add: {
+    description:
+      "有人要你從現在起遵守一條規則時用(例如「不要玩 Minecraft」「這一小時不要開台」)。" +
+      "系統會依對方的帳號決定這句話算不算數;你不用判斷權限。",
+    parameters: object(
+      {
+        text: { type: "string", description: "規則,用對方的話" },
+        minutes: { type: "integer", description: "只管這麼久(分鐘);省略 = 直到解除" },
+      },
+      ["text"],
+    ),
+  },
 };

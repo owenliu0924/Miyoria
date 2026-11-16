@@ -513,7 +513,7 @@ describe("a live run", () => {
 
   it("keeps `memory` as a slot until a runner is registered from outside", async () => {
     const registry = defaultSuites();
-    expect(registry.names()).toEqual(["persona", "tools", "relationship", "memory"]);
+    expect(registry.names()).toEqual(["persona", "tools", "relationship", "memory", "corrections"]);
     expect(runnableSuites(registry)).toEqual(["persona", "tools", "relationship"]);
     const { judge, meter } = setup(() => "{}");
     const base = { subject: twoVoices, judge, meter, registry, suites: ["memory"], persona: "p" };

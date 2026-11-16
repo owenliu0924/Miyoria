@@ -267,8 +267,8 @@ describe("subject current", () => {
       tools,
       call: () => ({ ok: true, text: "" }),
     });
-    expect(subject.unsupported({ ...base, tools: env(["web_search", "voice_join"]) })).toBe(
-      "no fake tool definition for voice_join",
+    expect(subject.unsupported({ ...base, tools: env(["web_search", "stream_start"]) })).toBe(
+      "no fake tool definition for stream_start",
     );
     expect(subject.unsupported({ ...base, address: "dm" })).not.toBeNull();
     // Every tool of the ten tasks has a definition: none of them is unsupported.

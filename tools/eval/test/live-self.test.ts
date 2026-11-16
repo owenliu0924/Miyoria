@@ -180,8 +180,8 @@ describe("subject self", () => {
       tools,
       call: () => ({ ok: true, text: "" }),
     });
-    expect(subject.unsupported({ ...base, tools: env(["voice_join"]) })).toBe(
-      "no fake tool definition for voice_join",
+    expect(subject.unsupported({ ...base, tools: env(["stream_start"]) })).toBe(
+      "no fake tool definition for stream_start",
     );
     expect(subject.unsupported({ ...base, address: "dm" })).not.toBeNull();
     for (const task of TOOL_TASKS) {

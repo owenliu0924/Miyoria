@@ -6,6 +6,7 @@ import type { Judge } from "./judge.js";
 import type { Meter } from "./meter.js";
 import type { ModelUsage, Subject } from "./subject.js";
 import { SuiteRegistry, type SuiteResult } from "./suite.js";
+import { runCorrections } from "./suites/corrections.js";
 import { runPersona } from "./suites/persona.js";
 import { runRelationship } from "./suites/relationship.js";
 import { runTools } from "./suites/tools.js";
@@ -25,12 +26,16 @@ export function defaultSuites(): SuiteRegistry {
     .register("persona", runPersona)
     .register("tools", (ctx) => runTools(ctx))
     .register("relationship", (ctx) => runRelationship(ctx))
-    .register("memory", null);
+    .register("memory", null)
+    .register("corrections", (ctx) => runCorrections(ctx));
 }
 
-/** The suites a run takes when none is named: the ones that have a runner. */
+/** Suites that run only when named: `corrections` is for comparing brains, not the nightly. */
+const OPT_IN: ReadonlySet<string> = new Set(["corrections"]);
+
+/** The suites a run takes when none is named: the ones that have a runner, but not the opt-in ones. */
 export function runnableSuites(registry: SuiteRegistry): string[] {
-  return registry.names().filter((n) => registry.get(n) !== null);
+  return registry.names().filter((n) => registry.get(n) !== null && !OPT_IN.has(n));
 }
 
 export interface LiveRunOptions {
@@ -148,6 +153,7 @@ export function formatRun(run: LiveRun): string {
       ...(s.stopped ? ["stopped: budget"] : []),
     ];
     lines.push(`  ${s.suite.padEnd(13)} ${numbers || "-"}  (${notes.join("; ")})`);
+    for (const row of s.report ?? []) lines.push(`    ${row}`);
   }
   const u = run.usage;
   lines.push(
