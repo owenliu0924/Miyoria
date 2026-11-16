@@ -56,7 +56,9 @@ const config = defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // Core serves everything in `dist` to anyone, source maps included: they are written only
+    // when asked for (`MIYORIA_PANEL_SOURCEMAP=1 pnpm build`), for debugging a build.
+    sourcemap: process.env.MIYORIA_PANEL_SOURCEMAP === "1",
     target: "es2022",
     // No manualChunks: splitting React from the libraries that import it produced circular chunks
     // (React's exports were read before its chunk had run, so the page stayed blank).
