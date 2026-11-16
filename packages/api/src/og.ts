@@ -28,7 +28,7 @@ import {
   originOf,
   pageMeta,
 } from "./meta.js";
-import { clientKey, tooMany } from "./public.js";
+import { tooMany } from "./public.js";
 import { param, type Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -311,7 +311,7 @@ async function cardImage(state: ApiState, c: ApiContext): Promise<Response> {
   const key = `${card.serial}:${version}`;
   let png = cache.get(key);
   if (!png) {
-    const wait = state.publicSide.admitCardCheck(clientKey(c));
+    const wait = state.publicSide.admitCardCheck(state.publicSide.client(c));
     if (wait !== null) return tooMany(wait);
     try {
       png = await oneAtATime(state, () => renderCardImage(card, state.panelDir));

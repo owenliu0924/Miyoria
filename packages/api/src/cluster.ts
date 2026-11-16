@@ -42,7 +42,6 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { toTimestamp } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { clientKey } from "./public.js";
 import { type ApiContext, type ApiState, actorOf, toJson } from "./state.js";
 
 const log = getLogger("api.cluster");
@@ -315,7 +314,7 @@ async function join(
   body: { code: string; name: string },
 ): Promise<ClusterJoinResult> {
   // First, before anything else: an address over its limit gets nothing but the 429.
-  const wait = state.publicSide.admitJoin(clientKey(c));
+  const wait = state.publicSide.admitJoin(state.publicSide.client(c));
   if (wait !== null) throw ApiError.tooMany(wait);
   const cluster = clusterOf(state);
   let made: ReturnType<ClusterService["hosts"]["redeem"]>;

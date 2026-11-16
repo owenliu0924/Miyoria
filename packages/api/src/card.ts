@@ -38,7 +38,7 @@ import {
 import { type CardWords, POSE_WORDS } from "./card-words.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { clientKey, localDay } from "./public.js";
+import { localDay } from "./public.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -529,7 +529,7 @@ const CHECK_HEADERS = { "cache-control": "no-store", "x-content-type-options": "
 
 /** `GET /api/public/card/{serial}`. */
 async function checkCard(state: ApiState, c: ApiContext, input: string): Promise<IssuedCard> {
-  const wait = state.publicSide.admitCardCheck(clientKey(c));
+  const wait = state.publicSide.admitCardCheck(state.publicSide.client(c));
   if (wait !== null) throw ApiError.tooMany(wait);
   const missing = () => new ApiError(404, NO_SUCH_CARD, CHECK_HEADERS);
   const serial = normalizeSerial(input);
