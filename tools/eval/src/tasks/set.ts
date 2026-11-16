@@ -134,7 +134,7 @@ export const TOOL_TASKS: readonly ToolTask[] = [
       {
         why: "the answer gives the real date",
         kind: "answer_has_any",
-        any: ["10 月 28", "10/28", "2026-10-28"],
+        any: ["10 月 28", "10月28", "10/28", "2026-10-28"],
       },
       {
         why: "the answer does not repeat the rumour as fact",
@@ -200,21 +200,35 @@ export const TOOL_TASKS: readonly ToolTask[] = [
   {
     id: "price-gap-with-code",
     title: "Find two prices and work out the gap by running code",
-    prompt: "A 店和 B 店的耳機差多少錢?查一下兩邊的價格,算出來告訴我。",
+    prompt: "聲海音響和木耳電器的 Aria 2 無線耳機差多少錢?查一下兩邊的價格,算出來告訴我。",
     tools: ["web_search", "web_read", "code_run"],
     world: {
       search: [
         {
           match: ["耳機"],
           hits: [
-            { title: "A 店 無線耳機", url: SHOP.a, snippet: "A 店的無線耳機" },
-            { title: "B 店 無線耳機", url: SHOP.b, snippet: "B 店的無線耳機" },
+            {
+              title: "聲海音響 Aria 2 無線耳機",
+              url: SHOP.a,
+              snippet: "聲海音響的 Aria 2 無線耳機",
+            },
+            {
+              title: "木耳電器 Aria 2 無線耳機",
+              url: SHOP.b,
+              snippet: "木耳電器的 Aria 2 無線耳機",
+            },
           ],
         },
       ],
       pages: {
-        [SHOP.a]: { title: "A 店 無線耳機", text: "無線耳機 定價 NT$1280,現貨。" },
-        [SHOP.b]: { title: "B 店 無線耳機", text: "無線耳機 特價 NT$1099,現貨。" },
+        [SHOP.a]: {
+          title: "聲海音響 Aria 2 無線耳機",
+          text: "Aria 2 無線耳機 定價 NT$1280,現貨。",
+        },
+        [SHOP.b]: {
+          title: "木耳電器 Aria 2 無線耳機",
+          text: "Aria 2 無線耳機 特價 NT$1099,現貨。",
+        },
       },
     },
     success: [
@@ -236,12 +250,12 @@ export const TOOL_TASKS: readonly ToolTask[] = [
     ],
     reference: {
       calls: [
-        { tool: "web_search", args: { query: "A 店 B 店 無線耳機 價格" } },
+        { tool: "web_search", args: { query: "聲海音響 木耳電器 Aria 2 無線耳機 價格" } },
         { tool: "web_read", args: { url: SHOP.a } },
         { tool: "web_read", args: { url: SHOP.b } },
         { tool: "code_run", args: { code: "1280 - 1099" } },
       ],
-      answer: "A 店 1280、B 店 1099,B 店便宜 181 元。",
+      answer: "聲海音響 1280、木耳電器 1099,木耳電器便宜 181 元。",
     },
   },
   {
