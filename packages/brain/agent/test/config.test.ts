@@ -75,6 +75,7 @@ describe("config", () => {
 
   it("defaults", () => {
     expect(defaultAgentConfig()).toEqual({
+      runner: "mainline",
       debounce_ms: 800,
       typing_extend_ms: 2500,
       max_debounce_ms: 4000,

@@ -24,6 +24,7 @@ export {
   type AttentionInput,
   ambientScale,
   answersHer,
+  asideOf,
   assess,
   conversing,
   decide,
@@ -111,8 +112,10 @@ export { type FileCandidate, fileParts, selectFiles } from "./files.js";
 export {
   type CallKind,
   callKind,
+  callsHer,
   type FocusSelection,
   focusVerb,
+  oneCaller,
   selectFocus,
   TurnFocusBoard,
   type TurnFocusInit,
@@ -136,6 +139,7 @@ export {
   levelHint,
   modeDescription,
   modeLabel,
+  paceMs,
 } from "./levels.js";
 export { ACTING_ALONE, FALLBACK_LINES, MainLine, MainTurn } from "./mainline/main.js";
 export { COMMIT_SPEC, STEER_SPEC, slimTool } from "./mainline/output.js";
@@ -144,6 +148,7 @@ export {
   entryCost,
   estimateTokens,
   exampleDialogues,
+  examplesBlock,
   fitHistory,
   historyWindow,
   mainMessages,
@@ -157,6 +162,7 @@ export {
   type WindowBudget,
 } from "./mainline/prompt.js";
 export { linkMentions, type MentionTarget } from "./mentions.js";
+export { agentTurns, CorrectionTally } from "./metrics.js";
 export { AgentModule } from "./module.js";
 export { PersonaHandle, PersonaHandleKey } from "./persona.js";
 export {
@@ -183,7 +189,14 @@ export {
   type TranscriptOptions,
   transcriptLine,
   VOICE_PRESENT_TITLE,
+  whenAndWhere,
 } from "./prompt.js";
+export {
+  Agent,
+  type TextLineMarks,
+  type TextRunner,
+  type TextRunnerFactory,
+} from "./runtime.js";
 export { toTraditional } from "./script.js";
 export {
   activityBlock,

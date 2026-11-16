@@ -600,6 +600,9 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # notice_ttl_ms = 600000         # 通知多久後就不用再告訴她
 
 [modules.agent]
+# 文字對話(頻道、討論串、私訊)由誰回:mainline(現在的回合)或 self(第 3 階段的新回合跑者,
+# 開發中)。語音、她自己起頭的話和工作車道兩種都走現在的路。只在啟動時讀一次
+# runner = "mainline"
 # 文字頻道的聊天等級:off(關閉)| mention-only(只回提及)| quiet(安靜)| normal(一般)| lively(活躍)
 # (always = 每則都回,測試用)。等級是上限:她在等級之內自己決定要多話,
 # 有人請她安靜點她也會自己調。沒設定的頻道用 profile 的 default_channel_mode(預設 quiet)。

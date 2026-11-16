@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/brain",
   "version": "0.1.0",
-  "description": "agent: Cognition core: sessions, attention, prompt assembly, generation and expression parsing; arbiter: Arbiter: the one place that decides whether she speaks or acts now, and her ledger; activity: ActivityManager: the one owner of what she is doing (voice presence, broadcast, activity); directive: the owner's standing rules for what she may do; self: the phase-3 turn runner: one run, its profiles, prompt layout, guard, loop and triage",
+  "description": "agent: Cognition core: sessions, attention, prompt assembly, generation and expression parsing; arbiter: Arbiter: the one place that decides whether she speaks or acts now, and her ledger; activity: ActivityManager: the one owner of what she is doing (voice presence, broadcast, activity); directive: the owner's standing rules for what she may do; self: the phase-3 turn runner: one run, its profiles, prompt layout, guard, loop and triage; selfhost: the text conversations on that runner, wired to today's services",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -31,6 +31,11 @@
       "@miyoria/source": "./self/src/index.ts",
       "types": "./dist/self/src/index.d.ts",
       "default": "./dist/self/src/index.js"
+    },
+    "./selfhost": {
+      "@miyoria/source": "./selfhost/src/index.ts",
+      "types": "./dist/selfhost/src/index.d.ts",
+      "default": "./dist/selfhost/src/index.js"
     }
   },
   "files": [
@@ -45,6 +50,7 @@
     "@miyoria/commands": "workspace:*",
     "@miyoria/gate": "workspace:*",
     "@miyoria/llm": "workspace:*",
+    "@miyoria/memory": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",
@@ -53,7 +59,6 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@miyoria/memory": "workspace:*",
     "@miyoria/stage": "workspace:*",
     "@types/node": "^24.19.2",
     "typescript": "~5.9.3",

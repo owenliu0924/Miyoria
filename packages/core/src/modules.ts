@@ -15,8 +15,9 @@ import { ApiModule, avatarEmotions, EvalModule } from "@miyoria/api";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
 import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
-import { ArbiterModule } from "@miyoria/brain/arbiter";
+import { ArbiterConfigSchema, ArbiterModule, type LocalTime } from "@miyoria/brain/arbiter";
 import { DirectiveModule } from "@miyoria/brain/directive";
+import { selfHost } from "@miyoria/brain/selfhost";
 import { ClusterModule } from "@miyoria/cluster";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
@@ -134,6 +135,12 @@ export function authOwners(config: Config): string[] {
   return parsed.success ? parsed.data.owners : [];
 }
 
+/** `[modules.arbiter]`'s clock: the quiet hours the text runner's guard keeps. */
+export function arbiterClock(config: Config): LocalTime | null {
+  const parsed = ArbiterConfigSchema.safeParse(config.module(ArbiterModule.ID).config ?? {});
+  return parsed.success ? parsed.data : null;
+}
+
 async function coreModules({
   config,
   profile,
@@ -157,7 +164,8 @@ async function coreModules({
     new VoiceLinkModule(),
     new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),
     new SchedulerModule(),
-    new AgentModule(profile),
+    // Text conversations go to the new turn runner only with `[modules.agent] runner = "self"`.
+    new AgentModule(profile).withTextRunner(selfHost({ quiet: arbiterClock(config) })),
     new CommandsModule({ owners: authOwners(config) }),
     new AuthModule(),
     new ActionsModule(profile.displayName),

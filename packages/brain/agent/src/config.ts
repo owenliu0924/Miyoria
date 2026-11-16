@@ -549,6 +549,12 @@ export type CorrectionsConfig = z.output<typeof CorrectionsConfigSchema>;
 
 /** `[modules.agent]` config section. */
 export const AgentConfigSchema = z.object({
+  /**
+   * Who answers text conversations (channels, threads, DMs): `mainline`, today's turn, or `self`,
+   * the phase-3 turn runner (`@miyoria/brain/selfhost`). Voice, her own starts and the work lane
+   * stay on the main line either way. Read once at start; a development switch of the rebuild.
+   */
+  runner: z.enum(["mainline", "self"]).default("mainline"),
   /** Quiet time after the last message before a turn starts. */
   debounce_ms: z.number().int().nonnegative().default(800),
   /** A typing notification pushes the turn start to at least this far out. */

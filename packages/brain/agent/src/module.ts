@@ -40,7 +40,7 @@ import { AgentIntents } from "./intents.js";
 import { ACTING_ALONE } from "./mainline/main.js";
 import { WorkingNotes } from "./notes.js";
 import { PersonaHandle, PersonaHandleKey } from "./persona.js";
-import { Agent } from "./runtime.js";
+import { Agent, type TextRunner, type TextRunnerFactory } from "./runtime.js";
 import { DropNoteTool, KeepNoteTool, ReactTool } from "./tools.js";
 import { TimeoutError, timeout } from "./util.js";
 import type { FetchLike } from "./vision.js";
@@ -109,10 +109,18 @@ export class AgentModule implements Module {
   #unregister: (() => void)[] = [];
   #agent: Agent | null = null;
   #lane: WorkLaneService | null = null;
+  #textRunners: TextRunnerFactory | null = null;
+  #textRunner: TextRunner | null = null;
 
   constructor(profile: Profile) {
     this.#persona = new PersonaHandle(profile);
     this.#tools = this.#ownTools;
+  }
+
+  /** What answers text conversations when `[modules.agent] runner = "self"`. */
+  withTextRunner(factory: TextRunnerFactory): this {
+    this.#textRunners = factory;
+    return this;
   }
 
   /** Replaces the decision sampler (default: seeded from config or entropy). */
@@ -232,6 +240,17 @@ export class AgentModule implements Module {
         : workBoard(proposals, () => !ctx.signal.aborted),
     );
     await agent.mainline.start();
+    if (config.runner === "self") {
+      if (this.#textRunners === null) {
+        ctx.log.warn(
+          'runner = "self" but no text runner is installed: text stays on the main line',
+        );
+      } else {
+        this.#textRunner = this.#textRunners(agent);
+        agent.textRunner = this.#textRunner;
+        ctx.log.info("text conversations run on the new turn runner");
+      }
+    }
     ctx.spawn("events", () => agent.run(events));
   }
 
@@ -294,6 +313,8 @@ export class AgentModule implements Module {
   }
 
   async stop(): Promise<void> {
+    this.#textRunner?.stop();
+    this.#textRunner = null;
     this.#lane?.close();
     this.#lane = null;
     this.#commands.uninstall();

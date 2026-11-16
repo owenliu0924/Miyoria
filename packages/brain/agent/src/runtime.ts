@@ -227,6 +227,35 @@ interface ContextHandle {
   inbox: Inbox;
 }
 
+/** What the agent knows of a text line it hands to a `TextRunner`. */
+export interface TextLineMarks {
+  /** Her own line (the platform's echo of what she sent). */
+  own: boolean;
+  /** A bot's line she does not answer (`respond_to_bots` off). */
+  bot: boolean;
+  /** What the input defence said of it (an `ignore` verdict never reaches the runner). */
+  verdict: InputVerdict | null;
+  /** The emergency stop is on: she keeps what she hears and answers nothing. */
+  muted: boolean;
+}
+
+/**
+ * Where the text conversations go with `[modules.agent] runner = "self"`
+ * (`@miyoria/brain/selfhost`). Voice, her own starts and the work lane stay with the agent.
+ */
+export interface TextRunner {
+  /** A line of a channel, thread or DM, after the agent's own checks (blocked users, `ignore`). */
+  line(msg: IncomingMessage, marks: TextLineMarks): void;
+  /** Someone types in a text place. */
+  typing(context: ContextKey): void;
+  /** The emergency stop: what runs ends, what waits is dropped. */
+  halt(): void;
+  stop(): void;
+}
+
+/** Makes the text runner of an agent (Core passes one; the module calls it only for `"self"`). */
+export type TextRunnerFactory = (agent: Agent) => TextRunner;
+
 /** State shared by the event loop, the per-context coordinators and turns. */
 export class Agent {
   readonly #selfAccounts = new Map<string, AccountRef>();
@@ -255,6 +284,11 @@ export class Agent {
   readonly rhythm: Rhythm;
   /** Messages people asked her not to remember, by context id (bounded). */
   readonly #excluded = new Map<string, Set<string>>();
+  /**
+   * The text conversations' runner with `runner = "self"`; `null`: every context is the agent's.
+   * Set once, before the events loop starts.
+   */
+  textRunner: TextRunner | null = null;
   /** The context menus' requests (`MessageActionsKey`). */
   readonly messageActions: MessageActions = {
     replyTo: (request) => Promise.resolve(this.#replyTo(request)),
@@ -306,6 +340,12 @@ export class Agent {
     }
     this.#arrivals.clear();
     this.mainline.silence();
+    this.textRunner?.halt();
+  }
+
+  /** `context` is a text conversation of the text runner (`runner = "self"`). */
+  #runsText(context: ContextKey): boolean {
+    return this.textRunner !== null && context.kind !== "voice";
   }
 
   static topics(): string[] {
@@ -347,7 +387,8 @@ export class Agent {
       this.#onMessage(env.data);
     } else if (is(Events.PlatformTyping, env)) {
       if (!this.isSelf(env.data.account)) {
-        this.#contexts.get(contextId(env.data.context))?.inbox.push({ type: "typing" });
+        if (this.#runsText(env.data.context)) this.textRunner?.typing(env.data.context);
+        else this.#contexts.get(contextId(env.data.context))?.inbox.push({ type: "typing" });
       }
     } else if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
       if (this.#isVoice(env.data.context)) {
@@ -433,6 +474,15 @@ export class Agent {
     const ignored = isSelf || (msg.author.is_bot && !this.config.respond_to_bots);
     const verdict = isSelf ? null : this.#inspect(msg, "chat");
     if (verdict?.action === "ignore") return;
+    if (this.#runsText(msg.id.context)) {
+      this.textRunner?.line(msg, {
+        own: isSelf,
+        bot: msg.author.is_bot && !this.config.respond_to_bots,
+        verdict,
+        muted: this.muted,
+      });
+      return;
+    }
     const cold = this.#existing(msg.id.context) === undefined;
     const handle = this.#context(msg.id.context);
     if (cold) startBackfill(this, handle.session, msg);
@@ -959,6 +1009,10 @@ export class Agent {
       aboutHerself(initiative.reason) && !asked ? this.ownLinesContext(target) : target;
     if (context.kind === "voice" && !this.inVoice(context)) {
       return Promise.resolve({ status: "refused", reason: "denied", detail: "不在那個語音頻道" });
+    }
+    // A due timer of a text place wakes the text runner itself (`mind.reminder`).
+    if (this.#runsText(context) && initiative.attention?.key.startsWith("reminder:") === true) {
+      return Promise.resolve({ status: "refused", reason: "denied", detail: "由新的回合跑者處理" });
     }
     return new Promise<ImpulseRun>((resolve) => {
       let settled = false;
