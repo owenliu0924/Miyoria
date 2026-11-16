@@ -15,6 +15,7 @@
 // Each source keeps today's limit (`contributor_timeout_ms`); a source that fails or is slow is
 // left out, the run goes on.
 
+import type { ContentPart } from "@miyoria/llm/llm";
 import {
   FLAGGED_TITLE,
   flaggedBody,
@@ -119,6 +120,8 @@ export interface HostPromptOptions {
   transcript: TranscriptStore;
   /** The session a place's transcript is under. */
   sessionOf(context: ContextKey): string;
+  /** The files and images of the run's lines (block 6); unset: none. */
+  attachments?(input: PromptInput): Promise<ContentPart[]>;
 }
 
 export class HostPrompt implements PromptSource {
@@ -369,6 +372,10 @@ export class HostPrompt implements PromptSource {
       voice: false,
       now: toTimestamp(input.now),
     };
+  }
+
+  async attachments(input: PromptInput): Promise<ContentPart[]> {
+    return (await this.#o.attachments?.(input)) ?? [];
   }
 
   // ---- block 7 ---------------------------------------------------------------------------------

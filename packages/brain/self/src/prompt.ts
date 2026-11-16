@@ -7,7 +7,8 @@
 //     [user]       4  this place and its regulars, as data             on compaction or a new face
 //     [history]    5  the transcript: lines, her calls, results,       only grows
 //                     reasoning (`toMessages`)
-//     [user]       6  what was retrieved, her inbox, as data           every run
+//     [user]       6  what was retrieved, her inbox, as data; the      every run
+//                     files and images of the lines that woke her
 //     [system]     7  <now> and what woke her                          every run
 //     ...             what the run itself adds: her steps, their results
 //
@@ -15,7 +16,13 @@
 // run starts with this one's up to the transcript's last entry. Within a run each step's request
 // is the one before plus what that step added.
 
-import { type ChatMessage, systemMessage, type ToolSpec, userMessage } from "@miyoria/llm/llm";
+import {
+  type ChatMessage,
+  type ContentPart,
+  systemMessage,
+  type ToolSpec,
+  userMessage,
+} from "@miyoria/llm/llm";
 import type { ToolEntry } from "@miyoria/llm/tools";
 import { type TranscriptTail, toMessages } from "@miyoria/memory/transcript";
 import { dataBlock } from "@miyoria/types";
@@ -31,7 +38,11 @@ export interface PromptBlocks {
   place: string | null;
   recalled: string | null;
   now: string | null;
+  /** Block 6's files and images (`PromptSource.attachments`); empty: none. */
+  attached?: readonly ContentPart[];
 }
+
+type TextBlock = Exclude<keyof PromptBlocks, "attached">;
 
 const blank = (text: string | null): string | null =>
   text === null || text.trim() === "" ? null : text.trim();
@@ -42,7 +53,7 @@ export async function gatherBlocks(
   input: PromptInput,
   onError: (block: keyof PromptBlocks, error: unknown) => void = () => undefined,
 ): Promise<PromptBlocks> {
-  const ask = async (block: keyof PromptBlocks): Promise<string | null> => {
+  const ask = async (block: TextBlock): Promise<string | null> => {
     try {
       return blank(await source[block](input));
     } catch (error) {
@@ -50,14 +61,23 @@ export async function gatherBlocks(
       return null;
     }
   };
-  const [fixed, pinned, place, recalled, now] = await Promise.all([
+  const attach = async (): Promise<ContentPart[]> => {
+    try {
+      return (await source.attachments?.(input)) ?? [];
+    } catch (error) {
+      onError("attached", error);
+      return [];
+    }
+  };
+  const [fixed, pinned, place, recalled, now, attached] = await Promise.all([
     ask("fixed"),
     ask("pinned"),
     ask("place"),
     ask("recalled"),
     ask("now"),
+    attach(),
   ]);
-  return { fixed, pinned, place, recalled, now };
+  return { fixed, pinned, place, recalled, now, attached };
 }
 
 /** Block 7's last part: what this run is. */
@@ -109,7 +129,14 @@ export function runMessages(
 
   const tail: ChatMessage[] = [];
   const data = [blocks.recalled, wakeData(wake)].filter((b): b is string => b !== null);
-  if (data.length > 0) tail.push(userMessage(data.join("\n\n")));
+  const attached = blocks.attached ?? [];
+  if (attached.length > 0) {
+    // Files and images only here, after the transcript: the next run's prefix never has them.
+    const text: ContentPart[] = data.length > 0 ? [{ type: "text", text: data.join("\n\n") }] : [];
+    tail.push(userMessage([...text, ...attached]));
+  } else if (data.length > 0) {
+    tail.push(userMessage(data.join("\n\n")));
+  }
   const now = blocks.now === null ? "" : `<now>\n${blocks.now}\n</now>\n`;
   tail.push(systemMessage(`${now}<turn>${wakeLine(wake)}</turn>`));
 

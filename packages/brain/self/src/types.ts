@@ -5,6 +5,7 @@
 import type {
   ChatRequest,
   ChatResponse,
+  ContentPart,
   Pricing,
   StreamEvent,
   ToolCall,
@@ -129,6 +130,12 @@ export interface PromptSource {
   place(input: PromptInput): Promise<string | null>;
   /** Block 6: what was retrieved for this run, and her inbox. */
   recalled(input: PromptInput): Promise<string | null>;
+  /**
+   * Block 6, after `recalled`: what the lines of this run carry that is not text in the
+   * transcript (the files read for her, the images with a line saying whose and where). Only this
+   * run sees them; the transcript keeps references and alt text. Unset: nothing.
+   */
+  attachments?(input: PromptInput): Promise<ContentPart[]>;
   /** Block 7: the inside of `<now>`: time, place, state, mood, what she has going on. */
   now(input: PromptInput): Promise<string | null>;
 }

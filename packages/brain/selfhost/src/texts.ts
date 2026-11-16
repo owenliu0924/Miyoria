@@ -17,8 +17,3 @@ export function askedLine(author: string, text: string): string {
     chars.length > ASKED_QUOTE_CHARS ? `${chars.slice(0, ASKED_QUOTE_CHARS).join("")}…` : flat;
   return `有人請你回 ${safeName(author)} 的這則訊息:「${quote}」(不一定是對話紀錄最後一句)。當成對你說的回。`;
 }
-
-/** Title of the data block (block 6) with the images and files of the lines she answers. */
-export const ATTACHED_TITLE = "訊息附的圖片和檔案";
-/** What stands before the images when there is no other data in the block. */
-export const IMAGES_ONLY = "(對話紀錄裡的訊息附上的圖片)";

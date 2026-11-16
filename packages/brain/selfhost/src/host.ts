@@ -21,7 +21,7 @@
 // delivered lines get their platform id in the transcript (`confirm`); a line the scheduler failed
 // late is marked as not heard. What a run did is published as today's turn records.
 
-import { type LlmRouter, LlmRouterKey, withLlmTag } from "@miyoria/llm/llm";
+import { type ContentPart, type LlmRouter, LlmRouterKey, withLlmTag } from "@miyoria/llm/llm";
 import {
   type EntryInput,
   entryOfIncoming,
@@ -91,6 +91,7 @@ import {
   type WakeAuthor,
   wakeAuthor,
 } from "../../self/src/index.js";
+import { LookAround } from "./around.js";
 import { Lane, type LaneHost, type LaneRun } from "./lane.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { resolvePlace } from "./places.js";
@@ -140,6 +141,8 @@ interface TurnState {
   /** A line of the run carried the platform's reply reference already. */
   quoted: boolean;
   tally: CorrectionTally;
+  /** The files and images of its lines, once asked for (`LookAround`). */
+  attached: Promise<ContentPart[]> | null;
 }
 
 /** Something she started that has not come back. */
@@ -157,6 +160,7 @@ export class SelfHost implements TextRunner {
   readonly prompt: HostPrompt;
   readonly #settlements = new Settlements();
   readonly #outlet: MouthOutlet;
+  readonly #around: LookAround;
   readonly #places = new Map<string, Place>();
   readonly #turns = new Map<string, TurnState>();
   readonly #jobs = new Map<string, Job>();
@@ -173,8 +177,13 @@ export class SelfHost implements TextRunner {
       options.transcript ?? agent.ctx.services.get(StoreKey)?.plugin(transcriptTables) ?? null;
     if (transcript === null) throw new Error("the text runner needs the store's transcripts");
     this.transcript = transcript;
+    this.#around = new LookAround(agent, transcript);
     const sessionOf = (context: ContextKey) => this.#sessionFor(context);
-    this.prompt = new HostPrompt(agent, { transcript, sessionOf });
+    this.prompt = new HostPrompt(agent, {
+      transcript,
+      sessionOf,
+      attachments: (input) => this.#attachments(input.turn),
+    });
     this.#outlet = new MouthOutlet(agent, this.#settlements, (line, id) =>
       this.#saidElsewhere(line.place, line.text, line.turn, id),
     );
@@ -351,6 +360,7 @@ export class SelfHost implements TextRunner {
     const note = marks.verdict?.note ?? null;
     if (note) entry.flagged = note;
     this.transcript.append(session, [entry], { context });
+    this.#around.recent.add(msg);
     this.#attachParent(place, msg);
     const call = this.#call(msg);
     const said = callsHer(call);
@@ -417,6 +427,7 @@ export class SelfHost implements TextRunner {
           entries.push({ kind: "self", content: m.text, message_id: m.id.id, at: m.ts });
         } else {
           entries.push(entryOfIncoming(m));
+          this.#around.recent.add(m);
         }
       }
       entries.sort((a, b) => timestampMs(a.at ?? first.ts) - timestampMs(b.at ?? first.ts));
@@ -510,6 +521,7 @@ export class SelfHost implements TextRunner {
       firstLineAt: null,
       quoted: false,
       tally: new CorrectionTally(false),
+      attached: null,
     };
     agent.mainline.own(turn);
     agent.ctx.publish(Events.AgentTurnStarted, { turn, context }, { turn });
@@ -571,6 +583,40 @@ export class SelfHost implements TextRunner {
     this.#confirm(state);
     if (result?.compacted) this.prompt.forget(place.session);
     this.#publish(state, result, error);
+  }
+
+  /** The files and images of the lines of the run of `turn` (block 6), looked at once. */
+  #attachments(turn: string): Promise<ContentPart[]> {
+    const state = this.#turns.get(turn);
+    if (state === undefined) return Promise.resolve([]);
+    state.attached ??= this.#around.parts({
+      session: state.place.session,
+      context: state.place.context,
+      turn,
+      inputs: this.#linesOf(state),
+      signal: state.run.controller.signal,
+    });
+    return state.attached;
+  }
+
+  /**
+   * The lines a run is about: those that called her; for a glance, the other people's lines since
+   * her last one. A result or a timer has none.
+   */
+  #linesOf(state: TurnState): IncomingMessage[] {
+    const { run, place } = state;
+    if (run.wake.kind === "addressed") return run.inputs;
+    if (run.wake.kind !== "glance") return [];
+    const entries = this.transcript.tail(place.session).entries;
+    const out: IncomingMessage[] = [];
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i];
+      if (e === undefined || e.kind === "self" || e.kind === "tool_calls") break;
+      if (e.kind !== "other" || e.message_id === null) continue;
+      const msg = this.#around.recent.get(place.context, e.message_id);
+      if (msg !== undefined) out.unshift(msg);
+    }
+    return out;
   }
 
   async #keepTyping(context: ContextKey, turn: string, signal: AbortSignal): Promise<void> {

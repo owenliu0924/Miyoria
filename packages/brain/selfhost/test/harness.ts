@@ -28,7 +28,7 @@ import {
   MouthKey,
   toTimestamp,
 } from "@miyoria/types";
-import { AgentModule, type TextRunnerFactory } from "../../agent/src/index.js";
+import { AgentModule, type FetchLike, type TextRunnerFactory } from "../../agent/src/index.js";
 import { profile, Stub } from "../../agent/test/harness.js";
 import { SelfHost, type SelfHostOptions } from "../src/index.js";
 
@@ -196,6 +196,10 @@ export interface RigOptions {
   host?: SelfHostOptions;
   /** More app services before the agent starts. */
   provide?: (sup: Supervisor, tools: ToolRegistry) => void;
+  /** How images are downloaded (no network). */
+  fetchImage?: FetchLike;
+  /** The scripted model takes image parts. Default `true`. */
+  images?: boolean;
 }
 
 const running: Rig[] = [];
@@ -231,6 +235,7 @@ export class Rig {
     const router = new LlmRouter(
       new Map<string, ChatProvider>([["scripted", rig.model]]),
       new Map([["chat", [parseModelRef("scripted:m")]]]),
+      { imageInput: new Map([["scripted:m", options.images ?? true]]) },
     );
     await sup.register(new Stub("llm", (ctx) => ctx.provide(LlmRouterKey, router)), null, true);
     await sup.register(
@@ -247,6 +252,7 @@ export class Rig {
       return rig.host;
     };
     const agent = new AgentModule(profile(options.mode ?? "normal")).withTextRunner(factory);
+    if (options.fetchImage !== undefined) agent.withImageFetch(options.fetchImage);
     await sup.register(
       agent,
       {
