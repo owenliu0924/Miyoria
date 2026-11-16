@@ -1,11 +1,8 @@
 // `knowledge_note` and the knowledge section of the prompt, on the notes.
 
 import type { ToolContext } from "@miyoria/llm/tools";
-import { MemorySettingsStore } from "@miyoria/store";
 import type { ContextKey, KnowledgeBase } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { KnowledgeConfigSchema } from "../../learning/src/config.js";
-import { KnowledgeStore } from "../../learning/src/knowledge.js";
 import { KnowledgeTool } from "../../learning/src/tool.js";
 import { NotesKnowledge } from "../src/knowledge.js";
 import {
@@ -28,15 +25,7 @@ afterEach(() => {
 async function setup() {
   open = await rig();
   const knowledge = new NotesKnowledge({ notes: open.notes, resolver: fakeResolver() });
-  const legacy = new KnowledgeStore(
-    new MemorySettingsStore(),
-    "p",
-    KnowledgeConfigSchema.parse({}),
-    {
-      now: () => open?.clock.now() ?? 0,
-    },
-  );
-  const base: KnowledgeBase = knowledge.base(legacy);
+  const base: KnowledgeBase = knowledge.base();
   const tool = new KnowledgeTool({
     store: base,
     personOf: () => OWEN,
@@ -132,5 +121,55 @@ describe("knowledge_note on the notes", () => {
     expect(k.base.render(subjects, { context: CHANNEL, maxChars: 800 })).toBe("");
     expect(k.base.render(subjects, { context: null, maxChars: 800 })).toContain("私訊裡說的");
     expect(k.knowledge.viewerFor(CHANNEL).space).toBe(SPACE);
+  });
+
+  it("lists and reads what her tool wrote, from the notes only", async () => {
+    const k = await setup();
+    expect(k.base.docs()).toEqual([]);
+    await k.tool.call(k.ctx(DM_CHANNEL), {
+      action: "create",
+      subject: "speaker",
+      kind: "人物卡",
+      title: "Owen",
+      content: { 喜好: "拉麵", 最近在忙: "考試" },
+    });
+    await k.tool.call(k.ctx(CHANNEL), {
+      action: "create",
+      subject: "topic:拉麵",
+      kind: "主題",
+      title: "拉麵",
+      content: { 重點: "週五吃" },
+    });
+    const all = k.base.docs();
+    expect(all.map((d) => d.subject.type).sort()).toEqual(["person", "topic"]);
+    const owen = k.base.docs({ type: "person", person: OWEN });
+    expect(owen).toHaveLength(1);
+    const doc = owen[0];
+    expect(doc?.subject).toEqual({ type: "person", person: OWEN });
+    expect(doc?.kind).toBe("人物");
+    expect(doc?.content).toEqual({ 喜好: ["拉麵"], 其他: ["最近在忙: 考試"] });
+    expect(doc?.sources["/喜好/0"]).toMatchObject({ kind: "said", confidence: expect.any(Number) });
+    expect(doc?.history.map((h) => h.version)).toEqual([1]);
+    expect(k.base.get(doc?.id ?? "")?.content).toEqual(doc?.content);
+    expect(k.base.get("#nothing")).toBeNull();
+    expect(k.base.docs({ type: "topic", name: "拉麵" })[0]?.content).toEqual({ 重點: ["週五吃"] });
+  });
+
+  it("stops listing a document once all its lines are outdated", async () => {
+    const k = await setup();
+    await k.tool.call(k.ctx(CHANNEL), {
+      action: "create",
+      subject: "topic:拉麵",
+      kind: "主題",
+      title: "拉麵",
+      content: { 重點: "週五吃" },
+    });
+    const id = k.base.docs()[0]?.id ?? "";
+    await k.base.apply(
+      { type: "delete", doc: id, why: "" },
+      { kind: "panel", account: null, person: null, name: null, context: null },
+    );
+    expect(k.base.docs()).toEqual([]);
+    expect(k.base.get(id)).toBeNull();
   });
 });

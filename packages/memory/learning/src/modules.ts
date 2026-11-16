@@ -260,14 +260,14 @@ export class KnowledgeModule implements Module {
     );
     await loadWithTimeout(ctx, "her documents", () => kb.load());
     this.#store = kb;
-    // Her documents live in the notes; the old store stays for what still lists it (the panel, the
-    // mind) and is the whole of it where the notes are not there.
+    // Her documents live in the notes, for reading and writing. The old store is the whole of it
+    // only where there is no database (a bare test rig); nothing live reads it but the importer.
     const notesStore = s.get(StoreKey)?.plugin(notesTables) ?? null;
     const notes =
       notesStore === null
         ? null
         : new NotesKnowledge({ notes: notesStore, resolver: notesStore.resolver() });
-    const base: KnowledgeBase = notes === null ? kb : notes.base(kb);
+    const base: KnowledgeBase = notes === null ? kb : notes.base();
     ctx.provide(KnowledgeKey, base);
     const topics = (request: PromptRequest) =>
       notes === null

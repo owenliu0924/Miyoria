@@ -18,12 +18,14 @@
 import type {
   AccountRef,
   ContextKey,
+  FieldSource,
   JsonValue,
   KnowledgeBase,
   KnowledgeChange,
   KnowledgeDoc,
   KnowledgeResult,
   KnowledgeSubject,
+  KnowledgeVersion,
   KnowledgeWriter,
   PatchOp,
   PersonId,
@@ -32,7 +34,7 @@ import { cleanKey } from "../../learning/src/json-doc.js";
 import { leaves, pieces } from "./importer.js";
 import type { DocumentKind, NoteAuthor, Provenance } from "./schema.js";
 import type { NoteScope, NotesReader, NotesViewer, ScopeResolver } from "./scope.js";
-import { MISC_SECTION, sectionKey } from "./sections.js";
+import { MISC_SECTION, sectionKey, sectionLabel } from "./sections.js";
 import {
   cleanLine,
   DEFAULT_CONFIDENCE,
@@ -53,6 +55,13 @@ export const KIND_LABEL: Readonly<Record<DocumentKind, string>> = {
   topic: "主題",
   self: "自己",
 };
+
+/** Who a line is attributed to, in the old words. */
+function sourceKind(line: NoteLine): FieldSource["kind"] {
+  if (line.author === "reflect") return "self";
+  if (line.author === "panel") return "panel";
+  return line.provenance === "told_by_subject" || line.provenance === "told_by_other" ? "said" : "inferred";
+}
 
 /** A document that is none of the subjects of a change, or the reason it cannot be one. */
 interface Resolved {
@@ -441,15 +450,79 @@ export class NotesKnowledge {
     }
   }
 
+  // ---- reading as documents -----------------------------------------------------------------
+
   /**
-   * These documents as the `KnowledgeBase` the other modules read and write: changes and the prompt
-   * text come from the notes (no context: everything, as for her reflection); `docs` and `get` stay
-   * with `legacy`, which the panel and the mind still list.
+   * A document in the old shape: the lines in use, by section label, in the order they were
+   * written; where each line came from; the change sets as versions. Everything: the reader is the
+   * owner.
    */
-  base(legacy: Pick<KnowledgeBase, "docs" | "get">): KnowledgeBase {
+  #asDoc(doc: NoteDocument): KnowledgeDoc {
+    const lines = [...this.notes.lines(doc.subject, "owner")].reverse();
+    const content: Record<string, string[]> = {};
+    const sources: Record<string, FieldSource> = {};
+    for (const l of lines) {
+      const label = sectionLabel(doc.kind, l.section);
+      const list = (content[label] ??= []);
+      sources[`/${label}/${list.length}`] = {
+        kind: sourceKind(l),
+        account: null,
+        name: null,
+        origin: null,
+        confidence: l.confidence,
+        at: l.created_at,
+      };
+      list.push(l.text);
+    }
+    const stub = this.#stub(doc, KIND_LABEL[doc.kind], this.#titleOf(doc));
+    return { ...stub, content, sources, history: this.#versions(doc) };
+  }
+
+  #versions(doc: NoteDocument): KnowledgeVersion[] {
+    const byVersion = new Map<number, KnowledgeVersion>();
+    for (const h of this.notes.history(doc.subject)) {
+      let v = byVersion.get(h.version);
+      if (v === undefined) {
+        v = {
+          version: h.version,
+          at: h.at,
+          by: h.author === "reflect" ? "self" : h.author === "panel" ? "panel" : "inferred",
+          name: null,
+          why: h.reason ?? "",
+          ops: [],
+        };
+        byVersion.set(h.version, v);
+      }
+      v.ops.push(`${h.op} ${sectionLabel(doc.kind, h.section)}`);
+    }
+    return [...byVersion.values()].sort((a, b) => a.version - b.version);
+  }
+
+  /** The documents that have lines in use (an emptied one is as good as deleted). */
+  docs(subject?: KnowledgeSubject): KnowledgeDoc[] {
+    const wanted = subject === undefined ? null : this.#resolve(subject, "");
+    if (typeof wanted === "string") return [];
+    return this.notes
+      .list("owner")
+      .filter((e) => e.lines > 0 && (wanted === null || e.document.subject === wanted.subject))
+      .map((e) => this.#asDoc(e.document));
+  }
+
+  /** A document by its id (or `#` and the end of it); `null`: none, or none with lines in use. */
+  get(id: string): KnowledgeDoc | null {
+    const doc = this.notes.documentByRef(id);
+    if (doc === null) return null;
+    return this.notes.lines(doc.subject, "owner").length === 0 ? null : this.#asDoc(doc);
+  }
+
+  /**
+   * These documents as the `KnowledgeBase` the other modules read and write: the listing, changes
+   * and prompt text all come from the notes (no context: everything, as for her reflection).
+   */
+  base(): KnowledgeBase {
     return {
-      docs: (subject) => legacy.docs(subject),
-      get: (id) => legacy.get(id),
+      docs: (subject) => this.docs(subject),
+      get: (id) => this.get(id),
       apply: (change, writer) => this.apply(change, writer),
       render: (subjects, options) => {
         if (options.context === null) return this.render(subjects, "owner", options.maxChars);

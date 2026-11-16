@@ -74,7 +74,7 @@ async function setup(...replies: string[]) {
   const settings = new MemorySettingsStore();
   const legacy = new KnowledgeStore(settings, "p", knowledgeConfig(), { now: () => Date.now() });
   const knowledge = new NotesKnowledge({ notes: open.notes, resolver: fakeResolver() });
-  services.provide("t", KnowledgeKey, knowledge.base(legacy));
+  services.provide("t", KnowledgeKey, knowledge.base());
   services.provide("t", PeopleStoreKey, {
     all: async () => [{ id: OWEN, display_name: "Owen", created_at: "", accounts: [] }],
   } as never);
