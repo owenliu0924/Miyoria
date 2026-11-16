@@ -244,6 +244,18 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 
 所以這一步沒有刪 `turn.ts`、手、工作車道、注意力、提案板,也沒有刪 Q8 不帶的修正(它們在 `turn.ts` 裡,遊戲實況還會經過)。要刪它們,得先讓新跑者接 Arbiter 開的回合(一個 `ImpulseHost` 在新跑者上叫醒那個地方),那是新的接線,不是刪除,要另外決定。mind 的 Plan 還會要她寫衝動(提示詞和回覆那一半沒拆,`selfstart.ts` 也還在:`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
 
+## 筆記的 embedding(2026-11-16)
+
+B7 原本該包含、但漏掉的一塊:筆記(L3)只用關鍵字找。現在和記憶紀錄(L2)用同一個 embedder(`[memory.embedding]`)、同一套分數。程式在 `packages/memory/notes/src/vectors.ts`、`rank.ts`。
+
+- **之前怎麼找**:`recall` 工具和提示詞第 6 區的記憶(`MemoryRetrieval`)只讀 `memory_records`,不讀筆記。筆記進提示詞只經「你整理的資料」(knowledge contributor):在場的人、這個伺服器、名字被講到的主題、她自己各一張卡,卡裡和這句有共同字的行排前面。段落整理的「相關文件」是 `NotesStore.search` 用共同字找主題文件。這三處都只有關鍵字。
+- **存什麼**:每一行一個向量,`notes_vectors`(notes 外掛的 migration 2):行的 id、做出向量的模型、float32。一行一個,不是一份文件一個:一行是一句話(最多 200 字)、寫了就不改,讀的地方拿的也都是行(卡片挑行、搜尋回傳最好的幾行),所以行的向量在行還用著的時候一直有效;整份文件一個向量會被不相關的行稀釋,而且任何一行變動就要重算。
+- **什麼時候算**:一行開始被用(新增、取代、revert 回來)時排進佇列,背景一次 8 行算,寫入不等它。一行不再用(過時、抹掉、忘記這個人)時,向量在同一個交易裡刪掉。佇列漏掉的(當時沒開、embedder 出錯、Core 停了)由背景補(和記憶紀錄同一個迴圈,每兩分鐘一批 32 行),換模型的向量當作沒有、重算。`miyoria memory rebuild --apply` 最後一次補完,並說還剩幾行。
+- **怎麼找**:和 `score.ts` 同一套:候選是有共同字的行加上 cosine 最近的 `candidate_limit` 行;cosine 攤開在候選之間(從 `min_vector` 起算);分數是 `weights` 加權的字、意思、新近度、這行的信心、是不是在場的人的文件。沒有共同字的行 cosine 要到 `min_vector` 才算。開了之後:卡裡意思接近的行排前面;意思接近的主題文件(最多兩份)就算名字沒被講到也會進「你整理的資料」;段落整理的相關文件也用意思找。
+- **退回**:查詢那一句的向量只等 `notes_vector_wait_ms`(500 ms),語音回合等 `notes_vector_voice_wait_ms`(150 ms,在 `live_context_ms` 400 ms 之內);等不到就只用字,晚到的向量留給下一次同一句。`provider = "none"` 或本機模型載不起來時,什麼都不排、不等,每個搜尋都和原本一模一樣。
+- **評測**:`pnpm eval --live --config <miyoria.toml> --suite memory --memory-set <題組> --memory-target notes` 把同一組題目問筆記(紀錄成 `memory-notes`,不和記憶紀錄的趨勢混在一起)。
+- **沒做的**:`recall` 工具和第 6 區的記憶還是只讀 `memory_records`(要不要讓它們也讀筆記是另外的決定,見 backlog);即時的段落整理還沒接上(只有 rebuild 會跑),所以它的「相關文件」現在只在 rebuild 用到。沒有用真的模型跑過。
+
 ## 風險
 
 - **她會變吵或變貴**:看一眼和更長的迴圈都會多叫模型。上限是程式的護欄,預設值保守;B1 的基準先量今天一天花多少,之後每一步都對著它看。

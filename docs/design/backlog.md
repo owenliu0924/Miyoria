@@ -56,7 +56,7 @@
 
 ## 等 owner 決定
 
-- V5 還沒定的:embedding 用哪個本機模型(階段 3 實測);十二月的生圖模型、ComfyUI 跑在哪一台、她的 LoRA 的授權;「玩」剩下的([v5-play.md](v5-play.md) §8:水族箱要先看示意圖;交易所的開戶門檻、持有上限、指數基金、放空);圖片訊息的背景暫時沿用遊戲美術那一張,之後要換;Minecraft 的志向清單 / 誰算主人 / AltoClef。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
+- V5 還沒定的:十二月的生圖模型、ComfyUI 跑在哪一台、她的 LoRA 的授權;「玩」剩下的([v5-play.md](v5-play.md) §8:水族箱要先看示意圖;交易所的開戶門檻、持有上限、指數基金、放空);圖片訊息的背景暫時沿用遊戲美術那一張,之後要換;Minecraft 的志向清單 / 誰算主人 / AltoClef。其餘十一項已決定:[v5-architecture.md](v5-architecture.md) §16。
 - 貨幣系統 §9 的問題已先用建議值上線,隨時可改:[economy.md](economy.md) §9.1。
 - 人設要不要加一句:肚子餓時可以被零食收買,不情願地配合可愛的小要求(現在人設寫著『現在你是一隻貓』這類要求要吐槽回去)。
 - `ambient_text` 怎麼設。
@@ -112,7 +112,7 @@
 - **「不要記住這個」擋不乾淨**:訊息紀錄的編號不是平台的訊息編號,只能靠內容雜湊比對;人物筆記沒有記來源,篩不掉;之後有人引用那則訊息回覆,引用的文字還是會進來。
 - **推理外洩的根因沒找到**:外洩的文字是模型直接寫在回覆欄位裡的。剩三種可能,現有紀錄分不出來;下次發生時該查什麼寫在 [v4-patches.md](v4-patches.md) §5。 2026-11-14 補:在現在的端點上,關掉思考的五個請求都乾淨(沒有推理欄位、推理 token 是 0),所以「該關的時候其實還開著」這個可能性變小;沒有重現外洩。
 - **事後修正還在**:18 處只收窄 2 處,4 處有開關。等上線後面板上的觸發次數接近零再關。
-- **本機向量檢索**:介面和背景補向量的工作做了,套件和模型(約 120 MB)沒裝,預設關。
+- **本機向量檢索**:記憶紀錄和筆記本(每一行,2026-11-16,見 [v5-brain.md](v5-brain.md)「筆記的 embedding」)都接上了,背景補向量也做了;執行環境(`@huggingface/transformers`)和選定的模型(Harrier-OSS-v1 270M fp16)沒裝,預設關。開的步驟在範例設定檔的「長期記憶」那段。沒有用真的模型跑過。
 - **Minecraft**:打獵要動物剛好在準星上,Java 模組的 `nearby_entities` 要加座標才能直接瞄準(模組沒改);導演在工作車道上的行為沒進過遊戲。
 - **沙箱網路白名單**:代理和設定做了,沒在真的 Docker 上跑過(`MIYORIA_LIVE_WORKSPACE_TESTS=1`)。
 - **面板的活動表是 API 裡的一份複本**(有測試防它走樣),`packages/heart/mind` 還沒有可讀的服務。
@@ -148,7 +148,9 @@
 - 線上 `miyoria.toml` 的三處修改還沒做(剩下的設定相容層要先改它才能拿掉);`/api/facts/context` 和 `/api/facts/retryable` 擁有者確認沒人在用,兩條路由已經刪掉。
 
 - **第 14 步留下的**(2026-11-16):舊的 store 介面大多還在(呼叫的地方多,跟著各套件重寫再換);五個已經沒人呼叫的方法還掛在介面上(`MessageLog.purge`、`IdentityStore.setPersonName`、`DecisionLog.appendOutcome`、`MemberCardStore.countSince`、`SettingsStore.deletePrefix`);人物卡不再於啟動時替羈絆超過 25 的人種依附(原本是 V4 搬移程式順便做的),階段 4 決定依附從哪來。詳見 [v5-data.md](v5-data.md)。
-- **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。
+- **embedding 上線後要調的**:相似度門檻(`min_vector`,現在 0.5)、分數門檻、向量的權重,都是用 200 筆人造資料調的;沒答案的問題仍有五到七成會帶進記憶。有了真實對話後重測,資料和腳本在 `research_notes/v5/embedding-trial/`。筆記本的行用同一組門檻和權重,沒有另外調過;`--memory-target notes` 可以拿同一組題目量筆記。語音回合等查詢向量的 150 ms(`notes_vector_voice_wait_ms`)是估的:背景補向量和查詢共用同一個 worker,一批 8 行還沒算完時查詢會排在後面,實際會不會常常等不到要上線後看 log。
+- **`recall` 和第 6 區的記憶不讀筆記本**:兩者都只找 `memory_records`;筆記本只經「你整理的資料」(卡片、意思接近的主題)進提示詞。要不要讓 `recall` 也找筆記本的行(`NotesSearch.lines` 已經有,評測用的就是它)要 owner 決定:會改變關掉 embedding 時 `recall` 回傳的內容。
+- **即時的段落整理沒接上**:`runSegmentPass` 只有 `miyoria memory rebuild` 在跑,所以它用意思找相關文件也只在 rebuild 時有用。
 - **只在機器很忙時失敗的測試**:`apps/voice-node` 的 `link.test.ts`(「sends hello… answers ping」)在同時跑很多東西時失敗過一次,單獨跑會過。再出現就改成等條件成立。
 - **範例擴充的端對端測試在 CI 被跳過**:它要先 build 才會跑,CI 是先測試;本機的整體檢查會跑。要不要讓 CI 也跑,等決定。
 
