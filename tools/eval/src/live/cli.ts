@@ -1,4 +1,4 @@
-// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections] [--subject current|self]
+// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections] [--subject self]
 //  [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>]`
 //
 // Runs the live suites against the real model and writes the run to `--out` (default
@@ -37,7 +37,7 @@ const DEFAULT_MAX_USD = 0.5;
 
 const USAGE =
   "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections] " +
-  "[--subject current|self] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>]\n" +
+  "[--subject self] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>]\n" +
   "       pnpm eval --live --rebuild-history [--out <dir>]\n";
 
 export interface SubjectDeps {
@@ -48,7 +48,6 @@ export interface SubjectDeps {
 
 /** The subjects by name. A new brain is one more entry here. */
 const SUBJECTS: Readonly<Record<string, (deps: SubjectDeps) => Promise<Subject>>> = {
-  current: async (deps) => new (await import("./current.js")).CurrentSubject(deps),
   self: async (deps) => new (await import("./self.js")).SelfSubject(deps),
 };
 
@@ -91,7 +90,7 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
   const configArg = opt("config");
   const repeat = Number(opt("repeat") ?? 1);
   const maxUsd = Number(opt("max-usd") ?? DEFAULT_MAX_USD);
-  const subjectName = opt("subject") ?? "current";
+  const subjectName = opt("subject") ?? "self";
   const makeSubject = SUBJECTS[subjectName];
   if (makeSubject === undefined) {
     err(`no subject \`${subjectName}\` (there is: ${Object.keys(SUBJECTS).join(", ")})\n${USAGE}`);

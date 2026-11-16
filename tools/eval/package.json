@@ -23,7 +23,6 @@
   "dependencies": {
     "@miyoria/brain": "workspace:*",
     "@miyoria/gate": "workspace:*",
-    "@miyoria/heart": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@miyoria/memory": "workspace:*",
     "@miyoria/play": "workspace:*",
