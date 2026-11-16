@@ -11,6 +11,7 @@ export {
   scoreRecall,
   visibleAt,
 } from "./metrics.js";
+export { noteScopeOf, runNotesRecall, viewerAt } from "./notes.js";
 export {
   formatRecallReport,
   formatSweep,
@@ -19,9 +20,11 @@ export {
 } from "./report.js";
 export {
   CachedEmbedder,
+  RECALL_TARGETS,
   type RecallConfigOverrides,
   type RecallOptions,
   type RecallResult,
+  type RecallTarget,
   runRecall,
   type SweepRow,
   type SweepVariant,

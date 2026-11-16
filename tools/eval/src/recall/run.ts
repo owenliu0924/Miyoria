@@ -1,6 +1,7 @@
 // The recall harness: a set's memories in a fresh in-memory database, every query asked the way
 // a turn asks (`MemoryContributor.contribute`: `visibleScopes`, `turnOf`, `MemoryEngine.recall`
-// over `PROMPT_KINDS`), and what came back scored by `metrics.ts`.
+// over `PROMPT_KINDS`), and what came back scored by `metrics.ts`. With `target: "notes"` the
+// same set is asked of her notes instead (`notes.ts`).
 //
 // Memories are written through the table layer (`MemoryTables.upsert`), not `MemoryEngine.store`:
 // the engine's write path merges similar records, refuses facts without evidence and
@@ -24,6 +25,7 @@ import {
 import { type MemoryRecord, SqliteStore } from "@miyoria/store";
 import type { z } from "zod";
 import { DEFAULT_KS, type RecallMetrics, type Returned, scoreRecall } from "./metrics.js";
+import { runNotesRecall } from "./notes.js";
 import type { RecallSet } from "./set.js";
 
 /** The profile the harness stores under (one database is one character). */
@@ -33,7 +35,13 @@ const EMBED_BATCH = 16;
 
 export type RecallConfigOverrides = z.input<typeof MemoryConfigSchema>;
 
+/** What is searched: the memory records (`memory_records`), or her notes (`notes.ts`). */
+export type RecallTarget = "records" | "notes";
+export const RECALL_TARGETS: readonly RecallTarget[] = ["records", "notes"];
+
 export interface RecallOptions {
+  /** Default `records`. */
+  target?: RecallTarget;
   /** Makes the vectors of memories and queries; absent: full text, recency and importance only. */
   embedder?: Embedder;
   /** The k of recall@k (1, 3, 5, 8). */
@@ -45,6 +53,7 @@ export interface RecallOptions {
 
 export interface RecallResult extends RecallMetrics {
   set: string;
+  target: RecallTarget;
   memories: number;
   /** The embedder's model (or name), `null` when the run had none. */
   embedder: string | null;
@@ -124,6 +133,7 @@ export async function runRecall(
   set: RecallSet,
   options: RecallOptions = {},
 ): Promise<RecallResult> {
+  if (options.target === "notes") return runNotesRecall(set, options);
   const config = memoryConfig(options.config ?? {});
   const ks = [...(options.ks ?? DEFAULT_KS)];
   const limit = Math.max(config.recall_limit, ...ks);
@@ -205,6 +215,7 @@ export async function runRecall(
 
     return {
       set: set.name,
+      target: "records",
       memories: set.memories.length,
       embedder: embedder === null ? null : (embedder.embeddingModel ?? embedder.name),
       embedding_failures: embedder === null ? 0 : embedder.failures - failuresBefore,

@@ -445,3 +445,50 @@ describe("recall harness on the example set", () => {
     expect((detail as RecallResult).per_query).toHaveLength(set.queries.length);
   });
 });
+
+describe("recall harness on her notes", () => {
+  const set = loadRecallSet(EXAMPLE);
+
+  it("asks the notes by words, and nothing leaks", async () => {
+    const result = await runRecall(set, { target: "notes" });
+    expect(result.target).toBe("notes");
+    expect(result.embedder).toBeNull();
+    expect(result.per_query.map((q) => q.id)).toEqual(set.queries.map((q) => q.id));
+    expect(result.leaks).toBe(0);
+    for (const q of result.per_query) {
+      expect(q.returned.map((r) => r.id)).not.toContain("m_yuki_home_old");
+      const scores = q.returned.map((r) => r.score);
+      expect(scores).toEqual([...scores].sort((a, b) => b - a));
+    }
+    expect(byId(result, "q_dm_quit_in_channel").returned.map((r) => r.id)).not.toContain(
+      "m_amei_quit_dm",
+    );
+    expect(formatRecallReport(result)).toContain("target notes");
+    expect(JSON.stringify(result)).not.toMatch(/[一-鿿]/);
+  });
+
+  it("with an embedder finds paraphrases by meaning, and nothing leaks", async () => {
+    const embedder = new ConceptEmbedder();
+    const result = await runRecall(set, { target: "notes", embedder });
+    const plain = await runRecall(set, { target: "notes" });
+    expect(result.embedder).toBe("concepts|v1");
+    expect(result.embedding_failures).toBe(0);
+    expect(result.leaks).toBe(0);
+    for (const id of PARAPHRASES) {
+      expect(found(byId(plain, id)), id).toBe(false);
+      expect(found(byId(result, id)), id).toBe(true);
+    }
+    expect(result.recall_at?.["5"]).toBeGreaterThan(plain.recall_at?.["5"] ?? 1);
+  });
+
+  it("is the suite `memory` with the target notes", async () => {
+    const { headline, detail } = await memorySuite({
+      setPath: EXAMPLE,
+      embedder: new ConceptEmbedder(),
+      target: "notes",
+    });
+    expect(headline.leaks).toBe(0);
+    expect(headline["recall@5"]).toBeGreaterThan(0);
+    expect((detail as RecallResult).target).toBe("notes");
+  });
+});

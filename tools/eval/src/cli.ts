@@ -25,6 +25,11 @@ if (args.includes("--live")) {
   };
   const setPath = at("--memory-set");
   const configPath = at("--config");
+  const target = at("--memory-target") ?? "records";
+  if (target !== "records" && target !== "notes") {
+    process.stderr.write(`--memory-target is \`records\` or \`notes\`, not \`${target}\`\n`);
+    process.exit(2);
+  }
   process.exit(
     await liveMain(
       args.filter((a) => a !== "--live"),
@@ -38,6 +43,7 @@ if (args.includes("--live")) {
             memoryRunner({
               setPath: resolve(base, setPath),
               configPath: resolve(base, configPath),
+              target,
             }),
           );
         },

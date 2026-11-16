@@ -1,7 +1,7 @@
 // Text reports of a recall run and of a sweep, and the entry the suite registry calls.
 
 import type { Embedder } from "@miyoria/memory/memory";
-import { type RecallResult, runRecall, type SweepRow } from "./run.js";
+import { type RecallResult, type RecallTarget, runRecall, type SweepRow } from "./run.js";
 import { loadRecallSet } from "./set.js";
 
 const pad = (s: string, n: number): string => s + " ".repeat(Math.max(0, n - [...s].length));
@@ -12,7 +12,7 @@ export function formatRecallReport(result: RecallResult): string {
   const lines: string[] = [];
   lines.push(
     `recall: ${result.set === "" ? "(unnamed set)" : result.set}, ${result.memories} memories, ` +
-      `${result.queries} queries, embedder ${result.embedder ?? "none"}`,
+      `${result.queries} queries, embedder ${result.embedder ?? "none"}, target ${result.target}`,
   );
   lines.push(
     `config: min_score ${result.config.min_score}  min_vector ${result.config.min_vector}  ` +
@@ -78,17 +78,22 @@ export function formatSweep(rows: readonly SweepRow[]): string {
 export interface MemorySuiteOptions {
   setPath: string;
   embedder?: Embedder;
+  /** Default `records`. */
+  target?: RecallTarget;
 }
 
 /**
- * The suite `memory`: one run of the set at `setPath` with the default config. The headline
- * leaves out a number the set has no queries for.
+ * The suite `memory`: one run of the set at `setPath` with the default config, against the
+ * memory records or her notes. The headline leaves out a number the set has no queries for.
  */
 export async function memorySuite(
   options: MemorySuiteOptions,
 ): Promise<{ headline: Record<string, number>; detail: unknown }> {
   const set = loadRecallSet(options.setPath);
-  const result = await runRecall(set, options.embedder ? { embedder: options.embedder } : {});
+  const result = await runRecall(set, {
+    ...(options.embedder ? { embedder: options.embedder } : {}),
+    ...(options.target === undefined ? {} : { target: options.target }),
+  });
   const headline: Record<string, number> = {};
   const recall5 = result.recall_at?.["5"];
   if (recall5 !== undefined) headline["recall@5"] = recall5;
