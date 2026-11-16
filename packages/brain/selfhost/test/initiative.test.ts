@@ -45,6 +45,19 @@ const DM = dm("dm-owen");
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
+/**
+ * The shift that puts the clock at the next noon (UTC+8) at least three hours away: outside her
+ * quiet hours, and five more hours stay within the same day of hers, at whatever hour this runs.
+ */
+function toNoon(): number {
+  const now = Date.now();
+  const day = 24 * HOUR;
+  const local = now + 8 * HOUR;
+  let noon = local - (local % day) + 12 * HOUR;
+  while (noon - local < 3 * HOUR) noon += day;
+  return noon - local;
+}
+
 const decisions = (rig: Rig) => rig.of<ArbiterDecision>(Events.ArbiterDecided.type);
 const ledger = (rig: Rig) => rig.of<LedgerEntry>(Events.ArbiterLedger.type);
 
@@ -313,7 +326,7 @@ describe("longing", () => {
   it("leads to her DM with them, when they take DMs", async () => {
     const rig = await rigWith(true);
     rig.model.push(says("在幹嘛~"));
-    rig.shift = 3 * HOUR;
+    rig.shift = toNoon();
     await tick(rig);
     await until(() => rig.sink.texts().length === 2, 3_000, "her DM");
     expect(rig.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
@@ -327,7 +340,7 @@ describe("longing", () => {
 
   it("does not, when they opted out of DMs: consent, recorded", async () => {
     const rig = await rigWith(false);
-    rig.shift = 3 * HOUR;
+    rig.shift = toNoon();
     await tick(rig);
     await sleep(100);
     expect(rig.model.requests).toHaveLength(1);
