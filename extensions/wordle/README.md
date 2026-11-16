@@ -36,7 +36,7 @@ Wordle 頁面是全螢幕的,遊戲在左邊,右邊留給她的模型。給它�
 
 她邊猜邊講話,字幕照常出現,觀眾聽得到她怎麼想。好幾個頻道同時在玩時,畫面上是最後有動靜的那一局。不想上畫面就設 `show_on_stream = false`。
 
-要看效果不用開直播:在 `apps/overlay` 跑 `pnpm dev`,打開 `http://localhost:5173/?layer=wordle&demo=1`,demo 會輪流玩一局猜中的和一局沒猜到的。
+要看效果不用開直播:在 `apps/overlay` 跑 `pnpm dev`,打開 `http://localhost:5173/?layer=wordle&demo=1`,demo 會輪流玩一局猜中的和一局沒猜到的。要讓真的模型玩一局(需要 API key),見 [tools/wordle-live](../../tools/wordle-live/README.md)。
 
 單字表是公開的 Wordle 清單:`words/answers.txt`(2314 個答案)和 `words/guesses.txt`(另外 10656 個可以猜的字)。
 
