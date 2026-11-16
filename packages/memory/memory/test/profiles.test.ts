@@ -13,6 +13,7 @@ import {
   MemoryEngine,
   MemoryRetriever,
   memoryConfig,
+  type ProfileSources,
   Profiles,
   profileLine,
   type RecentDeps,
@@ -30,7 +31,9 @@ const S = "Sora";
 const pS = "person-sora";
 const pT = "person-tomo";
 
-async function setup(options: { card?: Partial<PersonCard>; knowledge?: string } = {}) {
+async function setup(
+  options: { card?: Partial<PersonCard>; knowledge?: string; notes?: ProfileSources["notes"] } = {},
+) {
   const store = await openAreas("fake");
   const log = new FakeLog();
   const handles = new FakeHandles()
@@ -94,6 +97,7 @@ async function setup(options: { card?: Partial<PersonCard>; knowledge?: string }
     knowledge: () => kb,
     events: () => log,
     handles: () => handles,
+    ...(options.notes === undefined ? {} : { notes: options.notes }),
   });
   const fact = async (content: string, importance: number, when: Timestamp) =>
     storedId(
@@ -146,6 +150,32 @@ describe("person profiles", () => {
       `<scale>${BOND_SCALE_LINE}</scale>
 <person name="Sora" relation="朋友" level="30/1000" trust="50" call_as="小空" impression="很可靠" stance="會吐槽他" last_seen="昨天 21:30,這裡" last_topic="Sora說:「我先下線了」" notes="Sora 在準備面試;生日: 3/14"/>`,
     );
+  });
+
+  it("take their points from the person's notes document once the notes are the source", async () => {
+    const lines = [
+      { id: "note:l1", text: "Sora 最近在學畫畫", origin: "experienced" as const, said_by: null },
+      { id: "note:l2", text: "Sora 養了一隻貓", origin: "told" as const, said_by: "Tomo" },
+    ];
+    let switched = false;
+    const t = await setup({
+      notes: () =>
+        switched
+          ? { personPoints: () => ({ lines, recordKept: (id: string) => id === "keep" }) }
+          : null,
+    });
+    await t.fact("Sora 喜歡拉麵", 0.8, at(-48));
+    const where = { context: guild("lobby"), present: [pS], talking_with: [pS], now: at(10, 1) };
+    const before = await t.profiles.profiles(where);
+    expect(before[0]?.points.map((x) => x.text)).toEqual(["Sora 喜歡拉麵"]);
+
+    switched = true;
+    const after = await t.profiles.profiles(where);
+    // The note lines, in their shape; the old fact is what the rebuild remade as lines.
+    expect(after[0]?.points).toEqual([
+      { text: "Sora 最近在學畫畫", origin: "experienced", said_by: null },
+      { text: "Sora 養了一隻貓", origin: "told", said_by: "Tomo" },
+    ]);
   });
 
   it("are one tag each, values escaped, cut to the person's budget value by value", () => {

@@ -36,6 +36,7 @@ import {
   NotebookReadTool,
   NotebookWriteTool,
 } from "./notebook-tools.js";
+import type { NotesRecall } from "./notes-recall.js";
 import { Profiles } from "./profiles.js";
 import { OtherPlaces, type RecentDeps, Timeline, viewerFor } from "./recent.js";
 import { RecentLog } from "./recent-log.js";
@@ -78,6 +79,7 @@ export class RecentPast {
     services: ServiceLookup,
     clock: Clock,
     notes: NotesNotebook | null = null,
+    recall: NotesRecall | null = null,
   ) {
     const config = () => engine.config.recent;
     this.deps = {
@@ -103,6 +105,7 @@ export class RecentPast {
       knowledge: () => services.get(KnowledgeKey) ?? null,
       events: () => engine.events,
       handles: () => engine.handles,
+      notes: () => recall,
     });
     this.notebook = new NotebookStore({
       settings: engine.settings,

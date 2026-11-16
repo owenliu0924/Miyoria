@@ -104,6 +104,14 @@ export interface NotesRecallDeps {
   resolver?: ScopeResolver;
 }
 
+/** One point of a person profile taken from a line of their document. */
+export interface ProfilePoint {
+  id: string;
+  text: string;
+  origin: MemoryOrigin;
+  said_by: string | null;
+}
+
 /** The id of a line of her notes among the memories returned. */
 const NOTE_PREFIX = "note:";
 
@@ -232,6 +240,35 @@ export class NotesRecall implements MemoryRetrieval {
     const first = lines.slice(0, scopedCount);
     const rest = [...lines.slice(scopedCount), ...records].sort((a, b) => b.score - a.score);
     return { memories: [...first, ...rest].slice(0, limit), weak, source: "notes" };
+  }
+
+  /**
+   * What a person profile shows of `person` once the notes are the source: the lines of their
+   * document that can be shown here, newest first, and whether a memory record is a fact written
+   * since the rebuild began (`remember`; older facts are what the rebuild remade as lines).
+   * `null` before the switch: the profile reads the facts.
+   */
+  personPoints(
+    person: PersonId,
+    where: Pick<RecallAsk, "context" | "accounts" | "present">,
+  ): { lines: ProfilePoint[]; recordKept(id: string): boolean } | null {
+    const state = this.#d.source.state;
+    if (!switched(state) || state === null) return null;
+    const handles = this.#d.engine.handles;
+    const lines = this.#d.notes
+      .lines(personSubject(person), this.viewer(where))
+      .map((line): ProfilePoint => {
+        const told = line.provenance === "told_by_subject" || line.provenance === "told_by_other";
+        const teller =
+          told && line.told_by !== null ? (handles?.ofPerson(line.told_by) ?? null) : null;
+        return {
+          id: `${NOTE_PREFIX}${line.id}`,
+          text: line.text,
+          origin: told ? "told" : "experienced",
+          said_by: teller,
+        };
+      });
+    return { lines, recordKept: (id) => writtenSince(id, state.started_at) };
   }
 
   /** Who reads from where `ask` is: the place as identity names it, and the people present. */

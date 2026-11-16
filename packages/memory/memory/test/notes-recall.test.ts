@@ -19,7 +19,7 @@ import {
   personSubject,
   topicSubject,
 } from "../../notes/src/store.js";
-import { markRebuildStarted, markRebuilt } from "../../notes/src/switch.js";
+import { markRebuildStarted, markRebuilt, ulidTime } from "../../notes/src/switch.js";
 import { NotesSearch } from "../../notes/src/vectors.js";
 import {
   MemoryEngine,
@@ -154,6 +154,19 @@ describe("NotesRecall", () => {
     expect((await later.recall.recollect(ask("麻糬"))).memories.map((m) => m.content)).toEqual([
       "Owen 養了一隻貓叫麻糬",
     ]);
+  });
+
+  it("gives the lines of a person's document as profile points once the notes are the source", async () => {
+    const r = await rig();
+    line(r, personSubject(OWEN), "喜歡吃拉麵", "Owen");
+    const where = { context: CTX, accounts: [OWEN_ACCOUNT], present: [OWEN] };
+    expect(r.recall.personPoints(OWEN, where)).toBeNull();
+    await switchOver(r, Date.now() - 60_000);
+    const points = r.recall.personPoints(OWEN, where);
+    expect(points?.lines.map((l) => [l.text, l.origin])).toEqual([["喜歡吃拉麵", "experienced"]]);
+    const idAt = (ms: number) => `${ulidTime(toTimestamp(ms))}0000000000000000`;
+    expect(points?.recordKept(idAt(Date.now()))).toBe(true);
+    expect(points?.recordKept(idAt(Date.now() - 3_600_000))).toBe(false);
   });
 
   it("keeps the episodes older than the rebuild's start date", async () => {

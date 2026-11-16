@@ -244,7 +244,7 @@ export class MemoryModule implements Module {
       }
     }
     this.#installer.recall = recall;
-    const recent = new RecentPast(engine, services, ctx.clock, notebook);
+    const recent = new RecentPast(engine, services, ctx.clock, notebook, recall);
     try {
       await recent.notebook.load();
     } catch (error) {
