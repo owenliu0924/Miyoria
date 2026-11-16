@@ -75,6 +75,7 @@ export const queryKeys = {
   directives: (history: boolean) => ["directives", history] as const,
   directivesAll: ["directives"] as const,
   evalData: (windowMs: number) => ["facts", "eval", windowMs] as const,
+  evalLive: ["eval", "live"] as const,
   lifeToday: ["life", "today"] as const,
   reminders: ["life", "reminders"] as const,
   activities: ["life", "activities"] as const,
@@ -966,6 +967,16 @@ export function useEvalData(windowMs: number) {
     refetchInterval: poll(60_000),
     placeholderData: (prev) => prev,
     retry: false,
+  });
+}
+
+/** The live suites' runs (`history.jsonl`, the last 90) and the nightly run's state. */
+export function useEvalLive() {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.evalLive,
+    queryFn: ({ signal }) => api.rpc.eval.live({ query: {} }, { signal }),
+    refetchInterval: poll(60_000),
   });
 }
 

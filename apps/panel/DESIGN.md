@@ -202,6 +202,9 @@ answer is one plain line. Nothing here is invented: a number the Core does not s
   - No ranking of people. Someone's own quests show in their page under 角色 / 人.
 - 評測 (`/eval`): the participation metrics under 參與度指標, `ChartBlock`s 回合怎麼結束 and
   沒接話的原因 (a `SegmentBar` each, counts in the legend). Words for outcomes, never a score.
+  真模型評測 (`LiveEval`, from `GET /api/eval/live`): the nightly run as a strip of facts, the eight
+  headline numbers of the live suites as `Facets` over the runs (four columns on `xl`), then the
+  ten newest runs as a table. One brain per trend; a `Segmented` picks it when there are two.
 - 派對遊戲 (a card on 直播): from `GET /api/party`. Running games first (a pulsing brand dot, the
   game, the channel, how many are there, when it began, the scores when the game scores), then 最近的結果
   with why it ended and the final standings. "現在沒有人在玩" is an empty snapshot; the module being
