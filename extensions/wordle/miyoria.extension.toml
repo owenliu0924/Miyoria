@@ -1,0 +1,18 @@
+# Wordle:她用工具一次猜一個五個字母的英文單字,每個頻道各自一局。
+# 全部在本機算,不連網路;單字表放在 words/。
+# 建置:先 `pnpm build` packages/sdk,再在這裡 `pnpm install && pnpm build`。
+id = "miyoria.wordle"
+version = "0.1.0"
+name = "Wordle"
+description = "Wordle:開一局、猜字、看提示、放棄看答案"
+kind = ["tools"]
+runtime = "node"
+entry = "dist/index.js"
+placement = "any"
+
+[permissions]
+events = []
+tools = true
+
+[config]
+schema = "config.schema.json"
