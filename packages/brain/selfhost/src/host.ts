@@ -703,6 +703,7 @@ export class SelfHost implements TextRunner {
       return;
     }
     floor?.hold(turn, context, kind);
+    agent.mainline.holdsFloor(turn, true);
     this.#turns.set(turn, state);
     agent.ctx.publish(
       Events.AgentDecision,
@@ -735,6 +736,7 @@ export class SelfHost implements TextRunner {
       this.prompt.ended(turn, result !== null && result.outcome !== "cancelled");
       this.#turns.delete(turn);
       // Freed once its lines settled (`Floor.turnEnded`), cancelled or not.
+      agent.mainline.holdsFloor(turn, false);
       floor?.turnEnded(turn);
     }
     if (result?.compacted) this.prompt.forget(place.session);

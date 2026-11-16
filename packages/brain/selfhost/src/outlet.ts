@@ -1,7 +1,8 @@
 // How a line of hers leaves: through the mouth (`MainLine.say`), so the one-mouth rule, the
 // output review and the delivery ledger stay what they are, then the scheduler and the platform.
-// The run holds the Floor for all its lines (`SelfHost`), so a line takes no hold of its own. A
-// line may carry the platform's reply reference (the host says which, `replyTo`). The outlet waits
+// The run holds the Floor for all its lines (`SelfHost`, `MainLine.holdsFloor`), so a line takes no
+// hold of its own. A line may carry the platform's reply reference (the host says which,
+// `replyTo`; `MainLine.replyNext` hands it to the mouth). The outlet waits
 // for `action.settled` of the line to tell the runner whether it reached anyone and under which
 // platform id.
 //
@@ -138,17 +139,14 @@ export class MouthOutlet implements Outlet {
     const ms = Math.min(cfg.reply_ttl_ms + SETTLE_SLACK_MS, SETTLE_MAX_MS);
     const settled = this.#settlements.wait(line.turn, line.place, line.text, ms, signal);
     settled.catch(() => undefined);
-    // The run holds the Floor for all its lines (`SelfHost`): none takes a hold of its own.
-    await agent.mainline.say(
-      {
-        context: line.place,
-        text: line.text,
-        emotion: line.emotion,
-        turn: line.turn,
-        source: "self",
-      },
-      { held: true, replyTo: this.#replyTo(line) },
-    );
+    agent.mainline.replyNext(line.turn, line.place, this.#replyTo(line));
+    await agent.mainline.say({
+      context: line.place,
+      text: line.text,
+      emotion: line.emotion,
+      turn: line.turn,
+      source: "self",
+    });
     const end = await settled;
     if (line.focus) this.#lastAt.set(line.turn, agent.ctx.clock.now());
     if (end === null) {

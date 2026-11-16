@@ -205,14 +205,6 @@ export function heardShare(text: string, heardMs: number, totalMs: number): stri
 
 export { sentences } from "./loop.js";
 
-/** How a line of `MainLine.say` goes beyond what `FixedLine` says. */
-export interface SayOptions {
-  /** The turn holds the Floor already (for its whole run): the line takes no hold of its own. */
-  held?: boolean;
-  /** The message a text line answers (the platform's reply reference). */
-  replyTo?: MessageRef | null;
-}
-
 interface LineInfo {
   attention(said: string): { key: string; revision: number };
   audience(): readonly Handle[];
@@ -226,6 +218,10 @@ export class MainLine implements Mouth {
   readonly commitments: CommitmentBook;
   readonly proposals: Proposals;
   readonly #turns = new Set<TurnId>();
+  /** Turns of the text runner that hold the Floor for their whole run (`holdsFloor`). */
+  readonly #held = new Set<TurnId>();
+  /** The reply reference of a turn's next text line in a place (`replyNext`). */
+  readonly #replies = new Map<TurnId, { context: ContextKey; ref: MessageRef }>();
   /** Message id → its observation: what a turn's first line was caused by. */
   readonly #causes = new Map<string, string>();
   /** When a fixed line was last said, by context. */
@@ -414,15 +410,38 @@ export class MainLine implements Mouth {
   }
 
   /**
-   * `options` (the text runner's lines): `held`, the turn holds the Floor for its whole run, so
-   * the line takes no hold of its own; `replyTo`, the message a text line answers.
+   * The text runner's run of `turn` holds the Floor from its start to its end (`held`), or no
+   * longer: while it does, `say` takes no hold of its own for a line of that turn.
    */
-  async say(line: FixedLine, options: SayOptions = {}): Promise<void> {
+  holdsFloor(turn: TurnId, held: boolean): void {
+    if (held) this.#held.add(turn);
+    else {
+      this.#held.delete(turn);
+      this.#replies.delete(turn);
+    }
+  }
+
+  /** The next line `say` sends for `turn` in `context` answers `ref` (the platform's reference). */
+  replyNext(turn: TurnId, context: ContextKey, ref: MessageRef | null): void {
+    if (ref === null) this.#replies.delete(turn);
+    else this.#replies.set(turn, { context, ref });
+  }
+
+  /** The reply reference `replyNext` left for this line, taken. */
+  #replyOf(turn: TurnId, context: ContextKey): MessageRef | null {
+    const reply = this.#replies.get(turn);
+    if (reply === undefined || !contextKeyEquals(reply.context, context)) return null;
+    this.#replies.delete(turn);
+    return reply.ref;
+  }
+
+  async say(line: FixedLine): Promise<void> {
     const agent = this.#agent;
     if (agent.muted) return;
     const turn = line.turn ?? newId();
     this.own(turn);
     const { context } = line;
+    const replyTo = this.#replyOf(turn, context);
     const safe = safeOutgoing(agent.ctx.services.get(ModerationKey), {
       path: "reply",
       text: line.text,
@@ -432,7 +451,7 @@ export class MainLine implements Mouth {
     });
     const { text } = safe;
     const blocked = safe.blocked ?? line.blocked ?? null;
-    const floor = options.held === true ? null : this.floor();
+    const floor = this.#held.has(turn) ? null : this.floor();
     floor?.hold(turn, context, "result");
     const sink = agent.ctx.services.get(ActionSinkKey);
     try {
@@ -458,7 +477,7 @@ export class MainLine implements Mouth {
       const action = newAction(
         textLane(context),
         priority,
-        { type: "send_message", context, message: { text, reply_to: options.replyTo ?? null } },
+        { type: "send_message", context, message: { text, reply_to: replyTo } },
         { ttl: agent.config.reply_ttl_ms, turn, blocked },
       );
       agent.noteOwnText(context, text, action.id);
