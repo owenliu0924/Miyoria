@@ -968,6 +968,26 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # floor = 0.4                    # 最低乘到這麼多
 # similarity = 0.6               # 兩則記憶共同的字佔較小那組的比例到這裡才算同一件事
 
+# 段落整理:`miyoria memory rebuild --apply` 整個跑完之後(下次啟動起),她的記憶由它即時寫進筆記,
+# 下面「回想與整理」的 consolidate_* 那套停掉;回想和每回合的記憶改讀筆記。模型用途是 purpose。
+# [modules.memory.segment]
+# enabled = true
+# idle_secs = 300                # 一段對話安靜這麼久就算結束,交給段落整理
+# max_lines = 40                 # 或一段到這麼多句
+# tick_secs = 30                 # 背景多久找一次結束了的段落
+# compaction_wait_ms = 20000     # 壓縮逐字稿前最多等段落整理這麼久;等不到就先壓縮,記一筆,背景之後補
+# retry_secs = 60                # 整理失敗後等多久再試,每失敗一次加倍
+# retry_max_secs = 3600          # 最多等這麼久
+# abandon_limit = 3              # 回覆連續這麼多次不能用,就跳過那一段
+# per_tick = 4                   # 每個對話每次最多整理幾段
+# 回想(recall)和每回合的記憶讀筆記時的門檻,讓「其實沒有答案」的問題少帶出不相關的行
+# [modules.memory.notes_recall]
+# min_score = 0.3                # 分數低於這個的行不回傳
+# vector_alone_margin = 0.1      # 沒有共同的字、只靠意思像的行,cosine 要到 min_vector 再加這麼多
+# gap_rank = 5                   # 第一名和第幾名比(不到這麼多行就和 min_score 比)
+# min_gap = 0.05                 # 差距不到這個就算沒有特別相關的:每回合的記憶不放,recall 標成不確定
+# scoped_limit = 6               # 先找在場的人、被提到的人和這個地方的文件,最多幾行
+
 # 回想與整理:都是預設值。檢索分數是向量、文字、新近度、重要度、在場的人五項加權
 # [modules.memory]
 # consolidate_idle_secs = 300    # 一個對話安靜這麼久就整理

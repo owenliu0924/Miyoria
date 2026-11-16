@@ -7,6 +7,9 @@
 //   in the database (`event_cursors`, consumer `memory.rebuild`), so a stopped run goes on from
 //   the segment it was at. `--max-usd` stops it before the next segment once that much is spent.
 // - It writes lines and episodes only. It never deletes or supersedes a record.
+// - `--apply` records when the rebuild first began, and when a run has handled every segment
+//   (the setting `notes:rebuild`): from the next start of the Core on, her notes are the source
+//   of her memory (the live segment pass runs, consolidation stops, recall reads the notes).
 // - `--apply` is refused while another process holds the database file open (a Core running on
 //   it), unless `--force`. That check is the operating system's view of the file (`heldFiles`),
 //   not a lock of the Core's own.
@@ -278,6 +281,7 @@ export async function rebuildCommand(
         maxUsd,
         purpose: REBUILD_PURPOSE,
         signal: controller.signal,
+        marker: { settings: store.settings, profile },
         onSegment: (done, of) => {
           if (done % 10 === 0 || done === of) println(dim(`  ${done} / ${of}`));
         },
@@ -309,8 +313,10 @@ export async function rebuildCommand(
       } else {
         println(waitingLine());
       }
-      if (report.status === "done") ok("完成");
-      else if (report.status === "budget") warn("到上限停下來;再跑一次會從這裡繼續");
+      if (report.status === "done") {
+        ok("完成");
+        note("從下次啟動起,她的記憶以筆記為主:段落整理即時跑,舊的整理停掉,回想讀筆記");
+      } else if (report.status === "budget") warn("到上限停下來;再跑一次會從這裡繼續");
       else if (report.status === "aborted") warn("中斷;再跑一次會從這裡繼續");
       else {
         throw new MemoryCommandError(

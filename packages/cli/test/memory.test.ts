@@ -10,6 +10,7 @@ import { type IncomingMessage, toTimestamp } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { memoryTables } from "../../memory/memory/src/tables.js";
 import { notesTables } from "../../memory/notes/src/store.js";
+import { rebuildState } from "../../memory/notes/src/switch.js";
 import { COMMANDS, helpText, parseArgs } from "../src/cli.js";
 import { type RebuildModel, rebuildCommand } from "../src/commands/memory.js";
 import { setOutput } from "../src/ui.js";
@@ -155,6 +156,15 @@ describe("miyoria memory rebuild", () => {
     );
     expect(first.asked).toHaveLength(1);
     expect(text()).toContain("budget");
+    const state = async () => {
+      const store = await SqliteStore.open(db, { plugins: [notesTables, memoryTables] });
+      try {
+        return await rebuildState(store.settings, "deepseek-chan");
+      } finally {
+        await store.close();
+      }
+    };
+    expect(await state()).toMatchObject({ done_at: null });
 
     out = [];
     const second = model(PRICE);
@@ -165,6 +175,8 @@ describe("miyoria memory rebuild", () => {
     );
     expect(second.asked).toHaveLength(1);
     expect(text()).toContain("done");
+    expect(text()).toContain("記憶以筆記為主");
+    expect((await state())?.done_at).not.toBeNull();
 
     out = [];
     await rebuildCommand(
