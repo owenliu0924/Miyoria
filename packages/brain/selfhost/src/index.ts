@@ -15,6 +15,8 @@ export {
   type OpportunityKind,
 } from "./gates.js";
 export { SelfHost, type SelfHostOptions, selfHost } from "./host.js";
+export { ADMITTED_NOTES, CHAT_NOTES, NOTICE_TOOL } from "./impulse-texts.js";
+export { chatCapabilities, ImpulseDesk, type ImpulseDeskHost } from "./impulses.js";
 export {
   INITIATIVE_STATE_KEY,
   Initiative,
@@ -42,13 +44,20 @@ export {
   JobsHost,
   type JobsHostDeps,
   type JobsHostOptions,
-  kindOfWork,
   type RunReflectDeps,
   runReflect,
   settingsJobStore,
   taskEventOf,
 } from "./jobs.js";
-export { Lane, type LaneHost, type LaneInput, type LaneRun } from "./lane.js";
+export {
+  type AdmittedAnswer,
+  type AdmittedInput,
+  Lane,
+  type LaneHost,
+  type LaneInput,
+  type LaneRun,
+  selfStarted,
+} from "./lane.js";
 export { MouthOutlet, type Settled, Settlements, submitTyping, TYPING_TTL_MS } from "./outlet.js";
 export { type PlaceBook, resolvePlace } from "./places.js";
 export {

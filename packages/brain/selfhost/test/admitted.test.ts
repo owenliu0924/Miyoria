@@ -1,8 +1,10 @@
 // What other modules ask her to say, on the new runner: what the Arbiter admits (a game's
 // narration, a song's announcement, a notice) is a run of the place's lane under the turn the
-// Arbiter booked, never queued behind a run; `chat.start` wakes her where it was asked.
+// Arbiter booked, never queued behind a run; `chat.start` wakes her where it was asked; a long task
+// asked for in voice (the old work lane's `work_start`) is a helper's job.
 
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { defineTool } from "@miyoria/llm/tools";
 import { sleep } from "@miyoria/runtime/kernel";
 import {
   type ArbiterDecision,
@@ -12,16 +14,18 @@ import {
   type Impulse,
   ImpulseHostKey,
   type ImpulseInput,
-  type JsonValue,
   newImpulse,
+  type PlaybackState,
   Principals,
   type TurnOutcomeRecord,
   toTimestamp,
   type VoiceParticipant,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   account,
+  calls,
   channel,
   Rig,
   type RigOptions,
@@ -62,6 +66,28 @@ async function voiceRig(o: RigOptions = {}): Promise<Rig> {
   return rig;
 }
 
+let nextUtterance = 0;
+
+function hear(rig: Rig, who: string, text: string): void {
+  const now = Date.now();
+  rig.sup.bus.publish("voice.test", Events.VoiceUtteranceEvent, {
+    id: `u${nextUtterance++}`,
+    context: VC,
+    speaker: { account: account(who), display_name: who, is_bot: false },
+    text,
+    language: "zh",
+    emotion: null,
+    audio_events: [],
+    started_at: toTimestamp(now - 800),
+    ended_at: toTimestamp(now),
+    asr_ms: 200,
+  });
+}
+
+function play(rig: Rig, turn: string, state: PlaybackState, text: string): void {
+  rig.sup.bus.publish("voice.test", Events.VoicePlaybackEvent, { context: VC, turn, state, text });
+}
+
 function impulse(input: Partial<ImpulseInput> & Pick<ImpulseInput, "source">): Impulse {
   return newImpulse(
     { context: C1, ttlMs: 60_000, why: input.source, hint: "", reason: input.source, ...input },
@@ -97,7 +123,7 @@ describe("what the Arbiter admits", () => {
         context: C1,
         hint: "你要開始唱〈小星星〉了(owen 點的)。用一句話開場,說完就開始。",
         reason: "song_start",
-      }) as unknown as JsonValue,
+      }),
     );
     await until(() => speeches(rig).length === 1, 3_000, "her opening line");
     const [[text, turn] = ["", null]] = speeches(rig);
@@ -196,6 +222,49 @@ describe("what the Arbiter admits", () => {
     await until(() => outcomes(rig).length === 2, 3_000, "both outcomes");
     const cut = outcomes(rig).find((o) => o.outcome.type === "cancelled");
     expect(cut?.outcome).toMatchObject({ cause: "superseded" });
+  });
+
+  it("a long task asked for in voice goes to a helper; its result comes back to the channel", async () => {
+    const search = defineTool({
+      name: "web_search",
+      description: "搜尋。",
+      parameters: z.object({ q: z.string().optional() }),
+      effect: "read",
+      speed: "instant",
+      risk: "low",
+      group: "test",
+      core: true,
+      next: true,
+      readOnly: true,
+      call: async () => "三個結果",
+    });
+    const rig = await voiceRig({ provide: (_sup, tools) => tools.register(search) });
+    for (let i = 0; i < 8; i++) {
+      rig.model.push({
+        events: (request) => {
+          const helper = String(request.messages[0]?.content ?? "").includes("小幫手");
+          const text = textOf(request);
+          if (helper) {
+            return text.includes("三個結果")
+              ? says("結論:A 比較好。")
+              : calls("web_search", { q: "A B" });
+          }
+          if (text.includes("結論:A 比較好。")) return says("查好了,A 比較好");
+          if (text.includes("交給小幫手了")) return says("我請小幫手去查");
+          return calls("delegate", { kind: "research", goal: "查 A 和 B 哪個好" });
+        },
+      });
+    }
+    hear(rig, "owen", "小鯨魚幫我查 A 和 B 哪個好");
+    await until(() => speeches(rig).length === 1, 5_000, "the receipt");
+    const [[receipt, turn] = ["", null]] = speeches(rig);
+    expect(receipt).toBe("我請小幫手去查");
+    play(rig, turn ?? "", "started", receipt);
+    play(rig, turn ?? "", "finished", receipt);
+    await until(() => speeches(rig).length === 2, 5_000, "the result");
+    expect(speeches(rig)[1]?.[0]).toBe("查好了,A 比較好");
+    // Said in the voice channel: nothing went to a text channel.
+    expect(rig.sink.texts()).toEqual([]);
   });
 
   it("chat.start refuses a channel she does not talk in", async () => {

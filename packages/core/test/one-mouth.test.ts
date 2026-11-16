@@ -33,15 +33,13 @@ function using(pattern: RegExp): string[] {
 }
 
 describe("only the main line speaks", () => {
-  it("a line is only built by a turn, the mouth and her own DM tool", () => {
+  it("a line is only built by the mouth and her own DM tool", () => {
     expect(using(/\btype:\s*"(?:speak|send_message)"/)).toEqual(
       [
-        // `message.dm`: a tool, so only ever an action of a main-line turn; the scheduler checks.
+        // `message.dm`: a tool, so only ever an action of one of her runs; the scheduler checks.
         "packages/gate/actions/src/builtin.ts",
-        // The mouth (`MainLine.say`).
+        // The mouth (`MainLine.say`): every line of a run, and the fixed lines.
         "packages/brain/agent/src/mainline/main.ts",
-        // The turn itself: sentences, text, the fixed line.
-        "packages/brain/agent/src/turn.ts",
         // The bus shape of `action.settled` in the type's own file.
         "packages/types/src/action.ts",
       ].sort(),
@@ -87,8 +85,6 @@ describe("only the main line acts", () => {
         "packages/gate/actions/src/tools.ts",
         // Transitions of a request the turn already made.
         "packages/brain/activity/src/port.ts",
-        // `chat.*` only (`#propose` runs nothing): the consent check of a line she chose.
-        "packages/brain/agent/src/intents.ts",
         // A person on the member page asking for a song, as a `user`: a request she may turn down.
         "packages/api/src/member.ts",
         // A person at the panel, or a slash command: people, not her.
@@ -116,18 +112,18 @@ describe("only the main line acts", () => {
     expect(act).not.toContain(".propose(");
     expect(act).not.toContain("arbiter.submit");
     expect(act).not.toContain("registry.invoke");
-    const intents = readFileSync(join(ROOT, "packages/brain/agent/src/intents.ts"), "utf8");
-    expect(intents).toContain("if (!talkOnly) return this.#propose(intent);");
+    // What the Arbiter admits is a run of hers: its host runs no capability itself.
+    const desk = readFileSync(join(ROOT, "packages/brain/selfhost/src/impulses.ts"), "utf8");
+    expect(desk).not.toContain(".invoke(");
   });
 
-  it("the old self-starting paths are gone: without the agent module a proposal is dropped", () => {
+  it("the old self-starting paths are gone: the director's narration only asks the Arbiter", () => {
     const runtime = readFileSync(join(ROOT, "packages/brain/agent/src/runtime.ts"), "utf8");
     expect(runtime).not.toContain("legacyInitiative");
     expect(runtime).not.toContain("onImpulseEvent");
+    expect(runtime).not.toContain("openInitiative");
     const director = readFileSync(join(ROOT, "packages/play/game/src/director.ts"), "utf8");
-    const board = director.indexOf("ProposalBoardKey);");
-    expect(board).toBeGreaterThan(-1);
-    expect(board).toBeLessThan(director.indexOf("Events.ArbiterImpulse,"));
-    expect(director).toContain("commentary dropped: the agent module is not running");
+    expect(director).not.toContain("ProposalBoardKey");
+    expect(director).toContain("this.#ctx.publish(Events.ArbiterImpulse, impulse);");
   });
 });

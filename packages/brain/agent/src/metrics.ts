@@ -9,6 +9,21 @@ export const agentTurns = metrics.counter("miyoria_agent_turns_total", {
   labels: ["decision"],
 });
 
+/** Voice runs started before the wait after an utterance was over, by what came of them. */
+export const speculations = metrics.counter("miyoria_agent_voice_speculation_total", {
+  help: "Voice turns started before the wait after an utterance was over; result is confirmed or dropped.",
+  labels: ["result"],
+});
+
+/** What dropped early starts cost: the run's time, and the model's time of those that asked it. */
+export const speculationWaste = metrics.counter(
+  "miyoria_agent_voice_speculation_wasted_seconds_total",
+  {
+    help: "Time spent by voice turns that started early and were dropped; part is turn or model.",
+    labels: ["part"],
+  },
+);
+
 /**
  * The after-the-fact corrections of her output (docs/design/v4-patches.md), by kind and by where
  * she was (voice or text). Only that one fired: never what she said.

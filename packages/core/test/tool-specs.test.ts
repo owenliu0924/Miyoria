@@ -1,13 +1,12 @@
-// What the current turn offers the model, held to a file: the real core is booted on an in-memory
-// store (no Discord, API, cluster or extensions), the capabilities of modules that cannot start
-// here (voice, Stage, the sandbox, the diary) are added from their factories, and every tool's
-// spec is written out the way `turn.ts` reads it. A change to the registry must leave
-// `tool-specs.snap` as it is.
+// What a run offers the model, held to a file: the real core is booted on an in-memory store (no
+// Discord, API, cluster or extensions), the capabilities of modules that cannot start here (voice,
+// Stage, the sandbox, the diary) are added from their factories, and every tool's spec is written
+// out the way the runner reads it. A change to the registry must leave `tool-specs.snap` as it is.
 
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { COMMIT_SPEC, MainLineConfigSchema, STEER_SPEC, slimTool } from "@miyoria/brain/agent";
+import { MainLineConfigSchema, slimTool } from "@miyoria/brain/agent";
 import { ActuatorRegistryKey, CapabilityTool, isGatedToolName } from "@miyoria/gate/actions";
 import {
   searchTools,
@@ -49,7 +48,7 @@ enabled = true
 enabled = true
 `;
 
-/** What `turn.ts` reads of a tool besides calling it. */
+/** What the runner reads of a tool besides calling it. */
 function view(tool: Tool) {
   return {
     name: tool.spec.name,
@@ -107,15 +106,15 @@ function offered(): Tool[] {
   });
 }
 
-describe("the tools of the current turn", () => {
+describe("the tools of a run", () => {
   it("are offered with the same specs as before", async () => {
     const limits = MainLineConfigSchema.parse({});
     const slim = { description: limits.tool_chars, argument: limits.tool_arg_chars };
     const tools = offered();
     const snapshot = {
       tools: tools.map(view),
-      // What the main line sends: each spec cut to its budget, then her own two.
-      sent: [...tools.map((t) => slimTool(t.spec, slim)), COMMIT_SPEC, STEER_SPEC],
+      // What is sent: each spec cut to its budget.
+      sent: tools.map((t) => slimTool(t.spec, slim)),
     };
     await expect(`${JSON.stringify(snapshot, null, 2)}\n`).toMatchFileSnapshot(SNAPSHOT);
   });
@@ -125,7 +124,6 @@ describe("the tools of the current turn", () => {
     // One tool of each owner, so a module that stops registering here is noticed.
     const owners: Record<string, string> = {
       agent: "react",
-      worklane: "work_start",
       directive: "directive_add",
       memory: "recall",
       notebook: "notebook_read",
@@ -221,7 +219,6 @@ describe("the registry behind them", () => {
       "sing_start",
       "stream_start",
       "voice_join",
-      "work_start",
     ]);
   });
 

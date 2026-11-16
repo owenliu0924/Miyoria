@@ -34,12 +34,12 @@ describe("no rule reads how she feels", () => {
     expect(readers(inside("packages/brain/directive/src"))).toEqual([]);
   });
 
-  it("the claim gate and the main line's checks", () => {
+  it("the main line's commitments and the runner's guards", () => {
     expect(
       readers([
-        ...file("packages/brain/agent/src/claims.ts"),
-        ...file("packages/brain/agent/src/mainline/gate.ts"),
         ...file("packages/brain/agent/src/mainline/commitments.ts"),
+        ...file("packages/brain/self/src/guard.ts"),
+        ...file("packages/brain/self/src/service-guard.ts"),
       ]),
     ).toEqual([]);
   });

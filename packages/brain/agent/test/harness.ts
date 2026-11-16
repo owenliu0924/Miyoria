@@ -1,5 +1,7 @@
 // Module-level test harness: a real supervisor with a stub `llm` module (mock providers) and a
-// fake `scheduler` that records actions. Tests run with Vitest fake timers.
+// fake `scheduler` that records actions, and the agent module without a text runner (nothing
+// answers: what is tested is what the module keeps and provides). Tests run with Vitest fake
+// timers. The selfhost rig takes `profile` and `Stub` from here.
 
 import { CommandsModule, type InvocationData, splitPath } from "@miyoria/commands";
 import { type ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
@@ -182,8 +184,6 @@ export interface Setup {
   tools?: Tool[];
   /** Provided by the "app" before the agent starts. */
   appTools?: ToolRegistry;
-  /** Fixed decision roll (default 0: every positive probability passes). */
-  roll?: number;
   /** Provided by the "app" as the voice module's sink. */
   voiceSink?: VoiceSink;
   /** Provided by the "app" as the actuator registry. */
@@ -286,15 +286,12 @@ export class Harness {
       true,
     );
     for (const [module, cfg] of setup.before ?? []) await sup.register(module, cfg, true);
-    const roll = setup.roll ?? 0;
-    const agent = new AgentModule(setup.profile ?? profile(mode))
-      .withRandom({ nextF32: () => roll })
-      .withImageFetch(
-        setup.fetchImage ??
-          (async () => {
-            throw new Error("no network in tests");
-          }),
-      );
+    const agent = new AgentModule(setup.profile ?? profile(mode)).withImageFetch(
+      setup.fetchImage ??
+        (async () => {
+          throw new Error("no network in tests");
+        }),
+    );
     for (const tool of setup.tools ?? []) agent.tools().register(tool);
     await sup.register(agent, config, true);
     for (const [module, cfg] of setup.modules ?? []) await sup.register(module, cfg, true);

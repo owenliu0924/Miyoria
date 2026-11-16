@@ -68,48 +68,26 @@ describe("every line of hers is reviewed", () => {
       (f) => f !== "packages/types/src/action.ts",
     );
     expect(builders).toEqual(
-      [
-        "packages/gate/actions/src/builtin.ts",
-        "packages/brain/agent/src/mainline/main.ts",
-        "packages/brain/agent/src/turn.ts",
-      ].sort(),
+      ["packages/gate/actions/src/builtin.ts", "packages/brain/agent/src/mainline/main.ts"].sort(),
     );
     for (const file of builders) expect(read(file), file).toContain("safeOutgoing(");
   });
 
-  it("each way out of a turn goes through the review", () => {
-    const turn = read("packages/brain/agent/src/turn.ts");
-    for (const [head, call] of [
-      ["async #say(", "this.safe("],
-      ["async #endPair(", "this.#say("],
-      ["async #postAside(", "safeOutgoing("],
-      ["async #canned(", "this.#safe("],
-    ] as const) {
-      expect(bodyOf(turn, head), head).toContain(call);
+  it("each way out of a run goes through the review", () => {
+    // The runner's outlets hand every line of hers, text and voice, to the mouth.
+    for (const file of [
+      "packages/brain/selfhost/src/outlet.ts",
+      "packages/brain/selfhost/src/voice-outlet.ts",
+    ]) {
+      expect(read(file), file).toContain("agent.mainline.say(");
     }
-    // `Speech` hands a line to the sink in one place, `#say`, after the review.
-    expect(bodyOf(turn, "class Speech {").match(/this\.sink\.submit\(/g)).toHaveLength(1);
-    const speak = bodyOf(turn, "async #say(");
-    expect(speak.indexOf("this.safe(")).toBeGreaterThan(-1);
-    expect(speak.indexOf("this.safe(")).toBeLessThan(speak.indexOf("this.sink.submit("));
-    // The text `send` closure and the `Speech` get the review.
-    expect(turn.match(/const send = async \(raw: string\) => \{/g)).toHaveLength(1);
-    // The closure reviews every part it sends (`[回覆 N]` splits one into several).
-    expect(
-      turn.match(/const safe = this\.#safe\(cleanReply\(mark\.text, names\)\);/g),
-    ).toHaveLength(1);
-    expect(
-      turn.match(/\(text, spoken, aloud\) => this\.#safe\(text, spoken, aloud\)/g),
-    ).toHaveLength(1);
-    expect(turn.match(/new Speech\(/g)).toHaveLength(1);
-    // What says which path it is.
-    expect(turn).toContain('this.#fallback ? "fallback" : "reply"');
-    expect(turn).toContain("this.#fallback = stream.fallback;");
+    // And the mouth reviews before it builds the line.
     const say = bodyOf(
       read("packages/brain/agent/src/mainline/main.ts"),
       "async say(line: FixedLine)",
     );
-    expect(say).toContain("safeOutgoing(");
+    expect(say.indexOf("safeOutgoing(")).toBeGreaterThan(-1);
+    expect(say.indexOf("safeOutgoing(")).toBeLessThan(say.indexOf("newAction("));
   });
 
   it("every sink a line can reach reviews it or is told why it need not", () => {
@@ -212,9 +190,10 @@ describe("everything people write is judged", () => {
   });
 
   it("what tools bring back is outside content", () => {
-    const turn = read("packages/brain/agent/src/turn.ts");
-    expect(bodyOf(turn, "async #tryTool(")).toContain("this.#outside(out)");
-    expect(bodyOf(turn, "#outside(text: string)")).toContain('source: "tool"');
+    // The runner screens every result before she reads it; the service guard judges it as a tool's.
+    expect(read("packages/brain/self/src/run.ts")).toContain("guard.screenResult?.(result.text");
+    const guard = read("packages/brain/self/src/service-guard.ts");
+    expect(bodyOf(guard, "screenResult(text: string")).toContain('source: "tool"');
   });
 
   it("the node that marks the owner is held by owners alone", () => {

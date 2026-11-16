@@ -8,7 +8,7 @@ import {
 } from "@miyoria/commands";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { DirectivesKey, EventLogKey, ProposalBoardKey } from "@miyoria/types";
+import { DirectivesKey, EventLogKey } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { DirectiveModule } from "../src/index.js";
 import {
@@ -35,7 +35,6 @@ async function running() {
   sups.push(sup);
   sup.services.provide("kernel", DirectivesKey, w.rules);
   sup.services.provide("kernel", EventLogKey, w.log);
-  sup.services.provide("kernel", ProposalBoardKey, w.board);
   const tools = new ToolRegistry();
   sup.services.provide("kernel", ToolRegistryKey, tools);
   const commands = new CommandRegistry(Permissions.fromStrings([`discord:${OWNER.id}`]), {
@@ -76,9 +75,7 @@ describe("module directive", () => {
         proposal: { ...proposal(h.w, { what: "想開遊戲", capability: "game.start" }), id: "p1" },
       } as never,
     });
-    expect(h.w.board.open().map((p) => p.id)).toEqual(["p1"]);
     await Promise.resolve();
-    expect(h.w.board.open()).toEqual([]);
     expect(h.w.log.recent().find((e) => e.kind === "result")?.body).toMatchObject({
       proposal: "p1",
       state: "dropped",

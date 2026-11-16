@@ -75,10 +75,11 @@ export const PREFIX_PROFILE: Readonly<Record<ProfileName, ProfileName>> = {
 /**
  * What a voice run may call, by name, of the tools it is offered (the text profile's, so the
  * prefix holds): it answers within a breath. A call of anything else is refused at call time and
- * she reads why (the host's guard). Long actions (voice, songs, games, party games, going live)
- * only start something and come back with a receipt, as in text.
+ * she reads why (the host's guard). Long actions (voice, songs, games, party games, going live, a
+ * helper's job) only start something and come back with a receipt, as in text.
  */
 export const VOICE_TOOLS: ReadonlySet<string> = new Set([
+  "delegate",
   "find_tools",
   "recall",
   "remember",

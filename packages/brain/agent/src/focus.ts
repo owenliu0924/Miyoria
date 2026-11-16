@@ -1,8 +1,7 @@
 // Turn ownership (docs/design/v2-architecture.md §3.9): every turn knows whom it answers.
 //
-// `selectFocus` splits a turn's input into `focus` (the messages that called her, plus the
-// same people's follow-ups) and `background` (everything else). The prompt's "要回的訊息"
-// block only shows the focus, naming who asked, and the reply quotes its first message.
+// `callKind` says how a line relates to her (it calls her, replies to her, is about her said to
+// someone else, or only reacts); `oneCaller` gives several people calling her at once a run each.
 //
 // `TurnFocusBoard` keeps the focus of every turn in flight (or still speaking) per context:
 // the agent provides it as `TurnFocusViewKey` so voice barge-in can ask, on its hot path, whom
@@ -23,7 +22,7 @@ import {
   type TurnReason,
   timestampMs,
 } from "@miyoria/types";
-import { type Aside, isQuestion, openingCall } from "./attention.js";
+import { type Aside, isQuestion, openingCall } from "./address.js";
 import { contextId } from "./util.js";
 
 /** How one message relates to her. */
@@ -80,88 +79,6 @@ export function callKind(
     if (gap >= -voice.questionWindowMs && gap <= voice.questionWindowMs) return "address";
   }
   return null;
-}
-
-export interface FocusSelection {
-  reason: TurnReason;
-  /** The messages the reply answers, oldest first. */
-  focus: IncomingMessage[];
-  /** The rest of the turn's input: context only. */
-  background: IncomingMessage[];
-  /** The people who called her (or replied to her), in the order they did. */
-  addressed: IncomingMessage["author"][];
-  /** Authors of the focus messages (for an ambient turn: the last speaker). */
-  authors: AccountRef[];
-  /** How each focus message relates to her (same order as `focus`). */
-  kinds: CallKind[];
-}
-
-/**
- * Splits `inputs` (oldest first) into focus and background.
- *
- * - Someone called her (or replied to her): the focus is their messages from the first one that
- *   called her on; everyone else's are background. `reason` is `addressed` (or `reply_to_her`
- *   when every call was a reply).
- * - Nobody did but `followsHer` (someone answering what she just said): the last speaker's
- *   messages, `reply_to_her`, unless those only react to her line or are said to someone else
- *   (`about`, `reaction`): then nobody waits for her and the turn is `ambient`.
- * - Otherwise `ambient`: the last speaker's messages, nobody in `addressed`.
- */
-export function selectFocus(
-  inputs: readonly IncomingMessage[],
-  classify: (msg: IncomingMessage) => CallKind,
-  followsHer: boolean,
-): FocusSelection {
-  const kinds = inputs.map(classify);
-  const addressed: IncomingMessage["author"][] = [];
-  const firstCall = new Map<string, number>();
-  let anyAddress = false;
-  inputs.forEach((m, i) => {
-    const kind = kinds[i] ?? null;
-    if (!callsHer(kind)) return;
-    if (kind === "address") anyAddress = true;
-    const key = authorKey(m.author.account);
-    if (!firstCall.has(key)) {
-      firstCall.set(key, i);
-      addressed.push(m.author);
-    }
-  });
-  let take: (m: IncomingMessage, i: number) => boolean;
-  let reason: TurnReason;
-  if (addressed.length > 0) {
-    reason = anyAddress ? "addressed" : "reply_to_her";
-    take = (m, i) => {
-      const from = firstCall.get(authorKey(m.author.account));
-      return from !== undefined && i >= from;
-    };
-  } else {
-    const last = inputs.at(-1);
-    const aside = inputs.some(
-      (m, i) =>
-        last !== undefined &&
-        sameAccount(m.author.account, last.author.account) &&
-        (kinds[i] === "about" || kinds[i] === "reaction"),
-    );
-    reason = followsHer && last !== undefined && !aside ? "reply_to_her" : "ambient";
-    if (reason === "reply_to_her" && last) addressed.push(last.author);
-    take = (m) => last !== undefined && sameAccount(m.author.account, last.author.account);
-  }
-  const focus: IncomingMessage[] = [];
-  const focusKinds: CallKind[] = [];
-  const background: IncomingMessage[] = [];
-  inputs.forEach((m, i) => {
-    if (take(m, i)) {
-      focus.push(m);
-      focusKinds.push(kinds[i] ?? null);
-    } else {
-      background.push(m);
-    }
-  });
-  const authors: AccountRef[] = [];
-  for (const m of focus) {
-    if (!authors.some((a) => sameAccount(a, m.author.account))) authors.push(m.author.account);
-  }
-  return { reason, focus, background, addressed, authors, kinds: focusKinds };
 }
 
 /**
@@ -274,17 +191,6 @@ function pickPerson(
   const want = squash(said);
   const found = people.filter((p) => squash(p.display_name) === want);
   return found.length === 1 ? (found[0]?.account ?? null) : null;
-}
-
-/** How the focus block introduces a message (`Owen 問你:…`). */
-export function focusVerb(kind: CallKind, first: boolean): string {
-  // Said to someone else, about her: she may join, but it was not said to her.
-  if (kind === "about") return "跟別人講到你(不是對你說,真的需要才插話)";
-  if (kind === "reaction") return "對你的話反應(不用回也可以)";
-  if (!first) return "接著說";
-  if (kind === "address") return "問你";
-  if (kind === "reply") return "回你";
-  return "說";
 }
 
 export interface TurnFocusInit {

@@ -1,9 +1,8 @@
 // The sub-agent jobs on today's services (the engine is `Delegator` in `@miyoria/brain/self`).
 //
 // Her tools. `delegate` (core), `delegate_list`, `delegate_cancel` and `delegate_read` are
-// registered for the new runner only. `work_start`, `work_list` and `work_steer` keep their names
-// and specs (the tool list of the current turn does not change) but start, list and stop the same
-// jobs, except in a voice channel, which stays on the old work lane, as does the game director.
+// registered for the new runner only. They replace the old work lane's `work_start`, `work_list`
+// and `work_steer`; the lane itself stays only for the game director's driven tasks.
 //
 // Results. A job that ends wakes the place that started it as a `result`, with the job's id,
 // kind, goal and summary as the data of the wake (the runner frames it); one a restart cut is told
@@ -17,7 +16,7 @@
 // `delegate:day:<pool>`), the store the work lane keeps its task rows in.
 
 import { LlmRouterKey } from "@miyoria/llm/llm";
-import type { Tool, ToolContext, ToolResult } from "@miyoria/llm/tools";
+import type { Tool } from "@miyoria/llm/tools";
 import type { TranscriptStore } from "@miyoria/memory/transcript";
 import { errorMessage, SerialQueue, sleep } from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey, StoreKey } from "@miyoria/store";
@@ -32,20 +31,16 @@ import {
   type TaskEvent,
   type TaskFailureCode,
   toTimestamp,
-  WorkLaneKey,
 } from "@miyoria/types";
-import { z } from "zod";
 import { type Agent, pinnedSection } from "../../agent/src/index.js";
 import type { LocalTime } from "../../arbiter/src/index.js";
 import {
-  askerOf,
   type DayState,
   type DelegateEvent,
   type DelegateLimits,
   Delegator,
   delegateTexts,
   delegateTools,
-  isEnded,
   isSubagentKind,
   type JobRow,
   type JobState,
@@ -60,10 +55,6 @@ export const DELEGATE_OWNER = "delegate";
 /** Settings key prefixes. */
 export const JOB_PREFIX = "delegate:job:";
 export const DAY_PREFIX = "delegate:day:";
-/** The tools of the old lane that now start, list and stop jobs. */
-export const WORK_START = "work_start";
-export const WORK_LIST = "work_list";
-export const WORK_STEER = "work_steer";
 
 const RECOVER_DELAY_MS = 5_000;
 
@@ -186,73 +177,6 @@ export function taskEventOf(event: DelegateEvent, now: number): TaskEvent {
   return { type: "failed", task: job.id, code: failureCode(job), detail, at };
 }
 
-// ---- the work tools ----------------------------------------------------------------------------
-
-const WorkStartArgs = z.object({
-  goal: z.string(),
-  for: z.string().nullish(),
-  tools: z.array(z.string()).nullish(),
-});
-
-const WorkSteerArgs = z.object({
-  task: z.string(),
-  hint: z.string().nullish(),
-  goal: z.string().nullish(),
-  stop: z.boolean().nullish(),
-});
-
-const NOTE_WRITERS: ReadonlySet<string> = new Set(["notebook_write", "notebook_delete"]);
-const WEB_TOOLS: ReadonlySet<string> = new Set(["web_search", "web_read"]);
-const UNSUPPORTED = (name: string): boolean =>
-  name === "code_run" || name.startsWith("workspace_") || name === "skill_write";
-
-/** Which kind an old task is, by the tools it asked for; `null`: neither kind can do it. */
-export function kindOfWork(
-  tools: readonly string[] | null,
-): { kind: "research" | "curator" } | { refusal: string } {
-  if (tools === null || tools.length === 0) return { kind: "research" };
-  if (tools.some(UNSUPPORTED)) return { refusal: delegateTexts.WORK_REFUSALS.unsupported };
-  const writes = tools.some((t) => NOTE_WRITERS.has(t));
-  const web = tools.some((t) => WEB_TOOLS.has(t));
-  if (writes && web) return { refusal: delegateTexts.WORK_REFUSALS.mixed };
-  return { kind: writes ? "curator" : "research" };
-}
-
-async function original(tool: Tool, ctx: ToolContext, args: JsonValue): Promise<ToolResult> {
-  if (tool.result !== undefined) return tool.result(ctx, args);
-  try {
-    return { ok: true, text: await tool.call(ctx, args) };
-  } catch (error) {
-    if (ctx.signal.aborted) throw error;
-    return { ok: false, code: "failed", stage: null, text: errorMessage(error) };
-  }
-}
-
-/** `tool` with its own call and result: the same spec and meta (the prototype is `tool`). */
-function replacing(
-  tool: Tool,
-  run: (ctx: ToolContext, args: JsonValue) => Promise<ToolResult>,
-): Tool {
-  return Object.create(tool, {
-    result: { value: run, enumerable: true },
-    call: {
-      value: async (ctx: ToolContext, args: JsonValue) => {
-        const out = await run(ctx, args);
-        if (!out.ok) throw new Error(out.text);
-        return out.text;
-      },
-      enumerable: true,
-    },
-  }) as Tool;
-}
-
-const denied = (stage: string, text: string): ToolResult => ({
-  ok: false,
-  code: "denied",
-  stage,
-  text,
-});
-
 // ---- the reflection ----------------------------------------------------------------------------
 
 export interface RunReflectDeps<T> {
@@ -303,13 +227,10 @@ export interface JobsHostDeps {
   wake: (context: ContextKey, wake: Wake) => void;
 }
 
-const WORK_TOOLS = [WORK_START, WORK_LIST, WORK_STEER] as const;
-
 export class JobsHost {
   readonly delegator: Delegator;
   readonly #agent: Agent;
   readonly #tools: Tool[];
-  readonly #replaced = new Map<string, { original: Tool; wrapper: Tool }>();
   #stopped = false;
 
   constructor(agent: Agent, deps: JobsHostDeps, options: JobsHostOptions = {}) {
@@ -363,7 +284,6 @@ export class JobsHost {
       nameOf: (account) => agent.handleOf(account, account.id),
     });
     for (const tool of this.#tools) agent.tools.register(tool);
-    this.#mapWork();
     // The `reflect` module runs its daily reflection through this, under the nightly figure.
     agent.ctx.provide(ReflectGuardKey, {
       run: async (run, signal) => {
@@ -398,9 +318,9 @@ export class JobsHost {
     }
   }
 
-  /** The place that asked hears how its job ended. */
+  /** The place that asked hears how its job ended (a voice channel only while she is in it). */
   #told(job: JobRow, deps: JobsHostDeps): void {
-    if (this.#stopped || job.context === null || job.context.kind === "voice") return;
+    if (this.#stopped || job.context === null) return;
     deps.wake(job.context, {
       kind: "result",
       tool: delegateTexts.WAKE_TOOL,
@@ -411,70 +331,11 @@ export class JobsHost {
     });
   }
 
-  /** `work_start`, `work_list` and `work_steer` on the jobs (a voice channel keeps the old lane). */
-  #mapWork(): void {
-    const registry = this.#agent.tools;
-    const services = this.#agent.ctx.services;
-    const jobs = this.delegator;
-    const replace = (
-      name: string,
-      make: (tool: Tool) => (ctx: ToolContext, args: JsonValue) => Promise<ToolResult>,
-    ): void => {
-      const tool = registry.get(name);
-      if (tool === undefined) return;
-      const run = make(tool);
-      const wrapper = replacing(tool, (ctx, args) =>
-        ctx.context.kind === "voice" ? original(tool, ctx, args) : run(ctx, args),
-      );
-      registry.register(wrapper);
-      this.#replaced.set(name, { original: tool, wrapper });
-    };
-    replace(WORK_START, () => async (ctx, raw) => {
-      const args = WorkStartArgs.safeParse(raw);
-      if (!args.success) return denied("args", delegateTexts.DELEGATE_REFUSALS.emptyGoal);
-      const kind = kindOfWork(args.data.tools ?? null);
-      if ("refusal" in kind) return denied("kind", kind.refusal);
-      const who = args.data.for?.trim() ?? "";
-      const out = jobs.start({
-        kind: kind.kind,
-        goal:
-          who === "" ? args.data.goal : delegateTexts.WORK_REFUSALS.forWhom(who, args.data.goal),
-        budget: null,
-        context: ctx.context,
-        from: askerOf(ctx, (account) => this.#agent.handleOf(account, account.id)),
-      });
-      return out.ok ? { ok: true, text: out.text } : denied(out.code, out.text);
-    });
-    replace(WORK_LIST, (tool) => async (ctx, args) => {
-      const lines = jobs.lines();
-      const lane = services.get(WorkLaneKey)?.tasks() ?? [];
-      const old = lane.length === 0 ? null : await original(tool, ctx, args);
-      const text = [...lines, ...(old?.ok ? [old.text] : [])].join("\n");
-      return { ok: true, text: text === "" ? "沒有任務。" : text };
-    });
-    replace(WORK_STEER, (tool) => async (ctx, raw) => {
-      const args = WorkSteerArgs.safeParse(raw);
-      const job = args.success ? jobs.find(args.data.task) : null;
-      if (!args.success || job === null) return original(tool, ctx, raw);
-      if (args.data.stop === true) {
-        const out = jobs.cancel(job.id);
-        return out.ok ? { ok: true, text: out.text } : denied("job", out.text);
-      }
-      return isEnded(job.state)
-        ? denied("job", delegateTexts.DELEGATE_REFUSALS.ended(job.id, job.state))
-        : denied("steer", delegateTexts.WORK_REFUSALS.steer(job.id));
-    });
-  }
-
   stop(): void {
     this.#stopped = true;
     this.delegator.close();
     const registry = this.#agent.tools;
     for (const tool of this.#tools) registry.unregister(tool.spec.name);
-    for (const [name, { original: tool, wrapper }] of this.#replaced) {
-      if (registry.get(name) === wrapper) registry.register(tool);
-    }
-    this.#replaced.clear();
   }
 }
 
@@ -486,5 +347,3 @@ function emptyStore(): JobStore {
     saveDay: () => undefined,
   };
 }
-
-export { WORK_TOOLS };

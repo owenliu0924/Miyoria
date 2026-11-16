@@ -1,7 +1,7 @@
-// Links and code blocks in spoken replies, and `@name` mentions in text replies.
+// Links and code blocks in spoken replies.
 
 import { describe, expect, it } from "vitest";
-import { type FencedPiece, FenceSplitter, LinkSplitter, linkMentions } from "../src/index.js";
+import { type FencedPiece, FenceSplitter, LinkSplitter } from "../src/index.js";
 
 function run(
   splitter: { push(t: string): FencedPiece[]; flush(): FencedPiece[] },
@@ -52,20 +52,5 @@ describe("links", () => {
       { code: true, text: "https://q.r" },
     ]);
     expect(run(new LinkSplitter(), ["沒有連結 h"])).toEqual([{ code: false, text: "沒有連結 h" }]);
-  });
-});
-
-describe("mentions", () => {
-  it("links_known_names_longest_first", () => {
-    const targets = [
-      { name: "Owen", markup: "<@1>" },
-      { name: "Owen 2", markup: "<@2>" },
-      { name: "阿明", markup: "<@3>" },
-    ];
-    expect(linkMentions("@Owen 2 跟 @Owen,還有@阿明!@阿明明 @nobody", targets)).toBe(
-      "<@2> 跟 <@1>,還有<@3>!@阿明明 @nobody",
-    );
-    expect(linkMentions("沒有人", targets)).toBe("沒有人");
-    expect(linkMentions("@Owen", [])).toBe("@Owen");
   });
 });

@@ -60,8 +60,12 @@ describe("replay scenarios (v2 §4 acceptance)", () => {
   it("announcements nobody answered are not her topics", async () => {
     const r = await run("announcements-not-her-topics.jsonl");
     // The eight announcements were said and nobody answered them: none counts as her topic. Her
-    // own plans in the log are the new runner's and refused here.
-    expect(r.arbiter.by_verdict.accepted).toBe(8);
+    // own plans in the log are the new runner's and refused here; its initiative, which runs in
+    // the pipeline too, records the one start of hers it made as accepted.
+    expect(r.arbiter.by_verdict.accepted).toBe(9);
+    expect(r.turns.filter((t) => t.reason === "initiative" && t.outcome === "sent")).toHaveLength(
+      9,
+    );
     expect(r.arbiter.topics_ignored).toBe(0);
     expect(r.activity.residual).toEqual([]);
   });

@@ -1,10 +1,10 @@
-import { defineTool, type Tool, type ToolContext } from "@miyoria/llm/tools";
+import { defineTool, type Tool } from "@miyoria/llm/tools";
 import { sleep } from "@miyoria/runtime/kernel";
-import { type ContextKey, type JsonValue, Principals, ReflectGuardKey } from "@miyoria/types";
+import { type JsonValue, ReflectGuardKey } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runReflect } from "../src/index.js";
-import { account, calls, channel, mention, Rig, says, stopRigs, textOf, until } from "./harness.js";
+import { calls, channel, mention, Rig, says, stopRigs, textOf, until } from "./harness.js";
 
 afterEach(async () => {
   await stopRigs();
@@ -33,18 +33,6 @@ const tool = (
       return call(args as JsonValue);
     },
   });
-
-function ctxOf(context: ContextKey): ToolContext {
-  return {
-    turn: "t1",
-    context,
-    account: account("amy"),
-    principal: Principals.user(account("amy"), context),
-    message: { context, id: "m1" },
-    priority: "request",
-    signal: new AbortController().signal,
-  };
-}
 
 /** Records a call of a tool that should not run, and answers like a tool that did. */
 function mark(into: string[]): string {
@@ -176,53 +164,16 @@ describe("a job she starts", () => {
   });
 });
 
-describe("work_start and its friends", () => {
-  // The agent module registers the real work tools; the old lane says "工作車道", the jobs say "小幫手".
-  it('map onto the jobs with runner = "self", and keep their names', async () => {
-    const rig = await Rig.create(
-      tools([
-        tool("web_search", "read", () => "x"),
-        tool("notebook_read", "read", () => "頁"),
-        tool("notebook_write", "act", () => "ok"),
-      ]),
+describe("the old work lane's tools", () => {
+  it("are gone: delegate and its friends start, list and stop the jobs", async () => {
+    const rig = await Rig.create(tools([tool("web_search", "read", () => "x")]));
+    for (const name of ["work_start", "work_list", "work_steer"]) {
+      expect(rig.tools.get(name)).toBeUndefined();
+    }
+    const entries = rig.tools.entries().map((e) => e.name);
+    expect(entries).toEqual(
+      expect.arrayContaining(["delegate", "delegate_list", "delegate_cancel", "delegate_read"]),
     );
-    const start = rig.tools.get("work_start") as Tool;
-    const list = rig.tools.get("work_list") as Tool;
-    const steer = rig.tools.get("work_steer") as Tool;
-    // The wrappers have the old specs.
-    expect(start.spec.name).toBe("work_start");
-    expect(start.spec.description).toContain("交給背景的工作車道");
-
-    const run = (t: Tool, args: JsonValue, context = C1) =>
-      (t.result as NonNullable<Tool["result"]>)(ctxOf(context), args);
-
-    const research = await run(start, { goal: "查天氣", tools: ["web_search"] });
-    expect(research.ok).toBe(true);
-    const curator = await run(start, { goal: "整理筆記", tools: ["notebook_write"] });
-    expect(curator.ok).toBe(true);
-    const code = await run(start, { goal: "寫程式", tools: ["code_run"] });
-    expect(code.ok).toBe(false);
-    expect(research.ok && research.text).toContain("交給小幫手了");
-    const jobs = rig.host?.jobs?.delegator.jobs() ?? [];
-    expect(jobs.map((j) => j.kind)).toEqual(["research", "curator"]);
-
-    const listed = await run(list, {});
-    expect(listed.ok && listed.text).toContain("查天氣");
-    expect(listed.ok && listed.text).toContain("整理筆記");
-
-    const id = jobs[0]?.id as string;
-    const stopped = await run(steer, { task: id, stop: true });
-    expect(stopped.ok).toBe(true);
-    await sleep(20);
-    expect(rig.host?.jobs?.delegator.find(id)?.state).toBe("cancelled");
-    const hint = await run(steer, { task: jobs[1]?.id as string, hint: "改查別的" });
-    expect(hint.ok).toBe(false);
-    // A voice channel keeps the old lane.
-    const voice: ContextKey = { platform: "test", scope: "guild", channel: "v", kind: "voice" };
-    const old = await run(start, { goal: "查天氣" }, voice);
-    expect(old.ok && old.text).toContain("交給工作車道了");
-    expect(old.ok && old.text).not.toContain("小幫手");
-    expect(rig.host?.jobs?.delegator.jobs()).toHaveLength(2);
   });
 });
 

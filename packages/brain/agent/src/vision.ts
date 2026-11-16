@@ -10,9 +10,8 @@
 
 import type { ContentPart } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import { type Attachment, type IncomingMessage, imageType, safeName } from "@miyoria/types";
+import { type Attachment, imageType, safeName } from "@miyoria/types";
 import type { VisionConfig } from "./config.js";
-import type { HistoryEntry, Session } from "./session.js";
 import { timeout } from "./util.js";
 
 /** An image chosen for a turn, before download. */
@@ -46,12 +45,6 @@ export type FetchLike = (
   init: { signal: AbortSignal; redirect: "error" },
 ) => Promise<Response>;
 
-function cacheKey(a: Attachment): string {
-  if (a.id) return `id:${a.id}`;
-  const q = a.url.indexOf("?");
-  return `url:${q === -1 ? a.url : a.url.slice(0, q)}`;
-}
-
 /** Whether `url` is HTTPS on one of `hosts`. */
 export function allowedUrl(url: string, hosts: readonly string[]): boolean {
   let parsed: URL;
@@ -61,69 +54,6 @@ export function allowedUrl(url: string, hosts: readonly string[]): boolean {
     return false;
   }
   return parsed.protocol === "https:" && hosts.includes(parsed.hostname.toLowerCase());
-}
-
-/**
- * The images of a turn, in order of relevance: the messages she answers (newest first), the
- * messages they reply to (`parents`: entries in the history or fetched), then the same
- * people's images in the history up to `same_author_window_ms` before (not for a reply: it
- * points at what it is about, and an older image of theirs was taken for its answer on
- * 2026-11-08 14:22). Unsupported types,
- * images known to be too large and URLs outside `allowed_hosts` are skipped; at most
- * `max_images`.
- */
-export function selectImages(
-  inputs: readonly IncomingMessage[],
-  session: Session,
-  parents: readonly HistoryEntry[],
-  cfg: VisionConfig,
-): ImageCandidate[] {
-  const out: ImageCandidate[] = [];
-  const keys = new Set<string>();
-  const consider = (
-    a: Attachment,
-    author: string,
-    source: ImageCandidate["source"],
-    agoMs = 0,
-  ): void => {
-    if (out.length >= cfg.max_images) return;
-    const type = imageType(a);
-    if (type === null) return;
-    if (a.size != null && a.size > cfg.max_image_bytes) return;
-    if (!allowedUrl(a.url, cfg.allowed_hosts)) return;
-    const key = cacheKey(a);
-    if (keys.has(key)) return;
-    keys.add(key);
-    out.push({
-      attachment: a,
-      author,
-      key,
-      type,
-      source,
-      ...(source === "earlier" ? { ago_s: Math.max(0, Math.round(agoMs / 1000)) } : {}),
-    });
-  };
-  const newest = [...inputs].reverse();
-  for (const m of newest) {
-    for (const a of [...m.attachments, ...(m.forwarded ?? []).flatMap((f) => f.attachments)]) {
-      consider(a, m.author.display_name, "message");
-    }
-  }
-  for (const p of parents) for (const a of p.attachments) consider(a, p.author, "parent");
-  const ids = new Set(inputs.map((m) => m.id.id));
-  for (const m of newest) {
-    if (m.reply_to != null) continue;
-    const until = Date.parse(m.ts);
-    const since = until - cfg.same_author_window_ms;
-    for (const e of [...session.history()].reverse()) {
-      if (e.isSelf || (e.id !== null && ids.has(e.id))) continue;
-      if (e.ts > until || e.ts < since) continue;
-      if (e.account.platform !== m.author.account.platform) continue;
-      if (e.account.id !== m.author.account.id) continue;
-      for (const a of e.attachments) consider(a, e.author, "earlier", until - e.ts);
-    }
-  }
-  return out;
 }
 
 /** Downloads images (with a small in-memory cache keyed by attachment id). */

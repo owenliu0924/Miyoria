@@ -853,7 +853,7 @@ export class VoiceHost implements VoiceRunner {
       error = errorMessage(e);
       agent.log.warn({ turn, err: error }, "the voice run failed");
     } finally {
-      this.#d.prompt.ended(turn, result !== null && result.outcome !== "cancelled");
+      this.#d.prompt.ended(turn);
       this.#forget(state);
       agent.mainline.holdsFloor(turn, false);
       floor?.turnEnded(turn);

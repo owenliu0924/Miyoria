@@ -95,23 +95,6 @@ export const DELEGATE_REFUSALS = {
   empty: "要給 job(工作代號)。",
 } as const;
 
-/**
- * `work_start`, `work_list` and `work_steer` keep their names and descriptions; with the new runner
- * they start, list and stop the same jobs as `delegate` (the old lane still runs the game
- * director and her own starts, and everything in a voice channel).
- */
-export const WORK_REFUSALS = {
-  /** The old task asked for tools a helper does not have (code, the workspace, skills). */
-  unsupported:
-    "這類工作(寫程式、動工作區、改技能)小幫手現在做不了,只能查網路整理(research)或整理筆記本(curator)。",
-  /** One job cannot both search the web and write notes. */
-  mixed: "查網路和寫筆記不能放在同一個工作:先開查資料的,結果回來再開整理筆記的。",
-  /** A helper reads no new words once it runs. */
-  steer: (id: string) =>
-    `小幫手開工之後不會再看新的話,所以改不了方向:要改就停掉它(stop: true),再開一個新的。(工作 ${id})`,
-  forWhom: (name: string, goal: string) => `幫 ${neutralize(name).trim()} 做:${goal}`,
-} as const;
-
 /** The refusal of a helper's own call that its kind may not make (and its transcript keeps). */
 export const HELPER_REFUSALS = {
   effect: (name: string) =>

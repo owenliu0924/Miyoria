@@ -25,12 +25,10 @@ import {
   type NewProposal,
   type Principal,
   Principals,
-  ProposalBoardKey,
   type Subject,
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
-import { Proposals } from "../../../brain/agent/src/mainline/proposals.js";
 import { DirectiveService, directiveTables } from "../src/index.js";
 
 export const PROFILE = "miyoria";
@@ -151,7 +149,6 @@ export interface World {
   services: ServiceRegistry;
   rules: DirectiveService;
   log: EventLogService;
-  board: Proposals;
   registry: ActuatorRegistry;
   tools: ToolRegistry;
   ran: Ran[];
@@ -177,9 +174,6 @@ export async function world(path = ":memory:"): Promise<World> {
   services.provide("test", AuditLogKey, store.audit);
   const log = new EventLogService({ profile: PROFILE, store: null, clock });
   services.provide("test", EventLogKey, log);
-  const board = new Proposals({ log: () => log, now: () => t, services });
-  await log.project(board);
-  services.provide("test", ProposalBoardKey, board);
   const tools = new ToolRegistry();
   services.provide("test", ToolRegistryKey, tools);
   const registry = new ActuatorRegistry({ services, tools, clock, builtins: false });
@@ -195,7 +189,6 @@ export async function world(path = ":memory:"): Promise<World> {
     services,
     rules,
     log,
-    board,
     registry,
     tools,
     ran,

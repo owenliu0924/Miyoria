@@ -459,9 +459,13 @@ export class SelfHost implements TextRunner {
 
   // ---- places ----------------------------------------------------------------------------------
 
-  /** A wake of her own goes to the voice conversation of `context` when she is in one. */
+  /**
+   * A wake of her own goes to the voice conversation of `context` when she is in one; a voice
+   * channel she is not in takes none.
+   */
   #wake(context: ContextKey, wake: Wake): boolean {
     if (this.voice.wake(context, wake)) return true;
+    if (context.kind === "voice") return false;
     return this.#place(context).lane.push({ type: "wake", wake });
   }
 
@@ -900,7 +904,7 @@ export class SelfHost implements TextRunner {
     } finally {
       typing.abort();
       this.#outlet.ended(turn);
-      this.prompt.ended(turn, result !== null && result.outcome !== "cancelled");
+      this.prompt.ended(turn);
       this.#turns.delete(turn);
       // Freed once its lines settled (`Floor.turnEnded`), cancelled or not.
       agent.mainline.holdsFloor(turn, false);

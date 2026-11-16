@@ -97,7 +97,13 @@ export class ImpulseDesk implements ImpulseHost {
       return what.trim() === "" ? null : { kind: "world", what, claim };
     };
     const turn = newId();
-    const answer = await this.#admit(context, turn, wake, signal);
+    const started = (): Wake | null => {
+      const w = wake();
+      // Its lines are about what was admitted: the delivery ledger keeps the repeat window.
+      if (w !== null) agent.mainline.about(turn, impulse.attention ?? null);
+      return w;
+    };
+    const answer = await this.#admit(context, turn, started, signal);
     switch (answer.status) {
       case "started":
         return { status: "started", turn, task: null, detail: "" };

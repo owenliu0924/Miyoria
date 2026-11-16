@@ -12,9 +12,9 @@
 //   6 recalled  what memory retrieval finds for this run (`MemoryRetrieval`), the contributors'
 //               sections (just now, elsewhere, her working notes, a game's chat, ...: everything
 //               but the memory contributor, the recap and the slow ones), the cause of her mood,
-//               the commitments memory pins, what people wrote in her working context, results
-//               of things done with nobody there (the hands), the viewers' wishes, the notices
-//               that came back, and the flagged messages the transcript points to
+//               the commitments memory pins, what people wrote in her working context, the
+//               viewers' wishes, the notices that came back, and the flagged messages the
+//               transcript points to
 //   7 now       time and place, her state (`selfBlocks`), what the outside told her, the party
 //               game running here, the tasks in flight, what she promised and by when, the lines
 //               around a replied-to message she cannot see (`parent.ts`); then the
@@ -67,7 +67,6 @@ import {
   WorldStateKey,
 } from "@miyoria/types";
 import {
-  ACTING_ALONE,
   type Agent,
   budgetBlocks,
   budgetSelf,
@@ -80,7 +79,6 @@ import {
   feelingCauseBody,
   type Gathered,
   gather,
-  type Job,
   LIFE_TITLE,
   levelHint,
   MOOD_MIN,
@@ -93,8 +91,6 @@ import {
   pickKaomoji,
   pinnedSection,
   RECENT_OWN_LINES,
-  resultData,
-  resultsFor,
   rotatedExamples,
   SCAN_LINES,
   selfBlocks,
@@ -217,8 +213,6 @@ interface RunRead {
   /** The lines the run answers (the waking author's newest, since her last line). */
   asked: TranscriptEntry[];
   gathered: Promise<Gathered | null>;
-  /** Results block 6 showed: told once the run got to its end. */
-  telling: Job[];
   reads: SlowReads | null;
 }
 
@@ -320,21 +314,14 @@ export class HostPrompt implements PromptSource {
             : warmGather(registry, request, skip, reads, signal)
           ).catch(() => null)
         : Promise.resolve(null);
-    const read: RunRead = { request, asked, gathered, telling: [], reads };
+    const read: RunRead = { request, asked, gathered, reads };
     this.#runs.set(input.turn, read);
     return read;
   }
 
-  /**
-   * The run of `turn` ended; what it read is forgotten. `told`: it got to its end (not cut), so
-   * the results block 6 showed count as told (`Hands.toldOf`, as the old turn's conclusion did).
-   */
-  ended(turn: string, told: boolean): void {
-    const read = this.#runs.get(turn);
+  /** The run of `turn` ended; what it read is forgotten. */
+  ended(turn: string): void {
     this.#runs.delete(turn);
-    if (told && read !== undefined && read.telling.length > 0) {
-      this.#agent.mainline.hands.toldOf(read.telling);
-    }
   }
 
   // ---- block 1 ---------------------------------------------------------------------------------
@@ -562,8 +549,6 @@ export class HostPrompt implements PromptSource {
     const buckets = services.get(WorkingContextKey)?.buckets(context) ?? [];
     const working = contextData(buckets, m.context_entries);
     if (working !== null) blocks.push(working);
-    const results = this.#results(input, read);
-    if (results !== null) blocks.push(results);
     const wishes = services.get(DirectivesKey)?.wishes(context) ?? [];
     if (wishes.length > 0) blocks.push(dataBlock("viewers", VIEWERS_TITLE, wishes.join("\n")));
     const notices = noticesBlock({ context, now: input.now, notices: agent.takeNotices(context) });
@@ -574,22 +559,6 @@ export class HostPrompt implements PromptSource {
     const inbox = this.#o.inbox?.(input) ?? null;
     if (inbox !== null) blocks.push(inbox);
     return blocks.length === 0 ? null : blocks.join("\n\n");
-  }
-
-  /**
-   * What she did with nobody there, and what came back here, that she was not told of yet (the
-   * hands, `resultData`): a run answering someone tells theirs and her own, not someone else's.
-   */
-  #results(input: PromptInput, read: RunRead): string | null {
-    const hands = this.#agent.mainline.hands;
-    const context = input.session.context;
-    const author = wakeAuthor(input.wake);
-    const answering = input.wake.kind === "addressed" && author !== null;
-    read.telling = resultsFor(
-      [...hands.peekResults(ACTING_ALONE), ...hands.peekResults(context)],
-      answering ? [author.account] : null,
-    );
-    return resultData(read.telling);
   }
 
   /** The commitments memory pins for the people here (`PinnedMemory`, the old `#mainMemory`). */
@@ -650,6 +619,7 @@ export class HostPrompt implements PromptSource {
             : [],
         ),
         ...(m.memory_lines > 0 ? { limit: m.memory_lines } : {}),
+        ...(reads !== null ? { voice: true } : {}),
       };
       // What depends on the line: spoken, it is waited for only `liveMs`.
       const memories = await timeout(reads?.liveMs ?? this.#limit(), agent.ctx.signal, (signal) =>

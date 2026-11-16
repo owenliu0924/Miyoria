@@ -1,36 +1,15 @@
-// Capabilities the agent owns:
+// The capability the agent owns: `channel.activeness`, she sets how lively she is in the current
+// channel for a while (e.g. when asked to join in more). With the `self` module it becomes her
+// talkativeness for that context; without it a temporary activeness. Either way it reverts on its
+// own (at most a day), and the channel's level caps it.
 //
-// * `channel.activeness`: she sets how lively she is in the current channel for a while (e.g.
-//   when asked to join in more). With the `self` module it becomes her talkativeness for that
-//   context (which attention follows, in text and voice); without it a temporary activeness.
-//   Either way it reverts on its own (at most a day), and the channel's level caps it.
-// * `chat.start` / `chat.dm`: she starts talking on her own (an intent of her mind loop): in
-//   the context of the request (a text channel or the voice channel she is in), or in a DM.
-//   Consent (`/me privacy approach` / `dm`) applies to the person it is about. How often she
-//   may start talking is the Arbiter's one rule set (`[modules.arbiter]`: daily caps, per
-//   person, the gaps); the gate's limits on `chat.start` are only a safety net against a loop.
+// `chat.start` / `chat.dm` (talking on her own) are the text runner's (`@miyoria/brain/selfhost`).
 
-import {
-  type Capability,
-  CapabilityError,
-  defineCapability,
-  recipient,
-} from "@miyoria/gate/actions";
-import {
-  CHAT_DM,
-  CHAT_START,
-  type Clock,
-  contextKeyString,
-  newId,
-  PlatformSinksKey,
-  type SelfState,
-  toTimestamp,
-} from "@miyoria/types";
+import { type Capability, CapabilityError, defineCapability } from "@miyoria/gate/actions";
+import { type Clock, contextKeyString, type SelfState } from "@miyoria/types";
 import { z } from "zod";
 import type { AgentHandle } from "./handle.js";
-import type { AgentIntents } from "./intents.js";
 import { ceilingFor, modeLabel } from "./levels.js";
-import type { Agent, IntentTurn } from "./runtime.js";
 
 export const ACTIVENESS_CAPABILITY = "channel.activeness";
 
@@ -47,7 +26,7 @@ type Args = z.output<typeof Args>;
 
 const LEVEL_TEXT = { silent: "先不插話", low: "安靜", medium: "普通", high: "活躍" } as const;
 
-/** Talkativeness of each tool level (`silent` is at or below `SILENT_TALKATIVENESS`). */
+/** Talkativeness of each tool level (`silent` is the quietest a context can be set to). */
 export const LEVEL_TALKATIVENESS = { silent: 0, low: 0.2, medium: 0.5, high: 0.85 } as const;
 
 export function activenessCapability(
@@ -108,95 +87,4 @@ export function activenessCapability(
       };
     },
   }) as Capability;
-}
-
-/** How long an intent turn may wait when `chat.*` is invoked without one (e.g. by the panel). */
-const ADHOC_TTL_MS = 120_000;
-
-/** The intent turn behind a `chat.*` run: the one `submit` prepared, or one made up from args. */
-function intentTurn(
-  intents: AgentIntents,
-  clock: Clock,
-  capability: string,
-  turn: string | null,
-  why: string | null,
-): IntentTurn {
-  const prepared = intents.take(turn);
-  if (prepared) return prepared;
-  const now = clock.now();
-  return {
-    intent: {
-      id: newId(),
-      capability,
-      args: {},
-      why: why ?? "",
-      opening: null,
-      context: null,
-      about: null,
-      created_at: toTimestamp(now),
-      expires_at: toTimestamp(now + ADHOC_TTL_MS),
-    },
-    turn: turn ?? newId(),
-    done: null,
-    summary: null,
-  };
-}
-
-const NoArgs = z.object({});
-const DmArgs = z.object({ to: z.string().trim().min(1).max(64) });
-
-/** `chat.start` and `chat.dm`, bound to the running agent. */
-export function chatCapabilities(agent: Agent, intents: AgentIntents): Capability[] {
-  const clock = agent.ctx.clock;
-  const start = defineCapability<z.output<typeof NoArgs>>({
-    name: CHAT_START,
-    summary: "主動開口說話(在頻道或她所在的語音頻道)",
-    risk: "medium",
-    args: NoArgs,
-    permission: null,
-    // The real limits are the Arbiter's (`max_per_day`, `max_per_person_per_day`, `min_gap_secs`).
-    limits: { per_day: 200, per_person_per_day: 50, cooldown_ms: 0 },
-    scope: (_args, principal) => principal.context?.scope ?? null,
-    check: (_args, principal) => {
-      const context = principal.context;
-      if (context === null) return "no context to talk in";
-      if (context.kind === "dm") return "use chat.dm for DMs";
-      if (context.kind === "voice" && !agent.inVoice(context)) {
-        return "she is not in that voice channel";
-      }
-      return null;
-    },
-    async execute(_args, ctx) {
-      const context = ctx.principal.context;
-      if (context === null) throw new CapabilityError("no context to talk in");
-      const input = intentTurn(intents, clock, CHAT_START, ctx.request.turn, ctx.request.why);
-      const why = agent.deliverIntent(context, input);
-      if (why !== null) throw new CapabilityError(why);
-      return { text: "her turn is queued", data: { turn: input.turn } };
-    },
-  });
-  const dm = defineCapability<z.output<typeof DmArgs>>({
-    name: CHAT_DM,
-    summary: "主動私訊某個人聊天",
-    risk: "medium",
-    args: DmArgs,
-    permission: "chat.dm",
-    consent: "dm",
-    limits: { per_day: 6, per_person_per_day: 2, cooldown_ms: 600_000 },
-    target: (args, principal) => recipient(args.to, principal),
-    check: (args, principal) =>
-      recipient(args.to, principal) === null ? "`to` must be a mention or an id" : null,
-    async execute(args, ctx) {
-      const to = recipient(args.to, ctx.principal);
-      if (to === null) throw new CapabilityError("no recipient");
-      const sink = ctx.services.get(PlatformSinksKey)?.get(to.platform);
-      if (!sink?.openDm) throw new CapabilityError(`cannot send DMs on ${to.platform}`);
-      const context = await sink.openDm(to, ctx.signal);
-      const input = intentTurn(intents, clock, CHAT_DM, ctx.request.turn, ctx.request.why);
-      const why = agent.deliverIntent(context, input);
-      if (why !== null) throw new CapabilityError(why);
-      return { text: "her DM turn is queued", data: { turn: input.turn } };
-    },
-  });
-  return [start as Capability, dm as Capability];
 }
