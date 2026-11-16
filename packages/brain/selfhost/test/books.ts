@@ -17,9 +17,14 @@ export interface Books {
   events: LogEvent[];
 }
 
-export function books(floor: Record<string, unknown> = {}, maxUnanswered = 3): Books {
+/** `extra` projections see every event too (the wish book). */
+export function books(
+  floor: Record<string, unknown> = {},
+  maxUnanswered = 3,
+  extra: Projection[] = [],
+): Books {
   const events: LogEvent[] = [];
-  const projections: Projection[] = [];
+  const projections: Projection[] = [...extra];
   const log = {
     append(input: NewLogEvent): LogEvent {
       const event: LogEvent = {

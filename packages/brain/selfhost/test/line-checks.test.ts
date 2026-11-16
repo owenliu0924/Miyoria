@@ -124,6 +124,39 @@ describe("a wish that is done", () => {
     expect(textOf(rig.model.requests[1])).toContain("對方已經回答過了,不用再問");
   });
 
+  it("a line to one person is not refused for the closed wish of another in the room", async () => {
+    const book = new WishBook({ followup_hours: 24, keep_hours: 72 }, { now: () => Date.now() });
+    const wish = book.hold("bob", "問 bob 期末報告", "commitment:c1");
+    if (wish === null) throw new Error("no wish");
+    book.close(wish.key, "answered");
+    const rig = await Rig.create({
+      provide: (sup) => sup.services.provide("app", WishesKey, book),
+    });
+    spokeBefore(rig, C1, "amy", "今天好累");
+    spokeBefore(rig, C1, "bob", "我也是");
+    rig.model.push(says("@amy 你知道 bob 的期末報告後來怎麼樣了嗎"));
+    timer(rig, C1, "關心 amy");
+    await until(() => rig.sink.texts().length === 1, 3_000, "her line to amy");
+    expect(rig.sink.texts()).toEqual(["@amy 你知道 bob 的期末報告後來怎麼樣了嗎"]);
+  });
+
+  it("a line that @mentions the person of the closed wish is refused", async () => {
+    const book = new WishBook({ followup_hours: 24, keep_hours: 72 }, { now: () => Date.now() });
+    const wish = book.hold("bob", "問 bob 期末報告", "commitment:c1");
+    if (wish === null) throw new Error("no wish");
+    book.close(wish.key, "answered");
+    const rig = await Rig.create({
+      provide: (sup) => sup.services.provide("app", WishesKey, book),
+    });
+    spokeBefore(rig, C1, "amy", "今天好累");
+    spokeBefore(rig, C1, "bob", "我也是");
+    rig.model.push(says("@bob 期末報告後來怎麼樣了"), says(""));
+    timer(rig, C1, "關心 bob");
+    await until(() => rig.model.requests.length === 2, 3_000, "the step after the refusal");
+    expect(rig.sink.texts()).toEqual([]);
+    expect(textOf(rig.model.requests[1])).toContain("對方已經回答過了,不用再問");
+  });
+
   it("asked and not answered yet: no second time before the follow-up", async () => {
     const book = new WishBook({ followup_hours: 24, keep_hours: 72 }, { now: () => Date.now() });
     const wish = book.hold("amy", "問 amy 期末報告", "commitment:c1");
@@ -138,5 +171,56 @@ describe("a wish that is done", () => {
     await until(() => rig.model.requests.length === 2, 3_000, "the step after the refusal");
     expect(rig.sink.texts()).toEqual([]);
     expect(textOf(rig.model.requests[1])).toContain("這件事你剛問過了,對方還沒回");
+  });
+});
+
+describe("the audience of a text line", () => {
+  const openWish = (book: WishBook, person: string): string => {
+    const wish = book.hold(person, `問 ${person} 期末報告`, `commitment:${person}`);
+    if (wish === null) throw new Error("no wish");
+    return wish.key;
+  };
+  const stateOf = (book: WishBook, key: string) => book.all().find((w) => w.key === key)?.state;
+
+  it("asking the person what a wish is about in a start of hers marks it asked", async () => {
+    const wishes = new WishBook({ followup_hours: 24, keep_hours: 72 }, { now: () => Date.now() });
+    const { ledger } = books({}, 3, [wishes]);
+    const key = openWish(wishes, "amy");
+    const rig = await Rig.create({
+      provide: (sup) => {
+        sup.services.provide("app", DeliveryLedgerKey, ledger);
+        sup.services.provide("app", WishesKey, wishes);
+      },
+    });
+    spokeBefore(rig, C1, "amy", "今天好累");
+    rig.model.push(says("amy 你的期末報告後來怎麼樣了?"));
+    timer(rig, C1, "關心 amy");
+    await until(() => stateOf(wishes, key) === "asked", 3_000, "the wish marked asked");
+
+    expect(rig.sink.texts()).toEqual(["amy 你的期末報告後來怎麼樣了?"]);
+    const again = await wishes.screen({
+      person: "amy",
+      text: "amy 期末報告寫完了嗎",
+      holder: null,
+    });
+    expect(again.raise).toBe(false);
+  });
+
+  it("an answer marks asked the wish of the person who is answered, not of the others there", async () => {
+    const wishes = new WishBook({ followup_hours: 24, keep_hours: 72 }, { now: () => Date.now() });
+    const { ledger } = books({}, 3, [wishes]);
+    const amy = openWish(wishes, "amy");
+    const bob = openWish(wishes, "bob");
+    const rig = await Rig.create({
+      provide: (sup) => {
+        sup.services.provide("app", DeliveryLedgerKey, ledger);
+        sup.services.provide("app", WishesKey, wishes);
+      },
+    });
+    spokeBefore(rig, C1, "bob", "我也是");
+    rig.model.push(says("期末報告後來怎麼樣了?"));
+    rig.say(mention(C1, "amy", "@她 在嗎"));
+    await until(() => stateOf(wishes, amy) === "asked", 3_000, "amy's wish marked asked");
+    expect(stateOf(wishes, bob)).toBe("open");
   });
 });

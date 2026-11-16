@@ -458,7 +458,7 @@ export class MainLine implements Mouth {
       if (!sink) throw new Error("no scheduler");
       const mouth = this.mouth(sink, {
         attention: (said) => ({ key: topicKey(said), revision: 1 }),
-        audience: () => agent.audience(context),
+        audience: () => line.audience ?? agent.audience(context),
         cause: () => null,
       });
       const priority = "request" as const;

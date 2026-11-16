@@ -280,6 +280,8 @@ export interface FixedLine {
   source: string;
   /** `text` is the filtered line already (`safeOutgoing`'s `blocked`). */
   blocked?: string | null;
+  /** Who the line is for, as the delivery ledger records it. Unset: the people in the voice channel. */
+  audience?: readonly Handle[];
 }
 
 /** Provided by the agent. */

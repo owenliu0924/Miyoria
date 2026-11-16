@@ -116,8 +116,13 @@ export interface OutletClaims {
    * elsewhere as a start of hers (`sayKind`); `null`: not a run of the host (nothing checked).
    */
   kind(line: OutgoingLine): FloorClaimKind | null;
-  /** The people of `place`, whose wishes a line there may raise. */
-  people(place: ContextKey): Handle[];
+  /**
+   * The people the line is for: whoever the run answers (the author of what woke her and the
+   * others who called her), else the people the line names with an `@mention`, else the people who
+   * spoke lately in its place. They are who a wish is asked of and who the ledger records; `null`:
+   * not a run of the host.
+   */
+  audience(line: OutgoingLine): Handle[] | null;
 }
 
 /** The outlet of the host: `MainLine.say`, then the scheduler's word on it. */
@@ -156,9 +161,9 @@ export class MouthOutlet implements Outlet {
     if (agent.muted) return { status: "blocked", reason: "緊急停止中" };
     signal.throwIfAborted();
     const kind = this.#claims?.kind(line) ?? null;
+    const audience = this.#claims?.audience(line) ?? null;
     if (kind !== null) {
-      const people = this.#claims?.people(line.place) ?? [];
-      const refused = await lineRefusal(agent, { ...line, kind, people }, signal);
+      const refused = await lineRefusal(agent, { ...line, kind, audience: audience ?? [] }, signal);
       if (refused !== null) return { status: "blocked", reason: refused };
     }
     // A line in another place claims and counts in that place's Floor, under a turn of its own:
@@ -170,7 +175,7 @@ export class MouthOutlet implements Outlet {
       floor.hold(turn, line.place, kind);
     }
     try {
-      return await this.#say(line, turn, signal);
+      return await this.#say(line, turn, audience, signal);
     } finally {
       if (turn !== line.turn) {
         if (signal.aborted) {
@@ -184,7 +189,12 @@ export class MouthOutlet implements Outlet {
   }
 
   /** `line` to the mouth under `turn`, and how it left the scheduler. */
-  async #say(line: OutgoingLine, turn: string, signal: AbortSignal): Promise<Delivery> {
+  async #say(
+    line: OutgoingLine,
+    turn: string,
+    audience: readonly Handle[] | null,
+    signal: AbortSignal,
+  ): Promise<Delivery> {
     const agent = this.#agent;
     agent.mainline.own(turn);
     if (line.focus) await this.#pace(line, signal);
@@ -199,6 +209,7 @@ export class MouthOutlet implements Outlet {
       emotion: line.emotion,
       turn,
       source: "self",
+      ...(audience === null ? {} : { audience }),
     });
     const end = await settled;
     if (line.focus) this.#lastAt.set(line.turn, agent.ctx.clock.now());
