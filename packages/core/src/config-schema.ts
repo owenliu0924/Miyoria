@@ -96,6 +96,7 @@ import { SkillsConfigSchema, SkillsModule } from "@miyoria/workspace/skills";
 import { WebConfigSchema, WebModule } from "@miyoria/workspace/web";
 import { CliPlatform } from "./cli-platform.js";
 import { moduleEnabled, NEEDS_TOKEN } from "./module-ids.js";
+import { warnRemovedKeys } from "./removed-config.js";
 
 const log = getLogger("core.config");
 
@@ -283,6 +284,7 @@ export function assertStartConfig(config: Config): void {
     );
   }
   if (errors.length > 0) throw configProblemsError(errors);
+  warnRemovedKeys(config, (message) => log.warn(message));
 }
 
 /**

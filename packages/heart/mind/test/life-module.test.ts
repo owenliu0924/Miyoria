@@ -1,19 +1,14 @@
 // The mind module runs her own life (v4 §8): the life log follows the bus, `remind_me` is a tool
 // whose timers reach the main line as proposals, her Plan sees where her wants lead and cannot
-// start a game past its share of her day, and daily posts stay off unless configured.
+// start a game past its share of her day.
 
 import { ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import {
-  DailyPostsKey,
   type EventPayload,
   Events,
   type JsonValue,
   LifeLogKey,
-  type NewProposal,
   Principals,
-  type ProposalBoard,
-  ProposalBoardKey,
-  type ProposalOutcome,
   ReminderDeskKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -49,17 +44,6 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-class FakeBoard implements ProposalBoard {
-  readonly proposals: NewProposal[] = [];
-  async propose(p: NewProposal): Promise<ProposalOutcome> {
-    this.proposals.push(structuredClone(p));
-    return { id: `P${this.proposals.length}`, state: "open", detail: "", turn: null };
-  }
-  open() {
-    return [];
-  }
-}
-
 function fake(name: string) {
   return defineCapability({
     name,
@@ -74,20 +58,15 @@ function fake(name: string) {
 }
 
 describe("her own life in the mind module", () => {
-  it("provides the life log, her timers and her (off) daily posts, and registers remind_me", async () => {
+  it("provides the life log and her timers, and registers remind_me", async () => {
     const r = await rig(new ScriptedProvider(() => "{}"));
     expect(r.sup.services.get(LifeLogKey)?.summary()).toBeNull();
     expect(r.sup.services.get(ReminderDeskKey)?.list()).toEqual([]);
-    expect(r.sup.services.get(DailyPostsKey)?.channel()).toBeNull();
     expect(r.registry.get("self.remind")?.tool?.name).toBe("remind_me");
   });
 
-  it("logs her own search and offers a post only once daily posts are configured", async () => {
-    const board = new FakeBoard();
-    const r = await rig(new ScriptedProvider(() => "{}"), {
-      config: { daily_posts: { enabled: true, guild: "g1", channel: "posts" } } as JsonValue,
-      extra: (sup) => sup.services.provide("agent", ProposalBoardKey, board),
-    });
+  it("logs her own search", async () => {
+    const r = await rig(new ScriptedProvider(() => "{}"));
     r.publish(Events.GateDecision, {
       id: "d1",
       at: toTimestamp(Date.now()),
@@ -106,11 +85,6 @@ describe("her own life in the mind module", () => {
     expect(r.sup.services.require(LifeLogKey).summary()).toBe(
       "今天到 20:00 你做過的事:\n- 逛網路:查了「鯨魚的歌」",
     );
-    // The rig's day turns at 23:00, so 20:00 on Nov 2 still belongs to her Nov 1.
-    expect(board.proposals.map((p) => [p.context?.channel, p.attention?.key])).toEqual([
-      ["posts", "daily_post:2026-11-01:1"],
-    ]);
-    expect(r.sup.services.require(DailyPostsKey).left()).toBe(2);
   });
 
   it("Plan sees where wanting something new leads, and a game past its share starts nothing", async () => {

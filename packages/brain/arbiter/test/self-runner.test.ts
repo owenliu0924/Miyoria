@@ -15,9 +15,7 @@ import {
   type FollowupSource,
   FollowupSourceKey,
   ImpulseHostKey,
-  type NewProposal,
   newImpulse,
-  ProposalBoardKey,
   SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -61,7 +59,6 @@ class Followups implements FollowupSource {
 async function rig() {
   const sup = new Supervisor();
   const log = new EventLogService({ profile: "p", store: null });
-  const proposals: NewProposal[] = [];
   const followups = new Followups();
   const host = new FakeHost();
   sup.services.provide("app", EventLogKey, log);
@@ -70,16 +67,9 @@ async function rig() {
   });
   sup.services.provide("app", FollowupSourceKey, followups);
   sup.services.provide("app", ImpulseHostKey, host);
-  sup.services.provide("app", ProposalBoardKey, {
-    propose: async (p) => {
-      proposals.push(p);
-      return { id: "x", state: "open", detail: "", turn: null };
-    },
-    open: () => [],
-  });
   await sup.register(new ArbiterModule("p"), { tick_secs: 1 }, true);
   await sup.startAll();
-  return { sup, log, proposals, followups, host };
+  return { sup, log, followups, host };
 }
 
 function message(ctx: ContextKey, who: string) {
@@ -138,7 +128,6 @@ describe("her own starts are not the Arbiter's", () => {
     r.log.observe(observation("game.minecraft", "game:craft:stone_pickaxe"));
     await vi.advanceTimersByTimeAsync(1500);
     expect(r.log.recent(50).filter((e) => e.source === "world.greeting")).toEqual([]);
-    expect(r.proposals).toEqual([]);
     expect(r.followups.done).toEqual([]);
     expect(r.host.opened.map((i) => i.attention?.key)).toEqual(["game:craft:stone_pickaxe"]);
     await r.sup.stopAll();

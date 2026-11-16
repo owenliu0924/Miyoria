@@ -7,31 +7,6 @@ const count = () => z.number().int().nonnegative();
 const fraction = () => z.number().min(0).max(1);
 
 /**
- * `[modules.mind.daily_posts]` (docs/design/v4-plan.md §8.4, row 8 of §16): off unless enabled
- * with a channel; then at most `max_per_day` offers a day to post there what she did.
- *
- * ```toml
- * [modules.mind.daily_posts]
- * enabled = true
- * guild = "123"
- * channel = "456"
- * ```
- */
-export const DailyPostsConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  platform: z.string().default("discord"),
-  /** The server of the channel. */
-  guild: z.string().min(1).nullable().default(null),
-  /** The one text channel her daily posts may go to. */
-  channel: z.string().min(1).nullable().default(null),
-  max_per_day: z.number().int().min(0).max(10).default(3),
-  /** At least this long between two offers. */
-  min_gap_mins: count().default(120),
-});
-
-export type DailyPostsConfig = z.output<typeof DailyPostsConfigSchema>;
-
-/**
  * ```toml
  * [modules.mind]
  * max_calls_per_hour = 12
@@ -132,7 +107,6 @@ export const MindConfigSchema = z.object({
   reminder_max_days: z.number().int().min(1).max(366).default(30),
   /** A due timer stays on the board for the main line this long. */
   reminder_hold_mins: z.number().int().min(1).default(120),
-  daily_posts: DailyPostsConfigSchema.prefault({}),
 });
 
 export type MindConfig = z.output<typeof MindConfigSchema>;

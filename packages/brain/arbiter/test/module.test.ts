@@ -19,9 +19,7 @@ import {
   FollowupSourceKey,
   ImpulseHostKey,
   type JsonValue,
-  type NewProposal,
   newImpulse,
-  ProposalBoardKey,
   type SelfState,
   SelfStateKey,
   type SocialSignals,
@@ -138,7 +136,6 @@ describe("the Floor's module", () => {
     const sup = new Supervisor();
     if (store) sup.services.provide("app", SettingsStoreKey, store);
     const log = new EventLogService({ profile: "p", store: null });
-    const proposals: NewProposal[] = [];
     const social = new FakeSocial();
     social.set("a", "朋友", 60);
     const followups = new FakeFollowups();
@@ -147,16 +144,9 @@ describe("the Floor's module", () => {
     sup.services.provide("app", SocialSignalsKey, social);
     sup.services.provide("app", FollowupSourceKey, followups);
     sup.services.provide("app", ImpulseHostKey, host);
-    sup.services.provide("app", ProposalBoardKey, {
-      propose: async (p) => {
-        proposals.push(p);
-        return { id: "x", state: "open", detail: "", turn: null };
-      },
-      open: () => [],
-    });
     await sup.register(new ArbiterModule("p"), config, true);
     await sup.startAll();
-    return { sup, log, proposals, followups, host, social };
+    return { sup, log, followups, host, social };
   }
 
   it("provides the Floor", async () => {

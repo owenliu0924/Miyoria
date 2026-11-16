@@ -190,9 +190,6 @@ export class AgentModule implements Module {
     // Her promises from conversation are recorded by the memory's segment pass.
     ctx.provide(PromiseBookKey, agent.mainline.commitments);
     await agent.mainline.start();
-    if (config.runner !== undefined) {
-      ctx.log.info("`modules.agent.runner` is no longer read: the new turn runner always answers");
-    }
     if (this.#textRunners === null) {
       ctx.log.warn("no text runner is installed: nothing answers her conversations");
     } else {

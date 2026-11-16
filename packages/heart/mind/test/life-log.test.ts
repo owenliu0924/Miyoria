@@ -32,11 +32,7 @@ function clock(start = T0) {
   };
 }
 
-function book(
-  c = clock(),
-  store: MemorySettingsStore | null = null,
-  onRecord?: (e: LifeEntry) => void,
-) {
+function book(c = clock(), store: MemorySettingsStore | null = null) {
   return new LifeBook({
     store,
     profile: "p",
@@ -44,7 +40,6 @@ function book(
     offsetMinutes: 480,
     dayStartHour: 6,
     keepDays: 3,
-    ...(onRecord ? { onRecord } : {}),
   });
 }
 
@@ -174,13 +169,6 @@ describe("her life log", () => {
     await later.flush();
     expect(later.entries()).toEqual([]);
     expect((await store.list("p", LIFE_PREFIX)).size).toBe(0);
-  });
-
-  it("tells whoever follows it (her daily posts)", () => {
-    const seen: LifeEntry[] = [];
-    const b = book(clock(), null, (e) => seen.push(e));
-    b.observe(decision("web.search", { query: "新番" }));
-    expect(seen.map((e) => e.what)).toEqual(["查了「新番」"]);
   });
 });
 

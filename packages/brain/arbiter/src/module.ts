@@ -20,7 +20,6 @@ import {
   type ContextKey,
   contextKeyEquals,
   contextKeyString,
-  DailyPostsKey,
   DeliveryLedgerKey,
   type Envelope,
   EventLogKey,
@@ -235,10 +234,6 @@ function floorOf(ctx: ModuleContext, config: ArbiterConfig, clock: Clock): Floor
     talk: (context) =>
       (services.get(SelfStateKey)?.talkativeness(context)?.level ?? USUAL_TALK) / USUAL_TALK,
     feeling: () => services.get(AffectStateKey)?.snapshot().biases.talkativeness ?? 0,
-    postsTo: (context) => {
-      const posts = services.get(DailyPostsKey)?.channel() ?? null;
-      return posts !== null && contextKeyEquals(posts, context);
-    },
   });
 }
 

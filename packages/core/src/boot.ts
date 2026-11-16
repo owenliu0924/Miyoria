@@ -235,10 +235,6 @@ export async function buildCoreWith(
   }
 
   const k = KERNEL_MODULE;
-  // `[core] pipeline` chose between the main line and the V2 paths; only the main line is left.
-  if (config.section("core.pipeline") !== undefined) {
-    log.warn("`core.pipeline` is no longer read: the main line always runs");
-  }
   services.provide(k, PlatformSinksKey, new PlatformSinks());
   services.provide(k, PlatformHistoriesKey, new PlatformHistories());
   services.provide(k, SupervisorKey, supervisor);

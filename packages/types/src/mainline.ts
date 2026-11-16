@@ -280,19 +280,6 @@ export interface ProposalResultBody {
   turn: TurnId | null;
 }
 
-/** Provided by the agent: the only door the background has. */
-export interface ProposalBoard {
-  /**
-   * Writes `proposal` to the log and asks for the floor for it. Resolves when the Floor said
-   * whether the main line takes it up now; it stays on the board until it expires either way.
-   */
-  propose(proposal: NewProposal, signal?: AbortSignal): Promise<ProposalOutcome>;
-  /** What is waiting (`context`: there, or anywhere). */
-  open(context?: ContextKey | null): Proposal[];
-}
-
-export const ProposalBoardKey = serviceKey<ProposalBoard>("ProposalBoard");
-
 // ---- the mouth --------------------------------------------------------------------------------
 
 /** A line that needs no model: what the owner typed in the panel, a reply she already wrote. */

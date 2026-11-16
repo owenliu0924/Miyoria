@@ -78,8 +78,6 @@ export interface FloorEnv {
   talk?(context: ContextKey): number;
   /** What her feelings lean her talkativeness (`AffectBiases.talkativeness`, 0: nothing). */
   feeling?(context: ContextKey): number;
-  /** `context` is the channel her daily posts go to (`DailyPostsKey`): posting there needs nobody. */
-  postsTo?(context: ContextKey): boolean;
 }
 
 /**
@@ -327,8 +325,6 @@ export class FloorCore implements FloorService, Projection {
   /** People are around to hear something she starts herself. */
   #someoneThere(context: ContextKey, place: Place): boolean {
     if (context.kind === "dm") return true;
-    // Her daily posts have a channel of their own (§8.4): a post is read later, by whoever comes.
-    if (this.#env.postsTo?.(context) === true) return true;
     const humans = this.#env.humans?.(context) ?? null;
     if (humans !== null) return humans > 0;
     // A text channel has no roll call. Someone there not long ago is the nearest thing to it, and

@@ -1,17 +1,10 @@
-// Her Plan still keeps her goals and her day plan, but its impulses start nothing: no proposal
-// reaches the board (her own starts are the new runner's).
+// Her Plan still keeps her goals and her day plan, but its impulses start nothing (her own starts
+// are the new runner's).
 
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { LlmRouter, LlmRouterKey, parseModelRef } from "@miyoria/llm/llm";
 import { getLogger, ServiceRegistry } from "@miyoria/runtime/kernel";
-import {
-  type NewProposal,
-  Principals,
-  ProposalBoardKey,
-  type Reminder,
-  ReminderDeskKey,
-  toTimestamp,
-} from "@miyoria/types";
+import { Principals, type Reminder, ReminderDeskKey, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -27,16 +20,8 @@ import {
 import { ScriptedProvider } from "./fakes.js";
 import { rig, stopRigs, TEXT } from "./helpers.js";
 
-async function plan(): Promise<{ proposals: NewProposal[]; loop: MindLoop }> {
+async function plan(): Promise<{ loop: MindLoop }> {
   const services = new ServiceRegistry();
-  const proposals: NewProposal[] = [];
-  services.provide("app", ProposalBoardKey, {
-    propose: async (p) => {
-      proposals.push(structuredClone(p));
-      return { id: p.id ?? "x", state: "taken", detail: "", turn: "t1" };
-    },
-    open: () => [],
-  });
   const registry = new ActuatorRegistry({ services, builtins: false, publish: () => {} });
   registry.register(
     defineCapability({
@@ -82,7 +67,7 @@ async function plan(): Promise<{ proposals: NewProposal[]; loop: MindLoop }> {
   });
   await loop.plan([{ kind: "manual", detail: "", context: null }]);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  return { proposals, loop };
+  return { loop };
 }
 
 /** The new runner's schedules, as `remind_me` sees them. */
@@ -152,9 +137,8 @@ describe("remind_me on the new runner", () => {
 });
 
 describe("her Plan", () => {
-  it("an old impulse in her reply reaches no board and is not journaled", async () => {
-    const { proposals, loop } = await plan();
-    expect(proposals).toEqual([]);
+  it("an old impulse in her reply is not journaled", async () => {
+    const { loop } = await plan();
     expect(loop.thoughts()[0]?.intents ?? []).toEqual([]);
   });
 });

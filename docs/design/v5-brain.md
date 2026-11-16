@@ -254,7 +254,7 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 
 留著的:
 
-- `ProposalBoardKey` / `ProposalBoard`、`IntentSinkKey` / `IntentSink` 的型別還在 `@miyoria/types`,沒有人提供:mind 的每日貼文(`life/posts.ts`)、mind 的快照(頻道等級)和 mind、arbiter 的測試替身還讀它們。每日貼文從第一步起就不會貼(Arbiter 拒絕 `plan`),現在是「沒有 board」;要恢復得接到新跑者的 initiative。
+- 每日貼文(`life/posts.ts`、`[modules.mind.daily_posts]`、`DailyPostsKey`)和沒有人提供的 `ProposalBoardKey` / `IntentSinkKey`(含 mind 快照裡的頻道等級)已刪;owner 2026-11-16 決定擱置每日貼文,想法記在 [backlog.md](backlog.md)。`CHAT_START` 還在,mind 的能力清單用它。
 - `[modules.agent.mainline]`、`[modules.agent.attention]` 和 `[modules.agent.work]` 大部分的鍵沒有程式讀了,留在 schema 裡讓舊設定檔照樣載入。
 - mind 的 Plan 不再寫衝動(見下面「2026-11-16 的檢查」第 8 點),`selfstart.ts` 還在(`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
 - Arbiter 的 ledger 裡只算她自己起頭的部分(`book`、`raise`、每日上限、時間規則)還在:Arbiter 已經不接她自己起頭的事,這些不會再被用到,但 ledger view 的形狀面板和 mind 還在讀。

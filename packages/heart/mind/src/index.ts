@@ -26,8 +26,6 @@ export {
   Segments,
 } from "./appraise.js";
 export {
-  type DailyPostsConfig,
-  DailyPostsConfigSchema,
   type MindConfig,
   MindConfigSchema,
   mindConfig,
@@ -89,7 +87,6 @@ export {
   renderLines,
   renderToday,
 } from "./life/log.js";
-export { DailyPostDesk, type DailyPostDeskOptions, POSTS_PREFIX } from "./life/posts.js";
 export {
   type Deliver,
   type DeliveryOutcome,

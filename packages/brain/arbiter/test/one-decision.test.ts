@@ -8,13 +8,11 @@
 import { EventLogService } from "@miyoria/memory/facts";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
-  type ContextKey,
   type DeliveryLedger,
   EventLogKey,
   FloorKey,
   ImpulseHostKey,
   PartyStatusKey,
-  ProposalBoardKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArbiterModule, FloorConfigSchema, FloorCore, type StartFacts } from "../src/index.js";
@@ -27,7 +25,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function floor(now: () => number, env: { postsTo?: (c: ContextKey) => boolean } = {}) {
+function floor(now: () => number) {
   return new FloorCore(FloorConfigSchema.parse({}), 3, {
     now,
     ledger: () =>
@@ -37,7 +35,6 @@ function floor(now: () => number, env: { postsTo?: (c: ContextKey) => boolean } 
         saidLately: () => null,
       }) as unknown as DeliveryLedger,
     humans: (c) => (c.kind === "voice" ? 2 : null),
-    ...env,
   });
 }
 
@@ -108,10 +105,8 @@ describe("the waits on her own starts are one decision", () => {
 });
 
 describe("what other modules asked of the Floor", () => {
-  it("a wish for the daily-post channel needs nobody there; another text channel does", () => {
-    const posts = textCtx("posts");
-    const f = floor(() => T0, { postsTo: (c) => c.channel === "posts" });
-    expect(f.check("wish", posts)).toBeNull();
+  it("a wish for a text channel nobody is in is refused", () => {
+    const f = floor(() => T0);
     expect(f.check("wish", TEXT)?.reason).toBe("nobody");
   });
 
@@ -126,10 +121,6 @@ describe("what other modules asked of the Floor", () => {
     sup.services.provide("app", ImpulseHostKey, host);
     sup.services.provide("app", PartyStatusKey, {
       running: (c) => (playing.has(c.channel) ? { game: "quiz", title: "問答" } : null),
-    });
-    sup.services.provide("app", ProposalBoardKey, {
-      propose: async () => ({ id: "x", state: "open", detail: "", turn: null }),
-      open: () => [],
     });
     await sup.register(new ArbiterModule("p"), {}, true);
     await sup.startAll();

@@ -93,7 +93,6 @@ describe("mind module: Plan", () => {
     await wait(10);
     // Her Plan has no impulses (the old field in this reply is ignored): her own starts are the
     // new runner's.
-    expect(r.intents.intents).toEqual([]);
     const [thought] = r.mind().thoughts();
     expect(thought?.intents).toEqual([]);
     expect(thought?.changes).toEqual(["目標 +「問 Owen 報告的結果」(Owen 上線時)"]);

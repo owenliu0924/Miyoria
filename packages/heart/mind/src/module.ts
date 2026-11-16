@@ -17,7 +17,6 @@ import {
 import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type Clock,
-  DailyPostsKey,
   dataBlock,
   EventLogKey,
   Events,
@@ -42,7 +41,6 @@ import { type MindConfig, MindConfigSchema } from "./config.js";
 import { GoalBook } from "./goals.js";
 import { type Condense, intentCounts, Journal, ruleDigest } from "./journal.js";
 import { LifeBook } from "./life/log.js";
-import { DailyPostDesk } from "./life/posts.js";
 import {
   type ReminderBackend,
   ReminderBook,
@@ -214,7 +212,7 @@ export class MindModule implements Module {
   /**
    * Her own life (docs/design/v4-plan.md §8): the life log (`LifeLogKey`), her timers
    * (`ReminderDeskKey`, capability `self.remind` / tool `remind_me`, delivered while the module
-   * runs) and her daily posts (`DailyPostsKey`, off unless configured).
+   * runs).
    */
   async #startLife(
     ctx: ModuleContext,
@@ -223,7 +221,6 @@ export class MindModule implements Module {
   ): Promise<LifeBook> {
     const clock = this.#options.clock ?? ctx.clock;
     const offset = config.utc_offset_minutes;
-    let posts: DailyPostDesk | null = null;
     const life = new LifeBook({
       store,
       profile: this.#profile,
@@ -231,14 +228,6 @@ export class MindModule implements Module {
       offsetMinutes: offset,
       dayStartHour: config.daily_hour,
       keepDays: config.life_keep_days,
-      onRecord: (entry) => {
-        const desk = posts;
-        if (desk === null) return;
-        void desk.offer(entry).then(
-          (result) => ctx.log.debug({ result, activity: entry.activity }, "daily post"),
-          (error: unknown) => ctx.log.warn({ err: errorMessage(error) }, "daily post failed"),
-        );
-      },
     });
     const limits: ReminderLimits = {
       max: config.reminders_max,
@@ -263,24 +252,10 @@ export class MindModule implements Module {
         }),
       wishes: () => ctx.services.get(WishesKey) ?? null,
     });
-    const desk = new DailyPostDesk({
-      config: config.daily_posts,
-      store,
-      profile: this.#profile,
-      clock,
-      services: ctx.services,
-      dayOf: (at) => life.dayOf(at),
-    });
-    if (config.daily_posts.enabled && desk.channel() === null) {
-      ctx.log.warn(
-        "[modules.mind.daily_posts] is enabled without guild and channel: posts stay off",
-      );
-    }
     if (store) {
       for (const [what, load] of [
         ["her life log", () => life.load()],
         ["her timers", () => reminders.load()],
-        ["her daily posts", () => desk.load()],
       ] as const) {
         try {
           const loaded = await withTimeout(
@@ -293,13 +268,11 @@ export class MindModule implements Module {
         }
       }
     }
-    posts = desk;
     this.#life = life;
     this.#reminders = reminders;
     const book = bothBooks(() => served(ctx.services), reminders);
     ctx.provide(LifeLogKey, life);
     ctx.provide(ReminderDeskKey, book);
-    ctx.provide(DailyPostsKey, desk);
     this.#unregister = actuatorsFor(ctx).register(remindCapability(book));
     ctx.spawn("reminders", (signal) => reminders.run(signal));
     return life;

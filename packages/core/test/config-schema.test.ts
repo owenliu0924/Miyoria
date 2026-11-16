@@ -117,7 +117,8 @@ x = 1
   });
 
   it("leaves the shimmed and still-read keys as they load today", () => {
-    // `core.pipeline` is no longer read (boot warns); `[modules.auth] owners` is still read.
+    // `core.pipeline` is no longer read (`removed-config.ts` names it); `[modules.auth] owners`
+    // is still read.
     const config = toml(`
 [core]
 pipeline = "v2"

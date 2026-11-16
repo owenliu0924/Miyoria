@@ -48,8 +48,6 @@ async function manual(
 ): Promise<Rig & { plan(c?: ContextKey): Promise<Thought> }> {
   const r = await rig(provider, { config: { min_interval_secs: 0, max_calls_per_hour: 100 } });
   await r.registry.setPaused(true);
-  let n = 0;
-  r.intents.outcome = () => ({ status: "started", detail: "queued", turn: `T${++n}` });
   const loop = r.mind() as unknown as MindLoop;
   return Object.assign(r, {
     async plan(context: ContextKey = TEXT): Promise<Thought> {
@@ -232,8 +230,6 @@ describe("after her turns", () => {
   it("no turn of hers, started herself or not, wakes Plan", async () => {
     const provider = new MockProvider("p").reply(reply([speak("嗨", "想聊天")]));
     const r = await rig(provider, { config: { min_interval_secs: 0 } });
-    let n = 0;
-    r.intents.outcome = () => ({ status: "started", detail: "queued", turn: `T${++n}` });
     r.mind().suggest({
       source: "initiative",
       reason: "idle_channel",
@@ -255,24 +251,5 @@ describe("after her turns", () => {
     r.publish(Events.AgentTurnCompleted, { turn: "R1", context: TEXT, text: "好啊" });
     await wait(5000);
     expect(provider.requests()).toHaveLength(1);
-  });
-});
-
-describe("channel levels", () => {
-  it("are shown with the place", async () => {
-    const start = reply([speak("大家好", "想聊天")]);
-    const provider = new MockProvider("p").reply(start).reply(start);
-    const r = await manual(provider);
-    let blocked: string | null = null;
-    r.intents.levels = (c) =>
-      c.kind === "voice" ? null : { mode: "quiet", label: "安靜", blocked };
-    await r.plan();
-    expect(texts(provider.requests()[0]).data).toContain("聊天等級「安靜」");
-
-    blocked = "level quiet: she started talking here 0 min ago; next in 180 min";
-    await wait(11 * MIN);
-    await r.plan();
-    expect(texts(provider.requests()[1]).data).toContain("聊天等級「安靜」,現在不能主動開口");
-    expect(r.intents.intents).toEqual([]);
   });
 });

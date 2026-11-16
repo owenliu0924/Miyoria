@@ -577,8 +577,6 @@ export type CorrectionsConfig = z.output<typeof CorrectionsConfigSchema>;
 
 /** `[modules.agent]` config section. */
 export const AgentConfigSchema = z.object({
-  /** No longer read: the phase-3 turn runner always answers (a line at start says so). */
-  runner: z.unknown().optional(),
   /** Quiet time after the last message before a turn starts. */
   debounce_ms: z.number().int().nonnegative().default(800),
   /** A typing notification pushes the turn start to at least this far out. */

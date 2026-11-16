@@ -903,14 +903,6 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # reminder_max_days = 30         # 提醒最遠能設幾天後
 # reminder_hold_mins = 120       # 到時間的提醒留在主線的看板上多久
 # utc_offset_minutes = 480       # 她的當地時間(她的一天、日計畫、提醒的「HH:MM」都照這個)
-# 她的日常貼文:預設關。打開後只會貼到你指定的那一個文字頻道,每天最多 max_per_day 次(內容是她真的做過的事)
-# [modules.mind.daily_posts]
-# enabled = false
-# platform = "discord"
-# guild = "123456789012345678"   # 頻道所在的伺服器 id(要加引號;預設不設)
-# channel = "123456789012345678" # 唯一能貼的文字頻道 id(要加引號);沒設 = 不貼
-# max_per_day = 3                # 0 到 10
-# min_gap_mins = 120             # 兩次之間至少隔多久
 
 # ---- 反思與學習(自主層階段 G)-------------------------------------------------
 
