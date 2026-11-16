@@ -195,7 +195,7 @@ Q1 的決定改變了下面兩處:工作順序的 B4 不做開關,新舊在同�
 
 ## B10 的修正評測(`corrections` 題組)
 
-Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情境,加一個對她回覆的檢查。`pnpm eval --live --config <miyoria.toml> --suite corrections --subject current|self --repeat 3`,兩個受測對象各跑一次就能並排看。不在預設的題組裡(每晚不跑),要點名。偵測用的 regex 在 `tools/eval/src/live/suites/corrections.ts` 重寫了一份(舊的在 `claims.ts`、`mainline/loop.ts`,B10 會跟著 `turn.ts` 一起刪)。
+Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情境,加一個對她回覆的檢查。`pnpm eval --live --config <miyoria.toml> --suite corrections --repeat 3`(當時有 `current` 和 `self` 兩個受測對象可以並排看;`current` 在 B10 刪了,現在只有 `self`)。不在預設的題組裡(每晚不跑),要點名。偵測用的 regex 在 `tools/eval/src/live/suites/corrections.ts` 重寫了一份(舊的在 `claims.ts`、`mainline/loop.ts`,B10 會跟著 `turn.ts` 一起刪)。
 
 報告每個修正一行:題數、跑了幾次、失敗幾次、失敗率;`headline` 是整體的 `fail` 和每個修正的 `cNN`,存檔的格式沒有改。工具除了假世界的,多了四個只在這題組用的:`voice_join`、`voice_leave`、`game_start`、`directive_add`(`fake-tools.ts`,說明和真的一樣簡短)。
 
@@ -225,6 +225,24 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 - **5** V2 已經不存在,沒有東西可以跑;共用 2 的題。
 
 沒驗證的事:題目和偵測都沒有接真的模型跑過;失敗率的高低要等第一次對 `current` 和 `self` 各跑一次才知道,題目可能太容易(全過)或偵測抓錯(誤報),要看第一次的結果再調。
+
+## B10 的刪除(2026-11-16,只做了一部分)
+
+**做了的**:
+
+- `[modules.agent] runner` 不再讀:Core 一定裝新的跑者,舊的設定檔寫著 `runner` 照樣能載入(啟動時一行 log)。範例設定檔拿掉這個鍵。
+- 她自己起頭的事只走新跑者:Arbiter 對 `plan`、`agenda`、`world`、`followup` 的衝動一律拒絕;打招呼和追問的產生器(`producers.ts`)、Runner 的 `#followups`、`#propose`、`#observe` 刪了;`[modules.arbiter]` 的 `greeting`、`voice_join`、`followup`、`friend_labels`、`voice_join_min_affinity`、`voice_join_cooldown_secs`、`followup_active_secs` 不再讀(舊檔照樣載入)。存起來的 Arbiter 狀態裡舊的 `producers` 那一段讀的時候略過。
+- mind 的 Plan 不再提案(`#propose` 刪了,`#act` 只記「不做」);`remind_me` 一律寫新跑者的排程。舊的提醒送達(`deliverer`、`reminderText`)刪了;`ReminderBook` 和 `bothBooks` 留著,因為舊設定鍵裡存的計時器要靠它到期時發 `mind.reminder`,新跑者的收件匣讀這個事件。
+- 評測的 `current` 受測對象(`tools/eval/src/live/current.ts`)刪了,`self` 是預設。
+- 只測舊路徑的測試刪了(Arbiter 的主動規則、她自己的開口、結果回合、提案板上她自己的願望)。
+
+**沒做、為什麼**:舊的回合(`turn.ts`、coordinator、`MainTurn`、手、提案板、注意力、`AgentIntents`)現在還是活的,不是只有舊的文字和語音回合在用。新跑者沒有接 Arbiter 開的回合,下面這些還是由 `turn.ts` 產生台詞:
+
+- 遊戲實況:`game.*` 觀察和遊戲導演的 `arbiter.impulse` → Arbiter → `ImpulseHostKey`(`AgentIntents`)→ `Agent.openInitiative` → coordinator → `turn.ts`。遊戲導演的評論提案經 `ProposalBoardKey`(`mainline/proposals.ts`)走同一條路。
+- 唱歌的報幕(`sing` 的 `arbiter.impulse`)、`agent.notice` 的通知、`chat.start` / `chat.dm` 能力(`AgentIntents`)。
+- 工作車道:語音頻道裡的 `work_start` 和遊戲導演的任務還在舊車道上(`jobs.ts` 寫的)。
+
+所以這一步沒有刪 `turn.ts`、手、工作車道、注意力、提案板,也沒有刪 Q8 不帶的修正(它們在 `turn.ts` 裡,遊戲實況還會經過)。要刪它們,得先讓新跑者接 Arbiter 開的回合(一個 `ImpulseHost` 在新跑者上叫醒那個地方),那是新的接線,不是刪除,要另外決定。mind 的 Plan 還會要她寫衝動(提示詞和回覆那一半沒拆,`selfstart.ts` 也還在:`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
 
 ## 風險
 
