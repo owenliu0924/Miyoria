@@ -24,6 +24,13 @@ export {
 } from "./importer.js";
 export { KIND_LABEL, NotesKnowledge, type NotesKnowledgeOptions } from "./knowledge.js";
 export { importLegacyOnce, LEGACY_IMPORT_KEY, type LegacyImportDeps } from "./legacy.js";
+export {
+  type LiveSegmentConfig,
+  type LiveSegmentDeps,
+  type LiveSegmentStats,
+  LiveSegments,
+  placeOfContext,
+} from "./live.js";
 export { notesSchema } from "./migrations.js";
 export { NotesNotebook, type NotesNotebookOptions } from "./notebook.js";
 export {
@@ -49,6 +56,13 @@ export {
   segmentPassMessage,
   segmentPassPrompt,
 } from "./pass-prompt.js";
+export {
+  DEFAULT_PRECISION,
+  keptHits,
+  type Precision,
+  precise,
+  separated,
+} from "./precision.js";
 export {
   DEFAULT_RANKING,
   type QueryVector,
@@ -160,6 +174,16 @@ export {
   topicSubject,
   type VectorCounts,
 } from "./store.js";
+export {
+  markRebuildStarted,
+  markRebuilt,
+  REBUILD_STATE_KEY,
+  type RebuildState,
+  rebuildState,
+  switched,
+  ulidTime,
+  writtenSince,
+} from "./switch.js";
 export type {
   AppliedOp,
   ChangeMeta,

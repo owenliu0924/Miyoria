@@ -239,6 +239,8 @@ export interface VectorWait {
 export interface SearchOptions {
   kind?: DocumentKind;
   limit?: number;
+  /** `lines`: only the lines of these documents (subjects). */
+  subjects?: readonly string[];
   /** A voice turn: the query's vector is waited for `voice` ms. */
   voice?: boolean;
   signal?: AbortSignal;
@@ -304,9 +306,20 @@ export class NotesSearch {
   /** `NotesStore.searchLines`, with the query's vector when there is one in time. */
   async lines(query: string, reader: NotesReader, options: SearchOptions = {}): Promise<LineHit[]> {
     const vector = await this.vector(query, options);
+    return this.linesWith(vector, query, reader, options);
+  }
+
+  /** `lines` with a query vector already in hand (`vector`), so several searches share one wait. */
+  linesWith(
+    vector: QueryVector | null,
+    query: string,
+    reader: NotesReader,
+    options: Omit<SearchOptions, "voice" | "signal"> = {},
+  ): LineHit[] {
     return this.notes.searchLines(query, reader, {
       ...(options.kind === undefined ? {} : { kind: options.kind }),
       ...(options.limit === undefined ? {} : { limit: options.limit }),
+      ...(options.subjects === undefined ? {} : { subjects: options.subjects }),
       ranking: this.#ranking(),
       ...(vector === null ? {} : { vector }),
     });

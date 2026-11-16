@@ -211,6 +211,52 @@ export const DatesConfigSchema = z.object({
 export type DatesConfig = z.output<typeof DatesConfigSchema>;
 
 /**
+ * `[modules.memory.segment]`: the segment pass on live conversation (`notes/src/live.ts`), which
+ * runs once the notes are her memory's source (`miyoria memory rebuild --apply` has finished). The
+ * model is `[modules.memory] purpose`.
+ */
+export const SegmentConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** A pause this long ends a segment, and a session this quiet ends its last one. */
+  idle_secs: uint().default(300),
+  /** Lines (people's and hers) in one segment at most. */
+  max_lines: uint().default(40),
+  /** How often the background task looks for segments that have ended. */
+  tick_secs: uint().default(30),
+  /** The longest a compaction waits for the pass before it goes ahead (ms). */
+  compaction_wait_ms: uint().default(20_000),
+  /** The first wait after a failed pass; it doubles up to `retry_max_secs`. */
+  retry_secs: uint().default(60),
+  retry_max_secs: uint().default(3600),
+  /** Unusable replies in a row after which a segment is skipped. */
+  abandon_limit: uint().default(3),
+  /** Segments passed per session per tick at most. */
+  per_tick: uint().default(4),
+});
+export type SegmentConfig = z.output<typeof SegmentConfigSchema>;
+
+/**
+ * `[modules.memory.notes_recall]`: how sure a search of her notes has to be before `recall` and
+ * the prompt's memory block read its lines back (`notes/src/precision.ts`).
+ */
+export const NotesRecallConfigSchema = z.object({
+  /** Lines scoring below this are not returned at all. */
+  min_score: z.number().min(0).default(0.3),
+  /**
+   * A line sharing no word with the query must be `min_vector` plus this close to it (cosine);
+   * a line that shares a word only has to pass `min_score`.
+   */
+  vector_alone_margin: z.number().min(0).default(0.1),
+  /** The rank the best line is compared with (the floor when fewer came back). */
+  gap_rank: uint().default(5),
+  /** The best line has to be ahead of it by at least this, or the hits are weak. */
+  min_gap: z.number().min(0).default(0.05),
+  /** Lines of the documents about the people here or named and of the place, searched first. */
+  scoped_limit: uint().default(6),
+});
+export type NotesRecallConfig = z.output<typeof NotesRecallConfigSchema>;
+
+/**
  * `[modules.memory]`.
  *
  * ```toml
@@ -338,6 +384,8 @@ export const MemoryConfigSchema = z.object({
   profiles: ProfilesConfigSchema.prefault({}),
   notebook: NotebookConfigSchema.prefault({}),
   dates: DatesConfigSchema.prefault({}),
+  segment: SegmentConfigSchema.prefault({}),
+  notes_recall: NotesRecallConfigSchema.prefault({}),
 });
 export type MemoryConfig = z.output<typeof MemoryConfigSchema>;
 

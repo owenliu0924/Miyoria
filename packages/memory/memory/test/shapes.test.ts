@@ -105,6 +105,24 @@ describe("shapes", () => {
         index_chars: 600,
       },
       dates: { enabled: true, utc_offset_minutes: 480, met_anniversary: true },
+      segment: {
+        enabled: true,
+        idle_secs: 300,
+        max_lines: 40,
+        tick_secs: 30,
+        compaction_wait_ms: 20_000,
+        retry_secs: 60,
+        retry_max_secs: 3600,
+        abandon_limit: 3,
+        per_tick: 4,
+      },
+      notes_recall: {
+        min_score: 0.3,
+        vector_alone_margin: 0.1,
+        gap_rank: 5,
+        min_gap: 0.05,
+        scoped_limit: 6,
+      },
     });
     // Nested sections keep their other defaults.
     expect(memoryConfig({ weights: { vector: 1 } }).weights.text).toBe(0.25);

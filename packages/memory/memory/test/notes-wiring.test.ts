@@ -11,10 +11,18 @@ import {
   Supervisor,
 } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
-import { NotebookKey, PromptContributors, PromptContributorsKey } from "@miyoria/types";
+import {
+  MemoryRetrievalKey,
+  NotebookKey,
+  PromptContributors,
+  PromptContributorsKey,
+  SegmentFlushKey,
+  toTimestamp,
+} from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { LEGACY_IMPORT_KEY } from "../../notes/src/legacy.js";
 import { notesTables } from "../../notes/src/store.js";
+import { markRebuildStarted, markRebuilt } from "../../notes/src/switch.js";
 import { NotesSearchKey } from "../../notes/src/vectors.js";
 import {
   type Embedder,
@@ -129,5 +137,39 @@ describe("the memory module on the notes", () => {
       { author: "tool" },
     );
     expect(notes.vectorCounts("fake|1").waiting).toBe(1);
+  });
+
+  it("runs the segment pass and reads the notes only once the rebuild has finished", async () => {
+    const store = await SqliteStore.open(":memory:", { plugins: [memoryTables, notesTables] });
+    stores.push(store);
+    const notes = store.plugin(notesTables);
+    notes.add(
+      "topic:拉麵",
+      {
+        section: "重點",
+        text: "巷口那家拉麵很好吃",
+        provenance: "observed",
+        scope: { type: "public" },
+      },
+      { author: "tool" },
+    );
+    const query = {
+      context: { platform: "discord", scope: "g1", channel: "c1", kind: "channel" as const },
+      present: [],
+      text: "拉麵",
+      now: toTimestamp(Date.now()),
+    };
+    const before = await start(store);
+    expect(await before.services.get(SegmentFlushKey)?.beforeCompaction("s", 3)).toBe("off");
+    expect(await before.services.get(MemoryRetrievalKey)?.retrieve(query)).toEqual([]);
+    await before.sup.stopAll();
+
+    const at = toTimestamp(Date.now());
+    await markRebuildStarted(store.settings, profile(), at, at);
+    await markRebuilt(store.settings, profile(), at, at, at);
+    const after = await start(store);
+    expect(await after.services.get(SegmentFlushKey)?.beforeCompaction("s", 3)).toBe("done");
+    const found = await after.services.get(MemoryRetrievalKey)?.retrieve(query);
+    expect(found?.map((m) => m.content)).toEqual(["巷口那家拉麵很好吃"]);
   });
 });

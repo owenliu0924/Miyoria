@@ -14,6 +14,9 @@
 //   run stops before a segment once `maxUsd` is spent.
 // - With embeddings on, the lines written get vectors at the end (`rebuildVectors`), and the
 //   pass finds related documents by meaning too.
+// - With a `marker`, the first run records when the rebuild began and a run that handles its
+//   whole plan records that it is done (`switch.ts`): from then on the notes are her memory's
+//   source and the segment pass runs live.
 
 import {
   CHAT_EVENT_TYPES,
@@ -24,7 +27,7 @@ import {
 } from "@miyoria/contracts/events";
 import { type Completer, callCost, type Pricing } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import type { EventLogStore, LoggedEvent, SqliteStore } from "@miyoria/store";
+import type { EventLogStore, LoggedEvent, SettingsStore, SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
   type ContextKey,
@@ -55,6 +58,7 @@ import {
   segmentsBeforeCompaction,
 } from "./segment.js";
 import { type NotesStore, SELF_SEED } from "./store.js";
+import { markRebuildStarted, markRebuilt } from "./switch.js";
 import type { NotesIndex, NotesSearch } from "./vectors.js";
 
 /** The consumer id of the rebuild's positions in `event_cursors`. */
@@ -219,6 +223,8 @@ export interface RebuildPlan {
   since: Timestamp;
   /** Chat lines read. */
   lines: number;
+  /** When the newest of them was said; `null`: none. */
+  upto: Timestamp | null;
   sessions: PlannedSession[];
   /** What is still to do, in the order the lines were said. */
   segments: PlannedSegment[];
@@ -243,6 +249,11 @@ export async function planRebuild(
   const plan: RebuildPlan = {
     since,
     lines: lines.length,
+    upto: lines.reduce<Timestamp | null>(
+      (latest, l) =>
+        latest === null || timestampMs(l.entry.at) > timestampMs(latest) ? l.entry.at : latest,
+      null,
+    ),
     sessions: [],
     segments: [],
     contexts: new Map(),
@@ -374,6 +385,13 @@ export interface RebuildDeps {
   signal?: AbortSignal;
   /** Called after each segment. */
   onSegment?: (done: number, of: number, result: SegmentPassResult) => void;
+  /**
+   * Where the rebuild's state is kept (`switch.ts`): its first start, and its end once a run has
+   * handled every segment, which makes the notes her memory's source. Absent: not recorded.
+   */
+  marker?: { settings: Pick<SettingsStore, "get" | "set">; profile: ProfileId };
+  /** Wall-clock time of the marker. Default `Date.now`. */
+  wallClock?: () => number;
 }
 
 export interface RebuildReport {
@@ -418,6 +436,10 @@ export async function applyRebuild(plan: RebuildPlan, deps: RebuildDeps): Promis
     usd: 0,
   };
   const cursor = rebuildCursor(deps.cursor);
+  const wall = () => toTimestamp((deps.wallClock ?? Date.now)());
+  if (deps.marker) {
+    await markRebuildStarted(deps.marker.settings, deps.marker.profile, plan.since, wall());
+  }
   for (const planned of plan.segments) {
     if (deps.signal?.aborted) {
       report.status = "aborted";
@@ -471,6 +493,15 @@ export async function applyRebuild(plan: RebuildPlan, deps: RebuildDeps): Promis
     report.dropped += result.dropped.length;
     if ((result.episode?.stored ?? null) !== null) report.episodes += 1;
     deps.onSegment?.(report.segments, report.total, result);
+  }
+  if (deps.marker) {
+    await markRebuilt(
+      deps.marker.settings,
+      deps.marker.profile,
+      plan.since,
+      plan.upto ?? plan.since,
+      wall(),
+    );
   }
   return report;
 }

@@ -41,6 +41,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { markRebuildStarted, markRebuilt } from "../../notes/src/switch.js";
 import {
   embeddingConfig,
   MemoryEngine,
@@ -78,11 +79,16 @@ interface Harness {
 
 const sups: Supervisor[] = [];
 
-async function harness(llm: MockProvider, config: JsonValue): Promise<Harness> {
+async function harness(
+  llm: MockProvider,
+  config: JsonValue,
+  before: (store: Areas) => Promise<void> = async () => undefined,
+): Promise<Harness> {
   const services = new ServiceRegistry();
   const sup = new Supervisor({ services });
   sups.push(sup);
   const store = await openAreas("fake");
+  await before(store);
   services.provide("app", MemoryRecordStoreKey, store.memories);
   services.provide("app", MessageLogKey, store.messages);
   services.provide("app", PeopleStoreKey, store.people);
@@ -375,6 +381,42 @@ describe("module", () => {
       await pause(100);
     }
     expect(llm.requests()[0]?.messages[1]?.content).toContain("我下週要搬家");
+  });
+
+  it("consolidates nothing once the notes are the source, fold or not", async () => {
+    const reply = `{"facts": [{"subject_name": "Owen", "statement": "Owen 下週要搬家", "importance": 0.7, "confidence": 0.9, "global": false}]}`;
+    const llm = new MockProvider("sum").reply(reply);
+    const h = await harness(
+      llm,
+      { tick_secs: 1, consolidate_every_messages: 1, consolidate_idle_secs: 1 },
+      async (store) => {
+        const at = toTimestamp(Date.now());
+        await markRebuildStarted(store.settings, profile(), at, at);
+        await markRebuilt(store.settings, profile(), at, at, at);
+      },
+    );
+    const owen = acct("2");
+    const ctx = guildCtx("g1", "c1");
+    const msg: IncomingMessage = {
+      id: { context: ctx, id: "m1" },
+      author: { account: owen, display_name: "Owen", is_bot: false },
+      text: "我下週要搬家",
+      mentions_self: false,
+      reply_to_self: false,
+      attachments: [],
+      ts: toTimestamp(Date.now()),
+    };
+    await h.store.messages.append(logEntryFromIncoming(profile(), msg, false));
+    h.sup.bus.publish("test", Events.PlatformMessageCreated, msg);
+    h.sup.bus.publish("conversation", Events.ConversationFolded, {
+      context: { ...ctx },
+      folded_up_to: { id: "x", ts: msg.ts },
+      lines: 1,
+      session_lines: 1,
+    });
+    await pause(2500);
+    expect(llm.requests()).toHaveLength(0);
+    expect(await h.store.memories.list(profile(), memoryFilter(10))).toEqual([]);
   });
 
   it("is degraded without a message log and fails without a record store", async () => {

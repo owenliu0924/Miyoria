@@ -73,6 +73,12 @@ export interface CompactOptions extends CompactionBudget {
   summarise: Summarise;
   /** The turn doing it, recorded on the summary. */
   turn?: string | null;
+  /**
+   * Called with the cut once one is picked, before anything is summarised: where the longer-lived
+   * memory reads the entries up to it (the segment pass). It bounds its own wait; a rejection is
+   * ignored and the compaction goes ahead.
+   */
+  before?: (uptoSeq: number) => Promise<unknown>;
 }
 
 /**
@@ -105,6 +111,7 @@ export async function compactIfNeeded(
 
   const upto = pickCut(tail, options);
   if (upto === null) return null;
+  if (options.before) await options.before(upto).catch(() => undefined);
   const old = tail.entries.filter((e) => e.seq <= upto);
   const text = await options.summarise(old, tail.summary?.summary ?? null);
   if (!unchanged()) return null;

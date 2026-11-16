@@ -42,13 +42,17 @@ import {
   type ProfileId,
   type PromptContributors,
   PromptContributorsKey,
+  SegmentFlushKey,
   toTimestamp,
 } from "@miyoria/types";
+import { memoryEpisodeSink } from "../../notes/src/episodes.js";
 import { importLegacyOnce } from "../../notes/src/legacy.js";
+import { type LiveSegmentConfig, LiveSegments } from "../../notes/src/live.js";
 import { NotesNotebook } from "../../notes/src/notebook.js";
 import { rankingOf } from "../../notes/src/rank.js";
 import { notesTables } from "../../notes/src/store.js";
 import { NotesIndex, NotesSearch, NotesSearchKey } from "../../notes/src/vectors.js";
+import { transcriptTables } from "../../transcript/src/store.js";
 import { MemoryCommands } from "./commands.js";
 import {
   type EmbeddingConfig,
@@ -68,6 +72,7 @@ import {
 } from "./dates.js";
 import { buildEmbedder, type Embedder } from "./embed.js";
 import { MemoryEngine, MemoryEngineKey } from "./engine.js";
+import { NotesRecall, NotesSourceState } from "./notes-recall.js";
 import { PersonNotes } from "./person-note.js";
 import { PinnedReader } from "./pinned.js";
 import { RecentPast } from "./recent-install.js";
@@ -104,7 +109,9 @@ export interface MemoryModuleOptions {
  * `/admin memory wipe` `ProfileDataStoreKey`, `SupervisorKey` and `AuditLogKey`.
  *
  * Provides `MemoryEngineKey`, `FollowupSourceKey` and, over a store with the notes, `NotesSearchKey`
- * (her documents searched by words, and by meaning with embeddings on); registers the prompt
+ * (her documents searched by words, and by meaning with embeddings on), `SegmentFlushKey` (the
+ * live segment pass, which replaces consolidation once `miyoria memory rebuild` has finished) and
+ * a `MemoryRetrievalKey` that reads the notes from then on; registers the prompt
  * contributor `memory`,
  * the tools `remember` / `recall` and the `memory` commands (re-checked periodically, so start
  * order does not matter).
@@ -171,6 +178,13 @@ export class MemoryModule implements Module {
     this.#embedderInUse = embedder;
     engine.attach(services);
     const notes = store?.plugin(notesTables) ?? null;
+    // Whether the notes are her memory's source yet (`notes/src/switch.ts`).
+    const source = new NotesSourceState(settings, this.profile);
+    try {
+      await source.refresh();
+    } catch (error) {
+      ctx.log.warn({ error: errorMessage(error) }, "cannot read the rebuild's state");
+    }
     const notebook =
       notes === null
         ? null
@@ -185,20 +199,44 @@ export class MemoryModule implements Module {
     const notesIndex =
       notes !== null && embedder.enabled ? new NotesIndex({ notes, embedder }) : null;
     this.#notesIndex = notesIndex;
+    let recall: NotesRecall | null = null;
+    let live: LiveSegments | null = null;
     if (notes !== null) {
-      ctx.provide(
-        NotesSearchKey,
-        new NotesSearch({
-          notes,
-          index: notesIndex,
-          ranking: () => rankingOf(engine.config),
-          wait: () => ({
-            text: engine.config.notes_vector_wait_ms,
-            voice: engine.config.notes_vector_voice_wait_ms,
-          }),
+      const search = new NotesSearch({
+        notes,
+        index: notesIndex,
+        ranking: () => rankingOf(engine.config),
+        wait: () => ({
+          text: engine.config.notes_vector_wait_ms,
+          voice: engine.config.notes_vector_voice_wait_ms,
         }),
-      );
+      });
+      ctx.provide(NotesSearchKey, search);
+      recall = new NotesRecall({ engine, notes, search, source });
+      const cursors = notes.cursors();
+      if (store && cursors !== null) {
+        const transcripts = store.plugin(transcriptTables);
+        const resolver = notes.resolver();
+        live = new LiveSegments({
+          transcripts,
+          notes,
+          search,
+          episodes: memoryEpisodeSink(engine, {
+            resolver,
+            contextOf: (session) => transcripts.contextOf(session),
+          }),
+          cursor: cursors,
+          router,
+          resolver,
+          nameOf: (person) => engine.handles?.ofPerson(person) ?? null,
+          now: () => ctx.clock.now(),
+          config: () => liveSegmentConfig(engine.config),
+          state: () => source.state,
+        });
+        ctx.provide(SegmentFlushKey, live);
+      }
     }
+    this.#installer.recall = recall;
     const recent = new RecentPast(engine, services, ctx.clock, notebook);
     try {
       await recent.notebook.load();
@@ -227,7 +265,7 @@ export class MemoryModule implements Module {
     recent.provide((key, value) => ctx.provide(key, value));
     ctx.provide(MemoryEngineKey, engine);
     ctx.provide(PinnedMemoryKey, new PinnedReader(engine, ctx.clock));
-    ctx.provide(MemoryRetrievalKey, new MemoryRetriever(engine));
+    ctx.provide(MemoryRetrievalKey, recall ?? new MemoryRetriever(engine));
     ctx.provide(FollowupSourceKey, engine);
     ctx.provide(MemoryCuratorKey, new Curator(engine));
     ctx.provide(PersonNoteWriterKey, new PersonNotes(engine));
@@ -253,9 +291,23 @@ export class MemoryModule implements Module {
         ctx.log.warn({ error: errorMessage(error) }, "cannot check today's dates");
       });
     };
+    // Once the notes are the source, the segment pass writes her memory and consolidation stops.
     ctx.spawn("consolidate", (signal) =>
-      consolidationLoop(ctx, engine, installer, sub, signal, () => recent.log.invalidate(), seen),
+      consolidationLoop(
+        ctx,
+        engine,
+        installer,
+        sub,
+        signal,
+        () => recent.log.invalidate(),
+        seen,
+        () => source.switched,
+      ),
     );
+    const segments = live;
+    if (segments !== null) {
+      ctx.spawn("segment", (signal) => segmentLoop(ctx, engine, segments, source, signal));
+    }
     if (config.forgetting.enabled) {
       ctx.spawn("forget", (signal) => maintenanceLoop(ctx, engine, signal));
     }
@@ -295,6 +347,8 @@ class Installer {
   #recentTools: string[] = [];
   /** The dates book of `remember_date` / `forget_date` (set at start). */
   book: DateBook | null = null;
+  /** What `recall` reads once the notes are the source (set at start; `null`: no notes). */
+  recall: NotesRecall | null = null;
   readonly #commands = new MemoryCommands();
 
   install(ctx: ModuleContext, engine: MemoryEngine): void {
@@ -313,7 +367,7 @@ class Installer {
       if (this.#tools) this.#unregisterTools(this.#tools);
       try {
         tools.register(new RememberTool(engine, ctx.clock));
-        tools.register(new RecallTool(engine, ctx.clock));
+        tools.register(new RecallTool(engine, ctx.clock, this.recall));
         if (this.book !== null) {
           tools.register(new RememberDateTool(this.book, engine, ctx.clock));
           tools.register(new ForgetDateTool(this.book, engine));
@@ -441,6 +495,11 @@ async function consolidationLoop(
   excluded: () => void = () => {},
   /** Someone spoke (birthdays and other dates of theirs are checked). */
   seen: (account: AccountRef, context: ContextKey, nowMs: number) => void = () => undefined,
+  /**
+   * Whether the segment pass writes her memory (the notes are the source): then no context is
+   * consolidated and nothing is written to the memory records from the conversation here.
+   */
+  replaced: () => boolean = () => false,
 ): Promise<void> {
   const config = engine.config;
   const tracker = new ActivityTracker();
@@ -466,13 +525,14 @@ async function consolidationLoop(
       const env = wake.env;
       if (env === null) return;
       const nowMs = ctx.clock.now();
+      const tracking = !replaced();
       if (is(Events.PlatformMessageCreated, env)) {
         const data = env.data;
-        tracker.message(data.id.context, nowMs);
+        if (tracking) tracker.message(data.id.context, nowMs);
         if (!data.author.is_bot) seen(data.author.account, data.id.context, nowMs);
       } else if (is(Events.VoiceUtteranceEvent, env)) {
         const data = env.data;
-        tracker.message(data.context, nowMs);
+        if (tracking) tracker.message(data.context, nowMs);
         if (!data.speaker.is_bot) seen(data.speaker.account, data.context, nowMs);
       } else if (env.type === MESSAGE_EXCLUDED_TOPIC) {
         const body = parseExcluded(env.data as JsonValue);
@@ -488,14 +548,14 @@ async function consolidationLoop(
       } else if (env.type === CONVERSATION_FOLDED_TOPIC) {
         const payload = env.data as JsonValue;
         const c = isJsonObject(payload) ? parseFolded(payload.context) : null;
-        if (c) tracker.force(c, nowMs);
+        if (c && tracking) tracker.force(c, nowMs);
       }
       event = sub.recv().then((e): Wake => ({ kind: "event", env: e }));
       continue;
     }
 
     installer.install(ctx, engine);
-    if (engine.canConsolidate) {
+    if (engine.canConsolidate && !replaced()) {
       const nowMs = ctx.clock.now();
       for (const context of tracker.due(nowMs, config)) {
         if (signal.aborted) return;
@@ -537,6 +597,53 @@ function parseFolded(value: JsonValue | undefined): ContextKey | null {
   if (typeof platform !== "string" || typeof channel !== "string") return null;
   if (kind !== "channel" && kind !== "thread" && kind !== "dm" && kind !== "voice") return null;
   return { platform, scope: typeof scope === "string" ? scope : null, channel, kind };
+}
+
+/** `[modules.memory.segment]` as the live pass reads it. */
+export function liveSegmentConfig(config: MemoryConfig): LiveSegmentConfig {
+  const s = config.segment;
+  return {
+    enabled: s.enabled,
+    idleMs: s.idle_secs * 1000,
+    maxLines: s.max_lines,
+    compactionWaitMs: s.compaction_wait_ms,
+    retryMs: s.retry_secs * 1000,
+    retryMaxMs: s.retry_max_secs * 1000,
+    abandonLimit: s.abandon_limit,
+    perTick: s.per_tick,
+    purpose: config.purpose,
+  };
+}
+
+/**
+ * Reads the rebuild's state and passes the segments that have ended, every `tick_secs`. A tick
+ * that throws is logged; the next one tries again.
+ */
+async function segmentLoop(
+  ctx: ModuleContext,
+  engine: MemoryEngine,
+  live: LiveSegments,
+  source: NotesSourceState,
+  signal: AbortSignal,
+): Promise<void> {
+  for (;;) {
+    try {
+      await sleep(Math.max(1, engine.config.segment.tick_secs) * 1000, signal);
+    } catch {
+      return;
+    }
+    try {
+      const was = source.switched;
+      await source.refresh();
+      if (!was && source.switched) {
+        ctx.log.info("the notes are her memory's source now: the segment pass runs live");
+      }
+      await live.tick(signal);
+    } catch (error) {
+      if (signal.aborted) return;
+      ctx.log.warn({ error: errorMessage(error) }, "segment pass tick failed");
+    }
+  }
 }
 
 async function maintenanceLoop(

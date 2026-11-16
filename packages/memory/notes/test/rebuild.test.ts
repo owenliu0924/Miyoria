@@ -14,6 +14,8 @@ import {
   REBUILD_CONSUMER,
   type RebuildPlan,
   rebuildEpisodeSink,
+  rebuildState,
+  switched,
 } from "../src/index.js";
 import { personSubject } from "../src/store.js";
 
@@ -120,6 +122,8 @@ async function run(store: SqliteStore, plan: RebuildPlan, maxUsd: number, model 
     cursor: cursors,
     price: PRICE,
     maxUsd,
+    marker: { settings: store.settings, profile: P },
+    wallClock: () => Date.UTC(2026, 10, 16, 3),
   });
 }
 
@@ -224,6 +228,28 @@ describe("running a rebuild", () => {
     const second = await run(store, rest, 100, modelFor(plan, 2));
     expect(second).toMatchObject({ status: "done", segments: 1, episodes: 1 });
     expect(await episodes(store)).toHaveLength(3);
+  });
+
+  it("records its start, and its end only once a run has handled the whole plan", async () => {
+    const store = await open();
+    seed(store);
+    const notes = store.plugin(notesTables);
+    const cursors = notes.cursors();
+    if (cursors === null) throw new Error("no cursors");
+    expect(await rebuildState(store.settings, P)).toBeNull();
+    const plan = await planRebuild(store.events, cursors, { since: SINCE });
+    expect(plan.upto).not.toBeNull();
+    await run(store, plan, 1.5);
+    const started = await rebuildState(store.settings, P);
+    expect(started).toMatchObject({ since: SINCE, done_at: null, upto: null });
+    expect(switched(started)).toBe(false);
+
+    const rest = await planRebuild(store.events, cursors, { since: SINCE });
+    await run(store, rest, 100, modelFor(plan, 2));
+    const done = await rebuildState(store.settings, P);
+    expect(switched(done)).toBe(true);
+    expect(done?.started_at).toBe(started?.started_at);
+    expect(done?.upto).toBe(plan.upto);
   });
 
   it("goes on after a model error from the segment it stopped at", async () => {

@@ -238,6 +238,8 @@ export interface TurnRetrievalQuery extends RetrievalQuery {
   recent?: readonly string[];
   /** The people she is talking with: a few of their key memories come back without a shared word. */
   talking_with?: readonly PersonId[];
+  /** A spoken turn: a search waits for its query's vector only the voice wait. */
+  voice?: boolean;
 }
 
 // ---- place access ----------------------------------------------------------------------------

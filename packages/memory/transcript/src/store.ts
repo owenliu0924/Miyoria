@@ -47,6 +47,7 @@ import {
   desc,
   eq,
   gt,
+  gte,
   inArray,
   isNotNull,
   isNull,
@@ -252,6 +253,27 @@ export class TranscriptStore {
       .orderBy(desc(S.last_at), asc(S.session))
       .all()
       .map((r) => r.session);
+  }
+
+  /**
+   * Each session written at `since` or later (every one without it): its last sequence (0: none
+   * yet), when it was last written and its platform context, most recently written first.
+   */
+  heads(
+    since: Timestamp | null = null,
+  ): Array<{ session: string; last_seq: number; last_at: Timestamp; context: ContextKey | null }> {
+    return this.#db.orm
+      .select({ session: S.session, next: S.next_seq, last_at: S.last_at, context: S.context })
+      .from(S)
+      .where(since === null ? undefined : gte(S.last_at, since))
+      .orderBy(desc(S.last_at), asc(S.session))
+      .all()
+      .map((r) => ({
+        session: r.session,
+        last_seq: r.next - 1,
+        last_at: r.last_at,
+        context: r.context ?? null,
+      }));
   }
 
   /** The session's row, made on first use. Inside the caller's transaction. */

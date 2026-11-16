@@ -20,6 +20,7 @@ import { z } from "zod";
 import { formatLines, PROMPT_KINDS } from "./contributor.js";
 import type { MemoryEngine } from "./engine.js";
 import { LINE_REF_PREFIX, nameWords, supporting } from "./evidence.js";
+import type { NotesRecall } from "./notes-recall.js";
 import { noteAbout, scopeForNew, visibleScopes } from "./scope.js";
 
 export const REMEMBER = "remember";
@@ -165,7 +166,15 @@ const RecallParams = z.object({
   limit: z.int().min(1).max(20).optional(),
 });
 
-/** Searches memories visible in the current context. */
+/** What `recall` answers when nothing came back. */
+export const RECALL_NOTHING = "想不起來有關的事。";
+/** Said after what `recall` found when none of it clearly stands out (`notes/src/precision.ts`). */
+export const RECALL_WEAK = "(這幾則跟你要找的不一定有關,我不太確定。)";
+
+/**
+ * Searches memories visible in the current context: her notes and the records written since, once
+ * the notes are the source (`NotesRecall`), the memory records before that.
+ */
 export class RecallTool implements Tool {
   /** Only marks what it found as recalled (access count), whatever the order. */
   readonly readOnly = true;
@@ -184,10 +193,12 @@ export class RecallTool implements Tool {
   };
   readonly #engine: MemoryEngine;
   readonly #clock: Clock;
+  readonly #notes: NotesRecall | null;
 
-  constructor(engine: MemoryEngine, clock: Clock = systemClock) {
+  constructor(engine: MemoryEngine, clock: Clock = systemClock, notes: NotesRecall | null = null) {
     this.#engine = engine;
     this.#clock = clock;
+    this.#notes = notes;
   }
 
   async call(ctx: ToolContext, args: JsonValue): Promise<string> {
@@ -199,8 +210,17 @@ export class RecallTool implements Tool {
         : this.#engine.config.recall_limit;
     const person = await this.#engine.personOf(ctx.account);
     const present = person === null ? [] : [person];
-    const scopes = visibleScopes(ctx.context, [ctx.account], present);
     const now = toTimestamp(this.#clock.now());
+    if (this.#notes !== null) {
+      const found = await this.#notes.recollect(
+        { context: ctx.context, accounts: [ctx.account], present, text: query, limit, now },
+        ctx.signal,
+      );
+      if (found.memories.length === 0) return RECALL_NOTHING;
+      const body = this.#notes.format(found.memories, now);
+      return found.weak ? `${body}\n${RECALL_WEAK}` : body;
+    }
+    const scopes = visibleScopes(ctx.context, [ctx.account], present);
     const recalled = await this.#engine.recall(
       scopes,
       present,
@@ -210,7 +230,7 @@ export class RecallTool implements Tool {
       now,
       ctx.signal,
     );
-    if (recalled.length === 0) return "想不起來有關的事。";
+    if (recalled.length === 0) return RECALL_NOTHING;
     return formatLines(recalled, now);
   }
 }

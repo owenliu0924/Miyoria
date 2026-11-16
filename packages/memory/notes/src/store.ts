@@ -759,16 +759,25 @@ export class NotesStore {
   /**
    * The lines `reader` may see that match `query`, best first, each with its document: by words
    * alone, or with `vector` by words and meaning (`rank.ts`). With `ranking.min_score`, lines
-   * scoring below it are left out.
+   * scoring below it are left out; with `subjects`, only the lines of those documents are searched
+   * (and ranked against each other).
    */
   searchLines(
     query: string,
     reader: NotesReader,
-    options: { kind?: DocumentKind; limit?: number } & MeaningOptions = {},
+    options: {
+      kind?: DocumentKind;
+      limit?: number;
+      subjects?: readonly string[];
+    } & MeaningOptions = {},
   ): LineHit[] {
     const ranking = options.ranking ?? DEFAULT_RANKING;
     const visible = this.#visible(reader);
-    const entries = this.list(reader, options.kind === undefined ? {} : { kind: options.kind });
+    const only = options.subjects === undefined ? null : new Set(options.subjects);
+    const entries = this.list(
+      reader,
+      options.kind === undefined ? {} : { kind: options.kind },
+    ).filter((e) => only === null || only.has(e.document.subject));
     const documents = new Map(entries.map((e) => [e.document.id, e.document]));
     const rows = entries.flatMap((e) => visible.get(e.document.id) ?? []);
     // Without a vector: the same ranking with nothing close in meaning.

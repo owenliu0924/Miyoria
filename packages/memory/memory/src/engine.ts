@@ -241,6 +241,8 @@ interface RankOptions {
    */
   forTurn: boolean;
   turn?: TurnQuery;
+  /** Only records it keeps are candidates. */
+  keep?: (record: MemoryRecord) => boolean;
 }
 
 export interface ConsolidationReport {
@@ -796,7 +798,8 @@ export class MemoryEngine implements FollowupSource {
 
   /**
    * Hybrid recall among records in `scopes`. Records about `present` people are candidates
-   * even without a text or vector match. Recalled records are touched.
+   * even without a text or vector match. Recalled records are touched. With `keep`, only the
+   * records it keeps are candidates.
    */
   async recall(
     scopes: readonly MemoryScope[],
@@ -807,6 +810,7 @@ export class MemoryEngine implements FollowupSource {
     now: Timestamp,
     signal?: AbortSignal,
     turn?: TurnQuery,
+    keep?: (record: MemoryRecord) => boolean,
   ): Promise<Recalled[]> {
     const ranked = await this.#rank(
       scopes,
@@ -820,6 +824,7 @@ export class MemoryEngine implements FollowupSource {
         minScore: this.config.min_score,
         forTurn: true,
         ...(turn ? { turn } : {}),
+        ...(keep ? { keep } : {}),
       },
       signal,
     );
@@ -894,7 +899,8 @@ export class MemoryEngine implements FollowupSource {
       kinds.includes(r.kind) &&
       r.superseded_by === null &&
       (options.includeDone || !r.done) &&
-      !(options.forTurn && (expired(r, now) || staleState(r)));
+      !(options.forTurn && (expired(r, now) || staleState(r))) &&
+      (options.keep === undefined || options.keep(r));
 
     // id -> (record, backend text score, vector score)
     const candidates = new Map<string, [MemoryRecord, number, number | null]>();

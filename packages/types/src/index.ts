@@ -462,6 +462,9 @@ export {
   type RetrievalQuery,
   type RetrievedKind,
   type RetrievedMemory,
+  type SegmentFlush,
+  SegmentFlushKey,
+  type SegmentFlushOutcome,
 } from "./memory-layers.js";
 
 // ---- v2 contracts (docs/design/v2-architecture.md, docs/design/v2-implementation.md) ----------
