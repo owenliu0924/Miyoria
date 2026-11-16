@@ -91,7 +91,7 @@ export async function notebookPages(
 const hash = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
 /** `text` in pieces of at most `max` characters, cut after a sentence where it can be. */
-function pieces(text: string, max: number): string[] {
+export function pieces(text: string, max: number): string[] {
   const all = [...text];
   if (all.length <= max) return [text];
   const out: string[] = [];
@@ -209,39 +209,55 @@ function pagePlan(
     report.unmapped.push({ source, reason: scope });
     return;
   }
-  let current = section;
-  for (const raw of page.body.split("\n")) {
+  for (const line of bodyLines(kind, page.body, section, max)) {
+    plan(subject, title, {
+      source: `${source}:${[...line.text].slice(0, 20).join("")}`,
+      input: {
+        section: line.section,
+        text: line.text,
+        provenance: "observed",
+        scope,
+        confidence: 0.6,
+        import_key: `notebook:${page.id}:${hash(`${line.section}\n${line.text}`)}`,
+      },
+    });
+  }
+}
+
+/**
+ * A notebook body as lines: one per row of text (a bullet's mark and a `## heading` are not text),
+ * in the section a heading or a `label:` prefix names (else `fallback`), cut into pieces of at
+ * most `max` characters.
+ */
+export function bodyLines(
+  kind: DocumentKind,
+  body: string,
+  fallback: string,
+  max: number,
+): Array<{ section: string; text: string }> {
+  const out: Array<{ section: string; text: string }> = [];
+  let current = fallback;
+  for (const raw of body.split("\n")) {
     const heading = /^\s*#{1,6}\s*(.+)$/.exec(raw);
     if (heading?.[1]) {
-      current = sectionKey(kind, heading[1]) ?? section;
+      current = sectionKey(kind, heading[1]) ?? fallback;
       continue;
     }
-    let body = raw.replace(/^\s*(?:[-*•・]|\d+[.、)])\s*/, "").trim();
-    let lineSection = current;
-    const at = body.search(/[::]/);
+    let text = raw.replace(/^\s*(?:[-*•・]|\d+[.、)])\s*/, "").trim();
+    let section = current;
+    const at = text.search(/[::]/);
     if (at > 0) {
-      const key = sectionKey(kind, body.slice(0, at));
+      const key = sectionKey(kind, text.slice(0, at));
       if (key !== null) {
-        lineSection = key;
-        body = body.slice(at + 1).trim();
+        section = key;
+        text = text.slice(at + 1).trim();
       }
     }
-    const clean = cleanLine(body);
+    const clean = cleanLine(text);
     if (clean === "") continue;
-    for (const piece of pieces(clean, max)) {
-      plan(subject, title, {
-        source: `${source}:${[...piece].slice(0, 20).join("")}`,
-        input: {
-          section: lineSection,
-          text: piece,
-          provenance: "observed",
-          scope,
-          confidence: 0.6,
-          import_key: `notebook:${page.id}:${hash(`${lineSection}\n${piece}`)}`,
-        },
-      });
-    }
+    for (const piece of pieces(clean, max)) out.push({ section, text: piece });
   }
+  return out;
 }
 
 /** A DM origin (`dm:<context key>`) as its context. */
@@ -292,7 +308,7 @@ const scalarText = (v: JsonValue): string =>
   typeof v === "string" ? v : v === null ? "" : String(v);
 
 /** The leaves of `value` at `pointer`, each with its labels (the keys above it) and its pointer. */
-function leaves(
+export function leaves(
   value: JsonValue,
   pointer: string,
   labels: readonly string[],

@@ -33,6 +33,7 @@ import {
   is,
   isJsonObject,
   type JsonValue,
+  type KnowledgeBase,
   type KnowledgeDoc,
   KnowledgeKey,
   type KnowledgeSubject,
@@ -48,6 +49,8 @@ import {
   type ReflectionRun,
   SocialSignalsKey,
 } from "@miyoria/types";
+import { NotesKnowledge } from "../../notes/src/knowledge.js";
+import { notesTables } from "../../notes/src/store.js";
 import type { BudgetState } from "./caps.js";
 import {
   ConversationConfigSchema,
@@ -257,16 +260,42 @@ export class KnowledgeModule implements Module {
     );
     await loadWithTimeout(ctx, "her documents", () => kb.load());
     this.#store = kb;
-    ctx.provide(KnowledgeKey, kb);
+    // Her documents live in the notes; the old store stays for what still lists it (the panel, the
+    // mind) and is the whole of it where the notes are not there.
+    const notesStore = s.get(StoreKey)?.plugin(notesTables) ?? null;
+    const notes =
+      notesStore === null
+        ? null
+        : new NotesKnowledge({ notes: notesStore, resolver: notesStore.resolver() });
+    const base: KnowledgeBase = notes === null ? kb : notes.base(kb);
+    ctx.provide(KnowledgeKey, base);
+    const topics = (request: PromptRequest) =>
+      notes === null
+        ? kb
+        : {
+            docs: () =>
+              notes.notes
+                .list(notes.viewerFor(request.context, request.speakers), { kind: "topic" })
+                .map((e) => ({
+                  subject: { type: "topic" as const, name: e.document.title },
+                  title: e.document.title,
+                })),
+          };
     const contributors = s.get(PromptContributorsKey);
     contributors?.register({
       key: KNOWLEDGE_CONTRIBUTOR,
       contribute: async (request: PromptRequest) => {
         const people = peopleInPrompt(config.prompt_people, s.get(PersonProfilesKey) !== undefined);
-        const body = kb.render(subjectsFor(kb, request, people), {
-          context: request.context,
-          maxChars: config.prompt_chars,
-        });
+        const subjects = subjectsFor(topics(request), request, people);
+        const body =
+          notes === null
+            ? kb.render(subjects, { context: request.context, maxChars: config.prompt_chars })
+            : notes.render(
+                subjects,
+                notes.viewerFor(request.context, request.speakers),
+                config.prompt_chars,
+                { query: request.query },
+              );
         return body === ""
           ? []
           : [{ key: KNOWLEDGE_CONTRIBUTOR, title: "你整理的資料", body, order: 25 }];
@@ -276,7 +305,7 @@ export class KnowledgeModule implements Module {
     if (config.tool && tools) {
       tools.register(
         new KnowledgeTool({
-          store: kb,
+          store: base,
           personOf: (tc) => personOf(s, tc.account),
           nameOf: () => null,
         }),
@@ -301,7 +330,7 @@ export class KnowledgeModule implements Module {
  * them), this server, topics named in the input, herself.
  */
 export function subjectsFor(
-  kb: KnowledgeStore,
+  kb: { docs(): readonly Pick<KnowledgeDoc, "subject" | "title">[] },
   request: PromptRequest,
   people = true,
 ): KnowledgeSubject[] {
@@ -382,6 +411,7 @@ export class ReflectModule implements Module {
       feedback,
       lessons,
       handles: await handlesOf(s, settings, clock),
+      notes: s.get(StoreKey)?.plugin(notesTables) ?? null,
     });
     await loadWithTimeout(ctx, "feedback", () => feedback.load());
     await loadWithTimeout(ctx, "lessons", () => lessons.load());

@@ -9,18 +9,19 @@ import {
   isJsonObject,
   type JsonObject,
   type JsonValue,
+  type KnowledgeBase,
   type KnowledgeChange,
   type KnowledgeSubject,
   type KnowledgeWriter,
   type PersonId,
 } from "@miyoria/types";
 import { PatchError, parseOps } from "./json-doc.js";
-import { type KnowledgeStore, shortId } from "./knowledge.js";
+import { shortId } from "./knowledge.js";
 
 export const KNOWLEDGE_TOOL = "knowledge_note";
 
 export interface ToolDeps {
-  store: KnowledgeStore;
+  store: Pick<KnowledgeBase, "apply">;
   personOf: (ctx: ToolContext) => PersonId | null;
   nameOf: (ctx: ToolContext) => string | null;
 }

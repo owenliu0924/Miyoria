@@ -44,6 +44,9 @@ import {
   PromptContributorsKey,
   toTimestamp,
 } from "@miyoria/types";
+import { importLegacyOnce } from "../../notes/src/legacy.js";
+import { NotesNotebook } from "../../notes/src/notebook.js";
+import { notesTables } from "../../notes/src/store.js";
 import { MemoryCommands } from "./commands.js";
 import {
   type EmbeddingConfig,
@@ -162,11 +165,41 @@ export class MemoryModule implements Module {
     this.#engine = engine;
     this.#embedderInUse = embedder;
     engine.attach(services);
-    const recent = new RecentPast(engine, services, ctx.clock);
+    const notes = store?.plugin(notesTables) ?? null;
+    const notebook =
+      notes === null
+        ? null
+        : new NotesNotebook({
+            notes,
+            resolver: notes.resolver(),
+            config: () => engine.config.notebook,
+            handles: () => engine.handles,
+            clock: ctx.clock,
+          });
+    const recent = new RecentPast(engine, services, ctx.clock, notebook);
     try {
       await recent.notebook.load();
     } catch (error) {
       ctx.log.warn({ error: errorMessage(error) }, "cannot load her notebook: it starts empty");
+    }
+    if (notes !== null && settings !== null) {
+      try {
+        const report = await importLegacyOnce({
+          notes,
+          resolver: notes.resolver(),
+          settings,
+          profile: this.profile,
+          clock: ctx.clock,
+        });
+        if (report !== null) {
+          ctx.log.info(
+            { documents: report.documents, added: report.added, unmapped: report.unmapped.length },
+            "notebook and knowledge moved into the notes",
+          );
+        }
+      } catch (error) {
+        ctx.log.warn({ error: errorMessage(error) }, "cannot move the old notebook into the notes");
+      }
     }
     recent.provide((key, value) => ctx.provide(key, value));
     ctx.provide(MemoryEngineKey, engine);

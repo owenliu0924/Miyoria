@@ -12,6 +12,7 @@ import {
   ElsewhereKey,
   JustNowKey,
   KnowledgeKey,
+  type Notebook,
   NotebookKey,
   PersonProfilesKey,
   PersonThreadsKey,
@@ -24,11 +25,13 @@ import {
   SocialSignalsKey,
   type Whereabouts,
 } from "@miyoria/types";
+import type { NotesNotebook } from "../../notes/src/notebook.js";
 import { speakingPeople } from "./contributor.js";
 import type { MemoryEngine } from "./engine.js";
 import { indexText, NotebookStore } from "./notebook.js";
 import {
   NOTEBOOK_TOOLS,
+  type NotebookBackend,
   NotebookDeleteTool,
   NotebookReadTool,
   NotebookWriteTool,
@@ -64,10 +67,18 @@ export class RecentPast {
   readonly elsewhere: OtherPlaces;
   readonly threads: Threads;
   readonly profiles: Profiles;
+  /** The notebook pages of before: read once into the notes, kept until the notes are stable. */
   readonly notebook: NotebookStore;
+  /** The notebook she uses: her documents when there are some, else the pages. */
+  readonly book: NotebookBackend & Pick<Notebook, "index" | "read">;
   readonly deps: RecentDeps;
 
-  constructor(engine: MemoryEngine, services: ServiceLookup, clock: Clock) {
+  constructor(
+    engine: MemoryEngine,
+    services: ServiceLookup,
+    clock: Clock,
+    notes: NotesNotebook | null = null,
+  ) {
     const config = () => engine.config.recent;
     this.deps = {
       config,
@@ -100,7 +111,11 @@ export class RecentPast {
       handles: () => engine.handles,
       clock,
     });
+    this.book = notes ?? this.notebook;
+    this.#notes = notes;
   }
+
+  readonly #notes: NotesNotebook | null;
 
   /** What the module provides. */
   provide(provide: <T>(key: ServiceKey<T>, value: T) => void): void {
@@ -108,7 +123,19 @@ export class RecentPast {
     provide(ElsewhereKey, this.elsewhere);
     provide(PersonThreadsKey, this.threads);
     provide(PersonProfilesKey, this.profiles);
-    provide(NotebookKey, this.notebook);
+    const pages = this.notebook;
+    const notes = this.#notes;
+    provide(
+      NotebookKey,
+      notes === null
+        ? pages
+        : {
+            index: (where) => notes.index(where),
+            read: (path, where) => notes.read(path, where),
+            forgetPerson: async (person) =>
+              (await pages.forgetPerson(person)) + (await notes.forgetPerson(person)),
+          },
+    );
   }
 
   /** The prompt contributors (none when `recent.contributors` is off, no index without pages). */
@@ -149,7 +176,7 @@ export class RecentPast {
             NOTEBOOK_CONTRIBUTOR,
             NOTEBOOK_TITLE,
             indexText(
-              this.notebook.index({ context: request.context, accounts: request.speakers }),
+              this.book.index({ context: request.context, accounts: request.speakers }),
               engine.config.notebook.index_chars,
             ),
             30,
@@ -171,9 +198,9 @@ export class RecentPast {
   registerTools(tools: ToolRegistry, engine: MemoryEngine): string[] {
     if (!engine.config.notebook.enabled) return [];
     const config = () => engine.config.notebook;
-    tools.register(new NotebookReadTool(this.notebook, config));
-    tools.register(new NotebookWriteTool(this.notebook));
-    tools.register(new NotebookDeleteTool(this.notebook));
+    tools.register(new NotebookReadTool(this.book, config));
+    tools.register(new NotebookWriteTool(this.book));
+    tools.register(new NotebookDeleteTool(this.book));
     return [...NOTEBOOK_TOOLS];
   }
 }

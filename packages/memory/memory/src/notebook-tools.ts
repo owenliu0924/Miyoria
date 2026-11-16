@@ -8,15 +8,35 @@ import {
   type ToolSpec,
   toolParameters,
 } from "@miyoria/llm/tools";
-import { isJsonObject, type JsonValue, type NotebookWhere } from "@miyoria/types";
+import {
+  isJsonObject,
+  type JsonValue,
+  type NotebookEntry,
+  type NotebookPage,
+  type NotebookWhere,
+} from "@miyoria/types";
 import { z } from "zod";
 import type { NotebookConfig } from "./config.js";
-import { indexText, NotebookError, type NotebookStore, pageText } from "./notebook.js";
+import {
+  indexText,
+  NotebookError,
+  pageText,
+  type WriteMode,
+  type WriteResult,
+} from "./notebook.js";
 
 export const NOTEBOOK_READ = "notebook_read";
 export const NOTEBOOK_WRITE = "notebook_write";
 export const NOTEBOOK_DELETE = "notebook_delete";
 export const NOTEBOOK_TOOLS = [NOTEBOOK_READ, NOTEBOOK_WRITE, NOTEBOOK_DELETE] as const;
+
+/** What the three tools need of a notebook: the page store, or her documents (`NotesNotebook`). */
+export interface NotebookBackend {
+  index(where: NotebookWhere): NotebookEntry[];
+  read(path: string, where: NotebookWhere): NotebookPage | null;
+  write(path: string, text: string, mode: WriteMode, where: NotebookWhere): Promise<WriteResult>;
+  remove(path: string, where: NotebookWhere): Promise<boolean>;
+}
 
 function arg(args: JsonValue, key: string): JsonValue | undefined {
   return isJsonObject(args) ? args[key] : undefined;
@@ -58,7 +78,7 @@ export class NotebookReadTool implements Tool {
   };
 
   constructor(
-    private readonly store: NotebookStore,
+    private readonly store: NotebookBackend,
     private readonly config: () => NotebookConfig,
   ) {}
 
@@ -103,7 +123,7 @@ export class NotebookWriteTool implements Tool {
     core: true,
   };
 
-  constructor(private readonly store: NotebookStore) {}
+  constructor(private readonly store: NotebookBackend) {}
 
   async call(ctx: ToolContext, args: JsonValue): Promise<string> {
     const path = text(args, "path");
@@ -131,7 +151,7 @@ export class NotebookDeleteTool implements Tool {
   readonly parameters = DeleteParams;
   readonly meta: ToolMeta = { effect: "act", speed: "instant", risk: "medium", group: "notebook" };
 
-  constructor(private readonly store: NotebookStore) {}
+  constructor(private readonly store: NotebookBackend) {}
 
   async call(ctx: ToolContext, args: JsonValue): Promise<string> {
     const path = text(args, "path");

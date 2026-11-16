@@ -10,6 +10,7 @@ import * as discordCmd from "./commands/discord.js";
 import * as doctor from "./commands/doctor.js";
 import * as host from "./commands/host.js";
 import * as init from "./commands/init.js";
+import * as memoryCmd from "./commands/memory.js";
 import * as migrate from "./commands/migrate.js";
 import * as modelsCmd from "./commands/models.js";
 import * as nodeCmd from "./commands/node.js";
@@ -340,6 +341,41 @@ export const COMMANDS: CommandSpec = {
           help: "只讀檢查一個資料庫檔:V4 / V5 / 空的、Core 會不會拒絕、遷移、完整性、人數和事件數;V4 另列 import-links 會帶過來的",
           args: [{ name: "file", help: "要檢查的檔案;省略 = core.database_url", optional: true }],
           run: (ctx) => dbCmd.doctorCommand(ctx.config, ctx.args[0]),
+        },
+      ],
+    },
+    {
+      name: "memory",
+      help: "記憶的離線工具:從事件紀錄重建她的記憶(筆記和情節)",
+      subcommands: [
+        {
+          name: "rebuild",
+          help: "把事件紀錄裡的聊天重新跑一遍分段整理(用 config 的模型),補寫筆記行和情節;預設只預覽(段落、行數、預估 token 和費用),不呼叫模型。只新增,不刪也不取代任何現有記憶;進度存在資料庫裡,中斷後可繼續",
+          args: [{ name: "file", help: "資料庫檔案;省略 = core.database_url", optional: true }],
+          options: [
+            {
+              name: "since",
+              value: "DATE",
+              help: "只處理這個時間之後的聊天(ISO 日期)",
+              default: "2026-11-15",
+            },
+            { name: "apply", help: "真的開始(會呼叫模型、花錢);不加就只預覽" },
+            {
+              name: "max-usd",
+              value: "USD",
+              help: "花到這個金額就停下來,之後可以繼續",
+              default: "2",
+            },
+            { name: "force", help: "資料庫被別的程式開著(例如 Core 正在跑)也照做" },
+          ],
+          run: (ctx) =>
+            memoryCmd.rebuildCommand(ctx.config, {
+              file: ctx.args[0],
+              since: str(ctx, "since"),
+              apply: flag(ctx, "apply"),
+              maxUsd: str(ctx, "max-usd"),
+              force: flag(ctx, "force"),
+            }),
         },
       ],
     },

@@ -1,7 +1,8 @@
 // @miyoria/memory/notes: L3 of her memory. One document per person, place, topic and herself,
 // made of lines with where each may be shown, how she knows it and what it rests on; the segment
-// pass that writes them (docs/design/v5-brain.md B7, v5-architecture.md §7.4). Built beside the
-// notebook pages and knowledge documents; nothing in the running system reads or writes it yet.
+// pass that writes them (docs/design/v5-brain.md B7, v5-architecture.md §7.4). Her notebook and
+// knowledge tools, the prompt sections and the nightly reflection work on it; the old pages and
+// documents are left as they are.
 
 export {
   type EpisodeSink,
@@ -13,6 +14,7 @@ export {
   type SegmentFollowup,
 } from "./episodes.js";
 export {
+  bodyLines,
   type ImportReport,
   type ImportSources,
   importLegacy,
@@ -20,7 +22,10 @@ export {
   notebookPages,
   type Unmapped,
 } from "./importer.js";
+export { KIND_LABEL, NotesKnowledge, type NotesKnowledgeOptions } from "./knowledge.js";
+export { importLegacyOnce, LEGACY_IMPORT_KEY, type LegacyImportDeps } from "./legacy.js";
 export { notesSchema } from "./migrations.js";
+export { NotesNotebook, type NotesNotebookOptions } from "./notebook.js";
 export {
   DEFAULT_PASS_CAPS,
   type DropReason,
@@ -44,6 +49,23 @@ export {
   segmentPassMessage,
   segmentPassPrompt,
 } from "./pass-prompt.js";
+export {
+  applyRebuild,
+  estimateRebuild,
+  estimateTokens,
+  type PlannedSegment,
+  type PlannedSession,
+  planRebuild,
+  REBUILD_CONSUMER,
+  REBUILD_SINCE,
+  type RebuildDeps,
+  type RebuildEstimate,
+  type RebuildOptions,
+  type RebuildPlan,
+  type RebuildReport,
+  readChatLines,
+  rebuildEpisodeSink,
+} from "./rebuild.js";
 export {
   DOCUMENT_KINDS,
   HISTORY_OPS,
@@ -105,6 +127,7 @@ export {
   cleanLine,
   DEFAULT_CONFIDENCE,
   DEFAULT_LIMITS,
+  type DocumentOutline,
   type EvidenceSource,
   type FullOptions,
   NotesError,
