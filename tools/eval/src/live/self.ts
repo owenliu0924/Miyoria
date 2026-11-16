@@ -286,7 +286,7 @@ export class SelfSubject implements Subject {
       },
       { compaction: null },
     );
-    tools.register(sayTool({ resolve: () => null, speak: runner.speak }));
+    tools.register(sayTool({ resolve: () => null, sayIn: runner.sayIn }));
 
     const from = last === undefined ? null : { account: accountFor(last.who), name: last.who };
     const message = { context, id: `m${scene.lines.length}` };

@@ -121,10 +121,10 @@ export class SelfRunner {
   }
 
   /**
-   * Checks and delivers a line of the run of `turn` in `place` (the `say` tool's `speak`); `null`
+   * Checks and delivers a line of the run of `turn` in `place` (the `say` tool's `sayIn`); `null`
    * when no such run is going on.
    */
-  readonly speak = async (turn: string, place: ContextKey, text: string): Promise<Spoken | null> =>
+  readonly sayIn = async (turn: string, place: ContextKey, text: string): Promise<Spoken | null> =>
     (await this.#active.get(turn)?.speakElsewhere(place, text)) ?? null;
 
   async run(input: RunInput): Promise<RunResult> {

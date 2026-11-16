@@ -659,7 +659,7 @@ describe("say", () => {
   async function withSay(script: Parameters<typeof rig>[0], guard?: Guard) {
     const r = await rig(script, guard ? { guard } : {});
     r.tools.register(
-      sayTool({ resolve: (name) => places.get(name) ?? null, speak: r.runner.speak }),
+      sayTool({ resolve: (name) => places.get(name) ?? null, sayIn: r.runner.sayIn }),
     );
     return r;
   }

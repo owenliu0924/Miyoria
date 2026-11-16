@@ -16,7 +16,7 @@ export interface SayDeps {
   /** The place she named, from where she is; `null`: she knows no such place. */
   resolve(place: string, from: ContextKey): ContextKey | null;
   /** Checks and delivers the line for the run of `turn`; `null`: no such run is going on. */
-  speak(turn: string, place: ContextKey, text: string): Promise<Spoken | null>;
+  sayIn(turn: string, place: ContextKey, text: string): Promise<Spoken | null>;
 }
 
 const Params = z.object({
@@ -40,7 +40,7 @@ export function sayTool(deps: SayDeps): Tool {
     if (contextKeyString(place) === contextKeyString(ctx.context)) {
       return refused("place", SAY_TOOL.here);
     }
-    const spoken = await deps.speak(ctx.turn, place, args.data.text.trim());
+    const spoken = await deps.sayIn(ctx.turn, place, args.data.text.trim());
     if (spoken === null) return refused("run", SAY_TOOL.noRun);
     return spoken.ok
       ? { ok: true, text: SAY_TOOL.sent(name) }
