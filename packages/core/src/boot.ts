@@ -19,6 +19,7 @@ import {
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { memoryTables } from "@miyoria/memory/memory";
+import { transcriptTables } from "@miyoria/memory/transcript";
 import {
   type Config,
   ConfigError,
@@ -88,6 +89,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   directiveTables,
   economyTables,
   memoryTables,
+  transcriptTables,
 ];
 
 /** What the module factories get. */
