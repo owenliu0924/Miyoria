@@ -49,6 +49,11 @@ export const SCREEN_NAME_MAX = 32;
 export const SCREEN_TEXT_MAX = 200;
 export const SCREEN_SONG_MAX = 128;
 
+/** Most rows a Wordle board has (the most guesses a game allows). */
+export const WORDLE_ROWS_MAX = 12;
+/** Letters in a Wordle word. */
+export const WORDLE_WORD_LENGTH = 5;
+
 /** Longest highlight reason (code units). */
 export const CLIP_REASON_MAX = 120;
 /** Longest file path a message carries (code units). */
@@ -300,6 +305,47 @@ export const StageLinkScreenMessageSchema = z
   })
   .meta({ id: "StageLinkScreenMessage" });
 
+/** How one letter of a Wordle guess scored. */
+export const StageLinkWordleMarkSchema = z
+  .enum(["correct", "present", "absent"])
+  .meta({ id: "StageLinkWordleMark" });
+export type WordleMark = z.output<typeof StageLinkWordleMarkSchema>;
+
+export const StageLinkWordleStateSchema = z
+  .enum(["playing", "won", "lost", "gave_up"])
+  .meta({ id: "StageLinkWordleState" });
+export type WordleState = z.output<typeof StageLinkWordleStateSchema>;
+
+/** One guess: the word in capitals and a mark per letter. */
+export const StageLinkWordleRowSchema = z
+  .object({
+    word: z.string().regex(/^[A-Z]{5}$/),
+    marks: z.array(StageLinkWordleMarkSchema).length(WORDLE_WORD_LENGTH),
+  })
+  .meta({ id: "StageLinkWordleRow" });
+
+/**
+ * The Wordle game she plays (the `miyoria.wordle` extension's `ext.miyoria.wordle.board`): her
+ * guesses so far, out of `max_guesses`. `answer` is only there once the game is over.
+ */
+export const StageLinkWordleBoardSchema = z
+  .object({
+    rows: z.array(StageLinkWordleRowSchema).max(WORDLE_ROWS_MAX),
+    max_guesses: z.number().int().min(1).max(WORDLE_ROWS_MAX),
+    state: StageLinkWordleStateSchema,
+    answer: z
+      .string()
+      .regex(/^[A-Z]{5}$/)
+      .nullable(),
+  })
+  .meta({ id: "StageLinkWordleBoard" });
+export type WordleBoard = z.output<typeof StageLinkWordleBoardSchema>;
+
+/** The Wordle board on the overlay; `board: null` takes it away. */
+export const StageLinkWordleMessageSchema = z
+  .object({ type: z.literal("wordle"), board: StageLinkWordleBoardSchema.nullable() })
+  .meta({ id: "StageLinkWordleMessage" });
+
 /**
  * A viewer touched the stream on the website (`live.touch`): `x`, `y` 0..1 on the picture
  * (origin top-left), `part` what it landed on. The overlay draws it; she reacts to head, face
@@ -403,6 +449,7 @@ export const StageLinkCoreMessageSchema = z
     StageLinkGiftMessageSchema,
     StageLinkScreenMessageSchema,
     StageLinkTouchMessageSchema,
+    StageLinkWordleMessageSchema,
     StageLinkSongVideoMessageSchema,
     StageLinkBeatMessageSchema,
     StageLinkClipMessageSchema,

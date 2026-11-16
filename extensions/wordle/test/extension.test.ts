@@ -1,7 +1,7 @@
 import { PassThrough } from "node:stream";
 import { type InitializeResult, RpcPeer, runExtension } from "@miyoria/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import extension, { loadDictionary } from "../src/index.js";
+import extension, { BOARD_TOPIC, loadDictionary } from "../src/index.js";
 
 const context = (channel: string) => ({ platform: "discord", scope: null, channel, kind: "text" });
 const toolContext = (channel: string) => ({
@@ -19,7 +19,8 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function start() {
+async function start(config: Record<string, unknown> = {}) {
+  const published: Array<{ type: string; data: { board: Record<string, unknown> | null } }> = [];
   const hostToExt = new PassThrough();
   const extToHost = new PassThrough();
   const runtime = runExtension(extension, {
@@ -32,7 +33,10 @@ async function start() {
     input: extToHost,
     output: hostToExt,
     timeoutMs: 3000,
-    onRequest: () => ({}),
+    onRequest: (method, params) => {
+      if (method === "events.publish") published.push(params as (typeof published)[number]);
+      return {};
+    },
     onNotification: () => {},
   });
   shutdown = () => runtime.shutdown();
@@ -40,7 +44,7 @@ async function start() {
     protocol: 2,
     host: { name: "miyoria", version: "0.1.0" },
     extension: { id: "miyoria.wordle", version: "0.1.0", dir: "/ext", game: null },
-    config: {},
+    config,
     permissions: { events: [], tools: true, commands: false, network: [], input: [] },
   });
   const call = async (name: string, args: unknown, channel = "c1") =>
@@ -51,7 +55,7 @@ async function start() {
         context: toolContext(channel),
       })
     ).content;
-  return { init, call };
+  return { init, call, published };
 }
 
 describe("word lists", () => {
@@ -90,5 +94,36 @@ describe("extension", () => {
     expect(await call("wordle.give_up", {})).toContain("沒有正在玩");
     expect(await call("wordle.start", {})).toContain("新的一局");
     expect(await call("wordle.give_up", {})).toMatch(/答案是 [A-Z]{5}/);
+  });
+
+  it("puts the board on the stream after every change, the answer only at the end", async () => {
+    const { call, published } = await start();
+    vi.spyOn(Math, "random").mockReturnValue(0); // "aback"
+    await call("wordle.start", {});
+    await call("wordle.guess", { word: "zzzzz" }); // refused: no new board
+    await call("wordle.guess", { word: "slate" });
+    await call("wordle.give_up", {});
+    expect(published.map((p) => p.type)).toEqual([BOARD_TOPIC, BOARD_TOPIC, BOARD_TOPIC]);
+    expect(published.map((p) => p.data.board)).toEqual([
+      { rows: [], max_guesses: 6, state: "playing", answer: null },
+      {
+        rows: [{ word: "SLATE", marks: ["absent", "absent", "correct", "absent", "absent"] }],
+        max_guesses: 6,
+        state: "playing",
+        answer: null,
+      },
+      {
+        rows: [{ word: "SLATE", marks: ["absent", "absent", "correct", "absent", "absent"] }],
+        max_guesses: 6,
+        state: "gave_up",
+        answer: "ABACK",
+      },
+    ]);
+  });
+
+  it("keeps the board off the stream when show_on_stream is false", async () => {
+    const { call, published } = await start({ show_on_stream: false });
+    await call("wordle.start", {});
+    expect(published).toEqual([]);
   });
 });

@@ -1,13 +1,22 @@
 // Wordle tools. She starts a game, guesses five-letter words one at a time and reads the marks back.
 // Everything runs in this process: the answer never reaches her until the game ends or she gives up.
 // One game per channel, so two channels (or a text channel and the voice call) don't mix.
+//
+// On stream: after every change the board is published as `ext.miyoria.wordle.board` (`{board}`);
+// Core passes it to the Stage, and the overlay draws the grid and turns each new guess over. With
+// games in several channels, the stream shows whichever changed last.
 
 import { readFileSync } from "node:fs";
 import { defineExtension } from "@miyoria/sdk";
 import { type Dictionary, Game } from "./game.js";
 
+/** Topic the board is published on (the Stage's `WORDLE_TOPIC`). */
+export const BOARD_TOPIC = "ext.miyoria.wordle.board";
+
 interface WordleConfig {
   max_guesses?: number;
+  /** Publish the board for the stream overlay (default true). */
+  show_on_stream?: boolean;
 }
 
 function wordsFrom(file: string): string[] {
@@ -28,6 +37,15 @@ export default defineExtension({
     const maxGuesses = Math.min(12, Math.max(1, Math.trunc(config.max_guesses ?? 6)));
     const dictionary = loadDictionary();
     const games = new Map<string, Game>();
+    const onStream = config.show_on_stream ?? true;
+
+    /** Puts `game` on the stream overlay. A failure only costs the picture, never the turn. */
+    const show = (game: Game): void => {
+      if (!onStream) return;
+      ctx.events.publish(BOARD_TOPIC, { board: game.toBoard() }).catch((error: unknown) => {
+        ctx.log.warn("could not publish the board", { error: String(error) });
+      });
+    };
 
     const keyOf = (c: { platform: string; scope: string | null; channel: string }) =>
       `${c.platform}:${c.scope ?? ""}:${c.channel}`;
@@ -41,7 +59,9 @@ export default defineExtension({
         const current = games.get(key);
         if (current && !current.finished) return `這個頻道已經有一局在玩了。\n${current.board()}`;
         const answer = dictionary.answers[Math.floor(Math.random() * dictionary.answers.length)]!;
-        games.set(key, new Game(answer, maxGuesses, dictionary));
+        const game = new Game(answer, maxGuesses, dictionary);
+        games.set(key, game);
+        show(game);
         return `新的一局開始:五個字母的英文單字,最多猜 ${maxGuesses} 次。🟩 字母和位置都對、🟨 有這個字母但位置不對、⬛ 沒有。用 wordle.guess 猜。`;
       },
     });
@@ -56,8 +76,9 @@ export default defineExtension({
         if (!game) return "還沒開局,先用 wordle.start";
         const r = game.guess(String(word ?? ""));
         if (!r.ok) return `失敗:${r.reason}`;
+        show(game);
         if (r.won) return `${r.line}\n答對了!用了 ${game.guesses.length}/${game.maxGuesses} 次。`;
-        if (r.lost) return `${r.line}\n次數用完了,沒猜到。答案是 ${game.giveUp()}。`;
+        if (r.lost) return `${r.line}\n次數用完了,沒猜到。答案是 ${game.reveal()}。`;
         return `${r.line}\n${game.board()}`;
       },
     });
@@ -79,7 +100,9 @@ export default defineExtension({
       run: (_args, call) => {
         const game = games.get(keyOf(call.context));
         if (!game || game.finished) return "這個頻道沒有正在玩的一局";
-        return `放棄了。答案是 ${game.giveUp()}。`;
+        const answer = game.giveUp();
+        show(game);
+        return `放棄了。答案是 ${answer}。`;
       },
     });
 

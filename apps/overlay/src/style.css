@@ -38,6 +38,9 @@
   --t-move: 280ms;
   --t-progress: 700ms;
   --t-color: 500ms;
+  /* A Wordle tile turning over, and the gap between one tile and the next. */
+  --t-flip: 520ms;
+  --t-flip-step: 240ms;
   /* Distance things travel when they enter or leave. */
   --shift: 0.45rem;
 
@@ -63,6 +66,8 @@
     --t-move: 1ms;
     --t-progress: 1ms;
     --t-color: 1ms;
+    --t-flip: 1ms;
+    --t-flip-step: 0ms;
   }
 }
 
@@ -575,6 +580,145 @@ body {
   border-radius: calc(var(--video-r) + 1px);
   background: rgb(24 24 27 / 0.72);
   box-shadow: 0 1.125rem 3.125rem rgb(0 0 0 / 0.35);
+}
+
+/* ── Wordle board (left, vertically centred) ──────────────────────────── */
+
+.wordle {
+  --tile: 3.5rem;
+  --correct: oklch(0.62 0.13 150);
+  --present: oklch(0.7 0.13 85);
+  --absent: oklch(0.5 0.01 275);
+  position: absolute;
+  left: var(--pad);
+  top: 50%;
+  box-sizing: border-box;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem 1.1rem;
+  background: var(--plate);
+  border: 1px solid var(--plate-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--plate-shadow);
+  opacity: 1;
+  transform: translateY(-50%);
+  transition:
+    opacity var(--t-enter) var(--ease-out),
+    transform var(--t-enter) var(--ease-out);
+}
+
+.wordle.is-out {
+  opacity: 0;
+  transform: translate(calc(var(--shift) * -1), -50%);
+  transition-duration: var(--t-exit);
+  transition-timing-function: var(--ease-exit);
+}
+
+.wordle__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.wordle__title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+}
+
+.wordle__count {
+  color: var(--ink-dim);
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.wordle__grid {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.wordle__row {
+  display: grid;
+  grid-template-columns: repeat(5, var(--tile));
+  gap: 0.4rem;
+}
+
+.wordle__tile {
+  --fill: transparent;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--tile);
+  height: var(--tile);
+  border: 2px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--fill);
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.wordle__tile.is-correct,
+.wordle__tile.is-present,
+.wordle__tile.is-absent {
+  border-color: var(--fill);
+}
+
+.wordle__tile.is-correct {
+  --fill: var(--correct);
+}
+
+.wordle__tile.is-present {
+  --fill: var(--present);
+}
+
+.wordle__tile.is-absent {
+  --fill: var(--absent);
+}
+
+/* A new guess: each tile turns over in turn and shows its colour halfway, when it is edge-on. */
+.wordle__tile.is-flip {
+  animation: wordle-flip var(--t-flip) var(--ease-in-out) backwards;
+  animation-delay: calc(var(--i, 0) * var(--t-flip-step));
+}
+
+@keyframes wordle-flip {
+  0% {
+    transform: rotateX(0deg);
+    background: transparent;
+    border-color: oklch(1 0 0 / 0.35);
+  }
+  49.9% {
+    transform: rotateX(90deg);
+    background: transparent;
+    border-color: oklch(1 0 0 / 0.35);
+  }
+  50% {
+    transform: rotateX(90deg);
+    background: var(--fill);
+    border-color: var(--fill);
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+.wordle__result {
+  color: var(--ink-dim);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+/* Says how it ended once the last guess has turned over. */
+.wordle__result:not(.is-out) {
+  transition-delay: calc(4 * var(--t-flip-step) + var(--t-flip));
+}
+
+.wordle__result.is-won {
+  color: var(--correct);
 }
 
 /* ── side panel ───────────────────────────────────────────────────────── */

@@ -149,6 +149,9 @@
           "$ref": "#/$defs/OverlayTouchMessage"
         },
         {
+          "$ref": "#/$defs/OverlayWordleMessage"
+        },
+        {
           "$ref": "#/$defs/OverlaySpeakingMessage"
         },
         {
@@ -326,6 +329,93 @@
         "face",
         "body",
         "screen"
+      ]
+    },
+    "OverlayWordleBoard": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OverlayWordleRow"
+          }
+        },
+        "max_guesses": {
+          "type": "number"
+        },
+        "state": {
+          "$ref": "#/$defs/OverlayWordleState"
+        },
+        "answer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "rows",
+        "max_guesses",
+        "state",
+        "answer"
+      ]
+    },
+    "OverlayWordleMark": {
+      "type": "string",
+      "enum": [
+        "correct",
+        "present",
+        "absent"
+      ]
+    },
+    "OverlayWordleMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "wordle"
+        },
+        "board": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OverlayWordleBoard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "board"
+      ]
+    },
+    "OverlayWordleRow": {
+      "type": "object",
+      "properties": {
+        "word": {
+          "type": "string"
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OverlayWordleMark"
+          }
+        }
+      },
+      "required": [
+        "word",
+        "marks"
+      ]
+    },
+    "OverlayWordleState": {
+      "type": "string",
+      "enum": [
+        "playing",
+        "won",
+        "lost",
+        "gave_up"
       ]
     }
   }

@@ -355,6 +355,9 @@
           "$ref": "#/$defs/StageLinkTouchMessage"
         },
         {
+          "$ref": "#/$defs/StageLinkWordleMessage"
+        },
+        {
           "$ref": "#/$defs/StageLinkSongVideoMessage"
         },
         {
@@ -1031,6 +1034,104 @@
       "required": [
         "type",
         "session"
+      ]
+    },
+    "StageLinkWordleBoard": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StageLinkWordleRow"
+          }
+        },
+        "max_guesses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "state": {
+          "$ref": "#/$defs/StageLinkWordleState"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Z]{5}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "rows",
+        "max_guesses",
+        "state",
+        "answer"
+      ]
+    },
+    "StageLinkWordleMark": {
+      "type": "string",
+      "enum": [
+        "correct",
+        "present",
+        "absent"
+      ]
+    },
+    "StageLinkWordleMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "wordle"
+        },
+        "board": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StageLinkWordleBoard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "board"
+      ]
+    },
+    "StageLinkWordleRow": {
+      "type": "object",
+      "properties": {
+        "word": {
+          "type": "string",
+          "pattern": "^[A-Z]{5}$"
+        },
+        "marks": {
+          "minItems": 5,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StageLinkWordleMark"
+          }
+        }
+      },
+      "required": [
+        "word",
+        "marks"
+      ]
+    },
+    "StageLinkWordleState": {
+      "type": "string",
+      "enum": [
+        "playing",
+        "won",
+        "lost",
+        "gave_up"
       ]
     }
   }

@@ -42,9 +42,19 @@ export type GuessResult =
   | { ok: false; reason: string }
   | { ok: true; line: string; won: boolean; lost: boolean };
 
+export type GameState = "playing" | "won" | "lost" | "gave_up";
+
+/** The game as the stream overlay draws it (`ext.miyoria.wordle.board`): capitals, answer only once over. */
+export interface Board {
+  rows: { word: string; marks: Mark[] }[];
+  max_guesses: number;
+  state: GameState;
+  answer: string | null;
+}
+
 export class Game {
   readonly guesses: Array<{ word: string; marks: Mark[] }> = [];
-  #finished = false;
+  #state: GameState = "playing";
 
   constructor(
     private readonly answer: string,
@@ -52,8 +62,26 @@ export class Game {
     private readonly dictionary: Dictionary,
   ) {}
 
+  get state(): GameState {
+    return this.#state;
+  }
+
   get finished(): boolean {
-    return this.#finished;
+    return this.#state !== "playing";
+  }
+
+  /** The answer in capitals, once the game is over (else `null`). */
+  reveal(): string | null {
+    return this.finished ? this.answer.toUpperCase() : null;
+  }
+
+  toBoard(): Board {
+    return {
+      rows: this.guesses.map((g) => ({ word: g.word.toUpperCase(), marks: [...g.marks] })),
+      max_guesses: this.maxGuesses,
+      state: this.#state,
+      answer: this.reveal(),
+    };
   }
 
   get left(): number {
@@ -61,7 +89,7 @@ export class Game {
   }
 
   guess(raw: string): GuessResult {
-    if (this.#finished) return { ok: false, reason: "這局已經結束了,用 wordle.start 開新的一局" };
+    if (this.finished) return { ok: false, reason: "這局已經結束了,用 wordle.start 開新的一局" };
     const word = raw.trim().toLowerCase();
     if (!/^[a-z]+$/.test(word) || word.length !== WORD_LENGTH)
       return { ok: false, reason: `要剛好 ${WORD_LENGTH} 個英文字母(不算次數)` };
@@ -73,13 +101,14 @@ export class Game {
     this.guesses.push({ word, marks });
     const won = word === this.answer;
     const lost = !won && this.left <= 0;
-    this.#finished = won || lost;
+    if (won) this.#state = "won";
+    else if (lost) this.#state = "lost";
     return { ok: true, line: render(word, marks), won, lost };
   }
 
-  /** Ends the game and tells the answer. */
+  /** Ends a game in progress and tells the answer. */
   giveUp(): string {
-    this.#finished = true;
+    if (this.#state === "playing") this.#state = "gave_up";
     return this.answer.toUpperCase();
   }
 

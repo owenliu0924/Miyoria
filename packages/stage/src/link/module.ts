@@ -29,6 +29,7 @@ import {
 } from "@miyoria/types";
 import { type BoundAddress, formatAddress, HttpServer, isLoopback } from "../net.js";
 import { TOUCH_TOPIC } from "../touch.js";
+import { WORDLE_TOPIC } from "../wordle.js";
 import { stageCapabilities } from "./actions.js";
 import { ActivityTracker } from "./activity.js";
 import { registerStreamCommands, unregisterStreamCommands } from "./commands.js";
@@ -252,6 +253,7 @@ export class StageLinkModule implements Module {
       GIFT_TOPIC,
       TOUCH_TOPIC,
       SCREEN_TOPIC,
+      WORDLE_TOPIC,
       Events.SingCue.type,
       Events.SpeechPause.type,
       Events.AgentTurnStarted.type,
