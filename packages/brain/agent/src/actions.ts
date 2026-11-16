@@ -63,6 +63,7 @@ export function activenessCapability(
     permission: "admin.channel.activeness",
     tool: {
       name: "channel_activeness",
+      meta: { effect: "act", speed: "instant", group: "chat" },
       description:
         "調整你在這個頻道(或語音頻道)有多愛插話,一段時間後自己恢復:silent 先不插話(被叫到還是會回)、" +
         "low 安靜、medium 普通、high 活躍。有人叫你「安靜點」「少講話」「好吵」,或「可以多聊」「活躍點」," +

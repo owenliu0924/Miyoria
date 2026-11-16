@@ -24,6 +24,7 @@ export function callNameCapability(social: Social): Capability {
     limits: { per_day: 1_000, per_person_per_day: 10, cooldown_ms: 0 },
     tool: {
       name: "set_call_name",
+      meta: { effect: "act", speed: "instant", group: "memory" },
       description:
         "有人說想被怎麼稱呼(或不要被某個稱呼)時,把「說話的這個人」的稱呼存起來;只能改說話者自己的," +
         "不能幫別人改(「叫他小胖」不行)。name 填稱呼;不要再用某個稱呼時填「清除」。不要設 on_own。",

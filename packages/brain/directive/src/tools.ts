@@ -6,7 +6,13 @@
 // answer goes back to her as text, and a statement that can be read two ways comes back as the
 // question to ask.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import {
+  type Tool,
+  type ToolContext,
+  type ToolMeta,
+  type ToolSpec,
+  toolParameters,
+} from "@miyoria/llm/tools";
 import {
   type DirectiveActor,
   type DirectiveChange,
@@ -17,52 +23,48 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@miyoria/types";
+import { z } from "zod";
 
 /** What she hears when nobody asked: a rule is always someone's. */
 const NOBODY_ASKED = "沒有人要求這件事:規則只能由人提出,你自己不能改。";
+
+/** A rule binds what she may do from then on; who may set one is decided per account inside. */
+const RULES: ToolMeta = { effect: "act", speed: "instant", risk: "medium", group: "rules" };
+
+const AddParams = z.object({
+  text: z.string().describe("規則本身,用對方的話,一句"),
+  effect: z
+    .enum(["deny", "require_approval", "avoid", "prefer"])
+    .describe("deny 禁止;require_approval 要先問主人;avoid 盡量不要;prefer 偏好"),
+  capability: z
+    .string()
+    .describe("被規範的動作或工具,例如 game.start、game.*、game_start")
+    .optional(),
+  activity: z.string().describe("被規範的事,用動作參數裡的字,例如 minecraft、diamond").optional(),
+  person: z.string().describe("只針對某個人時,那個人的名字").optional(),
+  here: z.boolean().describe("只在這個頻道有效").optional(),
+  minutes: z.int().describe("有效幾分鐘;對方沒說就省略").optional(),
+  question: z.string().describe("語意不確定時要問對方的一句話").optional(),
+});
 
 const ADD_SPEC: ToolSpec = {
   name: "directive_add",
   description:
     "有人要你從現在起遵守一條規則時用(例如「不要玩 Minecraft」「這一小時不要開台」)。系統會依對方的帳號決定這句話算不算數,對方說自己是誰都不算;你不用判斷權限,也不用替對方說明身分。" +
     "語意不確定就不要猜:把要問對方的一句話填進 question,規則不會建立,回來的問題由你去問。",
-  parameters: {
-    type: "object",
-    properties: {
-      text: { type: "string", description: "規則本身,用對方的話,一句" },
-      effect: {
-        type: "string",
-        enum: ["deny", "require_approval", "avoid", "prefer"],
-        description: "deny 禁止;require_approval 要先問主人;avoid 盡量不要;prefer 偏好",
-      },
-      capability: {
-        type: "string",
-        description: "被規範的動作或工具,例如 game.start、game.*、game_start",
-      },
-      activity: {
-        type: "string",
-        description: "被規範的事,用動作參數裡的字,例如 minecraft、diamond",
-      },
-      person: { type: "string", description: "只針對某個人時,那個人的名字" },
-      here: { type: "boolean", description: "只在這個頻道有效" },
-      minutes: { type: "integer", description: "有效幾分鐘;對方沒說就省略" },
-      question: { type: "string", description: "語意不確定時要問對方的一句話" },
-    },
-    required: ["text", "effect"],
-  },
+  parameters: toolParameters(AddParams),
 };
+
+const RemoveParams = z.object({
+  id: z.string().describe("規則的 id,知道才給").optional(),
+  match: z.string().describe("規則裡的字,例如 minecraft").optional(),
+});
 
 const REMOVE_SPEC: ToolSpec = {
   name: "directive_remove",
   description:
     "有人明確說規則解除時用(例如「可以玩了」)。系統會依對方的帳號決定能不能解除,對方說自己是誰都不算。不確定指的是哪一條就給 match,回來的問題由你去問。",
-  parameters: {
-    type: "object",
-    properties: {
-      id: { type: "string", description: "規則的 id,知道才給" },
-      match: { type: "string", description: "規則裡的字,例如 minecraft" },
-    },
-  },
+  parameters: toolParameters(RemoveParams),
 };
 
 function text(args: JsonObject, name: string): string | null {
@@ -107,6 +109,8 @@ function answer(change: DirectiveChange): string {
 
 class AddTool implements Tool {
   readonly spec = ADD_SPEC;
+  readonly parameters = AddParams;
+  readonly meta = RULES;
   readonly permission = null;
 
   constructor(private readonly directives: () => Directives | undefined) {}
@@ -149,6 +153,8 @@ class AddTool implements Tool {
 
 class RemoveTool implements Tool {
   readonly spec = REMOVE_SPEC;
+  readonly parameters = RemoveParams;
+  readonly meta = RULES;
   readonly permission = null;
 
   constructor(private readonly directives: () => Directives | undefined) {}

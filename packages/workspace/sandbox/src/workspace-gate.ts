@@ -72,6 +72,7 @@ export function workspaceFileCapabilities(o: WorkspaceGateOptions): Capability<n
     permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_list",
+      meta: { effect: "read", speed: "instant", group: "workspace" },
       framed: true,
       readOnly: true,
       description:
@@ -115,6 +116,7 @@ export function workspaceFileCapabilities(o: WorkspaceGateOptions): Capability<n
     permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_read",
+      meta: { effect: "read", speed: "instant", group: "workspace" },
       framed: true,
       readOnly: true,
       description:
@@ -151,6 +153,7 @@ export function workspaceFileCapabilities(o: WorkspaceGateOptions): Capability<n
     permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_write",
+      meta: { effect: "act", speed: "instant", group: "workspace" },
       description:
         "把文字存成工作區裡的檔案(沒有的資料夾會自動建立,同名的檔案會被取代;append=true 則接在後面)。" +
         `工作區有額度(檔案數、總大小、單檔大小),超過會失敗。一次最多 ${MAX_WRITE_CHARS} 個字。` +
@@ -193,6 +196,7 @@ export function workspaceFileCapabilities(o: WorkspaceGateOptions): Capability<n
     permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_delete",
+      meta: { effect: "act", speed: "instant", group: "workspace" },
       description: "刪掉工作區裡的一個檔案,或一個資料夾和它底下所有東西。刪掉就回不來了。",
       properties: { path: { type: "string", description: "檔案或資料夾路徑" } },
       required: ["path"],
@@ -247,6 +251,7 @@ export function workspaceSaveScriptCapability(
     guidance: SAVE_SCRIPT_GUIDANCE,
     tool: {
       name: "workspace_save_script",
+      meta: { effect: "act", speed: "instant", group: "workspace" },
       description:
         "把一支 Python(.py)或 Node(.mjs)腳本存進工作區並送審;通過後可以用 workspace_run 反覆執行,不用每次再審。" +
         "之後你改了腳本內容就要重新用這個工具存。腳本在離線的沙箱裡跑,工作區掛在 /workspace,stdin / stdout 照常。" +
@@ -300,6 +305,7 @@ export function workspaceRunCapability(o: WorkspaceGateOptions): Capability<Work
     permission: NODE_CODE_RUN,
     tool: {
       name: "workspace_run",
+      meta: { effect: "external", speed: "instant", group: "workspace" },
       framed: true,
       description:
         "執行工作區裡用 workspace_save_script 存過(核准過、之後沒被改過)的腳本:.py 用 Python、.mjs 用 Node," +

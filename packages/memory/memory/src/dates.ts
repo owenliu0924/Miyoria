@@ -8,7 +8,13 @@
 // Each date is brought up once a year. The day she met someone (their person record's
 // `created_at`) counts from the first anniversary on, when `met_anniversary` is on.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import {
+  type Tool,
+  type ToolContext,
+  type ToolMeta,
+  type ToolSpec,
+  toolParameters,
+} from "@miyoria/llm/tools";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import type { PeopleStore, SettingsStore } from "@miyoria/store";
 import {
@@ -23,6 +29,7 @@ import {
   systemClock,
   toTimestamp,
 } from "@miyoria/types";
+import { z } from "zod";
 import type { DatesConfig } from "./config.js";
 import type { MemoryEngine } from "./engine.js";
 import { scopeForNew } from "./scope.js";
@@ -290,22 +297,22 @@ function labelArg(args: JsonValue): string {
   return label === "" ? "生日" : [...label].slice(0, MAX_LABEL).join("");
 }
 
+const RememberDateParams = z.object({
+  month: z.int().min(1).max(12),
+  day: z.int().min(1).max(31),
+  label: z.string().describe("什麼日子,預設「生日」,例如「交往紀念日」").optional(),
+});
+
 /** `remember_date`: a date of the person she is talking with (their birthday by default). */
 export class RememberDateTool implements Tool {
   readonly spec: ToolSpec = {
     name: REMEMBER_DATE,
     description:
       "正在跟你說話的人告訴你他的生日或某個對他重要的日子(例如紀念日)時記下來,那天他出現時你會想起來。只記對方自己說的,不記別人的。",
-    parameters: {
-      type: "object",
-      properties: {
-        month: { type: "integer", minimum: 1, maximum: 12 },
-        day: { type: "integer", minimum: 1, maximum: 31 },
-        label: { type: "string", description: "什麼日子,預設「生日」,例如「交往紀念日」" },
-      },
-      required: ["month", "day"],
-    },
+    parameters: toolParameters(RememberDateParams),
   };
+  readonly parameters = RememberDateParams;
+  readonly meta: ToolMeta = { effect: "act", speed: "instant", risk: "low", group: "memory" };
 
   constructor(
     private readonly book: DateBook,
@@ -330,18 +337,19 @@ export class RememberDateTool implements Tool {
   }
 }
 
+const ForgetDateParams = z.object({
+  label: z.string().describe("什麼日子,預設「生日」").optional(),
+});
+
 /** `forget_date`: drops a date of the person she is talking with. */
 export class ForgetDateTool implements Tool {
   readonly spec: ToolSpec = {
     name: FORGET_DATE,
     description: "正在跟你說話的人要你忘掉他的生日或某個日子時用。",
-    parameters: {
-      type: "object",
-      properties: {
-        label: { type: "string", description: "什麼日子,預設「生日」" },
-      },
-    },
+    parameters: toolParameters(ForgetDateParams),
   };
+  readonly parameters = ForgetDateParams;
+  readonly meta: ToolMeta = { effect: "act", speed: "instant", risk: "low", group: "memory" };
 
   constructor(
     private readonly book: DateBook,

@@ -223,6 +223,7 @@ export function voiceCapabilities(
     permission: "voice.join",
     tool: {
       name: "voice_join",
+      meta: { effect: "act", speed: "long", group: "voice" },
       description:
         "進語音頻道。有 channel 就直接進那個頻道,裡面沒人也可以。channel 省略 = 跟你說話的人現在所在的語音頻道(對方要在語音裡)。",
       properties: {
@@ -295,6 +296,7 @@ export function voiceCapabilities(
     permission: "voice.leave",
     tool: {
       name: "voice_leave",
+      meta: { effect: "act", speed: "instant", group: "voice" },
       description: "離開你現在所在的語音頻道。",
       properties: { guild: GUILD_PROPERTY },
     },
@@ -330,6 +332,7 @@ export function voiceCapabilities(
     permission: "voice.golive",
     tool: {
       name: "stream_start",
+      meta: { effect: "act", speed: "long", group: "stream" },
       description:
         "開直播 / 開台:在 Discord 語音頻道 Go Live(直播機的 OBS 會跟著開播),跟玩遊戲無關。還不在語音時會先進對方所在的語音頻道。",
       properties: { guild: GUILD_PROPERTY },
@@ -381,6 +384,7 @@ export function voiceCapabilities(
     permission: "voice.golive",
     tool: {
       name: "stream_stop",
+      meta: { effect: "act", speed: "instant", group: "stream" },
       description: "結束 Discord Go Live 直播。",
       properties: { guild: GUILD_PROPERTY },
     },
@@ -407,6 +411,7 @@ export function voiceCapabilities(
     permission: "voice.status",
     tool: {
       name: "voice_status",
+      meta: { effect: "act", speed: "instant", group: "voice" },
       description:
         "改你現在所在語音頻道的「頻道狀態」(頻道名稱下面那一行字,大家都看得到),例如「🎤 唱歌中」「聊天中」。status 空字串 = 清掉。",
       properties: {

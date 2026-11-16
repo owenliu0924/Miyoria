@@ -110,6 +110,7 @@ export function giveCapability(economy: EconomyService, services: Lookup): Capab
     limits: { per_day: 30, per_person_per_day: 3, cooldown_ms: 0 },
     tool: {
       name: "give_coins",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         `送${economy.config.currency}給一個人,當作你自己的獎勵:陪你玩、誇你的歌、安慰你的時候。` +
         `每人每天最多 ${economy.config.her_gift_per_person},所有人加起來每天最多 ` +
@@ -397,6 +398,7 @@ export function acceptFoodCapability(economy: EconomyService, offers: VoiceOffer
     limits: { per_day: 300, per_person_per_day: 40, cooldown_ms: 0 },
     tool: {
       name: "accept_food",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         `正在跟你說話的人說要餵你吃東西(白飯 ${c.rice}、大碗白飯 ${c.big_bowl}、甜點 ${c.dessert} ${cur})` +
         `,你想收下就呼叫,扣的是對方自己的${cur}。只有對方本人清楚說要餵你才用;` +
@@ -484,6 +486,7 @@ export function checkinCapability(economy: EconomyService): Capability {
     limits: { per_day: 1_000, per_person_per_day: 10, cooldown_ms: 0 },
     tool: {
       name: "checkin_for_speaker",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         "幫正在跟你說話的人簽到(每人每天一次,和面板、Discord 共用)。對方本人要簽到時才用," +
         `沒辦法幫別人簽。${NOT_ON_OWN}`,
@@ -557,6 +560,7 @@ export function lookCapability(economy: EconomyService): Capability {
     permission: null,
     tool: {
       name: "check_coins",
+      meta: { effect: "read", speed: "instant", group: "economy" },
       readOnly: true,
       description:
         `有人問他有多少${cur}、今天還能賺多少,或${cur}能買什麼、商店有什麼的時候用這個,` +
@@ -775,6 +779,7 @@ export function makeDealCapability(economy: EconomyService, deals: VoiceDeals): 
     limits: { per_day: 100, per_person_per_day: 8, cooldown_ms: 0 },
     tool: {
       name: "make_deal",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         "正在跟你說話的人想用零食收買你,要你做一件小事(學貓叫、說一句可愛的話、做個表情)," +
         `你答應了才呼叫。要不要答應是你自己決定:看你對他的信任和羈絆、你現在餓不餓、` +
@@ -888,6 +893,7 @@ export function dealDoneCapability(economy: EconomyService): Capability {
     limits: { per_day: 100, per_person_per_day: 10, cooldown_ms: 0 },
     tool: {
       name: "deal_done",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         "你真的做完了和正在跟你說話的人的約定,才呼叫。預付的約定會把託管的錢給你;沒預付的," +
         `對方要在 ${Math.round(c.deal_due_s / 60)} 分鐘內餵你,沒餵就算食言。只能說你和對方自己的約定。` +
@@ -941,6 +947,7 @@ export function cancelDealCapability(economy: EconomyService): Capability {
     limits: { per_day: 100, per_person_per_day: 10, cooldown_ms: 0 },
     tool: {
       name: "cancel_deal",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         "你不想做了,取消和正在跟你說話的人還沒結束的約定。預付的錢會退給對方。" +
         `反悔不用付代價,但你的紀錄裡看得到今天取消了幾個。${NOT_ON_OWN}`,

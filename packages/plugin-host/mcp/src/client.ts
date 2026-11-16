@@ -5,7 +5,7 @@ import { statSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import type { Stream } from "node:stream";
 import { MIYORIA_VERSION } from "@miyoria/llm/llm";
-import type { Tool, ToolContext, ToolRegistry, ToolSpec } from "@miyoria/llm/tools";
+import type { Tool, ToolContext, ToolMeta, ToolRegistry, ToolSpec } from "@miyoria/llm/tools";
 import { errorMessage, getLogger, sleep, withTimeout } from "@miyoria/runtime/kernel";
 import { type Clock, isJsonObject, type JsonValue } from "@miyoria/types";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -77,6 +77,9 @@ export class Registrar {
 
 /** A tool of an MCP server, as the model sees it. */
 class McpTool implements Tool {
+  /** An MCP server is a program of its own: what its tool does is not known here. */
+  readonly meta: ToolMeta = { effect: "external", speed: "instant", risk: "medium", group: "mcp" };
+
   constructor(
     readonly spec: ToolSpec,
     readonly server: string,

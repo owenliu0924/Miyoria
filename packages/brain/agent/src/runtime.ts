@@ -1084,6 +1084,8 @@ export class Agent {
 /** `react` with its own limit per channel (`Rhythm.takeReaction`): she hears why when it is spent. */
 class LimitedReact implements Tool {
   readonly spec;
+  readonly meta;
+  readonly parameters;
   readonly permission;
 
   constructor(
@@ -1091,6 +1093,8 @@ class LimitedReact implements Tool {
     readonly rhythm: Rhythm,
   ) {
     this.spec = inner.spec;
+    this.meta = inner.meta;
+    this.parameters = inner.parameters;
     this.permission = inner.permission ?? null;
   }
 

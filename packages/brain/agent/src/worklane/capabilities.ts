@@ -69,6 +69,7 @@ export function workCapabilities(deps: WorkCapabilityDeps): Capability[] {
     permission: null,
     tool: {
       name: WORK_START_TOOL,
+      meta: { effect: "act", speed: "long", group: "work" },
       description:
         "把要花很多步的事交給背景的工作車道去做:查好幾個來源再整理、在工作區寫一個小程式、整理筆記、改進一個技能。" +
         "它在背景一步一步做(可以上網、跑程式、讀寫你的工作區和筆記),不會講話也不會發訊息;" +
@@ -128,6 +129,7 @@ export function workCapabilities(deps: WorkCapabilityDeps): Capability[] {
     permission: null,
     tool: {
       name: WORK_LIST_TOOL,
+      meta: { effect: "read", speed: "instant", group: "work" },
       description:
         "看你交給工作車道的任務:哪些在做、哪些在排隊、最近做完了什麼。要改方向或停掉時先看代號。",
       properties: {},
@@ -145,6 +147,7 @@ export function workCapabilities(deps: WorkCapabilityDeps): Capability[] {
     permission: null,
     tool: {
       name: WORK_STEER_TOOL,
+      meta: { effect: "act", speed: "instant", group: "work" },
       description:
         "改一個工作車道上的任務(task 填 work_list 看到的代號):hint 補一句話讓它照著調整,goal 換目標(做到現在的會留著)," +
         "stop: true 停掉。改目標或補充不會多給它步數或時間。",

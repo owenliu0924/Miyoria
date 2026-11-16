@@ -1,8 +1,15 @@
 // Built-in tools. The interface lives in `@miyoria/llm/tools`.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import {
+  type Tool,
+  type ToolContext,
+  type ToolMeta,
+  type ToolSpec,
+  toolParameters,
+} from "@miyoria/llm/tools";
 import type { ModuleContext } from "@miyoria/runtime/kernel";
 import { ActionSinkKey, isJsonObject, type JsonValue, newAction, textLane } from "@miyoria/types";
+import { z } from "zod";
 import { DEFAULT_NOTE_MINUTES, MAX_NOTE_MINUTES, MAX_NOTES, type WorkingNotes } from "./notes.js";
 import { charCount } from "./util.js";
 
@@ -16,6 +23,14 @@ export class ToolArgumentError extends Error {
 /** Reactions one `react` call may add (Discord itself allows many per message). */
 export const MAX_REACTIONS = 5;
 
+const ReactParams = z.object({
+  emoji: z.string().describe("一個 emoji,例如 👍、😤、🐋;伺服器表情寫 :名字:").optional(),
+  emojis: z
+    .array(z.string())
+    .describe(`要一起按的幾個 emoji(最多 ${MAX_REACTIONS} 個),按順序加上去`)
+    .optional(),
+});
+
 /** Built-in `react`: adds emoji reactions to the triggering message. */
 export class ReactTool implements Tool {
   static readonly NAME = "react";
@@ -25,20 +40,15 @@ export class ReactTool implements Tool {
     description:
       "對觸發這次對話的那則訊息加上 emoji 反應。只想表達情緒、不需要多說話時可以只按反應然後輸出 <silence/>。" +
       `Discord 一則訊息可以按很多個不同的反應:想按好幾個就用 emojis 列出來(最多 ${MAX_REACTIONS} 個)。`,
-    parameters: {
-      type: "object",
-      properties: {
-        emoji: {
-          type: "string",
-          description: "一個 emoji,例如 👍、😤、🐋;伺服器表情寫 :名字:",
-        },
-        emojis: {
-          type: "array",
-          items: { type: "string" },
-          description: `要一起按的幾個 emoji(最多 ${MAX_REACTIONS} 個),按順序加上去`,
-        },
-      },
-    },
+    parameters: toolParameters(ReactParams),
+  };
+  readonly parameters = ReactParams;
+  readonly meta: ToolMeta = {
+    effect: "say",
+    speed: "instant",
+    risk: "low",
+    group: "chat",
+    core: true,
   };
 
   readonly #ctx: ModuleContext;
@@ -78,6 +88,11 @@ export class ReactTool implements Tool {
   }
 }
 
+const KeepNoteParams = z.object({
+  text: z.string().describe("要記的內容"),
+  minutes: z.int().describe(`留多久(1 到 ${MAX_NOTE_MINUTES} 分鐘,通常省略)`).optional(),
+});
+
 /** Built-in `keep_note`: something from this turn she wants to keep for the rest of the conversation. */
 export class KeepNoteTool implements Tool {
   static readonly NAME = "keep_note";
@@ -88,14 +103,15 @@ export class KeepNoteTool implements Tool {
       "工具結果(搜尋、歌詞、網頁、計算)的全文下一回合就看不到了,最多剩幾行摘要。之後這段對話還會用到全文的," +
       "用你自己的話記下重點(最多 600 字,例如歌詞的那幾句、查到的數字),之後每一回合都看得到;" +
       `預設留 ${DEFAULT_NOTE_MINUTES} 分鐘,每段對話最多 ${MAX_NOTES} 則,多了最舊的會被擠掉。用不到就不要記。`,
-    parameters: {
-      type: "object",
-      properties: {
-        text: { type: "string", description: "要記的內容" },
-        minutes: { type: "integer", description: `留多久(1 到 ${MAX_NOTE_MINUTES} 分鐘,通常省略)` },
-      },
-      required: ["text"],
-    },
+    parameters: toolParameters(KeepNoteParams),
+  };
+  readonly parameters = KeepNoteParams;
+  readonly meta: ToolMeta = {
+    effect: "act",
+    speed: "instant",
+    risk: "low",
+    group: "notes",
+    core: true,
   };
 
   constructor(private readonly notes: WorkingNotes) {}
@@ -110,6 +126,8 @@ export class KeepNoteTool implements Tool {
   }
 }
 
+const DropNoteParams = z.object({ id: z.string().describe("筆記代號") });
+
 /** Built-in `drop_note`: a working note she no longer needs. */
 export class DropNoteTool implements Tool {
   static readonly NAME = "drop_note";
@@ -117,12 +135,10 @@ export class DropNoteTool implements Tool {
   readonly spec: ToolSpec = {
     name: DropNoteTool.NAME,
     description: "丟掉一則你在這段對話記下、已經用不到的筆記(填方括號裡的代號,例如 n3)。",
-    parameters: {
-      type: "object",
-      properties: { id: { type: "string", description: "筆記代號" } },
-      required: ["id"],
-    },
+    parameters: toolParameters(DropNoteParams),
   };
+  readonly parameters = DropNoteParams;
+  readonly meta: ToolMeta = { effect: "act", speed: "instant", risk: "low", group: "notes" };
 
   constructor(private readonly notes: WorkingNotes) {}
 

@@ -1,6 +1,12 @@
 // Model tools `remember` and `recall`.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import {
+  type Tool,
+  type ToolContext,
+  type ToolMeta,
+  type ToolSpec,
+  toolParameters,
+} from "@miyoria/llm/tools";
 import type { MemoryKind } from "@miyoria/store";
 import {
   type Clock,
@@ -10,6 +16,7 @@ import {
   systemClock,
   toTimestamp,
 } from "@miyoria/types";
+import { z } from "zod";
 import { formatLines, PROMPT_KINDS } from "./contributor.js";
 import type { MemoryEngine } from "./engine.js";
 import { LINE_REF_PREFIX, nameWords, supporting } from "./evidence.js";
@@ -33,6 +40,16 @@ function requiredString(args: JsonValue, key: string): string {
   return s;
 }
 
+const RememberParams = z.object({
+  content: z.string().describe("要記住的事,例如「Owen 下週三要考期末考」"),
+  about: z.enum(["speaker", "self"]).describe("關於對方還是關於自己").optional(),
+  importance: z.number().min(0).max(1).describe("重要程度 0~1").optional(),
+  global: z
+    .boolean()
+    .describe("只有名字、希望怎麼被稱呼這類到哪都適用、不私密的事才設 true")
+    .optional(),
+});
+
 /**
  * Saves a note about the current speaker or herself. The note records who said it
  * (`source`), so it is recalled as something that person said, not as a fact.
@@ -42,19 +59,15 @@ export class RememberTool implements Tool {
     name: REMEMBER,
     description:
       "把一件值得長期記住的事記下來:關於正在跟你說話的人(about=speaker),或關於你自己的承諾、意見、經歷(about=self)。寫成日後單獨看也懂的一句話,包含名字。",
-    parameters: {
-      type: "object",
-      properties: {
-        content: { type: "string", description: "要記住的事,例如「Owen 下週三要考期末考」" },
-        about: { type: "string", enum: ["speaker", "self"], description: "關於對方還是關於自己" },
-        importance: { type: "number", minimum: 0, maximum: 1, description: "重要程度 0~1" },
-        global: {
-          type: "boolean",
-          description: "只有名字、希望怎麼被稱呼這類到哪都適用、不私密的事才設 true",
-        },
-      },
-      required: ["content"],
-    },
+    parameters: toolParameters(RememberParams),
+  };
+  readonly parameters = RememberParams;
+  readonly meta: ToolMeta = {
+    effect: "act",
+    speed: "instant",
+    risk: "low",
+    group: "memory",
+    core: true,
   };
   readonly #engine: MemoryEngine;
   readonly #clock: Clock;
@@ -147,6 +160,11 @@ export class RememberTool implements Tool {
   }
 }
 
+const RecallParams = z.object({
+  query: z.string().describe("要想起什麼,例如「Owen 喜歡吃什麼」"),
+  limit: z.int().min(1).max(20).optional(),
+});
+
 /** Searches memories visible in the current context. */
 export class RecallTool implements Tool {
   /** Only marks what it found as recalled (access count), whatever the order. */
@@ -154,14 +172,15 @@ export class RecallTool implements Tool {
   readonly spec: ToolSpec = {
     name: RECALL,
     description: "在你的長期記憶裡搜尋跟某件事有關的回憶(只會找到這裡可以提的記憶)。",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "要想起什麼,例如「Owen 喜歡吃什麼」" },
-        limit: { type: "integer", minimum: 1, maximum: 20 },
-      },
-      required: ["query"],
-    },
+    parameters: toolParameters(RecallParams),
+  };
+  readonly parameters = RecallParams;
+  readonly meta: ToolMeta = {
+    effect: "read",
+    speed: "instant",
+    risk: "low",
+    group: "memory",
+    core: true,
   };
   readonly #engine: MemoryEngine;
   readonly #clock: Clock;

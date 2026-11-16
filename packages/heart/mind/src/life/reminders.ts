@@ -504,6 +504,7 @@ export function remindCapability(book: ReminderBook): Capability {
     permission: REMIND_NODE,
     tool: {
       name: "remind_me",
+      meta: { effect: "act", speed: "instant", group: "schedule", core: true },
       description:
         "設一個提醒給自己:時間到了你會再想起這件事,到時候要不要說、怎麼說由你決定。" +
         "例如「二十分鐘後看一下烤箱」「明天 09:00 問 Owen 考試考得怎樣」,或別人請你提醒他的事。" +

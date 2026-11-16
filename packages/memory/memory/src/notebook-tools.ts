@@ -1,8 +1,15 @@
 // Model tools of her notebook: `notebook_read` (a page, or the index), `notebook_write` and
 // `notebook_delete`. Every answer is data: the page text is escaped, and a refused write says why.
 
-import type { Tool, ToolContext, ToolSpec } from "@miyoria/llm/tools";
+import {
+  type Tool,
+  type ToolContext,
+  type ToolMeta,
+  type ToolSpec,
+  toolParameters,
+} from "@miyoria/llm/tools";
 import { isJsonObject, type JsonValue, type NotebookWhere } from "@miyoria/types";
+import { z } from "zod";
 import type { NotebookConfig } from "./config.js";
 import { indexText, NotebookError, type NotebookStore, pageText } from "./notebook.js";
 
@@ -27,6 +34,11 @@ export function whereOf(ctx: ToolContext): NotebookWhere {
 
 const PATH_HINT = "頁面路徑,例如「人/Owen」「主題/Minecraft 建築」「自己/想做的事」";
 
+const ReadParams = z.object({
+  path: z.string().describe(PATH_HINT).optional(),
+  from: z.int().min(0).describe("從第幾個字開始讀(預設 0)").optional(),
+});
+
 export class NotebookReadTool implements Tool {
   /** Reading a page writes nothing. */
   readonly readOnly = true;
@@ -34,13 +46,15 @@ export class NotebookReadTool implements Tool {
     name: NOTEBOOK_READ,
     description:
       "讀你的筆記本。不給 path 就列出這裡看得到的所有頁面;給 path 就讀那一頁,太長的頁面用 from 分段讀。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: PATH_HINT },
-        from: { type: "integer", minimum: 0, description: "從第幾個字開始讀(預設 0)" },
-      },
-    },
+    parameters: toolParameters(ReadParams),
+  };
+  readonly parameters = ReadParams;
+  readonly meta: ToolMeta = {
+    effect: "read",
+    speed: "instant",
+    risk: "low",
+    group: "notebook",
+    core: true,
   };
 
   constructor(
@@ -67,20 +81,26 @@ export class NotebookReadTool implements Tool {
   }
 }
 
+const WriteParams = z.object({
+  path: z.string().describe(PATH_HINT),
+  content: z.string().describe("要寫的內容"),
+  mode: z.enum(["append", "replace"]).describe("預設 append").optional(),
+});
+
 export class NotebookWriteTool implements Tool {
   readonly spec: ToolSpec = {
     name: NOTEBOOK_WRITE,
     description:
       "寫進你的筆記本:每個人一頁(人/名字)、每個主題一頁(主題/名稱)、你自己的事(自己/…)。寫日後自己看得懂的重點,不要抄整段對話。mode=append 接在後面,mode=replace 整頁改寫(整理時用)。私訊裡寫的頁面只在那個私訊看得到。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: PATH_HINT },
-        content: { type: "string", description: "要寫的內容" },
-        mode: { type: "string", enum: ["append", "replace"], description: "預設 append" },
-      },
-      required: ["path", "content"],
-    },
+    parameters: toolParameters(WriteParams),
+  };
+  readonly parameters = WriteParams;
+  readonly meta: ToolMeta = {
+    effect: "act",
+    speed: "instant",
+    risk: "low",
+    group: "notebook",
+    core: true,
   };
 
   constructor(private readonly store: NotebookStore) {}
@@ -100,16 +120,16 @@ export class NotebookWriteTool implements Tool {
   }
 }
 
+const DeleteParams = z.object({ path: z.string().describe(PATH_HINT) });
+
 export class NotebookDeleteTool implements Tool {
   readonly spec: ToolSpec = {
     name: NOTEBOOK_DELETE,
     description: "刪掉筆記本裡的一頁(只能刪在這個地方寫的頁面)。合併或整理之後用。",
-    parameters: {
-      type: "object",
-      properties: { path: { type: "string", description: PATH_HINT } },
-      required: ["path"],
-    },
+    parameters: toolParameters(DeleteParams),
   };
+  readonly parameters = DeleteParams;
+  readonly meta: ToolMeta = { effect: "act", speed: "instant", risk: "medium", group: "notebook" };
 
   constructor(private readonly store: NotebookStore) {}
 

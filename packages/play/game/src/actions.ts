@@ -214,6 +214,7 @@ export function gameCapabilities(o: GameCapabilityOptions): Capability[] {
     permission: o.permissions.start,
     tool: {
       name: "game_start",
+      meta: { effect: "act", speed: "long", group: "game" },
       description:
         `開始玩遊戲(例如 Minecraft;導演迴路會自己決定目標與動作,直播畫面會切到遊戲場景)。只有被要求玩遊戲時才用;只是要開直播 / 開台請用 stream_start,不要用這個。game 省略 = ${o.defaultGame}。` +
         "遊戲沒開時會自己開(要等一兩分鐘);開不起來會失敗並說原因,那就跟大家說、請擁有者看一下。goal 可以給第一個目標;stream = true 會順便開台(Go Live)。",
@@ -286,6 +287,7 @@ export function gameCapabilities(o: GameCapabilityOptions): Capability[] {
     permission: o.permissions.stop,
     tool: {
       name: "game_stop",
+      meta: { effect: "act", speed: "instant", group: "game" },
       description: "停止正在玩的遊戲。",
       properties: {},
     },
@@ -304,6 +306,7 @@ export function gameCapabilities(o: GameCapabilityOptions): Capability[] {
     permission: o.permissions.goal,
     tool: {
       name: "game_goal",
+      meta: { effect: "act", speed: "instant", group: "game" },
       description: "指定你接下來在遊戲裡要做的事(例如「去挖鐵礦」)。只有在玩遊戲時有用。",
       properties: { text: { type: "string", description: "目標,一句話" } },
       required: ["text"],
