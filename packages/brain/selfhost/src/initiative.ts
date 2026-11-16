@@ -36,6 +36,7 @@ import {
   type AccountRef,
   AffectStateKey,
   type ArbiterDecision,
+  ArbiterKey,
   type ArbiterReason,
   type ContextKey,
   contextKeyString,
@@ -136,6 +137,8 @@ export interface InitiativeHost {
   wake(context: ContextKey, wake: Wake): boolean;
   /** The places the host has lanes for. */
   places(): ContextKey[];
+  /** Whether she is in the voice channel `context` now; unset: never. */
+  inVoice?(context: ContextKey): boolean;
 }
 
 /** An opportunity that woke her, until its run ends. */
@@ -248,7 +251,11 @@ export class Initiative {
     if (is(Events.WorldSalient, env)) {
       const s = env.data;
       if (s.score < this.#h.settings.salientMin || s.detail.trim() === "") return;
-      const context = s.context !== null && s.context.kind !== "voice" ? s.context : null;
+      // Someone joined the voice channel she is in: greeted there. The other events of a voice
+      // place (and a join of a channel she is not in) are for her home, as before.
+      const here =
+        s.kind === "joined_voice" && s.context !== null && this.#h.inVoice?.(s.context) === true;
+      const context = s.context !== null && (s.context.kind !== "voice" || here) ? s.context : null;
       this.#add({
         key: `world:${s.key}:${s.first_at}`,
         kind: "world",
@@ -287,7 +294,9 @@ export class Initiative {
   }
 
   #add(item: Omit<NewInboxItem, "session" | "at">): InboxRow | null {
-    const context = item.context !== null && item.context.kind !== "voice" ? item.context : null;
+    const voice = item.context?.kind === "voice";
+    const kept = item.kind === "world" && item.context !== null && this.#h.inVoice?.(item.context);
+    const context = item.context !== null && (!voice || kept === true) ? item.context : null;
     try {
       return this.#h.store.addItem({
         ...item,
@@ -362,7 +371,25 @@ export class Initiative {
       updated_at: toTimestamp(now),
     };
     waking.entry = entry;
-    this.#h.agent.ctx.publish(Events.ArbiterLedger, { ...entry });
+    // The Arbiter's own ledger holds it (the panel's Ledger and block 7 read that one); without an
+    // Arbiter the event is all there is.
+    const arbiter = this.#services.get(ArbiterKey);
+    if (arbiter === undefined) {
+      this.#h.agent.ctx.publish(Events.ArbiterLedger, { ...entry });
+    } else {
+      entry.id = arbiter.record({
+        kind: entry.kind,
+        source: entry.source,
+        context: entry.context,
+        person: entry.person,
+        summary: entry.summary,
+        outcome: entry.outcome,
+        detail: entry.detail,
+        impulse: entry.impulse,
+        turn: entry.turn,
+        task: entry.task,
+      });
+    }
     return [`initiative: ${o.kind}`];
   }
 
@@ -405,7 +432,10 @@ export class Initiative {
     entry.outcome = outcome;
     entry.detail = detail;
     entry.updated_at = toTimestamp(this.#now);
-    this.#h.agent.ctx.publish(Events.ArbiterLedger, { ...entry });
+    // An entry the Arbiter no longer has (one kept from before a restart) is only announced.
+    if (this.#services.get(ArbiterKey)?.resolve(entry.id, outcome, detail) !== true) {
+      this.#h.agent.ctx.publish(Events.ArbiterLedger, { ...entry });
+    }
   }
 
   // ---- looking ----------------------------------------------------------------------------------
@@ -799,6 +829,7 @@ export interface InitiativeWiring {
   places(): ContextKey[];
   resolve(name: string, from: ContextKey): Promise<ContextKey | null>;
   describe(place: ContextKey): Promise<string | null>;
+  inVoice?(context: ContextKey): boolean;
   signal: AbortSignal;
 }
 
@@ -832,6 +863,7 @@ export function startInitiative(
     sessionOf: wiring.sessionOf,
     wake: wiring.wake,
     places: wiring.places,
+    ...(wiring.inVoice === undefined ? {} : { inVoice: wiring.inVoice }),
   });
   agent.ctx.provide(ScheduleRemindersKey, initiative.book.reminders);
   const tools = scheduleTools({

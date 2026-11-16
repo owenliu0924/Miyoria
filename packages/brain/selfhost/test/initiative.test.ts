@@ -10,6 +10,7 @@ import {
   type AccountRef,
   AffectStateKey,
   type ArbiterDecision,
+  ArbiterKey,
   type Attitude,
   type ContextKey,
   Events,
@@ -272,6 +273,34 @@ describe("opportunities and gates", () => {
     await until(() => rig.sink.texts().length === 2, 3_000, "the answer");
     expect(gates.misses(place, at())).toBe(0);
     expect(gates.gapMs(place, at())).toBe(10 * MIN);
+  });
+});
+
+describe("her starts in the Arbiter's ledger", () => {
+  it("a start of hers is an entry of ArbiterKey.ledger(), and settles there", async () => {
+    const rig = await Rig.create({ arbiter: {} });
+    const arbiter = rig.sup.services.get(ArbiterKey);
+    if (arbiter === undefined) throw new Error("no arbiter");
+    // A DM: someone is always there to hear her.
+    rig.model.push(says("晚安"));
+    rig.say(line(DM, "owen", "晚安"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "the DM answer");
+    await sleep(50);
+    const book = host(rig).initiative.book;
+    book.set({ when: { due: Date.now() + MIN, daily: null }, note: "問 owen 好了沒", context: DM });
+    rig.model.push(says("owen,好了嗎"));
+    rig.shift = 2 * MIN;
+    await tick(rig);
+    await until(() => rig.sink.texts().length === 2, 3_000, "her start");
+    const mine = () => arbiter.ledger(DM).entries.filter((e) => e.summary.startsWith("timer:"));
+    await until(() => mine().some((e) => e.outcome === "pending"), 3_000, "the entry waiting");
+    expect(mine()).toHaveLength(1);
+    expect(mine()[0]).toMatchObject({ self_initiated: true, context: DM, kind: "turn" });
+    // Someone answers: the same entry settles.
+    rig.model.push(says("太好了"));
+    rig.say(mention(DM, "owen", "好了"));
+    await until(() => mine().some((e) => e.outcome === "ok"), 3_000, "the entry settled");
+    expect(mine()).toHaveLength(1);
   });
 });
 
