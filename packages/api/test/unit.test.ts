@@ -401,6 +401,7 @@ describe("config and helpers", () => {
         rate_per_minute: 60,
         rate_total_per_minute: 3000,
         utc_offset_minutes: 480,
+        client_ip_header: "cf-connecting-ip",
       },
     });
   });

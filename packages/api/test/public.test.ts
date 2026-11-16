@@ -1002,6 +1002,24 @@ describe("rate limits", () => {
     );
   });
 
+  it("reads the header the proxy on this machine uses (client_ip_header)", () => {
+    const ctx = (peer: string, headers: Record<string, string>) =>
+      ({
+        env: { incoming: { socket: { remoteAddress: peer } } },
+        req: { header: (name: string) => headers[name] },
+      }) as never;
+    const sent = {
+      "cf-connecting-ip": "203.0.113.7",
+      "x-forwarded-for": "198.51.100.1, 203.0.113.9",
+    };
+    // Of a list, the entry the proxy added itself: the first is the visitor's own word.
+    expect(clientKey(ctx("127.0.0.1", sent), "X-Forwarded-For")).toBe("203.0.113.9");
+    expect(clientKey(ctx("127.0.0.1", sent), "x-real-ip")).toBe("local");
+    // No header at all: whatever the visitor sends, nothing of it counts.
+    expect(clientKey(ctx("127.0.0.1", sent), "")).toBe("local");
+    expect(clientKey(ctx("198.51.100.9", sent), "x-forwarded-for")).toBe("198.51.100.9");
+  });
+
   it("does not grow without bound when addresses keep changing", () => {
     const limit = new RateWindow(1, 60_000, 100);
     for (let i = 0; i < 1000; i++) limit.hit(`client-${i}`, 0);
