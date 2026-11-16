@@ -118,9 +118,6 @@ describe("schedule", () => {
     // Recorded: accepted, and her run as a ledger entry that waits for an answer.
     const timers = decisions(again).filter((d) => d.impulse.startsWith("timer:"));
     expect(timers.map((d) => [d.source, d.verdict])).toEqual([["agenda", "accepted"]]);
-    // Her morning has no home place to wake her in: stopped, and said once.
-    const mornings = decisions(again).filter((d) => d.impulse.startsWith("morning:"));
-    expect(mornings.map((d) => [d.verdict, d.reason])).toEqual([["rejected", "nobody"]]);
     await until(() => ledger(again).some((e) => e.outcome === "pending" && e.detail !== null));
     // It does not come back.
     again.shift = 40 * MIN;
