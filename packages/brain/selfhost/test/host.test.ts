@@ -337,6 +337,46 @@ describe("what comes back", () => {
     expect(rig.sink.texts()).toEqual(["開始烤囉", "蛋糕好了!"]);
   });
 
+  it("a long tool that reports its results as an array (the activity route's shape) wakes her too", async () => {
+    const long = defineTool({
+      name: "sing_like",
+      description: "唱歌(要一段時間)。",
+      parameters: z.object({}),
+      effect: "act",
+      speed: "long",
+      risk: "low",
+      group: "test",
+      core: true,
+      next: true,
+      async call(ctx) {
+        ctx.report?.([
+          { status: "refused", task: null, resource: "a" },
+          { status: "started", task: "job-9", resource: "voice" },
+        ]);
+        return "開始唱了";
+      },
+    });
+    const rig = await Rig.create({ provide: (_sup, tools) => tools.register(long) });
+    rig.model.push(calls("sing_like", {}), says("開始唱囉"), says("唱完了!"));
+    rig.say(mention(C1, "amy", "@她 唱一首"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "the first answer");
+    expect(String(rig.model.requests[1]?.messages.at(-1)?.content)).toContain("代號 job-9");
+    rig.sup.bus.publish(
+      "test",
+      Events.TaskDone,
+      {
+        type: "done",
+        task: "job-9",
+        detail: "唱完了",
+        data: null,
+        at: toTimestamp(Date.now()),
+      },
+      { type: "sing.task.done" },
+    );
+    await until(() => rig.sink.texts().length === 2, 3_000, "the result's run");
+    expect(textOf(rig.model.requests[2])).toContain("代號 job-9");
+  });
+
   it("a due timer of hers wakes her where it was set", async () => {
     const rig = await Rig.create();
     rig.model.push(says("時間到了喔"));

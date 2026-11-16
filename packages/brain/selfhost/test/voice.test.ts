@@ -353,6 +353,41 @@ describe("tools in voice", () => {
   });
 });
 
+describe("a long tool's result in voice", () => {
+  it("a receipt given as an array is followed by a result wake when the task ends", async () => {
+    const long = defineTool({
+      name: "web_search",
+      description: "測試用的長工具。",
+      parameters: z.object({}),
+      effect: "read",
+      speed: "long",
+      risk: "low",
+      group: "test",
+      core: true,
+      next: true,
+      readOnly: true,
+      async call(ctx) {
+        ctx.report?.([{ status: "started", task: "job-v1", resource: "x" }]);
+        return "開始了";
+      },
+    });
+    const rig = await voiceRig({}, { provide: (_sup, tools) => tools.register(long) });
+    rig.model.push(calls("web_search", {}), says("開始囉。"), says("好了。"));
+    hear(rig, "owen", "小鯨魚幫我查", true);
+    await until(() => outcomes(rig).length === 1, 5_000, "the first outcome");
+    expect(String(rig.model.requests[1]?.messages.at(-1)?.content)).toContain("代號 job-v1");
+    play(rig, speeches(rig)[0]?.[2] as string, "started", "開始囉。");
+    rig.sup.bus.publish(
+      "test",
+      Events.TaskDone,
+      { type: "done", task: "job-v1", detail: "查完了", data: null, at: toTimestamp(Date.now()) },
+      { type: "test.task.done" },
+    );
+    await until(() => outcomes(rig).length === 2, 5_000, "the result's outcome");
+    expect(textOf(rig.model.requests[2])).toContain("代號 job-v1");
+  });
+});
+
 describe("the prefix", () => {
   it("a voice request starts like a text-profile request of the same session", async () => {
     const rig = await voiceRig();

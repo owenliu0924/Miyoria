@@ -214,6 +214,13 @@ function asEntry(session: string, seq: number, input: EntryInput): TranscriptEnt
 
 /** The job id a capability reported beside its text (`{task}`), when it gave one. */
 function reportedJob(data: JsonValue): string | null {
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const job = isJsonObject(item) && item["task"] !== undefined ? reportedJob(item) : null;
+      if (job !== null) return job;
+    }
+    return null;
+  }
   if (!isJsonObject(data)) return null;
   for (const key of ["task", "job"]) {
     const value = data[key];
