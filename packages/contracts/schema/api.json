@@ -3141,6 +3141,61 @@
       "properties": {},
       "additionalProperties": false
     },
+    "ApiEvalLiveHistory": {
+      "type": "object",
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventsEvalLiveRun"
+          }
+        },
+        "nightly": {
+          "$ref": "#/$defs/ApiEvalNightly"
+        }
+      },
+      "required": [
+        "runs",
+        "nightly"
+      ]
+    },
+    "ApiEvalNightly": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ApiEvalNightlyState"
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "running": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "state",
+        "time",
+        "next_at",
+        "running"
+      ]
+    },
+    "ApiEvalNightlyState": {
+      "type": "string",
+      "enum": [
+        "off",
+        "scheduled",
+        "no_checkout"
+      ]
+    },
     "ApiExpressionRequest": {
       "type": "object",
       "properties": {
@@ -12432,6 +12487,142 @@
         "people",
         "voice_channels",
         "channels"
+      ]
+    },
+    "EventsEvalLiveRun": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "number",
+          "const": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subject": {
+          "type": "string"
+        },
+        "repeat": {
+          "type": "number"
+        },
+        "suites": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/EventsEvalLiveSuite"
+          }
+        },
+        "tokens": {
+          "$ref": "#/$defs/EventsEvalLiveTokens"
+        },
+        "usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "type": "number"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stopped": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "budget"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "v",
+        "at",
+        "commit",
+        "subject",
+        "repeat",
+        "suites",
+        "tokens",
+        "usd",
+        "duration_ms",
+        "models",
+        "stopped"
+      ]
+    },
+    "EventsEvalLiveSuite": {
+      "type": "object",
+      "properties": {
+        "headline": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "items": {
+          "type": "number"
+        },
+        "unsupported": {
+          "type": "number"
+        },
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "headline",
+        "items",
+        "unsupported",
+        "stopped"
+      ]
+    },
+    "EventsEvalLiveTokens": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "number"
+        },
+        "prompt_tokens": {
+          "type": "number"
+        },
+        "completion_tokens": {
+          "type": "number"
+        },
+        "cached_prompt_tokens": {
+          "type": "number"
+        },
+        "reasoning_tokens": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_prompt_tokens",
+        "reasoning_tokens"
       ]
     },
     "HostGpuPolicy": {

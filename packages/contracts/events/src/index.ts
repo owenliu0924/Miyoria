@@ -232,6 +232,17 @@ export {
   RedactedDataSchema,
 } from "./envelope.js";
 export {
+  EVAL_EVENTS,
+  EVAL_LIVE_RUN_VERSION,
+  type EvalLiveRun,
+  EvalLiveRunSchema,
+  type EvalLiveSuite,
+  EvalLiveSuiteSchema,
+  type EvalLiveTokens,
+  EvalLiveTokensSchema,
+  EvalRun,
+} from "./eval.js";
+export {
   EXTENSION_EVENTS,
   ExtensionEvent,
   GameAdapterEvent,

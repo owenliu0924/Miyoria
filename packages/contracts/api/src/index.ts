@@ -27,6 +27,7 @@ import { decisions, events, llm, modules } from "./core.js";
 import { data } from "./data.js";
 import { directives } from "./directives.js";
 import { economy, peopleEconomy } from "./economy.js";
+import { evalRoutes } from "./eval.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { self, world } from "./inner.js";
@@ -50,6 +51,7 @@ import { turns } from "./turns.js";
 import { wallet } from "./wallet.js";
 import { skills, workspace } from "./workspace.js";
 
+export type { EvalLiveRun, EvalLiveSuite, EvalLiveTokens } from "../../events/src/eval.js";
 export {
   type AffectBiases,
   AffectBiasesSchema,
@@ -302,6 +304,14 @@ export {
   type RoomItem,
   RoomItemSchema,
 } from "./economy.js";
+export {
+  type EvalLiveHistory,
+  EvalLiveHistorySchema,
+  type EvalNightly,
+  EvalNightlySchema,
+  type EvalNightlyState,
+  EvalNightlyStateSchema,
+} from "./eval.js";
 export {
   type CauseChain,
   CauseChainSchema,
@@ -837,6 +847,7 @@ export const contract = {
   wallet,
   agency,
   fortune,
+  eval: evalRoutes,
 };
 
 export type ApiContract = typeof contract;

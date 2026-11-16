@@ -13,6 +13,7 @@ import { CHAT_EVENTS } from "./chat.js";
 import { CLUSTER_EVENTS } from "./cluster.js";
 import { DIRECTIVE_EVENTS } from "./directive.js";
 import { ECONOMY_BUS_EVENTS } from "./economy-topics.js";
+import { EVAL_EVENTS } from "./eval.js";
 import { EXTENSION_EVENTS } from "./extension.js";
 import { GATE_EVENTS } from "./gate.js";
 import { HEART_EVENTS } from "./heart.js";
@@ -56,6 +57,7 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   ...PLAY_EVENTS,
   ...STAGE_EVENTS,
   ...CLUSTER_EVENTS,
+  ...EVAL_EVENTS,
 ];
 
 /** A new registry holding `BUS_EVENTS`. */

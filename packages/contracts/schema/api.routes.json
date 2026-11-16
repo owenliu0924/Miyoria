@@ -2368,6 +2368,22 @@
           }
         }
       }
+    },
+    "eval": {
+      "live": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/eval/live"
+          }
+        }
+      }
     }
   }
 }
