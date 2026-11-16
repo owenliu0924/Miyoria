@@ -3,6 +3,7 @@
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type ChatRequest, contentText } from "@miyoria/llm/llm";
 import { defineTool } from "@miyoria/llm/tools";
+import { type LogEntry, type MessageLog, MessageLogKey } from "@miyoria/store";
 import {
   type Attachment,
   type Attitude,
@@ -494,6 +495,75 @@ describe("a reply chain", () => {
     expect(textOf(rig.model.requests[0])).toContain("> (被回覆) carol: 第 2 句");
     // What was there before is as it was.
     expect(rig.entries(C1).slice(0, before.length)).toEqual(before);
+  });
+});
+
+// ---- the backfill -------------------------------------------------------------------------------
+
+describe("the backfill of a cold place", () => {
+  function messageLog(context: ContextKey, lines: [string, string, number][]): MessageLog {
+    const entries: LogEntry[] = lines.map(([who, text, ago], i) => ({
+      id: `L${i}`,
+      profile: "test-chan" as LogEntry["profile"],
+      context,
+      author: who === "her" ? { platform: "test", id: "her" } : account(who),
+      author_name: who === "her" ? "她" : who,
+      text,
+      is_self: who === "her",
+      ts: toTimestamp(Date.now() - ago),
+      turn: null,
+    }));
+    return {
+      append: async () => undefined,
+      recent: async (_p, _c, limit) => entries.slice(-limit),
+      authoredSince: async () => [],
+      purge: async () => 0,
+    };
+  }
+
+  it("takes the message log when there is no platform history", async () => {
+    const log = messageLog(DM_AMY, [
+      ["amy", "昨天的事", 60_000],
+      ["her", "我記得", 50_000],
+    ]);
+    const rig = await Rig.create({
+      provide: (sup) => sup.services.provide("app", MessageLogKey, log),
+    });
+    rig.model.push(says("嗯"));
+    rig.say(line(DM_AMY, "amy", "然後呢"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    expect(rig.entries(DM_AMY).map((e) => [e.kind, e.content, e.message_id])).toEqual([
+      ["other", "昨天的事", null],
+      ["self", "我記得", null],
+      ["other", "然後呢", expect.any(String)],
+      ["self", "嗯", "sent-1"],
+    ]);
+  });
+
+  it("fills up from the log what a short platform history leaves out, older lines first", async () => {
+    const log = messageLog(C1, [
+      ["bob", "很久以前", 600_000],
+      ["carol", "也很久", 500_000],
+      ["dan", "平台也有這句", 1_000],
+    ]);
+    const recent = { ...line(C1, "dan", "平台也有這句"), ts: toTimestamp(Date.now() - 1_000) };
+    const histories = new PlatformHistories();
+    histories.register({ platform: "test", recent: async () => [recent], fetch: async () => null });
+    const rig = await Rig.create({
+      mode: "mention-only",
+      provide: (sup) => {
+        sup.services.provide("app", MessageLogKey, log);
+        sup.services.provide("app", PlatformHistoriesKey, histories);
+      },
+    });
+    rig.say(line(C1, "amy", "嗨"));
+    await until(() => rig.entries(C1).length === 4, 3_000, "the backfill");
+    expect(rig.entries(C1).map((e) => e.content)).toEqual([
+      "很久以前",
+      "也很久",
+      "平台也有這句",
+      "嗨",
+    ]);
   });
 });
 

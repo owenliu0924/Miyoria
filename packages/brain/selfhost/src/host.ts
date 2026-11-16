@@ -5,8 +5,9 @@
 // own lines' echoes are skipped (the runner wrote them), a flagged line carries the input
 // defence's note, a reply whose parent is not in the transcript gets the quote the platform sent
 // along (`attachParent`), and the first line of a place that has no transcript yet comes after the
-// platform's earlier lines (the backfill). The agent already dropped blocked people and lines the
-// defence ignores.
+// earlier lines of the platform and of the message log (the backfill). The agent already dropped
+// blocked people and lines the defence ignores. "要她回這則" from a message's menu (`replyTo`) is
+// a line that calls her.
 //
 // When she runs. `triage` decides per line: said to her (mention, name, reply, DM) wakes her,
 // after the waits of the place's lane (`lane.ts`); anything else may earn a glance, under the
@@ -15,11 +16,14 @@
 // .task.done|failed`, `activity.done|failed` of the job the call reported) and a due timer of
 // hers (`mind.reminder` fired) wake her as `result` and `timer`.
 //
-// A run. One `SelfRunner` for the process, the text profile, the blocks of `HostPrompt`, the
-// service guard over the real services (directives, permissions, budget, Floor, moderation,
-// quiet hours), the mouth as the outlet (`MouthOutlet`), `say` to the places she knows. Her
-// delivered lines get their platform id in the transcript (`confirm`); a line the scheduler failed
-// late is marked as not heard. What a run did is published as today's turn records.
+// A run. One `SelfRunner` for the process, the text profile, the blocks of `HostPrompt` with the
+// files and images of its lines (`LookAround`), the service guard over the real services
+// (directives, permissions, budget, Floor, moderation, quiet hours), the mouth as the outlet
+// (`MouthOutlet`), `say` to the places she knows (never a DM: that is `message_dm`'s). A run
+// holds the Floor from its start to its end, as the old turn did; a glance the Floor refuses is
+// not run. Her first line answering one person quotes their line (`#replyTarget`); a line the
+// scheduler failed late is marked as not heard. What a run did is published as today's turn
+// records.
 
 import { type ContentPart, type LlmRouter, LlmRouterKey, withLlmTag } from "@miyoria/llm/llm";
 import {
@@ -29,7 +33,7 @@ import {
   transcriptTables,
 } from "@miyoria/memory/transcript";
 import { errorMessage, type Subscription, sleep } from "@miyoria/runtime/kernel";
-import { StoreKey } from "@miyoria/store";
+import { MessageLogKey, StoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   ActionSinkKey,
@@ -106,6 +110,8 @@ import { askedLine, SAY_DM } from "./texts.js";
 
 /** Lines of a place before the first one the backfill fetches at most. */
 const MAX_BACKFILL = 50;
+/** The id prefix of a line the backfill took from the message log (the old `earlier`'s). */
+const LOGGED = "log:";
 /** Jobs remembered while they run. */
 const MAX_JOBS = 256;
 /** Lines triage holds that move nothing in their place: no restart, no longer wait. */
@@ -443,36 +449,98 @@ export class SelfHost implements TextRunner {
     });
   }
 
-  /** The platform's lines before `first`, for a place she has no transcript of. */
+  /**
+   * The lines before `first`, for a place she has no transcript of (the old `startBackfill`, up
+   * to `backfillLimit`, within `history.timeout_ms`): the platform's history, and the message log
+   * for what it does not give (no history, a failed fetch, or fewer lines than the limit), older
+   * than what the platform gave.
+   */
   async #backfill(place: Place, first: IncomingMessage): Promise<void> {
     const agent = this.#agent;
     const limit = Math.min(backfillLimit(agent), MAX_BACKFILL);
-    const history = agent.ctx.services.get(PlatformHistoriesKey)?.get(place.context.platform);
-    if (limit <= 0 || !history) return;
+    if (limit <= 0) return;
+    const signal = agent.ctx.signal;
+    let read: [IncomingMessage, boolean][] = [];
     try {
-      const fetched = await timeout(agent.config.history.timeout_ms, agent.ctx.signal, (s) =>
-        history.recent(place.context, { before: first.id.id, limit }, s),
+      read = await timeout(agent.config.history.timeout_ms, signal, (s) =>
+        this.#earlier(place.context, first, limit, s),
       );
-      const entries: EntryInput[] = [];
-      for (const m of fetched) {
-        if (m.id.id === first.id.id || agent.isBlocked(m.author.account)) continue;
-        if (agent.isSelf(m.author.account)) {
-          if (m.text.trim() === "") continue;
-          entries.push({ kind: "self", content: m.text, message_id: m.id.id, at: m.ts });
-        } else {
-          entries.push(entryOfIncoming(m));
-          this.#around.recent.add(m);
-        }
-      }
-      entries.sort((a, b) => timestampMs(a.at ?? first.ts) - timestampMs(b.at ?? first.ts));
-      if (entries.length > 0) {
-        this.transcript.append(place.session, entries, { context: place.context });
-      }
     } catch (error) {
       if (!(error instanceof TimeoutError)) {
         agent.log.debug({ err: errorMessage(error) }, "no backfill for a new place");
       }
     }
+    const entries: EntryInput[] = [];
+    for (const [m, own] of read) {
+      if (m.id.id === first.id.id || agent.isBlocked(m.author.account)) continue;
+      // A line of the message log has an id of its own, never a platform message's.
+      const logged = m.id.id.startsWith(LOGGED);
+      if (own) {
+        if (m.text.trim() === "") continue;
+        entries.push({
+          kind: "self",
+          content: m.text,
+          message_id: logged ? null : m.id.id,
+          at: m.ts,
+        });
+      } else {
+        entries.push({ ...entryOfIncoming(m), ...(logged ? { message_id: null } : {}) });
+        if (!logged) this.#around.recent.add(m);
+      }
+    }
+    entries.sort((a, b) => timestampMs(a.at ?? first.ts) - timestampMs(b.at ?? first.ts));
+    if (entries.length > 0) {
+      this.transcript.append(place.session, entries, { context: place.context });
+    }
+  }
+
+  /** Earlier lines of `context`, each with whether it is hers: the platform's, then the log's. */
+  async #earlier(
+    context: ContextKey,
+    first: IncomingMessage,
+    limit: number,
+    signal: AbortSignal,
+  ): Promise<[IncomingMessage, boolean][]> {
+    const agent = this.#agent;
+    const services = agent.ctx.services;
+    const history = services.get(PlatformHistoriesKey)?.get(context.platform);
+    let fetched: IncomingMessage[] = [];
+    if (history) {
+      try {
+        fetched = await history.recent(context, { before: first.id.id, limit }, signal);
+      } catch (error) {
+        signal.throwIfAborted();
+        agent.log.debug({ err: errorMessage(error) }, "no platform history for a new place");
+      }
+    }
+    const out: [IncomingMessage, boolean][] = fetched.map((m) => [
+      m,
+      agent.isSelf(m.author.account),
+    ]);
+    const missing = limit - fetched.length;
+    const log = services.get(MessageLogKey);
+    if (missing <= 0 || !log) return out;
+    const profile = agent.persona.read((p) => p.id);
+    const oldest = Math.min(timestampMs(first.ts), ...fetched.map((m) => timestampMs(m.ts)));
+    // One more than needed: the log may already hold `first` itself.
+    const logged = await log.recent(profile, context, limit + 1);
+    signal.throwIfAborted();
+    const older = logged.filter((e) => Date.parse(e.ts) < oldest).slice(-missing);
+    return [
+      ...older.map((e): [IncomingMessage, boolean] => [
+        {
+          id: { context, id: `${LOGGED}${e.id}` },
+          author: { account: e.author, display_name: e.author_name, is_bot: false },
+          text: e.text,
+          mentions_self: false,
+          reply_to_self: false,
+          attachments: [],
+          ts: e.ts,
+        },
+        e.is_self,
+      ]),
+      ...out,
+    ];
   }
 
   // ---- triage ----------------------------------------------------------------------------------
