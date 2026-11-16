@@ -48,11 +48,11 @@ import { markRebuildStarted, markRebuilt } from "../../notes/src/switch.js";
 import { transcriptTables } from "../../transcript/src/store.js";
 import {
   embeddingConfig,
-  memoryTables,
   MemoryEngine,
   MemoryEngineKey,
   MemoryModule,
   memoryFilter,
+  memoryTables,
   PATHS,
 } from "../src/index.js";
 import {
