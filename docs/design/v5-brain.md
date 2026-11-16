@@ -258,7 +258,7 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 - `[modules.agent.mainline]`、`[modules.agent.attention]` 和 `[modules.agent.work]` 大部分的鍵沒有程式讀了,留在 schema 裡讓舊設定檔照樣載入。
 - mind 的 Plan 不再寫衝動(見下面「2026-11-16 的檢查」第 8 點),`selfstart.ts` 還在(`MindKey.unanswered` 和 Plan 的狀態讀它);Plan 做的目標和今天的計畫留著,新跑者的第 7 區讀目標(`GoalAgendaKey`)。
 - Arbiter 的 ledger 裡只算她自己起頭的部分(`book`、`raise`、每日上限、時間規則)還在:Arbiter 已經不接她自己起頭的事,這些不會再被用到,但 ledger view 的形狀面板和 mind 還在讀。
-- `SavedPromptsKey` 還提供,但新跑者不存 prompt,面板的 prompt 頁會是空的。
+- `SavedPromptsKey`:新跑者的 host 在送出請求時存(文字和語音都存,`selfhost/src/saved.ts`),面板的 prompt 頁有內容;模型名稱和工具清單不在存的格式裡。
 - `CommitmentBook`:回合裡沒有人寫新的承諾了(那是修正 8),從 log 重建的舊承諾一天後就沒了;initiative 和第 7 區還讀它。之後由段落整理從對話記下(見「段落整理上線」)。
 - `agent.initiative` 事件還在(擴充可以發):理由是 game、notice、`song_*` 以外的,Arbiter 當成 `world` 拒絕(第一步起就是這樣)。
 
@@ -279,6 +279,17 @@ Q8 不帶的每個修正,對一組題:一個容易引出原本那個毛病的情
 6. 每晚反思數「被忽略的開口」時,看每一種決定理由(`intent:` 和 `initiative:`)。
 7. `Events.AgentTool` 寫進 facts 的事件紀錄,保留期和回合結果同一級,面板的「回合」頁讀它。
 8. mind 的 Plan 沒有衝動了:提示詞、回覆格式和解析都拿掉,舊回覆裡的 `impulses` 欄位直接忽略;目標和今天的計畫照舊,存下來的舊想法(有 `intents`)仍能載入。`max_intents` 留在 schema 讓舊設定檔能讀,不再使用。
+9. 活動類的長工具(唱歌、開遊戲、進語音、開台、派對)回報的是陣列,`reportedJob` 以前只收物件,工作代號因此丟掉、做完不會叫醒她;現在兩種都收,文字和語音都有用真實形狀的測試。
+10. `@名字` 變成真的 tag:`linkMentions` 跟著舊回合被刪掉,現在在 `MouthOutlet.deliver` 對文字訊息做(`selfhost/src/mentions.ts`);語音不做,逐字稿留她寫的原樣。
+11. 審核過的高風險工具晚到的結果走通知(`notifyLate`),不再發 Arbiter 一定會拒絕的 `followup` 衝動;通知保留結果的前 2000 字。
+12. `message_dm` 經過嘴送出(審查、Floor、送達紀錄,收件人是聽眾),願望簿從送達紀錄知道她私訊問過什麼。
+13. 語音的講話也餵給 initiative 的門檻;有人進她所在的語音頻道時,`joined_voice` 留在那個語音頻道叫醒她。`came_online`、`started_game` 仍然需要設定 `home`。
+14. 唱歌等報幕:Singer 跟著報幕那個衝動的決定和回合結束,講完才放歌;被拒絕或過期就在 `[modules.sing] opening_window_ms`(6000)到時開始。ImpulseDesk 在這段時間內每 100 ms 再問一次,過了就不講。
+15. 語音讓出發言權時,丟掉排著還沒講的句子,並停掉正在播的那一句(只是要她收尾時不停)。
+16. 她的訊息超過 `max_message_chars` 時,在送出前照段落和句子切開(`selfhost/src/split.ts`),不切在 tag 或程式碼區塊中間。
+17. 沒有人呼叫的 `chat.start` / `chat.dm` 刪掉。
+
+這次檢查之後還留著的:約六十個讀了但沒有作用的設定鍵(`[modules.agent.attention]`、`[modules.agent.corrections]`、`[modules.agent.mainline]` 的大部分等)、沒有人提供的 `ProposalBoardKey` / `IntentSinkKey` / `PlaceAccessKey`、沒有人讀的 `ElsewhereKey` / `GameControlKey` / `PartyTableKey` / `SkillStoreKey` / `ImageGenKey`、依賴 `ProposalBoardKey` 的 `DailyPostDesk`、`PROFILES.reflect`。都不影響行為。
 
 ## 筆記的 embedding(2026-11-16)
 
