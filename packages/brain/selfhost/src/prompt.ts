@@ -45,6 +45,7 @@ import {
   DirectivesKey,
   dataBlock,
   GoalAgendaKey,
+  type LedgerView,
   LifeLogKey,
   MemoryRetrievalKey,
   MindKey,
@@ -255,6 +256,8 @@ export interface HostPromptOptions {
   slowReads?(input: PromptInput): SlowReads | null;
   /** Her inbox for the run of `input` (block 6, last); unset or `null`: none. */
   inbox?(input: PromptInput): string | null;
+  /** Her starts today that the Arbiter's ledger does not count (her initiative's); unset: none. */
+  startsToday?(now: number): number;
 }
 
 export class HostPrompt implements PromptSource {
@@ -725,6 +728,17 @@ export class HostPrompt implements PromptSource {
 
   // ---- block 7 ---------------------------------------------------------------------------------
 
+  /** The Arbiter's ledger with her initiative's starts of today added to its count. */
+  #ledger(context: ContextKey, now: number): LedgerView | null {
+    const view = this.#services.get(ArbiterKey)?.ledger(context) ?? null;
+    const own = this.#o.startsToday?.(now) ?? 0;
+    if (view === null || own === 0) return view;
+    return {
+      ...view,
+      limits: { ...view.limits, initiatives_today: view.limits.initiatives_today + own },
+    };
+  }
+
   async now(input: PromptInput): Promise<string | null> {
     const agent = this.#agent;
     const services = this.#services;
@@ -737,7 +751,7 @@ export class HostPrompt implements PromptSource {
       now: input.now,
       affect: services.get(AffectStateKey) ?? null,
       activity: services.get(ActivityManagerKey)?.snapshot() ?? null,
-      ledger: services.get(ArbiterKey)?.ledger(context) ?? null,
+      ledger: this.#ledger(context, input.now),
       goals: services.get(GoalAgendaKey)?.goals() ?? null,
       present: present.map((p) => p.handle),
       mood: agent.mood(),

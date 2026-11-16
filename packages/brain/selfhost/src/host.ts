@@ -212,6 +212,7 @@ export class SelfHost implements TextRunner {
       sessionOf,
       attachments: (input) => this.#attachments(input.turn),
       inbox: (input) => this.initiative.inboxBlock(input),
+      startsToday: (now) => this.initiative.gates.startsToday(now),
       slowReads: (input) => this.voice.slowReads(input),
     });
     this.voice = new VoiceHost(agent, {
