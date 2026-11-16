@@ -216,7 +216,7 @@ function asEntry(session: string, seq: number, input: EntryInput): TranscriptEnt
 function reportedJob(data: JsonValue): string | null {
   if (Array.isArray(data)) {
     for (const item of data) {
-      const job = isJsonObject(item) && item["task"] !== undefined ? reportedJob(item) : null;
+      const job = isJsonObject(item) && item.task !== undefined ? reportedJob(item) : null;
       if (job !== null) return job;
     }
     return null;
