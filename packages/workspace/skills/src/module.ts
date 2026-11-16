@@ -1,4 +1,5 @@
 import { actuatorsFor } from "@miyoria/gate/actions";
+import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
   HEALTHY,
@@ -8,7 +9,7 @@ import {
 } from "@miyoria/runtime/kernel";
 import { SkillIndexKey, SkillShelfKey, serviceKey } from "@miyoria/types";
 import { SandboxKey } from "../../sandbox/src/index.js";
-import { skillCapabilities } from "./capabilities.js";
+import { SKILL_TOOL, skillCapabilities, skillTool } from "./capabilities.js";
 import { SkillsConfigSchema } from "./config.js";
 import { SkillStore } from "./store.js";
 
@@ -17,7 +18,8 @@ export const SkillStoreKey = serviceKey<SkillStore>("SkillStore");
 
 /**
  * Module `skills`: provides `SkillStoreKey` and registers `skill.list`, `skill.read`,
- * `skill.write` and `skill.delete` in the app's actuator registry. Skills live in the sandbox's
+ * `skill.write` and `skill.delete` in the app's actuator registry, and the tool `skill` (for the
+ * new turn runner) in its tool registry. Skills live in the sandbox's
  * persistent workspace, so without module `sandbox` (opt-in) and its workspace the module idles:
  * no service, no tools. `/admin autonomy status` shows how many skills she has.
  */
@@ -51,6 +53,14 @@ export class SkillsModule implements Module {
       this.#unregister.push(
         registry.register(capability as Parameters<typeof registry.register>[0]),
       );
+    }
+    const tools = ctx.services.get(ToolRegistryKey);
+    if (tools) {
+      const tool = skillTool(store, tools);
+      tools.register(tool);
+      this.#unregister.push(() => {
+        if (tools.entry(SKILL_TOOL)?.tool === tool) tools.unregister(SKILL_TOOL);
+      });
     }
     this.#unregister.push(
       registry.addStatus(SkillsModule.ID, async () => {

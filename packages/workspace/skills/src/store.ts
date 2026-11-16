@@ -1,5 +1,6 @@
 // Her skills on top of her workspace. A skill is a directory `skills/<name>/` with `SKILL.md`
-// (`description: <one line>`, a blank line, then the how-to) and optional scripts beside it
+// (`description: <one line>`, optionally `tools: <names, comma-separated>` for the tools that
+// opening it brings along, a blank line, then the how-to) and optional scripts beside it
 // (`.py` / `.mjs`, saved with the reviewed `workspace_save_script`, run with `workspace_run`).
 //
 // Everything in a skill is data: she may have written it from what someone told her, a
@@ -8,6 +9,7 @@
 // limits that refuse instead of cutting) and again when it is read, and what is shown to the
 // model is inside a data block, never in her system text.
 
+import { isValidToolName } from "@miyoria/llm/tools";
 import { dataBlock, escapeData } from "@miyoria/types";
 import { checkName, type WorkspaceApi } from "../../sandbox/src/index.js";
 import type { SkillsConfig } from "./config.js";
@@ -16,6 +18,9 @@ export const SKILLS_DIR = "skills";
 export const SKILL_FILE = "SKILL.md";
 
 const DESCRIPTION_PREFIX = "description:";
+const TOOLS_PREFIX = "tools:";
+/** Tools one skill may bring along. */
+export const MAX_SKILL_TOOLS = 16;
 /** Shown when a file has no (usable) description line, e.g. a program wrote it. */
 const NO_DESCRIPTION = "(沒有說明)";
 
@@ -43,6 +48,8 @@ export interface SkillFile {
 }
 
 export interface SkillPage extends SkillSummary {
+  /** The names on its `tools:` line, as written: some may be no registered tool. */
+  tools: string[];
   /** One page of the body. */
   text: string;
   offset: number;
@@ -81,8 +88,35 @@ function dirOf(name: string): string {
   return `${SKILLS_DIR}/${name}`;
 }
 
-/** Splits `SKILL.md`: the description line and the body (cleaned again, whoever wrote it). */
-function parse(raw: string, limits: SkillsConfig): { description: string; body: string } {
+/** The names on a `tools:` line: split at commas and spaces, tool names only, each once. */
+export function toolNames(line: string): string[] {
+  const names = line.split(/[\s,、,]+/u).filter(isValidToolName);
+  return [...new Set(names)].slice(0, MAX_SKILL_TOOLS);
+}
+
+/**
+ * Takes a leading `tools:` line off a text: how a skill says which tools it brings when the body
+ * is all its writer can pass.
+ */
+export function splitTools(body: string): { tools: string[]; body: string } {
+  const text = body.replace(/\r\n?/g, "\n").replace(/^\s+/, "");
+  if (!text.startsWith(TOOLS_PREFIX)) return { tools: [], body };
+  const end = text.indexOf("\n");
+  const line = end === -1 ? text : text.slice(0, end);
+  return {
+    tools: toolNames(line.slice(TOOLS_PREFIX.length)),
+    body: end === -1 ? "" : text.slice(end + 1),
+  };
+}
+
+/**
+ * Splits `SKILL.md`: the description line, the tools line when one comes right after it, and the
+ * body (cleaned again, whoever wrote it).
+ */
+function parse(
+  raw: string,
+  limits: SkillsConfig,
+): { description: string; tools: string[]; body: string } {
   const text = raw.replace(/\r\n?/g, "\n");
   if (text.startsWith(DESCRIPTION_PREFIX)) {
     const end = text.indexOf("\n");
@@ -90,12 +124,17 @@ function parse(raw: string, limits: SkillsConfig): { description: string; body: 
     const description = [...oneLine(line.slice(DESCRIPTION_PREFIX.length))]
       .slice(0, limits.max_description_chars)
       .join("");
+    const rest = end === -1 ? "" : text.slice(end + 1);
+    const { tools, body } = rest.startsWith(TOOLS_PREFIX)
+      ? splitTools(rest)
+      : { tools: [], body: rest };
     return {
       description: description === "" ? NO_DESCRIPTION : description,
-      body: cleanBody(end === -1 ? "" : text.slice(end + 1)),
+      tools,
+      body: cleanBody(body),
     };
   }
-  return { description: NO_DESCRIPTION, body: cleanBody(text) };
+  return { description: NO_DESCRIPTION, tools: [], body: cleanBody(text) };
 }
 
 export class SkillStore {
@@ -120,18 +159,25 @@ export class SkillStore {
     return { names: [...names].sort(), truncated };
   }
 
-  async #load(name: string): Promise<{ description: string; body: string; bodyCut: boolean }> {
+  async #load(
+    name: string,
+  ): Promise<{ description: string; tools: string[]; body: string; bodyCut: boolean }> {
     let raw: string;
     try {
       const read = await this.workspace.read(`${dirOf(name)}/${SKILL_FILE}`, {
         // The file may be longer than a skill may be (a program wrote it): cut, say so.
-        maxChars: this.limits.max_body_chars + this.limits.max_description_chars + 64,
+        maxChars:
+          this.limits.max_body_chars +
+          this.limits.max_description_chars +
+          MAX_SKILL_TOOLS * 66 +
+          64,
       });
       raw = read.text;
       const parsed = parse(raw, this.limits);
       const cut = chars(parsed.body) > this.limits.max_body_chars || read.next_offset !== null;
       return {
         description: parsed.description,
+        tools: parsed.tools,
         body: [...parsed.body].slice(0, this.limits.max_body_chars).join(""),
         bodyCut: cut,
       };
@@ -160,7 +206,7 @@ export class SkillStore {
   /** One page of a skill's body, with the files beside it. */
   async read(name: string, offset = 0): Promise<SkillPage> {
     skillName(name);
-    const { description, body, bodyCut } = await this.#load(name);
+    const { description, tools, body, bodyCut } = await this.#load(name);
     const all = [...body];
     const start = Math.max(0, Math.floor(offset));
     const page = all.slice(start, start + this.limits.read_chars);
@@ -168,6 +214,7 @@ export class SkillStore {
     return {
       name,
       description,
+      tools,
       text: page.join(""),
       offset: start,
       next_offset: end < all.length ? end : null,
@@ -194,8 +241,14 @@ export class SkillStore {
   /**
    * Creates or replaces a skill. The description is one line and the body is neutralised; a
    * text over the limits is refused (she shortens it) rather than cut. Scripts are not touched.
+   * `tools` become the `tools:` line; what is no tool name is left out.
    */
-  async write(name: string, description: string, body: string): Promise<SkillSummary> {
+  async write(
+    name: string,
+    description: string,
+    body: string,
+    tools: readonly string[] = [],
+  ): Promise<SkillSummary> {
     skillName(name);
     const line = oneLine(description);
     if (line === "") throw new SkillError("invalid", "要有一行說明");
@@ -214,10 +267,12 @@ export class SkillStore {
     if (!names.includes(name) && names.length >= this.limits.max_skills) {
       throw new SkillError("limit", `最多 ${this.limits.max_skills} 個技能,先刪掉用不到的`);
     }
+    const brought = toolNames(tools.join(","));
+    const header = brought.length === 0 ? "" : `${TOOLS_PREFIX} ${brought.join(", ")}\n`;
     try {
       await this.workspace.write(
         `${dirOf(name)}/${SKILL_FILE}`,
-        `${DESCRIPTION_PREFIX} ${line}\n\n${text}\n`,
+        `${DESCRIPTION_PREFIX} ${line}\n${header}\n${text}\n`,
       );
     } catch (error) {
       throw new SkillError("limit", `存不下:${(error as Error).message}`);
