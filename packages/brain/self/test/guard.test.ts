@@ -110,6 +110,24 @@ describe("the service guard", () => {
     expect(floorKind({ kind: "timer", note: "x" })).toBe("wish");
   });
 
+  it("a line in another place claims that place's Floor as a start of hers", async () => {
+    const asked: [string, ContextKey][] = [];
+    const floor = {
+      refuses: (kind: string, place: ContextKey) => {
+        asked.push([kind, place]);
+        return null;
+      },
+    };
+    const g = serviceGuard({ services: services([[FloorKey, floor]]) });
+    const elsewhere: ContextKey = { ...CTX, channel: "elsewhere" };
+    expect(await g.checkLine(elsewhere, "嗨", ctx())).toEqual(ALLOW);
+    expect(await g.checkLine(elsewhere, "嗨", ctx({ kind: "glance", lines: 2 }))).toEqual(ALLOW);
+    expect(asked).toEqual([
+      ["notable", elsewhere],
+      ["wish", elsewhere],
+    ]);
+  });
+
   it("a line the output review would change is refused, not rewritten", async () => {
     const g = serviceGuard({ services: services([]) });
     expect(await g.checkLine(CTX, "@everyone 來看", ctx())).toEqual(

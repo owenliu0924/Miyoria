@@ -10,7 +10,8 @@
 // (`paceMs`, today's `#pace`), with the typing indicator shown.
 //
 // Before a line goes, the checks the old path made on her own starts (`repeat.ts`): a repeat of
-// what she said there lately, a wish that is done.
+// what she said there lately, a wish that is done. A line in another place (`say`) holds and
+// counts in that place's Floor under a turn of its own, as a start of hers there.
 
 import { sleep } from "@miyoria/runtime/kernel";
 import {
@@ -22,6 +23,7 @@ import {
   type Handle,
   type MessageRef,
   newAction,
+  newId,
   textLane,
 } from "@miyoria/types";
 import { type Agent, paceMs } from "../../agent/src/index.js";
@@ -159,7 +161,26 @@ export class MouthOutlet implements Outlet {
       const refused = await lineRefusal(agent, { ...line, kind, people }, signal);
       if (refused !== null) return { status: "blocked", reason: refused };
     }
-    return await this.#say(line, line.turn, signal);
+    // A line in another place claims and counts in that place's Floor, under a turn of its own:
+    // the Floor counts a line in the place its turn holds.
+    const floor = !line.focus && kind !== null ? agent.mainline.floor() : null;
+    const turn = floor === null || kind === null ? line.turn : newId();
+    if (floor !== null && kind !== null) {
+      agent.mainline.holdsFloor(turn, true);
+      floor.hold(turn, line.place, kind);
+    }
+    try {
+      return await this.#say(line, turn, signal);
+    } finally {
+      if (turn !== line.turn) {
+        if (signal.aborted) {
+          void agent.ctx.services.get(ActionSinkKey)?.cancelTurn(turn);
+          agent.mainline.lines.cancelUnstarted(turn, "the run was cut");
+        }
+        agent.mainline.holdsFloor(turn, false);
+        floor?.turnEnded(turn);
+      }
+    }
   }
 
   /** `line` to the mouth under `turn`, and how it left the scheduler. */

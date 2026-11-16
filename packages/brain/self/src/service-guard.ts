@@ -15,7 +15,8 @@
 //
 // A line:
 //   1. the emergency stop and the quiet hours, for what she starts herself;
-//   2. the Floor's caps (lines per window, the unanswered cap, the waits), by what woke her;
+//   2. the Floor's caps (lines per window, the unanswered cap, the waits), by what woke her; a line
+//      `say` takes to another place claims that place's Floor as a start of hers (`sayKind`);
 //   3. the output review (`safeOutgoing`): a line it would replace or change is refused instead.
 //
 // What a tool brought back is shown to the input defence, which may put a warning in front.
@@ -25,6 +26,7 @@ import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   AuthorizerKey,
   type ContextKey,
+  contextKeyEquals,
   DirectivesKey,
   type FloorClaimKind,
   FloorKey,
@@ -87,10 +89,14 @@ export function serviceGuard(options: ServiceGuardOptions): Guard {
   const quiet = options.quiet ?? null;
   const paused = (): boolean => services.get(ActuatorRegistryKey)?.paused === true;
 
-  /** The caps on her speaking in `place`, without the output review. */
+  /**
+   * The caps on her speaking in `place`, without the output review: the pause and the quiet hours
+   * by what woke her, the Floor of `place` by what the line claims there.
+   */
   const speaking = (place: ContextKey, ctx: GuardContext): GuardVerdict => {
-    const kind = floorKind(ctx.wake);
-    if (spendsBudget(kind)) {
+    const woke = floorKind(ctx.wake);
+    const kind = contextKeyEquals(place, ctx.session.context) ? woke : sayKind(ctx.wake);
+    if (spendsBudget(woke)) {
       if (paused()) return refuse("pause", LINE_REFUSALS.paused);
       const until = quiet === null ? null : quietEndsAt(ctx.now, quiet);
       if (until !== null && quiet !== null) {
