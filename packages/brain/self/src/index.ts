@@ -1,0 +1,75 @@
+// @miyoria/brain/self: the turn runner of phase 3 (docs/design/v5-brain.md). One run: what woke
+// her, a profile, and ports for everything outside (transcript, tools, model, prompt blocks,
+// guard, outlet). Not wired into the running system yet.
+
+export { composeGuards, permissiveGuard } from "./guard.js";
+export {
+  type LimitName,
+  PROFILE_NAMES,
+  PROFILES,
+  type ProfileName,
+  type RunLimits,
+  type RunProfile,
+  VOICE_TOOLS,
+  withLimits,
+} from "./profiles.js";
+export {
+  gatherBlocks,
+  type PromptBlocks,
+  type RunMessages,
+  runMessages,
+  serialiseMessages,
+  serialiseTools,
+  toolSpecs,
+  wakeLine,
+} from "./prompt.js";
+export * as rules from "./rules.js";
+export { DEFAULT_COMPACTION, type RunnerOptions, SelfRunner, STATE_VERSION } from "./run.js";
+export { SAY, type SayDeps, type Spoken, sayTool } from "./say.js";
+export { type ScreenedLine, StepText } from "./screens.js";
+export { floorKind, type ServiceGuardOptions, serviceGuard } from "./service-guard.js";
+export { type HourSpend, SpendLedger, stepCost } from "./spend.js";
+export { modelSummarise, summaryText } from "./summarise.js";
+export {
+  addressedReason,
+  DEFAULT_TRIAGE,
+  GLANCES_PER_HOUR,
+  HOUR_MS,
+  noteGlance,
+  type TriageConfig,
+  type TriageDecision,
+  type TriageEvent,
+  type TriageState,
+  triage,
+} from "./triage.js";
+export {
+  type AddressedReason,
+  ALLOW,
+  type CallRecord,
+  type Delivery,
+  type Guard,
+  type GuardCall,
+  type GuardContext,
+  type GuardVerdict,
+  type ModelStream,
+  type OutgoingLine,
+  type Outlet,
+  type PromptInput,
+  type PromptSource,
+  type RunEvent,
+  type RunInput,
+  type RunModel,
+  type RunOutcome,
+  type RunPorts,
+  type RunResult,
+  type RunSession,
+  type RunTools,
+  type RunUsage,
+  refuse,
+  type ScreenKind,
+  someoneWaits,
+  type Wake,
+  type WakeAuthor,
+  type WakeKind,
+  wakeAuthor,
+} from "./types.js";

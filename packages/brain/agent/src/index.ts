@@ -127,6 +127,7 @@ export {
 } from "./handle.js";
 export { awaitBackfill, backfillLimit, replyParents, startBackfill } from "./history.js";
 export { AgentIntents } from "./intents.js";
+export { isSelfTalk, ReplyScreen } from "./leak.js";
 export {
   CEILINGS,
   type Ceiling,
@@ -136,7 +137,7 @@ export {
   modeDescription,
   modeLabel,
 } from "./levels.js";
-export { ACTING_ALONE, MainLine, MainTurn } from "./mainline/main.js";
+export { ACTING_ALONE, FALLBACK_LINES, MainLine, MainTurn } from "./mainline/main.js";
 export { COMMIT_SPEC, STEER_SPEC, slimTool } from "./mainline/output.js";
 export {
   contextData,
@@ -229,6 +230,7 @@ export {
   type TurnPlan,
   truncate,
 } from "./turn.js";
+export { TimeoutError, timeout } from "./util.js";
 export {
   allowedUrl,
   type FetchLike,
