@@ -79,7 +79,7 @@ describe("評測 / 真模型評測", () => {
 
     const nightly = within(s).getByLabelText("每晚排程");
     expect(nightly).toHaveTextContent("04:30");
-    expect(squeezed(nightly)).toContain(fmtDateTime("2026-11-17T20:30:00.000Z").replace(/s/g, ""));
+    expect(squeezed(nightly)).toContain(fmtDateTime("2026-11-17T20:30:00.000Z").replace(/\s/g, ""));
   });
 
   it("shows many runs: the latest value of each measure, the ten newest runs, and what is unknown", async () => {
@@ -104,7 +104,7 @@ describe("評測 / 真模型評測", () => {
     expect(first[2]).toHaveTextContent("current ×3");
     expect(first[3]).toHaveTextContent("—");
     expect(first[4]).toHaveTextContent("42 秒");
-    expect(squeezed(within(rows[9] as HTMLElement).getAllByRole("cell")[0])).toContain(fmtDateTime(runs[4]?.at ?? "").replace(/s/g, ""));
+    expect(squeezed(within(rows[9] as HTMLElement).getAllByRole("cell")[0])).toContain(fmtDateTime(runs[4]?.at ?? "").replace(/\s/g, ""));
     expect(within(s).getByLabelText("每晚排程")).toHaveTextContent("正在跑");
   });
 
