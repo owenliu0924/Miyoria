@@ -298,7 +298,9 @@ export class MemoryModule implements Module {
         ctx.log.warn({ error: errorMessage(error) }, "cannot check today's dates");
       });
     };
-    // Once the notes are the source, the segment pass writes her memory and consolidation stops.
+    if (live !== null && source.switched && !live.running) warnSegmentOff(ctx);
+    // Once the notes are the source and the segment pass runs, it writes her memory and
+    // consolidation stops. With the pass off, consolidation goes on: nothing else writes.
     ctx.spawn("consolidate", (signal) =>
       consolidationLoop(
         ctx,
@@ -308,7 +310,7 @@ export class MemoryModule implements Module {
         signal,
         () => recent.log.invalidate(),
         seen,
-        () => source.switched,
+        () => live?.running ?? false,
       ),
     );
     const segments = live;
@@ -622,6 +624,12 @@ export function liveSegmentConfig(config: MemoryConfig): LiveSegmentConfig {
   };
 }
 
+function warnSegmentOff(ctx: ModuleContext): void {
+  ctx.log.warn(
+    "the notes are her memory's source but [modules.memory.segment] is disabled: the segment pass does not write her memory, so the old consolidation keeps running",
+  );
+}
+
 /**
  * Reads the rebuild's state and passes the segments that have ended, every `tick_secs`. A tick
  * that throws is logged; the next one tries again.
@@ -643,7 +651,9 @@ async function segmentLoop(
       const was = source.switched;
       await source.refresh();
       if (!was && source.switched) {
-        ctx.log.info("the notes are her memory's source now: the segment pass runs live");
+        if (live.running) {
+          ctx.log.info("the notes are her memory's source now: the segment pass runs live");
+        } else warnSegmentOff(ctx);
       }
       await live.tick(signal);
     } catch (error) {
