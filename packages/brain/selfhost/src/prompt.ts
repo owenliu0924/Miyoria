@@ -181,6 +181,8 @@ export interface HostPromptOptions {
   sessionOf(context: ContextKey): string;
   /** The files and images of the run's lines (block 6); unset: none. */
   attachments?(input: PromptInput): Promise<ContentPart[]>;
+  /** Her inbox for the run of `input` (block 6, last); unset or `null`: none. */
+  inbox?(input: PromptInput): string | null;
 }
 
 export class HostPrompt implements PromptSource {
@@ -461,6 +463,8 @@ export class HostPrompt implements PromptSource {
     if (noticed !== "") blocks.push(dataBlock("notices", NOTICES_TITLE, noticed));
     const flagged = flaggedBody(tail.entries.slice(-FLAGGED_LINES));
     if (flagged !== "") blocks.push(dataBlock("flagged", FLAGGED_TITLE, flagged));
+    const inbox = this.#o.inbox?.(input) ?? null;
+    if (inbox !== null) blocks.push(inbox);
     return blocks.length === 0 ? null : blocks.join("\n\n");
   }
 

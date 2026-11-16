@@ -17,14 +17,14 @@ import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
 import { ArbiterConfigSchema, ArbiterModule, type LocalTime } from "@miyoria/brain/arbiter";
 import { DirectiveModule } from "@miyoria/brain/directive";
-import { selfHost } from "@miyoria/brain/selfhost";
+import { initiativeFromConfig, ScheduleRemindersKey, selfHost } from "@miyoria/brain/selfhost";
 import { ClusterModule } from "@miyoria/cluster";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
 import { ActionsModule } from "@miyoria/gate/actions";
 import { ModerationModule } from "@miyoria/gate/moderation";
-import { MindModule } from "@miyoria/heart/mind";
+import { MindModule, parseAt } from "@miyoria/heart/mind";
 import { SelfModule } from "@miyoria/heart/self";
 import { SocialModule } from "@miyoria/heart/social";
 import { LiveModule } from "@miyoria/live";
@@ -141,6 +141,12 @@ export function arbiterClock(config: Config): LocalTime | null {
   return parsed.success ? parsed.data : null;
 }
 
+/** `[modules.agent] runner = "self"`: her own starts are the new runner's initiative too. */
+export function runsSelf(config: Config): boolean {
+  const agent = config.module(AgentModule.ID).config;
+  return isJsonObject(agent) && agent.runner === "self";
+}
+
 async function coreModules({
   config,
   profile,
@@ -165,7 +171,12 @@ async function coreModules({
     new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),
     new SchedulerModule(),
     // Text conversations go to the new turn runner only with `[modules.agent] runner = "self"`.
-    new AgentModule(profile).withTextRunner(selfHost({ quiet: arbiterClock(config) })),
+    new AgentModule(profile).withTextRunner(
+      selfHost({
+        quiet: arbiterClock(config),
+        initiative: { settings: initiativeFromConfig(config), parseAt },
+      }),
+    ),
     new CommandsModule({ owners: authOwners(config) }),
     new AuthModule(),
     new ActionsModule(profile.displayName),
@@ -181,11 +192,14 @@ async function coreModules({
       baseline: profile.manifest.mood,
     }),
     new MemoryModule(profileId, config.get("memory.embedding", EmbeddingConfigSchema)),
-    new ArbiterModule(profileId),
+    new ArbiterModule(profileId, { selfStarts: !runsSelf(config) }),
     new MindModule(profileId, {
       name: profile.displayName,
       persona: (services) =>
         services.get(PersonaHandleKey)?.corePrompt() ?? profile.personaPrompt(),
+      ...(runsSelf(config)
+        ? { selfRunner: { reminders: (services) => services.get(ScheduleRemindersKey) ?? null } }
+        : {}),
     }),
     new KnowledgeModule(profileId),
     new ConversationModule(profileId),

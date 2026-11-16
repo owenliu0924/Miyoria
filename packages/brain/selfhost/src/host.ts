@@ -12,9 +12,10 @@
 // When she runs. `triage` decides per line: said to her (mention, name, reply, DM) wakes her,
 // after the waits of the place's lane (`lane.ts`); anything else may earn a glance, under the
 // place's level (`GLANCES_PER_HOUR`), a cap for the day and the panel's switch that pauses her
-// own initiative (the Arbiter's `paused`). A long tool she started that comes back (`<owner>
-// .task.done|failed`, `activity.done|failed` of the job the call reported) and a due timer of
-// hers (`mind.reminder` fired) wake her as `result` and `timer`.
+// own initiative (the actions gate's `paused`). A long tool she started that comes back (`<owner>
+// .task.done|failed`, `activity.done|failed` of the job the call reported) wakes her as `result`.
+// What wakes her on her own (a due schedule, a salient world event, her inbox, someone she
+// misses, her morning) is her initiative's (`initiative.ts`): an inbox, code gates, then a wake.
 //
 // A run. One `SelfRunner` for the process, the text profile, the blocks of `HostPrompt` with the
 // files and images of its lines (`LookAround`), the service guard over the real services
@@ -37,7 +38,6 @@ import { MessageLogKey, StoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   ActionSinkKey,
-  ArbiterKey,
   type ContextKey,
   contextKeyEquals,
   contextKeyString,
@@ -81,7 +81,6 @@ import type { LocalTime } from "../../arbiter/src/index.js";
 import {
   addressedReason,
   composeGuards,
-  DEFAULT_TRIAGE,
   floorKind,
   noteGlance,
   type OutgoingLine,
@@ -102,6 +101,7 @@ import {
   wakeAuthor,
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
+import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
 import { Lane, type LaneHost, type LaneRun } from "./lane.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { resolvePlace } from "./places.js";
@@ -120,12 +120,14 @@ const INERT: ReadonlySet<string> = new Set(["own", "bot", "flagged", "muted"]);
 export interface SelfHostOptions {
   /** The Arbiter's clock (`[modules.arbiter]`), for the quiet hours; `null`: none. */
   quiet?: LocalTime | null;
-  /** Glances a day over all places. Default `DEFAULT_TRIAGE.perDay`. */
+  /** Glances a day over all places. Default `[modules.agent.initiative] glances_per_day`. */
   glancesPerDay?: number;
   /** The runner's own options (tests). */
   runner?: RunnerOptions;
   /** The transcripts; default: the store's (`StoreKey`, `transcriptTables`). */
   transcript?: TranscriptStore;
+  /** Her own initiative: its numbers, `remind_me`'s time parser, its tables. */
+  initiative?: InitiativeOptions;
 }
 
 /** The factory Core installs on the agent module (`AgentModule.withTextRunner`). */
@@ -169,6 +171,9 @@ export class SelfHost implements TextRunner {
   readonly transcript: TranscriptStore;
   readonly runner: SelfRunner;
   readonly prompt: HostPrompt;
+  /** Her inbox, her schedules and what wakes her on her own (`initiative.ts`). */
+  readonly initiative: Initiative;
+  readonly #stopInitiative: () => void;
   readonly #settlements = new Settlements();
   readonly #outlet: MouthOutlet;
   readonly #around: LookAround;
@@ -198,6 +203,7 @@ export class SelfHost implements TextRunner {
       transcript,
       sessionOf,
       attachments: (input) => this.#attachments(input.turn),
+      inbox: (input) => this.initiative.inboxBlock(input),
     });
     this.#outlet = new MouthOutlet(
       agent,
@@ -249,6 +255,32 @@ export class SelfHost implements TextRunner {
         sayIn: this.runner.sayIn,
       }),
     );
+    const started = startInitiative(
+      agent,
+      {
+        transcript,
+        quiet: options.quiet ?? null,
+        sessionOf,
+        wake: (context, wake) => this.#place(context).lane.push({ type: "wake", wake }),
+        places: () => [...this.#places.values()].map((p) => p.context),
+        resolve: async (name, from) =>
+          resolvePlace(
+            {
+              transcript,
+              live: () => [...this.#places.values()].map((p) => p.context),
+              sessionOf,
+              describe: (context) => this.#describe(context),
+            },
+            name,
+            from,
+          ),
+        describe: (context) => this.#describe(context),
+        signal: this.#stop.signal,
+      },
+      options.initiative ?? {},
+    );
+    this.initiative = started.initiative;
+    this.#stopInitiative = started.stop;
     // Every topic: task events come from any owner (`<owner>.task.done`).
     const sub = agent.ctx.subscribe("*");
     this.#subscription = sub;
@@ -298,6 +330,7 @@ export class SelfHost implements TextRunner {
     this.#subscription?.close();
     for (const place of this.#places.values()) place.lane.close();
     this.#places.clear();
+    this.#stopInitiative();
     this.#agent.tools.unregister("say");
   }
 
@@ -424,6 +457,8 @@ export class SelfHost implements TextRunner {
       { context: contextKeyString(context), message: msg.id.id, triage: describe(decision) },
       "text line triaged",
     );
+    // A person spoke there: her waiting starts there may count as answered.
+    if (!marks.bot) this.initiative.line(context, said);
     // The place's lane now: an idle one may have ended while the line was taken in.
     this.#place(context).lane.push({
       type: "line",
@@ -554,11 +589,11 @@ export class SelfHost implements TextRunner {
   }
 
   #triageState(context: ContextKey): TriageState {
-    const paused = this.#agent.ctx.services.get(ArbiterKey)?.ledger(context).limits.paused;
     return {
       config: {
-        glances: paused !== true,
-        perDay: this.#o.glancesPerDay ?? DEFAULT_TRIAGE.perDay,
+        // The panel's switch for what she starts herself, the same as for her other starts.
+        glances: !this.initiative.paused(),
+        perDay: this.#o.glancesPerDay ?? this.initiative.glancesPerDay,
       },
       level: () => this.#agent.handle.channelMode(context),
       glances: this.#glances,
@@ -700,6 +735,7 @@ export class SelfHost implements TextRunner {
       );
       agentTurns.inc({ decision: "ignored" });
       this.#publish(state, null, null, { type: "silence" });
+      this.initiative.runEnded(run.wake, turn, context, null, false);
       return;
     }
     floor?.hold(turn, context, kind);
@@ -707,7 +743,16 @@ export class SelfHost implements TextRunner {
     this.#turns.set(turn, state);
     agent.ctx.publish(
       Events.AgentDecision,
-      { turn, context, respond: true, score: 0, reasons: decisionReasons(run.wake) },
+      {
+        turn,
+        context,
+        respond: true,
+        score: 0,
+        reasons: [
+          ...decisionReasons(run.wake),
+          ...this.initiative.runStarted(run.wake, turn, context),
+        ],
+      },
       { turn },
     );
     agentTurns.inc({ decision: "responded" });
@@ -741,6 +786,8 @@ export class SelfHost implements TextRunner {
     }
     if (result?.compacted) this.prompt.forget(place.session);
     this.#publish(state, result, error);
+    const outcome = result?.outcome ?? (error === null ? null : "failed");
+    this.initiative.runEnded(run.wake, turn, context, outcome, state.lines > 0);
   }
 
   /** The files and images of the lines of the run of `turn` (block 6), looked at once. */
@@ -950,14 +997,9 @@ export class SelfHost implements TextRunner {
       this.#ended(env.data.task, ok, env.data.detail ?? "");
       return;
     }
-    if (is(Events.MindReminder, env)) {
-      const { state, reminder } = env.data;
-      const context = reminder.context;
-      if (state !== "fired" || context === null || context.kind === "voice") return;
-      this.#place(context).lane.push({
-        type: "wake",
-        wake: { kind: "timer", note: reminder.what },
-      });
+    // A due timer and a salient world event: her inbox, then her initiative's gates.
+    if (is(Events.MindReminder, env) || is(Events.WorldSalient, env)) {
+      this.initiative.event(env);
       return;
     }
     if (is(Events.AgentMessageExcluded, env)) {
@@ -976,6 +1018,7 @@ export class SelfHost implements TextRunner {
     const job = this.#jobs.get(task);
     if (job === undefined) return;
     this.#jobs.delete(task);
+    this.initiative.result(job.context, task, ok, detail);
     this.#place(job.context).lane.push({
       type: "wake",
       wake: { kind: "result", tool: job.tool, job: task, ok, text: detail, from: job.from },

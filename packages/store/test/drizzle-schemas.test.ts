@@ -88,6 +88,7 @@ it("covers identity, config, the artifact store and the plugins that own their t
     "directive",
     "economy",
     "identity",
+    "initiative",
     "memory",
     "notes",
     "transcript",
