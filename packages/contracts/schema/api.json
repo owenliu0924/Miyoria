@@ -6937,6 +6937,400 @@
         "position"
       ]
     },
+    "ApiNoteAuthor": {
+      "type": "string",
+      "enum": [
+        "segment",
+        "reflect",
+        "tool",
+        "import",
+        "panel",
+        "system"
+      ]
+    },
+    "ApiNoteChange": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "add",
+            "outdate",
+            "restore",
+            "redact"
+          ]
+        },
+        "line_id": {
+          "type": "string"
+        },
+        "section": {
+          "type": "string"
+        },
+        "section_label": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "line_id",
+        "section",
+        "section_label",
+        "text"
+      ]
+    },
+    "ApiNoteDocumentEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiNoteKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "short_id",
+        "subject",
+        "kind",
+        "label",
+        "lines",
+        "version",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "ApiNoteDocumentView": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/ApiNoteDocumentEntry"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteSection"
+          }
+        },
+        "outdated": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "document",
+        "sections",
+        "outdated"
+      ]
+    },
+    "ApiNoteEvidence": {
+      "type": "object",
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "redacted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "quote",
+        "person_id",
+        "person_name",
+        "at",
+        "redacted"
+      ]
+    },
+    "ApiNoteHistory": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/ApiNoteDocumentEntry"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteVersion"
+          }
+        }
+      },
+      "required": [
+        "document",
+        "versions"
+      ]
+    },
+    "ApiNoteKind": {
+      "type": "string",
+      "enum": [
+        "person",
+        "place",
+        "topic",
+        "self"
+      ]
+    },
+    "ApiNoteKindCount": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ApiNoteKind"
+        },
+        "documents": {
+          "type": "number"
+        },
+        "lines": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "documents",
+        "lines"
+      ]
+    },
+    "ApiNoteLine": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ApiNoteProvenance"
+        },
+        "told_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "told_by_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "public",
+                "self",
+                "space",
+                "room",
+                "dm",
+                "person"
+              ]
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "label"
+          ]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "author": {
+          "$ref": "#/$defs/ApiNoteAuthor"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteEvidence"
+          }
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "outdated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outdated_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "short_id",
+        "text",
+        "provenance",
+        "told_by",
+        "told_by_name",
+        "scope",
+        "confidence",
+        "author",
+        "evidence",
+        "created_at",
+        "updated_at",
+        "outdated_at",
+        "outdated_reason"
+      ]
+    },
+    "ApiNoteProvenance": {
+      "type": "string",
+      "enum": [
+        "told_by_subject",
+        "told_by_other",
+        "observed",
+        "concluded"
+      ]
+    },
+    "ApiNoteRevertRequest": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "ApiNoteRevertResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/ApiNoteDocumentEntry"
+        },
+        "version": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "restored": {
+          "type": "number"
+        },
+        "outdated": {
+          "type": "number"
+        },
+        "gone": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "document",
+        "version",
+        "restored",
+        "outdated",
+        "gone"
+      ]
+    },
+    "ApiNoteSection": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteLine"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "lines"
+      ]
+    },
+    "ApiNoteVersion": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "#/$defs/ApiNoteAuthor"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteChange"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "at",
+        "author",
+        "reason",
+        "changes"
+      ]
+    },
     "ApiNotebookEntry": {
       "type": "object",
       "properties": {
@@ -7009,6 +7403,27 @@
         "about",
         "body",
         "created_at"
+      ]
+    },
+    "ApiNotesList": {
+      "type": "object",
+      "properties": {
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteDocumentEntry"
+          }
+        },
+        "counts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiNoteKindCount"
+          }
+        }
+      },
+      "required": [
+        "documents",
+        "counts"
       ]
     },
     "ApiPartyPlayerView": {

@@ -75,6 +75,7 @@ import { memoryRpc } from "./memory.js";
 import { turnMetricsRpc } from "./metrics-turns.js";
 import { mindRpc } from "./mind.js";
 import { notebookRpc, recentRpc } from "./notebook.js";
+import { notesRpc } from "./notes.js";
 import { authRpc } from "./oauth.js";
 import { opsRpc } from "./ops.js";
 import { partyRpc } from "./party.js";
@@ -137,6 +138,7 @@ export const router = os.router({
   directives: directivesRpc,
   memory: memoryRpc,
   notebook: notebookRpc,
+  notes: notesRpc,
   recent: recentRpc,
 });
 

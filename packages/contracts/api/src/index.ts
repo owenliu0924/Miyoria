@@ -37,6 +37,7 @@ import { member } from "./member.js";
 import { memory } from "./memory.js";
 import { mind } from "./mind.js";
 import { notebook, recent } from "./notebook.js";
+import { notes } from "./notes.js";
 import { extensions, mcp, queue, stage, voiceMonitor } from "./ops.js";
 import { party } from "./party.js";
 import { people } from "./people.js";
@@ -536,6 +537,38 @@ export {
   RecentViewSchema,
 } from "./notebook.js";
 export {
+  type NoteAuthor,
+  NoteAuthorSchema,
+  type NoteChange,
+  NoteChangeSchema,
+  type NoteDocumentEntry,
+  NoteDocumentEntrySchema,
+  type NoteDocumentView,
+  NoteDocumentViewSchema,
+  type NoteEvidenceView,
+  NoteEvidenceViewSchema,
+  type NoteHistory,
+  NoteHistorySchema,
+  type NoteKind,
+  type NoteKindCount,
+  NoteKindCountSchema,
+  NoteKindSchema,
+  type NoteLineView,
+  NoteLineViewSchema,
+  type NoteProvenance,
+  NoteProvenanceSchema,
+  type NoteRevertRequest,
+  NoteRevertRequestSchema,
+  type NoteRevertResult,
+  NoteRevertResultSchema,
+  type NoteSectionView,
+  NoteSectionViewSchema,
+  type NotesList,
+  NotesListSchema,
+  type NoteVersion,
+  NoteVersionSchema,
+} from "./notes.js";
+export {
   type E2eSegmentName,
   E2eSegmentNameSchema,
   type E2eStats,
@@ -831,6 +864,7 @@ export const contract = {
   directives,
   memory,
   notebook,
+  notes,
   recent,
   economy,
   facts,
