@@ -81,6 +81,15 @@ describe("the count of what she started today", () => {
   });
 });
 
+/** The shift to the next noon (UTC+8): after her morning hour, whatever hour this runs at. */
+function toNoon(): number {
+  const day = 24 * 60 * MIN;
+  const local = Date.now() + 8 * 60 * MIN;
+  let noon = local - (local % day) + 12 * 60 * MIN;
+  if (noon <= local) noon += day;
+  return noon - local;
+}
+
 describe("the morning without a home place", () => {
   it("is recorded as stopped once a day, however often she looks", async () => {
     const rig = await Rig.create();
@@ -88,7 +97,7 @@ describe("the morning without a home place", () => {
       rig
         .of<ArbiterDecision>(Events.ArbiterDecided.type)
         .filter((d) => d.impulse.startsWith("morning:"));
-    rig.shift = 3 * 60 * MIN;
+    rig.shift = toNoon();
     for (let i = 0; i < 3; i++) {
       await host(rig).initiative.tick();
       await sleep(20);
@@ -106,14 +115,15 @@ describe("the morning without a home place", () => {
         .of<ArbiterDecision>(Events.ArbiterDecided.type)
         .filter((d) => d.impulse.startsWith("morning:"));
     const first = await Rig.create({ store: db, provide });
-    first.shift = 3 * 60 * MIN;
+    const noon = toNoon();
+    first.shift = noon;
     await host(first).initiative.tick();
     await sleep(20);
     expect(morning(first)).toHaveLength(1);
     await first.stop();
 
     const again = await Rig.create({ store: db, provide });
-    again.shift = 3 * 60 * MIN;
+    again.shift = noon;
     await host(again).initiative.tick();
     await sleep(20);
     expect(morning(again)).toHaveLength(0);
