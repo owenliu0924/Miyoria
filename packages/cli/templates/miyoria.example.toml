@@ -729,6 +729,27 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # pace_ms_per_char = 40          # 一次回覆分成幾則短訊息時,依下一則的長度隔開並顯示輸入中:每字這麼久
 # pace_min_ms = 300              # 但最短
 # pace_max_ms = 1800             # 最長
+
+# 她自己起頭的事(只在 [modules.agent] runner = "self"):她設的時間到了、外面發生的事、該追問的事、答應過
+# 還沒做的事、這裡安靜了、想念某人、早上醒來,都先過程式的關卡,過了才叫醒她,說不說由她決定。
+# 每天幾次、每個地方幾次、每個人幾次、間隔、沒人回時拉長的間隔、安靜時段都照 [modules.arbiter];
+# 早上幾點和「在意的人」照 [modules.mind] 的 daily_hour、cared_attachment;面板的暫停也停這些。
+# 下面是新的設定,都是預設值
+# [modules.agent.initiative]
+# home = "<channel id>"          # 不屬於哪個地方的事(早上、沒指定地方的提醒)在哪裡叫她;不設 = 等她下次在任何地方醒來時看
+# glances_per_day = 120          # 所有頻道加起來一天最多「看一眼」幾次
+# quiet_mins = 10                # 一個地方多久沒人說話算安靜了
+# longing_min = 0.5              # 想念到多少(0 到 1)才會想私訊對方
+# row_window_mins = 60           # 「不連續兩次同一種事」往回看多久
+# tick_secs = 30                 # 多久看一次到期的時間、追問和承諾
+# inbox_items = 12               # 一個回合最多給她看幾件收件匣的事
+# schedules_max = 20             # 她設的時間(含 remind_me)最多幾個
+# schedules_per_person = 3       # 一個人最多請她設幾個提醒
+# schedule_max_days = 30         # 最遠設到幾天後
+# [modules.agent.initiative.cooldown_mins]
+# world = 30                     # 兩次「外面發生的事」至少隔多久
+# quiet = 60                     # 兩次「這裡安靜了」至少隔多久
+# longing = 240                  # 兩次「想念某人」至少隔多久
 [modules.agent.voice]
 default_mode = "normal"    # off | mention-only | normal | always(語音沒有安靜 / 活躍之分)
 debounce_ms = 700          # 對方講完後等多久(看他是不是還要繼續講)

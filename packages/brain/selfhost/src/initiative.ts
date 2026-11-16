@@ -85,6 +85,8 @@ export const INITIATIVE_STATE_KEY = "selfhost:initiative";
 const MAX_WOKEN = 500;
 /** Opportunities whose last stop is remembered, so a stop is recorded once. */
 const MAX_STOPS = 500;
+/** Runs whose shown inbox items are remembered until they end. */
+const MAX_SHOWN = 200;
 /** Sessions looked through for a DM with someone she misses. */
 const MAX_DM_SESSIONS = 500;
 const MINUTE_MS = 60_000;
@@ -324,6 +326,12 @@ export class Initiative {
       lines.push(`- ${at} ${INBOX_LABELS[row.kind]}${home}:${row.text.replace(/\s+/g, " ")}`);
     }
     this.#shown.set(input.turn, shown);
+    // A run of another host (voice) never reports its end here.
+    while (this.#shown.size > MAX_SHOWN) {
+      const oldest = this.#shown.keys().next().value;
+      if (oldest === undefined) break;
+      this.#shown.delete(oldest);
+    }
     return lines.length === 0 ? null : dataBlock("inbox", INBOX_TITLE, lines.join("\n"));
   }
 
