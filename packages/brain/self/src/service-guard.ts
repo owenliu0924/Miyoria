@@ -71,6 +71,17 @@ export function floorKind(wake: Wake): FloorClaimKind {
   }
 }
 
+/**
+ * What a line of a run woken by `wake` claims of the Floor of a place other than the run's
+ * (`say`): nobody there asked for it, so it spends that place's budget. Her own starts keep their
+ * kind; a glance elsewhere is a wish of hers there; anything someone asked for is `notable`.
+ */
+export function sayKind(wake: Wake): FloorClaimKind {
+  const kind = floorKind(wake);
+  if (kind === "wish" || kind === "notable") return kind;
+  return kind === "ambient" ? "wish" : "notable";
+}
+
 export function serviceGuard(options: ServiceGuardOptions): Guard {
   const { services } = options;
   const quiet = options.quiet ?? null;

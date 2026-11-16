@@ -61,7 +61,7 @@ export * as rules from "./rules.js";
 export { DEFAULT_COMPACTION, type RunnerOptions, SelfRunner, STATE_VERSION } from "./run.js";
 export { SAY, type SayDeps, type Spoken, sayTool } from "./say.js";
 export { asideLine, type ScreenedLine, StepText, type TextUnit } from "./screens.js";
-export { floorKind, type ServiceGuardOptions, serviceGuard } from "./service-guard.js";
+export { floorKind, type ServiceGuardOptions, sayKind, serviceGuard } from "./service-guard.js";
 export { type HourSpend, SpendLedger, stepCost } from "./spend.js";
 export {
   CALLABLE_KINDS,

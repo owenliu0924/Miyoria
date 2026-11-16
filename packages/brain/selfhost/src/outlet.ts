@@ -8,6 +8,9 @@
 //
 // In the place of the run, the second and later lines wait about as long as typing them takes
 // (`paceMs`, today's `#pace`), with the typing indicator shown.
+//
+// Before a line goes, the checks the old path made on her own starts (`repeat.ts`): a repeat of
+// what she said there lately, a wish that is done.
 
 import { sleep } from "@miyoria/runtime/kernel";
 import {
@@ -15,12 +18,15 @@ import {
   ActionSinkKey,
   type ContextKey,
   contextKeyString,
+  type FloorClaimKind,
+  type Handle,
   type MessageRef,
   newAction,
   textLane,
 } from "@miyoria/types";
 import { type Agent, paceMs } from "../../agent/src/index.js";
 import type { Delivery, OutgoingLine, Outlet } from "../../self/src/index.js";
+import { lineRefusal } from "./repeat.js";
 
 /** How a typing indicator lasts. */
 export const TYPING_TTL_MS = 10_000;
@@ -101,6 +107,17 @@ export class Settlements {
   }
 }
 
+/** What the outlet asks the host of a line before it goes out. */
+export interface OutletClaims {
+  /**
+   * The Floor claim the line makes where it is said: in the place of its run by what woke her,
+   * elsewhere as a start of hers (`sayKind`); `null`: not a run of the host (nothing checked).
+   */
+  kind(line: OutgoingLine): FloorClaimKind | null;
+  /** The people of `place`, whose wishes a line there may raise. */
+  people(place: ContextKey): Handle[];
+}
+
 /** The outlet of the host: `MainLine.say`, then the scheduler's word on it. */
 export class MouthOutlet implements Outlet {
   readonly #agent: Agent;
@@ -111,17 +128,20 @@ export class MouthOutlet implements Outlet {
   readonly #elsewhere: (line: OutgoingLine, messageId: string | null) => void;
   /** The platform reply reference a line carries, if any. */
   readonly #replyTo: (line: OutgoingLine) => MessageRef | null;
+  readonly #claims: OutletClaims | null;
 
   constructor(
     agent: Agent,
     settlements: Settlements,
     elsewhere: (line: OutgoingLine, messageId: string | null) => void,
     replyTo: (line: OutgoingLine) => MessageRef | null = () => null,
+    claims: OutletClaims | null = null,
   ) {
     this.#agent = agent;
     this.#settlements = settlements;
     this.#elsewhere = elsewhere;
     this.#replyTo = replyTo;
+    this.#claims = claims;
   }
 
   /** The turn ended: its pace is forgotten. */
@@ -133,18 +153,30 @@ export class MouthOutlet implements Outlet {
     const agent = this.#agent;
     if (agent.muted) return { status: "blocked", reason: "緊急停止中" };
     signal.throwIfAborted();
-    agent.mainline.own(line.turn);
+    const kind = this.#claims?.kind(line) ?? null;
+    if (kind !== null) {
+      const people = this.#claims?.people(line.place) ?? [];
+      const refused = await lineRefusal(agent, { ...line, kind, people }, signal);
+      if (refused !== null) return { status: "blocked", reason: refused };
+    }
+    return await this.#say(line, line.turn, signal);
+  }
+
+  /** `line` to the mouth under `turn`, and how it left the scheduler. */
+  async #say(line: OutgoingLine, turn: string, signal: AbortSignal): Promise<Delivery> {
+    const agent = this.#agent;
+    agent.mainline.own(turn);
     if (line.focus) await this.#pace(line, signal);
     const cfg = agent.config;
     const ms = Math.min(cfg.reply_ttl_ms + SETTLE_SLACK_MS, SETTLE_MAX_MS);
-    const settled = this.#settlements.wait(line.turn, line.place, line.text, ms, signal);
+    const settled = this.#settlements.wait(turn, line.place, line.text, ms, signal);
     settled.catch(() => undefined);
-    agent.mainline.replyNext(line.turn, line.place, this.#replyTo(line));
+    agent.mainline.replyNext(turn, line.place, this.#replyTo(line));
     await agent.mainline.say({
       context: line.place,
       text: line.text,
       emotion: line.emotion,
-      turn: line.turn,
+      turn,
       source: "self",
     });
     const end = await settled;

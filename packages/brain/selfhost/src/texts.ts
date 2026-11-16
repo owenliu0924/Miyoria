@@ -27,6 +27,9 @@ export function replyAroundHead(author: string): string {
   return `${safeName(author)} 回覆的那則訊息不在你看得到的對話裡,這是它和當時前後的話:`;
 }
 
+/** Why a line of a start of hers repeating what she said there lately was not said (the Floor's). */
+export const REPEATED_LINE = "這件事你剛說過了,沒有新進展就不用再提";
+
 /** Characters of the message quoted when someone asks her to answer it (the context menu). */
 const ASKED_QUOTE_CHARS = 120;
 

@@ -108,6 +108,7 @@ import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
+import { outletClaims } from "./repeat.js";
 import { askedLine, SAY_DM } from "./texts.js";
 import { VoiceHost } from "./voice.js";
 
@@ -242,6 +243,10 @@ export class SelfHost implements TextRunner {
       this.#settlements,
       (line, id) => this.#saidElsewhere(line.place, line.text, line.turn, id),
       (line) => this.#replyTarget(line),
+      outletClaims(agent, {
+        wakeOf: (turn) => this.#turns.get(turn)?.run.wake ?? null,
+        entries: (place) => this.transcript.tail(this.#sessionFor(place)).entries,
+      }),
     );
     const services = agent.ctx.services;
     const router = (): LlmRouter => {
