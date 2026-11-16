@@ -52,19 +52,22 @@ export function ledgerSource(principal: Principal, turn: string | null): Impulse
   }
 }
 
-function clip(text: string): string {
+/** A notice is the only way a late result reaches her, so it keeps more of the result. */
+const NOTICE_TEXT = 2000;
+
+function clip(text: string, max = MAX_TEXT): string {
   const chars = [...text.trim()];
-  return chars.length > MAX_TEXT ? `${chars.slice(0, MAX_TEXT).join("")}…` : chars.join("");
+  return chars.length > max ? `${chars.slice(0, max).join("")}…` : chars.join("");
 }
 
 function ledgerOutcome(outcome: ActionOutcome): LedgerOutcome {
   return outcome.status === "done" ? "ok" : outcome.status === "denied" ? "denied" : "failed";
 }
 
-function detailOf(outcome: ActionOutcome): string {
+function detailOf(outcome: ActionOutcome, max = MAX_TEXT): string {
   switch (outcome.status) {
     case "done":
-      return clip(outcome.result.text);
+      return clip(outcome.result.text, max);
     case "denied":
       return clip(`${deniedText(outcome.decision.stage)}(${outcome.decision.reason})`);
     case "failed":
@@ -94,7 +97,7 @@ export function outcomeNotice(
     context: request.principal.context,
     ok,
     code: codeOf(outcome),
-    text: clip(`${head}(${detailOf(outcome)})`),
+    text: `${head}(${detailOf(outcome, NOTICE_TEXT)})`,
     expires_at: toTimestamp(now + NOTICE_TTL_MS),
   };
 }
