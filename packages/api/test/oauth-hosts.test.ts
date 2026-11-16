@@ -20,21 +20,21 @@ const sentTo = (url: URL) => url.searchParams.get("redirect_uri");
 
 describe("the callback follows the address the login started on", () => {
   it("returns to a configured host", () => {
-    expect(sentTo(client().begin("/", "panel.example.com"))).toBe(PUBLIC);
+    expect(sentTo(client().begin("/", "panel.example.com", "b"))).toBe(PUBLIC);
   });
 
   it("stays local on the local host", () => {
-    expect(sentTo(client().begin("/", "127.0.0.1:7878"))).toBe(LOCAL);
+    expect(sentTo(client().begin("/", "127.0.0.1:7878", "b"))).toBe(LOCAL);
   });
 
   it("never redirects to a host nobody configured", () => {
-    expect(sentTo(client().begin("/", "evil.example.net"))).toBe(LOCAL);
-    expect(sentTo(client().begin("/", null))).toBe(LOCAL);
+    expect(sentTo(client().begin("/", "evil.example.net", "b"))).toBe(LOCAL);
+    expect(sentTo(client().begin("/", null, "b"))).toBe(LOCAL);
   });
 
   it("exchanges the code with the address the login used", () => {
     const oauth = client();
-    const url = oauth.begin("/", "panel.example.com");
+    const url = oauth.begin("/", "panel.example.com", "b");
     const pending = oauth.take(url.searchParams.get("state") ?? "");
     expect(pending?.redirect.href).toBe(PUBLIC);
   });

@@ -111,7 +111,7 @@ describe("session", () => {
 // ---- oauth ---
 
 function login(at: number): PendingLogin {
-  return { verifier: "v", next: "/", redirect: new URL("http://127.0.0.1/cb"), at };
+  return { verifier: "v", next: "/", redirect: new URL("http://127.0.0.1/cb"), binding: "b", at };
 }
 
 describe("oauth", () => {
