@@ -20,7 +20,9 @@
 //   nobody is talking and her last speech has played;
 // - what the Arbiter admitted (a game's narration, a song's announcement, a notice) starts at once
 //   in that same quiet or is answered `busy` (the Arbiter tries again), never queued; a run she
-//   started herself that has handed nothing to the mouth gives way to it.
+//   started herself that has handed nothing to the mouth gives way to it. One with a window
+//   (`until`: a song's opening) that has handed nothing to the mouth when the window is over is
+//   cancelled, not said late.
 
 import type { IncomingMessage } from "@miyoria/types";
 import {
@@ -50,6 +52,8 @@ export type VoiceInput =
   | { type: "wake"; wake: Wake }
   /** What the Arbiter admitted, as its turn. */
   | AdmittedInput
+  /** The window of an admitted run (`AdmittedInput.until`) is over. */
+  | { type: "expired"; turn: string }
   /** A claim from elsewhere cuts into her speech here. */
   | { type: "yield"; level: InterruptLevel }
   /** The emergency stop. */
@@ -376,10 +380,22 @@ export class VoiceLane {
                   input.answer({ status: "empty" });
                   break;
                 }
-                running = this.#start(wake, [], null, false, input.turn, true);
+                running = this.#start(wake, [], null, false, input.turn, true, input.until ?? null);
                 input.answer({ status: "started" });
                 break;
               }
+              case "expired":
+                // Past its window with nothing handed to the mouth: said now, it would be late.
+                if (
+                  running !== null &&
+                  !running.done &&
+                  running.run.turn === input.turn &&
+                  !host.queued(input.turn)
+                ) {
+                  await this.#abort(running, "expired", null);
+                  running = null;
+                }
+                break;
               case "yield": {
                 // What speaks here gives way as far as the level says: the run that holds the
                 // mic ends, and so does the speech of one that ended but still has some queued.
@@ -448,6 +464,7 @@ export class VoiceLane {
     early: boolean,
     turn: string | null = null,
     admitted = false,
+    until: number | null = null,
   ): Running {
     const host = this.#host;
     let confirm: () => void = () => undefined;
@@ -480,11 +497,19 @@ export class VoiceLane {
       admitted,
       early: early ? { confirm, startedAt: host.now() } : null,
     };
+    const expiry =
+      until === null
+        ? undefined
+        : setTimeout(
+            () => this.push({ type: "expired", turn: run.turn }),
+            Math.max(until - host.now(), 0),
+          );
     running.promise = host
       .execute(run)
       .catch((error: unknown) => host.warn("a voice run failed", error))
       .finally(() => {
         running.done = true;
+        clearTimeout(expiry);
       });
     return running;
   }

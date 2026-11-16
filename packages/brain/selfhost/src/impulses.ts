@@ -6,7 +6,11 @@
 // the Arbiter books: the voice channel she is in when it is news of hers (a game, a song, a
 // notice) and she is in voice on that server, else the place it names. The lane starts it at once
 // or answers `busy` (never queued behind a run), as the old coordinator did; a claim that cuts
-// into her speech there does so first (`Agent.yieldTo`, the Floor's interrupt level).
+// into her speech there does so first (`Agent.yieldTo`, the Floor's interrupt level). What expires
+// within seconds (a song's opening, which the song does not wait for) cannot wait for the
+// Arbiter's retries: the desk asks the lane again every moment while the place is busy, so a run
+// answering someone finishes first and the announcement still comes inside its window; the lane
+// cancels one that has said nothing when the window is over. Past it nothing is said.
 //
 // The run's wake: a notice is a `result` whose data is the notices waiting for that place (taken
 // when the run starts, so block 6 does not show them again); anything else is a `world` wake with
@@ -23,6 +27,7 @@ import {
   defineCapability,
   recipient,
 } from "@miyoria/gate/actions";
+import { sleep } from "@miyoria/runtime/kernel";
 import {
   type ArbiterReason,
   CHAT_DM,
@@ -44,6 +49,10 @@ import type { AdmittedAnswer, AdmittedInput } from "./lane.js";
 
 /** How long the Arbiter waits for a lane to take (or refuse) what it admitted. */
 const OPEN_TIMEOUT_MS = 5_000;
+/** An impulse that expires within this has no room for the Arbiter's retries (a song's opening). */
+const SHORT_WINDOW_MS = 10_000;
+/** How often the lane is asked again for such an impulse while its place is busy. */
+const OFFER_EVERY_MS = 100;
 
 export interface ImpulseDeskHost {
   agent: Agent;
@@ -103,7 +112,28 @@ export class ImpulseDesk implements ImpulseHost {
       if (w !== null) agent.mainline.about(turn, impulse.attention ?? null);
       return w;
     };
-    const answer = await this.#admit(context, turn, started, signal);
+    // What is worth saying only for a few seconds (a song's opening) has no room for the Arbiter's
+    // retries: while the place is busy, the lane is asked again until the window is over.
+    const now = agent.ctx.clock.now();
+    const expires = Date.parse(impulse.expires_at);
+    const short = expires - now <= SHORT_WINDOW_MS;
+    const giveUp = Math.min(expires, now + OPEN_TIMEOUT_MS);
+    const until = short ? expires : undefined;
+    let answer = await this.#admit(context, turn, started, signal, until);
+    while (
+      short &&
+      answer.status === "busy" &&
+      answer.open &&
+      signal?.aborted !== true &&
+      agent.ctx.clock.now() + OFFER_EVERY_MS < giveUp
+    ) {
+      try {
+        await sleep(OFFER_EVERY_MS, signal);
+      } catch {
+        break;
+      }
+      answer = await this.#admit(context, turn, started, signal, until);
+    }
     switch (answer.status) {
       case "started":
         return { status: "started", turn, task: null, detail: "" };
@@ -129,21 +159,25 @@ export class ImpulseDesk implements ImpulseHost {
     };
   }
 
-  /** Hands the run to the lane of `context` and waits for its answer (busy after a while). */
+  /**
+   * Hands the run to the lane of `context` and waits for its answer (busy after a while);
+   * `open`: the lane gave the answer, so asking again may be answered otherwise.
+   */
   #admit(
     context: ContextKey,
     turn: string,
     wake: () => Wake | null,
     signal: AbortSignal | undefined,
-  ): Promise<AdmittedAnswer> {
-    return new Promise<AdmittedAnswer>((resolve) => {
+    until: number | undefined,
+  ): Promise<AdmittedAnswer & { open: boolean }> {
+    return new Promise((resolve) => {
       let settled = false;
-      const done = (answer: AdmittedAnswer): void => {
+      const done = (answer: AdmittedAnswer, open = false): void => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         signal?.removeEventListener("abort", onAbort);
-        resolve(answer);
+        resolve({ ...answer, open });
       };
       const onAbort = (): void => done({ status: "busy", why: "the arbiter gave up on it" });
       const timer = setTimeout(
@@ -160,7 +194,8 @@ export class ImpulseDesk implements ImpulseHost {
         turn,
         // An answer that came too late is no run: the Arbiter already took it as busy.
         wake: () => (settled ? null : wake()),
-        answer: done,
+        ...(until !== undefined && { until }),
+        answer: (answer) => done(answer, true),
       });
       if (!taken) done({ status: "busy", why: "the place is closing" });
     });

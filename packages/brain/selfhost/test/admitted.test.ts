@@ -293,3 +293,94 @@ describe("what the Arbiter admits", () => {
     expect(rig.model.requests).toEqual([]);
   });
 });
+
+describe("an announcement that must come before something else starts", () => {
+  /** A song's opening: worth saying for a few seconds only (scaled down from six). */
+  const opening = (ttlMs: number) =>
+    impulse({
+      source: "song",
+      context: C1,
+      ttlMs,
+      hint: "你要開始唱〈小星星〉了(owen 點的)。用一句話開場,說完就開始。",
+      reason: "song_start",
+    });
+
+  it("waits for the answer she is giving and is said inside its window", async () => {
+    const rig = await voiceRig({ arbiter: {} });
+    rig.model.push({ events: says("在喔。"), delay: 400 }, says("要開始唱囉!"));
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => rig.model.requests.length === 1, 3_000, "the run that answers owen");
+    const at = Date.now();
+    const asked = desk(rig).open(opening(800));
+    await until(() => speeches(rig).length === 1, 3_000, "her answer");
+    const answer = speeches(rig)[0]?.[1] ?? "";
+    play(rig, answer, "started", "在喔。");
+    play(rig, answer, "finished", "在喔。");
+    const run = await asked;
+    expect(run.status).toBe("started");
+    expect(Date.now() - at).toBeLessThan(800);
+    await until(() => speeches(rig).length === 2, 3_000, "the announcement");
+    expect(speeches(rig).map(([t]) => t)).toEqual(["在喔。", "要開始唱囉!"]);
+    expect(rig.sink.cancelled).toEqual([]);
+    await until(() => outcomes(rig).length === 2, 3_000, "both outcomes");
+    expect(outcomes(rig).map((o) => o.outcome.type)).toEqual(["sent", "sent"]);
+  });
+
+  it("through the Arbiter: said once the answer is out, not retried past its window", async () => {
+    const rig = await voiceRig({ arbiter: { retry_ms: 400 } });
+    rig.model.push({ events: says("在喔。"), delay: 500 }, says("要開始唱囉!"));
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => rig.model.requests.length === 1, 3_000, "the run that answers owen");
+    rig.sup.bus.publish("sing", Events.ArbiterImpulse, opening(1_200));
+    await until(() => speeches(rig).length === 1, 3_000, "her answer");
+    const answer = speeches(rig)[0]?.[1] ?? "";
+    play(rig, answer, "started", "在喔。");
+    play(rig, answer, "finished", "在喔。");
+    await until(() => speeches(rig).length === 2, 3_000, "the announcement");
+    expect(speeches(rig)[1]?.[0]).toBe("要開始唱囉!");
+    const decisions = rig
+      .of<ArbiterDecision>(Events.ArbiterDecided.type)
+      .filter((d) => d.source === "song");
+    expect(decisions.at(-1)).toMatchObject({ verdict: "accepted", turn: speeches(rig)[1]?.[1] });
+  });
+
+  it("says nothing when the answer outlasts the window", async () => {
+    const rig = await voiceRig({ arbiter: {} });
+    rig.model.push({ events: says("在喔。"), delay: 1_500 }, says("要開始唱囉!"));
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => rig.model.requests.length === 1, 3_000, "the run that answers owen");
+    const at = Date.now();
+    const run = await desk(rig).open(opening(400));
+    expect(run.status).toBe("busy");
+    // It asked until the window was over, not longer.
+    expect(Date.now() - at).toBeGreaterThanOrEqual(300);
+    expect(Date.now() - at).toBeLessThan(1_000);
+    await until(() => speeches(rig).length === 1, 5_000, "her answer");
+    await sleep(300);
+    expect(speeches(rig).map(([t]) => t)).toEqual(["在喔。"]);
+    expect(rig.model.requests).toHaveLength(1);
+  });
+
+  it("a run that has said nothing when the window is over is cancelled, not said late", async () => {
+    const rig = await voiceRig({ arbiter: {} });
+    rig.model.push({ events: says("要開始唱囉!"), delay: 900 });
+    const run = await desk(rig).open(opening(300));
+    expect(run.status).toBe("started");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    expect(outcomes(rig)[0]?.outcome).toMatchObject({ type: "cancelled", cause: "expired" });
+    expect(speeches(rig)).toEqual([]);
+  });
+
+  it("a long window is not waited for: the Arbiter retries as before", async () => {
+    const rig = await voiceRig({ arbiter: {} });
+    rig.model.push({ events: says("在喔。"), delay: 600 });
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => rig.model.requests.length === 1, 3_000, "the run that answers owen");
+    const at = Date.now();
+    const run = await desk(rig).open(
+      impulse({ source: "song", context: C1, ttlMs: 120_000, reason: "song_done", hint: "唱完了" }),
+    );
+    expect(run.status).toBe("busy");
+    expect(Date.now() - at).toBeLessThan(200);
+  });
+});

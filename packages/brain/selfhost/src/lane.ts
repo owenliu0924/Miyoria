@@ -54,12 +54,15 @@ export type LaneInput =
 
 /**
  * Something the Arbiter admitted that wants a run here now, as `turn`. `wake` is asked only when
- * it starts (`null`: nothing is left to say); `answer` is called once.
+ * it starts (`null`: nothing is left to say); `answer` is called once. `until` (clock ms): a run
+ * that has not handed a line to the mouth by then is not worth finishing (a voice lane's, for
+ * what must come before something else starts); unset: it runs as long as it takes.
  */
 export interface AdmittedInput {
   type: "admitted";
   turn: string;
   wake: () => Wake | null;
+  until?: number;
   answer: (answer: AdmittedAnswer) => void;
 }
 
