@@ -29,6 +29,8 @@ describe("shapes", () => {
       candidate_limit: 32,
       min_score: 0.25,
       min_vector: 0.5,
+      notes_vector_wait_ms: 500,
+      notes_vector_voice_wait_ms: 150,
       weights: { vector: 0.35, text: 0.25, recency: 0.15, importance: 0.15, subject: 0.1 },
       recency_tau_days: 14,
       episode_recency_tau_days: 1.5,

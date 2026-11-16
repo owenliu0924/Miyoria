@@ -13,7 +13,7 @@ describe("the notes schema", () => {
     try {
       expect(
         t.applied.filter((m) => m.plugin === "notes").map((m) => `${m.version}:${m.name}`),
-      ).toEqual(["1:init"]);
+      ).toEqual(["1:init", "2:vectors"]);
       expect(migrate(t.db, [notesSchema])).toEqual([]);
       const tables = t.db
         .all("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'notes_%'")
@@ -23,6 +23,7 @@ describe("the notes schema", () => {
         ["notes_evidence", 1],
         ["notes_history", 1],
         ["notes_lines", 1],
+        ["notes_vectors", 1],
       ]);
     } finally {
       t.close();

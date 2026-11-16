@@ -1,7 +1,9 @@
 // The `notes` plugin's migrations.
 //
 // Generated from the Drizzle tables in `schema.ts` with `pnpm --filter @miyoria/store schema:sql
-// notes` (drizzle-kit, plus `STRICT`) and never edited after they are released: the runner
+// notes` (drizzle-kit, plus `STRICT`; for migration 2, which that command cannot write because
+// drizzle-kit asks whether a new table is a renamed one, the store's drift test printed the
+// statement) and never edited after they are released: the runner
 // refuses a database whose recorded checksum differs. The store's drift test proves the migrated
 // database and the Drizzle tables agree. The tables carry the plugin's prefix and have no foreign
 // keys (`schema.ts`).
@@ -105,8 +107,24 @@ CREATE INDEX \`notes_lines_scope_idx\` ON \`notes_lines\` (\`scope\`,\`scope_id\
 CREATE UNIQUE INDEX \`notes_lines_import_key\` ON \`notes_lines\` (\`import_key\`) WHERE "notes_lines"."import_key" IS NOT NULL;
 `;
 
-/** Her documents, their lines, what the lines rest on and every change made to them. */
+/** The embedding of each line in use (`vectors.ts`). */
+const VECTORS = `CREATE TABLE \`notes_vectors\` (
+	\`line_id\` text PRIMARY KEY,
+	\`model\` text NOT NULL,
+	\`vector\` blob NOT NULL,
+	\`at\` integer NOT NULL,
+	CONSTRAINT "notes_vectors_vector_check" CHECK(length("vector") > 0 AND length("vector") % 4 = 0)
+) STRICT;
+`;
+
+/**
+ * Her documents, their lines, what the lines rest on and every change made to them; the vectors
+ * of the lines in use.
+ */
 export const notesSchema: PluginSchema = {
   plugin: "notes",
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "vectors", sql: VECTORS },
+  ],
 };

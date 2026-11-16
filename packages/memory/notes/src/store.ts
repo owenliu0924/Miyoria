@@ -29,8 +29,18 @@ import { EventCursors, tablePart } from "@miyoria/store";
 import { escapeData, newId, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { cleanBody } from "../../memory/src/notebook.js";
+import { recency, signalScore } from "../../memory/src/score.js";
+import { cleanEmbedding, decodeEmbedding, encodeEmbedding } from "../../memory/src/stored.js";
 import { tokenize } from "../../memory/src/tokenize.js";
 import { notesSchema } from "./migrations.js";
+import {
+  DEFAULT_RANKING,
+  type QueryVector,
+  type RankedLine,
+  type Ranking,
+  type RankRow,
+  rankLines,
+} from "./rank.js";
 import {
   DOCUMENT_KINDS,
   type DocumentKind,
@@ -42,6 +52,7 @@ import {
   notesEvidence,
   notesHistory,
   notesLines,
+  notesVectors,
   type Provenance,
 } from "./schema.js";
 import {
@@ -75,6 +86,7 @@ const D = notesDocuments;
 const L = notesLines;
 const E = notesEvidence;
 const H = notesHistory;
+const V = notesVectors;
 
 export const DEFAULT_LIMITS: NotesLimits = {
   lineChars: 200,
@@ -240,6 +252,41 @@ export interface CardOptions {
   budget?: number;
   /** What the conversation is about: lines sharing its words come first. */
   query?: string;
+  /**
+   * The query's vector: lines close to it in meaning come first too, ranked as `rank.ts` ranks
+   * them. Absent: words alone.
+   */
+  vector?: QueryVector | null;
+  ranking?: Ranking;
+}
+
+/** How a search may read meaning (`rank.ts`); without `vector` it reads words alone. */
+export interface MeaningOptions {
+  vector?: QueryVector | null;
+  ranking?: Ranking;
+  /** The time recency is measured from; default the store's clock. */
+  now?: Timestamp;
+}
+
+/** A line found by `searchLines`. */
+export interface LineHit {
+  line: NoteLine;
+  document: NoteDocument;
+  /** The hybrid score (`rank.ts`). */
+  score: number;
+  /** 0..1: the share of the query's words the line holds. */
+  text: number;
+  /** The raw cosine to the query; `null`: no vector was compared. */
+  cosine: number | null;
+}
+
+/** How many lines in use have a vector of a model, and how many still wait for one. */
+export interface VectorCounts {
+  /** Lines in use with text. */
+  lines: number;
+  /** Of those, the ones with a vector of the model. */
+  vectors: number;
+  waiting: number;
 }
 
 export interface FullOptions {
@@ -287,11 +334,35 @@ export class NotesStore {
   readonly #db: Db;
   readonly #events: EventStore | null;
   readonly limits: NotesLimits;
+  /** Told the ids of lines that came into use (`onAdded`). */
+  readonly #added = new Set<(lines: readonly string[]) => void>();
 
   constructor(db: Db, limits: Partial<NotesLimits> = {}, events: EventStore | null = null) {
     this.#db = db;
     this.#events = events;
     this.limits = { ...DEFAULT_LIMITS, ...limits };
+  }
+
+  /**
+   * Calls `listener` with the ids of the lines a change brought into use (added, or restored by a
+   * revert), right after the change, before an enclosing transaction commits. Returns what stops
+   * it. The listener must not throw or write here; the embedding queue (`vectors.ts`) only notes
+   * the ids.
+   */
+  onAdded(listener: (lines: readonly string[]) => void): () => void {
+    this.#added.add(listener);
+    return () => this.#added.delete(listener);
+  }
+
+  #tell(lines: readonly string[]): void {
+    if (lines.length === 0) return;
+    for (const listener of this.#added) {
+      try {
+        listener(lines);
+      } catch {
+        // A listener's failure is not the writer's.
+      }
+    }
   }
 
   /** Identity's places and accounts, for the scopes of lines. */
@@ -522,13 +593,16 @@ export class NotesStore {
 
   /**
    * The documents whose title or visible lines share words with `query`, best first. A document
-   * none of whose lines `reader` may see is not found, whatever its title.
+   * none of whose lines `reader` may see is not found, whatever its title. With `vector`, also the
+   * documents with a line close to it in meaning, and the score is the hybrid one
+   * (`#searchByMeaning`).
    */
   search(
     query: string,
     reader: NotesReader,
-    options: { kind?: DocumentKind; limit?: number } = {},
+    options: { kind?: DocumentKind; limit?: number } & MeaningOptions = {},
   ): SearchHit[] {
+    if (options.vector) return this.#searchByMeaning(query, reader, options.vector, options);
     const words = tokenize(query);
     if (words.length === 0) return [];
     const visible = this.#visible(reader);
@@ -556,6 +630,255 @@ export class NotesStore {
     }
     hits.sort((a, b) => b.score - a.score || Date.parse(b.at) - Date.parse(a.at));
     return hits.slice(0, Math.max(1, options.limit ?? 8)).map(({ at: _at, ...hit }) => hit);
+  }
+
+  /** The lines of `rows` ranked against `query` and `vector` (`rank.ts`), best first. */
+  #rank<T extends RankRow>(
+    query: string,
+    vector: QueryVector,
+    rows: readonly T[],
+    reader: NotesReader,
+    options: MeaningOptions,
+  ): RankedLine<T>[] {
+    const persons = new Map(
+      this.#db.orm
+        .select({ id: D.id, person: D.person_id })
+        .from(D)
+        .all()
+        .map((r) => [r.id, r.person as PersonId | null]),
+    );
+    const present = reader === "owner" ? [] : reader.present;
+    const words = new Map<string, ReadonlySet<string>>();
+    const ranked = rankLines(rows, {
+      words: tokenize(query),
+      wordsOf: (row) => {
+        let have = words.get(row.id);
+        if (have === undefined) {
+          have = new Set(tokenize(row.text));
+          words.set(row.id, have);
+        }
+        return have;
+      },
+      vector,
+      vectors: this.#vectorsOf(vector.model),
+      aboutPresent: (row) => {
+        const person = persons.get(row.document_id) ?? null;
+        return person !== null && present.includes(person);
+      },
+      ranking: options.ranking ?? DEFAULT_RANKING,
+      now: options.now ?? this.#now(),
+    });
+    return ranked.sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.row.updated_at.localeCompare(a.row.updated_at) ||
+        (a.row.id < b.row.id ? 1 : -1),
+    );
+  }
+
+  /**
+   * How well each of a card's `lines` matches the query by words and meaning: its share of the
+   * query's words plus its spread cosine, weighed as `rank.ts` weighs them. Lines that are no
+   * match are not in the map.
+   */
+  #matchedInCard(
+    query: string,
+    vector: QueryVector,
+    lines: readonly NoteLine[],
+    reader: NotesReader,
+    options: MeaningOptions,
+  ): Map<string, number> {
+    const w = (options.ranking ?? DEFAULT_RANKING).weights;
+    return new Map(
+      this.#rank(query, vector, lines, reader, options).map((r) => [
+        r.row.id,
+        w.text * r.text + w.vector * r.vector,
+      ]),
+    );
+  }
+
+  /**
+   * `search` with a query vector: the documents with a line that shares a word with `query` or is
+   * close to it in meaning, or whose title shares a word. A document's score is `signalScore` of
+   * its share of the query's words (title and lines, as `search` counts them), the best spread
+   * cosine of its lines, its last change, the best confidence among its matching lines and whether
+   * it is about someone present; its matches are its best three lines.
+   */
+  #searchByMeaning(
+    query: string,
+    reader: NotesReader,
+    vector: QueryVector,
+    options: { kind?: DocumentKind; limit?: number } & MeaningOptions,
+  ): SearchHit[] {
+    const words = tokenize(query);
+    const ranking = options.ranking ?? DEFAULT_RANKING;
+    const now = options.now ?? this.#now();
+    const visible = this.#visible(reader);
+    const entries = this.list(reader, options.kind === undefined ? {} : { kind: options.kind });
+    const rows = entries.flatMap((e) => visible.get(e.document.id) ?? []);
+    const byDocument = new Map<string, RankedLine[]>();
+    for (const r of this.#rank(query, vector, rows, reader, options)) {
+      const list = byDocument.get(r.row.document_id) ?? [];
+      list.push(r);
+      byDocument.set(r.row.document_id, list);
+    }
+    const present = reader === "owner" ? [] : reader.present;
+    const hits: Array<SearchHit & { at: Timestamp }> = [];
+    for (const entry of entries) {
+      const doc = entry.document;
+      if ((visible.get(doc.id) ?? []).length === 0) continue;
+      const lines = byDocument.get(doc.id) ?? [];
+      const title = new Set(tokenize(doc.title));
+      const found = new Set(words.filter((w) => title.has(w)));
+      if (lines.length === 0 && found.size === 0) continue;
+      for (const l of lines) {
+        const have = new Set(tokenize(l.row.text));
+        for (const w of words) if (have.has(w)) found.add(w);
+      }
+      const score = signalScore(
+        {
+          vector: Math.max(0, ...lines.map((l) => l.vector)),
+          text: words.length === 0 ? 0 : found.size / words.length,
+          recency: recency(doc.updated_at, now, ranking.recency_tau_days),
+          importance: Math.max(0, ...lines.map((l) => l.row.confidence)),
+          subject: doc.person_id !== null && present.includes(doc.person_id) ? 1 : 0,
+        },
+        ranking.weights,
+      );
+      hits.push({
+        ...entry,
+        score,
+        matches: this.#lines(lines.slice(0, 3).map((l) => l.row)),
+        at: doc.updated_at,
+      });
+    }
+    hits.sort((a, b) => b.score - a.score || Date.parse(b.at) - Date.parse(a.at));
+    return hits.slice(0, Math.max(1, options.limit ?? 8)).map(({ at: _at, ...hit }) => hit);
+  }
+
+  /**
+   * The lines `reader` may see that match `query`, best first, each with its document: by words
+   * alone, or with `vector` by words and meaning (`rank.ts`). With `ranking.min_score`, lines
+   * scoring below it are left out.
+   */
+  searchLines(
+    query: string,
+    reader: NotesReader,
+    options: { kind?: DocumentKind; limit?: number } & MeaningOptions = {},
+  ): LineHit[] {
+    const ranking = options.ranking ?? DEFAULT_RANKING;
+    const visible = this.#visible(reader);
+    const entries = this.list(reader, options.kind === undefined ? {} : { kind: options.kind });
+    const documents = new Map(entries.map((e) => [e.document.id, e.document]));
+    const rows = entries.flatMap((e) => visible.get(e.document.id) ?? []);
+    // Without a vector: the same ranking with nothing close in meaning.
+    const vector = options.vector ?? { values: [], model: "" };
+    const ranked = this.#rank(query, vector, rows, reader, options).filter(
+      (r) => ranking.min_score === null || r.score >= ranking.min_score,
+    );
+    const top = ranked.slice(0, Math.max(1, options.limit ?? 8));
+    const lines = new Map(this.#lines(top.map((r) => r.row)).map((l) => [l.id, l]));
+    return top.flatMap((r) => {
+      const line = lines.get(r.row.id);
+      const document = documents.get(r.row.document_id);
+      return line === undefined || document === undefined
+        ? []
+        : [{ line, document, score: r.score, text: r.text, cosine: r.cosine }];
+    });
+  }
+
+  // ---- vectors ------------------------------------------------------------------------------
+
+  /** The stored vectors `model` made, decoded, by line. */
+  #vectorsOf(model: string): Map<string, Float32Array> {
+    const out = new Map<string, Float32Array>();
+    if (model === "") return out;
+    const rows = this.#db.orm
+      .select({ line: V.line_id, vector: V.vector })
+      .from(V)
+      .where(eq(V.model, model))
+      .all();
+    for (const row of rows) out.set(row.line, decodeEmbedding(row.vector));
+    return out;
+  }
+
+  /**
+   * Keeps `values` as the vector `model` made of `line`'s text. Kept only while the line is in use
+   * and has its text; returns whether it was.
+   */
+  putVector(line: string, model: string, values: readonly number[]): boolean {
+    const clean = cleanEmbedding(values);
+    if (clean === null || model === "") return false;
+    return this.#db.tx(() => {
+      const row = this.#db.orm
+        .select({ id: L.id })
+        .from(L)
+        .where(and(eq(L.id, line), isNull(L.outdated_at), isNull(L.redacted_at)))
+        .get();
+      if (row === undefined) return false;
+      const vector = encodeEmbedding(clean);
+      const at = this.#now();
+      this.#db.orm
+        .insert(V)
+        .values({ line_id: line, model, vector, at })
+        .onConflictDoUpdate({ target: V.line_id, set: { model, vector, at } })
+        .run();
+      return true;
+    });
+  }
+
+  /**
+   * Lines in use with text and no vector of `model` (none, or one another model made), newest
+   * first; only among `ids` when given.
+   */
+  missingVectors(
+    model: string,
+    limit: number,
+    ids?: readonly string[],
+  ): Array<{ id: string; text: string }> {
+    if (limit <= 0 || ids?.length === 0) return [];
+    return this.#db.orm
+      .select({ id: L.id, text: L.text })
+      .from(L)
+      .leftJoin(V, eq(V.line_id, L.id))
+      .where(
+        and(
+          isNull(L.outdated_at),
+          isNull(L.redacted_at),
+          sql`${L.text} <> ''`,
+          or(isNull(V.line_id), sql`${V.model} <> ${model}`),
+          ids === undefined ? undefined : inArray(L.id, [...ids].slice(0, 500)),
+        ),
+      )
+      .orderBy(desc(L.updated_at), desc(L.id))
+      .limit(limit)
+      .all();
+  }
+
+  /** How many lines in use have a vector of `model` and how many still wait for one. */
+  vectorCounts(model: string): VectorCounts {
+    const row = this.#db.orm
+      .select({
+        lines: sql<number>`count(*)`,
+        vectors: sql<number>`count(${V.line_id})`,
+      })
+      .from(L)
+      .leftJoin(V, and(eq(V.line_id, L.id), eq(V.model, model)))
+      .where(and(isNull(L.outdated_at), isNull(L.redacted_at), sql`${L.text} <> ''`))
+      .get();
+    const lines = Number(row?.lines ?? 0);
+    const vectors = Number(row?.vectors ?? 0);
+    return { lines, vectors, waiting: lines - vectors };
+  }
+
+  /** Drops the vectors of lines that went out of use or lost their text. */
+  #dropVectors(ids: readonly string[]): void {
+    for (let i = 0; i < ids.length; i += 500) {
+      this.#db.orm
+        .delete(V)
+        .where(inArray(V.line_id, ids.slice(i, i + 500)))
+        .run();
+    }
   }
 
   // ---- changing -----------------------------------------------------------------------------
@@ -692,6 +1015,7 @@ export class NotesStore {
       .set({ outdated_at: now, outdated_reason: why === "" ? null : why, updated_at: now })
       .where(eq(L.id, row.id))
       .run();
+    this.#dropVectors([row.id]);
     this.#history(doc, version, row.id, "outdate", meta.author, why === "" ? null : why, now);
   }
 
@@ -745,6 +1069,12 @@ export class NotesStore {
    * is written. A change set that wrote nothing gets no version.
    */
   apply(subject: string, ops: readonly NoteOp[], meta: ChangeMeta, title?: string): ChangeResult {
+    const result = this.#apply(subject, ops, meta, title);
+    this.#tell(result.applied.filter((a) => a.op !== "outdate").map((a) => a.line));
+    return result;
+  }
+
+  #apply(subject: string, ops: readonly NoteOp[], meta: ChangeMeta, title?: string): ChangeResult {
     return this.#db.tx(() => {
       const existed = this.document(subject) !== null;
       const doc = this.ensure(subject, title);
@@ -849,6 +1179,12 @@ export class NotesStore {
    * in use again. A line that lost its text since stays out. Limits are not applied.
    */
   revert(subject: string, toVersion: number, meta: ChangeMeta): RevertResult {
+    const result = this.#revert(subject, toVersion, meta);
+    this.#tell(result.restored);
+    return result;
+  }
+
+  #revert(subject: string, toVersion: number, meta: ChangeMeta): RevertResult {
     return this.#db.tx(() => {
       const doc = this.#need(subject);
       if (!Number.isInteger(toVersion) || toVersion < 0 || toVersion > doc.version) {
@@ -895,6 +1231,7 @@ export class NotesStore {
             .set({ outdated_at: now, outdated_reason: why, updated_at: now })
             .where(eq(L.id, row.id))
             .run();
+          this.#dropVectors([row.id]);
           this.#history(doc, version, row.id, "outdate", meta.author, why, now);
           outdated.push(row.id);
         }
@@ -920,9 +1257,20 @@ export class NotesStore {
     if (doc === null) return "";
     const budget = Math.max(0, options.budget ?? 600);
     const words = options.query === undefined ? [] : tokenize(options.query);
-    const ranked = this.lines(subject, reader).map((line) => {
-      const have = words.length === 0 ? null : new Set(tokenize(line.text));
-      const hits = have === null ? 0 : words.filter((w) => have.has(w)).length;
+    const lines = this.lines(subject, reader);
+    // With a query vector, how well a line matches is its hybrid score (`rank.ts`), not its words.
+    const matched =
+      options.vector && options.query !== undefined
+        ? this.#matchedInCard(options.query, options.vector, lines, reader, options)
+        : null;
+    const ranked = lines.map((line) => {
+      const have = words.length === 0 || matched !== null ? null : new Set(tokenize(line.text));
+      const hits =
+        matched !== null
+          ? (matched.get(line.id) ?? 0)
+          : have === null
+            ? 0
+            : words.filter((w) => have.has(w)).length;
       return { line, hits, first: sectionOrder(doc.kind, line.section) === 0 };
     });
     // `lines` is newest first, and the sort is stable.
@@ -1085,6 +1433,7 @@ export class NotesStore {
   #deleteLines(ids: readonly string[]): void {
     for (let i = 0; i < ids.length; i += 500) {
       const part = ids.slice(i, i + 500);
+      this.#db.orm.delete(V).where(inArray(V.line_id, part)).run();
       this.#db.orm.delete(E).where(inArray(E.line_id, part)).run();
       this.#db.orm.delete(H).where(inArray(H.line_id, part)).run();
       this.#db.orm.update(L).set({ replaced_by: null }).where(inArray(L.replaced_by, part)).run();
@@ -1129,6 +1478,7 @@ export class NotesStore {
         })
         .where(eq(L.id, row.id))
         .run();
+      this.#dropVectors([row.id]);
       this.#db.orm
         .update(E)
         .set({ quote: "", redacted_at: now })
@@ -1317,7 +1667,7 @@ export class NotesStore {
 /** Her documents among the data categories: counted, exported and wiped with her knowledge. */
 const notesData: readonly CategoryData[] = [
   {
-    // The four tables go together: a line never outlives its document, nor evidence its line.
+    // The tables go together: a line never outlives its document, nor evidence or a vector its line.
     category: "knowledge",
     parts: [
       tablePart("notes_documents", "notes_documents", "node", "updated_at", "subject", {
@@ -1373,6 +1723,12 @@ const notesData: readonly CategoryData[] = [
         op: "text",
         author: "text",
         reason: "text",
+        at: "ts",
+      }),
+      // Derived from the lines' text; the numbers themselves are not exported.
+      tablePart("notes_vectors", "notes_vectors", "node", "at", "line_id", {
+        line_id: "text",
+        model: "text",
         at: "ts",
       }),
     ],

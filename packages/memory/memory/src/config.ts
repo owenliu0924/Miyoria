@@ -267,6 +267,18 @@ export const MemoryConfigSchema = z.object({
    * it on real recall, not on the trial's set.
    */
   min_vector: z.number().default(0.5),
+  /**
+   * With embeddings on, how long a search of her documents (the notes: the knowledge section of
+   * a prompt, the segment pass's related documents) waits for the query's vector before it goes
+   * on with words alone (ms). The vector that comes later is kept for the next ask.
+   */
+  notes_vector_wait_ms: uint().default(500),
+  /**
+   * The same in a voice turn. Keep it well under `[modules.agent.voice] live_context_ms` (400 by
+   * default): that is all a spoken turn waits for what depends on the line, and the search itself
+   * runs after the wait.
+   */
+  notes_vector_voice_wait_ms: uint().default(150),
   weights: WeightsSchema.prefault({}),
   /** Recency decay time constant (days): `exp(-age / tau)`. */
   recency_tau_days: z.number().default(14),

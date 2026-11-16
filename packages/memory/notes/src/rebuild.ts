@@ -12,6 +12,8 @@
 // - What a run costs is estimated before it starts from the prompt's size (characters, as
 //   tokens) and, while it runs, counted from the pass's own usage against the model's price. A
 //   run stops before a segment once `maxUsd` is spent.
+// - With embeddings on, the lines written get vectors at the end (`rebuildVectors`), and the
+//   pass finds related documents by meaning too.
 
 import {
   CHAT_EVENT_TYPES,
@@ -53,6 +55,7 @@ import {
   segmentsBeforeCompaction,
 } from "./segment.js";
 import { type NotesStore, SELF_SEED } from "./store.js";
+import type { NotesIndex, NotesSearch } from "./vectors.js";
 
 /** The consumer id of the rebuild's positions in `event_cursors`. */
 export const REBUILD_CONSUMER = "memory.rebuild";
@@ -356,6 +359,8 @@ export function estimateRebuild(plan: RebuildPlan, price: Pricing | null): Rebui
 export interface RebuildDeps {
   router: Completer;
   notes: NotesStore;
+  /** The segment pass's related documents by meaning too (`vectors.ts`); absent: by words. */
+  search?: NotesSearch | null;
   /** Where the episodes go; `null`: the documents only. */
   episodes: EpisodeSink | null;
   /** `EventCursors`, or a fake in tests. */
@@ -434,6 +439,7 @@ export async function applyRebuild(plan: RebuildPlan, deps: RebuildDeps): Promis
         {
           router: deps.router,
           notes: deps.notes,
+          ...(deps.search ? { search: deps.search } : {}),
           episodes: deps.episodes,
           cursor,
           now: () => timestampMs(planned.at),
@@ -467,6 +473,59 @@ export async function applyRebuild(plan: RebuildPlan, deps: RebuildDeps): Promis
     deps.onSegment?.(report.segments, report.total, result);
   }
   return report;
+}
+
+export interface VectorReport {
+  /** Lines given a vector by this call. */
+  done: number;
+  /** Lines in use that still have none of the model in use. */
+  waiting: number;
+  /** `off`: the embedder is off or turned itself off (the runtime or the model could not load). */
+  status: "done" | "off" | "stalled" | "aborted";
+}
+
+/** Lines embedded per backfill call at the end of a rebuild. */
+const REBUILD_VECTOR_BATCH = 64;
+
+/**
+ * The end of a rebuild with embeddings on: every line in use without a vector of the model gets
+ * one, `REBUILD_VECTOR_BATCH` at a time. What is done is kept as it goes, so a stop loses at most
+ * a batch, and the running Core's backfill finishes what is left. `stalled`: a call gave no
+ * vector (the embedder failed; logged).
+ */
+export async function rebuildVectors(
+  index: NotesIndex,
+  options: { signal?: AbortSignal; onBatch?: (done: number, waiting: number) => void } = {},
+): Promise<VectorReport> {
+  await index.idle();
+  let done = 0;
+  let status: VectorReport["status"] = "done";
+  for (;;) {
+    if (!index.enabled) {
+      status = "off";
+      break;
+    }
+    if (options.signal?.aborted) {
+      status = "aborted";
+      break;
+    }
+    if (index.counts().waiting === 0) break;
+    let n: number;
+    try {
+      n = await index.backfill(REBUILD_VECTOR_BATCH, options.signal);
+    } catch (error) {
+      if (!options.signal?.aborted) throw error;
+      status = "aborted";
+      break;
+    }
+    done += n;
+    if (n === 0) {
+      status = index.enabled ? "stalled" : "off";
+      break;
+    }
+    options.onBatch?.(done, index.counts().waiting);
+  }
+  return { done, waiting: index.counts().waiting, status };
 }
 
 /**

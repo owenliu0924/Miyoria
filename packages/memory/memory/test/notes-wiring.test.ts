@@ -15,7 +15,14 @@ import { NotebookKey, PromptContributors, PromptContributorsKey } from "@miyoria
 import { afterEach, describe, expect, it } from "vitest";
 import { LEGACY_IMPORT_KEY } from "../../notes/src/legacy.js";
 import { notesTables } from "../../notes/src/store.js";
-import { embeddingConfig, MemoryModule, memoryConfig, memoryTables } from "../src/index.js";
+import { NotesSearchKey } from "../../notes/src/vectors.js";
+import {
+  type Embedder,
+  embeddingConfig,
+  MemoryModule,
+  memoryConfig,
+  memoryTables,
+} from "../src/index.js";
 import { NotebookStore } from "../src/notebook.js";
 import { NOTEBOOK_TOOLS } from "../src/notebook-tools.js";
 import { profile, router } from "./helpers.js";
@@ -45,7 +52,7 @@ async function legacyPage(store: SqliteStore, path: string, body: string) {
   await pages.write(path, body, "append", { context: null });
 }
 
-async function start(store: SqliteStore) {
+async function start(store: SqliteStore, embedder?: Embedder) {
   const services = new ServiceRegistry();
   const sup = new Supervisor({ services });
   sups.push(sup);
@@ -54,7 +61,11 @@ async function start(store: SqliteStore) {
   services.provide("app", ToolRegistryKey, tools);
   services.provide("app", PromptContributorsKey, new PromptContributors());
   await sup.register(new LlmStub(router(new MockProvider("p"))), null, true);
-  await sup.register(new MemoryModule(profile(), embeddingConfig()), {}, true);
+  await sup.register(
+    new MemoryModule(profile(), embeddingConfig(), embedder === undefined ? {} : { embedder }),
+    {},
+    true,
+  );
   await sup.startAll();
   return { sup, tools, services };
 }
@@ -83,5 +94,40 @@ describe("the memory module on the notes", () => {
     await start(store);
     expect(notes.document("topic:新的")).toBeNull();
     expect(notes.lines("topic:活動", "owner")).toHaveLength(1);
+  });
+
+  it("gives the lines vectors with the module's embedder, and none without one", async () => {
+    const embedder: Embedder = {
+      name: "fake",
+      enabled: true,
+      embeddingModel: "fake|1",
+      embed: async (texts) => texts.map((t) => [t.length, 1]),
+    };
+    const store = await SqliteStore.open(":memory:", { plugins: [memoryTables, notesTables] });
+    stores.push(store);
+    const notes = store.plugin(notesTables);
+    const on = await start(store, embedder);
+    const search = on.services.get(NotesSearchKey);
+    expect(search?.index?.model).toBe("fake|1");
+    notes.add(
+      "topic:活動",
+      { section: "重點", text: "週六有團", provenance: "observed", scope: { type: "public" } },
+      { author: "tool" },
+    );
+    await search?.index?.idle();
+    expect(notes.vectorCounts("fake|1")).toEqual({ lines: 1, vectors: 1, waiting: 0 });
+    await on.sup.stopAll();
+
+    // Off: the search is there, by words, and nothing is queued.
+    const off = await start(store);
+    const words = off.services.get(NotesSearchKey);
+    expect(words).toBeDefined();
+    expect(words?.index).toBeNull();
+    notes.add(
+      "topic:活動",
+      { section: "重點", text: "週日也有", provenance: "observed", scope: { type: "public" } },
+      { author: "tool" },
+    );
+    expect(notes.vectorCounts("fake|1").waiting).toBe(1);
   });
 });

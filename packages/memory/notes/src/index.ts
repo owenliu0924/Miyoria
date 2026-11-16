@@ -50,6 +50,15 @@ export {
   segmentPassPrompt,
 } from "./pass-prompt.js";
 export {
+  DEFAULT_RANKING,
+  type QueryVector,
+  type RankedLine,
+  type Ranking,
+  type RankRow,
+  rankingOf,
+  rankLines,
+} from "./rank.js";
+export {
   applyRebuild,
   estimateRebuild,
   estimateTokens,
@@ -65,6 +74,8 @@ export {
   type RebuildReport,
   readChatLines,
   rebuildEpisodeSink,
+  rebuildVectors,
+  type VectorReport,
 } from "./rebuild.js";
 export {
   DOCUMENT_KINDS,
@@ -75,10 +86,12 @@ export {
   type NotesEvidenceRow,
   type NotesHistoryRow,
   type NotesLineRow,
+  type NotesVectorRow,
   notesDocuments,
   notesEvidence,
   notesHistory,
   notesLines,
+  notesVectors,
   PROVENANCES,
 } from "./schema.js";
 export {
@@ -130,6 +143,8 @@ export {
   type DocumentOutline,
   type EvidenceSource,
   type FullOptions,
+  type LineHit,
+  type MeaningOptions,
   NotesError,
   NotesStore,
   notesTables,
@@ -143,6 +158,7 @@ export {
   shortLineId,
   topicSlug,
   topicSubject,
+  type VectorCounts,
 } from "./store.js";
 export type {
   AppliedOp,
@@ -167,3 +183,14 @@ export type {
   SearchHit,
   SegmentRef,
 } from "./types.js";
+export {
+  EMBED_BATCH,
+  modelOf,
+  NotesIndex,
+  type NotesIndexOptions,
+  NotesSearch,
+  NotesSearchKey,
+  type NotesSearchOptions,
+  type SearchOptions,
+  type VectorWait,
+} from "./vectors.js";

@@ -75,6 +75,7 @@ import {
   topicSubject,
 } from "./store.js";
 import type { EvidenceInput, NoteLine, NoteOp, NotesErrorCode, SegmentRef } from "./types.js";
+import type { NotesSearch } from "./vectors.js";
 
 // ---- the reply --------------------------------------------------------------------------------
 
@@ -189,6 +190,11 @@ export const DEFAULT_PASS_CAPS: PassCaps = { adds: 8, changes: 8, perDocument: 5
 export interface SegmentPassDeps {
   router: Completer;
   notes: NotesStore;
+  /**
+   * Finds the topic documents related to what was said by meaning too (`vectors.ts`), over the
+   * same `notes`; absent: by words.
+   */
+  search?: NotesSearch | null;
   /** Where the episode and the follow-ups go; none: they are only returned. */
   episodes?: EpisodeSink | null;
   /** The session's position, moved to the segment's end with the documents. */
@@ -425,9 +431,14 @@ export async function runSegmentPass(
   const topicSubjects = new Set<string>();
   for (const name of input.topics ?? []) topicSubjects.add(topicSubject(name));
   const said = spoken.map((e) => e.content).join("\n");
-  for (const hit of notes.search(said, viewer, { kind: "topic", limit: 3 })) {
-    topicSubjects.add(hit.document.subject);
-  }
+  const related = deps.search
+    ? await deps.search.documents(said, viewer, {
+        kind: "topic",
+        limit: 3,
+        ...(deps.signal === undefined ? {} : { signal: deps.signal }),
+      })
+    : notes.search(said, viewer, { kind: "topic", limit: 3 });
+  for (const hit of related) topicSubjects.add(hit.document.subject);
   for (const subject of topicSubjects) {
     const doc = notes.document(subject);
     const name = doc?.title || subject.slice("topic:".length);

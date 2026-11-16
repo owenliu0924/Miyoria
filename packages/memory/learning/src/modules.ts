@@ -53,6 +53,7 @@ import {
 } from "@miyoria/types";
 import { NotesKnowledge } from "../../notes/src/knowledge.js";
 import { notesTables } from "../../notes/src/store.js";
+import { NotesSearchKey } from "../../notes/src/vectors.js";
 import type { BudgetState } from "./caps.js";
 import {
   ConversationConfigSchema,
@@ -73,6 +74,8 @@ const STORE_TIMEOUT_MS = 5_000;
 export const CONVERSATION_CONTRIBUTOR = "conversation";
 export const KNOWLEDGE_CONTRIBUTOR = "knowledge";
 export const LESSONS_CONTRIBUTOR = "lessons";
+/** Topic documents the knowledge section adds when they are close in meaning to the line. */
+const TOPICS_BY_MEANING = 2;
 
 function budgetOf(services: ServiceLookup): BudgetState {
   return services.get(LlmRouterKey)?.budgetState() ?? "ok";
@@ -300,21 +303,48 @@ export class KnowledgeModule implements Module {
     const contributors = s.get(PromptContributorsKey);
     contributors?.register({
       key: KNOWLEDGE_CONTRIBUTOR,
-      contribute: async (request: PromptRequest) => {
+      contribute: async (request: PromptRequest, signal?: AbortSignal) => {
         const people = peopleInPrompt(config.prompt_people, s.get(PersonProfilesKey) !== undefined);
         const subjects = subjectsFor(topics(request), request, people);
-        const body =
-          notes === null
-            ? kb.render(subjects, { context: request.context, maxChars: config.prompt_chars })
-            : notes.render(
-                subjects,
-                notes.viewerFor(request.context, request.speakers),
-                config.prompt_chars,
-                { query: request.query },
-              );
-        return body === ""
-          ? []
-          : [{ key: KNOWLEDGE_CONTRIBUTOR, title: "你整理的資料", body, order: 25 }];
+        const section = (body: string) =>
+          body === ""
+            ? []
+            : [{ key: KNOWLEDGE_CONTRIBUTOR, title: "你整理的資料", body, order: 25 }];
+        if (notes === null) {
+          return section(
+            kb.render(subjects, { context: request.context, maxChars: config.prompt_chars }),
+          );
+        }
+        const viewer = notes.viewerFor(request.context, request.speakers);
+        // With embeddings on and the line's vector there in time (a voice turn waits less):
+        // lines close to it in meaning come first in each card, and topics it is about come in
+        // even when their names are not said. Otherwise words alone, as without embeddings.
+        const search = s.get(NotesSearchKey) ?? null;
+        const vector =
+          search === null
+            ? null
+            : await search.vector(request.query, {
+                voice: request.voice,
+                ...(signal === undefined ? {} : { signal }),
+              });
+        if (search !== null && vector !== null) {
+          const found = notes.notes
+            .search(request.query, viewer, {
+              kind: "topic",
+              limit: TOPICS_BY_MEANING,
+              vector,
+              ranking: search.ranking,
+            })
+            .map((hit): KnowledgeSubject => ({ type: "topic", name: hit.document.title }));
+          // Before herself, which `subjectsFor` puts last.
+          subjects.splice(Math.max(0, subjects.length - 1), 0, ...found);
+        }
+        return section(
+          notes.render(subjects, viewer, config.prompt_chars, {
+            query: request.query,
+            ...(search === null ? {} : search.cardOptions(vector)),
+          }),
+        );
       },
     });
     const tools = s.get(ToolRegistryKey);

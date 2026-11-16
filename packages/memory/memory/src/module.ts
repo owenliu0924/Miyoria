@@ -46,7 +46,9 @@ import {
 } from "@miyoria/types";
 import { importLegacyOnce } from "../../notes/src/legacy.js";
 import { NotesNotebook } from "../../notes/src/notebook.js";
+import { rankingOf } from "../../notes/src/rank.js";
 import { notesTables } from "../../notes/src/store.js";
+import { NotesIndex, NotesSearch, NotesSearchKey } from "../../notes/src/vectors.js";
 import { MemoryCommands } from "./commands.js";
 import {
   type EmbeddingConfig,
@@ -101,7 +103,9 @@ export interface MemoryModuleOptions {
  * field), `PromptContributorsKey`, `ToolRegistryKey`, `CommandRegistryKey`, and for
  * `/admin memory wipe` `ProfileDataStoreKey`, `SupervisorKey` and `AuditLogKey`.
  *
- * Provides `MemoryEngineKey` and `FollowupSourceKey`; registers the prompt contributor `memory`,
+ * Provides `MemoryEngineKey`, `FollowupSourceKey` and, over a store with the notes, `NotesSearchKey`
+ * (her documents searched by words, and by meaning with embeddings on); registers the prompt
+ * contributor `memory`,
  * the tools `remember` / `recall` and the `memory` commands (re-checked periodically, so start
  * order does not matter).
  */
@@ -122,6 +126,7 @@ export class MemoryModule implements Module {
   readonly #installer = new Installer();
   #engine: MemoryEngine | null = null;
   #embedderInUse: Embedder | null = null;
+  #notesIndex: NotesIndex | null = null;
   #degraded: string | null = null;
 
   /** `embedding` is the top-level `[memory.embedding]` section. */
@@ -176,6 +181,24 @@ export class MemoryModule implements Module {
             handles: () => engine.handles,
             clock: ctx.clock,
           });
+    // Her documents' lines get vectors from the same embedder (`notes/src/vectors.ts`).
+    const notesIndex =
+      notes !== null && embedder.enabled ? new NotesIndex({ notes, embedder }) : null;
+    this.#notesIndex = notesIndex;
+    if (notes !== null) {
+      ctx.provide(
+        NotesSearchKey,
+        new NotesSearch({
+          notes,
+          index: notesIndex,
+          ranking: () => rankingOf(engine.config),
+          wait: () => ({
+            text: engine.config.notes_vector_wait_ms,
+            voice: engine.config.notes_vector_voice_wait_ms,
+          }),
+        }),
+      );
+    }
     const recent = new RecentPast(engine, services, ctx.clock, notebook);
     try {
       await recent.notebook.load();
@@ -237,12 +260,14 @@ export class MemoryModule implements Module {
       ctx.spawn("forget", (signal) => maintenanceLoop(ctx, engine, signal));
     }
     if (embedder.enabled) {
-      ctx.spawn("embed", (signal) => backfillLoop(ctx, engine, signal));
+      ctx.spawn("embed", (signal) => backfillLoop(ctx, engine, signal, notesIndex));
     }
   }
 
   async stop(): Promise<void> {
     this.#installer.uninstall();
+    this.#notesIndex?.close();
+    this.#notesIndex = null;
     const embedder = this.#embedderInUse as (Embedder & { close?: () => Promise<void> }) | null;
     this.#embedderInUse = null;
     await embedder?.close?.();
@@ -540,11 +565,15 @@ async function maintenanceLoop(
   }
 }
 
-/** Gives vectors to records stored without one, a batch at a time, while the embedder is on. */
+/**
+ * Gives vectors to records stored without one, and to lines of her documents without one, a
+ * batch at a time, while the embedder is on.
+ */
 async function backfillLoop(
   ctx: ModuleContext,
   engine: MemoryEngine,
   signal: AbortSignal,
+  notes: NotesIndex | null = null,
 ): Promise<void> {
   for (;;) {
     try {
@@ -559,6 +588,14 @@ async function backfillLoop(
     } catch (error) {
       if (signal.aborted) return;
       ctx.log.warn({ error: errorMessage(error) }, "embedding backfill failed");
+    }
+    if (notes === null) continue;
+    try {
+      const n = await notes.backfill(BACKFILL_BATCH, signal);
+      if (n > 0) ctx.log.info({ lines: n }, "note lines given vectors");
+    } catch (error) {
+      if (signal.aborted) return;
+      ctx.log.warn({ error: errorMessage(error) }, "notes embedding backfill failed");
     }
   }
 }

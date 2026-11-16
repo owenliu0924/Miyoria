@@ -36,6 +36,7 @@ import type { DocumentKind, NoteAuthor, Provenance } from "./schema.js";
 import type { NoteScope, NotesReader, NotesViewer, ScopeResolver } from "./scope.js";
 import { MISC_SECTION, sectionKey, sectionLabel } from "./sections.js";
 import {
+  type CardOptions,
   cleanLine,
   DEFAULT_CONFIDENCE,
   NotesError,
@@ -551,7 +552,7 @@ export class NotesKnowledge {
     subjects: readonly KnowledgeSubject[],
     reader: NotesReader,
     maxChars: number,
-    options: { query?: string } = {},
+    options: Pick<CardOptions, "query" | "vector" | "ranking"> = {},
   ): string {
     const seen = new Set<string>();
     const parts: string[] = [];
@@ -566,6 +567,8 @@ export class NotesKnowledge {
       const card = this.notes.card(target.subject, reader, {
         budget: Math.max(0, Math.min(600, maxChars - used)),
         ...(options.query === undefined ? {} : { query: options.query }),
+        ...(options.vector ? { vector: options.vector } : {}),
+        ...(options.ranking === undefined ? {} : { ranking: options.ranking }),
       });
       if (card === "") continue;
       const head = `${shortLineId(doc.id)} ${KIND_LABEL[doc.kind]}「${this.#titleOf(doc)}」`;

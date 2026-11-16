@@ -16,6 +16,10 @@
 //   message or the event they are from. A redaction finds lines through this table.
 // - `notes_history`: every change of a document, one row per line touched; the rows of one call
 //   share a `version`.
+// - `notes_vectors`: the embedding of a line in use (`vectors.ts`), for finding it by meaning.
+//   Derived from the line's text, which never changes: a line that goes out of use (outdated,
+//   redacted, deleted) loses its vector in the same transaction, and one made by another model
+//   counts as missing.
 //
 // No foreign keys: like the event log and the transcripts, a line must accept a person, a place
 // or a session that identity has not resolved (or that a wipe of another category removed); the
@@ -27,6 +31,7 @@ import { micros } from "@miyoria/store";
 import { sql } from "drizzle-orm";
 import {
   check,
+  customType,
   index,
   integer,
   real,
@@ -210,7 +215,31 @@ export const notesHistory = sqliteTable(
   ],
 );
 
+/** A vector as little-endian float32 components, as `memory_records.embedding` holds one. */
+const f32 = customType<{ data: Uint8Array; driverData: Uint8Array }>({
+  dataType: () => "blob",
+});
+
+export const notesVectors = sqliteTable(
+  "notes_vectors",
+  {
+    /** The line it is of. */
+    line_id: text().primaryKey(),
+    /** What made it (the embedder's `embeddingModel`). */
+    model: text().notNull(),
+    vector: f32().notNull(),
+    at: micros().notNull(),
+  },
+  (t) => [
+    check(
+      "notes_vectors_vector_check",
+      sql`length(${t.vector}) > 0 AND length(${t.vector}) % 4 = 0`,
+    ),
+  ],
+);
+
 export type NotesDocumentRow = typeof notesDocuments.$inferSelect;
 export type NotesLineRow = typeof notesLines.$inferSelect;
 export type NotesEvidenceRow = typeof notesEvidence.$inferSelect;
 export type NotesHistoryRow = typeof notesHistory.$inferSelect;
+export type NotesVectorRow = typeof notesVectors.$inferSelect;
