@@ -19,12 +19,15 @@ import {
   type FloorHold,
   FloorKey,
   type GateDecisionPayload,
+  type IncomingMessage,
   type InterruptLevel,
   type LifeLog,
   LifeLogKey,
   MessageActionsKey,
   type PartyStatus,
   PartyStatusKey,
+  PlatformHistories,
+  PlatformHistoriesKey,
   type PromptContributor,
   PromptContributors,
   PromptContributorsKey,
@@ -383,6 +386,59 @@ describe("「要她回這則」", () => {
       });
     expect(await ask("sent-1")).toEqual({ ok: false, reason: "這是她自己說的話。" });
     expect(await ask("nowhere")).toEqual({ ok: false, reason: "她現在看不到這則訊息。" });
+  });
+});
+
+// ---- reply chains -------------------------------------------------------------------------------
+
+describe("a reply chain", () => {
+  it("notes the ancestors she did not see after the line, up to `reply_chain`, nothing rewritten", async () => {
+    const chain: IncomingMessage[] = [];
+    for (const [i, who] of ["dan", "carol", "bob", "erin"].entries()) {
+      const parent = chain.at(-1);
+      chain.push({
+        ...line(C1, who, `第 ${i + 1} 句`),
+        ...(parent === undefined ? {} : { reply_to: parent.id }),
+      });
+    }
+    const fetched: string[] = [];
+    const histories = new PlatformHistories();
+    histories.register({
+      platform: "test",
+      recent: async () => [],
+      fetch: async (ref) => {
+        fetched.push(ref.id);
+        return chain.find((m) => m.id.id === ref.id) ?? null;
+      },
+    });
+    const rig = await Rig.create({
+      provide: (sup) => sup.services.provide("app", PlatformHistoriesKey, histories),
+    });
+    rig.say(line(C1, "amy", "先講一句"));
+    await until(() => rig.entries(C1).length === 1, 3_000, "the first line");
+    const before = rig.entries(C1).map((e) => ({ ...e }));
+    rig.model.push(says("原來如此"));
+    const direct = chain.at(-1) as IncomingMessage;
+    rig.say({
+      ...mention(C1, "amy", "@她 你看這串"),
+      reply_to: direct.id,
+      referenced: { author: account("erin"), author_name: "erin", text: "第 4 句" },
+    });
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    const notes = rig
+      .entries(C1)
+      .filter((e) => e.kind === "note")
+      .map((e) => [e.author, e.content]);
+    // The quote that came with the reply, then the fetched ancestors, nearest first, three in all.
+    expect(notes).toEqual([
+      ["erin", "第 4 句"],
+      ["bob", "第 3 句"],
+      ["carol", "第 2 句"],
+    ]);
+    expect(fetched).toEqual([direct.id.id, chain[2]?.id.id, chain[1]?.id.id]);
+    expect(textOf(rig.model.requests[0])).toContain("> (被回覆) carol: 第 2 句");
+    // What was there before is as it was.
+    expect(rig.entries(C1).slice(0, before.length)).toEqual(before);
   });
 });
 
