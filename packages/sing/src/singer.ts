@@ -58,12 +58,13 @@ import {
   type GpuContext,
   type SingWorker,
   SingWorkerError,
+  type SongMeta,
   type SongQuery,
   type WorkerJob,
 } from "./client.js";
 import type { SingConfig } from "./config.js";
 import { dedicationProblem, type SongPayments, SongPaymentsKey } from "./payments.js";
-import { singSong, sleep } from "./player.js";
+import { ensureVideo, singSong, sleep } from "./player.js";
 import {
   type BackingMode,
   dedicationNote,
@@ -135,7 +136,15 @@ interface Playing {
   entry: SongEntry;
   guild: string;
   stop: AbortController;
-  /** The song itself started streaming (before that she is still saying her opening). */
+  /**
+   * Her opening is over and the song has the channel (`holder`), from the moment its audio is
+   * fetched: her speech waits behind it and she is no longer asked for an opening.
+   */
+  holding: boolean;
+  /**
+   * The voice node reported the song itself as playing. Before that the audio is still on its
+   * way from the worker: nothing of the song was heard, so a skip gives the charges back.
+   */
   audible: boolean;
 }
 
@@ -248,7 +257,7 @@ export class Singer implements VoiceFloor, SpeechPause {
 
   holder(guild: string): string | null {
     const p = this.#playing;
-    return p?.audible && p.guild === guild ? "song" : null;
+    return p?.holding && p.guild === guild ? "song" : null;
   }
 
   playing(): SongEntry | null {
@@ -282,7 +291,7 @@ export class Singer implements VoiceFloor, SpeechPause {
 
   /** The song started is waiting for her to finish talking. */
   starting(): boolean {
-    return this.#playing !== null && !this.#playing.audible;
+    return this.#playing !== null && !this.#playing.holding;
   }
 
   /** A voice channel she is in (in `guild` when given). */
@@ -443,6 +452,7 @@ export class Singer implements VoiceFloor, SpeechPause {
         entry.progress = 1;
         entry.ready_at = toTimestamp(this.ctx.clock.now());
         log.info({ no: entry.no, song: job.song.id, cached: job.cached }, "song ready");
+        this.#fetchVideo(job.song);
         this.#onReady(entry);
         return;
       case "failed":
@@ -452,6 +462,12 @@ export class Singer implements VoiceFloor, SpeechPause {
       default:
         return;
     }
+  }
+
+  /** Brings a ready song's video over now, so that it is here by the time she sings it. */
+  #fetchVideo(song: SongMeta): void {
+    if (this.videoDir === null || this.#closed) return;
+    void ensureVideo({ worker: this.worker, videoDir: this.videoDir }, song, this.ctx.signal);
   }
 
   // ----- the GPU to the worker -----
@@ -722,7 +738,7 @@ export class Singer implements VoiceFloor, SpeechPause {
   #begin(entry: SongEntry, guild: string, turn: TurnId | null, expectMs: number): void {
     const stop = new AbortController();
     entry.state = "playing";
-    this.#playing = { entry, guild, stop, audible: false };
+    this.#playing = { entry, guild, stop, holding: false, audible: false };
     this.ctx.spawn(`song-${entry.no}`, async (signal) => {
       const both = AbortSignal.any([signal, stop.signal]);
       let outcome: PlaybackState | "error" = "interrupted";
@@ -731,9 +747,12 @@ export class Singer implements VoiceFloor, SpeechPause {
         if (!both.aborted) outcome = await this.#sing(entry, guild, both);
       } catch (error) {
         if (isGone(error) && !both.aborted && (await this.#prepareAgain(entry))) return;
-        log.warn({ no: entry.no, err: errorMessage(error) }, "could not sing");
-        outcome = "error";
-        entry.error = errorMessage(error);
+        // Stopped while the audio was on its way: a skip like any other, not a failure.
+        if (!both.aborted) {
+          log.warn({ no: entry.no, err: errorMessage(error) }, "could not sing");
+          outcome = "error";
+          entry.error = errorMessage(error);
+        }
       }
       this.#ended(entry, guild, outcome);
     });
@@ -782,8 +801,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     const song = entry.song;
     if (!song) throw new SingError("the song has no audio");
     log.info({ no: entry.no, song: song.id, guild }, "singing");
-    if (this.#playing?.entry === entry) this.#playing.audible = true;
-    this.#showDedication(entry);
+    if (this.#playing?.entry === entry) this.#playing.holding = true;
     return singSong(
       {
         worker: this.worker,
@@ -795,6 +813,13 @@ export class Singer implements VoiceFloor, SpeechPause {
         lyrics: this.cfg.lyrics,
         lipSyncVocals: this.cfg.lip_sync_vocals,
         videoDir: this.videoDir,
+        videoSignal: this.ctx.signal,
+        // Only from here on does a skip keep the charges, and the dedication go up.
+        heard: () => {
+          if (this.#playing?.entry !== entry || this.#playing.audible) return;
+          this.#playing.audible = true;
+          this.#showDedication(entry);
+        },
       },
       song,
       guild,

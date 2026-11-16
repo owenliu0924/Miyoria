@@ -216,7 +216,15 @@ class FakeWorker implements SingWorker {
   /** Songs its cache cleaned out (`/songs/{id}/files/*` answers 404). */
   readonly cleaned = new Set<string>();
 
-  async audio(song: string, track: SongTrack): Promise<Int16Array> {
+  /** The audio never arrives: the fetch ends only when its signal aborts. */
+  audioHeld = false;
+
+  async audio(song: string, track: SongTrack, signal?: AbortSignal): Promise<Int16Array> {
+    if (this.audioHeld) {
+      await new Promise<never>((_, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
     if (this.cleaned.has(song)) {
       throw new SingWorkerError(`song ${song} has no ${track}`, { status: 404 });
     }
@@ -253,6 +261,8 @@ interface Play {
 class FakeVoice implements VoicePlayer {
   readonly plays: Play[] = [];
   readonly channels = new Map<string, string>();
+  /** The node takes a play but never reports it started (until it is stopped). */
+  holdPlay = false;
 
   channel(guild: string): string | null {
     return this.channels.get(guild) ?? null;
@@ -277,6 +287,7 @@ class FakeVoice implements VoicePlayer {
       resolve = r;
     });
     void (async () => {
+      if (this.holdPlay) await new Promise((r) => setTimeout(r, 600_000));
       for await (const c of audio) {
         if (p.stoppedWith !== null) break;
         p.chunks.push(c);
@@ -739,9 +750,16 @@ describe("sing module", () => {
     });
     expect(started[1]).not.toHaveProperty("video");
     // The worker may be on another machine: Core fetched the video into its own cache dir.
-    expect(h.worker.downloaded).toEqual([
-      { song: "s-j1", file: "video.mp4", dest: join(dir, "s-j1", "video.mp4") },
-    ]);
+    // It is fetched as soon as the song is ready; this stand-in writes no file, so the start
+    // asks once more.
+    expect(h.worker.downloaded.length).toBeGreaterThanOrEqual(1);
+    for (const fetched of h.worker.downloaded) {
+      expect(fetched).toEqual({
+        song: "s-j1",
+        file: "video.mp4",
+        dest: join(dir, "s-j1", "video.mp4"),
+      });
+    }
   });
 
   it("sings without a video when the worker cannot give it", async () => {
@@ -1234,6 +1252,40 @@ describe("sing module", () => {
       expect(h.singer.list.playing()?.no).toBe(1);
       await h.singer.stop(false);
       await settle(50);
+      expect(pay.refunds).toEqual(["e1"]);
+      expect(h.events.some((e) => e.type === "economy.screen")).toBe(false);
+    });
+
+    it("a song skipped while its audio is on its way is refunded, and is no failure", async () => {
+      const pay = await paid({});
+      await asAmy(h, { query: "Song A", dedication: "加油" });
+      h.worker.audioHeld = true;
+      h.worker.finish("j1", "Song A", 1);
+      await settle(6000 + 400);
+      expect(h.singer.list.playing()?.no).toBe(1);
+      // Her opening is over: the song holds the channel while its audio is on its way.
+      expect(h.sup.services.require(VoiceFloorKey).holder("g1")).toBe("song");
+      expect(h.singer.starting()).toBe(false);
+      expect(await h.section()).not.toContain("要開始唱");
+      await h.singer.stop(false);
+      await settle(50);
+      // Nothing of it was heard: the charge goes back and the dedication never went up.
+      expect(pay.refunds).toEqual(["e1"]);
+      expect(h.events.some((e) => e.type === "economy.screen")).toBe(false);
+      expect(h.singer.list.get(1)?.state).toBe("done");
+      expect(h.singer.list.get(1)?.error).toBeNull();
+    });
+
+    it("a song stopped before the node plays any of it is refunded", async () => {
+      const pay = await paid({});
+      await asAmy(h, { query: "Song A", dedication: "加油" });
+      h.voice.holdPlay = true;
+      h.worker.finish("j1", "Song A", 1);
+      await settle(6000 + 400);
+      expect(h.voice.plays).toHaveLength(1);
+      await h.singer.stop(false);
+      await settle(50);
+      // Over as `interrupted` without ever being `started`: nothing of it was heard.
       expect(pay.refunds).toEqual(["e1"]);
       expect(h.events.some((e) => e.type === "economy.screen")).toBe(false);
     });

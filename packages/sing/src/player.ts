@@ -30,6 +30,12 @@ export interface PlayerDeps {
   lipSyncVocals: boolean;
   /** The worker's cache dir (absolute) when videos are shown, else `null`. */
   videoDir: string | null;
+  /** Called once, when the voice node reports that the song itself is heard. */
+  heard?: () => void;
+  /** What a video download stops on (the module's signal). Default: the song's own. */
+  videoSignal?: AbortSignal;
+  /** How long the song waits for its video. Default `VIDEO_WAIT_MS`. */
+  videoWaitMs?: number;
 }
 
 /** Song ids and video names as the worker writes them (`safe_id`, `video<ext>`). */
@@ -62,6 +68,14 @@ export function songBeats(song: SongMeta): SongBeats | null {
 /** How long to wait for the node to report a started playback before giving up on lyrics. */
 const START_WAIT_MS = 60_000;
 const POLL_MS = 50;
+/**
+ * How long a song waits for its video before it starts without one. A video that is not here by
+ * then goes on downloading and is shown the next time the song is sung.
+ */
+export const VIDEO_WAIT_MS = 5_000;
+
+/** Video downloads under way, by destination: two callers never write the same file. */
+const fetching = new Map<string, Promise<string | null>>();
 
 /** Resolves after `ms`, or when `signal` aborts (never rejects). */
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -113,7 +127,7 @@ export async function* paced(
  * Core fetches it from the worker once). The path to show, or `null` when there is none.
  */
 export async function ensureVideo(
-  d: PlayerDeps,
+  d: Pick<PlayerDeps, "worker" | "videoDir">,
   song: SongMeta,
   signal: AbortSignal,
 ): Promise<string | null> {
@@ -127,13 +141,22 @@ export async function ensureVideo(
   } catch {
     // not here yet: ask the worker
   }
-  try {
-    await d.worker.download(song.id, file, path, signal);
-    return path;
-  } catch (error) {
-    if (!signal.aborted) log.warn({ song: song.id, err: String(error) }, "song video not fetched");
-    return null;
-  }
+  const running = fetching.get(path);
+  if (running !== undefined) return running;
+  const download = d.worker
+    .download(song.id, file, path, signal)
+    .then(
+      () => path,
+      (error: unknown) => {
+        if (!signal.aborted) {
+          log.warn({ song: song.id, err: String(error) }, "song video not fetched");
+        }
+        return null;
+      },
+    )
+    .finally(() => fetching.delete(path));
+  fetching.set(path, download);
+  return download;
 }
 
 export async function singSong(
@@ -143,12 +166,17 @@ export async function singSong(
   signal: AbortSignal,
 ): Promise<PlaybackState> {
   const rate = song.play.sample_rate;
-  const videoFetch = ensureVideo(d, song, signal);
+  // Not on the song's own signal: a skipped song's video is still wanted the next time.
+  const videoFetch = ensureVideo(d, song, d.videoSignal ?? signal);
   const [mix, vocals] = await Promise.all([
     d.worker.audio(song.id, "play_mix.pcm", signal),
     d.lipSyncVocals ? d.worker.audio(song.id, "play_vocals.pcm", signal) : Promise.resolve(null),
   ]);
-  const video = await videoFetch;
+  // The song does not wait for a slow download: it starts without the video instead.
+  const video = await Promise.race([
+    videoFetch,
+    sleep(d.videoWaitMs ?? VIDEO_WAIT_MS, signal).then(() => null),
+  ]);
   if (signal.aborted) return "interrupted";
   const streaming = new AbortController();
   const handle = await d.voice.play(
@@ -158,7 +186,9 @@ export async function singSong(
     { levels: vocals !== null },
   );
   const onAbort = () => handle.stop(d.fadeMs);
-  signal.addEventListener("abort", onAbort, { once: true });
+  // A stop that came while the playback was being set up fires no event any more.
+  if (signal.aborted) onAbort();
+  else signal.addEventListener("abort", onAbort, { once: true });
   const lyricsDone = new AbortController();
   const durationMs = Math.round((mix.length / rate) * 1000);
   const lyrics = cueLyrics(
@@ -195,6 +225,10 @@ async function cueLyrics(
   while (handle.state() === null && !signal.aborted && d.clock.now() < waitUntil) {
     await sleep(POLL_MS, signal);
   }
+  // Playing, or played to its end: heard. `failed` or `interrupted` here may have ended before
+  // the node played any of it, so neither counts.
+  const reached = handle.state();
+  if (reached === "started" || reached === "finished") d.heard?.();
   if (signal.aborted || handle.state() !== "started") return;
   const startedAt = d.clock.now();
   const beats = songBeats(song);
