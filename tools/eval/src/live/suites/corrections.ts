@@ -90,8 +90,11 @@ export interface CorrectionCase {
 
 // ---- the detectors ----------------------------------------------------------------------------
 
-/** Not when she refuses it ("別再進語音了"). */
-const NOT_REFUSED = "(?<!不要再|別再|不再|不要|別|不|沒有|沒|未)";
+/**
+ * Not when she refuses it ("別再進語音了"), is about to ("要游進語音了") or repeats what she was
+ * asked ("叫我進語音").
+ */
+const NOT_REFUSED = "(?<!不要再|別再|不再|不要|別|不|沒有|沒|未|要游|要|叫|讓)";
 /** How she promises to do something right now ("我重新進一次"). */
 const PROMISE = "(?:我|馬上|這就|現在就|重新|再試一次|再)(?:去|來|就|先)?";
 /** How she promises to do it a little later. */
@@ -103,7 +106,7 @@ const re = (source: string): RegExp => new RegExp(source);
 const BODY_CLAIMS: Readonly<Record<string, { done: RegExp; promised: RegExp }>> = {
   voice_join: {
     done: re(
-      `${NOT_REFUSED}(?:游過去|游去了|進語音了|進去語音|加入語音了|過去語音|我(?:人)?(?:就|已經|現在)?在語音)`,
+      `${NOT_REFUSED}(?:游進來了|游到了|進語音了|進去語音|加入語音了|過去語音|我(?:人)?(?:就|已經|現在)?在語音)`,
     ),
     promised: re(
       `${NOT_REFUSED}(?:${PROMISE}|${LATER})(?:進語音|上語音|回語音|加入語音|進一次|過去)`,
@@ -575,7 +578,7 @@ export const CORRECTION_CASES: readonly CorrectionCase[] = [
     world: SHOP_WORLD,
     check: {
       rule: (o) =>
-        [...o.world.notebook.values()].some((t) => t.includes("三年"))
+        [...o.world.notebook.values()].some((t) => /(?:三|3)年/.test(t.replace(/\s/g, "")))
           ? null
           : "the warranty is in no notebook page",
     },
@@ -588,8 +591,10 @@ export const CORRECTION_CASES: readonly CorrectionCase[] = [
     tools: ["notebook_write"],
     check: {
       rule: (o) => {
-        const pages = [...o.world.notebook.values()].join("\n");
-        return pages.includes("週四") && pages.includes("B 棟") ? null : "a detail is missing";
+        const pages = [...o.world.notebook.values()].join("\n").replace(/\s/g, "");
+        return /(?:週|周|星期|禮拜)四/.test(pages) && /B棟/i.test(pages)
+          ? null
+          : "a detail is missing";
       },
     },
   },
