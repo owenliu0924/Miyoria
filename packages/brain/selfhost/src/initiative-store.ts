@@ -1,9 +1,16 @@
 // Reads and writes of the `initiative` plugin's tables (`initiative-schema.ts`): her schedules and
 // her inbox. Every time is given by the caller (her clock), never the store's.
 
-import type { Db, StorePlugin } from "@miyoria/store";
+import {
+  type CategoryData,
+  type Db,
+  type Identity,
+  type PersonForget,
+  type StorePlugin,
+  tablePart,
+} from "@miyoria/store";
 import { type AccountRef, type ContextKey, type Timestamp, toTimestamp } from "@miyoria/types";
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { initiativeSchema } from "./initiative-migrations.js";
 import {
   initiativeInbox as I,
@@ -46,8 +53,47 @@ const ts = (ms: number): Timestamp => toTimestamp(ms);
 export class InitiativeStore {
   readonly #db: Db;
 
-  constructor(db: Db) {
+  readonly #identity: Identity | null;
+
+  constructor(db: Db, identity: Identity | null = null) {
     this.#db = db;
+    this.#identity = identity;
+  }
+
+  /**
+   * "Forget me": the schedules and inbox items that are about or from the persons `request.ids`
+   * (by handle, or by the account that asked for a schedule) are deleted.
+   */
+  forgetPerson(request: PersonForget): { schedules: number; inbox: number } {
+    const handles = new Set<string>();
+    for (const id of request.ids) {
+      const handle = this.#identity?.personRow(id)?.handle;
+      if (handle) handles.add(handle.toLowerCase());
+    }
+    const theirs = (person: string | null) =>
+      person !== null && handles.has(person.trim().toLowerCase());
+    const asked = (account: AccountRef | null) =>
+      account !== null &&
+      request.accounts.some((a) => a.platform === account.platform && a.id === account.id);
+    return this.#db.tx(() => {
+      const schedules = this.#db.orm
+        .select({ id: S.id, person: S.person, for_account: S.for_account })
+        .from(S)
+        .where(or(isNotNull(S.person), isNotNull(S.for_account)))
+        .all()
+        .filter((s) => theirs(s.person) || asked(s.for_account))
+        .map((s) => s.id);
+      const inbox = this.#db.orm
+        .select({ id: I.id, person: I.person })
+        .from(I)
+        .where(isNotNull(I.person))
+        .all()
+        .filter((i) => theirs(i.person))
+        .map((i) => i.id);
+      if (schedules.length > 0) this.#db.orm.delete(S).where(inArray(S.id, schedules)).run();
+      if (inbox.length > 0) this.#db.orm.delete(I).where(inArray(I.id, inbox)).run();
+      return { schedules: schedules.length, inbox: inbox.length };
+    });
   }
 
   // ---- schedules ------------------------------------------------------------------------------
@@ -175,11 +221,50 @@ export class InitiativeStore {
   }
 }
 
+/** Her schedules and inbox on the panel's data page: counted, exported and wiped with her initiative. */
+const initiativeData: readonly CategoryData[] = [
+  {
+    category: "initiative",
+    parts: [
+      tablePart("initiative_schedules", "initiative_schedules", "node", "updated_at", "id", {
+        id: "text",
+        note: "text",
+        due: "ts",
+        daily: "text",
+        context: "json",
+        person: "text",
+        for_account: "json",
+        source: "text",
+        fired: "num",
+        state: "text",
+        created_at: "ts",
+        updated_at: "ts",
+      }),
+      tablePart("initiative_inbox", "initiative_inbox", "node", "created_at", "id", {
+        id: "num",
+        key: "text",
+        kind: "text",
+        session: "text",
+        context: "json",
+        text: "text",
+        person: "text",
+        created_at: "ts",
+        woke_at: "ts",
+        woke_turn: "text",
+        seen_at: "ts",
+        seen_turn: "text",
+      }),
+    ],
+  },
+];
+
 /**
  * Her schedules and her inbox as a plugin of the store: Core opens the store with it
  * (`STORE_PLUGINS`), so the tables exist; only the new runner writes them.
  */
 export const initiativeTables: StorePlugin<InitiativeStore> = {
   schema: initiativeSchema,
-  open: ({ db }) => new InitiativeStore(db),
+  open: ({ db, identity }) => new InitiativeStore(db, identity),
+  data: initiativeData,
+  forgetPerson: (store, request: PersonForget) => ({ counts: store.forgetPerson(request) }),
 };
