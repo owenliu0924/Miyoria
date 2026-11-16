@@ -1,5 +1,5 @@
 // What other modules ask her to say, on the new runner: the Arbiter's `ImpulseHost` (a game's
-// narration, a song's announcement, a notice) and the capabilities `chat.start` / `chat.dm`.
+// narration, a song's announcement, a notice).
 //
 // The Arbiter still decides whether and when: its floors, the Floor's claims, and retrying a
 // place that is busy, most urgent first. What it admits is a run of the place's lane, as the turn
@@ -16,22 +16,10 @@
 // when the run starts, so block 6 does not show them again); anything else is a `world` wake with
 // what happened (`ADMITTED_NOTES`) and the Floor row it was admitted under. Lines that are fixed
 // text do not come here: they go out through the mouth (`MouthKey.say`).
-//
-// `chat.start` and `chat.dm` keep their gate (consent, `chat.dm`'s permission and limits); the
-// channel's level and her budget still hold. Running one puts a `self` wake in that place (the
-// DM it opens, for `chat.dm`) that says she wanted to talk; she may still stay quiet.
 
-import {
-  type Capability,
-  CapabilityError,
-  defineCapability,
-  recipient,
-} from "@miyoria/gate/actions";
 import { sleep } from "@miyoria/runtime/kernel";
 import {
   type ArbiterReason,
-  CHAT_DM,
-  CHAT_START,
   type ContextKey,
   type ConversationFacts,
   claimOf,
@@ -39,12 +27,10 @@ import {
   type ImpulseHost,
   type ImpulseRun,
   newId,
-  PlatformSinksKey,
 } from "@miyoria/types";
-import { z } from "zod";
 import type { Agent } from "../../agent/src/index.js";
 import type { Wake } from "../../self/src/index.js";
-import { ADMITTED_NOTES, CHAT_NOTES, NOTICE_TOOL, noticeLine } from "./impulse-texts.js";
+import { ADMITTED_NOTES, NOTICE_TOOL, noticeLine } from "./impulse-texts.js";
 import type { AdmittedAnswer, AdmittedInput } from "./lane.js";
 
 /** How long the Arbiter waits for a lane to take (or refuse) what it admitted. */
@@ -58,8 +44,6 @@ export interface ImpulseDeskHost {
   agent: Agent;
   /** Hands `input` to the lane of `context`; `false`: no lane took it. */
   admit(context: ContextKey, input: AdmittedInput): boolean;
-  /** Puts `wake` in the lane of `context`, after what is there. */
-  wake(context: ContextKey, wake: Wake): boolean;
 }
 
 const refused = (reason: ArbiterReason, detail: string): ImpulseRun => ({
@@ -200,77 +184,4 @@ export class ImpulseDesk implements ImpulseHost {
       if (!taken) done({ status: "busy", why: "the place is closing" });
     });
   }
-}
-
-/** Why she may not start talking in `context` now; `null`: she may. */
-function startRefusal(agent: Agent, context: ContextKey): string | null {
-  if (agent.muted) return "the emergency stop";
-  if (context.kind !== "dm") {
-    const mode = agent.handle.channelMode(context);
-    if (mode === "off" || mode === "mention-only") return `mode ${mode}`;
-  }
-  const budget = agent.handle.llmBudget();
-  return budget === "ok" ? null : `llm budget ${budget}`;
-}
-
-const NoArgs = z.object({});
-const DmArgs = z.object({ to: z.string().trim().min(1).max(64) });
-
-/** `chat.start` and `chat.dm` on the new runner. */
-export function chatCapabilities(host: ImpulseDeskHost): Capability[] {
-  const agent = host.agent;
-  const start = defineCapability<z.output<typeof NoArgs>>({
-    name: CHAT_START,
-    summary: "主動開口說話(在頻道或她所在的語音頻道)",
-    risk: "medium",
-    args: NoArgs,
-    permission: null,
-    limits: { per_day: 200, per_person_per_day: 50, cooldown_ms: 0 },
-    scope: (_args, principal) => principal.context?.scope ?? null,
-    check: (_args, principal) => {
-      const context = principal.context;
-      if (context === null) return "no context to talk in";
-      if (context.kind === "dm") return "use chat.dm for DMs";
-      if (context.kind === "voice" && !agent.inVoice(context)) {
-        return "she is not in that voice channel";
-      }
-      return null;
-    },
-    async execute(_args, ctx) {
-      const context = ctx.principal.context;
-      if (context === null) throw new CapabilityError("no context to talk in");
-      const why = startRefusal(agent, context);
-      if (why !== null) throw new CapabilityError(why);
-      if (!host.wake(context, { kind: "self", note: CHAT_NOTES.start(ctx.request.why) })) {
-        throw new CapabilityError("the place is closing");
-      }
-      return { text: "her run is queued", data: null };
-    },
-  });
-  const dm = defineCapability<z.output<typeof DmArgs>>({
-    name: CHAT_DM,
-    summary: "主動私訊某個人聊天",
-    risk: "medium",
-    args: DmArgs,
-    permission: "chat.dm",
-    consent: "dm",
-    limits: { per_day: 6, per_person_per_day: 2, cooldown_ms: 600_000 },
-    target: (args, principal) => recipient(args.to, principal),
-    check: (args, principal) =>
-      recipient(args.to, principal) === null ? "`to` must be a mention or an id" : null,
-    async execute(args, ctx) {
-      const to = recipient(args.to, ctx.principal);
-      if (to === null) throw new CapabilityError("no recipient");
-      const sink = ctx.services.get(PlatformSinksKey)?.get(to.platform);
-      if (!sink?.openDm) throw new CapabilityError(`cannot send DMs on ${to.platform}`);
-      const context = await sink.openDm(to, ctx.signal);
-      const why = startRefusal(agent, context);
-      if (why !== null) throw new CapabilityError(why);
-      if (!host.wake(context, { kind: "self", note: CHAT_NOTES.dm(ctx.request.why) })) {
-        throw new CapabilityError("the place is closing");
-      }
-      return { text: "her DM run is queued", data: null };
-    },
-  });
-  return [start as Capability, dm as Capability];
 }

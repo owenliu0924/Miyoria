@@ -1,9 +1,8 @@
 // What other modules ask her to say, on the new runner: what the Arbiter admits (a game's
 // narration, a song's announcement, a notice) is a run of the place's lane under the turn the
-// Arbiter booked, never queued behind a run; `chat.start` wakes her where it was asked; a long task
-// asked for in voice (the old work lane's `work_start`) is a helper's job.
+// Arbiter booked, never queued behind a run; a long task asked for in voice (the old work lane's
+// `work_start`) is a helper's job.
 
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { defineTool } from "@miyoria/llm/tools";
 import { sleep } from "@miyoria/runtime/kernel";
 import {
@@ -16,7 +15,6 @@ import {
   type ImpulseInput,
   newImpulse,
   type PlaybackState,
-  Principals,
   type TurnOutcomeRecord,
   toTimestamp,
   type VoiceParticipant,
@@ -188,31 +186,26 @@ describe("what the Arbiter admits", () => {
     expect(again).toMatchObject({ status: "refused", reason: "repeat" });
   });
 
-  it("her own run that has said nothing gives way; chat.start wakes her where it was asked", async () => {
-    let registry: ActuatorRegistry | null = null;
-    const rig = await Rig.create({
-      provide: (sup, tools) => {
-        registry = new ActuatorRegistry({
-          services: sup.services,
-          tools,
-          publish: sup.bus.publisher("actions"),
-          builtins: false,
-        });
-        sup.services.provide("app", ActuatorRegistryKey, registry);
+  it("her own run that has said nothing gives way", async () => {
+    const rig = await Rig.create();
+    rig.model.push({ events: says("我想說…"), delay: 800 }, says("這局好險"));
+    rig.sup.bus.publish("mind", Events.MindReminder, {
+      state: "fired",
+      reminder: {
+        id: "r1",
+        key: "R1",
+        what: "提醒 amy 喝水",
+        due: toTimestamp(Date.now()),
+        daily: false,
+        context: C1,
+        person: null,
+        for_account: null,
+        fired: 1,
+        created_at: toTimestamp(Date.now() - 60_000),
       },
     });
-    const actuators = registry as unknown as ActuatorRegistry;
-    rig.model.push({ events: says("我想說…"), delay: 800 }, says("這局好險"));
-    const started = await actuators.invoke({
-      principal: Principals.panel("test", C1),
-      capability: "chat.start",
-      args: {},
-      why: "想聊聊今天的天氣",
-      turn: null,
-    });
-    expect(started.status).toBe("done");
     await until(() => rig.model.requests.length === 1, 3_000, "her own run");
-    expect(textOf(rig.model.requests[0])).toContain("你想在這裡主動開口聊聊:想聊聊今天的天氣");
+    expect(textOf(rig.model.requests[0])).toContain("提醒 amy 喝水");
     const run = await desk(rig).open(
       impulse({ source: "game", context: C1, hint: "贏了這一局", claim: "notable" }),
     );
@@ -265,32 +258,6 @@ describe("what the Arbiter admits", () => {
     expect(speeches(rig)[1]?.[0]).toBe("查好了,A 比較好");
     // Said in the voice channel: nothing went to a text channel.
     expect(rig.sink.texts()).toEqual([]);
-  });
-
-  it("chat.start refuses a channel she does not talk in", async () => {
-    let registry: ActuatorRegistry | null = null;
-    const rig = await Rig.create({
-      mode: "mention-only",
-      provide: (sup, tools) => {
-        registry = new ActuatorRegistry({
-          services: sup.services,
-          tools,
-          publish: sup.bus.publisher("actions"),
-          builtins: false,
-        });
-        sup.services.provide("app", ActuatorRegistryKey, registry);
-      },
-    });
-    const outcome = await (registry as unknown as ActuatorRegistry).invoke({
-      principal: Principals.panel("test", C1),
-      capability: "chat.start",
-      args: {},
-      why: null,
-      turn: null,
-    });
-    expect(outcome).toMatchObject({ status: "failed" });
-    await sleep(100);
-    expect(rig.model.requests).toEqual([]);
   });
 });
 

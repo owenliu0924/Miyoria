@@ -17,8 +17,7 @@
 // What wakes her on her own (a due schedule, a salient world event, her inbox, someone she
 // misses, her morning) is her initiative's (`initiative.ts`): an inbox, code gates, then a wake.
 // What another module asks her to say (a game's narration, a song's announcement, a notice) comes
-// through the Arbiter, whose host this is (`ImpulseHostKey`, `impulses.ts`), as do `chat.start`
-// and `chat.dm`.
+// through the Arbiter, whose host this is (`ImpulseHostKey`, `impulses.ts`).
 //
 // A run. One `SelfRunner` for the process, the text profile, the blocks of `HostPrompt` with the
 // files and images of its lines (`LookAround`), the service guard over the real services
@@ -29,7 +28,6 @@
 // scheduler failed late is marked as not heard. What a run did is published as today's turn
 // records.
 
-import { actuatorsFor } from "@miyoria/gate/actions";
 import {
   type ContentPart,
   currentLlmTag,
@@ -115,7 +113,7 @@ import {
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
 import { startIdleCompaction } from "./idle-compaction.js";
-import { chatCapabilities, ImpulseDesk } from "./impulses.js";
+import { ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
 import { type AdmittedInput, Lane, type LaneHost, type LaneRun } from "./lane.js";
@@ -202,7 +200,6 @@ export class SelfHost implements TextRunner {
   /** What the Arbiter admits, run here (`ImpulseHostKey`). */
   readonly impulses: ImpulseDesk;
   readonly #stopInitiative: () => void;
-  readonly #unregister: (() => void)[] = [];
   readonly #settlements = new Settlements();
   readonly #outlet: MouthOutlet;
   readonly #around: LookAround;
@@ -384,17 +381,11 @@ export class SelfHost implements TextRunner {
     );
     this.initiative = started.initiative;
     this.#stopInitiative = started.stop;
-    const desk = {
+    this.impulses = new ImpulseDesk({
       agent,
       admit: (context: ContextKey, input: AdmittedInput) => this.#admit(context, input),
-      wake: (context: ContextKey, wake: Wake) => this.#wake(context, wake),
-    };
-    this.impulses = new ImpulseDesk(desk);
+    });
     agent.ctx.provide(ImpulseHostKey, this.impulses);
-    const actuators = actuatorsFor(agent.ctx);
-    for (const capability of chatCapabilities(desk)) {
-      this.#unregister.push(actuators.register(capability));
-    }
     // Every topic: task events come from any owner (`<owner>.task.done`).
     const sub = agent.ctx.subscribe("*");
     this.#subscription = sub;
@@ -448,7 +439,6 @@ export class SelfHost implements TextRunner {
     this.voice.stop();
     this.jobs?.stop();
     this.#stopInitiative();
-    for (const unregister of this.#unregister.splice(0)) unregister();
     this.#agent.tools.unregister("say");
   }
 

@@ -15,8 +15,8 @@ export {
   type OpportunityKind,
 } from "./gates.js";
 export { SelfHost, type SelfHostOptions, selfHost } from "./host.js";
-export { ADMITTED_NOTES, CHAT_NOTES, NOTICE_TOOL } from "./impulse-texts.js";
-export { chatCapabilities, ImpulseDesk, type ImpulseDeskHost } from "./impulses.js";
+export { ADMITTED_NOTES, NOTICE_TOOL } from "./impulse-texts.js";
+export { ImpulseDesk, type ImpulseDeskHost } from "./impulses.js";
 export {
   INITIATIVE_STATE_KEY,
   Initiative,
