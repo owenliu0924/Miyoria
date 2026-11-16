@@ -1468,9 +1468,6 @@ importers:
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../../packages/gate
-      '@miyoria/heart':
-        specifier: workspace:*
-        version: link:../../packages/heart
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../../packages/llm
