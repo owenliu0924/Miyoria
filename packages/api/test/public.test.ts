@@ -543,7 +543,12 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
     const url = new URL(`${base}/api/auth/oauth/callback`);
     url.searchParams.append("code", code);
     url.searchParams.append("state", authorize.searchParams.get("state") ?? "");
-    const done = await fetch(url, { redirect: "manual" });
+    // The browser sends back the cookie its login started with.
+    const held = /miyoria_login=([^;]+)/.exec(start.headers.get("set-cookie") ?? "")?.[1] ?? "";
+    const done = await fetch(url, {
+      redirect: "manual",
+      headers: { cookie: `miyoria_login=${held}` },
+    });
     await done.arrayBuffer();
     const set = done.headers.get("set-cookie");
     return {
