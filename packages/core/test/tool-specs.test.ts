@@ -9,7 +9,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COMMIT_SPEC, MainLineConfigSchema, STEER_SPEC, slimTool } from "@miyoria/brain/agent";
 import { ActuatorRegistryKey, CapabilityTool, isGatedToolName } from "@miyoria/gate/actions";
-import { type Tool, ToolRegistryKey } from "@miyoria/llm/tools";
+import {
+  searchTools,
+  TOOL_EFFECTS,
+  TOOL_RISKS,
+  TOOL_SPEEDS,
+  type Tool,
+  ToolRegistryKey,
+} from "@miyoria/llm/tools";
 import { Config } from "@miyoria/runtime/kernel";
 import { stageCapabilities } from "@miyoria/stage";
 import { openStore } from "@miyoria/store";
@@ -140,5 +147,79 @@ describe("the tools of the current turn", () => {
     };
     const missing = Object.entries(owners).filter(([, tool]) => !names.has(tool));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("the registry behind them", () => {
+  it("knows of every tool what it does, how fast and at what risk", () => {
+    const tools = core.services.require(ToolRegistryKey);
+    const actuators = core.services.require(ActuatorRegistryKey);
+    const entries = tools.entries();
+    // Nothing here falls back to the defaults an MCP or extension tool gets.
+    expect(entries.filter((e) => !e.declared).map((e) => e.name)).toEqual([]);
+    for (const entry of entries) {
+      expect(TOOL_EFFECTS, entry.name).toContain(entry.effect);
+      expect(TOOL_SPEEDS, entry.name).toContain(entry.speed);
+      expect(TOOL_RISKS, entry.name).toContain(entry.risk);
+      expect(entry.group, entry.name).toMatch(/^[a-z]+$/);
+      // A capability's entry carries the risk the gate decides by.
+      if (entry.tool instanceof CapabilityTool) {
+        expect(entry.risk, entry.name).toBe(actuators.get(entry.tool.capability.name)?.risk);
+      }
+    }
+  });
+
+  it("has the always-on tools of the new runner, two of them not for the current turn", () => {
+    const tools = core.services.require(ToolRegistryKey);
+    const always = tools
+      .entries()
+      .filter((e) => e.core)
+      .map((e) => e.name);
+    expect(always).toEqual([
+      "code_run",
+      "find_tools",
+      "keep_note",
+      "message_dm",
+      "notebook_read",
+      "notebook_write",
+      "react",
+      "recall",
+      "remember",
+      "remind_me",
+      "skill",
+      "web_read",
+      "web_search",
+    ]);
+    const next = tools.entries().filter((e) => e.next);
+    expect(next.map((e) => e.name)).toEqual(["find_tools", "skill"]);
+    for (const { name } of next) {
+      expect(tools.names()).not.toContain(name);
+      expect(tools.get(name)).toBeUndefined();
+    }
+    expect(tools.entries()).toHaveLength(tools.names().length + next.length);
+    // What starts something that ends later.
+    const long = tools.entries().filter((e) => e.speed === "long");
+    expect(long.map((e) => e.name)).toEqual([
+      "game_start",
+      "party_start",
+      "sing_request",
+      "sing_start",
+      "stream_start",
+      "voice_join",
+      "work_start",
+    ]);
+  });
+
+  it("finds the tools a turn does not always offer", () => {
+    const tools = core.services.require(ToolRegistryKey);
+    const found = (query: string) => searchTools(tools.listings(), query).map((t) => t.name);
+    expect(found("魚幣").length).toBe(8);
+    expect(found("唱歌")).toEqual(
+      expect.arrayContaining(["sing_request", "sing_start", "sing_stop"]),
+    );
+    expect(found("派對遊戲")[0]).toMatch(/^party_/);
+    expect(found("開台")).toContain("stream_start");
+    expect(found("voice")).toEqual(expect.arrayContaining(["voice_join", "voice_leave"]));
+    expect(found("recall")).toEqual([]);
   });
 });
