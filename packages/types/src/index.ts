@@ -139,6 +139,8 @@ export {
   MemoryCuratorKey,
   type PatchOp,
   type ReactionEvent,
+  type ReflectGuard,
+  ReflectGuardKey,
   type Reflection,
   ReflectionKey,
   type ReflectionRun,

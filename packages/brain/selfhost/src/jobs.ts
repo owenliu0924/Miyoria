@@ -30,6 +30,7 @@ import {
   type JsonValue,
   type ProfileId,
   publishTaskEvent,
+  ReflectGuardKey,
   type TaskEvent,
   type TaskFailureCode,
   toTimestamp,
@@ -365,6 +366,13 @@ export class JobsHost {
     });
     for (const tool of this.#tools) agent.tools.register(tool);
     this.#mapWork();
+    // The `reflect` module runs its daily reflection through this, under the nightly figure.
+    agent.ctx.provide(ReflectGuardKey, {
+      run: async (run, signal) => {
+        const out = await this.runReflect({ run, ...(signal === undefined ? {} : { signal }) });
+        return { ran: out.ran, result: out.result, why: out.why };
+      },
+    });
     // After the host is up: telling her opens a run through the Floor.
     agent.ctx.spawn("selfhost.jobs", async (signal) => {
       await sleep(options.recoverDelayMs ?? RECOVER_DELAY_MS, signal);

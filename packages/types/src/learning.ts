@@ -273,6 +273,22 @@ export interface Reflection {
 
 export const ReflectionKey = serviceKey<Reflection>("Reflection");
 
+/**
+ * What the new text runner puts around her daily reflection when sub-agents are on (`selfhost`
+ * `runReflect`): the reflection runs under the nightly figure's accounting. Provided by the host;
+ * the `reflect` module looks it up each time it is due, and runs the reflection itself when it is
+ * not there.
+ */
+export interface ReflectGuard {
+  /** Runs `run`; `ran` is `false` when nothing ran, with `why` (the nightly figure is used up). */
+  run<T>(
+    run: (signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<{ ran: boolean; result: T | null; why: string | null }>;
+}
+
+export const ReflectGuardKey = serviceKey<ReflectGuard>("ReflectGuard");
+
 // ---- memory curation ----------------------------------------------------------------------
 
 /** A long-term memory as reflection sees it (never from a DM). */

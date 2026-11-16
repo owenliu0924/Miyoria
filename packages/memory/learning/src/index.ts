@@ -89,6 +89,7 @@ export {
   LESSONS_CONTRIBUTOR,
   type LearningModuleOptions,
   ReflectModule,
+  reflectUnder,
   subjectsFor,
 } from "./modules.js";
 export { RECAP_STALE_MINS, recapAgeNote } from "./recap-age.js";

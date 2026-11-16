@@ -45,6 +45,8 @@ import {
   type ProfileId,
   PromptContributorsKey,
   type PromptRequest,
+  type ReflectGuard,
+  ReflectGuardKey,
   ReflectionKey,
   type ReflectionRun,
   SocialSignalsKey,
@@ -92,6 +94,20 @@ async function handlesOf(
   } catch {
     return new StoredHandleDirectory(null, clock);
   }
+}
+
+/**
+ * Runs a reflection that is due: under `guard` (the text runner's accounting of the nightly
+ * reflection) when there is one, else as it is. `skipped` says why the guard let nothing run.
+ */
+export async function reflectUnder(
+  guard: ReflectGuard | undefined,
+  reflect: (signal: AbortSignal) => Promise<ReflectionRun | null>,
+  signal: AbortSignal,
+): Promise<{ run: ReflectionRun | null; skipped: string | null }> {
+  if (guard === undefined) return { run: await reflect(signal), skipped: null };
+  const out = await guard.run(reflect, signal);
+  return { run: out.result, skipped: out.ran ? null : (out.why ?? "") };
 }
 
 function personOf(services: ServiceLookup, account: AccountRef): PersonId | null {
@@ -616,11 +632,13 @@ export class ReflectModule implements Module {
         if (idle() !== null) continue;
         const due = reflector.due(clock.now(), budgetOf(s));
         if (due === null) continue;
-        const run = await reflector.reflect(
-          due.kind,
-          due.kind === "light" ? due.context : null,
+        const { run, skipped } = await reflectUnder(
+          due.kind === "daily" ? ctx.services.get(ReflectGuardKey) : undefined,
+          (within) =>
+            reflector.reflect(due.kind, due.kind === "light" ? due.context : null, within),
           signal,
         );
+        if (skipped !== null) ctx.log.info({ why: skipped }, "the nightly reflection did not run");
         if (run) {
           ctx.publish(Events.ReflectRun, JSON.parse(JSON.stringify(run)) as ReflectionRun);
           if (run.kind === "daily") {

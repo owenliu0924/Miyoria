@@ -1,6 +1,6 @@
 import { defineTool, type Tool, type ToolContext } from "@miyoria/llm/tools";
 import { sleep } from "@miyoria/runtime/kernel";
-import { type ContextKey, type JsonValue, Principals } from "@miyoria/types";
+import { type ContextKey, type JsonValue, Principals, ReflectGuardKey } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runReflect } from "../src/index.js";
@@ -293,5 +293,22 @@ describe("the nightly reflection", () => {
     expect(jobs?.delegator.jobs().map((j) => [j.kind, j.state])).toEqual([["reflect", "done"]]);
     await sleep(50);
     expect(rig.sink.texts()).toEqual([]);
+  });
+
+  it("is offered to the reflect module as a guard that counts it as a job; off without sub-agents", async () => {
+    const rig = await Rig.create();
+    const guard = rig.sup.services.get(ReflectGuardKey);
+    expect(guard).toBeDefined();
+    const out = await guard?.run(async () => "反思完了");
+    expect(out).toEqual({ ran: true, result: "反思完了", why: null });
+    expect(rig.host?.jobs?.delegator.jobs().map((j) => [j.kind, j.state])).toEqual([
+      ["reflect", "done"],
+    ]);
+
+    const off = await Rig.create({ config: { delegate: { enabled: false } } });
+    expect(off.host?.jobs).toBeNull();
+    expect(off.sup.services.get(ReflectGuardKey)).toBeUndefined();
+    const old = await Rig.create({ config: { runner: "mainline" } });
+    expect(old.sup.services.get(ReflectGuardKey)).toBeUndefined();
   });
 });
