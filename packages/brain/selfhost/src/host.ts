@@ -31,6 +31,7 @@ import {
 import { errorMessage, type Subscription, sleep } from "@miyoria/runtime/kernel";
 import { StoreKey } from "@miyoria/store";
 import {
+  type AccountRef,
   ActionSinkKey,
   ArbiterKey,
   type ContextKey,
@@ -41,10 +42,12 @@ import {
   holdsBack,
   type IncomingMessage,
   is,
+  type MessageRef,
   newId,
   PlatformHistoriesKey,
   parseTaskEvent,
   parseTaskTopic,
+  sameAccount,
   type TurnOutcome,
   type TurnReason,
   timestampMs,
@@ -75,6 +78,7 @@ import {
   DEFAULT_TRIAGE,
   floorKind,
   noteGlance,
+  type OutgoingLine,
   PROFILES,
   type RunEvent,
   type RunModel,
@@ -134,8 +138,7 @@ interface Place {
 interface TurnState {
   place: Place;
   run: LaneRun;
-  /** Platform ids of her lines in the place, in order. */
-  ids: (string | null)[];
+  /** Her lines of the run that reached the place. */
   lines: number;
   firstLineAt: number | null;
   /** A line of the run carried the platform's reply reference already. */
@@ -184,8 +187,11 @@ export class SelfHost implements TextRunner {
       sessionOf,
       attachments: (input) => this.#attachments(input.turn),
     });
-    this.#outlet = new MouthOutlet(agent, this.#settlements, (line, id) =>
-      this.#saidElsewhere(line.place, line.text, line.turn, id),
+    this.#outlet = new MouthOutlet(
+      agent,
+      this.#settlements,
+      (line, id) => this.#saidElsewhere(line.place, line.text, line.turn, id),
+      (line) => this.#replyTarget(line),
     );
     const services = agent.ctx.services;
     const router = (): LlmRouter => {
@@ -516,7 +522,6 @@ export class SelfHost implements TextRunner {
     const state: TurnState = {
       place,
       run,
-      ids: [],
       lines: 0,
       firstLineAt: null,
       quoted: false,
@@ -580,7 +585,6 @@ export class SelfHost implements TextRunner {
       // Freed once its lines settled (`Floor.turnEnded`), cancelled or not.
       floor?.turnEnded(turn);
     }
-    this.#confirm(state);
     if (result?.compacted) this.prompt.forget(place.session);
     this.#publish(state, result, error);
   }
@@ -631,27 +635,25 @@ export class SelfHost implements TextRunner {
     }
   }
 
-  /** Her lines of the run get the platform's ids, one entry at a time. */
-  #confirm(state: TurnState): void {
-    const ids = [...state.ids];
-    if (ids.length === 0) return;
-    const own = this.transcript
-      .tail(state.place.session)
-      .entries.filter(
-        (e) =>
-          e.turn === state.run.turn &&
-          (e.kind === "self" || e.kind === "tool_calls") &&
-          e.content !== "",
-      );
-    for (const entry of own) {
-      const lines = entry.content.split("\n").length;
-      const taken = ids.splice(0, lines);
-      const id = taken.find((i) => i !== null) ?? null;
-      if (id !== null && entry.message_id === null) {
-        this.transcript.confirm(state.place.session, entry.seq, id);
-      }
-      if (ids.length === 0) break;
+  /**
+   * The platform reply reference of a line (`[modules.agent] reply_reference`), as the old turn
+   * set it: the first line of a run that answers someone, in a channel or thread (not a DM), and
+   * only when one person called her; with several, an unmarked reply quotes nobody.
+   */
+  #replyTarget(line: OutgoingLine): MessageRef | null {
+    const state = this.#turns.get(line.turn);
+    const agent = this.#agent;
+    if (state === undefined || !line.focus || line.replyTo === null || state.quoted) return null;
+    if (!agent.config.reply_reference || line.place.kind === "dm") return null;
+    if (state.run.wake.kind !== "addressed") return null;
+    const callers: AccountRef[] = [];
+    for (const m of state.run.inputs) {
+      if (!callsHer(this.#call(m))) continue;
+      if (!callers.some((a) => sameAccount(a, m.author.account))) callers.push(m.author.account);
     }
+    if (callers.length > 1) return null;
+    state.quoted = true;
+    return line.replyTo;
   }
 
   #onRunEvent(event: RunEvent): void {
@@ -663,7 +665,6 @@ export class SelfHost implements TextRunner {
       case "line": {
         if (contextKeyEquals(event.place, context) && event.via !== "say") {
           state.lines += 1;
-          state.ids.push(event.message_id);
           state.firstLineAt ??= this.#now;
         }
         if (event.emotion !== null) {

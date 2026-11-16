@@ -7,7 +7,8 @@
 // answered, by its result or by a refusal she reads as its result; a line that did not go out is
 // a note she reads next. What a step made (her text, her reasoning, her calls, their results) is
 // appended to the transcript right after the step, calls and results together, so a run that is
-// cancelled or fails leaves every call paired with its answer.
+// cancelled or fails leaves every call paired with its answer. Each line of hers that went out is
+// an entry of its own, with the platform id it went out under.
 //
 // When a limit is reached one more step runs, told that no tool runs any more; the tools stay in
 // the request (the prefix cache) and a call made anyway is refused.
@@ -142,6 +143,8 @@ export class SelfRunner {
 interface Step {
   /** The lines that reached people (a speaking profile) or the screened lines (a quiet one). */
   lines: string[];
+  /** The platform id of each of `lines` (a speaking profile), `null` when the outlet gave none. */
+  ids: (string | null)[];
   /** Reasons of the lines the guard or the outlet did not let out. */
   blocked: string[];
   reasoning: string;
@@ -419,12 +422,12 @@ class Run {
                 this.#refused(call, "refused", "no_more_calls", NO_MORE_CALLS),
               )
             : await this.#runCalls(step.calls, offered);
-        this.#record(assistant, records, step.blocked);
+        this.#record(assistant, records, step.blocked, step);
         if (this.#signal.aborted) throw new Cancelled();
         if (limit !== null) break;
         continue;
       }
-      this.#record(assistant, [], step.blocked);
+      this.#record(assistant, [], step.blocked, step);
       // A line that did not go out is hers to know about: one more step reads the note.
       if (step.blocked.length > 0 && limit === null && !retriedBlocked) {
         retriedBlocked = true;
@@ -481,17 +484,45 @@ class Run {
     };
   }
 
-  /** Appends what a step made: her message, the answers to her calls, a note of blocked lines. */
+  /**
+   * Appends what a step made: her message, the answers to her calls, a note of blocked lines.
+   * With `sent` (a speaking profile's lines that went out, and their platform ids), each line is
+   * an entry of its own with its id, and her calls and reasoning follow in an entry without text;
+   * with no calls, the reasoning is on the first line. Her lines in a row without reasoning read
+   * as one message again (`toMessages`).
+   */
   #record(
     assistant: ChatMessage,
     records: readonly CallRecord[],
     blocked: readonly string[],
+    sent: Pick<Step, "lines" | "ids"> | null = null,
   ): void {
-    const messages = [assistant, ...records.map((r) => toolResultMessage(r.id, r.text))];
-    const entries = entriesOfMessages(messages, {
-      turn: this.turn,
-      spoken: this.#profile.name === "voice",
-    });
+    const spoken = this.#profile.name === "voice";
+    const results = records.map((r) => toolResultMessage(r.id, r.text));
+    let entries: EntryInput[];
+    if (sent === null || !this.#profile.speaks || sent.lines.length === 0) {
+      entries = entriesOfMessages([assistant, ...results], { turn: this.turn, spoken });
+    } else {
+      const reasoning =
+        assistant.reasoning == null || assistant.reasoning === "" ? null : assistant.reasoning;
+      const calls = assistant.tool_calls.length > 0;
+      entries = sent.lines.map((content, i) => ({
+        kind: "self" as const,
+        content,
+        reasoning: !calls && i === 0 ? reasoning : null,
+        turn: this.turn,
+        message_id: sent.ids[i] ?? null,
+        spoken,
+      }));
+      if (calls) {
+        entries.push(
+          ...entriesOfMessages([{ ...assistant, content: "" }, ...results], {
+            turn: this.turn,
+            spoken,
+          }),
+        );
+      }
+    }
     if (blocked.length > 0) {
       entries.push({
         kind: "note",
@@ -515,6 +546,7 @@ class Run {
     const screen = new StepText();
     const step: Step = {
       lines: [],
+      ids: [],
       blocked: [],
       reasoning: "",
       calls: [],
@@ -528,8 +560,12 @@ class Run {
           continue;
         }
         const out = await this.#deliver(this.#session.context, line.text, line.emotion, "text");
-        if (out.ok) step.lines.push(line.text);
-        else step.blocked.push(out.reason);
+        if (out.ok) {
+          step.lines.push(line.text);
+          step.ids.push(out.message_id);
+        } else {
+          step.blocked.push(out.reason);
+        }
       }
     };
     const calls: ToolCall[] = [];
@@ -576,6 +612,7 @@ class Run {
           },
           [],
           [],
+          step,
         );
         throw new Cancelled();
       }
@@ -592,6 +629,7 @@ class Run {
           },
           [],
           step.blocked,
+          step,
         );
       }
     }
@@ -656,7 +694,9 @@ class Run {
     text: string,
     emotion: string | null,
     via: "text" | "say" | "fixed",
-  ): Promise<{ ok: true } | { ok: false; code: string; reason: string }> {
+  ): Promise<
+    { ok: true; message_id: string | null } | { ok: false; code: string; reason: string }
+  > {
     const blocked = (code: string, reason: string) => {
       this.#emit({ type: "refusal", turn: this.turn, what: "line", name: null, code });
       return { ok: false as const, code, reason };
@@ -690,7 +730,7 @@ class Run {
       via,
       message_id: delivery.message_id,
     });
-    return { ok: true };
+    return { ok: true, message_id: delivery.message_id };
   }
 
   /** A `say` of this run: her words for another place, screened like her written lines. */
@@ -700,8 +740,9 @@ class Run {
     const text = lines.map((l) => l.text).join("\n");
     if (text === "") return { ok: false, code: "empty", reason: LINE_REFUSALS.empty };
     const out = await this.#deliver(place, text, lines.at(-1)?.emotion ?? null, "say");
-    if (out.ok) this.#spokeViaTool = true;
-    return out;
+    if (!out.ok) return out;
+    this.#spokeViaTool = true;
+    return { ok: true };
   }
 
   /** The fixed line for someone left waiting (#15); whether it went out. */
@@ -722,7 +763,7 @@ class Run {
     try {
       const out = await this.#deliver(this.#session.context, line, null, "fixed");
       if (!out.ok) return false;
-      this.#append([{ kind: "self", content: line, turn: this.turn }]);
+      this.#append([{ kind: "self", content: line, turn: this.turn, message_id: out.message_id }]);
       this.#emit({ type: "screened", turn: this.turn, kind: "fallback_line", count: 1 });
       return true;
     } catch (error) {

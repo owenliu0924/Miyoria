@@ -1,5 +1,6 @@
 import { BudgetExhaustedError, contentText } from "@miyoria/llm/llm";
 import { FIND_TOOLS, ToolRegistry } from "@miyoria/llm/tools";
+import { toMessages } from "@miyoria/memory/transcript";
 import { contextKeyString } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EXHAUSTED_LINE, FALLBACK_LINES } from "../../agent/src/index.js";
@@ -64,12 +65,15 @@ describe("one run of the text profile", () => {
     expect(request).toMatchObject({ reasoning_purpose: "chat_text", session: "s1" });
     expect(request?.reasoning).toBeUndefined();
     expect(r.model.purposes).toEqual(["chat"]);
-    // What she said is in the transcript as one line of hers.
-    const tail = r.transcript.tail(SESSION.id).entries;
-    expect(tail.at(-1)).toMatchObject({
-      kind: "self",
+    // Each line of hers is an entry with the id it went out under; they read as one message.
+    const tail = r.transcript.tail(SESSION.id);
+    expect(tail.entries.slice(-2).map((e) => [e.kind, e.content, e.turn, e.message_id])).toEqual([
+      ["self", "嗨 Owen", "t1", "out-1"],
+      ["self", "今天怎麼樣?", "t1", "out-2"],
+    ]);
+    expect(toMessages(tail).at(-1)).toMatchObject({
+      role: "assistant",
       content: "嗨 Owen\n今天怎麼樣?",
-      turn: "t1",
     });
     expect(r.events.map((e) => e.type)).toEqual(["started", "line", "line", "step", "finished"]);
     expect(r.events.at(-1)).toMatchObject({
@@ -366,6 +370,29 @@ describe("tools in the loop", () => {
     const later = r.model.requests[2]?.messages.find((m) => m.role === "assistant");
     expect(later?.reasoning).toBe("先查一下比較好");
   });
+
+  it("a step that says lines and calls: each line with its id, then the calls and reasoning", async () => {
+    const r = await rig([calls([{ name: "look" }], "我查一下\n等等", "要查"), say("好了")]);
+    r.tools.register(fakeTool("look"));
+    r.line("Owen", "@她 查");
+    await r.run();
+    const own = r.transcript
+      .tail(SESSION.id)
+      .entries.filter((e) => e.turn === "t1" && e.kind !== "tool_result");
+    expect(own.map((e) => [e.kind, e.content, e.message_id, e.reasoning])).toEqual([
+      ["self", "我查一下", "out-1", null],
+      ["self", "等等", "out-2", null],
+      ["tool_calls", "", null, "要查"],
+      ["self", "好了", "out-3", null],
+    ]);
+    // The second step reads the first as her lines, then her calls with their results.
+    const second = r.model.requests[1]?.messages.slice(-3);
+    expect(second?.map((m) => [m.role, contentText(m.content), m.tool_calls.length])).toEqual([
+      ["assistant", "我查一下\n等等", 0],
+      ["assistant", "", 1],
+      ["tool", "look 的結果", 0],
+    ]);
+  });
 });
 
 describe("limits", () => {
@@ -578,10 +605,15 @@ describe("a cancelled run", () => {
     const result = await r.run(addressed(), { signal: controller.signal });
     expect(result.outcome).toBe("cancelled");
     expect(r.outlet.texts()).toEqual(["第一句", "第二句"]);
-    expect(r.transcript.tail(SESSION.id).entries.at(-1)).toMatchObject({
-      kind: "self",
-      content: "第一句\n第二句",
-    });
+    expect(
+      r.transcript
+        .tail(SESSION.id)
+        .entries.slice(-2)
+        .map((e) => [e.kind, e.content]),
+    ).toEqual([
+      ["self", "第一句"],
+      ["self", "第二句"],
+    ]);
   });
 });
 

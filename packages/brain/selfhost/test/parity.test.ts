@@ -152,6 +152,58 @@ describe("the Floor", () => {
   });
 });
 
+// ---- what her lines go out as -------------------------------------------------------------------
+
+/** `[text, reply_to id]` of every line sent. */
+const replies = (rig: Rig) =>
+  rig.sink.actions.flatMap((a) =>
+    a.payload.type === "send_message"
+      ? [[a.payload.message.text, a.payload.message.reply_to?.id ?? null]]
+      : [],
+  );
+
+describe("her lines", () => {
+  it("the first line of an answer in a channel quotes the line that called her", async () => {
+    const rig = await Rig.create();
+    rig.model.push(says("第一句\n第二句"));
+    const asked = mention(C1, "amy", "@她 說兩句");
+    rig.say(asked);
+    await until(() => outcomes(rig).length === 1, 3_000, "the run");
+    expect(replies(rig)).toEqual([
+      ["第一句", asked.id.id],
+      ["第二句", null],
+    ]);
+    // Each line its own entry, with the id it went out under.
+    const own = rig.entries(C1).filter((e) => e.kind === "self");
+    expect(own.map((e) => [e.content, e.message_id])).toEqual([
+      ["第一句", "sent-1"],
+      ["第二句", "sent-2"],
+    ]);
+  });
+
+  it("quotes nothing in a DM, nor when several people called her at once", async () => {
+    const rig = await Rig.create({ config: { one_caller_per_turn: false } });
+    rig.model.push(says("嗨"), says("你們好"));
+    rig.say(line(DM_AMY, "amy", "在嗎"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the DM run");
+    rig.say(mention(C1, "amy", "@她 早"));
+    rig.say(mention(C1, "bob", "@她 早安"));
+    await until(() => outcomes(rig).length === 2, 3_000, "the channel run");
+    expect(replies(rig)).toEqual([
+      ["嗨", null],
+      ["你們好", null],
+    ]);
+  });
+
+  it("with reply_reference off, nothing is quoted", async () => {
+    const rig = await Rig.create({ config: { reply_reference: false } });
+    rig.model.push(says("好"));
+    rig.say(mention(C1, "amy", "@她 嗨"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the run");
+    expect(replies(rig)).toEqual([["好", null]]);
+  });
+});
+
 // ---- images and files ---------------------------------------------------------------------------
 
 function image(id: string, name = `${id}.png`): Attachment {
