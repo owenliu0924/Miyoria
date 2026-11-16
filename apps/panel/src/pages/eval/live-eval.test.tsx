@@ -37,6 +37,8 @@ function core(body: EvalLiveHistory | { status: number }) {
   });
 }
 
+/** The text without any white space: the date format's space differs between platforms. */
+const squeezed = (el: Element | undefined) => (el?.textContent ?? "").replace(/\s/g, "");
 const section = () => screen.findByRole("region", { name: "真模型評測" });
 /** The header of one measure: its label, then the latest value. */
 const latest = (s: HTMLElement, label: string) => (within(s).getAllByText(label)[0] as HTMLElement).parentElement as HTMLElement;
@@ -69,7 +71,7 @@ describe("評測 / 真模型評測", () => {
     const rows = within(within(s).getByRole("table", { name: "最近的真模型評測" })).getAllByRole("row");
     expect(rows).toHaveLength(2);
     const cells = within(rows[1] as HTMLElement).getAllByRole("cell");
-    expect(cells[0]).toHaveTextContent(fmtDateTime("2026-11-16T20:30:00.000Z"));
+    expect(squeezed(cells[0])).toContain(fmtDateTime("2026-11-16T20:30:00.000Z").replace(/\s/g, ""));
     expect(cells[1]).toHaveTextContent(/^0d611db5$/);
     expect(cells[2]).toHaveTextContent("current");
     expect(cells[3]).toHaveTextContent("$0.08");
@@ -96,7 +98,7 @@ describe("評測 / 真模型評測", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(10);
     const first = within(rows[0] as HTMLElement).getAllByRole("cell");
-    expect(first[0]).toHaveTextContent(fmtDateTime(runs[13]?.at ?? ""));
+    expect(squeezed(first[0])).toContain(fmtDateTime(runs[13]?.at ?? "").replace(/\s/g, ""));
     expect(first[0]).toHaveTextContent("到上限,沒跑完");
     expect(first[1]).toHaveTextContent("—");
     expect(first[2]).toHaveTextContent("current ×3");
