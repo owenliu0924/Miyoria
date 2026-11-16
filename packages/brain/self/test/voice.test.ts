@@ -37,7 +37,12 @@ describe("spoken text", () => {
   };
 
   it("is cut into sentences as it streams, each with the emotion it was written under", () => {
-    const { lines } = all("sentence", ["<emo:happy>考完啦?", "辛苦了", "。<emo:sad>可是", "我好累"]);
+    const { lines } = all("sentence", [
+      "<emo:happy>考完啦?",
+      "辛苦了",
+      "。<emo:sad>可是",
+      "我好累",
+    ]);
     expect(lines).toEqual([
       { text: "考完啦?", emotion: "happy" },
       { text: "辛苦了。", emotion: "happy" },

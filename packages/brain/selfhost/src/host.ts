@@ -107,6 +107,7 @@ import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
 import { askedLine, SAY_DM } from "./texts.js";
+import { VoiceHost } from "./voice.js";
 
 /** Lines of a place before the first one the backfill fetches at most. */
 const MAX_BACKFILL = 50;
@@ -171,6 +172,8 @@ export class SelfHost implements TextRunner {
   readonly transcript: TranscriptStore;
   readonly runner: SelfRunner;
   readonly prompt: HostPrompt;
+  /** The voice conversations (`TextRunner.voice`). */
+  readonly voice: VoiceHost;
   /** Her inbox, her schedules and what wakes her on her own (`initiative.ts`). */
   readonly initiative: Initiative;
   readonly #stopInitiative: () => void;
@@ -204,6 +207,20 @@ export class SelfHost implements TextRunner {
       sessionOf,
       attachments: (input) => this.#attachments(input.turn),
       inbox: (input) => this.initiative.inboxBlock(input),
+      slowReads: (input) => this.voice.slowReads(input),
+    });
+    this.voice = new VoiceHost(agent, {
+      transcript,
+      prompt: this.prompt,
+      runner: () => this.runner,
+      sessionOf,
+      triage: (context, line) =>
+        triage(
+          { kind: "line", place: contextKeyString(context), at: this.#now, own: false, ...line },
+          this.#triageState(context),
+          this.#now,
+        ),
+      takeGlance: (context) => this.#takeGlance(context),
     });
     this.#outlet = new MouthOutlet(
       agent,
@@ -218,7 +235,8 @@ export class SelfHost implements TextRunner {
       return r;
     };
     const model: RunModel = {
-      stream: (purpose, request, signal) => router().stream(purpose, request, signal),
+      stream: (purpose, request, signal) =>
+        this.voice.stream(request, signal, () => router().stream(purpose, request, signal)),
       complete: (purpose, request, signal) => router().complete(purpose, request, signal),
       prices: () => services.get(LlmRouterKey)?.prices() ?? {},
     };
@@ -227,12 +245,18 @@ export class SelfHost implements TextRunner {
         transcript,
         tools: agent.tools,
         model,
-        prompt: this.prompt,
-        guard: composeGuards(serviceGuard({ services, quiet: options.quiet ?? null })),
-        outlet: this.#outlet,
+        prompt: this.voice.prompt(this.prompt),
+        guard: composeGuards(
+          this.voice.guard,
+          serviceGuard({ services, quiet: options.quiet ?? null }),
+        ),
+        outlet: this.voice.outlet(this.#outlet),
         clock: agent.ctx.clock,
         log: agent.log,
-        onEvent: (event) => this.#onRunEvent(event),
+        onEvent: (event) => {
+          this.#onRunEvent(event);
+          this.voice.onRunEvent(event);
+        },
         selfAccount: (platform) => agent.selfAccount(platform),
       },
       options.runner ?? {},
@@ -323,6 +347,7 @@ export class SelfHost implements TextRunner {
 
   halt(): void {
     for (const place of this.#places.values()) place.lane.push({ type: "halt" });
+    this.voice.halt();
   }
 
   stop(): void {
@@ -330,6 +355,7 @@ export class SelfHost implements TextRunner {
     this.#subscription?.close();
     for (const place of this.#places.values()) place.lane.close();
     this.#places.clear();
+    this.voice.stop();
     this.#stopInitiative();
     this.#agent.tools.unregister("say");
   }
@@ -699,6 +725,28 @@ export class SelfHost implements TextRunner {
     return lines === 0 ? null : { kind: "glance", lines };
   }
 
+  /** Whether a glance at the voice channel `context` is still due; counted when it is. */
+  #takeGlance(context: ContextKey): boolean {
+    const place = contextKeyString(context);
+    const now = this.#now;
+    const state = this.#triageState(context);
+    const event: TriageEvent = {
+      kind: "line",
+      place,
+      at: now,
+      addressed: null,
+      own: false,
+      bot: false,
+      flagged: false,
+      muted: this.#agent.muted,
+    };
+    if (triage(event, state, now).decision !== "glance") return false;
+    const next = noteGlance(state, place, now);
+    this.#glances = new Map(next.glances);
+    this.#day.count = next.today;
+    return true;
+  }
+
   // ---- a run -----------------------------------------------------------------------------------
 
   async #execute(context: ContextKey, run: LaneRun): Promise<void> {
@@ -982,6 +1030,7 @@ export class SelfHost implements TextRunner {
   // ---- what comes back -------------------------------------------------------------------------
 
   #event(env: Envelope): void {
+    this.voice.event(env);
     if (is(Events.ActionSettled, env)) {
       const taken = this.#settlements.settled(env.data);
       // Taken as said when the scheduler was slow, then it failed: nobody heard it.

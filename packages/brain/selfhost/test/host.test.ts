@@ -424,7 +424,7 @@ describe("the switch", () => {
     expect(rig.store.plugin(transcripts.transcriptTables).sessions()).toEqual([]);
   });
 
-  it('voice stays on the old path with runner = "self"', async () => {
+  it('voice goes to the new runner too with runner = "self"', async () => {
     const rig = await Rig.create();
     const voice: ContextKey = { platform: "test", scope: "guild", channel: "v", kind: "voice" };
     const now = Date.now();
@@ -444,12 +444,16 @@ describe("the switch", () => {
       () =>
         rig.of<DecisionTrace>(Events.AgentDecision.type).some((d) => d.context.kind === "voice"),
       3_000,
-      "the old path's decision",
+      "the runner's decision",
     );
     const decision = rig
       .of<DecisionTrace>(Events.AgentDecision.type)
       .find((d) => d.context.kind === "voice");
-    expect(decision?.reasons).not.toContain("runner self");
-    expect(rig.host?.transcript.sessions()).toEqual([]);
+    expect(decision?.reasons.slice(0, 2)).toEqual(["runner self", "voice"]);
+    expect(rig.entries(voice).map((e) => [e.kind, e.content, e.spoken])).toContainEqual([
+      "other",
+      "大家晚安",
+      true,
+    ]);
   });
 });

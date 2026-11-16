@@ -181,7 +181,10 @@ export class StepText {
     const t = text.trim();
     if (t === "") return [];
     const before = this.#splitter.flush();
-    return [...(before === null ? [] : this.#sentence(before)), { text: t, emotion: this.#emotion }];
+    return [
+      ...(before === null ? [] : this.#sentence(before)),
+      { text: t, emotion: this.#emotion },
+    ];
   }
 
   /** One spoken sentence, judged alone: reasoning (#10) and notes to herself (#19) are not said. */

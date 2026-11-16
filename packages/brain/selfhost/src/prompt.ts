@@ -21,6 +21,8 @@
 //
 // Each source keeps today's budget and limit (`contributor_timeout_ms`); a source that fails or is
 // slow is left out, the run goes on. The contributors are asked once per run, for blocks 4 and 6.
+// A spoken run (`slowReads`) waits on none of the slow ones: what does not depend on the line is
+// read as last made for the people here, the rest is waited for `live_context_ms`.
 
 import type { ContentPart } from "@miyoria/llm/llm";
 import {
@@ -35,6 +37,7 @@ import {
   ActivityManagerKey,
   AffectStateKey,
   ArbiterKey,
+  accountRefString,
   type ContextKey,
   ConversationStatesKey,
   contextKeyString,
@@ -48,6 +51,7 @@ import {
   type Participant,
   PartyStatusKey,
   PersonProfilesKey,
+  type PromptContributors,
   PromptContributorsKey,
   type PromptRequest,
   type PromptSection,
@@ -78,6 +82,7 @@ import {
   LIFE_TITLE,
   levelHint,
   MOOD_MIN,
+  mergeGathered,
   noticesBlock,
   PRESENT_TITLE,
   type PresentPerson,
@@ -149,6 +154,45 @@ function lineText(e: TranscriptEntry, her: string): string | null {
   return null;
 }
 
+/**
+ * The contributors of a run that reads warm (the old turn's `#gatherVoice`): those kept warm as
+ * they were last read for the people here (and read again in the background), the others asked
+ * now and waited for `liveMs`.
+ */
+async function warmGather(
+  registry: PromptContributors,
+  request: PromptRequest,
+  skip: readonly string[],
+  reads: SlowReads,
+  signal: AbortSignal,
+): Promise<Gathered> {
+  const keys = registry
+    .all()
+    .map((c) => c.key)
+    .filter((k) => !skip.includes(k));
+  const kept = keys.filter((k) => reads.warmContributors.includes(k));
+  const live = keys.filter((k) => !kept.includes(k));
+  const [warmed, asked] = await Promise.all([
+    kept.length === 0
+      ? undefined
+      : reads.warm("contributors", accountsKey(request.participants), () =>
+          gather(registry, request, WARM_LOAD_MS, signal, [...skip, ...live]),
+        ),
+    live.length === 0
+      ? undefined
+      : gather(registry, request, reads.liveMs, signal, [...skip, ...kept]),
+  ]);
+  return mergeGathered(warmed, asked);
+}
+
+/** The accounts of `people`, as one key. */
+function accountsKey(people: readonly { account: AccountRef }[]): string {
+  return people
+    .map((p) => accountRefString(p.account))
+    .sort()
+    .join(",");
+}
+
 /** The entries after her last line: what a run is about. */
 function sinceHerLast(entries: readonly TranscriptEntry[]): TranscriptEntry[] {
   let since = entries.length;
@@ -173,7 +217,33 @@ interface RunRead {
   gathered: Promise<Gathered | null>;
   /** Results block 6 showed: told once the run got to its end. */
   telling: Job[];
+  reads: SlowReads | null;
 }
+
+/** A value kept warm per place (`SlowReads.warm`). */
+export type WarmSlot = "contributors" | "skills" | "pinned" | "people";
+
+/**
+ * How a run reads what is slow to read when nobody may wait for it (voice, the old turn's
+ * `warm_context`): what does not depend on the line is read as it was last made for the people
+ * here and made again in the background; what does is waited for `liveMs`, then left out.
+ */
+export interface SlowReads {
+  /** The run is spoken (contributors are told so). */
+  voice: boolean;
+  /** Contributors read warm (`[modules.agent.voice] warm_contributors`). */
+  warmContributors: readonly string[];
+  /** How long what depends on the line is waited for (`live_context_ms`). */
+  liveMs: number;
+  /**
+   * `load`'s value kept in `slot`, made for `key` (what it depends on) and the people listening,
+   * refreshed for the next run; `undefined`: not there in time.
+   */
+  warm<T>(slot: WarmSlot, key: string, load: () => Promise<T>): Promise<T | undefined>;
+}
+
+/** What is made in the background for a later run may take this long (the old `WARM_LOAD_MS`). */
+const WARM_LOAD_MS = 10_000;
 
 export interface HostPromptOptions {
   transcript: TranscriptStore;
@@ -181,6 +251,8 @@ export interface HostPromptOptions {
   sessionOf(context: ContextKey): string;
   /** The files and images of the run's lines (block 6); unset: none. */
   attachments?(input: PromptInput): Promise<ContentPart[]>;
+  /** How the run of `input` reads its slow sources; unset or `null`: each within its limit. */
+  slowReads?(input: PromptInput): SlowReads | null;
   /** Her inbox for the run of `input` (block 6, last); unset or `null`: none. */
   inbox?(input: PromptInput): string | null;
 }
@@ -227,17 +299,22 @@ export class HostPrompt implements PromptSource {
     const known = this.#runs.get(input.turn);
     if (known !== undefined) return known;
     const entries = this.#o.transcript.tail(input.session.id).entries;
-    const { request, asked } = this.#request(input, entries);
+    const reads = this.#o.slowReads?.(input) ?? null;
+    const { request, asked } = this.#request(input, entries, reads?.voice ?? false);
     const registry = this.#services.get(PromptContributorsKey);
     const skip = [
       RECAP_CONTRIBUTOR,
       ...(this.#services.has(MemoryRetrievalKey) ? [MEMORY_CONTRIBUTOR] : []),
     ];
+    const signal = this.#agent.ctx.signal;
     const gathered =
       registry && registry.all().length > 0
-        ? gather(registry, request, this.#limit(), this.#agent.ctx.signal, skip).catch(() => null)
+        ? (reads === null
+            ? gather(registry, request, this.#limit(), signal, skip)
+            : warmGather(registry, request, skip, reads, signal)
+          ).catch(() => null)
         : Promise.resolve(null);
-    const read: RunRead = { request, asked, gathered, telling: [] };
+    const read: RunRead = { request, asked, gathered, telling: [], reads };
     this.#runs.set(input.turn, read);
     return read;
   }
@@ -282,8 +359,9 @@ export class HostPrompt implements PromptSource {
     const key = `${roster}|${tail.summary?.id ?? 0}|${stableHash(slow.join("\n"))}`;
     const cached = this.#places.get(session);
     if (cached !== undefined && cached.key === key) return cached.text;
-    const text = await this.#renderPlace(input, speakers, slow);
-    this.#places.set(session, { key, text });
+    const { text, settled } = await this.#renderPlace(input, speakers, slow);
+    // Read warm and not ready yet (the people's cards): made again next run, not kept as is.
+    if (settled) this.#places.set(session, { key, text });
     return text;
   }
 
@@ -296,13 +374,13 @@ export class HostPrompt implements PromptSource {
     input: PromptInput,
     speakers: readonly Speaker[],
     slow: readonly string[],
-  ): Promise<string | null> {
+  ): Promise<{ text: string | null; settled: boolean }> {
     const agent = this.#agent;
     const context = input.session.context;
     const parts: string[] = [...slow];
     const recap = this.#services.get(ConversationStatesKey)?.get(context)?.recap?.trim() ?? "";
     if (recap !== "") parts.push(dataBlock(RECAP_CONTRIBUTOR, RECAP_TITLE, recap));
-    const people = await this.#people(input, speakers);
+    const { body: people, settled } = await this.#people(input, speakers);
     if (people !== null) parts.push(dataBlock("people", PRESENT_TITLE, people));
     const chars = agent.config.mainline.examples_chars;
     if (chars > 0) {
@@ -311,7 +389,7 @@ export class HostPrompt implements PromptSource {
       const examples = examplesBlock(picked, agent.persona.names());
       if (examples !== null) parts.push(examples);
     }
-    return parts.length === 0 ? null : parts.join("\n\n");
+    return { text: parts.length === 0 ? null : parts.join("\n\n"), settled };
   }
 
   /**
@@ -320,7 +398,8 @@ export class HostPrompt implements PromptSource {
    */
   async #slow(input: PromptInput): Promise<string[]> {
     const m = this.#agent.config.mainline;
-    const [skills, gathered] = await Promise.all([this.#skills(), this.#run(input).gathered]);
+    const read = this.#run(input);
+    const [skills, gathered] = await Promise.all([this.#skills(read.reads), read.gathered]);
     const out: string[] = [];
     if (skills !== null) {
       // The skill index comes as a data block; anything else is made one.
@@ -345,11 +424,19 @@ export class HostPrompt implements PromptSource {
   }
 
   /** Her skills, a name and a line each (`SkillIndex`); `null` when none or too slow. */
-  async #skills(): Promise<string | null> {
+  async #skills(reads: SlowReads | null): Promise<string | null> {
     const agent = this.#agent;
     const index = this.#services.get(SkillIndexKey);
     const chars = agent.config.mainline.skills_chars;
     if (index === undefined || chars <= 0) return null;
+    if (reads !== null) {
+      // The index as it was last read: it changes when she learns a skill.
+      const text = await reads.warm("skills", `skills:${chars}`, async () => {
+        const read = await timeout(WARM_LOAD_MS, agent.ctx.signal, () => index.index(chars));
+        return read.trim() === "" ? null : read;
+      });
+      return text ?? null;
+    }
     try {
       const text = await timeout(this.#limit(), agent.ctx.signal, () => index.index(chars));
       return text.trim() === "" ? null : text;
@@ -383,25 +470,40 @@ export class HostPrompt implements PromptSource {
     }
   }
 
-  async #people(input: PromptInput, speakers: readonly Speaker[]): Promise<string | null> {
+  /**
+   * The people here as cards, else as `<person/>` lines. `settled`: false when the cards were read
+   * warm and are still being written (this run has the lines).
+   */
+  async #people(
+    input: PromptInput,
+    speakers: readonly Speaker[],
+  ): Promise<{ body: string | null; settled: boolean }> {
     const agent = this.#agent;
     const present = this.#present(speakers);
-    if (present.length === 0) return null;
+    if (present.length === 0) return { body: null, settled: true };
     const chars = agent.config.mainline.people_chars;
     const profiles = this.#services.get(PersonProfilesKey);
+    let settled = true;
     if (profiles !== undefined && chars > 0) {
-      try {
-        const where = {
-          context: input.session.context,
-          present: present.flatMap((p) => (p.person === null ? [] : [p.person])),
-          talking_with: [],
-          accounts: present.map((p) => p.account),
-          now: toTimestamp(input.now),
-        };
-        const body = await timeout(this.#limit(), agent.ctx.signal, (s) =>
+      const where = {
+        context: input.session.context,
+        present: present.flatMap((p) => (p.person === null ? [] : [p.person])),
+        talking_with: [],
+        accounts: present.map((p) => p.account),
+        now: toTimestamp(input.now),
+      };
+      const render = async (limit: number): Promise<string | null> => {
+        const body = await timeout(limit, agent.ctx.signal, (s) =>
           profiles.render(where, chars, {}, s),
         );
         return body.trim() === "" ? null : body.trim();
+      };
+      const reads = this.#run(input).reads;
+      try {
+        if (reads === null) return { body: await render(this.#limit()), settled: true };
+        const read = await reads.warm("people", accountsKey(present), () => render(WARM_LOAD_MS));
+        if (read !== undefined) return { body: read, settled: true };
+        settled = false;
       } catch (error) {
         agent.log.debug({ err: errorMessage(error) }, "no person profiles for the runner");
       }
@@ -412,7 +514,7 @@ export class HostPrompt implements PromptSource {
       attitude: (a) => agent.attitude(a),
       self: services.get(SelfStateKey) ?? null,
     });
-    return body === "" ? null : body;
+    return { body: body === "" ? null : body, settled };
   }
 
   // ---- block 6 ---------------------------------------------------------------------------------
@@ -428,8 +530,8 @@ export class HostPrompt implements PromptSource {
     const { request } = read;
     const blocks: string[] = [];
     const [memory, pinned] = await Promise.all([
-      this.#memory(input, request),
-      this.#pinnedMemory(input, request),
+      this.#memory(input, request, read.reads),
+      this.#pinnedMemory(input, request, read.reads),
     ]);
     if (memory !== null) blocks.push(memory);
     const gathered = await read.gathered;
@@ -485,19 +587,30 @@ export class HostPrompt implements PromptSource {
   }
 
   /** The commitments memory pins for the people here (`PinnedMemory`, the old `#mainMemory`). */
-  async #pinnedMemory(input: PromptInput, request: PromptRequest): Promise<string[]> {
+  async #pinnedMemory(
+    input: PromptInput,
+    request: PromptRequest,
+    reads: SlowReads | null,
+  ): Promise<string[]> {
     const agent = this.#agent;
     const pinned = agent.mainline.pinned();
     if (pinned === null) return [];
     try {
-      const read = await timeout(this.#limit(), agent.ctx.signal, () =>
-        pinned.pinned({
-          context: input.session.context,
-          present: request.participants.flatMap((p) => (p.person === null ? [] : [p.person])),
-          accounts: request.participants.map((p) => p.account),
-          now: toTimestamp(input.now),
-        }),
-      );
+      const load = (limit: number) =>
+        timeout(limit, agent.ctx.signal, () =>
+          pinned.pinned({
+            context: input.session.context,
+            present: request.participants.flatMap((p) => (p.person === null ? [] : [p.person])),
+            accounts: request.participants.map((p) => p.account),
+            now: toTimestamp(input.now),
+          }),
+        );
+      // Spoken, they come warm: they depend on who is here, not on the line.
+      const read =
+        reads === null
+          ? await load(this.#limit())
+          : await reads.warm("pinned", accountsKey(request.participants), () => load(WARM_LOAD_MS));
+      if (read === undefined) return [];
       return read.sections
         .filter((s) => s.key === "commitments" && s.lines.length > 0)
         .map((s) => dataBlock(`pinned.${s.key}`, s.title, s.lines.join("\n")));
@@ -507,7 +620,11 @@ export class HostPrompt implements PromptSource {
     }
   }
 
-  async #memory(input: PromptInput, request: PromptRequest): Promise<string | null> {
+  async #memory(
+    input: PromptInput,
+    request: PromptRequest,
+    reads: SlowReads | null,
+  ): Promise<string | null> {
     const agent = this.#agent;
     const retrieval = this.#services.get(MemoryRetrievalKey);
     if (!retrieval || request.query.trim() === "") return null;
@@ -528,7 +645,8 @@ export class HostPrompt implements PromptSource {
         ),
         ...(m.memory_lines > 0 ? { limit: m.memory_lines } : {}),
       };
-      const memories = await timeout(this.#limit(), agent.ctx.signal, (signal) =>
+      // What depends on the line: spoken, it is waited for only `liveMs`.
+      const memories = await timeout(reads?.liveMs ?? this.#limit(), agent.ctx.signal, (signal) =>
         retrieval.retrieve(query, signal),
       );
       const body = retrieval.format(memories, now);
@@ -544,6 +662,7 @@ export class HostPrompt implements PromptSource {
   #request(
     input: PromptInput,
     entries: readonly TranscriptEntry[],
+    voice: boolean,
   ): { request: PromptRequest; asked: TranscriptEntry[] } {
     const agent = this.#agent;
     const her = agent.persona.displayName();
@@ -594,7 +713,7 @@ export class HostPrompt implements PromptSource {
       speakers: author === null ? [] : [author.account],
       query,
       recent: before.slice(-CONTRIBUTOR_HISTORY),
-      voice: false,
+      voice,
       now: toTimestamp(input.now),
     };
     return { request, asked };

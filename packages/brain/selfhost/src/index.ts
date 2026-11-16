@@ -1,7 +1,6 @@
-// @miyoria/brain/selfhost: the text conversations on the phase-3 turn runner
+// @miyoria/brain/selfhost: the text and voice conversations on the phase-3 turn runner
 // (`@miyoria/brain/self`), wired to today's services. Core installs `selfHost()` on the agent
-// module; it runs only with `[modules.agent] runner = "self"`, beside the main line, which keeps
-// voice, her own starts and the work lane.
+// module; it runs only with `[modules.agent] runner = "self"`, beside the main line.
 
 export {
   GateBook,
@@ -45,8 +44,10 @@ export {
   HostPrompt,
   type HostPromptOptions,
   RECAP_TITLE,
+  type SlowReads,
   type Speaker,
   speakersOf,
+  type WarmSlot,
 } from "./prompt.js";
 export {
   type ParseAt,
@@ -56,3 +57,7 @@ export {
   scheduleKey,
 } from "./schedule.js";
 export { SCHEDULE, SCHEDULE_CANCEL, SCHEDULE_LIST, scheduleTools } from "./schedule-tools.js";
+export { silentWaits, VoiceHost, type VoiceHostDeps, type VoiceLineFacts } from "./voice.js";
+export { type VoiceInput, VoiceLane, type VoiceLaneHost, type VoiceRun } from "./voice-lane.js";
+export { PlaceOutlet, VoiceOutlet, type VoiceOutletHost } from "./voice-outlet.js";
+export { VoicePrompt, type VoiceRoom, voiceReads, WarmValues } from "./voice-prompt.js";

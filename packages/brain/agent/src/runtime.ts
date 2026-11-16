@@ -241,7 +241,7 @@ export interface TextLineMarks {
 
 /**
  * Where the text conversations go with `[modules.agent] runner = "self"`
- * (`@miyoria/brain/selfhost`). Voice, her own starts and the work lane stay with the agent.
+ * (`@miyoria/brain/selfhost`), and the voice ones when it has `voice`.
  */
 export interface TextRunner {
   /** A line of a channel, thread or DM, after the agent's own checks (blocked users, `ignore`). */
@@ -256,6 +256,27 @@ export interface TextRunner {
    * the menu does not reach its places.
    */
   replyTo?(message: MessageRef): TextReplyOutcome;
+  /**
+   * The voice conversations, when the runner takes them too. The agent still keeps each voice
+   * channel's session (who is there, her own starts there) and hands over what is said in it.
+   */
+  voice?: VoiceRunner;
+}
+
+/** What the agent hands a text runner that runs voice conversations (`TextRunner.voice`). */
+export interface VoiceRunner {
+  /** An utterance (`spoken`), or a line typed in the voice channel's chat, after the agent's checks. */
+  line(msg: IncomingMessage, marks: TextLineMarks, spoken: boolean): void;
+  /** Who is in the voice channel `context` now, her not included. */
+  members(context: ContextKey, members: readonly VoiceParticipant[]): void;
+  /** Someone started or stopped speaking there. */
+  speaking(context: ContextKey, account: AccountRef, speaking: boolean): void;
+  /** A sentence of hers started, ended, was cut off or failed; `heard`: what of one cut off was heard. */
+  playback(playback: EventPayload<typeof Events.VoicePlaybackEvent>, heard: string | null): void;
+  /** A claim cuts into her speech in `context`, this hard (§7.3). */
+  yieldTo(context: ContextKey, level: InterruptLevel): void;
+  /** She left the voice channel `context`. */
+  left(context: ContextKey): void;
 }
 
 /** How a text runner took a "要她回這則" (`ok`: a run is on its way). */
@@ -422,6 +443,7 @@ export class Agent {
       const id = contextId(context);
       this.#contexts.get(id)?.inbox.close();
       this.#contexts.delete(id);
+      this.textRunner?.voice?.left(context);
     } else if (is(Events.VoiceSpeaking, env)) {
       const { context, account, speaking } = env.data;
       if (!this.#isVoice(context) || this.isSelf(account)) return;
@@ -430,6 +452,7 @@ export class Agent {
         h.session.setSpeaking(account, speaking);
         h.inbox.push({ type: "speaking" });
       }
+      this.textRunner?.voice?.speaking(context, account, speaking);
     } else if (is(Events.VoiceUtteranceEvent, env)) {
       this.mainline.noteCause(env.data.id, env.id);
       if (this.#isVoice(env.data.context)) this.#onUtterance(env.data);
@@ -491,6 +514,16 @@ export class Agent {
     const ignored = isSelf || (msg.author.is_bot && !this.config.respond_to_bots);
     const verdict = isSelf ? null : this.#inspect(msg, "chat");
     if (verdict?.action === "ignore") return;
+    const voice = msg.id.context.kind === "voice" ? (this.textRunner?.voice ?? null) : null;
+    if (voice !== null) {
+      // The voice channel's session keeps the line for her own starts there.
+      const session = this.#existing(msg.id.context)?.session;
+      session?.recordMessage(msg, isSelf);
+      if (verdict?.note) session?.flag(msg.id.id, verdict.note);
+      const bot = msg.author.is_bot && !this.config.respond_to_bots;
+      voice.line(msg, { own: isSelf, bot, verdict, muted: this.muted }, false);
+      return;
+    }
     if (this.#runsText(msg.id.context)) {
       this.textRunner?.line(msg, {
         own: isSelf,
@@ -669,6 +702,7 @@ export class Agent {
     const others = members.filter((m) => !m.is_self);
     const handle = this.#context(context);
     handle.session.setVoiceMembers(others);
+    this.textRunner?.voice?.members(context, others);
     const id = contextId(context);
     const arrival = this.#arrivals.get(id);
     if (arrival) {
@@ -897,6 +931,12 @@ export class Agent {
     if (verdict?.action === "ignore") return;
     const handle = this.#context(utterance.context);
     handle.session.recordUtterance(msg);
+    const voice = this.textRunner?.voice;
+    if (voice !== undefined) {
+      if (verdict?.note) handle.session.flag(msg.id.id, verdict.note);
+      voice.line(msg, { own: false, bot: ignored, verdict, muted: this.muted }, true);
+      return;
+    }
     this.#take(handle, msg, verdict, ignored);
   }
 
@@ -904,6 +944,10 @@ export class Agent {
   #onPlayback(playback: EventPayload<typeof Events.VoicePlaybackEvent>): void {
     const { context, turn, state, text, blocked = null } = playback;
     const heardMs = this.mainline.lines.playback(context, turn, state, text, blocked) ?? 0;
+    this.textRunner?.voice?.playback(
+      playback,
+      state === "interrupted" ? this.#heard(text, playback, heardMs) : null,
+    );
     const h = this.#existing(context);
     if (!h) return;
     const name = this.persona.displayName();
@@ -1003,6 +1047,7 @@ export class Agent {
     const level = floor.interruptLevel(kind, holder.kind);
     if (level === "queue") return;
     this.#existing(context)?.inbox.push({ type: "yield", level });
+    this.textRunner?.voice?.yieldTo(context, level);
   }
 
   /** Conversation facts for the Arbiter's floors (`ImpulseHost.facts`). */

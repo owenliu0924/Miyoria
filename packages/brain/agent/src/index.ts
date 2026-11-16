@@ -109,6 +109,7 @@ export {
   WarmContext,
   type WarmRead,
 } from "./contributors.js";
+export { speculations, speculationWaste } from "./coordinator.js";
 export {
   DEFAULT_PAUSE_MS,
   Expression,
@@ -221,6 +222,7 @@ export {
   type TextReplyOutcome,
   type TextRunner,
   type TextRunnerFactory,
+  type VoiceRunner,
 } from "./runtime.js";
 export { toTraditional } from "./script.js";
 export {
