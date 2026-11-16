@@ -26,7 +26,7 @@ const DEFAULT_MAX_USD = 0.5;
 
 const USAGE =
   "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship] " +
-  "[--subject current] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>]\n";
+  "[--subject current] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>]\n";
 
 export interface SubjectDeps {
   router: LlmRouter;

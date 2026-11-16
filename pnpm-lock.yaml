@@ -1468,15 +1468,27 @@ importers:
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../../packages/gate
+      '@miyoria/heart':
+        specifier: workspace:*
+        version: link:../../packages/heart
       '@miyoria/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@miyoria/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@miyoria/play':
         specifier: workspace:*
         version: link:../../packages/play
       '@miyoria/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@miyoria/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       zod:
         specifier: ^4.6.7
         version: 4.6.7

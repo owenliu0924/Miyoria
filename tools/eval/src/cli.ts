@@ -17,7 +17,33 @@ const args = process.argv.slice(2);
 if (args.includes("--live")) {
   // Loaded only here: the offline suite needs none of the live code or what it imports.
   const { liveMain } = await import("./live/cli.js");
-  process.exit(await liveMain(args.filter((a) => a !== "--live")));
+  const { resolve } = await import("node:path");
+  const base = process.env.INIT_CWD ?? process.cwd();
+  const at = (name: string): string | undefined => {
+    const i = args.indexOf(name);
+    return i >= 0 ? args[i + 1] : undefined;
+  };
+  const setPath = at("--memory-set");
+  const configPath = at("--config");
+  process.exit(
+    await liveMain(
+      args.filter((a) => a !== "--live"),
+      {
+        // The set holds real conversations and is never in the repository: no flag, no suite.
+        register: async (registry) => {
+          if (setPath === undefined || configPath === undefined) return;
+          const { memoryRunner } = await import("./live/suites/memory.js");
+          registry.register(
+            "memory",
+            memoryRunner({
+              setPath: resolve(base, setPath),
+              configPath: resolve(base, configPath),
+            }),
+          );
+        },
+      },
+    ),
+  );
 }
 const json = args.includes("--json");
 const live = process.env.MIYORIA_EVAL_LIVE === "1";
