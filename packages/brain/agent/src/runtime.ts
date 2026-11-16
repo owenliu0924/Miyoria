@@ -251,7 +251,24 @@ export interface TextRunner {
   /** The emergency stop: what runs ends, what waits is dropped. */
   halt(): void;
   stop(): void;
+  /**
+   * "要她回這則" on a line of a place it runs: a run on that line as if it had called her. Unset:
+   * the menu does not reach its places.
+   */
+  replyTo?(message: MessageRef): TextReplyOutcome;
 }
+
+/** How a text runner took a "要她回這則" (`ok`: a run is on its way). */
+export type TextReplyOutcome = "ok" | "unseen" | "own" | "blocked" | "off" | "failed";
+
+/** What the menu says when "要她回這則" cannot be done. */
+const REPLY_REFUSALS: Readonly<Record<Exclude<TextReplyOutcome, "ok">, string>> = {
+  unseen: "她現在看不到這則訊息。",
+  own: "這是她自己說的話。",
+  blocked: "這個功能現在不能用。",
+  off: "她在這個頻道不說話。",
+  failed: "沒有成功,請稍後再試。",
+};
 
 /** Makes the text runner of an agent (Core passes one; the module calls it only for `"self"`). */
 export type TextRunnerFactory = (agent: Agent) => TextRunner;
@@ -561,25 +578,34 @@ export class Agent {
    */
   #replyTo(request: MessageActionRequest): MessageActionOutcome {
     if (this.muted) return { ok: false, reason: "她現在暫停中。" };
-    if (this.isBlocked(request.requested_by)) return { ok: false, reason: "這個功能現在不能用。" };
+    if (this.isBlocked(request.requested_by)) return { ok: false, reason: REPLY_REFUSALS.blocked };
+    const ref = request.message;
+    const runner = this.textRunner;
+    if (runner?.replyTo && this.#roomOf(ref.context) === null && this.#runsText(ref.context)) {
+      if (this.#isExcluded(ref.context, ref.id)) {
+        return { ok: false, reason: "這則訊息已經請她不要記住了。" };
+      }
+      const taken = runner.replyTo(ref);
+      return taken === "ok" ? { ok: true } : { ok: false, reason: REPLY_REFUSALS[taken] };
+    }
     const found = this.#find(request.message);
-    if (found === null) return { ok: false, reason: "她現在看不到這則訊息。" };
+    if (found === null) return { ok: false, reason: REPLY_REFUSALS.unseen };
     const { handle, entry } = found;
-    if (entry.isSelf) return { ok: false, reason: "這是她自己說的話。" };
-    if (this.isBlocked(entry.account)) return { ok: false, reason: "這個功能現在不能用。" };
+    if (entry.isSelf) return { ok: false, reason: REPLY_REFUSALS.own };
+    if (this.isBlocked(entry.account)) return { ok: false, reason: REPLY_REFUSALS.blocked };
     if (this.#isExcluded(handle.session.context, request.message.id)) {
       return { ok: false, reason: "這則訊息已經請她不要記住了。" };
     }
     const context = handle.session.context;
     if (this.handle.channelMode(context) === "off") {
-      return { ok: false, reason: "她在這個頻道不說話。" };
+      return { ok: false, reason: REPLY_REFUSALS.off };
     }
     this.log.debug(
       { context: contextId(context), message: request.message.id, by: request.requested_by.id },
       "asked to answer a message",
     );
     const pushed = handle.inbox.push({ type: "message", message: entryMessage(context, entry) });
-    return pushed ? { ok: true } : { ok: false, reason: "沒有成功,請稍後再試。" };
+    return pushed ? { ok: true } : { ok: false, reason: REPLY_REFUSALS.failed };
   }
 
   /**

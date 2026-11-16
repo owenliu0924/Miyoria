@@ -95,7 +95,7 @@ export async function gatherBlocks(
 export function wakeLine(wake: Wake): string {
   switch (wake.kind) {
     case "addressed":
-      return WAKE_LINES[wake.reason](wake.from.name);
+      return wake.line ?? WAKE_LINES[wake.reason](wake.from.name);
     case "result":
       return WAKE_LINES.result(wake.tool, wake.job, wake.ok);
     case "timer":

@@ -216,6 +216,7 @@ export {
 export {
   Agent,
   type TextLineMarks,
+  type TextReplyOutcome,
   type TextRunner,
   type TextRunnerFactory,
 } from "./runtime.js";

@@ -65,6 +65,7 @@ import {
   directReason,
   maxDebounceMs,
   type TextLineMarks,
+  type TextReplyOutcome,
   type TextRunner,
   type TextRunnerFactory,
   TimeoutError,
@@ -100,7 +101,7 @@ import { Lane, type LaneHost, type LaneRun } from "./lane.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
-import { SAY_DM } from "./texts.js";
+import { askedLine, SAY_DM } from "./texts.js";
 
 /** Lines of a place before the first one the backfill fetches at most. */
 const MAX_BACKFILL = 50;
@@ -167,6 +168,8 @@ export class SelfHost implements TextRunner {
   readonly #places = new Map<string, Place>();
   readonly #turns = new Map<string, TurnState>();
   readonly #jobs = new Map<string, Job>();
+  /** Lines someone asked her to answer from their menu, until a run takes them. */
+  readonly #asked = new Set<string>();
   /** When she glanced at each place (`contextKeyString`). */
   #glances = new Map<string, readonly number[]>();
   #day = { key: "", count: 0 };
@@ -472,16 +475,71 @@ export class SelfHost implements TextRunner {
 
   #addressedWake(inputs: readonly IncomingMessage[]): Wake | null {
     const names = this.#agent.persona.names();
-    const first = inputs.find((m) => callsHer(this.#call(m)));
+    const calling = inputs.filter((m) => callsHer(this.#call(m)));
+    // A line someone asked her to answer from its menu leads, worded as such.
+    const asked = calling.find((m) => this.#asked.has(m.id.id));
+    if (asked !== undefined) this.#asked.delete(asked.id.id);
+    const first = asked ?? calling[0];
     if (first === undefined) return null;
     const reason =
       addressedReason(directReason(first, names)) ?? (first.reply_to_self ? "reply" : "mention");
+    const callers: { from: WakeAuthor; message: MessageRef }[] = [];
+    for (const m of [first, ...calling]) {
+      const from = { account: m.author.account, name: m.author.display_name };
+      const known = callers.find((c) => sameAccount(c.from.account, from.account));
+      if (known === undefined) callers.push({ from, message: m.id });
+      else if (m !== first) known.message = m.id;
+    }
     return {
       kind: "addressed",
       reason,
       from: { account: first.author.account, name: first.author.display_name },
       message: first.id,
+      ...(asked === undefined ? {} : { line: askedLine(asked.author.display_name, asked.text) }),
+      ...(callers.length > 1 ? { callers } : {}),
     };
+  }
+
+  /** "要她回這則" (`TextRunner.replyTo`): a run on that line, as if it had called her. */
+  replyTo(ref: MessageRef): TextReplyOutcome {
+    const agent = this.#agent;
+    const context = ref.context;
+    const entries = this.transcript.tail(this.#sessionFor(context)).entries;
+    const entry = entries.findLast(
+      (e) => e.message_id === ref.id && (e.kind === "other" || e.kind === "self"),
+    );
+    if (entry === undefined || entry.redacted_at !== null) return "unseen";
+    if (entry.kind === "self") return "own";
+    if (entry.account !== null && agent.isBlocked(entry.account)) return "blocked";
+    if (agent.handle.channelMode(context) === "off") return "off";
+    const seen = this.#around.recent.get(context, ref.id);
+    const msg: IncomingMessage = {
+      ...(seen ?? {
+        id: ref,
+        author: {
+          account: entry.account ?? { platform: context.platform, id: "unknown" },
+          display_name: entry.author ?? "",
+          is_bot: entry.bot,
+        },
+        text: entry.content,
+        reply_to_self: false,
+        attachments: [],
+        ts: entry.at,
+        reply_to: entry.reply_to === null ? null : { context, id: entry.reply_to },
+      }),
+      mentions_self: true,
+    };
+    agent.log.debug({ context: contextKeyString(context), message: ref.id }, "asked to answer");
+    this.#asked.add(ref.id);
+    const pushed = this.#place(context).lane.push({
+      type: "line",
+      msg,
+      call: "address",
+      glance: false,
+      inert: false,
+    });
+    if (!pushed) this.#asked.delete(ref.id);
+    return pushed ? "ok" : "failed";
   }
 
   /** A glance at `context` if it is still due (another place may have taken the day's last). */

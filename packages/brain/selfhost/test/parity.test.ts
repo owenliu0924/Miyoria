@@ -22,6 +22,7 @@ import {
   type InterruptLevel,
   type LifeLog,
   LifeLogKey,
+  MessageActionsKey,
   type PartyStatus,
   PartyStatusKey,
   type PromptContributor,
@@ -339,6 +340,49 @@ describe("her lines", () => {
     rig.say(mention(C1, "amy", "@她 嗨"));
     await until(() => outcomes(rig).length === 1, 3_000, "the run");
     expect(replies(rig)).toEqual([["好", null]]);
+  });
+});
+
+// ---- the message menu ---------------------------------------------------------------------------
+
+describe("「要她回這則」", () => {
+  it("wakes her for that line as if it had called her, even when it is not the newest", async () => {
+    const rig = await Rig.create({ mode: "mention-only" });
+    const asked = line(C1, "bob", "有人知道哪裡的拉麵好吃嗎");
+    rig.say(asked);
+    rig.say(line(C1, "carol", "我也想知道"));
+    await until(() => rig.entries(C1).length === 2, 3_000, "both lines");
+    expect(rig.model.requests).toHaveLength(0);
+    rig.model.push(says("車站前那家"));
+    const actions = rig.sup.services.get(MessageActionsKey);
+    const outcome = await actions?.replyTo({
+      message: asked.id,
+      requested_by: account("amy"),
+      author: null,
+    });
+    expect(outcome).toEqual({ ok: true });
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    const last = contentText(rig.model.requests[0]?.messages.at(-1)?.content ?? "");
+    expect(last).toContain("有人請你回 bob 的這則訊息:「有人知道哪裡的拉麵好吃嗎」");
+    expect(replies(rig)).toEqual([["車站前那家", asked.id.id]]);
+    expect(outcomes(rig)[0]?.reason).toBe("addressed");
+  });
+
+  it("refuses her own lines and lines she has not seen", async () => {
+    const rig = await Rig.create();
+    rig.model.push(says("嗨"));
+    rig.say(mention(C1, "amy", "@她 嗨"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    await until(() => outcomes(rig).length === 1, 3_000, "the run's end");
+    const actions = rig.sup.services.get(MessageActionsKey);
+    const ask = (id: string) =>
+      actions?.replyTo({
+        message: { context: C1, id },
+        requested_by: account("amy"),
+        author: null,
+      });
+    expect(await ask("sent-1")).toEqual({ ok: false, reason: "這是她自己說的話。" });
+    expect(await ask("nowhere")).toEqual({ ok: false, reason: "她現在看不到這則訊息。" });
   });
 });
 

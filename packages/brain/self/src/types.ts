@@ -48,7 +48,22 @@ export type AddressedReason = "mention" | "name" | "reply" | "dm";
 /** What woke her. The line itself is in the transcript already; this says what the run is. */
 export type Wake =
   /** Someone spoke to her: someone waits for an answer. */
-  | { kind: "addressed"; reason: AddressedReason; from: WakeAuthor; message: MessageRef }
+  | {
+      kind: "addressed";
+      reason: AddressedReason;
+      from: WakeAuthor;
+      message: MessageRef;
+      /**
+       * What block 7 says woke her, when the host words it itself (someone asked her from the
+       * message's menu to answer a line that need not be the newest). Unset: by `reason`.
+       */
+      line?: string;
+      /**
+       * Everyone who called her in the lines the run answers, in order, each with their newest
+       * line that called her; `from` is the first. Unset: only `from`.
+       */
+      callers?: readonly { from: WakeAuthor; message: MessageRef }[];
+    }
   /** Something she started came back. */
   | {
       kind: "result";
