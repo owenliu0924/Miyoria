@@ -9,6 +9,7 @@
 import { ACTIVITY_EVENTS } from "./activity.js";
 import { AGENT_EVENTS } from "./agent.js";
 import { ARBITER_EVENTS } from "./arbiter.js";
+import { ArtifactShared } from "./artifact.js";
 import { CHAT_EVENTS } from "./chat.js";
 import { CLUSTER_EVENTS } from "./cluster.js";
 import { DIRECTIVE_EVENTS } from "./directive.js";
@@ -58,6 +59,8 @@ export const BUS_EVENTS: readonly AnyEventDefinition[] = [
   ...STAGE_EVENTS,
   ...CLUSTER_EVENTS,
   ...EVAL_EVENTS,
+  // The artifact store writes its own lifecycle events to the log; only a hand-over is a topic.
+  ArtifactShared,
 ];
 
 /** A new registry holding `BUS_EVENTS`. */

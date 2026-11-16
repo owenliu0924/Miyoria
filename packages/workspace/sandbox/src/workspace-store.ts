@@ -70,6 +70,11 @@ export interface WorkspaceApi {
   list(prefix?: string): Promise<{ entries: WorkspaceEntry[]; truncated: boolean }>;
   read(path: string, options?: { offset?: number; maxChars?: number }): Promise<WorkspaceRead>;
   write(path: string, text: string, options?: { append?: boolean }): Promise<WorkspaceEntry>;
+  /**
+   * The bytes of one file (never through a link), for taking a copy out of the workspace. Throws
+   * `not_found` for none and `limit` for a file over `maxBytes`.
+   */
+  readBytes(path: string, maxBytes: number): Promise<Uint8Array>;
   /** Removes a file, or a directory with everything in it; `false` when there is none. */
   remove(path: string): Promise<boolean>;
   exists(path: string): Promise<boolean>;
@@ -250,6 +255,28 @@ export class PersistentWorkspace implements WorkspaceApi {
         offset,
         next_offset: end < chars.length ? end : null,
       };
+    } finally {
+      await handle.close();
+    }
+  }
+
+  async readBytes(path: string, maxBytes: number): Promise<Uint8Array> {
+    const full = await this.#resolve(path, false);
+    let handle: Awaited<ReturnType<typeof open>>;
+    try {
+      handle = await open(full, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    } catch (error) {
+      if (isMissing(error)) throw new SandboxError("not_found", `no file \`${path}\``);
+      throw invalid(path, "cannot be opened");
+    }
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile()) throw new SandboxError("not_found", `\`${path}\` is not a file`);
+      const cap = Math.min(maxBytes, this.limits.maxFileBytes);
+      if (stat.size > cap) {
+        throw new SandboxError("limit", `\`${path}\` is over ${cap} bytes`);
+      }
+      return await handle.readFile();
     } finally {
       await handle.close();
     }

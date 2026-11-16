@@ -14,6 +14,11 @@ export const FactsConfigSchema = z.object({
   compact_every_mins: z.number().positive().default(60),
   /** Rows one compaction pass deletes at most (a pass blocks whatever else uses the store). */
   compact_max_rows: z.number().int().positive().default(2_000),
+  /**
+   * How often the artifact store is swept: expired artifacts are marked deleted and their shares
+   * revoked, and rows, blobs and stray files past the store's grace are removed.
+   */
+  artifact_sweep_hours: z.number().positive().default(24),
   /** Ambient observations (tier `ambient`) older than this are folded into per-day counts. */
   fold_after_days: z.number().positive().default(14),
   /** Turn internals and the rest of tier `short` older than this go (0: never). */

@@ -10,6 +10,7 @@ import {
 import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  AttachmentSourceKey,
   Events as BusEvents,
   type ContextKind,
   ModerationKey,
@@ -357,12 +358,20 @@ export class GatewayBridge {
       this.ctx.publish(BusEvents.PlatformReady, { platform: PLATFORM, self_account: account(id) });
     }
     const emojiConfig = this.shared.config.emoji;
-    const sink = new DiscordSink(client.rest, () => this.ctx.services.get(ModerationKey), {
-      table: this.shared.emoji,
-      usage: this.shared.emojiUsage,
-      enabled: () => emojiConfig.enabled,
-      limits: () => emojiConfig,
-    });
+    const sink = new DiscordSink(
+      client.rest,
+      () => this.ctx.services.get(ModerationKey),
+      {
+        table: this.shared.emoji,
+        usage: this.shared.emojiUsage,
+        enabled: () => emojiConfig.enabled,
+        limits: () => emojiConfig,
+      },
+      {
+        source: () => this.ctx.services.get(AttachmentSourceKey),
+        maxBytes: () => this.shared.config.max_upload_bytes,
+      },
+    );
     this.shared.sinks?.register(sink);
     this.shared.histories?.register(
       new DiscordHistory(client as unknown as HistoryClientLike, this.shared.selfIds),

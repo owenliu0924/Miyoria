@@ -190,6 +190,47 @@ describe("beside V2", () => {
     await store.close();
   });
 
+  it("sweeps the artifact store on its schedule, and a failed sweep does not stop it", async () => {
+    const store = await SqliteStore.open(":memory:");
+    const result = {
+      expired: 0,
+      rows_removed: 0,
+      blobs_removed: 0,
+      orphan_files_removed: 0,
+      temp_files_removed: 0,
+      missing_blobs: 0,
+      bytes_freed: 0,
+    };
+    let calls = 0;
+    const artifacts = {
+      async sweep() {
+        calls++;
+        if (calls === 1) throw new Error("disk is full");
+        return result;
+      },
+    };
+    // 0.00002 hours: the interval is a few tens of milliseconds, so the schedule is seen to repeat.
+    const sup = await run({ events: store.events, artifacts } as never, {
+      ...CONFIG,
+      artifact_sweep_hours: 0.00002,
+    });
+    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(3), { timeout: 3000 });
+    await sup.stopAll();
+    const seen = calls;
+    await settle(150);
+    expect(calls).toBe(seen);
+    await store.close();
+  });
+
+  it("does not sweep anything for a store without artifacts", async () => {
+    const store = await SqliteStore.open(":memory:");
+    expect(store.artifacts).toBeNull();
+    const sup = await run(store, { ...CONFIG, artifact_sweep_hours: 0.00002 });
+    await settle(100);
+    await sup.stopAll();
+    await store.close();
+  });
+
   it("reports a store that cannot be reached in its health", async () => {
     const store = await SqliteStore.open(":memory:");
     const failing: EventLogStore = Object.create(store.events);

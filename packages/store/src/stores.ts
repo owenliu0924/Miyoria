@@ -18,6 +18,7 @@ import {
   type Timestamp,
   type TurnOutcomeRecord,
 } from "@miyoria/types";
+import type { ArtifactStore } from "./artifacts/store.js";
 import type { ConfigModuleState } from "./config/revisions.js";
 import type { DataCategoryId, DataExport, DataInventory, WipeCounts, WipeOptions } from "./data.js";
 import type { ChatLogStore } from "./events/chat.js";
@@ -341,6 +342,11 @@ export interface Store {
   readonly profileData: ProfileDataStore;
   /** The event log (`events`). Optional for test doubles; without it the log stays in memory. */
   readonly events?: EventLogStore;
+  /**
+   * The files she makes (`artifacts/store.ts`). `null` for an in-memory database, which has no
+   * folder for the bytes; optional for test doubles.
+   */
+  readonly artifacts?: ArtifactStore | null;
   /**
    * Chat lines on the event log: writing them, "do not remember this" and "forget me". Optional
    * for test doubles; `messages` reads the same lines.

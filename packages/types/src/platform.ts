@@ -124,10 +124,102 @@ export function incomingText(msg: IncomingMessage): string {
   return out;
 }
 
+/**
+ * A file that goes out with a message: an artifact of the artifact store, named by its id. Never a
+ * host path and never bytes: the platform sink asks the `AttachmentSource` for the content when it
+ * sends, and the source checks again that the destination may see it (v5-architecture §11.2).
+ */
+export interface OutgoingAttachment {
+  artifact_id: string;
+}
+
 export interface OutgoingMessage {
+  /** May be empty when `attachments` is not. */
   text: string;
   reply_to: MessageRef | null;
+  /**
+   * Files sent with the message. A sink without `attachmentLimit` cannot take any: senders check
+   * `attachmentLimit` first and do not put attachments on a message for such a sink.
+   */
+  attachments?: OutgoingAttachment[];
 }
+
+/** Why an attachment did not go out. */
+export type AttachmentRefusal =
+  /** Nothing here can resolve artifacts (no artifact store, or the platform takes no files). */
+  | "unavailable"
+  /** No such artifact, or it is gone (expired, deleted, taken down). */
+  | "not_found"
+  /** The destination may not see it. */
+  | "not_visible"
+  /** It may never leave as a file (a song cover). */
+  | "not_shareable"
+  /** Larger than the platform takes there. */
+  | "too_large"
+  /** More files than one message takes. */
+  | "too_many"
+  /** Its bytes are missing or are not the ones recorded. */
+  | "damaged"
+  /** The platform refused the upload (no permission to attach files there, its own limits). */
+  | "platform";
+
+/** An attachment could not be sent; `message` says why in plain words (for logs and the tool). */
+export class AttachmentError extends Error {
+  override readonly name = "AttachmentError";
+
+  constructor(
+    readonly code: AttachmentRefusal,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+  }
+}
+
+/** The `AttachmentError` in `error` or its causes, if any. */
+export function attachmentErrorOf(error: unknown): AttachmentError | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 8 && current instanceof Error; depth++) {
+    if (current instanceof AttachmentError) return current;
+    current = current.cause;
+  }
+  return null;
+}
+
+/** An attachment resolved for one send: its upload name, sniffed type and bytes. */
+export interface AttachmentFile {
+  artifact_id: string;
+  /** Cleaned by the artifact store; never a path. */
+  filename: string;
+  content_type: string;
+  size: number;
+  data: Uint8Array;
+}
+
+export interface AttachmentOpenOptions {
+  /** The largest file the platform takes at the destination, in bytes. */
+  maxBytes: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Resolves outgoing attachments at send time. Provided by the app over the artifact store
+ * (`AttachmentSourceKey`); platform sinks look it up per message.
+ */
+export interface AttachmentSource {
+  /**
+   * The content of artifact `artifactId` for a message into `destination`. Checks, now, that the
+   * artifact is still there, may be downloaded, is visible at the destination and fits `maxBytes`.
+   * Throws an `AttachmentError` otherwise.
+   */
+  open(
+    artifactId: string,
+    destination: ContextKey,
+    options: AttachmentOpenOptions,
+  ): Promise<AttachmentFile>;
+}
+
+export const AttachmentSourceKey = serviceKey<AttachmentSource>("AttachmentSource");
 
 /**
  * Implemented by platform adapters so the scheduler can execute output actions without knowing
@@ -141,6 +233,11 @@ export interface PlatformSink {
   send(context: ContextKey, message: OutgoingMessage, signal?: AbortSignal): Promise<SentMessage>;
   react(message: MessageRef, emoji: string, signal?: AbortSignal): Promise<void>;
   typing(context: ContextKey, signal?: AbortSignal): Promise<void>;
+  /**
+   * The largest attachment `send` takes in `context`, in bytes; `null` when it takes none there.
+   * Optional: a platform without it has no attachments at all, and `send` ignores them.
+   */
+  attachmentLimit?(context: ContextKey): number | null;
   /**
    * Sets the status line of the voice channel `context` (`""` clears it). Optional; platforms
    * without one leave it out.

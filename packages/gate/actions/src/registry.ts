@@ -70,6 +70,7 @@ import { publishNotice, recordOutcome } from "./outcome.js";
 import { PRIVACY_PROFILE, Privacy } from "./privacy.js";
 import { effectiveLimits, RateLimiter, type RateRun, tightened } from "./rate.js";
 import { approvalCard, Escalations, parseReview, reviewMessages } from "./review.js";
+import { shareCapability } from "./share.js";
 import { CapabilityTool } from "./tools.js";
 
 const log = getLogger("actions");
@@ -293,6 +294,14 @@ export class ActuatorRegistry implements ActuatorExecutor {
     });
     if (options.builtins ?? true) {
       for (const capability of builtinCapabilities(options.services)) this.register(capability);
+      this.register(
+        shareCapability({
+          services: options.services,
+          config: () => this.#config.share,
+          publish: (definition, data, ...meta) => this.#publish(definition, data, ...meta),
+          clock: this.#clock,
+        }) as Capability,
+      );
     }
   }
 

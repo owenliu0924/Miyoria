@@ -34,6 +34,8 @@ import {
 import type { Profile } from "@miyoria/runtime/profile";
 import { ReplayRecorderModule } from "@miyoria/runtime/replay-log";
 import {
+  ArtifactAttachments,
+  ArtifactStoreKey,
   AuditLogKey,
   AuthStoreKey,
   DecisionLogKey,
@@ -54,6 +56,7 @@ import {
 } from "@miyoria/store";
 import {
   ActuatorExecutorKey,
+  AttachmentSourceKey,
   DirectivesKey,
   Events,
   HandleDirectoryKey,
@@ -257,6 +260,10 @@ export async function buildCoreWith(
   services.provide(k, IdentityStoreKey, store.identity);
   services.provide(k, AuthStoreKey, store.plugin(authTables).store);
   services.provide(k, AuditLogKey, store.audit);
+  if (store.artifacts) {
+    services.provide(k, ArtifactStoreKey, store.artifacts);
+    services.provide(k, AttachmentSourceKey, new ArtifactAttachments(store.artifacts));
+  }
   services.provide(k, ProfileDataStoreKey, store.profileData);
   // Her stable names for people (`Owen`, `Owen#2`): never per-call codes (`u1`).
   let handles: PersonHandleDirectory | null = null;

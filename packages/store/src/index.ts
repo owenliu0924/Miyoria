@@ -8,9 +8,12 @@ export {
   MEDIA_TYPES,
   type MediaType,
   normalizeMime,
+  SNIFF_BYTES,
   sniff,
+  TextCheck,
 } from "./artifacts/media.js";
 export { artifactSchema } from "./artifacts/migrations.js";
+export { ArtifactAttachments } from "./artifacts/outgoing.js";
 export {
   ArtifactPathError,
   BlobLayout,
@@ -18,6 +21,12 @@ export {
   FILENAME_MAX_BYTES,
   isSha256,
 } from "./artifacts/paths.js";
+export {
+  ArtifactPlaces,
+  type ArtifactSite,
+  type SiteOptions,
+  type SitePlace,
+} from "./artifacts/places.js";
 export {
   ARTIFACT_KINDS,
   ARTIFACT_SCOPES,
@@ -53,6 +62,7 @@ export {
   ArtifactNotFoundError,
   type ArtifactPlace,
   ArtifactStore,
+  ArtifactStoreKey,
   type ArtifactStoreOptions,
   ArtifactTooLargeError,
   DEFAULT_GRACE_MS,
@@ -60,6 +70,11 @@ export {
   DEFAULT_SIZE_LIMITS,
   type SweepResult,
 } from "./artifacts/store.js";
+export {
+  ArtifactSweepSchedule,
+  type Sweepable,
+  type SweepScheduleOptions,
+} from "./artifacts/sweeper.js";
 export {
   type ArtifactViewer,
   isLive,

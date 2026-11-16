@@ -35,6 +35,7 @@ export {
   ArbiterDecided,
   ArbiterImpulse,
   ArbiterLedger,
+  ArtifactShared,
   AutonomyEmergency,
   ClusterHostApproved,
   ClusterHostConnected,

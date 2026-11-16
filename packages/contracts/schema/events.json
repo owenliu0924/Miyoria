@@ -1131,6 +1131,73 @@
         "text"
       ]
     },
+    "EventsArtifactShared": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "mime": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/EventsArtifactSource"
+        },
+        "requested_by": {
+          "$ref": "#/$defs/WireAccountRef"
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "message_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata_stripped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "sha256",
+        "size",
+        "mime",
+        "filename",
+        "source",
+        "requested_by",
+        "person_id",
+        "turn",
+        "context",
+        "message_id",
+        "metadata_stripped"
+      ]
+    },
     "EventsArtifactSource": {
       "type": "string",
       "enum": [

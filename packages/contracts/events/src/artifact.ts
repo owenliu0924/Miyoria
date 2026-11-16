@@ -10,12 +10,15 @@
 // - `share.created`, `share.revoked`: a share token made or withdrawn (who asked is the envelope's
 //   person and turn); `share.opened`: the first use of a token only, so every download does not
 //   become an event.
+// - `artifact.shared`: she handed an artifact to someone as an attachment of a message (the
+//   `share` capability): who asked, in which turn, which artifact, where. Published on the bus by
+//   the gate after the platform took the upload; the facts writer records it. No token is made.
 //
 // Artifact events are kept forever (`keep`), share events 365 days (`long`), as §2.5 says. All but
 // `artifact.created` are for the owner.
 
 import { z } from "zod";
-import { TimestampSchema } from "../../wire/src/index.js";
+import { AccountRefSchema, ContextKeySchema, TimestampSchema } from "../../wire/src/index.js";
 import { defineEvent } from "./registry.js";
 
 /** What kind of content an artifact is, from its sniffed media type. */
@@ -141,6 +144,32 @@ export const ShareOpenedSchema = z
   .meta({ id: "EventsShareOpened" });
 export type ShareOpenedData = z.output<typeof ShareOpenedSchema>;
 
+/** An `artifact.shared` payload: one hand-over of an artifact as an attachment. */
+export const ArtifactSharedSchema = z
+  .object({
+    artifact_id: z.string(),
+    sha256: Sha256Schema,
+    size: z.number().int().min(1),
+    mime: z.string(),
+    /** The name it was uploaded under (as cleaned by the store). */
+    filename: z.string(),
+    source: ArtifactSourceSchema,
+    /** The account that asked for it, and received it. */
+    requested_by: AccountRefSchema,
+    /** Their person, when identity knows them. */
+    person_id: z.string().nullable(),
+    /** The turn the request was made in. */
+    turn: z.string().nullable(),
+    /** Where it was posted. */
+    context: ContextKeySchema,
+    /** The platform's id of the message that carries it. */
+    message_id: z.string().nullable(),
+    /** Whether image metadata (EXIF and the like) was stripped before the upload. */
+    metadata_stripped: z.boolean(),
+  })
+  .meta({ id: "EventsArtifactShared" });
+export type ArtifactSharedData = z.output<typeof ArtifactSharedSchema>;
+
 export const ArtifactCreated = defineEvent({
   type: "artifact.created",
   v: 1,
@@ -168,6 +197,14 @@ export const ArtifactSwept = defineEvent({
   type: "artifact.swept",
   v: 1,
   data: ArtifactSweptSchema,
+  scope: "owner",
+  tier: "keep",
+});
+
+export const ArtifactShared = defineEvent({
+  type: "artifact.shared",
+  v: 1,
+  data: ArtifactSharedSchema,
   scope: "owner",
   tier: "keep",
 });
@@ -202,6 +239,7 @@ export const ARTIFACT_EVENTS = [
   ArtifactExpired,
   ArtifactTakenDown,
   ArtifactSwept,
+  ArtifactShared,
   ShareCreated,
   ShareRevoked,
   ShareOpened,

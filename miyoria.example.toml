@@ -198,6 +198,10 @@ presence_intents = true
 # (字數上限是 [modules.agent.mainline] 的 emoji_chars)。
 # [modules."platform.discord.bot".emoji]
 # enabled = true
+
+# 她傳給人的檔案(附件)一則訊息加起來最多幾 bytes。預設 10 MiB 是 Discord 一般伺服器的上限,
+# 加成過的伺服器收得更大,調大才有用。
+# max_upload_bytes = 10485760
 # auto_describe = true
 # max_listed = 40
 # per_message = 1
@@ -561,6 +565,10 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # [modules.actions.limits."code.run"]
 # per_day = 50
 # cooldown_ms = 5000
+# [modules.actions.share]        # 她把自己做的檔案當附件傳給開口要的人(這個階段沒有連結)
+# max_bytes = 10485760           # 一個檔案最多幾 bytes(平台自己的上限另外算,取小的)
+# per_day = 60                   # 每 24 小時最多傳幾個(所有人加起來)
+# per_person_per_day = 10        # 每 24 小時最多傳給同一個人幾個
 
 [modules.directive]
 # 主人規則(docs/design/v3-architecture.md §9)。規則本身存在資料庫裡,用對話、/miyo、/admin i 或面板管理,
@@ -1347,6 +1355,7 @@ record = false
 # rebuild_days = 7               # 啟動時投影往回讀幾天
 # compact_every_mins = 60        # 多久壓縮一次舊資料
 # compact_max_rows = 2000        # 每次壓縮最多刪幾筆
+# artifact_sweep_hours = 24      # 多久清一次她做的檔案:過期的標成刪除、沒人用的內容和檔案移除
 # fold_after_days = 14           # 背景事實(ambient)過多久合併成每日統計
 # short_days = 90                # 回合內部、動作這類事件留多久(0 = 永久);還有後續事件指向的不會被刪
 # long_days = 365                # 大家說過的話和她說的話留多久(0 = 永久)

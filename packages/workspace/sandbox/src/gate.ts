@@ -58,6 +58,7 @@ import {
   type SandboxHealth,
   SessionClosedError,
 } from "./types.js";
+import { workspaceExportCapability } from "./workspace-export.js";
 import {
   type WorkspaceGateOptions,
   workspaceFileCapabilities,
@@ -515,6 +516,9 @@ export class SandboxGate {
     for (const capability of workspaceFileCapabilities(this.#workspaceOptions(workspace))) {
       this.#files.push(this.#registry.register(capability as Capability));
     }
+    this.#files.push(
+      this.#registry.register(workspaceExportCapability({ workspace }) as Capability),
+    );
   }
 
   /** Offers (Docker available) or withdraws every capability. */

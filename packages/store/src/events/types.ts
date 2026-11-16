@@ -30,7 +30,11 @@
 //
 // The artifact store (§5, §8 step 10) records each stored artifact (`artifact.created`, in the
 // artifact's own scope), each expiry, take-down and collection run, and each share token made,
-// revoked and first used (`ARTIFACT_EVENTS`).
+// revoked and first used (`ARTIFACT_EVENTS`). A hand-over as an attachment (`artifact.shared`) is
+// published on the bus by the gate and recorded by the facts writer.
+//
+// A live evaluation run (`eval.run`, `EVAL_EVENTS`) is published by the `eval` module after a
+// nightly run and recorded by the facts writer too: for the owner, kept.
 //
 // Every row the economy plugin's coin ledger posts is one `economy.posted` (§3.3, decision D8),
 // appended in the posting's transaction: for the owner, kept like the ledger.
@@ -45,6 +49,7 @@ import {
   defineEvent,
   EconomyPosted,
   type EconomyPostedData,
+  EVAL_EVENTS,
   type EventDefaults,
   EventRegistry,
   IdentityImported,
@@ -212,6 +217,7 @@ export function coreEventRegistry(): EventRegistry {
     ConfigRevised,
     SettingsChanged,
     ...ARTIFACT_EVENTS,
+    ...EVAL_EVENTS,
     IdentityImported,
     EconomyPosted,
   );

@@ -57,6 +57,8 @@ export {
   capabilityMatches,
   defaultActionsConfig,
   type Limit,
+  type ShareConfig,
+  ShareConfigSchema,
   type TierLimit,
 } from "./config.js";
 export { type EmergencyDeps, EmergencyStop } from "./emergency.js";
@@ -114,4 +116,13 @@ export {
   type ReviewVerdict,
   reviewMessages,
 } from "./review.js";
+export {
+  activeText,
+  type ContentVerdict,
+  checkContent,
+  SHARE,
+  type ShareOptions,
+  type ShareRefusalCode,
+  shareCapability,
+} from "./share.js";
 export { CapabilityTool, REQUEST_RULE, RESULT_PENDING, REVIEW_PENDING } from "./tools.js";

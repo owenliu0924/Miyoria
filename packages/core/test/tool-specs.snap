@@ -1935,6 +1935,38 @@
       "framed": false
     },
     {
+      "name": "share",
+      "description": "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;翻唱的成品不能傳;只收圖片、音訊、影片、PDF、純文字。不行的時候會告訴你原因,照原因跟對方說就好。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "artifact": {
+            "type": "string",
+            "description": "產物的 id"
+          },
+          "to": {
+            "type": "string",
+            "description": "給誰:省略或 speaker(只能是開口要的人)"
+          },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
+          "on_own": {
+            "type": "boolean",
+            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
+          }
+        },
+        "required": [
+          "artifact"
+        ]
+      },
+      "permission": null,
+      "actsFor": true,
+      "readOnly": false,
+      "framed": false
+    },
+    {
       "name": "sing_request",
       "description": "準備一首歌給你唱(在背景下載、分離人聲、轉成你的聲音,通常要一到兩分鐘;已經唱過的歌馬上好)。有人點歌、你想唱的時候用;準備的時候照常聊天,好了會告訴你,再用 sing_start 開唱。query 寫歌名(加上歌手更準),也可以是 YouTube 或 bilibili 連結。不想唱、歌不適合可以拒絕。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -2583,6 +2615,34 @@
           "path": {
             "type": "string",
             "description": "檔案或資料夾路徑"
+          },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
+          "on_own": {
+            "type": "boolean",
+            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "permission": null,
+      "actsFor": true,
+      "readOnly": false,
+      "framed": false
+    },
+    {
+      "name": "workspace_export",
+      "description": "把工作區裡的一個檔案存成產物,回給你它的 id;要把檔案交給人,就用這個 id 呼叫 share。產物是給現在開口要的人做的,只在現在這個頻道或私訊裡看得到。只收圖片、音訊、影片、PDF 和純文字;其他東西(程式、壓縮檔、網頁)存不進去。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "工作區裡的檔案路徑,例如 report.txt"
           },
           "why": {
             "type": "string",
@@ -4233,6 +4293,29 @@
       }
     },
     {
+      "name": "share",
+      "description": "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;翻唱的成品不能傳;只收圖片、音訊、影片、PDF、純文字。不行的時候會告訴你原因,照原因跟對方說就好。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "artifact": {
+            "type": "string",
+            "description": "產物的 id"
+          },
+          "to": {
+            "type": "string",
+            "description": "給誰:省略或 speaker(只能是開口要的人)"
+          },
+          "on_own": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "artifact"
+        ]
+      }
+    },
+    {
       "name": "sing_request",
       "description": "準備一首歌給你唱(在背景下載、分離人聲、轉成你的聲音,通常要一到兩分鐘;已經唱過的歌馬上好)。有人點歌、你想唱的時候用;準備的時候照常聊天,好了會告訴你,再用 sing_start 開唱。query 寫歌名(加上歌手更準),也可以是 YouTube 或 bilibili 連結。不想唱、歌不適合可以拒絕。",
       "parameters": {
@@ -4701,6 +4784,25 @@
           "path": {
             "type": "string",
             "description": "檔案或資料夾路徑"
+          },
+          "on_own": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "workspace_export",
+      "description": "把工作區裡的一個檔案存成產物,回給你它的 id;要把檔案交給人,就用這個 id 呼叫 share。產物是給現在開口要的人做的,只在現在這個頻道或私訊裡看得到。只收圖片、音訊、影片、PDF 和純文字;其他東西(程式、壓縮檔、網頁)存不進去。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "工作區裡的檔案路徑,例如 report.txt"
           },
           "on_own": {
             "type": "boolean"
