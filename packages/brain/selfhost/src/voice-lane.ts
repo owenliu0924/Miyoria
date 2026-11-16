@@ -381,9 +381,12 @@ export class VoiceLane {
                 break;
               }
               case "yield": {
+                // What speaks here gives way as far as the level says: the run that holds the
+                // mic ends, and so does the speech of one that ended but still has some queued.
                 const holder = host.holder();
-                if (holder !== null && running !== null && running.run.turn === holder.turn) {
-                  host.stop(holder.turn);
+                if (holder === null) break;
+                await this.#cutInto(holder.turn, input.level);
+                if (running !== null && running.run.turn === holder.turn) {
                   if (!running.done) await this.#abort(running, "superseded", null);
                   running = null;
                 }
@@ -524,16 +527,21 @@ export class VoiceLane {
     }
     const level = host.interruptLevel(kind, holder.kind);
     if (level === "queue") return null;
-    host.stop(holder.turn);
-    await this.#cancel(holder.turn);
-    if (level !== "wrap_up") {
-      try {
-        await host.interrupt(holder.turn);
-      } catch (error) {
-        host.warn("could not stop her speech", error);
-      }
-    }
+    await this.#cutInto(holder.turn, level);
     return holder.turn;
+  }
+
+  /** `turn`'s speech gives way: nothing more is said, the rest is dropped; harder, the playing one stops. */
+  async #cutInto(turn: string, level: InterruptLevel): Promise<void> {
+    const host = this.#host;
+    host.stop(turn);
+    await this.#cancel(turn);
+    if (level === "wrap_up") return;
+    try {
+      await host.interrupt(turn);
+    } catch (error) {
+      host.warn("could not stop her speech", error);
+    }
   }
 
   async #cancel(turn: string): Promise<void> {

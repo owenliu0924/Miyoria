@@ -137,6 +137,8 @@ export function textOf(request: ChatRequest | undefined): string {
 export class SettlingSink implements ActionSink {
   readonly actions: Action[] = [];
   readonly cancelled: string[] = [];
+  /** Turns whose sentence that plays was stopped. */
+  readonly interrupted: string[] = [];
   /** Lines that were not the main line's. */
   readonly strays: Action[] = [];
   #ctx: ModuleContext | null = null;
@@ -170,6 +172,10 @@ export class SettlingSink implements ActionSink {
 
   async cancelTurn(turn: string): Promise<void> {
     this.cancelled.push(turn);
+  }
+
+  async interruptTurn(turn: string): Promise<void> {
+    this.interrupted.push(turn);
   }
 
   /** `[context channel, text]` of every line sent. */

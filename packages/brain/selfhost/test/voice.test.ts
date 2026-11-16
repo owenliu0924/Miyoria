@@ -2,24 +2,31 @@
 // the transcript once they play. The playback events the voice module would publish are
 // simulated here; the model is scripted. Real time, with the waits of the voice config made short.
 
-import { defineTool } from "@miyoria/llm/tools";
+import { defineTool, type ToolRegistry } from "@miyoria/llm/tools";
 import { sleep } from "@miyoria/runtime/kernel";
 import {
   type ContextKey,
   type DecisionTrace,
+  DeliveryLedgerKey,
   Events,
+  FloorKey,
+  type InterruptLevel,
   type JsonValue,
   MouthKey,
   type PlaybackState,
   type TurnOutcomeRecord,
   toTimestamp,
   type VoiceParticipant,
+  type VoiceTurnMark,
+  type VoiceTurns,
+  VoiceTurnsKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { PROFILES, serialiseMessages, serialiseTools } from "../../self/src/index.js";
 import { silentWaits } from "../src/index.js";
 import { notInVoice } from "../src/voice-texts.js";
+import { books } from "./books.js";
 import {
   account,
   calls,
@@ -415,5 +422,354 @@ describe("her inbox in voice", () => {
     hear(rig, "owen", "小鯨魚你還在嗎");
     await until(() => speeches(rig).length === 2, 3_000, "the second answer");
     expect(textOf(rig.model.requests[1])).not.toContain("Owen 在別的伺服器得獎了");
+  });
+});
+
+/** A `search` call after a first sentence: the run holds the Floor and is in flight. */
+function searchingRun(rig: Rig): void {
+  rig.model.push(
+    {
+      events: [{ type: "text_delta", text: "我查一下喔。" }, ...calls("web_search", { q: "鯨魚" })],
+    },
+    says("找到了。"),
+  );
+}
+
+const holder = (rig: Rig) => rig.sup.services.get(FloorKey)?.holder(VC) ?? null;
+
+/** The Floor and the delivery ledger on one log, as the event log's projections see them. */
+function floored(extra?: (tools: ToolRegistry) => void): RigOptions {
+  const b = books({ budget: { base_lines: 10 } });
+  return {
+    provide: (sup, tools) => {
+      sup.services.provide("app", DeliveryLedgerKey, b.ledger);
+      sup.services.provide("app", FloorKey, b.floor);
+      extra?.(tools);
+    },
+  };
+}
+
+describe("a claim from elsewhere cuts into her speech (yieldTo)", () => {
+  const LEVELS: InterruptLevel[] = ["wrap_up", "cut_short", "interrupt"];
+
+  it("queue changes nothing: the run goes on and says the rest", async () => {
+    const search = slowTool("web_search", 300);
+    const rig = await voiceRig(
+      {},
+      floored((tools) => tools.register(search.tool)),
+    );
+    searchingRun(rig);
+    hear(rig, "owen", "小鯨魚幫我查鯨魚");
+    await until(() => speeches(rig).length === 1, 3_000, "her first sentence");
+    rig.host?.voice.yieldTo(VC, "queue");
+    await until(() => outcomes(rig).length === 1, 5_000, "the outcome");
+    expect(outcomes(rig)[0]?.outcome.type).toBe("sent");
+    expect(speeches(rig).map(([t]) => t)).toEqual(["我查一下喔。", "找到了。"]);
+    expect(rig.sink.cancelled).toEqual([]);
+    expect(rig.sink.interrupted).toEqual([]);
+  });
+
+  for (const level of LEVELS) {
+    it(`${level}: the run that speaks ends, what it queued is dropped${level === "wrap_up" ? ", the sentence playing is left" : ", the sentence playing stops too"}`, async () => {
+      const search = slowTool("web_search", 1_000);
+      const rig = await voiceRig(
+        {},
+        floored((tools) => tools.register(search.tool)),
+      );
+      searchingRun(rig);
+      hear(rig, "owen", "小鯨魚幫我查鯨魚");
+      await until(() => speeches(rig).length === 1, 3_000, "her first sentence");
+      const turn = speeches(rig)[0]?.[2] as string;
+      expect(holder(rig)?.turn).toBe(turn);
+      rig.host?.voice.yieldTo(VC, level);
+      await until(() => outcomes(rig).length === 1, 5_000, "the outcome");
+      expect(outcomes(rig)[0]?.outcome).toMatchObject({ type: "cancelled", cause: "superseded" });
+      expect(rig.sink.cancelled).toContain(turn);
+      expect(rig.sink.interrupted).toEqual(level === "wrap_up" ? [] : [turn]);
+      await sleep(150);
+      expect(speeches(rig).map(([t]) => t)).toEqual(["我查一下喔。"]);
+    });
+
+    it(`${level}: speech of a run that already ended is dropped as well`, async () => {
+      const rig = await voiceRig({}, floored());
+      rig.model.push(says("我跟你說一個很長的故事。後面還有很多。"));
+      hear(rig, "owen", "小鯨魚講故事");
+      await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+      const turn = speeches(rig)[0]?.[2] as string;
+      // Her speech is queued and none of it played: she still holds the Floor.
+      expect(holder(rig)?.turn).toBe(turn);
+      rig.host?.voice.yieldTo(VC, level);
+      await until(() => rig.sink.cancelled.includes(turn), 2_000, "the queued speech dropped");
+      expect(rig.sink.interrupted).toEqual(level === "wrap_up" ? [] : [turn]);
+    });
+  }
+
+  it("a place that has no run and no hold has nothing to cut", async () => {
+    const rig = await voiceRig({}, floored());
+    rig.host?.voice.yieldTo(VC, "interrupt");
+    await sleep(100);
+    expect(rig.sink.cancelled).toEqual([]);
+    expect(rig.sink.interrupted).toEqual([]);
+    rig.host?.voice.yieldTo({ ...VC, channel: "other" }, "interrupt");
+  });
+});
+
+describe("giving way to someone who speaks", () => {
+  it("an early start stays held while they speak, and says its line once they stop", async () => {
+    const rig = await voiceRig({ speculate: true, direct_debounce_ms: 300 });
+    rig.model.push(says("在這。"));
+    hear(rig, "owen", "小鯨魚");
+    await until(() => rig.model.requests.length === 1, 300, "the early model call");
+    speaking(rig, "owen", true);
+    // Past the wait the line opened: someone is speaking, so it is pushed out.
+    await sleep(500);
+    expect(speeches(rig)).toEqual([]);
+    speaking(rig, "owen", false);
+    await until(() => speeches(rig).length === 1, 3_000, "her line");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    expect(outcomes(rig)[0]?.voice_stages?.speculative).toBe(true);
+    expect(own(rig)).toEqual([]);
+  });
+
+  it("a line while her run thinks does not cut it: its answer is said, the line gets the next run", async () => {
+    const rig = await voiceRig();
+    rig.model.push({ events: says("先回你這個。"), delay: 400 }, says("再回你那個。"));
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => rig.model.requests.length === 1, 3_000, "the first run");
+    hear(rig, "owen", "小鯨魚還有一件事想問你");
+    await until(() => speeches(rig).length === 2, 5_000, "both answers");
+    expect(speeches(rig).map(([t]) => t)).toEqual(["先回你這個。", "再回你那個。"]);
+    expect(speeches(rig)[0]?.[2]).not.toBe(speeches(rig)[1]?.[2]);
+    expect(textOf(rig.model.requests[1])).toContain("小鯨魚還有一件事想問你");
+    expect(rig.sink.cancelled).toEqual([]);
+    await until(() => outcomes(rig).length === 2, 3_000, "both outcomes");
+    expect(outcomes(rig).map((o) => o.outcome.type)).toEqual(["sent", "sent"]);
+  });
+
+  it("a run she started herself gives way to someone calling her: nothing of it is said", async () => {
+    const rig = await voiceRig();
+    rig.model.push({ events: says("我想說…"), delay: 600 }, says("在喔。"));
+    expect(rig.host?.voice.wake(VC, { kind: "timer", note: "蛋糕" })).toBe(true);
+    await until(() => rig.model.requests.length === 1, 3_000, "her own run");
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => speeches(rig).length === 1, 5_000, "the answer");
+    expect(speeches(rig).map(([t]) => t)).toEqual(["在喔。"]);
+    await until(() => outcomes(rig).length === 2, 3_000, "both outcomes");
+    const cut = outcomes(rig).find((o) => o.outcome.type === "cancelled");
+    expect(cut?.outcome).toMatchObject({ cause: "superseded", by: "owen" });
+  });
+
+  it("speech of her own start that is queued is dropped when someone calls her; the sentence playing is left", async () => {
+    const rig = await voiceRig({}, floored());
+    rig.model.push(says("對了,蛋糕該出爐了。"), says("在喔。"));
+    // What she says of her own accord spends her budget: a caller cuts into it.
+    expect(rig.host?.voice.wake(VC, { kind: "world", what: "蛋糕出爐了", claim: "notable" })).toBe(
+      true,
+    );
+    await until(() => speeches(rig).length === 1, 3_000, "her own line");
+    const first = speeches(rig)[0]?.[2] as string;
+    await until(() => outcomes(rig).length === 1, 3_000, "her own outcome");
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => speeches(rig).length === 2, 5_000, "the answer");
+    expect(speeches(rig)[1]?.[0]).toBe("在喔。");
+    expect(rig.sink.cancelled).toContain(first);
+    expect(rig.sink.interrupted).toEqual([]);
+  });
+
+  it("speech that answers a person is not cut by a second call: both are answered", async () => {
+    const rig = await voiceRig({}, floored());
+    rig.model.push(says("在喔。"), says("對啊。"));
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => outcomes(rig).length === 1, 3_000, "the first outcome");
+    hear(rig, "amy", "小鯨魚我也在");
+    await until(() => speeches(rig).length === 2, 5_000, "the second answer");
+    expect(rig.sink.cancelled).toEqual([]);
+    expect(rig.sink.interrupted).toEqual([]);
+  });
+
+  it("while sentences wait to play the next run's wake waits for them; a started sentence frees it", async () => {
+    const rig = await voiceRig();
+    rig.model.push(says("好。"), says("對了,蛋糕該出爐了。"));
+    hear(rig, "owen", "小鯨魚好不好");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    const turn = speeches(rig)[0]?.[2] as string;
+    // A result of hers waits until her speech has played.
+    expect(rig.host?.voice.wake(VC, { kind: "timer", note: "蛋糕" })).toBe(true);
+    await sleep(300);
+    expect(rig.model.requests).toHaveLength(1);
+    play(rig, turn, "started", "好。");
+    await until(() => speeches(rig).length === 2, 3_000, "the wake's line");
+  });
+});
+
+/** A `VoiceTurns` that keeps what it is told. */
+class Turns implements VoiceTurns {
+  readonly marks: { turn: string; mark: VoiceTurnMark; at: number; focus: number }[] = [];
+  readonly expected: { turn: string; startedAt: number; at: number }[] = [];
+  readonly settled: string[] = [];
+  mark(turn: string, focus: readonly unknown[], mark: VoiceTurnMark, at: number): void {
+    this.marks.push({ turn, mark, at, focus: focus.length });
+  }
+  expect(_context: ContextKey, turn: string, startedAt: number): void {
+    this.expected.push({ turn, startedAt, at: Date.now() });
+  }
+  settle(turn: string): void {
+    this.settled.push(turn);
+  }
+  marked(turn: string): VoiceTurnMark[] {
+    return this.marks.filter((m) => m.turn === turn).map((m) => m.mark);
+  }
+}
+
+function voiceTurns(): { turns: Turns; opts: RigOptions } {
+  const turns = new Turns();
+  return {
+    turns,
+    opts: { provide: (sup) => sup.services.provide("app", VoiceTurnsKey, turns) },
+  };
+}
+
+describe("the voice module hears of a run", () => {
+  it("marks, in order, where its time went; the outcome and the latency record carry them", async () => {
+    const { turns, opts } = voiceTurns();
+    const rig = await voiceRig({}, opts);
+    rig.model.push(says("在喔。"));
+    hear(rig, "owen", "小鯨魚你在嗎");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    const turn = speeches(rig)[0]?.[2] as string;
+    expect(turns.marked(turn)).toEqual(["started", "decided", "context", "request", "first_token"]);
+    // Each mark answers the line it was for.
+    expect(turns.marks.every((m) => m.focus === 1)).toBe(true);
+    const at = turns.marks.map((m) => m.at);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+    // She will answer: a filler may cover a long silence; the run ended, so it is settled.
+    expect(turns.expected.map((e) => e.turn)).toEqual([turn]);
+    expect(turns.expected[0]?.startedAt).toBe(turns.marks[0]?.at);
+    expect(turns.settled).toEqual([turn]);
+    const stages = outcomes(rig)[0]?.voice_stages;
+    expect(stages).toMatchObject({ speculative: false });
+    for (const part of [
+      stages?.heard_ms,
+      stages?.wait_ms,
+      stages?.decide_ms,
+      stages?.context_ms,
+      stages?.prompt_ms,
+      stages?.first_token_ms,
+      stages?.held_ms,
+      stages?.first_sentence_ms,
+    ]) {
+      expect(part).not.toBeNull();
+      expect(part).toBeGreaterThanOrEqual(0);
+    }
+    const latency = rig
+      .of<{ stage: string; turn: string; model: string; first_token_ms: number }>(
+        Events.VoiceLatency.type,
+      )
+      .filter((l) => l.stage === "llm");
+    expect(latency).toHaveLength(1);
+    expect(latency[0]).toMatchObject({ turn, model: "scripted:m" });
+    expect(latency[0]?.first_token_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("an early start: the filler waits for the confirmation, which is a mark of its own", async () => {
+    const { turns, opts } = voiceTurns();
+    const rig = await voiceRig({ speculate: true, direct_debounce_ms: 500 }, opts);
+    rig.model.push(says("在這。"));
+    hear(rig, "owen", "小鯨魚");
+    await until(() => rig.model.requests.length === 1, 300, "the early model call");
+    // The model call went out but the wait is not over: no filler yet.
+    expect(turns.expected).toEqual([]);
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    const turn = speeches(rig)[0]?.[2] as string;
+    expect(turns.marked(turn)).toEqual([
+      "started",
+      "decided",
+      "context",
+      "request",
+      "first_token",
+      "confirmed",
+    ]);
+    const request = turns.marks.find((m) => m.mark === "request")?.at ?? 0;
+    expect(turns.expected).toHaveLength(1);
+    expect((turns.expected[0]?.at ?? 0) - request).toBeGreaterThanOrEqual(300);
+    const stages = outcomes(rig)[0]?.voice_stages;
+    expect(stages?.speculative).toBe(true);
+    expect(stages?.held_ms).toBeGreaterThanOrEqual(300);
+  });
+
+  it("an early start that is dropped gets no filler and is settled; the merged run gets one", async () => {
+    const { turns, opts } = voiceTurns();
+    const rig = await voiceRig({ speculate: true, direct_debounce_ms: 500 }, opts);
+    rig.model.push(says("第一次的回答。"), says("合起來的回答。"));
+    hear(rig, "owen", "小鯨魚");
+    await until(() => rig.model.requests.length === 1, 300, "the early model call");
+    hear(rig, "owen", "今天晚餐吃什麼好");
+    await until(() => outcomes(rig).length === 1, 3_000, "the merged run's outcome");
+    const turn = speeches(rig)[0]?.[2] as string;
+    expect(turns.expected.map((e) => e.turn)).toEqual([turn]);
+    const dropped = [...new Set(turns.marks.map((m) => m.turn))].filter((t) => t !== turn);
+    expect(dropped).toHaveLength(1);
+    expect(turns.marked(dropped[0] as string)).not.toContain("confirmed");
+    expect(turns.settled).toContain(dropped[0]);
+    expect(turns.settled).toContain(turn);
+  });
+
+  it("a wake of her own is marked but expects nothing, and its outcome has no stages", async () => {
+    const { turns, opts } = voiceTurns();
+    const rig = await voiceRig({}, opts);
+    rig.model.push(says("對了,蛋糕該出爐了。"));
+    expect(rig.host?.voice.wake(VC, { kind: "timer", note: "蛋糕" })).toBe(true);
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    const turn = speeches(rig)[0]?.[2] as string;
+    expect(turns.marked(turn)).toEqual(["started", "decided", "context", "request", "first_token"]);
+    expect(turns.expected).toEqual([]);
+    expect(turns.settled).toEqual([turn]);
+    expect(outcomes(rig)[0]?.voice_stages).toBeUndefined();
+  });
+});
+
+describe("links and code are written, not read aloud", () => {
+  const chat = (rig: Rig) => rig.sink.sent().filter(([channel]) => channel === "vc");
+
+  it("a link goes to the voice channel's chat; the sentences around it are said", async () => {
+    const rig = await voiceRig();
+    rig.model.push(says("我貼給你喔。https://example.com/a?b=1 你看看。"));
+    hear(rig, "owen", "小鯨魚給我連結");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    expect(speeches(rig).map(([t]) => t)).toEqual(["我貼給你喔。", "你看看。"]);
+    expect(chat(rig)).toEqual([["vc", "https://example.com/a?b=1"]]);
+    // The written line is in the voice conversation's transcript at once, not as spoken.
+    const written = rig.entries(VC).find((e) => e.content === "https://example.com/a?b=1");
+    expect(written?.kind).toBe("self");
+    expect(written?.spoken).toBe(false);
+    expect(outcomes(rig)[0]?.outcome).toEqual({ type: "sent", parts: 3 });
+  });
+
+  it("a code block goes to the chat whole", async () => {
+    const rig = await voiceRig();
+    rig.model.push(says("寫法在這:\n```ts\nconst a = 1;\n```\n就是這樣。"));
+    hear(rig, "owen", "小鯨魚寫給我看");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    expect(chat(rig)).toEqual([["vc", "```ts\nconst a = 1;\n```"]]);
+    for (const [text] of speeches(rig)) {
+      expect(text).not.toContain("```");
+      expect(text).not.toContain("const");
+    }
+    expect(
+      speeches(rig)
+        .map(([t]) => t)
+        .join(""),
+    ).toContain("就是這樣");
+  });
+
+  it("without text_aside it is neither written nor read, and she is told why", async () => {
+    const rig = await voiceRig({ text_aside: false });
+    rig.model.push(says("我貼給你喔。https://example.com/a?b=1 你看看。"));
+    hear(rig, "owen", "小鯨魚給我連結");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    expect(speeches(rig).map(([t]) => t)).toEqual(["我貼給你喔。", "你看看。"]);
+    expect(chat(rig)).toEqual([]);
+    const note = rig.entries(VC).find((e) => e.kind === "note");
+    expect(note?.content).toContain("連結和程式碼念不出來");
   });
 });
