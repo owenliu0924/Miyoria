@@ -16,7 +16,8 @@
 //               of things done with nobody there (the hands), the viewers' wishes, the notices
 //               that came back, and the flagged messages the transcript points to
 //   7 now       time and place, her state (`selfBlocks`), what the outside told her, the party
-//               game running here, the tasks in flight, what she promised and by when; then the
+//               game running here, the tasks in flight, what she promised and by when, the lines
+//               around a replied-to message she cannot see (`parent.ts`); then the
 //               `<style_note>` (`styleNote`: lorebook entries, a few kaomoji)
 //
 // Each source keeps today's budget and limit (`contributor_timeout_ms`); a source that fails or is
@@ -258,6 +259,8 @@ export interface HostPromptOptions {
   inbox?(input: PromptInput): string | null;
   /** Her starts today that the Arbiter's ledger does not count (her initiative's); unset: none. */
   startsToday?(now: number): number;
+  /** The lines around a replied-to message she cannot see (block 7); unset or `null`: none. */
+  replyContext?(input: PromptInput): Promise<string | null>;
 }
 
 export class HostPrompt implements PromptSource {
@@ -783,6 +786,8 @@ export class HostPrompt implements PromptSource {
     }
     const promised = pinnedSection([], agent.mainline.commitments.open(context), input.now, offset);
     if (promised !== null) lines.push(promised);
+    const replied = (await this.#o.replyContext?.(input)) ?? null;
+    if (replied !== null) lines.push(replied);
     return lines.join("\n");
   }
 

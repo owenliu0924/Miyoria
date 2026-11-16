@@ -15,6 +15,18 @@ export const NOTICES_TITLE = "剛收到的結果(你之前做的事)";
 /** The line before the tasks in flight (block 7). */
 export const TASKS_HEAD = "手上的任務:";
 
+/** Title of the lines around a replied-to message she cannot see (block 7). */
+export const REPLY_AROUND_TITLE = "被回覆的那則和前後的話";
+/** Tags of those lines (the old transcript's `前文` / `被回覆` / `後文`). */
+export const REPLY_AROUND_TAGS = { before: "前文", after: "後文", replied: "被回覆" } as const;
+/** When a replied-to message was, if unknown (only its quote came with the reply). */
+export const REPLY_AROUND_UNDATED = "較早";
+
+/** The line before them: whose reply it is. */
+export function replyAroundHead(author: string): string {
+  return `${safeName(author)} 回覆的那則訊息不在你看得到的對話裡,這是它和當時前後的話:`;
+}
+
 /** Characters of the message quoted when someone asks her to answer it (the context menu). */
 const ASKED_QUOTE_CHARS = 120;
 

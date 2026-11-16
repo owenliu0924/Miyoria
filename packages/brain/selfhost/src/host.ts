@@ -105,6 +105,7 @@ import { type Initiative, type InitiativeOptions, startInitiative } from "./init
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
 import { Lane, type LaneHost, type LaneRun } from "./lane.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
+import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
 import { askedLine, SAY_DM } from "./texts.js";
@@ -185,6 +186,7 @@ export class SelfHost implements TextRunner {
   readonly #settlements = new Settlements();
   readonly #outlet: MouthOutlet;
   readonly #around: LookAround;
+  readonly #replied: ReplyContext;
   readonly #places = new Map<string, Place>();
   readonly #turns = new Map<string, TurnState>();
   readonly #jobs = new Map<string, Job>();
@@ -206,6 +208,7 @@ export class SelfHost implements TextRunner {
     if (transcript === null) throw new Error("the text runner needs the store's transcripts");
     this.transcript = transcript;
     this.#around = new LookAround(agent, transcript);
+    this.#replied = new ReplyContext(agent, transcript, this.#around.recent);
     const sessionOf = (context: ContextKey) => this.#sessionFor(context);
     this.prompt = new HostPrompt(agent, {
       transcript,
@@ -214,6 +217,7 @@ export class SelfHost implements TextRunner {
       inbox: (input) => this.initiative.inboxBlock(input),
       startsToday: (now) => this.initiative.gates.startsToday(now),
       slowReads: (input) => this.voice.slowReads(input),
+      replyContext: (input) => this.#replyContext(input.turn),
     });
     this.voice = new VoiceHost(agent, {
       transcript,
@@ -868,6 +872,18 @@ export class SelfHost implements TextRunner {
     this.#publish(state, result, error);
     const outcome = result?.outcome ?? (error === null ? null : "failed");
     this.initiative.runEnded(run.wake, turn, context, outcome, state.lines > 0);
+  }
+
+  /** The lines around a parent the run of `turn` replies to and cannot see (block 7). */
+  #replyContext(turn: string): Promise<string | null> {
+    const state = this.#turns.get(turn);
+    if (state === undefined || state.run.wake.kind !== "addressed") return Promise.resolve(null);
+    return this.#replied.block({
+      session: state.place.session,
+      turn,
+      inputs: state.run.inputs,
+      signal: state.run.controller.signal,
+    });
   }
 
   /** The files and images of the lines of the run of `turn` (block 6), looked at once. */
