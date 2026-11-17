@@ -203,6 +203,10 @@ token = "${MIYORIA_API_TOKEN:-}"
 # (Prometheus 用 authorization.credentials 帶 token)。設成 true 就不用驗證,
 # 但連得到 bind 位址(或前面的反向代理)的人都看得到。
 # metrics_public = false
+# 圖片訊息(錢包、個人卡、每週回顧、圖鑑、機率表這類算出來的圖)背後的那張圖,
+# 相對於工作目錄。留空 = 公開頁現在那一張(面板資料夾裡的 background.local.jpg);
+# 兩個都沒有就用面板的暮色漸層。
+# picture_background = ""
 
 # 管理面板用 Discord 登入(token 照樣能用)。三個值都填才會開啟;
 # redirect_uri 要跟 Developer Portal → OAuth2 → Redirects 裡的一模一樣,
@@ -471,6 +475,37 @@ dirs = ["extensions"]
 # drop_delay_max_secs = 180
 # drop_expire_mins = 10       # 沒人撿就飄走
 # drops_per_person_day = 1    # 一個人一天最多撿幾張;上一張是你撿的,同一個頻道的下一張你撿不到
+
+# 每週的市集(docs/design/v5-play.md §4.5、§11.4):點歌優先券、每週拍賣、每週樂透。下面都是預設值。
+# 魚幣都走經濟的帳本;得標的錢、用掉的優先券和三成的樂透會燒掉。她自己不能出價、買券或中獎。
+# [modules.market]
+# enabled = true
+# utc_offset_minutes = 480    # 「今天」「這週」從哪個時區算
+# # ---- 點歌優先券:/queue song request 加 priority(會員頁點歌也能勾),排到沒用券的歌前面;用券的照先後
+# song_priority = 40          # 一張多少魚幣;歌沒準備成功或被取消就退回
+# song_priority_per_day = 2   # 一個人一天最多幾張(0 = 不賣)
+# # ---- 每週拍賣:一週一件,在 auction_channel 公開出價(按鈕加表單),出價先押住,被超過就馬上退回
+# auction = true              # false = 不開新的;正在拍的取消,押著的全退
+# auction_channel = ""        # 拍賣的頻道 id;留空 = 不辦拍賣
+# auction_weekday = 6         # 星期幾開(0 = 星期日 … 6 = 星期六)
+# auction_time = "20:00"      # 幾點開(她的時間)
+# auction_hours = 24          # 開多久
+# auction_opening_bid = 50    # 起標
+# auction_step = 5            # 每次至少加多少
+# auction_extend_mins = 5     # 最後幾分鐘有人出價就延長這麼久(0 = 不延長)
+# auction_lots = ["call_name", "frame"]   # 拍什麼:這一週她怎麼叫你、只此一件的卡框;她從裡面挑,沒有模型就輪流
+# auction_call_days = 7       # 得標的稱呼用幾天,之後換回原本的
+# auction_name_hours = 72     # 得標的人幾小時內要給一個她接受的稱呼,不然退款
+# auction_purpose = "market"  # 她挑拍品用的模型([llm.purposes];沒設 = 聊天那一組)
+# # ---- 每週樂透:依張數抽一個人;少於 lottery_min_buyers 個人買就不開獎、全額退回
+# lottery = true              # false = 不賣;這週已經賣的全額退回
+# lottery_channel = ""        # 每週公告和開獎發在哪;留空 = 拍賣的頻道(兩個都空就不公告)
+# lottery_price = 10          # 一張多少魚幣
+# lottery_per_week = 20       # 一個人一週最多幾張
+# lottery_prize_share = 0.7   # 獎金是賣出的這個比例,其餘燒掉
+# lottery_weekday = 0         # 星期幾開獎(0 = 星期日)
+# lottery_time = "20:00"
+# lottery_min_buyers = 3      # 至少幾個不同的人買才開獎
 
 # 遊戲內聊天變成獨立的對話(每個世界 / 伺服器一段歷史)。玩家在 Discord 用 /me link 拿代碼,
 # 在遊戲聊天室打 `!link <代碼>` 就跟 Discord 帳號連在一起;沒連的玩家是陌生人。

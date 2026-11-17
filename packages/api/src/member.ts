@@ -598,14 +598,18 @@ export const memberRpc = {
   }),
 };
 
-// What `fortune-routes.ts` builds a slip from: the same views the page and the cards use.
+// What `fortune-routes.ts` builds a slip from and `pictures.ts` draws someone's own pictures from:
+// the same views the page and the cards use.
 export type { Member as MemberContext };
 export {
   accountsOf,
+  activity,
+  bondView,
   cardView,
   member as loadMember,
   memberOf as loadMemberOf,
   namesFor,
+  ownSongs,
   shown,
   shownMemories,
 };
