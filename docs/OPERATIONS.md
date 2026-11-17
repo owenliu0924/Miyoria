@@ -444,9 +444,9 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 
 1. **Live2D 的檔案**:照 `tools/card-studio/vendor.md` 把 Cubism Core(`live2dcubismcore.min.js`,Core 5.1)和 Cubism Web Framework(`5-r.4`)放進 `tools/card-studio/vendor/`。這個資料夾在 `.gitignore` 裡,是 Live2D 的授權檔案,不要提交。
 2. **建置**:`pnpm --filter @miyoria/card-studio build`(做出 `dist/` 的頁面和 Core 載入的 `dist/node/render.js`;沒有 `vendor/` 時它說明原因後什麼都不做)。`pnpm install` 已經裝好 playwright-core,不用另外下載瀏覽器:用這台電腦的 Edge(Windows 都有)或 Chrome。
-3. **設定**:`[modules.cards] portrait_model` 指到模型的 `.model3.json`(例如 VTube Studio 的 `StreamingAssets/Live2DModels/DeepSeek-chan/大肥鱼.model3.json`)。`portrait` 預設 `"live2d"`,改成 `"fixed"` 就一律用固定立繪;`portrait_browser`(`msedge` / `chrome`)、`portrait_studio`(預設 `tools/card-studio`)、`portrait_cache`(預設 `data/cards/portraits`)、`portrait_timeout_secs`(30)。改完 `miyoria restart core`。
+3. **設定**:`[modules.cards] portrait_model` 指到模型的 `.model3.json`(例如 VTube Studio 的 `StreamingAssets/Live2DModels/DeepSeek-chan/大肥鱼.model3.json`)。`portrait` 預設 `"live2d"`,改成 `"fixed"` 就一律用固定立繪;`portrait_browser`(`msedge` / `chrome`)、`portrait_studio`(預設 `tools/card-studio`)、`portrait_cache`(預設 `data/cards/portraits`)、`portrait_cache_max_mb`(2048:`portrait_cache` 裡的圖最多佔多少 MB,超過就從最久沒用的刪起)、`portrait_timeout_secs`(30)。改完 `miyoria restart core`。
 
-缺任何一樣(沒設模型、沒建置、少了 `vendor/`、開不了瀏覽器),Core 照常啟動,日誌寫一行 `card portraits: Live2D rendering unavailable` 說原因,卡用固定立繪。連續失敗三次會暫停十分鐘(一行 `paused`)。第一張約 3 秒(開瀏覽器、載入模型),之後一張約 0.5 秒;同一張卡只算一次,圖依「抽到什麼」的雜湊存在 `portrait_cache`(一張約 1 MB,不會自己清;刪掉會照卡的快照重算出一樣的)。要看全部部件和表情長怎樣:`pnpm --filter @miyoria/card-studio sheet`,圖在 `.tmp-test/cards-sheet/`。
+缺任何一樣(沒設模型、沒建置、少了 `vendor/`、開不了瀏覽器),Core 照常啟動,日誌寫一行 `card portraits: Live2D rendering unavailable` 說原因,卡用固定立繪。連續失敗三次會暫停十分鐘(一行 `paused`)。第一張約 3 秒(開瀏覽器、載入模型),之後一張約 0.5 秒;同一張卡只算一次,圖依「抽到什麼」的雜湊存在 `portrait_cache`(一張約 1 MB;啟動時和每算好一張後,總量超過 `portrait_cache_max_mb` 就刪最久沒用的,讀一次算用一次;刪掉的圖下次要用時照卡的快照重算出一樣的)。要看全部部件和表情長怎樣:`pnpm --filter @miyoria/card-studio sheet`,圖在 `.tmp-test/cards-sheet/`。
 
 **每週的市集**(`[modules.market]`,`packages/play/market`,設計見 [design/v5-play.md](design/v5-play.md) §4.5、§11.4):點歌優先券、每週拍賣、每週樂透,做完就開,數字都是設定。魚幣都走經濟的帳本(要 `economy` 模組在跑),帳本的新原因是 `song_priority` / `song_priority_refund`、`lottery_ticket` / `lottery_refund` / `lottery_prize`、`auction_hold` / `auction_release` / `auction_won`;經濟健康表把優先券、彩券和得標算成回收,減掉退回和樂透獎金,押著的出價不算。她自己的帳號不能出價、買券或中獎。
 
