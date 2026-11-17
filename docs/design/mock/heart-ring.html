@@ -105,8 +105,17 @@ const NS = "http://www.w3.org/2000/svg";
 // Lucide "heart", the icon set the panel uses.
 const HEART = "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z";
 const TRACK = "rgba(255,255,255,.07)";
-// Ten steps between the theme's two accents: the outer lap is the secondary, the tenth the primary.
-function lapColor(i) { return "color-mix(in oklab, var(--primary) " + Math.round((i / 9) * 100) + "%, var(--secondary))"; }
+// Three candidate palettes, ten laps each.
+const PALETTES = {
+  // Ten hues at the primary's own lightness and chroma, from the secondary's violet round to the primary's pink.
+  "十色": [290, 258, 228, 198, 168, 135, 100, 70, 35, 352].map((h) => "oklch(0.78 0.115 " + h + ")"),
+  // The two accents only: violet to pink, lightness alternating so neighbours part.
+  "紫到粉": Array.from({ length: 10 }, (_, i) => "color-mix(in oklab, color-mix(in oklab, var(--primary) " + Math.round((i / 9) * 100) + "%, var(--secondary)) " + (i % 2 ? 78 : 100) + "%, white)"),
+  // One colour: the primary, two shades in turn; the steps alone count the laps.
+  "單色": Array.from({ length: 10 }, (_, i) => (i % 2 ? "color-mix(in oklab, var(--primary) 72%, #2a1a26)" : "var(--primary)")),
+};
+let PALETTE = PALETTES["十色"];
+function lapColor(i) { return PALETTE[i]; }
 function el(name, attrs, parent) {
   const n = document.createElementNS(NS, name);
   for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -120,26 +129,27 @@ function band(svg, r, w, frac, color) {
   n.style.stroke = color;
   return n;
 }
-// Ten flush bands from the edge inward; the hole in the middle holds the heart.
+// One track. Each lap lies on the one before and is a little narrower, so the laps under it show
+// as steps at both edges and can be counted.
 function ring(bond) {
   const svg = el("svg", { viewBox: "0 0 160 160", role: "img", "aria-label": "羈絆環" });
-  const OUT = 78, HOLE = 24, W = (OUT - HOLE) / 10;
+  const R = 56, BASE = 40, STEP = 3.2;
   const laps = Math.min(Math.floor(Math.max(bond, 0) / 100), 10);
   const frac = bond >= 1000 ? 0 : (Math.max(bond, 0) % 100) / 100;
-  el("circle", { cx: 80, cy: 80, r: (OUT + HOLE) / 2, fill: "none", stroke: TRACK, "stroke-width": OUT - HOLE }, svg);
+  el("circle", { cx: 80, cy: 80, r: R, fill: "none", stroke: TRACK, "stroke-width": BASE }, svg);
   for (let i = 0; i < 10; i++) {
-    const r = OUT - W * i - W / 2;
-    if (i < laps) band(svg, r, W + 0.4, 1, lapColor(i));
-    else if (i === laps && frac > 0) band(svg, r, W + 0.4, frac, lapColor(i));
+    const w = BASE - STEP * i;
+    if (i < laps) band(svg, R, w, 1, lapColor(i));
+    else if (i === laps && frac > 0) band(svg, R, w, frac, lapColor(i));
   }
   if (bond < 0) {
-    band(svg, OUT - W / 2, W + 0.4, Math.abs(bond) / 100, "rgba(241,240,244,.38)")
+    band(svg, R, BASE, Math.abs(bond) / 100, "rgba(241,240,244,.38)")
       .setAttribute("transform", "rotate(-90 80 80) scale(1 -1) translate(0 -160)");
   }
-  const g = el("g", { transform: "translate(80 81) scale(1.45) translate(-12 -12)" }, svg);
+  const g = el("g", { transform: "translate(80 81) scale(1.9) translate(-12 -12)" }, svg);
   const h = el("path", { d: HEART, "stroke-width": 1.6, "stroke-linejoin": "round" }, g);
   if (bond <= 0) { h.style.fill = "none"; h.style.stroke = "rgba(241,240,244,.45)"; }
-  else { h.style.fill = "var(--primary)"; h.style.stroke = "var(--primary)"; }
+  else { h.style.fill = "var(--foreground)"; h.style.stroke = "var(--foreground)"; }
   return svg;
 }
 // The list's 28 px mark: only the current lap and the heart; the detail belongs to the person page.
@@ -149,15 +159,27 @@ function mark(bond) {
   el("circle", { cx: 80, cy: 80, r: 66, fill: "none", stroke: "rgba(255,255,255,.1)", "stroke-width": 22 }, svg);
   band(svg, 66, 22, frac, lapColor(lap));
   const g = el("g", { transform: "translate(80 82) scale(3) translate(-12 -12)" }, svg);
-  el("path", { d: HEART }, g).style.fill = "var(--primary)";
+  el("path", { d: HEART }, g).style.fill = "var(--foreground)";
   return svg;
 }
 const states = document.getElementById("states");
-for (const b of [0, 35, 160, 480, 730, 1000, -40]) {
+for (const name of Object.keys(PALETTES)) {
+  PALETTE = PALETTES[name];
+  const h = document.createElement("h3"); h.textContent = name; h.style.width = "100%"; h.style.margin = "8px 0 -12px"; states.appendChild(h);
+  for (const b of [35, 160, 480, 730, 1000]) {
+    const f = document.createElement("figure");
+    f.appendChild(ring(b));
+    const c = document.createElement("figcaption");
+    c.innerHTML = '<span class="dim">' + (b >= 1000 ? "滿" : "第 " + (Math.floor(b / 100) + 1) + " 圈") + '</span><span class="num">' + b + "</span>";
+    f.appendChild(c); states.appendChild(f);
+  }
+}
+PALETTE = PALETTES["十色"];
+for (const b of [0, -40]) {
   const f = document.createElement("figure");
   f.appendChild(ring(b));
   const c = document.createElement("figcaption");
-  c.innerHTML = '<span class="dim">' + (b < 0 ? "負的" : b >= 1000 ? "滿" : "第 " + (Math.floor(b / 100) + 1) + " 圈") + '</span><span class="num">' + String(b).replace("-", "−") + "</span>";
+  c.innerHTML = '<span class="dim">' + (b < 0 ? "負的" : "還沒有") + '</span><span class="num">' + String(b).replace("-", "−") + "</span>";
   f.appendChild(c); states.appendChild(f);
 }
 document.getElementById("personRing").appendChild(ring(342));
