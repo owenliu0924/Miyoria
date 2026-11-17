@@ -834,7 +834,16 @@ export interface RefereeCase {
 
 export const REFEREE_CASES: readonly RefereeCase[] = [
   { id: "ref-yes-small", question: "他是不是個子很矮?", accept: ["yes"] },
-  { id: "ref-yes-button", question: "他是不是因為按不到十樓的按鈕?", accept: ["yes", "solved"] },
+  {
+    // A true yes-or-no question that is also half the explanation (it reaches the button, not the
+    // rain): the referee's rules call that `close` («方向對了、抓到一部分關鍵,但還沒說出整個真相»)
+    // as much as `yes`, and both tell the player the same thing. It is not `solved`: nothing of
+    // the umbrella. Until 2026-11-18 this wanted yes or solved, and the referee said close 8 of 8.
+    id: "ref-yes-button",
+    question: "他是不是因為按不到十樓的按鈕?",
+    accept: ["yes", "close"],
+    forbid: ["solved"],
+  },
   { id: "ref-no-floor", question: "他是不是住在七樓?", accept: ["no"] },
   { id: "ref-no-body", question: "他是不是腿受傷了不能走路?", accept: ["no"] },
   { id: "ref-irrelevant-tv", question: "他回家以後是不是會看電視?", accept: ["irrelevant"] },
