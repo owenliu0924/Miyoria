@@ -83,6 +83,19 @@ describe("the people directory", () => {
     expect(await people.resolve(account("9"), null, T0)).toBeNull();
   });
 
+  it("loads who people are a page at a time, letting the rest of the process run", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const people = directory(store, clock);
+    for (let i = 0; i < 201; i++) people.heart.adminSet(`p${i}`, "bond", 1);
+    let ran = false;
+    setTimeout(() => {
+      ran = true;
+    }, 0);
+    await people.load();
+    expect(ran).toBe(true);
+  });
+
   it("links two accounts into one person; the absorbed one's row moves", async () => {
     const clock = new ManualClock();
     const store = await openStore(clock);

@@ -9,7 +9,7 @@
 // from memory and SQLite, never awaiting: the account map is filled at start (every person with
 // a row) and as accounts are seen.
 
-import { getLogger } from "@miyoria/runtime/kernel";
+import { getLogger, sleep } from "@miyoria/runtime/kernel";
 import { hookCounts, type IdentityStore, type PeopleStore } from "@miyoria/store";
 import {
   type AccountRef,
@@ -140,6 +140,8 @@ export class PeopleDirectory implements SocialSignals {
         }
       }
       offset = page.next;
+      // A page at a time: the rest of the process runs between pages.
+      if (offset !== null) await sleep(0);
     }
     log.info({ profile: this.profile, people }, "people loaded");
   }

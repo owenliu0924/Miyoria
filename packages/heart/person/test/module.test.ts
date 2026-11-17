@@ -196,17 +196,35 @@ describe("the daily pass", () => {
     people.adminSet("amy", "bond", 50, { now: T0 - 20 * DAY });
     people.seen("amy", { text: "hi", directed: true, together: true, at: T0 - 20 * DAY });
     const today = localDay(T0, people.rules);
-    const first = runDecay(people, T0);
+    const first = await runDecay(people, T0);
     expect(first.people).toBe(1);
     expect(first.changes).toBeGreaterThan(0);
     expect(people.get("amy")?.decayed_on).toBe(today);
     const bond = people.get("amy")?.bond ?? 0;
     // The same day again: nothing.
-    expect(runDecay(people, T0 + 3_600_000)).toEqual({ people: 0, changes: 0 });
+    expect(await runDecay(people, T0 + 3_600_000)).toEqual({ people: 0, changes: 0 });
     // The next local day: once more, a point of bond less (more than a week without contact).
-    expect(runDecay(people, T0 + DAY).people).toBe(1);
+    expect((await runDecay(people, T0 + DAY)).people).toBe(1);
     expect(people.get("amy")?.bond).toBeCloseTo(bond - 1);
     expect(people.get("amy")?.decayed_on).toBe(today + 1);
+  });
+});
+
+describe("the daily pass over many people", () => {
+  it("lets the rest of the process run between batches", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const people = store.plugin(heartTables).people;
+    for (let i = 0; i < 120; i++) people.adminSet(`p${String(i).padStart(3, "0")}`, "bond", 10);
+    const order: string[] = [];
+    const done = await runDecay(people, T0, {
+      batch: 50,
+      pause: async () => {
+        order.push(`pause after ${people.decayDue(T0).length} left`);
+      },
+    });
+    expect(done.people).toBe(120);
+    expect(order).toEqual(["pause after 70 left", "pause after 20 left"]);
   });
 });
 

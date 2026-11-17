@@ -88,6 +88,7 @@ export {
   type TierAnchor,
 } from "./model.js";
 export {
+  DECAY_BATCH,
   type HeartConfig,
   HeartConfigSchema,
   HeartModule,

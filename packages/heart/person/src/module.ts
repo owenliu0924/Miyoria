@@ -22,6 +22,7 @@ import {
   type Logger,
   type Module,
   type ModuleContext,
+  sleep,
 } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
 import {
@@ -297,14 +298,31 @@ export async function migrateOnStart(d: MigrationDeps): Promise<LegacyResult | n
   return result;
 }
 
+/** People the daily pass takes before it lets the rest of the process run. */
+export const DECAY_BATCH = 50;
+
 /**
  * The daily pass (H9) for everyone it has not run for on the local day of `now` (her day, the
- * rules' `utc_offset_minutes`; `now` from the module's clock, so tests set the day).
+ * rules' `utc_offset_minutes`; `now` from the module's clock, so tests set the day). Every
+ * `batch` people it waits for `pause` (a turn of the event loop), so a pass over many people
+ * never holds up what else the process does.
  */
-export function runDecay(people: HeartStore, now: number): { people: number; changes: number } {
+export async function runDecay(
+  people: HeartStore,
+  now: number,
+  options: { batch?: number; pause?: () => Promise<void> } = {},
+): Promise<{ people: number; changes: number }> {
+  const batch = Math.max(1, options.batch ?? DECAY_BATCH);
+  const pause = options.pause ?? (() => sleep(0));
   let done = 0;
   let changes = 0;
+  let inBatch = 0;
   for (const person of people.decayDue(now)) {
+    if (inBatch >= batch) {
+      await pause();
+      inBatch = 0;
+    }
+    inBatch += 1;
     const pass = people.applyDecay(person, { now });
     if (pass === null) continue;
     done += 1;
@@ -598,17 +616,18 @@ export class HeartModule implements Module {
         }
       }
     });
-    const decay = () => {
+    const decay = async (signal: AbortSignal) => {
       try {
-        const done = runDecay(people, clock.now());
+        const done = await runDecay(people, clock.now(), { pause: () => sleep(0, signal) });
         if (done.changes > 0) ctx.log.debug(done, "heart: the daily pass ran");
       } catch (error) {
+        if (signal.aborted) return;
         ctx.log.warn({ err: errorMessage(error) }, "heart: the daily pass failed");
       }
     };
     ctx.spawn("decay", async (signal) => {
-      decay();
-      for await (const _ of interval(config.decay_check_mins * 60_000, signal)) decay();
+      await decay(signal);
+      for await (const _ of interval(config.decay_check_mins * 60_000, signal)) await decay(signal);
     });
   }
 
