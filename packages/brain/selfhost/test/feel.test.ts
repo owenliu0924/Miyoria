@@ -60,6 +60,7 @@ function deps(): { deps: FeelDeps; rec: Recorded } {
       personOf: (a) => (a.id === "9" ? null : `p${a.id}`),
       excluded: (a) => a.id === "4" || a.id === "self",
       handleOf: (a, name) => (a.id === "2" ? "ming" : name),
+      callName: (a) => (a.id === "3" ? "哲哥" : null),
       heart: () => heart,
       affect: () => affect,
       journal: () => ({ note: (n: MindNote) => rec.noted.push(n) }),
@@ -87,6 +88,13 @@ describe("matching the names of a feel block", () => {
     ]);
     // Three people named: the third is over the turn's two.
     expect(read.over).toBe(1);
+  });
+
+  it("knows someone by what she calls them", () => {
+    const { deps: d } = deps();
+    const read = readFeel(d, ["哲哥: 默契 + 「接得好」"], PEOPLE);
+    expect(read.proposals.map((p) => [p.person, p.name])).toEqual([["p3", "阿哲"]]);
+    expect(read.unmatched).toBe(0);
   });
 
   it("drops a name that is nobody here or two people, a blocked person and her own account", () => {

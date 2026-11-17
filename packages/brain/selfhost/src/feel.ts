@@ -2,7 +2,7 @@
 //
 // The runner swallowed the blocks and gave them in `RunResult.feel`. Here they are read
 // (`parseFeel`), each name is matched to one of the people present in the place the way an `@name`
-// is (`nameMatcher`: case, the cleaned name, the handle, a unique first word), and the turn's caps
+// is (`nameMatcher`: case, the cleaned name, the handle, what she calls them, a unique first word), and the turn's caps
 // are kept (two people, three lines). Blocked people and her own accounts are never among them. Her
 // own emotion goes to the emotion engine through the entry Appraise uses (`AffectState.appraise`),
 // her proposals to the heart (`HeartPeople.feel`, which writes each change with the turn's id),
@@ -54,6 +54,8 @@ export interface FeelDeps {
   /** Blocked, or one of her own accounts: never a target. */
   excluded(account: AccountRef): boolean;
   handleOf(account: AccountRef, name: string): Handle;
+  /** What she calls them (稱呼), a name she may write for them; absent or `null`: none. */
+  callName?(account: AccountRef): string | null;
   heart(): HeartPeople | null;
   affect(): AffectState | null;
   /** Her journal (`MindKey`); absent or `null`: nothing is noted. */
@@ -67,6 +69,7 @@ export function feelDeps(agent: Agent): FeelDeps {
     personOf: (account) => agent.attitude(account)?.person ?? null,
     excluded: (account) => agent.isBlocked(account) || agent.isSelf(account),
     handleOf: (account, name) => agent.handleOf(account, name),
+    callName: (account) => agent.attitude(account)?.call_name ?? null,
     heart: () => agent.ctx.services.get(HeartKey) ?? null,
     affect: () => agent.ctx.services.get(AffectStateKey) ?? null,
     journal: () => agent.ctx.services.get(MindKey) ?? null,
@@ -182,7 +185,7 @@ export function causeLine(
 
 /** Reads the blocks and matches their names; applies nothing. */
 export function readFeel(
-  deps: Pick<FeelDeps, "personOf" | "excluded" | "handleOf">,
+  deps: Pick<FeelDeps, "personOf" | "excluded" | "handleOf" | "callName">,
   feel: readonly string[],
   people: readonly FeelPerson[],
 ): Omit<FeelOutcome, "felt" | "applied"> {
@@ -203,7 +206,10 @@ export function readFeel(
     seen.push(p.account);
     const person = deps.personOf(p.account);
     if (person === null) continue;
-    targets.push({ name: p.name, aliases: [deps.handleOf(p.account, p.name)], key: person });
+    const aliases = [deps.handleOf(p.account, p.name)];
+    const call = deps.callName?.(p.account) ?? null;
+    if (call !== null) aliases.push(call);
+    targets.push({ name: p.name, aliases, key: person });
   }
   const match = nameMatcher(targets);
   const matched: FeelApplied[] = [];
