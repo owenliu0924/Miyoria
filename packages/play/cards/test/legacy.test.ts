@@ -87,14 +87,14 @@ describe("the old collectibles", () => {
     ]);
   });
 
-  it("go when the person is forgotten", () => {
+  it("stay when the person is forgotten, like what coins bought", () => {
     t.db.exec(DOCS);
     const alice = identity.see({ platform: "discord", id: "a1" }, "Alice");
     const acc = identity.account({ platform: "discord", id: "a1" })?.id as string;
     doc("item", "i1", acc, { item: "bg_stars" }, NOW);
     store.importLegacy();
-    expect(store.forgetPerson([alice.id])).toMatchObject({ cards_legacy: 1 });
-    expect(store.legacy(alice.id)).toEqual([]);
+    expect(store.forgetPerson([alice.id])).not.toHaveProperty("cards_legacy");
+    expect(store.legacy(alice.id)).toHaveLength(1);
   });
 
   it("are nothing without the economy's table", () => {

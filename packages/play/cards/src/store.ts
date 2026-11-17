@@ -624,7 +624,11 @@ export class CardStore {
 
   // ---- people ---------------------------------------------------------------------------------
 
-  /** Deletes every row of `ids` (a person and everyone merged into them). Rows per table. */
+  /**
+   * Deletes every row of `ids` (a person and everyone merged into them). Rows per table. The old
+   * collectibles stay: they were bought with coins, and the economy keeps what coins bought (its
+   * own rows of them are kept too, so a deleted copy would only come back at the next start).
+   */
   forgetPerson(ids: readonly PersonId[]): Record<string, number> {
     if (ids.length === 0) return {};
     const list = [...ids];
@@ -645,12 +649,6 @@ export class CardStore {
         ),
         cards_titles: Number(
           o.delete(cardsTitles).where(inArray(cardsTitles.person_id, list)).run().changes,
-        ),
-        cards_legacy: Number(
-          o
-            .delete(cardsLegacy)
-            .where(inArray(cardsLegacy.account_id, accountsOf(this.#db, list)))
-            .run().changes,
         ),
       };
     });
