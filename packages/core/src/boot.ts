@@ -18,6 +18,7 @@ import {
   LedgerStatsKey,
 } from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { heartTables } from "@miyoria/heart/person";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { memoryTables } from "@miyoria/memory/memory";
 import { notesTables } from "@miyoria/memory/notes";
@@ -93,6 +94,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   clusterTables,
   directiveTables,
   economyTables,
+  heartTables,
   initiativeTables,
   memoryTables,
   notesTables,

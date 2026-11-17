@@ -7,8 +7,7 @@
 // `economy.posted`. `upsert` writes a row as it is given, for her words and tags; it records no
 // change, so it is not the way to move a number.
 //
-// Nothing opens this plugin yet (step 1 of the phase): core's store is not given `heartTables`
-// until the module that owns the heart is switched over.
+// Core's store opens this plugin (`STORE_PLUGINS`); the module `heart` (`module.ts`) owns it.
 
 import {
   type CategoryData,
@@ -25,6 +24,7 @@ import {
 } from "@miyoria/store";
 import {
   type Clock,
+  type HeartLine,
   type JsonObject,
   type JsonValue,
   type PersonId,
@@ -47,15 +47,25 @@ import { type HeartPersonConfig, heartPersonConfig } from "./config.js";
 import { type LegacyInput, type LegacyResult, migrateLegacy } from "./legacy.js";
 import { changeWrite, evidenceWrite, HeartLog } from "./log.js";
 import { heartSchema } from "./migrations.js";
-import { type HeartField, type HeartPerson, newPerson, type TierAnchor } from "./model.js";
+import {
+  BLOCKED_TAG,
+  clampField,
+  type HeartField,
+  type HeartPerson,
+  hasTag,
+  newPerson,
+  type TierAnchor,
+} from "./model.js";
 import {
   ANCHORED_TIERS,
   applyChange,
   applyDecay,
   decayDay,
   emptyLedger,
+  familiarityGain,
   type HeartChange,
   type HeartChangeRequest,
+  lineDepth,
   localDay,
 } from "./rules.js";
 import { type HeartPersonRow, heartPerson, heartSelf } from "./schema.js";
@@ -319,6 +329,38 @@ export class HeartStore {
       }
       if (out.length > 0) this.upsert(current);
       return out;
+    });
+  }
+
+  /**
+   * `person` said a line (a row is made for someone new): when she last saw them, and, for a line
+   * said with her (to her, or in the voice channel she is in), an interaction and when they last
+   * talked and were together; familiarity grows by the line's depth (`lineDepth`,
+   * `familiarityGain`). Bookkeeping, not a change of hers: no `heart.changed` is written, as
+   * `interactions` writes none. Someone tagged `blocked` is left as they are. The row as written.
+   */
+  seen(person: PersonId, line: HeartLine): HeartPerson {
+    const at = toTimestamp(line.at);
+    return this.#write(() => {
+      const current = this.get(person) ?? newPerson(person, at, this.#rules.default_trust);
+      if (hasTag(current, BLOCKED_TAG)) return current;
+      const together = line.together || line.directed;
+      const gain = familiarityGain(
+        current.familiarity,
+        lineDepth(line.text, line.directed),
+        this.#rules,
+      );
+      const next: HeartPerson = {
+        ...current,
+        familiarity: clampField("familiarity", current.familiarity + gain),
+        interactions: current.interactions + (together ? 1 : 0),
+        last_seen: at,
+        last_interaction: together ? at : current.last_interaction,
+        last_together: together ? at : current.last_together,
+        updated_at: at,
+      };
+      this.upsert(next);
+      return next;
     });
   }
 

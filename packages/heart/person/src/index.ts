@@ -13,9 +13,10 @@
 // - `schema.ts`, `migrations.ts`, `store.ts`: the `heart` store plugin (`heart_person`,
 //   `heart_self`) and the code that writes a row and its event in one transaction.
 // - `public.ts`: what a member may see (words, the ring, the tier; no raw value).
+// - `module.ts`: module `heart`, the owner of the tables: its config section, the migration on
+//   start, the daily pass and `HeartKey` (`@miyoria/types`), through which her `feel` is applied.
 //
-// Nothing runs these yet, and no store is opened with `heartTables`: the modules still use
-// `social`, `self` and `mind` until the next steps of the phase switch them over.
+// `social`, `self` and `mind` still keep their own records beside it until step 5 of the phase.
 
 export {
   type HeartPersonConfig,
@@ -58,6 +59,18 @@ export {
   type ProposalField,
   type TierAnchor,
 } from "./model.js";
+export {
+  type HeartConfig,
+  HeartConfigSchema,
+  HeartModule,
+  type HeartModuleOptions,
+  HeartService,
+  MIGRATED_KEY,
+  type MigrationDeps,
+  migrateOnStart,
+  runDecay,
+  viewOf,
+} from "./module.js";
 export { type PublicBond, type PublicRing, publicBond } from "./public.js";
 export {
   ANCHORED_TIERS,

@@ -22,6 +22,7 @@ export const MODULE_IDS: readonly string[] = [
   "social",
   "world",
   "self",
+  "heart",
   "memory",
   "arbiter",
   "mind",
