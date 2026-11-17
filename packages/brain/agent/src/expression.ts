@@ -12,6 +12,11 @@
 //     <voice>えっ、本当に?</voice>欸,真的嗎?
 //
 // It is not part of her text (subtitles, chat log and history keep the written line).
+//
+// One block: `<feel>…</feel>`, what she felt in the exchange (docs/design/v5-heart.md §2.1), meant
+// for the heart and never for people. It is swallowed whole, whatever shape it comes in: split
+// over chunks, in the middle of a reply, never closed (the rest of the reply is the block), with
+// attributes, self-closing, or a stray closing tag; its inside comes out as one `feel` segment.
 
 import { asciiLower, utf8Len } from "./util.js";
 
@@ -39,6 +44,13 @@ const THINK_OPEN = /^<emo:(thinking|think|thought)(?: [0-9.]+)?>/;
 /** A closing emotion tag never says anything: `</emo:thinking>`. */
 const EMO_CLOSE = /^<\/emo:[a-z0-9_-]{1,32}>/;
 const EMO_CLOSE_PARTIAL = /^<\/(?:e(?:m(?:o(?::[a-z0-9_-]{0,32})?)?)?)?$/;
+const FEEL_OPEN = "<feel";
+const FEEL_CLOSE = "</feel";
+/**
+ * How far the `>` of `<feel …>` is looked for. A `<feel` with no `>` before a line break or within
+ * this many characters is taken as the opening all the same (she forgot the `>`).
+ */
+const MAX_FEEL_TAG = 64;
 export const DEFAULT_PAUSE_MS = 300;
 export const MAX_PAUSE_MS = 10_000;
 
@@ -58,6 +70,13 @@ export type Segment =
   | { type: "spoken_start" }
   /** `<sing_start>`: a tool written as text instead of called. */
   | { type: "tool"; name: string }
+  /** The inside of a `<feel>` block, as she wrote it. Never shown, never said. */
+  | { type: "feel"; text: string }
+  /**
+   * A `<feel>` block opened and its end is not here yet: the words before it are complete (they
+   * may be said now, not after the block).
+   */
+  | { type: "feel_start" }
   /** Markup nobody should see (`<span>`, `</span>`): dropped. */
   | { type: "markup" };
 
@@ -80,6 +99,8 @@ export class ExpressionParser {
   #announced = false;
   /** A DSML tool call began: everything after it is dropped. */
   #dropRest = false;
+  /** The inside of the `<feel>` block being read; `null`: not in one. */
+  #feel: string | null = null;
 
   constructor(checks: Partial<ParserChecks> = {}) {
     this.#checks = { thinkingBlock: true, tagStrip: true, ...checks };
@@ -112,8 +133,30 @@ export class ExpressionParser {
     };
     let pos = 0;
     const lower = asciiLower(input);
+    if (this.#feel !== null) {
+      pos = this.#feelBody(input, lower, 0, eof, out);
+      if (pos < 0) return out;
+    }
     for (let start = input.indexOf("<", pos); start !== -1; start = input.indexOf("<", pos)) {
       text += input.slice(pos, start);
+      const feel = feelTag(input, lower, start, eof);
+      if (feel !== null) {
+        flush();
+        if (feel.kind === "hold") {
+          this.#held = input.slice(start);
+          return out;
+        }
+        if (feel.kind === "empty") out.push({ type: "feel", text: "" });
+        if (feel.kind !== "open") {
+          pos = feel.end;
+          continue;
+        }
+        this.#feel = "";
+        out.push({ type: "feel_start" });
+        pos = this.#feelBody(input, lower, feel.end, eof, out);
+        if (pos < 0) return out;
+        continue;
+      }
       if (lower.startsWith(VOICE_CLOSE, start)) {
         // A closing tag without its opening one says nothing.
         pos = start + VOICE_CLOSE.length;
@@ -206,6 +249,99 @@ export class ExpressionParser {
     flush();
     return out;
   }
+
+  /**
+   * Reads the inside of the open `<feel>` block from `from`: up to its closing tag, the position
+   * after it; `-1` when the input ran out first (what may be a closing tag in pieces is held;
+   * at the end of the stream the block ends there).
+   */
+  #feelBody(input: string, lower: string, from: number, eof: boolean, out: Segment[]): number {
+    let p = from;
+    for (;;) {
+      const close = lower.indexOf(FEEL_CLOSE, p);
+      if (close === -1) {
+        const lt = input.lastIndexOf("<");
+        const partial = lt >= p && FEEL_CLOSE.startsWith(lower.slice(lt));
+        this.#feel = (this.#feel ?? "") + input.slice(p, partial ? lt : input.length);
+        if (partial && !eof) {
+          this.#held = input.slice(lt);
+          return -1;
+        }
+        if (eof) this.#endFeel(out);
+        return -1;
+      }
+      const after = close + FEEL_CLOSE.length;
+      let i = after;
+      while (i < input.length && (input[i] === " " || input[i] === "\t")) i++;
+      if (i >= input.length && !eof) {
+        this.#feel = (this.#feel ?? "") + input.slice(p, close);
+        this.#held = input.slice(close);
+        return -1;
+      }
+      if (i >= input.length || input[i] === ">") {
+        this.#feel = (this.#feel ?? "") + input.slice(p, close);
+        this.#endFeel(out);
+        return Math.min(i + 1, input.length);
+      }
+      // `</feeling…`: words of the block, not its end.
+      this.#feel = (this.#feel ?? "") + input.slice(p, after);
+      p = after;
+    }
+  }
+
+  #endFeel(out: Segment[]): void {
+    out.push({ type: "feel", text: this.#feel ?? "" });
+    this.#feel = null;
+  }
+}
+
+/** What a `<` at `start` is as far as a feel block goes. */
+type FeelTag =
+  /** Not a feel tag. */
+  | null
+  /** May become one once more input arrives. */
+  | { kind: "hold" }
+  /** `<feel>` (or `<feel …>`): the block starts at `end`. */
+  | { kind: "open"; end: number }
+  /** `<feel/>`, or a `<feel` cut off by the end of the stream: an empty block. */
+  | { kind: "empty"; end: number }
+  /** `</feel>` with no block open: dropped. */
+  | { kind: "close"; end: number };
+
+function isSpace(c: string | undefined): boolean {
+  return c === " " || c === "\t" || c === "\n" || c === "\r";
+}
+
+function feelTag(input: string, lower: string, start: number, eof: boolean): FeelTag {
+  // The stream ended in the middle of the tag (`<fee`, `</fe`): what there is goes too.
+  const rest = lower.slice(start);
+  if (eof && rest.length >= 3 && (FEEL_OPEN.startsWith(rest) || FEEL_CLOSE.startsWith(rest))) {
+    return { kind: rest.startsWith("</") ? "close" : "empty", end: input.length };
+  }
+  if (lower.startsWith(FEEL_CLOSE, start)) {
+    let i = start + FEEL_CLOSE.length;
+    const next = input[i];
+    if (next !== undefined && next !== ">" && !isSpace(next)) return null;
+    while (i < input.length && (input[i] === " " || input[i] === "\t")) i++;
+    if (i >= input.length) return eof ? { kind: "close", end: input.length } : { kind: "hold" };
+    return input[i] === ">" ? { kind: "close", end: i + 1 } : null;
+  }
+  if (!lower.startsWith(FEEL_OPEN, start)) return null;
+  const after = start + FEEL_OPEN.length;
+  const next = input[after];
+  if (next === undefined) return eof ? { kind: "empty", end: input.length } : { kind: "hold" };
+  if (next === ">") return { kind: "open", end: after + 1 };
+  if (next !== "/" && !isSpace(next)) return null;
+  for (let i = after; i < input.length; i++) {
+    const c = input[i];
+    if (c === ">") {
+      const inside = input.slice(after, i).trimEnd();
+      return inside.endsWith("/") ? { kind: "empty", end: i + 1 } : { kind: "open", end: i + 1 };
+    }
+    // No `>` on the tag's line, or none for a while: she forgot it; the block starts here.
+    if (c === "\n" || i - start >= MAX_FEEL_TAG) return { kind: "open", end: after };
+  }
+  return eof ? { kind: "open", end: after } : { kind: "hold" };
 }
 
 type Scan =
@@ -367,6 +503,8 @@ export class Expression {
   tools: string[] = [];
   /** `<silence/>` came before any visible text: she chose not to reply. */
   silence = false;
+  /** The inside of each `<feel>` block, in order (never part of `text`). */
+  feel: string[] = [];
 
   static parse(s: string): Expression {
     const parser = new ExpressionParser();
@@ -375,8 +513,12 @@ export class Expression {
     return out;
   }
 
-  /** Folds one segment in. Once silent, the rest of the reply is ignored. */
+  /** Folds one segment in. Once silent, the rest of the reply is ignored but her feel blocks. */
   apply(segment: Segment): void {
+    if (segment.type === "feel") {
+      this.feel.push(segment.text);
+      return;
+    }
     if (this.silence) return;
     switch (segment.type) {
       case "text":
@@ -391,6 +533,7 @@ export class Expression {
       case "pause":
       case "spoken":
       case "spoken_start":
+      case "feel_start":
       case "markup":
         break;
       case "silence":

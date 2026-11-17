@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import type { AssignRoleRequest } from "@miyoria/contracts/api";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
-import { Social, SocialKey, socialConfig } from "@miyoria/heart/social";
+import { type HeartStore, heartTables } from "@miyoria/heart/person";
 import { LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   type Embedder,
@@ -45,9 +45,9 @@ import {
   type MemoryRecord,
   MemoryRecordStoreKey,
   PeopleStoreKey,
-  RelationshipStoreKey,
   type RoleMapping,
   SqliteStore,
+  StoreKey,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -80,7 +80,8 @@ const PROFILE = "test-chan";
 interface Harness {
   sup: Supervisor;
   store: TestStore;
-  social: Social;
+  /** Her rows for people (`heart_person`), the only place the people routes read and write. */
+  heart: HeartStore;
   queue: RequestQueue;
   sink: FakeSink;
   base: string;
@@ -88,10 +89,12 @@ interface Harness {
 
 const harnesses: Harness[] = [];
 const dirs: string[] = [];
+const closers: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
   for (const h of harnesses.splice(0)) await h.sup.stopAll();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const f of closers.splice(0)) await f();
 });
 
 async function harness(
@@ -105,22 +108,17 @@ async function harness(
   s.provide(k, SupervisorKey, sup);
   s.provide(k, ActiveProfileKey, PROFILE);
   s.provide(k, PeopleStoreKey, store.people);
-  s.provide(k, RelationshipStoreKey, store.relationships);
   s.provide(k, IdentityStoreKey, store.identity);
   s.provide(k, MemoryRecordStoreKey, store.memories);
   s.provide(k, AuthStoreKey, store.auth);
   s.provide(k, AuditLogKey, store.audit);
   s.provide("llm", LlmRouterKey, new LlmRouter(new Map(), new Map()));
 
-  const social = new Social(
-    PROFILE,
-    "Test",
-    [],
-    socialConfig(),
-    { people: store.people, relationships: store.relationships, identity: store.identity },
-    () => {},
-  );
-  s.provide("social", SocialKey, social);
+  const heartDb = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+  closers.push(() => heartDb.close());
+  const heart = heartDb.plugin(heartTables).people;
+  // Only the heart's rows are read through the whole store here.
+  s.provide("store", StoreKey, { plugin: (p: never) => heartDb.plugin(p) } as never);
   const auth = await AuthService.load(store.auth, store.audit, [], "user");
   s.provide("auth", AuthServiceKey, auth);
   const queue = new RequestQueue();
@@ -147,9 +145,14 @@ async function harness(
 
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  const h = { sup, store, social, queue, sink, base };
+  const h = { sup, store, heart, queue, sink, base };
   harnesses.push(h);
   return h;
+}
+
+/** Adds to the bond the way an admin does (cause `admin`). */
+function bump(h: Harness, person: PersonId, by: number): void {
+  h.heart.adminSet(person, "bond", (h.heart.get(person)?.bond ?? 0) + by);
 }
 
 async function audited(h: Harness, action: string): Promise<AuditEntry> {
@@ -267,12 +270,11 @@ describe("routes", () => {
   it("people_list_detail_and_changes", async () => {
     const h = await harness();
     const adm = adminCalls(h.base, TOKEN);
-    const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
-    await h.social.adjust(owen, 10, "test", now);
-    await h.social.adjust(owen, 5, "test", now);
-    await h.social.adjust(mika, -3, "test", now);
+    bump(h, owen, 10);
+    bump(h, owen, 5);
+    bump(h, mika, -3);
     await h.store.memories.upsert(memory(owen, "fact", "Owen 喜歡拉麵", 0));
 
     let page = await adm.people();
@@ -284,8 +286,10 @@ describe("routes", () => {
     expect(summary?.person.id).toBe(owen);
     expect(summary?.person.display_name).toBe("Owen");
     expect(summary?.person.accounts[0]?.account).toEqual(account("1"));
-    expect(summary?.relationship?.affinity).toBe(15);
-    expect(summary?.label).not.toBeNull();
+    expect(summary?.bond).toBe(15);
+    expect(summary?.has_row).toBe(true);
+    expect(summary?.tier).toBe("朋友");
+    expect(summary?.ring).toEqual({ lap: 0, fraction: 0.15, full: false, below: 0 });
     expect(summary?.blocked).toBe(false);
     page = await adm.people({ limit: 1 });
     expect(page.items).toHaveLength(1);
@@ -297,28 +301,39 @@ describe("routes", () => {
 
     const detail = await adm.person(owen);
     expect(
-      detail.history.map((d) => d.affinity),
-      "absolute levels, oldest first",
-    ).toEqual([10, 15]);
+      detail.history.items.map((d) => [d.field, d.delta, d.value_after, d.cause]),
+      "newest first, with the value after each change",
+    ).toEqual([
+      ["bond", 5, 15, "admin"],
+      ["bond", 10, 10, "admin"],
+    ]);
+    expect(detail.history.next_before).toBeNull();
     expect(detail.memory_count).toBe(1);
+    expect(detail.next_tier).toBe("好朋友");
+    expect(detail.tier_progress).toBeCloseTo(0, 5);
+    expect(detail.anchors).toEqual([]);
+    expect(detail.ledger.find((l) => l.field === "bond")).toMatchObject({
+      used_up: 0,
+      cap_up: 12,
+      cap_down: 36,
+    });
     const flat = await raw(h.base, "GET", `/api/people/${owen}`, { token: TOKEN });
     expect(flat.body, "flattened").toHaveProperty("person");
     expect(flat.body).toHaveProperty("history");
 
     const updated = await adm.updatePerson(owen, {
       tags: ["常客", " Minecraft ", "常客"],
-      notes: "喜歡拉麵",
+      impression: "喜歡拉麵",
+      stance: "嘴硬但會照顧他",
       call_name: "歐文",
       blocked: true,
     });
-    const rel = updated.relationship;
-    expect([...(rel?.tags ?? [])].sort()).toEqual(["Minecraft", "blocked", "常客"]);
-    expect(rel?.notes).toBe("喜歡拉麵");
-    expect(rel?.call_name).toBe("歐文");
+    expect([...updated.tags].sort()).toEqual(["Minecraft", "blocked", "常客"]);
+    expect(updated.impression).toBe("喜歡拉麵");
+    expect(updated.call_name).toBe("歐文");
     expect(updated.blocked).toBe(true);
-    expect(h.social.relationship(owen)?.notes, "the engine's cache sees the notes").toBe(
-      "喜歡拉麵",
-    );
+    expect(h.heart.get(owen)?.impression).toBe("喜歡拉麵");
+    expect(h.heart.get(owen)?.stance).toBe("嘴硬但會照顧他");
     const entry = await audited(h, "person.update");
     expect(entry.target).toBe(owen);
     expect(entry.ok).toBe(true);
@@ -330,17 +345,32 @@ describe("routes", () => {
     });
     expect(patched.status).toBe(200);
     const body = patched.body as {
-      relationship: { call_name: unknown; notes: string; tags: string[] };
+      call_name: unknown;
+      impression: string;
+      tags: string[];
       blocked: boolean;
     };
-    expect(body.relationship.call_name).toBeNull();
-    expect(body.relationship.notes).toBe("喜歡拉麵");
-    expect(body.relationship.tags).toEqual(["常客"]);
+    expect(body.call_name).toBeNull();
+    expect(body.impression).toBe("喜歡拉麵");
+    expect(body.tags).toEqual(["常客"]);
     expect(body.blocked).toBe(false);
 
-    const adjusted = await adm.adjustPerson(mika, 20);
-    expect(adjusted.relationship?.affinity).toBe(17);
+    const adjusted = await adm.adjustPerson(mika, { field: "bond", delta: 20 });
+    expect(adjusted.bond).toBe(17);
     await audited(h, "person.adjust");
+    // Any number, by value or by delta, with the cause `admin`; one of the two, in range.
+    const warmer = await adm.adjustPerson(mika, { field: "warmth", value: 0.4 });
+    expect(warmer.warmth).toBeCloseTo(0.4, 5);
+    expect((await adm.adjustPerson(mika, { field: "warmth", delta: 5 })).warmth).toBe(1);
+    const moved = await adm.person(mika);
+    expect(moved.history.items[0]).toMatchObject({ field: "warmth", cause: "admin" });
+    for (const bad of [
+      { field: "bond" },
+      { field: "bond", value: 1, delta: 1 },
+      { field: "bond", delta: 5000 },
+    ]) {
+      expect(await statusOf(adm.adjustPerson(mika, bad as never))).toBe(400);
+    }
 
     for (const id of [newId(), "nope"]) {
       const err = await errorOf(adm.person(id));
@@ -349,32 +379,33 @@ describe("routes", () => {
     }
     expect(await statusOf(adm.updatePerson(newId(), {}))).toBe(404);
 
-    h.sup.services.removeOwnedBy("social");
+    // Without the heart's rows there is nothing to read or write.
+    h.sup.services.removeOwnedBy("store");
     expect(await statusOf(adm.updatePerson(owen, {}))).toBe(503);
-    // Reads still work from the stores.
-    expect((await adm.people()).items).toHaveLength(2);
+    expect(await statusOf(adm.people())).toBe(503);
   });
 
   it("people_list_includes_people_without_a_relationship", async () => {
     const h = await harness();
     const adm = adminCalls(h.base, TOKEN);
-    const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
     const lurker = await h.store.people.upsertAccount(account("3"), "Lurker");
-    await h.social.adjust(owen, 10, "test", now);
+    bump(h, owen, 10);
 
     let page = await adm.people();
     const order = page.items.map((i) => i.person.id);
     expect(order[0], "with a relationship first").toBe(owen);
     expect([...order].sort()).toEqual([owen, mika, lurker].sort());
     const stranger = page.items.find((i) => i.person.id === mika);
-    expect(stranger?.relationship).toBeNull();
-    expect(stranger?.label).toBe("陌生人");
+    expect(stranger?.has_row).toBe(false);
+    expect(stranger?.tier).toBe("陌生人");
+    expect(stranger?.bond).toBe(0);
+    expect(stranger?.updated_at).toBeNull();
     expect(stranger?.blocked).toBe(false);
     expect(stranger?.person.display_name).toBe("Mika");
     expect(stranger?.person.accounts.map((a) => a.account)).toEqual([account("2")]);
-    expect(page.items[0]?.relationship?.affinity).toBe(10);
+    expect(page.items[0]?.bond).toBe(10);
 
     page = await adm.people({ q: "mik" });
     expect(page.items.map((i) => i.person.id)).toEqual([mika]);
@@ -393,14 +424,81 @@ describe("routes", () => {
     expect(page.items.map((i) => i.person.id)).toEqual(order.slice(2));
     expect(page.next_cursor).toBeNull();
 
-    // A relationship the engine has not written yet still shows.
-    await h.social.adjust(mika, 1, "test", now);
+    // A row written after the first read shows.
+    bump(h, mika, 1);
     page = await adm.people();
-    expect(page.items.find((i) => i.person.id === mika)?.relationship?.affinity).toBe(1);
+    expect(page.items.find((i) => i.person.id === mika)?.bond).toBe(1);
     const detail = await adm.person(lurker);
-    expect(detail.relationship).toBeNull();
-    expect(detail.label).toBe("陌生人");
+    expect(detail.has_row).toBe(false);
+    expect(detail.tier).toBe("陌生人");
+    expect(detail.history.items).toEqual([]);
     expect(detail.memory_count).toBe(0);
+  });
+
+  it("people_row_has_the_ring_the_values_and_what_she_cares", async () => {
+    const h = await harness();
+    const adm = adminCalls(h.base, TOKEN);
+    const owen = await h.store.people.upsertAccount(account("1"), "Owen");
+    h.heart.adminSet(owen, "bond", 742.3);
+    h.heart.adminSet(owen, "trust", 61);
+    h.heart.adminSet(owen, "longing", 0.5);
+    const row = (await adm.people()).items[0];
+    expect(row?.bond).toBe(742.3);
+    expect(row?.tier).toBe("命運相連");
+    expect(row).toMatchObject({ stage: 3, tier_label: "命運相連 III" });
+    expect(row?.ring.lap).toBe(7);
+    expect(row?.ring.fraction).toBeCloseTo(0.423, 3);
+    expect(row?.ring.full).toBe(false);
+    expect(row).toMatchObject({ trust: 61, longing: 0.5, warmth: 0, rapport: 0 });
+    expect(row?.cares).toBeGreaterThan(0.9);
+    const detail = await adm.person(owen);
+    expect(detail.next_tier).toBe("無可取代");
+    expect(detail.next_label).toBe("無可取代 I");
+    // Past 知心 a tier rests on an anchor: this bond went by the owner's hand, so none is needed.
+    expect(detail.held).toBeNull();
+  });
+
+  it("people_history_pages_by_before", async () => {
+    const h = await harness();
+    const adm = adminCalls(h.base, TOKEN);
+    const owen = await h.store.people.upsertAccount(account("1"), "Owen");
+    for (let i = 1; i <= 5; i++) bump(h, owen, 1);
+    const first = await adm.personHistory(owen, { limit: 2 });
+    expect(first.items.map((e) => e.value_after)).toEqual([5, 4]);
+    expect(first.next_before).toBe(first.items[1]?.id);
+    const second = await adm.personHistory(owen, { limit: 2, before: first.next_before ?? "" });
+    expect(second.items.map((e) => e.value_after)).toEqual([3, 2]);
+    const last = await adm.personHistory(owen, { limit: 2, before: second.next_before ?? "" });
+    expect(last.items.map((e) => e.value_after)).toEqual([1]);
+    expect(last.next_before).toBeNull();
+    expect((await adm.person(owen, { limit: 3 })).history.items).toHaveLength(3);
+    expect(await statusOf(adm.personHistory(newId()))).toBe(404);
+  });
+
+  it("people_anchors_are_set_and_removed_by_the_owner", async () => {
+    const h = await harness();
+    const adm = adminCalls(h.base, TOKEN);
+    const owen = await h.store.people.upsertAccount(account("1"), "Owen");
+    expect(await statusOf(adm.setAnchor(owen, 120, { quote: "一起熬夜" }))).toBe(404);
+    bump(h, owen, 130);
+    const anchors = await adm.setAnchor(owen, 120, { quote: "  一起熬夜打王  ", note_ref: "n1" });
+    expect(anchors).toEqual([
+      expect.objectContaining({
+        tier: 120,
+        tier_name: "知心",
+        quote: "一起熬夜打王",
+        note_ref: "n1",
+        by: "admin",
+      }),
+    ]);
+    expect((await adm.person(owen)).anchors.map((a) => a.tier)).toEqual([120]);
+    await audited(h, "person.anchor.set");
+    expect(await statusOf(adm.setAnchor(owen, 100, { quote: "x" }))).toBe(400);
+    expect(await statusOf(adm.setAnchor(owen, 120, { quote: "  " }))).toBe(400);
+    expect(await adm.removeAnchor(owen, 120)).toEqual([]);
+    expect((await adm.person(owen)).anchors).toEqual([]);
+    expect(h.heart.get(owen)?.bond, "the bond stays").toBe(130);
+    await audited(h, "person.anchor.remove");
   });
 
   it("memory_search_uses_hybrid_recall", async () => {

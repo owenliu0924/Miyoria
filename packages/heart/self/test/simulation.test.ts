@@ -61,8 +61,7 @@ function day(r: Rig, seed: number, hard = 1): DayResult {
   const random = prng(seed);
   const poisson = (perHour: number) => random() < 1 - Math.exp(-perHour / 60);
   const people = ["p1", "p2", "p3"];
-  for (const p of people) r.attitudes.set(p, { affinity: p === "p1" ? 85 : 50, familiarity: 30 });
-  r.engine.hearts.attach("p1", 0.4, r.clock.at);
+  for (const p of people) r.cares.set(p, p === "p1" ? 0.6 : 0.35);
 
   const minutes = 24 * 60;
   let over = 0;
@@ -148,7 +147,7 @@ describe("a day of synthetic events (acceptance: any emotion above 0.8 under 10%
 
   it("loneliness follows the long quiet of the night and eases when people come back", () => {
     const r = rig();
-    r.attitudes.set("p1", { affinity: 85, familiarity: 30 });
+    r.cares.set("p1", 0.6);
     r.engine.adjust({ social: 0.7, attention: 0.7 });
     for (let h = 1; h <= 10; h++) {
       r.clock.at = T0 + h * 60 * MINUTE;

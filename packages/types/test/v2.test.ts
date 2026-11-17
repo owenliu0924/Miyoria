@@ -177,10 +177,10 @@ describe("arbiter", () => {
 
 describe("affect", () => {
   it("one relationship scale", () => {
-    expect(relationshipLabel({ affinity: 39.87, familiarity: 50 })).toBe("朋友");
-    expect(relationshipLabel({ affinity: 5, familiarity: 1 })).toBe("陌生人");
-    expect(relationshipLabel({ affinity: 80, familiarity: 40 })).toBe("摯友");
-    expect(relationshipLabel({ affinity: -60, familiarity: 90 })).toBe("很討厭");
+    expect(relationshipLabel({ affinity: 39.87 })).toBe("朋友");
+    expect(relationshipLabel({ affinity: 5, met: false })).toBe("陌生人");
+    expect(relationshipLabel({ affinity: 80 })).toBe("摯友");
+    expect(relationshipLabel({ affinity: -60 })).toBe("很討厭");
   });
 });
 
@@ -220,10 +220,11 @@ describe("reasoning", () => {
   it("defaults cover every purpose, the table overrides them", () => {
     for (const p of REASONING_PURPOSES) expect(DEFAULT_REASONING[p]).toBeDefined();
     expect(reasoningFor("chat_text")).toBe("off");
-    expect(reasoningFor("plan_daily")).toBe("high");
-    // Purposes nothing asks for any more are not listed.
+    expect(reasoningFor("reflect")).toBe("high");
+    // Purposes nothing asks for any more are not listed (Plan's went in phase 4 step 5).
     expect(reasoningFor("chat_tools")).toBe("off");
-    expect(reasoningFor("plan", { plan: "low" })).toBe("low");
+    expect(reasoningFor("plan_daily")).toBe("off");
+    expect(reasoningFor("summarizer", { summarizer: "low" })).toBe("low");
     expect(reasoningFor("unknown")).toBe("off");
   });
 });

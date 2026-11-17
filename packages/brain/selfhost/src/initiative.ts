@@ -34,6 +34,7 @@ import { errorMessage, interval } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey, StoreKey } from "@miyoria/store";
 import {
   type AccountRef,
+  type AffectBiases,
   AffectStateKey,
   type ArbiterDecision,
   ArbiterKey,
@@ -45,6 +46,7 @@ import {
   Events,
   FollowupSourceKey,
   HandleDirectoryKey,
+  HeartKey,
   type ImpulseSource,
   is,
   isJsonObject,
@@ -558,7 +560,8 @@ export class Initiative {
 
   /** Places that went quiet with something in her inbox or promises there, once per lull. */
   #quiet(now: number, open: readonly InboxRow[]): Opportunity[] {
-    const quietMs = this.#h.settings.own.quiet_mins * MINUTE_MS;
+    // Sooner when she feels like starting things, later when she does not (`#willing`).
+    const quietMs = this.#h.settings.own.quiet_mins * MINUTE_MS * this.#willing().factor;
     const places = new Map<string, { place: ContextKey; items: number; promises: number }>();
     const of = (place: ContextKey) => {
       const key = keyOf(place);
@@ -594,32 +597,68 @@ export class Initiative {
     return out;
   }
 
-  /** People she cares about and misses enough, in her DM with them, once a day each. */
+  /**
+   * How her feelings weigh on her own starts (`mood_weight`; 0: not at all): `factor` multiplies
+   * the waits she starts after (less when she wants to start things, `biases.initiative` > 0, more
+   * when she does not), and `wants` is how much she wants to talk with each person (`chat_with`,
+   * `find_person`), by handle.
+   */
+  #willing(): { factor: number; wants: Map<string, number> } {
+    const weight = this.#h.settings.own.mood_weight;
+    const wants = new Map<string, number>();
+    if (weight <= 0) return { factor: 1, wants };
+    let biases: AffectBiases | null = null;
+    try {
+      biases = this.#services.get(AffectStateKey)?.snapshot().biases ?? null;
+    } catch (error) {
+      this.#h.agent.log.debug({ err: errorMessage(error) }, "no feelings for her initiative");
+    }
+    if (biases === null) return { factor: 1, wants };
+    const initiative = Number.isFinite(biases.initiative) ? biases.initiative : 0;
+    const factor = Math.min(Math.max(1 - weight * initiative, 0.5), 1.5);
+    for (const w of biases.wants) {
+      if ((w.want !== "chat_with" && w.want !== "find_person") || w.person === null) continue;
+      wants.set(w.person, Math.max(wants.get(w.person) ?? 0, weight * w.weight));
+    }
+    return { factor, wants };
+  }
+
+  /**
+   * The one she cares about most, when she misses them enough, in her DM with them, once a day
+   * (owner decision H5: the old crush's DM hangs on that person, the heart's 在意). How much she
+   * misses them is the heart's longing; how much is enough comes down when her feelings make her
+   * want to start things or to talk with them. Nothing without the heart.
+   */
   async #longing(now: number): Promise<Opportunity[]> {
-    const affect = this.#services.get(AffectStateKey);
-    if (!affect) return [];
-    const { caredAttachment } = this.#h.settings;
-    const min = this.#h.settings.own.longing_min;
-    const day = this.#day(now);
-    const out: Opportunity[] = [];
-    for (const card of affect.cards()) {
-      if (card.blocked || card.attachment < caredAttachment) continue;
-      if ((card.emotions.missing ?? 0) < min) continue;
-      const id = `longing:${card.person}:${day}`;
-      if (this.#woken.includes(id)) continue;
-      const dm = this.#dmWith(card.person);
-      out.push({
+    const heart = this.#services.get(HeartKey);
+    if (heart === undefined) return [];
+    const { factor, wants } = this.#willing();
+    const cared = heart.mostCared();
+    if (cared === null) return [];
+    const view = heart.view(cared.person);
+    if (view === null || view.blocked) return [];
+    const handle =
+      this.#services.get(HandleDirectoryKey)?.ofPerson(cared.person) ??
+      this.#services.get(SocialSignalsKey)?.attitudeOf?.(cared.person)?.display_name ??
+      view.call_name;
+    if (handle === null) return [];
+    const min = this.#h.settings.own.longing_min * factor - (wants.get(handle) ?? 0);
+    if (view.longing < Math.max(min, 0.05)) return [];
+    const id = `longing:${cared.person}:${this.#day(now)}`;
+    if (this.#woken.includes(id)) return [];
+    const dm = this.#dmWith(cared.person);
+    return [
+      {
         id,
         kind: "longing",
         place: dm?.place ?? null,
-        person: card.person,
+        person: cared.person,
         account: dm?.account ?? null,
         dm: true,
-        note: WAKE_NOTES.longing(card.call_name ?? card.handle),
+        note: WAKE_NOTES.longing(view.call_name ?? handle),
         item: null,
-      });
-    }
-    return out;
+      },
+    ];
   }
 
   /** Her DM with `person`, from the transcripts: the place and their account there. */

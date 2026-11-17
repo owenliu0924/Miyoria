@@ -187,6 +187,18 @@ export interface PersonProfile {
   owner?: boolean;
   /** How much she trusts them (0..100), `null` when not known; absent on older producers. */
   trust?: number | null;
+  /**
+   * The slow values of the heart as words (`heartWords`: trust, familiarity, respect, ease,
+   * rapport), when the heart has a row for them; they replace `trust`'s number. The fast ones
+   * (warmth, grudge, longing) are block 7's. Absent: no row, or an older producer.
+   */
+  values?: {
+    trust: string;
+    familiarity: string;
+    respect: string;
+    ease: string;
+    rapport: string;
+  } | null;
   call_name: string | null;
   feeling: string | null;
   stance: string | null;

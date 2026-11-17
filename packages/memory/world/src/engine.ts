@@ -9,12 +9,12 @@
 // * `channel_quiet`: a lively channel had no messages for `quiet_after_secs`, or the voice
 //   channel she is in went quiet after a conversation (nobody, her included, said anything for
 //   `voice_quiet_secs`). The one "cold channel" signal (docs/design/v2-architecture.md §3.3):
-//   her mind / Plan wakes on it and decides whether to raise something.
+//   whoever reads `world.salient` may wake her on it, and she decides whether to raise something.
 // * `mentioned`: she was mentioned / replied to in a guild context she has not spoken in for
 //   `away_secs`.
 //
-// Snapshot updates (`initial`) never trigger rules. "Cares about" = not blocked and affinity or
-// familiarity at least the configured minimum.
+// Snapshot updates (`initial`) never trigger rules. "Cares about" = not blocked and the heart's one
+// definition of 在意 at `CARES_THRESHOLD` (`Signals.cares`); nobody when the heart does not run.
 
 import {
   type AccountRef,
@@ -28,6 +28,7 @@ import {
   type HerStatus,
   type IncomingMessage,
   type MemberUpdate,
+  type PersonId,
   type PersonPresence,
   type PlatformId,
   type PresenceActivity,
@@ -50,6 +51,11 @@ import { topicWords } from "./topic.js";
 /** What the engine asks other modules at the moment it needs it. */
 export interface Signals {
   attitude(account: AccountRef): Attitude | null;
+  /**
+   * Whether she cares about `person` (the heart's one definition, `CARES_THRESHOLD`, H5); unset:
+   * nobody (the heart does not run).
+   */
+  cares?(person: PersonId): boolean;
 }
 
 export const NO_SIGNALS: Signals = { attitude: () => null };
@@ -222,7 +228,7 @@ export class WorldEngine {
     const out: Candidate[] = [];
     const att = sig.attitude(u.account);
     const name = oneLine(u.display_name, 32);
-    if (online && prevStatus === "offline" && this.#cares(att)) {
+    if (online && prevStatus === "offline" && this.#cares(att, sig)) {
       out.push({
         kind: "came_online",
         key: `came_online:${key}`,
@@ -248,7 +254,7 @@ export class WorldEngine {
         display_name: u.display_name,
         context: null,
         detail: `${name} 開始玩 ${oneLine(a.name, 40)}`,
-        score: this.#cares(att) ? 0.6 : 0.5,
+        score: this.#cares(att, sig) ? 0.6 : 0.5,
       });
     }
     return out;
@@ -284,7 +290,7 @@ export class WorldEngine {
     }
     if (u.initial || u.is_bot || prev?.channel === u.channel) return [];
     const att = sig.attitude(u.account);
-    if (!this.#cares(att)) return [];
+    if (!this.#cares(att, sig)) return [];
     const channel = oneLine(u.channel_name ?? u.channel, 32);
     return [
       {
@@ -785,12 +791,9 @@ export class WorldEngine {
     };
   }
 
-  #cares(att: Attitude | null): boolean {
+  #cares(att: Attitude | null, sig: Signals): boolean {
     if (!att || att.blocked) return false;
-    return (
-      att.affinity >= this.config.care_min_affinity ||
-      att.familiarity >= this.config.care_min_familiarity
-    );
+    return sig.cares?.(att.person) ?? false;
   }
 
   #noteMember(account: AccountRef, guild: string, name: string, isBot: boolean): void {

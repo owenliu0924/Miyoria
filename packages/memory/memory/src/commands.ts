@@ -118,10 +118,10 @@ export function wipeModules(scope: WipeScope): string[] {
 
 /** What `me memory forget` removes, said before it is asked and again after it is done. */
 export const FORGET_REMOVES =
-  "會刪除：關於你的記憶、你告訴她的事，以及從你說過的話整理出來的記憶（經歷、事實、她的筆記）；全部忘記時，她筆記本裡關於你的頁面也一起刪除，聊天紀錄裡你說過的話也會清掉內容，只留下時間。";
+  "會刪除：關於你的記憶、你告訴她的事，以及從你說過的話整理出來的記憶（經歷、事實、她的筆記）；全部忘記時，她會把你當成剛認識的人：還會刪除她筆記本裡關於你的頁面、聊天紀錄裡你說過的話的內容（只留下時間）、你們累積的羈絆、信任、熟悉和已經到過的分級、她怎麼稱呼你，以及她對你的印象、和你相處的方式、還沒聊完的事、你們的梗、會員頁上她對你說的那句話，和她記下心情變化時引用的話。";
 /** What it leaves, and why. */
 export const FORGET_KEEPS =
-  "不會刪除：事件紀錄裡的其他事（只有擁有者能用 /admin memory wipe 清除）、她對你的羈絆與印象，以及和你無關、也不是從你的話整理出來的記憶；用關鍵字忘記時，聊天紀錄不變。之後你再說起同樣的事，她可能會重新記下來。";
+  "不會刪除：她對你的不滿（負的羈絆、心結，被扣掉的信任和好感）不會因此消失；事件紀錄裡的其他事（只有擁有者能用 /admin memory wipe 清除）；以及和你無關、也不是從你的話整理出來的記憶。用關鍵字忘記時，只刪符合的記憶，聊天紀錄、羈絆和她對你的印象都不變。之後你再說起同樣的事，她可能會重新記下來。";
 
 const R = {
   showPage: "me:memory:page",
@@ -328,9 +328,7 @@ class Handler {
       inventory.categories.flatMap((c) => c.parts).find((p) => p.id === id)?.count ?? 0;
     const counts = [
       `記憶 ${part("memory_records")} 筆`,
-      ...(scope !== "memories"
-        ? [`關係 ${part("relationships")} 筆（變化紀錄 ${part("relationship_deltas")} 筆）`]
-        : []),
+      ...(scope !== "memories" ? [`關係 ${part("heart_person")} 人`] : []),
       ...(scope === "history" || scope === "everything"
         ? [`聊天紀錄 ${part("message_log")} 則、決策紀錄 ${part("decision_log")} 筆`]
         : []),
@@ -416,9 +414,9 @@ class Handler {
     const n = (...parts: string[]) => parts.reduce((sum, p) => sum + (counts[p] ?? 0), 0);
     const lines = [
       `記憶 ${n("memory_records")} 筆`,
-      `關係 ${n("relationships")} 筆、變化紀錄 ${n("relationship_deltas")} 筆`,
+      `關係 ${n("heart_person")} 人`,
       `聊天紀錄 ${n("message_log")} 則、決策紀錄 ${n("decision_log")} 筆`,
-      `設定 ${n("memory_maintenance", "memory_watermarks", "self_state", "self_feelings", "mood", "initiative")} 項`,
+      `設定 ${n("memory_maintenance", "memory_watermarks", "heart_self", "self_state", "self_feelings", "mood", "initiative")} 項`,
     ];
     const blocks: CardBlock[] = [
       { type: "text", text: `已刪除：\n${lines.join("\n")}` },

@@ -69,8 +69,12 @@ export interface PartyNote {
 export interface PartyEnded {
   session: string;
   game: GameId;
+  /** The game's name as players see it. */
+  title: string;
   context: ContextKey;
   reason: EndReason;
+  /** The people who played (made a move or scored); never her. */
+  players: { account: AccountRef; name: string }[];
 }
 
 export interface PartyOutput {
@@ -569,8 +573,13 @@ export class Table {
     this.output.ended({
       session: session.id,
       game: session.game.id,
+      title: session.game.title,
       context: session.context,
       reason,
+      players: session
+        .humans()
+        .filter((p) => p.active || p.score > 0)
+        .flatMap((p) => (p.account === null ? [] : [{ account: p.account, name: p.name }])),
     });
     this.#reward(session);
   }

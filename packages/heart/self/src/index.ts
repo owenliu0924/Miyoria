@@ -6,19 +6,18 @@
 // them. Emotions (七情 and a few more: discrete, coexisting, each fading toward its baseline at
 // the pace the profile's temperament sets) have only two inputs, rule events (`events.ts`)
 // and appraisals (an emotion, a strength, who it is about); the dynamics (`dynamics.ts`:
-// habituation, mutual inhibition, a stir budget) turn them into numbers. Bonds are one
-// `PersonCard` per person (feeling, attachment, emotions toward them, the social numbers).
+// habituation, mutual inhibition, a stir budget) turn them into numbers. How she feels about each
+// person is the heart's (`heart_person`, module `heart`), read here for 在意 and longing.
 // Mood is not stored: it is derived from the three layers and the hour. What she shows of what
 // she feels is a pure function of her display rules and who is there (`display.ts`).
 //
 // Provides `AffectStateKey` (the one service for all of that, with the canonical prompt text
-// of mood and people) beside `SelfStateKey` (policy, agenda and the older reads) and
-// `MoodSignalsKey`, and the `self` and `emotion` prompt sections (kept for older consumers). What
-// each emotion goes on to do is the table `EMOTION_OUTPUTS` of `@miyoria/types`.
+// of her mood) beside `SelfStateKey` (policy, agenda and the older reads) and `MoodSignalsKey`.
+// What each emotion goes on to do is the table `EMOTION_OUTPUTS` of `@miyoria/types`.
 //
-// Persisted in the `SettingsStore` of the active profile: `self:state` (drives, emotions,
-// agenda, hearts) and one `self:feeling:<person id>` per person, which is the person's card
-// (the feeling text keeps its old shape; the rest of the card lives under `card`).
+// Persisted in `heart_self` (the store's `heart` plugin), written only when it changed: drives,
+// emotions, policy and agenda. The old `self:state` settings record is read once, when
+// `heart_self` is still empty, and never written again.
 
 export {
   type AffectDeps,
@@ -29,9 +28,7 @@ export {
 } from "./affect.js";
 export { type BiasInputs, computeBiases, MAX_BIAS, MIN_WANT } from "./biases.js";
 export {
-  type BondConfig,
   type EmotionsConfig,
-  type HeartConfig,
   type SelfConfig,
   SelfConfigSchema,
   selfConfig,
@@ -70,18 +67,6 @@ export {
   socialEffects,
   strengthOf,
 } from "./events.js";
-export {
-  type BondLedger,
-  type BondSnapshot,
-  type CardExtras,
-  type CardLegacy,
-  type CardRecord,
-  FEELING_PREFIX,
-  FeelingsBook,
-  feelingKey,
-  stripEphemeral,
-} from "./feelings.js";
-export { HeartBook } from "./heart.js";
 export {
   eventDelta,
   parseAffectEvent,

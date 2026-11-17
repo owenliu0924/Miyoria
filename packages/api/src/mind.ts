@@ -20,7 +20,6 @@ function mindView(state: ApiState): MindView {
   return {
     paused: registry?.paused ?? false,
     running: mind !== undefined,
-    accepting: mind?.accepting ?? false,
     stats: mind?.stats() ?? null,
     pending_approvals: registry?.escalations.pending().length ?? 0,
     emergency: registry?.emergency.last ?? null,

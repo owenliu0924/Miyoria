@@ -72,6 +72,7 @@ const PREF_NAMES = Object.keys(PREFS) as PrefName[];
 const V4_TABLES = ["schema_version", "people", "accounts", "profile_settings"];
 
 // ---- V4's bond tiers, as V4 named them (main:packages/types/src/affect.ts) --------------------
+// Kept as V4 had them on purpose: 家人般 is 宛若家人 in V5 (H10), but this reads V4's records.
 
 const V4_BOND_TIERS: ReadonlyArray<readonly [number, string]> = [
   [1000, "永恆羈絆"],

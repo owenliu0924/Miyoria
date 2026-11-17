@@ -159,8 +159,13 @@ export const ReflectConfigSchema = z.object({
    * a light reflection over all of it follows in the next quiet moment (0 = off).
    */
   light_after_total_lines: count().default(300),
-  /** Bond changes (attachment, feelings) a reflection may propose, each person once a day. */
-  max_bonds: count().default(5),
+  /**
+   * After the daily reflection, one call per person who did anything with her since the last
+   * night (most first), at most this many people a night (docs/design/v5-heart.md §2.4).
+   */
+  people_per_night: count().default(30),
+  /** Most tokens of one of those calls. */
+  people_max_tokens: count().default(3000),
   max_calls_per_day: count().default(6),
   min_interval_mins: count().default(30),
   timeout_ms: count().default(120_000),

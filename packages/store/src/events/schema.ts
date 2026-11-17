@@ -83,6 +83,33 @@ CREATE TABLE event_rollups (
 `;
 
 /**
+ * Core migration 7: a redaction may also keep part of a payload. "Forget me" takes the words out
+ * of events that must stay readable (the heart's `heart.changed`, whose numbers are the day's caps
+ * and a person's history): the payload stays a JSON object, the fields with their words are
+ * emptied, and it carries `"redacted": true`. Everything else of the trigger is migration 2's: once
+ * only, `redacted_at` set, every envelope column unchanged.
+ */
+export const PARTIAL_REDACTION_SQL = `-- A redaction replaces the payload with '{"redacted":true}', or keeps a JSON object marked
+-- "redacted": true (the fields with someone's words emptied); either once.
+DROP TRIGGER events_append_only;
+
+CREATE TRIGGER events_append_only BEFORE UPDATE ON events
+WHEN NOT (OLD.redacted_at IS NULL AND NEW.redacted_at IS NOT NULL
+          AND (NEW.data = '{"redacted":true}'
+               OR (json_valid(NEW.data) IS 1 AND json_type(NEW.data) IS 'object'
+                   AND json_type(NEW.data, '$.redacted') IS 'true'))
+          AND NEW.seq = OLD.seq AND NEW.id = OLD.id AND NEW.at = OLD.at
+          AND NEW.type = OLD.type AND NEW.v = OLD.v AND NEW.source = OLD.source
+          AND NEW.parent IS OLD.parent AND NEW.turn IS OLD.turn AND NEW.session IS OLD.session
+          AND NEW.space_id IS OLD.space_id AND NEW.room_id IS OLD.room_id
+          AND NEW.person_id IS OLD.person_id AND NEW.account_id IS OLD.account_id
+          AND NEW.scope = OLD.scope AND NEW.tier = OLD.tier AND NEW.key IS OLD.key)
+BEGIN
+    SELECT RAISE(ABORT, 'events are append-only');
+END;
+`;
+
+/**
  * Core migration 3: chat lines on the event log (§2.7, §8 step 5). The lines of a session and of
  * an account, by time, over partial indexes (the chat types are a few percent of the log), and
  * `v_messages`, the old `message_log` columns read from the payloads (the data export uses it).

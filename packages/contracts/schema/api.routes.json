@@ -130,20 +130,6 @@
             "path": "/api/affect"
           }
         }
-      },
-      "people": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/affect/people"
-          }
-        }
       }
     },
     "prompts": {
@@ -263,6 +249,20 @@
           }
         }
       },
+      "history": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/people/{id}/history"
+          }
+        }
+      },
       "update": {
         "~orpc": {
           "errorMap": {},
@@ -288,6 +288,34 @@
             "inputStructure": "detailed",
             "method": "POST",
             "path": "/api/people/{id}/adjust"
+          }
+        }
+      },
+      "setAnchor": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/people/{id}/anchors/{tier}"
+          }
+        }
+      },
+      "removeAnchor": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "DELETE",
+            "path": "/api/people/{id}/anchors/{tier}"
           }
         }
       },
@@ -775,20 +803,6 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/mind/goals"
-          }
-        }
-      },
-      "plan": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/mind/plan"
           }
         }
       }

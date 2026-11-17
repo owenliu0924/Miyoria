@@ -11,9 +11,11 @@ import {
   LessonsKey,
   type MemoryCurator,
   MemoryCuratorKey,
+  MindKey,
   type PersonId,
   ReflectionKey,
   SelfStateKey,
+  type Thought,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,6 +98,9 @@ const note = (
   said_by: null,
 });
 
+/** Her journal as the reflection reads it (`MindKey.thoughts`). */
+const MIND = { thoughts: [] as Thought[] };
+
 function setup(reply: string) {
   const provider = new MockProvider("p").reply(reply);
   const services = new ServiceRegistry();
@@ -112,6 +117,7 @@ function setup(reply: string) {
     note("m5", "Amy 的私事", "channel:discord:g2:c2", ["p-amy"]),
   ]);
   services.provide("t", MemoryCuratorKey, curator);
+  services.provide("t", MindKey, { thoughts: (n?: number) => MIND.thoughts.slice(0, n) } as never);
   const store = new MemorySettingsStore();
   const kb = new KnowledgeStore(store, "p", knowledgeConfig(), { now: () => Date.now() });
   services.provide("t", KnowledgeKey, kb);
@@ -151,7 +157,7 @@ function setup(reply: string) {
 }
 
 describe("daily reflection", () => {
-  it("merges memories, supersedes contradictions, writes lessons, documents, feelings and goals", async () => {
+  it("merges memories, supersedes contradictions, writes lessons, documents and goals", async () => {
     const reply = JSON.stringify({
       summary: "今天 Owen 跟我聊了很多,我插話太多次了。",
       insights: [
@@ -199,7 +205,8 @@ describe("daily reflection", () => {
     const docs = kb.docs();
     expect(docs.map((d) => d.subject.type).sort()).toEqual(["person", "self"]);
     expect(docs.every((d) => d.sources[""]?.kind === "self")).toBe(true);
-    expect(self.feelings.get("p-owen")).toBe("今天跟他聊得很開心");
+    // Feelings are the nightly reflection on each person's now: the daily one writes none.
+    expect(self.feelings.size).toBe(0);
     expect(self.agendaItems.map((a) => a.text)).toEqual(["學會 Owen 喜歡的拉麵店名字"]);
     const all = lessons.all();
     expect(all.map((l) => l.text).sort()).toEqual(["Owen 講話時不要插嘴", "在這裡少說一點"]);
@@ -236,6 +243,34 @@ describe("daily reflection", () => {
     const run = await reflector.reflect("daily", null);
     expect(run?.insights).toBe(0);
     expect(curator.insights).toEqual([]);
+  });
+
+  it("leaves what she felt in a DM out of what may reach her diary", async () => {
+    const { provider, reflector } = setup(JSON.stringify({ summary: "嗯" }));
+    const thought = (text: string, kind: "dm" | "channel"): Thought => ({
+      id: text,
+      at: "2026-11-17T01:00:00.000Z",
+      triggers: [
+        {
+          kind: "turn",
+          detail: "",
+          context: { platform: "discord", scope: kind === "dm" ? null : "g1", channel: "c", kind },
+          at: "2026-11-17T01:00:00.000Z",
+        },
+      ],
+      thought: text,
+      changes: [],
+      intents: [],
+      tokens: null,
+      error: null,
+      ms: 0,
+    });
+    MIND.thoughts = [thought("Owen 羈絆 +「他說他住在台南」", "dm"), thought("開心 中", "channel")];
+    await reflector.reflect("daily", null);
+    const sent = JSON.stringify(provider.requests());
+    expect(sent).toContain("開心 中");
+    expect(sent).not.toContain("住在台南");
+    MIND.thoughts = [];
   });
 
   it("runs once a day in a quiet moment, and lighter after a long session", () => {
@@ -508,8 +543,8 @@ describe("reflection writes only stable names", () => {
     expect(run?.error).toBeNull();
     // The summary kept for the panel has lost its code sentences.
     expect(ephemeralHandlesIn(run?.summary ?? "")).toEqual([]);
-    // Feelings: the unknown person and the unresolvable sentence are skipped.
-    expect([...self.feelings.values()]).toEqual(["今天聊得很開心"]);
+    // Feelings are not the daily reflection's any more.
+    expect([...self.feelings.values()]).toEqual([]);
     // Goals: the code is not written into the agenda.
     expect(self.agendaItems.map((a) => a.text)).toEqual(["把拉麵店名字記起來"]);
     // Lessons: "u1" in a lesson about Owen is Owen; "u9" cannot be resolved, so no lesson.

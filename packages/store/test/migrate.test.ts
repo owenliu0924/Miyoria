@@ -81,6 +81,7 @@ describe("bookkeeping", () => {
         "core:4",
         "core:5",
         "core:6",
+        "core:7",
         "legacy:1",
       ]);
       expect(rows[0]).toMatchObject({
@@ -154,6 +155,7 @@ describe("bookkeeping", () => {
         "core:4",
         "core:5",
         "core:6",
+        "core:7",
         "shop:1",
       ]);
       const later = migrate(first.db, [SHOP]);
@@ -182,6 +184,7 @@ describe("bookkeeping", () => {
       expect(error.code).toBe("failed");
       expect(error.message).toMatch(/shop migration 1 \(step1\) failed/);
       expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual([
+        "core",
         "core",
         "core",
         "core",
@@ -223,6 +226,7 @@ describe("refusals before any write", () => {
         "core:4",
         "core:5",
         "core:6",
+        "core:7",
         "shop:1",
       ]);
       db.close();
@@ -427,6 +431,7 @@ describe("naming lint", () => {
       const error = thrown(() => migrate(t.db, [other, bad]));
       expect(error.code).toBe("lint");
       expect(appliedMigrations(t.db).map((m) => m.plugin)).toEqual([
+        "core",
         "core",
         "core",
         "core",

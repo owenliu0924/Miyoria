@@ -8,19 +8,23 @@ import { sleep } from "@miyoria/runtime/kernel";
 import { SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
+  type AffectState,
   AffectStateKey,
   type ArbiterDecision,
   ArbiterKey,
   type Attitude,
   type ContextKey,
   Events,
+  HeartKey,
+  type HeartPeople,
+  type HeartView,
   type LedgerEntry,
-  type PersonCard,
+  type PersonId,
   SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { initiativeTables, type SelfHost } from "../src/index.js";
+import { initiativeSettings, initiativeTables, type SelfHost } from "../src/index.js";
 import {
   account,
   calls,
@@ -303,24 +307,6 @@ describe("her starts in the Arbiter's ledger", () => {
 
 describe("longing", () => {
   const owen = account("owen");
-  const card = {
-    person: "p-owen",
-    handle: "Owen",
-    call_name: null,
-    affinity: 60,
-    trust: 60,
-    familiarity: 60,
-    attachment: 0.8,
-    emotions: { missing: 0.9 },
-    feeling: "",
-    label: "朋友",
-    level: 60,
-    owner: false,
-    blocked: false,
-    last_seen: null,
-    last_together: null,
-    updated_at: toTimestamp(Date.now()),
-  } as PersonCard;
 
   async function rigWith(dmOk: boolean): Promise<Rig> {
     const options: RigOptions = {
@@ -337,7 +323,8 @@ describe("longing", () => {
           attitude: (a: AccountRef) =>
             a.id === "owen" ? ({ person: "p-owen", blocked: false } as Attitude) : null,
         } as never);
-        sup.services.provide("app", AffectStateKey, { cards: () => [card] } as never);
+        // The one she cares about most, missing them a lot (the heart's longing).
+        withHeart({ person: "p-owen", cares: 0.8 }, 0.9)(sup);
       },
     };
     const rig = await Rig.create(options);
@@ -356,7 +343,7 @@ describe("longing", () => {
     await tick(rig);
     await until(() => rig.sink.texts().length === 2, 3_000, "her DM");
     expect(rig.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
-    expect(textOf(rig.model.requests[1])).toContain("你有點想念 Owen");
+    expect(textOf(rig.model.requests[1])).toContain("你有點想念 歐歐");
     // Once a day.
     rig.shift += 5 * HOUR;
     await tick(rig);
@@ -372,5 +359,104 @@ describe("longing", () => {
     expect(rig.model.requests).toHaveLength(1);
     const stopped = decisions(rig).find((d) => d.impulse.startsWith("longing:"));
     expect(stopped).toMatchObject({ verdict: "rejected", reason: "consent" });
+  });
+
+  /** The heart (docs/design/v5-heart.md H5): the one she cares about most, and their longing. */
+  function withHeart(most: { person: PersonId; cares: number } | null, longing: number) {
+    const heart: Pick<HeartPeople, "mostCared" | "view"> = {
+      mostCared: () => most,
+      view: (p) =>
+        p === "p-owen"
+          ? ({ person: p, longing, call_name: "歐歐", blocked: false } as HeartView)
+          : null,
+    };
+    return (sup: Rig["sup"]) => sup.services.provide("app", HeartKey, heart as HeartPeople);
+  }
+
+  async function heartRig(
+    most: { person: PersonId; cares: number } | null,
+    longing: number,
+    mood: { initiative: number; weight?: number } | null = null,
+  ) {
+    const rig = await Rig.create({
+      ...(mood?.weight === undefined
+        ? {}
+        : { host: { initiative: { settings: initiativeSettings({ mood_weight: mood.weight }) } } }),
+      provide: (sup, tools) => {
+        if (mood !== null) {
+          const affect: Pick<AffectState, "snapshot"> = {
+            snapshot: () =>
+              ({ biases: { talkativeness: 0, initiative: mood.initiative, wants: [] } }) as never,
+          };
+          sup.services.provide("app", AffectStateKey, affect as AffectState);
+        }
+        const registry = new ActuatorRegistry({
+          services: sup.services,
+          tools,
+          publish: sup.bus.publisher("actions"),
+          builtins: false,
+        });
+        void registry.privacy.set(owen, { dm: true });
+        sup.services.provide("app", ActuatorRegistryKey, registry);
+        sup.services.provide("app", SocialSignalsKey, {
+          attitude: (a: AccountRef) =>
+            a.id === "owen" ? ({ person: "p-owen", blocked: false } as Attitude) : null,
+        } as never);
+        withHeart(most, longing)(sup);
+      },
+    });
+    rig.model.push(says("晚安"));
+    rig.say(line(DM, "owen", "晚安"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "the DM answer");
+    await sleep(50);
+    return rig;
+  }
+
+  it("with the heart: the one she cares about most, when the heart says she misses them", async () => {
+    const rig = await heartRig({ person: "p-owen", cares: 0.6 }, 0.8);
+    rig.model.push(says("在幹嘛~"));
+    rig.shift = toNoon();
+    await tick(rig);
+    await until(() => rig.sink.texts().length === 2, 3_000, "her DM");
+    expect(rig.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
+    expect(textOf(rig.model.requests[1])).toContain("歐歐");
+  });
+
+  it("her wish to start things lowers how much she must miss them (mood_weight)", async () => {
+    // Missed at 0.4, under longing_min (0.5): no DM by itself...
+    const flat = await heartRig({ person: "p-owen", cares: 0.6 }, 0.4);
+    flat.shift = toNoon();
+    await tick(flat);
+    await sleep(100);
+    expect(flat.model.requests).toHaveLength(1);
+    await flat.stop();
+    // ...nor with mood_weight 0, however much she wants to start things...
+    const off = await heartRig({ person: "p-owen", cares: 0.6 }, 0.4, { initiative: 1, weight: 0 });
+    off.shift = toNoon();
+    await tick(off);
+    await sleep(100);
+    expect(off.model.requests).toHaveLength(1);
+    await off.stop();
+    // ...but with the default weight and her wanting to start things, the bar is halved.
+    const eager = await heartRig({ person: "p-owen", cares: 0.6 }, 0.4, { initiative: 1 });
+    eager.model.push(says("在幹嘛~"));
+    eager.shift = toNoon();
+    await tick(eager);
+    await until(() => eager.sink.texts().length === 2, 3_000, "her DM");
+    expect(eager.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
+  });
+
+  it("with the heart: nobody she cares about, or not missed enough: no DM", async () => {
+    for (const [most, longing] of [
+      [null, 0.9],
+      [{ person: "p-owen", cares: 0.6 }, 0.1],
+    ] as const) {
+      const rig = await heartRig(most, longing);
+      rig.shift = toNoon();
+      await tick(rig);
+      await sleep(100);
+      expect(rig.model.requests).toHaveLength(1);
+      await rig.stop();
+    }
   });
 });

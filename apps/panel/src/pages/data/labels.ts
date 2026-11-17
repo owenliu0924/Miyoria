@@ -52,7 +52,7 @@ export const VIEW_LINK: Partial<Record<DataCategoryId, { to: NavPath; search?: R
   call_names: { to: "/character", search: { tab: "people" } },
   people: { to: "/character", search: { tab: "people" } },
   persona: { to: "/character", search: { tab: "persona" } },
-  inner: { to: "/inner", search: { tab: "feelings" } },
+  inner: { to: "/inner", search: { tab: "affect" } },
   knowledge: { to: "/inner", search: { tab: "knowledge" } },
   learning: { to: "/inner", search: { tab: "reflection" } },
   conversation: { to: "/inner", search: { tab: "knowledge" } },

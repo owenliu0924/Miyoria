@@ -251,7 +251,13 @@ export {
   type RedactionListener,
   sessionScope,
 } from "./events/log.js";
-export { CHAT_SQL, EVENTS_SQL, LLM_CALLS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
+export {
+  CHAT_SQL,
+  EVENTS_SQL,
+  LLM_CALLS_SQL,
+  PARTIAL_REDACTION_SQL,
+  TURNS_AUDIT_SQL,
+} from "./events/schema.js";
 export { TurnLog } from "./events/turns.js";
 export {
   ConfigRevised,
@@ -272,6 +278,10 @@ export {
   FactsSteer,
   FactsThought,
   FactsUtterance,
+  HeartChanged,
+  type HeartChangedData,
+  HeartEvidence,
+  type HeartEvidenceData,
   PrivacyRedacted,
   SettingsChanged,
   typeDefaults,
@@ -403,7 +413,6 @@ export {
   type ProfileDataStore,
   ProfileDataStoreKey,
   type RelationshipStore,
-  RelationshipStoreKey,
   type SettingsStore,
   SettingsStoreKey,
   type Store,

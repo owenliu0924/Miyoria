@@ -18,7 +18,7 @@ const RiseSchema = z.object({
    * talking does not fill her (`turn_hunger`).
    */
   hunger: rate().default(0.6),
-  /** Toward her crush's romance while they are not with her (no crush: it fades). */
+  /** Toward how much she cares about the one she cares about most (nobody: it fades). */
   longing: rate().default(0.12),
 });
 
@@ -49,9 +49,9 @@ const SatisfySchema = z.object({
   streaming_per_hour: rate().default(0.5),
   /** While she is live, `rest` rises this much per hour. */
   streaming_rest_per_hour: rate().default(0.1),
-  /** Her crush talked to her: `longing`. */
+  /** The one she cares about most talked to her: `longing`. */
   crush_message_longing: unit().default(0.12),
-  /** Her crush is in her voice channel: `longing` per hour. */
+  /** The one she cares about most is in her voice channel: `longing` per hour. */
   crush_together_per_hour: rate().default(0.6),
 });
 
@@ -66,11 +66,9 @@ const EmotionsSchema = z.object({
   notice: unit().default(0.2),
   /** At most this many emotions in a prompt. */
   prompt_max: count().default(3),
-  /** People she cares about: affinity at or above this (or some romance). */
-  care_affinity: z.number().default(40),
-  /** Someone she cares about away this long starts to be missed (想念)... */
+  /** Someone she cares about away this long is news when they are back. */
   missing_after_hours: z.number().positive().default(20),
-  /** ...this much per day (before her temperament). */
+  /** The longing drive turns into 想念 this much per day (before her temperament). */
   missing_per_day: rate().default(0.35),
   /** Someone she cares about talking to others this many times, never to her... */
   jealousy_lines: count().default(3),
@@ -97,33 +95,6 @@ const EmotionsSchema = z.object({
   history_keep: count().default(288),
 });
 
-/** `[modules.self.heart]`: romance and her crush. */
-const HeartSchema = z.object({
-  /** Half-life of romance while nothing new happens (days). */
-  half_life_days: z.number().positive().default(45),
-  /** Her crush: the highest romance at or above this... */
-  crush_threshold: unit().default(0.35),
-  /** ...and someone else needs this much more to take the place of the current one. */
-  crush_margin: unit().default(0.08),
-  /** People with feelings kept (the faintest are forgotten beyond this). */
-  max_people: count().default(300),
-});
-
-/**
- * `[modules.self.bond]`: how far Reflect's proposals may move a bond (small steps, a cap per
- * person per local day). Attachment moves only on Reflect's (or the panel's) proposal.
- */
-const BondSchema = z.object({
-  attachment_step: z.number().positive().default(0.03),
-  attachment_daily: z.number().positive().default(0.06),
-  affinity_step: z.number().positive().default(2),
-  affinity_daily: z.number().positive().default(4),
-  trust_step: z.number().positive().default(1),
-  trust_daily: z.number().positive().default(2),
-  familiarity_step: z.number().positive().default(2),
-  familiarity_daily: z.number().positive().default(4),
-});
-
 /**
  * `[modules.self.mood]`: the mood is derived (baseline shaped by the hour, her emotions, her
  * unmet drives), never stored.
@@ -145,8 +116,6 @@ const MoodSchema = z.object({
  * boredom_per_hour = 0.15
  * [modules.self.rise_per_hour]
  * social = 0.08
- * [modules.self.heart]
- * crush_threshold = 0.35
  * ```
  */
 export const SelfConfigSchema = z.object({
@@ -161,8 +130,6 @@ export const SelfConfigSchema = z.object({
   rise_per_hour: RiseSchema.prefault({}),
   satisfy: SatisfySchema.prefault({}),
   emotions: EmotionsSchema.prefault({}),
-  heart: HeartSchema.prefault({}),
-  bond: BondSchema.prefault({}),
   mood: MoodSchema.prefault({}),
   /** Starting value of every drive (first run, or after a wipe); `longing` starts at 0. */
   initial_drive: unit().default(0.3),
@@ -179,8 +146,6 @@ export const SelfConfigSchema = z.object({
   max_agenda_days: z.number().positive().default(3),
   /** Done / dropped / expired agenda items kept for the panel. */
   keep_closed_agenda: count().default(20),
-  /** Longest feelings text per person. */
-  max_feeling_chars: count().default(500),
   /** Her local time zone as a UTC offset (times in the prompt section, local days). */
   utc_offset_minutes: z
     .number()
@@ -190,8 +155,6 @@ export const SelfConfigSchema = z.object({
 
 export type SelfConfig = z.output<typeof SelfConfigSchema>;
 export type EmotionsConfig = SelfConfig["emotions"];
-export type HeartConfig = SelfConfig["heart"];
-export type BondConfig = SelfConfig["bond"];
 
 /** The defaults, optionally overridden. */
 export function selfConfig(overrides: Partial<SelfConfig> = {}): SelfConfig {

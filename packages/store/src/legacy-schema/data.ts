@@ -1,7 +1,9 @@
 // The `legacy` tables' parts of the data categories (`data.ts`): relationships, their changes and
-// the member page's cards (snapshots of the relationship, which go with it), and what she calls
-// each person (`call_names`, cleared while the relationship stays). Step 14 of v5-data §8 removes
-// them with the schema.
+// the member page's cards (snapshots of the relationship, which go with it), and what she called
+// each person (`call_names`, cleared while the relationship stays). Since phase 4 step 5 nothing
+// writes `relationships` or `relationship_deltas` (the heart's `heart_person` holds what she feels
+// and what she calls people; only the heart's migration reads them): they are listed here so the
+// data page can still export and delete them. Step 14 of v5-data §8 removes them with the schema.
 
 import type { CategoryData } from "../data.js";
 import { tablePart } from "../data.js";
@@ -40,5 +42,8 @@ export const legacyData: readonly CategoryData[] = [
       }),
     ],
   },
-  { category: "call_names", parts: [{ kind: "call_names", id: "call_names" }] },
+  {
+    category: "call_names",
+    parts: [{ kind: "call_names", id: "call_names", table: "relationships", rows: "profile" }],
+  },
 ];

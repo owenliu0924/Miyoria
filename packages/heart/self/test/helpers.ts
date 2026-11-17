@@ -2,9 +2,11 @@
 // clock, without a bus or a store.
 
 import {
-  type Attitude,
+  CARES_THRESHOLD,
   type Clock,
   type Handle,
+  type HeartPeople,
+  type HeartView,
   type JsonValue,
   type Mood,
   type PersonId,
@@ -14,7 +16,6 @@ import { AffectService } from "../src/affect.js";
 import { type SelfConfig, selfConfig } from "../src/config.js";
 import { type TemperamentInput, temperament } from "../src/emotions.js";
 import { IDLE, SelfEngine } from "../src/engine.js";
-import { FeelingsBook } from "../src/feelings.js";
 import { SelfService } from "../src/state.js";
 
 export const T0 = Date.parse("2026-11-02T04:00:00.000Z");
@@ -36,10 +37,11 @@ export interface Rig {
   engine: SelfEngine;
   self: SelfService;
   affect: AffectService;
-  feelings: FeelingsBook;
   config: SelfConfig;
-  /** Attitudes the fake social module answers with (by person). */
-  attitudes: Map<PersonId, Partial<Attitude>>;
+  /** How much she cares about each person (the fake heart's 在意, 0..1). */
+  cares: Map<PersonId, number>;
+  /** How much she misses each person (the fake heart's longing, 0..1). */
+  longing: Map<PersonId, number>;
   /** Handles the fake directory answers with (by person). */
   handles: Map<PersonId, Handle>;
   published: { topic: string; payload: unknown }[];
@@ -51,6 +53,8 @@ export function rig(
     temperament?: TemperamentInput;
     config?: Partial<SelfConfig["emotions"]> & { budget?: number };
     mood?: Mood;
+    /** Replaces the fake heart (`HeartKey`) built from `cares` and `longing`. */
+    heart?: HeartPeople;
   } = {},
 ): Rig {
   const clock = new ManualClock();
@@ -63,31 +67,19 @@ export function rig(
     config.emotions.budget_per_10min = options.config.budget;
   }
   const engine = new SelfEngine(config, clock.now(), temperament(options.temperament).temperament);
-  const feelings = new FeelingsBook(null, "p", config.max_feeling_chars);
-  const attitudes = new Map<PersonId, Partial<Attitude>>();
+  const cares = new Map<PersonId, number>();
+  const longing = new Map<PersonId, number>();
   const handles = new Map<PersonId, Handle>();
   const published: Rig["published"] = [];
+  const heart = options.heart ?? fakeHeart(cares, longing);
   const self: SelfService = new SelfService({
     engine,
-    feelings,
     clock,
     config,
     circumstances: () => IDLE,
     mood: () => null,
-    attitudeOf: (person) => {
-      const a = attitudes.get(person);
-      if (!a) return null;
-      return {
-        person,
-        affinity: 0,
-        trust: 10,
-        familiarity: 0,
-        blocked: false,
-        label: "陌生人",
-        call_name: null,
-        ...a,
-      };
-    },
+    heart: () => heart,
+    nameOf: (person) => handles.get(person) ?? null,
     changed: () => undefined,
   });
   const affect = new AffectService({
@@ -98,15 +90,16 @@ export function rig(
     publish: (definition, payload, ..._meta) => {
       published.push({ topic: definition.type, payload: payload as JsonValue });
     },
+    heart: () => heart,
   });
   return {
     clock,
     engine,
     self,
     affect,
-    feelings,
     config,
-    attitudes,
+    cares,
+    longing,
     handles,
     published,
     advance(ms) {
@@ -132,3 +125,26 @@ export const ev = (
 
 export const level = (r: Rig, name: string): number =>
   r.self.emotions(0).find((e) => e.name === name)?.intensity ?? 0;
+
+/** A heart that answers 在意 and longing from the maps (the parts `self` reads). */
+export function fakeHeart(
+  cares: Map<PersonId, number>,
+  longing: Map<PersonId, number>,
+): HeartPeople {
+  const cared = () =>
+    [...cares]
+      .filter(([, c]) => c >= CARES_THRESHOLD)
+      .sort((a, b) => b[1] - a[1])
+      .map(([person, c]) => ({ person, cares: c }));
+  return {
+    feel: () => 0,
+    seen: () => undefined,
+    view: (person) =>
+      cares.has(person) || longing.has(person)
+        ? ({ person, longing: longing.get(person) ?? 0, blocked: false } as HeartView)
+        : null,
+    cares: (person) => cares.get(person) ?? 0,
+    mostCared: () => cared()[0] ?? null,
+    caredAbout: (max) => cared().slice(0, max),
+  };
+}

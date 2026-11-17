@@ -15,7 +15,8 @@
 //               the commitments memory pins, what people wrote in her working context, the
 //               viewers' wishes, the notices that came back, and the flagged messages the
 //               transcript points to
-//   7 now       time and place, her state (`selfBlocks`), what the outside told her, the party
+//   7 now       time and place, her state (`selfBlocks`), how she feels toward the people here
+//               now (the heart's warmth, grudge, longing: `heartNowBody`), what the outside told her, the party
 //               game running here, the tasks in flight, what she promised and by when, the lines
 //               around a replied-to message she cannot see (`parent.ts`); then the
 //               `<style_note>` (`styleNote`: lorebook entries, a few kaomoji)
@@ -46,10 +47,10 @@ import {
   DirectivesKey,
   dataBlock,
   GoalAgendaKey,
+  HeartKey,
   type LedgerView,
   LifeLogKey,
   MemoryRetrievalKey,
-  MindKey,
   type Participant,
   PartyStatusKey,
   PersonProfilesKey,
@@ -80,10 +81,12 @@ import {
   feelingCauseBody,
   type Gathered,
   gather,
+  heartNowBody,
   LIFE_TITLE,
   levelHint,
   MOOD_MIN,
   mergeGathered,
+  moodStyleLines,
   noticesBlock,
   PRESENT_TITLE,
   type PresentPerson,
@@ -124,6 +127,25 @@ const UNLIMITED = Number.MAX_SAFE_INTEGER;
 const DAY_MS = 86_400_000;
 /** The recap's title (the conversation contributor's). */
 export const RECAP_TITLE = "這段對話的前情提要";
+
+/**
+ * `<style_note>`'s sentences from her feelings now (`moodStyleLines`: her talkativeness, her
+ * mood's valence), when `[modules.agent.prompt] mood_style` is on; none without her feelings.
+ */
+export function moodStyle(agent: Agent, voice: boolean): string[] {
+  if (!agent.config.prompt.mood_style) return [];
+  try {
+    const snap = agent.ctx.services.get(AffectStateKey)?.snapshot() ?? null;
+    if (snap === null) return [];
+    return moodStyleLines(
+      { talkativeness: snap.biases.talkativeness, valence: snap.mood.valence },
+      voice,
+    );
+  } catch (error) {
+    agent.log.debug({ err: errorMessage(error) }, "no feelings for the style note");
+    return [];
+  }
+}
 
 /** Someone who spoke in a place, newest first. */
 export interface Speaker {
@@ -259,6 +281,11 @@ export interface HostPromptOptions {
   startsToday?(now: number): number;
   /** The lines around a replied-to message she cannot see (block 7); unset or `null`: none. */
   replyContext?(input: PromptInput): Promise<string | null>;
+  /**
+   * Who else is in the place of `input` besides the people who spoke there (the members of the
+   * voice channel she is in); unset: nobody.
+   */
+  present?(input: PromptInput): readonly Speaker[];
 }
 
 export class HostPrompt implements PromptSource {
@@ -268,6 +295,8 @@ export class HostPrompt implements PromptSource {
   readonly #places = new Map<string, PlaceCache>();
   /** What each run in flight read, by turn. */
   readonly #runs = new Map<string, RunRead>();
+  /** The people the blocks of each run in flight name, by turn (whom an `@name` may tag). */
+  readonly #named = new Map<string, Speaker[]>();
   /** 「今天的你」 as last written, with what it was written from. */
   #life: PlaceCache | null = null;
 
@@ -326,6 +355,33 @@ export class HostPrompt implements PromptSource {
   /** The run of `turn` ended; what it read is forgotten. */
   ended(turn: string): void {
     this.#runs.delete(turn);
+    this.#named.delete(turn);
+  }
+
+  /** The people the blocks of the run of `turn` name (block 4's people, block 7's). */
+  named(turn: string): readonly Speaker[] {
+    return this.#named.get(turn) ?? [];
+  }
+
+  #name(turn: string, people: readonly Speaker[]): void {
+    const known = this.#named.get(turn) ?? [];
+    for (const p of people) {
+      if (!known.some((k) => sameAccount(k.account, p.account))) known.push(p);
+    }
+    this.#named.set(turn, known);
+  }
+
+  /** The people of the place of `input`: who spoke there, whoever woke her, who else is there. */
+  #here(input: PromptInput): Speaker[] {
+    const out = speakersOf(this.#o.transcript.tail(input.session.id).entries);
+    const author = wakeAuthor(input.wake);
+    const more = [...(author === null ? [] : [author]), ...(this.#o.present?.(input) ?? [])];
+    for (const p of more) {
+      if (!out.some((o) => sameAccount(o.account, p.account))) {
+        out.push({ account: p.account, name: p.name });
+      }
+    }
+    return out;
   }
 
   // ---- block 1 ---------------------------------------------------------------------------------
@@ -355,12 +411,16 @@ export class HostPrompt implements PromptSource {
     const session = input.session.id;
     const tail = this.#o.transcript.tail(session);
     const speakers = speakersOf(tail.entries);
+    this.#name(input.turn, speakers);
     const roster = speakers
       .map((s) => `${s.account.platform}:${s.account.id}`)
       .sort()
       .join(",");
     const slow = await this.#slow(input);
-    const key = `${roster}|${tail.summary?.id ?? 0}|${stableHash(slow.join("\n"))}`;
+    // What block 4 shows of the people from the heart (tier, the slow words, call name,
+    // impression, stance): a change there is a new block. A line someone says changes none of it.
+    const hearts = this.#heartKey(this.#present(speakers));
+    const key = `${roster}|${tail.summary?.id ?? 0}|${stableHash(slow.join("\n"))}|${hearts}`;
     const cached = this.#places.get(session);
     if (cached !== undefined && cached.key === key) return cached.text;
     const { text, settled } = await this.#renderPlace(input, speakers, slow);
@@ -372,6 +432,14 @@ export class HostPrompt implements PromptSource {
   /** Forgets block 4 of `session` (its people or its transcript changed under it). */
   forget(session: string): void {
     this.#places.delete(session);
+  }
+
+  /** A hash of what block 4 shows of `present` from the heart (the fallback body's text). */
+  #heartKey(present: readonly PresentPerson[]): string {
+    const heart = this.#services.get(HeartKey) ?? null;
+    if (heart === null || present.length === 0) return "";
+    const body = peopleBody(present, { attitude: (a) => this.#agent.attitude(a), heart });
+    return String(stableHash(body));
   }
 
   async #renderPlace(
@@ -505,7 +573,8 @@ export class HostPrompt implements PromptSource {
       const reads = this.#run(input).reads;
       try {
         if (reads === null) return { body: await render(this.#limit()), settled: true };
-        const read = await reads.warm("people", accountsKey(present), () => render(WARM_LOAD_MS));
+        const key = `${accountsKey(present)}|${this.#heartKey(present)}`;
+        const read = await reads.warm("people", key, () => render(WARM_LOAD_MS));
         if (read !== undefined) return { body: read, settled: true };
         settled = false;
       } catch (error) {
@@ -514,9 +583,8 @@ export class HostPrompt implements PromptSource {
     }
     const services = this.#services;
     const body = peopleBody(present, {
-      affect: services.get(AffectStateKey) ?? null,
       attitude: (a) => agent.attitude(a),
-      self: services.get(SelfStateKey) ?? null,
+      heart: services.get(HeartKey) ?? null,
     });
     return { body: body === "" ? null : body, settled };
   }
@@ -741,7 +809,6 @@ export class HostPrompt implements PromptSource {
       mood: agent.mood(),
       self: services.get(SelfStateKey) ?? null,
       her: services.get(WorldStateKey)?.snapshot().her ?? null,
-      unanswered: services.get(MindKey)?.unanswered?.(context) ?? [],
       level: levelHint(agent.handle.channelMode(context), context),
       notices: [],
     });
@@ -756,6 +823,11 @@ export class HostPrompt implements PromptSource {
       const block = note.trim();
       if (block !== "") lines.push(block);
     }
+    // How she feels toward the people here now: the heart's values that move by the day.
+    const here = this.#here(input);
+    this.#name(input.turn, here);
+    const feeling = heartNowBody(this.#present(here), services.get(HeartKey) ?? null);
+    if (feeling !== "") lines.push(feeling);
     // A party game's verdicts are the program's: her state, not data.
     const party = services.get(PartyStatusKey)?.running(context) ?? null;
     if (party !== null) lines.push(partyLine(party));
@@ -793,7 +865,7 @@ export class HostPrompt implements PromptSource {
       .map((e) => e.content);
     const last = entries.at(-1)?.seq ?? 0;
     const seed = stableHash(`${contextKeyString(input.session.context)}:${input.now}:${last}`);
-    return styleNote(false, pickKaomoji(book, moods, own, seed), lore);
+    return styleNote(false, pickKaomoji(book, moods, own, seed), lore, moodStyle(agent, false));
   }
 
   /** Her emotions now, by name: the tag she shows and the strongest ones she feels. */

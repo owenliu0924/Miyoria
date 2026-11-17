@@ -149,18 +149,6 @@ export const MoodChangedSchema = z
   .meta({ id: "EventsMoodChanged" });
 export type MoodChangedData = z.output<typeof MoodChangedSchema>;
 
-/** A bond change the affect module applied to the numbers the social module owns: `affect.bond`. */
-export const AffectBondSchema = z
-  .object({
-    person: z.string(),
-    affinity: z.number(),
-    trust: z.number(),
-    familiarity: z.number(),
-    why: z.string(),
-  })
-  .meta({ id: "EventsAffectBond" });
-export type AffectBondData = z.output<typeof AffectBondSchema>;
-
 /** What a rule event is about. */
 export const AffectEventKindSchema = z
   .enum([
@@ -543,55 +531,6 @@ export const SocialEventSchema = z
   .meta({ id: "EventsSocialEvent" });
 export type SocialEventData = z.output<typeof SocialEventSchema>;
 
-/** One person in a social appraisal. */
-export const AppraisedPersonSchema = z
-  .object({
-    person: z.string(),
-    name: z.string().nullable(),
-    /** -1..1, how they treated her. */
-    toward_her: z.number(),
-    /** -1..1, how flirty, caring or intimate they were with her. */
-    romance: z.number(),
-    /** 0..1, how warmly they were with other people while leaving her out. */
-    others: z.number(),
-    /** A promise to her they kept or broke in these lines. */
-    promise: z.enum(["kept", "broken"]).nullable(),
-  })
-  .meta({ id: "EventsAppraisedPerson" });
-
-/** What the batched appraisal read about her feelings in a conversation: `social.appraisal`. */
-export const SocialAppraisalSchema = z
-  .object({
-    context: ContextKeySchema,
-    /** Her emotions (name: 0..1) the conversation stirred, as the model read it. */
-    her: z.record(z.string(), z.number()),
-    people: z.array(AppraisedPersonSchema),
-  })
-  .meta({ id: "EventsSocialAppraisal" });
-export type SocialAppraisalData = z.output<typeof SocialAppraisalSchema>;
-
-/** A person's relationship numbers moved: `social.relationship`. */
-export const SocialRelationshipSchema = z
-  .object({
-    profile: z.string(),
-    person: z.string(),
-    name: z.string().nullable(),
-    /** Why it moved (the delta's reason). */
-    reason: z.string(),
-    /** The kind of social event behind it; `null` for a change that is not one. */
-    kind: z.string().nullable(),
-    positive: z.boolean().nullable(),
-    /** The change in each number, not the new value. */
-    affinity: z.number(),
-    trust: z.number(),
-    familiarity: z.number(),
-    /** The relationship label now. */
-    label: z.string(),
-    context: ContextKeySchema.nullable(),
-  })
-  .meta({ id: "EventsSocialRelationship" });
-export type SocialRelationshipData = z.output<typeof SocialRelationshipSchema>;
-
 export const AffectChanged = defineEvent({
   type: "affect.changed",
   v: 1,
@@ -605,13 +544,6 @@ export const MoodChanged = defineEvent({
   v: 1,
   data: MoodChangedSchema,
   scope: "self",
-  tier: "short",
-});
-
-export const AffectBond = defineEvent({
-  type: "affect.bond",
-  v: 1,
-  data: AffectBondSchema,
   tier: "short",
 });
 
@@ -665,26 +597,10 @@ export const SocialEvent = defineEvent({
   tier: "short",
 });
 
-export const SocialAppraisal = defineEvent({
-  type: "social.appraisal",
-  v: 1,
-  data: SocialAppraisalSchema,
-  tier: "short",
-});
-
-export const SocialRelationship = defineEvent({
-  type: "social.relationship",
-  v: 1,
-  data: SocialRelationshipSchema,
-  scope: "owner",
-  tier: "short",
-});
-
 /** Every heart type. */
 export const HEART_EVENTS = [
   AffectChanged,
   MoodChanged,
-  AffectBond,
   AffectEvent,
   SelfNudge,
   SelfFeel,
@@ -692,6 +608,4 @@ export const HEART_EVENTS = [
   PlanGoal,
   MindReminder,
   SocialEvent,
-  SocialAppraisal,
-  SocialRelationship,
 ] as const;

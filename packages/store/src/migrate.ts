@@ -25,7 +25,13 @@ import { StoreError } from "./common.js";
 import { openReadOnly } from "./cutover/old-file.js";
 import type { Db, Row } from "./db.js";
 import { EVENT_CURSORS_SQL } from "./events/cursors.js";
-import { CHAT_SQL, EVENTS_SQL, LLM_CALLS_SQL, TURNS_AUDIT_SQL } from "./events/schema.js";
+import {
+  CHAT_SQL,
+  EVENTS_SQL,
+  LLM_CALLS_SQL,
+  PARTIAL_REDACTION_SQL,
+  TURNS_AUDIT_SQL,
+} from "./events/schema.js";
 
 const log = getLogger("store.migrate");
 
@@ -93,7 +99,7 @@ const BOOKKEEPING = `CREATE TABLE _migrations (
 /**
  * Core's own tables: the bookkeeping, the event log, then its chat indexes and view, then the
  * indexes and views of turn records and audit entries, then those of LLM calls, then the
- * positions of the log's readers. No prefix.
+ * positions of the log's readers, then the redaction that keeps part of a payload. No prefix.
  * Always applied first.
  */
 export const coreSchema: PluginSchema = {
@@ -105,6 +111,7 @@ export const coreSchema: PluginSchema = {
     { version: 4, name: "turns_audit", sql: TURNS_AUDIT_SQL },
     { version: 5, name: "llm_calls", sql: LLM_CALLS_SQL },
     { version: 6, name: "event_cursors", sql: EVENT_CURSORS_SQL },
+    { version: 7, name: "partial_redaction", sql: PARTIAL_REDACTION_SQL },
   ],
 };
 

@@ -1,19 +1,17 @@
-// The affect service: rule events, appraisals, derived mood, what she shows, biases, person cards
-// and bond changes.
+// The affect service: rule events, appraisals, derived mood, what she shows and biases. How she
+// feels about each person is the heart's (a fake one here).
 
 import {
   AFFECT_EVENT_KINDS,
   APPRAISAL_STRENGTH,
   type EmotionReading,
-  Events,
-  relationshipLabel,
   renderAffectMood,
   toTimestamp,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { shownEmotion } from "../src/display.js";
 import { eventEffects, NO_CONTEXT, socialEffects, strengthOf } from "../src/events.js";
-import { DAY, ev, HOUR, level, MINUTE, rig, T0 } from "./helpers.js";
+import { ev, HOUR, level, MINUTE, rig, T0 } from "./helpers.js";
 
 const reading = (name: EmotionReading["name"], intensity: number): EmotionReading => ({
   name,
@@ -21,70 +19,6 @@ const reading = (name: EmotionReading["name"], intensity: number): EmotionReadin
   cause: "",
   at: toTimestamp(T0),
   person: null,
-});
-
-describe("the line shown to the person", () => {
-  it("is written by Reflect alone, kept apart from her feeling, and can be cleared", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 10 });
-    await r.self.setFeeling("p1", "比 Bob 有趣", "self");
-    expect(r.affect.card("p1")?.public_feeling).toBeNull();
-
-    await r.affect.adjustBond("p1", { public_feeling: "有人寫的", why: "x" }, "appraise");
-    await r.affect.adjustBond("p1", { public_feeling: "有人寫的", why: "x" }, "panel");
-    expect(r.affect.card("p1")?.public_feeling).toBeNull();
-
-    await r.affect.adjustBond("p1", { public_feeling: "你常來陪我", why: "x" }, "reflect");
-    expect(r.affect.card("p1")).toMatchObject({
-      public_feeling: "你常來陪我",
-      feeling: "比 Bob 有趣",
-    });
-
-    await r.affect.adjustBond("p1", { public_feeling: null, why: "x" }, "panel");
-    expect(r.affect.card("p1")?.public_feeling).toBeNull();
-  });
-
-  it("is never written into her prompt lines", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 10 });
-    await r.affect.adjustBond("p1", { public_feeling: "PUBLIC-LINE", why: "x" }, "reflect");
-    expect(r.affect.renderPeople(["p1"]).join("\n")).not.toContain("PUBLIC-LINE");
-  });
-});
-
-describe("her stance toward a person", () => {
-  it("is written by Reflect alone, with the level it was written at, and cleaned", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 42 });
-    expect(r.affect.card("p1")).toMatchObject({ level: 42, stance: null, stance_level: null });
-
-    await r.affect.adjustBond("p1", { stance: "別人寫的", why: "x" }, "appraise");
-    await r.affect.adjustBond("p1", { stance: "別人寫的", why: "x" }, "panel");
-    expect(r.affect.card("p1")?.stance).toBeNull();
-
-    const long = `對 Owen 比較坦率。u1 說的不算。${"很".repeat(80)}`;
-    await r.affect.adjustBond("p1", { stance: long, why: "x" }, "reflect");
-    const card = r.affect.card("p1");
-    expect(card?.stance_level).toBe(42);
-    expect([...(card?.stance ?? "")].length).toBeLessThanOrEqual(60);
-    expect(card?.stance).toContain("Owen");
-    expect(card?.stance).not.toContain("u1");
-
-    // A code-only line keeps the old one; a new one is stamped with the card's level now.
-    await r.affect.adjustBond("p1", { stance: "u1", why: "x" }, "reflect");
-    expect(r.affect.card("p1")?.stance_level).toBe(42);
-    r.attitudes.set("p1", { affinity: 55 });
-    expect(r.affect.card("p1")).toMatchObject({ level: 55, stance_level: 42 });
-    await r.affect.adjustBond("p1", { stance: "更愛鬧他", why: "x" }, "reflect");
-    expect(r.affect.card("p1")).toMatchObject({ stance: "更愛鬧他", stance_level: 55 });
-  });
-
-  it("is never written into the renderer used for the people lines", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 10 });
-    await r.affect.adjustBond("p1", { stance: "STANCE-LINE", why: "x" }, "reflect");
-    expect(r.affect.renderPeople(["p1"]).join("\n")).not.toContain("STANCE-LINE");
-  });
 });
 
 describe("the rule-event table", () => {
@@ -206,26 +140,17 @@ describe("rule events through the service", () => {
     expect(level(r, "sorrow")).toBeCloseTo(before - 0.1, 2);
   });
 
-  it("an arrival of someone she cares about: joy, easing missing toward them, company eases lonely", () => {
+  it("an arrival of someone she cares about: joy by how much she missed them, company eases lonely", () => {
     const r = rig();
-    r.attitudes.set("p1", { affinity: 80, familiarity: 40 });
-    r.self.feelToward("p1", "missing", 0.6, "久沒見");
+    r.cares.set("p1", 0.6);
     r.advance(11 * MINUTE);
     r.self.feel("lonely", 0.4, "x");
     const lonely = level(r, "lonely");
-    const missing = r.self.heart("p1")?.emotions.missing ?? 0;
-    r.affect.applyEvent(ev("cared_arrived", r.clock.at, { person: "p1", key: "arrive|p1" }));
+    r.affect.applyEvent(ev("cared_arrived", r.clock.at, { person: "p1", key: "arrive|p1" }), {
+      missed: 0.6,
+    });
     expect(level(r, "joy")).toBeGreaterThanOrEqual(0.2);
-    expect(r.self.heart("p1")?.emotions.missing ?? 0).toBeLessThan(missing);
     expect(level(r, "lonely")).toBeLessThan(lonely);
-  });
-
-  it("jealousy toward the person too", () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 70, familiarity: 20 });
-    r.affect.applyEvent(ev("cared_close_with_other", T0, { person: "p1", key: "j" }));
-    expect(level(r, "jealousy")).toBeGreaterThan(0.05);
-    expect(r.self.heart("p1")?.emotions.jealousy ?? 0).toBeGreaterThan(0.05);
   });
 
   it("drives follow: a song finished satisfies esteem", () => {
@@ -289,28 +214,6 @@ describe("appraisals", () => {
     expect(one()?.habituation).toBe(1);
     r.advance(5 * MINUTE);
     expect(one()?.habituation).toBe(0.5);
-  });
-
-  it("toward someone by handle: their emotions toward them move too; a `u1` code is nobody", () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 50, familiarity: 20 });
-    r.handles.set("p1", "Owen");
-    const out = r.affect.appraise({
-      source: "appraise",
-      context: null,
-      at: toTimestamp(T0),
-      events: [
-        { emotion: "gratitude", strength: "medium", toward: "Owen", cause: "他幫我 u3 修好了" },
-        { emotion: "joy", strength: "weak", toward: "u1", cause: "x" },
-      ],
-    });
-    expect(out[0]?.toward).toBe("p1");
-    expect(r.self.heart("p1")?.emotions.gratitude ?? 0).toBeGreaterThan(0.15);
-    expect(out[1]?.toward).toBeNull();
-    // The cause she remembers carries no per-call code.
-    expect(r.self.emotions(0).find((e) => e.name === "gratitude")?.cause).toBe(
-      "他幫我 某人 修好了",
-    );
   });
 });
 
@@ -405,15 +308,12 @@ describe("how her feelings lean her behaviour", () => {
     expect(down.initiative).toBeLessThan(0);
   });
 
-  it("lonely: wanting someone to talk to ranks first, with the most attached person", async () => {
+  it("lonely: wanting someone to talk to ranks first, with the one she cares about most", () => {
     const r = rig();
-    r.attitudes.set("p1", { affinity: 80, familiarity: 40 });
+    r.cares.set("p1", 0.7);
     r.handles.set("p1", "Owen");
-    r.attitudes.set("p2", { affinity: 30, familiarity: 10 });
+    r.cares.set("p2", 0.1);
     r.handles.set("p2", "Amy");
-    await r.affect.adjustBond("p1", { attachment: 0.03, why: "x" }, "reflect");
-    await r.affect.adjustBond("p2", { affinity: 1, why: "x" }, "appraise");
-    r.engine.hearts.attach("p1", 0.3, r.clock.at);
     r.engine.adjust({ social: 1, attention: 1 });
     for (let h = 1; h <= 8; h++) {
       r.advance(HOUR);
@@ -426,11 +326,11 @@ describe("how her feelings lean her behaviour", () => {
     expect(wants[0]?.weight).toBeGreaterThan(0.4);
   });
 
-  it("missing someone: a strong wish to go find them", () => {
+  it("missing someone: a strong wish to go find them (the heart's longing)", () => {
     const r = rig();
-    r.attitudes.set("p1", { affinity: 80, familiarity: 40 });
+    r.cares.set("p1", 0.6);
+    r.longing.set("p1", 0.7);
     r.handles.set("p1", "Owen");
-    r.self.feelToward("p1", "missing", 0.7, "想他");
     const wants = r.affect.snapshot().biases.wants;
     expect(wants.find((w) => w.want === "find_person")).toMatchObject({ person: "Owen" });
   });
@@ -447,137 +347,6 @@ describe("how her feelings lean her behaviour", () => {
     const b = rig().affect.snapshot().biases;
     expect(b.talkativeness).toBe(0);
     expect(b.wants).toEqual([]);
-  });
-});
-
-describe("person cards", () => {
-  it("one card per person: numbers from the social module, her feeling and attachment", async () => {
-    const r = rig();
-    r.attitudes.set("p1", {
-      affinity: 80,
-      familiarity: 40,
-      trust: 60,
-      owner: true,
-      call_name: "歐文",
-    });
-    r.handles.set("p1", "Owen");
-    await r.self.setFeeling("p1", "Owen 很可靠,有點在意。", "self");
-    const card = r.affect.card("p1");
-    expect(card).toMatchObject({
-      person: "p1",
-      handle: "Owen",
-      call_name: "歐文",
-      affinity: 80,
-      trust: 60,
-      familiarity: 40,
-      feeling: "Owen 很可靠,有點在意。",
-      owner: true,
-      blocked: false,
-      attachment: 0,
-    });
-    // The one label scale.
-    expect(card?.label).toBe(relationshipLabel({ affinity: 80, familiarity: 40 }));
-    expect(card?.label).toBe("摯友");
-    expect(r.affect.cardByHandle("Owen")?.person).toBe("p1");
-    expect(r.affect.card("nobody")).toBeNull();
-  });
-
-  it("renders one line per person: handle, the label, her feeling sentence", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 50, familiarity: 15 });
-    r.handles.set("p1", "Owen");
-    r.attitudes.set("p2", { affinity: 0, familiarity: 0 });
-    r.handles.set("p2", "Amy");
-    await r.self.setFeeling("p1", "他很可靠。", "self");
-    await r.self.setFeeling("p2", "", "self");
-    r.engine.hearts.seed("p2", 0, "Amy", r.clock.at);
-    expect(r.affect.renderPeople?.(["p1", "p2", "p1", "ghost"])).toEqual([
-      "- Owen:好朋友;他很可靠。",
-      "- Amy:陌生人",
-    ]);
-  });
-
-  it("feelings use names: sentences with a u1-style code are dropped, never stored", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 50, familiarity: 15 });
-    await r.self.setFeeling("p1", "他很可靠。u7 也很在意他。後來更熟了。", "self");
-    expect(r.self.feeling("p1")?.text).toBe("他很可靠。後來更熟了。");
-    // Nothing usable left: the old feeling stays.
-    await r.self.setFeeling("p1", "u3 u4", "self");
-    expect(r.self.feeling("p1")?.text).toBe("他很可靠。後來更熟了。");
-  });
-
-  it("a handle that is a reference code is never shown", () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 50, familiarity: 15, display_name: "u1" });
-    expect(r.affect.card("p1")?.handle).not.toBe("u1");
-    r.handles.set("p2", "g3");
-    r.attitudes.set("p2", { affinity: 0, familiarity: 0, display_name: "Amy" });
-    expect(r.affect.card("p2")?.handle).toBe("Amy");
-  });
-
-  it("blocked people are left out of the people lines", () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: -80, familiarity: 40, blocked: true });
-    r.handles.set("p1", "Troll");
-    expect(r.affect.renderPeople?.(["p1"])).toEqual([]);
-  });
-});
-
-describe("bond changes", () => {
-  it("attachment moves only on Reflect's proposal, in small steps, within a daily cap", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 50, familiarity: 15 });
-    // Appraise cannot touch attachment.
-    await r.affect.adjustBond("p1", { attachment: 0.5, why: "x" }, "appraise");
-    expect(r.affect.card("p1")?.attachment).toBe(0);
-    // Reflect: one step is at most 0.03.
-    const c1 = await r.affect.adjustBond("p1", { attachment: 0.5, why: "常聊" }, "reflect");
-    expect(c1?.attachment).toBeCloseTo(0.03, 6);
-    // Daily cap 0.06: one more step fits, then no more today.
-    await r.affect.adjustBond("p1", { attachment: 0.5, why: "常聊" }, "reflect");
-    const c3 = await r.affect.adjustBond("p1", { attachment: 0.5, why: "常聊" }, "reflect");
-    expect(c3?.attachment).toBeCloseTo(0.06, 6);
-    // The next local day the cap is fresh.
-    r.advance(DAY);
-    const c4 = await r.affect.adjustBond("p1", { attachment: -0.5, why: "疏遠" }, "reflect");
-    // (It also faded a hair in the day: its half-life is weeks.)
-    expect(c4?.attachment).toBeCloseTo(0.03, 2);
-  });
-
-  it("affinity / trust / familiarity go to the social module as small, capped changes", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 50, familiarity: 15 });
-    await r.affect.adjustBond(
-      "p1",
-      { affinity: 10, trust: 10, familiarity: 10, why: "他很照顧我" },
-      "reflect",
-    );
-    const sent = r.published.filter((p) => p.topic === Events.AffectBond.type);
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.payload).toMatchObject({ person: "p1", affinity: 2, trust: 1, familiarity: 2 });
-    // The day's cap on affinity is 4: only 2 more.
-    await r.affect.adjustBond("p1", { affinity: 10, why: "x" }, "reflect");
-    await r.affect.adjustBond("p1", { affinity: 10, why: "x" }, "reflect");
-    const total = r.published
-      .filter((p) => p.topic === Events.AffectBond.type)
-      .reduce((a, p) => a + ((p.payload as { affinity: number }).affinity ?? 0), 0);
-    expect(total).toBe(4);
-  });
-
-  it("the feeling text is rewritten, with names", async () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 50, familiarity: 15 });
-    const card = await r.affect.adjustBond(
-      "p1",
-      { feeling: "Owen 越來越讓我放心。", why: "x" },
-      "reflect",
-    );
-    expect(card?.feeling).toBe("Owen 越來越讓我放心。");
-  });
-
-  it("nobody known: null", async () => {
-    expect(await rig().affect.adjustBond("ghost", { affinity: 1, why: "x" }, "reflect")).toBeNull();
   });
 });
 

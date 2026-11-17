@@ -23,7 +23,6 @@ import { SingerKey } from "@miyoria/sing";
 import { AuditLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {
   type AccountRef,
-  AffectStateKey,
   type AnyEventDefinition,
   AuthorizerKey,
   accountRefString,
@@ -33,6 +32,8 @@ import {
   type EventPayload,
   Events,
   HandleDirectoryKey,
+  type HeartEvidenceInput,
+  HeartKey,
   holdsBack,
   inspectInput,
   type JsonValue,
@@ -220,6 +221,22 @@ export function streakOf(days: ReadonlySet<number>, today: number): number {
 const CONTROL = /[\u0000-\u001f\u007f]/g;
 
 /** A display name for the overlay: one line, at most 32 characters. */
+/**
+ * Something that happened between her and someone, for her nightly reflection on them
+ * (`HeartKey.evidence`); nothing when the heart does not run. Never throws.
+ */
+export function heartEvidence(
+  services: ServiceLookup,
+  log: Pick<Logger, "warn">,
+  input: HeartEvidenceInput,
+): void {
+  try {
+    services.get(HeartKey)?.evidence?.(input);
+  } catch (error) {
+    log.warn({ err: errorMessage(error), kind: input.kind }, "cannot record evidence");
+  }
+}
+
 function plainName(name: string): string {
   const flat = name.replace(CONTROL, " ").replace(/\s+/g, " ").trim();
   const cut = [...flat].slice(0, 32).join("");
@@ -536,11 +553,11 @@ export class EconomyService implements Economy {
     if (!people) return null;
     const person = await people.personByAccount(account);
     if (!person) return null;
+    // Whether she blocked them: their heart row (`SocialSignalsKey`, by account or by person).
     const social = s.get(SocialSignalsKey);
-    const affect = s.get(AffectStateKey);
     const authorizer = s.get(AuthorizerKey);
-    if ((!social && !affect) || !authorizer?.allows(account, WALLET_NODE)) return null;
-    if (social?.attitude(account)?.blocked || affect?.card(person.id)?.blocked) return null;
+    if (!social || !authorizer?.allows(account, WALLET_NODE)) return null;
+    if (social.attitude(account)?.blocked || social.attitudeOf?.(person.id)?.blocked) return null;
     return memberOf(account, person);
   }
 
@@ -1431,6 +1448,13 @@ export class EconomyService implements Economy {
     };
     this.#d.publish(Events.SocialEvent, payload as EventPayload<typeof Events.SocialEvent>);
     await this.#bond(who);
+    heartEvidence(this.#d.services, this.#d.log, {
+      person: who.person.id,
+      kind: "gift",
+      detail: `送了你${label}`,
+      weight: Math.abs(entry.delta),
+      at: this.#d.clock.now(),
+    });
     this.#perceive(who, entry, `${safeName(who.name)}送了你${label}`);
     this.#announce(who, item ?? "expression", count, label);
   }

@@ -3,6 +3,8 @@ import { exemptFromBusCheck, Supervisor } from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   Events,
+  HeartKey,
+  type HeartPeople,
   type JsonValue,
   newId,
   PresencePrivacyKey,
@@ -32,6 +34,10 @@ async function boot(store = new MemorySettingsStore(), config: JsonValue = { coa
   const contributors = new PromptContributors();
   sup.services.provide("app", SettingsStoreKey, store);
   sup.services.provide("app", SocialSignalsKey, social);
+  // Whom she cares about is the heart's 在意 (a stand-in here).
+  sup.services.provide("app", HeartKey, {
+    cares: (person: string) => (social.cares(person) ? 1 : 0),
+  } as unknown as HeartPeople);
   sup.services.provide("app", PromptContributorsKey, contributors);
   await sup.register(new CommandsModule(), null, true);
   await sup.register(

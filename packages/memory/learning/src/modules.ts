@@ -115,6 +115,48 @@ export async function reflectUnder(
   return { run: out.result, skipped: out.ran ? null : (out.why ?? "") };
 }
 
+/**
+ * The nightly reflection on each person (`Reflector.reflectPeople`), under the text runner's
+ * accounting of the nightly figure (`ReflectGuardKey`) like the daily reflection. When nothing ran
+ * under it (the figure is used up) or the figure ran out on the way, the pass is over for today.
+ */
+export async function reflectOnPeople(
+  ctx: Pick<ModuleContext, "services" | "clock" | "log">,
+  reflector: Reflector,
+  signal: AbortSignal,
+): Promise<string[]> {
+  const guard = ctx.services.get(ReflectGuardKey);
+  let names: string[] = [];
+  try {
+    if (guard === undefined) {
+      names = await reflector.reflectPeople(signal);
+    } else {
+      const out = await guard.run((within) => reflector.reflectPeople(within), signal);
+      if (!out.ran) {
+        ctx.log.info({ why: out.why }, "the nightly reflection on people did not run");
+        reflector.peopleFinished(ctx.clock.now());
+        return [];
+      }
+      if (out.result === null) {
+        // The guard caught a failure (or the figure ran out): over for today, not tried again at
+        // every tick, each try a job row of its own.
+        if (signal.aborted) return [];
+        ctx.log.warn({ why: out.why }, "the nightly reflection on people failed");
+        reflector.peopleFinished(ctx.clock.now());
+        return [];
+      }
+      names = out.result;
+    }
+  } catch (error) {
+    if (signal.aborted) return [];
+    ctx.log.warn({ err: errorMessage(error) }, "the nightly reflection on people failed");
+    reflector.peopleFinished(ctx.clock.now());
+    return [];
+  }
+  if (names.length > 0) ctx.log.info({ people: names.length }, "she reflected on people");
+  return names;
+}
+
 function personOf(services: ServiceLookup, account: AccountRef): PersonId | null {
   return services.get(SocialSignalsKey)?.attitude(account)?.person ?? null;
 }
@@ -148,7 +190,7 @@ export class ConversationModule implements Module {
   readonly manifest = defineManifest(ConversationModule.ID, "Conversation notes", {
     description: "Continuous conversation compaction into her own structured notes",
     requires: ["llm"],
-    optional: ["social", "knowledge"],
+    optional: ["heart", "knowledge"],
     configSchema: ConversationConfigSchema,
   });
   #engine: ConversationEngine | null = null;
@@ -254,7 +296,7 @@ export class KnowledgeModule implements Module {
   static readonly ID = "knowledge";
   readonly manifest = defineManifest(KnowledgeModule.ID, "Knowledge", {
     description: "Her self-organized documents about people, servers, herself and topics",
-    optional: ["social"],
+    optional: ["heart"],
     configSchema: KnowledgeConfigSchema,
   });
   #store: KnowledgeStore | null = null;
@@ -439,7 +481,7 @@ export class ReflectModule implements Module {
   readonly manifest = defineManifest(ReflectModule.ID, "Reflection", {
     description: "Feedback signals, lessons and her daily reflection",
     requires: ["llm"],
-    optional: ["self", "memory", "knowledge", "conversation", "social", "mind", "actions"],
+    optional: ["self", "memory", "knowledge", "conversation", "heart", "mind", "actions"],
     configSchema: ReflectConfigSchema,
   });
   #flush: (() => Promise<void>) | null = null;
@@ -689,7 +731,13 @@ export class ReflectModule implements Module {
         await feedback.persist();
         if (idle() !== null) continue;
         const due = reflector.due(clock.now(), budgetOf(s));
-        if (due === null) continue;
+        if (due === null) {
+          // After the daily reflection, one call per person (under the same nightly figure).
+          if (reflector.peopleDue(clock.now(), budgetOf(s))) {
+            await reflectOnPeople(ctx, reflector, signal);
+          }
+          continue;
+        }
         const { run, skipped } = await reflectUnder(
           due.kind === "daily" ? ctx.services.get(ReflectGuardKey) : undefined,
           (within) =>

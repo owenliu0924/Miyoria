@@ -44,7 +44,6 @@ import {
   type PartySnapshot as ContractPartySnapshot,
   type PendingApproval as ContractPendingApproval,
   type Person as ContractPerson,
-  type PersonCard as ContractPersonCard,
   type PredictionView as ContractPredictionView,
   type ProposedTool as ContractProposedTool,
   type QuestsView as ContractQuestsView,
@@ -52,8 +51,6 @@ import {
   type ReachedGoal as ContractReachedGoal,
   type ReflectionRun as ContractReflectionRun,
   type ReflectionStats as ContractReflectionStats,
-  type Relationship as ContractRelationship,
-  type RelationshipDelta as ContractRelationshipDelta,
   type ReminderView as ContractReminderView,
   type RoleAssignment as ContractRoleAssignment,
   type RoleDefinition as ContractRoleDefinition,
@@ -97,8 +94,6 @@ import type {
   DecisionRecord,
   MemoryRecord,
   Person,
-  Relationship,
-  RelationshipDelta,
   RoleAssignment,
   RoleDefinition,
   RoleMapping,
@@ -117,7 +112,6 @@ import type {
   Directive,
   EmergencyReport,
   FeedbackTally,
-  Feeling,
   Goal,
   JustNowEntry,
   KnowledgeDoc,
@@ -130,7 +124,7 @@ import type {
   NotebookEntry,
   NotebookPage,
   PartySnapshot,
-  PersonCard,
+  PersonId,
   ReflectionRun,
   ReflectionStats,
   Reminder,
@@ -139,6 +133,7 @@ import type {
   SkillShelfFile,
   Thought,
   ThoughtDigest,
+  Timestamp,
   VoiceParticipant,
   WorldSnapshot,
 } from "@miyoria/types";
@@ -166,8 +161,11 @@ const MANAGE_REFUSAL = "managing her data needs `owner.data.manage`";
 const CASES: Case[] = [
   { name: "people.list", method: "GET", path: "/api/people" },
   { name: "people.get", method: "GET", path: "/api/people/:id" },
+  { name: "people.history", method: "GET", path: "/api/people/:id/history" },
   { name: "people.update", method: "PATCH", path: "/api/people/:id" },
   { name: "people.adjust", method: "POST", path: "/api/people/:id/adjust" },
+  { name: "people.setAnchor", method: "PUT", path: "/api/people/:id/anchors/:tier" },
+  { name: "people.removeAnchor", method: "DELETE", path: "/api/people/:id/anchors/:tier" },
   { name: "people.wallet", method: "GET", path: "/api/people/:id/wallet" },
   {
     name: "people.adjustWallet",
@@ -281,9 +279,7 @@ const CASES: Case[] = [
   { name: "self", method: "GET", path: "/api/self" },
   { name: "world", method: "GET", path: "/api/world" },
   { name: "affect.snapshot", method: "GET", path: "/api/affect" },
-  { name: "affect.people", method: "GET", path: "/api/affect/people" },
   { name: "mind.goals", method: "GET", path: "/api/mind/goals" },
-  { name: "mind.plan", method: "GET", path: "/api/mind/plan" },
   { name: "prompts.list", method: "GET", path: "/api/prompts" },
   { name: "prompts.get", method: "GET", path: "/api/prompts/:turn" },
   { name: "turns.outcomes", method: "GET", path: "/api/turns/outcomes" },
@@ -384,9 +380,7 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 describe("the schemas agree with the types of the packages that own the shapes", () => {
   it("people", () => {
     const person: Same<ContractPerson, Person> = true;
-    const relationship: Same<ContractRelationship, Relationship> = true;
-    const delta: Same<ContractRelationshipDelta, RelationshipDelta> = true;
-    expect([person, relationship, delta]).toEqual([true, true, true]);
+    expect([person]).toEqual([true]);
   });
 
   it("modules, decisions and the cost report", () => {
@@ -492,7 +486,10 @@ describe("the schemas agree with the types of the packages that own the shapes",
   });
 
   it("her inner state, her world, her mood and her goals", () => {
-    // The self module's snapshot with her feelings named, and the world's with its channels named.
+    // The self module's snapshot with her impressions of people from the heart's rows (named), and
+    // the world's with its channels named. The panel's person cards are the heart's rows in the old
+    // words (`api/src/affect.ts`), with no type of their own to match.
+    type Feeling = { person: PersonId; text: string; updated_at: Timestamp };
     type Self = SelfSnapshot & { feelings: (Feeling & { display_name: string | null })[] };
     type World = Omit<WorldSnapshot, "channels"> & {
       channels: (ChannelActivity & { label: string | null })[];
@@ -500,9 +497,8 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const self: Same<ContractSelfView, Self> = true;
     const world: Same<ContractWorldView, World> = true;
     const affect: Same<ContractAffectSnapshot, AffectSnapshot> = true;
-    const card: Same<ContractPersonCard, PersonCard> = true;
     const goal: Same<ContractGoal, Goal> = true;
-    expect([self, world, affect, card, goal]).toEqual(Array(5).fill(true));
+    expect([self, world, affect, goal]).toEqual(Array(4).fill(true));
   });
 
   it("the saved prompts, how turns ended and the party games", () => {

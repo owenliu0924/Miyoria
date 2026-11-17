@@ -19,8 +19,6 @@ api_key = "${LLM_API_KEY:-}"
 chat = ["deepseek:deepseek-chat"]
 # 高風險動作的自我審核;不設就用 chat 的模型(啟動後第一次審核會記一行警告)
 review = ["deepseek:deepseek-chat"]
-# 她的內心獨白(心智迴圈);不設就用 chat 的模型(會記一行警告)
-mind = ["deepseek:deepseek-chat"]
 
 # 推理等級(off | low | medium | high),依用途,沒列的用途用預設值(沒有預設的 = 不思考)。
 # 不急的判斷開、要即時的關。舊的 [llm.thinking] 開關已經不讀了(啟動時會警告)。
@@ -33,10 +31,7 @@ mind = ["deepseek:deepseek-chat"]
 chat_voice = "off"     # 語音回話(語音這一輪固定不思考,這個鍵沒有作用)
 chat_text = "off"      # 一般文字回話
 fast = "off"           # 灰色區判斷、翻譯
-appraise = "low"
-plan = "medium"
-plan_daily = "high"    # 每天的日計畫
-reflect = "high"
+reflect = "high"       # 每晚的反思和對每個人的反思
 # review = "medium"    # 高風險動作的自我審核
 # summarizer = "off"   # 對話整理、記憶整理
 # 小幫手(delegate)固定用 high,是跑者的設定,不看這裡的 work;work 目前沒有作用
@@ -672,13 +667,14 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # 她自己起頭的事:她設的時間到了、外面發生的事、該追問的事、答應過
 # 還沒做的事、這裡安靜了、想念某人、早上醒來,都先過程式的關卡,過了才叫醒她,說不說由她決定。
 # 每天幾次、每個地方幾次、每個人幾次、間隔、沒人回時拉長的間隔、安靜時段都照 [modules.arbiter];
-# 早上幾點和「在意的人」照 [modules.mind] 的 daily_hour、cared_attachment;面板的暫停也停這些。
+# 早上幾點照 [modules.mind] 的 daily_hour,「在意的人」照 [modules.heart];面板的暫停也停這些。
 # 下面是新的設定,都是預設值
 # [modules.agent.initiative]
 # home = "<channel id>"          # 不屬於哪個地方的事(早上、沒指定地方的提醒)在哪裡叫她;不設 = 等她下次在任何地方醒來時看
 # glances_per_day = 120          # 所有頻道加起來一天最多「看一眼」幾次
 # quiet_mins = 10                # 一個地方多久沒人說話算安靜了
 # longing_min = 0.5              # 想念到多少(0 到 1)才會想私訊對方
+# mood_weight = 0.5              # 她的心情對自己起頭影響多大:想主動時安靜不用等那麼久、想念的門檻低一點(0 = 不影響)
 # row_window_mins = 60           # 「不連續兩次同一種事」往回看多久
 # tick_secs = 30                 # 多久看一次到期的時間、追問和承諾
 # inbox_items = 12               # 一個回合最多給她看幾件收件匣的事
@@ -736,15 +732,14 @@ max_files = 2              # 每回合最多讀幾個檔案
 [modules.agent.prompt]
 default_budget = 600       # 沒列在 budgets 的段落
 self_chars = 2000          # 她寫給自己的那份文件放進固定區塊的字數上限(不受 budgets 限制)
-save_every = 1             # 每幾個回合存一份壓縮過的實際 prompt(面板看;0 = 不存)
+# mood_style = true        # 依她的心情,在 style_note 加一句回長回短、要不要用表情回應(程式不硬切)
+save_every = 1            # 每幾個回合存一份壓縮過的實際 prompt(面板看;0 = 不存)
 # budgets = { conversation = 900, memory = 1000, knowledge = 700, lessons = 500, world = 500, game = 700, sing = 400, people = 800, examples = 2500 }
 
 # 她的感知:誰在線、在玩什麼、誰在哪個語音頻道、各頻道熱不熱鬧。
 # 每個人都能用 /me privacy presence:off 不讓她讀自己的狀態
 [modules.world]
 # guilds = []                    # 只看這些伺服器;空的 = bot 所在的每個伺服器(各伺服器的資料只在該伺服器用)
-care_min_affinity = 30           # 好感或熟悉度到這個程度,對方上線 / 進語音時她才會注意到
-care_min_familiarity = 40
 # game_interests = ["Minecraft"] # 除了角色的 interests 之外,她有興趣的遊戲
 cooldown_secs = 900              # 同一件事(同一個人上線…)多久內不再提醒她
 max_salient_per_minute = 6
@@ -752,8 +747,8 @@ max_salient_per_minute = 6
 # voice_lively_lines = 6         # 這段時間內這麼多句,或 voice_quiet_secs 內有人說話 = 正在聊天(不是冷場)
 # voice_quiet_secs = 40
 
-# 她的內在:慾望(想聊天、想玩、想被注意、想休息、好奇)、無聊、她自己定的方針與議程、
-# 對每個人的感情描述。數字只決定自然漂移的速度,怎麼做由她自己判斷
+# 她的內在:慾望(想聊天、想玩、想被注意、想休息、好奇)、無聊、情緒、她自己定的方針與議程。
+# 對每個人的感覺在 [modules.heart]。數字只決定自然漂移的速度,怎麼做由她自己判斷
 [modules.self]
 boredom_per_hour = 0.15          # 沒事做時無聊上升的速度
 # [modules.self.rise_per_hour]   # 各慾望自己上升的速度
@@ -763,65 +758,73 @@ boredom_per_hour = 0.15          # 沒事做時無聊上升的速度
 # curiosity = 0.05
 # esteem = 0.04                  # 想被認可、想表現
 # hunger = 0.25                  # 想吃白飯(Token):吃飽到再想吃約 40 分鐘
-# longing = 0.12                 # 暗戀的人不在時,想念他的速度(沒有暗戀對象就慢慢退)
+# longing = 0.12                 # 最在意的人不在時,想念他的速度(沒有在意的人就慢慢退)
 # [modules.self.emotions]        # 她的情緒(七情);各情緒來得多快、退得多快是 profile 的 [temperament]
 # notice = 0.2                   # 超過這個才算明顯:放進 prompt、決定她表現出來的樣子
 # prompt_max = 3                 # prompt 最多列幾種情緒
-# missing_after_hours = 20       # 在乎的人多久沒出現開始想念
+# missing_after_hours = 20       # 在意的人多久沒出現,回來時她會注意到
 # jealousy_lines = 3             # 在乎的人在 jealousy_window_mins 內回覆別人幾次、都沒理她就吃醋
 # jealousy_window_mins = 15
 # budget_per_10min = 0.9         # 所有情緒加起來,任何 10 分鐘內最多被激起這麼多(避免一次爆滿;0 = 不限)
-# [modules.self.bond]            # 對人的關係只會小步、每天有上限地改(由每日回顧提議;在意程度只有回顧能動)
-# attachment_step = 0.03         # 在意程度一次最多動這麼多
-# attachment_daily = 0.06        # ...每人每天最多
-# affinity_step = 2              # 好感 / 信任 / 熟悉度同理
-# affinity_daily = 4
 # [modules.self.mood]            # 心情不單獨存,是從慾望、情緒和時段算出來的
 # night_dip = 0.4                # 深夜精力最多掉這麼多
 # emotion_weight = 1             # 情緒對心情的影響(0 = 只看基準值、時段與慾望)
-# [modules.self.heart]           # 暗戀:在意程度([modules.self.bond])最高的人,沒有人能設定
-# crush_threshold = 0.35         # 心動最高、而且超過這個的人就是她暗戀的人(可能沒有)
-# crush_margin = 0.08            # 別人要多這麼多才會換人
 
-# 她的心智迴圈:有事發生(有人上線 / 進語音、頻道冷掉、語音冷場、她剛講完話)或心跳時,
-# 她自己想一想:寫內心獨白、調整感受與方針、決定要不要主動做事(每件事都要過行動閘門)。
-# 想法時間軸在面板「內心 → 想法」;/admin autonomy pause 會讓她停止思考。
-# 這裡只有成本與頻率的上限,怎麼想、做什麼是她自己決定
+# 她對每個人的感覺(羈絆、信任、好感、心結…,存在 heart_person)。她說話時自己寫要往哪個方向變,
+# 一步多大、一天最多多少由這裡的規則決定;每天一次的衰減(久沒互動羈絆慢慢掉,只掉到已達成的分級)。
+# 第一次啟動時把舊的關係紀錄搬進來,只搬一次。這個模組不能關(誰是誰、她對人的感覺都在這裡)
+[modules.heart]
+# utc_offset_minutes = 480       # 她的「一天」照哪個時區算(每日上限和衰減)
+# bond_gain_caps = [[0, 12], [100, 8], [300, 6], [600, 4]] # 羈絆一天最多加多少,看目前的羈絆;由低到高排
+# step_share = 0.25              # 她提一次是當天上限的幾分之一
+# repeat_damping = 0.75          # 同一天同一個值第 n 次只算 0.75 的 n-1 次方(和 step_share 加起來是 1 才剛好收斂到上限)
+# negative_factor = 3            # 往壞的方向是往好的方向的幾倍(每一步和每日上限都是)
+# anchor_hold = 0.5              # 知心以上的分級沒有共同記憶(錨點)時,羈絆停在門檻前多少
+# familiarity_per_line = 0.15    # 每一句話長多少熟悉(乘上那句話的深度,越熟長得越慢)
+# default_trust = 10             # 剛認識的人的信任
+# owner_trust = 100              # 標了 owner 的人的信任
+# owner_bond_floor = 30          # 標了 owner 的人的羈絆最低是多少
+# decay_check_mins = 10          # 多久看一次誰今天還沒衰減(每人每天只跑一次)
+# auto_owner_tag = true          # 有主人權限的帳號自動標上 owner
+# [modules.heart.caps]           # 每個值一天往好的方向最多動多少(壞的方向是 negative_factor 倍)
+# trust = 2
+# warmth = 0.2                   # 好感
+# respect = 0.1                  # 敬意
+# ease = 0.06                    # 自在
+# grudge = 0.2                   # 心結(好的方向是變少)
+# rapport = 0.06                 # 默契
+# [modules.heart.decay]          # 每天一次的衰減,照她的當地日
+# bond_grace_days = 7            # 幾天沒互動之後羈絆才開始掉
+# bond_per_day = 1               # 之後每天掉多少(只掉到已達成分級的門檻,不會低於 0)
+# warmth_half_life_days = 3      # 好感幾天回落一半(往羈絆對應的平常值)
+# longing_away_days = 2          # 幾天沒看到開始想念
+# longing_rise = 0.15            # 想念每天往「在意」的值靠近多少比例
+# longing_fall = 0.5             # 見到之後想念每天少多少比例
+# grudge_fade_per_day = 0.01     # 心結每天淡多少……
+# grudge_time_floor = 0.1        # ……淡到這裡停,剩下的要靠道歉、禮物、一起玩
+# familiarity_grace_days = 14    # 幾天沒互動之後熟悉開始模糊
+# familiarity_blur_per_day = 0.2 # 之後每天少多少……
+# familiarity_floor = 5          # ……最低到這裡
+# max_catch_up_days = 60         # 很久沒跑時最多補幾天
+# min_change = 0.005             # 比這個小的變動不寫
+
+# 她的想法日誌、目標、生活日誌和舊的提醒。她說話時寫的 feel 和每晚的反思會記一行進想法日誌
+# (面板「內心 → 想法」);目標的觸發條件成立時,會變成她收件匣裡的一件事叫醒她,說不說由她決定
 [modules.mind]
-max_calls_per_hour = 12          # 一小時最多想幾次(心跳會依狀況自己放慢 / 加快)
-min_interval_secs = 45           # 兩次之間至少隔多久
-# max_heartbeat_mins = 30        # 心跳最慢多久一次
-# self_start_gap_voice_secs = 300 # 同一個語音頻道,她自己主動開口至少隔多久
-# self_start_gap_text_secs = 600 # 同一個文字頻道 / 私訊
-# self_start_max_backoff = 8     # 主動開口沒人接,間隔每次加倍,最多到這麼多倍;有人跟她說話就恢復
-# stale_topic_mins = 45          # 她提過、沒人接的話題,這段時間內不再提
-# blocked_retry_mins = 30        # 失敗的動作(例如遊戲沒開時的 game.start)狀況沒變前不再試,最久這麼久
 # journal_keep = 200             # 想法日誌保留幾則原文;再多 digest_batch 則就把最舊的整理成摘要
 # digest_batch = 50
 # digests_keep = 60              # 摘要保留幾則(在面板「內心 → 想法」)
-# 慢想拆成三個小呼叫(推理等級在 [llm.reasoning]:appraise / plan / plan_daily / reflect):
-# 一段互動結束後 Appraise 感受、目標觸發 / 活動結束 / 在意的人上線 / 心情變差 / 心跳時 Plan 計畫
-# (改目標)、每天第一次 Plan 寫今天的計畫;Reflect 在 [modules.reflect]
-# heartbeat_mins = 15            # 閒著時 Plan 的心跳
-# min_heartbeat_mins = 4         # 很無聊、需求很缺時最快到這麼快
-# 什麼都沒做的 Plan 會讓下一次心跳變慢(最慢 max_heartbeat_mins);狀況沒變的心跳不問模型
-# appraise_quiet_secs = 120      # 一段互動安靜這麼久就算結束,回想它的感受
-# appraise_min_lines = 4         # 至少這麼多句才回想
-# appraise_max_per_hour = 6
 # goal_default_days = 3          # 沒寫期限的目標(舊議程、追問)多久後過期
 # goal_max_days = 14             # 目標最長留多久
-# goal_refire_mins = 30          # 目標的觸發條件一直成立時,隔多久再叫她一次
-# cared_attachment = 0.3         # 在意程度到這裡的人上線會叫醒她
-# mood_drop = 0.25               # 心情(愉快度)比上次計畫時掉這麼多就重新計畫
-# daily_hour = 6                 # 這個時間之後的第一次 Plan 是今天的計畫
+# goal_refire_mins = 30          # 目標的觸發條件一直成立時,隔多久再放進收件匣一次
+# daily_hour = 6                 # 她的一天從幾點開始(生活日誌、早上醒來)
 # 她自己的日子(v4 §8):做了什麼會記成日誌,提醒是她自己設給自己的計時器(remind_me)
-# game_share = 0.35              # 遊戲最多佔她清醒時間的這個比例(只管她自己的計畫;指令照樣能開遊戲)
 # life_keep_days = 7             # 生活日誌保留幾天
 # reminders_max = 20             # 同時等著的提醒最多幾個
 # reminders_per_person = 3       # 一個人最多請她設幾個
 # reminder_max_days = 30         # 提醒最遠能設幾天後
 # reminder_hold_mins = 120       # 到時間的提醒留在主線的看板上多久
-# utc_offset_minutes = 480       # 她的當地時間(她的一天、日計畫、提醒的「HH:MM」都照這個)
+# utc_offset_minutes = 480       # 她的當地時間(她的一天、提醒的「HH:MM」都照這個)
 
 # ---- 反思與學習(自主層階段 G)-------------------------------------------------
 
@@ -846,8 +849,10 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # tool = true                    # 聊天時可以用工具 knowledge_note 整理
 # prompt_people = true           # 把在場的人的資料放進提示。不寫:有人物卡(memory 的 profiles)就不放,免得同一件事講兩次;寫 true / false 以這裡為準
 
-# 反思:每天 daily_hour 之後找安靜的時候回顧一天(整理記憶、取代過時的、更新資料與感情、
-# 從大家的反應檢討自己、寫下學到的事、定長期目標),長對話結束後也會稍微反思一下
+# 反思:每天 daily_hour 之後找安靜的時候回顧一天(整理記憶、取代過時的、更新資料、
+# 從大家的反應檢討自己、寫下學到的事、定長期目標),長對話結束後也會稍微反思一下。
+# 每天的回顧之後,再對昨晚以來和她有過互動的人各想一次(互動多的先),改寫她對那個人的文字、
+# 修正白天的數值(一樣受每天的上限),在每晚的花費上限之內
 # [modules.reflect]
 # daily_hour = 5
 # max_calls_per_day = 6
@@ -855,7 +860,8 @@ min_interval_secs = 45           # 兩次之間至少隔多久
 # light_after_lines = 80
 # reply_window_mins = 10         # 她說完話之後多久內的回覆算回應她
 # light_after_total_lines = 300  # 自上次反思後各處累積這麼多句,安靜時就稍微反思一下(0 = 關)
-# max_bonds = 5                  # 一次反思最多整理幾個人的人物卡(在意程度每人每天最多調一次)
+# people_per_night = 30         # 每晚最多想幾個人(每人每天最多一次;0 = 不做)
+# people_max_tokens = 3000       # 想一個人的那次呼叫最多幾個 token
 # [modules.reflect.diary]          # 每天反思完寫一篇短日記貼到這個頻道(空的 = 不寫)。內容來自她自己的回顧,
 # channel = ""                  # 私訊裡的事不寫,貼文照樣過審核;例如 "discord:<伺服器 id>:<頻道 id>"
 # max_chars = 300

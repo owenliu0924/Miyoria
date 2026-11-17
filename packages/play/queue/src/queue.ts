@@ -249,8 +249,19 @@ function roundHalfAway(x: number): number {
   return Math.sign(x) * Math.round(Math.abs(x));
 }
 
+/** A service or the function that looks it up, as a function. */
+function lookup(
+  social: SocialSignals | (() => SocialSignals | null) | null,
+): () => SocialSignals | null {
+  return typeof social === "function" ? social : () => social;
+}
+
 export interface RequestQueueOptions {
-  social?: SocialSignals | null;
+  /**
+   * How she feels about requesters, or where to look it up at each use (the module that provides
+   * it may restart and provide a new one).
+   */
+  social?: SocialSignals | (() => SocialSignals | null) | null;
   store?: SettingsStore | null;
   publisher?: Publisher | null;
   clock?: Clock;
@@ -271,7 +282,7 @@ export interface RequestQueueOptions {
 export class RequestQueue {
   readonly config: QueueConfig;
   readonly #state: State = newState();
-  #social: SocialSignals | null;
+  #social: () => SocialSignals | null;
   #store: SettingsStore | null;
   #publisher: Publisher | null;
   #clock: Clock;
@@ -285,14 +296,14 @@ export class RequestQueue {
     options: RequestQueueOptions = {},
   ) {
     this.config = config;
-    this.#social = options.social ?? null;
+    this.#social = lookup(options.social ?? null);
     this.#store = options.store ?? null;
     this.#publisher = options.publisher ?? null;
     this.#clock = options.clock ?? systemClock;
   }
 
-  withSocial(social: SocialSignals | null): this {
-    this.#social = social;
+  withSocial(social: SocialSignals | (() => SocialSignals | null) | null): this {
+    this.#social = lookup(social);
     return this;
   }
 
@@ -322,7 +333,7 @@ export class RequestQueue {
     }
     const kind = req.kind.trim().toLowerCase();
     req.kind = kind === "" ? guessKind(req.text) : [...kind].slice(0, 32).join("");
-    if (this.#social?.attitude(req.requester)?.blocked) throw QueueError.blocked();
+    if (this.#social()?.attitude(req.requester)?.blocked) throw QueueError.blocked();
     return this.#commit((st, now) => {
       if (pendingTotal(st) >= this.config.max_pending) {
         throw QueueError.queueFull(this.config.max_pending);
@@ -693,7 +704,7 @@ export class RequestQueue {
 
   #affinity(account: AccountRef): number {
     // Weight counts plain affinity only: bond stacked past 100 does not buy a queue place.
-    return Math.min(this.#social?.attitude(account)?.affinity ?? 0, 100);
+    return Math.min(this.#social()?.attitude(account)?.affinity ?? 0, 100);
   }
 
   /** Indexes into `st.items` of the pending items, in service order. */

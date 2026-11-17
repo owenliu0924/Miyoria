@@ -45,7 +45,7 @@ const SELF: SelfView = {
     },
   ],
   feelings: [
-    { person: "p1", display_name: "Owen", text: "最近常陪我聊天,有點在意他", updated_at: "2026-11-02T11:30:00.000Z", by: "self" },
+    { person: "p1", display_name: "Owen", text: "最近常陪我聊天,有點在意他", updated_at: "2026-11-02T11:30:00.000Z" },
   ],
 };
 
@@ -181,14 +181,8 @@ function mindView(paused: boolean, approvals: number): MindView {
   return {
     paused,
     running: true,
-    accepting: !paused,
     stats: {
-      calls_last_hour: 3,
-      max_calls_per_hour: 12,
-      calls_total: 40,
-      tokens_total: 52_000,
       last_at: "2026-11-02T11:59:00.000Z",
-      next_heartbeat_at: "2026-11-02T12:10:00.000Z",
       idle_reason: paused ? "paused" : null,
     },
     pending_approvals: approvals,
@@ -263,20 +257,11 @@ describe("Inner", () => {
     expect(screen.getByText("星期一 晚上 20:00")).toBeInTheDocument();
   });
 
-  it("lists her feelings and the world on their tabs", async () => {
+  it("lists the world on its tab", async () => {
     serve();
     const user = userEvent.setup();
     renderRoute("/inner");
-    await user.click(await screen.findByRole("tab", { name: "感情" }));
-    const feelings = await screen.findByRole("table", { name: "感情" });
-    expect(within(feelings).getByRole("link", { name: "Owen" })).toHaveAttribute(
-      "href",
-      "/character?tab=people&person=p1",
-    );
-    expect(within(feelings).getByText("最近常陪我聊天,有點在意他")).toBeInTheDocument();
-    expect(within(feelings).getByText("她")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "世界" }));
+    await user.click(await screen.findByRole("tab", { name: "世界" }));
     const people = await screen.findByRole("table", { name: "在線的人" });
     const owen = within(people).getByText("Owen").closest("tr") as HTMLElement;
     expect(within(owen).getByText("在線")).toBeInTheDocument();
@@ -305,7 +290,6 @@ describe("Inner", () => {
       drives: { social, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.4, esteem: 0.4, hunger: 0.3, longing: 0 },
       initiative: 0.5,
       llm: { calls: 0, prompt_tokens: 0, completion_tokens: 0, cached_prompt_tokens: 0, cost_usd: 0, errors: 0, first_token: { count: 0, sum_s: 0, buckets: [] } },
-      mind: null,
       voice_sessions: 0,
       speaking: false,
       events: {},
@@ -371,7 +355,7 @@ describe("Inner", () => {
     expect(within(intents).getByText(/對方意願 · the person opted out of DMs/)).toBeInTheDocument();
 
     const status = await screen.findByLabelText("心智迴圈");
-    expect(within(status).getByText("3 / 12")).toBeInTheDocument();
+    expect(within(status).getByText("上次記下")).toBeInTheDocument();
     expect(within(screen.getByRole("main")).getByText("運作中")).toBeInTheDocument();
 
     const approvals = screen.getByRole("table", { name: "等待確認" });

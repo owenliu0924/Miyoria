@@ -103,7 +103,7 @@ export class ArbiterModule implements Module {
   static readonly ID = "arbiter";
   readonly manifest = defineManifest(ArbiterModule.ID, "Arbiter", {
     description: "Decides whether she speaks or acts now; keeps her ledger",
-    optional: ["facts", "agent", "actions", "llm", "social", "memory"],
+    optional: ["facts", "agent", "actions", "llm", "heart", "memory"],
     configSchema: ArbiterConfigSchema,
   });
   readonly #clock: Clock | undefined;

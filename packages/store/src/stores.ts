@@ -231,6 +231,12 @@ export interface MemoryRecordStore {
   mergePerson(keep: PersonId, absorb: PersonId): Promise<number>;
 }
 
+/**
+ * The old `relationships` and `relationship_deltas` tables. Read-only since phase 4 step 5: what
+ * she feels about people lives on the heart's `heart_person` rows, and only the heart's migration
+ * (`@miyoria/heart/person`, `migrateOnStart`) reads these. The writes stay for the store's own
+ * tests and the data page until v5-data §8 step 14 drops the tables.
+ */
 export interface RelationshipStore {
   get(profile: ProfileId, person: PersonId): Promise<Relationship | null>;
   upsert(relationship: Relationship): Promise<void>;
@@ -384,7 +390,6 @@ export const PeopleStoreKey = serviceKey<PeopleStore>("PeopleStore");
 export const DecisionLogKey = serviceKey<DecisionLog>("DecisionLog");
 export const SettingsStoreKey = serviceKey<SettingsStore>("SettingsStore");
 export const MemoryRecordStoreKey = serviceKey<MemoryRecordStore>("MemoryRecordStore");
-export const RelationshipStoreKey = serviceKey<RelationshipStore>("RelationshipStore");
 export const IdentityStoreKey = serviceKey<IdentityStore>("IdentityStore");
 export const AuthStoreKey = serviceKey<AuthStore>("AuthStore");
 export const AuditLogKey = serviceKey<AuditLog>("AuditLog");

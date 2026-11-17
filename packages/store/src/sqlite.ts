@@ -578,14 +578,29 @@ export class SqliteStore implements Store {
         return { counts: { persons: 1, accounts: moved } };
       },
     });
+    const db = this.#db;
     personData.add({
       plugin: "legacy",
-      forgetPerson: () =>
-        declined(
-          "her bond with them and what she calls them stay; the member page deletes their cards",
-        ),
+      // The old tables are frozen (the heart migrated them); her old notes on them and the reasons
+      // of the old changes are words made of what they said, so they go. The numbers stay.
+      forgetPerson: (r) => {
+        const ids = { ids: JSON.stringify(r.ids) };
+        const among = "person_id IN (SELECT value FROM json_each($ids))";
+        return {
+          counts: {
+            notes: db.run(
+              `UPDATE relationships SET notes = '' WHERE ${among} AND notes <> ''`,
+              ids,
+            ),
+            reasons: db.run(
+              `UPDATE relationship_deltas SET reason = '' WHERE ${among} AND reason <> ''`,
+              ids,
+            ),
+          },
+        };
+      },
       mergePerson: () =>
-        declined("the social module merges the relationship through its cache before the people"),
+        declined("the old relationship tables are frozen: the heart's rows are merged instead"),
     });
   }
 

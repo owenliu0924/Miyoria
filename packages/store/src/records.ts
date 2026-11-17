@@ -246,7 +246,10 @@ export interface PrunePolicy {
 
 // ---- relationships ----------------------------------------------------------------------
 
-/** How one profile (character) feels about one person. */
+/**
+ * How one profile (character) felt about one person, in the old table (read-only since phase 4
+ * step 5; the heart's `heart_person` rows replace it).
+ */
 export interface Relationship {
   profile: ProfileId;
   person: PersonId;

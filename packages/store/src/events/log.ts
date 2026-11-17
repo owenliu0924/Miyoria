@@ -693,6 +693,76 @@ export class EventStore implements EventLogStore {
     return records;
   }
 
+  /**
+   * Takes the words out of the events `filter` matches and keeps the rest of their payload: each
+   * of `fields` that holds a non-empty string becomes `""`, and the payload is marked
+   * `"redacted": true` (core migration 7). For events that must stay readable after "forget me"
+   * (a change's numbers are the day's caps and a person's history), where `redactWhere` would take
+   * the whole payload. An event with none of `fields` to empty is left as it is. In one
+   * transaction, each with its `privacy.redacted` record; returns the records.
+   */
+  redactFields(
+    filter: RedactionFilter,
+    fields: readonly string[],
+    reason: string,
+    source: string,
+  ): EventEnvelope[] {
+    if (filter.key === undefined && filter.personId === undefined) {
+      throw new StoreError("a redaction names a key or a person");
+    }
+    if (filter.types?.length === 0 || fields.length === 0) return [];
+    const where = ["redacted_at IS NULL"];
+    const params: Params = {};
+    if (filter.key !== undefined) {
+      where.push("key = $key");
+      params.key = filter.key;
+    }
+    if (filter.personId !== undefined) {
+      where.push("person_id = $person");
+      params.person = filter.personId;
+    }
+    if (filter.types !== undefined) {
+      where.push("type IN (SELECT value FROM json_each($types))");
+      params.types = JSON.stringify(filter.types);
+    }
+    let records: EventEnvelope[];
+    try {
+      records = this.#db.tx(() => {
+        const at = this.#db.nowMicros();
+        const out: EventEnvelope[] = [];
+        const rows = this.#db.all(
+          `SELECT * FROM events WHERE ${where.join(" AND ")} ORDER BY seq`,
+          params,
+        );
+        for (const row of rows) {
+          const target = envelopeOf(row);
+          const data = target.data;
+          if (!isJsonObject(data) || data.redacted === true) continue;
+          const words = fields.filter((f) => typeof data[f] === "string" && data[f] !== "");
+          if (words.length === 0) continue;
+          const kept: Record<string, JsonValue> = { ...data, redacted: true };
+          for (const f of words) kept[f] = "";
+          this.#db.run(
+            "UPDATE events SET data = $data, redacted_at = $at WHERE id = $id AND redacted_at IS NULL",
+            { data: JSON.stringify(kept), at, id: target.id },
+          );
+          out.push(this.#record(target, reason, source));
+        }
+        return out;
+      });
+    } catch (cause) {
+      if (cause instanceof StoreError) throw cause;
+      throw new StoreError("cannot redact the events", { cause });
+    }
+    const ids = records.flatMap((r) => {
+      const data = r.data;
+      return isJsonObject(data) && typeof data.target === "string" ? [data.target] : [];
+    });
+    // No keys: a later event of the same key is not one whose words were asked to go.
+    this.#told({ ids, keys: [] });
+    return records;
+  }
+
   // ---- compaction ---------------------------------------------------------------------------
 
   /** Rows of `tier` from before `before` that no row names as its parent, oldest first. */

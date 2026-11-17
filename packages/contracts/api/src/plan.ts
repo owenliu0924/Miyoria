@@ -1,5 +1,6 @@
 // What she wants to do, read-only: `GET /api/mind/goals` (her structured agenda, soonest trigger
-// first) and `GET /api/mind/plan` (today's plan in her words). They join the `mind` group.
+// first). It joins the `mind` group. (Her day plan, `GET /api/mind/plan`, went with Plan in phase 4
+// step 5.)
 
 import { z } from "zod";
 import { ContextKeySchema, TimestampSchema } from "../../wire/src/index.js";
@@ -62,12 +63,6 @@ export const GoalsViewSchema = z
   .meta({ id: "ApiGoalsView" });
 export type GoalsView = z.output<typeof GoalsViewSchema>;
 
-/** `GET /api/mind/plan`: today's plan in her words (`null`: not written yet). */
-export const DayPlanViewSchema = z
-  .object({ day_plan: z.string().nullable() })
-  .meta({ id: "ApiDayPlanView" });
-export type DayPlanView = z.output<typeof DayPlanViewSchema>;
-
 /** Joins the `mind` group. */
 export const mindPlan = {
   /** `closed=true` adds the goals that are done or dropped, when the agenda keeps them. */
@@ -76,8 +71,4 @@ export const mindPlan = {
     .route({ method: "GET", path: "/api/mind/goals" })
     .input(z.object({ query: z.object({ closed: FlagQuery.optional() }) }))
     .output(GoalsViewSchema),
-  plan: route
-    .meta({ audience: "admin", permission: null })
-    .route({ method: "GET", path: "/api/mind/plan" })
-    .output(DayPlanViewSchema),
 };

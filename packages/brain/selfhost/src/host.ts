@@ -114,6 +114,7 @@ import {
   wakeAuthor,
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
+import { answeredLine, applyFeel, feelApplies, feelDeps } from "./feel.js";
 import { startIdleCompaction } from "./idle-compaction.js";
 import { ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
@@ -123,7 +124,7 @@ import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
-import { outletClaims } from "./repeat.js";
+import { knownPeople, outletClaims } from "./repeat.js";
 import { PromptKeeper } from "./saved.js";
 import { askedLine, SAY_DM } from "./texts.js";
 import { VoiceHost } from "./voice.js";
@@ -252,6 +253,7 @@ export class SelfHost implements TextRunner {
       startsToday: (now) => this.initiative.gates.startsToday(now),
       slowReads: (input) => this.voice.slowReads(input),
       replyContext: (input) => this.#replyContext(input.turn),
+      present: (input) => this.voice.roster(input.session.context),
     });
     this.voice = new VoiceHost(agent, {
       transcript,
@@ -281,6 +283,8 @@ export class SelfHost implements TextRunner {
       outletClaims(agent, {
         wakeOf: (turn) => this.#turns.get(turn)?.run.wake ?? null,
         entries: (place) => this.transcript.tail(this.#sessionFor(place)).entries,
+        named: (turn) => this.prompt.named(turn),
+        members: (place) => this.voice.roster(place),
       }),
     );
     const services = agent.ctx.services;
@@ -956,9 +960,28 @@ export class SelfHost implements TextRunner {
       floor?.turnEnded(turn);
     }
     if (result?.compacted) this.prompt.forget(place.session);
+    if (result !== null) this.#feel(context, place.session, run, result);
     this.#publish(state, result, error);
     const outcome = result?.outcome ?? (error === null ? null : "failed");
     this.initiative.runEnded(run.wake, turn, context, outcome, state.lines > 0);
+  }
+
+  /** Her `<feel>` blocks of a run that ended, to the emotion engine and the heart (`feel.ts`). */
+  #feel(context: ContextKey, session: string, run: LaneRun, result: RunResult): void {
+    if (result.feel.length === 0 || !feelApplies(run)) return;
+    try {
+      const entries = this.transcript.tail(session).entries;
+      applyFeel(feelDeps(this.#agent), {
+        turn: run.turn,
+        context,
+        wake: run.wake,
+        feel: result.feel,
+        people: [...knownPeople(entries, run.wake), ...this.voice.roster(context)],
+        line: answeredLine(run.wake, run.inputs, entries),
+      });
+    } catch (error) {
+      this.#agent.log.warn({ turn: run.turn, err: errorMessage(error) }, "feel not applied");
+    }
   }
 
   /** The lines around a parent the run of `turn` replies to and cannot see (block 7). */
@@ -1061,7 +1084,9 @@ export class SelfHost implements TextRunner {
         break;
       }
       case "screened":
-        if (event.kind !== "tag_stripped") state.tally.count(event.kind, event.count);
+        if (event.kind === "feel_cut") {
+          agent.log.debug({ turn: event.turn, lines: event.count }, "feel lines left out");
+        } else if (event.kind !== "tag_stripped") state.tally.count(event.kind, event.count);
         break;
       case "tool_call":
         if (event.job !== null) {

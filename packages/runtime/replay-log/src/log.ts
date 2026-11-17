@@ -34,13 +34,6 @@ export interface ScriptedLlmConfig {
   replies?: string[];
   /** Time to the first token of every reply (ms). Default 1500. */
   latency_ms?: number;
-  /** What a Plan call answers (JSON text, cycled). Default `{}` (nothing to do). */
-  plans?: string[];
-  /**
-   * Plan reads her ledger: while its limits say "not now" it answers `{}` (default true; false:
-   * she plans blind, as the v1 mind did).
-   */
-  plan_reads_ledger?: boolean;
 }
 
 export interface ReplayMeta {

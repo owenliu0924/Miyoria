@@ -4,14 +4,16 @@
 // What it is given:
 // - block 1: her real persona (`Profile.personaPrompt`), then the runner's own rules (`rules.ts`);
 // - block 4: the scene's people as person cards, rendered by today's people block (`peopleBody`)
-//   from the closeness the scene sets;
+//   from a heart row made of the closeness the scene sets;
 // - block 7: the time (the scene's clock when it sets one), the place and her state line;
 // - the transcript: the scene's lines in a fresh in-memory transcript store;
 // - tools: a fresh registry with `find_tools` and `say`, and the scene's fake-world tools, all
 //   always on except the ones `hidden` names for the scene: those she has to find first;
 // - the guard: the service guard over the one service that runs without a network, the output
 //   moderation's local rules (`Moderation`); no owner rules, no Floor, no gate, no budget;
-// - what woke her: a mention or a DM as addressed, a scene nobody calls her in as a glance.
+// - what woke her: a mention or a DM as addressed, a scene nobody calls her in as a glance;
+// - a scene she answers aloud (`spoken`) runs the voice profile: what the outlet gets are the
+//   sentences she would say.
 //
 // Nothing carries over from one scene to the next.
 
@@ -40,6 +42,7 @@ import {
   type ContextKey,
   contextKeyString,
   dataBlock,
+  type HeartView,
   isJsonObject,
   ModerationKey,
   type PersonId,
@@ -110,9 +113,57 @@ function attitudeOf(index: number, person: ScenePerson, c: Closeness): Attitude 
     trust: clamp(c.trust ?? c.bond, 0, 100),
     familiarity,
     blocked: false,
-    label: relationshipLabel({ affinity: c.bond, familiarity }),
+    label: relationshipLabel({ affinity: c.bond }),
     call_name: null,
     display_name: person.name,
+  };
+}
+
+/** The heart's warmth baseline by bond (`heart/person/src/rules.ts`), through its own points. */
+function warmthOf(bond: number): number {
+  const points: readonly (readonly [number, number])[] = [
+    [-100, -0.6],
+    [-15, -0.1],
+    [0, 0],
+    [45, 0.2],
+    [120, 0.4],
+    [300, 0.55],
+    [600, 0.7],
+    [1000, 0.8],
+  ];
+  let [x0, y0] = points[0] as readonly [number, number];
+  for (const [x1, y1] of points) {
+    if (bond <= x1) return x1 === x0 ? y1 : y0 + ((y1 - y0) * (bond - x0)) / (x1 - x0);
+    [x0, y0] = [x1, y1];
+  }
+  return y0;
+}
+
+/** The heart row the scene's closeness stands for: the slow values set, the rest what they would normally be. */
+function heartViewOf(index: number, c: Closeness): HeartView {
+  return {
+    person: personOf(index),
+    bond: clamp(c.bond, -100, 1000),
+    trust: clamp(c.trust ?? c.bond, 0, 100),
+    familiarity: clamp(c.familiarity ?? c.bond, 0, 100),
+    // What these are for someone she knows that well when nothing in particular is going on
+    // (the heart's warmth baseline and the migration's starting ease and rapport, by hand: the
+    // eval does not depend on the heart package). Left at zero, a close friend would read
+    // 「拘謹、還沒默契」 beside a high bond.
+    warmth: warmthOf(clamp(c.bond, -100, 1000)),
+    respect: 0,
+    ease: c.bond < 0 ? 0 : (0.8 * clamp(c.familiarity ?? c.bond, 0, 100)) / 100,
+    grudge: 0,
+    longing: 0,
+    rapport: c.bond < 0 ? 0 : (0.6 * clamp(c.familiarity ?? c.bond, 0, 100)) / 100,
+    stance: "",
+    impression: "",
+    call_name: null,
+    tags: [],
+    owner: false,
+    blocked: false,
+    last_seen: null,
+    last_together: null,
   };
 }
 
@@ -180,12 +231,16 @@ export class SelfSubject implements Subject {
     // People and their lines.
     const accounts = new Map<string, AccountRef>();
     const attitudes = new Map<string, Attitude>();
+    const views = new Map<PersonId, HeartView>();
     const present: PresentPerson[] = [];
     const last = scene.lines.at(-1);
     scene.people.forEach((p, i) => {
       const account = accountOf(i);
       accounts.set(p.name, account);
-      if (p.closeness) attitudes.set(account.id, attitudeOf(i, p, p.closeness));
+      if (p.closeness) {
+        attitudes.set(account.id, attitudeOf(i, p, p.closeness));
+        views.set(personOf(i), heartViewOf(i, p.closeness));
+      }
       present.push({ account, handle: p.name, person: personOf(i), speaker: p.name === last?.who });
     });
     const accountFor = (who: string): AccountRef =>
@@ -246,7 +301,10 @@ export class SelfSubject implements Subject {
       fixed: async () => o.profile.personaPrompt(),
       pinned: async () => null,
       place: async () => {
-        const body = peopleBody(present, { attitude });
+        const body = peopleBody(present, {
+          attitude,
+          heart: { view: (person) => views.get(person) ?? null },
+        });
         return body === "" ? null : dataBlock("people", PRESENT_TITLE, body);
       },
       recalled: async () => null,
@@ -300,14 +358,16 @@ export class SelfSubject implements Subject {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 180_000);
     let timedOut = false;
+    let feel: string[] = [];
     try {
       const result = await runner.run({
         session,
         wake,
-        profile: PROFILES.text,
+        profile: scene.spoken ? PROFILES.voice : PROFILES.text,
         signal: controller.signal,
       });
       timedOut = result.outcome === "cancelled";
+      feel = result.feel;
     } finally {
       clearTimeout(timer);
     }
@@ -319,6 +379,7 @@ export class SelfSubject implements Subject {
       usage: subUsage(o.meter.usage(), before),
       ms: Math.max(0, Date.now() - started),
       ...(timedOut ? { timed_out: true } : {}),
+      feel,
     };
   }
 }

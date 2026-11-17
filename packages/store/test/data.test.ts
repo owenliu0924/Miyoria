@@ -226,7 +226,7 @@ describe("data categories", () => {
       "people",
     ]);
     expect(categoryModules(resolveCategories(["people"]))).toEqual([
-      "social",
+      "heart",
       "agent",
       "self",
       "mind",

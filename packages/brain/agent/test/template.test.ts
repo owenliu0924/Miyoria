@@ -23,7 +23,7 @@ describe("config templates", () => {
       const llm = LlmConfigSchema.parse(config.section("llm"));
       expect(llm.image_input).toEqual({});
       expect(llm.reasoning.chat_text).toBe("off");
-      expect(llm.reasoning.plan_daily).toBe("high");
+      expect(llm.reasoning.reflect).toBe("high");
     });
   }
 });

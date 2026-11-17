@@ -163,6 +163,7 @@ const ANSWERS = {
   "member.session": { name: "Alice", avatar_url: null } satisfies ApiOutputs["member"]["session"],
   "member.me": {
     card: WORDS,
+    bond: null,
     memories: [{ text: "a", kind: "fact", date: "2026-11-08" }],
     songs: [],
     activity: [{ date: "2026-11-08", text: 1, voice: 0 }],

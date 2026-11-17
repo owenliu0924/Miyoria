@@ -651,33 +651,6 @@
         "wants"
       ]
     },
-    "EventsAffectBond": {
-      "type": "object",
-      "properties": {
-        "person": {
-          "type": "string"
-        },
-        "affinity": {
-          "type": "number"
-        },
-        "trust": {
-          "type": "number"
-        },
-        "familiarity": {
-          "type": "number"
-        },
-        "why": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "person",
-        "affinity",
-        "trust",
-        "familiarity",
-        "why"
-      ]
-    },
     "EventsAffectEvent": {
       "type": "object",
       "properties": {
@@ -865,51 +838,6 @@
         "tool",
         "ok",
         "result"
-      ]
-    },
-    "EventsAppraisedPerson": {
-      "type": "object",
-      "properties": {
-        "person": {
-          "type": "string"
-        },
-        "name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "toward_her": {
-          "type": "number"
-        },
-        "romance": {
-          "type": "number"
-        },
-        "others": {
-          "type": "number"
-        },
-        "promise": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "kept",
-                "broken"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "person",
-        "name",
-        "toward_her",
-        "romance",
-        "others",
-        "promise"
       ]
     },
     "EventsArbiterDecision": {
@@ -3192,6 +3120,112 @@
             "kind"
           ]
         }
+      ]
+    },
+    "EventsHeartCause": {
+      "type": "string",
+      "enum": [
+        "feel",
+        "reflect",
+        "evidence",
+        "decay",
+        "admin",
+        "migrate"
+      ]
+    },
+    "EventsHeartChanged": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "field": {
+          "$ref": "#/$defs/EventsHeartField"
+        },
+        "delta": {
+          "type": "number"
+        },
+        "value_after": {
+          "type": "number"
+        },
+        "proposed": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reason_quote": {
+          "type": "string"
+        },
+        "cause": {
+          "$ref": "#/$defs/EventsHeartCause"
+        }
+      },
+      "required": [
+        "person",
+        "field",
+        "delta",
+        "value_after",
+        "proposed",
+        "reason_quote",
+        "cause"
+      ]
+    },
+    "EventsHeartEvidence": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EventsHeartEvidenceKind"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "weight": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "person",
+        "kind",
+        "detail",
+        "weight",
+        "at"
+      ]
+    },
+    "EventsHeartEvidenceKind": {
+      "type": "string",
+      "enum": [
+        "voice_together",
+        "heard_song",
+        "played_together",
+        "task_together",
+        "gift",
+        "card",
+        "deal_kept",
+        "deal_broken"
+      ]
+    },
+    "EventsHeartField": {
+      "type": "string",
+      "enum": [
+        "bond",
+        "trust",
+        "familiarity",
+        "warmth",
+        "respect",
+        "ease",
+        "grudge",
+        "longing",
+        "rapport"
       ]
     },
     "EventsHerActivity": {
@@ -6110,34 +6144,6 @@
         "masked"
       ]
     },
-    "EventsSocialAppraisal": {
-      "type": "object",
-      "properties": {
-        "context": {
-          "$ref": "#/$defs/WireContextKey"
-        },
-        "her": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "type": "number"
-          }
-        },
-        "people": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/EventsAppraisedPerson"
-          }
-        }
-      },
-      "required": [
-        "context",
-        "her",
-        "people"
-      ]
-    },
     "EventsSocialEvent": {
       "type": "object",
       "properties": {
@@ -6179,73 +6185,6 @@
         "kind",
         "source",
         "scale",
-        "context"
-      ]
-    },
-    "EventsSocialRelationship": {
-      "type": "object",
-      "properties": {
-        "profile": {
-          "type": "string"
-        },
-        "person": {
-          "type": "string"
-        },
-        "name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "reason": {
-          "type": "string"
-        },
-        "kind": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "positive": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "affinity": {
-          "type": "number"
-        },
-        "trust": {
-          "type": "number"
-        },
-        "familiarity": {
-          "type": "number"
-        },
-        "label": {
-          "type": "string"
-        },
-        "context": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WireContextKey"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "profile",
-        "person",
-        "name",
-        "reason",
-        "kind",
-        "positive",
-        "affinity",
-        "trust",
-        "familiarity",
-        "label",
         "context"
       ]
     },

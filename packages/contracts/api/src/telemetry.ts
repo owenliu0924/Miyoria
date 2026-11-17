@@ -36,7 +36,6 @@ export const TelemetryPointSchema = z
     drives: DrivesSchema.nullable(),
     initiative: z.number().nullable(),
     llm: TelemetryLlmSchema,
-    mind: z.object({ calls_total: z.number(), tokens_total: z.number() }).nullable(),
     voice_sessions: z.number(),
     speaking: z.boolean(),
     /** `messages`, `turns`, `initiatives`, `utterances`, `actions` since the previous sample. */

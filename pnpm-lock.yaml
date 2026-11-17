@@ -489,6 +489,9 @@ importers:
 
   packages/card-face:
     dependencies:
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../types
       react:
         specifier: ^19.1.0
         version: 19.3.1
@@ -933,6 +936,9 @@ importers:
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
+      drizzle-orm:
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5(zod@4.6.7)
       zod:
         specifier: ^4.6.7
         version: 4.6.7

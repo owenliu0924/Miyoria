@@ -39,6 +39,11 @@
 // Every row the economy plugin's coin ledger posts is one `economy.posted` (§3.3, decision D8),
 // appended in the posting's transaction: for the owner, kept like the ledger.
 //
+// Every change of one of her numbers for a person is one `heart.changed`, appended in the
+// transaction that writes the `heart_person` row: for the owner, kept. What happened between her
+// and someone that the nightly reflection weighs is one `heart.evidence`, kept a year
+// (`HEART_LOG_EVENTS`, docs/design/v5-heart.md §2.2).
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
@@ -52,13 +57,25 @@ import {
   EVAL_EVENTS,
   type EventDefaults,
   EventRegistry,
+  HEART_LOG_EVENTS,
+  HeartChanged,
+  type HeartChangedData,
+  HeartEvidence,
+  type HeartEvidenceData,
   IdentityImported,
   LlmCall,
   TURN_EVENTS,
 } from "@miyoria/contracts/events";
 import { JsonValueSchema } from "@miyoria/contracts/wire";
 
-export { EconomyPosted, type EconomyPostedData };
+export {
+  EconomyPosted,
+  type EconomyPostedData,
+  HeartChanged,
+  type HeartChangedData,
+  HeartEvidence,
+  type HeartEvidenceData,
+};
 
 /** Prefix of every type the facts writer records. */
 export const FACTS_TYPE_PREFIX = "facts.";
@@ -220,6 +237,7 @@ export function coreEventRegistry(): EventRegistry {
     ...EVAL_EVENTS,
     IdentityImported,
     EconomyPosted,
+    ...HEART_LOG_EVENTS,
   );
 }
 

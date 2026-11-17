@@ -13,8 +13,10 @@ import {
   ActivityManagerKey,
   type ActivitySnapshot,
   type BusEvent,
+  CARES_THRESHOLD,
   type Clock,
   Events,
+  HeartKey,
   is,
   type JsonValue,
   type PersonId,
@@ -109,7 +111,7 @@ export class WorldModule implements Module {
   static readonly ID = "world";
   readonly manifest = defineManifest(WorldModule.ID, "World", {
     description: "What she perceives: who is online, in voice and doing what; salient changes",
-    optional: ["social"],
+    optional: ["heart"],
     configSchema: WorldConfigSchema,
   });
   readonly #options: WorldModuleOptions;
@@ -131,7 +133,16 @@ export class WorldModule implements Module {
       book.presenceAllowed(a),
     );
     const salience = new Salience(config);
-    const signals = (): Signals => ctx.services.get(SocialSignalsKey) ?? NO_SIGNALS;
+    // Who she cares about is the heart's (`CARES_THRESHOLD`, H5); nobody without it.
+    const signals = (): Signals => {
+      const social = ctx.services.get(SocialSignalsKey) ?? NO_SIGNALS;
+      const heart = ctx.services.get(HeartKey);
+      if (heart === undefined) return { attitude: (account) => social.attitude(account) };
+      return {
+        attitude: (account) => social.attitude(account),
+        cares: (person) => heart.cares(person) >= CARES_THRESHOLD,
+      };
+    };
     const gameOf = this.#options.game;
     const game = () => {
       try {

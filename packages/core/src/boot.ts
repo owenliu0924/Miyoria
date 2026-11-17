@@ -18,6 +18,7 @@ import {
   LedgerStatsKey,
 } from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { heartTables } from "@miyoria/heart/person";
 import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { memoryTables } from "@miyoria/memory/memory";
 import { notesTables } from "@miyoria/memory/notes";
@@ -49,7 +50,6 @@ import {
   PersonaOverrideStoreKey,
   type PersonHandleDirectory,
   ProfileDataStoreKey,
-  RelationshipStoreKey,
   SettingsStoreKey,
   type Store,
   StoredHandleDirectory,
@@ -75,7 +75,12 @@ import {
   PromptContributorsKey,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
-import { moduleEnabled, NEEDS_TOKEN, REQUIRED_MODULES } from "./module-ids.js";
+import {
+  moduleEnabled,
+  NEEDS_TOKEN,
+  REQUIRED_MODULE_REASONS,
+  REQUIRED_MODULES,
+} from "./module-ids.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
@@ -93,6 +98,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   clusterTables,
   directiveTables,
   economyTables,
+  heartTables,
   initiativeTables,
   memoryTables,
   notesTables,
@@ -216,7 +222,7 @@ export async function buildCoreWith(
     if (moduleEnabled(config, id)) continue;
     throw new ConfigError(
       "invalid",
-      `invalid config at \`modules.${id}.enabled\`: the \`${id}\` module cannot be disabled; nothing speaks while it is down`,
+      `invalid config at \`modules.${id}.enabled\`: the \`${id}\` module cannot be disabled; ${REQUIRED_MODULE_REASONS[id]}`,
       `modules.${id}.enabled`,
     );
   }
@@ -256,7 +262,6 @@ export async function buildCoreWith(
   services.provide(k, PeopleStoreKey, store.people);
   // The memory plugin's tables (`@miyoria/memory/memory` `tables.ts`).
   services.provide(k, MemoryRecordStoreKey, store.plugin(memoryTables));
-  services.provide(k, RelationshipStoreKey, store.relationships);
   services.provide(k, IdentityStoreKey, store.identity);
   services.provide(k, AuthStoreKey, store.plugin(authTables).store);
   services.provide(k, AuditLogKey, store.audit);

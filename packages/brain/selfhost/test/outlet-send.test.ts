@@ -6,6 +6,8 @@ import {
   type PlatformSink,
   PlatformSinks,
   PlatformSinksKey,
+  type SocialSignals,
+  SocialSignalsKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { splitLine } from "../src/split.js";
@@ -38,6 +40,22 @@ describe("@name in a text line", () => {
     const mine = rig.entries(C1).find((e) => e.kind === "self");
     expect(mine?.content).toContain("@amy 好喔");
     expect(mine?.content).not.toContain("<@amy>");
+  });
+
+  it("knows someone by what she calls them", async () => {
+    const provide = withMentions();
+    const rig = await Rig.create({
+      provide: (sup, tools) => {
+        provide?.(sup, tools);
+        sup.services.provide("app", SocialSignalsKey, {
+          attitude: (a: AccountRef) => (a.id === "amy" ? { call_name: "阿咪" } : null),
+        } as unknown as SocialSignals);
+      },
+    });
+    rig.model.push(says("@阿咪 好喔"));
+    rig.say(mention(C1, "amy", "@她 在嗎"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    expect(rig.sink.texts()[0]).toBe("<@amy> 好喔");
   });
 
   it("stays plain when mention_users is off", async () => {

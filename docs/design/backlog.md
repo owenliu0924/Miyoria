@@ -54,6 +54,15 @@
   - 跨電腦執行:三個角色分到不同電腦,沒有實際跑過;
   - Linux / macOS:`install` 的套件管理員對應和印出的 apt / dnf 指令只用假的指令執行器測過,`start` 在這些系統上只會提示改用 `miyoria up`;
   - Core 在「沒有任何 worker」時用預設的本機 ASR / TTS 網址能不能乾淨開機(純文字聊天),沒有實測。
+- **公開站的渲染方式,需要時再評估**(2026-11-17,owner 問要不要從 React + Vite 搬到 Next;同一天決定面板不拆成 `admin` / `web`):
+  - 現在不搬。面板在登入後面,SPA 就夠;API 在 Core(oRPC),不會搬到 Next;連結預覽 Core 已經自己改寫 meta 和產生圖。
+  - 代價是多一個 Node 伺服器(hostd 多管一個服務,和 Core 之間要處理登入和轉發),或用靜態匯出而失去大部分好處;「Core 一個程式就送出面板」也會沒了。
+  - 值得再看的時機:公開站要做搜尋引擎找得到的內容頁(歌單、每個人的公開頁)。到時先比較 Vite 加預先渲染這種不用多跑伺服器的做法,再考慮 Next。管理面板不搬。
+- **上網查東西的方式,找時間比較一次**(2026-11-17,owner:現在查東西要一直用付費的 API):
+  - 現況:她的 `web_search` 有 Tavily 金鑰就用 Tavily(每次查詢算點數),沒有就退回 DuckDuckGo;`web_read` 讀單一網頁。
+  - 要看的:DeepSeek 自己的 harness 怎麼搜、Agora(自帶金鑰的用戶端)怎麼搜,還有不用付費 API 的做法(自己架的 SearXNG、模型供應商內建的搜尋、瀏覽器式的抓取)。
+  - 比的項目:每次查詢的花費、結果品質(中文和時事)、速度、被擋的機率、要不要多跑一個服務。
+  - 還沒查任何資料,這一條只是記下要做。
 
 ## 等 owner 決定
 
@@ -220,6 +229,21 @@
 - **`[llm.reasoning]` 的 `chat_voice` 和 `work` 沒有作用**:語音這一輪和小幫手都在 profile 裡固定了推理等級,不看這兩個鍵。範例檔已經這樣註明,鍵本身留著。
 - **移除 `[llm.thinking]` 的行為差異**:舊設定檔裡有 `[llm.thinking]` 的,現在那些用途改用 `[llm.reasoning]` 或預設值(例如 `mind = true` 以前等於 `medium`,現在是沒列的用途 = 不思考)。啟動時會警告,但要不要在 `[llm.reasoning]` 補上,要 owner 看自己的設定檔。
 
+
+### V5 階段 4 第 4、5 步留下的(2026-11-17)
+
+- **`task_together` 證據沒有人寫**:任務、懸賞完成時沒有記;Minecraft 沒有玩家名單,也沒記 `played_together`。
+- **V4 的分級對照表還是手抄的**(`store` 的切換程式):V4 切換拿掉時一起刪,或改成從 `BOND_TIERS` 產生。
+- **`tools/replay` 的 `announcements-not-her-topics.jsonl` 還帶著 `plans`**:Plan 刪了以後腳本不讀它,留著不影響結果;下次重錄時拿掉。
+- **self 裡「暗戀」的名字還在**(`crushPerson`、`crush_spoke`、`crush_message_longing` 這些):讀的已經是 heart 算的「最在意的人」(H5),只是名字沒改;設定鍵要改名得一起改 `removed-config.ts` 和範例檔。
+- **`relationships`、`relationship_deltas`、`self:feeling:*`、`self:state` 沒人寫了**,只有搬移讀;等 v5-data §8 第 14 步刪表。
+
+### V5 階段 4 稽核之後留下的(2026-11-17)
+
+- **多個 profile 共用 `heart_person`**(稽核 M10):表沒有 profile 欄,同一個資料庫開兩個角色時她們對人的數值是同一份;要分開得加欄位和搬移,等 Space / 角色分開(階段 6)時一起做。
+- **稽核 M18 的既有競態**:階段 4 之前就有,這一輪沒有修;細節在稽核報告裡,修的時候先寫一個會失敗的測試。
+- **合併兩個人時事件不改名下**:`heart.changed`、`heart.evidence` 是只能附加的,被併的人的事件留在原來的 id 下,留下的人的變動紀錄和當天的上限看不到它們(列已經合成一列)。要看得到得讓讀的一方把 `absorbedInto` 的 id 一起查。
+- **「忘記我」沒清舊的 `self:feeling:<person>` 卡片**:搬移讀完就沒人讀,v5-data §8 第 14 步刪表時一起刪;在那之前它們還留著她以前寫的感覺。
 
 ## 4. 自我修復與自我改進(備忘)
 

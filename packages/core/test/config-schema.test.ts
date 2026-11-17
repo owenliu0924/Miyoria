@@ -70,6 +70,27 @@ describe("the root schema", () => {
     await store.close();
   });
 
+  it("orders modules only after modules that exist (a gone id orders nothing)", async () => {
+    const config = toml(`[core]\nprofiles_dir = '${PROFILES}'\nprofile = "deepseek-chan"\n`);
+    const profile = await loadProfile(config);
+    const store = await openStore("memory://");
+    const deps = { config, profile, profileId: profile.id, store, baseDir: PROFILES };
+    const modules = [
+      ...(await defaultCatalog.coreModules(deps)),
+      defaultCatalog.discord(deps),
+      defaultCatalog.api(deps),
+    ];
+    const known = new Set([...MODULE_IDS, CliPlatform.ID]);
+    for (const m of modules) {
+      const named = [...(m.manifest.requires ?? []), ...(m.manifest.optional ?? [])];
+      expect(
+        named.filter((id) => !known.has(id)),
+        m.manifest.id,
+      ).toEqual([]);
+    }
+    await store.close();
+  });
+
   it("finds nothing at all in the example files", () => {
     expect(outcomes(file("miyoria.example.toml"))).toEqual({});
     expect(outcomes(file("deploy/miyoria.docker.toml"))).toEqual({});

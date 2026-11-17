@@ -33,6 +33,13 @@ export const InitiativeConfigSchema = z.object({
   quiet_mins: z.number().positive().default(10),
   /** How much she must miss someone (0..1, the `missing` feeling) to think of a DM. New. */
   longing_min: fraction().default(0.5),
+  /**
+   * How much her feelings move her own starts (0: not at all). Her wish to start things
+   * (`biases.initiative`, -1..1) shortens or lengthens the quiet she waits for and lowers or
+   * raises how much she must miss someone, by up to half; wanting to talk with someone lowers it
+   * for them by this times how much. New (phase 4).
+   */
+  mood_weight: fraction().default(0.5),
   /** Between two starts of the same kind (minutes; 0: none). */
   cooldown_mins: z
     .object({
@@ -59,12 +66,10 @@ export const InitiativeConfigSchema = z.object({
 });
 export type InitiativeConfig = z.output<typeof InitiativeConfigSchema>;
 
-/** What she reads of `[modules.mind]`: her morning and whom she cares about. */
+/** What she reads of `[modules.mind]`: her morning. */
 const MindPartSchema = z.looseObject({
-  /** Her first Plan of the day comes after this local hour (`daily_hour`). */
+  /** Her day starts at this local hour (`daily_hour`). */
   daily_hour: z.number().int().min(0).max(23).default(6),
-  /** Attachment that makes someone a person she cares about (`cared_attachment`). */
-  cared_attachment: fraction().default(0.3),
 });
 
 /** Everything the initiative reads, from three sections. */
@@ -72,25 +77,23 @@ export interface InitiativeSettings {
   own: InitiativeConfig;
   arbiter: ArbiterConfig;
   morningHour: number;
-  caredAttachment: number;
   /** Salient world events below this score do not wake her (mind's `SALIENT_MIN_SCORE`). */
   salientMin: number;
 }
 
-/** Mind's `SALIENT_MIN_SCORE` (mind.ts): below it a salient event does not wake her Plan. */
+/** Below this score a salient world event does not wake her (as the old Plan had it). */
 export const SALIENT_MIN_SCORE = 0.5;
 
 export function initiativeSettings(
   own: Partial<InitiativeConfig> = {},
   arbiter: Partial<ArbiterConfig> = {},
-  mind: { daily_hour?: number; cared_attachment?: number } = {},
+  mind: { daily_hour?: number } = {},
 ): InitiativeSettings {
   const m = MindPartSchema.parse(mind);
   return {
     own: { ...InitiativeConfigSchema.parse({}), ...own },
     arbiter: { ...ArbiterConfigSchema.parse({}), ...arbiter },
     morningHour: m.daily_hour,
-    caredAttachment: m.cared_attachment,
     salientMin: SALIENT_MIN_SCORE,
   };
 }
@@ -104,7 +107,6 @@ export function initiativeFromConfig(config: Config): InitiativeSettings {
     own,
     arbiter: arbiter.success ? arbiter.data : ArbiterConfigSchema.parse({}),
     morningHour: mind.success ? mind.data.daily_hour : 6,
-    caredAttachment: mind.success ? mind.data.cared_attachment : 0.3,
     salientMin: SALIENT_MIN_SCORE,
   };
 }

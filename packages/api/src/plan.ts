@@ -1,11 +1,10 @@
 // What she wants to do, read-only (docs/design/v2-architecture.md §3.7): `GET
 // /api/mind/goals?closed=false` (her structured agenda, soonest trigger first; `closed=true`
-// adds the ones that are done or dropped when the agenda keeps them) and `GET /api/mind/plan`
-// (today's plan in her words). The agenda service and the mind loop are looked up for the
-// optional getters `all()` and `dayPlan()` that their contract does not list.
+// adds the ones that are done or dropped when the agenda keeps them). The agenda service is
+// looked up for the optional getter `all()` that its contract does not list.
 
-import type { DayPlanView, GoalsView } from "@miyoria/contracts/api";
-import { type Goal, GoalAgendaKey, MindKey } from "@miyoria/types";
+import type { GoalsView } from "@miyoria/contracts/api";
+import { type Goal, GoalAgendaKey } from "@miyoria/types";
 import { os } from "./contract.js";
 
 /** `GoalBook.all()`, when the agenda is one. */
@@ -25,11 +24,5 @@ export const planRpc = {
     const openIds = new Set(open.map((g) => g.id));
     const shut = all().filter((g) => !openIds.has(g.id));
     return { goals: [...open, ...shut], closed_included: true };
-  }),
-  plan: os.mind.plan.handler(({ context }): DayPlanView => {
-    const mind = context.state.service(MindKey, "mind module") as {
-      dayPlan?: () => string | null;
-    };
-    return { day_plan: typeof mind.dayPlan === "function" ? mind.dayPlan() : null };
   }),
 };

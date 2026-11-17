@@ -32,7 +32,7 @@ export class QueueModule implements Module {
   static readonly ID = "queue";
   readonly manifest = defineManifest(QueueModule.ID, "Request queue", {
     description: "Fair request queue with voting mode",
-    optional: ["commands", "social"],
+    optional: ["commands", "heart"],
     configSchema: QueueConfigSchema,
   });
   #running: Running | null = null;
@@ -40,7 +40,8 @@ export class QueueModule implements Module {
   async start(ctx: ModuleContext): Promise<void> {
     const config = ctx.config(QueueConfigSchema);
     const queue = new RequestQueue(config, {
-      social: ctx.services.get(SocialSignalsKey) ?? null,
+      // Looked up at each use: the heart may restart and provide a new one.
+      social: () => ctx.services.get(SocialSignalsKey) ?? null,
       store: ctx.services.get(SettingsStoreKey) ?? null,
       publisher: ctx.publisher,
       clock: ctx.clock,

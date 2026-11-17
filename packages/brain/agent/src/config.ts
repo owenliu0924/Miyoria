@@ -252,6 +252,11 @@ export const PromptConfigSchema = z.object({
   default_budget: z.number().int().nonnegative().default(600),
   /** Characters of her document about herself in the pinned block (it is never cut by a section's budget). */
   self_chars: z.number().int().nonnegative().default(2000),
+  /**
+   * `<style_note>` says in a sentence what her feelings make of her reply now: longer or shorter,
+   * whether to react to a message with an emoji (`moodStyleLines`). Nothing is cut in code.
+   */
+  mood_style: z.boolean().default(true),
   /** Keep a compressed copy of every n-th turn's prompt (`agent.prompt`); 0 = none. */
   save_every: z.number().int().nonnegative().default(1),
   /** Saved prompts kept in memory. */

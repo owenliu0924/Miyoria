@@ -51,6 +51,7 @@ describe("the table", () => {
       "core:4:turns_audit",
       "core:5:llm_calls",
       "core:6:event_cursors",
+      "core:7:partial_redaction",
     ]);
     const strict = db.all("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'event%'");
     expect(strict).toEqual(
@@ -367,6 +368,67 @@ describe("redact", () => {
     expect(events.redact(target.id, "again", "memory")).toBeNull();
     expect(events.redact("unknown", "x", "memory")).toBeNull();
     expect(events.query({ types: ["privacy.redacted"] })).toHaveLength(1);
+  });
+
+  it("can take only the words of a payload and keep the rest", () => {
+    now = T0 + HOUR;
+    const { db, events } = testDb(false);
+    const person = "p1";
+    const quoted = events.appendNow({
+      draft: draft("heart.changed", T0, {
+        person_id: person,
+        data: { person, field: "bond", delta: 3, reason_quote: "他說他家住哪", cause: "feel" },
+      }),
+      source: "heart",
+    });
+    const plain = events.appendNow({
+      draft: draft("heart.changed", T0, {
+        person_id: person,
+        data: { person, field: "bond", delta: -1, reason_quote: "", cause: "decay" },
+      }),
+      source: "heart",
+    });
+    const other = events.appendNow({
+      draft: draft("heart.changed", T0, {
+        person_id: "p2",
+        data: { person: "p2", field: "bond", delta: 3, reason_quote: "別人的話", cause: "feel" },
+      }),
+      source: "heart",
+    });
+    const records = events.redactFields(
+      { personId: person, types: ["heart.changed"] },
+      ["reason_quote"],
+      "forget me",
+      "memory",
+    );
+    expect(records.map((r) => r.data)).toEqual([{ target: quoted.id, reason: "forget me" }]);
+    expect(events.get(quoted.id)?.envelope).toEqual({
+      ...quoted,
+      redacted_at: toTimestamp(now),
+      data: {
+        person,
+        field: "bond",
+        delta: 3,
+        reason_quote: "",
+        cause: "feel",
+        redacted: true,
+      },
+    });
+    // Nothing to take: left as it was, no record.
+    expect(events.get(plain.id)?.envelope).toEqual(plain);
+    expect(events.get(other.id)?.envelope).toEqual(other);
+    // Once only, as a whole redaction; and the trigger takes no other payload.
+    expect(events.redactFields({ personId: person }, ["reason_quote"], "again", "memory")).toEqual(
+      [],
+    );
+    expect(() =>
+      db.exec(
+        `UPDATE events SET data = '{"person":"p2","reason_quote":""}', redacted_at = 1 WHERE id = '${other.id}'`,
+      ),
+    ).toThrow(/append-only/);
+    expect(() => events.redactFields({}, ["reason_quote"], "all", "memory")).toThrow(
+      /key or a person/,
+    );
   });
 });
 

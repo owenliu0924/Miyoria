@@ -90,13 +90,25 @@ export {
   LESSONS_CONTRIBUTOR,
   type LearningModuleOptions,
   ReflectModule,
+  reflectOnPeople,
   reflectUnder,
   subjectsFor,
 } from "./modules.js";
+export {
+  MAX_CORRECTIONS,
+  MAX_QUOTE,
+  PersonReflectionError,
+  type PersonReflectionReply,
+  PersonReflectionSchema,
+  personData,
+  personRules,
+  reflectionOf,
+  type ShownMemory,
+  TEXT_LIMITS,
+} from "./person-reflect.js";
 export { RECAP_STALE_MINS, recapAgeNote } from "./recap-age.js";
 export {
   MAX_PUBLIC_FEELING,
-  MAX_STANCE,
   parseContextString,
   REFLECT_STATE_KEY,
   type ReflectDeps,

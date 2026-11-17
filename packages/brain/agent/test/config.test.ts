@@ -169,6 +169,7 @@ describe("config", () => {
         },
         default_budget: 600,
         self_chars: 2000,
+        mood_style: true,
         save_every: 1,
         saved: 50,
         saved_message_chars: 800,

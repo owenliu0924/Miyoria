@@ -212,7 +212,10 @@ export class MouthOutlet implements Outlet {
       for (const person of this.#claims.people(line)) {
         const markup = sink.mention(person.account);
         if (markup === null) continue;
+        // What she calls them (稱呼) is a name she writes for them too.
+        const call = this.#agent.attitude(person.account)?.call_name ?? null;
         const aliases = [safeName(person.name), this.#agent.handleOf(person.account, person.name)];
+        if (call !== null) aliases.push(call);
         targets.push({ name: person.name, markup, aliases });
       }
       text = linkMentions(text, targets);

@@ -22,10 +22,7 @@ export const REASONING_PURPOSES = [
   "chat_text",
   /** Gray-zone checks, translation. */
   "fast",
-  "appraise",
-  "plan",
-  /** The first Plan of the day (her day plan). */
-  "plan_daily",
+  /** Her reflections: the daily one and the one on each person. */
   "reflect",
   /** Self-review of high-risk actions. */
   "review",
@@ -42,9 +39,6 @@ export const DEFAULT_REASONING: Readonly<Record<ReasoningPurpose, ReasoningLevel
   chat_voice: "off",
   chat_text: "off",
   fast: "off",
-  appraise: "low",
-  plan: "medium",
-  plan_daily: "high",
   reflect: "high",
   review: "medium",
   summarizer: "off",

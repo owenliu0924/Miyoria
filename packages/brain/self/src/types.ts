@@ -247,8 +247,16 @@ export interface Outlet {
 
 // ---- events ------------------------------------------------------------------------------------
 
-/** The screens kept from today's turn (docs/design/v4-patches.md §2: 9, 11/18, 15, 19). */
-export type ScreenKind = "leak_dropped" | "self_talk_cut" | "tag_stripped" | "fallback_line";
+/**
+ * The screens kept from today's turn (docs/design/v4-patches.md §2: 9, 11/18, 15, 19), and
+ * `feel_cut`: a line that read like a feel block without its tags (v5-heart.md §2.9).
+ */
+export type ScreenKind =
+  | "leak_dropped"
+  | "self_talk_cut"
+  | "tag_stripped"
+  | "fallback_line"
+  | "feel_cut";
 
 export interface RunUsage {
   /** Model calls made. */
@@ -410,4 +418,9 @@ export interface RunResult {
   cost_usd: number;
   limits: LimitName[];
   compacted: boolean;
+  /**
+   * The inside of each `<feel>` block she wrote in the run, in order (never shown, never in the
+   * transcript); the host applies them once the run ended.
+   */
+  feel: string[];
 }

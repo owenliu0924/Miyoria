@@ -20,8 +20,11 @@
 // * `GET /api/decisions?limit=50&context=<json ContextKey>` (newest first)
 // * `GET /api/llm/usage`, `GET /api/llm/cost`
 // * `GET /api/persona`, `PUT /api/persona/{key}`, `GET /api/persona/{key}/history`
-// * `GET /api/people?q=&limit=&cursor=`, `GET|PATCH /api/people/{id}`,
-//   `POST /api/people/{id}/adjust`, `GET /api/people/{id}/wallet`,
+// * `GET /api/people?q=&limit=&cursor=` (the one list: bond, ring, values, how much she cares),
+//   `GET|PATCH /api/people/{id}` (her words, tier and anchors, history, today's caps, evidence),
+//   `GET /api/people/{id}/history?before=&limit=`, `POST /api/people/{id}/adjust` (any number,
+//   `{field, value|delta}`), `PUT|DELETE /api/people/{id}/anchors/{tier}`,
+//   `GET /api/people/{id}/wallet`,
 //   `POST /api/people/{id}/wallet/adjust` (coins by hand, needs `admin.economy.adjust`)
 // * `GET /api/memory?q=&kind=&subject=&before=&include_superseded=&limit=`,
 //   `PATCH|DELETE /api/memory/{id}`
@@ -53,8 +56,8 @@
 // * `GET /api/activity` (presence, broadcast, activity, scene), `GET /api/activity/tasks?limit=20`
 // * `GET /api/arbiter/ledger?context=&limit=`, `GET /api/arbiter/decisions?limit=&context=&verdict=`
 //   (the arbiter's verdicts since the `api` module started)
-// * `GET /api/affect` (emotions, mood, drives, biases), `GET /api/affect/people` (person cards)
-// * `GET /api/mind/goals?closed=false`, `GET /api/mind/plan` (her agenda and today's plan)
+// * `GET /api/affect` (emotions, mood, drives, biases), how she feels about each person is `/api/people`
+// * `GET /api/mind/goals?closed=false` (her agenda)
 // * `GET /api/prompts?context=&limit=`, `GET /api/prompts/{turn}` (saved prompts per turn),
 //   `GET /api/turns/outcomes?context=&outcome=&limit=` (how turns ended); read-only
 // * `GET /api/knowledge` (her documents), `GET /api/knowledge/conversations` (her conversation
@@ -129,7 +132,6 @@ export {
   safeNext,
 } from "./oauth.js";
 export { PANEL_DIR_ENV, pickDir } from "./panel.js";
-export { absoluteHistory } from "./people.js";
 export { summarizePrompt } from "./prompts.js";
 export { type PublicConfig, PublicConfigSchema } from "./public.js";
 export { ActiveProfileKey, isQueueNotFound, MCP_MODULE_ID } from "./services.js";

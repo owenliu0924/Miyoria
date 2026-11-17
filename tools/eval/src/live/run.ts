@@ -7,6 +7,7 @@ import type { Meter } from "./meter.js";
 import type { ModelUsage, Subject } from "./subject.js";
 import { SuiteRegistry, type SuiteResult } from "./suite.js";
 import { runCorrections } from "./suites/corrections.js";
+import { runFeel } from "./suites/feel.js";
 import { runPersona } from "./suites/persona.js";
 import { runRelationship } from "./suites/relationship.js";
 import { runTools } from "./suites/tools.js";
@@ -27,7 +28,8 @@ export function defaultSuites(): SuiteRegistry {
     .register("tools", (ctx) => runTools(ctx))
     .register("relationship", (ctx) => runRelationship(ctx))
     .register("memory", null)
-    .register("corrections", (ctx) => runCorrections(ctx));
+    .register("corrections", (ctx) => runCorrections(ctx))
+    .register("feel", (ctx) => runFeel(ctx));
 }
 
 /** Suites that run only when named: `corrections` is for comparing brains, not the nightly. */

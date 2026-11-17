@@ -10,7 +10,7 @@ import type {
   NoteLineView,
   NoteVersion,
 } from "@miyoria/contracts/api";
-import { SocialKey } from "@miyoria/heart/social";
+import { PeopleDirectoryKey } from "@miyoria/heart/person";
 import {
   DOCUMENT_KINDS,
   type NoteDocument,
@@ -37,7 +37,7 @@ function store(state: ApiState): NotesStore {
 }
 
 function nameOf(state: ApiState, person: PersonId | null): string | null {
-  return person === null ? null : (state.optional(SocialKey)?.displayName(person) ?? null);
+  return person === null ? null : (state.optional(PeopleDirectoryKey)?.displayName(person) ?? null);
 }
 
 function scopeLabel(state: ApiState, scope: NoteScope): string {

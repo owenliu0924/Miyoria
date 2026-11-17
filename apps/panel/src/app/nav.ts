@@ -79,7 +79,6 @@ export const ECONOMY_TABS = [
 export const INNER_TABS = [
   { tab: "state", label: "狀態" },
   { tab: "affect", label: "情緒" },
-  { tab: "feelings", label: "感情" },
   { tab: "goals", label: "目標" },
   { tab: "world", label: "世界" },
   { tab: "thoughts", label: "想法" },

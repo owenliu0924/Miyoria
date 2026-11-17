@@ -38,6 +38,7 @@ export {
   moduleEnabled,
   NEEDS_TOKEN,
   OPT_IN_MODULES,
+  REQUIRED_MODULE_REASONS,
   REQUIRED_MODULES,
 } from "./module-ids.js";
 export {

@@ -12,7 +12,7 @@ import type {
   Lesson as LessonView,
   ReflectionView,
 } from "@miyoria/contracts/api";
-import { SocialKey } from "@miyoria/heart/social";
+import { PeopleDirectoryKey } from "@miyoria/heart/person";
 import {
   ConversationStatesKey,
   KnowledgeKey,
@@ -35,7 +35,7 @@ function shortId(id: string): string {
 function subjectLabel(state: ApiState, subject: KnowledgeSubject): string {
   switch (subject.type) {
     case "person":
-      return state.optional(SocialKey)?.displayName(subject.person) ?? subject.person;
+      return state.optional(PeopleDirectoryKey)?.displayName(subject.person) ?? subject.person;
     case "guild":
       return `伺服器 ${subject.guild}`;
     case "self":
@@ -73,7 +73,7 @@ async function conversations(state: ApiState): Promise<ConversationNoteView[]> {
 
 function reflectionView(state: ApiState, days: number): ReflectionView {
   const reflection = state.service(ReflectionKey, "reflect module");
-  const social = state.optional(SocialKey);
+  const social = state.optional(PeopleDirectoryKey);
   const lessons: LessonView[] = (state.optional(LessonsKey)?.all() ?? []).map((l) => ({
     ...l,
     display_name: l.person === null ? null : (social?.displayName(l.person) ?? null),

@@ -5,49 +5,41 @@
 //   appraisals (`appraise`: the LLM says what happened meant, as an event with a strength; the
 //   program turns it into a number). Nobody writes an absolute level.
 // * Mood is not stored: `snapshot().mood` is derived from drives + emotions + the hour.
-// * One `PersonCard` per person: her feeling, attachment and emotions toward them, plus the
-//   social numbers. Reflect (or the panel) moves a bond only in small steps, within a daily cap.
+// * How she feels about each person is the heart's (`heart_person`, docs/design/v5-heart.md §2.10):
+//   the people she cares about and how much she misses them are read from it for the biases.
 // * The weighted behaviour biases her feelings imply are part of the snapshot.
 // * This is where her mood is served from (`MoodSignalsKey`, `mood.changed`).
 
 import {
-  type AffectBondPayload,
   type AffectEvent,
   type AffectInput,
   type AffectSnapshot,
-  type AffectSource,
   type AffectState,
   APPRAISAL_STRENGTH,
   type AppliedAppraisal,
   type AppraisalStrength,
-  type Attitude,
-  affinityLevel,
-  type BondChange,
-  clampAffinity,
   type DriveName,
   deriveMood,
   type EmotionName,
   type EmotionReading,
   Events,
   type Handle,
+  type HeartPeople,
   isEphemeralHandle,
   type Mood,
   type MoodSignals,
   moodLine,
-  type PersonCard,
   type PersonEmotionName,
   type PersonId,
   type Publish,
-  relationshipLabel,
   renderAffectMood,
-  renderPeople,
   safeName,
   toTimestamp,
 } from "@miyoria/types";
 import { computeBiases } from "./biases.js";
 import type { SelfConfig } from "./config.js";
 import { INHIBITION_SHARE } from "./dynamics.js";
-import { isEmotion, isPersonEmotion } from "./emotions.js";
+import { isEmotion } from "./emotions.js";
 import {
   type Effect,
   eventEffects,
@@ -55,7 +47,6 @@ import {
   type RuleContext,
   socialEffects,
 } from "./events.js";
-import { cleanStance } from "./feelings.js";
 import type { SelfService } from "./state.js";
 
 /** At most this many appraisals count per call (the Appraise call outputs at most 3). */
@@ -63,8 +54,9 @@ export const MAX_APPRAISALS = 3;
 /** At most this many promises count per call. */
 export const MAX_PROMISES = 2;
 const MAX_CAUSE = 80;
-const DAY_MS = 86_400_000;
 const MAX_UNKNOWN_HANDLE = 64;
+/** The people she cares about the biases look at. */
+const CARED_FOR_BIASES = 5;
 
 export interface AffectDeps {
   self: SelfService;
@@ -74,8 +66,12 @@ export interface AffectDeps {
   handleOf?: (person: PersonId) => Handle | null;
   /** The person behind a handle, when the directory knows it. */
   personOfHandle?: (handle: Handle) => PersonId | null;
-  /** Publishes on the bus (`affect.changed`, `mood.changed`, `affect.bond`). */
+  /** Publishes on the bus (`affect.changed`, `mood.changed`). */
   publish?: Publish;
+  /** The heart (`HeartKey`): whom she cares about and misses, for the biases. */
+  heart?: () => HeartPeople | null;
+  /** Someone's name as people see it, for a handle the directory has none of. */
+  nameOf?: (person: PersonId) => string | null;
 }
 
 /** What one rule event did (for tests and the journal). */
@@ -121,13 +117,18 @@ export class AffectService implements AffectState, MoodSignals {
       .filter((r) => r.intensity >= cfg.emotions.notice)
       .slice(0, Math.max(cfg.emotions.prompt_max, 1));
     const mood = this.#mood(now);
-    const cards = this.cards();
+    const heart = this.d.heart?.() ?? null;
+    const people = (heart?.caredAbout(CARED_FOR_BIASES) ?? []).map((c) => ({
+      handle: this.#handleFor(c.person),
+      longing: heart?.view(c.person)?.longing ?? 0,
+    }));
     const levels: Partial<Record<EmotionName, number>> = {};
     const causes: Partial<Record<EmotionName, Handle>> = {};
     for (const r of felt) {
       levels[r.name] = r.intensity;
-      const cause = r.person === null ? undefined : cards.find((c) => c.person === r.person);
-      if (cause) causes[r.name] = cause.handle;
+      if (r.person !== null && (heart?.cares(r.person) ?? 0) > 0) {
+        causes[r.name] = this.#handleFor(r.person);
+      }
     }
     const drives = e.drives();
     return {
@@ -144,7 +145,7 @@ export class AffectService implements AffectState, MoodSignals {
         drives,
         boredom: e.boredom(),
         valence: mood.valence,
-        cards,
+        people,
       }),
     };
   }
@@ -221,13 +222,11 @@ export class AffectService implements AffectState, MoodSignals {
 
   // ---- emotions in -------------------------------------------------------------------
 
-  /** The person a handle names (the directory first, then the cards). */
+  /** The person a handle names (the directory's). */
   #resolve(handle: Handle | null): PersonId | null {
     if (handle === null) return null;
     if (isEphemeralHandle(handle)) return null;
-    const viaDirectory = this.d.personOfHandle?.(handle);
-    if (viaDirectory) return viaDirectory;
-    return this.cardByHandle(handle)?.person ?? null;
+    return this.d.personOfHandle?.(handle) ?? null;
   }
 
   appraise(input: AffectInput): AppliedAppraisal[] {
@@ -268,7 +267,6 @@ export class AffectService implements AffectState, MoodSignals {
       },
       now,
     );
-    if (person !== null && r.applied > 0) this.#toward(person, ev.emotion, r.applied, r, now);
     self.changed("event");
     return {
       emotion: ev.emotion,
@@ -277,21 +275,6 @@ export class AffectService implements AffectState, MoodSignals {
       habituation: r.habituation,
       inhibited: r.inhibited,
     };
-  }
-
-  /** The part of a stir that is about one person (their own emotions toward them). */
-  #toward(
-    person: PersonId,
-    emotion: EmotionName | PersonEmotionName,
-    amount: number,
-    r: { inhibitedToward: Partial<Record<PersonEmotionName, number>> },
-    now: number,
-  ): void {
-    const hearts = this.#self.engine.hearts;
-    if (isPersonEmotion(emotion)) hearts.feel(person, emotion, amount, now);
-    for (const [name, down] of Object.entries(r.inhibitedToward) as [PersonEmotionName, number][]) {
-      hearts.feel(person, name, -down, now);
-    }
   }
 
   /**
@@ -380,21 +363,15 @@ export class AffectService implements AffectState, MoodSignals {
             now,
           );
           if (r.applied > 0) out.push({ emotion: f.emotion, amount: r.applied });
-          if (person !== null && f.toward !== undefined) {
-            const towardAmount = (f.towardAmount ?? r.applied) * (r.applied > 0 ? 1 : 0);
-            if (towardAmount > 0) this.#toward(person, f.toward, towardAmount, r, now);
-          }
           break;
         }
         case "toward": {
-          if (person === null) break;
-          const factor = f.amount > 0 ? e.emotions.habituate(`${key}|toward|${f.emotion}`, now) : 1;
-          const v = e.hearts.feel(person, f.emotion, f.amount * factor, now);
+          // How she feels about the person is the heart's (her `feel`, her nightly reflection):
+          // only resentment shows in her own emotions now, as (a part of) her anger.
+          if (person === null || f.emotion !== "resentment" || f.amount <= 0) break;
+          const factor = e.emotions.habituate(`${key}|toward|${f.emotion}`, now);
+          e.emotions.atLeast("anger", f.amount * factor * 0.8, why || "不爽", person, now);
           out.push({ emotion: f.emotion, amount: f.amount * factor });
-          // Resentment toward someone is also (a part of) her anger.
-          if (f.emotion === "resentment" && f.amount > 0) {
-            e.emotions.atLeast("anger", v * 0.8, why || "不爽", person, now);
-          }
           break;
         }
         case "companionship": {
@@ -420,17 +397,11 @@ export class AffectService implements AffectState, MoodSignals {
 
   // ---- people -------------------------------------------------------------------------
 
-  /** The handle shown for someone: the directory's, else the one stored, else their name. */
-  #handleFor(
-    person: PersonId,
-    stored: string | null,
-    att: Attitude | null,
-    heartName: string | null,
-  ): Handle {
+  /** The handle shown for someone: the directory's, else their name. */
+  #handleFor(person: PersonId): Handle {
     const viaDirectory = this.d.handleOf?.(person);
     if (viaDirectory && !isEphemeralHandle(viaDirectory)) return viaDirectory;
-    if (stored && !isEphemeralHandle(stored)) return stored;
-    const name = att?.display_name ?? heartName;
+    const name = this.d.nameOf?.(person) ?? null;
     if (name && name.trim() !== "") {
       const handle = safeName(name).slice(0, MAX_UNKNOWN_HANDLE);
       if (!isEphemeralHandle(handle)) return handle;
@@ -438,216 +409,9 @@ export class AffectService implements AffectState, MoodSignals {
     return "(無名)";
   }
 
-  /** Whether anything is known about `person`. */
-  #known(person: PersonId): boolean {
-    const self = this.#self;
-    return (
-      self.feelingsBook.record(person) !== null ||
-      self.engine.hearts.has(person) ||
-      self.attitudeOf(person) !== null
-    );
-  }
-
-  card(person: PersonId): PersonCard | null {
-    const self = this.#self;
-    const now = self.now();
-    return this.#card(person, now);
-  }
-
-  #card(person: PersonId, now: number): PersonCard | null {
-    const self = this.#self;
-    if (!this.#known(person)) return null;
-    const rec = self.feelingsBook.record(person);
-    const att = self.attitudeOf(person);
-    const heart = self.engine.hearts.heart(person, now);
-    const snap = rec?.extras.snapshot ?? null;
-    const affinity = att?.affinity ?? snap?.affinity ?? 0;
-    const familiarity = att?.familiarity ?? snap?.familiarity ?? 0;
-    const feeling = self.feelingsBook.get(person);
-    return {
-      person,
-      handle: this.#handleFor(person, rec?.extras.handle ?? null, att, heart?.name ?? null),
-      call_name: att?.call_name ?? rec?.extras.call_name ?? null,
-      affinity,
-      trust: att?.trust ?? snap?.trust ?? 0,
-      familiarity,
-      attachment: heart?.romance ?? 0,
-      emotions: heart?.emotions ?? {},
-      feeling: feeling?.text ?? "",
-      public_feeling: rec?.extras.public_feeling ?? null,
-      label: relationshipLabel({ affinity, familiarity }),
-      level: affinityLevel(affinity),
-      stance: rec?.extras.stance ?? null,
-      stance_level: rec?.extras.stance_level ?? null,
-      owner: att?.owner ?? snap?.owner ?? false,
-      blocked: att?.blocked ?? snap?.blocked ?? false,
-      last_seen: heart?.last_seen ?? null,
-      last_together: heart?.last_together ?? null,
-      updated_at: feeling?.updated_at ?? toTimestamp(now),
-    };
-  }
-
-  cardByHandle(handle: Handle): PersonCard | null {
-    return this.cards().find((c) => c.handle === handle) ?? null;
-  }
-
-  /** Every card, highest attachment first. */
-  cards(): PersonCard[] {
-    const self = this.#self;
-    const now = self.now();
-    const people = new Set<PersonId>([
-      ...self.feelingsBook.records().map((r) => r.person),
-      ...self.engine.hearts.people(),
-    ]);
-    const out: PersonCard[] = [];
-    for (const person of people) {
-      const card = this.#card(person, now);
-      if (card) out.push(card);
-    }
-    return out.sort(
-      (a, b) =>
-        b.attachment - a.attachment || b.affinity - a.affinity || (a.person < b.person ? -1 : 1),
-    );
-  }
-
-  async adjustBond(
-    person: PersonId,
-    change: BondChange,
-    by: AffectSource,
-  ): Promise<PersonCard | null> {
-    const self = this.#self;
-    const now = self.now();
-    if (!this.#known(person)) return null;
-    const cfg = this.#config.bond;
-    const day = Math.floor((now + this.#config.utc_offset_minutes * 60_000) / DAY_MS);
-    // Attachment moves only when Reflect (or the panel) says so; Appraise may nudge the rest.
-    const attachmentAllowed = by === "reflect" || by === "panel";
-    const free = by === "panel";
-    const step = (v: number | undefined, max: number, spent: number, cap: number) => {
-      if (v === undefined || !Number.isFinite(v) || v === 0) return 0;
-      const room = free ? Number.POSITIVE_INFINITY : Math.max(cap - spent, 0);
-      const size = Math.min(Math.abs(v), free ? Math.abs(v) : max, room);
-      return Math.sign(v) * size;
-    };
-    const done = { attachment: 0, affinity: 0, trust: 0, familiarity: 0 };
-    await self.feelingsBook.patch(
-      person,
-      (x) => {
-        if (x.ledger.day !== day) {
-          x.ledger = { day, attachment: 0, affinity: 0, trust: 0, familiarity: 0 };
-        }
-        const l = x.ledger;
-        if (attachmentAllowed) {
-          done.attachment = step(
-            change.attachment,
-            cfg.attachment_step,
-            l.attachment,
-            cfg.attachment_daily,
-          );
-        }
-        done.affinity = step(change.affinity, cfg.affinity_step, l.affinity, cfg.affinity_daily);
-        done.trust = step(change.trust, cfg.trust_step, l.trust, cfg.trust_daily);
-        done.familiarity = step(
-          change.familiarity,
-          cfg.familiarity_step,
-          l.familiarity,
-          cfg.familiarity_daily,
-        );
-        l.attachment += Math.abs(done.attachment);
-        l.affinity += Math.abs(done.affinity);
-        l.trust += Math.abs(done.trust);
-        l.familiarity += Math.abs(done.familiarity);
-        // Only Reflect writes the line; anyone who may change a card may clear it.
-        if (change.public_feeling === null) x.public_feeling = null;
-        else if (change.public_feeling !== undefined && by === "reflect") {
-          x.public_feeling = change.public_feeling;
-        }
-        // Only Reflect writes her stance, at the level the card has once this change lands.
-        if (change.stance !== undefined && by === "reflect") {
-          const line = cleanStance(change.stance);
-          if (line !== "") {
-            x.stance = line;
-            const base = self.attitudeOf(person)?.affinity ?? x.snapshot?.affinity ?? 0;
-            x.stance_level = affinityLevel(clampAffinity(base + done.affinity));
-          }
-        }
-        if (x.snapshot) {
-          x.snapshot.affinity = clampAffinity(x.snapshot.affinity + done.affinity);
-          x.snapshot.trust = clampTo(x.snapshot.trust + done.trust, 0, 100);
-          x.snapshot.familiarity = clampTo(x.snapshot.familiarity + done.familiarity, 0, 100);
-        }
-      },
-      now,
-    );
-    if (done.attachment !== 0) self.engine.hearts.attach(person, done.attachment, now);
-    if (done.affinity !== 0 || done.trust !== 0 || done.familiarity !== 0) {
-      const payload: AffectBondPayload = {
-        person,
-        affinity: done.affinity,
-        trust: done.trust,
-        familiarity: done.familiarity,
-        why: change.why,
-      };
-      this.d.publish?.(Events.AffectBond, payload);
-    }
-    // Her feeling uses names: sentences with a `u1`-style code are dropped by the book.
-    if (change.feeling !== undefined) await self.setFeeling(person, change.feeling, by);
-    self.changed("bond");
-    return this.card(person);
-  }
-
-  /**
-   * Keeps the stored numbers of every card as the social module has them now (so a card is
-   * whole when the social module is not running). Returns how many cards changed.
-   */
-  async syncSnapshots(): Promise<number> {
-    const self = this.#self;
-    const now = self.now();
-    let changed = 0;
-    for (const rec of self.feelingsBook.records()) {
-      const att = self.attitudeOf(rec.person);
-      if (!att) continue;
-      const next = {
-        affinity: att.affinity,
-        trust: att.trust,
-        familiarity: att.familiarity,
-        owner: att.owner ?? false,
-        blocked: att.blocked,
-        interactions: att.interactions ?? rec.extras.snapshot?.interactions ?? 0,
-        last_interaction: att.last_interaction ?? rec.extras.snapshot?.last_interaction ?? null,
-      };
-      const same = JSON.stringify(rec.extras.snapshot) === JSON.stringify(next);
-      if (same && rec.extras.call_name === att.call_name) continue;
-      const did = await self.feelingsBook.patch(
-        rec.person,
-        (x) => {
-          x.snapshot = next;
-          x.call_name = att.call_name;
-        },
-        now,
-      );
-      if (did) changed++;
-    }
-    return changed;
-  }
-
   // ---- text for prompts ---------------------------------------------------------------
 
   renderMood(): string {
     return renderAffectMood(this.snapshot());
   }
-
-  renderPeople(people: readonly PersonId[]): string[] {
-    const seen = new Set<PersonId>();
-    const cards: PersonCard[] = [];
-    for (const person of people) {
-      if (seen.has(person)) continue;
-      seen.add(person);
-      const card = this.card(person);
-      if (card && !card.blocked) cards.push(card);
-    }
-    return renderPeople(cards);
-  }
 }
-
-const clampTo = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);

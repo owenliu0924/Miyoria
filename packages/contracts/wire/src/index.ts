@@ -56,6 +56,13 @@ export {
   StickerSchema,
 } from "./platform.js";
 export {
+  BOND_TIER_FLOORS,
+  RELATIONSHIP_LABELS,
+  type RelationshipLabel,
+  TIER_STAGE_NUMERALS,
+  type TierStage,
+} from "./tiers.js";
+export {
   type PlaybackState,
   PlaybackStateSchema,
   type VoiceParticipant,

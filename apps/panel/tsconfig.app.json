@@ -23,6 +23,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@miyoria/card-face": ["../../packages/card-face/src/index.tsx"],
+      "@miyoria/types/bond": ["../../packages/types/src/bond.ts"],
+      "@miyoria/contracts/wire/tiers": ["../../packages/contracts/wire/src/tiers.ts"],
       "@miyoria/contracts/api": ["../../packages/contracts/api/src/index.ts"],
       "@miyoria/contracts/events": ["../../packages/contracts/events/src/index.ts"],
       "@miyoria/contracts/wire": ["../../packages/contracts/wire/src/index.ts"],

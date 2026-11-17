@@ -1,10 +1,7 @@
-// Her mind loop (docs/design/autonomy.md §5): the thoughts the `mind` module has and the intents
-// they produce.
-//
-// * The `mind` module provides `MindKey`: its journal (thoughts, intents, outcomes) and an
-//   inbox for suggestions from other modules (initiative's idle channels, greetings, voice
-//   joins, followups), which become reasons to think instead of direct `agent.initiative`
-//   turns.
+// Her mind (docs/design/autonomy.md §5, docs/design/v5-heart.md §2.6): the `mind` module provides
+// `MindKey`, her thought journal. Since phase 4 step 5 it records her `feel` applications and her
+// reflections in a line each (`note`); older entries (Plan's thoughts and intents) keep their
+// shape. Nothing here thinks on its own any more.
 
 import type { ThoughtData } from "@miyoria/contracts/events";
 import type { TurnId } from "./ids.js";
@@ -225,17 +222,23 @@ export interface MindSuggestion {
   about: AccountRef[];
 }
 
-/** Calls of her mind loop. */
+/** How her journal is going. */
 export interface MindStats {
-  /** Calls in the last hour. */
-  calls_last_hour: number;
-  max_calls_per_hour: number;
-  calls_total: number;
-  tokens_total: number;
+  /** Her newest journal entry. */
   last_at: Timestamp | null;
-  next_heartbeat_at: Timestamp | null;
-  /** Why she is not thinking right now, if she is not (`paused`, `budget exhausted`, ...). */
+  /** Why the module is not looking at her goals right now, if it is not. */
   idle_reason: string | null;
+}
+
+/** A line of what went on inside her, for her journal (`Mind.note`). */
+export interface MindNote {
+  /** `feel`: her `feel` block applied; `reflect`: one of her reflections. */
+  kind: "feel" | "reflect";
+  /** What she felt or concluded, short (her words; may name people). */
+  text: string;
+  /** What changed, one line each. */
+  changes?: string[];
+  context?: ContextKey | null;
 }
 
 /**
@@ -252,10 +255,6 @@ export interface RaisedTopic {
 
 /** Provided by the `mind` module. */
 export interface Mind {
-  /** She takes suggestions (running, not paused). */
-  readonly accepting: boolean;
-  /** Offers a reason to think; `false` when not accepted. */
-  suggest(suggestion: MindSuggestion): boolean;
   /** Newest first. */
   thoughts(limit?: number): Thought[];
   /** One journal entry, with what it saw while it still keeps that. */
@@ -263,11 +262,8 @@ export interface Mind {
   /** Digests of older thoughts, newest first. */
   digests?(limit?: number): ThoughtDigest[];
   stats(): MindStats;
-  /**
-   * Topics she raised on her own in `context` recently that nobody picked up, newest first
-   * (her own state: turn prompts tell her not to bring them up again for a while).
-   */
-  unanswered?(context: ContextKey | null): RaisedTopic[];
+  /** Records a line of what went on inside her (optional so test doubles need not). */
+  note?(entry: MindNote): void;
 }
 
 export const MindKey = serviceKey<Mind>("Mind");

@@ -11,19 +11,20 @@
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   AFFINITY_LEVEL_MAX,
-  type AffectState,
   affinityLevel,
   BOND_SCALE_LINE,
   type EventLog,
   type Handle,
   type HandleDirectory,
+  type HeartPeople,
+  heartWords,
   type KnowledgeBase,
   type PersonId,
   type PersonProfile,
   type PersonProfiles,
   type PlaceRef,
   type ProfileOptions,
-  type SocialSignals,
+  relationshipLabel,
   safeName,
   type Timestamp,
   timestampMs,
@@ -47,8 +48,11 @@ const MINUTE_MS = 60_000;
 
 export interface ProfileSources {
   config: () => ProfilesConfig;
-  affect: () => AffectState | null;
-  social: () => SocialSignals | null;
+  /**
+   * Her numbers and words for each person (`HeartKey`, docs/design/v5-heart.md §2.9): the tier,
+   * the level, the slow values and her words. Unset or `null`: none of them.
+   */
+  heart?: () => HeartPeople | null;
   knowledge: () => KnowledgeBase | null;
   events: () => Pick<EventLog, "query"> | null;
   handles: () => HandleDirectory | null;
@@ -114,9 +118,8 @@ export class Profiles implements PersonProfiles {
     const handle: Handle =
       this.#src.handles()?.ofPerson(person) ?? (await this.#engine.nameOfPerson(person)) ?? "";
     if (handle === "") return null;
-    const card = this.#src.affect()?.card(person) ?? null;
-    const attitude = card === null ? (this.#src.social()?.attitudeOf?.(person) ?? null) : null;
-    if (attitude?.blocked || card?.blocked) return null;
+    const view = this.#src.heart?.()?.view(person) ?? null;
+    if (view?.blocked) return null;
 
     const nowMs = timestampMs(where.now);
     const window = await this.#log.window(nowMs);
@@ -176,18 +179,33 @@ export class Profiles implements PersonProfiles {
       points.push({ text: line, origin: "experienced", said_by: null });
     }
 
+    // How she feels about them and her words (call name, impression, stance) are their heart
+    // row's: the nightly reflection, `set_call_name` and the panel write them there. Someone
+    // without a row yet has none of it.
+    const said = (text: string | null | undefined) =>
+      text === null || text === undefined || text.trim() === "" ? null : text;
+    const words = view === null ? null : heartWords(view);
     return {
       person,
       handle,
-      label: card?.label ?? attitude?.label ?? null,
-      level: card?.level ?? (attitude ? affinityLevel(attitude.affinity) : null),
-      owner: card?.owner ?? attitude?.owner ?? false,
-      trust: card?.trust ?? attitude?.trust ?? null,
-      call_name: card?.call_name ?? attitude?.call_name ?? null,
-      feeling: card !== null && card.feeling.trim() !== "" ? card.feeling : null,
-      stance: card?.stance?.trim() ? card.stance : null,
-      last_seen:
-        seen.at === null ? fallbackSeen(card, attitude, seen.stretchStart) : toTimestamp(seen.at),
+      label: view === null ? null : relationshipLabel({ affinity: view.bond }),
+      level: view === null ? null : affinityLevel(view.bond),
+      owner: view?.owner ?? false,
+      trust: null,
+      values:
+        words === null
+          ? null
+          : {
+              trust: words.trust,
+              familiarity: words.familiarity,
+              respect: words.respect,
+              ease: words.ease,
+              rapport: words.rapport,
+            },
+      call_name: said(view?.call_name),
+      feeling: said(view?.impression),
+      stance: said(view?.stance),
+      last_seen: seen.at === null ? fallbackSeen(view, seen.stretchStart) : toTimestamp(seen.at),
       last_place: seen.place,
       last_topic: lastTopic,
       last_topic_private: topicPrivate,
@@ -318,13 +336,12 @@ export class Profiles implements PersonProfiles {
   }
 }
 
-/** When neither the log nor the window knows: what the card or the social record says. */
+/** When neither the log nor the window knows: what their heart row says. */
 function fallbackSeen(
-  card: { last_together: Timestamp | null; last_seen: Timestamp | null } | null,
-  attitude: { last_interaction?: Timestamp | null } | null,
+  view: { last_together: Timestamp | null; last_seen: Timestamp | null } | null,
   stretchStart: number,
 ): Timestamp | null {
-  for (const at of [card?.last_together, card?.last_seen, attitude?.last_interaction]) {
+  for (const at of [view?.last_together, view?.last_seen]) {
     if (at && timestampMs(at) < stretchStart) return at;
   }
   return null;
@@ -355,7 +372,14 @@ export function profileLine(
     ["relation", p.label],
     ["level", p.label === null || p.level === null ? null : `${p.level}/${AFFINITY_LEVEL_MAX}`],
     ["owner", p.owner === true ? "主人" : null],
-    ["trust", p.label === null || p.trust == null ? null : Math.round(p.trust)],
+    [
+      "trust",
+      p.label === null ? null : (p.values?.trust ?? (p.trust == null ? null : Math.round(p.trust))),
+    ],
+    ["familiar", p.values?.familiarity ?? null],
+    ["respect", p.values?.respect ?? null],
+    ["ease", p.values?.ease ?? null],
+    ["rapport", p.values?.rapport ?? null],
     ["call_as", p.call_name ? safeName(p.call_name, 16) : null],
     ["impression", p.feeling],
     ["stance", p.stance],

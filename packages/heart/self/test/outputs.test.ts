@@ -11,11 +11,10 @@ import {
   type EmotionName,
   Events,
   MoodSignalsKey,
-  toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { computeBiases, MAX_BIAS, MIN_WANT, SelfModule } from "../src/index.js";
-import { HOUR, rig, T0 } from "./helpers.js";
+import { computeBiases, MAX_BIAS, SelfModule } from "../src/index.js";
+import { HOUR, rig } from "./helpers.js";
 
 const DRIVES: Drives = {
   social: 0,
@@ -34,16 +33,11 @@ const inputs = (p: Partial<Inputs>): Inputs => ({
   drives: DRIVES,
   boredom: 0,
   valence: 0,
-  cards: [],
+  people: [],
   ...p,
 });
-const card = (handle: string, attachment = 0.5, more: object = {}) => ({
-  handle,
-  attachment,
-  emotions: {},
-  blocked: false,
-  ...more,
-});
+/** Someone she cares about (the heart's), with how much she misses them. */
+const card = (handle: string, longing = 0) => ({ handle, longing });
 const wanted = (b: AffectBiases, want: string) => b.wants.find((w) => w.want === want);
 
 /** Every emotion whose weight of `key` points that way, at its strongest. */
@@ -94,44 +88,27 @@ describe("what she wants because of it", () => {
     for (const name of EMOTION_NAMES) {
       const row = EMOTION_OUTPUTS[name].want;
       if (row === null) continue;
-      const b = computeBiases(inputs({ emotions: { [name]: 0.8 }, cards }));
+      const b = computeBiases(inputs({ emotions: { [name]: 0.8 }, people: cards }));
       expect(wanted(b, row.want), name).toMatchObject({ why: row.why, from: name });
     }
   });
 
   it("a wish about someone goes to who stirred it, else to the closest one", () => {
-    const cards = [card("Owen", 0.8), card("Amy", 0.3)];
+    const cards = [card("Owen"), card("Amy")];
     const stirred = computeBiases(
-      inputs({ emotions: { gratitude: 0.8 }, causes: { gratitude: "Amy" }, cards }),
+      inputs({ emotions: { gratitude: 0.8 }, causes: { gratitude: "Amy" }, people: cards }),
     );
     expect(wanted(stirred, "chat_with")?.person).toBe("Amy");
-    const nobody = computeBiases(inputs({ emotions: { gratitude: 0.8 }, cards }));
+    const nobody = computeBiases(inputs({ emotions: { gratitude: 0.8 }, people: cards }));
     expect(wanted(nobody, "chat_with")?.person).toBe("Owen");
-  });
-
-  it("never someone blocked", () => {
-    const cards = [card("Troll", 0.9, { blocked: true }), card("Owen", 0.4)];
-    const b = computeBiases(
-      inputs({ emotions: { jealousy: 0.9 }, causes: { jealousy: "Troll" }, cards }),
-    );
-    expect(wanted(b, "chat_with")?.person).toBe("Owen");
   });
 
   it("two feelings about the same thing are one wish, the stronger one", () => {
     const b = computeBiases(
-      inputs({ emotions: { sorrow: 0.5, lonely: 0.9 }, cards: [card("Owen")] }),
+      inputs({ emotions: { sorrow: 0.5, lonely: 0.9 }, people: [card("Owen")] }),
     );
     expect(b.wants.filter((w) => w.want === "chat_with")).toHaveLength(1);
     expect(wanted(b, "chat_with")).toMatchObject({ weight: 0.9, from: "lonely" });
-  });
-
-  it("a feeling toward someone in particular points at them", () => {
-    const cards = [card("Owen", 0.8), card("Amy", 0.3, { emotions: { gratitude: 0.7 } })];
-    const b = computeBiases(inputs({ cards }));
-    expect(b.wants).toEqual([
-      expect.objectContaining({ want: "chat_with", person: "Amy", from: "gratitude" }),
-    ]);
-    expect(b.wants[0]?.weight).toBeGreaterThanOrEqual(MIN_WANT);
   });
 });
 
@@ -159,63 +136,6 @@ describe("an extreme state", () => {
     const snap = r.affect.snapshot();
     expect(snap.shown?.tag).toBe("neutral");
     expect(wanted(snap.biases, "chat_with")).toBeDefined();
-  });
-});
-
-describe("Appraise, the one reader of what an interaction meant", () => {
-  it("a promise counts toward the person, through the same call", () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 40, familiarity: 20 });
-    r.handles.set("p1", "Owen");
-    const at = toTimestamp(T0);
-    r.affect.appraise({
-      source: "appraise",
-      events: [],
-      promises: [{ toward: "Owen", kept: false, cause: "Owen食言了" }],
-      context: null,
-      at,
-    });
-    expect(r.self.heart("p1")?.emotions.resentment ?? 0).toBeGreaterThan(0);
-    r.affect.appraise({
-      source: "appraise",
-      events: [],
-      promises: [{ toward: "Owen", kept: true, cause: "Owen說到做到" }],
-      context: null,
-      at,
-    });
-    expect(r.self.heart("p1")?.emotions.gratitude ?? 0).toBeGreaterThan(0);
-  });
-
-  it("a promise about nobody she knows is dropped, and at most two count", () => {
-    const r = rig();
-    r.handles.set("p1", "Owen");
-    r.affect.appraise({
-      source: "appraise",
-      events: [],
-      promises: [
-        { toward: "Nobody", kept: false, cause: "" },
-        { toward: "Owen", kept: false, cause: "a" },
-        { toward: "Owen", kept: false, cause: "b" },
-      ],
-      context: null,
-      at: toTimestamp(T0),
-    });
-    const once = r.self.heart("p1")?.emotions.resentment ?? 0;
-    expect(once).toBeGreaterThan(0);
-    const fresh = rig();
-    fresh.handles.set("p1", "Owen");
-    fresh.affect.appraise({
-      source: "appraise",
-      events: [],
-      promises: [
-        { toward: "Owen", kept: false, cause: "a" },
-        { toward: "Owen", kept: false, cause: "b" },
-        { toward: "Owen", kept: false, cause: "c" },
-      ],
-      context: null,
-      at: toTimestamp(T0),
-    });
-    expect(fresh.self.heart("p1")?.emotions.resentment ?? 0).toBeGreaterThan(once);
   });
 });
 

@@ -23,6 +23,7 @@
 import type { AddressInfo } from "node:net";
 import { isIPv4, isIPv6 } from "node:net";
 import { createAdaptorServer, type ServerType } from "@hono/node-server";
+import { BondRingImagesKey } from "@miyoria/heart/person";
 import { tokenize } from "@miyoria/memory/memory";
 import {
   defineManifest,
@@ -39,6 +40,7 @@ import { MONITOR_TOPICS, Monitor } from "./monitor.js";
 import { DiscordOAuthConfigSchema, OAuth, recheckMs, sessionTtlMs } from "./oauth.js";
 import { PANEL_DIR_ENV, pickDir } from "./panel.js";
 import { PublicConfigSchema, PublicSide, STATS_EVERY_MS } from "./public.js";
+import { RingImages } from "./ring-image.js";
 import { createApp } from "./server.js";
 import { Sessions } from "./session.js";
 import { ApiState, type PanelAuth, type Tokenizer } from "./state.js";
@@ -248,6 +250,8 @@ export class ApiModule implements Module {
     );
     // The same cards and slips the member page gives, for a command in chat.
     ctx.provide(KeepsakesKey, new KeepsakeService(state));
+    // The bond ring's picture for `/me profile` and `/admin person show`.
+    ctx.provide(BondRingImagesKey, new RingImages());
     const app = createApp(state, { metricsPublic: config.metrics_public });
     const server = createAdaptorServer({ fetch: app.fetch });
     let address: AddressInfo;

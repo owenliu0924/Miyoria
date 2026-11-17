@@ -46,7 +46,7 @@ export class EconomyModule implements Module {
       "facts",
       "moderation",
       "actions",
-      "social",
+      "heart",
       "self",
       "sing",
       "stage.link",

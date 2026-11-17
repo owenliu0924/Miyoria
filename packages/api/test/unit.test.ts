@@ -3,14 +3,12 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Relationship, RelationshipDelta } from "@miyoria/store";
 import {
   type AccountRef,
   BaseAuthorizer,
   type ContextKey,
   Events,
   eventEnvelope,
-  newId,
   PlatformSinks,
   type Subject,
 } from "@miyoria/types";
@@ -32,7 +30,6 @@ import {
   validId,
 } from "../src/oauth.js";
 import { pickDir, pickEncoding } from "../src/panel.js";
-import { absoluteHistory } from "../src/people.js";
 import {
   checkAccess,
   cookieToken,
@@ -177,36 +174,6 @@ describe("oauth", () => {
 });
 
 // ---- people ---
-
-function delta(affinity: number, reason: string): RelationshipDelta {
-  return { at: new Date().toISOString(), affinity, trust: 0, familiarity: 1, reason };
-}
-
-function relationship(affinity: number, familiarity: number): Relationship {
-  return {
-    profile: "p",
-    person: newId(),
-    affinity,
-    trust: 50,
-    familiarity,
-    tags: [],
-    notes: "",
-    call_name: null,
-    interactions: 2,
-    last_interaction: null,
-    updated_at: new Date().toISOString(),
-  };
-}
-
-describe("people", () => {
-  it("history_is_absolute_and_oldest_first", () => {
-    const history = absoluteHistory([delta(10, "a"), delta(5, "b")], relationship(15, 2));
-    expect(history.map((d) => [d.affinity, d.familiarity, d.reason])).toEqual([
-      [10, 1, "a"],
-      [15, 2, "b"],
-    ]);
-  });
-});
 
 // ---- monitor ---
 

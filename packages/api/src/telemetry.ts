@@ -5,7 +5,7 @@
 
 import type { TelemetryLlm, TelemetryPoint, TelemetryView } from "@miyoria/contracts/api";
 import { type MetricFamily, metrics } from "@miyoria/runtime/kernel";
-import { type BusEvent, Events, is, MindKey, SelfStateKey, toTimestamp } from "@miyoria/types";
+import { type BusEvent, Events, is, SelfStateKey, toTimestamp } from "@miyoria/types";
 import { os } from "./contract.js";
 import { countOf } from "./extract.js";
 import type { ApiState } from "./state.js";
@@ -96,7 +96,6 @@ export class Telemetry {
   /** Takes one sample of `state` now. */
   sample(state: ApiState): TelemetryPoint {
     const self = state.optional(SelfStateKey)?.snapshot() ?? null;
-    const stats = state.optional(MindKey)?.stats() ?? null;
     const events: Record<string, number> = {};
     for (const key of Object.values(TELEMETRY_TOPICS)) events[key] = this.#counts[key] ?? 0;
     this.#counts = {};
@@ -107,7 +106,6 @@ export class Telemetry {
       drives: self ? { ...self.drives } : null,
       initiative: self ? self.policy.initiative : null,
       llm: llmTotals(metrics.collect()),
-      mind: stats ? { calls_total: stats.calls_total, tokens_total: stats.tokens_total } : null,
       voice_sessions: state.monitor.voice(state.now()).sessions.length,
       speaking: state.monitor.speaking(),
       events,

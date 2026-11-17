@@ -1,6 +1,9 @@
 // The member view: what a person logged in with Discord sees of what she has of them, and the cards
 // she gives them. The session alone says whose it is: no route takes an id, and a body with a field
-// it does not know is refused. The numbers behind her feelings never leave: only their bands.
+// it does not know is refused. The numbers behind her feelings never leave: only their bands, and
+// the ring's lap and fill (in steps of a twentieth, so it shows roughly where they are and nobody
+// can read their bond off it). These schemas have no field for a raw value: a response is
+// validated against them and what they do not name is stripped.
 
 import { z } from "zod";
 import { IdempotencyHeaders, route } from "./route.js";
@@ -58,10 +61,45 @@ export const MemberDaySchema = z
   .meta({ id: "ApiMemberDay" });
 export type MemberDay = z.output<typeof MemberDaySchema>;
 
+/** The ring as they see it: the lap being filled and how full it is, no number. */
+export const MemberRingSchema = z
+  .object({
+    /** The lap being filled, 0..9. */
+    lap: z.number(),
+    /** How full that lap is, 0..1 in steps of 1/20. */
+    fraction: z.number(),
+    /** All ten laps are full. */
+    full: z.boolean(),
+  })
+  .meta({ id: "ApiMemberRing" });
+export type MemberRing = z.output<typeof MemberRingSchema>;
+
+/** Where they are with her: the tier, how far to the next and the ring. */
+export const MemberBondSchema = z
+  .object({
+    /** The tier's name (`RELATIONSHIP_LABELS`): what code keys on. */
+    tier: z.string(),
+    /** The tier's stage, 1 to 3 (I, II, III); `null` for 討厭, 很討厭 and 永恆羈絆. */
+    stage: z.number().int().min(1).max(3).nullable().optional(),
+    /** Name and stage as they read it: 「知心 II」. */
+    tier_label: z.string().optional(),
+    /** The tier after it; `null` at the top. */
+    next_tier: z.string().nullable(),
+    /** The next step as they read it: the next stage, or after III the next tier; `null`: none. */
+    next_label: z.string().nullable().optional(),
+    /** How far to the next tier, 0..1 in steps of 1/20. */
+    tier_progress: z.number(),
+    ring: MemberRingSchema,
+  })
+  .meta({ id: "ApiMemberBond" });
+export type MemberBond = z.output<typeof MemberBondSchema>;
+
 /** `GET /api/member/me`. */
 export const MemberViewSchema = z
   .object({
     card: MemberCardSchema,
+    /** `null` for someone she does not know (or will not say). */
+    bond: MemberBondSchema.nullable(),
     memories: z.array(MemberMemorySchema),
     songs: z.array(MemberSongSchema),
     /** The last 30 local days, oldest first, today last. */

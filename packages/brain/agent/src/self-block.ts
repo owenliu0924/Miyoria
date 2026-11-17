@@ -12,7 +12,8 @@
 // | `self.goals`    | `GoalAgendaKey.goals()`         | `SelfStateKey.agenda()`                |
 // | `self.ledger`   | `ArbiterKey.ledger(context)`    | `MindKey.unanswered(context)`          |
 // | `self.notices`  | `agent.notice` events the agent collected                                |
-// | people (data)   | `AffectStateKey` person cards   | `SocialSignalsKey` + `SelfStateKey`    |
+// | people (data)   | `HeartKey` rows, then           | `SocialSignalsKey` + `SelfStateKey`    |
+// |                 | `AffectStateKey` person cards   |                                        |
 // | feeling (data)  | `AffectStateKey.snapshot()`     | `SelfStateKey`                         |
 //
 // Her own state carries no text other people wrote (emotion causes, names): those stay in the
@@ -26,30 +27,27 @@ import {
   type AffectState,
   type Attitude,
   affinityLevel,
-  affinityStep,
   BOND_SCALE_LINE,
   type ContextKey,
   EMOTION_LABELS,
   type EmotionName,
   type EmotionReading,
   type Goal,
+  type HeartPeople,
   type HerStatus,
+  heartCues,
+  heartWords,
   type LedgerView,
   type Mood,
   moodLine,
   type Notice,
   neutralize,
   PERSON_EMOTION_LABELS,
-  PERSON_EMOTION_NAMES,
-  type PersonCard,
-  type PersonEmotionName,
   type PersonId,
-  type RaisedTopic,
   relationshipLabel,
   type SelfState,
   type ShownEmotion,
   safeName,
-  stanceStale,
   xmlAttrs,
 } from "@miyoria/types";
 import type { SelfBlock } from "./compiler.js";
@@ -74,12 +72,9 @@ export interface SelfSources {
   mood?: Mood | null;
   self?: SelfState | null;
   her?: HerStatus | null;
-  unanswered?: readonly RaisedTopic[];
   /** The owner's level hint for the channel (`levelHint`). */
   level?: string | null;
   notices?: readonly Notice[];
-  /** Her crush is among the people present (named in the people block only). */
-  crushHere?: boolean;
 }
 
 const MAX_GOALS = 3;
@@ -167,9 +162,6 @@ export function moodBlock(src: SelfSources): string {
   }
   const hint = shown ? shownHint(shown) : "";
   if (hint !== "") lines.push(hint);
-  if (src.crushHere) {
-    lines.push("你偷偷喜歡的人在場(「在場的人」裡標著)。這是你的祕密,你不想讓任何人知道。");
-  }
   return lines.join("\n");
 }
 
@@ -300,7 +292,7 @@ export function goalsBlock(src: SelfSources): string {
 /** `self.ledger`: what she started on her own lately and the limits that apply now. */
 export function ledgerBlock(src: SelfSources): string {
   const view = src.ledger ?? null;
-  if (view === null) return unansweredHint(src.unanswered ?? []);
+  if (view === null) return "";
   const lines: string[] = [];
   const l = view.limits;
   const offset = src.utcOffsetMinutes ?? -new Date(src.now).getTimezoneOffset();
@@ -376,35 +368,14 @@ export interface PresentPerson {
 }
 
 export interface PeopleSources {
-  affect?: AffectState | null;
+  /** Who an account is and whether she blocked them (`SocialSignalsKey`, from the heart's rows). */
   attitude?: (account: AccountRef) => Attitude | null;
-  self?: SelfState | null;
+  /** The heart (`HeartKey`): what she knows and feels of someone is their row. */
+  heart?: Pick<HeartPeople, "view"> | null;
 }
 
-/** Person emotions at or above this are named. */
-const TOWARD_MIN = 0.2;
 const MAX_FEELING = 60;
-
-function towardLine(emotions: Partial<Record<PersonEmotionName, number>>): string {
-  return PERSON_EMOTION_NAMES.filter((n) => (emotions[n] ?? 0) >= TOWARD_MIN)
-    .map((n) => PERSON_EMOTION_LABELS[n])
-    .join("、");
-}
-
 const MAX_STANCE = 60;
-
-/**
- * A nudge to re-decide how she acts when the level moved since she wrote her stance (or she has
- * none and the bond is already far from neutral). Nothing says what to do: that is hers.
- */
-function stanceCue(level: number, written: number | null): string {
-  if (written !== null) {
-    return stanceStale(written, level)
-      ? `羈絆變了(Lv.${written}→Lv.${level}),你可以自己決定對他有沒有不一樣`
-      : "";
-  }
-  return affinityStep(level) !== 0 ? `你還沒決定怎麼對他(Lv.${level}),可以自己決定` : "";
-}
 
 /** What the people block says of one person (`personTag`); empty values are left out. */
 export interface PersonAttrs {
@@ -415,8 +386,8 @@ export interface PersonAttrs {
   level?: number | string | null;
   /** `主人` for her owner. */
   owner?: string | null;
-  /** How much she trusts them (0..100). */
-  trust?: number | null;
+  /** How much she trusts them (0..100; words when the heart has a row). */
+  trust?: number | string | null;
   /** What she calls them. */
   call_as?: string | null;
   /** What she thinks of them. */
@@ -438,67 +409,83 @@ export function personTag(attrs: PersonAttrs): string {
 }
 
 /** What is known about `p`, or `null` when nothing is. */
-function personAttrs(
-  p: PresentPerson,
-  src: PeopleSources,
-  crush: PersonId | null,
-): PersonAttrs | null {
+function personAttrs(p: PresentPerson, src: PeopleSources): PersonAttrs | null {
   const attrs: PersonAttrs = { name: p.handle };
-  const card: PersonCard | null =
-    src.affect?.cardByHandle(p.handle) ??
-    (p.person === null ? null : (src.affect?.card(p.person) ?? null));
-  if (card !== null) {
-    attrs.relation = card.label;
-    attrs.level = `${card.level}/${AFFINITY_LEVEL_MAX}`;
-    if (card.owner) attrs.owner = "主人";
-    attrs.trust = Math.round(card.trust);
-    if (card.call_name) attrs.call_as = safeName(card.call_name, 16);
-    if (card.feeling.trim() !== "") attrs.impression = short(card.feeling, MAX_FEELING);
-    attrs.toward = towardLine(card.emotions);
-    const stance = (card.stance ?? "").trim();
+  const view = p.person === null ? null : (src.heart?.view(p.person) ?? null);
+  if (view !== null) {
+    // The heart's row (docs/design/v5-heart.md §2.9): the tier, the level and the slow values as
+    // words; the fast ones are block 7's. Her words (call name, impression, stance) are the
+    // heart's too: the nightly reflection, `set_call_name` and the panel write them there.
+    if (view.blocked) return null;
+    const words = heartWords(view);
+    attrs.relation = relationshipLabel({ affinity: view.bond });
+    attrs.level = `${affinityLevel(view.bond)}/${AFFINITY_LEVEL_MAX}`;
+    if (view.owner) attrs.owner = "主人";
+    attrs.trust = words.trust;
+    attrs.familiar = words.familiarity;
+    attrs.respect = words.respect;
+    attrs.ease = words.ease;
+    attrs.rapport = words.rapport;
+    if (view.call_name) attrs.call_as = safeName(view.call_name, 16);
+    const impression = view.impression.trim();
+    if (impression !== "") attrs.impression = short(impression, MAX_FEELING);
+    const stance = view.stance.trim();
     if (stance !== "") attrs.stance = short(stance, MAX_STANCE);
-    attrs.hint = stanceCue(card.level, stance !== "" ? (card.stance_level ?? null) : null);
-  } else {
-    const attitude = src.attitude?.(p.account) ?? null;
-    if (attitude !== null) {
-      attrs.relation = relationshipLabel(attitude);
-      attrs.level = `${affinityLevel(attitude.affinity)}/${AFFINITY_LEVEL_MAX}`;
-      if (attitude.owner) attrs.owner = "主人";
-      attrs.trust = Math.round(attitude.trust);
-      if (attitude.call_name) attrs.call_as = safeName(attitude.call_name, 16);
-    }
-    if (p.person !== null && src.self) {
-      const feeling = src.self.feeling(p.person);
-      if (feeling) attrs.impression = short(feeling.text, MAX_FEELING);
-      const heart = src.self.heart(p.person);
-      if (heart) attrs.toward = towardLine(heart.emotions);
-    }
   }
-  if (p.person !== null && p.person === crush) attrs.secret = "你偷偷喜歡他";
   const known = Object.entries(attrs).some(
     ([k, v]) => k !== "name" && v !== null && v !== undefined && String(v).trim() !== "",
   );
   return known ? attrs : null;
 }
 
+/** Title of block 7's lines about how she feels toward the people here now. */
+export const HEART_NOW_TITLE = "你現在對在場的人的感覺:";
+
+/**
+ * Block 7's lines about the people here (docs/design/v5-heart.md §2.5): the values that move by
+ * the day (warmth, grudge, longing) as words, and a sentence when a grudge or longing is high.
+ * Block 4 is cached until the people, the summary or her slow words about them change, so these
+ * are not there. Someone
+ * without a row, blocked, or with nothing to say is left out; empty when nobody is left.
+ */
+export function heartNowBody(
+  people: readonly { handle: string; person: PersonId | null }[],
+  heart: HeartPeople | null,
+): string {
+  if (heart === null) return "";
+  const lines: string[] = [];
+  const seen = new Set<PersonId>();
+  for (const p of people) {
+    if (p.person === null || seen.has(p.person)) continue;
+    seen.add(p.person);
+    const view = heart.view(p.person);
+    if (view === null || view.blocked) continue;
+    const words = heartWords(view);
+    const parts = [words.warmth];
+    if (view.grudge >= 0.1) parts.push(words.grudge);
+    if (view.longing >= 0.15) parts.push(words.longing);
+    const cues = heartCues(view);
+    lines.push(
+      `- ${safeName(p.handle)}:${parts.join("、")}${cues.length > 0 ? `(${cues.join(";")})` : ""}`,
+    );
+  }
+  return lines.length === 0 ? "" : `${HEART_NOW_TITLE}\n${lines.join("\n")}`;
+}
+
 /**
  * The people block body: one `<person/>` per person (speakers first, then the ones she knows
- * something about, then the others by name only). `crush`: her secret crush (marked on their
- * tag). Empty when nobody is there.
+ * something about, then the others by name only). Empty when nobody is there.
  */
-export function peopleBody(
-  present: readonly PresentPerson[],
-  src: PeopleSources,
-  crush: PersonId | null = null,
-): string {
+export function peopleBody(present: readonly PresentPerson[], src: PeopleSources): string {
   const sorted = [...present].sort((a, b) => Number(b.speaker) - Number(a.speaker));
   const lines: string[] = [];
   const others: string[] = [];
   for (const p of sorted) {
     if (src.attitude?.(p.account)?.blocked) continue;
+    if (p.person !== null && src.heart?.view(p.person)?.blocked) continue;
     let attrs: PersonAttrs | null;
     try {
-      attrs = personAttrs(p, src, crush);
+      attrs = personAttrs(p, src);
     } catch {
       attrs = null;
     }

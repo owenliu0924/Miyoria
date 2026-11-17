@@ -17,7 +17,6 @@ describe("tiers and default scopes", () => {
   it.each([
     ["affect.changed", "self", "short"],
     ["mood.changed", "self", "short"],
-    ["affect.bond", null, "short"],
     ["affect.event", null, "short"],
     ["self.nudge", null, "short"],
     ["self.feel", null, "short"],
@@ -25,8 +24,6 @@ describe("tiers and default scopes", () => {
     ["plan.goal", null, "short"],
     ["mind.reminder", null, "short"],
     ["social.event", null, "short"],
-    ["social.appraisal", null, "short"],
-    ["social.relationship", "owner", "short"],
     ["world.salient", null, "ambient"],
     ["feedback.signal", null, "short"],
     ["conversation.folded", null, "short"],
@@ -112,12 +109,15 @@ describe("payloads as they are published", () => {
     ).toEqual([]);
   });
 
-  it("a mood change and a bond change", () => {
+  it("a mood change", () => {
     expect(
       problems("mood.changed", { valence: 0.2, arousal: 0.4, energy: 0.6, reason: "affect" }),
     ).toEqual([]);
-    expect(
-      problems("affect.bond", { person: "p1", affinity: 1, trust: 0, familiarity: 0.5, why: "x" }),
-    ).toEqual([]);
+  });
+
+  it("no longer knows the types nothing publishes or reads", () => {
+    for (const gone of ["affect.bond", "social.appraisal", "social.relationship"]) {
+      expect(registry.get(gone), gone).toBeNull();
+    }
   });
 });

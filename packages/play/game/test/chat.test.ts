@@ -3,7 +3,7 @@
 // (sanitized, through the gate as `self`), to voice, or both.
 
 import { ActuatorRegistry, ActuatorRegistryKey, type GateDecision } from "@miyoria/gate/actions";
-import { type Social, SocialKey } from "@miyoria/heart/social";
+import { type PeopleDirectory, PeopleDirectoryKey } from "@miyoria/heart/person";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
@@ -112,8 +112,8 @@ class Chat {
             ? { type: "linked", keep: "p1", absorbed: "p2" }
             : { type: "invalid_code" };
         },
-      } as unknown as Social;
-      s.provide("app", SocialKey, social);
+      } as unknown as PeopleDirectory;
+      s.provide("app", PeopleDirectoryKey, social);
     }
     // `game.act` (her chat lines go through it) belongs to the game module.
     await c.sup.register(new GameModule("DeepSeek醬", "傲嬌"), null, true);
@@ -285,7 +285,7 @@ describe("game chat module", () => {
     await c.stop();
   });
 
-  it("without the social module linking is unavailable", async () => {
+  it("without the heart module linking is unavailable", async () => {
     const c = await Chat.create(null, { social: false });
     await c.chat("Steve", "!link GOODCODE");
     expect(c.links).toEqual([{ game: "minecraft", account: "steve", outcome: "unavailable" }]);

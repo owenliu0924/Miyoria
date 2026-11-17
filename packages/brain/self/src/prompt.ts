@@ -29,7 +29,14 @@ import { type TranscriptTail, toMessages } from "@miyoria/memory/transcript";
 import { dataBlock, isJsonObject } from "@miyoria/types";
 import { FOR_ARG, FOR_PROPERTY, slimTool } from "../../agent/src/index.js";
 import { PREFIX_PROFILE, type ProfileName } from "./profiles.js";
-import { PROFILE_NOTES, RESULT_TITLE, rulesFor, WAKE_LINES } from "./rules.js";
+import {
+  FEEL_REMINDER,
+  FEEL_RULES,
+  PROFILE_NOTES,
+  RESULT_TITLE,
+  rulesFor,
+  WAKE_LINES,
+} from "./rules.js";
 import type { PromptInput, PromptSource, Wake } from "./types.js";
 
 /** The text of each block around the transcript; `null`: the block is left out. */
@@ -156,7 +163,12 @@ export function runMessages(
   const now = blocks.now === null ? "" : `<now>\n${blocks.now}\n</now>\n`;
   const style = blocks.style ? `<style_note>\n${blocks.style}\n</style_note>\n` : "";
   const own = note === null ? "" : `${note}\n`;
-  tail.push(systemMessage(`${now}${style}${own}<turn>${wakeLine(wake)}</turn>`));
+  // Only where a feel block is read (the profiles whose block 1 has its rules).
+  const feel = rules.includes(FEEL_RULES)
+    ? `
+${FEEL_REMINDER}`
+    : "";
+  tail.push(systemMessage(`${now}${style}${own}<turn>${wakeLine(wake)}${feel}</turn>`));
 
   return { head, history: toMessages(transcript), tail };
 }

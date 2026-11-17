@@ -16,8 +16,6 @@ export const HER_NAME = "DeepSeek-chan";
 export function mindState(m: MindView): { tone: Tone; label: string } {
   if (m.paused) return { tone: "warning", label: "已緊急停止" };
   if (!m.running) return { tone: "neutral", label: "心智迴圈未啟動" };
-  if (m.stats?.idle_reason === "budget exhausted") return { tone: "danger", label: "額度用完" };
-  if (!m.accepting) return { tone: "neutral", label: "休息中" };
   return { tone: "success", label: "運作中" };
 }
 

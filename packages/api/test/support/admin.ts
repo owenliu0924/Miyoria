@@ -3,13 +3,14 @@
 // and the arguments of the client method it replaced, so a test reads as it did.
 
 import type {
+  AdjustPersonRequest,
   ArbiterDecisionsView,
   AssignRoleRequest,
   ConversationNote as ConversationNoteView,
   CostReport as CostInfo,
-  DayPlanView,
   ExtensionInfo,
   GoalsView,
+  HeartHistoryPage,
   KnowledgeView,
   McpServerInfo,
   MemoryItem,
@@ -17,9 +18,10 @@ import type {
   MemoryRecordView,
   MindView,
   ModuleInfo,
-  PersonDetail,
+  PersonAnchor,
   PersonPage,
-  PersonSummary,
+  PersonProfile,
+  PersonRow,
   PromptSummary,
   QueueState,
   ReflectionView,
@@ -27,6 +29,7 @@ import type {
   SayResponse,
   SceneRolesState,
   SelfView,
+  SetAnchorRequest,
   StageState,
   TurnOutcomeKind,
   UpdateMemoryRequest,
@@ -45,7 +48,6 @@ import type {
   ArbiterVerdict,
   ContextKey,
   LedgerView,
-  PersonCard,
   PlatformId,
   SavedPrompt,
   ThoughtDigest,
@@ -85,11 +87,18 @@ export function adminCalls(base: string, token: string) {
     // ---- people
     people: (query: { q?: string; limit?: number; cursor?: string } = {}) =>
       get<PersonPage>("/api/people", query),
-    person: (id: string) => get<PersonDetail>(`/api/people/${seg(id)}`),
+    person: (id: string, query: { limit?: number } = {}) =>
+      get<PersonProfile>(`/api/people/${seg(id)}`, query),
+    personHistory: (id: string, query: { before?: string; limit?: number } = {}) =>
+      get<HeartHistoryPage>(`/api/people/${seg(id)}/history`, query),
     updatePerson: (id: string, request: UpdatePersonRequest) =>
-      send<PersonSummary>("PATCH", `/api/people/${seg(id)}`, request),
-    adjustPerson: (id: string, affinity: number) =>
-      send<PersonSummary>("POST", `/api/people/${seg(id)}/adjust`, { affinity }),
+      send<PersonRow>("PATCH", `/api/people/${seg(id)}`, request),
+    adjustPerson: (id: string, request: AdjustPersonRequest) =>
+      send<PersonRow>("POST", `/api/people/${seg(id)}/adjust`, request),
+    setAnchor: (id: string, tier: number, request: SetAnchorRequest) =>
+      send<PersonAnchor[]>("PUT", `/api/people/${seg(id)}/anchors/${tier}`, request),
+    removeAnchor: (id: string, tier: number) =>
+      send<PersonAnchor[]>("DELETE", `/api/people/${seg(id)}/anchors/${tier}`),
 
     // ---- memory
     memory: (query: MemoryListQuery = {}) => get<MemoryPage>("/api/memory", query),
@@ -172,10 +181,8 @@ export function adminCalls(base: string, token: string) {
     self: () => get<SelfView>("/api/self"),
     world: () => get<WorldView>("/api/world"),
     affect: () => get<AffectSnapshot>("/api/affect"),
-    affectPeople: () => get<PersonCard[]>("/api/affect/people"),
     goals: (closed = false) =>
       get<GoalsView>("/api/mind/goals", { closed: closed ? "true" : undefined }),
-    dayPlan: () => get<DayPlanView>("/api/mind/plan"),
 
     // ---- what she was told and how her turns ended
     prompts: (context: ContextKey | null = null, limit = 30) =>

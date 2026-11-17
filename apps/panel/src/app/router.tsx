@@ -73,10 +73,15 @@ export const characterRoute = createRoute({
 export const innerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inner",
-  validateSearch: (s: Record<string, unknown>): { tab?: InnerTab; thought?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { tab?: InnerTab; thought?: string; feelings?: true } => ({
     tab: oneOf(INNER_TABS, s.tab),
     thought: str(s.thought),
+    // 感情 was a second list of people: an old link to it goes to 角色 / 人.
+    ...(s.tab === "feelings" ? { feelings: true as const } : {}),
   }),
+  beforeLoad: ({ search }) => {
+    if (search.feelings) throw redirect({ to: "/character", search: { tab: "people" } });
+  },
   component: InnerPage,
 });
 

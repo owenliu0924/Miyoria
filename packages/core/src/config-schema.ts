@@ -35,8 +35,8 @@ import { EconomyConfigSchema, EconomyModule } from "@miyoria/economy";
 import { ActionsConfigSchema, ActionsModule } from "@miyoria/gate/actions";
 import { ModerationConfigSchema, ModerationModule } from "@miyoria/gate/moderation";
 import { MindConfigSchema, MindModule } from "@miyoria/heart/mind";
+import { HeartConfigSchema, HeartModule } from "@miyoria/heart/person";
 import { SelfConfigSchema, SelfModule } from "@miyoria/heart/self";
-import { SocialConfigSchema, SocialModule } from "@miyoria/heart/social";
 import { LiveConfigSchema, LiveModule } from "@miyoria/live";
 import { LlmConfigSchema, LlmModule } from "@miyoria/llm/llm";
 import { FactsConfigSchema, FactsModule } from "@miyoria/memory/facts";
@@ -123,9 +123,9 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [ActionsModule.ID, ActionsConfigSchema],
   [DirectiveModule.ID, DirectiveConfigSchema],
   [ActivityModule.ID, ActivityConfigSchema],
-  [SocialModule.ID, SocialConfigSchema],
   [WorldModule.ID, WorldConfigSchema],
   [SelfModule.ID, SelfConfigSchema],
+  [HeartModule.ID, HeartConfigSchema],
   [MemoryModule.ID, MemoryConfigSchema],
   [ArbiterModule.ID, ArbiterConfigSchema],
   [MindModule.ID, MindConfigSchema],

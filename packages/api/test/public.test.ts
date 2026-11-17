@@ -7,7 +7,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import type { IssuedCard } from "@miyoria/contracts/api";
+import { type IssuedCard, MemberViewSchema } from "@miyoria/contracts/api";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
@@ -19,6 +19,7 @@ import {
   GoalStoreKey,
 } from "@miyoria/economy";
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
+import { type HeartStore, heartTables } from "@miyoria/heart/person";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
@@ -39,15 +40,14 @@ import {
   MessageLogKey,
   PeopleStoreKey,
   SettingsStoreKey,
+  SqliteStore,
+  StoreKey,
 } from "@miyoria/store";
 import {
   type AccountRef,
   ActivityManagerKey,
   type ActivitySnapshot,
-  type AffectState,
-  AffectStateKey,
   AuthorizerKey,
-  type BondChange,
   type ContextKey,
   DirectivesKey,
   type Envelope,
@@ -56,7 +56,6 @@ import {
   type JsonValue,
   KeepsakesKey,
   ModerationKey,
-  type PersonCard,
   type PersonId,
   SelfStateKey,
   SocialSignalsKey,
@@ -65,7 +64,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CARD_POSES, CARDS_PER_DAY, normalizeSerial } from "../src/card.js";
 import { ActiveProfileKey, ApiModule } from "../src/index.js";
-import { acceptableQuery, affinityBand, familiarityBand, trustBand } from "../src/member.js";
+import { acceptableQuery, bondBand, familiarityBand, trustBand } from "../src/member.js";
 import { cardMeta, injectMeta } from "../src/meta.js";
 import { Monitor } from "../src/monitor.js";
 import { cardVersion } from "../src/og.js";
@@ -180,27 +179,21 @@ function memory(id: string, over: Partial<MemoryRecord>): MemoryRecord {
   } as MemoryRecord;
 }
 
-function card(person: PersonId, handle: string, over: Partial<PersonCard> = {}): PersonCard {
-  return {
-    person,
-    handle,
-    call_name: null,
-    affinity: 60,
-    trust: 50,
-    familiarity: 40,
-    attachment: 0.91,
-    emotions: { missing: 0.6 },
-    feeling: `SECRET-feeling ${handle} 跟 Bob 比起來`,
-    public_feeling: null,
-    label: "好朋友",
-    level: 12,
-    owner: false,
-    blocked: false,
-    last_seen: AT,
-    last_together: null,
-    updated_at: AT,
-    ...over,
-  };
+/** Her row for someone, as the member page reads it (`heart_person`). */
+function seed(
+  heart: HeartStore,
+  person: PersonId,
+  over: { call_name?: string; public_feeling?: string; blocked?: boolean } = {},
+): void {
+  heart.adminSet(person, "bond", 60);
+  heart.adminSet(person, "trust", 50);
+  heart.adminSet(person, "familiarity", 40);
+  heart.edit(person, {
+    impression: "SECRET-feeling 跟 Bob 比起來",
+    call_name: over.call_name ?? null,
+    public_feeling: over.public_feeling ?? null,
+  });
+  if (over.blocked) heart.setTag(person, "blocked", true);
 }
 
 interface Rig {
@@ -209,12 +202,12 @@ interface Rig {
   store: TestStore;
   auth: AuthService;
   people: Map<string, PersonId>;
-  cards: Map<PersonId, PersonCard>;
+  /** Her rows for people (`heart_person`). */
+  heart: HeartStore;
   songs: SongEntry[];
   memories: Map<PersonId, MemoryRecord[]>;
   derived: MemoryRecord[];
   forgotten: { person: PersonId | null; account: AccountRef }[];
-  bonds: { person: PersonId; change: BondChange }[];
   requested: { args: unknown; kind: string; requester: AccountRef | null }[];
   bus: Envelope[];
   counters: { songs: number; activity: number };
@@ -311,25 +304,24 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
   const erin = people.get(ERIN) as PersonId;
   const frank = people.get(FRANK) as PersonId;
 
-  const cards = new Map<PersonId, PersonCard>([
-    [alice, card(alice, "Alice", { call_name: "小愛", public_feeling: "妳總是記得跟我打招呼。" })],
-    [bob, card(bob, "Bob", { public_feeling: "SECRET-bob-line" })],
-    [carol, card(carol, "Carol", { public_feeling: "SECRET-carol-line" })],
-    [erin, card(erin, "Erin", { public_feeling: "SECRET-erin-line" })],
-    [frank, card(frank, "Frank", { blocked: true, public_feeling: "SECRET-frank-line" })],
-  ]);
-  const bonds: Rig["bonds"] = [];
-  s.provide("self", AffectStateKey, {
-    card: (p: PersonId) => cards.get(p) ?? null,
-    cards: () => [...cards.values()],
-    adjustBond: async (person: PersonId, change: BondChange) => {
-      bonds.push({ person, change });
-      return cards.get(person) ?? null;
-    },
-  } as unknown as AffectState);
+  const heartDb = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+  cleanups.push(() => heartDb.close());
+  const heart = heartDb.plugin(heartTables).people;
+  seed(heart, alice, { call_name: "小愛", public_feeling: "妳總是記得跟我打招呼。" });
+  seed(heart, bob, { public_feeling: "SECRET-bob-line" });
+  seed(heart, carol, { public_feeling: "SECRET-carol-line" });
+  seed(heart, erin, { public_feeling: "SECRET-erin-line" });
+  seed(heart, frank, { blocked: true, public_feeling: "SECRET-frank-line" });
+  // Only the heart's rows are read through the whole store here.
+  s.provide("store", StoreKey, { plugin: (p: never) => heartDb.plugin(p) } as never);
+  // Carol is blocked only here, the way the directory knows it; Frank by the tag on his row,
+  // which the directory reads too.
   s.provide("social", SocialSignalsKey, {
-    attitude: (a: AccountRef) =>
-      a.id === CAROL ? ({ blocked: true } as never) : ({ blocked: false } as never),
+    attitude: (a: AccountRef) => {
+      const person = people.get(a.id);
+      const tagged = person !== undefined && (heart.get(person)?.tags.includes("blocked") ?? false);
+      return { blocked: a.id === CAROL || tagged } as never;
+    },
   });
 
   const songs = [
@@ -443,6 +435,8 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
     }),
     forget: async (person: PersonId | null, account: AccountRef) => {
       forgotten.push({ person, account });
+      // The store's "forget me" runs the heart plugin's hook in the same transaction.
+      if (person !== null) heart.forgetPerson([person], "forget me", "memory");
       return { deleted: 3, about: 2, derived: 1, unverified: 1 };
     },
   } as never);
@@ -525,12 +519,11 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
     store,
     auth,
     people,
-    cards,
+    heart,
     songs,
     memories,
     derived,
     forgotten,
-    bonds,
     requested,
     bus,
     counters,
@@ -618,6 +611,15 @@ const ME_SHAPE = [
   "activity[].date",
   "activity[].text",
   "activity[].voice",
+  "bond.next_label",
+  "bond.next_tier",
+  "bond.ring.fraction",
+  "bond.ring.full",
+  "bond.ring.lap",
+  "bond.stage",
+  "bond.tier",
+  "bond.tier_label",
+  "bond.tier_progress",
   "can_request_song",
   "card.affinity",
   "card.call_name",
@@ -1102,7 +1104,8 @@ describe("the member view", () => {
     const body = res.body as Record<string, never>;
     expect(body.card).toEqual({
       call_name: "小愛",
-      relationship: "好朋友",
+      // What she reads on the card: the tier with its stage (H10).
+      relationship: "好朋友 II",
       affinity: "很好",
       trust: "信任",
       familiarity: "熟",
@@ -1136,9 +1139,41 @@ describe("the member view", () => {
     expect(text).not.toContain("owner");
   });
 
+  it("shows the ring and the tier of a high bond, and no number of it", async () => {
+    const r = await rig();
+    const cookie = await r.login("alice");
+    r.heart.adminSet(r.people.get(ALICE) as PersonId, "bond", 742.3);
+    const res = await r.get("/api/member/me", cookie);
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      card: { affinity: string };
+      bond: { tier: string; next_tier: string; tier_progress: number; ring: unknown };
+    };
+    expect(body.bond).toEqual({
+      tier: "命運相連",
+      // The stage is a coarse band (H10): the last third of the tier, no number.
+      stage: 3,
+      tier_label: "命運相連 III",
+      next_tier: "無可取代",
+      next_label: "無可取代 I",
+      tier_progress: 0.9,
+      ring: { lap: 7, fraction: 0.4, full: false },
+    });
+    // The band words go all the way up.
+    expect(body.card.affinity).toBe("像家人一樣");
+    expect(res.text).not.toContain("742");
+    expect(shape(res.body)).toEqual(ME_SHAPE);
+    // A response is stripped by the schema: a raw value has no field to ride on.
+    const stripped = MemberViewSchema.parse({
+      ...(res.body as object),
+      bond: { ...body.bond, raw: 742.3, ring: { lap: 7, fraction: 0.4, full: false, bond: 742.3 } },
+    });
+    expect(JSON.stringify(stripped)).not.toContain("742");
+  });
+
   it("bands every value into a word", () => {
-    for (let v = -100; v <= 100; v += 1) {
-      expect(affinityBand(v)).toMatch(/^\D+$/);
+    for (let v = -100; v <= 1000; v += 1) {
+      expect(bondBand(v)).toMatch(/^\D+$/);
       if (v >= 0) {
         expect(trustBand(v)).toMatch(/^\D+$/);
         expect(familiarityBand(v)).toMatch(/^\D+$/);
@@ -1275,9 +1310,8 @@ describe("public_feeling on the page", () => {
   it("shows nothing rather than her private feeling when there is none", async () => {
     const r = await rig();
     const alice = r.people.get(ALICE) as PersonId;
-    const c = r.cards.get(alice) as PersonCard;
     // Names nobody else, so only the rule itself can keep it off the page, not the name filter.
-    r.cards.set(alice, { ...c, public_feeling: null, feeling: "SECRET-feeling 我有點在意她" });
+    r.heart.edit(alice, { public_feeling: null, impression: "SECRET-feeling 我有點在意她" });
     const cookie = await r.login("alice");
     const res = await r.get("/api/member/me", cookie);
     expect((res.body as { card: Record<string, unknown> }).card.public_feeling).toBeNull();
@@ -1288,15 +1322,14 @@ describe("public_feeling on the page", () => {
   it("drops a stored line that names someone else, even one who came along later", async () => {
     const r = await rig();
     const alice = r.people.get(ALICE) as PersonId;
-    const c = r.cards.get(alice) as PersonCard;
-    r.cards.set(alice, { ...c, public_feeling: "妳和 Bob 感情真好。" });
+    r.heart.edit(alice, { public_feeling: "妳和 Bob 感情真好。" });
     const cookie = await r.login("alice");
     const body = (await r.get("/api/member/me", cookie)).body as {
       card: Record<string, unknown>;
     };
     expect(body.card.public_feeling).toBeNull();
     // Written spaced and in another case it is still the name.
-    r.cards.set(alice, { ...c, public_feeling: "妳和 B O B 感情真好。" });
+    r.heart.edit(alice, { public_feeling: "妳和 B O B 感情真好。" });
     const again = (await r.get("/api/member/me", cookie)).body as typeof body;
     expect(again.card.public_feeling).toBeNull();
   });
@@ -1304,8 +1337,7 @@ describe("public_feeling on the page", () => {
   it("drops a line moderation does not pass", async () => {
     const r = await rig();
     const alice = r.people.get(ALICE) as PersonId;
-    const c = r.cards.get(alice) as PersonCard;
-    r.cards.set(alice, { ...c, public_feeling: "BADWORD" });
+    r.heart.edit(alice, { public_feeling: "BADWORD" });
     const cookie = await r.login("alice");
     const body = (await r.get("/api/member/me", cookie)).body as {
       card: Record<string, unknown>;
@@ -1359,7 +1391,8 @@ describe("a blocked person", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ deleted: 0, about: 0, derived: 0, unverified: 0 });
     expect(r.forgotten).toEqual([]);
-    expect(r.bonds).toEqual([]);
+    const carol = r.people.get(CAROL) as PersonId;
+    expect(r.heart.get(carol)?.public_feeling).toBe("SECRET-carol-line");
   });
 
   it("is treated as blocked when nothing can tell otherwise", async () => {
@@ -1429,9 +1462,8 @@ describe("forgetting", () => {
     expect(res.body).toEqual({ deleted: 3, about: 2, derived: 1, unverified: 1 });
     const alice = r.people.get(ALICE);
     expect(r.forgotten).toEqual([{ person: alice, account: discord(ALICE) }]);
-    expect(r.bonds).toEqual([
-      { person: alice, change: { public_feeling: null, why: "本人要求忘記" } },
-    ]);
+    // The line was written from what they said: it goes with them.
+    expect(r.heart.get(alice as PersonId)?.public_feeling).toBeNull();
     const audit = await r.store.audit.recent(10, `discord:${ALICE}`);
     expect(audit.find((a) => a.action === "member.forget")?.detail).toEqual({ deleted: 3 });
   });
@@ -1604,7 +1636,7 @@ describe("cards she gives", () => {
     }
     expect([...poses].sort()).toEqual([...(CARD_POSES.很好 ?? [])].sort());
     const alice = r.people.get(ALICE) as PersonId;
-    r.cards.set(alice, { ...(r.cards.get(alice) as PersonCard), affinity: -80 });
+    r.heart.adminSet(alice, "bond", -80);
     const cold = (await issue(r, cookie)).body as Card;
     expect(cold.affinity).toBe("很差");
     expect(cold.pose).toBe("cold");

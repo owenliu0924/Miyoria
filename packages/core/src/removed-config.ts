@@ -72,6 +72,49 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
   // [modules.mind]
   "modules.mind.max_intents",
   "modules.mind.daily_posts",
+  // [modules.reflect]: the daily reflection's bonds part (phase 4: one reflection per person).
+  "modules.reflect.max_bonds",
+  // [modules.social]: the module is gone (phase 4 step 5); who people are is module `heart`'s,
+  // whose `auto_owner_tag` replaces the one key still meant.
+  "modules.social",
+  // [modules.self]: her feelings about people are the heart's (phase 4 step 5).
+  "modules.self.emotions.care_affinity",
+  "modules.self.heart",
+  "modules.self.bond",
+  "modules.self.max_feeling_chars",
+  // [modules.world]: who she cares about is the heart's 在意.
+  "modules.world.care_min_affinity",
+  "modules.world.care_min_familiarity",
+  // [modules.mind]: Appraise, Plan, the heartbeat and her own starts are gone (phase 4 step 5).
+  ...[
+    "purpose",
+    "max_calls_per_hour",
+    "min_interval_secs",
+    "heartbeat_mins",
+    "min_heartbeat_mins",
+    "max_heartbeat_mins",
+    "coalesce_ms",
+    "timeout_ms",
+    "max_tokens",
+    "self_start_gap_voice_secs",
+    "self_start_gap_text_secs",
+    "self_start_max_backoff",
+    "stale_topic_mins",
+    "blocked_retry_mins",
+    "contributors",
+    "appraise_quiet_secs",
+    "appraise_min_lines",
+    "appraise_max_per_hour",
+    "appraise_max_tokens",
+    "cared_attachment",
+    "mood_drop",
+    "game_share",
+  ].map((key) => `modules.mind.${key}`),
+  // [llm]: the model chain and the reasoning of the calls that are gone.
+  "llm.purposes.mind",
+  "llm.reasoning.appraise",
+  "llm.reasoning.plan",
+  "llm.reasoning.plan_daily",
 ];
 
 /** The removed paths `config` still holds, in the order of `REMOVED_CONFIG_KEYS`. */

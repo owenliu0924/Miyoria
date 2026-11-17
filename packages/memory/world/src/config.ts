@@ -7,7 +7,6 @@ const secs = () => z.number().int().nonnegative();
  *
  * ```toml
  * [modules.world]
- * care_min_affinity = 30
  * game_interests = ["Minecraft"]
  * ```
  */
@@ -43,10 +42,6 @@ export const WorldConfigSchema = z.object({
   quiet_after_secs: secs().default(300),
   /** A mention counts as salient when she has not spoken in that context for this long. */
   away_secs: secs().default(600),
-  /** People she cares about: affinity at least this... */
-  care_min_affinity: z.number().default(30),
-  /** ...or familiarity at least this. */
-  care_min_familiarity: z.number().default(40),
   /** Game names she is interested in, besides the profile's `interests`. */
   game_interests: z.array(z.string()).default([]),
   /** Repeats of the same salient change within this window are merged into one event. */

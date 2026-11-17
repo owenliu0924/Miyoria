@@ -36,18 +36,8 @@ const THOUGHT: Thought = {
 };
 
 const fakeMind: Mind = {
-  accepting: true,
-  suggest: () => true,
   thoughts: (limit = 50) => [THOUGHT].slice(0, limit),
-  stats: () => ({
-    calls_last_hour: 1,
-    max_calls_per_hour: 12,
-    calls_total: 4,
-    tokens_total: 4800,
-    last_at: THOUGHT.at,
-    next_heartbeat_at: null,
-    idle_reason: null,
-  }),
+  stats: () => ({ last_at: THOUGHT.at, idle_reason: null }),
 };
 
 const sups: Supervisor[] = [];
@@ -78,7 +68,6 @@ describe("mind routes", () => {
     expect(await adm.mind()).toEqual({
       paused: false,
       running: false,
-      accepting: false,
       stats: null,
       pending_approvals: 0,
       emergency: null,
@@ -93,7 +82,7 @@ describe("mind routes", () => {
     expect((await raw(h.base, "GET", "/api/mind/thoughts/nope", { token: TOKEN })).status).toBe(
       404,
     );
-    expect((await adm.mind()).stats?.calls_total).toBe(4);
+    expect((await adm.mind()).stats?.last_at).toBe(THOUGHT.at);
     expect((await raw(h.base, "GET", "/api/mind/thoughts")).status).toBe(401);
   });
 

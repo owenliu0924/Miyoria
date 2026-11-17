@@ -5,7 +5,6 @@
 
 import { fileURLToPath } from "node:url";
 import { ArbiterModule, FloorConfigSchema, FloorCore } from "@miyoria/brain/arbiter";
-import { heartbeatMs, mindConfig, rankDesires } from "@miyoria/heart/mind";
 import { computeBiases, MAX_BIAS, SelfModule, shownEmotion } from "@miyoria/heart/self";
 import { EventLogService } from "@miyoria/memory/facts";
 import { Supervisor } from "@miyoria/runtime/kernel";
@@ -26,8 +25,6 @@ import {
   FLOOR_CLAIMS,
   FloorKey,
   MoodSignalsKey,
-  PERSON_EMOTION_NAMES,
-  type PersonCard,
   toTimestamp,
 } from "@miyoria/types";
 import { VoiceProfile } from "@miyoria/voice/voice";
@@ -46,8 +43,9 @@ const DRIVES: Drives = {
   hunger: 0,
   longing: 0,
 };
-type Card = Pick<PersonCard, "handle" | "attachment" | "emotions" | "blocked">;
-const OWEN: Card = { handle: "Owen", attachment: 0.8, emotions: {}, blocked: false };
+/** Someone she cares about (the heart's 在意), and how much she misses them. */
+type Cared = { handle: string; longing: number };
+const OWEN: Cared = { handle: "Owen", longing: 0 };
 
 const PROFILE = fileURLToPath(new URL("../../../profiles/deepseek-chan", import.meta.url));
 const voice = VoiceProfile.parse("deepseek-chan", (await Profile.loadDir(PROFILE)).voice);
@@ -75,7 +73,7 @@ function snapshotOf(felt: Partial<Record<EmotionName, number>>, display: "open" 
     drives: DRIVES,
     boredom: 0,
     valence: 0,
-    cards: [OWEN],
+    people: [OWEN],
   });
   return {
     at: toTimestamp(NOW),
@@ -89,32 +87,10 @@ function snapshotOf(felt: Partial<Record<EmotionName, number>>, display: "open" 
   } satisfies AffectSnapshot;
 }
 
-const desires = (snapshot: AffectSnapshot, cards: readonly Card[] = [OWEN]) =>
-  rankDesires({
-    affect: snapshot,
-    cards,
-    where: () => "online",
-    goals: [],
-    fired: new Set(),
-    capabilities: new Set(["chat.start", "chat.dm", "game.start", "sing.request"]),
-    activity: null,
-    inVoice: false,
-    cared: 0.9,
-  }).map((d) => `${d.want}:${d.person ?? ""}:${d.weight}`);
+/** What her own starts read of her feelings (`biases`: the initiative's mood weight and wants). */
+const lean = (s: AffectSnapshot) => JSON.stringify([s.biases.initiative, s.biases.wants]);
 
-const beat = (s: AffectSnapshot) =>
-  heartbeatMs(
-    {
-      urge: 0,
-      emptyStreak: 0,
-      quiet: false,
-      budget: "ok",
-      initiative: s.biases.initiative,
-    },
-    mindConfig(),
-  );
-
-type Output = "voice" | "expression" | "talk" | "planner";
+type Output = "voice" | "expression" | "talk" | "initiative";
 
 /** Which real outputs `felt` changes, against her feeling nothing. */
 function reached(
@@ -135,8 +111,7 @@ function reached(
   }
   const budget = (s: AffectSnapshot) => floorWith(s.biases.talkativeness).budget(ROOM).allowed;
   if (budget(now) !== budget(calm)) out.push("talk");
-  const plan = (s: AffectSnapshot) => JSON.stringify([desires(s), beat(s)]);
-  if (plan(now) !== plan(calm)) out.push("planner");
+  if (lean(now) !== lean(calm)) out.push("initiative");
   return out;
 }
 
@@ -155,16 +130,14 @@ describe("every emotion reaches a real output", () => {
     const row = EMOTION_OUTPUTS[name];
     const out = reached({ [name]: 1 }, "open");
     if (row.talk !== 0) expect(out).toContain("talk");
-    if (row.initiative !== 0 || row.want !== null) expect(out).toContain("planner");
+    if (row.initiative !== 0 || row.want !== null) expect(out).toContain("initiative");
   });
 
-  it.each(PERSON_EMOTION_NAMES)("%s toward someone changes what she wants about them", (name) => {
-    // She wants company: what she feels toward him changes what that means for him.
+  it("missing someone she cares about (the heart's longing) changes what she wants about them", () => {
     const lonely = { emotions: { lonely: 0.5 }, drives: DRIVES, boredom: 0, valence: 0 };
     const snapshot = snapshotOf({ lonely: 0.5 }, "open");
-    const cards: Card[] = [{ ...OWEN, emotions: { [name]: 0.9 } }];
-    const biases = computeBiases({ ...lonely, cards });
-    expect(desires({ ...snapshot, biases }, cards)).not.toEqual(desires(snapshot));
+    const biases = computeBiases({ ...lonely, people: [{ ...OWEN, longing: 0.9 }] });
+    expect(lean({ ...snapshot, biases })).not.toEqual(lean(snapshot));
   });
 
   it("the guard itself: a row that reaches nothing is caught", () => {
@@ -195,9 +168,6 @@ describe("an extreme state", () => {
     for (const kind of ["addressed", "reply", "result", "urgent"] as const) {
       expect(floor.check(kind, ROOM), kind).toBeNull();
     }
-    // Plan keeps thinking about what she wants, and it is not nothing.
-    expect(beat(worst)).not.toBeNull();
-    expect(desires(worst).length).toBeGreaterThan(0);
   });
 
   it("does not flood the room", () => {
@@ -206,7 +176,6 @@ describe("an extreme state", () => {
     const config = FloorConfigSchema.parse({});
     const allowed = floorWith(best.biases.talkativeness).budget(ROOM).allowed;
     expect(allowed).toBeLessThanOrEqual(config.budget.base_lines * config.max_feeling_multiplier);
-    expect(beat(best)).toBeGreaterThanOrEqual(mindConfig().min_heartbeat_mins * 60_000);
   });
 
   it("changes nothing about who may cut in", () => {
