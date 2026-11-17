@@ -5,7 +5,8 @@
 // up (§6.2: who got it is worth talking about), an SR or better daily card, a card the pity gave, a
 // card with a part they wished for, a series completed. Each is one short line, with nothing in it
 // that is not public (the rarity and the pity's length are on the odds table; the relationship and
-// her words are not repeated; a milestone's tier is hers to know). An ordinary card is not told:
+// her words are not repeated; a milestone's tier is hers to know; a title is named only when it is
+// public, and a new title is private). An ordinary card is not told:
 // she would hear of every purchase otherwise. A keepsake is not told either: it is no news to her,
 // and nobody is sent anything for it (P5).
 
@@ -41,8 +42,14 @@ export function cardNotes(issued: IssuedCard, wishedNames: ReadonlyMap<string, s
   for (const id of card.wished) {
     lines.push(`${who} ${got}了願望單上的「${wishedNames.get(id) ?? id}」。`);
   }
+  // A title is theirs alone until they make it public: the note does not name a private one, so
+  // she cannot say it in a channel.
   for (const t of issued.titles) {
-    lines.push(`${who} 集滿了一個系列,拿到稱號「${t.title}」。`);
+    lines.push(
+      t.public
+        ? `${who} 集滿了一個系列,拿到稱號「${t.title}」。`
+        : `${who} 集滿了一個系列,拿到一個稱號。`,
+    );
   }
   return lines;
 }
