@@ -113,6 +113,12 @@ export {
 } from "./imagegen.js";
 export { isJsonObject, type JsonObject, type JsonPrimitive, type JsonValue } from "./json.js";
 export {
+  type KaraokeFileName,
+  type KaraokeQuery,
+  type KaraokeWorker,
+  KaraokeWorkerKey,
+} from "./karaoke.js";
+export {
   CONVERSATION_FOLDED_TOPIC,
   type ConversationFolded,
   type ConversationState,

@@ -365,6 +365,12 @@ export {
   LegacySnapshotSchema,
 } from "./identity.js";
 export {
+  KARAOKE_EVENTS,
+  KaraokeScored,
+  type KaraokeScoredData,
+  KaraokeScoredSchema,
+} from "./karaoke.js";
+export {
   LlmBudget,
   type LlmBudgetData,
   LlmBudgetSchema,

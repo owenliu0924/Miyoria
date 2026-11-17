@@ -1,4 +1,5 @@
-"""The real song pipeline: yt-dlp / library → Demucs → lead / backing split → Seed-VC (singing, F0) → mix.
+"""The real song pipeline: yt-dlp / library → Demucs → lead / backing split → Seed-VC (singing, F0) → mix;
+for karaoke, RMVPE on the lead (``karaoke_f0``) instead of the conversion.
 
 Everything heavy is imported lazily so the server (and its mock mode) starts without torch. Models
 are loaded per stage and freed right after (``SING_KEEP_MODELS=1`` keeps them): the GPU is shared
@@ -396,6 +397,7 @@ class RealBackend:
         self._vc: Any = None
         self._demucs: Any = None  # the vocal separator, whichever it is
         self._lead: Any = None
+        self._pitch: Any = None  # RMVPE alone, for a karaoke reference (karaoke_f0)
         self.gate: Callable[[], None] | None = None  # sharing the GPU: runs before every step
         self._ref: Any = None
         self._ref_f0: float | None = None
@@ -852,6 +854,30 @@ class RealBackend:
 
         return f0_stats(self._load_vc().f0(mono, sr, clean=self.f0_clean))
 
+    def karaoke_f0(self, wav: Path, device: str | None = None):
+        """RMVPE's F0 of ``wav`` (its channels averaged): Hz per 10 ms frame, 0 unvoiced, not cleaned
+        (melody.py gates and cleans it). Only the pitch tracker is loaded for it, on ``device`` (where
+        gpu.py placed the stage; ``cpu`` or the worker's device), unless the converter that has one
+        is already loaded there."""
+        dev = "cpu" if device == "cpu" else self.device
+        x, sr = read_audio(wav)
+        vc = getattr(self, "_vc", None)
+        try:
+            if vc is not None and str(getattr(vc, "device", "")) == str(dev):
+                return vc.f0(x.mean(axis=1), sr, clean=False)
+            code = self.ying_dir if self.voice.startswith("ying") else self.seedvc_dir
+            if str(code) not in sys.path:
+                sys.path.insert(0, str(code))  # its ``modules`` package has RMVPE (see ``_load_vc``)
+            from seedvc_runtime import PitchExtractor
+
+            self._pitch = PitchExtractor(self.seedvc_dir, dev)
+            return self._pitch.f0(x.mean(axis=1), sr, clean=False)
+        finally:
+            vc = None
+            if not self.keep:
+                self._pitch = None
+                free_cuda()
+
     def reference(self):
         """Her reference voice, mono: one file, or several clips joined with short pauses (a
         longer reference gives the model more of her), at most REF_MAX_S."""
@@ -1066,6 +1092,7 @@ class RealBackend:
         self._vc = None
         self._demucs = None
         self._lead = None
+        self._pitch = None  # karaoke_f0's pitch tracker
         free_cuda()
 
     def unload(self) -> None:

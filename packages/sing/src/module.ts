@@ -13,6 +13,8 @@ import {
 } from "@miyoria/runtime/kernel";
 import {
   Events,
+  type KaraokeWorker,
+  KaraokeWorkerKey,
   type PromptContributors,
   PromptContributorsKey,
   SongClipsKey,
@@ -203,6 +205,8 @@ export class SingModule implements Module {
     ctx.provide(SpeechPauseKey, singer);
     // The market's pass asks whether a charged ticket's song is still in the set list.
     ctx.provide(SongTicketsKey, { holds: (key) => singer.holdsTicket(key) });
+    // Karaoke prepares its songs on the same workers, through the same failover.
+    ctx.provide(KaraokeWorkerKey, karaokeWorker(worker));
     let clips: SingClips | null = null;
     if (cfg.clips) {
       clips = new SingClips({
@@ -313,6 +317,30 @@ export class SingModule implements Module {
     running.unroute?.();
     for (const unregister of running.capabilities) unregister();
   }
+}
+
+/**
+ * The karaoke port over the song workers (docs/design/karaoke.md §3): a job with
+ * `purpose: "karaoke"`, its state, and its files from the worker that made it.
+ */
+export function karaokeWorker(worker: SingWorker): KaraokeWorker {
+  return {
+    prepare: (query, signal) =>
+      worker.submit(
+        {
+          ...(query.url === undefined ? {} : { url: query.url }),
+          ...(query.query === undefined ? {} : { query: query.query }),
+          ...(query.title === undefined ? {} : { title: query.title }),
+          ...(query.artist === undefined ? {} : { artist: query.artist }),
+          force: query.force ?? false,
+          purpose: "karaoke",
+        },
+        signal,
+      ),
+    job: (id, signal) => worker.job(id, signal),
+    cancel: (id) => worker.cancel(id),
+    file: (song, name, dest, signal) => worker.karaokeFile(song, name, dest, signal),
+  };
 }
 
 /**

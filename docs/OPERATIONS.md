@@ -475,6 +475,18 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 - **重啟**:所有狀態在資料庫(`market_lots`、`market_bids`、`market_lottery_weeks`、`market_lottery_tickets`),時間從存的時間算;每 30 秒看一次該開的、該結束的、該開獎的,停在一半的(押了錢沒記下的出價、扣了錢沒記下的彩券、還沒燒或還沒付的、她收下了但還沒套上的稱呼)下一輪補完;那一週已經開過才找到的彩券直接退回。點歌優先券的退款沒成功(經濟沒在跑)時,唱歌模組每 30 秒再試一次,日誌 `cannot refund a song priority ticket`。日誌:`market: a lot opened`、`market: a pass failed; the next one tries again`、`market: no Discord to post in`。
 - **拿掉功能**:先把 `auction`、`lottery` 設成 `false` 讓它退完;整個外掛要刪的時候,`packages/play/market/src/migrations.ts` 的 `retireMarketSql` 就是要加的那個 migration(押著的出價和還沒開獎那週的彩券退回,再刪表)。
 
+**唱 K(第一步,一個人)**(`[modules.karaoke]`,`packages/play/karaoke`,設計見 [design/karaoke.md](design/karaoke.md) 的「做了什麼(第一步)」):會員在 `/karaoke` 貼連結或打歌名,唱歌 worker 做伴唱軌和參考旋律,會員在自己的瀏覽器唱,唱完 Core 重算分數,她在講評頻道講一句。沒有房間、沒有直播畫面、沒有魚幣。
+
+- **要什麼**:`sing` 模組在跑、至少一台唱歌 worker(和翻唱同一批,同一套 failover;worker 要是這個分支的,看得懂 `purpose: "karaoke"`);會員頁要開(`[modules.api.public] enabled`)。沒有 worker 時只能唱已經準備好的歌,會員頁會說。worker 不用新的模型,只用翻唱已經有的分離、主唱、RMVPE 和歌詞查詢。
+- **設定**:`open`(會員能不能點歌和唱)、`max_song_secs`(480)、`daily_songs`(每人每天準備幾首新歌,10;已經準備好的不算)、`tolerance_cents`(50)、`comment`(她講評)、`comment_channel`(`"discord:<伺服器 id>:<頻道 id>"`,沒設就只讓她知道、不開口)、`cache_dir`(`data/karaoke`)。面板的 `/system/karaoke` 能改前六個。
+- **worker 那邊**:做出來的放在 worker 歌曲快取的 `_karaoke/k-<來源>/`(`karaoke.m4a`:伴奏加和聲,AAC 128 kbps 48 kHz 立體聲;`reference.json`;`meta.json`),不在 `GET /songs`(她翻唱過的歌)裡,跟著歌曲快取一起清。唱 K 的工作不會叫語音讓出顯卡:放不下就等,等太久就失敗。檔案從 `GET /karaoke/<id>/files/<名字>` 拿。
+- **Core 這邊**:準備好時把兩個檔案抓到 `cache_dir/<歌的 id>/`,一天沒人唱就刪,再唱時再從 worker 抓。瀏覽器拿檔案只能用 10 分鐘的簽名網址(綁這一次、這個檔、這個帳號,還要登入的 cookie),不能公開分享、沒有下載鍵;Core 重啟後舊的網址失效。音高軌(每秒 50 格、一格一個位元組)留 7 天;結果留著(「忘記我」一起刪)。
+- **API**:會員 `GET /api/member/karaoke`、`POST /api/member/karaoke/songs {text}`、`GET /api/member/karaoke/songs/{id}`、`POST /api/member/karaoke/songs/{id}/sessions`、`POST /api/member/karaoke/sessions/{id}/result`、`GET /api/member/karaoke/sessions/{id}`,檔案 `GET /api/member/karaoke/files/{session}/{name}?exp=&sig=`;owner `GET /api/karaoke/results`(最近的結果和「沒有驗證」的原因)。
+- **她講評**:唱完 Core 送她一則通知(來源 `game.karaoke`),裡面是系統的數字;設了 `comment_channel` 時她在那個頻道照平常的方式回一句(她平常的一個回合,沒有另外的模型呼叫),之後 3 分鐘內她在那個頻道的第一句當成講評顯示在會員的結果頁。一起唱過記成 `played_together`。
+- **作弊標記**:音高軌九成以上的格離原唱不到 15 cents(就是拿參考旋律做的軌)會被標成「沒有驗證」:分數照樣顯示,不算最好成績;她不會知道。原因在 `GET /api/karaoke/results`。
+- **試一下**:開發時 `pnpm --filter @miyoria/panel dev`,開 `http://localhost:5178/karaoke?karaoke-demo`:不用 Core、不用麥克風的示範(假的 API 和假的唱歌的人,只在開發伺服器)。
+- **日誌**:`karaoke: the worker did not take the song`、`karaoke: a song could not be prepared`(`detail` 是 worker 的原話)、`karaoke: the files are gone`、`karaoke: the pass failed`。
+
 面板的頁(側欄可收合,`Ctrl/⌘ + B`;`Ctrl/⌘ + K` 開搜尋,可跳到頁面、人、子系統):
 
 | 頁 | 內容 |

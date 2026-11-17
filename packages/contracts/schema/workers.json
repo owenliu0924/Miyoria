@@ -131,6 +131,352 @@
         "status"
       ]
     },
+    "WorkersKaraokeChar": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "start": {
+          "type": "number"
+        },
+        "end": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "text",
+        "start",
+        "end"
+      ]
+    },
+    "WorkersKaraokeLine": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number"
+        },
+        "end": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "check": {
+          "type": "string",
+          "enum": [
+            "unchecked",
+            "matched",
+            "uncertain",
+            "failed"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "chars": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WorkersKaraokeChar"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "text",
+        "check",
+        "confidence",
+        "chars"
+      ]
+    },
+    "WorkersKaraokeLyrics": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timing": {
+          "type": "string",
+          "enum": [
+            "line",
+            "char"
+          ]
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersKaraokeLine"
+          }
+        }
+      },
+      "required": [
+        "provider",
+        "timing",
+        "lines"
+      ]
+    },
+    "WorkersKaraokeMade": {
+      "type": "object",
+      "properties": {
+        "pitch": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "lyrics": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pitch",
+        "notes",
+        "lyrics"
+      ]
+    },
+    "WorkersKaraokeNote": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number"
+        },
+        "end": {
+          "type": "number"
+        },
+        "midi": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "pitch",
+            "lyric"
+          ]
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "char": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "midi",
+        "source",
+        "line",
+        "char"
+      ]
+    },
+    "WorkersKaraokePitch": {
+      "type": "object",
+      "properties": {
+        "hz": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "start": {
+          "type": "number"
+        },
+        "midi": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "required": [
+        "hz",
+        "start",
+        "midi"
+      ]
+    },
+    "WorkersKaraokeQuality": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "voiced_ratio": {
+          "type": "number"
+        },
+        "notes": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "lead_split": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "reason",
+        "voiced_ratio",
+        "notes",
+        "lead_split"
+      ]
+    },
+    "WorkersKaraokeReference": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string",
+          "const": "miyoria.karaoke.reference"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "artist": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_s": {
+          "type": "number"
+        },
+        "backing": {
+          "type": "string"
+        },
+        "pitch": {
+          "$ref": "#/$defs/WorkersKaraokePitch"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersKaraokeNote"
+          }
+        },
+        "lyrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkersKaraokeLyrics"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quality": {
+          "$ref": "#/$defs/WorkersKaraokeQuality"
+        },
+        "made": {
+          "$ref": "#/$defs/WorkersKaraokeMade"
+        }
+      },
+      "required": [
+        "format",
+        "version",
+        "id",
+        "title",
+        "artist",
+        "duration_s",
+        "backing",
+        "pitch",
+        "notes",
+        "lyrics",
+        "quality",
+        "made"
+      ]
+    },
+    "WorkersKaraokeSong": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "type": "string"
+        },
+        "artist": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_s": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "quality": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkersKaraokeQuality"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "artist",
+        "duration_s",
+        "quality"
+      ]
+    },
     "WorkersLyricsHealth": {
       "type": "object",
       "properties": {
@@ -825,6 +1171,17 @@
               "type": "null"
             }
           ]
+        },
+        "karaoke": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkersKaraokeSong"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -940,6 +1297,14 @@
         "exclusive_ack": {
           "default": false,
           "type": "boolean"
+        },
+        "purpose": {
+          "default": "cover",
+          "type": "string",
+          "enum": [
+            "cover",
+            "karaoke"
+          ]
         }
       }
     },

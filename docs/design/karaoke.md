@@ -1,6 +1,6 @@
 # 線上唱 K:她當主持人
 
-> 2026-11-17 規劃,沒有實作。依據是 owner 2026-11-17 的回答([v5-play.md](v5-play.md) §11.3),讀過舊的 `karaoke` 專案(SUMI,唯讀)和這個 repo 的唱歌 worker、派對遊戲、Stage、overlay、voice node、面板和經濟。模型和評分的資料是網路上查的,來源在 §15,沒查到的在 §16。數字標「草案」的都是設定。
+> 2026-11-17 規劃;2026-11-18 做了第一步(單人網頁唱 K,見最後的「做了什麼(第一步)」)。依據是 owner 2026-11-17 的回答([v5-play.md](v5-play.md) §11.3),讀過舊的 `karaoke` 專案(SUMI,唯讀)和這個 repo 的唱歌 worker、派對遊戲、Stage、overlay、voice node、面板和經濟。模型和評分的資料是網路上查的,來源在 §15,沒查到的在 §16。數字標「草案」的都是設定。
 
 ## 0. 結論
 
@@ -401,3 +401,91 @@ owner 接受在 Discord 裡的風險。能做的範圍:
    - 不確定或失敗的行退回只用音高切,歌詞照樣顯示但不逐字上色。
    - 辨識和對齊用哪個模型,拿幾首中文和日文歌實測,把每個字畫在聲音上給 owner 看了再定(候選:WhisperX、現在的 Qwen3-ASR、唱歌專用的對齊模型)。日文漢字要先轉讀音,特殊讀法會錯。
    - 面板上有編輯器可以修逐字時間和音符,修過的版本存起來以後都用它。
+
+## 做了什麼(第一步)
+
+2026-11-18,分支 `v5p5d`。§14 的第 1 步:單人網頁唱 K。照 owner 的三個改變做:分數只比音高曲線、不看音符;偵測做成兩層的介面(這一步兩層是同一條);音符這一步全部是「只用音高切」的退路。**沒有下載任何新模型**(owner 還沒同意下載,硬碟也快滿),需要新模型的部分都只做了介面和最簡單的退路,下面標「等模型」。
+
+### 走一遍
+
+1. 會員在面板 `/karaoke` 貼連結或打歌名(`POST /api/member/karaoke/songs`)。同一個連結或同一組字就是同一首,不再做一次;新的一首算進那個人當天的 `daily_songs`。
+2. Core 經唱歌模組提供的 `KaraokeWorkerKey`(同一批唱歌 worker、同一套 failover,沒有第二個 worker 用戶端)送 `POST /jobs {purpose: "karaoke"}`,每 3 秒看一次進度,會員頁顯示階段、進度和排隊位置。
+3. worker 下載、分離、分出主唱、RMVPE、查歌詞、編碼,不做轉換。做好後 Core 把 `reference.json` 和 `karaoke.m4a` 抓到自己的 `cache_dir`,品質不過、太長或失敗就寫一句原因。
+4. 會員先做一次延遲校正(每台裝置一次),再開始唱(`POST .../songs/{id}/sessions`):拿到兩個 10 分鐘的簽名網址,瀏覽器用 Web Audio 播伴唱軌、AudioWorklet 跑 McLeod、畫跑道和歌詞。
+5. 唱完瀏覽器把音高軌(50 Hz、一格一個位元組、base64)和延遲送一次(`POST .../sessions/{id}/result`)。Core 用同一個評分模組重算、存起來、標作弊、送她一則通知、記 `played_together`,回傳 Core 的結果;瀏覽器先顯示自己算的,收到後換成 Core 的。
+6. 她在講評頻道照平常的方式回一句;那個頻道 3 分鐘內她的第一句當成講評,結果頁每 5 秒問一次,出現就顯示。
+
+### `reference.json`(第 1 版)
+
+定義只有一份:`packages/contracts/workers/src/karaoke.ts`(zod,`WorkersKaraokeReferenceSchema`;Python 端是 `workers/contracts.py` 的同名 pydantic 模型,worker 的測試用它驗證輸出)。時間都是從伴唱軌開頭算的秒數。標題、歌手、歌詞來自 YouTube 和 lrclib,不可信。
+
+| 欄位 | 內容 | 這一步 | 之後 |
+|---|---|---|---|
+| `format`、`version` | `"miyoria.karaoke.reference"`、`1` | | 格式改了才升版 |
+| `id`、`title`、`artist`、`duration_s` | worker 上的唱 K 歌 id(`k-<來源>`)和歌的資料 | | |
+| `backing` | 伴唱軌的檔名,`karaoke.m4a` | 伴奏 + 和聲(有主唱分離時;沒有就只有伴奏),AAC 128 kbps、48 kHz 立體聲、響度照翻唱的 | `guide.m4a`(導唱)、`play_karaoke.pcm`(給 voice node)還沒做 |
+| `pitch` | `{hz: 50, start: 0, midi: [MIDI 小數或 null]}`:主唱的音高,`null` 就是沒聲音(有聲旗標) | RMVPE(10 ms)→ 比主唱有聲格的中位響度低 30 dB 的算沒聲音 → `clean_f0` → 兩格併一格(有聲的平均)→ MIDI,兩位小數 | 換準的模型只改這裡 |
+| `notes` | `[{start, end, midi, source, line, char}]`:畫面上的音符條,**只是導引,不影響分數** | 全部 `source: "pitch"`,`line`、`char` 是 `null`(切法見下) | 歌詞確定的行改成 `source: "lyric"`,一個字一條,`line` / `char` 指到那個字 |
+| `lyrics` | `{provider, timing, lines: [{start, end, text, check, confidence, chars}]}` 或 `null` | 現有的查歌詞(lrclib / 網易雲 + 整體位移),`timing: "line"`;`end` 是下一行開始(最後一行到主唱最後有聲的格);`check: "unchecked"`、`confidence: null`、`chars: null` | 整首辨識逐行比對後填 `check`(`matched` / `uncertain` / `failed`)和 `confidence`;強制對齊後填 `chars` 和 `timing: "char"` |
+| `quality` | `{ok, reason, voiced_ratio, notes, lead_split}` | 有聲少於 15% 或音符少於 30 個就 `ok: false`(worker 的環境變數 `SING_KARAOKE_MIN_VOICED`、`SING_KARAOKE_MIN_NOTES` 可改);工作照樣 `done`,Core 不開放這首 | |
+| `made` | `{pitch: "rmvpe", notes: "pitch-runs-1", lyrics: "line" / "none"}` | 之後換方法時知道哪些要重做 | |
+
+**只用音高切的音符(`workers/sing/melody.py`,退路)**:50 Hz 曲線、每段有聲裡先做 0.1 秒的中位數濾波;離目前這條音符的中心(到目前為止的中位數)超過 0.65 半音、持續 60 ms 就從離開的那一格開新的一條;同音高的空隙 120 ms 以內接起來(子音);短於 80 ms 的丟掉;長於 4 秒的平均切開;音高取那段原始曲線的中位數。這是 owner 說「不沿用」的那種切法,所以只當退路、只當導引。
+
+### 評分(`packages/play/karaoke/src/score/`,`@miyoria/play/karaoke/score`)
+
+純 TypeScript,不 import 資料夾外的東西、沒有 DOM 也沒有 Node,面板經窄的路徑對應拿它(和 `@miyoria/types/bond` 一樣),Core 也用它。同樣的輸入得到同樣的結果;瀏覽器最後顯示的分數就是拿要送出的那條軌算的,所以和 Core 一樣。瀏覽器 100 Hz 的原始軌和送出的 50 Hz 軌,測試釘住差不超過 1 分。
+
+- **對齊**:唱的軌減掉裝置延遲(`latency_ms`),每一句(歌詞的行;沒有歌詞就用參考曲線的休止切句)取唱的人和原唱差的中位數,四捨五入到八度,那一句就在那個八度比。低八度唱和原調同分。
+- **每一格**:參考有聲的格,差在容許範圍(`tolerance_cents`,50)內算滿分,到兩倍時降到 0;沒出聲的格算沒對。
+- **音程 60**:有聲格的平均得分 `hit`,從 0.15(亂唱大約拿到的)到 0.9 線性對到 0–60。
+- **安定 15**:參考曲線上停在同一個音 0.4 秒以上的段落(從曲線找,不用音符),唱的人和參考的差先做 9 格移動平均(把顫音平掉)再取標準差,12 cents 以下滿分、60 以上 0;唱不到一半的段落算 0。
+- **節奏 15**:參考的每個起音(休止 60 ms 以上之後、長 0.15 秒以上),在 ±0.3 秒裡找唱的人最近的起音(音高差在一個半音內),取中位數(偏快 / 偏慢)和分散度:中位數 60 ms 內、分散 40 ms 內滿分。**只有做過校正才算**;沒校正就照音程的比例給,結果寫「沒有校正延遲」。
+- **表現 10(加分)**:顫音(4.5–8 Hz、±15–100 cents,0.5 秒的窗用正弦擬合,而且那一段要跟著參考)每 1.5 秒 1 分最多 4;長音(參考停 1 秒以上、九成的格唱對)每個 0.6 最多 3;しゃくり(進音前 160 ms 內從低一個半音以上滑上來,原唱自己沒有滑)每個 0.3 最多 1.5;フォール(句尾原唱休止時往下掉一個半音半)每個 0.3 最多 1.5;再乘上 `min(1, hit / 0.6)`,音不準就拿不到。
+- **每一句**:分數(0–100)、`hit`、有出聲的比例;最好和最弱的一句(有聲 0.5 秒以上的才算)。
+- **給她的事實**:總分、四項、節奏偏快 / 偏慢多少、八度、整體偏高 / 偏低多少 cents、出聲的比例、最好和最弱的一句(和那一行的前 16 個字)、顫音秒數、長音個數、和自己之前最好的比。
+- **太完美**:兩邊都有聲的格九成以上離參考不到 15 cents(而且唱了參考有聲的八成以上),或已經有七成五很接近、起音的分散小於 10 ms。送出的軌是四分之一半音一階(最多差 12.5 cents),所以門檻是 15。被標的結果照樣顯示、寫「沒有驗證」,不算最好成績,她不知道;原因在 owner 的 `GET /api/karaoke/results`。
+- **即時分數**:`LiveScore` 只算音程那一項,隨著偵測更新,也給畫面用的八度。
+
+量過的(合成的歌、合成的唱的人,`packages/play/karaoke/test/score.test.ts`):像人的好歌手約 97,鬆一點的約 94,低八度同分,整首高一個半音約 31(音程 0),晚 150 ms 有校正約 97、沒扣延遲但有校正約 78 而且說「偏慢」、沒校正約 80,不出聲 0,亂數 0–1,照抄參考 97 而且被標。**沒有真的人聲量過。**
+
+### 瀏覽器(`apps/panel/src/pages/public/karaoke/`)
+
+- **偵測**:`PitchDetector` 介面(`name`、`size`、`detect(frame, sampleRate)`),現在是 pitchy 的 McLeod(2048 樣本的窗),跑在 AudioWorklet 裡(`pitch.worklet.ts?worker&url`),每 480 樣本一次,帶窗中點的音訊時鐘時間;清晰度 ≥ 0.9 而且 RMS 超過底噪兩倍才算有聲。分數用的軌從 `ScoreTrackSource` 來;這一步它就是畫面那一條(`liveTrackSource`),畫面不提分層。**等模型**:第二層(準的偵測,例如 SwiftF0 或 RMVPE 的 ONNX)接成另一個 `ScoreTrackSource`。
+- **延遲校正**:先量 1.2 秒底噪,再放 8 聲嗶(每 0.75 秒),每聲拍手或唱「啦」,取起點差的中位數;超過 250 ms 提醒換有線耳機。結果存在瀏覽器(`localStorage`,鍵含麥克風的 deviceId),可以手動加減(−200 到 +800 ms)。沒量過時用瀏覽器給的 `baseLatency + outputLatency + 20 ms`,送出時 `calibrated: false`。
+- **唱**:伴唱軌用 `fetch` 拿成 ArrayBuffer、`decodeAudioData`,不用 `<audio>`,沒有下載鍵;麥克風關掉回音消除、降噪、自動增益。跑道:現在的線在 25% 寬,桌面 8 秒、手機 5 秒,音域是整首加減 3 個半音(至少 14 個);參考曲線(細線)、音符條、唱的人的線(搬到參考的八度);歌詞一行加下一行;即時分數;暫停、從頭、唱完了、離開;頁面寫「麥克風的聲音只在這個瀏覽器裡處理,不會送出去」和戴耳機。
+- **結果**:總分、四項各一行字、每一句(有歌詞的寫出那一行)、出聲比例、之前最好、「沒有驗證」、她的講評。
+- **支援**:先做桌面 Chrome / Edge;沒有 AudioWorklet、麥克風、安全連線,或 AAC 解不開時,頁面說明為什麼不能唱。
+- **示範**:開發伺服器開 `/karaoke?karaoke-demo`:假的 API、假的唱的人,不要 Core 和麥克風;正式建置不含它。
+
+### Core(`packages/play/karaoke`,模組 `karaoke`)
+
+- **表**:`karaoke_songs`(來源鍵唯一、worker 的工作和歌 id、狀態)、`karaoke_requests`(每天的上限)、`karaoke_sessions`、`karaoke_tracks`(音高軌,7 天後刪)、`karaoke_results`(四項、整份結果的 JSON、標記和原因、她的講評);migration 1 由 `schema:sql karaoke` 產生。事件 `karaoke.scored`(唱的人的 DM 範圍,留一年)。「忘記我」刪掉那個人的 session、軌、結果和請求,歌留著;合併時搬過去。
+- **檔案**:準備好時抓到 `cache_dir/<歌>/`,一天沒人唱就刪,再唱時從 worker 再抓。簽名網址:HMAC(模組啟動時產生的金鑰)簽 session、檔名、帳號和到期時間,10 分鐘;還要會員的 cookie,帳號要對得上;錯的一律 404;`no-store`、沒有 `content-disposition`。
+- **收軌的檢查**:session 是他的、還開著、沒過期;軌不比歌長 5 秒以上;從開始到送出的時間不少於軌的長度減 5 秒(事先做好的軌來得太快);一個 session 只收一次。
+- **她**:一則通知(和卡片、市集一樣是 Observation,來源 `game.karaoke`,內容標成不可信),有講評頻道而且唱了一成五以上時可以開口,否則只讓她知道。她的模型呼叫就是她平常的那一個回合,唱的時候沒有任何模型呼叫。唱了三成以上記一筆 `played_together`。
+- **沒有魚幣**(單人不給,owner 的決定)。
+- **狀態卡**:會員頁開不開、準備好幾首、準備中幾首、worker 在不在、她講不講評;圖示 `mic-vocal`。
+
+### 等模型、還沒做的
+
+| 什麼 | 現在 | 等什麼 |
+|---|---|---|
+| 歌詞要先對過聽到的(owner 決定 3) | 查到什麼用什麼,每行 `check: "unchecked"` | 整首辨識(候選 WhisperX、現在的 Qwen3-ASR 拿主唱跑)和逐行比對;owner 看過實測再定模型 |
+| 每個字的時間、照字切音符 | 沒有,`chars: null`,不逐字上色 | 強制對齊(WhisperX 的 wav2vec2、MFA、SOFA 實測);日文漢字先轉讀音 |
+| 準的音符(GAME / ROSVOT) | 只用音高切 | owner 同意下載後在朋友那台試 |
+| 第二層偵測(瀏覽器背景的神經網路) | 介面在,兩層同一條 | 先拿真人清唱比 McLeod 和 RMVPE 差多少;夠準就不做 |
+| 修逐字時間和音符的編輯器 | 沒有 | 字級時間做出來之後 |
+| 導唱、`play_karaoke.pcm` | 沒做 | 第 3 步(直播) |
+| 房間、多人、直播、播聲音、魚幣 | 沒做 | 第 2–4 步 |
+| 試麥時偵測「沒戴耳機」 | 只有提醒 | 第 2 步的試麥 |
+
+### 測試
+
+- worker:`workers/tests/test_sing_karaoke.py`(切音符、50 Hz、響度門檻、品質、歌詞的行、格式,和 mock 後端跑完整個工作、m4a 用 ffprobe 驗、`/songs` 不列、第二次是快取)和 `test_sing_gpu.py` 的四個(唱 K 不叫語音下線)。都不用 GPU、不連網。
+- 評分:`packages/play/karaoke/test/score.test.ts`(好歌手、低八度、差一個半音、晚 150 ms 有沒有校正、不出聲、亂數、照抄參考、最弱的一句、沒有歌詞時切句、唱一半、和 100 Hz 的差、顫音、しゃくり、長音、即時分數)。
+- Core:`packages/play/karaoke/test/service.test.ts`(準備、上限、失敗的原因、簽名網址、重算和通知和講評、只收一次、太快、標記、清理、忘記我)。
+- **不用人的整條路**:`packages/api/test/karaoke.test.ts`:記憶體裡的 worker 準備一首合成的歌,經會員路由和簽名網址拿檔案,把參考曲線本身、晚 150 ms 的好歌手(有校正 / 沒扣延遲 / 沒校正)、高一個半音、亂數、低八度的「唱的人」照瀏覽器的方式記錄、編碼、送進路由,Core 重算,分數都合理。
+- 面板:`karaoke-logic.test.ts`(時鐘、跑道的座標、校正的數學和儲存、階段的字、結果的字、軌的編解碼)和 `karaoke.test.tsx`(歌單、點歌、拒絕、準備中、失敗、結果的講評和「沒有驗證」)。
+
+真的人聲、真的麥克風、藍牙耳機和手機都還沒試過;第一步做完請 owner 唱一首。

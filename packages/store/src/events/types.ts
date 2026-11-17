@@ -50,6 +50,9 @@
 // An auction lot that closed is one `market.lot_closed`, a lottery week drawn or refunded one
 // `market.lottery_drawn` (`MARKET_EVENTS`): money records, for the owner, kept.
 //
+// A karaoke singing that Core scored is one `karaoke.scored` (`KARAOKE_EVENTS`), appended with its
+// result: in the singer's DM scope, kept a year like the cards.
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
@@ -70,6 +73,7 @@ import {
   HeartEvidence,
   type HeartEvidenceData,
   IdentityImported,
+  KARAOKE_EVENTS,
   LlmCall,
   MARKET_EVENTS,
   TURN_EVENTS,
@@ -248,6 +252,7 @@ export function coreEventRegistry(): EventRegistry {
     ...HEART_LOG_EVENTS,
     ...CARDS_EVENTS,
     ...MARKET_EVENTS,
+    ...KARAOKE_EVENTS,
   );
 }
 

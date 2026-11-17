@@ -722,6 +722,10 @@ describe("the route table", () => {
       "GET /api/member/cards/wishlist",
       "GET /api/member/export",
       "GET /api/member/fortune",
+      "GET /api/member/karaoke",
+      "GET /api/member/karaoke/files/:session/:name",
+      "GET /api/member/karaoke/sessions/:id",
+      "GET /api/member/karaoke/songs/:id",
       "GET /api/member/market/auction",
       "GET /api/member/market/bids",
       "GET /api/member/market/lottery",
@@ -735,6 +739,9 @@ describe("the route table", () => {
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
+      "POST /api/member/karaoke/sessions/:id/result",
+      "POST /api/member/karaoke/songs",
+      "POST /api/member/karaoke/songs/:id/sessions",
       "POST /api/member/live/pat",
       "POST /api/member/market/bid",
       "POST /api/member/market/lottery",
@@ -747,9 +754,17 @@ describe("the route table", () => {
     ]);
     expect(all.filter((r) => !r.public && !r.member).length).toBeGreaterThan(90);
     // No member route takes a parameter that could name a person: a card's serial names a card,
-    // and one that is not theirs is not found; a series names one of their own titles.
+    // and one that is not theirs is not found; a series names one of their own titles; a karaoke
+    // song is nobody's, and a karaoke session (and its files) that is not theirs is not found.
     const named = all.filter(
-      (r) => r.member && r.path.replace(":serial", "").replace(":series", "").includes(":"),
+      (r) =>
+        r.member &&
+        r.path
+          .replace(":serial", "")
+          .replace(":series", "")
+          .replace(/^\/api\/member\/karaoke\/(songs|sessions)\/:id/, "")
+          .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
+          .includes(":"),
     );
     expect(named).toEqual([]);
   });

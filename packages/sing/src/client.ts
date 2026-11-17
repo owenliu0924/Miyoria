@@ -106,6 +106,8 @@ export interface SingWorker {
   audio(song: string, track: SongTrack, signal?: AbortSignal): Promise<Int16Array>;
   /** Saves one of the song's files (its video) to `dest`; the worker may be on another machine. */
   download(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void>;
+  /** Saves one of a karaoke song's files (`GET /karaoke/{id}/files/{name}`) to `dest`. */
+  karaokeFile(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void>;
   /** `null` when healthy, else why not. */
   health(signal?: AbortSignal): Promise<string | null>;
 }
@@ -282,14 +284,28 @@ export class HttpSingWorker implements SingWorker {
     return out;
   }
 
-  async download(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void> {
+  download(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void> {
     // A video is far bigger than the audio (up to `SING_VIDEO_MAX_MB`): allow it a long time.
-    const res = await this.#call(
+    return this.#save(
       `/songs/${encodeURIComponent(song)}/files/${encodeURIComponent(file)}`,
-      {},
       Math.max(this.#timeoutMs * 60, 600_000),
+      dest,
       signal,
     );
+  }
+
+  karaokeFile(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void> {
+    // A backing track is a few MB of AAC.
+    return this.#save(
+      `/karaoke/${encodeURIComponent(song)}/files/${encodeURIComponent(file)}`,
+      this.#timeoutMs * 10,
+      dest,
+      signal,
+    );
+  }
+
+  async #save(path: string, timeoutMs: number, dest: string, signal?: AbortSignal): Promise<void> {
+    const res = await this.#call(path, {}, timeoutMs, signal);
     if (res.body === null) throw new SingWorkerError("song worker sent an empty file");
     await mkdir(dirname(dest), { recursive: true });
     const part = `${dest}.part`;

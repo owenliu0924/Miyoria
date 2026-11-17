@@ -75,6 +75,8 @@ export class FailoverSingWorker implements SingWorker {
   /** Which worker took a job / has a song, as answers come in (lost on restart, then searched). */
   readonly #jobs = new Map<string, Endpoint>();
   readonly #songs = new Map<string, Endpoint>();
+  /** Which worker made a karaoke song (its own namespace on the worker: never in `songs()`). */
+  readonly #karaoke = new Map<string, Endpoint>();
   /** Jobs given up on (made again elsewhere, or cancelled while unreachable), to cancel later. */
   readonly #abandoned = new Map<string, Endpoint>();
 
@@ -247,6 +249,15 @@ export class FailoverSingWorker implements SingWorker {
     return this.#forSong(song, (w) => w.download(song, file, dest, signal));
   }
 
+  /** From the worker that made it when known, else the first that has it. */
+  async karaokeFile(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void> {
+    const owner = this.#karaoke.get(song);
+    const order =
+      owner === undefined ? this.#all : [owner, ...this.#all.filter((e) => e !== owner)];
+    const [ep] = await this.#find(order, (w) => w.karaokeFile(song, file, dest, signal));
+    this.#karaoke.set(song, ep);
+  }
+
   /** Healthy while any worker is; otherwise why each one is not. */
   async health(signal?: AbortSignal): Promise<string | null> {
     const all = this.#list();
@@ -388,6 +399,7 @@ export class FailoverSingWorker implements SingWorker {
   #own(ep: Endpoint, job: WorkerJob): void {
     this.#jobs.set(job.id, ep);
     if (job.song_id !== null) this.#songs.set(job.song_id, ep);
+    if (job.karaoke) this.#karaoke.set(job.karaoke.id, ep);
   }
 }
 
