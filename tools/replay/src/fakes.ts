@@ -16,32 +16,14 @@ import {
 
 const DEFAULT_REPLY = "嗯嗯,我在聽!";
 
-/** Lines of the Plan prompt's limits (mind/src/ledger.ts) that mean "not now". */
-const WAIT_LINES = [
-  /下次可以主動開口:/,
-  /才能主動開口/,
-  /現在就是,不要主動找人/,
-  /不能主動做任何事/,
-];
-
-/** The Plan request's limits say she may not start talking now (or her daily cap is reached). */
-function ledgerSaysWait(request: ChatRequest): boolean {
-  const text = JSON.stringify(request.messages);
-  if (WAIT_LINES.some((re) => re.test(text))) return true;
-  const cap = /今天你主動開了 (\d+) 次話題(上限 (\d+))/.exec(text);
-  return cap !== null && Number(cap[1]) >= Number(cap[2]);
-}
-
 /**
  * Answers every call by its reasoning purpose: replies (`chat_*`) from `replies` after
- * `latency_ms`, Plan from `plans`, Appraise with nothing to report, anything else `{}`.
- * Deterministic: lists are cycled in call order.
+ * `latency_ms`, anything else `{}`. Deterministic: replies are cycled in call order.
  */
 export class ScriptedLlm implements ChatProvider {
   readonly name = "scripted";
   readonly requests: ChatRequest[] = [];
   #replies = 0;
-  #plans = 0;
 
   constructor(readonly script: ScriptedLlmConfig = {}) {}
 
@@ -58,18 +40,6 @@ export class ScriptedLlm implements ChatProvider {
       this.#replies += 1;
       return { text, delay: this.script.latency_ms ?? 1500 };
     }
-    if (purpose === "plan" || purpose === "plan_daily") {
-      // She plans with her ledger (v2 §3.3): while it says she may not start anything now,
-      // she does not try (the scripted plans are what she would do once she may).
-      if ((this.script.plan_reads_ledger ?? true) && ledgerSaysWait(request)) {
-        return { text: "{}", delay: 2000 };
-      }
-      const plans = this.script.plans ?? [];
-      const text = plans.length === 0 ? "{}" : (plans[this.#plans % plans.length] ?? "{}");
-      this.#plans += 1;
-      return { text, delay: 2000 };
-    }
-    if (purpose === "appraise") return { text: "[]", delay: 1000 };
     return { text: "{}", delay: 500 };
   }
 
