@@ -191,6 +191,23 @@ export class HeartLog {
     return out;
   }
 
+  /** The newest evidence about `person`, newest first (the panel's person page). */
+  recentEvidence(person: PersonId, limit = 30): HeartEvidenceEntry[] {
+    const rows = this.events.query({
+      types: [HeartEvidence.type],
+      personId: person,
+      order: "desc",
+      limit,
+    });
+    const out: HeartEvidenceEntry[] = [];
+    for (const row of rows) {
+      const parsed = HeartEvidence.data.safeParse(row.envelope.data);
+      if (parsed.success) out.push({ id: row.envelope.id, evidence: parsed.data });
+    }
+    // By when it happened, as `evidence` sorts it.
+    return out.sort((a, b) => Date.parse(b.evidence.at) - Date.parse(a.evidence.at));
+  }
+
   /** The evidence about `person` from `since` until `until`, oldest first (the reflection's day). */
   evidence(
     person: PersonId,

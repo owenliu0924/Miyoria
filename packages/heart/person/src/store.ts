@@ -494,13 +494,25 @@ export class HeartStore {
 
   /**
    * Writes her words and tags about `person` as given (a row is made for someone new): her call
-   * name (`set_call_name`, `/me call`, the panel), the impression (the panel's notes), the member
-   * page's line (`null` when they ask her to forget it) and the tags. Records no change: these are
+   * name (`set_call_name`, `/me call`, the panel), her other words about them (the panel), the
+   * member page's line (`null` when they ask her to forget it) and the tags. Records no change: these are
    * not numbers. The row as written.
    */
   edit(
     person: PersonId,
-    patch: Partial<Pick<HeartPerson, "call_name" | "impression" | "public_feeling" | "tags">>,
+    patch: Partial<
+      Pick<
+        HeartPerson,
+        | "call_name"
+        | "impression"
+        | "public_feeling"
+        | "tags"
+        | "stance"
+        | "unfinished"
+        | "jokes"
+        | "dislikes"
+      >
+    >,
     options: { now?: number } = {},
   ): HeartPerson {
     const at = toTimestamp(this.#now(options.now));

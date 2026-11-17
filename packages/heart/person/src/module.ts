@@ -73,6 +73,7 @@ import { HeartEffects } from "./effects.js";
 import type { LegacyResult } from "./legacy.js";
 import { BLOCKED_TAG, type HeartPerson, hasTag, isProposalField } from "./model.js";
 import { readOldCards } from "./old-cards.js";
+import { BondRingImagesKey } from "./ring-image.js";
 import { CARES_THRESHOLD, cares, type HeartChangeRequest } from "./rules.js";
 import { type HeartStore, heartTables } from "./store.js";
 import { Together } from "./together.js";
@@ -479,7 +480,8 @@ export class HeartModule implements Module {
     const screen = screenWith(ctx);
     const commands = new CommandMount(
       "heart",
-      (registry) => registerCommands(registry, directory, screen),
+      (registry) =>
+        registerCommands(registry, directory, screen, () => ctx.services.get(BondRingImagesKey)),
       unregisterCommands,
     );
     commands.attach(ctx);

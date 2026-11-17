@@ -8,18 +8,9 @@
 // role without `/me memory`), and checks `public_feeling` and `call_name` (other names,
 // moderation) as the member page does.
 
-import {
-  BOND_LADDER,
-  bondBand,
-  clampAffinity,
-  familiarityBand,
-  RING_LAPS,
-  relationshipLabel,
-  ringOf,
-  tierProgress,
-  trustBand,
-} from "@miyoria/types";
+import { bondBand, clampAffinity, familiarityBand, trustBand } from "@miyoria/types";
 import type { HeartPerson } from "./model.js";
+import { bondPlace } from "./place.js";
 
 /** The ring as a member sees it (H1, H2). */
 export interface PublicRing {
@@ -67,23 +58,16 @@ export function publicBond(
   person: Pick<HeartPerson, "bond" | "trust" | "familiarity" | "public_feeling" | "call_name">,
 ): PublicBond {
   const bond = clampAffinity(person.bond);
-  const place = tierProgress(bond);
-  const ring = ringOf(bond);
-  const first = BOND_LADDER[0]?.label ?? "認識";
-  // Below the ladder: the names for someone she does not like (familiarity does not matter there).
-  const disliked = bond <= -15;
-  const tier = disliked
-    ? relationshipLabel({ affinity: bond, familiarity: 100 })
-    : place.tier.label;
+  const place = bondPlace(bond);
   return {
-    tier,
-    next_tier: disliked ? first : (place.next?.label ?? null),
-    tier_progress: disliked ? 0 : coarse(place.progress),
+    tier: place.tier,
+    next_tier: place.next_tier,
+    tier_progress: coarse(place.tier_progress),
     ring: {
-      lap: ring.lap,
-      fraction: coarse(ring.fraction),
-      full: ring.lap === RING_LAPS - 1 && ring.fraction >= 1,
-      below: ring.below > 0,
+      lap: place.ring.lap,
+      fraction: coarse(place.ring.fraction),
+      full: place.ring.full,
+      below: place.ring.below > 0,
     },
     closeness: bondBand(bond),
     trust: trustBand(person.trust),

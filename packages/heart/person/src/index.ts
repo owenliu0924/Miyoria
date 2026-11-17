@@ -12,7 +12,9 @@
 // - `config.ts`: every number of the rules, with its default.
 // - `schema.ts`, `migrations.ts`, `store.ts`: the `heart` store plugin (`heart_person`,
 //   `heart_self`) and the code that writes a row and its event in one transaction.
-// - `public.ts`: what a member may see (words, the ring, the tier; no raw value).
+// - `place.ts`, `public.ts`: where a bond is (tier, next tier, the ring); what a member may see of
+//   it (words, the ring, the tier; no raw value).
+// - `ring-image.ts`: the key through which the api's renderer gives `/me profile` the ring's PNG.
 // - `module.ts`: module `heart`, the owner of the tables: its config section, the migration on
 //   start, the daily pass and `HeartKey` (`@miyoria/types`), through which her `feel` is applied.
 // - `directory.ts`, `commands.ts`, `call-name-tool.ts`: who people are (accounts, names, `/me link`),
@@ -30,6 +32,7 @@ export {
   labelOf,
   NODE_OWNER_TAG,
   PATHS,
+  type RingImages,
   registerCommands,
   type ScreenCallName,
   UNFIT_CALL_NAME,
@@ -107,7 +110,13 @@ export {
   feelingKey,
   readOldCards,
 } from "./old-cards.js";
+export { type BondPlace, type BondRingPlace, bondPlace } from "./place.js";
 export { type PublicBond, type PublicRing, publicBond } from "./public.js";
+export {
+  type BondRingImageSpec,
+  type BondRingImages,
+  BondRingImagesKey,
+} from "./ring-image.js";
 export {
   ANCHORED_TIERS,
   type AppliedChange,

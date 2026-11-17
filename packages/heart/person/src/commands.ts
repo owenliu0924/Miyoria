@@ -21,6 +21,7 @@ import {
   type Invocation,
   notice,
   parseAccount,
+  type ReplyFile,
 } from "@miyoria/commands";
 import {
   type AccountRef,
@@ -32,6 +33,9 @@ import {
 } from "@miyoria/types";
 import type { LinkOutcome, PeopleDirectory } from "./directory.js";
 import { BLOCKED_TAG, type HeartPerson, hasTag, OWNER_TAG } from "./model.js";
+import { bondPlace } from "./place.js";
+import { publicBond } from "./public.js";
+import type { BondRingImageSpec, BondRingImages } from "./ring-image.js";
 import { dayStart, localDay } from "./rules.js";
 
 /** Paths registered by `registerCommands`. */
@@ -72,11 +76,40 @@ type AdminOp = "show" | "tag" | "untag" | "block" | "unblock" | "reset" | "adjus
 /** Whether a call name passes moderation; `null` when it does (or nothing can screen it). */
 export type ScreenCallName = (call: string) => Promise<string | null>;
 
+/** Where the ring's pictures come from, asked each time (the renderer may start after this). */
+export type RingImages = () => BondRingImages | undefined;
+
+/** How far under the ring a member's picture draws a bond below 0 (they are only told it is). */
+const PUBLIC_BELOW = 0.25;
+
+/** The name of the ring's picture on a reply. */
+const RING_FILE = "bond-ring.png";
+
+/** The ring as a file block and the file to send with it; `null` without a renderer. */
+async function ringFile(
+  images: RingImages,
+  spec: BondRingImageSpec,
+): Promise<{ block: CardBlock; file: ReplyFile } | null> {
+  const renderer = images();
+  if (renderer === undefined) return null;
+  try {
+    const data = await renderer.png(spec);
+    return {
+      block: { type: "file", name: RING_FILE },
+      file: { name: RING_FILE, data, contentType: "image/png" },
+    };
+  } catch {
+    // A card without the picture is still the card.
+    return null;
+  }
+}
+
 /** Registers the people commands. Undo with `unregisterCommands`. */
 export function registerCommands(
   registry: CommandRegistry,
   people: PeopleDirectory,
   screen: ScreenCallName = async () => null,
+  images: RingImages = () => undefined,
 ): void {
   const callRoutes: AnyComponentRoute[] = [
     {
@@ -102,7 +135,7 @@ export function registerCommands(
         if (result.tone === "warn" || result.tone === "error" || inv.messageId === null) {
           return ComponentResult.reply(result);
         }
-        return ComponentResult.update(await profile(people, inv, result.text));
+        return ComponentResult.update(await profile(people, images, inv, result.text));
       },
     },
     {
@@ -110,7 +143,7 @@ export function registerCommands(
       handle: async (inv) => {
         const result = await setCall(people, screen, inv, "清除");
         if (result.tone === "warn" || result.tone === "error") return ComponentResult.reply(result);
-        return ComponentResult.update(await profile(people, inv, result.text));
+        return ComponentResult.update(await profile(people, images, inv, result.text));
       },
     },
   ];
@@ -120,7 +153,7 @@ export function registerCommands(
       permission: "me.profile",
       ephemeral: true,
     }),
-    (inv) => profile(people, inv),
+    (inv) => profile(people, images, inv),
   );
 
   registry.register(
@@ -226,7 +259,11 @@ export function registerCommands(
             ],
           }
         : {};
-    registry.register({ ...spec, ephemeral: true }, (inv) => admin(people, op, inv), options);
+    registry.register(
+      { ...spec, ephemeral: true },
+      (inv) => admin(people, images, op, inv),
+      options,
+    );
   }
 }
 
@@ -321,6 +358,7 @@ export const FEELINGS: Readonly<Record<RelationshipLabel, string>> = {
 
 async function profile(
   people: PeopleDirectory,
+  images: RingImages,
   inv: Invocation,
   note: string | null = null,
 ): Promise<CommandReply> {
@@ -331,7 +369,23 @@ async function profile(
   if (row !== null && hasTag(row, BLOCKED_TAG)) return NOT_RESPONDING();
   const tier = labelOf(row);
   const callName = row?.call_name ?? null;
-  const blocks: CardBlock[] = [
+  const blocks: CardBlock[] = [];
+  // The ring a member sees (no number), when she has a row for them and a renderer is running.
+  const files: ReplyFile[] = [];
+  if (row !== null) {
+    const ring = publicBond(row).ring;
+    const drawn = await ringFile(images, {
+      lap: ring.lap,
+      fraction: ring.fraction,
+      full: ring.full,
+      below: ring.below ? PUBLIC_BELOW : 0,
+    });
+    if (drawn !== null) {
+      blocks.push(drawn.block);
+      files.push(drawn.file);
+    }
+  }
+  blocks.push(
     {
       type: "text",
       text: [
@@ -341,7 +395,7 @@ async function profile(
     },
     // Her own voice: the one place a system card quotes her.
     { type: "text", text: `> ${FEELINGS[tier]}` },
-  ];
+  );
   if (note) blocks.push({ type: "muted", text: note });
   blocks.push({
     type: "buttons",
@@ -358,6 +412,7 @@ async function profile(
     title: `${inv.invoker_display_name} 的資料`,
     accent: "brand",
     session: {},
+    files,
   });
 }
 
@@ -398,7 +453,12 @@ export function checkCallName(call: string): string | null {
 /** What moderation says of a call name she would use: `null` passes. */
 export const UNFIT_CALL_NAME = "這個稱呼不適合，請換一個。";
 
-async function admin(people: PeopleDirectory, op: AdminOp, inv: Invocation): Promise<CommandReply> {
+async function admin(
+  people: PeopleDirectory,
+  images: RingImages,
+  op: AdminOp,
+  inv: Invocation,
+): Promise<CommandReply> {
   const now = people.clock.now();
   const user = inv.str("user") ?? "";
   const person = await findPerson(people, inv, user);
@@ -408,7 +468,7 @@ async function admin(people: PeopleDirectory, op: AdminOp, inv: Invocation): Pro
   const heart = people.heart;
   switch (op) {
     case "show":
-      return show(people, person, name, now);
+      return show(people, images, person, name, now);
     case "tag":
     case "untag": {
       const on = op === "tag";
@@ -474,7 +534,13 @@ function utcMinutes(ts: string): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }
 
-function show(people: PeopleDirectory, person: PersonId, name: string, now: number): CommandReply {
+async function show(
+  people: PeopleDirectory,
+  images: RingImages,
+  person: PersonId,
+  name: string,
+  now: number,
+): Promise<CommandReply> {
   const r = people.heart.get(person);
   if (r === null) return notice("info", `她和 ${name} 還沒有任何互動。`);
   const lines = [
@@ -502,13 +568,18 @@ function show(people: PeopleDirectory, person: PersonId, name: string, now: numb
   }
   const impression = r.impression.trim() === "" ? "（尚無）" : r.impression.trim();
   lines.push(`印象：${impression}`);
-  return cardReply(
-    [
-      { type: "text", text: lines.join("\n") },
-      { type: "muted", text: `person ${person}` },
-    ],
-    { title: name, accent: "neutral" },
-  );
+  // The owner's ring has the number on the heart.
+  const drawn = await ringFile(images, { ...bondPlace(r.bond).ring, value: r.bond });
+  const blocks: CardBlock[] = [
+    ...(drawn === null ? [] : [drawn.block]),
+    { type: "text", text: lines.join("\n") },
+    { type: "muted", text: `person ${person}` },
+  ];
+  return cardReply(blocks, {
+    title: name,
+    accent: "neutral",
+    ...(drawn === null ? {} : { files: [drawn.file] }),
+  });
 }
 
 function normalizeTag(tag: string): string | null {
