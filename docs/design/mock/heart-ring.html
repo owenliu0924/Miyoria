@@ -71,17 +71,37 @@
         <div id="personRing"></div>
         <div class="facts">
           <div class="dim">羈絆<b class="num">342</b></div>
-          <div class="dim">分級<b>心有靈犀</b></div>
-          <div class="dim">下一級<b class="num">370</b></div>
+          <div class="dim">分級<b>心有靈犀 II</b></div>
+          <div class="dim">下一階<b>心有靈犀 III</b></div>
+          <div class="dim">在意<b class="num">0.71</b></div>
         </div>
       </div>
       <div>
         <div class="rows" id="bars"></div>
+        <h3 style="margin-top:24px">今天的額度</h3>
+        <div class="rows">
+          <div class="row"><span class="dim">羈絆</span><div class="meter"><i style="left:0;width:58%"></i></div><span class="v num">3.5 / 6</span></div>
+          <div class="row"><span class="dim">默契</span><div class="meter"><i style="left:0;width:67%"></i></div><span class="v num">.04 / .06</span></div>
+        </div>
         <h3 style="margin-top:24px">最近的變化</h3>
         <div class="rows log">
           <div class="row"><span class="dim num">21:14</span><span>默契 <span class="num">+0.04</span></span><q>他接了我上次那個梗</q></div>
           <div class="row"><span class="dim num">20:52</span><span>羈絆 <span class="num">+1.5</span></span><q>記得我說想吃的東西</q></div>
+          <div class="row"><span class="dim num">19:30</span><span>一起</span><span class="dim">在你的語音頻道一起待了 42 分鐘</span></div>
           <div class="row"><span class="dim num">昨天</span><span>心結 <span class="num">−0.10</span></span><q>他道歉了,我也沒那麼氣了</q></div>
+        </div>
+        <h3 style="margin-top:24px">分級的共同記憶</h3>
+        <div class="rows log">
+          <div class="row"><span class="dim">心有靈犀</span><span class="dim num">11/02</span><q>那天他陪我把整首歌練完</q></div>
+          <div class="row"><span class="dim">莫逆之交</span><span class="dim num">10/19</span><q>他幫我擋掉那個一直洗頻的人</q></div>
+        </div>
+        <h3 style="margin-top:24px">她寫的</h3>
+        <div class="rows log">
+          <div class="row" style="grid-template-columns:96px minmax(0,1fr)"><span class="dim">怎麼相處</span><span>會鬧他,但他認真的時候不鬧</span></div>
+          <div class="row" style="grid-template-columns:96px minmax(0,1fr)"><span class="dim">印象</span><span>記性很好,答應的事會做</span></div>
+          <div class="row" style="grid-template-columns:96px minmax(0,1fr)"><span class="dim">還沒聊完</span><span>他換工作的事</span></div>
+          <div class="row" style="grid-template-columns:96px minmax(0,1fr)"><span class="dim">你們的梗</span><span>香菜</span></div>
+          <div class="row" style="grid-template-columns:96px minmax(0,1fr)"><span class="dim">對他說的</span><span>我還沒說你就知道了……不准偷看我在想什麼!</span></div>
         </div>
       </div>
     </div>
@@ -97,7 +117,7 @@
 
   <section>
     <h2>公開頁和 Discord</h2>
-    <div class="public"><div id="pub"></div><div><b>心有靈犀</b><span class="dim">離「形影不離」還有一段</span></div></div>
+    <div class="public"><div id="pub"></div><div><b>心有靈犀 II</b><span class="dim">離「心有靈犀 III」還有一段</span></div></div>
   </section>
 </main>
 <script>
@@ -196,7 +216,7 @@ for (const [name, v, lo, hi, text] of BARS) {
     '<i style="left:' + left + "%;width:" + width + '%"></i></div><span class="v num">' + text + "</span>";
   bars.appendChild(row);
 }
-const LIST = [["小明", "心有靈犀", 342, "剛剛"], ["阿哲", "朋友", 28, "2 小時前"], ["Mika", "無可取代", 780, "昨天"], ["路人", "認識", 6, "3 天前"]];
+const LIST = [["小明", "心有靈犀 II", 342, "剛剛"], ["阿哲", "朋友 II", 28, "2 小時前"], ["Mika", "無可取代 I", 780, "昨天"], ["路人", "認識 II", 6, "3 天前"]];
 const list = document.getElementById("list");
 for (const [name, tier, bond, when] of LIST) {
   const tr = document.createElement("tr");
