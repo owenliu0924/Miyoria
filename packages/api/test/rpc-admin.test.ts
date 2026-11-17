@@ -51,8 +51,6 @@ import {
   type ReachedGoal as ContractReachedGoal,
   type ReflectionRun as ContractReflectionRun,
   type ReflectionStats as ContractReflectionStats,
-  type Relationship as ContractRelationship,
-  type RelationshipDelta as ContractRelationshipDelta,
   type ReminderView as ContractReminderView,
   type RoleAssignment as ContractRoleAssignment,
   type RoleDefinition as ContractRoleDefinition,
@@ -96,8 +94,6 @@ import type {
   DecisionRecord,
   MemoryRecord,
   Person,
-  Relationship,
-  RelationshipDelta,
   RoleAssignment,
   RoleDefinition,
   RoleMapping,
@@ -165,8 +161,11 @@ const MANAGE_REFUSAL = "managing her data needs `owner.data.manage`";
 const CASES: Case[] = [
   { name: "people.list", method: "GET", path: "/api/people" },
   { name: "people.get", method: "GET", path: "/api/people/:id" },
+  { name: "people.history", method: "GET", path: "/api/people/:id/history" },
   { name: "people.update", method: "PATCH", path: "/api/people/:id" },
   { name: "people.adjust", method: "POST", path: "/api/people/:id/adjust" },
+  { name: "people.setAnchor", method: "PUT", path: "/api/people/:id/anchors/:tier" },
+  { name: "people.removeAnchor", method: "DELETE", path: "/api/people/:id/anchors/:tier" },
   { name: "people.wallet", method: "GET", path: "/api/people/:id/wallet" },
   {
     name: "people.adjustWallet",
@@ -280,7 +279,6 @@ const CASES: Case[] = [
   { name: "self", method: "GET", path: "/api/self" },
   { name: "world", method: "GET", path: "/api/world" },
   { name: "affect.snapshot", method: "GET", path: "/api/affect" },
-  { name: "affect.people", method: "GET", path: "/api/affect/people" },
   { name: "mind.goals", method: "GET", path: "/api/mind/goals" },
   { name: "prompts.list", method: "GET", path: "/api/prompts" },
   { name: "prompts.get", method: "GET", path: "/api/prompts/:turn" },
@@ -382,9 +380,7 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 describe("the schemas agree with the types of the packages that own the shapes", () => {
   it("people", () => {
     const person: Same<ContractPerson, Person> = true;
-    const relationship: Same<ContractRelationship, Relationship> = true;
-    const delta: Same<ContractRelationshipDelta, RelationshipDelta> = true;
-    expect([person, relationship, delta]).toEqual([true, true, true]);
+    expect([person]).toEqual([true]);
   });
 
   it("modules, decisions and the cost report", () => {

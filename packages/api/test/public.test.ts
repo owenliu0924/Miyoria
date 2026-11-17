@@ -7,7 +7,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import type { IssuedCard } from "@miyoria/contracts/api";
+import { type IssuedCard, MemberViewSchema } from "@miyoria/contracts/api";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
@@ -64,7 +64,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CARD_POSES, CARDS_PER_DAY, normalizeSerial } from "../src/card.js";
 import { ActiveProfileKey, ApiModule } from "../src/index.js";
-import { acceptableQuery, affinityBand, familiarityBand, trustBand } from "../src/member.js";
+import { acceptableQuery, bondBand, familiarityBand, trustBand } from "../src/member.js";
 import { cardMeta, injectMeta } from "../src/meta.js";
 import { Monitor } from "../src/monitor.js";
 import { cardVersion } from "../src/og.js";
@@ -609,6 +609,12 @@ const ME_SHAPE = [
   "activity[].date",
   "activity[].text",
   "activity[].voice",
+  "bond.next_tier",
+  "bond.ring.fraction",
+  "bond.ring.full",
+  "bond.ring.lap",
+  "bond.tier",
+  "bond.tier_progress",
   "can_request_song",
   "card.affinity",
   "card.call_name",
@@ -1127,9 +1133,37 @@ describe("the member view", () => {
     expect(text).not.toContain("owner");
   });
 
+  it("shows the ring and the tier of a high bond, and no number of it", async () => {
+    const r = await rig();
+    const cookie = await r.login("alice");
+    r.heart.adminSet(r.people.get(ALICE) as PersonId, "bond", 742.3);
+    const res = await r.get("/api/member/me", cookie);
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      card: { affinity: string };
+      bond: { tier: string; next_tier: string; tier_progress: number; ring: unknown };
+    };
+    expect(body.bond).toEqual({
+      tier: "命運相連",
+      next_tier: "無可取代",
+      tier_progress: 0.9,
+      ring: { lap: 7, fraction: 0.4, full: false },
+    });
+    // The band words go all the way up.
+    expect(body.card.affinity).toBe("像家人一樣");
+    expect(res.text).not.toContain("742");
+    expect(shape(res.body)).toEqual(ME_SHAPE);
+    // A response is stripped by the schema: a raw value has no field to ride on.
+    const stripped = MemberViewSchema.parse({
+      ...(res.body as object),
+      bond: { ...body.bond, raw: 742.3, ring: { lap: 7, fraction: 0.4, full: false, bond: 742.3 } },
+    });
+    expect(JSON.stringify(stripped)).not.toContain("742");
+  });
+
   it("bands every value into a word", () => {
-    for (let v = -100; v <= 100; v += 1) {
-      expect(affinityBand(v)).toMatch(/^\D+$/);
+    for (let v = -100; v <= 1000; v += 1) {
+      expect(bondBand(v)).toMatch(/^\D+$/);
       if (v >= 0) {
         expect(trustBand(v)).toMatch(/^\D+$/);
         expect(familiarityBand(v)).toMatch(/^\D+$/);

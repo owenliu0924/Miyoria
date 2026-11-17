@@ -558,12 +558,18 @@
     "ApiAdjustPersonRequest": {
       "type": "object",
       "properties": {
-        "affinity": {
+        "field": {
+          "$ref": "#/$defs/EventsHeartField"
+        },
+        "value": {
+          "type": "number"
+        },
+        "delta": {
           "type": "number"
         }
       },
       "required": [
-        "affinity"
+        "field"
       ]
     },
     "ApiAffectBiases": {
@@ -1000,6 +1006,29 @@
         "on"
       ],
       "additionalProperties": false
+    },
+    "ApiBondRing": {
+      "type": "object",
+      "properties": {
+        "lap": {
+          "type": "number"
+        },
+        "fraction": {
+          "type": "number"
+        },
+        "full": {
+          "type": "boolean"
+        },
+        "below": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "lap",
+        "fraction",
+        "full",
+        "below"
+      ]
     },
     "ApiBountyList": {
       "type": "object",
@@ -3264,6 +3293,41 @@
         "display_name"
       ]
     },
+    "ApiFieldLedger": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/EventsHeartField"
+        },
+        "used_up": {
+          "type": "number"
+        },
+        "used_down": {
+          "type": "number"
+        },
+        "cap_up": {
+          "type": "number"
+        },
+        "cap_down": {
+          "type": "number"
+        },
+        "proposed_up": {
+          "type": "number"
+        },
+        "proposed_down": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "field",
+        "used_up",
+        "used_down",
+        "cap_up",
+        "cap_down",
+        "proposed_up",
+        "proposed_down"
+      ]
+    },
     "ApiFieldSource": {
       "type": "object",
       "properties": {
@@ -3832,6 +3896,84 @@
       "required": [
         "status",
         "version"
+      ]
+    },
+    "ApiHeartHistoryEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "field": {
+          "$ref": "#/$defs/EventsHeartField"
+        },
+        "delta": {
+          "type": "number"
+        },
+        "value_after": {
+          "type": "number"
+        },
+        "proposed": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cause": {
+          "$ref": "#/$defs/EventsHeartCause"
+        },
+        "reason_quote": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "field",
+        "delta",
+        "value_after",
+        "proposed",
+        "cause",
+        "reason_quote"
+      ]
+    },
+    "ApiHeartHistoryPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiHeartHistoryEntry"
+          }
+        },
+        "next_before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_before"
+      ]
+    },
+    "ApiHeldTier": {
+      "type": "object",
+      "properties": {
+        "tier": {
+          "type": "number"
+        },
+        "label": {
+          "$ref": "#/$defs/ApiRelationshipLabel"
+        }
+      },
+      "required": [
+        "tier",
+        "label"
       ]
     },
     "ApiHerActivity": {
@@ -5983,6 +6125,32 @@
         "description"
       ]
     },
+    "ApiMemberBond": {
+      "type": "object",
+      "properties": {
+        "tier": {
+          "type": "string"
+        },
+        "next_tier": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier_progress": {
+          "type": "number"
+        },
+        "ring": {
+          "$ref": "#/$defs/ApiMemberRing"
+        }
+      },
+      "required": [
+        "tier",
+        "next_tier",
+        "tier_progress",
+        "ring"
+      ]
+    },
     "ApiMemberCard": {
       "type": "object",
       "properties": {
@@ -6134,6 +6302,25 @@
         "date"
       ]
     },
+    "ApiMemberRing": {
+      "type": "object",
+      "properties": {
+        "lap": {
+          "type": "number"
+        },
+        "fraction": {
+          "type": "number"
+        },
+        "full": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lap",
+        "fraction",
+        "full"
+      ]
+    },
     "ApiMemberSession": {
       "type": "object",
       "properties": {
@@ -6209,6 +6396,16 @@
         "card": {
           "$ref": "#/$defs/ApiMemberCard"
         },
+        "bond": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiMemberBond"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "memories": {
           "type": "array",
           "items": {
@@ -6248,6 +6445,7 @@
       },
       "required": [
         "card",
+        "bond",
         "memories",
         "songs",
         "activity",
@@ -7518,132 +7716,43 @@
         "last_seen"
       ]
     },
-    "ApiPersonCard": {
+    "ApiPersonAnchor": {
       "type": "object",
       "properties": {
-        "person": {
-          "type": "string"
-        },
-        "handle": {
-          "type": "string"
-        },
-        "call_name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "affinity": {
+        "tier": {
           "type": "number"
         },
-        "trust": {
-          "type": "number"
-        },
-        "familiarity": {
-          "type": "number"
-        },
-        "feeling": {
+        "tier_name": {
           "type": "string"
         },
-        "public_feeling": {
+        "note_ref": {
           "type": [
             "string",
             "null"
           ]
         },
-        "label": {
-          "$ref": "#/$defs/ApiRelationshipLabel"
-        },
-        "level": {
-          "type": "number"
-        },
-        "stance": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "owner": {
-          "type": "boolean"
-        },
-        "blocked": {
-          "type": "boolean"
-        },
-        "last_seen": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "last_together": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "updated_at": {
+        "quote": {
           "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "enum": [
+            "reflect",
+            "admin",
+            "migrate"
+          ]
         }
       },
       "required": [
-        "person",
-        "handle",
-        "call_name",
-        "affinity",
-        "trust",
-        "familiarity",
-        "feeling",
-        "label",
-        "level",
-        "owner",
-        "blocked",
-        "last_seen",
-        "last_together",
-        "updated_at"
-      ]
-    },
-    "ApiPersonDetail": {
-      "type": "object",
-      "properties": {
-        "person": {
-          "$ref": "#/$defs/ApiPerson"
-        },
-        "relationship": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ApiRelationship"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "label": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "blocked": {
-          "type": "boolean"
-        },
-        "history": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiRelationshipDelta"
-          }
-        },
-        "memory_count": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "person",
-        "relationship",
-        "label",
-        "blocked",
-        "history",
-        "memory_count"
+        "tier",
+        "tier_name",
+        "note_ref",
+        "quote",
+        "at",
+        "by"
       ]
     },
     "ApiPersonEmotionName": {
@@ -7655,13 +7764,43 @@
         "resentment"
       ]
     },
+    "ApiPersonEvidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EventsHeartEvidenceKind"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "weight": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "kind",
+        "detail",
+        "weight"
+      ]
+    },
     "ApiPersonPage": {
       "type": "object",
       "properties": {
         "items": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ApiPersonSummary"
+            "$ref": "#/$defs/ApiPersonRow"
           }
         },
         "next_cursor": {
@@ -7738,37 +7877,339 @@
         "updated_at"
       ]
     },
-    "ApiPersonSummary": {
+    "ApiPersonProfile": {
       "type": "object",
       "properties": {
         "person": {
           "$ref": "#/$defs/ApiPerson"
         },
-        "relationship": {
+        "has_row": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "owner": {
+          "type": "boolean"
+        },
+        "tier": {
+          "$ref": "#/$defs/ApiRelationshipLabel"
+        },
+        "bond": {
+          "type": "number"
+        },
+        "ring": {
+          "$ref": "#/$defs/ApiBondRing"
+        },
+        "trust": {
+          "type": "number"
+        },
+        "familiarity": {
+          "type": "number"
+        },
+        "warmth": {
+          "type": "number"
+        },
+        "respect": {
+          "type": "number"
+        },
+        "ease": {
+          "type": "number"
+        },
+        "grudge": {
+          "type": "number"
+        },
+        "longing": {
+          "type": "number"
+        },
+        "rapport": {
+          "type": "number"
+        },
+        "cares": {
+          "type": "number"
+        },
+        "stance": {
+          "type": "string"
+        },
+        "impression": {
+          "type": "string"
+        },
+        "public_feeling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "interactions": {
+          "type": "number"
+        },
+        "last_interaction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_seen": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_together": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_tier": {
           "anyOf": [
             {
-              "$ref": "#/$defs/ApiRelationship"
+              "$ref": "#/$defs/ApiRelationshipLabel"
             },
             {
               "type": "null"
             }
           ]
         },
-        "label": {
+        "tier_progress": {
+          "type": "number"
+        },
+        "tier_floor": {
+          "type": "number"
+        },
+        "held": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiHeldTier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "anchors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPersonAnchor"
+          }
+        },
+        "unfinished": {
+          "type": "string"
+        },
+        "jokes": {
+          "type": "string"
+        },
+        "dislikes": {
+          "type": "string"
+        },
+        "history": {
+          "$ref": "#/$defs/ApiHeartHistoryPage"
+        },
+        "ledger": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiFieldLedger"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPersonEvidence"
+          }
+        },
+        "memory_count": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "person",
+        "has_row",
+        "blocked",
+        "owner",
+        "tier",
+        "bond",
+        "ring",
+        "trust",
+        "familiarity",
+        "warmth",
+        "respect",
+        "ease",
+        "grudge",
+        "longing",
+        "rapport",
+        "cares",
+        "stance",
+        "impression",
+        "public_feeling",
+        "call_name",
+        "tags",
+        "interactions",
+        "last_interaction",
+        "last_seen",
+        "last_together",
+        "updated_at",
+        "next_tier",
+        "tier_progress",
+        "tier_floor",
+        "held",
+        "anchors",
+        "unfinished",
+        "jokes",
+        "dislikes",
+        "history",
+        "ledger",
+        "evidence",
+        "memory_count"
+      ]
+    },
+    "ApiPersonRow": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "$ref": "#/$defs/ApiPerson"
+        },
+        "has_row": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "owner": {
+          "type": "boolean"
+        },
+        "tier": {
+          "$ref": "#/$defs/ApiRelationshipLabel"
+        },
+        "bond": {
+          "type": "number"
+        },
+        "ring": {
+          "$ref": "#/$defs/ApiBondRing"
+        },
+        "trust": {
+          "type": "number"
+        },
+        "familiarity": {
+          "type": "number"
+        },
+        "warmth": {
+          "type": "number"
+        },
+        "respect": {
+          "type": "number"
+        },
+        "ease": {
+          "type": "number"
+        },
+        "grudge": {
+          "type": "number"
+        },
+        "longing": {
+          "type": "number"
+        },
+        "rapport": {
+          "type": "number"
+        },
+        "cares": {
+          "type": "number"
+        },
+        "stance": {
+          "type": "string"
+        },
+        "impression": {
+          "type": "string"
+        },
+        "public_feeling": {
           "type": [
             "string",
             "null"
           ]
         },
-        "blocked": {
-          "type": "boolean"
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "interactions": {
+          "type": "number"
+        },
+        "last_interaction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_seen": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_together": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "person",
-        "relationship",
-        "label",
-        "blocked"
+        "has_row",
+        "blocked",
+        "owner",
+        "tier",
+        "bond",
+        "ring",
+        "trust",
+        "familiarity",
+        "warmth",
+        "respect",
+        "ease",
+        "grudge",
+        "longing",
+        "rapport",
+        "cares",
+        "stance",
+        "impression",
+        "public_feeling",
+        "call_name",
+        "tags",
+        "interactions",
+        "last_interaction",
+        "last_seen",
+        "last_together",
+        "updated_at"
       ]
     },
     "ApiPersonWalletView": {
@@ -8945,93 +9386,6 @@
         "feedback"
       ]
     },
-    "ApiRelationship": {
-      "type": "object",
-      "properties": {
-        "profile": {
-          "type": "string"
-        },
-        "person": {
-          "type": "string"
-        },
-        "affinity": {
-          "type": "number"
-        },
-        "trust": {
-          "type": "number"
-        },
-        "familiarity": {
-          "type": "number"
-        },
-        "tags": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "notes": {
-          "type": "string"
-        },
-        "call_name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "interactions": {
-          "type": "number"
-        },
-        "last_interaction": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "updated_at": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "profile",
-        "person",
-        "affinity",
-        "trust",
-        "familiarity",
-        "tags",
-        "notes",
-        "call_name",
-        "interactions",
-        "last_interaction",
-        "updated_at"
-      ]
-    },
-    "ApiRelationshipDelta": {
-      "type": "object",
-      "properties": {
-        "at": {
-          "type": "string"
-        },
-        "affinity": {
-          "type": "number"
-        },
-        "trust": {
-          "type": "number"
-        },
-        "familiarity": {
-          "type": "number"
-        },
-        "reason": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "affinity",
-        "trust",
-        "familiarity",
-        "reason"
-      ]
-    },
     "ApiRelationshipLabel": {
       "type": "string",
       "enum": [
@@ -9731,6 +10085,23 @@
         "id",
         "name",
         "avatar_url"
+      ]
+    },
+    "ApiSetAnchorRequest": {
+      "type": "object",
+      "properties": {
+        "quote": {
+          "type": "string"
+        },
+        "note_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "quote"
       ]
     },
     "ApiSetChannelLevelRequest": {
@@ -11931,7 +12302,37 @@
             }
           ]
         },
-        "notes": {
+        "impression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stance": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unfinished": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "jokes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dislikes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "public_feeling": {
           "type": [
             "string",
             "null"
@@ -12691,6 +13092,44 @@
         "completion_tokens",
         "cached_prompt_tokens",
         "reasoning_tokens"
+      ]
+    },
+    "EventsHeartCause": {
+      "type": "string",
+      "enum": [
+        "feel",
+        "reflect",
+        "evidence",
+        "decay",
+        "admin",
+        "migrate"
+      ]
+    },
+    "EventsHeartEvidenceKind": {
+      "type": "string",
+      "enum": [
+        "voice_together",
+        "heard_song",
+        "played_together",
+        "task_together",
+        "gift",
+        "card",
+        "deal_kept",
+        "deal_broken"
+      ]
+    },
+    "EventsHeartField": {
+      "type": "string",
+      "enum": [
+        "bond",
+        "trust",
+        "familiarity",
+        "warmth",
+        "respect",
+        "ease",
+        "grudge",
+        "longing",
+        "rapport"
       ]
     },
     "HostGpuPolicy": {

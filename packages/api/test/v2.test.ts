@@ -2,9 +2,8 @@
 // `/api/mind/plan`, `/api/prompts*` and `/api/turns/outcomes`, against fake services.
 
 import { SavedPromptsKey } from "@miyoria/brain/agent";
-import { heartTables } from "@miyoria/heart/person";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
-import { DecisionLogKey, SqliteStore, StoreKey } from "@miyoria/store";
+import { DecisionLogKey, type SqliteStore } from "@miyoria/store";
 import {
   type ActivityManager,
   ActivityManagerKey,
@@ -260,7 +259,6 @@ const GET_ROUTES = [
   "/api/arbiter/ledger",
   "/api/arbiter/decisions",
   "/api/affect",
-  "/api/affect/people",
   "/api/mind/goals",
   "/api/prompts",
   "/api/prompts/T",
@@ -282,7 +280,6 @@ describe("v2 routes", () => {
     expect(await statusOf(h.adm.activityTasks())).toBe(503);
     expect(await statusOf(h.adm.ledger())).toBe(503);
     expect(await statusOf(h.adm.affect())).toBe(503);
-    expect(await statusOf(h.adm.affectPeople())).toBe(503);
     expect(await statusOf(h.adm.goals())).toBe(503);
     expect(await statusOf(h.adm.prompts())).toBe(503);
     expect(await statusOf(h.adm.prompt("T"))).toBe(503);
@@ -350,30 +347,14 @@ describe("v2 routes", () => {
     expect(bad.status).toBe(400);
   });
 
-  it("serve affect with its biases and the person cards", async () => {
+  it("serve affect with its biases", async () => {
     const h = await harness();
     h.sup.services.provide("self", AffectStateKey, fakeAffect);
     const affect = await h.adm.affect();
     expect(affect).toEqual(AFFECT);
     expect(affect.biases.wants[0]?.want).toBe("chat_with");
-    // The cards are the heart's rows.
-    const store = await SqliteStore.open(":memory:", { plugins: [heartTables] });
-    stores.push(store);
-    const rows = store.plugin(heartTables).people;
-    rows.adminSet("p-owen", "bond", 60);
-    rows.edit("p-owen", { impression: "很可靠", call_name: "歐文" });
-    h.sup.services.provide("app", StoreKey, store);
-    expect(await h.adm.affectPeople()).toEqual([
-      expect.objectContaining({
-        person: "p-owen",
-        call_name: "歐文",
-        affinity: 60,
-        feeling: "很可靠",
-        // Close, but they have not spent time with her yet.
-        label: "朋友",
-        level: 60,
-      }),
-    ]);
+    // How she feels about people is `/api/people` now.
+    expect((await raw(h.base, "GET", "/api/affect/people", { token: TOKEN })).status).toBe(404);
   });
 
   it("serve goals", async () => {

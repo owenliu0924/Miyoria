@@ -57,7 +57,11 @@ const NO_WALLET = "錢包現在不能用";
 const BAD_POSE = "這張立繪現在不能選";
 const NOTHING_TO_REROLL = "今天沒有可以重抽的卡";
 
-/** Pictures of her per affinity band; `stranger` for someone she does not know (or will not say). */
+/**
+ * Pictures of her per affinity band (`bondBand`, the whole scale); `stranger` for someone she does
+ * not know (or will not say). The bands past 非常好 take its pictures.
+ */
+const NEAREST: readonly string[] = ["heart", "blush", "squint"];
 export const CARD_POSES: Readonly<Record<string, readonly string[]>> = {
   stranger: ["calm", "finger"],
   很差: ["cold"],
@@ -65,7 +69,12 @@ export const CARD_POSES: Readonly<Record<string, readonly string[]>> = {
   普通: ["calm", "finger", "smug"],
   不錯: ["smile", "finger", "hand"],
   很好: ["blush", "squint", "hand"],
-  非常好: ["heart", "blush", "squint"],
+  非常好: NEAREST,
+  很親近: NEAREST,
+  心意相通: NEAREST,
+  像家人一樣: NEAREST,
+  無可取代: NEAREST,
+  永恆的羈絆: NEAREST,
 };
 
 // ---- serials --------------------------------------------------------------------------------

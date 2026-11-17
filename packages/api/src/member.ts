@@ -27,6 +27,7 @@ import type {
   IssueCardRequest,
   IssuedCard,
   IssuedFortune,
+  MemberBond,
   MemberCard,
   MemberCards,
   MemberDay,
@@ -39,7 +40,7 @@ import type {
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
-import { BLOCKED_TAG, type HeartPerson, hasTag } from "@miyoria/heart/person";
+import { BLOCKED_TAG, type HeartPerson, hasTag, publicBond } from "@miyoria/heart/person";
 import {
   FORGET_KEEPS,
   FORGET_REMOVES,
@@ -53,6 +54,7 @@ import {
   type AccountRef,
   AuthorizerKey,
   accountRefString,
+  bondBand,
   ephemeralHandlesIn,
   familiarityBand,
   HandleDirectoryKey,
@@ -124,18 +126,11 @@ const SONG_REFUSED = "目前沒辦法點這首歌";
 
 // ---- bands ----------------------------------------------------------------------------------
 
-/** Words, never numbers: a number on a page is something to farm (§17.1). */
-export function affinityBand(value: number): string {
-  if (value <= -50) return "很差";
-  if (value <= -15) return "不太好";
-  if (value < 15) return "普通";
-  if (value < 45) return "不錯";
-  if (value < 75) return "很好";
-  return "非常好";
-}
-
-/** The trust and familiarity words live with the bond's, in `@miyoria/types`. */
-export { familiarityBand, trustBand };
+/**
+ * Words, never numbers: a number on a page is something to farm (§17.1). The bond's words cover
+ * the whole scale up to 1000, and live with trust's and familiarity's in `@miyoria/types`.
+ */
+export { bondBand, familiarityBand, trustBand };
 
 // ---- who is asking --------------------------------------------------------------------------
 
@@ -229,11 +224,28 @@ function cardView(state: ApiState, who: Member, names: NameSplit | null): Member
   return {
     call_name: call !== "" && state.publicSide.passes(state, call) ? call : null,
     relationship: relationshipLabel({ affinity: row.bond, familiarity: row.familiarity }),
-    affinity: affinityBand(row.bond),
+    affinity: bondBand(row.bond),
     trust: trustBand(row.trust),
     familiarity: familiarityBand(row.familiarity),
     // Only the line written for them: her private impression names other people.
     public_feeling: shown(state, row.public_feeling ?? "", names),
+  };
+}
+
+/**
+ * Where they are with her: the tier, how far to the next and the ring, from `publicBond`, which
+ * only gives the ring's lap and fill and the progress in steps of a twentieth. `null` for someone
+ * she does not know (or will not say).
+ */
+function bondView(who: Member): MemberBond | null {
+  const row = who.hidden ? null : who.row;
+  if (row === null) return null;
+  const { tier, next_tier, tier_progress, ring } = publicBond(row);
+  return {
+    tier,
+    next_tier,
+    tier_progress,
+    ring: { lap: ring.lap, fraction: ring.fraction, full: ring.full },
   };
 }
 
@@ -345,6 +357,7 @@ async function memberView(state: ApiState, c: ApiContext): Promise<MemberView> {
   const memories = await shownMemories(state, who, names);
   return {
     card: cardView(state, who, names),
+    bond: bondView(who),
     memories,
     songs: ownSongs(state, who),
     activity: await activity(state, who),

@@ -3,17 +3,14 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HeartHistoryEntry, HeartPerson } from "@miyoria/heart/person";
 import {
   type AccountRef,
   BaseAuthorizer,
   type ContextKey,
   Events,
   eventEnvelope,
-  newId,
   PlatformSinks,
   type Subject,
-  toTimestamp,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { ApiConfigSchema, parseBind } from "../src/index.js";
@@ -33,7 +30,6 @@ import {
   validId,
 } from "../src/oauth.js";
 import { pickDir, pickEncoding } from "../src/panel.js";
-import { absoluteHistory } from "../src/people.js";
 import {
   checkAccess,
   cookieToken,
@@ -178,39 +174,6 @@ describe("oauth", () => {
 });
 
 // ---- people ---
-
-/** One change of her heart log, as the history reads it (newest first). */
-function change(field: "bond" | "familiarity", delta: number, quote: string): HeartHistoryEntry {
-  return {
-    id: newId(),
-    at: toTimestamp(Date.now()),
-    change: {
-      person: "p1",
-      field,
-      delta,
-      value_after: 0,
-      proposed: null,
-      reason_quote: quote,
-      cause: "feel",
-    },
-  };
-}
-
-describe("people", () => {
-  it("history_is_absolute_and_oldest_first", () => {
-    // Newest first, as the log pages: bond +5 ("b") after bond +10 and familiarity +1 ("a").
-    const row = { bond: 15, trust: 50, familiarity: 2 } as HeartPerson;
-    const history = absoluteHistory(
-      [change("bond", 5, "b"), change("familiarity", 1, ""), change("bond", 10, "a")],
-      row,
-    );
-    expect(history.map((d) => [d.affinity, d.familiarity, d.reason])).toEqual([
-      [10, 1, "feel: a"],
-      [10, 2, "feel"],
-      [15, 2, "feel: b"],
-    ]);
-  });
-});
 
 // ---- monitor ---
 
