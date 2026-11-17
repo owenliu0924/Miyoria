@@ -52,6 +52,7 @@ import {
   BACKING_LABELS,
   backingOf,
   type GpuContext,
+  REFUND_RETRY_MS,
   SETLIST_KEY,
   SingerKey,
   SingModule,
@@ -1187,6 +1188,8 @@ describe("sing module", () => {
       refunds: string[] = [];
       refuse: string | null = null;
       onSale = true;
+      /** While set, a refund throws (the economy is restarting). */
+      down = false;
 
       terms() {
         return this.onSale ? { price: 40, per_day: 2, currency: "魚幣" } : null;
@@ -1199,6 +1202,7 @@ describe("sing module", () => {
       }
 
       async refund(_who: AccountRef, key: string) {
+        if (this.down) throw new Error("錢包現在打不開");
         if (this.refunds.includes(key)) return 0;
         this.refunds.push(key);
         return 40;
@@ -1270,6 +1274,24 @@ describe("sing module", () => {
       // The set list keeps it across a restart: still marked, nothing more to give back.
       const stored = h.singer.list.snapshot() as { entries: { priority?: boolean }[] };
       expect(stored.entries.map((e) => e.priority)).toEqual([true, true]);
+    });
+
+    it("tries a refund that did not go again until it does, once", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one", priority: true });
+      ticket.down = true;
+      h.worker.fail("j1", "no search result");
+      await settle(200);
+      expect(h.singer.list.get(1)?.state).toBe("failed");
+      expect(ticket.refunds).toEqual([]);
+      expect(h.singer.list.get(1)?.priority_key).not.toBeNull();
+      // The wallet is back: a later round gives it back, and only once.
+      ticket.down = false;
+      await settle(REFUND_RETRY_MS + 300);
+      expect(ticket.refunds).toEqual([ticket.charges[0]?.key]);
+      expect(h.singer.list.get(1)?.priority_key).toBeNull();
+      await settle(REFUND_RETRY_MS + 300);
+      expect(ticket.refunds).toHaveLength(1);
     });
 
     it("gives it back when the list has no room for the song", async () => {

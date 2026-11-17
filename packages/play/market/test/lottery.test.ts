@@ -63,6 +63,18 @@ describe("the song priority ticket", () => {
     expect(await p.charge(STRANGER, "g", "song")).toMatchObject({ ok: false });
   });
 
+  it("says a refund did not go when the wallet is not there, so the singer tries again", async () => {
+    const r = await rig();
+    r.wallet.fund(ALICE, 100);
+    const p = r.service.songPriority;
+    expect((await p.charge(ALICE, "a", "song")).ok).toBe(true);
+    r.walletGone = true;
+    await expect(p.refund(ALICE, "a")).rejects.toThrow();
+    r.walletGone = false;
+    expect(await p.refund(ALICE, "a")).toBe(40);
+    expect(r.wallet.balanceOf("p-alice")).toBe(100);
+  });
+
   it("is not on sale at 0 a day", async () => {
     const r = await rig({ song_priority_per_day: 0 });
     expect(r.service.songPriority.terms()).toBeNull();
@@ -251,6 +263,27 @@ describe("the weekly lottery", () => {
     await r.service.tick();
     expect(r.store.tickets(week).map((x) => x.id)).toEqual(["T1"]);
     expect(r.store.ticketByKey("p-alice", "k2")).toBeNull();
+  });
+
+  it("gives back a purchase that stopped half way when its week was settled without it", async () => {
+    const r = await rig({ auction: false });
+    r.wallet.fund(ALICE, 100);
+    // Charged, then the Core stopped before the purchase was marked paid.
+    r.wallet.throwAfterCharge = true;
+    await expect(r.service.buyTickets(ALICE, 2, "k")).rejects.toThrow();
+    r.wallet.throwAfterCharge = false;
+    expect(r.wallet.balanceOf("p-alice")).toBe(80);
+    // Back up within two minutes with the lottery turned off: the week is refunded at once.
+    const off = r.restart({ lottery: false });
+    await off.tick();
+    expect(r.store.week(localDay(DRAW, OFFSET))?.status).toBe("refunded");
+    // The purchase is found later: it was in no draw, so it goes back.
+    r.clock.at += 5 * MIN;
+    await off.tick();
+    expect(r.wallet.balanceOf("p-alice")).toBe(100);
+    expect(r.store.ticketByKey("p-alice", "k")?.status).toBe("refunded");
+    await off.tick();
+    expect(r.wallet.balanceOf("p-alice")).toBe(100);
   });
 
   it("refunds the open week when it is turned off, and sells nothing", async () => {

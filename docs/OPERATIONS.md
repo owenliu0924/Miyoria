@@ -455,7 +455,7 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 - **每週樂透**:一張 10,一個人一週最多 20 張,週日 20:00 開獎。少於 3 個不同的人買就不開、全額退回;否則用系統的 CSPRNG 依張數抽一張,中的人拿賣出的七成,其餘燒掉。公告(有「買 1 張」「買 5 張」按鈕)和開獎發在 `lottery_channel`,沒設就用拍賣的頻道,兩個都空就不公告(照樣能用 `/me lottery count:` 和會員頁買)。改 `lottery = false`:不賣,這週已經賣的全額退回。
 - **API**:會員 `GET /api/member/market/auction|bids|lottery|tickets`、`POST /api/member/market/bid {amount}`、`POST /api/member/market/name {name}`(或 `{give_up: true}`)、`POST /api/member/market/lottery {count}`(帶 `Idempotency-Key`);owner `GET /api/market/history`、`POST /api/market/plan {lot: "call_name" | "frame" | "skip", note?}`(下一場:這週的還沒開就是這週的)、`POST /api/market/settle {what: "auction" | "lottery"}`(立刻結束拍賣 / 立刻開獎),後兩個要 `admin.economy.adjust`。
 - **圖**:拍賣和樂透的通知(開始、結束、每週公告、開獎)和 `/me auction`、`/me lottery` 的回覆上面有一張圖(api 模組的 `PicturesKey`,替代文字是一行摘要);api 沒開、畫不出來或太慢就只有原本的文字卡,頻道不給上傳檔案時也一樣。要讓圖發得出去,她在頻道裡要有「附加檔案」的權限。
-- **重啟**:所有狀態在資料庫(`market_lots`、`market_bids`、`market_lottery_weeks`、`market_lottery_tickets`),時間從存的時間算;每 30 秒看一次該開的、該結束的、該開獎的,停在一半的(押了錢沒記下的出價、扣了錢沒記下的彩券、還沒燒或還沒付的)下一輪補完。日誌:`market: a lot opened`、`market: a pass failed; the next one tries again`、`market: no Discord to post in`。
+- **重啟**:所有狀態在資料庫(`market_lots`、`market_bids`、`market_lottery_weeks`、`market_lottery_tickets`),時間從存的時間算;每 30 秒看一次該開的、該結束的、該開獎的,停在一半的(押了錢沒記下的出價、扣了錢沒記下的彩券、還沒燒或還沒付的、她收下了但還沒套上的稱呼)下一輪補完;那一週已經開過才找到的彩券直接退回。點歌優先券的退款沒成功(經濟沒在跑)時,唱歌模組每 30 秒再試一次,日誌 `cannot refund a song priority ticket`。日誌:`market: a lot opened`、`market: a pass failed; the next one tries again`、`market: no Discord to post in`。
 - **拿掉功能**:先把 `auction`、`lottery` 設成 `false` 讓它退完;整個外掛要刪的時候,`packages/play/market/src/migrations.ts` 的 `retireMarketSql` 就是要加的那個 migration(押著的出價和還沒開獎那週的彩券退回,再刪表)。
 
 面板的頁(側欄可收合,`Ctrl/⌘ + B`;`Ctrl/⌘ + K` 開搜尋,可跳到頁面、人、子系統):

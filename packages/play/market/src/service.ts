@@ -324,9 +324,11 @@ export class MarketService {
       }
       return { ok: false, message: this.#refusal(charge, `(優先券要 ${c.song_priority})`).message };
     },
+    // Without the wallet nothing went back: it throws, so the singer keeps the key and tries again
+    // (answering 0 would read as "nothing to give back" and the ticket would be lost).
     refund: async (account, key) => {
       const wallet = this.#wallet();
-      if (wallet === null) return 0;
+      if (wallet === null) throw new Unsettled(NO_WALLET);
       return wallet.refund(account, MARKET_REASONS.songPriority, key);
     },
   };
@@ -465,34 +467,59 @@ export class MarketService {
       if (wallet === null) return refuse(503, NO_WALLET);
       const who = await wallet.member(account);
       if (who === null) return refuse(403, NOT_KNOWN);
-      const lot = this.#naming(who.person);
-      if (lot === null) return refuse(404, "你沒有要取名的拍賣");
+      const found = this.#naming(who.person);
+      if (found === null) return refuse(404, "你沒有要取名的拍賣");
       const names = this.#d.names;
       if (names === null) return refuse(503, "現在沒辦法設定稱呼");
+      // A name taken before a stop: finish that one (its price may be burned already).
+      if (found.call_name !== null) {
+        const done = await this.#applyName(found);
+        return { ok: true, call_name: done.call_name ?? "", applied_until: done.applied_until };
+      }
       const name = raw.trim();
       if (name === "") return refuse(400, "要寫一個稱呼");
       const why = await this.#d.screenName(name);
       if (why !== null) return refuse(409, `她不想這樣叫你:${why} 換一個,或選不要了退款。`);
       if (names.refuses(who.person)) return refuse(409, "她現在不想幫你換稱呼。可以選不要了退款。");
-      const now = this.#now();
-      const until = now + this.#d.config.auction_call_days * DAY_MS;
-      await this.#settleWin(lot, `call_name:${lot.id}`);
-      const previous = names.get(who.person);
-      names.set(who.person, name);
-      this.#d.store.setLot(lot.id, ["naming"], {
-        status: "applied",
+      const until = this.#now() + this.#d.config.auction_call_days * DAY_MS;
+      // Taken: written before anything is burned, so a stop after this finishes applying it and
+      // never refunds a price that was burned.
+      const taken = {
         call_name: name,
-        previous_call_name: previous,
+        previous_call_name: names.get(who.person),
         applied_until: toTimestamp(until),
-        settled_at: toTimestamp(now),
-      });
+      };
+      if (!this.#d.store.setLot(found.id, ["naming"], taken)) {
+        return refuse(409, "這場拍賣已經結束了");
+      }
+      const done = await this.#applyName({ ...found, ...taken });
       this.#d.tell(
         nameNote(who.name, name, this.#d.config.auction_call_days),
-        `market:name:${lot.id}`,
+        `market:name:${found.id}`,
         who.person,
       );
-      return { ok: true, call_name: name, applied_until: toTimestamp(until) };
+      return { ok: true, call_name: name, applied_until: done.applied_until };
     });
+  }
+
+  /**
+   * A name the winner gave that she took (`call_name` on a `naming` lot): the price burned, the
+   * holds released, the name set, the lot `applied`. Each step once, so it is finished from any
+   * point it stopped at.
+   */
+  async #applyName(lot: Lot): Promise<{ call_name: string | null; applied_until: Timestamp }> {
+    const names = this.#d.names;
+    if (names === null) throw new Unsettled("no heart to set the name in");
+    const winner = lot.winner_bid === null ? null : this.#d.store.bid(lot.winner_bid);
+    await this.#settleWin(lot, `call_name:${lot.id}`);
+    if (winner !== null && lot.call_name !== null) names.set(winner.person, lot.call_name);
+    const until = lot.applied_until ?? toTimestamp(this.#now());
+    this.#d.store.setLot(lot.id, ["naming"], {
+      status: "applied",
+      applied_until: until,
+      settled_at: toTimestamp(this.#now()),
+    });
+    return { call_name: lot.call_name, applied_until: until };
   }
 
   /** The winner of a name lot gives it up: their coins go back, nothing is burned. */
@@ -504,6 +531,11 @@ export class MarketService {
       if (who === null) return refuse(403, NOT_KNOWN);
       const lot = this.#naming(who.person);
       if (lot === null) return refuse(404, "你沒有要取名的拍賣");
+      if (lot.call_name !== null) {
+        // She took a name already and its price may be burned: that name is finished instead.
+        await this.#applyName(lot);
+        return refuse(409, `她已經收下「${lot.call_name}」這個稱呼了,不能退款`);
+      }
       const back = await this.#refundLot(lot, ["naming"]);
       return { ok: true, refunded: back };
     });
@@ -1014,15 +1046,23 @@ export class MarketService {
     if (c.lottery) await this.#weekNotice(now);
   }
 
-  /** A purchase left `pending`: paid when its charge stands, else forgotten. */
+  /**
+   * A purchase left `pending`: paid when its charge stands, else forgotten. When its week was
+   * already settled without it (drawn, or being refunded), it was in no draw: its coins go back.
+   */
   async #settleTicket(t: Ticket): Promise<void> {
     const wallet = this.#wallet();
     if (wallet === null) throw new Unsettled("no wallet");
-    if (await wallet.charged(t.account, MARKET_REASONS.lotteryTicket, t.id)) {
-      this.#d.store.setTicket(t.id, "paid", this.#now());
-    } else {
+    if (!(await wallet.charged(t.account, MARKET_REASONS.lotteryTicket, t.id))) {
       this.#d.store.dropTicket(t.id);
+      return;
     }
+    if ((this.#d.store.week(t.week)?.status ?? "open") === "open") {
+      this.#d.store.setTicket(t.id, "paid", this.#now());
+      return;
+    }
+    await wallet.refund(t.account, MARKET_REASONS.lotteryTicket, t.id);
+    this.#d.store.setTicket(t.id, "refunded", this.#now());
   }
 
   async #draw(w: LotteryWeek): Promise<void> {
@@ -1072,6 +1112,8 @@ export class MarketService {
       w = store.week(w.week) as LotteryWeek;
     }
     if (w.status === "refunding") {
+      // A purchase that stopped half way (turned off before it was settled) goes back too.
+      for (const t of store.tickets(w.week, ["pending"])) await this.#settleTicket(t);
       for (const t of store.tickets(w.week)) {
         await wallet.refund(t.account, MARKET_REASONS.lotteryTicket, t.id);
         store.setTicket(t.id, "refunded", now);
@@ -1175,9 +1217,12 @@ export class MarketService {
     }
     for (const b of store.unreleased()) await this.#release(b);
     if (!this.auctionRunning()) {
-      // Off, or no channel: an open lot is called off and a name not given yet is refunded.
+      // Off, or no channel: an open lot is called off and a name not given yet is refunded (a
+      // name she took is finished below).
       for (const lot of store.lotsIn(["open"])) await this.#refundLot(lot, ["open"], "cancelled");
-      for (const lot of store.lotsIn(["naming"])) await this.#refundLot(lot, ["naming"]);
+      for (const lot of store.lotsIn(["naming"])) {
+        if (lot.call_name === null) await this.#refundLot(lot, ["naming"]);
+      }
     } else {
       await this.#open(now, signal);
     }
@@ -1186,6 +1231,11 @@ export class MarketService {
     }
     for (const lot of store.lotsIn(["closing"])) await this.#settle(lot, now);
     for (const lot of store.lotsIn(["naming"])) {
+      // A name she took when the Core stopped half way through applying it.
+      if (lot.call_name !== null) {
+        await this.#applyName(lot);
+        continue;
+      }
       if (lot.name_due !== null && Date.parse(lot.name_due) <= now) {
         await this.#refundLot(lot, ["naming"]);
         this.#d.log.info({ lot: lot.id }, "market: no name was given in time; refunded");

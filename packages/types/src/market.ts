@@ -119,7 +119,10 @@ export interface SongPriority {
     key: string,
     ref: string,
   ): Promise<{ ok: true; balance: number } | { ok: false; message: string }>;
-  /** Gives the ticket of `key` back, once: the coins given back. */
+  /**
+   * Gives the ticket of `key` back, once: the coins given back (0: nothing to give back). Throws
+   * when the wallet cannot be reached now; the caller keeps the key and tries again.
+   */
   refund(account: AccountRef, key: string): Promise<number>;
 }
 

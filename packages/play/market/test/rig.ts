@@ -80,6 +80,8 @@ export class FakeWallet implements MarketWallet {
   #n = 0;
   /** While set, every call throws (the economy is down). */
   down = false;
+  /** While set, a charge is written and then the call throws (the Core stopped right after). */
+  throwAfterCharge = false;
 
   constructor(private readonly clock: { at: number }) {}
 
@@ -149,6 +151,7 @@ export class FakeWallet implements MarketWallet {
     const balance = this.balanceOf(who.person);
     if (balance < amount) return { ok: false, reason: "insufficient", balance };
     const row = this.#post(who.person, -amount, reason, `${reason}:${key}`, ref);
+    if (this.throwAfterCharge) throw new Error("stopped after the charge");
     return { ok: true, receipt: row.id, balance: this.balanceOf(who.person) };
   }
 
@@ -230,6 +233,8 @@ export interface Rig {
   calls: Map<PersonId, string | null>;
   /** What the CSPRNG gives next. */
   dice: number[];
+  /** While set, the economy's wallet is not there (`MarketWalletKey` absent). */
+  walletGone: boolean;
   /** Restarts the service over the same store (a new process). */
   restart(config?: Partial<MarketConfig>): MarketService;
 }
@@ -251,6 +256,8 @@ export interface RigOptions {
   pictures?: Pictures | null;
   /** Posts that carry files fail (the channel takes no uploads). */
   noUploads?: boolean;
+  /** Setting what she calls someone throws this many times first (the Core stopped there). */
+  nameSetFails?: number;
 }
 
 /** A renderer that records what it was asked to draw and answers a tiny PNG with an alt line. */
@@ -298,9 +305,14 @@ export async function rig(
   const told: Rig["told"] = [];
   const calls = new Map<PersonId, string | null>();
   const dice: number[] = [];
+  let setFails = options.nameSetFails ?? 0;
   const names: CallNames = {
     get: (p) => calls.get(p) ?? null,
     set: (p, n) => {
+      if (setFails > 0) {
+        setFails -= 1;
+        throw new Error("stopped before the name was set");
+      }
       calls.set(p, n);
     },
     refuses: (p) => options.refuses?.includes(p) ?? false,
@@ -310,7 +322,7 @@ export async function rig(
     new MarketService({
       config: marketConfig({ auction_channel: "100", ...config, ...overrides }),
       store,
-      wallet: () => wallet,
+      wallet: () => (r.walletGone ? null : wallet),
       now: () => clock.at,
       isSelf: (a) => a.id === HER.id,
       names: options.names === false ? null : names,
@@ -341,6 +353,7 @@ export async function rig(
     told,
     calls,
     dice,
+    walletGone: false,
     restart: (overrides = {}) => {
       r.service = make(overrides);
       return r.service;

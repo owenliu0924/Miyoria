@@ -383,6 +383,49 @@ describe("the end of a lot", () => {
     expect(late.wallet.rows.some((x) => x.reason === "auction_won")).toBe(false);
   });
 
+  it("finishes a name that stopped after its price was burned, never refunding it late", async () => {
+    const r = await open("call_name", { nameSetFails: 1 });
+    r.calls.set("p-bob", "小鮑");
+    await r.service.bid(BOB, 80);
+    r.clock.at = OPENS + DAY;
+    await r.service.tick();
+    const lot = r.store.history(1)[0];
+    // The name was taken and the price burned, then the Core stopped before the name was set.
+    await expect(r.service.proposeName(BOB, "鮑大王")).rejects.toThrow();
+    // Past the due time, after a restart: the pass finishes it rather than refunding.
+    r.clock.at = OPENS + DAY + 72 * HOUR;
+    const again = r.restart();
+    await again.tick();
+    expect(r.store.lot(lot?.id ?? "")).toMatchObject({
+      status: "applied",
+      call_name: "鮑大王",
+      previous_call_name: "小鮑",
+    });
+    expect(r.calls.get("p-bob")).toBe("鮑大王");
+    expect(r.wallet.rows.filter((x) => x.reason === "auction_won")).toHaveLength(1);
+    expect(held(r, "p-bob")).toBe(0);
+    expect(r.wallet.balanceOf("p-bob")).toBe(920);
+    expect(await again.myBids(BOB)).toEqual([expect.objectContaining({ state: "won" })]);
+  });
+
+  it("does not let a name that was taken be given up for a refund of nothing", async () => {
+    const r = await open("call_name", { nameSetFails: 1 });
+    await r.service.bid(BOB, 80);
+    r.clock.at = OPENS + DAY;
+    await r.service.tick();
+    const lot = r.store.history(1)[0];
+    await expect(r.service.proposeName(BOB, "鮑大王")).rejects.toThrow();
+    // 不要了 now: the price is already burned, so the name is finished instead.
+    expect(await r.service.giveUpName(BOB)).toMatchObject({ ok: false, status: 409 });
+    expect(r.store.lot(lot?.id ?? "")?.status).toBe("applied");
+    expect(r.calls.get("p-bob")).toBe("鮑大王");
+    expect(r.wallet.balanceOf("p-bob")).toBe(920);
+    // Turning the auction off later refunds nothing either.
+    await r.restart({ auction: false }).tick();
+    expect(r.wallet.balanceOf("p-bob")).toBe(920);
+    expect(r.store.lot(lot?.id ?? "")?.status).toBe("applied");
+  });
+
   it("is called off with every hold given back when the auction is turned off", async () => {
     const r = await open("frame");
     await r.service.bid(ALICE, 50);

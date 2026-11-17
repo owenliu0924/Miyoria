@@ -23,7 +23,9 @@
 // * A request with a song priority ticket (`priority`, the person's own command or member page
 //   only) pays it first through `SongPriorityKey` and stands ahead of the songs without one. A
 //   song that is not sung (it could not be listed or made, it failed, it was cancelled) gives the
-//   ticket back. Her prompt says nothing of it: the order is the whole effect.
+//   ticket back; a refund that did not go (the wallet was not there) keeps the ticket's key on the
+//   entry and is tried again every `REFUND_RETRY_MS` (the ledger gives a charge back once, so a
+//   retry never pays twice). Her prompt says nothing of it: the order is the whole effect.
 
 import { randomUUID } from "node:crypto";
 import { CapabilityError } from "@miyoria/gate/actions";
@@ -93,6 +95,8 @@ const ANNOUNCEMENTS_REMEMBERED = 32;
 
 /** An announcement no longer makes sense after this. */
 const ANNOUNCE_TTL_MS = 2 * 60_000;
+/** How often a song priority ticket whose refund did not go is tried again. */
+export const REFUND_RETRY_MS = 30_000;
 
 /** Initiative / mind suggestion reasons. */
 export const REASONS = {
@@ -201,6 +205,8 @@ export class Singer implements VoiceFloor, SpeechPause {
   #saved: string | null = null;
   /** Restored songs that never reached the worker. */
   readonly #orphans = new Set<SongNo>();
+  /** When refunds that did not go were last tried again (epoch ms). */
+  #refundsTried = 0;
   /** Songs whose job has (or is about to have) the GPU, by number. */
   readonly #gpu = new Set<SongNo>();
   #preparing: Preparing | null = null;
@@ -372,6 +378,21 @@ export class Singer implements VoiceFloor, SpeechPause {
     } catch (error) {
       log.warn({ key, err: errorMessage(error) }, "cannot refund a song priority ticket");
       return false;
+    }
+  }
+
+  /**
+   * The songs that ended without being sung and still hold a ticket (a refund that did not go,
+   * or a song restored as failed) give it back now; at most every `REFUND_RETRY_MS`.
+   */
+  async #retryRefunds(): Promise<void> {
+    const now = this.ctx.clock.now();
+    if (now - this.#refundsTried < REFUND_RETRY_MS) return;
+    this.#refundsTried = now;
+    for (const e of this.list.all()) {
+      if ((e.state === "failed" || e.state === "cancelled") && e.priority_key) {
+        await this.#giveBackPriority(e);
+      }
     }
   }
 
@@ -1108,6 +1129,7 @@ export class Singer implements VoiceFloor, SpeechPause {
    * old jobs) is asked for again: a song it finished is in its cache and comes back at once.
    */
   async poll(signal?: AbortSignal): Promise<void> {
+    await this.#retryRefunds();
     if (this.list.preparing().length > 0) {
       // Without this the worker assumes people are listening, which is the careful answer.
       const context = this.#gpuContext();
