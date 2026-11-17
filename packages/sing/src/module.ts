@@ -92,7 +92,18 @@ export class SingModule implements Module {
     icon: "music",
     category: "play",
     description: "Song requests: AI covers in her voice, sung in voice with lyrics",
-    optional: ["voice.link", "arbiter", "queue", "commands", "actions", "agent", "activity"],
+    // `cluster`: its registry is where the song workers of other machines are listed, so it
+    // starts first (the list is asked again before every use as well, see `refresh` below).
+    optional: [
+      "cluster",
+      "voice.link",
+      "arbiter",
+      "queue",
+      "commands",
+      "actions",
+      "agent",
+      "activity",
+    ],
     configSchema: SingConfigSchema,
   });
   readonly #worker: SingWorkerFactory | null;
@@ -131,6 +142,9 @@ export class SingModule implements Module {
         const client = clients.get(id);
         if (client !== undefined) source?.failed(client.endpoint, error);
       },
+      // The registry is looked up again at every use: one that was not there when this module
+      // started (the `cluster` module restarted, or started later) is found then.
+      refresh: () => follow(),
     });
     const follow = () => {
       if (source === null) return;

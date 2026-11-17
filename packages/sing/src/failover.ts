@@ -28,6 +28,12 @@ export interface FailoverOptions {
   now?: () => number;
   /** Told when a worker is found unreachable (by its id): the registry rests it too. */
   failed?: (id: string, error: unknown) => void;
+  /**
+   * Asked before the list is read: the owner calls `update` when the workers known now are not
+   * the ones listed. A list that was empty when it was made (the registry of another module was
+   * not there yet) would otherwise stay empty, since nothing else asks again.
+   */
+  refresh?: () => void;
 }
 
 /** One worker of the list. */
@@ -65,6 +71,7 @@ export class FailoverSingWorker implements SingWorker {
   readonly #retryMs: number;
   readonly #now: () => number;
   readonly #failed: ((id: string, error: unknown) => void) | null;
+  #refresh: (() => void) | null = null;
   /** Which worker took a job / has a song, as answers come in (lost on restart, then searched). */
   readonly #jobs = new Map<string, Endpoint>();
   readonly #songs = new Map<string, Endpoint>();
@@ -76,6 +83,13 @@ export class FailoverSingWorker implements SingWorker {
     this.#now = options.now ?? Date.now;
     this.#failed = options.failed ?? null;
     this.update(workers);
+    this.#refresh = options.refresh ?? null;
+  }
+
+  /** The list as it is now, after asking the owner whether it changed. */
+  #list(): Endpoint[] {
+    this.#refresh?.();
+    return this.#all;
   }
 
   /** The workers in order of preference now. */
@@ -128,7 +142,7 @@ export class FailoverSingWorker implements SingWorker {
 
   /** Where new work goes now: the first worker that answers. */
   current(): string | null {
-    return this.#all.find((ep) => ep.downSince === null)?.name ?? null;
+    return this.#list().find((ep) => ep.downSince === null)?.name ?? null;
   }
 
   async submit(query: SongQuery, signal?: AbortSignal): Promise<WorkerJob> {
@@ -235,7 +249,7 @@ export class FailoverSingWorker implements SingWorker {
 
   /** Healthy while any worker is; otherwise why each one is not. */
   async health(signal?: AbortSignal): Promise<string | null> {
-    const all = this.#all;
+    const all = this.#list();
     if (all.length === 0) return NO_WORKER;
     const whys = await Promise.all(all.map((ep) => ep.worker.health(signal)));
     const now = this.#now();
@@ -254,8 +268,9 @@ export class FailoverSingWorker implements SingWorker {
   /** Workers for new work: those not passed over right now, or all of them when none is left. */
   #candidates(): Endpoint[] {
     const now = this.#now();
-    const up = this.#all.filter((ep) => !this.#resting(ep, now));
-    return up.length > 0 ? up : this.#all;
+    const all = this.#list();
+    const up = all.filter((ep) => !this.#resting(ep, now));
+    return up.length > 0 ? up : all;
   }
 
   /** Found unreachable a moment ago: not asked again until `retryMs` passed. Gone: never. */
