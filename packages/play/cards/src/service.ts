@@ -527,7 +527,9 @@ export class CardService {
     const { person, key, serial } = row;
     // Settled meanwhile, or written by a retry in this turn's queue.
     if (this.#store.pendingOf(person, key)?.serial !== serial) return "gone";
-    if (this.#store.byKey(person, key) !== null || this.#store.card(serial) !== null) {
+    // Its own card, by the serial: a card of the same key with another serial (a merged person's)
+    // was not paid by this charge.
+    if (this.#store.card(serial) !== null) {
       this.#store.unreserve(person, key, serial);
       log.info({ person, serial }, "cards: a kept serial's card was written; the row is cleared");
       return "cleared";

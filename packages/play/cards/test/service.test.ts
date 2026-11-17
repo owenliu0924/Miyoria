@@ -765,6 +765,62 @@ describe("a person", () => {
     expect(store.dex("a")).toEqual([]);
   });
 
+  it("forgotten, still gets back what a card never written was charged", async () => {
+    wallet.balances.set("p1", 100);
+    store.reserve("p1", "daily:k1", "MYR-KEPT-0000-0001", now);
+    await wallet.spend(payer("p1"), 30, "card_daily", "MYR-KEPT-0000-0001");
+    store.forgetPerson(["p1"]);
+    expect(store.pending()).toHaveLength(1);
+    now += SETTLE_GRACE_MS;
+    const account = async (p: PersonId) => payer(p).account;
+    expect(await service({ account }).settlePending()).toMatchObject({ refunded: 1 });
+    expect(wallet.balances.get("p1")).toBe(100);
+    expect(store.pending()).toEqual([]);
+  });
+
+  it("merged, hands a try still pending to the kept person, and never pays for one twice", async () => {
+    wallet.balances.set("a", 100);
+    wallet.balances.set("k", 100);
+    const account = async (p: PersonId) => payer(p).account;
+    // Both stopped after paying for a try under the same key; the kept person's also got its card.
+    store.reserve("a", "daily:k1", "MYR-KEPT-0000-000A", now);
+    await wallet.spend(payer("a"), 30, "card_daily", "MYR-KEPT-0000-000A");
+    store.reserve("a", "daily:k2", "MYR-KEPT-0000-00A2", now);
+    await wallet.spend(payer("a"), 30, "card_daily", "MYR-KEPT-0000-00A2");
+    store.reserve("a", "daily:k3", "MYR-KEPT-0000-00A3", now);
+    await wallet.spend(payer("a"), 30, "card_daily", "MYR-KEPT-0000-00A3");
+    const written = await service().issueDaily(payer("k"), face, { key: "k1" });
+    if (!written.ok) throw new Error("refused");
+    // The kept person's own try of k3 stopped before it was charged.
+    store.reserve("k", "daily:k3", "MYR-KEPT-0000-00K3", now);
+    store.merge("k", "a");
+    // The economy's wallet of the kept person is theirs and the absorbed one's together.
+    for (const c of wallet.charges) if (c.person === "a") c.person = "k";
+    wallet.balances.set("k", (wallet.balances.get("k") ?? 0) + (wallet.balances.get("a") ?? 0));
+    wallet.balances.delete("a");
+    expect(wallet.balances.get("k")).toBe(80);
+    expect(store.pending().map((p) => [p.person, p.key, p.serial])).toEqual([
+      ["k", "daily:k1", "MYR-KEPT-0000-000A"],
+      ["k", "daily:k2", "MYR-KEPT-0000-00A2"],
+      ["k", "daily:k3", "MYR-KEPT-0000-00K3"],
+      ["k", "daily:k3#MYR-KEPT-0000-00A3", "MYR-KEPT-0000-00A3"],
+    ]);
+    // The kept person retries the absorbed try of k2: the card it paid for, nothing more.
+    const retry = await service().issueDaily(payer("k"), face, { key: "k2" });
+    expect(retry.ok && retry.issued.card.serial).toBe("MYR-KEPT-0000-00A2");
+    expect(wallet.balances.get("k")).toBe(80);
+    // Of k1 the card is the kept person's own, and k3's kept serial is theirs: the absorbed tries
+    // of both paid for no card and go back; the kept person's uncharged one just goes.
+    now += SETTLE_GRACE_MS;
+    expect(await service({ account }).settlePending()).toEqual({
+      cleared: 0,
+      refunded: 3,
+      waiting: 0,
+    });
+    expect(wallet.balances.get("k")).toBe(140);
+    expect(store.pending()).toEqual([]);
+  });
+
   it("merged, keeps both cards of a key they both had, only one as that key's", () => {
     issue("a", { kind: "milestone", key: "milestone:15", pity: false });
     issue("k", { kind: "milestone", key: "milestone:15", pity: false });

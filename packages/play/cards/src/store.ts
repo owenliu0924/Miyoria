@@ -948,7 +948,9 @@ export class CardStore {
    * own rows of them are kept too, so a deleted copy would only come back at the next start). So
    * does the mark that they were given their keepsake (`cards_keepsake`, a person id and a time):
    * what makes them eligible (`persons.legacy`) outlives a forget too, and asking to be forgotten
-   * is no way to a second one.
+   * is no way to a second one. And so do the serials kept for paid cards not written yet
+   * (`cards_pending`): their coins are still taken, and the settling (`CardService.settlePending`)
+   * gives them back and deletes the rows within minutes; deleted now, the coins would stay taken.
    */
   forgetPerson(ids: readonly PersonId[]): Record<string, number> {
     if (ids.length === 0) return {};
@@ -973,9 +975,6 @@ export class CardStore {
         ),
         cards_drop: Number(
           o.delete(cardsDrop).where(inArray(cardsDrop.claimed_by, list)).run().changes,
-        ),
-        cards_pending: Number(
-          o.delete(cardsPending).where(inArray(cardsPending.person_id, list)).run().changes,
         ),
       };
     });
@@ -1045,8 +1044,17 @@ export class CardStore {
         .set({ claimed_by: keep })
         .where(eq(cardsDrop.claimed_by, absorb))
         .run();
-      // A try still pending under the absorbed id is retried, if ever, by the kept person.
-      this.#db.orm.delete(cardsPending).where(eq(cardsPending.person_id, absorb)).run();
+      // A try still pending under the absorbed id is the kept person's: retried by them, or settled
+      // (its coins given back). One whose key the kept person has a try of too keeps its serial
+      // under a key nobody asks for, so it is only settled.
+      this.#db.run(
+        `UPDATE cards_pending SET person_id = $keep,
+           issue_key = CASE WHEN EXISTS (SELECT 1 FROM cards_pending k
+             WHERE k.person_id = $keep AND k.issue_key = cards_pending.issue_key)
+           THEN issue_key || '#' || serial ELSE issue_key END
+         WHERE person_id = $absorb`,
+        p,
+      );
       // Either one given a keepsake: the kept person was.
       this.#db.run(
         `INSERT OR IGNORE INTO cards_keepsake (person_id, given_at)
