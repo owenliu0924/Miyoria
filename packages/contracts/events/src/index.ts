@@ -377,6 +377,15 @@ export {
   LlmCallUsageSchema,
 } from "./llm.js";
 export {
+  LotClosed,
+  type LotClosedData,
+  LotClosedSchema,
+  LotteryDrawn,
+  type LotteryDrawnData,
+  LotteryDrawnSchema,
+  MARKET_EVENTS,
+} from "./market.js";
+export {
   ConversationFolded,
   type ConversationFoldedData,
   ConversationFoldedSchema,

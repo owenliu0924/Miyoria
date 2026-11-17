@@ -94,6 +94,7 @@ it("covers identity, config, the artifact store and the plugins that own their t
     "heart",
     "identity",
     "initiative",
+    "market",
     "memory",
     "notes",
     "transcript",
