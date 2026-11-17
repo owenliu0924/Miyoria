@@ -32,5 +32,6 @@
     },
     "resolveJsonModule": true
   },
-  "include": ["src", "../../packages/card-face/src"]
+  "include": ["src", "../../packages/card-face/src"],
+  "exclude": ["../../packages/card-face/src/pictures"]
 }
