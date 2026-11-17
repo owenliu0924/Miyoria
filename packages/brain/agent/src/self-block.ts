@@ -244,7 +244,7 @@ export function activityBlock(src: SelfSources): string {
   const singing = a.type === "singing" && (a.phase === "running" || a.phase === "starting");
   const apart =
     textHere && singing
-      ? "唱歌只佔語音,不影響這裡:文字頻道的事(查錢包、收食物、簽到、約定…)現在就用工具做,不用等唱完。"
+      ? "唱歌只佔語音,不影響這裡:文字頻道的事(查錢包、收食物、簽到…)現在就用工具做,不用等唱完。"
       : "";
   return `你現在${voice}、${live}、${doing}。${apart}`;
 }

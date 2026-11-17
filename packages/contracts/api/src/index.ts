@@ -784,8 +784,6 @@ export {
   BoardRequestSchema,
   type CheckinResult,
   CheckinResultSchema,
-  type DealView,
-  DealViewSchema,
   type EarnLine,
   EarnLineSchema,
   type FeedItem,

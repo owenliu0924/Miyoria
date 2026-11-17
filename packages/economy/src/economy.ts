@@ -9,7 +9,6 @@
 //   affinity and trust by a hair through the social engine (`RelationshipEffects`), within its own
 //   daily cap. She learns of it as a silent Observation, read when she next thinks (never a
 //   reason to break into a song).
-// * Deals (deals.ts) are someone's promise of a snack for a task; payment is read off this ledger.
 // * Spends of this process take turns, so two clicks cannot both pass a check meant for one.
 
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
@@ -55,7 +54,6 @@ import {
 import { setBoard, sponsorBoard } from "./board.js";
 import { BountyBoard } from "./bounties.js";
 import type { EconomyConfig } from "./config.js";
-import { DealDesk } from "./deals.js";
 import { type EconomyDocStore, EconomyDocsKey, MemoryDocs } from "./docs.js";
 import { GoalDesk } from "./goals.js";
 import { Purse } from "./purse.js";
@@ -175,6 +173,7 @@ export const PAID_NAME: Readonly<Record<PaidItem, { label: string; kind: ShopIte
 const RETIRED_LABEL: Readonly<Record<string, string>> = {
   letter: "寫信給她",
   expression: "送她表情",
+  deal_escrow: "先付給她的約定",
 };
 
 /** Ledger reasons that are gifts to her (they diminish each other). */
@@ -297,8 +296,6 @@ export interface EconomyDeps {
 export class EconomyService implements Economy {
   readonly #d: EconomyDeps;
   readonly #turns = new SerialQueue();
-  /** Deals she accepted (deals.ts). */
-  readonly deals: DealDesk;
   /** Her own coins (purse.ts), her crowdfunding goals (goals.ts) and her bounties (bounties.ts). */
   readonly purse: Purse;
   readonly goalDesk: GoalDesk;
@@ -310,7 +307,6 @@ export class EconomyService implements Economy {
 
   constructor(deps: EconomyDeps) {
     this.#d = deps;
-    this.deals = new DealDesk(this);
     this.purse = new Purse(this);
     this.goalDesk = new GoalDesk(this);
     this.bountyDesk = new BountyBoard(this);
@@ -408,7 +404,7 @@ export class EconomyService implements Economy {
     return this.#d.config;
   }
 
-  // ---- what deals.ts uses -----------------------------------------------------------------
+  // ---- what the other files of the economy use -----------------------------------------------------------------
 
   get services(): ServiceLookup {
     return this.#d.services;
@@ -500,18 +496,6 @@ export class EconomyService implements Economy {
 
   bounties(): Promise<BountyView[]> {
     return this.bountyDesk.view();
-  }
-
-  /**
-   * Escrow released to her: she eats what the deal's reward is, then it is an ordinary gift
-   * (`gift` event, a hair of affinity, the overlay). Nothing is charged: the escrow already was.
-   */
-  async release(who: Member, entry: CoinEntry, item: FeedItem, count: number): Promise<void> {
-    const label = feedLabel(item, count);
-    this.#d.services.get(SelfStateKey)?.adjust({ hunger: -HUNGER_OF[item] * count }, "fed");
-    await this.#gift(who, entry, item, count, label);
-    await this.purse.share(entry, true);
-    if (item === "big_bowl") this.#bigBowl();
   }
 
   /** Something she knows from now on, silently; `writer` is the working-context bucket. */
@@ -712,8 +696,6 @@ export class EconomyService implements Economy {
         const frame = c.frames.find((f) => f.id === r.ref);
         return `買卡框${frame ? `「${frame.label}」` : ""}`;
       }
-      case "deal_escrow":
-        return "先付給她的約定";
       case "goal_pledge":
         return "投給她的目標";
       case "purse_gift":
@@ -769,7 +751,6 @@ export class EconomyService implements Economy {
       frames: { owned: [], selected: null },
       hungry: null,
       recent: [],
-      deals: [],
       on_board: false,
     };
   }
@@ -838,13 +819,12 @@ export class EconomyService implements Economy {
     if (!who) return this.#strangerView();
     const c = this.#d.config;
     const ledger = this.#ledger();
-    const [balance, today, days, frames, recent, deals] = await Promise.all([
+    const [balance, today, days, frames, recent] = await Promise.all([
       this.#balance(who),
       this.#todayRows(who),
       this.#checkinDays(who),
       this.#frames(who),
       ledger.entries(this.#d.profile, who.wallet, { limit: RECENT_LINES }),
-      this.deals.view(who),
     ]);
     const day = this.#today();
     const streak = streakOf(days, day);
@@ -878,7 +858,6 @@ export class EconomyService implements Economy {
       frames,
       hungry: hunger === null ? null : hungerWord(hunger, c.full_below),
       recent: recent.map((r) => this.#line(r)),
-      deals,
       on_board: await ledger.onBoard(this.#d.profile, who.wallet),
     };
   }
@@ -1045,10 +1024,6 @@ export class EconomyService implements Economy {
       await this.#gift(who, spent.entry, ate, eaten, label);
       if (ate === "big_bowl") this.#bigBowl();
       this.#audit(who, "economy.feed", { item: ate, eaten, charged: -spent.entry.delta });
-      // A feed may be what someone owed her for a deal.
-      await this.deals.paid(who).catch((error: unknown) => {
-        this.#d.log.warn({ err: errorMessage(error) }, "cannot check a deal against a feed");
-      });
       unlocked = await this.v2.afterEarn(who);
     }
     return {

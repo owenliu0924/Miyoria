@@ -15,9 +15,9 @@
 
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { type AccountRef, type ContextKey, newId, toTimestamp } from "@miyoria/types";
-import { cleanText, guardTask } from "./deals.js";
 import type { EconomyService } from "./economy.js";
 import { STRANGER } from "./economy.js";
+import { cleanText, guardTask } from "./guard.js";
 import { postCard } from "./notices.js";
 import { receipt } from "./receipt.js";
 import { type Goal, type GoalFulfiller, GoalStoreKey } from "./records.js";
@@ -62,7 +62,7 @@ export class GoalDesk {
 
   // ---- her side -------------------------------------------------------------------------
 
-  /** She asks for a goal. Throws `EconomyError` / `DealRefusal`. */
+  /** She asks for a goal. Throws `EconomyError` / `TaskRefusal`. */
   async propose(req: ProposeGoalRequest): Promise<Goal> {
     const c = this.e.config;
     const title = cleanText(req.title, MAX_TITLE_CHARS);

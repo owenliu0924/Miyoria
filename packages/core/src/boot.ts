@@ -10,7 +10,6 @@ import { clusterTables } from "@miyoria/cluster";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
-  DealStoreKey,
   EconomyDocsKey,
   economyTables,
   FortuneStoreKey,
@@ -256,7 +255,6 @@ export async function buildCoreWith(
   const economy = store.plugin(economyTables);
   services.provide(k, CoinLedgerStoreKey, economy.ledger);
   services.provide(k, LedgerStatsKey, economy.ledger);
-  services.provide(k, DealStoreKey, economy.deals);
   services.provide(k, EconomyDocsKey, economy.docs);
   services.provide(k, FortuneStoreKey, economy.fortunes);
   services.provide(k, GoalStoreKey, economy.goals);

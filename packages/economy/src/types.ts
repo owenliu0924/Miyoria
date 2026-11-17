@@ -85,17 +85,6 @@ export interface LedgerLine {
 
 export type Hunger = "full" | "ok" | "hungry" | "starving";
 
-/** One deal as the wallet shows it (docs/design/economy.md §12). */
-export interface DealView {
-  /** What she said she would do. */
-  task: string;
-  /** `一碗白飯`, `3 碗白飯`. */
-  reward_label: string;
-  status: "open" | "owed" | "settled" | "broken" | "refunded";
-  /** When the next deadline falls (`open`: do it by; `owed`: pay by); `null` once it ended. */
-  due_at: string | null;
-}
-
 export interface WalletView {
   currency: string;
   balance: number;
@@ -111,8 +100,6 @@ export interface WalletView {
   hungry: Hunger | null;
   /** Newest first, at most 20. */
   recent: LedgerLine[];
-  /** Her deals with this person, newest first, at most 10; cancelled ones are not shown. */
-  deals: DealView[];
   /** Whether they are on the sponsor board (on unless they left; `false` for strangers). */
   on_board: boolean;
 }

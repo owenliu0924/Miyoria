@@ -8,9 +8,8 @@ import { type BoardLine, PAID_ITEMS } from "./types.js";
 
 /**
  * Ledger reasons that are coins spent on her: food, frames, every paid item
- * (cards, song tickets, dedications, screen messages, fortunes), a goal's pledge, and a deal's
- * escrow once it was released to her (`deal_escrow` counts only then). Rows that were refunded do
- * not count, which is how a failed goal gives its pledges back. Coins given to other people
+ * (cards, song tickets, dedications, screen messages, fortunes), a goal's pledge and the escrow of a
+ * deal she kept (`deal_escrow`, rows of before deals went). Rows that were refunded do not count, which is how a failed goal gives its pledges back. Coins given to other people
  * (`transfer_out`, a bounty's escrow, `purse_gift`) are not spent on her.
  */
 export const BOARD_REASONS: readonly string[] = [

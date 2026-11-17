@@ -18,7 +18,7 @@ import { EconomyService } from "../src/economy.js";
 import { CoinLedgerStoreKey } from "../src/records.js";
 import { inIdOf, NO_RECEIVER, NO_TRANSFERS, OWN_ACCOUNT, otherName } from "../src/transfer.js";
 import { EconomyError } from "../src/types.js";
-import { economyOf, ledgerOf, walletOf } from "./ledger.js";
+import { ledgerOf, walletOf } from "./ledger.js";
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 10, 8, 4, 0, 0);
@@ -305,33 +305,12 @@ describe("the sponsor board", () => {
     expect(await r.economy.board()).toEqual([{ rank: 1, name: "Alice", spent: 5 }]);
   });
 
-  it("counts a deal's escrow only once it was released to her", async () => {
+  it("counts what a removed feature held only while it was not given back", async () => {
     const r = await rig();
-    const held = await post(r, BOB, -10, "deal_escrow", { id: "ESC1" });
-    const paid = await post(r, BOB, -40, "deal_escrow", { id: "ESC2" });
-    const sent = (id: string, escrow: string, status: string) =>
-      economyOf(r.store)
-        .deals.create({
-          id,
-          account: BOB,
-          item: "rice",
-          count: 1,
-          value: 10,
-          task: "t",
-          prepaid: true,
-          escrow,
-          status: "open",
-          created_at: new Date(T0).toISOString(),
-          done_at: null,
-          due_at: null,
-          closed_at: null,
-        } as never)
-        .then(async () => {
-          if (status !== "open")
-            await economyOf(r.store).deals.transition(id, ["open"], { status } as never);
-        });
-    await sent("D1", held, "open");
-    await sent("D2", paid, "settled");
+    // Escrow rows of before deals went: a kept deal counts, one the migration returned does not.
+    await post(r, BOB, -40, "deal_escrow", { id: "ESC2" });
+    await post(r, BOB, -10, "deal_escrow", { id: "ESC1" });
+    await post(r, BOB, 10, "refund_removed", { ref: "ESC1" });
     expect(await r.economy.board()).toEqual([{ rank: 1, name: "Bob∶*x*", spent: 40 }]);
   });
 

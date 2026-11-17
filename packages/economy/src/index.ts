@@ -4,7 +4,6 @@
 export { BOARD_REASONS, MAX_BOARD } from "./board.js";
 export { BountyBoard } from "./bounties.js";
 export { DEFAULT_FRAMES, type EconomyConfig, EconomyConfigSchema, type Frame } from "./config.js";
-export { DealDesk, DealRefusal } from "./deals.js";
 export {
   ALREADY_CHECKED_IN,
   EconomyService,
@@ -17,6 +16,7 @@ export {
   WALLET_NODE,
 } from "./economy.js";
 export { GoalDesk } from "./goals.js";
+export { TaskRefusal } from "./guard.js";
 export { economySchema } from "./migrations.js";
 export { EconomyModule } from "./module.js";
 export { PURSE_PLATFORM, Purse } from "./purse.js";
@@ -32,11 +32,6 @@ export {
   CoinLedgerStoreKey,
   type CoinPost,
   type CoinRule,
-  type Deal,
-  type DealPatch,
-  type DealStatus,
-  type DealStore,
-  DealStoreKey,
   type DocFilter,
   type DocUpdate,
   type EconomyDoc,
@@ -60,11 +55,8 @@ export {
 export {
   BOUNTY_STATUSES,
   type BountyRow,
-  DEAL_STATUSES,
-  type DealRow,
   type DocRow,
   economyBounties,
-  economyDeals,
   economyDocs,
   economyFortunes,
   economyGoalPledges,
@@ -83,7 +75,6 @@ export { MAX_SCREEN_CHARS, screenText } from "./screen.js";
 export {
   allowedDelta,
   BountyTables,
-  DealTables,
   DocTables,
   type EconomyTables,
   economyTables,
@@ -97,7 +88,6 @@ export {
   type BoardLine,
   type BountyView,
   type CheckinResult,
-  type DealView,
   type EarnLine,
   type EarnReason,
   type Economy,

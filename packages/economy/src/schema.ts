@@ -10,8 +10,6 @@
 //   person, and coins never go by a cascade; a wipe deletes them as a data category.
 // - `economy_wallets`: what a person chose about their wallet (the card frame, leaving the
 //   sponsor board). It goes with the person.
-// - `economy_deals`: a bribe she accepted (docs/design/economy.md §12), by the account that made
-//   it (identity's `accounts.id`); the speaker's wallet pays.
 // - `economy_fortunes`: the fortune slips she wrote on the member page (§13), at most one per
 //   person per local day, by the session account it was written for.
 // - `economy_goals`, `economy_goal_pledges`: her crowdfunding goals and the coins people held
@@ -39,15 +37,6 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 const oneOf = (values: readonly string[]) => sql.raw(values.map((v) => `'${v}'`).join(","));
-
-export const DEAL_STATUSES = [
-  "open",
-  "owed",
-  "settled",
-  "broken",
-  "refunded",
-  "cancelled",
-] as const;
 
 export const economyLedger = sqliteTable(
   "economy_ledger",
@@ -89,38 +78,6 @@ export const economyWallets = sqliteTable("economy_wallets", {
   /** Left the sponsor board (it is opt-out). */
   off_board: integer({ mode: "boolean" }).notNull().default(false),
 });
-
-export const economyDeals = sqliteTable(
-  "economy_deals",
-  {
-    /** ULID. */
-    id: text().primaryKey(),
-    /** The speaker; their wallet pays. */
-    account_id: text()
-      .notNull()
-      .references(() => accounts.id, { onDelete: "cascade" }),
-    reward_item: text().notNull(),
-    reward_count: integer().notNull(),
-    /** What the reward costs in coins, fixed when the deal was made. */
-    reward_value: integer().notNull(),
-    task: text().notNull(),
-    prepaid: integer({ mode: "boolean" }).notNull().default(false),
-    /** The escrow's ledger row, for a prepaid deal. */
-    escrow_entry: text(),
-    status: text({ enum: DEAL_STATUSES }).notNull(),
-    created_at: micros().notNull(),
-    /** When she said she did the task. */
-    done_at: micros(),
-    /** Unpaid: when payment is due; prepaid: when the escrow is refunded if she has not done it. */
-    due_at: micros(),
-    closed_at: micros(),
-  },
-  (t) => [
-    index("economy_deals_account_idx").on(t.account_id, t.created_at),
-    index("economy_deals_status_idx").on(t.status, t.due_at),
-    check("economy_deals_status_check", sql`${t.status} IN (${oneOf(DEAL_STATUSES)})`),
-  ],
-);
 
 export const GOAL_STATUSES = ["open", "reached", "expired", "cancelled"] as const;
 export const GOAL_FULFILLERS = ["owner", "self"] as const;
@@ -240,7 +197,6 @@ export const economyDocs = sqliteTable(
 
 export type LedgerRow = typeof economyLedger.$inferSelect;
 export type WalletRow = typeof economyWallets.$inferSelect;
-export type DealRow = typeof economyDeals.$inferSelect;
 export type FortuneRow = typeof economyFortunes.$inferSelect;
 export type GoalRow = typeof economyGoals.$inferSelect;
 export type PledgeRow = typeof economyGoalPledges.$inferSelect;

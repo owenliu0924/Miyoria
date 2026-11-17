@@ -47,7 +47,6 @@ function view(over: Partial<WalletView> = {}): WalletView {
     frames: { owned: [], selected: null },
     hungry: "hungry",
     recent: [],
-    deals: [],
     on_board: false,
     ...over,
   };

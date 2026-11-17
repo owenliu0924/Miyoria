@@ -501,7 +501,6 @@ describe("a paid gift and affinity", () => {
         if (fail) throw new Error("the social engine is down");
         return { affinity: gain.affinity, trust: gain.trust };
       },
-      penalty: async () => ({ affinity: 0, trust: 0 }),
     });
     return calls;
   }
@@ -801,9 +800,7 @@ describe("the module", () => {
       expect(registry.get("economy.checkin")?.tool?.name).toBe("checkin_for_speaker");
       expect(registry.get("economy.look")?.tool?.name).toBe("check_coins");
       expect(registry.get("economy.wallet")).toBeUndefined();
-      expect(registry.get("economy.make_deal")?.tool?.name).toBe("make_deal");
-      expect(registry.get("economy.deal_done")?.tool?.name).toBe("deal_done");
-      expect(registry.get("economy.cancel_deal")?.tool?.name).toBe("cancel_deal");
+      expect(registry.get("economy.make_deal")).toBeUndefined();
       // Economy 2.0: her tools, and the two services others call.
       for (const name of [
         "economy.quests",

@@ -2324,39 +2324,6 @@
         "notes"
       ]
     },
-    "ApiDealView": {
-      "type": "object",
-      "properties": {
-        "task": {
-          "type": "string"
-        },
-        "reward_label": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "open",
-            "owed",
-            "settled",
-            "broken",
-            "refunded"
-          ]
-        },
-        "due_at": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "task",
-        "reward_label",
-        "status",
-        "due_at"
-      ]
-    },
     "ApiDecisionRecord": {
       "type": "object",
       "properties": {
@@ -12841,12 +12808,6 @@
             "$ref": "#/$defs/ApiLedgerLine"
           }
         },
-        "deals": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiDealView"
-          }
-        },
         "on_board": {
           "type": "boolean"
         }
@@ -12863,7 +12824,6 @@
         "frames",
         "hungry",
         "recent",
-        "deals",
         "on_board"
       ]
     },

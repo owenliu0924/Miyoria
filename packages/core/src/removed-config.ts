@@ -129,6 +129,19 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
   "modules.economy.letter",
   // Buying an expression for her (her own purse still buys one for herself).
   "modules.economy.expression_cooldown_s",
+  // Deals (a snack promised for a task), their trust cost and the owed meal that followed.
+  ...[
+    "deal_due_s",
+    "deal_timeout_s",
+    "deals_per_day",
+    "deal_sweep_s",
+    "deal_kept_trust",
+    "broken_trust",
+    "broken_affinity",
+    "broken_growth",
+    "broken_cap",
+    "owe_days",
+  ].map((key) => `modules.economy.${key}`),
 ];
 
 /** The removed paths `config` still holds, in the order of `REMOVED_CONFIG_KEYS`. */

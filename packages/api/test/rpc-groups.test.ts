@@ -194,7 +194,6 @@ const ANSWERS = {
     frames: { owned: [], selected: null },
     hungry: "ok",
     recent: [{ ts: "2026-11-08T03:00:00Z", delta: 1, label: "a" }],
-    deals: [{ task: "a", reward_label: "b", status: "open", due_at: null }],
     on_board: false,
   } satisfies ApiOutputs["wallet"]["view"],
   "wallet.checkin": { gained: 1, streak: 1, balance: 1 } satisfies ApiOutputs["wallet"]["checkin"],

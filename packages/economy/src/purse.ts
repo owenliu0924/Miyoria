@@ -26,14 +26,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import type { EconomyService, Member } from "./economy.js";
-import {
-  BountyStoreKey,
-  type CoinEntry,
-  type CoinPost,
-  DealStoreKey,
-  GoalStoreKey,
-  PURSE,
-} from "./records.js";
+import { BountyStoreKey, type CoinEntry, type CoinPost, GoalStoreKey, PURSE } from "./records.js";
 import { EconomyError, GIFT_EXPRESSIONS, type GiftExpression } from "./types.js";
 
 /** The platform of the purse's account. */
@@ -114,12 +107,12 @@ export class Purse {
   // ---- her share ------------------------------------------------------------------------
 
   /**
-   * Her share of what `entry` charged, once. Only the paid gifts have one, unless `force` (a
-   * deal's escrow is hers when she is given it). Never throws: a gift is not undone by this.
+   * Her share of what `entry` charged, once. Only the paid gifts have one. Never throws: a gift is
+   * not undone by this.
    */
-  async share(entry: CoinEntry, force = false): Promise<number> {
+  async share(entry: CoinEntry): Promise<number> {
     try {
-      if (entry.delta >= 0 || (!force && !SHARED_REASONS.includes(entry.reason))) return 0;
+      if (entry.delta >= 0 || !SHARED_REASONS.includes(entry.reason)) return 0;
       const amount = Math.floor(-entry.delta * this.e.config.her_share);
       if (amount < 1) return 0;
       const post = await this.credit(amount, "her_share", entry.id, `share:${entry.id}`);
@@ -135,7 +128,7 @@ export class Purse {
   /** A charge was refunded: her share of it goes back (as much as she still has of it). */
   async claw(entry: CoinEntry): Promise<void> {
     try {
-      if (!SHARED_REASONS.includes(entry.reason) && entry.reason !== "deal_escrow") return;
+      if (!SHARED_REASONS.includes(entry.reason)) return;
       const ledger = this.e.ledger();
       const shared = await ledger.byKey(this.e.profile, PURSE, `share:${entry.id}`);
       if (!shared) return;
@@ -323,40 +316,7 @@ export class Purse {
     for (const b of bounties ?? []) {
       parts.push(`你貼的懸賞[${shortId(b.id)}]「${b.task}」${b.reward} ${c.currency}`);
     }
-    for (const line of await this.owedMeals()) parts.push(line);
     return `${parts.join("。")}。`;
-  }
-
-  /**
-   * Who still owes her a meal: they promised a reward for something she did, did not pay in time
-   * (the deal is `broken`) and have not fed her since, for `owe_days` after it broke. She remembers
-   * it as a fact, not a grudge: it changes nothing about how she treats anyone (the deal's own
-   * trust and affinity cost was paid when it broke).
-   */
-  async owedMeals(): Promise<string[]> {
-    const deals = this.e.services.get(DealStoreKey);
-    if (!deals) return [];
-    const c = this.e.config;
-    const now = this.e.now();
-    const since = toTimestamp(now - c.owe_days * DAY_MS);
-    const out: string[] = [];
-    const seen = new Set<string>();
-    for (const deal of await deals.byStatus(this.e.profile, ["broken"], { since, limit: 50 })) {
-      if (deal.closed_at === null || now - Date.parse(deal.closed_at) > c.owe_days * DAY_MS)
-        continue;
-      const who = await this.e.member(deal.account);
-      if (!who || seen.has(who.person.id)) continue;
-      const fed = await this.e.ledger().entries(this.e.profile, who.wallet, {
-        reasons: ["feed"],
-        limit: 20,
-      });
-      if (fed.some((r) => r.ts > (deal.closed_at as string))) continue;
-      seen.add(who.person.id);
-      out.push(
-        `${safeName(who.name)}欠你一頓飯(他答應「${safeName(deal.task, 40)}」的獎勵沒有付,還沒補)`,
-      );
-    }
-    return out;
   }
 
   /** Writes the purse into her working context when it changed. */

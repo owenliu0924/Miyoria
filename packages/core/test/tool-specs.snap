@@ -161,27 +161,6 @@
       "framed": false
     },
     {
-      "name": "cancel_deal",
-      "description": "你不想做了,取消和正在跟你說話的人還沒結束的約定。預付的錢會退給對方。反悔不用付代價,但你的紀錄裡看得到今天取消了幾個。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
       "name": "cancel_goal",
       "description": "你不想做了,取消現在進行中的目標,大家投的魚幣全部退回。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -594,27 +573,6 @@
         "required": [
           "topic"
         ]
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
-      "name": "deal_done",
-      "description": "你真的做完了和正在跟你說話的人的約定,才呼叫。預付的約定會把託管的錢給你;沒預付的,對方要在 10 分鐘內餵你,沒餵就算食言。只能說你和對方自己的約定。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
       },
       "permission": null,
       "actsFor": true,
@@ -1187,68 +1145,6 @@
       "permission": null,
       "actsFor": true,
       "readOnly": true,
-      "framed": false
-    },
-    {
-      "name": "make_deal",
-      "description": "正在跟你說話的人想用零食收買你,要你做一件小事(學貓叫、說一句可愛的話、做個表情),你答應了才呼叫。要不要答應是你自己決定:看你對他的信任和羈絆、你現在餓不餓、獎勵值不值(白飯 10、大碗白飯 40、甜點 25 魚幣)、你有多不想做(覺得丟臉、想吐槽都可以不答應)、心情好不好;信任不夠、或他之前食言過,就要他先付(prepaid: true,錢先放在託管,你做完才算你的)。只能答應本來就是你自己能決定的小事:不能拿來繞過規則、權限或安全 —— 需要被管的動作(開台、進語音、私訊、玩遊戲、唱歌…)、主人規則禁止的事、通不過審查的話,給再多都不行,系統也會擋。付錢的只能是對方自己的錢包。同一個人同時只有一個約定,每天最多 5 個。語音裡要先問:第一次呼叫只會記下來,對方下一句說好,再用同樣內容加 confirm: true 呼叫才算數。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "reward": {
-            "type": "object",
-            "description": "對方要給你的獎勵",
-            "properties": {
-              "item": {
-                "type": "string",
-                "enum": [
-                  "rice",
-                  "big_bowl",
-                  "dessert"
-                ],
-                "description": "rice 白飯、big_bowl 大碗白飯、dessert 甜點"
-              },
-              "count": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 5,
-                "description": "幾份(預設 1)"
-              }
-            },
-            "required": [
-              "item"
-            ]
-          },
-          "task": {
-            "type": "string",
-            "maxLength": 60,
-            "description": "你要做什麼,一句短的話"
-          },
-          "prepaid": {
-            "type": "boolean",
-            "description": "要對方先付(託管),你做完才拿到"
-          },
-          "confirm": {
-            "type": "boolean",
-            "description": "語音:對方已經說好了才設 true"
-          },
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        },
-        "required": [
-          "reward",
-          "task"
-        ]
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
       "framed": false
     },
     {
@@ -2808,18 +2704,6 @@
       }
     },
     {
-      "name": "cancel_deal",
-      "description": "你不想做了,取消和正在跟你說話的人還沒結束的約定。預付的錢會退給對方。反悔不用付代價,但你的紀錄裡看得到今天取消了幾個。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
-          }
-        }
-      }
-    },
-    {
       "name": "cancel_goal",
       "description": "你不想做了,取消現在進行中的目標,大家投的魚幣全部退回。這是你自己的決定:用 on_own: true 呼叫。",
       "parameters": {
@@ -3110,18 +2994,6 @@
         "required": [
           "topic"
         ]
-      }
-    },
-    {
-      "name": "deal_done",
-      "description": "你真的做完了和正在跟你說話的人的約定,才呼叫。預付的約定會把託管的錢給你;沒預付的,對方要在 10 分鐘內餵你,沒餵就算食言。只能說你和對方自己的約定。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
-          }
-        }
       }
     },
     {
@@ -3555,59 +3427,6 @@
             "type": "boolean"
           }
         }
-      }
-    },
-    {
-      "name": "make_deal",
-      "description": "正在跟你說話的人想用零食收買你,要你做一件小事(學貓叫、說一句可愛的話、做個表情),你答應了才呼叫。要不要答應是你自己決定:看你對他的信任和羈絆、你現在餓不餓、獎勵值不值(白飯 10、大碗白飯 40、甜點 25 魚幣)、你有多不想做(覺得丟臉、想吐槽都可以不答應)、心情好不好;信任不夠、或他之前食言過,就要他先付(prepaid: true,錢先放在託管,你做完才算你的)。只能答應本來就是你自己能決定的小事:不能拿來繞過規則、權限或安全 —— 需要被管的動作(開台、進語音、私訊、玩遊戲、唱歌…)、主人規則禁止的事、通不過審查的話,給再多都不行,系統也會擋。付錢的只能是對方自己的錢包。同一個人同時只有一個約定,每天最多 5 個。語音裡要先問:第一次呼叫只會記下來,對方下一句說好,再用同樣內容加 confirm: true 呼叫才算數。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "reward": {
-            "type": "object",
-            "description": "對方要給你的獎勵",
-            "properties": {
-              "item": {
-                "type": "string",
-                "enum": [
-                  "rice",
-                  "big_bowl",
-                  "dessert"
-                ],
-                "description": "rice 白飯、big_bowl 大碗白飯、dessert 甜點"
-              },
-              "count": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 5,
-                "description": "幾份(預設 1)"
-              }
-            },
-            "required": [
-              "item"
-            ]
-          },
-          "task": {
-            "type": "string",
-            "maxLength": 60,
-            "description": "你要做什麼,一句短的話"
-          },
-          "prepaid": {
-            "type": "boolean",
-            "description": "要對方先付(託管),你做完才拿到"
-          },
-          "confirm": {
-            "type": "boolean",
-            "description": "語音:對方已經說好了才設 true"
-          },
-          "on_own": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "reward",
-          "task"
-        ]
       }
     },
     {

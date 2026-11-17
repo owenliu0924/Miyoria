@@ -11,7 +11,6 @@ import { type IssuedCard, MemberViewSchema } from "@miyoria/contracts/api";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
-  DealStoreKey,
   EconomyConfigSchema,
   EconomyKey,
   EconomyService,
@@ -1865,7 +1864,6 @@ describe("the wallet", () => {
     const hunger = { value: 0.8 };
     const s = r.sup.services;
     s.provide("economy", CoinLedgerStoreKey, tables.economy.ledger);
-    s.provide("economy", DealStoreKey, tables.economy.deals);
     s.provide("self", SelfStateKey, {
       drives: () => ({ hunger: hunger.value }),
       adjust: (d: { hunger?: number }) => {
@@ -1926,62 +1924,7 @@ describe("the wallet", () => {
       hungry: "starving",
       frames: { owned: [], selected: null },
       recent: [],
-      deals: [],
     });
-  });
-
-  it("shows her deals with them: what she said she would do, the reward, where it stands", async () => {
-    const r = await walletRig();
-    const cookie = await r.login("alice");
-    await r.economy.deals.create({
-      id: "deal-1",
-      account: discord(ALICE),
-      item: "rice",
-      count: 2,
-      value: 20,
-      task: "喵喵叫",
-      prepaid: false,
-      escrow: null,
-      status: "open",
-      created_at: "2026-01-01T00:00:00Z",
-      done_at: null,
-      due_at: "2026-01-01T00:15:00Z",
-      closed_at: null,
-    });
-    await r.economy.deals.create({
-      id: "deal-2",
-      account: discord(BOB),
-      item: "dessert",
-      count: 1,
-      value: 25,
-      task: "別人的約定",
-      prepaid: false,
-      escrow: null,
-      status: "open",
-      created_at: "2026-01-01T00:00:00Z",
-      done_at: null,
-      due_at: "2026-01-01T00:15:00Z",
-      closed_at: null,
-    });
-    const res = await r.get("/api/member/wallet", cookie);
-    expect(res.status).toBe(200);
-    expect((res.body as { deals: unknown }).deals).toEqual([
-      {
-        task: "喵喵叫",
-        reward_label: "2 碗白飯",
-        status: "open",
-        due_at: "2026-01-01T00:15:00.000Z",
-      },
-    ]);
-    expect(shape(res.body)).toEqual(
-      [
-        ...WALLET_SHAPE,
-        "deals[].due_at",
-        "deals[].reward_label",
-        "deals[].status",
-        "deals[].task",
-      ].sort(),
-    );
   });
 
   it("shows her goals and bounties, takes pledges and keeps strangers out of them", async () => {
@@ -2478,7 +2421,6 @@ describe("between people, the sponsor board and fortune slips", () => {
     cleanups.push(() => coins.close());
     const s = r.sup.services;
     s.provide("economy", CoinLedgerStoreKey, tables.economy.ledger);
-    s.provide("economy", DealStoreKey, tables.economy.deals);
     s.provide("economy", FortuneStoreKey, tables.economy.fortunes);
     s.provide("self", SelfStateKey, {
       drives: () => ({ hunger: 0.8 }),

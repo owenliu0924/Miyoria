@@ -170,25 +170,6 @@ export const EconomyConfigSchema = z.object({
   /** The most gifts alone add per person per day (they also count toward the overall caps). */
   gift_affinity_cap: z.number().nonnegative().default(1.5),
   gift_trust_cap: z.number().nonnegative().default(0.5),
-  /** A deal (docs/design/economy.md §12): how long they have to pay after she says she did it. */
-  deal_due_s: z.number().int().positive().default(600),
-  /** A deal she has not done by then ends; escrow is refunded. */
-  deal_timeout_s: z.number().int().positive().default(900),
-  /** Deals one person may make per day. */
-  deals_per_day: coins.default(5),
-  /** How often unpaid deals expire and escrow times out. */
-  deal_sweep_s: z.number().int().positive().default(30),
-  /** Trust a deal that was paid adds (it counts toward the daily caps). */
-  deal_kept_trust: z.number().nonnegative().default(0.3),
-  /**
-   * A broken promise (she did the task, they did not pay): what it takes off, outside the gain
-   * caps. Each later one by the same person costs `broken_growth` times more, up to
-   * `broken_cap` times the first.
-   */
-  broken_trust: z.number().nonnegative().default(4),
-  broken_affinity: z.number().nonnegative().default(1.5),
-  broken_growth: z.number().min(1).default(1.5),
-  broken_cap: z.number().min(1).default(3),
   // Paid things beyond food and gifts (docs/design/economy.md §13): a price, and how many one
   // person may buy per local day (refunded ones do not count); `0` per day takes it off sale.
   /** Re-draw today's newest card: it is voided and she issues a new one (same day's count). */
@@ -336,8 +317,6 @@ export const EconomyConfigSchema = z.object({
     }),
   shop_slots: z.number().int().positive().max(20).default(4),
   shop_her_share: z.number().min(0).max(1).default(0.5),
-  /** How many days a broken deal counts as "owes her a meal" until they feed her. */
-  owe_days: z.number().int().positive().default(14),
   // The health table (health.ts): how many days it shows, and under what share of the coins issued
   // that were taken back in a week the table says "inflating".
   health_days: z.number().int().positive().max(90).default(14),

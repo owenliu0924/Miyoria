@@ -15,9 +15,9 @@ import {
 import type { AccountRef, ContextKey, JsonObject } from "@miyoria/types";
 import { z } from "zod";
 import { NO_BOUNTY } from "./bounties.js";
-import { DealRefusal } from "./deals.js";
 import type { EconomyService } from "./economy.js";
 import { MAX_PROMISE_CHARS, MAX_TITLE_CHARS, NO_GOAL, OPEN_GOAL } from "./goals.js";
+import { TaskRefusal } from "./guard.js";
 import { EXPRESSION_WORD } from "./purse.js";
 import { receipt, someone } from "./receipt.js";
 import { EconomyError, GIFT_EXPRESSIONS } from "./types.js";
@@ -40,7 +40,7 @@ type Refused =
   | "no_bounty";
 
 function reasonOf(error: EconomyError): Refused {
-  if (error instanceof DealRefusal) return "forbidden";
+  if (error instanceof TaskRefusal) return "forbidden";
   if (error.message === NO_GOAL) return "no_goal";
   if (error.message === NO_BOUNTY) return "no_bounty";
   if (error.message === OPEN_GOAL) return "open_goal";

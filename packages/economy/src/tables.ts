@@ -1,5 +1,5 @@
 // The `economy` plugin's tables on the store's database (`schema.ts`): the coin ledger and the
-// wallets (`CoinLedgerStore`), the deals (`DealStore`), the fortune slips (`FortuneStore`), her
+// wallets (`CoinLedgerStore`), the fortune slips (`FortuneStore`), her
 // goals and bounties (`GoalStore`, `BountyStore`) and economy 2.0's documents (`EconomyDocStore`).
 // What names an account keeps the `AccountRef` in its record and identity's `accounts.id` in its
 // row, made on first use like a link code's account. Core opens the store with
@@ -33,7 +33,7 @@ import {
   type ProfileId,
   type Timestamp,
 } from "@miyoria/types";
-import { and, asc, desc, eq, getColumns, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getColumns, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { economySchema } from "./migrations.js";
 import {
   type Bounty,
@@ -45,10 +45,6 @@ import {
   type CoinLedgerStore,
   type CoinPost,
   type CoinRule,
-  type Deal,
-  type DealPatch,
-  type DealStatus,
-  type DealStore,
   type DocFilter,
   type DocUpdate,
   type EconomyDoc,
@@ -66,10 +62,8 @@ import {
 } from "./records.js";
 import {
   type BountyRow,
-  type DealRow,
   type DocRow,
   economyBounties,
-  economyDeals,
   economyDocs,
   economyFortunes,
   economyGoalPledges,
@@ -420,9 +414,7 @@ export class LedgerTables implements CoinLedgerStore {
         FROM ${L} JOIN ${persons} ON ${persons.id} = ${L.person_id}
         WHERE ${L.ts} >= ${toMicros(since)} AND ${L.delta} < 0
           AND ${L.reason} IN (SELECT value FROM json_each(${JSON.stringify(reasons)}))
-          AND (${L.reason} <> 'deal_escrow' OR EXISTS (SELECT 1 FROM ${economyDeals}
-            WHERE ${economyDeals.escrow_entry} = ${L.id} AND ${economyDeals.status} = 'settled'))
-          AND NOT EXISTS (SELECT 1 FROM ${L} AS ${r} WHERE ${r}.reason = 'refund'
+          AND NOT EXISTS (SELECT 1 FROM ${L} AS ${r} WHERE ${r}.reason IN ('refund', 'refund_removed')
             AND ${r}.ref = ${L.id})
         GROUP BY 1 HAVING SUM(${L.delta}) < 0
       ) s
@@ -462,142 +454,6 @@ export class LedgerTables implements CoinLedgerStore {
       positive: Number(r.positive),
       negative: Number(r.negative),
     }));
-  }
-}
-
-// ---- deals ----------------------------------------------------------------------------------
-
-const D = economyDeals;
-
-function dealOf(row: DealRow & { platform: string; external_id: string }): Deal {
-  return {
-    id: row.id,
-    account: { platform: row.platform, id: row.external_id },
-    item: row.reward_item,
-    count: row.reward_count,
-    value: row.reward_value,
-    task: row.task,
-    prepaid: row.prepaid,
-    escrow: row.escrow_entry,
-    status: row.status,
-    created_at: row.created_at,
-    done_at: row.done_at,
-    due_at: row.due_at,
-    closed_at: row.closed_at,
-  };
-}
-
-/** The deals she accepted (`DealStore`) on `economy_deals`, by identity's `accounts.id`. */
-export class DealTables implements DealStore {
-  readonly #db: Db;
-  readonly #identity: Identity;
-
-  constructor(db: Db, identity: Identity) {
-    this.#db = db;
-    this.#identity = identity;
-  }
-
-  #select() {
-    return this.#db.orm
-      .select({ ...getColumns(D), platform: accounts.platform, external_id: accounts.external_id })
-      .from(D)
-      .innerJoin(accounts, eq(accounts.id, D.account_id));
-  }
-
-  /** The rows of `accounts` that exist; an account never seen has no deal. */
-  #accountIds(refs: readonly AccountRef[]): string[] {
-    return refs.flatMap((r) => {
-      const id = this.#identity.account(r)?.id;
-      return id === undefined ? [] : [id];
-    });
-  }
-
-  async create(deal: Deal): Promise<void> {
-    try {
-      this.#db.tx(() => {
-        const account = this.#identity.ensureAccount(deal.account);
-        this.#db.orm
-          .insert(D)
-          .values({
-            id: deal.id,
-            account_id: account.id,
-            reward_item: deal.item,
-            reward_count: deal.count,
-            reward_value: deal.value,
-            task: deal.task,
-            prepaid: deal.prepaid,
-            escrow_entry: deal.escrow,
-            status: deal.status,
-            created_at: deal.created_at,
-            done_at: deal.done_at,
-            due_at: deal.due_at,
-            closed_at: deal.closed_at,
-          })
-          .run();
-      });
-    } catch (cause) {
-      throw new StoreError("cannot write the deal", { cause });
-    }
-  }
-
-  async get(id: string): Promise<Deal | null> {
-    const row = this.#select().where(eq(D.id, id)).get();
-    return row ? dealOf(row) : null;
-  }
-
-  async transition(id: string, from: readonly DealStatus[], patch: DealPatch): Promise<boolean> {
-    if (from.length === 0) return false;
-    const set: Partial<typeof D.$inferInsert> = { status: patch.status };
-    if (patch.done_at !== undefined) set.done_at = patch.done_at;
-    if (patch.due_at !== undefined) set.due_at = patch.due_at;
-    if (patch.closed_at !== undefined) set.closed_at = patch.closed_at;
-    const changed = this.#db.orm
-      .update(D)
-      .set(set)
-      .where(and(eq(D.id, id), inArray(D.status, [...from])))
-      .run();
-    return changed.changes > 0;
-  }
-
-  async forAccounts(
-    _profile: ProfileId,
-    refs: readonly AccountRef[],
-    filter: { statuses?: readonly DealStatus[]; since?: Timestamp; limit: number },
-  ): Promise<Deal[]> {
-    if (filter.statuses?.length === 0) return [];
-    const ids = this.#accountIds(refs);
-    if (ids.length === 0) return [];
-    const rows = this.#select()
-      .where(
-        and(
-          inArray(D.account_id, ids),
-          filter.statuses ? inArray(D.status, [...filter.statuses]) : undefined,
-          filter.since !== undefined ? gte(D.created_at, filter.since) : undefined,
-        ),
-      )
-      .orderBy(desc(D.created_at), sql`${D}.rowid DESC`)
-      .limit(limitOf(filter.limit))
-      .all();
-    return rows.map(dealOf);
-  }
-
-  async byStatus(
-    _profile: ProfileId,
-    statuses: readonly DealStatus[],
-    filter: { since?: Timestamp; limit: number },
-  ): Promise<Deal[]> {
-    if (statuses.length === 0) return [];
-    const rows = this.#select()
-      .where(
-        and(
-          inArray(D.status, [...statuses]),
-          filter.since !== undefined ? gte(D.created_at, filter.since) : undefined,
-        ),
-      )
-      .orderBy(asc(D.created_at), sql`${D}.rowid`)
-      .limit(limitOf(filter.limit))
-      .all();
-    return rows.map(dealOf);
   }
 }
 
@@ -1076,7 +932,6 @@ export class DocTables implements EconomyDocStore {
 /** The economy plugin's code over its tables. */
 export interface EconomyTables {
   readonly ledger: LedgerTables;
-  readonly deals: DealTables;
   readonly fortunes: FortuneTables;
   readonly goals: GoalTables;
   readonly bounties: BountyTables;
@@ -1117,23 +972,6 @@ const economyData: readonly CategoryData[] = [
         issued_at: "ts",
         entry_id: "text",
         slip: "json",
-      }),
-      // Deals are promises between her and a member, kept like the wallet. By identity's
-      // `accounts.id`; they go with the account too.
-      tablePart("deals", "economy_deals", "node", "created_at", "created_at, id", {
-        id: "text",
-        account_id: "text",
-        reward_item: "text",
-        reward_count: "num",
-        reward_value: "num",
-        task: "text",
-        prepaid: "bool",
-        escrow_entry: "text",
-        status: "text",
-        created_at: "ts",
-        done_at: "ts",
-        due_at: "ts",
-        closed_at: "ts",
       }),
       // Her crowdfunding goals, the pledges to them and the bounties from her purse.
       tablePart("goals", "economy_goals", "node", "created_at", "created_at, id", {
@@ -1188,7 +1026,6 @@ export const economyTables: StorePlugin<EconomyTables> = {
   schema: economySchema,
   open: ({ db, events, identity }) => ({
     ledger: new LedgerTables(db, identity, events),
-    deals: new DealTables(db, identity),
     fortunes: new FortuneTables(db, identity),
     goals: new GoalTables(db, identity),
     bounties: new BountyTables(db, identity),
@@ -1197,7 +1034,7 @@ export const economyTables: StorePlugin<EconomyTables> = {
   data: economyData,
   // Money is kept (v5-data §2.5); the member page deletes their fortune slips itself.
   forgetPerson: () =>
-    declined("coins, wallets, deals and bounties are kept; the member page deletes fortune slips"),
+    declined("coins, wallets and bounties are kept; the member page deletes fortune slips"),
   // A wallet is a person with the persons they absorbed (see the top of this file).
   mergePerson: () => declined("a wallet resolves the persons it absorbed when it is read"),
 };

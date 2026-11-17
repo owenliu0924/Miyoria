@@ -107,7 +107,6 @@ const WALLET: WalletView = {
     { ts: "2026-11-08T03:00:00Z", delta: 10, label: "每日簽到" },
     { ts: "2026-11-08T02:00:00Z", delta: -10, label: "餵了一碗白飯" },
   ],
-  deals: [],
   on_board: false,
 };
 

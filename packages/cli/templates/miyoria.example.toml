@@ -382,15 +382,6 @@ dirs = ["extensions"]
 # gift_trust = 0.1            # ...和信任
 # gift_affinity_cap = 1.5     # 禮物本身每人每天最多加的好感(也算進一般每日上限)
 # gift_trust_cap = 0.5        # ...和信任
-# deal_due_s = 600            # 約定:她說做完後,對方多久內要付
-# deal_timeout_s = 900        # 約定:她沒在這段時間內做完就作廢,託管退回
-# deals_per_day = 5           # 每個人每天最多幾個約定
-# deal_sweep_s = 30           # 多久掃一次到期的約定
-# deal_kept_trust = 0.3       # 約定付清了,多加的信任
-# broken_trust = 4            # 食言(她做了、沒收到):信任扣多少,不受每日增加上限限制
-# broken_affinity = 1.5       # ...好感扣多少
-# broken_growth = 1.5         # 同一個人之後每次食言扣的倍數
-# broken_cap = 3              # ...最多到第一次的幾倍
 # # ---- 花在卡片、歌、畫面上(docs/design/economy.md §13):價格,和一個人一天最多買幾次(每日 0 = 下架;退款的不算)
 # card_reroll = 30            # 重抽今天最新的一張卡(舊的作廢,她重新發一張)
 # card_rerolls_per_day = 2
@@ -463,7 +454,6 @@ dirs = ["extensions"]
 # # 她每週的小店:可以進貨什麼(shop_catalog,每項 { id, label, kind(title 或 collectible), price, item })、一週上架幾件、賣出的錢她留幾成(其餘離開經濟)
 # shop_slots = 4              # 1 到 20
 # shop_her_share = 0.5
-# owe_days = 14               # 食言後「欠她一餐」算幾天,直到你餵她
 # # 經濟健康表:顯示幾天,和一週內發出去的幣被收回的比例低於多少就標「通膨」
 # health_days = 14            # 1 到 90
 # health_warn_ratio = 0.6

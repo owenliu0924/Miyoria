@@ -46,20 +46,6 @@ export const LedgerLineSchema = z
   .meta({ id: "ApiLedgerLine" });
 export type LedgerLine = z.output<typeof LedgerLineSchema>;
 
-/** One deal as the wallet shows it. */
-export const DealViewSchema = z
-  .object({
-    /** What she said she would do. */
-    task: z.string(),
-    /** `一碗白飯`, `3 碗白飯`. */
-    reward_label: z.string(),
-    status: z.enum(["open", "owed", "settled", "broken", "refunded"]),
-    /** When the next deadline falls; `null` once it ended. */
-    due_at: z.string().nullable(),
-  })
-  .meta({ id: "ApiDealView" });
-export type DealView = z.output<typeof DealViewSchema>;
-
 /** `GET /api/member/wallet`. */
 export const WalletViewSchema = z
   .object({
@@ -77,8 +63,6 @@ export const WalletViewSchema = z
     hungry: HungerSchema.nullable(),
     /** Newest first, at most 20. */
     recent: z.array(LedgerLineSchema),
-    /** Her deals with this person, newest first, at most 10. */
-    deals: z.array(DealViewSchema),
     /** On the sponsor board (on unless they left; `false` for strangers). */
     on_board: z.boolean(),
   })

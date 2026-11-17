@@ -27,13 +27,12 @@ const VOICE_TICK_MS = 30_000;
  * Module `economy` (docs/design/economy.md): coins people earn by being with her and spend on
  * feeding her and small gifts. Provides `EconomyKey` (the member routes and the Discord commands
  * use it) and registers `economy.give` (her tool `give_coins`) and the speaker's own
- * `economy.accept_food` / `economy.checkin` / `economy.look` and her deals `economy.make_deal` /
- * `economy.deal_done` / `economy.cancel_deal` (tools.ts, deals.ts), and her own money's tools
+ * `economy.accept_food` / `economy.checkin` / `economy.look` and her own money's tools
  * (`economy.treat`, `buy_self`, `propose_goal`, `cancel_goal`, `post_bounty`, `award_bounty`,
  * `cancel_bounty`; agency-tools.ts, purse.ts, goals.ts, bounties.ts). Also provides `Participation`
  * (the web page's head-pats) and `PartyRewards` (party games, party.ts). Uses `EconomyDocs` (collection,
  * bets, commissions, her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
- * `DealStore`, `RelationshipEffects` (a hair of affinity per gift), `PersonNoteWriter`, `Directives`,
+ * `RelationshipEffects` (a hair of affinity per gift), `PersonNoteWriter`, `Directives`,
  * `PeopleStore`, `SocialSignals` / `AffectState` (who is blocked), `SelfState` (her hunger),
  * `Singer`, `CommandRegistry`, `ActuatorRegistry` (`stage.expression`), `Moderation` and `EventLog` when present.
  */
@@ -111,8 +110,7 @@ export class EconomyModule implements Module {
     ctx.spawn("earn", async () => {
       for await (const env of events) await earnings.onEvent(env, ctx.clock.now());
     });
-    // Deals she is owed run out here: a promise not kept becomes broken, escrow times out.
-    // Her goals and bounties run out here too; her purse note is written once at the start.
+    // Her goals and bounties run out here; her purse note is written once at the start.
     ctx.spawn("agency", async (signal) => {
       await economy.purse.refresh().catch((error: unknown) => {
         ctx.log.warn({ err: errorMessage(error) }, "cannot write her purse note");
@@ -128,15 +126,6 @@ export class EconomyModule implements Module {
           await economy.v2.sweep();
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "the economy 2.0 sweep failed");
-        }
-      }
-    });
-    ctx.spawn("deals", async (signal) => {
-      for await (const _ of interval(Math.max(config.deal_sweep_s, 1) * 1000, signal)) {
-        try {
-          await economy.deals.sweep();
-        } catch (error) {
-          ctx.log.warn({ err: errorMessage(error) }, "the deal sweep failed");
         }
       }
     });

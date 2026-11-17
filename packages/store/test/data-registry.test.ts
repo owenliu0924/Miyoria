@@ -53,7 +53,6 @@ describe("the data registry", () => {
         "coin_ledger",
         "coin_wallets",
         "fortunes",
-        "deals",
         "goals",
         "goal_pledges",
         "bounties",

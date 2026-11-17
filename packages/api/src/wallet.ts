@@ -15,7 +15,6 @@
 
 import {
   type CheckinResult,
-  type DealView,
   type EarnLine,
   type Economy,
   EconomyError,
@@ -94,13 +93,6 @@ const shopItem = (s: ShopItem): ShopItem => ({
 
 const ledgerLine = (l: LedgerLine): LedgerLine => ({ ts: l.ts, delta: l.delta, label: l.label });
 
-const dealView = (d: DealView): DealView => ({
-  task: d.task,
-  reward_label: d.reward_label,
-  status: d.status,
-  due_at: d.due_at,
-});
-
 function walletView(v: WalletView): WalletView {
   return {
     currency: v.currency,
@@ -114,7 +106,6 @@ function walletView(v: WalletView): WalletView {
     frames: { owned: [...v.frames.owned], selected: v.frames.selected },
     hungry: v.hungry,
     recent: v.recent.map(ledgerLine),
-    deals: v.deals.map(dealView),
     on_board: v.on_board,
   };
 }

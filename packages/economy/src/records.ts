@@ -120,7 +120,7 @@ export interface CoinLedgerStore extends LedgerStatsStore {
   offBoard(profile: ProfileId, limit: number): Promise<PersonId[]>;
   /**
    * What each wallet spent since `since` on `reasons`, biggest first, at most `limit`: negative
-   * rows that were not refunded. `deal_escrow` counts only for a settled deal (released to her).
+   * rows that were not refunded.
    * A person another one absorbed is counted in the absorbing one's line; `account` is the
    * person's first account (`null` if it has none), her purse is never a line.
    */
@@ -130,72 +130,6 @@ export interface CoinLedgerStore extends LedgerStatsStore {
     since: Timestamp,
     limit: number,
   ): Promise<{ person: PersonId; account: AccountRef | null; spent: number }[]>;
-}
-
-// ---- deals ------------------------------------------------------------------------------
-
-/**
- * `open`: she took the deal, the task is not done; `owed`: she says it is done, payment awaited;
- * `settled`: paid (or escrow released); `broken`: not paid by its due time; `refunded`: escrow
- * returned; `cancelled`: ended with nothing to return.
- */
-export type DealStatus = "open" | "owed" | "settled" | "broken" | "refunded" | "cancelled";
-
-/** A bribe she accepted (docs/design/economy.md §12): someone's promise of a reward for a task. */
-export interface Deal {
-  /** ULID. */
-  id: string;
-  /** The account that made it (the speaker); its person's wallet pays. */
-  account: AccountRef;
-  /** `rice`, `big_bowl` or `dessert`. */
-  item: string;
-  count: number;
-  /** What the reward costs in coins, fixed when the deal was made. */
-  value: number;
-  /** What she will do, short. */
-  task: string;
-  /** Paid into escrow at once (`escrow` is its ledger row). */
-  prepaid: boolean;
-  /** The escrow's coin ledger row id. */
-  escrow: string | null;
-  status: DealStatus;
-  created_at: Timestamp;
-  /** When she said she did it. */
-  done_at: Timestamp | null;
-  /** Unpaid deals: when payment is due once she is done; escrow deals: the refund time. */
-  due_at: Timestamp | null;
-  closed_at: Timestamp | null;
-}
-
-/** What `DealStore.transition` changes besides the status. */
-export interface DealPatch {
-  status: DealStatus;
-  done_at?: Timestamp | null;
-  due_at?: Timestamp | null;
-  closed_at?: Timestamp | null;
-}
-
-/** Deals she accepted (docs/design/economy.md §12): they outlive restarts. */
-export interface DealStore {
-  create(deal: Deal): Promise<void>;
-  get(id: string): Promise<Deal | null>;
-  /**
-   * Changes the deal only while its status is one of `from`; `false` when it was not (another
-   * writer got there first, or it is gone). The one place a status moves.
-   */
-  transition(id: string, from: readonly DealStatus[], patch: DealPatch): Promise<boolean>;
-  /** Deals of any of `accounts`, newest first; `statuses` and `since` (created) narrow them. */
-  forAccounts(
-    profile: ProfileId,
-    accounts: readonly AccountRef[],
-    filter: { statuses?: readonly DealStatus[]; since?: Timestamp; limit: number },
-  ): Promise<Deal[]>;
-  /** Deals of everyone in these statuses, oldest first (the sweep, her context). */
-  byStatus(
-    profile: ProfileId,
-    statuses: readonly DealStatus[],
-    filter: { since?: Timestamp; limit: number },
-  ): Promise<Deal[]>;
 }
 
 // ---- fortunes ---------------------------------------------------------------------------
@@ -411,7 +345,6 @@ export interface EconomyDocStore {
 // Service keys: Core provides the economy plugin's tables under them (`store.plugin`).
 export const CoinLedgerStoreKey = serviceKey<CoinLedgerStore>("CoinLedgerStore");
 export const LedgerStatsKey = serviceKey<LedgerStatsStore>("LedgerStats");
-export const DealStoreKey = serviceKey<DealStore>("DealStore");
 export const FortuneStoreKey = serviceKey<FortuneStore>("FortuneStore");
 export const GoalStoreKey = serviceKey<GoalStore>("GoalStore");
 export const BountyStoreKey = serviceKey<BountyStore>("BountyStore");
