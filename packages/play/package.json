@@ -21,6 +21,11 @@
       "@miyoria/source": "./queue/src/index.ts",
       "types": "./dist/queue/src/index.d.ts",
       "default": "./dist/queue/src/index.js"
+    },
+    "./cards": {
+      "@miyoria/source": "./cards/src/index.ts",
+      "types": "./dist/cards/src/index.d.ts",
+      "default": "./dist/cards/src/index.js"
     }
   },
   "files": [

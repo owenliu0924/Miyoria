@@ -1,0 +1,56 @@
+// `[modules.cards]` (docs/design/v5-play.md §2, §8): the price of a daily card, how many a person
+// may buy a day, the pity and the rarity weights. Every field has a default. The weights are the
+// public odds (`odds.ts` prints them): changing them is a config change, and a config revision is
+// the record cards.md §2.3 asks for.
+
+import { z } from "zod";
+import type { DrawRules } from "./draw.js";
+
+const weight = () => z.number().nonnegative();
+
+/**
+ * ```toml
+ * [modules.cards]
+ * price = 30
+ * daily_cap = 5
+ * pity = 20
+ * rarity_weights = { N = 70, R = 22, SR = 7, SSR = 1 }
+ * ```
+ */
+export const CardsConfigSchema = z.object({
+  /** Her local time zone as a UTC offset: what a "day" is for the daily cap (the heart's). */
+  utc_offset_minutes: z
+    .number()
+    .int()
+    .min(-720)
+    .max(840)
+    .default(8 * 60),
+  /** Fish coins per daily card; the first card of the day costs the same (owner, 2026-11-14). */
+  price: z.number().int().nonnegative().default(30),
+  /** Daily cards one person may get per local day. */
+  daily_cap: z.number().int().positive().default(5),
+  /** Cards in a row without an SR-or-better part after which the next one is guaranteed one. */
+  pity: z.number().int().positive().default(20),
+  /** The chance of each rarity, as weights (they need not sum to 100). */
+  rarity_weights: z
+    .object({
+      N: weight().default(70),
+      R: weight().default(22),
+      SR: weight().default(7),
+      SSR: weight().default(1),
+    })
+    .refine((w) => w.N + w.R + w.SR + w.SSR > 0, { message: "at least one weight must be above 0" })
+    .prefault({}),
+});
+
+export type CardsConfig = z.output<typeof CardsConfigSchema>;
+
+/** The defaults, optionally overridden. */
+export function cardsConfig(overrides: Partial<CardsConfig> = {}): CardsConfig {
+  return { ...CardsConfigSchema.parse({}), ...overrides };
+}
+
+/** The draw's part of the config. */
+export function drawRules(config: Pick<CardsConfig, "rarity_weights" | "pity">): DrawRules {
+  return { weights: config.rarity_weights, pity: config.pity };
+}
