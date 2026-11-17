@@ -66,6 +66,7 @@ import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
 import { selfRpc, worldRpc } from "./inner.js";
+import { karaokeAdminRpc, karaokeRpc } from "./karaoke-routes.js";
 import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
 import { lifeRpc } from "./life.js";
 import { livePatRpc } from "./live.js";
@@ -127,6 +128,8 @@ export const router = os.router({
   fortune: fortuneRpc,
   market: marketRpc,
   marketAdmin: marketAdminRpc,
+  karaoke: karaokeRpc,
+  karaokeAdmin: karaokeAdminRpc,
   people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
   // The settings routes before `POST /api/modules/{id}/{action}` (see the contract).
@@ -163,8 +166,17 @@ export function defaultResponseCheck(env: NodeJS.ProcessEnv = process.env): Resp
   return FROM_SOURCE ? "strict" : "production";
 }
 
-/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the cards, the wallet, fortune and the market are member pages too). */
-const PUBLIC_SIDE = new Set(["public", "member", "cards", "wallet", "agency", "fortune", "market"]);
+/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the cards, the wallet, fortune, the market and karaoke are member pages too). */
+const PUBLIC_SIDE = new Set([
+  "public",
+  "member",
+  "cards",
+  "wallet",
+  "agency",
+  "fortune",
+  "market",
+  "karaoke",
+]);
 
 /** Whether a route is served at all: the public side's routes go away with its switch. */
 function served(state: ApiState, path: readonly string[]): boolean {
