@@ -1,4 +1,5 @@
-// 海龜湯: she reads the surface, people ask yes-or-no questions, she answers. She hosts without
+// 海龜湯: she reads the surface, people ask yes-or-no questions, she answers (spoken in a voice
+// channel, as ordinary messages in a text channel: the engine is the same). She hosts without
 // knowing the bottom: every question goes through `party_ask` to the referee (judge.ts), which
 // sees the bottom and answers one fixed word. The bottom reaches her only once the soup is over
 // (solved, given up, out of time), so until then she cannot let it slip.
@@ -54,7 +55,11 @@ export class SoupGame implements Game {
 
   begin(): string {
     this.#host.setTimer("time", this.#host.cfg.soup_mins * 60_000);
-    return `海龜湯「${this.#puzzle.title}」開始。先把湯面念給大家聽:「${this.#puzzle.surface}」大家可以問是非題,${this.#host.cfg.soup_mins} 分鐘內要猜出真相。`;
+    const how =
+      this.#host.context.kind === "voice"
+        ? "先把湯面念給大家聽"
+        : "先把湯面貼在頻道裡,問題和你的回答都用一般訊息";
+    return `海龜湯「${this.#puzzle.title}」開始。${how}:「${this.#puzzle.surface}」大家可以問是非題,${this.#host.cfg.soup_mins} 分鐘內要猜出真相。`;
   }
 
   async ask(question: string, player: Player | null): Promise<string> {

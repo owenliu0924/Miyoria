@@ -1417,7 +1417,7 @@
           },
           "player": {
             "type": "string",
-            "description": "誰問的(猜中有分)"
+            "description": "誰問的(猜中有分;省略 = 你正在回的那個人)"
           },
           "why": {
             "type": "string",
@@ -1439,7 +1439,7 @@
     },
     {
       "name": "party_host",
-      "description": "主持正在玩的派對遊戲。action:next 下一題 / 下一首 / 新的一串(還沒人答對的會先公布答案)、hint 給一個提示、accept 算「很接近」的那個答案對(多半是語音辨識錯字)、reject 不算(接龍會收回上一個詞)、end 結束遊戲。回傳的就是結果,照著用自己的話講。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "description": "主持正在玩的派對遊戲。action:next 下一首(還沒人猜到的會先公布答案;海龜湯是放棄並公布湯底)、hint 給一個提示、accept 算「很接近」的那個答案對(多半是語音辨識錯字)、reject 不算、end 結束遊戲。回傳的就是結果,照著用自己的話講。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1478,13 +1478,13 @@
     },
     {
       "name": "party_play",
-      "description": "你自己在正在玩的派對遊戲裡出一手:猜歌、問答搶答、接龍接一個詞、故事接龍說你的那句。text 是你要出的內容,程式會判定算不算,照結果講。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "description": "你自己在正在玩的派對遊戲裡出一手:猜歌的搶答。text 是你要出的內容,程式會判定對不對,照結果講。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
         "type": "object",
         "properties": {
           "text": {
             "type": "string",
-            "description": "你的答案、詞或那一句故事"
+            "description": "你的答案"
           },
           "why": {
             "type": "string",
@@ -1506,7 +1506,7 @@
     },
     {
       "name": "party_start",
-      "description": "在你所在的語音頻道開一場派對遊戲,你當主持人(有的也下場玩)。語音裡有人想玩、或大家冷場時你想帶動氣氛時用;一次只能玩一個。game:soup 海龜湯(你念湯面,大家問是非題,裁判判定)、song 猜歌(放你唱過的歌的片段搶答)、chain 接龍(mode:idiom 成語、word 詞語、story 故事,你也下場)、quiz 問答(搶答,題目可以自己出)。開始後照回傳的說明開場。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "description": "開一場派對遊戲,你當主持人。有人請你開(誰都可以請),或大家冷場時你自己想帶動氣氛時用;一次只能玩一個。game:soup 海龜湯(你念湯面,大家問是非題,裁判判定;語音或文字頻道都能玩,在哪個頻道被請就開在哪個頻道)、song 猜歌(放你唱過的歌的片段搶答,只有語音頻道)。where:你在文字頻道被請、而你正在語音頻道時,要玩在語音就填 voice,玩在這個文字頻道就填 here(省略 = 這個頻道)。開始後照回傳的說明開場。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1514,50 +1514,21 @@
             "type": "string",
             "enum": [
               "soup",
-              "song",
-              "chain",
-              "quiz"
+              "song"
             ],
             "description": "哪個遊戲"
           },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "idiom",
-              "word",
-              "story"
-            ],
-            "description": "接龍的種類(只有 chain 用,預設 idiom)"
-          },
           "rounds": {
             "type": "integer",
-            "description": "幾題 / 幾首 / 幾串(可省略)"
+            "description": "猜歌幾首(可省略)"
           },
-          "questions": {
-            "type": "array",
-            "description": "問答用你自己出的題目(可省略,省略就用題庫;自己出的你知道答案,就不能搶答)",
-            "items": {
-              "type": "object",
-              "properties": {
-                "question": {
-                  "type": "string"
-                },
-                "answer": {
-                  "type": "string"
-                },
-                "also": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "也算對的說法"
-                }
-              },
-              "required": [
-                "question",
-                "answer"
-              ]
-            }
+          "where": {
+            "type": "string",
+            "enum": [
+              "voice",
+              "here"
+            ],
+            "description": "海龜湯玩在哪裡(可省略)"
           },
           "why": {
             "type": "string",
@@ -3775,7 +3746,7 @@
           },
           "player": {
             "type": "string",
-            "description": "誰問的(猜中有分)"
+            "description": "誰問的(猜中有分;省略 = 你正在回的那個人)"
           },
           "on_own": {
             "type": "boolean"
@@ -3788,7 +3759,7 @@
     },
     {
       "name": "party_host",
-      "description": "主持正在玩的派對遊戲。action:next 下一題 / 下一首 / 新的一串(還沒人答對的會先公布答案)、hint 給一個提示、accept 算「很接近」的那個答案對(多半是語音辨識錯字)、reject 不算(接龍會收回上一個詞)、end 結束遊戲。回傳的就是結果,照著用自己的話講。",
+      "description": "主持正在玩的派對遊戲。action:next 下一首(還沒人猜到的會先公布答案;海龜湯是放棄並公布湯底)、hint 給一個提示、accept 算「很接近」的那個答案對(多半是語音辨識錯字)、reject 不算、end 結束遊戲。回傳的就是結果,照著用自己的話講。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -3818,13 +3789,13 @@
     },
     {
       "name": "party_play",
-      "description": "你自己在正在玩的派對遊戲裡出一手:猜歌、問答搶答、接龍接一個詞、故事接龍說你的那句。text 是你要出的內容,程式會判定算不算,照結果講。",
+      "description": "你自己在正在玩的派對遊戲裡出一手:猜歌的搶答。text 是你要出的內容,程式會判定對不對,照結果講。",
       "parameters": {
         "type": "object",
         "properties": {
           "text": {
             "type": "string",
-            "description": "你的答案、詞或那一句故事"
+            "description": "你的答案"
           },
           "on_own": {
             "type": "boolean"
@@ -3837,7 +3808,7 @@
     },
     {
       "name": "party_start",
-      "description": "在你所在的語音頻道開一場派對遊戲,你當主持人(有的也下場玩)。語音裡有人想玩、或大家冷場時你想帶動氣氛時用;一次只能玩一個。game:soup 海龜湯(你念湯面,大家問是非題,裁判判定)、song 猜歌(放你唱過的歌的片段搶答)、chain 接龍(mode:idiom 成語、word 詞語、story 故事,你也下場)、quiz 問答(搶答,題目可以自己出)。開始後照回傳的說明開場。",
+      "description": "開一場派對遊戲,你當主持人。有人請你開(誰都可以請),或大家冷場時你自己想帶動氣氛時用;一次只能玩一個。game:soup 海龜湯(你念湯面,大家問是非題,裁判判定;語音或文字頻道都能玩,在哪個頻道被請就開在哪個頻道)、song 猜歌(放你唱過的歌的片段搶答,只有語音頻道)。where:你在文字頻道被請、而你正在語音頻道時,要玩在語音就填 voice,玩在這個文字頻道就填 here(省略 = 這個頻道)。開始後照回傳的說明開場。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -3845,50 +3816,21 @@
             "type": "string",
             "enum": [
               "soup",
-              "song",
-              "chain",
-              "quiz"
+              "song"
             ],
             "description": "哪個遊戲"
           },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "idiom",
-              "word",
-              "story"
-            ],
-            "description": "接龍的種類(只有 chain 用,預設 idiom)"
-          },
           "rounds": {
             "type": "integer",
-            "description": "幾題 / 幾首 / 幾串(可省略)"
+            "description": "猜歌幾首(可省略)"
           },
-          "questions": {
-            "type": "array",
-            "description": "問答用你自己出的題目(可省略,省略就用題庫;自己出的你知道答案,就不能搶答)",
-            "items": {
-              "type": "object",
-              "properties": {
-                "question": {
-                  "type": "string"
-                },
-                "answer": {
-                  "type": "string"
-                },
-                "also": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "也算對的說法"
-                }
-              },
-              "required": [
-                "question",
-                "answer"
-              ]
-            }
+          "where": {
+            "type": "string",
+            "enum": [
+              "voice",
+              "here"
+            ],
+            "description": "海龜湯玩在哪裡(可省略)"
           },
           "on_own": {
             "type": "boolean"
