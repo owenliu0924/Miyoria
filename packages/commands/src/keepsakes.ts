@@ -1,17 +1,21 @@
-// `/me card` (docs/design/v4-plan.md §9.3): the card she gives, the same one the member page
-// gives, through the `Keepsakes` service the api module provides. Without it (api off, no wallet)
-// the answer is a neutral notice.
+// `/me card` (docs/design/v5-play.md §2, §6.3): the daily card she gives, the same one the member
+// page gives, through the `Keepsakes` service the api module provides. Without it (api off, no
+// cards) the answer is a neutral notice.
 //
-// The answer is a neutral card only the person sees; what she wrote is shown as written. `/me
-// card` shows today's card and issues one only when there is none yet today; with `action` it
-// issues another one today (`foil` makes it a foil card, paid) or rerolls today's newest (paid).
-// A chosen picture stays on the member page: it is picked by looking at the pictures. The fortune
-// slip is not here: it is the paid add-on of `/me checkin` (`fortune:true`, in the economy).
+// The answer is a neutral card only the person sees; what she wrote is shown as written. `/me card`
+// shows today's card and issues one only when there is none yet today; a daily card costs fish
+// coins, the first of the day too. The rest of the cards lives under the same command (the owner
+// wants few commands): `action` issues another card today (`foil` makes it a foil card), or shows
+// the dex (圖鑑), the public odds (機率), the pity counter (保底) or sets the wishlist (願望單, with
+// `wish`: up to three part names, or 清空). The fortune slip is not here: it is the paid add-on of
+// `/me checkin` (`fortune:true`, in the economy).
 
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type KeepsakeCard,
+  type KeepsakeCardBook,
   type KeepsakeCards,
+  type KeepsakeOdds,
   type KeepsakeResult,
   KeepsakesKey,
   newId,
@@ -27,9 +31,14 @@ export const CARD_NODE = "me.card";
 
 const UNAVAILABLE = "這個功能現在不能用。";
 
-/** `/me card action:…`: another card today, or today's newest written again. */
+/** `/me card action:…`. */
 export const CARD_NEW = "再發一張";
-export const CARD_REROLL = "重抽";
+export const CARD_DEX = "圖鑑";
+export const CARD_ODDS = "機率";
+export const CARD_PITY = "保底";
+export const CARD_WISH = "願望單";
+/** `wish:` that clears the wishlist. */
+export const CLEAR_WISHES = "清空";
 
 /** What it cost, under the card. */
 function paidLine(charged: number, balance: number | null): CardBlock | null {
@@ -38,11 +47,14 @@ function paidLine(charged: number, balance: number | null): CardBlock | null {
 }
 
 function cardText(card: KeepsakeCard): CardBlock[] {
-  const head = [`第 ${card.number} 張`, card.relationship, card.foil ? "閃卡" : null]
+  const head = [`第 ${card.number} 張`, card.rarity, card.relationship, card.foil ? "閃卡" : null]
     .filter((x) => x !== null && x !== "")
     .join("　");
   const lines = [head];
   if (card.line) lines.push(card.line);
+  if (card.expression || card.parts.length > 0) {
+    lines.push([card.expression, ...card.parts].filter((x) => x !== null).join("・"));
+  }
   if (card.fields.length > 0)
     lines.push(card.fields.map((f) => `${f.label}：${f.text}`).join("\n"));
   const blocks: CardBlock[] = [{ type: "text", text: lines.join("\n") }];
@@ -50,20 +62,71 @@ function cardText(card: KeepsakeCard): CardBlock[] {
   return blocks;
 }
 
-/** Under today's card: how many were given, and what else `/me card` can do. */
+/** The pity in words. */
+function pityText(pity: { since: number; pity: number; until: number }): string {
+  return pity.until === 0
+    ? `已經連續 ${pity.since} 張沒有 SR 以上，下一張保證有。`
+    : `連續 ${pity.since} 張沒有 SR 以上；再 ${pity.until} 張還沒有的話，下一張保證有。`;
+}
+
+/** Under today's card: how many were given, the price, and what else `/me card` can do. */
 function todayHint(today: KeepsakeCards): string {
   const parts = [`今天發了 ${today.today} / ${today.per_day} 張。`];
-  if (today.today < today.per_day) {
-    const foil = today.prices.foil === null ? "" : `，加 foil 做成閃卡（${today.prices.foil}）`;
-    parts.push(`要再一張用 action:${CARD_NEW}${foil}。`);
+  if (today.today < today.per_day && today.prices.card !== null) {
+    const foil = today.prices.foil === null ? "" : `，加 foil 做成閃卡（再 ${today.prices.foil}）`;
+    parts.push(`再一張用 action:${CARD_NEW}（${today.prices.card}${foil}）。`);
   }
-  if (today.rerolls_left > 0 && today.prices.reroll !== null) {
-    parts.push(
-      `想請她重寫這張用 action:${CARD_REROLL}（${today.prices.reroll}，今天還能 ${today.rerolls_left} 次）。`,
+  parts.push(`圖鑑、機率、保底和願望單也在 action 裡。`);
+  return parts.join("");
+}
+
+function bookText(book: KeepsakeCardBook): CardBlock[] {
+  const lines = [`收集到 ${book.parts.owned} / ${book.parts.total} 種部件。`];
+  for (const s of book.series) {
+    lines.push(`${s.name}：${s.owned} / ${s.total}${s.complete ? `（稱號「${s.title}」）` : ""}`);
+  }
+  if (book.legacy.length > 0) {
+    lines.push(
+      `舊收藏：${book.legacy.map((i) => (i.count > 1 ? `${i.name}×${i.count}` : i.name)).join("、")}`,
     );
   }
-  parts.push("選圖到會員頁。");
-  return parts.join("");
+  const blocks: CardBlock[] = [{ type: "text", text: lines.join("\n") }];
+  blocks.push({ type: "muted", text: pityText(book.pity) });
+  blocks.push({
+    type: "muted",
+    text:
+      book.wishlist.length > 0
+        ? `願望單：${book.wishlist.join("、")}（不改機率，抽到時她會知道）`
+        : `願望單是空的：用 action:${CARD_WISH} wish:部件名稱 標記最多三個。`,
+  });
+  return blocks;
+}
+
+function oddsText(odds: KeepsakeOdds): CardBlock[] {
+  const lines = [
+    `一張 ${odds.price}，一天最多 ${odds.per_day} 張。`,
+    odds.rarities.map((r) => `${r.rarity} ${r.shown}%`).join("　"),
+  ];
+  if (odds.pity_after !== null) {
+    lines.push(`連續 ${odds.pity_after} 張沒有 SR 以上，下一張保證有。`);
+  }
+  for (const slot of odds.slots) {
+    lines.push(`${slot.name}：${slot.parts.map((p) => `${p.name} ${p.shown}%`).join("、")}`);
+  }
+  const blocks: CardBlock[] = [{ type: "text", text: lines.join("\n") }];
+  blocks.push({ type: "muted", text: "機率對每個人都一樣；表情由你們的關係決定，不靠抽。" });
+  return blocks;
+}
+
+/** The part names of `wish:`, split on the usual separators; `清空` clears. */
+function wishes(raw: string | null): string[] | null {
+  if (raw === null) return null;
+  const text = raw.trim();
+  if (text === CLEAR_WISHES) return [];
+  return text
+    .split(/[、,，\s]+/)
+    .map((w) => w.trim())
+    .filter((w) => w !== "");
 }
 
 /** A refusal is plain information; only "not now" is a warning. */
@@ -87,17 +150,23 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
   };
 
   registry.register(
-    commandSpec("me card", "她給你的卡片：今天還沒有就發一張，有了就看今天的", {
+    commandSpec("me card", "她給你的每日卡：今天還沒有就發一張（要花魚幣），有了就看今天的", {
       permission: CARD_NODE,
       ephemeral: true,
       args: [
         argSpec(
           "action",
-          `${CARD_NEW}：今天再發一張新卡；${CARD_REROLL}：今天最新那張請她重寫（要花魚幣）`,
-          ArgKind.choice([CARD_NEW, CARD_REROLL]),
+          `${CARD_NEW}：今天再發一張；${CARD_DEX}：你集到的部件和稱號；${CARD_ODDS}：公開機率；${CARD_PITY}：保底計數；${CARD_WISH}：標記想要的部件`,
+          ArgKind.choice([CARD_NEW, CARD_DEX, CARD_ODDS, CARD_PITY, CARD_WISH]),
           { required: false },
         ),
-        argSpec("foil", "新卡做成閃卡（要花魚幣）", ArgKind.boolean, { required: false }),
+        argSpec("foil", "新卡做成閃卡（要多花魚幣）", ArgKind.boolean, { required: false }),
+        argSpec(
+          "wish",
+          `願望單：最多三個部件名稱，用頓號分開；${CLEAR_WISHES} 就清掉`,
+          ArgKind.string,
+          { required: false },
+        ),
       ],
     }),
     (inv) =>
@@ -106,16 +175,40 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
         if (!keepsakes) return notice("info", UNAVAILABLE);
         const action = inv.str("action");
         const foil = inv.bool("foil") === true;
-        const key = `discord:${newId()}`;
-        if (action === CARD_REROLL) {
-          if (foil) return notice("info", "閃卡要用「再發一張」發新卡；重抽只會請她重寫今天那張。");
-          const redone = await keepsakes.rerollCard(who(inv), key);
-          if (!redone.ok) return refusal(redone);
-          const blocks = cardText(redone.value);
-          const paid = paidLine(redone.charged, redone.balance);
-          if (paid) blocks.push(paid);
-          return cardReply(blocks, { accent: "neutral", title: "重抽的卡片" });
+        if (action === CARD_ODDS) {
+          const odds = await keepsakes.cardOdds();
+          if (!odds) return notice("info", UNAVAILABLE);
+          return cardReply(oddsText(odds), { accent: "neutral", title: "每日卡的機率" });
         }
+        if (action === CARD_DEX || action === CARD_PITY) {
+          const book = await keepsakes.cardBook(inv.invoker);
+          if (!book.ok) return refusal(book);
+          if (action === CARD_PITY) return notice("info", pityText(book.value.pity));
+          return cardReply(bookText(book.value), { accent: "neutral", title: "你的圖鑑" });
+        }
+        if (action === CARD_WISH) {
+          const parts = wishes(inv.str("wish"));
+          if (parts === null) {
+            const book = await keepsakes.cardBook(inv.invoker);
+            if (!book.ok) return refusal(book);
+            const list = book.value.wishlist;
+            return notice(
+              "info",
+              list.length > 0
+                ? `願望單：${list.join("、")}`
+                : `願望單是空的：用 wish:部件名稱 標記最多三個（名稱看 action:${CARD_ODDS}）。`,
+            );
+          }
+          const set = await keepsakes.setCardWishlist(who(inv), parts);
+          if (!set.ok) return refusal(set);
+          return notice(
+            "info",
+            set.value.length > 0
+              ? `願望單：${set.value.join("、")}。機率不會變，抽到時她會知道。`
+              : "願望單清空了。",
+          );
+        }
+        const key = `discord:${newId()}`;
         const today = await keepsakes.cardsToday(inv.invoker);
         const fresh = action !== CARD_NEW && !foil;
         if (fresh && today.latest !== null && today.today > 0) {

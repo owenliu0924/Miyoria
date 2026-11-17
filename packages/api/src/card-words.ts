@@ -79,10 +79,12 @@ export const POSE_WORDS: Readonly<Record<string, string>> = {
 
 function rules(poses: readonly string[]): string {
   const choices = poses.map((p) => `${p}(${POSE_WORDS[p] ?? p})`).join("、");
+  // On a daily card the relationship picks her expression: she does not choose a picture.
+  const pose = poses.length > 0 ? `\n- pose:卡上放你哪張圖,從這幾個挑:${choices}。` : "";
+  const shape = poses.length > 0 ? `"pose": 字串, ` : "";
   return `你要發一張卡給下面這個人,卡上的字你自己寫,他本人會看到,拿到卡的人掃碼也看得到。
-只回傳 JSON:{"line": 字串, "pose": 字串, "stamp": 字串或 null, "fields": [{"label": 字串, "text": 字串}]}
-- line:這一刻想對他說的一句話,${MAX_LINE} 字內,用你平常說話的語氣,每次發卡都可以不一樣。
-- pose:卡上放你哪張圖,從這幾個挑:${choices}。
+只回傳 JSON:{"line": 字串, ${shape}"stamp": 字串或 null, "fields": [{"label": 字串, "text": 字串}]}
+- line:這一刻想對他說的一句話,${MAX_LINE} 字內,用你平常說話的語氣,每次發卡都可以不一樣。${pose}
 - stamp:蓋在卡上的章,${MAX_STAMP} 字內(例如「認證損友」),不想蓋就 null。
 - fields:你想在卡上多寫的東西,0 到 ${MAX_FIELDS} 個,欄位名稱(${MAX_LABEL} 字內)和內容(${MAX_FIELD} 字內)都你決定,例如給他的稱號、你們的回憶、對他的期待;沒什麼想寫就空陣列。
 - 只寫你和他,不提任何其他人(不寫別人的名字,也不寫「另一個人」「某人」);不寫數字分數、不寫你心裡的盤算或秘密。`;

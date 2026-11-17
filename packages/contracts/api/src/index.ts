@@ -20,6 +20,7 @@ import { affect } from "./affect.js";
 import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
 import { activity, arbiter } from "./body.js";
+import { cards, cardsAdmin } from "./cards.js";
 import { channels } from "./channels.js";
 import { cluster } from "./cluster.js";
 import { game, songs, voiceControl } from "./control.js";
@@ -125,6 +126,32 @@ export {
   type TaskFailureCode,
   TaskFailureCodeSchema,
 } from "./body.js";
+export {
+  type CardDex,
+  CardDexSchema,
+  type CardOdds,
+  CardOddsSchema,
+  type CardPity,
+  CardPitySchema,
+  type CardTitle,
+  CardTitleSchema,
+  type CardWishlist,
+  CardWishlistSchema,
+  type DexPart,
+  DexPartSchema,
+  type DexSeries,
+  DexSeriesSchema,
+  type LegacyItem,
+  LegacyItemSchema,
+  type MyCard,
+  MyCardSchema,
+  type MyCards,
+  MyCardsSchema,
+  type PersonCards,
+  PersonCardsSchema,
+  type SetWishlistRequest,
+  SetWishlistRequestSchema,
+} from "./cards.js";
 export {
   type ChannelLevelInfo,
   ChannelLevelInfoSchema,
@@ -410,8 +437,8 @@ export {
 export {
   type CardField,
   CardFieldSchema,
-  type CardPoseChoice,
-  CardPoseChoiceSchema,
+  type CardPart,
+  CardPartSchema,
   type CardPrices,
   CardPricesSchema,
   EmptyRequestSchema,
@@ -858,6 +885,8 @@ export const contract = {
   skills,
   public: publicView,
   member,
+  cards,
+  cardsAdmin,
   wallet,
   agency,
   fortune,

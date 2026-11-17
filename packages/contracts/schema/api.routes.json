@@ -2125,21 +2125,6 @@
           }
         }
       },
-      "rerollCard": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "member",
-            "permission": null,
-            "limited": true
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "POST",
-            "path": "/api/member/card/reroll"
-          }
-        }
-      },
       "pat": {
         "~orpc": {
           "errorMap": {},
@@ -2151,6 +2136,128 @@
             "inputStructure": "detailed",
             "method": "POST",
             "path": "/api/member/live/pat"
+          }
+        }
+      }
+    },
+    "cards": {
+      "mine": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/cards"
+          }
+        }
+      },
+      "one": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/card/{serial}"
+          }
+        }
+      },
+      "dex": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/cards/dex"
+          }
+        }
+      },
+      "pity": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/cards/pity"
+          }
+        }
+      },
+      "wishlist": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/cards/wishlist"
+          }
+        }
+      },
+      "setWishlist": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/member/cards/wishlist"
+          }
+        }
+      },
+      "odds": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/public/cards/odds"
+          }
+        }
+      }
+    },
+    "cardsAdmin": {
+      "person": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/people/{id}/cards"
           }
         }
       }

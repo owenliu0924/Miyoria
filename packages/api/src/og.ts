@@ -15,6 +15,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { renderCardSvg } from "@miyoria/card-face/render";
 import type { IssuedCard } from "@miyoria/contracts/api";
+import { CardPortraitKey, CardsKey } from "@miyoria/play/cards";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { Resvg } from "@resvg/resvg-js";
 import sharp from "sharp";
@@ -92,6 +93,27 @@ async function poseArt(
   return art;
 }
 
+/**
+ * Her rendered picture for a daily card (`CardPortraitKey`, cards.md §6), `CARD_IMAGE_WIDTH` wide on
+ * black like the fixed portraits; `null` when nothing renders it (yet), which falls back to the
+ * fixed portrait nearest her expression.
+ */
+async function portraitArt(portrait: () => Promise<Uint8Array | null>): Promise<string | null> {
+  try {
+    const png = await portrait();
+    if (png === null) return null;
+    const jpeg = await sharp(png)
+      .resize({ width: CARD_IMAGE_WIDTH })
+      .flatten({ background: "#000000" })
+      .jpeg({ quality: 88 })
+      .toBuffer();
+    return toDataUrl("image/jpeg", jpeg);
+  } catch (error) {
+    log.warn({ error: errorMessage(error) }, "cannot use a rendered card portrait");
+    return null;
+  }
+}
+
 /** Their avatar as a small PNG data URL; `null` when it is not Discord's or cannot be had. */
 async function avatarArt(url: string | null): Promise<string | null> {
   if (url === null) return null;
@@ -125,9 +147,13 @@ async function toPng(svg: string, width: number, background: string | null): Pro
  * The card as the whole picture, at its own 630×880 ratio and clear around its rounded corners.
  * `og:image:width` and `height` say the same size (`CARD_IMAGE_WIDTH`, `CARD_IMAGE_HEIGHT`).
  */
-export async function renderCardImage(card: IssuedCard, panelDir: string | null): Promise<Buffer> {
+export async function renderCardImage(
+  card: IssuedCard,
+  panelDir: string | null,
+  portrait: () => Promise<Uint8Array | null> = async () => null,
+): Promise<Buffer> {
   const [art, avatar] = await Promise.all([
-    poseArt(panelDir, card.pose, CARD_IMAGE_WIDTH),
+    portraitArt(portrait).then((own) => own ?? poseArt(panelDir, card.pose, CARD_IMAGE_WIDTH)),
     avatarArt(card.avatar_url),
   ]);
   const svg = renderCardSvg({
@@ -301,6 +327,14 @@ async function defaultImage(state: ApiState, cacheControl = SITE_CACHE): Promise
   return image(png, cacheControl);
 }
 
+/** The rendered portrait of a daily card, when something renders them. */
+async function portraitOf(state: ApiState, serial: string): Promise<Uint8Array | null> {
+  const renderer = state.optional(CardPortraitKey);
+  const card = renderer ? state.optional(CardsKey)?.card(serial) : null;
+  if (!renderer || !card) return null;
+  return renderer.render({ parts: card.parts, expression: card.expression, seed: card.seed });
+}
+
 async function cardImage(state: ApiState, c: ApiContext): Promise<Response> {
   const file = param(c, "file");
   const serial = file.endsWith(".png") ? file.slice(0, -4) : "";
@@ -314,7 +348,9 @@ async function cardImage(state: ApiState, c: ApiContext): Promise<Response> {
     const wait = state.publicSide.admitCardCheck(clientKey(c));
     if (wait !== null) return tooMany(wait);
     try {
-      png = await oneAtATime(state, () => renderCardImage(card, state.panelDir));
+      png = await oneAtATime(state, () =>
+        renderCardImage(card, state.panelDir, () => portraitOf(state, card.serial)),
+      );
     } catch (error) {
       log.warn({ error: errorMessage(error) }, "cannot draw a card preview");
       return defaultImage(state, "no-store");

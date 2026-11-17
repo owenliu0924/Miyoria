@@ -77,6 +77,8 @@ export interface CardFace {
   stamp: string | null;
   /** Fields she named herself (at most three). */
   fields: CardField[];
+  /** The nth card this person was given (their old member cards counted too). */
+  number: number;
 }
 
 /**
@@ -211,6 +213,7 @@ function cardOf(row: CardsCardRow): CardRecord {
       line: face.line ?? null,
       stamp: face.stamp ?? null,
       fields: face.fields ?? [],
+      number: face.number ?? 0,
     },
     relationship: row.relationship as unknown as CardRelationship,
     artifact_id: row.artifact_id,
@@ -280,6 +283,13 @@ export class CardStore {
       .limit(limit)
       .all()
       .map(cardOf);
+  }
+
+  /** Deletes the cards of `person`; how many. */
+  deleteCards(person: PersonId): number {
+    return this.#write(() =>
+      Number(this.#db.orm.delete(cardsCard).where(eq(cardsCard.person_id, person)).run().changes),
+    );
   }
 
   /** How many cards a person has. */

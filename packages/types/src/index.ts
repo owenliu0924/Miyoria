@@ -658,10 +658,12 @@ export {
 } from "./impulse.js";
 export {
   type KeepsakeCard,
+  type KeepsakeCardBook,
   type KeepsakeCardOrder,
   type KeepsakeCards,
   type KeepsakeField,
   type KeepsakeFortune,
+  type KeepsakeOdds,
   type KeepsakeResult,
   type Keepsakes,
   KeepsakesKey,

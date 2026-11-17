@@ -11,6 +11,8 @@
 // - `schema.ts`, `migrations.ts`, `store.ts`: the `cards` store plugin (`cards_card`, `cards_parts`,
 //   `cards_pity`, `cards_dex`, `cards_wishlist`, `cards_titles`) and the transaction that writes a
 //   card with its pity, dex, titles and events (`events.ts`).
+// - `portrait.ts`: the seam for her rendered picture (`CardPortraitKey`), and the fixed portrait
+//   nearest each expression until it exists.
 // - `wallet.ts`: the port through which a card is paid (`CardWalletKey`, the economy's to provide).
 // - `service.ts`, `module.ts`: module `cards` and `CardsKey`: issuing a daily card, the odds, a
 //   person's pity, dex and wishlist.
@@ -84,6 +86,13 @@ export {
   oddsTable,
   shownPercents,
 } from "./odds.js";
+export {
+  type CardPortrait,
+  CardPortraitKey,
+  PORTRAIT_POSES,
+  type PortraitInput,
+  portraitPose,
+} from "./portrait.js";
 export { cardRelationship } from "./relationship.js";
 export {
   type CardsCardRow,

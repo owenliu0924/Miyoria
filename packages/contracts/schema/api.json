@@ -1079,6 +1079,53 @@
         "exhausted"
       ]
     },
+    "ApiCardDex": {
+      "type": "object",
+      "properties": {
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDexPart"
+          }
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiDexSeries"
+          }
+        },
+        "titles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardTitle"
+          }
+        },
+        "legacy": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ApiLegacyItem"
+              }
+            }
+          },
+          "required": [
+            "name",
+            "items"
+          ]
+        }
+      },
+      "required": [
+        "parts",
+        "series",
+        "titles",
+        "legacy"
+      ]
+    },
     "ApiCardField": {
       "type": "object",
       "properties": {
@@ -1094,25 +1141,262 @@
         "text"
       ]
     },
-    "ApiCardPoseChoice": {
+    "ApiCardOdds": {
+      "type": "object",
+      "properties": {
+        "rarities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "percent": {
+                "type": "number"
+              },
+              "shown": {
+                "type": "string"
+              },
+              "rarity": {
+                "type": "string",
+                "enum": [
+                  "N",
+                  "R",
+                  "SR",
+                  "SSR"
+                ]
+              }
+            },
+            "required": [
+              "percent",
+              "shown",
+              "rarity"
+            ]
+          }
+        },
+        "pity": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "after": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "rarities": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "percent": {
+                        "type": "number"
+                      },
+                      "shown": {
+                        "type": "string"
+                      },
+                      "rarity": {
+                        "type": "string",
+                        "enum": [
+                          "N",
+                          "R",
+                          "SR",
+                          "SSR"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "percent",
+                      "shown",
+                      "rarity"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "after",
+                "rarities"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slot": {
+                "type": "string",
+                "enum": [
+                  "hand",
+                  "accessory",
+                  "outfit",
+                  "pose",
+                  "background"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "parts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "percent": {
+                      "type": "number"
+                    },
+                    "shown": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "rarity": {
+                      "type": "string",
+                      "enum": [
+                        "N",
+                        "R",
+                        "SR",
+                        "SSR"
+                      ]
+                    },
+                    "series": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "percent",
+                    "shown",
+                    "id",
+                    "name",
+                    "rarity",
+                    "series"
+                  ]
+                }
+              },
+              "empty": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "percent": {
+                        "type": "number"
+                      },
+                      "shown": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "percent",
+                      "shown"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "slot",
+              "name",
+              "parts",
+              "empty"
+            ]
+          }
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "per_day": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "rarities",
+        "pity",
+        "slots",
+        "price",
+        "per_day"
+      ]
+    },
+    "ApiCardPart": {
       "type": "object",
       "properties": {
         "id": {
           "type": "string"
         },
-        "label": {
+        "slot": {
+          "type": "string",
+          "enum": [
+            "hand",
+            "accessory",
+            "outfit",
+            "pose",
+            "background"
+          ]
+        },
+        "name": {
           "type": "string"
+        },
+        "rarity": {
+          "type": "string",
+          "enum": [
+            "N",
+            "R",
+            "SR",
+            "SSR"
+          ]
         }
       },
       "required": [
         "id",
-        "label"
+        "slot",
+        "name",
+        "rarity"
+      ]
+    },
+    "ApiCardPity": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "pity": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "until": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "since",
+        "pity",
+        "until"
       ]
     },
     "ApiCardPrices": {
       "type": "object",
       "properties": {
-        "pose": {
+        "card": {
           "type": [
             "number",
             "null"
@@ -1123,18 +1407,54 @@
             "number",
             "null"
           ]
-        },
-        "reroll": {
-          "type": [
-            "number",
-            "null"
-          ]
         }
       },
       "required": [
-        "pose",
-        "foil",
-        "reroll"
+        "card",
+        "foil"
+      ]
+    },
+    "ApiCardTitle": {
+      "type": "object",
+      "properties": {
+        "series": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "earned_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "series",
+        "title",
+        "public",
+        "earned_at"
+      ]
+    },
+    "ApiCardWishlist": {
+      "type": "object",
+      "properties": {
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardPart"
+          }
+        },
+        "max": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "parts",
+        "max"
       ]
     },
     "ApiCauseChain": {
@@ -2380,6 +2700,94 @@
       "enum": [
         "voice",
         "text"
+      ]
+    },
+    "ApiDexPart": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slot": {
+          "type": "string",
+          "enum": [
+            "hand",
+            "accessory",
+            "outfit",
+            "pose",
+            "background"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "rarity": {
+          "type": "string",
+          "enum": [
+            "N",
+            "R",
+            "SR",
+            "SSR"
+          ]
+        },
+        "series": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "first_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "slot",
+        "name",
+        "rarity",
+        "series",
+        "count",
+        "first_at"
+      ]
+    },
+    "ApiDexSeries": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "owned": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "total": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "title",
+        "owned",
+        "total",
+        "complete"
       ]
     },
     "ApiDirective": {
@@ -4093,10 +4501,6 @@
     "ApiIssueCardRequest": {
       "type": "object",
       "properties": {
-        "pose": {
-          "type": "string",
-          "maxLength": 16
-        },
         "foil": {
           "type": "boolean"
         }
@@ -4197,6 +4601,34 @@
             "string",
             "null"
           ]
+        },
+        "rarity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "N",
+                "R",
+                "SR",
+                "SSR"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardPart"
+          }
+        },
+        "expression": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -4217,7 +4649,10 @@
         "pose",
         "frame",
         "foil",
-        "voided_at"
+        "voided_at",
+        "rarity",
+        "parts",
+        "expression"
       ]
     },
     "ApiIssuedFortune": {
@@ -4839,6 +5274,42 @@
         "entries",
         "limits",
         "unanswered"
+      ]
+    },
+    "ApiLegacyItem": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rarity": {
+          "type": "string"
+        },
+        "series": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "first_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "name",
+        "rarity",
+        "series",
+        "count",
+        "first_at"
       ]
     },
     "ApiLesson": {
@@ -6041,26 +6512,49 @@
         "per_day": {
           "type": "number"
         },
-        "poses": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiCardPoseChoice"
-          }
-        },
         "prices": {
           "$ref": "#/$defs/ApiCardPrices"
         },
-        "rerolls_left": {
-          "type": "number"
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pity": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "since": {
+                  "type": "number"
+                },
+                "pity": {
+                  "type": "number"
+                },
+                "until": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "since",
+                "pity",
+                "until"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "latest",
         "today",
         "per_day",
-        "poses",
         "prices",
-        "rerolls_left"
+        "balance",
+        "pity"
       ]
     },
     "ApiMemberDay": {
@@ -6734,6 +7228,48 @@
       },
       "required": [
         "position"
+      ]
+    },
+    "ApiMyCard": {
+      "type": "object",
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/ApiIssuedCard"
+        },
+        "pity_hit": {
+          "type": "boolean"
+        },
+        "wished": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "card",
+        "pity_hit",
+        "wished",
+        "price"
+      ]
+    },
+    "ApiMyCards": {
+      "type": "object",
+      "properties": {
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiIssuedCard"
+          }
+        }
+      },
+      "required": [
+        "cards"
       ]
     },
     "ApiNoteAuthor": {
@@ -7575,6 +8111,35 @@
         "quote",
         "at",
         "by"
+      ]
+    },
+    "ApiPersonCards": {
+      "type": "object",
+      "properties": {
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMyCard"
+          }
+        },
+        "dex": {
+          "$ref": "#/$defs/ApiCardDex"
+        },
+        "pity": {
+          "$ref": "#/$defs/ApiCardPity"
+        },
+        "wishlist": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardPart"
+          }
+        }
+      },
+      "required": [
+        "cards",
+        "dex",
+        "pity",
+        "wishlist"
       ]
     },
     "ApiPersonEmotionName": {
@@ -9934,6 +10499,23 @@
         "role",
         "scene"
       ]
+    },
+    "ApiSetWishlistRequest": {
+      "type": "object",
+      "properties": {
+        "parts": {
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      },
+      "required": [
+        "parts"
+      ],
+      "additionalProperties": false
     },
     "ApiShopItem": {
       "type": "object",

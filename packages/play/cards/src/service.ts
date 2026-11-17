@@ -62,6 +62,11 @@ export interface DailyOptions {
   frame?: string | null;
   /** A shine they bought for it. */
   foil?: boolean;
+  /**
+   * The relationship to show instead of the heart's (a stranger's for someone she will not say
+   * anything about); default: what the heart says now.
+   */
+  relationship?: CardRelationship;
 }
 
 /** The sentence for a refusal. */
@@ -190,7 +195,7 @@ export class CardService {
         serial,
         price: config.price,
         face: words,
-        relationship: this.#o.relationship(payer.person),
+        relationship: options.relationship ?? this.#o.relationship(payer.person),
         rules: drawRules(config),
         random: this.#random,
         now,
@@ -274,6 +279,19 @@ export class CardService {
 
   clearWishlist(person: PersonId): void {
     this.#store.clearWishlist(person);
+  }
+
+  /** How many cards `person` has. */
+  count(person: PersonId): number {
+    return this.#store.countOf(person);
+  }
+
+  /**
+   * Deletes the cards of `person` (when they ask her to forget them, like the member cards were):
+   * no card of theirs checks out any more. Their dex and titles go with the plugin's own hook.
+   */
+  deleteCards(person: PersonId): number {
+    return this.#store.deleteCards(person);
   }
 
   /** Runs `fn` after every earlier call of `person`'s in this process. */

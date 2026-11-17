@@ -120,12 +120,6 @@ const SLIP: IssuedFortune = {
   line: "記得喝水",
 };
 
-const OFFERS_FOR_REROLL = {
-  poses: [],
-  prices: { pose: null, foil: null, reroll: 30 },
-  rerolls_left: 2,
-};
-
 const USER: MemberSession = { name: "Alice", avatar_url: null };
 
 interface Options {
@@ -139,7 +133,7 @@ interface Options {
   wallet?: WalletView | null;
   /** What the next feed answers. */
   feed?: { status?: number; body: unknown };
-  /** Extra fields of `GET /api/member/card` (poses, prices, rerolls). */
+  /** Extra fields of `GET /api/member/card` (the prices, their coins, the pity). */
   cardInfo?: Record<string, unknown>;
   /** What the check page answers for the card's code. */
   checked?: IssuedCard;
@@ -168,6 +162,9 @@ const CARD: IssuedCard = {
   frame: null,
   foil: false,
   voided_at: null,
+  rarity: "SR",
+  parts: [{ id: "hand.cat", slot: "hand", name: "貓", rarity: "SR" }],
+  expression: "臉紅",
 };
 
 function core(o: Options = {}) {
@@ -256,17 +253,23 @@ function core(o: Options = {}) {
       return { body: { deleted: 2, about: 2, derived: 0, unverified: 0 } };
     }
     if (path === "/api/member/songs") return { body: { accepted: true } };
-    if (path === "/api/member/card/reroll") {
-      latest = { ...CARD, serial: "MYR-RR00-0000-0003" };
-      return { body: latest };
-    }
     if (path === "/api/member/card" && method === "POST") {
-      const req = body as { pose?: string; foil?: boolean };
-      latest = { ...CARD, serial: "MYR-NEW0-0000-0002", number: 2, pose: req.pose ?? CARD.pose, foil: req.foil === true };
+      const req = body as { foil?: boolean };
+      latest = { ...CARD, serial: "MYR-NEW0-0000-0002", number: 2, foil: req.foil === true };
       return { body: latest };
     }
     if (path === "/api/member/card") {
-      return { body: { latest, today: latest ? latest.number : 0, per_day: 5, ...o.cardInfo } };
+      return {
+        body: {
+          latest,
+          today: latest ? latest.number : 0,
+          per_day: 5,
+          prices: { card: 30, foil: null },
+          balance: 100,
+          pity: { since: 1, pity: 30, until: 29 },
+          ...o.cardInfo,
+        },
+      };
     }
     if (path === `/api/public/card/${CARD.serial}`) return { body: o.checked ?? CARD };
     if (path.startsWith("/api/public/card/")) return { status: 404, body: { error: "這張卡不存在或已經作廢" } };
@@ -531,14 +534,16 @@ describe("an admin", () => {
 });
 
 describe("a card she gives", () => {
-  it("is on their page, and they can draw a new one", async () => {
-    const { posts } = core({ member: USER });
+  it("is on their page, and they can draw a new one for its price, with a key for the charge", async () => {
+    const { posts, keys } = core({ member: USER });
     renderApp();
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     expect(await within(section).findByRole("img", { name: /MYR-AB12-CD34-EF56/ })).toBeInTheDocument();
-    await userEvent.click(within(section).getByRole("button", { name: /抽一張新卡/ }));
+    // The first card of the day costs too.
+    await userEvent.click(within(section).getByRole("button", { name: /抽一張新卡.*30/ }));
     await waitFor(() => expect(posts.map((p) => p.path)).toContain("/api/member/card"));
     expect(posts.find((p) => p.path === "/api/member/card")?.body).toEqual({});
+    expect(keys.at(-1)).toBeTruthy();
     expect(await within(section).findByRole("img", { name: /MYR-NEW0-0000-0002/ })).toBeInTheDocument();
     expect(within(section).getByRole("button", { name: "下載" })).toBeInTheDocument();
     expect(within(section).getByRole("button", { name: "分享" })).toBeInTheDocument();
@@ -549,42 +554,38 @@ describe("a card she gives", () => {
     expect(open.getAttribute("target")).toBe("_blank");
   });
 
-  const OFFERS = {
-    poses: [
-      { id: "blush", label: "害羞臉紅" },
-      { id: "hand", label: "揮手" },
-    ],
-    prices: { pose: 20, foil: 50, reroll: 30 },
-    rerolls_left: 2,
-  };
-
-  it("lets them pay for a picture and a foil finish, with a key for the charge", async () => {
-    const { posts, keys } = core({ member: USER, cardInfo: OFFERS });
+  it("sends a fresh key with every card", async () => {
+    const { posts, keys } = core({ member: USER });
     renderApp();
     const section = await screen.findByRole("region", { name: "她給你的卡" });
-    await userEvent.click(await within(section).findByRole("button", { name: "揮手" }));
+    await userEvent.click(await within(section).findByRole("button", { name: /抽一張新卡/ }));
+    await waitFor(() => expect(posts.filter((p) => p.path === "/api/member/card")).toHaveLength(1));
+    await userEvent.click(within(section).getByRole("button", { name: /抽一張新卡/ }));
+    await waitFor(() => expect(posts.filter((p) => p.path === "/api/member/card")).toHaveLength(2));
+    const [first, second] = keys.slice(-2);
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    expect(first).not.toBe(second);
+  });
+
+  it("lets them pay for a foil finish on top of the card, and shows what both cost", async () => {
+    const { posts, keys } = core({ member: USER, cardInfo: { prices: { card: 30, foil: 50 } } });
+    renderApp();
+    const section = await screen.findByRole("region", { name: "她給你的卡" });
+    expect(await within(section).findByRole("button", { name: /抽一張新卡.*30/ })).toBeInTheDocument();
+    // No picture to choose: her expression comes with the card.
+    expect(within(section).queryByRole("button", { name: "揮手" })).toBeNull();
     await userEvent.click(within(section).getByRole("button", { name: "閃卡" }));
-    expect(within(section).getByRole("button", { name: /抽一張新卡.*70/ })).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: /抽一張新卡.*80/ })).toBeInTheDocument();
     await userEvent.click(within(section).getByRole("button", { name: /抽一張新卡/ }));
     await waitFor(() => expect(posts.map((p) => p.path)).toContain("/api/member/card"));
-    expect(posts.find((p) => p.path === "/api/member/card")?.body).toEqual({ pose: "hand", foil: true });
+    expect(posts.find((p) => p.path === "/api/member/card")?.body).toEqual({ foil: true });
     expect(keys.at(-1)).toBeTruthy();
     expect(await within(section).findByRole("img", { name: /MYR-NEW0-0000-0002.*閃卡|閃卡.*MYR-NEW0-0000-0002/ })).toBeInTheDocument();
   });
 
-  it("offers a reroll of today's card with its price and what is left", async () => {
-    const { posts, keys } = core({ member: USER, cardInfo: OFFERS });
-    renderApp();
-    const section = await screen.findByRole("region", { name: "她給你的卡" });
-    await userEvent.click(await within(section).findByRole("button", { name: /重抽這張.*30.*2 次/ }));
-    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "重抽" }));
-    await waitFor(() => expect(posts.map((p) => p.path)).toContain("/api/member/card/reroll"));
-    expect(keys.at(-1)).toBeTruthy();
-    expect(await within(section).findByRole("img", { name: /MYR-RR00-0000-0003/ })).toBeInTheDocument();
-  });
-
-  it("has no reroll or extras to offer when none is on sale", async () => {
-    core({ member: USER, cardInfo: { poses: OFFERS.poses, prices: { pose: null, foil: null, reroll: null }, rerolls_left: 0 } });
+  it("has no foil to offer when it is not on sale, and no reroll at all", async () => {
+    core({ member: USER, cardInfo: { prices: { card: 30, foil: null } } });
     renderApp();
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     await within(section).findByRole("button", { name: /抽一張新卡/ });
@@ -592,8 +593,15 @@ describe("a card she gives", () => {
     expect(within(section).queryByRole("button", { name: /重抽/ })).toBeNull();
   });
 
-  it("says a rerolled card's code is void", async () => {
-    core({ checked: { ...CARD, voided_at: "2026-11-08T05:00:00Z" } });
+  it("says when today's cards are all given", async () => {
+    core({ member: USER, cardInfo: { today: 5 } });
+    renderApp();
+    const section = await screen.findByRole("region", { name: "她給你的卡" });
+    expect(await within(section).findByRole("button", { name: "今天的卡抽完了" })).toBeDisabled();
+  });
+
+  it("says an older card's voided code is void", async () => {
+    core({ checked: { ...CARD, rarity: null, parts: [], expression: null, voided_at: "2026-11-08T05:00:00Z" } });
     window.history.replaceState(null, "", `/card/${CARD.serial}`);
     renderApp();
     expect(await screen.findByText("這張卡已作廢")).toBeInTheDocument();
@@ -934,22 +942,5 @@ describe("the newer places to spend", () => {
     const section = await screen.findByRole("region", { name: "她的懸賞" });
     expect(await within(section).findByText("教她一個新梗")).toBeInTheDocument();
     expect(within(section).getByText(/由她判定/)).toBeInTheDocument();
-  });
-
-  it("asks before a reroll voids the old card", async () => {
-    const { posts, keys } = core({ member: USER, cardInfo: OFFERS_FOR_REROLL });
-    renderApp();
-    const section = await screen.findByRole("region", { name: "她給你的卡" });
-    await userEvent.click(await within(section).findByRole("button", { name: /重抽這張/ }));
-    const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText(/舊卡會作廢/)).toBeInTheDocument();
-    expect(posts.filter((p) => p.path === "/api/member/card/reroll")).toEqual([]);
-    await userEvent.click(within(dialog).getByRole("button", { name: "取消" }));
-    expect(posts.filter((p) => p.path === "/api/member/card/reroll")).toEqual([]);
-    await userEvent.click(within(section).getByRole("button", { name: /重抽這張/ }));
-    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "重抽" }));
-    await waitFor(() => expect(posts.map((p) => p.path)).toContain("/api/member/card/reroll"));
-    expect(keys.at(-1)).toBeTruthy();
-    expect(await within(section).findByRole("img", { name: /MYR-RR00-0000-0003/ })).toBeInTheDocument();
   });
 });

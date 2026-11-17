@@ -31,6 +31,7 @@ const FACE = {
   line: "今天也來了呢",
   stamp: null,
   fields: [],
+  number: 1,
 };
 const FRIEND = {
   tier: "朋友",

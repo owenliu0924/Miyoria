@@ -25,6 +25,7 @@ const FACE = {
   line: null,
   stamp: null,
   fields: [],
+  number: 1,
 };
 
 const cleanup: (() => Promise<unknown>)[] = [];

@@ -51,6 +51,7 @@ import { agencyRpc } from "./agency.js";
 import { boardRpc } from "./board.js";
 import { activityRpc, arbiterRpc } from "./body.js";
 import { cardCheckRpc } from "./card.js";
+import { cardsAdminRpc, cardsRpc } from "./cards-routes.js";
 import { channelRpc } from "./channels.js";
 import { clusterRpc } from "./cluster.js";
 import { os, type RpcContext } from "./contract.js";
@@ -117,6 +118,8 @@ export const router = os.router({
   skills: skillsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },
   member: { ...memberRpc, ...livePatRpc },
+  cards: cardsRpc,
+  cardsAdmin: cardsAdminRpc,
   wallet: walletRpc,
   agency: agencyRpc,
   fortune: fortuneRpc,
@@ -153,8 +156,8 @@ export function defaultResponseCheck(env: NodeJS.ProcessEnv = process.env): Resp
   return FROM_SOURCE ? "strict" : "production";
 }
 
-/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the wallet and fortune are member pages too). */
-const PUBLIC_SIDE = new Set(["public", "member", "wallet", "agency", "fortune"]);
+/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the cards, the wallet and fortune are member pages too). */
+const PUBLIC_SIDE = new Set(["public", "member", "cards", "wallet", "agency", "fortune"]);
 
 /** Whether a route is served at all: the public side's routes go away with its switch. */
 function served(state: ApiState, path: readonly string[]): boolean {

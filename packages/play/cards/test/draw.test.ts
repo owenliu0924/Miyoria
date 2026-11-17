@@ -13,6 +13,7 @@ import {
   type Part,
   pityApplies,
   pityView,
+  portraitPose,
   RARITIES,
   type Rarity,
   rarityChances,
@@ -200,5 +201,25 @@ describe("the wishlist", () => {
       ids[3],
       ids[1],
     ]);
+  });
+});
+
+describe("the fallback portrait", () => {
+  it("has one of the ten fixed pictures for every expression", () => {
+    const poses = [
+      "calm",
+      "smile",
+      "blush",
+      "heart",
+      "squint",
+      "finger",
+      "hand",
+      "smug",
+      "sweat",
+      "cold",
+    ];
+    for (const e of Object.values(EXPRESSIONS)) expect(poses).toContain(portraitPose(e.id));
+    expect(portraitPose("black_face")).toBe("cold");
+    expect(portraitPose("unknown")).toBe("calm");
   });
 });

@@ -61,19 +61,49 @@ export interface KeepsakeCard {
   stamp: string | null;
   fields: KeepsakeField[];
   foil: boolean;
+  /** A daily card's rarity; `null` on an older member card. */
+  rarity: string | null;
+  /** The names of the parts drawn onto it; empty on an older card. */
+  parts: string[];
+  /** Her expression on it, in words; `null` on an older card. */
+  expression: string | null;
 }
 
 /** Today's cards of someone. */
 export interface KeepsakeCards {
   /** Their newest card that is not voided. */
   latest: KeepsakeCard | null;
-  /** Cards issued today (the local day). */
+  /** Daily cards issued today (the local day). */
   today: number;
   per_day: number;
-  /** What a foil finish and a reroll cost now; `null` when it is not on offer. */
-  prices: { foil: number | null; reroll: number | null };
-  /** Rerolls of today's newest card still allowed today. */
-  rerolls_left: number;
+  /** What a daily card and a foil finish on it cost now; `null` when it is not on offer. */
+  prices: { card: number | null; foil: number | null };
+  /** Cards in a row without SR or better, and how many until the next is guaranteed one. */
+  pity: { since: number; pity: number; until: number } | null;
+}
+
+/** A person's card book: their dex by series, titles, the old collectibles, the pity, wishes. */
+export interface KeepsakeCardBook {
+  series: { name: string; owned: number; total: number; title: string; complete: boolean }[];
+  /** Parts collected, of every part a card can have. */
+  parts: { owned: number; total: number };
+  titles: string[];
+  /** The closed series 舊收藏: the old collectibles, by name with how many. */
+  legacy: { name: string; count: number }[];
+  pity: { since: number; pity: number; until: number };
+  /** The names of the wished parts. */
+  wishlist: string[];
+}
+
+/** The public odds, as a chat reply prints them. */
+export interface KeepsakeOdds {
+  rarities: { rarity: string; shown: string }[];
+  /** After this many cards without SR or better the next one is; `null`: no pity. */
+  pity_after: number | null;
+  price: number;
+  per_day: number;
+  /** Each slot's parts: name, rarity and chance. */
+  slots: { name: string; parts: { name: string; rarity: string; shown: string }[] }[];
 }
 
 /** What a new card is issued with (a chosen picture stays on the member page). */
@@ -97,11 +127,15 @@ export interface Keepsakes {
     key: string,
     order?: KeepsakeCardOrder,
   ): Promise<KeepsakeResult<KeepsakeCard>>;
+  /** Their dex, titles, old collectibles, pity and wishlist. */
+  cardBook(account: AccountRef): Promise<KeepsakeResult<KeepsakeCardBook>>;
+  /** The public odds of a daily card; `null` without the cards. */
+  cardOdds(): Promise<KeepsakeOdds | null>;
   /**
-   * Replaces today's newest card with one she writes afresh, paid (`card_reroll`): the old one is
-   * voided and the new one keeps its number. Refused when there is no card today to replace.
+   * Replaces their wishlist with the parts named (by name or id, at most three; none clears it).
+   * Answers the names now on it.
    */
-  rerollCard(who: KeepsakeWho, key: string): Promise<KeepsakeResult<KeepsakeCard>>;
+  setCardWishlist(who: KeepsakeWho, parts: readonly string[]): Promise<KeepsakeResult<string[]>>;
 }
 
 export const KeepsakesKey = serviceKey<Keepsakes>("Keepsakes");
