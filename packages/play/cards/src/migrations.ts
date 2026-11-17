@@ -184,6 +184,20 @@ const PENDING = `CREATE TABLE \`cards_pending\` (
 ) STRICT;
 `;
 
+/**
+ * Migration 5: who was given their keepsake card (`cards_keepsake`), kept when they are forgotten
+ * so nobody gets a second one; made like migration 3, then filled from the keepsake cards already
+ * there (by hand: drizzle-kit does not write data).
+ */
+const KEEPSAKE = `CREATE TABLE \`cards_keepsake\` (
+	\`person_id\` text PRIMARY KEY,
+	\`given_at\` integer NOT NULL
+) STRICT;
+
+INSERT OR IGNORE INTO \`cards_keepsake\` (\`person_id\`, \`given_at\`)
+	SELECT \`person_id\`, min(\`created_at\`) FROM \`cards_card\` WHERE \`kind\` = 'keepsake' GROUP BY \`person_id\`;
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -193,5 +207,6 @@ export const cardsSchema: PluginSchema = {
     { version: 2, name: "issue_key", sql: ISSUE_KEY },
     { version: 3, name: "drops", sql: DROPS },
     { version: 4, name: "pending", sql: PENDING },
+    { version: 5, name: "keepsake", sql: KEEPSAKE },
   ],
 };

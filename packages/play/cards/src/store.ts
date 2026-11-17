@@ -74,6 +74,7 @@ import {
   cardsCard,
   cardsDex,
   cardsDrop,
+  cardsKeepsake,
   cardsLegacy,
   cardsParts,
   cardsPending,
@@ -432,6 +433,17 @@ export class CardStore {
     return row === undefined ? null : cardOf(row);
   }
 
+  /** Whether `person` was ever given their keepsake card, deleted since or not. */
+  keepsakeGiven(person: PersonId): boolean {
+    this.#db.ensureOpen();
+    const row = this.#db.orm
+      .select({ person: cardsKeepsake.person_id })
+      .from(cardsKeepsake)
+      .where(eq(cardsKeepsake.person_id, person))
+      .get();
+    return row !== undefined;
+  }
+
   /** A person's cards, newest first; `before`: older than that card (the next page). */
   cards(person: PersonId, options: { limit?: number; before?: string } = {}): CardRecord[] {
     this.#db.ensureOpen();
@@ -650,6 +662,13 @@ export class CardStore {
         this.#db.orm
           .delete(cardsPending)
           .where(and(eq(cardsPending.person_id, person), eq(cardsPending.issue_key, key)))
+          .run();
+      }
+      if (input.kind === "keepsake") {
+        this.#db.orm
+          .insert(cardsKeepsake)
+          .values({ person_id: person, given_at: ts })
+          .onConflictDoNothing()
           .run();
       }
       const after = counted ? nextSince(since, drawn.rarity) : since;
@@ -925,7 +944,10 @@ export class CardStore {
   /**
    * Deletes every row of `ids` (a person and everyone merged into them). Rows per table. The old
    * collectibles stay: they were bought with coins, and the economy keeps what coins bought (its
-   * own rows of them are kept too, so a deleted copy would only come back at the next start).
+   * own rows of them are kept too, so a deleted copy would only come back at the next start). So
+   * does the mark that they were given their keepsake (`cards_keepsake`, a person id and a time):
+   * what makes them eligible (`persons.legacy`) outlives a forget too, and asking to be forgotten
+   * is no way to a second one.
    */
   forgetPerson(ids: readonly PersonId[]): Record<string, number> {
     if (ids.length === 0) return {};
@@ -1024,6 +1046,13 @@ export class CardStore {
         .run();
       // A try still pending under the absorbed id is retried, if ever, by the kept person.
       this.#db.orm.delete(cardsPending).where(eq(cardsPending.person_id, absorb)).run();
+      // Either one given a keepsake: the kept person was.
+      this.#db.run(
+        `INSERT OR IGNORE INTO cards_keepsake (person_id, given_at)
+         SELECT $keep, given_at FROM cards_keepsake WHERE person_id = $absorb`,
+        p,
+      );
+      this.#db.orm.delete(cardsKeepsake).where(eq(cardsKeepsake.person_id, absorb)).run();
       return { counts: { cards, pity, dex, titles } };
     });
   }
@@ -1108,6 +1137,17 @@ const cardsData: readonly CategoryData[] = [
         series: "text",
         source: "text",
         acquired_at: "ts",
+      }),
+    ],
+  },
+  // Who was given their keepsake: it goes with the people, as `persons.legacy` that made them
+  // eligible does, not with their relationship (a wipe of that leaves them eligible).
+  {
+    category: "people",
+    parts: [
+      tablePart("cards_keepsake", "cards_keepsake", "node", "given_at", "person_id", {
+        person_id: "text",
+        given_at: "ts",
       }),
     ],
   },

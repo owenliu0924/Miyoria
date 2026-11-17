@@ -118,6 +118,7 @@ export {
   cardsCard,
   cardsDex,
   cardsDrop,
+  cardsKeepsake,
   cardsLegacy,
   cardsParts,
   cardsPity,

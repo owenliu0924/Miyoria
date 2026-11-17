@@ -217,5 +217,15 @@ export const cardsPending = sqliteTable(
   (t) => [primaryKey({ name: "cards_pending_pk", columns: [t.person_id, t.issue_key] })],
 );
 
+/**
+ * Who was given their keepsake card (§10.2 P5): one row per person, nothing else of theirs. It
+ * stays when they ask her to forget them, while their cards go, so nobody is given a second one;
+ * it is part of the people data category with `persons.legacy`, which makes them eligible.
+ */
+export const cardsKeepsake = sqliteTable("cards_keepsake", {
+  person_id: text().primaryKey(),
+  given_at: micros().notNull(),
+});
+
 export type CardsCardRow = typeof cardsCard.$inferSelect;
 export type CardsPartRow = typeof cardsParts.$inferSelect;

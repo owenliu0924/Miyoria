@@ -2,6 +2,7 @@
 // local day, too few coins, a refund when a card cannot be written, the pity counter, the dex with
 // series titles, wishlists and their events, and forgetting and merging a person.
 
+import { identitySchema, migrate } from "@miyoria/store";
 import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import type { PersonId } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -471,6 +472,57 @@ describe("a keepsake card", () => {
     });
     expect(again.ok && again.issued.again).toBe(true);
     expect(store.cards("p9")).toHaveLength(1);
+  });
+
+  it("is never given twice, not after they asked her to forget them", async () => {
+    const cards = service({ migrated: () => true });
+    const first = await cards.keepsake("p9", words);
+    expect(first.ok).toBe(true);
+    expect(store.keepsakeGiven("p9")).toBe(true);
+    // Their cards go; the mark that they had their keepsake stays.
+    expect(store.forgetPerson(["p9"])).toMatchObject({ cards_card: 1 });
+    expect(store.cards("p9")).toEqual([]);
+    expect(await cards.keepsake("p9", words)).toEqual({ ok: false, reason: "not_eligible" });
+    expect(store.cards("p9")).toEqual([]);
+  });
+
+  it("merged, is the kept person's: neither gets another", async () => {
+    const cards = service({ migrated: () => true });
+    expect((await cards.keepsake("a", words)).ok).toBe(true);
+    store.merge("k", "a");
+    expect(store.keepsakeGiven("k")).toBe(true);
+    expect(store.keepsakeGiven("a")).toBe(false);
+    store.forgetPerson(["k"]);
+    expect(await cards.keepsake("k", words)).toEqual({ ok: false, reason: "not_eligible" });
+  });
+
+  it("is marked for every keepsake card already there when the mark comes (migration 5)", () => {
+    const before = { ...cardsSchema, migrations: cardsSchema.migrations.slice(0, 4) };
+    const old = openTestDb({ identity: true, plugins: [before], clock: { now: () => now } });
+    try {
+      const card = (serial: string, person: string, kind: string, key: string | null, at: number) =>
+        old.db.run(
+          "INSERT INTO cards_card (serial, person_id, kind, rarity, parts, created_at, issue_key) VALUES ($serial, $person, $kind, 'N', '{}', $at, $key)",
+          { serial, person, kind, key, at },
+        );
+      card("MYR-OLD-0000-0001", "p1", "keepsake", "keepsake", 10);
+      card("MYR-OLD-0000-0002", "p2", "daily", null, 20);
+      card("MYR-OLD-0000-0003", "p3", "keepsake", null, 30);
+      card("MYR-OLD-0000-0004", "p3", "keepsake", "keepsake", 40);
+      migrate(old.db, [identitySchema, cardsSchema]);
+      const migrated = new CardStore(old.db, old.events);
+      expect(migrated.keepsakeGiven("p1")).toBe(true);
+      expect(migrated.keepsakeGiven("p2")).toBe(false);
+      expect(migrated.keepsakeGiven("p3")).toBe(true);
+      expect(
+        old.db.all("SELECT person_id, given_at FROM cards_keepsake ORDER BY person_id"),
+      ).toEqual([
+        { person_id: "p1", given_at: 10 },
+        { person_id: "p3", given_at: 30 },
+      ]);
+    } finally {
+      old.close();
+    }
   });
 });
 

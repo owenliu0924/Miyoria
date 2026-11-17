@@ -349,13 +349,16 @@ export class CardService {
   /**
    * The keepsake card of someone who came over from the old records (P5): one each, whatever tier
    * they were at (no milestone is given backwards), issued the first time they open their cards.
-   * Free like a milestone card. `not_eligible` for anyone else; nobody is sent anything for it.
+   * Free like a milestone card. `not_eligible` for anyone else, and for someone given one before
+   * whose card is gone (they asked her to forget them); nobody is sent anything for it.
    */
   keepsake(person: PersonId, face: () => Promise<OccasionFace | null>): Promise<FreeResult> {
     if (this.#o.migrated?.(person) !== true) {
       return Promise.resolve({ ok: false, reason: "not_eligible" });
     }
-    return this.#issueFree(person, "keepsake", issueKey.keepsake, face);
+    return this.#issueFree(person, "keepsake", issueKey.keepsake, face, () =>
+      this.#store.keepsakeGiven(person),
+    );
   }
 
   /**
@@ -484,12 +487,16 @@ export class CardService {
     }
   }
 
-  /** A free card of `kind` for `key`, once per person; the one already there when it exists. */
+  /**
+   * A free card of `kind` for `key`, once per person; the one already there when it exists.
+   * `given`: whether one was given before and is gone, so none is given now.
+   */
   #issueFree(
     person: PersonId,
     kind: CardKind,
     key: string,
     face: () => Promise<OccasionFace | null>,
+    given?: () => boolean,
   ): Promise<FreeResult> {
     return this.#inTurn(person, async (): Promise<FreeResult> => {
       const { config, clock } = this.#o;
@@ -498,6 +505,7 @@ export class CardService {
         const pity = this.pity(person);
         return { ok: true, issued: { card: found, pity, new_parts: [], titles: [], again: true } };
       }
+      if (given?.() === true) return { ok: false, reason: "not_eligible" };
       const words = await face();
       if (words === null) return { ok: false, reason: "no_face" };
       const issued = this.#store.issue({
