@@ -5576,6 +5576,188 @@
         "capability"
       ]
     },
+    "ApiListedCard": {
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "string"
+        },
+        "issued_at": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "avatar_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relationship": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "affinity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trust": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "familiarity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "public_feeling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stamp": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardField"
+          }
+        },
+        "pose": {
+          "type": "string"
+        },
+        "frame": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "foil": {
+          "type": "boolean"
+        },
+        "voided_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rarity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "N",
+                "R",
+                "SR",
+                "SSR"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCardPart"
+          }
+        },
+        "expression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "daily",
+            "milestone",
+            "keepsake",
+            "drop"
+          ]
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "pity_hit": {
+          "type": "boolean"
+        },
+        "wished": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "portrait": {
+          "type": "string",
+          "enum": [
+            "live",
+            "fixed"
+          ]
+        }
+      },
+      "required": [
+        "serial",
+        "issued_at",
+        "name",
+        "avatar_url",
+        "number",
+        "call_name",
+        "relationship",
+        "affinity",
+        "trust",
+        "familiarity",
+        "public_feeling",
+        "line",
+        "stamp",
+        "fields",
+        "pose",
+        "frame",
+        "foil",
+        "voided_at",
+        "rarity",
+        "parts",
+        "expression",
+        "price",
+        "pity_hit",
+        "wished",
+        "portrait"
+      ]
+    },
     "ApiLlmCallDetail": {
       "type": "object",
       "properties": {
@@ -7383,7 +7565,7 @@
         "cards": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ApiIssuedCard"
+            "$ref": "#/$defs/ApiListedCard"
           }
         }
       },

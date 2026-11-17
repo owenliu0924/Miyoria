@@ -22,9 +22,30 @@ export const CardPitySchema = z
   .meta({ id: "ApiCardPity" });
 export type CardPity = z.output<typeof CardPitySchema>;
 
+/**
+ * One of their cards in their list, with what only its owner sees: what one card's page needs,
+ * so the list asks for nothing more per card. An older member card cost nothing it knows of, had
+ * no pity or wishes, and keeps its fixed portrait.
+ */
+export const ListedCardSchema = IssuedCardSchema.extend({
+  /** Fish coins it cost. */
+  price: z.number().int(),
+  /** The pity decided its rarity. */
+  pity_hit: z.boolean(),
+  /** Wished parts it has (their ids). */
+  wished: z.array(z.string()),
+  /**
+   * Its picture: `live`, her picture rendered from what the card drew (opaque, its background
+   * drawn; the fixed portrait stands in while it cannot be rendered), or `fixed`, the cut-out
+   * portrait of its `pose`.
+   */
+  portrait: z.enum(["live", "fixed"]),
+}).meta({ id: "ApiListedCard" });
+export type ListedCard = z.output<typeof ListedCardSchema>;
+
 /** `GET /api/member/cards`: their cards, newest first, daily and older ones together. */
 export const MyCardsSchema = z
-  .object({ cards: z.array(IssuedCardSchema) })
+  .object({ cards: z.array(ListedCardSchema) })
   .meta({ id: "ApiMyCards" });
 export type MyCards = z.output<typeof MyCardsSchema>;
 

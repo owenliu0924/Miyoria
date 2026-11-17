@@ -247,7 +247,9 @@ const ANSWERS = {
   "fortune.today": { fortune: SLIP, price: 10 } satisfies ApiOutputs["fortune"]["today"],
   "member.pat": { pats: { recent: 1, open: true } } satisfies ApiOutputs["member"]["pat"],
   "member.issueCard": CARD,
-  "cards.mine": { cards: [CARD] } satisfies ApiOutputs["cards"]["mine"],
+  "cards.mine": {
+    cards: [{ ...CARD, price: 30, pity_hit: false, wished: ["hand.cat"], portrait: "live" }],
+  } satisfies ApiOutputs["cards"]["mine"],
   "cards.one": {
     card: CARD,
     pity_hit: false,

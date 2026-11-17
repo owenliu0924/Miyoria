@@ -10,7 +10,7 @@
 import { useEffect, useRef } from "react";
 import type { IssuedCard } from "@miyoria/contracts/api";
 import { cn } from "@/lib/utils";
-import { InlinedCard, useArtOpaque, useCardArt } from "./card";
+import { artUrl, InlinedCard, useArtOpaque, useCardArt } from "./card";
 
 /** Frames that have a light of their own in `index.css` (`.holo-band-<id>`). */
 const LIT_FRAMES = new Set(["sakura", "abyss", "gold"]);
@@ -53,12 +53,18 @@ function apply(el: HTMLElement, p: Pose) {
 
 export function HoloCard({
   card,
+  portrait,
   svgRef,
   zoom = 1.05,
   sway = true,
   className,
 }: {
   card: IssuedCard;
+  /**
+   * Which picture the Core says the card has (`live`: her rendered one, opaque; `fixed`: a
+   * cut-out portrait), as its list sends it; without it, read from the picture itself.
+   */
+  portrait?: "live" | "fixed";
   svgRef?: React.Ref<SVGSVGElement>;
   /** Size under the pointer. */
   zoom?: number;
@@ -117,7 +123,9 @@ export function HoloCard({
   const lit = card.frame && LIT_FRAMES.has(card.frame) ? card.frame : null;
   // A cut-out portrait masks the foil off her; her rendered picture is opaque, so the foil is a
   // sheen printed over the whole picture instead (`index.css`, `[data-art="opaque"]`).
-  const opaque = useArtOpaque(art);
+  const read = useArtOpaque(portrait === undefined ? art : { url: null, data: null });
+  // The Core's word holds for the picture the Core sent, not the panel's own fallback portrait.
+  const opaque = portrait === undefined ? read : portrait === "live" && art.url === artUrl(card.serial);
   return (
     <div className={cn("holo-stage", className)}>
       <div

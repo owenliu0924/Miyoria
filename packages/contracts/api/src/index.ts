@@ -147,6 +147,8 @@ export {
   DexSeriesSchema,
   type LegacyItem,
   LegacyItemSchema,
+  type ListedCard,
+  ListedCardSchema,
   type MyCard,
   MyCardSchema,
   type MyCards,

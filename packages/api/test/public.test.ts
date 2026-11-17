@@ -2273,7 +2273,28 @@ describe("her cards", () => {
     const res = await r.get("/api/member/cards", cookie);
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(res.body).toEqual({ cards: [second, first, OLDER_CARD] });
+    // Each with what its page shows them, so the list needs nothing more per card.
+    const listed = (c: IssuedCard, portrait: "live" | "fixed") => {
+      const kept = r.cards.card(c.serial);
+      return {
+        ...c,
+        price: kept?.price ?? 0,
+        pity_hit: kept?.pity_hit ?? false,
+        wished: kept?.wished ?? [],
+        portrait,
+      };
+    };
+    expect(res.body).toEqual({
+      cards: [listed(second, "fixed"), listed(first, "fixed"), listed(OLDER_CARD, "fixed")],
+    });
+    expect((res.body as { cards: { price: number }[] }).cards.map((c) => c.price)).toEqual([
+      30, 30, 0,
+    ]);
+    // Rendered pictures for every daily card once something renders them; never an older card.
+    r.sup.services.provide("portrait", CardPortraitKey, { render: async () => null });
+    expect((await r.get("/api/member/cards", cookie)).body).toEqual({
+      cards: [listed(second, "live"), listed(first, "live"), listed(OLDER_CARD, "fixed")],
+    });
     expect((await r.get("/api/member/cards", await r.login("bob"))).body).toEqual({ cards: [] });
     expect((await r.get("/api/member/cards")).status).toBe(401);
   });

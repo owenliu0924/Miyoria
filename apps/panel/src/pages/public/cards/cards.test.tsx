@@ -4,7 +4,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import type { CardDex, CardOdds, IssuedCard, MyCard, PersonCards } from "@miyoria/contracts/api";
+import type { CardCatalogue, CardDex, CardOdds, CataloguePart, IssuedCard, ListedCard, MyCard, PersonCards } from "@miyoria/contracts/api";
 import { writeStorage } from "@/lib/storage";
 import { CardsSection } from "@/pages/character/CardsSection";
 import { mockFetch, renderPage } from "@/test/render";
@@ -65,6 +65,46 @@ const ONE: Record<string, MyCard> = {
   [DROP.serial]: { card: DROP, pity_hit: false, wished: [], price: 0 },
 };
 
+/** The list as the Core sends it: each card with what its page shows. */
+const LISTED: ListedCard[] = [
+  { ...SSR, pity_hit: true, wished: ["background.aurora"], price: 80, portrait: "live" },
+  { ...DROP, pity_hit: false, wished: [], price: 0, portrait: "live" },
+  { ...OLD, pity_hit: false, wished: [], price: 0, portrait: "fixed" },
+];
+
+const part = (id: string, name: string, rarity: CataloguePart["rarity"], series: [string, string] | null, more: Partial<CataloguePart> = {}): CataloguePart => ({
+  id,
+  slot: id.slice(0, id.indexOf(".")) as CataloguePart["slot"],
+  name,
+  rarity,
+  series: series?.[0] ?? null,
+  series_name: series?.[1] ?? null,
+  drop_only: false,
+  blank: false,
+  enabled: true,
+  wishable: true,
+  ...more,
+});
+const GLASSES: [string, string] = ["glasses", "眼鏡系列"];
+const CURIOS: [string, string] = ["curios", "怪東西系列"];
+const SKY: [string, string] = ["sky", "天空系列"];
+const CATALOGUE: CardCatalogue = {
+  parts: [
+    part("accessory.none", "無配件", "N", null, { blank: true, wishable: false }),
+    part("accessory.monocle", "單片眼鏡", "SR", GLASSES),
+    part("accessory.monocle_tail", "單片眼鏡和尾巴", "SSR", CURIOS),
+    part("accessory.basin", "大鋼盆", "SR", CURIOS, { enabled: false, wishable: false }),
+    part("background.stars", "星點", "R", SKY),
+    part("background.aurora", "極光", "SSR", SKY),
+    part("background.fireworks", "頻道裡的煙火", "SR", null, { drop_only: true }),
+  ],
+  series: [
+    { id: "glasses", name: "眼鏡系列", title: "眼鏡控" },
+    { id: "curios", name: "怪東西系列", title: "怪東西收藏家" },
+    { id: "sky", name: "天空系列", title: "摘星的人" },
+  ],
+};
+
 const DEX: CardDex = {
   parts: [
     { id: "accessory.monocle_tail", slot: "accessory", name: "單片眼鏡和尾巴", rarity: "SSR", series: "curios", count: 1, first_at: "2026-11-17T03:00:00Z" },
@@ -122,16 +162,20 @@ interface Options {
 
 function core(o: Options = {}) {
   const puts: unknown[] = [];
+  const titled: { series: string; body: unknown }[] = [];
   let wish = { parts: [{ id: "background.aurora", slot: "background", name: "極光", rarity: "SSR" }], max: 3 };
   const fn = mockFetch((method, url, body) => {
     const path = url.pathname;
     if (o.older && path.includes("/cards")) return undefined;
     if (path === "/api/member/wallet") return undefined;
-    if (path === "/api/member/cards") return { body: { cards: [SSR, DROP, OLD] } };
-    const one = /^\/api\/member\/card\/(.+)$/.exec(path);
-    if (one) {
-      const c = ONE[decodeURIComponent(one[1] ?? "")];
-      return c ? { body: c } : { status: 404, body: { error: "沒有這張卡" } };
+    if (path === "/api/member/cards") return { body: { cards: LISTED } };
+    if (path === "/api/member/cards/catalogue") return { body: CATALOGUE };
+    const title = /^\/api\/member\/cards\/titles\/(.+)$/.exec(path);
+    if (title && method === "PUT") {
+      const series = decodeURIComponent(title[1] ?? "");
+      titled.push({ series, body });
+      const known = DEX.titles.find((t) => t.series === series);
+      return known ? { body: { ...known, public: (body as { public: boolean }).public } } : { status: 404, body: { error: "你還沒有這個稱號" } };
     }
     if (path === "/api/member/cards/dex") return { body: DEX };
     if (path === "/api/member/cards/pity") return { body: { since: 7, pity: 20, until: 13 } };
@@ -146,7 +190,7 @@ function core(o: Options = {}) {
     if (path === "/api/member/cards/wishlist") return { body: wish };
     return undefined;
   });
-  return { fn, puts };
+  return { fn, puts, titled };
 }
 
 afterEach(() => writeStorage("miyoria.member.cards-tab", null));
@@ -167,7 +211,7 @@ describe("卡冊: their cards", () => {
   });
 
   it("opens one card large with its parts, expression, date, code, what it cost and the pity", async () => {
-    core();
+    const { fn } = core();
     renderPage(<CardsArea />);
     const a = await area();
     await userEvent.click(await within(a).findByRole("button", { name: /每日卡 第 3 張 SSR/ }));
@@ -185,6 +229,9 @@ describe("卡冊: their cards", () => {
     expect(within(dialog).getByText("這張由保底決定")).toBeInTheDocument();
     // Foil: the light layers sit over the card.
     expect(dialog.querySelector(".holo-foil")).not.toBeNull();
+    // Everything came with the list: no request per card.
+    const asked = fn.mock.calls.map((c) => new URL(String(c[0]), "http://panel.test").pathname);
+    expect(asked.filter((p) => p.startsWith("/api/member/card/"))).toEqual([]);
   });
 
   it("says plainly when the Core has no 卡冊 yet", async () => {
@@ -202,14 +249,41 @@ describe("卡冊: the dex", () => {
     await userEvent.click(within(a).getByRole("tab", { name: "圖鑑" }));
     expect(await within(a).findByRole("listitem", { name: "極光,SSR,有 2 張" })).toBeInTheDocument();
     expect(within(a).getByRole("listitem", { name: "單片眼鏡,SR,還沒有" })).toBeInTheDocument();
-    // A blank part ("無配件") is not collected; a drop-only part they caught is.
+    // A blank part ("無配件") is not collected, nor a disabled one they never had; a drop-only
+    // part they caught is.
     expect(within(a).queryByRole("listitem", { name: /^無配件/ })).toBeNull();
+    expect(within(a).queryByRole("listitem", { name: /^大鋼盆/ })).toBeNull();
     expect(within(a).getByRole("listitem", { name: "頻道裡的煙火,SR,有 1 張" })).toBeInTheDocument();
     const series = within(a).getByRole("region", { name: "系列" });
     expect(within(series).getByRole("meter", { name: "天空系列 1/2" })).toBeInTheDocument();
     expect(within(series).getByText("稱號「怪東西收藏家」")).toBeInTheDocument();
     expect(within(a).getByRole("region", { name: "稱號" })).toHaveTextContent("只有你看得到");
     expect(within(within(a).getByRole("region", { name: "舊收藏" })).getByText("大鋼盆")).toBeInTheDocument();
+  });
+
+  it("groups parts by the catalogue's series, named", async () => {
+    core();
+    renderPage(<CardsArea />);
+    const a = await area();
+    await userEvent.click(within(a).getByRole("tab", { name: "圖鑑" }));
+    await userEvent.click(await within(a).findByRole("radio", { name: "依系列" }));
+    const glasses = within(a).getByRole("region", { name: "眼鏡系列" });
+    expect(within(glasses).getByRole("listitem", { name: "單片眼鏡,SR,還沒有" })).toBeInTheDocument();
+    expect(within(within(a).getByRole("region", { name: "不屬於系列" })).getByRole("listitem", { name: /頻道裡的煙火/ })).toBeInTheDocument();
+  });
+
+  it("shows a title to others, or keeps it theirs, through the Core", async () => {
+    const { titled } = core();
+    renderPage(<CardsArea />);
+    const a = await area();
+    await userEvent.click(within(a).getByRole("tab", { name: "圖鑑" }));
+    const titles = await within(a).findByRole("region", { name: "稱號" });
+    const toggle = within(titles).getByRole("switch", { name: "「怪東西收藏家」給別人看" });
+    expect(toggle).not.toBeChecked();
+    await userEvent.click(toggle);
+    await waitFor(() => expect(titled).toEqual([{ series: "curios", body: { public: true } }]));
+    expect(await within(titles).findByText("公開")).toBeInTheDocument();
+    expect(within(titles).getByRole("switch", { name: "「怪東西收藏家」給別人看" })).toBeChecked();
   });
 });
 
@@ -243,6 +317,17 @@ describe("卡冊: the wishlist", () => {
     expect(await within(a).findByText("還沒有願望")).toBeInTheDocument();
   });
 
+  it("offers what the Core marks wishable: a drop-only part, never a blank or a disabled one", async () => {
+    core();
+    renderPage(<CardsArea />);
+    const a = await area();
+    await userEvent.click(within(a).getByRole("tab", { name: "願望單" }));
+    const pick = await within(a).findByRole("region", { name: "挑部件" });
+    expect(within(pick).getByRole("button", { name: "頻道裡的煙火 SR,已經有了" })).toBeInTheDocument();
+    expect(within(pick).queryByRole("button", { name: /^無配件/ })).toBeNull();
+    expect(within(pick).queryByRole("button", { name: /^大鋼盆/ })).toBeNull();
+  });
+
   it("shows the Core's sentence when it will not take the list", async () => {
     core({ wishSave: { status: 400, body: { error: "願望單最多三個" } } });
     renderPage(<CardsArea />);
@@ -255,12 +340,15 @@ describe("卡冊: the wishlist", () => {
 });
 
 describe("the catalogue", () => {
-  it("leaves out blank parts unless owned and keeps drop-only parts they have", () => {
-    const ids = catalogOf(DEX, ODDS).map((p) => p.id);
+  it("is the Core's: no blank part, a disabled one only once owned, drop-only parts kept", () => {
+    const ids = catalogOf(DEX, CATALOGUE).map((p) => p.id);
     expect(ids).not.toContain("accessory.none");
+    expect(ids).not.toContain("accessory.basin");
     expect(ids).toContain("background.fireworks");
     expect(ids).toContain("accessory.monocle");
-    // Without the odds, only their own.
+    const owned = { ...DEX, parts: [...DEX.parts, { id: "accessory.basin", slot: "accessory" as const, name: "大鋼盆", rarity: "SR" as const, series: "curios", count: 1, first_at: "2026-11-01T00:00:00Z" }] };
+    expect(catalogOf(owned, CATALOGUE).find((p) => p.id === "accessory.basin")).toMatchObject({ count: 1, wishable: false });
+    // Without the catalogue (an older Core), only their own.
     expect(catalogOf(DEX, undefined).map((p) => p.id).sort()).toEqual(DEX.parts.map((p) => p.id).sort());
   });
 });

@@ -5,12 +5,13 @@
 
 import { Check, Lock } from "lucide-react";
 import { useState } from "react";
-import type { CardDex, CardOdds, DexSeries } from "@miyoria/contracts/api";
+import type { CardCatalogue, CardDex, DexSeries } from "@miyoria/contracts/api";
 import { EmptyLine } from "@/components/query-state";
 import { Meter } from "@/components/status";
 import { Segmented } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
-import { type CatalogPart, catalogOf } from "./data";
+import { type CatalogPart, catalogOf, seriesNames } from "./data";
+import { TitleShown } from "./TitleShown";
 import { isRarity, RarityBadge, SLOT_LABEL, SLOTS, shortDate } from "./labels";
 
 function PartRow({ part }: { part: CatalogPart }) {
@@ -75,15 +76,15 @@ function SeriesList({ series }: { series: DexSeries[] }) {
 
 type By = "slot" | "series";
 
-export function Dex({ dex, odds }: { dex: CardDex; odds: CardOdds | undefined }) {
+export function Dex({ dex, catalogue }: { dex: CardDex; catalogue: CardCatalogue | undefined }) {
   const [by, setBy] = useState<By>("slot");
-  const catalog = catalogOf(dex, odds);
-  const seriesName = new Map(dex.series.map((s) => [s.id, s.name]));
+  const catalog = catalogOf(dex, catalogue);
+  const seriesName = seriesNames(dex, catalogue);
   const groups =
     by === "slot"
       ? SLOTS.map((slot) => ({ key: slot, title: SLOT_LABEL[slot], parts: catalog.filter((p) => p.slot === slot) }))
       : [
-          ...dex.series.map((s) => ({ key: s.id, title: s.name, parts: catalog.filter((p) => p.series === s.id) })),
+          ...[...seriesName].map(([id, name]) => ({ key: id, title: name, parts: catalog.filter((p) => p.series === id) })),
           { key: "_", title: "不屬於系列", parts: catalog.filter((p) => p.series === null || !seriesName.has(p.series)) },
         ];
   const owned = catalog.filter((p) => p.count > 0).length;
@@ -107,7 +108,7 @@ export function Dex({ dex, odds }: { dex: CardDex; odds: CardOdds | undefined })
               <li key={t.series} className="flex items-baseline gap-3 py-(--row-y)">
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.title}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">{seriesName.get(t.series) ?? t.series}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{t.public ? "公開" : "只有你看得到"}</span>
+                <TitleShown title={t} />
                 <span className="w-20 shrink-0 text-right font-mono text-xs text-muted-foreground">{shortDate(t.earned_at)}</span>
               </li>
             ))}

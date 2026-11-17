@@ -1,18 +1,16 @@
 // One of their cards, large: the card to turn in the light beside everything on it in words (the
 // parts with their rarity, her expression, the date, the code), and what only its owner sees
-// (what it cost, whether the pity decided it, which wished parts it brought).
+// (what it cost, whether the pity decided it, which wished parts it brought), all from the list.
 
 import { CircleX, Download, ExternalLink, Heart, Link2 } from "lucide-react";
 import { useRef, useState } from "react";
-import type { IssuedCard } from "@miyoria/contracts/api";
-import { isApiError } from "@/api/http";
+import type { ListedCard } from "@miyoria/contracts/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { fmtInt } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { FRAME_NAME, cardFileName, cardPng, saveBlob, shareCard, verifyUrl } from "../card";
 import { HoloCard } from "../HoloCard";
-import { useMyCard } from "./data";
 import { KIND_LABEL, kindOf, RarityBadge, SLOT_LABEL, shortDate } from "./labels";
 
 function Fact({ label, children, mono, wide }: { label: string; children: React.ReactNode; mono?: boolean; wide?: boolean }) {
@@ -24,10 +22,8 @@ function Fact({ label, children, mono, wide }: { label: string; children: React.
   );
 }
 
-function Details({ card, svg, currency }: { card: IssuedCard; svg: React.RefObject<SVGSVGElement | null>; currency: string }) {
-  const mine = useMyCard(card.serial);
-  const extra = mine.data;
-  const wished = new Set(extra?.wished ?? []);
+function Details({ card, svg, currency }: { card: ListedCard; svg: React.RefObject<SVGSVGElement | null>; currency: string }) {
+  const wished = new Set(card.wished);
   const [busy, setBusy] = useState<"download" | "share" | null>(null);
   const run = async (what: "download" | "share") => {
     if (!svg.current) return;
@@ -47,8 +43,7 @@ function Details({ card, svg, currency }: { card: IssuedCard; svg: React.RefObje
     .join(" · ");
   const line = card.line ?? card.public_feeling;
   const kind = kindOf(card);
-  // Only what the Core knows: a card it does not answer for (an older card voided) has no extras.
-  const price = extra ? (extra.price > 0 ? `${fmtInt(extra.price)} ${currency}` : "不用錢") : null;
+  const price = card.price > 0 ? `${fmtInt(card.price)} ${currency}` : "不用錢";
   return (
     <div className="grid min-w-0 content-start gap-5">
       {card.voided_at && (
@@ -86,15 +81,12 @@ function Details({ card, svg, currency }: { card: IssuedCard; svg: React.RefObje
         <Fact label="發卡日">{shortDate(card.issued_at)}</Fact>
         <Fact label="第幾張">第 {card.number} 張</Fact>
         <Fact label="卡面">{finish || "一般"}</Fact>
-        {kind === "daily" && price !== null && <Fact label="花了">{price}</Fact>}
-        {extra?.pity_hit && <Fact label="保底">這張由保底決定</Fact>}
+        {kind === "daily" && <Fact label="花了">{price}</Fact>}
+        {card.pity_hit && <Fact label="保底">這張由保底決定</Fact>}
         <Fact label="編號" mono wide>
           {card.serial}
         </Fact>
       </dl>
-      {mine.isError && !(isApiError(mine.error) && mine.error.kind === "not_found") && (
-        <p className="text-[13px] text-muted-foreground">花費和保底現在讀不到</p>
-      )}
 
       <div className="grid grid-cols-2 gap-2">
         <Button variant="outline" busy={busy === "download"} onClick={() => void run("download")}>
@@ -117,7 +109,7 @@ function Details({ card, svg, currency }: { card: IssuedCard; svg: React.RefObje
 }
 
 /** The dialog for one card; `card` null closes it. */
-export function CardDialog({ card, currency, onClose }: { card: IssuedCard | null; currency: string; onClose: () => void }) {
+export function CardDialog({ card, currency, onClose }: { card: ListedCard | null; currency: string; onClose: () => void }) {
   const svg = useRef<SVGSVGElement>(null);
   return (
     <Dialog open={card !== null} onOpenChange={(o) => !o && onClose()}>
@@ -134,7 +126,7 @@ export function CardDialog({ card, currency, onClose }: { card: IssuedCard | nul
               </DialogTitle>
             </DialogHeader>
             <div className="grid items-start gap-6 md:grid-cols-[minmax(0,380px)_minmax(0,1fr)] md:gap-8">
-              <HoloCard card={card} svgRef={svg} className="mx-auto w-full max-w-[380px]" />
+              <HoloCard card={card} portrait={card.portrait} svgRef={svg} className="mx-auto w-full max-w-[380px]" />
               <Details card={card} svg={svg} currency={currency} />
             </div>
           </>

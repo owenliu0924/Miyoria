@@ -3,13 +3,13 @@
 
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
-import type { IssuedCard, MyCards as MyCardsView } from "@miyoria/contracts/api";
+import type { ListedCard, MyCards as MyCardsView } from "@miyoria/contracts/api";
 import { EmptyLine } from "@/components/query-state";
 import { Segmented } from "@/components/ui/segmented";
 import { CardDialog } from "./CardDialog";
 import { type Kind, KIND_LABEL, KINDS, kindOf, CardThumb, RarityBadge, shortDate } from "./labels";
 
-function Tile({ card, onOpen }: { card: IssuedCard; onOpen: () => void }) {
+function Tile({ card, onOpen }: { card: ListedCard; onOpen: () => void }) {
   const kind = kindOf(card);
   return (
     <li className="min-w-0">
@@ -39,7 +39,7 @@ function Tile({ card, onOpen }: { card: IssuedCard; onOpen: () => void }) {
 
 export function MyCards({ view, currency }: { view: MyCardsView; currency: string }) {
   const [kind, setKind] = useState<Kind | "all">("all");
-  const [open, setOpen] = useState<IssuedCard | null>(null);
+  const [open, setOpen] = useState<ListedCard | null>(null);
   const cards = view.cards;
   if (cards.length === 0) return <EmptyLine>還沒有卡</EmptyLine>;
   const counts = new Map<Kind, number>();

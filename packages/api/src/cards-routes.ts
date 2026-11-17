@@ -14,12 +14,14 @@ import type {
   CardPity,
   CardTitle,
   CardWishlist,
+  ListedCard,
   MyCard,
   PersonCards,
 } from "@miyoria/contracts/api";
 import { STRANGER } from "@miyoria/economy";
 import {
   CARD_TEXTS,
+  CardPortraitKey,
   type CardRecord,
   type CardService,
   CardsKey,
@@ -148,13 +150,40 @@ async function oneOf(state: ApiState, who: MemberContext, input: string): Promis
   return { card, pity_hit: false, wished: [], price: 0 };
 }
 
+/**
+ * Their cards for their list, newest first, each with what one card's page shows its owner (what
+ * it cost, the pity, the wished parts, which picture it has): daily cards (every kind), then
+ * their older member cards. A daily card's picture is her rendered one whenever something renders
+ * it (`cardArt`), the same for every daily card.
+ */
+async function listedCards(state: ApiState, who: MemberContext): Promise<ListedCard[]> {
+  const cards = state.optional(CardsKey);
+  const person = who.person?.id ?? null;
+  const portrait: ListedCard["portrait"] = state.optional(CardPortraitKey) ? "live" : "fixed";
+  const daily = cards && person ? cards.cards(person, { limit: 500 }) : [];
+  // With no person, only the older cards of their accounts.
+  const older = await cardsOf(state, accountsOf(who), null);
+  return [
+    ...daily.map(
+      (c): ListedCard => ({
+        ...dailyCard(c),
+        price: c.price,
+        pity_hit: c.pity_hit,
+        wished: c.wished,
+        portrait,
+      }),
+    ),
+    ...older.map(
+      (c): ListedCard => ({ ...c, price: 0, pity_hit: false, wished: [], portrait: "fixed" }),
+    ),
+  ];
+}
+
 /** The cards routes on the route table: the member's and the public odds (see `rpc.ts`). */
 export const cardsRpc = {
   mine: os.cards.mine.handler(async ({ context }) => {
     const who = await opening(context.state, context.c);
-    return {
-      cards: await cardsOf(context.state, accountsOf(who), who.person?.id ?? null),
-    };
+    return { cards: await listedCards(context.state, who) };
   }),
   one: os.cards.one.handler(async ({ input, context }) =>
     oneOf(context.state, await me(context.state, context.c), input.params.serial),

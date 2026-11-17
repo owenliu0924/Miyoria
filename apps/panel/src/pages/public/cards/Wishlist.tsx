@@ -1,4 +1,5 @@
-// 願望單: up to three parts they would like (picked from the dex's catalogue), saved or cleared on the
+// 願望單: up to three parts they would like (picked from the Core's catalogue, the parts it marks
+// wishable), saved or cleared on the
 // Core. Wishing changes no odds; she mentions it when a wished part comes. The Core's own sentence
 // is shown when it will not take a list.
 
@@ -47,6 +48,8 @@ export function Wishlist({ saved, catalog }: { saved: CardWishlist; catalog: Cat
   };
   const dirty = !same(ids, savedIds);
   const full = ids.length >= max;
+  // What the Core takes on a wishlist: a drop-only part too, never a blank or a disabled one.
+  const wishable = catalog.filter((p) => p.wishable);
 
   return (
     <div className="grid gap-(--stage-gap)">
@@ -111,11 +114,11 @@ export function Wishlist({ saved, catalog }: { saved: CardWishlist; catalog: Cat
 
       <section aria-label="挑部件" className="grid gap-4">
         <h3 className="text-[13px] font-medium">挑部件</h3>
-        {catalog.length === 0 ? (
+        {wishable.length === 0 ? (
           <EmptyLine>沒有可以挑的部件</EmptyLine>
         ) : (
           SLOTS.map((slot) => {
-            const parts = catalog.filter((p) => p.slot === slot);
+            const parts = wishable.filter((p) => p.slot === slot);
             if (parts.length === 0) return null;
             return (
               <div key={slot} className="grid gap-2 sm:grid-cols-[3.5rem_minmax(0,1fr)] sm:items-start">

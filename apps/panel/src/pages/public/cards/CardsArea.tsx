@@ -10,7 +10,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { useWallet } from "../spend";
-import { catalogOf, useDex, useMyCards, useOdds, usePity, useWishlist } from "./data";
+import { catalogOf, useCatalogue, useDex, useMyCards, useOdds, usePity, useWishlist } from "./data";
 import { Dex } from "./Dex";
 import { MyCards } from "./MyCards";
 import { Odds } from "./Odds";
@@ -29,10 +29,10 @@ function Loaded<T>({ query, rows = 4, children }: { query: UseQueryResult<T>; ro
 
 function DexTab() {
   const dex = useDex();
-  const odds = useOdds();
-  // The catalogue's unowned parts come from the odds; without them the dex still shows theirs.
-  if (dex.isPending || (odds.isPending && !odds.isError)) return <SkeletonRows count={6} />;
-  return <Loaded query={dex}>{(d) => <Dex dex={d} odds={odds.data} />}</Loaded>;
+  const catalogue = useCatalogue();
+  // The parts they do not have come from the catalogue; without it the dex still shows theirs.
+  if (dex.isPending || (catalogue.isPending && !catalogue.isError)) return <SkeletonRows count={6} />;
+  return <Loaded query={dex}>{(d) => <Dex dex={d} catalogue={catalogue.data} />}</Loaded>;
 }
 
 function OddsTab({ currency }: { currency: string }) {
@@ -44,10 +44,10 @@ function OddsTab({ currency }: { currency: string }) {
 function WishTab() {
   const wish = useWishlist();
   const dex = useDex();
-  const odds = useOdds();
-  if (wish.isPending || dex.isPending || (odds.isPending && !odds.isError)) return <SkeletonRows count={4} />;
+  const catalogue = useCatalogue();
+  if (wish.isPending || dex.isPending || (catalogue.isPending && !catalogue.isError)) return <SkeletonRows count={4} />;
   if (dex.isError) return <ErrorLine error={dex.error} onRetry={() => void dex.refetch()} />;
-  const catalog = catalogOf(dex.data, odds.data);
+  const catalog = catalogOf(dex.data, catalogue.data);
   return <Loaded query={wish}>{(w) => <Wishlist saved={w} catalog={catalog} />}</Loaded>;
 }
 
