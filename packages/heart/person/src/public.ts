@@ -8,7 +8,13 @@
 // role without `/me memory`), and checks `public_feeling` and `call_name` (other names,
 // moderation) as the member page does.
 
-import { bondBand, clampAffinity, familiarityBand, trustBand } from "@miyoria/types";
+import {
+  bondBand,
+  clampAffinity,
+  familiarityBand,
+  type TierStage,
+  trustBand,
+} from "@miyoria/types";
 import type { HeartPerson } from "./model.js";
 import { bondPlace } from "./place.js";
 
@@ -28,6 +34,12 @@ export interface PublicRing {
 export interface PublicBond {
   /** The name of their tier (認識 ... 永恆羈絆; 討厭, 很討厭 below the ladder). */
   tier: string;
+  /** Its stage, 1..3 (H10): a coarse band, no number to read the bond off; `null`: none. */
+  stage: TierStage | null;
+  /** Name and stage as they read it: 「知心 II」. */
+  tier_label: string;
+  /** The next step: 「知心 III」, or the next tier after III; `null` at the top. */
+  next_label: string | null;
   /** The tier after it; `null` at the top. */
   next_tier: string | null;
   /** How far into the tier toward the next, 0..1 in steps of 1/20 (1 at the top). */
@@ -61,6 +73,9 @@ export function publicBond(
   const place = bondPlace(bond);
   return {
     tier: place.tier,
+    stage: place.stage,
+    tier_label: place.tier_label,
+    next_label: place.next_label,
     next_tier: place.next_tier,
     tier_progress: coarse(place.tier_progress),
     ring: {

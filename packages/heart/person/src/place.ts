@@ -9,7 +9,9 @@ import {
   RING_LAPS,
   relationshipLabel,
   ringOf,
+  type TierStage,
   tierProgress,
+  tierStanding,
 } from "@miyoria/types";
 
 /** The ring with all its parts (`below` is how far under 0 the bond is, 0..1). */
@@ -26,8 +28,14 @@ export interface BondRingPlace {
 
 /** A bond's tier, the next one and the ring. */
 export interface BondPlace {
-  /** The tier's name (認識 ... 永恆羈絆; 討厭, 很討厭 below the ladder). */
+  /** The tier's name (認識 ... 永恆羈絆; 討厭, 很討厭 below the ladder): what code keys on. */
   tier: RelationshipLabel;
+  /** Its stage, 1..3 (H10); `null` for 討厭, 很討厭 and 永恆羈絆. */
+  stage: TierStage | null;
+  /** Name and stage as people read it: 「知心 II」. */
+  tier_label: string;
+  /** The next step as people read it: the next stage, or the next tier after III. */
+  next_label: string | null;
   /** The tier after it; `null` at the top. */
   next_tier: RelationshipLabel | null;
   /** 0..1 of the way to the next tier (1 at the top, 0 below the ladder). */
@@ -45,8 +53,12 @@ export function bondPlace(bond: number): BondPlace {
   const ring = ringOf(b);
   const first = (BOND_LADDER[0]?.label ?? "認識") as RelationshipLabel;
   const disliked = b <= DISLIKE_AT;
+  const standing = tierStanding({ affinity: b });
   return {
     tier: disliked ? relationshipLabel({ affinity: b }) : place.tier.label,
+    stage: standing.stage,
+    tier_label: standing.label,
+    next_label: standing.next_label,
     next_tier: disliked ? first : (place.next?.label ?? null),
     tier_progress: disliked ? 0 : place.progress,
     ring: {

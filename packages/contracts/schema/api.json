@@ -6131,7 +6131,28 @@
         "tier": {
           "type": "string"
         },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tier_label": {
+          "type": "string"
+        },
         "next_tier": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_label": {
           "type": [
             "string",
             "null"
@@ -7895,6 +7916,21 @@
         "tier": {
           "$ref": "#/$defs/ApiRelationshipLabel"
         },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tier_label": {
+          "type": "string"
+        },
         "bond": {
           "type": "number"
         },
@@ -7987,6 +8023,12 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "next_label": {
+          "type": [
+            "string",
+            "null"
           ]
         },
         "tier_progress": {
@@ -8097,6 +8139,21 @@
         },
         "tier": {
           "$ref": "#/$defs/ApiRelationshipLabel"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tier_label": {
+          "type": "string"
         },
         "bond": {
           "type": "number"

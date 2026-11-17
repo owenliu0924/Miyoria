@@ -445,6 +445,7 @@ describe("routes", () => {
     const row = (await adm.people()).items[0];
     expect(row?.bond).toBe(742.3);
     expect(row?.tier).toBe("命運相連");
+    expect(row).toMatchObject({ stage: 3, tier_label: "命運相連 III" });
     expect(row?.ring.lap).toBe(7);
     expect(row?.ring.fraction).toBeCloseTo(0.423, 3);
     expect(row?.ring.full).toBe(false);
@@ -452,6 +453,7 @@ describe("routes", () => {
     expect(row?.cares).toBeGreaterThan(0.9);
     const detail = await adm.person(owen);
     expect(detail.next_tier).toBe("無可取代");
+    expect(detail.next_label).toBe("無可取代 I");
     // Past 知心 a tier rests on an anchor: this bond went by the owner's hand, so none is needed.
     expect(detail.held).toBeNull();
   });

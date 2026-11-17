@@ -67,7 +67,8 @@ describe("/me", () => {
     const amy = people.personOf(account("5")) as string;
     heart.adminSet(amy, "bond", 130);
     const close = await run("me profile", "5");
-    expect(textOf(close)).toContain("關係：知心");
+    // The tier with its stage (H10); her line goes by the tier.
+    expect(textOf(close)).toContain("關係：知心 II");
     expect(textOf(close)).toContain(FEELINGS.知心);
     expect(textOf(close)).not.toContain("130");
   });

@@ -30,12 +30,17 @@ describe("publicBond", () => {
         call_name: "小美",
       }),
     );
-    expect(numbers(view).sort()).toEqual(["ring.fraction", "ring.lap", "tier_progress"]);
+    // The stage (1..3) is a coarse band of the tier, like the progress (H10).
+    expect(numbers(view).sort()).toEqual(["ring.fraction", "ring.lap", "stage", "tier_progress"]);
     expect(Object.keys(view)).not.toContain("bond");
     expect(JSON.stringify(view)).not.toMatch(/263|72\.4|41\.3|0\.33/);
     expect(view).toEqual({
       tier: "莫逆之交",
+      // (263.7 - 240) * 3 < 60 * 2: the second third.
+      stage: 2,
+      tier_label: "莫逆之交 II",
       next_tier: "心有靈犀",
+      next_label: "莫逆之交 III",
       // (263.7 - 240) / (300 - 240) = 0.395, shown as 0.35.
       tier_progress: 0.35,
       // Lap 2 (200..300), 63.7% full, shown as 0.6.

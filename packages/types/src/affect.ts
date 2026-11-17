@@ -17,6 +17,8 @@ import {
   BOND_TIER_FLOORS,
   RELATIONSHIP_LABELS,
   type RelationshipLabel,
+  TIER_STAGE_NUMERALS,
+  type TierStage,
 } from "@miyoria/contracts/wire";
 import { AFFINITY_MAX, AFFINITY_MIN, clampAffinity } from "./bond.js";
 import type { Handle } from "./handle.js";
@@ -123,7 +125,7 @@ export interface AppliedAppraisal {
  * wire contract's (`@miyoria/contracts/wire`, so the API's enum is made from it); this is where
  * everyone else reads it.
  */
-export { RELATIONSHIP_LABELS, type RelationshipLabel };
+export { RELATIONSHIP_LABELS, type RelationshipLabel, TIER_STAGE_NUMERALS, type TierStage };
 
 /** The tiers past 摯友, highest first: `[lowest bond, label]`. */
 export const BOND_TIERS: readonly (readonly [number, RelationshipLabel])[] = [
@@ -222,6 +224,11 @@ export interface TierProgress {
   next: BondTier | null;
   /** 0..1 of the way from this tier's lowest bond to the next one's (1 at the top, 0 below 0). */
   progress: number;
+  /**
+   * Which third of the tier's span the bond is in (H10): 1, 2 or 3; `null` at the top, which has
+   * none. A bond below 0 is stage 1 of the first tier. Derived, never stored.
+   */
+  stage: TierStage | null;
 }
 
 /**
@@ -242,7 +249,56 @@ export function tierProgress(bond: number): TierProgress {
       : b <= 0
         ? 0
         : Math.min(Math.max((b - tier.min) / (next.min - tier.min), 0), 1);
-  return { tier, index, next, progress };
+  return { tier, index, next, progress, stage: stageIn(b, tier, next) };
+}
+
+/** The stage of `bond` in `tier` (equal thirds of its span up to `next`); `null` with no next. */
+function stageIn(bond: number, tier: BondTier, next: BondTier | null): TierStage | null {
+  if (next === null) return null;
+  // A hair over: a bond at a third computed in floating point (870 + 2 * 130 / 3) is in the next.
+  const into = Math.max(bond - tier.min, 0) * 3 + 1e-9;
+  const span = next.min - tier.min;
+  if (into < span) return 1;
+  if (into < span * 2) return 2;
+  return 3;
+}
+
+/** The name of a tier with its stage, as people read it: 「知心 II」; the bare name without one. */
+export function tierLabel(tier: RelationshipLabel, stage: TierStage | null): string {
+  return stage === null ? tier : `${tier} ${TIER_STAGE_NUMERALS[stage - 1]}`;
+}
+
+/** Where someone stands, as a person reads it (H10). */
+export interface TierStanding {
+  /** The tier's bare name (what code keys on: tones, her lines, the poses). */
+  tier: RelationshipLabel;
+  /** Its stage; `null` for 陌生人, 討厭, 很討厭 and 永恆羈絆. */
+  stage: TierStage | null;
+  /** Name and stage, 「知心 II」: what a person reads. */
+  label: string;
+  /** The next step: the next stage, or the next tier's first after III; `null`: none. */
+  next_label: string | null;
+}
+
+/**
+ * The tier of `rel` with its stage (`relationshipLabel` plus `tierProgress`): the next step is the
+ * next stage, or after III the next tier (its stage I, or 永恆羈絆, which has none); below the
+ * ladder it is 認識 I, for someone not met yet there is none.
+ */
+export function tierStanding(rel: RelationshipNumbers): TierStanding {
+  const tier = relationshipLabel(rel);
+  if (rel.met === false) return { tier, stage: null, label: tier, next_label: null };
+  const place = tierProgress(rel.affinity);
+  const first = tierLabel(BOND_LADDER[0]?.label ?? "認識", 1);
+  if (tier !== place.tier.label) return { tier, stage: null, label: tier, next_label: first };
+  const stage = place.stage;
+  let next: string | null = null;
+  if (stage !== null && stage < 3) next = tierLabel(tier, (stage + 1) as TierStage);
+  else if (place.next !== null) {
+    const after = tierProgress(place.next.min);
+    next = tierLabel(place.next.label, after.stage === null ? null : 1);
+  }
+  return { tier, stage, label: tierLabel(tier, stage), next_label: next };
 }
 
 /** The lowest bond of the tier `bond` is in (0 for a bond below 0). */

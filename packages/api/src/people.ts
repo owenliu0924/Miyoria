@@ -121,6 +121,8 @@ export function rowOf(person: Person, row: HeartPerson | null): PersonRow {
     blocked: hasTag(p, BLOCKED_TAG),
     owner: hasTag(p, OWNER_TAG),
     tier: row === null ? NEUTRAL_TIER : place.tier,
+    stage: row === null ? null : place.stage,
+    tier_label: row === null ? NEUTRAL_TIER : place.tier_label,
     ...numbersOf(p),
     ring: place.ring,
     cares: cares(p),
@@ -374,6 +376,7 @@ async function detail(
   return {
     ...row,
     next_tier: place.next_tier,
+    next_label: row.has_row ? place.next_label : null,
     tier_progress: place.tier_progress,
     tier_floor: p.tier_floor,
     held: held === null ? null : { tier: held.tier, label: held.label as RelationshipLabel },

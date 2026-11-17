@@ -8,7 +8,9 @@ import {
   relationshipLabel,
   ringOf,
   tierFloorOf,
+  tierLabel,
   tierProgress,
+  tierStanding,
   tiersEntered,
 } from "../src/index.js";
 
@@ -38,6 +40,7 @@ describe("the bond ladder", () => {
       index: 1,
       next: { min: 45, label: "好朋友" },
       progress: 0.5,
+      stage: 2,
     });
     expect(tierProgress(120).progress).toBe(0);
     expect(tierProgress(119.5).tier.label).toBe("摯友");
@@ -109,5 +112,59 @@ describe("member bands", () => {
       "無可取代",
       "永恆的羈絆",
     ]);
+  });
+});
+
+describe("the stages of a tier (H10)", () => {
+  const stage = (bond: number) => tierProgress(bond).stage;
+
+  it("splits a low tier in equal thirds: 認識 0..15", () => {
+    expect([0, 4.99, 5, 9.99, 10, 14.99].map(stage)).toEqual([1, 1, 2, 2, 3, 3]);
+    expect(stage(15)).toBe(1);
+  });
+
+  it("splits a wide tier the same way: 心之所歸 870..1000", () => {
+    const third = 130 / 3;
+    expect([870, 870 + third - 0.01, 870 + third, 870 + 2 * third, 999.9].map(stage)).toEqual([
+      1, 1, 2, 3, 3,
+    ]);
+  });
+
+  it("gives the top none, nor 陌生人, 討厭 and 很討厭", () => {
+    expect(stage(1000)).toBeNull();
+    expect(tierStanding({ affinity: 1000 })).toEqual({
+      tier: "永恆羈絆",
+      stage: null,
+      label: "永恆羈絆",
+      next_label: null,
+    });
+    expect(tierStanding({ affinity: 0, met: false }).label).toBe("陌生人");
+    expect(tierStanding({ affinity: -20 })).toMatchObject({ label: "討厭", stage: null });
+    expect(tierStanding({ affinity: -80 })).toMatchObject({
+      label: "很討厭",
+      next_label: "認識 I",
+    });
+  });
+
+  it("writes the stage after the name with a space, in Roman numerals", () => {
+    expect(tierLabel("知心", 1)).toBe("知心 I");
+    expect(tierLabel("知心", 2)).toBe("知心 II");
+    expect(tierLabel("知心", 3)).toBe("知心 III");
+    expect(tierLabel("永恆羈絆", null)).toBe("永恆羈絆");
+  });
+
+  it("shows a bond held under an unanchored tier as III of the tier below", () => {
+    expect(tierStanding({ affinity: 119.5 })).toEqual({
+      tier: "摯友",
+      stage: 3,
+      label: "摯友 III",
+      next_label: "知心 I",
+    });
+  });
+
+  it("names the next step: the next stage, or the next tier's first after III", () => {
+    expect(tierStanding({ affinity: 125 }).next_label).toBe("知心 II");
+    expect(tierStanding({ affinity: 140 }).next_label).toBe("知己 I");
+    expect(tierStanding({ affinity: 990 }).next_label).toBe("永恆羈絆");
   });
 });

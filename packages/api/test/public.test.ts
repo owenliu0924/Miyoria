@@ -611,11 +611,14 @@ const ME_SHAPE = [
   "activity[].date",
   "activity[].text",
   "activity[].voice",
+  "bond.next_label",
   "bond.next_tier",
   "bond.ring.fraction",
   "bond.ring.full",
   "bond.ring.lap",
+  "bond.stage",
   "bond.tier",
+  "bond.tier_label",
   "bond.tier_progress",
   "can_request_song",
   "card.affinity",
@@ -1101,7 +1104,8 @@ describe("the member view", () => {
     const body = res.body as Record<string, never>;
     expect(body.card).toEqual({
       call_name: "小愛",
-      relationship: "好朋友",
+      // What she reads on the card: the tier with its stage (H10).
+      relationship: "好朋友 II",
       affinity: "很好",
       trust: "信任",
       familiarity: "熟",
@@ -1147,7 +1151,11 @@ describe("the member view", () => {
     };
     expect(body.bond).toEqual({
       tier: "命運相連",
+      // The stage is a coarse band (H10): the last third of the tier, no number.
+      stage: 3,
+      tier_label: "命運相連 III",
       next_tier: "無可取代",
+      next_label: "無可取代 I",
       tier_progress: 0.9,
       ring: { lap: 7, fraction: 0.4, full: false },
     });

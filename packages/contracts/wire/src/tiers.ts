@@ -28,6 +28,16 @@ export const RELATIONSHIP_LABELS = [
 
 export type RelationshipLabel = (typeof RELATIONSHIP_LABELS)[number];
 
+/**
+ * Each named tier of the ladder but the top is split in three stages (owner decision H10), written
+ * after the name with a space: 「知心 I」「知心 II」「知心 III」. 陌生人, 討厭, 很討厭 and 永恆羈絆
+ * have none.
+ */
+export const TIER_STAGE_NUMERALS = ["I", "II", "III"] as const;
+
+/** A stage of a tier: which third of the tier's span the bond is in. */
+export type TierStage = 1 | 2 | 3;
+
 /** The tiers past 摯友, lowest first: `[lowest bond, name]`. */
 export const BOND_TIER_FLOORS: readonly (readonly [number, RelationshipLabel])[] = [
   [120, "知心"],

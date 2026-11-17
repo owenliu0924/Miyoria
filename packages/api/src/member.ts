@@ -63,10 +63,10 @@ import {
   mentionsAnother,
   type NameSplit,
   Principals,
-  relationshipLabel,
   SocialSignalsKey,
   sameAccount,
   splitNames,
+  tierStanding,
   toTimestamp,
   trustBand,
 } from "@miyoria/types";
@@ -223,10 +223,11 @@ function cardView(state: ApiState, who: Member, names: NameSplit | null): Member
   const call = (row.call_name ?? handle).trim();
   return {
     call_name: call !== "" && state.publicSide.passes(state, call) ? call : null,
-    relationship: relationshipLabel({
+    // What a person reads (the card's title, its words): the tier with its stage (H10).
+    relationship: tierStanding({
       affinity: row.bond,
       met: row.interactions > 0 || row.bond !== 0,
-    }),
+    }).label,
     affinity: bondBand(row.bond),
     trust: trustBand(row.trust),
     familiarity: familiarityBand(row.familiarity),
@@ -243,10 +244,13 @@ function cardView(state: ApiState, who: Member, names: NameSplit | null): Member
 function bondView(who: Member): MemberBond | null {
   const row = who.hidden ? null : who.row;
   if (row === null) return null;
-  const { tier, next_tier, tier_progress, ring } = publicBond(row);
+  const { tier, stage, tier_label, next_tier, next_label, tier_progress, ring } = publicBond(row);
   return {
     tier,
+    stage,
+    tier_label,
     next_tier,
+    next_label,
     tier_progress,
     ring: { lap: ring.lap, fraction: ring.fraction, full: ring.full },
   };

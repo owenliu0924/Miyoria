@@ -29,6 +29,7 @@ import {
   type PersonId,
   type RelationshipLabel,
   relationshipLabel,
+  tierStanding,
   toTimestamp,
 } from "@miyoria/types";
 import type { LinkOutcome, PeopleDirectory } from "./directory.js";
@@ -371,6 +372,8 @@ async function profile(
   const row = people.heart.get(person);
   if (row !== null && hasTag(row, BLOCKED_TAG)) return NOT_RESPONDING();
   const tier = labelOf(row);
+  // What they read is the tier with its stage (H10); her line goes by the tier.
+  const shown = row === null ? tier : tierStanding({ affinity: row.bond, met: metOf(row) }).label;
   const callName = row?.call_name ?? null;
   const blocks: CardBlock[] = [];
   // The ring a member sees (no number), when she has a row for them and a renderer is running.
@@ -392,7 +395,7 @@ async function profile(
     {
       type: "text",
       text: [
-        `關係：${tier}`,
+        `關係：${shown}`,
         callName !== null ? `她怎麼稱呼你：「${callName}」` : "她怎麼稱呼你：尚未設定",
       ].join("\n"),
     },

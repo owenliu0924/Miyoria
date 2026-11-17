@@ -77,10 +77,16 @@ export type MemberRing = z.output<typeof MemberRingSchema>;
 /** Where they are with her: the tier, how far to the next and the ring. */
 export const MemberBondSchema = z
   .object({
-    /** The tier's name (`RELATIONSHIP_LABELS`). */
+    /** The tier's name (`RELATIONSHIP_LABELS`): what code keys on. */
     tier: z.string(),
+    /** The tier's stage, 1 to 3 (I, II, III); `null` for 討厭, 很討厭 and 永恆羈絆. */
+    stage: z.number().int().min(1).max(3).nullable().optional(),
+    /** Name and stage as they read it: 「知心 II」. */
+    tier_label: z.string().optional(),
     /** The tier after it; `null` at the top. */
     next_tier: z.string().nullable(),
+    /** The next step as they read it: the next stage, or after III the next tier; `null`: none. */
+    next_label: z.string().nullable().optional(),
     /** How far to the next tier, 0..1 in steps of 1/20. */
     tier_progress: z.number(),
     ring: MemberRingSchema,

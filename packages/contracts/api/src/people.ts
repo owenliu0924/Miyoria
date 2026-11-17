@@ -73,8 +73,12 @@ export const PersonRowSchema = z
     has_row: z.boolean(),
     blocked: z.boolean(),
     owner: z.boolean(),
-    /** The tier's name (`RELATIONSHIP_LABELS`); 陌生人 without a row. */
+    /** The tier's name (`RELATIONSHIP_LABELS`); 陌生人 without a row. What code keys on. */
     tier: RelationshipLabelSchema,
+    /** The tier's stage, 1 to 3 (I, II, III); `null` for 陌生人, 討厭, 很討厭 and 永恆羈絆. */
+    stage: z.number().int().min(1).max(3).nullable().optional(),
+    /** Name and stage as people read it: 「知心 II」. */
+    tier_label: z.string().optional(),
     /** -100 to 1000. */
     bond: z.number(),
     ring: BondRingSchema,
@@ -205,6 +209,8 @@ export const PersonProfileSchema = z
     ...PersonRowSchema.shape,
     /** The tier after this one; `null` at the top. */
     next_tier: RelationshipLabelSchema.nullable(),
+    /** The next step as people read it: the next stage, or after III the next tier. */
+    next_label: z.string().nullable().optional(),
     /** 0..1 of the way to the next tier. */
     tier_progress: z.number(),
     /** The lowest bond of the highest tier ever entered: decay stops there. */
