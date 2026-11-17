@@ -12,11 +12,14 @@ export {
   HUNGER_OF,
   hungerWord,
   MAX_FEED_COUNT,
+  marketWonLabel,
   PAID_NAME,
   STRANGER,
+  uniqueFrameOf,
   WALLET_NODE,
 } from "./economy.js";
 export { TaskRefusal } from "./guard.js";
+export { EconomyMarketWallet } from "./market-wallet.js";
 export { economySchema } from "./migrations.js";
 export { EconomyModule } from "./module.js";
 export { PURSE_PLATFORM, Purse } from "./purse.js";
