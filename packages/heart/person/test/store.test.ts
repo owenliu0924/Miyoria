@@ -207,14 +207,58 @@ describe("evidence and people's requests", () => {
     expect(read.map((e) => e.id)).toEqual([id]);
   });
 
-  it("moves a row on a merge only when the other has none", () => {
+  it("moves a row on a merge, and makes two rows one with the closer one leading", () => {
     const at = toTimestamp(NOW);
+    const later = toTimestamp(NOW + DAY);
     store.upsert({ ...newPerson("a", at), bond: 10 });
-    store.upsert({ ...newPerson("b", at), bond: 20 });
     expect(store.merge("c", "a")).toEqual({ counts: { moved: 1 } });
     expect(store.get("c")?.bond).toBe(10);
-    expect(store.merge("c", "b").declined).toBeDefined();
-    expect(store.get("b")?.bond).toBe(20);
+    store.upsert({
+      ...newPerson("c", at),
+      bond: 130,
+      trust: 40,
+      tier_floor: 120,
+      impression: "",
+      stance: "會鬧他",
+      tags: ["regular"],
+      anchors: [{ tier: 120, note_ref: "n1", quote: "第一次一起唱歌", at, by: "reflect" }],
+      interactions: 5,
+      last_interaction: at,
+    });
+    store.upsert({
+      ...newPerson("b", at),
+      bond: 320,
+      trust: 70,
+      tier_floor: 300,
+      impression: "很會照顧人",
+      stance: "",
+      call_name: "阿B",
+      tags: ["owner"],
+      anchors: [
+        { tier: 120, note_ref: "n2", quote: "幫她修麥克風", at, by: "reflect" },
+        { tier: 300, note_ref: "n3", quote: "陪她過生日", at, by: "reflect" },
+      ],
+      interactions: 7,
+      last_interaction: later,
+    });
+    expect(store.merge("c", "b")).toEqual({ counts: { merged: 1 } });
+    expect(store.has("b")).toBe(false);
+    expect(store.get("c")).toMatchObject({
+      person_id: "c",
+      bond: 320,
+      trust: 70,
+      tier_floor: 300,
+      impression: "很會照顧人",
+      stance: "會鬧他",
+      call_name: "阿B",
+      tags: ["owner", "regular"],
+      interactions: 12,
+      last_interaction: later,
+    });
+    expect(store.get("c")?.anchors.map((a) => [a.tier, a.note_ref])).toEqual([
+      [120, "n2"],
+      [300, "n3"],
+    ]);
   });
 });
 

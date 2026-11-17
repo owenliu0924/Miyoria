@@ -35,6 +35,7 @@ import {
   type JsonObject,
   type JsonValue,
   type PersonId,
+  type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
 import {
@@ -740,21 +741,25 @@ export class HeartStore {
   }
 
   /**
-   * `absorb` turned out to be `keep`: its row becomes `keep`'s when `keep` has none. When both
-   * have one, both stay and the merge is declined (the owner decides which numbers are right).
+   * `absorb` turned out to be `keep`: its row becomes `keep`'s when `keep` has none. When both have
+   * one, they become one row of `keep`: the numbers, tier floor and words of the one with the
+   * higher bond (words the other has where that one has none), the higher tier floor, every
+   * anchor (that one's for a tier both have), all tags, the interactions added up and the latest
+   * times. The events stay under the absorbed id (the log is append-only), so the kept person's
+   * history and today's caps do not count what was logged under it.
    */
   merge(keep: PersonId, absorb: PersonId): PersonHookResult {
-    return this.#write(() => {
+    return this.#write((): PersonHookResult => {
       const from = this.get(absorb);
       if (from === null) return { counts: { moved: 0 } };
-      if (this.has(keep)) {
-        return {
-          counts: { moved: 0 },
-          declined: "both people have a heart row; the absorbed one is left for the owner",
-        };
+      const into = this.get(keep);
+      if (into === null) {
+        this.#db.orm.update(P).set({ person_id: keep }).where(eq(P.person_id, absorb)).run();
+        return { counts: { moved: 1 } };
       }
-      this.#db.orm.update(P).set({ person_id: keep }).where(eq(P.person_id, absorb)).run();
-      return { counts: { moved: 1 } };
+      this.upsert(mergedRow(keep, into, from));
+      this.#db.orm.delete(P).where(eq(P.person_id, absorb)).run();
+      return { counts: { merged: 1 } };
     });
   }
 
@@ -762,6 +767,47 @@ export class HeartStore {
     this.#db.ensureOpen();
     return this.#db.tx(fn);
   }
+}
+
+/** The later of two times. */
+function later(a: Timestamp | null, b: Timestamp | null): Timestamp | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Date.parse(a) >= Date.parse(b) ? a : b;
+}
+
+/** Two rows of one person as one (`HeartStore.merge`): the closer one leads. */
+function mergedRow(keep: PersonId, a: HeartPerson, b: HeartPerson): HeartPerson {
+  const [lead, other] = b.bond > a.bond ? [b, a] : [a, b];
+  const words = (f: "stance" | "impression" | "unfinished" | "jokes" | "dislikes") =>
+    lead[f] !== "" ? lead[f] : other[f];
+  const anchors = [
+    ...lead.anchors,
+    ...other.anchors.filter((x) => !lead.anchors.some((y) => y.tier === x.tier)),
+  ].sort((x, y) => x.tier - y.tier);
+  return {
+    ...lead,
+    person_id: keep,
+    stance: words("stance"),
+    impression: words("impression"),
+    unfinished: words("unfinished"),
+    jokes: words("jokes"),
+    dislikes: words("dislikes"),
+    public_feeling: lead.public_feeling ?? other.public_feeling,
+    call_name: lead.call_name ?? other.call_name,
+    tags: [...new Set([...lead.tags, ...other.tags])].sort(),
+    tier_floor: Math.max(lead.tier_floor, other.tier_floor),
+    anchors,
+    interactions: lead.interactions + other.interactions,
+    last_interaction: later(lead.last_interaction, other.last_interaction),
+    last_seen: later(lead.last_seen, other.last_seen),
+    last_together: later(lead.last_together, other.last_together),
+    legacy: { ...other.legacy, ...lead.legacy },
+    created_at:
+      Date.parse(other.created_at) < Date.parse(lead.created_at)
+        ? other.created_at
+        : lead.created_at,
+  };
 }
 
 /** JSON text with every object's keys sorted: the same state gives the same text. */

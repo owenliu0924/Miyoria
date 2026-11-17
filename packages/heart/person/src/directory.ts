@@ -250,7 +250,7 @@ export class PeopleDirectory implements SocialSignals {
   /**
    * Redeems a code from another account: the invoker's person is merged into the issuer's. The
    * identity store's merge moves what every schema keeps about them in one transaction (the
-   * heart's row with it, unless both have one: then the owner decides).
+   * heart's rows become one, `HeartStore.merge`).
    */
   async redeemLinkCode(
     account: AccountRef,
