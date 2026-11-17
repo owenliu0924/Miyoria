@@ -4,11 +4,10 @@
 // section; the module that will own `heart_person` reads it as its section.
 //
 // How the steps and caps fit together: the n-th proposal for one field, one person and one
-// direction on a local day counts `repeat_damping^(n-1)`. With 0.5 the whole day's proposals add
-// up to at most twice the step, so a cap that the 8th to 15th proposal should reach needs a step
-// of about half the cap: after 8 proposals the day has 99.6% of the cap, after 15 99.997%. Each
-// step below is half its cap for that reason, and the bond's step is half of the bond's cap at
-// the current bond, so every tier's cap (H3) is reached the same way.
+// direction on a local day counts `repeat_damping^(n-1)`, and one proposal is `step_share` of the
+// day's cap for that field (the bond's: at the current bond, H3). With 0.75 and a quarter the
+// day's proposals converge on the cap (a quarter times 1 / (1 - 0.75) is the whole cap): three
+// proposals give 58% of it, eight 90%, fifteen 99%, and no number of them passes it.
 
 import { z } from "zod";
 
@@ -16,25 +15,6 @@ const positive = () => z.number().positive();
 const nonnegative = () => z.number().nonnegative();
 const unit = () => z.number().min(0).max(1);
 const days = () => z.number().int().nonnegative();
-
-/**
- * Per field, the size of one proposal in the field's good direction (up, for grudge down). A
- * proposal in the other direction is `negative_factor` times this.
- */
-const StepsSchema = z.object({
-  /** 0..100, slow. */
-  trust: positive().default(1),
-  /** -1..1, fast. */
-  warmth: positive().default(0.1),
-  /** -1..1 */
-  respect: positive().default(0.05),
-  /** 0..1 */
-  ease: positive().default(0.03),
-  /** 0..1, good direction down: an apology, a gift, a game together. */
-  grudge: positive().default(0.1),
-  /** 0..1 */
-  rapport: positive().default(0.03),
-});
 
 /** Per field, the most a day may move it in the good direction; the other direction gets `negative_factor` times this. */
 const CapsSchema = z.object({
@@ -83,7 +63,8 @@ const DecaySchema = z.object({
  * The heart's rules. Section of the module that owns `heart_person` (not wired yet).
  *
  * ```toml
- * repeat_damping = 0.5
+ * repeat_damping = 0.75
+ * step_share = 0.25
  * negative_factor = 3
  * bond_gain_caps = [[0, 12], [100, 8], [300, 6], [600, 4]]
  * ```
@@ -97,7 +78,7 @@ export const HeartPersonConfigSchema = z.object({
     .max(840)
     .default(8 * 60),
   /** The n-th proposal of a day for one field, person and direction counts `repeat_damping^(n-1)`. */
-  repeat_damping: unit().default(0.5),
+  repeat_damping: unit().default(0.75),
   /** A step and a cap in a field's bad direction are this many times the good one. */
   negative_factor: positive().default(3),
   /** Most bond gained per day by the bond it starts from (H3). Lost: `negative_factor` times. */
@@ -110,9 +91,11 @@ export const HeartPersonConfigSchema = z.object({
       [300, 6],
       [600, 4],
     ]),
-  /** One bond proposal is this share of the day's bond cap at the current bond. */
-  bond_step_share: unit().default(0.5),
-  steps: StepsSchema.prefault({}),
+  /**
+   * One proposal is this share of the field's daily cap in its direction (the bond's at the
+   * current bond): bond +3 / +2 / +1.5 / +1 in the four bands of H3, trust +0.5, warmth +0.05.
+   */
+  step_share: unit().default(0.25),
   caps: CapsSchema.prefault({}),
   /** Without the anchor of a tier, bond is held this far below the tier (H4). */
   anchor_hold: positive().default(0.5),

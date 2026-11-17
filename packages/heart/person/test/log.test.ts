@@ -107,7 +107,7 @@ describe("heart.changed on the log", () => {
       write(applied.change, toTimestamp(NOW + i));
       p = applied.person;
     }
-    expect(p.bond).toBe(6 + 3 + 1.5);
+    expect(p.bond).toBe(3 + 2.25 + 1.6875);
   });
 });
 

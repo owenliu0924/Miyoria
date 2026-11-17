@@ -1,9 +1,9 @@
 // The heart's rules (docs/design/v5-heart.md §2.3; H3, H4, H9): she proposes, the program sets
 // the size and the pace. Pure functions, no I/O; "now" is passed in as epoch ms.
 //
-// - A `feel` proposal has a direction only; its size is the field's step, a bad direction
-//   `negative_factor` times the good one, and the n-th of a day for one field, person and
-//   direction counts `repeat_damping^(n-1)`.
+// - A `feel` proposal has a direction only; its size is `step_share` of the field's daily cap in
+//   that direction (a bad direction's cap is `negative_factor` times the good one's), and the n-th
+//   of a day for one field, person and direction counts `repeat_damping^(n-1)`.
 // - Every day has caps per field and direction for what her proposals, her reflection and
 //   evidence may move. The bond's cap depends on the bond (H3). The day's totals come from the
 //   day's `heart.changed` events (`DayLedger`).
@@ -94,8 +94,9 @@ export function dailyCap(
 }
 
 /**
- * The signed change one `feel` proposal asks for, before damping and caps. The bond's step is a
- * share of the day's bond cap at `bond`, so each tier's cap takes as many proposals to reach.
+ * The signed change one `feel` proposal asks for, before damping and caps: `step_share` of the
+ * day's cap in that direction (the bond's at `bond`), so every field and every tier takes as many
+ * proposals to reach its cap, and a bad direction is `negative_factor` times a good one.
  */
 export function proposalStep(
   field: ProposalField,
@@ -103,9 +104,7 @@ export function proposalStep(
   rules: HeartPersonConfig,
   bond = 0,
 ): number {
-  const good =
-    field === "bond" ? bondGainCap(bond, rules) * rules.bond_step_share : rules.steps[field];
-  const size = isNegative(field, direction) ? good * rules.negative_factor : good;
+  const size = dailyCap(field, direction, rules, bond) * rules.step_share;
   return direction === "up" ? size : -size;
 }
 

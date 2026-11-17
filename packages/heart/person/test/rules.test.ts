@@ -64,9 +64,11 @@ function run(
 
 describe("config", () => {
   it("has a default for every number and keeps nested defaults", () => {
-    const parsed = HeartPersonConfigSchema.parse({ steps: { trust: 2 } });
-    expect(parsed.steps.trust).toBe(2);
-    expect(parsed.steps.warmth).toBe(0.1);
+    const parsed = HeartPersonConfigSchema.parse({ caps: { trust: 3 } });
+    expect(parsed.caps.trust).toBe(3);
+    expect(parsed.caps.warmth).toBe(0.2);
+    expect(parsed.repeat_damping).toBe(0.75);
+    expect(parsed.step_share).toBe(0.25);
     expect(parsed.decay.bond_grace_days).toBe(7);
     expect(parsed.bond_gain_caps).toEqual([
       [0, 12],
@@ -108,18 +110,21 @@ describe("proposal steps", () => {
     expect([0, 99, 100, 299, 300, 599, 600, 1000].map((b) => bondGainCap(b, rules))).toEqual([
       12, 12, 8, 8, 6, 6, 4, 4,
     ]);
-    expect(proposalStep("bond", "up", rules, 50)).toBe(6);
-    expect(proposalStep("bond", "up", rules, 650)).toBe(2);
-    expect(proposalStep("bond", "down", rules, 650)).toBe(-6);
+    expect([50, 150, 450, 650].map((b) => proposalStep("bond", "up", rules, b))).toEqual([
+      3, 2, 1.5, 1,
+    ]);
+    expect(proposalStep("bond", "down", rules, 650)).toBe(-3);
+    expect(proposalStep("trust", "up", rules)).toBe(0.5);
+    expect(proposalStep("warmth", "up", rules)).toBeCloseTo(0.05);
     expect(dailyCap("bond", "down", rules, 50)).toBe(36);
     expect(dailyCap("grudge", "up", rules)).toBeCloseTo(0.6);
   });
 
-  it("damp the n-th of a day by 0.5^(n-1)", () => {
-    expect([1, 2, 3, 4].map((n) => repeatFactor(n, rules))).toEqual([1, 0.5, 0.25, 0.125]);
+  it("damp the n-th of a day by 0.75^(n-1)", () => {
+    expect([1, 2, 3, 4].map((n) => repeatFactor(n, rules))).toEqual([1, 0.75, 0.5625, 0.421875]);
   });
 
-  it("reach each daily cap with the 8th to 15th proposal and never pass it", () => {
+  it("converge on each daily cap over 8 to 15 proposals and never pass it", () => {
     const cases: [ProposalField, "up" | "down", number][] = [
       ["bond", "up", 0],
       ["bond", "up", 150],
@@ -144,9 +149,10 @@ describe("proposal steps", () => {
           start,
           Array.from({ length: n }, () => propose(field, direction)),
         ).deltas.reduce((a, b) => a + Math.abs(b), 0);
-      expect(total(3)).toBeLessThan(0.9 * cap);
-      expect(total(8)).toBeGreaterThan(0.99 * cap);
-      expect(total(15)).toBeGreaterThan(0.9999 * cap);
+      expect(total(1)).toBeCloseTo(0.25 * cap);
+      expect(total(3)).toBeLessThan(0.6 * cap);
+      expect(total(8)).toBeGreaterThan(0.89 * cap);
+      expect(total(15)).toBeGreaterThan(0.98 * cap);
       expect(total(40)).toBeLessThanOrEqual(cap + 1e-9);
     }
   });
@@ -161,13 +167,13 @@ describe("applyChange", () => {
       bond: { up: 11, down: 0, proposed_up: 3, proposed_down: 0 },
     };
     const applied = applyChange(start, propose("bond", "up"), ledger, rules, NOW);
-    // The 4th proposal asks 6 * 0.125 = 0.75; only 1 is left of the cap.
+    // The 4th proposal asks 3 * 0.75^3 = 1.27; only 1 is left of the cap.
     expect(applied.change).toEqual({
       person: "p1",
       field: "bond",
-      delta: 0.75,
-      value_after: 10.75,
-      proposed: 6,
+      delta: 1,
+      value_after: 11,
+      proposed: 3,
       reason_quote: "他記得我說過的話",
       cause: "feel",
     });
@@ -182,7 +188,7 @@ describe("applyChange", () => {
       NOW,
     );
     expect(capped.change.delta).toBe(0);
-    expect(capped.change.proposed).toBe(6);
+    expect(capped.change.proposed).toBe(3);
     // A proposal the cap took all of still counts for the damping.
     expect(capped.ledger.fields.bond.proposed_up).toBe(1);
   });
@@ -193,7 +199,7 @@ describe("applyChange", () => {
       propose("bond", "up"),
       propose("bond", "down"),
     ]);
-    expect(deltas).toEqual([6, 3, -18]);
+    expect(deltas).toEqual([3, 2.25, -9]);
   });
 
   it("caps reflection and evidence but not the owner, decay or the migration", () => {
@@ -247,9 +253,9 @@ describe("applyChange", () => {
         change: {
           person: "p1",
           field: "bond" as const,
-          delta: 6,
-          value_after: 56,
-          proposed: 6,
+          delta: 3,
+          value_after: 53,
+          proposed: 3,
           reason_quote: "",
           cause: "feel" as const,
         },
@@ -259,9 +265,9 @@ describe("applyChange", () => {
         change: {
           person: "p1",
           field: "warmth" as const,
-          delta: -0.3,
-          value_after: -0.3,
-          proposed: -0.3,
+          delta: -0.15,
+          value_after: -0.15,
+          proposed: -0.15,
           reason_quote: "",
           cause: "feel" as const,
         },
@@ -272,7 +278,7 @@ describe("applyChange", () => {
           person: "p1",
           field: "bond" as const,
           delta: 2,
-          value_after: 58,
+          value_after: 55,
           proposed: 2,
           reason_quote: "",
           cause: "reflect" as const,
@@ -284,7 +290,7 @@ describe("applyChange", () => {
           person: "p1",
           field: "bond" as const,
           delta: -1,
-          value_after: 57,
+          value_after: 54,
           proposed: null,
           reason_quote: "",
           cause: "decay" as const,
@@ -296,9 +302,9 @@ describe("applyChange", () => {
         change: {
           person: "p1",
           field: "bond" as const,
-          delta: 6,
+          delta: 3,
           value_after: 50,
-          proposed: 6,
+          proposed: 3,
           reason_quote: "",
           cause: "feel" as const,
         },
@@ -307,7 +313,7 @@ describe("applyChange", () => {
     const rebuilt = ledgerFrom(TODAY, changes, rules);
     expect(rebuilt.fields.bond).toEqual(ledger.fields.bond);
     expect(rebuilt.fields.warmth.down).toBeCloseTo(ledger.fields.warmth.down);
-    expect(rebuilt.fields.bond).toEqual({ up: 8, down: 0, proposed_up: 1, proposed_down: 0 });
+    expect(rebuilt.fields.bond).toEqual({ up: 5, down: 0, proposed_up: 1, proposed_down: 0 });
   });
 });
 
@@ -370,12 +376,12 @@ describe("anchors (H4)", () => {
   });
 
   it("apply to her proposals", () => {
-    const { person: p, deltas } = run(person({ bond: 116, tier_floor: 75 }), [
+    const { person: p, deltas } = run(person({ bond: 117, tier_floor: 75 }), [
       { type: "adjust", field: "bond", delta: 1, cause: "admin", quote: "" },
       propose("bond", "up"),
     ]);
     expect(p.bond).toBe(119.5);
-    expect(deltas[1]).toBeCloseTo(2.5);
+    expect(deltas[1]).toBeCloseTo(1.5);
     expect(p.tier_floor).toBe(75);
   });
 
@@ -494,7 +500,7 @@ describe("decayDay (H9)", () => {
       (c) => c.field === "grudge",
     );
     expect(fade?.type === "adjust" && hurt.grudge + fade.delta).toBeCloseTo(0.1);
-    const small = person({ grudge: 0.08, last_interaction: at(0), last_seen: at(0) });
+    const small = person({ grudge: 0.05, last_interaction: at(0), last_seen: at(0) });
     expect(decayDay(small, NOW, rules).changes.find((c) => c.field === "grudge")).toBeUndefined();
     // Only a proposal clears the rest.
     const cleared = run(small, [propose("grudge", "down")]).person;
