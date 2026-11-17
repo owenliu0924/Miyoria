@@ -1112,6 +1112,9 @@ importers:
       '@miyoria/commands':
         specifier: workspace:*
         version: link:../commands
+      '@miyoria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
@@ -1130,6 +1133,9 @@ importers:
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
+      drizzle-orm:
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5(zod@4.6.7)
       opencc-js:
         specifier: ^1.4.2
         version: 1.4.2
