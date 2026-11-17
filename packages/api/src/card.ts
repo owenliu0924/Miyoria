@@ -64,8 +64,6 @@ export const CARDS_PER_DAY = 5;
 const MAX_EXPORTED = 1_000;
 /** Recent older cards looked at for "latest". */
 const RECENT = 100;
-/** Requests remembered so a retry with the same idempotency key answers the same card. */
-const REMEMBERED_KEYS = 500;
 
 const NO_STORE = "這個 Core 還不能發卡";
 const NO_SUCH_CARD = "這張卡不存在或已經作廢";
@@ -300,32 +298,13 @@ export interface CardOrder {
   key: string;
 }
 
-/** Cards answered per idempotency key, per state: a retry gets the card the first try made. */
-const answered = new WeakMap<ApiState, Map<string, string>>();
-
-function rememberedCard(state: ApiState, cards: CardService, key: string): IssuedCard | null {
-  if (key === "") return null;
-  const serial = answered.get(state)?.get(key);
-  const card = serial === undefined ? null : cards.card(serial);
-  return card ? dailyCard(card) : null;
-}
-
-function remember(state: ApiState, key: string, serial: string) {
-  if (key === "") return;
-  let keys = answered.get(state);
-  if (!keys) {
-    keys = new Map();
-    answered.set(state, keys);
-  }
-  keys.set(key, serial);
-  if (keys.size > REMEMBERED_KEYS) keys.delete(keys.keys().next().value as string);
-}
-
 /**
  * `POST /api/member/card`: a daily card of `view`, what the member page shows them right now,
  * with what she writes on it (`write`, asked only once the day and the coins allow the card; null
  * for no words). `hidden`: someone she will not say anything about gets a stranger's card. A foil
- * finish is charged first and given back if no card follows.
+ * finish is charged first and given back if no card follows. A retry with the same Idempotency-Key
+ * (`order.key`), after a restart too, answers the card the first try made: the cards keep the key
+ * on the card, and the serial it is charged under before the charge.
  */
 export async function issueCard(
   state: ApiState,
@@ -339,8 +318,9 @@ export async function issueCard(
   if (!cards) throw ApiError.unavailable(NO_STORE);
   const person = holder.person;
   if (person === null) throw new ApiError(403, STRANGER);
-  const again = rememberedCard(state, cards, order.key);
-  if (again) return again;
+  // Before the day's limit is asked: the card a retry is for may be the day's last.
+  const again = cards.dailyByKey(person, order.key);
+  if (again) return dailyCard(again);
   const account = holder.session.account;
   const payer = { person, account };
   // Nobody pays for a card the day or the wallet would refuse.
@@ -387,6 +367,7 @@ export async function issueCard(
       frame: await frameOf(state, account),
       foil: order.foil,
       relationship,
+      key: order.key,
     });
   } catch (error) {
     if (economy && foilEntry) await giveBack(economy, account, foilEntry);
@@ -397,8 +378,7 @@ export async function issueCard(
     throw refusedCard(result);
   }
   const card = dailyCard(result.issued.card);
-  remember(state, order.key, card.serial);
-  cardEvidence(state, person, card);
+  if (!result.issued.again) cardEvidence(state, person, card);
   return card;
 }
 

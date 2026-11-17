@@ -2713,6 +2713,43 @@ describe("the wallet", () => {
         today: 1,
         balance: 70,
       });
+      // After a restart (a new cards service, nothing remembered in memory), still the same card.
+      const pay = () => r.sup.services.get(CardWalletKey) ?? null;
+      r.sup.services.provide("cards", CardsKey, cardService(r.cardStore, r.heart, pay));
+      const later = await r.spend("/api/member/card", cookie, {}, "c-1");
+      expect((later.body as Card).serial).toBe((res.body as Card).serial);
+      expect(await balance(r)).toBe(70);
+      // The day's last card answers its own retry, the limit notwithstanding.
+      await r.fund(ALICE, 200);
+      for (let i = 2; i <= CARDS_PER_DAY; i++) {
+        await r.spend("/api/member/card", cookie, {}, `c-${i}`);
+      }
+      const last = await r.spend("/api/member/card", cookie, {}, `c-${CARDS_PER_DAY}`);
+      expect(last.status).toBe(200);
+      expect((await r.spend("/api/member/card", cookie, {}, "c-new")).status).toBe(429);
+    });
+
+    it("gives a retry after a stop between the charge and the card that card, charged once", async () => {
+      const r = await walletRig();
+      await r.fund(ALICE, 100);
+      const cookie = await r.login("alice");
+      const alice = r.people.get(ALICE) as PersonId;
+      // A first try kept its serial and was charged, and Core stopped before the card was written.
+      const serial = r.cardStore.reserve(alice, "daily:c-9", "MYR-0000-0000-0009", Date.now());
+      const wallet = r.sup.services.require(CardWalletKey);
+      const charged = await wallet.spend(
+        { person: alice, account: discord(ALICE) },
+        30,
+        "card_daily",
+        serial,
+      );
+      expect(charged.ok).toBe(true);
+      expect(await balance(r)).toBe(70);
+      const retry = await r.spend("/api/member/card", cookie, {}, "c-9");
+      expect(retry.status).toBe(200);
+      expect((retry.body as Card).serial).toBe(serial);
+      expect(await balance(r)).toBe(70);
+      expect(r.cards.count(alice)).toBe(1);
     });
 
     it("charges foil on top, stores it and shows it when checked", async () => {

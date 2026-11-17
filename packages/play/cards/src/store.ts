@@ -76,6 +76,7 @@ import {
   cardsDrop,
   cardsLegacy,
   cardsParts,
+  cardsPending,
   cardsPity,
   cardsTitles,
   cardsWishlist,
@@ -232,6 +233,8 @@ export const issueKey = {
   keepsake: "keepsake",
   /** The card a drop in a channel became. */
   drop: (id: string) => `drop:${id}`,
+  /** A daily card asked for with a request's Idempotency-Key. */
+  daily: (key: string) => `daily:${key}`,
 } as const;
 
 /** The tier a milestone card was given for; `null` for any other card. */
@@ -334,6 +337,38 @@ export class CardStore {
     this.#db.ensureOpen();
     const row = this.#db.orm.select().from(cardsCard).where(eq(cardsCard.serial, serial)).get();
     return row === undefined ? null : cardOf(row);
+  }
+
+  /**
+   * The serial a paid card asked for under `key` is charged under: the one kept from an earlier
+   * try (`cards_pending`), or `serial`, kept now. A retry after a restart is thus the same charge.
+   */
+  reserve(person: PersonId, key: string, serial: string, now: number): string {
+    return this.#write(() => {
+      const P = cardsPending;
+      const kept = this.#db.orm
+        .select({ serial: P.serial })
+        .from(P)
+        .where(and(eq(P.person_id, person), eq(P.issue_key, key)))
+        .get();
+      if (kept !== undefined) return kept.serial;
+      this.#db.orm
+        .insert(P)
+        .values({ person_id: person, issue_key: key, serial, created_at: at(now) })
+        .run();
+      return serial;
+    });
+  }
+
+  /** Forgets the serial kept for `key` (no card followed and the coins went back). */
+  unreserve(person: PersonId, key: string): void {
+    this.#write(() => {
+      const P = cardsPending;
+      this.#db.orm
+        .delete(P)
+        .where(and(eq(P.person_id, person), eq(P.issue_key, key)))
+        .run();
+    });
   }
 
   /** The card `person` was issued for `key` (`issueKey`); `null`: none. */
@@ -562,6 +597,12 @@ export class CardStore {
           issue_key: key,
         })
         .run();
+      if (key !== null) {
+        this.#db.orm
+          .delete(cardsPending)
+          .where(and(eq(cardsPending.person_id, person), eq(cardsPending.issue_key, key)))
+          .run();
+      }
       const after = counted ? nextSince(since, drawn.rarity) : since;
       if (counted) {
         this.#db.orm
@@ -861,6 +902,9 @@ export class CardStore {
         cards_drop: Number(
           o.delete(cardsDrop).where(inArray(cardsDrop.claimed_by, list)).run().changes,
         ),
+        cards_pending: Number(
+          o.delete(cardsPending).where(inArray(cardsPending.person_id, list)).run().changes,
+        ),
       };
     });
   }
@@ -874,6 +918,12 @@ export class CardStore {
     if (keep === absorb) return { counts: {} };
     return this.#write((): PersonHookResult => {
       const p = { keep, absorb };
+      // A milestone or keepsake both had stays a card of theirs, no longer the one of its key.
+      this.#db.run(
+        `UPDATE cards_card SET issue_key = NULL WHERE person_id = $absorb AND issue_key IN
+           (SELECT issue_key FROM cards_card WHERE person_id = $keep AND issue_key IS NOT NULL)`,
+        p,
+      );
       const cards = Number(
         this.#db.orm
           .update(cardsCard)
@@ -923,6 +973,8 @@ export class CardStore {
         .set({ claimed_by: keep })
         .where(eq(cardsDrop.claimed_by, absorb))
         .run();
+      // A try still pending under the absorbed id is retried, if ever, by the kept person.
+      this.#db.orm.delete(cardsPending).where(eq(cardsPending.person_id, absorb)).run();
       return { counts: { cards, pity, dex, titles } };
     });
   }
@@ -991,6 +1043,12 @@ const cardsData: readonly CategoryData[] = [
         claimed_by: "text",
         claimed_at: "ts",
         serial: "text",
+      }),
+      tablePart("cards_pending", "cards_pending", "node", "created_at", "person_id, issue_key", {
+        person_id: "text",
+        issue_key: "text",
+        serial: "text",
+        created_at: "ts",
       }),
       tablePart("cards_legacy", "cards_legacy", "node", "acquired_at", "account_id, acquired_at", {
         id: "text",

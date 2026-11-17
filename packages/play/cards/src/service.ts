@@ -103,6 +103,11 @@ export interface DailyOptions {
    * anything about); default: what the heart says now.
    */
   relationship?: CardRelationship;
+  /**
+   * The request's Idempotency-Key: asked again with it, after a restart too, the answer is the
+   * card the first try made and nothing more is charged.
+   */
+  key?: string;
 }
 
 /** The sentence for a refusal. */
@@ -197,6 +202,11 @@ export class CardService {
    * Issues `payer` a daily card: refused when they have had `daily_cap` today or cannot pay
    * `price`. `face` (her words, which may take a model call) is asked for only once the card is
    * paid; if it fails, the coins go back. Their relationship decides her expression on it.
+   *
+   * With `options.key` (a request's Idempotency-Key) it is the one card of that key: asked again,
+   * a restart in between too, the answer is that card, charged nothing. The serial is kept under
+   * the key before the coins are taken, and the wallet keys a charge by the serial, so a retry
+   * after a stop between the charge and the card is the same charge and gets the card.
    */
   issueDaily(
     payer: CardPayer,
@@ -212,16 +222,36 @@ export class CardService {
     options: DailyOptions,
   ): Promise<DailyResult> {
     const { config, clock } = this.#o;
+    const key =
+      options.key === undefined || options.key === "" ? null : issueKey.daily(options.key);
+    if (key !== null) {
+      const again = this.#store.byKey(payer.person, key);
+      if (again !== null) {
+        const pity = this.pity(payer.person);
+        const issued = { card: again, pity, new_parts: [], titles: [], again: true };
+        return { ok: true, issued, balance: null };
+      }
+    }
     const quote = await this.quote(payer);
     if (!quote.ok) return quote;
-    const serial = this.#serial();
+    // Under a key the serial is kept before the charge: a retry after a restart is the same charge.
+    const fresh = this.#serial();
+    const serial =
+      key === null ? fresh : this.#store.reserve(payer.person, key, fresh, clock.now());
+    const unkeep = () => {
+      if (key !== null) this.#store.unreserve(payer.person, key);
+    };
     let paid: { wallet: CardWallet; receipt: string } | null = null;
     let balance: number | null = null;
     if (config.price > 0) {
       const wallet = this.#o.wallet();
-      if (wallet === null) return { ok: false, reason: "no_wallet" };
+      if (wallet === null) {
+        unkeep();
+        return { ok: false, reason: "no_wallet" };
+      }
       const charge = await wallet.spend(payer, config.price, CARD_REASONS.daily, serial);
       if (!charge.ok) {
+        unkeep();
         return charge.reason === "insufficient"
           ? { ok: false, reason: "insufficient", price: config.price, balance: charge.balance }
           : { ok: false, reason: "refused", message: charge.message };
@@ -245,6 +275,7 @@ export class CardService {
         cap: { max: config.daily_cap, since: dayStart(now, config.utc_offset_minutes) },
         frame: options.frame ?? null,
         foil: options.foil === true,
+        key,
       });
       this.#told(issued);
       return { ok: true, issued, balance };
@@ -252,12 +283,16 @@ export class CardService {
       if (paid !== null) {
         try {
           await paid.wallet.refund(payer, paid.receipt, CARD_REASONS.refund);
+          // Given back: a retry is a new charge, under a new serial.
+          unkeep();
         } catch (refundError) {
           log.error(
             { person: payer.person, serial, receipt: paid.receipt, err: String(refundError) },
             "cards: a card was not written and its coins could not be given back",
           );
         }
+      } else {
+        unkeep();
       }
       if (error instanceof CardCapError) {
         return { ok: false, reason: "daily_cap", cap: config.daily_cap };
@@ -414,6 +449,11 @@ export class CardService {
         "cards: cannot tell her about a card",
       );
     }
+  }
+
+  /** The daily card `person` was issued for the request key `key`; `null`: none. */
+  dailyByKey(person: PersonId, key: string): CardRecord | null {
+    return key === "" ? null : this.#store.byKey(person, issueKey.daily(key));
   }
 
   /** Daily cards `person` may still get today. */

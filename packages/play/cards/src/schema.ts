@@ -200,5 +200,22 @@ export const cardsDrop = sqliteTable(
   ],
 );
 
+/**
+ * A paid card asked for under a key (a request's Idempotency-Key) and charged, not written yet:
+ * the serial it is charged under, so a retry after a restart pays (the wallet keys a charge by the
+ * serial) and is given the same card instead of a second one. Gone once the card is written, or
+ * when no card follows and the coins go back.
+ */
+export const cardsPending = sqliteTable(
+  "cards_pending",
+  {
+    person_id: text().notNull(),
+    issue_key: text().notNull(),
+    serial: text().notNull(),
+    created_at: micros().notNull(),
+  },
+  (t) => [primaryKey({ name: "cards_pending_pk", columns: [t.person_id, t.issue_key] })],
+);
+
 export type CardsCardRow = typeof cardsCard.$inferSelect;
 export type CardsPartRow = typeof cardsParts.$inferSelect;

@@ -51,8 +51,12 @@ class FakeWallet implements CardWallet {
     return this.balances.get(person) ?? 0;
   }
 
+  /** Keyed like the economy's: the same key is the same charge. */
   async spend({ person }: CardPayer, amount: number, reason: string, key: string) {
     const balance = this.balances.get(person) ?? 0;
+    if (this.charges.some((c) => c.key === key)) {
+      return { ok: true as const, receipt: `r-${key}`, balance };
+    }
     if (balance < amount) return { ok: false as const, reason: "insufficient" as const, balance };
     this.balances.set(person, balance - amount);
     this.charges.push({ person, amount, reason, key });
@@ -225,6 +229,53 @@ describe("a daily card", () => {
       wished: [],
       price: 30,
     });
+  });
+});
+
+describe("a daily card asked for under a key", () => {
+  it("is the one card of its key, after a restart too, charged once", async () => {
+    wallet.balances.set("p1", 100);
+    const first = await service().issueDaily(payer("p1"), face, { key: "k1" });
+    if (!first.ok) throw new Error("refused");
+    expect(first.issued.card.issue_key).toBe("daily:k1");
+    const again = await service().issueDaily(payer("p1"), face, { key: "k1" });
+    expect(again.ok && again.issued).toMatchObject({ again: true, card: first.issued.card });
+    expect(wallet.charges).toHaveLength(1);
+    expect(service().dailyByKey("p1", "k1")?.serial).toBe(first.issued.card.serial);
+    // The same key of someone else is theirs.
+    wallet.balances.set("p2", 30);
+    expect((await service().issueDaily(payer("p2"), face, { key: "k1" })).ok).toBe(true);
+  });
+
+  it("is the card a try charged before Core stopped, and that charge", async () => {
+    wallet.balances.set("p1", 100);
+    const kept = store.reserve("p1", "daily:k2", "MYR-KEPT-0000-0001", now);
+    await wallet.spend(payer("p1"), 30, "card_daily", kept);
+    const retry = await service().issueDaily(payer("p1"), face, { key: "k2" });
+    expect(retry.ok && retry.issued.card.serial).toBe("MYR-KEPT-0000-0001");
+    expect(wallet.charges).toHaveLength(1);
+    expect(wallet.balances.get("p1")).toBe(70);
+    // Written: nothing is kept for the key any more.
+    expect(store.reserve("p1", "daily:k2", "MYR-NEXT-0000-0001", now)).toBe("MYR-NEXT-0000-0001");
+  });
+
+  it("is a new charge again once a failed try gave the coins back", async () => {
+    wallet.balances.set("p1", 30);
+    const cards = service();
+    await expect(
+      cards.issueDaily(
+        payer("p1"),
+        async () => {
+          throw new Error("she could not write");
+        },
+        { key: "k3" },
+      ),
+    ).rejects.toThrow("she could not write");
+    expect(wallet.balances.get("p1")).toBe(30);
+    const retry = await cards.issueDaily(payer("p1"), face, { key: "k3" });
+    expect(retry.ok).toBe(true);
+    expect(wallet.charges).toHaveLength(2);
+    expect(wallet.balances.get("p1")).toBe(0);
   });
 });
 
@@ -422,5 +473,14 @@ describe("a person", () => {
     expect(store.pitySince("k")).toBe(3);
     expect(store.dex("k").every((e) => e.count === 4)).toBe(true);
     expect(store.dex("a")).toEqual([]);
+  });
+
+  it("merged, keeps both cards of a key they both had, only one as that key's", () => {
+    issue("a", { kind: "milestone", key: "milestone:15", pity: false });
+    issue("k", { kind: "milestone", key: "milestone:15", pity: false });
+    store.merge("k", "a");
+    const cards = store.cards("k");
+    expect(cards).toHaveLength(2);
+    expect(cards.filter((c) => c.issue_key === "milestone:15")).toHaveLength(1);
   });
 });

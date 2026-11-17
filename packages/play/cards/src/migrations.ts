@@ -171,6 +171,19 @@ CREATE INDEX \`cards_drop_channel_idx\` ON \`cards_drop\` (\`channel\`,\`created
 CREATE INDEX \`cards_drop_claimed_idx\` ON \`cards_drop\` (\`claimed_by\`);
 `;
 
+/**
+ * Migration 4: a paid card's request key kept across a restart (`cards_pending`, and the card's
+ * own `issue_key`), made like migration 3.
+ */
+const PENDING = `CREATE TABLE \`cards_pending\` (
+	\`person_id\` text NOT NULL,
+	\`issue_key\` text NOT NULL,
+	\`serial\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	CONSTRAINT \`cards_pending_pk\` PRIMARY KEY(\`person_id\`, \`issue_key\`)
+) STRICT;
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -179,5 +192,6 @@ export const cardsSchema: PluginSchema = {
     { version: 1, name: "init", sql: `${TABLES}\n${CARDS_CATALOGUE_SQL}` },
     { version: 2, name: "issue_key", sql: ISSUE_KEY },
     { version: 3, name: "drops", sql: DROPS },
+    { version: 4, name: "pending", sql: PENDING },
   ],
 };
