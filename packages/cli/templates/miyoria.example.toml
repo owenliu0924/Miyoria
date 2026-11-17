@@ -1246,6 +1246,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # region = "tw-tzh"              # DuckDuckGo 的 kl(地區與語言)
 # search_results = 5             # 她沒說時一次回幾筆(她最多可要 8)
 # read_chars = 12000             # web_read 留下的網頁文字字數(v4 §4.2:一頁 1.2 萬字)
+# read_pictures = 4               # web_read 最後列出內文裡幾張圖片(另外還有網頁自己的主圖;0 = 不列)
 # result_chars = 12000           # web_read 一次回給她的字數上限
 # search_chars = 3900            # web_search 一次回給她的字數上限
 # timeout_ms = 10000             # 每個請求的時間上限

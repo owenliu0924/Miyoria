@@ -222,7 +222,7 @@ interface Stimulus {
 
 **對話紀錄的樣子**(`prompt.ts` 的 `buildMessages`):別人的訊息 `名字: 內容`,名字後面加標記 `(bot)`、`(語音)`、`(回覆 X)`(回覆她自己 = `(回覆 你)`);兩則相隔超過 `time_gap_ms`(30 分鐘)插一行 `—— 過了 2 小時 ——`(放 user role);整段和每則的長度上限是 `[modules.agent.mainline]` 的 `history_chars`、`entry_chars`。所有名字、引用和標記都經過 `safeName` / `neutralize`。
 
-**看圖**(`agent/src/vision.ts`):聊天模型收圖片時(`[llm.image_input]`,見 §13),她看「她要回的訊息、它回覆的那則、同一個人 `same_author_window_ms`(2 分鐘)內傳的圖」,只收 png / jpeg / webp / gif,每回合最多 `max_images`(3)張、單張 `max_image_bytes`、合計 `max_total_bytes`。圖片先下載(Discord CDN 網址有簽章會過期,而且只從 `allowed_hosts` 用 HTTPS 下載、不跟隨轉址)再以 base64 data URL 放進最後一則 user 訊息(前面一行「(誰 傳的圖片 檔名)」),依附件 id 快取。之後的回合只留文字 `[圖片: 檔名(替代文字)]`;不另外產生圖片描述。
+**看圖**(`agent/src/vision.ts`):聊天模型收圖片時(`[llm.image_input]`,見 §13),她看「她要回的訊息、它回覆的那則、同一個人 `same_author_window_ms`(2 分鐘)內傳的圖」(連結預覽的圖也算那則訊息的圖,只拿 Discord 自己代理的那份,主機是 `images-ext-1/2.discordapp.net`,不會連到第三方網站),只收 png / jpeg / webp / gif,每回合最多 `max_images`(3)張、單張 `max_image_bytes`、合計 `max_total_bytes`。圖片先下載(Discord CDN 網址有簽章會過期,而且只從 `allowed_hosts` 用 HTTPS 下載、不跟隨轉址,並以檔案開頭的位元組確認是 png / jpeg / webp / gif)再以 base64 data URL 放進最後一則 user 訊息(前面一行「(誰 傳的圖片 檔名)」),依附件 id 快取。之後的回合只留文字 `[圖片: 檔名(替代文字)]`;不另外產生圖片描述。
 
 ### 4.2 Attention:要不要回?
 
