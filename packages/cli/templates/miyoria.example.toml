@@ -691,6 +691,8 @@ enabled = true
 max_images = 3             # 每回合最多幾張
 max_image_bytes = 5000000  # 單張上限
 # detail = "auto"          # auto | low | high(low 最便宜)
+# 連結預覽的圖也算那則訊息的圖,只拿 Discord 自己代理的那份,不會連到第三方網站
+# allowed_hosts = ["cdn.discordapp.com", "media.discordapp.net", "images-ext-1.discordapp.net", "images-ext-2.discordapp.net"]
 
 # 別人傳來的檔案(文字、程式碼、markdown、csv、json、pdf、docx、xlsx、pptx):在沙箱裡開、
 # 當資料給她看,見 docs/design/file-attachments.md。要有 tools.file(member 以上預設有)。
@@ -1212,10 +1214,12 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # region = "tw-tzh"              # DuckDuckGo 的 kl(地區與語言)
 # search_results = 5             # 她沒說時一次回幾筆(她最多可要 8)
 # read_chars = 12000             # web_read 留下的網頁文字字數(v4 §4.2:一頁 1.2 萬字)
+# read_pictures = 4               # web_read 最後列出內文裡幾張圖片(另外還有網頁自己的主圖;0 = 不列)
 # result_chars = 12000           # web_read 一次回給她的字數上限
 # search_chars = 3900            # web_search 一次回給她的字數上限
 # timeout_ms = 10000             # 每個請求的時間上限
 # max_download_bytes = 2000000   # 網頁下載上限
+# image_max_bytes = 5000000      # web_image 一張圖的上限(不縮圖,超過就看不了),和 [modules.agent.vision] 的單張上限一樣
 # max_redirects = 3
 # allow_ports = []               # 80 和 443 以外還要允許的連接埠
 # cache_ttl_s = 600              # 同一個搜尋或網頁這段時間內不重查
@@ -1224,6 +1228,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # read_per_person = 10
 # search_global = 30
 # read_global = 60
+# image_per_person = 10          # web_image 每人在 window_s 內最多看幾張
+# image_global = 40
 
 # ---- Stage 節點(在直播機執行 `miyoria stage`)-------------------------------
 [stage]

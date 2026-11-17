@@ -75,10 +75,10 @@ function rig(
 }
 
 describe("registration", () => {
-  it("offers web_search and web_read as low-risk capabilities behind tools.web", () => {
+  it("offers web_search, web_read and web_image as low-risk capabilities behind tools.web", () => {
     const r = rig();
-    expect([...r.registered.keys()].sort()).toEqual(["web_read", "web_search"]);
-    for (const name of ["web.search", "web.read"]) {
+    expect([...r.registered.keys()].sort()).toEqual(["web_image", "web_read", "web_search"]);
+    for (const name of ["web.search", "web.read", "web.image"]) {
       const c = r.registry.get(name);
       expect(c?.risk).toBe("low");
       expect(c?.permission).toBe("tools.web");
@@ -90,12 +90,15 @@ describe("registration", () => {
     });
     const read = (r.registered.get("web_read") as CapabilityTool).spec;
     expect(read.parameters).toMatchObject({ required: ["url"] });
+    const image = (r.registered.get("web_image") as CapabilityTool).spec;
+    expect(image.parameters).toMatchObject({ required: ["url"] });
   });
 
   it("withdraws the tools when the capabilities are unregistered", () => {
     const r = rig();
     r.registry.unregister("web.search");
     r.registry.unregister("web.read");
+    r.registry.unregister("web.image");
     expect(r.registered.size).toBe(0);
   });
 });

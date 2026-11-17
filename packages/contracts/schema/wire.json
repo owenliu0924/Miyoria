@@ -131,6 +131,18 @@
             "string",
             "null"
           ]
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thumbnail": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

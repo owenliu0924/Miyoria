@@ -204,6 +204,7 @@ export {
   contextKeyEquals,
   contextKeyString,
   type Embed,
+  embedPicture,
   type ForwardedMessage,
   type HistoryQuery,
   IMAGE_TYPES,
@@ -220,10 +221,12 @@ export {
   type PlatformSink,
   PlatformSinks,
   PlatformSinksKey,
+  picturesOf,
   type QuotedMessage,
   type SentMessage,
   type Sticker,
   sameAccount,
+  sniffImage,
 } from "./platform.js";
 export {
   mergePrivacy,

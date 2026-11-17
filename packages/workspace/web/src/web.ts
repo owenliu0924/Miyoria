@@ -2,9 +2,15 @@
 // challenged), the guarded page reader, the caches and the rate limits. Results are formatted as
 // untrusted data blocks for her.
 
-import { type Clock, dataBlock } from "@miyoria/types";
+import { type Clock, dataBlock, sniffImage } from "@miyoria/types";
 import type { WebConfig } from "./config.js";
-import { parseSearchPage, readableText, type SearchHit } from "./html.js";
+import {
+  type PagePicture,
+  pagePictures,
+  parseSearchPage,
+  readableText,
+  type SearchHit,
+} from "./html.js";
 import { Limits, TtlCache, WindowLimit } from "./limits.js";
 import { type GuardDeps, guardedGet, WebError } from "./net.js";
 
@@ -23,9 +29,22 @@ export interface WebDeps extends GuardDeps {
   sleep?: (ms: number) => Promise<void>;
   /** The Tavily key when it is not in `config.tavily_api_key` (the module passes the environment's). */
   tavilyKey?: string;
+  /** Whether the chat model looks at images (`[llm.image_input]`); unset: it does not. */
+  takesImages?: () => boolean;
   /** Why a search failed, for the log (she is only told it could not search). */
   note?: (detail: string) => void;
 }
+
+/** What she is told when the chat model takes no images (nothing is downloaded then). */
+export const NO_IMAGES = "我現在用的模型看不到圖片,沒辦法看這張圖。";
+const IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+  "application/octet-stream",
+];
 
 const realSleep = (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms));
 
@@ -53,6 +72,20 @@ export interface ReadOutcome {
   title: string;
   /** Characters of page text before the cap. */
   chars: number;
+  /** The page's own main picture (`og:image`, `twitter:image`), when it has one. */
+  image: PagePicture | null;
+  /** Pictures of the article body, in order (`read_pictures` at most). */
+  pictures: PagePicture[];
+}
+
+/** A picture `web_image` fetched. */
+export interface ImageOutcome {
+  url: string;
+  /** What the bytes are (`image/png`, `image/jpeg`, `image/webp`, `image/gif`). */
+  type: string;
+  bytes: number;
+  /** `data:` URL of the bytes as downloaded. Goes to the model, never to a log or the data. */
+  dataUrl: string;
 }
 
 export class WebService {
@@ -61,6 +94,7 @@ export class WebService {
   readonly #readCache: TtlCache<ReadOutcome>;
   readonly #searches: Limits;
   readonly #reads: Limits;
+  readonly #images: Limits;
   /** DuckDuckGo searches go one at a time, `ddg_gap_ms` apart. */
   #ddgQueue: Promise<unknown> = Promise.resolve();
   #ddgLast = Number.NEGATIVE_INFINITY;
@@ -79,6 +113,10 @@ export class WebService {
     this.#reads = new Limits(
       new WindowLimit(c.read_per_person, windowMs),
       new WindowLimit(c.read_global, windowMs),
+    );
+    this.#images = new Limits(
+      new WindowLimit(c.image_per_person, windowMs),
+      new WindowLimit(c.image_global, windowMs),
     );
   }
 
@@ -281,6 +319,43 @@ export class WebService {
     return page.kind === "results" ? page.hits : [];
   }
 
+  /**
+   * One picture by URL, through the same guarded download as a page (public addresses, every
+   * redirect checked, the pinned connection) with its own rate limit. Only png, jpeg, webp and
+   * gif by their bytes, at most `image_max_bytes` and not downsized. Nothing is fetched when the
+   * chat model takes no images.
+   */
+  async image(who: string, rawUrl: string, signal: AbortSignal): Promise<ImageOutcome> {
+    const cfg = this.#d.config;
+    if (this.#d.takesImages?.() !== true) throw new WebError(NO_IMAGES, "no image input");
+    if (!this.#images.take(who, this.#now())) {
+      throw new WebError("看太多張圖了,等一下再看。", "image rate limit");
+    }
+    const got = await guardedGet(rawUrl.trim(), cfg, signal, this.#d, {
+      accept: "image/png,image/jpeg,image/webp,image/gif;q=0.9,*/*;q=0.1",
+      types: IMAGE_TYPES,
+      wrongType: "這不是圖片(只看 png、jpeg、webp、gif)",
+      // One more than the cap tells "exactly the cap" from "more than it".
+      maxBytes: cfg.image_max_bytes + 1,
+    });
+    if (got.bytes.length > cfg.image_max_bytes) {
+      throw new WebError(
+        `這張圖太大了(超過 ${Math.floor(cfg.image_max_bytes / 1000)} KB),看不了。`,
+        "image too large",
+      );
+    }
+    const type = sniffImage(got.bytes);
+    if (type === null || got.bytes.length === 0) {
+      throw new WebError("這個檔案不是圖片(只看 png、jpeg、webp、gif)", "not an image");
+    }
+    return {
+      url: got.url.href,
+      type,
+      bytes: got.bytes.length,
+      dataUrl: `data:${type};base64,${Buffer.from(got.bytes).toString("base64")}`,
+    };
+  }
+
   async read(who: string, rawUrl: string, signal: AbortSignal): Promise<ReadOutcome> {
     const cfg = this.#d.config;
     const key = rawUrl.trim();
@@ -296,16 +371,23 @@ export class WebService {
     if (text === "") throw new WebError("這頁讀不出文字", "empty text");
     const total = [...text].length;
     const heading = title === "" ? page.url.hostname : oneLine(title, 120);
+    const found = plain
+      ? { main: null, body: [] }
+      : pagePictures(body, page.url, cfg.read_pictures);
     const out: ReadOutcome = {
       url: page.url.href,
       title: heading,
       chars: total,
+      image: found.main,
+      pictures: found.body,
       text: formatPage(
         heading,
         page.url.href,
         clip(text, cfg.read_chars),
         total > cfg.read_chars,
         cfg.result_chars,
+        found.main,
+        found.body,
       ),
     };
     this.#readCache.set(key, out, this.#now());
@@ -376,14 +458,55 @@ export function formatPage(
   text: string,
   cut: boolean,
   maxChars: number,
+  image: PagePicture | null = null,
+  pictures: readonly PagePicture[] = [],
 ): string {
   const body = `網址: ${oneLine(url, 200)}\n${text}${cut ? "\n…(後面還有,已截斷)" : ""}`;
-  return shrinkBlock(PAGE_INTRO, `網頁 ${title}`, body, maxChars);
+  return shrinkBlock(
+    PAGE_INTRO,
+    `網頁 ${title}`,
+    body,
+    maxChars,
+    pictureList(image, pictures, Math.floor(maxChars / 3)),
+  );
 }
 
-/** `intro` and a data block whose body is shortened until the whole fits `maxChars`. */
-function shrinkBlock(intro: string, title: string, body: string, maxChars: number): string {
-  const make = (b: string) => `${intro}\n${dataBlock("web", title, b)}`;
+/**
+ * The pictures of a page as a short list at the end of its text (what `web_image` takes), as
+ * many as fit in `room` characters; empty when there are none.
+ */
+function pictureList(
+  image: PagePicture | null,
+  pictures: readonly PagePicture[],
+  room: number,
+): string {
+  const line = (p: PagePicture, label: string) =>
+    `- ${label}${oneLine(p.url, 300)}${p.alt === "" ? "" : `(${oneLine(p.alt, 60)})`}`;
+  const lines = [
+    ...(image === null ? [] : [line(image, "主圖 ")]),
+    ...pictures.map((p) => line(p, "")),
+  ];
+  const head = "\n這頁的圖片(要看用 web_image,網址照抄):";
+  let out = "";
+  for (const l of lines) {
+    if ([...`${head}${out}\n${l}`].length > room) break;
+    out += `\n${l}`;
+  }
+  return out === "" ? "" : `${head}${out}`;
+}
+
+/**
+ * `intro` and a data block whose body is shortened until the whole fits `maxChars`; `tail`
+ * (a list that must survive the cut) always stays after the body.
+ */
+function shrinkBlock(
+  intro: string,
+  title: string,
+  body: string,
+  maxChars: number,
+  tail = "",
+): string {
+  const make = (b: string) => `${intro}\n${dataBlock("web", title, `${b}${tail}`)}`;
   const length = (s: string) => [...s].length;
   let out = make(body);
   if (length(out) <= maxChars) return out;

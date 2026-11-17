@@ -3,6 +3,7 @@
 // director) goes through `ActuatorRegistry.invoke`, which runs the gate first.
 
 import type { CommandReply, ReplyFile } from "@miyoria/commands";
+import type { ImagePart } from "@miyoria/llm/llm";
 import type { ToolMeta } from "@miyoria/llm/tools";
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import type {
@@ -94,6 +95,11 @@ export interface ExecContext {
 export interface ActionResult {
   text: string;
   data: JsonValue;
+  /**
+   * Pictures for her to look at (a tool whose answer is an image): handed to the model as pictures
+   * after the results of the step, never written into `text` or `data`, which are logged.
+   */
+  images?: readonly ImagePart[];
   /**
    * A card for everyone where the request came from (what moved in coins, a receipt): posted by
    * the executor when she acted in a chat or voice turn, and she is told it is there so she

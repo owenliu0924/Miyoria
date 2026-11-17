@@ -212,8 +212,18 @@ export const VisionConfigSchema = z.object({
   detail: z.enum(["auto", "low", "high"]).default("auto"),
   /** Time limit for downloading one image. */
   download_timeout_ms: z.number().int().nonnegative().default(5000),
-  /** Images are only downloaded from these hosts (the platform's CDN), over HTTPS. */
-  allowed_hosts: z.array(z.string()).default(["cdn.discordapp.com", "media.discordapp.net"]),
+  /**
+   * Images are only downloaded from these hosts (the platform's CDN and its link preview proxy),
+   * over HTTPS.
+   */
+  allowed_hosts: z
+    .array(z.string())
+    .default([
+      "cdn.discordapp.com",
+      "media.discordapp.net",
+      "images-ext-1.discordapp.net",
+      "images-ext-2.discordapp.net",
+    ]),
   /** Downloaded images kept in memory (by attachment id). */
   cache_entries: z.number().int().nonnegative().default(32),
 });

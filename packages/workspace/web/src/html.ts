@@ -310,6 +310,132 @@ export function readableText(html: string): PageText {
   return { title: page.title, text: page.main.length >= 300 ? page.main : page.text };
 }
 
+// ---- pictures -----------------------------------------------------------------------------
+
+/** A picture a page offers: where it is (absolute http/https) and what its author said it shows. */
+export interface PagePicture {
+  url: string;
+  alt: string;
+}
+
+export interface PagePictures {
+  /** `og:image` / `twitter:image`: the picture the page puts forward for itself. */
+  main: PagePicture | null;
+  /** From the article body (`<main>` / `<article>` when it has some, else the page), in order. */
+  body: PagePicture[];
+}
+
+/** Longest picture URL kept (longer ones are tracking links or data in disguise). */
+const MAX_PICTURE_URL = 500;
+/** Smaller than this (by the tag's own size) is an icon or a spacer. */
+const MIN_PICTURE_SIDE = 80;
+const MAIN_PICTURE_META = new Set([
+  "og:image",
+  "og:image:url",
+  "og:image:secure_url",
+  "twitter:image",
+  "twitter:image:src",
+]);
+
+/** `raw` resolved against `base`, when it is a plain http(s) URL of a sane length. */
+function pictureUrl(raw: string | undefined, base: URL): string | null {
+  const value = raw?.trim() ?? "";
+  if (value === "" || value.startsWith("data:")) return null;
+  let url: URL;
+  try {
+    url = new URL(value, base);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (url.username !== "" || url.password !== "") return null;
+  url.hash = "";
+  const href = url.href;
+  return href.length > MAX_PICTURE_URL || /\.svg(?:$|[?#])/i.test(url.pathname) ? null : href;
+}
+
+/** The first candidate of a `srcset` (`url 1x, url2 2x`). */
+const firstSrcset = (value: string | undefined) => value?.split(",")[0]?.trim().split(/\s+/)[0];
+
+/**
+ * The pictures of an HTML page, for her to ask about: the page's own main picture (`og:image`,
+ * `twitter:image`) and up to `maxBody` `<img>` of the article body, URLs made absolute against
+ * `base`. Icons (by their size), inline data, SVG, hidden parts, navigation, footers and forms
+ * are left out, and so is a picture the page already named as its main one.
+ */
+export function pagePictures(html: string, base: URL, maxBody: number): PagePictures {
+  let main: PagePicture | null = null;
+  let mainAlt = "";
+  const inMain: PagePicture[] = [];
+  const anywhere: PagePicture[] = [];
+  let skip: string | null = null;
+  let skipDepth = 0;
+  let mainDepth = 0;
+  for (const t of tokenize(html)) {
+    if (t.kind === "text") continue;
+    if (t.kind === "close") {
+      if (skip !== null) {
+        if (t.name === skip && --skipDepth === 0) skip = null;
+        continue;
+      }
+      if ((t.name === "main" || t.name === "article") && mainDepth > 0) mainDepth--;
+      continue;
+    }
+    if (skip !== null) {
+      if (t.name === skip && !t.selfClosing) skipDepth++;
+      continue;
+    }
+    if (t.name === "meta") {
+      const key = (t.attrs.property ?? t.attrs.name ?? "").toLowerCase();
+      if (main === null && MAIN_PICTURE_META.has(key)) {
+        const url = pictureUrl(t.attrs.content, base);
+        if (url !== null) main = { url, alt: mainAlt };
+      } else if (key === "og:image:alt" || key === "twitter:image:alt") {
+        mainAlt = oneLineText(t.attrs.content ?? "");
+        if (main !== null && (main as PagePicture).alt === "") {
+          main = { url: (main as PagePicture).url, alt: mainAlt };
+        }
+      }
+      continue;
+    }
+    const hidden = "hidden" in t.attrs || t.attrs["aria-hidden"] === "true";
+    if (
+      !VOID.has(t.name) &&
+      !t.selfClosing &&
+      (ALWAYS_SKIP.has(t.name) || FURNITURE.has(t.name) || hidden)
+    ) {
+      skip = t.name;
+      skipDepth = 1;
+      continue;
+    }
+    if (t.name === "main" || t.name === "article") mainDepth++;
+    if (t.name !== "img" || hidden) continue;
+    const width = Number.parseInt(t.attrs.width ?? "", 10);
+    const height = Number.parseInt(t.attrs.height ?? "", 10);
+    if (width < MIN_PICTURE_SIDE || height < MIN_PICTURE_SIDE) continue;
+    const url = pictureUrl(
+      t.attrs.src ?? t.attrs["data-src"] ?? t.attrs["data-original"] ?? firstSrcset(t.attrs.srcset),
+      base,
+    );
+    if (url === null) continue;
+    const picture = { url, alt: oneLineText(t.attrs.alt ?? "") };
+    anywhere.push(picture);
+    if (mainDepth > 0) inMain.push(picture);
+  }
+  const seen = new Set<string>(main === null ? [] : [(main as PagePicture).url]);
+  const body: PagePicture[] = [];
+  for (const p of inMain.length > 0 ? inMain : anywhere) {
+    if (body.length >= maxBody) break;
+    if (seen.has(p.url)) continue;
+    seen.add(p.url);
+    body.push(p);
+  }
+  return { main, body };
+}
+
+/** One line of attribute text. */
+const oneLineText = (s: string) => squashLine(s.replace(/\s+/g, " "));
+
 // ---- DuckDuckGo ---------------------------------------------------------------------------
 
 export interface SearchHit {

@@ -187,6 +187,7 @@ describe("the registry behind them", () => {
       "say",
       "schedule",
       "skill",
+      "web_image",
       "web_read",
       "web_search",
     ]);
