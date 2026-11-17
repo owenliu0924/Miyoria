@@ -27,6 +27,7 @@ export type { Endpoint, EndpointQuery, EndpointSource, EndpointsOption } from ".
 export { type FailoverEntry, type FailoverOptions, FailoverSingWorker } from "./failover.js";
 export {
   type GpuContextSink,
+  karaokeWorker,
   SingerKey,
   SingModule,
   type SingWorkerFactory,

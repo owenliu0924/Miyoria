@@ -240,6 +240,10 @@ class FakeWorker implements SingWorker {
     this.downloaded.push({ song, file, dest });
   }
 
+  async karaokeFile(song: string): Promise<void> {
+    throw new SingWorkerError(`no karaoke ${song}`, { status: 404 });
+  }
+
   async health(): Promise<string | null> {
     return null;
   }

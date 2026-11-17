@@ -18,7 +18,7 @@ import {
 } from "../src/client.js";
 import { SingConfigSchema } from "../src/config.js";
 import { FailoverSingWorker } from "../src/failover.js";
-import { SingModule, workerUrls } from "../src/module.js";
+import { karaokeWorker, SingModule, workerUrls } from "../src/module.js";
 import { FakeEndpoints } from "./endpoints.js";
 
 const RETRY = 30_000;
@@ -124,6 +124,23 @@ class FakeWorker implements SingWorker {
   async download(song: string): Promise<void> {
     this.#call(`download ${song}`);
     if (!this.cached.has(song)) throw new SingWorkerError(`no song ${song}`, { status: 404 });
+  }
+
+  /** Karaoke songs this worker made. */
+  readonly karaoke = new Set<string>();
+
+  finishKaraoke(id: string, song: string): void {
+    Object.assign(this.jobs.get(id) ?? {}, {
+      state: "done",
+      progress: 1,
+      karaoke: { id: song, title: "K", artist: null, duration_s: 10, quality: null },
+    });
+    this.karaoke.add(song);
+  }
+
+  async karaokeFile(song: string, file: string): Promise<void> {
+    this.#call(`karaoke ${song} ${file}`);
+    if (!this.karaoke.has(song)) throw new SingWorkerError(`no karaoke ${song}`, { status: 404 });
   }
 
   async health(): Promise<string | null> {
@@ -342,6 +359,19 @@ describe("FailoverSingWorker", () => {
     expect(await worker.audio("yt-2", "play_mix.pcm")).toEqual(new Int16Array([5]));
     await worker.download("yt-2", "video.mp4", "x");
     expect(remote.calls).not.toContain("audio yt-2");
+  });
+
+  it("asks for a karaoke job and fetches its files from the worker that made it", async () => {
+    const { remote, local, worker } = setup();
+    const kw = karaokeWorker(worker);
+    const job = await kw.prepare({ url: "https://youtu.be/x" });
+    remote.finishKaraoke(job.id, "k-1");
+    expect((await kw.job(job.id)).karaoke?.id).toBe("k-1");
+    await kw.file("k-1", "reference.json", "x");
+    expect(remote.calls).toContain("karaoke k-1 reference.json");
+    expect(local.calls.some((c) => c.startsWith("karaoke"))).toBe(false);
+    // Never one of her covers.
+    expect((await worker.songs()).map((s) => s.id)).not.toContain("k-1");
   });
 
   it("fetches a song from another worker that has it when its own is unreachable", async () => {
