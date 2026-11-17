@@ -489,6 +489,9 @@ importers:
 
   packages/card-face:
     dependencies:
+      '@miyoria/types':
+        specifier: workspace:*
+        version: link:../types
       react:
         specifier: ^19.1.0
         version: 19.3.1
