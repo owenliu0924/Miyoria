@@ -39,14 +39,10 @@
 <body>
 <main>
   <h1>羈絆環示意圖</h1>
-  <p>每 100 點一圈,一圈一個顏色,最多十圈。下面兩種畫法讓你選,數字都是假的。</p>
+  <p>每 100 點一圈,一圈一個顏色,最多十圈。數字都是假的。</p>
 
-  <h2>畫法 A:同一條軌道,新顏色疊上去</h2>
-  <p>只有一個環。滿一圈之後,整圈留著上一圈的顏色,新的顏色從頂端開始蓋上去。下面一排小點表示現在在第幾圈。</p>
-  <div class="row" id="rowA"></div>
-
-  <h2>畫法 B:一圈一圈往外長</h2>
-  <p>每滿 100 點多一個同心環,最多十個。一眼看得出總量,但十圈的時候每一圈都很細。</p>
+  <h2>一圈一圈往內長</h2>
+  <p>第一圈在最外面,每滿 100 點往內多一圈,最多十圈;中間是愛心,顏色跟著目前那一圈。</p>
   <div class="row" id="rowB"></div>
 
   <div class="legend" id="legend"></div>
@@ -55,7 +51,7 @@
   <p>羈絆可以到 −100。負的時候環是灰紅色、反方向畫,愛心是裂的。</p>
   <div class="row" id="rowN"></div>
 
-  <h2>管理面板的人物頁(畫法 A)</h2>
+  <h2>管理面板的人物頁</h2>
   <p>環的旁邊是確切數值,八個細項用長條。公開頁和 Discord 用同一個環,但只寫分級名稱,不寫數字。</p>
   <div class="person">
     <div id="personRing"></div>
@@ -110,16 +106,17 @@ function ringA(bond, opts) {
   }
   return svg;
 }
-function ringB(bond) {
+function ringB(bond, number) {
   const svg = el("svg", { viewBox: "0 0 160 176" });
   const laps = Math.floor(bond / 100), frac = (bond % 100) / 100;
   for (let i = 0; i < 10; i++) {
-    const r = 24 + i * 5.2;
+    const r = 72 - i * 5.2;
     arc(svg, r, 3.6, 1, "#1d202a");
     if (i < laps) arc(svg, r, 3.6, 1, COLORS[i]);
-    else if (i === laps) arc(svg, r, 3.6, frac, COLORS[i]);
+    else if (i === laps && frac > 0) arc(svg, r, 3.6, frac, COLORS[i]);
   }
-  heart(svg, COLORS[Math.min(laps, 9)], 0.9);
+  heart(svg, bond > 0 ? COLORS[Math.min(laps, 9)] : "#3a4050", 0.95);
+  if (number) label(svg, String(bond), 172, 12, "#e8e9ee");
   return svg;
 }
 function ringNeg(bond) {
@@ -135,15 +132,14 @@ function cell(parent, svg, cap) {
   const c = document.createElement("div"); c.className = "cap"; c.innerHTML = cap; d.appendChild(c);
   document.getElementById(parent).appendChild(d);
 }
-for (const b of [35, 160, 480, 730, 1000]) {
-  cell("rowA", ringA(b), "羈絆 <b>" + b + "</b>,第 " + Math.min(Math.floor(b / 100) + 1, 10) + " 圈");
+for (const b of [0, 35, 160, 480, 730, 1000]) {
   cell("rowB", ringB(b), "羈絆 <b>" + b + "</b>");
 }
 cell("rowN", ringNeg(-20), "羈絆 <b>−20</b>");
 cell("rowN", ringNeg(-75), "羈絆 <b>−75</b>");
 const lg = document.getElementById("legend");
 COLORS.forEach((c, i) => { const s = document.createElement("span"); s.innerHTML = '<i style="background:' + c + '"></i>' + (i * 100) + "–" + (i * 100 + 100); lg.appendChild(s); });
-document.getElementById("personRing").appendChild(ringA(342, { number: true }));
+document.getElementById("personRing").appendChild(ringB(342, true));
 const BARS = [["信任", 62, 0, 100, "62"], ["熟悉", 48, 0, 100, "48"], ["好感", 0.35, -1, 1, "+0.35"], ["敬意", 0.1, -1, 1, "+0.10"],
   ["自在", 0.7, 0, 1, "0.70"], ["心結", 0.15, 0, 1, "0.15"], ["想念", 0.4, 0, 1, "0.40"], ["默契", 0.55, 0, 1, "0.55"]];
 const bars = document.getElementById("bars");
@@ -157,8 +153,8 @@ for (const [name, v, lo, hi, text] of BARS) {
     '<u style="left:' + left + "%;width:" + width + "%;background:" + color + '"></u></div><span>' + text + "</span>";
   bars.appendChild(row);
 }
-cell("rowP", ringA(342), "<b>(分級名稱)</b><br>離下一級還有一段");
-cell("rowP", ringA(905), "<b>(分級名稱)</b><br>快到下一級了");
+cell("rowP", ringB(342), "<b>(分級名稱)</b><br>離下一級還有一段");
+cell("rowP", ringB(905), "<b>(分級名稱)</b><br>快到下一級了");
 </script>
 </body>
 </html>
