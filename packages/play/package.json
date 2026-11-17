@@ -31,6 +31,11 @@
       "@miyoria/source": "./market/src/index.ts",
       "types": "./dist/market/src/index.d.ts",
       "default": "./dist/market/src/index.js"
+    },
+    "./karaoke/score": {
+      "@miyoria/source": "./karaoke/src/score/index.ts",
+      "types": "./dist/karaoke/src/score/index.d.ts",
+      "default": "./dist/karaoke/src/score/index.js"
     }
   },
   "files": [
