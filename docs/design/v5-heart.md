@@ -266,8 +266,39 @@
 
 **還沒做的**
 
-- 顯示(§4 第 6、7 步):環的元件、合併的人物頁、會員頁的環、`/me profile` 的圖。
+- 顯示(§4 第 7 步):合併的人物頁、會員頁的環(API 在 §2.11 已經有);環的元件和 `/me profile` 的圖已經有。
 - 每晚一人一次和兩項 `feel` 評測沒有接真的模型跑過;提示詞和 `/me profile` 的句子還要 owner 看。
+
+### 2.11 第 6 步(API 和契約)做時定下的細節(2026-11-17)
+
+**一個人物 API**(`packages/contracts/api/src/people.ts`、`packages/api/src/people.ts`)
+
+- `GET /api/people` 是唯一的來源,`GET /api/affect/people` 和它的契約拿掉。清單每列是 `PersonRow`:人、帳號、`has_row`、封鎖和 owner、分級名稱 `tier`、`bond`、環 `{lap, fraction, full, below}`、八個值(信任、熟悉、好感 `warmth`、敬意 `respect`、自在 `ease`、心結 `grudge`、想念 `longing`、默契 `rapport`)、`cares`、她的立場和印象、對外那句、稱呼、標籤、互動次數、最後互動、最後看到、最後一起、更新時間。`stance`、`impression`、`public_feeling` 放在清單裡,是因為「內心」那頁的卡片要用;其他頁可以不理。
+- 認識但還沒有列的人照舊列出(`has_row: false`),所有數字是新認識的人的起點,`tier` 是「陌生人」。
+- `GET /api/people/{id}` 是 `PersonProfile`:`PersonRow` 加 `next_tier`、`tier_progress`(精確,管理員看的)、`tier_floor`、`held`(停在哪一級門檻前)、`anchors`、`unfinished`、`jokes`、`dislikes`、`history`(`{items, next_before}`,新的在前,`?limit=` 預設 50 最多 500)、`ledger`(今天每個有上限的值用了多少、上限多少、她提議了幾次)、`evidence`(最近 30 筆)、`memory_count`。
+- `GET /api/people/{id}/history?before=&limit=`:翻下一頁,`before` 是上一頁的 `next_before`(事件 id)。
+- 欄位改成心的名字:`bond`、`impression`(舊的 `affinity`、`notes` 沒有了)。`PATCH` 的 `notes` 改 `impression`,另外可以改 `stance`、`unfinished`、`jokes`、`dislikes`、`public_feeling`(`null` 清掉)。
+- `POST /api/people/{id}/adjust` 收 `{field, value | delta}`,任何一個數值欄位,二選一,原因 `admin`(不受上限和錨點擋);範圍和沒有列的人照 `adminSet`。
+- `PUT /api/people/{id}/anchors/{tier}`(`{quote, note_ref?}`,`by: admin`)和 `DELETE`:設定或拿掉一級的錨點,只收 `ANCHORED_TIERS`(知心以上),只改錨點、不動羈絆;沒有列的人 404。兩個都寫稽核(`person.anchor.set`、`person.anchor.remove`)。
+- 面板在過渡期:頁面還在讀舊的形狀(`PersonSummary`、`PersonDetail`、`PersonCard`、`RelationshipDelta`),所以契約多留了一個只有型別的檔案 `people-panel.ts`,`apps/panel/src/api/people-view.ts` 把新路由的答案轉成舊形狀,兩個清單、人物頁和變動圖都讀同一條路由、顯示真的資料。新頁面做完就一起刪這兩個檔案。舊頁面看不到的新東西(環、八個值、錨點、上限)要等新頁面。
+- `absoluteHistory`(api)拿掉,同樣的算法在面板的轉換裡(`levelsOf`);路由本身給每筆變動的 `value_after`。
+
+**會員**(`GET /api/member/me`)
+
+- 多一個 `bond`:`{tier, next_tier, tier_progress, ring: {lap, fraction, full}}`,陌生人或被擋的人是 `null`。來自 `publicBond`,環和分級內進度以 1/20 為一格往下取。放在 `card` 外面,因為 `card` 是會員卡和籤詩抄的那份。
+- 沒有 `below`:討厭的人環是空的、`tier` 是「討厭」。
+- 「羈絆」的文字(`card.affinity`)改用 `bondBand`,涵蓋到 1000(很親近、心意相通、像家人一樣、無可取代、永恆的羈絆);會員卡的立繪表給這五段和「非常好」同一組。會員卡的 SVG(`card-face`)還只認六段,新的五個字會照寫,但那一格的條不畫。
+- 公開和會員的回應都由 schema 驗過、多的欄位砍掉,所以 schema 裡沒有原始數值的欄位,測試確認羈絆 742.3 的人拿到的回應裡沒有「742」。
+
+**Discord 的環**
+
+- `/me profile` 和 `/admin person show` 的卡片帶一張 PNG(`file` 區塊加 `files`,`packages/commands` 的回覆本來就支援)。圖由 api 的 `RingImages`(`packages/api/src/ring-image.ts`,`@miyoria/card-face/render` 加 resvg,和 `og.ts` 同一條路)畫,透過 `BondRingImagesKey`(定義在 `heart/person`,api 模組提供)給指令用;沒有這個服務或畫失敗,就回文字版。
+- 會員的圖用 `publicBond` 的環(沒有數字);低於 0 時畫一小段固定長度的負弧(只知道在下面,不知道多少)。管理員的圖帶數字。圖按 `(lap, fraction, full, below, 數字)` 快取,最多留 256 張;底色用深色,因為環的顏色是為暗色主題配的。
+- `/me profile` 的分級名稱照舊是 `labelOf`(看熟悉度),和環的分級(只看羈絆)在熟悉度低、羈絆高的時候會不一樣。
+
+**沒做**
+
+- `card-face` 的 `bondRingProps` 還是收 `ringOf` 的結果:`card-face` 的 `node_modules` 沒有 `@miyoria` 的連結,不跑 `pnpm install` 就不能依賴 `@miyoria/types`。
 
 ## 3. owner 的決定(2026-11-17)
 
