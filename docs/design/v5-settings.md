@@ -1,6 +1,6 @@
 # 每個子系統自己的設定和狀態卡
 
-> 2026-11-17 規劃,沒有實作。owner 的要求在 [v5-play.md](v5-play.md) §11.2:每個子系統要能有自己的設定,系統頁把每個子系統畫成一張有更多資訊的卡,要有一個介面讓子系統自己定義設定項(開關、輸入框這類)。第一個用到的是每週拍賣的頻道。文中的現況是讀程式得來的,沒有執行;§12 是要 owner 回答的事。
+> 2026-11-17 規劃;2026-11-18 做了第一步和第二步(卡片格子),見文末「做了什麼」。owner 的要求在 [v5-play.md](v5-play.md) §11.2:每個子系統要能有自己的設定,系統頁把每個子系統畫成一張有更多資訊的卡,要有一個介面讓子系統自己定義設定項(開關、輸入框這類)。第一個用到的是每週拍賣的頻道。文中的現況是讀程式得來的,沒有執行;§12 是要 owner 回答的事。
 
 ## 0. 結論
 
@@ -377,3 +377,41 @@ interface Module {
 | S6 拍賣和樂透要不要每個伺服器一套 | 先一套,階段 6 再分 |
 | S7 系統頁預設 | 卡片牆 |
 | 卡片上的圖示(owner 2026-11-17 追加) | 每張系統卡片有一個小圖示代表那個系統。模組在自己的宣告裡給圖示的名稱(用面板已經在用的那一套圖示,不放圖檔),沒給的用預設的;外部擴充也能給 |
+
+## 做了什麼(2026-11-18,第一步和第二步)
+
+| 部分 | 在哪 | 做了什麼 |
+|---|---|---|
+| 設定項的宣告 | `runtime/kernel/src/settings.ts` | `setting()`、`settingGroups()`、`settingFields()`(讀 JSON Schema,所以內建模組和擴充同一條路)、§2.2 的全部種類(型別都有;面板畫 switch、number、text、select、channel、time、weekday、duration、coins、ratio,其餘顯示值並說要改檔案)、`sectionIssues()`(zod 的 zh-TW 語系,只在這次解析用) |
+| 疊加層 | `core/src/module-settings.ts` | `ModuleSettings`(`ModuleSettingsKey`):開機時把 `config_revisions` 的 `modules.<id>` 疊在檔案上(`enabled` 照舊另外 AND),不合 schema 的鍵略過並警告,面板蓋掉且和檔案不同的鍵 log 一次;`describe`(欄位、值、來源)、`save`(檢查、寫一版、套用)、`history`、`revert`、`overrides` |
+| 重新啟動 | `Supervisor.reconfigure` | 換掉 slot 的設定,在佇列裡停掉它和依賴它的再啟動;停用的模組只存設定。會停到 sing、voice、voice.link、stage.link 的重啟在她唱歌或直播時(`cluster-guards.ts` 的兩個守衛)先存,守衛放開(每 5 秒看一次)才重啟 |
+| 地點 | `types/src/places.ts`、`discord/src/places.ts` | `PlaceDirectoryKey`,Discord 從連線的 guild cache 提供(她能不能看、能不能發言 / 加入,不能時的原因);沒連上就是空的、`ready: false`。沒有退回 identity 的表 |
+| API | `contracts/api/src/settings.ts`、`api/src/settings.ts` | §6 的路由,除了 `places/roles` 和 `config/overrides`;`GET /api/modules` 多 `icon`、`category`、`settings`、`card`、`pending`;另加 `POST .../settings/revert`;400 帶 `problems`,409 是版本衝突 |
+| 權限 | 同上 | 改要 `admin.settings.<id>`(加上 `admin.panel.write`),讀照舊;稽核 `settings.save`、`settings.revert`、`module.card_action` |
+| 狀態卡 | `Module.card()` / `act()`、各模組 | cards、economy、market(拍賣和樂透是同一個模組,一張卡)、sing、party、heart、llm;每個模組的 manifest 有 `icon` 和 `category`。快速動作只有唱歌的「停下這首」(經 actuator gate 跑 `sing.stop`) |
+| 擴充 | `contracts/ext`、`ext-host` | manifest 的 `icon`;`initialize` 的 contributions 可以說 `status: true`,host 就用 `status` 請求拿卡(`ExtStatusResult`) |
+| CLI | `cli/src/commands/config.ts` | `config get` 說被面板蓋掉(第幾版、誰、何時、檔案寫什麼),`config set` 警告,`config overrides`、`config bake` |
+| 面板 | `pages/system/` | 卡片格子(預設)和清單的切換、「有設定」篩選、`/system/$id`(狀態、設定表單、變更紀錄),見 `apps/panel/DESIGN.md`「Subsystems and their settings」 |
+| 登入 | `api/src/session.ts` | 角色改了,已登入的面板在下一個請求重新判斷;會員 ↔ 管理對不上就失效、要重新登入(經 API 改的立刻,Discord 指令改的最晚 `recheck_secs`)。權限頁的指派對話框說一行 |
+
+第一批開放的欄位(§9,不含卡片的機率和經濟的發放數字):
+
+- market:拍賣開關、拍賣頻道、星期幾開拍、幾點開拍、拍多久、起標、每次至少加、延長、最多延長;樂透開關、樂透頻道、一張的價格、每人每週幾張、星期幾開獎、幾點開獎、最少幾人;點歌優先券的價格、每人每天幾張
+- cards:`price`、`daily_cap`、`pity`、`drops`、`drop_channels`、`drop_window_mins`、`drop_min_people`、`drop_min_lines`、`drop_chance`、`drops_per_channel_day`、`drop_gap_mins`、`drop_delay_min_secs`、`drop_delay_max_secs`、`drop_expire_mins`、`drops_per_person_day`
+- economy:`card_foil`、`screen_message`、`fortune`
+- party:`song_rounds`、`soup_mins`、`rewards.enabled`、`rewards.coins_per_point`、`rewards.max_coins`
+- sing:`start`、`max_pending_per_user`、`video`
+- live:`pats`、`channels`
+
+和上面設計不一樣的地方:
+
+- **擴充的 `status` 沒有把協定版本加一**:改成 contributions 的一個選用旗標,預設關。版本加一會讓每個沒更新的擴充連不上,旗標不會;SDK 還沒有包裝它,擴充自己回 `status` 請求即可。
+- **還原是一個模組的**:「回到第 N 版」只把這個模組在面板上的設定換成那一版的,不是整份文件 `revert`,不然會一起退掉別的模組和開關的變更。變更紀錄的按鈕是「復原這次」(回到這次之前那一版)。
+- **作者**寫 `panel:<平台>:<帳號 id>` 和 `panel:token`(不是 person id:API 手上只有帳號);變更紀錄的名字從目前登入的 session 找,找不到就寫 id。
+- **TanStack Form 沒有用**:面板沒有這個套件(規定不能 `pnpm install`),表單狀態是頁面自己的 draft(改了哪些、還原哪些),一樣只在 Core 檢查值。
+- **分類**寫在 manifest(`category`),不是 API 另外配。`duration` 多了 `ms` 這個單位。面板認得的圖示是 `lib/module-icons.ts` 裡的一組 lucide 名字,不是整套(整套會打包上千個檔);其他名字畫預設的 `Box`。
+- **`SettingField` 有兩份型別**:kernel 的 TypeScript 介面(產生它)和 contracts 的 zod schema(API 回應用);contracts 不能依賴 kernel,API 的型別檢查讓兩邊對得上。
+- **守衛**不分哪一個:被保護的模組在唱歌或直播任一個守衛擋著時都等。
+- 範例檔的同步測試做了(`core/test/module-settings.test.ts`:每個面板欄位在範例檔的那個表格裡都有)。
+
+還沒做:`check_only`、`GET /api/places/roles`(身分組、人物選擇器)、`GET|PUT /api/config/overrides`、`config set --clear-override`、`scope: "space"` 寫 `place_settings`(欄位已經標了)、模組熱套用(`ctx.onConfig`)、派對和拍賣的快速動作(沒有經 gate 的 capability 可以用)。

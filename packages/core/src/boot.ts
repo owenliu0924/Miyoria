@@ -30,6 +30,7 @@ import {
   errorMessage,
   getLogger,
   type Module,
+  ModuleSettingsKey,
   ServiceRegistry,
   Supervisor,
   SupervisorKey,
@@ -75,12 +76,14 @@ import {
   PromptContributorsKey,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
+import { CLUSTER_GUARDS } from "./cluster-guards.js";
 import {
   moduleEnabled,
   NEEDS_TOKEN,
   REQUIRED_MODULE_REASONS,
   REQUIRED_MODULES,
 } from "./module-ids.js";
+import { ModuleSettings } from "./module-settings.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
@@ -169,6 +172,8 @@ export class Core {
     readonly store: Store,
     readonly profileDisplayName: string,
     readonly profileId: ProfileId,
+    /** The panel's settings layer; `null` in a core built without one. */
+    readonly settings: ModuleSettings | null = null,
   ) {}
 
   get bus(): EventBus {
@@ -204,6 +209,7 @@ export class Core {
   async stop(): Promise<void> {
     // What modules say from here on is the core going down, not something that happened.
     this.bus.publish(KERNEL_MODULE, Events.SystemShutdown, {});
+    this.settings?.close();
     await this.supervisor.stopAll();
     this.#persist.abort();
     await this.#persistTask;
@@ -246,6 +252,20 @@ export async function buildCoreWith(
   services.provide(k, PlatformSinksKey, new PlatformSinks());
   services.provide(k, PlatformHistoriesKey, new PlatformHistories());
   services.provide(k, SupervisorKey, supervisor);
+  // What the panel changes of a module's config, laid over the file (docs/design/v5-settings.md).
+  const settings = new ModuleSettings({
+    config,
+    revisions: store.moduleState.revisions,
+    supervisor,
+    guard: () => {
+      for (const guard of CLUSTER_GUARDS) {
+        const state = guard(services);
+        if (typeof state === "string") return state;
+      }
+      return null;
+    },
+  });
+  services.provide(k, ModuleSettingsKey, settings);
   services.provide(k, StoreKey, store);
   services.provide(k, SettingsStoreKey, store.settings);
   services.provide(k, DecisionLogKey, store.decisions);
@@ -339,7 +359,8 @@ export async function buildCoreWith(
       log.warn({ module: id }, "token is empty; module disabled");
       enabled = false;
     }
-    await supervisor.register(module, section.config, enabled, { required });
+    const effective = settings.boot(id, section.config, module.manifest.configSchema);
+    await supervisor.register(module, effective, enabled, { required });
   }
 
   // Each extension is a module of its own (`ext.<id>`), after the host.
@@ -358,7 +379,7 @@ export async function buildCoreWith(
     log.warn({ err: errorMessage(error) }, "extension discovery failed");
   }
 
-  const core = new Core(supervisor, store, profileDisplayName, profileId);
+  const core = new Core(supervisor, store, profileDisplayName, profileId, settings);
   core.persistModuleState((id) => moduleEnabled(config, id));
   return core;
 }

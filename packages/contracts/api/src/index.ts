@@ -49,6 +49,7 @@ import { prompts } from "./prompts.js";
 import { publicView } from "./public.js";
 import { roles } from "./roles.js";
 import { sandbox } from "./sandbox.js";
+import { moduleSettings, places } from "./settings.js";
 import { telemetry } from "./telemetry.js";
 import { turns } from "./turns.js";
 import { wallet } from "./wallet.js";
@@ -264,6 +265,10 @@ export {
   LlmToolCallSchema,
   type ModelUsage,
   ModelUsageSchema,
+  type ModuleCard,
+  ModuleCardSchema,
+  type ModuleCategory,
+  ModuleCategorySchema,
   type ModuleInfo,
   ModuleInfoSchema,
   type ModuleStateKind,
@@ -796,6 +801,38 @@ export {
   type SandboxTools,
   SandboxToolsSchema,
 } from "./sandbox.js";
+export {
+  type ModuleActionResult,
+  ModuleActionResultSchema,
+  type ModuleDetail,
+  ModuleDetailSchema,
+  type ModuleSettings,
+  ModuleSettingsSchema,
+  type PlaceRoom,
+  PlaceRoomSchema,
+  type PlaceRooms,
+  PlaceRoomsSchema,
+  type RevertSettingsRequest,
+  RevertSettingsRequestSchema,
+  type SaveSettingsRequest,
+  SaveSettingsRequestSchema,
+  type SaveSettingsResult,
+  SaveSettingsResultSchema,
+  type SettingField,
+  SettingFieldSchema,
+  type SettingGroup,
+  SettingGroupSchema,
+  type SettingKind,
+  SettingKindSchema,
+  type SettingProblem,
+  SettingProblemSchema,
+  type SettingsChange,
+  SettingsChangeSchema,
+  type SettingsHistory,
+  SettingsHistorySchema,
+  type SettingValue,
+  SettingValueSchema,
+} from "./settings.js";
 export { type ContextKeyIn, ContextKeyInSchema } from "./shared.js";
 export {
   type TelemetryLlm,
@@ -898,7 +935,9 @@ export const contract = {
   telemetry,
   party,
   people: { ...people, ...peopleEconomy },
-  modules,
+  // The settings routes first: `/api/modules/{id}/settings` before `/api/modules/{id}/{action}`.
+  modules: { list: modules.list, ...moduleSettings, action: modules.action },
+  places,
   decisions,
   events,
   llm,

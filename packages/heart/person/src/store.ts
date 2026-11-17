@@ -336,6 +336,26 @@ export class HeartStore {
   }
 
   /**
+   * How many people have a row, and how many of them had a number change from `since` (epoch ms)
+   * on, the daily pass and the migration left out: for the module's card on the panel. Two indexed
+   * reads of the log: where `since` starts in commit order (`events_at_idx`, the index alone), then
+   * the heart's changes from there (`events_type_idx`).
+   */
+  summary(since: number): { people: number; changed: number } {
+    this.#db.ensureOpen();
+    const people = this.#db.orm.select({ n: count() }).from(P).get();
+    const from = since * 1000;
+    const changed = this.#db.orm.all<{ n: number }>(sql`
+      SELECT COUNT(DISTINCT e.person_id) AS n FROM events e
+      WHERE e.type = ${HeartChanged.type}
+        AND e.seq >= (SELECT MIN(seq) FROM events WHERE at >= ${from})
+        AND e.at >= ${from}
+        AND json_extract(e.data, '$.cause') NOT IN ('decay', 'migrate')
+        AND e.person_id IN (SELECT ${P.person_id} FROM ${P})`);
+    return { people: Number(people?.n ?? 0), changed: Number(changed[0]?.n ?? 0) };
+  }
+
+  /**
    * The people with a row, not blocked, who did anything with her from `since` until `until`
    * (epoch ms): a line said with her (`last_interaction` in the span), a `feel` change or
    * evidence. Most first (lines, changes and evidence together, then person id), at most `max`.

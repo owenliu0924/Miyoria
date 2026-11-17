@@ -11,8 +11,9 @@
 // - `notices.ts`, `commands.ts`: the neutral cards it posts and `/me auction`, `/me lottery`.
 // - `pictures.ts`: their `auction` / `lottery` pictures (`PicturesKey`), best-effort above the text.
 // - `notes.ts`: what she hears of a lot won and of a draw.
-// - `module.ts`: module `market` and `MarketKey`.
+// - `module.ts`: module `market` and `MarketKey`; `card.ts`: its card on the panel.
 
+export { marketCard } from "./card.js";
 export { registerCommands, unregisterCommands } from "./commands.js";
 export {
   LOT_KINDS,

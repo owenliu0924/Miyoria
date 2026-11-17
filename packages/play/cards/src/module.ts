@@ -24,6 +24,7 @@ import {
   defineManifest,
   errorMessage,
   type Module,
+  type ModuleCard,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { type Store, StoreKey } from "@miyoria/store";
@@ -33,8 +34,9 @@ import {
   HandleDirectoryKey,
   type PersonId,
   serviceKey,
+  toTimestamp,
 } from "@miyoria/types";
-import { CardsConfigSchema } from "./config.js";
+import { type CardsConfig, CardsConfigSchema } from "./config.js";
 import type { Random } from "./draw.js";
 import { watchDrops } from "./drops.js";
 import { CardFacesKey, type OccasionFace } from "./faces.js";
@@ -42,7 +44,7 @@ import { type Live2dPortrait, livePortrait } from "./live2d.js";
 import { cardNotes } from "./notes.js";
 import { CardPortraitKey } from "./portrait.js";
 import { cardRelationship } from "./relationship.js";
-import { CardService } from "./service.js";
+import { CardService, dayStart } from "./service.js";
 import { type CardStore, cardsTables, type IssuedCard } from "./store.js";
 import { CardWalletKey } from "./wallet.js";
 
@@ -51,6 +53,10 @@ export const CardsKey = serviceKey<CardService>("Cards");
 /** Her working-context bucket for the cards, and how many notes it keeps. */
 const WRITER = "cards";
 const MAX_ENTRIES = 6;
+
+const DAY_MS = 86_400_000;
+/** The coins' name on the panel's card: the cards' config does not carry the economy's. */
+const COIN_UNIT = "魚幣";
 
 /**
  * A card worth a word (`notes.ts`) as a note she may react to: an observation on the event log,
@@ -115,6 +121,8 @@ export const KEEPSAKES_PER_PASS = 3;
 export class CardsModule implements Module {
   static readonly ID = "cards";
   readonly manifest = defineManifest(CardsModule.ID, "Cards", {
+    icon: "layers",
+    category: "play",
     description:
       "Her cards for each person: the daily card (paid, at most a few a day), milestone cards for a new tier, cards dropped in a channel (off by default), the public odds, the pity, the dex with series titles, and wishlists",
     optional: ["heart", "economy"],
@@ -129,6 +137,8 @@ export class CardsModule implements Module {
   #keepsakeTimers: ReturnType<typeof setTimeout>[] = [];
   #writing: Promise<void> | null = null;
   #portrait: Live2dPortrait | null = null;
+  /** What the card on the panel reads, while the module runs with a store. */
+  #running: { cards: CardStore; config: CardsConfig; clock: Clock } | null = null;
 
   constructor(options: CardsModuleOptions = {}) {
     this.#options = options;
@@ -175,6 +185,7 @@ export class CardsModule implements Module {
       ...(this.#options.newSerial === undefined ? {} : { newSerial: this.#options.newSerial }),
     });
     ctx.provide(CardsKey, service);
+    this.#running = { cards, config, clock: this.#options.clock ?? ctx.clock };
     // A paid card charged and never written (Core stopped in between, or the refund failed), that
     // nobody retried: its coins go back now and every few minutes while the module runs. The
     // economy starts in its own order, so a pass without the wallet leaves the row for the next.
@@ -252,7 +263,28 @@ export class CardsModule implements Module {
     watchDrops(ctx, config, cards, this.#options.random ?? Math.random, now);
   }
 
+  /**
+   * Today's cards (her local day, `utc_offset_minutes`): issued, the coins their price took, the
+   * drops she made and the pity's cards; next, the day's reset at her midnight.
+   */
+  async card(): Promise<ModuleCard> {
+    const running = this.#running;
+    if (running === null) return { facts: [] };
+    const start = dayStart(running.clock.now(), running.config.utc_offset_minutes);
+    const day = running.cards.daySummary(start);
+    return {
+      facts: [
+        { label: "今天發出", value: day.cards, unit: "張" },
+        { label: "今天收入", value: day.coins, unit: COIN_UNIT },
+        { label: "今天掉落", value: day.drops, unit: "次" },
+        { label: "保底觸發", value: day.pity, unit: "次" },
+      ],
+      next: { label: "每日重置", at: toTimestamp(start + DAY_MS) },
+    };
+  }
+
   async stop(): Promise<void> {
+    this.#running = null;
     this.#stop?.();
     this.#stop = null;
     this.#stopped = true;

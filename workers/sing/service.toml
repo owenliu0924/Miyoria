@@ -25,8 +25,68 @@ what = "主唱與伴唱分離模型(BS-RoFormer karaoke,放在 becruily-bs/;沒�
 path = "workers/models/vocal-split"
 what = "人聲分離模型(MelBandRoformer.ckpt 和 .yaml;沒有就退回 Demucs)"
 
+# The two separation models are public weights that can be downloaded automatically once each
+# entry below has its checksum, its size and a pinned source. The repository does not record them
+# yet. TODO(owner machine): run `miyoria doctor --print-hashes sing` (it prints the sha256 and size
+# of every file in workers/models/lead-split and vocal-split), copy them in, fill in the commit ids
+# and the .yaml sources, uncomment the entries, add the two [run] env lines below, and delete the
+# two [[install.manual]] items above. The files then live in <state>/models/, not workers/models/.
+#
+#   env = { SING_OFFLOAD_URLS = "{offload_urls}",
+#           SING_VOCAL_MODEL = "{models}/vocal-split/MelBandRoformer.ckpt",
+#           SING_LEAD_MODEL = "{models}/lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt" }
+#
+# [[install.files]]
+# path = "vocal-split/MelBandRoformer.ckpt"
+# hf = "KimberleyJSN/melbandroformer"
+# file = "MelBandRoformer.ckpt"
+# revision = "TODO(owner machine): the 40-character commit id"
+# sha256 = "TODO(owner machine): sha256"
+# size = 0  # TODO(owner machine): bytes
+# what = "人聲分離模型(Kim 的 Mel-Band RoFormer;沒有就退回 Demucs)"
+# licence = "MIT"
+# optional = true
+#
+# [[install.files]]
+# path = "vocal-split/MelBandRoformer.yaml"
+# # TODO(owner machine): the source of this config. workers/README.md says it is MSST's
+# # config_vocals_mel_band_roformer_kj.yaml (ZFTurbo/Music-Source-Separation-Training); a
+# # raw.githubusercontent.com URL at a commit id works.
+# url = "TODO(owner machine)"
+# sha256 = "TODO(owner machine): sha256"
+# size = 0  # TODO(owner machine): bytes
+# what = "人聲分離模型的設定檔"
+# licence = "MIT"
+# optional = true
+#
+# [[install.files]]
+# path = "lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt"
+# hf = "becruily/bs-roformer-karaoke"
+# file = "TODO(owner machine): the file name in the repository"
+# revision = "TODO(owner machine): the 40-character commit id"
+# sha256 = "TODO(owner machine): sha256"
+# size = 0  # TODO(owner machine): bytes
+# what = "主唱與伴唱分離模型(becruily & Frazer 的 BS-RoFormer karaoke;沒有就不切主唱)"
+# # The repository states no licence (workers/README.md §9): decide whether it may be fetched
+# # automatically before uncommenting.
+# licence = "未標授權"
+# optional = true
+#
+# [[install.files]]
+# path = "lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.yaml"
+# hf = "becruily/bs-roformer-karaoke"
+# file = "TODO(owner machine): the config's file name in the repository"
+# revision = "TODO(owner machine): the same commit id"
+# sha256 = "TODO(owner machine): sha256"
+# size = 0  # TODO(owner machine): bytes
+# what = "主唱與伴唱分離模型的設定檔"
+# licence = "未標授權"
+# optional = true
+
 # The worker refuses to start without these two, whichever voice chain is used
 # (workers/sing/engine.py).
+# Seed-VC is source code the worker imports (GPL-3.0), not weights: install.files never fetches
+# anything that runs, so it stays a manual item.
 [[install.manual]]
 path = "workers/models/seed-vc"
 what = "Seed-VC 原始碼(啟動時一定要有;換位置設 SING_SEEDVC_DIR)"

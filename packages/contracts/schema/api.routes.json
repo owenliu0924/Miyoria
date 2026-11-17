@@ -377,6 +377,90 @@
           }
         }
       },
+      "get": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/modules/{id}"
+          }
+        }
+      },
+      "settings": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/modules/{id}/settings"
+          }
+        }
+      },
+      "saveSettings": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/modules/{id}/settings"
+          }
+        }
+      },
+      "settingsHistory": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/modules/{id}/settings/history"
+          }
+        }
+      },
+      "revertSettings": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/modules/{id}/settings/revert"
+          }
+        }
+      },
+      "cardAction": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/modules/{id}/actions/{action}"
+          }
+        }
+      },
       "action": {
         "~orpc": {
           "errorMap": {},
@@ -388,6 +472,22 @@
             "inputStructure": "detailed",
             "method": "POST",
             "path": "/api/modules/{id}/{action}"
+          }
+        }
+      }
+    },
+    "places": {
+      "rooms": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/places/rooms"
           }
         }
       }

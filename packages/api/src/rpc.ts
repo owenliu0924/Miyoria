@@ -88,6 +88,7 @@ import { limitMember, publicRpc } from "./public.js";
 import { roleRpc } from "./roles.js";
 import type { Method, Route } from "./route.js";
 import { sandboxRpc } from "./sandbox.js";
+import { placesRpc, settingsRpc } from "./settings.js";
 import type { ApiContext, ApiState } from "./state.js";
 import { telemetryRpc } from "./telemetry.js";
 import { walletRpc } from "./wallet.js";
@@ -128,6 +129,9 @@ export const router = os.router({
   marketAdmin: marketAdminRpc,
   people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
+  // The settings routes before `POST /api/modules/{id}/{action}` (see the contract).
+  modules: { list: coreRpc.modules.list, ...settingsRpc, action: coreRpc.modules.action },
+  places: placesRpc,
   events: eventsRpc,
   llm: { ...coreRpc.llm, ...llmCallsRpc },
   economy: economyRpc,

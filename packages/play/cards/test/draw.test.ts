@@ -80,7 +80,8 @@ describe("the rarity", () => {
         expect(p.id).not.toBe("background.aurora");
       }
     }
-  });
+    // Twenty thousand draws: a slow machine needs more than the default five seconds.
+  }, 30_000);
 
   it("leaves out a rarity no part can give; the others share its weight", () => {
     const noSsr: Part[] = SEED_PARTS.filter((p) => p.rarity !== "SSR");

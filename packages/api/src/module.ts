@@ -185,6 +185,8 @@ async function close(server: ServerType): Promise<void> {
 export class ApiModule implements Module {
   static readonly ID = "api";
   readonly manifest = defineManifest(ApiModule.ID, "Admin API", {
+    icon: "server",
+    category: "platform",
     description: "HTTP + SSE API for the CLI and the admin panel",
     configSchema: ApiConfigSchema,
   });

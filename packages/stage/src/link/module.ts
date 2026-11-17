@@ -125,6 +125,8 @@ export class StageLinkModule implements Module {
   static readonly DEFAULT_BIND = DEFAULT_BIND;
 
   readonly manifest = defineManifest(StageLinkModule.ID, "Stage Link", {
+    icon: "clapperboard",
+    category: "platform",
     description: "WebSocket link to the Stage node (VTube Studio, OBS, overlay)",
     optional: ["commands"],
     configSchema: StageLinkConfigSchema,

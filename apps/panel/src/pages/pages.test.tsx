@@ -37,8 +37,44 @@ const WORLD_BASE: WorldView = {
 const posts = (fetch: ReturnType<typeof mockFetch>) =>
   fetch.mock.calls.filter(([, init]) => init?.method && init.method !== "GET").map(([u, init]) => `${init?.method} ${String(u)}`);
 
+/** The system page's table instead of its card grid (the choice is remembered per browser). */
+const listView = () => window.localStorage.setItem("miyoria.panel.system.view", "list");
+
 describe("System", () => {
+  it("shows the modules as cards by section, with the card's facts and next thing", async () => {
+    mockFetch((_method, url) => {
+      if (url.pathname === "/api/modules") {
+        return {
+          body: [
+            mod("market", {
+              name: "Market",
+              icon: "gavel",
+              category: "play",
+              settings: true,
+              card: { facts: [{ label: "最高出價", value: 180, unit: "魚幣" }], next: { label: "結標", at: "2026-11-23T12:00:00.000Z" } },
+              pending: null,
+            }),
+            mod("voice", { category: "platform", state: "failed", reason: "TTS worker unreachable", card: null }),
+            mod("party", { category: "play", enabled: false, state: "disabled" }),
+          ],
+        };
+      }
+      return undefined;
+    });
+    renderRoute("/system");
+    const market = await screen.findByRole("article", { name: "Market" });
+    expect(within(market).getByText("最高出價")).toBeInTheDocument();
+    expect(within(market).getByText("180")).toBeInTheDocument();
+    expect(within(market).getByText(/^結標 · /)).toBeInTheDocument();
+    expect(within(market).getByRole("link", { name: /設定/ })).toHaveAttribute("href", "/system/market");
+    expect(screen.getByRole("heading", { name: /^玩/ })).toBeInTheDocument();
+    const voice = screen.getByRole("article", { name: "VOICE" });
+    expect(within(voice).getByRole("alert")).toHaveTextContent("TTS worker unreachable");
+    expect(within(screen.getByRole("article", { name: "PARTY" })).getByRole("button", { name: "啟用" })).toBeInTheDocument();
+  });
+
   it("confirms before disabling a module and posts the action", async () => {
+    listView();
     const modules = [mod("api"), mod("voice", { state: "failed", reason: "TTS worker unreachable" })];
     const fetch = mockFetch((method, url) => {
       if (method === "GET" && url.pathname === "/api/modules") return { body: modules };
@@ -67,6 +103,7 @@ describe("System", () => {
   });
 
   it("keeps the confirm dialog open when the action fails", async () => {
+    listView();
     mockFetch((method, url) => {
       if (url.pathname === "/api/modules") return { body: [mod("voice")] };
       if (method === "POST") return { status: 409, body: { error: "voice is busy" } };

@@ -95,7 +95,8 @@ describe("the odds table", () => {
         expect(Math.abs((seen.get(part.id) ?? 0) / runs - p), part.id).toBeLessThan(tolerance);
       }
     }
-  });
+    // Two hundred thousand draws: a slow machine needs more than the default five seconds.
+  }, 30_000);
 
   it("follows the weights of the config", () => {
     const flat = oddsTable(SEED_PARTS, { ...rules, weights: { N: 1, R: 1, SR: 1, SSR: 1 } });

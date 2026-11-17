@@ -54,9 +54,14 @@ pnpm dev add sing
 
 - 用 uv 把 `workers/sing/pyproject.toml` 和 `uv.lock` 裝成一個環境(放在 `data/host/envs/sing`),包括 CUDA 12.8 版的 torch。第一次要下載很多東西,要等一陣子;失敗了重新執行同一個指令,做完的會跳過;
 - 檢查 ffmpeg 在不在 PATH;
+- 下載 `workers/sing/service.toml` 的 `[[install.files]]` 列的公開模型檔:先列出每個檔案的大小、授權和來源,問你一次(`-y` 不問),同意後下載到 `data/host/models/`,SHA-256 對了才留下;
 - 列出**要你自己放的東西**。
 
-### 要自己放的模型和資料
+### 自動下載的和要自己放的
+
+**自動下載的**:只有公開、可以自由下載、`service.toml` 寫了 SHA-256 和固定版本的模型檔。**目前還沒有**:兩個分離模型(下表第 3、4 列)已經寫成 `[[install.files]]`,但要等 Owen 在他那台把檢查碼填進去(`miyoria doctor --print-hashes sing`)才會打開。打開之後你 `git pull`,再 `pnpm dev update` 或 `pnpm dev doctor --fix` 就會列出來問你,下載後放在 `data/host/models/` 而不是 `workers/models/`;在那之前照下表自己放。
+
+**一直要自己放的**:Owen 的聲音資產(下表前兩列,私人的,不會自動下載),和 Seed-VC 原始碼(是程式碼,自動下載只抓模型權重,從不抓會被執行的東西)。
 
 路徑從 repository 根目錄算起。前兩項是 Owen 的聲音資產,**請 Owen 提供**,只放在你的本機,不要上傳或再分享。
 
@@ -68,7 +73,7 @@ pnpm dev add sing
 | `workers/models/vocal-split/MelBandRoformer.ckpt` + `.yaml` | 人聲分離 | Hugging Face `KimberleyJSN/melbandroformer`;沒有就退回 Demucs(第一次自動下載) |
 | `workers/models/seed-vc/` | Seed-VC 原始碼(要有 `modules/` 這個資料夾) | github.com/Plachtaa/seed-vc。**不能略過**:worker 啟動時就檢查它在不在,沒有就啟動失敗(`Seed-VC not found at ...`),即使預設轉換鏈 `rvc` 用不到它 |
 
-第一首歌還會自動下載約 2 GB 的模型。檢查還缺什麼:
+第一首歌還會自動下載約 2 GB 的模型(worker 自己從 Hugging Face 抓的,不經過上面的清單)。檢查還缺什麼(`doctor` 也會驗證已經下載的模型檔的 SHA-256):
 
 ```powershell
 pnpm dev doctor

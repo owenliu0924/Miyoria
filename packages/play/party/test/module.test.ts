@@ -103,6 +103,7 @@ class Harness {
   readonly gate = new Gate();
   readonly commands: CommandRegistry;
   readonly clips = new FakeClips(SONGS);
+  readonly module = new PartyModule({ random: () => 0 });
   /** What the turtle-soup referee answers. */
   verdict = "yes";
 
@@ -129,7 +130,7 @@ class Harness {
 
   static async create(config: JsonValue = {}): Promise<Harness> {
     const h = new Harness();
-    await h.sup.register(new PartyModule({ random: () => 0 }), config, true);
+    await h.sup.register(h.module, config, true);
     await h.sup.startAll();
     await h.publish(Events.VoiceJoined, { context: VOICE, participants: ROOM });
     return h;
@@ -252,6 +253,25 @@ describe("party module", () => {
     expect(overview.snapshot()).toEqual({ sessions: [], recent: [] });
     await h.sup.disable("party");
     expect(h.sup.services.get(PartyOverviewKey)).toBeUndefined();
+  });
+
+  it("its card shows the games going on and the last one that ended", async () => {
+    h = await Harness.create();
+    expect(await h.module.card()).toEqual({ facts: [{ label: "進行中", value: 0, unit: "場" }] });
+    await h.invoke("party.start", { game: "song", rounds: 1 });
+    expect((await h.module.card()).facts).toEqual([
+      { label: "進行中", value: 1, unit: "場" },
+      { label: "正在玩", value: "猜歌" },
+    ]);
+    await h.invoke("party.host", { action: "next" });
+    await h.say(AMY, "Amy", h.clips.current());
+    expect(h.sup.services.require(PartyTableKey).session(VOICE)).toBeNull();
+    const card = await h.module.card();
+    expect(card.facts).toEqual([
+      { label: "進行中", value: 0, unit: "場" },
+      { label: "上一場", value: "猜歌" },
+    ]);
+    expect(card.actions).toBeUndefined();
   });
 
   it("plays song guessing: her tools, answers by voice and chat, Observations that may claim the mic", async () => {

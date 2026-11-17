@@ -5,6 +5,8 @@ import {
   errorMessage,
   interval,
   type Module,
+  type ModuleCard,
+  type ModuleCardFact,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import {
@@ -46,6 +48,8 @@ const VOICE_TICK_MS = 30_000;
 export class EconomyModule implements Module {
   static readonly ID = "economy";
   readonly manifest = defineManifest(EconomyModule.ID, "Economy", {
+    icon: "coins",
+    category: "play",
     description: "Coins earned by being with her, spent on feeding her and small gifts",
     optional: [
       "memory",
@@ -63,6 +67,8 @@ export class EconomyModule implements Module {
   readonly #profile: ProfileId;
   #unregister: (() => void) | null = null;
   readonly #commands = new EconomyCommands();
+  /** The running economy, for the card on the panel. */
+  #economy: EconomyService | null = null;
 
   constructor(profile: ProfileId) {
     this.#profile = profile;
@@ -90,6 +96,7 @@ export class EconomyModule implements Module {
       for (const f of off) f();
     };
     ctx.provide(EconomyKey, economy);
+    this.#economy = economy;
     // Her cards are paid through it (`@miyoria/play/cards`).
     ctx.provide(CardWalletKey, new EconomyCardWallet(economy));
     // The weekly market is paid through it (`@miyoria/play/market`).
@@ -144,7 +151,34 @@ export class EconomyModule implements Module {
     });
   }
 
+  /**
+   * The health table's numbers (`health.ts`): the last seven days' recovery rate, and today's
+   * coins issued and recovered, in the economy's currency; none without a store of ledger totals.
+   * Next: the first of her open bounties to run out, which the sweep then settles.
+   */
+  async card(): Promise<ModuleCard> {
+    const economy = this.#economy;
+    if (economy === null) return { facts: [] };
+    const currency = economy.config.currency;
+    const facts: ModuleCardFact[] = [];
+    const health = await economy.v2.health();
+    if (health.available) {
+      const today = health.days.at(-1);
+      if (health.week.ratio !== null) {
+        facts.push({ label: "七天回收率", value: Math.round(health.week.ratio * 100), unit: "%" });
+      }
+      facts.push({ label: "今天發出", value: today?.issued ?? 0, unit: currency });
+      facts.push({ label: "今天收回", value: today?.recovered ?? 0, unit: currency });
+    }
+    const due = (await economy.bountyDesk.view())
+      .map((b) => b.expires_at)
+      .sort()
+      .at(0);
+    return { facts, ...(due === undefined ? {} : { next: { label: "懸賞到期", at: due } }) };
+  }
+
   async stop(): Promise<void> {
+    this.#economy = null;
     this.#commands.uninstall();
     this.#unregister?.();
     this.#unregister = null;

@@ -187,6 +187,13 @@ export {
   type ThoughtTriggerKind,
 } from "./mind.js";
 export {
+  type PlaceDirectory,
+  PlaceDirectoryKey,
+  type PlaceRoom,
+  type PlaceRoomKind,
+  type PlaceSpace,
+} from "./places.js";
+export {
   type AccountRef,
   type Attachment,
   AttachmentError,

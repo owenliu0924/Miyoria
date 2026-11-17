@@ -171,6 +171,7 @@ export {
   type CardRecord,
   type CardRelationship,
   CardStore,
+  type CardsDaySummary,
   type CardTitle,
   cardsTables,
   type DexEntry,

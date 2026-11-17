@@ -834,14 +834,17 @@ describe("the session model", () => {
     expect(found?.access.panel).toBe(false);
   });
 
-  it("leaves an admin who lost access with the member routes only", async () => {
+  it("ends the session of an admin who lost access; the next login is a member's", async () => {
     const r = await rig();
     await r.auth.assign("test", discord(BOB), "admin", { type: "global" });
     const cookie = await r.login("bob");
     expect((await r.get("/api/auth/session", cookie)).status).toBe(200);
     await r.auth.revoke("test", discord(BOB), "admin", { type: "global" });
     expect((await r.get("/api/auth/session", cookie)).status).toBe(401);
-    expect((await r.get("/api/member/session", cookie)).status).toBe(200);
+    expect((await r.get("/api/member/session", cookie)).status).toBe(401);
+    const again = await r.login("bob");
+    expect((await r.get("/api/member/session", again)).status).toBe(200);
+    expect((await r.get("/api/auth/session", again)).status).toBe(401);
   });
 
   it("is not opened by the admin token, and refuses changes without the CSRF header", async () => {

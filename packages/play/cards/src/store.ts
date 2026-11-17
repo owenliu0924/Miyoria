@@ -216,6 +216,18 @@ export interface DropRecord {
   serial: string | null;
 }
 
+/** What the cards came to over a span (`CardStore.daySummary`). */
+export interface CardsDaySummary {
+  /** Cards issued, every kind. */
+  cards: number;
+  /** Coins their price took. */
+  coins: number;
+  /** Cards the pity gave an SR-or-better part. */
+  pity: number;
+  /** Cards she dropped in a channel, picked up or not. */
+  drops: number;
+}
+
 /** The serial a paid card asked for under a key is charged under, kept until the card is written. */
 export interface PendingCard {
   person: PersonId;
@@ -544,6 +556,37 @@ export class CardStore {
       .where(and(eq(T.person_id, person), eq(T.kind, kind), gte(T.at, at(since))))
       .get();
     return row?.n ?? 0;
+  }
+
+  /**
+   * What the cards came to since `since` (epoch ms), for the module's card on the panel: the cards
+   * issued, the coins their price took (a foil, paid apart, not counted), the cards that were the
+   * pity's, and the cards she dropped in a channel. The cards of someone she was asked to forget
+   * are gone and not counted.
+   */
+  daySummary(since: number): CardsDaySummary {
+    this.#db.ensureOpen();
+    const C = cardsCard;
+    const issued = this.#db.orm
+      .select({
+        cards: count(),
+        coins: sql<number>`coalesce(sum(${C.price}), 0)`.mapWith(Number),
+        pity: sql<number>`coalesce(sum(${C.pity_hit}), 0)`.mapWith(Number),
+      })
+      .from(C)
+      .where(gte(C.created_at, at(since)))
+      .get();
+    const dropped = this.#db.orm
+      .select({ n: count() })
+      .from(cardsDrop)
+      .where(gte(cardsDrop.created_at, at(since)))
+      .get();
+    return {
+      cards: issued?.cards ?? 0,
+      coins: issued?.coins ?? 0,
+      pity: issued?.pity ?? 0,
+      drops: dropped?.n ?? 0,
+    };
   }
 
   /** Cards in a row without SR or better. */
