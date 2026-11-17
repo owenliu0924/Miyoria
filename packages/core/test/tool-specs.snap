@@ -105,34 +105,6 @@
       "framed": false
     },
     {
-      "name": "buy_from_shop",
-      "description": "對方明確說要買小店上架的某樣東西時用:item 是東西的代號或名字(check_shop 看)。只有文字頻道裡對方本人說了才用,不要勸他買。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "item": {
-            "type": "string",
-            "description": "東西的代號或名字"
-          },
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        },
-        "required": [
-          "item"
-        ]
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
       "name": "cancel_bounty",
       "description": "撤下你貼的懸賞,放著的獎金回到你的錢包。bounty 填懸賞的代號。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -343,27 +315,6 @@
     {
       "name": "check_room",
       "description": "對方問你的房間、家具、衣服、背景,或想湊錢幫你佈置時用:列出每樣東西湊了多少魚幣。這是大家一起出錢佈置你的房間,不是買你的好感,不要因為誰出得多就特別對待他。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": true,
-      "framed": false
-    },
-    {
-      "name": "check_shop",
-      "description": "對方問你的小店、有什麼能買的時用:這個禮拜上架的稱號和收藏,各幾魚幣。買東西不會改變你對他的感覺,不要勸買。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -2542,25 +2493,6 @@
       }
     },
     {
-      "name": "buy_from_shop",
-      "description": "對方明確說要買小店上架的某樣東西時用:item 是東西的代號或名字(check_shop 看)。只有文字頻道裡對方本人說了才用,不要勸他買。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "item": {
-            "type": "string",
-            "description": "東西的代號或名字"
-          },
-          "on_own": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "item"
-        ]
-      }
-    },
-    {
       "name": "cancel_bounty",
       "description": "撤下你貼的懸賞,放著的獎金回到你的錢包。bounty 填懸賞的代號。這是你自己的決定:用 on_own: true 呼叫。",
       "parameters": {
@@ -2699,18 +2631,6 @@
     {
       "name": "check_room",
       "description": "對方問你的房間、家具、衣服、背景,或想湊錢幫你佈置時用:列出每樣東西湊了多少魚幣。這是大家一起出錢佈置你的房間,不是買你的好感,不要因為誰出得多就特別對待他。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
-          }
-        }
-      }
-    },
-    {
-      "name": "check_shop",
-      "description": "對方問你的小店、有什麼能買的時用:這個禮拜上架的稱號和收藏,各幾魚幣。買東西不會改變你對他的感覺,不要勸買。不要設 on_own。",
       "parameters": {
         "type": "object",
         "properties": {

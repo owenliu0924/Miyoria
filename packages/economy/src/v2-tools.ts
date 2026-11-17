@@ -1,6 +1,6 @@
 // Her tools for economy 2.0 (docs/design/v4-plan.md §10). Two kinds, like the rest of the package:
 //
-// * The speaker's own things (quests, the collection, the shop, bets): always the
+// * The speaker's own things (quests, the collection, bets): always the
 //   authenticated author of the message she answers, never a name in the arguments; no `on_own`.
 // * Hers to decide (opening a prediction, resolving it): the
 //   `economy.agency` permission, nobody has it by default, so she calls them with `on_own`.
@@ -631,99 +631,6 @@ export function fundRoomCapability(economy: EconomyService): Capability {
   }) as Capability;
 }
 
-// ---- her shop --------------------------------------------------------------------------------
-
-/** `economy.check_shop` (tool `check_shop`): this week's shelf. */
-export function shopCapability(economy: EconomyService): Capability {
-  const cur = economy.config.currency;
-  return defineCapability<NoArgs>({
-    name: "economy.check_shop",
-    summary: "看她這個禮拜的小店賣什麼",
-    risk: "low",
-    args: NoArgs,
-    permission: null,
-    limits: { per_day: 500, per_person_per_day: 30, cooldown_ms: 0 },
-    tool: {
-      name: "check_shop",
-      meta: { effect: "read", speed: "instant", group: "economy" },
-      readOnly: true,
-      description:
-        `對方問你的小店、有什麼能買的時用:這個禮拜上架的稱號和收藏,各幾${cur}。` +
-        `買東西不會改變你對他的感覺,不要勸買。${NOT_ON_OWN}`,
-      properties: {},
-      required: [],
-    },
-    check: (_args, principal) => noSpeaker(principal),
-    async execute(_args, ctx) {
-      const who = speakerOf(ctx);
-      return answering("看不了小店", async (): Promise<Answer> => {
-        const v = await economy.v2.shop(who.account);
-        const lines = v.items.map(
-          (i) =>
-            `[${i.id}] ${i.label}(${i.kind === "title" ? "稱號" : "收藏"}) ${i.price} ${cur}` +
-            (i.owned === true || (typeof i.owned === "number" && i.owned > 0) ? ",他有了" : ""),
-        );
-        return {
-          text: `${lines.join("\n")}\n每個禮拜換一批。`,
-          data: { items: v.items.map((i) => ({ id: i.id, price: i.price })) },
-        };
-      });
-    },
-  }) as Capability;
-}
-
-const BuyArgs = z.strictObject({ item: z.string().trim().min(1).max(32) });
-type BuyArgs = z.output<typeof BuyArgs>;
-
-/** `economy.buy_from_shop` (tool `buy_from_shop`): the speaker buys one thing off the shelf. */
-export function buyFromShopCapability(economy: EconomyService): Capability {
-  const cur = economy.config.currency;
-  return defineCapability<BuyArgs>({
-    name: "economy.buy_from_shop",
-    summary: `讓說話的人用${cur}買小店的東西`,
-    risk: "medium",
-    args: BuyArgs,
-    permission: null,
-    limits: { per_day: 500, per_person_per_day: 20, cooldown_ms: 0 },
-    tool: {
-      name: "buy_from_shop",
-      meta: { effect: "spend", speed: "instant", group: "economy" },
-      description:
-        "對方明確說要買小店上架的某樣東西時用:item 是東西的代號或名字(check_shop 看)。" +
-        `只有文字頻道裡對方本人說了才用,不要勸他買。${NOT_ON_OWN}`,
-      properties: { item: { type: "string", description: "東西的代號或名字" } },
-      required: ["item"],
-    },
-    check: (_args, principal) => noSpeaker(principal),
-    async execute(args, ctx) {
-      const who = speakerOf(ctx);
-      if (who.voice) {
-        return refusal(
-          "沒有買",
-          "unconfirmed",
-          `語音裡可能聽錯,不能直接花錢;請對方在文字頻道用 ${typedCommand("me shop", "discord")}`,
-        );
-      }
-      return answering("沒有買成", async (): Promise<Answer> => {
-        const r = await economy.v2.buyFromShop(
-          who.account,
-          args.item,
-          messageKey(who.message.context, who.message.id),
-        );
-        return {
-          text: `買好了:「${r.item.label}」${r.charged} ${cur},現在有 ${r.balance}。`,
-          data: { done: true, item: r.item.id, charged: r.charged, balance: r.balance },
-          receipt: receipt(
-            "🛍 小店",
-            `${someone(who.account)} 買了「${r.item.label}」`,
-            `−${r.charged} ${cur} · 現在有 ${r.balance}`,
-          ),
-        };
-      });
-    },
-  }) as Capability;
-}
-
 /** Every tool of economy 2.0. */
 export function v2Capabilities(economy: EconomyService): Capability[] {
   return [
@@ -738,7 +645,5 @@ export function v2Capabilities(economy: EconomyService): Capability[] {
     cancelPredictionCapability(economy),
     roomCapability(economy),
     fundRoomCapability(economy),
-    shopCapability(economy),
-    buyFromShopCapability(economy),
   ];
 }

@@ -586,11 +586,10 @@ function mePages(policyUrl: string | null): PanelPage[] {
       ],
     },
     {
-      // The economy's second generation (quests, collection, predictions, her room,
-      // her shop). Commands come from the economy module; without it the page is hidden.
+      // The economy's second generation (quests, collection, predictions, her room). Commands come from the economy module; without it the page is hidden.
       id: "play",
       label: "玩與收藏",
-      description: "每日任務、抽收藏、預測、小店、她的房間",
+      description: "每日任務、抽收藏、預測、她的房間",
       refresh: true,
       status: [{ path: "me quests", label: "今天的任務" }],
       actions: [
@@ -619,13 +618,6 @@ function mePages(policyUrl: string | null): PanelPage[] {
               field("amount", "押多少魚幣"),
             ],
           },
-        },
-        { id: "shop", label: "她的小店", path: "me shop" },
-        {
-          id: "shop-buy",
-          label: "買小店的東西",
-          path: "me shop",
-          ask: { title: "買小店的東西", fields: [field("item", "東西的名字或代號")] },
         },
         { id: "room", label: "她的房間", path: "me room" },
         {

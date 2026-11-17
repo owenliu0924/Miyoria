@@ -176,6 +176,8 @@ const RETIRED_LABEL: Readonly<Record<string, string>> = {
   deal_escrow: "先付給她的約定",
   commission: "委託她",
   commission_pay: "委託做完了",
+  shop: "她的小店",
+  shop_pay: "小店的收入",
 };
 
 /** Ledger reasons that are gifts to her (they diminish each other). */

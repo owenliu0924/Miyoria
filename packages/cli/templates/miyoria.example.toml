@@ -445,9 +445,6 @@ dirs = ["extensions"]
 # prediction_expire_hours = 24
 # # 她的房間:大家一起出錢買的家具、衣服、背景(room_items = [{ id, label, kind = "furniture" | "outfit" | "background", price }])
 # room_pledge_max = 100       # 一個人對一件最多出多少
-# # 她每週的小店:可以進貨什麼(shop_catalog,每項 { id, label, kind(title 或 collectible), price, item })、一週上架幾件、賣出的錢她留幾成(其餘離開經濟)
-# shop_slots = 4              # 1 到 20
-# shop_her_share = 0.5
 # # 經濟健康表:顯示幾天,和一週內發出去的幣被收回的比例低於多少就標「通膨」
 # health_days = 14            # 1 到 90
 # health_warn_ratio = 0.6

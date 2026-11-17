@@ -96,28 +96,6 @@ export const DEFAULT_ROOM: RoomItem[] = [
   { id: "bg_sakura", label: "櫻花背景", kind: "background", price: 500 },
 ];
 
-/** One thing her weekly shop may stock. */
-export const ShopStockSchema = z.object({
-  id: slug,
-  label: z.string().min(1).max(32),
-  /** `title` adds a title to the buyer; `collectible` adds an item of a series (`item`). */
-  kind: z.enum(["title", "collectible"]),
-  price: z.number().int().positive(),
-  /** The title's text, or the collectible's id in `collection_series`. */
-  item: z.string().min(1).max(32),
-});
-export type ShopStock = z.output<typeof ShopStockSchema>;
-
-export const DEFAULT_SHOP: ShopStock[] = [
-  { id: "title_regular", label: "稱號「常客」", kind: "title", price: 60, item: "常客" },
-  { id: "title_fishfan", label: "稱號「魚粉」", kind: "title", price: 60, item: "魚粉" },
-  { id: "title_nightowl", label: "稱號「夜貓子」", kind: "title", price: 80, item: "夜貓子" },
-  { id: "item_foxtail", label: "狗尾草", kind: "collectible", price: 45, item: "hand_foxtail" },
-  { id: "item_water", label: "水面背景", kind: "collectible", price: 70, item: "bg_water" },
-  { id: "item_round", label: "圓框眼鏡", kind: "collectible", price: 70, item: "glasses_round" },
-  { id: "item_stars", label: "星點背景", kind: "collectible", price: 70, item: "bg_stars" },
-];
-
 /**
  * `[modules.economy]` (docs/design/economy.md): what people earn by being with her and what
  * feeding her and small gifts cost. A paid gift raises affinity by a hair (`gift_affinity`, capped
@@ -296,17 +274,6 @@ export const EconomyConfigSchema = z.object({
       message: "room item ids must be unique",
     }),
   room_pledge_max: z.number().int().positive().default(100),
-  // Her weekly shop (shop.ts): what it may stock, how many things are on the shelf in a week, and
-  // the share of a sale that goes in her purse (the rest leaves the economy).
-  shop_catalog: z
-    .array(ShopStockSchema)
-    .max(100)
-    .default(DEFAULT_SHOP)
-    .refine((list) => new Set(list.map((i) => i.id)).size === list.length, {
-      message: "shop item ids must be unique",
-    }),
-  shop_slots: z.number().int().positive().max(20).default(4),
-  shop_her_share: z.number().min(0).max(1).default(0.5),
   // The health table (health.ts): how many days it shows, and under what share of the coins issued
   // that were taken back in a week the table says "inflating".
   health_days: z.number().int().positive().max(90).default(14),

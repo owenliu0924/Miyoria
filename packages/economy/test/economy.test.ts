@@ -802,6 +802,7 @@ describe("the module", () => {
       expect(registry.get("economy.wallet")).toBeUndefined();
       expect(registry.get("economy.make_deal")).toBeUndefined();
       expect(registry.get("economy.commission")).toBeUndefined();
+      expect(registry.get("economy.buy_from_shop")).toBeUndefined();
       // Economy 2.0: her tools, and the two services others call.
       for (const name of [
         "economy.quests",
@@ -809,7 +810,6 @@ describe("the module", () => {
         "economy.place_bet",
         "economy.open_prediction",
         "economy.fund_room",
-        "economy.buy_from_shop",
       ]) {
         expect(registry.get(name), name).toBeDefined();
       }

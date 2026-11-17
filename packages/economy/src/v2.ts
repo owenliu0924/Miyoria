@@ -14,7 +14,6 @@ import { PredictionDesk } from "./predictions.js";
 import { QuestDesk } from "./quests.js";
 import type { CoinEntry } from "./records.js";
 import { RoomDesk } from "./room.js";
-import { ShopDesk } from "./shop.js";
 import type {
   AchievementsView,
   AchievementUnlocked,
@@ -32,8 +31,6 @@ import type {
   ResolveResult,
   RoomFundResult,
   RoomView,
-  ShopBuyResult,
-  ShopView,
 } from "./v2-types.js";
 
 const ACTIVITY_LABEL: Readonly<Record<string, string>> = {
@@ -61,10 +58,6 @@ export function labelV2(r: CoinEntry, _config: EconomyConfig): string | null {
       return "抽收藏";
     case "room":
       return "一起佈置她的房間";
-    case "shop":
-      return "她的小店";
-    case "shop_pay":
-      return "小店的收入";
     case "quest":
       return r.ref === "all" ? "今天的任務全部完成" : "每日任務";
     default:
@@ -81,7 +74,6 @@ export class V2 implements Economy2 {
   readonly achievement: AchievementDesk;
   readonly prediction: PredictionDesk;
   readonly roomDesk: RoomDesk;
-  readonly shopDesk: ShopDesk;
   readonly healthDesk: Health;
 
   constructor(readonly e: EconomyService) {
@@ -92,7 +84,6 @@ export class V2 implements Economy2 {
     this.achievement = new AchievementDesk(e);
     this.prediction = new PredictionDesk(e);
     this.roomDesk = new RoomDesk(e);
-    this.shopDesk = new ShopDesk(e);
     this.healthDesk = new Health(e);
   }
 
@@ -212,14 +203,6 @@ export class V2 implements Economy2 {
     key: string,
   ): Promise<RoomFundResult> {
     return this.roomDesk.fund(account, item, amount, key);
-  }
-
-  shop(account: AccountRef): Promise<ShopView> {
-    return this.shopDesk.view(account);
-  }
-
-  buyFromShop(account: AccountRef, item: string, key: string): Promise<ShopBuyResult> {
-    return this.shopDesk.buy(account, item, key);
   }
 
   health(): Promise<HealthView> {

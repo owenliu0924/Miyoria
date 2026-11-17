@@ -102,4 +102,23 @@ describe("achievements", () => {
     await r.economy.v2.achievements(BOB);
     expect((await r.economy.v2.achievements(BOB)).titles).toContain("玩家");
   });
+
+  it("still lists a title her shop sold before it went", async () => {
+    const r = await rig();
+    expect(
+      await r.economy.docs().create({
+        id: "title:old",
+        kind: "title",
+        owner: ALICE,
+        status: "held",
+        version: 1,
+        data: { title: "常客", source: "x" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    ).toBe(true);
+    expect((await r.economy.v2.achievements(ALICE)).titles).toContain("常客");
+    expect((await r.economy.v2.achievements(ALICE_TWO)).titles).toContain("常客");
+    expect((await r.economy.v2.achievements(BOB)).titles).not.toContain("常客");
+  });
 });

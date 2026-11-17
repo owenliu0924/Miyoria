@@ -1023,7 +1023,6 @@ describe("the economy hub on /me i", () => {
     "me giveitem",
     "me predictions",
     "me bet",
-    "me shop",
     "me room",
   ];
   const ARGS: Record<string, ArgSpec[]> = {
@@ -1033,7 +1032,6 @@ describe("the economy hub on /me i", () => {
       argSpec("option", "o", ArgKind.string),
       argSpec("amount", "a", ArgKind.integer),
     ],
-    "me shop": [argSpec("item", "i", ArgKind.string, { required: false })],
     "me room": [
       argSpec("item", "i", ArgKind.string, { required: false }),
       argSpec("amount", "a", ArgKind.integer, { required: false }),
@@ -1062,7 +1060,7 @@ describe("the economy hub on /me i", () => {
     const page = updated(
       await registry.dispatchComponent(click(nav?.id ?? "", MEMBER, { values: ["play"] })),
     );
-    for (const label of ["抽收藏", "收藏冊", "稱號", "看預測", "她的小店", "她的房間"]) {
+    for (const label of ["抽收藏", "收藏冊", "稱號", "看預測", "她的房間"]) {
       expect(button(page, label)).toBeDefined();
     }
     await registry.dispatchComponent(click(button(page, "抽收藏").id, MEMBER));

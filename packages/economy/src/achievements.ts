@@ -8,7 +8,7 @@
 // (notices.ts).
 //
 // A title is the name an achievement gives (a series' completed set gives its own), shown beside
-// the person's wallet; titles from her shop come with the shop (shop.ts). Nothing here ranks
+// the person's wallet; titles her shop sold (it is gone) stay with whoever bought them. Nothing here ranks
 // anyone and no number or title reaches her feelings for the person (docs/design/v4-plan.md §15).
 
 import type { AccountRef } from "@miyoria/types";
@@ -267,8 +267,17 @@ export class AchievementDesk {
     });
     const titles = [
       ...list.filter((a) => a.unlocked_at !== null).map((a) => a.title),
-      ...(await this.e.v2.shopDesk.titles(who)),
+      ...(await this.#bought(who)),
     ];
     return { achievements: list, titles: [...new Set(titles)] };
+  }
+
+  /** Titles her shop sold before it went: documents of kind `title`, kept with their owner. */
+  async #bought(who: Member): Promise<string[]> {
+    const docs = await this.e.docs().list(this.e.profile, "title", {
+      owners: who.accounts,
+      limit: 100,
+    });
+    return docs.map((d) => String((d.data as { title?: unknown }).title ?? ""));
   }
 }
