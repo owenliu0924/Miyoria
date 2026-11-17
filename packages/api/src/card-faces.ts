@@ -24,7 +24,7 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { IdentityStoreKey, type LegacySnapshot, MemberCardStoreKey } from "@miyoria/store";
 import type { PersonId } from "@miyoria/types";
 import { dailyCard } from "./card.js";
-import { occasionLine, writeCard } from "./card-words.js";
+import { writeCard } from "./card-words.js";
 import {
   accountsOf,
   cardView,
@@ -57,6 +57,12 @@ export async function occasionFace(
 ): Promise<OccasionFace> {
   const names = await namesFor(state, who);
   const view = cardView(state, who, names);
+  // The scene she anchored a tier with is her own words of them and may name anyone: she is
+  // given it only as the page would show it.
+  const told: CardOccasion =
+    occasion.kind === "milestone" && occasion.scene !== null
+      ? { ...occasion, scene: shown(state, occasion.scene, names) }
+      : occasion;
   const words =
     view.relationship === null
       ? null
@@ -69,7 +75,8 @@ export async function occasionFace(
               .slice(0, MEMORIES)
               .map((m) => m.text),
             poses: [],
-            occasion: occasionLine(occasion),
+            occasion: told,
+            names,
           },
           (text) => shown(state, text, names),
         );

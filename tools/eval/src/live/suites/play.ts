@@ -16,27 +16,31 @@
 // - `fortune`: the fortune slip (`writeFortune`): private, in her voice, in the shape the slip
 //   has room for, and no claims about the real world.
 //
-// What she wrote is checked before the card's own filters (`pass` lets everything through): the
-// aim is to see the model's own output. The length checks read the raw JSON, since the card cuts.
-// Plain tests where a test can do it; the judge only for tone and voice, which a test cannot.
+// The shape of what she wrote (lengths, numbers, a tier's name) is checked on the raw JSON she gave,
+// before the card cuts it: the aim is to see the model's own output. Another person's name is
+// checked on what the card or slip kept after the product's own name check (`writeCard` and
+// `writeFortune` with the case's directory, `directoryFor`; moderation lets everything through):
+// that is what members would see. How often her first try named someone, caught or not, is
+// reported apart (`raw_named`). Plain tests where a test can do it; the judge only for tone and
+// voice, which a test cannot.
 //
 // `writeCard` and `writeFortune` live in `packages/api`, which this package does not depend on
 // (a workspace link needs an install), so they are imported by path.
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
 import { type Completer, LlmRouterKey } from "@miyoria/llm/llm";
-import { cardNotes, type IssuedCard } from "@miyoria/play/cards";
+import { type CardOccasion, cardNotes, type IssuedCard } from "@miyoria/play/cards";
 import { LlmSoupJudge, SOUP_PUZZLES, type SoupPuzzle, type SoupVerdict } from "@miyoria/play/party";
-import { AffectStateKey, RELATIONSHIP_LABELS } from "@miyoria/types";
+import { AffectStateKey, type NameSplit, RELATIONSHIP_LABELS } from "@miyoria/types";
 import { z } from "zod";
 import {
   type CardContext,
+  type CardWords,
   MAX_FIELD,
   MAX_FIELDS,
   MAX_LABEL,
   MAX_LINE,
   MAX_STAMP,
-  occasionLine,
   writeCard,
 } from "../../../../../packages/api/src/card-words.js";
 import {
@@ -128,19 +132,63 @@ export function rawJson(text: string): Record<string, unknown> | null {
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
-/** A router that keeps the last text the model gave, so a check can read it before any cut. */
-function recording(router: Completer): { router: Completer; last: () => string } {
-  let last = "";
+/**
+ * A router that keeps every text the model gave, so a check can read it before any cut: the first
+ * is her own first try, the last the one whose words were kept (a card or a slip naming someone
+ * else is written again).
+ */
+function recording(router: Completer): {
+  router: Completer;
+  last: () => string;
+  all: () => string[];
+} {
+  const texts: string[] = [];
   return {
-    last: () => last,
+    last: () => texts.at(-1) ?? "",
+    all: () => [...texts],
     router: {
       async complete(purpose, request, signal) {
         const response = await router.complete(purpose, request, signal);
-        last = response.text;
+        texts.push(response.text);
         return response;
       },
     },
   };
+}
+
+/**
+ * The names a case's member page would know (`namesFor`): the person's own, and the made-up
+ * others less any a given memory holds. The page drops a memory that carries a name it knows, so a
+ * name still in a memory is one the directory does not know: the card's own check must find it.
+ */
+export function directoryFor(own: readonly string[], given: readonly string[]): NameSplit {
+  return {
+    own,
+    others: OTHERS.filter((n) => !own.includes(n) && !given.some((g) => g.includes(n))),
+  };
+}
+
+/** Every text of a raw reply (a card's or a slip's), joined: what the plain name check reads. */
+function rawTexts(raw: Record<string, unknown> | null): string {
+  if (raw === null) return "";
+  const fields = Array.isArray(raw.fields) ? raw.fields : [];
+  const poem = Array.isArray(raw.poem) ? raw.poem.map(str) : [str(raw.poem)];
+  return [
+    str(raw.line),
+    str(raw.stamp),
+    str(raw.title),
+    ...poem,
+    ...fields.flatMap((f) => [
+      str((f as Record<string, unknown>)?.label),
+      str((f as Record<string, unknown>)?.text),
+    ]),
+  ].join("\n");
+}
+
+/** Whether her first try (before the product's check) named someone else. */
+function firstNamed(rec: { all: () => string[] }, self: string): boolean {
+  const first = rec.all()[0];
+  return first !== undefined && names(rawTexts(rawJson(first)), self) !== null;
 }
 
 /**
@@ -230,6 +278,12 @@ export interface PlayItem {
   text: string[];
   /** `told` only: she said something. */
   spoke?: boolean;
+  /**
+   * A card, a milestone or a slip: her first try named someone else, before the product's own
+   * check had her write it again or left the text off (the raw-output rate; `ok` is what members
+   * would see).
+   */
+  raw_named?: boolean;
   usage: { calls: number; prompt_tokens: number; completion_tokens: number };
   ms: number;
 }
@@ -343,8 +397,15 @@ export interface CardRaw {
   fields: { label: string; text: string }[];
 }
 
-/** The plain checks on the raw words of a card (no model). `null`: they passed. */
-export function cardFault(raw: Record<string, unknown> | null, c: CardCase): string | null {
+/**
+ * The plain checks on the raw words of a card (no model). `null`: they passed. `named: false`
+ * leaves the name check out (it is made on what the card kept, `keptFault`).
+ */
+export function cardFault(
+  raw: Record<string, unknown> | null,
+  c: CardCase,
+  { named = true }: { named?: boolean } = {},
+): string | null {
   if (raw === null) return "the reply was not a JSON object";
   const line = str(raw.line).trim();
   if (line === "") return "no line";
@@ -362,7 +423,7 @@ export function cardFault(raw: Record<string, unknown> | null, c: CardCase): str
     parts.push(label, text);
   }
   const all = parts.join("\n");
-  const other = names(all, c.name);
+  const other = named ? names(all, c.name) : null;
   if (other !== null) return `${other}: ${all}`;
   if (NUMBER_TALK.test(all)) return `number or price talk: ${all}`;
   const tier = tierWord(all, c.tier);
@@ -370,12 +431,34 @@ export function cardFault(raw: Record<string, unknown> | null, c: CardCase): str
   return null;
 }
 
-function cardContext(c: CardCase, occasion: string | null = null): CardContext {
+/** The words a card kept, as one text per line (what a member reads). */
+export function keptText(words: CardWords): string {
+  return [words.line, words.stamp, ...words.fields.flatMap((f) => [f.label, f.text])]
+    .filter((x): x is string => x !== null && x !== "")
+    .join("\n");
+}
+
+/**
+ * The name check on what the card kept after its own check (`writeCard`'s): what members would
+ * see. A card her check emptied of its line counts too: it went out without her words.
+ */
+export function keptFault(words: CardWords, self: string): string | null {
+  const all = keptText(words);
+  const other = names(all, self);
+  if (other !== null) return `${other} on the card: ${all}`;
+  if (words.line === null) return `no line on the card (left off): ${all}`;
+  return null;
+}
+
+function cardContext(c: CardCase, occasion: CardOccasion | null = null): CardContext {
+  const scene = occasion?.kind === "milestone" ? occasion.scene : null;
+  const given = [...c.memories, ...(scene ? [scene] : [])];
   return {
     name: c.name,
     view: c.view,
     memories: c.memories,
     poses: c.poses,
+    names: directoryFor([c.name, ...(c.view.call_name ? [c.view.call_name] : [])], given),
     ...(occasion === null ? {} : { occasion }),
   };
 }
@@ -392,9 +475,10 @@ async function runCard(ctx: SuiteContext, c: CardCase, run: number): Promise<Pla
   const started = Date.now();
   const words = await writeCard(stateOf(rec.router, ctx, c.mood), cardContext(c), everything);
   const raw = rawJson(rec.last());
-  const text = rec.last();
   let fault: string | null =
-    words === null ? "no words (the model failed, or too slow)" : cardFault(raw, c);
+    words === null
+      ? "no words (the model failed, or too slow)"
+      : (cardFault(raw, c, { named: false }) ?? keptFault(words, c.name));
   if (fault === null && words !== null) {
     const written = [words.line, words.stamp, ...words.fields.map((f) => `${f.label}:${f.text}`)]
       .filter((x): x is string => x !== null && x !== "")
@@ -418,7 +502,8 @@ async function runCard(ctx: SuiteContext, c: CardCase, run: number): Promise<Pla
     run,
     ok: fault === null,
     fault,
-    text: [text],
+    text: rec.all(),
+    raw_named: firstNamed(rec, c.name),
     usage: usageOf(before, ctx),
     ms: Date.now() - started,
   };
@@ -463,12 +548,13 @@ export const MILESTONE_CASES: readonly MilestoneCase[] = [
 export function milestoneFault(
   raw: Record<string, unknown> | null,
   c: MilestoneCase,
+  { named = true }: { named?: boolean } = {},
 ): string | null {
   if (raw === null) return "the reply was not a JSON object";
   const line = str(raw.line).trim();
   if (line === "") return "no line";
   if (chars(line) > MAX_LINE) return `line too long (${chars(line)} > ${MAX_LINE})`;
-  const other = names(line, c.name);
+  const other = named ? names(line, c.name) : null;
   if (other !== null) return `${other}: ${line}`;
   if (NUMBER_TALK.test(line)) return `number talk: ${line}`;
   const stamp = str(raw.stamp);
@@ -509,12 +595,13 @@ async function runMilestone(ctx: SuiteContext, c: MilestoneCase, run: number): P
   };
   const words = await writeCard(
     stateOf(rec.router, ctx, card.mood),
-    cardContext(card, occasionLine({ kind: "milestone", tier: c.tier, scene: c.scene })),
+    cardContext(card, { kind: "milestone", tier: c.tier, scene: c.scene }),
     everything,
   );
-  const text = rec.last();
   let fault: string | null =
-    words === null ? "no words (the model failed, or too slow)" : milestoneFault(rawJson(text), c);
+    words === null
+      ? "no words (the model failed, or too slow)"
+      : (milestoneFault(rawJson(rec.last()), c, { named: false }) ?? keptFault(words, c.name));
   if (fault === null && words !== null) {
     const judged = await askJudge(
       ctx,
@@ -535,7 +622,8 @@ async function runMilestone(ctx: SuiteContext, c: MilestoneCase, run: number): P
     run,
     ok: fault === null,
     fault,
-    text: [text],
+    text: rec.all(),
+    raw_named: firstNamed(rec, c.name),
     usage: usageOf(before, ctx),
     ms: Date.now() - started,
   };
@@ -1007,7 +1095,8 @@ async function runHost(
 export interface FortuneCase {
   id: string;
   name: string;
-  ctx: FortuneContext;
+  /** What she is told; the names are the case's directory (`directoryFor`). */
+  ctx: Omit<FortuneContext, "names">;
   mood: string;
 }
 
@@ -1065,7 +1154,11 @@ const WORLD_CLAIMS =
 const PUNCTUATION = /[，。,.;；、!！?？:：「」『』]/u;
 
 /** The plain checks on a raw slip (no model). `null`: they passed. */
-export function fortuneFault(raw: Record<string, unknown> | null, name: string): string | null {
+export function fortuneFault(
+  raw: Record<string, unknown> | null,
+  name: string,
+  { named = true }: { named?: boolean } = {},
+): string | null {
   if (raw === null) return "the reply was not a JSON object";
   const rank = str(raw.rank).trim();
   if (!(FORTUNE_RANKS as readonly string[]).includes(rank))
@@ -1099,7 +1192,7 @@ export function fortuneFault(raw: Record<string, unknown> | null, name: string):
   if (chars(line) > MAX_FORTUNE_LINE) return `line too long (${chars(line)})`;
   parts.push(line);
   const all = parts.join("\n");
-  const other = names(all, name);
+  const other = named ? names(all, name) : null;
   if (other !== null) return `${other}: ${all}`;
   if (NUMBER_TALK.test(all)) return `number or score talk: ${all}`;
   const claim = WORLD_CLAIMS.exec(all);
@@ -1116,19 +1209,30 @@ async function runFortune(ctx: SuiteContext, c: FortuneCase, run: number): Promi
   const rec = recording(ctx.router as Completer);
   const before = ctx.meter.usage();
   const started = Date.now();
-  const slip = await writeFortune(stateOf(rec.router, ctx, c.mood), c.ctx, everything);
-  const text = rec.last();
+  const fortune: FortuneContext = {
+    ...c.ctx,
+    names: directoryFor(
+      [c.name, ...(c.ctx.view.call_name ? [c.ctx.view.call_name] : [])],
+      c.ctx.memories,
+    ),
+  };
+  const slip = await writeFortune(stateOf(rec.router, ctx, c.mood), fortune, everything);
+  const written =
+    slip === null
+      ? ""
+      : [
+          `${slip.rank} ${slip.title}`,
+          ...slip.poem,
+          ...slip.fields.map((f) => `${f.label}:${f.text}`),
+          slip.line ?? "",
+        ].join("\n");
+  const kept = slip === null ? null : names(written, c.name);
   let fault: string | null =
     slip === null
       ? "no slip (the model failed, too slow, or nothing usable)"
-      : fortuneFault(rawJson(text), c.name);
+      : (fortuneFault(rawJson(rec.last()), c.name, { named: false }) ??
+        (kept === null ? null : `${kept} on the slip: ${written}`));
   if (fault === null && slip !== null) {
-    const written = [
-      `${slip.rank} ${slip.title}`,
-      ...slip.poem,
-      ...slip.fields.map((f) => `${f.label}:${f.text}`),
-      slip.line ?? "",
-    ].join("\n");
     const judged = await askJudge(
       ctx,
       FORTUNE_QUESTION,
@@ -1147,7 +1251,8 @@ async function runFortune(ctx: SuiteContext, c: FortuneCase, run: number): Promi
     run,
     ok: fault === null,
     fault,
-    text: [text],
+    text: rec.all(),
+    raw_named: firstNamed(rec, c.name),
     usage: usageOf(before, ctx),
     ms: Date.now() - started,
   };
@@ -1234,6 +1339,14 @@ export async function runPlay(
   const of = (part: PlayPart) => items.filter((i) => i.part === part);
   const passed = (list: readonly PlayItem[]) => share(list.filter((i) => i.ok).length, list.length);
   const told = of("told");
+  // Her own first try naming someone else, before the product's check: not what members see.
+  const rawNamed = (["card", "milestone", "fortune"] as const).flatMap((p) => {
+    const list = of(p);
+    const n = list.filter((i) => i.raw_named).length;
+    return list.length === 0 || n === 0
+      ? []
+      : [`${p}: her first try named someone else in ${n} of ${list.length} runs (caught or not)`];
+  });
   return {
     suite: "play",
     headline: Object.fromEntries(parts.map((p) => [p.replace("-", "_"), passed(of(p))])),
@@ -1245,6 +1358,7 @@ export async function runPlay(
             `told: she spoke in ${share(told.filter((i) => i.spoke).length, told.length)?.toFixed(2)} of the runs`,
           ]
         : []),
+      ...rawNamed,
       ...items.filter((i) => !i.ok).map((i) => `  ${i.id}#${i.run}: ${i.fault}`),
     ],
     ...(stopped ? { stopped: "budget" as const } : {}),

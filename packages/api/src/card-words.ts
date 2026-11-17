@@ -11,8 +11,11 @@
 // when, what they were, their old cards); only her line of it is kept.
 //
 // She writes as she talks: her whole persona and example dialogues (`herVoice`), then what a card
-// asks (`CARD_VOICE`): short spoken lines of hers, no tier's name, nothing made up. A text that
-// still names a tier is left off.
+// asks (`CARD_VOICE`): short spoken lines of hers, no tier's name, nothing made up, nobody but the
+// two of them. A text that still names a tier is left off. A text that names anyone else, by the
+// names she knows people by or by a name in what she was given (`other-names.ts`), has her write
+// the card once more without that memory, and is left off if it still does: every path a card's
+// words take (daily, drop, milestone, the keepsake's later line) comes through `writeCard`.
 
 import type { CardField, MemberCard } from "@miyoria/contracts/api";
 import {
@@ -24,9 +27,10 @@ import {
 } from "@miyoria/llm/llm";
 import type { CardOccasion } from "@miyoria/play/cards";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import { AffectStateKey, RELATIONSHIP_LABELS } from "@miyoria/types";
+import { AffectStateKey, type NameSplit, RELATIONSHIP_LABELS } from "@miyoria/types";
 import { z } from "zod";
 import { herVoice, WRITTEN_NOT_CHAT, withoutMarkup } from "./her-voice.js";
+import { type NameHit, type NameScreen, nameScreen, otherNameIn } from "./other-names.js";
 import type { ApiState } from "./state.js";
 
 const log = getLogger("api.card");
@@ -70,8 +74,14 @@ export interface CardContext {
   memories: readonly string[];
   /** Pictures of her the card may use (their affinity band's). */
   poses: readonly string[];
-  /** What the card is for when it is not a daily one (`occasionLine`); default a daily card. */
-  occasion?: string | null;
+  /** What the card is for when it is not a daily one (told as `occasionLine`); default daily. */
+  occasion?: CardOccasion | null;
+  /**
+   * Whose names are whose (`namesFor`): every text she writes is checked against everyone else's
+   * names and the names in what she is given (`other-names.ts`). `null` when the names cannot be
+   * read: then nothing she wrote could be shown, and she is not asked.
+   */
+  names: NameSplit | null;
 }
 
 /** What she is told a card nobody bought is for, as a line of `about`. */
@@ -117,7 +127,8 @@ export const CARD_VOICE = `## 卡上的字怎麼寫
 - 陌生人的卡也是你寫的:有點距離、有點好奇或小小吐槽,不是「初次見面請多指教」的制式問候,也不是填空的表格。討厭的人的卡冷淡敷衍,但還是你的口氣。
 - 卡上任何地方(line、stamp、fields)都不寫關係分級的名稱:${RELATIONSHIP_LABELS.filter((l) => l !== "認識").join("、")}這些詞都不寫,也不寫「XX認證」「升級成XX」「正式成為XX」。你們多熟,讓口氣自己說出來。
 - 只寫下面給你的事。沒有共同的回憶或場面可寫時,就寫現在這一刻(你現在的心情、他今天來了、這張卡本身),不要編一件你們以前做過的事,也不要替記得的事補上沒寫到的細節。
-- 只寫你和他,不提任何其他人(不寫別人的名字,也不寫「另一個人」「某人」);不寫數字、分數、價錢,不寫你心裡的盤算或秘密。`;
+- 卡是你們兩個人之間的東西,只寫你和他。記得的事裡有別人(朋友、家人、推薦他東西的人,任何名字或綽號)時,那個人整個不寫:不寫名字、不寫綽號,也不改寫成「朋友」「有人」「某人」「另一個人」;只寫那件事裡你和他的部分,或者換一件事寫。
+- 不寫數字、分數、價錢,不寫你心裡的盤算或秘密。`;
 
 function rules(poses: readonly string[]): string {
   const choices = poses.map((p) => `${p}(${POSE_WORDS[p] ?? p})`).join("、");
@@ -147,42 +158,67 @@ function about(c: CardContext, mood: string | null): string {
     lines.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${m}`).join("\n")}`);
   }
   if (mood) lines.push(`你現在的心情:${mood}`);
-  if (c.occasion) lines.push(c.occasion);
+  if (c.occasion) lines.push(occasionLine(c.occasion));
   return lines.join("\n");
 }
+
+/** What she is given of them that may hold someone else's name: memories, a scene, a card's facts. */
+function givenTexts(c: CardContext): string[] {
+  const o = c.occasion;
+  const occasion =
+    o?.kind === "milestone"
+      ? o.scene === null
+        ? []
+        : [o.scene]
+      : o?.kind === "keepsake"
+        ? o.facts.map((f) => `${f.label} ${f.text}`)
+        : [];
+  return [...c.memories, ...occasion, ...(c.view.public_feeling ? [c.view.public_feeling] : [])];
+}
+
+/** `c` without the given texts at `drop` (indices of `givenTexts`). */
+function without(c: CardContext, drop: readonly number[]): CardContext {
+  const memories = c.memories.filter((_, i) => !drop.includes(i));
+  const o = c.occasion;
+  let occasion = o;
+  let at = c.memories.length;
+  if (o?.kind === "milestone" && o.scene !== null) {
+    if (drop.includes(at)) occasion = { ...o, scene: null };
+    at += 1;
+  } else if (o?.kind === "keepsake") {
+    occasion = { ...o, facts: o.facts.filter((_, i) => !drop.includes(at + i)) };
+    at += o.facts.length;
+  }
+  const view = drop.includes(at) ? { ...c.view, public_feeling: null } : c.view;
+  return { ...c, memories, occasion: occasion ?? null, view };
+}
+
+/** Said when she is asked again because her first words named someone else. */
+const AGAIN =
+  "你剛才寫的字裡出現了別人。重寫一次:卡上只有你和他,不寫別人的名字或綽號,也不用「朋友」「某人」代替。";
 
 function cut(text: string, max: number): string {
   const chars = [...withoutMarkup(text).replace(/\s+/g, " ").trim()];
   return chars.length > max ? `${chars.slice(0, max).join("")}…` : chars.join("");
 }
 
-/**
- * Her words for a card, each passed by `pass` (nobody else named, moderation) or dropped; `null`
- * when she cannot write now (no model, a failure, too slow): the card goes out without them.
- */
-export async function writeCard(
+/** One answer of hers for `c`; `null` when she gives none (a failure, too slow). */
+async function ask(
   state: ApiState,
   c: CardContext,
-  pass: (text: string) => string | null,
-): Promise<CardWords | null> {
+  mood: string | null,
+  again: boolean,
+): Promise<z.output<typeof WordsSchema> | null> {
   const router = state.optional(LlmRouterKey);
   if (!router) return null;
-  let mood: string | null = null;
-  try {
-    mood = state.optional(AffectStateKey)?.snapshot().mood_line ?? null;
-  } catch {
-    mood = null;
-  }
+  const told = again ? `${about(c, mood)}\n\n${AGAIN}` : about(c, mood);
   try {
     const result = await withLlmTag({ module: "api", label: "card" }, () =>
       completeJson(
         router,
         "chat",
         {
-          messages: [
-            systemMessage(`${herVoice(state)}\n\n${rules(c.poses)}`),
-            userMessage(about(c, mood)),
-          ],
+          messages: [systemMessage(`${herVoice(state)}\n\n${rules(c.poses)}`), userMessage(told)],
           json_mode: true,
           reasoning_purpose: "card",
           max_tokens: 400,
@@ -191,7 +227,7 @@ export async function writeCard(
         { signal: AbortSignal.timeout(WRITE_TIMEOUT_MS) },
       ),
     );
-    return checked(result.value, c.poses, pass);
+    return result.value;
   } catch (error) {
     log.warn({ error: errorMessage(error) }, "she could not write on a card");
     return null;
@@ -199,18 +235,66 @@ export async function writeCard(
 }
 
 /**
+ * Her words for a card, each passed by `pass` (nobody else named, moderation) or dropped; `null`
+ * when she cannot write now (no model, a failure, too slow, the names cannot be read): the card
+ * goes out without them.
+ *
+ * A text of hers that names anyone but them (`otherNameIn`: the directory's names, or one found in
+ * what she was given) has her write the card once more, without the memory that name came from;
+ * whatever still names someone then is left off, and the rest stands.
+ */
+export async function writeCard(
+  state: ApiState,
+  c: CardContext,
+  pass: (text: string) => string | null,
+): Promise<CardWords | null> {
+  if (!state.optional(LlmRouterKey) || c.names === null) return null;
+  let mood: string | null = null;
+  try {
+    mood = state.optional(AffectStateKey)?.snapshot().mood_line ?? null;
+  } catch {
+    mood = null;
+  }
+  const screen = nameScreen(c.names, givenTexts(c));
+  const first = await ask(state, c, mood, false);
+  if (first === null) return null;
+  const once = checked(first, c.poses, pass, screen);
+  if (once.named.length === 0) return once.words;
+  const from = [...new Set(once.named.flatMap((hit) => hit.from))];
+  log.info(
+    { texts: once.named.length, memories: from.length },
+    "her words on a card named someone else; she writes them again",
+  );
+  const second = await ask(state, without(c, from), mood, true);
+  if (second === null) return once.words;
+  const twice = checked(second, c.poses, pass, screen);
+  if (twice.named.length > 0) {
+    log.info({ texts: twice.named.length }, "her words on a card still named someone: left off");
+  }
+  return twice.words;
+}
+
+/**
  * Her raw choice, cut to size and passed field by field; a text that names a tier of the scale
- * (`TIER_WORDS`) is left off like one `pass` refuses.
+ * (`TIER_WORDS`) is left off like one `pass` refuses, and so is one that names someone else by
+ * `screen` (`named` says where each came from).
  */
 export function checked(
   raw: z.output<typeof WordsSchema>,
   poses: readonly string[],
   pass: (text: string) => string | null,
-): CardWords {
+  screen?: NameScreen,
+): { words: CardWords; named: NameHit[] } {
+  const named: NameHit[] = [];
   const say = (v: string | null, max: number) => {
     if (v === null) return null;
     const text = cut(v, max);
     if (text === "" || TIER_WORDS.some((t) => text.includes(t))) return null;
+    const hit = screen === undefined ? null : otherNameIn(screen, text);
+    if (hit !== null) {
+      named.push(hit);
+      return null;
+    }
     return pass(text);
   };
   const fields: CardField[] = [];
@@ -220,10 +304,11 @@ export function checked(
     const text = say(f.text, MAX_FIELD);
     if (label !== null && text !== null) fields.push({ label, text });
   }
-  return {
+  const words: CardWords = {
     line: say(raw.line, MAX_LINE),
     pose: raw.pose !== null && poses.includes(raw.pose) ? raw.pose : null,
     stamp: say(raw.stamp, MAX_STAMP),
     fields,
   };
+  return { words, named };
 }

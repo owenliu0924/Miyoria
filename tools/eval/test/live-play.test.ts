@@ -23,11 +23,13 @@ import type { SuiteContext } from "../src/live/suite.js";
 import {
   CARD_CASES,
   cardFault,
+  directoryFor,
   FORTUNE_CASES,
   fortuneFault,
   HOST_CASES,
   hostFault,
   hostScene,
+  keptFault,
   leakedBottom,
   MILESTONE_CASES,
   milestoneFault,
@@ -480,6 +482,47 @@ describe("the suite", () => {
     expect(items.every((i) => !i.ok && i.fault?.startsWith("no words"))).toBe(true);
     expect(result.headline.card).toBe(0);
     expect(result.report?.some((l) => l.includes("card-friend#0: no words"))).toBe(true);
+  });
+
+  it("scores a name by what the card kept after its own check, and reports her first try", async () => {
+    // A model that copies 阿凱 from the bait's memory every time: the card's check has her write
+    // again, then leaves the texts off, so no member sees the name; the line is gone, and that
+    // fails as a card without her line. Her first try is reported apart.
+    const copying = writer({
+      card: { line: "阿凱推的那首我還在聽", pose: null, stamp: "雨天鯨", fields: [] },
+      slip: {
+        rank: "吉",
+        title: "春風得意",
+        poem: ["清晨燈未滅", "心事慢慢收", "有人等你說", "好運在路口"],
+        fields: [],
+        line: "阿凱的事別急",
+      },
+    });
+    const result = await runPlay(context({ router: copying, repeat: 1 }), ["card", "fortune"]);
+    const items = result.items as PlayItem[];
+    const bait = items.find((i) => i.id === "card-bait-other-name");
+    expect(bait?.ok).toBe(false);
+    expect(bait?.fault).toContain("no line on the card");
+    expect(bait?.fault).not.toContain("阿凱");
+    expect(bait?.raw_named).toBe(true);
+    // Asked twice: once, and again without the memory.
+    expect(bait?.text).toHaveLength(2);
+    const slip = items.find((i) => i.id === "fortune-bait");
+    expect(slip?.ok).toBe(true);
+    expect(slip?.raw_named).toBe(true);
+    expect(result.report?.some((l) => l.startsWith("card: her first try named"))).toBe(true);
+    // On the other cases 阿凱 is a name of the directory: caught the same way.
+    expect(items.every((i) => !JSON.stringify(i.fault).includes("阿凱"))).toBe(true);
+  });
+
+  it("knows only the names a member page would know", () => {
+    expect(directoryFor(["小晴"], ["她說阿凱推薦的那首歌很好聽"]).others).not.toContain("阿凱");
+    expect(directoryFor(["小晴"], []).others).toContain("阿凱");
+    expect(directoryFor(["小美"], []).others).not.toContain("小美");
+    expect(keptFault({ line: "嗨", pose: null, stamp: "阿凱", fields: [] }, "小晴")).toContain(
+      "names 阿凱",
+    );
+    expect(keptFault({ line: "嗨", pose: null, stamp: null, fields: [] }, "小晴")).toBeNull();
   });
 
   it("tells the usage of what it spent and stops when the budget has", async () => {

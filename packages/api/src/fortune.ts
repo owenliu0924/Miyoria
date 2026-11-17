@@ -2,7 +2,8 @@
 // a rank, a short title, a four line poem, a few fields (戀愛, 學業, ...) and a personal line. The
 // words are hers, the shape is the system's: every text is cut to size and passed by what the member
 // page passes (nobody else named, moderation), and a rank that is not one of the six is replaced
-// by a weighted draw.
+// by a weighted draw. A slip naming anyone but them, by the names she knows people by or by a name
+// in the memories she was given (`other-names.ts`), is written once more without that memory.
 //
 // She writes as she talks (`herVoice`: her whole persona and example dialogues). A slip says
 // nothing about anyone's body, money, a law case or an exam, even when what she knows of them
@@ -29,12 +30,14 @@ import {
   isJsonObject,
   type JsonObject,
   type JsonValue,
+  type NameSplit,
   newId,
   type PersonId,
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
 import { herVoice, WRITTEN_NOT_CHAT, withoutMarkup } from "./her-voice.js";
+import { type NameHit, type NameScreen, nameScreen, otherNameIn } from "./other-names.js";
 import { dateOf } from "./public.js";
 import type { ApiState } from "./state.js";
 
@@ -102,6 +105,11 @@ export interface FortuneContext {
   memories: readonly string[];
   /** Today, `YYYY-MM-DD`. */
   date: string;
+  /**
+   * Whose names are whose (`namesFor`), for the check that keeps everyone else's names off the slip
+   * (`other-names.ts`); `null` when they cannot be read, and then there is no slip.
+   */
+  names: NameSplit | null;
 }
 
 /**
@@ -126,7 +134,8 @@ const RULES = `${WRITTEN_NOT_CHAT}
 - 想關心他,就在 line 用你的口氣順口關心一句,不點出是哪件事,也不給建議。
 - 不寫任何保證會發生的事(一定、保證、必定);籤只說今天的心情和運氣,輕鬆就好。
 - 不寫數字:阿拉伯數字、國字的數目、分數、價錢、日期都不寫。
-- 只寫你和他,不提任何其他人(不寫別人的名字,也不寫「另一個人」「某人」「他」指別人);不寫你心裡的盤算或秘密。
+- 籤是你們兩個人之間的東西,只寫你和他。他的事裡有別人(朋友、家人、借他錢的人,任何名字或綽號)時,那個人整個不寫:不寫名字、不寫綽號,也不改寫成「朋友」「有人」「某人」「另一個人」或用「他」指別人;只寫你和他,或者換一件事寫。
+- 不寫你心裡的盤算或秘密。
 - 不要寫成制式的籤詩或勵志文案:換一個人還能照用的句子就不要寫。`;
 
 function about(c: FortuneContext, mood: string | null): string {
@@ -189,11 +198,13 @@ export function checked(
   raw: RawSlip,
   pass: (text: string) => string | null,
   random: () => number = Math.random,
+  screen?: NameScreen,
 ): FortuneSlip | null {
   const say = (v: string | null, max: number, dots: boolean) => {
     if (v === null) return null;
     const text = cut(v, max, dots);
-    return text === "" ? null : pass(text);
+    if (text === "" || (screen !== undefined && otherNameIn(screen, text) !== null)) return null;
+    return pass(text);
   };
   const title = say(raw.title, MAX_TITLE, false);
   const lines = (Array.isArray(raw.poem) ? raw.poem : raw.poem.split(/\n+/))
@@ -222,30 +233,46 @@ export function checked(
   return { rank, title, poem, fields, line: say(raw.line, MAX_LINE, true) };
 }
 
-/**
- * Her slip for `c`, each text passed by `pass`; `null` when she cannot write now (no model, a
- * failure, too slow, nothing usable): the caller gives the payment back.
- */
-export async function writeFortune(
+/** Every text of a raw slip, as she wrote it. */
+function textsOf(raw: RawSlip): string[] {
+  const poem = Array.isArray(raw.poem) ? raw.poem : [raw.poem];
+  return [
+    raw.title ?? "",
+    ...poem,
+    ...raw.fields.flatMap((f) => [f.label, f.text]),
+    raw.line ?? "",
+  ].filter((t) => t.trim() !== "");
+}
+
+/** Where the texts of `raw` name someone else (`other-names.ts`). */
+export function namedIn(raw: RawSlip, screen: NameScreen): NameHit[] {
+  return textsOf(raw).flatMap((t) => {
+    const hit = otherNameIn(screen, t);
+    return hit === null ? [] : [hit];
+  });
+}
+
+/** Said when she is asked again because her first slip named someone else. */
+const AGAIN_NAMES =
+  "你剛才寫的籤裡出現了別人。重寫一次:籤上只有你和他,不寫別人的名字或綽號,也不用「朋友」「某人」代替。";
+
+/** One answer of hers for `c`, with `again` said after it; `null` when she gives none. */
+async function ask(
   state: ApiState,
   c: FortuneContext,
-  pass: (text: string) => string | null,
-): Promise<FortuneSlip | null> {
+  mood: string | null,
+  again: string | null,
+): Promise<RawSlip | null> {
   const router = state.optional(LlmRouterKey);
   if (!router) return null;
-  let mood: string | null = null;
-  try {
-    mood = state.optional(AffectStateKey)?.snapshot().mood_line ?? null;
-  } catch {
-    mood = null;
-  }
+  const told = again === null ? about(c, mood) : `${about(c, mood)}\n\n${again}`;
   try {
     const result = await withLlmTag({ module: "api", label: "fortune" }, () =>
       completeJson(
         router,
         "chat",
         {
-          messages: [systemMessage(`${herVoice(state)}\n\n${RULES}`), userMessage(about(c, mood))],
+          messages: [systemMessage(`${herVoice(state)}\n\n${RULES}`), userMessage(told)],
           json_mode: true,
           reasoning_purpose: "fortune",
           max_tokens: 500,
@@ -254,11 +281,42 @@ export async function writeFortune(
         { signal: AbortSignal.timeout(WRITE_TIMEOUT_MS) },
       ),
     );
-    return checked(result.value, pass);
+    return result.value;
   } catch (error) {
     log.warn({ error: errorMessage(error) }, "she could not write a fortune");
     return null;
   }
+}
+
+/**
+ * Her slip for `c`, each text passed by `pass`; `null` when she cannot write now (no model, a
+ * failure, too slow, the names cannot be read, nothing usable): the caller gives the payment back.
+ * A slip that names anyone but them (`other-names.ts`) is written once more without the memory the
+ * name came from; a text that still does is left off (the title or a poem line: no slip).
+ */
+export async function writeFortune(
+  state: ApiState,
+  c: FortuneContext,
+  pass: (text: string) => string | null,
+): Promise<FortuneSlip | null> {
+  if (!state.optional(LlmRouterKey) || c.names === null) return null;
+  let mood: string | null = null;
+  try {
+    mood = state.optional(AffectStateKey)?.snapshot().mood_line ?? null;
+  } catch {
+    mood = null;
+  }
+  const screen = nameScreen(c.names, c.memories);
+  let raw = await ask(state, c, mood, null);
+  if (raw === null) return null;
+  const named = namedIn(raw, screen);
+  if (named.length > 0) {
+    const from = new Set(named.flatMap((hit) => hit.from));
+    log.info({ texts: named.length }, "her fortune named someone else; she writes it again");
+    const fewer = { ...c, memories: c.memories.filter((_, i) => !from.has(i)) };
+    raw = (await ask(state, fewer, mood, AGAIN_NAMES)) ?? raw;
+  }
+  return checked(raw, pass, Math.random, screen);
 }
 
 // ---- keeping them ---------------------------------------------------------------------------

@@ -548,6 +548,7 @@ export async function cardWords(
       view,
       memories: (await shownMemories(state, who, names)).slice(0, 5).map((m) => m.text),
       poses: [],
+      names,
     },
     (text) => shown(state, text, names),
   );

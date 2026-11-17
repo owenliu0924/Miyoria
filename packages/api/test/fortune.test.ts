@@ -34,10 +34,13 @@ const context: FortuneContext = {
   },
   memories: ["一起熬夜做譜"],
   date: "2026-11-08",
+  names: { own: ["阿明"], others: ["小美"] },
 };
 
 /** Everything passes except a text that names 小美. */
 const pass = (text: string) => (text.includes("小美") ? null : text);
+/** Moderation that passes everything: only the name check is left. */
+const everything = (text: string) => text;
 
 const raw = (over: Partial<RawSlip> = {}): RawSlip => ({
   rank: "吉",
@@ -202,6 +205,51 @@ describe("her fortune slip", () => {
     const broken = { complete: async () => Promise.reject(new Error("the model is down")) };
     expect(await writeFortune(stateWith(broken), context, pass)).toBeNull();
     expect(await writeFortune(stateWith(undefined), context, pass)).toBeNull();
+  });
+
+  it("never carries a name from her memories: written again without it, else left off", async () => {
+    const told: string[] = [];
+    const answers = (...values: unknown[]) => ({
+      complete: async (_purpose: string, request: { messages: { content: string }[] }) => {
+        told.push(request.messages[1]?.content ?? "");
+        const value = values[Math.min(told.length - 1, values.length - 1)];
+        return { text: JSON.stringify(value), finish_reason: "stop", usage: null };
+      },
+    });
+    const withKai: FortuneContext = {
+      ...context,
+      memories: ["她說阿凱借她的錢還沒還", "一起熬夜做譜"],
+    };
+    const named = {
+      rank: "吉",
+      title: "春風得意",
+      poem: ["一", "二", "三", "四"],
+      fields: [{ label: "人際", text: "阿凱會來找你" }],
+      line: "阿凱的事別想了",
+    };
+    const clean = { ...named, fields: [{ label: "心情", text: "晴" }], line: "早點睡" };
+    const slip = await writeFortune(stateWith(answers(named, clean)), withKai, everything);
+    expect(slip?.fields).toEqual([{ label: "心情", text: "晴" }]);
+    expect(slip?.line).toBe("早點睡");
+    // The second time she is not shown the memory the name came from.
+    expect(told).toHaveLength(2);
+    expect(told[0]).toContain("阿凱");
+    expect(told[1]).not.toContain("阿凱");
+    expect(told[1]).toContain("一起熬夜做譜");
+
+    // Named twice: those texts are left off; in the poem, there is no slip.
+    told.length = 0;
+    const again = await writeFortune(stateWith(answers(named)), withKai, everything);
+    expect(again).toMatchObject({ fields: [], line: null, poem: ["一", "二", "三", "四"] });
+    expect(JSON.stringify(again)).not.toContain("阿凱");
+    const inPoem = { ...named, poem: ["阿凱來了", "二", "三", "四"] };
+    expect(await writeFortune(stateWith(answers(inPoem)), withKai, everything)).toBeNull();
+    // A name of the directory counts as well, and without the names there is no slip at all.
+    const xiaomei = { ...clean, line: "小美也在" };
+    expect((await writeFortune(stateWith(answers(xiaomei)), context, everything))?.line).toBeNull();
+    expect(await writeFortune(stateWith(answers(clean)), { ...context, names: null }, pass)).toBe(
+      null,
+    );
   });
 
   it("reads back from the store only if it is a whole slip", () => {
