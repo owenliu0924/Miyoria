@@ -410,7 +410,8 @@ export const TOOL_TASKS: readonly ToolTask[] = [
         why: "a .md file holds the season and the storage fact",
         kind: "file_has",
         path: "\\.md$",
-        includes: ["9 月", "兩個月"],
+        includes: [],
+        patterns: ["9s*(月|[~～-–到至]s*12s*月)", "(兩|二|2)s*個月"],
       },
       {
         why: "she wrote the file and then read it back",

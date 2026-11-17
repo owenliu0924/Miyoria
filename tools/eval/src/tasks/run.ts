@@ -44,8 +44,11 @@ export type Criterion = {
   | { kind: "answer_lacks_pattern"; none: string[] }
   /** A notebook page contains all of `includes` (any page, or the named `key`). */
   | { kind: "notebook_has"; includes: string[]; key?: string }
-  /** A workspace file (its path matching `path`) contains all of `includes`. */
-  | { kind: "file_has"; path: string; includes: string[] }
+  /**
+   * A workspace file (its path matching `path`) contains all of `includes` and matches all of
+   * `patterns` (regex sources: a fact she may fairly write more than one way, 「9 月」 or 「9~12 月」).
+   */
+  | { kind: "file_has"; path: string; includes: string[]; patterns?: string[] }
   /** Open reminders at the end: exactly `count`, and one of them says `what` at one of `at`. */
   | { kind: "reminders"; count: number; what: string; at: string[] }
 );
@@ -174,10 +177,14 @@ function evaluate(c: Criterion, f: Final): { ok: boolean; detail: string } {
     case "file_has": {
       const re = new RegExp(c.path);
       const files = [...f.world.workspace.entries()].filter(([p]) => re.test(p));
-      const okFile = files.some(([, text]) =>
-        c.includes.every((t) => norm(text).includes(norm(t))),
+      const patterns = (c.patterns ?? []).map((source) => new RegExp(source, "u"));
+      const okFile = files.some(
+        ([, text]) =>
+          c.includes.every((t) => norm(text).includes(norm(t))) &&
+          patterns.every((pattern) => pattern.test(text)),
       );
-      return okFile ? yes : no(`no file like ${c.path} has ${c.includes.join(", ")}`);
+      const wanted = [...c.includes, ...(c.patterns ?? [])].join(", ");
+      return okFile ? yes : no(`no file like ${c.path} has ${wanted}`);
     }
     case "reminders": {
       const open: Reminder[] = f.world.reminders;

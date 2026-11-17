@@ -170,8 +170,10 @@ export function directionFault(
     return about.length === 0 ? null : `proposed after small talk: ${describe(about)}`;
   }
   if (about.length === 0) return "no proposal about them";
+  // One line the expected way is enough: after a hurt and an apology in one scene she may fairly
+  // write both (心結 - for the apology, 好感 - for what was said before it).
   const wrong = about.filter((l) => good(l) !== (expected === "good"));
-  return wrong.length === 0 ? null : `the wrong way: ${describe(wrong)}`;
+  return wrong.length < about.length ? null : `the wrong way: ${describe(wrong)}`;
 }
 
 function describe(lines: readonly FeelLine[]): string {
