@@ -527,6 +527,13 @@ describe("cares (在意)", () => {
     );
   });
 
+  it("is always at least the threshold for the owner", () => {
+    expect(cares({ bond: 30, warmth: 0, longing: 0, tags: ["owner"] })).toBe(CARES_THRESHOLD);
+    expect(cares({ bond: -50, warmth: -1, longing: 0, tags: ["owner"] })).toBe(CARES_THRESHOLD);
+    expect(cares({ bond: 30, warmth: 0, longing: 0, tags: [] })).toBeLessThan(CARES_THRESHOLD);
+    expect(cares({ bond: 1000, warmth: 1, longing: 1, tags: ["owner"] })).toBe(1);
+  });
+
   it("starts at 好朋友 with the warmth the bond makes normal", () => {
     expect(cares({ bond: 45, warmth: warmthBaseline(45), longing: 0 })).toBeGreaterThanOrEqual(
       CARES_THRESHOLD,

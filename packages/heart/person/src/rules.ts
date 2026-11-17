@@ -18,6 +18,7 @@ import type { HeartChangedData } from "@miyoria/store";
 import {
   ANCHORED_TIER_MIN,
   BOND_LADDER,
+  CARES_THRESHOLD,
   type Timestamp,
   tierFloorOf,
   tierProgress,
@@ -469,7 +470,7 @@ export const CARE_BY_TIER: readonly number[] = [
  * From this much on, she cares (在意): world, self, mind and her initiative all use this. Defined
  * with the heart's service in `@miyoria/types`, which they read it from.
  */
-export { CARES_THRESHOLD } from "@miyoria/types";
+export { CARES_THRESHOLD };
 
 const clamp01 = (x: number) => (Number.isFinite(x) ? Math.min(Math.max(x, 0), 1) : 0);
 
@@ -482,13 +483,19 @@ export function caresBase(bond: number, warmth: number): number {
 
 /**
  * How much she cares about someone (在意), 0..1: the one definition, from the bond's tier,
- * how warm she is with them now and how much she misses them. At 好朋友 with the warmth the bond
+ * how warm she is with them now and how much she misses them; never under the threshold for
+ * someone tagged `owner`. At 好朋友 with the warmth the bond
  * makes normal it is just at `CARES_THRESHOLD`.
  */
-export function cares(person: Pick<HeartPerson, "bond" | "warmth" | "longing">): number {
-  if (!(person.bond >= 0)) return 0;
-  return clamp01(
-    caresBase(person.bond, person.warmth) + 0.15 * clampField("longing", person.longing),
+export function cares(
+  person: Pick<HeartPerson, "bond" | "warmth" | "longing"> & { tags?: readonly string[] },
+): number {
+  // The owner is always someone she cares about, however the numbers stand today.
+  const owner = person.tags?.includes(OWNER_TAG) === true ? CARES_THRESHOLD : 0;
+  if (!(person.bond >= 0)) return owner;
+  return Math.max(
+    owner,
+    clamp01(caresBase(person.bond, person.warmth) + 0.15 * clampField("longing", person.longing)),
   );
 }
 
