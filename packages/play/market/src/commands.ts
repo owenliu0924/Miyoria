@@ -30,7 +30,7 @@ import { auctionNotice, BUY_COUNTS, lotteryNotice, md, ROUTES } from "./notices.
 import { withPicture } from "./pictures.js";
 import type { MarketRefusal, MarketService } from "./service.js";
 
-export const PATHS = ["me auction", "me lottery"] as const;
+export const PATHS = ["me auction", "me lottery", "game lottery"] as const;
 
 /** The wallet's node: a role without it, like `blocked`, cannot take part. */
 const NODE = "me.wallet";
@@ -243,6 +243,16 @@ function registerAll(registry: CommandRegistry, service: () => MarketService | n
         return lotteryCard(market, inv.invoker);
       }),
     { components: lotteryRoutes },
+  );
+
+  // The week's pot for everyone in the channel (owner 2026-11-18): the same card as the weekly
+  // notice, with nobody's own tickets on it. Its buttons are the routes `/me lottery` declares,
+  // so a purchase from it is still answered only to the buyer.
+  registry.register(
+    commandSpec("game lottery", "每週樂透:把這週的獎池和開獎時間貼在這個頻道(大家都看得到)", {
+      permission: NODE,
+    }),
+    () => run(async (market) => lotteryCard(market, null)),
   );
 }
 
