@@ -7,6 +7,8 @@
 //   (H3), the anchors a tier needs (H4), the daily decay (H9) and the one definition of 在意.
 // - `log.ts`: a change is one `heart.changed` event and evidence one `heart.evidence`; a
 //   person's history and the day's ledger are read from them.
+// - `legacy.ts`: the migration from `relationships`, `relationship_deltas`, the
+//   `self:feeling:<person>` cards and the `hearts` of `self:state`.
 // - `config.ts`: every number of the rules, with its default.
 //
 // Nothing runs these yet: the modules still use `social`, `self` and `mind` until the next steps
@@ -17,6 +19,13 @@ export {
   HeartPersonConfigSchema,
   heartPersonConfig,
 } from "./config.js";
+export {
+  type LegacyHearts,
+  type LegacyInput,
+  type LegacyResult,
+  migrateLegacy,
+  parseLegacyHearts,
+} from "./legacy.js";
 export {
   changeWrite,
   evidenceWrite,
