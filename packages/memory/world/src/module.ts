@@ -111,7 +111,7 @@ export class WorldModule implements Module {
   static readonly ID = "world";
   readonly manifest = defineManifest(WorldModule.ID, "World", {
     description: "What she perceives: who is online, in voice and doing what; salient changes",
-    optional: ["social"],
+    optional: ["heart"],
     configSchema: WorldConfigSchema,
   });
   readonly #options: WorldModuleOptions;

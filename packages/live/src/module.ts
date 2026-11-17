@@ -73,7 +73,7 @@ export class LiveModule implements Module {
   static readonly ID = "live";
   readonly manifest = defineManifest(LiveModule.ID, "Live page", {
     description: "Her state, face and public lines for the live page; head-pats as Observations",
-    optional: ["facts", "moderation", "activity", "social", "self", "economy"],
+    optional: ["facts", "moderation", "activity", "heart", "self", "economy"],
     configSchema: LiveConfigSchema,
   });
   readonly #own: readonly string[];

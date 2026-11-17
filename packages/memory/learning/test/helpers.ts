@@ -173,7 +173,7 @@ export async function rig(options: RigOptions): Promise<Rig> {
   const router = new LlmRouter(new Map([["p", options.provider]]), purposes);
   await sup.register(new Stub("llm", (ctx) => ctx.provide(LlmRouterKey, router)), null, true);
   await sup.register(
-    new Stub("social", (ctx) =>
+    new Stub("heart", (ctx) =>
       ctx.provide(SocialSignalsKey, {
         attitude: (a: AccountRef): Attitude | null =>
           PEOPLE[a.id]

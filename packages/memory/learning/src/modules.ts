@@ -182,7 +182,7 @@ export class ConversationModule implements Module {
   readonly manifest = defineManifest(ConversationModule.ID, "Conversation notes", {
     description: "Continuous conversation compaction into her own structured notes",
     requires: ["llm"],
-    optional: ["social", "knowledge"],
+    optional: ["heart", "knowledge"],
     configSchema: ConversationConfigSchema,
   });
   #engine: ConversationEngine | null = null;
@@ -288,7 +288,7 @@ export class KnowledgeModule implements Module {
   static readonly ID = "knowledge";
   readonly manifest = defineManifest(KnowledgeModule.ID, "Knowledge", {
     description: "Her self-organized documents about people, servers, herself and topics",
-    optional: ["social"],
+    optional: ["heart"],
     configSchema: KnowledgeConfigSchema,
   });
   #store: KnowledgeStore | null = null;
@@ -473,7 +473,7 @@ export class ReflectModule implements Module {
   readonly manifest = defineManifest(ReflectModule.ID, "Reflection", {
     description: "Feedback signals, lessons and her daily reflection",
     requires: ["llm"],
-    optional: ["self", "memory", "knowledge", "conversation", "social", "mind", "actions"],
+    optional: ["self", "memory", "knowledge", "conversation", "heart", "mind", "actions"],
     configSchema: ReflectConfigSchema,
   });
   #flush: (() => Promise<void>) | null = null;
