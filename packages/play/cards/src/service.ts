@@ -103,6 +103,8 @@ export interface CardServiceOptions {
   random?: Random;
   /** Default `newSerial` (`MYR-XXXX-XXXX-XXXX` from the system's CSPRNG). */
   newSerial?: () => string;
+  /** Told of every card issued (what she hears of it, `notes.ts`); its errors are logged. */
+  onIssued?: (issued: IssuedCard) => void;
 }
 
 /** The start (epoch ms) of the local day of `now` at `offsetMinutes` from UTC. */
@@ -203,6 +205,14 @@ export class CardService {
         frame: options.frame ?? null,
         foil: options.foil === true,
       });
+      try {
+        this.#o.onIssued?.(issued);
+      } catch (error) {
+        log.warn(
+          { person: payer.person, serial, err: String(error) },
+          "cards: cannot tell her about a card",
+        );
+      }
       return { ok: true, issued, balance };
     } catch (error) {
       if (paid !== null) {

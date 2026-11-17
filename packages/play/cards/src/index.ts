@@ -11,6 +11,7 @@
 // - `schema.ts`, `migrations.ts`, `store.ts`: the `cards` store plugin (`cards_card`, `cards_parts`,
 //   `cards_pity`, `cards_dex`, `cards_wishlist`, `cards_titles`) and the transaction that writes a
 //   card with its pity, dex, titles and events (`events.ts`).
+// - `notes.ts`: the line she hears of a card worth a word (a rare one, the pity, a wish, a title).
 // - `portrait.ts`: the seam for her rendered picture (`CardPortraitKey`), and the fixed portrait
 //   nearest each expression until it exists.
 // - `wallet.ts`: the port through which a card is paid (`CardWalletKey`, the economy's to provide).
@@ -78,6 +79,7 @@ export { EXPRESSIONS, type Expression, expressionsFor } from "./expressions.js";
 export { LEGACY_ITEMS, LEGACY_SERIES, type LegacyItem } from "./legacy.js";
 export { CARDS_CATALOGUE_SQL, cardsSchema } from "./migrations.js";
 export { CardsKey, CardsModule, type CardsModuleOptions } from "./module.js";
+export { cardNotes } from "./notes.js";
 export {
   type OddsPart,
   type OddsRarity,

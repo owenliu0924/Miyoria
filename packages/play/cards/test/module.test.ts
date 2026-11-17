@@ -5,11 +5,12 @@
 import { heartTables } from "@miyoria/heart/person";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
-import type { JsonObject } from "@miyoria/types";
+import { EventLogKey, type JsonObject } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CardsKey,
   CardsModule,
+  type CardsModuleOptions,
   type CardWallet,
   CardWalletKey,
   cardsTables,
@@ -33,13 +34,13 @@ afterEach(async () => {
   for (const f of cleanup.splice(0).reverse()) await f();
 });
 
-async function start(config: JsonObject | null = null) {
+async function start(config: JsonObject | null = null, options: CardsModuleOptions = {}) {
   const store = await SqliteStore.open(":memory:", { plugins: [heartTables, cardsTables], clock });
   cleanup.push(() => store.close());
   const sup = new Supervisor();
   cleanup.push(() => sup.stopAll());
   sup.services.provide("app", StoreKey, store);
-  await sup.register(new CardsModule({ clock }), config, true);
+  await sup.register(new CardsModule({ clock, ...options }), config, true);
   await sup.startAll();
   return { store, sup };
 }
@@ -112,5 +113,25 @@ describe("module cards", () => {
     expect(cards?.cards("p1")).toEqual([]);
     // The catalogue is not anyone's data and stays.
     expect(cards?.catalogue().length).toBeGreaterThan(0);
+  });
+
+  it("tells her of a rare card as a note she may react to, and not of an ordinary one", async () => {
+    const notes: { source: string; silent: boolean; summary: string; attention_key: string }[] = [];
+    const log = { observe: (o: (typeof notes)[number]) => notes.push(o) };
+    // The last of every pick: an SSR card.
+    const { sup } = await start({ price: 0 }, { random: () => 0.999_999 });
+    sup.services.provide("facts", EventLogKey, log as never);
+    const cards = sup.services.get(CardsKey);
+    const rare = await cards?.issueDaily(payer("p1"), face);
+    if (!rare?.ok) throw new Error("refused");
+    expect(rare.issued.card.rarity).toBe("SSR");
+    expect(notes).toEqual([
+      expect.objectContaining({
+        source: "cards.drawn",
+        silent: false,
+        attention_key: `cards:${rare.issued.card.serial}`,
+        summary: expect.stringMatching(/^小明 抽到一張 SSR 的卡/),
+      }),
+    ]);
   });
 });

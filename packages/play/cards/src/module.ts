@@ -15,15 +15,56 @@ import {
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { StoreKey } from "@miyoria/store";
-import { type Clock, serviceKey } from "@miyoria/types";
+import { type Clock, EventLogKey, HandleDirectoryKey, serviceKey } from "@miyoria/types";
 import { CardsConfigSchema } from "./config.js";
 import type { Random } from "./draw.js";
+import { cardNotes } from "./notes.js";
 import { cardRelationship } from "./relationship.js";
 import { CardService } from "./service.js";
-import { cardsTables } from "./store.js";
+import { type CardStore, cardsTables, type IssuedCard } from "./store.js";
 import { CardWalletKey } from "./wallet.js";
 
 export const CardsKey = serviceKey<CardService>("Cards");
+
+/** Her working-context bucket for the cards, and how many notes it keeps. */
+const WRITER = "cards";
+const MAX_ENTRIES = 6;
+
+/**
+ * A card worth a word (`notes.ts`) as a note she may react to: an observation on the event log,
+ * not silent, once per card, in her working context. Names are untrusted.
+ */
+function tell(ctx: ModuleContext, issued: IssuedCard, cards: CardStore): void {
+  const names = new Map(cards.catalogue().map((p) => [p.id, p.name]));
+  const lines = cardNotes(issued, names);
+  if (lines.length === 0) return;
+  const handle = ctx.services.get(HandleDirectoryKey)?.ofPerson(issued.card.person) ?? null;
+  ctx.services.get(EventLogKey)?.observe(
+    {
+      source: "cards.drawn",
+      silent: false,
+      salience: "notable",
+      attention_key: `cards:${issued.card.serial}`,
+      revision: 1,
+      summary: lines.join("\n"),
+      addressed_to_her: false,
+      from: handle,
+      context: null,
+    },
+    {
+      buckets: [
+        {
+          op: "append-self",
+          writer: WRITER,
+          owner: CardsModule.ID,
+          untrusted: true,
+          max_entries: MAX_ENTRIES,
+        },
+      ],
+      person: handle,
+    },
+  );
+}
 
 export interface CardsModuleOptions {
   /** Replaces the module context's clock (tests). */
@@ -71,6 +112,7 @@ export class CardsModule implements Module {
       // Looked up at each use: the economy may restart and provide a new one.
       wallet: () => ctx.services.get(CardWalletKey) ?? null,
       relationship: (person) => cardRelationship(heart.get(person)),
+      onIssued: (issued) => tell(ctx, issued, cards),
       ...(this.#options.random === undefined ? {} : { random: this.#options.random }),
       ...(this.#options.newSerial === undefined ? {} : { newSerial: this.#options.newSerial }),
     });
