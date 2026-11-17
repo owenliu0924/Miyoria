@@ -12,6 +12,7 @@
 // - `cards_wishlist`: per person, at most three parts (`position` 1..3).
 // - `cards_titles`: per person, the series they completed and the title it gave; private unless
 //   they make it public.
+// - `cards_tally`: what the day's limits count, kept apart from the cards so a forget resets none.
 //
 // No foreign key to `persons`, like the heart's tables: forgetting a person deletes their rows
 // through the plugin's hook (`store.ts`).
@@ -202,9 +203,10 @@ export const cardsDrop = sqliteTable(
 
 /**
  * A paid card asked for under a key (a request's Idempotency-Key) and charged, not written yet:
- * the serial it is charged under, so a retry after a restart pays (the wallet keys a charge by the
- * serial) and is given the same card instead of a second one. Gone once the card is written, or
- * when no card follows and the coins go back.
+ * the serial it is charged under, and whether a foil finish was ordered with it, so a retry after
+ * a restart is the same order and pays (the wallet keys both charges by the serial) and is given
+ * the same card instead of a second one. Gone once the card is written, or when no card follows
+ * and the coins go back.
  */
 export const cardsPending = sqliteTable(
   "cards_pending",
@@ -213,8 +215,54 @@ export const cardsPending = sqliteTable(
     issue_key: text().notNull(),
     serial: text().notNull(),
     created_at: micros().notNull(),
+    foil: integer({ mode: "boolean" }).notNull().default(false),
   },
   (t) => [primaryKey({ name: "cards_pending_pk", columns: [t.person_id, t.issue_key] })],
+);
+
+/**
+ * Who was given their keepsake card (§10.2 P5): one row per person, nothing else of theirs. It
+ * stays when they ask her to forget them, while their cards go, so nobody is given a second one;
+ * it is part of the people data category with `persons.legacy`, which makes them eligible.
+ */
+export const cardsKeepsake = sqliteTable("cards_keepsake", {
+  person_id: text().primaryKey(),
+  given_at: micros().notNull(),
+});
+
+/**
+ * What the day's limits count (a daily card, a card picked up from a drop), one row per card,
+ * apart from the cards: a forget deletes the cards but not these rows, so asking to be forgotten
+ * gives nobody a fresh day's cards. Only the last two days are kept (`issue` drops older rows):
+ * a local day is at most a day back.
+ */
+export const cardsTally = sqliteTable(
+  "cards_tally",
+  {
+    person_id: text().notNull(),
+    kind: text().notNull(),
+    at: micros().notNull(),
+  },
+  (t) => [
+    index("cards_tally_person_idx").on(t.person_id, t.kind, t.at),
+    index("cards_tally_at_idx").on(t.at),
+  ],
+);
+
+/**
+ * The tiers a person was given a milestone card for (§6.1, P4), by the tier's lowest bond: kept
+ * when they ask her to forget them, while the cards go (and the heart's tier floor with them), so
+ * climbing back gives no second card for a tier. It goes with the relationships, as the floor does:
+ * a wipe of those starts the milestones again.
+ */
+export const cardsMilestone = sqliteTable(
+  "cards_milestone",
+  {
+    person_id: text().notNull(),
+    tier_min: integer().notNull(),
+    given_at: micros().notNull(),
+  },
+  (t) => [primaryKey({ name: "cards_milestone_pk", columns: [t.person_id, t.tier_min] })],
 );
 
 export type CardsCardRow = typeof cardsCard.$inferSelect;

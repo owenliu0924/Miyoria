@@ -126,6 +126,7 @@ export async function drawFortune(
         date: new Date(state.now() + state.publicSide.config.utc_offset_minutes * 60_000)
           .toISOString()
           .slice(0, 10),
+        names,
       },
       (text) => shown(state, text, names),
     );

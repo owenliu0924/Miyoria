@@ -14,6 +14,7 @@ import {
   type PromptContributors,
   PromptContributorsKey,
   SongClipsKey,
+  SongTicketsKey,
   SpeechPauseKey,
   serviceKey,
   TaskSteerKey,
@@ -181,6 +182,8 @@ export class SingModule implements Module {
     ctx.provide(SingerKey, singer);
     ctx.provide(VoiceFloorKey, singer);
     ctx.provide(SpeechPauseKey, singer);
+    // The market's pass asks whether a charged ticket's song is still in the set list.
+    ctx.provide(SongTicketsKey, { holds: (key) => singer.holdsTicket(key) });
     let clips: SingClips | null = null;
     if (cfg.clips) {
       clips = new SingClips({

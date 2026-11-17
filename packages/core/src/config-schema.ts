@@ -57,6 +57,7 @@ import {
   GameConfigSchema,
   GameModule,
 } from "@miyoria/play/game";
+import { MarketConfigSchema, MarketModule } from "@miyoria/play/market";
 import { PartyConfigSchema, PartyModule } from "@miyoria/play/party";
 import { QueueConfigSchema, QueueModule } from "@miyoria/play/queue";
 import {
@@ -141,6 +142,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [StageLinkModule.ID, StageLinkConfigSchema],
   [EconomyModule.ID, EconomyConfigSchema],
   [CardsModule.ID, CardsConfigSchema],
+  [MarketModule.ID, MarketConfigSchema],
   [WebModule.ID, WebConfigSchema],
   [SandboxModule.ID, SandboxConfigSchema],
   [ImageGenModule.ID, ImageGenConfigSchema],

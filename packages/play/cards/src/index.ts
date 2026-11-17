@@ -43,6 +43,7 @@ export {
 export { type CardsConfig, CardsConfigSchema, cardsConfig, drawRules } from "./config.js";
 export {
   completedBy,
+  isWishable,
   MAX_WISHES,
   type SeriesProgress,
   seriesParts,
@@ -94,7 +95,15 @@ export { EXPRESSIONS, type Expression, expressionsFor } from "./expressions.js";
 export { type CardFaces, CardFacesKey, type CardOccasion, type OccasionFace } from "./faces.js";
 export { LEGACY_ITEMS, LEGACY_SERIES, type LegacyItem } from "./legacy.js";
 export { CARDS_CATALOGUE_SQL, cardsSchema } from "./migrations.js";
-export { CardsKey, CardsModule, type CardsModuleOptions } from "./module.js";
+export {
+  CardsKey,
+  CardsModule,
+  type CardsModuleOptions,
+  KEEPSAKE_EVERY_MS,
+  KEEPSAKE_FIRST_MS,
+  KEEPSAKES_PER_PASS,
+  SETTLE_EVERY_MS,
+} from "./module.js";
 export { cardNotes } from "./notes.js";
 export {
   type OddsPart,
@@ -111,6 +120,12 @@ export {
   type PortraitInput,
   portraitPose,
 } from "./portrait.js";
+export {
+  cacheBytes,
+  PortraitCache,
+  type PortraitCacheOptions,
+  type SweepResult,
+} from "./portrait-cache.js";
 export { cardRelationship } from "./relationship.js";
 export {
   type CardsCardRow,
@@ -118,9 +133,12 @@ export {
   cardsCard,
   cardsDex,
   cardsDrop,
+  cardsKeepsake,
   cardsLegacy,
+  cardsMilestone,
   cardsParts,
   cardsPity,
+  cardsTally,
   cardsTitles,
   cardsWishlist,
 } from "./schema.js";
@@ -130,6 +148,7 @@ export {
   CardService,
   type CardServiceOptions,
   type DailyOptions,
+  type DailyOrder,
   type DailyQuote,
   type DailyRefusal,
   type DailyResult,
@@ -140,6 +159,8 @@ export {
   dayStart,
   type FreeResult,
   refusalText,
+  SETTLE_GRACE_MS,
+  type SettleResult,
 } from "./service.js";
 export {
   CARD_KINDS,
@@ -154,10 +175,16 @@ export {
   cardsTables,
   type DexEntry,
   type DropRecord,
+  FORGOTTEN_CLAIMER,
   type IssuedCard,
   type IssueInput,
   issueKey,
+  KEEPSAKE_LINE_TRIES,
   milestoneTier,
+  type PendingCard,
+  TALLIED_KINDS,
+  TALLY_KEPT_MS,
+  type TalliedKind,
 } from "./store.js";
 export {
   CARD_REASONS,

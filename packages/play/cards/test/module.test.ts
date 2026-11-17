@@ -4,18 +4,21 @@
 
 import { ReplySinkKey } from "@miyoria/commands";
 import { heartTables, PeopleDirectoryKey } from "@miyoria/heart/person";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
 import { EventLogKey, Events, type JsonObject } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CardFacesKey,
+  CardService,
   CardsKey,
   CardsModule,
   type CardsModuleOptions,
   type CardWallet,
   CardWalletKey,
   cardRelationship,
+  cardsConfig,
   cardsTables,
   expressionsFor,
 } from "../src/index.js";
@@ -60,7 +63,15 @@ function walletWith(coins: number): CardWallet & { spent: number } {
       this.spent += amount;
       return { ok: true, receipt: "r", balance: coins };
     },
-    async refund() {},
+    foilPrice() {
+      return null;
+    },
+    async foil() {
+      return { ok: false, reason: "refused", message: "not on sale" };
+    },
+    async refund() {
+      return 0;
+    },
   };
 }
 
@@ -84,6 +95,45 @@ describe("module cards", () => {
     });
     expect(wallet.spent).toBe(24);
     expect(cards?.odds().rarities.map((r) => r.shown)).toEqual(["70.00", "22.00", "7.00", "1.00"]);
+  });
+
+  it("gives back what a card never written was charged, once the economy is up", async () => {
+    const store = await SqliteStore.open(":memory:", {
+      plugins: [heartTables, cardsTables],
+      clock,
+    });
+    cleanup.push(() => store.close());
+    const tables = store.plugin(cardsTables);
+    const mei = await store.people.upsertAccount({ platform: "discord", id: "a1" }, "小美");
+    // A try charged three minutes ago, and Core stopped before the card was written.
+    tables.reserve(mei, "daily:k1", "MYR-KEPT-0000-0001", T0 - 3 * 60_000);
+    // One a second ago is still going: it is left alone.
+    tables.reserve(mei, "daily:k2", "MYR-KEPT-0000-0002", T0 - 1_000);
+    const refunds: unknown[] = [];
+    const wallet: CardWallet = {
+      ...walletWith(0),
+      async refund(p, key) {
+        refunds.push([p, key]);
+        return 30;
+      },
+    };
+    const sup = new Supervisor();
+    cleanup.push(() => sup.stopAll());
+    sup.services.provide("app", StoreKey, store);
+    await sup.register(new CardsModule({ clock, settleEveryMs: 10 }), null, true);
+    await sup.startAll();
+    // The economy is not up yet: the row waits for a later pass.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(tables.pending()).toHaveLength(2);
+    sup.services.provide("economy", CardWalletKey, wallet);
+    await vi.waitFor(() => expect(tables.pending()).toHaveLength(1));
+    expect(tables.pending()[0]?.serial).toBe("MYR-KEPT-0000-0002");
+    expect(refunds).toEqual([
+      [{ person: mei, account: { platform: "discord", id: "a1" } }, "MYR-KEPT-0000-0001"],
+    ]);
+    // Later passes give nothing twice.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(refunds).toHaveLength(1);
   });
 
   it("puts the heart's words on the card, and her expression follows them", async () => {
@@ -116,6 +166,78 @@ describe("module cards", () => {
     expect(cards?.cards("p1")).toEqual([]);
     // The catalogue is not anyone's data and stays.
     expect(cards?.catalogue().length).toBeGreaterThan(0);
+  });
+
+  it("writes her line on keepsake cards in the background, only with a model and the budget", async () => {
+    const { sup, store } = await start(null, { keepsakeFirstMs: 5, keepsakeEveryMs: 10 });
+    const tables = store.plugin(cardsTables);
+    const service = new CardService(tables, {
+      config: cardsConfig(),
+      clock,
+      wallet: () => null,
+      relationship: () => cardRelationship(null),
+      migrated: () => true,
+    });
+    for (const p of ["p1", "p2"]) {
+      await service.keepsake(p, async () => ({ face: FACE, relationship: cardRelationship(null) }));
+    }
+    const asked: string[] = [];
+    const told: string[] = [];
+    sup.services.provide("api", CardFacesKey, {
+      async face(person) {
+        asked.push(person);
+        return { face: { ...FACE, line: "老朋友,好久不見" }, relationship: cardRelationship(null) };
+      },
+      rewritten: (serial) => told.push(serial),
+    });
+    // No model: nothing is asked for.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(asked).toEqual([]);
+    // A model whose day's budget is used up: still nothing.
+    const budget = { state: "degraded" as "ok" | "degraded" | "exhausted" };
+    sup.services.provide("llm", LlmRouterKey, { budgetState: () => budget.state } as never);
+    await new Promise((r) => setTimeout(r, 40));
+    expect(asked).toEqual([]);
+    budget.state = "ok";
+    await vi.waitFor(() => expect(tables.keepsakesWithoutLine(10)).toEqual([]));
+    expect(asked.sort()).toEqual(["p1", "p2"]);
+    expect(told).toHaveLength(2);
+    expect(tables.cards("p1")[0]?.face.line).toBe("老朋友,好久不見");
+    // Later passes ask for nothing more.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(asked).toHaveLength(2);
+  });
+
+  it("leaves a charged card's serial through a wipe of the relationships, for the settling", async () => {
+    const { store } = await start({ price: 0 });
+    const tables = store.plugin(cardsTables);
+    const mei = await store.people.upsertAccount({ platform: "discord", id: "a1" }, "小美");
+    tables.reserve(mei, "daily:k1", "MYR-KEPT-0000-0001", T0 - 3 * 60_000);
+    const counts = await store.profileData.wipe("p", ["relationships"]);
+    expect(counts).not.toHaveProperty("cards_pending");
+    expect(tables.pending()).toHaveLength(1);
+    // The settling gives back what was charged under it, then the row goes.
+    const refunds: string[] = [];
+    const service = new CardService(tables, {
+      config: cardsConfig(),
+      clock,
+      wallet: () => ({
+        ...walletWith(0),
+        async refund(_p, key) {
+          refunds.push(key);
+          return 30;
+        },
+      }),
+      relationship: () => cardRelationship(null),
+      account: async () => ({ platform: "discord", id: "a1" }),
+    });
+    expect(await service.settlePending()).toMatchObject({ refunded: 1 });
+    expect(refunds).toEqual(["MYR-KEPT-0000-0001"]);
+    expect(tables.pending()).toEqual([]);
+    // A wipe of the people takes it, with the persons and their wallets.
+    tables.reserve(mei, "daily:k2", "MYR-KEPT-0000-0002", T0);
+    expect(await store.profileData.wipe("p", ["people"])).toMatchObject({ cards_pending: 1 });
+    expect(tables.pending()).toEqual([]);
   });
 
   it("gives a milestone card for each tier a bond enters, once, with her words when it can", async () => {
@@ -238,7 +360,7 @@ describe("module cards", () => {
         source: "cards.drawn",
         silent: false,
         attention_key: `cards:${rare.issued.card.serial}`,
-        summary: expect.stringMatching(/^小明 抽到一張 SSR 的卡/),
+        summary: expect.stringMatching(/^小明 自己抽卡,抽到一張 SSR 的卡.*不是你抽的/),
       }),
     ]);
   });

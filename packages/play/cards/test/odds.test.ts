@@ -29,6 +29,18 @@ describe("the odds table", () => {
     expect(sum(table.rarities.map((r) => r.percent))).toBeCloseTo(100, 9);
   });
 
+  it("names each part's series, and nothing for a part without one", () => {
+    const parts = table.slots.flatMap((s) => s.parts);
+    expect(parts.find((p) => p.id === "accessory.glasses")).toMatchObject({
+      series: "glasses",
+      series_name: "眼鏡系列",
+    });
+    expect(parts.find((p) => p.id === "accessory.none")).toMatchObject({
+      series: null,
+      series_name: null,
+    });
+  });
+
   it("prints the pity's rarities, summing to 100", () => {
     expect(table.pity?.after).toBe(20);
     expect(table.pity?.rarities.map((r) => [r.rarity, r.shown])).toEqual([
@@ -53,10 +65,18 @@ describe("the odds table", () => {
     }
   });
 
-  it("lists no drop-only part", () => {
+  it("lists no drop-only part and no disabled one", () => {
     const ids = table.slots.flatMap((s) => s.parts.map((p) => p.id));
     expect(ids).not.toContain("background.fireworks");
-    expect(ids).toHaveLength(SEED_PARTS.filter((p) => !p.drop_only).length);
+    // 短裙 is off (migration 9): nobody draws it, so the table does not print it.
+    expect(ids).not.toContain("outfit.short_skirt");
+    expect(ids).toHaveLength(SEED_PARTS.filter((p) => p.enabled && !p.drop_only).length);
+    expect(table.slots.find((s) => s.slot === "outfit")?.parts.map((p) => p.id)).toEqual([
+      "outfit.usual",
+      "outfit.long_skirt",
+      "outfit.shoes",
+      "outfit.top",
+    ]);
   });
 
   it("agrees with a seeded run of the draw", () => {
@@ -67,6 +87,7 @@ describe("the odds table", () => {
       const card = drawCard({ catalogue: SEED_PARTS, rules, since: 0, tier: "朋友", random });
       for (const p of card.parts) seen.set(p.id, (seen.get(p.id) ?? 0) + 1);
     }
+    expect(seen.get("outfit.short_skirt") ?? 0).toBe(0);
     for (const slot of table.slots) {
       for (const part of slot.parts) {
         const p = part.percent / 100;

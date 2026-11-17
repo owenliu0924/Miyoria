@@ -74,10 +74,13 @@ import {
   cardsCard,
   cardsDex,
   cardsDrop,
+  cardsKeepsake,
   cardsLegacy,
+  cardsMilestone,
   cardsParts,
   cardsPending,
   cardsPity,
+  cardsTally,
   cardsTitles,
   cardsWishlist,
 } from "./schema.js";
@@ -213,6 +216,17 @@ export interface DropRecord {
   serial: string | null;
 }
 
+/** The serial a paid card asked for under a key is charged under, kept until the card is written. */
+export interface PendingCard {
+  person: PersonId;
+  /** The card's `issue_key` (`daily:<request key>`). */
+  key: string;
+  serial: string;
+  created_at: Timestamp;
+  /** Ordered with a foil finish. */
+  foil: boolean;
+}
+
 /** What `issue` did. */
 export interface IssuedCard {
   card: CardRecord;
@@ -237,12 +251,41 @@ export const issueKey = {
   daily: (key: string) => `daily:${key}`,
 } as const;
 
+/** The lowest bond of the tier a milestone card's `issue_key` names; `null` for any other key. */
+function milestoneMin(key: string | null): number | null {
+  if (key === null || !key.startsWith("milestone:")) return null;
+  const min = Number(key.slice("milestone:".length));
+  return Number.isInteger(min) ? min : null;
+}
+
 /** The tier a milestone card was given for; `null` for any other card. */
 export function milestoneTier(card: Pick<CardRecord, "kind" | "issue_key">): BondTier | null {
-  if (card.kind !== "milestone" || card.issue_key === null) return null;
-  const min = Number(card.issue_key.slice("milestone:".length));
-  return BOND_LADDER.find((t) => t.min === min) ?? null;
+  if (card.kind !== "milestone") return null;
+  const min = milestoneMin(card.issue_key);
+  return min === null ? null : (BOND_LADDER.find((t) => t.min === min) ?? null);
 }
+
+/**
+ * How many times her line for a keepsake card is asked for before it is left without one (she
+ * wrote nothing that passed the checks, or could not write).
+ */
+export const KEEPSAKE_LINE_TRIES = 3;
+
+/** The kinds of card a day's limit counts (`cards_tally`). */
+export const TALLIED_KINDS = ["daily", "drop"] as const;
+export type TalliedKind = (typeof TALLIED_KINDS)[number];
+
+const isTallied = (kind: CardKind): kind is TalliedKind =>
+  (TALLIED_KINDS as readonly string[]).includes(kind);
+
+/** How long a tally row is kept: a local day starts at most a day back. */
+export const TALLY_KEPT_MS = 2 * 86_400_000;
+
+/**
+ * Who picked up a drop, once they asked her to forget them: the drop stays taken and counts for its
+ * channel's day, and names nobody.
+ */
+export const FORGOTTEN_CLAIMER = "";
 
 /** The day's cap was reached (by a card issued meanwhile). */
 export class CardCapError extends CardsError {
@@ -303,6 +346,16 @@ function cardOf(row: CardsCardRow): CardRecord {
 
 const at = (ms: number): Timestamp => toTimestamp(ms);
 
+function pendingOf(row: typeof cardsPending.$inferSelect): PendingCard {
+  return {
+    person: row.person_id,
+    key: row.issue_key,
+    serial: row.serial,
+    created_at: row.created_at,
+    foil: row.foil,
+  };
+}
+
 /** The ids of the accounts of `persons`, as a subquery. */
 function accountsOf(db: Db, persons: readonly PersonId[]) {
   return db.orm
@@ -341,9 +394,10 @@ export class CardStore {
 
   /**
    * The serial a paid card asked for under `key` is charged under: the one kept from an earlier
-   * try (`cards_pending`), or `serial`, kept now. A retry after a restart is thus the same charge.
+   * try (`cards_pending`), or `serial`, kept now with whether a foil finish is ordered with it. A
+   * retry after a restart is thus the same charge.
    */
-  reserve(person: PersonId, key: string, serial: string, now: number): string {
+  reserve(person: PersonId, key: string, serial: string, now: number, foil = false): string {
     return this.#write(() => {
       const P = cardsPending;
       const kept = this.#db.orm
@@ -354,21 +408,49 @@ export class CardStore {
       if (kept !== undefined) return kept.serial;
       this.#db.orm
         .insert(P)
-        .values({ person_id: person, issue_key: key, serial, created_at: at(now) })
+        .values({ person_id: person, issue_key: key, serial, created_at: at(now), foil })
         .run();
       return serial;
     });
   }
 
-  /** Forgets the serial kept for `key` (no card followed and the coins went back). */
-  unreserve(person: PersonId, key: string): void {
+  /**
+   * Forgets the serial kept for `key` (no card followed and the coins went back); with `serial`,
+   * only while that is the one kept.
+   */
+  unreserve(person: PersonId, key: string, serial?: string): void {
     this.#write(() => {
       const P = cardsPending;
+      const kept = serial === undefined ? undefined : eq(P.serial, serial);
       this.#db.orm
         .delete(P)
-        .where(and(eq(P.person_id, person), eq(P.issue_key, key)))
+        .where(and(eq(P.person_id, person), eq(P.issue_key, key), kept))
         .run();
     });
+  }
+
+  /** Every serial kept for a paid card that is not written yet, oldest first. */
+  pending(): PendingCard[] {
+    this.#db.ensureOpen();
+    const P = cardsPending;
+    return this.#db.orm
+      .select()
+      .from(P)
+      .orderBy(asc(P.created_at), asc(P.person_id), asc(P.issue_key))
+      .all()
+      .map(pendingOf);
+  }
+
+  /** The serial kept for `key`; `null`: none. */
+  pendingOf(person: PersonId, key: string): PendingCard | null {
+    this.#db.ensureOpen();
+    const P = cardsPending;
+    const row = this.#db.orm
+      .select()
+      .from(P)
+      .where(and(eq(P.person_id, person), eq(P.issue_key, key)))
+      .get();
+    return row === undefined ? null : pendingOf(row);
   }
 
   /** The card `person` was issued for `key` (`issueKey`); `null`: none. */
@@ -381,6 +463,32 @@ export class CardStore {
       .where(and(eq(C.person_id, person), eq(C.issue_key, key)))
       .get();
     return row === undefined ? null : cardOf(row);
+  }
+
+  /** Whether `person` was ever given their keepsake card, deleted since or not. */
+  keepsakeGiven(person: PersonId): boolean {
+    this.#db.ensureOpen();
+    const row = this.#db.orm
+      .select({ person: cardsKeepsake.person_id })
+      .from(cardsKeepsake)
+      .where(eq(cardsKeepsake.person_id, person))
+      .get();
+    return row !== undefined;
+  }
+
+  /**
+   * Whether `person` was ever given the milestone card of the tier whose lowest bond is `min`,
+   * deleted since or not.
+   */
+  milestoneGiven(person: PersonId, min: number): boolean {
+    this.#db.ensureOpen();
+    const M = cardsMilestone;
+    const row = this.#db.orm
+      .select({ person: M.person_id })
+      .from(M)
+      .where(and(eq(M.person_id, person), eq(M.tier_min, min)))
+      .get();
+    return row !== undefined;
   }
 
   /** A person's cards, newest first; `before`: older than that card (the next page). */
@@ -423,14 +531,17 @@ export class CardStore {
     return row?.n ?? 0;
   }
 
-  /** Cards of `kind` a person got since `since` (epoch ms). */
-  countSince(person: PersonId, kind: CardKind, since: number): number {
+  /**
+   * Cards of `kind` (a daily or a dropped one) a person got since `since` (epoch ms, at most
+   * `TALLY_KEPT_MS` back), counted from `cards_tally`: the cards they asked her to forget too.
+   */
+  countSince(person: PersonId, kind: TalliedKind, since: number): number {
     this.#db.ensureOpen();
-    const C = cardsCard;
+    const T = cardsTally;
     const row = this.#db.orm
       .select({ n: count() })
-      .from(C)
-      .where(and(eq(C.person_id, person), eq(C.kind, kind), gte(C.created_at, at(since))))
+      .from(T)
+      .where(and(eq(T.person_id, person), eq(T.kind, kind), gte(T.at, at(since))))
       .get();
     return row?.n ?? 0;
   }
@@ -525,6 +636,80 @@ export class CardStore {
       }));
   }
 
+  /**
+   * Makes one of `person`'s titles shown to others (`value` true) or theirs alone. The title as it
+   * is now; `null` when they have no title of `series`.
+   */
+  setTitlePublic(person: PersonId, series: string, value: boolean): CardTitle | null {
+    return this.#write(() => {
+      const T = cardsTitles;
+      const changed = Number(
+        this.#db.orm
+          .update(T)
+          .set({ public: value })
+          .where(and(eq(T.person_id, person), eq(T.series, series)))
+          .run().changes,
+      );
+      if (changed === 0) return null;
+      return this.titles(person).find((t) => t.series === series) ?? null;
+    });
+  }
+
+  /**
+   * Keepsake cards still without her line, oldest first, at most `limit`: the ones tried fewer
+   * than `KEEPSAKE_LINE_TRIES` times.
+   */
+  keepsakesWithoutLine(limit: number): CardRecord[] {
+    this.#db.ensureOpen();
+    const C = cardsCard;
+    return this.#db.orm
+      .select()
+      .from(C)
+      .where(
+        and(
+          eq(C.kind, "keepsake"),
+          sql`json_extract(${C.face}, '$.line') IS NULL`,
+          sql`coalesce(json_extract(${C.face}, '$.line_tries'), 0) < ${KEEPSAKE_LINE_TRIES}`,
+        ),
+      )
+      .orderBy(asc(C.created_at), asc(C.serial))
+      .limit(Math.max(limit, 0))
+      .all()
+      .map(cardOf);
+  }
+
+  /**
+   * Puts her line on keepsake card `serial`, if it still has none; `null` (she wrote nothing that
+   * passed) counts a try instead. The card's picture of record is cleared with a new line (it
+   * showed the card without it). Whether the line went on.
+   */
+  setKeepsakeLine(serial: string, line: string | null): boolean {
+    const C = cardsCard;
+    const still = and(
+      eq(C.serial, serial),
+      eq(C.kind, "keepsake"),
+      sql`json_extract(${C.face}, '$.line') IS NULL`,
+    );
+    return this.#write(() => {
+      if (line === null) {
+        this.#db.orm
+          .update(C)
+          .set({
+            face: sql`json_set(${C.face}, '$.line_tries', coalesce(json_extract(${C.face}, '$.line_tries'), 0) + 1)`,
+          })
+          .where(still)
+          .run();
+        return false;
+      }
+      const changed = this.#db.orm
+        .update(C)
+        .set({ face: sql`json_set(${C.face}, '$.line', ${line})`, artifact_id: null })
+        .where(still)
+        .run().changes;
+      return Number(changed) > 0;
+    });
+  }
+
   /** Records the picture of a card once rendered. Whether there was such a card. */
   setArtifact(serial: string, artifactId: string): boolean {
     return (
@@ -558,8 +743,13 @@ export class CardStore {
           return { card: found, pity, new_parts: [], titles: [], again: true };
         }
       }
-      if (input.cap && this.countSince(person, input.kind, input.cap.since) >= input.cap.max) {
-        throw new CardCapError(`${person} already has ${input.cap.max} ${input.kind} cards today`);
+      if (input.cap) {
+        if (!isTallied(input.kind)) throw new CardsError(`no day's cap for ${input.kind} cards`);
+        if (this.countSince(person, input.kind, input.cap.since) >= input.cap.max) {
+          throw new CardCapError(
+            `${person} already has ${input.cap.max} ${input.kind} cards today`,
+          );
+        }
       }
       const ts = at(now);
       const catalogue = this.catalogue();
@@ -601,6 +791,31 @@ export class CardStore {
         this.#db.orm
           .delete(cardsPending)
           .where(and(eq(cardsPending.person_id, person), eq(cardsPending.issue_key, key)))
+          .run();
+      }
+      if (isTallied(input.kind)) {
+        this.#db.orm
+          .insert(cardsTally)
+          .values({ person_id: person, kind: input.kind, at: ts })
+          .run();
+        this.#db.orm
+          .delete(cardsTally)
+          .where(lt(cardsTally.at, at(now - TALLY_KEPT_MS)))
+          .run();
+      }
+      const tier = input.kind === "milestone" ? milestoneMin(key) : null;
+      if (tier !== null) {
+        this.#db.orm
+          .insert(cardsMilestone)
+          .values({ person_id: person, tier_min: tier, given_at: ts })
+          .onConflictDoNothing()
+          .run();
+      }
+      if (input.kind === "keepsake") {
+        this.#db.orm
+          .insert(cardsKeepsake)
+          .values({ person_id: person, given_at: ts })
+          .onConflictDoNothing()
           .run();
       }
       const after = counted ? nextSince(since, drawn.rarity) : since;
@@ -876,7 +1091,17 @@ export class CardStore {
   /**
    * Deletes every row of `ids` (a person and everyone merged into them). Rows per table. The old
    * collectibles stay: they were bought with coins, and the economy keeps what coins bought (its
-   * own rows of them are kept too, so a deleted copy would only come back at the next start).
+   * own rows of them are kept too, so a deleted copy would only come back at the next start). So
+   * does the mark that they were given their keepsake (`cards_keepsake`, a person id and a time):
+   * what makes them eligible (`persons.legacy`) outlives a forget too, and asking to be forgotten
+   * is no way to a second one. And so do the serials kept for paid cards not written yet
+   * (`cards_pending`): their coins are still taken, and the settling (`CardService.settlePending`)
+   * gives them back and deletes the rows within minutes; deleted now, the coins would stay taken.
+   * What the day's limits count stays too (`cards_tally`: a person id, a kind and a time, two days
+   * at most), so a forget is no way to a fresh day's cards; and a drop they picked up stays taken,
+   * naming nobody (`FORGOTTEN_CLAIMER`), so its channel's day keeps its count. And so do the tiers
+   * they were given a milestone card for (`cards_milestone`): the heart forgets their tier floor,
+   * and climbing back is no way to a second card for a tier.
    */
   forgetPerson(ids: readonly PersonId[]): Record<string, number> {
     if (ids.length === 0) return {};
@@ -900,10 +1125,11 @@ export class CardStore {
           o.delete(cardsTitles).where(inArray(cardsTitles.person_id, list)).run().changes,
         ),
         cards_drop: Number(
-          o.delete(cardsDrop).where(inArray(cardsDrop.claimed_by, list)).run().changes,
-        ),
-        cards_pending: Number(
-          o.delete(cardsPending).where(inArray(cardsPending.person_id, list)).run().changes,
+          o
+            .update(cardsDrop)
+            .set({ claimed_by: FORGOTTEN_CLAIMER, serial: null })
+            .where(inArray(cardsDrop.claimed_by, list))
+            .run().changes,
         ),
       };
     });
@@ -973,8 +1199,38 @@ export class CardStore {
         .set({ claimed_by: keep })
         .where(eq(cardsDrop.claimed_by, absorb))
         .run();
-      // A try still pending under the absorbed id is retried, if ever, by the kept person.
-      this.#db.orm.delete(cardsPending).where(eq(cardsPending.person_id, absorb)).run();
+      // A tier either was given a milestone card for gives the kept person none again.
+      this.#db.run(
+        `INSERT INTO cards_milestone (person_id, tier_min, given_at)
+         SELECT $keep, tier_min, given_at FROM cards_milestone WHERE person_id = $absorb
+         ON CONFLICT (person_id, tier_min) DO UPDATE SET given_at = min(given_at, excluded.given_at)`,
+        p,
+      );
+      this.#db.orm.delete(cardsMilestone).where(eq(cardsMilestone.person_id, absorb)).run();
+      // What the day's limits counted of either is the kept person's.
+      this.#db.orm
+        .update(cardsTally)
+        .set({ person_id: keep })
+        .where(eq(cardsTally.person_id, absorb))
+        .run();
+      // A try still pending under the absorbed id is the kept person's: retried by them, or settled
+      // (its coins given back). One whose key the kept person has a try of too keeps its serial
+      // under a key nobody asks for, so it is only settled.
+      this.#db.run(
+        `UPDATE cards_pending SET person_id = $keep,
+           issue_key = CASE WHEN EXISTS (SELECT 1 FROM cards_pending k
+             WHERE k.person_id = $keep AND k.issue_key = cards_pending.issue_key)
+           THEN issue_key || '#' || serial ELSE issue_key END
+         WHERE person_id = $absorb`,
+        p,
+      );
+      // Either one given a keepsake: the kept person was.
+      this.#db.run(
+        `INSERT OR IGNORE INTO cards_keepsake (person_id, given_at)
+         SELECT $keep, given_at FROM cards_keepsake WHERE person_id = $absorb`,
+        p,
+      );
+      this.#db.orm.delete(cardsKeepsake).where(eq(cardsKeepsake.person_id, absorb)).run();
       return { counts: { cards, pity, dex, titles } };
     });
   }
@@ -1044,11 +1300,15 @@ const cardsData: readonly CategoryData[] = [
         claimed_at: "ts",
         serial: "text",
       }),
-      tablePart("cards_pending", "cards_pending", "node", "created_at", "person_id, issue_key", {
+      tablePart("cards_milestone", "cards_milestone", "node", "given_at", "person_id, tier_min", {
         person_id: "text",
-        issue_key: "text",
-        serial: "text",
-        created_at: "ts",
+        tier_min: "num",
+        given_at: "ts",
+      }),
+      tablePart("cards_tally", "cards_tally", "node", "at", "at, person_id", {
+        person_id: "text",
+        kind: "text",
+        at: "ts",
       }),
       tablePart("cards_legacy", "cards_legacy", "node", "acquired_at", "account_id, acquired_at", {
         id: "text",
@@ -1059,6 +1319,31 @@ const cardsData: readonly CategoryData[] = [
         series: "text",
         source: "text",
         acquired_at: "ts",
+      }),
+    ],
+  },
+  // Who was given their keepsake: it goes with the people, as `persons.legacy` that made them
+  // eligible does, not with their relationship (a wipe of that leaves them eligible).
+  //
+  // And the serials of paid cards charged and not written yet: a wipe of the relationships leaves
+  // them, so the settling (`CardService.settlePending`) still gives back what was charged under
+  // them (nothing, when the wallet was wiped with the relationships). A wipe is a set of
+  // statements with no code before it, so the store cannot settle them first; and a deleted row is
+  // a charge nothing would ever give back. Only a wipe of the people takes them, and with them the
+  // persons and the wallets.
+  {
+    category: "people",
+    parts: [
+      tablePart("cards_keepsake", "cards_keepsake", "node", "given_at", "person_id", {
+        person_id: "text",
+        given_at: "ts",
+      }),
+      tablePart("cards_pending", "cards_pending", "node", "created_at", "person_id, issue_key", {
+        person_id: "text",
+        issue_key: "text",
+        serial: "text",
+        created_at: "ts",
+        foil: "bool",
       }),
     ],
   },

@@ -7,10 +7,16 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { type IssuedCard, MemberViewSchema } from "@miyoria/contracts/api";
+import {
+  type CardCatalogue,
+  type CardOdds,
+  type IssuedCard,
+  MemberViewSchema,
+} from "@miyoria/contracts/api";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
+  EconomyCardWallet,
   EconomyConfigSchema,
   EconomyKey,
   EconomyService,
@@ -98,7 +104,7 @@ import {
 import { routes } from "../src/server.js";
 import { Sessions } from "../src/session.js";
 import { ApiState } from "../src/state.js";
-import { CoinPurse, cardService, LedgerCardWallet } from "./support/cards.js";
+import { CoinPurse, cardService } from "./support/cards.js";
 import { economyStore } from "./support/economy.js";
 import { listenFetchable, type RawResponse, raw } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
@@ -710,11 +716,16 @@ describe("the route table", () => {
       "GET /api/member/card",
       "GET /api/member/card/:serial",
       "GET /api/member/cards",
+      "GET /api/member/cards/catalogue",
       "GET /api/member/cards/dex",
       "GET /api/member/cards/pity",
       "GET /api/member/cards/wishlist",
       "GET /api/member/export",
       "GET /api/member/fortune",
+      "GET /api/member/market/auction",
+      "GET /api/member/market/bids",
+      "GET /api/member/market/lottery",
+      "GET /api/member/market/tickets",
       "GET /api/member/me",
       "GET /api/member/session",
       "GET /api/member/wallet",
@@ -725,15 +736,21 @@ describe("the route table", () => {
       "POST /api/member/forget",
       "POST /api/member/frame",
       "POST /api/member/live/pat",
+      "POST /api/member/market/bid",
+      "POST /api/member/market/lottery",
+      "POST /api/member/market/name",
       "POST /api/member/screen",
       "POST /api/member/songs",
       "POST /api/member/transfer",
+      "PUT /api/member/cards/titles/:series",
       "PUT /api/member/cards/wishlist",
     ]);
     expect(all.filter((r) => !r.public && !r.member).length).toBeGreaterThan(90);
     // No member route takes a parameter that could name a person: a card's serial names a card,
-    // and one that is not theirs is not found.
-    const named = all.filter((r) => r.member && r.path.replace(":serial", "").includes(":"));
+    // and one that is not theirs is not found; a series names one of their own titles.
+    const named = all.filter(
+      (r) => r.member && r.path.replace(":serial", "").replace(":series", "").includes(":"),
+    );
     expect(named).toEqual([]);
   });
 
@@ -1930,7 +1947,7 @@ describe("cards she gives", () => {
     const card = (await issue(r, await r.login("alice"))).body as Card;
     const res = await anyone(r, card.serial);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(card);
+    expect(res.body).toEqual({ ...card, titles: [] });
     expect(res.body).toMatchObject({ rarity: card.rarity, expression: card.expression });
     expect((res.body as Card).parts).toEqual(card.parts);
     expect(res.headers.get("cache-control")).toBe("no-store");
@@ -1938,9 +1955,9 @@ describe("cards she gives", () => {
     expect(res.text).not.toContain("SECRET");
     expect(res.text).not.toContain(ALICE);
     const flat = card.serial.replace(/-/g, "").toLowerCase();
-    expect((await anyone(r, flat)).body).toEqual(card);
+    expect((await anyone(r, flat)).body).toEqual({ ...card, titles: [] });
     const spaced = encodeURIComponent(` ${card.serial.toLowerCase()} `);
-    expect((await anyone(r, spaced)).body).toEqual(card);
+    expect((await anyone(r, spaced)).body).toEqual({ ...card, titles: [] });
   });
 
   it("is unknown for a serial nobody was given, or one that is not a serial", async () => {
@@ -1973,7 +1990,7 @@ describe("cards she gives", () => {
     await olderCard(r, ALICE, OLDER);
     const cookie = await r.login("alice");
     const older = (await anyone(r, OLDER)).body;
-    expect(older).toEqual(OLDER_CARD);
+    expect(older).toEqual({ ...OLDER_CARD, titles: [] });
     expect((await r.get("/api/member/card", cookie)).body).toMatchObject({
       latest: OLDER_CARD,
       today: 0,
@@ -1986,7 +2003,7 @@ describe("cards she gives", () => {
       today: 1,
     });
     // The daily card did not change the older one.
-    expect((await anyone(r, OLDER)).body).toEqual(OLDER_CARD);
+    expect((await anyone(r, OLDER)).body).toEqual({ ...OLDER_CARD, titles: [] });
   });
 
   it("drops her line on a card when it names someone else, as the page does", async () => {
@@ -2012,7 +2029,8 @@ describe("cards she gives", () => {
     expect((await anyone(r, OLDER)).status).toBe(404);
     expect(r.cards.count(r.people.get(ALICE) as PersonId)).toBe(0);
     const after = (await r.get("/api/member/card", cookie)).body;
-    expect(after).toMatchObject({ latest: null, today: 0 });
+    // The card is gone; the day still had it, so a forget is no way to more cards today.
+    expect(after).toMatchObject({ latest: null, today: 1 });
     // Numbering starts over.
     expect(((await issue(r, cookie)).body as Card).number).toBe(1);
   });
@@ -2058,7 +2076,7 @@ describe("cards she gives", () => {
       expect(strangers, code).toContain(card.expression);
       expect(res.text).not.toContain("SECRET");
       expect(coins(r, id), code).toBe(70);
-      expect((await anyone(r, card.serial)).body, code).toEqual(card);
+      expect((await anyone(r, card.serial)).body, code).toEqual({ ...card, titles: [] });
       expect((await r.get("/api/member/card", cookie)).body, code).toMatchObject({ today: 1 });
       // A forget that finds nothing still takes the card.
       await r.post("/api/member/forget", cookie, { confirm: true });
@@ -2138,7 +2156,8 @@ describe("cards she gives", () => {
       name: "Alice",
       call_name: "小愛",
       line: "那天妳唱完最後一句",
-      stamp: "好朋友",
+      // The tier is printed on the card already: her stamp naming it is left off.
+      stamp: null,
       number: 2,
     });
     expect(got?.relationship).toMatchObject({
@@ -2180,7 +2199,7 @@ describe("cards she gives", () => {
     await r.get("/api/member/cards", alice);
     await r.get("/api/member/cards/dex", alice);
     expect(r.cards.cards(r.people.get(ALICE) as PersonId)).toHaveLength(1);
-    expect((await anyone(r, first.latest.serial)).body).toEqual(first.latest);
+    expect((await anyone(r, first.latest.serial)).body).toEqual({ ...first.latest, titles: [] });
     // The command shows it on the first look of its own person, and issues nothing then.
     const keepsakes = r.sup.services.require(KeepsakesKey);
     const today = await keepsakes.cardsToday(discord(BOB));
@@ -2262,7 +2281,28 @@ describe("her cards", () => {
     const res = await r.get("/api/member/cards", cookie);
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(res.body).toEqual({ cards: [second, first, OLDER_CARD] });
+    // Each with what its page shows them, so the list needs nothing more per card.
+    const listed = (c: IssuedCard, portrait: "live" | "fixed") => {
+      const kept = r.cards.card(c.serial);
+      return {
+        ...c,
+        price: kept?.price ?? 0,
+        pity_hit: kept?.pity_hit ?? false,
+        wished: kept?.wished ?? [],
+        portrait,
+      };
+    };
+    expect(res.body).toEqual({
+      cards: [listed(second, "fixed"), listed(first, "fixed"), listed(OLDER_CARD, "fixed")],
+    });
+    expect((res.body as { cards: { price: number }[] }).cards.map((c) => c.price)).toEqual([
+      30, 30, 0,
+    ]);
+    // Rendered pictures for every daily card once something renders them; never an older card.
+    r.sup.services.provide("portrait", CardPortraitKey, { render: async () => null });
+    expect((await r.get("/api/member/cards", cookie)).body).toEqual({
+      cards: [listed(second, "live"), listed(first, "live"), listed(OLDER_CARD, "fixed")],
+    });
     expect((await r.get("/api/member/cards", await r.login("bob"))).body).toEqual({ cards: [] });
     expect((await r.get("/api/member/cards")).status).toBe(401);
   });
@@ -2351,6 +2391,58 @@ describe("her cards", () => {
     });
   });
 
+  it("lets them show a title to others or keep it theirs, and the check shows only public ones", async () => {
+    const r = await rig();
+    r.fund(ALICE, 100);
+    const cookie = await r.login("alice");
+    const card = (await issue(r, cookie)).body as IssuedCard;
+    const alice = r.people.get(ALICE) as PersonId;
+    const { db } = r.tables.plugin(probe);
+    for (const [series, title] of [
+      ["glasses", "眼鏡控"],
+      ["sky", "摘星的人"],
+    ] as const) {
+      db.run(
+        "INSERT INTO cards_titles (person_id, series, title, card, public, earned_at) VALUES ($p, $s, $t, NULL, 0, 1)",
+        { p: alice, s: series, t: title },
+      );
+    }
+    const titles = async () => {
+      const res = await r.get(`/api/public/card/${card.serial}`, undefined, {
+        "cf-connecting-ip": "203.0.113.21",
+      });
+      return (res.body as { titles: string[] }).titles;
+    };
+    // Private when earned: nobody else sees either.
+    expect(await titles()).toEqual([]);
+    const set = (series: string, value: boolean, who = cookie) =>
+      raw(r.base, "PUT", `/api/member/cards/titles/${series}`, {
+        json: { public: value },
+        headers: { cookie: `miyoria_session=${who}`, "x-miyoria-request": "1" },
+      });
+    const shown = await set("sky", true);
+    expect(shown.status).toBe(200);
+    expect(shown.body).toMatchObject({ series: "sky", title: "摘星的人", public: true });
+    expect(await titles()).toEqual(["摘星的人"]);
+    const dex = (await r.get("/api/member/cards/dex", cookie)).body as {
+      titles: { series: string; public: boolean }[];
+    };
+    expect(dex.titles.map((t) => [t.series, t.public])).toEqual([
+      ["glasses", false],
+      ["sky", true],
+    ]);
+    expect((await set("sky", false)).body).toMatchObject({ public: false });
+    expect(await titles()).toEqual([]);
+    // Nobody else's title, none they do not have, and nothing for someone she never met.
+    expect((await set("water", true)).status).toBe(404);
+    expect((await set("sky", true, await r.login("bob"))).status).toBe(404);
+    expect((await set("sky", true, await r.login("dave"))).status).toBe(403);
+    expect(await titles()).toEqual([]);
+    expect(
+      (await raw(r.base, "PUT", "/api/member/cards/titles/sky", { json: { public: true } })).status,
+    ).toBe(401);
+  });
+
   it("keeps a wishlist of at most three parts, which they may clear", async () => {
     const r = await rig();
     const cookie = await r.login("alice");
@@ -2396,6 +2488,53 @@ describe("her cards", () => {
       status: 403,
       message: "她還不認識你,先和她說說話吧",
     });
+  });
+
+  it("gives a member the whole catalogue, and the odds name each part's series", async () => {
+    const r = await rig();
+    expect((await r.get("/api/member/cards/catalogue")).status).toBe(401);
+    const cookie = await r.login("alice");
+    const res = await r.get("/api/member/cards/catalogue", cookie);
+    expect(res.status).toBe(200);
+    const catalogue = res.body as CardCatalogue;
+    expect(catalogue.parts.map((p) => p.id).sort()).toEqual(
+      r.cards
+        .catalogue()
+        .map((p) => p.id)
+        .sort(),
+    );
+    const byId = new Map(catalogue.parts.map((p) => [p.id, p]));
+    expect(byId.get("hand.none")).toMatchObject({
+      blank: true,
+      wishable: false,
+      series: null,
+      series_name: null,
+    });
+    expect(byId.get("accessory.glasses")).toMatchObject({
+      slot: "accessory",
+      rarity: "N",
+      series: "glasses",
+      series_name: "眼鏡系列",
+      drop_only: false,
+      enabled: true,
+      wishable: true,
+    });
+    // A part only a drop gives is listed, and can be wished for: the wishlist takes it.
+    expect(byId.get("background.fireworks")).toMatchObject({ drop_only: true, wishable: true });
+    const wished = await put(r, cookie, { parts: ["background.fireworks"] });
+    expect(wished.status).toBe(200);
+    expect(catalogue.series.find((s) => s.id === "glasses")).toEqual({
+      id: "glasses",
+      name: "眼鏡系列",
+      title: "眼鏡控",
+    });
+    // Every catalogue part the odds list carries its series' name.
+    const odds = (await r.get("/api/public/cards/odds")).body as CardOdds;
+    for (const slot of odds.slots) {
+      for (const p of slot.parts) {
+        expect(p.series_name, p.id).toBe(byId.get(p.id)?.series_name);
+      }
+    }
   });
 
   it("publishes the odds to anyone, each list summing to 100.00", async () => {
@@ -2488,7 +2627,7 @@ describe("the wallet", () => {
     });
     s.provide("economy", EconomyKey, economy);
     // Her cards are paid through the ledger from now on, as the economy module provides it.
-    s.provide("economy", CardWalletKey, new LedgerCardWallet(economy));
+    s.provide("economy", CardWalletKey, new EconomyCardWallet(economy));
     const spend = (path: string, cookie: string, json: unknown, key?: string) =>
       raw(r.base, "POST", path, {
         json,
@@ -2795,6 +2934,89 @@ describe("the wallet", () => {
       expect(res.body).toEqual({ error: "魚幣不夠" });
       expect(await balance(r)).toBe(60);
       expect((await r.get("/api/member/card", cookie)).body).toMatchObject({ today: 0 });
+    });
+
+    it("never gives foil on a retry that did not pay for it", async () => {
+      const r = await walletRig();
+      await r.fund(ALICE, 100);
+      const cookie = await r.login("alice");
+      // The first try pays for the card and its foil, no card follows, and both go back.
+      const restore = failIssue(r);
+      const first = await r.spend("/api/member/card", cookie, { foil: true }, "ff-1");
+      restore();
+      expect(first.status).toBeGreaterThanOrEqual(500);
+      expect(await balance(r)).toBe(100);
+      // The same request again is a new try: the card and the foil are paid again.
+      const retry = await r.spend("/api/member/card", cookie, { foil: true }, "ff-1");
+      expect(retry.status).toBe(200);
+      const card = retry.body as Card;
+      expect(card.foil).toBe(true);
+      expect(await balance(r)).toBe(20);
+      // Asked once more, whatever the body says: the card as it was, nothing charged.
+      const again = await r.spend("/api/member/card", cookie, { foil: false }, "ff-1");
+      expect(again.body).toMatchObject({ serial: card.serial, foil: true });
+      expect(await balance(r)).toBe(20);
+    });
+
+    it("never gives foil on a retry after the card and its foil could not both be paid for", async () => {
+      const r = await walletRig();
+      // Enough for foil or for the card, not for both: refused before anything is charged.
+      await r.fund(ALICE, 60);
+      const cookie = await r.login("alice");
+      const first = await r.spend("/api/member/card", cookie, { foil: true }, "ff-2");
+      expect(first.status).toBe(402);
+      expect(await balance(r)).toBe(60);
+      await r.fund(ALICE, 40);
+      const retry = await r.spend("/api/member/card", cookie, { foil: true }, "ff-2");
+      expect(retry.status).toBe(200);
+      expect(retry.body).toMatchObject({ foil: true });
+      expect(await balance(r)).toBe(20);
+    });
+
+    it("gives a retry after a stop between the charges and the card its foil, charged once", async () => {
+      const r = await walletRig();
+      await r.fund(ALICE, 100);
+      const cookie = await r.login("alice");
+      const alice = r.people.get(ALICE) as PersonId;
+      // A first try ordered foil, kept its serial, paid both, and Core stopped.
+      const serial = r.cardStore.reserve(
+        alice,
+        "daily:ff-3",
+        "MYR-0000-0000-00F3",
+        Date.now(),
+        true,
+      );
+      const wallet = r.sup.services.require(CardWalletKey);
+      const payer = { person: alice, account: discord(ALICE) };
+      expect((await wallet.spend(payer, 30, "card_daily", serial)).ok).toBe(true);
+      expect((await wallet.foil(payer, serial)).ok).toBe(true);
+      expect(await balance(r)).toBe(20);
+      // The retry is the same order, whatever its body says: the foil it paid for, nothing more.
+      const retry = await r.spend("/api/member/card", cookie, { foil: false }, "ff-3");
+      expect(retry.status).toBe(200);
+      expect(retry.body).toMatchObject({ serial, foil: true });
+      expect(await balance(r)).toBe(20);
+    });
+
+    it("charges no foil it cannot sell, and counts the day's foils", async () => {
+      const r = await walletRig({ card_foils_per_day: 1 });
+      await r.fund(ALICE, 300);
+      const cookie = await r.login("alice");
+      expect((await r.spend("/api/member/card", cookie, { foil: true }, "fc-1")).status).toBe(200);
+      expect(await balance(r)).toBe(220);
+      const capped = await r.spend("/api/member/card", cookie, { foil: true }, "fc-2");
+      expect(capped.status).toBe(429);
+      expect(capped.body).toEqual({ error: "今天最多 1 次" });
+      // The card charged before the foil was refused went back.
+      expect(await balance(r)).toBe(220);
+      expect((await r.get("/api/member/card", cookie)).body).toMatchObject({ today: 1 });
+      const off = await walletRig({ card_foils_per_day: 0 });
+      await off.fund(ALICE, 300);
+      const offCookie = await off.login("alice");
+      const res = await off.spend("/api/member/card", offCookie, { foil: true }, "fo-1");
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: "現在不賣閃卡" });
+      expect(await off.balanceOf(ALICE)).toBe(300);
     });
 
     it("says no to a card they cannot afford, charging nothing", async () => {
@@ -3162,6 +3384,32 @@ describe("between people, the sponsor board and fortune slips", () => {
       expect(failed.status).toBe(200);
       expect(failed.body).toMatchObject({ gained: 0, fortune_note: "她現在寫不出來,魚幣已經退回" });
       expect(await r.balance(ALICE)).toBe(before);
+    });
+
+    it("give the payment back for a slip whose poem never fits, and charge one that is fixed", async () => {
+      const r = await socialRig();
+      await gift(r, ALICE, 30);
+      const cookie = await r.login("alice");
+      // Eight characters in a line every time: asked again, then for the poem alone, then no slip.
+      r.model.slip = () => ({ ...SLIP, poem: ["月落烏啼霜滿天下", "二", "三", "四"] });
+      const failed = await checkin(r, cookie);
+      expect(failed.body).toMatchObject({
+        gained: 10,
+        fortune_note: "她現在寫不出來,魚幣已經退回",
+      });
+      expect(r.model.asked).toBe(3);
+      expect(await r.balance(ALICE)).toBe(50);
+      // Too many fields and a long line are fixed without her: charged, and the slip fits.
+      r.model.slip = () => ({
+        ...SLIP,
+        fields: ["心情", "人際", "願望", "今天宜"].map((label) => ({ label, text: "好" })),
+        line: `今天也辛苦了,早點休息吧。${"慢慢來".repeat(10)}`,
+      });
+      const bought = await checkin(r, cookie);
+      expect(bought.body).toMatchObject({ fortune_charged: 10, balance: 40 });
+      const slip = (bought.body as { fortune: { fields: unknown[]; line: string } }).fortune;
+      expect(slip.fields).toHaveLength(3);
+      expect(slip.line).toBe("今天也辛苦了,早點休息吧。");
     });
 
     it("are not drawn by a plain check-in, and a strict body takes nothing else", async () => {

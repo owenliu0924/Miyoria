@@ -10,6 +10,7 @@ import {
 import {
   CardWalletKey,
   Events,
+  MarketWalletKey,
   ParticipationKey,
   PartyRewardsKey,
   type ProfileId,
@@ -20,6 +21,7 @@ import { EconomyCommands } from "./commands.js";
 import { EconomyConfigSchema } from "./config.js";
 import { Earnings } from "./earn.js";
 import { EconomyService } from "./economy.js";
+import { EconomyMarketWallet } from "./market-wallet.js";
 import { giveCapability, speakerCapabilities } from "./tools.js";
 import { EconomyKey } from "./types.js";
 import { v2Capabilities } from "./v2-tools.js";
@@ -90,6 +92,8 @@ export class EconomyModule implements Module {
     ctx.provide(EconomyKey, economy);
     // Her cards are paid through it (`@miyoria/play/cards`).
     ctx.provide(CardWalletKey, new EconomyCardWallet(economy));
+    // The weekly market is paid through it (`@miyoria/play/market`).
+    ctx.provide(MarketWalletKey, new EconomyMarketWallet(economy));
     ctx.provide(ParticipationKey, economy.v2.play);
     ctx.provide(Economy2Key, economy.v2);
     ctx.provide(PartyRewardsKey, economy.v2.party);

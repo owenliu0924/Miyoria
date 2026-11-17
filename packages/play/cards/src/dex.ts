@@ -64,9 +64,17 @@ export const MAX_WISHES = 3;
 export type WishlistProblem = "too_many" | "duplicate" | "unknown_part";
 
 /**
+ * Whether a part can be wished for: one a card can give now and the dex collects (not blank, not
+ * disabled). A drop-only part can: the design lets anyone wish for any part, and wishing changes
+ * no odds (v5-play.md §6.3); she only says so when a drop brings it.
+ */
+export function isWishable(part: Pick<Part, "blank" | "enabled">): boolean {
+  return !part.blank && part.enabled;
+}
+
+/**
  * Why `ids` cannot be a wishlist, or `null` when it can: at most `MAX_WISHES`, each once, each a
- * part of the catalogue that can be collected (not blank, not disabled; a drop-only part can, from
- * a drop). Wishing changes no odds.
+ * part of the catalogue that is wishable (`isWishable`). Wishing changes no odds.
  */
 export function wishlistProblem(
   catalogue: readonly Part[],
@@ -74,7 +82,7 @@ export function wishlistProblem(
 ): WishlistProblem | null {
   if (ids.length > MAX_WISHES) return "too_many";
   if (new Set(ids).size !== ids.length) return "duplicate";
-  const known = new Set(catalogue.filter((p) => !p.blank && p.enabled).map((p) => p.id));
+  const known = new Set(catalogue.filter(isWishable).map((p) => p.id));
   if (ids.some((id) => !known.has(id))) return "unknown_part";
   return null;
 }

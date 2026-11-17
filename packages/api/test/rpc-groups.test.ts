@@ -88,6 +88,19 @@ const CASES: Case[] = [
     request: { json: { parts: ["hand.cat"] } },
   },
   { name: "cards.odds", method: "GET", path: "/api/public/cards/odds", audience: "public" },
+  {
+    name: "cards.setTitle",
+    method: "PUT",
+    path: "/api/member/cards/titles/glasses",
+    audience: "member",
+    request: { json: { public: true } },
+  },
+  {
+    name: "cards.catalogue",
+    method: "GET",
+    path: "/api/member/cards/catalogue",
+    audience: "member",
+  },
 ];
 
 /** The member routes that never counted against the member's rate limit. */
@@ -166,7 +179,7 @@ const ANSWERS = {
   "public.board": {
     entries: [{ rank: 1, name: "a", spent: 3 }],
   } satisfies ApiOutputs["public"]["board"],
-  "public.card": CARD,
+  "public.card": { ...CARD, titles: ["眼鏡控"] } satisfies ApiOutputs["public"]["card"],
   "member.session": { name: "Alice", avatar_url: null } satisfies ApiOutputs["member"]["session"],
   "member.me": {
     card: WORDS,
@@ -234,7 +247,9 @@ const ANSWERS = {
   "fortune.today": { fortune: SLIP, price: 10 } satisfies ApiOutputs["fortune"]["today"],
   "member.pat": { pats: { recent: 1, open: true } } satisfies ApiOutputs["member"]["pat"],
   "member.issueCard": CARD,
-  "cards.mine": { cards: [CARD] } satisfies ApiOutputs["cards"]["mine"],
+  "cards.mine": {
+    cards: [{ ...CARD, price: 30, pity_hit: false, wished: ["hand.cat"], portrait: "live" }],
+  } satisfies ApiOutputs["cards"]["mine"],
   "cards.one": {
     card: CARD,
     pity_hit: false,
@@ -269,13 +284,35 @@ const ANSWERS = {
       {
         slot: "hand",
         name: "手上",
-        parts: [{ ...CHANCE, id: "hand.cat", name: "貓", rarity: "SR", series: null }],
+        parts: [
+          { ...CHANCE, id: "hand.cat", name: "貓", rarity: "SR", series: null, series_name: null },
+        ],
         empty: null,
       },
     ],
     price: 30,
     per_day: 5,
   } satisfies ApiOutputs["cards"]["odds"],
+  "cards.setTitle": {
+    series: "glasses",
+    title: "眼鏡控",
+    public: true,
+    earned_at: "2026-11-08T03:00:00.000Z",
+  } satisfies ApiOutputs["cards"]["setTitle"],
+  "cards.catalogue": {
+    parts: [
+      {
+        ...PART,
+        series: "cats",
+        series_name: "貓咪系列",
+        drop_only: false,
+        blank: false,
+        enabled: true,
+        wishable: true,
+      },
+    ],
+    series: [{ id: "cats", name: "貓咪系列", title: "貓奴" }],
+  } satisfies ApiOutputs["cards"]["catalogue"],
 } as const;
 
 /** `value` with an extra field at the top and in every object and array of objects below. */
@@ -320,6 +357,7 @@ describe("the public and member routes of the table", () => {
 function pathOf(c: Case): string {
   if (c.name === "public.card") return "/api/public/card/:serial";
   if (c.name === "cards.one") return "/api/member/card/:serial";
+  if (c.name === "cards.setTitle") return "/api/member/cards/titles/:series";
   return c.path;
 }
 
@@ -359,6 +397,8 @@ describe("the answers", () => {
       wishlist: os.cards.wishlist.handler(answer("cards.wishlist")),
       setWishlist: os.cards.setWishlist.handler(answer("cards.setWishlist")),
       odds: os.cards.odds.handler(answer("cards.odds")),
+      setTitle: os.cards.setTitle.handler(answer("cards.setTitle")),
+      catalogue: os.cards.catalogue.handler(answer("cards.catalogue")),
     },
     wallet: {
       view: os.wallet.view.handler(answer("wallet.view")),

@@ -22,9 +22,30 @@ export const CardPitySchema = z
   .meta({ id: "ApiCardPity" });
 export type CardPity = z.output<typeof CardPitySchema>;
 
+/**
+ * One of their cards in their list, with what only its owner sees: what one card's page needs,
+ * so the list asks for nothing more per card. An older member card cost nothing it knows of, had
+ * no pity or wishes, and keeps its fixed portrait.
+ */
+export const ListedCardSchema = IssuedCardSchema.extend({
+  /** Fish coins it cost. */
+  price: z.number().int(),
+  /** The pity decided its rarity. */
+  pity_hit: z.boolean(),
+  /** Wished parts it has (their ids). */
+  wished: z.array(z.string()),
+  /**
+   * Its picture: `live`, her picture rendered from what the card drew (opaque, its background
+   * drawn; the fixed portrait stands in while it cannot be rendered), or `fixed`, the cut-out
+   * portrait of its `pose`.
+   */
+  portrait: z.enum(["live", "fixed"]),
+}).meta({ id: "ApiListedCard" });
+export type ListedCard = z.output<typeof ListedCardSchema>;
+
 /** `GET /api/member/cards`: their cards, newest first, daily and older ones together. */
 export const MyCardsSchema = z
-  .object({ cards: z.array(IssuedCardSchema) })
+  .object({ cards: z.array(ListedCardSchema) })
   .meta({ id: "ApiMyCards" });
 export type MyCards = z.output<typeof MyCardsSchema>;
 
@@ -74,6 +95,12 @@ export const CardTitleSchema = z
   .meta({ id: "ApiCardTitle" });
 export type CardTitle = z.output<typeof CardTitleSchema>;
 
+/** Body of `PUT /api/member/cards/titles/{series}`: shown to others, or theirs alone. */
+export const SetCardTitleRequestSchema = z
+  .strictObject({ public: z.boolean() })
+  .meta({ id: "ApiSetCardTitleRequest" });
+export type SetCardTitleRequest = z.input<typeof SetCardTitleRequestSchema>;
+
 /** An old collectible, kept as it was (copies counted together). */
 export const LegacyItemSchema = z
   .object({
@@ -112,6 +139,31 @@ export const SetWishlistRequestSchema = z
   .meta({ id: "ApiSetWishlistRequest" });
 export type SetWishlistRequest = z.input<typeof SetWishlistRequestSchema>;
 
+/** One part of the catalogue, as every card is drawn from it. */
+export const CataloguePartSchema = CardPartSchema.extend({
+  /** The series it counts toward, and that series' name; null: none. */
+  series: z.string().nullable(),
+  series_name: z.string().nullable(),
+  /** Only a card dropped in a channel can give it. */
+  drop_only: z.boolean(),
+  /** "Nothing there" (an empty hand, no accessory): drawn and shown, never collected. */
+  blank: z.boolean(),
+  /** A disabled part is never drawn and does not count toward its series. */
+  enabled: z.boolean(),
+  /** It can be on a wishlist: collectable now (not blank, enabled); a drop-only part can. */
+  wishable: z.boolean(),
+}).meta({ id: "ApiCataloguePart" });
+export type CataloguePart = z.output<typeof CataloguePartSchema>;
+
+/** `GET /api/member/cards/catalogue`: every part, by slot then id, and every series. */
+export const CardCatalogueSchema = z
+  .object({
+    parts: z.array(CataloguePartSchema),
+    series: z.array(z.object({ id: z.string(), name: z.string(), title: z.string() })),
+  })
+  .meta({ id: "ApiCardCatalogue" });
+export type CardCatalogue = z.output<typeof CardCatalogueSchema>;
+
 const Chance = z.object({
   /** Exact, 0..100. */
   percent: z.number(),
@@ -137,6 +189,8 @@ export const CardOddsSchema = z
             name: z.string(),
             rarity: Rarity,
             series: z.string().nullable(),
+            /** The series' name; null: none. */
+            series_name: z.string().nullable(),
           }),
         ),
         /** The chance the slot comes out empty; null when it never does. */
@@ -198,6 +252,20 @@ export const cards = {
     .meta({ audience: "public", permission: null })
     .route({ method: "GET", path: "/api/public/cards/odds" })
     .output(CardOddsSchema),
+  /**
+   * One of their titles shown to others (on the public check of their cards) or theirs alone;
+   * `404` for a title they do not have.
+   */
+  setTitle: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "PUT", path: "/api/member/cards/titles/{series}" })
+    .input(z.object({ params: z.object({ series: z.string() }), body: SetCardTitleRequestSchema }))
+    .output(CardTitleSchema),
+  /** The whole catalogue, owned or not: what the dex and the wishlist pick from. */
+  catalogue: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "GET", path: "/api/member/cards/catalogue" })
+    .output(CardCatalogueSchema),
 };
 
 /** The owner's side: one person's cards, dex, pity and wishlist. */

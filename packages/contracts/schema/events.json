@@ -4562,6 +4562,124 @@
         "reasoning_tokens"
       ]
     },
+    "EventsLotClosed": {
+      "type": "object",
+      "properties": {
+        "lot": {
+          "type": "string"
+        },
+        "week": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "type": "string"
+        },
+        "winner_bid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "winner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "price": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bids": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bidders": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "extended": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lot",
+        "week",
+        "kind",
+        "winner_bid",
+        "winner",
+        "price",
+        "bids",
+        "bidders",
+        "extended"
+      ]
+    },
+    "EventsLotteryDrawn": {
+      "type": "object",
+      "properties": {
+        "week": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "tickets": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "buyers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "prize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "burned": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "winner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refunded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "week",
+        "tickets",
+        "buyers",
+        "pot",
+        "prize",
+        "burned",
+        "winner",
+        "refunded"
+      ]
+    },
     "EventsMemberUpdate": {
       "type": "object",
       "properties": {

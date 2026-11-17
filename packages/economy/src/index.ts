@@ -3,6 +3,7 @@
 
 export { BOARD_REASONS, MAX_BOARD } from "./board.js";
 export { BountyBoard } from "./bounties.js";
+export { EconomyCardWallet } from "./card-wallet.js";
 export { DEFAULT_FRAMES, type EconomyConfig, EconomyConfigSchema, type Frame } from "./config.js";
 export {
   ALREADY_CHECKED_IN,
@@ -11,11 +12,14 @@ export {
   HUNGER_OF,
   hungerWord,
   MAX_FEED_COUNT,
+  marketWonLabel,
   PAID_NAME,
   STRANGER,
+  uniqueFrameOf,
   WALLET_NODE,
 } from "./economy.js";
 export { TaskRefusal } from "./guard.js";
+export { EconomyMarketWallet } from "./market-wallet.js";
 export { economySchema } from "./migrations.js";
 export { EconomyModule } from "./module.js";
 export { PURSE_PLATFORM, Purse } from "./purse.js";

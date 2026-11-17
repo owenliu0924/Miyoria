@@ -224,11 +224,22 @@ describe("a dropped card", () => {
     expect((await cards.claimDrop("p3", "d1", face)).ok).toBe(true);
   });
 
-  it("is forgotten with whoever picked it up", async () => {
+  it("forgets whoever picked it up, and still counts for the day and the channel", async () => {
+    const cards = service();
     drop("d1");
-    await service().claimDrop("p1", "d1", face);
+    await cards.claimDrop("p1", "d1", face);
+    expect(store.dropsSince("discord:g1:c1", T0).count).toBe(1);
     expect(store.forgetPerson(["p1"])).toMatchObject({ cards_card: 1, cards_drop: 1 });
-    expect(store.drop("d1")).toBeNull();
+    // Taken, by nobody named, and not theirs to take again.
+    expect(store.drop("d1")).toMatchObject({ claimed_by: "", serial: null });
+    expect(store.dropsSince("discord:g1:c1", T0).count).toBe(1);
+    expect(await cards.claimDrop("p1", "d1", face)).toEqual({ ok: false, reason: "drop_taken" });
+    // Their one drop of the day was had: asking to be forgotten gives them no second.
+    drop("d2", "discord:g1:c9");
+    expect(await cards.claimDrop("p1", "d2", face)).toEqual({ ok: false, reason: "drop_cap" });
+    now += 24 * 60 * MIN;
+    drop("d3", "discord:g1:c9");
+    expect((await cards.claimDrop("p1", "d3", face)).ok).toBe(true);
   });
 });
 

@@ -34,6 +34,7 @@ import { fortune } from "./fortune.js";
 import { self, world } from "./inner.js";
 import { knowledge, mindDigests, reflection } from "./learning.js";
 import { life } from "./life.js";
+import { market, marketAdmin } from "./market.js";
 import { member } from "./member.js";
 import { memory } from "./memory.js";
 import { mind } from "./mind.js";
@@ -127,6 +128,8 @@ export {
   TaskFailureCodeSchema,
 } from "./body.js";
 export {
+  type CardCatalogue,
+  CardCatalogueSchema,
   type CardDex,
   CardDexSchema,
   type CardOdds,
@@ -137,18 +140,24 @@ export {
   CardTitleSchema,
   type CardWishlist,
   CardWishlistSchema,
+  type CataloguePart,
+  CataloguePartSchema,
   type DexPart,
   DexPartSchema,
   type DexSeries,
   DexSeriesSchema,
   type LegacyItem,
   LegacyItemSchema,
+  type ListedCard,
+  ListedCardSchema,
   type MyCard,
   MyCardSchema,
   type MyCards,
   MyCardsSchema,
   type PersonCards,
   PersonCardsSchema,
+  type SetCardTitleRequest,
+  SetCardTitleRequestSchema,
   type SetWishlistRequest,
   SetWishlistRequestSchema,
 } from "./cards.js";
@@ -435,6 +444,41 @@ export {
   ReminderViewSchema,
 } from "./life.js";
 export {
+  type AuctionView,
+  AuctionViewSchema,
+  type BidRequest,
+  BidRequestSchema,
+  type BidResult,
+  BidResultSchema,
+  LotKindSchema,
+  type LotPlan,
+  type LotPlanRequest,
+  LotPlanRequestSchema,
+  LotPlanSchema,
+  type LotteryResult,
+  LotteryResultSchema,
+  type LotteryView,
+  LotteryViewSchema,
+  type LotView,
+  LotViewSchema,
+  type MarketHistory,
+  MarketHistorySchema,
+  type MyBids,
+  MyBidsSchema,
+  type MyTickets,
+  MyTicketsSchema,
+  type NameRequest,
+  NameRequestSchema,
+  type NameResult,
+  NameResultSchema,
+  type SettleRequest,
+  SettleRequestSchema,
+  type TicketRequest,
+  TicketRequestSchema,
+  type TicketResult,
+  TicketResultSchema,
+} from "./market.js";
+export {
   type CardField,
   CardFieldSchema,
   type CardPart,
@@ -706,6 +750,8 @@ export {
 export {
   type PublicBoard,
   PublicBoardSchema,
+  type PublicCard,
+  PublicCardSchema,
   type PublicDay,
   PublicDaySchema,
   type PublicSong,
@@ -890,6 +936,8 @@ export const contract = {
   wallet,
   agency,
   fortune,
+  market,
+  marketAdmin,
   eval: evalRoutes,
 };
 

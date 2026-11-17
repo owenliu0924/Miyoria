@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-query";
 import { isApiError } from "@/api/http";
 import type { DecisionsQuery, E2eRecord, FactEventsQuery, LlmCallsQuery, LlmThinkingQuery, MemoryQuery, ModuleAction, PeopleQuery } from "@/api/types";
-import type { AddDirectiveRequest, AdjustPersonRequest, UpdatePersonRequest,ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
+import type { AddDirectiveRequest, AdjustPersonRequest, UpdatePersonRequest,ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, LotPlanRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SettleRequest, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
 import type { ContextKey, Timestamp } from "@miyoria/contracts/wire";
 import { type EvalData, loadEvalData } from "@/lib/eval-data";
 import { factEventsInput } from "@/lib/fact-events";
@@ -86,7 +86,9 @@ export const queryKeys = {
   economyHealth: ["economy", "health"] as const,
   predictions: ["economy", "predictions"] as const,
   room: ["economy", "room"] as const,
+  marketHistory: ["economy", "market"] as const,
   personQuests: (id: string) => ["people", "quests", id] as const,
+  personCards: (id: string) => ["people", "cards", id] as const,
   workspace: ["workspace"] as const,
   skills: ["skills"] as const,
   skill: (name: string) => ["skills", name] as const,
@@ -1096,9 +1098,41 @@ export function useRoom() {
   return useQuery({ queryKey: queryKeys.room, queryFn: ({ signal }) => api.rpc.economy.room(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
 }
 
+/** The weekly market's lots and lottery weeks, newest first (`GET /api/market/history`). */
+export function useMarketHistory() {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.marketHistory, queryFn: ({ signal }) => api.rpc.marketAdmin.history(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
+}
+
+/** Sets or skips the coming week's lot (`admin.economy.adjust`). */
+export function usePlanLot() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: LotPlanRequest) => api.rpc.marketAdmin.plan({ body: req }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.marketHistory }),
+  });
+}
+
+/** Ends the open lot or draws this week's lottery now (`admin.economy.adjust`). */
+export function useSettleMarket() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (what: SettleRequest["what"]) => api.rpc.marketAdmin.settle({ body: { what } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.marketHistory }),
+  });
+}
+
 export function usePersonQuests(id: string) {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.personQuests(id), queryFn: ({ signal }) => api.rpc.people.quests({ params: { id } }, { signal }), retry: false });
+}
+
+/** One person's cards, dex, pity and wishlist (`GET /api/people/{id}/cards`). */
+export function usePersonCards(id: string) {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.personCards(id), queryFn: ({ signal }) => api.rpc.cardsAdmin.person({ params: { id } }, { signal }), retry: false });
 }
 
 export function useWorkspace() {

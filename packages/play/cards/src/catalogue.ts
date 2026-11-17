@@ -1,6 +1,7 @@
 // The parts a card is drawn from (docs/design/cards.md §3–§5, docs/design/v5-play.md §2): the
 // slots, the rarities, the series and their titles, and the catalogue the `cards_parts` table is
-// seeded with (`migrations.ts`, migration 2; a test keeps the two together).
+// seeded with (`migrations.ts`, migration 1 and the later catalogue changes; a test keeps the two
+// together).
 //
 // A part is one thing on the picture: what is in her hand, an accessory, the outfit, the pose, the
 // background. The expression is not a part: the relationship decides it (`expressions.ts`), never
@@ -96,7 +97,7 @@ function part(
   rarity: Rarity,
   series: string | null,
   name: string,
-  options: { weight?: number; blank?: boolean; drop_only?: boolean } = {},
+  options: { weight?: number; blank?: boolean; drop_only?: boolean; enabled?: boolean } = {},
 ): Part {
   const slot = id.slice(0, id.indexOf(".")) as Slot;
   return {
@@ -106,17 +107,18 @@ function part(
     series,
     name,
     weight: options.weight ?? 1,
-    enabled: true,
+    enabled: options.enabled ?? true,
     drop_only: options.drop_only ?? false,
     blank: options.blank ?? false,
   };
 }
 
 /**
- * The catalogue as migration 2 seeds it (cards.md §3–§5). N: the basic angles, no accessory or
- * the plain glasses, the plain outfit, her colours; R adds hand gestures, outfit changes, the
- * rarer poses and backgrounds; SR the rare accessories and special backgrounds; SSR special
- * backgrounds and an accessory set.
+ * The catalogue as the migrations leave it (cards.md §3–§5): migration 1 seeds it, migration 9
+ * disables 短裙 (it drew the same picture as 平常的衣服; cards that have it keep it, so it stays a
+ * row). N: the basic angles, no accessory or the plain glasses, the plain outfit, her colours; R
+ * adds hand gestures, outfit changes, the rarer poses and backgrounds; SR the rare accessories and
+ * special backgrounds; SSR special backgrounds and an accessory set.
  */
 export const SEED_PARTS: readonly Part[] = [
   part("hand.none", "N", null, "空手", { blank: true }),
@@ -133,7 +135,7 @@ export const SEED_PARTS: readonly Part[] = [
 
   part("outfit.usual", "N", "wardrobe", "平常的衣服"),
   part("outfit.long_skirt", "R", "wardrobe", "長裙"),
-  part("outfit.short_skirt", "R", "wardrobe", "短裙"),
+  part("outfit.short_skirt", "R", "wardrobe", "短裙", { enabled: false }),
   part("outfit.shoes", "R", "wardrobe", "換一雙鞋"),
   part("outfit.top", "R", "wardrobe", "胸口的衣服"),
 

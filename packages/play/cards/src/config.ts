@@ -55,6 +55,11 @@ export const CardsConfigSchema = z.object({
   portrait_studio: z.string().default("tools/card-studio"),
   /** Where rendered pictures are kept, by the hash of what they are drawn from. */
   portrait_cache: z.string().default("data/cards/portraits"),
+  /**
+   * Most megabytes the kept pictures may take (about one per card): past it the ones used longest
+   * ago go. Any of them can be rendered again from its card.
+   */
+  portrait_cache_max_mb: z.number().int().positive().default(2048),
   /** The browser playwright-core starts: `msedge` or `chrome`. */
   portrait_browser: z.enum(["msedge", "chrome"]).default("msedge"),
   /** Longest wait for one picture. */

@@ -2,10 +2,10 @@
 //
 // Generated from the Drizzle tables in `schema.ts` with `pnpm --filter @miyoria/store schema:sql
 // cards` (drizzle-kit, plus `STRICT`; for a later migration, what the migrated database lacks),
-// migration 1 then the catalogue of `catalogue.ts` seeded by hand
-// (`CARDS_CATALOGUE_SQL`; a test keeps it equal to `SEED_PARTS`). Never edited after they are
-// released: the runner refuses a database whose recorded checksum differs. A later change of the
-// catalogue is a new migration, never an edit of this one. The store's drift test proves the
+// migration 1 then the catalogue of `catalogue.ts` seeded by hand (`CARDS_CATALOGUE_SQL`; a test
+// keeps the migrated catalogue equal to `SEED_PARTS`). Never edited after they are released: the
+// runner refuses a database whose recorded checksum differs. A later change of the catalogue is a
+// new migration (migration 9), never an edit of this one. The store's drift test proves the
 // migrated database and the Drizzle tables agree.
 
 import type { PluginSchema } from "@miyoria/store";
@@ -184,6 +184,75 @@ const PENDING = `CREATE TABLE \`cards_pending\` (
 ) STRICT;
 `;
 
+/**
+ * Migration 5: who was given their keepsake card (`cards_keepsake`), kept when they are forgotten
+ * so nobody gets a second one; made like migration 3, then filled from the keepsake cards already
+ * there (by hand: drizzle-kit does not write data).
+ */
+const KEEPSAKE = `CREATE TABLE \`cards_keepsake\` (
+	\`person_id\` text PRIMARY KEY,
+	\`given_at\` integer NOT NULL
+) STRICT;
+
+INSERT OR IGNORE INTO \`cards_keepsake\` (\`person_id\`, \`given_at\`)
+	SELECT \`person_id\`, min(\`created_at\`) FROM \`cards_card\` WHERE \`kind\` = 'keepsake' GROUP BY \`person_id\`;
+`;
+
+/**
+ * Migration 6 (`schema:sql cards`): whether a kept paid card was ordered with a foil finish, so a
+ * retry is the same order. A row kept before it was ordered without one, as the old code charged
+ * the foil apart from the card.
+ */
+const PENDING_FOIL = `ALTER TABLE \`cards_pending\` ADD \`foil\` integer DEFAULT false NOT NULL;
+`;
+
+/**
+ * Migration 7: what the day's limits count, apart from the cards (`cards_tally`), so a forget
+ * resets none of them; made like migration 3 (`schema:sql cards` stops at the new table's "rename
+ * or create?"), then filled from the daily and dropped cards of the last two days (by hand), so
+ * the day the migration runs keeps its count.
+ */
+const TALLY = `CREATE TABLE \`cards_tally\` (
+	\`person_id\` text NOT NULL,
+	\`kind\` text NOT NULL,
+	\`at\` integer NOT NULL
+) STRICT;
+
+CREATE INDEX \`cards_tally_person_idx\` ON \`cards_tally\` (\`person_id\`,\`kind\`,\`at\`);
+
+CREATE INDEX \`cards_tally_at_idx\` ON \`cards_tally\` (\`at\`);
+
+INSERT INTO \`cards_tally\` (\`person_id\`, \`kind\`, \`at\`)
+	SELECT \`person_id\`, \`kind\`, \`created_at\` FROM \`cards_card\`
+	WHERE \`kind\` IN ('daily', 'drop') AND \`created_at\` >= (CAST(strftime('%s', 'now') AS INTEGER) - 172800) * 1000000;
+`;
+
+/**
+ * Migration 8: the tiers each person was given a milestone card for (`cards_milestone`), kept when
+ * they are forgotten so no tier gives a second card; made like migration 3, then filled from the
+ * milestone cards already there (by hand), each at its earliest card.
+ */
+const MILESTONES = `CREATE TABLE \`cards_milestone\` (
+	\`person_id\` text NOT NULL,
+	\`tier_min\` integer NOT NULL,
+	\`given_at\` integer NOT NULL,
+	CONSTRAINT \`cards_milestone_pk\` PRIMARY KEY(\`person_id\`, \`tier_min\`)
+) STRICT;
+
+INSERT OR IGNORE INTO \`cards_milestone\` (\`person_id\`, \`tier_min\`, \`given_at\`)
+	SELECT \`person_id\`, CAST(substr(\`issue_key\`, 11) AS INTEGER), min(\`created_at\`) FROM \`cards_card\`
+	WHERE \`kind\` = 'milestone' AND \`issue_key\` LIKE 'milestone:%' GROUP BY \`person_id\`, \`issue_key\`;
+`;
+
+/**
+ * Migration 9: 「短裙」 is taken out of the draw (owner decision 2026-11-17: it draws the same
+ * picture as 平常的衣服). A catalogue change, by hand (drizzle-kit does not write data): the part
+ * is disabled, so no card gives it, it cannot be wished for and its series no longer counts it;
+ * the cards and dex rows that have it keep it.
+ */
+const SHORT_SKIRT_OFF = `UPDATE \`cards_parts\` SET \`enabled\` = 0 WHERE \`id\` = 'outfit.short_skirt';
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -193,5 +262,10 @@ export const cardsSchema: PluginSchema = {
     { version: 2, name: "issue_key", sql: ISSUE_KEY },
     { version: 3, name: "drops", sql: DROPS },
     { version: 4, name: "pending", sql: PENDING },
+    { version: 5, name: "keepsake", sql: KEEPSAKE },
+    { version: 6, name: "pending_foil", sql: PENDING_FOIL },
+    { version: 7, name: "tally", sql: TALLY },
+    { version: 8, name: "milestones", sql: MILESTONES },
+    { version: 9, name: "short_skirt_off", sql: SHORT_SKIRT_OFF },
   ],
 };

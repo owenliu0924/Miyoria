@@ -411,8 +411,92 @@ function Foil({ id }: { id: string }) {
   );
 }
 
+/** A one-of-a-kind frame won at the weekly auction: `one-<lot id>` (docs/design/v5-play.md §11.4). */
+export function isUniqueFrame(frame: string | null | undefined): boolean {
+  return typeof frame === "string" && frame.startsWith("one-");
+}
+
+/** The frame's name for the card's page: the shop's names, and 只此一件 for a won one. */
+export function frameName(frame: string | null | undefined): string | null {
+  if (isUniqueFrame(frame)) return "只此一件";
+  return frame ? (FRAME_NAME[frame] ?? null) : null;
+}
+
+/** A number in [0, 1) from `text` and `salt`: the same frame always looks the same. */
+function seeded(text: string, salt: number): number {
+  let h = 2166136261 ^ salt;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 10_000) / 10_000;
+}
+
+/** `hsl()` as a literal hex colour (the PNG export takes no CSS functions). */
+function hex(h: number, s: number, l: number): string {
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  const to = (x: number) =>
+    Math.round(x * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${to(f(0))}${to(f(8))}${to(f(4))}`;
+}
+
+/**
+ * The one-of-a-kind frame: two hues and a pattern drawn from its id, so no two won frames look
+ * alike and the same one always looks the same, with a small 一 seal at the bottom corner.
+ */
+function UniqueFrame({ frame, id }: { frame: string; id: string }) {
+  const hue = Math.floor(seeded(frame, 1) * 360);
+  const other = (hue + 40 + Math.floor(seeded(frame, 2) * 140)) % 360;
+  const tilt = Math.floor(seeded(frame, 3) * 90) - 45;
+  const stripe = 6 + Math.floor(seeded(frame, 4) * 10);
+  const light = hex(hue, 0.7, 0.78);
+  const mid = hex(hue, 0.55, 0.5);
+  const deep = hex(other, 0.6, 0.32);
+  return (
+    <g>
+      <defs>
+        <linearGradient
+          id={`one-${id}`}
+          gradientUnits="userSpaceOnUse"
+          x1="0"
+          y1="0"
+          x2={W}
+          y2={H}
+        >
+          <stop offset="0" stopColor={light} />
+          <stop offset="0.45" stopColor={mid} />
+          <stop offset="0.7" stopColor={light} />
+          <stop offset="1" stopColor={deep} />
+        </linearGradient>
+        <pattern
+          id={`one-print-${id}`}
+          width={stripe}
+          height={stripe}
+          patternUnits="userSpaceOnUse"
+          patternTransform={`rotate(${tilt})`}
+        >
+          <rect width={stripe / 2} height={stripe} fill="#ffffff" />
+        </pattern>
+      </defs>
+      <path d={BAND_PATH} fillRule="evenodd" fill={`url(#one-${id})`} />
+      <path d={BAND_PATH} fillRule="evenodd" fill={`url(#one-print-${id})`} opacity={0.12} />
+      <Glitter id={id} tint="#ffffff" />
+      <BandEdges rim={deep} lip={light} />
+      <circle cx={W - BAND / 2 - 1} cy={H - BAND / 2 - 1} r={11} fill={deep} stroke={light} />
+      <path
+        d={`M${W - BAND / 2 - 7} ${H - BAND / 2 - 1}H${W - BAND / 2 + 5}`}
+        stroke={light}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </g>
+  );
+}
+
 /** The border of the card, drawn over the picture. Literal colours only: it is exported to PNG. */
 function Frame({ frame, id }: { frame: string | null | undefined; id: string }) {
+  if (frame && isUniqueFrame(frame)) return <UniqueFrame frame={frame} id={id} />;
   if (frame === "sakura") {
     // Pearl pink, blossoms printed faintly across the band, and one blossom at two opposite corners.
     return (

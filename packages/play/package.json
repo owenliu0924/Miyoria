@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/play",
   "version": "0.1.0",
-  "description": "party: Party games she hosts: turtle soup (voice or text channel) and song guessing (voice); game: Game director: picks goals, acts through game adapter tools, comments live; queue: User request queue: fair ordering, voting mode, persistence and commands; cards: Her cards for each person (module `cards`): the paid daily card, its draw by public odds with a pity, the expression by relationship, the dex with series titles and the old collectibles, the wishlist",
+  "description": "party: Party games she hosts: turtle soup (voice or text channel) and song guessing (voice); game: Game director: picks goals, acts through game adapter tools, comments live; queue: User request queue: fair ordering, voting mode, persistence and commands; cards: Her cards for each person (module `cards`): the paid daily card, its draw by public odds with a pity, the expression by relationship, the dex with series titles and the old collectibles, the wishlist; market: The weekly market (module `market`): the song priority ticket, a weekly auction of one lot in a channel and a weekly lottery",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -26,6 +26,11 @@
       "@miyoria/source": "./cards/src/index.ts",
       "types": "./dist/cards/src/index.d.ts",
       "default": "./dist/cards/src/index.js"
+    },
+    "./market": {
+      "@miyoria/source": "./market/src/index.ts",
+      "types": "./dist/market/src/index.d.ts",
+      "default": "./dist/market/src/index.js"
     }
   },
   "files": [

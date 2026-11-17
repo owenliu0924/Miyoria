@@ -3,11 +3,12 @@ import { ECONOMY_TABS, type EconomyTab } from "@/app/nav";
 import { Page, PageHeader } from "@/components/page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HealthTab } from "./HealthTab";
+import { MarketTab } from "./MarketTab";
 import { PredictionsTab, RoomTab } from "./OpenTabs";
 
 const route = getRouteApi("/economy");
 
-/** The coin economy as a whole (economy 2.0): health, predictions, her room. */
+/** The coin economy as a whole (economy 2.0): health, predictions, her room, the weekly market. */
 export function EconomyPage() {
   const tab = route.useSearch().tab ?? "health";
   const navigate = useNavigate();
@@ -30,6 +31,9 @@ export function EconomyPage() {
         </TabsContent>
         <TabsContent value="room">
           <RoomTab />
+        </TabsContent>
+        <TabsContent value="market">
+          <MarketTab />
         </TabsContent>
       </Page>
     </Tabs>

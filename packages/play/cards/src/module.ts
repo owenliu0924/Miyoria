@@ -8,14 +8,18 @@
 // milestone card for each such tier (§6.1); her words for it come through `CardFacesKey`. A tier
 // entered while this module is not running gets no card later: the cards are never handed out
 // backwards. The people who came over from the old records get one keepsake card each instead
-// (P5), issued by the api the first time they open their cards. With `drops` on it watches the
+// (P5), issued by the api the first time they open their cards with facts only; her line for each
+// is written later by a low-priority pass (a few cards every half hour, through `CardFacesKey`,
+// only while there is a model and the day's budget is untouched). With `drops` on it watches the
 // channels that opted in and now and then drops a card there (§6.2, `drops.ts`); `/me card` routes
-// its button.
+// its button. A paid card that was charged and never written, and that nobody retried, gets its
+// coins back from a pass over the kept serials at start and every few minutes (`settlePending`).
 //
 // The routes and the commands are the api's (`KeepsakesKey`, the `cards` route group). Config
 // changes reach it the way they reach every module: the supervisor restarts it.
 
 import { type HeartStore, heartTables, type TierEntered } from "@miyoria/heart/person";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,
   errorMessage,
@@ -89,7 +93,24 @@ export interface CardsModuleOptions {
   clock?: Clock;
   random?: Random;
   newSerial?: () => string;
+  /** How often kept serials are settled after the pass at start; default `SETTLE_EVERY_MS`. */
+  settleEveryMs?: number;
+  /** How long after start the first pass over keepsake lines runs; default `KEEPSAKE_FIRST_MS`. */
+  keepsakeFirstMs?: number;
+  /** How often keepsake lines are looked for after that; default `KEEPSAKE_EVERY_MS`. */
+  keepsakeEveryMs?: number;
 }
+
+/** How often the serials kept for paid cards are looked at again while the module runs. */
+export const SETTLE_EVERY_MS = 5 * 60_000;
+
+/**
+ * Her line for keepsake cards issued with facts only: a pass this long after start, then every
+ * `KEEPSAKE_EVERY_MS`, writing at most `KEEPSAKES_PER_PASS` lines a pass.
+ */
+export const KEEPSAKE_FIRST_MS = 3 * 60_000;
+export const KEEPSAKE_EVERY_MS = 30 * 60_000;
+export const KEEPSAKES_PER_PASS = 3;
 
 export class CardsModule implements Module {
   static readonly ID = "cards";
@@ -102,6 +123,11 @@ export class CardsModule implements Module {
   readonly #options: CardsModuleOptions;
   readonly #pending = new Set<Promise<void>>();
   #stop: (() => void) | null = null;
+  #stopped = false;
+  #settling: Promise<void> | null = null;
+  #settleTimer: ReturnType<typeof setInterval> | null = null;
+  #keepsakeTimers: ReturnType<typeof setTimeout>[] = [];
+  #writing: Promise<void> | null = null;
   #portrait: Live2dPortrait | null = null;
 
   constructor(options: CardsModuleOptions = {}) {
@@ -143,10 +169,73 @@ export class CardsModule implements Module {
       migrated: (person) =>
         typeof heart.get(person)?.legacy.migrated_at === "string" ||
         cards.importedLegacy(person) !== null,
+      // A refund goes back to the person's wallet, so any account of theirs pays it back.
+      account: async (person) => (await store.identity.accountsOf(person))[0]?.account ?? null,
       ...(this.#options.random === undefined ? {} : { random: this.#options.random }),
       ...(this.#options.newSerial === undefined ? {} : { newSerial: this.#options.newSerial }),
     });
     ctx.provide(CardsKey, service);
+    // A paid card charged and never written (Core stopped in between, or the refund failed), that
+    // nobody retried: its coins go back now and every few minutes while the module runs. The
+    // economy starts in its own order, so a pass without the wallet leaves the row for the next.
+    this.#stopped = false;
+    const settle = () => {
+      if (this.#stopped || this.#settling !== null) return;
+      const run = service
+        .settlePending()
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          ctx.log.warn(
+            { err: errorMessage(error) },
+            "cards: cannot settle the kept serials; the next pass tries again",
+          );
+        })
+        .finally(() => {
+          this.#settling = null;
+        });
+      this.#settling = run;
+    };
+    settle();
+    this.#settleTimer = setInterval(settle, this.#options.settleEveryMs ?? SETTLE_EVERY_MS);
+    this.#settleTimer.unref?.();
+    // Her line for keepsake cards, issued with facts only: low priority, a few a pass, only while
+    // the api writes card words, there is a model and the day's model budget is untouched.
+    const write = () => {
+      if (this.#stopped || this.#writing !== null) return;
+      const faces = ctx.services.get(CardFacesKey);
+      const router = ctx.services.get(LlmRouterKey);
+      if (faces === undefined || router === undefined) return;
+      if (router.budgetState() !== "ok") {
+        ctx.log.debug(
+          { budget: router.budgetState() },
+          "cards: keepsake lines wait for the budget",
+        );
+        return;
+      }
+      const run = service
+        .writeKeepsakeLines(faces, KEEPSAKES_PER_PASS)
+        .then(({ written, tried }) => {
+          if (tried > 0) ctx.log.info({ written, tried }, "cards: her lines for keepsake cards");
+        })
+        .catch((error: unknown) => {
+          ctx.log.warn(
+            { err: errorMessage(error) },
+            "cards: cannot write keepsake lines; the next pass tries again",
+          );
+        })
+        .finally(() => {
+          this.#writing = null;
+        });
+      this.#writing = run;
+    };
+    const first = setTimeout(() => {
+      write();
+      const every = setInterval(write, this.#options.keepsakeEveryMs ?? KEEPSAKE_EVERY_MS);
+      every.unref?.();
+      this.#keepsakeTimers.push(every);
+    }, this.#options.keepsakeFirstMs ?? KEEPSAKE_FIRST_MS);
+    first.unref?.();
+    this.#keepsakeTimers.push(first);
     // Her picture on a card from her Live2D model (cards.md §6), when this machine can draw it;
     // without `CardPortraitKey` every card uses the fixed portraits.
     this.#portrait = livePortrait(config, ctx.log);
@@ -166,7 +255,14 @@ export class CardsModule implements Module {
   async stop(): Promise<void> {
     this.#stop?.();
     this.#stop = null;
-    await Promise.allSettled([...this.#pending]);
+    this.#stopped = true;
+    if (this.#settleTimer !== null) clearInterval(this.#settleTimer);
+    this.#settleTimer = null;
+    // A timeout and an interval are cleared by either call.
+    for (const timer of this.#keepsakeTimers.splice(0)) clearInterval(timer);
+    const settling = this.#settling === null ? [] : [this.#settling];
+    const writing = this.#writing === null ? [] : [this.#writing];
+    await Promise.allSettled([...this.#pending, ...settling, ...writing]);
     await this.#portrait?.close();
     this.#portrait = null;
   }

@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
-import { FRAME_SWATCH } from "./card";
+import { FRAME_SWATCH, frameName, isUniqueFrame } from "./card";
 import { Board, Bounties, Fortune, FORTUNE, useFortuneToday } from "./Extras";
 import { newKey, priceText, say, usePatchWallet, useWallet } from "./spend";
 
@@ -244,12 +244,28 @@ function ScreenMessage({ item, currency }: { item: ShopItem; currency: string })
   );
 }
 
-function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
+/** A frame on the list: one the shop sells, or a one-of-a-kind one won at the weekly auction (never sold). */
+interface FrameOffer {
+  fid: string;
+  label: string;
+  /** `null`: not for sale. */
+  price: number | null;
+  available: boolean;
+  why: string | null;
+}
+
+const shopFrame = (item: ShopItem): FrameOffer => {
+  const fid = item.id.replace(/^frame:/, "");
+  return { fid, label: FRAME_LABEL[fid] ?? item.label, price: item.price, available: item.available, why: item.why ?? null };
+};
+
+const wonFrame = (fid: string): FrameOffer => ({ fid, label: frameName(fid) ?? fid, price: null, available: false, why: null });
+
+function FrameRow({ item, w }: { item: FrameOffer; w: WalletView }) {
   const api = useApi();
   const { patch, refresh } = usePatchWallet();
   const [asking, setAsking] = useState(false);
-  const fid = item.id.replace(/^frame:/, "");
-  const label = FRAME_LABEL[fid] ?? item.label;
+  const { fid, label } = item;
   const owned = w.frames.owned.includes(fid);
   const selected = w.frames.selected === fid;
   const run = useMutation({
@@ -274,7 +290,7 @@ function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
         />
         <span className="min-w-0 flex-1 text-sm">{label}</span>
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {selected ? "使用中" : owned ? "已擁有" : priceText(item.price, w.currency)}
+          {selected ? "使用中" : owned ? "已擁有" : item.price === null ? "" : priceText(item.price, w.currency)}
         </span>
         {owned ? (
           <Button
@@ -308,7 +324,7 @@ function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
         onClose={() => setAsking(false)}
       >
         <p>
-          {priceText(item.price, w.currency)},之後抽的卡會用這個框。
+          {priceText(item.price ?? 0, w.currency)},之後抽的卡會用這個框。
         </p>
       </ConfirmDialog>
     </li>
@@ -316,7 +332,11 @@ function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
 }
 
 function Shop({ w }: { w: WalletView }) {
-  const frames = w.shop.filter((s) => s.kind === "frame");
+  const frames = [
+    ...w.shop.filter((s) => s.kind === "frame").map(shopFrame),
+    // A won one-of-a-kind frame is theirs alone and never in the shop: listed after the shop's.
+    ...w.frames.owned.filter(isUniqueFrame).map(wonFrame),
+  ];
   const screen = w.shop.find((s) => s.id === "screen_message");
   return (
     <Card aria-label="商店">
@@ -332,8 +352,8 @@ function Shop({ w }: { w: WalletView }) {
             <div className="grid gap-1">
               <p className="text-xs text-muted-foreground">卡框</p>
               <ul className="divide-y divide-line-soft">
-                {frames.map((s) => (
-                  <FrameRow key={s.id} item={s} w={w} />
+                {frames.map((f) => (
+                  <FrameRow key={f.fid} item={f} w={w} />
                 ))}
               </ul>
             </div>

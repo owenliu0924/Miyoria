@@ -648,9 +648,11 @@ class Run {
         }
         const out = await this.#deliver(this.#session.context, line.text, line.emotion, "text");
         if (out.ok) {
-          step.lines.push(line.text);
+          // What was said: a line the guard replaced is the fixed line, and she is told why.
+          step.lines.push(out.text);
           step.ids.push(out.message_id);
           step.later.push(out.later);
+          if (out.replaced !== null) step.blocked.push(out.replaced);
         } else {
           step.blocked.push(out.reason);
         }
@@ -782,14 +784,17 @@ class Run {
 
   // ---- lines ------------------------------------------------------------------------------
 
-  /** One line through the guard and the outlet. */
+  /**
+   * One line through the guard and the outlet. A line the guard refuses with a fixed line to say
+   * instead (`GuardVerdict.instead`) has that one said: `text` is what was said, `replaced` why.
+   */
   async #deliver(
     place: ContextKey,
     text: string,
     emotion: string | null,
     via: "text" | "say" | "fixed",
   ): Promise<
-    | { ok: true; message_id: string | null; later: boolean }
+    | { ok: true; message_id: string | null; later: boolean; text: string; replaced: string | null }
     | { ok: false; code: string; reason: string }
   > {
     const blocked = (code: string, reason: string) => {
@@ -799,6 +804,11 @@ class Run {
     let delivery: Delivery;
     try {
       const verdict = await this.#p.guard.checkLine(place, text, this.#guardContext());
+      if (!verdict.allow && verdict.instead !== undefined && via !== "fixed") {
+        blocked(verdict.code, verdict.text);
+        const out = await this.#deliver(place, verdict.instead, emotion, "fixed");
+        return out.ok ? { ...out, replaced: verdict.text } : out;
+      }
       if (!verdict.allow) return blocked(verdict.code, verdict.text);
       const focus = contextKeyString(place) === contextKeyString(this.#session.context);
       const replyTo: MessageRef | null =
@@ -825,7 +835,13 @@ class Run {
       via,
       message_id: delivery.message_id,
     });
-    return { ok: true, message_id: delivery.message_id, later: delivery.later === true };
+    return {
+      ok: true,
+      message_id: delivery.message_id,
+      later: delivery.later === true,
+      text,
+      replaced: null,
+    };
   }
 
   /** A `say` of this run: her words for another place, screened like her written lines. */

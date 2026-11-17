@@ -120,7 +120,7 @@ const groups: Record<string, Sample[]> = {
       parts: [
         "hand.chest",
         "accessory.monocle_tail",
-        "outfit.short_skirt",
+        "outfit.long_skirt",
         "pose.sway",
         "background.aurora",
       ],

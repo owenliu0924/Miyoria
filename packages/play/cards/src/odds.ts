@@ -7,7 +7,15 @@
 // parts (with "nothing", when a slot can come out empty). `shown` is the percentage with two
 // decimals, rounded so that the printed column adds up to exactly 100.00.
 
-import { drawPool, type Part, type Rarity, SLOT_NAMES, SLOTS, type Slot } from "./catalogue.js";
+import {
+  drawPool,
+  type Part,
+  type Rarity,
+  SLOT_NAMES,
+  SLOTS,
+  type Slot,
+  seriesOf,
+} from "./catalogue.js";
 import { type DrawRules, headlineSlots, rarityChances, slotParts } from "./draw.js";
 
 export interface OddsRarity {
@@ -23,6 +31,8 @@ export interface OddsPart {
   name: string;
   rarity: Rarity;
   series: string | null;
+  /** The series' name (`SERIES`); `null`: none, or a series it does not know. */
+  series_name: string | null;
   percent: number;
   shown: string;
 }
@@ -123,6 +133,7 @@ export function oddsTable(catalogue: readonly Part[], rules: DrawRules): OddsTab
         name: r.part.name,
         rarity: r.part.rarity,
         series: r.part.series,
+        series_name: r.part.series === null ? null : (seriesOf(r.part.series)?.name ?? null),
         percent: r.percent,
         shown: shown[i] as string,
       })),

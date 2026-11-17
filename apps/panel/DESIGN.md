@@ -232,7 +232,11 @@ the laps done, a heart in the middle. Primary only, no colour of its own.
     when the day's cap took it, her quote. 20 at a time, 載入更多 for older ones.
   - 證據, 分級的共同記憶 (tier, date, quote; 新增共同記憶 in a `Dialog`, 拿掉 in `RowActions` behind a
     `ConfirmDialog`), 她怎麼看這個人 (稱呼, 標籤, 印象, 相處方式, 還沒聊完的事, 共同的梗, 不喜歡的地方,
-    會員頁上的話, one 儲存), then 魚幣, 今天的任務 and 帳號 as before.
+    會員頁上的話, one 儲存), then 魚幣, 今天的任務, 卡片 and 帳號. 卡片 (`GET /api/people/{id}/cards`,
+    read only) is 張數 by kind, 保底, 願望單 and 圖鑑 as `Facts`, the newest eight cards as rows (a
+    small thumbnail, rarity, kind, 閃卡 / 保底 / 已作廢, what was drawn, the price or 不用錢, the date
+    linking to its check page; 顯示全部 for the rest), then the series as meters. Left out when the
+    cards module is off.
   - Sections without anything to show are left out; someone without a row has 還沒有關係紀錄.
 
 ## Public site
@@ -264,6 +268,32 @@ token form stays at `#/login`, with no link to it from the page.
   card and today's fortune slip, the same things `/me card` and `/me checkin fortune:true` give on Discord,
   through the same service, so both read alike. The card and the slip are the only decorated
   surfaces on the site; the rest stays flat, and the card's motion stops under reduced motion.
+  The rail's 她給你的卡 shows, under the newest card, a strip of facts (一張, 今天還能抽, 你有, 保底)
+  and, under the button, the Core's own sentence when it would not give a card (in the primary,
+  `role="alert"`); short coins disable the button with the same kind of line before asking.
+- 卡冊 (`pages/public/cards/`), a block of the main column after 一起的回憶, holds everything else
+  about the cards as an inline tab row (`TabsList variant="inline"`: the page tab row's underline,
+  without glass or stickiness, first tab flush with the block title), remembered per browser:
+  - 我的卡: every card, newest first, as 3:4 thumbnails of her picture (`/api/public/card-art`,
+    then the fixed portrait, then a blank) with the rarity tag, the kind (每日卡, 里程碑卡, 紀念卡,
+    掉落的卡, 舊卡) and the date; a `Segmented` filters by kind once there are two. A card opens in a
+    `Dialog` (`sm:max-w-4xl`): the `HoloCard` beside its parts (slot, name, rarity, 願望 on a wished
+    part), then 表情, 關係, 發卡日, 第幾張, 卡面, 花了, 保底 and 編號, download, share and its check page.
+  - 圖鑑: 系列 (a `Meter` each, `owned/total`, the title once complete), 稱號, 部件 by slot or by
+    series (a `Segmented`); a part they do not have keeps its name and rarity behind a lock icon and
+    muted text. 舊收藏 last, marked 不再增加.
+  - 機率表: price and per-day as facts, 你的保底 (「再 N 張保證 SR 以上」 and a `Meter`), the
+    rarity table (with the pity's column) and each slot's parts as bars with a fixed value column,
+    in the Core's order and its two-decimal figures.
+  - 願望單: the saved list (remove per row), 儲存 / 清空 / 還原, the Core's sentence on a refusal,
+    then every collectable part as chips by slot, disabled once three are picked.
+  - Rarity is a tag of fixed width in the two accents, rising in weight: N quiet, R neutral bright,
+    SR primary text, SSR solid primary. Always the letters.
+  - Foil on her rendered picture: that picture is opaque, so the old mask (the cut-out portrait's
+    alpha) cannot keep the foil off her. On an opaque picture (`data-art="opaque"`, read from the
+    picture's top row) the foil is a pale rainbow in `color-dodge` over the whole picture, rising
+    from its light parts, and a soft band of light crossing with the pointer; both fade before the
+    words. A faint sheen stays at rest and under reduced motion. Cut-out portraits keep the old foil.
 - 她 (the public live page at `/watch`, `LIVE_PAGE` in `pages/public/live`; `/live` stays the admin 直播 page): anyone with the link may watch, and
   patting her head needs a Discord login that returns there. No admin shell, no admin route. While
   OBS publishes (`snapshot.video.on`) the stage is the real OBS picture, never a model the page

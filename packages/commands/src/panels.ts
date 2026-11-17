@@ -526,7 +526,8 @@ function mePages(policyUrl: string | null): PanelPage[] {
       id: "profile",
       label: "我的資料",
       description: "她怎麼稱呼你、帳號連結",
-      status: [{ path: "me profile", label: "她對你的印象" }],
+      // A status line shows the words only: no picture is drawn for it.
+      status: [{ path: "me profile", label: "她對你的印象", args: { picture: false } }],
       actions: [
         {
           id: "call",
@@ -559,7 +560,7 @@ function mePages(policyUrl: string | null): PanelPage[] {
       label: "錢包",
       description: "魚幣、簽到、餵她",
       refresh: true,
-      status: [{ path: "me wallet", label: "我的錢包" }],
+      status: [{ path: "me wallet", label: "我的錢包", args: { picture: false } }],
       actions: [
         { id: "checkin", label: "簽到", path: "me checkin", style: "primary" },
         { id: "rice", label: "餵一碗", path: "me feed", args: { item: "rice" } },

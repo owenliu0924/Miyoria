@@ -87,13 +87,30 @@ describe("what she hears of a card", () => {
       names,
     );
     expect(lines).toEqual([
-      "小明明 抽到一張 SSR 的卡,上面有「極光」。",
-      "小明明 好久沒抽到 SR 以上,這張是保底給的。",
-      "小明明 抽到了願望單上的「極光」。",
-      "小明明 集滿了一個系列,拿到稱號「摘星的人」。",
+      "小明明 自己抽卡,抽到一張 SSR 的卡,上面有「極光」(是 小明明 的卡,不是你抽的)。",
+      "小明明 好久沒抽到 SR 以上,小明明 這張是保底給的。",
+      "小明明 抽到的卡上有 小明明 願望單上的「極光」。",
+      "小明明 集滿了一個系列,拿到一個稱號。",
     ]);
-    // Nothing private: not the price, the card's number, the pity count or the relationship.
-    expect(lines.join("")).not.toMatch(/30|第 3|20|朋友/);
+    // Nothing private: not the price, the card's number, the pity count, the relationship or a
+    // title they have not made public.
+    expect(lines.join("")).not.toMatch(/30|第 3|20|朋友|摘星/);
+  });
+
+  it("names a title only when it is public", () => {
+    const title = (series: string, name: string, shown: boolean) => ({
+      series,
+      title: name,
+      card: "MYR-0000-0000-0001",
+      public: shown,
+      earned_at: "2026-11-17T02:00:00.000Z",
+    });
+    expect(
+      cardNotes(
+        issued({}, [title("sky", "摘星的人", false), title("night", "夜貓子", true)]),
+        names,
+      ),
+    ).toEqual(["小明 集滿了一個系列,拿到一個稱號。", "小明 集滿了一個系列,拿到稱號「夜貓子」。"]);
   });
 
   it("says who picked up a card she dropped, and nothing for a keepsake", () => {
@@ -122,7 +139,7 @@ describe("what she hears of a card", () => {
     );
     expect(lines).toEqual([
       "你和 小明 的關係到了「好朋友」,你給了他一張里程碑卡。",
-      "小明 拿到了願望單上的「極光」。",
+      "小明 拿到的卡上有 小明 願望單上的「極光」。",
     ]);
   });
 });

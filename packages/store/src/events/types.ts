@@ -47,6 +47,9 @@
 // Every card she gives is one `cards.drawn`, appended with its `cards_card` row, and a series of the
 // dex completed one `cards.titled` (`CARDS_EVENTS`): in the person's DM scope, kept a year.
 //
+// An auction lot that closed is one `market.lot_closed`, a lottery week drawn or refunded one
+// `market.lottery_drawn` (`MARKET_EVENTS`): money records, for the owner, kept.
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
@@ -68,6 +71,7 @@ import {
   type HeartEvidenceData,
   IdentityImported,
   LlmCall,
+  MARKET_EVENTS,
   TURN_EVENTS,
 } from "@miyoria/contracts/events";
 import { JsonValueSchema } from "@miyoria/contracts/wire";
@@ -243,6 +247,7 @@ export function coreEventRegistry(): EventRegistry {
     EconomyPosted,
     ...HEART_LOG_EVENTS,
     ...CARDS_EVENTS,
+    ...MARKET_EVENTS,
   );
 }
 

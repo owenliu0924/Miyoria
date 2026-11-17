@@ -21,6 +21,11 @@
       "@miyoria/source": "./src/fonts.ts",
       "types": "./dist/fonts.d.ts",
       "default": "./dist/fonts.js"
+    },
+    "./pictures": {
+      "@miyoria/source": "./src/pictures/index.ts",
+      "types": "./dist/pictures/index.d.ts",
+      "default": "./dist/pictures/index.js"
     }
   },
   "files": [

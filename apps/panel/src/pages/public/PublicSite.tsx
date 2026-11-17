@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { fmtInt } from "@/lib/format";
+import { CardsArea } from "./cards/CardsArea";
 import { LiveStage } from "./live/LiveStage";
+import { Market } from "./Market";
 import { DAY_MS, localMidnight, MemberActions, MemberActivity, MemberLists, MemberProfile } from "./Member";
 import { STATE, stateLabel, usePublicSongs, usePublicStatus } from "./status";
 import { WalletMain } from "./Wallet";
@@ -241,6 +243,8 @@ export function PublicSite({
           </div>
           <Now />
           <MemberLists />
+          <CardsArea />
+          <Market />
           <WalletMain />
           <Songs />
         </Page>

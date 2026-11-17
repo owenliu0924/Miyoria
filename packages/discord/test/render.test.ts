@@ -108,6 +108,18 @@ describe("render", () => {
     expect(shown.match(/attachment:\/\/card\.png/g)).toHaveLength(1);
   });
 
+  test("an_image_block_s_alt_is_the_gallery_item_s_description", () => {
+    const [payload] = renderReply(
+      cardReply([{ type: "image", name: "w.png", alt: "小魚乾的錢包：餘額 1,280 魚幣" }], {
+        files: [{ name: "w.png", data: new Uint8Array([1]), contentType: "image/png" }],
+      }),
+      true,
+    );
+    expect(JSON.stringify(payload?.components)).toContain(
+      '"items":[{"media":{"url":"attachment://w.png"},"description":"小魚乾的錢包：餘額 1,280 魚幣"}]',
+    );
+  });
+
   test("disable_and_modals", () => {
     const [payload] = renderReply(
       cardReply([

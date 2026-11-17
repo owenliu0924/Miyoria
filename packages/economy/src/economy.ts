@@ -36,6 +36,7 @@ import {
   holdsBack,
   inspectInput,
   type JsonValue,
+  MARKET_REASONS,
   ModerationKey,
   newId,
   type PersonId,
@@ -173,6 +174,36 @@ const RETIRED_LABEL: Readonly<Record<string, string>> = {
   card_pose: "指定立繪",
   draw: "抽收藏",
 };
+
+/** What the weekly market's rows say (docs/design/v5-play.md §11.4). */
+const MARKET_LABEL: Readonly<Record<string, string>> = {
+  [MARKET_REASONS.songPriority]: "點歌優先券",
+  [MARKET_REASONS.songPriorityRefund]: "點歌優先券退回",
+  [MARKET_REASONS.lotteryTicket]: "每週樂透彩券",
+  [MARKET_REASONS.lotteryRefund]: "每週樂透退回",
+  [MARKET_REASONS.lotteryPrize]: "每週樂透中獎",
+  [MARKET_REASONS.auctionHold]: "拍賣出價(押著)",
+  [MARKET_REASONS.auctionRelease]: "拍賣出價退回",
+};
+
+/** A won lot's ref: `<lot kind>:<lot id>`. */
+const WON_LOT: Readonly<Record<string, string>> = {
+  call_name: "這一週她怎麼叫你",
+  frame: "只此一件的卡框",
+};
+
+/** `拍賣得標:只此一件的卡框`, from an `auction_won` row's ref. */
+export function marketWonLabel(ref: string | null): string {
+  const what = WON_LOT[(ref ?? "").split(":")[0] ?? ""];
+  return what === undefined ? "拍賣得標" : `拍賣得標:${what}`;
+}
+
+/** The one-of-a-kind frame a won `frame` lot gives: `one-<lot id>` (`auction_won` ref `frame:<lot id>`). */
+export function uniqueFrameOf(entry: Pick<CoinEntry, "reason" | "ref">): string | null {
+  if (entry.reason !== MARKET_REASONS.auctionWon) return null;
+  const [kind, lot] = (entry.ref ?? "").split(":");
+  return kind === "frame" && lot ? `one-${lot}` : null;
+}
 
 /** Ledger reasons that are gifts to her (they diminish each other). */
 const GIFT_REASONS = ["feed"];
@@ -647,12 +678,20 @@ export class EconomyService implements Economy {
   async #frames(who: Member): Promise<{ owned: string[]; selected: string | null }> {
     const ledger = this.#ledger();
     const rows = await ledger.entries(this.#d.profile, who.wallet, {
-      reasons: ["frame"],
+      reasons: ["frame", MARKET_REASONS.auctionWon],
       limit: 1_000,
     });
-    const known = new Set(this.#d.config.frames.map((f) => f.id));
-    const bought = new Set(rows.map((r) => r.ref ?? ""));
-    const owned = this.#d.config.frames.map((f) => f.id).filter((id) => bought.has(id));
+    const bought = new Set(rows.filter((r) => r.reason === "frame").map((r) => r.ref ?? ""));
+    // A one-of-a-kind frame won at the weekly auction is theirs alone, oldest first.
+    const unique = rows
+      .map((r) => uniqueFrameOf(r))
+      .filter((id): id is string => id !== null)
+      .reverse();
+    const owned = [
+      ...this.#d.config.frames.map((f) => f.id).filter((id) => bought.has(id)),
+      ...new Set(unique),
+    ];
+    const known = new Set([...this.#d.config.frames.map((f) => f.id), ...unique]);
     const selected = await ledger.selectedFrame(this.#d.profile, who.wallet);
     return { owned, selected: selected !== null && known.has(selected) ? selected : null };
   }
@@ -712,6 +751,16 @@ export class EconomyService implements Economy {
         return "每日卡退回";
       case "admin_adjust":
         return r.ref ? `管理員調整:${r.ref}` : "管理員調整";
+      case MARKET_REASONS.auctionWon:
+        return marketWonLabel(r.ref);
+      case MARKET_REASONS.songPriority:
+      case MARKET_REASONS.songPriorityRefund:
+      case MARKET_REASONS.lotteryTicket:
+      case MARKET_REASONS.lotteryRefund:
+      case MARKET_REASONS.lotteryPrize:
+      case MARKET_REASONS.auctionHold:
+      case MARKET_REASONS.auctionRelease:
+        return MARKET_LABEL[r.reason] ?? r.reason;
       case "checkin":
         return r.delta > c.checkin ? "每日簽到(連續 7 天)" : EARN_LABEL.checkin;
       default:
@@ -1246,7 +1295,8 @@ export class EconomyService implements Economy {
       return frame;
     };
     const buy = req.buy === undefined ? null : named(req.buy);
-    if (typeof req.select === "string") named(req.select);
+    // A one-of-a-kind frame is never sold; whether it is theirs is checked below.
+    if (typeof req.select === "string" && !req.select.startsWith("one-")) named(req.select);
     return this.#turns.run(async () => {
       let state = await this.#frames(who);
       if (buy !== null && !state.owned.includes(buy.id)) {

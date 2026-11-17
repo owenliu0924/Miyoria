@@ -7,7 +7,7 @@ import { type CardFaceProps, CardFace, W, H } from "@miyoria/card-face";
 import { useState } from "react";
 import type { IssuedCard } from "@miyoria/contracts/api";
 
-export { AFFINITY, CardFace, FAMILIARITY, FRAME_NAME, FRAME_SWATCH, TRUST } from "@miyoria/card-face";
+export { AFFINITY, CardFace, FAMILIARITY, FRAME_NAME, FRAME_SWATCH, frameName, isUniqueFrame, TRUST } from "@miyoria/card-face";
 export type { CardFaceProps };
 
 /** Her pictures are the owner's renders of her model, kept out of git like the background. */
@@ -74,6 +74,38 @@ export function useCardArt(card: IssuedCard): { url: string | null; data: string
   return { url: null, data: null };
 }
 
+/**
+ * Whether a picture is opaque: her rendered picture is (its background is drawn), a fixed portrait
+ * is cut out. Read from the top row of the picture scaled down to 8 x 8. `null` while unknown, or
+ * where there is no canvas to read it with.
+ */
+async function opaqueOf(data: string): Promise<boolean | null> {
+  const img = new Image();
+  img.src = data;
+  await img.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 8;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0, 8, 8);
+  const row = ctx.getImageData(0, 0, 8, 1).data;
+  for (let i = 3; i < row.length; i += 4) if ((row[i] ?? 0) < 250) return false;
+  return true;
+}
+
+/** Whether the card's picture is opaque (see `opaqueOf`); keyed by where it came from. */
+export function useArtOpaque(art: { url: string | null; data: string | null }): boolean | null {
+  const q = useQuery({
+    queryKey: ["art-opaque", art.url],
+    queryFn: () => (art.data ? opaqueOf(art.data).catch(() => null) : null),
+    enabled: art.data !== null,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 30 * 60_000,
+  });
+  return q.data ?? null;
+}
+
 /** The card with its pictures inlined, so the same `<svg>` can become a PNG. */
 export function InlinedCard({ card, svgRef }: { card: IssuedCard; svgRef?: React.Ref<SVGSVGElement> }) {
   const art = useCardArt(card);
@@ -116,3 +148,34 @@ export async function cardPng(svg: SVGSVGElement, scale = 2): Promise<Blob> {
 }
 
 export const cardFileName = (card: IssuedCard) => `miyoria-card-${card.serial}.png`;
+
+/** Saves a blob as a file. */
+export function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * The share sheet with the picture where the browser has one; otherwise the link to the check page
+ * is copied. `true` when the link was copied (the caller says so).
+ */
+export async function shareCard(card: IssuedCard, blob: Blob): Promise<boolean> {
+  const file = new File([blob], cardFileName(card), { type: "image/png" });
+  const url = verifyUrl(card.serial);
+  const data = { files: [file], title: "她給我的卡", url };
+  if (navigator.canShare?.(data)) {
+    try {
+      await navigator.share(data);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return false;
+      throw e;
+    }
+    return false;
+  }
+  await navigator.clipboard.writeText(url);
+  return true;
+}

@@ -72,6 +72,7 @@ export const ECONOMY_TABS = [
   { tab: "health", label: "健康度" },
   { tab: "predictions", label: "預測" },
   { tab: "room", label: "房間" },
+  { tab: "market", label: "市集" },
 ] as const;
 
 export const INNER_TABS = [

@@ -7,7 +7,7 @@
 // store answers `dailyTotals` with one `GROUP BY` (`LedgerStatsStore`, provided by the app); with
 // none, the table says it is not available rather than inventing numbers.
 
-import { CARD_REASONS } from "@miyoria/types";
+import { CARD_REASONS, MARKET_REASONS } from "@miyoria/types";
 import type { EconomyService } from "./economy.js";
 import { type LedgerDayTotal, LedgerStatsKey, type LedgerStatsStore } from "./records.js";
 import type { HealthView } from "./v2-types.js";
@@ -37,6 +37,23 @@ export const RECOVERED_REASONS: readonly string[] = [
   "commission",
   "transfer_fee",
   CARD_REASONS.daily,
+  // The weekly market (docs/design/v5-play.md §11.4): the song priority ticket, lottery tickets and
+  // the price of a won lot are burned. A bid's hold is neither: it is given back or becomes a win.
+  MARKET_REASONS.songPriority,
+  MARKET_REASONS.lotteryTicket,
+  MARKET_REASONS.auctionWon,
+];
+
+/**
+ * Reasons that give back part of what a recovered reason took: a daily card or a song priority
+ * ticket that was refunded, lottery tickets refunded in a week with too few buyers, and the
+ * lottery prize (the share of the tickets that goes back to a person; the rest stays burned).
+ */
+export const GIVEN_BACK_REASONS: readonly string[] = [
+  CARD_REASONS.refund,
+  MARKET_REASONS.songPriorityRefund,
+  MARKET_REASONS.lotteryRefund,
+  MARKET_REASONS.lotteryPrize,
 ];
 
 const WEEK = 7;
@@ -69,8 +86,9 @@ export class Health {
       if (!day) continue;
       if (ISSUED_REASONS.includes(r.reason)) day.issued += r.positive;
       if (RECOVERED_REASONS.includes(r.reason)) day.recovered += r.negative;
-      // A daily card that could not be written gave its coins back: they were not recovered.
-      if (r.reason === CARD_REASONS.refund) day.recovered -= r.positive;
+      // A daily card that could not be written gave its coins back: they were not recovered. So do
+      // the market's refunds and its lottery prize.
+      if (GIVEN_BACK_REASONS.includes(r.reason)) day.recovered -= r.positive;
     }
     const list = [...days.entries()]
       .sort((a, b) => a[0] - b[0])
