@@ -6,6 +6,7 @@
 // "opening their cards": someone who came over from the old records gets their keepsake then (P5).
 
 import type {
+  CardCatalogue,
   CardDex,
   CardOdds,
   CardPart,
@@ -20,8 +21,11 @@ import {
   type CardRecord,
   type CardService,
   CardsKey,
+  isWishable,
   MAX_WISHES,
   type Part,
+  SERIES,
+  seriesOf,
 } from "@miyoria/play/cards";
 import { MemberCardStoreKey } from "@miyoria/store";
 import { type PersonId, sameAccount } from "@miyoria/types";
@@ -95,6 +99,22 @@ export function cardOdds(cards: CardService): CardOdds {
   return { ...table, price: cards.config.price, per_day: cards.config.daily_cap };
 }
 
+/** The whole catalogue, every part as it is (blank, disabled and drop-only ones too), and the series. */
+export function cardCatalogue(cards: CardService): CardCatalogue {
+  return {
+    parts: cards.catalogue().map((p) => ({
+      ...partOf(p),
+      series: p.series,
+      series_name: p.series === null ? null : (seriesOf(p.series)?.name ?? null),
+      drop_only: p.drop_only,
+      blank: p.blank,
+      enabled: p.enabled,
+      wishable: isWishable(p),
+    })),
+    series: SERIES.map((s) => ({ id: s.id, name: s.name, title: s.title })),
+  };
+}
+
 async function me(state: ApiState, c: Parameters<typeof loadMember>[1]): Promise<MemberContext> {
   return loadMember(state, c);
 }
@@ -163,6 +183,11 @@ export const cardsRpc = {
     return { parts: wishlistOf(cards, person), max: MAX_WISHES };
   }),
   odds: os.cards.odds.handler(({ context }) => cardOdds(service(context.state))),
+  catalogue: os.cards.catalogue.handler(async ({ context }) => {
+    // A member route like the dex it serves: their session first, then the catalogue.
+    await me(context.state, context.c);
+    return cardCatalogue(service(context.state));
+  }),
 };
 
 /** One person's cards for the owner (`GET /api/people/{id}/cards`). */

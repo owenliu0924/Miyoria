@@ -112,6 +112,31 @@ export const SetWishlistRequestSchema = z
   .meta({ id: "ApiSetWishlistRequest" });
 export type SetWishlistRequest = z.input<typeof SetWishlistRequestSchema>;
 
+/** One part of the catalogue, as every card is drawn from it. */
+export const CataloguePartSchema = CardPartSchema.extend({
+  /** The series it counts toward, and that series' name; null: none. */
+  series: z.string().nullable(),
+  series_name: z.string().nullable(),
+  /** Only a card dropped in a channel can give it. */
+  drop_only: z.boolean(),
+  /** "Nothing there" (an empty hand, no accessory): drawn and shown, never collected. */
+  blank: z.boolean(),
+  /** A disabled part is never drawn and does not count toward its series. */
+  enabled: z.boolean(),
+  /** It can be on a wishlist: collectable now (not blank, enabled); a drop-only part can. */
+  wishable: z.boolean(),
+}).meta({ id: "ApiCataloguePart" });
+export type CataloguePart = z.output<typeof CataloguePartSchema>;
+
+/** `GET /api/member/cards/catalogue`: every part, by slot then id, and every series. */
+export const CardCatalogueSchema = z
+  .object({
+    parts: z.array(CataloguePartSchema),
+    series: z.array(z.object({ id: z.string(), name: z.string(), title: z.string() })),
+  })
+  .meta({ id: "ApiCardCatalogue" });
+export type CardCatalogue = z.output<typeof CardCatalogueSchema>;
+
 const Chance = z.object({
   /** Exact, 0..100. */
   percent: z.number(),
@@ -137,6 +162,8 @@ export const CardOddsSchema = z
             name: z.string(),
             rarity: Rarity,
             series: z.string().nullable(),
+            /** The series' name; null: none. */
+            series_name: z.string().nullable(),
           }),
         ),
         /** The chance the slot comes out empty; null when it never does. */
@@ -198,6 +225,11 @@ export const cards = {
     .meta({ audience: "public", permission: null })
     .route({ method: "GET", path: "/api/public/cards/odds" })
     .output(CardOddsSchema),
+  /** The whole catalogue, owned or not: what the dex and the wishlist pick from. */
+  catalogue: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "GET", path: "/api/member/cards/catalogue" })
+    .output(CardCatalogueSchema),
 };
 
 /** The owner's side: one person's cards, dex, pity and wishlist. */

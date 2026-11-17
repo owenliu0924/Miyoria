@@ -1079,6 +1079,43 @@
         "exhausted"
       ]
     },
+    "ApiCardCatalogue": {
+      "type": "object",
+      "properties": {
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiCataloguePart"
+          }
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "title"
+            ]
+          }
+        }
+      },
+      "required": [
+        "parts",
+        "series"
+      ]
+    },
     "ApiCardDex": {
       "type": "object",
       "properties": {
@@ -1270,6 +1307,12 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "series_name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -1278,7 +1321,8 @@
                     "id",
                     "name",
                     "rarity",
-                    "series"
+                    "series",
+                    "series_name"
                   ]
                 }
               },
@@ -1455,6 +1499,72 @@
       "required": [
         "parts",
         "max"
+      ]
+    },
+    "ApiCataloguePart": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slot": {
+          "type": "string",
+          "enum": [
+            "hand",
+            "accessory",
+            "outfit",
+            "pose",
+            "background"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "rarity": {
+          "type": "string",
+          "enum": [
+            "N",
+            "R",
+            "SR",
+            "SSR"
+          ]
+        },
+        "series": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "series_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "drop_only": {
+          "type": "boolean"
+        },
+        "blank": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "wishable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "slot",
+        "name",
+        "rarity",
+        "series",
+        "series_name",
+        "drop_only",
+        "blank",
+        "enabled",
+        "wishable"
       ]
     },
     "ApiCauseChain": {

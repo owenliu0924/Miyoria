@@ -29,6 +29,18 @@ describe("the odds table", () => {
     expect(sum(table.rarities.map((r) => r.percent))).toBeCloseTo(100, 9);
   });
 
+  it("names each part's series, and nothing for a part without one", () => {
+    const parts = table.slots.flatMap((s) => s.parts);
+    expect(parts.find((p) => p.id === "accessory.glasses")).toMatchObject({
+      series: "glasses",
+      series_name: "眼鏡系列",
+    });
+    expect(parts.find((p) => p.id === "accessory.none")).toMatchObject({
+      series: null,
+      series_name: null,
+    });
+  });
+
   it("prints the pity's rarities, summing to 100", () => {
     expect(table.pity?.after).toBe(20);
     expect(table.pity?.rarities.map((r) => [r.rarity, r.shown])).toEqual([

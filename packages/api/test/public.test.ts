@@ -7,7 +7,12 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
-import { type IssuedCard, MemberViewSchema } from "@miyoria/contracts/api";
+import {
+  type CardCatalogue,
+  type CardOdds,
+  type IssuedCard,
+  MemberViewSchema,
+} from "@miyoria/contracts/api";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
@@ -711,6 +716,7 @@ describe("the route table", () => {
       "GET /api/member/card",
       "GET /api/member/card/:serial",
       "GET /api/member/cards",
+      "GET /api/member/cards/catalogue",
       "GET /api/member/cards/dex",
       "GET /api/member/cards/pity",
       "GET /api/member/cards/wishlist",
@@ -2013,7 +2019,8 @@ describe("cards she gives", () => {
     expect((await anyone(r, OLDER)).status).toBe(404);
     expect(r.cards.count(r.people.get(ALICE) as PersonId)).toBe(0);
     const after = (await r.get("/api/member/card", cookie)).body;
-    expect(after).toMatchObject({ latest: null, today: 0 });
+    // The card is gone; the day still had it, so a forget is no way to more cards today.
+    expect(after).toMatchObject({ latest: null, today: 1 });
     // Numbering starts over.
     expect(((await issue(r, cookie)).body as Card).number).toBe(1);
   });
@@ -2397,6 +2404,53 @@ describe("her cards", () => {
       status: 403,
       message: "她還不認識你,先和她說說話吧",
     });
+  });
+
+  it("gives a member the whole catalogue, and the odds name each part's series", async () => {
+    const r = await rig();
+    expect((await r.get("/api/member/cards/catalogue")).status).toBe(401);
+    const cookie = await r.login("alice");
+    const res = await r.get("/api/member/cards/catalogue", cookie);
+    expect(res.status).toBe(200);
+    const catalogue = res.body as CardCatalogue;
+    expect(catalogue.parts.map((p) => p.id).sort()).toEqual(
+      r.cards
+        .catalogue()
+        .map((p) => p.id)
+        .sort(),
+    );
+    const byId = new Map(catalogue.parts.map((p) => [p.id, p]));
+    expect(byId.get("hand.none")).toMatchObject({
+      blank: true,
+      wishable: false,
+      series: null,
+      series_name: null,
+    });
+    expect(byId.get("accessory.glasses")).toMatchObject({
+      slot: "accessory",
+      rarity: "N",
+      series: "glasses",
+      series_name: "眼鏡系列",
+      drop_only: false,
+      enabled: true,
+      wishable: true,
+    });
+    // A part only a drop gives is listed, and can be wished for: the wishlist takes it.
+    expect(byId.get("background.fireworks")).toMatchObject({ drop_only: true, wishable: true });
+    const wished = await put(r, cookie, { parts: ["background.fireworks"] });
+    expect(wished.status).toBe(200);
+    expect(catalogue.series.find((s) => s.id === "glasses")).toEqual({
+      id: "glasses",
+      name: "眼鏡系列",
+      title: "眼鏡控",
+    });
+    // Every catalogue part the odds list carries its series' name.
+    const odds = (await r.get("/api/public/cards/odds")).body as CardOdds;
+    for (const slot of odds.slots) {
+      for (const p of slot.parts) {
+        expect(p.series_name, p.id).toBe(byId.get(p.id)?.series_name);
+      }
+    }
   });
 
   it("publishes the odds to anyone, each list summing to 100.00", async () => {

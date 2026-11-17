@@ -93,9 +93,9 @@ const ODDS: CardOdds = {
       slot: "accessory",
       name: "配件",
       parts: [
-        { id: "accessory.none", name: "無配件", rarity: "N", series: null, ...chance(60) },
-        { id: "accessory.monocle", name: "單片眼鏡", rarity: "SR", series: "glasses", ...chance(39.5) },
-        { id: "accessory.monocle_tail", name: "單片眼鏡和尾巴", rarity: "SSR", series: "curios", ...chance(0.5) },
+        { id: "accessory.none", name: "無配件", rarity: "N", series: null, series_name: null, ...chance(60) },
+        { id: "accessory.monocle", name: "單片眼鏡", rarity: "SR", series: "glasses", series_name: "眼鏡系列", ...chance(39.5) },
+        { id: "accessory.monocle_tail", name: "單片眼鏡和尾巴", rarity: "SSR", series: "curios", series_name: "怪東西系列", ...chance(0.5) },
       ],
       empty: null,
     },
@@ -103,8 +103,8 @@ const ODDS: CardOdds = {
       slot: "background",
       name: "背景",
       parts: [
-        { id: "background.stars", name: "星點", rarity: "R", series: "sky", ...chance(99.7) },
-        { id: "background.aurora", name: "極光", rarity: "SSR", series: "sky", ...chance(0.3) },
+        { id: "background.stars", name: "星點", rarity: "R", series: "sky", series_name: "天空系列", ...chance(99.7) },
+        { id: "background.aurora", name: "極光", rarity: "SSR", series: "sky", series_name: "天空系列", ...chance(0.3) },
       ],
       empty: null,
     },

@@ -127,6 +127,8 @@ export {
   TaskFailureCodeSchema,
 } from "./body.js";
 export {
+  type CardCatalogue,
+  CardCatalogueSchema,
   type CardDex,
   CardDexSchema,
   type CardOdds,
@@ -137,6 +139,8 @@ export {
   CardTitleSchema,
   type CardWishlist,
   CardWishlistSchema,
+  type CataloguePart,
+  CataloguePartSchema,
   type DexPart,
   DexPartSchema,
   type DexSeries,

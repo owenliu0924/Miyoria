@@ -2244,6 +2244,21 @@
             "path": "/api/public/cards/odds"
           }
         }
+      },
+      "catalogue": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/cards/catalogue"
+          }
+        }
       }
     },
     "cardsAdmin": {

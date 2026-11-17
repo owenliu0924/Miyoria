@@ -88,6 +88,12 @@ const CASES: Case[] = [
     request: { json: { parts: ["hand.cat"] } },
   },
   { name: "cards.odds", method: "GET", path: "/api/public/cards/odds", audience: "public" },
+  {
+    name: "cards.catalogue",
+    method: "GET",
+    path: "/api/member/cards/catalogue",
+    audience: "member",
+  },
 ];
 
 /** The member routes that never counted against the member's rate limit. */
@@ -269,13 +275,29 @@ const ANSWERS = {
       {
         slot: "hand",
         name: "手上",
-        parts: [{ ...CHANCE, id: "hand.cat", name: "貓", rarity: "SR", series: null }],
+        parts: [
+          { ...CHANCE, id: "hand.cat", name: "貓", rarity: "SR", series: null, series_name: null },
+        ],
         empty: null,
       },
     ],
     price: 30,
     per_day: 5,
   } satisfies ApiOutputs["cards"]["odds"],
+  "cards.catalogue": {
+    parts: [
+      {
+        ...PART,
+        series: "cats",
+        series_name: "貓咪系列",
+        drop_only: false,
+        blank: false,
+        enabled: true,
+        wishable: true,
+      },
+    ],
+    series: [{ id: "cats", name: "貓咪系列", title: "貓奴" }],
+  } satisfies ApiOutputs["cards"]["catalogue"],
 } as const;
 
 /** `value` with an extra field at the top and in every object and array of objects below. */
@@ -359,6 +381,7 @@ describe("the answers", () => {
       wishlist: os.cards.wishlist.handler(answer("cards.wishlist")),
       setWishlist: os.cards.setWishlist.handler(answer("cards.setWishlist")),
       odds: os.cards.odds.handler(answer("cards.odds")),
+      catalogue: os.cards.catalogue.handler(answer("cards.catalogue")),
     },
     wallet: {
       view: os.wallet.view.handler(answer("wallet.view")),

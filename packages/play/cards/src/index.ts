@@ -43,6 +43,7 @@ export {
 export { type CardsConfig, CardsConfigSchema, cardsConfig, drawRules } from "./config.js";
 export {
   completedBy,
+  isWishable,
   MAX_WISHES,
   type SeriesProgress,
   seriesParts,
