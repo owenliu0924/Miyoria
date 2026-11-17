@@ -317,13 +317,6 @@ body {
   text-wrap: pretty;
 }
 
-.shout__song {
-  color: var(--ink-dim);
-  font-size: 1.3rem;
-  letter-spacing: 0.03em;
-  overflow-wrap: anywhere;
-}
-
 /* Over the song video's top edge, centred on it. */
 [data-layout="sing"] .shout {
   left: calc(var(--pad) + var(--video-w) / 2);

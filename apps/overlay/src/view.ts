@@ -26,7 +26,7 @@ import { MAX_TOUCHES, type Touch, TouchSet } from "./touch.js";
 import { Wave } from "./wave.js";
 
 const QUEUE_SHOWN = 5;
-/** How long one paid message / dedication stays up before the next one comes. */
+/** How long one paid message stays up before the next one comes. */
 export const SCREEN_SHOW_MS = 12_000;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -167,7 +167,7 @@ export class Overlay {
     this.gift.setAttribute("role", "status");
     this.giftText = new Swap(el("span", "gift__text", this.gift));
 
-    // Paid messages and song dedications, one at a time (top centre, under the gift line).
+    // Paid messages, one at a time (top centre, under the gift line).
     this.screen = el("div", "shout is-out", main);
     this.screen.hidden = true;
     this.screen.setAttribute("role", "status");
@@ -394,14 +394,13 @@ export class Overlay {
   }
 }
 
-/** The card on the screen for a paid message or dedication. */
+/** The card on the screen for a paid message. */
 function screenCard(item: HTMLElement, card: ScreenCard): void {
   item.classList.add("shout__card");
   const head = el("div", "shout__head", item);
-  el("span", "shout__tag", head, card.kind === "dedication" ? "點歌獻詞" : "留言");
+  el("span", "shout__tag", head, "留言");
   el("span", "shout__name", head, card.name);
   el("div", "shout__text", item, card.text);
-  if (card.song) el("div", "shout__song", item, `\u266A ${card.song}`);
 }
 
 /** Keys of queue items; a repeated item gets its occurrence number. */

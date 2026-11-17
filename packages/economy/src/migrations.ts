@@ -141,7 +141,7 @@ CREATE INDEX \`economy_ledger_reason_idx\` ON \`economy_ledger\` (\`reason\`,\`t
  * refunded already is skipped, so it is safe to run on any database. The new ids are the
  * original's with the first random character changed (still a ULID, and not the next one a
  * monotonic generator would make); the event's balance is the person's
- * own rows up to the refund. Versions 2, 3 and 4 use it: never edit it once released.
+ * own rows up to the refund. Versions 2 to 5 use it: never edit it once released.
  */
 const refundHeld = (
   held: string,
@@ -202,14 +202,31 @@ const RETIRE_GOALS = `${refundHeld(
 DROP TABLE economy_goal_pledges;
 DROP TABLE economy_goals;`;
 
+/**
+ * Song tickets and dedications are gone: the singer's set list (the settings row `sing:setlist` of
+ * `plugin_state`) still holds the ledger rows of the ones charged for songs not yet sung (state
+ * `preparing`, `ready` or `playing`); they go back to their payers. A song sung already keeps its
+ * charge. A database without that row has nothing to give back.
+ */
+const RETIRE_SONG_EXTRAS = refundHeld(
+  `SELECT json_extract(e.value, '$.ticket_entry') FROM plugin_state s, json_each(s.value, '$.entries') e
+  WHERE s.plugin = 'settings' AND s.key = 'sing:setlist'
+    AND json_extract(e.value, '$.state') IN ('preparing', 'ready', 'playing')
+  UNION
+  SELECT json_extract(e.value, '$.dedication_entry') FROM plugin_state s, json_each(s.value, '$.entries') e
+  WHERE s.plugin = 'settings' AND s.key = 'sing:setlist'
+    AND json_extract(e.value, '$.state') IN ('preparing', 'ready', 'playing')`,
+);
+
 /** The coin ledger, the wallets, fortune slips, bounties and the 2.0 documents. */
 export const economySchema: PluginSchema = {
   plugin: "economy",
-  requires: ["identity"],
+  requires: ["identity", "config"],
   migrations: [
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "retire_deals", sql: RETIRE_DEALS },
     { version: 3, name: "retire_commissions", sql: RETIRE_COMMISSIONS },
     { version: 4, name: "retire_goals", sql: RETIRE_GOALS },
+    { version: 5, name: "retire_song_extras", sql: RETIRE_SONG_EXTRAS },
   ],
 };

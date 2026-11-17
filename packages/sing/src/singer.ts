@@ -21,7 +21,6 @@
 // * The song being prepared, its worker stage and progress are published as
 //   `Events.SingPrepare` whenever they change (the overlay's activity line).
 
-import { randomUUID } from "node:crypto";
 import { CapabilityError } from "@miyoria/gate/actions";
 import { type RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
@@ -65,11 +64,9 @@ import {
   type WorkerJob,
 } from "./client.js";
 import type { SingConfig } from "./config.js";
-import { dedicationProblem, type SongPayments, SongPaymentsKey } from "./payments.js";
 import { singSong, sleep } from "./player.js";
 import {
   type BackingMode,
-  dedicationNote,
   type NewSong,
   SetList,
   type SongEntry,
@@ -105,14 +102,7 @@ export class SingError extends CapabilityError {
 }
 
 /** A request: what to look for, and who asked. */
-export interface SongRequest
-  extends Omit<NewSong, "query" | "ticket_entry" | "dedication" | "dedication_entry"> {
-  query: string;
-  /** Buy a ticket if (and only if) the requester is at the per-person limit. */
-  ticket?: boolean;
-  /** A paid dedication (screened and charged here); needs a requester. */
-  dedication?: string | null;
-}
+export type SongRequest = NewSong;
 
 const LINK = /https?:\/\/[^\s<>"'「」]+/i;
 /** A link pasted without its scheme (`www.bilibili.com/video/BV…/`, `youtu.be/…`): one of the usual hosts. */
@@ -316,25 +306,11 @@ export class Singer implements VoiceFloor, SpeechPause {
         `already preparing ${this.cfg.max_practice} songs for yourself; sing one of them first`,
       );
     }
-    const { ticket, dedication, ...plain } = req;
-    const dedicationText = dedication?.trim() || null;
-    if (dedicationText !== null) {
-      const problem = dedicationProblem(dedicationText);
-      if (problem !== null) throw new SingError(problem);
-    }
-    const paid = await this.#charge(req, query, ticket === true, dedicationText);
     let entry: SongEntry;
     try {
-      entry = this.list.add({ ...plain, query, ...paid.fields }, toTimestamp(this.ctx.clock.now()));
+      entry = this.list.add({ ...req, query }, toTimestamp(this.ctx.clock.now()));
     } catch (error) {
-      await this.#refundAll(req.requester, paid.entries);
-      const hint =
-        req.requester !== null && this.list.atUserLimit(req.requester) && ticket !== true
-          ? this.#payments() !== null
-            ? "。想多點一首可以用指令 /queue song request 加上點歌加點券(ticket)"
-            : ""
-          : "";
-      throw new SingError(`${errorMessage(error)}${hint}`, { cause: error });
+      throw new SingError(errorMessage(error), { cause: error });
     }
     try {
       const job = await this.worker.submit(this.#query(query, req.key, entry.backing), signal);
@@ -349,78 +325,6 @@ export class Singer implements VoiceFloor, SpeechPause {
       });
     }
     return entry;
-  }
-
-  #payments(): SongPayments | null {
-    return this.ctx.services.get(SongPaymentsKey) ?? null;
-  }
-
-  /**
-   * Charges what a request asked to pay for: a ticket (only when the requester is at the limit)
-   * and a dedication. Throws a `SingError` with the reason when it cannot; a charge made is
-   * refunded when a later one fails.
-   */
-  async #charge(
-    req: SongRequest,
-    query: string,
-    wantsTicket: boolean,
-    dedication: string | null,
-  ): Promise<{
-    fields: { ticket_entry?: string; dedication?: string; dedication_entry?: string };
-    entries: string[];
-  }> {
-    const fields: { ticket_entry?: string; dedication?: string; dedication_entry?: string } = {};
-    const entries: string[] = [];
-    const who = req.requester;
-    const needsTicket = wantsTicket && who !== null && this.list.atUserLimit(who);
-    if (!needsTicket && dedication === null) return { fields, entries };
-    const payments = this.#payments();
-    if (who === null || payments === null) {
-      throw new SingError(
-        needsTicket ? "點歌加點券現在不能用" : "獻詞現在不能用(要有帳號和經濟系統)",
-      );
-    }
-    const nonce = `${this.ctx.clock.now()}:${randomUUID()}`;
-    const ref = `song:${safeName(query, 60)}`;
-    try {
-      if (needsTicket) {
-        const r = await payments.charge(who, "song_ticket", `${nonce}:ticket`, ref);
-        if ("refused" in r) throw new SingError(r.refused);
-        fields.ticket_entry = r.entryId;
-        entries.push(r.entryId);
-      }
-      if (dedication !== null) {
-        const r = await payments.charge(who, "dedication", `${nonce}:ded`, ref, dedication);
-        if ("refused" in r) throw new SingError(r.refused);
-        fields.dedication = dedication;
-        fields.dedication_entry = r.entryId;
-        entries.push(r.entryId);
-      }
-    } catch (error) {
-      await this.#refundAll(who, entries);
-      throw error;
-    }
-    return { fields, entries };
-  }
-
-  async #refundAll(who: AccountRef | null, entries: string[]): Promise<void> {
-    const payments = this.#payments();
-    if (who === null || payments === null) return;
-    for (const id of entries) {
-      try {
-        await payments.refund(who, id);
-      } catch (error) {
-        log.warn({ err: errorMessage(error) }, "could not refund a song charge");
-      }
-    }
-  }
-
-  /** The song was not sung to its end: gives back the ticket and the dedication, once each. */
-  #release(entry: SongEntry): void {
-    const ids = [entry.ticket_entry, entry.dedication_entry].filter((x): x is string => !!x);
-    entry.ticket_entry = null;
-    entry.dedication_entry = null;
-    if (ids.length > 0) void this.#refundAll(entry.requester, ids);
   }
 
   #query(query: string, key: number, backing: BackingMode = "keep"): SongQuery {
@@ -566,7 +470,6 @@ export class Singer implements VoiceFloor, SpeechPause {
     if (entry.state !== "preparing" && entry.state !== "ready") return;
     log.info({ no: entry.no, why }, "song failed");
     this.list.finish(entry, "failed", why);
-    this.#release(entry);
     this.#finishQueueItem(entry, false);
     const where = entry.context ?? this.voiceContext();
     if (tell && where !== null && entry.requester !== null) {
@@ -642,7 +545,7 @@ export class Singer implements VoiceFloor, SpeechPause {
       entry.practice === true
         ? `你自己練的${songLabel(entry)}準備好了(#${entry.no}),還沒唱給誰聽。` +
           `有人在語音、你想唱的時候用 sing.play(song = ${entry.no}),opening 寫一句開場;不用急,之後也可以跟大家提一下新歌。${voice}${busy}`
-        : `${entry.requester_name} 點的${songLabel(entry)}已經準備好了(#${entry.no}${dedicationNote(entry)})。` +
+        : `${entry.requester_name} 點的${songLabel(entry)}已經準備好了(#${entry.no})。` +
           `想唱就用 sing.play(song = ${entry.no}),opening 寫一句開場;現在不想唱也可以晚點再唱。${voice}${busy}`;
     if (where === null || !this.#sheDecides()) {
       this.#autoStart();
@@ -666,7 +569,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     const announcement = this.#tell(
       where,
       REASONS.start,
-      `你要開始唱${songLabel(next)}了(${next.requester_name} 點的${dedicationNote(next)})。用一句話開場,說完就開始。`,
+      `你要開始唱${songLabel(next)}了(${next.requester_name} 點的)。用一句話開場,說完就開始。`,
       next,
     );
     this.#begin(next, where.scope, null, this.cfg.opening_window_ms, announcement);
@@ -765,7 +668,7 @@ export class Singer implements VoiceFloor, SpeechPause {
   /**
    * The worker's cache cleaned the song out while it sat ready here (`workers/sing/cache.py`):
    * the same request again makes it again, and it is ready (and offered or started) as before.
-   * Nothing was audible yet, so it keeps its place and its charges. `false`: the worker refused.
+   * Nothing was audible yet, so it keeps its place. `false`: the worker refused.
    */
   async #prepareAgain(entry: SongEntry): Promise<boolean> {
     let job: WorkerJob;
@@ -806,7 +709,6 @@ export class Singer implements VoiceFloor, SpeechPause {
     if (!song) throw new SingError("the song has no audio");
     log.info({ no: entry.no, song: song.id, guild }, "singing");
     if (this.#playing?.entry === entry) this.#playing.audible = true;
-    this.#showDedication(entry);
     return singSong(
       {
         worker: this.worker,
@@ -825,26 +727,11 @@ export class Singer implements VoiceFloor, SpeechPause {
     );
   }
 
-  /** The dedication goes up on the overlay as the song starts. */
-  #showDedication(entry: SongEntry): void {
-    if (!entry.dedication || !entry.dedication_entry) return;
-    const title = entry.song?.title?.trim() || entry.query;
-    this.ctx.publish(Events.EconomyScreen, {
-      kind: "dedication",
-      name: safeName(entry.requester_name, 32),
-      text: entry.dedication,
-      song: safeName(title, 60),
-    });
-  }
-
   #ended(entry: SongEntry, guild: string, outcome: PlaybackState | "error"): void {
-    const wasAudible = this.#playing?.entry === entry && this.#playing.audible;
     if (this.#playing?.entry === entry) this.#playing = null;
     if (entry.song) this.#cue({ state: "ended", song: entry.song.id, outcome });
     const finished = outcome === "finished";
     this.list.finish(entry, finished || outcome === "interrupted" ? "done" : "failed", entry.error);
-    // A song that was sung (to the end, or skipped once it was audible) keeps its charges.
-    if (!wasAudible || !(finished || outcome === "interrupted")) this.#release(entry);
     this.#finishQueueItem(entry, finished);
     log.info({ no: entry.no, outcome }, "song ended");
     const where = this.voiceContext(guild);
@@ -915,7 +802,6 @@ export class Singer implements VoiceFloor, SpeechPause {
           await this.worker.cancel(e.job).catch(() => undefined);
         }
         this.list.finish(e, "cancelled");
-        this.#release(e);
         this.#finishQueueItem(e, false);
         dropped += 1;
       }
@@ -1285,8 +1171,6 @@ export class Singer implements VoiceFloor, SpeechPause {
       const raw = await store.get(STORE_PROFILE, SETLIST_KEY);
       if (raw === null) return;
       const n = this.list.restore(raw);
-      // A song cut off with nothing to sing is over: its charges go back.
-      for (const e of this.list.all()) if (e.state === "failed") this.#release(e);
       this.#saved = JSON.stringify(this.list.snapshot());
       for (const e of this.list.preparing()) if (e.job === null) this.#orphans.add(e.no);
       if (n > 0) {

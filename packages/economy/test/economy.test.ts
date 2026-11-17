@@ -36,7 +36,6 @@ import { Earnings } from "../src/earn.js";
 import { EconomyService, STRANGER, streakOf } from "../src/economy.js";
 import { EconomyModule } from "../src/module.js";
 import { CoinLedgerStoreKey } from "../src/records.js";
-import { songPayments } from "../src/songs.js";
 import { giveCapability } from "../src/tools.js";
 import { EconomyError, EconomyKey, GIFT_TOPIC, SCREEN_TOPIC } from "../src/types.js";
 import { Economy2Key } from "../src/v2-types.js";
@@ -592,9 +591,7 @@ describe("screen messages", () => {
       charged: 30,
       balance: 70,
     });
-    expect(topics(r, SCREEN_TOPIC)).toEqual([
-      { kind: "message", name: "Alice", text: "加油 喔", song: null },
-    ]);
+    expect(topics(r, SCREEN_TOPIC)).toEqual([{ name: "Alice", text: "加油 喔" }]);
     // Her purse note may land after it, so look for the line instead of taking the last.
     expect(r.observed).toContainEqual({
       source: "economy.screen_message",
@@ -715,8 +712,8 @@ describe("paid things other parts sell", () => {
   it("are refused to strangers, when short, and when off sale", async () => {
     const r = await rig({ fortunes_per_day: 0 });
     await funded(r, ALICE, 5);
-    await rejects(r.economy.purchase(DAVE, "song_ticket", "k"), 403);
-    await rejects(r.economy.purchase(ALICE, "song_ticket", "k"), 402);
+    await rejects(r.economy.purchase(DAVE, "card_reroll", "k"), 403);
+    await rejects(r.economy.purchase(ALICE, "card_reroll", "k"), 402);
     await rejects(r.economy.purchase(ALICE, "fortune", "k"), 400);
     expect(r.economy.price("fortune")).toEqual({ price: 10, per_day: 0 });
     expect((await r.economy.wallet(ALICE)).shop.some((s) => s.id === "fortune")).toBe(false);
@@ -837,29 +834,6 @@ describe("the module", () => {
       await sup.stopAll();
     }
     expect(registry.get("economy.give")).toBeUndefined();
-  });
-});
-
-describe("the singer's payment port", () => {
-  it("charges a ticket, screens a dedication before charging, and refunds", async () => {
-    const r = await rig();
-    await funded(r, ALICE, 100);
-    const pay = songPayments(r.economy);
-    const ticket = await pay.charge(ALICE, "song_ticket", "k1", "song:x");
-    expect(ticket).toEqual({ entryId: expect.any(String) });
-    // Words that fail the screen are refused before any charge.
-    expect(await pay.charge(ALICE, "dedication", "k2", "song:x", "BADWORD")).toHaveProperty(
-      "refused",
-    );
-    expect((await r.economy.wallet(ALICE)).balance).toBe(75);
-    const ded = await pay.charge(ALICE, "dedication", "k3", "song:x", "給你");
-    expect(ded).toEqual({ entryId: expect.any(String) });
-    expect((await r.economy.wallet(ALICE)).balance).toBe(60);
-    if ("entryId" in ded) expect(await pay.refund(ALICE, ded.entryId)).toBe(true);
-    expect((await r.economy.wallet(ALICE)).balance).toBe(75);
-    // Strangers and a short purse come back as a reason, not a throw.
-    expect(await pay.charge(DAVE, "dedication", "k4", "song:x", "hi")).toHaveProperty("refused");
-    expect(await pay.charge(BOB, "song_ticket", "k5", "song:x")).toHaveProperty("refused");
   });
 });
 

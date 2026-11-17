@@ -2,7 +2,7 @@
 // still held goes back to its owner as a ledger row that says so, then its tables are dropped.
 // The database is brought to version 1, filled the way the old code left it, and migrated.
 
-import { identitySchema, migrate } from "@miyoria/store";
+import { configSchema, identitySchema, migrate } from "@miyoria/store";
 import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import { newId } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ const NOW = 1_700_000_000_000_000;
 function oldDatabase() {
   const t = openTestDb({
     identity: true,
+    config: true,
     plugins: [{ ...economySchema, migrations: economySchema.migrations.slice(0, 1) }],
   });
   open.push(t);
@@ -96,9 +97,9 @@ describe("retiring deals", () => {
     expect(balance(alice.person)).toBe(100 - 30 - 20);
     expect(balance(bob.person)).toBe(100 - 10 - 15 + 15);
 
-    expect(migrate(t.db, [identitySchema, economySchema]).map((m) => m.name)).toContain(
-      "retire_deals",
-    );
+    expect(
+      migrate(t.db, [identitySchema, configSchema, economySchema]).map((m) => m.name),
+    ).toContain("retire_deals");
 
     expect(refunds(t)).toEqual([
       {
@@ -134,7 +135,7 @@ describe("retiring deals", () => {
       balance: 100 - 30 - 20 + 30,
     });
     // Nothing is left to apply, and a second run changes nothing.
-    expect(migrate(t.db, [identitySchema, economySchema])).toEqual([]);
+    expect(migrate(t.db, [identitySchema, configSchema, economySchema])).toEqual([]);
     expect(refunds(t)).toHaveLength(2);
   });
 });
@@ -159,9 +160,9 @@ describe("retiring goals", () => {
     expect(balance(alice.person)).toBe(200 - 30);
     expect(balance(bob.person)).toBe(200 - 50 - 40 - 10);
 
-    expect(migrate(t.db, [identitySchema, economySchema]).map((m) => m.name)).toContain(
-      "retire_goals",
-    );
+    expect(
+      migrate(t.db, [identitySchema, configSchema, economySchema]).map((m) => m.name),
+    ).toContain("retire_goals");
 
     expect(refunds(t).map((r) => [r.person_id, r.delta, r.ref])).toEqual([
       [alice.person, 30, openA],
@@ -175,8 +176,76 @@ describe("retiring goals", () => {
     expect(
       t.db.all("SELECT 1 FROM events WHERE type = 'economy.posted' AND key LIKE 'ledger:%'"),
     ).toHaveLength(3);
-    expect(migrate(t.db, [identitySchema, economySchema])).toEqual([]);
+    expect(migrate(t.db, [identitySchema, configSchema, economySchema])).toEqual([]);
     expect(refunds(t)).toHaveLength(3);
+  });
+});
+
+describe("retiring song tickets and dedications", () => {
+  it("returns what the stored set list still holds for songs not yet sung", () => {
+    const { t, people, row, balance } = oldDatabase();
+    const [alice, bob] = people;
+    if (!alice || !bob) throw new Error("people");
+    row(alice.person, 200, "checkin");
+    row(bob.person, 200, "checkin");
+    const ticketA = row(alice.person, -25, "song_ticket", "song:a");
+    const dedicationA = row(alice.person, -15, "dedication", "song:a");
+    const ticketB = row(bob.person, -25, "song_ticket", "song:b");
+    const sung = row(bob.person, -15, "dedication", "song:c");
+    const skipped = row(bob.person, -25, "song_ticket", "song:d");
+    row(bob.person, 25, "refund", skipped);
+    const entry = (state: string, ticket: string | null, dedication: string | null) => ({
+      no: 1,
+      state,
+      ticket_entry: ticket,
+      dedication_entry: dedication,
+    });
+    const setlist = {
+      version: 1,
+      next: 6,
+      entries: [
+        entry("preparing", ticketA, dedicationA),
+        entry("playing", ticketB, null),
+        entry("done", null, sung),
+        entry("failed", skipped, null),
+        entry("ready", null, null),
+      ],
+    };
+    t.db.run(
+      "INSERT INTO plugin_state (plugin, key, value, v, updated_at) VALUES ('settings', 'sing:setlist', $value, 1, $ts)",
+      { value: JSON.stringify(setlist), ts: NOW },
+    );
+    expect(balance(alice.person)).toBe(200 - 25 - 15);
+    expect(balance(bob.person)).toBe(200 - 25 - 15 - 25 + 25);
+
+    expect(
+      migrate(t.db, [identitySchema, configSchema, economySchema]).map((m) => m.name),
+    ).toContain("retire_song_extras");
+
+    expect(
+      refunds(t)
+        .map((r) => [r.person_id, r.delta, r.ref])
+        .sort((a, b) => String(a[2]).localeCompare(String(b[2]))),
+    ).toEqual(
+      [
+        [alice.person, 25, ticketA],
+        [alice.person, 15, dedicationA],
+        [bob.person, 25, ticketB],
+      ].sort((a, b) => String(a[2]).localeCompare(String(b[2]))),
+    );
+    expect(balance(alice.person)).toBe(200);
+    expect(balance(bob.person)).toBe(200 - 15);
+    expect(migrate(t.db, [identitySchema, configSchema, economySchema])).toEqual([]);
+    expect(refunds(t)).toHaveLength(3);
+  });
+
+  it("has nothing to give back when no set list was stored", () => {
+    const { t, people, row } = oldDatabase();
+    const [alice] = people;
+    if (!alice) throw new Error("people");
+    row(alice.person, 50, "checkin");
+    migrate(t.db, [identitySchema, configSchema, economySchema]);
+    expect(refunds(t)).toEqual([]);
   });
 });
 
@@ -211,9 +280,9 @@ describe("retiring commissions", () => {
     expect(balance(alice.person)).toBe(200 - 40 - 30);
     expect(balance(bob.person)).toBe(200 - 120);
 
-    expect(migrate(t.db, [identitySchema, economySchema]).map((m) => m.name)).toContain(
-      "retire_commissions",
-    );
+    expect(
+      migrate(t.db, [identitySchema, configSchema, economySchema]).map((m) => m.name),
+    ).toContain("retire_commissions");
 
     expect(refunds(t).map((r) => [r.person_id, r.delta, r.ref])).toEqual([
       [alice.person, 40, waitingA],

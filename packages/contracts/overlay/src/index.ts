@@ -51,18 +51,12 @@ export const OverlayGiftMessageSchema = z
   .object({ type: z.literal("gift"), text: z.string() })
   .meta({ id: "OverlayGiftMessage" });
 
-export const OverlayScreenKindSchema = z
-  .enum(["message", "dedication"])
-  .meta({ id: "OverlayScreenKind" });
-
-/** A paid message or a song dedication; the overlay queues them and shows one at a time. */
+/** A paid message; the overlay queues them and shows one at a time. */
 export const OverlayScreenMessageSchema = z
   .object({
     type: z.literal("screen"),
-    kind: OverlayScreenKindSchema,
     name: z.string(),
     text: z.string(),
-    song: z.string().nullable(),
   })
   .meta({ id: "OverlayScreenMessage" });
 

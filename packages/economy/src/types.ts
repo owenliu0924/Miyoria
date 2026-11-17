@@ -23,25 +23,15 @@ export interface EarnLine {
 }
 
 /**
- * Paid things another part of her sells (docs/design/economy.md §13): the card routes, the singer,
- * the overlay, the fortune. The economy only charges, caps per day and refunds; what is bought is
+ * Paid things another part of her sells (docs/design/economy.md §13): the card routes, the overlay, the fortune. The economy only charges, caps per day and refunds; what is bought is
  * the caller's. Prices and daily limits are `[modules.economy]` keys of the same name.
  */
-export type PaidItem =
-  | "card_reroll"
-  | "card_pose"
-  | "card_foil"
-  | "song_ticket"
-  | "dedication"
-  | "screen_message"
-  | "fortune";
+export type PaidItem = "card_reroll" | "card_pose" | "card_foil" | "screen_message" | "fortune";
 
 export const PAID_ITEMS: readonly PaidItem[] = [
   "card_reroll",
   "card_pose",
   "card_foil",
-  "song_ticket",
-  "dedication",
   "screen_message",
   "fortune",
 ];
@@ -70,7 +60,7 @@ export interface Purchase {
 export interface ShopItem {
   /** `rice`, `frame:sakura`, `card_reroll`, ... */
   id: string;
-  kind: "feed" | "frame" | "card" | "song" | "stream" | "fortune";
+  kind: "feed" | "frame" | "card" | "stream" | "fortune";
   label: string;
   price: number;
   available: boolean;
@@ -255,18 +245,15 @@ export interface BountyView {
   expires_at: string;
 }
 
-/** Bus topic of what goes on the stream overlay's screen line (a paid message, a dedication). */
+/** Bus topic of what goes on the stream overlay's screen line (a paid message). */
 export const SCREEN_TOPIC = Events.EconomyScreen.type;
 
 /** Payload of `economy.screen`; texts were already screened. */
 export interface ScreenEvent {
-  kind: "message" | "dedication";
   /** Who paid (display name, untrusted). */
   name: string;
-  /** The message, or the dedication's words. */
+  /** The message; already screened. */
   text: string;
-  /** A dedication: the song's title. */
-  song: string | null;
 }
 
 export const EconomyKey = serviceKey<Economy>("Economy");

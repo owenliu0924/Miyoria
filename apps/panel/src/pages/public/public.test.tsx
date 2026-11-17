@@ -96,8 +96,6 @@ const WALLET: WalletView = {
     { id: "frame:sakura", kind: "frame", label: "櫻花", price: 100, available: true, why: null },
     { id: "frame:abyss", kind: "frame", label: "深海", price: 150, available: true, why: null },
     { id: "frame:gold", kind: "frame", label: "金框", price: 300, available: true, why: null },
-    { id: "song_ticket", kind: "song", label: "點歌加點券", price: 25, available: true, why: null },
-    { id: "dedication", kind: "song", label: "歌曲獻詞", price: 15, available: true, why: null },
     { id: "screen_message", kind: "stream", label: "留言上大螢幕", price: 30, available: true, why: null },
     { id: "fortune", kind: "fortune", label: "今日籤詩", price: 10, available: true, why: null },
   ],
@@ -818,15 +816,6 @@ describe("the newer places to spend", () => {
     await userEvent.click(within(shop).getByRole("button", { name: /送上螢幕/ }));
     expect(await screen.findByText(/她現在沒有開台/)).toBeInTheDocument();
     expect(box).toHaveValue("晚安");
-  });
-
-  it("lists the song extras as information for Discord, without a buy button", async () => {
-    core({ member: USER });
-    renderApp();
-    const shop = await screen.findByRole("region", { name: "商店" });
-    expect(await within(shop).findByText(/在 Discord 點歌時用/)).toBeInTheDocument();
-    expect(within(shop).getByText("歌曲獻詞")).toBeInTheDocument();
-    expect(within(shop).queryByRole("button", { name: /歌曲獻詞|點歌加點券/ })).toBeNull();
   });
 
   it("draws the day's fortune once, then shows the slip", async () => {

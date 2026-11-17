@@ -121,12 +121,12 @@ export class OverlayHub {
   }
 
   /**
-   * A paid message or dedication, passed on as it is: the overlay queues them. Not kept for new
+   * A paid message, passed on as it is: the overlay queues them. Not kept for new
    * clients (a card that was due while nobody watched is not worth showing late).
    */
   screen(card: Extract<CoreMessage, { type: "screen" }>): void {
-    const { kind, name, text, song } = card;
-    this.#send(frame({ type: "screen", kind, name, text, song }));
+    const { name, text } = card;
+    this.#send(frame({ type: "screen", name, text }));
   }
 
   /** A viewer's touch, passed on (at most a few a second; the rest are dropped). Not kept for new clients. */

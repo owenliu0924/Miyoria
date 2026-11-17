@@ -145,8 +145,6 @@ const PER_DAY = {
   card_reroll: "card_rerolls_per_day",
   card_pose: "card_poses_per_day",
   card_foil: "card_foils_per_day",
-  song_ticket: "song_tickets_per_day",
-  dedication: "dedications_per_day",
   screen_message: "screen_messages_per_day",
   fortune: "fortunes_per_day",
 } as const satisfies Record<PaidItem, keyof EconomyConfig>;
@@ -156,8 +154,6 @@ export const PAID_NAME: Readonly<Record<PaidItem, { label: string; kind: ShopIte
   card_reroll: { label: "抽卡重製券", kind: "card" },
   card_pose: { label: "指定立繪", kind: "card" },
   card_foil: { label: "閃卡加工", kind: "card" },
-  song_ticket: { label: "點歌加點券", kind: "song" },
-  dedication: { label: "歌曲獻詞", kind: "song" },
   screen_message: { label: "留言上大螢幕", kind: "stream" },
   fortune: { label: "今日籤詩", kind: "fortune" },
 };
@@ -172,6 +168,8 @@ const RETIRED_LABEL: Readonly<Record<string, string>> = {
   shop: "她的小店",
   shop_pay: "小店的收入",
   goal_pledge: "投給她的目標",
+  song_ticket: "點歌加點券",
+  dedication: "歌曲獻詞",
 };
 
 /** Ledger reasons that are gifts to her (they diminish each other). */
@@ -675,8 +673,6 @@ export class EconomyService implements Economy {
       case "card_reroll":
       case "card_pose":
       case "card_foil":
-      case "song_ticket":
-      case "dedication":
       case "screen_message":
       case "fortune":
         return PAID_NAME[r.reason].label;
@@ -770,7 +766,7 @@ export class EconomyService implements Economy {
     for (const f of c.frames) {
       add(`frame:${f.id}`, "frame", f.label, f.price, state?.owned.has(f.id) ? "已經有了" : null);
     }
-    // Whether one can be used right now (a card to re-draw, a song to dedicate) is the seller's.
+    // Whether one can be used right now (a card to re-draw) is the seller's.
     for (const item of PAID_ITEMS) {
       const { price, per_day } = this.price(item);
       if (per_day === 0) continue;

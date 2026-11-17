@@ -192,12 +192,12 @@ A、B 階段的後端和 C 的卡框做好了;面板、直播 overlay 和 Discor
 | 抽卡重製券 `card_reroll` | 30 | 2 | 卡片 | 今天最新那張作廢(驗證頁顯示已作廢),她重新發一張:重寫那句話、重挑立繪;不算進每天的張數。發不出來就退錢 |
 | 指定立繪 `card_pose` | 20 | 5 | 卡片 | 發卡時自己從好感區間允許的立繪挑一張;她就不挑了 |
 | 閃卡加工 `card_foil` | 50 | 5 | 卡片 | 這張卡加一層箔,純外觀 |
-| 點歌加點券 `song_ticket` | 25 | 3 | 點歌 | 同時點歌數到上限時多點一首;這首沒唱(被丟掉、失敗、她不唱)就退錢 |
-| 歌曲獻詞 `dedication` | 15 | 3 | 點歌 | 點歌附一句獻詞(過審查、不點名別人);唱之前她知道「這首是 X 點給 Y 的」,overlay 顯示;沒唱就退錢 |
 | 留言上大螢幕 `screen_message` | 30 | 10 | 直播 | 開台時 overlay 顯示 60 字內的留言;過審查;每人每 10 分鐘一則;她看得到,有空可能念 |
 | 今日籤詩 `fortune` | 10 | 1 | 籤詩 | 她現寫一張籤(籤等、四句、幾個欄位),可以下載;寫不出來就退錢 |
 
-overlay 的新東西走 `economy.screen`(`ScreenEvent`:留言或獻詞)。
+overlay 的新東西走 `economy.screen`(`ScreenEvent` 只有 `name` 和 `text`:一則付費留言)。
+
+點歌加點券和歌曲獻詞(2026-11-17 已移除,`v5-play.md` §10):設定 `song_ticket` / `song_tickets_per_day` / `dedication` / `dedications_per_day`、點歌指令的 `ticket` / `dedication` 參數、歌手的付款介面 `SongPaymentsKey`、overlay 的獻詞卡(`economy.screen` 的 `kind` 和 `song`)都沒了。migration 5(`retire_song_extras`)把還排在歌單裡(準備中、準備好、正在唱)的點歌加點券和獻詞退給付款的人(帳本一行,原因 `refund_removed`);已經唱完的留在帳本裡,贊助排行榜照舊算。
 
 **她自己的錢(§3.3 開始做)**:她有一個錢包。別人餵她、送她東西,有一部分進她的錢包;她可以用來送人、買給自己(例如自己換表情)、開懸賞。她錢包裡有多少、在存什麼,她自己看得到。
 

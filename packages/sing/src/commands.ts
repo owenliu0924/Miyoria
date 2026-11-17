@@ -154,17 +154,6 @@ export function registerCommands(
           ArgKind.choice(BACKING_MODES.map((m) => BACKING_LABELS[m])),
           { required: false },
         ),
-        argSpec(
-          "ticket",
-          "同時點歌數到上限時，用點歌加點券多點一首（沒到上限不收費）",
-          ArgKind.boolean,
-          {
-            required: false,
-          },
-        ),
-        argSpec("dedication", "獻詞（40 字內，要付費；過審查、不能點名別人）", ArgKind.string, {
-          required: false,
-        }),
       ],
       permission: perms.request,
     }),
@@ -176,9 +165,6 @@ export function registerCommands(
       if (key !== null && key !== undefined) args.key = key;
       const backing = backingOf(inv.str("backing"));
       if (backing !== "keep") args.backing = backing;
-      if (inv.bool("ticket") === true) args.ticket = true;
-      const dedication = (inv.str("dedication") ?? "").trim();
-      if (dedication !== "") args.dedication = dedication;
       return ask(actuators, inv, "sing.request", args);
     },
   );

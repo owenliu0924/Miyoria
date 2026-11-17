@@ -159,12 +159,6 @@ export const EconomyConfigSchema = z.object({
   /** A foil finish on the next card; looks only, like a frame. */
   card_foil: coins.default(50),
   card_foils_per_day: coins.default(5),
-  /** One more song past the per-person limit; refunded when she does not sing it. */
-  song_ticket: coins.default(25),
-  song_tickets_per_day: coins.default(3),
-  /** A dedication with a requested song: she says who it is for before singing; on the overlay. */
-  dedication: coins.default(15),
-  dedications_per_day: coins.default(3),
   /** A short message shown on the stream overlay (she may read it out). */
   screen_message: coins.default(30),
   screen_messages_per_day: coins.default(10),
@@ -183,7 +177,7 @@ export const EconomyConfigSchema = z.object({
   /** The sponsor board counts what was spent on her over this many days. */
   board_days: z.number().int().positive().max(365).default(30),
   // Her own purse (docs/design/economy.md §13): a share of every paid gift to her is hers.
-  /** The share of a paid gift (feed, screen message, dedication) she keeps. */
+  /** The share of a paid gift (feed, screen message) she keeps. */
   her_share: z.number().min(0).max(1).default(0.2),
   /** What she may treat one person to from her purse per day, and everyone together. */
   treat_per_person: coins.default(30),

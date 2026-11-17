@@ -15,10 +15,8 @@ function problems(topic: string, payload: unknown) {
 }
 
 interface ScreenEvent {
-  kind: "message" | "dedication";
   name: string;
   text: string;
-  song: string | null;
 }
 
 interface GiftEvent {
@@ -70,9 +68,7 @@ describe("payloads as they are published", () => {
     expect(
       problems("economy.room.placed", { item: "kotatsu", label: "暖桌", kind: "furniture" }),
     ).toEqual([]);
-    expect(
-      problems("economy.screen", { kind: "dedication", name: "Owen", text: "hi", song: "A song" }),
-    ).toEqual([]);
+    expect(problems("economy.screen", { name: "Owen", text: "hi" })).toEqual([]);
     expect(
       problems("economy.gift", { name: "Owen", item: "rice", count: 1, label: "一碗白飯" }),
     ).toEqual([]);

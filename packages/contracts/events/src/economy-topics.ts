@@ -1,5 +1,5 @@
 // The economy's bus topics (docs/design/v5-contracts.md §3, K12a): a commission someone paid for
-// and how it ended, a room item the community funded, a paid message or dedication for the
+// and how it ended, a room item the community funded, a paid message for the
 // screen, and a gift. Each type is the bus topic it is published on, and its payload is that
 // event's data. Written from what `packages/economy` publishes today; the economy's own new
 // topics (`economy.posted`) are defined in the file that comes with them.
@@ -63,16 +63,13 @@ export const RoomPlacedSchema = z
   .meta({ id: "EventsRoomPlaced" });
 export type RoomPlacedData = z.output<typeof RoomPlacedSchema>;
 
-/** A paid message, or a dedication the singer puts up as a song starts: `economy.screen`. */
+/** A paid message put on the stream's screen: `economy.screen`. */
 export const ScreenLineSchema = z
   .object({
-    kind: z.enum(["message", "dedication"]),
     /** Who paid (display name, untrusted). */
     name: z.string(),
-    /** The message, or the dedication's words; already screened. */
+    /** The message; already screened. */
     text: z.string(),
-    /** A dedication: the song's title. */
-    song: z.string().nullable(),
   })
   .meta({ id: "EventsScreenLine" });
 export type ScreenLineData = z.output<typeof ScreenLineSchema>;

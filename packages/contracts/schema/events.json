@@ -5901,31 +5901,16 @@
     "EventsScreenLine": {
       "type": "object",
       "properties": {
-        "kind": {
-          "type": "string",
-          "enum": [
-            "message",
-            "dedication"
-          ]
-        },
         "name": {
           "type": "string"
         },
         "text": {
           "type": "string"
-        },
-        "song": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
-        "kind",
         "name",
-        "text",
-        "song"
+        "text"
       ]
     },
     "EventsSelfFeel": {

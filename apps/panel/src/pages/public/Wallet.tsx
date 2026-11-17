@@ -208,23 +208,6 @@ function ScreenMessage({ item, currency }: { item: ShopItem; currency: string })
   );
 }
 
-/** Song extras are spent from Discord's `/queue song`: shown here so they can be found, not bought. */
-function SongExtras({ items, currency }: { items: ShopItem[]; currency: string }) {
-  return (
-    <div className="grid gap-1">
-      <p className="text-xs text-muted-foreground">點歌加購 · 在 Discord 點歌時用</p>
-      <ul className="divide-y divide-line-soft">
-        {items.map((s) => (
-          <li key={s.id} className="flex items-center gap-3 py-(--row-y)">
-            <span className="min-w-0 flex-1 text-sm">{s.label}</span>
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{priceText(s.price, currency)}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
   const api = useApi();
   const { patch, refresh } = usePatchWallet();
@@ -299,7 +282,6 @@ function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
 function Shop({ w }: { w: WalletView }) {
   const frames = w.shop.filter((s) => s.kind === "frame");
   const screen = w.shop.find((s) => s.id === "screen_message");
-  const songs = w.shop.filter((s) => s.kind === "song");
   return (
     <Card aria-label="商店">
       <CardHeader>
@@ -320,7 +302,6 @@ function Shop({ w }: { w: WalletView }) {
               </ul>
             </div>
           )}
-          {songs.length > 0 && <SongExtras items={songs} currency={w.currency} />}
         </div>
       </div>
     </Card>

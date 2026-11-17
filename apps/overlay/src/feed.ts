@@ -13,8 +13,8 @@
 //    "label":"…","detail":"…"|null,"progress":0..1|null,"elapsed_ms":n|null,"duration_ms":n|null}
 //                                               what she is doing; kind null hides it
 //   {"type":"gift","text":"Owen 餵了她一碗白飯"}  the gift line (the Stage merges gifts); "" hides it
-//   {"type":"screen","kind":"message"|"dedication","name":"Owen","text":"加油","song":null|"春日影"}
-//                                               a paid message or song dedication; not merged, queued here
+//   {"type":"screen","name":"Owen","text":"加油"}
+//                                               a paid message; not merged, queued here
 //   {"type":"touch","x":0..1,"y":0..1,"part":"head"|"face"|"body"|"screen"}
 //                                               a viewer touched the stream; drawn at (x·W, y·H), not kept in state
 
@@ -67,16 +67,13 @@ export interface QueueItem {
   by: string | null;
 }
 
-/** A paid message or dedication waiting for, or on, the screen. */
+/** A paid message waiting for, or on, the screen. */
 export interface ScreenCard {
   /** Counts up per card; a repeated message is still a new card. */
   id: number;
-  kind: "message" | "dedication";
   /** Who paid. */
   name: string;
   text: string;
-  /** A dedication's song title. */
-  song: string | null;
 }
 
 export interface OverlayState {
@@ -125,7 +122,7 @@ interface Parsed {
   activity: { type: "activity"; activity: Activity | null };
   /** The gift line (already merged by the Stage); `null` hides it. */
   gift: { type: "gift"; text: string | null };
-  /** A paid message or dedication; the reducer queues it. */
+  /** A paid message; the reducer queues it. */
   screen: Wire<"screen">;
   /** A viewer's touch on the picture: drawn once by the view, never part of the reduced state. */
   touch: Wire<"touch">;
@@ -278,19 +275,13 @@ const PARSERS: { [K in OverlayMessage["type"]]: (raw: Raw) => Parsed[K] | null }
     return { type: "gift", text: body ? body.slice(0, MAX_TITLE) : null };
   },
   screen(raw) {
-    const kind = raw.kind === "dedication" ? "dedication" : raw.kind === "message" ? "message" : null;
     const name = nonEmpty(raw.name);
     const text = nonEmpty(raw.text);
-    if (kind === null || !name || !text) return null;
-    const song = nonEmpty(raw.song)?.slice(0, MAX_TITLE) ?? null;
-    // A dedication is about a song; without one it is a plain message.
-    const dedication = kind === "dedication" && song !== null;
+    if (!name || !text) return null;
     return {
       type: "screen",
-      kind: dedication ? "dedication" : "message",
       name: name.slice(0, MAX_NAME),
       text: text.slice(0, MAX_SCREEN_TEXT),
-      song: dedication ? song : null,
     };
   },
   touch(raw) {
@@ -410,7 +401,7 @@ export function reduce(state: OverlayState, action: Action): OverlayState {
 /** Queues the card; over the cap the oldest one that is only waiting goes (never the one on screen). */
 function reduceScreen(state: OverlayState, m: Extract<FeedMessage, { type: "screen" }>): OverlayState {
   const id = state.screenSeq + 1;
-  const card: ScreenCard = { id, kind: m.kind, name: m.name, text: m.text, song: m.song };
+  const card: ScreenCard = { id, name: m.name, text: m.text };
   const screens = [...state.screens, card];
   if (screens.length > MAX_SCREEN_CARDS) screens.splice(1, 1);
   return { ...state, screens, screenSeq: id };

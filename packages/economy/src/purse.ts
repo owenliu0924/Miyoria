@@ -5,7 +5,7 @@
 // reached; it leaves as treats, expressions she buys herself, and bounties.
 //
 // * A share (`her_share`, floored) of what someone pays to feed her, write her, send an expression
-//   or put a message or a dedication on screen goes in the purse, keyed on the source row, so it
+//   or put a message on screen goes in the purse, keyed on the source row, so it
 //   is paid once and taken back once if that charge is refunded.
 // * She sees what she has and what she is saving for in her working context: the `purse` bucket
 //   (one entry, replaced when it changes) and `purse_news` (what just happened).
@@ -32,7 +32,7 @@ import { EconomyError, GIFT_EXPRESSIONS, type GiftExpression } from "./types.js"
 /** The platform of the purse's account. */
 export const PURSE_PLATFORM = "self";
 /** Ledger reasons whose price she gets a share of. */
-export const SHARED_REASONS: readonly string[] = ["feed", "screen_message", "dedication"];
+export const SHARED_REASONS: readonly string[] = ["feed", "screen_message"];
 const MAX_ROWS = 2_000;
 const MAX_NEWS = 6;
 const NOT_ENOUGH = "你的錢包不夠";

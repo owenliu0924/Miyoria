@@ -26,7 +26,7 @@ const messages: OverlayMessage[] = [
     duration_ms: null,
   },
   { type: "gift", text: "Mia 送了 3 碗飯" },
-  { type: "screen", kind: "message", name: "Mia", text: "hi", song: null },
+  { type: "screen", name: "Mia", text: "hi" },
   { type: "touch", x: 0.25, y: 0.75, part: "face" },
   { type: "speaking", state: "stopped" },
   { type: "levels", rms: 0.3, bands: [0.1, 0.2] },

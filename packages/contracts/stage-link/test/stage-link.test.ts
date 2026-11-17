@@ -42,7 +42,7 @@ const coreMessages: CoreMessageIn[] = [
   { type: "gaze", target: "chat" },
   { type: "avatar_expression", expression: "heart", seconds: 5, id: 4 },
   { type: "gift", name: "Mia", item: "bowl", count: 3, label: "a bowl" },
-  { type: "screen", kind: "dedication", name: "Mia", text: "hi", song: "Song" },
+  { type: "screen", name: "Mia", text: "hi" },
   { type: "touch", x: 0.25, y: 0.75, part: "head" },
   {
     type: "song_video",

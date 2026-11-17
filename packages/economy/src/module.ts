@@ -7,14 +7,12 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { SongPaymentsKey } from "@miyoria/sing";
 import { Events, ParticipationKey, PartyRewardsKey, type ProfileId } from "@miyoria/types";
 import { agencyCapabilities } from "./agency-tools.js";
 import { EconomyCommands } from "./commands.js";
 import { EconomyConfigSchema } from "./config.js";
 import { Earnings } from "./earn.js";
 import { EconomyService } from "./economy.js";
-import { songPayments } from "./songs.js";
 import { giveCapability, speakerCapabilities } from "./tools.js";
 import { EconomyKey } from "./types.js";
 import { v2Capabilities } from "./v2-tools.js";
@@ -91,7 +89,6 @@ export class EconomyModule implements Module {
         "no store provides EconomyDocs: collection, bets and the room are kept in memory only",
       );
     }
-    ctx.provide(SongPaymentsKey, songPayments(economy));
     const mount = () => {
       const registry = ctx.services.get(CommandRegistryKey);
       if (registry) this.#commands.install(registry, ctx.services);

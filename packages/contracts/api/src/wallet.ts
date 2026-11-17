@@ -31,7 +31,7 @@ export const ShopItemSchema = z
   .object({
     /** `rice`, `frame:sakura`, `card_reroll`, ... */
     id: z.string(),
-    kind: z.enum(["feed", "frame", "card", "song", "stream", "fortune"]),
+    kind: z.enum(["feed", "frame", "card", "stream", "fortune"]),
     label: z.string(),
     price: z.number(),
     available: z.boolean(),

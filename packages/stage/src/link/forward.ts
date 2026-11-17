@@ -15,7 +15,6 @@ import {
   GIFT_LABEL_MAX,
   GIFT_NAME_MAX,
   SCREEN_NAME_MAX,
-  SCREEN_SONG_MAX,
   SCREEN_TEXT_MAX,
 } from "../protocol.js";
 import { parseTouch, TOUCH_TOPIC } from "../touch.js";
@@ -24,7 +23,7 @@ import { parseTouch, TOUCH_TOPIC } from "../touch.js";
 export const EMOTION_TOPIC = Events.AgentEmotion.type;
 /** Topic of a gift to her (`{name, item, count, label}`), shown on the overlay. */
 export const GIFT_TOPIC = Events.EconomyGift.type;
-/** Topic of a paid screen message or dedication (`{kind, name, text, song}`). */
+/** Topic of a paid screen message (`{name, text}`). */
 export const SCREEN_TOPIC = Events.EconomyScreen.type;
 /** How much a feeling must change before her resting face follows it. */
 const RESTING_STEP = 0.1;
@@ -414,17 +413,12 @@ function screenMessage(payload: JsonValue): CoreMessage[] {
   const p = isJsonObject(payload) ? payload : {};
   const name = typeof p.name === "string" ? p.name.trim() : "";
   const text = typeof p.text === "string" ? p.text.trim() : "";
-  const song = typeof p.song === "string" ? p.song.trim() : "";
-  const kind = p.kind === "dedication" ? "dedication" : p.kind === "message" ? "message" : null;
-  if (kind === null || name === "" || text === "") return [];
-  if (kind === "dedication" && song === "") return [];
+  if (name === "" || text === "") return [];
   return [
     {
       type: "screen",
-      kind,
       name: name.slice(0, SCREEN_NAME_MAX),
       text: text.slice(0, SCREEN_TEXT_MAX),
-      song: kind === "dedication" ? song.slice(0, SCREEN_SONG_MAX) : null,
     },
   ];
 }
