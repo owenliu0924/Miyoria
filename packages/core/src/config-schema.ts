@@ -50,6 +50,7 @@ import {
 } from "@miyoria/memory/learning";
 import { EmbeddingConfigSchema, MemoryConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldConfigSchema, WorldModule } from "@miyoria/memory/world";
+import { CardsConfigSchema, CardsModule } from "@miyoria/play/cards";
 import {
   GameChatConfigSchema,
   GameChatModule,
@@ -139,6 +140,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [McpModule.ID, null],
   [StageLinkModule.ID, StageLinkConfigSchema],
   [EconomyModule.ID, EconomyConfigSchema],
+  [CardsModule.ID, CardsConfigSchema],
   [WebModule.ID, WebConfigSchema],
   [SandboxModule.ID, SandboxConfigSchema],
   [ImageGenModule.ID, ImageGenConfigSchema],

@@ -474,6 +474,16 @@ dirs = ["extensions"]
 #   { id = "gold", label = "金框", price = 300 },
 # ]
 
+# 她給你的卡(docs/design/v5-play.md §2、cards.md):每日卡用魚幣買,每天第一張也要錢;部件照公開的機率抽,
+# 表情由你們的關係決定,買不到也抽不到。卡不能交易、不能送。下面都是預設值。
+# [modules.cards]
+# enabled = true
+# price = 30                  # 一張每日卡多少魚幣
+# daily_cap = 5               # 一個人一天最多幾張(她的當地日)
+# pity = 20                   # 連續幾張沒有 SR 以上的部件,下一張保證有
+# rarity_weights = { N = 70, R = 22, SR = 7, SSR = 1 }   # 稀有度的權重(公開的機率表照這個算)
+# utc_offset_minutes = 480    # 「今天」從哪個時區的午夜開始算
+
 # 遊戲內聊天變成獨立的對話(每個世界 / 伺服器一段歷史)。玩家在 Discord 用 /me link 拿代碼,
 # 在遊戲聊天室打 `!link <代碼>` 就跟 Discord 帳號連在一起;沒連的玩家是陌生人。
 # 她在遊戲裡的回話很短、不會下指令;直播中又在語音裡時也用語音說(她可以用 game_chat_reply 自己改)

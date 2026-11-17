@@ -23,6 +23,7 @@ import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { memoryTables } from "@miyoria/memory/memory";
 import { notesTables } from "@miyoria/memory/notes";
 import { transcriptTables } from "@miyoria/memory/transcript";
+import { cardsTables } from "@miyoria/play/cards";
 import {
   type Config,
   ConfigError,
@@ -95,6 +96,7 @@ const DIRECTIVE_MODULE = DirectiveModule.ID;
  */
 export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   authTables,
+  cardsTables,
   clusterTables,
   directiveTables,
   economyTables,
