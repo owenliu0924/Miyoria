@@ -287,6 +287,35 @@ describe("a milestone card", () => {
   });
 });
 
+describe("a keepsake card", () => {
+  const LEGACY = { first_seen: "2025-03-01T00:00:00.000Z", old_tier: "摯友", cards: 4 };
+  const migrated = (p: PersonId) => store.importedLegacy(p) !== null;
+  const words = async () => ({ face: FACE, relationship: FRIEND });
+
+  it("is for someone the import brought, once, free and outside the pity", async () => {
+    t.db.run(
+      "INSERT INTO persons (id, name, handle, created_at, legacy) VALUES ('p9', '小九', '小九', 1, $legacy)",
+      { legacy: JSON.stringify(LEGACY) },
+    );
+    expect(store.importedLegacy("p9")).toEqual(LEGACY);
+    expect(store.importedLegacy("p1")).toBeNull();
+    const cards = service({ migrated });
+    expect(await cards.keepsake("p1", words)).toEqual({ ok: false, reason: "not_eligible" });
+    // Nobody is from before without being told who.
+    expect(await service().keepsake("p9", words)).toEqual({ ok: false, reason: "not_eligible" });
+    const first = await cards.keepsake("p9", words);
+    if (!first.ok) throw new Error("refused");
+    expect(first.issued.card).toMatchObject({ kind: "keepsake", price: 0, issue_key: "keepsake" });
+    expect(store.pitySince("p9")).toBe(0);
+    expect(wallet.charges).toEqual([]);
+    const again = await cards.keepsake("p9", async () => {
+      throw new Error("not asked again");
+    });
+    expect(again.ok && again.issued.again).toBe(true);
+    expect(store.cards("p9")).toHaveLength(1);
+  });
+});
+
 describe("the pity", () => {
   it("counts up to 20 and gives SR or better on the 21st, then starts again", () => {
     for (let i = 1; i <= 20; i++) {

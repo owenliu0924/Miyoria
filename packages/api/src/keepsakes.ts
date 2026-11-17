@@ -21,12 +21,21 @@ import {
   type KeepsakeResult,
   type Keepsakes,
   type KeepsakeWho,
+  sameAccount,
 } from "@miyoria/types";
 import { issueCard, memberCards } from "./card.js";
+import { keepsakeFor } from "./card-faces.js";
 import { cardOdds } from "./cards-routes.js";
 import { ApiError } from "./errors.js";
 import { drawFortune, fortuneTodayOf } from "./fortune-routes.js";
-import { cardHolder, cardView, cardWords, loadMemberOf, namesFor } from "./member.js";
+import {
+  cardHolder,
+  cardView,
+  cardWords,
+  loadMemberOf,
+  type MemberContext,
+  namesFor,
+} from "./member.js";
 import type { ApiState } from "./state.js";
 
 const log = getLogger("api.keepsakes");
@@ -63,6 +72,7 @@ export class KeepsakeService implements Keepsakes {
 
   async cardsToday(account: AccountRef): Promise<KeepsakeCards> {
     const who = await loadMemberOf(this.state, account);
+    const given = await keepsakeFor(this.state, who, nameOf(who, account), null);
     const holder = cardHolder({ account, name: "", avatar_url: null }, who);
     const cards = await memberCards(this.state, holder);
     return {
@@ -71,6 +81,7 @@ export class KeepsakeService implements Keepsakes {
       per_day: cards.per_day,
       prices: { card: cards.prices.card, foil: cards.prices.foil },
       pity: cards.pity,
+      ...(given === null ? {} : { keepsake: keepsakeCard(given) }),
     };
   }
 
@@ -114,6 +125,7 @@ export class KeepsakeService implements Keepsakes {
     if (!cards) return { ok: false, status: 503, message: FAILED };
     try {
       const member = await loadMemberOf(this.state, account);
+      await keepsakeFor(this.state, member, nameOf(member, account), null);
       const person = member.person?.id ?? null;
       const pity = person
         ? cards.pity(person)
@@ -208,6 +220,12 @@ export class KeepsakeService implements Keepsakes {
       return refused(error);
     }
   }
+}
+
+/** The name `account` was last seen with, for a card given with no command name to hand. */
+function nameOf(who: MemberContext, account: AccountRef): string {
+  const seen = who.person?.accounts.find((a) => sameAccount(a.account, account));
+  return seen?.display_name ?? who.person?.display_name ?? "";
 }
 
 /** A card as a chat reply shows it. */

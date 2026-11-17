@@ -82,6 +82,11 @@ export interface KeepsakeCards {
   prices: { card: number | null; foil: number | null };
   /** Cards in a row without SR or better, and how many until the next is guaranteed one. */
   pity: { since: number; pity: number; until: number } | null;
+  /**
+   * The keepsake card she gave them just now, the first time they looked (they were here before
+   * the cards); absent otherwise. Shown before anything is issued.
+   */
+  keepsake?: KeepsakeCard;
 }
 
 /** A person's card book: their dex by series, titles, the old collectibles, the pity, wishes. */

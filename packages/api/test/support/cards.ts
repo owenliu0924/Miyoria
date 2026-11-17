@@ -33,6 +33,7 @@ export function cardService(
     wallet,
     relationship: (person) => cardRelationship(heart.get(person)),
     random: seededRandom(7),
+    migrated: (person) => typeof heart.get(person)?.legacy.migrated_at === "string",
   });
 }
 

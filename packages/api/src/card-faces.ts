@@ -4,7 +4,12 @@
 // checks (`card-words.ts`), and the card's number among all of theirs. The cards module asks for it
 // when a bond enters a new tier (a milestone card), with no session: the person's name is the one
 // their first account was last seen with.
+//
+// The keepsake card of someone who came over from the old records (P5) is given here too, the
+// first time they open their cards (`keepsakeFor`, called by the routes and the command that show
+// them); nobody is sent anything for it.
 
+import type { CardField, IssuedCard } from "@miyoria/contracts/api";
 import {
   type CardFace,
   type CardFaces,
@@ -13,8 +18,10 @@ import {
   cardRelationship,
   type OccasionFace,
 } from "@miyoria/play/cards";
-import { IdentityStoreKey, MemberCardStoreKey } from "@miyoria/store";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
+import { IdentityStoreKey, type LegacySnapshot, MemberCardStoreKey } from "@miyoria/store";
 import type { PersonId } from "@miyoria/types";
+import { dailyCard } from "./card.js";
 import { occasionLine, writeCard } from "./card-words.js";
 import {
   accountsOf,
@@ -25,7 +32,10 @@ import {
   shown,
   shownMemories,
 } from "./member.js";
+import { dateOf, localDay } from "./public.js";
 import type { ApiState } from "./state.js";
+
+const log = getLogger("api.card");
 
 /** Memories she is shown for a card's words, at most. */
 const MEMORIES = 5;
@@ -78,6 +88,72 @@ export async function occasionFace(
     face,
     relationship: { ...cardRelationship(who.row), public_feeling: view.public_feeling },
   };
+}
+
+/**
+ * What a keepsake card says of them: since when she has known them, what they were to her before
+ * (from the V4 import, D4) and how many of the old member cards she had given them. Facts, not her
+ * words: the keepsake is issued while their cards are being opened, with no model call to wait for.
+ */
+function keepsakeFields(
+  state: ApiState,
+  who: MemberContext,
+  legacy: LegacySnapshot | null,
+  older: number,
+): CardField[] {
+  const seen = [legacy?.first_seen, ...(who.person?.accounts.map((a) => a.first_seen) ?? [])]
+    .map((t) => (t === undefined ? Number.NaN : Date.parse(t)))
+    .filter((ms) => !Number.isNaN(ms));
+  const fields: CardField[] = [];
+  if (seen.length > 0) {
+    const offset = state.publicSide.config.utc_offset_minutes;
+    fields.push({ label: "第一次見面", text: dateOf(localDay(Math.min(...seen), offset)) });
+  }
+  if (legacy?.old_tier) fields.push({ label: "以前的關係", text: legacy.old_tier });
+  const cards = legacy?.cards ?? older;
+  if (cards > 0) fields.push({ label: "以前的卡", text: `${cards} 張` });
+  return fields;
+}
+
+/**
+ * Their keepsake card, given the first time they open their cards if they came over from the old
+ * records (P5): the card as the page shows it when it was given just now, `null` when it was given
+ * before, or is not theirs to have (someone she does not know or will not say anything about, or
+ * nobody from before). Never throws: a keepsake is no reason for their cards not to open.
+ */
+export async function keepsakeFor(
+  state: ApiState,
+  who: MemberContext,
+  name: string,
+  avatar_url: string | null,
+): Promise<IssuedCard | null> {
+  const cards = state.optional(CardsKey);
+  const person = who.person?.id ?? null;
+  if (!cards || person === null || who.hidden) return null;
+  try {
+    const result = await cards.keepsake(person, async () => {
+      const names = await namesFor(state, who);
+      const view = cardView(state, who, names);
+      const older =
+        (await state.optional(MemberCardStoreKey)?.countFor(state.profile(), accountsOf(who))) ?? 0;
+      return {
+        face: {
+          name,
+          avatar_url,
+          call_name: view.call_name,
+          line: null,
+          stamp: null,
+          fields: keepsakeFields(state, who, cards.importedLegacy(person), older),
+          number: older + cards.count(person) + 1,
+        },
+        relationship: { ...cardRelationship(who.row), public_feeling: view.public_feeling },
+      };
+    });
+    return result.ok && !result.issued.again ? dailyCard(result.issued.card) : null;
+  } catch (error) {
+    log.warn({ err: errorMessage(error) }, "cannot give a keepsake card");
+    return null;
+  }
 }
 
 /** The faces the cards module asks for, by person. */

@@ -7,7 +7,8 @@
 // It listens to the heart for a bond entering a tier it never reached (`onTierEntered`) and gives a
 // milestone card for each such tier (§6.1); her words for it come through `CardFacesKey`. A tier
 // entered while this module is not running gets no card later: the cards are never handed out
-// backwards.
+// backwards. The people who came over from the old records get one keepsake card each instead
+// (P5), issued by the api the first time they open their cards.
 //
 // The routes and the commands are the api's (`KeepsakesKey`, the `cards` route group). Config
 // changes reach it the way they reach every module: the supervisor restarts it.
@@ -127,6 +128,11 @@ export class CardsModule implements Module {
       wallet: () => ctx.services.get(CardWalletKey) ?? null,
       relationship: (person) => cardRelationship(heart.get(person)),
       onIssued: (issued) => tell(ctx, issued, cards),
+      // Came over from the old records: the heart's migration of the old relationships marks the
+      // row (`legacy.migrated_at`), the import from a V4 database the person (`persons.legacy`).
+      migrated: (person) =>
+        typeof heart.get(person)?.legacy.migrated_at === "string" ||
+        cards.importedLegacy(person) !== null,
       ...(this.#options.random === undefined ? {} : { random: this.#options.random }),
       ...(this.#options.newSerial === undefined ? {} : { newSerial: this.#options.newSerial }),
     });

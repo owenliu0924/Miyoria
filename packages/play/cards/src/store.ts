@@ -19,9 +19,11 @@ import {
   type CategoryData,
   type Db,
   type EventStore,
+  type LegacySnapshot,
   type PersonForget,
   type PersonHookResult,
   type PersonMerge,
+  persons,
   type StorePlugin,
   tablePart,
 } from "@miyoria/store";
@@ -690,6 +692,20 @@ export class CardStore {
       }
     }
     return [...out.values()];
+  }
+
+  /**
+   * What the import from the V4 database kept of `person` for their keepsake (`persons.legacy`,
+   * docs/design/v5-data.md D4); `null` for someone it did not bring.
+   */
+  importedLegacy(person: PersonId): LegacySnapshot | null {
+    this.#db.ensureOpen();
+    const row = this.#db.orm
+      .select({ legacy: persons.legacy })
+      .from(persons)
+      .where(eq(persons.id, person))
+      .get();
+    return row?.legacy ?? null;
   }
 
   // ---- people ---------------------------------------------------------------------------------

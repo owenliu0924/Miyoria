@@ -159,6 +159,25 @@ describe("module cards", () => {
     expect(cards?.cards(mei, { limit: 1 })[0]?.face.line).toBe("那天一起看完了流星");
   });
 
+  it("gives a keepsake to someone the heart's migration brought over, and to nobody else", async () => {
+    const notes: unknown[] = [];
+    const { sup, store } = await start();
+    sup.services.provide("facts", EventLogKey, { observe: (o: unknown) => notes.push(o) } as never);
+    const heart = store.plugin(heartTables).people;
+    const cards = sup.services.get(CardsKey);
+    heart.edit("old", {}, { now: T0 });
+    const row = heart.get("old");
+    if (row === null) throw new Error("no row");
+    heart.upsert({ ...row, legacy: { migrated_at: "2026-11-17T02:00:00.000Z" } });
+    heart.edit("new", {}, { now: T0 });
+    const words = async () => ({ face: FACE, relationship: cardRelationship(null) });
+    expect((await cards?.keepsake("old", words))?.ok).toBe(true);
+    expect(await cards?.keepsake("new", words)).toEqual({ ok: false, reason: "not_eligible" });
+    expect(cards?.cards("old").map((c) => c.kind)).toEqual(["keepsake"]);
+    // She is not told of it, and nobody is sent anything.
+    expect(notes).toEqual([]);
+  });
+
   it("tells her of a rare card as a note she may react to, and not of an ordinary one", async () => {
     const notes: { source: string; silent: boolean; summary: string; attention_key: string }[] = [];
     const log = { observe: (o: (typeof notes)[number]) => notes.push(o) };

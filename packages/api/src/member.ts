@@ -72,6 +72,7 @@ import {
   trustBand,
 } from "@miyoria/types";
 import { type CardHolder, cardsOf, deleteCards, issueCard, memberCards } from "./card.js";
+import { keepsakeFor } from "./card-faces.js";
 import { type CardWords, writeCard } from "./card-words.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
@@ -512,6 +513,8 @@ export function cardHolder(session: CardHolder["session"], who: Member): CardHol
 
 async function cardsMine(state: ApiState, c: ApiContext): Promise<MemberCards> {
   const who = await member(state, c);
+  // Someone from before the cards finds their keepsake the first time they look.
+  await keepsakeFor(state, who, record(c).name, record(c).avatar_url);
   return memberCards(state, holderOf(c, who));
 }
 

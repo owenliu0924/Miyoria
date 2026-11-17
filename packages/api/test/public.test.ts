@@ -2148,6 +2148,46 @@ describe("cards she gives", () => {
     expect(await faces.face("nobody" as PersonId, occasion)).toBeNull();
   });
 
+  it("gives someone from before the cards one keepsake the first time they look, free", async () => {
+    const r = await rig();
+    const migrate = (id: string) => {
+      const person = r.people.get(id) as PersonId;
+      const row = r.heart.get(person);
+      if (row === null) throw new Error("no row");
+      r.heart.upsert({ ...row, legacy: { migrated_at: "2026-11-17T02:00:00.000Z" } });
+    };
+    for (const id of [ALICE, BOB, FRANK]) migrate(id);
+    const alice = await r.login("alice");
+    const first = (await r.get("/api/member/card", alice)).body as { latest: Card; today: number };
+    expect(first.today).toBe(0);
+    expect(first.latest).toMatchObject({
+      kind: "keepsake",
+      number: 1,
+      name: "Alice",
+      call_name: "小愛",
+      line: null,
+      relationship: expect.any(String),
+    });
+    expect(first.latest.fields.map((f) => f.label)).toEqual(["第一次見面"]);
+    expect(r.purse.charges).toEqual([]);
+    // Once: looking again, listing them or opening the dex gives nothing new.
+    await r.get("/api/member/card", alice);
+    await r.get("/api/member/cards", alice);
+    await r.get("/api/member/cards/dex", alice);
+    expect(r.cards.cards(r.people.get(ALICE) as PersonId)).toHaveLength(1);
+    expect((await anyone(r, first.latest.serial)).body).toEqual(first.latest);
+    // The command shows it on the first look of its own person, and issues nothing then.
+    const keepsakes = r.sup.services.require(KeepsakesKey);
+    const today = await keepsakes.cardsToday(discord(BOB));
+    expect(today.keepsake).toMatchObject({ kind: "keepsake", number: 1 });
+    expect((await keepsakes.cardsToday(discord(BOB))).keepsake).toBeUndefined();
+    // Someone she will not say anything about, and someone not from before, get none.
+    await r.get("/api/member/card", await r.login("frank"));
+    expect(r.cards.count(r.people.get(FRANK) as PersonId)).toBe(0);
+    await r.get("/api/member/card", await r.login("carol"));
+    expect(r.cards.count(r.people.get(CAROL) as PersonId)).toBe(0);
+  });
+
   it("are not given without a wallet to pay with", async () => {
     const r = await rig();
     r.sup.services.removeOwnedBy("wallet");

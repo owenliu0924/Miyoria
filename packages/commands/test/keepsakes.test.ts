@@ -71,6 +71,8 @@ class Fake implements Keepsakes {
   refuse: { status: number; message: string } | null = null;
   wishlist: string[] = [];
   odds: KeepsakeOdds | null = ODDS;
+  /** A keepsake the next look gives. */
+  keepsake: KeepsakeCard | null = null;
 
   async fortuneToday() {
     return { fortune: this.slip, price: 10 };
@@ -85,12 +87,15 @@ class Fake implements Keepsakes {
   }
 
   async cardsToday(): Promise<KeepsakeCards> {
+    const keepsake = this.keepsake;
+    this.keepsake = null;
     return {
-      latest: this.issued.at(-1) ?? null,
+      latest: keepsake ?? this.issued.at(-1) ?? null,
       today: this.issued.length,
       per_day: 5,
       prices: { card: 30, foil: 50 },
       pity: { since: this.issued.length, pity: 30, until: 30 - this.issued.length },
+      ...(keepsake === null ? {} : { keepsake }),
     };
   }
 
@@ -212,6 +217,18 @@ describe("me card", () => {
     await run("me card");
     fake.issued.push({ ...card(2), kind: "milestone" });
     expect((await run("me card")).text).toContain("第 2 張　里程碑卡　SR　好朋友");
+  });
+
+  it("shows a keepsake on the first look of someone from before, and issues nothing", async () => {
+    const { run, fake } = setup();
+    fake.keepsake = { ...card(1), kind: "keepsake", line: null };
+    const first = await run("me card");
+    expect(first.text).toContain("第 1 張　紀念卡　SR　好朋友");
+    expect(first.text).toContain("紀念卡，不用魚幣");
+    expect(first.text).not.toContain("花了");
+    expect(fake.issued).toEqual([]);
+    // The next look is the usual one.
+    expect((await run("me card")).text).toContain("花了 30");
   });
 
   it("offers the dex, the odds, the pity and the wishlist, and no reroll", () => {

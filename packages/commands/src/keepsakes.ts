@@ -8,7 +8,8 @@
 // wants few commands): `action` issues another card today (`foil` makes it a foil card), or shows
 // the dex (圖鑑), the public odds (機率), the pity counter (保底) or sets the wishlist (願望單, with
 // `wish`: up to three part names, or 清空). The fortune slip is not here: it is the paid add-on of
-// `/me checkin` (`fortune:true`, in the economy).
+// `/me checkin` (`fortune:true`, in the economy). Someone who was here before the cards finds their
+// keepsake card the first time they look (P5): that look shows it and issues nothing.
 
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
@@ -39,6 +40,9 @@ export const CARD_PITY = "保底";
 export const CARD_WISH = "願望單";
 /** `wish:` that clears the wishlist. */
 export const CLEAR_WISHES = "清空";
+
+/** Under a keepsake card given on the first look. */
+const KEEPSAKE_NOTE = "在有卡片之前你就在了，這張是她給你的紀念卡，不用魚幣。";
 
 /** What it cost, under the card. */
 function paidLine(charged: number, balance: number | null): CardBlock | null {
@@ -224,6 +228,13 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
         }
         const key = `discord:${newId()}`;
         const today = await keepsakes.cardsToday(inv.invoker);
+        // The first look of someone from before the cards: their keepsake, and nothing charged.
+        if (today.keepsake !== undefined) {
+          const blocks = cardText(today.keepsake);
+          blocks.push({ type: "muted", text: KEEPSAKE_NOTE });
+          blocks.push({ type: "muted", text: todayHint(today) });
+          return cardReply(blocks, { accent: "neutral", title: "你的紀念卡" });
+        }
         const fresh = action !== CARD_NEW && !foil;
         if (fresh && today.latest !== null && today.today > 0) {
           const blocks = cardText(today.latest);

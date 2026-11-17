@@ -2,7 +2,8 @@
 // card with what only its owner sees, the dex (with the old collectibles as the closed series
 // 舊收藏), the pity, the wishlist, the public odds, and one person's cards for the owner
 // (docs/design/v5-play.md §2, §6.3). Someone she has never met has none of these yet; their own
-// cards stay theirs to see whatever she thinks of them now.
+// cards stay theirs to see whatever she thinks of them now. Listing their cards or their dex is
+// "opening their cards": someone who came over from the old records gets their keepsake then (P5).
 
 import type {
   CardDex,
@@ -24,10 +25,11 @@ import {
 import { MemberCardStoreKey } from "@miyoria/store";
 import { type PersonId, sameAccount } from "@miyoria/types";
 import { cardsOf, dailyCard, normalizeSerial } from "./card.js";
+import { keepsakeFor } from "./card-faces.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { accountsOf, loadMember, type MemberContext } from "./member.js";
-import type { ApiState } from "./state.js";
+import type { ApiContext, ApiState } from "./state.js";
 
 const NO_CARDS = "這個 Core 還不能發卡";
 const NO_SUCH_CARD = "這張卡不存在或已經作廢";
@@ -96,6 +98,14 @@ async function me(state: ApiState, c: Parameters<typeof loadMember>[1]): Promise
   return loadMember(state, c);
 }
 
+/** Who is looking at their cards; someone from before the cards finds their keepsake then. */
+async function opening(state: ApiState, c: ApiContext): Promise<MemberContext> {
+  const who = await me(state, c);
+  const session = c.get("member");
+  await keepsakeFor(state, who, session.name, session.avatar_url);
+  return who;
+}
+
 /** One of their own cards: a daily card of theirs, or an older one on one of their accounts. */
 async function oneOf(state: ApiState, who: MemberContext, input: string): Promise<MyCard> {
   const missing = () => new ApiError(404, NO_SUCH_CARD);
@@ -117,7 +127,7 @@ async function oneOf(state: ApiState, who: MemberContext, input: string): Promis
 /** The cards routes on the route table: the member's and the public odds (see `rpc.ts`). */
 export const cardsRpc = {
   mine: os.cards.mine.handler(async ({ context }) => {
-    const who = await me(context.state, context.c);
+    const who = await opening(context.state, context.c);
     return {
       cards: await cardsOf(context.state, accountsOf(who), who.person?.id ?? null),
     };
@@ -126,8 +136,9 @@ export const cardsRpc = {
     oneOf(context.state, await me(context.state, context.c), input.params.serial),
   ),
   dex: os.cards.dex.handler(async ({ context }) => {
-    const who = await me(context.state, context.c);
-    return dexOf(service(context.state), who.person?.id ?? null);
+    const cards = service(context.state);
+    const who = await opening(context.state, context.c);
+    return dexOf(cards, who.person?.id ?? null);
   }),
   pity: os.cards.pity.handler(async ({ context }) => {
     const who = await me(context.state, context.c);

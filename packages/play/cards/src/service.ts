@@ -7,12 +7,14 @@
 // draws and writes the card in one transaction, checking the cap again. When the card cannot be
 // written the coins go back.
 //
-// Some cards nobody pays for (§6.1): a milestone card when a bond enters a tier it had never
-// reached. It is issued once per person and occasion (the store's `issue_key`), in the same turn as
+// Some cards nobody pays for: a milestone card when a bond enters a tier it had never reached
+// (§6.1), the keepsake of someone who came over from the old records (§10.2 P5). Each is issued
+// once per person and occasion (the store's `issue_key`), in the same turn as
 // that person's other cards, outside the day's cap, at the plain odds and without moving the pity
 // (the design says nothing of the pity for it: a free card that moved it would be a way around it).
 
 import { getLogger } from "@miyoria/runtime/kernel";
+import type { LegacySnapshot } from "@miyoria/store";
 import { BOND_LADDER, type BondTier, type Clock, type PersonId } from "@miyoria/types";
 import type { Part, Rarity, Slot } from "./catalogue.js";
 import { type CardsConfig, drawRules } from "./config.js";
@@ -122,6 +124,11 @@ export interface CardServiceOptions {
   newSerial?: () => string;
   /** Told of every card issued (what she hears of it, `notes.ts`); its errors are logged. */
   onIssued?: (issued: IssuedCard) => void;
+  /**
+   * Whether `person` came over from the old records (and so has a keepsake card); default
+   * nobody.
+   */
+  migrated?: (person: PersonId) => boolean;
 }
 
 /** The start (epoch ms) of the local day of `now` at `offsetMinutes` from UTC. */
@@ -259,6 +266,23 @@ export class CardService {
       return Promise.resolve({ ok: false, reason: "not_eligible" });
     }
     return this.#issueFree(person, "milestone", issueKey.milestone(tier.min), face);
+  }
+
+  /**
+   * The keepsake card of someone who came over from the old records (P5): one each, whatever tier
+   * they were at (no milestone is given backwards), issued the first time they open their cards.
+   * Free like a milestone card. `not_eligible` for anyone else; nobody is sent anything for it.
+   */
+  keepsake(person: PersonId, face: () => Promise<OccasionFace | null>): Promise<FreeResult> {
+    if (this.#o.migrated?.(person) !== true) {
+      return Promise.resolve({ ok: false, reason: "not_eligible" });
+    }
+    return this.#issueFree(person, "keepsake", issueKey.keepsake, face);
+  }
+
+  /** What the import from the V4 database kept of `person` (D4); `null`: it did not bring them. */
+  importedLegacy(person: PersonId): LegacySnapshot | null {
+    return this.#store.importedLegacy(person);
   }
 
   /** A free card of `kind` for `key`, once per person; the one already there when it exists. */
