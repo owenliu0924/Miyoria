@@ -4,11 +4,15 @@
 // page passes (nobody else named, moderation), and a rank that is not one of the six is replaced
 // by a weighted draw.
 //
+// She writes as she talks (`herVoice`: her whole persona and example dialogues). A slip says
+// nothing about anyone's body, money, a law case or an exam, even when what she knows of them
+// does, and promises nothing: a field named for one of those is left off, and a field's text or
+// her line that runs long is cut after its last whole clause.
+//
 // She is given what the member page already shows them (bands, her line for them, memories they
 // may read) and her mood, never her private feeling. One slip per person per local day, kept so
 // they can look at it again, export it and have it forgotten with their cards.
 
-import { PersonaHandleKey } from "@miyoria/brain/agent";
 import type { FortuneField, IssuedFortune, MemberCard } from "@miyoria/contracts/api";
 import { type FortuneRecord, FortuneStoreKey } from "@miyoria/economy";
 import {
@@ -22,7 +26,6 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
   AffectStateKey,
-  characterCore,
   isJsonObject,
   type JsonObject,
   type JsonValue,
@@ -31,6 +34,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
+import { herVoice, WRITTEN_NOT_CHAT, withoutMarkup } from "./her-voice.js";
 import { dateOf } from "./public.js";
 import type { ApiState } from "./state.js";
 
@@ -100,14 +104,30 @@ export interface FortuneContext {
   date: string;
 }
 
-const RULES = `你要為下面這個人抽一支今日籤,籤上的字你自己寫,他本人會看到,可以下載分享。
+/**
+ * Field names a slip may not have: what it must not tell anyone about (their body, money, a law
+ * case, an exam). A field she names so is left off.
+ */
+const FORBIDDEN_FIELD =
+  /健康|身體|病|醫|藥|財|錢|債|借|貸|投資|法律|訴訟|官司|考試|學業|成績|升學/u;
+
+const RULES = `${WRITTEN_NOT_CHAT}
+
+你要為下面這個人抽一支今日籤,籤上的字你自己寫,他本人會看到,可以下載分享。
 只回傳 JSON:{"rank": 字串, "title": 字串, "poem": [四句], "fields": [{"label": 字串, "text": 字串}], "line": 字串}
 - rank:只能是 ${FORTUNE_RANKS.join("、")} 其中一個。多數時候是吉(大吉、吉、中吉、小吉、末吉都算),凶很少見,看你今天對他的感覺和他最近的樣子決定,不要每次都一樣。
-- title:籤題,${MAX_TITLE} 字內(例如「春風得意」)。
-- poem:剛好 4 句,每句 ${MAX_POEM_LINE} 字內,不加標點,像籤詩的口吻,可以俏皮,要和他有關。
-- fields:0 到 ${MAX_FIELDS} 個,欄位名稱(${MAX_FIELD_LABEL} 字內,例如 戀愛、學業、健康、願望、財運)和內容(${MAX_FIELD_TEXT} 字內)。
-- line:對他說的一句私人的話,${MAX_LINE} 字內,用你平常說話的語氣。
-- 只寫你和他,不提任何其他人(不寫別人的名字,也不寫「另一個人」「某人」);不寫數字分數、不寫你心裡的盤算或秘密;不要真的預言重大的事(病、錢、死亡),輕鬆就好。`;
+- title:籤題,${MAX_TITLE} 字內。
+- poem:剛好 4 句,每句 ${MAX_POEM_LINE} 字內,不加標點,有籤詩的樣子,但是你寫的:可以俏皮、可以吐槽,要和他有關。
+- fields:0 到 ${MAX_FIELDS} 個,欄位名稱 ${MAX_FIELD_LABEL} 字內(例如 心情、戀愛、願望、人際、今天宜),內容 ${MAX_FIELD_TEXT} 字內,半句話就好,不要寫成完整的長句。
+- line:你對他說的一句私人的話,${MAX_LINE} 字內,就是你在聊天裡會講的那種話。
+
+## 籤上不寫的事
+- 不寫身體和病痛、錢和借貸、官司和法律、考試和成績;就算下面他的事裡提到這些(他在咳嗽、有人欠他錢、快考試了),籤上也一個字都不提,不給建議(多喝水、去看醫生、早點要回來),也不說會好起來、會還、會考上。
+- 想關心他,就在 line 用你的口氣順口關心一句,不點出是哪件事,也不給建議。
+- 不寫任何保證會發生的事(一定、保證、必定);籤只說今天的心情和運氣,輕鬆就好。
+- 不寫數字:阿拉伯數字、國字的數目、分數、價錢、日期都不寫。
+- 只寫你和他,不提任何其他人(不寫別人的名字,也不寫「另一個人」「某人」「他」指別人);不寫你心裡的盤算或秘密。
+- 不要寫成制式的籤詩或勵志文案:換一個人還能照用的句子就不要寫。`;
 
 function about(c: FortuneContext, mood: string | null): string {
   const v = c.view;
@@ -125,11 +145,25 @@ function about(c: FortuneContext, mood: string | null): string {
   return lines.join("\n");
 }
 
-/** `text` flattened to one line and cut to `max` characters (`…` after a cut when `dots`). */
+/** Where a sentence or a clause ends: a long text is cut after one. */
+const CLAUSE_END = /[，。,.!！?？;；~～…]/u;
+/** The ends of a whole sentence, kept after a cut (a comma is dropped). */
+const SENTENCE_END = /[。!！?？~～…]/u;
+
+/**
+ * `text` flattened to one line, without chat markup, and cut to `max` characters. A text that
+ * reads as a sentence (`dots`: a field's text, her line) is cut after the last sentence or clause
+ * in its first `max` characters when that keeps at least half of it, else after `max` with `…`.
+ */
 function cut(text: string, max: number, dots: boolean): string {
-  const chars = [...text.replace(/\s+/g, " ").trim()];
+  const chars = [...withoutMarkup(text).replace(/\s+/g, " ").trim()];
   if (chars.length <= max) return chars.join("");
-  return `${chars.slice(0, max).join("")}${dots ? "…" : ""}`;
+  if (!dots) return chars.slice(0, max).join("");
+  for (let i = max - 1; i >= Math.ceil(max / 2); i--) {
+    const c = chars[i] ?? "";
+    if (CLAUSE_END.test(c)) return chars.slice(0, SENTENCE_END.test(c) ? i + 1 : i).join("");
+  }
+  return `${chars.slice(0, max).join("")}…`;
 }
 
 /** The trailing punctuation of a poem line: the slip sets its own. */
@@ -180,6 +214,7 @@ export function checked(
   const fields: FortuneField[] = [];
   for (const f of raw.fields) {
     if (fields.length >= MAX_FIELDS) break;
+    if (FORBIDDEN_FIELD.test(f.label)) continue;
     const label = say(f.label, MAX_FIELD_LABEL, false);
     const text = say(f.text, MAX_FIELD_TEXT, true);
     if (label !== null && text !== null) fields.push({ label, text });
@@ -198,8 +233,6 @@ export async function writeFortune(
 ): Promise<FortuneSlip | null> {
   const router = state.optional(LlmRouterKey);
   if (!router) return null;
-  const persona = state.optional(PersonaHandleKey);
-  const who = persona ? characterCore(persona.corePrompt()) : "";
   let mood: string | null = null;
   try {
     mood = state.optional(AffectStateKey)?.snapshot().mood_line ?? null;
@@ -212,10 +245,7 @@ export async function writeFortune(
         router,
         "chat",
         {
-          messages: [
-            systemMessage(`${who || `你是${persona?.displayName() ?? "她"}。`}\n\n${RULES}`),
-            userMessage(about(c, mood)),
-          ],
+          messages: [systemMessage(`${herVoice(state)}\n\n${RULES}`), userMessage(about(c, mood))],
           json_mode: true,
           reasoning_purpose: "fortune",
           max_tokens: 500,

@@ -74,8 +74,8 @@ describe("her fortune slip", () => {
         poem: [`${"一".repeat(MAX_POEM_LINE + 3)}，`, "二。", "三，", "四"],
         fields: [
           { label: "戀".repeat(MAX_FIELD_LABEL + 2), text: "文".repeat(MAX_FIELD_TEXT + 5) },
-          { label: "學業", text: "好好睡覺" },
-          { label: "健康", text: "多喝水" },
+          { label: "心情", text: "好好睡覺" },
+          { label: "人際", text: "點頭就好" },
           { label: "多的", text: "第四個不要" },
         ],
         line: "話".repeat(MAX_LINE + 6),
@@ -97,16 +97,48 @@ describe("her fortune slip", () => {
       raw({
         fields: [
           { label: "戀愛", text: "和小美有緣" },
-          { label: "學業", text: "專心" },
+          { label: "心情", text: "專心" },
         ],
         line: "小美也會來",
       }),
       pass,
     );
-    expect(slip?.fields).toEqual([{ label: "學業", text: "專心" }]);
+    expect(slip?.fields).toEqual([{ label: "心情", text: "專心" }]);
     expect(slip?.line).toBeNull();
     expect(checked(raw({ poem: ["小美來了", "二", "三", "四"] }), pass)).toBeNull();
     expect(checked(raw({ title: "小美" }), pass)).toBeNull();
+  });
+
+  it("leaves off a field about their body, money, a law case or an exam", () => {
+    const slip = checked(
+      raw({
+        fields: [
+          { label: "健康", text: "多喝溫水" },
+          { label: "財運", text: "會回來的" },
+          { label: "學業", text: "會考上" },
+          { label: "心情", text: "晴天" },
+        ],
+      }),
+      pass,
+    );
+    expect(slip?.fields).toEqual([{ label: "心情", text: "晴天" }]);
+  });
+
+  it("cuts a long field or line after its last whole clause, else with an ellipsis", () => {
+    const head = "今天適合慢慢來放輕鬆一點";
+    const slip = checked(
+      raw({
+        fields: [{ label: "心情", text: `${head},不用急著把每件事都說清楚啦` }],
+        line: `${"嗯".repeat(MAX_LINE - 6)}!再多講一點就超過了喔`,
+      }),
+      pass,
+    );
+    // A comma is dropped with what follows it; a sentence's own end stays.
+    expect(slip?.fields[0]?.text).toBe(head);
+    expect(slip?.line).toBe(`${"嗯".repeat(MAX_LINE - 6)}!`);
+    // A clause end too early (it would keep less than half) is not a place to cut.
+    const early = checked(raw({ line: `嗯,${"話".repeat(MAX_LINE + 4)}` }), pass);
+    expect(early?.line).toBe(`嗯,${"話".repeat(MAX_LINE - 2)}…`);
   });
 
   it("needs a title and exactly four poem lines, whether she sent a list or one text", () => {
@@ -162,6 +194,9 @@ describe("her fortune slip", () => {
     expect(prompt).toContain("又熬夜了吧");
     expect(prompt).toContain("2026-11-08");
     for (const rank of FORTUNE_RANKS) expect(prompt).toContain(rank);
+    // Nothing about their body or money, even when what she knows of them says so.
+    expect(prompt).toContain("籤上也一個字都不提");
+    expect(prompt).not.toMatch(/健康、|財運/);
 
     expect(await writeFortune(stateWith(answer({ title: "只有題" })), context, pass)).toBeNull();
     const broken = { complete: async () => Promise.reject(new Error("the model is down")) };
