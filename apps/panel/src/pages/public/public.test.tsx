@@ -93,7 +93,6 @@ const WALLET: WalletView = {
     { id: "rice", kind: "feed", label: "一碗白飯", price: 10, available: true, why: null },
     { id: "big_bowl", kind: "feed", label: "鋼盆", price: 40, available: true, why: null },
     { id: "dessert", kind: "feed", label: "甜點", price: 25, available: true, why: null },
-    { id: "letter", kind: "letter", label: "一封信", price: 15, available: true, why: null },
     { id: "expression:heart", kind: "expression", label: "愛心眼", price: 20, available: true, why: null },
     { id: "expression:blush", kind: "expression", label: "臉紅", price: 20, available: false, why: "直播還沒開" },
     { id: "expression:squint", kind: "expression", label: "＞＜", price: 20, available: true, why: null },
@@ -202,7 +201,7 @@ function core(o: Options = {}) {
       keys.push(headers.get("Idempotency-Key"));
     }
     if (path.startsWith("/api/member/") && o.wallet === null) {
-      if (["wallet", "checkin", "feed", "letter", "expression", "frame"].includes(path.slice(12))) return undefined;
+      if (["wallet", "checkin", "feed", "expression", "frame"].includes(path.slice(12))) return undefined;
     }
     if (path === "/api/member/wallet") return { body: wallet };
     if (path === "/api/member/checkin") {
@@ -213,10 +212,6 @@ function core(o: Options = {}) {
       if (o.feed) return o.feed;
       wallet = { ...wallet, balance: wallet.balance - 10 };
       return { body: { accepted: true, eaten: 1, charged: 10, balance: wallet.balance, message: "她吃得很開心" } };
-    }
-    if (path === "/api/member/letter") {
-      wallet = { ...wallet, balance: wallet.balance - 15 };
-      return { body: { accepted: true, charged: 15, balance: wallet.balance, message: "信寄出了" } };
     }
     if (path === "/api/member/frame") {
       const req = body as { buy?: string; select?: string | null };
@@ -764,31 +759,6 @@ describe("the wallet", () => {
 });
 
 describe("the shop", () => {
-  it("counts a letter to 120, then posts it", async () => {
-    const { posts, keys } = core({ member: USER });
-    renderApp();
-    const shop = await screen.findByRole("region", { name: "商店" });
-    const box = await within(shop).findByLabelText("寫信給她");
-    const send = within(shop).getByRole("button", { name: /寄出/ });
-    expect(send).toBeDisabled();
-    expect(within(shop).getByText("0/120")).toBeInTheDocument();
-    await userEvent.type(box, "謝謝妳");
-    expect(within(shop).getByText("3/120")).toBeInTheDocument();
-    await userEvent.click(box);
-    await userEvent.paste("字".repeat(118));
-    expect(within(shop).getByText("121/120")).toBeInTheDocument();
-    expect(send).toBeDisabled();
-    await userEvent.clear(box);
-    await userEvent.type(box, "謝謝妳");
-    await userEvent.click(send);
-    await waitFor(() =>
-      expect(posts.find((p) => p.path === "/api/member/letter")?.body).toEqual({ text: "謝謝妳" }),
-    );
-    expect(keys.at(-1)).toBeTruthy();
-    expect(await screen.findByText("信寄出了")).toBeInTheDocument();
-    expect(box).toHaveValue("");
-  });
-
   it("lists the expressions and says why one is not available", async () => {
     const { posts } = core({ member: USER });
     renderApp();

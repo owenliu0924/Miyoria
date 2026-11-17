@@ -13,7 +13,7 @@
 // * `POST /api/member/songs` `{ query }`: a song request, as if said in chat.
 // * `GET /api/member/card`, `POST /api/member/card` `{}`: the card she gives them, the card view
 //   below frozen with a serial (`card.ts`).
-// * `/api/member/wallet`, `checkin`, `feed`, `letter`, `expression`, `frame`: their coins
+// * `/api/member/wallet`, `checkin`, `feed`, `expression`, `frame`: their coins
 //   (`wallet.ts`). Forgetting keeps the wallet: coins are not her memory of them.
 //
 // The person comes from the session and from nowhere else: no route takes an id, a query parameter

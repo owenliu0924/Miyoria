@@ -69,7 +69,6 @@ const CASES: Case[] = [
   { name: "wallet.view", method: "GET", path: "/api/member/wallet", audience: "member" },
   post("wallet.checkin", "/api/member/checkin", {}),
   post("wallet.feed", "/api/member/feed", { item: "rice" }),
-  post("wallet.letter", "/api/member/letter", { text: "hi" }),
   post("wallet.screen", "/api/member/screen", { text: "hi" }),
   post("wallet.expression", "/api/member/expression", { expression: "heart" }),
   post("wallet.transfer", "/api/member/transfer", { to_discord_id: "1", amount: 1 }),
@@ -128,7 +127,7 @@ const SPENT = {
   charged: 1,
   balance: 1,
   message: "a",
-} satisfies ApiOutputs["wallet"]["letter"];
+} satisfies ApiOutputs["wallet"]["screen"];
 
 const SLIP = {
   id: "f1",
@@ -208,7 +207,6 @@ const ANSWERS = {
     balance: 1,
     message: "a",
   } satisfies ApiOutputs["wallet"]["feed"],
-  "wallet.letter": SPENT,
   "wallet.screen": SPENT,
   "wallet.expression": SPENT,
   "wallet.transfer": { sent: 1, balance: 1, to: "a" } satisfies ApiOutputs["wallet"]["transfer"],
@@ -332,7 +330,6 @@ describe("the answers", () => {
       view: os.wallet.view.handler(answer("wallet.view")),
       checkin: os.wallet.checkin.handler(answer("wallet.checkin")),
       feed: os.wallet.feed.handler(answer("wallet.feed")),
-      letter: os.wallet.letter.handler(answer("wallet.letter")),
       screen: os.wallet.screen.handler(answer("wallet.screen")),
       expression: os.wallet.expression.handler(answer("wallet.expression")),
       transfer: os.wallet.transfer.handler(answer("wallet.transfer")),

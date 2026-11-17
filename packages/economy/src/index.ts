@@ -12,7 +12,6 @@ export {
   HUNGER_OF,
   hungerWord,
   MAX_FEED_COUNT,
-  MAX_LETTER_CHARS,
   PAID_NAME,
   STRANGER,
   WALLET_NODE,

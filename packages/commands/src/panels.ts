@@ -636,23 +636,13 @@ function mePages(policyUrl: string | null): PanelPage[] {
       ],
     },
     {
-      // The card and the slip come from the commands module itself (the api module gives them);
-      // the letter from the economy module.
+      // The card and the slip come from the commands module itself (the api module gives them).
       id: "keepsakes",
       label: "卡片與籤詩",
-      description: "她給你的卡片、今日籤詩、寫信給她",
+      description: "她給你的卡片、今日籤詩",
       actions: [
         { id: "card", label: "我的卡片", path: "me card", style: "primary" },
         { id: "fortune", label: "抽今日籤詩", path: "me fortune" },
-        {
-          id: "letter",
-          label: "寫信給她",
-          path: "me letter",
-          ask: {
-            title: "寫信給她",
-            fields: [field("text", "信的內容（120 字內）", { style: "paragraph", maxLength: 120 })],
-          },
-        },
       ],
     },
     {

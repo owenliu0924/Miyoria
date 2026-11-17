@@ -3,7 +3,7 @@
 //
 // * Asking charges the kind's price (`commission_prices`; `0` takes a kind off) up front, at most
 //   `commissions_per_day` per person and `commissions_open` waiting for her at once. The brief
-//   passes the same screen a letter passes. The charge is held: it is only hers once she delivers.
+//   passes the same screen a paid message passes. The charge is held: it is only hers once she delivers.
 // * She hears of it silently (her working context, a bucket of its own) and `economy.commission`
 //   goes on the bus for whatever does the work (the work lane); `list_commissions` shows her what
 //   is open. She, or the work lane through this service, then `deliver`s the result (screened as

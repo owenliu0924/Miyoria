@@ -23,7 +23,7 @@ interface ScreenEvent {
 
 interface GiftEvent {
   name: string;
-  item: "rice" | "big_bowl" | "dessert" | "letter" | "expression";
+  item: "rice" | "big_bowl" | "dessert" | "expression";
   count: number;
   label: string;
 }

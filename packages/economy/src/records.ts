@@ -24,7 +24,7 @@ export interface CoinEntry {
   person: PersonId;
   /** Positive: earned or refunded; negative: spent. A whole number. */
   delta: number;
-  /** `checkin`, `talked`, `voice`, `song`, `her_gift`, `feed`, `letter`, `refund`, ... */
+  /** `checkin`, `talked`, `voice`, `song`, `her_gift`, `feed`, `expression`, `refund`, ... */
   reason: string;
   ref: string | null;
   /** Counts once per wallet; `null`: no key. */

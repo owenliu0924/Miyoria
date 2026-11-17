@@ -5,7 +5,7 @@
 // * A wallet is every account of the person she knows them as. Someone she does not know, or
 //   has blocked, has a stranger's wallet: empty, earning nothing, every spend refused alike.
 // * A gift lowers her hunger by what she ate and is the `gift` social event toward the giver,
-//   weaker for each earlier gift of the same person today. A paid gift (not a letter) also raises
+//   weaker for each earlier gift of the same person today. A paid gift also raises
 //   affinity and trust by a hair through the social engine (`RelationshipEffects`), within its own
 //   daily cap. She learns of it as a silent Observation, read when she next thinks (never a
 //   reason to break into a song).
@@ -119,7 +119,6 @@ const DAY_MS = 86_400_000;
 const VOICE_WINDOW_MS = 10 * 60_000;
 /** Feeds per request at most. */
 export const MAX_FEED_COUNT = 5;
-export const MAX_LETTER_CHARS = 120;
 /** How long a bought expression shows, and the big bowl's. */
 export const EXPRESSION_SECONDS = 8;
 export const BIG_BOWL_SECONDS = 5;
@@ -129,9 +128,7 @@ const MAX_EXPORTED = 10_000;
 const MAX_DAY_ROWS = 2_000;
 /** Check-ins read for the streak: more than a year. */
 const MAX_CHECKINS = 400;
-/** Letters she has not read yet stay this long when there is no EventLog. */
-const LETTER_TTL_MS = 6 * 3_600_000;
-/** Kept in her working context: the latest gifts and letters. */
+/** Kept in her working context: the latest gifts. */
 const MAX_CONTEXT_ENTRIES = 8;
 
 /** How much hunger one of each takes away. */
@@ -183,8 +180,13 @@ export const PAID_NAME: Readonly<Record<PaidItem, { label: string; kind: ShopIte
   fortune: { label: "今日籤詩", kind: "fortune" },
 };
 
+/** What ledger rows of things that are not sold any more say (old rows stay in statements). */
+const RETIRED_LABEL: Readonly<Record<string, string>> = {
+  letter: "寫信給她",
+};
+
 /** Ledger reasons that are gifts to her (they diminish each other). */
-const GIFT_REASONS = ["feed", "letter", "expression"];
+const GIFT_REASONS = ["feed", "expression"];
 const EARN_REASONS: readonly EarnReason[] = ["checkin", "talked", "voice", "song", "her_gift"];
 
 /** `一碗白飯`, `3 碗白飯`. */
@@ -473,7 +475,7 @@ export class EconomyService implements Economy {
     return true;
   }
 
-  /** Whether the text passes the screen a letter passes (moderation, input and output). */
+  /** Whether the text passes the screen a paid message passes (moderation, input and output). */
   passes(who: Pick<Member, "account">, text: string): boolean {
     return this.#passes(who, text);
   }
@@ -727,8 +729,6 @@ export class EconomyService implements Economy {
         const { item, eaten } = fedOf(r);
         return item === null ? "餵她" : `餵她${feedLabel(item, eaten)}`;
       }
-      case "letter":
-        return "寫信給她";
       case "expression": {
         const name = Object.hasOwn(EXPRESSION_NAME, r.ref ?? "")
           ? EXPRESSION_NAME[r.ref as GiftExpression]
@@ -766,7 +766,9 @@ export class EconomyService implements Economy {
       case "checkin":
         return r.delta > c.checkin ? "每日簽到(連續 7 天)" : EARN_LABEL.checkin;
       default:
-        return labelV2(r, c) ?? EARN_LABEL[r.reason as EarnReason] ?? r.reason;
+        return (
+          labelV2(r, c) ?? RETIRED_LABEL[r.reason] ?? EARN_LABEL[r.reason as EarnReason] ?? r.reason
+        );
     }
   }
 
@@ -844,7 +846,6 @@ export class EconomyService implements Economy {
         state?.hunger == null ? "現在沒辦法餵她" : state.hunger < c.full_below ? "她吃飽了" : null;
       add(item, "feed", FEED_NAME[item][0], c[item], why);
     }
-    add("letter", "letter", "一封信", c.letter, null);
     for (const e of GIFT_EXPRESSIONS) {
       const why = !state?.stage
         ? "她現在沒有開台"
@@ -1220,35 +1221,6 @@ export class EconomyService implements Economy {
     return today.filter((r) => r.reason === item && !refunded.has(r.id)).length;
   }
 
-  async letter(account: AccountRef, text: string, key: string): Promise<SpendResult> {
-    const body = text.trim();
-    const length = [...body].length;
-    if (length < 1 || length > MAX_LETTER_CHARS) {
-      throw new EconomyError(400, `信要 1 到 ${MAX_LETTER_CHARS} 個字`);
-    }
-    const who = await this.#known(account);
-    const c = this.#d.config;
-    const idem = `letter:${key}`;
-    const spent = await this.#turns.run(async (): Promise<Spent | SpendResult> => {
-      const first = await this.#first(who, idem);
-      if (first) return first;
-      if (!this.#passes(who, body)) return this.#refused(who, "這封信沒辦法送出");
-      return this.#spend(who, c.letter, "letter", null, idem);
-    });
-    if (!("entry" in spent)) return spent;
-    if (spent.fresh) {
-      this.#deliverLetter(who, body, spent.entry);
-      this.#announce(who, "letter", 1, "一封信");
-      this.#audit(who, "economy.letter", { charged: c.letter, chars: length });
-    }
-    return {
-      accepted: true,
-      charged: -spent.entry.delta,
-      balance: spent.balance,
-      message: "信送出去了,她有空會看",
-    };
-  }
-
   async screenMessage(account: AccountRef, text: string, key: string): Promise<SpendResult> {
     const body = screenText(text);
     if (body === null) throw new EconomyError(400, `留言要 1 到 ${MAX_SCREEN_CHARS} 個字`);
@@ -1282,7 +1254,7 @@ export class EconomyService implements Economy {
     if (spent.fresh) {
       const name = plainName(who.name);
       this.#d.publish(Events.EconomyScreen, screenEvent(name, body));
-      // Silent, like a letter: she may read it out when free, and a song is not interrupted.
+      // Silent: she may read it out when free, and a song is not interrupted.
       this.#perceive(who, spent.entry, `${safeName(who.name)}把一則留言放上了大螢幕:「${body}」`);
       this.#audit(who, "economy.screen_message", { charged: price, chars: [...body].length });
     }
@@ -1294,7 +1266,7 @@ export class EconomyService implements Economy {
     };
   }
 
-  /** Moderation reads a letter as input and as text on a page; without it nothing passes. */
+  /** Moderation reads a text as input and as text on a page; without it nothing passes. */
   #passes(who: Pick<Member, "account">, text: string): boolean {
     const s = this.#d.services;
     const moderation = s.get(ModerationKey);
@@ -1538,28 +1510,6 @@ export class EconomyService implements Economy {
       this.#d.log.warn({ err: errorMessage(error) }, "cannot tell her about a gift");
       return false;
     }
-  }
-
-  /**
-   * A letter is hers to read when she is free: an Observation in her working context, or,
-   * without the EventLog, a notice for wherever she talks next. Neither opens a turn.
-   */
-  #deliverLetter(who: Member, text: string, entry: CoinEntry): void {
-    const summary = `${safeName(who.name)}寫了一封信給你:「${text}」`;
-    if (this.#perceive(who, entry, summary)) return;
-    const now = this.#d.clock.now();
-    this.#d.publish(Events.AgentNotice, {
-      id: newId(),
-      at: toTimestamp(now),
-      source: "economy",
-      task: null,
-      turn: null,
-      context: null,
-      ok: true,
-      code: null,
-      text: summary,
-      expires_at: toTimestamp(now + LETTER_TTL_MS),
-    });
   }
 
   #handle(person: PersonId): string | null {

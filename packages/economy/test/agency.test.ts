@@ -245,21 +245,19 @@ describe("her share of gifts", () => {
     await fund(r, ALICE, 500);
     await r.economy.feed(ALICE, "rice", 1, "k1");
     expect(await purse(r)).toBe(2);
-    await r.economy.letter(ALICE, "你好", "k2");
-    expect(await purse(r)).toBe(5);
     await r.economy.purchase(ALICE, "screen_message", "k3");
-    expect(await purse(r)).toBe(11);
+    expect(await purse(r)).toBe(8);
     // A fortune is not a gift to her; neither is a frame.
     await r.economy.purchase(ALICE, "fortune", "k4");
     await r.economy.frame(ALICE, { buy: "sakura" }, "k5");
-    expect(await purse(r)).toBe(11);
+    expect(await purse(r)).toBe(8);
     const rows = await ledgerOf(r.store).entries("p", PURSE, {
       reasons: ["her_share"],
       limit: 20,
     });
-    expect(rows.map((x) => x.delta).sort()).toEqual([2, 3, 6]);
+    expect(rows.map((x) => x.delta).sort()).toEqual([2, 6]);
     // Her share is not the person's loss: they paid the full price.
-    expect(await balance(r, ALICE)).toBe(500 - 10 - 15 - 30 - 10 - 100);
+    expect(await balance(r, ALICE)).toBe(500 - 10 - 30 - 10 - 100);
   });
 
   it("is paid once per gift and not at all when the share is off", async () => {

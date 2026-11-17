@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/components/confirm";
 import { EmptyLine, ErrorLine, SkeletonRows } from "@/components/query-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input, Textarea } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,6 @@ import { FRAME_SWATCH } from "./card";
 import { Board, Bounties, Fortune, Goals } from "./Extras";
 import { newKey, priceText, say, usePatchWallet, useWallet } from "./spend";
 
-const LETTER_MAX = 120;
 const SCREEN_MAX = 60;
 
 export const STRANGER_LINE = "她還不認識你,先和她說說話吧";
@@ -162,52 +161,6 @@ export function WalletCard() {
 
 // ---------------------------------------------------------------------------
 // main column
-
-function Letter({ item, currency }: { item: ShopItem; currency: string }) {
-  const api = useApi();
-  const { patch, refresh } = usePatchWallet();
-  const [text, setText] = useState("");
-  const id = useId();
-  const count = [...text.trim()].length;
-  const over = count > LETTER_MAX;
-  const send = useMutation({
-    mutationFn: (t: string) => api.rpc.wallet.letter({ headers: { "idempotency-key": newKey() }, body: { text: t } }),
-    onSuccess: (r: SpendResult) => {
-      patch((v) => ({ ...v, balance: r.balance }));
-      if (r.accepted) setText("");
-      say(r);
-      void refresh();
-    },
-    onError: (e) => notify.error(e),
-  });
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (count > 0 && !over) send.mutate(text.trim());
-  };
-  return (
-    <form className="grid content-start gap-2" onSubmit={submit}>
-      <label htmlFor={id} className="text-xs text-muted-foreground">
-        寫信給她
-      </label>
-      <Textarea id={id} value={text} onChange={(e) => setText(e.target.value)} placeholder="她有空時會讀" />
-      <div className="flex items-center justify-between gap-3">
-        <span className={cn("text-xs tabular-nums", over ? "text-primary" : "text-muted-foreground")} aria-live="polite">
-          {count}/{LETTER_MAX}
-        </span>
-        <Button
-          type="submit"
-          variant="secondary"
-          busy={send.isPending}
-          disabled={count === 0 || over || !item.available}
-          title={item.available ? undefined : (item.why ?? undefined)}
-        >
-          寄出 · {priceText(item.price, currency)}
-        </Button>
-      </div>
-      {!item.available && item.why && <p className="text-xs text-muted-foreground">{item.why}</p>}
-    </form>
-  );
-}
 
 /** One line on the stream's screen while she is live; she sees it and may read it out. */
 function ScreenMessage({ item, currency }: { item: ShopItem; currency: string }) {
@@ -383,7 +336,6 @@ function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
 }
 
 function Shop({ w }: { w: WalletView }) {
-  const letter = w.shop.find((s) => s.kind === "letter");
   const expressions = w.shop.filter((s) => s.kind === "expression");
   const frames = w.shop.filter((s) => s.kind === "frame");
   const screen = w.shop.find((s) => s.id === "screen_message");
@@ -395,7 +347,6 @@ function Shop({ w }: { w: WalletView }) {
       </CardHeader>
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="grid content-start gap-5">
-          {letter && <Letter item={letter} currency={w.currency} />}
           {screen && <ScreenMessage item={screen} currency={w.currency} />}
         </div>
         <div className="grid content-start gap-5">

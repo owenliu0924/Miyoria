@@ -204,12 +204,9 @@ describe("me fortune", () => {
 });
 
 describe("the me panel", () => {
-  it("has a page for the card, the slip and a letter, over commands that exist", () => {
+  it("has a page for the card and the slip, over commands that exist", () => {
     const me = panelDefs().find((d) => d.command === "me");
     const page = me?.pages.find((p) => p.id === "keepsakes");
-    expect(page?.actions.map((a) => a.path)).toEqual(["me card", "me fortune", "me letter"]);
-    expect(page?.actions.find((a) => a.id === "letter")?.ask?.fields.map((f) => f.arg)).toEqual([
-      "text",
-    ]);
+    expect(page?.actions.map((a) => a.path)).toEqual(["me card", "me fortune"]);
   });
 });

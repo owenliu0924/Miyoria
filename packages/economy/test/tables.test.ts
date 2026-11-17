@@ -275,10 +275,10 @@ describe("the coin ledger", () => {
     const absorbed = person(discord("1b"), "Alice two");
     const bob = person(discord("2"), "Bob");
     await economy.ledger.post(coin(id, -30, "feed", null, 1_000));
-    await economy.ledger.post(coin(absorbed, -20, "letter", null, 2_000));
+    await economy.ledger.post(coin(absorbed, -20, "expression", null, 2_000));
     await economy.ledger.post(coin(bob, -10, "feed", null, 3_000));
     store.persons.merge(id, absorbed);
-    expect(await economy.ledger.spent("p", ["feed", "letter"], at(0), 10)).toEqual([
+    expect(await economy.ledger.spent("p", ["feed", "expression"], at(0), 10)).toEqual([
       { person: id, account: discord("1"), spent: 50 },
       { person: bob, account: discord("2"), spent: 10 },
     ]);

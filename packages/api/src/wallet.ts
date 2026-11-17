@@ -3,8 +3,7 @@
 //
 // * `GET /api/member/wallet`: balance, what they can still earn today, the shop, their frames.
 // * `POST /api/member/checkin` `{}`: once a local day (Discord's `/me` counts too); 409 after.
-// * `POST /api/member/feed` `{ item, count? }`, `POST /api/member/letter` `{ text }`,
-//   `POST /api/member/expression` `{ expression }`,
+// * `POST /api/member/feed` `{ item, count? }`, `POST /api/member/expression` `{ expression }`,
 //   `POST /api/member/screen` `{ text }` (a message on the stream: 409 when she is not live), `POST /api/member/frame` `{ buy?, select? }`.
 // * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member (403 in the
 //   same words for every reason they cannot take them); `POST /api/member/board` `{ on }`: join or
@@ -181,11 +180,6 @@ export const walletRpc = {
     const { item, count } = input.body;
     const r = await withWallet(state, (e) => e.feed(accountOf(c), item, count ?? 1, key));
     return feedResult(r);
-  }),
-  letter: os.wallet.letter.handler(async ({ input, context: { state, c } }) => {
-    const key = keyOf(input.headers["idempotency-key"]);
-    const { text } = input.body;
-    return spendResult(await withWallet(state, (e) => e.letter(accountOf(c), text, key)));
   }),
   screen: os.wallet.screen.handler(async ({ input, context: { state, c } }) => {
     const key = keyOf(input.headers["idempotency-key"]);

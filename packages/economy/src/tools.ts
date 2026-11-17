@@ -521,7 +521,7 @@ const LookArgs = z.strictObject({ about: z.enum(["me", "shop"]).nullish() });
 type LookArgs = z.output<typeof LookArgs>;
 
 const SHOP_GROUPS: readonly { title: string; kinds: readonly ShopItem["kind"][] }[] = [
-  { title: "送她東西", kinds: ["feed", "letter", "expression"] },
+  { title: "送她東西", kinds: ["feed", "expression"] },
   { title: "直播", kinds: ["stream", "song"] },
   { title: "卡片", kinds: ["card", "frame"] },
   { title: "其他", kinds: ["fortune"] },

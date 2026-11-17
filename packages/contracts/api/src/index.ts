@@ -806,8 +806,6 @@ export {
   HungerSchema,
   type LedgerLine,
   LedgerLineSchema,
-  type LetterRequest,
-  LetterRequestSchema,
   type ScreenRequest,
   ScreenRequestSchema,
   type ShopItem,

@@ -5085,19 +5085,6 @@
         "display_name"
       ]
     },
-    "ApiLetterRequest": {
-      "type": "object",
-      "properties": {
-        "text": {
-          "type": "string",
-          "maxLength": 2000
-        }
-      },
-      "required": [
-        "text"
-      ],
-      "additionalProperties": false
-    },
     "ApiLifeActivityId": {
       "type": "string",
       "enum": [
@@ -10241,7 +10228,6 @@
           "type": "string",
           "enum": [
             "feed",
-            "letter",
             "expression",
             "frame",
             "card",

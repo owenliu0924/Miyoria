@@ -264,7 +264,6 @@ token form stays at `#/login`, with no link to it from the page.
   card and today's fortune slip, the same things `/me card` and `/me fortune` give on Discord,
   through the same service, so both read alike. The card and the slip are the only decorated
   surfaces on the site; the rest stays flat, and the card's motion stops under reduced motion.
-  Letters to her are written from the shop (`Wallet`) or with `/me letter`.
 - 她 (the public live page at `/watch`, `LIVE_PAGE` in `pages/public/live`; `/live` stays the admin 直播 page): anyone with the link may watch, and
   patting her head needs a Discord login that returns there. No admin shell, no admin route. While
   OBS publishes (`snapshot.video.on`) the stage is the real OBS picture, never a model the page

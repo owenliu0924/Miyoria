@@ -34,9 +34,9 @@ export type EarnLine = z.output<typeof EarnLineSchema>;
 
 export const ShopItemSchema = z
   .object({
-    /** `rice`, `letter`, `expression:heart`, `frame:sakura`, `card_reroll`, ... */
+    /** `rice`, `expression:heart`, `frame:sakura`, `card_reroll`, ... */
     id: z.string(),
-    kind: z.enum(["feed", "letter", "expression", "frame", "card", "song", "stream", "fortune"]),
+    kind: z.enum(["feed", "expression", "frame", "card", "song", "stream", "fortune"]),
     label: z.string(),
     price: z.number(),
     available: z.boolean(),
@@ -114,12 +114,6 @@ export const FeedResultSchema = z
   .meta({ id: "ApiFeedResult" });
 export type FeedResult = z.output<typeof FeedResultSchema>;
 
-/** Body of `POST /api/member/letter`. */
-export const LetterRequestSchema = z
-  .strictObject({ text: z.string().max(2_000) })
-  .meta({ id: "ApiLetterRequest" });
-export type LetterRequest = z.input<typeof LetterRequestSchema>;
-
 /** Body of `POST /api/member/screen`: a message on the stream (`409` when she is not live). */
 export const ScreenRequestSchema = z
   .strictObject({ text: z.string().max(500) })
@@ -132,7 +126,7 @@ export const ExpressionRequestSchema = z
   .meta({ id: "ApiExpressionRequest" });
 export type ExpressionRequest = z.input<typeof ExpressionRequestSchema>;
 
-/** `POST /api/member/letter`, `/screen` and `/expression`. */
+/** `POST /api/member/screen` and `/expression`. */
 export const SpendResultSchema = z
   .object({
     accepted: z.boolean(),
@@ -209,7 +203,6 @@ export const wallet = {
     .input(z.object({ body: EmptyRequestSchema }))
     .output(CheckinResultSchema),
   feed: spend("/api/member/feed", FeedRequestSchema).output(FeedResultSchema),
-  letter: spend("/api/member/letter", LetterRequestSchema).output(SpendResultSchema),
   screen: spend("/api/member/screen", ScreenRequestSchema).output(SpendResultSchema),
   expression: spend("/api/member/expression", ExpressionRequestSchema).output(SpendResultSchema),
   /** Coins to another member (`403` in the same words for every reason they cannot take them). */

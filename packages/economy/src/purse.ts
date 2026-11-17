@@ -41,7 +41,6 @@ export const PURSE_PLATFORM = "self";
 /** Ledger reasons whose price she gets a share of. */
 export const SHARED_REASONS: readonly string[] = [
   "feed",
-  "letter",
   "expression",
   "screen_message",
   "dedication",

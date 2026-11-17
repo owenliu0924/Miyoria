@@ -115,6 +115,9 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
   "llm.reasoning.appraise",
   "llm.reasoning.plan",
   "llm.reasoning.plan_daily",
+  // [modules.economy]: phase 5 slims what coins are for; each feature sold off takes its keys.
+  // Letters.
+  "modules.economy.letter",
 ];
 
 /** The removed paths `config` still holds, in the order of `REMOVED_CONFIG_KEYS`. */

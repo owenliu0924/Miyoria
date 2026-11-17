@@ -144,7 +144,7 @@ describe("transfers", () => {
     await r.economy.transfer(ALICE, BOB, 10, "k1");
     const spent = await ledgerOf(r.store).spent(
       "p",
-      ["feed", "letter", "expression"],
+      ["feed", "expression"],
       "2000-01-01T00:00:00Z",
       10,
     );
@@ -264,7 +264,7 @@ describe("the sponsor board", () => {
     const r = await rig();
     await post(r, ALICE, -40, "feed", { ref: "rice:4" });
     await post(r, BOB, -90, "feed", { ref: "big_bowl:1" });
-    await post(r, FRANK, -15, "letter");
+    await post(r, FRANK, -15, "screen_message");
     const lines = await r.economy.board();
     expect(lines).toEqual([
       { rank: 1, name: "Bob∶*x*", spent: 90 },
@@ -283,7 +283,6 @@ describe("the sponsor board", () => {
   it("counts everything spent on her, within the window, and not transfers or refunds", async () => {
     const r = await rig();
     await post(r, ALICE, -10, "feed", { ref: "rice:1" });
-    await post(r, ALICE, -15, "letter");
     await post(r, ALICE, -20, "expression", { ref: "heart" });
     await post(r, ALICE, -30, "screen_message");
     await post(r, ALICE, -15, "dedication");
@@ -302,7 +301,7 @@ describe("the sponsor board", () => {
     // Refunded.
     const gone = await post(r, ALICE, -40, "dedication");
     await post(r, ALICE, 40, "refund", { ref: gone });
-    expect(await r.economy.board()).toEqual([{ rank: 1, name: "Alice", spent: 277 }]);
+    expect(await r.economy.board()).toEqual([{ rank: 1, name: "Alice", spent: 262 }]);
   });
 
   it("lists a fortune-only spender and leaves out a transfer-only one", async () => {
@@ -345,7 +344,7 @@ describe("the sponsor board", () => {
   it("is one person across linked accounts, off when any account left, and off for all", async () => {
     const r = await rig();
     await post(r, ALICE, -30, "feed", { ref: "rice:3" });
-    await post(r, ALICE_TWO, -20, "letter");
+    await post(r, ALICE_TWO, -20, "expression");
     expect(await r.economy.board()).toEqual([{ rank: 1, name: "Alice", spent: 50 }]);
     await r.economy.setOnBoard(ALICE_TWO, false);
     expect(await r.economy.board()).toEqual([]);

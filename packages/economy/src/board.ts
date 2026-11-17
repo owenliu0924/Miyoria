@@ -7,22 +7,14 @@ import type { EconomyService } from "./economy.js";
 import { type BoardLine, PAID_ITEMS } from "./types.js";
 
 /**
- * Ledger reasons that are coins spent on her: food, letters, expressions, frames, every paid item
+ * Ledger reasons that are coins spent on her: food, expressions, frames, every paid item
  * (cards, song tickets, dedications, screen messages, fortunes), a goal's pledge, and a deal's
  * escrow once it was released to her (`deal_escrow` counts only then). Rows that were refunded do
  * not count, which is how a failed goal gives its pledges back. Coins given to other people
  * (`transfer_out`, a bounty's escrow, `purse_gift`) are not spent on her.
  */
 export const BOARD_REASONS: readonly string[] = [
-  ...new Set([
-    "feed",
-    "letter",
-    "expression",
-    "frame",
-    ...PAID_ITEMS,
-    "goal_pledge",
-    "deal_escrow",
-  ]),
+  ...new Set(["feed", "expression", "frame", ...PAID_ITEMS, "goal_pledge", "deal_escrow"]),
 ];
 
 /** Places the board shows at most. */

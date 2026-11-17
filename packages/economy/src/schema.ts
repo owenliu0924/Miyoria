@@ -60,7 +60,7 @@ export const economyLedger = sqliteTable(
     person_id: text().notNull(),
     /** Positive: earned or refunded; negative: spent. A whole number (`STRICT`). */
     delta: integer().notNull(),
-    /** `checkin`, `talked`, `voice`, `feed`, `letter`, `refund`, ... */
+    /** `checkin`, `talked`, `voice`, `feed`, `expression`, `refund`, ... */
     reason: text().notNull(),
     /** What it is about: the food and count, the frame, her reason, the refunded row. */
     ref: text(),

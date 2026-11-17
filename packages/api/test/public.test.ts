@@ -687,7 +687,6 @@ describe("the route table", () => {
       "POST /api/member/fortune",
       "POST /api/member/frame",
       "POST /api/member/goals/:id/pledge",
-      "POST /api/member/letter",
       "POST /api/member/live/pat",
       "POST /api/member/screen",
       "POST /api/member/songs",
@@ -2183,7 +2182,6 @@ describe("the wallet", () => {
       for (const [path, json] of [
         ["/api/member/checkin", {}],
         ["/api/member/feed", { item: "rice" }],
-        ["/api/member/letter", { text: "嗨" }],
         ["/api/member/screen", { text: "嗨" }],
         ["/api/member/expression", { expression: "heart" }],
         ["/api/member/frame", { buy: "sakura" }],
@@ -2200,25 +2198,15 @@ describe("the wallet", () => {
     expect(r.hunger.value).toBe(0.8);
   });
 
-  it("sends letters through moderation and refuses expressions while the stage is down", async () => {
+  it("refuses expressions while the stage is down", async () => {
     const r = await walletRig();
     await r.fund(ALICE, 100);
     const cookie = await r.login("alice");
-    const sent = await r.spend("/api/member/letter", cookie, { text: "今天辛苦了" }, "l-1");
-    expect(sent.body).toEqual({
-      accepted: true,
-      charged: 15,
-      balance: 85,
-      message: "信送出去了,她有空會看",
-    });
-    const bad = await r.spend("/api/member/letter", cookie, { text: "BADWORD" }, "l-2");
-    expect(bad.body).toMatchObject({ accepted: false, charged: 0, balance: 85 });
-    expect((await r.spend("/api/member/letter", cookie, { text: " " }, "l-3")).status).toBe(400);
     const face = await r.spend("/api/member/expression", cookie, { expression: "blush" }, "e-1");
     expect(face.body).toEqual({
       accepted: false,
       charged: 0,
-      balance: 85,
+      balance: 100,
       message: "她現在沒有開台",
     });
   });

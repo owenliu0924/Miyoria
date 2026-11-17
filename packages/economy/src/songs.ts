@@ -1,6 +1,6 @@
 // The economy's side of the singer's payment port (`SongPaymentsKey` in @miyoria/sing): a song
-// ticket and a dedication are `Economy.purchase` items; a dedication's words pass the same screen
-// a letter passes before anything is charged.
+// ticket and a dedication are `Economy.purchase` items; a dedication's words pass the screen
+// a paid message passes before anything is charged.
 
 import type { SongCharge, SongPayments } from "@miyoria/sing";
 import type { AccountRef } from "@miyoria/types";

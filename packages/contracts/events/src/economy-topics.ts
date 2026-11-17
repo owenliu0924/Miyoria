@@ -77,9 +77,9 @@ export const ScreenLineSchema = z
   .meta({ id: "EventsScreenLine" });
 export type ScreenLineData = z.output<typeof ScreenLineSchema>;
 
-/** What a gift is: a food item, a letter, or an expression. */
+/** What a gift is: a food item or an expression. */
 export const GiftItemSchema = z
-  .enum(["rice", "big_bowl", "dessert", "letter", "expression"])
+  .enum(["rice", "big_bowl", "dessert", "expression"])
   .meta({ id: "EventsGiftItem" });
 
 /** Someone paid for a gift: `economy.gift`. */
