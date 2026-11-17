@@ -99,10 +99,21 @@ export interface SettingsPart {
   prefixes: readonly string[];
 }
 
-/** `relationships.call_name` (cleared, the relationship stays). */
+/**
+ * A `call_name` column (cleared, the row stays): the heart's `heart_person` (node-wide) since
+ * phase 4, the old `relationships` (per profile, read-only) before it.
+ */
 export interface CallNamesPart {
   kind: "call_names";
   id: string;
+  table: string;
+  rows: "profile" | "node";
+}
+
+/** The `WHERE` of a call-names part. */
+function callNamesWhere(p: Params, part: CallNamesPart, profile: ProfileId): string {
+  const scope = part.rows === "profile" ? `profile_id = ${p.add(profile)} AND ` : "";
+  return `${scope}call_name IS NOT NULL`;
 }
 
 /** Settings keys that no other part covers. */
@@ -204,8 +215,8 @@ export const CATEGORY_SPECS: readonly CategorySpec[] = [
   spec("memories", { modules: ["memory", "arbiter"] }),
   // Relationships with their changes and member cards (`legacy`), and the economy plugin's tables:
   // coins come from being with her; the wallet goes with the relationship, not with a forget.
-  spec("relationships", { modules: ["social", "agent"] }),
-  spec("call_names", { modules: ["social", "agent"], confirm: "simple" }),
+  spec("relationships", { modules: ["heart", "agent"] }),
+  spec("call_names", { modules: ["heart", "agent"], confirm: "simple" }),
   // Her inner state, feelings and thoughts (settings keys).
   spec("inner", { modules: ["self", "mind"] }),
   spec("knowledge", { modules: ["knowledge"] }),
@@ -225,7 +236,7 @@ export const CATEGORY_SPECS: readonly CategorySpec[] = [
     // Relationships, feelings, documents, lessons and feedback are keyed by person; artifacts
     // name the person they were made for and the place they were made in.
     requires: ["relationships", "call_names", "inner", "knowledge", "learning", "artifacts"],
-    modules: ["social", "agent", "world", "memory"],
+    modules: ["heart", "agent", "world", "memory"],
     shared: true,
   }),
   spec("channels", { confirm: "simple" }),
@@ -487,7 +498,7 @@ function countStmt(s: PartScope, part: DataPart): Stmt {
       };
     case "call_names":
       return {
-        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM relationships WHERE profile_id = ${p.add(s.profile)} AND call_name IS NOT NULL`,
+        sql: `SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM ${part.table} WHERE ${callNamesWhere(p, part, s.profile)}`,
         params: p.values,
       };
     case "other_settings":
@@ -552,7 +563,7 @@ function exportStmt(s: PartScope, part: DataPart): Stmt {
       };
     case "call_names":
       return {
-        sql: `SELECT person_id, call_name FROM relationships WHERE profile_id = ${p.add(profile)} AND call_name IS NOT NULL ORDER BY person_id`,
+        sql: `SELECT person_id, call_name FROM ${part.table} WHERE ${callNamesWhere(p, part, profile)} ORDER BY person_id`,
         params: p.values,
       };
     case "other_settings":
@@ -598,7 +609,7 @@ function deleteStmt(s: PartScope, part: DataPart, claimed: string): Stmt | null 
       };
     case "call_names":
       return {
-        sql: `UPDATE relationships SET call_name = NULL WHERE profile_id = ${p.add(profile)} AND call_name IS NOT NULL`,
+        sql: `UPDATE ${part.table} SET call_name = NULL WHERE ${callNamesWhere(p, part, profile)}`,
         params: p.values,
       };
     case "other_settings":

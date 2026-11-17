@@ -95,7 +95,7 @@ async function setup() {
   services.provide("app", SettingsStoreKey, store.settings);
   services.provide("app", ProfileDataStoreKey, store.profileData);
   services.provide("app", AuditLogKey, store.audit);
-  const counting = ["social", "mood", "agent", "arbiter"].map((id) => new Counting(id));
+  const counting = ["heart", "mood", "agent", "arbiter"].map((id) => new Counting(id));
   await sup.register(new LlmStub(router(new MockProvider("sum").reply("{}"))), null, true);
   await sup.register(new CommandsModule(), { owners: ["discord:1"] }, true);
   await sup.register(new MemoryModule(profile(), embeddingConfig()), {}, true);
@@ -204,7 +204,7 @@ describe("memory wipe", () => {
     expect(wipeModules("history")).toEqual([
       "memory",
       "arbiter",
-      "social",
+      "heart",
       "agent",
       "self",
       "mind",
