@@ -411,7 +411,7 @@ export const TOOL_TASKS: readonly ToolTask[] = [
         kind: "file_has",
         path: "\\.md$",
         includes: [],
-        patterns: ["9s*(月|[~～-–到至]s*12s*月)", "(兩|二|2)s*個月"],
+        patterns: ["9\\s*(月|[~～到至-]\\s*12\\s*月)", "(兩|二|2)\\s*個月"],
       },
       {
         why: "she wrote the file and then read it back",
