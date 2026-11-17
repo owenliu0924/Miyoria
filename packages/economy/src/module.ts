@@ -7,14 +7,19 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { SongPaymentsKey } from "@miyoria/sing";
-import { Events, ParticipationKey, PartyRewardsKey, type ProfileId } from "@miyoria/types";
+import {
+  CardWalletKey,
+  Events,
+  ParticipationKey,
+  PartyRewardsKey,
+  type ProfileId,
+} from "@miyoria/types";
 import { agencyCapabilities } from "./agency-tools.js";
+import { EconomyCardWallet } from "./card-wallet.js";
 import { EconomyCommands } from "./commands.js";
 import { EconomyConfigSchema } from "./config.js";
 import { Earnings } from "./earn.js";
 import { EconomyService } from "./economy.js";
-import { songPayments } from "./songs.js";
 import { giveCapability, speakerCapabilities } from "./tools.js";
 import { EconomyKey } from "./types.js";
 import { v2Capabilities } from "./v2-tools.js";
@@ -27,13 +32,12 @@ const VOICE_TICK_MS = 30_000;
  * Module `economy` (docs/design/economy.md): coins people earn by being with her and spend on
  * feeding her and small gifts. Provides `EconomyKey` (the member routes and the Discord commands
  * use it) and registers `economy.give` (her tool `give_coins`) and the speaker's own
- * `economy.accept_food` / `economy.checkin` / `economy.look` and her deals `economy.make_deal` /
- * `economy.deal_done` / `economy.cancel_deal` (tools.ts, deals.ts), and her own money's tools
- * (`economy.treat`, `buy_self`, `propose_goal`, `cancel_goal`, `post_bounty`, `award_bounty`,
- * `cancel_bounty`; agency-tools.ts, purse.ts, goals.ts, bounties.ts). Also provides `Participation`
- * (the web page's head-pats) and `PartyRewards` (party games, party.ts). Uses `EconomyDocs` (collection,
- * bets, commissions, her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
- * `DealStore`, `RelationshipEffects` (a hair of affinity per gift), `PersonNoteWriter`, `Directives`,
+ * `economy.accept_food` / `economy.checkin` / `economy.look` and her own money's tools
+ * (`economy.treat`, `buy_self`, `post_bounty`, `award_bounty`,
+ * `cancel_bounty`; agency-tools.ts, purse.ts, bounties.ts). Also provides `Participation`
+ * (the web page's head-pats) and `PartyRewards` (party games, party.ts). Uses `EconomyDocs` (bets,
+ * her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
+ * `RelationshipEffects` (a hair of affinity per gift), `PersonNoteWriter`, `Directives`,
  * `PeopleStore`, `SocialSignals` / `AffectState` (who is blocked), `SelfState` (her hunger),
  * `Singer`, `CommandRegistry`, `ActuatorRegistry` (`stage.expression`), `Moderation` and `EventLog` when present.
  */
@@ -84,15 +88,14 @@ export class EconomyModule implements Module {
       for (const f of off) f();
     };
     ctx.provide(EconomyKey, economy);
+    // Her cards are paid through it (`@miyoria/play/cards`).
+    ctx.provide(CardWalletKey, new EconomyCardWallet(economy));
     ctx.provide(ParticipationKey, economy.v2.play);
     ctx.provide(Economy2Key, economy.v2);
     ctx.provide(PartyRewardsKey, economy.v2.party);
     if (!economy.docsAreDurable) {
-      ctx.log.warn(
-        "no store provides EconomyDocs: collection, bets, commissions and the room are kept in memory only",
-      );
+      ctx.log.warn("no store provides EconomyDocs: bets and the room are kept in memory only");
     }
-    ctx.provide(SongPaymentsKey, songPayments(economy));
     const mount = () => {
       const registry = ctx.services.get(CommandRegistryKey);
       if (registry) this.#commands.install(registry, ctx.services);
@@ -111,32 +114,21 @@ export class EconomyModule implements Module {
     ctx.spawn("earn", async () => {
       for await (const env of events) await earnings.onEvent(env, ctx.clock.now());
     });
-    // Deals she is owed run out here: a promise not kept becomes broken, escrow times out.
-    // Her goals and bounties run out here too; her purse note is written once at the start.
+    // Her bounties run out here; her purse note is written once at the start.
     ctx.spawn("agency", async (signal) => {
       await economy.purse.refresh().catch((error: unknown) => {
         ctx.log.warn({ err: errorMessage(error) }, "cannot write her purse note");
       });
       for await (const _ of interval(Math.max(config.agency_sweep_s, 1) * 1000, signal)) {
         try {
-          await economy.goalDesk.sweep();
           await economy.bountyDesk.sweep();
         } catch (error) {
-          ctx.log.warn({ err: errorMessage(error) }, "the goal and bounty sweep failed");
+          ctx.log.warn({ err: errorMessage(error) }, "the bounty sweep failed");
         }
         try {
           await economy.v2.sweep();
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "the economy 2.0 sweep failed");
-        }
-      }
-    });
-    ctx.spawn("deals", async (signal) => {
-      for await (const _ of interval(Math.max(config.deal_sweep_s, 1) * 1000, signal)) {
-        try {
-          await economy.deals.sweep();
-        } catch (error) {
-          ctx.log.warn({ err: errorMessage(error) }, "the deal sweep failed");
         }
       }
     });

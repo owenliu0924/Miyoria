@@ -1,3 +1,4 @@
+import { CommandMount } from "@miyoria/commands";
 import { actuatorsFor } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
@@ -32,6 +33,7 @@ import {
   serviceKey,
 } from "@miyoria/types";
 import { partyCapabilities } from "./actions.js";
+import { registerCommands } from "./commands.js";
 import { PartyConfigSchema } from "./config.js";
 import { LlmSoupJudge } from "./judge.js";
 import { PartyPrompt, PROMPT_KEY } from "./prompt.js";
@@ -50,6 +52,7 @@ const AWAY = new Set(["singing", "game", "browse"]);
 
 interface Running {
   table: Table;
+  commands: CommandMount;
   prompts: PromptContributors | null;
   capabilities: (() => void)[];
 }
@@ -122,11 +125,12 @@ class Notes implements PartyOutput {
 }
 
 /**
- * Module `party`: party games in voice (docs/design/v4-plan.md §9.1) that she hosts and plays:
- * turtle soup, song guessing, word chains and quizzes. One game per voice channel; players answer
- * by speaking or by typing in the channel's text chat.
+ * Module `party`: party games (docs/design/v4-plan.md §9.1, v5-play.md §5) that she hosts:
+ * turtle soup and song guessing. One game per channel; players answer by speaking or by typing in
+ * the voice channel's text chat, and a turtle soup can be played in a text channel altogether.
  *
- * Nothing here speaks or starts by itself: a game begins only with her `party_start`, she runs it
+ * Nothing here speaks or starts by itself: a game begins only with her `party_start` (anyone can
+ * ask her for one), she runs it
  * with `party_host` / `party_play` / `party_ask`, and what happens in it reaches her as
  * Observations (source `game.party.<game>`) and the prompt section `party`. Services used (all
  * optional): `ActuatorRegistry`, `PromptContributors`, `EventLog`, `LlmRouter` (the turtle-soup
@@ -135,8 +139,19 @@ class Notes implements PartyOutput {
 export class PartyModule implements Module {
   static readonly ID = "party";
   readonly manifest = defineManifest(PartyModule.ID, "Party games", {
-    description: "Voice party games she hosts and plays: turtle soup, song guessing, chains, quiz",
-    optional: ["facts", "llm", "actions", "agent", "voice", "sing", "economy", "moderation"],
+    description:
+      "Party games she hosts: turtle soup (voice or text channel) and song guessing (voice)",
+    optional: [
+      "facts",
+      "llm",
+      "actions",
+      "agent",
+      "voice",
+      "sing",
+      "economy",
+      "moderation",
+      "commands",
+    ],
     configSchema: PartyConfigSchema,
   });
   readonly #random: () => number;
@@ -169,6 +184,18 @@ export class PartyModule implements Module {
     const capabilities = partyCapabilities(table, cfg.permissions).map((c) =>
       actuators.register(c),
     );
+    // `/game party`: the same start, asked for with a command (and from the `/miyo` panel).
+    let paths: string[] = [];
+    const commands = new CommandMount(
+      "party",
+      (registry) => {
+        paths = registerCommands(registry, cfg.permissions, actuators);
+      },
+      (registry) => {
+        for (const path of paths) registry.unregister(path);
+      },
+    );
+    commands.attach(ctx);
     const prompts = services.get(PromptContributorsKey) ?? null;
     prompts?.register(new PartyPrompt(table));
     ctx.provide(PartyTableKey, table);
@@ -202,7 +229,7 @@ export class PartyModule implements Module {
         }
       }
     });
-    this.#running = { table, prompts, capabilities };
+    this.#running = { table, commands, prompts, capabilities };
   }
 
   #onEvent(ctx: ModuleContext, table: Table, event: BusEvent): void {
@@ -277,6 +304,7 @@ export class PartyModule implements Module {
     this.#running = null;
     if (!running) return;
     running.table.close();
+    running.commands.detach();
     running.prompts?.unregister(PROMPT_KEY);
     for (const unregister of running.capabilities) unregister();
   }

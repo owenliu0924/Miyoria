@@ -1343,6 +1343,102 @@
         "browse"
       ]
     },
+    "EventsCardDrawn": {
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "string"
+        },
+        "person": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "rarity": {
+          "$ref": "#/$defs/EventsCardRarity"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expression": {
+          "type": "string"
+        },
+        "price": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pity_hit": {
+          "type": "boolean"
+        },
+        "pity_since": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "wished": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "new_parts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "serial",
+        "person",
+        "kind",
+        "rarity",
+        "parts",
+        "expression",
+        "price",
+        "pity_hit",
+        "pity_since",
+        "wished",
+        "new_parts"
+      ]
+    },
+    "EventsCardRarity": {
+      "type": "string",
+      "enum": [
+        "N",
+        "R",
+        "SR",
+        "SSR"
+      ]
+    },
+    "EventsCardTitled": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "series": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "person",
+        "series",
+        "title",
+        "serial"
+      ]
+    },
     "EventsClusterHostApproved": {
       "type": "object",
       "properties": {
@@ -2872,9 +2968,7 @@
       "enum": [
         "rice",
         "big_bowl",
-        "dessert",
-        "letter",
-        "expression"
+        "dessert"
       ]
     },
     "EventsGoLiveState": {
@@ -5903,31 +5997,16 @@
     "EventsScreenLine": {
       "type": "object",
       "properties": {
-        "kind": {
-          "type": "string",
-          "enum": [
-            "message",
-            "dedication"
-          ]
-        },
         "name": {
           "type": "string"
         },
         "text": {
           "type": "string"
-        },
-        "song": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
-        "kind",
         "name",
-        "text",
-        "song"
+        "text"
       ]
     },
     "EventsSelfFeel": {

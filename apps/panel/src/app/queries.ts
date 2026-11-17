@@ -84,10 +84,8 @@ export const queryKeys = {
   reminders: ["life", "reminders"] as const,
   activities: ["life", "activities"] as const,
   economyHealth: ["economy", "health"] as const,
-  commissions: ["economy", "commissions"] as const,
   predictions: ["economy", "predictions"] as const,
   room: ["economy", "room"] as const,
-  reachedGoals: ["economy", "goals"] as const,
   personQuests: (id: string) => ["people", "quests", id] as const,
   workspace: ["workspace"] as const,
   skills: ["skills"] as const,
@@ -1083,28 +1081,9 @@ export function useActivities() {
   return useQuery({ queryKey: queryKeys.activities, queryFn: ({ signal }) => api.rpc.life.activities(undefined, { signal }), refetchInterval: pollModule(30_000), retry: false });
 }
 
-export function useReachedGoals() {
-  const api = useApi();
-  return useQuery({ queryKey: queryKeys.reachedGoals, queryFn: ({ signal }) => api.rpc.economy.goals(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
-}
-
-export function useFulfillGoal() {
-  const api = useApi();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.rpc.economy.fulfill({ params: { id }, body: {} }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.reachedGoals }),
-  });
-}
-
 export function useEconomyHealth() {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.economyHealth, queryFn: ({ signal }) => api.rpc.economy.health(undefined, { signal }), refetchInterval: pollModule(60_000), retry: false });
-}
-
-export function useCommissions() {
-  const api = useApi();
-  return useQuery({ queryKey: queryKeys.commissions, queryFn: ({ signal }) => api.rpc.economy.commissions(undefined, { signal }), refetchInterval: pollModule(30_000), retry: false });
 }
 
 export function usePredictions() {

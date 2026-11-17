@@ -197,7 +197,7 @@ answer is one plain line. Nothing here is invented: a number the Core does not s
   the Core sends.
   - 健康度: 這七天回收率 as one `ChartBlock` with a `TimeChart` of what went out and came back,
     怎麼算 as a `dl`, and 每天 as a table.
-  - 委託: 等她做的委託 as a table. 預測: each question with its bets. 房間: 她的房間 as a table
+  - 預測: each question with its bets. 房間: 她的房間 as a table
     with a `Meter` for how much of the price is funded.
   - No ranking of people. Someone's own quests show in their page under 角色 / 人.
 - 評測 (`/eval`): the participation metrics under 參與度指標, `ChartBlock`s 回合怎麼結束 and
@@ -261,10 +261,9 @@ token form stays at `#/login`, with no link to it from the page.
   step. The header says 關係 with the same tier. A Core without the ring keeps the six steps.
 - No ranking of people, anywhere.
 - The logged-in page also holds the keepsakes (`CardSection`, `FortuneSlip`, `HoloCard`): the member
-  card and today's fortune slip, the same things `/me card` and `/me fortune` give on Discord,
+  card and today's fortune slip, the same things `/me card` and `/me checkin fortune:true` give on Discord,
   through the same service, so both read alike. The card and the slip are the only decorated
   surfaces on the site; the rest stays flat, and the card's motion stops under reduced motion.
-  Letters to her are written from the shop (`Wallet`) or with `/me letter`.
 - 她 (the public live page at `/watch`, `LIVE_PAGE` in `pages/public/live`; `/live` stays the admin 直播 page): anyone with the link may watch, and
   patting her head needs a Discord login that returns there. No admin shell, no admin route. While
   OBS publishes (`snapshot.video.on`) the stage is the real OBS picture, never a model the page

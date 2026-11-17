@@ -54,7 +54,9 @@ export type CardBlock =
   /** One select menu. */
   | { type: "select"; select: CardSelect }
   /** Shows one of the reply's `files`. */
-  | { type: "file"; name: string };
+  | { type: "file"; name: string }
+  /** Shows one of the reply's `files` as a picture. */
+  | { type: "image"; name: string };
 
 export interface Card {
   accent: Accent;

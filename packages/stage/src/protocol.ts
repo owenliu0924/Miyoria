@@ -18,7 +18,6 @@ import {
   type GiftExpression,
   type LevelFrame,
   SCREEN_NAME_MAX,
-  SCREEN_SONG_MAX,
   SCREEN_TEXT_MAX,
   type SongVideoAction,
   type SpeakingState,
@@ -59,7 +58,6 @@ export {
   GIFT_LABEL_MAX,
   GIFT_NAME_MAX,
   SCREEN_NAME_MAX,
-  SCREEN_SONG_MAX,
   SCREEN_TEXT_MAX,
   TRANSITION_MAX_MS,
 };

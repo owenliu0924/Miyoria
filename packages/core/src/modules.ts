@@ -5,7 +5,7 @@
 // which is there before anything can say a word): llm, cluster, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, heart, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
-// stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, eval, Discord bot, Admin API, terminal chat, then the
+// stage.link, economy, cards, web, sandbox (opt-in), imagegen (opt-in), party, eval, Discord bot, Admin API, terminal chat, then the
 // extension host and one `ext.<id>` per extension. `facts` also writes the raw record (chat lines,
 // her decisions, how each turn ended) from the bus.
 
@@ -40,6 +40,7 @@ import { FactsModule } from "@miyoria/memory/facts";
 import { ConversationModule, KnowledgeModule, ReflectModule } from "@miyoria/memory/learning";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldModule } from "@miyoria/memory/world";
+import { CardsModule } from "@miyoria/play/cards";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/play/game";
 import { PartyModule } from "@miyoria/play/party";
 import { QueueModule } from "@miyoria/play/queue";
@@ -209,6 +210,8 @@ async function coreModules({
     McpModule.fromAppConfig(config),
     new StageLinkModule(),
     new EconomyModule(profileId),
+    // Her cards for each person: the daily card, the odds, the pity, the dex and wishlists.
+    new CardsModule(),
     new WebModule(),
     new SandboxModule(profileId, { baseDir }),
     new ImageGenModule({ baseDir, endpoints }),

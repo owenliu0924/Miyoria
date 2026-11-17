@@ -20,6 +20,7 @@ import { affect } from "./affect.js";
 import { agency } from "./agency.js";
 import { auth, health } from "./auth.js";
 import { activity, arbiter } from "./body.js";
+import { cards, cardsAdmin } from "./cards.js";
 import { channels } from "./channels.js";
 import { cluster } from "./cluster.js";
 import { game, songs, voiceControl } from "./control.js";
@@ -64,14 +65,6 @@ export {
   BountyListSchema,
   type BountyView,
   BountyViewSchema,
-  type GoalList,
-  GoalListSchema,
-  type GoalView,
-  GoalViewSchema,
-  type PledgeRequest,
-  PledgeRequestSchema,
-  type PledgeResult,
-  PledgeResultSchema,
 } from "./agency.js";
 export {
   type AuthMethods,
@@ -133,6 +126,32 @@ export {
   type TaskFailureCode,
   TaskFailureCodeSchema,
 } from "./body.js";
+export {
+  type CardDex,
+  CardDexSchema,
+  type CardOdds,
+  CardOddsSchema,
+  type CardPity,
+  CardPitySchema,
+  type CardTitle,
+  CardTitleSchema,
+  type CardWishlist,
+  CardWishlistSchema,
+  type DexPart,
+  DexPartSchema,
+  type DexSeries,
+  DexSeriesSchema,
+  type LegacyItem,
+  LegacyItemSchema,
+  type MyCard,
+  MyCardSchema,
+  type MyCards,
+  MyCardsSchema,
+  type PersonCards,
+  PersonCardsSchema,
+  type SetWishlistRequest,
+  SetWishlistRequestSchema,
+} from "./cards.js";
 export {
   type ChannelLevelInfo,
   ChannelLevelInfoSchema,
@@ -284,10 +303,6 @@ export {
   DirectivesViewSchema,
 } from "./directives.js";
 export {
-  type CommissionKind,
-  CommissionKindSchema,
-  type CommissionView,
-  CommissionViewSchema,
   type EconomyHealth,
   EconomyHealthSchema,
   type HealthDay,
@@ -296,8 +311,6 @@ export {
   PredictionViewSchema,
   type QuestsView,
   QuestsViewSchema,
-  type ReachedGoal,
-  ReachedGoalSchema,
   type RoomItem,
   RoomItemSchema,
 } from "./economy.js";
@@ -320,8 +333,6 @@ export {
   LogEventSchema,
 } from "./facts.js";
 export {
-  type FortuneDraw,
-  FortuneDrawSchema,
   type FortuneField,
   FortuneFieldSchema,
   type FortuneToday,
@@ -426,8 +437,8 @@ export {
 export {
   type CardField,
   CardFieldSchema,
-  type CardPoseChoice,
-  CardPoseChoiceSchema,
+  type CardPart,
+  CardPartSchema,
   type CardPrices,
   CardPricesSchema,
   EmptyRequestSchema,
@@ -782,14 +793,12 @@ export {
   BoardChoiceSchema,
   type BoardRequest,
   BoardRequestSchema,
+  type CheckinRequest,
+  CheckinRequestSchema,
   type CheckinResult,
   CheckinResultSchema,
-  type DealView,
-  DealViewSchema,
   type EarnLine,
   EarnLineSchema,
-  type ExpressionRequest,
-  ExpressionRequestSchema,
   type FeedItem,
   FeedItemSchema,
   type FeedRequest,
@@ -800,14 +809,10 @@ export {
   FrameRequestSchema,
   type FramesResult,
   FramesResultSchema,
-  type GiftExpression,
-  GiftExpressionSchema,
   type Hunger,
   HungerSchema,
   type LedgerLine,
   LedgerLineSchema,
-  type LetterRequest,
-  LetterRequestSchema,
   type ScreenRequest,
   ScreenRequestSchema,
   type ShopItem,
@@ -880,6 +885,8 @@ export const contract = {
   skills,
   public: publicView,
   member,
+  cards,
+  cardsAdmin,
   wallet,
   agency,
   fortune,

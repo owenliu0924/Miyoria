@@ -588,6 +588,13 @@ export {
   SELF_INITIATED_SOURCES,
 } from "./arbiter.js";
 export {
+  CARD_REASONS,
+  type CardCharge,
+  type CardPayer,
+  type CardWallet,
+  CardWalletKey,
+} from "./cards.js";
+export {
   DIRECTIVE_AUTHORITIES,
   DIRECTIVE_EFFECTS,
   type Directive,
@@ -651,10 +658,13 @@ export {
 } from "./impulse.js";
 export {
   type KeepsakeCard,
+  type KeepsakeCardBook,
+  type KeepsakeCardImage,
   type KeepsakeCardOrder,
   type KeepsakeCards,
   type KeepsakeField,
   type KeepsakeFortune,
+  type KeepsakeOdds,
   type KeepsakeResult,
   type Keepsakes,
   KeepsakesKey,

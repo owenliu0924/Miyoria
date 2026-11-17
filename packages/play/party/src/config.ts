@@ -2,8 +2,8 @@ import { z } from "zod";
 
 /**
  * Permission nodes of the party tools for the person she plays with (`user` principals). Everyday
- * users have `chat.talk`, so anyone she talks with can play; a role without it cannot get her to
- * start or run a game.
+ * users have `chat.talk`, so anyone she talks with can ask her to start a game (`start`) and play
+ * it; a role without it cannot get her to start or run one.
  */
 export const PartyPermissionsSchema = z.object({
   start: z.string().default("chat.talk"),
@@ -25,33 +25,22 @@ export const PartyRewardsConfigSchema = z.object({
 });
 
 /**
- * `[modules.party]`: party games in voice (docs/design/v4-plan.md §9.1). Nothing starts on its
- * own: a game only begins when she calls `party_start`, so the module is on by default.
+ * `[modules.party]`: party games (docs/design/v4-plan.md §9.1, v5-play.md §5): song guessing in
+ * voice, turtle soup in voice or in a text channel. Nothing starts on its own: a game only begins
+ * when she calls `party_start`, so the module is on by default.
  *
  * ```toml
  * [modules.party]
- * quiz_rounds = 10
+ * song_rounds = 8
  * ```
  */
 export const PartyConfigSchema = z.object({
-  /** Questions in a quiz unless she asks for another number. */
-  quiz_rounds: z.number().int().min(1).max(50).default(10),
-  /** Seconds to answer a quiz question before the answer is given. */
-  quiz_answer_secs: z.number().int().min(5).default(40),
   /** Songs in a song-guessing game unless she asks for another number. */
   song_rounds: z.number().int().min(1).max(30).default(8),
   /** Seconds to guess a song after its clip started. */
   song_answer_secs: z.number().int().min(5).default(60),
   /** How long the clip of a song is. */
   clip_secs: z.number().int().min(3).max(60).default(15),
-  /** Word chains: nobody continues for this long and the chain is broken. */
-  chain_idle_secs: z.number().int().min(5).default(45),
-  /** Story chain: seconds for the person whose turn it is before the next one goes. */
-  story_turn_secs: z.number().int().min(5).default(60),
-  /** Story chain: lines until the story is done. */
-  story_max_lines: z.number().int().min(2).max(60).default(12),
-  /** Longest line of a story kept (characters). */
-  story_line_chars: z.number().int().min(10).max(400).default(80),
   /** Turtle soup: minutes before the bottom is given. */
   soup_mins: z.number().min(1).default(15),
   /** The model chain that judges turtle-soup questions (`[llm.purposes]`; unset: the chat chain). */

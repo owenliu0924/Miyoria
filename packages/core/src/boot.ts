@@ -10,11 +10,9 @@ import { clusterTables } from "@miyoria/cluster";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
-  DealStoreKey,
   EconomyDocsKey,
   economyTables,
   FortuneStoreKey,
-  GoalStoreKey,
   LedgerStatsKey,
 } from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
@@ -23,6 +21,7 @@ import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import { memoryTables } from "@miyoria/memory/memory";
 import { notesTables } from "@miyoria/memory/notes";
 import { transcriptTables } from "@miyoria/memory/transcript";
+import { cardsTables } from "@miyoria/play/cards";
 import {
   type Config,
   ConfigError,
@@ -95,6 +94,7 @@ const DIRECTIVE_MODULE = DirectiveModule.ID;
  */
 export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   authTables,
+  cardsTables,
   clusterTables,
   directiveTables,
   economyTables,
@@ -254,10 +254,8 @@ export async function buildCoreWith(
   const economy = store.plugin(economyTables);
   services.provide(k, CoinLedgerStoreKey, economy.ledger);
   services.provide(k, LedgerStatsKey, economy.ledger);
-  services.provide(k, DealStoreKey, economy.deals);
   services.provide(k, EconomyDocsKey, economy.docs);
   services.provide(k, FortuneStoreKey, economy.fortunes);
-  services.provide(k, GoalStoreKey, economy.goals);
   services.provide(k, BountyStoreKey, economy.bounties);
   services.provide(k, PeopleStoreKey, store.people);
   // The memory plugin's tables (`@miyoria/memory/memory` `tables.ts`).

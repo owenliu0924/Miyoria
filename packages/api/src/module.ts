@@ -25,6 +25,7 @@ import { isIPv4, isIPv6 } from "node:net";
 import { createAdaptorServer, type ServerType } from "@hono/node-server";
 import { BondRingImagesKey } from "@miyoria/heart/person";
 import { tokenize } from "@miyoria/memory/memory";
+import { CardFacesKey } from "@miyoria/play/cards";
 import {
   defineManifest,
   errorMessage,
@@ -35,6 +36,7 @@ import {
 import { SettingsStoreKey } from "@miyoria/store";
 import { ActivityManagerKey, Events, KeepsakesKey } from "@miyoria/types";
 import { z } from "zod";
+import { CardFaceService } from "./card-faces.js";
 import { KeepsakeService } from "./keepsakes.js";
 import { MONITOR_TOPICS, Monitor } from "./monitor.js";
 import { DiscordOAuthConfigSchema, OAuth, recheckMs, sessionTtlMs } from "./oauth.js";
@@ -250,6 +252,8 @@ export class ApiModule implements Module {
     );
     // The same cards and slips the member page gives, for a command in chat.
     ctx.provide(KeepsakesKey, new KeepsakeService(state));
+    // Her words on a milestone card, which the cards module issues with no page open.
+    ctx.provide(CardFacesKey, new CardFaceService(state));
     // The bond ring's picture for `/me profile` and `/admin person show`.
     ctx.provide(BondRingImagesKey, new RingImages());
     const app = createApp(state, { metricsPublic: config.metrics_public });

@@ -27,10 +27,6 @@ const RequestArgs = z.object({
   by: z.string().trim().min(1).max(64).nullish(),
   /** She prepares it for herself (練歌): no one is waiting, so it is not sung on its own. */
   practice: z.boolean().nullish(),
-  /** Commands only: use a ticket when the person is at the limit. */
-  ticket: z.boolean().nullish(),
-  /** Commands only: a paid dedication (up to 40 characters). */
-  dedication: z.string().trim().max(200).nullish(),
 });
 // Song numbers start at 1; a model that fills the optional field with 0 means "the first ready".
 const PlayArgs = z.object({
@@ -112,10 +108,6 @@ export function singCapabilities(singer: Singer, perms: SingPermissions): Capabi
           context: p.context,
           forced: !practice && forced(p),
           practice,
-          // Money moves only on the person's own command, never on her tool call.
-          ...(p.kind === "command"
-            ? { ticket: args.ticket === true, dedication: args.dedication ?? null }
-            : {}),
         },
         ctx.signal,
       );

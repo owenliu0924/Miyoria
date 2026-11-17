@@ -32,21 +32,12 @@ export {
   type SingWorkerFactory,
   workerUrls,
 } from "./module.js";
-export {
-  dedicationProblem,
-  MAX_DEDICATION_CHARS,
-  type SongCharge,
-  type SongPaidItem,
-  type SongPayments,
-  SongPaymentsKey,
-} from "./payments.js";
 export { paced, singSong, sleep, songBeats, songVideoPath } from "./player.js";
 export { PROMPT_KEY, SingPrompt } from "./prompt.js";
 export {
   BACKING_LABELS,
   BACKING_MODES,
   type BackingMode,
-  dedicationNote,
   type NewSong,
   SetList,
   SetListError,

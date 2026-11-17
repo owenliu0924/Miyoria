@@ -175,13 +175,6 @@
         "text"
       ]
     },
-    "OverlayScreenKind": {
-      "type": "string",
-      "enum": [
-        "message",
-        "dedication"
-      ]
-    },
     "OverlayScreenMessage": {
       "type": "object",
       "properties": {
@@ -189,28 +182,17 @@
           "type": "string",
           "const": "screen"
         },
-        "kind": {
-          "$ref": "#/$defs/OverlayScreenKind"
-        },
         "name": {
           "type": "string"
         },
         "text": {
           "type": "string"
-        },
-        "song": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
         "type",
-        "kind",
         "name",
-        "text",
-        "song"
+        "text"
       ]
     },
     "OverlaySpeakingMessage": {

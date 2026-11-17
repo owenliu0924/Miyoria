@@ -5,7 +5,9 @@
 //
 // She is given what the member page already shows them (bands, her line for them, memories they
 // may read) and her mood, never her private feeling: it names other people and may hold a secret,
-// and a card's code lets anyone read it.
+// and a card's code lets anyone read it. A milestone card (docs/design/v5-play.md §6.1) adds the
+// tier and the shared memory she anchored it with, which the design puts on the card; what she
+// writes of it passes the same checks.
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
 import type { CardField, MemberCard } from "@miyoria/contracts/api";
@@ -16,6 +18,7 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm/llm";
+import type { CardOccasion } from "@miyoria/play/cards";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { AffectStateKey, characterCore } from "@miyoria/types";
 import { z } from "zod";
@@ -62,6 +65,17 @@ export interface CardContext {
   memories: readonly string[];
   /** Pictures of her the card may use (their affinity band's). */
   poses: readonly string[];
+  /** What the card is for when it is not a daily one (`occasionLine`); default a daily card. */
+  occasion?: string | null;
+}
+
+/** What she is told a card nobody bought is for, as a line of `about`. */
+export function occasionLine(occasion: CardOccasion): string {
+  const scene =
+    occasion.scene === null
+      ? "line 寫你們之間的一個場面(從你記得的事裡挑一件),像替這一刻留下的一句旁白。"
+      : `line 寫你們之間的這個場面:「${occasion.scene}」,用你自己的話,像替這一刻留下的一句旁白。`;
+  return `這不是平常的每日卡,是里程碑卡:你們的關係剛到了「${occasion.tier}」,這張是你送他的。${scene}`;
 }
 
 export const POSE_WORDS: Readonly<Record<string, string>> = {
@@ -79,10 +93,12 @@ export const POSE_WORDS: Readonly<Record<string, string>> = {
 
 function rules(poses: readonly string[]): string {
   const choices = poses.map((p) => `${p}(${POSE_WORDS[p] ?? p})`).join("、");
+  // On a daily card the relationship picks her expression: she does not choose a picture.
+  const pose = poses.length > 0 ? `\n- pose:卡上放你哪張圖,從這幾個挑:${choices}。` : "";
+  const shape = poses.length > 0 ? `"pose": 字串, ` : "";
   return `你要發一張卡給下面這個人,卡上的字你自己寫,他本人會看到,拿到卡的人掃碼也看得到。
-只回傳 JSON:{"line": 字串, "pose": 字串, "stamp": 字串或 null, "fields": [{"label": 字串, "text": 字串}]}
-- line:這一刻想對他說的一句話,${MAX_LINE} 字內,用你平常說話的語氣,每次發卡都可以不一樣。
-- pose:卡上放你哪張圖,從這幾個挑:${choices}。
+只回傳 JSON:{"line": 字串, ${shape}"stamp": 字串或 null, "fields": [{"label": 字串, "text": 字串}]}
+- line:這一刻想對他說的一句話,${MAX_LINE} 字內,用你平常說話的語氣,每次發卡都可以不一樣。${pose}
 - stamp:蓋在卡上的章,${MAX_STAMP} 字內(例如「認證損友」),不想蓋就 null。
 - fields:你想在卡上多寫的東西,0 到 ${MAX_FIELDS} 個,欄位名稱(${MAX_LABEL} 字內)和內容(${MAX_FIELD} 字內)都你決定,例如給他的稱號、你們的回憶、對他的期待;沒什麼想寫就空陣列。
 - 只寫你和他,不提任何其他人(不寫別人的名字,也不寫「另一個人」「某人」);不寫數字分數、不寫你心裡的盤算或秘密。`;
@@ -100,6 +116,7 @@ function about(c: CardContext, mood: string | null): string {
     lines.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${m}`).join("\n")}`);
   }
   if (mood) lines.push(`你現在的心情:${mood}`);
+  if (c.occasion) lines.push(c.occasion);
   return lines.join("\n");
 }
 

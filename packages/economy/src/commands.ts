@@ -23,9 +23,9 @@ import {
   notice,
 } from "@miyoria/commands";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
-import { newId } from "@miyoria/types";
+import { type KeepsakeFortune, KeepsakesKey, newId } from "@miyoria/types";
 import { registerV2, unregisterV2 } from "./commands-v2.js";
-import { MAX_LETTER_CHARS, STRANGER, WALLET_NODE } from "./economy.js";
+import { STRANGER, WALLET_NODE } from "./economy.js";
 import { mutedText, unlockLines } from "./notices.js";
 import { NO_RECEIVER } from "./transfer.js";
 import {
@@ -34,7 +34,6 @@ import {
   EconomyKey,
   FEED_ITEMS,
   type FeedItem,
-  type GoalView,
   type Hunger,
   type WalletView,
 } from "./types.js";
@@ -48,9 +47,6 @@ export const PATHS = [
   "me give",
   "me board",
   "me screen",
-  "me letter",
-  "me goals",
-  "me pledge",
   "me bounties",
 ] as const;
 
@@ -58,11 +54,7 @@ const R = {
   checkin: "me:wallet:checkin",
   feed: "me:wallet:feed",
   board: "me:board:set",
-  pledge: "me:goal:pledge",
 } as const;
-
-/** Quick pledge buttons on the goals card; the exact amount is `/me pledge`. */
-const PLEDGE_BUTTONS = [10, 50] as const;
 
 /** Bounties `/me bounties` lists. */
 const BOUNTY_PLACES = 10;
@@ -84,6 +76,19 @@ const HUNGER_WORD: Readonly<Record<Hunger, string>> = {
 };
 
 const UNAVAILABLE = "錢包現在打不開";
+const NO_SLIP = "今天的籤詩現在抽不了。";
+
+/** A fortune slip as it is shown: rank and title, the poem, her fields and line. */
+function slipText(slip: KeepsakeFortune): CardBlock[] {
+  const lines = [`**${slip.rank}　${slip.title}**`, slip.poem.join("\n")];
+  if (slip.fields.length > 0)
+    lines.push(slip.fields.map((f) => `${f.label}：${f.text}`).join("\n"));
+  if (slip.line) lines.push(slip.line);
+  return [
+    { type: "text", text: lines.join("\n\n") },
+    { type: "muted", text: slip.date },
+  ];
+}
 
 /** Buttons of the wallet card: label of `me feed <item>` (dessert is web only). */
 const FEED_BUTTONS: readonly { item: FeedItem; label: string }[] = [
@@ -176,15 +181,64 @@ class Handler {
     });
   }
 
-  checkin(inv: Invocation): Promise<CommandReply> {
+  /**
+   * `/me checkin`; with `fortune` also today's fortune slip, paid. A day that was checked in
+   * already still buys the slip alone, with no second reward. The slip is asked after the
+   * check-in went through, and a refusal of it is a line under the check-in, never an error. What
+   * she wrote is private: the reply only says a slip was drawn, the slip itself goes to the buyer
+   * as an ephemeral follow-up.
+   */
+  checkin(inv: Invocation, fortune = false): Promise<CommandReply> {
     return this.#guard(async (economy) => {
-      const r = await economy.checkin(inv.invoker);
       const view = await economy.wallet(inv.invoker);
-      return result(
-        `簽到了，+${r.gained} ${view.currency}。連續 ${r.streak} 天，現在有 ${r.balance} ${view.currency}。`,
-        mutedText(unlockLines(r.unlocked)),
-      );
+      const slipOnly = fortune && view.checked_in_today;
+      const r = slipOnly ? null : await economy.checkin(inv.invoker);
+      const head = r
+        ? `簽到了，+${r.gained} ${view.currency}。連續 ${r.streak} 天，現在有 ${r.balance} ${view.currency}。`
+        : "今天已經簽到過了，這次只買籤詩，沒有再領魚幣。";
+      const unlocked = mutedText(unlockLines(r?.unlocked));
+      if (!fortune) return result(head, unlocked);
+      const blocks: CardBlock[] = [{ type: "text", text: head }];
+      const slip = await this.#slip(inv, view.currency);
+      for (const line of slip.public) blocks.push({ type: "muted", text: line });
+      if (unlocked) blocks.push({ type: "muted", text: unlocked });
+      return cardReply(blocks, { accent: "neutral" });
     });
+  }
+
+  /**
+   * Buys today's slip. Its text goes to the buyer alone (an ephemeral follow-up); `public` is
+   * what the shared reply may say: that one was drawn and what it cost, or why there is none.
+   */
+  async #slip(inv: Invocation, currency: string): Promise<{ public: string[] }> {
+    const keepsakes = this.services.get(KeepsakesKey);
+    if (!keepsakes) return { public: [NO_SLIP] };
+    try {
+      const drawn = await keepsakes.drawFortune(
+        { account: inv.invoker, name: inv.invoker_display_name, avatar_url: null },
+        `discord:${newId()}`,
+      );
+      if (!drawn.ok) return { public: [drawn.message] };
+      const left = drawn.balance === null ? "" : `，剩 ${drawn.balance}`;
+      const paid = drawn.charged > 0 ? `籤詩花了 ${drawn.charged} ${currency}${left}。` : "";
+      if (!inv.canFollowUp()) return { public: [`${paid}籤詩到會員頁看。`] };
+      try {
+        await inv.followUp(
+          cardReply(slipText(drawn.value), {
+            accent: "neutral",
+            title: "今日籤詩",
+            ephemeral: true,
+          }),
+        );
+      } catch (error) {
+        log.warn({ error: errorMessage(error) }, "cannot send a slip privately");
+        return { public: [`${paid}籤詩到會員頁看。`] };
+      }
+      return { public: [`${paid}今天的籤詩抽好了，只有你看得到。`] };
+    } catch (error) {
+      log.warn({ error: errorMessage(error) }, "a check-in's fortune failed");
+      return { public: [NO_SLIP] };
+    }
   }
 
   feed(inv: Invocation, item: FeedItem): Promise<CommandReply> {
@@ -210,7 +264,9 @@ class Handler {
       if (to.platform !== inv.invoker.platform) return notice("info", NO_RECEIVER);
       const r = await economy.transfer(inv.invoker, to, amount, `discord:${newId()}`);
       const view = await economy.wallet(inv.invoker);
-      return result(`轉了 ${r.sent} ${view.currency}給 ${r.to}，剩 ${r.balance}。`);
+      return result(
+        `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。`,
+      );
     });
   }
 
@@ -265,65 +321,6 @@ class Handler {
     });
   }
 
-  /** `/me letter`: a short letter to her (paid; the answer is only for the sender). */
-  letter(inv: Invocation): Promise<CommandReply> {
-    return this.#guard(async (economy) => {
-      const text = inv.str("text")?.trim() ?? "";
-      if (text === "") return notice("warn", "要寫什麼?");
-      const r = await economy.letter(inv.invoker, text, `discord:${newId()}`);
-      if (!r.accepted) return result(r.message);
-      const view = await economy.wallet(inv.invoker);
-      return result(`${r.message}，花了 ${r.charged} ${view.currency}，剩 ${r.balance}。`);
-    });
-  }
-
-  /** `/me goals`: her open goal (and the last one that ended), with quick pledge buttons. */
-  goals(inv: Invocation): Promise<CommandReply> {
-    return this.#guard(async (economy) => {
-      const [goals, view] = await Promise.all([
-        economy.goals(inv.invoker),
-        economy.wallet(inv.invoker),
-      ]);
-      const open = goals.find((g) => g.status === "open");
-      const ended = goals.find((g) => g.status !== "open");
-      const blocks: CardBlock[] = [];
-      if (open) {
-        blocks.push({ type: "text", text: goalText(open, view.currency) });
-        if (view.can_earn) {
-          blocks.push({
-            type: "buttons",
-            buttons: PLEDGE_BUTTONS.map(
-              (n): CardButton => ({
-                id: componentId(R.pledge, open.id, String(n)),
-                label: `投 ${n}`,
-              }),
-            ),
-          });
-        }
-      } else {
-        blocks.push({ type: "text", text: "她現在沒有開著的目標" });
-      }
-      if (ended) blocks.push({ type: "muted", text: `上一個：${goalEnded(ended)}` });
-      return cardReply(blocks, { accent: "neutral", title: "她的目標" });
-    });
-  }
-
-  /** `/me pledge`: coins to the open goal (the answer is only for the sender). */
-  pledge(inv: Invocation, amount: number | null, goalId: string | null): Promise<CommandReply> {
-    return this.#guard(async (economy) => {
-      if (amount === null) return notice("warn", "要投多少?");
-      const id =
-        goalId ?? (await economy.goals(inv.invoker)).find((g) => g.status === "open")?.id ?? null;
-      if (id === null) return notice("info", "她現在沒有開著的目標");
-      const r = await economy.pledge(inv.invoker, id, amount, `discord:${newId()}`, inv.context);
-      const view = await economy.wallet(inv.invoker);
-      const tail = r.reached ? "目標到了。" : "";
-      return result(
-        `投了 ${r.pledged} ${view.currency}，現在 ${r.raised} / ${r.target}，剩 ${r.balance}。${tail}`,
-      );
-    });
-  }
-
   /** `/me bounties`: what she has posted. */
   bounties(): Promise<CommandReply> {
     return this.#guard(async (economy) => {
@@ -339,28 +336,6 @@ class Handler {
       );
     });
   }
-}
-
-/** One goal as lines: title, promise, progress, deadline, what this person put in. */
-export function goalText(g: GoalView, currency: string): string {
-  const lines = [
-    `**${g.title}**`,
-    `她答應：${g.promise}`,
-    `${g.raised} / ${g.target} ${currency}　到 ${when(g.deadline)}`,
-  ];
-  if (g.my_pledge > 0) lines.push(`你投了 ${g.my_pledge}`);
-  return lines.join("\n");
-}
-
-function goalEnded(g: GoalView): string {
-  const word = {
-    reached: "達成了",
-    expired: "沒湊滿，已退回",
-    cancelled: "取消了，已退回",
-    open: "",
-  }[g.status];
-  const kept = g.status === "reached" ? (g.fulfilled ? "，她做到了" : "，她還沒做到") : "";
-  return `${g.title}　${word}${kept}`;
 }
 
 function unregister(registry: CommandRegistry): void {
@@ -387,18 +362,6 @@ function register(registry: CommandRegistry, handler: Handler): void {
       handle: async (inv, on) => ComponentResult.reply(await handler.board(inv, on)),
     }),
   ];
-  const goalRoutes: AnyComponentRoute[] = [
-    defineRoute<{ goal: string; amount: number }>({
-      route: R.pledge,
-      ephemeral: true,
-      parse: (p) => {
-        const amount = Number(p[1]);
-        return p[0] && PLEDGE_BUTTONS.some((n) => n === amount) ? { goal: p[0], amount } : null;
-      },
-      handle: async (inv, { goal, amount }) =>
-        ComponentResult.reply(await handler.pledge(inv, amount, goal)),
-    }),
-  ];
   registry.register(
     commandSpec("me wallet", "你的魚幣：餘額、今天還能賺多少，可以簽到和餵她", {
       permission: WALLET_NODE,
@@ -407,8 +370,20 @@ function register(registry: CommandRegistry, handler: Handler): void {
     { components: routes },
   );
   registry.register(
-    commandSpec("me checkin", "每日簽到，領魚幣", { permission: WALLET_NODE }),
-    (inv) => handler.checkin(inv),
+    commandSpec("me checkin", "每日簽到，領魚幣（可以加買今天的籤詩）", {
+      args: [
+        argSpec(
+          "fortune",
+          "順便抽今天的籤詩（要花魚幣；已經簽到過也能只買籤詩）",
+          ArgKind.boolean,
+          {
+            required: false,
+          },
+        ),
+      ],
+      permission: WALLET_NODE,
+    }),
+    (inv) => handler.checkin(inv, inv.bool("fortune") === true),
   );
   registry.register(
     commandSpec("me feed", "用魚幣餵她一碗飯", {
@@ -423,10 +398,10 @@ function register(registry: CommandRegistry, handler: Handler): void {
     },
   );
   registry.register(
-    commandSpec("me give", "把魚幣轉給她認識的另一個人", {
+    commandSpec("me give", "把魚幣轉給她認識的另一個人（另收手續費，會燒掉）", {
       args: [
         argSpec("user", "要轉給誰", ArgKind.user),
-        argSpec("amount", "多少魚幣", ArgKind.integer),
+        argSpec("amount", "對方收到多少魚幣（手續費你另付）", ArgKind.integer),
       ],
       permission: WALLET_NODE,
       ephemeral: true,
@@ -454,29 +429,6 @@ function register(registry: CommandRegistry, handler: Handler): void {
       permission: WALLET_NODE,
     }),
     (inv) => handler.screen(inv),
-  );
-  registry.register(
-    commandSpec("me letter", `花魚幣寫一封信給她（${MAX_LETTER_CHARS} 字內，她有空會看）`, {
-      args: [argSpec("text", "信的內容", ArgKind.string)],
-      permission: WALLET_NODE,
-      ephemeral: true,
-    }),
-    (inv) => handler.letter(inv),
-  );
-  registry.register(
-    commandSpec("me goals", "她現在的目標：要做什麼、湊到哪、你投了多少", {
-      permission: WALLET_NODE,
-    }),
-    (inv) => handler.goals(inv),
-    { components: goalRoutes },
-  );
-  registry.register(
-    commandSpec("me pledge", "把魚幣投給她現在的目標", {
-      args: [argSpec("amount", "多少魚幣", ArgKind.integer)],
-      permission: WALLET_NODE,
-      ephemeral: true,
-    }),
-    (inv) => handler.pledge(inv, inv.int("amount"), null),
   );
   registry.register(commandSpec("me bounties", "她貼著的懸賞", { permission: WALLET_NODE }), () =>
     handler.bounties(),

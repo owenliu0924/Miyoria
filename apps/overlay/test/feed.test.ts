@@ -32,22 +32,15 @@ describe("gift line", () => {
 });
 
 describe("screen cards", () => {
-  const card = (text: string): Action => ({ type: "screen", kind: "message", name: "Owen", text, song: null });
+  const card = (text: string): Action => ({ type: "screen", name: "Owen", text });
 
-  it("parses messages and dedications, and drops what is not a card", () => {
-    expect(parseMessage('{"type":"screen","kind":"message","name":" Owen ","text":"加油","song":null}')).toEqual({
-      type: "screen", kind: "message", name: "Owen", text: "加油", song: null,
+  it("parses messages, and drops what is not a card", () => {
+    expect(parseMessage('{"type":"screen","name":" Owen ","text":"加油"}')).toEqual({
+      type: "screen", name: "Owen", text: "加油",
     });
-    expect(parseMessage('{"type":"screen","kind":"dedication","name":"A","text":"給 B","song":"春日影"}')).toMatchObject({
-      kind: "dedication", song: "春日影",
-    });
-    // A dedication without a song is a message; a message has no song.
-    expect(parseMessage('{"type":"screen","kind":"dedication","name":"A","text":"x","song":""}')).toMatchObject({ kind: "message", song: null });
-    expect(parseMessage('{"type":"screen","kind":"message","name":"A","text":"x","song":"s"}')).toMatchObject({ song: null });
     for (const bad of [
-      '{"type":"screen","kind":"other","name":"A","text":"x"}',
-      '{"type":"screen","kind":"message","name":"","text":"x"}',
-      '{"type":"screen","kind":"message","name":"A","text":" "}',
+      '{"type":"screen","name":"","text":"x"}',
+      '{"type":"screen","name":"A","text":" "}',
     ]) {
       expect(parseMessage(bad), bad).toBeNull();
     }

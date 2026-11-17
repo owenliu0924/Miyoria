@@ -44,10 +44,9 @@ export const GIFT_LABEL_MAX = 24;
 /** Most gifts of one kind a message counts. */
 export const GIFT_COUNT_MAX = 99;
 
-/** Longest payer name / message / song title a screen card takes (code units). */
+/** Longest payer name / message a screen card takes (code units). */
 export const SCREEN_NAME_MAX = 32;
 export const SCREEN_TEXT_MAX = 200;
-export const SCREEN_SONG_MAX = 128;
 
 /** Longest highlight reason (code units). */
 export const CLIP_REASON_MAX = 120;
@@ -100,12 +99,6 @@ export const StageLinkSpeakingStateSchema = z
   .enum(["started", "stopped"])
   .meta({ id: "StageLinkSpeakingState" });
 export type SpeakingState = z.output<typeof StageLinkSpeakingStateSchema>;
-
-/** A paid message or a song dedication. */
-export const StageLinkScreenKindSchema = z
-  .enum(["message", "dedication"])
-  .meta({ id: "StageLinkScreenKind" });
-export type ScreenKind = z.output<typeof StageLinkScreenKindSchema>;
 
 /** What a viewer's touch landed on. */
 export const StageLinkTouchPartSchema = z
@@ -287,16 +280,14 @@ export const StageLinkGiftMessageSchema = z
   .meta({ id: "StageLinkGiftMessage" });
 
 /**
- * A paid message or a song dedication (`economy.screen`). Unlike gifts they are not merged: the
- * overlay queues them and shows one at a time. `song` is the title for a dedication, else null.
+ * A paid message (`economy.screen`). Unlike gifts they are not merged: the overlay queues them
+ * and shows one at a time.
  */
 export const StageLinkScreenMessageSchema = z
   .object({
     type: z.literal("screen"),
-    kind: StageLinkScreenKindSchema,
     name: z.string().max(SCREEN_NAME_MAX),
     text: z.string().max(SCREEN_TEXT_MAX),
-    song: z.string().max(SCREEN_SONG_MAX).nullable(),
   })
   .meta({ id: "StageLinkScreenMessage" });
 

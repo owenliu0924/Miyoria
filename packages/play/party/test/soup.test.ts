@@ -20,7 +20,7 @@ afterEach(() => {
 
 describe("turtle soup", () => {
   it("needs a referee", () => {
-    const { table } = rig();
+    const { table } = rig({ judge: () => null });
     expect(() => table.start(VOICE, "soup")).toThrow(/沒有裁判/);
     expect(table.session(VOICE)).toBeNull();
   });
