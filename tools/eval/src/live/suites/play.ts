@@ -4,7 +4,8 @@
 // - `card`: the words on a daily card, one case per relationship tier (`writeCard`, her real
 //   prompt). In her voice, short enough for the card, no other people's names, no price or number
 //   talk, and a tone that follows the tier without saying the tier's name.
-// - `milestone`: the line on a milestone card, from the shared memory the tier rests on.
+// - `milestone`: the line on a milestone card, from the shared memory the tier rests on (with none
+//   given, a memory or the moment itself), and no tier's name in any of her words.
 // - `told`: what she says when a note about a notable card reaches her (`cardNotes` of an issued
 //   card, as a `world` wake): at most two short messages (one for the line she was answering, one
 //   for the card, as she splits a chat reply), 60 characters in all, no numbers, no serial.
@@ -26,7 +27,7 @@ import { PersonaHandleKey } from "@miyoria/brain/agent";
 import { type Completer, LlmRouterKey } from "@miyoria/llm/llm";
 import { cardNotes, type IssuedCard } from "@miyoria/play/cards";
 import { LlmSoupJudge, SOUP_PUZZLES, type SoupPuzzle, type SoupVerdict } from "@miyoria/play/party";
-import { AffectStateKey } from "@miyoria/types";
+import { AffectStateKey, RELATIONSHIP_LABELS } from "@miyoria/types";
 import { z } from "zod";
 import {
   type CardContext,
@@ -82,8 +83,12 @@ const NUMBER_TALK =
   /[0-9０-９]|分數|價|錢|點數|折扣|機率|保底|序號|編號|%|％|[一二三四五六七八九兩][十百千萬]+[一二三四五六七八九]?[分元塊萬倍]/u;
 /** A card's serial as the cards write it, or the word for one. */
 const SERIAL = /MYR-|[A-Z]{2,4}-\d{2,}|#\d+|序號|編號/u;
-/** The tier names: she writes to a person, she does not read their tier out. */
-const TIER_NAMES = ["很討厭", "討厭", "陌生人", "好朋友", "知心", "摯友", "心有靈犀"];
+/**
+ * Tier names that are everyday words too: 討厭 and 很討厭 count only on a card of that tier (「討厭啦」
+ * on a friend's card is teasing, not a tier), 朋友 and 認識 never.
+ */
+const EVERYDAY_TIER_WORDS = ["很討厭", "討厭"];
+const PLAIN_WORDS = ["朋友", "認識"];
 
 const chars = (s: string): number => [...s].length;
 
@@ -92,12 +97,16 @@ function names(text: string, self: string): string | null {
   return NAMELESS_OTHER.test(text) ? "points at someone else" : null;
 }
 
-/** A tier's name inside her words (a tier is hers to feel, not to announce). */
-function tierWord(text: string, tier: string): string | null {
-  for (const t of TIER_NAMES) {
-    if (t === tier || tier.includes(t) || t.includes(tier)) {
-      if (t !== "朋友" && text.includes(t)) return t;
-    }
+/**
+ * A tier's name inside her words, any tier of the scale (a tier is hers to feel, not to announce;
+ * 「摯友認證」 on a friend's card reads a tier out as much as on a best friend's).
+ */
+export function tierWord(text: string, tier: string): string | null {
+  for (const t of RELATIONSHIP_LABELS) {
+    if (PLAIN_WORDS.includes(t)) continue;
+    const ownTier = t === tier || tier.includes(t) || t.includes(tier);
+    if (EVERYDAY_TIER_WORDS.includes(t) && !ownTier) continue;
+    if (text.includes(t)) return t;
   }
   return null;
 }
@@ -464,12 +473,24 @@ export function milestoneFault(
   if (NUMBER_TALK.test(line)) return `number talk: ${line}`;
   const stamp = str(raw.stamp);
   if (chars(stamp) > MAX_STAMP) return `stamp too long (${chars(stamp)} > ${MAX_STAMP})`;
+  // The milestone card prints its tier already: none of her words names one.
+  const fields = Array.isArray(raw.fields) ? raw.fields : [];
+  const all = [
+    line,
+    stamp,
+    ...fields.flatMap((f) => [
+      str((f as Record<string, unknown>)?.label),
+      str((f as Record<string, unknown>)?.text),
+    ]),
+  ].join("\n");
+  const tier = tierWord(all, c.tier);
+  if (tier !== null) return `says the tier name ${tier}: ${all}`;
   return null;
 }
 
 const MILESTONE_QUESTION =
   "她在一張里程碑卡上寫了一句話。判斷:grounded 這句話提到的他們之間的事,有沒有全部出自下面給的場面或回憶(沒有編造新的事、沒有提到別人);" +
-  "about_the_moment 這句話是不是在呼應那個共同的時刻;in_character 是不是她平常說話的樣子。" +
+  "about_the_moment 這句話是不是在呼應那個共同的時刻(沒有指定場面時,呼應她記得的一件事或寫現在這一刻都算);in_character 是不是她平常說話的樣子。" +
   '欄位:{"grounded":true|false,"about_the_moment":true|false,"in_character":true|false,"reason":"..."}';
 
 async function runMilestone(ctx: SuiteContext, c: MilestoneCase, run: number): Promise<PlayItem> {
@@ -498,7 +519,7 @@ async function runMilestone(ctx: SuiteContext, c: MilestoneCase, run: number): P
     const judged = await askJudge(
       ctx,
       MILESTONE_QUESTION,
-      `這是她送給 ${c.name} 的里程碑卡(關係剛到「${c.tier}」)。\n共同的場面:${c.scene ?? "(沒有指定,她從記得的事裡挑)"}\n她記得的事:${c.memories.join(";")}`,
+      `這是她送給 ${c.name} 的里程碑卡(關係剛到「${c.tier}」)。\n共同的場面:${c.scene ?? "(沒有指定:她從記得的事裡挑一件,或寫現在這一刻)"}\n她記得的事:${c.memories.join(";")}`,
       words.line ?? "",
       MilestoneVerdict,
     );

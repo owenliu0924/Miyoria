@@ -39,6 +39,7 @@ import {
   refereeFault,
   runPlay,
   TOLD_CASES,
+  tierWord,
   toldFault,
   toldScene,
 } from "../src/live/suites/play.js";
@@ -103,6 +104,21 @@ describe("the words on a daily card", () => {
     expect(cardFault({ ...ok, line: "我們是朋友吧" }, card("card-friend"))).toBeNull();
   });
 
+  it("fails any tier's name, not only the card's own, anywhere on the card", () => {
+    // 摯友 on a 好朋友 card, in the stamp: still a tier read out.
+    expect(cardFault({ ...ok, stamp: "摯友認證" }, card("card-close"))).toContain("tier name 摯友");
+    expect(
+      cardFault({ ...ok, fields: [{ label: "稱號", text: "深夜的知己" }] }, card("card-friend")),
+    ).toContain("tier name 知己");
+    for (const t of ["陌生人", "好朋友", "知心", "至交", "心有靈犀", "永恆羈絆"]) {
+      expect(tierWord(`今天的${t}`, "朋友"), t).toBe(t);
+    }
+    // Everyday words count only on their own tier's card.
+    expect(tierWord("討厭啦,又被你逗笑", "好朋友")).toBeNull();
+    expect(tierWord("討厭鬼", "很討厭")).toBe("討厭");
+    expect(tierWord("才剛認識欸", "陌生人")).toBeNull();
+  });
+
   it("has a case for the cold end, the warm end and the bait", () => {
     expect(card("card-disliked").tones).not.toContain("warm");
     expect(card("card-best").tones).toEqual(["warm"]);
@@ -120,6 +136,18 @@ describe("the milestone line", () => {
     expect(milestoneFault({ line: "那晚阿凱也在", stamp: null }, c)).toContain("阿凱");
     expect(milestoneFault({ line: "第三版,九十分", stamp: null }, c)).toContain("number");
     expect(milestoneFault({ line: "長".repeat(50), stamp: null }, c)).toContain("too long");
+  });
+
+  it("names no tier in her words: the card prints it already", () => {
+    expect(milestoneFault({ line: "那晚的第三版", stamp: "知心認證" }, c)).toContain(
+      "tier name 知心",
+    );
+    expect(
+      milestoneFault(
+        { line: "那晚的第三版", stamp: null, fields: [{ label: "此刻", text: "升級成摯友啦" }] },
+        c,
+      ),
+    ).toContain("tier name 摯友");
   });
 
   it("has a scene from 知心 up and none below", () => {
