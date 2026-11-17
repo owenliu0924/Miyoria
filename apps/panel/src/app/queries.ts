@@ -87,6 +87,7 @@ export const queryKeys = {
   predictions: ["economy", "predictions"] as const,
   room: ["economy", "room"] as const,
   personQuests: (id: string) => ["people", "quests", id] as const,
+  personCards: (id: string) => ["people", "cards", id] as const,
   workspace: ["workspace"] as const,
   skills: ["skills"] as const,
   skill: (name: string) => ["skills", name] as const,
@@ -1099,6 +1100,12 @@ export function useRoom() {
 export function usePersonQuests(id: string) {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.personQuests(id), queryFn: ({ signal }) => api.rpc.people.quests({ params: { id } }, { signal }), retry: false });
+}
+
+/** One person's cards, dex, pity and wishlist (`GET /api/people/{id}/cards`). */
+export function usePersonCards(id: string) {
+  const api = useApi();
+  return useQuery({ queryKey: queryKeys.personCards(id), queryFn: ({ signal }) => api.rpc.cardsAdmin.person({ params: { id } }, { signal }), retry: false });
 }
 
 export function useWorkspace() {
