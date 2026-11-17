@@ -98,7 +98,8 @@ export const PART_LOOKS: Readonly<Record<string, PartLook>> = {
   },
 
   // ---- outfit: the usual one is the model's default; the short skirt is that skirt, framed to
-  // the knees so the card shows it (the model has two lengths, and the short one is its default) ----
+  // the knees so the card shows it (the model has two lengths, and the short one is its default).
+  // The short skirt is no longer drawn (migration 9); its row stays for the cards that have it ----
   "outfit.usual": { shown: "model" },
   "outfit.long_skirt": { shown: "model", framing: "knee", expressions: [EXP("裙子切换")] },
   "outfit.short_skirt": { shown: "model", framing: "knee" },

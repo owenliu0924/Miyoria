@@ -2,10 +2,10 @@
 //
 // Generated from the Drizzle tables in `schema.ts` with `pnpm --filter @miyoria/store schema:sql
 // cards` (drizzle-kit, plus `STRICT`; for a later migration, what the migrated database lacks),
-// migration 1 then the catalogue of `catalogue.ts` seeded by hand
-// (`CARDS_CATALOGUE_SQL`; a test keeps it equal to `SEED_PARTS`). Never edited after they are
-// released: the runner refuses a database whose recorded checksum differs. A later change of the
-// catalogue is a new migration, never an edit of this one. The store's drift test proves the
+// migration 1 then the catalogue of `catalogue.ts` seeded by hand (`CARDS_CATALOGUE_SQL`; a test
+// keeps the migrated catalogue equal to `SEED_PARTS`). Never edited after they are released: the
+// runner refuses a database whose recorded checksum differs. A later change of the catalogue is a
+// new migration (migration 9), never an edit of this one. The store's drift test proves the
 // migrated database and the Drizzle tables agree.
 
 import type { PluginSchema } from "@miyoria/store";
@@ -244,6 +244,15 @@ INSERT OR IGNORE INTO \`cards_milestone\` (\`person_id\`, \`tier_min\`, \`given_
 	WHERE \`kind\` = 'milestone' AND \`issue_key\` LIKE 'milestone:%' GROUP BY \`person_id\`, \`issue_key\`;
 `;
 
+/**
+ * Migration 9: 「短裙」 is taken out of the draw (owner decision 2026-11-17: it draws the same
+ * picture as 平常的衣服). A catalogue change, by hand (drizzle-kit does not write data): the part
+ * is disabled, so no card gives it, it cannot be wished for and its series no longer counts it;
+ * the cards and dex rows that have it keep it.
+ */
+const SHORT_SKIRT_OFF = `UPDATE \`cards_parts\` SET \`enabled\` = 0 WHERE \`id\` = 'outfit.short_skirt';
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -257,5 +266,6 @@ export const cardsSchema: PluginSchema = {
     { version: 6, name: "pending_foil", sql: PENDING_FOIL },
     { version: 7, name: "tally", sql: TALLY },
     { version: 8, name: "milestones", sql: MILESTONES },
+    { version: 9, name: "short_skirt_off", sql: SHORT_SKIRT_OFF },
   ],
 };

@@ -56,6 +56,10 @@ describe("the look table", () => {
   it("has a row for every part of the catalogue, and none for a part that is gone", () => {
     const ids = SEED_PARTS.map((p) => p.id);
     expect(Object.keys(PART_LOOKS).sort()).toEqual([...ids].sort());
+    // A disabled part keeps its row: the cards drawn before it was turned off still show it.
+    const off = SEED_PARTS.filter((p) => !p.enabled).map((p) => p.id);
+    expect(off).toEqual(["outfit.short_skirt"]);
+    for (const id of off) expect(PART_LOOKS[id], id).toBeDefined();
   });
 
   it("has a row for every expression, and none for one that is gone", () => {
