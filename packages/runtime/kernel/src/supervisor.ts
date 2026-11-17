@@ -242,6 +242,11 @@ export class Supervisor {
     return this.#slot(id).config;
   }
 
+  /** Whether the module was registered as required (it cannot be disabled). */
+  isRequired(id: ModuleId): boolean {
+    return this.#slots.get(id)?.required ?? false;
+  }
+
   /** The registered module itself (for its manifest, card and actions), `undefined` if none. */
   module(id: ModuleId): Module | undefined {
     return this.#slots.get(id)?.module;

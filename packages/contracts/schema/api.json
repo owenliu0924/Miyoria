@@ -8327,6 +8327,214 @@
         "cost_usd"
       ]
     },
+    "ApiModuleActionResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "ApiModuleCard": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "unit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label",
+              "value"
+            ]
+          }
+        },
+        "next": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "label",
+            "at"
+          ]
+        },
+        "last_error": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "message"
+          ]
+        },
+        "actions": {
+          "maxItems": 2,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "confirm": {
+                "type": "string"
+              },
+              "capability": {
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/WireJsonValue"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          }
+        }
+      },
+      "required": [
+        "facts"
+      ]
+    },
+    "ApiModuleCategory": {
+      "type": "string",
+      "enum": [
+        "her",
+        "platform",
+        "play",
+        "system"
+      ]
+    },
+    "ApiModuleDetail": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/ApiModuleStateKind"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recent_restarts": {
+          "type": "number"
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "category": {
+          "$ref": "#/$defs/ApiModuleCategory"
+        },
+        "settings": {
+          "type": "boolean"
+        },
+        "card": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiModuleCard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "optional": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "enabled",
+        "state",
+        "reason",
+        "recent_restarts",
+        "required",
+        "requires",
+        "optional",
+        "dependents"
+      ]
+    },
     "ApiModuleInfo": {
       "type": "object",
       "properties": {
@@ -8353,6 +8561,34 @@
         },
         "recent_restarts": {
           "type": "number"
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "category": {
+          "$ref": "#/$defs/ApiModuleCategory"
+        },
+        "settings": {
+          "type": "boolean"
+        },
+        "card": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiModuleCard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -8363,6 +8599,102 @@
         "state",
         "reason",
         "recent_restarts"
+      ]
+    },
+    "ApiModuleSettings": {
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSettingGroup"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSettingField"
+          }
+        },
+        "values": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ApiSettingValue"
+          }
+        },
+        "updated": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "number"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "by_label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "version",
+                "at",
+                "by",
+                "by_label"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guard": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pending": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "can_edit": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "module",
+        "name",
+        "revision",
+        "groups",
+        "fields",
+        "values",
+        "updated",
+        "guard",
+        "pending",
+        "can_edit",
+        "currency"
       ]
     },
     "ApiModuleStateKind": {
@@ -10015,6 +10347,110 @@
         "body"
       ]
     },
+    "ApiPlaceRoom": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "context": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "voice",
+            "thread"
+          ]
+        },
+        "space": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "position": {
+          "type": "number"
+        },
+        "usable": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "platform",
+        "id",
+        "context",
+        "name",
+        "kind",
+        "space",
+        "category",
+        "position",
+        "usable",
+        "reason"
+      ]
+    },
+    "ApiPlaceRooms": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "rooms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPlaceRoom"
+          }
+        }
+      },
+      "required": [
+        "ready",
+        "rooms"
+      ]
+    },
     "ApiPlaySongRequest": {
       "type": "object",
       "properties": {
@@ -11295,6 +11731,25 @@
         "platform_role"
       ]
     },
+    "ApiRevertSettingsRequest": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expected": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "version",
+        "expected"
+      ]
+    },
     "ApiReviewToolRequest": {
       "type": "object",
       "properties": {
@@ -11501,6 +11956,79 @@
       "required": [
         "sandbox",
         "tools"
+      ]
+    },
+    "ApiSaveSettingsRequest": {
+      "type": "object",
+      "properties": {
+        "expected": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "set": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/WireJsonValue"
+          }
+        },
+        "reset": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "expected"
+      ]
+    },
+    "ApiSaveSettingsResult": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "number"
+        },
+        "applied": {
+          "type": "string",
+          "enum": [
+            "restarted",
+            "deferred",
+            "stored",
+            "unchanged"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ApiModuleStateKind"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "applied",
+        "state",
+        "reason"
       ]
     },
     "ApiSavedPrompt": {
@@ -11990,6 +12518,413 @@
         "parts"
       ],
       "additionalProperties": false
+    },
+    "ApiSettingField": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiSettingKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "help": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "order": {
+          "type": "number"
+        },
+        "apply": {
+          "type": "string",
+          "enum": [
+            "module",
+            "core"
+          ]
+        },
+        "danger": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "cluster",
+            "space"
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "ms",
+                "s",
+                "min",
+                "h",
+                "day"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "room": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "text",
+                "voice",
+                "thread"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "multiple": {
+          "type": "boolean"
+        },
+        "ref": {
+          "type": "string",
+          "enum": [
+            "id",
+            "context"
+          ]
+        },
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "step": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "int": {
+          "type": "boolean"
+        },
+        "max_length": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pattern": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slider": {
+          "type": "boolean"
+        },
+        "long": {
+          "type": "boolean"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "keys",
+        "kind",
+        "label",
+        "help",
+        "group",
+        "order",
+        "apply",
+        "danger",
+        "secret",
+        "scope",
+        "unit",
+        "labels",
+        "room",
+        "multiple",
+        "ref",
+        "min",
+        "max",
+        "step",
+        "int",
+        "max_length",
+        "pattern",
+        "options",
+        "slider",
+        "long",
+        "default"
+      ]
+    },
+    "ApiSettingGroup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "ApiSettingKind": {
+      "type": "string",
+      "enum": [
+        "switch",
+        "number",
+        "text",
+        "select",
+        "multi",
+        "channel",
+        "role",
+        "person",
+        "time",
+        "weekday",
+        "duration",
+        "coins",
+        "ratio",
+        "rows"
+      ]
+    },
+    "ApiSettingProblem": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "message"
+      ]
+    },
+    "ApiSettingValue": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "default",
+            "file",
+            "panel"
+          ]
+        },
+        "file": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "file_set": {
+          "type": "boolean"
+        },
+        "set": {
+          "type": "boolean"
+        },
+        "env": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "invalid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "file",
+        "file_set",
+        "set",
+        "env",
+        "invalid"
+      ]
+    },
+    "ApiSettingsChange": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "by_label": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "before": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/WireJsonValue"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "after": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/WireJsonValue"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "label",
+              "before",
+              "after"
+            ]
+          }
+        }
+      },
+      "required": [
+        "version",
+        "at",
+        "by",
+        "by_label",
+        "note",
+        "changes"
+      ]
+    },
+    "ApiSettingsHistory": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSettingsChange"
+          }
+        },
+        "next_before": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_before"
+      ]
     },
     "ApiShopItem": {
       "type": "object",
