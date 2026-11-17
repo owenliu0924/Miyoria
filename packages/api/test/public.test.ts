@@ -436,7 +436,7 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
     forget: async (person: PersonId | null, account: AccountRef) => {
       forgotten.push({ person, account });
       // The store's "forget me" runs the heart plugin's hook in the same transaction.
-      if (person !== null) heart.forgetWords([person], "forget me", "memory");
+      if (person !== null) heart.forgetPerson([person], "forget me", "memory");
       return { deleted: 3, about: 2, derived: 1, unverified: 1 };
     },
   } as never);

@@ -110,7 +110,7 @@ describe("the migration on start", () => {
     expect(await store.settings.get(PROFILE, MIGRATED_KEY)).toMatchObject({ rows: 2 });
     // Run again, and again once everyone was forgotten: nothing moves back.
     expect(await migrateOnStart(deps)).toBeNull();
-    people.forgetWords(["amy", "owen"], "forget me", "memory");
+    people.forgetPerson(["amy", "owen"], "forget me", "memory");
     expect(await migrateOnStart(deps)).toBeNull();
     expect(people.get("amy")?.impression).toBe("");
   });
@@ -287,7 +287,7 @@ describe("the heart as the others see it", () => {
 });
 
 describe("forget me", () => {
-  it("keeps her numbers for them and takes out what she made of their words", async () => {
+  it("takes them for someone she has just met and takes out what she made of their words", async () => {
     const clock = new ManualClock();
     const store = await openStore(clock);
     const people = store.plugin(heartTables).people;
@@ -328,19 +328,18 @@ describe("forget me", () => {
       evidence: 1,
     });
     const after = people.get(amy) ?? fail();
-    // The numbers, the floor, the tiers of the anchors, the tags and the call name stay.
+    // What they built goes; the tags stay.
+    expect(before.bond).toBe(130);
     expect(after).toMatchObject({
-      bond: before.bond,
-      trust: before.trust,
-      warmth: before.warmth,
-      tier_floor: before.tier_floor,
+      bond: 0,
+      trust: 10,
+      familiarity: 0,
+      tier_floor: 0,
+      anchors: [],
       tags: ["regular"],
-      call_name: "阿咪",
-      interactions: before.interactions,
+      call_name: null,
+      interactions: 0,
     });
-    expect(after.anchors).toEqual([
-      { tier: 120, note_ref: null, quote: "", at: toTimestamp(T0), by: "reflect" },
-    ]);
     expect(after).toMatchObject({
       impression: "",
       stance: "",
@@ -351,8 +350,10 @@ describe("forget me", () => {
     });
     // The log keeps the numbers of the change and loses the words.
     const history = people.log.history(amy);
-    expect(history.map((h) => h.change.reason_quote)).toEqual(["", ""]);
+    expect(history.every((h) => h.change.reason_quote === "")).toBe(true);
     expect(history.at(-1)?.change).toMatchObject({ field: "bond", delta: 3, cause: "feel" });
+    // The reset is on the log as a change of its own.
+    expect(history[0]?.change).toMatchObject({ field: "bond", value_after: 0, cause: "admin" });
     expect(people.log.recentEvidence(amy)[0]?.evidence).toMatchObject({
       kind: "played_together",
       detail: "",
@@ -361,6 +362,42 @@ describe("forget me", () => {
     for (const words of ["台南", "她家附近", "養過貓", "很好聊"]) expect(all).not.toContain(words);
     // Today's caps still count the change that was made.
     expect(people.log.dayLedger(amy, T0).fields.bond.up).toBe(3);
+  });
+});
+
+describe("forget me, when she holds something against them", () => {
+  it("keeps a bond below zero, the grudge and the blocked tag", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const people = store.plugin(heartTables).people;
+    const bob = await store.people.upsertAccount({ platform: "discord", id: "2" }, "Bob");
+    people.adminSet(bob, "bond", -40);
+    people.adminSet(bob, "grudge", 0.6);
+    people.adminSet(bob, "trust", 3);
+    people.adminSet(bob, "warmth", -0.5);
+    people.adminSet(bob, "rapport", 0.4);
+    people.edit(bob, { tags: ["blocked"], impression: "一直洗頻" });
+    store.personData.forget(bob, { reason: "forget me", source: "memory" });
+    expect(people.get(bob)).toMatchObject({
+      bond: -40,
+      grudge: 0.6,
+      trust: 3,
+      warmth: -0.5,
+      rapport: 0,
+      tags: ["blocked"],
+      impression: "",
+    });
+  });
+
+  it("leaves the owner the owner's floors", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const people = store.plugin(heartTables).people;
+    const owner = await store.people.upsertAccount({ platform: "discord", id: "3" }, "Owner");
+    people.edit(owner, { tags: ["owner"] });
+    people.adminSet(owner, "bond", 400);
+    store.personData.forget(owner, { reason: "forget me", source: "memory" });
+    expect(people.get(owner)).toMatchObject({ bond: 30, trust: 100, tags: ["owner"] });
   });
 });
 

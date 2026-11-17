@@ -985,9 +985,9 @@ describe("forget", () => {
     expect(text).toContain("你告訴她或從你的話整理出來的 2 件");
     expect(text).toContain("不會刪除");
     expect(text).toContain("事件紀錄");
-    expect(text).toContain("用關鍵字忘記時，只刪符合的記憶，聊天紀錄和她對你的印象都不變");
-    // Her numbers stay; what she wrote of what they said does not (the heart's forget hook).
-    expect(text).toContain("羈絆、信任、熟悉這些數值");
+    expect(text).toContain("用關鍵字忘記時，只刪符合的記憶，聊天紀錄、羈絆和她對你的印象都不變");
+    // What she holds against them stays; what they built does not (the heart's forget hook).
+    expect(text).toContain("她對你的不滿");
     expect(text).not.toContain("羈絆與印象");
     expect(FORGET_REMOVES).toContain("對你的印象");
     expect(FORGET_REMOVES).toContain("引用的話");
