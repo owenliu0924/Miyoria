@@ -187,6 +187,25 @@
 - **她的聲音少一個檔**:`workers/voices/deepseek-chan/ref.txt`(參考音實際說的內容)不在,語音合成因此用只看音色的模式載入,`doctor` 會提醒。切換前就是這樣。
 - **npm 還沒發佈**(owner 2026-11-15:晚點)。
 
+### V5 階段 3 合併之後還沒做的收尾(2026-11-17)
+
+階段 3 在 2026-11-17 合併(PR #56),live 在同一天凌晨切到新的腦:記憶重建跑完(318 段、521 行、230 則情節,約 1.08 美元),本機 embedding(Harrier)在跑,`[modules.agent.initiative] home` 設好了。下面是還沒做的:
+
+- **owner 的實測還沒做完**:語音插話她會不會停、唱歌的報幕(歌等報幕講完)和唱完的回報、`@名字` 是不是真的 tag、`schedule` 到時間會不會來、審核過的工具晚到的結果。這些只有模擬事件的測試,沒有在真的 Discord 和語音上看過。
+- **記憶重建丟掉約三成的行**(寫入 521、丟掉 212),9 段因為模型回的格式不能用而放棄。還沒看是哪一類被丟(沒有出處、重複、超過長度),也沒看放棄的段落能不能重試。
+- **重建的花費預估差了六倍**(預估 0.17 美元,實際 1.08):`estimateRebuild` 每段只算約 350 個輸出 token,實際約 3,000 到 3,700,因為 `summarizer = "medium"` 的思考也算輸出。預估要把推理等級算進去。
+- **搬舊筆記時有 95 筆對不到歸屬**(`notebook and knowledge moved into the notes`:128 份文件、1,023 行、unmapped 95)。沒搬的還在舊表裡,沒有看是什麼。
+- **新記憶的 recall 還沒量**:舊的基準是 recall@5 0.80、MRR 0.63(`data/eval/sets/memory.json`)。`pnpm eval --live --suite memory --memory-set <set> --memory-target notes` 還沒跑;「找回不相關」的三個門檻(`[modules.memory.notes_recall]`)是預設值,沒用真實題目調過。
+- **「只回受理了就說做好了」沒有完全消掉**:修正評測最後一輪 117 次裡 1 次(`c04-file-receipt`)。
+- **修正評測的一個已知誤判**:`c03-alarm-no-tool` 把她對對方說的「你設好了跟我說」當成她宣稱設好了。
+- **承諾的預設期限偏急**:沒講時間的承諾 2 分鐘到期,而段落整理要對話停 5 分鐘才跑,所以一記下就過期。超過 24 小時才到期的承諾,Core 重啟後會掉(`CommitmentBook` 只從最近 24 小時的紀錄重建)。她明講不做了的承諾不會關。
+- **願望檢查在她自己起頭、沒有 @ 人、房間裡有好幾個人時**,仍然對每個人都檢查,可能誤擋。
+- **面板的新頁面沒有在瀏覽器看過**(評測、筆記、回合頁的工具呼叫、提示詞頁);**夜間評測沒有實際跑過**(`[modules.eval]` 預設關)。
+- **`share` 的圖片 metadata 沒有清除**(沒有加編碼器依賴)。
+- **CLI 用相對路徑匯入 notes**,`packages/cli` 還沒有 `@miyoria/memory` 這個依賴。
+- **live 的 `miyoria.toml` 還有不再被讀的鍵**(啟動時的警告列了 `llm.thinking`、`modules.agent.max_tool_steps`、`tool_timeout_ms`、`max_tool_result_chars`;`[llm.reasoning] chat_intent` 也沒有作用了),可以刪。
+- **退路的備份**:`data/backups/core-db-before-v5p3-20261117/` 和 `miyoria.toml.before-v5p3-20261117`;`data/backups/core.db.rebuild-dryrun-20261116` 是估花費用的複本,可以刪。
+
 ### 設定鍵清理之後留下的(2026-11-16)
 
 舊的主線和舊的工作線被新跑者換掉之後,沒有人讀的設定鍵和服務鍵清掉了(哪些見 [v5-brain.md](v5-brain.md) 「2026-11-16 的檢查」最後一段)。下面是清的時候發現、但不屬於清理的:
