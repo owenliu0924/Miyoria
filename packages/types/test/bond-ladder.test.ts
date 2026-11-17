@@ -146,6 +146,12 @@ describe("the stages of a tier (H10)", () => {
     });
   });
 
+  it("calls the tier at 450 宛若家人 (H10, it was 家人般)", () => {
+    expect(tierProgress(450).tier).toEqual({ min: 450, label: "宛若家人" });
+    expect(RELATIONSHIP_LABELS).not.toContain("家人般");
+    expect(tierStanding({ affinity: 539 }).label).toBe("宛若家人 III");
+  });
+
   it("writes the stage after the name with a space, in Roman numerals", () => {
     expect(tierLabel("知心", 1)).toBe("知心 I");
     expect(tierLabel("知心", 2)).toBe("知心 II");
