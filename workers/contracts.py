@@ -63,6 +63,106 @@ class WorkersHealth(BaseModel):
     status: str
 
 
+class WorkersKaraokeChar(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    text: str
+    start: float
+    end: float
+
+
+class WorkersKaraokeLine(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    start: float
+    end: float | None
+    text: str
+    check: Literal["unchecked", "matched", "uncertain", "failed"]
+    confidence: float | None
+    chars: list[WorkersKaraokeChar] | None
+
+
+class WorkersKaraokeLyrics(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    provider: str | None
+    timing: Literal["line", "char"]
+    lines: list[WorkersKaraokeLine]
+
+
+class WorkersKaraokeMade(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    pitch: str
+    notes: str
+    lyrics: str
+
+
+class WorkersKaraokeNote(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    start: float
+    end: float
+    midi: float
+    source: Literal["pitch", "lyric"]
+    line: conint(ge=-9007199254740991, le=9007199254740991) | None
+    char: conint(ge=-9007199254740991, le=9007199254740991) | None
+
+
+class WorkersKaraokePitch(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    hz: conint(le=9007199254740991, gt=0)
+    start: float
+    midi: list[float | None]
+
+
+class WorkersKaraokeQuality(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    ok: bool
+    reason: str | None
+    voiced_ratio: float
+    notes: conint(ge=-9007199254740991, le=9007199254740991)
+    lead_split: bool
+
+
+class WorkersKaraokeReference(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    format: Literal["miyoria.karaoke.reference"]
+    version: Literal[1]
+    id: str
+    title: str
+    artist: str | None
+    duration_s: float
+    backing: str
+    pitch: WorkersKaraokePitch
+    notes: list[WorkersKaraokeNote]
+    lyrics: WorkersKaraokeLyrics | None
+    quality: WorkersKaraokeQuality
+    made: WorkersKaraokeMade
+
+
+class WorkersKaraokeSong(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    id: str
+    title: str
+    artist: str | None
+    duration_s: float | None
+    quality: WorkersKaraokeQuality | None
+
+
 class WorkersLyricsHealth(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
@@ -250,6 +350,7 @@ class WorkersSingJobRequest(BaseModel):
     backing: Literal["keep", "drop", "convert", "acapella"] = "keep"
     force: bool = False
     exclusive_ack: bool = False
+    purpose: Literal["cover", "karaoke"] = "cover"
 
 
 class WorkersSingLibraryEntry(BaseModel):
@@ -494,6 +595,7 @@ class WorkersSingJob(BaseModel):
         Literal["waiting", "offloading", "active", "reloading", "done", "shared"] | None
     )
     gpu: WorkersSingGpuStatus | None
+    karaoke: WorkersKaraokeSong | None = None
 
 
 class WorkersSingJobReply(BaseModel):

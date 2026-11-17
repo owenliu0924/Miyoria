@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { WorkersHealthSchema } from "./common.js";
+import { WorkersKaraokeSongSchema } from "./karaoke.js";
 
 // The song worker (`workers/sing/server.py`). Most of what it answers is read leniently: a field a
 // worker predating it does not send, or sends in an unexpected form, falls back to the value after
@@ -33,6 +34,11 @@ export const WorkersSingJobRequestSchema = z
     force: z.boolean().default(false),
     /** The worker waits for `POST /jobs/{id}/exclusive` before it takes the GPU (she says she is off first). */
     exclusive_ack: z.boolean().default(false),
+    /**
+     * `cover`: a song in her voice. `karaoke`: the backing track and the reference to sing over
+     * (`karaoke.ts`); no conversion, `pitch`, `key` and `backing` are not read.
+     */
+    purpose: z.enum(["cover", "karaoke"]).default("cover"),
   })
   .meta({ id: "WorkersSingJobRequest" });
 export type WorkersSingJobRequest = z.output<typeof WorkersSingJobRequestSchema>;
@@ -174,6 +180,8 @@ export const WorkersSingJobSchema = z
       .nullable()
       .catch(null),
     gpu: WorkersSingGpuStatusSchema.nullable().catch(null),
+    /** A karaoke job (`purpose: "karaoke"`) once it is `done`: its karaoke song (`song_id` stays `null`). */
+    karaoke: WorkersKaraokeSongSchema.nullable().catch(null).optional(),
   })
   .meta({ id: "WorkersSingJob" });
 export type WorkersSingJob = z.output<typeof WorkersSingJobSchema>;
