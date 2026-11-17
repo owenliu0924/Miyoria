@@ -24,6 +24,8 @@ import { clusterSchema } from "../../cluster/src/migrations.js";
 import * as clusterTables from "../../cluster/src/schema.js";
 import { economySchema } from "../../economy/src/migrations.js";
 import * as economyTables from "../../economy/src/schema.js";
+import { heartSchema } from "../../heart/person/src/migrations.js";
+import * as heartTables from "../../heart/person/src/schema.js";
 import { MEMORY_SEARCH_SQL, memorySchema } from "../../memory/memory/src/migrations.js";
 import * as memoryTables from "../../memory/memory/src/schema.js";
 import { notesSchema } from "../../memory/notes/src/migrations.js";
@@ -100,6 +102,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   cluster: { tables: clusterTables, schema: clusterSchema },
   directive: { tables: directiveTables, schema: directiveSchema },
   economy: { tables: economyTables, schema: economySchema },
+  heart: { tables: heartTables, schema: heartSchema },
   initiative: { tables: initiativeTables, schema: initiativeSchema },
   memory: { tables: memoryTables, schema: memorySchema, handWritten: MEMORY_SEARCH_SQL },
   notes: { tables: notesTables, schema: notesSchema },
