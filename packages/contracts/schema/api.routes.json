@@ -2245,6 +2245,21 @@
           }
         }
       },
+      "setTitle": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/member/cards/titles/{series}"
+          }
+        }
+      },
       "catalogue": {
         "~orpc": {
           "errorMap": {},

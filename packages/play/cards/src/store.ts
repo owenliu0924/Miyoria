@@ -630,6 +630,25 @@ export class CardStore {
       }));
   }
 
+  /**
+   * Makes one of `person`'s titles shown to others (`value` true) or theirs alone. The title as it
+   * is now; `null` when they have no title of `series`.
+   */
+  setTitlePublic(person: PersonId, series: string, value: boolean): CardTitle | null {
+    return this.#write(() => {
+      const T = cardsTitles;
+      const changed = Number(
+        this.#db.orm
+          .update(T)
+          .set({ public: value })
+          .where(and(eq(T.person_id, person), eq(T.series, series)))
+          .run().changes,
+      );
+      if (changed === 0) return null;
+      return this.titles(person).find((t) => t.series === series) ?? null;
+    });
+  }
+
   /** Records the picture of a card once rendered. Whether there was such a card. */
   setArtifact(serial: string, artifactId: string): boolean {
     return (

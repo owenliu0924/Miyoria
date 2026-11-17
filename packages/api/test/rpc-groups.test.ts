@@ -89,6 +89,13 @@ const CASES: Case[] = [
   },
   { name: "cards.odds", method: "GET", path: "/api/public/cards/odds", audience: "public" },
   {
+    name: "cards.setTitle",
+    method: "PUT",
+    path: "/api/member/cards/titles/glasses",
+    audience: "member",
+    request: { json: { public: true } },
+  },
+  {
     name: "cards.catalogue",
     method: "GET",
     path: "/api/member/cards/catalogue",
@@ -172,7 +179,7 @@ const ANSWERS = {
   "public.board": {
     entries: [{ rank: 1, name: "a", spent: 3 }],
   } satisfies ApiOutputs["public"]["board"],
-  "public.card": CARD,
+  "public.card": { ...CARD, titles: ["眼鏡控"] } satisfies ApiOutputs["public"]["card"],
   "member.session": { name: "Alice", avatar_url: null } satisfies ApiOutputs["member"]["session"],
   "member.me": {
     card: WORDS,
@@ -284,6 +291,12 @@ const ANSWERS = {
     price: 30,
     per_day: 5,
   } satisfies ApiOutputs["cards"]["odds"],
+  "cards.setTitle": {
+    series: "glasses",
+    title: "眼鏡控",
+    public: true,
+    earned_at: "2026-11-08T03:00:00.000Z",
+  } satisfies ApiOutputs["cards"]["setTitle"],
   "cards.catalogue": {
     parts: [
       {
@@ -342,6 +355,7 @@ describe("the public and member routes of the table", () => {
 function pathOf(c: Case): string {
   if (c.name === "public.card") return "/api/public/card/:serial";
   if (c.name === "cards.one") return "/api/member/card/:serial";
+  if (c.name === "cards.setTitle") return "/api/member/cards/titles/:series";
   return c.path;
 }
 
@@ -381,6 +395,7 @@ describe("the answers", () => {
       wishlist: os.cards.wishlist.handler(answer("cards.wishlist")),
       setWishlist: os.cards.setWishlist.handler(answer("cards.setWishlist")),
       odds: os.cards.odds.handler(answer("cards.odds")),
+      setTitle: os.cards.setTitle.handler(answer("cards.setTitle")),
       catalogue: os.cards.catalogue.handler(answer("cards.catalogue")),
     },
     wallet: {

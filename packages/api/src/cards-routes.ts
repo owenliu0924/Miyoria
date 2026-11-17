@@ -1,6 +1,7 @@
 // The routes of her cards beyond issuing one (`card.ts`, `member.ts`): a member's own cards, one
 // card with what only its owner sees, the dex (with the old collectibles as the closed series
-// 舊收藏), the pity, the wishlist, the public odds, and one person's cards for the owner
+// 舊收藏), whether each of their titles is shown to others, the pity, the wishlist, the whole
+// catalogue, the public odds, and one person's cards for the owner
 // (docs/design/v5-play.md §2, §6.3). Someone she has never met has none of these yet; their own
 // cards stay theirs to see whatever she thinks of them now. Listing their cards or their dex is
 // "opening their cards": someone who came over from the old records gets their keepsake then (P5).
@@ -11,6 +12,7 @@ import type {
   CardOdds,
   CardPart,
   CardPity,
+  CardTitle,
   CardWishlist,
   MyCard,
   PersonCards,
@@ -38,6 +40,7 @@ import type { ApiContext, ApiState } from "./state.js";
 
 const NO_CARDS = "這個 Core 還不能發卡";
 const NO_SUCH_CARD = "這張卡不存在或已經作廢";
+const NO_SUCH_TITLE = "你還沒有這個稱號";
 
 function service(state: ApiState): CardService {
   const cards = state.optional(CardsKey);
@@ -183,6 +186,21 @@ export const cardsRpc = {
     return { parts: wishlistOf(cards, person), max: MAX_WISHES };
   }),
   odds: os.cards.odds.handler(({ context }) => cardOdds(service(context.state))),
+  setTitle: os.cards.setTitle.handler(async ({ input, context }): Promise<CardTitle> => {
+    const who = await me(context.state, context.c);
+    const cards = service(context.state);
+    const person = who.person?.id ?? null;
+    // Someone she has never met has no titles, and is told so.
+    if (person === null) throw new ApiError(403, STRANGER);
+    const title = cards.setTitlePublic(person, input.params.series, input.body.public);
+    if (title === null) throw new ApiError(404, NO_SUCH_TITLE);
+    return {
+      series: title.series,
+      title: title.title,
+      public: title.public,
+      earned_at: title.earned_at,
+    };
+  }),
   catalogue: os.cards.catalogue.handler(async ({ context }) => {
     // A member route like the dex it serves: their session first, then the catalogue.
     await me(context.state, context.c);

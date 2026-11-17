@@ -764,6 +764,26 @@ describe("the dex", () => {
       { person: "p1", series: "glasses", title: "眼鏡控", serial: issued.card.serial },
     ]);
   });
+
+  it("keeps a title theirs alone until they make it public, and back", () => {
+    t.db.run(
+      "INSERT INTO cards_dex (person_id, part_id, first_at, count) VALUES ('p1', 'accessory.monocle', 1, 1)",
+    );
+    issue("p1");
+    const cards = service();
+    expect(cards.publicTitles("p1")).toEqual([]);
+    expect(cards.setTitlePublic("p1", "glasses", true)).toMatchObject({
+      series: "glasses",
+      title: "眼鏡控",
+      public: true,
+    });
+    expect(cards.publicTitles("p1").map((x) => x.title)).toEqual(["眼鏡控"]);
+    expect(cards.setTitlePublic("p1", "glasses", false)?.public).toBe(false);
+    expect(cards.publicTitles("p1")).toEqual([]);
+    // Nobody's title but their own, and only one they have.
+    expect(cards.setTitlePublic("p2", "glasses", true)).toBeNull();
+    expect(cards.setTitlePublic("p1", "sky", true)).toBeNull();
+  });
 });
 
 describe("the wishlist", () => {

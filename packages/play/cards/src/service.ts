@@ -663,6 +663,19 @@ export class CardService {
     return this.#store.wishlist(person);
   }
 
+  /**
+   * Makes one of their titles shown to others or theirs alone (private when earned); the title as
+   * it is now, `null` when they have none of `series`.
+   */
+  setTitlePublic(person: PersonId, series: string, value: boolean): CardTitle | null {
+    return this.#store.setTitlePublic(person, series, value);
+  }
+
+  /** The titles `person` chose to show others, earliest first: all anyone else may see of them. */
+  publicTitles(person: PersonId): CardTitle[] {
+    return this.#store.titles(person).filter((t) => t.public);
+  }
+
   /** Replaces the wishlist (at most three parts); why not, or `null` once written. */
   setWishlist(person: PersonId, parts: readonly string[]): WishlistProblem | null {
     return this.#store.setWishlist(person, parts, this.#o.clock.now());

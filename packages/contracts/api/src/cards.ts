@@ -74,6 +74,12 @@ export const CardTitleSchema = z
   .meta({ id: "ApiCardTitle" });
 export type CardTitle = z.output<typeof CardTitleSchema>;
 
+/** Body of `PUT /api/member/cards/titles/{series}`: shown to others, or theirs alone. */
+export const SetCardTitleRequestSchema = z
+  .strictObject({ public: z.boolean() })
+  .meta({ id: "ApiSetCardTitleRequest" });
+export type SetCardTitleRequest = z.input<typeof SetCardTitleRequestSchema>;
+
 /** An old collectible, kept as it was (copies counted together). */
 export const LegacyItemSchema = z
   .object({
@@ -225,6 +231,15 @@ export const cards = {
     .meta({ audience: "public", permission: null })
     .route({ method: "GET", path: "/api/public/cards/odds" })
     .output(CardOddsSchema),
+  /**
+   * One of their titles shown to others (on the public check of their cards) or theirs alone;
+   * `404` for a title they do not have.
+   */
+  setTitle: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "PUT", path: "/api/member/cards/titles/{series}" })
+    .input(z.object({ params: z.object({ series: z.string() }), body: SetCardTitleRequestSchema }))
+    .output(CardTitleSchema),
   /** The whole catalogue, owned or not: what the dex and the wishlist pick from. */
   catalogue: route
     .meta({ audience: "member", permission: null, limited: true })

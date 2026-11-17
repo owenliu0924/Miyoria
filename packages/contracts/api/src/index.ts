@@ -153,6 +153,8 @@ export {
   MyCardsSchema,
   type PersonCards,
   PersonCardsSchema,
+  type SetCardTitleRequest,
+  SetCardTitleRequestSchema,
   type SetWishlistRequest,
   SetWishlistRequestSchema,
 } from "./cards.js";
@@ -710,6 +712,8 @@ export {
 export {
   type PublicBoard,
   PublicBoardSchema,
+  type PublicCard,
+  PublicCardSchema,
   type PublicDay,
   PublicDaySchema,
   type PublicSong,

@@ -10,7 +10,8 @@
 //   the cards (`CardWallet.foil`). The day and the balance (for the card and its foil) are checked
 //   before she is asked to write anything, so a refused card costs no model call.
 // * `GET /api/public/card/{serial}`: anyone may check a code, daily or older; unknown, deleted and
-//   malformed serials get the same 404.
+//   malformed serials get the same 404. A daily card's check also lists the titles its holder made
+//   public (`cards_titles.public`); a private title is never on it.
 // * A card she dropped in a channel is picked up from its button (`claimDropCard`, through
 //   `KeepsakesKey`): free, written like a daily card.
 //
@@ -24,6 +25,7 @@ import type {
   IssuedCard,
   MemberCard,
   MemberCards,
+  PublicCard,
 } from "@miyoria/contracts/api";
 import { type Economy, EconomyKey, STRANGER } from "@miyoria/economy";
 import {
@@ -474,22 +476,35 @@ async function bySerial(state: ApiState, serial: string): Promise<IssuedCard | n
   return found && isJsonObject(found.snapshot) ? olderCard(found) : null;
 }
 
-/** `GET /api/public/card/{serial}`. */
-async function checkCard(state: ApiState, c: ApiContext, input: string): Promise<IssuedCard> {
+/**
+ * The titles the holder of a daily card chose to show others (a title is theirs alone until they
+ * make it public); none on an older member card, or when the cards cannot say.
+ */
+function shownTitles(state: ApiState, serial: string): string[] {
+  const cards = state.optional(CardsKey);
+  const daily = cards?.card(serial);
+  if (!cards || !daily) return [];
+  return cards.publicTitles(daily.person).map((t) => t.title);
+}
+
+/** `GET /api/public/card/{serial}`: the card, and its holder's public titles. */
+async function checkCard(state: ApiState, c: ApiContext, input: string): Promise<PublicCard> {
   const wait = state.publicSide.admitCardCheck(clientKey(c));
   if (wait !== null) throw ApiError.tooMany(wait);
   const missing = () => new ApiError(404, NO_SUCH_CARD, CHECK_HEADERS);
   const serial = normalizeSerial(input);
   if (serial === null) throw missing();
   let card: IssuedCard | null;
+  let titles: string[];
   try {
     card = await bySerial(state, serial);
+    titles = card ? shownTitles(state, serial) : [];
   } catch (error) {
     log.warn({ error: errorMessage(error) }, "cannot check a card");
     throw new ApiError(503, "not available right now", CHECK_HEADERS);
   }
   if (!card) throw missing();
-  return card;
+  return { ...card, titles };
 }
 
 /** `GET /api/public/card/{serial}`; served only while the public side is on (see `rpc.ts`). */

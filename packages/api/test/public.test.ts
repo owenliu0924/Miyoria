@@ -735,12 +735,15 @@ describe("the route table", () => {
       "POST /api/member/screen",
       "POST /api/member/songs",
       "POST /api/member/transfer",
+      "PUT /api/member/cards/titles/:series",
       "PUT /api/member/cards/wishlist",
     ]);
     expect(all.filter((r) => !r.public && !r.member).length).toBeGreaterThan(90);
     // No member route takes a parameter that could name a person: a card's serial names a card,
-    // and one that is not theirs is not found.
-    const named = all.filter((r) => r.member && r.path.replace(":serial", "").includes(":"));
+    // and one that is not theirs is not found; a series names one of their own titles.
+    const named = all.filter(
+      (r) => r.member && r.path.replace(":serial", "").replace(":series", "").includes(":"),
+    );
     expect(named).toEqual([]);
   });
 
@@ -1937,7 +1940,7 @@ describe("cards she gives", () => {
     const card = (await issue(r, await r.login("alice"))).body as Card;
     const res = await anyone(r, card.serial);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(card);
+    expect(res.body).toEqual({ ...card, titles: [] });
     expect(res.body).toMatchObject({ rarity: card.rarity, expression: card.expression });
     expect((res.body as Card).parts).toEqual(card.parts);
     expect(res.headers.get("cache-control")).toBe("no-store");
@@ -1945,9 +1948,9 @@ describe("cards she gives", () => {
     expect(res.text).not.toContain("SECRET");
     expect(res.text).not.toContain(ALICE);
     const flat = card.serial.replace(/-/g, "").toLowerCase();
-    expect((await anyone(r, flat)).body).toEqual(card);
+    expect((await anyone(r, flat)).body).toEqual({ ...card, titles: [] });
     const spaced = encodeURIComponent(` ${card.serial.toLowerCase()} `);
-    expect((await anyone(r, spaced)).body).toEqual(card);
+    expect((await anyone(r, spaced)).body).toEqual({ ...card, titles: [] });
   });
 
   it("is unknown for a serial nobody was given, or one that is not a serial", async () => {
@@ -1980,7 +1983,7 @@ describe("cards she gives", () => {
     await olderCard(r, ALICE, OLDER);
     const cookie = await r.login("alice");
     const older = (await anyone(r, OLDER)).body;
-    expect(older).toEqual(OLDER_CARD);
+    expect(older).toEqual({ ...OLDER_CARD, titles: [] });
     expect((await r.get("/api/member/card", cookie)).body).toMatchObject({
       latest: OLDER_CARD,
       today: 0,
@@ -1993,7 +1996,7 @@ describe("cards she gives", () => {
       today: 1,
     });
     // The daily card did not change the older one.
-    expect((await anyone(r, OLDER)).body).toEqual(OLDER_CARD);
+    expect((await anyone(r, OLDER)).body).toEqual({ ...OLDER_CARD, titles: [] });
   });
 
   it("drops her line on a card when it names someone else, as the page does", async () => {
@@ -2066,7 +2069,7 @@ describe("cards she gives", () => {
       expect(strangers, code).toContain(card.expression);
       expect(res.text).not.toContain("SECRET");
       expect(coins(r, id), code).toBe(70);
-      expect((await anyone(r, card.serial)).body, code).toEqual(card);
+      expect((await anyone(r, card.serial)).body, code).toEqual({ ...card, titles: [] });
       expect((await r.get("/api/member/card", cookie)).body, code).toMatchObject({ today: 1 });
       // A forget that finds nothing still takes the card.
       await r.post("/api/member/forget", cookie, { confirm: true });
@@ -2188,7 +2191,7 @@ describe("cards she gives", () => {
     await r.get("/api/member/cards", alice);
     await r.get("/api/member/cards/dex", alice);
     expect(r.cards.cards(r.people.get(ALICE) as PersonId)).toHaveLength(1);
-    expect((await anyone(r, first.latest.serial)).body).toEqual(first.latest);
+    expect((await anyone(r, first.latest.serial)).body).toEqual({ ...first.latest, titles: [] });
     // The command shows it on the first look of its own person, and issues nothing then.
     const keepsakes = r.sup.services.require(KeepsakesKey);
     const today = await keepsakes.cardsToday(discord(BOB));
@@ -2357,6 +2360,58 @@ describe("her cards", () => {
       pity,
       until: pity,
     });
+  });
+
+  it("lets them show a title to others or keep it theirs, and the check shows only public ones", async () => {
+    const r = await rig();
+    r.fund(ALICE, 100);
+    const cookie = await r.login("alice");
+    const card = (await issue(r, cookie)).body as IssuedCard;
+    const alice = r.people.get(ALICE) as PersonId;
+    const { db } = r.tables.plugin(probe);
+    for (const [series, title] of [
+      ["glasses", "眼鏡控"],
+      ["sky", "摘星的人"],
+    ] as const) {
+      db.run(
+        "INSERT INTO cards_titles (person_id, series, title, card, public, earned_at) VALUES ($p, $s, $t, NULL, 0, 1)",
+        { p: alice, s: series, t: title },
+      );
+    }
+    const titles = async () => {
+      const res = await r.get(`/api/public/card/${card.serial}`, undefined, {
+        "cf-connecting-ip": "203.0.113.21",
+      });
+      return (res.body as { titles: string[] }).titles;
+    };
+    // Private when earned: nobody else sees either.
+    expect(await titles()).toEqual([]);
+    const set = (series: string, value: boolean, who = cookie) =>
+      raw(r.base, "PUT", `/api/member/cards/titles/${series}`, {
+        json: { public: value },
+        headers: { cookie: `miyoria_session=${who}`, "x-miyoria-request": "1" },
+      });
+    const shown = await set("sky", true);
+    expect(shown.status).toBe(200);
+    expect(shown.body).toMatchObject({ series: "sky", title: "摘星的人", public: true });
+    expect(await titles()).toEqual(["摘星的人"]);
+    const dex = (await r.get("/api/member/cards/dex", cookie)).body as {
+      titles: { series: string; public: boolean }[];
+    };
+    expect(dex.titles.map((t) => [t.series, t.public])).toEqual([
+      ["glasses", false],
+      ["sky", true],
+    ]);
+    expect((await set("sky", false)).body).toMatchObject({ public: false });
+    expect(await titles()).toEqual([]);
+    // Nobody else's title, none they do not have, and nothing for someone she never met.
+    expect((await set("water", true)).status).toBe(404);
+    expect((await set("sky", true, await r.login("bob"))).status).toBe(404);
+    expect((await set("sky", true, await r.login("dave"))).status).toBe(403);
+    expect(await titles()).toEqual([]);
+    expect(
+      (await raw(r.base, "PUT", "/api/member/cards/titles/sky", { json: { public: true } })).status,
+    ).toBe(401);
   });
 
   it("keeps a wishlist of at most three parts, which they may clear", async () => {
