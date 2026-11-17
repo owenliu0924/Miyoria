@@ -515,6 +515,23 @@ describe("the suite", () => {
     expect(items.every((i) => !JSON.stringify(i.fault).includes("阿凱"))).toBe(true);
   });
 
+  it("scores a slip by what was kept, and reports her first try's shape apart", async () => {
+    const slip = {
+      rank: "吉",
+      title: "春風得意",
+      poem: ["清晨燈未滅", "我們聊到星星關機", "有人等你說", "好運在路口"],
+      fields: [],
+      line: "早點睡",
+    };
+    const result = await runPlay(context({ router: writer({ slip }), repeat: 1 }), ["fortune"]);
+    const items = result.items as PlayItem[];
+    // Never fits: asked again, then for the poem alone, then no slip (and nothing charged).
+    expect(items.every((i) => !i.ok && i.fault?.startsWith("no slip"))).toBe(true);
+    expect(items.every((i) => i.text.length === 3)).toBe(true);
+    expect(items.every((i) => i.raw_fault?.includes("poem line too long"))).toBe(true);
+    expect(result.report?.some((l) => l.includes("broke the slip's shape in 4 of 4"))).toBe(true);
+  });
+
   it("knows only the names a member page would know", () => {
     expect(directoryFor(["小晴"], ["她說阿凱推薦的那首歌很好聽"]).others).not.toContain("阿凱");
     expect(directoryFor(["小晴"], []).others).toContain("阿凱");

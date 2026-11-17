@@ -3386,6 +3386,32 @@ describe("between people, the sponsor board and fortune slips", () => {
       expect(await r.balance(ALICE)).toBe(before);
     });
 
+    it("give the payment back for a slip whose poem never fits, and charge one that is fixed", async () => {
+      const r = await socialRig();
+      await gift(r, ALICE, 30);
+      const cookie = await r.login("alice");
+      // Eight characters in a line every time: asked again, then for the poem alone, then no slip.
+      r.model.slip = () => ({ ...SLIP, poem: ["月落烏啼霜滿天下", "二", "三", "四"] });
+      const failed = await checkin(r, cookie);
+      expect(failed.body).toMatchObject({
+        gained: 10,
+        fortune_note: "她現在寫不出來,魚幣已經退回",
+      });
+      expect(r.model.asked).toBe(3);
+      expect(await r.balance(ALICE)).toBe(50);
+      // Too many fields and a long line are fixed without her: charged, and the slip fits.
+      r.model.slip = () => ({
+        ...SLIP,
+        fields: ["心情", "人際", "願望", "今天宜"].map((label) => ({ label, text: "好" })),
+        line: `今天也辛苦了,早點休息吧。${"慢慢來".repeat(10)}`,
+      });
+      const bought = await checkin(r, cookie);
+      expect(bought.body).toMatchObject({ fortune_charged: 10, balance: 40 });
+      const slip = (bought.body as { fortune: { fields: unknown[]; line: string } }).fortune;
+      expect(slip.fields).toHaveLength(3);
+      expect(slip.line).toBe("今天也辛苦了,早點休息吧。");
+    });
+
     it("are not drawn by a plain check-in, and a strict body takes nothing else", async () => {
       const r = await socialRig();
       await gift(r, ALICE, 30);

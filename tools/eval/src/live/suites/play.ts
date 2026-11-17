@@ -284,6 +284,8 @@ export interface PlayItem {
    * would see).
    */
   raw_named?: boolean;
+  /** A slip: what her first try broke (`fortuneFault`, names aside) before it was written again. */
+  raw_fault?: string | null;
   usage: { calls: number; prompt_tokens: number; completion_tokens: number };
   ms: number;
 }
@@ -1226,12 +1228,14 @@ async function runFortune(ctx: SuiteContext, c: FortuneCase, run: number): Promi
           ...slip.fields.map((f) => `${f.label}:${f.text}`),
           slip.line ?? "",
         ].join("\n");
-  const kept = slip === null ? null : names(written, c.name);
+  // The slip is written again, or its poem alone, until it fits or there is none: the plain checks
+  // read what was kept (what members see); her first try's shape is reported apart.
+  const first = rawJson(rec.all()[0] ?? "");
+  const rawFault = first === null ? null : fortuneFault(first, c.name, { named: false });
   let fault: string | null =
     slip === null
-      ? "no slip (the model failed, too slow, or nothing usable)"
-      : (fortuneFault(rawJson(rec.last()), c.name, { named: false }) ??
-        (kept === null ? null : `${kept} on the slip: ${written}`));
+      ? "no slip (the model failed, too slow, did not fit, or nothing usable)"
+      : fortuneFault({ ...slip } as Record<string, unknown>, c.name);
   if (fault === null && slip !== null) {
     const judged = await askJudge(
       ctx,
@@ -1253,6 +1257,7 @@ async function runFortune(ctx: SuiteContext, c: FortuneCase, run: number): Promi
     fault,
     text: rec.all(),
     raw_named: firstNamed(rec, c.name),
+    raw_fault: rawFault,
     usage: usageOf(before, ctx),
     ms: Date.now() - started,
   };
@@ -1339,14 +1344,21 @@ export async function runPlay(
   const of = (part: PlayPart) => items.filter((i) => i.part === part);
   const passed = (list: readonly PlayItem[]) => share(list.filter((i) => i.ok).length, list.length);
   const told = of("told");
-  // Her own first try naming someone else, before the product's check: not what members see.
-  const rawNamed = (["card", "milestone", "fortune"] as const).flatMap((p) => {
+  // Her own first try, before the product's checks: not what members see.
+  const rawReport = (["card", "milestone", "fortune"] as const).flatMap((p) => {
     const list = of(p);
     const n = list.filter((i) => i.raw_named).length;
     return list.length === 0 || n === 0
       ? []
       : [`${p}: her first try named someone else in ${n} of ${list.length} runs (caught or not)`];
   });
+  const slips = of("fortune");
+  const misfit = slips.filter((i) => i.raw_fault != null).length;
+  if (misfit > 0) {
+    rawReport.push(
+      `fortune: her first try broke the slip's shape in ${misfit} of ${slips.length} runs (written again)`,
+    );
+  }
   return {
     suite: "play",
     headline: Object.fromEntries(parts.map((p) => [p.replace("-", "_"), passed(of(p))])),
@@ -1358,7 +1370,7 @@ export async function runPlay(
             `told: she spoke in ${share(told.filter((i) => i.spoke).length, told.length)?.toFixed(2)} of the runs`,
           ]
         : []),
-      ...rawNamed,
+      ...rawReport,
       ...items.filter((i) => !i.ok).map((i) => `  ${i.id}#${i.run}: ${i.fault}`),
     ],
     ...(stopped ? { stopped: "budget" as const } : {}),
