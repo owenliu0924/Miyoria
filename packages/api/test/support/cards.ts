@@ -60,6 +60,15 @@ export class CoinPurse implements CardWallet {
     return { ok: true, receipt: `r-${key}`, balance: balance - amount };
   }
 
+  /** No foil is sold here: the economy's wallet sells it. */
+  foilPrice(): number | null {
+    return null;
+  }
+
+  async foil(): Promise<CardCharge> {
+    return { ok: false, reason: "refused", message: "not on sale" };
+  }
+
   async refund({ person }: CardPayer, key: string): Promise<number> {
     if (this.refunds.includes(key)) return 0;
     const charge = this.charges.find((c) => c.key === key && c.person === person);

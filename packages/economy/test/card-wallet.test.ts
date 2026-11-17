@@ -66,6 +66,68 @@ describe("the card wallet", () => {
     expect(statement.ledger[0]).toMatchObject({ delta: 30, label: "每日卡退回" });
   });
 
+  it("sells a card's foil keyed by its serial, within the day's foils, and gives both back", async () => {
+    const r = await rig({ card_foils_per_day: 1 });
+    await fund(r, ALICE, 200);
+    const wallet = new EconomyCardWallet(r.economy);
+    expect(wallet.foilPrice()).toBe(50);
+    expect((await wallet.spend(payer(ALICE), 30, CARD_REASONS.daily, "MYR-F")).ok).toBe(true);
+    const foil = await wallet.foil(payer(ALICE), "MYR-F");
+    expect(foil).toMatchObject({ ok: true, balance: 120 });
+    // The same serial is the same foil; another one today is over the day's limit.
+    expect(await wallet.foil(payer(ALICE_TWO), "MYR-F")).toMatchObject({ ok: true, balance: 120 });
+    expect(await wallet.foil(payer(ALICE), "MYR-G")).toMatchObject({ ok: false, reason: "capped" });
+    expect((await r.economy.statement(ALICE)).ledger[0]).toMatchObject({
+      delta: -50,
+      label: "閃卡加工",
+    });
+    // The card and its foil go back together, once.
+    expect(await wallet.refund(payer(ALICE), "MYR-F", CARD_REASONS.refund)).toBe(80);
+    expect(await wallet.refund(payer(ALICE), "MYR-F", CARD_REASONS.refund)).toBe(0);
+    expect(await balance(r, ALICE)).toBe(200);
+    // A refunded foil no longer counts toward the day's; the economy's own refund pays nothing more.
+    if (foil.ok) expect(await r.economy.refund(ALICE, foil.receipt)).toBe(false);
+    expect(await wallet.foil(payer(ALICE), "MYR-H")).toMatchObject({ ok: true, balance: 150 });
+  });
+
+  it("never answers a charge that was given back as paid", async () => {
+    const r = await rig();
+    await fund(r, ALICE, 200);
+    const wallet = new EconomyCardWallet(r.economy);
+    await wallet.spend(payer(ALICE), 30, CARD_REASONS.daily, "MYR-R");
+    await wallet.foil(payer(ALICE), "MYR-R");
+    await wallet.refund(payer(ALICE), "MYR-R", CARD_REASONS.refund);
+    expect(await wallet.spend(payer(ALICE), 30, CARD_REASONS.daily, "MYR-R")).toMatchObject({
+      ok: false,
+      reason: "refused",
+    });
+    expect(await wallet.foil(payer(ALICE), "MYR-R")).toMatchObject({
+      ok: false,
+      reason: "refused",
+    });
+    expect(await balance(r, ALICE)).toBe(200);
+  });
+
+  it("sells no foil when it is off sale, to a stranger or someone short of coins", async () => {
+    const off = await rig({ card_foils_per_day: 0 });
+    await fund(off, ALICE, 200);
+    const wallet = new EconomyCardWallet(off.economy);
+    expect(wallet.foilPrice()).toBeNull();
+    expect(await wallet.foil(payer(ALICE), "MYR-O")).toMatchObject({
+      ok: false,
+      reason: "refused",
+    });
+    const r = await rig();
+    await fund(r, ALICE, 49);
+    const open = new EconomyCardWallet(r.economy);
+    expect(await open.foil(payer(DAVE), "MYR-S")).toMatchObject({ ok: false, reason: "refused" });
+    expect(await open.foil(payer(ALICE), "MYR-S")).toEqual({
+      ok: false,
+      reason: "insufficient",
+      balance: 49,
+    });
+  });
+
   it("is spending on her for the board and recovered coins for the health table", () => {
     expect(BOARD_REASONS).toContain(CARD_REASONS.daily);
     expect(RECOVERED_REASONS).toContain(CARD_REASONS.daily);

@@ -2798,6 +2798,89 @@ describe("the wallet", () => {
       expect((await r.get("/api/member/card", cookie)).body).toMatchObject({ today: 0 });
     });
 
+    it("never gives foil on a retry that did not pay for it", async () => {
+      const r = await walletRig();
+      await r.fund(ALICE, 100);
+      const cookie = await r.login("alice");
+      // The first try pays for the card and its foil, no card follows, and both go back.
+      const restore = failIssue(r);
+      const first = await r.spend("/api/member/card", cookie, { foil: true }, "ff-1");
+      restore();
+      expect(first.status).toBeGreaterThanOrEqual(500);
+      expect(await balance(r)).toBe(100);
+      // The same request again is a new try: the card and the foil are paid again.
+      const retry = await r.spend("/api/member/card", cookie, { foil: true }, "ff-1");
+      expect(retry.status).toBe(200);
+      const card = retry.body as Card;
+      expect(card.foil).toBe(true);
+      expect(await balance(r)).toBe(20);
+      // Asked once more, whatever the body says: the card as it was, nothing charged.
+      const again = await r.spend("/api/member/card", cookie, { foil: false }, "ff-1");
+      expect(again.body).toMatchObject({ serial: card.serial, foil: true });
+      expect(await balance(r)).toBe(20);
+    });
+
+    it("never gives foil on a retry after the card and its foil could not both be paid for", async () => {
+      const r = await walletRig();
+      // Enough for foil or for the card, not for both: refused before anything is charged.
+      await r.fund(ALICE, 60);
+      const cookie = await r.login("alice");
+      const first = await r.spend("/api/member/card", cookie, { foil: true }, "ff-2");
+      expect(first.status).toBe(402);
+      expect(await balance(r)).toBe(60);
+      await r.fund(ALICE, 40);
+      const retry = await r.spend("/api/member/card", cookie, { foil: true }, "ff-2");
+      expect(retry.status).toBe(200);
+      expect(retry.body).toMatchObject({ foil: true });
+      expect(await balance(r)).toBe(20);
+    });
+
+    it("gives a retry after a stop between the charges and the card its foil, charged once", async () => {
+      const r = await walletRig();
+      await r.fund(ALICE, 100);
+      const cookie = await r.login("alice");
+      const alice = r.people.get(ALICE) as PersonId;
+      // A first try ordered foil, kept its serial, paid both, and Core stopped.
+      const serial = r.cardStore.reserve(
+        alice,
+        "daily:ff-3",
+        "MYR-0000-0000-00F3",
+        Date.now(),
+        true,
+      );
+      const wallet = r.sup.services.require(CardWalletKey);
+      const payer = { person: alice, account: discord(ALICE) };
+      expect((await wallet.spend(payer, 30, "card_daily", serial)).ok).toBe(true);
+      expect((await wallet.foil(payer, serial)).ok).toBe(true);
+      expect(await balance(r)).toBe(20);
+      // The retry is the same order, whatever its body says: the foil it paid for, nothing more.
+      const retry = await r.spend("/api/member/card", cookie, { foil: false }, "ff-3");
+      expect(retry.status).toBe(200);
+      expect(retry.body).toMatchObject({ serial, foil: true });
+      expect(await balance(r)).toBe(20);
+    });
+
+    it("charges no foil it cannot sell, and counts the day's foils", async () => {
+      const r = await walletRig({ card_foils_per_day: 1 });
+      await r.fund(ALICE, 300);
+      const cookie = await r.login("alice");
+      expect((await r.spend("/api/member/card", cookie, { foil: true }, "fc-1")).status).toBe(200);
+      expect(await balance(r)).toBe(220);
+      const capped = await r.spend("/api/member/card", cookie, { foil: true }, "fc-2");
+      expect(capped.status).toBe(429);
+      expect(capped.body).toEqual({ error: "今天最多 1 次" });
+      // The card charged before the foil was refused went back.
+      expect(await balance(r)).toBe(220);
+      expect((await r.get("/api/member/card", cookie)).body).toMatchObject({ today: 1 });
+      const off = await walletRig({ card_foils_per_day: 0 });
+      await off.fund(ALICE, 300);
+      const offCookie = await off.login("alice");
+      const res = await off.spend("/api/member/card", offCookie, { foil: true }, "fo-1");
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: "現在不賣閃卡" });
+      expect(await off.balanceOf(ALICE)).toBe(300);
+    });
+
     it("says no to a card they cannot afford, charging nothing", async () => {
       const r = await walletRig();
       await r.fund(ALICE, 20);

@@ -221,6 +221,8 @@ export interface PendingCard {
   key: string;
   serial: string;
   created_at: Timestamp;
+  /** Ordered with a foil finish. */
+  foil: boolean;
 }
 
 /** What `issue` did. */
@@ -313,6 +315,16 @@ function cardOf(row: CardsCardRow): CardRecord {
 
 const at = (ms: number): Timestamp => toTimestamp(ms);
 
+function pendingOf(row: typeof cardsPending.$inferSelect): PendingCard {
+  return {
+    person: row.person_id,
+    key: row.issue_key,
+    serial: row.serial,
+    created_at: row.created_at,
+    foil: row.foil,
+  };
+}
+
 /** The ids of the accounts of `persons`, as a subquery. */
 function accountsOf(db: Db, persons: readonly PersonId[]) {
   return db.orm
@@ -351,9 +363,10 @@ export class CardStore {
 
   /**
    * The serial a paid card asked for under `key` is charged under: the one kept from an earlier
-   * try (`cards_pending`), or `serial`, kept now. A retry after a restart is thus the same charge.
+   * try (`cards_pending`), or `serial`, kept now with whether a foil finish is ordered with it. A
+   * retry after a restart is thus the same charge.
    */
-  reserve(person: PersonId, key: string, serial: string, now: number): string {
+  reserve(person: PersonId, key: string, serial: string, now: number, foil = false): string {
     return this.#write(() => {
       const P = cardsPending;
       const kept = this.#db.orm
@@ -364,7 +377,7 @@ export class CardStore {
       if (kept !== undefined) return kept.serial;
       this.#db.orm
         .insert(P)
-        .values({ person_id: person, issue_key: key, serial, created_at: at(now) })
+        .values({ person_id: person, issue_key: key, serial, created_at: at(now), foil })
         .run();
       return serial;
     });
@@ -394,12 +407,7 @@ export class CardStore {
       .from(P)
       .orderBy(asc(P.created_at), asc(P.person_id), asc(P.issue_key))
       .all()
-      .map((r) => ({
-        person: r.person_id,
-        key: r.issue_key,
-        serial: r.serial,
-        created_at: r.created_at,
-      }));
+      .map(pendingOf);
   }
 
   /** The serial kept for `key`; `null`: none. */
@@ -411,14 +419,7 @@ export class CardStore {
       .from(P)
       .where(and(eq(P.person_id, person), eq(P.issue_key, key)))
       .get();
-    return row === undefined
-      ? null
-      : {
-          person: row.person_id,
-          key: row.issue_key,
-          serial: row.serial,
-          created_at: row.created_at,
-        };
+    return row === undefined ? null : pendingOf(row);
   }
 
   /** The card `person` was issued for `key` (`issueKey`); `null`: none. */
@@ -1127,6 +1128,7 @@ const cardsData: readonly CategoryData[] = [
         issue_key: "text",
         serial: "text",
         created_at: "ts",
+        foil: "bool",
       }),
       tablePart("cards_legacy", "cards_legacy", "node", "acquired_at", "account_id, acquired_at", {
         id: "text",

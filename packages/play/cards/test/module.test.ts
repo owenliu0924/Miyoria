@@ -60,6 +60,12 @@ function walletWith(coins: number): CardWallet & { spent: number } {
       this.spent += amount;
       return { ok: true, receipt: "r", balance: coins };
     },
+    foilPrice() {
+      return null;
+    },
+    async foil() {
+      return { ok: false, reason: "refused", message: "not on sale" };
+    },
     async refund() {
       return 0;
     },

@@ -24,7 +24,7 @@ import {
   type KeepsakeWho,
   sameAccount,
 } from "@miyoria/types";
-import { claimDropCard, issueCard, memberCards, publicCard } from "./card.js";
+import { claimDropCard, issueDaily, memberCards, publicCard } from "./card.js";
 import { keepsakeFor } from "./card-faces.js";
 import { cardOdds } from "./cards-routes.js";
 import { ApiError } from "./errors.js";
@@ -99,8 +99,7 @@ export class KeepsakeService implements Keepsakes {
       const names = member.hidden ? null : await namesFor(state, member);
       const holder = cardHolder(who, member);
       const view = cardView(state, member, names);
-      const prices = (await memberCards(state, holder)).prices;
-      const card = await issueCard(
+      const { card, charged } = await issueDaily(
         state,
         holder,
         view,
@@ -115,7 +114,6 @@ export class KeepsakeService implements Keepsakes {
         ?.wallet(who.account)
         .then((w) => w.balance)
         .catch(() => null);
-      const charged = (prices.card ?? 0) + (foil ? (prices.foil ?? 0) : 0);
       return { ok: true, value: keepsakeCard(card), charged, balance: balance ?? null };
     } catch (error) {
       return refused(error);

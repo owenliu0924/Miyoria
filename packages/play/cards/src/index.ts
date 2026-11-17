@@ -131,6 +131,7 @@ export {
   CardService,
   type CardServiceOptions,
   type DailyOptions,
+  type DailyOrder,
   type DailyQuote,
   type DailyRefusal,
   type DailyResult,

@@ -198,6 +198,14 @@ INSERT OR IGNORE INTO \`cards_keepsake\` (\`person_id\`, \`given_at\`)
 	SELECT \`person_id\`, min(\`created_at\`) FROM \`cards_card\` WHERE \`kind\` = 'keepsake' GROUP BY \`person_id\`;
 `;
 
+/**
+ * Migration 6 (`schema:sql cards`): whether a kept paid card was ordered with a foil finish, so a
+ * retry is the same order. A row kept before it was ordered without one, as the old code charged
+ * the foil apart from the card.
+ */
+const PENDING_FOIL = `ALTER TABLE \`cards_pending\` ADD \`foil\` integer DEFAULT false NOT NULL;
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -208,5 +216,6 @@ export const cardsSchema: PluginSchema = {
     { version: 3, name: "drops", sql: DROPS },
     { version: 4, name: "pending", sql: PENDING },
     { version: 5, name: "keepsake", sql: KEEPSAKE },
+    { version: 6, name: "pending_foil", sql: PENDING_FOIL },
   ],
 };

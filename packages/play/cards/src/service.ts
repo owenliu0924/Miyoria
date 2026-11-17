@@ -2,10 +2,11 @@
 // person's pity, dex and wishlist (docs/design/v5-play.md §2, §6.3).
 //
 // A daily card costs `price` fish coins, the first of the day too, and a person gets at most
-// `daily_cap` a day (her local day). One person's cards are issued one at a time in this process:
-// the cap is checked, the coins are taken through the wallet port (`wallet.ts`), then the store
+// `daily_cap` a day (her local day); a foil finish is paid on top. One person's cards are issued
+// one at a time in this process: the cap is checked, the coins are taken through the wallet port
+// (`wallet.ts`), the card's and then its foil's, both keyed by the card's serial, then the store
 // draws and writes the card in one transaction, checking the cap again. When the card cannot be
-// written the coins go back.
+// written both go back.
 //
 // Some cards nobody pays for: a milestone card when a bond enters a tier it had never reached
 // (§6.1), the keepsake of someone who came over from the old records (§10.2 P5), a card she drops
@@ -44,7 +45,7 @@ import {
   issueKey,
   type PendingCard,
 } from "./store.js";
-import { CARD_REASONS, type CardPayer, type CardWallet } from "./wallet.js";
+import { CARD_REASONS, type CardCharge, type CardPayer, type CardWallet } from "./wallet.js";
 
 const log = getLogger("cards");
 
@@ -55,6 +56,7 @@ export const CARD_TEXTS = {
   daily_cap: "今天的卡已經發完了,明天再來",
   insufficient: "魚幣不夠",
   no_wallet: "錢包現在不能用",
+  no_foil: "現在不賣閃卡",
   too_many: "願望單最多三個",
   duplicate: "願望單裡有重複的部件",
   unknown_part: "沒有這個部件",
@@ -76,14 +78,25 @@ export type DropRefusal =
 
 export type DropResult = { ok: true; issued: IssuedCard } | { ok: false; reason: DropRefusal };
 
-/** Why a daily card is not issued now. */
+/**
+ * Why a daily card is not issued now: the day's cards, too few coins for the card and its foil,
+ * the day's foils (`capped`), no wallet, no foil on sale, or the wallet's own refusal.
+ */
 export type DailyRefusal =
   | { ok: false; reason: "daily_cap"; cap: number }
   | { ok: false; reason: "insufficient"; price: number; balance: number | null }
+  | { ok: false; reason: "capped"; message: string }
   | { ok: false; reason: "refused"; message: string }
-  | { ok: false; reason: "no_wallet" };
+  | { ok: false; reason: "no_wallet" }
+  | { ok: false; reason: "no_foil" };
 
-export type DailyResult = { ok: true; issued: IssuedCard; balance: number | null } | DailyRefusal;
+/**
+ * A daily card issued: `charged` is what this call took (the card and its foil; nothing when it
+ * answers the card a first try of the same key made).
+ */
+export type DailyResult =
+  | { ok: true; issued: IssuedCard; balance: number | null; charged: number }
+  | DailyRefusal;
 
 /**
  * What a card nobody pays for came to: issued (or the one of the same key already there,
@@ -94,16 +107,30 @@ export type FreeResult =
   | { ok: true; issued: IssuedCard }
   | { ok: false; reason: "no_face" | "not_eligible" };
 
-/** Whether a daily card can be issued now, and what it costs. */
+/**
+ * Whether a daily card can be issued now, and what it costs (`price`: the card and, when it is
+ * ordered, its foil; `foil`: whether it is).
+ */
 export type DailyQuote =
-  | { ok: true; left: number; cap: number; price: number; balance: number | null }
+  | { ok: true; left: number; cap: number; price: number; foil: boolean; balance: number | null }
   | DailyRefusal;
+
+/** What a daily card is ordered with: a foil finish, and the request's key. */
+export interface DailyOrder {
+  /** A foil finish, paid on top through the wallet (`CardWallet.foil`). */
+  foil?: boolean;
+  /** As `DailyOptions.key`. */
+  key?: string;
+}
 
 /** What a daily card is issued with besides the draw. */
 export interface DailyOptions {
   /** The frame they chose. */
   frame?: string | null;
-  /** A shine they bought for it. */
+  /**
+   * A foil finish, paid on top through the wallet (`CardWallet.foil`) under the card's serial. A
+   * try kept under the same key keeps the foil it was asked with: a retry is the same order.
+   */
   foil?: boolean;
   /**
    * The relationship to show instead of the heart's (a stranger's for someone she will not say
@@ -119,7 +146,7 @@ export interface DailyOptions {
 
 /** The sentence for a refusal. */
 export function refusalText(r: DailyRefusal): string {
-  if (r.reason === "refused") return r.message;
+  if (r.reason === "refused" || r.reason === "capped") return r.message;
   return CARD_TEXTS[r.reason];
 }
 
@@ -203,24 +230,33 @@ export class CardService {
   }
 
   /**
-   * Whether `payer` may be given a daily card now: under the day's cap, and able to pay. Asked
-   * before she writes anything, so a refused card costs no model call.
+   * Whether `payer` may be given a daily card now: under the day's cap, and able to pay for the
+   * card and, when `order.foil`, its foil. Asked before she writes anything, so a refused card
+   * costs no model call. A try kept under `order.key` is the order it was asked with (its foil),
+   * and may be paid already (the wallet answers its charges again), so its balance is not asked.
    */
-  async quote(payer: CardPayer): Promise<DailyQuote> {
+  async quote(payer: CardPayer, order: DailyOrder = {}): Promise<DailyQuote> {
     const { config } = this.#o;
     const left = this.dailyLeft(payer.person);
-    if (left <= 0) return { ok: false, reason: "daily_cap", cap: config.daily_cap };
-    if (config.price === 0) {
-      return { ok: true, left, cap: config.daily_cap, price: 0, balance: null };
-    }
+    const cap = config.daily_cap;
+    if (left <= 0) return { ok: false, reason: "daily_cap", cap };
+    const kept =
+      order.key === undefined || order.key === ""
+        ? null
+        : this.#store.pendingOf(payer.person, issueKey.daily(order.key));
+    const foil = kept?.foil ?? order.foil === true;
+    if (config.price === 0 && !foil) return { ok: true, left, cap, price: 0, foil, balance: null };
     const wallet = this.#o.wallet();
     if (wallet === null) return { ok: false, reason: "no_wallet" };
+    const shine = foil ? wallet.foilPrice() : 0;
+    if (shine === null) return { ok: false, reason: "no_foil" };
+    const price = config.price + shine;
     const balance = await wallet.balance(payer);
     if (balance === null) return { ok: false, reason: "refused", message: CARD_TEXTS.no_wallet };
-    if (balance < config.price) {
-      return { ok: false, reason: "insufficient", price: config.price, balance };
+    if (kept === null && balance < price) {
+      return { ok: false, reason: "insufficient", price, balance };
     }
-    return { ok: true, left, cap: config.daily_cap, price: config.price, balance };
+    return { ok: true, left, cap, price, foil, balance };
   }
 
   /**
@@ -229,9 +265,12 @@ export class CardService {
    * paid; if it fails, the coins go back. Their relationship decides her expression on it.
    *
    * With `options.key` (a request's Idempotency-Key) it is the one card of that key: asked again,
-   * a restart in between too, the answer is that card, charged nothing. The serial is kept under
-   * the key before the coins are taken, and the wallet keys a charge by the serial, so a retry
-   * after a stop between the charge and the card is the same charge and gets the card.
+   * a restart in between too, the answer is that card as it was (with or without its foil),
+   * charged nothing. The serial is kept under the key, with the foil asked for, before the coins
+   * are taken, and the wallet keys both charges by the serial, so a retry after a stop between the
+   * charges and the card is the same order and the same charges, and gets the card. When no card
+   * follows, both charges go back and the kept serial goes, so the next try is a new order with
+   * new charges: a foil is never on a card whose foil charge was given back.
    */
   issueDaily(
     payer: CardPayer,
@@ -254,35 +293,52 @@ export class CardService {
       if (again !== null) {
         const pity = this.pity(payer.person);
         const issued = { card: again, pity, new_parts: [], titles: [], again: true };
-        return { ok: true, issued, balance: null };
+        return { ok: true, issued, balance: null, charged: 0 };
       }
     }
-    const quote = await this.quote(payer);
+    const quote = await this.quote(payer, {
+      foil: options.foil === true,
+      ...(options.key === undefined ? {} : { key: options.key }),
+    });
     if (!quote.ok) return quote;
-    // Under a key the serial is kept before the charge: a retry after a restart is the same charge.
+    const { foil, price } = quote;
+    // Under a key the serial is kept before the charges: a retry after a restart is the same order.
     const fresh = this.#serial();
     const serial =
-      key === null ? fresh : this.#store.reserve(payer.person, key, fresh, clock.now());
+      key === null ? fresh : this.#store.reserve(payer.person, key, fresh, clock.now(), foil);
     const unkeep = () => {
-      if (key !== null) this.#store.unreserve(payer.person, key);
+      if (key !== null) this.#store.unreserve(payer.person, key, serial);
     };
     let paid: CardWallet | null = null;
     let balance: number | null = null;
-    if (config.price > 0) {
+    if (price > 0) {
       const wallet = this.#o.wallet();
       if (wallet === null) {
         unkeep();
         return { ok: false, reason: "no_wallet" };
       }
-      const charge = await wallet.spend(payer, config.price, CARD_REASONS.daily, serial);
-      if (!charge.ok) {
-        unkeep();
-        return charge.reason === "insufficient"
-          ? { ok: false, reason: "insufficient", price: config.price, balance: charge.balance }
-          : { ok: false, reason: "refused", message: charge.message };
-      }
       paid = wallet;
-      balance = charge.balance;
+      const charges: (() => Promise<CardCharge>)[] = [];
+      if (config.price > 0) {
+        charges.push(() => wallet.spend(payer, config.price, CARD_REASONS.daily, serial));
+      }
+      if (foil) charges.push(() => wallet.foil(payer, serial));
+      let taken = 0;
+      for (const take of charges) {
+        const charge = await take();
+        if (charge.ok) {
+          balance = charge.balance;
+          taken += 1;
+          continue;
+        }
+        // What was taken before it goes back with the serial.
+        if (taken > 0) await this.#giveBack(payer, wallet, serial, unkeep);
+        else unkeep();
+        if (charge.reason === "insufficient") {
+          return { ok: false, reason: "insufficient", price, balance: charge.balance };
+        }
+        return { ok: false, reason: charge.reason, message: charge.message };
+      }
     }
     try {
       const words = await face();
@@ -299,31 +355,40 @@ export class CardService {
         now,
         cap: { max: config.daily_cap, since: dayStart(now, config.utc_offset_minutes) },
         frame: options.frame ?? null,
-        foil: options.foil === true,
+        foil,
         key,
       });
       this.#told(issued);
-      return { ok: true, issued, balance };
+      return { ok: true, issued, balance, charged: issued.again ? 0 : price };
     } catch (error) {
-      if (paid !== null) {
-        try {
-          await paid.refund(payer, serial, CARD_REASONS.refund);
-          // Given back: a retry is a new charge, under a new serial.
-          unkeep();
-        } catch (refundError) {
-          // Under a key the serial stays kept: `settlePending` gives the coins back later.
-          log.error(
-            { person: payer.person, serial, err: String(refundError) },
-            "cards: a card was not written and its coins could not be given back",
-          );
-        }
-      } else {
-        unkeep();
-      }
+      if (paid !== null) await this.#giveBack(payer, paid, serial, unkeep);
+      else unkeep();
       if (error instanceof CardCapError) {
         return { ok: false, reason: "daily_cap", cap: config.daily_cap };
       }
       throw error;
+    }
+  }
+
+  /**
+   * Gives back what was charged for `serial` (the card and its foil) and forgets the kept serial,
+   * so a retry is a new order. When the refund fails the serial stays kept and `settlePending`
+   * gives the coins back later.
+   */
+  async #giveBack(
+    payer: CardPayer,
+    wallet: CardWallet,
+    serial: string,
+    unkeep: () => void,
+  ): Promise<void> {
+    try {
+      await wallet.refund(payer, serial, CARD_REASONS.refund);
+      unkeep();
+    } catch (error) {
+      log.error(
+        { person: payer.person, serial, err: String(error) },
+        "cards: a card was not written and its coins could not be given back",
+      );
     }
   }
 

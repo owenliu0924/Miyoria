@@ -53,25 +53,51 @@ class FakeWallet implements CardWallet {
     return this.balances.get(person) ?? 0;
   }
 
-  /** Keyed like the economy's: the same key is the same charge. */
+  /** What a foil costs; `null`: not on sale. */
+  foilCost: number | null = 50;
+  /** Foils a day. */
+  foilsPerDay = 5;
+
+  /**
+   * Keyed like the economy's: the same key (and reason) is the same charge, and one given back is
+   * refused.
+   */
   async spend({ person }: CardPayer, amount: number, reason: string, key: string) {
     const balance = this.balances.get(person) ?? 0;
-    if (this.charges.some((c) => c.key === key)) {
-      return { ok: true as const, receipt: `r-${key}`, balance };
+    if (this.charges.some((c) => c.key === key && c.reason === reason)) {
+      if (this.refunds.some((r) => r.key === key)) {
+        return { ok: false as const, reason: "refused" as const, message: "given back" };
+      }
+      return { ok: true as const, receipt: `r-${reason}-${key}`, balance };
     }
     if (balance < amount) return { ok: false as const, reason: "insufficient" as const, balance };
     this.balances.set(person, balance - amount);
     this.charges.push({ person, amount, reason, key });
-    return { ok: true as const, receipt: `r-${key}`, balance: balance - amount };
+    return { ok: true as const, receipt: `r-${reason}-${key}`, balance: balance - amount };
   }
 
-  /** Keyed by the charge like the economy's: once, and nothing for a key never charged. */
+  foilPrice() {
+    return this.foilCost;
+  }
+
+  async foil(payer: CardPayer, key: string) {
+    const kept = this.charges.filter((c) => c.reason === "card_foil" && c.person === payer.person);
+    const live = kept.filter((c) => !this.refunds.some((r) => r.key === c.key));
+    if (!kept.some((c) => c.key === key) && live.length >= this.foilsPerDay) {
+      return { ok: false as const, reason: "capped" as const, message: "今天最多 5 次" };
+    }
+    return this.spend(payer, this.foilCost ?? 0, "card_foil", key);
+  }
+
+  /** Keyed by the card like the economy's: its card and foil, once; nothing for no charge. */
   async refund({ person }: CardPayer, key: string) {
-    const charge = this.charges.find((c) => c.key === key && c.person === person);
-    if (charge === undefined || this.refunds.some((r) => r.key === key)) return 0;
-    this.balances.set(person, (this.balances.get(person) ?? 0) + charge.amount);
+    if (this.refunds.some((r) => r.key === key)) return 0;
+    const charges = this.charges.filter((c) => c.key === key && c.person === person);
+    if (charges.length === 0) return 0;
+    const back = charges.reduce((sum, c) => sum + c.amount, 0);
+    this.balances.set(person, (this.balances.get(person) ?? 0) + back);
     this.refunds.push({ person, key });
-    return charge.amount;
+    return back;
   }
 }
 
@@ -294,6 +320,107 @@ describe("a daily card asked for under a key", () => {
     expect(retry.ok).toBe(true);
     expect(wallet.charges).toHaveLength(2);
     expect(wallet.balances.get("p1")).toBe(0);
+  });
+});
+
+describe("a daily card with a foil finish", () => {
+  it("costs the card and the foil, both under the card's serial", async () => {
+    wallet.balances.set("p1", 100);
+    const result = await service().issueDaily(payer("p1"), face, { foil: true, key: "f1" });
+    if (!result.ok) throw new Error("refused");
+    expect(result.issued.card.foil).toBe(true);
+    expect(result.charged).toBe(80);
+    const serial = result.issued.card.serial;
+    expect(wallet.charges.map((c) => [c.reason, c.amount, c.key])).toEqual([
+      ["card_daily", 30, serial],
+      ["card_foil", 50, serial],
+    ]);
+    expect(wallet.balances.get("p1")).toBe(20);
+    // Asked again: the card as it was, nothing charged.
+    const again = await service().issueDaily(payer("p1"), face, { key: "f1" });
+    expect(again.ok && again).toMatchObject({ charged: 0, issued: { again: true } });
+    expect(again.ok && again.issued.card.foil).toBe(true);
+    expect(wallet.balances.get("p1")).toBe(20);
+  });
+
+  it("is refused before any charge without coins for both, or with no foil on sale", async () => {
+    wallet.balances.set("p1", 79);
+    expect(await service().issueDaily(payer("p1"), face, { foil: true })).toEqual({
+      ok: false,
+      reason: "insufficient",
+      price: 80,
+      balance: 79,
+    });
+    wallet.foilCost = null;
+    expect(await service().issueDaily(payer("p1"), face, { foil: true })).toEqual({
+      ok: false,
+      reason: "no_foil",
+    });
+    // Even when the card itself is free.
+    const free = service({ config: cardsConfig({ price: 0 }) });
+    expect(await free.issueDaily(payer("p1"), face, { foil: true })).toEqual({
+      ok: false,
+      reason: "no_foil",
+    });
+    expect(wallet.charges).toEqual([]);
+    expect(store.pending()).toEqual([]);
+  });
+
+  it("gives the card's coins back when the foil is refused", async () => {
+    wallet.balances.set("p1", 1000);
+    wallet.foilsPerDay = 0;
+    expect(await service().issueDaily(payer("p1"), face, { foil: true, key: "f2" })).toEqual({
+      ok: false,
+      reason: "capped",
+      message: "今天最多 5 次",
+    });
+    expect(wallet.balances.get("p1")).toBe(1000);
+    expect(store.cards("p1")).toEqual([]);
+    expect(store.pending()).toEqual([]);
+  });
+
+  it("is never free on a retry: the card and the foil are paid again after a give-back", async () => {
+    wallet.balances.set("p1", 160);
+    const cards = service();
+    const failing = async () => {
+      throw new Error("she could not write");
+    };
+    await expect(cards.issueDaily(payer("p1"), failing, { foil: true, key: "f3" })).rejects.toThrow(
+      "she could not write",
+    );
+    expect(wallet.balances.get("p1")).toBe(160);
+    const retry = await cards.issueDaily(payer("p1"), face, { foil: true, key: "f3" });
+    expect(retry.ok && retry.issued.card.foil).toBe(true);
+    expect(wallet.balances.get("p1")).toBe(80);
+  });
+
+  it("keeps the foil a stopped try ordered: its retry is the same order", async () => {
+    wallet.balances.set("p1", 100);
+    const kept = store.reserve("p1", "daily:f4", "MYR-KEPT-0000-00F4", now, true);
+    await wallet.spend(payer("p1"), 30, "card_daily", kept);
+    await wallet.foil(payer("p1"), kept);
+    expect(wallet.balances.get("p1")).toBe(20);
+    // The balance is below a card now, and the retry asks for no foil: the paid order stands.
+    const retry = await service().issueDaily(payer("p1"), face, { key: "f4" });
+    expect(retry.ok && retry.issued.card).toMatchObject({ serial: kept, foil: true });
+    expect(wallet.balances.get("p1")).toBe(20);
+    expect(wallet.charges).toHaveLength(2);
+  });
+
+  it("is refused, not answered as paid, for a charge that was given back", async () => {
+    wallet.balances.set("p1", 100);
+    // A serial still kept although its charges went back (the row's delete failed).
+    const kept = store.reserve("p1", "daily:f5", "MYR-KEPT-0000-00F5", now, true);
+    await wallet.spend(payer("p1"), 30, "card_daily", kept);
+    await wallet.refund(payer("p1"), kept);
+    const retry = await service().issueDaily(payer("p1"), face, { key: "f5" });
+    expect(retry).toEqual({ ok: false, reason: "refused", message: "given back" });
+    expect(store.cards("p1")).toEqual([]);
+    // The kept serial went: the next try is a new order.
+    expect(store.pending()).toEqual([]);
+    const next = await service().issueDaily(payer("p1"), face, { foil: true, key: "f5" });
+    expect(next.ok && next.issued.card.foil).toBe(true);
+    expect(wallet.balances.get("p1")).toBe(20);
   });
 });
 

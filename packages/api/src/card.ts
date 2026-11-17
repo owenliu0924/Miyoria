@@ -6,7 +6,8 @@
 //   allows, and a new daily card (routes in `member.ts`; what goes on a card is `cardView` there).
 //   A daily card costs `[modules.cards] price` fish coins, the first of the day too, at most
 //   `daily_cap` a day; the parts are drawn by the public odds and her expression follows the
-//   relationship. Frames and the foil finish still apply. The day and the balance are checked
+//   relationship. Frames and the foil finish still apply; the foil is paid with the card through
+//   the cards (`CardWallet.foil`). The day and the balance (for the card and its foil) are checked
 //   before she is asked to write anything, so a refused card costs no model call.
 // * `GET /api/public/card/{serial}`: anyone may check a code, daily or older; unknown, deleted and
 //   malformed serials get the same 404.
@@ -24,13 +25,12 @@ import type {
   MemberCard,
   MemberCards,
 } from "@miyoria/contracts/api";
-import { type Economy, EconomyError, EconomyKey, STRANGER } from "@miyoria/economy";
+import { type Economy, EconomyKey, STRANGER } from "@miyoria/economy";
 import {
   CARD_TEXTS,
   type CardFace,
   type CardRecord,
   type CardRelationship,
-  type CardService,
   CardsKey,
   CardWalletKey,
   cardRelationship,
@@ -250,6 +250,16 @@ async function frameOf(state: ApiState, account: AccountRef): Promise<string | n
   }
 }
 
+/** What each refusal of a daily card answers with. */
+const REFUSAL_STATUS: Readonly<Record<DailyRefusal["reason"], number>> = {
+  daily_cap: 429,
+  capped: 429,
+  insufficient: 402,
+  no_wallet: 503,
+  no_foil: 400,
+  refused: 403,
+};
+
 /** A refusal of the cards as the error the routes answer with. */
 function refusedCard(r: DailyRefusal): ApiError {
   // A wallet that has no balance for them will not take their coins: for the economy, someone she
@@ -257,14 +267,7 @@ function refusedCard(r: DailyRefusal): ApiError {
   if (r.reason === "refused" && r.message === CARD_TEXTS.no_wallet) {
     return new ApiError(403, STRANGER);
   }
-  const status =
-    r.reason === "daily_cap"
-      ? 429
-      : r.reason === "insufficient"
-        ? 402
-        : r.reason === "no_wallet"
-          ? 503
-          : 403;
+  const status = REFUSAL_STATUS[r.reason];
   return new ApiError(status, r.reason === "no_wallet" ? NO_WALLET : refusalText(r));
 }
 
@@ -283,28 +286,27 @@ function cardEvidence(state: ApiState, person: PersonId, card: IssuedCard) {
   }
 }
 
-async function giveBack(economy: Economy, account: AccountRef, entry: string) {
-  try {
-    await economy.refund(account, entry);
-  } catch (error) {
-    log.warn({ error: errorMessage(error) }, "cannot refund a card charge");
-  }
-}
-
 /** What they ask for on top of a plain card. */
 export interface CardOrder {
   foil: boolean;
-  /** The request's Idempotency-Key; the foil charge derives its own from it. */
+  /** The request's Idempotency-Key. */
   key: string;
+}
+
+/** A daily card issued, and what this request took for it (nothing for a retry's answer). */
+export interface IssuedDaily {
+  card: IssuedCard;
+  charged: number;
 }
 
 /**
  * `POST /api/member/card`: a daily card of `view`, what the member page shows them right now,
  * with what she writes on it (`write`, asked only once the day and the coins allow the card; null
  * for no words). `hidden`: someone she will not say anything about gets a stranger's card. A foil
- * finish is charged first and given back if no card follows. A retry with the same Idempotency-Key
- * (`order.key`), after a restart too, answers the card the first try made: the cards keep the key
- * on the card, and the serial it is charged under before the charge.
+ * finish is paid with the card, through the cards (both charges keyed by the card's serial, both
+ * given back if no card follows). A retry with the same Idempotency-Key (`order.key`), after a
+ * restart too, answers the card the first try made, as it was: the cards keep the key on the card,
+ * and the serial and the foil ordered before the charges.
  */
 export async function issueCard(
   state: ApiState,
@@ -314,30 +316,30 @@ export async function issueCard(
   order: CardOrder = { foil: false, key: "" },
   hidden = false,
 ): Promise<IssuedCard> {
+  return (await issueDaily(state, holder, view, write, order, hidden)).card;
+}
+
+/** `issueCard`, with what it charged. */
+export async function issueDaily(
+  state: ApiState,
+  holder: CardHolder,
+  view: MemberCard,
+  write: () => Promise<CardWords | null>,
+  order: CardOrder = { foil: false, key: "" },
+  hidden = false,
+): Promise<IssuedDaily> {
   const cards = state.optional(CardsKey);
   if (!cards) throw ApiError.unavailable(NO_STORE);
   const person = holder.person;
   if (person === null) throw new ApiError(403, STRANGER);
   // Before the day's limit is asked: the card a retry is for may be the day's last.
   const again = cards.dailyByKey(person, order.key);
-  if (again) return dailyCard(again);
+  if (again) return { card: dailyCard(again), charged: 0 };
   const account = holder.session.account;
   const payer = { person, account };
   // Nobody pays for a card the day or the wallet would refuse.
-  const quote = await cards.quote(payer);
+  const quote = await cards.quote(payer, order);
   if (!quote.ok) throw refusedCard(quote);
-  const economy = state.optional(EconomyKey);
-  let foilEntry: string | null = null;
-  if (order.foil) {
-    if (!economy || offer(economy, "card_foil") === null) throw ApiError.unavailable(NO_WALLET);
-    try {
-      const bought = await economy.purchase(account, "card_foil", `${order.key}:foil`, null);
-      foilEntry = bought.entry_id;
-    } catch (error) {
-      if (error instanceof EconomyError) throw new ApiError(error.status, error.message);
-      throw error;
-    }
-  }
   // Her line for them goes on the card as the page shows it (nobody else named, moderation passed),
   // never as it is stored: anyone with the serial can read the card.
   const relationship: CardRelationship = hidden
@@ -361,25 +363,16 @@ export async function issueCard(
       number: (older ?? 0) + cards.count(person) + 1,
     };
   };
-  let result: Awaited<ReturnType<CardService["issueDaily"]>>;
-  try {
-    result = await cards.issueDaily(payer, face, {
-      frame: await frameOf(state, account),
-      foil: order.foil,
-      relationship,
-      key: order.key,
-    });
-  } catch (error) {
-    if (economy && foilEntry) await giveBack(economy, account, foilEntry);
-    throw error;
-  }
-  if (!result.ok) {
-    if (economy && foilEntry) await giveBack(economy, account, foilEntry);
-    throw refusedCard(result);
-  }
+  const result = await cards.issueDaily(payer, face, {
+    frame: await frameOf(state, account),
+    foil: order.foil,
+    relationship,
+    key: order.key,
+  });
+  if (!result.ok) throw refusedCard(result);
   const card = dailyCard(result.issued.card);
   if (!result.issued.again) cardEvidence(state, person, card);
-  return card;
+  return { card, charged: result.charged };
 }
 
 /** What a refused pick-up answers with. */
