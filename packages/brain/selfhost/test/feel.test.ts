@@ -116,7 +116,7 @@ describe("matching the names of a feel block", () => {
     expect(read.unmatched).toBe(4);
   });
 
-  it("counts lines that do not read, and keeps three lines at most", () => {
+  it("counts lines that do not read, keeps three lines at most and the last emotion", () => {
     const { deps: d } = deps();
     const read = readFeel(
       d,
@@ -126,11 +126,12 @@ describe("matching the names of a feel block", () => {
       ],
       PEOPLE,
     );
-    expect(read.self?.emotion).toBe("joy");
+    // The last step's emotion is what she feels at the end of the run.
+    expect(read.self?.emotion).toBe("sorrow");
     expect(read.proposals.map((p) => p.field)).toEqual(["bond", "warmth", "trust"]);
     expect(read.over).toBe(1);
-    // The second block's own line, and the unknown value.
-    expect(read.unreadable).toBe(2);
+    // The unknown value.
+    expect(read.unreadable).toBe(1);
   });
 });
 

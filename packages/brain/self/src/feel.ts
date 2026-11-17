@@ -45,7 +45,12 @@ export type FeelDropReason =
   /** Not a line of either kind. */
   | "malformed"
   /** A second line about her own emotion. */
-  | "repeated";
+  | "repeated"
+  /**
+   * A proposal cut off (the token limit ends a block mid-line): a quote whose bracket never
+   * closes, or a last line without brackets that the block did not end after.
+   */
+  | "cut";
 
 export interface ParsedFeel {
   self: FeelSelf | null;
@@ -69,11 +74,26 @@ function strengthOf(word: string): AppraisalStrength | undefined {
   return FEEL_STRENGTH_WORDS[word];
 }
 
-/** The quote of a proposal: inside its brackets when it has them, else the rest of the line. */
-function quoteOf(rest: string): string {
+const OPENING = /^[「『“"'‘]/u;
+const CLOSING = /[」』”"'’]$/u;
+
+/**
+ * The quote of a proposal: inside its brackets when it has them, else the rest of the line.
+ * `null` when it was cut off: an opening bracket that never closes, or no brackets on the line
+ * the block may have been cut in (`complete` false: its last line, with no line break after it).
+ */
+function quoteOf(rest: string, complete: boolean): string | null {
   const t = rest.trim();
-  const inside = /^[「『“"'](.*?)[」』”"']?$/u.exec(t);
-  const text = (inside?.[1] ?? t).replace(/\s+/gu, " ").trim();
+  let inside: string;
+  if (OPENING.test(t)) {
+    const chars = [...t];
+    if (chars.length < 2 || !CLOSING.test(t)) return null;
+    inside = chars.slice(1, -1).join("");
+  } else {
+    if (!complete) return null;
+    inside = t;
+  }
+  const text = inside.replace(/\s+/gu, " ").trim();
   const chars = [...text];
   return chars.length > MAX_QUOTE ? `${chars.slice(0, MAX_QUOTE).join("")}…` : text;
 }
@@ -105,7 +125,10 @@ function selfOf(rest: string): FeelSelf | null {
 /** Reads the inside of one or more feel blocks. */
 export function parseFeel(raw: string): ParsedFeel {
   const out: ParsedFeel = { self: null, lines: [], dropped: [] };
-  for (const original of raw.split(/\r?\n/u)) {
+  const lines = raw.split(/\r?\n/u);
+  // A block that does not end with a line break may have been cut in its last line.
+  const last = /\n\s*$/u.test(raw) ? -1 : lines.findLastIndex((l) => l.trim() !== "");
+  for (const [index, original] of lines.entries()) {
     const line = original.trim().replace(BULLET, "").trim();
     if (line === "") continue;
     const own = SELF_LINE.exec(line);
@@ -127,7 +150,11 @@ export function parseFeel(raw: string): ParsedFeel {
       out.dropped.push({ line, why: "unknown_field" });
       continue;
     }
-    const quote = quoteOf(person[4] ?? "");
+    const quote = quoteOf(person[4] ?? "", index !== last);
+    if (quote === null) {
+      out.dropped.push({ line, why: "cut" });
+      continue;
+    }
     if (name === "" || quote === "") {
       out.dropped.push({ line, why: name === "" ? "malformed" : "no_quote" });
       continue;

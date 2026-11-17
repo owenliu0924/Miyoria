@@ -194,8 +194,8 @@ export function readFeel(
   let unreadable = 0;
   for (const block of feel) {
     const parsed = parseFeel(block);
-    if (self === null) self = parsed.self;
-    else if (parsed.self !== null) unreadable += 1;
+    // Steps come in order: what she feels at the end of the run is the last step's.
+    if (parsed.self !== null) self = parsed.self;
     lines.push(...parsed.lines);
     unreadable += parsed.dropped.length;
   }

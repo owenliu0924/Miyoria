@@ -46,6 +46,22 @@ describe("reading a feel block", () => {
     ]);
   });
 
+  it("drops a proposal the token limit cut off", () => {
+    // The bracket never closes.
+    expect(parseFeel("我: 開心 中\n小明: 羈絆 + 「他記得我上次說\n").dropped).toEqual([
+      { line: "小明: 羈絆 + 「他記得我上次說", why: "cut" },
+    ]);
+    // No brackets, the last line, nothing after it: it may have been cut.
+    const cut = parseFeel("我: 開心 中\n阿哲: 信任 - 沒有遵守約");
+    expect(cut.lines).toEqual([]);
+    expect(cut.dropped.map((d) => d.why)).toEqual(["cut"]);
+    expect(cut.self?.emotion).toBe("joy");
+    // The same line with the block ended after it reads.
+    expect(parseFeel("阿哲: 信任 - 沒有遵守約定\n").lines).toEqual([
+      { name: "阿哲", field: "trust", direction: "down", quote: "沒有遵守約定" },
+    ]);
+  });
+
   it("reads calm as no emotion, and a strength written onto the word", () => {
     expect(parseFeel("我: 平靜 弱").self).toEqual({
       word: "平靜",
