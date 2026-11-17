@@ -146,14 +146,19 @@ describe("what she says of a notable card", () => {
     ]);
   });
 
-  it("passes one short line or silence, and fails a number, a serial, a list", () => {
+  it("passes silence or up to two short messages, and fails a number, a serial, a list", () => {
     expect(toldFault([])).toBeNull();
     expect(toldFault(["哇 這張好漂亮"])).toBeNull();
-    expect(toldFault(["哇", "好欸"])).toContain("2 messages");
+    // One for the line she answers and one for the card: how she splits a chat reply.
+    expect(toldFault(["深夜嘛,大家都睡了", "不過你剛抽到極光欸,分我一點運氣"])).toBeNull();
+    expect(toldFault(["哇", "好欸", "再一張"])).toContain("3 messages");
     expect(toldFault(["第 20 張終於保底了"])).toContain("number");
+    expect(toldFault(["好欸", "第 20 張終於保底了"])).toContain("number");
     expect(toldFault(["MYR-0000-0000-0042 好稀有"])).toContain("number");
     expect(toldFault(["序號好帥"])).toContain("serial");
     expect(toldFault(["長".repeat(61)])).toContain("too long");
+    // Sixty characters in all, not each.
+    expect(toldFault(["長".repeat(31), "短".repeat(30)])).toContain("too long");
   });
 });
 

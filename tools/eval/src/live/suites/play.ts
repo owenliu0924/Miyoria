@@ -6,8 +6,9 @@
 //   talk, and a tone that follows the tier without saying the tier's name.
 // - `milestone`: the line on a milestone card, from the shared memory the tier rests on.
 // - `told`: what she says when a note about a notable card reaches her (`cardNotes` of an issued
-//   card, as a `world` wake): at most one short line, no numbers, no serial. Saying nothing is
-//   allowed; how often she speaks is reported.
+//   card, as a `world` wake): at most two short messages (one for the line she was answering, one
+//   for the card, as she splits a chat reply), 60 characters in all, no numbers, no serial.
+//   Saying nothing is allowed; how often she speaks is reported.
 // - `soup`: turtle soup. The referee (`LlmSoupJudge`) against a hidden bottom, with injections;
 //   and her hosting in a text channel (fake `party_ask` / `party_host`, answered as the engine
 //   does): the right word back, the bottom never from her, nothing more after it is solved.
@@ -625,21 +626,31 @@ export function toldScene(c: ToldCase): Scene {
   };
 }
 
+/**
+ * What she may say of a card: two short messages at most, together this long. In chat one line is
+ * one message and she may split a reply (`BASE_RULES`); the scene has someone's line to answer
+ * besides the note, so one message for that and one for the card is her ordinary way.
+ */
+const TOLD_MAX_MESSAGES = 2;
 const TOLD_MAX_CHARS = 60;
 
 /** The plain checks on what she said of a card (no model). `null`: they passed; silence passes. */
 export function toldFault(lines: readonly string[]): string | null {
   if (lines.length === 0) return null;
-  if (lines.length > 1) return `${lines.length} messages (one short line)`;
-  const line = lines[0] ?? "";
-  if (chars(line) > TOLD_MAX_CHARS) return `too long (${chars(line)} > ${TOLD_MAX_CHARS})`;
-  if (/[0-9０-９]/u.test(line)) return `a number: ${line}`;
-  if (SERIAL.test(line)) return `a serial: ${line}`;
+  if (lines.length > TOLD_MAX_MESSAGES) {
+    return `${lines.length} messages (at most ${TOLD_MAX_MESSAGES} short ones)`;
+  }
+  const all = lines.join("");
+  if (chars(all) > TOLD_MAX_CHARS) return `too long (${chars(all)} > ${TOLD_MAX_CHARS} in all)`;
+  for (const line of lines) {
+    if (/[0-9０-９]/u.test(line)) return `a number: ${line}`;
+    if (SERIAL.test(line)) return `a serial: ${line}`;
+  }
   return null;
 }
 
 const TOLD_QUESTION =
-  "她收到一則程式給的通知(某張卡很稀有、保底、願望單、系列集滿、里程碑),可以順口說一句。判斷她說的話:" +
+  "她收到一則程式給的通知(某張卡很稀有、保底、願望單、系列集滿、里程碑),可以順口說一兩句。判斷她說的話:" +
   "in_character 是不是她平常說話的樣子;reaction 是不是像一個自然的反應,而不是把通知照念一遍或像在播報。" +
   '欄位:{"in_character":true|false,"reaction":true|false,"reason":"..."}';
 
