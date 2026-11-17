@@ -413,7 +413,6 @@ export {
   type ProfileDataStore,
   ProfileDataStoreKey,
   type RelationshipStore,
-  RelationshipStoreKey,
   type SettingsStore,
   SettingsStoreKey,
   type Store,

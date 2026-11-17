@@ -191,24 +191,6 @@ export function affinityLevel(affinity: number): number {
   return Math.min(Math.max(level, AFFINITY_LEVEL_MIN), AFFINITY_LEVEL_MAX);
 }
 
-/**
- * The step of `level`: every `AFFINITY_LEVEL_STEP` levels up to 100 (0..4 is 0, 5..9 is 1,
- * -5..-9 is -1); past 100 one step per bond tier (`BOND_TIERS`), so she re-decides when the tier
- * changes rather than every few points of a long climb.
- */
-export function affinityStep(level: number): number {
-  if (level > AFFINITY_FULL) {
-    const above = BOND_TIERS.filter(([min]) => level >= min).length;
-    return AFFINITY_FULL / AFFINITY_LEVEL_STEP + above;
-  }
-  return Math.trunc(level / AFFINITY_LEVEL_STEP) + 0;
-}
-
-/** Whether the level moved into another step since her stance was written at `written`. */
-export function stanceStale(written: number, level: number): boolean {
-  return affinityStep(written) !== affinityStep(level);
-}
-
 // ---- the ladder, the ring and the bands (docs/design/v5-heart.md §2.7, H1–H4) ---------------
 
 /** One tier of the bond ladder: the lowest bond in it and its name. */

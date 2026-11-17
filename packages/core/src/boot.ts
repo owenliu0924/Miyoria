@@ -50,7 +50,6 @@ import {
   PersonaOverrideStoreKey,
   type PersonHandleDirectory,
   ProfileDataStoreKey,
-  RelationshipStoreKey,
   SettingsStoreKey,
   type Store,
   StoredHandleDirectory,
@@ -263,7 +262,6 @@ export async function buildCoreWith(
   services.provide(k, PeopleStoreKey, store.people);
   // The memory plugin's tables (`@miyoria/memory/memory` `tables.ts`).
   services.provide(k, MemoryRecordStoreKey, store.plugin(memoryTables));
-  services.provide(k, RelationshipStoreKey, store.relationships);
   services.provide(k, IdentityStoreKey, store.identity);
   services.provide(k, AuthStoreKey, store.plugin(authTables).store);
   services.provide(k, AuditLogKey, store.audit);

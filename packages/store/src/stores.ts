@@ -390,7 +390,6 @@ export const PeopleStoreKey = serviceKey<PeopleStore>("PeopleStore");
 export const DecisionLogKey = serviceKey<DecisionLog>("DecisionLog");
 export const SettingsStoreKey = serviceKey<SettingsStore>("SettingsStore");
 export const MemoryRecordStoreKey = serviceKey<MemoryRecordStore>("MemoryRecordStore");
-export const RelationshipStoreKey = serviceKey<RelationshipStore>("RelationshipStore");
 export const IdentityStoreKey = serviceKey<IdentityStore>("IdentityStore");
 export const AuthStoreKey = serviceKey<AuthStore>("AuthStore");
 export const AuditLogKey = serviceKey<AuditLog>("AuditLog");

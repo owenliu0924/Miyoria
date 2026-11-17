@@ -651,33 +651,6 @@
         "wants"
       ]
     },
-    "EventsAffectBond": {
-      "type": "object",
-      "properties": {
-        "person": {
-          "type": "string"
-        },
-        "affinity": {
-          "type": "number"
-        },
-        "trust": {
-          "type": "number"
-        },
-        "familiarity": {
-          "type": "number"
-        },
-        "why": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "person",
-        "affinity",
-        "trust",
-        "familiarity",
-        "why"
-      ]
-    },
     "EventsAffectEvent": {
       "type": "object",
       "properties": {
@@ -865,51 +838,6 @@
         "tool",
         "ok",
         "result"
-      ]
-    },
-    "EventsAppraisedPerson": {
-      "type": "object",
-      "properties": {
-        "person": {
-          "type": "string"
-        },
-        "name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "toward_her": {
-          "type": "number"
-        },
-        "romance": {
-          "type": "number"
-        },
-        "others": {
-          "type": "number"
-        },
-        "promise": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "kept",
-                "broken"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "person",
-        "name",
-        "toward_her",
-        "romance",
-        "others",
-        "promise"
       ]
     },
     "EventsArbiterDecision": {
@@ -6216,34 +6144,6 @@
         "masked"
       ]
     },
-    "EventsSocialAppraisal": {
-      "type": "object",
-      "properties": {
-        "context": {
-          "$ref": "#/$defs/WireContextKey"
-        },
-        "her": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "type": "number"
-          }
-        },
-        "people": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/EventsAppraisedPerson"
-          }
-        }
-      },
-      "required": [
-        "context",
-        "her",
-        "people"
-      ]
-    },
     "EventsSocialEvent": {
       "type": "object",
       "properties": {
@@ -6285,73 +6185,6 @@
         "kind",
         "source",
         "scale",
-        "context"
-      ]
-    },
-    "EventsSocialRelationship": {
-      "type": "object",
-      "properties": {
-        "profile": {
-          "type": "string"
-        },
-        "person": {
-          "type": "string"
-        },
-        "name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "reason": {
-          "type": "string"
-        },
-        "kind": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "positive": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "affinity": {
-          "type": "number"
-        },
-        "trust": {
-          "type": "number"
-        },
-        "familiarity": {
-          "type": "number"
-        },
-        "label": {
-          "type": "string"
-        },
-        "context": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WireContextKey"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "profile",
-        "person",
-        "name",
-        "reason",
-        "kind",
-        "positive",
-        "affinity",
-        "trust",
-        "familiarity",
-        "label",
         "context"
       ]
     },

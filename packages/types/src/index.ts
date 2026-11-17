@@ -272,7 +272,6 @@ export {
 } from "./self.js";
 export { ServiceKey, serviceKey } from "./service-key.js";
 export {
-  type AppraisedPerson,
   type Attitude,
   type Followup,
   type FollowupSource,
@@ -283,7 +282,6 @@ export {
   type RelationshipEffects,
   RelationshipEffectsKey,
   type RelationshipGain,
-  type SocialAppraisal,
   type SocialEvent,
   type SocialSignals,
   SocialSignalsKey,
@@ -517,7 +515,6 @@ export {
   type AppraisalStrength,
   type AppraisedPromise,
   affinityLevel,
-  affinityStep,
   BOND_BANDS,
   BOND_LADDER,
   BOND_SCALE_LINE,
@@ -534,7 +531,6 @@ export {
   type RingPosition,
   relationshipLabel,
   ringOf,
-  stanceStale,
   type TierProgress,
   tierFloorOf,
   tierProgress,

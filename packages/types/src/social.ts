@@ -1,4 +1,4 @@
-import type { SocialAppraisalData, SocialEventData } from "@miyoria/contracts/events";
+import type { SocialEventData } from "@miyoria/contracts/events";
 import type { PersonId, ProfileId } from "./ids.js";
 import type { AccountRef, ContextKey } from "./platform.js";
 import { serviceKey } from "./service-key.js";
@@ -71,23 +71,6 @@ export const RelationshipEffectsKey = serviceKey<RelationshipEffects>("Relations
 
 /** Payload of `social.event` (contract: `SocialEventSchema` in @miyoria/contracts/events). */
 export type SocialEvent = SocialEventData;
-
-/** One person in a `SocialAppraisal`. */
-export interface AppraisedPerson {
-  person: PersonId;
-  name: string | null;
-  /** -1..1, how they treated her. */
-  toward_her: number;
-  /** -1..1, how flirty, caring or intimate they were with her (beyond friendly). */
-  romance: number;
-  /** 0..1, how warmly they were with other people while leaving her out. */
-  others: number;
-  /** A promise to her they kept or broke in these lines. */
-  promise: "kept" | "broken" | null;
-}
-
-/** Payload of `social.appraisal` (contract: `SocialAppraisalSchema` in @miyoria/contracts/events). */
-export type SocialAppraisal = SocialAppraisalData;
 
 /** Global emotional state of the active profile. */
 export interface Mood {

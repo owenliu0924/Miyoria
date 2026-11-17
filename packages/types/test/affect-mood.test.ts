@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Drives } from "../src/index.js";
 import {
   affinityLevel,
-  affinityStep,
   circadianEnergy,
   deriveMood,
   emotionsLine,
@@ -12,7 +11,6 @@ import {
   RELATIONSHIP_LABELS,
   relationshipLabel,
   renderAffectMood,
-  stanceStale,
   toTimestamp,
 } from "../src/index.js";
 
@@ -160,15 +158,5 @@ describe("affinityLevel", () => {
     expect(affinityLevel(1250)).toBe(1000);
     expect(affinityLevel(-250)).toBe(-100);
     expect(affinityLevel(Number.NaN)).toBe(0);
-  });
-
-  it("re-deciding the stance comes every 5 levels", () => {
-    expect(affinityStep(4)).toBe(0);
-    expect(affinityStep(5)).toBe(1);
-    expect(Object.is(affinityStep(-4), 0)).toBe(true);
-    expect(affinityStep(-5)).toBe(-1);
-    expect(stanceStale(60, 64)).toBe(false);
-    expect(stanceStale(64, 65)).toBe(true);
-    expect(stanceStale(66, 61)).toBe(true);
   });
 });
