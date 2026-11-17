@@ -1,8 +1,9 @@
 // How her cards are paid for (docs/design/v5-play.md §2): a port the economy provides
 // (`CardWalletKey`) and the cards plugin (`@miyoria/play/cards`) charges through, so neither
 // package depends on the other. A charge is keyed by the card's serial, so a retry is the same
-// charge, and a card that could not be written gives its coins back. Coins are only earned, never
-// bought, and cards are never sold or given away: there is no way back from a card to coins.
+// charge, and a card that could not be written gives its coins back, found by the same key. Coins
+// are only earned, never bought, and cards are never sold or given away: there is no way back from
+// a card to coins.
 
 import type { PersonId } from "./ids.js";
 import type { AccountRef } from "./platform.js";
@@ -29,8 +30,13 @@ export interface CardWallet {
   balance(payer: CardPayer): Promise<number | null>;
   /** Takes `amount` fish coins for `reason`; the same `key` is the same charge. */
   spend(payer: CardPayer, amount: number, reason: string, key: string): Promise<CardCharge>;
-  /** Gives back a charge whose card was not written (once; a second call does nothing). */
-  refund(payer: CardPayer, receipt: string, reason: string): Promise<void>;
+  /**
+   * Gives back what was charged under `key` (the card's serial) when its card was not written:
+   * once, so a second call, or one for a key nothing was charged under, gives nothing. The coins
+   * given back. Keyed by the charge, not its receipt, so a try that stopped before it saw the
+   * receipt can still be settled.
+   */
+  refund(payer: CardPayer, key: string, reason: string): Promise<number>;
 }
 
 export const CardWalletKey = serviceKey<CardWallet>("CardWallet");

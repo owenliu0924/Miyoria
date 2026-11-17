@@ -18,6 +18,7 @@ import {
   type IssueInput,
   type Part,
   SEED_PARTS,
+  SETTLE_GRACE_MS,
   seededRandom,
 } from "../src/index.js";
 
@@ -45,7 +46,7 @@ const FRIEND = {
 class FakeWallet implements CardWallet {
   readonly balances = new Map<PersonId, number>();
   readonly charges: { person: PersonId; amount: number; reason: string; key: string }[] = [];
-  readonly refunds: { person: PersonId; receipt: string }[] = [];
+  readonly refunds: { person: PersonId; key: string }[] = [];
 
   async balance({ person }: CardPayer) {
     return this.balances.get(person) ?? 0;
@@ -63,10 +64,13 @@ class FakeWallet implements CardWallet {
     return { ok: true as const, receipt: `r-${key}`, balance: balance - amount };
   }
 
-  async refund({ person }: CardPayer, receipt: string) {
-    const charge = this.charges.find((c) => `r-${c.key}` === receipt);
-    this.balances.set(person, (this.balances.get(person) ?? 0) + (charge?.amount ?? 0));
-    this.refunds.push({ person, receipt });
+  /** Keyed by the charge like the economy's: once, and nothing for a key never charged. */
+  async refund({ person }: CardPayer, key: string) {
+    const charge = this.charges.find((c) => c.key === key && c.person === person);
+    if (charge === undefined || this.refunds.some((r) => r.key === key)) return 0;
+    this.balances.set(person, (this.balances.get(person) ?? 0) + charge.amount);
+    this.refunds.push({ person, key });
+    return charge.amount;
   }
 }
 
@@ -214,6 +218,19 @@ describe("a daily card", () => {
     expect(store.cards("p1")).toEqual([]);
   });
 
+  it("keeps the serial of a keyed card whose refund failed, for the settling", async () => {
+    wallet.balances.set("p1", 30);
+    t.db.run("UPDATE cards_parts SET enabled = 0");
+    wallet.refund = async () => {
+      throw new Error("ledger busy");
+    };
+    await expect(service().issueDaily(payer("p1"), face, { key: "kf" })).rejects.toThrow(
+      /nothing to draw/,
+    );
+    expect(wallet.balances.get("p1")).toBe(0);
+    expect(store.pending()).toMatchObject([{ person: "p1", key: "daily:kf" }]);
+  });
+
   it("writes cards.drawn in her DM scope with the card's parts", async () => {
     wallet.balances.set("p1", 30);
     const result = await service().issueDaily(payer("p1"), face);
@@ -276,6 +293,96 @@ describe("a daily card asked for under a key", () => {
     expect(retry.ok).toBe(true);
     expect(wallet.charges).toHaveLength(2);
     expect(wallet.balances.get("p1")).toBe(0);
+  });
+});
+
+describe("a paid card charged and never written", () => {
+  const account = async (person: PersonId) => payer(person).account;
+  /** A first try that kept `serial` under `key`, was charged, and stopped. */
+  async function stopped(person: PersonId, key: string, serial: string) {
+    store.reserve(person, `daily:${key}`, serial, now);
+    await wallet.spend(payer(person), 30, "card_daily", serial);
+  }
+
+  it("gets its coins back once nobody retried it, once, and a later retry is a new charge", async () => {
+    wallet.balances.set("p1", 100);
+    await stopped("p1", "k1", "MYR-KEPT-0000-0001");
+    expect(wallet.balances.get("p1")).toBe(70);
+    const cards = service({ account });
+    // A try still going is not raced: nothing younger than the grace period is touched.
+    now += SETTLE_GRACE_MS - 1;
+    expect(await cards.settlePending()).toEqual({ cleared: 0, refunded: 0, waiting: 1 });
+    expect(wallet.balances.get("p1")).toBe(70);
+    now += 1;
+    expect(await cards.settlePending()).toEqual({ cleared: 0, refunded: 1, waiting: 0 });
+    expect(wallet.balances.get("p1")).toBe(100);
+    expect(wallet.refunds).toEqual([{ person: "p1", key: "MYR-KEPT-0000-0001" }]);
+    expect(store.pending()).toEqual([]);
+    // Again: nothing left to settle, nothing given twice.
+    expect(await cards.settlePending()).toEqual({ cleared: 0, refunded: 0, waiting: 0 });
+    expect(wallet.balances.get("p1")).toBe(100);
+    // The same key later is a new try: a new serial, a new charge, one card.
+    const retry = await cards.issueDaily(payer("p1"), face, { key: "k1" });
+    expect(retry.ok && retry.issued.card.serial).not.toBe("MYR-KEPT-0000-0001");
+    expect(wallet.balances.get("p1")).toBe(70);
+    expect(store.cards("p1")).toHaveLength(1);
+  });
+
+  it("clears the row of a card written after all, and refunds nothing", async () => {
+    wallet.balances.set("p1", 100);
+    const cards = service({ account });
+    const issued = await cards.issueDaily(payer("p1"), face, { key: "k2" });
+    if (!issued.ok) throw new Error("refused");
+    // A row left behind next to its card (it is normally deleted with the card's write).
+    store.reserve("p1", "daily:k2", issued.issued.card.serial, now);
+    now += SETTLE_GRACE_MS;
+    expect(await cards.settlePending()).toEqual({ cleared: 1, refunded: 0, waiting: 0 });
+    expect(wallet.refunds).toEqual([]);
+    expect(wallet.balances.get("p1")).toBe(70);
+    expect(store.pending()).toEqual([]);
+  });
+
+  it("waits for the wallet and an account, and settles once they are there", async () => {
+    wallet.balances.set("p1", 100);
+    await stopped("p1", "k3", "MYR-KEPT-0000-0003");
+    now += SETTLE_GRACE_MS;
+    let open: FakeWallet | null = null;
+    const noAccount = service({ account: async () => null });
+    expect(await noAccount.settlePending()).toEqual({ cleared: 0, refunded: 0, waiting: 1 });
+    const cards = service({ account, wallet: () => open });
+    expect(await cards.settlePending()).toEqual({ cleared: 0, refunded: 0, waiting: 1 });
+    expect(store.pending()).toHaveLength(1);
+    open = wallet;
+    expect(await cards.settlePending()).toEqual({ cleared: 0, refunded: 1, waiting: 0 });
+    expect(wallet.balances.get("p1")).toBe(100);
+  });
+
+  it("keeps the row when the refund fails, for the next pass", async () => {
+    wallet.balances.set("p1", 100);
+    await stopped("p1", "k4", "MYR-KEPT-0000-0004");
+    now += SETTLE_GRACE_MS;
+    const refund = wallet.refund.bind(wallet);
+    wallet.refund = async () => {
+      throw new Error("ledger busy");
+    };
+    const cards = service({ account });
+    expect(await cards.settlePending()).toEqual({ cleared: 0, refunded: 0, waiting: 1 });
+    wallet.refund = refund;
+    expect(await cards.settlePending()).toEqual({ cleared: 0, refunded: 1, waiting: 0 });
+    expect(wallet.balances.get("p1")).toBe(100);
+  });
+
+  it("also settles a try that kept its serial and stopped before the charge", async () => {
+    wallet.balances.set("p1", 100);
+    store.reserve("p1", "daily:k5", "MYR-KEPT-0000-0005", now);
+    now += SETTLE_GRACE_MS;
+    expect(await service({ account }).settlePending()).toEqual({
+      cleared: 0,
+      refunded: 1,
+      waiting: 0,
+    });
+    expect(wallet.balances.get("p1")).toBe(100);
+    expect(store.pending()).toEqual([]);
   });
 });
 

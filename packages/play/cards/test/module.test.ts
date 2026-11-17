@@ -60,7 +60,9 @@ function walletWith(coins: number): CardWallet & { spent: number } {
       this.spent += amount;
       return { ok: true, receipt: "r", balance: coins };
     },
-    async refund() {},
+    async refund() {
+      return 0;
+    },
   };
 }
 
@@ -84,6 +86,45 @@ describe("module cards", () => {
     });
     expect(wallet.spent).toBe(24);
     expect(cards?.odds().rarities.map((r) => r.shown)).toEqual(["70.00", "22.00", "7.00", "1.00"]);
+  });
+
+  it("gives back what a card never written was charged, once the economy is up", async () => {
+    const store = await SqliteStore.open(":memory:", {
+      plugins: [heartTables, cardsTables],
+      clock,
+    });
+    cleanup.push(() => store.close());
+    const tables = store.plugin(cardsTables);
+    const mei = await store.people.upsertAccount({ platform: "discord", id: "a1" }, "小美");
+    // A try charged three minutes ago, and Core stopped before the card was written.
+    tables.reserve(mei, "daily:k1", "MYR-KEPT-0000-0001", T0 - 3 * 60_000);
+    // One a second ago is still going: it is left alone.
+    tables.reserve(mei, "daily:k2", "MYR-KEPT-0000-0002", T0 - 1_000);
+    const refunds: unknown[] = [];
+    const wallet: CardWallet = {
+      ...walletWith(0),
+      async refund(p, key) {
+        refunds.push([p, key]);
+        return 30;
+      },
+    };
+    const sup = new Supervisor();
+    cleanup.push(() => sup.stopAll());
+    sup.services.provide("app", StoreKey, store);
+    await sup.register(new CardsModule({ clock, settleEveryMs: 10 }), null, true);
+    await sup.startAll();
+    // The economy is not up yet: the row waits for a later pass.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(tables.pending()).toHaveLength(2);
+    sup.services.provide("economy", CardWalletKey, wallet);
+    await vi.waitFor(() => expect(tables.pending()).toHaveLength(1));
+    expect(tables.pending()[0]?.serial).toBe("MYR-KEPT-0000-0002");
+    expect(refunds).toEqual([
+      [{ person: mei, account: { platform: "discord", id: "a1" } }, "MYR-KEPT-0000-0001"],
+    ]);
+    // Later passes give nothing twice.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(refunds).toHaveLength(1);
   });
 
   it("puts the heart's words on the card, and her expression follows them", async () => {

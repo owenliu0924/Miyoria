@@ -10,7 +10,8 @@
 // backwards. The people who came over from the old records get one keepsake card each instead
 // (P5), issued by the api the first time they open their cards. With `drops` on it watches the
 // channels that opted in and now and then drops a card there (§6.2, `drops.ts`); `/me card` routes
-// its button.
+// its button. A paid card that was charged and never written, and that nobody retried, gets its
+// coins back from a pass over the kept serials at start and every few minutes (`settlePending`).
 //
 // The routes and the commands are the api's (`KeepsakesKey`, the `cards` route group). Config
 // changes reach it the way they reach every module: the supervisor restarts it.
@@ -89,7 +90,12 @@ export interface CardsModuleOptions {
   clock?: Clock;
   random?: Random;
   newSerial?: () => string;
+  /** How often kept serials are settled after the pass at start; default `SETTLE_EVERY_MS`. */
+  settleEveryMs?: number;
 }
+
+/** How often the serials kept for paid cards are looked at again while the module runs. */
+export const SETTLE_EVERY_MS = 5 * 60_000;
 
 export class CardsModule implements Module {
   static readonly ID = "cards";
@@ -102,6 +108,9 @@ export class CardsModule implements Module {
   readonly #options: CardsModuleOptions;
   readonly #pending = new Set<Promise<void>>();
   #stop: (() => void) | null = null;
+  #stopped = false;
+  #settling: Promise<void> | null = null;
+  #settleTimer: ReturnType<typeof setInterval> | null = null;
   #portrait: Live2dPortrait | null = null;
 
   constructor(options: CardsModuleOptions = {}) {
@@ -143,10 +152,35 @@ export class CardsModule implements Module {
       migrated: (person) =>
         typeof heart.get(person)?.legacy.migrated_at === "string" ||
         cards.importedLegacy(person) !== null,
+      // A refund goes back to the person's wallet, so any account of theirs pays it back.
+      account: async (person) => (await store.identity.accountsOf(person))[0]?.account ?? null,
       ...(this.#options.random === undefined ? {} : { random: this.#options.random }),
       ...(this.#options.newSerial === undefined ? {} : { newSerial: this.#options.newSerial }),
     });
     ctx.provide(CardsKey, service);
+    // A paid card charged and never written (Core stopped in between, or the refund failed), that
+    // nobody retried: its coins go back now and every few minutes while the module runs. The
+    // economy starts in its own order, so a pass without the wallet leaves the row for the next.
+    this.#stopped = false;
+    const settle = () => {
+      if (this.#stopped || this.#settling !== null) return;
+      const run = service
+        .settlePending()
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          ctx.log.warn(
+            { err: errorMessage(error) },
+            "cards: cannot settle the kept serials; the next pass tries again",
+          );
+        })
+        .finally(() => {
+          this.#settling = null;
+        });
+      this.#settling = run;
+    };
+    settle();
+    this.#settleTimer = setInterval(settle, this.#options.settleEveryMs ?? SETTLE_EVERY_MS);
+    this.#settleTimer.unref?.();
     // Her picture on a card from her Live2D model (cards.md §6), when this machine can draw it;
     // without `CardPortraitKey` every card uses the fixed portraits.
     this.#portrait = livePortrait(config, ctx.log);
@@ -166,7 +200,11 @@ export class CardsModule implements Module {
   async stop(): Promise<void> {
     this.#stop?.();
     this.#stop = null;
-    await Promise.allSettled([...this.#pending]);
+    this.#stopped = true;
+    if (this.#settleTimer !== null) clearInterval(this.#settleTimer);
+    this.#settleTimer = null;
+    const settling = this.#settling === null ? [] : [this.#settling];
+    await Promise.allSettled([...this.#pending, ...settling]);
     await this.#portrait?.close();
     this.#portrait = null;
   }

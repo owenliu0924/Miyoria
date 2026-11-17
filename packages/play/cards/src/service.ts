@@ -16,7 +16,13 @@
 
 import { getLogger } from "@miyoria/runtime/kernel";
 import type { LegacySnapshot } from "@miyoria/store";
-import { BOND_LADDER, type BondTier, type Clock, type PersonId } from "@miyoria/types";
+import {
+  type AccountRef,
+  BOND_LADDER,
+  type BondTier,
+  type Clock,
+  type PersonId,
+} from "@miyoria/types";
 import type { Part, Rarity, Slot } from "./catalogue.js";
 import { type CardsConfig, drawRules } from "./config.js";
 import { type SeriesProgress, seriesProgress, type WishlistProblem } from "./dex.js";
@@ -36,6 +42,7 @@ import {
   type DexEntry,
   type IssuedCard,
   issueKey,
+  type PendingCard,
 } from "./store.js";
 import { CARD_REASONS, type CardPayer, type CardWallet } from "./wallet.js";
 
@@ -151,7 +158,25 @@ export interface CardServiceOptions {
    * nobody.
    */
   migrated?: (person: PersonId) => boolean;
+  /**
+   * An account of `person` a refund can be paid back through (the wallet is the person's, so any
+   * of theirs); `null`: none now. Without it nothing kept is settled (`settlePending`).
+   */
+  account?: (person: PersonId) => Promise<AccountRef | null>;
 }
+
+/** What one pass of `settlePending` did. */
+export interface SettleResult {
+  /** Kept serials whose card was written after all: the row went. */
+  cleared: number;
+  /** Kept serials with no card: what was charged under them went back, and the row went. */
+  refunded: number;
+  /** Kept serials left for a later pass: too young, or the wallet or the account not there. */
+  waiting: number;
+}
+
+/** How old a kept serial must be before it is settled: a try still going is not raced. */
+export const SETTLE_GRACE_MS = 2 * 60_000;
 
 /** The start (epoch ms) of the local day of `now` at `offsetMinutes` from UTC. */
 export function dayStart(now: number, offsetMinutes: number): number {
@@ -241,7 +266,7 @@ export class CardService {
     const unkeep = () => {
       if (key !== null) this.#store.unreserve(payer.person, key);
     };
-    let paid: { wallet: CardWallet; receipt: string } | null = null;
+    let paid: CardWallet | null = null;
     let balance: number | null = null;
     if (config.price > 0) {
       const wallet = this.#o.wallet();
@@ -256,7 +281,7 @@ export class CardService {
           ? { ok: false, reason: "insufficient", price: config.price, balance: charge.balance }
           : { ok: false, reason: "refused", message: charge.message };
       }
-      paid = { wallet, receipt: charge.receipt };
+      paid = wallet;
       balance = charge.balance;
     }
     try {
@@ -282,12 +307,13 @@ export class CardService {
     } catch (error) {
       if (paid !== null) {
         try {
-          await paid.wallet.refund(payer, paid.receipt, CARD_REASONS.refund);
+          await paid.refund(payer, serial, CARD_REASONS.refund);
           // Given back: a retry is a new charge, under a new serial.
           unkeep();
         } catch (refundError) {
+          // Under a key the serial stays kept: `settlePending` gives the coins back later.
           log.error(
-            { person: payer.person, serial, receipt: paid.receipt, err: String(refundError) },
+            { person: payer.person, serial, err: String(refundError) },
             "cards: a card was not written and its coins could not be given back",
           );
         }
@@ -403,6 +429,59 @@ export class CardService {
   /** What the import from the V4 database kept of `person` (D4); `null`: it did not bring them. */
   importedLegacy(person: PersonId): LegacySnapshot | null {
     return this.#store.importedLegacy(person);
+  }
+
+  /**
+   * Settles every serial kept for a paid card (`cards_pending`) older than `graceMs`: a try that
+   * was charged and then stopped (Core stopped, or the refund failed) and that nobody retried with
+   * the same key. When the card was written after all the row just goes; otherwise what was charged
+   * under the serial goes back through the wallet (keyed by the charge, so never twice) and then
+   * the row goes, so a later retry with that key is a new try. Each row is settled in its person's
+   * turn, after any card of theirs still being issued in this process. A row whose wallet or
+   * account is not there now stays for a later pass. Safe to run again at any time.
+   */
+  async settlePending(graceMs = SETTLE_GRACE_MS): Promise<SettleResult> {
+    const result: SettleResult = { cleared: 0, refunded: 0, waiting: 0 };
+    const before = this.#o.clock.now() - graceMs;
+    for (const row of this.#store.pending()) {
+      if (Date.parse(row.created_at) > before) {
+        result.waiting += 1;
+        continue;
+      }
+      const done = await this.#inTurn(row.person, () => this.#settle(row));
+      if (done === "waiting") result.waiting += 1;
+      else if (done !== "gone") result[done] += 1;
+    }
+    return result;
+  }
+
+  async #settle(row: PendingCard): Promise<"cleared" | "refunded" | "waiting" | "gone"> {
+    const { person, key, serial } = row;
+    // Settled meanwhile, or written by a retry in this turn's queue.
+    if (this.#store.pendingOf(person, key)?.serial !== serial) return "gone";
+    if (this.#store.byKey(person, key) !== null || this.#store.card(serial) !== null) {
+      this.#store.unreserve(person, key, serial);
+      log.info({ person, serial }, "cards: a kept serial's card was written; the row is cleared");
+      return "cleared";
+    }
+    const wallet = this.#o.wallet();
+    const account = wallet === null ? null : await this.#o.account?.(person);
+    if (wallet === null || account === null || account === undefined) return "waiting";
+    try {
+      const coins = await wallet.refund({ person, account }, serial, CARD_REASONS.refund);
+      this.#store.unreserve(person, key, serial);
+      log.info(
+        { person, serial, coins },
+        "cards: a card was charged and never written; what was charged went back",
+      );
+      return "refunded";
+    } catch (error) {
+      log.warn(
+        { person, serial, err: String(error) },
+        "cards: cannot give back a card that was never written; the next pass tries again",
+      );
+      return "waiting";
+    }
   }
 
   /** A free card of `kind` for `key`, once per person; the one already there when it exists. */

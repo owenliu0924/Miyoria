@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { BOARD_REASONS } from "../src/board.js";
 import { EconomyCardWallet } from "../src/card-wallet.js";
 import { RECOVERED_REASONS } from "../src/health.js";
-import { ALICE, ALICE_TWO, balance, CAROL, DAVE, fund, rig } from "./rig.js";
+import { ALICE, ALICE_TWO, BOB, balance, CAROL, DAVE, fund, rig } from "./rig.js";
 
 const payer = (account: CardPayer["account"]): CardPayer => ({ person: "unused", account });
 
@@ -49,14 +49,17 @@ describe("the card wallet", () => {
     expect(await balance(r, ALICE)).toBe(29);
   });
 
-  it("gives a charge back once, as a card_refund row", async () => {
+  it("gives a charge back once, by the card's serial, as a card_refund row", async () => {
     const r = await rig();
     await fund(r, ALICE, 50);
     const wallet = new EconomyCardWallet(r.economy);
     const charge = await wallet.spend(payer(ALICE), 30, CARD_REASONS.daily, "MYR-B");
     if (!charge.ok) throw new Error("refused");
-    await wallet.refund(payer(ALICE), charge.receipt, CARD_REASONS.refund);
-    await wallet.refund(payer(ALICE), charge.receipt, CARD_REASONS.refund);
+    // Nothing was charged under another serial, and someone else has no charge under this one.
+    expect(await wallet.refund(payer(ALICE), "MYR-C", CARD_REASONS.refund)).toBe(0);
+    expect(await wallet.refund(payer(BOB), "MYR-B", CARD_REASONS.refund)).toBe(0);
+    expect(await wallet.refund(payer(ALICE_TWO), "MYR-B", CARD_REASONS.refund)).toBe(30);
+    expect(await wallet.refund(payer(ALICE), "MYR-B", CARD_REASONS.refund)).toBe(0);
     expect(await balance(r, ALICE)).toBe(50);
     const statement = await r.economy.statement(ALICE);
     expect(statement.ledger.filter((l) => l.delta === 30)).toHaveLength(1);

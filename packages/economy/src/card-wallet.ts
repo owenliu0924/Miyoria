@@ -1,15 +1,12 @@
 // The wallet her cards are paid through (`CardWalletKey`, docs/design/v5-play.md §2): a daily card
 // is one `card_daily` row of the ledger, keyed by the card's serial so a retry is the same charge,
 // and a card that could not be written is given back once as one `card_refund` row (keyed on the
-// charge). A stranger or someone she blocked cannot pay; a refund still reaches someone blocked
-// since, as with every refund, what was taken is theirs.
+// charge, found by the card's serial). A stranger or someone she blocked cannot pay; a refund still
+// reaches someone blocked since, as with every refund, what was taken is theirs.
 
 import { CARD_REASONS, type CardCharge, type CardPayer, type CardWallet } from "@miyoria/types";
 import { type EconomyService, type Member, STRANGER } from "./economy.js";
 import { EconomyError } from "./types.js";
-
-/** Rows of a wallet looked through for the charge a refund gives back. */
-const MAX_CHARGES = 500;
 
 export class EconomyCardWallet implements CardWallet {
   constructor(private readonly e: EconomyService) {}
@@ -50,25 +47,28 @@ export class EconomyCardWallet implements CardWallet {
     }
   }
 
-  async refund(payer: CardPayer, receipt: string, reason: string): Promise<void> {
+  async refund(payer: CardPayer, key: string, reason: string): Promise<number> {
     const who = await this.e.holder(payer.account);
-    await this.e.serial(async () => {
+    return this.e.serial(async () => {
       const ledger = this.e.ledger();
-      const key = `refund:${receipt}`;
-      if ((await ledger.byKey(this.e.profile, who.wallet, key)) !== null) return;
-      const charges = await ledger.entries(this.e.profile, who.wallet, {
-        reasons: [CARD_REASONS.daily],
-        limit: MAX_CHARGES,
-      });
-      const charge = charges.find((r) => r.id === receipt);
-      if (charge === undefined || charge.delta >= 0) return;
-      const post = await ledger.post(this.e.entryFor(who, -charge.delta, reason, charge.id, key));
-      if (post.status !== "posted" && post.status !== "duplicate") {
+      const charge = await ledger.byKey(this.e.profile, who.wallet, chargeKey(key));
+      if (charge === null || charge.delta >= 0) return 0;
+      const back = `refund:${charge.id}`;
+      if ((await ledger.byKey(this.e.profile, who.wallet, back)) !== null) return 0;
+      const post = await ledger.post(this.e.entryFor(who, -charge.delta, reason, charge.id, back));
+      if (post.status === "posted") return -charge.delta;
+      if (post.status !== "duplicate") {
         this.e.log.warn(
-          { person: payer.person, receipt, status: post.status },
+          { person: payer.person, receipt: charge.id, status: post.status },
           "cards: the refund of a card was not posted",
         );
       }
+      return 0;
     });
   }
+}
+
+/** The ledger key of a card's charge: the one `spend` posts under. */
+function chargeKey(key: string): string {
+  return `${CARD_REASONS.daily}:${key}`;
 }

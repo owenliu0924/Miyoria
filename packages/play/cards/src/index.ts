@@ -94,7 +94,7 @@ export { EXPRESSIONS, type Expression, expressionsFor } from "./expressions.js";
 export { type CardFaces, CardFacesKey, type CardOccasion, type OccasionFace } from "./faces.js";
 export { LEGACY_ITEMS, LEGACY_SERIES, type LegacyItem } from "./legacy.js";
 export { CARDS_CATALOGUE_SQL, cardsSchema } from "./migrations.js";
-export { CardsKey, CardsModule, type CardsModuleOptions } from "./module.js";
+export { CardsKey, CardsModule, type CardsModuleOptions, SETTLE_EVERY_MS } from "./module.js";
 export { cardNotes } from "./notes.js";
 export {
   type OddsPart,
@@ -140,6 +140,8 @@ export {
   dayStart,
   type FreeResult,
   refusalText,
+  SETTLE_GRACE_MS,
+  type SettleResult,
 } from "./service.js";
 export {
   CARD_KINDS,
@@ -158,6 +160,7 @@ export {
   type IssueInput,
   issueKey,
   milestoneTier,
+  type PendingCard,
 } from "./store.js";
 export {
   CARD_REASONS,

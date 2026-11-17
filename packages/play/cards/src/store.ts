@@ -213,6 +213,15 @@ export interface DropRecord {
   serial: string | null;
 }
 
+/** The serial a paid card asked for under a key is charged under, kept until the card is written. */
+export interface PendingCard {
+  person: PersonId;
+  /** The card's `issue_key` (`daily:<request key>`). */
+  key: string;
+  serial: string;
+  created_at: Timestamp;
+}
+
 /** What `issue` did. */
 export interface IssuedCard {
   card: CardRecord;
@@ -360,15 +369,55 @@ export class CardStore {
     });
   }
 
-  /** Forgets the serial kept for `key` (no card followed and the coins went back). */
-  unreserve(person: PersonId, key: string): void {
+  /**
+   * Forgets the serial kept for `key` (no card followed and the coins went back); with `serial`,
+   * only while that is the one kept.
+   */
+  unreserve(person: PersonId, key: string, serial?: string): void {
     this.#write(() => {
       const P = cardsPending;
+      const kept = serial === undefined ? undefined : eq(P.serial, serial);
       this.#db.orm
         .delete(P)
-        .where(and(eq(P.person_id, person), eq(P.issue_key, key)))
+        .where(and(eq(P.person_id, person), eq(P.issue_key, key), kept))
         .run();
     });
+  }
+
+  /** Every serial kept for a paid card that is not written yet, oldest first. */
+  pending(): PendingCard[] {
+    this.#db.ensureOpen();
+    const P = cardsPending;
+    return this.#db.orm
+      .select()
+      .from(P)
+      .orderBy(asc(P.created_at), asc(P.person_id), asc(P.issue_key))
+      .all()
+      .map((r) => ({
+        person: r.person_id,
+        key: r.issue_key,
+        serial: r.serial,
+        created_at: r.created_at,
+      }));
+  }
+
+  /** The serial kept for `key`; `null`: none. */
+  pendingOf(person: PersonId, key: string): PendingCard | null {
+    this.#db.ensureOpen();
+    const P = cardsPending;
+    const row = this.#db.orm
+      .select()
+      .from(P)
+      .where(and(eq(P.person_id, person), eq(P.issue_key, key)))
+      .get();
+    return row === undefined
+      ? null
+      : {
+          person: row.person_id,
+          key: row.issue_key,
+          serial: row.serial,
+          created_at: row.created_at,
+        };
   }
 
   /** The card `person` was issued for `key` (`issueKey`); `null`: none. */

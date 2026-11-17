@@ -3,6 +3,7 @@
 
 export { BOARD_REASONS, MAX_BOARD } from "./board.js";
 export { BountyBoard } from "./bounties.js";
+export { EconomyCardWallet } from "./card-wallet.js";
 export { DEFAULT_FRAMES, type EconomyConfig, EconomyConfigSchema, type Frame } from "./config.js";
 export {
   ALREADY_CHECKED_IN,

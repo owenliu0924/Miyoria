@@ -11,6 +11,7 @@ import { type IssuedCard, MemberViewSchema } from "@miyoria/contracts/api";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
+  EconomyCardWallet,
   EconomyConfigSchema,
   EconomyKey,
   EconomyService,
@@ -98,7 +99,7 @@ import {
 import { routes } from "../src/server.js";
 import { Sessions } from "../src/session.js";
 import { ApiState } from "../src/state.js";
-import { CoinPurse, cardService, LedgerCardWallet } from "./support/cards.js";
+import { CoinPurse, cardService } from "./support/cards.js";
 import { economyStore } from "./support/economy.js";
 import { listenFetchable, type RawResponse, raw } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
@@ -2488,7 +2489,7 @@ describe("the wallet", () => {
     });
     s.provide("economy", EconomyKey, economy);
     // Her cards are paid through the ledger from now on, as the economy module provides it.
-    s.provide("economy", CardWalletKey, new LedgerCardWallet(economy));
+    s.provide("economy", CardWalletKey, new EconomyCardWallet(economy));
     const spend = (path: string, cookie: string, json: unknown, key?: string) =>
       raw(r.base, "POST", path, {
         json,
