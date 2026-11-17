@@ -245,10 +245,10 @@ function referenceSubject(skip: (scene: Scene) => string | null = () => null): S
 }
 
 describe("suite tools", () => {
-  it("runs the ten tasks with the subject as the agent and decides by their criteria", async () => {
+  it("runs the thirteen tasks with the subject as the agent and decides by their criteria", async () => {
     const { judge, meter } = setup(() => "{}");
     const result = await runTools(context(referenceSubject(), judge, meter));
-    expect(result.items).toHaveLength(10);
+    expect(result.items).toHaveLength(13);
     expect(result.headline.success).toBe(1);
     expect(result.unsupported).toEqual([]);
   });
@@ -276,7 +276,7 @@ describe("suite tools", () => {
     expect(result.unsupported).toEqual(
       withReminders.map((id) => ({ id, reason: "no reminders in this subject" })),
     );
-    expect(result.items).toHaveLength(10 - withReminders.length);
+    expect(result.items).toHaveLength(13 - withReminders.length);
     expect((result.items as ToolItem[]).every((i) => !withReminders.includes(i.id))).toBe(true);
     expect(result.headline.success).toBe(1);
   });

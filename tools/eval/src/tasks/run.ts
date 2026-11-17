@@ -40,6 +40,8 @@ export type Criterion = {
   | { kind: "answer_has_any"; any: string[] }
   /** The final answer contains none of these. */
   | { kind: "answer_lacks"; none: string[] }
+  /** The final answer matches none of these regular expressions (source strings, case-insensitive). */
+  | { kind: "answer_lacks_pattern"; none: string[] }
   /** A notebook page contains all of `includes` (any page, or the named `key`). */
   | { kind: "notebook_has"; includes: string[]; key?: string }
   /** A workspace file (its path matching `path`) contains all of `includes`. */
@@ -158,6 +160,10 @@ function evaluate(c: Criterion, f: Final): { ok: boolean; detail: string } {
     case "answer_lacks": {
       const found = c.none.filter((t) => norm(f.answer).includes(norm(t)));
       return found.length === 0 ? yes : no(`the answer says ${found.join(", ")}`);
+    }
+    case "answer_lacks_pattern": {
+      const found = c.none.filter((p) => new RegExp(p, "i").test(f.answer));
+      return found.length === 0 ? yes : no(`the answer matches ${found.join(", ")}`);
     }
     case "notebook_has": {
       const pages =
