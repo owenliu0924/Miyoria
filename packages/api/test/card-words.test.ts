@@ -133,10 +133,12 @@ describe("her words on a card", () => {
     expect(system).toContain("好耶</reply>");
     expect(system).toContain(CARD_VOICE);
     expect(system).toContain("摯友");
-    // A milestone without a scene asks for nothing made up.
-    expect(occasionLine({ kind: "milestone", tier: "知心", scene: null })).toContain(
-      "不要補上沒寫到的細節",
-    );
+    // A milestone, with a scene or without, asks for nothing added and nobody's part swapped.
+    for (const scene of [null, "一起看流星"]) {
+      const told = occasionLine({ kind: "milestone", tier: "知心", scene });
+      expect(told).toContain("只說寫到的事:不加任何沒寫到的話、動作、反應、時間或後來的事");
+      expect(told).toContain("是他問你的,就不要寫成你問他");
+    }
   });
 
   it("come from her model, and the card goes out without them when it fails", async () => {
