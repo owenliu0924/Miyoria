@@ -71,6 +71,13 @@ export {
   snowflake,
 } from "./mapping.js";
 export {
+  type ChannelView,
+  DiscordPlaces,
+  type GuildView,
+  guildViews,
+  placeRooms,
+} from "./places.js";
+export {
   createClient,
   DiscordBotModule,
   intents,

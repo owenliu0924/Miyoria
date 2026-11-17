@@ -229,6 +229,13 @@ export {
   sniffImage,
 } from "./platform.js";
 export {
+  type PlaceDirectory,
+  PlaceDirectoryKey,
+  type PlaceRoom,
+  type PlaceRoomKind,
+  type PlaceSpace,
+} from "./places.js";
+export {
   mergePrivacy,
   type PersonPrivacy,
   PRIVACY_PREFIX,
