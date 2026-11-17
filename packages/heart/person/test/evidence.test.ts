@@ -62,13 +62,29 @@ describe("Together", () => {
     t.participants(VOICE, [member("me", true), member("amy"), member("cat")], T0 + 20 * MIN);
     // Bob left after 20 minutes; Cat came.
     expect(ended).toEqual([{ id: "bob", minutes: 20 }]);
-    // Another channel's list is not hers.
-    t.participants({ ...VOICE, channel: "other" }, [], T0 + 21 * MIN);
     t.left(VOICE, T0 + 20 * MIN + MIN_TOGETHER_MS - 1);
     // Amy stayed 20 minutes and a bit; Cat less than a minute.
     expect(ended).toEqual([
       { id: "bob", minutes: 20 },
       { id: "amy", minutes: 21 },
+    ]);
+  });
+
+  it("follows her when she is moved to another channel", () => {
+    const ended: { id: string; channel: string; minutes: number }[] = [];
+    const t = new Together((s) =>
+      ended.push({ id: s.account.id, channel: s.context.channel, minutes: s.minutes }),
+    );
+    const other = { ...VOICE, channel: "other" };
+    t.joined(VOICE, [member("amy")], T0);
+    // Moved: the list of another channel is the one she is in now.
+    t.participants(other, [member("amy"), member("bob")], T0 + 10 * MIN);
+    expect(ended).toEqual([{ id: "amy", channel: "v", minutes: 10 }]);
+    t.left(other, T0 + 25 * MIN);
+    expect(ended).toEqual([
+      { id: "amy", channel: "v", minutes: 10 },
+      { id: "amy", channel: "other", minutes: 15 },
+      { id: "bob", channel: "other", minutes: 15 },
     ]);
   });
 
@@ -117,6 +133,21 @@ describe("evidence through the heart's service", () => {
     ]);
     // Someone she does not know is left out.
     expect(store.events?.query({ types: ["heart.evidence"], limit: 100 }).length).toBe(2);
+  });
+
+  it("gives someone without a row one, so the nightly pass sees them; never a bot", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const people = store.plugin(heartTables).people;
+    const heart = new HeartService(people, clock, { isBot: (p) => p === "p-bot" });
+    for (const person of ["p-quiet", "p-bot"]) {
+      heart.evidence({ person, kind: "voice_together", detail: "一起待了 30 分鐘", weight: 30 });
+    }
+    expect(people.has("p-quiet")).toBe(true);
+    expect(people.has("p-bot")).toBe(false);
+    expect(people.active(T0 - MIN, T0 + MIN, 10).map((a) => a.person)).toEqual(["p-quiet"]);
+    const all = store.events?.query({ types: ["heart.evidence"], limit: 10 }) ?? [];
+    expect(all.map((e) => e.envelope.person_id)).toEqual(["p-quiet"]);
   });
 
   it("never records evidence about someone blocked", async () => {
@@ -293,8 +324,40 @@ describe("module heart", () => {
     const amy = await store.people.personByAccount(account("amy"));
     expect(evidence()[0]?.envelope.person_id).toBe(amy?.id);
     expect(evidence()[0]?.envelope.data).toMatchObject({ kind: "voice_together", weight: 12 });
-    // And she is who the bus's account is to everyone else now (`SocialSignalsKey`).
-    expect(sup.services.require(SocialSignalsKey).attitude(account("amy"))).toBeNull();
+    // She has a row now, and is who the bus's account is to everyone else (`SocialSignalsKey`).
+    expect(sup.services.require(SocialSignalsKey).attitude(account("amy"))?.person).toBe(amy?.id);
+  });
+
+  it("writes nothing about a bot in her voice channel", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const sup = new Supervisor();
+    cleanup.push(() => sup.stopAll());
+    sup.services.provide("app", StoreKey, store);
+    await sup.register(new HeartModule("p", { clock }), null, true);
+    await sup.startAll();
+    sup.bus.publish("discord", Events.PlatformVoiceState, {
+      platform: "discord",
+      guild: "g",
+      account: account("music"),
+      display_name: "Music Bot",
+      is_bot: true,
+      channel: "v",
+    } as never);
+    sup.bus.publish("voice", Events.VoiceJoined, {
+      context: VOICE,
+      participants: [member("music"), member("amy")],
+    } as never);
+    await new Promise((r) => setTimeout(r, 20));
+    clock.at += 12 * MIN;
+    sup.bus.publish("voice", Events.VoiceLeft, { context: VOICE } as never);
+    const evidence = () => store.events?.query({ types: ["heart.evidence"], limit: 10 }) ?? [];
+    await waitFor(() => evidence().length > 0);
+    await new Promise((r) => setTimeout(r, 20));
+    const amy = await store.people.personByAccount(account("amy"));
+    expect(evidence().map((e) => e.envelope.person_id)).toEqual([amy?.id]);
+    expect(await store.people.personByAccount(account("music"))).toBeNull();
+    expect(store.plugin(heartTables).people.list().total).toBe(1);
   });
 });
 

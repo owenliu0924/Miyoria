@@ -86,6 +86,8 @@ export class PeopleDirectory implements SocialSignals {
   readonly #accounts = new Map<string, PersonId>();
   readonly #selfAccounts = new Map<string, AccountRef>();
   readonly #linkFailures = new Map<string, { since: number; count: number }>();
+  /** Accounts the platform says are bots. */
+  readonly #bots = new Set<string>();
 
   constructor(
     profile: ProfileId,
@@ -157,6 +159,23 @@ export class PeopleDirectory implements SocialSignals {
 
   isSelf(account: AccountRef): boolean {
     return this.#selfAccounts.has(accountRefString(account));
+  }
+
+  /** What the platform says of `account`: a bot or not. */
+  noteBot(account: AccountRef, isBot: boolean): void {
+    const key = accountRefString(account);
+    if (isBot) this.#bots.add(key);
+    else this.#bots.delete(key);
+  }
+
+  isBot(account: AccountRef): boolean {
+    return this.#bots.has(accountRefString(account));
+  }
+
+  /** Whether one of the accounts of `person` is a bot. */
+  isBotPerson(person: PersonId): boolean {
+    for (const [key, p] of this.#accounts) if (p === person && this.#bots.has(key)) return true;
+    return false;
   }
 
   /** Whether `text` names her (one of her names, any case). */

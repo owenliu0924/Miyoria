@@ -58,10 +58,17 @@ export class Together {
     this.#update(participants, now);
   }
 
-  /** Who is in her voice channel now. */
+  /**
+   * Who is in her voice channel now. A list of another channel means she was moved there: every
+   * stay in the old one ends, and the new one's begin.
+   */
   participants(context: ContextKey, participants: readonly VoiceParticipant[], now: number): void {
+    if (this.#voice !== null && !contextKeyEquals(this.#voice.context, context)) {
+      this.#endAll(now);
+      this.#voice = null;
+      this.#listening = null;
+    }
     if (this.#voice === null) this.#voice = { context, since: new Map() };
-    else if (!contextKeyEquals(this.#voice.context, context)) return;
     this.#update(participants, now);
   }
 

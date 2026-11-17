@@ -112,10 +112,17 @@ export { viewOf } from "./view.js";
 export class HeartService implements HeartPeople {
   readonly #people: HeartStore;
   readonly #clock: Clock;
+  readonly #isBot: (person: PersonId) => boolean;
 
-  constructor(people: HeartStore, clock: Clock) {
+  /** `isBot`: whether a person is a bot, as far as the platform said (no evidence, no row). */
+  constructor(
+    people: HeartStore,
+    clock: Clock,
+    options: { isBot?: (person: PersonId) => boolean } = {},
+  ) {
     this.#people = people;
     this.#clock = clock;
+    this.#isBot = options.isBot ?? (() => false);
   }
 
   feel(
@@ -160,10 +167,20 @@ export class HeartService implements HeartPeople {
     return this.#cared().slice(0, Math.max(0, max));
   }
 
+  /**
+   * Writes a piece of evidence. Someone without a row gets one (a listener who never said a word
+   * still has a day the nightly reflection should see), unless they are a bot; nothing about
+   * someone blocked.
+   */
   evidence(input: HeartEvidenceInput): void {
     const row = this.#people.get(input.person);
     if (row !== null && hasTag(row, BLOCKED_TAG)) return;
-    const at = toTimestamp(input.at ?? this.#clock.now());
+    const ms = input.at ?? this.#clock.now();
+    const at = toTimestamp(ms);
+    if (row === null) {
+      if (this.#isBot(input.person)) return;
+      this.#people.edit(input.person, {}, { now: ms });
+    }
     this.#people.appendEvidence(
       {
         person: input.person,
@@ -497,7 +514,9 @@ export class HeartModule implements Module {
     } catch (error) {
       ctx.log.warn({ err: errorMessage(error) }, "heart: cannot load who people are");
     }
-    const service = new HeartService(people, clock);
+    const service = new HeartService(people, clock, {
+      isBot: (person) => directory.isBotPerson(person),
+    });
     ctx.provide(HeartKey, service);
     ctx.provide(SocialSignalsKey, directory);
     ctx.provide(PeopleDirectoryKey, directory);
@@ -520,12 +539,15 @@ export class HeartModule implements Module {
     };
 
     const together = togetherOf(
-      (account) => (directory.isSelf(account) ? null : directory.personOf(account)),
+      (account) =>
+        directory.isSelf(account) || directory.isBot(account) ? null : directory.personOf(account),
       service,
     );
     // Subscribe before returning so no event published after start is missed.
     const sub = ctx.subscribe([
       Events.PlatformReady.type,
+      Events.PlatformVoiceState.type,
+      Events.PlatformMember.type,
       Events.PlatformMessageCreated.type,
       Events.VoiceUtteranceEvent.type,
       Events.VoiceJoined.type,
@@ -547,6 +569,14 @@ export class HeartModule implements Module {
             }
             continue;
           }
+          // Which accounts are bots: they get no row and no evidence.
+          if (is(Events.PlatformVoiceState, env) || is(Events.PlatformMember, env)) {
+            directory.noteBot(env.data.account, env.data.is_bot);
+            continue;
+          }
+          if (is(Events.PlatformMessageCreated, env) && env.data.author.is_bot) {
+            directory.noteBot(env.data.author.account, true);
+          }
           const line = lineOf(env, directory);
           if (line !== null) {
             await countLine(ctx, directory, service, line, now);
@@ -555,7 +585,7 @@ export class HeartModule implements Module {
           // Who is in her voice channel is known by person before their time is counted.
           if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
             for (const p of env.data.participants) {
-              if (p.is_self || directory.isSelf(p.account)) continue;
+              if (p.is_self || directory.isSelf(p.account) || directory.isBot(p.account)) continue;
               await directory.resolve(p.account, p.display_name, now);
             }
           }
