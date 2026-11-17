@@ -448,6 +448,8 @@ dirs = ["extensions"]
 # 她給你的卡(docs/design/v5-play.md §2、cards.md):每日卡用魚幣買,每天第一張也要錢;部件照公開的機率抽,
 # 表情由你們的關係決定,買不到也抽不到。卡不能交易、不能送。卡框和閃卡在 [modules.economy](frames、card_foil)。
 # 舊的「抽收藏」拿掉了,已經有的收藏留在圖鑑的「舊收藏」。下面都是預設值。
+# 不用錢的卡(不必設定):羈絆升到沒到過的分級時一張里程碑卡(每一級一張,最多 15 張);
+# 從舊紀錄搬過來的人第一次看自己的卡時一張紀念卡。都不算進每天的張數,也不動保底。
 # [modules.cards]
 # enabled = true
 # price = 30                  # 一張每日卡多少魚幣
@@ -455,6 +457,19 @@ dirs = ["extensions"]
 # pity = 20                   # 連續幾張沒有 SR 以上的部件,下一張保證有
 # rarity_weights = { N = 70, R = 22, SR = 7, SSR = 1 }   # 稀有度的權重(公開的機率表照這個算)
 # utc_offset_minutes = 480    # 「今天」從哪個時區的午夜開始算
+# # 頻道裡的掉落(v5-play.md §6.2):頻道熱鬧時她偶爾丟一張卡,第一個按「撿起來」的人拿走(免費,帶一個只有掉落才有的部件)
+# drops = false               # 預設關;開了也只在 drop_channels 列的頻道
+# drop_channels = []          # 要掉落的頻道 id,例如 ["123456789012345678"]
+# drop_window_mins = 10       # 熱鬧 = 這幾分鐘內
+# drop_min_people = 3         #   至少這麼多人
+# drop_min_lines = 20         #   一共說了這麼多句(她自己、機器人的不算)
+# drop_chance = 0.25          # 熱鬧時掉一張的機率,一段時間只擲一次
+# drops_per_channel_day = 2   # 一個頻道一天最多幾次
+# drop_gap_mins = 120         # 同一個頻道兩次之間至少隔多久
+# drop_delay_min_secs = 30    # 決定要掉之後隨機等一下才出現,不能算準
+# drop_delay_max_secs = 180
+# drop_expire_mins = 10       # 沒人撿就飄走
+# drops_per_person_day = 1    # 一個人一天最多撿幾張;上一張是你撿的,同一個頻道的下一張你撿不到
 
 # 遊戲內聊天變成獨立的對話(每個世界 / 伺服器一段歷史)。玩家在 Discord 用 /me link 拿代碼,
 # 在遊戲聊天室打 `!link <代碼>` 就跟 Discord 帳號連在一起;沒連的玩家是陌生人。
