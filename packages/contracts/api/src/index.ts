@@ -662,13 +662,6 @@ export {
   type WalletAdjustResult,
   WalletAdjustResultSchema,
 } from "./people.js";
-export type {
-  PersonCard,
-  PersonDetail,
-  PersonSummary,
-  Relationship,
-  RelationshipDelta,
-} from "./people-panel.js";
 export {
   type PersonaOverride,
   PersonaOverrideSchema,
