@@ -257,19 +257,11 @@ describe("Inner", () => {
     expect(screen.getByText("星期一 晚上 20:00")).toBeInTheDocument();
   });
 
-  it("lists her feelings and the world on their tabs", async () => {
+  it("lists the world on its tab", async () => {
     serve();
     const user = userEvent.setup();
     renderRoute("/inner");
-    await user.click(await screen.findByRole("tab", { name: "感情" }));
-    const feelings = await screen.findByRole("table", { name: "感情" });
-    expect(within(feelings).getByRole("link", { name: "Owen" })).toHaveAttribute(
-      "href",
-      "/character?tab=people&person=p1",
-    );
-    expect(within(feelings).getByText("最近常陪我聊天,有點在意他")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "世界" }));
+    await user.click(await screen.findByRole("tab", { name: "世界" }));
     const people = await screen.findByRole("table", { name: "在線的人" });
     const owen = within(people).getByText("Owen").closest("tr") as HTMLElement;
     expect(within(owen).getByText("在線")).toBeInTheDocument();

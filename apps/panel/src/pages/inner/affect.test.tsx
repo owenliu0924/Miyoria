@@ -2,12 +2,11 @@ import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { AffectSnapshot, Goal, GoalsView, PersonCard, PersonRow, SelfView, WorldView } from "@miyoria/contracts/api";
+import type { AffectSnapshot, Goal, GoalsView, PersonRow, SelfView, WorldView } from "@miyoria/contracts/api";
 import { applyCustomEvent } from "@/app/events-store";
 import { queryKeys } from "@/app/queries";
 import { envelope } from "@/test/envelope";
 import { mockFetch, renderRoute } from "@/test/render";
-import { labelTone, stanceText } from "./PersonCards";
 import { triggerText } from "./GoalsTab";
 
 const AT = "2026-11-02T12:00:00.000Z";
@@ -33,25 +32,7 @@ const AFFECT: AffectSnapshot = {
   },
 };
 
-const CARD: PersonCard = {
-  person: "p1",
-  handle: "owen",
-  call_name: "歐文",
-  affinity: 60,
-  trust: 50,
-  familiarity: 40,
-  feeling: "最近常陪我聊天,有點在意他",
-  label: "好朋友",
-  level: 60,
-  stance: "嘴硬但會照顧他",
-  owner: true,
-  blocked: false,
-  last_seen: AT,
-  last_together: null,
-  updated_at: AT,
-};
-
-/** The one people route's row for `CARD`: what the inner page's cards are made from. */
+/** Someone in the one people list. */
 const ROW: PersonRow = {
   person: { id: "p1", display_name: "owen", created_at: AT, accounts: [] },
   has_row: true,
@@ -175,42 +156,15 @@ describe("Inner: affect", () => {
   });
 });
 
-describe("Inner: people cards", () => {
-  it("shows one card per person above her older notes", async () => {
+describe("Inner: feelings", () => {
+  it("is gone: an old link lands on the one people list", async () => {
     serve();
-    renderRoute("/inner?tab=feelings");
-    const cards = await screen.findByRole("table", { name: "人物卡" });
-    const link = within(cards).getByRole("link", { name: "歐文" });
-    expect(link).toHaveAttribute("href", "/character?tab=people&person=p1");
-    expect(within(cards).getByText("好朋友")).toBeInTheDocument();
-    expect(within(cards).getByText("主人")).toBeInTheDocument();
-    expect(within(cards).getByRole("meter", { name: "owen 羈絆 60" })).toBeInTheDocument();
-    expect(within(cards).getByText("最近常陪我聊天,有點在意他")).toBeInTheDocument();
-    expect(within(cards).getByText("Lv.60")).toBeInTheDocument();
-    expect(within(cards).getByText("嘴硬但會照顧他")).toBeInTheDocument();
-    expect(await screen.findByRole("table", { name: "感情" })).toBeInTheDocument();
-  });
-
-  it("still lists her notes when the cards are not available", async () => {
-    serve((_m, url) => (url.pathname === "/api/people" ? { status: 503, body: { error: "the heart's rows are not available" } } : undefined));
-    renderRoute("/inner?tab=feelings");
-    expect(await screen.findByRole("table", { name: "感情" })).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "人物卡" })).toBeNull();
-  });
-
-  it("gives every tier a tone, closer tiers the brand's", () => {
-    expect(labelTone("討厭")).toBe("danger");
-    expect(labelTone("陌生人")).toBe("neutral");
-    expect(labelTone("好朋友")).toBe("success");
-    expect(labelTone("永恆羈絆")).toBe("brand");
-  });
-
-  it("shows her stance as she wrote it, and nothing without one", () => {
-    expect(stanceText(CARD)).toBe("嘴硬但會照顧他");
-    expect(stanceText({ ...CARD, stance: "  " })).toBeNull();
-    expect(stanceText({ ...CARD, stance: null })).toBeNull();
-    // An older Core sends none.
-    expect(stanceText({})).toBeNull();
+    const { router } = renderRoute("/inner?tab=feelings");
+    const list = await screen.findByRole("table", { name: "人" });
+    expect(within(list).getByText("owen")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/character");
+    expect(router.state.location.search).toEqual({ tab: "people" });
+    expect(screen.queryByRole("tab", { name: "感情" })).toBeNull();
   });
 });
 

@@ -9,9 +9,8 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import { isApiError } from "@/api/http";
-import { type AdjustPersonInput, cardsOf, detailOf, summaryOf, summaryPageOf, type UpdatePersonInput, updateBodyOf } from "@/api/people-view";
 import type { DecisionsQuery, E2eRecord, FactEventsQuery, LlmCallsQuery, LlmThinkingQuery, MemoryQuery, ModuleAction, PeopleQuery } from "@/api/types";
-import type { AddDirectiveRequest, ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
+import type { AddDirectiveRequest, AdjustPersonRequest, UpdatePersonRequest,ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
 import type { ContextKey, Timestamp } from "@miyoria/contracts/wire";
 import { type EvalData, loadEvalData } from "@/lib/eval-data";
 import { factEventsInput } from "@/lib/fact-events";
@@ -34,6 +33,8 @@ export const queryKeys = {
   cost: ["llm", "cost"] as const,
   people: (q: PeopleQuery) => ["people", q] as const,
   person: (id: string) => ["people", "detail", id] as const,
+  personHistory: (id: string, after: string) => ["people", "history", id, after] as const,
+  personTrend: (id: string) => ["people", "trend", id] as const,
   personWallet: (id: string) => ["people", "wallet", id] as const,
   memory: (q: Omit<MemoryQuery, "before">) => ["memory", q] as const,
   roles: ["auth", "roles"] as const,
@@ -67,7 +68,6 @@ export const queryKeys = {
   ledger: (context: ContextKey | undefined) => ["arbiter", "ledger", context ?? null] as const,
   arbiterDecisions: (q: object) => ["arbiter", "decisions", q] as const,
   affect: ["affect"] as const,
-  affectPeople: ["affect", "people"] as const,
   goals: ["mind", "goals"] as const,
   prompts: ["prompts"] as const,
   turnOutcomes: (q: object) => ["turns", "outcomes", q] as const,
@@ -264,18 +264,46 @@ export function useSetPersona() {
 
 export function usePeople(q: PeopleQuery, enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.people(q), queryFn: async ({ signal }) => summaryPageOf(await api.rpc.people.list({ query: q }, { signal })), enabled });
+  return useQuery({ queryKey: queryKeys.people(q), queryFn: ({ signal }) => api.rpc.people.list({ query: q }, { signal }), enabled });
 }
 
-/** Changes of the history the old chart reads. */
-const HISTORY_LIMIT = 500;
+/** Changes per page of a person's history. */
+const HISTORY_PAGE = 20;
+/** Changes a trend chart reads at most. */
+const TREND_LIMIT = 500;
 
 export function usePerson(id: string | undefined) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.person(id ?? ""),
-    queryFn: async ({ signal }) => detailOf(await api.rpc.people.get({ params: { id: id ?? "" }, query: { limit: HISTORY_LIMIT } }, { signal })),
+    queryFn: ({ signal }) => api.rpc.people.get({ params: { id: id ?? "" }, query: { limit: HISTORY_PAGE } }, { signal }),
     enabled: Boolean(id),
+  });
+}
+
+/**
+ * The pages of a person's history after the one the person page came with (`after`, its
+ * `next_before`). Nothing is fetched until `fetchNextPage`; a new first page starts over.
+ */
+export function usePersonHistory(id: string, after: string) {
+  const api = useApi();
+  return useInfiniteQuery({
+    queryKey: queryKeys.personHistory(id, after),
+    queryFn: ({ signal, pageParam }) => api.rpc.people.history({ params: { id }, query: { before: pageParam, limit: HISTORY_PAGE } }, { signal }),
+    initialPageParam: after,
+    getNextPageParam: (last) => last.next_before ?? undefined,
+    enabled: false,
+  });
+}
+
+/** The newest changes of several people at once, for the trend chart. */
+export function usePeopleHistories(ids: string[]) {
+  const api = useApi();
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: queryKeys.personTrend(id),
+      queryFn: ({ signal }: { signal: AbortSignal }) => api.rpc.people.history({ params: { id }, query: { limit: TREND_LIMIT } }, { signal }),
+    })),
   });
 }
 
@@ -283,9 +311,26 @@ export function useUpdatePerson(id: string) {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (req: UpdatePersonInput) => summaryOf(await api.rpc.people.update({ params: { id }, body: updateBodyOf(req) })),
+    mutationFn: (req: UpdatePersonRequest) => api.rpc.people.update({ params: { id }, body: req }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["people"] }),
   });
+}
+
+/** Sets or removes the shared memory a tier rests on. */
+export function useAnchorMutations(id: string) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const refresh = () => void qc.invalidateQueries({ queryKey: queryKeys.person(id) });
+  return {
+    set: useMutation({
+      mutationFn: ({ tier, quote }: { tier: number; quote: string }) => api.rpc.people.setAnchor({ params: { id, tier }, body: { quote } }),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (tier: number) => api.rpc.people.removeAnchor({ params: { id, tier } }),
+      onSuccess: refresh,
+    }),
+  };
 }
 
 export function usePersonWallet(id: string) {
@@ -310,7 +355,7 @@ export function useAdjustPerson(id: string) {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (req: AdjustPersonInput) => summaryOf(await api.rpc.people.adjust({ params: { id }, body: { field: "bond", delta: req.affinity } })),
+    mutationFn: (req: AdjustPersonRequest) => api.rpc.people.adjust({ params: { id }, body: req }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["people"] }),
   });
 }
@@ -775,17 +820,6 @@ export function useThoughtHistory() {
   });
 }
 
-/** Details (with the affinity history) of several people at once. */
-export function usePeopleDetails(ids: string[]) {
-  const api = useApi();
-  return useQueries({
-    queries: ids.map((id) => ({
-      queryKey: queryKeys.person(id),
-      queryFn: async ({ signal }: { signal: AbortSignal }) => detailOf(await api.rpc.people.get({ params: { id }, query: { limit: HISTORY_LIMIT } }, { signal })),
-    })),
-  });
-}
-
 
 // --- body, arbiter, affect, plan, prompts -----------------------------------------
 // Older Cores answer 404 and a stopped module 503: `poll` then stops asking.
@@ -831,12 +865,6 @@ export function useArbiterDecisions(q: { limit?: number; verdict?: ArbiterVerdic
 export function useAffect() {
   const api = useApi();
   return useQuery({ queryKey: queryKeys.affect, queryFn: ({ signal }) => api.rpc.affect.snapshot(undefined, { signal }), refetchInterval: poll(10_000) });
-}
-
-/** The inner page's person cards: the people list's rows that have a heart row, closest first. */
-export function useAffectPeople() {
-  const api = useApi();
-  return useQuery({ queryKey: queryKeys.affectPeople, queryFn: async ({ signal }) => cardsOf(await api.rpc.people.list({ query: { limit: 500 } }, { signal })), refetchInterval: poll(30_000) });
 }
 
 export function useGoals(closed: boolean) {

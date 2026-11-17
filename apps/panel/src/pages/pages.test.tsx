@@ -221,7 +221,7 @@ describe("PersonSheet", () => {
     });
     const user = userEvent.setup();
     const { queryClient } = renderPage(<PersonSheet personId="P1" onClose={() => {}} />);
-    const notes = await screen.findByLabelText("備註");
+    const notes = await screen.findByLabelText("印象");
     expect(notes).toHaveValue("喜歡拉麵");
     await user.clear(notes);
     await user.type(notes, "其實比較喜歡烏龍麵");
@@ -229,7 +229,7 @@ describe("PersonSheet", () => {
     // A refetch hands back a new object (new tag array) with the same values.
     await act(() => queryClient.invalidateQueries());
     await waitFor(() => expect(fetches).toBe(2));
-    expect(screen.getByLabelText("備註")).toHaveValue("其實比較喜歡烏龍麵");
+    expect(screen.getByLabelText("印象")).toHaveValue("其實比較喜歡烏龍麵");
     expect(screen.getByRole("button", { name: "儲存" })).toBeEnabled();
   });
 
