@@ -6,7 +6,9 @@
 
 ## 1. 現況
 
-### 1.1 三個模組都還在跑
+> **現在的樣子(第 5 步之後,2026-11-17)**:下面 §1.1、§1.2 是開工前的盤點,留著當紀錄。`heart/social` 已經併進 module `heart`;關鍵字規則表、社交評估、印象筆記、Appraise、Plan、每日 Plan、`desire`、`SelfStarts`、心跳都刪了;`relationships`、`relationship_deltas`、`self:feeling:*` 不再有人寫,只有搬移在讀。現在跑的是什麼、怎麼接的,看 §2.10。
+
+### 1.1 三個模組都還在跑(開工前)
 
 | 模組 | 做什麼 | 模型呼叫 |
 |---|---|---|
@@ -202,6 +204,70 @@
 - 每晚反思還沒寫 `heart_person` 的文字欄位和數值(第 4 步);證據事件沒有人寫。
 - social 的規則表和評估、mind 的 Appraise 照舊在跑,只寫它們自己的表;現在 Appraise 和 `feel` 都會動情緒(第 5 步刪 Appraise)。`set_call_name` 還寫 `relationships`。
 - 兩項評測(`feel` 題組:漏出來、方向)沒有接真的模型跑過;規則的文字還要 owner 看過。
+
+### 2.10 第 4、5 步做時定下的細節(2026-11-17)
+
+**證據**(`heart.evidence`,不動數值,每晚反思時她會看到)
+
+| 種類 | 誰寫 | 寫什麼 |
+|---|---|---|
+| `voice_together` | module `heart` 自己看語音事件(`together.ts`) | 她和對方同在一個語音頻道,從兩個都在到其中一個離開,滿 60 秒才算;「在你的語音頻道一起待了 N 分鐘」,`weight` 是分鐘 |
+| `heard_song` | module `heart` 看 `sing.cue` | 歌開始時在場、唱完時還在的人;「聽你唱完了〈歌名〉」 |
+| `played_together` | `play/party` 結束時 | 每個玩家;「一起玩了〈遊戲〉」 |
+| `gift` | economy 收到禮物 | 「送了你〈東西〉」,`weight` 是幣值 |
+| `deal_kept`、`deal_broken` | economy 的約定 | 付了或沒付 |
+| `card` | api 發會員卡 | 「拿到了 / 重抽了你的第 N 張卡片」 |
+
+- Minecraft 那邊沒有玩家名單,沒寫;`task_together` 還沒有人寫。
+- 禮物和守約原本的「一點點」改成 `heart_person` 的變動(`cause: evidence`,`effects.ts`,經 `RelationshipEffectsKey`):受當天的上限,同一種(同一句原因)當天每多一次少 0.75 倍,另有每種自己的上限。毀約是往壞的方向,上限是三倍,所以是真的扣分;原因寫「約定做了,說好的錢沒付」。
+
+**每晚一個人一次**(`memory/learning/src/person-reflect.ts`、`reflect.ts`)
+
+- 整體反思照舊先跑(它不再改任何人的感覺,`max_bonds` 拿掉);跑完、而且還在每晚的花費上限內,才一個人一次。同一個 `ReflectGuardKey`,上限用完就停,當晚不再補。
+- 對象:從上一次一人一次跑完的時間到現在(最多往回兩天,第一次是一天)有互動的人,互動多的先;一晚最多 `people_per_night`(30)個;同一個當地日一個人只想一次(重啟不會重來)。
+- 她讀到的:現在對他的感覺(文字和數字)、今天的變動和原因、今天的證據、今天和他有關的記憶(那段時間的對話筆記 e1…、記憶庫裡寫到他的筆記 n1…,別人私訊的不給,各最多 12 條)、她之前寫的五段文字。高思考(`reflect`),最多 `people_max_tokens`(3000)個 token。
+- 回覆用 zod 驗;值寫錯、同一個值兩項、沒有 held 卻給錨點、錨點的代號不在資料裡,就整份不用(只記 log),從不寫一半。寫的時候一個交易:錨點先、再文字、再數值,所以同一晚的修正就能過那一級。
+- 數值的修正一樣是提議(`cause: reflect`),受當天的上限,但不打遞減的折扣。
+- 會員看到的那句(`public_feeling`):不能有別人的名字(看得到的每個名字和稱呼都比對)、要過審核;沒有審核或沒有名單時不存。
+- 提示詞的文字是 owner 要看的(第 4 步的報告裡有全文)。
+
+**誰寫 `heart_person`**
+
+- `set_call_name`(能力名稱照舊 `social.set_call_name`)、`/me call`、管理面板的人物頁(標籤、封鎖、稱呼;面板的「備註」就是她的印象)、`/admin person adjust`、會員的「忘記我」(清掉對外那句):都寫 `heart_person`,管理員的是 `cause: admin`。
+- 區塊 4 和她的 `@名字` 名單只讀 `heart_person`,不再先讀舊的。
+
+**social 併進 heart**(第 5 步)
+
+- 不留一個薄的 social:它剩下的只有帳號對應人、名字、`/me link`、指令,都是 heart 列的鄰居。module id `social` 拿掉,`[modules.social]` 列進 `removed-config.ts`;多一個 `[modules.heart] auto_owner_tag`(預設開,權限上是 owner 的帳號會被加上 `owner` 標籤)。
+- `PeopleDirectory`(`heart/person/src/directory.ts`)是 `SocialSignalsKey`:誰是誰、封鎖、她自己的帳號、連結碼;`attitude` 的數字從 `heart_person` 來,沒有列的人回 `null`(陌生人)。`PeopleDirectoryKey` 給要帳號的人(api 的筆記和學習、遊戲聊天)。
+- 每一句話由 module `heart` 自己數(以前是 social 叫它):認人、熟悉長、對她說的或同在語音的算一次互動。
+- 分級名稱只有 `contracts/wire/src/tiers.ts` 一份(契約不能依賴 `packages/types`),`packages/types` 轉出去;契約的 enum 從它來,面板改成照名字算色調、不再抄表。V4 的對照表還是一份手抄,留到 V4 切換拿掉的時候。
+- `/me profile` 每個分級一句她的話(`FEELINGS`,`commands.ts`),「知心」以上不會再掉回陌生人那句。
+
+**self**
+
+- 刪 `HeartBook`、`self:feeling` 卡片、`adjustBond`、`affect.bond`、`syncSnapshots`、對人的四種情緒的獨立數字。「在意」只問 heart。想念某人:取 heart 的想念,每 `missing_after_hours` 最多觸發一次。
+- 情緒和驅力存在 `heart_self`,只在事件或她的設定改了才寫(內容一樣不寫);`heart_self` 是空的時候讀一次舊的 `self:state`。衰減照時間算回來,不必每分鐘存。
+
+**mind 剩下的**(`heart/mind/src/mind.ts`)
+
+- 想法日誌:每次 `feel` 套用寫一行(她寫的情緒和提議,`brain/selfhost/src/feel.ts`),每次反思寫一行(看 `reflect.run`);面板的「內心」照舊讀。
+- 目標:觸發條件到了就送一個 `mind.reminder`(`fired`,id `goal:<id>`),新的 runner 把它當 timer 收進她的 inbox,由她決定做不做。沒有開新的 inbox 種類。
+- 生活紀錄、提醒照舊。`MindKey.suggest`、`accepting`、心跳、`calls_last_hour` 這類統計都拿掉;`/api/mind/plan` 和面板的「今天的計畫」拿掉。
+- `llm.purposes.mind`、`llm.reasoning.appraise / plan / plan_daily` 和 `[modules.mind]` 的舊鍵列進 `removed-config.ts`。
+
+**唱歌**
+
+- 歌準備好時,有 Arbiter 和 impulse 的話送一個 impulse(`song`,原因 `song_ready`),由她決定現在唱不唱;沒有的時候照舊自己開始。報幕的流程和階段 3 一樣。
+
+**舊表**
+
+- `relationships`、`relationship_deltas`、`self:feeling:*`、`self:state` 不刪,只是沒人寫,搬移還讀得到。資料頁的「稱呼」清的是 `heart_person` 的稱呼(舊表的那份一起清)。v5-data §8 第 14 步才拿掉表。
+
+**還沒做的**
+
+- 顯示(§4 第 6、7 步):環的元件、合併的人物頁、會員頁的環、`/me profile` 的圖。
+- 每晚一人一次和兩項 `feel` 評測沒有接真的模型跑過;提示詞和 `/me profile` 的句子還要 owner 看。
 
 ## 3. owner 的決定(2026-11-17)
 

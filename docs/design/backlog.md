@@ -225,6 +225,15 @@
 - **移除 `[llm.thinking]` 的行為差異**:舊設定檔裡有 `[llm.thinking]` 的,現在那些用途改用 `[llm.reasoning]` 或預設值(例如 `mind = true` 以前等於 `medium`,現在是沒列的用途 = 不思考)。啟動時會警告,但要不要在 `[llm.reasoning]` 補上,要 owner 看自己的設定檔。
 
 
+### V5 階段 4 第 4、5 步留下的(2026-11-17)
+
+- **`task_together` 證據沒有人寫**:任務、懸賞完成時沒有記;Minecraft 沒有玩家名單,也沒記 `played_together`。
+- **V4 的分級對照表還是手抄的**(`store` 的切換程式):V4 切換拿掉時一起刪,或改成從 `BOND_TIERS` 產生。
+- **`tools/replay` 的 `announcements-not-her-topics.jsonl` 還帶著 `plans`**:Plan 刪了以後腳本不讀它,留著不影響結果;下次重錄時拿掉。
+- **`social.appraisal` 事件沒有人發也沒有人聽**(社交評估刪了):它在 SDK 公開的事件清單裡,和 `agent.initiative` 一樣,要拿掉是改公開的事件合約,另外決定。
+- **self 裡「暗戀」的名字還在**(`crushPerson`、`crush_spoke`、`crush_message_longing` 這些):讀的已經是 heart 算的「最在意的人」(H5),只是名字沒改;設定鍵要改名得一起改 `removed-config.ts` 和範例檔。
+- **`relationships`、`relationship_deltas`、`self:feeling:*`、`self:state` 沒人寫了**,只有搬移讀;等 v5-data §8 第 14 步刪表。
+
 ## 4. 自我修復與自我改進(備忘)
 
 三層,越下面風險越高:
