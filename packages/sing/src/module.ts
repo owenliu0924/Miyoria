@@ -6,6 +6,8 @@ import {
   HEALTHY,
   type Health,
   type Module,
+  type ModuleCard,
+  type ModuleCardFact,
   type ModuleContext,
   type ServiceLookup,
 } from "@miyoria/runtime/kernel";
@@ -16,6 +18,7 @@ import {
   SongClipsKey,
   SongTicketsKey,
   SpeechPauseKey,
+  safeName,
   serviceKey,
   TaskSteerKey,
   VoiceFloorKey,
@@ -38,7 +41,7 @@ export const SingerKey = serviceKey<Singer>("Singer");
 interface Running {
   singer: Singer;
   clips: SingClips | null;
-  worker: SingWorker;
+  worker: FailoverSingWorker;
   commands: CommandMount;
   prompts: PromptContributors | null;
   capabilities: (() => void)[];
@@ -86,6 +89,8 @@ function endpointId(endpoint: Endpoint): string {
 export class SingModule implements Module {
   static readonly ID = "sing";
   readonly manifest = defineManifest(SingModule.ID, "Singing", {
+    icon: "music",
+    category: "play",
     description: "Song requests: AI covers in her voice, sung in voice with lyrics",
     optional: ["voice.link", "arbiter", "queue", "commands", "actions", "agent", "activity"],
     configSchema: SingConfigSchema,
@@ -240,6 +245,45 @@ export class SingModule implements Module {
     if (!running) return HEALTHY;
     const why = await running.worker.health(AbortSignal.timeout(3000));
     return why === null ? HEALTHY : { status: "degraded", reason: why };
+  }
+
+  /**
+   * The set list (songs still open, the ones being prepared), what she is singing now, and whether
+   * a song worker takes work (the failover's last word on each, never a request from here). While
+   * a song plays, an action stops it (`sing.stop`, through the gate).
+   */
+  async card(): Promise<ModuleCard> {
+    const running = this.#running;
+    if (!running) return { facts: [] };
+    const { singer, worker } = running;
+    const playing = singer.playing();
+    const facts: ModuleCardFact[] = [
+      { label: "歌單", value: singer.list.open().length, unit: "首" },
+      { label: "準備中", value: singer.list.preparing().length, unit: "首" },
+    ];
+    if (playing !== null) {
+      facts.push({
+        label: "正在唱",
+        value: safeName(playing.song?.title?.trim() || playing.query, 40),
+      });
+    }
+    facts.push({ label: "worker", value: worker.current() === null ? "連不上" : "連得上" });
+    return {
+      facts,
+      ...(playing === null
+        ? {}
+        : {
+            actions: [
+              {
+                id: "stop",
+                label: "停下這首",
+                confirm: "停下她正在唱的歌?",
+                capability: "sing.stop",
+                args: {},
+              },
+            ],
+          }),
+    };
   }
 
   async stop(): Promise<void> {

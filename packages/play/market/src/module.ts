@@ -29,6 +29,7 @@ import {
   errorMessage,
   interval,
   type Module,
+  type ModuleCard,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import { StoreKey } from "@miyoria/store";
@@ -45,6 +46,7 @@ import {
   SongTicketsKey,
   serviceKey,
 } from "@miyoria/types";
+import { marketCard } from "./card.js";
 import { registerCommands, unregisterCommands } from "./commands.js";
 import { MarketConfigSchema } from "./config.js";
 import { LlmLotPicker } from "./lots.js";
@@ -73,6 +75,8 @@ export interface MarketModuleOptions {
 export class MarketModule implements Module {
   static readonly ID = "market";
   readonly manifest = defineManifest(MarketModule.ID, "Market", {
+    icon: "gavel",
+    category: "play",
     description:
       "The weekly market: the song priority ticket, a weekly auction of one lot in a channel, and a weekly lottery",
     optional: ["economy", "heart", "commands", "moderation"],
@@ -80,6 +84,8 @@ export class MarketModule implements Module {
   });
   readonly #options: MarketModuleOptions;
   #mount: CommandMount | null = null;
+  /** The running service and its clock, for the card on the panel. */
+  #running: { service: MarketService; clock: Clock } | null = null;
 
   constructor(options: MarketModuleOptions = {}) {
     this.#options = options;
@@ -138,6 +144,7 @@ export class MarketModule implements Module {
     });
     ctx.provide(MarketKey, service);
     ctx.provide(SongPriorityKey, service.songPriority);
+    this.#running = { service, clock };
     this.#mount = new CommandMount(
       "market",
       (registry) => registerCommands(registry, () => service),
@@ -158,7 +165,20 @@ export class MarketModule implements Module {
     });
   }
 
+  /** The week's auction and lottery (`card.ts`); nothing without a store. */
+  async card(): Promise<ModuleCard> {
+    const running = this.#running;
+    if (running === null) return { facts: [] };
+    const { service, clock } = running;
+    const [auction, lottery] = await Promise.all([
+      service.auctionView(null),
+      service.lotteryView(null),
+    ]);
+    return marketCard(auction, lottery, clock.now());
+  }
+
   async stop(): Promise<void> {
+    this.#running = null;
     this.#mount?.detach();
     this.#mount = null;
   }

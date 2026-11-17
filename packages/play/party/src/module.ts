@@ -6,6 +6,8 @@ import {
   errorMessage,
   getLogger,
   type Module,
+  type ModuleCard,
+  type ModuleCardFact,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
 import {
@@ -140,6 +142,8 @@ class Notes implements PartyOutput {
 export class PartyModule implements Module {
   static readonly ID = "party";
   readonly manifest = defineManifest(PartyModule.ID, "Party games", {
+    icon: "party-popper",
+    category: "play",
     description:
       "Party games she hosts: turtle soup (voice or text channel) and song guessing (voice)",
     optional: [
@@ -306,6 +310,23 @@ export class PartyModule implements Module {
     if ("phase" in activity && (activity.phase === "starting" || activity.phase === "running")) {
       table.away();
     }
+  }
+
+  /**
+   * The games going on now and what they are, and the last game that ended. The results are kept
+   * in memory, a few and only since the start, so there is no count of the day's games.
+   */
+  async card(): Promise<ModuleCard> {
+    const running = this.#running;
+    if (!running) return { facts: [] };
+    const { sessions, recent } = running.table.snapshot();
+    const facts: ModuleCardFact[] = [{ label: "進行中", value: sessions.length, unit: "場" }];
+    if (sessions.length > 0) {
+      facts.push({ label: "正在玩", value: [...new Set(sessions.map((s) => s.title))].join("、") });
+    }
+    const last = recent[0];
+    if (last !== undefined) facts.push({ label: "上一場", value: last.title });
+    return { facts };
   }
 
   async stop(): Promise<void> {

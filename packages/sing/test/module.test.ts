@@ -336,6 +336,8 @@ class Harness {
   readonly events: PublishedEvent[] = [];
   /** What went to Core's other sink for the audience context (the hosts' GPU arbiters). */
   readonly sent: GpuContext[] = [];
+  /** The module under test (its card). */
+  module: SingModule | null = null;
 
   private constructor(withMind: boolean, store: MemorySettingsStore | null) {
     const s = this.sup.services;
@@ -368,14 +370,15 @@ class Harness {
   ): Promise<Harness> {
     const h = new Harness(withMind, restart?.store ?? null);
     if (restart?.worker) h.worker = restart.worker;
+    h.module = new SingModule(() => h.worker, {
+      endpoints: oneWorker(),
+      context: (services, context) => {
+        expect(services).toBe(h.sup.services);
+        h.sent.push(context);
+      },
+    });
     await h.sup.register(
-      new SingModule(() => h.worker, {
-        endpoints: oneWorker(),
-        context: (services, context) => {
-          expect(services).toBe(h.sup.services);
-          h.sent.push(context);
-        },
-      }),
+      h.module,
       { poll_ms: 100, quiet_ms: 200, lead_ms: 300, announce_max_secs: 5, ...(config as object) },
       true,
     );
@@ -1061,6 +1064,48 @@ describe("sing module", () => {
     expect(await h.command("queue song stop")).toContain("取消了歌單上的 1 首");
     expect(h.worker.cancelled).toEqual(["j2"]);
     expect(h.singer.list.open()).toHaveLength(0);
+  });
+
+  it("its card shows the set list and the song she sings, with an action that stops it", async () => {
+    h = await Harness.create();
+    expect(await h.module?.card()).toEqual({
+      facts: [
+        { label: "歌單", value: 0, unit: "首" },
+        { label: "準備中", value: 0, unit: "首" },
+        { label: "worker", value: "連得上" },
+      ],
+    });
+    await h.join();
+    h.worker.cacheHit = true;
+    h.worker.cacheSeconds = 30;
+    await h.command("queue song request", { song: "Long" });
+    h.worker.cacheHit = false;
+    await h.invoke(Principals.user(AMY, TEXT), "sing.request", { query: "Next one" });
+    await settle(6000 + 400);
+    expect(h.voice.plays).toHaveLength(1);
+    const card = await h.module?.card();
+    expect(card?.facts).toEqual([
+      { label: "歌單", value: 2, unit: "首" },
+      { label: "準備中", value: 1, unit: "首" },
+      { label: "正在唱", value: "Long" },
+      { label: "worker", value: "連得上" },
+    ]);
+    expect(card?.actions).toEqual([
+      {
+        id: "stop",
+        label: "停下這首",
+        confirm: "停下她正在唱的歌?",
+        capability: "sing.stop",
+        args: {},
+      },
+    ]);
+    // The action, as the panel runs it through the gate: this song stops, the next one stays.
+    const action = card?.actions?.[0];
+    await h.invoke(Principals.panel("api"), action?.capability ?? "", action?.args ?? {});
+    await settle(50);
+    expect(h.voice.plays[0]?.stoppedWith).not.toBeNull();
+    expect(h.singer.list.open()).toHaveLength(1);
+    expect((await h.module?.card())?.actions).toBeUndefined();
   });
 
   it("her wrap-up clears the rest of the list and lets the song she is singing finish", async () => {
