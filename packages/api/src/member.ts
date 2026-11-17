@@ -54,6 +54,7 @@ import {
   AuthorizerKey,
   accountRefString,
   ephemeralHandlesIn,
+  familiarityBand,
   holdsBack,
   inspectInput,
   mentionsAnother,
@@ -64,6 +65,7 @@ import {
   sameAccount,
   splitNames,
   toTimestamp,
+  trustBand,
 } from "@miyoria/types";
 import {
   type CardHolder,
@@ -130,20 +132,8 @@ export function affinityBand(value: number): string {
   return "非常好";
 }
 
-export function trustBand(value: number): string {
-  if (value < 15) return "還不信任";
-  if (value < 40) return "有點信任";
-  if (value < 70) return "信任";
-  return "很信任";
-}
-
-export function familiarityBand(value: number): string {
-  if (value < 3) return "陌生";
-  if (value < 10) return "見過幾次";
-  if (value < 30) return "有點熟";
-  if (value < 60) return "熟";
-  return "很熟";
-}
+/** The trust and familiarity words live with the bond's, in `@miyoria/types`. */
+export { familiarityBand, trustBand };
 
 // ---- who is asking --------------------------------------------------------------------------
 

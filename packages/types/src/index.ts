@@ -528,6 +528,7 @@ export {
   type BondTier,
   bondBand,
   clampAffinity,
+  familiarityBand,
   type PersonCard,
   RELATIONSHIP_LABELS,
   type RelationshipLabel,
@@ -542,6 +543,7 @@ export {
   tierFloorOf,
   tierProgress,
   tiersEntered,
+  trustBand,
 } from "./affect.js";
 export {
   type AffectBondPayload,

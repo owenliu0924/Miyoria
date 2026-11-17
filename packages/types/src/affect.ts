@@ -351,6 +351,23 @@ export function bondBand(bond: number): string {
   return "普通";
 }
 
+/** The member-facing words for trust (0..100), never the number. */
+export function trustBand(value: number): string {
+  if (value < 15) return "還不信任";
+  if (value < 40) return "有點信任";
+  if (value < 70) return "信任";
+  return "很信任";
+}
+
+/** The member-facing words for familiarity (0..100), never the number. */
+export function familiarityBand(value: number): string {
+  if (value < 3) return "陌生";
+  if (value < 10) return "見過幾次";
+  if (value < 30) return "有點熟";
+  if (value < 60) return "熟";
+  return "很熟";
+}
+
 /**
  * One card per person: replaces affinity / trust / notes (social), feelings / hearts / romance
  * / emotions toward people (self), the knowledge person card and per-person lessons as the
