@@ -233,6 +233,124 @@ export function stanceStale(written: number, level: number): boolean {
   return affinityStep(written) !== affinityStep(level);
 }
 
+// ---- the ladder, the ring and the bands (docs/design/v5-heart.md §2.7, H1–H4) ---------------
+
+/** One tier of the bond ladder: the lowest bond in it and its name. */
+export interface BondTier {
+  min: number;
+  label: RelationshipLabel;
+}
+
+/**
+ * The tiers a bond of 0 or more climbs through, lowest first, by bond alone. 朋友, 好朋友 and 摯友
+ * sit where `relationshipLabel` puts them, and from 知心 up they are `BOND_TIERS`. The first tier
+ * is named 認識 here; `relationshipLabel` calls it 陌生人 while familiarity is low, and it also
+ * asks for familiarity before 好朋友 and 摯友. The ladder leaves familiarity out because the ring,
+ * the anchors and the decay floor go by bond alone.
+ */
+export const BOND_LADDER: readonly BondTier[] = [
+  { min: 0, label: "認識" },
+  { min: 15, label: "朋友" },
+  { min: 45, label: "好朋友" },
+  { min: 75, label: "摯友" },
+  ...[...BOND_TIERS].reverse().map(([min, label]) => ({ min, label })),
+];
+
+/** From this tier up, entering a tier needs a shared memory as its anchor (H4). */
+export const ANCHORED_TIER_MIN = 120;
+
+/** Where a bond sits on the ladder. */
+export interface TierProgress {
+  tier: BondTier;
+  /** Its place in `BOND_LADDER`. */
+  index: number;
+  /** The tier above; `null` at the top. */
+  next: BondTier | null;
+  /** 0..1 of the way from this tier's lowest bond to the next one's (1 at the top, 0 below 0). */
+  progress: number;
+}
+
+/**
+ * The tier of `bond`, how far into it and what comes next. A bond below 0 is not on the ladder:
+ * it reads as the first tier with no progress (the ring shows it with `RingPosition.below`).
+ */
+export function tierProgress(bond: number): TierProgress {
+  const b = clampAffinity(bond);
+  let index = 0;
+  for (let i = 0; i < BOND_LADDER.length; i++) {
+    if (b >= (BOND_LADDER[i] as BondTier).min) index = i;
+  }
+  const tier = BOND_LADDER[index] as BondTier;
+  const next = BOND_LADDER[index + 1] ?? null;
+  const progress =
+    next === null
+      ? 1
+      : b <= 0
+        ? 0
+        : Math.min(Math.max((b - tier.min) / (next.min - tier.min), 0), 1);
+  return { tier, index, next, progress };
+}
+
+/** The lowest bond of the tier `bond` is in (0 for a bond below 0). */
+export function tierFloorOf(bond: number): number {
+  return tierProgress(bond).tier.min;
+}
+
+/** The tiers whose lowest bond lies in `(from, to]`, lowest first: what a rise from `from` to `to` enters. */
+export function tiersEntered(from: number, to: number): BondTier[] {
+  const a = clampAffinity(from);
+  const b = clampAffinity(to);
+  return BOND_LADDER.filter((t) => t.min > a && t.min <= b);
+}
+
+/** Bond per lap of the ring (H1): one lap per 100, ten laps to 1000. */
+export const RING_LAP = 100;
+export const RING_LAPS = 10;
+
+/** Where a bond is on the ring (H1). */
+export interface RingPosition {
+  /** The lap being drawn, 0..9: lap 0 is the outermost ring. */
+  lap: number;
+  /** 0..1 of that lap. At 1000 it is lap 9, full. */
+  fraction: number;
+  /** For a bond below 0, how far below (0..1 of the way to -100); 0 otherwise. */
+  below: number;
+}
+
+/** The ring position of `bond`: `floor(bond / 100)` laps done, capped at the tenth. */
+export function ringOf(bond: number): RingPosition {
+  const b = clampAffinity(bond);
+  if (b < 0) return { lap: 0, fraction: 0, below: Math.min(-b / -AFFINITY_MIN, 1) };
+  const lap = Math.min(Math.floor(b / RING_LAP), RING_LAPS - 1);
+  const fraction = Math.min((b - lap * RING_LAP) / RING_LAP, 1);
+  return { lap, fraction, below: 0 };
+}
+
+/**
+ * The words a member sees for their bond, never the number (§17.1, H2), from the bottom of the
+ * scale to 1000: `[lowest bond, words]`, highest first. Below 120 they are the six bands the
+ * member page has always shown.
+ */
+export const BOND_BANDS: readonly (readonly [number, string])[] = [
+  [1000, "永恆的羈絆"],
+  [750, "無可取代"],
+  [450, "像家人一樣"],
+  [240, "心意相通"],
+  [120, "很親近"],
+  [75, "非常好"],
+  [45, "很好"],
+  [15, "不錯"],
+];
+
+/** The member-facing words for `bond` (`BOND_BANDS`; at or below -15 and below 15 as before). */
+export function bondBand(bond: number): string {
+  const b = clampAffinity(bond);
+  if (b <= -50) return "很差";
+  if (b <= -15) return "不太好";
+  for (const [min, words] of BOND_BANDS) if (b >= min) return words;
+  return "普通";
+}
+
 /**
  * One card per person: replaces affinity / trust / notes (social), feelings / hearts / romance
  * / emotions toward people (self), the knowledge person card and per-person lessons as the
