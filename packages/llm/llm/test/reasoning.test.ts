@@ -39,7 +39,7 @@ describe("reasoning levels", () => {
       ["chat", { reasoning_purpose: "chat_text" }],
       // Unlisted reasoning purposes: their defaults (voice replies never think).
       ["chat", { reasoning_purpose: "chat_voice" }],
-      ["chat", { reasoning_purpose: "appraise" }],
+      ["chat", { reasoning_purpose: "reflect" }],
       // Purposes nobody lists do not reason; `fast` defaults to off.
       ["mind", {}],
       ["fast", {}],
@@ -55,7 +55,7 @@ describe("reasoning levels", () => {
     expect(got).toStrictEqual([
       ["low", true],
       ["off", false],
-      ["low", true],
+      ["high", true],
       ["off", false],
       ["off", false],
       ["off", false],
@@ -72,7 +72,7 @@ describe("reasoning levels", () => {
     expect(r.reasoningFor("chat", { ...request(), reasoning_purpose: "chat_text" })).toBe("off");
     expect(r.reasoningFor("chat", request())).toBe("off");
     expect(r.reasoningFor("review", request())).toBe("medium");
-    expect(r.reasoningFor("plan_daily", request())).toBe("high");
+    expect(r.reasoningFor("reflect", request())).toBe("high");
     expect(r.reasoningFor("game", request())).toBe("off");
   });
 
