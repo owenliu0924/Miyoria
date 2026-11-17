@@ -26,6 +26,7 @@ import {
   newAction,
   newId,
   PlatformSinksKey,
+  safeName,
   textLane,
 } from "@miyoria/types";
 import { type Agent, paceMs } from "../../agent/src/index.js";
@@ -210,7 +211,9 @@ export class MouthOutlet implements Outlet {
       const targets: MentionTarget[] = [];
       for (const person of this.#claims.people(line)) {
         const markup = sink.mention(person.account);
-        if (markup !== null) targets.push({ name: person.name, markup });
+        if (markup === null) continue;
+        const aliases = [safeName(person.name), this.#agent.handleOf(person.account, person.name)];
+        targets.push({ name: person.name, markup, aliases });
       }
       text = linkMentions(text, targets);
     }
