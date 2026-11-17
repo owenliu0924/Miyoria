@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { SEED_PARTS } from "../src/catalogue.js";
+import { cardsConfig } from "../src/config.js";
 import type { DrawnPart } from "../src/draw.js";
 import { drawnPart } from "../src/draw.js";
 import { EXPRESSIONS } from "../src/expressions.js";
@@ -239,6 +240,15 @@ describe("the Live2D portrait", () => {
     expect(livePortrait({ ...config, portrait_model: "" }, log)).toBeNull();
     expect(livePortrait({ ...config, portrait_studio: join(studioDir, "gone") }, log)).toBeNull();
     expect(log.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("is on by default in the config, with no model until one is set", () => {
+    const config = cardsConfig();
+    expect(config.portrait).toBe("live2d");
+    expect(config.portrait_model).toBe("");
+    const log = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+    expect(livePortrait(config, log)).toBeNull();
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it("answers null when the studio is not built here", async () => {

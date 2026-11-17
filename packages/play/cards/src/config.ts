@@ -16,6 +16,8 @@ const weight = () => z.number().nonnegative();
  * daily_cap = 5
  * pity = 20
  * rarity_weights = { N = 70, R = 22, SR = 7, SSR = 1 }
+ * portrait = "live2d"
+ * portrait_model = "C:/.../Live2DModels/DeepSeek-chan/大肥鱼.model3.json"
  * ```
  */
 export const CardsConfigSchema = z.object({
@@ -42,6 +44,21 @@ export const CardsConfigSchema = z.object({
     })
     .refine((w) => w.N + w.R + w.SR + w.SSR > 0, { message: "at least one weight must be above 0" })
     .prefault({}),
+  /**
+   * Her picture on a daily card (cards.md §6): `live2d` renders it from her model by what was drawn
+   * and falls back to the fixed portraits whenever it cannot; `fixed` always uses those.
+   */
+  portrait: z.enum(["live2d", "fixed"]).default("live2d"),
+  /** Her model's `.model3.json` for `live2d`; empty: not set, the fixed portraits are used. */
+  portrait_model: z.string().default(""),
+  /** The card studio's folder (built per its `vendor.md`), relative to the working folder. */
+  portrait_studio: z.string().default("tools/card-studio"),
+  /** Where rendered pictures are kept, by the hash of what they are drawn from. */
+  portrait_cache: z.string().default("data/cards/portraits"),
+  /** The browser playwright-core starts: `msedge` or `chrome`. */
+  portrait_browser: z.enum(["msedge", "chrome"]).default("msedge"),
+  /** Longest wait for one picture. */
+  portrait_timeout_secs: z.number().positive().max(600).default(30),
   // The cards she drops in a channel (§6.2), off by default.
   ...DROP_CONFIG,
 });

@@ -431,6 +431,14 @@ dirs = ["extensions"]
 # health_days = 14            # 1 到 90
 # health_warn_ratio = 0.6
 # utc_offset_minutes = 480    # 「今天」從哪個時區的午夜開始算
+# 卡上的立繪(docs/design/cards.md §6):live2d = 照抽到的部件和表情用她的 Live2D 模型現場算圖,
+# 算不出來(沒設模型、card-studio 沒建置、沒有 Edge / Chrome)就用 10 張固定立繪;fixed = 一律用固定立繪
+# portrait = "live2d"
+# portrait_model = "C:/Program Files (x86)/Steam/steamapps/common/VTube Studio/VTube Studio_Data/StreamingAssets/Live2DModels/DeepSeek-chan/大肥鱼.model3.json"   # 沒設 = 用固定立繪
+# portrait_studio = "tools/card-studio"        # card-studio 的資料夾(照它的 vendor.md 放好 Live2D 的檔案再 build)
+# portrait_cache = "data/cards/portraits"     # 算好的圖,依「抽到什麼」的雜湊存,同一張卡只算一次
+# portrait_browser = "msedge"                 # 無頭瀏覽器:msedge 或 chrome
+# portrait_timeout_secs = 30                  # 一張圖最多等多久
 # frames = [                  # 卡框:只是外觀,不影響她
 #   { id = "sakura", label = "櫻花", price = 100 },
 #   { id = "abyss", label = "深海", price = 150 },

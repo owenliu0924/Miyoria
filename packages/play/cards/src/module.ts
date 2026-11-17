@@ -34,7 +34,9 @@ import { CardsConfigSchema } from "./config.js";
 import type { Random } from "./draw.js";
 import { watchDrops } from "./drops.js";
 import { CardFacesKey, type OccasionFace } from "./faces.js";
+import { type Live2dPortrait, livePortrait } from "./live2d.js";
 import { cardNotes } from "./notes.js";
+import { CardPortraitKey } from "./portrait.js";
 import { cardRelationship } from "./relationship.js";
 import { CardService } from "./service.js";
 import { type CardStore, cardsTables, type IssuedCard } from "./store.js";
@@ -100,6 +102,7 @@ export class CardsModule implements Module {
   readonly #options: CardsModuleOptions;
   readonly #pending = new Set<Promise<void>>();
   #stop: (() => void) | null = null;
+  #portrait: Live2dPortrait | null = null;
 
   constructor(options: CardsModuleOptions = {}) {
     this.#options = options;
@@ -130,7 +133,11 @@ export class CardsModule implements Module {
       // Looked up at each use: the economy may restart and provide a new one.
       wallet: () => ctx.services.get(CardWalletKey) ?? null,
       relationship: (person) => cardRelationship(heart.get(person)),
-      onIssued: (issued) => tell(ctx, issued, cards),
+      onIssued: (issued) => {
+        tell(ctx, issued, cards);
+        // Her live picture is drawn now, so the card's page and preview find it ready.
+        void this.#portrait?.render(issued.card);
+      },
       // Came over from the old records: the heart's migration of the old relationships marks the
       // row (`legacy.migrated_at`), the import from a V4 database the person (`persons.legacy`).
       migrated: (person) =>
@@ -140,6 +147,10 @@ export class CardsModule implements Module {
       ...(this.#options.newSerial === undefined ? {} : { newSerial: this.#options.newSerial }),
     });
     ctx.provide(CardsKey, service);
+    // Her picture on a card from her Live2D model (cards.md §6), when this machine can draw it;
+    // without `CardPortraitKey` every card uses the fixed portraits.
+    this.#portrait = livePortrait(config, ctx.log);
+    if (this.#portrait) ctx.provide(CardPortraitKey, this.#portrait);
     // A bond entering a tier it never reached: one milestone card per tier (§6.1).
     const off = heart.onTierEntered((entered) => {
       const run = milestones(ctx, service, store, heart, entered);
@@ -156,6 +167,8 @@ export class CardsModule implements Module {
     this.#stop?.();
     this.#stop = null;
     await Promise.allSettled([...this.#pending]);
+    await this.#portrait?.close();
+    this.#portrait = null;
   }
 }
 
