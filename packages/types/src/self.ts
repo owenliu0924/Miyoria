@@ -1,6 +1,6 @@
 // Her inner state (docs/design/autonomy.md §4, §23): emotions (七情), drives (六欲), boredom,
-// the policy she sets for herself, her agenda and how she feels about people (her notes, the
-// romance she feels, her crush). Provided by the `self` module as `SelfStateKey`; her mood stays
+// the policy she sets for herself and her agenda. How she feels about people is the heart's
+// (`HeartKey`, `heart_person`). Provided by the `self` module as `SelfStateKey`; her mood stays
 // with the `mood` module (which follows her emotions through `SelfState.affect`) and is only
 // included in snapshots.
 
