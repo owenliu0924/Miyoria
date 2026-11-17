@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { AffectSnapshot, Goal, GoalsView, PersonCard, SelfView, WorldView } from "@miyoria/contracts/api";
+import type { AffectSnapshot, Goal, GoalsView, PersonCard, PersonRow, SelfView, WorldView } from "@miyoria/contracts/api";
 import { applyCustomEvent } from "@/app/events-store";
 import { queryKeys } from "@/app/queries";
 import { envelope } from "@/test/envelope";
@@ -46,6 +46,36 @@ const CARD: PersonCard = {
   stance: "嘴硬但會照顧他",
   owner: true,
   blocked: false,
+  last_seen: AT,
+  last_together: null,
+  updated_at: AT,
+};
+
+/** The one people route's row for `CARD`: what the inner page's cards are made from. */
+const ROW: PersonRow = {
+  person: { id: "p1", display_name: "owen", created_at: AT, accounts: [] },
+  has_row: true,
+  blocked: false,
+  owner: true,
+  tier: "好朋友",
+  bond: 60,
+  ring: { lap: 0, fraction: 0.6, full: false, below: 0 },
+  trust: 50,
+  familiarity: 40,
+  warmth: 0,
+  respect: 0,
+  ease: 0,
+  grudge: 0,
+  longing: 0,
+  rapport: 0,
+  cares: 0.3,
+  stance: "嘴硬但會照顧他",
+  impression: "最近常陪我聊天,有點在意他",
+  public_feeling: null,
+  call_name: "歐文",
+  tags: [],
+  interactions: 3,
+  last_interaction: null,
   last_seen: AT,
   last_together: null,
   updated_at: AT,
@@ -99,8 +129,8 @@ function serve(extra?: Parameters<typeof mockFetch>[0]) {
         return { body: WORLD };
       case "/api/affect":
         return { body: AFFECT };
-      case "/api/affect/people":
-        return { body: [CARD] };
+      case "/api/people":
+        return { body: { items: [ROW], next_cursor: null } };
       case "/api/mind/goals": {
         const closed = url.searchParams.get("closed") === "true";
         return { body: { goals: closed ? [GOAL, DONE] : [GOAL], closed_included: true } satisfies GoalsView };
@@ -162,7 +192,7 @@ describe("Inner: people cards", () => {
   });
 
   it("still lists her notes when the cards are not available", async () => {
-    serve((_m, url) => (url.pathname === "/api/affect/people" ? { status: 503, body: { error: "affect module is not available" } } : undefined));
+    serve((_m, url) => (url.pathname === "/api/people" ? { status: 503, body: { error: "the heart's rows are not available" } } : undefined));
     renderRoute("/inner?tab=feelings");
     expect(await screen.findByRole("table", { name: "感情" })).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "人物卡" })).toBeNull();

@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { VoiceState } from "@/api/types";
-import type { ChannelLevelsView, ChannelLevelView, ModuleInfo, PersonDetail, SongsState, SongView, StageState, WorldView } from "@miyoria/contracts/api";
+import type { ChannelLevelsView, ChannelLevelView, ModuleInfo, PersonProfile, PersonRow, SongsState, SongView, StageState, WorldView } from "@miyoria/contracts/api";
 import { ConnectionProvider, STORAGE_TOKEN } from "@/app/connection";
 import { EventStore } from "@/app/events-store";
 import { envelope as busEnvelope } from "@/test/envelope";
@@ -160,29 +160,54 @@ describe("Persona", () => {
   });
 });
 
-const detail = (notes: string): PersonDetail => ({
+/** The list's row of someone she knows (the one people route). */
+const row = (notes: string): PersonRow => ({
   person: {
     id: "P1",
     display_name: "Owen",
     created_at: "2026-01-01T00:00:00Z",
     accounts: [{ account: { platform: "discord", id: "1" }, display_name: "Owen", first_seen: "2026-01-01T00:00:00Z", last_seen: "2026-11-01T00:00:00Z" }],
   },
-  relationship: {
-    profile: "p",
-    person: "P1",
-    affinity: 40,
-    trust: 50,
-    familiarity: 60,
-    tags: ["常客"],
-    notes,
-    call_name: null,
-    interactions: 3,
-    last_interaction: null,
-    updated_at: "2026-11-01T00:00:00Z",
-  },
-  label: "朋友",
+  has_row: true,
   blocked: false,
-  history: [],
+  owner: false,
+  tier: "朋友",
+  bond: 40,
+  ring: { lap: 0, fraction: 0.4, full: false, below: 0 },
+  trust: 50,
+  familiarity: 60,
+  warmth: 0,
+  respect: 0,
+  ease: 0,
+  grudge: 0,
+  longing: 0,
+  rapport: 0,
+  cares: 0.1,
+  stance: "",
+  impression: notes,
+  public_feeling: null,
+  call_name: null,
+  tags: ["常客"],
+  interactions: 3,
+  last_interaction: null,
+  last_seen: null,
+  last_together: null,
+  updated_at: "2026-11-01T00:00:00Z",
+});
+
+const detail = (notes: string): PersonProfile => ({
+  ...row(notes),
+  next_tier: "好朋友",
+  tier_progress: 0.8,
+  tier_floor: 15,
+  held: null,
+  anchors: [],
+  unfinished: "",
+  jokes: "",
+  dislikes: "",
+  history: { items: [], next_before: null },
+  ledger: [],
+  evidence: [],
   memory_count: 2,
 });
 
@@ -633,7 +658,7 @@ describe("Access", () => {
       if (url.pathname === "/api/people")
         return {
           body: {
-            items: [{ ...detail("x"), history: undefined, memory_count: undefined }],
+            items: [row("x")],
             next_cursor: null,
           },
         };

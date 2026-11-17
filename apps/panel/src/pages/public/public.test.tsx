@@ -41,6 +41,7 @@ const ME: MemberView = {
     familiarity: "熟",
     public_feeling: "妳總是記得跟我打招呼。",
   },
+  bond: { tier: "好朋友", next_tier: "摯友", tier_progress: 0.4, ring: { lap: 0, fraction: 0.5, full: false } },
   memories: [{ text: "小愛喜歡貓", kind: "fact", date: "2026-11-07" }],
   songs: [{ title: "群青", artist: "YOASOBI", state: "ready", requested_at: "2026-11-07T12:00:00Z" }],
   activity: [
@@ -60,6 +61,7 @@ const STRANGER: MemberView = {
     familiarity: null,
     public_feeling: null,
   },
+  bond: null,
   memories: [],
   songs: [],
   activity: [],

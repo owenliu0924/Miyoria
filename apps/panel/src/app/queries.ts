@@ -9,8 +9,9 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import { isApiError } from "@/api/http";
+import { type AdjustPersonInput, cardsOf, detailOf, summaryOf, summaryPageOf, type UpdatePersonInput, updateBodyOf } from "@/api/people-view";
 import type { DecisionsQuery, E2eRecord, FactEventsQuery, LlmCallsQuery, LlmThinkingQuery, MemoryQuery, ModuleAction, PeopleQuery } from "@/api/types";
-import type { AddDirectiveRequest, ClusterInviteRequest, AdjustPersonRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpdatePersonRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
+import type { AddDirectiveRequest, ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
 import type { ContextKey, Timestamp } from "@miyoria/contracts/wire";
 import { type EvalData, loadEvalData } from "@/lib/eval-data";
 import { factEventsInput } from "@/lib/fact-events";
@@ -263,14 +264,17 @@ export function useSetPersona() {
 
 export function usePeople(q: PeopleQuery, enabled = true) {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.people(q), queryFn: ({ signal }) => api.rpc.people.list({ query: q }, { signal }), enabled });
+  return useQuery({ queryKey: queryKeys.people(q), queryFn: async ({ signal }) => summaryPageOf(await api.rpc.people.list({ query: q }, { signal })), enabled });
 }
+
+/** Changes of the history the old chart reads. */
+const HISTORY_LIMIT = 500;
 
 export function usePerson(id: string | undefined) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.person(id ?? ""),
-    queryFn: ({ signal }) => api.rpc.people.get({ params: { id: id ?? "" } }, { signal }),
+    queryFn: async ({ signal }) => detailOf(await api.rpc.people.get({ params: { id: id ?? "" }, query: { limit: HISTORY_LIMIT } }, { signal })),
     enabled: Boolean(id),
   });
 }
@@ -279,7 +283,7 @@ export function useUpdatePerson(id: string) {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: UpdatePersonRequest) => api.rpc.people.update({ params: { id }, body: req }),
+    mutationFn: async (req: UpdatePersonInput) => summaryOf(await api.rpc.people.update({ params: { id }, body: updateBodyOf(req) })),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["people"] }),
   });
 }
@@ -306,7 +310,7 @@ export function useAdjustPerson(id: string) {
   const api = useApi();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: AdjustPersonRequest) => api.rpc.people.adjust({ params: { id }, body: req }),
+    mutationFn: async (req: AdjustPersonInput) => summaryOf(await api.rpc.people.adjust({ params: { id }, body: { field: "bond", delta: req.affinity } })),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["people"] }),
   });
 }
@@ -777,7 +781,7 @@ export function usePeopleDetails(ids: string[]) {
   return useQueries({
     queries: ids.map((id) => ({
       queryKey: queryKeys.person(id),
-      queryFn: ({ signal }: { signal: AbortSignal }) => api.rpc.people.get({ params: { id } }, { signal }),
+      queryFn: async ({ signal }: { signal: AbortSignal }) => detailOf(await api.rpc.people.get({ params: { id }, query: { limit: HISTORY_LIMIT } }, { signal })),
     })),
   });
 }
@@ -829,9 +833,10 @@ export function useAffect() {
   return useQuery({ queryKey: queryKeys.affect, queryFn: ({ signal }) => api.rpc.affect.snapshot(undefined, { signal }), refetchInterval: poll(10_000) });
 }
 
+/** The inner page's person cards: the people list's rows that have a heart row, closest first. */
 export function useAffectPeople() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.affectPeople, queryFn: ({ signal }) => api.rpc.affect.people(undefined, { signal }), refetchInterval: poll(30_000) });
+  return useQuery({ queryKey: queryKeys.affectPeople, queryFn: async ({ signal }) => cardsOf(await api.rpc.people.list({ query: { limit: 500 } }, { signal })), refetchInterval: poll(30_000) });
 }
 
 export function useGoals(closed: boolean) {
