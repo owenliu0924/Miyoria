@@ -37,6 +37,7 @@ export const MODULE_IDS: readonly string[] = [
   "economy",
   "cards",
   "market",
+  "karaoke",
   "web",
   "sandbox",
   "imagegen",

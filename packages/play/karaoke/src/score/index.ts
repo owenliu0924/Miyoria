@@ -39,5 +39,6 @@ export {
   TRACK_MIDI_BASE,
   TRACK_MIDI_TOP,
   TRACK_STEPS,
+  TrackRecorder,
   toBase64,
 } from "./track.js";

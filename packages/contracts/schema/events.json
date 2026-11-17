@@ -3899,6 +3899,56 @@
         "failed"
       ]
     },
+    "EventsKaraokeScored": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        },
+        "song": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total": {
+          "type": "number"
+        },
+        "pitch": {
+          "type": "number"
+        },
+        "stability": {
+          "type": "number"
+        },
+        "rhythm": {
+          "type": "number"
+        },
+        "expression": {
+          "type": "number"
+        },
+        "unranked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session",
+        "song",
+        "title",
+        "person",
+        "total",
+        "pitch",
+        "stability",
+        "rhythm",
+        "expression",
+        "unranked"
+      ]
+    },
     "EventsKnowledgeChanged": {
       "type": "object",
       "properties": {

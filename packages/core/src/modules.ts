@@ -42,6 +42,7 @@ import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldModule } from "@miyoria/memory/world";
 import { CardsModule } from "@miyoria/play/cards";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/play/game";
+import { KaraokeModule } from "@miyoria/play/karaoke";
 import { MarketModule } from "@miyoria/play/market";
 import { PartyModule } from "@miyoria/play/party";
 import { QueueModule } from "@miyoria/play/queue";
@@ -215,6 +216,8 @@ async function coreModules({
     new CardsModule(),
     // The weekly market: the song priority ticket, the weekly auction and the weekly lottery.
     new MarketModule(),
+    // Karaoke on the member page: songs prepared on the song workers, scored again by Core.
+    new KaraokeModule({ baseDir }),
     new WebModule(),
     new SandboxModule(profileId, { baseDir }),
     new ImageGenModule({ baseDir, endpoints }),

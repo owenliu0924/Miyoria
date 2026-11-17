@@ -508,6 +508,20 @@ dirs = ["extensions"]
 # lottery_time = "20:00"
 # lottery_min_buyers = 3      # 至少幾個不同的人買才開獎
 
+# 唱 K 第一步(docs/design/karaoke.md「做了什麼(第一步)」):會員頁一個人唱。貼連結或打歌名,
+# 唱歌 worker 做伴唱軌和參考旋律;在自己的瀏覽器唱、算音高,唱完 Core 用同一份評分重算,
+# 她在講評頻道講一句。麥克風的聲音不離開瀏覽器,只送每秒 50 格的音高軌(留 7 天)。沒有魚幣。
+# [modules.karaoke]
+# enabled = true
+# utc_offset_minutes = 480    # 「今天」從哪個時區算(每人每天的上限)
+# open = true                 # false = 會員頁不能點歌、不能開始唱;唱完的結果照常
+# max_song_secs = 480         # 一首最長幾秒,超過的準備失敗
+# daily_songs = 10            # 每人每天能準備幾首新歌;已經準備好的歌不算(0 = 只能唱準備好的)
+# tolerance_cents = 50        # 離原唱幾 cents 內算唱對,兩倍遠就不算
+# comment = true              # 唱完讓她講評(她平常的一個回合,沒有另外的模型呼叫)
+# comment_channel = ""        # 講評的文字頻道,"discord:<伺服器 id>:<頻道 id>";留空 = 她只知道、不開口
+# cache_dir = "data/karaoke"  # 伴唱軌和參考旋律在 Core 上放哪(相對 miyoria.toml);一天沒人唱就刪
+
 # 遊戲內聊天變成獨立的對話(每個世界 / 伺服器一段歷史)。玩家在 Discord 用 /me link 拿代碼,
 # 在遊戲聊天室打 `!link <代碼>` 就跟 Discord 帳號連在一起;沒連的玩家是陌生人。
 # 她在遊戲裡的回話很短、不會下指令;直播中又在語音裡時也用語音說(她可以用 game_chat_reply 自己改)

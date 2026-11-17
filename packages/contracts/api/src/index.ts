@@ -32,6 +32,7 @@ import { evalRoutes } from "./eval.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { self, world } from "./inner.js";
+import { karaoke, karaokeAdmin } from "./karaoke.js";
 import { knowledge, mindDigests, reflection } from "./learning.js";
 import { life } from "./life.js";
 import { market, marketAdmin } from "./market.js";
@@ -404,6 +405,26 @@ export {
   type WorldView,
   WorldViewSchema,
 } from "./inner.js";
+export {
+  type KaraokeAdminResults,
+  KaraokeAdminResultsSchema,
+  type KaraokeOverview,
+  KaraokeOverviewSchema,
+  type KaraokeRequest,
+  type KaraokeRequestResult,
+  KaraokeRequestResultSchema,
+  KaraokeRequestSchema,
+  type KaraokeResult,
+  KaraokeResultSchema,
+  type KaraokeResultSummary,
+  KaraokeResultSummarySchema,
+  type KaraokeSession,
+  KaraokeSessionSchema,
+  type KaraokeSongView,
+  KaraokeSongViewSchema,
+  type KaraokeSubmit,
+  KaraokeSubmitSchema,
+} from "./karaoke.js";
 export {
   type ConversationNote,
   ConversationNoteSchema,
@@ -977,6 +998,8 @@ export const contract = {
   fortune,
   market,
   marketAdmin,
+  karaoke,
+  karaokeAdmin,
   eval: evalRoutes,
 };
 

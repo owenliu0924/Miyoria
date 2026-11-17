@@ -5083,6 +5083,728 @@
         "asked"
       ]
     },
+    "ApiKaraokeAdminResults": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "session": {
+                "type": "string"
+              },
+              "person": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "song": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "total": {
+                "type": "number"
+              },
+              "client_total": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "unranked": {
+                "type": "boolean"
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "latency_ms": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "calibrated": {
+                "type": "boolean"
+              },
+              "browser": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "session",
+              "person",
+              "name",
+              "song",
+              "title",
+              "total",
+              "client_total",
+              "unranked",
+              "reasons",
+              "latency_ms",
+              "calibrated",
+              "browser",
+              "at"
+            ]
+          }
+        }
+      },
+      "required": [
+        "results"
+      ]
+    },
+    "ApiKaraokeOverview": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "preparing": {
+          "type": "boolean"
+        },
+        "songs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiKaraokeSongView"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "daily": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "used": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "max_minutes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "daily",
+            "used",
+            "max_minutes"
+          ]
+        },
+        "tolerance_cents": {
+          "type": "number"
+        },
+        "comments": {
+          "type": "boolean"
+        },
+        "recent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiKaraokeResultSummary"
+          }
+        }
+      },
+      "required": [
+        "open",
+        "preparing",
+        "songs",
+        "limits",
+        "tolerance_cents",
+        "comments",
+        "recent"
+      ]
+    },
+    "ApiKaraokeRequest": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ApiKaraokeRequestResult": {
+      "type": "object",
+      "properties": {
+        "song": {
+          "$ref": "#/$defs/ApiKaraokeSongView"
+        },
+        "created": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "song",
+        "created"
+      ]
+    },
+    "ApiKaraokeResult": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        },
+        "song": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "artist": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "artist"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "total": {
+          "type": "number"
+        },
+        "pitch": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "hit": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "score",
+            "max",
+            "hit"
+          ]
+        },
+        "stability": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "wobble_cents": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "held": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "score",
+            "max",
+            "wobble_cents",
+            "held"
+          ]
+        },
+        "rhythm": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "calibrated": {
+              "type": "boolean"
+            },
+            "measured": {
+              "type": "boolean"
+            },
+            "offset_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "spread_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "onsets": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "found": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "feel": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "early",
+                    "late",
+                    "steady"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "score",
+            "max",
+            "calibrated",
+            "measured",
+            "offset_ms",
+            "spread_ms",
+            "onsets",
+            "found",
+            "feel"
+          ]
+        },
+        "expression": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "vibrato_s": {
+              "type": "number"
+            },
+            "long_tones": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "scoops": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "falls": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "score",
+            "max",
+            "vibrato_s",
+            "long_tones",
+            "scoops",
+            "falls"
+          ]
+        },
+        "phrases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "start": {
+                "type": "number"
+              },
+              "end": {
+                "type": "number"
+              },
+              "score": {
+                "type": "number"
+              },
+              "hit": {
+                "type": "number"
+              },
+              "sung": {
+                "type": "number"
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "index",
+              "start",
+              "end",
+              "score",
+              "hit",
+              "sung",
+              "text"
+            ]
+          }
+        },
+        "facts": {
+          "type": "object",
+          "properties": {
+            "coverage": {
+              "type": "number"
+            },
+            "best": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "weakest": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "octave": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "offset_cents": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "sung_s": {
+              "type": "number"
+            },
+            "reference_s": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "coverage",
+            "best",
+            "weakest",
+            "octave",
+            "offset_cents",
+            "sung_s",
+            "reference_s"
+          ]
+        },
+        "unranked": {
+          "type": "boolean"
+        },
+        "client_total": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "best_before": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "comment": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "waiting",
+                "said",
+                "none"
+              ]
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "text"
+          ]
+        }
+      },
+      "required": [
+        "session",
+        "song",
+        "at",
+        "total",
+        "pitch",
+        "stability",
+        "rhythm",
+        "expression",
+        "phrases",
+        "facts",
+        "unranked",
+        "client_total",
+        "latency_ms",
+        "best_before",
+        "comment"
+      ]
+    },
+    "ApiKaraokeResultSummary": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        },
+        "song": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "total": {
+          "type": "number"
+        },
+        "unranked": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "song",
+        "title",
+        "total",
+        "unranked",
+        "at"
+      ]
+    },
+    "ApiKaraokeSession": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        },
+        "song": {
+          "$ref": "#/$defs/ApiKaraokeSongView"
+        },
+        "backing_url": {
+          "type": "string"
+        },
+        "reference_url": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "tolerance_cents": {
+          "type": "number"
+        },
+        "frame_hz": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "session",
+        "song",
+        "backing_url",
+        "reference_url",
+        "expires_at",
+        "tolerance_cents",
+        "frame_hz"
+      ]
+    },
+    "ApiKaraokeSongView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "artist": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "preparing",
+            "ready",
+            "failed"
+          ]
+        },
+        "stage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": "number"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lyrics": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "mine": {
+          "type": "boolean"
+        },
+        "best": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sung": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "artist",
+        "duration_s",
+        "state",
+        "stage",
+        "progress",
+        "position",
+        "error",
+        "lyrics",
+        "notes",
+        "mine",
+        "best",
+        "sung"
+      ]
+    },
+    "ApiKaraokeSubmit": {
+      "type": "object",
+      "properties": {
+        "track": {
+          "type": "string",
+          "maxLength": 80000
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": -500,
+          "maximum": 1500
+        },
+        "calibrated": {
+          "type": "boolean"
+        },
+        "client_total": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "browser": {
+          "default": "",
+          "type": "string",
+          "maxLength": 60
+        }
+      },
+      "required": [
+        "track",
+        "latency_ms",
+        "calibrated",
+        "client_total"
+      ],
+      "additionalProperties": false
+    },
     "ApiKnowledgeDoc": {
       "type": "object",
       "properties": {

@@ -115,3 +115,42 @@ export function resampleTrack(track: PitchTrack, hz: number): (number | null)[] 
 export function asSubmitted(track: PitchTrack): (number | null)[] {
   return decodeTrack(encodeTrack(resampleTrack(track, TRACK_HZ)));
 }
+
+/**
+ * The singer's detections as they come (`push`, at the song time each was captured, before the
+ * latency), on a grid of `hz` frames; a frame not pushed is silent, a frame pushed twice keeps the
+ * last. `encode` is what the browser sends: `TRACK_HZ`, one byte a frame, base64.
+ */
+export class TrackRecorder {
+  readonly hz: number;
+  readonly #frames: (number | null)[] = [];
+
+  constructor(hz = 100) {
+    this.hz = hz;
+  }
+
+  push(t: number, midi: number | null): void {
+    const i = Math.round(t * this.hz);
+    if (i < 0 || !Number.isFinite(i)) return;
+    while (this.#frames.length <= i) this.#frames.push(null);
+    this.#frames[i] = midi !== null && Number.isFinite(midi) ? midi : null;
+  }
+
+  /** Frames from `t` seconds on are dropped (a restart from there, or before a pause). */
+  cut(t: number): void {
+    this.#frames.length = Math.min(this.#frames.length, Math.max(0, Math.round(t * this.hz)));
+  }
+
+  get track(): PitchTrack {
+    return { hz: this.hz, midi: [...this.#frames] };
+  }
+
+  /** Seconds covered so far. */
+  get seconds(): number {
+    return this.#frames.length / this.hz;
+  }
+
+  encode(): string {
+    return toBase64(encodeTrack(resampleTrack(this.track, TRACK_HZ)));
+  }
+}

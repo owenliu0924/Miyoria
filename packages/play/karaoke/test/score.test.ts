@@ -10,6 +10,7 @@ import {
   type ScoreInput,
   scoreSinging,
   TRACK_HZ,
+  TrackRecorder,
   toBase64,
 } from "../src/score/index.js";
 import {
@@ -20,7 +21,7 @@ import {
   type SynthSong,
   silentSinger,
   synthSong,
-} from "./synth.js";
+} from "../src/synth.js";
 
 const song = synthSong(1);
 
@@ -60,6 +61,21 @@ describe("the track", () => {
     expect(toBase64(new Uint8Array([0, 0x10, 0x83]))).toBe("ABCD");
     expect(fromBase64("AB$D")).toBeNull();
     expect(fromBase64("ABC")).toBeNull();
+  });
+
+  it("records detections on a grid and sends them at 50 Hz", () => {
+    const rec = new TrackRecorder(100);
+    rec.push(0.0, 60);
+    rec.push(0.011, 62); // frame 1
+    rec.push(0.05, null);
+    rec.push(0.06, 64);
+    rec.push(0.06, 65); // the same frame again: the last stays
+    expect(rec.track.midi).toEqual([60, 62, null, null, null, null, 65]);
+    expect(rec.seconds).toBeCloseTo(0.07, 5);
+    // Seven frames at 100 Hz are three at 50 Hz (the odd one at the end waits for its pair).
+    expect(decodeTrack(fromBase64(rec.encode()) as Uint8Array)).toEqual([60, 62, null]);
+    rec.cut(0.02);
+    expect(rec.track.midi).toEqual([60, 62]);
   });
 
   it("goes from 100 Hz to 50 Hz by the mean of the voiced frames", () => {

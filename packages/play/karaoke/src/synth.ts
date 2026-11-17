@@ -1,8 +1,9 @@
 // Synthetic songs and singers for the score's tests and the offline end-to-end check: a lead
 // vocal's curve built from phrases of notes (consonant gaps, rests, vibrato on the long notes),
-// and singers made from it. A seeded generator, so every run is the same.
+// and singers made from it. A seeded generator, so every run is the same. Test support only
+// (`testing.ts`); nothing the module runs imports it.
 
-import type { PitchTrack, ReferenceCurve } from "../src/score/index.js";
+import type { PitchTrack, ReferenceCurve } from "./score/index.js";
 
 /** Mulberry32: a small seeded generator in [0, 1). */
 export function rng(seed: number): () => number {

@@ -350,13 +350,22 @@ describe("sing", () => {
       backing: "drop",
       force: false,
       exclusive_ack: true,
+      purpose: "cover",
     });
     expect(WorkersSingJobRequestSchema.parse({ url: "https://youtu.be/abc123" })).toMatchObject({
       key: 0,
       backing: "keep",
       force: false,
       exclusive_ack: false,
+      purpose: "cover",
     });
+    expect(
+      WorkersSingJobRequestSchema.parse({ url: "https://youtu.be/abc123", purpose: "karaoke" })
+        .purpose,
+    ).toBe("karaoke");
+    expect(WorkersSingJobRequestSchema.safeParse({ query: "x", purpose: "mix" }).success).toBe(
+      false,
+    );
     expect(WorkersSingJobRequestSchema.safeParse({ query: "x", backing: "mute" }).success).toBe(
       false,
     );
