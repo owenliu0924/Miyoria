@@ -22,6 +22,11 @@ export interface RunLimits {
   wallMs: number;
   /** One tool call may take this long (ms). */
   toolMs: number;
+  /**
+   * The pictures her tools fetched (`ToolResult.images`) may be this many bytes together in one
+   * run; unset: 10,000,000. The host sets the vision cap.
+   */
+  pictureBytes?: number;
   /** Prompt and completion tokens of a run, all steps together. */
   tokens: number;
   /** What a session may spend on models in an hour (USD). Owner decision Q6: 1. */

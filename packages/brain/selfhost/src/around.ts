@@ -7,7 +7,8 @@
 //   first, fetched from the platform within one `history.timeout_ms`. Nothing already in the
 //   transcript is rewritten; a parent noted once is not noted again.
 // - Images (`[modules.agent.vision]`, agent/vision.ts): those of the lines of the run, of the
-//   message each replies to, and those the same person sent a moment before (not for a reply),
+//   message each replies to, and those the same person sent a moment before (not for a reply);
+//   a link preview's picture counts as one of its message's (the platform's proxy copy),
 //   each labelled with whose it is and where it was; only when the chat model takes images.
 // - Files (`[modules.agent.files]`, agent/files.ts): read in the sandbox for people allowed
 //   `tools.file`; without the sandbox nothing is read.
@@ -35,6 +36,7 @@ import {
   imageType,
   type MessageRef,
   PlatformHistoriesKey,
+  picturesOf,
   sameAccount,
   timestampMs,
 } from "@miyoria/types";
@@ -231,9 +233,11 @@ export class LookAround {
         ...(source === "earlier" ? { ago_s: Math.max(0, Math.round(agoMs / 1000)) } : {}),
       });
     };
+    // Attachments and the preview pictures of link embeds (the platform's proxy copies, which
+    // `allowed_hosts` lets through; the third party's own server is never asked), forwards too.
     const attachmentsOf = (m: IncomingMessage) => [
-      ...m.attachments,
-      ...(m.forwarded ?? []).flatMap((f) => f.attachments),
+      ...picturesOf(m),
+      ...(m.forwarded ?? []).flatMap((f) => picturesOf(f)),
     ];
     const newest = [...run.inputs].reverse();
     for (const m of newest) {
@@ -253,7 +257,7 @@ export class LookAround {
         const at = timestampMs(e.ts);
         if (at > until || at < since) continue;
         if (!sameAccount(e.author.account, m.author.account)) continue;
-        for (const a of e.attachments) consider(a, e.author.display_name, "earlier", until - at);
+        for (const a of picturesOf(e)) consider(a, e.author.display_name, "earlier", until - at);
       }
     }
     return out;

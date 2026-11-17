@@ -10,7 +10,7 @@
 
 import type { ContentPart } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import { type Attachment, imageType, safeName } from "@miyoria/types";
+import { type Attachment, imageType, safeName, sniffImage } from "@miyoria/types";
 import type { VisionConfig } from "./config.js";
 import { timeout } from "./util.js";
 
@@ -137,12 +137,16 @@ async function download(
   if (declared && !declared.startsWith("image/") && declared !== "application/octet-stream") {
     return null;
   }
-  const type = declared?.startsWith("image/") ? declared : candidate.type;
+  let type = declared?.startsWith("image/") ? declared : candidate.type;
   if (imageType({ url: "", filename: "", content_type: type }) === null) return null;
   const length = Number(response.headers.get("content-length") ?? Number.NaN);
   if (Number.isFinite(length) && length > maxBytes) return null;
   const body = Buffer.from(await response.arrayBuffer());
   if (body.length === 0 || body.length > maxBytes) return null;
+  // What the bytes are wins over what the name or the server said (a link preview's type is a guess).
+  const sniffed = sniffImage(body);
+  if (sniffed === null) return null;
+  type = sniffed;
   return { dataUrl: `data:${type};base64,${body.toString("base64")}`, bytes: body.length };
 }
 

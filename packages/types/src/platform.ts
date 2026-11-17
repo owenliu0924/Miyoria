@@ -80,11 +80,59 @@ export function imageType(a: Attachment): string | null {
   return IMAGE_EXTENSIONS[ext] ?? null;
 }
 
+/** png / jpeg / webp / gif by their first bytes, else `null`: what the bytes are, not what was said. */
+export function sniffImage(bytes: Uint8Array): string | null {
+  const at = (i: number, text: string) =>
+    [...text].every((c, k) => bytes[i + k] === c.charCodeAt(0));
+  if (bytes[0] === 0x89 && at(1, "PNG")) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (at(0, "GIF87a") || at(0, "GIF89a")) return "image/gif";
+  if (at(0, "RIFF") && at(8, "WEBP")) return "image/webp";
+  return null;
+}
+
 /** `[圖片: cat.png(一隻橘貓)]` for images, `[附件: notes.pdf]` for other files. */
 export function attachmentLabel(a: Attachment): string {
   const alt = a.description?.trim() ?? "";
   const kind = imageType(a) === null ? "附件" : "圖片";
   return alt === "" ? `[${kind}: ${a.filename}]` : `[${kind}: ${a.filename}(${alt})]`;
+}
+
+/**
+ * The preview picture of a link embed (its large image, else its thumbnail) as an attachment of
+ * its message, so it is looked at, limited and labelled like one. The URL is the platform's own
+ * proxy copy (`Embed.image`), never the original. The platform checked that it is a picture but
+ * does not say which kind, so the type is a guess from the name; the download is checked again
+ * against what the server says and the bytes.
+ */
+export function embedPicture(e: Embed): Attachment | null {
+  const url = (e.image ?? e.thumbnail)?.trim() ?? "";
+  if (url === "") return null;
+  let name = "";
+  let format = "";
+  try {
+    const parsed = new URL(url);
+    name = decodeURIComponent(parsed.pathname.split("/").at(-1) ?? "");
+    format = parsed.searchParams.get("format")?.toLowerCase() ?? "";
+  } catch {
+    return null;
+  }
+  const ext = name.split(".").at(-1)?.toLowerCase() ?? "";
+  const type = IMAGE_EXTENSIONS[ext] ?? IMAGE_EXTENSIONS[format] ?? "image/jpeg";
+  return { url, filename: name === "" ? "preview" : name, content_type: type };
+}
+
+/** The attachments of a message and the preview pictures of its embeds, in that order. */
+export function picturesOf(msg: {
+  attachments: readonly Attachment[];
+  embeds?: readonly Embed[] | undefined;
+}): Attachment[] {
+  const out = [...msg.attachments];
+  for (const e of msg.embeds ?? []) {
+    const picture = embedPicture(e);
+    if (picture !== null) out.push(picture);
+  }
+  return out;
 }
 
 function embedLabel(e: Embed): string | null {
@@ -104,7 +152,10 @@ function bodyText(
 ): string {
   const parts = [text.trim()];
   for (const s of stickers) parts.push(`[貼圖: ${s.name}]`);
-  for (const e of embeds) parts.push(embedLabel(e) ?? "");
+  for (const e of embeds) {
+    parts.push(embedLabel(e) ?? "");
+    if (embedPicture(e) !== null) parts.push("[圖片: 連結預覽]");
+  }
   for (const a of attachments) parts.push(attachmentLabel(a));
   return parts.filter((p) => p !== "").join(" ");
 }

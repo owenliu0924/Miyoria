@@ -282,6 +282,24 @@ export interface GuardDeps {
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 const READABLE_TYPES = ["text/html", "application/xhtml+xml", "text/plain"];
 
+/** What a download is for: pages by default; `web_image` asks for pictures. */
+export interface GetKind {
+  /** The `accept` header. */
+  accept: string;
+  /** Content types taken (an empty or `application/octet-stream` one is let through to the caller's check). */
+  types: readonly string[];
+  /** The refusal she is told for another type. */
+  wrongType: string;
+  /** At most this many bytes are read (`truncated` says more came). Default `max_download_bytes`. */
+  maxBytes?: number;
+}
+
+const PAGE_KIND: GetKind = {
+  accept: "text/html,text/plain;q=0.9,*/*;q=0.1",
+  types: READABLE_TYPES,
+  wrongType: "這不是網頁文字(只讀 HTML 或純文字)",
+};
+
 /** Reads at most `limit` bytes of `body`. */
 async function readLimited(
   body: AsyncIterable<Uint8Array>,
@@ -304,14 +322,16 @@ async function readLimited(
 
 /**
  * Downloads `raw` under the guard: every hop is checked (`checkUrl`, DNS, pinned connection),
- * at most `max_redirects` hops, only readable content types, `max_download_bytes`, and one
- * timeout over the whole thing (also stopped by `signal`).
+ * at most `max_redirects` hops, only the content types of `kind` (readable ones by default),
+ * `max_download_bytes` (or `kind.maxBytes`), and one timeout over the whole thing (also stopped
+ * by `signal`).
  */
 export async function guardedGet(
   raw: string,
   config: WebConfig,
   signal: AbortSignal,
   deps: GuardDeps = {},
+  kind: GetKind = PAGE_KIND,
 ): Promise<Download> {
   const resolve = deps.resolve ?? systemResolver;
   const transport = deps.transport ?? pinnedTransport;
@@ -329,7 +349,7 @@ export async function guardedGet(
         signal: deadline,
         headers: {
           "user-agent": config.user_agent,
-          accept: "text/html,text/plain;q=0.9,*/*;q=0.1",
+          accept: kind.accept,
           "accept-encoding": "identity",
         },
       });
@@ -357,13 +377,13 @@ export async function guardedGet(
       const contentType = (res.headers["content-type"] ?? "").toLowerCase();
       const mime = contentType.split(";")[0]?.trim() ?? "";
       // A page that does not say what it is is read as HTML only when it looks like text.
-      if (mime !== "" && !READABLE_TYPES.includes(mime)) {
+      if (mime !== "" && !kind.types.includes(mime)) {
         res.destroy();
-        throw new WebError("這不是網頁文字(只讀 HTML 或純文字)", `content-type ${mime}`);
+        throw new WebError(kind.wrongType, `content-type ${mime}`);
       }
       let read: { bytes: Uint8Array; truncated: boolean };
       try {
-        read = await readLimited(res.body, config.max_download_bytes);
+        read = await readLimited(res.body, kind.maxBytes ?? config.max_download_bytes);
       } catch (error) {
         if (deadline.aborted) throw new WebError("網站回應太久了", "timeout");
         throw new WebError("下載到一半斷了", `body failed: ${(error as Error).message}`);

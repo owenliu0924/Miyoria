@@ -10,7 +10,7 @@ import type {
   TurnId,
 } from "@miyoria/types";
 import { z } from "zod";
-import type { ToolSpec } from "../../llm/src/index.js";
+import type { ImagePart, ToolSpec } from "../../llm/src/index.js";
 
 /** What a tool call is running on behalf of. */
 export interface ToolContext {
@@ -83,7 +83,16 @@ export type ToolRefusalCode = "denied" | "dropped" | "failed" | "unknown_tool";
 
 /** A call's outcome as a value. `text` is what goes back to the model either way. */
 export type ToolResult =
-  | { ok: true; text: string }
+  | {
+      ok: true;
+      text: string;
+      /**
+       * Pictures the call fetched for the model to look at. The chat format has images in `user`
+       * messages only, so the runner offers them in one after the step's results; `text` says
+       * what they are.
+       */
+      images?: readonly ImagePart[];
+    }
   | {
       ok: false;
       code: ToolRefusalCode;

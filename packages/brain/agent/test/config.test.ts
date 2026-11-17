@@ -152,7 +152,12 @@ describe("config", () => {
         same_author_window_ms: 120_000,
         detail: "auto",
         download_timeout_ms: 5000,
-        allowed_hosts: ["cdn.discordapp.com", "media.discordapp.net"],
+        allowed_hosts: [
+          "cdn.discordapp.com",
+          "media.discordapp.net",
+          "images-ext-1.discordapp.net",
+          "images-ext-2.discordapp.net",
+        ],
         cache_entries: 32,
       },
       prompt: {
