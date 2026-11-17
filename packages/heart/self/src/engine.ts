@@ -91,10 +91,16 @@ export interface Circumstances {
   playing: boolean;
   /** She is live (OBS streaming or Discord Go Live). */
   streaming: boolean;
-  /** Her crush is with her (in her voice channel). */
+  /** The one she cares about most is with her (in her voice channel). */
   crushTogether?: boolean;
   /** How much she cares about someone (0..1); unknown = only romance counts. */
   care?: (person: string) => number;
+  /**
+   * The one she cares about most, above the threshold (the heart's 在意, H5): whom she longs for
+   * and misses. Set (even `null`, nobody), the old crush and `romance` are not read; unset: they
+   * are, as before the heart.
+   */
+  cared?: { person: string; cares: number } | null;
 }
 
 export const IDLE: Circumstances = { energy: null, playing: false, streaming: false };
@@ -251,8 +257,14 @@ export class SelfEngine {
       d.esteem = toward1(d.esteem, rise.esteem);
       d.hunger = toward1(d.hunger, rise.hunger);
       this.#boredom = toward1(this.#boredom, this.config.boredom_per_hour);
-      // The crush as of the start of the interval.
-      const crush = this.hearts.crush(this.#at);
+      // Whom she longs for as of the start of the interval: the one she cares about most (its
+      // 在意 is the longing it grows toward), else the old crush.
+      const crush =
+        c.cared === undefined
+          ? this.hearts.crush(this.#at)
+          : c.cared === null
+            ? null
+            : { person: c.cared.person, romance: Math.max(c.cared.cares - 0.3, 0) };
       if (crush === null) {
         // Nobody to long for: it fades (half-life 6 hours).
         d.longing *= 0.5 ** (hours / 6);
@@ -363,7 +375,8 @@ export class SelfEngine {
     for (const person of this.hearts.people()) {
       const seen = this.hearts.lastSeen(person);
       if (seen === null || now - seen < after) continue;
-      const level = Math.max(care ? care(person) : 0, this.hearts.romanceOf(person));
+      const romance = c.cared === undefined ? this.hearts.romanceOf(person) : 0;
+      const level = Math.max(care ? care(person) : 0, romance);
       if (level <= 0) continue;
       const v = this.hearts.long(person, "missing", level, (e.missing_per_day / 24) * hours, now);
       if (v > missing) {

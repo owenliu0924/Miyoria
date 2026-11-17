@@ -129,19 +129,43 @@ export class HeartService implements HeartPeople {
   }
 
   mostCared(among?: readonly PersonId[]): { person: PersonId; cares: number } | null {
-    const rows =
-      among === undefined
-        ? this.#people.list({ limit: MOST_CARED_POOL }).entries.map((e) => e.person)
-        : among.flatMap((p) => this.#people.get(p) ?? []);
-    let best: { person: PersonId; cares: number } | null = null;
-    for (const row of rows) {
-      if (hasTag(row, BLOCKED_TAG)) continue;
-      const c = cares(row);
-      if (c < CARES_THRESHOLD) continue;
-      if (best === null || c > best.cares) best = { person: row.person_id, cares: c };
-    }
-    return best;
+    if (among === undefined) return this.#cared()[0] ?? null;
+    return rank(among.flatMap((p) => this.#people.get(p) ?? []))[0] ?? null;
   }
+
+  caredAbout(max: number): { person: PersonId; cares: number }[] {
+    return this.#cared().slice(0, Math.max(0, max));
+  }
+
+  /**
+   * Everyone she cares about, most first, read again at most every `CARED_TTL_MS`: her emotions
+   * ask on every event, and who she cares about moves by the day.
+   */
+  #cared(): { person: PersonId; cares: number }[] {
+    const now = this.#clock.now();
+    if (this.#caredCache !== null && now - this.#caredCache.at < CARED_TTL_MS) {
+      return this.#caredCache.list;
+    }
+    const list = rank(this.#people.list({ limit: MOST_CARED_POOL }).entries.map((e) => e.person));
+    this.#caredCache = { at: now, list };
+    return list;
+  }
+
+  #caredCache: { at: number; list: { person: PersonId; cares: number }[] } | null = null;
+}
+
+/** How long the list of people she cares about is kept before it is read again. */
+const CARED_TTL_MS = 60_000;
+
+/** The rows at or above the threshold, as `{person, cares}`, most first (blocked never). */
+function rank(rows: readonly HeartPerson[]): { person: PersonId; cares: number }[] {
+  const out: { person: PersonId; cares: number }[] = [];
+  for (const row of rows) {
+    if (hasTag(row, BLOCKED_TAG)) continue;
+    const c = cares(row);
+    if (c >= CARES_THRESHOLD) out.push({ person: row.person_id, cares: c });
+  }
+  return out.sort((a, b) => b.cares - a.cares || (a.person < b.person ? -1 : 1));
 }
 
 /** What the migration on start reads and writes through. */

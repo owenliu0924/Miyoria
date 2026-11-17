@@ -23,6 +23,30 @@ function engine(overrides = {}, allowed: (id: string) => boolean = () => true) {
 }
 
 describe("presence", () => {
+  it("asks the heart whom she cares about when it runs, not the affinity (H5)", () => {
+    const social = new FakeSocial().set("1", 90).set("2", 0);
+    // Person 2 is the one the heart says she cares about; person 1's affinity no longer counts.
+    const sig = {
+      attitude: (a: Parameters<FakeSocial["attitude"]>[0]) => social.attitude(a),
+      cares: (person: string) => person === "person-2",
+    };
+    const w = engine();
+    for (const id of ["1", "2"]) {
+      w.member({
+        platform: "discord",
+        guild: G,
+        account: acct(id),
+        display_name: id,
+        is_bot: false,
+        left: false,
+      });
+    }
+    expect(w.presence(presence("1", "online"), T0 + 1, sig)).toEqual([]);
+    expect(w.presence(presence("2", "online"), T0 + 2, sig).map((c) => c.person)).toEqual([
+      "person-2",
+    ]);
+  });
+
   it("reports someone she cares about coming online, but not snapshots or strangers", () => {
     const social = new FakeSocial().set("1", 50).set("2", 5).set("3", 0, 60);
     const w = engine();

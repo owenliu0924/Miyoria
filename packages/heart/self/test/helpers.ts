@@ -5,6 +5,7 @@ import {
   type Attitude,
   type Clock,
   type Handle,
+  type HeartPeople,
   type JsonValue,
   type Mood,
   type PersonId,
@@ -51,6 +52,8 @@ export function rig(
     temperament?: TemperamentInput;
     config?: Partial<SelfConfig["emotions"]> & { budget?: number };
     mood?: Mood;
+    /** The heart (`HeartKey`): 在意 and the one she cares about most come from it. */
+    heart?: HeartPeople;
   } = {},
 ): Rig {
   const clock = new ManualClock();
@@ -88,6 +91,7 @@ export function rig(
         ...a,
       };
     },
+    heart: () => options.heart ?? null,
     changed: () => undefined,
   });
   const affect = new AffectService({

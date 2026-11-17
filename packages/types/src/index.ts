@@ -935,6 +935,7 @@ export {
 // ---- v5 phase 4: the heart as its readers see it ------------------------------------------------
 
 export {
+  CARES_THRESHOLD,
   FEEL_EMOTION_WORDS,
   FEEL_FIELD_WORDS,
   FEEL_FIELDS,

@@ -235,6 +235,12 @@ export function heartCues(v: Pick<HeartView, "grudge" | "longing">): string[] {
 
 // ---- the service ------------------------------------------------------------------------------
 
+/**
+ * From this much 在意 on (`cares` of the person part, 0..1), she cares about someone: world, self,
+ * mind and her initiative all use this one threshold (owner decision H5).
+ */
+export const CARES_THRESHOLD = 0.3;
+
 /** One line someone said, as the heart keeps count of it. */
 export interface HeartLine {
   text: string;
@@ -266,10 +272,12 @@ export interface HeartPeople {
   /** How much she cares about `person` (在意, 0..1; 0 for someone without a row). */
   cares(person: PersonId): number;
   /**
-   * The one she cares about most, if that is at or above the threshold (在意 ≥ 0.3); among
-   * `among` when given.
+   * The one she cares about most, if that is at or above the threshold (`CARES_THRESHOLD`);
+   * among `among` when given. Where the old crush (暗戀) behaviours hang now (H5).
    */
   mostCared(among?: readonly PersonId[]): { person: PersonId; cares: number } | null;
+  /** Everyone she cares about (at or above the threshold), most first, at most `max`. */
+  caredAbout(max: number): { person: PersonId; cares: number }[];
 }
 
 export const HeartKey = serviceKey<HeartPeople>("HeartPeople");

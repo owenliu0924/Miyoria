@@ -16,6 +16,7 @@ import type {
   EmotionSample,
   Feeling,
   Heart,
+  HeartPeople,
   Mood,
   PersonEmotionName,
   PersonId,
@@ -25,7 +26,12 @@ import type {
   Talkativeness,
   TalkativenessInput,
 } from "@miyoria/types";
-import { EMOTION_LABELS, PERSON_EMOTION_LABELS, toTimestamp } from "@miyoria/types";
+import {
+  CARES_THRESHOLD,
+  EMOTION_LABELS,
+  PERSON_EMOTION_LABELS,
+  toTimestamp,
+} from "@miyoria/types";
 import type { SelfConfig } from "./config.js";
 import { type Audience, shownEmotion } from "./display.js";
 import type { Circumstances, SelfEngine } from "./engine.js";
@@ -41,6 +47,8 @@ export interface SelfServiceDeps {
   mood: () => Mood | null;
   /** The social numbers of someone, when the social module runs. */
   attitudeOf?: (person: PersonId) => Attitude | null;
+  /** The heart (`HeartKey`), when the module `heart` runs: 在意 and the one she cares about most. */
+  heart?: () => HeartPeople | null;
   /** Who she is with right now (for what she shows); `undefined` = nobody in particular. */
   audience?: () => Audience | undefined;
   /** Called after every change of the persisted state. */
@@ -205,17 +213,31 @@ export class SelfService implements SelfState {
 
   // ---- people (for the rules; not part of `SelfState`) -------------------------------
 
-  /** How much she cares about someone, 0..1: from affinity and romance. */
+  /**
+   * How much she cares about someone, 0..1; 0 when she does not (yet). With the heart running it
+   * is the one definition (`HeartPeople.cares`, counted from `CARES_THRESHOLD` on, owner decision
+   * H5); without it, the affinity alone as before (`care_affinity`). The old `romance` is not read.
+   */
   care(person: PersonId): number {
+    const heart = this.d.heart?.() ?? null;
+    if (heart !== null) {
+      const cares = heart.cares(person);
+      return cares >= CARES_THRESHOLD ? clamp01(cares) : 0;
+    }
     const a = this.d.attitudeOf?.(person) ?? null;
     if (a?.blocked) return 0;
     const min = this.d.config.emotions.care_affinity;
-    let care = 0;
-    if (a !== null && a.affinity >= min)
-      care = 0.4 + (0.6 * (a.affinity - min)) / Math.max(100 - min, 1);
-    const romance = this.d.engine.hearts.romanceOf(person);
-    if (romance >= 0.15) care = Math.max(care, romance + 0.2);
-    return clamp01(care);
+    if (a === null || a.affinity < min) return 0;
+    return clamp01(0.4 + (0.6 * (a.affinity - min)) / Math.max(100 - min, 1));
+  }
+
+  /**
+   * The one she cares about most, above the threshold (the heart's), where the old crush's
+   * behaviours hang (H5); `undefined` without the heart, `null` for nobody.
+   */
+  mostCared(): { person: PersonId; cares: number } | null | undefined {
+    const heart = this.d.heart?.() ?? null;
+    return heart === null ? undefined : heart.mostCared();
   }
 
   /**
@@ -233,8 +255,13 @@ export class SelfService implements SelfState {
     return missed;
   }
 
-  /** Her crush's person id, without advancing (cheap, for event routing). */
+  /**
+   * Who the old crush rules are about, without advancing (cheap, for event routing): the one she
+   * cares about most (H5); without the heart, the old crush.
+   */
   crushPerson(): PersonId | null {
+    const cared = this.mostCared();
+    if (cared !== undefined) return cared?.person ?? null;
     return this.d.engine.hearts.crush(this.d.clock.now())?.person ?? null;
   }
 

@@ -37,6 +37,7 @@ import {
   type AffectSnapshot,
   AffectStateKey,
   ArbiterKey,
+  CARES_THRESHOLD,
   CHAT_DM,
   CHAT_START,
   type Clock,
@@ -52,6 +53,7 @@ import {
   type Goal,
   type Handle,
   HandleDirectoryKey,
+  HeartKey,
   holdsBack,
   incomingText,
   inspectInput,
@@ -512,13 +514,28 @@ export class MindLoop implements Mind {
     }
   }
 
-  /** The attachment of the person behind `account` (0 when unknown). */
-  #attachment(account: AccountRef | null, person: PersonId | null): number {
+  /**
+   * How much she cares about a person (`of`) and from how much on that counts (`threshold`): the
+   * heart's one definition when it runs (`HeartKey`, `CARES_THRESHOLD`, owner decision H5); else
+   * the old card's attachment and `cared_attachment`.
+   */
+  #care(): { of: (person: PersonId) => number; threshold: number } {
+    const heart = this.#d.services.get(HeartKey);
+    if (heart !== undefined) return { of: (p) => heart.cares(p), threshold: CARES_THRESHOLD };
     const affect = this.#d.services.get(AffectStateKey);
-    if (!affect) return 0;
+    return {
+      of: (p) => affect?.card(p)?.attachment ?? 0,
+      threshold: this.#d.config.cared_attachment,
+    };
+  }
+
+  /** Whether she cares about the person behind `account` (`#care`). */
+  #cares(account: AccountRef | null, person: PersonId | null): boolean {
     const p =
       person ?? (account ? (this.#d.services.get(SocialKey)?.personOf(account) ?? null) : null);
-    return p === null ? 0 : (affect.card(p)?.attachment ?? 0);
+    if (p === null) return false;
+    const care = this.#care();
+    return care.of(p) >= care.threshold;
   }
 
   /** Feeds one bus event (salience, her turns, voice, activity, affect, gate decisions). */
@@ -640,9 +657,7 @@ export class MindLoop implements Mind {
           const handle = this.#handleOfAccount(salient.account, salient.display_name);
           if (handle !== null) this.#presence.seen(handle, now);
         }
-        const cared =
-          arrival &&
-          this.#attachment(salient.account, salient.person) >= this.#d.config.cared_attachment;
+        const cared = arrival && this.#cares(salient.account, salient.person);
         if (this.#budget() === "degraded" && salient.score < DEGRADED_MIN_SCORE && !cared) return;
         // Someone coming online may fire a `when_online` goal: check right away.
         if (arrival) this.#wake?.();
@@ -1050,8 +1065,9 @@ export class MindLoop implements Mind {
     const goals = this.#d.goals.goals();
     const desires = this.#desires(affect, goals, new Set());
     const bucket = (w: number) => Math.round(w * 5);
+    const care = this.#care();
     const cared = (this.#d.services.get(AffectStateKey)?.cards() ?? [])
-      .filter((c) => c.attachment >= this.#d.config.cared_attachment)
+      .filter((c) => care.of(c.person) >= care.threshold)
       .map((c) => `${c.handle}:${this.where(c.handle)}`)
       .sort();
     const doing = this.#doing();
@@ -1111,7 +1127,12 @@ export class MindLoop implements Mind {
   }
 
   #desires(affect: AffectSnapshot | null, goals: Goal[], fired: ReadonlySet<string>): Desire[] {
-    const cards = this.#d.services.get(AffectStateKey)?.cards() ?? [];
+    // The cards' attachment read as 在意 (`#care`), against its threshold.
+    const care = this.#care();
+    const cards = (this.#d.services.get(AffectStateKey)?.cards() ?? []).map((c) => ({
+      ...c,
+      attachment: care.of(c.person),
+    }));
     const capabilities = this.#capabilities();
     const life = this.#lifeSituation(affect, capabilities);
     return rankDesires({
@@ -1124,7 +1145,7 @@ export class MindLoop implements Mind {
       capabilities,
       activity: this.#doing()?.type ?? null,
       inVoice: this.#herVoice() !== null,
-      cared: this.#d.config.cared_attachment,
+      cared: care.threshold,
     });
   }
 
@@ -1645,8 +1666,9 @@ export class MindLoop implements Mind {
   /** When the people she cares about usually show up. */
   #habits(now: number): string[] {
     const cards = this.#d.services.get(AffectStateKey)?.cards() ?? [];
+    const care = this.#care();
     const cared = new Set(
-      cards.filter((c) => c.attachment >= this.#d.config.cared_attachment).map((c) => c.handle),
+      cards.filter((c) => care.of(c.person) >= care.threshold).map((c) => c.handle),
     );
     const habits = this.#presence.habits(now);
     const picked = [

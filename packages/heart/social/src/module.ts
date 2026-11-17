@@ -17,6 +17,7 @@ import {
   EMOTION_LABELS,
   Events,
   HeartKey,
+  type HeartPeople,
   is,
   isJsonObject,
   type JsonValue,
@@ -45,20 +46,26 @@ interface Running {
   off: () => void;
 }
 
-/** Liked this much counts as someone she cares about, for the appraisal. */
+/** Liked this much counts as someone she cares about, for the appraisal (without the heart). */
 const CARES_AFFINITY = 40;
 
 /**
- * What she cares about, for the appraisal to read her feelings: the people she likes, her
- * secret crush, her strongest emotions and wants. Short; names are made inert.
+ * What she cares about, for the appraisal to read her feelings: the people she cares about and
+ * the one she cares about most (the heart's 在意 when it runs, H5; else the liked and the old
+ * crush), her strongest emotions and wants. Short; names are made inert.
  */
-export function concerns(social: Social, self: SelfState): string {
+export function concerns(
+  social: Social,
+  self: SelfState,
+  heart: HeartPeople | null = null,
+): string {
   const lines: string[] = [];
   const name = (p: PersonId) => safeName(social.displayName(p) ?? "某人", 24);
-  const liked = social.liked(CARES_AFFINITY, 5);
+  const liked =
+    heart === null ? social.liked(CARES_AFFINITY, 5) : heart.caredAbout(5).map((c) => c.person);
   if (liked.length > 0) lines.push(`- 她喜歡的人:${liked.map(name).join("、")}`);
-  const crush = self.crush();
-  if (crush) lines.push(`- 她偷偷喜歡(暗戀,祕密):${name(crush.person)}`);
+  const crush = heart === null ? (self.crush()?.person ?? null) : (liked[0] ?? null);
+  if (crush) lines.push(`- 她偷偷喜歡(暗戀,祕密):${name(crush)}`);
   const felt = self.emotions().slice(0, 3);
   if (felt.length > 0) {
     lines.push(`- 她現在的情緒:${felt.map((e) => EMOTION_LABELS[e.name]).join("、")}`);
@@ -135,7 +142,7 @@ export class SocialModule implements Module {
     social.setConcerns(() => {
       if (ctx.services.get(MindKey)) return null;
       const self = ctx.services.get(SelfStateKey);
-      return self ? concerns(social, self) : null;
+      return self ? concerns(social, self, ctx.services.get(HeartKey) ?? null) : null;
     });
     await social.load();
 

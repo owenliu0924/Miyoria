@@ -19,6 +19,7 @@ import {
   type Drives,
   Events,
   HandleDirectoryKey,
+  HeartKey,
   is,
   isJsonObject,
   type JsonValue,
@@ -200,10 +201,16 @@ export class SelfModule implements Module {
         config.utc_offset_minutes,
         config.mood.night_dip,
       );
-      if (!her) return { ...IDLE, energy };
-      // Her crush is with her when they are in her voice channel (the engine's own crush:
-      // asking the service would advance it again).
-      const crush = engine.hearts.crush(clock.now())?.person ?? null;
+      // The one she cares about most (H5), from the heart when it runs; the old crush otherwise
+      // (the engine's own: asking the service would advance it again).
+      const heart = ctx.services.get(HeartKey);
+      const cared = heart === undefined ? undefined : heart.mostCared();
+      const withCared = cared === undefined ? {} : { cared };
+      if (!her) return { ...IDLE, energy, ...withCared };
+      const crush =
+        cared === undefined
+          ? (engine.hearts.crush(clock.now())?.person ?? null)
+          : (cared?.person ?? null);
       const voice = her.voice ?? null;
       const members =
         voice === null
@@ -220,6 +227,7 @@ export class SelfModule implements Module {
         playing: her.game !== null && her.game !== undefined,
         streaming: her.streaming || her.golive === "live",
         crushTogether,
+        ...withCared,
       };
     };
     /** Who she is with (for what she shows): the people in her voice channel. */
@@ -260,6 +268,7 @@ export class SelfModule implements Module {
       mood: () => affect.mood(),
       audience,
       attitudeOf: (person) => social()?.attitudeOf?.(person) ?? null,
+      heart: () => ctx.services.get(HeartKey) ?? null,
       changed: (reason) => {
         dirty = true;
         ctx.log.debug({ reason }, "inner state changed");

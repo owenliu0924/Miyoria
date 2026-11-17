@@ -448,8 +448,11 @@ export const CARE_BY_TIER: readonly number[] = [
   0, 0.1, 0.26, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.84, 0.88, 0.92, 0.96, 1,
 ];
 
-/** From this much on, she cares (在意): world, self and her initiative all use this. */
-export const CARES_THRESHOLD = 0.3;
+/**
+ * From this much on, she cares (在意): world, self, mind and her initiative all use this. Defined
+ * with the heart's service in `@miyoria/types`, which they read it from.
+ */
+export { CARES_THRESHOLD } from "@miyoria/types";
 
 const clamp01 = (x: number) => (Number.isFinite(x) ? Math.min(Math.max(x, 0), 1) : 0);
 

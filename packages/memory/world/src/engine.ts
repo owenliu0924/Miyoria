@@ -28,6 +28,7 @@ import {
   type HerStatus,
   type IncomingMessage,
   type MemberUpdate,
+  type PersonId,
   type PersonPresence,
   type PlatformId,
   type PresenceActivity,
@@ -50,6 +51,11 @@ import { topicWords } from "./topic.js";
 /** What the engine asks other modules at the moment it needs it. */
 export interface Signals {
   attitude(account: AccountRef): Attitude | null;
+  /**
+   * Whether she cares about `person` (the heart's one definition, `CARES_THRESHOLD`, H5); unset:
+   * `care_min_affinity` and `care_min_familiarity` of the attitude, as before the heart.
+   */
+  cares?(person: PersonId): boolean;
 }
 
 export const NO_SIGNALS: Signals = { attitude: () => null };
@@ -222,7 +228,7 @@ export class WorldEngine {
     const out: Candidate[] = [];
     const att = sig.attitude(u.account);
     const name = oneLine(u.display_name, 32);
-    if (online && prevStatus === "offline" && this.#cares(att)) {
+    if (online && prevStatus === "offline" && this.#cares(att, sig)) {
       out.push({
         kind: "came_online",
         key: `came_online:${key}`,
@@ -248,7 +254,7 @@ export class WorldEngine {
         display_name: u.display_name,
         context: null,
         detail: `${name} 開始玩 ${oneLine(a.name, 40)}`,
-        score: this.#cares(att) ? 0.6 : 0.5,
+        score: this.#cares(att, sig) ? 0.6 : 0.5,
       });
     }
     return out;
@@ -284,7 +290,7 @@ export class WorldEngine {
     }
     if (u.initial || u.is_bot || prev?.channel === u.channel) return [];
     const att = sig.attitude(u.account);
-    if (!this.#cares(att)) return [];
+    if (!this.#cares(att, sig)) return [];
     const channel = oneLine(u.channel_name ?? u.channel, 32);
     return [
       {
@@ -785,8 +791,9 @@ export class WorldEngine {
     };
   }
 
-  #cares(att: Attitude | null): boolean {
+  #cares(att: Attitude | null, sig: Signals): boolean {
     if (!att || att.blocked) return false;
+    if (sig.cares !== undefined) return sig.cares(att.person);
     return (
       att.affinity >= this.config.care_min_affinity ||
       att.familiarity >= this.config.care_min_familiarity
