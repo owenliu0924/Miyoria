@@ -188,12 +188,15 @@ function core(o: Options = {}) {
     if (path === "/api/member/wallet") return { body: wallet };
     if (path === "/api/member/checkin") {
       const withSlip = (body as { fortune?: boolean }).fortune === true;
-      wallet = { ...wallet, balance: wallet.balance + 10 - (withSlip ? 10 : 0), checked_in_today: true, streak: 4, today_earned: 30 };
+      // A day checked in already can only buy the slip: no reward.
+      const gained = wallet.checked_in_today ? 0 : 10;
+      if (gained === 0 && !withSlip) return { status: 409, body: { error: "今天已經簽到過了" } };
+      wallet = { ...wallet, balance: wallet.balance + gained - (withSlip ? 10 : 0), checked_in_today: true, streak: 4, today_earned: 20 + gained };
       if (withSlip) slip = SLIP;
       return {
         body: withSlip
-          ? { gained: 10, streak: 4, balance: wallet.balance, fortune: SLIP, fortune_charged: 10 }
-          : { gained: 10, streak: 4, balance: wallet.balance },
+          ? { gained, streak: 4, balance: wallet.balance, fortune: SLIP, fortune_charged: 10 }
+          : { gained, streak: 4, balance: wallet.balance },
       };
     }
     if (path === "/api/member/feed") {
@@ -830,6 +833,27 @@ describe("the newer places to spend", () => {
     expect(posts.some((p) => p.path === "/api/member/fortune")).toBe(false);
     const section = await screen.findByRole("region", { name: "今日籤詩" });
     expect(await within(section).findByRole("button", { name: "下載" })).toBeInTheDocument();
+    expect(within(wallet).queryByRole("switch")).toBeNull();
+  });
+
+  it("buys the slip alone on a day already checked in, until today's slip exists", async () => {
+    const { posts } = core({ member: USER, wallet: { ...WALLET, checked_in_today: true, streak: 3 } });
+    renderApp();
+    const wallet = await screen.findByRole("region", { name: "錢包" });
+    expect(within(wallet).queryByRole("switch")).toBeNull();
+    await userEvent.click(await within(wallet).findByRole("button", { name: /買今日籤詩.*10/ }));
+    await waitFor(() => expect(posts.find((p) => p.path === "/api/member/checkin")?.body).toEqual({ fortune: true }));
+    const section = await screen.findByRole("region", { name: "今日籤詩" });
+    expect(await within(section).findByRole("button", { name: "下載" })).toBeInTheDocument();
+    await waitFor(() => expect(within(wallet).queryByRole("button", { name: /買今日籤詩/ })).toBeNull());
+  });
+
+  it("offers no purchase once today's slip exists", async () => {
+    core({ member: USER, slip: true, wallet: { ...WALLET, checked_in_today: true } });
+    renderApp();
+    const wallet = await screen.findByRole("region", { name: "錢包" });
+    await within(wallet).findByText("今天已簽到");
+    expect(within(wallet).queryByRole("button", { name: /買今日籤詩/ })).toBeNull();
     expect(within(wallet).queryByRole("switch")).toBeNull();
   });
 

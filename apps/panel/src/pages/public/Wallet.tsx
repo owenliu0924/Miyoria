@@ -17,7 +17,7 @@ import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 import { FRAME_SWATCH } from "./card";
-import { Board, Bounties, Fortune, FORTUNE } from "./Extras";
+import { Board, Bounties, Fortune, FORTUNE, useFortuneToday } from "./Extras";
 import { newKey, priceText, say, usePatchWallet, useWallet } from "./spend";
 
 const SCREEN_MAX = 60;
@@ -52,8 +52,11 @@ function WalletBody({ w }: { w: WalletView }) {
   // The fortune slip is a paid add-on of the check-in: asked with it, today's slip comes in its answer.
   const [withFortune, setWithFortune] = useState(false);
   const slipOffer = w.shop.find((s) => s.id === "fortune");
+  // Offered until today's slip exists (and only where the Core answers for it).
+  const slipDrawn = useFortuneToday().data;
+  const slipOpen = slipOffer !== undefined && slipDrawn !== undefined && slipDrawn.fortune === null;
   const checkin = useMutation({
-    mutationFn: () => api.rpc.wallet.checkin({ body: withFortune ? { fortune: true } : {} }),
+    mutationFn: (fortune: boolean) => api.rpc.wallet.checkin({ body: fortune ? { fortune: true } : {} }),
     onSuccess: (r) => {
       if (r.fortune) {
         const slip = r.fortune;
@@ -67,7 +70,10 @@ function WalletBody({ w }: { w: WalletView }) {
         checked_in_today: true,
         today_earned: v.today_earned + r.gained,
       }));
-      notify.ok(`簽到了,+${fmtInt(r.gained)} ${w.currency}`);
+      setWithFortune(false);
+      // A day checked in already buys the slip alone: `gained` is 0 then.
+      if (r.gained > 0) notify.ok(`簽到了,+${fmtInt(r.gained)} ${w.currency}`);
+      else if (r.fortune) notify.ok("今天的籤詩來了");
       void refresh();
     },
     onError: (e) => {
@@ -114,16 +120,27 @@ function WalletBody({ w }: { w: WalletView }) {
       </div>
       {w.hungry && <p className="text-[13px] text-muted-foreground">她現在:{HUNGRY[w.hungry] ?? w.hungry}</p>}
       <div className="grid gap-1.5">
-        <Button variant="secondary" disabled={w.checked_in_today} busy={checkin.isPending} onClick={() => checkin.mutate()}>
+        <Button variant="secondary" disabled={w.checked_in_today} busy={checkin.isPending} onClick={() => checkin.mutate(withFortune && slipOpen)}>
           {w.checked_in_today ? "今天已簽到" : `簽到${checkinLine ? ` +${fmtInt(checkinLine.amount)}` : ""}`}
         </Button>
-        {slipOffer && !w.checked_in_today && (
+        {slipOpen && !w.checked_in_today && (
           <div className="flex items-center gap-2">
             <Switch id={fortuneId} checked={withFortune} disabled={!slipOffer.available || checkin.isPending} onCheckedChange={setWithFortune} />
             <label htmlFor={fortuneId} className="text-xs text-muted-foreground">
               加買今日籤詩 · {priceText(slipOffer.price, w.currency)}
             </label>
           </div>
+        )}
+        {slipOpen && w.checked_in_today && (
+          <Button
+            variant="outline"
+            disabled={!slipOffer.available || checkin.isPending}
+            title={slipOffer.available ? undefined : (slipOffer.why ?? undefined)}
+            busy={checkin.isPending}
+            onClick={() => checkin.mutate(true)}
+          >
+            買今日籤詩 · {priceText(slipOffer.price, w.currency)}
+          </Button>
         )}
         {w.streak > 0 && <p className="text-xs text-muted-foreground">連續簽到 {w.streak} 天</p>}
       </div>

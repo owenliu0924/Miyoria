@@ -2521,10 +2521,57 @@ describe("between people, the sponsor board and fortune slips", () => {
         fortune: slip,
         price: 10,
       });
-      // The day's check-in is done: nothing more is written or charged.
-      expect((await checkin(r, cookie)).status).toBe(409);
+      // The day's check-in is done: a plain one is refused, and asking for the slip again answers
+      // today's own slip for nothing, without a second reward or another model call.
+      expect((await checkin(r, cookie, {})).status).toBe(409);
+      const again = await checkin(r, cookie);
+      expect(again.status).toBe(200);
+      expect(again.body).toEqual({
+        gained: 0,
+        streak: 1,
+        balance: 40,
+        fortune: slip,
+        fortune_charged: 0,
+      });
       expect(r.model.asked).toBe(1);
       expect(await r.balance(ALICE)).toBe(40);
+    });
+
+    it("can still be bought on a day already checked in, alone, until today's slip exists", async () => {
+      const r = await socialRig();
+      await gift(r, ALICE, 30);
+      const cookie = await r.login("alice");
+      expect((await checkin(r, cookie, {})).body).toEqual({ gained: 10, streak: 1, balance: 50 });
+      expect((await checkin(r, cookie, {})).status).toBe(409);
+
+      const bought = await checkin(r, cookie);
+      expect(bought.status).toBe(200);
+      expect(bought.body).toMatchObject({
+        gained: 0,
+        streak: 1,
+        balance: 40,
+        fortune_charged: 10,
+      });
+      expect((bought.body as { fortune: unknown }).fortune).toMatchObject(SLIP);
+      expect(await r.balance(ALICE)).toBe(40);
+      // Only the slip was charged: no second check-in row, no second reward.
+      expect(r.model.asked).toBe(1);
+      expect((await r.get("/api/member/fortune", cookie)).body).toMatchObject({
+        fortune: { title: SLIP.title },
+      });
+    });
+
+    it("keeps the price and the check-in when the slip cannot be bought on such a day", async () => {
+      const r = await socialRig();
+      await gift(r, ALICE, 5);
+      const cookie = await r.login("alice");
+      expect((await checkin(r, cookie, {})).status).toBe(200);
+      const before = await r.balance(ALICE);
+      r.model.fail = true;
+      const failed = await checkin(r, cookie);
+      expect(failed.status).toBe(200);
+      expect(failed.body).toMatchObject({ gained: 0, fortune_note: "她現在寫不出來,魚幣已經退回" });
+      expect(await r.balance(ALICE)).toBe(before);
     });
 
     it("are not drawn by a plain check-in, and a strict body takes nothing else", async () => {

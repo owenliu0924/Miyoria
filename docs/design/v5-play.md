@@ -356,7 +356,7 @@ owner,2026-11-14:
 - 轉帳:收 `transfer_fee`(預設 0.05)的手續費,進位、至少 1、燒掉(帳本一行 `transfer_fee`,沒有對方)。轉的人付「數量 + 手續費」,收的人拿滿數量;每日上限算數量、不算手續費。收據、確認文字(面板和 `/me give`)都寫出手續費。
 - 「今天聊過天」的魚幣 10 → 5(`talked`)。
 - 餵食:整體的「她餓不餓」不再擋餵食,改成每人每天 `feed_hunger_cap`(0.85,和以前整體的範圍一樣大)的份量;用完回「你今天餵得夠多了」不扣錢。錢包的 `hungry` 對吃到上限的人是 full。`full_below` 進 removed-config。
-- 籤詩併進簽到,是簽到的可選加買(同價 10,`fortunes_per_day` 照舊):`POST /api/member/checkin { fortune: true }`、`/me checkin fortune:true`;答案多 `fortune`、`fortune_charged`,她寫不出來時簽到照算、多一句 `fortune_note`、錢退回。`/me fortune`、`POST /api/member/fortune` 刪了;`GET /api/member/fortune` 留著給會員頁看今天那張。面板在簽到旁多一個「加買今日籤詩」的開關,籤詩卡片只顯示。簡單版的限制:已經簽到過的那天不能再加買籤詩。
+- 籤詩併進簽到,是簽到的可選加買(同價 10,`fortunes_per_day` 照舊):`POST /api/member/checkin { fortune: true }`、`/me checkin fortune:true`;答案多 `fortune`、`fortune_charged`,她寫不出來時簽到照算、多一句 `fortune_note`、錢退回。`/me fortune`、`POST /api/member/fortune` 刪了;`GET /api/member/fortune` 留著給會員頁看今天那張。面板在簽到旁多一個「加買今日籤詩」的開關,籤詩卡片只顯示。已經簽到過的那天也能只買籤詩(沒有第二份簽到獎勵),面板顯示「買今日籤詩」按鈕直到今天的籤詩存在。Discord 的公開答案只說籤詩抽好了,籤詩本身是只有買的人看得到的 follow-up(籤詩有她寫的私人一句)。
 
 ### 10.3 連結和圖(不屬於階段 5)
 

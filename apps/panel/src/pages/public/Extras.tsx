@@ -40,15 +40,20 @@ const retry = (n: number, e: Error) => !isNotProvided(e) && n < 2;
 // ---------------------------------------------------------------------------
 // fortune
 
-/** Today's slip; there is a button for none: it is drawn with the check-in (an add-on of it). */
-export function Fortune() {
+/** Today's slip and what one costs; the wallet's check-in buys it and puts it here. */
+export function useFortuneToday() {
   const api = useApi();
-  const currency = useWallet().data?.currency ?? "幣";
-  const today = useQuery({
+  return useQuery({
     queryKey: FORTUNE,
     queryFn: ({ signal }) => api.rpc.fortune.today(undefined, { signal }),
     retry,
   });
+}
+
+/** Today's slip; there is a button for none: it is drawn with the check-in (an add-on of it). */
+export function Fortune() {
+  const currency = useWallet().data?.currency ?? "幣";
+  const today = useFortuneToday();
   if (today.isError && isNotProvided(today.error)) return null;
   return (
     <Card aria-label="今日籤詩">
@@ -61,7 +66,7 @@ export function Fortune() {
             <FortuneSlip fortune={t.fortune} />
           ) : (
             <p className="text-[13px] text-muted-foreground">
-              每天一張,是她現在為你寫的。簽到時可以加買({priceText(t.price, currency)}),今天還沒簽到的話在錢包那邊勾選。
+              每天一張,是她現在為你寫的。簽到時可以加買({priceText(t.price, currency)}),簽過到了也能只買籤詩,在錢包那邊。
             </p>
           )
         }

@@ -282,28 +282,69 @@ describe("wallet commands", () => {
     services.provide("test", KeepsakesKey, keepsakes);
     new EconomyCommands().install(registry, services);
 
+    // Dispatches like the platform does: a follow-up is what the buyer alone sees.
+    const asWith = async (args: Record<string, string | number | boolean>, canFollow = true) => {
+      const followUps: CommandReply[] = [];
+      const reply = await registry.dispatch(
+        {
+          path: ["me", "checkin"],
+          args,
+          invoker: acct("5"),
+          invoker_display_name: "Bob",
+          context: ctx,
+          invoker_is_guild_admin: false,
+        },
+        canFollow ? { followUp: async (r: CommandReply) => void followUps.push(r) } : {},
+      );
+      return { reply, followUps };
+    };
+
     const plain = await run(registry, "me checkin");
     expect(plain.text).not.toContain("春風得意");
     expect(drawn).toHaveLength(0);
 
-    const asked = await run(registry, "me checkin", { fortune: true });
-    expect(asked.text).toContain("簽到了，+10 魚幣");
-    expect(asked.text).toContain("大吉　春風得意");
-    expect(asked.text).toContain("籤詩花了 10 魚幣，剩 120");
+    // The shared reply says a slip was drawn, never what it says; the slip is a private follow-up.
+    const asked = await asWith({ fortune: true });
+    expect(asked.reply.text).toContain("簽到了，+10 魚幣");
+    expect(asked.reply.text).toContain("籤詩花了 10 魚幣，剩 120");
+    expect(asked.reply.text).toContain("只有你看得到");
+    expect(asked.reply.text).not.toContain("春風得意");
+    expect(asked.reply.text).not.toContain("月落烏啼");
+    expect(asked.followUps).toHaveLength(1);
+    expect(asked.followUps[0]?.ephemeral).toBe(true);
+    expect(asked.followUps[0]?.text).toContain("大吉　春風得意");
+    expect(asked.followUps[0]?.text).toContain("月落烏啼\n江楓漁火");
     expect(drawn).toHaveLength(1);
 
-    // The slip is refused: the check-in stands, with the reason under it.
-    refuse = "魚幣不夠";
-    const short = await run(registry, "me checkin", { fortune: true });
-    expect(short.text).toContain("簽到了，+10 魚幣");
-    expect(short.text).toContain("魚幣不夠");
+    // Where a private message cannot be sent, the slip is not put in the shared reply either.
+    const noFollow = await asWith({ fortune: true }, false);
+    expect(noFollow.reply.text).toContain("會員頁");
+    expect(noFollow.reply.text).not.toContain("春風得意");
 
-    // Already checked in: nothing is drawn, and nothing is charged.
-    f.state.fail = new EconomyError(409, "今天已經簽到過了");
+    // The slip is refused: the check-in stands, with the reason under it, and nothing private.
+    refuse = "魚幣不夠";
+    const short = await asWith({ fortune: true });
+    expect(short.reply.text).toContain("簽到了，+10 魚幣");
+    expect(short.reply.text).toContain("魚幣不夠");
+    expect(short.followUps).toHaveLength(0);
     refuse = null;
-    const again = await run(registry, "me checkin", { fortune: true });
-    expect(again.text).toBe("今天已經簽到過了");
-    expect(drawn).toHaveLength(2);
+
+    // Already checked in: the slip alone is bought, with no second check-in and no reward.
+    f.state.view = view({ checked_in_today: true });
+    const checkins = f.calls.filter((c) => c === "checkin").length;
+    const before = drawn.length;
+    const only = await asWith({ fortune: true });
+    expect(only.reply.text).toContain("今天已經簽到過了");
+    expect(only.reply.text).not.toContain("簽到了，+");
+    expect(only.followUps[0]?.text).toContain("春風得意");
+    expect(drawn).toHaveLength(before + 1);
+    expect(f.calls.filter((c) => c === "checkin")).toHaveLength(checkins);
+    // Without the add-on, a second check-in is still the economy's own refusal.
+    f.state.fail = new EconomyError(409, "今天已經簽到過了");
+    const plainAgain = await run(registry, "me checkin");
+    expect(plainAgain.text).toBe("今天已經簽到過了");
+    expect(drawn).toHaveLength(before + 1);
+    f.state.fail = null;
 
     // Without the service the check-in still stands.
     const bare = setup();

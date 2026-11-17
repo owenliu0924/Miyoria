@@ -182,44 +182,62 @@ class Handler {
   }
 
   /**
-   * `/me checkin`; with `fortune` also today's fortune slip, paid. The slip is asked after the
-   * check-in went through, and a refusal of it is a line under the check-in, never an error.
+   * `/me checkin`; with `fortune` also today's fortune slip, paid. A day that was checked in
+   * already still buys the slip alone, with no second reward. The slip is asked after the
+   * check-in went through, and a refusal of it is a line under the check-in, never an error. What
+   * she wrote is private: the reply only says a slip was drawn, the slip itself goes to the buyer
+   * as an ephemeral follow-up.
    */
   checkin(inv: Invocation, fortune = false): Promise<CommandReply> {
     return this.#guard(async (economy) => {
-      const r = await economy.checkin(inv.invoker);
       const view = await economy.wallet(inv.invoker);
-      const lines = [
-        `簽到了，+${r.gained} ${view.currency}。連續 ${r.streak} 天，現在有 ${r.balance} ${view.currency}。`,
-      ];
-      if (!fortune) return result(lines[0] ?? "", mutedText(unlockLines(r.unlocked)));
+      const slipOnly = fortune && view.checked_in_today;
+      const r = slipOnly ? null : await economy.checkin(inv.invoker);
+      const head = r
+        ? `簽到了，+${r.gained} ${view.currency}。連續 ${r.streak} 天，現在有 ${r.balance} ${view.currency}。`
+        : "今天已經簽到過了，這次只買籤詩，沒有再領魚幣。";
+      const unlocked = mutedText(unlockLines(r?.unlocked));
+      if (!fortune) return result(head, unlocked);
+      const blocks: CardBlock[] = [{ type: "text", text: head }];
       const slip = await this.#slip(inv, view.currency);
-      const blocks: CardBlock[] = [{ type: "text", text: lines[0] ?? "" }, ...slip];
-      const unlocked = mutedText(unlockLines(r.unlocked));
+      for (const line of slip.public) blocks.push({ type: "muted", text: line });
       if (unlocked) blocks.push({ type: "muted", text: unlocked });
       return cardReply(blocks, { accent: "neutral" });
     });
   }
 
-  /** The slip asked with a check-in, or the reason there is none. */
-  async #slip(inv: Invocation, currency: string): Promise<CardBlock[]> {
+  /**
+   * Buys today's slip. Its text goes to the buyer alone (an ephemeral follow-up); `public` is
+   * what the shared reply may say: that one was drawn and what it cost, or why there is none.
+   */
+  async #slip(inv: Invocation, currency: string): Promise<{ public: string[] }> {
     const keepsakes = this.services.get(KeepsakesKey);
-    if (!keepsakes) return [{ type: "muted", text: NO_SLIP }];
+    if (!keepsakes) return { public: [NO_SLIP] };
     try {
       const drawn = await keepsakes.drawFortune(
         { account: inv.invoker, name: inv.invoker_display_name, avatar_url: null },
         `discord:${newId()}`,
       );
-      if (!drawn.ok) return [{ type: "muted", text: drawn.message }];
-      const blocks = slipText(drawn.value);
-      if (drawn.charged > 0) {
-        const left = drawn.balance === null ? "" : `，剩 ${drawn.balance}`;
-        blocks.push({ type: "muted", text: `籤詩花了 ${drawn.charged} ${currency}${left}` });
+      if (!drawn.ok) return { public: [drawn.message] };
+      const left = drawn.balance === null ? "" : `，剩 ${drawn.balance}`;
+      const paid = drawn.charged > 0 ? `籤詩花了 ${drawn.charged} ${currency}${left}。` : "";
+      if (!inv.canFollowUp()) return { public: [`${paid}籤詩到會員頁看。`] };
+      try {
+        await inv.followUp(
+          cardReply(slipText(drawn.value), {
+            accent: "neutral",
+            title: "今日籤詩",
+            ephemeral: true,
+          }),
+        );
+      } catch (error) {
+        log.warn({ error: errorMessage(error) }, "cannot send a slip privately");
+        return { public: [`${paid}籤詩到會員頁看。`] };
       }
-      return blocks;
+      return { public: [`${paid}今天的籤詩抽好了，只有你看得到。`] };
     } catch (error) {
       log.warn({ error: errorMessage(error) }, "a check-in's fortune failed");
-      return [{ type: "muted", text: NO_SLIP }];
+      return { public: [NO_SLIP] };
     }
   }
 
@@ -354,9 +372,14 @@ function register(registry: CommandRegistry, handler: Handler): void {
   registry.register(
     commandSpec("me checkin", "每日簽到，領魚幣（可以加買今天的籤詩）", {
       args: [
-        argSpec("fortune", "簽到時順便抽今天的籤詩（要花魚幣）", ArgKind.boolean, {
-          required: false,
-        }),
+        argSpec(
+          "fortune",
+          "順便抽今天的籤詩（要花魚幣；已經簽到過也能只買籤詩）",
+          ArgKind.boolean,
+          {
+            required: false,
+          },
+        ),
       ],
       permission: WALLET_NODE,
     }),

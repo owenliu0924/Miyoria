@@ -190,7 +190,7 @@ export const wallet = {
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/wallet" })
     .output(WalletViewSchema),
-  /** Once a local day (the Discord command counts too); `409` after. Optionally with a paid fortune slip. */
+  /** Once a local day (the Discord command counts too); `409` after. Optionally with a paid fortune slip, which a day already checked in can still buy alone (`gained` 0). */
   checkin: route
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/checkin" })

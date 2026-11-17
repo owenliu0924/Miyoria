@@ -3,7 +3,8 @@
 //
 // * `GET /api/member/wallet`: balance, what they can still earn today, the shop, their frames.
 // * `POST /api/member/checkin` `{ fortune? }`: once a local day (Discord's `/me` counts too); 409
-//   after. `fortune: true` adds today's fortune slip, paid (the check-in stands if the slip fails).
+//   after. `fortune: true` adds today's fortune slip, paid (the check-in stands if the slip fails);
+//   on a day already checked in it buys the slip alone (`gained` 0, no second reward).
 // * `POST /api/member/feed` `{ item, count? }`,
 //   `POST /api/member/screen` `{ text }` (a message on the stream: 409 when she is not live), `POST /api/member/frame` `{ buy?, select? }`.
 // * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member (403 in the
@@ -168,10 +169,17 @@ export const walletRpc = {
     return walletView(await withWallet(state, (e) => e.wallet(accountOf(c))));
   }),
   checkin: os.wallet.checkin.handler(async ({ input, context: { state, c } }) => {
-    const done = checkinResult(await withWallet(state, (e) => e.checkin(accountOf(c))));
-    if (input.body.fortune !== true) return done;
+    const account = accountOf(c);
+    const asked = input.body.fortune === true;
+    // A day already checked in still buys the slip alone: no second check-in, nothing earned.
+    const today = asked ? await withWallet(state, (e) => e.wallet(account)) : null;
+    const done =
+      today?.checked_in_today === true
+        ? { gained: 0, streak: today.streak, balance: today.balance }
+        : checkinResult(await withWallet(state, (e) => e.checkin(account)));
+    if (!asked) return done;
     // The paid add-on: the check-in stands whatever happens to the slip.
-    const { account, name } = c.get("member") as SessionRecord;
+    const { name } = c.get("member") as SessionRecord;
     const { balance, ...slip } = await checkinFortune(state, { account, name });
     return { ...done, ...slip, balance: balance ?? done.balance };
   }),
