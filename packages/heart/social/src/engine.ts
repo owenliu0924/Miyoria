@@ -36,6 +36,7 @@ import {
   timestampMs,
   toTimestamp,
 } from "@miyoria/types";
+import type { HeartStore } from "../../person/src/store.js";
 import {
   appraisalRequest,
   type Line,
@@ -259,6 +260,11 @@ export class Social implements SocialSignals, RelationshipEffects {
    * crush, what she wants); `null` = the appraisal does not read her feelings.
    */
   #concerns: (() => string | null) | null = null;
+  /**
+   * The heart's rows: the owner's and the person's own edits (call name, tags, the owner's adjust
+   * and reset) are written there too (phase 4 step 4), until step 5 moves them there alone.
+   */
+  #heart: HeartStore | null = null;
 
   constructor(
     profile: ProfileId,
@@ -291,6 +297,11 @@ export class Social implements SocialSignals, RelationshipEffects {
    */
   setConcerns(concerns: (() => string | null) | null): void {
     this.#concerns = concerns;
+  }
+
+  /** The heart's rows the edits are written to as well; `null`: none. */
+  setHeart(heart: HeartStore | null): void {
+    this.#heart = heart;
   }
 
   get authorizer(): Authorizer | null {
@@ -934,6 +945,7 @@ export class Social implements SocialSignals, RelationshipEffects {
 
   /** Resets numbers, notes and call name; tags stay. */
   reset(person: PersonId, by: string, now: number): Promise<Relationship> {
+    this.#heart?.reset(person, { now, quote: `reset by ${by}` });
     const fresh = this.#newRel(person, now);
     return this.modify(person, `admin: reset by ${by}`, now, (r) => {
       const tags = r.tags;
@@ -943,6 +955,11 @@ export class Social implements SocialSignals, RelationshipEffects {
 
   /** Adds `affinity` directly (owner only; ignores caps). */
   adjust(person: PersonId, affinity: number, by: string, now: number): Promise<Relationship> {
+    const heart = this.#heart;
+    if (heart !== null && affinity !== 0) {
+      const bond = heart.get(person)?.bond ?? 0;
+      heart.adminSet(person, "bond", bond + affinity, { now, quote: `adjust by ${by}` });
+    }
     return this.modify(person, `admin: adjust by ${by}`, now, (r) => {
       r.affinity += affinity;
     });
@@ -958,6 +975,7 @@ export class Social implements SocialSignals, RelationshipEffects {
   ): Promise<boolean> {
     const rel = this.#rels.get(person);
     const has = rel !== undefined && hasTag(rel, tag);
+    this.#heart?.setTag(person, tag, on, { now });
     if (has === on) return false;
     const verb = on ? "tag" : "untag";
     await this.modify(person, `admin: ${verb} ${tag} by ${by}`, now, (r) => {
@@ -974,6 +992,7 @@ export class Social implements SocialSignals, RelationshipEffects {
     now: number,
     by = "me",
   ): Promise<Relationship> {
+    this.#heart?.edit(person, { call_name: callName }, { now });
     return this.modify(person, `${by}: call_name`, now, (r) => {
       r.call_name = callName;
     });

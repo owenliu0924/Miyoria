@@ -10,6 +10,7 @@ import type {
   PersonSummary,
   UpdatePersonRequest,
 } from "@miyoria/contracts/api";
+import type { HeartStore } from "@miyoria/heart/person";
 import { attitude, BLOCKED_TAG, label, type Social, SocialKey } from "@miyoria/heart/social";
 import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
@@ -28,6 +29,7 @@ import {
 import { isUlid, type PersonId, type ProfileId, toTimestamp } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
+import { heartRows } from "./heart-rows.js";
 import { type ApiContext, type ApiState, actorOf, toJson } from "./state.js";
 
 const DEFAULT_LIMIT = 100;
@@ -78,9 +80,11 @@ class PeopleCtx {
   readonly identity: IdentityStore;
   readonly people: PeopleStore | undefined;
   readonly social: Social | undefined;
+  readonly heart: HeartStore | null;
 
   constructor(state: ApiState) {
     this.social = state.optional(SocialKey);
+    this.heart = heartRows(state);
     this.profile = this.social ? this.social.profile : state.profile();
     this.relationships = state.service(RelationshipStoreKey, "relationship store");
     this.identity = state.service(IdentityStoreKey, "identity store");
@@ -333,6 +337,8 @@ async function applyUpdate(
     await social.setCallName(person, name, now);
   }
   if (request.notes !== undefined) {
+    // The panel's notes are her impression of them on the heart's row.
+    ctx.heart?.edit(person, { impression: request.notes.trim() }, { now });
     // The engine has no notes setter: write the stored row and reload its cache (after flushing
     // its pending counters).
     await social.flush();

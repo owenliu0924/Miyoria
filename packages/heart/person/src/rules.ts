@@ -249,8 +249,17 @@ export type HeartChange = HeartChangedData;
 
 /** What to change. */
 export type HeartChangeRequest =
-  /** Her `feel` proposal: a direction, sized by the program. */
-  | { type: "propose"; field: ProposalField; direction: Direction; quote: string }
+  /**
+   * Her proposal: a direction, sized by the program. `feel` (the default) is damped by the day's
+   * earlier proposals; `reflect` (her nightly reflection, one per field and direction) is not.
+   */
+  | {
+      type: "propose";
+      field: ProposalField;
+      direction: Direction;
+      quote: string;
+      cause?: "feel" | "reflect";
+    }
   /** A change of a given size: her reflection, evidence, the owner, decay, the migration. */
   | {
       type: "adjust";
@@ -283,7 +292,7 @@ export function applyChange(
   now: number,
 ): AppliedChange {
   const field = request.field;
-  const cause: HeartCause = request.type === "propose" ? "feel" : request.cause;
+  const cause: HeartCause = request.type === "propose" ? (request.cause ?? "feel") : request.cause;
   let proposed: number | null;
   let wanted: number;
   if (request.type === "propose") {
@@ -291,7 +300,7 @@ export function applyChange(
     const counts = ledger.fields[field];
     const n = (request.direction === "up" ? counts.proposed_up : counts.proposed_down) + 1;
     proposed = step;
-    wanted = step * repeatFactor(n, rules);
+    wanted = cause === "feel" ? step * repeatFactor(n, rules) : step;
   } else {
     wanted = Number.isFinite(request.delta) ? request.delta : 0;
     proposed = cause === "decay" || cause === "migrate" ? null : wanted;
@@ -495,6 +504,22 @@ export function lineDepth(text: string, directed: boolean): number {
 export function familiarityGain(current: number, depth: number, rules: HeartPersonConfig): number {
   const room = clamp01(1 - current / 100);
   return Math.max(rules.familiarity_per_line, 0) * Math.max(depth, 0) * room;
+}
+
+/**
+ * The tier the bond of `person` is held under for want of an anchor (H4): the next tier from 知心
+ * up, never entered, without an anchor, with the bond at most `anchor_hold` (and a hair) below
+ * it. `null` when it is not held.
+ */
+export function heldTier(
+  person: Pick<HeartPerson, "bond" | "tier_floor" | "anchors">,
+  rules: Pick<HeartPersonConfig, "anchor_hold">,
+): { tier: number; label: string } | null {
+  const next = tierProgress(person.bond).next;
+  if (next === null || next.min < ANCHORED_TIER_MIN || next.min <= person.tier_floor) return null;
+  if (hasAnchor(person, next.min)) return null;
+  if (person.bond < next.min - rules.anchor_hold - 0.01) return null;
+  return { tier: next.min, label: next.label };
 }
 
 /** The tier floors of `BOND_LADDER` that need an anchor (知心 and up). */

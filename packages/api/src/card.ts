@@ -29,6 +29,7 @@ import {
 } from "@miyoria/store";
 import {
   type AccountRef,
+  HeartKey,
   isJsonObject,
   type JsonObject,
   type JsonValue,
@@ -347,6 +348,7 @@ async function issue(
         issued_at: card.issued_at,
         snapshot,
       });
+      cardEvidence(state, holder, card, extras.replaces !== null);
       return card;
     } catch (error) {
       if (!(error instanceof StoreError) || !/already exists/.test(error.message) || attempt >= 2) {
@@ -354,6 +356,22 @@ async function issue(
       }
       card.serial = newSerial();
     }
+  }
+}
+
+/** A card she gave them is evidence for her nightly reflection on them (`card`). Never throws. */
+function cardEvidence(state: ApiState, holder: CardHolder, card: IssuedCard, reroll: boolean) {
+  if (holder.person === null) return;
+  try {
+    state.optional(HeartKey)?.evidence?.({
+      person: holder.person,
+      kind: "card",
+      detail: `${reroll ? "重抽了" : "拿到了"}你的第 ${card.number} 張卡片${card.foil ? "(閃卡)" : ""}`,
+      weight: null,
+      at: state.now(),
+    });
+  } catch (error) {
+    log.warn({ err: errorMessage(error) }, "cannot record a card as evidence");
   }
 }
 

@@ -11,8 +11,10 @@ import {
   type ActivitySnapshot,
   type BusEvent,
   type ContextKey,
+  contextKeyString,
   EventLogKey,
   Events,
+  HeartKey,
   holdsBack,
   incomingText,
   inspectInput,
@@ -25,6 +27,7 @@ import {
   type PromptContributors,
   PromptContributorsKey,
   type ServiceKey,
+  SocialSignalsKey,
   SongClipsKey,
   serviceKey,
 } from "@miyoria/types";
@@ -32,7 +35,7 @@ import { partyCapabilities } from "./actions.js";
 import { PartyConfigSchema } from "./config.js";
 import { LlmSoupJudge } from "./judge.js";
 import { PartyPrompt, PROMPT_KEY } from "./prompt.js";
-import { type PartyNote, type PartyOutput, type Speaker, Table } from "./table.js";
+import { type PartyEnded, type PartyNote, type PartyOutput, type Speaker, Table } from "./table.js";
 
 const log = getLogger("party");
 
@@ -92,7 +95,30 @@ class Notes implements PartyOutput {
     }
   }
 
-  ended(): void {}
+  /** Everyone who played it is evidence for her nightly reflection on them (`played_together`). */
+  ended(info: PartyEnded): void {
+    const services = this.ctx.services;
+    const heart = services.get(HeartKey);
+    const people = services.get(SocialSignalsKey);
+    if (heart?.evidence === undefined || people === undefined) return;
+    const at = this.ctx.clock.now();
+    for (const p of info.players) {
+      try {
+        const person = people.attitude(p.account)?.person;
+        if (person === undefined) continue;
+        heart.evidence({
+          person,
+          kind: "played_together",
+          detail: `一起玩了${info.title}`,
+          weight: null,
+          at,
+          session: contextKeyString(info.context),
+        });
+      } catch (error) {
+        log.warn({ err: errorMessage(error) }, "cannot record a game played together");
+      }
+    }
+  }
 }
 
 /**

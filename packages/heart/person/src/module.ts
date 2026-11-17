@@ -22,24 +22,40 @@ import {
   StoreKey,
 } from "@miyoria/store";
 import {
+  type AccountRef,
+  type BusEvent,
   type Clock,
+  contextKeyString,
+  Events,
   type FeelProposal,
+  type HeartActivity,
+  type HeartDay,
+  type HeartEvidenceInput,
   HeartKey,
   type HeartLine,
   type HeartPeople,
+  type HeartReflected,
+  type HeartReflection,
   type HeartView,
+  is,
   type JsonValue,
   type PersonId,
   type ProfileId,
+  parseSongCue,
+  RelationshipEffectsKey,
+  SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
 import { FeelingsBook } from "../../self/src/feelings.js";
 import { HeartPersonConfigSchema } from "./config.js";
+import { HeartEffects } from "./effects.js";
 import type { LegacyResult } from "./legacy.js";
-import { BLOCKED_TAG, type HeartPerson, hasTag, isProposalField, OWNER_TAG } from "./model.js";
+import { BLOCKED_TAG, type HeartPerson, hasTag, isProposalField } from "./model.js";
 import { CARES_THRESHOLD, cares, type HeartChangeRequest } from "./rules.js";
 import { type HeartStore, heartTables } from "./store.js";
+import { Together } from "./together.js";
+import { viewOf } from "./view.js";
 
 /** `[modules.heart]`: the rules of `heart_person`, and how often the daily pass looks. */
 export const HeartConfigSchema = HeartPersonConfigSchema.extend({
@@ -61,29 +77,7 @@ const CARD_CHARS = 100_000;
 /** At most this many people are looked through for the one she cares about most. */
 const MOST_CARED_POOL = 200;
 
-/** A row as its readers see it. */
-export function viewOf(p: HeartPerson): HeartView {
-  return {
-    person: p.person_id,
-    bond: p.bond,
-    trust: p.trust,
-    familiarity: p.familiarity,
-    warmth: p.warmth,
-    respect: p.respect,
-    ease: p.ease,
-    grudge: p.grudge,
-    longing: p.longing,
-    rapport: p.rapport,
-    stance: p.stance,
-    impression: p.impression,
-    call_name: p.call_name,
-    tags: [...p.tags],
-    owner: hasTag(p, OWNER_TAG),
-    blocked: hasTag(p, BLOCKED_TAG),
-    last_seen: p.last_seen,
-    last_together: p.last_together,
-  };
-}
+export { viewOf } from "./view.js";
 
 /** `HeartKey`: the store's rows, read and moved by the rules. */
 export class HeartService implements HeartPeople {
@@ -135,6 +129,38 @@ export class HeartService implements HeartPeople {
 
   caredAbout(max: number): { person: PersonId; cares: number }[] {
     return this.#cared().slice(0, Math.max(0, max));
+  }
+
+  evidence(input: HeartEvidenceInput): void {
+    const row = this.#people.get(input.person);
+    if (row !== null && hasTag(row, BLOCKED_TAG)) return;
+    const at = toTimestamp(input.at ?? this.#clock.now());
+    this.#people.appendEvidence(
+      {
+        person: input.person,
+        kind: input.kind,
+        detail: input.detail,
+        weight: input.weight,
+        at,
+      },
+      input.session ?? null,
+    );
+  }
+
+  active(since: number, until: number, max: number): HeartActivity[] {
+    return this.#people.active(since, until, max);
+  }
+
+  day(person: PersonId, since: number, until: number): HeartDay | null {
+    return this.#people.day(person, since, until);
+  }
+
+  reflect(
+    person: PersonId,
+    reflection: HeartReflection,
+    options: { now?: number } = {},
+  ): HeartReflected {
+    return this.#people.reflect(person, reflection, { now: options.now ?? this.#clock.now() });
   }
 
   /**
@@ -241,6 +267,60 @@ export function runDecay(people: HeartStore, now: number): { people: number; cha
   return { people: done, changes };
 }
 
+/**
+ * Time together in her voice channel and the songs people heard her sing (`together.ts`), written
+ * as evidence for whoever the bus's accounts are (`SocialSignalsKey`; someone she does not know
+ * yet is left out).
+ */
+export function togetherOf(
+  ctx: Pick<ModuleContext, "services">,
+  heart: Pick<HeartService, "evidence">,
+): { on(env: BusEvent, now: number): void } {
+  const personOf = (account: AccountRef): PersonId | null =>
+    ctx.services.get(SocialSignalsKey)?.attitude(account)?.person ?? null;
+  const together = new Together((stay) => {
+    const person = personOf(stay.account);
+    if (person === null) return;
+    heart.evidence({
+      person,
+      kind: "voice_together",
+      detail: `在你的語音頻道一起待了 ${stay.minutes} 分鐘`,
+      weight: stay.minutes,
+      at: stay.at,
+      session: contextKeyString(stay.context),
+    });
+  });
+  return {
+    on(env, now) {
+      if (is(Events.VoiceJoined, env)) {
+        together.joined(env.data.context, env.data.participants, now);
+      } else if (is(Events.VoiceParticipants, env)) {
+        together.participants(env.data.context, env.data.participants, now);
+      } else if (is(Events.VoiceLeft, env)) {
+        together.left(env.data.context, now);
+      } else if (env.type === Events.SingCue.type) {
+        const cue = parseSongCue(env.data as JsonValue);
+        if (cue?.state === "started") together.songStarted(cue.title);
+        if (cue?.state !== "ended") return;
+        for (const heard of together.songEnded(cue.outcome === "finished", "", now)) {
+          const person = personOf(heard.account);
+          if (person === null) continue;
+          const title =
+            heard.title === "" ? "一首歌" : `〈${[...heard.title].slice(0, 60).join("")}〉`;
+          heart.evidence({
+            person,
+            kind: "heard_song",
+            detail: `聽你唱完了${title}`,
+            weight: null,
+            at: heard.at,
+            session: contextKeyString(heard.context),
+          });
+        }
+      }
+    },
+  };
+}
+
 export interface HeartModuleOptions {
   /** Replaces the module context's clock (tests). */
   clock?: Clock;
@@ -286,7 +366,26 @@ export class HeartModule implements Module {
       // The old records stay where they are; the next start tries again.
       ctx.log.warn({ err: errorMessage(error) }, "heart: the old records could not be moved");
     }
-    ctx.provide(HeartKey, new HeartService(people, clock));
+    const service = new HeartService(people, clock);
+    ctx.provide(HeartKey, service);
+    // The economy's small gift and deal effects, on `heart_person` with cause `evidence`.
+    ctx.provide(RelationshipEffectsKey, new HeartEffects(people));
+    const together = togetherOf(ctx, service);
+    const sub = ctx.subscribe([
+      Events.VoiceJoined.type,
+      Events.VoiceParticipants.type,
+      Events.VoiceLeft.type,
+      Events.SingCue.type,
+    ]);
+    ctx.spawn("together", async () => {
+      for await (const env of sub) {
+        try {
+          together.on(env, clock.now());
+        } catch (error) {
+          ctx.log.warn({ err: errorMessage(error) }, "heart: cannot record time together");
+        }
+      }
+    });
     const decay = () => {
       try {
         const done = runDecay(people, clock.now());

@@ -23,6 +23,7 @@ export {
   HeartPersonConfigSchema,
   heartPersonConfig,
 } from "./config.js";
+export { GAIN_QUOTES, HeartEffects } from "./effects.js";
 export {
   type LegacyHearts,
   type LegacyInput,
@@ -69,7 +70,7 @@ export {
   type MigrationDeps,
   migrateOnStart,
   runDecay,
-  viewOf,
+  togetherOf,
 } from "./module.js";
 export { type PublicBond, type PublicRing, publicBond } from "./public.js";
 export {
@@ -97,6 +98,7 @@ export {
   familiarityGain,
   type HeartChange,
   type HeartChangeRequest,
+  heldTier,
   isNegative,
   type LocalDay,
   ledgerFrom,
@@ -119,3 +121,5 @@ export {
   type HeartTables,
   heartTables,
 } from "./store.js";
+export { MIN_TOGETHER_MS, type SongHeard, type StayEnded, Together } from "./together.js";
+export { recordOf, viewOf } from "./view.js";

@@ -553,7 +553,7 @@ describe("a broken promise", () => {
     expect(broken).toMatchObject({ id: d.id, status: "broken", due_at: null });
     const person = r.people.get(ALICE.id);
     expect(r.penalties).toEqual([
-      { person, affinity: 1.5, trust: 4, reason: "deal: broken_promise" },
+      { person, affinity: 1.5, trust: 4, reason: "約定做了,說好的錢沒付" },
     ]);
     expect(events(r, "broken_promise")).toEqual([
       expect.objectContaining({ person, source: "economy", kind: "broken_promise", scale: 0.4 }),

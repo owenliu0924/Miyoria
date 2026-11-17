@@ -24,17 +24,24 @@ import {
 } from "@miyoria/store";
 import {
   type Clock,
+  HEART_TEXT_FIELDS,
+  type HeartActivity,
+  type HeartDay,
   type HeartLine,
+  type HeartReflected,
+  type HeartReflection,
   type JsonObject,
   type JsonValue,
   type PersonId,
   toTimestamp,
 } from "@miyoria/types";
 import {
+  and,
   asc,
   count,
   desc,
   eq,
+  gte,
   inArray,
   isNull,
   lt,
@@ -50,9 +57,11 @@ import { heartSchema } from "./migrations.js";
 import {
   BLOCKED_TAG,
   clampField,
+  HEART_FIELDS,
   type HeartField,
   type HeartPerson,
   hasTag,
+  isProposalField,
   newPerson,
   type TierAnchor,
 } from "./model.js";
@@ -65,10 +74,12 @@ import {
   familiarityGain,
   type HeartChange,
   type HeartChangeRequest,
+  heldTier,
   lineDepth,
   localDay,
 } from "./rules.js";
 import { type HeartPersonRow, heartPerson, heartSelf } from "./schema.js";
+import { recordOf } from "./view.js";
 
 const P = heartPerson;
 
@@ -266,6 +277,110 @@ export class HeartStore {
     };
   }
 
+  /**
+   * The people with a row, not blocked, who did anything with her from `since` until `until`
+   * (epoch ms): a line said with her (`last_interaction` in the span), a `feel` change or
+   * evidence. Most first (lines, changes and evidence together, then person id), at most `max`.
+   */
+  active(since: number, until: number, max: number): HeartActivity[] {
+    this.#db.ensureOpen();
+    const from = toTimestamp(since);
+    const to = toTimestamp(until);
+    const counts = this.#log.activity(from, to);
+    const talked = this.#db.orm
+      .select({ id: P.person_id })
+      .from(P)
+      .where(and(gte(P.last_interaction, from), lt(P.last_interaction, to)))
+      .all()
+      .map((r) => r.id);
+    const candidates = new Set<PersonId>(talked);
+    for (const [person, c] of counts) if (c.changes + c.evidence > 0) candidates.add(person);
+    const out: HeartActivity[] = [];
+    for (const person of candidates) {
+      const row = this.get(person);
+      if (row === null || hasTag(row, BLOCKED_TAG)) continue;
+      const c = counts.get(person) ?? { lines: 0, changes: 0, evidence: 0 };
+      out.push({ person, ...c });
+    }
+    const total = (a: HeartActivity) => a.lines + a.changes + a.evidence;
+    out.sort((a, b) => total(b) - total(a) || (a.person < b.person ? -1 : 1));
+    return out.slice(0, Math.max(0, max));
+  }
+
+  /**
+   * What the nightly reflection on `person` is given for the span: the row, the changes (not the
+   * daily pass's or the migration's), the evidence and the tier the bond is held under, if any.
+   */
+  day(person: PersonId, since: number, until: number): HeartDay | null {
+    const row = this.get(person);
+    if (row === null) return null;
+    const from = toTimestamp(since);
+    const to = toTimestamp(until);
+    const changes = this.#log
+      .changesBetween(person, from, to)
+      .filter((e) => e.change.cause !== "decay" && e.change.cause !== "migrate")
+      .map(({ at, change: c }) => ({
+        at,
+        field: c.field,
+        delta: c.delta,
+        proposed: c.proposed,
+        quote: c.reason_quote,
+        cause: c.cause,
+      }));
+    const evidence = this.#log.evidence(person, from, to).map(({ evidence: e }) => ({
+      at: e.at,
+      kind: e.kind,
+      detail: e.detail,
+      weight: e.weight,
+    }));
+    return { record: recordOf(row), changes, evidence, held: heldTier(row, this.#rules) };
+  }
+
+  /**
+   * Applies her nightly reflection on `person` in one transaction: the anchor first (so a rise it
+   * allows passes the tier), the texts, then the value corrections (cause `reflect`, one step each,
+   * under the day's caps). Throws, changing nothing, for someone without a row or a bad anchor.
+   */
+  reflect(
+    person: PersonId,
+    reflection: HeartReflection,
+    options: HeartApplyOptions = {},
+  ): HeartReflected {
+    const now = this.#now(options.now);
+    const at = toTimestamp(now);
+    return this.#write(() => {
+      const current = this.get(person);
+      if (current === null) throw new StoreError(`no heart row for person \`${person}\``);
+      let anchored = false;
+      if (reflection.anchor !== null) {
+        const { tier, note_ref, quote } = reflection.anchor;
+        this.setAnchor(person, { tier, note_ref, quote, at, by: "reflect" }, { now });
+        anchored = true;
+      }
+      const texts = HEART_TEXT_FIELDS.filter((f) => reflection.texts[f] !== undefined);
+      const feeling = reflection.public_feeling !== undefined;
+      if (texts.length > 0 || feeling) {
+        const next = { ...(this.get(person) as HeartPerson), updated_at: at };
+        for (const f of texts) next[f] = reflection.texts[f] as string;
+        if (feeling) next.public_feeling = reflection.public_feeling as string;
+        this.upsert(next);
+      }
+      const requests: HeartChangeRequest[] = [];
+      for (const p of reflection.proposals) {
+        if (!isProposalField(p.field)) continue;
+        requests.push({
+          type: "propose",
+          field: p.field,
+          direction: p.direction,
+          quote: p.quote,
+          cause: "reflect",
+        });
+      }
+      const changes = requests.length === 0 ? [] : this.applyAll(person, requests, options);
+      return { changes: changes.length, texts, public_feeling: feeling, anchored };
+    });
+  }
+
   /** The people the daily pass has not run for on the local day of `now`. */
   decayDue(now?: number): PersonId[] {
     this.#db.ensureOpen();
@@ -361,6 +476,65 @@ export class HeartStore {
       };
       this.upsert(next);
       return next;
+    });
+  }
+
+  /**
+   * Writes her words and tags about `person` as given (a row is made for someone new): her call
+   * name (`set_call_name`, `/me call`, the panel), the impression (the panel's notes), the member
+   * page's line (`null` when they ask her to forget it) and the tags. Records no change: these are
+   * not numbers. The row as written.
+   */
+  edit(
+    person: PersonId,
+    patch: Partial<Pick<HeartPerson, "call_name" | "impression" | "public_feeling" | "tags">>,
+    options: { now?: number } = {},
+  ): HeartPerson {
+    const at = toTimestamp(this.#now(options.now));
+    return this.#write(() => {
+      const current = this.get(person) ?? newPerson(person, at, this.#rules.default_trust);
+      const next: HeartPerson = { ...current, ...patch, updated_at: at };
+      if (patch.tags !== undefined) next.tags = [...new Set(patch.tags)].sort();
+      this.upsert(next);
+      return next;
+    });
+  }
+
+  /** Adds or removes `tag` of `person`; whether anything changed. */
+  setTag(person: PersonId, tag: string, on: boolean, options: { now?: number } = {}): boolean {
+    return this.#write(() => {
+      const tags = this.get(person)?.tags ?? [];
+      if (tags.includes(tag) === on) return false;
+      this.edit(person, { tags: on ? [...tags, tag] : tags.filter((t) => t !== tag) }, options);
+      return true;
+    });
+  }
+
+  /**
+   * The owner's reset of `person`: every number back to where someone new starts (cause `admin`)
+   * and her words about them cleared; tags, the tier floor and the anchors stay.
+   */
+  reset(person: PersonId, options: HeartApplyOptions & { quote?: string } = {}): HeartPerson {
+    const at = toTimestamp(this.#now(options.now));
+    return this.#write(() => {
+      const fresh = newPerson(person, at, this.#rules.default_trust);
+      const before = this.get(person) ?? fresh;
+      for (const field of HEART_FIELDS) {
+        if (before[field] !== fresh[field]) this.adminSet(person, field, fresh[field], options);
+      }
+      const current = this.get(person) ?? fresh;
+      this.upsert({
+        ...current,
+        stance: "",
+        impression: "",
+        unfinished: "",
+        jokes: "",
+        dislikes: "",
+        public_feeling: null,
+        call_name: null,
+        updated_at: at,
+      });
+      return this.get(person) as HeartPerson;
     });
   }
 

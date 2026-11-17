@@ -33,7 +33,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import type { EconomyService, Member } from "./economy.js";
-import { feedLabel, MAX_FEED_COUNT, memberOf, STRANGER } from "./economy.js";
+import { feedLabel, heartEvidence, MAX_FEED_COUNT, memberOf, STRANGER } from "./economy.js";
 import { type CoinEntry, type Deal, type DealStatus, DealStoreKey } from "./records.js";
 import { type DealView, EconomyError, FEED_ITEMS, type FeedItem } from "./types.js";
 
@@ -446,8 +446,15 @@ export class DealDesk {
     return true;
   }
 
-  /** A deal paid for: a little trust (inside the daily caps). */
+  /** A deal paid for: a little trust (inside the daily caps), and evidence of it. */
   async #kept(who: Member, deal: Deal): Promise<void> {
+    heartEvidence(this.e.services, this.e.log, {
+      person: who.person.id,
+      kind: "deal_kept",
+      detail: `約定(${deal.task})說好的錢付了`,
+      weight: deal.value,
+      at: this.e.now(),
+    });
     const trust = this.e.config.deal_kept_trust;
     const effects = this.e.services.get(RelationshipEffectsKey);
     if (!effects || trust <= 0) return;
@@ -547,6 +554,13 @@ export class DealDesk {
     const now = this.e.now();
     const label = feedLabel(deal.item as FeedItem, deal.count);
     const name = safeName(who.name);
+    heartEvidence(this.e.services, this.e.log, {
+      person: who.person.id,
+      kind: "deal_broken",
+      detail: `約定(${deal.task})你做了,說好的錢沒付`,
+      weight: deal.value,
+      at: now,
+    });
     const effects = this.e.services.get(RelationshipEffectsKey);
     try {
       await effects?.penalty(
@@ -554,7 +568,7 @@ export class DealDesk {
         {
           affinity: c.broken_affinity * times,
           trust: c.broken_trust * times,
-          reason: "deal: broken_promise",
+          reason: "約定做了,說好的錢沒付",
         },
         now,
       );

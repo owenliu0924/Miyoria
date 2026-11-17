@@ -24,12 +24,12 @@ import {
   MindKey,
   type PersonId,
   type ProfileId,
-  RelationshipEffectsKey,
   type SelfState,
   SelfStateKey,
   SocialSignalsKey,
   safeName,
 } from "@miyoria/types";
+import { heartTables } from "../../person/src/store.js";
 import { callNameCapability } from "./call-name-tool.js";
 import { registerCommands, unregisterCommands } from "./commands.js";
 import { SocialConfigSchema } from "./config.js";
@@ -99,7 +99,7 @@ function stores(ctx: ModuleContext): SocialStores {
  * Services used: `RelationshipStoreKey` (required), `PeopleStoreKey` (or the `StoreKey`
  * bundle), `IdentityStoreKey` (optional, for `/me link`; its merge moves memories too),
  * `PromptContributorsKey`, `CommandRegistryKey` and
- * `AuthorizerKey` (optional). Provides `SocialSignalsKey`, `SocialKey` and `RelationshipEffectsKey`.
+ * `AuthorizerKey` (optional). Provides `SocialSignalsKey` and `SocialKey`.
  */
 export class SocialModule implements Module {
   static readonly ID = "social";
@@ -137,6 +137,11 @@ export class SocialModule implements Module {
       ctx.clock,
     );
     social.setAuthorizer(ctx.services.get(AuthorizerKey) ?? null);
+    try {
+      social.setHeart(ctx.services.get(StoreKey)?.plugin(heartTables).people ?? null);
+    } catch (error) {
+      ctx.log.warn({ err: errorMessage(error) }, "no heart rows: edits go to relationships only");
+    }
     // Appraise (the `mind` module) is the one reader of what a conversation meant to her. Only
     // without it, and with her emotions (the `self` module), this pass reads how she feels too.
     social.setConcerns(() => {
@@ -148,7 +153,7 @@ export class SocialModule implements Module {
 
     ctx.provide(SocialSignalsKey, social);
     ctx.provide(SocialKey, social);
-    ctx.provide(RelationshipEffectsKey, social);
+    // `RelationshipEffectsKey` is the heart's now (its `HeartEffects`, cause `evidence`).
 
     const commands = new CommandMount(
       "social",

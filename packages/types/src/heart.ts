@@ -4,6 +4,11 @@
 // `@miyoria/heart/person`; the brain and memory packages do not depend on it, so what they read
 // is here, as the bond's words already were.
 
+import type {
+  HeartCauseName,
+  HeartEvidenceKindName,
+  HeartFieldName,
+} from "@miyoria/contracts/events";
 import { type AppraisalStrength, familiarityBand, trustBand } from "./affect.js";
 import type { PersonId } from "./ids.js";
 import type { EmotionName } from "./self.js";
@@ -252,6 +257,126 @@ export interface HeartLine {
   at: number;
 }
 
+// ---- evidence ---------------------------------------------------------------------------------
+
+/** What kind of thing happened between her and someone (`heart.evidence`). */
+export type HeartEvidenceKind = HeartEvidenceKindName;
+
+/**
+ * Something that happened between her and someone, for her nightly reflection on them (§2.3 "all
+ * interactions are evidence"). It moves no number by itself.
+ */
+export interface HeartEvidenceInput {
+  person: PersonId;
+  kind: HeartEvidenceKind;
+  /** What happened, short, neutral zh-TW (may contain names). */
+  detail: string;
+  /** How much of it in the kind's unit (minutes in voice, coins of a gift); `null`: none. */
+  weight: number | null;
+  /** Epoch ms it happened (the end of a span); default: now. */
+  at?: number;
+  /** The session it happened in (`contextKeyString`), which decides its scope; default none. */
+  session?: string | null;
+}
+
+// ---- the nightly reflection on one person ------------------------------------------------------
+
+/** A tier anchor as the readers see it (the person part's `TierAnchor`). */
+export interface HeartAnchorView {
+  tier: number;
+  note_ref: string | null;
+  quote: string;
+  at: Timestamp;
+  by: string;
+}
+
+/** One person's row with everything her nightly reflection on them reads and rewrites. */
+export interface HeartRecord extends HeartView {
+  unfinished: string;
+  jokes: string;
+  dislikes: string;
+  /** The line shown to them on the member page; `null`: none yet. */
+  public_feeling: string | null;
+  /** The lowest bond of the highest tier ever entered. */
+  tier_floor: number;
+  anchors: readonly HeartAnchorView[];
+  interactions: number;
+  last_interaction: Timestamp | null;
+}
+
+/** One `heart.changed` of a day, as the reflection reads it. */
+export interface HeartDayChange {
+  at: Timestamp;
+  field: HeartFieldName;
+  delta: number;
+  proposed: number | null;
+  quote: string;
+  cause: HeartCauseName;
+}
+
+/** One `heart.evidence` of a day. */
+export interface HeartDayEvidence {
+  at: Timestamp;
+  kind: HeartEvidenceKind;
+  detail: string;
+  weight: number | null;
+}
+
+/** How much went on with someone in a span: who the nightly pass reflects on, most first. */
+export interface HeartActivity {
+  person: PersonId;
+  /** Lines they said that she saw (the event log's chat lines). */
+  lines: number;
+  /** Her `feel` changes about them. */
+  changes: number;
+  evidence: number;
+}
+
+/** What one person's nightly reflection is given. */
+export interface HeartDay {
+  record: HeartRecord;
+  changes: HeartDayChange[];
+  evidence: HeartDayEvidence[];
+  /**
+   * The tier the bond is held under for want of an anchor (H4): its lowest bond and name;
+   * `null` when it is not held.
+   */
+  held: { tier: number; label: string } | null;
+}
+
+/** The text fields the nightly reflection rewrites. */
+export const HEART_TEXT_FIELDS = [
+  "stance",
+  "impression",
+  "unfinished",
+  "jokes",
+  "dislikes",
+] as const;
+export type HeartTextField = (typeof HEART_TEXT_FIELDS)[number];
+
+/** What her nightly reflection on one person decided, applied whole or not at all. */
+export interface HeartReflection {
+  /** Rewritten text fields; a field left out stays as it is. */
+  texts: Partial<Record<HeartTextField, string>>;
+  /** The member page's line, already filtered and screened; left out: unchanged. */
+  public_feeling?: string;
+  /** Value corrections: a direction and her quote, sized and capped by the rules (cause `reflect`). */
+  proposals: FeelProposal[];
+  /** The memory the held tier rests on (H4); `null`: none. */
+  anchor: { tier: number; note_ref: string; quote: string } | null;
+}
+
+/** What applying a reflection did. */
+export interface HeartReflected {
+  /** Changes written (`heart.changed`, cause `reflect`). */
+  changes: number;
+  texts: HeartTextField[];
+  public_feeling: boolean;
+  anchored: boolean;
+}
+
+// ---- the service ------------------------------------------------------------------------------
+
 /**
  * Her numbers and words for each person, provided by the module `heart`. Everything that moves a
  * number goes through its store's rules (steps, caps, anchors); readers get words and views.
@@ -278,6 +403,27 @@ export interface HeartPeople {
   mostCared(among?: readonly PersonId[]): { person: PersonId; cares: number } | null;
   /** Everyone she cares about (at or above the threshold), most first, at most `max`. */
   caredAbout(max: number): { person: PersonId; cares: number }[];
+  /**
+   * Records a piece of evidence (`heart.evidence`); it moves nothing. Someone tagged `blocked` is
+   * not recorded. Optional so test doubles need not implement it.
+   */
+  evidence?(input: HeartEvidenceInput): void;
+  /**
+   * The people with a row, not blocked, who did anything with her between `since` and `until`
+   * (epoch ms): a line said with her, a `feel` change or evidence. Most first, at most `max`.
+   */
+  active?(since: number, until: number, max: number): HeartActivity[];
+  /** What the nightly reflection on `person` is given for that span; `null`: no row. */
+  day?(person: PersonId, since: number, until: number): HeartDay | null;
+  /**
+   * Applies her nightly reflection on `person` in one transaction (texts, `reflect` proposals,
+   * the anchor). Throws (and changes nothing) when it cannot be applied whole.
+   */
+  reflect?(
+    person: PersonId,
+    reflection: HeartReflection,
+    options?: { now?: number },
+  ): HeartReflected;
 }
 
 export const HeartKey = serviceKey<HeartPeople>("HeartPeople");

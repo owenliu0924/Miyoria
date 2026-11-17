@@ -13,7 +13,7 @@ import {
   HeartEvidence,
   type HeartEvidenceData,
 } from "@miyoria/store";
-import { newId, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
+import { Events, newId, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
 import type { HeartPersonConfig } from "./config.js";
 import { type DayLedger, dayStart, type HeartChange, ledgerFrom, localDay } from "./rules.js";
 
@@ -22,6 +22,13 @@ export const HEART_SOURCE = "heart";
 
 /** At most this many changes of one person in one day are read for the ledger. */
 const DAY_LIMIT = 10_000;
+/** At most this many events of each kind are read to rank who to reflect on. */
+const ACTIVITY_LIMIT = 50_000;
+/** The chat lines of a person on the log (the types `facts` writes with the author's person). */
+const LINE_TYPES: readonly string[] = [
+  Events.PlatformMessageCreated.type,
+  Events.VoiceUtteranceEvent.type,
+];
 
 /** One change as the history shows it. */
 export interface HeartHistoryEntry {
@@ -124,6 +131,64 @@ export class HeartLog {
       if (parsed.success) changes.push({ at: row.envelope.at, change: parsed.data });
     }
     return ledgerFrom(day, changes, this.rules);
+  }
+
+  /** The changes of `person` from `since` until `until`, oldest first (a redacted one is left out). */
+  changesBetween(
+    person: PersonId,
+    since: Timestamp,
+    until: Timestamp,
+    limit = DAY_LIMIT,
+  ): HeartHistoryEntry[] {
+    const rows = this.events.query({
+      types: [HeartChanged.type],
+      personId: person,
+      since,
+      until,
+      order: "asc",
+      limit,
+    });
+    const out: HeartHistoryEntry[] = [];
+    for (const row of rows) {
+      const parsed = HeartChanged.data.safeParse(row.envelope.data);
+      if (parsed.success)
+        out.push({ id: row.envelope.id, at: row.envelope.at, change: parsed.data });
+    }
+    return out;
+  }
+
+  /**
+   * Per person, from `since` until `until`: the chat lines they said (the log's `platform.message.
+   * created` and `voice.utterance`), her `feel` changes about them and the evidence about them.
+   */
+  activity(
+    since: Timestamp,
+    until: Timestamp,
+    limit = ACTIVITY_LIMIT,
+  ): Map<PersonId, { lines: number; changes: number; evidence: number }> {
+    const out = new Map<PersonId, { lines: number; changes: number; evidence: number }>();
+    const of = (p: PersonId) => {
+      let c = out.get(p);
+      if (c === undefined) {
+        c = { lines: 0, changes: 0, evidence: 0 };
+        out.set(p, c);
+      }
+      return c;
+    };
+    const window = { since, until, order: "asc" as const, limit };
+    for (const row of this.events.query({ types: LINE_TYPES, ...window })) {
+      const p = row.envelope.person_id;
+      if (p !== null) of(p).lines += 1;
+    }
+    for (const row of this.events.query({ types: [HeartChanged.type], ...window })) {
+      const parsed = HeartChanged.data.safeParse(row.envelope.data);
+      if (parsed.success && parsed.data.cause === "feel") of(parsed.data.person).changes += 1;
+    }
+    for (const row of this.events.query({ types: [HeartEvidence.type], ...window })) {
+      const parsed = HeartEvidence.data.safeParse(row.envelope.data);
+      if (parsed.success) of(parsed.data.person).evidence += 1;
+    }
+    return out;
   }
 
   /** The evidence about `person` from `since` until `until`, oldest first (the reflection's day). */

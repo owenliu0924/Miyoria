@@ -81,6 +81,7 @@ import { type CardWords, writeCard } from "./card-words.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { deleteFortunes, fortunesOf } from "./fortune.js";
+import { heartRows } from "./heart-rows.js";
 import { dateOf, localDay, tooMany } from "./public.js";
 import type { Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
@@ -410,6 +411,8 @@ async function forgetMine(state: ApiState, c: ApiContext): Promise<MemberForgetR
   const report = await engine.forget(person, account, null);
   // The line was written from those memories; it goes with them.
   if (person !== null) {
+    const heart = heartRows(state);
+    if (heart?.has(person)) heart.edit(person, { public_feeling: null }, { now: state.now() });
     await state
       .optional(AffectStateKey)
       ?.adjustBond(person, { public_feeling: null, why: "本人要求忘記" }, "panel");
