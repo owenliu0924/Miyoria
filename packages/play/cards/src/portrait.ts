@@ -1,11 +1,12 @@
-// Her picture on a card (cards.md §6): the seam where the Live2D renderer will go. A
-// `CardPortrait` (`CardPortraitKey`, provided by whatever can render) is given a card's parts, her
-// expression and the pose's seed and answers a PNG, or `null` when it cannot (not there, failed);
-// then the card falls back to one of the ten fixed portraits (`card-<pose>.local.webp` in the
-// panel's folder), the one nearest her drawn expression (`portraitPose`).
+// Her picture on a card (cards.md §6). A `CardPortrait` (`CardPortraitKey`) is given a card's
+// parts, her expression and the pose's seed and answers a PNG, or `null` when it cannot (not there,
+// failed); then the card falls back to one of the ten fixed portraits (`card-<pose>.local.webp` in
+// the panel's folder), the one nearest her drawn expression (`portraitPose`).
 //
-// Until the renderer exists nothing provides the port, so every card uses the fallback. The drawn
-// parts are printed on the card and its page as text either way.
+// The module provides the Live2D one (`live2d.ts`) when `[modules.cards] portrait = "live2d"` and
+// this machine can render: a 900×1200 PNG of her over the drawn background (`portrait-spec.ts`),
+// opaque, the whole art of the card. Elsewhere nothing provides the port and every card uses the
+// fallback. The drawn parts are printed on the card and its page as text either way.
 
 import { serviceKey } from "@miyoria/types";
 import type { DrawnPart } from "./draw.js";
