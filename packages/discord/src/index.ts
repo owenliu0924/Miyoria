@@ -71,18 +71,18 @@ export {
   snowflake,
 } from "./mapping.js";
 export {
+  createClient,
+  DiscordBotModule,
+  intents,
+  SHUTDOWN_GRACE_MS,
+} from "./module.js";
+export {
   type ChannelView,
   DiscordPlaces,
   type GuildView,
   guildViews,
   placeRooms,
 } from "./places.js";
-export {
-  createClient,
-  DiscordBotModule,
-  intents,
-  SHUTDOWN_GRACE_MS,
-} from "./module.js";
 export {
   ACCENT_COLORS,
   disableComponents,

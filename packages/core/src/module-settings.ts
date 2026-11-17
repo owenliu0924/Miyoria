@@ -17,6 +17,7 @@
 
 import {
   type Config,
+  configJsonSchema,
   getLogger,
   jsonAt,
   type Logger,
@@ -33,7 +34,6 @@ import {
   type SettingsSaveResult,
   type SettingValue,
   type Supervisor,
-  configJsonSchema,
   sectionIssues,
   settingFields,
 } from "@miyoria/runtime/kernel";

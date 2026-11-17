@@ -106,16 +106,14 @@ export const EconomyConfigSchema = z
       ),
     card_foils_per_day: coins.default(5),
     /** A short message shown on the stream overlay (she may read it out). */
-    screen_message: coins
-      .default(30)
-      .meta(
-        setting({
-          kind: "coins",
-          label: "直播留言",
-          help: "顯示在直播畫面上的一句話",
-          group: "prices",
-        }),
-      ),
+    screen_message: coins.default(30).meta(
+      setting({
+        kind: "coins",
+        label: "直播留言",
+        help: "顯示在直播畫面上的一句話",
+        group: "prices",
+      }),
+    ),
     screen_messages_per_day: coins.default(10),
     /** One screen message per person per this many seconds. */
     screen_message_cooldown_s: coins.default(600),

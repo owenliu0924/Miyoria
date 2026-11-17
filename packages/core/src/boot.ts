@@ -30,9 +30,9 @@ import {
   errorMessage,
   getLogger,
   type Module,
+  ModuleSettingsKey,
   ServiceRegistry,
   Supervisor,
-  ModuleSettingsKey,
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
 import type { Profile } from "@miyoria/runtime/profile";
@@ -77,13 +77,13 @@ import {
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
-import { ModuleSettings } from "./module-settings.js";
 import {
   moduleEnabled,
   NEEDS_TOKEN,
   REQUIRED_MODULE_REASONS,
   REQUIRED_MODULES,
 } from "./module-ids.js";
+import { ModuleSettings } from "./module-settings.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
