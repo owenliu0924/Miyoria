@@ -72,6 +72,8 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
   // [modules.mind]
   "modules.mind.max_intents",
   "modules.mind.daily_posts",
+  // [modules.reflect]: the daily reflection's bonds part (phase 4: one reflection per person).
+  "modules.reflect.max_bonds",
 ];
 
 /** The removed paths `config` still holds, in the order of `REMOVED_CONFIG_KEYS`. */

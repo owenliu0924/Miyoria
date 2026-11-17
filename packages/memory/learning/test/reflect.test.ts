@@ -151,7 +151,7 @@ function setup(reply: string) {
 }
 
 describe("daily reflection", () => {
-  it("merges memories, supersedes contradictions, writes lessons, documents, feelings and goals", async () => {
+  it("merges memories, supersedes contradictions, writes lessons, documents and goals", async () => {
     const reply = JSON.stringify({
       summary: "今天 Owen 跟我聊了很多,我插話太多次了。",
       insights: [
@@ -199,7 +199,8 @@ describe("daily reflection", () => {
     const docs = kb.docs();
     expect(docs.map((d) => d.subject.type).sort()).toEqual(["person", "self"]);
     expect(docs.every((d) => d.sources[""]?.kind === "self")).toBe(true);
-    expect(self.feelings.get("p-owen")).toBe("今天跟他聊得很開心");
+    // Feelings are the nightly reflection on each person's now: the daily one writes none.
+    expect(self.feelings.size).toBe(0);
     expect(self.agendaItems.map((a) => a.text)).toEqual(["學會 Owen 喜歡的拉麵店名字"]);
     const all = lessons.all();
     expect(all.map((l) => l.text).sort()).toEqual(["Owen 講話時不要插嘴", "在這裡少說一點"]);
@@ -508,8 +509,8 @@ describe("reflection writes only stable names", () => {
     expect(run?.error).toBeNull();
     // The summary kept for the panel has lost its code sentences.
     expect(ephemeralHandlesIn(run?.summary ?? "")).toEqual([]);
-    // Feelings: the unknown person and the unresolvable sentence are skipped.
-    expect([...self.feelings.values()]).toEqual(["今天聊得很開心"]);
+    // Feelings are not the daily reflection's any more.
+    expect([...self.feelings.values()]).toEqual([]);
     // Goals: the code is not written into the agenda.
     expect(self.agendaItems.map((a) => a.text)).toEqual(["把拉麵店名字記起來"]);
     // Lessons: "u1" in a lesson about Owen is Owen; "u9" cannot be resolved, so no lesson.
