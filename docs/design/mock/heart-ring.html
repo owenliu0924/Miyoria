@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>羈絆環示意圖</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #16181f; --line: #262a35; --text: #e8e9ee; --dim: #8b90a0;
+    --track: #232733;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 system-ui, "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 36px 0 4px; }
+  p { color: var(--dim); margin: 4px 0 14px; max-width: 70ch; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .cell { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 10px 12px; text-align: center; }
+  .cell svg { width: 100%; max-width: 170px; height: auto; display: block; margin: 0 auto; }
+  .cap { font-size: 13px; color: var(--dim); margin-top: 6px; }
+  .cap b { color: var(--text); font-weight: 600; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; color: var(--dim); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .person { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  @media (max-width: 620px) { .person { grid-template-columns: 1fr; } }
+  .bars { display: grid; gap: 7px; }
+  .bar { display: grid; grid-template-columns: 44px 1fr 44px; gap: 10px; align-items: center; font-size: 13px; }
+  .bar span:last-child { color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+  .bar div { height: 6px; border-radius: 3px; background: var(--track); position: relative; overflow: hidden; }
+  .bar div u { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+  .bar div em { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #3a4050; }
+  .note { font-size: 13px; color: var(--dim); border-left: 2px solid var(--line); padding-left: 10px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>羈絆環示意圖</h1>
+  <p>每 100 點一圈,一圈一個顏色,最多十圈。下面兩種畫法讓你選,數字都是假的。</p>
+
+  <h2>畫法 A:同一條軌道,新顏色疊上去</h2>
+  <p>只有一個環。滿一圈之後,整圈留著上一圈的顏色,新的顏色從頂端開始蓋上去。下面一排小點表示現在在第幾圈。</p>
+  <div class="row" id="rowA"></div>
+
+  <h2>畫法 B:一圈一圈往外長</h2>
+  <p>每滿 100 點多一個同心環,最多十個。一眼看得出總量,但十圈的時候每一圈都很細。</p>
+  <div class="row" id="rowB"></div>
+
+  <div class="legend" id="legend"></div>
+
+  <h2>負的羈絆</h2>
+  <p>羈絆可以到 −100。負的時候環是灰紅色、反方向畫,愛心是裂的。</p>
+  <div class="row" id="rowN"></div>
+
+  <h2>管理面板的人物頁(畫法 A)</h2>
+  <p>環的旁邊是確切數值,八個細項用長條。公開頁和 Discord 用同一個環,但只寫分級名稱,不寫數字。</p>
+  <div class="person">
+    <div id="personRing"></div>
+    <div>
+      <div class="bars" id="bars"></div>
+      <div class="note">下面接變動紀錄(每一筆都有她引用的那句話當原因)和她寫的這個人的文件。</div>
+    </div>
+  </div>
+
+  <h2>公開頁和 Discord</h2>
+  <div class="row" id="rowP"></div>
+</main>
+<script>
+const COLORS = ["#7c8cff","#5aa9ff","#3cc8d8","#3fd19a","#9bd84a","#f2cf3f","#ffa53d","#ff7a59","#ff5c93","#d16bff"];
+const NS = "http://www.w3.org/2000/svg";
+function el(name, attrs, parent) {
+  const n = document.createElementNS(NS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function arc(svg, r, width, frac, color, reverse) {
+  const c = 2 * Math.PI * r;
+  const a = el("circle", { cx: 80, cy: 80, r, fill: "none", stroke: color, "stroke-width": width,
+    "stroke-linecap": frac >= 1 ? "butt" : "round",
+    "stroke-dasharray": (c * Math.min(frac, 1)) + " " + c,
+    transform: reverse ? "rotate(-90 80 80) scale(1 -1) translate(0 -160)" : "rotate(-90 80 80)" }, svg);
+  return a;
+}
+function heart(svg, color, scale, broken) {
+  const g = el("g", { transform: "translate(80 82) scale(" + scale + ")" }, svg);
+  el("path", { d: "M0 14 C -22 -2 -14 -18 0 -8 C 14 -18 22 -2 0 14 Z", fill: color }, g);
+  if (broken) el("path", { d: "M1 -8 L-3 -1 L3 3 L-1 12", fill: "none", stroke: "#0e0f13", "stroke-width": 2 }, g);
+}
+function label(svg, text, y, size, color) {
+  const t = el("text", { x: 80, y, "text-anchor": "middle", "font-size": size, fill: color,
+    "font-family": "system-ui, sans-serif", "font-weight": 600 }, svg);
+  t.textContent = text;
+}
+function ringA(bond, opts) {
+  opts = opts || {};
+  const svg = el("svg", { viewBox: "0 0 160 176" });
+  const lap = Math.min(Math.floor(bond / 100), 9);
+  const frac = bond >= 1000 ? 1 : (bond % 100) / 100;
+  arc(svg, 58, 12, 1, lap > 0 ? COLORS[lap - 1] : "#232733");
+  if (lap > 0) arc(svg, 58, 12, 1, "rgba(14,15,19,.45)");
+  arc(svg, 58, 12, frac, COLORS[lap]);
+  heart(svg, COLORS[lap], 1.5);
+  if (opts.number) label(svg, String(bond), 118, 13, "#e8e9ee");
+  for (let i = 0; i < 10; i++) {
+    el("circle", { cx: 80 - 45 + i * 10, cy: 166, r: 3, fill: i <= lap && bond > 0 ? COLORS[i] : "#2a2f3c" }, svg);
+  }
+  return svg;
+}
+function ringB(bond) {
+  const svg = el("svg", { viewBox: "0 0 160 176" });
+  const laps = Math.floor(bond / 100), frac = (bond % 100) / 100;
+  for (let i = 0; i < 10; i++) {
+    const r = 24 + i * 5.2;
+    arc(svg, r, 3.6, 1, "#1d202a");
+    if (i < laps) arc(svg, r, 3.6, 1, COLORS[i]);
+    else if (i === laps) arc(svg, r, 3.6, frac, COLORS[i]);
+  }
+  heart(svg, COLORS[Math.min(laps, 9)], 0.9);
+  return svg;
+}
+function ringNeg(bond) {
+  const svg = el("svg", { viewBox: "0 0 160 176" });
+  arc(svg, 58, 12, 1, "#232733");
+  arc(svg, 58, 12, Math.abs(bond) / 100, "#8a4a55", true);
+  heart(svg, "#8a4a55", 1.5, true);
+  return svg;
+}
+function cell(parent, svg, cap) {
+  const d = document.createElement("div"); d.className = "cell";
+  d.appendChild(svg);
+  const c = document.createElement("div"); c.className = "cap"; c.innerHTML = cap; d.appendChild(c);
+  document.getElementById(parent).appendChild(d);
+}
+for (const b of [35, 160, 480, 730, 1000]) {
+  cell("rowA", ringA(b), "羈絆 <b>" + b + "</b>,第 " + Math.min(Math.floor(b / 100) + 1, 10) + " 圈");
+  cell("rowB", ringB(b), "羈絆 <b>" + b + "</b>");
+}
+cell("rowN", ringNeg(-20), "羈絆 <b>−20</b>");
+cell("rowN", ringNeg(-75), "羈絆 <b>−75</b>");
+const lg = document.getElementById("legend");
+COLORS.forEach((c, i) => { const s = document.createElement("span"); s.innerHTML = '<i style="background:' + c + '"></i>' + (i * 100) + "–" + (i * 100 + 100); lg.appendChild(s); });
+document.getElementById("personRing").appendChild(ringA(342, { number: true }));
+const BARS = [["信任", 62, 0, 100, "62"], ["熟悉", 48, 0, 100, "48"], ["好感", 0.35, -1, 1, "+0.35"], ["敬意", 0.1, -1, 1, "+0.10"],
+  ["自在", 0.7, 0, 1, "0.70"], ["心結", 0.15, 0, 1, "0.15"], ["想念", 0.4, 0, 1, "0.40"], ["默契", 0.55, 0, 1, "0.55"]];
+const bars = document.getElementById("bars");
+for (const [name, v, lo, hi, text] of BARS) {
+  const row = document.createElement("div"); row.className = "bar";
+  const bip = lo < 0;
+  const left = bip ? (v >= 0 ? 50 : 50 + v * 50) : 0;
+  const width = bip ? Math.abs(v) * 50 : ((v - lo) / (hi - lo)) * 100;
+  const color = name === "心結" ? "#8a4a55" : "#3fd19a";
+  row.innerHTML = "<span>" + name + "</span><div>" + (bip ? "<em></em>" : "") +
+    '<u style="left:' + left + "%;width:" + width + "%;background:" + color + '"></u></div><span>' + text + "</span>";
+  bars.appendChild(row);
+}
+cell("rowP", ringA(342), "<b>(分級名稱)</b><br>離下一級還有一段");
+cell("rowP", ringA(905), "<b>(分級名稱)</b><br>快到下一級了");
+</script>
+</body>
+</html>
