@@ -9,7 +9,7 @@
 import { useEffect, useRef } from "react";
 import type { IssuedCard } from "@miyoria/contracts/api";
 import { cn } from "@/lib/utils";
-import { InlinedCard, poseUrl } from "./card";
+import { InlinedCard, useCardArt } from "./card";
 
 /** Frames that have a light of their own in `index.css` (`.holo-band-<id>`). */
 const LIT_FRAMES = new Set(["sakura", "abyss", "gold"]);
@@ -65,6 +65,7 @@ export function HoloCard({
   sway?: boolean;
   className?: string;
 }) {
+  const art = useCardArt(card);
   const box = useRef<HTMLDivElement>(null);
   const target = useRef<Pose>({ ...REST });
   const now = useRef<Pose>({ ...REST });
@@ -119,7 +120,7 @@ export function HoloCard({
         ref={box}
         className={cn("holo-card", card.voided_at && "opacity-40 grayscale")}
         // Her picture, as the mask that keeps the foil off her.
-        style={{ "--art": `url("${poseUrl(card.pose)}")` } as React.CSSProperties}
+        style={(art.url ? { "--art": `url("${art.url}")` } : {}) as React.CSSProperties}
         onPointerMove={move}
         onPointerDown={move}
         onPointerLeave={leave}

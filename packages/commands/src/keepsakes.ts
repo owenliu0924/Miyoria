@@ -17,15 +17,17 @@ import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/ke
 import {
   type KeepsakeCard,
   type KeepsakeCardBook,
+  type KeepsakeCardImage,
   type KeepsakeCards,
   type KeepsakeOdds,
   type KeepsakeResult,
+  type Keepsakes,
   KeepsakesKey,
   newId,
 } from "@miyoria/types";
 import { type ComponentInvocation, ComponentResult, defineRoute } from "./components.js";
 import type { CommandRegistry } from "./registry.js";
-import { type CardBlock, type CommandReply, cardReply, notice } from "./reply.js";
+import { type CardBlock, type CardOptions, type CommandReply, cardReply, notice } from "./reply.js";
 import { ArgKind, argSpec, commandSpec, type Invocation } from "./spec.js";
 
 const log = getLogger("commands.keepsakes");
@@ -84,6 +86,29 @@ function cardText(card: KeepsakeCard): CardBlock[] {
   const blocks: CardBlock[] = [{ type: "text", text: lines.join("\n") }];
   blocks.push({ type: "muted", text: `編號 ${card.serial}` });
   return blocks;
+}
+
+/**
+ * A card's reply with its picture on top: the same one its link preview shows (`cardImage`). A card
+ * that cannot be drawn is told in words alone.
+ */
+async function cardWithPicture(
+  keepsakes: Keepsakes,
+  serial: string,
+  blocks: CardBlock[],
+  options: CardOptions,
+): Promise<CommandReply> {
+  let image: KeepsakeCardImage | null = null;
+  try {
+    image = (await keepsakes.cardImage?.(serial)) ?? null;
+  } catch (error) {
+    log.warn({ error: errorMessage(error) }, "cannot draw a card for its reply");
+  }
+  if (image === null) return cardReply(blocks, options);
+  return cardReply([{ type: "image", name: image.name }, ...blocks], {
+    ...options,
+    files: [{ name: image.name, data: image.data, contentType: image.contentType }],
+  });
 }
 
 /** The pity in words. */
@@ -240,20 +265,29 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
           const blocks = cardText(today.keepsake);
           blocks.push({ type: "muted", text: KEEPSAKE_NOTE });
           blocks.push({ type: "muted", text: todayHint(today) });
-          return cardReply(blocks, { accent: "neutral", title: "你的紀念卡" });
+          return cardWithPicture(keepsakes, today.keepsake.serial, blocks, {
+            accent: "neutral",
+            title: "你的紀念卡",
+          });
         }
         const fresh = action !== CARD_NEW && !foil;
         if (fresh && today.latest !== null && today.today > 0) {
           const blocks = cardText(today.latest);
           blocks.push({ type: "muted", text: todayHint(today) });
-          return cardReply(blocks, { accent: "neutral", title: "你的卡片" });
+          return cardWithPicture(keepsakes, today.latest.serial, blocks, {
+            accent: "neutral",
+            title: "你的卡片",
+          });
         }
         const issued = await keepsakes.issueCard(who(inv), key, { foil });
         if (!issued.ok) return refusal(issued);
         const blocks = cardText(issued.value);
         const paid = paidLine(issued.charged, issued.balance);
         if (paid) blocks.push(paid);
-        return cardReply(blocks, { accent: "neutral", title: "你的卡片" });
+        return cardWithPicture(keepsakes, issued.value.serial, blocks, {
+          accent: "neutral",
+          title: "你的卡片",
+        });
       }),
     {
       components: [
@@ -287,7 +321,11 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
     if (inv.canFollowUp()) {
       try {
         await inv.followUp(
-          cardReply(blocks, { accent: "neutral", title: "你撿到的卡", ephemeral: true }),
+          await cardWithPicture(keepsakes, got.value.serial, blocks, {
+            accent: "neutral",
+            title: "你撿到的卡",
+            ephemeral: true,
+          }),
         );
       } catch (error) {
         log.warn({ error: errorMessage(error) }, "cannot show a dropped card privately");

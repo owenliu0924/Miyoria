@@ -14,6 +14,7 @@ import {
   accountRefString,
   type KeepsakeCard,
   type KeepsakeCardBook,
+  type KeepsakeCardImage,
   type KeepsakeCardOrder,
   type KeepsakeCards,
   type KeepsakeFortune,
@@ -23,7 +24,7 @@ import {
   type KeepsakeWho,
   sameAccount,
 } from "@miyoria/types";
-import { claimDropCard, issueCard, memberCards } from "./card.js";
+import { claimDropCard, issueCard, memberCards, publicCard } from "./card.js";
 import { keepsakeFor } from "./card-faces.js";
 import { cardOdds } from "./cards-routes.js";
 import { ApiError } from "./errors.js";
@@ -36,6 +37,7 @@ import {
   type MemberContext,
   namesFor,
 } from "./member.js";
+import { cardPng } from "./og.js";
 import type { ApiState } from "./state.js";
 
 const log = getLogger("api.keepsakes");
@@ -139,6 +141,18 @@ export class KeepsakeService implements Keepsakes {
       return { ok: true, value: keepsakeCard(card), charged: 0, balance: null };
     } catch (error) {
       return refused(error);
+    }
+  }
+
+  async cardImage(serial: string): Promise<KeepsakeCardImage | null> {
+    try {
+      const card = await publicCard(this.state, serial);
+      if (card === null) return null;
+      const data = await cardPng(this.state, card);
+      return { name: `miyoria-card-${card.serial}.png`, data, contentType: "image/png" };
+    } catch (error) {
+      log.warn({ error: errorMessage(error) }, "cannot draw a card for a chat reply");
+      return null;
     }
   }
 

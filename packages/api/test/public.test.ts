@@ -22,12 +22,15 @@ import { LlmRouterKey } from "@miyoria/llm/llm";
 import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
   CardFacesKey,
+  CardPortraitKey,
   type CardService,
   type CardStore,
   CardsKey,
   CardWalletKey,
+  cardRelationship,
   cardsTables,
   expressionsFor,
+  type PortraitInput,
   portraitPose,
 } from "@miyoria/play/cards";
 import {
@@ -74,6 +77,7 @@ import {
   SelfStateKey,
   SocialSignalsKey,
 } from "@miyoria/types";
+import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CARDS_PER_DAY, normalizeSerial } from "../src/card.js";
@@ -684,6 +688,7 @@ describe("the route table", () => {
       "GET /api/auth/oauth/login",
       "GET /api/health",
       "GET /api/public/board",
+      "GET /api/public/card-art/:file",
       "GET /api/public/card/:serial",
       "GET /api/public/cards/odds",
       "GET /api/public/live",
@@ -3471,5 +3476,208 @@ describe("link previews", () => {
     );
     expect(tags).not.toContain("<script>");
     expect(tags).toContain("&lt;script&gt;");
+  });
+});
+
+describe("the picture on a card", () => {
+  const PAGE = `<!doctype html><html><head><meta charset="UTF-8" /></head><body></body></html>`;
+  const SEEN = { "cf-connecting-ip": "203.0.113.40" };
+  const bytesOf = async (url: string) => {
+    const res = await fetch(url, { headers: SEEN });
+    return { res, bytes: Buffer.from(await res.arrayBuffer()) };
+  };
+  const art = (r: Rig, serial: string) => bytesOf(`${r.base}/api/public/card-art/${serial}.png`);
+  const swatch = (color: string, format: "png" | "webp") =>
+    sharp({ create: { width: 8, height: 8, channels: 3, background: color } })
+      [format]()
+      .toBuffer();
+
+  /** A panel folder with the ten fixed portraits, each a different file. */
+  async function panel() {
+    const dir = await mkdtemp(join(tmpdir(), "myr-art-"));
+    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+    await writeFile(join(dir, "index.html"), PAGE);
+    const poses = [
+      "calm",
+      "smile",
+      "blush",
+      "heart",
+      "squint",
+      "finger",
+      "hand",
+      "smug",
+      "sweat",
+      "cold",
+    ];
+    const files: Record<string, Buffer> = {};
+    for (const [i, pose] of poses.entries()) {
+      const file = await swatch(`#${(0x20 + i * 12).toString(16)}60a0`, "webp");
+      files[pose] = file;
+      await writeFile(join(dir, `card-${pose}.local.webp`), file);
+    }
+    return { dir, files };
+  }
+
+  /** A renderer that answers `picture`, and what it was asked. */
+  function renderer(picture: Uint8Array | null) {
+    const asked: PortraitInput[] = [];
+    return {
+      asked,
+      port: {
+        render: async (input: PortraitInput) => {
+          asked.push(input);
+          return picture;
+        },
+      },
+    };
+  }
+
+  async function daily(r: Rig) {
+    r.fund(ALICE, 100);
+    const cookie = await r.login("alice");
+    return { cookie, card: (await r.post("/api/member/card", cookie, {})).body as IssuedCard };
+  }
+
+  it("is her rendered picture when something renders it, drawn from what the card kept", async () => {
+    const { dir } = await panel();
+    const r = await rig({}, dir);
+    const live = await swatch("#cc3366", "png");
+    const rendering = renderer(live);
+    r.sup.services.provide("portrait", CardPortraitKey, rendering.port);
+    const { card } = await daily(r);
+    const mine = r.cards.card(card.serial);
+    expect(mine).not.toBeNull();
+    const got = await art(r, card.serial);
+    expect(got.res.status).toBe(200);
+    expect(got.res.headers.get("content-type")).toBe("image/png");
+    expect(got.res.headers.get("cache-control")).toContain("immutable");
+    expect(got.res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(got.bytes.equals(live)).toBe(true);
+    expect(rendering.asked[0]).toEqual({
+      parts: mine?.parts,
+      expression: mine?.expression,
+      seed: mine?.seed,
+    });
+    // It never changes, so it is rendered once and the same bytes answer again.
+    const again = await art(r, card.serial);
+    expect(again.bytes.equals(live)).toBe(true);
+    expect(rendering.asked).toHaveLength(1);
+  });
+
+  it("is the fixed portrait nearest her expression when nothing renders it", async () => {
+    const { dir, files } = await panel();
+    const r = await rig({}, dir);
+    const { card } = await daily(r);
+    const got = await art(r, card.serial);
+    expect(got.res.status).toBe(200);
+    expect(got.res.headers.get("content-type")).toBe("image/webp");
+    // Not forever: a renderer that comes up later takes over.
+    expect(got.res.headers.get("cache-control")).not.toContain("immutable");
+    expect(got.bytes.equals(files[card.pose] ?? Buffer.alloc(0))).toBe(true);
+  });
+
+  it("falls back to the fixed portrait when the renderer cannot or fails", async () => {
+    const { dir, files } = await panel();
+    const r = await rig({}, dir);
+    const failing = renderer(null);
+    r.sup.services.provide("portrait", CardPortraitKey, failing.port);
+    const { card } = await daily(r);
+    const first = await art(r, card.serial);
+    expect(first.res.headers.get("content-type")).toBe("image/webp");
+    expect(first.bytes.equals(files[card.pose] ?? Buffer.alloc(0))).toBe(true);
+    expect(failing.asked).toHaveLength(1);
+    const broken = await rig({}, dir);
+    broken.sup.services.provide("portrait", CardPortraitKey, {
+      render: async () => {
+        throw new Error("browser gone");
+      },
+    });
+    const other = await daily(broken);
+    const got = await art(broken, other.card.serial);
+    expect(got.res.status).toBe(200);
+    expect(got.res.headers.get("content-type")).toBe("image/webp");
+  });
+
+  it("keeps an older member card's fixed portrait: it has no draw to render", async () => {
+    const { dir, files } = await panel();
+    const r = await rig({}, dir);
+    const rendering = renderer(await swatch("#cc3366", "png"));
+    r.sup.services.provide("portrait", CardPortraitKey, rendering.port);
+    await olderCard(r, ALICE, OLDER);
+    const got = await art(r, OLDER);
+    expect(got.res.status).toBe(200);
+    expect(got.res.headers.get("content-type")).toBe("image/webp");
+    expect(got.bytes.equals(files.smile ?? Buffer.alloc(0))).toBe(true);
+    expect(rendering.asked).toEqual([]);
+  });
+
+  it("shows a milestone card the same way: every kind keeps its own draw, the picture ignores the kind", async () => {
+    const { dir } = await panel();
+    const r = await rig({}, dir);
+    const live = await swatch("#cc3366", "png");
+    const rendering = renderer(live);
+    r.sup.services.provide("portrait", CardPortraitKey, rendering.port);
+    const alice = r.people.get(ALICE) as PersonId;
+    const made = await r.cards.issueMilestone(alice, { min: 15, label: "朋友" }, async () => ({
+      face: {
+        name: "Alice",
+        avatar_url: null,
+        call_name: null,
+        line: null,
+        stamp: null,
+        fields: [],
+        number: 1,
+      },
+      relationship: cardRelationship(null),
+    }));
+    if (!made.ok) throw new Error("no milestone card");
+    const serial = made.issued.card.serial;
+    expect(made.issued.card.kind).toBe("milestone");
+    const got = await art(r, serial);
+    expect(got.res.status).toBe(200);
+    expect(got.res.headers.get("content-type")).toBe("image/png");
+    expect(got.bytes.equals(live)).toBe(true);
+    expect(rendering.asked[0]?.seed).toBe(made.issued.card.seed);
+  });
+
+  it("is 404 for a card the public may not see, and for no picture at all", async () => {
+    const { dir } = await panel();
+    const r = await rig({}, dir);
+    const { card } = await daily(r);
+    for (const serial of ["MYR-0000-0000-0000", "not-a-card", "MYR-1234"]) {
+      const got = await art(r, serial);
+      expect(got.res.status, serial).toBe(404);
+      expect(got.res.headers.get("cache-control")).toBe("no-store");
+      expect(got.bytes.toString()).not.toContain("MYR-0000");
+    }
+    // Forgotten: the same 404 as the check, and nothing of it left.
+    const cookie = await r.login("alice");
+    await r.post("/api/member/forget", cookie, { confirm: true });
+    expect((await art(r, card.serial)).res.status).toBe(404);
+    // No panel folder and no renderer: no picture, as no portrait file on a bare machine.
+    const bare = await rig();
+    const mine = await daily(bare);
+    expect((await art(bare, mine.card.serial)).res.status).toBe(404);
+  });
+
+  it("is the same picture in the link preview, the card on a page and /me card", async () => {
+    const { dir } = await panel();
+    const r = await rig({}, dir);
+    const rendering = renderer(await swatch("#cc3366", "png"));
+    r.sup.services.provide("portrait", CardPortraitKey, rendering.port);
+    const { card } = await daily(r);
+    const keepsakes = r.sup.services.require(KeepsakesKey);
+    const chat = await keepsakes.cardImage?.(card.serial);
+    expect(chat?.contentType).toBe("image/png");
+    expect(chat?.name).toBe(`miyoria-card-${card.serial}.png`);
+    const preview = await bytesOf(`${r.base}/og/card/${card.serial}.png`);
+    expect(preview.res.status).toBe(200);
+    // One drawing for both, and the render asked for once.
+    expect(Buffer.from(chat?.data ?? []).equals(preview.bytes)).toBe(true);
+    expect((await art(r, card.serial)).res.status).toBe(200);
+    expect(rendering.asked).toHaveLength(1);
+    // A card it may not draw gets none, without an error.
+    expect(await keepsakes.cardImage?.("MYR-0000-0000-0000")).toBeNull();
+    expect(await keepsakes.cardImage?.("nonsense")).toBeNull();
   });
 });

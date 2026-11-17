@@ -204,6 +204,13 @@ export function renderCard(card: Card, files: readonly string[] = []): APIContai
         shownFiles.add(block.name);
         inner.push({ type: ComponentType.File, file: { url: `attachment://${block.name}` } });
         break;
+      case "image":
+        shownFiles.add(block.name);
+        inner.push({
+          type: ComponentType.MediaGallery,
+          items: [{ media: { url: `attachment://${block.name}` } }],
+        });
+        break;
     }
   }
   // Attached files are only shown when a component references them.

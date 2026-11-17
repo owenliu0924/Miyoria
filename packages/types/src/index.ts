@@ -659,6 +659,7 @@ export {
 export {
   type KeepsakeCard,
   type KeepsakeCardBook,
+  type KeepsakeCardImage,
   type KeepsakeCardOrder,
   type KeepsakeCards,
   type KeepsakeField,

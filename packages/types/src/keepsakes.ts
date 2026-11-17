@@ -148,6 +148,20 @@ export interface Keepsakes {
    * first, within the day's limit; free. Asked again by whoever got it, the same card.
    */
   claimDrop?(who: KeepsakeWho, drop: string): Promise<KeepsakeResult<KeepsakeCard>>;
+  /**
+   * The picture of the card `serial`, the whole card as a PNG: the same one its link preview shows
+   * (her rendered picture when there is one, the fixed portrait otherwise). `null` for a card it
+   * cannot draw (unknown, voided, no renderer); never throws.
+   */
+  cardImage?(serial: string): Promise<KeepsakeCardImage | null>;
+}
+
+/** A card drawn as a picture. */
+export interface KeepsakeCardImage {
+  /** A file name for the attachment. */
+  name: string;
+  data: Uint8Array;
+  contentType: string;
 }
 
 export const KeepsakesKey = serviceKey<Keepsakes>("Keepsakes");

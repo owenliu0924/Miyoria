@@ -13,6 +13,13 @@ export type { CardFaceProps };
 /** Her pictures are the owner's renders of her model, kept out of git like the background. */
 export const poseUrl = (pose: string) => `/card-${pose.replace(/[^a-z0-9-]/g, "")}.local.webp`;
 
+/**
+ * The picture of a card, from the Core: her rendered one, or the fixed portrait it stands in for
+ * (the same one the link preview and `/me card` show). A card the Core will not show (voided) has
+ * none there.
+ */
+export const artUrl = (serial: string) => `/api/public/card-art/${encodeURIComponent(serial)}.png`;
+
 /** Where the code on a card leads: the page that checks it. */
 export const verifyUrl = (serial: string) => `${window.location.origin}/card/${encodeURIComponent(serial)}`;
 
@@ -53,16 +60,30 @@ export function cardColors() {
   return { primary: cssVar("--primary", "#f29dc4"), secondary: cssVar("--secondary", "#7355e8") };
 }
 
+/**
+ * A card's picture: where it is (`url`, for a mask) and inlined (`data`, for the `<svg>`). The
+ * Core's, falling back to the fixed portrait of the card's pose when the Core has none to show.
+ */
+export function useCardArt(card: IssuedCard): { url: string | null; data: string | null } {
+  const core = artUrl(card.serial);
+  const fromCore = useInlined(core);
+  const fixed = poseUrl(card.pose);
+  const fromFixed = useInlined(!fromCore.isPending && !fromCore.data ? fixed : null);
+  if (fromCore.data) return { url: core, data: fromCore.data };
+  if (fromFixed.data) return { url: fixed, data: fromFixed.data };
+  return { url: null, data: null };
+}
+
 /** The card with its pictures inlined, so the same `<svg>` can become a PNG. */
 export function InlinedCard({ card, svgRef }: { card: IssuedCard; svgRef?: React.Ref<SVGSVGElement> }) {
-  const art = useInlined(poseUrl(card.pose));
+  const art = useCardArt(card);
   const avatar = useInlined(card.avatar_url);
   const [colors] = useState(cardColors);
   return (
     <CardFace
       ref={svgRef}
       card={card}
-      art={art.data ?? null}
+      art={art.data}
       avatar={avatar.data ?? null}
       colors={colors}
       verifyUrl={verifyUrl(card.serial)}

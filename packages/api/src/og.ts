@@ -16,11 +16,12 @@ import { join } from "node:path";
 import { CARD_FONT_FAMILY, cardFontOptions } from "@miyoria/card-face/fonts";
 import { renderCardSvg } from "@miyoria/card-face/render";
 import type { IssuedCard } from "@miyoria/contracts/api";
-import { CardPortraitKey, CardsKey } from "@miyoria/play/cards";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { Resvg } from "@resvg/resvg-js";
 import sharp from "sharp";
 import { publicCard } from "./card.js";
+import { type CardArt, cardArt } from "./card-art.js";
+import { ApiError } from "./errors.js";
 import {
   CARD_IMAGE_WIDTH,
   cardMeta,
@@ -95,23 +96,18 @@ async function poseArt(
   return art;
 }
 
-/**
- * Her rendered picture for a daily card (`CardPortraitKey`, cards.md §6), `CARD_IMAGE_WIDTH` wide on
- * black like the fixed portraits; `null` when nothing renders it (yet), which falls back to the
- * fixed portrait nearest her expression.
- */
-async function portraitArt(portrait: () => Promise<Uint8Array | null>): Promise<string | null> {
+/** A card's picture (`cardArt`) as a JPEG data URL, `CARD_IMAGE_WIDTH` wide on black like the card's top. */
+async function artUrl(art: CardArt | null): Promise<string | null> {
+  if (art === null) return null;
   try {
-    const png = await portrait();
-    if (png === null) return null;
-    const jpeg = await sharp(png)
+    const jpeg = await sharp(art.bytes)
       .resize({ width: CARD_IMAGE_WIDTH })
       .flatten({ background: "#000000" })
       .jpeg({ quality: 88 })
       .toBuffer();
     return toDataUrl("image/jpeg", jpeg);
   } catch (error) {
-    log.warn({ error: errorMessage(error) }, "cannot use a rendered card portrait");
+    log.warn({ error: errorMessage(error) }, "cannot use a card picture");
     return null;
   }
 }
@@ -149,15 +145,8 @@ async function toPng(svg: string, width: number, background: string | null): Pro
  * The card as the whole picture, at its own 630×880 ratio and clear around its rounded corners.
  * `og:image:width` and `height` say the same size (`CARD_IMAGE_WIDTH`, `CARD_IMAGE_HEIGHT`).
  */
-export async function renderCardImage(
-  card: IssuedCard,
-  panelDir: string | null,
-  portrait: () => Promise<Uint8Array | null> = async () => null,
-): Promise<Buffer> {
-  const [art, avatar] = await Promise.all([
-    portraitArt(portrait).then((own) => own ?? poseArt(panelDir, card.pose, CARD_IMAGE_WIDTH)),
-    avatarArt(card.avatar_url),
-  ]);
+export async function renderCardImage(card: IssuedCard, picture: CardArt | null): Promise<Buffer> {
+  const [art, avatar] = await Promise.all([artUrl(picture), avatarArt(card.avatar_url)]);
   const svg = renderCardSvg({
     card,
     art,
@@ -257,21 +246,21 @@ ${her}
 // ---- cache ----------------------------------------------------------------------------------
 
 /** Renders kept by serial and version; the least recently used go first. */
-class ImageCache {
-  readonly #items = new Map<string, Buffer>();
+class ImageCache<T> {
+  readonly #items = new Map<string, T>();
 
-  get(key: string): Buffer | undefined {
+  get(key: string): T | undefined {
     const hit = this.#items.get(key);
-    if (hit) {
+    if (hit !== undefined) {
       this.#items.delete(key);
       this.#items.set(key, hit);
     }
     return hit;
   }
 
-  set(key: string, png: Buffer): void {
+  set(key: string, value: T): void {
     this.#items.delete(key);
-    this.#items.set(key, png);
+    this.#items.set(key, value);
     while (this.#items.size > CACHED_IMAGES) {
       const oldest = this.#items.keys().next().value;
       if (oldest === undefined) break;
@@ -280,12 +269,23 @@ class ImageCache {
   }
 }
 
-const caches = new WeakMap<ApiState, ImageCache>();
-function cacheOf(state: ApiState): ImageCache {
+const caches = new WeakMap<ApiState, ImageCache<Buffer>>();
+function cacheOf(state: ApiState): ImageCache<Buffer> {
   let cache = caches.get(state);
   if (!cache) {
     cache = new ImageCache();
     caches.set(state, cache);
+  }
+  return cache;
+}
+
+/** Rendered pictures (`cardArt`, only the ones that never change) by serial. */
+const artCaches = new WeakMap<ApiState, ImageCache<CardArt>>();
+function artCacheOf(state: ApiState): ImageCache<CardArt> {
+  let cache = artCaches.get(state);
+  if (!cache) {
+    cache = new ImageCache();
+    artCaches.set(state, cache);
   }
   return cache;
 }
@@ -329,12 +329,30 @@ async function defaultImage(state: ApiState, cacheControl = SITE_CACHE): Promise
   return image(png, cacheControl);
 }
 
-/** The rendered portrait of a daily card, when something renders them. */
-async function portraitOf(state: ApiState, serial: string): Promise<Uint8Array | null> {
-  const renderer = state.optional(CardPortraitKey);
-  const card = renderer ? state.optional(CardsKey)?.card(serial) : null;
-  if (!renderer || !card) return null;
-  return renderer.render({ parts: card.parts, expression: card.expression, seed: card.seed });
+/** The picture of a card (`cardArt`), a rendered one kept: it never changes, the fixed one may. */
+async function artOf(state: ApiState, card: IssuedCard): Promise<CardArt | null> {
+  const cache = artCacheOf(state);
+  const kept = cache.get(card.serial);
+  if (kept) return kept;
+  const art = await cardArt(state, card);
+  if (art?.live) cache.set(card.serial, art);
+  return art;
+}
+
+/**
+ * The card as the whole picture (`renderCardImage`): the link preview's, and the one `/me card`
+ * attaches. Kept per serial and version of the card's data, drawn one at a time. Not rate limited:
+ * a route asks `admitCardCheck` first when it is open to anyone.
+ */
+export async function cardPng(state: ApiState, card: IssuedCard): Promise<Buffer> {
+  const cache = cacheOf(state);
+  const key = `${card.serial}:${cardVersion(card)}`;
+  let png = cache.get(key);
+  if (!png) {
+    png = await oneAtATime(state, async () => renderCardImage(card, await artOf(state, card)));
+    cache.set(key, png);
+  }
+  return png;
 }
 
 async function cardImage(state: ApiState, c: ApiContext): Promise<Response> {
@@ -343,32 +361,73 @@ async function cardImage(state: ApiState, c: ApiContext): Promise<Response> {
   const card = await publicCard(state, serial);
   if (card === null) return defaultImage(state, SHORT_CACHE);
   const version = cardVersion(card);
-  const cache = cacheOf(state);
-  const key = `${card.serial}:${version}`;
-  let png = cache.get(key);
-  if (!png) {
+  if (!cacheOf(state).get(`${card.serial}:${version}`)) {
     const wait = state.publicSide.admitCardCheck(clientKey(c));
     if (wait !== null) return tooMany(wait);
-    try {
-      png = await oneAtATime(state, () =>
-        renderCardImage(card, state.panelDir, () => portraitOf(state, card.serial)),
-      );
-    } catch (error) {
-      log.warn({ error: errorMessage(error) }, "cannot draw a card preview");
-      return defaultImage(state, "no-store");
-    }
-    cache.set(key, png);
+  }
+  let png: Buffer;
+  try {
+    png = await cardPng(state, card);
+  } catch (error) {
+    log.warn({ error: errorMessage(error) }, "cannot draw a card preview");
+    return defaultImage(state, "no-store");
   }
   const asked = new URL(c.req.url).searchParams.get("v");
   return image(png, asked === version ? VERSIONED_CACHE : SHORT_CACHE);
 }
 
-/** `GET /og/default.png` and `GET /og/card/{serial}.png`: open to anyone, like the page they preview. */
+const NO_ART = "這張卡不存在或已經作廢";
+
+/**
+ * `GET /api/public/card-art/{serial}.png`: the picture on a card without its frame and words, what
+ * the member page and the check page draw it with. The card must be one the public check shows
+ * (and the preview draws): an unknown, malformed or voided one is a 404. Her rendered picture never
+ * changes, so it is kept long; the fixed portrait it stands in for may give way to it, so it is not.
+ */
+async function artImage(state: ApiState, c: ApiContext): Promise<Response> {
+  const file = param(c, "file");
+  const serial = file.endsWith(".png") ? file.slice(0, -4) : "";
+  const missing = () => new ApiError(404, NO_ART, { "cache-control": "no-store" }).toResponse();
+  const card = await publicCard(state, serial);
+  if (card === null) return missing();
+  let art = artCacheOf(state).get(card.serial) ?? null;
+  if (art === null) {
+    const wait = state.publicSide.admitCardCheck(clientKey(c));
+    if (wait !== null) return tooMany(wait);
+    try {
+      art = await oneAtATime(state, () => artOf(state, card));
+    } catch (error) {
+      log.warn({ error: errorMessage(error) }, "cannot find a card's picture");
+      return missing();
+    }
+  }
+  if (art === null) return missing();
+  return new Response(new Uint8Array(art.bytes), {
+    status: 200,
+    headers: {
+      "content-type": art.type,
+      "content-length": String(art.bytes.length),
+      "cache-control": art.live ? VERSIONED_CACHE : SHORT_CACHE,
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
+/**
+ * `GET /og/default.png`, `GET /og/card/{serial}.png` and `GET /api/public/card-art/{serial}.png`:
+ * open to anyone, like the page they preview.
+ */
 export function ogRoutes(state: ApiState): Route[] {
   if (!state.publicSide.config.enabled) return [];
   return [
     { method: "GET", path: "/og/default.png", public: true, handler: () => defaultImage(state) },
     { method: "GET", path: "/og/card/:file", public: true, handler: (c) => cardImage(state, c) },
+    {
+      method: "GET",
+      path: "/api/public/card-art/:file",
+      public: true,
+      handler: (c) => artImage(state, c),
+    },
   ];
 }
 

@@ -5,6 +5,7 @@ import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
   type KeepsakeCard,
   type KeepsakeCardBook,
+  type KeepsakeCardImage,
   type KeepsakeCardOrder,
   type KeepsakeCards,
   type KeepsakeFortune,
@@ -141,6 +142,22 @@ class Fake implements Keepsakes {
     return this.odds;
   }
 
+  /** The picture of a card, once a test turns it on (a service without `cardImage` has none). */
+  pictures: string[] | null = null;
+  asked: string[] = [];
+  broken = false;
+
+  async cardImage(serial: string): Promise<KeepsakeCardImage | null> {
+    this.asked.push(serial);
+    if (this.broken) throw new Error("cannot draw");
+    if (this.pictures === null || !this.pictures.includes(serial)) return null;
+    return {
+      name: `miyoria-card-${serial}.png`,
+      data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      contentType: "image/png",
+    };
+  }
+
   drops = new Map<string, string>();
 
   async claimDrop(who: { name: string }, drop: string): Promise<KeepsakeResult<KeepsakeCard>> {
@@ -185,6 +202,46 @@ function setup(withService = true) {
     );
   return { registry, fake, run };
 }
+
+describe("me card's picture", () => {
+  const SERIAL = "MYR-TEST-0000-0001";
+
+  it("goes on top of the card, new or shown again, as a file only they get", async () => {
+    const { run, fake } = setup();
+    fake.pictures = [SERIAL];
+    const first = await run("me card");
+    expect(first.files?.map((f) => [f.name, f.contentType])).toEqual([
+      [`miyoria-card-${SERIAL}.png`, "image/png"],
+    ]);
+    expect(first.card?.blocks[0]).toEqual({ type: "image", name: `miyoria-card-${SERIAL}.png` });
+    expect(first.text).toContain("第 1 張");
+    const again = await run("me card");
+    expect(again.files).toHaveLength(1);
+    expect(again.card?.blocks[0]?.type).toBe("image");
+    expect(fake.asked).toEqual([SERIAL, SERIAL]);
+  });
+
+  it("is on the keepsake card of someone from before the cards", async () => {
+    const { run, fake } = setup();
+    fake.pictures = ["MYR-TEST-0000-0007"];
+    fake.keepsake = { ...card(7), kind: "keepsake" };
+    const kept = await run("me card");
+    expect(kept.files).toHaveLength(1);
+    expect(kept.text).toContain("紀念卡");
+  });
+
+  it("is left out when the card cannot be drawn, and the words still come", async () => {
+    const { run, fake } = setup();
+    const none = await run("me card");
+    expect(none.files).toBeUndefined();
+    expect(none.card?.blocks.some((b) => b.type === "image")).toBe(false);
+    expect(none.text).toContain("第 1 張");
+    fake.broken = true;
+    const failed = await run("me card");
+    expect(failed.files).toBeUndefined();
+    expect(failed.text).toContain("第 1 張");
+  });
+});
 
 describe("me card", () => {
   it("issues one when there is none today and shows today's after that", async () => {
