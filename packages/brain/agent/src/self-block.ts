@@ -444,7 +444,8 @@ export const HEART_NOW_TITLE = "你現在對在場的人的感覺:";
 /**
  * Block 7's lines about the people here (docs/design/v5-heart.md §2.5): the values that move by
  * the day (warmth, grudge, longing) as words, and a sentence when a grudge or longing is high.
- * Block 4 is cached until the people or the summary change, so these are not there. Someone
+ * Block 4 is cached until the people, the summary or her slow words about them change, so these
+ * are not there. Someone
  * without a row, blocked, or with nothing to say is left out; empty when nobody is left.
  */
 export function heartNowBody(

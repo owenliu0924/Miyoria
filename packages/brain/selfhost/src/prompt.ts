@@ -417,7 +417,10 @@ export class HostPrompt implements PromptSource {
       .sort()
       .join(",");
     const slow = await this.#slow(input);
-    const key = `${roster}|${tail.summary?.id ?? 0}|${stableHash(slow.join("\n"))}`;
+    // What block 4 shows of the people from the heart (tier, the slow words, call name,
+    // impression, stance): a change there is a new block. A line someone says changes none of it.
+    const hearts = this.#heartKey(this.#present(speakers));
+    const key = `${roster}|${tail.summary?.id ?? 0}|${stableHash(slow.join("\n"))}|${hearts}`;
     const cached = this.#places.get(session);
     if (cached !== undefined && cached.key === key) return cached.text;
     const { text, settled } = await this.#renderPlace(input, speakers, slow);
@@ -429,6 +432,14 @@ export class HostPrompt implements PromptSource {
   /** Forgets block 4 of `session` (its people or its transcript changed under it). */
   forget(session: string): void {
     this.#places.delete(session);
+  }
+
+  /** A hash of what block 4 shows of `present` from the heart (the fallback body's text). */
+  #heartKey(present: readonly PresentPerson[]): string {
+    const heart = this.#services.get(HeartKey) ?? null;
+    if (heart === null || present.length === 0) return "";
+    const body = peopleBody(present, { attitude: (a) => this.#agent.attitude(a), heart });
+    return String(stableHash(body));
   }
 
   async #renderPlace(
@@ -562,7 +573,8 @@ export class HostPrompt implements PromptSource {
       const reads = this.#run(input).reads;
       try {
         if (reads === null) return { body: await render(this.#limit()), settled: true };
-        const read = await reads.warm("people", accountsKey(present), () => render(WARM_LOAD_MS));
+        const key = `${accountsKey(present)}|${this.#heartKey(present)}`;
+        const read = await reads.warm("people", key, () => render(WARM_LOAD_MS));
         if (read !== undefined) return { body: read, settled: true };
         settled = false;
       } catch (error) {

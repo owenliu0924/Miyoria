@@ -162,6 +162,50 @@ describe("a feel block in production", () => {
     );
   });
 
+  it("block 4 shows her new words about someone at the next run, not a stale copy", async () => {
+    const felt: Felt[] = [];
+    const appraised: AffectInput[] = [];
+    const base = services(felt, appraised);
+    let impression = "很會打遊戲";
+    const view = (p: PersonId): HeartView =>
+      ({
+        person: p,
+        bond: 60,
+        trust: 40,
+        familiarity: 30,
+        warmth: 0.1,
+        respect: 0,
+        ease: 0.2,
+        grudge: 0,
+        longing: 0,
+        rapport: 0,
+        stance: "",
+        impression,
+        call_name: null,
+        tags: [],
+        owner: false,
+        blocked: false,
+        last_seen: null,
+        last_together: null,
+      }) as HeartView;
+    const rig = await Rig.create({
+      provide: (sup) => {
+        base.provide(sup);
+        const heart: Pick<HeartPeople, "view" | "feel"> = { feel: () => 0, view };
+        sup.services.provide("test", HeartKey, heart as HeartPeople);
+      },
+    });
+    rig.model.push(says("嗯?"), says("嗯嗯"));
+    rig.say(mention(C1, "owen", "@她 欸"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the first outcome");
+    impression = "其實很怕寂寞";
+    rig.say(mention(C1, "owen", "@她 再一次"));
+    await until(() => outcomes(rig).length === 2, 3_000, "the second outcome");
+    const second = JSON.stringify(rig.model.requests[1]?.messages ?? []);
+    expect(second).toContain("其實很怕寂寞");
+    expect(second).not.toContain("很會打遊戲");
+  });
+
   it("a voice run: the block is never said; the people in the channel may be named", async () => {
     const felt: Felt[] = [];
     const appraised: AffectInput[] = [];
