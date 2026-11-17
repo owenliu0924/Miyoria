@@ -5,7 +5,7 @@
 
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
-import { type Clock, HeartKey, toTimestamp } from "@miyoria/types";
+import { type Clock, HeartKey, type JsonObject, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   HeartModule,
@@ -73,7 +73,11 @@ async function oldRecords(store: SqliteStore): Promise<void> {
   });
 }
 
-async function startModule(store: SqliteStore, clock: ManualClock, config: object | null = null) {
+async function startModule(
+  store: SqliteStore,
+  clock: ManualClock,
+  config: JsonObject | null = null,
+) {
   const sup = new Supervisor();
   cleanup.push(() => sup.stopAll());
   sup.services.provide("app", StoreKey, store);
