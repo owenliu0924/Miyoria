@@ -45,7 +45,7 @@ export interface AppraisalEvent {
 }
 
 /** Who produced an affect input. */
-export type AffectSource = "rule" | "appraise" | "reflect" | "drive" | "panel";
+export type AffectSource = "rule" | "appraise" | "feel" | "reflect" | "drive" | "panel";
 
 /**
  * Rule events (cheap, immediate), published by whoever sees them as `Events.AffectEvent`; the

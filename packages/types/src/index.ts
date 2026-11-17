@@ -932,6 +932,26 @@ export {
   type WorkTaskView,
 } from "./worklane.js";
 
+// ---- v5 phase 4: the heart as its readers see it ------------------------------------------------
+
+export {
+  FEEL_EMOTION_WORDS,
+  FEEL_FIELD_WORDS,
+  FEEL_FIELDS,
+  FEEL_STRENGTH_WORDS,
+  type FeelField,
+  type FeelProposal,
+  GRUDGE_CUE,
+  HeartKey,
+  type HeartLine,
+  type HeartPeople,
+  type HeartView,
+  type HeartWords,
+  heartCues,
+  heartWords,
+  LONGING_CUE,
+} from "./heart.js";
+
 // ---- v4 §4.5: the after-the-fact corrections, counted ------------------------------------------
 
 export {
