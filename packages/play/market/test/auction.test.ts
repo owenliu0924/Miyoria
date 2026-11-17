@@ -6,6 +6,7 @@
 // up from the rows; she cannot bid.
 
 import { describe, expect, it } from "vitest";
+import { marketConfig } from "../src/config.js";
 import { parsePick, rotationKind } from "../src/lots.js";
 import { retireMarketSql } from "../src/migrations.js";
 import {
@@ -23,9 +24,9 @@ import {
   T0,
 } from "./rig.js";
 
-/** A rig with the lot of `kind` open (the owner set it). */
+/** A rig with the lot of `kind` open (the owner set it; both kinds on offer). */
 async function open(kind: "frame" | "call_name", options: Parameters<typeof rig>[1] = {}) {
-  const r = await rig({ lottery: false }, options);
+  const r = await rig({ lottery: false, auction_lots: ["call_name", "frame"] }, options);
   expect(await r.service.plan(kind)).toMatchObject({ ok: true, plan: kind });
   r.clock.at = OPENS;
   await r.service.tick();
@@ -39,8 +40,38 @@ const held = (r: Awaited<ReturnType<typeof rig>>, person: string) =>
     .reduce((n, x) => n - x.delta, 0);
 
 describe("the lot of the week", () => {
+  it("offers only the frame unless the config adds the name lot (owner 2026-11-18)", async () => {
+    expect(marketConfig().auction_lots).toEqual(["frame"]);
+    let asked = 0;
+    const picker = {
+      pick: async () => {
+        asked += 1;
+        return { kind: "call_name" as const, why: "不該問" };
+      },
+    };
+    const r = await rig({ lottery: false }, { picker });
+    // A plan for a kind not on offer is refused; the frame and a skip are fine.
+    expect(await r.service.plan("call_name")).toMatchObject({ ok: false, status: 409 });
+    r.clock.at = OPENS;
+    await r.service.tick();
+    // One kind: nothing to pick, no model call, the frame every week.
+    expect(asked).toBe(0);
+    expect(r.store.lotsIn(["open"])[0]).toMatchObject({ kind: "frame", picked_by: "rotation" });
+    for (const week of [0, 7, 14, 21]) expect(rotationKind(["frame"], week)).toBe("frame");
+    // The next week is planned the same way.
+    expect(await r.service.plan("frame")).toMatchObject({ ok: true, plan: "frame" });
+    // Added by an owner, the name lot runs again (her pick among the two).
+    const both = await rig(
+      { lottery: false, auction_lots: ["call_name", "frame"] },
+      { picker: { pick: async () => ({ kind: "call_name", why: null }) } },
+    );
+    both.clock.at = OPENS;
+    await both.service.tick();
+    expect(both.store.lotsIn(["open"])[0]).toMatchObject({ kind: "call_name", picked_by: "her" });
+  });
+
   it("opens Saturday 20:00 for 24 hours in the channel, by the rotation without a model", async () => {
-    const r = await rig({ lottery: false });
+    const r = await rig({ lottery: false, auction_lots: ["call_name", "frame"] });
     await r.service.tick();
     expect(r.posted).toEqual([]);
     r.clock.at = OPENS;
@@ -62,7 +93,7 @@ describe("the lot of the week", () => {
 
   it("is her pick when a model answers, and the rotation when it does not", async () => {
     const r = await rig(
-      { lottery: false },
+      { lottery: false, auction_lots: ["call_name", "frame"] },
       { picker: { pick: async () => ({ kind: "frame", why: "想看大家搶" }) } },
     );
     r.clock.at = OPENS + HOUR;
@@ -73,7 +104,7 @@ describe("the lot of the week", () => {
       note: "想看大家搶",
     });
     const failing = await rig(
-      { lottery: false },
+      { lottery: false, auction_lots: ["call_name", "frame"] },
       {
         picker: {
           pick: async () => {

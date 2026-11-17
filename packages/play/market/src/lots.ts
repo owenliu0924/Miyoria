@@ -1,7 +1,8 @@
-// What the weekly auction sells (docs/design/v5-play.md §4.5, owner 2026-11-17: the first batch is
-// "how she calls you this week" and a one-of-a-kind card frame) and how the week's lot is chosen:
-// the owner's plan for the week first, else she picks from the kinds on offer with one small model
-// call, else (no model, a failure, an answer that is not one of them) a rotation by the week.
+// What the weekly auction sells (docs/design/v5-play.md §4.5, owner 2026-11-17: "how she calls you
+// this week" and a one-of-a-kind card frame; owner 2026-11-18: only the frame is offered unless the
+// config adds the name) and how the week's lot is chosen: the owner's plan for the week first, else
+// she picks from the kinds on offer with one small model call (none when only one kind is on
+// offer), else (no model, a failure, an answer that is not one of them) a rotation by the week.
 
 import { type LlmRouter, systemMessage, userMessage } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";

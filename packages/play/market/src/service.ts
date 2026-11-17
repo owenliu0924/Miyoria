@@ -816,7 +816,8 @@ export class MarketService {
 
   /**
    * Sets the coming week's lot (`kind`) or skips it. The coming week is the one whose lot has not
-   * opened yet: this week's while it has not, else the next. A refusal when it has already opened.
+   * opened yet: this week's while it has not, else the next. A refusal when it has already opened,
+   * or for a kind `auction_lots` does not offer.
    */
   plan(
     choice: LotKind | "skip",
@@ -824,6 +825,11 @@ export class MarketService {
   ): Promise<
     { ok: true; week: number; opens_at: Timestamp; plan: LotKind | "skip" } | MarketRefusal
   > {
+    if (choice !== "skip" && !this.#d.config.auction_lots.includes(choice)) {
+      return Promise.resolve(
+        refuse(409, `「${LOT_TITLE[choice].name}」現在沒有開放拍賣(auction_lots 裡沒有它)`),
+      );
+    }
     return this.#turns.run(async () => {
       const now = this.#now();
       const slot = this.#slot(now);

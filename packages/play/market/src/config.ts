@@ -9,6 +9,13 @@ import { z } from "zod";
 export const LOT_KINDS = ["call_name", "frame"] as const;
 export type LotKind = (typeof LOT_KINDS)[number];
 
+/**
+ * The kinds offered when the config names none (owner 2026-11-18): only the one-of-a-kind frame.
+ * "How she calls you this week" sells nothing while anyone can set their name for free with
+ * `/me call`; it runs only when an owner adds it to `auction_lots`.
+ */
+export const DEFAULT_LOTS: readonly LotKind[] = ["frame"];
+
 const clock = () =>
   z
     .string()
@@ -59,11 +66,14 @@ export const MarketConfigSchema = z.object({
   auction_step: z.number().int().positive().default(5),
   /** A bid this close to the end moves the end this much later. */
   auction_extend_mins: z.number().int().min(0).max(60).default(5),
-  /** The lot kinds she picks from (and the rotation goes through). */
+  /**
+   * The lot kinds she picks from (and the rotation goes through); with one kind there is nothing
+   * to pick and no model call. Default: the frame only (`DEFAULT_LOTS`).
+   */
   auction_lots: z
     .array(z.enum(LOT_KINDS))
     .min(1)
-    .default([...LOT_KINDS]),
+    .default([...DEFAULT_LOTS]),
   /** How long the won name is what she calls the winner. */
   auction_call_days: z.number().int().min(1).max(30).default(7),
   /** How long the winner of a name has to give one she accepts; after that it is refunded. */

@@ -493,7 +493,7 @@ dirs = ["extensions"]
 # auction_opening_bid = 50    # 起標
 # auction_step = 5            # 每次至少加多少
 # auction_extend_mins = 5     # 最後幾分鐘有人出價就延長這麼久(0 = 不延長)
-# auction_lots = ["call_name", "frame"]   # 拍什麼:這一週她怎麼叫你、只此一件的卡框;她從裡面挑,沒有模型就輪流
+# auction_lots = ["frame"]    # 拍什麼:只此一件的卡框;加 "call_name"(這一週她怎麼叫你)才會拍稱呼。不只一種時她挑,沒有模型就輪流
 # auction_call_days = 7       # 得標的稱呼用幾天,之後換回原本的
 # auction_name_hours = 72     # 得標的人幾小時內要給一個她接受的稱呼,不然退款
 # auction_purpose = "market"  # 她挑拍品用的模型([llm.purposes];沒設 = 聊天那一組)
