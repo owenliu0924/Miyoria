@@ -131,7 +131,7 @@ function band(svg, r, w, frac, color) {
 }
 // One track. Each lap lies on the one before and is a little narrower, so the laps under it show
 // as steps at both edges and can be counted.
-function ring(bond) {
+function ring(bond, number) {
   const svg = el("svg", { viewBox: "0 0 160 160", role: "img", "aria-label": "羈絆環" });
   const R = 56, BASE = 40, STEP = 3.2;
   const laps = Math.min(Math.floor(Math.max(bond, 0) / 100), 10);
@@ -146,10 +146,19 @@ function ring(bond) {
     band(svg, R, BASE, Math.abs(bond) / 100, "rgba(241,240,244,.38)")
       .setAttribute("transform", "rotate(-90 80 80) scale(1 -1) translate(0 -160)");
   }
-  const g = el("g", { transform: "translate(80 81) scale(1.9) translate(-12 -12)" }, svg);
+  const g = el("g", { transform: "translate(80 81) scale(2.05) translate(-12 -12)" }, svg);
   const h = el("path", { d: HEART, "stroke-width": 1.6, "stroke-linejoin": "round" }, g);
   if (bond <= 0) { h.style.fill = "none"; h.style.stroke = "rgba(241,240,244,.45)"; }
   else { h.style.fill = "var(--foreground)"; h.style.stroke = "var(--foreground)"; }
+  // The admin panel writes the value on the heart; the public ring leaves the heart plain.
+  if (number !== false) {
+    const text = String(Math.round(bond)).replace("-", "−");
+    const t = el("text", { x: 80, y: 79, "text-anchor": "middle", "dominant-baseline": "central",
+      "font-size": text.length >= 4 ? 11.5 : text.length === 3 ? 13.5 : 15, "font-weight": 650 }, svg);
+    t.style.fill = bond <= 0 ? "var(--muted-foreground)" : "#1f1218";
+    t.style.fontVariantNumeric = "tabular-nums";
+    t.textContent = text;
+  }
   return svg;
 }
 // The list's 28 px mark: only the current lap and the heart; the detail belongs to the person page.
@@ -183,7 +192,7 @@ for (const b of [0, -40]) {
   f.appendChild(c); states.appendChild(f);
 }
 document.getElementById("personRing").appendChild(ring(342));
-document.getElementById("pub").appendChild(ring(342));
+document.getElementById("pub").appendChild(ring(342, false));
 const BARS = [["信任", 62, 0, 100, "62"], ["熟悉", 48, 0, 100, "48"], ["好感", 0.35, -1, 1, "+0.35"], ["敬意", 0.1, -1, 1, "+0.10"],
   ["自在", 0.7, 0, 1, "0.70"], ["心結", 0.15, 0, 1, "0.15"], ["想念", 0.4, 0, 1, "0.40"], ["默契", 0.55, 0, 1, "0.55"]];
 const bars = document.getElementById("bars");
