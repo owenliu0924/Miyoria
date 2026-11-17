@@ -60,7 +60,7 @@ const DecaySchema = z.object({
 });
 
 /**
- * The heart's rules. Section of the module that owns `heart_person` (not wired yet).
+ * The heart's rules: the part of `[modules.heart]` the store's `HeartStore` puts in force.
  *
  * ```toml
  * repeat_damping = 0.75
@@ -85,6 +85,12 @@ export const HeartPersonConfigSchema = z.object({
   bond_gain_caps: z
     .array(BondCapSchema)
     .min(1)
+    .refine(
+      (caps) => caps.every((c, i) => i === 0 || c[0] > (caps[i - 1] as [number, number])[0]),
+      {
+        message: "the lowest bonds must go up, each band after the one below it",
+      },
+    )
     .default([
       [0, 12],
       [100, 8],
