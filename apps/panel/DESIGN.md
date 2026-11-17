@@ -54,6 +54,13 @@ Text on the content surface carries `0 1px 2px` shadow and a lighter `--muted-fo
 brightest part of a picture and secondary text about 4:1. Raising see-through lowers this, so the
 controls exist and the owner decides. Solid controls drop the text shadow.
 
+**The one exception (owner, 2026-11-17): the system page's subsystem cards.** 系統 / 子系統 opens as a
+grid of cards, one per module, because there are 40-odd of them and each has a different set of
+facts. Each card is a `.glass-well` fill with a 1 px `--border` hairline (`--line-strong` on hover
+and focus), 10 px radius, no shadow and no blur of its own: the panel's frosted glass is what sits
+behind every card (a backdrop filter of its own would only see the sheet). Nothing else in the
+panel becomes a card because of this.
+
 The login screen is the one card in the panel, two columns (shadcn `login-04`): the form on overlay
 glass and a clear pane that lifts the picture behind it, so it follows the chosen background. Under
 `md` the pane goes and the form stands alone.
@@ -210,6 +217,35 @@ answer is one plain line. Nothing here is invented: a number the Core does not s
   with why it ended and the final standings. "現在沒有人在玩" is an empty snapshot; the module being
   off is the `OffLine` row. It never shows what a game keeps hidden (an answer, the soup's bottom).
   The recent list lives in memory, so a restart empties it.
+
+## Subsystems and their settings
+
+- 系統 / 子系統 (`pages/system/SystemPage.tsx`): the cards above, in sections 她, 玩, 平台, 系統 (section
+  title 15 with a muted count), three columns from `xl`, two from `md`, one on phones. A card, top
+  down: the module's icon (`lib/module-icons.ts`: a lucide name the module chose; any other name or
+  none is `Box`) in a 28 px neutral square, the name (15 semibold, links to the module) over its id
+  in mono, the state as a dot and its word at the right; up to four facts, label 12 over value 14
+  (never a big number); one line of what waits (a save waiting for her to finish singing), else the
+  last error or why it is not running (primary, `role="alert"`), else the next thing; then 設定 ›
+  (or 詳情 ›) and up to two quick actions as small neutral buttons. An off module dims and keeps
+  only 啟用. A `Segmented` with two icons (格子 / 清單) at the toolbar's right switches to the table,
+  remembered per browser (`miyoria.panel.system.view`); the filter has 有設定.
+- 一個子系統 (`/system/$id`, `pages/system/ModulePage.tsx`): the header keeps 運作 / 系統 and carries
+  重新啟動 / 停用. The page: a line with back, icon, name 15, state and id; 依賴 and what restarts with
+  it; the card's facts in four columns, its note and actions. Then 設定: a 13 semibold title per
+  group, a field per row (label in a 12 rem column on `md`, stacked on phones; the control; help
+  under it; 「面板改過 · 檔案:X」 with 還原成檔案的值; Core's refusal in primary under the field). A
+  changed field gets a 6 px primary dot by its label. While anything is unsaved, a band sticks to the
+  bottom of the sheet (`--line-strong` border, a darker fill with a blur of what scrolls under it):
+  「有 N 項沒存」, 取消 and the one primary button 「儲存並重新啟動 X」, which confirms first when the
+  restart will wait for a guard or a field is marked dangerous. Then 變更紀錄: when and who in the
+  label column, `label 舊 → 新` per change, 復原這次 / 回到這次之前 behind a confirm.
+- Controls per kind (`setting-fields.tsx`): `Switch`; numbers in a 8 rem box with the unit (小時,
+  分鐘, the currency, %) beside it; `Segmented` for a select of up to four and for weekdays (日 一 …
+  六), `Select` beyond; `type="time"`; the channel picker is a `Popover` + `Command` grouped by server
+  and category, picked channels as chips with ×, a channel she cannot use shown disabled with why, a
+  stored one that is gone shown as 找不到這個頻道 and its id. Read only without
+  `admin.settings.<id>`, with one line saying so.
 
 ## People
 
