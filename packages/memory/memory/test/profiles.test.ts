@@ -307,13 +307,13 @@ describe("person profiles from the heart (docs/design/v5-heart.md §2.9)", () =>
         ease: "自在",
         rapport: "有點默契",
       },
-      // Her words are still written to the card until step 4: the card's first.
-      feeling: "很可靠",
+      // Her words are the heart's for anyone with a row: the card's are not read.
+      feeling: "很會煮飯",
       call_name: "空空",
     });
     const text = await t.profiles.render(where, 2000);
     expect(text).toContain(
-      '<person name="Sora" relation="好朋友" level="60/1000" trust="信任" familiar="熟" respect="欣賞" ease="自在" rapport="有點默契" call_as="空空" impression="很可靠"',
+      '<person name="Sora" relation="好朋友" level="60/1000" trust="信任" familiar="熟" respect="欣賞" ease="自在" rapport="有點默契" call_as="空空" impression="很會煮飯"',
     );
     // The values that move by the day are block 7's, not this cached block's.
     expect(text).not.toMatch(/心結|想念|好感/);

@@ -456,8 +456,8 @@ function personAttrs(
   const view = p.person === null ? null : (src.heart?.view(p.person) ?? null);
   if (view !== null) {
     // The heart's row (docs/design/v5-heart.md §2.9): the tier, the level and the slow values as
-    // words; the fast ones are block 7's. Her words are still written where they were until
-    // step 4 (the card, `social`'s call name): those first, the heart's after.
+    // words; the fast ones are block 7's. Her words (call name, impression, stance) are the
+    // heart's too: the nightly reflection, `set_call_name` and the panel write them there.
     if (view.blocked) return null;
     const words = heartWords(view);
     attrs.relation = relationshipLabel({ affinity: view.bond, familiarity: view.familiarity });
@@ -468,12 +468,10 @@ function personAttrs(
     attrs.respect = words.respect;
     attrs.ease = words.ease;
     attrs.rapport = words.rapport;
-    const callName =
-      card?.call_name || src.attitude?.(p.account)?.call_name || view.call_name || null;
-    if (callName) attrs.call_as = safeName(callName, 16);
-    const impression = (card?.feeling ?? "").trim() || view.impression.trim();
+    if (view.call_name) attrs.call_as = safeName(view.call_name, 16);
+    const impression = view.impression.trim();
     if (impression !== "") attrs.impression = short(impression, MAX_FEELING);
-    const stance = (card?.stance ?? "").trim() || view.stance.trim();
+    const stance = view.stance.trim();
     if (stance !== "") attrs.stance = short(stance, MAX_STANCE);
   } else if (card !== null) {
     attrs.relation = card.label;

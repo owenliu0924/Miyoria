@@ -185,10 +185,11 @@ export class Profiles implements PersonProfiles {
       points.push({ text: line, origin: "experienced", said_by: null });
     }
 
-    // Her words (call name, impression, stance) are still written where they were until the
-    // nightly reflection writes `heart_person` (step 4): the live ones first, the heart's after.
+    // Her words (call name, impression, stance) are the heart's for anyone with a row: the
+    // nightly reflection, `set_call_name` and the panel write them there.
     const said = (...texts: (string | null | undefined)[]) =>
       texts.find((t) => t !== null && t !== undefined && t.trim() !== "") ?? null;
+    const heartSaid = (text: string | null) => (text === null || text.trim() === "" ? null : text);
     const words = view === null ? null : heartWords(view);
     return {
       person,
@@ -213,9 +214,10 @@ export class Profiles implements PersonProfiles {
               ease: words.ease,
               rapport: words.rapport,
             },
-      call_name: said(card?.call_name, attitude?.call_name, view?.call_name),
-      feeling: said(card?.feeling, view?.impression),
-      stance: said(card?.stance, view?.stance),
+      call_name:
+        view !== null ? heartSaid(view.call_name) : said(card?.call_name, attitude?.call_name),
+      feeling: view !== null ? heartSaid(view.impression) : said(card?.feeling),
+      stance: view !== null ? heartSaid(view.stance) : said(card?.stance),
       last_seen:
         seen.at === null ? fallbackSeen(card, attitude, seen.stretchStart) : toTimestamp(seen.at),
       last_place: seen.place,
