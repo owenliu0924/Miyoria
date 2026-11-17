@@ -193,6 +193,15 @@ export function drawCard(input: DrawInput): DrawnCard {
   return { rarity, parts, expression, foil: rarity === "SSR", seed, pity_hit: pityHit };
 }
 
+/** What a card keeps of its draw (`cards_card.parts`): enough to draw its picture again. */
+export interface DrawSnapshot {
+  parts: DrawnPart[];
+  expression: Expression;
+  /** SSR, or a shine bought for it. */
+  foil: boolean;
+  seed: number;
+}
+
 /** The wished parts a card has, in the wishlist's order. */
 export function wishedOn(card: Pick<DrawnCard, "parts">, wishlist: readonly string[]): string[] {
   const ids = new Set(card.parts.map((p) => p.id));

@@ -44,12 +44,16 @@
 // and someone that the nightly reflection weighs is one `heart.evidence`, kept a year
 // (`HEART_LOG_EVENTS`, docs/design/v5-heart.md §2.2).
 //
+// Every card she gives is one `cards.drawn`, appended with its `cards_card` row, and a series of the
+// dex completed one `cards.titled` (`CARDS_EVENTS`): in the person's DM scope, kept a year.
+//
 // A definition named `<prefix>.*` is a family: it gives its scope and tier to every type under
 // `<prefix>.` that has no definition of its own (`audit.module.disable` takes `audit.*`'s).
 
 import {
   ARTIFACT_EVENTS,
   AuditRecorded,
+  CARDS_EVENTS,
   CHAT_EVENTS,
   defineEvent,
   EconomyPosted,
@@ -238,6 +242,7 @@ export function coreEventRegistry(): EventRegistry {
     IdentityImported,
     EconomyPosted,
     ...HEART_LOG_EVENTS,
+    ...CARDS_EVENTS,
   );
 }
 

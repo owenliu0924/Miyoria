@@ -18,7 +18,14 @@ import {
 
 const T0 = Date.UTC(2026, 10, 17, 2, 0, 0);
 const clock = { now: () => T0 };
-const FACE = { name: "小明", call_name: null, line: null, stamp: null };
+const FACE = {
+  name: "小明",
+  avatar_url: null,
+  call_name: null,
+  line: null,
+  stamp: null,
+  fields: [],
+};
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {

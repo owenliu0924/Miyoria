@@ -1,40 +1,15 @@
 // The `cards` plugin's migrations (docs/design/v5-data.md §3.2, docs/design/v5-play.md §2, §6.3).
-// Never edited after they are released: the runner refuses a database whose recorded checksum
-// differs. A later change of the catalogue is a new migration (or a row written with its event),
-// never an edit of migration 2.
 //
-// - `cards_card`: one row per card. The drawn parts, her expression, foil and the pose's seed are a
-//   snapshot (`parts`), as are the words on it (`face`) and the relationship it shows
-//   (`relationship`, words only, never the raw bond); `artifact_id` is its picture once rendered.
-// - `cards_parts`: the catalogue a draw picks from (`catalogue.ts`), seeded by migration 2.
-// - `cards_pity`: per person, cards in a row without an SR-or-better part.
-// - `cards_dex`: per person and part, when it was first drawn, on which card, and how often.
-// - `cards_wishlist`: per person, at most three parts (`position` 1..3).
-// - `cards_titles`: per person, the series they completed and the title it gave; private unless
-//   they make it public.
-//
-// No foreign key to `persons`, like the heart's and the ledger's tables: forgetting a person
-// deletes their rows through the plugin's hook (`store.ts`). Times are epoch microseconds.
+// Generated from the Drizzle tables in `schema.ts` with `pnpm --filter @miyoria/store schema:sql
+// cards` (drizzle-kit, plus `STRICT`), then the catalogue of `catalogue.ts` seeded by hand
+// (`CARDS_CATALOGUE_SQL`; a test keeps it equal to `SEED_PARTS`). Never edited after they are
+// released: the runner refuses a database whose recorded checksum differs. A later change of the
+// catalogue is a new migration, never an edit of this one. The store's drift test proves the
+// migrated database and the Drizzle tables agree.
 
 import type { PluginSchema } from "@miyoria/store";
 
-const INIT = `CREATE TABLE \`cards_parts\` (
-	\`id\` text PRIMARY KEY,
-	\`slot\` text NOT NULL,
-	\`rarity\` text NOT NULL,
-	\`series\` text,
-	\`name\` text NOT NULL,
-	\`weight\` real DEFAULT 1 NOT NULL,
-	\`enabled\` integer DEFAULT 1 NOT NULL,
-	\`drop_only\` integer DEFAULT 0 NOT NULL,
-	\`blank\` integer DEFAULT 0 NOT NULL,
-	CONSTRAINT "cards_parts_slot_check" CHECK("slot" IN ('hand', 'accessory', 'outfit', 'pose', 'background')),
-	CONSTRAINT "cards_parts_rarity_check" CHECK("rarity" IN ('N', 'R', 'SR', 'SSR')),
-	CONSTRAINT "cards_parts_weight_check" CHECK("weight" > 0),
-	CONSTRAINT "cards_parts_flags_check" CHECK("enabled" IN (0, 1) AND "drop_only" IN (0, 1) AND "blank" IN (0, 1))
-) STRICT;
-
-CREATE TABLE \`cards_card\` (
+const TABLES = `CREATE TABLE \`cards_card\` (
 	\`serial\` text PRIMARY KEY,
 	\`person_id\` text NOT NULL,
 	\`kind\` text NOT NULL,
@@ -44,12 +19,51 @@ CREATE TABLE \`cards_card\` (
 	\`relationship\` text DEFAULT '{}' NOT NULL,
 	\`artifact_id\` text,
 	\`price\` integer DEFAULT 0 NOT NULL,
-	\`pity_hit\` integer DEFAULT 0 NOT NULL,
+	\`pity_hit\` integer DEFAULT false NOT NULL,
 	\`wished\` text DEFAULT '[]' NOT NULL,
+	\`frame\` text,
 	\`created_at\` integer NOT NULL,
 	CONSTRAINT "cards_card_kind_check" CHECK("kind" IN ('daily', 'milestone', 'keepsake', 'drop')),
 	CONSTRAINT "cards_card_rarity_check" CHECK("rarity" IN ('N', 'R', 'SR', 'SSR')),
-	CONSTRAINT "cards_card_price_check" CHECK("price" >= 0 AND "pity_hit" IN (0, 1))
+	CONSTRAINT "cards_card_price_check" CHECK("price" >= 0)
+) STRICT;
+
+CREATE TABLE \`cards_dex\` (
+	\`person_id\` text NOT NULL,
+	\`part_id\` text NOT NULL,
+	\`first_at\` integer NOT NULL,
+	\`first_card\` text,
+	\`count\` integer DEFAULT 1 NOT NULL,
+	CONSTRAINT \`cards_dex_pk\` PRIMARY KEY(\`person_id\`, \`part_id\`),
+	CONSTRAINT \`fk_cards_dex_part_id_cards_parts_id_fk\` FOREIGN KEY (\`part_id\`) REFERENCES \`cards_parts\`(\`id\`),
+	CONSTRAINT "cards_dex_count_check" CHECK("count" >= 1)
+) STRICT;
+
+CREATE TABLE \`cards_legacy\` (
+	\`id\` text PRIMARY KEY,
+	\`account_id\` text NOT NULL,
+	\`item\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`rarity\` text NOT NULL,
+	\`series\` text,
+	\`source\` text NOT NULL,
+	\`acquired_at\` integer NOT NULL,
+	CONSTRAINT \`fk_cards_legacy_account_id_accounts_id_fk\` FOREIGN KEY (\`account_id\`) REFERENCES \`accounts\`(\`id\`) ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE \`cards_parts\` (
+	\`id\` text PRIMARY KEY,
+	\`slot\` text NOT NULL,
+	\`rarity\` text NOT NULL,
+	\`series\` text,
+	\`name\` text NOT NULL,
+	\`weight\` real DEFAULT 1 NOT NULL,
+	\`enabled\` integer DEFAULT true NOT NULL,
+	\`drop_only\` integer DEFAULT false NOT NULL,
+	\`blank\` integer DEFAULT false NOT NULL,
+	CONSTRAINT "cards_parts_slot_check" CHECK("slot" IN ('hand', 'accessory', 'outfit', 'pose', 'background')),
+	CONSTRAINT "cards_parts_rarity_check" CHECK("rarity" IN ('N', 'R', 'SR', 'SSR')),
+	CONSTRAINT "cards_parts_weight_check" CHECK("weight" > 0)
 ) STRICT;
 
 CREATE TABLE \`cards_pity\` (
@@ -60,45 +74,37 @@ CREATE TABLE \`cards_pity\` (
 	CONSTRAINT "cards_pity_check" CHECK("since" >= 0 AND "drawn" >= 0)
 ) STRICT;
 
-CREATE TABLE \`cards_dex\` (
-	\`person_id\` text NOT NULL,
-	\`part_id\` text NOT NULL REFERENCES \`cards_parts\`(\`id\`),
-	\`first_at\` integer NOT NULL,
-	\`first_card\` text,
-	\`count\` integer DEFAULT 1 NOT NULL,
-	PRIMARY KEY (\`person_id\`, \`part_id\`),
-	CONSTRAINT "cards_dex_count_check" CHECK("count" >= 1)
-) STRICT;
-
-CREATE TABLE \`cards_wishlist\` (
-	\`person_id\` text NOT NULL,
-	\`part_id\` text NOT NULL REFERENCES \`cards_parts\`(\`id\`),
-	\`position\` integer NOT NULL,
-	\`added_at\` integer NOT NULL,
-	PRIMARY KEY (\`person_id\`, \`part_id\`),
-	CONSTRAINT "cards_wishlist_position_check" CHECK("position" BETWEEN 1 AND 3)
-) STRICT;
-
 CREATE TABLE \`cards_titles\` (
 	\`person_id\` text NOT NULL,
 	\`series\` text NOT NULL,
 	\`title\` text NOT NULL,
 	\`card\` text,
-	\`public\` integer DEFAULT 0 NOT NULL,
+	\`public\` integer DEFAULT false NOT NULL,
 	\`earned_at\` integer NOT NULL,
-	PRIMARY KEY (\`person_id\`, \`series\`),
-	CONSTRAINT "cards_titles_public_check" CHECK("public" IN (0, 1))
+	CONSTRAINT \`cards_titles_pk\` PRIMARY KEY(\`person_id\`, \`series\`)
 ) STRICT;
 
-CREATE INDEX \`cards_card_person_idx\` ON \`cards_card\` (\`person_id\`, \`created_at\`);
+CREATE TABLE \`cards_wishlist\` (
+	\`person_id\` text NOT NULL,
+	\`part_id\` text NOT NULL,
+	\`position\` integer NOT NULL,
+	\`added_at\` integer NOT NULL,
+	CONSTRAINT \`cards_wishlist_pk\` PRIMARY KEY(\`person_id\`, \`part_id\`),
+	CONSTRAINT \`fk_cards_wishlist_part_id_cards_parts_id_fk\` FOREIGN KEY (\`part_id\`) REFERENCES \`cards_parts\`(\`id\`),
+	CONSTRAINT "cards_wishlist_position_check" CHECK("position" BETWEEN 1 AND 3)
+) STRICT;
 
-CREATE INDEX \`cards_card_day_idx\` ON \`cards_card\` (\`person_id\`, \`kind\`, \`created_at\`);
+CREATE INDEX \`cards_card_person_idx\` ON \`cards_card\` (\`person_id\`,\`created_at\`);
 
-CREATE UNIQUE INDEX \`cards_wishlist_position_idx\` ON \`cards_wishlist\` (\`person_id\`, \`position\`);
+CREATE INDEX \`cards_card_day_idx\` ON \`cards_card\` (\`person_id\`,\`kind\`,\`created_at\`);
+
+CREATE INDEX \`cards_legacy_account_idx\` ON \`cards_legacy\` (\`account_id\`,\`acquired_at\`);
+
+CREATE UNIQUE INDEX \`cards_wishlist_position_idx\` ON \`cards_wishlist\` (\`person_id\`,\`position\`);
 `;
 
-/** The catalogue of `SEED_PARTS` (`catalogue.ts`), as released; a test keeps the two equal. */
-const CATALOGUE = `INSERT INTO \`cards_parts\` (\`id\`, \`slot\`, \`rarity\`, \`series\`, \`name\`, \`weight\`, \`enabled\`, \`drop_only\`, \`blank\`) VALUES
+/** The catalogue of `SEED_PARTS` (`catalogue.ts`), as released, after the generated tables. */
+export const CARDS_CATALOGUE_SQL = `INSERT INTO \`cards_parts\` (\`id\`, \`slot\`, \`rarity\`, \`series\`, \`name\`, \`weight\`, \`enabled\`, \`drop_only\`, \`blank\`) VALUES
 	('hand.none', 'hand', 'N', NULL, '空手', 1, 1, 0, 1),
 	('hand.finger', 'hand', 'R', 'hands', '豎食指', 1, 1, 0, 0),
 	('hand.chest', 'hand', 'R', 'hands', '撫胸', 1, 1, 0, 0),
@@ -139,8 +145,6 @@ const CATALOGUE = `INSERT INTO \`cards_parts\` (\`id\`, \`slot\`, \`rarity\`, \`
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
-  migrations: [
-    { version: 1, name: "init", sql: INIT },
-    { version: 2, name: "catalogue", sql: CATALOGUE },
-  ],
+  requires: ["identity"],
+  migrations: [{ version: 1, name: "init", sql: `${TABLES}\n${CARDS_CATALOGUE_SQL}` }],
 };

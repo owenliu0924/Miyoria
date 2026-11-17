@@ -7,7 +7,8 @@
 // - `odds.ts`: the public odds table, from the catalogue and the draw's own helpers.
 // - `dex.ts`: series progress and titles, and what a wishlist may hold.
 // - `config.ts`: `[modules.cards]` (price, daily cap, pity, rarity weights).
-// - `migrations.ts`, `store.ts`: the `cards` store plugin (`cards_card`, `cards_parts`,
+// - `legacy.ts`: the old collectibles, kept as the closed series 舊收藏.
+// - `schema.ts`, `migrations.ts`, `store.ts`: the `cards` store plugin (`cards_card`, `cards_parts`,
 //   `cards_pity`, `cards_dex`, `cards_wishlist`, `cards_titles`) and the transaction that writes a
 //   card with its pity, dex, titles and events (`events.ts`).
 // - `wallet.ts`: the port through which a card is paid (`CardWalletKey`, the economy's to provide).
@@ -47,6 +48,7 @@ export {
   type DrawnCard,
   type DrawnPart,
   type DrawRules,
+  type DrawSnapshot,
   drawCard,
   drawnPart,
   headlineSlots,
@@ -71,7 +73,8 @@ export {
   titledWrite,
 } from "./events.js";
 export { EXPRESSIONS, type Expression, expressionsFor } from "./expressions.js";
-export { cardsSchema } from "./migrations.js";
+export { LEGACY_ITEMS, LEGACY_SERIES, type LegacyItem } from "./legacy.js";
+export { CARDS_CATALOGUE_SQL, cardsSchema } from "./migrations.js";
 export { CardsKey, CardsModule, type CardsModuleOptions } from "./module.js";
 export {
   type OddsPart,
@@ -82,6 +85,17 @@ export {
   shownPercents,
 } from "./odds.js";
 export { cardRelationship } from "./relationship.js";
+export {
+  type CardsCardRow,
+  type CardsPartRow,
+  cardsCard,
+  cardsDex,
+  cardsLegacy,
+  cardsParts,
+  cardsPity,
+  cardsTitles,
+  cardsWishlist,
+} from "./schema.js";
 export { newSerial } from "./serial.js";
 export {
   CARD_TEXTS,
@@ -96,6 +110,7 @@ export {
   CARD_KINDS,
   CardCapError,
   type CardFace,
+  type CardField,
   type CardKind,
   type CardRecord,
   type CardRelationship,

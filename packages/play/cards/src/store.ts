@@ -1,5 +1,5 @@
-// The `cards` plugin's tables on the store's database (`migrations.ts`): the catalogue, the cards,
-// the pity, the dex, wishlists and titles (`CardStore`).
+// The `cards` plugin's tables on the store's database (`schema.ts`): the catalogue, the cards,
+// the pity, the dex, wishlists, titles and the old collectibles (`CardStore`).
 //
 // A card is written by `issue` only: in one `Db.tx` it checks the day's cap again, reads the pity,
 // the catalogue and the wishlist, draws (`draw.ts`), writes the card, moves the pity, adds the
@@ -7,33 +7,30 @@
 // `cards.titled`) to the event log, as the heart writes `heart_person` with `heart.changed`. Paying
 // for it is the service's (`service.ts`), outside the transaction.
 //
-// The tables are written in plain SQL on the store's connection (`Db.all/get/run`), not Drizzle,
-// whose package this one does not depend on.
-//
 // Core's store opens this plugin (`STORE_PLUGINS`); the module `cards` (`module.ts`) owns it. Cards
 // are not tradable: nothing here moves a card to another person except a merge of two persons
 // that turned out to be one.
 
 import {
+  accounts,
   type CategoryData,
   type Db,
   type EventStore,
-  fromMicros,
   type PersonForget,
   type PersonHookResult,
   type PersonMerge,
-  type Row,
   type StorePlugin,
   tablePart,
-  toMicros,
 } from "@miyoria/store";
 import { type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
+import { and, asc, count, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { isRarity, isSlot, type Part, type Rarity } from "./catalogue.js";
 import { completedBy, type WishlistProblem, wishlistProblem } from "./dex.js";
 import {
   CardsError,
   type DrawnPart,
   type DrawRules,
+  type DrawSnapshot,
   drawCard,
   nextSince,
   type PityView,
@@ -43,21 +40,43 @@ import {
 } from "./draw.js";
 import { drawnWrite, titledWrite } from "./events.js";
 import type { Expression } from "./expressions.js";
+import { LEGACY_ITEMS, type LegacyItem } from "./legacy.js";
 import { cardsSchema } from "./migrations.js";
+import {
+  type CardsCardRow,
+  type CardsPartRow,
+  cardsCard,
+  cardsDex,
+  cardsLegacy,
+  cardsParts,
+  cardsPity,
+  cardsTitles,
+  cardsWishlist,
+} from "./schema.js";
 
 export const CARD_KINDS = ["daily", "milestone", "keepsake", "drop"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
+
+/** A field she added to a card: her own label and text. */
+export interface CardField {
+  label: string;
+  text: string;
+}
 
 /** The words on a card besides the relationship: who it is for and what she wrote. */
 export interface CardFace {
   /** Their name as she knows them. */
   name: string;
+  /** Their picture when the card was issued; `null`: none. */
+  avatar_url: string | null;
   /** What she calls them; `null`: their name. */
   call_name: string | null;
   /** The line she wrote on it; `null`: none. */
   line: string | null;
   /** Her stamp; `null`: none. */
   stamp: string | null;
+  /** Fields she named herself (at most three). */
+  fields: CardField[];
 }
 
 /**
@@ -94,6 +113,8 @@ export interface CardRecord {
   pity_hit: boolean;
   /** Wished parts it has. */
   wished: string[];
+  /** The frame it was issued in; `null`: none. */
+  frame: string | null;
   created_at: Timestamp;
 }
 
@@ -130,6 +151,10 @@ export interface IssueInput {
   now: number;
   /** At most `max` cards of `kind` since `since` (epoch ms): checked inside the transaction. */
   cap?: { max: number; since: number };
+  /** The frame they chose; default none. */
+  frame?: string | null;
+  /** A shine they bought for it (an SSR card shines anyway). */
+  foil?: boolean;
 }
 
 /** What `issue` did. */
@@ -149,102 +174,63 @@ export class CardCapError extends CardsError {
 
 // ---- rows -----------------------------------------------------------------------------------
 
-const str = (row: Row, column: string): string => {
-  const v = row[column];
-  if (typeof v !== "string") throw new CardsError(`cards column \`${column}\` is not text`);
-  return v;
-};
-
-const optStr = (row: Row, column: string): string | null => {
-  const v = row[column];
-  return v === null || v === undefined ? null : str(row, column);
-};
-
-const num = (row: Row, column: string): number => {
-  const v = row[column];
-  if (typeof v === "number") return v;
-  if (typeof v === "bigint") return Number(v);
-  throw new CardsError(`cards column \`${column}\` is not a number`);
-};
-
-function json<T>(row: Row, column: string): T {
-  try {
-    return JSON.parse(str(row, column)) as T;
-  } catch (cause) {
-    throw new CardsError(`cards column \`${column}\` is not JSON`, { cause });
-  }
-}
-
-function partOf(row: Row): Part {
-  const slot = str(row, "slot");
-  const rarity = str(row, "rarity");
-  if (!isSlot(slot) || !isRarity(rarity)) {
-    throw new CardsError(`part \`${str(row, "id")}\` has slot ${slot}, rarity ${rarity}`);
+function partOf(row: CardsPartRow): Part {
+  if (!isSlot(row.slot) || !isRarity(row.rarity)) {
+    throw new CardsError(`part \`${row.id}\` has slot ${row.slot}, rarity ${row.rarity}`);
   }
   return {
-    id: str(row, "id"),
-    slot,
-    rarity,
-    series: optStr(row, "series"),
-    name: str(row, "name"),
-    weight: num(row, "weight"),
-    enabled: num(row, "enabled") === 1,
-    drop_only: num(row, "drop_only") === 1,
-    blank: num(row, "blank") === 1,
+    id: row.id,
+    slot: row.slot,
+    rarity: row.rarity,
+    series: row.series,
+    name: row.name,
+    weight: row.weight,
+    enabled: row.enabled,
+    drop_only: row.drop_only,
+    blank: row.blank,
   };
 }
 
-/** What `cards_card.parts` holds. */
-interface DrawSnapshot {
-  parts: DrawnPart[];
-  expression: Expression;
-  foil: boolean;
-  seed: number;
-}
-
-function cardOf(row: Row): CardRecord {
-  const drawn = json<DrawSnapshot>(row, "parts");
-  const rarity = str(row, "rarity");
-  if (!isRarity(rarity))
-    throw new CardsError(`card \`${str(row, "serial")}\` has rarity ${rarity}`);
+function cardOf(row: CardsCardRow): CardRecord {
+  if (!isRarity(row.rarity))
+    throw new CardsError(`card \`${row.serial}\` has rarity ${row.rarity}`);
+  const face = row.face as Partial<CardFace>;
   return {
-    serial: str(row, "serial"),
-    person: str(row, "person_id"),
-    kind: str(row, "kind") as CardKind,
-    rarity,
-    parts: drawn.parts,
-    expression: drawn.expression,
-    foil: drawn.foil,
-    seed: drawn.seed,
-    face: json<CardFace>(row, "face"),
-    relationship: json<CardRelationship>(row, "relationship"),
-    artifact_id: optStr(row, "artifact_id"),
-    price: num(row, "price"),
-    pity_hit: num(row, "pity_hit") === 1,
-    wished: json<string[]>(row, "wished"),
-    created_at: fromMicros(num(row, "created_at")),
+    serial: row.serial,
+    person: row.person_id,
+    kind: row.kind as CardKind,
+    rarity: row.rarity,
+    parts: row.parts.parts,
+    expression: row.parts.expression,
+    foil: row.parts.foil,
+    seed: row.parts.seed,
+    face: {
+      name: face.name ?? "",
+      avatar_url: face.avatar_url ?? null,
+      call_name: face.call_name ?? null,
+      line: face.line ?? null,
+      stamp: face.stamp ?? null,
+      fields: face.fields ?? [],
+    },
+    relationship: row.relationship as unknown as CardRelationship,
+    artifact_id: row.artifact_id,
+    price: row.price,
+    pity_hit: row.pity_hit,
+    wished: row.wished,
+    frame: row.frame,
+    created_at: row.created_at,
   };
 }
 
-const micros = (ms: number): number => toMicros(toTimestamp(ms));
+const at = (ms: number): Timestamp => toTimestamp(ms);
 
-/** `$i0, $i1, ...` for `ids`, with their parameters. */
-function inList(ids: readonly string[]): [string, Record<string, string>] {
-  const params: Record<string, string> = {};
-  ids.forEach((id, i) => {
-    params[`i${i}`] = id;
-  });
-  return [ids.map((_, i) => `$i${i}`).join(", "), params];
+/** The ids of the accounts of `persons`, as a subquery. */
+function accountsOf(db: Db, persons: readonly PersonId[]) {
+  return db.orm
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(inArray(accounts.person_id, [...persons]));
 }
-
-/** The person's tables, in the order a forget deletes them. */
-const PERSON_TABLES = [
-  "cards_card",
-  "cards_pity",
-  "cards_dex",
-  "cards_wishlist",
-  "cards_titles",
-] as const;
 
 // ---- the store ------------------------------------------------------------------------------
 
@@ -259,51 +245,86 @@ export class CardStore {
 
   /** The whole catalogue, by slot then id. */
   catalogue(): Part[] {
-    return this.#db.all("SELECT * FROM cards_parts ORDER BY slot, id").map(partOf);
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select()
+      .from(cardsParts)
+      .orderBy(asc(cardsParts.slot), asc(cardsParts.id))
+      .all()
+      .map(partOf);
   }
 
   card(serial: string): CardRecord | null {
-    const row = this.#db.get("SELECT * FROM cards_card WHERE serial = $serial", { serial });
+    this.#db.ensureOpen();
+    const row = this.#db.orm.select().from(cardsCard).where(eq(cardsCard.serial, serial)).get();
     return row === undefined ? null : cardOf(row);
   }
 
   /** A person's cards, newest first; `before`: older than that card (the next page). */
   cards(person: PersonId, options: { limit?: number; before?: string } = {}): CardRecord[] {
+    this.#db.ensureOpen();
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
     const before = options.before === undefined ? null : this.card(options.before);
-    const rows = before
-      ? this.#db.all(
-          "SELECT * FROM cards_card WHERE person_id = $person AND (created_at < $at OR (created_at = $at AND serial < $serial)) ORDER BY created_at DESC, serial DESC LIMIT $limit",
-          { person, at: micros(Date.parse(before.created_at)), serial: before.serial, limit },
+    const C = cardsCard;
+    const older = before
+      ? or(
+          lt(C.created_at, before.created_at),
+          and(eq(C.created_at, before.created_at), lt(C.serial, before.serial)),
         )
-      : this.#db.all(
-          "SELECT * FROM cards_card WHERE person_id = $person ORDER BY created_at DESC, serial DESC LIMIT $limit",
-          { person, limit },
-        );
-    return rows.map(cardOf);
+      : undefined;
+    return this.#db.orm
+      .select()
+      .from(C)
+      .where(and(eq(C.person_id, person), older))
+      .orderBy(desc(C.created_at), desc(C.serial))
+      .limit(limit)
+      .all()
+      .map(cardOf);
+  }
+
+  /** How many cards a person has. */
+  countOf(person: PersonId): number {
+    this.#db.ensureOpen();
+    const row = this.#db.orm
+      .select({ n: count() })
+      .from(cardsCard)
+      .where(eq(cardsCard.person_id, person))
+      .get();
+    return row?.n ?? 0;
   }
 
   /** Cards of `kind` a person got since `since` (epoch ms). */
   countSince(person: PersonId, kind: CardKind, since: number): number {
-    const row = this.#db.get(
-      "SELECT count(*) AS n FROM cards_card WHERE person_id = $person AND kind = $kind AND created_at >= $since",
-      { person, kind, since: micros(since) },
-    );
-    return row === undefined ? 0 : num(row, "n");
+    this.#db.ensureOpen();
+    const C = cardsCard;
+    const row = this.#db.orm
+      .select({ n: count() })
+      .from(C)
+      .where(and(eq(C.person_id, person), eq(C.kind, kind), gte(C.created_at, at(since))))
+      .get();
+    return row?.n ?? 0;
   }
 
   /** Cards in a row without SR or better. */
   pitySince(person: PersonId): number {
-    const row = this.#db.get("SELECT since FROM cards_pity WHERE person_id = $person", { person });
-    return row === undefined ? 0 : num(row, "since");
+    this.#db.ensureOpen();
+    const row = this.#db.orm
+      .select({ since: cardsPity.since })
+      .from(cardsPity)
+      .where(eq(cardsPity.person_id, person))
+      .get();
+    return row?.since ?? 0;
   }
 
   wishlist(person: PersonId): string[] {
-    return this.#db
-      .all("SELECT part_id FROM cards_wishlist WHERE person_id = $person ORDER BY position", {
-        person,
-      })
-      .map((row) => str(row, "part_id"));
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select({ part: cardsWishlist.part_id })
+      .from(cardsWishlist)
+      .where(eq(cardsWishlist.person_id, person))
+      .orderBy(asc(cardsWishlist.position))
+      .all()
+      .map((r) => r.part);
   }
 
   /**
@@ -314,48 +335,63 @@ export class CardStore {
     return this.#write(() => {
       const problem = wishlistProblem(this.catalogue(), ids);
       if (problem !== null) return problem;
-      this.#db.run("DELETE FROM cards_wishlist WHERE person_id = $person", { person });
-      ids.forEach((part, i) => {
-        this.#db.run(
-          "INSERT INTO cards_wishlist (person_id, part_id, position, added_at) VALUES ($person, $part, $position, $at)",
-          { person, part, position: i + 1, at: micros(now) },
-        );
-      });
+      this.#db.orm.delete(cardsWishlist).where(eq(cardsWishlist.person_id, person)).run();
+      if (ids.length > 0) {
+        this.#db.orm
+          .insert(cardsWishlist)
+          .values(
+            ids.map((part, i) => ({
+              person_id: person,
+              part_id: part,
+              position: i + 1,
+              added_at: at(now),
+            })),
+          )
+          .run();
+      }
       return null;
     });
   }
 
   clearWishlist(person: PersonId): number {
     return this.#write(() =>
-      this.#db.run("DELETE FROM cards_wishlist WHERE person_id = $person", { person }),
+      Number(
+        this.#db.orm.delete(cardsWishlist).where(eq(cardsWishlist.person_id, person)).run().changes,
+      ),
     );
   }
 
   /** The parts a person has, first drawn first. */
   dex(person: PersonId): DexEntry[] {
-    return this.#db
-      .all("SELECT * FROM cards_dex WHERE person_id = $person ORDER BY first_at, part_id", {
-        person,
-      })
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select()
+      .from(cardsDex)
+      .where(eq(cardsDex.person_id, person))
+      .orderBy(asc(cardsDex.first_at), asc(cardsDex.part_id))
+      .all()
       .map((row) => ({
-        part: str(row, "part_id"),
-        first_at: fromMicros(num(row, "first_at")),
-        first_card: optStr(row, "first_card"),
-        count: num(row, "count"),
+        part: row.part_id,
+        first_at: row.first_at,
+        first_card: row.first_card,
+        count: row.count,
       }));
   }
 
   titles(person: PersonId): CardTitle[] {
-    return this.#db
-      .all("SELECT * FROM cards_titles WHERE person_id = $person ORDER BY earned_at, series", {
-        person,
-      })
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select()
+      .from(cardsTitles)
+      .where(eq(cardsTitles.person_id, person))
+      .orderBy(asc(cardsTitles.earned_at), asc(cardsTitles.series))
+      .all()
       .map((row) => ({
-        series: str(row, "series"),
-        title: str(row, "title"),
-        card: optStr(row, "card"),
-        public: num(row, "public") === 1,
-        earned_at: fromMicros(num(row, "earned_at")),
+        series: row.series,
+        title: row.title,
+        card: row.card,
+        public: row.public,
+        earned_at: row.earned_at,
       }));
   }
 
@@ -363,10 +399,13 @@ export class CardStore {
   setArtifact(serial: string, artifactId: string): boolean {
     return (
       this.#write(() =>
-        this.#db.run("UPDATE cards_card SET artifact_id = $artifact WHERE serial = $serial", {
-          artifact: artifactId,
-          serial,
-        }),
+        Number(
+          this.#db.orm
+            .update(cardsCard)
+            .set({ artifact_id: artifactId })
+            .where(eq(cardsCard.serial, serial))
+            .run().changes,
+        ),
       ) > 0
     );
   }
@@ -382,8 +421,7 @@ export class CardStore {
       if (input.cap && this.countSince(person, input.kind, input.cap.since) >= input.cap.max) {
         throw new CardCapError(`${person} already has ${input.cap.max} ${input.kind} cards today`);
       }
-      const at = micros(now);
-      const ts = fromMicros(at);
+      const ts = at(now);
       const catalogue = this.catalogue();
       const since = this.pitySince(person);
       const drawn = drawCard({
@@ -394,42 +432,55 @@ export class CardStore {
         random: input.random,
       });
       const wished = wishedOn(drawn, this.wishlist(person));
-      this.#db.run(
-        `INSERT INTO cards_card (serial, person_id, kind, rarity, parts, face, relationship, price, pity_hit, wished, created_at)
-         VALUES ($serial, $person, $kind, $rarity, $parts, $face, $relationship, $price, $pity_hit, $wished, $at)`,
-        {
+      const snapshot: DrawSnapshot = {
+        parts: drawn.parts,
+        expression: drawn.expression,
+        foil: drawn.foil || input.foil === true,
+        seed: drawn.seed,
+      };
+      this.#db.orm
+        .insert(cardsCard)
+        .values({
           serial: input.serial,
-          person,
+          person_id: person,
           kind: input.kind,
           rarity: drawn.rarity,
-          parts: JSON.stringify({
-            parts: drawn.parts,
-            expression: drawn.expression,
-            foil: drawn.foil,
-            seed: drawn.seed,
-          } satisfies DrawSnapshot),
-          face: JSON.stringify(input.face),
-          relationship: JSON.stringify(input.relationship),
+          parts: snapshot,
+          face: { ...input.face },
+          relationship: { ...input.relationship },
           price: input.price,
-          pity_hit: drawn.pity_hit ? 1 : 0,
-          wished: JSON.stringify(wished),
-          at,
-        },
-      );
+          pity_hit: drawn.pity_hit,
+          wished,
+          frame: input.frame ?? null,
+          created_at: ts,
+        })
+        .run();
       const after = nextSince(since, drawn.rarity);
-      this.#db.run(
-        `INSERT INTO cards_pity (person_id, since, drawn, updated_at) VALUES ($person, $since, 1, $at)
-         ON CONFLICT (person_id) DO UPDATE SET since = excluded.since, drawn = drawn + 1, updated_at = excluded.updated_at`,
-        { person, since: after, at },
-      );
+      this.#db.orm
+        .insert(cardsPity)
+        .values({ person_id: person, since: after, drawn: 1, updated_at: ts })
+        .onConflictDoUpdate({
+          target: cardsPity.person_id,
+          set: { since: after, drawn: sql`${cardsPity.drawn} + 1`, updated_at: ts },
+        })
+        .run();
       const before = new Set(this.dex(person).map((e) => e.part));
       const collected = drawn.parts.filter((p) => !p.blank);
       for (const p of collected) {
-        this.#db.run(
-          `INSERT INTO cards_dex (person_id, part_id, first_at, first_card, count) VALUES ($person, $part, $at, $serial, 1)
-           ON CONFLICT (person_id, part_id) DO UPDATE SET count = count + 1`,
-          { person, part: p.id, at, serial: input.serial },
-        );
+        this.#db.orm
+          .insert(cardsDex)
+          .values({
+            person_id: person,
+            part_id: p.id,
+            first_at: ts,
+            first_card: input.serial,
+            count: 1,
+          })
+          .onConflictDoUpdate({
+            target: [cardsDex.person_id, cardsDex.part_id],
+            set: { count: sql`${cardsDex.count} + 1` },
+          })
+          .run();
       }
       const newParts = collected.filter((p) => !before.has(p.id)).map((p) => p.id);
       const owned = new Set([...before, ...newParts]);
@@ -437,10 +488,17 @@ export class CardStore {
       const titles: CardTitle[] = [];
       for (const s of completedBy(catalogue, before, owned)) {
         if (known.has(s.id)) continue;
-        this.#db.run(
-          "INSERT INTO cards_titles (person_id, series, title, card, public, earned_at) VALUES ($person, $series, $title, $serial, 0, $at)",
-          { person, series: s.id, title: s.title, serial: input.serial, at },
-        );
+        this.#db.orm
+          .insert(cardsTitles)
+          .values({
+            person_id: person,
+            series: s.id,
+            title: s.title,
+            card: input.serial,
+            public: false,
+            earned_at: ts,
+          })
+          .run();
         titles.push({
           series: s.id,
           title: s.title,
@@ -474,39 +532,135 @@ export class CardStore {
       }
       const card = this.card(input.serial);
       if (card === null) throw new CardsError(`card ${input.serial} was not written`);
-      return {
-        card,
-        pity: pityView(after, input.rules.pity),
-        new_parts: newParts,
-        titles,
-      };
+      return { card, pity: pityView(after, input.rules.pity), new_parts: newParts, titles };
     });
   }
+
+  // ---- the old collectibles ------------------------------------------------------------------
+
+  /**
+   * Copies the old collectibles (`economy_docs` of kind `item`) into `cards_legacy`, each once (by
+   * the old document's id). Nothing when the economy's table is not there. How many were new.
+   */
+  importLegacy(): number {
+    return this.#write(() => {
+      const table = this.#db.get(
+        "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'economy_docs'",
+      );
+      if (table === undefined) return 0;
+      const rows = this.#db.all(
+        "SELECT d.id, d.owner_account_id, d.data, d.created_at FROM economy_docs d " +
+          "JOIN accounts a ON a.id = d.owner_account_id " +
+          "WHERE d.kind = 'item' AND d.id NOT IN (SELECT id FROM cards_legacy)",
+      );
+      let added = 0;
+      for (const row of rows) {
+        let data: Record<string, unknown> = {};
+        try {
+          data = JSON.parse(String(row.data)) as Record<string, unknown>;
+        } catch {
+          data = {};
+        }
+        const item = typeof data.item === "string" ? data.item : String(row.id);
+        const known = LEGACY_ITEMS[item];
+        const rarity = typeof data.rarity === "string" ? data.rarity : (known?.rarity ?? "N");
+        const source = typeof data.source === "string" ? data.source : "draw";
+        added += this.#db.run(
+          "INSERT OR IGNORE INTO cards_legacy (id, account_id, item, name, rarity, series, source, acquired_at) " +
+            "VALUES ($id, $account, $item, $name, $rarity, $series, $source, $at)",
+          {
+            id: String(row.id),
+            account: String(row.owner_account_id),
+            item,
+            name: known?.name ?? item,
+            rarity,
+            series: known?.series ?? null,
+            source,
+            at: Number(row.created_at),
+          },
+        );
+      }
+      return added;
+    });
+  }
+
+  /** The old collectibles of a person (through their accounts), copies counted together. */
+  legacy(person: PersonId): LegacyItem[] {
+    this.#db.ensureOpen();
+    const L = cardsLegacy;
+    const rows = this.#db.orm
+      .select()
+      .from(L)
+      .where(inArray(L.account_id, accountsOf(this.#db, [person])))
+      .orderBy(asc(L.acquired_at), asc(L.id))
+      .all();
+    const out = new Map<string, LegacyItem>();
+    for (const r of rows) {
+      const seen = out.get(r.item);
+      if (seen) seen.count += 1;
+      else {
+        out.set(r.item, {
+          item: r.item,
+          name: r.name,
+          rarity: r.rarity,
+          series: r.series,
+          count: 1,
+          first_at: r.acquired_at,
+        });
+      }
+    }
+    return [...out.values()];
+  }
+
+  // ---- people ---------------------------------------------------------------------------------
 
   /** Deletes every row of `ids` (a person and everyone merged into them). Rows per table. */
   forgetPerson(ids: readonly PersonId[]): Record<string, number> {
     if (ids.length === 0) return {};
-    const [list, params] = inList(ids);
+    const list = [...ids];
     return this.#write(() => {
-      const counts: Record<string, number> = {};
-      for (const table of PERSON_TABLES) {
-        counts[table] = this.#db.run(`DELETE FROM ${table} WHERE person_id IN (${list})`, params);
-      }
-      return counts;
+      const o = this.#db.orm;
+      return {
+        cards_card: Number(
+          o.delete(cardsCard).where(inArray(cardsCard.person_id, list)).run().changes,
+        ),
+        cards_pity: Number(
+          o.delete(cardsPity).where(inArray(cardsPity.person_id, list)).run().changes,
+        ),
+        cards_dex: Number(
+          o.delete(cardsDex).where(inArray(cardsDex.person_id, list)).run().changes,
+        ),
+        cards_wishlist: Number(
+          o.delete(cardsWishlist).where(inArray(cardsWishlist.person_id, list)).run().changes,
+        ),
+        cards_titles: Number(
+          o.delete(cardsTitles).where(inArray(cardsTitles.person_id, list)).run().changes,
+        ),
+        cards_legacy: Number(
+          o
+            .delete(cardsLegacy)
+            .where(inArray(cardsLegacy.account_id, accountsOf(this.#db, list)))
+            .run().changes,
+        ),
+      };
     });
   }
 
   /**
    * `absorb`'s rows as `keep`'s: the cards move, the pity keeps the longer run, the dex adds up
-   * (earliest first time), the titles join, and `keep`'s wishlist wins when both have one.
+   * (earliest first time), the titles join, and `keep`'s wishlist wins when both have one. The old
+   * collectibles go with their accounts, which identity moves.
    */
   merge(keep: PersonId, absorb: PersonId): PersonHookResult {
     if (keep === absorb) return { counts: {} };
     return this.#write((): PersonHookResult => {
       const p = { keep, absorb };
-      const cards = this.#db.run(
-        "UPDATE cards_card SET person_id = $keep WHERE person_id = $absorb",
-        p,
+      const cards = Number(
+        this.#db.orm
+          .update(cardsCard)
+          .set({ person_id: keep })
+          .where(eq(cardsCard.person_id, absorb))
+          .run().changes,
       );
       this.#db.run(
         `INSERT INTO cards_pity (person_id, since, drawn, updated_at)
@@ -514,7 +668,9 @@ export class CardStore {
          ON CONFLICT (person_id) DO UPDATE SET since = max(since, excluded.since), drawn = drawn + excluded.drawn, updated_at = max(updated_at, excluded.updated_at)`,
         p,
       );
-      const pity = this.#db.run("DELETE FROM cards_pity WHERE person_id = $absorb", { absorb });
+      const pity = Number(
+        this.#db.orm.delete(cardsPity).where(eq(cardsPity.person_id, absorb)).run().changes,
+      );
       this.#db.run(
         `INSERT INTO cards_dex (person_id, part_id, first_at, first_card, count)
          SELECT $keep, part_id, first_at, first_card, count FROM cards_dex WHERE person_id = $absorb
@@ -524,17 +680,25 @@ export class CardStore {
            first_at = min(first_at, excluded.first_at)`,
         p,
       );
-      const dex = this.#db.run("DELETE FROM cards_dex WHERE person_id = $absorb", { absorb });
+      const dex = Number(
+        this.#db.orm.delete(cardsDex).where(eq(cardsDex.person_id, absorb)).run().changes,
+      );
       this.#db.run(
         `INSERT OR IGNORE INTO cards_titles (person_id, series, title, card, public, earned_at)
          SELECT $keep, series, title, card, public, earned_at FROM cards_titles WHERE person_id = $absorb`,
         p,
       );
-      const titles = this.#db.run("DELETE FROM cards_titles WHERE person_id = $absorb", { absorb });
+      const titles = Number(
+        this.#db.orm.delete(cardsTitles).where(eq(cardsTitles.person_id, absorb)).run().changes,
+      );
       if (this.wishlist(keep).length === 0) {
-        this.#db.run("UPDATE cards_wishlist SET person_id = $keep WHERE person_id = $absorb", p);
+        this.#db.orm
+          .update(cardsWishlist)
+          .set({ person_id: keep })
+          .where(eq(cardsWishlist.person_id, absorb))
+          .run();
       }
-      this.#db.run("DELETE FROM cards_wishlist WHERE person_id = $absorb", { absorb });
+      this.#db.orm.delete(cardsWishlist).where(eq(cardsWishlist.person_id, absorb)).run();
       return { counts: { cards, pity, dex, titles } };
     });
   }
@@ -564,6 +728,7 @@ const cardsData: readonly CategoryData[] = [
         price: "num",
         pity_hit: "bool",
         wished: "json",
+        frame: "text",
         created_at: "ts",
       }),
       tablePart("cards_pity", "cards_pity", "node", "updated_at", "person_id", {
@@ -592,6 +757,16 @@ const cardsData: readonly CategoryData[] = [
         card: "text",
         public: "bool",
         earned_at: "ts",
+      }),
+      tablePart("cards_legacy", "cards_legacy", "node", "acquired_at", "account_id, acquired_at", {
+        id: "text",
+        account_id: "text",
+        item: "text",
+        name: "text",
+        rarity: "text",
+        series: "text",
+        source: "text",
+        acquired_at: "ts",
       }),
     ],
   },

@@ -23,7 +23,14 @@ import {
 /** 2026-11-17 10:00 in her time zone (UTC+8). */
 const T0 = Date.UTC(2026, 10, 17, 2, 0, 0);
 const DAY = 86_400_000;
-const FACE = { name: "小明", call_name: null, line: "今天也來了呢", stamp: null };
+const FACE = {
+  name: "小明",
+  avatar_url: null,
+  call_name: null,
+  line: "今天也來了呢",
+  stamp: null,
+  fields: [],
+};
 const FRIEND = {
   tier: "朋友",
   tier_label: "朋友 I",
@@ -191,7 +198,7 @@ describe("a daily card", () => {
     const result = await service().issueDaily("p1", FACE);
     if (!result.ok) throw new Error("refused");
     const [event] = events("cards.drawn");
-    expect(event).toMatchObject({ person_id: "p1", scope: "dm", source: "cards" });
+    expect(event).toMatchObject({ person_id: "p1", scope: "dm", tier: "long", source: "cards" });
     expect(event?.data).toMatchObject({
       serial: result.issued.card.serial,
       rarity: result.issued.card.rarity,
