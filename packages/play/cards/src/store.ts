@@ -76,6 +76,7 @@ import {
   cardsDrop,
   cardsKeepsake,
   cardsLegacy,
+  cardsMilestone,
   cardsParts,
   cardsPending,
   cardsPity,
@@ -250,11 +251,18 @@ export const issueKey = {
   daily: (key: string) => `daily:${key}`,
 } as const;
 
+/** The lowest bond of the tier a milestone card's `issue_key` names; `null` for any other key. */
+function milestoneMin(key: string | null): number | null {
+  if (key === null || !key.startsWith("milestone:")) return null;
+  const min = Number(key.slice("milestone:".length));
+  return Number.isInteger(min) ? min : null;
+}
+
 /** The tier a milestone card was given for; `null` for any other card. */
 export function milestoneTier(card: Pick<CardRecord, "kind" | "issue_key">): BondTier | null {
-  if (card.kind !== "milestone" || card.issue_key === null) return null;
-  const min = Number(card.issue_key.slice("milestone:".length));
-  return BOND_LADDER.find((t) => t.min === min) ?? null;
+  if (card.kind !== "milestone") return null;
+  const min = milestoneMin(card.issue_key);
+  return min === null ? null : (BOND_LADDER.find((t) => t.min === min) ?? null);
 }
 
 /** The kinds of card a day's limit counts (`cards_tally`). */
@@ -458,6 +466,21 @@ export class CardStore {
       .select({ person: cardsKeepsake.person_id })
       .from(cardsKeepsake)
       .where(eq(cardsKeepsake.person_id, person))
+      .get();
+    return row !== undefined;
+  }
+
+  /**
+   * Whether `person` was ever given the milestone card of the tier whose lowest bond is `min`,
+   * deleted since or not.
+   */
+  milestoneGiven(person: PersonId, min: number): boolean {
+    this.#db.ensureOpen();
+    const M = cardsMilestone;
+    const row = this.#db.orm
+      .select({ person: M.person_id })
+      .from(M)
+      .where(and(eq(M.person_id, person), eq(M.tier_min, min)))
       .get();
     return row !== undefined;
   }
@@ -698,6 +721,14 @@ export class CardStore {
         this.#db.orm
           .delete(cardsTally)
           .where(lt(cardsTally.at, at(now - TALLY_KEPT_MS)))
+          .run();
+      }
+      const tier = input.kind === "milestone" ? milestoneMin(key) : null;
+      if (tier !== null) {
+        this.#db.orm
+          .insert(cardsMilestone)
+          .values({ person_id: person, tier_min: tier, given_at: ts })
+          .onConflictDoNothing()
           .run();
       }
       if (input.kind === "keepsake") {
@@ -988,7 +1019,9 @@ export class CardStore {
    * gives them back and deletes the rows within minutes; deleted now, the coins would stay taken.
    * What the day's limits count stays too (`cards_tally`: a person id, a kind and a time, two days
    * at most), so a forget is no way to a fresh day's cards; and a drop they picked up stays taken,
-   * naming nobody (`FORGOTTEN_CLAIMER`), so its channel's day keeps its count.
+   * naming nobody (`FORGOTTEN_CLAIMER`), so its channel's day keeps its count. And so do the tiers
+   * they were given a milestone card for (`cards_milestone`): the heart forgets their tier floor,
+   * and climbing back is no way to a second card for a tier.
    */
   forgetPerson(ids: readonly PersonId[]): Record<string, number> {
     if (ids.length === 0) return {};
@@ -1086,6 +1119,14 @@ export class CardStore {
         .set({ claimed_by: keep })
         .where(eq(cardsDrop.claimed_by, absorb))
         .run();
+      // A tier either was given a milestone card for gives the kept person none again.
+      this.#db.run(
+        `INSERT INTO cards_milestone (person_id, tier_min, given_at)
+         SELECT $keep, tier_min, given_at FROM cards_milestone WHERE person_id = $absorb
+         ON CONFLICT (person_id, tier_min) DO UPDATE SET given_at = min(given_at, excluded.given_at)`,
+        p,
+      );
+      this.#db.orm.delete(cardsMilestone).where(eq(cardsMilestone.person_id, absorb)).run();
       // What the day's limits counted of either is the kept person's.
       this.#db.orm
         .update(cardsTally)
@@ -1178,6 +1219,11 @@ const cardsData: readonly CategoryData[] = [
         claimed_by: "text",
         claimed_at: "ts",
         serial: "text",
+      }),
+      tablePart("cards_milestone", "cards_milestone", "node", "given_at", "person_id, tier_min", {
+        person_id: "text",
+        tier_min: "num",
+        given_at: "ts",
       }),
       tablePart("cards_tally", "cards_tally", "node", "at", "at, person_id", {
         person_id: "text",

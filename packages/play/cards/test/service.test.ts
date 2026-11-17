@@ -551,6 +551,64 @@ describe("a milestone card", () => {
     expect(events("cards.drawn").at(-1)?.data).toMatchObject({ kind: "milestone", price: 0 });
   });
 
+  it("is never given twice for a tier, not after they asked her to forget them", async () => {
+    const cards = service();
+    const asked: number[] = [];
+    expect((await cards.issueMilestone("p1", friends, occasion(asked))).ok).toBe(true);
+    expect(store.milestoneGiven("p1", 15)).toBe(true);
+    expect(store.forgetPerson(["p1"])).toMatchObject({ cards_card: 1 });
+    expect(store.cards("p1")).toEqual([]);
+    // The heart forgot the floor, the bond climbed back: no second card, her words not asked for.
+    expect(await cards.issueMilestone("p1", friends, occasion(asked))).toEqual({
+      ok: false,
+      reason: "not_eligible",
+    });
+    expect(asked).toHaveLength(1);
+    // A tier never reached still gives its card.
+    expect(
+      (await cards.issueMilestone("p1", { min: 45, label: "好朋友" }, occasion(asked))).ok,
+    ).toBe(true);
+  });
+
+  it("merged, is the kept person's: no tier either had gives another", async () => {
+    const cards = service();
+    expect((await cards.issueMilestone("a", friends, occasion([]))).ok).toBe(true);
+    store.merge("k", "a");
+    expect(store.milestoneGiven("k", 15)).toBe(true);
+    expect(store.milestoneGiven("a", 15)).toBe(false);
+    store.forgetPerson(["k"]);
+    expect(await cards.issueMilestone("k", friends, occasion([]))).toEqual({
+      ok: false,
+      reason: "not_eligible",
+    });
+  });
+
+  it("is marked for every milestone card already there when the mark comes (migration 8)", () => {
+    const before = { ...cardsSchema, migrations: cardsSchema.migrations.slice(0, 7) };
+    const old = openTestDb({ identity: true, plugins: [before], clock: { now: () => now } });
+    try {
+      const card = (serial: string, person: string, kind: string, key: string | null, at: number) =>
+        old.db.run(
+          "INSERT INTO cards_card (serial, person_id, kind, rarity, parts, created_at, issue_key) VALUES ($serial, $person, $kind, 'N', '{}', $at, $key)",
+          { serial, person, kind, key, at },
+        );
+      card("MYR-OLD-0000-0001", "p1", "milestone", "milestone:15", 10);
+      card("MYR-OLD-0000-0002", "p1", "milestone", "milestone:45", 20);
+      // A merge's leftover: a milestone card that is no longer the one of its key.
+      card("MYR-OLD-0000-0003", "p2", "milestone", null, 30);
+      card("MYR-OLD-0000-0004", "p2", "daily", "daily:x", 40);
+      migrate(old.db, [identitySchema, cardsSchema]);
+      expect(
+        old.db.all("SELECT person_id, tier_min, given_at FROM cards_milestone ORDER BY tier_min"),
+      ).toEqual([
+        { person_id: "p1", tier_min: 15, given_at: 10 },
+        { person_id: "p1", tier_min: 45, given_at: 20 },
+      ]);
+    } finally {
+      old.close();
+    }
+  });
+
   it("is only for a tier above 認識 on the ladder, and not without a face", async () => {
     const cards = service();
     const asked: number[] = [];

@@ -227,6 +227,23 @@ INSERT INTO \`cards_tally\` (\`person_id\`, \`kind\`, \`at\`)
 	WHERE \`kind\` IN ('daily', 'drop') AND \`created_at\` >= (CAST(strftime('%s', 'now') AS INTEGER) - 172800) * 1000000;
 `;
 
+/**
+ * Migration 8: the tiers each person was given a milestone card for (`cards_milestone`), kept when
+ * they are forgotten so no tier gives a second card; made like migration 3, then filled from the
+ * milestone cards already there (by hand), each at its earliest card.
+ */
+const MILESTONES = `CREATE TABLE \`cards_milestone\` (
+	\`person_id\` text NOT NULL,
+	\`tier_min\` integer NOT NULL,
+	\`given_at\` integer NOT NULL,
+	CONSTRAINT \`cards_milestone_pk\` PRIMARY KEY(\`person_id\`, \`tier_min\`)
+) STRICT;
+
+INSERT OR IGNORE INTO \`cards_milestone\` (\`person_id\`, \`tier_min\`, \`given_at\`)
+	SELECT \`person_id\`, CAST(substr(\`issue_key\`, 11) AS INTEGER), min(\`created_at\`) FROM \`cards_card\`
+	WHERE \`kind\` = 'milestone' AND \`issue_key\` LIKE 'milestone:%' GROUP BY \`person_id\`, \`issue_key\`;
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -239,5 +256,6 @@ export const cardsSchema: PluginSchema = {
     { version: 5, name: "keepsake", sql: KEEPSAKE },
     { version: 6, name: "pending_foil", sql: PENDING_FOIL },
     { version: 7, name: "tally", sql: TALLY },
+    { version: 8, name: "milestones", sql: MILESTONES },
   ],
 };

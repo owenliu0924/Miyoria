@@ -249,5 +249,21 @@ export const cardsTally = sqliteTable(
   ],
 );
 
+/**
+ * The tiers a person was given a milestone card for (§6.1, P4), by the tier's lowest bond: kept
+ * when they ask her to forget them, while the cards go (and the heart's tier floor with them), so
+ * climbing back gives no second card for a tier. It goes with the relationships, as the floor does:
+ * a wipe of those starts the milestones again.
+ */
+export const cardsMilestone = sqliteTable(
+  "cards_milestone",
+  {
+    person_id: text().notNull(),
+    tier_min: integer().notNull(),
+    given_at: micros().notNull(),
+  },
+  (t) => [primaryKey({ name: "cards_milestone_pk", columns: [t.person_id, t.tier_min] })],
+);
+
 export type CardsCardRow = typeof cardsCard.$inferSelect;
 export type CardsPartRow = typeof cardsParts.$inferSelect;

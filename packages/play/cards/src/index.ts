@@ -120,6 +120,7 @@ export {
   cardsDrop,
   cardsKeepsake,
   cardsLegacy,
+  cardsMilestone,
   cardsParts,
   cardsPity,
   cardsTally,

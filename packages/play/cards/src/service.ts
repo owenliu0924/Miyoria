@@ -395,9 +395,10 @@ export class CardService {
   /**
    * The milestone card of `tier` for `person` (docs/design/v5-play.md §6.1, P4): the bond entered
    * a tier it had never reached. One per tier per person, whatever happens after (down and up again
-   * gives nothing new), so at most one per tier above 認識: 15. Free, outside the day's cap, drawn
-   * at the plain odds without moving the pity. `face` is asked for only when there is no such card
-   * yet.
+   * gives nothing new), so at most one per tier above 認識: 15. A tier given a card before whose
+   * card is gone (they asked her to forget them, and the heart's tier floor went with it) gives
+   * none: `not_eligible`. Free, outside the day's cap, drawn at the plain odds without moving the
+   * pity. `face` is asked for only when there is no such card yet.
    */
   issueMilestone(
     person: PersonId,
@@ -408,7 +409,9 @@ export class CardService {
     if (!known || tier.min <= 0) {
       return Promise.resolve({ ok: false, reason: "not_eligible" });
     }
-    return this.#issueFree(person, "milestone", issueKey.milestone(tier.min), face);
+    return this.#issueFree(person, "milestone", issueKey.milestone(tier.min), face, () =>
+      this.#store.milestoneGiven(person, tier.min),
+    );
   }
 
   /**
