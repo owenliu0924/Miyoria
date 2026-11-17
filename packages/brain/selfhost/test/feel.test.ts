@@ -135,7 +135,7 @@ describe("applying a feel block", () => {
       wake: WAKE,
       feel: ["我: 開心 強\nOwen Liu: 羈絆 + 「他記得我想吃布丁」\n阿哲: 好感 + 「他也有買」"],
       people: PEOPLE,
-      line: "Owen Liu: 我帶了布丁",
+      line: { account: acct("1"), name: "Owen Liu", text: "我帶了布丁" },
     });
     expect(out).toMatchObject({ felt: true, applied: 2 });
     expect(rec.appraised).toEqual([
@@ -197,6 +197,30 @@ describe("applying a feel block", () => {
       },
     );
     expect(off).toMatchObject({ felt: false, applied: 0 });
+  });
+
+  it("takes the line as the cause only from the one she feels toward, never in a DM", () => {
+    const { deps: d, rec } = deps();
+    const feel = ["我: 開心 中"];
+    const said = { account: acct("1"), name: "Owen Liu", text: "我住在台南" };
+    // Someone else's line in the place is not the cause of what she feels toward Owen.
+    applyFeel(d, {
+      turn: "t1",
+      context: CTX,
+      wake: WAKE,
+      feel,
+      people: PEOPLE,
+      line: { account: acct("3"), name: "阿哲", text: "我家在高雄" },
+    });
+    // A DM: no line at all, whoever said it.
+    const dm = { platform: "discord", scope: null, channel: "d1", kind: "dm" } as const;
+    applyFeel(d, { turn: "t2", context: dm, wake: WAKE, feel, people: PEOPLE, line: said });
+    applyFeel(d, { turn: "t3", context: CTX, wake: WAKE, feel, people: PEOPLE, line: said });
+    expect(rec.appraised.map((a) => a.events[0]?.cause)).toEqual([
+      "剛剛的對話",
+      "私訊裡的事",
+      "Owen Liu: 我住在台南",
+    ]);
   });
 
   it("takes the cause from the line answered, else from what woke her", () => {

@@ -83,9 +83,23 @@ export interface FeelInput {
   feel: readonly string[];
   /** The people present: who may be named. */
   people: readonly FeelPerson[];
-  /** The line the run answered (`名字: 內容`), for the cause of her emotion; `null`: none. */
-  line: string | null;
+  /** The line the run answered (`answeredLine`), for the cause of her emotion; `null`: none. */
+  line: AnsweredLine | null;
 }
+
+/** The line a run answered and who said it. */
+export interface AnsweredLine {
+  /** Who said it; `null`: not known. */
+  account: AccountRef | null;
+  name: string;
+  text: string;
+}
+
+/**
+ * The cause of her emotion in a DM: the emotion engine keeps it and the prompt shows it wherever
+ * she is, so a line from a DM is never repeated as the cause.
+ */
+export const DM_CAUSE = "私訊裡的事";
 
 /** One proposal as applied. */
 export interface FeelApplied extends FeelProposal {
@@ -134,19 +148,36 @@ export function feelCause(wake: Wake, line: string | null, quote: string | null)
 }
 
 /**
- * The line a run answered, as `名字: 內容`: the newest line that called her, or for a glance the
- * newest line of someone else; `null` for a run nobody's line woke.
+ * The line a run answered: the newest line that called her, or for a glance the newest line of
+ * someone else; `null` for a run nobody's line woke.
  */
 export function answeredLine(
   wake: Wake,
   inputs: readonly IncomingMessage[],
   entries: readonly TranscriptEntry[],
-): string | null {
+): AnsweredLine | null {
   const last = inputs.at(-1);
-  if (last !== undefined) return `${last.author.display_name}: ${last.text}`;
+  if (last !== undefined) {
+    return { account: last.author.account, name: last.author.display_name, text: last.text };
+  }
   if (wake.kind !== "addressed" && wake.kind !== "glance") return null;
   const other = entries.findLast((e) => e.kind === "other" && e.redacted_at === null);
-  return other === undefined ? null : `${other.author ?? ""}: ${other.content}`;
+  return other === undefined
+    ? null
+    : { account: other.account, name: other.author ?? "", text: other.content };
+}
+
+/**
+ * The words of `line` as the cause of her emotion toward `from` (`名字: 內容`): only a line `from`
+ * said themselves, and never one in a DM (the emotion engine shows its causes wherever she is).
+ */
+export function causeLine(
+  context: ContextKey,
+  line: AnsweredLine | null,
+  from: { account: AccountRef } | null,
+): string | null {
+  if (context.kind === "dm" || line === null || from === null || line.account === null) return null;
+  return sameAccount(line.account, from.account) ? `${line.name}: ${line.text}` : null;
 }
 
 /** Reads the blocks and matches their names; applies nothing. */
@@ -225,16 +256,17 @@ export function applyFeel(deps: FeelDeps, input: FeelInput): FeelOutcome {
   if (read.self?.emotion && affect !== null) {
     const from = wakeAuthor(input.wake);
     const toward = from === null ? null : deps.handleOf(from.account, from.name);
+    const cause =
+      input.context.kind === "dm"
+        ? DM_CAUSE
+        : feelCause(
+            input.wake,
+            causeLine(input.context, input.line, from),
+            read.proposals[0]?.quote ?? null,
+          );
     affect.appraise({
       source: "feel",
-      events: [
-        {
-          emotion: read.self.emotion,
-          strength: read.self.strength,
-          toward,
-          cause: feelCause(input.wake, input.line, read.proposals[0]?.quote ?? null),
-        },
-      ],
+      events: [{ emotion: read.self.emotion, strength: read.self.strength, toward, cause }],
       context: input.context,
       at: toTimestamp(deps.now()),
     });
