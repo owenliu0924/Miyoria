@@ -28,6 +28,7 @@ import {
   MindKey,
   type PersonId,
   sameAccount,
+  type TurnCancelCause,
   toTimestamp,
 } from "@miyoria/types";
 import type { Agent } from "../../agent/src/index.js";
@@ -181,6 +182,16 @@ export function causeLine(
 ): string | null {
   if (context.kind === "dm" || line === null || from === null || line.account === null) return null;
   return sameAccount(line.account, from.account) ? `${line.name}: ${line.text}` : null;
+}
+
+/**
+ * Whether the feel of a run that ended is applied. A run cut for a restart (`input`: the person it
+ * answers said more before it said anything) is not: the restarted run answers the same lines and
+ * writes its own, so applying both would count one exchange twice. Every other run that ended,
+ * cancelled or not, is applied with what it wrote.
+ */
+export function feelApplies(run: { cancel: { cause: TurnCancelCause } | null }): boolean {
+  return run.cancel?.cause !== "input";
 }
 
 /** Reads the blocks and matches their names; applies nothing. */

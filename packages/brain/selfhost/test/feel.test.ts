@@ -13,7 +13,14 @@ import type {
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import type { Wake } from "../../self/src/index.js";
-import { answeredLine, applyFeel, type FeelDeps, feelCause, readFeel } from "../src/feel.js";
+import {
+  answeredLine,
+  applyFeel,
+  type FeelDeps,
+  feelApplies,
+  feelCause,
+  readFeel,
+} from "../src/feel.js";
 
 const CTX = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
 const acct = (id: string): AccountRef => ({ platform: "discord", id });
@@ -237,5 +244,14 @@ describe("applying a feel block", () => {
     expect(feelCause({ kind: "glance", lines: 2 }, null, "他說謝謝")).toBe("他說謝謝");
     expect(feelCause({ kind: "self", note: null }, null, null)).toBe("剛剛的對話");
     expect(answeredLine({ kind: "timer", note: "x" }, [], [])).toBeNull();
+  });
+});
+
+describe("which runs' feel is applied", () => {
+  it("not a run cut to be restarted for the same lines; every other run that ended", () => {
+    expect(feelApplies({ cancel: { cause: "input" } })).toBe(false);
+    expect(feelApplies({ cancel: null })).toBe(true);
+    expect(feelApplies({ cancel: { cause: "superseded" } })).toBe(true);
+    expect(feelApplies({ cancel: { cause: "shutdown" } })).toBe(true);
   });
 });

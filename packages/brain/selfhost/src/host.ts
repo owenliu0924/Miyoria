@@ -114,7 +114,7 @@ import {
   wakeAuthor,
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
-import { answeredLine, applyFeel, feelDeps } from "./feel.js";
+import { answeredLine, applyFeel, feelApplies, feelDeps } from "./feel.js";
 import { startIdleCompaction } from "./idle-compaction.js";
 import { ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
@@ -968,7 +968,7 @@ export class SelfHost implements TextRunner {
 
   /** Her `<feel>` blocks of a run that ended, to the emotion engine and the heart (`feel.ts`). */
   #feel(context: ContextKey, session: string, run: LaneRun, result: RunResult): void {
-    if (result.feel.length === 0) return;
+    if (result.feel.length === 0 || !feelApplies(run)) return;
     try {
       const entries = this.transcript.tail(session).entries;
       applyFeel(feelDeps(this.#agent), {
