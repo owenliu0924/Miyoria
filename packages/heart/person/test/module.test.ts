@@ -115,12 +115,14 @@ describe("the migration on start", () => {
     expect(people.get("amy")?.impression).toBe("");
   });
 
-  it("does not move anything into a table that has rows, and remembers that", async () => {
+  it("moves the people without a row also when the table has rows already", async () => {
     const clock = new ManualClock();
     const store = await openStore(clock);
     await oldRecords(store);
     const people = store.plugin(heartTables).people;
+    // Someone counted on an earlier start whose migration failed.
     people.seen("zed", { text: "hi", directed: true, together: true, at: T0 });
+    people.seen("amy", { text: "hi", directed: true, together: true, at: T0 });
     const deps = {
       people,
       settings: store.settings,
@@ -129,8 +131,38 @@ describe("the migration on start", () => {
       now: T0,
       log: { info: () => undefined },
     };
-    expect(await migrateOnStart(deps)).toBeNull();
-    expect(people.has("owen")).toBe(false);
+    const result = await migrateOnStart(deps);
+    expect(result?.rows.map((r) => r.person_id)).toEqual(["owen"]);
+    expect(people.get("owen")?.bond).toBe(60);
+    // Amy had a row: hers stays as it was.
+    expect(people.get("amy")?.bond).toBe(0);
+    expect(await store.settings.get(PROFILE, MIGRATED_KEY)).toMatchObject({ rows: 1 });
+  });
+
+  it("does not record a migration that failed, and the next start tries again", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    await oldRecords(store);
+    const people = store.plugin(heartTables).people;
+    let broken = true;
+    const deps = {
+      people,
+      settings: store.settings,
+      relationships: {
+        list: async (profile: string) => {
+          if (broken) throw new Error("disk went away");
+          return store.relationships.list(profile);
+        },
+        deltasSince: store.relationships.deltasSince.bind(store.relationships),
+      },
+      profile: PROFILE,
+      now: T0,
+      log: { info: () => undefined },
+    };
+    await expect(migrateOnStart(deps)).rejects.toThrow(/disk went away/);
+    expect(await store.settings.get(PROFILE, MIGRATED_KEY)).toBeNull();
+    broken = false;
+    expect((await migrateOnStart(deps))?.rows).toHaveLength(2);
     expect(await store.settings.get(PROFILE, MIGRATED_KEY)).not.toBeNull();
   });
 

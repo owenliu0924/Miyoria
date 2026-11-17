@@ -234,18 +234,16 @@ export interface MigrationDeps {
 }
 
 /**
- * The migration from the old records (H8), once: only when it never ran (`MIGRATED_KEY`) and
- * `heart_person` is still empty. Whatever happens, the key is set after, so it never runs again
- * (a table emptied later, by forgetting everyone, is not filled from the old records once more).
- * One log line with the counts. The result; `null` when it did not run.
+ * The migration from the old records (H8), once: while it never finished (`MIGRATED_KEY`). People
+ * who already have a row are skipped (`migrateLegacy`), so rows written by a start whose migration
+ * failed are no reason to skip the others. The key is set only once it went through, so a table
+ * emptied later is not filled from the old records again, and a failed start tries again on the
+ * next one (the error is thrown to the caller). One log line with the counts. The result; `null`
+ * when it ran before.
  */
 export async function migrateOnStart(d: MigrationDeps): Promise<LegacyResult | null> {
   if ((await d.settings.get(d.profile, MIGRATED_KEY)) !== null) return null;
   const at = toTimestamp(d.now);
-  if (d.people.list({ limit: 1 }).total > 0) {
-    await d.settings.set(d.profile, MIGRATED_KEY, { at, rows: 0, skipped: "rows already there" });
-    return null;
-  }
   const relationships = await d.relationships.list(d.profile);
   const deltas = new Map<PersonId, RelationshipDelta[]>();
   for (const r of relationships) {
@@ -449,8 +447,11 @@ export class HeartModule implements Module {
         log: ctx.log,
       });
     } catch (error) {
-      // The old records stay where they are; the next start tries again.
-      ctx.log.warn({ err: errorMessage(error) }, "heart: the old records could not be moved");
+      // The old records stay where they are and the key is not set: the next start tries again.
+      ctx.log.error(
+        { err: errorMessage(error) },
+        "heart: the old records could not be moved; the next start tries again",
+      );
     }
     const directory = new PeopleDirectory(
       this.#profile,
