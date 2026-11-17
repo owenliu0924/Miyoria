@@ -308,10 +308,24 @@ describe("the installed plugins' hooks", () => {
 
   it("forget: memory forgets, money, roles and rules stay and say so", async () => {
     const { store, owen } = await installed();
+    const at = toTimestamp(Date.UTC(2026, 0, 1));
+    await store.relationships.upsert({
+      profile: "p",
+      person: owen,
+      affinity: 40,
+      trust: 30,
+      familiarity: 20,
+      tags: [],
+      notes: "他住在台南",
+      call_name: null,
+      interactions: 3,
+      last_interaction: at,
+      updated_at: at,
+    });
     const result = store.personData.forget(owen, { reason: "forget me", source: "memory" });
     expect(result.hooks.map((h) => [h.plugin, h.declined === null])).toEqual([
       ["memory", true],
-      ["legacy", false],
+      ["legacy", true],
       ["economy", false],
       ["directive", false],
       ["auth", false],
@@ -319,6 +333,9 @@ describe("the installed plugins' hooks", () => {
       ["core", true],
     ]);
     expect(hookCounts(result, "memory")).toEqual({ about: 1, derived: 0, unverified: 0 });
+    // The old tables keep her numbers for them and lose her notes on what they said.
+    expect(hookCounts(result, "legacy")).toEqual({ notes: 1, reasons: 0 });
+    expect(await store.relationships.get("p", owen)).toMatchObject({ affinity: 40, notes: "" });
     expect(await store.plugin(economyTables).ledger.balance("p", owen)).toBe(10);
     expect(await store.plugin(authTables).store.assignmentsFor(OWEN)).toHaveLength(1);
     expect(await store.plugin(directiveTables).all("p", 9)).toHaveLength(1);
