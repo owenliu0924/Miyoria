@@ -119,19 +119,43 @@ function attitudeOf(index: number, person: ScenePerson, c: Closeness): Attitude 
   };
 }
 
-/** The heart row the scene's closeness stands for: the slow values set, the rest neutral. */
+/** The heart's warmth baseline by bond (`heart/person/src/rules.ts`), through its own points. */
+function warmthOf(bond: number): number {
+  const points: readonly (readonly [number, number])[] = [
+    [-100, -0.6],
+    [-15, -0.1],
+    [0, 0],
+    [45, 0.2],
+    [120, 0.4],
+    [300, 0.55],
+    [600, 0.7],
+    [1000, 0.8],
+  ];
+  let [x0, y0] = points[0] as readonly [number, number];
+  for (const [x1, y1] of points) {
+    if (bond <= x1) return x1 === x0 ? y1 : y0 + ((y1 - y0) * (bond - x0)) / (x1 - x0);
+    [x0, y0] = [x1, y1];
+  }
+  return y0;
+}
+
+/** The heart row the scene's closeness stands for: the slow values set, the rest what they would normally be. */
 function heartViewOf(index: number, c: Closeness): HeartView {
   return {
     person: personOf(index),
     bond: clamp(c.bond, -100, 1000),
     trust: clamp(c.trust ?? c.bond, 0, 100),
     familiarity: clamp(c.familiarity ?? c.bond, 0, 100),
-    warmth: 0,
+    // What these are for someone she knows that well when nothing in particular is going on
+    // (the heart's warmth baseline and the migration's starting ease and rapport, by hand: the
+    // eval does not depend on the heart package). Left at zero, a close friend would read
+    // 「拘謹、還沒默契」 beside a high bond.
+    warmth: warmthOf(clamp(c.bond, -100, 1000)),
     respect: 0,
-    ease: 0,
+    ease: c.bond < 0 ? 0 : (0.8 * clamp(c.familiarity ?? c.bond, 0, 100)) / 100,
     grudge: 0,
     longing: 0,
-    rapport: 0,
+    rapport: c.bond < 0 ? 0 : (0.6 * clamp(c.familiarity ?? c.bond, 0, 100)) / 100,
     stance: "",
     impression: "",
     call_name: null,

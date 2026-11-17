@@ -162,7 +162,10 @@ describe("migrateLegacy", () => {
       created_at: toTimestamp(NOW),
     });
     expect(mei?.warmth).toBeCloseTo(warmthBaseline(260));
-    expect([mei?.respect, mei?.ease, mei?.rapport]).toEqual([0, 0, 0]);
+    // Ease and rapport start from how well she knows them (familiarity 55), not from zero.
+    expect(mei?.respect).toBe(0);
+    expect(mei?.ease).toBeCloseTo(0.44);
+    expect(mei?.rapport).toBeCloseTo(0.33);
   });
 
   it("keeps what has no new home in legacy, romance among it", () => {

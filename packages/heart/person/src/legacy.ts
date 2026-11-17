@@ -41,7 +41,14 @@ import {
   type TierAnchor,
 } from "./model.js";
 import type { CardRecord } from "./old-cards.js";
-import { ANCHORED_TIERS, type HeartChange, settle, warmthBaseline } from "./rules.js";
+import {
+  ANCHORED_TIERS,
+  type HeartChange,
+  settle,
+  startingEase,
+  startingRapport,
+  warmthBaseline,
+} from "./rules.js";
 
 /** One person of the `hearts` part of `self:state`. */
 export interface LegacyHearts {
@@ -162,6 +169,8 @@ function migrateOne(
   row.call_name = rel?.call_name ?? extras?.call_name ?? null;
 
   row.warmth = warmthBaseline(row.bond);
+  row.ease = startingEase(row.bond, row.familiarity);
+  row.rapport = startingRapport(row.bond, row.familiarity);
   row.longing = heart?.emotions.missing ?? 0;
   row.grudge = heart?.emotions.resentment ?? 0;
 

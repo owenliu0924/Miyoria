@@ -383,6 +383,19 @@ export function warmthBaseline(bond: number): number {
   return interpolate(WARMTH_BASELINE, clampField("bond", bond));
 }
 
+/**
+ * How at ease she starts with someone the migration brings over: the old records had no such
+ * value, and zero would read 「拘謹」 for an old friend. It follows how well she knows them.
+ */
+export function startingEase(bond: number, familiarity: number): number {
+  return bond < 0 ? 0 : clampField("ease", (0.8 * clampField("familiarity", familiarity)) / 100);
+}
+
+/** The same for how well their banter clicks. */
+export function startingRapport(bond: number, familiarity: number): number {
+  return bond < 0 ? 0 : clampField("rapport", (0.6 * clampField("familiarity", familiarity)) / 100);
+}
+
 function dayOf(ts: Timestamp | null, rules: HeartPersonConfig): LocalDay | null {
   if (ts === null) return null;
   const ms = Date.parse(ts);

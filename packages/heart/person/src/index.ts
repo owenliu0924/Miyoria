@@ -153,6 +153,8 @@ export {
   proposalStep,
   repeatFactor,
   settle,
+  startingEase,
+  startingRapport,
   warmthBaseline,
 } from "./rules.js";
 export { type HeartPersonRow, type HeartSelfRow, heartPerson, heartSelf } from "./schema.js";
