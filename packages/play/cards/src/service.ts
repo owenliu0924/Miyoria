@@ -8,7 +8,8 @@
 // written the coins go back.
 //
 // Some cards nobody pays for: a milestone card when a bond enters a tier it had never reached
-// (§6.1), the keepsake of someone who came over from the old records (§10.2 P5). Each is issued
+// (§6.1), the keepsake of someone who came over from the old records (§10.2 P5), a card she drops
+// in a channel for the first one to pick up (§6.2, `claimDrop`). Each is issued
 // once per person and occasion (the store's `issue_key`), in the same turn as
 // that person's other cards, outside the day's cap, at the plain odds and without moving the pity
 // (the design says nothing of the pity for it: a free card that moved it would be a way around it).
@@ -50,7 +51,23 @@ export const CARD_TEXTS = {
   too_many: "願望單最多三個",
   duplicate: "願望單裡有重複的部件",
   unknown_part: "沒有這個部件",
+  drop_gone: "這張卡不見了",
+  drop_expired: "這張卡已經飄走了",
+  drop_taken: "被別人先撿走了",
+  drop_cap: "今天已經撿過一張了,明天再來",
+  drop_skipped: "上一張是你撿的,這張留給別人吧",
 } as const;
+
+/** Why a dropped card is not theirs. */
+export type DropRefusal =
+  | "drop_gone"
+  | "drop_expired"
+  | "drop_taken"
+  | "drop_cap"
+  | "drop_skipped"
+  | "no_face";
+
+export type DropResult = { ok: true; issued: IssuedCard } | { ok: false; reason: DropRefusal };
 
 /** Why a daily card is not issued now. */
 export type DailyRefusal =
@@ -278,6 +295,74 @@ export class CardService {
       return Promise.resolve({ ok: false, reason: "not_eligible" });
     }
     return this.#issueFree(person, "keepsake", issueKey.keepsake, face);
+  }
+
+  /**
+   * `person` picks up the card she dropped as `id` (§6.2): theirs if nobody took it yet, it has
+   * not expired, they picked up fewer than `drops_per_person_day` today and they did not pick up
+   * the last one in that channel (it is left for someone else). The drop is taken before her
+   * words are asked for, so nobody who is too late costs a model call; when no card follows it is
+   * put back. A drop card is free, outside the daily cap and the pity, and has one part only a
+   * drop can give. Asked again by its taker, it answers their card.
+   */
+  claimDrop(
+    person: PersonId,
+    id: string,
+    face: () => Promise<OccasionFace | null>,
+  ): Promise<DropResult> {
+    return this.#inTurn(person, async (): Promise<DropResult> => {
+      const { config, clock } = this.#o;
+      const drop = this.#store.drop(id);
+      if (drop === null) return { ok: false, reason: "drop_gone" };
+      if (drop.claimed_by !== null) {
+        const mine =
+          drop.claimed_by === person ? this.#store.byKey(person, issueKey.drop(id)) : null;
+        if (mine === null) return { ok: false, reason: "drop_taken" };
+        return {
+          ok: true,
+          issued: { card: mine, pity: this.pity(person), new_parts: [], titles: [], again: true },
+        };
+      }
+      const now = clock.now();
+      if (Date.parse(drop.expires_at) <= now) return { ok: false, reason: "drop_expired" };
+      const today = dayStart(now, config.utc_offset_minutes);
+      if (this.#store.countSince(person, "drop", today) >= config.drops_per_person_day) {
+        return { ok: false, reason: "drop_cap" };
+      }
+      if (this.#store.lastClaimer(drop.channel) === person) {
+        return { ok: false, reason: "drop_skipped" };
+      }
+      const serial = this.#serial();
+      if (!this.#store.claimDrop(id, person, serial, now)) {
+        return { ok: false, reason: "drop_taken" };
+      }
+      try {
+        const words = await face();
+        if (words === null) {
+          this.#store.releaseDrop(id, person);
+          return { ok: false, reason: "no_face" };
+        }
+        const issued = this.#store.issue({
+          person,
+          kind: "drop",
+          serial,
+          price: 0,
+          face: words.face,
+          relationship: words.relationship,
+          rules: drawRules(config),
+          random: this.#random,
+          now: clock.now(),
+          key: issueKey.drop(id),
+          pity: false,
+          dropPart: true,
+        });
+        this.#told(issued);
+        return { ok: true, issued };
+      } catch (error) {
+        this.#store.releaseDrop(id, person);
+        throw error;
+      }
+    });
   }
 
   /** What the import from the V4 database kept of `person` (D4); `null`: it did not bring them. */

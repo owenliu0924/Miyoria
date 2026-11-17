@@ -151,6 +151,26 @@ const ISSUE_KEY = `ALTER TABLE \`cards_card\` ADD \`issue_key\` text;
 CREATE UNIQUE INDEX \`cards_card_key_idx\` ON \`cards_card\` (\`person_id\`,\`issue_key\`);
 `;
 
+/**
+ * Migration 3: the cards she drops in a channel (§6.2). `schema:sql cards` stops at drizzle-kit's
+ * "rename or create?" question for a new table, so this is the script's `createSql` of the new
+ * table alone (what migration 1 is made of); the drift test checks it like the rest.
+ */
+const DROPS = `CREATE TABLE \`cards_drop\` (
+	\`id\` text PRIMARY KEY,
+	\`channel\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`expires_at\` integer NOT NULL,
+	\`claimed_by\` text,
+	\`claimed_at\` integer,
+	\`serial\` text
+) STRICT;
+
+CREATE INDEX \`cards_drop_channel_idx\` ON \`cards_drop\` (\`channel\`,\`created_at\`);
+
+CREATE INDEX \`cards_drop_claimed_idx\` ON \`cards_drop\` (\`claimed_by\`);
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -158,5 +178,6 @@ export const cardsSchema: PluginSchema = {
   migrations: [
     { version: 1, name: "init", sql: `${TABLES}\n${CARDS_CATALOGUE_SQL}` },
     { version: 2, name: "issue_key", sql: ISSUE_KEY },
+    { version: 3, name: "drops", sql: DROPS },
   ],
 };

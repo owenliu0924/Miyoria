@@ -96,6 +96,18 @@ describe("what she hears of a card", () => {
     expect(lines.join("")).not.toMatch(/30|第 3|20|朋友/);
   });
 
+  it("says who picked up a card she dropped, and nothing for a keepsake", () => {
+    const fireworks = {
+      ...part("background.fireworks", "SR", "頻道裡的煙火"),
+      slot: "background" as const,
+    };
+    const drop = issued({ kind: "drop", rarity: "SR", price: 0, parts: [fireworks] });
+    expect(cardNotes(drop, names)).toEqual([
+      "你丟在頻道裡的卡被 小明 撿走了,上面有「頻道裡的煙火」。",
+    ]);
+    expect(cardNotes(issued({ kind: "keepsake", rarity: "SSR", price: 0 }), names)).toEqual([]);
+  });
+
   it("is the tier for a milestone card, and a wish on it was not drawn", () => {
     const lines = cardNotes(
       issued({

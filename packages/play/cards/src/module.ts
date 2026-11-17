@@ -8,7 +8,9 @@
 // milestone card for each such tier (§6.1); her words for it come through `CardFacesKey`. A tier
 // entered while this module is not running gets no card later: the cards are never handed out
 // backwards. The people who came over from the old records get one keepsake card each instead
-// (P5), issued by the api the first time they open their cards.
+// (P5), issued by the api the first time they open their cards. With `drops` on it watches the
+// channels that opted in and now and then drops a card there (§6.2, `drops.ts`); `/me card` routes
+// its button.
 //
 // The routes and the commands are the api's (`KeepsakesKey`, the `cards` route group). Config
 // changes reach it the way they reach every module: the supervisor restarts it.
@@ -30,6 +32,7 @@ import {
 } from "@miyoria/types";
 import { CardsConfigSchema } from "./config.js";
 import type { Random } from "./draw.js";
+import { watchDrops } from "./drops.js";
 import { CardFacesKey, type OccasionFace } from "./faces.js";
 import { cardNotes } from "./notes.js";
 import { cardRelationship } from "./relationship.js";
@@ -90,7 +93,7 @@ export class CardsModule implements Module {
   static readonly ID = "cards";
   readonly manifest = defineManifest(CardsModule.ID, "Cards", {
     description:
-      "Her cards for each person: the daily card (paid, at most a few a day), milestone cards for a new tier, the public odds, the pity, the dex with series titles, and wishlists",
+      "Her cards for each person: the daily card (paid, at most a few a day), milestone cards for a new tier, cards dropped in a channel (off by default), the public odds, the pity, the dex with series titles, and wishlists",
     optional: ["heart", "economy"],
     configSchema: CardsConfigSchema,
   });
@@ -144,6 +147,9 @@ export class CardsModule implements Module {
       void run.finally(() => this.#pending.delete(run));
     });
     this.#stop = off;
+    // A card dropped in a lively channel that opted in (§6.2), when drops are on.
+    const now = () => (this.#options.clock ?? ctx.clock).now();
+    watchDrops(ctx, config, cards, this.#options.random ?? Math.random, now);
   }
 
   async stop(): Promise<void> {

@@ -2,10 +2,11 @@
 // `CardWalletKey` holds at the time, takes its numbers from `[modules.cards]`, and puts the heart's
 // relationship (words only) on the card.
 
-import { heartTables } from "@miyoria/heart/person";
+import { ReplySinkKey } from "@miyoria/commands";
+import { heartTables, PeopleDirectoryKey } from "@miyoria/heart/person";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
-import { EventLogKey, type JsonObject } from "@miyoria/types";
+import { EventLogKey, Events, type JsonObject } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CardFacesKey,
@@ -156,7 +157,8 @@ describe("module cards", () => {
       { kind: "milestone", tier: "摯友", scene: null },
       { kind: "milestone", tier: "知心", scene: "一起看流星" },
     ]);
-    expect(cards?.cards(mei, { limit: 1 })[0]?.face.line).toBe("那天一起看完了流星");
+    const known = cards?.cards(mei).find((c) => c.issue_key === "milestone:120");
+    expect(known?.face.line).toBe("那天一起看完了流星");
   });
 
   it("gives a keepsake to someone the heart's migration brought over, and to nobody else", async () => {
@@ -176,6 +178,49 @@ describe("module cards", () => {
     expect(cards?.cards("old").map((c) => c.kind)).toEqual(["keepsake"]);
     // She is not told of it, and nobody is sent anything.
     expect(notes).toEqual([]);
+  });
+
+  it("drops a card in a lively channel that opted in, counting nobody's lines but people's", async () => {
+    const posted: { context: unknown; reply: { card?: { blocks: unknown[] } } }[] = [];
+    const { sup, store } = await start({
+      drops: true,
+      drop_channels: ["c1"],
+      drop_chance: 1,
+      drop_delay_min_secs: 0,
+      drop_delay_max_secs: 0,
+    });
+    sup.services.provide("discord", ReplySinkKey, {
+      platform: "discord",
+      sendDirect: async () => ({}) as never,
+      sendCard: async (context, reply) => {
+        posted.push({ context, reply });
+        return {} as never;
+      },
+    });
+    sup.services.provide("heart", PeopleDirectoryKey, {
+      isSelf: (a: { id: string }) => a.id === "her",
+      isBot: (a: { id: string }) => a.id === "bot",
+    } as never);
+    const context = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" };
+    const say = (id: string, n: number) =>
+      sup.bus.publish("discord", Events.PlatformMessageCreated, {
+        id: { context, id: `m${n}` },
+        author: { account: { platform: "discord", id }, display_name: id, is_bot: false },
+        text: "hi",
+        mentions_self: false,
+        reply_to_self: false,
+        attachments: [],
+        ts: "2026-11-17T02:00:00.000Z",
+      } as never);
+    // Her lines and a bot's do not make a channel lively.
+    for (let i = 0; i < 30; i++) say(["her", "bot", "a"][i % 3] as string, i);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posted).toEqual([]);
+    for (let i = 0; i < 20; i++) say(["a", "b", "c"][i % 3] as string, 100 + i);
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]?.context).toEqual(context);
+    expect(JSON.stringify(posted[0]?.reply)).toContain("mi:cards:drop:");
+    expect(store.plugin(cardsTables).dropsSince("discord:g1:c1", 0).count).toBe(1);
   });
 
   it("tells her of a rare card as a note she may react to, and not of an ordinary one", async () => {

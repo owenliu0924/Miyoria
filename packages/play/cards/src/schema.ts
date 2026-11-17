@@ -175,5 +175,30 @@ export const cardsLegacy = sqliteTable(
   (t) => [index("cards_legacy_account_idx").on(t.account_id, t.acquired_at)],
 );
 
+/**
+ * A card she dropped in a channel (docs/design/v5-play.md §6.2): the first person to pick it up
+ * before it expires gets it, as a card of kind `drop` (`serial`). Kept after it is picked up or
+ * gone: the day's drops of a channel, and who picked up the last one, are counted from here.
+ */
+export const cardsDrop = sqliteTable(
+  "cards_drop",
+  {
+    id: text().primaryKey(),
+    /** The channel, as `contextKeyString` writes it. */
+    channel: text().notNull(),
+    created_at: micros().notNull(),
+    expires_at: micros().notNull(),
+    /** Who picked it up; `null`: nobody (yet). */
+    claimed_by: text(),
+    claimed_at: micros(),
+    /** The card it became. */
+    serial: text(),
+  },
+  (t) => [
+    index("cards_drop_channel_idx").on(t.channel, t.created_at),
+    index("cards_drop_claimed_idx").on(t.claimed_by),
+  ],
+);
+
 export type CardsCardRow = typeof cardsCard.$inferSelect;
 export type CardsPartRow = typeof cardsParts.$inferSelect;

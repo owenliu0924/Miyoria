@@ -23,7 +23,7 @@ import {
   type KeepsakeWho,
   sameAccount,
 } from "@miyoria/types";
-import { issueCard, memberCards } from "./card.js";
+import { claimDropCard, issueCard, memberCards } from "./card.js";
 import { keepsakeFor } from "./card-faces.js";
 import { cardOdds } from "./cards-routes.js";
 import { ApiError } from "./errors.js";
@@ -115,6 +115,28 @@ export class KeepsakeService implements Keepsakes {
         .catch(() => null);
       const charged = (prices.card ?? 0) + (foil ? (prices.foil ?? 0) : 0);
       return { ok: true, value: keepsakeCard(card), charged, balance: balance ?? null };
+    } catch (error) {
+      return refused(error);
+    }
+  }
+
+  async claimDrop(who: KeepsakeWho, drop: string): Promise<KeepsakeResult<KeepsakeCard>> {
+    const { state } = this;
+    try {
+      const member = await loadMemberOf(state, who.account);
+      const names = member.hidden ? null : await namesFor(state, member);
+      const view = cardView(state, member, names);
+      const card = await claimDropCard(
+        state,
+        cardHolder(who, member),
+        view,
+        () => cardWords(state, who.name, member, view),
+        drop,
+        member.hidden,
+      );
+      const actor = accountRefString(who.account);
+      await state.auditAs(actor, "member.card.drop", actor, { serial: card.serial, drop }, true);
+      return { ok: true, value: keepsakeCard(card), charged: 0, balance: null };
     } catch (error) {
       return refused(error);
     }

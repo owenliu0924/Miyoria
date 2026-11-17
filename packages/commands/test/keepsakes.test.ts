@@ -16,6 +16,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   CommandRegistry,
+  type CommandReply,
   Invocation,
   Permissions,
   panelDefs,
@@ -140,6 +141,17 @@ class Fake implements Keepsakes {
     return this.odds;
   }
 
+  drops = new Map<string, string>();
+
+  async claimDrop(who: { name: string }, drop: string): Promise<KeepsakeResult<KeepsakeCard>> {
+    const taker = this.drops.get(drop);
+    if (taker !== undefined && taker !== who.name) {
+      return { ok: false, status: 409, message: "被別人先撿走了" };
+    }
+    this.drops.set(drop, who.name);
+    return { ok: true, value: { ...card(9), kind: "drop" }, charged: 0, balance: null };
+  }
+
   async setCardWishlist(
     _who: unknown,
     parts: readonly string[],
@@ -229,6 +241,34 @@ describe("me card", () => {
     expect(fake.issued).toEqual([]);
     // The next look is the usual one.
     expect((await run("me card")).text).toContain("花了 30");
+  });
+
+  it("routes a dropped card's button: the card to its taker alone, who got it to the channel", async () => {
+    const { registry } = setup();
+    const press = (id: string, name: string, followUp?: (r: CommandReply) => Promise<void>) =>
+      registry.dispatchComponent(
+        {
+          custom_id: `mi:cards:drop:${id}`,
+          invoker: { platform: "discord", id: "1" },
+          invoker_display_name: name,
+          context: guildContext,
+          invoker_is_guild_admin: false,
+        },
+        followUp ? { followUp } : {},
+      );
+    const private_: CommandReply[] = [];
+    const won = await press("D1", "Owen", async (r) => {
+      private_.push(r);
+    });
+    expect(won?.result.type).toBe("update");
+    expect(won?.result.type === "update" && won.result.reply.text).toContain("Owen 撿走了這張卡");
+    expect(private_).toHaveLength(1);
+    expect(private_[0]?.ephemeral).toBe(true);
+    expect(private_[0]?.text).toContain("頻道裡撿到的卡");
+    const late = await press("D1", "Mia");
+    expect(late?.result.type).toBe("reply");
+    expect(late?.ephemeral).toBe(true);
+    expect(late?.result.type === "reply" && late.result.reply.text).toBe("被別人先撿走了");
   });
 
   it("offers the dex, the odds, the pity and the wishlist, and no reroll", () => {

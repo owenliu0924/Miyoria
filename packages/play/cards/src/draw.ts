@@ -13,7 +13,8 @@
 //    again exactly. SSR cards are foil.
 //
 // The odds table (`odds.ts`) is computed from the same helpers, so it cannot disagree with this.
-// The wishlist changes nothing here: who wished for what is looked at after the draw.
+// The wishlist changes nothing here: who wished for what is looked at after the draw. A card
+// dropped in a channel is drawn the same way, then given one drop-only part (`withDropPart`).
 
 import {
   drawPool,
@@ -191,6 +192,31 @@ export function drawCard(input: DrawInput): DrawnCard {
   const expression = pickOne(expressionsFor(input.tier), random);
   const seed = Math.floor(random() * 2 ** 31);
   return { rarity, parts, expression, foil: rarity === "SSR", seed, pity_hit: pityHit };
+}
+
+/**
+ * A dropped card (v5-play §6.2): `drawn` with one part only a drop can give put in its slot, picked
+ * by weight among the enabled drop-only parts; the card's rarity is again its rarest part's (an
+ * SSR one shines). Unchanged when the catalogue has no such part.
+ */
+export function withDropPart(
+  drawn: DrawnCard,
+  catalogue: readonly Part[],
+  random: Random,
+): DrawnCard {
+  const only = catalogue.filter((p) => p.enabled && p.drop_only);
+  if (only.length === 0) return drawn;
+  const part = drawnPart(pickWeighted(only, (p) => p.weight, random));
+  const parts = SLOTS.flatMap((slot) => {
+    if (slot === part.slot) return [part];
+    const had = drawn.parts.find((p) => p.slot === slot);
+    return had === undefined ? [] : [had];
+  });
+  const rarity = parts.reduce<Rarity>(
+    (best, p) => (rarityRank(p.rarity) > rarityRank(best) ? p.rarity : best),
+    "N",
+  );
+  return { ...drawn, parts, rarity, foil: rarity === "SSR" };
 }
 
 /** What a card keeps of its draw (`cards_card.parts`): enough to draw its picture again. */

@@ -10,6 +10,8 @@
 //   before she is asked to write anything, so a refused card costs no model call.
 // * `GET /api/public/card/{serial}`: anyone may check a code, daily or older; unknown, deleted and
 //   malformed serials get the same 404.
+// * A card she dropped in a channel is picked up from its button (`claimDropCard`, through
+//   `KeepsakesKey`): free, written like a daily card.
 //
 // A card holds what the member page showed, in words, the frame they chose, and on a daily card
 // the parts drawn onto it: it is built field by field from the stored snapshot, so a field added to
@@ -33,6 +35,7 @@ import {
   CardWalletKey,
   cardRelationship,
   type DailyRefusal,
+  type DropRefusal,
   portraitPose,
   refusalText,
 } from "@miyoria/play/cards";
@@ -396,6 +399,65 @@ export async function issueCard(
   const card = dailyCard(result.issued.card);
   remember(state, order.key, card.serial);
   cardEvidence(state, person, card);
+  return card;
+}
+
+/** What a refused pick-up answers with. */
+const DROP_STATUS: Readonly<Record<DropRefusal, number>> = {
+  drop_gone: 404,
+  drop_expired: 410,
+  drop_taken: 409,
+  drop_cap: 429,
+  drop_skipped: 409,
+  no_face: 403,
+};
+
+/**
+ * Picks up the card she dropped as `drop` in a channel (docs/design/v5-play.md §6.2) for the
+ * holder: free, written like a daily card of `view` (her words through `write`, asked only once
+ * the drop is theirs). Someone she does not know, or will not say anything about, cannot pick one
+ * up, and is answered like a stranger.
+ */
+export async function claimDropCard(
+  state: ApiState,
+  holder: CardHolder,
+  view: MemberCard,
+  write: () => Promise<CardWords | null>,
+  drop: string,
+  hidden: boolean,
+): Promise<IssuedCard> {
+  const cards = state.optional(CardsKey);
+  if (!cards) throw ApiError.unavailable(NO_STORE);
+  const person = holder.person;
+  if (person === null || hidden) throw new ApiError(403, STRANGER);
+  const relationship: CardRelationship = {
+    ...cardRelationship(heartRows(state)?.get(person) ?? null),
+    public_feeling: view.public_feeling,
+  };
+  const older = await state
+    .optional(MemberCardStoreKey)
+    ?.countFor(state.profile(), holder.accounts);
+  const result = await cards.claimDrop(person, drop, async () => {
+    const words = await write();
+    return {
+      face: {
+        name: holder.session.name,
+        avatar_url: holder.session.avatar_url,
+        call_name: view.call_name,
+        line: words?.line ?? null,
+        stamp: words?.stamp ?? null,
+        fields: words?.fields ?? [],
+        number: (older ?? 0) + cards.count(person) + 1,
+      },
+      relationship,
+    };
+  });
+  if (!result.ok) {
+    const message = result.reason === "no_face" ? STRANGER : CARD_TEXTS[result.reason];
+    throw new ApiError(DROP_STATUS[result.reason], message);
+  }
+  const card = dailyCard(result.issued.card);
+  if (!result.issued.again) cardEvidence(state, person, card);
   return card;
 }
 

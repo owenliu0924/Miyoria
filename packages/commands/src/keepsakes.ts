@@ -9,7 +9,9 @@
 // the dex (圖鑑), the public odds (機率), the pity counter (保底) or sets the wishlist (願望單, with
 // `wish`: up to three part names, or 清空). The fortune slip is not here: it is the paid add-on of
 // `/me checkin` (`fortune:true`, in the economy). Someone who was here before the cards finds their
-// keepsake card the first time they look (P5): that look shows it and issues nothing.
+// keepsake card the first time they look (P5): that look shows it and issues nothing. The button
+// of a card she drops in a channel (v5-play §6.2) is a route of this command, not a command of its
+// own.
 
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
@@ -21,6 +23,7 @@ import {
   KeepsakesKey,
   newId,
 } from "@miyoria/types";
+import { type ComponentInvocation, ComponentResult, defineRoute } from "./components.js";
 import type { CommandRegistry } from "./registry.js";
 import { type CardBlock, type CommandReply, cardReply, notice } from "./reply.js";
 import { ArgKind, argSpec, commandSpec, type Invocation } from "./spec.js";
@@ -40,6 +43,9 @@ export const CARD_PITY = "保底";
 export const CARD_WISH = "願望單";
 /** `wish:` that clears the wishlist. */
 export const CLEAR_WISHES = "清空";
+
+/** The button of a card she dropped in a channel: `mi:cards:drop:<id>` (`@miyoria/play/cards`). */
+export const CARD_DROP_ROUTE = "cards:drop";
 
 /** Under a keepsake card given on the first look. */
 const KEEPSAKE_NOTE = "在有卡片之前你就在了，這張是她給你的紀念卡，不用魚幣。";
@@ -248,5 +254,50 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
         if (paid) blocks.push(paid);
         return cardReply(blocks, { accent: "neutral", title: "你的卡片" });
       }),
+    {
+      components: [
+        defineRoute<string>({
+          route: CARD_DROP_ROUTE,
+          ephemeral: true,
+          parse: (params) => (params.length === 1 && params[0] !== "" ? (params[0] ?? null) : null),
+          handle: (inv, drop) => pickUp(inv, drop),
+        }),
+      ],
+    },
   );
+
+  /**
+   * The button of a card she dropped in a channel (v5-play §6.2). The card goes to the one who
+   * picked it up alone (an ephemeral follow-up); the drop itself then says who got it, since who
+   * got it is the point. A refusal (too late, one a day already) is theirs alone.
+   */
+  async function pickUp(inv: ComponentInvocation, drop: string): Promise<ComponentResult> {
+    const keepsakes = services.get(KeepsakesKey);
+    if (!keepsakes?.claimDrop) return ComponentResult.reply(notice("info", UNAVAILABLE));
+    let got: KeepsakeResult<KeepsakeCard>;
+    try {
+      got = await keepsakes.claimDrop(who(inv), drop);
+    } catch (error) {
+      log.warn({ error: errorMessage(error) }, "a dropped card failed");
+      return ComponentResult.reply(notice("warn", UNAVAILABLE));
+    }
+    if (!got.ok) return ComponentResult.reply(refusal(got));
+    const blocks = cardText(got.value);
+    if (inv.canFollowUp()) {
+      try {
+        await inv.followUp(
+          cardReply(blocks, { accent: "neutral", title: "你撿到的卡", ephemeral: true }),
+        );
+      } catch (error) {
+        log.warn({ error: errorMessage(error) }, "cannot show a dropped card privately");
+      }
+    }
+    const name = inv.invoker_display_name.trim() || "有人";
+    return ComponentResult.update(
+      cardReply([{ type: "text", text: `${name} 撿走了這張卡。` }], {
+        accent: "neutral",
+        title: "掉落的卡",
+      }),
+    );
+  }
 }

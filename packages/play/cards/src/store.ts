@@ -34,7 +34,21 @@ import {
   type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
-import { and, asc, count, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import { isRarity, isSlot, type Part, type Rarity } from "./catalogue.js";
 import { completedBy, type WishlistProblem, wishlistProblem } from "./dex.js";
 import {
@@ -48,6 +62,7 @@ import {
   pityView,
   type Random,
   wishedOn,
+  withDropPart,
 } from "./draw.js";
 import { drawnWrite, titledWrite } from "./events.js";
 import type { Expression } from "./expressions.js";
@@ -58,6 +73,7 @@ import {
   type CardsPartRow,
   cardsCard,
   cardsDex,
+  cardsDrop,
   cardsLegacy,
   cardsParts,
   cardsPity,
@@ -180,6 +196,20 @@ export interface IssueInput {
    * plain odds and leaves the counter where it is.
    */
   pity?: boolean;
+  /** A dropped card: one of its parts is one only a drop can give (`withDropPart`). */
+  dropPart?: boolean;
+}
+
+/** A card she dropped in a channel (`cards_drop`). */
+export interface DropRecord {
+  id: string;
+  /** `contextKeyString` of the channel. */
+  channel: string;
+  created_at: Timestamp;
+  expires_at: Timestamp;
+  claimed_by: PersonId | null;
+  claimed_at: Timestamp | null;
+  serial: string | null;
 }
 
 /** What `issue` did. */
@@ -200,6 +230,8 @@ export const issueKey = {
   milestone: (min: number) => `milestone:${min}`,
   /** The keepsake card of someone migrated from the old records. */
   keepsake: "keepsake",
+  /** The card a drop in a channel became. */
+  drop: (id: string) => `drop:${id}`,
 } as const;
 
 /** The tier a milestone card was given for; `null` for any other card. */
@@ -496,7 +528,7 @@ export class CardStore {
       }
       const ts = at(now);
       const catalogue = this.catalogue();
-      const drawn = drawCard({
+      const plain = drawCard({
         catalogue,
         rules: input.rules,
         // A card the pity does not count is drawn at the plain odds.
@@ -504,6 +536,7 @@ export class CardStore {
         tier: input.relationship.tier,
         random: input.random,
       });
+      const drawn = input.dropPart ? withDropPart(plain, catalogue, input.random) : plain;
       const wished = wishedOn(drawn, this.wishlist(person));
       const snapshot: DrawSnapshot = {
         parts: drawn.parts,
@@ -615,6 +648,95 @@ export class CardStore {
         titles,
         again: false,
       };
+    });
+  }
+
+  // ---- cards dropped in a channel ------------------------------------------------------------
+
+  /** Records a card she dropped in `channel`, to be picked up until `expires` (epoch ms). */
+  addDrop(id: string, channel: string, now: number, expires: number): void {
+    this.#write(() => {
+      this.#db.orm
+        .insert(cardsDrop)
+        .values({ id, channel, created_at: at(now), expires_at: at(expires) })
+        .run();
+    });
+  }
+
+  /** Forgets a drop that never reached the channel. */
+  removeDrop(id: string): void {
+    this.#write(() => {
+      this.#db.orm.delete(cardsDrop).where(eq(cardsDrop.id, id)).run();
+    });
+  }
+
+  drop(id: string): DropRecord | null {
+    this.#db.ensureOpen();
+    const row = this.#db.orm.select().from(cardsDrop).where(eq(cardsDrop.id, id)).get();
+    return row === undefined ? null : { ...row };
+  }
+
+  /** The drops of `channel` since `since` (epoch ms), and the latest one's time. */
+  dropsSince(channel: string, since: number): { count: number; last: Timestamp | null } {
+    this.#db.ensureOpen();
+    const D = cardsDrop;
+    const today = this.#db.orm
+      .select({ n: count() })
+      .from(D)
+      .where(and(eq(D.channel, channel), gte(D.created_at, at(since))))
+      .get();
+    const last = this.#db.orm
+      .select({ at: D.created_at })
+      .from(D)
+      .where(eq(D.channel, channel))
+      .orderBy(desc(D.created_at))
+      .limit(1)
+      .get();
+    return { count: today?.n ?? 0, last: last?.at ?? null };
+  }
+
+  /** Who picked up the last card picked up in `channel`; `null`: nobody yet. */
+  lastClaimer(channel: string): PersonId | null {
+    this.#db.ensureOpen();
+    const D = cardsDrop;
+    const row = this.#db.orm
+      .select({ by: D.claimed_by })
+      .from(D)
+      .where(and(eq(D.channel, channel), isNotNull(D.claimed_by)))
+      .orderBy(desc(D.claimed_at))
+      .limit(1)
+      .get();
+    return row?.by ?? null;
+  }
+
+  /**
+   * Takes drop `id` for `person` as the card `serial`, if nobody has and it has not expired at
+   * `now`: whether it did. One statement, so of two people at once only one gets it.
+   */
+  claimDrop(id: string, person: PersonId, serial: string, now: number): boolean {
+    const D = cardsDrop;
+    return (
+      this.#write(() =>
+        Number(
+          this.#db.orm
+            .update(D)
+            .set({ claimed_by: person, claimed_at: at(now), serial })
+            .where(and(eq(D.id, id), isNull(D.claimed_by), gt(D.expires_at, at(now))))
+            .run().changes,
+        ),
+      ) > 0
+    );
+  }
+
+  /** Puts back drop `id` that `person` took but got no card from. */
+  releaseDrop(id: string, person: PersonId): void {
+    const D = cardsDrop;
+    this.#write(() => {
+      this.#db.orm
+        .update(D)
+        .set({ claimed_by: null, claimed_at: null, serial: null })
+        .where(and(eq(D.id, id), eq(D.claimed_by, person)))
+        .run();
     });
   }
 
@@ -736,6 +858,9 @@ export class CardStore {
         cards_titles: Number(
           o.delete(cardsTitles).where(inArray(cardsTitles.person_id, list)).run().changes,
         ),
+        cards_drop: Number(
+          o.delete(cardsDrop).where(inArray(cardsDrop.claimed_by, list)).run().changes,
+        ),
       };
     });
   }
@@ -793,6 +918,11 @@ export class CardStore {
           .run();
       }
       this.#db.orm.delete(cardsWishlist).where(eq(cardsWishlist.person_id, absorb)).run();
+      this.#db.orm
+        .update(cardsDrop)
+        .set({ claimed_by: keep })
+        .where(eq(cardsDrop.claimed_by, absorb))
+        .run();
       return { counts: { cards, pity, dex, titles } };
     });
   }
@@ -852,6 +982,15 @@ const cardsData: readonly CategoryData[] = [
         card: "text",
         public: "bool",
         earned_at: "ts",
+      }),
+      tablePart("cards_drop", "cards_drop", "node", "created_at", "created_at", {
+        id: "text",
+        channel: "text",
+        created_at: "ts",
+        expires_at: "ts",
+        claimed_by: "text",
+        claimed_at: "ts",
+        serial: "text",
       }),
       tablePart("cards_legacy", "cards_legacy", "node", "acquired_at", "account_id, acquired_at", {
         id: "text",

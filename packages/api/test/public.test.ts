@@ -2188,6 +2188,37 @@ describe("cards she gives", () => {
     expect(r.cards.count(r.people.get(CAROL) as PersonId)).toBe(0);
   });
 
+  it("gives a card she dropped to the first who picks it up, free, through the command", async () => {
+    const r = await rig();
+    const keepsakes = r.sup.services.require(KeepsakesKey);
+    const now = Date.now();
+    r.cardStore.addDrop("D1", "discord:g:c", now, now + 600_000);
+    const as = (id: string, name: string) => ({ account: discord(id), name, avatar_url: null });
+    const claim = (id: string, name: string) => keepsakes.claimDrop?.(as(id, name), "D1");
+    // Someone she will not say anything about, or does not know, cannot pick it up.
+    expect(await claim(FRANK, "Frank")).toEqual({
+      ok: false,
+      status: 403,
+      message: "她還不認識你,先和她說說話吧",
+    });
+    const got = await claim(ALICE, "Alice");
+    expect(got).toMatchObject({ ok: true, charged: 0, value: { kind: "drop", number: 1 } });
+    if (!got?.ok) throw new Error("no card");
+    expect(got.value.parts).toContain("頻道裡的煙火");
+    expect(r.purse.charges).toEqual([]);
+    expect(await claim(BOB, "Bob")).toEqual({ ok: false, status: 409, message: "被別人先撿走了" });
+    // Pressed again by Alice: the same card.
+    expect(await claim(ALICE, "Alice")).toMatchObject({
+      ok: true,
+      value: { serial: got.value.serial },
+    });
+    const audit = await r.store.audit.recent(10, `discord:${ALICE}`);
+    expect(audit.find((a) => a.action === "member.card.drop")?.detail).toEqual({
+      serial: got.value.serial,
+      drop: "D1",
+    });
+  });
+
   it("are not given without a wallet to pay with", async () => {
     const r = await rig();
     r.sup.services.removeOwnedBy("wallet");

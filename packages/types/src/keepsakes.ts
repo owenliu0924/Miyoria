@@ -143,6 +143,11 @@ export interface Keepsakes {
    * Answers the names now on it.
    */
   setCardWishlist(who: KeepsakeWho, parts: readonly string[]): Promise<KeepsakeResult<string[]>>;
+  /**
+   * Picks up the card she dropped in a channel as `drop` (its button): theirs if they are the
+   * first, within the day's limit; free. Asked again by whoever got it, the same card.
+   */
+  claimDrop?(who: KeepsakeWho, drop: string): Promise<KeepsakeResult<KeepsakeCard>>;
 }
 
 export const KeepsakesKey = serviceKey<Keepsakes>("Keepsakes");

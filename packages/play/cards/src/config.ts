@@ -1,10 +1,11 @@
-// `[modules.cards]` (docs/design/v5-play.md §2, §8): the price of a daily card, how many a person
-// may buy a day, the pity and the rarity weights. Every field has a default. The weights are the
-// public odds (`odds.ts` prints them): changing them is a config change, and a config revision is
-// the record cards.md §2.3 asks for.
+// `[modules.cards]` (docs/design/v5-play.md §2, §6.2, §8): the price of a daily card, how many a
+// person may buy a day, the pity and the rarity weights, and the cards she drops in a channel (off
+// by default). Every field has a default. The weights are the public odds (`odds.ts` prints them):
+// changing them is a config change, and a config revision is the record cards.md §2.3 asks for.
 
 import { z } from "zod";
 import type { DrawRules } from "./draw.js";
+import { DROP_CONFIG } from "./drop-config.js";
 
 const weight = () => z.number().nonnegative();
 
@@ -41,6 +42,8 @@ export const CardsConfigSchema = z.object({
     })
     .refine((w) => w.N + w.R + w.SR + w.SSR > 0, { message: "at least one weight must be above 0" })
     .prefault({}),
+  // The cards she drops in a channel (§6.2), off by default.
+  ...DROP_CONFIG,
 });
 
 export type CardsConfig = z.output<typeof CardsConfigSchema>;

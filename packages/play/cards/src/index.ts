@@ -6,7 +6,9 @@
 // - `expressions.ts`: which expressions each tier of the relationship may show.
 // - `odds.ts`: the public odds table, from the catalogue and the draw's own helpers.
 // - `dex.ts`: series progress and titles, and what a wishlist may hold.
-// - `config.ts`: `[modules.cards]` (price, daily cap, pity, rarity weights).
+// - `config.ts`: `[modules.cards]` (price, daily cap, pity, rarity weights; the drops' part in
+//   `drop-config.ts`).
+// - `drops.ts`: when she drops a card in a lively channel that opted in, and the button's route.
 // - `legacy.ts`: the old collectibles, kept as the closed series 舊收藏.
 // - `schema.ts`, `migrations.ts`, `store.ts`: the `cards` store plugin (`cards_card`, `cards_parts`,
 //   `cards_pity`, `cards_dex`, `cards_wishlist`, `cards_titles`) and the transaction that writes a
@@ -68,7 +70,17 @@ export {
   seededRandom,
   slotParts,
   wishedOn,
+  withDropPart,
 } from "./draw.js";
+export { DROP_CONFIG } from "./drop-config.js";
+export {
+  type ChannelLine,
+  DROP_ROUTE,
+  DropWatch,
+  type DropWatchOptions,
+  dropCard,
+  watchDrops,
+} from "./drops.js";
 export {
   CARDS_DRAWN,
   CARDS_SOURCE,
@@ -105,6 +117,7 @@ export {
   type CardsPartRow,
   cardsCard,
   cardsDex,
+  cardsDrop,
   cardsLegacy,
   cardsParts,
   cardsPity,
@@ -122,6 +135,8 @@ export {
   type DailyResult,
   type DexPart,
   type DexView,
+  type DropRefusal,
+  type DropResult,
   dayStart,
   type FreeResult,
   refusalText,
@@ -138,6 +153,7 @@ export {
   type CardTitle,
   cardsTables,
   type DexEntry,
+  type DropRecord,
   type IssuedCard,
   type IssueInput,
   issueKey,

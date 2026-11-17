@@ -1,7 +1,8 @@
 // What she hears of the cards (docs/design/v5-play.md §2, §6.1, §6.3): a card worth a word reaches
 // her as a note she may react to, the way the party games tell her about a game (an `Observation`
 // on the event log, not silent, in her working context). Only these are worth one: a milestone
-// card (she gave it for a tier they reached), an SR or better daily card, a card the pity gave, a
+// card (she gave it for a tier they reached), a card she dropped in a channel and who picked it
+// up (§6.2: who got it is worth talking about), an SR or better daily card, a card the pity gave, a
 // card with a part they wished for, a series completed. Each is one short line, with nothing in it
 // that is not public (the rarity and the pity's length are on the odds table; the relationship and
 // her words are not repeated; a milestone's tier is hers to know). An ordinary card is not told:
@@ -21,6 +22,12 @@ export function cardNotes(issued: IssuedCard, wishedNames: ReadonlyMap<string, s
   const tier = milestoneTier(card);
   if (tier !== null) {
     lines.push(`你和 ${who} 的關係到了「${tier.label}」,你給了他一張里程碑卡。`);
+  }
+  if (card.kind === "drop") {
+    const rare = card.parts.filter((p) => isRare(p.rarity)).map((p) => p.name);
+    lines.push(
+      `你丟在頻道裡的卡被 ${who} 撿走了${rare.length > 0 ? `,上面有「${rare.join("」「")}」` : ""}。`,
+    );
   }
   if (card.kind === "daily" && isRare(card.rarity)) {
     const rare = card.parts.filter((p) => isRare(p.rarity)).map((p) => p.name);
