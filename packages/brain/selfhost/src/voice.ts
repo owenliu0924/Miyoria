@@ -89,8 +89,10 @@ import {
   type WakeAuthor,
   wakeAuthor,
 } from "../../self/src/index.js";
+import { answeredLine, applyFeel, feelDeps } from "./feel.js";
 import type { AdmittedInput } from "./lane.js";
 import type { HostPrompt, SlowReads } from "./prompt.js";
+import { knownPeople } from "./repeat.js";
 import type { PromptKeeper } from "./saved.js";
 import { VoiceLane, type VoiceLaneHost, type VoiceRun } from "./voice-lane.js";
 import { PlaceOutlet, until, VoiceOutlet } from "./voice-outlet.js";
@@ -446,7 +448,9 @@ export class VoiceHost implements VoiceRunner {
         }
         break;
       case "screened":
-        if (event.kind !== "tag_stripped") state.tally.count(event.kind, event.count);
+        if (event.kind === "feel_cut") {
+          agent.log.debug({ turn: event.turn, lines: event.count }, "feel lines left out");
+        } else if (event.kind !== "tag_stripped") state.tally.count(event.kind, event.count);
         break;
       case "tool_call":
         if (event.job !== null) {
@@ -890,7 +894,30 @@ export class VoiceHost implements VoiceRunner {
       agent.ctx.publish(Events.AgentTurnCompleted, { turn, context, text: "" }, { turn });
       return;
     }
+    if (result !== null) this.#feel(place, run, result);
     this.#publish(state, result, error);
+  }
+
+  /** Her `<feel>` blocks of a voice run that ended (`feel.ts`): those in the channel may be named. */
+  #feel(place: VoicePlace, run: VoiceRun, result: RunResult): void {
+    if (result.feel.length === 0) return;
+    try {
+      const entries = this.#d.transcript.tail(place.session).entries;
+      const people = [
+        ...place.members.map((m) => ({ account: m.account, name: m.display_name })),
+        ...knownPeople(entries, run.wake),
+      ];
+      applyFeel(feelDeps(this.#agent), {
+        turn: run.turn,
+        context: place.context,
+        wake: run.wake,
+        feel: result.feel,
+        people,
+        line: answeredLine(run.wake, run.inputs, entries),
+      });
+    } catch (error) {
+      this.#agent.log.warn({ turn: run.turn, err: errorMessage(error) }, "feel not applied");
+    }
   }
 
   #forget(state: VoiceTurn): void {

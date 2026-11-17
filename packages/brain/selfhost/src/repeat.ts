@@ -65,16 +65,28 @@ export function outletClaims(agent: Agent, host: ClaimsHost): OutletClaims {
       return [...new Set(handles)];
     },
     people(line: OutgoingLine): { account: AccountRef; name: string }[] {
-      const out = speakersOf(host.entries(line.place), KNOWN_PEOPLE);
-      const wake = host.wakeOf(line.turn);
-      for (const from of wake === null ? [] : askers(wake)) {
-        if (!out.some((o) => sameAccount(o.account, from.account))) {
-          out.push({ account: from.account, name: from.name });
-        }
-      }
-      return out.filter((p) => !agent.isBlocked(p.account));
+      return knownPeople(host.entries(line.place), host.wakeOf(line.turn)).filter(
+        (p) => !agent.isBlocked(p.account),
+      );
     },
   };
+}
+
+/**
+ * The people known in a place: who spoke there lately (`KNOWN_PEOPLE` of them) and whoever the
+ * run answers. Who an `@name` may mention and whom a name in her `<feel>` may be.
+ */
+export function knownPeople(
+  entries: readonly TranscriptEntry[],
+  wake: Wake | null,
+): { account: AccountRef; name: string }[] {
+  const out = speakersOf(entries, KNOWN_PEOPLE);
+  for (const from of wake === null ? [] : askers(wake)) {
+    if (!out.some((o) => sameAccount(o.account, from.account))) {
+      out.push({ account: from.account, name: from.name });
+    }
+  }
+  return out;
 }
 
 /** Whoever the run answers: the author of what woke her and the others who called her. */
