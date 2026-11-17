@@ -99,3 +99,16 @@ describe("/me lottery", () => {
     expect(typed.text).toContain("這週你一共 7 張");
   });
 });
+
+describe("/game lottery", () => {
+  it("shows the week's pot to everyone, without anyone's own tickets", async () => {
+    const r = await rig({ auction: false });
+    r.wallet.fund(BOB, 100);
+    const registry = registryWith(r.service);
+    await registry.dispatch({ path: ["me", "lottery"], args: { count: 4 }, ...who(BOB) });
+    const shown = await registry.dispatch({ path: ["game", "lottery"], args: {}, ...who(BOB) });
+    expect(shown.ephemeral ?? false).toBe(false);
+    expect(shown.text).not.toContain("你有");
+    expect(shown.text).toContain("1 人買了 4 張,獎池 28");
+  });
+});
