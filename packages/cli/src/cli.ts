@@ -121,6 +121,8 @@ function hostTargetOf(ctx: RunContext): host.HostTarget {
 /** The installer's confirmation: `--yes` agrees, a script without a terminal refuses. */
 function serviceDepsOf(ctx: RunContext): servicesCmd.ServiceDeps {
   return {
+    yes: ctx.yes,
+    interactive: isInteractive(),
     confirm: async (message) => {
       if (ctx.yes) return true;
       if (!isInteractive()) return false;
@@ -290,7 +292,12 @@ export const COMMANDS: CommandSpec = {
         { name: "deep-only", help: "只做 --deep 的部署檢查(不連 LLM、Discord、資料庫)" },
         {
           name: "fix",
-          help: "只做安全的修復:同步缺的或過期的環境、下載缺的 install.files;不裝系統程式、不改任何系統設定",
+          help: "只做安全的修復:同步缺的或過期的環境、下載缺的或不對的模型檔(install.files,先列出大小和授權問一次,-y 不問);不裝系統程式、不改任何系統設定",
+        },
+        {
+          name: "print-hashes",
+          value: "SERVICE",
+          help: "只印出這個服務在這台電腦上現有檔案(install.files 和 install.manual)的 SHA-256 和大小,用 service.toml 的寫法,方便填進 [[install.files]]",
         },
         HOST_CONFIG_OPTION,
       ],
@@ -300,6 +307,7 @@ export const COMMANDS: CommandSpec = {
           stackOnly: flag(ctx, "deep-only"),
           fix: flag(ctx, "fix"),
           ...optionalString("hostConfig", str(ctx, "host-config")),
+          ...optionalString("printHashes", str(ctx, "print-hashes")),
           services: serviceDepsOf(ctx),
         }),
     },
@@ -381,7 +389,7 @@ export const COMMANDS: CommandSpec = {
     },
     {
       name: "add",
-      help: "把服務加進這台電腦:寫進 host.toml,用 uv 建好環境、下載缺的檔案,並列出還缺什麼;不給名字就列出目錄",
+      help: "把服務加進這台電腦:寫進 host.toml,用 uv 建好環境、下載缺的模型檔(先列出大小和授權問一次,-y 不問),並列出還缺什麼;不給名字就列出目錄",
       args: [
         {
           name: "service",
@@ -718,11 +726,14 @@ export const COMMANDS: CommandSpec = {
             noRestart: flag(ctx, "no-restart"),
             ...optionalString("hostConfig", str(ctx, "host-config")),
           },
-          update.defaultUpdateDeps(async (message) => {
-            if (ctx.yes) return true;
-            if (!isInteractive()) return false;
-            return interactivePrompter().confirm(message, false);
-          }),
+          {
+            ...update.defaultUpdateDeps(async (message) => {
+              if (ctx.yes) return true;
+              if (!isInteractive()) return false;
+              return interactivePrompter().confirm(message, false);
+            }),
+            services: serviceDepsOf(ctx),
+          },
         ),
     },
     {
