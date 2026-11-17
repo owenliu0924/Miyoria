@@ -4,7 +4,13 @@
 
 import { type Clock, dataBlock } from "@miyoria/types";
 import type { WebConfig } from "./config.js";
-import { parseSearchPage, readableText, type SearchHit } from "./html.js";
+import {
+  type PagePicture,
+  pagePictures,
+  parseSearchPage,
+  readableText,
+  type SearchHit,
+} from "./html.js";
 import { Limits, TtlCache, WindowLimit } from "./limits.js";
 import { type GuardDeps, guardedGet, WebError } from "./net.js";
 
@@ -53,6 +59,10 @@ export interface ReadOutcome {
   title: string;
   /** Characters of page text before the cap. */
   chars: number;
+  /** The page's own main picture (`og:image`, `twitter:image`), when it has one. */
+  image: PagePicture | null;
+  /** Pictures of the article body, in order (`read_pictures` at most). */
+  pictures: PagePicture[];
 }
 
 export class WebService {
@@ -296,16 +306,23 @@ export class WebService {
     if (text === "") throw new WebError("這頁讀不出文字", "empty text");
     const total = [...text].length;
     const heading = title === "" ? page.url.hostname : oneLine(title, 120);
+    const found = plain
+      ? { main: null, body: [] }
+      : pagePictures(body, page.url, cfg.read_pictures);
     const out: ReadOutcome = {
       url: page.url.href,
       title: heading,
       chars: total,
+      image: found.main,
+      pictures: found.body,
       text: formatPage(
         heading,
         page.url.href,
         clip(text, cfg.read_chars),
         total > cfg.read_chars,
         cfg.result_chars,
+        found.main,
+        found.body,
       ),
     };
     this.#readCache.set(key, out, this.#now());
@@ -376,14 +393,55 @@ export function formatPage(
   text: string,
   cut: boolean,
   maxChars: number,
+  image: PagePicture | null = null,
+  pictures: readonly PagePicture[] = [],
 ): string {
   const body = `網址: ${oneLine(url, 200)}\n${text}${cut ? "\n…(後面還有,已截斷)" : ""}`;
-  return shrinkBlock(PAGE_INTRO, `網頁 ${title}`, body, maxChars);
+  return shrinkBlock(
+    PAGE_INTRO,
+    `網頁 ${title}`,
+    body,
+    maxChars,
+    pictureList(image, pictures, Math.floor(maxChars / 3)),
+  );
 }
 
-/** `intro` and a data block whose body is shortened until the whole fits `maxChars`. */
-function shrinkBlock(intro: string, title: string, body: string, maxChars: number): string {
-  const make = (b: string) => `${intro}\n${dataBlock("web", title, b)}`;
+/**
+ * The pictures of a page as a short list at the end of its text (what `web_image` takes), as
+ * many as fit in `room` characters; empty when there are none.
+ */
+function pictureList(
+  image: PagePicture | null,
+  pictures: readonly PagePicture[],
+  room: number,
+): string {
+  const line = (p: PagePicture, label: string) =>
+    `- ${label}${oneLine(p.url, 300)}${p.alt === "" ? "" : `(${oneLine(p.alt, 60)})`}`;
+  const lines = [
+    ...(image === null ? [] : [line(image, "主圖 ")]),
+    ...pictures.map((p) => line(p, "")),
+  ];
+  const head = "\n這頁的圖片(要看用 web_image,網址照抄):";
+  let out = "";
+  for (const l of lines) {
+    if ([...`${head}${out}\n${l}`].length > room) break;
+    out += `\n${l}`;
+  }
+  return out === "" ? "" : `${head}${out}`;
+}
+
+/**
+ * `intro` and a data block whose body is shortened until the whole fits `maxChars`; `tail`
+ * (a list that must survive the cut) always stays after the body.
+ */
+function shrinkBlock(
+  intro: string,
+  title: string,
+  body: string,
+  maxChars: number,
+  tail = "",
+): string {
+  const make = (b: string) => `${intro}\n${dataBlock("web", title, `${b}${tail}`)}`;
   const length = (s: string) => [...s].length;
   let out = make(body);
   if (length(out) <= maxChars) return out;

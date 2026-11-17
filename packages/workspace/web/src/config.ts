@@ -40,6 +40,8 @@ export const WebConfigSchema = z.object({
   search_results: z.number().int().min(1).max(8).default(5),
   /** Characters of page text `web_read` keeps (v4 plan §4.2: a page, 12,000). */
   read_chars: z.number().int().min(200).max(20_000).default(12_000),
+  /** Pictures from the article body `web_read` lists (besides the page's main one); 0 lists none. */
+  read_pictures: z.number().int().min(0).max(10).default(4),
   /**
    * The most characters one `web_read` answer takes, block markers included (§4.2: 12,000).
    */
