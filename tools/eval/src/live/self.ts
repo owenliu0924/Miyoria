@@ -4,7 +4,7 @@
 // What it is given:
 // - block 1: her real persona (`Profile.personaPrompt`), then the runner's own rules (`rules.ts`);
 // - block 4: the scene's people as person cards, rendered by today's people block (`peopleBody`)
-//   from the closeness the scene sets;
+//   from a heart row made of the closeness the scene sets;
 // - block 7: the time (the scene's clock when it sets one), the place and her state line;
 // - the transcript: the scene's lines in a fresh in-memory transcript store;
 // - tools: a fresh registry with `find_tools` and `say`, and the scene's fake-world tools, all
@@ -42,6 +42,7 @@ import {
   type ContextKey,
   contextKeyString,
   dataBlock,
+  type HeartView,
   isJsonObject,
   ModerationKey,
   type PersonId,
@@ -118,6 +119,30 @@ function attitudeOf(index: number, person: ScenePerson, c: Closeness): Attitude 
   };
 }
 
+/** The heart row the scene's closeness stands for: the slow values set, the rest neutral. */
+function heartViewOf(index: number, c: Closeness): HeartView {
+  return {
+    person: personOf(index),
+    bond: clamp(c.bond, -100, 1000),
+    trust: clamp(c.trust ?? c.bond, 0, 100),
+    familiarity: clamp(c.familiarity ?? c.bond, 0, 100),
+    warmth: 0,
+    respect: 0,
+    ease: 0,
+    grudge: 0,
+    longing: 0,
+    rapport: 0,
+    stance: "",
+    impression: "",
+    call_name: null,
+    tags: [],
+    owner: false,
+    blocked: false,
+    last_seen: null,
+    last_together: null,
+  };
+}
+
 /** `YYYY-MM-DD HH:MM` in the local time zone, as epoch ms. */
 function localMs(text: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(text);
@@ -182,12 +207,16 @@ export class SelfSubject implements Subject {
     // People and their lines.
     const accounts = new Map<string, AccountRef>();
     const attitudes = new Map<string, Attitude>();
+    const views = new Map<PersonId, HeartView>();
     const present: PresentPerson[] = [];
     const last = scene.lines.at(-1);
     scene.people.forEach((p, i) => {
       const account = accountOf(i);
       accounts.set(p.name, account);
-      if (p.closeness) attitudes.set(account.id, attitudeOf(i, p, p.closeness));
+      if (p.closeness) {
+        attitudes.set(account.id, attitudeOf(i, p, p.closeness));
+        views.set(personOf(i), heartViewOf(i, p.closeness));
+      }
       present.push({ account, handle: p.name, person: personOf(i), speaker: p.name === last?.who });
     });
     const accountFor = (who: string): AccountRef =>
@@ -248,7 +277,10 @@ export class SelfSubject implements Subject {
       fixed: async () => o.profile.personaPrompt(),
       pinned: async () => null,
       place: async () => {
-        const body = peopleBody(present, { attitude });
+        const body = peopleBody(present, {
+          attitude,
+          heart: { view: (person) => views.get(person) ?? null },
+        });
         return body === "" ? null : dataBlock("people", PRESENT_TITLE, body);
       },
       recalled: async () => null,
