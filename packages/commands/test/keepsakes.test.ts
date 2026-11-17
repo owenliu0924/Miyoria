@@ -1,4 +1,4 @@
-// `/me card` and `/me fortune`: neutral answers over the Keepsakes service, and the hub page.
+// `/me card`: neutral answers over the Keepsakes service, and the hub page.
 
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
@@ -177,36 +177,13 @@ describe("me card", () => {
   it("says so plainly when the api is not running", async () => {
     const { run } = setup(false);
     expect((await run("me card")).text).toBe("這個功能現在不能用。");
-    expect((await run("me fortune")).text).toBe("這個功能現在不能用。");
-  });
-});
-
-describe("me fortune", () => {
-  it("shows the slip and what it cost, and the same slip for nothing the second time", async () => {
-    const { run } = setup();
-    const first = await run("me fortune");
-    expect(first.card?.accent).toBe("neutral");
-    expect(first.text).toContain("大吉　春風得意");
-    expect(first.text).toContain("月落烏啼\n江楓漁火");
-    expect(first.text).toContain("花了 10，剩 20");
-    const again = await run("me fortune");
-    expect(again.text).toContain("春風得意");
-    expect(again.text).not.toContain("花了");
-  });
-
-  it("is refused in plain words for someone she does not know", async () => {
-    const { run, fake } = setup();
-    fake.refuse = { status: 403, message: "她還不認識你" };
-    const reply = await run("me fortune");
-    expect(reply.text).toBe("她還不認識你");
-    expect(reply.tone).toBe("info");
   });
 });
 
 describe("the me panel", () => {
-  it("has a page for the card and the slip, over commands that exist", () => {
+  it("has a page for the card, over a command that exists", () => {
     const me = panelDefs().find((d) => d.command === "me");
     const page = me?.pages.find((p) => p.id === "keepsakes");
-    expect(page?.actions.map((a) => a.path)).toEqual(["me card", "me fortune"]);
+    expect(page?.actions.map((a) => a.path)).toEqual(["me card"]);
   });
 });

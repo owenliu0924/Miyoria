@@ -1283,6 +1283,15 @@
         "channels"
       ]
     },
+    "ApiCheckinRequest": {
+      "type": "object",
+      "properties": {
+        "fortune": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "ApiCheckinResult": {
       "type": "object",
       "properties": {
@@ -1294,6 +1303,15 @@
         },
         "balance": {
           "type": "number"
+        },
+        "fortune": {
+          "$ref": "#/$defs/ApiIssuedFortune"
+        },
+        "fortune_charged": {
+          "type": "number"
+        },
+        "fortune_note": {
+          "type": "string"
         }
       },
       "required": [
@@ -3301,25 +3319,6 @@
         "confirm"
       ],
       "additionalProperties": false
-    },
-    "ApiFortuneDraw": {
-      "type": "object",
-      "properties": {
-        "fortune": {
-          "$ref": "#/$defs/ApiIssuedFortune"
-        },
-        "charged": {
-          "type": "number"
-        },
-        "balance": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "fortune",
-        "charged",
-        "balance"
-      ]
     },
     "ApiFortuneField": {
       "type": "object",

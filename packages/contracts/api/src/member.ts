@@ -229,7 +229,7 @@ export const IssueCardRequestSchema = z
   .meta({ id: "ApiIssueCardRequest" });
 export type IssueCardRequest = z.input<typeof IssueCardRequestSchema>;
 
-/** The body of a request that says nothing (reroll, check-in, a fortune draw): `{}`, no other field. */
+/** The body of a request that says nothing (a reroll): `{}`, no other field. */
 /** Body of `POST /api/member/live/pat`: empty, or where on her picture the pat landed (0..1). */
 const PatUnit = z.number().finite().min(0).max(1);
 export const PatRequestSchema = z

@@ -261,7 +261,7 @@ token form stays at `#/login`, with no link to it from the page.
   step. The header says 關係 with the same tier. A Core without the ring keeps the six steps.
 - No ranking of people, anywhere.
 - The logged-in page also holds the keepsakes (`CardSection`, `FortuneSlip`, `HoloCard`): the member
-  card and today's fortune slip, the same things `/me card` and `/me fortune` give on Discord,
+  card and today's fortune slip, the same things `/me card` and `/me checkin fortune:true` give on Discord,
   through the same service, so both read alike. The card and the slip are the only decorated
   surfaces on the site; the rest stays flat, and the card's motion stops under reduced motion.
 - 她 (the public live page at `/watch`, `LIVE_PAGE` in `pages/public/live`; `/live` stays the admin 直播 page): anyone with the link may watch, and

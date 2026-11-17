@@ -677,7 +677,6 @@ describe("the route table", () => {
       "POST /api/member/checkin",
       "POST /api/member/feed",
       "POST /api/member/forget",
-      "POST /api/member/fortune",
       "POST /api/member/frame",
       "POST /api/member/live/pat",
       "POST /api/member/screen",
@@ -2365,8 +2364,6 @@ describe("between people, the sponsor board and fortune slips", () => {
 
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const FORTUNE_SHAPE = [
-    "balance",
-    "charged",
     "fortune.date",
     "fortune.fields[].label",
     "fortune.fields[].text",
@@ -2491,127 +2488,169 @@ describe("between people, the sponsor board and fortune slips", () => {
   });
 
   describe("fortune slips", () => {
-    it("are written once a day for the price, kept, and asked again for nothing", async () => {
+    /** Coins that do not count as a check-in (the seeded `fund` rows do). */
+    const gift = (r: Awaited<ReturnType<typeof socialRig>>, id: string, delta: number) =>
+      r.row(id, delta, "her_gift");
+    const checkin = (
+      r: Awaited<ReturnType<typeof socialRig>>,
+      cookie: string,
+      body: unknown = { fortune: true },
+    ) => r.spend("/api/member/checkin", cookie, body);
+    const who = (id: string, name: string) => ({ account: discord(id), name, avatar_url: null });
+
+    it("are an optional paid add-on of the check-in: written once, kept, the page shows it", async () => {
       const r = await socialRig();
-      await r.fund(ALICE, 30);
+      await gift(r, ALICE, 30);
       const cookie = await r.login("alice");
       expect((await r.get("/api/member/fortune", cookie)).body).toEqual({
         fortune: null,
         price: 10,
       });
 
-      const first = await r.spend("/api/member/fortune", cookie, {}, "f-1");
+      const first = await checkin(r, cookie);
       expect(first.status).toBe(200);
-      expect(shape(first.body)).toEqual(FORTUNE_SHAPE);
+      expect(shape(first.body)).toEqual(
+        [...FORTUNE_SHAPE, "balance", "fortune_charged", "gained", "streak"].sort(),
+      );
       const slip = (first.body as { fortune: Record<string, unknown> }).fortune;
       expect(slip).toMatchObject(SLIP);
-      expect(first.body).toMatchObject({ charged: 10, balance: 20 });
-      expect(await r.balance(ALICE)).toBe(20);
+      // 30 gifted, 10 for the check-in and 10 for the achievement it unlocks, minus 10 for the slip.
+      expect(first.body).toMatchObject({ gained: 10, fortune_charged: 10, balance: 40 });
+      expect(await r.balance(ALICE)).toBe(40);
       expect((await r.get("/api/member/fortune", cookie)).body).toEqual({
         fortune: slip,
         price: 10,
       });
-
-      // The same key, and another key the same day: the same slip, nothing more charged, no more asking.
-      const asked = r.model.asked;
-      for (const key of ["f-1", "f-2"]) {
-        const again = await r.spend("/api/member/fortune", cookie, {}, key);
-        expect(again.status).toBe(200);
-        expect(again.body).toEqual({ fortune: slip, charged: 0, balance: 20 });
-      }
-      expect(r.model.asked).toBe(asked);
-      expect(await r.balance(ALICE)).toBe(20);
+      // The day's check-in is done: nothing more is written or charged.
+      expect((await checkin(r, cookie)).status).toBe(409);
+      expect(r.model.asked).toBe(1);
+      expect(await r.balance(ALICE)).toBe(40);
     });
 
-    it("can be drawn from a command through the Keepsakes service, and the page shows the same slip", async () => {
+    it("are not drawn by a plain check-in, and a strict body takes nothing else", async () => {
       const r = await socialRig();
-      await r.fund(ALICE, 30);
+      await gift(r, ALICE, 30);
+      const cookie = await r.login("alice");
+      const plain = await checkin(r, cookie, {});
+      expect(plain.status).toBe(200);
+      expect(plain.body).toEqual({ gained: 10, streak: 1, balance: 50 });
+      expect(r.model.asked).toBe(0);
+      expect((await checkin(r, cookie, { fortune: true, to: BOB })).status).toBe(422);
+      expect(await r.balance(ALICE)).toBe(50);
+    });
+
+    it("can be drawn from the Keepsakes service, and asked again for nothing", async () => {
+      const r = await socialRig();
+      await gift(r, ALICE, 30);
       const keepsakes = r.sup.services.require(KeepsakesKey);
-      const who = { account: discord(ALICE), name: "Alice", avatar_url: null };
-      expect(await keepsakes.fortuneToday(who.account)).toEqual({ fortune: null, price: 10 });
-      const drawn = await keepsakes.drawFortune(who, "c-1");
+      const alice = who(ALICE, "Alice");
+      expect(await keepsakes.fortuneToday(alice.account)).toEqual({ fortune: null, price: 10 });
+      const drawn = await keepsakes.drawFortune(alice, "c-1");
       expect(drawn).toMatchObject({ ok: true, charged: 10, balance: 20 });
       const cookie = await r.login("alice");
       expect((await r.get("/api/member/fortune", cookie)).body).toEqual({
         fortune: drawn.ok ? drawn.value : null,
         price: 10,
       });
-      const again = await keepsakes.drawFortune(who, "c-2");
+      const again = await keepsakes.drawFortune(alice, "c-2");
       expect(again).toMatchObject({ ok: true, charged: 0, balance: 20 });
       // Someone she does not know gets the same words as on the page.
-      const stranger = { account: discord("999"), name: "路人", avatar_url: null };
-      expect(await keepsakes.drawFortune(stranger, "c-3")).toMatchObject({
+      expect(await keepsakes.drawFortune(who("999", "路人"), "c-3")).toMatchObject({
         ok: false,
         status: 403,
       });
     });
 
-    it("give the payment back when she cannot write, and a retry of that key buys nothing", async () => {
+    it("give the payment back when she cannot write: the check-in stands with a note, and a retried key buys nothing", async () => {
       const r = await socialRig();
-      await r.fund(ALICE, 30);
+      await gift(r, ALICE, 30);
       const cookie = await r.login("alice");
       r.model.fail = true;
-      const failed = await r.spend("/api/member/fortune", cookie, {}, "g-1");
-      expect(failed.status).toBe(503);
-      expect(failed.body).toEqual({ error: "她現在寫不出來,魚幣已經退回" });
-      expect(await r.balance(ALICE)).toBe(30);
+      const failed = await checkin(r, cookie);
+      expect(failed.status).toBe(200);
+      expect(failed.body).toEqual({
+        gained: 10,
+        streak: 1,
+        balance: 50,
+        fortune_note: "她現在寫不出來,魚幣已經退回",
+      });
+      expect(await r.balance(ALICE)).toBe(50);
       expect((await r.get("/api/member/fortune", cookie)).body).toEqual({
         fortune: null,
         price: 10,
       });
 
+      // The same key after a failed attempt finds its charge made: given back, and it is a 409.
+      const keepsakes = r.sup.services.require(KeepsakesKey);
+      const alice = who(ALICE, "Alice");
+      expect(await keepsakes.drawFortune(alice, "g-1")).toMatchObject({ ok: false, status: 503 });
       r.model.fail = false;
-      const retry = await r.spend("/api/member/fortune", cookie, {}, "g-1");
-      expect(retry.status).toBe(409);
-      expect(await r.balance(ALICE)).toBe(30);
-      const fresh = await r.spend("/api/member/fortune", cookie, {}, "g-2");
-      expect(fresh.status).toBe(200);
-      expect(await r.balance(ALICE)).toBe(20);
+      expect(await keepsakes.drawFortune(alice, "g-1")).toMatchObject({ ok: false, status: 409 });
+      expect(await r.balance(ALICE)).toBe(50);
+      expect(await keepsakes.drawFortune(alice, "g-2")).toMatchObject({ ok: true, charged: 10 });
+      expect(await r.balance(ALICE)).toBe(40);
     });
 
     it("are not kept when a poem line names someone else, and the payment goes back", async () => {
       const r = await socialRig();
-      await r.fund(ALICE, 30);
+      await gift(r, ALICE, 30);
       const cookie = await r.login("alice");
       r.model.slip = () => ({ ...SLIP, poem: ["Bob來了", "江楓漁火", "姑蘇城外", "夜半鐘聲"] });
-      const res = await r.spend("/api/member/fortune", cookie, {}, "n-1");
-      expect(res.status).toBe(503);
-      expect(await r.balance(ALICE)).toBe(30);
+      const res = await checkin(r, cookie);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ gained: 10, balance: 50 });
+      expect((res.body as { fortune?: unknown }).fortune).toBeUndefined();
+      expect(await r.balance(ALICE)).toBe(50);
       // A field naming him is only left off.
       r.model.slip = () => ({ ...SLIP, fields: [{ label: "戀愛", text: "和 Bob 有緣" }] });
-      const ok = await r.spend("/api/member/fortune", cookie, {}, "n-2");
-      expect(ok.status).toBe(200);
-      expect((ok.body as { fortune: { fields: unknown[] } }).fortune.fields).toEqual([]);
+      const ok = await r.sup.services.require(KeepsakesKey).drawFortune(who(ALICE, "Alice"), "n-2");
+      expect(ok).toMatchObject({ ok: true });
+      expect(ok.ok ? ok.value.fields : null).toEqual([]);
     });
 
     it("are refused to strangers and the blocked in the words of the wallet, and without a model", async () => {
       const r = await socialRig();
-      for (const id of [CAROL, DAVE, ERIN, FRANK]) await r.fund(id, 50);
-      for (const who of ["carol", "dave", "erin", "frank"]) {
-        const res = await r.spend("/api/member/fortune", await r.login(who), {}, "k");
-        expect(res.status, who).toBe(403);
+      for (const id of [CAROL, DAVE, ERIN, FRANK]) await gift(r, id, 50);
+      const keepsakes = r.sup.services.require(KeepsakesKey);
+      for (const [who_, id, name] of [
+        ["carol", CAROL, "Carol"],
+        ["dave", DAVE, "Dave"],
+        ["erin", ERIN, "Erin"],
+        ["frank", FRANK, "Frank"],
+      ] as const) {
+        // The check-in is refused as a whole, so nothing is drawn.
+        const res = await checkin(r, await r.login(who_));
+        expect(res.status, who_).toBe(403);
         expect(res.body).toEqual({ error: "她還不認識你,先和她說說話吧" });
-        const view = await r.get("/api/member/fortune", await r.login(who));
+        expect(await keepsakes.drawFortune(who(id, name), "k")).toMatchObject({
+          ok: false,
+          status: 403,
+        });
+        const view = await r.get("/api/member/fortune", await r.login(who_));
         expect(view.body).toEqual({ fortune: null, price: 10 });
       }
       for (const id of [CAROL, DAVE, ERIN, FRANK]) expect(await r.balance(id)).toBe(50);
       expect(r.model.asked).toBe(0);
 
-      await r.fund(ALICE, 30);
+      await gift(r, ALICE, 30);
       r.sup.services.removeOwnedBy("llm");
       const cookie = await r.login("alice");
-      expect((await r.spend("/api/member/fortune", cookie, {}, "m")).status).toBe(503);
-      expect(await r.balance(ALICE)).toBe(30);
-      expect((await r.spend("/api/member/fortune", cookie, { to: BOB }, "m")).status).toBe(422);
+      const res = await checkin(r, cookie);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        gained: 10,
+        streak: 1,
+        balance: 50,
+        fortune_note: "現在抽不了籤",
+      });
+      expect(await r.balance(ALICE)).toBe(50);
     });
 
     it("are in the export, and go when they ask to be forgotten", async () => {
       const r = await socialRig();
-      await r.fund(ALICE, 30);
+      await gift(r, ALICE, 30);
       const cookie = await r.login("alice");
-      const made = (await r.spend("/api/member/fortune", cookie, {}, "x-1")).body as {
-        fortune: unknown;
-      };
+      const made = (await checkin(r, cookie)).body as { fortune: unknown };
       const exported = (await r.get("/api/member/export", cookie)).body as { fortunes: unknown[] };
       expect(exported.fortunes).toEqual([made.fortune]);
       expect(shape(exported.fortunes)).toEqual(

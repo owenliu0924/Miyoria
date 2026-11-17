@@ -5,7 +5,7 @@
 // not enough coins, `409` a refusal in the words of the page, `429` a limit.
 
 import { z } from "zod";
-import { EmptyRequestSchema } from "./member.js";
+import { IssuedFortuneSchema } from "./fortune.js";
 import { IdempotencyHeaders, route } from "./route.js";
 
 export const FeedItemSchema = z.enum(["rice", "big_bowl", "dessert"]).meta({ id: "ApiFeedItem" });
@@ -71,9 +71,26 @@ export const WalletViewSchema = z
   .meta({ id: "ApiWalletView" });
 export type WalletView = z.output<typeof WalletViewSchema>;
 
-/** `POST /api/member/checkin`. */
+/** Body of `POST /api/member/checkin`: `fortune` adds today's fortune slip to the check-in (paid). */
+export const CheckinRequestSchema = z
+  .strictObject({ fortune: z.boolean().optional() })
+  .meta({ id: "ApiCheckinRequest" });
+export type CheckinRequest = z.input<typeof CheckinRequestSchema>;
+
+/**
+ * `POST /api/member/checkin`. With `fortune` asked: the slip (`fortune`, today's own when one was
+ * drawn already, `fortune_charged` 0 then) or why there is none (`fortune_note`; the check-in
+ * itself stands). `balance` is after the slip's price.
+ */
 export const CheckinResultSchema = z
-  .object({ gained: z.number(), streak: z.number(), balance: z.number() })
+  .object({
+    gained: z.number(),
+    streak: z.number(),
+    balance: z.number(),
+    fortune: IssuedFortuneSchema.optional(),
+    fortune_charged: z.number().optional(),
+    fortune_note: z.string().optional(),
+  })
   .meta({ id: "ApiCheckinResult" });
 export type CheckinResult = z.output<typeof CheckinResultSchema>;
 
@@ -173,11 +190,11 @@ export const wallet = {
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/wallet" })
     .output(WalletViewSchema),
-  /** Once a local day (the Discord command counts too); `409` after. */
+  /** Once a local day (the Discord command counts too); `409` after. Optionally with a paid fortune slip. */
   checkin: route
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "POST", path: "/api/member/checkin" })
-    .input(z.object({ body: EmptyRequestSchema }))
+    .input(z.object({ body: CheckinRequestSchema }))
     .output(CheckinResultSchema),
   feed: spend("/api/member/feed", FeedRequestSchema).output(FeedResultSchema),
   screen: spend("/api/member/screen", ScreenRequestSchema).output(SpendResultSchema),

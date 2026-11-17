@@ -9,7 +9,7 @@ import {
   replyEphemeral,
 } from "@miyoria/commands";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import type { AccountRef, ContextKey } from "@miyoria/types";
+import { type AccountRef, type ContextKey, type Keepsakes, KeepsakesKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyCommands, PATHS, walletText } from "../src/commands.js";
 import { STRANGER } from "../src/economy.js";
@@ -250,6 +250,66 @@ describe("wallet commands", () => {
 
     state.fail = new EconomyError(503, "現在沒辦法餵她");
     expect((await run(registry, "me feed", { item: "rice" })).tone).toBe("warn");
+  });
+
+  it("checkin_adds_a_paid_fortune_slip_only_when_asked", async () => {
+    const f = fake();
+    const drawn: string[] = [];
+    let refuse: string | null = null;
+    const keepsakes = {
+      drawFortune: async (_who: unknown, key: string) => {
+        drawn.push(key);
+        if (refuse) return { ok: false, status: 402, message: refuse };
+        return {
+          ok: true,
+          value: {
+            id: "f1",
+            date: "2026-11-17",
+            rank: "大吉",
+            title: "春風得意",
+            poem: ["月落烏啼", "江楓漁火"],
+            fields: [],
+            line: null,
+          },
+          charged: 10,
+          balance: 120,
+        };
+      },
+    } as unknown as Keepsakes;
+    const registry = new CommandRegistry(Permissions.fromStrings(["discord:1"]));
+    const services = new ServiceRegistry();
+    services.provide("test", EconomyKey, f.economy);
+    services.provide("test", KeepsakesKey, keepsakes);
+    new EconomyCommands().install(registry, services);
+
+    const plain = await run(registry, "me checkin");
+    expect(plain.text).not.toContain("春風得意");
+    expect(drawn).toHaveLength(0);
+
+    const asked = await run(registry, "me checkin", { fortune: true });
+    expect(asked.text).toContain("簽到了，+10 魚幣");
+    expect(asked.text).toContain("大吉　春風得意");
+    expect(asked.text).toContain("籤詩花了 10 魚幣，剩 120");
+    expect(drawn).toHaveLength(1);
+
+    // The slip is refused: the check-in stands, with the reason under it.
+    refuse = "魚幣不夠";
+    const short = await run(registry, "me checkin", { fortune: true });
+    expect(short.text).toContain("簽到了，+10 魚幣");
+    expect(short.text).toContain("魚幣不夠");
+
+    // Already checked in: nothing is drawn, and nothing is charged.
+    f.state.fail = new EconomyError(409, "今天已經簽到過了");
+    refuse = null;
+    const again = await run(registry, "me checkin", { fortune: true });
+    expect(again.text).toBe("今天已經簽到過了");
+    expect(drawn).toHaveLength(2);
+
+    // Without the service the check-in still stands.
+    const bare = setup();
+    const none = await run(bare.registry, "me checkin", { fortune: true });
+    expect(none.text).toContain("簽到了");
+    expect(none.text).toContain("籤詩現在抽不了");
   });
 
   it("without_the_economy_the_commands_say_so", async () => {

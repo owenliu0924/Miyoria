@@ -2,7 +2,8 @@
 // session's person, and nobody else's.
 //
 // * `GET /api/member/wallet`: balance, what they can still earn today, the shop, their frames.
-// * `POST /api/member/checkin` `{}`: once a local day (Discord's `/me` counts too); 409 after.
+// * `POST /api/member/checkin` `{ fortune? }`: once a local day (Discord's `/me` counts too); 409
+//   after. `fortune: true` adds today's fortune slip, paid (the check-in stands if the slip fails).
 // * `POST /api/member/feed` `{ item, count? }`,
 //   `POST /api/member/screen` `{ text }` (a message on the stream: 409 when she is not live), `POST /api/member/frame` `{ buy?, select? }`.
 // * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member (403 in the
@@ -33,6 +34,7 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, newId } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
+import { checkinFortune } from "./fortune-routes.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -165,8 +167,13 @@ export const walletRpc = {
   view: os.wallet.view.handler(async ({ context: { state, c } }) => {
     return walletView(await withWallet(state, (e) => e.wallet(accountOf(c))));
   }),
-  checkin: os.wallet.checkin.handler(async ({ context: { state, c } }) => {
-    return checkinResult(await withWallet(state, (e) => e.checkin(accountOf(c))));
+  checkin: os.wallet.checkin.handler(async ({ input, context: { state, c } }) => {
+    const done = checkinResult(await withWallet(state, (e) => e.checkin(accountOf(c))));
+    if (input.body.fortune !== true) return done;
+    // The paid add-on: the check-in stands whatever happens to the slip.
+    const { account, name } = c.get("member") as SessionRecord;
+    const { balance, ...slip } = await checkinFortune(state, { account, name });
+    return { ...done, ...slip, balance: balance ?? done.balance };
   }),
   feed: os.wallet.feed.handler(async ({ input, context: { state, c } }) => {
     const key = keyOf(input.headers["idempotency-key"]);

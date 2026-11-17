@@ -23,7 +23,7 @@ import {
   notice,
 } from "@miyoria/commands";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
-import { newId } from "@miyoria/types";
+import { type KeepsakeFortune, KeepsakesKey, newId } from "@miyoria/types";
 import { registerV2, unregisterV2 } from "./commands-v2.js";
 import { STRANGER, WALLET_NODE } from "./economy.js";
 import { mutedText, unlockLines } from "./notices.js";
@@ -76,6 +76,19 @@ const HUNGER_WORD: Readonly<Record<Hunger, string>> = {
 };
 
 const UNAVAILABLE = "錢包現在打不開";
+const NO_SLIP = "今天的籤詩現在抽不了。";
+
+/** A fortune slip as it is shown: rank and title, the poem, her fields and line. */
+function slipText(slip: KeepsakeFortune): CardBlock[] {
+  const lines = [`**${slip.rank}　${slip.title}**`, slip.poem.join("\n")];
+  if (slip.fields.length > 0)
+    lines.push(slip.fields.map((f) => `${f.label}：${f.text}`).join("\n"));
+  if (slip.line) lines.push(slip.line);
+  return [
+    { type: "text", text: lines.join("\n\n") },
+    { type: "muted", text: slip.date },
+  ];
+}
 
 /** Buttons of the wallet card: label of `me feed <item>` (dessert is web only). */
 const FEED_BUTTONS: readonly { item: FeedItem; label: string }[] = [
@@ -168,15 +181,46 @@ class Handler {
     });
   }
 
-  checkin(inv: Invocation): Promise<CommandReply> {
+  /**
+   * `/me checkin`; with `fortune` also today's fortune slip, paid. The slip is asked after the
+   * check-in went through, and a refusal of it is a line under the check-in, never an error.
+   */
+  checkin(inv: Invocation, fortune = false): Promise<CommandReply> {
     return this.#guard(async (economy) => {
       const r = await economy.checkin(inv.invoker);
       const view = await economy.wallet(inv.invoker);
-      return result(
+      const lines = [
         `簽到了，+${r.gained} ${view.currency}。連續 ${r.streak} 天，現在有 ${r.balance} ${view.currency}。`,
-        mutedText(unlockLines(r.unlocked)),
-      );
+      ];
+      if (!fortune) return result(lines[0] ?? "", mutedText(unlockLines(r.unlocked)));
+      const slip = await this.#slip(inv, view.currency);
+      const blocks: CardBlock[] = [{ type: "text", text: lines[0] ?? "" }, ...slip];
+      const unlocked = mutedText(unlockLines(r.unlocked));
+      if (unlocked) blocks.push({ type: "muted", text: unlocked });
+      return cardReply(blocks, { accent: "neutral" });
     });
+  }
+
+  /** The slip asked with a check-in, or the reason there is none. */
+  async #slip(inv: Invocation, currency: string): Promise<CardBlock[]> {
+    const keepsakes = this.services.get(KeepsakesKey);
+    if (!keepsakes) return [{ type: "muted", text: NO_SLIP }];
+    try {
+      const drawn = await keepsakes.drawFortune(
+        { account: inv.invoker, name: inv.invoker_display_name, avatar_url: null },
+        `discord:${newId()}`,
+      );
+      if (!drawn.ok) return [{ type: "muted", text: drawn.message }];
+      const blocks = slipText(drawn.value);
+      if (drawn.charged > 0) {
+        const left = drawn.balance === null ? "" : `，剩 ${drawn.balance}`;
+        blocks.push({ type: "muted", text: `籤詩花了 ${drawn.charged} ${currency}${left}` });
+      }
+      return blocks;
+    } catch (error) {
+      log.warn({ error: errorMessage(error) }, "a check-in's fortune failed");
+      return [{ type: "muted", text: NO_SLIP }];
+    }
   }
 
   feed(inv: Invocation, item: FeedItem): Promise<CommandReply> {
@@ -308,8 +352,15 @@ function register(registry: CommandRegistry, handler: Handler): void {
     { components: routes },
   );
   registry.register(
-    commandSpec("me checkin", "每日簽到，領魚幣", { permission: WALLET_NODE }),
-    (inv) => handler.checkin(inv),
+    commandSpec("me checkin", "每日簽到，領魚幣（可以加買今天的籤詩）", {
+      args: [
+        argSpec("fortune", "簽到時順便抽今天的籤詩（要花魚幣）", ArgKind.boolean, {
+          required: false,
+        }),
+      ],
+      permission: WALLET_NODE,
+    }),
+    (inv) => handler.checkin(inv, inv.bool("fortune") === true),
   );
   registry.register(
     commandSpec("me feed", "用魚幣餵她一碗飯", {

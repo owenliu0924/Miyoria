@@ -632,14 +632,12 @@ function mePages(policyUrl: string | null): PanelPage[] {
       ],
     },
     {
-      // The card and the slip come from the commands module itself (the api module gives them).
+      // The card comes from the commands module itself (the api module gives it). The fortune slip
+      // is the paid add-on of the check-in (`me checkin fortune:true`).
       id: "keepsakes",
-      label: "卡片與籤詩",
-      description: "她給你的卡片、今日籤詩",
-      actions: [
-        { id: "card", label: "我的卡片", path: "me card", style: "primary" },
-        { id: "fortune", label: "抽今日籤詩", path: "me fortune" },
-      ],
+      label: "卡片",
+      description: "她給你的卡片",
+      actions: [{ id: "card", label: "我的卡片", path: "me card", style: "primary" }],
     },
     {
       id: "wishes",

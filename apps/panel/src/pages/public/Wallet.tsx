@@ -2,7 +2,7 @@
 // main-column blocks (shop, how to earn, recent). Everything is what `GET /api/member/wallet`
 // answers; a Core without the route shows one line, and someone she does not know sees one line.
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import type { FeedItem, FeedResult, ShopItem, SpendResult, WalletView } from "@miyoria/contracts/api";
 import { isNotProvided } from "@/api/http";
@@ -11,12 +11,13 @@ import { ConfirmDialog } from "@/components/confirm";
 import { EmptyLine, ErrorLine, SkeletonRows } from "@/components/query-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 import { FRAME_SWATCH } from "./card";
-import { Board, Bounties, Fortune } from "./Extras";
+import { Board, Bounties, Fortune, FORTUNE } from "./Extras";
 import { newKey, priceText, say, usePatchWallet, useWallet } from "./spend";
 
 const SCREEN_MAX = 60;
@@ -46,9 +47,19 @@ function WalletBody({ w }: { w: WalletView }) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  const client = useQueryClient();
+  const fortuneId = useId();
+  // The fortune slip is a paid add-on of the check-in: asked with it, today's slip comes in its answer.
+  const [withFortune, setWithFortune] = useState(false);
+  const slipOffer = w.shop.find((s) => s.id === "fortune");
   const checkin = useMutation({
-    mutationFn: () => api.rpc.wallet.checkin({ body: {} }),
+    mutationFn: () => api.rpc.wallet.checkin({ body: withFortune ? { fortune: true } : {} }),
     onSuccess: (r) => {
+      if (r.fortune) {
+        const slip = r.fortune;
+        client.setQueryData(FORTUNE, (old: { fortune: unknown; price: number } | undefined) => (old ? { ...old, fortune: slip } : old));
+      }
+      if (r.fortune_note) notify.info(r.fortune_note);
       patch((v) => ({
         ...v,
         balance: r.balance,
@@ -106,6 +117,14 @@ function WalletBody({ w }: { w: WalletView }) {
         <Button variant="secondary" disabled={w.checked_in_today} busy={checkin.isPending} onClick={() => checkin.mutate()}>
           {w.checked_in_today ? "今天已簽到" : `簽到${checkinLine ? ` +${fmtInt(checkinLine.amount)}` : ""}`}
         </Button>
+        {slipOffer && !w.checked_in_today && (
+          <div className="flex items-center gap-2">
+            <Switch id={fortuneId} checked={withFortune} disabled={!slipOffer.available || checkin.isPending} onCheckedChange={setWithFortune} />
+            <label htmlFor={fortuneId} className="text-xs text-muted-foreground">
+              加買今日籤詩 · {priceText(slipOffer.price, w.currency)}
+            </label>
+          </div>
+        )}
         {w.streak > 0 && <p className="text-xs text-muted-foreground">連續簽到 {w.streak} 天</p>}
       </div>
       {feeds.length > 0 && (

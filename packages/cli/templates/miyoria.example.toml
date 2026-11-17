@@ -392,7 +392,7 @@ dirs = ["extensions"]
 # screen_message = 30         # 在直播 overlay 顯示一則短訊息(她可能念出來)
 # screen_messages_per_day = 10
 # screen_message_cooldown_s = 600   # 每個人多久能送一則
-# fortune = 10                # 她幫你寫一張籤
+# fortune = 10                # 簽到時加買的籤詩,她幫你寫一張
 # fortunes_per_day = 1
 # # ---- 人和人之間(§13):transfer_max = 0 或任一個每日上限 = 0 就關閉轉帳
 # transfer_max = 50           # 一次轉帳最多(收到的數量)

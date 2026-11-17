@@ -306,8 +306,6 @@ export {
   LogEventSchema,
 } from "./facts.js";
 export {
-  type FortuneDraw,
-  FortuneDrawSchema,
   type FortuneField,
   FortuneFieldSchema,
   type FortuneToday,
@@ -768,6 +766,8 @@ export {
   BoardChoiceSchema,
   type BoardRequest,
   BoardRequestSchema,
+  type CheckinRequest,
+  CheckinRequestSchema,
   type CheckinResult,
   CheckinResultSchema,
   type EarnLine,

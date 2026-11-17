@@ -2294,21 +2294,6 @@
             "path": "/api/member/fortune"
           }
         }
-      },
-      "draw": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "member",
-            "permission": null,
-            "limited": true
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "POST",
-            "path": "/api/member/fortune"
-          }
-        }
       }
     },
     "eval": {

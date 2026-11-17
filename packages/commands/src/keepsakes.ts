@@ -1,18 +1,17 @@
-// `/me card` and `/me fortune` (docs/design/v4-plan.md §9.3): the card she gives and today's
-// fortune slip, the same ones the member page gives, through the `Keepsakes` service the api
-// module provides. Without it (api off, no wallet) the answer is a neutral notice.
+// `/me card` (docs/design/v4-plan.md §9.3): the card she gives, the same one the member page
+// gives, through the `Keepsakes` service the api module provides. Without it (api off, no wallet)
+// the answer is a neutral notice.
 //
-// Both answers are neutral cards only the person sees; what she wrote is shown as written. `/me
+// The answer is a neutral card only the person sees; what she wrote is shown as written. `/me
 // card` shows today's card and issues one only when there is none yet today; with `action` it
 // issues another one today (`foil` makes it a foil card, paid) or rerolls today's newest (paid).
-// A chosen picture stays on the member page: it is picked by looking at the pictures. `/me
-// fortune` draws once a day and shows the same slip when asked again, for nothing.
+// A chosen picture stays on the member page: it is picked by looking at the pictures. The fortune
+// slip is not here: it is the paid add-on of `/me checkin` (`fortune:true`, in the economy).
 
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type KeepsakeCard,
   type KeepsakeCards,
-  type KeepsakeFortune,
   type KeepsakeResult,
   KeepsakesKey,
   newId,
@@ -25,7 +24,6 @@ const log = getLogger("commands.keepsakes");
 
 /** Members have these through `me.*`. */
 export const CARD_NODE = "me.card";
-export const FORTUNE_NODE = "me.fortune";
 
 const UNAVAILABLE = "這個功能現在不能用。";
 
@@ -50,17 +48,6 @@ function cardText(card: KeepsakeCard): CardBlock[] {
   const blocks: CardBlock[] = [{ type: "text", text: lines.join("\n") }];
   blocks.push({ type: "muted", text: `編號 ${card.serial}` });
   return blocks;
-}
-
-function slipText(slip: KeepsakeFortune): CardBlock[] {
-  const lines = [`**${slip.rank}　${slip.title}**`, slip.poem.join("\n")];
-  if (slip.fields.length > 0)
-    lines.push(slip.fields.map((f) => `${f.label}：${f.text}`).join("\n"));
-  if (slip.line) lines.push(slip.line);
-  return [
-    { type: "text", text: lines.join("\n\n") },
-    { type: "muted", text: slip.date },
-  ];
 }
 
 /** Under today's card: how many were given, and what else `/me card` can do. */
@@ -142,28 +129,6 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
         const paid = paidLine(issued.charged, issued.balance);
         if (paid) blocks.push(paid);
         return cardReply(blocks, { accent: "neutral", title: "你的卡片" });
-      }),
-  );
-
-  registry.register(
-    commandSpec("me fortune", "抽今天的籤詩（一天一支，要花魚幣；再問一次還是同一支）", {
-      permission: FORTUNE_NODE,
-      ephemeral: true,
-    }),
-    (inv) =>
-      guard(async () => {
-        const keepsakes = services.get(KeepsakesKey);
-        if (!keepsakes) return notice("info", UNAVAILABLE);
-        const drawn = await keepsakes.drawFortune(who(inv), `discord:${newId()}`);
-        if (!drawn.ok) return refusal(drawn);
-        const blocks = slipText(drawn.value);
-        if (drawn.charged > 0) {
-          blocks.push({
-            type: "muted",
-            text: `花了 ${drawn.charged}${drawn.balance === null ? "" : `，剩 ${drawn.balance}`}`,
-          });
-        }
-        return cardReply(blocks, { accent: "neutral", title: "今日籤詩" });
       }),
   );
 }

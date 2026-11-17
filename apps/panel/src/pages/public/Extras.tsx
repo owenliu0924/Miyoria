@@ -1,10 +1,10 @@
-// The newer places to spend on the member page (docs/design/economy.md §13): today's fortune slip,
+// The newer places to spend on the member page (docs/design/economy.md §13): today's fortune slip
+// (drawn with the check-in, see Wallet.tsx),
 // sending coins to a friend, the sponsor board and her bounties. A Core
 // without a route leaves its block out; someone she does not know never gets this far (the
 // wallet says so first).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Dices } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 import { isNotProvided } from "@/api/http";
 import type { BountyView } from "@miyoria/contracts/api";
@@ -20,7 +20,8 @@ import { notify } from "@/lib/notify";
 import { FortuneSlip } from "./FortuneSlip";
 import { newKey, priceText, usePatchWallet, useWallet } from "./spend";
 
-const FORTUNE = ["member", "fortune"] as const;
+/** The query of today's slip: the check-in puts the slip it drew here. */
+export const FORTUNE = ["member", "fortune"] as const;
 const BOARD = ["public", "board"] as const;
 const BOUNTIES = ["member", "bounties"] as const;
 const POLL_MS = 60_000;
@@ -39,28 +40,14 @@ const retry = (n: number, e: Error) => !isNotProvided(e) && n < 2;
 // ---------------------------------------------------------------------------
 // fortune
 
-/** Today's slip, or a button to draw one: once a day, she writes it. */
+/** Today's slip; there is a button for none: it is drawn with the check-in (an add-on of it). */
 export function Fortune() {
   const api = useApi();
-  const client = useQueryClient();
-  const { patch, refresh } = usePatchWallet();
   const currency = useWallet().data?.currency ?? "幣";
   const today = useQuery({
     queryKey: FORTUNE,
     queryFn: ({ signal }) => api.rpc.fortune.today(undefined, { signal }),
     retry,
-  });
-  const draw = useMutation({
-    mutationFn: () => api.rpc.fortune.draw({ headers: { "idempotency-key": newKey() }, body: {} }),
-    onSuccess: (r) => {
-      client.setQueryData(FORTUNE, (old: typeof today.data) => (old ? { ...old, fortune: r.fortune } : old));
-      patch((v) => ({ ...v, balance: r.balance }));
-      void refresh();
-    },
-    onError: (e) => {
-      notify.error(e);
-      void refresh();
-    },
   });
   if (today.isError && isNotProvided(today.error)) return null;
   return (
@@ -73,13 +60,9 @@ export function Fortune() {
           t.fortune ? (
             <FortuneSlip fortune={t.fortune} />
           ) : (
-            <div className="grid justify-items-start gap-2">
-              <p className="text-[13px] text-muted-foreground">每天一張,是她現在為你寫的。</p>
-              <Button variant="secondary" busy={draw.isPending} onClick={() => draw.mutate()}>
-                <Dices aria-hidden />
-                抽籤 · {priceText(t.price, currency)}
-              </Button>
-            </div>
+            <p className="text-[13px] text-muted-foreground">
+              每天一張,是她現在為你寫的。簽到時可以加買({priceText(t.price, currency)}),今天還沒簽到的話在錢包那邊勾選。
+            </p>
           )
         }
       </QueryView>

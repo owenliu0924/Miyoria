@@ -187,8 +187,14 @@ function core(o: Options = {}) {
     }
     if (path === "/api/member/wallet") return { body: wallet };
     if (path === "/api/member/checkin") {
-      wallet = { ...wallet, balance: wallet.balance + 10, checked_in_today: true, streak: 4, today_earned: 30 };
-      return { body: { gained: 10, streak: 4, balance: wallet.balance } };
+      const withSlip = (body as { fortune?: boolean }).fortune === true;
+      wallet = { ...wallet, balance: wallet.balance + 10 - (withSlip ? 10 : 0), checked_in_today: true, streak: 4, today_earned: 30 };
+      if (withSlip) slip = SLIP;
+      return {
+        body: withSlip
+          ? { gained: 10, streak: 4, balance: wallet.balance, fortune: SLIP, fortune_charged: 10 }
+          : { gained: 10, streak: 4, balance: wallet.balance },
+      };
     }
     if (path === "/api/member/feed") {
       if (o.feed) return o.feed;
@@ -208,11 +214,6 @@ function core(o: Options = {}) {
       return { body: { accepted: true, charged: 30, balance: wallet.balance, message: "已經送上螢幕了" } };
     }
     if (path === "/api/member/fortune") {
-      if (method === "POST") {
-        slip = SLIP;
-        wallet = { ...wallet, balance: wallet.balance - 10 };
-        return { body: { fortune: SLIP, charged: 10, balance: wallet.balance } };
-      }
       return { body: { fortune: slip, price: 10 } };
     }
     if (path === "/api/member/transfer") {
@@ -819,16 +820,17 @@ describe("the newer places to spend", () => {
     expect(box).toHaveValue("晚安");
   });
 
-  it("draws the day's fortune once, then shows the slip", async () => {
-    const { posts, keys } = core({ member: USER });
+  it("asks for the day's fortune with the check-in, then shows the slip", async () => {
+    const { posts } = core({ member: USER });
     renderApp();
+    const wallet = await screen.findByRole("region", { name: "錢包" });
+    await userEvent.click(await within(wallet).findByRole("switch", { name: /加買今日籤詩.*10/ }));
+    await userEvent.click(within(wallet).getByRole("button", { name: /簽到/ }));
+    await waitFor(() => expect(posts.find((p) => p.path === "/api/member/checkin")?.body).toEqual({ fortune: true }));
+    expect(posts.some((p) => p.path === "/api/member/fortune")).toBe(false);
     const section = await screen.findByRole("region", { name: "今日籤詩" });
-    await userEvent.click(await within(section).findByRole("button", { name: /抽籤.*10/ }));
-    await waitFor(() => expect(posts.map((p) => p.path)).toContain("/api/member/fortune"));
-    expect(posts.find((p) => p.path === "/api/member/fortune")?.body).toEqual({});
-    expect(keys.at(-1)).toBeTruthy();
     expect(await within(section).findByRole("button", { name: "下載" })).toBeInTheDocument();
-    expect(within(section).queryByRole("button", { name: /抽籤/ })).toBeNull();
+    expect(within(wallet).queryByRole("switch")).toBeNull();
   });
 
   it("shows a slip already drawn today without offering another", async () => {
@@ -837,6 +839,14 @@ describe("the newer places to spend", () => {
     const section = await screen.findByRole("region", { name: "今日籤詩" });
     expect(await within(section).findByRole("button", { name: "下載" })).toBeInTheDocument();
     expect(within(section).queryByRole("button", { name: /抽籤/ })).toBeNull();
+  });
+
+  it("offers no draw button of its own: the slip comes with the check-in", async () => {
+    core({ member: USER });
+    renderApp();
+    const section = await screen.findByRole("region", { name: "今日籤詩" });
+    expect(await within(section).findByText(/簽到時可以加買/)).toBeInTheDocument();
+    expect(within(section).queryByRole("button")).toBeNull();
   });
 
   it("asks before a transfer and sends it only after the answer", async () => {

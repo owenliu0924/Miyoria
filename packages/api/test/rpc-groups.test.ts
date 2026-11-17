@@ -75,7 +75,6 @@ const CASES: Case[] = [
   post("member.pat", "/api/member/live/pat", {}),
   { name: "agency.bounties", method: "GET", path: "/api/member/bounties", audience: "member" },
   { name: "fortune.today", method: "GET", path: "/api/member/fortune", audience: "member" },
-  post("fortune.draw", "/api/member/fortune", {}),
   {
     name: "member.rerollCard",
     method: "POST",
@@ -220,11 +219,6 @@ const ANSWERS = {
     bounties: [{ id: "b1", task: "a", reward: 1, posted_at: "x", expires_at: "y" }],
   } satisfies ApiOutputs["agency"]["bounties"],
   "fortune.today": { fortune: SLIP, price: 10 } satisfies ApiOutputs["fortune"]["today"],
-  "fortune.draw": {
-    fortune: SLIP,
-    charged: 10,
-    balance: 1,
-  } satisfies ApiOutputs["fortune"]["draw"],
   "member.pat": { pats: { recent: 1, open: true } } satisfies ApiOutputs["member"]["pat"],
   "member.issueCard": CARD,
   "member.rerollCard": CARD,
@@ -316,7 +310,6 @@ describe("the answers", () => {
     },
     fortune: {
       today: os.fortune.today.handler(answer("fortune.today")),
-      draw: os.fortune.draw.handler(answer("fortune.draw")),
     },
   });
   const state = {
