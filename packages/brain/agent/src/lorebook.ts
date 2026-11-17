@@ -109,13 +109,45 @@ export const STYLE_LINES = {
 /** The line that offers this turn's kaomoji. */
 export const KAOMOJI_LINE = "- 這回合想用顏文字的話從這幾個挑:";
 
+/** How far her feelings must lean before `<style_note>` says so. */
+const MOOD_LEAN = 0.25;
+
+/** `<style_note>`'s sentences from her feelings now (docs/design/v5-heart.md §2.5). */
+export const MOOD_STYLE = {
+  longer: "- 你現在話比較多,想多講幾句也可以。",
+  shorter: "- 你現在不太想多說,回短一點就好。",
+  react: "- 心情不錯,看到喜歡的訊息可以用 react 回個表情。",
+  noReact: "- 心情不太好,不用特地 react。",
+} as const;
+
+/**
+ * What her feelings make of her reply now, as `<style_note>` sentences: how long (her
+ * talkativeness), and in writing whether to react with an emoji (her mood's valence). A nudge
+ * for her to read, never a cut in code; nothing when she leans neither way.
+ */
+export function moodStyleLines(
+  feel: { talkativeness: number; valence: number } | null,
+  voice: boolean,
+): string[] {
+  if (feel === null) return [];
+  const out: string[] = [];
+  if (feel.talkativeness >= MOOD_LEAN) out.push(MOOD_STYLE.longer);
+  else if (feel.talkativeness <= -MOOD_LEAN) out.push(MOOD_STYLE.shorter);
+  if (!voice) {
+    if (feel.valence >= 0.4) out.push(MOOD_STYLE.react);
+    else if (feel.valence <= -0.3) out.push(MOOD_STYLE.noReact);
+  }
+  return out;
+}
+
 /** The body of `<style_note>`: the fixed lines, the kaomoji picks (text), the entries. */
 export function styleNote(
   voice: boolean,
   kaomoji: readonly string[],
   entries: readonly LoreEntry[],
+  mood: readonly string[] = [],
 ): string {
-  const lines: string[] = [...(voice ? STYLE_LINES.voice : STYLE_LINES.text)];
+  const lines: string[] = [...(voice ? STYLE_LINES.voice : STYLE_LINES.text), ...mood];
   if (!voice && kaomoji.length > 0) lines.push(`${KAOMOJI_LINE}${kaomoji.join(" ")}`);
   for (const e of entries) {
     const text = e.text.replace(/\s+/g, " ").trim();

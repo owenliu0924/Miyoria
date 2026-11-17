@@ -328,6 +328,20 @@ export class VoiceHost implements VoiceRunner {
     this.#place(context).members = members.filter((m) => !m.is_self);
   }
 
+  /**
+   * Who is in the voice channel of `context` with her (the channel itself, or its text chat: the
+   * same channel); none when she is not in it.
+   */
+  roster(context: ContextKey): { account: AccountRef; name: string }[] {
+    for (const place of this.#places.values()) {
+      const c = place.context;
+      if (c.platform !== context.platform || c.scope !== context.scope) continue;
+      if (c.channel !== context.channel) continue;
+      return place.members.map((m) => ({ account: m.account, name: m.display_name }));
+    }
+    return [];
+  }
+
   speaking(context: ContextKey, account: AccountRef, speaking: boolean): void {
     const place = this.#places.get(contextKeyString(context));
     if (place === undefined) return;

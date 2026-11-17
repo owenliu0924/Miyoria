@@ -44,6 +44,10 @@ export interface ClaimsHost {
   wakeOf(turn: string): Wake | null;
   /** The transcript of `place` she sees. */
   entries(place: ContextKey): readonly TranscriptEntry[];
+  /** The people the prompt blocks of the run of `turn` name (its people, block 7's); unset: none. */
+  named?(turn: string): readonly { account: AccountRef; name: string }[];
+  /** Who is in the voice channel of `place` with her; unset: nobody. */
+  members?(place: ContextKey): readonly { account: AccountRef; name: string }[];
 }
 
 /** The outlet's claims (`OutletClaims`) for the text runs of a host. */
@@ -65,9 +69,19 @@ export function outletClaims(agent: Agent, host: ClaimsHost): OutletClaims {
       return [...new Set(handles)];
     },
     people(line: OutgoingLine): { account: AccountRef; name: string }[] {
-      return knownPeople(host.entries(line.place), host.wakeOf(line.turn)).filter(
-        (p) => !agent.isBlocked(p.account),
-      );
+      // Who spoke there and whoever she answers, then who is in the voice channel there and
+      // whoever this run's prompt names (in the place she speaks in).
+      const out = knownPeople(host.entries(line.place), host.wakeOf(line.turn));
+      const more = [
+        ...(host.members?.(line.place) ?? []),
+        ...(line.focus ? (host.named?.(line.turn) ?? []) : []),
+      ];
+      for (const p of more) {
+        if (!out.some((o) => sameAccount(o.account, p.account))) {
+          out.push({ account: p.account, name: p.name });
+        }
+      }
+      return out.filter((p) => !agent.isBlocked(p.account) && !agent.isSelf(p.account));
     },
   };
 }

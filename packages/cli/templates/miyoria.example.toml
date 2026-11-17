@@ -679,6 +679,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # glances_per_day = 120          # 所有頻道加起來一天最多「看一眼」幾次
 # quiet_mins = 10                # 一個地方多久沒人說話算安靜了
 # longing_min = 0.5              # 想念到多少(0 到 1)才會想私訊對方
+# mood_weight = 0.5              # 她的心情對自己起頭影響多大:想主動時安靜不用等那麼久、想念的門檻低一點(0 = 不影響)
 # row_window_mins = 60           # 「不連續兩次同一種事」往回看多久
 # tick_secs = 30                 # 多久看一次到期的時間、追問和承諾
 # inbox_items = 12               # 一個回合最多給她看幾件收件匣的事
@@ -736,7 +737,8 @@ max_files = 2              # 每回合最多讀幾個檔案
 [modules.agent.prompt]
 default_budget = 600       # 沒列在 budgets 的段落
 self_chars = 2000          # 她寫給自己的那份文件放進固定區塊的字數上限(不受 budgets 限制)
-save_every = 1             # 每幾個回合存一份壓縮過的實際 prompt(面板看;0 = 不存)
+# mood_style = true        # 依她的心情,在 style_note 加一句回長回短、要不要用表情回應(程式不硬切)
+save_every = 1            # 每幾個回合存一份壓縮過的實際 prompt(面板看;0 = 不存)
 # budgets = { conversation = 900, memory = 1000, knowledge = 700, lessons = 500, world = 500, game = 700, sing = 400, people = 800, examples = 2500 }
 
 # 她的感知:誰在線、在玩什麼、誰在哪個語音頻道、各頻道熱不熱鬧。

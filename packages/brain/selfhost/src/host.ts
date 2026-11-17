@@ -253,6 +253,7 @@ export class SelfHost implements TextRunner {
       startsToday: (now) => this.initiative.gates.startsToday(now),
       slowReads: (input) => this.voice.slowReads(input),
       replyContext: (input) => this.#replyContext(input.turn),
+      present: (input) => this.voice.roster(input.session.context),
     });
     this.voice = new VoiceHost(agent, {
       transcript,
@@ -282,6 +283,8 @@ export class SelfHost implements TextRunner {
       outletClaims(agent, {
         wakeOf: (turn) => this.#turns.get(turn)?.run.wake ?? null,
         entries: (place) => this.transcript.tail(this.#sessionFor(place)).entries,
+        named: (turn) => this.prompt.named(turn),
+        members: (place) => this.voice.roster(place),
       }),
     );
     const services = agent.ctx.services;
@@ -973,7 +976,7 @@ export class SelfHost implements TextRunner {
         context,
         wake: run.wake,
         feel: result.feel,
-        people: knownPeople(entries, run.wake),
+        people: [...knownPeople(entries, run.wake), ...this.voice.roster(context)],
         line: answeredLine(run.wake, run.inputs, entries),
       });
     } catch (error) {

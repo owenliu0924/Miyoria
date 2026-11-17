@@ -13,6 +13,7 @@ import {
   type FeelProposal,
   HeartKey,
   type HeartPeople,
+  type HeartView,
   type PersonId,
   SocialSignalsKey,
   type TurnOutcomeRecord,
@@ -53,18 +54,20 @@ function services(felt: Felt[], appraised: AffectInput[]) {
       sup.services.provide("app", SocialSignalsKey, {
         attitude: (a) => (a.id === "her" ? null : attitude(a.id)),
       });
-      sup.services.provide("app", HeartKey, {
+      const heart: Pick<HeartPeople, "feel"> = {
         feel: (person, proposals, o) => {
           felt.push({ person, proposals, turn: o.turn });
           return proposals.length;
         },
-      } as HeartPeople);
-      sup.services.provide("app", AffectStateKey, {
+      };
+      sup.services.provide("app", HeartKey, heart as HeartPeople);
+      const affect: Pick<AffectState, "appraise"> = {
         appraise: (input) => {
           appraised.push(input);
           return [];
         },
-      } as AffectState);
+      };
+      sup.services.provide("app", AffectStateKey, affect as AffectState);
     },
   };
 }
@@ -112,6 +115,51 @@ describe("a feel block in production", () => {
     expect(outcomes(rig)[0]?.outcome).toEqual({ type: "silence" });
     expect(appraised[0]?.events[0]).toMatchObject({ emotion: "sorrow", strength: "weak" });
     expect(felt).toEqual([]);
+  });
+
+  it("block 7 says how she feels toward the people here now, from the heart", async () => {
+    const felt: Felt[] = [];
+    const appraised: AffectInput[] = [];
+    const base = services(felt, appraised);
+    const rig = await Rig.create({
+      provide: (sup) => {
+        base.provide(sup);
+        const views: Pick<HeartPeople, "view" | "feel"> = {
+          feel: () => 0,
+          view: (p) =>
+            p === "person-owen"
+              ? ({
+                  person: p,
+                  bond: 60,
+                  trust: 40,
+                  familiarity: 30,
+                  warmth: 0.5,
+                  respect: 0,
+                  ease: 0.2,
+                  grudge: 0.4,
+                  longing: 0,
+                  rapport: 0,
+                  stance: "",
+                  impression: "",
+                  call_name: null,
+                  tags: [],
+                  owner: false,
+                  blocked: false,
+                  last_seen: null,
+                  last_together: null,
+                } as HeartView)
+              : null,
+        };
+        sup.services.provide("test", HeartKey, views as HeartPeople);
+      },
+    });
+    rig.model.push(says("嗯?"));
+    rig.say(mention(C1, "owen", "@她 欸"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    const now = String(rig.model.requests[0]?.messages.at(-1)?.content ?? "");
+    expect(now).toContain(
+      "你現在對在場的人的感覺:\n- owen:很有好感、有心結(你對他還有心結,還沒說開)",
+    );
   });
 
   it("a voice run: the block is never said; the people in the channel may be named", async () => {

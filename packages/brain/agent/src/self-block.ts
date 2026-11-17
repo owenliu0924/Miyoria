@@ -12,7 +12,8 @@
 // | `self.goals`    | `GoalAgendaKey.goals()`         | `SelfStateKey.agenda()`                |
 // | `self.ledger`   | `ArbiterKey.ledger(context)`    | `MindKey.unanswered(context)`          |
 // | `self.notices`  | `agent.notice` events the agent collected                                |
-// | people (data)   | `AffectStateKey` person cards   | `SocialSignalsKey` + `SelfStateKey`    |
+// | people (data)   | `HeartKey` rows, then           | `SocialSignalsKey` + `SelfStateKey`    |
+// |                 | `AffectStateKey` person cards   |                                        |
 // | feeling (data)  | `AffectStateKey.snapshot()`     | `SelfStateKey`                         |
 //
 // Her own state carries no text other people wrote (emotion causes, names): those stay in the
@@ -33,7 +34,10 @@ import {
   type EmotionName,
   type EmotionReading,
   type Goal,
+  type HeartPeople,
   type HerStatus,
+  heartCues,
+  heartWords,
   type LedgerView,
   type Mood,
   moodLine,
@@ -379,6 +383,8 @@ export interface PeopleSources {
   affect?: AffectState | null;
   attitude?: (account: AccountRef) => Attitude | null;
   self?: SelfState | null;
+  /** The heart (`HeartKey`): someone with a row there is read from it. */
+  heart?: HeartPeople | null;
 }
 
 /** Person emotions at or above this are named. */
@@ -415,8 +421,8 @@ export interface PersonAttrs {
   level?: number | string | null;
   /** `主人` for her owner. */
   owner?: string | null;
-  /** How much she trusts them (0..100). */
-  trust?: number | null;
+  /** How much she trusts them (0..100; words when the heart has a row). */
+  trust?: number | string | null;
   /** What she calls them. */
   call_as?: string | null;
   /** What she thinks of them. */
@@ -447,7 +453,29 @@ function personAttrs(
   const card: PersonCard | null =
     src.affect?.cardByHandle(p.handle) ??
     (p.person === null ? null : (src.affect?.card(p.person) ?? null));
-  if (card !== null) {
+  const view = p.person === null ? null : (src.heart?.view(p.person) ?? null);
+  if (view !== null) {
+    // The heart's row (docs/design/v5-heart.md §2.9): the tier, the level and the slow values as
+    // words; the fast ones are block 7's. Her words are still written where they were until
+    // step 4 (the card, `social`'s call name): those first, the heart's after.
+    if (view.blocked) return null;
+    const words = heartWords(view);
+    attrs.relation = relationshipLabel({ affinity: view.bond, familiarity: view.familiarity });
+    attrs.level = `${affinityLevel(view.bond)}/${AFFINITY_LEVEL_MAX}`;
+    if (view.owner) attrs.owner = "主人";
+    attrs.trust = words.trust;
+    attrs.familiar = words.familiarity;
+    attrs.respect = words.respect;
+    attrs.ease = words.ease;
+    attrs.rapport = words.rapport;
+    const callName =
+      card?.call_name || src.attitude?.(p.account)?.call_name || view.call_name || null;
+    if (callName) attrs.call_as = safeName(callName, 16);
+    const impression = (card?.feeling ?? "").trim() || view.impression.trim();
+    if (impression !== "") attrs.impression = short(impression, MAX_FEELING);
+    const stance = (card?.stance ?? "").trim() || view.stance.trim();
+    if (stance !== "") attrs.stance = short(stance, MAX_STANCE);
+  } else if (card !== null) {
     attrs.relation = card.label;
     attrs.level = `${card.level}/${AFFINITY_LEVEL_MAX}`;
     if (card.owner) attrs.owner = "主人";
@@ -474,11 +502,44 @@ function personAttrs(
       if (heart) attrs.toward = towardLine(heart.emotions);
     }
   }
-  if (p.person !== null && p.person === crush) attrs.secret = "你偷偷喜歡他";
+  if (view === null && p.person !== null && p.person === crush) attrs.secret = "你偷偷喜歡他";
   const known = Object.entries(attrs).some(
     ([k, v]) => k !== "name" && v !== null && v !== undefined && String(v).trim() !== "",
   );
   return known ? attrs : null;
+}
+
+/** Title of block 7's lines about how she feels toward the people here now. */
+export const HEART_NOW_TITLE = "你現在對在場的人的感覺:";
+
+/**
+ * Block 7's lines about the people here (docs/design/v5-heart.md §2.5): the values that move by
+ * the day (warmth, grudge, longing) as words, and a sentence when a grudge or longing is high.
+ * Block 4 is cached until the people or the summary change, so these are not there. Someone
+ * without a row, blocked, or with nothing to say is left out; empty when nobody is left.
+ */
+export function heartNowBody(
+  people: readonly { handle: string; person: PersonId | null }[],
+  heart: HeartPeople | null,
+): string {
+  if (heart === null) return "";
+  const lines: string[] = [];
+  const seen = new Set<PersonId>();
+  for (const p of people) {
+    if (p.person === null || seen.has(p.person)) continue;
+    seen.add(p.person);
+    const view = heart.view(p.person);
+    if (view === null || view.blocked) continue;
+    const words = heartWords(view);
+    const parts = [words.warmth];
+    if (view.grudge >= 0.1) parts.push(words.grudge);
+    if (view.longing >= 0.15) parts.push(words.longing);
+    const cues = heartCues(view);
+    lines.push(
+      `- ${safeName(p.handle)}:${parts.join("、")}${cues.length > 0 ? `(${cues.join(";")})` : ""}`,
+    );
+  }
+  return lines.length === 0 ? "" : `${HEART_NOW_TITLE}\n${lines.join("\n")}`;
 }
 
 /**
@@ -496,6 +557,7 @@ export function peopleBody(
   const others: string[] = [];
   for (const p of sorted) {
     if (src.attitude?.(p.account)?.blocked) continue;
+    if (p.person !== null && src.heart?.view(p.person)?.blocked) continue;
     let attrs: PersonAttrs | null;
     try {
       attrs = personAttrs(p, src, crush);

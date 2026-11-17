@@ -21,7 +21,7 @@ import {
   Warm,
 } from "../../agent/src/index.js";
 import type { PromptInput, PromptSource } from "../../self/src/index.js";
-import type { SlowReads, WarmSlot } from "./prompt.js";
+import { moodStyle, type SlowReads, type WarmSlot } from "./prompt.js";
 import { roomLines } from "./voice-texts.js";
 
 /** What the voice prompt knows of a voice channel. */
@@ -135,7 +135,7 @@ export class VoicePrompt implements PromptSource {
     // The old voice turn's note: lorebook entries for speech, no kaomoji.
     const scan = this.#room.recent(input, SCAN_LINES).join("\n");
     const lore = triggeredEntries(this.#agent.persona.lorebook(), scan, this.#moods(), true);
-    return styleNote(true, [], lore);
+    return styleNote(true, [], lore, moodStyle(this.#agent, true));
   }
 
   /** Her emotions now, by name: the tag she shows and the strongest ones she feels. */
