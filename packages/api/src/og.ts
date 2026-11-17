@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { CARD_FONT_FAMILY, cardFontOptions } from "@miyoria/card-face/fonts";
 import { renderCardSvg } from "@miyoria/card-face/render";
 import type { IssuedCard } from "@miyoria/contracts/api";
 import { CardPortraitKey, CardsKey } from "@miyoria/play/cards";
@@ -36,13 +37,14 @@ import type { ApiContext, ApiState } from "./state.js";
 const log = getLogger("api.og");
 
 /** Bump to draw every cached image again after the layout changes. */
-const RENDER_VERSION = "2";
+const RENDER_VERSION = "3";
 const COLORS = { primary: "#f29dc4", secondary: "#7355e8" };
 const CACHED_IMAGES = 64;
 const AVATAR_HOSTS = new Set(["cdn.discordapp.com", "media.discordapp.net"]);
 const MAX_AVATAR_BYTES = 2_000_000;
 const PNG = "image/png";
-const FONT_FAMILY = "Microsoft JhengHei";
+/** The bundled font (`@miyoria/card-face/fonts`): no machine's own fonts are used. */
+const FONT_FAMILY = CARD_FONT_FAMILY;
 
 /** What a card's picture depends on: its data and this layout. */
 export function cardVersion(card: IssuedCard): string {
@@ -139,7 +141,7 @@ async function toPng(svg: string, width: number, background: string | null): Pro
   const resvg = new Resvg(svg, {
     fitTo: { mode: "width", value: width },
     ...(background === null ? {} : { background }),
-    font: { loadSystemFonts: true, defaultFontFamily: FONT_FAMILY },
+    font: cardFontOptions(),
   });
   return resvg.render().asPng();
 }
@@ -176,7 +178,7 @@ export async function renderCardImage(
 const BASE = "#0b0d12";
 const TEXT = "#f1f0f4";
 const MUTED = "#dedce4";
-const LATIN = "Segoe UI";
+const LATIN = CARD_FONT_FAMILY;
 /** What shows where her picture is clear: a night blue near her hair, so the glass has light to frost. */
 const NIGHT = "#161c3a";
 /** Where the glass ends. */
