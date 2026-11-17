@@ -8,6 +8,8 @@
 import { forwardRef } from "react";
 import { encode } from "uqr";
 
+export * from "./ring.js";
+
 /** What a card draws: the fields of an issued card (`IssuedCard` in the panel and the API). */
 export interface CardData {
   serial: string;
