@@ -107,16 +107,39 @@ CREATE INDEX \`market_lottery_tickets_week_idx\` ON \`market_lottery_tickets\` (
 CREATE INDEX \`market_lottery_weeks_status_idx\` ON \`market_lottery_weeks\` (\`status\`,\`draw_at\`);
 `;
 
-/** The lots, bids, lottery weeks and tickets. */
+/**
+ * Version 2: the song priority tickets, one row per charge, kept from before the wallet is asked
+ * until the song is sung or the coins went back (the pass gives back what is neither).
+ */
+const SONG_TICKETS = `CREATE TABLE \`market_song_tickets\` (
+	\`key\` text PRIMARY KEY,
+	\`person_id\` text NOT NULL,
+	\`platform\` text NOT NULL,
+	\`account_id\` text NOT NULL,
+	\`amount\` integer NOT NULL,
+	\`status\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`settled_at\` integer,
+	CONSTRAINT "market_song_tickets_status_check" CHECK("status" IN ('charging', 'charged', 'void', 'consumed', 'refunded')),
+	CONSTRAINT "market_song_tickets_amount_check" CHECK("amount" >= 0)
+) STRICT;
+
+CREATE INDEX \`market_song_tickets_status_idx\` ON \`market_song_tickets\` (\`status\`,\`created_at\`);
+`;
+
+/** The lots, bids, lottery weeks and tickets; the song priority tickets. */
 export const marketSchema: PluginSchema = {
   plugin: "market",
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "song_tickets", sql: SONG_TICKETS },
+  ],
 };
 
 /**
  * The migration that retires the auction and the lottery when they are removed: every bid's hold
- * that was never released, and every lottery ticket of a week not drawn (open, or refunding when
- * Core stopped), goes back to its owner as one `refund_removed` row shaped like the economy's
+ * that was never released, every lottery ticket of a week not drawn (open, or refunding when
+ * Core stopped), and every song priority ticket not yet used or given back, goes back to its owner as one `refund_removed` row shaped like the economy's
  * (the original row as `ref`, key `refund:<id>`, with its `economy.posted` event), then the
  * tables are dropped. A hold or a ticket that went back already is skipped, so it is safe on any
  * database. It needs the economy's ledger: add `requires: ["economy"]` with it.
@@ -134,9 +157,12 @@ WHERE e.delta < 0
       AND e.idem_key IN (SELECT 'lottery_ticket:' || t.id FROM market_lottery_tickets t
         JOIN market_lottery_weeks w ON w.week = t.week
         WHERE t.status = 'paid' AND w.status IN ('open', 'refunding')))
+    OR (e.reason = 'song_priority'
+      AND e.idem_key IN (SELECT 'song_priority:' || s.key FROM market_song_tickets s
+        WHERE s.status IN ('charging', 'charged')))
   )
   AND NOT EXISTS (SELECT 1 FROM economy_ledger r WHERE r.ref = e.id
-    AND r.reason IN ('refund', 'refund_removed', 'lottery_refund'));
+    AND r.reason IN ('refund', 'refund_removed', 'lottery_refund', 'song_priority_refund'));
 
 INSERT INTO events (id, at, type, v, source, person_id, scope, tier, key, data)
 SELECT substr(l.ref, 1, 10) || CASE substr(l.ref, 11, 1) WHEN '2' THEN '3' ELSE '2' END || substr(l.ref, 12),
@@ -153,4 +179,5 @@ WHERE l.reason = 'refund_removed'
 DROP TABLE market_bids;
 DROP TABLE market_lots;
 DROP TABLE market_lottery_tickets;
-DROP TABLE market_lottery_weeks;`;
+DROP TABLE market_lottery_weeks;
+DROP TABLE market_song_tickets;`;

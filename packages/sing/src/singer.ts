@@ -25,7 +25,12 @@
 //   song that is not sung (it could not be listed or made, it failed, it was cancelled) gives the
 //   ticket back; a refund that did not go (the wallet was not there) keeps the ticket's key on the
 //   entry and is tried again every `REFUND_RETRY_MS` (the ledger gives a charge back once, so a
-//   retry never pays twice). Her prompt says nothing of it: the order is the whole effect.
+//   retry never pays twice). Once the song starts being sung (or ends counted as sung) the ticket
+//   is used (`SongPriority.consume`), and never given back. The market keeps every charge in its
+//   own table and gives back one that is neither used nor held by the set list (`holdsTicket`,
+//   `SongTicketsKey`) after a grace period, so a charge lost half way (before the set list was
+//   saved, a refund that failed before the song was listed, a song trimmed from the history with
+//   its refund due) still goes back. Her prompt says nothing of it: the order is the whole effect.
 
 import { randomUUID } from "node:crypto";
 import { CapabilityError } from "@miyoria/gate/actions";
@@ -207,6 +212,8 @@ export class Singer implements VoiceFloor, SpeechPause {
   readonly #orphans = new Set<SongNo>();
   /** When refunds that did not go were last tried again (epoch ms). */
   #refundsTried = 0;
+  /** The stored set list was read back (or there was none): `holdsTicket` can tell. */
+  #restored = false;
   /** Songs whose job has (or is about to have) the GPU, by number. */
   readonly #gpu = new Set<SongNo>();
   #preparing: Preparing | null = null;
@@ -393,6 +400,7 @@ export class Singer implements VoiceFloor, SpeechPause {
       if ((e.state === "failed" || e.state === "cancelled") && e.priority_key) {
         await this.#giveBackPriority(e);
       }
+      if (e.state === "done" && e.priority_key) this.#consumePriority(e);
     }
   }
 
@@ -401,6 +409,35 @@ export class Singer implements VoiceFloor, SpeechPause {
     const key = entry.priority_key ?? null;
     if (key === null || entry.requester === null) return;
     if (await this.#refundPriority(entry.requester, key)) entry.priority_key = null;
+  }
+
+  /**
+   * The song started being sung (or counts as sung): its ticket is used, and the market keeps
+   * that (`SongPriority.consume`). The key goes once it is kept; until then the retry round tries
+   * again, and the market's pass sees the song held (`holdsTicket`), so it gives nothing back.
+   */
+  #consumePriority(entry: SongEntry): void {
+    const key = entry.priority_key ?? null;
+    if (key === null) return;
+    const port = this.ctx.services.get(SongPriorityKey);
+    if (!port) return;
+    try {
+      port.consume(key);
+      entry.priority_key = null;
+    } catch (error) {
+      log.warn({ key, err: errorMessage(error) }, "cannot mark a song priority ticket used");
+    }
+  }
+
+  /**
+   * Whether the set list holds the song a ticket was charged under (`SongTicketsKey`, for the
+   * market's pass): listed, and not ended without being sung. `null` until the stored set list
+   * was read back at start, when a song of before the stop would look gone.
+   */
+  holdsTicket(key: string): boolean | null {
+    if (!this.#restored) return null;
+    const entry = this.list.all().find((e) => e.priority_key === key);
+    return entry !== undefined && entry.state !== "failed" && entry.state !== "cancelled";
   }
 
   #query(query: string, key: number, backing: BackingMode = "keep"): SongQuery {
@@ -791,7 +828,11 @@ export class Singer implements VoiceFloor, SpeechPause {
         worker: this.worker,
         voice,
         clock: this.ctx.clock,
-        cue: (cue) => this.#cue(cue),
+        cue: (cue) => {
+          // Her voice is out: the song is being sung, and its ticket is used.
+          if (cue.state === "started") this.#consumePriority(entry);
+          this.#cue(cue);
+        },
         leadMs: this.cfg.lead_ms,
         fadeMs: this.cfg.fade_ms,
         lyrics: this.cfg.lyrics,
@@ -811,7 +852,8 @@ export class Singer implements VoiceFloor, SpeechPause {
     const sung = finished || outcome === "interrupted";
     this.list.finish(entry, sung ? "done" : "failed", entry.error);
     this.#finishQueueItem(entry, finished);
-    if (!sung) void this.#giveBackPriority(entry);
+    if (sung) this.#consumePriority(entry);
+    else void this.#giveBackPriority(entry);
     log.info({ no: entry.no, outcome }, "song ended");
     const where = this.voiceContext(guild);
     if (finished && where !== null && !this.#closed) {
@@ -1246,6 +1288,14 @@ export class Singer implements VoiceFloor, SpeechPause {
    * their worker jobs on the next poll; ready ones are offered or sung as usual.
    */
   async restore(): Promise<void> {
+    try {
+      await this.#restore();
+    } finally {
+      this.#restored = true;
+    }
+  }
+
+  async #restore(): Promise<void> {
     const store = this.ctx.services.get(SettingsStoreKey);
     if (!store) return;
     try {

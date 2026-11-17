@@ -124,6 +124,25 @@ export interface SongPriority {
    * when the wallet cannot be reached now; the caller keeps the key and tries again.
    */
   refund(account: AccountRef, key: string): Promise<number>;
+  /**
+   * The song of `key` started being sung: its ticket is used and is never given back. Throws when
+   * that cannot be kept now; the caller keeps the key and tries again.
+   */
+  consume(key: string): void;
 }
 
 export const SongPriorityKey = serviceKey<SongPriority>("SongPriority");
+
+/**
+ * The singer's side of the ticket: whether its set list still holds the song a ticket was charged
+ * for (listed, and not ended without being sung). The market's pass gives back a ticket that is
+ * neither used nor held after a grace period, whatever stopped half way (a charge just before Core
+ * stopped, before the set list was saved; a refund that failed before the song was listed; a song
+ * that left the set list's history with its refund still due).
+ */
+export interface SongTickets {
+  /** `null`: it cannot tell now (the set list is not read back yet). */
+  holds(key: string): boolean | null;
+}
+
+export const SongTicketsKey = serviceKey<SongTickets>("SongTickets");

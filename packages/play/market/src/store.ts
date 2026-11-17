@@ -28,7 +28,13 @@ import {
   lotteryDrawnWrite,
 } from "./events.js";
 import { marketSchema } from "./migrations.js";
-import { marketBids, marketLots, marketLotteryTickets, marketLotteryWeeks } from "./schema.js";
+import {
+  marketBids,
+  marketLots,
+  marketLotteryTickets,
+  marketLotteryWeeks,
+  marketSongTickets,
+} from "./schema.js";
 
 export type LotStatus =
   | "planned"
@@ -44,6 +50,18 @@ export type LotPicker = "owner" | "her" | "rotation";
 export type BidStatus = "pending" | "leading" | "outbid" | "won" | "void";
 export type WeekStatus = "open" | "drawing" | "drawn" | "refunding" | "refunded";
 export type TicketStatus = "pending" | "paid" | "refunded";
+export type SongTicketStatus = "charging" | "charged" | "void" | "consumed" | "refunded";
+
+/** A song priority ticket, kept from before it is charged until it is used or given back. */
+export interface SongTicket {
+  key: string;
+  person: PersonId;
+  account: AccountRef;
+  amount: number;
+  status: SongTicketStatus;
+  created_at: Timestamp;
+  settled_at: Timestamp | null;
+}
 
 export interface Lot {
   id: string;
@@ -117,8 +135,21 @@ type LotRow = typeof marketLots.$inferSelect;
 type BidRow = typeof marketBids.$inferSelect;
 type WeekRow = typeof marketLotteryWeeks.$inferSelect;
 type TicketRow = typeof marketLotteryTickets.$inferSelect;
+type SongTicketRow = typeof marketSongTickets.$inferSelect;
 
 const at = (ms: number): Timestamp => toTimestamp(ms);
+
+function songTicketOf(r: SongTicketRow): SongTicket {
+  return {
+    key: r.key,
+    person: r.person_id as PersonId,
+    account: { platform: r.platform, id: r.account_id },
+    amount: r.amount,
+    status: r.status as SongTicketStatus,
+    created_at: r.created_at,
+    settled_at: r.settled_at,
+  };
+}
 
 function lotOf(r: LotRow): Lot {
   return {
@@ -650,6 +681,69 @@ export class MarketStore {
     });
   }
 
+  // ---- song priority tickets ----------------------------------------------------------------
+
+  /** A ticket about to be charged under `key` (`charging`); one already there is left alone. */
+  addSongTicket(t: Omit<SongTicket, "status" | "created_at" | "settled_at">, now: number): void {
+    this.#write(() => {
+      this.#db.orm
+        .insert(marketSongTickets)
+        .values({
+          key: t.key,
+          person_id: t.person,
+          platform: t.account.platform,
+          account_id: t.account.id,
+          amount: t.amount,
+          status: "charging",
+          created_at: at(now),
+        })
+        .onConflictDoNothing()
+        .run();
+    });
+  }
+
+  songTicket(key: string): SongTicket | null {
+    this.#db.ensureOpen();
+    const T = marketSongTickets;
+    const row = this.#db.orm.select().from(T).where(eq(T.key, key)).get();
+    return row === undefined ? null : songTicketOf(row);
+  }
+
+  /**
+   * Moves the ticket of `key` to `status` when it is in one of `from`; whether it did. A ticket
+   * that was used or given back stays so.
+   */
+  setSongTicket(
+    key: string,
+    status: SongTicketStatus,
+    from: readonly SongTicketStatus[],
+    now: number,
+  ): boolean {
+    return this.#write(() => {
+      const T = marketSongTickets;
+      const settled = status === "charged" ? {} : { settled_at: at(now) };
+      const changed = this.#db.orm
+        .update(T)
+        .set({ status, ...settled })
+        .where(and(eq(T.key, key), inArray(T.status, [...from])))
+        .run().changes;
+      return Number(changed) > 0;
+    });
+  }
+
+  /** Tickets neither used nor given back (`charging`, `charged`) made before `before` (epoch ms). */
+  openSongTickets(before: number): SongTicket[] {
+    this.#db.ensureOpen();
+    const T = marketSongTickets;
+    return this.#db.orm
+      .select()
+      .from(T)
+      .where(and(inArray(T.status, ["charging", "charged"]), lte(T.created_at, at(before))))
+      .orderBy(asc(T.created_at))
+      .all()
+      .map(songTicketOf);
+  }
+
   /** Purchases still `pending` that were made before `before` (epoch ms). */
   staleTickets(before: number): Ticket[] {
     this.#db.ensureOpen();
@@ -693,7 +787,21 @@ export class MarketStore {
           .where(eq(marketLotteryWeeks.winner_person, absorb))
           .run().changes,
       );
-      return { counts: { market_bids: bids, market_lottery_tickets: tickets, winners } };
+      const songs = Number(
+        this.#db.orm
+          .update(marketSongTickets)
+          .set({ person_id: keep })
+          .where(eq(marketSongTickets.person_id, absorb))
+          .run().changes,
+      );
+      return {
+        counts: {
+          market_bids: bids,
+          market_lottery_tickets: tickets,
+          winners,
+          market_song_tickets: songs,
+        },
+      };
     });
   }
 }
@@ -780,6 +888,23 @@ const marketData: readonly CategoryData[] = [
           status: "text",
           created_at: "ts",
           refunded_at: "ts",
+        },
+      ),
+      tablePart(
+        "market_song_tickets",
+        "market_song_tickets",
+        "node",
+        "created_at",
+        "created_at, key",
+        {
+          key: "text",
+          person_id: "text",
+          platform: "text",
+          account_id: "text",
+          amount: "num",
+          status: "text",
+          created_at: "ts",
+          settled_at: "ts",
         },
       ),
     ],

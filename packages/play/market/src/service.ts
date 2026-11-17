@@ -22,6 +22,10 @@
 // * She cannot bid, buy a ticket or win: her own accounts are refused before anything is charged.
 //   She is told what happened (a lot won, a draw) so she can say something in her own words; the
 //   song priority ticket is never mentioned to her.
+// * The song priority ticket: each charge is a row (`market_song_tickets`) written before the
+//   wallet is asked, marked used when its song starts being sung (`consume`) or given back. The
+//   pass gives back a ticket neither used nor held by the singer's set list after a grace period,
+//   so a charge that stopped half way, anywhere, goes back.
 // * Turning the auction off (or leaving it without a channel) calls off an open lot and gives
 //   every hold back; turning the lottery off refunds the open week. `migrations.ts` has the SQL
 //   that does the same when the plugin is removed.
@@ -39,6 +43,7 @@ import {
   type Pictures,
   type SongPriority,
   type SongPriorityTerms,
+  type SongTickets,
   type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
@@ -73,6 +78,11 @@ import {
 
 /** A step that stopped this long ago with nothing after it is settled by the pass. */
 export const STALE_MS = 2 * MINUTE_MS;
+/**
+ * How long after its charge a song priority ticket whose song the set list does not hold is given
+ * back: a request still between its charge and its listing is not raced.
+ */
+export const SONG_TICKET_GRACE_MS = 5 * MINUTE_MS;
 /** The highest bid anyone can make. */
 export const MAX_BID = 1_000_000;
 /** How many past lots and weeks the history keeps. */
@@ -248,6 +258,11 @@ export interface MarketDeps {
   randomInt?: (n: number) => number;
   /** The picture renderer (`PicturesKey`), looked up at each use; absent: text cards only. */
   pictures?: () => Pictures | null;
+  /**
+   * The singer's set list (`SongTicketsKey`), looked up at each use; absent or `null`: no song
+   * priority ticket is given back by the pass (it cannot tell which are still waiting).
+   */
+  songTickets?: () => SongTickets | null;
 }
 
 /** Throws when a ledger call did not go through, so the pass tries again. */
@@ -307,13 +322,22 @@ export class MarketService {
         currency: this.#currency(),
       };
     },
+    // The row goes in before the wallet is asked, so a charge that stopped half way (Core stopped,
+    // the singer never listed the song) is found by the pass (`#songTicketPass`) and given back.
     charge: async (account, key, ref) => {
       const c = this.#d.config;
       if (c.song_priority_per_day === 0) return { ok: false, message: "現在沒有賣點歌優先券" };
       if (this.#d.isSelf(account)) return { ok: false, message: HER_OWN };
       const wallet = this.#wallet();
       if (wallet === null) return { ok: false, message: NO_WALLET };
-      const since = toTimestamp(dayStartMs(localDay(this.#now(), this.#offset()), this.#offset()));
+      const who = await wallet.member(account);
+      if (who === null) return { ok: false, message: NOT_KNOWN };
+      const now = this.#now();
+      this.#d.store.addSongTicket(
+        { key, person: who.person, account, amount: c.song_priority },
+        now,
+      );
+      const since = toTimestamp(dayStartMs(localDay(now, this.#offset()), this.#offset()));
       const charge = await wallet.charge(
         account,
         c.song_priority,
@@ -322,7 +346,11 @@ export class MarketService {
         ref,
         { since, limit: c.song_priority_per_day },
       );
-      if (charge.ok) return { ok: true, balance: charge.balance };
+      if (charge.ok) {
+        this.#d.store.setSongTicket(key, "charged", ["charging"], this.#now());
+        return { ok: true, balance: charge.balance };
+      }
+      this.#d.store.setSongTicket(key, "void", ["charging"], this.#now());
       if (charge.reason === "capped") {
         return { ok: false, message: `點歌優先券一天最多用 ${c.song_priority_per_day} 張` };
       }
@@ -333,9 +361,48 @@ export class MarketService {
     refund: async (account, key) => {
       const wallet = this.#wallet();
       if (wallet === null) throw new Unsettled(NO_WALLET);
-      return wallet.refund(account, MARKET_REASONS.songPriority, key);
+      const coins = await wallet.refund(account, MARKET_REASONS.songPriority, key);
+      this.#d.store.setSongTicket(key, "refunded", ["charging", "charged"], this.#now());
+      return coins;
+    },
+    // A ticket of before the table (no row) has nothing to mark: the singer's own refunds cover it.
+    consume: (key) => {
+      if (!this.#d.store.setSongTicket(key, "consumed", ["charging", "charged"], this.#now())) {
+        const was = this.#d.store.songTicket(key)?.status ?? null;
+        if (was === "refunded") {
+          this.#d.log.warn({ key }, "market: a song was sung after its ticket was given back");
+        }
+      }
     },
   };
+
+  /**
+   * The song priority tickets neither used nor given back, `SONG_TICKET_GRACE_MS` after they were
+   * charged: given back when the singer's set list does not hold their song (it was never listed,
+   * it ended without being sung, it left the history with its refund due). Without the singer, or
+   * before it read its set list back, nothing is decided. What went back is kept as `refunded`; a
+   * charge that never happened gives back nothing and is kept so too.
+   */
+  async #songTicketPass(signal?: AbortSignal): Promise<void> {
+    const store = this.#d.store;
+    const open = store.openSongTickets(this.#now() - SONG_TICKET_GRACE_MS);
+    if (open.length === 0) return;
+    const songs = this.#d.songTickets?.() ?? null;
+    if (songs === null) return;
+    const wallet = this.#wallet();
+    if (wallet === null) throw new Unsettled("no wallet");
+    for (const t of open) {
+      if (signal?.aborted) return;
+      const held = songs.holds(t.key);
+      if (held !== false) continue;
+      const coins = await wallet.refund(t.account, MARKET_REASONS.songPriority, t.key);
+      store.setSongTicket(t.key, "refunded", ["charging", "charged"], this.#now());
+      this.#d.log.info(
+        { key: t.key, person: t.person, coins },
+        "market: a song priority ticket with no song was given back",
+      );
+    }
+  }
 
   // ---- times --------------------------------------------------------------------------------
 
@@ -1012,6 +1079,7 @@ export class MarketService {
       for (const [name, step] of [
         ["lottery", () => this.#lotteryPass(signal)],
         ["auction", () => this.#auctionPass(signal)],
+        ["song tickets", () => this.#songTicketPass(signal)],
       ] as const) {
         try {
           await step();

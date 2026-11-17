@@ -10,6 +10,8 @@
 // - `market_lottery_weeks`: one row per draw (the local day it is drawn): the totals, the winner
 //   and the draw itself, and the week's notice.
 // - `market_lottery_tickets`: one row per purchase, `pending` until it is paid.
+// - `market_song_tickets` (version 2): one row per song priority ticket, written before the wallet
+//   is asked, until the song is sung (`consumed`) or the ticket is given back (`refunded`).
 //
 // The coins themselves are rows of the economy's ledger, keyed by these ids. No foreign key to
 // `persons`: the rows are money records and stay when a person is forgotten.
@@ -157,5 +159,33 @@ export const marketLotteryTickets = sqliteTable(
       sql`${t.status} IN ('pending', 'paid', 'refunded')`,
     ),
     check("market_lottery_tickets_count_check", sql`${t.count} > 0 AND ${t.amount} >= 0`),
+  ],
+);
+
+export const marketSongTickets = sqliteTable(
+  "market_song_tickets",
+  {
+    /** The key it was charged under (the singer's `song:<uuid>`), the ledger row's key too. */
+    key: text().primaryKey(),
+    person_id: text().notNull(),
+    platform: text().notNull(),
+    account_id: text().notNull(),
+    amount: integer().notNull(),
+    /**
+     * `charging` (the wallet is asked), `charged`, `void` (it was not charged), `consumed` (the
+     * song started being sung), `refunded`.
+     */
+    status: text().notNull(),
+    created_at: micros().notNull(),
+    /** When it became `void`, `consumed` or `refunded`. */
+    settled_at: micros(),
+  },
+  (t) => [
+    index("market_song_tickets_status_idx").on(t.status, t.created_at),
+    check(
+      "market_song_tickets_status_check",
+      sql`${t.status} IN ('charging', 'charged', 'void', 'consumed', 'refunded')`,
+    ),
+    check("market_song_tickets_amount_check", sql`${t.amount} >= 0`),
   ],
 );

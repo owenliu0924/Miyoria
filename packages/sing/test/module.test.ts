@@ -38,6 +38,7 @@ import {
   type SongPrepare,
   type SongPriority,
   SongPriorityKey,
+  SongTicketsKey,
   SpeechPauseKey,
   toTimestamp,
   VoiceFloorKey,
@@ -1207,6 +1208,15 @@ describe("sing module", () => {
         this.refunds.push(key);
         return 40;
       }
+
+      readonly consumed: string[] = [];
+      /** While set, marking a ticket used throws (the market is restarting). */
+      consumeDown = false;
+
+      consume(key: string) {
+        if (this.consumeDown) throw new Error("市集現在不在");
+        this.consumed.push(key);
+      }
     }
 
     const asAmy = (args: Record<string, JsonValue>) =>
@@ -1292,6 +1302,63 @@ describe("sing module", () => {
       expect(h.singer.list.get(1)?.priority_key).toBeNull();
       await settle(REFUND_RETRY_MS + 300);
       expect(ticket.refunds).toHaveLength(1);
+    });
+
+    it("uses the ticket once its song starts being sung, and holds it for the market until then", async () => {
+      const ticket = await priced();
+      const tickets = h.sup.services.require(SongTicketsKey);
+      await asAmy({ query: "one", priority: true });
+      const key = ticket.charges[0]?.key ?? "";
+      // Listed and waiting: the market's pass sees it held.
+      expect(tickets.holds(key)).toBe(true);
+      expect(tickets.holds("song:unknown")).toBe(false);
+      h.worker.finish("j1", "One", 1);
+      await settle(200);
+      expect(ticket.consumed).toEqual([]);
+      await h.join();
+      await settle(6000 + 400);
+      expect(h.voice.plays).toHaveLength(1);
+      expect(ticket.consumed).toEqual([key]);
+      expect(h.singer.list.get(1)?.priority_key).toBeNull();
+      expect(ticket.refunds).toEqual([]);
+      // A song that ended unsung is not held: the market may give its ticket back.
+      await asAmy({ query: "two", priority: true });
+      const two = ticket.charges[1]?.key ?? "";
+      ticket.down = true;
+      h.worker.fail("j2", "no search result");
+      await settle(200);
+      expect(h.singer.list.get(2)?.priority_key).toBe(two);
+      expect(tickets.holds(two)).toBe(false);
+    });
+
+    it("marks a sung song's ticket used later when the market was not there", async () => {
+      const ticket = await priced();
+      ticket.consumeDown = true;
+      await asAmy({ query: "one", priority: true });
+      const key = ticket.charges[0]?.key ?? "";
+      h.worker.finish("j1", "One", 1);
+      await h.join();
+      await settle(6000 + 400 + 2000);
+      expect(h.singer.list.get(1)?.state).toBe("done");
+      // Not kept yet: still held, so nothing is given back for it meanwhile.
+      expect(ticket.consumed).toEqual([]);
+      expect(h.sup.services.require(SongTicketsKey).holds(key)).toBe(true);
+      ticket.consumeDown = false;
+      await settle(REFUND_RETRY_MS + 300);
+      expect(ticket.consumed).toEqual([key]);
+      expect(ticket.refunds).toEqual([]);
+    });
+
+    it("holds a listed song's ticket again after a restart", async () => {
+      const store = new MemorySettingsStore();
+      h = await Harness.create({ max_pending_per_user: 10 }, false, { store });
+      const ticket = new FakePriority();
+      h.sup.services.provide("market", SongPriorityKey, ticket);
+      await asAmy({ query: "one", priority: true });
+      const key = ticket.charges[0]?.key ?? "";
+      await h.stop();
+      h = await Harness.create({ max_pending_per_user: 10 }, false, { store, worker: h.worker });
+      expect(h.sup.services.require(SongTicketsKey).holds(key)).toBe(true);
     });
 
     it("gives it back when the list has no room for the song", async () => {

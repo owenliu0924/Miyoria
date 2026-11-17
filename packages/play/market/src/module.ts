@@ -42,6 +42,7 @@ import {
   type PersonId,
   PicturesKey,
   SongPriorityKey,
+  SongTicketsKey,
   serviceKey,
 } from "@miyoria/types";
 import { registerCommands, unregisterCommands } from "./commands.js";
@@ -132,6 +133,7 @@ export class MarketModule implements Module {
       tell: (summary, key, person) => tell(ctx, summary, key, person),
       log: ctx.log,
       pictures: () => ctx.services.get(PicturesKey) ?? null,
+      songTickets: () => ctx.services.get(SongTicketsKey) ?? null,
       ...(this.#options.randomInt === undefined ? {} : { randomInt: this.#options.randomInt }),
     });
     ctx.provide(MarketKey, service);

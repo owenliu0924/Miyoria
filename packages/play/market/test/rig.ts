@@ -19,6 +19,7 @@ import {
   type PictureFile,
   type PictureKind,
   type Pictures,
+  type SongTickets,
 } from "@miyoria/types";
 import { afterEach } from "vitest";
 import { type MarketConfig, marketConfig } from "../src/config.js";
@@ -237,6 +238,21 @@ export interface Rig {
   walletGone: boolean;
   /** Restarts the service over the same store (a new process). */
   restart(config?: Partial<MarketConfig>): MarketService;
+  /**
+   * The singer's set list as the pass sees it (`SongTicketsKey`): the keys it holds; `songs.read`
+   * false: it has not read its stored list back yet; `songsGone`: the singer is not running.
+   */
+  songs: FakeSongs;
+  songsGone: boolean;
+}
+
+/** The singer's side of the song priority ticket. */
+export class FakeSongs implements SongTickets {
+  readonly held = new Set<string>();
+  read = true;
+  holds(key: string): boolean | null {
+    return this.read ? this.held.has(key) : null;
+  }
 }
 
 let dbs: TestDb[] = [];
@@ -335,6 +351,7 @@ export async function rig(
         return `m${++n}`;
       },
       pictures: () => options.pictures ?? null,
+      songTickets: () => (r.songsGone ? null : r.songs),
       tell: (summary, key, person) => told.push({ summary, key, person }),
       log: { info: () => undefined, warn: () => undefined },
       randomInt: (max) => {
@@ -354,6 +371,8 @@ export async function rig(
     calls,
     dice,
     walletGone: false,
+    songs: new FakeSongs(),
+    songsGone: false,
     restart: (overrides = {}) => {
       r.service = make(overrides);
       return r.service;
