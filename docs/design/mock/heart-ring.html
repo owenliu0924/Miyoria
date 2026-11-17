@@ -105,16 +105,8 @@ const NS = "http://www.w3.org/2000/svg";
 // Lucide "heart", the icon set the panel uses.
 const HEART = "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z";
 const TRACK = "rgba(255,255,255,.07)";
-// Three candidate palettes. Each takes the lap and whether it is the one on top.
-const PALETTES = {
-  // The panel's own rule: neutral for what is past, the primary only for the lap being filled.
-  "中性,最上面一圈粉": (i, top) => top ? "var(--primary)" : "color-mix(in oklab, #f1f0f4 " + (i % 2 ? 22 : 40) + "%, #14151f)",
-  // The two accents: past laps in the secondary, darker to lighter, the lap being filled in the primary.
-  "紫,最上面一圈粉": (i, top) => top ? "var(--primary)" : "color-mix(in oklab, var(--secondary) " + (100 - i * 5) + "%, " + (i % 2 ? "white" : "#14151f") + ")",
-  // One hue: past laps in two deep pinks in turn, the lap being filled in the primary.
-  "深粉,最上面一圈粉": (i, top) => top ? "var(--primary)" : "color-mix(in oklab, var(--primary) " + (i % 2 ? 34 : 58) + "%, #1c1220)",
-};
-let PALETTE = PALETTES["中性,最上面一圈粉"];
+// One hue: past laps in two deep pinks in turn, the lap being filled in the primary.
+const PALETTE = (i, top) => top ? "var(--primary)" : "color-mix(in oklab, var(--primary) " + (i % 2 ? 34 : 58) + "%, #1c1220)";
 function lapColor(i, top) { return PALETTE(i, top); }
 function el(name, attrs, parent) {
   const n = document.createElementNS(NS, name);
@@ -140,7 +132,7 @@ function band(svg, r, w, frac, color) {
 // as steps at both edges and can be counted.
 function ring(bond, number) {
   const svg = el("svg", { viewBox: "0 0 160 160", role: "img", "aria-label": "羈絆環" });
-  const R = 58, BASE = 32, STEP = 2.6;
+  const R = 64, BASE = 20, STEP = 1.6;
   const laps = Math.min(Math.floor(Math.max(bond, 0) / 100), 10);
   const frac = bond >= 1000 ? 0 : (Math.max(bond, 0) % 100) / 100;
   el("circle", { cx: 80, cy: 80, r: R, fill: "none", stroke: TRACK, "stroke-width": BASE }, svg);
@@ -153,7 +145,7 @@ function ring(bond, number) {
     band(svg, R, BASE, Math.abs(bond) / 100, "rgba(241,240,244,.38)")
       .setAttribute("transform", "rotate(-90 80 80) scale(1 -1) translate(0 -160)");
   }
-  const g = el("g", { transform: "translate(80 81) scale(2.05) translate(-12 -12)" }, svg);
+  const g = el("g", { transform: "translate(80 81) scale(2.6) translate(-12 -12)" }, svg);
   const h = el("path", { d: HEART, "stroke-width": 1.6, "stroke-linejoin": "round" }, g);
   if (bond <= 0) { h.style.fill = "none"; h.style.stroke = "rgba(241,240,244,.45)"; }
   else { h.style.fill = "var(--foreground)"; h.style.stroke = "var(--foreground)"; }
@@ -161,7 +153,7 @@ function ring(bond, number) {
   if (number !== false) {
     const text = String(Math.round(bond)).replace("-", "−");
     const t = el("text", { x: 80, y: 79, "text-anchor": "middle", "dominant-baseline": "central",
-      "font-size": text.length >= 4 ? 11.5 : text.length === 3 ? 13.5 : 15, "font-weight": 650 }, svg);
+      "font-size": text.length >= 4 ? 15 : text.length === 3 ? 17.5 : 19, "font-weight": 650 }, svg);
     t.style.fill = bond <= 0 ? "var(--muted-foreground)" : "#1f1218";
     t.style.fontVariantNumeric = "tabular-nums";
     t.textContent = text;
@@ -179,18 +171,13 @@ function mark(bond) {
   return svg;
 }
 const states = document.getElementById("states");
-for (const name of Object.keys(PALETTES)) {
-  PALETTE = PALETTES[name];
-  const h = document.createElement("h3"); h.textContent = name; h.style.width = "100%"; h.style.margin = "8px 0 -12px"; states.appendChild(h);
-  for (const b of [35, 160, 480, 730, 1000]) {
-    const f = document.createElement("figure");
-    f.appendChild(ring(b));
-    const c = document.createElement("figcaption");
-    c.innerHTML = '<span class="dim">' + (b >= 1000 ? "滿" : "第 " + (Math.floor(b / 100) + 1) + " 圈") + '</span><span class="num">' + b + "</span>";
-    f.appendChild(c); states.appendChild(f);
-  }
+for (const b of [35, 160, 480, 730, 1000]) {
+  const f = document.createElement("figure");
+  f.appendChild(ring(b));
+  const c = document.createElement("figcaption");
+  c.innerHTML = '<span class="dim">' + (b >= 1000 ? "滿" : "第 " + (Math.floor(b / 100) + 1) + " 圈") + '</span><span class="num">' + b + "</span>";
+  f.appendChild(c); states.appendChild(f);
 }
-PALETTE = PALETTES["中性,最上面一圈粉"];
 for (const b of [0, -40]) {
   const f = document.createElement("figure");
   f.appendChild(ring(b));
