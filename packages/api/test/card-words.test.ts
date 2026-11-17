@@ -3,7 +3,14 @@
 
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { describe, expect, it } from "vitest";
-import { type CardContext, checked, MAX_FIELDS, MAX_LINE, writeCard } from "../src/card-words.js";
+import {
+  type CardContext,
+  checked,
+  MAX_FIELDS,
+  MAX_LINE,
+  occasionLine,
+  writeCard,
+} from "../src/card-words.js";
 import type { ApiState } from "../src/state.js";
 
 const context: CardContext = {
@@ -22,6 +29,24 @@ const context: CardContext = {
 
 /** Everything passes except a line that names 小美. */
 const pass = (text: string) => (text.includes("小美") ? null : text);
+
+describe("what a card nobody bought is for", () => {
+  it("is the tier and its scene for a milestone, what the card prints for a keepsake", () => {
+    expect(occasionLine({ kind: "milestone", tier: "知心", scene: "一起看流星" })).toContain(
+      "「一起看流星」",
+    );
+    const keepsake = occasionLine({
+      kind: "keepsake",
+      facts: [
+        { label: "第一次見面", text: "2025-03-01" },
+        { label: "以前的關係", text: "朋友" },
+      ],
+    });
+    expect(keepsake).toContain("紀念卡");
+    expect(keepsake).toContain("第一次見面:2025-03-01、以前的關係:朋友");
+    expect(occasionLine({ kind: "keepsake", facts: [] })).not.toContain("卡上已經印著");
+  });
+});
 
 describe("her words on a card", () => {
   it("are cut to size, passed one by one, and pick a pose of the band only", () => {

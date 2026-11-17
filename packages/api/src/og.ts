@@ -267,6 +267,17 @@ class ImageCache<T> {
       this.#items.delete(oldest);
     }
   }
+
+  /** Drops every entry whose key starts with `prefix`; how many. */
+  forget(prefix: string): number {
+    let n = 0;
+    for (const key of [...this.#items.keys()]) {
+      if (!key.startsWith(prefix)) continue;
+      this.#items.delete(key);
+      n += 1;
+    }
+    return n;
+  }
 }
 
 const caches = new WeakMap<ApiState, ImageCache<Buffer>>();
@@ -277,6 +288,15 @@ function cacheOf(state: ApiState): ImageCache<Buffer> {
     caches.set(state, cache);
   }
   return cache;
+}
+
+/**
+ * Drops the pictures of the whole card `serial` kept so far (its words changed after it was
+ * issued: her line on a keepsake). The next one is drawn from the card as it is now; her picture
+ * on it (`cardArt`) does not depend on the words and stays.
+ */
+export function forgetCardImages(state: ApiState, serial: string): number {
+  return cacheOf(state).forget(`${serial}:`);
 }
 
 /** Rendered pictures (`cardArt`, only the ones that never change) by serial. */

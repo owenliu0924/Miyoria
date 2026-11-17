@@ -7,7 +7,8 @@
 // may read) and her mood, never her private feeling: it names other people and may hold a secret,
 // and a card's code lets anyone read it. A milestone card (docs/design/v5-play.md §6.1) adds the
 // tier and the shared memory she anchored it with, which the design puts on the card; what she
-// writes of it passes the same checks.
+// writes of it passes the same checks. A keepsake card (P5) is told what it already prints (since
+// when, what they were, their old cards); only her line of it is kept.
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
 import type { CardField, MemberCard } from "@miyoria/contracts/api";
@@ -71,6 +72,12 @@ export interface CardContext {
 
 /** What she is told a card nobody bought is for, as a line of `about`. */
 export function occasionLine(occasion: CardOccasion): string {
+  if (occasion.kind === "keepsake") {
+    const facts = occasion.facts.map((f) => `${f.label}:${f.text}`).join("、");
+    return `這不是平常的每日卡,是紀念卡:他在你開始發卡之前就認識你了,這張是給老朋友的${
+      facts === "" ? "" : `(卡上已經印著:${facts})`
+    }。line 寫一句給他的話,像替你們認識的這段時間留下的一句旁白;卡上印著的事不用再寫一次。`;
+  }
   const scene =
     occasion.scene === null
       ? "line 寫你們之間的一個場面(從你記得的事裡挑一件),像替這一刻留下的一句旁白。"

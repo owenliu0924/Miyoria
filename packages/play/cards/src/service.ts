@@ -28,7 +28,7 @@ import type { Part, Rarity, Slot } from "./catalogue.js";
 import { type CardsConfig, drawRules } from "./config.js";
 import { type SeriesProgress, seriesProgress, type WishlistProblem } from "./dex.js";
 import { type PityView, pityView, type Random } from "./draw.js";
-import type { OccasionFace } from "./faces.js";
+import type { CardFaces, OccasionFace } from "./faces.js";
 import { LEGACY_SERIES, type LegacyItem } from "./legacy.js";
 import { type OddsTable, oddsTable } from "./odds.js";
 import { newSerial } from "./serial.js";
@@ -555,6 +555,44 @@ export class CardService {
       );
       return "waiting";
     }
+  }
+
+  /**
+   * Her line for up to `limit` keepsake cards that have none (issued with facts only, so opening
+   * one's cards never waits on a model), oldest first, each in its person's turn: asked for through
+   * `faces` (the api's writer, with its moderation and its no-other-names filter), told what the
+   * card already says, and put on the card if it still has no line. A card she wrote nothing for
+   * that passed is tried again on a later pass, at most `KEEPSAKE_LINE_TRIES` times. `rewritten` is
+   * told of each card that got its line (its kept pictures go). Safe to run again at any time, and
+   * after a restart: what is done is on the cards.
+   */
+  async writeKeepsakeLines(
+    faces: CardFaces,
+    limit: number,
+  ): Promise<{ written: number; tried: number }> {
+    const result = { written: 0, tried: 0 };
+    for (const candidate of this.#store.keepsakesWithoutLine(limit)) {
+      const done = await this.#inTurn(candidate.person, async () => {
+        const card = this.#store.card(candidate.serial);
+        if (card === null || card.face.line !== null) return null;
+        const face = await faces.face(card.person, { kind: "keepsake", facts: card.face.fields });
+        const line = face?.face.line ?? null;
+        return this.#store.setKeepsakeLine(card.serial, line);
+      });
+      if (done === null) continue;
+      result.tried += 1;
+      if (!done) continue;
+      result.written += 1;
+      try {
+        faces.rewritten?.(candidate.serial);
+      } catch (error) {
+        log.warn(
+          { serial: candidate.serial, err: String(error) },
+          "cards: cannot drop a rewritten card's pictures",
+        );
+      }
+    }
+    return result;
   }
 
   /**

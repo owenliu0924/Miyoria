@@ -7,6 +7,7 @@ import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import type { PersonId } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  type CardOccasion,
   type CardPayer,
   CardService,
   type CardServiceOptions,
@@ -35,6 +36,7 @@ const FACE = {
   fields: [],
   number: 1,
 };
+const FACE_NO_LINE = { ...FACE, line: null };
 const FRIEND = {
   tier: "朋友",
   tier_label: "朋友 I",
@@ -679,6 +681,71 @@ describe("a keepsake card", () => {
     expect(store.keepsakeGiven("a")).toBe(false);
     store.forgetPerson(["k"]);
     expect(await cards.keepsake("k", words)).toEqual({ ok: false, reason: "not_eligible" });
+  });
+
+  it("gets her line later, once, through the writer, and is let be after a few tries", async () => {
+    const cards = service({ migrated: () => true });
+    const fields = [{ label: "第一次見面", text: "2025-03-01" }];
+    for (const p of ["p1", "p2", "p3"]) {
+      const given = await cards.keepsake(p, async () => ({
+        face: { ...FACE, line: null, fields },
+        relationship: FRIEND,
+      }));
+      expect(given.ok).toBe(true);
+    }
+    const asked: { person: string; occasion: unknown }[] = [];
+    const rewritten: string[] = [];
+    const lines: Record<string, string | null> = { p1: "好久不見,還記得那年冬天嗎", p2: null };
+    const faces = {
+      async face(person: PersonId, occasion: CardOccasion) {
+        asked.push({ person, occasion });
+        // p3: someone she will not say anything about now.
+        if (person === "p3") return null;
+        return { face: { ...FACE, line: lines[person] ?? null }, relationship: FRIEND };
+      },
+      rewritten: (serial: string) => rewritten.push(serial),
+    };
+    const p1 = store.cards("p1")[0];
+    store.setArtifact(p1?.serial ?? "", "art-1");
+    expect(await cards.writeKeepsakeLines(faces, 10)).toEqual({ written: 1, tried: 3 });
+    expect(asked[0]).toEqual({ person: "p1", occasion: { kind: "keepsake", facts: fields } });
+    // Her line, and only it: the facts and the rest stay as issued; its picture of record goes.
+    const written = store.card(p1?.serial ?? "");
+    expect(written?.face).toMatchObject({
+      line: "好久不見,還記得那年冬天嗎",
+      fields,
+      name: "小明",
+    });
+    expect(written?.artifact_id).toBeNull();
+    expect(rewritten).toEqual([p1?.serial]);
+    // Again: p1 is done; the others are tried until the third try, then let be.
+    expect(await cards.writeKeepsakeLines(faces, 10)).toEqual({ written: 0, tried: 2 });
+    expect(await cards.writeKeepsakeLines(faces, 10)).toEqual({ written: 0, tried: 2 });
+    expect(await cards.writeKeepsakeLines(faces, 10)).toEqual({ written: 0, tried: 0 });
+    expect(asked.filter((a) => a.person === "p1")).toHaveLength(1);
+    expect(store.keepsakesWithoutLine(10)).toEqual([]);
+    // A line is never written over.
+    expect(store.setKeepsakeLine(p1?.serial ?? "", "另一句")).toBe(false);
+    expect(store.card(p1?.serial ?? "")?.face.line).toBe("好久不見,還記得那年冬天嗎");
+  });
+
+  it("takes a few lines a pass, oldest first", async () => {
+    const cards = service({ migrated: () => true });
+    for (const p of ["p1", "p2", "p3"]) {
+      now += 1000;
+      await cards.keepsake(p, async () => ({ face: FACE_NO_LINE, relationship: FRIEND }));
+    }
+    const asked: string[] = [];
+    const faces = {
+      async face(person: PersonId) {
+        asked.push(person);
+        return { face: { ...FACE, line: `給 ${person}` }, relationship: FRIEND };
+      },
+    };
+    expect(await cards.writeKeepsakeLines(faces, 2)).toEqual({ written: 2, tried: 2 });
+    expect(asked).toEqual(["p1", "p2"]);
+    expect(await cards.writeKeepsakeLines(faces, 2)).toEqual({ written: 1, tried: 1 });
+    expect(asked).toEqual(["p1", "p2", "p3"]);
   });
 
   it("is marked for every keepsake card already there when the mark comes (migration 5)", () => {

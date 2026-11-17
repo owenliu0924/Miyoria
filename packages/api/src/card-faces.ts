@@ -7,7 +7,9 @@
 //
 // The keepsake card of someone who came over from the old records (P5) is given here too, the
 // first time they open their cards (`keepsakeFor`, called by the routes and the command that show
-// them); nobody is sent anything for it.
+// them), with facts only; nobody is sent anything for it. Her line for it comes later, when the
+// cards module asks for it through `face` (occasion `keepsake`) and then says the card changed
+// (`rewritten`), which drops the pictures of the whole card kept here.
 
 import type { CardField, IssuedCard } from "@miyoria/contracts/api";
 import {
@@ -32,6 +34,7 @@ import {
   shown,
   shownMemories,
 } from "./member.js";
+import { forgetCardImages } from "./og.js";
 import { dateOf, localDay } from "./public.js";
 import type { ApiState } from "./state.js";
 
@@ -170,5 +173,10 @@ export class CardFaceService implements CardFaces {
     // Someone she will not say anything about gets no card that would.
     if (who.hidden || who.person?.id !== person) return null;
     return occasionFace(state, who, first.display_name, null, occasion);
+  }
+
+  /** A card's words changed (her line on a keepsake): its kept pictures of the whole card go. */
+  rewritten(serial: string): void {
+    forgetCardImages(this.state, serial);
   }
 }

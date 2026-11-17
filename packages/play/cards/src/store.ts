@@ -265,6 +265,12 @@ export function milestoneTier(card: Pick<CardRecord, "kind" | "issue_key">): Bon
   return min === null ? null : (BOND_LADDER.find((t) => t.min === min) ?? null);
 }
 
+/**
+ * How many times her line for a keepsake card is asked for before it is left without one (she
+ * wrote nothing that passed the checks, or could not write).
+ */
+export const KEEPSAKE_LINE_TRIES = 3;
+
 /** The kinds of card a day's limit counts (`cards_tally`). */
 export const TALLIED_KINDS = ["daily", "drop"] as const;
 export type TalliedKind = (typeof TALLIED_KINDS)[number];
@@ -646,6 +652,61 @@ export class CardStore {
       );
       if (changed === 0) return null;
       return this.titles(person).find((t) => t.series === series) ?? null;
+    });
+  }
+
+  /**
+   * Keepsake cards still without her line, oldest first, at most `limit`: the ones tried fewer
+   * than `KEEPSAKE_LINE_TRIES` times.
+   */
+  keepsakesWithoutLine(limit: number): CardRecord[] {
+    this.#db.ensureOpen();
+    const C = cardsCard;
+    return this.#db.orm
+      .select()
+      .from(C)
+      .where(
+        and(
+          eq(C.kind, "keepsake"),
+          sql`json_extract(${C.face}, '$.line') IS NULL`,
+          sql`coalesce(json_extract(${C.face}, '$.line_tries'), 0) < ${KEEPSAKE_LINE_TRIES}`,
+        ),
+      )
+      .orderBy(asc(C.created_at), asc(C.serial))
+      .limit(Math.max(limit, 0))
+      .all()
+      .map(cardOf);
+  }
+
+  /**
+   * Puts her line on keepsake card `serial`, if it still has none; `null` (she wrote nothing that
+   * passed) counts a try instead. The card's picture of record is cleared with a new line (it
+   * showed the card without it). Whether the line went on.
+   */
+  setKeepsakeLine(serial: string, line: string | null): boolean {
+    const C = cardsCard;
+    const still = and(
+      eq(C.serial, serial),
+      eq(C.kind, "keepsake"),
+      sql`json_extract(${C.face}, '$.line') IS NULL`,
+    );
+    return this.#write(() => {
+      if (line === null) {
+        this.#db.orm
+          .update(C)
+          .set({
+            face: sql`json_set(${C.face}, '$.line_tries', coalesce(json_extract(${C.face}, '$.line_tries'), 0) + 1)`,
+          })
+          .where(still)
+          .run();
+        return false;
+      }
+      const changed = this.#db.orm
+        .update(C)
+        .set({ face: sql`json_set(${C.face}, '$.line', ${line})`, artifact_id: null })
+        .where(still)
+        .run().changes;
+      return Number(changed) > 0;
     });
   }
 

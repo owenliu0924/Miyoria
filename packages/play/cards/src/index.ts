@@ -95,7 +95,15 @@ export { EXPRESSIONS, type Expression, expressionsFor } from "./expressions.js";
 export { type CardFaces, CardFacesKey, type CardOccasion, type OccasionFace } from "./faces.js";
 export { LEGACY_ITEMS, LEGACY_SERIES, type LegacyItem } from "./legacy.js";
 export { CARDS_CATALOGUE_SQL, cardsSchema } from "./migrations.js";
-export { CardsKey, CardsModule, type CardsModuleOptions, SETTLE_EVERY_MS } from "./module.js";
+export {
+  CardsKey,
+  CardsModule,
+  type CardsModuleOptions,
+  KEEPSAKE_EVERY_MS,
+  KEEPSAKE_FIRST_MS,
+  KEEPSAKES_PER_PASS,
+  SETTLE_EVERY_MS,
+} from "./module.js";
 export { cardNotes } from "./notes.js";
 export {
   type OddsPart,
@@ -171,6 +179,7 @@ export {
   type IssuedCard,
   type IssueInput,
   issueKey,
+  KEEPSAKE_LINE_TRIES,
   milestoneTier,
   type PendingCard,
   TALLIED_KINDS,

@@ -4,6 +4,7 @@
 
 import { ReplySinkKey } from "@miyoria/commands";
 import { heartTables, PeopleDirectoryKey } from "@miyoria/heart/person";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
 import { EventLogKey, Events, type JsonObject } from "@miyoria/types";
@@ -165,6 +166,46 @@ describe("module cards", () => {
     expect(cards?.cards("p1")).toEqual([]);
     // The catalogue is not anyone's data and stays.
     expect(cards?.catalogue().length).toBeGreaterThan(0);
+  });
+
+  it("writes her line on keepsake cards in the background, only with a model and the budget", async () => {
+    const { sup, store } = await start(null, { keepsakeFirstMs: 5, keepsakeEveryMs: 10 });
+    const tables = store.plugin(cardsTables);
+    const service = new CardService(tables, {
+      config: cardsConfig(),
+      clock,
+      wallet: () => null,
+      relationship: () => cardRelationship(null),
+      migrated: () => true,
+    });
+    for (const p of ["p1", "p2"]) {
+      await service.keepsake(p, async () => ({ face: FACE, relationship: cardRelationship(null) }));
+    }
+    const asked: string[] = [];
+    const told: string[] = [];
+    sup.services.provide("api", CardFacesKey, {
+      async face(person) {
+        asked.push(person);
+        return { face: { ...FACE, line: "老朋友,好久不見" }, relationship: cardRelationship(null) };
+      },
+      rewritten: (serial) => told.push(serial),
+    });
+    // No model: nothing is asked for.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(asked).toEqual([]);
+    // A model whose day's budget is used up: still nothing.
+    const budget = { state: "degraded" as "ok" | "degraded" | "exhausted" };
+    sup.services.provide("llm", LlmRouterKey, { budgetState: () => budget.state } as never);
+    await new Promise((r) => setTimeout(r, 40));
+    expect(asked).toEqual([]);
+    budget.state = "ok";
+    await vi.waitFor(() => expect(tables.keepsakesWithoutLine(10)).toEqual([]));
+    expect(asked.sort()).toEqual(["p1", "p2"]);
+    expect(told).toHaveLength(2);
+    expect(tables.cards("p1")[0]?.face.line).toBe("老朋友,好久不見");
+    // Later passes ask for nothing more.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(asked).toHaveLength(2);
   });
 
   it("leaves a charged card's serial through a wipe of the relationships, for the settling", async () => {
