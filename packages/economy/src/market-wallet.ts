@@ -93,7 +93,7 @@ export class EconomyMarketWallet implements MarketWallet {
           return { ok: true, receipt: first.id, balance };
         }
         if (cap !== undefined && (await this.#standing(who, reason, refund, cap)) >= cap.limit) {
-          return { ok: false, reason: "capped", message: `今天最多 ${cap.limit} 張` };
+          return { ok: false, reason: "capped", message: `最多 ${cap.limit} 張,已經到上限了` };
         }
         const spent = await this.e.spend(who, amount, reason, ref, idem);
         return { ok: true, receipt: spent.entry.id, balance: spent.balance };
