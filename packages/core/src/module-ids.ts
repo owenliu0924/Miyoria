@@ -57,10 +57,19 @@ export const NEEDS_TOKEN: readonly string[] = [
 ];
 
 /**
- * Modules that cannot be turned off in the config file: the agent owns her mouth and the arbiter
- * decides when she speaks, so nothing speaks while either is down.
+ * Modules that cannot be turned off, in the config file or at runtime, and why: the agent owns her
+ * mouth and the arbiter decides when she speaks, so nothing speaks while either is down; the heart
+ * is who people are and how she feels about them (`SocialSignalsKey`), which the gate, the queue,
+ * her prompt and her feel all read.
  */
-export const REQUIRED_MODULES: readonly string[] = ["agent", "arbiter"];
+export const REQUIRED_MODULE_REASONS: Readonly<Record<string, string>> = {
+  agent: "nothing speaks while it is down",
+  arbiter: "nothing speaks while it is down",
+  heart: "who people are and how she feels about them live there",
+};
+
+/** The ids of `REQUIRED_MODULE_REASONS`. */
+export const REQUIRED_MODULES: readonly string[] = Object.keys(REQUIRED_MODULE_REASONS);
 
 /**
  * Modules that are off unless their section says `enabled = true` (a missing section or a

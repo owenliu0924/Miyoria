@@ -320,7 +320,7 @@ describe("buildCore", () => {
 });
 
 describe("required modules", () => {
-  it("refuses_a_config_that_turns_the_agent_or_arbiter_off", async () => {
+  it("refuses_a_config_that_turns_a_required_module_off", async () => {
     for (const id of REQUIRED_MODULES) {
       const off = config(`[modules.${id}]\nenabled = false\n`);
       const error: unknown = await buildCoreWith(catalog(), off).catch((e: unknown) => e);
@@ -343,11 +343,13 @@ describe("required modules", () => {
     for (const id of REQUIRED_MODULES) expect(after.get(id), id).toBe(true);
   });
 
-  it("starts_with_both_on_by_default_or_by_name", async () => {
-    expect(REQUIRED_MODULES).toEqual(["agent", "arbiter"]);
+  it("starts_with_all_of_them_on_by_default_or_by_name", async () => {
+    expect(REQUIRED_MODULES).toEqual(["agent", "arbiter", "heart"]);
     core = await buildCoreWith(
       catalog(),
-      config("[modules.agent]\nenabled = true\n[modules.arbiter]\nenabled = true\n"),
+      config(
+        "[modules.agent]\nenabled = true\n[modules.arbiter]\nenabled = true\n[modules.heart]\nenabled = true\n",
+      ),
       { store: await openStore("memory://") },
     );
     expect(core).toBeDefined();

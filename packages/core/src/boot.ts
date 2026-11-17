@@ -76,7 +76,12 @@ import {
   PromptContributorsKey,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
-import { moduleEnabled, NEEDS_TOKEN, REQUIRED_MODULES } from "./module-ids.js";
+import {
+  moduleEnabled,
+  NEEDS_TOKEN,
+  REQUIRED_MODULE_REASONS,
+  REQUIRED_MODULES,
+} from "./module-ids.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
@@ -218,7 +223,7 @@ export async function buildCoreWith(
     if (moduleEnabled(config, id)) continue;
     throw new ConfigError(
       "invalid",
-      `invalid config at \`modules.${id}.enabled\`: the \`${id}\` module cannot be disabled; nothing speaks while it is down`,
+      `invalid config at \`modules.${id}.enabled\`: the \`${id}\` module cannot be disabled; ${REQUIRED_MODULE_REASONS[id]}`,
       `modules.${id}.enabled`,
     );
   }
