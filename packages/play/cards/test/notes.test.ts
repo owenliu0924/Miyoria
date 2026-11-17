@@ -87,9 +87,9 @@ describe("what she hears of a card", () => {
       names,
     );
     expect(lines).toEqual([
-      "小明明 抽到一張 SSR 的卡,上面有「極光」。",
-      "小明明 好久沒抽到 SR 以上,這張是保底給的。",
-      "小明明 抽到了願望單上的「極光」。",
+      "小明明 自己抽卡,抽到一張 SSR 的卡,上面有「極光」(是 小明明 的卡,不是你抽的)。",
+      "小明明 好久沒抽到 SR 以上,小明明 這張是保底給的。",
+      "小明明 抽到的卡上有 小明明 願望單上的「極光」。",
       "小明明 集滿了一個系列,拿到一個稱號。",
     ]);
     // Nothing private: not the price, the card's number, the pity count, the relationship or a
@@ -139,7 +139,7 @@ describe("what she hears of a card", () => {
     );
     expect(lines).toEqual([
       "你和 小明 的關係到了「好朋友」,你給了他一張里程碑卡。",
-      "小明 拿到了願望單上的「極光」。",
+      "小明 拿到的卡上有 小明 願望單上的「極光」。",
     ]);
   });
 });

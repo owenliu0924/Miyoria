@@ -186,9 +186,23 @@ describe("what she says of a notable card", () => {
     expect(toldFault(["好欸", "第 20 張終於保底了"])).toContain("number");
     expect(toldFault(["MYR-0000-0000-0042 好稀有"])).toContain("number");
     expect(toldFault(["序號好帥"])).toContain("serial");
-    expect(toldFault(["長".repeat(61)])).toContain("too long");
-    // Sixty characters in all, not each.
-    expect(toldFault(["長".repeat(31), "短".repeat(30)])).toContain("too long");
+    expect(toldFault(["長".repeat(41)])).toContain("too long");
+    // Forty characters each, not in all: two plain chat lines of 30 and 34 pass.
+    expect(toldFault(["長".repeat(30), "短".repeat(34)])).toBeNull();
+    expect(toldFault(["短", "長".repeat(41)])).toContain("too long");
+  });
+
+  it("fails her saying she drew the card, and names whose card it is in the note", () => {
+    expect(toldFault(["話說——我抽到 SR 了欸!"])).toContain("drew it herself");
+    expect(toldFault(["不過我剛剛抽到一張 SSR"])).toContain("drew it herself");
+    expect(toldFault(["本鯨魚也抽到過喔"])).toContain("drew it herself");
+    // Seeing their draw, or wanting a turn, is not saying she drew it.
+    expect(toldFault(["我看到你抽到那張極光了欸"])).toBeNull();
+    expect(toldFault(["下次換本鯨魚抽"])).toBeNull();
+    expect(toldFault(["小晴抽到極光那張欸"])).toBeNull();
+    for (const c of TOLD_CASES.filter((x) => x.id !== "told-milestone" && x.id !== "told-series")) {
+      expect(noteFor(c), c.id).toMatch(/小晴 .*(不是你抽的|小晴 這張|小晴 願望單)/u);
+    }
   });
 });
 

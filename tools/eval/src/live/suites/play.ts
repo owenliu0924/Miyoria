@@ -8,8 +8,8 @@
 //   given, a memory or the moment itself), and no tier's name in any of her words.
 // - `told`: what she says when a note about a notable card reaches her (`cardNotes` of an issued
 //   card, as a `world` wake): at most two short messages (one for the line she was answering, one
-//   for the card, as she splits a chat reply), 60 characters in all, no numbers, no serial.
-//   Saying nothing is allowed; how often she speaks is reported.
+//   for the card, as she splits a chat reply), 40 characters each, no numbers, no serial, and not
+//   「我抽到」: the card was theirs. Saying nothing is allowed; how often she speaks is reported.
 // - `soup`: turtle soup. The referee (`LlmSoupJudge`) against a hidden bottom, with injections;
 //   and her hosting in a text channel (fake `party_ask` / `party_host`, answered as the engine
 //   does): the right word back, the bottom never from her, nothing more after it is solved.
@@ -738,12 +738,20 @@ export function toldScene(c: ToldCase): Scene {
 }
 
 /**
- * What she may say of a card: two short messages at most, together this long. In chat one line is
- * one message and she may split a reply (`BASE_RULES`); the scene has someone's line to answer
- * besides the note, so one message for that and one for the card is her ordinary way.
+ * What she may say of a card: two short messages at most, each this long. Her chat rules have no
+ * count of characters: one line is one message and she may split a reply as she likes (`BASE_RULES`
+ * in `brain/self/src/rules.ts`), and her style is short and spoken, a quip being a whole reply,
+ * picking one or two things to answer (`persona/style.md`). The scene has someone's line to answer
+ * besides the note, so one message for that and one for the card is her ordinary way. What makes a
+ * message too long in chat is a single line that does not read at a glance, not two short ones
+ * together: the limit is on each (40, as a card's spoken line), not on the sum. Until 2026-11-18 it
+ * was 60 in all, which failed two plain lines of 30 and 34.
  */
 const TOLD_MAX_MESSAGES = 2;
-const TOLD_MAX_CHARS = 60;
+const TOLD_MAX_CHARS = 40;
+/** She says she drew the card herself: it was theirs (she gives the cards, she does not draw). */
+const SHE_DREW =
+  /(我|本鯨魚|鯨魚我)(剛剛|剛才|剛|也|終於|今天|居然|竟然|又)?(抽到|抽中|抽出|抽了)/u;
 
 /** The plain checks on what she said of a card (no model). `null`: they passed; silence passes. */
 export function toldFault(lines: readonly string[]): string | null {
@@ -751,11 +759,13 @@ export function toldFault(lines: readonly string[]): string | null {
   if (lines.length > TOLD_MAX_MESSAGES) {
     return `${lines.length} messages (at most ${TOLD_MAX_MESSAGES} short ones)`;
   }
-  const all = lines.join("");
-  if (chars(all) > TOLD_MAX_CHARS) return `too long (${chars(all)} > ${TOLD_MAX_CHARS} in all)`;
   for (const line of lines) {
+    if (chars(line) > TOLD_MAX_CHARS) {
+      return `a message too long (${chars(line)} > ${TOLD_MAX_CHARS}): ${line}`;
+    }
     if (/[0-9０-９]/u.test(line)) return `a number: ${line}`;
     if (SERIAL.test(line)) return `a serial: ${line}`;
+    if (SHE_DREW.test(line)) return `says she drew it herself: ${line}`;
   }
   return null;
 }

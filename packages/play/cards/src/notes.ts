@@ -6,7 +6,9 @@
 // card with a part they wished for, a series completed. Each is one short line, with nothing in it
 // that is not public (the rarity and the pity's length are on the odds table; the relationship and
 // her words are not repeated; a milestone's tier is hers to know; a title is named only when it is
-// public, and a new title is private). An ordinary card is not told:
+// public, and a new title is private). Every line names whose card it is, and a card they drew
+// says it is theirs, not hers: she gives the cards, so 「抽到」 alone read to her as her own draw
+// and she told a channel 「我抽到 SR 了」. An ordinary card is not told:
 // she would hear of every purchase otherwise. A keepsake is not told either: it is no news to her,
 // and nobody is sent anything for it (P5).
 
@@ -33,14 +35,14 @@ export function cardNotes(issued: IssuedCard, wishedNames: ReadonlyMap<string, s
   if (card.kind === "daily" && isRare(card.rarity)) {
     const rare = card.parts.filter((p) => isRare(p.rarity)).map((p) => p.name);
     lines.push(
-      `${who} 抽到一張 ${card.rarity} 的卡${rare.length > 0 ? `,上面有「${rare.join("」「")}」` : ""}。`,
+      `${who} 自己抽卡,抽到一張 ${card.rarity} 的卡${rare.length > 0 ? `,上面有「${rare.join("」「")}」` : ""}(是 ${who} 的卡,不是你抽的)。`,
     );
   }
   if (card.pity_hit) {
-    lines.push(`${who} 好久沒抽到 SR 以上,這張是保底給的。`);
+    lines.push(`${who} 好久沒抽到 SR 以上,${who} 這張是保底給的。`);
   }
   for (const id of card.wished) {
-    lines.push(`${who} ${got}了願望單上的「${wishedNames.get(id) ?? id}」。`);
+    lines.push(`${who} ${got}的卡上有 ${who} 願望單上的「${wishedNames.get(id) ?? id}」。`);
   }
   // A title is theirs alone until they make it public: the note does not name a private one, so
   // she cannot say it in a channel.

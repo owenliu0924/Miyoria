@@ -360,7 +360,7 @@ describe("module cards", () => {
         source: "cards.drawn",
         silent: false,
         attention_key: `cards:${rare.issued.card.serial}`,
-        summary: expect.stringMatching(/^小明 抽到一張 SSR 的卡/),
+        summary: expect.stringMatching(/^小明 自己抽卡,抽到一張 SSR 的卡.*不是你抽的/),
       }),
     ]);
   });
