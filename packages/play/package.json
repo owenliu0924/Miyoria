@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/play",
   "version": "0.1.0",
-  "description": "party: Party games she hosts: turtle soup (voice or text channel) and song guessing (voice); game: Game director: picks goals, acts through game adapter tools, comments live; queue: User request queue: fair ordering, voting mode, persistence and commands",
+  "description": "party: Party games she hosts: turtle soup (voice or text channel) and song guessing (voice); game: Game director: picks goals, acts through game adapter tools, comments live; queue: User request queue: fair ordering, voting mode, persistence and commands; cards: Her cards for each person (module `cards`): the paid daily card, its draw by public odds with a pity, the expression by relationship, the dex with series titles and the old collectibles, the wishlist",
   "type": "module",
   "engines": {
     "node": ">=24"

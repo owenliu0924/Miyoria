@@ -358,6 +358,17 @@ owner,2026-11-14:
 - 餵食:整體的「她餓不餓」不再擋餵食,改成每人每天 `feed_hunger_cap`(0.85,和以前整體的範圍一樣大)的份量;用完回「你今天餵得夠多了」不扣錢。錢包的 `hungry` 對吃到上限的人是 full。`full_below` 進 removed-config。
 - 籤詩併進簽到,是簽到的可選加買(同價 10,`fortunes_per_day` 照舊):`POST /api/member/checkin { fortune: true }`、`/me checkin fortune:true`;答案多 `fortune`、`fortune_charged`,她寫不出來時簽到照算、多一句 `fortune_note`、錢退回。`/me fortune`、`POST /api/member/fortune` 刪了;`GET /api/member/fortune` 留著給會員頁看今天那張。面板在簽到旁多一個「加買今日籤詩」的開關,籤詩卡片只顯示。已經簽到過的那天也能只買籤詩(沒有第二份簽到獎勵),面板顯示「買今日籤詩」按鈕直到今天的籤詩存在。Discord 的公開答案只說籤詩抽好了,籤詩本身是只有買的人看得到的 follow-up(籤詩有她寫的私人一句)。
 
+### 10.2.3 步驟 1–2:`cards` 外掛和每日卡做了什麼
+
+- **外掛**:`packages/play/cards`(模組 `cards`,可以關,不是必要模組)。資料表用 Drizzle 定義(`schema.ts`),migration 1 由 `schema:sql cards` 產生,部件目錄接在後面手寫:`cards_card`(卡,抽到的部件、表情、閃、姿勢的種子是快照;卡上的關係只有文字,沒有羈絆數字)、`cards_parts`(目錄,cards.md §3–§5,背景只有名字)、`cards_pity`、`cards_dex`、`cards_wishlist`、`cards_titles`(系列稱號,預設只有本人看得到)、`cards_legacy`(舊收藏)。事件 `cards.drawn`、`cards.titled` 在 `@miyoria/contracts/events` 定義,範圍是那個人的私訊,留一年。
+- **抽**:先抽稀有度(N 70 / R 22 / SR 7 / SSR 1,`[modules.cards] rarity_weights`),再挑一個有該稀有度部件的欄位放一個那個稀有度的部件,其餘欄位從那個稀有度以下抽,所以卡的稀有度就是最稀有的部件。連續 20 張沒有 SR 以上,下一張只從 SR、SSR 抽。表情只看關係的分級(P3:黑臉只給討厭、很討厭,很討厭和討厭沒有愛心眼),跟稀有度、付錢無關。機率表(`odds.ts`)用同一組函式算,各欄位加總是 100.00。
+- **每日卡**:`POST /api/member/card` 和 `/me card` 都走 `CardService.issueDaily`:一張 30 魚幣,第一張也要錢,一天 5 張(她的當地日)。先看今天還能不能發、錢夠不夠,才請她寫字,所以被拒的卡不花模型呼叫;她寫的字(一句話、印章、欄位、名字、稱呼)和舊卡一樣寫法,付了錢才寫,寫不出來就退錢。錢包是經濟提供的 `CardWalletKey`(帳本原因 `card_daily`,退回 `card_refund`,以卡號為冪等鍵);陌生人和被封鎖的人收到和陌生人一樣的回答。卡框和閃卡照舊;「重抽」「指定立繪」拿掉(一次性的購買,不退)。
+- **舊卡和舊收藏**:舊的會員卡(`member_cards`)原樣留著,照樣驗得到、列在新卡後面、算進張數。舊收藏(`economy_docs` 的 `item`)在模組啟動時複製到 `cards_legacy`(以舊文件 id 為鍵,重複跑不會重複),圖鑑裡是封閉的「舊收藏」系列;選擇複製而不是原地讀,是因為舊目錄和文件表都屬於經濟、之後會拿掉,而圖鑑是這個外掛的。舊的抽收藏整個刪了(程式、工具、指令、設定、面板按鈕)。
+- **圖**:還是 `card-face` 畫,立繪用 10 張固定圖裡最接近抽到的表情那張(`portrait.ts`:落淚→害羞臉紅、圈圈眼→瞇眼笑、大牙→微笑、黑臉→冷淡,其餘同名)。`CardPortraitKey` 是 Live2D 算圖要接的地方:給部件、表情、種子,回 PNG 或 `null`(`null` 就用固定圖)。抽到的部件用文字印在卡上和卡片頁。
+- **API**:`cards` 群組有我的卡、一張卡(只有本人看得到保底、願望、價格)、圖鑑(系列、稱號、舊收藏)、保底、願望單讀寫、公開的機率表;`cardsAdmin` 給面板看一個人的卡。Discord 不加新指令:`/me card` 的 `action` 多了 圖鑑、機率、保底、願望單(`wish:` 最多三個部件名稱,`清空` 清掉)。
+- **她聽到的**:SR 以上、保底、抽到願望單上的部件、集滿系列,各一句短話,當成她可以回應的通知(和派對遊戲一樣,不安靜的 observation);普通的卡不說。
+- 沒做的(下一步):里程碑卡、紀念卡、頻道掉落、Live2D 算圖、面板頁。
+
 ### 10.3 連結和圖(不屬於階段 5)
 
 現況:

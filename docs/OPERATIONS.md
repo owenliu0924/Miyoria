@@ -434,6 +434,8 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 
 **連結預覽**:Discord、Slack、X 這類爬蟲不跑 JavaScript,所以 Core 送出 `index.html` 時按路由改寫 `<!-- meta:start -->` 到 `<!-- meta:end -->` 之間的標籤(標題、描述、`og:*`、Twitter card,`packages/api/src/meta.ts`)。`/card/<編號>` 的標籤帶那張卡的名字、稱呼、編號和框(都是卡片頁本來就顯示的),`og:image` 指到 `/og/card/<編號>.png?v=<卡片資料的雜湊>`:只有那張卡本身,1000×1397(卡的原比例,四角透明),和面板同一份繪圖(`packages/card-face`)用 resvg 畫出來,不需要瀏覽器。站台預設圖 `/og/default.png`(1200×630)是毛玻璃:靠左貼齊邊緣一片玻璃放名字和一句話,她站在右邊、壓過玻璃的邊。玻璃後面的光是她自己的立繪放大模糊做的,不用面板的背景圖(那是遊戲美術,只放在 owner 自己的螢幕上,不放進誰都能抓的預覽圖);沒有立繪就用暮色漸層(resvg 沒有 backdrop-filter,模糊是事先用 sharp 做好的)。圖按編號加資料版本留在記憶體(最近 64 張),卡的資料變了(換框、作廢)網址的 `v` 就變,上游快取不會吃到舊圖。編號不存在、格式不對、已作廢或讀不到時給站台預設標籤和 `/og/default.png`,不含任何人的資料。網址的 origin 取 `X-Forwarded-Host` / `X-Forwarded-Proto`,沒有就用 `Host`(隧道要把原本的 Host 傳進來)。畫圖用系統字型(Windows 的微軟正黑體,Linux 要裝 Noto Sans CJK);立繪讀 `panel_dir` 裡的 `card-<pose>.local.webp`,沒有就畫不含立繪的卡。
 
+**每日卡**(`[modules.cards]`,`packages/play/cards`,設計見 [design/v5-play.md](design/v5-play.md) §2、§10.2.3):會員頁的「抽一張新卡」和 `/me card` 發的是每日卡,一張 `price`(預設 30)魚幣,第一張也要錢,一天最多 `daily_cap`(5)張,部件照公開機率抽(`GET /api/public/cards/odds`,`/me card action:機率`),表情跟著關係。卡上的立繪暫時是 10 張固定圖裡最接近抽到的表情那張;之後的 Live2D 算圖接在 `CardPortraitKey`。舊的會員卡原樣留著;舊的抽收藏已經拿掉,大家已經有的收藏在模組啟動時複製到 `cards_legacy`,圖鑑裡是「舊收藏」。帳本的新原因是 `card_daily` 和 `card_refund`。改機率就是改 `rarity_weights`,設定的修訂紀錄就是改機率的紀錄。
+
 面板的頁(側欄可收合,`Ctrl/⌘ + B`;`Ctrl/⌘ + K` 開搜尋,可跳到頁面、人、子系統):
 
 | 頁 | 內容 |

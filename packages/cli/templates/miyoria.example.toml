@@ -438,7 +438,8 @@ dirs = ["extensions"]
 # ]
 
 # 她給你的卡(docs/design/v5-play.md §2、cards.md):每日卡用魚幣買,每天第一張也要錢;部件照公開的機率抽,
-# 表情由你們的關係決定,買不到也抽不到。卡不能交易、不能送。下面都是預設值。
+# 表情由你們的關係決定,買不到也抽不到。卡不能交易、不能送。卡框和閃卡在 [modules.economy](frames、card_foil)。
+# 舊的「抽收藏」拿掉了,已經有的收藏留在圖鑑的「舊收藏」。下面都是預設值。
 # [modules.cards]
 # enabled = true
 # price = 30                  # 一張每日卡多少魚幣
