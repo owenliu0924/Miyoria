@@ -81,7 +81,14 @@ describe("one run of the text profile", () => {
       role: "assistant",
       content: "嗨 Owen\n今天怎麼樣?",
     });
-    expect(r.events.map((e) => e.type)).toEqual(["started", "line", "line", "step", "finished"]);
+    expect(r.events.map((e) => e.type)).toEqual([
+      "started",
+      "speaking",
+      "line",
+      "line",
+      "step",
+      "finished",
+    ]);
     expect(r.events.at(-1)).toMatchObject({
       type: "finished",
       outcome: "said",

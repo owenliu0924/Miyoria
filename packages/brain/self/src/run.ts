@@ -266,6 +266,8 @@ class Run {
   #cost = 0;
   #basis: "usd" | "tokens" = "usd";
   #rounds = 0;
+  /** The `speaking` event went out. */
+  #spoke = false;
   /** A tool of effect `say` reached someone (a `say`, a reaction). */
   #spokeViaTool = false;
   /** Rounds of tools that ran `silentWaitMs` or longer with nothing of hers out yet. */
@@ -667,9 +669,15 @@ class Run {
       model = stream.model ?? null;
       for await (const ev of stream) {
         switch (ev.type) {
-          case "text_delta":
-            await take(screen.push(ev.text));
+          case "text_delta": {
+            const lines = screen.push(ev.text);
+            if (!this.#spoke && this.#profile.speaks && screen.wroteText) {
+              this.#spoke = true;
+              this.#emit({ type: "speaking", turn: this.turn });
+            }
+            await take(lines);
             break;
+          }
           case "reasoning_delta":
             step.reasoning += ev.text;
             break;

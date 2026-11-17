@@ -315,6 +315,14 @@ export type RunEvent =
       final: boolean;
     }
   | {
+      /**
+       * The first visible text of the run began to stream (once per run): not a `<feel>` block, a
+       * `<silence/>`, an emotion tag or a tool call. The host shows her typing from here.
+       */
+      type: "speaking";
+      turn: string;
+    }
+  | {
       type: "line";
       turn: string;
       place: ContextKey;

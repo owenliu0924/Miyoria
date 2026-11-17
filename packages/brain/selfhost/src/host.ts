@@ -192,6 +192,8 @@ interface TurnState {
   tally: CorrectionTally;
   /** The files and images of its lines, once asked for (`LookAround`). */
   attached: Promise<ContentPart[]> | null;
+  /** Stops the typing notices of the run; `null` until her first visible text streams. */
+  typing: AbortController | null;
 }
 
 /** Something she started that has not come back. */
@@ -887,6 +889,7 @@ export class SelfHost implements TextRunner {
       quoted: false,
       tally: new CorrectionTally(false),
       attached: null,
+      typing: null,
     };
     agent.mainline.own(turn);
     agent.ctx.publish(Events.AgentTurnStarted, { turn, context }, { turn });
@@ -931,10 +934,6 @@ export class SelfHost implements TextRunner {
       { turn },
     );
     agentTurns.inc({ decision: "responded" });
-    const typing = new AbortController();
-    if (run.wake.kind === "addressed" || run.wake.kind === "result") {
-      void this.#keepTyping(context, turn, AbortSignal.any([typing.signal, run.controller.signal]));
-    }
     let result: RunResult | null = null;
     let error: string | null = null;
     try {
@@ -951,7 +950,7 @@ export class SelfHost implements TextRunner {
       error = errorMessage(e);
       agent.log.warn({ turn, err: error }, "the runner failed");
     } finally {
-      typing.abort();
+      state.typing?.abort();
       this.#outlet.ended(turn);
       this.#saved.end(turn);
       this.prompt.ended(turn);
@@ -1089,6 +1088,19 @@ export class SelfHost implements TextRunner {
           agent.log.debug({ turn: event.turn, lines: event.count }, "feel lines left out");
         } else if (event.kind !== "tag_stripped") state.tally.count(event.kind, event.count);
         break;
+      case "speaking": {
+        // Discord has no "stop typing": a notice only once she is going to say something.
+        const kind = state.run.wake.kind;
+        if (state.typing === null && (kind === "addressed" || kind === "result")) {
+          state.typing = new AbortController();
+          void this.#keepTyping(
+            context,
+            event.turn,
+            AbortSignal.any([state.typing.signal, state.run.controller.signal]),
+          );
+        }
+        break;
+      }
       case "tool_call":
         if (event.job !== null) {
           this.#jobs.set(event.job, {
@@ -1110,6 +1122,8 @@ export class SelfHost implements TextRunner {
         );
         break;
       case "step":
+        // The run ends with this step and nothing was said: no more notices.
+        if (event.calls === 0 && event.text_chars === 0) state.typing?.abort();
         agent.log.debug(
           {
             turn: event.turn,

@@ -497,6 +497,7 @@ export class VoiceHost implements VoiceRunner {
         );
         break;
       case "refusal":
+      case "speaking":
       case "started":
         break;
     }
