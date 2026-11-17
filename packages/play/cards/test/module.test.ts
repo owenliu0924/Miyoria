@@ -6,13 +6,15 @@ import { heartTables } from "@miyoria/heart/person";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
 import { EventLogKey, type JsonObject } from "@miyoria/types";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CardFacesKey,
   CardsKey,
   CardsModule,
   type CardsModuleOptions,
   type CardWallet,
   CardWalletKey,
+  cardRelationship,
   cardsTables,
   expressionsFor,
 } from "../src/index.js";
@@ -113,6 +115,48 @@ describe("module cards", () => {
     expect(cards?.cards("p1")).toEqual([]);
     // The catalogue is not anyone's data and stays.
     expect(cards?.catalogue().length).toBeGreaterThan(0);
+  });
+
+  it("gives a milestone card for each tier a bond enters, once, with her words when it can", async () => {
+    const { sup, store } = await start();
+    const heart = store.plugin(heartTables).people;
+    const cards = sup.services.get(CardsKey);
+    const mei = await store.people.upsertAccount({ platform: "discord", id: "a1" }, "小美");
+    // Without the api's words: their name, nothing she wrote.
+    heart.adminSet(mei, "bond", 50, { now: T0 });
+    await vi.waitFor(() => expect(cards?.cards(mei)).toHaveLength(2));
+    const first = cards?.cards(mei) ?? [];
+    expect(first.map((c) => [c.kind, c.issue_key, c.price, c.face.name]).sort()).toEqual([
+      ["milestone", "milestone:15", 0, "小美"],
+      ["milestone", "milestone:45", 0, "小美"],
+    ]);
+    // Down and up again: nothing new. A new tier, with the api's words and the anchor's memory.
+    const asked: unknown[] = [];
+    sup.services.provide("api", CardFacesKey, {
+      async face(person, occasion) {
+        asked.push(occasion);
+        return {
+          face: { ...FACE, line: "那天一起看完了流星" },
+          relationship: cardRelationship(heart.get(person)),
+        };
+      },
+    });
+    heart.adminSet(mei, "bond", 10, { now: T0 });
+    heart.adminSet(mei, "bond", 119, { now: T0 });
+    heart.setAnchor(mei, {
+      tier: 120,
+      note_ref: "n1",
+      quote: "一起看流星",
+      at: "2026-11-17T02:00:00.000Z",
+      by: "reflect",
+    });
+    heart.adminSet(mei, "bond", 121, { now: T0 });
+    await vi.waitFor(() => expect(cards?.cards(mei)).toHaveLength(4));
+    expect(asked).toEqual([
+      { kind: "milestone", tier: "摯友", scene: null },
+      { kind: "milestone", tier: "知心", scene: "一起看流星" },
+    ]);
+    expect(cards?.cards(mei, { limit: 1 })[0]?.face.line).toBe("那天一起看完了流星");
   });
 
   it("tells her of a rare card as a note she may react to, and not of an ordinary one", async () => {

@@ -75,10 +75,16 @@ export const cardsCard = sqliteTable(
     /** Its frame (a cosmetic the person chose), `null`: none. */
     frame: text(),
     created_at: micros().notNull(),
+    /**
+     * What it was issued for, once per person (`store.ts` `issueKey`): a milestone's tier, the
+     * keepsake. `null`: a card that needs no such key.
+     */
+    issue_key: text(),
   },
   (t) => [
     index("cards_card_person_idx").on(t.person_id, t.created_at),
     index("cards_card_day_idx").on(t.person_id, t.kind, t.created_at),
+    uniqueIndex("cards_card_key_idx").on(t.person_id, t.issue_key),
     check("cards_card_kind_check", sql`${t.kind} IN ('daily', 'milestone', 'keepsake', 'drop')`),
     check("cards_card_rarity_check", sql`${t.rarity} IN ('N', 'R', 'SR', 'SSR')`),
     check("cards_card_price_check", sql`${t.price} >= 0`),

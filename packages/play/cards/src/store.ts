@@ -5,7 +5,10 @@
 // the catalogue and the wishlist, draws (`draw.ts`), writes the card, moves the pity, adds the
 // parts to the dex, gives the titles of any series it completes and appends `cards.drawn` (and
 // `cards.titled`) to the event log, as the heart writes `heart_person` with `heart.changed`. Paying
-// for it is the service's (`service.ts`), outside the transaction.
+// for it is the service's (`service.ts`), outside the transaction. A card issued for something once
+// per person (a milestone's tier, the keepsake) carries that as its `issue_key`, unique per person:
+// asked again, `issue` answers the card already there. A card nobody paid for neither uses nor
+// moves the pity (`pity: false`).
 //
 // Core's store opens this plugin (`STORE_PLUGINS`); the module `cards` (`module.ts`) owns it. Cards
 // are not tradable: nothing here moves a card to another person except a merge of two persons
@@ -22,7 +25,13 @@ import {
   type StorePlugin,
   tablePart,
 } from "@miyoria/store";
-import { type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
+import {
+  BOND_LADDER,
+  type BondTier,
+  type PersonId,
+  type Timestamp,
+  toTimestamp,
+} from "@miyoria/types";
 import { and, asc, count, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { isRarity, isSlot, type Part, type Rarity } from "./catalogue.js";
 import { completedBy, type WishlistProblem, wishlistProblem } from "./dex.js";
@@ -118,6 +127,8 @@ export interface CardRecord {
   /** The frame it was issued in; `null`: none. */
   frame: string | null;
   created_at: Timestamp;
+  /** What it was issued for, once per person (`issueKey`); `null`: a card with no such key. */
+  issue_key: string | null;
 }
 
 /** One part a person has. */
@@ -157,6 +168,16 @@ export interface IssueInput {
   frame?: string | null;
   /** A shine they bought for it (an SSR card shines anyway). */
   foil?: boolean;
+  /**
+   * What the card is issued for, once per person (`issueKey`): when they already have the card of
+   * this key, that card is the answer and nothing is drawn or written. Default none.
+   */
+  key?: string | null;
+  /**
+   * Whether the pity counts this card (default `true`): a card nobody paid for is drawn at the
+   * plain odds and leaves the counter where it is.
+   */
+  pity?: boolean;
 }
 
 /** What `issue` did. */
@@ -167,6 +188,23 @@ export interface IssuedCard {
   new_parts: string[];
   /** Titles this card earned. */
   titles: CardTitle[];
+  /** The card of the input's key was there already: nothing was drawn or written. */
+  again: boolean;
+}
+
+/** The `issue_key` of a card issued for something once per person. */
+export const issueKey = {
+  /** A milestone card for entering the tier whose lowest bond is `min`. */
+  milestone: (min: number) => `milestone:${min}`,
+  /** The keepsake card of someone migrated from the old records. */
+  keepsake: "keepsake",
+} as const;
+
+/** The tier a milestone card was given for; `null` for any other card. */
+export function milestoneTier(card: Pick<CardRecord, "kind" | "issue_key">): BondTier | null {
+  if (card.kind !== "milestone" || card.issue_key === null) return null;
+  const min = Number(card.issue_key.slice("milestone:".length));
+  return BOND_LADDER.find((t) => t.min === min) ?? null;
 }
 
 /** The day's cap was reached (by a card issued meanwhile). */
@@ -222,6 +260,7 @@ function cardOf(row: CardsCardRow): CardRecord {
     wished: row.wished,
     frame: row.frame,
     created_at: row.created_at,
+    issue_key: row.issue_key,
   };
 }
 
@@ -260,6 +299,18 @@ export class CardStore {
   card(serial: string): CardRecord | null {
     this.#db.ensureOpen();
     const row = this.#db.orm.select().from(cardsCard).where(eq(cardsCard.serial, serial)).get();
+    return row === undefined ? null : cardOf(row);
+  }
+
+  /** The card `person` was issued for `key` (`issueKey`); `null`: none. */
+  byKey(person: PersonId, key: string): CardRecord | null {
+    this.#db.ensureOpen();
+    const C = cardsCard;
+    const row = this.#db.orm
+      .select()
+      .from(C)
+      .where(and(eq(C.person_id, person), eq(C.issue_key, key)))
+      .get();
     return row === undefined ? null : cardOf(row);
   }
 
@@ -427,17 +478,27 @@ export class CardStore {
    */
   issue(input: IssueInput): IssuedCard {
     const { person, now } = input;
+    const key = input.key ?? null;
+    const counted = input.pity !== false;
     return this.#write(() => {
+      const since = this.pitySince(person);
+      if (key !== null) {
+        const found = this.byKey(person, key);
+        if (found !== null) {
+          const pity = pityView(since, input.rules.pity);
+          return { card: found, pity, new_parts: [], titles: [], again: true };
+        }
+      }
       if (input.cap && this.countSince(person, input.kind, input.cap.since) >= input.cap.max) {
         throw new CardCapError(`${person} already has ${input.cap.max} ${input.kind} cards today`);
       }
       const ts = at(now);
       const catalogue = this.catalogue();
-      const since = this.pitySince(person);
       const drawn = drawCard({
         catalogue,
         rules: input.rules,
-        since,
+        // A card the pity does not count is drawn at the plain odds.
+        since: counted ? since : 0,
         tier: input.relationship.tier,
         random: input.random,
       });
@@ -463,17 +524,20 @@ export class CardStore {
           wished,
           frame: input.frame ?? null,
           created_at: ts,
+          issue_key: key,
         })
         .run();
-      const after = nextSince(since, drawn.rarity);
-      this.#db.orm
-        .insert(cardsPity)
-        .values({ person_id: person, since: after, drawn: 1, updated_at: ts })
-        .onConflictDoUpdate({
-          target: cardsPity.person_id,
-          set: { since: after, drawn: sql`${cardsPity.drawn} + 1`, updated_at: ts },
-        })
-        .run();
+      const after = counted ? nextSince(since, drawn.rarity) : since;
+      if (counted) {
+        this.#db.orm
+          .insert(cardsPity)
+          .values({ person_id: person, since: after, drawn: 1, updated_at: ts })
+          .onConflictDoUpdate({
+            target: cardsPity.person_id,
+            set: { since: after, drawn: sql`${cardsPity.drawn} + 1`, updated_at: ts },
+          })
+          .run();
+      }
       const before = new Set(this.dex(person).map((e) => e.part));
       const collected = drawn.parts.filter((p) => !p.blank);
       for (const p of collected) {
@@ -542,7 +606,13 @@ export class CardStore {
       }
       const card = this.card(input.serial);
       if (card === null) throw new CardsError(`card ${input.serial} was not written`);
-      return { card, pity: pityView(after, input.rules.pity), new_parts: newParts, titles };
+      return {
+        card,
+        pity: pityView(after, input.rules.pity),
+        new_parts: newParts,
+        titles,
+        again: false,
+      };
     });
   }
 
@@ -738,6 +808,7 @@ const cardsData: readonly CategoryData[] = [
         wished: "json",
         frame: "text",
         created_at: "ts",
+        issue_key: "text",
       }),
       tablePart("cards_pity", "cards_pity", "node", "updated_at", "person_id", {
         person_id: "text",

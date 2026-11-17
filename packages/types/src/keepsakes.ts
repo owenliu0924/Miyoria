@@ -67,6 +67,8 @@ export interface KeepsakeCard {
   parts: string[];
   /** Her expression on it, in words; `null` on an older card. */
   expression: string | null;
+  /** `daily`, `milestone`, `keepsake` or `drop`; absent on an older member card. */
+  kind?: string;
 }
 
 /** Today's cards of someone. */

@@ -47,11 +47,13 @@ function issued(over: Partial<IssuedCard["card"]> = {}, titles: IssuedCard["titl
       wished: [],
       frame: null,
       created_at: "2026-11-17T02:00:00.000Z",
+      issue_key: null,
       ...over,
     },
     pity: { since: 0, pity: 20, until: 20 },
     new_parts: [],
     titles,
+    again: false,
   } as IssuedCard;
 }
 
@@ -92,5 +94,23 @@ describe("what she hears of a card", () => {
     ]);
     // Nothing private: not the price, the card's number, the pity count or the relationship.
     expect(lines.join("")).not.toMatch(/30|第 3|20|朋友/);
+  });
+
+  it("is the tier for a milestone card, and a wish on it was not drawn", () => {
+    const lines = cardNotes(
+      issued({
+        kind: "milestone",
+        issue_key: "milestone:45",
+        rarity: "SSR",
+        price: 0,
+        parts: [part("background.aurora", "SSR", "極光")],
+        wished: ["background.aurora"],
+      }),
+      names,
+    );
+    expect(lines).toEqual([
+      "你和 小明 的關係到了「好朋友」,你給了他一張里程碑卡。",
+      "小明 拿到了願望單上的「極光」。",
+    ]);
   });
 });

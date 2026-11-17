@@ -228,6 +228,65 @@ describe("a daily card", () => {
   });
 });
 
+describe("a milestone card", () => {
+  const friends = { min: 15, label: "朋友" } as const;
+  const occasion = (faces: number[]) => async () => {
+    faces.push(1);
+    return { face: FACE, relationship: FRIEND };
+  };
+
+  it("is free, once per tier, outside the day's cap and the pity", async () => {
+    wallet.balances.set("p1", 1000);
+    const cards = service();
+    for (let i = 0; i < 5; i++) await cards.issueDaily(payer("p1"), face);
+    const pity = store.pitySince("p1");
+    const asked: number[] = [];
+    const first = await cards.issueMilestone("p1", friends, occasion(asked));
+    if (!first.ok) throw new Error("refused");
+    expect(first.issued.again).toBe(false);
+    expect(first.issued.card).toMatchObject({
+      kind: "milestone",
+      price: 0,
+      issue_key: "milestone:15",
+      pity_hit: false,
+    });
+    expect(wallet.charges).toHaveLength(5);
+    expect(store.pitySince("p1")).toBe(pity);
+    expect(cards.dailyLeft("p1")).toBe(0);
+    // Asked again (down and up again, or a restart): the same card, her words not asked for.
+    const again = await service().issueMilestone("p1", friends, occasion(asked));
+    expect(again.ok && again.issued).toMatchObject({ again: true, card: first.issued.card });
+    expect(asked).toHaveLength(1);
+    expect(store.cards("p1").filter((c) => c.kind === "milestone")).toHaveLength(1);
+    // Another tier is another card.
+    expect(
+      (await cards.issueMilestone("p1", { min: 45, label: "好朋友" }, occasion(asked))).ok,
+    ).toBe(true);
+    expect(events("cards.drawn").at(-1)?.data).toMatchObject({ kind: "milestone", price: 0 });
+  });
+
+  it("is only for a tier above 認識 on the ladder, and not without a face", async () => {
+    const cards = service();
+    const asked: number[] = [];
+    for (const tier of [
+      { min: 0, label: "認識" },
+      { min: 16, label: "朋友" },
+      { min: 15, label: "好朋友" },
+    ] as const) {
+      expect(await cards.issueMilestone("p1", tier, occasion(asked))).toEqual({
+        ok: false,
+        reason: "not_eligible",
+      });
+    }
+    expect(await cards.issueMilestone("p1", friends, async () => null)).toEqual({
+      ok: false,
+      reason: "no_face",
+    });
+    expect(asked).toEqual([]);
+    expect(store.cards("p1")).toEqual([]);
+  });
+});
+
 describe("the pity", () => {
   it("counts up to 20 and gives SR or better on the 21st, then starts again", () => {
     for (let i = 1; i <= 20; i++) {

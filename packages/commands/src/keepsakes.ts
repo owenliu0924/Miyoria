@@ -46,8 +46,22 @@ function paidLine(charged: number, balance: number | null): CardBlock | null {
   return { type: "muted", text: `花了 ${charged}${balance === null ? "" : `，剩 ${balance}`}` };
 }
 
+/** What a card that is not a daily one is called on it. */
+const KIND_NAMES: Readonly<Record<string, string>> = {
+  milestone: "里程碑卡",
+  keepsake: "紀念卡",
+  drop: "頻道裡撿到的卡",
+};
+
 function cardText(card: KeepsakeCard): CardBlock[] {
-  const head = [`第 ${card.number} 張`, card.rarity, card.relationship, card.foil ? "閃卡" : null]
+  const kind = card.kind === undefined ? null : (KIND_NAMES[card.kind] ?? null);
+  const head = [
+    `第 ${card.number} 張`,
+    kind,
+    card.rarity,
+    card.relationship,
+    card.foil ? "閃卡" : null,
+  ]
     .filter((x) => x !== null && x !== "")
     .join("　");
   const lines = [head];

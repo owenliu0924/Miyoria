@@ -207,6 +207,13 @@ describe("me card", () => {
     expect(fake.issued.map((c) => c.foil)).toEqual([false, false, true]);
   });
 
+  it("names a card she gave for something else than a purchase", async () => {
+    const { run, fake } = setup();
+    await run("me card");
+    fake.issued.push({ ...card(2), kind: "milestone" });
+    expect((await run("me card")).text).toContain("第 2 張　里程碑卡　SR　好朋友");
+  });
+
   it("offers the dex, the odds, the pity and the wishlist, and no reroll", () => {
     const { registry } = setup();
     const spec = registry.get(["me", "card"]);

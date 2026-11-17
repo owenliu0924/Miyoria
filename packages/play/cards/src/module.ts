@@ -4,20 +4,32 @@
 // without it a card that costs anything is refused. The relationship a card shows is read from the
 // heart's row of the person at the time.
 //
-// No commands, routes or pictures yet: those come with the wiring step. Config changes reach it the
-// way they reach every module: the supervisor restarts it.
+// It listens to the heart for a bond entering a tier it never reached (`onTierEntered`) and gives a
+// milestone card for each such tier (§6.1); her words for it come through `CardFacesKey`. A tier
+// entered while this module is not running gets no card later: the cards are never handed out
+// backwards.
+//
+// The routes and the commands are the api's (`KeepsakesKey`, the `cards` route group). Config
+// changes reach it the way they reach every module: the supervisor restarts it.
 
-import { heartTables } from "@miyoria/heart/person";
+import { type HeartStore, heartTables, type TierEntered } from "@miyoria/heart/person";
 import {
   defineManifest,
   errorMessage,
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { StoreKey } from "@miyoria/store";
-import { type Clock, EventLogKey, HandleDirectoryKey, serviceKey } from "@miyoria/types";
+import { type Store, StoreKey } from "@miyoria/store";
+import {
+  type Clock,
+  EventLogKey,
+  HandleDirectoryKey,
+  type PersonId,
+  serviceKey,
+} from "@miyoria/types";
 import { CardsConfigSchema } from "./config.js";
 import type { Random } from "./draw.js";
+import { CardFacesKey, type OccasionFace } from "./faces.js";
 import { cardNotes } from "./notes.js";
 import { cardRelationship } from "./relationship.js";
 import { CardService } from "./service.js";
@@ -77,11 +89,13 @@ export class CardsModule implements Module {
   static readonly ID = "cards";
   readonly manifest = defineManifest(CardsModule.ID, "Cards", {
     description:
-      "Her cards for each person: the daily card (paid, at most a few a day), the public odds, the pity, the dex with series titles, and wishlists",
+      "Her cards for each person: the daily card (paid, at most a few a day), milestone cards for a new tier, the public odds, the pity, the dex with series titles, and wishlists",
     optional: ["heart", "economy"],
     configSchema: CardsConfigSchema,
   });
   readonly #options: CardsModuleOptions;
+  readonly #pending = new Set<Promise<void>>();
+  #stop: (() => void) | null = null;
 
   constructor(options: CardsModuleOptions = {}) {
     this.#options = options;
@@ -117,7 +131,86 @@ export class CardsModule implements Module {
       ...(this.#options.newSerial === undefined ? {} : { newSerial: this.#options.newSerial }),
     });
     ctx.provide(CardsKey, service);
+    // A bond entering a tier it never reached: one milestone card per tier (§6.1).
+    const off = heart.onTierEntered((entered) => {
+      const run = milestones(ctx, service, store, heart, entered);
+      this.#pending.add(run);
+      void run.finally(() => this.#pending.delete(run));
+    });
+    this.#stop = off;
   }
 
-  async stop(): Promise<void> {}
+  async stop(): Promise<void> {
+    this.#stop?.();
+    this.#stop = null;
+    await Promise.allSettled([...this.#pending]);
+  }
+}
+
+/**
+ * The milestone cards of `entered`, lowest tier first. Her words come from `CardFacesKey` (the api
+ * module's) when it runs; without it the card carries the person's name and nothing she wrote.
+ * Failures are logged: the heart's write is long committed.
+ */
+async function milestones(
+  ctx: ModuleContext,
+  service: CardService,
+  store: Store,
+  heart: HeartStore,
+  entered: TierEntered,
+): Promise<void> {
+  const { person } = entered;
+  for (const tier of entered.tiers) {
+    try {
+      const result = await service.issueMilestone(person, tier, async () => {
+        const anchor = heart
+          .get(person)
+          ?.anchors.find((a) => a.tier === tier.min && a.by !== "migrate" && a.quote !== "");
+        const faces = ctx.services.get(CardFacesKey);
+        if (faces !== undefined) {
+          return faces.face(person, {
+            kind: "milestone",
+            tier: tier.label,
+            scene: anchor?.quote ?? null,
+          });
+        }
+        return plainFace(store, heart, service, person);
+      });
+      if (!result.ok) {
+        ctx.log.info(
+          { person, tier: tier.label, reason: result.reason },
+          "cards: no milestone card",
+        );
+      }
+    } catch (error) {
+      ctx.log.warn(
+        { person, tier: tier.label, err: errorMessage(error) },
+        "cards: cannot issue a milestone card",
+      );
+    }
+  }
+}
+
+/** A card's face without the api: their name, nothing she wrote; `null` without an account. */
+async function plainFace(
+  store: Store,
+  heart: HeartStore,
+  service: CardService,
+  person: PersonId,
+): Promise<OccasionFace | null> {
+  const [account] = await store.identity.accountsOf(person);
+  if (account === undefined) return null;
+  return {
+    face: {
+      name: account.display_name,
+      avatar_url: null,
+      call_name: null,
+      line: null,
+      stamp: null,
+      fields: [],
+      number: service.count(person) + 1,
+    },
+    // Her line for them only ever goes on a card through the api's screen.
+    relationship: { ...cardRelationship(heart.get(person)), public_feeling: null },
+  };
 }

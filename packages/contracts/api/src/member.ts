@@ -205,6 +205,12 @@ export const IssuedCardSchema = z
     parts: z.array(CardPartSchema),
     /** Her expression on it, in words (chosen by the relationship); null on an older card. */
     expression: z.string().nullable(),
+    /**
+     * Why she gave it: `daily` (bought), `milestone` (the relationship reached a new tier),
+     * `keepsake` (they were here before the cards), `drop` (caught in a channel); absent on an
+     * older member card.
+     */
+    kind: z.enum(["daily", "milestone", "keepsake", "drop"]).optional(),
   })
   .meta({ id: "ApiIssuedCard" });
 export type IssuedCard = z.output<typeof IssuedCardSchema>;

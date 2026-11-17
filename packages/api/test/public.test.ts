@@ -21,6 +21,7 @@ import { type HeartStore, heartTables } from "@miyoria/heart/person";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
+  CardFacesKey,
   type CardService,
   type CardStore,
   CardsKey,
@@ -42,6 +43,7 @@ import {
   AuditLogKey,
   AuthStoreKey,
   accounts,
+  IdentityStoreKey,
   MemberCardStoreKey,
   type MemoryRecord,
   MemorySettingsStore,
@@ -1704,6 +1706,7 @@ describe("cards she gives", () => {
     "foil",
     "frame",
     "issued_at",
+    "kind",
     "line",
     "name",
     "number",
@@ -1741,7 +1744,14 @@ describe("cards she gives", () => {
     expect(Date.parse(card.issued_at)).not.toBeNaN();
     const me = (await r.get("/api/member/me", cookie)).body as { card: Record<string, unknown> };
     const session = (await r.get("/api/member/session", cookie)).body as Record<string, unknown>;
-    expect(card).toMatchObject({ ...me.card, ...session, number: 1, foil: false, voided_at: null });
+    expect(card).toMatchObject({
+      ...me.card,
+      ...session,
+      number: 1,
+      foil: false,
+      voided_at: null,
+      kind: "daily",
+    });
     expect(RARITIES).toContain(card.rarity);
     // Her expression follows the relationship; the picture is the fixed portrait nearest it.
     const id = expressionId("好朋友", card.expression);
@@ -2088,6 +2098,54 @@ describe("cards she gives", () => {
     }
     expect((await r.get("/api/public/cards/odds")).status).toBe(503);
     expect(coins(r, ALICE)).toBe(100);
+  });
+
+  it("gives the cards module her words for a milestone card, as for a daily one", async () => {
+    const r = await rig();
+    const alice = r.people.get(ALICE) as PersonId;
+    const frank = r.people.get(FRANK) as PersonId;
+    const asked: string[] = [];
+    r.sup.services.provide("llm", LlmRouterKey, {
+      complete: async (_purpose: string, request: { messages: { content: string }[] }) => {
+        asked.push(request.messages.map((m) => m.content).join("\n"));
+        const words = { line: "那天妳唱完最後一句", stamp: "好朋友", fields: [] };
+        return { text: JSON.stringify(words), finish_reason: "stop", usage: null };
+      },
+    } as never);
+    const seen = "2026-01-01T00:00:00.000Z";
+    r.sup.services.provide("identity", IdentityStoreKey, {
+      accountsOf: async (person: PersonId) =>
+        [ALICE, FRANK]
+          .filter((id) => r.people.get(id) === person)
+          .map((id) => ({
+            account: discord(id),
+            display_name: id === ALICE ? "Alice" : "Frank",
+            first_seen: seen,
+            last_seen: seen,
+          })),
+    } as never);
+    await olderCard(r, ALICE, OLDER);
+    const faces = r.sup.services.require(CardFacesKey);
+    const occasion = { kind: "milestone", tier: "好朋友", scene: "一起唱完那首歌" } as const;
+    const got = await faces.face(alice, occasion);
+    expect(asked).toHaveLength(1);
+    expect(got?.face).toMatchObject({
+      name: "Alice",
+      call_name: "小愛",
+      line: "那天妳唱完最後一句",
+      stamp: "好朋友",
+      number: 2,
+    });
+    expect(got?.relationship).toMatchObject({
+      tier: "好朋友",
+      public_feeling: "妳總是記得跟我打招呼。",
+    });
+    expect(asked[0]).toContain("里程碑卡");
+    expect(asked[0]).toContain("一起唱完那首歌");
+    expect(asked[0]).not.toContain("SECRET");
+    // Someone she will not say anything about, or nobody she can find, gets no card.
+    expect(await faces.face(frank, occasion)).toBeNull();
+    expect(await faces.face("nobody" as PersonId, occasion)).toBeNull();
   });
 
   it("are not given without a wallet to pay with", async () => {

@@ -1,7 +1,8 @@
 // The `cards` plugin's migrations (docs/design/v5-data.md §3.2, docs/design/v5-play.md §2, §6.3).
 //
 // Generated from the Drizzle tables in `schema.ts` with `pnpm --filter @miyoria/store schema:sql
-// cards` (drizzle-kit, plus `STRICT`), then the catalogue of `catalogue.ts` seeded by hand
+// cards` (drizzle-kit, plus `STRICT`; for a later migration, what the migrated database lacks),
+// migration 1 then the catalogue of `catalogue.ts` seeded by hand
 // (`CARDS_CATALOGUE_SQL`; a test keeps it equal to `SEED_PARTS`). Never edited after they are
 // released: the runner refuses a database whose recorded checksum differs. A later change of the
 // catalogue is a new migration, never an edit of this one. The store's drift test proves the
@@ -142,9 +143,20 @@ export const CARDS_CATALOGUE_SQL = `INSERT INTO \`cards_parts\` (\`id\`, \`slot\
 	('background.fireworks', 'background', 'SR', NULL, '頻道裡的煙火', 1, 1, 1, 0);
 `;
 
+/**
+ * Migration 2 (`schema:sql cards`): what a card was issued for, once per person (a milestone's
+ * tier, the keepsake), so it is never issued twice, a restart included.
+ */
+const ISSUE_KEY = `ALTER TABLE \`cards_card\` ADD \`issue_key\` text;
+CREATE UNIQUE INDEX \`cards_card_key_idx\` ON \`cards_card\` (\`person_id\`,\`issue_key\`);
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
   requires: ["identity"],
-  migrations: [{ version: 1, name: "init", sql: `${TABLES}\n${CARDS_CATALOGUE_SQL}` }],
+  migrations: [
+    { version: 1, name: "init", sql: `${TABLES}\n${CARDS_CATALOGUE_SQL}` },
+    { version: 2, name: "issue_key", sql: ISSUE_KEY },
+  ],
 };

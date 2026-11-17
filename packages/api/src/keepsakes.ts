@@ -224,5 +224,6 @@ function keepsakeCard(card: IssuedCard): KeepsakeCard {
     rarity: card.rarity,
     parts: card.parts.map((p) => p.name),
     expression: card.expression,
+    ...(card.kind === undefined ? {} : { kind: card.kind }),
   };
 }

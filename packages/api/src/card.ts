@@ -174,6 +174,7 @@ export function dailyCard(c: CardRecord): IssuedCard {
     rarity: c.rarity,
     parts,
     expression: c.expression.name,
+    kind: c.kind,
   };
 }
 

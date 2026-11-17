@@ -5,7 +5,9 @@
 //
 // She is given what the member page already shows them (bands, her line for them, memories they
 // may read) and her mood, never her private feeling: it names other people and may hold a secret,
-// and a card's code lets anyone read it.
+// and a card's code lets anyone read it. A milestone card (docs/design/v5-play.md §6.1) adds the
+// tier and the shared memory she anchored it with, which the design puts on the card; what she
+// writes of it passes the same checks.
 
 import { PersonaHandleKey } from "@miyoria/brain/agent";
 import type { CardField, MemberCard } from "@miyoria/contracts/api";
@@ -16,6 +18,7 @@ import {
   userMessage,
   withLlmTag,
 } from "@miyoria/llm/llm";
+import type { CardOccasion } from "@miyoria/play/cards";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { AffectStateKey, characterCore } from "@miyoria/types";
 import { z } from "zod";
@@ -62,6 +65,17 @@ export interface CardContext {
   memories: readonly string[];
   /** Pictures of her the card may use (their affinity band's). */
   poses: readonly string[];
+  /** What the card is for when it is not a daily one (`occasionLine`); default a daily card. */
+  occasion?: string | null;
+}
+
+/** What she is told a card nobody bought is for, as a line of `about`. */
+export function occasionLine(occasion: CardOccasion): string {
+  const scene =
+    occasion.scene === null
+      ? "line 寫你們之間的一個場面(從你記得的事裡挑一件),像替這一刻留下的一句旁白。"
+      : `line 寫你們之間的這個場面:「${occasion.scene}」,用你自己的話,像替這一刻留下的一句旁白。`;
+  return `這不是平常的每日卡,是里程碑卡:你們的關係剛到了「${occasion.tier}」,這張是你送他的。${scene}`;
 }
 
 export const POSE_WORDS: Readonly<Record<string, string>> = {
@@ -102,6 +116,7 @@ function about(c: CardContext, mood: string | null): string {
     lines.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${m}`).join("\n")}`);
   }
   if (mood) lines.push(`你現在的心情:${mood}`);
+  if (c.occasion) lines.push(c.occasion);
   return lines.join("\n");
 }
 

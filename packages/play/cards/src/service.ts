@@ -6,25 +6,33 @@
 // the cap is checked, the coins are taken through the wallet port (`wallet.ts`), then the store
 // draws and writes the card in one transaction, checking the cap again. When the card cannot be
 // written the coins go back.
+//
+// Some cards nobody pays for (§6.1): a milestone card when a bond enters a tier it had never
+// reached. It is issued once per person and occasion (the store's `issue_key`), in the same turn as
+// that person's other cards, outside the day's cap, at the plain odds and without moving the pity
+// (the design says nothing of the pity for it: a free card that moved it would be a way around it).
 
 import { getLogger } from "@miyoria/runtime/kernel";
-import type { Clock, PersonId } from "@miyoria/types";
+import { BOND_LADDER, type BondTier, type Clock, type PersonId } from "@miyoria/types";
 import type { Part, Rarity, Slot } from "./catalogue.js";
 import { type CardsConfig, drawRules } from "./config.js";
 import { type SeriesProgress, seriesProgress, type WishlistProblem } from "./dex.js";
 import { type PityView, pityView, type Random } from "./draw.js";
+import type { OccasionFace } from "./faces.js";
 import { LEGACY_SERIES, type LegacyItem } from "./legacy.js";
 import { type OddsTable, oddsTable } from "./odds.js";
 import { newSerial } from "./serial.js";
 import {
   CardCapError,
   type CardFace,
+  type CardKind,
   type CardRecord,
   type CardRelationship,
   type CardStore,
   type CardTitle,
   type DexEntry,
   type IssuedCard,
+  issueKey,
 } from "./store.js";
 import { CARD_REASONS, type CardPayer, type CardWallet } from "./wallet.js";
 
@@ -50,6 +58,15 @@ export type DailyRefusal =
   | { ok: false; reason: "no_wallet" };
 
 export type DailyResult = { ok: true; issued: IssuedCard; balance: number | null } | DailyRefusal;
+
+/**
+ * What a card nobody pays for came to: issued (or the one of the same key already there,
+ * `issued.again`), or not, because no card should name them now (`no_face`) or the occasion is not
+ * one (`not_eligible`).
+ */
+export type FreeResult =
+  | { ok: true; issued: IssuedCard }
+  | { ok: false; reason: "no_face" | "not_eligible" };
 
 /** Whether a daily card can be issued now, and what it costs. */
 export type DailyQuote =
@@ -205,14 +222,7 @@ export class CardService {
         frame: options.frame ?? null,
         foil: options.foil === true,
       });
-      try {
-        this.#o.onIssued?.(issued);
-      } catch (error) {
-        log.warn(
-          { person: payer.person, serial, err: String(error) },
-          "cards: cannot tell her about a card",
-        );
-      }
+      this.#told(issued);
       return { ok: true, issued, balance };
     } catch (error) {
       if (paid !== null) {
@@ -229,6 +239,71 @@ export class CardService {
         return { ok: false, reason: "daily_cap", cap: config.daily_cap };
       }
       throw error;
+    }
+  }
+
+  /**
+   * The milestone card of `tier` for `person` (docs/design/v5-play.md §6.1, P4): the bond entered
+   * a tier it had never reached. One per tier per person, whatever happens after (down and up again
+   * gives nothing new), so at most one per tier above 認識: 15. Free, outside the day's cap, drawn
+   * at the plain odds without moving the pity. `face` is asked for only when there is no such card
+   * yet.
+   */
+  issueMilestone(
+    person: PersonId,
+    tier: BondTier,
+    face: () => Promise<OccasionFace | null>,
+  ): Promise<FreeResult> {
+    const known = BOND_LADDER.some((t) => t.min === tier.min && t.label === tier.label);
+    if (!known || tier.min <= 0) {
+      return Promise.resolve({ ok: false, reason: "not_eligible" });
+    }
+    return this.#issueFree(person, "milestone", issueKey.milestone(tier.min), face);
+  }
+
+  /** A free card of `kind` for `key`, once per person; the one already there when it exists. */
+  #issueFree(
+    person: PersonId,
+    kind: CardKind,
+    key: string,
+    face: () => Promise<OccasionFace | null>,
+  ): Promise<FreeResult> {
+    return this.#inTurn(person, async (): Promise<FreeResult> => {
+      const { config, clock } = this.#o;
+      const found = this.#store.byKey(person, key);
+      if (found !== null) {
+        const pity = this.pity(person);
+        return { ok: true, issued: { card: found, pity, new_parts: [], titles: [], again: true } };
+      }
+      const words = await face();
+      if (words === null) return { ok: false, reason: "no_face" };
+      const issued = this.#store.issue({
+        person,
+        kind,
+        serial: this.#serial(),
+        price: 0,
+        face: words.face,
+        relationship: words.relationship,
+        rules: drawRules(config),
+        random: this.#random,
+        now: clock.now(),
+        key,
+        pity: false,
+      });
+      if (!issued.again) this.#told(issued);
+      return { ok: true, issued };
+    });
+  }
+
+  /** Tells `onIssued` of a card; its errors are logged. */
+  #told(issued: IssuedCard): void {
+    try {
+      this.#o.onIssued?.(issued);
+    } catch (error) {
+      log.warn(
+        { person: issued.card.person, serial: issued.card.serial, err: String(error) },
+        "cards: cannot tell her about a card",
+      );
     }
   }
 
