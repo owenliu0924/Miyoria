@@ -3,6 +3,9 @@
 // an incident, not its words, and the tests assert what she does about it, through the real
 // agent, gate, Arbiter, ActivityManager and mind with a scripted LLM.
 //
+// The 2026-11-07 stop request was about Plan, which did not see the room; Plan is gone, so the case
+// now asks the new runner: the run that answers the request, and her later runs there, see it.
+//
 // Not expressible here, covered in the owning package instead: a promise with no action behind
 // it (`packages/brain/agent/test/promise-claims.test.ts`: the replay's scripted LLM makes no tool
 // calls and the voice and game tools are not registered), and the game staying closed after a
@@ -186,6 +189,31 @@ describe("the main line", () => {
         const spoke = r.sink.speeches().filter((s) => s.at >= at && s.at <= at + 30_000);
         expect(spoke.length, v.impulse.why).toBeGreaterThanOrEqual(1);
       }
+    });
+  });
+
+  describe("2026-11-07: told to stop", () => {
+    it("the run that answers it has the request in front of her, and so do her later runs", async () => {
+      const { run: r } = await run(load("told-to-stop-playing.jsonl"));
+      // Plan, which did not see the room, is gone: her runs read the place's transcript.
+      expect(r.llm.requests.some((q) => q.reasoning_purpose === "plan")).toBe(false);
+      const asked = "Miyoria, please stop playing Minecraft.";
+      const runs = r.llm.requests.filter((q) => JSON.stringify(q.messages).includes(asked));
+      expect(runs.length).toBeGreaterThanOrEqual(1);
+      // She answered it, in the voice channel it was said in.
+      const spoken = r.sink.speeches();
+      expect(spoken.length).toBeGreaterThanOrEqual(1);
+      expect(
+        spoken[0]?.action.payload.type === "speak" && spoken[0].action.payload.context,
+      ).toMatchObject({
+        kind: "voice",
+        channel: "v1",
+      });
+      // Every run after it (the talk went on there) still has the request in its transcript.
+      const first = r.llm.requests.findIndex((q) => JSON.stringify(q.messages).includes(asked));
+      const later = r.llm.requests.slice(first + 1);
+      expect(later.length).toBeGreaterThanOrEqual(1);
+      for (const q of later) expect(JSON.stringify(q.messages)).toContain(asked);
     });
   });
 
