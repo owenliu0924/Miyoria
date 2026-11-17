@@ -767,6 +767,26 @@ export {
 } from "./party-overview.js";
 export { CORE_CHARS, CORE_SENTENCES, characterCore } from "./persona-core.js";
 export {
+  type AdminProfilePicture,
+  type AuctionPictureData,
+  type DexPictureData,
+  type LotteryPictureData,
+  type MemberPictureKind,
+  type MemberPictureResult,
+  type MemberProfilePicture,
+  type OddsPictureData,
+  type PictureDataMap,
+  type PictureFile,
+  type PictureKind,
+  type PictureRing,
+  type Pictures,
+  PicturesKey,
+  type PictureWho,
+  type ProfilePictureData,
+  type WalletPictureData,
+  type WeekPictureData,
+} from "./pictures.js";
+export {
   type Desire,
   type Goal,
   type GoalAgenda,
