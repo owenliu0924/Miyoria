@@ -22,6 +22,7 @@ import {
   labelOf,
   PeopleDirectory,
   PeopleDirectoryKey,
+  SELF_ACCOUNTS_KEY,
 } from "../src/index.js";
 
 const T0 = Date.UTC(2026, 10, 17, 2, 0, 0);
@@ -174,6 +175,51 @@ describe("module heart, who people are", () => {
     expect(store.plugin(heartTables).people.get(amy?.person as string)?.interactions).toBe(1);
   });
 });
+
+describe("her own accounts", () => {
+  it("are kept across a restart, so her own lines never count as a person's", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const start = async () => {
+      const sup = new Supervisor();
+      cleanup.push(() => sup.stopAll());
+      sup.services.provide("app", StoreKey, store);
+      await sup.register(HeartModule.fromProfile(profileOf(), { clock }), null, true);
+      await sup.startAll();
+      return sup;
+    };
+    const first = await start();
+    first.bus.publish("discord", Events.PlatformReady, {
+      platform: "discord",
+      self_account: account("900"),
+    } as never);
+    await waitFor(() => first.services.require(PeopleDirectoryKey).isSelf(account("900")));
+    await waitForAsync(async () => (await store.settings.get("p", SELF_ACCOUNTS_KEY)) !== null);
+    await first.stopAll();
+
+    // Restarted: no PlatformReady this time.
+    const second = await start();
+    const line = (id: string, from: string, name: string) =>
+      second.bus.publish("discord", Events.PlatformMessageCreated, {
+        id: { context: { platform: "discord", scope: "g", channel: "c", kind: "channel" }, id },
+        author: { account: account(from), display_name: name, is_bot: false },
+        text: "米優早安",
+        mentions_self: false,
+        reply_to_self: false,
+      } as never);
+    line("m1", "900", "米優");
+    line("m2", "1", "Amy");
+    const signals = second.services.require(SocialSignalsKey);
+    await waitFor(() => signals.attitude(account("1")) !== null);
+    expect(second.services.require(PeopleDirectoryKey).personOf(account("900"))).toBeNull();
+    expect(store.plugin(heartTables).people.list().total).toBe(1);
+  });
+});
+
+async function waitForAsync(ok: () => Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 200 && !(await ok()); i++) await new Promise((r) => setTimeout(r, 5));
+  if (!(await ok())) throw new Error("timed out");
+}
 
 function profileOf() {
   return { id: "p", displayName: "米優", names: () => ["miyo"] } as never;

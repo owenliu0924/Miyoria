@@ -50,6 +50,7 @@ import {
   type HeartReflection,
   type HeartView,
   is,
+  isJsonObject,
   type JsonValue,
   ModerationKey,
   type PersonId,
@@ -94,6 +95,12 @@ export type HeartConfig = z.output<typeof HeartConfigSchema>;
 
 /** Settings key that records the migration ran (owner decision H8): it never runs twice. */
 export const MIGRATED_KEY = "heart:migrated";
+/**
+ * Settings key with her own accounts as `PlatformReady` told them: after a restart of this module
+ * they are known before the platform says them again, so her own lines are never counted as a
+ * person's.
+ */
+export const SELF_ACCOUNTS_KEY = "heart:self_accounts";
 /** Where `self` keeps its state (`SelfModule`'s `STATE_KEY`), with the old `hearts`. */
 const SELF_STATE_KEY = "self:state";
 /** At most this many people are looked through for the one she cares about most. */
@@ -349,6 +356,16 @@ export interface HeartModuleOptions {
   names?: readonly string[];
 }
 
+/** The accounts of a stored list (`SELF_ACCOUNTS_KEY`); anything else in it is skipped. */
+function parseAccounts(value: JsonValue | null): AccountRef[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((v) =>
+    isJsonObject(v) && typeof v.platform === "string" && typeof v.id === "string"
+      ? [{ platform: v.platform, id: v.id }]
+      : [],
+  );
+}
+
 /** What a line someone said is, as the heart counts it. */
 interface Line {
   account: AccountRef;
@@ -467,6 +484,15 @@ export class HeartModule implements Module {
     );
     directory.setAuthorizer(ctx.services.get(AuthorizerKey) ?? null);
     try {
+      for (const account of parseAccounts(
+        await store.settings.get(this.#profile, SELF_ACCOUNTS_KEY),
+      )) {
+        directory.addSelfAccount(account);
+      }
+    } catch (error) {
+      ctx.log.warn({ err: errorMessage(error) }, "heart: cannot read her own accounts");
+    }
+    try {
       await directory.load();
     } catch (error) {
       ctx.log.warn({ err: errorMessage(error) }, "heart: cannot load who people are");
@@ -493,7 +519,10 @@ export class HeartModule implements Module {
       off();
     };
 
-    const together = togetherOf((account) => directory.personOf(account), service);
+    const together = togetherOf(
+      (account) => (directory.isSelf(account) ? null : directory.personOf(account)),
+      service,
+    );
     // Subscribe before returning so no event published after start is missed.
     const sub = ctx.subscribe([
       Events.PlatformReady.type,
@@ -509,7 +538,13 @@ export class HeartModule implements Module {
         const now = clock.now();
         try {
           if (is(Events.PlatformReady, env)) {
-            directory.addSelfAccount(env.data.self_account);
+            if (directory.addSelfAccount(env.data.self_account)) {
+              await store.settings.set(
+                this.#profile,
+                SELF_ACCOUNTS_KEY,
+                directory.selfAccounts().map((a) => ({ platform: a.platform, id: a.id })),
+              );
+            }
             continue;
           }
           const line = lineOf(env, directory);
@@ -520,7 +555,8 @@ export class HeartModule implements Module {
           // Who is in her voice channel is known by person before their time is counted.
           if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
             for (const p of env.data.participants) {
-              if (!p.is_self) await directory.resolve(p.account, p.display_name, now);
+              if (p.is_self || directory.isSelf(p.account)) continue;
+              await directory.resolve(p.account, p.display_name, now);
             }
           }
           together.on(env, now);

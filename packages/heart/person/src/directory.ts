@@ -84,7 +84,7 @@ export class PeopleDirectory implements SocialSignals {
   #authorizer: Authorizer | null = null;
   readonly #personNames = new Map<PersonId, string>();
   readonly #accounts = new Map<string, PersonId>();
-  readonly #selfAccounts = new Set<string>();
+  readonly #selfAccounts = new Map<string, AccountRef>();
   readonly #linkFailures = new Map<string, { since: number; count: number }>();
 
   constructor(
@@ -142,9 +142,17 @@ export class PeopleDirectory implements SocialSignals {
     log.info({ profile: this.profile, people }, "people loaded");
   }
 
-  /** One of her own accounts. */
-  addSelfAccount(account: AccountRef): void {
-    this.#selfAccounts.add(accountRefString(account));
+  /** One of her own accounts; whether it was new. */
+  addSelfAccount(account: AccountRef): boolean {
+    const key = accountRefString(account);
+    if (this.#selfAccounts.has(key)) return false;
+    this.#selfAccounts.set(key, { platform: account.platform, id: account.id });
+    return true;
+  }
+
+  /** Her own accounts as known so far (the module keeps them across restarts). */
+  selfAccounts(): AccountRef[] {
+    return [...this.#selfAccounts.values()];
   }
 
   isSelf(account: AccountRef): boolean {

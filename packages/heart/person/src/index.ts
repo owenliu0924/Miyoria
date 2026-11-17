@@ -98,6 +98,7 @@ export {
   type MigrationDeps,
   migrateOnStart,
   runDecay,
+  SELF_ACCOUNTS_KEY,
   togetherOf,
 } from "./module.js";
 export {
