@@ -51,7 +51,7 @@ export interface RelationshipGain {
   kind_cap: { affinity: number; trust: number } | null;
 }
 
-/** Provided by the social module. Neither call publishes an emotion: the caller already did. */
+/** Provided by the heart (`HeartEffects`). Neither call publishes an emotion: the caller already did. */
 export interface RelationshipEffects {
   /** Applies a small gain; returns what actually changed (the caps and the decay apply). */
   gain(
@@ -59,7 +59,10 @@ export interface RelationshipEffects {
     gain: RelationshipGain,
     now: number,
   ): Promise<{ affinity: number; trust: number }>;
-  /** A loss outside the daily caps (a broken promise); `reason` is recorded with the change. */
+  /**
+   * A loss (a broken promise), under the daily cap of the bad direction (`negative_factor` times
+   * the good one, so it is a real loss); `reason` is recorded with the change.
+   */
   penalty(
     person: PersonId,
     loss: { affinity: number; trust: number; reason: string },

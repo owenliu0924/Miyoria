@@ -9,12 +9,12 @@
 // * `channel_quiet`: a lively channel had no messages for `quiet_after_secs`, or the voice
 //   channel she is in went quiet after a conversation (nobody, her included, said anything for
 //   `voice_quiet_secs`). The one "cold channel" signal (docs/design/v2-architecture.md §3.3):
-//   her mind / Plan wakes on it and decides whether to raise something.
+//   whoever reads `world.salient` may wake her on it, and she decides whether to raise something.
 // * `mentioned`: she was mentioned / replied to in a guild context she has not spoken in for
 //   `away_secs`.
 //
-// Snapshot updates (`initial`) never trigger rules. "Cares about" = not blocked and affinity or
-// familiarity at least the configured minimum.
+// Snapshot updates (`initial`) never trigger rules. "Cares about" = not blocked and the heart's one
+// definition of 在意 at `CARES_THRESHOLD` (`Signals.cares`); nobody when the heart does not run.
 
 import {
   type AccountRef,
