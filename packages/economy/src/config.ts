@@ -155,16 +155,14 @@ export const EconomyConfigSchema = z.object({
   big_bowl: coins.default(40),
   /** Dessert: joy, hunger −0.05. */
   dessert: coins.default(25),
-  /** An expression (heart, blush, squint) while the stage is up and she is not singing. */
+  /** An expression on her own face, bought from her purse while the stage is up (`buy_for_self`). */
   expression: coins.default(20),
-  /** One bought expression per person per this many seconds. */
-  expression_cooldown_s: coins.default(600),
   /** Under this hunger she is full: a feed is refused and nothing is charged. */
   full_below: z.number().min(0).max(1).default(0.15),
   /** Gift emotion multiplier per earlier gift of the same person today. */
   diminish: z.number().min(0).max(1).default(0.6),
   /**
-   * What one paid gift (a feed or an expression) adds to affinity and trust before
+   * What one paid gift (a feed) adds to affinity and trust before
    * the social engine's own diminishing returns: a hair, never a way to buy a friend.
    */
   gift_affinity: z.number().nonnegative().default(0.4),
@@ -226,7 +224,7 @@ export const EconomyConfigSchema = z.object({
   /** The sponsor board counts what was spent on her over this many days. */
   board_days: z.number().int().positive().max(365).default(30),
   // Her own purse (docs/design/economy.md §13): a share of every paid gift to her is hers.
-  /** The share of a paid gift (feed, expression, screen message, dedication) she keeps. */
+  /** The share of a paid gift (feed, screen message, dedication) she keeps. */
   her_share: z.number().min(0).max(1).default(0.2),
   /** What she may treat one person to from her purse per day, and everyone together. */
   treat_per_person: coins.default(30),

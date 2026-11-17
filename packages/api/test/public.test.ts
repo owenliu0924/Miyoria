@@ -681,7 +681,6 @@ describe("the route table", () => {
       "POST /api/member/card",
       "POST /api/member/card/reroll",
       "POST /api/member/checkin",
-      "POST /api/member/expression",
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/fortune",
@@ -2183,7 +2182,6 @@ describe("the wallet", () => {
         ["/api/member/checkin", {}],
         ["/api/member/feed", { item: "rice" }],
         ["/api/member/screen", { text: "嗨" }],
-        ["/api/member/expression", { expression: "heart" }],
         ["/api/member/frame", { buy: "sakura" }],
       ] as const) {
         const res = await r.spend(path, cookie, json, "k");
@@ -2196,19 +2194,6 @@ describe("the wallet", () => {
       expect(await r.balanceOf(id)).toBe(500);
     }
     expect(r.hunger.value).toBe(0.8);
-  });
-
-  it("refuses expressions while the stage is down", async () => {
-    const r = await walletRig();
-    await r.fund(ALICE, 100);
-    const cookie = await r.login("alice");
-    const face = await r.spend("/api/member/expression", cookie, { expression: "blush" }, "e-1");
-    expect(face.body).toEqual({
-      accepted: false,
-      charged: 0,
-      balance: 100,
-      message: "她現在沒有開台",
-    });
   });
 
   it("puts a message on the screen only while she is live, and not for nothing", async () => {

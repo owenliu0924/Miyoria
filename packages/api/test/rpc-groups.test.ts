@@ -7,10 +7,9 @@ import {
   contract,
   FeedItemSchema,
   FeedRequestSchema,
-  GiftExpressionSchema,
   routeMeta,
 } from "@miyoria/contracts/api";
-import { FEED_ITEMS, GIFT_EXPRESSIONS, MAX_FEED_COUNT } from "@miyoria/economy";
+import { FEED_ITEMS, MAX_FEED_COUNT } from "@miyoria/economy";
 import { implement } from "@orpc/server";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
@@ -70,7 +69,6 @@ const CASES: Case[] = [
   post("wallet.checkin", "/api/member/checkin", {}),
   post("wallet.feed", "/api/member/feed", { item: "rice" }),
   post("wallet.screen", "/api/member/screen", { text: "hi" }),
-  post("wallet.expression", "/api/member/expression", { expression: "heart" }),
   post("wallet.transfer", "/api/member/transfer", { to_discord_id: "1", amount: 1 }),
   post("wallet.board", "/api/member/board", { on: true }),
   post("wallet.frame", "/api/member/frame", { buy: "sakura" }),
@@ -208,7 +206,6 @@ const ANSWERS = {
     message: "a",
   } satisfies ApiOutputs["wallet"]["feed"],
   "wallet.screen": SPENT,
-  "wallet.expression": SPENT,
   "wallet.transfer": { sent: 1, balance: 1, to: "a" } satisfies ApiOutputs["wallet"]["transfer"],
   "wallet.board": { on_board: true } satisfies ApiOutputs["wallet"]["board"],
   "wallet.frame": {
@@ -331,7 +328,6 @@ describe("the answers", () => {
       checkin: os.wallet.checkin.handler(answer("wallet.checkin")),
       feed: os.wallet.feed.handler(answer("wallet.feed")),
       screen: os.wallet.screen.handler(answer("wallet.screen")),
-      expression: os.wallet.expression.handler(answer("wallet.expression")),
       transfer: os.wallet.transfer.handler(answer("wallet.transfer")),
       board: os.wallet.board.handler(answer("wallet.board")),
       frame: os.wallet.frame.handler(answer("wallet.frame")),
@@ -377,9 +373,8 @@ describe("the answers", () => {
 });
 
 describe("what the contract says again of the economy", () => {
-  it("allows the items, expressions and count the wallet has", () => {
+  it("allows the items and count the wallet has", () => {
     expect(FeedItemSchema.options).toEqual([...FEED_ITEMS]);
-    expect(GiftExpressionSchema.options).toEqual([...GIFT_EXPRESSIONS]);
     expect(FeedRequestSchema.safeParse({ item: "rice", count: MAX_FEED_COUNT }).success).toBe(true);
     expect(FeedRequestSchema.safeParse({ item: "rice", count: MAX_FEED_COUNT + 1 }).success).toBe(
       false,

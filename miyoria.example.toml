@@ -375,11 +375,10 @@ dirs = ["extensions"]
 # rice = 10                   # 一碗白飯:hunger −0.15
 # big_bowl = 40               # 大碗(鋼盆):hunger −0.5,開台時出現钢盆表情幾秒
 # dessert = 25                # 甜點:hunger −0.05
-# expression = 20             # 送她表情(愛心眼、臉紅、＞＜):開台中、沒在唱歌時;沒送出去就退錢
-# expression_cooldown_s = 600 # 每個人多久能送一次表情
+# expression = 20             # 她用自己的錢包給自己換一個表情(buy_for_self):開台中、沒在唱歌時;沒出來就退回
 # full_below = 0.15           # hunger 低於這個就是吃飽了:不收、不扣錢
 # diminish = 0.6              # 同一個人當天第 n 份禮物,情緒乘上 0.6^(n-1)
-# gift_affinity = 0.4         # 每份付錢的禮物(餵食、表情)加的好感,再乘社交引擎的遞減
+# gift_affinity = 0.4         # 每份付錢的禮物(餵食)加的好感,再乘社交引擎的遞減
 # gift_trust = 0.1            # ...和信任
 # gift_affinity_cap = 1.5     # 禮物本身每人每天最多加的好感(也算進一般每日上限)
 # gift_trust_cap = 0.5        # ...和信任
@@ -414,7 +413,7 @@ dirs = ["extensions"]
 # transfer_in_per_day = 100   # 一個人一天最多收到
 # board_days = 30             # 贊助榜統計過去幾天花在她身上的
 # # ---- 她自己的錢包(§13):付費禮物的一部分是她的
-# her_share = 0.2             # 付費禮物(餵食、表情、螢幕訊息、獻詞)她留多少比例
+# her_share = 0.2             # 付費禮物(餵食、螢幕訊息、獻詞)她留多少比例
 # treat_per_person = 30       # 她請一個人一天最多
 # treat_total = 100           # 她請所有人一天最多
 # self_expressions_per_day = 3   # 她自己買表情一天幾次(價格是 expression)
@@ -1194,18 +1193,14 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # head = [0.62, 0.10, 0.88, 0.38]
 # body = [0.58, 0.35, 0.92, 1.00]
 
-# 語音派對遊戲(v4 §9.1;海龜湯、猜歌、接龍、問答、故事接龍):規則和計分是程式的狀態機,主持、吐槽、
-# 判定模糊答案是她。她叫 party_start 才會開始,不會自己跑,所以預設就開著。下面都是預設值
+# 派對遊戲(v4 §9.1、v5-play §5;猜歌只在語音,海龜湯在語音或文字頻道):規則和計分是程式的狀態機,
+# 主持、吐槽、判定模糊答案是她。誰都可以請她開一場(跟她說,或用 /miyo 的「派對遊戲」),她叫 party_start
+# 才會開始,不會自己跑,所以預設就開著。問答和兩種接龍已經刪了(舊的 quiz_* / chain_* / story_* 設定
+# 會被忽略,啟動時警告一次)。下面都是預設值
 # [modules.party]
-# quiz_rounds = 10               # 問答幾題(她沒指定時)
-# quiz_answer_secs = 40          # 一題答多久,之後公布答案
 # song_rounds = 8                # 猜歌幾首
 # song_answer_secs = 60          # 前奏開始後猜多久
 # clip_secs = 15                 # 猜歌的片段長度
-# chain_idle_secs = 45           # 接龍:這麼久沒人接就斷了
-# story_turn_secs = 60           # 故事接龍:輪到的人有這麼久,之後換下一個
-# story_max_lines = 12           # 故事接龍幾句完結
-# story_line_chars = 80          # 故事每句最多留幾字
 # soup_mins = 15                 # 海龜湯幾分鐘後公布湯底
 # judge_purpose = "party"        # 判海龜湯問題的模型([llm.purposes];沒設就用 chat)
 # judge_timeout_ms = 8000

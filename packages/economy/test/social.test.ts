@@ -142,12 +142,7 @@ describe("transfers", () => {
     const r = await rig();
     await post(r, ALICE, 80, "checkin");
     await r.economy.transfer(ALICE, BOB, 10, "k1");
-    const spent = await ledgerOf(r.store).spent(
-      "p",
-      ["feed", "expression"],
-      "2000-01-01T00:00:00Z",
-      10,
-    );
+    const spent = await ledgerOf(r.store).spent("p", ["feed"], "2000-01-01T00:00:00Z", 10);
     expect(spent).toEqual([]);
   });
 
@@ -283,7 +278,6 @@ describe("the sponsor board", () => {
   it("counts everything spent on her, within the window, and not transfers or refunds", async () => {
     const r = await rig();
     await post(r, ALICE, -10, "feed", { ref: "rice:1" });
-    await post(r, ALICE, -20, "expression", { ref: "heart" });
     await post(r, ALICE, -30, "screen_message");
     await post(r, ALICE, -15, "dedication");
     await post(r, ALICE, -25, "song_ticket");
@@ -301,7 +295,7 @@ describe("the sponsor board", () => {
     // Refunded.
     const gone = await post(r, ALICE, -40, "dedication");
     await post(r, ALICE, 40, "refund", { ref: gone });
-    expect(await r.economy.board()).toEqual([{ rank: 1, name: "Alice", spent: 262 }]);
+    expect(await r.economy.board()).toEqual([{ rank: 1, name: "Alice", spent: 242 }]);
   });
 
   it("lists a fortune-only spender and leaves out a transfer-only one", async () => {
@@ -344,7 +338,7 @@ describe("the sponsor board", () => {
   it("is one person across linked accounts, off when any account left, and off for all", async () => {
     const r = await rig();
     await post(r, ALICE, -30, "feed", { ref: "rice:3" });
-    await post(r, ALICE_TWO, -20, "expression");
+    await post(r, ALICE_TWO, -20, "frame");
     expect(await r.economy.board()).toEqual([{ rank: 1, name: "Alice", spent: 50 }]);
     await r.economy.setOnBoard(ALICE_TWO, false);
     expect(await r.economy.board()).toEqual([]);

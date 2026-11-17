@@ -110,6 +110,15 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
     "mood_drop",
     "game_share",
   ].map((key) => `modules.mind.${key}`),
+  // [modules.party]: the quiz, the word chain and the story chain are gone (phase 5 step 6).
+  ...[
+    "quiz_rounds",
+    "quiz_answer_secs",
+    "chain_idle_secs",
+    "story_turn_secs",
+    "story_max_lines",
+    "story_line_chars",
+  ].map((key) => `modules.party.${key}`),
   // [llm]: the model chain and the reasoning of the calls that are gone.
   "llm.purposes.mind",
   "llm.reasoning.appraise",
@@ -118,6 +127,8 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
   // [modules.economy]: phase 5 slims what coins are for; each feature sold off takes its keys.
   // Letters.
   "modules.economy.letter",
+  // Buying an expression for her (her own purse still buys one for herself).
+  "modules.economy.expression_cooldown_s",
 ];
 
 /** The removed paths `config` still holds, in the order of `REMOVED_CONFIG_KEYS`. */

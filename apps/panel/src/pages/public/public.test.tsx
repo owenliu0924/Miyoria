@@ -93,9 +93,6 @@ const WALLET: WalletView = {
     { id: "rice", kind: "feed", label: "一碗白飯", price: 10, available: true, why: null },
     { id: "big_bowl", kind: "feed", label: "鋼盆", price: 40, available: true, why: null },
     { id: "dessert", kind: "feed", label: "甜點", price: 25, available: true, why: null },
-    { id: "expression:heart", kind: "expression", label: "愛心眼", price: 20, available: true, why: null },
-    { id: "expression:blush", kind: "expression", label: "臉紅", price: 20, available: false, why: "直播還沒開" },
-    { id: "expression:squint", kind: "expression", label: "＞＜", price: 20, available: true, why: null },
     { id: "frame:sakura", kind: "frame", label: "櫻花", price: 100, available: true, why: null },
     { id: "frame:abyss", kind: "frame", label: "深海", price: 150, available: true, why: null },
     { id: "frame:gold", kind: "frame", label: "金框", price: 300, available: true, why: null },
@@ -201,7 +198,7 @@ function core(o: Options = {}) {
       keys.push(headers.get("Idempotency-Key"));
     }
     if (path.startsWith("/api/member/") && o.wallet === null) {
-      if (["wallet", "checkin", "feed", "expression", "frame"].includes(path.slice(12))) return undefined;
+      if (["wallet", "checkin", "feed", "frame"].includes(path.slice(12))) return undefined;
     }
     if (path === "/api/member/wallet") return { body: wallet };
     if (path === "/api/member/checkin") {
@@ -759,18 +756,6 @@ describe("the wallet", () => {
 });
 
 describe("the shop", () => {
-  it("lists the expressions and says why one is not available", async () => {
-    const { posts } = core({ member: USER });
-    renderApp();
-    const shop = await screen.findByRole("region", { name: "商店" });
-    expect(within(shop).getByText("直播還沒開")).toBeInTheDocument();
-    expect(await within(shop).findByRole("button", { name: "送出 臉紅" })).toBeDisabled();
-    await userEvent.click(within(shop).getByRole("button", { name: "送出 愛心眼" }));
-    await waitFor(() =>
-      expect(posts.find((p) => p.path === "/api/member/expression")?.body).toEqual({ expression: "heart" }),
-    );
-  });
-
   it("buys a frame after asking, and selects an owned one", async () => {
     const { posts } = core({ member: USER });
     renderApp();

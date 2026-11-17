@@ -23,7 +23,7 @@ interface ScreenEvent {
 
 interface GiftEvent {
   name: string;
-  item: "rice" | "big_bowl" | "dessert" | "expression";
+  item: "rice" | "big_bowl" | "dessert";
   count: number;
   label: string;
 }
@@ -74,7 +74,7 @@ describe("payloads as they are published", () => {
       problems("economy.screen", { kind: "dedication", name: "Owen", text: "hi", song: "A song" }),
     ).toEqual([]);
     expect(
-      problems("economy.gift", { name: "Owen", item: "expression", count: 1, label: "愛心" }),
+      problems("economy.gift", { name: "Owen", item: "rice", count: 1, label: "一碗白飯" }),
     ).toEqual([]);
   });
 });

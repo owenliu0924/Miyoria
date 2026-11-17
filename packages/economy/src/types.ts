@@ -7,7 +7,7 @@ import type { AchievementUnlocked } from "./v2-types.js";
 export type FeedItem = "rice" | "big_bowl" | "dessert";
 export type GiftExpression = "heart" | "blush" | "squint";
 /** What `economy.gift` names. */
-export type GiftItem = FeedItem | "expression";
+export type GiftItem = FeedItem;
 
 export const FEED_ITEMS: readonly FeedItem[] = ["rice", "big_bowl", "dessert"];
 export const GIFT_EXPRESSIONS: readonly GiftExpression[] = ["heart", "blush", "squint"];
@@ -68,9 +68,9 @@ export interface Purchase {
 }
 
 export interface ShopItem {
-  /** `rice`, `expression:heart`, `frame:sakura`, `card_reroll`, ... */
+  /** `rice`, `frame:sakura`, `card_reroll`, ... */
   id: string;
-  kind: "feed" | "expression" | "frame" | "card" | "song" | "stream" | "fortune";
+  kind: "feed" | "frame" | "card" | "song" | "stream" | "fortune";
   label: string;
   price: number;
   available: boolean;
@@ -177,7 +177,6 @@ export interface Economy {
   wallet(account: AccountRef): Promise<WalletView>;
   checkin(account: AccountRef): Promise<CheckinResult>;
   feed(account: AccountRef, item: FeedItem, count: number, key: string): Promise<FeedResult>;
-  expression(account: AccountRef, expression: GiftExpression, key: string): Promise<SpendResult>;
   /**
    * A message (1 to 60 characters) on the stream's screen while she is live: charged as
    * `screen_message`, once per person per cooldown. Refused without charging when the stage is

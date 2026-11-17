@@ -11,11 +11,6 @@ import { IdempotencyHeaders, route } from "./route.js";
 export const FeedItemSchema = z.enum(["rice", "big_bowl", "dessert"]).meta({ id: "ApiFeedItem" });
 export type FeedItem = z.output<typeof FeedItemSchema>;
 
-export const GiftExpressionSchema = z
-  .enum(["heart", "blush", "squint"])
-  .meta({ id: "ApiGiftExpression" });
-export type GiftExpression = z.output<typeof GiftExpressionSchema>;
-
 /** How hungry she is, in words: never the number. */
 export const HungerSchema = z.enum(["full", "ok", "hungry", "starving"]).meta({ id: "ApiHunger" });
 export type Hunger = z.output<typeof HungerSchema>;
@@ -34,9 +29,9 @@ export type EarnLine = z.output<typeof EarnLineSchema>;
 
 export const ShopItemSchema = z
   .object({
-    /** `rice`, `expression:heart`, `frame:sakura`, `card_reroll`, ... */
+    /** `rice`, `frame:sakura`, `card_reroll`, ... */
     id: z.string(),
-    kind: z.enum(["feed", "expression", "frame", "card", "song", "stream", "fortune"]),
+    kind: z.enum(["feed", "frame", "card", "song", "stream", "fortune"]),
     label: z.string(),
     price: z.number(),
     available: z.boolean(),
@@ -120,13 +115,7 @@ export const ScreenRequestSchema = z
   .meta({ id: "ApiScreenRequest" });
 export type ScreenRequest = z.input<typeof ScreenRequestSchema>;
 
-/** Body of `POST /api/member/expression`. */
-export const ExpressionRequestSchema = z
-  .strictObject({ expression: GiftExpressionSchema })
-  .meta({ id: "ApiExpressionRequest" });
-export type ExpressionRequest = z.input<typeof ExpressionRequestSchema>;
-
-/** `POST /api/member/screen` and `/expression`. */
+/** `POST /api/member/screen`. */
 export const SpendResultSchema = z
   .object({
     accepted: z.boolean(),
@@ -204,7 +193,6 @@ export const wallet = {
     .output(CheckinResultSchema),
   feed: spend("/api/member/feed", FeedRequestSchema).output(FeedResultSchema),
   screen: spend("/api/member/screen", ScreenRequestSchema).output(SpendResultSchema),
-  expression: spend("/api/member/expression", ExpressionRequestSchema).output(SpendResultSchema),
   /** Coins to another member (`403` in the same words for every reason they cannot take them). */
   transfer: spend("/api/member/transfer", TransferRequestSchema).output(TransferResultSchema),
   board: route

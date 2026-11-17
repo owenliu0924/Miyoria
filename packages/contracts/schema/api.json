@@ -3092,18 +3092,6 @@
         "no_checkout"
       ]
     },
-    "ApiExpressionRequest": {
-      "type": "object",
-      "properties": {
-        "expression": {
-          "$ref": "#/$defs/ApiGiftExpression"
-        }
-      },
-      "required": [
-        "expression"
-      ],
-      "additionalProperties": false
-    },
     "ApiExtensionInfo": {
       "type": "object",
       "properties": {
@@ -3575,14 +3563,6 @@
           ]
         }
       }
-    },
-    "ApiGiftExpression": {
-      "type": "string",
-      "enum": [
-        "heart",
-        "blush",
-        "squint"
-      ]
     },
     "ApiGoLiveRequest": {
       "type": "object",
@@ -10228,7 +10208,6 @@
           "type": "string",
           "enum": [
             "feed",
-            "expression",
             "frame",
             "card",
             "song",

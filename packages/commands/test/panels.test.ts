@@ -30,7 +30,7 @@ import { guildContext, inv } from "./helpers.js";
 const OWNER = "1";
 const MEMBER = "5";
 
-/** Every command the repository registers (71 leaves, docs/design/v3-architecture.md §14.2). */
+/** Every command the repository registers (72 leaves, docs/design/v3-architecture.md §14.2). */
 const INVENTORY = [
   "help",
   "admin autonomy pause",
@@ -64,6 +64,7 @@ const INVENTORY = [
   "channel activeness",
   "channel mode",
   "game goal",
+  "game party",
   "game start",
   "game status",
   "game stop",
@@ -134,6 +135,15 @@ const FAKES: Fake[] = [
     args: ["dm", "approach", "presence"].map((n) =>
       argSpec(n, n, ArgKind.choice(["on", "off"]), { required: false }),
     ),
+  },
+  {
+    path: "game party",
+    permission: "chat.talk",
+    ephemeral: false,
+    args: [
+      argSpec("game", "g", ArgKind.choice(["soup", "song"])),
+      argSpec("where", "w", ArgKind.choice(["here", "voice"]), { required: false }),
+    ],
   },
   { path: "me profile", permission: "me.profile", ephemeral: true },
   {
@@ -385,7 +395,7 @@ describe("registration", () => {
     const mapped = new Set(panelCommandPaths());
     mapped.add("help"); // folded into /me, still a text command
     expect(INVENTORY.filter((path) => !mapped.has(path))).toEqual([]);
-    expect(INVENTORY).toHaveLength(71);
+    expect(INVENTORY).toHaveLength(72);
   });
 
   it("the_tiers_map_onto_the_agent_levels", () => {
@@ -469,7 +479,7 @@ describe("what a member sees", () => {
     expect(selectOf(reply)?.options.map((o) => o.label)).toEqual(["角色與權限", "她認識的人"]);
     const miyo = await open(registry, "miyo", OWNER);
     const pages = selectOf(miyo)?.options.map((o) => o.label);
-    expect(pages).toEqual(["總覽", "語音", "聊天等級", "歌單", "緊急停止"]);
+    expect(pages).toEqual(["總覽", "語音", "派對遊戲", "聊天等級", "歌單", "緊急停止"]);
   });
 });
 
@@ -610,6 +620,24 @@ describe("permissions of controls", () => {
 });
 
 describe("controls", () => {
+  it("a_member_asks_for_a_party_game_on_the_miyo_panel", async () => {
+    const { registry, calls } = setup();
+    const miyo = await open(registry, "miyo", MEMBER);
+    expect(selectOf(miyo)?.options.map((o) => o.label)).toContain("派對遊戲");
+    const page = updated(
+      await registry.dispatchComponent(
+        click(selectOf(miyo)?.id ?? "", MEMBER, { values: ["party"] }),
+      ),
+    );
+    expect(buttons(page).map((b) => b.label)).toEqual(expect.arrayContaining(["海龜湯", "猜歌"]));
+    await registry.dispatchComponent(click(button(page, "海龜湯").id, MEMBER));
+    await registry.dispatchComponent(click(button(page, "猜歌").id, MEMBER));
+    expect(calls.map((c) => [c.path, c.args.game])).toEqual([
+      ["game party", "soup"],
+      ["game party", "song"],
+    ]);
+  });
+
   it("a_modal_asks_for_the_arguments_and_leaves_optional_ones_out", async () => {
     const { registry, calls } = setup();
     const home = await open(registry, "me", MEMBER);

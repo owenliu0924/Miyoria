@@ -4,7 +4,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import type { FeedItem, FeedResult, GiftExpression, ShopItem, SpendResult, WalletView } from "@miyoria/contracts/api";
+import type { FeedItem, FeedResult, ShopItem, SpendResult, WalletView } from "@miyoria/contracts/api";
 import { isNotProvided } from "@/api/http";
 import { useApi } from "@/app/connection";
 import { ConfirmDialog } from "@/components/confirm";
@@ -25,7 +25,6 @@ export const STRANGER_LINE = "她還不認識你,先和她說說話吧";
 
 const HUNGRY: Record<string, string> = { full: "吃飽了", ok: "還好", hungry: "有點餓", starving: "很餓" };
 const FEED_LABEL: Record<string, string> = { rice: "一碗白飯", big_bowl: "鋼盆", dessert: "甜點" };
-const EXPRESSION_LABEL: Record<string, string> = { heart: "愛心眼", blush: "臉紅", squint: "＞＜" };
 const FRAME_LABEL: Record<string, string> = { sakura: "櫻花", abyss: "深海", gold: "金框" };
 
 // ---------------------------------------------------------------------------
@@ -226,44 +225,6 @@ function SongExtras({ items, currency }: { items: ShopItem[]; currency: string }
   );
 }
 
-function ExpressionRow({ item, currency }: { item: ShopItem; currency: string }) {
-  const api = useApi();
-  const { patch, refresh } = usePatchWallet();
-  const key = item.id.replace(/^expression:/, "");
-  const label = EXPRESSION_LABEL[key] ?? item.label;
-  const send = useMutation({
-    mutationFn: () => api.rpc.wallet.expression({ headers: { "idempotency-key": newKey() }, body: { expression: key as GiftExpression } }),
-    onSuccess: (r: SpendResult) => {
-      patch((v) => ({ ...v, balance: r.balance }));
-      say(r);
-      void refresh();
-    },
-    onError: (e) => {
-      notify.error(e);
-      void refresh();
-    },
-  });
-  return (
-    <li className="grid gap-0.5 py-(--row-y)">
-      <div className="flex items-center gap-3">
-        <span className="min-w-0 flex-1 text-sm">{label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{priceText(item.price, currency)}</span>
-        <Button
-          size="sm"
-          variant="outline"
-          aria-label={`送出 ${label}`}
-          busy={send.isPending}
-          disabled={!item.available}
-          onClick={() => send.mutate()}
-        >
-          送出
-        </Button>
-      </div>
-      {!item.available && item.why && <p className="text-xs text-muted-foreground">{item.why}</p>}
-    </li>
-  );
-}
-
 function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
   const api = useApi();
   const { patch, refresh } = usePatchWallet();
@@ -336,7 +297,6 @@ function FrameRow({ item, w }: { item: ShopItem; w: WalletView }) {
 }
 
 function Shop({ w }: { w: WalletView }) {
-  const expressions = w.shop.filter((s) => s.kind === "expression");
   const frames = w.shop.filter((s) => s.kind === "frame");
   const screen = w.shop.find((s) => s.id === "screen_message");
   const songs = w.shop.filter((s) => s.kind === "song");
@@ -350,16 +310,6 @@ function Shop({ w }: { w: WalletView }) {
           {screen && <ScreenMessage item={screen} currency={w.currency} />}
         </div>
         <div className="grid content-start gap-5">
-          {expressions.length > 0 && (
-            <div className="grid gap-1">
-              <p className="text-xs text-muted-foreground">直播中送她一個表情</p>
-              <ul className="divide-y divide-line-soft">
-                {expressions.map((s) => (
-                  <ExpressionRow key={s.id} item={s} currency={w.currency} />
-                ))}
-              </ul>
-            </div>
-          )}
           {frames.length > 0 && (
             <div className="grid gap-1">
               <p className="text-xs text-muted-foreground">卡框</p>

@@ -241,7 +241,6 @@ describe("strangers and the blocked", () => {
       expect(view.shop.every((s) => !s.available && s.why === STRANGER)).toBe(true);
       await rejects(r.economy.checkin(who), 403, STRANGER);
       await rejects(r.economy.feed(who, "rice", 1, "k"), 403, STRANGER);
-      await rejects(r.economy.expression(who, "heart", "k"), 403, STRANGER);
       await rejects(r.economy.frame(who, { buy: "sakura" }, "k"), 403, STRANGER);
       expect(await r.economy.earn(who, "talked", 10, "talked:1")).toBeNull();
       expect(await r.economy.exportWallet(who)).toEqual({ balance: 0, ledger: [] });
@@ -493,7 +492,7 @@ describe("feeding her", () => {
 });
 
 describe("a paid gift and affinity", () => {
-  /** What the social engine was asked: a hair for feeds and expressions. */
+  /** What the social engine was asked: a hair for feeds. */
   function bonds(r: Rig, fail = false) {
     const calls: { person: PersonId; gain: RelationshipGain }[] = [];
     r.services.provide("test", RelationshipEffectsKey, {
@@ -532,24 +531,17 @@ describe("a paid gift and affinity", () => {
     expect(calls).toHaveLength(2);
   });
 
-  it("an expression is one, and a refused or failed gift is not", async () => {
+  it("a refused gift is not one", async () => {
     const r = await rig();
     const calls = bonds(r);
     await funded(r, ALICE, 200);
-    await r.economy.expression(ALICE, "heart", "e1");
-    expect(calls.map((c) => c.gain.kind)).toEqual(["treat"]);
-    // The stage fails: refunded, not a gift.
-    r.clock.at += 601_000;
-    r.stage.ok = false;
-    await r.economy.expression(ALICE, "blush", "e2");
-    expect(calls).toHaveLength(1);
     // She is full: nothing eaten, nothing charged, nothing bonded.
     r.hunger.value = 0.05;
     await r.economy.feed(ALICE, "rice", 1, "f1");
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(0);
     // Strangers and the blocked have no gift to bond.
     await rejects(r.economy.feed(CAROL, "rice", 1, "c1"), 403);
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(0);
   });
 
   it("takes its numbers from [modules.economy]: 0 turns it off", async () => {
@@ -589,53 +581,6 @@ describe("a paid gift and affinity", () => {
     bonds(r, true);
     expect((await r.economy.feed(ALICE, "rice", 1, "k2")).accepted).toBe(true);
     expect(topics(r, Events.SocialEvent.type)).toHaveLength(2);
-  });
-});
-
-describe("expressions", () => {
-  it("toggle the stage expression and are a gift", async () => {
-    const r = await rig();
-    await funded(r, ALICE, 100);
-    expect(await r.economy.expression(ALICE, "heart", "k")).toMatchObject({
-      accepted: true,
-      charged: 20,
-      balance: 80,
-    });
-    expect(r.stage.calls).toEqual([{ expression: "heart", seconds: 8 }]);
-    expect(topics(r, Events.SocialEvent.type)).toHaveLength(1);
-    expect(topics(r, GIFT_TOPIC)).toEqual([
-      { name: "Alice", item: "expression", count: 1, label: "表情「愛心眼」" },
-    ]);
-    // One per person per cooldown.
-    await rejects(r.economy.expression(ALICE, "blush", "k2"), 429);
-    r.clock.at += 601_000;
-    expect((await r.economy.expression(ALICE, "blush", "k3")).accepted).toBe(true);
-  });
-
-  it("are refunded when the stage fails, and refused while she sings or the stage is down", async () => {
-    const r = await rig();
-    await funded(r, ALICE, 100);
-    r.stage.ok = false;
-    const failed = await r.economy.expression(ALICE, "squint", "k");
-    expect(failed).toMatchObject({ accepted: false, charged: 0, balance: 100 });
-    expect(await r.economy.expression(ALICE, "squint", "k")).toMatchObject({ accepted: false });
-    expect(topics(r, Events.SocialEvent.type)).toEqual([]);
-    const lines = (await r.economy.wallet(ALICE)).recent.map((l) => l.delta);
-    expect(lines.slice(0, 2)).toEqual([20, -20]);
-    // A refunded one does not start the cooldown.
-    r.stage.ok = true;
-    r.singing.now = true;
-    expect(await r.economy.expression(ALICE, "squint", "k2")).toMatchObject({
-      accepted: false,
-      charged: 0,
-    });
-    expect((await r.economy.wallet(ALICE)).shop.find((s) => s.id === "expression:heart")?.why).toBe(
-      "她正在唱歌",
-    );
-    r.singing.now = false;
-    r.registry.unregister("stage.expression");
-    expect(await r.economy.expression(ALICE, "squint", "k3")).toMatchObject({ accepted: false });
-    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(100);
   });
 });
 

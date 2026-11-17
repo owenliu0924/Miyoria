@@ -188,6 +188,25 @@ function miyoPages(): PanelPage[] {
       ],
     },
     {
+      id: "party",
+      label: "派對遊戲",
+      description: "請她開一場猜歌或海龜湯",
+      intro: [
+        "猜歌要在語音頻道玩;海龜湯在語音頻道或這個文字頻道都可以,文字頻道裡問題和她的回答都是一般訊息。",
+        "開了之後她主持。也可以直接跟她說「開海龜湯」。",
+      ],
+      actions: [
+        {
+          id: "party-soup",
+          label: "海龜湯",
+          path: "game party",
+          args: { game: "soup" },
+          style: "primary",
+        },
+        { id: "party-song", label: "猜歌", path: "game party", args: { game: "song" } },
+      ],
+    },
+    {
       id: "stream",
       label: "直播",
       description: "OBS 開關台與場景",

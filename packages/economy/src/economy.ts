@@ -83,9 +83,7 @@ import {
   type FeedItem,
   type FeedResult,
   type FramesResult,
-  GIFT_EXPRESSIONS,
   type GiftEvent,
-  type GiftExpression,
   type GiftItem,
   type GoalView,
   type Hunger,
@@ -119,8 +117,7 @@ const DAY_MS = 86_400_000;
 const VOICE_WINDOW_MS = 10 * 60_000;
 /** Feeds per request at most. */
 export const MAX_FEED_COUNT = 5;
-/** How long a bought expression shows, and the big bowl's. */
-export const EXPRESSION_SECONDS = 8;
+/** How long the big bowl's face shows. */
 export const BIG_BOWL_SECONDS = 5;
 const RECENT_LINES = 20;
 const MAX_EXPORTED = 10_000;
@@ -142,12 +139,6 @@ const FEED_NAME: Readonly<Record<FeedItem, [string, string]>> = {
   rice: ["一碗白飯", "碗白飯"],
   big_bowl: ["一大碗白飯", "大碗白飯"],
   dessert: ["一份甜點", "份甜點"],
-};
-
-const EXPRESSION_NAME: Readonly<Record<GiftExpression, string>> = {
-  heart: "愛心眼",
-  blush: "臉紅",
-  squint: "＞＜",
 };
 
 const EARN_LABEL: Readonly<Record<EarnReason, string>> = {
@@ -183,10 +174,11 @@ export const PAID_NAME: Readonly<Record<PaidItem, { label: string; kind: ShopIte
 /** What ledger rows of things that are not sold any more say (old rows stay in statements). */
 const RETIRED_LABEL: Readonly<Record<string, string>> = {
   letter: "寫信給她",
+  expression: "送她表情",
 };
 
 /** Ledger reasons that are gifts to her (they diminish each other). */
-const GIFT_REASONS = ["feed", "expression"];
+const GIFT_REASONS = ["feed"];
 const EARN_REASONS: readonly EarnReason[] = ["checkin", "talked", "voice", "song", "her_gift"];
 
 /** `一碗白飯`, `3 碗白飯`. */
@@ -709,31 +701,12 @@ export class EconomyService implements Economy {
     return this.#d.services.get(ActuatorRegistryKey)?.get("stage.expression") !== undefined;
   }
 
-  #cooldownMinutes(): number {
-    return Math.max(Math.round(this.#d.config.expression_cooldown_s / 60), 1);
-  }
-
-  /** The last bought expression not refunded, within the cooldown. */
-  #cooling(today: readonly CoinEntry[]): boolean {
-    const refunded = new Set(today.filter((r) => r.reason === "refund").map((r) => r.ref));
-    const since = this.#d.clock.now() - this.#d.config.expression_cooldown_s * 1000;
-    return today.some(
-      (r) => r.reason === "expression" && !refunded.has(r.id) && Date.parse(r.ts) > since,
-    );
-  }
-
   #label(r: CoinEntry): string {
     const c = this.#d.config;
     switch (r.reason) {
       case "feed": {
         const { item, eaten } = fedOf(r);
         return item === null ? "餵她" : `餵她${feedLabel(item, eaten)}`;
-      }
-      case "expression": {
-        const name = Object.hasOwn(EXPRESSION_NAME, r.ref ?? "")
-          ? EXPRESSION_NAME[r.ref as GiftExpression]
-          : null;
-        return name === null ? "送她表情" : `送她表情「${name}」`;
       }
       case "frame": {
         const frame = c.frames.find((f) => f.id === r.ref);
@@ -822,9 +795,6 @@ export class EconomyService implements Economy {
     state: {
       balance: number;
       hunger: number | null;
-      singing: boolean;
-      stage: boolean;
-      cooling: boolean;
       owned: ReadonlySet<string>;
     } | null,
   ): ShopItem[] {
@@ -845,16 +815,6 @@ export class EconomyService implements Economy {
       const why =
         state?.hunger == null ? "現在沒辦法餵她" : state.hunger < c.full_below ? "她吃飽了" : null;
       add(item, "feed", FEED_NAME[item][0], c[item], why);
-    }
-    for (const e of GIFT_EXPRESSIONS) {
-      const why = !state?.stage
-        ? "她現在沒有開台"
-        : state.singing
-          ? "她正在唱歌"
-          : state.cooling
-            ? `每 ${this.#cooldownMinutes()} 分鐘只能送一次`
-            : null;
-      add(`expression:${e}`, "expression", EXPRESSION_NAME[e], c.expression, why);
     }
     for (const f of c.frames) {
       add(`frame:${f.id}`, "frame", f.label, f.price, state?.owned.has(f.id) ? "已經有了" : null);
@@ -913,9 +873,6 @@ export class EconomyService implements Economy {
       shop: this.#shop({
         balance,
         hunger,
-        singing: this.#singing(),
-        stage: this.#stageUp(),
-        cooling: this.#cooling(today),
         owned: new Set(frames.owned),
       }),
       frames,
@@ -1280,53 +1237,6 @@ export class EconomyService implements Economy {
     }
   }
 
-  async expression(
-    account: AccountRef,
-    expression: GiftExpression,
-    key: string,
-  ): Promise<SpendResult> {
-    if (!GIFT_EXPRESSIONS.includes(expression)) throw new EconomyError(400, "沒有這個表情");
-    const who = await this.#known(account);
-    const c = this.#d.config;
-    const idem = `expression:${key}`;
-    const minutes = this.#cooldownMinutes();
-    const spent = await this.#turns.run(async (): Promise<Spent | SpendResult> => {
-      const first = await this.#first(who, idem);
-      if (first) return first;
-      if (this.#cooling(await this.#todayRows(who))) {
-        throw new EconomyError(429, `每 ${minutes} 分鐘只能送一次表情`);
-      }
-      if (!this.#stageUp()) return this.#refused(who, "她現在沒有開台");
-      if (this.#singing()) return this.#refused(who, "她正在唱歌,等她唱完再送");
-      return this.#spend(who, c.expression, "expression", expression, idem);
-    });
-    if (!("entry" in spent)) return spent;
-    const failed = "表情沒有送出去,已經退回";
-    if (!spent.fresh) {
-      if (await this.#refunded(who, spent.entry)) return this.#refused(who, failed);
-      return {
-        accepted: true,
-        charged: -spent.entry.delta,
-        balance: spent.balance,
-        message: "她收到了",
-      };
-    }
-    // The stage is asked outside the turns: it holds the face for seconds.
-    const shown = !this.#singing() && (await this.#expressOnStage(expression, EXPRESSION_SECONDS));
-    if (!shown) {
-      const balance = await this.#turns.run(() => this.#refund(who, spent.entry));
-      return { accepted: false, charged: 0, balance, message: failed };
-    }
-    await this.#gift(who, spent.entry, null, 1, `表情「${EXPRESSION_NAME[expression]}」`);
-    this.#audit(who, "economy.expression", { expression, charged: c.expression });
-    return {
-      accepted: true,
-      charged: c.expression,
-      balance: await this.#balance(who),
-      message: "她收到了",
-    };
-  }
-
   /** `stage.expression` through the gate; `false` when it is not there or did not run. */
   async #expressOnStage(expression: string, seconds: number): Promise<boolean> {
     const actuators = this.#d.services.get(ActuatorRegistryKey);
@@ -1393,7 +1303,7 @@ export class EconomyService implements Economy {
   async #gift(
     who: Member,
     entry: CoinEntry,
-    item: FeedItem | null,
+    item: FeedItem,
     count: number,
     label: string,
   ): Promise<void> {
@@ -1428,7 +1338,7 @@ export class EconomyService implements Economy {
       at: this.#d.clock.now(),
     });
     this.#perceive(who, entry, `${safeName(who.name)}送了你${label}`);
-    this.#announce(who, item ?? "expression", count, label);
+    this.#announce(who, item, count, label);
   }
 
   /**

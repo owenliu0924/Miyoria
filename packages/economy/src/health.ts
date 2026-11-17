@@ -28,7 +28,6 @@ export const ISSUED_REASONS: readonly string[] = [
 /** Reasons that take coins out for good: they were spent on something that does not give them back. */
 export const RECOVERED_REASONS: readonly string[] = [
   "feed",
-  "expression",
   "screen_message",
   "dedication",
   "draw",

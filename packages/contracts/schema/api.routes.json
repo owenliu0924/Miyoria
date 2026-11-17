@@ -2258,21 +2258,6 @@
           }
         }
       },
-      "expression": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "member",
-            "permission": null,
-            "limited": true
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "POST",
-            "path": "/api/member/expression"
-          }
-        }
-      },
       "transfer": {
         "~orpc": {
           "errorMap": {},

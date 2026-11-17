@@ -15,7 +15,7 @@
 //             play quests|draw|album|giveitem|predictions|bet|titles|commission|commissions|
 //             room|shop (regrouped for Discord, see `SLASH_REGROUP`)
 //   /queue    add · list · upvote · manage ... · vote start|end · song request|list|skip|stop
-//   /game     start · stop · goal · status
+//   /game     start · stop · goal · status · party
 //   /channel  mode · activeness
 //   /admin    i · module ... · role ... · perm ... · person ... · persona show · memory wipe ·
 //             autonomy pause|resume|status · directive list|add|remove
@@ -38,7 +38,7 @@ export const COMMAND_GROUPS: Readonly<Record<string, GroupInit>> = {
   "queue manage": { description: "管理佇列（叫號、跳過、清空等）" },
   "queue vote": { description: "投票" },
   "queue song": { description: "點歌：她用自己的聲音唱" },
-  game: { description: "遊戲：讓她開始或停止玩遊戲", guild_only: true },
+  game: { description: "遊戲：讓她開始或停止玩遊戲，或請她開一場派對遊戲", guild_only: true },
   channel: { description: "頻道設定：她在這個頻道的聊天模式與主動程度", guild_only: true },
   // No Manage Server gate: what a member may do is decided by permission nodes, so a
   // moderator with `admin.person.*` still finds `/admin`.

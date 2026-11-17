@@ -38,7 +38,7 @@ export const reasonLabel = (reason: string): string => (EARN_REASON_LABEL as Rec
 
 /** What the health table counts as issued (nothing was spent for it) and as recovered. */
 export const ISSUED_REASONS = ["checkin", "talked", "voice", "song", "her_gift", "quest", "play", "achievement"] as const;
-export const RECOVERED_REASONS = ["feed", "expression", "screen_message", "dedication", "draw", "shop", "room", "commission"] as const;
+export const RECOVERED_REASONS = ["feed", "screen_message", "dedication", "draw", "shop", "room", "commission"] as const;
 
 export const COMMISSION_KIND_LABEL: Record<string, string> = {
   poem: "寫詩",

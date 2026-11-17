@@ -2872,8 +2872,7 @@
       "enum": [
         "rice",
         "big_bowl",
-        "dessert",
-        "expression"
+        "dessert"
       ]
     },
     "EventsGoLiveState": {
