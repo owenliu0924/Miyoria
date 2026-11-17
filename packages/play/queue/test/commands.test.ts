@@ -12,9 +12,14 @@ import {
   replyEphemeral,
   splitPath,
 } from "@miyoria/commands";
-import { Supervisor } from "@miyoria/runtime/kernel";
+import {
+  defineManifest,
+  type Module,
+  type ModuleContext,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
-import type { ContextKey } from "@miyoria/types";
+import { type Attitude, type ContextKey, SocialSignalsKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   QueueConfigSchema,
@@ -328,10 +333,41 @@ describe("QueueModule", () => {
     await sup.stopAll();
   });
 
+  it("module_reads_how_she_feels_from_the_heart_it_finds_now", async () => {
+    const sup = new Supervisor();
+    let blocked = false;
+    // Stands in for the heart: a new service each start.
+    class Heart implements Module {
+      readonly manifest = defineManifest("heart", "Heart");
+      async start(ctx: ModuleContext): Promise<void> {
+        const now = blocked;
+        ctx.provide(SocialSignalsKey, {
+          attitude: () => ({ blocked: now, affinity: 0 }) as Attitude,
+        });
+      }
+    }
+    await sup.register(new Heart(), null, true);
+    await sup.register(new QueueModule(), null, true);
+    await sup.startAll();
+    const queue = sup.services.require(RequestQueueKey);
+    const ask = (text: string) =>
+      queue.submit({
+        requester: parseAccount("discord:5"),
+        requesterName: "five",
+        kind: "chat",
+        text,
+      });
+    expect(() => ask("one")).not.toThrow();
+    blocked = true;
+    await sup.restart("heart");
+    expect(() => ask("two")).toThrow(/blocked|封鎖/);
+    await sup.stopAll();
+  });
+
   it("module_manifest", () => {
     const m = new QueueModule().manifest;
     expect(m.id).toBe("queue");
-    expect(m.optional).toEqual(["commands", "social"]);
+    expect(m.optional).toEqual(["commands", "heart"]);
     expect(m.requires).toEqual([]);
   });
 });
