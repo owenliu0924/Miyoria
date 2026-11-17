@@ -76,7 +76,12 @@ function fakeMarket() {
         ? { ok: true, week: 1, opens_at: "z", plan: lot }
         : { ok: false, status: 409, message: "這週的拍賣已經開始了" },
     settleNow: async () => ({ ok: true }),
-    history: () => ({ lots: [], weeks: [] }),
+    history: () => ({
+      lots: [],
+      weeks: [],
+      offered: ["frame"],
+      next: { opens_at: "z", plan: "frame" },
+    }),
   };
   return { market: market as unknown as MarketService, calls };
 }
@@ -192,6 +197,8 @@ describe("the market's routes", () => {
     expect(await (await hono.request("/api/market/history")).json()).toEqual({
       lots: [],
       weeks: [],
+      offered: ["frame"],
+      next: { opens_at: "z", plan: "frame" },
     });
   });
 

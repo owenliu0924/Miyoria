@@ -7422,11 +7422,56 @@
           "items": {
             "$ref": "#/$defs/ApiLotteryResult"
           }
+        },
+        "offered": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLotKind"
+          }
+        },
+        "next": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "opens_at": {
+                  "type": "string"
+                },
+                "plan": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/ApiLotKind"
+                        },
+                        {
+                          "type": "string",
+                          "const": "skip"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "opens_at",
+                "plan"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "lots",
-        "weeks"
+        "weeks",
+        "offered",
+        "next"
       ]
     },
     "ApiMarketSettleRequest": {

@@ -224,6 +224,15 @@ export const MarketHistorySchema = z
       LotViewSchema.extend({ note: z.string().nullable(), price: z.number().int().nullable() }),
     ),
     weeks: z.array(LotteryResultSchema),
+    /** The lot kinds the config offers (`auction_lots`): what a plan may name. */
+    offered: z.array(LotKindSchema),
+    /** The coming opening and the owner's plan for it, as the member view has it; `null`: off. */
+    next: z
+      .object({
+        opens_at: z.string(),
+        plan: z.union([LotKindSchema, z.literal("skip")]).nullable(),
+      })
+      .nullable(),
   })
   .meta({ id: "ApiMarketHistory" });
 export type MarketHistory = z.output<typeof MarketHistorySchema>;

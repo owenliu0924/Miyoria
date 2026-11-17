@@ -59,8 +59,12 @@ describe("the lot of the week", () => {
     expect(asked).toBe(0);
     expect(r.store.lotsIn(["open"])[0]).toMatchObject({ kind: "frame", picked_by: "rotation" });
     for (const week of [0, 7, 14, 21]) expect(rotationKind(["frame"], week)).toBe("frame");
-    // The next week is planned the same way.
+    // The next week is planned the same way; the owner's history says what is offered and planned.
     expect(await r.service.plan("frame")).toMatchObject({ ok: true, plan: "frame" });
+    expect(r.service.history()).toMatchObject({
+      offered: ["frame"],
+      next: { opens_at: new Date(OPENS + 7 * DAY).toISOString(), plan: "frame" },
+    });
     // Added by an owner, the name lot runs again (her pick among the two).
     const both = await rig(
       { lottery: false, auction_lots: ["call_name", "frame"] },

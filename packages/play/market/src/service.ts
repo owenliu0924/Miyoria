@@ -211,6 +211,10 @@ export interface MyTickets {
 export interface MarketHistory {
   lots: (LotView & { note: string | null; price: number | null })[];
   weeks: NonNullable<LotteryView["last"]>[];
+  /** The lot kinds the config offers (`auction_lots`). */
+  offered: LotKind[];
+  /** The coming opening and the owner's plan for it, as `AuctionView.next`. */
+  next: AuctionView["next"];
 }
 
 /** What she would call someone, and setting it (the heart's `call_name`). */
@@ -696,12 +700,6 @@ export class MarketService {
   async auctionView(account: AccountRef | null): Promise<AuctionView> {
     const lot = this.#currentLot();
     const view = lot === null ? null : this.#lotView(lot);
-    const now = this.#now();
-    const slot = this.#slot(now);
-    const nextOpens =
-      now < slot.opens ? slot.opens : nextSlot(this.#auctionAt(), now, this.#offset());
-    const nextWeek = localDay(nextOpens, this.#offset());
-    const plan = this.#d.store.lotOfWeek(nextWeek);
     let mine: AuctionView["mine"] = null;
     if (account !== null && lot !== null) {
       const who = await this.#wallet()?.member(account);
@@ -725,15 +723,22 @@ export class MarketService {
       currency: this.#currency(),
       running: this.auctionRunning(),
       lot: view,
-      next: this.auctionRunning()
-        ? {
-            opens_at: toTimestamp(nextOpens),
-            plan:
-              plan?.status === "skipped" ? "skip" : plan?.status === "planned" ? plan.kind : null,
-          }
-        : null,
+      next: this.#next(),
       mine,
       history,
+    };
+  }
+
+  /** The coming opening and the owner's plan for it; `null` while the auction does not run. */
+  #next(): AuctionView["next"] {
+    if (!this.auctionRunning()) return null;
+    const now = this.#now();
+    const slot = this.#slot(now);
+    const opens = now < slot.opens ? slot.opens : nextSlot(this.#auctionAt(), now, this.#offset());
+    const plan = this.#d.store.lotOfWeek(localDay(opens, this.#offset()));
+    return {
+      opens_at: toTimestamp(opens),
+      plan: plan?.status === "skipped" ? "skip" : plan?.status === "planned" ? plan.kind : null,
     };
   }
 
@@ -996,7 +1001,7 @@ export class MarketService {
         burned: w.burned,
         winner: w.winner?.name ?? null,
       }));
-    return { lots, weeks };
+    return { lots, weeks, offered: [...this.#d.config.auction_lots], next: this.#next() };
   }
 
   // ---- the pass -----------------------------------------------------------------------------
