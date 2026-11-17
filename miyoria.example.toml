@@ -1251,6 +1251,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # search_chars = 3900            # web_search 一次回給她的字數上限
 # timeout_ms = 10000             # 每個請求的時間上限
 # max_download_bytes = 2000000   # 網頁下載上限
+# image_max_bytes = 5000000      # web_image 一張圖的上限(不縮圖,超過就看不了),和 [modules.agent.vision] 的單張上限一樣
 # max_redirects = 3
 # allow_ports = []               # 80 和 443 以外還要允許的連接埠
 # cache_ttl_s = 600              # 同一個搜尋或網頁這段時間內不重查
@@ -1259,6 +1260,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # read_per_person = 10
 # search_global = 30
 # read_global = 60
+# image_per_person = 10          # web_image 每人在 window_s 內最多看幾張
+# image_global = 40
 
 # ---- Stage 節點(在直播機執行 `miyoria stage`)-------------------------------
 [stage]

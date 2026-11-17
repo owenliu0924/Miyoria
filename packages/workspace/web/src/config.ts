@@ -52,6 +52,8 @@ export const WebConfigSchema = z.object({
   timeout_ms: z.number().int().min(1000).max(60_000).default(10_000),
   /** A page download stops here; what arrived is still read. */
   max_download_bytes: z.number().int().min(10_000).max(10_000_000).default(2_000_000),
+  /** A picture `web_image` takes stops here (not downsized: one larger is refused). */
+  image_max_bytes: z.number().int().min(10_000).max(10_000_000).default(5_000_000),
   /** Redirects a page may take, each one re-checked. */
   max_redirects: z.number().int().min(0).max(5).default(3),
   /** Ports besides 80 and 443 a page may use. */
@@ -70,6 +72,9 @@ export const WebConfigSchema = z.object({
   window_s: z.number().int().min(10).max(86_400).default(600),
   search_per_person: z.number().int().min(1).max(1000).default(6),
   read_per_person: z.number().int().min(1).max(1000).default(10),
+  /** `web_image` per person and for everyone over `window_s`. */
+  image_per_person: z.number().int().min(1).max(1000).default(10),
+  image_global: z.number().int().min(1).max(10_000).default(40),
   search_global: z.number().int().min(1).max(10_000).default(30),
   read_global: z.number().int().min(1).max(10_000).default(60),
 });

@@ -2,7 +2,7 @@
 // challenged), the guarded page reader, the caches and the rate limits. Results are formatted as
 // untrusted data blocks for her.
 
-import { type Clock, dataBlock } from "@miyoria/types";
+import { type Clock, dataBlock, sniffImage } from "@miyoria/types";
 import type { WebConfig } from "./config.js";
 import {
   type PagePicture,
@@ -29,9 +29,22 @@ export interface WebDeps extends GuardDeps {
   sleep?: (ms: number) => Promise<void>;
   /** The Tavily key when it is not in `config.tavily_api_key` (the module passes the environment's). */
   tavilyKey?: string;
+  /** Whether the chat model looks at images (`[llm.image_input]`); unset: it does not. */
+  takesImages?: () => boolean;
   /** Why a search failed, for the log (she is only told it could not search). */
   note?: (detail: string) => void;
 }
+
+/** What she is told when the chat model takes no images (nothing is downloaded then). */
+export const NO_IMAGES = "我現在用的模型看不到圖片,沒辦法看這張圖。";
+const IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+  "application/octet-stream",
+];
 
 const realSleep = (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms));
 
@@ -65,12 +78,23 @@ export interface ReadOutcome {
   pictures: PagePicture[];
 }
 
+/** A picture `web_image` fetched. */
+export interface ImageOutcome {
+  url: string;
+  /** What the bytes are (`image/png`, `image/jpeg`, `image/webp`, `image/gif`). */
+  type: string;
+  bytes: number;
+  /** `data:` URL of the bytes as downloaded. Goes to the model, never to a log or the data. */
+  dataUrl: string;
+}
+
 export class WebService {
   readonly #d: WebDeps;
   readonly #searchCache: TtlCache<SearchOutcome>;
   readonly #readCache: TtlCache<ReadOutcome>;
   readonly #searches: Limits;
   readonly #reads: Limits;
+  readonly #images: Limits;
   /** DuckDuckGo searches go one at a time, `ddg_gap_ms` apart. */
   #ddgQueue: Promise<unknown> = Promise.resolve();
   #ddgLast = Number.NEGATIVE_INFINITY;
@@ -89,6 +113,10 @@ export class WebService {
     this.#reads = new Limits(
       new WindowLimit(c.read_per_person, windowMs),
       new WindowLimit(c.read_global, windowMs),
+    );
+    this.#images = new Limits(
+      new WindowLimit(c.image_per_person, windowMs),
+      new WindowLimit(c.image_global, windowMs),
     );
   }
 
@@ -289,6 +317,43 @@ export class WebService {
     // A challenge is a "no": never retried, never worked around.
     if (page.kind === "challenge") throw new WebError(SEARCH_DOWN, "duckduckgo challenge");
     return page.kind === "results" ? page.hits : [];
+  }
+
+  /**
+   * One picture by URL, through the same guarded download as a page (public addresses, every
+   * redirect checked, the pinned connection) with its own rate limit. Only png, jpeg, webp and
+   * gif by their bytes, at most `image_max_bytes` and not downsized. Nothing is fetched when the
+   * chat model takes no images.
+   */
+  async image(who: string, rawUrl: string, signal: AbortSignal): Promise<ImageOutcome> {
+    const cfg = this.#d.config;
+    if (this.#d.takesImages?.() !== true) throw new WebError(NO_IMAGES, "no image input");
+    if (!this.#images.take(who, this.#now())) {
+      throw new WebError("看太多張圖了,等一下再看。", "image rate limit");
+    }
+    const got = await guardedGet(rawUrl.trim(), cfg, signal, this.#d, {
+      accept: "image/png,image/jpeg,image/webp,image/gif;q=0.9,*/*;q=0.1",
+      types: IMAGE_TYPES,
+      wrongType: "這不是圖片(只看 png、jpeg、webp、gif)",
+      // One more than the cap tells "exactly the cap" from "more than it".
+      maxBytes: cfg.image_max_bytes + 1,
+    });
+    if (got.bytes.length > cfg.image_max_bytes) {
+      throw new WebError(
+        `這張圖太大了(超過 ${Math.floor(cfg.image_max_bytes / 1000)} KB),看不了。`,
+        "image too large",
+      );
+    }
+    const type = sniffImage(got.bytes);
+    if (type === null || got.bytes.length === 0) {
+      throw new WebError("這個檔案不是圖片(只看 png、jpeg、webp、gif)", "not an image");
+    }
+    return {
+      url: got.url.href,
+      type,
+      bytes: got.bytes.length,
+      dataUrl: `data:${type};base64,${Buffer.from(got.bytes).toString("base64")}`,
+    };
   }
 
   async read(who: string, rawUrl: string, signal: AbortSignal): Promise<ReadOutcome> {
