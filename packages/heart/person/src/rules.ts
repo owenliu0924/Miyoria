@@ -229,14 +229,22 @@ export function applyBond(
 
 /**
  * Every number in its range, the owner's trust and bond floor, and `tier_floor` raised to the
- * tier the bond is in. Returns a new person.
+ * tier the bond is in. Returns a new person. With `only`, the owner's rules hold for that field
+ * alone: a change of one field never moves another without its own event (tagging someone owner
+ * applies both at once, `HeartStore.edit`).
  */
-export function settle(person: HeartPerson, rules: HeartPersonConfig): HeartPerson {
+export function settle(
+  person: HeartPerson,
+  rules: HeartPersonConfig,
+  only: HeartField | null = null,
+): HeartPerson {
   const next = { ...person };
   for (const f of HEART_FIELDS) next[f] = clampField(f, next[f]);
   if (hasTag(next, OWNER_TAG)) {
-    next.trust = clampField("trust", rules.owner_trust);
-    next.bond = Math.max(next.bond, clampField("bond", rules.owner_bond_floor));
+    if (only === null || only === "trust") next.trust = clampField("trust", rules.owner_trust);
+    if (only === null || only === "bond") {
+      next.bond = Math.max(next.bond, clampField("bond", rules.owner_bond_floor));
+    }
   }
   next.tier_floor = Math.max(next.tier_floor, tierFloorOf(next.bond));
   return next;
@@ -323,7 +331,7 @@ export function applyChange(
   } else {
     next[field] = clampField(field, person[field] + wanted);
   }
-  next = settle(next, rules);
+  next = settle(next, rules, field);
   next.updated_at = toTimestamp(now);
 
   const change: HeartChange = {

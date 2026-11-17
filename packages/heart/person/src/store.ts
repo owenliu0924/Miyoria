@@ -65,6 +65,7 @@ import {
   hasTag,
   isProposalField,
   newPerson,
+  OWNER_TAG,
   type TierAnchor,
 } from "./model.js";
 import {
@@ -522,8 +523,26 @@ export class HeartStore {
       const next: HeartPerson = { ...current, ...patch, updated_at: at };
       if (patch.tags !== undefined) next.tags = [...new Set(patch.tags)].sort();
       this.upsert(next);
+      if (hasTag(next, OWNER_TAG) && !hasTag(current, OWNER_TAG)) {
+        return this.#ownerFloors(person, options.now);
+      }
       return next;
     });
+  }
+
+  /**
+   * The owner's trust and bond floor (`owner_trust`, `owner_bond_floor`), applied at once when the
+   * tag is added, each jump its own change (cause `admin`), rather than folded into whatever
+   * change comes next. The row as written.
+   */
+  #ownerFloors(person: PersonId, now: number | undefined): HeartPerson {
+    const quote = "標為擁有者";
+    let row = this.get(person) as HeartPerson;
+    const trust = clampField("trust", this.#rules.owner_trust);
+    if (row.trust !== trust) row = this.adminSet(person, "trust", trust, { now, quote }).person;
+    const floor = clampField("bond", this.#rules.owner_bond_floor);
+    if (row.bond < floor) row = this.adminSet(person, "bond", floor, { now, quote }).person;
+    return row;
   }
 
   /** Adds or removes `tag` of `person`; whether anything changed. */

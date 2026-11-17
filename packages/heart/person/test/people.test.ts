@@ -99,6 +99,35 @@ describe("the people directory", () => {
   });
 });
 
+describe("the owner", () => {
+  it("is tagged on sight and gets the owner's trust and bond floor at once, each logged", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const people = directory(store, clock);
+    people.setAuthorizer({
+      allows: (a: AccountRef, node: string) => a.id === "1" && node === "owner.social",
+      allowsSubject: () => false,
+    } as never);
+    const owen = (await people.resolve(account("1"), "Owen", T0)) as string;
+    const amy = (await people.resolve(account("2"), "Amy", T0)) as string;
+    const heart = people.heart;
+    expect(heart.get(owen)).toMatchObject({ tags: ["owner"], trust: 100, bond: 30 });
+    expect(heart.get(amy)).toBeNull();
+    const changes = heart.log.history(owen).map((h) => h.change);
+    expect(changes.map((c) => [c.field, c.delta, c.cause])).toEqual([
+      ["bond", 30, "admin"],
+      ["trust", 90, "admin"],
+    ]);
+    // Seen again: nothing more to apply, nothing more logged.
+    await people.resolve(account("1"), "Owen", T0 + 1);
+    expect(heart.log.history(owen)).toHaveLength(2);
+    // A change of another field moves only that field.
+    heart.apply(owen, { type: "propose", field: "warmth", direction: "up", quote: "嗯" });
+    expect(heart.log.history(owen)[0]?.change.field).toBe("warmth");
+    expect(heart.get(owen)).toMatchObject({ trust: 100, bond: 30 });
+  });
+});
+
 describe("/me profile lines", () => {
   it("has a line in her voice for every tier, and never the stranger's for a close tier", () => {
     for (const tier of RELATIONSHIP_LABELS) expect(FEELINGS[tier].length).toBeGreaterThan(0);
