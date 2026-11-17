@@ -933,6 +933,9 @@ importers:
       '@miyoria/types':
         specifier: workspace:*
         version: link:../types
+      drizzle-orm:
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5(zod@4.6.7)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
