@@ -8,6 +8,8 @@ import { sleep } from "@miyoria/runtime/kernel";
 import { SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
+  type AffectState,
+  AffectStateKey,
   type ArbiterDecision,
   ArbiterKey,
   type Attitude,
@@ -22,7 +24,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { initiativeTables, type SelfHost } from "../src/index.js";
+import { initiativeSettings, initiativeTables, type SelfHost } from "../src/index.js";
 import {
   account,
   calls,
@@ -371,9 +373,23 @@ describe("longing", () => {
     return (sup: Rig["sup"]) => sup.services.provide("app", HeartKey, heart as HeartPeople);
   }
 
-  async function heartRig(most: { person: PersonId; cares: number } | null, longing: number) {
+  async function heartRig(
+    most: { person: PersonId; cares: number } | null,
+    longing: number,
+    mood: { initiative: number; weight?: number } | null = null,
+  ) {
     const rig = await Rig.create({
+      ...(mood?.weight === undefined
+        ? {}
+        : { host: { initiative: { settings: initiativeSettings({ mood_weight: mood.weight }) } } }),
       provide: (sup, tools) => {
+        if (mood !== null) {
+          const affect: Pick<AffectState, "snapshot"> = {
+            snapshot: () =>
+              ({ biases: { talkativeness: 0, initiative: mood.initiative, wants: [] } }) as never,
+          };
+          sup.services.provide("app", AffectStateKey, affect as AffectState);
+        }
         const registry = new ActuatorRegistry({
           services: sup.services,
           tools,
@@ -404,6 +420,30 @@ describe("longing", () => {
     await until(() => rig.sink.texts().length === 2, 3_000, "her DM");
     expect(rig.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
     expect(textOf(rig.model.requests[1])).toContain("歐歐");
+  });
+
+  it("her wish to start things lowers how much she must miss them (mood_weight)", async () => {
+    // Missed at 0.4, under longing_min (0.5): no DM by itself...
+    const flat = await heartRig({ person: "p-owen", cares: 0.6 }, 0.4);
+    flat.shift = toNoon();
+    await tick(flat);
+    await sleep(100);
+    expect(flat.model.requests).toHaveLength(1);
+    await flat.stop();
+    // ...nor with mood_weight 0, however much she wants to start things...
+    const off = await heartRig({ person: "p-owen", cares: 0.6 }, 0.4, { initiative: 1, weight: 0 });
+    off.shift = toNoon();
+    await tick(off);
+    await sleep(100);
+    expect(off.model.requests).toHaveLength(1);
+    await off.stop();
+    // ...but with the default weight and her wanting to start things, the bar is halved.
+    const eager = await heartRig({ person: "p-owen", cares: 0.6 }, 0.4, { initiative: 1 });
+    eager.model.push(says("在幹嘛~"));
+    eager.shift = toNoon();
+    await tick(eager);
+    await until(() => eager.sink.texts().length === 2, 3_000, "her DM");
+    expect(eager.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
   });
 
   it("with the heart: nobody she cares about, or not missed enough: no DM", async () => {
