@@ -117,6 +117,7 @@ describe("parseConfig", () => {
     expect(parseConfig("", loc)).toMatchObject({ layer: "overlay", layout: "default" });
     expect(parseConfig("?layer=Backdrop&layout=sing", loc)).toMatchObject({ layer: "backdrop", layout: "sing" });
     expect(parseConfig("?layer=top&layout=karaoke", loc)).toMatchObject({ layer: "overlay", layout: "default" });
+    expect(parseConfig("?layer=wordle", loc)).toMatchObject({ layer: "wordle" });
   });
 });
 

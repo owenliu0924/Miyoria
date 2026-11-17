@@ -13,6 +13,7 @@ import { closeOnAbort, type ServeResult } from "./lipsync.js";
 import { formatAddress, HttpServer } from "./net.js";
 import type { Activity, CoreMessage, SpeakingState, StageStatus } from "./protocol.js";
 import { type Touch, TouchThrottle } from "./touch.js";
+import type { WordleBoard } from "./wordle.js";
 
 const log = getLogger("stage.overlay");
 
@@ -31,6 +32,8 @@ interface Snapshot {
   notice: string | null;
   /** The activity shown (not the hidden one), and when it was sent. */
   activity: { activity: Activity; at: number } | null;
+  /** The Wordle game in progress (a finished one is not shown to clients that come later). */
+  wordle: string | null;
 }
 
 /**
@@ -45,6 +48,7 @@ export class OverlayHub {
     emotion: null,
     notice: null,
     activity: null,
+    wordle: null,
   };
   readonly #now: () => number;
   readonly #gifts = new GiftMerger();
@@ -129,6 +133,13 @@ export class OverlayHub {
     this.#send(frame({ type: "screen", kind, name, text, song }));
   }
 
+  /** Her Wordle board (`null` takes it away). */
+  wordle(board: WordleBoard | null): void {
+    const v = frame({ type: "wordle", board });
+    this.#snapshot.wordle = board !== null && board.state === "playing" ? v : null;
+    this.#send(v);
+  }
+
   /** A viewer's touch, passed on (at most a few a second; the rest are dropped). Not kept for new clients. */
   touch(touch: Touch): void {
     if (this.#listeners.size === 0 || !this.#touches.allow(this.#now())) return;
@@ -166,12 +177,13 @@ export class OverlayHub {
     this.#send(v);
   }
 
-  /** The snapshot for a new client: status, emotion, subtitle, notice, activity (those that exist). */
+  /** The snapshot for a new client: status, emotion, subtitle, notice, gift, Wordle game, activity (those that exist). */
   initial(): string[] {
     const s = this.#snapshot;
     const out = [s.status, s.emotion, s.subtitle, s.notice].filter((v): v is string => v !== null);
     const gift = this.#gifts.current(this.#now());
     if (gift !== null) out.push(frame({ type: "gift", text: gift }));
+    if (s.wordle !== null) out.push(s.wordle);
     if (s.activity !== null) {
       const { activity, at } = s.activity;
       const elapsed =

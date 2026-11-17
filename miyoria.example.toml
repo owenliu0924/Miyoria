@@ -268,7 +268,7 @@ token = "${STAGE_LINK_TOKEN:-}"
 # 第一次看到 OBS 的場景清單時用 fast 模型從名稱判斷(沒有模型就用關鍵字),面板「直播」頁可以改;
 # 這裡寫的最優先,面板不能改。導演:開台 → 開場再到聊天、開始玩遊戲 → 遊戲、直播中沒人講話或她離開語音
 # → 暫離、下播 → 結尾(先停留 ending_ms 再真的停播)、唱歌 → 唱歌(放原曲 MV,唱完回到原本的場景)。
-# 她也可以自己用 stage_scene 換。
+# 她也可以自己用 stage_scene 換。另外可以加 `wordle = "Wordle"`:她玩 Wordle 時切過去(見 extensions/wordle)。
 [modules."stage.link".scenes]
 # director = true
 # roles = { chat = "聊天", game = "遊戲", brb = "暫離", starting = "開場", ending = "結尾", sing = "唱歌" }

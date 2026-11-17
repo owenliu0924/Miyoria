@@ -14,6 +14,53 @@ import {
 const run = (actions: Action[], from: OverlayState = initialState()): OverlayState => actions.reduce(reduce, from);
 const sub = (turn: string, text: string, final = false): Action => ({ type: "subtitle", turn, text, final });
 
+describe("wordle board", () => {
+  const board = (rows: string[], state = "playing", answer: string | null = null) => ({
+    rows: rows.map((word) => ({ word, marks: ["absent", "present", "correct", "absent", "absent"] })),
+    max_guesses: 6,
+    state,
+    answer,
+    attempts: rows.length,
+    rejected: null,
+  });
+  const frame = (b: unknown) => JSON.stringify({ type: "wordle", board: b });
+
+  it("parses the board into camelCase; null takes it away", () => {
+    expect(parseMessage(frame({ ...board(["SLATE"]), attempts: 2, rejected: "XQ" }))).toEqual({
+      type: "wordle",
+      board: {
+        rows: [{ word: "SLATE", marks: ["absent", "present", "correct", "absent", "absent"] }],
+        maxGuesses: 6,
+        state: "playing",
+        answer: null,
+        attempts: 2,
+        rejected: "XQ",
+      },
+    });
+    expect(parseMessage(frame(null))).toEqual({ type: "wordle", board: null });
+  });
+
+  it("ignores a board that is off in any way", () => {
+    expect(parseMessage(frame(board(["slate"])))).toBeNull();
+    expect(parseMessage(frame(board(["SLATES"])))).toBeNull();
+    expect(parseMessage(frame({ ...board(["SLATE"]), max_guesses: 0 }))).toBeNull();
+    expect(parseMessage(frame({ ...board(["SLATE", "CRANE"]), max_guesses: 1 }))).toBeNull();
+    expect(parseMessage(frame({ ...board(["SLATE"]), state: "done" }))).toBeNull();
+    // The answer is there exactly when the game is over.
+    expect(parseMessage(frame(board(["SLATE"], "playing", "CRANE")))).toBeNull();
+    expect(parseMessage(frame(board(["SLATE"], "lost", null)))).toBeNull();
+    expect(parseMessage(frame({ ...board([]), rows: [{ word: "SLATE", marks: ["absent"] }] }))).toBeNull();
+    expect(parseMessage(frame({ ...board([]), attempts: -1 }))).toBeNull();
+    expect(parseMessage(frame({ ...board([]), rejected: "abc" }))).toBeNull();
+    expect(parseMessage('{"type":"wordle"}')).toBeNull();
+  });
+
+  it("is not the overlay's to draw (the Wordle page is)", () => {
+    const s = initialState();
+    expect(reduce(s, parseMessage(frame(board(["SLATE"]))) as Action)).toBe(s);
+  });
+});
+
 describe("gift line", () => {
   it("parses the Stage's gift frame; empty text hides it", () => {
     expect(parseMessage('{"type":"gift","text":"Owen 餵了她一碗白飯"}')).toEqual({ type: "gift", text: "Owen 餵了她一碗白飯" });

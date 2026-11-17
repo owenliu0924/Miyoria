@@ -1,13 +1,17 @@
 // Overlay settings from the query string, e.g.
 //   /overlay/?show=subtitles,queue&cps=16&scale=1.1&ws=ws://192.168.1.20:7884/overlay/ws
 //   /overlay/?layer=backdrop&layout=sing   (the background under the scene's sources)
+//   /overlay/?layer=wordle                 (her Wordle game, full screen, for the Wordle scene)
 import { DEFAULT_CPS } from "./typewriter.js";
 
 export const SECTIONS = ["subtitles", "emotion", "status", "queue", "wave", "activity", "gifts", "screen", "touches"] as const;
 export type Section = (typeof SECTIONS)[number];
 
-/** Which layer of the scene this page is: the overlay on top, or the background under everything. */
-export const LAYERS = ["overlay", "backdrop"] as const;
+/**
+ * Which layer of the scene this page is: the overlay on top, the background under everything, or
+ * her Wordle game (a page of its own, between the background and her model).
+ */
+export const LAYERS = ["overlay", "backdrop", "wordle"] as const;
 export type Layer = (typeof LAYERS)[number];
 
 /** Scene layouts: `sing` frames the song video top left and leaves the bottom right to her. */

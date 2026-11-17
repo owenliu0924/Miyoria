@@ -408,6 +408,9 @@ class Stage {
       case "screen":
         this.#overlay.screen(msg);
         return;
+      case "wordle":
+        this.#overlay.wordle(msg.board);
+        return;
       case "touch":
         this.#overlay.touch(msg);
         this.#avatar?.touch(msg.part);

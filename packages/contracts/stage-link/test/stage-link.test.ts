@@ -45,6 +45,17 @@ const coreMessages: CoreMessageIn[] = [
   { type: "screen", kind: "dedication", name: "Mia", text: "hi", song: "Song" },
   { type: "touch", x: 0.25, y: 0.75, part: "head" },
   {
+    type: "wordle",
+    board: {
+      rows: [{ word: "CRANE", marks: ["correct", "correct", "correct", "correct", "correct"] }],
+      max_guesses: 6,
+      state: "won",
+      answer: "CRANE",
+      attempts: 1,
+      rejected: null,
+    },
+  },
+  {
     type: "song_video",
     action: "play",
     song: "Song",
@@ -175,6 +186,20 @@ describe("CoreMessage", () => {
     ["avatar_expression", { type: "avatar_expression", expression: "heart", seconds: 16 }],
     ["gift", { type: "gift", name: "n", item: "i", count: 100, label: "l" }],
     ["touch", { type: "touch", x: 1.5, y: 0, part: "head" }],
+    [
+      "wordle",
+      {
+        type: "wordle",
+        board: {
+          rows: [],
+          max_guesses: 6,
+          state: "playing",
+          answer: null,
+          attempts: 0,
+          rejected: "lower",
+        },
+      },
+    ],
     ["beat", { type: "beat", song: "S", bpm: 401, times_ms: [], offset_ms: 0 }],
     ["activity", { type: "activity", kind: "singing", progress: 2 }],
     ["notice", { type: "notice", text: "x".repeat(201) }],

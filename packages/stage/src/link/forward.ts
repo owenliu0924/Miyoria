@@ -19,6 +19,7 @@ import {
   SCREEN_TEXT_MAX,
 } from "../protocol.js";
 import { parseTouch, TOUCH_TOPIC } from "../touch.js";
+import { parseWordle, WORDLE_TOPIC } from "../wordle.js";
 
 /** Topic of the agent's emotion markers. */
 export const EMOTION_TOPIC = Events.AgentEmotion.type;
@@ -247,6 +248,7 @@ export class Forwarder {
       if (event.type === GIFT_TOPIC) return giftMessage(event.data as JsonValue);
       if (event.type === TOUCH_TOPIC) return touchMessage(event.data as JsonValue);
       if (event.type === SCREEN_TOPIC) return screenMessage(event.data as JsonValue);
+      if (event.type === WORDLE_TOPIC) return wordleMessage(event.data as JsonValue);
       if (event.type === Events.AffectChanged.type) return this.#onAffect(event.data as JsonValue);
       return event.type === EMOTION_TOPIC ? this.#onEmotion(event.data as JsonValue) : [];
     }
@@ -403,6 +405,11 @@ function giftMessage(payload: JsonValue): CoreMessage[] {
       label: label.slice(0, GIFT_LABEL_MAX),
     },
   ];
+}
+
+function wordleMessage(payload: JsonValue): CoreMessage[] {
+  const board = parseWordle(payload);
+  return board === undefined ? [] : [{ type: "wordle", board }];
 }
 
 function touchMessage(payload: JsonValue): CoreMessage[] {

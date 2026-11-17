@@ -17,6 +17,11 @@
 //                                               a paid message or song dedication; not merged, queued here
 //   {"type":"touch","x":0..1,"y":0..1,"part":"head"|"face"|"body"|"screen"}
 //                                               a viewer touched the stream; drawn at (x·W, y·H), not kept in state
+//   {"type":"wordle","board":{"rows":[{"word":"CRANE","marks":["correct"|"present"|"absent",…]}],
+//    "max_guesses":6,"state":"playing"|"won"|"lost"|"gave_up","answer":null|"CRANE",
+//    "attempts":3,"rejected":null|"CRANX"}|null}
+//                                               her Wordle game, drawn by the Wordle page (?layer=wordle);
+//                                               the overlay itself ignores it
 
 import type { OverlayMessage } from "@miyoria/contracts/overlay";
 import { parseTouch } from "./touch.js";
@@ -79,6 +84,28 @@ export interface ScreenCard {
   song: string | null;
 }
 
+export type WordleMark = "correct" | "present" | "absent";
+export type WordleState = "playing" | "won" | "lost" | "gave_up";
+
+export interface WordleRow {
+  /** Five capitals. */
+  word: string;
+  marks: WordleMark[];
+}
+
+/** Her Wordle game: guesses so far (capitals, a mark per letter) out of `maxGuesses`. */
+export interface WordleBoard {
+  rows: WordleRow[];
+  maxGuesses: number;
+  state: WordleState;
+  /** Only once the game is over. */
+  answer: string | null;
+  /** Every word she typed this game, refused ones too. */
+  attempts: number;
+  /** The word just refused (capitals, up to 12 letters, may be empty), else null. */
+  rejected: string | null;
+}
+
 export interface OverlayState {
   /** The WebSocket to the Stage is up. */
   connected: boolean;
@@ -129,6 +156,8 @@ interface Parsed {
   screen: Wire<"screen">;
   /** A viewer's touch on the picture: drawn once by the view, never part of the reduced state. */
   touch: Wire<"touch">;
+  /** The board in the overlay's camelCase; `null` takes it away. */
+  wordle: { type: "wordle"; board: WordleBoard | null };
 }
 
 /**
@@ -146,11 +175,19 @@ export type FeedMessage = Parsed[keyof Parsed] | DemoQueueMessage;
  * Everything the reducer accepts: feed messages, the connection state (reported by the transport)
  * and `screen_done` (from the view: the card with this id has been shown long enough).
  */
-export type Action = FeedMessage | { type: "connection"; connected: boolean } | { type: "screen_done"; id: number };
+export type Action =
+  | FeedMessage
+  | { type: "connection"; connected: boolean }
+  | { type: "screen_done"; id: number };
 
 export const MAX_QUEUE_ITEMS = 12;
 /** Cards on the screen plus waiting; past this the oldest waiting one is dropped. */
 export const MAX_SCREEN_CARDS = 5;
+/** Most guesses a Wordle board has. */
+export const MAX_WORDLE_ROWS = 12;
+const WORDLE_WORD = /^[A-Z]{5}$/;
+const WORDLE_MARKS: readonly string[] = ["correct", "present", "absent"];
+const WORDLE_STATES: readonly string[] = ["playing", "won", "lost", "gave_up"];
 const MAX_NAME = 32;
 const MAX_SCREEN_TEXT = 200;
 const MAX_TEXT = 2000;
@@ -297,7 +334,37 @@ const PARSERS: { [K in OverlayMessage["type"]]: (raw: Raw) => Parsed[K] | null }
     const touch = parseTouch(raw);
     return touch === null ? null : { type: "touch", ...touch };
   },
+  wordle(raw) {
+    if (raw.board === null) return { type: "wordle", board: null };
+    const board = parseWordleBoard(raw.board);
+    return board === null ? null : { type: "wordle", board };
+  },
 };
+
+/** A board as the contract has it, or null when any part of it is off (the frame is then ignored). */
+export function parseWordleBoard(raw: unknown): WordleBoard | null {
+  if (!isRecord(raw) || !Array.isArray(raw.rows)) return null;
+  const maxGuesses = raw.max_guesses;
+  if (typeof maxGuesses !== "number" || !Number.isInteger(maxGuesses)) return null;
+  if (maxGuesses < 1 || maxGuesses > MAX_WORDLE_ROWS || raw.rows.length > maxGuesses) return null;
+  const rows: WordleBoard["rows"] = [];
+  for (const row of raw.rows) {
+    if (!isRecord(row) || typeof row.word !== "string" || !WORDLE_WORD.test(row.word)) return null;
+    const marks = row.marks;
+    if (!Array.isArray(marks) || marks.length !== row.word.length) return null;
+    if (!marks.every((m) => typeof m === "string" && WORDLE_MARKS.includes(m))) return null;
+    rows.push({ word: row.word, marks: marks as WordleMark[] });
+  }
+  const state = raw.state;
+  if (typeof state !== "string" || !WORDLE_STATES.includes(state)) return null;
+  const answer = raw.answer === null ? null : typeof raw.answer === "string" && WORDLE_WORD.test(raw.answer) ? raw.answer : undefined;
+  if (answer === undefined || (state === "playing") !== (answer === null)) return null;
+  const attempts = raw.attempts;
+  if (typeof attempts !== "number" || !Number.isInteger(attempts) || attempts < 0) return null;
+  const rejected = raw.rejected === null ? null : typeof raw.rejected === "string" && /^[A-Z]{0,12}$/.test(raw.rejected) ? raw.rejected : undefined;
+  if (rejected === undefined) return null;
+  return { rows, maxGuesses, state: state as WordleState, answer, attempts, rejected };
+}
 
 /** The demo's queue frame: loose on purpose ("items":[…]); see `DemoQueueMessage`. */
 function parseQueueMessage(raw: Raw): DemoQueueMessage | null {
@@ -403,6 +470,7 @@ export function reduce(state: OverlayState, action: Action): OverlayState {
       return reduceSubtitle(state, action);
     case "levels":
     case "touch":
+    case "wordle":
       return state;
   }
 }

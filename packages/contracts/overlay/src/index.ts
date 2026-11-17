@@ -80,6 +80,39 @@ export const OverlayTouchMessageSchema = z
   })
   .meta({ id: "OverlayTouchMessage" });
 
+export const OverlayWordleMarkSchema = z
+  .enum(["correct", "present", "absent"])
+  .meta({ id: "OverlayWordleMark" });
+
+export const OverlayWordleStateSchema = z
+  .enum(["playing", "won", "lost", "gave_up"])
+  .meta({ id: "OverlayWordleState" });
+
+/** One guess: the word in capitals and a mark per letter. */
+export const OverlayWordleRowSchema = z
+  .object({ word: z.string(), marks: z.array(OverlayWordleMarkSchema) })
+  .meta({ id: "OverlayWordleRow" });
+
+/**
+ * Her Wordle game: guesses so far out of `max_guesses`; `answer` once it is over; `attempts`
+ * counts every word typed (refused ones too); `rejected` is the word just refused, else `null`.
+ */
+export const OverlayWordleBoardSchema = z
+  .object({
+    rows: z.array(OverlayWordleRowSchema),
+    max_guesses: z.number(),
+    state: OverlayWordleStateSchema,
+    answer: z.string().nullable(),
+    attempts: z.number(),
+    rejected: z.string().nullable(),
+  })
+  .meta({ id: "OverlayWordleBoard" });
+
+/** The Wordle board; `board: null` takes it away. */
+export const OverlayWordleMessageSchema = z
+  .object({ type: z.literal("wordle"), board: OverlayWordleBoardSchema.nullable() })
+  .meta({ id: "OverlayWordleMessage" });
+
 export const OverlaySpeakingStateSchema = z
   .enum(["started", "stopped"])
   .meta({ id: "OverlaySpeakingState" });
@@ -122,6 +155,7 @@ export const OverlayMessageSchema = z
     OverlayGiftMessageSchema,
     OverlayScreenMessageSchema,
     OverlayTouchMessageSchema,
+    OverlayWordleMessageSchema,
     OverlaySpeakingMessageSchema,
     OverlayLevelsMessageSchema,
     OverlayStatusMessageSchema,

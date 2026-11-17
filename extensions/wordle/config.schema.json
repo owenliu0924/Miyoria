@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "max_guesses": {
+      "type": "integer",
+      "description": "一局最多猜幾次",
+      "minimum": 1,
+      "maximum": 12,
+      "default": 6
+    },
+    "show_on_stream": {
+      "type": "boolean",
+      "description": "把盤面送到直播 overlay(需要 Stage 和 overlay);關掉就只在對話裡玩",
+      "default": true
+    }
+  }
+}

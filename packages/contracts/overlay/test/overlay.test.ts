@@ -28,6 +28,18 @@ const messages: OverlayMessage[] = [
   { type: "gift", text: "Mia 送了 3 碗飯" },
   { type: "screen", kind: "message", name: "Mia", text: "hi", song: null },
   { type: "touch", x: 0.25, y: 0.75, part: "face" },
+  {
+    type: "wordle",
+    board: {
+      rows: [{ word: "SLATE", marks: ["absent", "present", "correct", "absent", "absent"] }],
+      max_guesses: 6,
+      state: "playing",
+      answer: null,
+      attempts: 2,
+      rejected: "XQZ",
+    },
+  },
+  { type: "wordle", board: null },
   { type: "speaking", state: "stopped" },
   { type: "levels", rms: 0.3, bands: [0.1, 0.2] },
   { type: "levels", rms: 0 },

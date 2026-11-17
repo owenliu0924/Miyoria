@@ -13,7 +13,9 @@
 // * the sing scene: backdrop, the frame at `SING.video`, her model at `SING.model`, the sing
 //   overlay on top. `SING` must match `--pad` / `--video-*` in apps/overlay/src/style.css;
 // * the chat scene: backdrop, her model filling the frame, the overlay;
-// * the game scene (when a `game` role is set): her model in the bottom-right corner, the overlay.
+// * the game scene (when a `game` role is set): her model in the bottom-right corner, the overlay;
+// * the Wordle scene (when a `wordle` role is set): backdrop, the Wordle page (`?layer=wordle`,
+//   its game on the left), her model standing at the right, the overlay.
 //
 // It only ever creates and changes Miyoria's own sources. Items it places are positioned once,
 // when it adds them (`relayout` places them again). In the scenes it manages, another capture of
@@ -45,6 +47,11 @@ export const THREADS = {
   model: { x: 600, y: 200, width: 1600, height: 900 },
 } as const;
 
+/** The Wordle scene: her model at the right, clear of the game on the page's left. */
+export const WORDLE = {
+  model: { x: 700, y: 180, width: 1600, height: 900 },
+} as const;
+
 /** The Threads extension's browser window (an app window titled `Miyoria Threads`). */
 export const THREADS_WINDOW = "Miyoria Threads:Chrome_WidgetWin_1:chrome.exe";
 
@@ -59,6 +66,7 @@ export const SOURCES = {
   model: "VTube Studio 透明",
   frame: "◇ 影片框",
   threads: "Miyoria Threads 視窗",
+  wordle: "Miyoria Wordle",
 } as const;
 
 /** The image mask filter that rounds the song video. */
@@ -77,8 +85,14 @@ export interface ObsSetupOptions {
   videoSource: string;
   /** Where the mask image goes (absolute). */
   maskPath: string;
-  /** Scene of each role (`[modules."stage.link".scenes] roles`); `game` and `threads` may be absent. */
-  scenes: { sing: string; chat: string; game: string | null; threads?: string | null };
+  /** Scene of each role (`[modules."stage.link".scenes] roles`); `game`, `threads` and `wordle` may be absent. */
+  scenes: {
+    sing: string;
+    chat: string;
+    game: string | null;
+    threads?: string | null;
+    wordle?: string | null;
+  };
   /** Place the items again even when they exist. */
   relayout: boolean;
 }
@@ -207,6 +221,7 @@ export function planObsSetup(snap: ObsSnapshot, options: ObsSetupOptions): Step[
     },
     [SOURCES.overlay]: { kind: "browser_source", settings: browser("") },
     [SOURCES.overlaySing]: { kind: "browser_source", settings: browser("?layout=sing") },
+    [SOURCES.wordle]: { kind: "browser_source", settings: browser("?layer=wordle") },
     [SOURCES.model]: {
       kind: "game_capture",
       settings: {
@@ -247,6 +262,7 @@ export function planObsSetup(snap: ObsSnapshot, options: ObsSetupOptions): Step[
     [SOURCES.backdropSing]: ["url"],
     [SOURCES.overlay]: ["url"],
     [SOURCES.overlaySing]: ["url"],
+    [SOURCES.wordle]: ["url"],
     [SOURCES.model]: ["allow_transparency"],
   };
   for (const [name, fields] of Object.entries(keep)) {
@@ -410,6 +426,22 @@ export function planObsSetup(snap: ObsSnapshot, options: ObsSetupOptions): Step[
       ],
     );
     hideOtherVts(threads);
+  }
+
+  // ---- wordle: backdrop, the Wordle page, her model at the right, the overlay
+  const wordle = options.scenes.wordle ?? null;
+  if (wordle !== null) {
+    ensureScene(wordle);
+    layout(
+      wordle,
+      [{ source: SOURCES.backdrop, transform: full }],
+      [
+        { source: SOURCES.wordle, transform: full },
+        { source: SOURCES.model, transform: fitInto(WORDLE.model) },
+        { source: SOURCES.overlay, transform: full },
+      ],
+    );
+    hideOtherVts(wordle);
   }
   return steps;
 }
