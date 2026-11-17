@@ -193,7 +193,9 @@ miyoria status                  # 看每個服務的狀態、健康、埠
 - 算過的 SHA-256 記在 `<狀態資料夾>/models.verified.json`(連同檔案的大小和修改時間),之後 `doctor` 只重算有變的檔案;`doctor --deep` 每個都重算。
 - `miyoria doctor --print-hashes <服務>` 印出這台電腦上那個服務的檔案(`[[install.files]]` 的,和 `[install.manual]` 資料夾裡的)的 SHA-256 和大小,照 `service.toml` 的寫法,方便把手動放的檔案改成自動下載。
 
-**目前還沒有任何服務自動下載**:turn 的兩個小模型、sing 的兩個分離模型都已經寫成 `[[install.files]]`,但 repository 裡沒有它們的 SHA-256 和 commit,所以先註解掉、照舊列成手動項目。在有這些檔案的電腦上執行 `miyoria doctor --print-hashes turn`(和 `sing`)填進去、取消註解後就會自動下載(見 `workers/turn/service.toml`、`workers/sing/service.toml` 的 `TODO(owner machine)`)。
+**現在自動下載的**:sing 的兩個分離模型(`vocal-split/MelBandRoformer.ckpt`、`lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt` 和它的設定檔,2026-11-18 對過實際檔案和 repository 公布的 SHA-256 後填入 `workers/sing/service.toml`)。turn 的兩個小模型還沒有:repository 裡沒有它們的 SHA-256 和 commit,所以先註解掉、照舊列成手動項目;在有這些檔案的電腦上執行 `miyoria doctor --print-hashes turn` 填進去、取消註解後就會自動下載(見 `workers/turn/service.toml` 的 `TODO(owner machine)`)。
+
+**沿用舊位置的檔案(`adopt_from`)**:`[[install.files]]` 可以寫 `adopt_from`,值是工作區(`host.toml` 所在資料夾)底下的相對路徑,指這個檔案手動放的舊位置(例如 sing 的 `workers/models/vocal-split/MelBandRoformer.ckpt`)。`add` / `update` / `doctor --fix` 發現檔案在 `<狀態資料夾>/models/` 還沒有(或不對),而舊位置的檔案大小和 SHA-256 都符合,就改用**硬連結**把它接過來(同一個磁碟上不多佔空間;跨磁碟時才複製),不下載、不問(清單上寫「沿用 …」,不算進要下載的大小),舊檔案原封不動。大小或檢查碼不符的舊檔案會被忽略,照一般方式下載。sing 的 worker 自己也先找 `SING_MODELS_DIR`(hostd 給的 `<狀態資料夾>/models`),找不到就退回舊位置(`workers/sing/modelpaths.py`),所以 `update` 抓檔案之前什麼都不會壞;`SING_VOCAL_MODEL`、`SING_LEAD_MODEL` 指定的完整路徑永遠優先。人聲分離的 `MelBandRoformer.yaml` 沒有固定來源,仍然是手動的(放在 `workers/models/vocal-split/` 或 `<狀態資料夾>/models/vocal-split/` 都找得到)。
 
 Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務自己下載,或先 `miyoria models pull <服務>`(下載到 `<狀態資料夾>/models`)。要同步別的 extras(例如 ASR 的 `sensevoice`):`miyoria add asr --extra sensevoice`(只能用在一個服務,另外要在 `[services.asr]` 用 `env` 設 `ASR_BACKEND`,見 [workers/README.md](../workers/README.md))。`--no-install` 只寫 `host.toml`,不建環境。
 
@@ -205,7 +207,7 @@ Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務�
 |---|---|---|
 | `tts` | `workers/voices/<聲音>/ref.wav` 和 `ref.txt` | 她的聲音參考音,不進 git;`<聲音>` 預設 `deepseek-chan`([workers/README.md](../workers/README.md) 第 4 節) |
 | `turn` | `<模型資料夾>/smart-turn/smart-turn-v3.2-cpu.onnx`、`<模型資料夾>/silero-vad/silero_vad.onnx` | 兩個公開的小模型,填好檢查碼後改成自動下載(見上面);沒有也能跑,Core 退回舊的判斷 |
-| `sing` | `workers/models/applio`、`models/lead-split`、`models/vocal-split`、`models/seed-vc` | 她的 RVC 歌聲模型(私人)、兩個分離模型(公開,填好檢查碼後改成自動下載)和 Seed-VC 原始碼(是程式碼,不自動下載);沒有的部分會退回或略過,見 [workers/README.md](../workers/README.md) 第 9 節 |
+| `sing` | `workers/models/applio`、`workers/models/vocal-split/MelBandRoformer.yaml`、`workers/models/seed-vc` | 她的 RVC 歌聲模型(私人)、人聲分離模型的設定檔(沒有固定來源)和 Seed-VC 原始碼(是程式碼,不自動下載)。兩個分離模型本身(`vocal-split`、`lead-split`)由 `update` 自動下載,舊位置 `workers/models/` 裡的沿用;沒有的部分會退回或略過,見 [workers/README.md](../workers/README.md) 第 9 節 |
 | `mediamtx` | `workers/mediamtx/mediamtx.exe` | 見下面 [MediaMTX](#mediamtx) |
 | `voice-node` | `apps/voice-node/.env` | `SELF_TOKEN`,見下面 [Voice node](#voice-node) |
 

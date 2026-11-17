@@ -69,12 +69,20 @@ export async function filesToFetch(
   return out;
 }
 
-const remaining = (s: FileStatus) => Math.max(s.size - s.partBytes, 0);
+/** What a file still costs to download: nothing for one adopted from where the machine has it. */
+const remaining = (s: FileStatus) => (s.adopt !== null ? 0 : Math.max(s.size - s.partBytes, 0));
 
 /** The list a person agrees to: each file with its size, licence and source, and the total. */
 export function printFileNeeds(needs: readonly FileNeed[], models: string): void {
   section("要下載的模型檔");
   for (const { service, status: s } of needs) {
+    if (s.adopt !== null) {
+      println(
+        `  ${bold(service)}  ${s.path}  ${formatBytes(s.size)}  沿用 ${s.adopt}(檢查碼相同,硬連結,不用下載)`,
+      );
+      println(dim(`      ${s.what}${s.optional ? "(沒有也能跑)" : ""}`));
+      continue;
+    }
     const resume = s.partBytes > 0 ? `(續傳,還要 ${formatBytes(remaining(s))})` : "";
     println(
       `  ${bold(service)}  ${s.path}  ${formatBytes(s.size)}${resume}  授權 ${s.licence}  來自 ${s.source}`,
@@ -98,13 +106,16 @@ export async function confirmFiles(
 ): Promise<boolean> {
   if (needs.length === 0) return true;
   printFileNeeds(needs, host.state.models);
+  // Only files already on this machine: nothing is downloaded, so there is nothing to agree to.
+  if (needs.every((n) => n.status.adopt !== null)) return true;
   if (deps.yes === true) return true;
   const canAsk = deps.interactive ?? deps.confirm !== undefined;
   if (!canAsk || deps.confirm === undefined) {
     throw new HostCommandError(`沒有終端機可以確認要不要下載上面的檔案;同意的話執行 \`${again}\``);
   }
   const total = needs.reduce((n, { status }) => n + remaining(status), 0);
-  return deps.confirm(`下載這 ${needs.length} 個檔案(共 ${formatBytes(total)})?`);
+  const fetched = needs.filter((n) => n.status.adopt === null).length;
+  return deps.confirm(`下載這 ${fetched} 個檔案(共 ${formatBytes(total)})?`);
 }
 
 /** The lines about `install.files` of one install result. Returns whether one failed. */
@@ -113,6 +124,7 @@ export function printFiles(result: HostServiceInstallResult): boolean {
   let failed = false;
   for (const f of result.files) {
     if (f.state === "downloaded") ok(`${name}  已下載並驗證 ${f.path}`);
+    else if (f.state === "present" && f.detail !== undefined) ok(`${name}  ${f.path}:${f.detail}`);
     else if (f.state === "failed") {
       failed = true;
       fail(`${result.service}  ${f.path}:${f.detail ?? "下載失敗"}`);

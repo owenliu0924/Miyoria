@@ -62,7 +62,7 @@ miyoria logs asr -f           # 看一個服務的 log
 |---|---|---|
 | tts | `workers/voices/<聲音>/ref.wav` + `ref.txt` | 你的聲音參考音,不進 git(第 4 節);`<聲音>` 預設 `deepseek-chan` |
 | turn | `<狀態資料夾>/models/smart-turn/smart-turn-v3.2-cpu.onnx`、`<狀態資料夾>/models/silero-vad/silero_vad.onnx` | 第 10 節;公開的小模型,`service.toml` 填好檢查碼後改成自動下載;沒有也能跑 |
-| sing | `workers/models/applio/`(她的 RVC 模型)、`workers/models/lead-split/`(`becruily-bs/`)、`workers/models/vocal-split/`、`workers/models/seed-vc/` | 第 9 節;沒有的部分會退回或略過,`doctor` 以警告列出。兩個分離模型填好檢查碼後改成自動下載;RVC 模型(私人)和 Seed-VC 原始碼一直是手動的 |
+| sing | `workers/models/applio/`(她的 RVC 模型)、`workers/models/lead-split/`(`becruily-bs/`)、`workers/models/vocal-split/`、`workers/models/seed-vc/` | 第 9 節;沒有的部分會退回或略過,`doctor` 以警告列出。兩個分離模型由 `miyoria update` 自動下載到 `<狀態資料夾>/models/`(舊位置 `workers/models/` 的沿用,見 `modelpaths.py`);人聲分離的 `.yaml`、RVC 模型(私人)和 Seed-VC 原始碼是手動的 |
 
 Hugging Face 上的大模型 `add` 不下載:第一次啟動時服務自己下載,或先 `miyoria models pull <服務>`,放在 `<狀態資料夾>/models/hf`(hostd 把 `HF_HUB_CACHE` 指到那裡)。Qwen3-ASR 約 2 GB、Qwen3-TTS 約 4–5 GB(tts 還會捕捉 CUDA graph,要等幾分鐘)、sing 的第一首歌約 2 GB。
 
@@ -582,7 +582,7 @@ curl -s -X POST http://127.0.0.1:8005/cache/prune                     # 現在�
 
 **安裝**
 
-`miyoria add sing` 建環境(`workers/sing/pyproject.toml`,torch 和 torchaudio 2.11.0 的 CUDA 12.8 版,`ffmpeg` 要在 PATH 上),再列出要自己放的東西(兩個分離模型在 `service.toml` 寫好了 `[[install.files]]`,填好檢查碼後改成自動下載到 `<狀態資料夾>/models/`):`workers/models/` 底下的 `applio/`(她的 RVC 模型)、`lead-split/`(`becruily-bs/`)、`vocal-split/`(`MelBandRoformer.ckpt` + `.yaml`)、`seed-vc/`(Seed-VC 原始碼)。後三個沒有的話會退回或略過(沒有 lead-split 就不切主唱、沒有 vocal-split 就退回 Demucs);`applio/` 只在 `SING_VOICE=seedvc` 時可以略過。第一首歌會先下載約 2 GB 的模型。
+`miyoria add sing` 建環境(`workers/sing/pyproject.toml`,torch 和 torchaudio 2.11.0 的 CUDA 12.8 版,`ffmpeg` 要在 PATH 上),再列出要自己放的東西(兩個分離模型在 `service.toml` 寫好了 `[[install.files]]`,自動下載到 `<狀態資料夾>/models/`,舊位置 `workers/models/` 的沿用;人聲分離的 `.yaml` 仍然手動):`workers/models/` 底下的 `applio/`(她的 RVC 模型)、`lead-split/`(`becruily-bs/`)、`vocal-split/`(`MelBandRoformer.ckpt` + `.yaml`)、`seed-vc/`(Seed-VC 原始碼)。後三個沒有的話會退回或略過(沒有 lead-split 就不切主唱、沒有 vocal-split 就退回 Demucs);`applio/` 只在 `SING_VOICE=seedvc` 時可以略過。第一首歌會先下載約 2 GB 的模型。
 
 自己用 uv 跑(Git Bash):
 

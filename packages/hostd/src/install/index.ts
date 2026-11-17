@@ -15,6 +15,8 @@ export {
   RETRY_DELAYS_MS,
 } from "./download.js";
 export {
+  adoptFile,
+  adoptSource,
   bytesToFetch,
   type CheckMode,
   checkFiles,

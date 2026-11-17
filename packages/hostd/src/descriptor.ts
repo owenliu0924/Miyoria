@@ -55,6 +55,13 @@ export const InstallFileSchema = z
     licence: z.string().min(1),
     /** The service also runs without it (it falls back): hostd starts it anyway. */
     optional: z.boolean().default(false),
+    /**
+     * Where a machine that fetched this file by hand keeps it, relative to the workspace (the
+     * folder of `host.toml`), e.g. `workers/models/vocal-split/MelBandRoformer.ckpt`. When the
+     * file is missing here and that one has the same checksum, it is linked in (or copied) instead
+     * of downloaded again. Never moved or changed.
+     */
+    adopt_from: z.string().min(1).optional(),
   })
   .strict()
   .superRefine((f, ctx) => {
@@ -65,6 +72,10 @@ export const InstallFileSchema = z
       if (problem !== null) issue(`${problem} (a path inside the model folder)`, "path");
       else if (f.path.split("/")[0] === "hf") issue("hf/ is the Hugging Face cache", "path");
       else if (f.path.endsWith(".part")) issue("may not end in .part", "path");
+    }
+    if (f.adopt_from !== undefined) {
+      const problem = relativePathProblem(f.adopt_from);
+      if (problem !== null) issue(`${problem} (a path inside the workspace)`, "adopt_from");
     }
     if (f.url !== undefined && f.hf !== undefined) {
       issue("give url or hf, not both", "url");

@@ -103,14 +103,16 @@ Environment
     SING_SEPARATE_DEVICE   device of the separator                (default SING_DEVICE; VRAM OOM → CPU)
     SING_SEPARATOR_MODEL   melband | a Demucs model               (default melband when SING_VOCAL_MODEL is there,
                            else htdemucs; htdemucs_ft = better Demucs, 4x slower)
+    SING_MODELS_DIR        the host's model folder (hostd sets it to <state>/models; `miyoria update` fills
+                           vocal-split/ and lead-split/ there). Looked in first, then ../models (modelpaths.py)
     SING_VOCAL_MODEL       the vocal RoFormer's checkpoint (.ckpt; its .yaml beside it)
-                           (default ../models/vocal-split/MelBandRoformer.ckpt, KimberleyJSN/melbandroformer)
+                           (default vocal-split/MelBandRoformer.ckpt of the model folders, KimberleyJSN/melbandroformer)
     SING_VOCAL_OVERLAP     chunk overlap of the vocal RoFormer, 8 s chunks (default 2)
     SING_LEAD_SPLIT        0 = no lead / backing split: the whole vocal stem is converted (default 1: on
                            when the model file is there)
     SING_LEAD_MODEL        the split's checkpoint (.ckpt; its .yaml beside it) (default
-                           ../models/lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt, else
-                           ../models/lead-split/mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt)
+                           lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt, else
+                           lead-split/mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt, of the model folders)
     SING_LEAD_INPUT        mix | vocals: what the split reads    (default mix, the whole song)
     SING_LEAD_FP16         0 = the split in fp32 on CUDA          (default 1: fp16)
     SING_LEAD_DEVICE       device of the split                    (default SING_SEPARATE_DEVICE; VRAM OOM → CPU)

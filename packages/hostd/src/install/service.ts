@@ -11,6 +11,7 @@ import type { LoadedHostConfig } from "../host-config.js";
 import { pythonIn } from "../resolve.js";
 import { downloadFile, type Fetch, formatBytes } from "./download.js";
 import {
+  adoptFile,
   bytesToFetch,
   type CheckMode,
   checkFiles,
@@ -215,7 +216,13 @@ export function checkServiceFiles(
   host: LoadedHostConfig,
   mode: CheckMode,
 ): Promise<FileStatus[]> {
-  return checkFiles(entry.descriptor.install.files, host.state.models, host.state.root, mode);
+  return checkFiles(
+    entry.descriptor.install.files,
+    host.state.models,
+    host.state.root,
+    mode,
+    host.workspace,
+  );
 }
 
 /**
@@ -380,6 +387,7 @@ async function fetchFiles(
     host.state.models,
     host.state.root,
     download ? "cached" : "quick",
+    host.workspace,
   );
   const out = new Map<string, HostServiceInstallResult["files"][number]>();
   const todo: FileStatus[] = [];
@@ -406,6 +414,20 @@ async function fetchFiles(
     }
     if (options.signal?.aborted) {
       out.set(s.path, { path: s.path, state: "failed", detail: "已取消" });
+      continue;
+    }
+    if (s.adopt !== null) {
+      try {
+        const how = adoptFile(s.adopt, s.dest);
+        const stat = statSync(s.dest);
+        cache.set(s.path, stat.size, stat.mtimeMs, s.sha256);
+        cache.save();
+        const label = how === "linked" ? "硬連結" : "複製";
+        options.onLine?.(`沿用 ${s.adopt}(檢查碼相同,${label}到 ${s.dest},不用下載)`);
+        out.set(s.path, { path: s.path, state: "present", detail: `沿用舊位置的檔案(${label})` });
+      } catch (error) {
+        out.set(s.path, { path: s.path, state: "failed", detail: message(error) });
+      }
       continue;
     }
     options.onLine?.(`下載 ${s.path}(${formatBytes(s.size)},來自 ${s.source},授權 ${s.licence})`);

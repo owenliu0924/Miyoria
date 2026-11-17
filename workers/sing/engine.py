@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+import modelpaths
 from songs import PLAY_RATE, Source, Store, safe_id, short_hash
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -43,7 +44,10 @@ MELBAND = "melband"
 
 def vocal_model_path(env: dict[str, str] | None = None) -> Path:
     e = env if env is not None else os.environ
-    return Path(e.get("SING_VOCAL_MODEL") or Path(__file__).resolve().parent.parent / "models" / "vocal-split" / VOCAL_CKPT)
+    if e.get("SING_VOCAL_MODEL"):
+        return Path(e["SING_VOCAL_MODEL"])
+    # The host's model folder (miyoria update), else workers/models, else where it belongs.
+    return modelpaths.locate(Path("vocal-split") / VOCAL_CKPT, e)
 
 
 VOICE_CHAINS = ("rvc", "ying+rvc", "ying", "seedvc+rvc", "seedvc")
@@ -95,7 +99,7 @@ def default_separator(env: dict[str, str] | None = None) -> str:
     if e.get("SING_SEPARATOR_MODEL"):
         return e["SING_SEPARATOR_MODEL"]
     ckpt = vocal_model_path(e)
-    return MELBAND if ckpt.is_file() and leadsplit.config_path(ckpt) is not None else "htdemucs"
+    return MELBAND if ckpt.is_file() and leadsplit.config_path(ckpt, e) is not None else "htdemucs"
 
 
 class JobError(Exception):

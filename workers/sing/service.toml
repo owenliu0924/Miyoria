@@ -12,76 +12,62 @@ system = ["ffmpeg"]
 project = "."
 check_imports = ["torch", "demucs", "librosa"]
 
-# The first song downloads about 2 GB of models by itself; their repositories are not pinned yet.
+# The first song downloads about 2 GB of other models by itself (Hugging Face caches); their
+# repositories are not pinned yet.
 [[install.manual]]
 path = "workers/models/applio"
 what = "她的 RVC 歌聲模型(Applio 訓練出來的;只用 SING_VOICE=seedvc 時可略過)"
 
 [[install.manual]]
-path = "workers/models/lead-split"
-what = "主唱與伴唱分離模型(BS-RoFormer karaoke,放在 becruily-bs/;沒有就不切主唱)"
+path = "workers/models/vocal-split/MelBandRoformer.yaml"
+what = "人聲分離模型的設定檔(模型檔本身 `miyoria update` 會下載;沒有設定檔就退回 Demucs;放在 workers/models/vocal-split/ 或 <state>/models/vocal-split/ 都行)"
 
-[[install.manual]]
-path = "workers/models/vocal-split"
-what = "人聲分離模型(MelBandRoformer.ckpt 和 .yaml;沒有就退回 Demucs)"
+# The two separation models are public weights, downloaded by `miyoria update` into
+# <state>/models/ (hostd gives the worker that folder as SING_MODELS_DIR, workers/modelpaths.py).
+# A machine that fetched them by hand keeps them under workers/models/: the worker looks in
+# <state>/models/ first and falls back to there, so nothing breaks before the files are fetched,
+# and `adopt_from` makes `update` link a file that is already there (same sha256) into the new
+# folder instead of downloading it again. Verified against the files in use and the repositories'
+# published hashes on 2026-11-18.
+#
+# MelBandRoformer.yaml has no pinned source (workers/README.md names MSST's
+# config_vocals_mel_band_roformer_kj.yaml, ZFTurbo/Music-Source-Separation-Training, but no commit
+# whose bytes were checked: sha256 f63f38eb1e6e40a7db0dade714a5ae257555dd8748f4e774eae8679275a81926,
+# 1721 bytes), so it stays the manual item above.
+[[install.files]]
+path = "vocal-split/MelBandRoformer.ckpt"
+hf = "KimberleyJSN/melbandroformer"
+file = "MelBandRoformer.ckpt"
+revision = "ac9b0614ab3cd7f77219e18ba494dfd93956c348"
+sha256 = "87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e"
+size = 913106900
+what = "人聲分離模型(Kim 的 Mel-Band RoFormer;沒有就退回 Demucs)"
+licence = "MIT"
+optional = true
+adopt_from = "workers/models/vocal-split/MelBandRoformer.ckpt"
 
-# The two separation models are public weights that can be downloaded automatically once each
-# entry below has its checksum, its size and a pinned source. The repository does not record them
-# yet. TODO(owner machine): run `miyoria doctor --print-hashes sing` (it prints the sha256 and size
-# of every file in workers/models/lead-split and vocal-split), copy them in, fill in the commit ids
-# and the .yaml sources, uncomment the entries, add the two [run] env lines below, and delete the
-# two [[install.manual]] items above. The files then live in <state>/models/, not workers/models/.
-#
-#   env = { SING_OFFLOAD_URLS = "{offload_urls}",
-#           SING_VOCAL_MODEL = "{models}/vocal-split/MelBandRoformer.ckpt",
-#           SING_LEAD_MODEL = "{models}/lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt" }
-#
-# [[install.files]]
-# path = "vocal-split/MelBandRoformer.ckpt"
-# hf = "KimberleyJSN/melbandroformer"
-# file = "MelBandRoformer.ckpt"
-# revision = "TODO(owner machine): the 40-character commit id"
-# sha256 = "TODO(owner machine): sha256"
-# size = 0  # TODO(owner machine): bytes
-# what = "人聲分離模型(Kim 的 Mel-Band RoFormer;沒有就退回 Demucs)"
-# licence = "MIT"
-# optional = true
-#
-# [[install.files]]
-# path = "vocal-split/MelBandRoformer.yaml"
-# # TODO(owner machine): the source of this config. workers/README.md says it is MSST's
-# # config_vocals_mel_band_roformer_kj.yaml (ZFTurbo/Music-Source-Separation-Training); a
-# # raw.githubusercontent.com URL at a commit id works.
-# url = "TODO(owner machine)"
-# sha256 = "TODO(owner machine): sha256"
-# size = 0  # TODO(owner machine): bytes
-# what = "人聲分離模型的設定檔"
-# licence = "MIT"
-# optional = true
-#
-# [[install.files]]
-# path = "lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt"
-# hf = "becruily/bs-roformer-karaoke"
-# file = "TODO(owner machine): the file name in the repository"
-# revision = "TODO(owner machine): the 40-character commit id"
-# sha256 = "TODO(owner machine): sha256"
-# size = 0  # TODO(owner machine): bytes
-# what = "主唱與伴唱分離模型(becruily & Frazer 的 BS-RoFormer karaoke;沒有就不切主唱)"
-# # The repository states no licence (workers/README.md §9): decide whether it may be fetched
-# # automatically before uncommenting.
-# licence = "未標授權"
-# optional = true
-#
-# [[install.files]]
-# path = "lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.yaml"
-# hf = "becruily/bs-roformer-karaoke"
-# file = "TODO(owner machine): the config's file name in the repository"
-# revision = "TODO(owner machine): the same commit id"
-# sha256 = "TODO(owner machine): sha256"
-# size = 0  # TODO(owner machine): bytes
-# what = "主唱與伴唱分離模型的設定檔"
-# licence = "未標授權"
-# optional = true
+[[install.files]]
+path = "lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt"
+hf = "becruily/bs-roformer-karaoke"
+file = "bs_roformer_karaoke_frazer_becruily.ckpt"
+revision = "0d66103c6b79c0dd0e9efd38ca70db7042f6f695"
+sha256 = "eb90ee24c1154d83fbcfd27e96182f19e061557cc6e4746953125e08c29389f9"
+size = 204436907
+what = "主唱與伴唱分離模型(becruily & Frazer 的 BS-RoFormer karaoke;沒有就不切主唱)"
+licence = "未標示(來源沒有寫授權;由擁有者決定自動下載)"
+optional = true
+adopt_from = "workers/models/lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt"
+
+[[install.files]]
+path = "lead-split/becruily-bs/config_karaoke_frazer_becruily.yaml"
+hf = "becruily/bs-roformer-karaoke"
+file = "config_karaoke_frazer_becruily.yaml"
+revision = "0d66103c6b79c0dd0e9efd38ca70db7042f6f695"
+sha256 = "1d3b58b473025183d0d3c91e7a444cb5f1418d9f34e8f46b8d2fb10d2cc8ab34"
+size = 1903
+what = "主唱與伴唱分離模型的設定檔"
+licence = "未標示(來源沒有寫授權;由擁有者決定自動下載)"
+optional = true
 
 # The worker refuses to start without these two, whichever voice chain is used
 # (workers/sing/engine.py).
@@ -107,7 +93,7 @@ port_env = "PORT"
 # - "hostd": hostd decides; it starts the worker with SING_GPU_ARBITER=hostd and without
 #   SING_OFFLOAD_URLS, and reads the SING_* tuning below and in host.toml from here.
 after = ["asr", "tts"]
-env = { SING_OFFLOAD_URLS = "{offload_urls}" }
+env = { SING_OFFLOAD_URLS = "{offload_urls}", SING_MODELS_DIR = "{models}" }
 
 [run.health]
 http = "/health"
