@@ -190,18 +190,26 @@ export type GuardVerdict =
       code: string;
       /** What she is told, in her language. */
       text: string;
+      /**
+       * A refused line only: a fixed line said in its place (a game's plain answer for a line that
+       * gave its secret away), itself checked like any line. Unset: nothing is said.
+       */
+      instead?: string;
     };
 
 export const ALLOW: GuardVerdict = { allow: true };
 
-export function refuse(code: string, text: string): GuardVerdict {
-  return { allow: false, code, text };
+export function refuse(code: string, text: string, instead?: string): GuardVerdict {
+  return instead === undefined
+    ? { allow: false, code, text }
+    : { allow: false, code, text, instead };
 }
 
 /**
  * Asked before every tool call and before every line of hers leaves. It only allows or refuses;
- * nothing is rewritten. A refusal is never dropped: the runner gives a refused call's text to her
- * as the call's result, and a refused line's as a note of the next round.
+ * her words are never rewritten (a refused line may name a fixed line to say instead). A refusal
+ * is never dropped: the runner gives a refused call's text to her as the call's result, and a
+ * refused line's as a note of the next round.
  */
 export interface Guard {
   checkCall(call: GuardCall, ctx: GuardContext): Promise<GuardVerdict>;

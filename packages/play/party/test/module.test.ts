@@ -21,6 +21,7 @@ import {
   EventLogKey,
   type EventPayload,
   Events,
+  GameSecretsKey,
   type HeartEvidenceInput,
   HeartKey,
   type HeartPeople,
@@ -44,6 +45,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SOUP_PUZZLES } from "../src/content.js";
 import { PartyModule, PartyTableKey } from "../src/module.js";
 import { AMY, BOB, FakeClips, HER, ROOM, SONGS, TEXT, VOICE, VOICE_CHAT } from "./helpers.js";
 
@@ -343,6 +345,12 @@ describe("party module", () => {
       const table = h.sup.services.require(PartyTableKey);
       expect(table.session(TEXT)?.game.id).toBe("soup");
       expect(table.session(VOICE)).toBeNull();
+      // Her line guard asks the game of the place whether a line gives its bottom away.
+      const secrets = h.sup.services.require(GameSecretsKey);
+      const words = SOUP_PUZZLES.flatMap((p) => p.keywords);
+      expect(words.some((w) => secrets.leak(TEXT, `是不是${w}?`) !== null)).toBe(true);
+      expect(secrets.leak(TEXT, "大家慢慢想喔")).toBeNull();
+      expect(words.every((w) => secrets.leak(VOICE, `是不是${w}?`) === null)).toBe(true);
     });
 
     it("asks the permission node of the person, and a role without it cannot", async () => {

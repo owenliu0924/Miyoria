@@ -748,6 +748,9 @@ export {
 } from "./participation.js";
 export {
   type ClipOutcome,
+  type GameSecretLeak,
+  type GameSecrets,
+  GameSecretsKey,
   type PartyAward,
   type PartyRewardRequest,
   type PartyRewards,

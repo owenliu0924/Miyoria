@@ -568,6 +568,28 @@ describe("the kept screens", () => {
     expect(result.outcome).toBe("said");
     expect(r.transcript.tail(SESSION.id).entries.at(-1)).toMatchObject({ kind: "note" });
   });
+
+  it("a refused line with a fixed one to say instead has that one said, and she is told", async () => {
+    const guard: Guard = {
+      checkCall: async () => ALLOW,
+      checkLine: async (_place, line) =>
+        line.includes("按鈕") ? refuse("game_secret", "說出了湯底的字", "很接近了!") : ALLOW,
+    };
+    const r = await rig([say("很接近了喔\n想想電梯按鈕\n再想想按鈕"), say("<silence/>")], {
+      guard,
+    });
+    r.line("Owen", "@她 是不是身體的關係?");
+    await r.run();
+    // Each refused line has the fixed one said in its place (the game decides how often it gives
+    // one); what she wrote is never sent, and the transcript has what was said.
+    expect(r.outlet.texts()).toEqual(["很接近了喔", "很接近了!", "很接近了!"]);
+    expect(promptText(r.model.requests[1])).toContain("有 2 行沒有送出去:說出了湯底的字");
+    const said = r.transcript
+      .tail(SESSION.id)
+      .entries.map((e) => e.content)
+      .join("\n");
+    expect(said).not.toContain("按鈕");
+  });
 });
 
 describe("a cancelled run", () => {

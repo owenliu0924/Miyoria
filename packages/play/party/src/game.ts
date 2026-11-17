@@ -7,7 +7,7 @@
 // it (a song). Notes follow the same rule.
 
 import { CapabilityError } from "@miyoria/gate/actions";
-import type { AccountRef, ContextKey, SongClips } from "@miyoria/types";
+import type { AccountRef, ContextKey, GameSecretLeak, SongClips } from "@miyoria/types";
 import type { PartyConfig } from "./config.js";
 import type { SoupJudge } from "./judge.js";
 
@@ -112,6 +112,11 @@ export interface Game {
   play(text: string): string;
   /** Turtle soup: a yes-or-no question someone asked. */
   ask(question: string, player: Player | null): Promise<string>;
+  /**
+   * Whether a line of hers would give away what the game hides (the line guard asks through
+   * `GameSecrets`); unset: the game hides nothing she knows.
+   */
+  leak?(text: string): GameSecretLeak | null;
   timer(name: string): void;
   /** What she should know once it is over (the answer still hidden, the story so far). */
   finish(reason: EndReason): string[];

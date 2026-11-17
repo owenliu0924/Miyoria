@@ -15,6 +15,7 @@ import {
   contextKeyString,
   EventLogKey,
   Events,
+  GameSecretsKey,
   HeartKey,
   holdsBack,
   incomingText,
@@ -208,6 +209,14 @@ export class PartyModule implements Module {
         return session === null || session.ended !== null
           ? null
           : { game: session.game.id, title: session.game.title };
+      },
+    });
+    // What the line guard asks before every line of hers: does it give away the game's secret?
+    ctx.provide(GameSecretsKey, {
+      leak: (context, text) => {
+        const session = table.session(context);
+        if (session === null || session.ended !== null) return null;
+        return session.game.leak?.(text) ?? null;
       },
     });
 

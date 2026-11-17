@@ -915,7 +915,7 @@ async function runReferee(ctx: SuiteContext, c: RefereeCase, run: number): Promi
 
 /** What the party prompt tells her during a soup (copy of `PartyPrompt` and `SoupGame.view`). */
 const HOST_RULES =
-  "你是主持人,但湯底你也不知道,由裁判判定。有人問是非題或說出他猜的真相,就用 party_ask 把那句話交給裁判,照結果回答「是 / 不是 / 不重要 / 很接近了」,不要自己編答案。猜中了程式會公布湯底。party_host:hint 給一個提示、next 放棄並公布湯底、end 結束。";
+  "你是主持人,但湯底你也不知道,由裁判判定。有人問是非題或說出他猜的真相,就用 party_ask 把那句話交給裁判,照結果回答「是 / 不是 / 不重要 / 很接近了」,不要自己編答案。回答只用提問的人自己說過的字:可以重複他的話,但不要補上他沒說的東西,也不要給方向或舉例;這題你就算聽過、記得答案,也只說裁判的結果。猜中了程式會公布湯底。party_host:hint 給一個提示、next 放棄並公布湯底、end 結束。";
 
 function hostState(asked: number): string {
   return [
