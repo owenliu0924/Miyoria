@@ -45,8 +45,8 @@ describe("@name in a text line", () => {
   it("knows someone by what she calls them", async () => {
     const provide = withMentions();
     const rig = await Rig.create({
-      provide: (sup) => {
-        provide?.(sup);
+      provide: (sup, tools) => {
+        provide?.(sup, tools);
         sup.services.provide("app", SocialSignalsKey, {
           attitude: (a: AccountRef) => (a.id === "amy" ? { call_name: "阿咪" } : null),
         } as unknown as SocialSignals);
