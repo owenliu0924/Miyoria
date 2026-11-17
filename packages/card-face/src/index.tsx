@@ -658,6 +658,7 @@ export const CardFace = forwardRef<SVGSVGElement, CardFaceProps>(function CardFa
           .filter((s): s is string => typeof s === "string" && s !== "")
           .join("・")
       : null;
+  const number = `No.${String(card.number).padStart(3, "0")}`;
   const id = card.serial.replace(/[^A-Z0-9]/gi, "");
   const label = [
     `${card.name} 的卡,${title}`,
@@ -738,28 +739,33 @@ export const CardFace = forwardRef<SVGSVGElement, CardFaceProps>(function CardFa
         <rect width={W} height={H} fill={`url(#sheen-${id})`} />
         {card.foil && <Foil id={id} />}
 
-        <text
-          x={PAD}
-          y={56}
-          fontSize={15}
-          fontWeight={600}
-          letterSpacing={5}
-          fill="#ffffff"
-          opacity={0.9}
-        >
-          MIYORIA
-        </text>
-        <text
-          x={W - PAD}
-          y={56}
-          fontSize={15}
-          fontFamily={MONO}
-          textAnchor="end"
-          fill="#ffffff"
-          opacity={0.85}
-        >
-          No.{String(card.number).padStart(3, "0")}
-        </text>
+        {/* A daily card's strip (below) carries the number instead: nothing shows through it. */}
+        {!drawn && (
+          <text
+            x={PAD}
+            y={56}
+            fontSize={15}
+            fontWeight={600}
+            letterSpacing={5}
+            fill="#ffffff"
+            opacity={0.9}
+          >
+            MIYORIA
+          </text>
+        )}
+        {!drawn && (
+          <text
+            x={W - PAD}
+            y={56}
+            fontSize={15}
+            fontFamily={MONO}
+            textAnchor="end"
+            fill="#ffffff"
+            opacity={0.85}
+          >
+            {number}
+          </text>
+        )}
 
         <text x={PAD} y={titleY} fontSize={46} fontWeight={700} fill="#ffffff" letterSpacing={1}>
           {title}
@@ -861,7 +867,18 @@ export const CardFace = forwardRef<SVGSVGElement, CardFaceProps>(function CardFa
         <g>
           <rect x={PAD - 10} y={30} width={W - 2 * PAD + 20} height={30} rx={8} fill="rgba(11,13,20,0.62)" />
           <text x={PAD} y={50} fontSize={13} fill="rgba(255,255,255,0.86)">
-            {wrap(drawn, 40, 1)[0]}
+            {wrap(drawn, 34, 1)[0]}
+          </text>
+          <text
+            x={W - PAD}
+            y={50}
+            fontSize={13}
+            fontFamily={MONO}
+            textAnchor="end"
+            fill="#ffffff"
+            opacity={0.8}
+          >
+            {number}
           </text>
         </g>
       )}

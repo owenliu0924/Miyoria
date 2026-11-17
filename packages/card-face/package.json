@@ -16,10 +16,16 @@
       "@miyoria/source": "./src/render.tsx",
       "types": "./dist/render.d.ts",
       "default": "./dist/render.js"
+    },
+    "./fonts": {
+      "@miyoria/source": "./src/fonts.ts",
+      "types": "./dist/fonts.d.ts",
+      "default": "./dist/fonts.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "fonts"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

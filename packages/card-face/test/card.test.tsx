@@ -71,4 +71,13 @@ describe("a daily card", () => {
   it("prints nothing of a draw on an older card", () => {
     expect(draw(card("很好"))).not.toContain("・");
   });
+
+  it("puts its number in the strip, with nothing of the header under it", () => {
+    const daily = draw({ ...card("很好"), rarity: "N", parts: [{ name: "夜空" }] });
+    expect(daily.match(/No\.001/g)).toHaveLength(1);
+    expect(daily).not.toContain("MIYORIA");
+    const older = draw(card("很好"));
+    expect(older).toContain("MIYORIA");
+    expect(older.match(/No\.001/g)).toHaveLength(1);
+  });
 });
