@@ -656,3 +656,17 @@ describe("HttpSingWorker through the registry", () => {
     expect((await rejection(worker.submit({ query: "a" }))).maybeReceived).toBe(true);
   });
 });
+
+describe("a list that was empty when it was made", () => {
+  it("asks its owner again before it picks a worker", async () => {
+    let known: { name: string; worker: SingWorker }[] = [];
+    const failover: FailoverSingWorker = new FailoverSingWorker([], {
+      retryMs: 1000,
+      refresh: () => failover.update(known),
+    });
+    expect(failover.current()).toBeNull();
+    known = [{ name: "late", worker: new FakeWorker("late") }];
+    expect(failover.current()).toBe("late");
+    expect(await failover.health()).toBeNull();
+  });
+});
