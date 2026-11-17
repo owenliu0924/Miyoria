@@ -917,6 +917,124 @@
         "scope"
       ]
     },
+    "ApiAuctionView": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "lot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiLotView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "opens_at": {
+                  "type": "string"
+                },
+                "plan": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/ApiLotKind"
+                        },
+                        {
+                          "type": "string",
+                          "const": "skip"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "opens_at",
+                "plan"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mine": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "leading": {
+                  "type": "boolean"
+                },
+                "won": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "amount",
+                "leading",
+                "won"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "name": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "amount",
+              "name",
+              "at"
+            ]
+          }
+        }
+      },
+      "required": [
+        "currency",
+        "running",
+        "lot",
+        "next",
+        "mine",
+        "history"
+      ]
+    },
     "ApiAuthMethods": {
       "type": "object",
       "properties": {
@@ -982,6 +1100,48 @@
             "context"
           ]
         }
+      ]
+    },
+    "ApiBidRequest": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "ApiBidResult": {
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "ends_at": {
+          "type": "string"
+        },
+        "extended": {
+          "type": "boolean"
+        },
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "amount",
+        "ends_at",
+        "extended",
+        "balance"
       ]
     },
     "ApiBoardChoice": {
@@ -6615,6 +6775,676 @@
         "proposal"
       ]
     },
+    "ApiLotKind": {
+      "type": "string",
+      "enum": [
+        "call_name",
+        "frame"
+      ]
+    },
+    "ApiLotNameRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "give_up": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApiLotNameResult": {
+      "type": "object",
+      "properties": {
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "applied_until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refunded": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "call_name",
+        "applied_until",
+        "refunded"
+      ]
+    },
+    "ApiLotPlan": {
+      "type": "object",
+      "properties": {
+        "week": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "opens_at": {
+          "type": "string"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiLotKind"
+            },
+            {
+              "type": "string",
+              "const": "skip"
+            }
+          ]
+        }
+      },
+      "required": [
+        "week",
+        "opens_at",
+        "plan"
+      ]
+    },
+    "ApiLotPlanRequest": {
+      "type": "object",
+      "properties": {
+        "lot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiLotKind"
+            },
+            {
+              "type": "string",
+              "const": "skip"
+            }
+          ]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "lot"
+      ],
+      "additionalProperties": false
+    },
+    "ApiLotView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "week": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiLotKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closing",
+            "naming",
+            "applied",
+            "done",
+            "refunded",
+            "cancelled"
+          ]
+        },
+        "picked_by": {
+          "type": "string",
+          "enum": [
+            "owner",
+            "her",
+            "rotation"
+          ]
+        },
+        "opens_at": {
+          "type": "string"
+        },
+        "ends_at": {
+          "type": "string"
+        },
+        "extended": {
+          "type": "boolean"
+        },
+        "opening_bid": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "step": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "min_bid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "top": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "amount",
+                "name"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bids": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "bidders": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "winner": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "price": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "name",
+                "price"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "call_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name_due": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "applied_until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "week",
+        "kind",
+        "name",
+        "detail",
+        "state",
+        "picked_by",
+        "opens_at",
+        "ends_at",
+        "extended",
+        "opening_bid",
+        "step",
+        "min_bid",
+        "top",
+        "bids",
+        "bidders",
+        "winner",
+        "call_name",
+        "name_due",
+        "applied_until"
+      ]
+    },
+    "ApiLotteryResult": {
+      "type": "object",
+      "properties": {
+        "week": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "drawn",
+            "refunded"
+          ]
+        },
+        "drawn_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tickets": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "buyers": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "pot": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "prize": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "burned": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "winner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "week",
+        "state",
+        "drawn_at",
+        "tickets",
+        "buyers",
+        "pot",
+        "prize",
+        "burned",
+        "winner"
+      ]
+    },
+    "ApiLotteryView": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "per_person": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "min_buyers": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "prize_share": {
+          "type": "number"
+        },
+        "week": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "drawing",
+            "drawn",
+            "refunding",
+            "refunded"
+          ]
+        },
+        "draw_at": {
+          "type": "string"
+        },
+        "tickets": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "buyers": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "pot": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "mine": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "tickets": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "tickets"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiLotteryResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "currency",
+        "running",
+        "price",
+        "per_person",
+        "min_buyers",
+        "prize_share",
+        "week",
+        "state",
+        "draw_at",
+        "tickets",
+        "buyers",
+        "pot",
+        "mine",
+        "last"
+      ]
+    },
+    "ApiMarketHistory": {
+      "type": "object",
+      "properties": {
+        "lots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "week": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "kind": {
+                "$ref": "#/$defs/ApiLotKind"
+              },
+              "name": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "closing",
+                  "naming",
+                  "applied",
+                  "done",
+                  "refunded",
+                  "cancelled"
+                ]
+              },
+              "picked_by": {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "her",
+                  "rotation"
+                ]
+              },
+              "opens_at": {
+                "type": "string"
+              },
+              "ends_at": {
+                "type": "string"
+              },
+              "extended": {
+                "type": "boolean"
+              },
+              "opening_bid": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "step": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "min_bid": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "top": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "amount": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "amount",
+                      "name"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "bids": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "bidders": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "winner": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "price": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "price"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "call_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name_due": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "applied_until": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "price": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "week",
+              "kind",
+              "name",
+              "detail",
+              "state",
+              "picked_by",
+              "opens_at",
+              "ends_at",
+              "extended",
+              "opening_bid",
+              "step",
+              "min_bid",
+              "top",
+              "bids",
+              "bidders",
+              "winner",
+              "call_name",
+              "name_due",
+              "applied_until",
+              "note",
+              "price"
+            ]
+          }
+        },
+        "weeks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLotteryResult"
+          }
+        }
+      },
+      "required": [
+        "lots",
+        "weeks"
+      ]
+    },
+    "ApiMarketSettleRequest": {
+      "type": "object",
+      "properties": {
+        "what": {
+          "type": "string",
+          "enum": [
+            "auction",
+            "lottery"
+          ]
+        }
+      },
+      "required": [
+        "what"
+      ],
+      "additionalProperties": false
+    },
     "ApiMcpServerInfo": {
       "type": "object",
       "properties": {
@@ -7000,6 +7830,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 120
+        },
+        "priority": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -7531,6 +8364,64 @@
         "position"
       ]
     },
+    "ApiMyBids": {
+      "type": "object",
+      "properties": {
+        "bids": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lot": {
+                "type": "string"
+              },
+              "week": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "kind": {
+                "$ref": "#/$defs/ApiLotKind"
+              },
+              "name": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "leading",
+                  "outbid",
+                  "won",
+                  "lost",
+                  "cancelled",
+                  "refunded"
+                ]
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "lot",
+              "week",
+              "kind",
+              "name",
+              "amount",
+              "state",
+              "at"
+            ]
+          }
+        }
+      },
+      "required": [
+        "bids"
+      ]
+    },
     "ApiMyCard": {
       "type": "object",
       "properties": {
@@ -7571,6 +8462,67 @@
       },
       "required": [
         "cards"
+      ]
+    },
+    "ApiMyTickets": {
+      "type": "object",
+      "properties": {
+        "weeks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "week": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "draw_at": {
+                "type": "string"
+              },
+              "tickets": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "paid": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "drawing",
+                  "drawn",
+                  "refunding",
+                  "refunded"
+                ]
+              },
+              "won": {
+                "type": "boolean"
+              },
+              "prize": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "week",
+              "draw_at",
+              "tickets",
+              "paid",
+              "state",
+              "won",
+              "prize"
+            ]
+          }
+        }
+      },
+      "required": [
+        "weeks"
       ]
     },
     "ApiNoteAuthor": {
@@ -12611,6 +13563,52 @@
         "turn",
         "voice_quiet",
         "manual"
+      ]
+    },
+    "ApiTicketRequest": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "additionalProperties": false
+    },
+    "ApiTicketResult": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "mine": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "charged": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "count",
+        "mine",
+        "charged",
+        "balance"
       ]
     },
     "ApiTimeContext": {

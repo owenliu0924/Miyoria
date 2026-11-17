@@ -34,6 +34,7 @@ import { fortune } from "./fortune.js";
 import { self, world } from "./inner.js";
 import { knowledge, mindDigests, reflection } from "./learning.js";
 import { life } from "./life.js";
+import { market, marketAdmin } from "./market.js";
 import { member } from "./member.js";
 import { memory } from "./memory.js";
 import { mind } from "./mind.js";
@@ -442,6 +443,41 @@ export {
   type ReminderView,
   ReminderViewSchema,
 } from "./life.js";
+export {
+  type AuctionView,
+  AuctionViewSchema,
+  type BidRequest,
+  BidRequestSchema,
+  type BidResult,
+  BidResultSchema,
+  LotKindSchema,
+  type LotPlan,
+  type LotPlanRequest,
+  LotPlanRequestSchema,
+  LotPlanSchema,
+  type LotteryResult,
+  LotteryResultSchema,
+  type LotteryView,
+  LotteryViewSchema,
+  type LotView,
+  LotViewSchema,
+  type MarketHistory,
+  MarketHistorySchema,
+  type MyBids,
+  MyBidsSchema,
+  type MyTickets,
+  MyTicketsSchema,
+  type NameRequest,
+  NameRequestSchema,
+  type NameResult,
+  NameResultSchema,
+  type SettleRequest,
+  SettleRequestSchema,
+  type TicketRequest,
+  TicketRequestSchema,
+  type TicketResult,
+  TicketResultSchema,
+} from "./market.js";
 export {
   type CardField,
   CardFieldSchema,
@@ -900,6 +936,8 @@ export const contract = {
   wallet,
   agency,
   fortune,
+  market,
+  marketAdmin,
   eval: evalRoutes,
 };
 

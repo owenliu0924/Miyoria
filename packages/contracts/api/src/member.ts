@@ -131,7 +131,11 @@ export type MemberForgetResult = z.output<typeof MemberForgetResultSchema>;
 
 /** Body of `POST /api/member/songs`. */
 export const SongRequestSchema = z
-  .strictObject({ query: z.string().trim().min(1).max(120) })
+  .strictObject({
+    query: z.string().trim().min(1).max(120),
+    /** Use a song priority ticket (coins, a daily limit): ahead of the songs without one. */
+    priority: z.boolean().optional(),
+  })
   .meta({ id: "ApiMemberSongRequest" });
 export type SongRequest = z.input<typeof SongRequestSchema>;
 

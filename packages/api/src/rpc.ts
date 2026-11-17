@@ -70,6 +70,7 @@ import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
 import { lifeRpc } from "./life.js";
 import { livePatRpc } from "./live.js";
 import { llmCallsRpc, thoughtRpc } from "./llmcalls.js";
+import { marketAdminRpc, marketRpc } from "./market-routes.js";
 import { memberRpc } from "./member.js";
 import { memoryRpc } from "./memory.js";
 import { turnMetricsRpc } from "./metrics-turns.js";
@@ -123,6 +124,8 @@ export const router = os.router({
   wallet: walletRpc,
   agency: agencyRpc,
   fortune: fortuneRpc,
+  market: marketRpc,
+  marketAdmin: marketAdminRpc,
   people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
   events: eventsRpc,
@@ -156,8 +159,8 @@ export function defaultResponseCheck(env: NodeJS.ProcessEnv = process.env): Resp
   return FROM_SOURCE ? "strict" : "production";
 }
 
-/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the cards, the wallet and fortune are member pages too). */
-const PUBLIC_SIDE = new Set(["public", "member", "cards", "wallet", "agency", "fortune"]);
+/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the cards, the wallet, fortune and the market are member pages too). */
+const PUBLIC_SIDE = new Set(["public", "member", "cards", "wallet", "agency", "fortune", "market"]);
 
 /** Whether a route is served at all: the public side's routes go away with its switch. */
 function served(state: ApiState, path: readonly string[]): boolean {

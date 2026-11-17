@@ -10,7 +10,8 @@
 // * `GET /api/member/export`: the same as a file, with what `/me memory export` would give, minus
 //   what belongs to others.
 // * `POST /api/member/forget` `{ confirm: true }`: `/me memory forget all`.
-// * `POST /api/member/songs` `{ query }`: a song request, as if said in chat.
+// * `POST /api/member/songs` `{ query, priority? }`: a song request, as if said in chat; with
+//   `priority`, paid with a song priority ticket (`409` with the reason when it cannot be).
 // * `GET /api/member/card`, `POST /api/member/card` `{ foil? }`: the daily card she gives them,
 //   the card view below frozen with a serial and the parts drawn onto it (`card.ts`); the rest of
 //   their cards (the dex, the pity, the wishlist) is `cards-routes.ts`.
@@ -49,7 +50,7 @@ import {
   ownMemories,
   visibleToSelf,
 } from "@miyoria/memory/memory";
-import { SingerKey, type SongEntry } from "@miyoria/sing";
+import { SingerKey, type SongEntry, SongPriorityError } from "@miyoria/sing";
 import { type MemoryRecord, MessageLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {
   type AccountRef,
@@ -472,7 +473,12 @@ export function acceptableQuery(query: string): boolean {
  * the gate runs it for a `user`, which means the rules, the permission and the rate limits apply,
  * and she may turn it down. `actAs` (the panel) would skip those, and force the song.
  */
-async function requestSong(state: ApiState, c: ApiContext, query: string): Promise<SongAccepted> {
+async function requestSong(
+  state: ApiState,
+  c: ApiContext,
+  query: string,
+  priority = false,
+): Promise<SongAccepted> {
   const session = record(c);
   const { account } = session;
   const wait = state.publicSide.admitMember(`song:${accountRefString(account)}`);
@@ -489,7 +495,8 @@ async function requestSong(state: ApiState, c: ApiContext, query: string): Promi
   const outcome = await actuators.invoke({
     principal: Principals.user(account, state.monitor.voiceContext()),
     capability: "sing.request",
-    args: by === "" ? { query } : { query, by },
+    // A song priority ticket is theirs to use here: their own request, with no turn of hers.
+    args: { query, ...(by === "" ? {} : { by }), ...(priority ? { priority: true } : {}) },
     why: "公開頁點歌",
     turn: null,
   });
@@ -498,7 +505,11 @@ async function requestSong(state: ApiState, c: ApiContext, query: string): Promi
     if (outcome.decision.stage === "rate") throw new ApiError(429, "今天點歌的次數到上限了");
     throw refused();
   }
-  if (outcome.status === "failed") throw new ApiError(502, "歌曲服務暫時無法使用");
+  if (outcome.status === "failed") {
+    // A ticket that could not be taken says why (their coins, the day's limit); nothing was charged.
+    if (outcome.cause instanceof SongPriorityError) throw new ApiError(409, outcome.error);
+    throw new ApiError(502, "歌曲服務暫時無法使用");
+  }
   return { accepted: true };
 }
 
@@ -590,7 +601,7 @@ export const memberRpc = {
   me: os.member.me.handler(({ context }) => memberView(context.state, context.c)),
   forget: os.member.forget.handler(({ context }) => forgetMine(context.state, context.c)),
   requestSong: os.member.requestSong.handler(({ input, context }) =>
-    requestSong(context.state, context.c, input.body.query),
+    requestSong(context.state, context.c, input.body.query, input.body.priority === true),
   ),
   cards: os.member.cards.handler(({ context }) => cardsMine(context.state, context.c)),
   issueCard: os.member.issueCard.handler(({ input, context }) => {
