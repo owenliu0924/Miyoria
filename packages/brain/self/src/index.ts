@@ -34,6 +34,17 @@ export {
   type DelegateToolDeps,
   delegateTools,
 } from "./delegate-tools.js";
+export {
+  type FeelDropReason,
+  type FeelLine,
+  type FeelSelf,
+  isFeelLine,
+  limitProposals,
+  MAX_FEEL_LINES,
+  MAX_FEEL_PEOPLE,
+  type ParsedFeel,
+  parseFeel,
+} from "./feel.js";
 export { composeGuards, permissiveGuard } from "./guard.js";
 export {
   type LimitName,

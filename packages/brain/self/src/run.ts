@@ -167,7 +167,7 @@ interface Step {
   blocked: string[];
   reasoning: string;
   calls: ToolCall[];
-  /** `<silence/>` before any text. */
+  /** `<silence/>` before any text, or only a feel block. */
   silence: boolean;
   /** The model failed (not an abort). */
   error: unknown;
@@ -260,6 +260,8 @@ class Run {
   #silentWaits = 0;
   /** The last step's text of a profile that does not speak. */
   #text = "";
+  /** The inside of every feel block of the run's steps. */
+  readonly #feel: string[] = [];
   /** Call ids of the transcript's tail and of this run. */
   readonly #callIds = new Set<string>();
 
@@ -352,6 +354,7 @@ class Run {
       cost_usd: this.#cost,
       limits: [...this.#hit],
       compacted,
+      feel: [...this.#feel],
     };
     this.#emit({
       type: "finished",
@@ -655,7 +658,8 @@ class Run {
       await take(screen.finish());
     } catch (error) {
       if (this.#signal.aborted) {
-        // What already reached people is hers; calls not yet run are not kept.
+        // What already reached people is hers, and what she felt; calls not yet run are not kept.
+        this.#feel.push(...screen.feel);
         this.#record(
           {
             role: "assistant",
@@ -688,6 +692,8 @@ class Run {
       }
     }
     step.silence = screen.silence;
+    // Her feel blocks are the host's, never the transcript's: only the lines that went out are.
+    this.#feel.push(...screen.feel);
     // A call is answered by its id: one the session already has (or none) is replaced.
     step.calls = calls
       .filter((c) => c.name !== "" || c.arguments !== "")
@@ -715,6 +721,7 @@ class Run {
       ["leak_dropped", screen.leakDropped],
       ["self_talk_cut", screen.selfTalkCut],
       ["tag_stripped", screen.tagsStripped],
+      ["feel_cut", screen.feelCut],
     ] as const;
     for (const [kind, count] of screened) {
       if (count > 0) this.#emit({ type: "screened", turn: this.turn, kind, count });

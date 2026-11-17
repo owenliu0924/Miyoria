@@ -16,6 +16,11 @@
 // on its own (#10, today's `Speech`): one that is reasoning or a note to herself is not said, the
 // others are; nothing is held back waiting for the next. Links and ``` blocks are never read out:
 // each comes as a line of its own (`asideLine`), for the outlet to put in writing.
+//
+// Her `<feel>` blocks (docs/design/v5-heart.md §2.1) never go out: the parser swallows them and
+// they are kept apart (`feel`) for the host to apply; a line that reads like one written without
+// its tags is left out too (`isFeelLine`). A step that is only a feel block is silent, as with
+// `<silence/>`, and its feel still counts.
 
 import {
   ExpressionParser,
@@ -28,6 +33,7 @@ import {
   type Segment,
   SentenceSplitter,
 } from "../../agent/src/index.js";
+import { isFeelLine } from "./feel.js";
 
 export interface ScreenedLine {
   text: string;
@@ -84,11 +90,17 @@ export class StepText {
   #emotion: string | null = null;
   #seenText = false;
   #silence = false;
+  /** The inside of each feel block of the step. */
+  readonly #feel: string[] = [];
+  /** A line (a sentence, spoken) passed the feel check: she wrote words for people. */
+  #kept = false;
   /** Sentences left out, spoken (`unit: "sentence"`). */
   #leakSentences = 0;
   #selfTalkSentences = 0;
   /** Tools written as tags that were taken out of her text. */
   tagsStripped = 0;
+  /** Lines (sentences, spoken) left out because they read like a feel block without its tags. */
+  feelCut = 0;
 
   constructor(unit: TextUnit = "line", checks: OutputChecks = ALL_CHECKS) {
     this.#checks = checks;
@@ -100,9 +112,17 @@ export class StepText {
     this.#sentences = unit === "sentence";
   }
 
-  /** `<silence/>` came before any text: she chose not to speak, and the rest is ignored. */
+  /**
+   * `<silence/>` came before any text (she chose not to speak, and the rest is ignored), or all
+   * she wrote was a feel block.
+   */
   get silence(): boolean {
-    return this.#silence;
+    return this.#silence || ((this.#feel.length > 0 || this.feelCut > 0) && !this.#kept);
+  }
+
+  /** The inside of each feel block of the step so far, in order. */
+  get feel(): readonly string[] {
+    return this.#feel;
   }
 
   /** The response was judged a reasoning leak (#9), or one of its sentences was (#10). */
@@ -161,7 +181,12 @@ export class StepText {
   #take(segments: readonly Segment[]): ScreenedLine[] {
     const out: ScreenedLine[] = [];
     for (const segment of segments) {
-      if (this.#silence) break;
+      // A feel block counts even after `<silence/>`: she said nothing, and still felt something.
+      if (segment.type === "feel") {
+        this.#feel.push(segment.text);
+        continue;
+      }
+      if (this.#silence) continue;
       switch (segment.type) {
         case "text":
           if (segment.text.trim() !== "") this.#seenText = true;
@@ -183,10 +208,27 @@ export class StepText {
         case "tool":
           this.tagsStripped += 1;
           break;
+        case "feel_start":
+          // She writes the block after her words: the last of them goes out now, not after it.
+          out.push(...this.#flushWords());
+          break;
         default:
           break;
       }
     }
+    return out;
+  }
+
+  /** The words held for the end marks or the line break that might follow, as they are. */
+  #flushWords(): ScreenedLine[] {
+    if (!this.#sentences) {
+      const out = this.#line(this.#buffer);
+      this.#buffer = "";
+      return out;
+    }
+    const out = this.#links.flush().flatMap((part) => this.#spoken(part.code, part.text));
+    const rest = this.#splitter.flush();
+    if (rest !== null) out.push(...this.#sentence(rest));
     return out;
   }
 
@@ -216,6 +258,7 @@ export class StepText {
     const t = text.trim();
     if (t === "") return [];
     const before = this.#splitter.flush();
+    this.#kept = true;
     return [
       ...(before === null ? [] : this.#sentence(before)),
       { text: t, emotion: this.#emotion },
@@ -226,6 +269,11 @@ export class StepText {
   #sentence(raw: string): ScreenedLine[] {
     const text = raw.trim();
     if (!isSpeakable(text)) return [];
+    if (isFeelLine(text)) {
+      this.feelCut += 1;
+      return [];
+    }
+    this.#kept = true;
     if (this.#checks.selfTalk && isSelfTalk(text)) {
       this.#selfTalkSentences += 1;
       return [];
@@ -240,6 +288,11 @@ export class StepText {
   #line(raw: string): ScreenedLine[] {
     const text = raw.trim();
     if (text === "") return [];
+    if (isFeelLine(text)) {
+      this.feelCut += 1;
+      return [];
+    }
+    this.#kept = true;
     return this.#screen.push({ text, emotion: this.#emotion }).send;
   }
 }
