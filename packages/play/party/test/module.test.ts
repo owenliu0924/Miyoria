@@ -12,6 +12,9 @@ import {
   EventLogKey,
   type EventPayload,
   Events,
+  type HeartEvidenceInput,
+  HeartKey,
+  type HeartPeople,
   type InputVerdict,
   type JsonValue,
   ModerationKey,
@@ -26,6 +29,8 @@ import {
   type PromptRequest,
   type PublishedEvent,
   type PublishMetaArgs,
+  type SocialSignals,
+  SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -238,6 +243,29 @@ describe("party module", () => {
     expect(h.observations().at(-1)?.summary).toContain("最後分數:Amy 1、Bob 1");
     // Nothing of hers went out on the bus: no line, no impulse.
     expect(h.events.some((e) => e.type === Events.ArbiterImpulse.type)).toBe(false);
+  });
+
+  it("an ended game is evidence for her nightly reflection on everyone who played", async () => {
+    h = await Harness.create();
+    const evidence: HeartEvidenceInput[] = [];
+    h.sup.services.provide("heart", HeartKey, {
+      evidence: (input: HeartEvidenceInput) => evidence.push(input),
+    } as unknown as HeartPeople);
+    h.sup.services.provide("heart", SocialSignalsKey, {
+      attitude: (a) => ({ person: `p-${a.id}` }) as never,
+    } as SocialSignals);
+    await h.invoke("party.start", { game: "quiz", questions: QUESTIONS });
+    await h.invoke("party.host", { action: "next" });
+    await h.say(AMY, "Amy", "玉山");
+    await h.invoke("party.host", { action: "next" });
+    await h.type(BOB, "Bob", "tokyo");
+    expect(h.sup.services.require(PartyTableKey).session(VOICE)).toBeNull();
+    expect(evidence.map((e) => [e.person, e.kind, e.weight])).toEqual([
+      [`p-${AMY.id}`, "played_together", null],
+      [`p-${BOB.id}`, "played_together", null],
+    ]);
+    expect(evidence[0]?.detail).toContain("問答");
+    expect(evidence[0]?.session).toContain(VOICE.channel);
   });
 
   it("shows the game in the voice channel and its chat, not in other channels", async () => {
