@@ -279,6 +279,16 @@ export const COMMANDS: CommandSpec = {
           help: "用編輯器開啟 miyoria.toml($VISUAL / $EDITOR,Windows 預設記事本)",
           run: (ctx) => configCmd.edit(ctx.config, ctx.yes),
         },
+        {
+          name: "overrides",
+          help: "列出面板改過的設定(存在資料庫,蓋過 miyoria.toml 的值)、檔案的值和誰改的",
+          run: (ctx) => configCmd.overrides(ctx.config),
+        },
+        {
+          name: "bake",
+          help: "把面板改過的設定寫進 miyoria.toml(保留註解),再清掉資料庫裡的這些值",
+          run: (ctx) => configCmd.bake(ctx.config, ctx.yes, ctx.yes ? null : interactivePrompter()),
+        },
       ],
     },
     {
