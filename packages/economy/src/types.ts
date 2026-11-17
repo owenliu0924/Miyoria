@@ -92,6 +92,8 @@ export interface WalletView {
   recent: LedgerLine[];
   /** Whether they are on the sponsor board (on unless they left; `false` for strangers). */
   on_board: boolean;
+  /** The share of a transfer the sender pays on top, burned (`transfer_fee`; the amount is rounded up). */
+  transfer_fee: number;
 }
 
 export interface CheckinResult {
@@ -205,8 +207,9 @@ export interface Economy {
   /** The bounties she has open. */
   bounties(): Promise<BountyView[]>;
   /**
-   * Coins from one person to another she knows (`EconomyError`: 400 a bad amount or yourself,
-   * 402 short, 403 a stranger on either side, in the same words, 429 the sender's day). Not a gift
+   * Coins from one person to another she knows, plus a fee of the sender's that is burned
+   * (`transfer_fee`; `EconomyError`: 400 a bad amount or yourself, 402 short of the amount and the
+   * fee, 403 a stranger on either side, in the same words, 429 the sender's day). Not a gift
    * to her. The same key twice answers what the first did.
    */
   transfer(from: AccountRef, to: AccountRef, amount: number, key: string): Promise<TransferResult>;
@@ -218,8 +221,10 @@ export interface Economy {
 
 /** What a transfer did. */
 export interface TransferResult {
-  /** What left the sender's wallet (and reached the other's). */
+  /** What reached the other's wallet. */
   sent: number;
+  /** The fee on top of it, taken from the sender and burned. */
+  fee: number;
   /** The sender's balance after. */
   balance: number;
   /** The receiver, as the sender's ledger names them. */

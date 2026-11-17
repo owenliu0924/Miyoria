@@ -106,6 +106,7 @@ const WALLET: WalletView = {
     { ts: "2026-11-08T02:00:00Z", delta: -10, label: "餵了一碗白飯" },
   ],
   on_board: false,
+  transfer_fee: 0.05,
 };
 
 const SLIP: IssuedFortune = {
@@ -216,7 +217,7 @@ function core(o: Options = {}) {
     }
     if (path === "/api/member/transfer") {
       wallet = { ...wallet, balance: wallet.balance - 20 };
-      return { body: { sent: 20, balance: wallet.balance, to: "Bob" } };
+      return { body: { sent: 20, fee: 1, balance: wallet.balance, to: "Bob" } };
     }
     if (path === "/api/member/board") {
       const on = (body as { on: boolean }).on;
@@ -852,6 +853,8 @@ describe("the newer places to spend", () => {
     await userEvent.click(send);
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText(/123456789/)).toBeInTheDocument();
+    // 5% of 20 is 1: the dialog says what is taken on top.
+    expect(within(dialog).getByText(/另付手續費 1.*燒掉.*共扣 21/)).toBeInTheDocument();
     expect(posts.filter((p) => p.path === "/api/member/transfer")).toEqual([]);
     await userEvent.click(within(dialog).getByRole("button", { name: "轉出" }));
     await waitFor(() =>
@@ -861,7 +864,7 @@ describe("the newer places to spend", () => {
       }),
     );
     expect(keys.at(-1)).toBeTruthy();
-    expect(await screen.findByText(/已轉 20.*Bob/)).toBeInTheDocument();
+    expect(await screen.findByText(/已轉 20.*Bob.*手續費 1/)).toBeInTheDocument();
   });
 
   it("does not send a transfer when they back out", async () => {

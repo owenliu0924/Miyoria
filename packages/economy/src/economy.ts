@@ -678,6 +678,8 @@ export class EconomyService implements Economy {
         return PAID_NAME[r.reason].label;
       case "transfer_out":
         return `轉給 ${otherName(r.ref) ?? "朋友"}`;
+      case "transfer_fee":
+        return "轉帳手續費";
       case "transfer_in":
         return `${otherName(r.ref) ?? "朋友"} 轉給你`;
       case "refund":
@@ -718,6 +720,7 @@ export class EconomyService implements Economy {
       hungry: null,
       recent: [],
       on_board: false,
+      transfer_fee: this.#d.config.transfer_fee,
     };
   }
 
@@ -825,6 +828,7 @@ export class EconomyService implements Economy {
       hungry: hunger === null ? null : hungerWord(hunger, c.full_below),
       recent: recent.map((r) => this.#line(r)),
       on_board: await ledger.onBoard(this.#d.profile, who.wallet),
+      transfer_fee: c.transfer_fee,
     };
   }
 

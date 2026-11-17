@@ -202,7 +202,9 @@ class Handler {
       if (to.platform !== inv.invoker.platform) return notice("info", NO_RECEIVER);
       const r = await economy.transfer(inv.invoker, to, amount, `discord:${newId()}`);
       const view = await economy.wallet(inv.invoker);
-      return result(`轉了 ${r.sent} ${view.currency}給 ${r.to}，剩 ${r.balance}。`);
+      return result(
+        `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。`,
+      );
     });
   }
 
@@ -322,10 +324,10 @@ function register(registry: CommandRegistry, handler: Handler): void {
     },
   );
   registry.register(
-    commandSpec("me give", "把魚幣轉給她認識的另一個人", {
+    commandSpec("me give", "把魚幣轉給她認識的另一個人（另收手續費，會燒掉）", {
       args: [
         argSpec("user", "要轉給誰", ArgKind.user),
-        argSpec("amount", "多少魚幣", ArgKind.integer),
+        argSpec("amount", "對方收到多少魚幣（手續費你另付）", ArgKind.integer),
       ],
       permission: WALLET_NODE,
       ephemeral: true,

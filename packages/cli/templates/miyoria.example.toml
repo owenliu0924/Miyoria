@@ -395,7 +395,8 @@ dirs = ["extensions"]
 # fortune = 10                # 她幫你寫一張籤
 # fortunes_per_day = 1
 # # ---- 人和人之間(§13):transfer_max = 0 或任一個每日上限 = 0 就關閉轉帳
-# transfer_max = 50           # 一次轉帳最多
+# transfer_max = 50           # 一次轉帳最多(收到的數量)
+# transfer_fee = 0.05         # 手續費:轉出數量的這個比例,進位、至少 1,由轉的人另付,燒掉(0 就不收)
 # transfer_out_per_day = 100  # 一個人一天最多轉出
 # transfer_in_per_day = 100   # 一個人一天最多收到
 # board_days = 30             # 贊助榜統計過去幾天花在她身上的

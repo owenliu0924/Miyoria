@@ -1843,6 +1843,7 @@ describe("the wallet", () => {
     "shop[].why",
     "streak",
     "today_earned",
+    "transfer_fee",
   ];
 
   /** The rig with a real wallet on an in-memory ledger, and her hunger. */
@@ -2383,14 +2384,16 @@ describe("between people, the sponsor board and fortune slips", () => {
       const body = { to_discord_id: BOB, amount: 30 };
       const first = await r.spend("/api/member/transfer", cookie, body, "t-1");
       expect(first.status).toBe(200);
-      expect(first.body).toEqual({ sent: 30, balance: 50, to: "Bob" });
+      // 5% of 30 rounds up to a fee of 2.
+      expect(first.body).toEqual({ sent: 30, fee: 2, balance: 48, to: "Bob" });
       expect((await r.spend("/api/member/transfer", cookie, body, "t-1")).body).toEqual(first.body);
-      expect(await r.balance(ALICE)).toBe(50);
+      expect(await r.balance(ALICE)).toBe(48);
       expect(await r.balance(BOB)).toBe(30);
       const mine = (await r.get("/api/member/wallet", cookie)).body as {
         recent: { delta: number; label: string }[];
       };
-      expect(mine.recent[0]).toMatchObject({ delta: -30, label: "轉給 Bob" });
+      expect(mine.recent[0]).toMatchObject({ delta: -2, label: "轉帳手續費" });
+      expect(mine.recent[1]).toMatchObject({ delta: -30, label: "轉給 Bob" });
       const theirs = (await r.get("/api/member/wallet", await r.login("bob"))).body as {
         recent: { delta: number; label: string }[];
       };

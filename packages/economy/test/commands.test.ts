@@ -47,6 +47,7 @@ function view(over: Partial<WalletView> = {}): WalletView {
     hungry: "hungry",
     recent: [],
     on_board: false,
+    transfer_fee: 0.05,
     ...over,
   };
 }
@@ -92,7 +93,7 @@ function fake(): Fake {
     transfer: async (_a: AccountRef, to: AccountRef, amount: number, key: string) => {
       calls.push(`transfer:${to.platform}:${to.id}:${amount}:${key}`);
       if (state.fail) throw state.fail;
-      return { sent: amount, balance: 90, to: "Bob" };
+      return { sent: amount, fee: 2, balance: 90, to: "Bob" };
     },
     board: async (limit?: number) => {
       calls.push(`board:${limit}`);
@@ -339,7 +340,7 @@ describe("wallet commands", () => {
     const spec = registry.get(["me", "give"]);
     expect(spec?.ephemeral).toBe(true);
     const reply = await run(registry, "me give", { user: "77", amount: 25 });
-    expect(reply.text).toBe("轉了 25 魚幣給 Bob，剩 90。");
+    expect(reply.text).toBe("轉了 25 魚幣給 Bob，另付手續費 2（燒掉），剩 90。");
     expect(reply.card?.accent).toBe("neutral");
     expect(calls[0]).toMatch(/^transfer:discord:77:25:discord:/);
     // Another platform's account is not someone one can reach, in the receiver's usual words.

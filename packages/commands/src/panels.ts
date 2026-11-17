@@ -578,8 +578,8 @@ function mePages(policyUrl: string | null): PanelPage[] {
           label: "轉給別人",
           path: "me give",
           ask: {
-            title: "轉魚幣給別人",
-            fields: [USER_FIELD, field("amount", "多少魚幣", { placeholder: "1 到 50" })],
+            title: "轉魚幣給別人（另收手續費，會燒掉）",
+            fields: [USER_FIELD, field("amount", "對方收到多少魚幣", { placeholder: "1 到 50" })],
           },
         },
         { id: "board", label: "排行榜", path: "me board" },

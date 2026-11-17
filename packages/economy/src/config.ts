@@ -171,6 +171,11 @@ export const EconomyConfigSchema = z.object({
   // `0` closes transfers.
   /** The most one transfer may carry. */
   transfer_max: coins.default(50),
+  /**
+   * The fee on a transfer, as a share of the amount sent: rounded up, at least 1 coin, paid by the
+   * sender on top of the amount and burned (it goes to nobody). `0` charges none.
+   */
+  transfer_fee: z.number().min(0).max(1).default(0.05),
   /** What one person may send in a local day, and what one person may receive. */
   transfer_out_per_day: coins.default(100),
   transfer_in_per_day: coins.default(100),

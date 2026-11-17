@@ -11607,6 +11607,9 @@
         "sent": {
           "type": "number"
         },
+        "fee": {
+          "type": "number"
+        },
         "balance": {
           "type": "number"
         },
@@ -11616,6 +11619,7 @@
       },
       "required": [
         "sent",
+        "fee",
         "balance",
         "to"
       ]
@@ -12580,6 +12584,9 @@
         },
         "on_board": {
           "type": "boolean"
+        },
+        "transfer_fee": {
+          "type": "number"
         }
       },
       "required": [
@@ -12594,7 +12601,8 @@
         "frames",
         "hungry",
         "recent",
-        "on_board"
+        "on_board",
+        "transfer_fee"
       ]
     },
     "ApiWorkspaceFile": {

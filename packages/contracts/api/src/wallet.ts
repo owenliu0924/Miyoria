@@ -65,6 +65,8 @@ export const WalletViewSchema = z
     recent: z.array(LedgerLineSchema),
     /** On the sponsor board (on unless they left; `false` for strangers). */
     on_board: z.boolean(),
+    /** What a sender pays on top of a transfer, as a share of it (rounded up, at least 1 coin); burned. */
+    transfer_fee: z.number(),
   })
   .meta({ id: "ApiWalletView" });
 export type WalletView = z.output<typeof WalletViewSchema>;
@@ -123,8 +125,10 @@ export type TransferRequest = z.input<typeof TransferRequestSchema>;
 /** `POST /api/member/transfer`. */
 export const TransferResultSchema = z
   .object({
-    /** What left their wallet (and reached the other's). */
+    /** What reached the other's wallet. */
     sent: z.number(),
+    /** The fee on top of it, taken from them and burned. */
+    fee: z.number(),
     balance: z.number(),
     /** The receiver, as their ledger names them. */
     to: z.string(),

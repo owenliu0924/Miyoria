@@ -107,6 +107,7 @@ function walletView(v: WalletView): WalletView {
     hungry: v.hungry,
     recent: v.recent.map(ledgerLine),
     on_board: v.on_board,
+    transfer_fee: v.transfer_fee,
   };
 }
 
@@ -127,6 +128,7 @@ const feedResult = (r: FeedResult): FeedResult => ({
 
 const transferResult = (r: TransferResult): TransferResult => ({
   sent: r.sent,
+  fee: r.fee,
   balance: r.balance,
   to: r.to,
 });

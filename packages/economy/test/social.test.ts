@@ -16,7 +16,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EconomyConfigSchema } from "../src/config.js";
 import { EconomyService } from "../src/economy.js";
 import { CoinLedgerStoreKey } from "../src/records.js";
-import { inIdOf, NO_RECEIVER, NO_TRANSFERS, OWN_ACCOUNT, otherName } from "../src/transfer.js";
+import {
+  inIdOf,
+  NO_RECEIVER,
+  NO_TRANSFERS,
+  OWN_ACCOUNT,
+  otherName,
+  transferFee,
+} from "../src/transfer.js";
 import { EconomyError } from "../src/types.js";
 import { ledgerOf, walletOf } from "./ledger.js";
 
@@ -113,11 +120,13 @@ describe("transfers", () => {
     const r = await rig();
     await post(r, ALICE, 80, "checkin");
     const out = await r.economy.transfer(ALICE, BOB, 30, "k1");
-    expect(out).toEqual({ sent: 30, balance: 50, to: "Bob∶*x*" });
-    expect(await balance(r, ALICE)).toBe(50);
+    // 5% of 30 is 1.5: the fee rounds up to 2, on top of the amount.
+    expect(out).toEqual({ sent: 30, fee: 2, balance: 48, to: "Bob∶*x*" });
+    expect(await balance(r, ALICE)).toBe(48);
     expect(await balance(r, BOB)).toBe(30);
-    const mine = (await r.economy.wallet(ALICE)).recent[0];
+    const [fee, mine] = (await r.economy.wallet(ALICE)).recent;
     const theirs = (await r.economy.wallet(BOB)).recent[0];
+    expect(fee).toMatchObject({ delta: -2, label: "轉帳手續費" });
     expect(mine).toMatchObject({ delta: -30, label: "轉給 Bob∶*x*" });
     expect(theirs).toMatchObject({ delta: 30, label: "Alice 轉給你" });
     const rowOut = (
@@ -153,7 +162,7 @@ describe("transfers", () => {
     const again = await r.economy.transfer(ALICE, BOB, 20, "same");
     expect(again).toEqual(first);
     expect(await balance(r, BOB)).toBe(20);
-    expect(await balance(r, ALICE)).toBe(60);
+    expect(await balance(r, ALICE)).toBe(59);
   });
 
   it("refuses bad amounts and an unfunded sender", async () => {
@@ -163,7 +172,59 @@ describe("transfers", () => {
     await refused(r.economy.transfer(ALICE, BOB, 1.5, "b"), 400);
     await refused(r.economy.transfer(ALICE, BOB, 51, "c"), 400, "一次轉 1 到 50 魚幣");
     await refused(r.economy.transfer(ALICE, BOB, 41, "d"), 402);
+    // The fee counts: 40 and its fee of 2 are more than 40.
+    await refused(r.economy.transfer(ALICE, BOB, 40, "e"), 402, "魚幣不夠(要 42,含手續費 2)");
     expect(await balance(r, ALICE)).toBe(40);
+    expect(await balance(r, BOB)).toBe(0);
+  });
+
+  it("rounds the fee up to at least one coin, and charges none at a rate of 0", () => {
+    expect([1, 10, 20, 21, 60, 100, 140].map((n) => transferFee(n, 0.05))).toEqual([
+      1, 1, 1, 2, 3, 5, 7,
+    ]);
+    expect(transferFee(30, 0.1)).toBe(3);
+    expect(transferFee(30, 0)).toBe(0);
+  });
+
+  it("burns the fee: it leaves the sender, reaches nobody and is not spent on her", async () => {
+    const r = await rig();
+    await post(r, ALICE, 80, "checkin");
+    await r.economy.transfer(ALICE, BOB, 40, "k");
+    expect((await balance(r, ALICE)) + (await balance(r, BOB))).toBe(80 - 2);
+    const rows = await ledgerOf(r.store).entries("p", walletOf(r.store, ALICE), {
+      reasons: ["transfer_fee"],
+      limit: 9,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ delta: -2, reason: "transfer_fee" });
+    expect(await r.economy.board()).toEqual([]);
+    // The day limit counts the amount, not the fee.
+    const limited = await rig({ transfer_out_per_day: 50 });
+    await post(limited, ALICE, 200, "checkin");
+    await limited.economy.transfer(ALICE, BOB, 50, "a");
+    await refused(limited.economy.transfer(ALICE, BOB, 1, "b"), 429);
+  });
+
+  it("charges no fee when the rate is 0, and none for a transfer that was refused", async () => {
+    const free = await rig({ transfer_fee: 0 });
+    await post(free, ALICE, 80, "checkin");
+    expect(await free.economy.transfer(ALICE, BOB, 30, "k")).toEqual({
+      sent: 30,
+      fee: 0,
+      balance: 50,
+      to: "Bob∶*x*",
+    });
+    const r = await rig({ transfer_in_per_day: 20 });
+    await post(r, ALICE, 80, "checkin");
+    await refused(r.economy.transfer(ALICE, BOB, 30, "k"), 403, NO_RECEIVER);
+    expect(await balance(r, ALICE)).toBe(80);
+  });
+
+  it("tells the wallet what the fee is", async () => {
+    const r = await rig({ transfer_fee: 0.1 });
+    await post(r, ALICE, 10, "checkin");
+    expect((await r.economy.wallet(ALICE)).transfer_fee).toBe(0.1);
+    expect((await r.economy.wallet(DAVE)).transfer_fee).toBe(0.1);
   });
 
   it("refuses a stranger sender and answers every receiver that cannot take it alike", async () => {
@@ -226,7 +287,8 @@ describe("transfers", () => {
     expect(await balance(r, BOB)).toBe(25);
     await r.economy.transfer(ALICE, BOB, 25, "crash");
     expect(await balance(r, BOB)).toBe(25);
-    expect(await balance(r, ALICE)).toBe(55);
+    // The retry took the fee the first try had not reached, once.
+    expect(await balance(r, ALICE)).toBe(80 - 25 - 2);
   });
 
   it("gives the sender's row back when the receiver's limit refuses the second", async () => {

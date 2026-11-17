@@ -193,6 +193,7 @@ const ANSWERS = {
     hungry: "ok",
     recent: [{ ts: "2026-11-08T03:00:00Z", delta: 1, label: "a" }],
     on_board: false,
+    transfer_fee: 0.05,
   } satisfies ApiOutputs["wallet"]["view"],
   "wallet.checkin": { gained: 1, streak: 1, balance: 1 } satisfies ApiOutputs["wallet"]["checkin"],
   "wallet.feed": {
@@ -203,7 +204,12 @@ const ANSWERS = {
     message: "a",
   } satisfies ApiOutputs["wallet"]["feed"],
   "wallet.screen": SPENT,
-  "wallet.transfer": { sent: 1, balance: 1, to: "a" } satisfies ApiOutputs["wallet"]["transfer"],
+  "wallet.transfer": {
+    sent: 1,
+    fee: 1,
+    balance: 1,
+    to: "a",
+  } satisfies ApiOutputs["wallet"]["transfer"],
   "wallet.board": { on_board: true } satisfies ApiOutputs["wallet"]["board"],
   "wallet.frame": {
     owned: ["sakura"],

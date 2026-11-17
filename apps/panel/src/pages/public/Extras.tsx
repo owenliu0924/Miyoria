@@ -27,6 +27,12 @@ const POLL_MS = 60_000;
 /** A transfer is at most this many coins; the Core says no above its own limit. */
 export const TRANSFER_MAX = 50;
 
+/** What the sender pays on top of `amount` at the Core's rate: rounded up, at least 1, none at 0. */
+export function transferFee(amount: number, rate: number): number {
+  if (rate <= 0) return 0;
+  return Math.max(1, Math.ceil(Number((amount * rate).toFixed(6))));
+}
+
 /** An older Core has no such route: asking again will not change that. */
 const retry = (n: number, e: Error) => !isNotProvided(e) && n < 2;
 
@@ -99,13 +105,14 @@ export function Transfer() {
   const n = Number(amount);
   const idOk = /^[0-9]{1,25}$/.test(to.trim());
   const amountOk = Number.isInteger(n) && n >= 1 && n <= TRANSFER_MAX;
+  const fee = transferFee(n, w?.transfer_fee ?? 0);
   const send = useMutation({
     mutationFn: () => api.rpc.wallet.transfer({ headers: { "idempotency-key": newKey() }, body: { to_discord_id: to.trim(), amount: n } }),
     onSuccess: (r) => {
       setAsking(false);
       setAmount("");
       patch((v) => ({ ...v, balance: r.balance }));
-      notify.ok(`已轉 ${fmtInt(r.sent)} ${w?.currency ?? ""}給 ${r.to}`);
+      notify.ok(`已轉 ${fmtInt(r.sent)} ${w?.currency ?? ""}給 ${r.to},手續費 ${fmtInt(r.fee)}`);
       void refresh();
     },
     onError: (e) => {
@@ -158,7 +165,9 @@ export function Transfer() {
         <Button type="submit" variant="outline" disabled={!idOk || !amountOk}>
           轉出
         </Button>
-        <p className="text-xs text-muted-foreground">只能轉給她認識的人,每天有上限。</p>
+        <p className="text-xs text-muted-foreground">
+          只能轉給她認識的人,每天有上限。另收{fmtInt(Math.round(w.transfer_fee * 100))}% 手續費(至少 1),由你付,不會到任何人手上。
+        </p>
       </form>
       <ConfirmDialog
         open={asking}
@@ -169,7 +178,8 @@ export function Transfer() {
         onClose={() => setAsking(false)}
       >
         <p>
-          把 {priceText(n, w.currency)} 轉給 ID {to.trim()}。轉出後無法收回。
+          把 {priceText(n, w.currency)} 轉給 ID {to.trim()},另付手續費 {priceText(fee, w.currency)}(燒掉),共扣{" "}
+          {priceText(n + fee, w.currency)}。轉出後無法收回。
         </p>
       </ConfirmDialog>
     </Card>

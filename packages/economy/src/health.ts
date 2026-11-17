@@ -34,6 +34,7 @@ export const RECOVERED_REASONS: readonly string[] = [
   "shop",
   "room",
   "commission",
+  "transfer_fee",
 ];
 
 const WEEK = 7;
