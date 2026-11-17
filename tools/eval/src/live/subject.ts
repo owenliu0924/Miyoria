@@ -48,6 +48,8 @@ export interface Scene {
   tools?: ToolEnv;
   /** The local time it is (`YYYY-MM-DD HH:MM`), when the fake world's clock matters. */
   now?: string;
+  /** She answers aloud (the voice profile: sentences, said as written); unset: in writing. */
+  spoken?: boolean;
 }
 
 export interface ReplyCall {
@@ -107,6 +109,11 @@ export interface Reply {
   ms: number;
   /** The subject gave up waiting for her to finish; what is here is what she did until then. */
   timed_out?: boolean;
+  /**
+   * The inside of each `<feel>` block she wrote (never part of `lines`); unset: the subject does
+   * not report them.
+   */
+  feel?: string[];
 }
 
 export interface Subject {

@@ -11,7 +11,9 @@
 //   always on except the ones `hidden` names for the scene: those she has to find first;
 // - the guard: the service guard over the one service that runs without a network, the output
 //   moderation's local rules (`Moderation`); no owner rules, no Floor, no gate, no budget;
-// - what woke her: a mention or a DM as addressed, a scene nobody calls her in as a glance.
+// - what woke her: a mention or a DM as addressed, a scene nobody calls her in as a glance;
+// - a scene she answers aloud (`spoken`) runs the voice profile: what the outlet gets are the
+//   sentences she would say.
 //
 // Nothing carries over from one scene to the next.
 
@@ -300,14 +302,16 @@ export class SelfSubject implements Subject {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 180_000);
     let timedOut = false;
+    let feel: string[] = [];
     try {
       const result = await runner.run({
         session,
         wake,
-        profile: PROFILES.text,
+        profile: scene.spoken ? PROFILES.voice : PROFILES.text,
         signal: controller.signal,
       });
       timedOut = result.outcome === "cancelled";
+      feel = result.feel;
     } finally {
       clearTimeout(timer);
     }
@@ -319,6 +323,7 @@ export class SelfSubject implements Subject {
       usage: subUsage(o.meter.usage(), before),
       ms: Math.max(0, Date.now() - started),
       ...(timedOut ? { timed_out: true } : {}),
+      feel,
     };
   }
 }
