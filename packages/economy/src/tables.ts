@@ -405,7 +405,7 @@ export class LedgerTables implements CoinLedgerStore {
         FROM ${L} JOIN ${persons} ON ${persons.id} = ${L.person_id}
         WHERE ${L.ts} >= ${toMicros(since)} AND ${L.delta} < 0
           AND ${L.reason} IN (SELECT value FROM json_each(${JSON.stringify(reasons)}))
-          AND NOT EXISTS (SELECT 1 FROM ${L} AS ${r} WHERE ${r}.reason IN ('refund', 'refund_removed')
+          AND NOT EXISTS (SELECT 1 FROM ${L} AS ${r} WHERE ${r}.reason IN ('refund', 'refund_removed', 'card_refund')
             AND ${r}.ref = ${L.id})
         GROUP BY 1 HAVING SUM(${L.delta}) < 0
       ) s

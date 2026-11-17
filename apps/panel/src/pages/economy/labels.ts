@@ -27,6 +27,8 @@ export const SPEND_REASON_LABEL: Record<string, string> = {
   bet: "押預測",
   bet_win: "預測猜中了",
   draw: "抽收藏",
+  card_daily: "每日卡",
+  card_refund: "每日卡退回",
   room: "一起佈置她的房間",
   shop: "她的小店",
   shop_pay: "小店的收入",
@@ -39,7 +41,7 @@ export const reasonLabel = (reason: string): string => (EARN_REASON_LABEL as Rec
 
 /** What the health table counts as issued (nothing was spent for it) and as recovered. */
 export const ISSUED_REASONS = ["checkin", "talked", "voice", "song", "her_gift", "quest", "play", "achievement"] as const;
-export const RECOVERED_REASONS = ["feed", "screen_message", "dedication", "draw", "shop", "room", "commission", "transfer_fee"] as const;
+export const RECOVERED_REASONS = ["feed", "screen_message", "dedication", "draw", "shop", "room", "commission", "transfer_fee", "card_daily"] as const;
 
 export const PREDICTION_STATUS_LABEL = {
   open: "可以下注",

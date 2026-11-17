@@ -6,6 +6,7 @@ import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import type { PersonId } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  type CardPayer,
   CardService,
   type CardServiceOptions,
   CardStore,
@@ -45,20 +46,31 @@ class FakeWallet implements CardWallet {
   readonly charges: { person: PersonId; amount: number; reason: string; key: string }[] = [];
   readonly refunds: { person: PersonId; receipt: string }[] = [];
 
-  async spend(person: PersonId, amount: number, reason: string, key: string) {
+  async balance({ person }: CardPayer) {
+    return this.balances.get(person) ?? 0;
+  }
+
+  async spend({ person }: CardPayer, amount: number, reason: string, key: string) {
     const balance = this.balances.get(person) ?? 0;
     if (balance < amount) return { ok: false as const, reason: "insufficient" as const, balance };
     this.balances.set(person, balance - amount);
     this.charges.push({ person, amount, reason, key });
-    return { ok: true as const, receipt: `r-${key}` };
+    return { ok: true as const, receipt: `r-${key}`, balance: balance - amount };
   }
 
-  async refund(person: PersonId, receipt: string) {
+  async refund({ person }: CardPayer, receipt: string) {
     const charge = this.charges.find((c) => `r-${c.key}` === receipt);
     this.balances.set(person, (this.balances.get(person) ?? 0) + (charge?.amount ?? 0));
     this.refunds.push({ person, receipt });
   }
 }
+
+/** The person paying through a Discord account of theirs. */
+const payer = (person: PersonId): CardPayer => ({
+  person,
+  account: { platform: "discord", id: `acc-${person}` },
+});
+const face = async () => FACE;
 
 let t: TestDb;
 let store: CardStore;
@@ -118,7 +130,7 @@ describe("the catalogue", () => {
 describe("a daily card", () => {
   it("costs the price, the first card of the day too", async () => {
     wallet.balances.set("p1", 100);
-    const result = await service().issueDaily("p1", FACE);
+    const result = await service().issueDaily(payer("p1"), face);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(wallet.charges).toEqual([
@@ -139,24 +151,28 @@ describe("a daily card", () => {
   it("stops at five a day, without charging the sixth, and starts again the next local day", async () => {
     wallet.balances.set("p1", 1000);
     const cards = service();
-    for (let i = 0; i < 5; i++) expect((await cards.issueDaily("p1", FACE)).ok).toBe(true);
-    expect(await cards.issueDaily("p1", FACE)).toEqual({ ok: false, reason: "daily_cap", cap: 5 });
+    for (let i = 0; i < 5; i++) expect((await cards.issueDaily(payer("p1"), face)).ok).toBe(true);
+    expect(await cards.issueDaily(payer("p1"), face)).toEqual({
+      ok: false,
+      reason: "daily_cap",
+      cap: 5,
+    });
     expect(wallet.charges).toHaveLength(5);
     expect(cards.dailyLeft("p1")).toBe(0);
     // Someone else is not affected.
     wallet.balances.set("p2", 30);
-    expect((await cards.issueDaily("p2", FACE)).ok).toBe(true);
+    expect((await cards.issueDaily(payer("p2"), face)).ok).toBe(true);
     // Her day starts at midnight UTC+8 (16:00 UTC).
     now = dayStart(T0, 480) + DAY;
     expect(cards.dailyLeft("p1")).toBe(5);
-    expect((await cards.issueDaily("p1", FACE)).ok).toBe(true);
+    expect((await cards.issueDaily(payer("p1"), face)).ok).toBe(true);
   });
 
   it("holds the cap when several are asked for at once", async () => {
     wallet.balances.set("p1", 1000);
     const cards = service();
     const results = await Promise.all(
-      Array.from({ length: 8 }, () => cards.issueDaily("p1", FACE)),
+      Array.from({ length: 8 }, () => cards.issueDaily(payer("p1"), face)),
     );
     expect(results.filter((r) => r.ok)).toHaveLength(5);
     expect(wallet.charges).toHaveLength(5);
@@ -164,7 +180,7 @@ describe("a daily card", () => {
 
   it("is refused without enough coins, and nothing is written", async () => {
     wallet.balances.set("p1", 29);
-    expect(await service().issueDaily("p1", FACE)).toEqual({
+    expect(await service().issueDaily(payer("p1"), face)).toEqual({
       ok: false,
       reason: "insufficient",
       price: 30,
@@ -176,18 +192,18 @@ describe("a daily card", () => {
   });
 
   it("is refused without a wallet, unless it is free", async () => {
-    expect(await service({ wallet: () => null }).issueDaily("p1", FACE)).toEqual({
+    expect(await service({ wallet: () => null }).issueDaily(payer("p1"), face)).toEqual({
       ok: false,
       reason: "no_wallet",
     });
     const free = service({ wallet: () => null, config: cardsConfig({ price: 0 }) });
-    expect((await free.issueDaily("p1", FACE)).ok).toBe(true);
+    expect((await free.issueDaily(payer("p1"), face)).ok).toBe(true);
   });
 
   it("gives the coins back when the card cannot be written", async () => {
     wallet.balances.set("p1", 30);
     t.db.run("UPDATE cards_parts SET enabled = 0");
-    await expect(service().issueDaily("p1", FACE)).rejects.toThrow(/nothing to draw/);
+    await expect(service().issueDaily(payer("p1"), face)).rejects.toThrow(/nothing to draw/);
     expect(wallet.refunds).toHaveLength(1);
     expect(wallet.balances.get("p1")).toBe(30);
     expect(store.cards("p1")).toEqual([]);
@@ -195,7 +211,7 @@ describe("a daily card", () => {
 
   it("writes cards.drawn in her DM scope with the card's parts", async () => {
     wallet.balances.set("p1", 30);
-    const result = await service().issueDaily("p1", FACE);
+    const result = await service().issueDaily(payer("p1"), face);
     if (!result.ok) throw new Error("refused");
     const [event] = events("cards.drawn");
     expect(event).toMatchObject({ person_id: "p1", scope: "dm", tier: "long", source: "cards" });

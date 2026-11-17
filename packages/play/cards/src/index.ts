@@ -101,10 +101,14 @@ export {
   CARD_TEXTS,
   CardService,
   type CardServiceOptions,
+  type DailyOptions,
+  type DailyQuote,
+  type DailyRefusal,
   type DailyResult,
   type DexPart,
   type DexView,
   dayStart,
+  refusalText,
 } from "./service.js";
 export {
   CARD_KINDS,
@@ -121,4 +125,10 @@ export {
   type IssuedCard,
   type IssueInput,
 } from "./store.js";
-export { CARD_REASONS, type CardCharge, type CardWallet, CardWalletKey } from "./wallet.js";
+export {
+  CARD_REASONS,
+  type CardCharge,
+  type CardPayer,
+  type CardWallet,
+  CardWalletKey,
+} from "./wallet.js";

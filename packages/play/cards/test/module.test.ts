@@ -46,27 +46,37 @@ async function start(config: JsonObject | null = null) {
 function walletWith(coins: number): CardWallet & { spent: number } {
   return {
     spent: 0,
-    async spend(_person, amount) {
+    async balance() {
+      return coins;
+    },
+    async spend(_payer, amount) {
       if (coins < amount) return { ok: false, reason: "insufficient", balance: coins };
       coins -= amount;
       this.spent += amount;
-      return { ok: true, receipt: "r" };
+      return { ok: true, receipt: "r", balance: coins };
     },
     async refund() {},
   };
 }
+
+const payer = (person: string) => ({ person, account: { platform: "discord", id: person } });
+const face = async () => FACE;
 
 describe("module cards", () => {
   it("provides the cards and charges through the wallet it finds", async () => {
     const { sup } = await start({ price: 12, daily_cap: 2 });
     const cards = sup.services.get(CardsKey);
     expect(cards?.config).toMatchObject({ price: 12, daily_cap: 2, pity: 20 });
-    expect(await cards?.issueDaily("p1", FACE)).toEqual({ ok: false, reason: "no_wallet" });
+    expect(await cards?.issueDaily(payer("p1"), face)).toEqual({ ok: false, reason: "no_wallet" });
     const wallet = walletWith(100);
     sup.services.provide("economy", CardWalletKey, wallet);
-    expect((await cards?.issueDaily("p1", FACE))?.ok).toBe(true);
-    expect((await cards?.issueDaily("p1", FACE))?.ok).toBe(true);
-    expect(await cards?.issueDaily("p1", FACE)).toEqual({ ok: false, reason: "daily_cap", cap: 2 });
+    expect((await cards?.issueDaily(payer("p1"), face))?.ok).toBe(true);
+    expect((await cards?.issueDaily(payer("p1"), face))?.ok).toBe(true);
+    expect(await cards?.issueDaily(payer("p1"), face)).toEqual({
+      ok: false,
+      reason: "daily_cap",
+      cap: 2,
+    });
     expect(wallet.spent).toBe(24);
     expect(cards?.odds().rarities.map((r) => r.shown)).toEqual(["70.00", "22.00", "7.00", "1.00"]);
   });
@@ -77,8 +87,8 @@ describe("module cards", () => {
     heart.edit("p1", {}, { now: T0 });
     heart.adminSet("p1", "bond", -80, { now: T0 });
     const cards = sup.services.get(CardsKey);
-    const stranger = await cards?.issueDaily("nobody", FACE);
-    const disliked = await cards?.issueDaily("p1", FACE);
+    const stranger = await cards?.issueDaily(payer("nobody"), face);
+    const disliked = await cards?.issueDaily(payer("p1"), face);
     if (!stranger?.ok || !disliked?.ok) throw new Error("refused");
     expect(stranger.issued.card.relationship.tier).toBe("陌生人");
     expect(disliked.issued.card.relationship).toMatchObject({
@@ -92,7 +102,7 @@ describe("module cards", () => {
   it("puts a person's cards in the relationships data category: exported and wiped with it", async () => {
     const { sup, store } = await start({ price: 0 });
     const cards = sup.services.get(CardsKey);
-    await cards?.issueDaily("p1", FACE);
+    await cards?.issueDaily(payer("p1"), face);
     cards?.setWishlist("p1", ["pose.sway"]);
     const exported = await store.profileData.export("p", ["relationships"]);
     expect(JSON.stringify(exported)).toContain("cards_card");

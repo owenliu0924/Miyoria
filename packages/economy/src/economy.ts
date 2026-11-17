@@ -25,6 +25,7 @@ import {
   type AnyEventDefinition,
   AuthorizerKey,
   accountRefString,
+  CARD_REASONS,
   type Clock,
   EventLogKey,
   type EventPayload,
@@ -708,6 +709,10 @@ export class EconomyService implements Economy {
         return `${otherName(r.ref) ?? "朋友"} 轉給你`;
       case "refund":
         return "退回";
+      case CARD_REASONS.daily:
+        return "每日卡";
+      case CARD_REASONS.refund:
+        return "每日卡退回";
       case "admin_adjust":
         return r.ref ? `管理員調整:${r.ref}` : "管理員調整";
       case "checkin":

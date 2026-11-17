@@ -2,13 +2,13 @@
 // ranked by how much. On by default, and anyone can leave; never a balance. A person is one wallet
 // and one line (their linked accounts, and whoever they absorbed), and leaving takes them off.
 
-import { type AccountRef, safeName, toTimestamp } from "@miyoria/types";
+import { type AccountRef, CARD_REASONS, safeName, toTimestamp } from "@miyoria/types";
 import type { EconomyService } from "./economy.js";
 import { type BoardLine, PAID_ITEMS } from "./types.js";
 
 /**
  * Ledger reasons that are coins spent on her: food, frames, every paid item
- * (cards, screen messages, fortunes), and the rows of what is not sold any more (a goal's pledge, a
+ * (cards, screen messages, fortunes), the daily cards, and the rows of what is not sold any more (a goal's pledge, a
  * song ticket, a dedication, the escrow of a deal she kept). Rows that were refunded do not count, which is how a failed goal gives its pledges back. Coins given to other people
  * (`transfer_out`, a bounty's escrow, `purse_gift`) are not spent on her.
  */
@@ -16,6 +16,7 @@ export const BOARD_REASONS: readonly string[] = [
   ...new Set([
     "feed",
     "frame",
+    CARD_REASONS.daily,
     ...PAID_ITEMS,
     "goal_pledge",
     "song_ticket",

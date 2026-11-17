@@ -7,8 +7,15 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { Events, ParticipationKey, PartyRewardsKey, type ProfileId } from "@miyoria/types";
+import {
+  CardWalletKey,
+  Events,
+  ParticipationKey,
+  PartyRewardsKey,
+  type ProfileId,
+} from "@miyoria/types";
 import { agencyCapabilities } from "./agency-tools.js";
+import { EconomyCardWallet } from "./card-wallet.js";
 import { EconomyCommands } from "./commands.js";
 import { EconomyConfigSchema } from "./config.js";
 import { Earnings } from "./earn.js";
@@ -81,6 +88,8 @@ export class EconomyModule implements Module {
       for (const f of off) f();
     };
     ctx.provide(EconomyKey, economy);
+    // Her cards are paid through it (`@miyoria/play/cards`).
+    ctx.provide(CardWalletKey, new EconomyCardWallet(economy));
     ctx.provide(ParticipationKey, economy.v2.play);
     ctx.provide(Economy2Key, economy.v2);
     ctx.provide(PartyRewardsKey, economy.v2.party);

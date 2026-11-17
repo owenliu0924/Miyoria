@@ -8,7 +8,12 @@
 // way they reach every module: the supervisor restarts it.
 
 import { heartTables } from "@miyoria/heart/person";
-import { defineManifest, type Module, type ModuleContext } from "@miyoria/runtime/kernel";
+import {
+  defineManifest,
+  errorMessage,
+  type Module,
+  type ModuleContext,
+} from "@miyoria/runtime/kernel";
 import { StoreKey } from "@miyoria/store";
 import { type Clock, serviceKey } from "@miyoria/types";
 import { CardsConfigSchema } from "./config.js";
@@ -49,6 +54,16 @@ export class CardsModule implements Module {
       return;
     }
     const cards = store.plugin(cardsTables);
+    try {
+      const copied = cards.importLegacy();
+      if (copied > 0)
+        ctx.log.info({ copied }, "cards: the old collectibles were copied to the dex");
+    } catch (error) {
+      ctx.log.warn(
+        { err: errorMessage(error) },
+        "cards: cannot copy the old collectibles; the next start tries again",
+      );
+    }
     const heart = store.plugin(heartTables).people;
     const service = new CardService(cards, {
       config,

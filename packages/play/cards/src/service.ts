@@ -13,6 +13,7 @@ import type { Part, Rarity, Slot } from "./catalogue.js";
 import { type CardsConfig, drawRules } from "./config.js";
 import { type SeriesProgress, seriesProgress, type WishlistProblem } from "./dex.js";
 import { type PityView, pityView, type Random } from "./draw.js";
+import { LEGACY_SERIES, type LegacyItem } from "./legacy.js";
 import { type OddsTable, oddsTable } from "./odds.js";
 import { newSerial } from "./serial.js";
 import {
@@ -25,7 +26,7 @@ import {
   type DexEntry,
   type IssuedCard,
 } from "./store.js";
-import { CARD_REASONS, type CardWallet } from "./wallet.js";
+import { CARD_REASONS, type CardPayer, type CardWallet } from "./wallet.js";
 
 const log = getLogger("cards");
 
@@ -41,11 +42,33 @@ export const CARD_TEXTS = {
   unknown_part: "沒有這個部件",
 } as const;
 
-export type DailyResult =
-  | { ok: true; issued: IssuedCard }
+/** Why a daily card is not issued now. */
+export type DailyRefusal =
   | { ok: false; reason: "daily_cap"; cap: number }
   | { ok: false; reason: "insufficient"; price: number; balance: number | null }
+  | { ok: false; reason: "refused"; message: string }
   | { ok: false; reason: "no_wallet" };
+
+export type DailyResult = { ok: true; issued: IssuedCard; balance: number | null } | DailyRefusal;
+
+/** Whether a daily card can be issued now, and what it costs. */
+export type DailyQuote =
+  | { ok: true; left: number; cap: number; price: number; balance: number | null }
+  | DailyRefusal;
+
+/** What a daily card is issued with besides the draw. */
+export interface DailyOptions {
+  /** The frame they chose. */
+  frame?: string | null;
+  /** A shine they bought for it. */
+  foil?: boolean;
+}
+
+/** The sentence for a refusal. */
+export function refusalText(r: DailyRefusal): string {
+  if (r.reason === "refused") return r.message;
+  return CARD_TEXTS[r.reason];
+}
 
 /** One part a person has, with what it is. */
 export interface DexPart extends DexEntry {
@@ -60,6 +83,8 @@ export interface DexView {
   parts: DexPart[];
   series: SeriesProgress[];
   titles: CardTitle[];
+  /** The old collectibles they had, as the closed series 舊收藏 (read only). */
+  legacy: { series: typeof LEGACY_SERIES; items: LegacyItem[] };
 }
 
 export interface CardServiceOptions {
@@ -100,52 +125,87 @@ export class CardService {
   }
 
   /**
-   * Issues `person` a daily card with `face` on it: refused when they have had `daily_cap` today
-   * or cannot pay `price`. Their relationship decides her expression on it.
+   * Whether `payer` may be given a daily card now: under the day's cap, and able to pay. Asked
+   * before she writes anything, so a refused card costs no model call.
    */
-  issueDaily(person: PersonId, face: CardFace): Promise<DailyResult> {
-    return this.#inTurn(person, () => this.#issueDaily(person, face));
+  async quote(payer: CardPayer): Promise<DailyQuote> {
+    const { config } = this.#o;
+    const left = this.dailyLeft(payer.person);
+    if (left <= 0) return { ok: false, reason: "daily_cap", cap: config.daily_cap };
+    if (config.price === 0) {
+      return { ok: true, left, cap: config.daily_cap, price: 0, balance: null };
+    }
+    const wallet = this.#o.wallet();
+    if (wallet === null) return { ok: false, reason: "no_wallet" };
+    const balance = await wallet.balance(payer);
+    if (balance === null) return { ok: false, reason: "refused", message: CARD_TEXTS.no_wallet };
+    if (balance < config.price) {
+      return { ok: false, reason: "insufficient", price: config.price, balance };
+    }
+    return { ok: true, left, cap: config.daily_cap, price: config.price, balance };
   }
 
-  async #issueDaily(person: PersonId, face: CardFace): Promise<DailyResult> {
+  /**
+   * Issues `payer` a daily card: refused when they have had `daily_cap` today or cannot pay
+   * `price`. `face` (her words, which may take a model call) is asked for only once the card is
+   * paid; if it fails, the coins go back. Their relationship decides her expression on it.
+   */
+  issueDaily(
+    payer: CardPayer,
+    face: () => Promise<CardFace>,
+    options: DailyOptions = {},
+  ): Promise<DailyResult> {
+    return this.#inTurn(payer.person, () => this.#issueDaily(payer, face, options));
+  }
+
+  async #issueDaily(
+    payer: CardPayer,
+    face: () => Promise<CardFace>,
+    options: DailyOptions,
+  ): Promise<DailyResult> {
     const { config, clock } = this.#o;
-    const now = clock.now();
-    const since = dayStart(now, config.utc_offset_minutes);
-    if (this.#store.countSince(person, "daily", since) >= config.daily_cap) {
-      return { ok: false, reason: "daily_cap", cap: config.daily_cap };
-    }
+    const quote = await this.quote(payer);
+    if (!quote.ok) return quote;
     const serial = this.#serial();
     let paid: { wallet: CardWallet; receipt: string } | null = null;
+    let balance: number | null = null;
     if (config.price > 0) {
       const wallet = this.#o.wallet();
       if (wallet === null) return { ok: false, reason: "no_wallet" };
-      const charge = await wallet.spend(person, config.price, CARD_REASONS.daily, serial);
+      const charge = await wallet.spend(payer, config.price, CARD_REASONS.daily, serial);
       if (!charge.ok) {
-        return { ok: false, reason: "insufficient", price: config.price, balance: charge.balance };
+        return charge.reason === "insufficient"
+          ? { ok: false, reason: "insufficient", price: config.price, balance: charge.balance }
+          : { ok: false, reason: "refused", message: charge.message };
       }
       paid = { wallet, receipt: charge.receipt };
+      balance = charge.balance;
     }
     try {
+      const words = await face();
+      const now = clock.now();
       const issued = this.#store.issue({
-        person,
+        person: payer.person,
         kind: "daily",
         serial,
         price: config.price,
-        face,
-        relationship: this.#o.relationship(person),
+        face: words,
+        relationship: this.#o.relationship(payer.person),
         rules: drawRules(config),
         random: this.#random,
         now,
-        cap: { max: config.daily_cap, since },
+        cap: { max: config.daily_cap, since: dayStart(now, config.utc_offset_minutes) },
+        frame: options.frame ?? null,
+        foil: options.foil === true,
       });
-      return { ok: true, issued };
+      return { ok: true, issued, balance };
     } catch (error) {
       if (paid !== null) {
         try {
-          await paid.wallet.refund(person, paid.receipt, CARD_REASONS.refund);
+          await paid.wallet.refund(payer, paid.receipt, CARD_REASONS.refund);
         } catch (refundError) {
           log.error(
-            { person, serial, receipt: paid.receipt, err: String(refundError) },
+            { person: payer.person, serial, receipt: paid.receipt, err: String(refundError) },
             "cards: a card was not written and its coins could not be given back",
           );
         }
@@ -199,6 +259,7 @@ export class CardService {
       parts,
       series: seriesProgress(catalogue, new Set(entries.map((e) => e.part))),
       titles: this.#store.titles(person),
+      legacy: { series: LEGACY_SERIES, items: this.#store.legacy(person) },
     };
   }
 
