@@ -36,6 +36,8 @@ import {
   SongClipsKey,
   type SongCue,
   type SongPrepare,
+  type SongPriority,
+  SongPriorityKey,
   SpeechPauseKey,
   toTimestamp,
   VoiceFloorKey,
@@ -1177,6 +1179,107 @@ describe("sing module", () => {
     const zero = await h.invoke(Principals.self(VOICE), "sing.play", { song: 0 });
     expect(zero.status).toBe("denied");
     expect(zero.status === "denied" && zero.decision.reason).toBe("no song is ready");
+  });
+
+  describe("the song priority ticket", () => {
+    class FakePriority implements SongPriority {
+      charges: { who: string; key: string }[] = [];
+      refunds: string[] = [];
+      refuse: string | null = null;
+      onSale = true;
+
+      terms() {
+        return this.onSale ? { price: 40, per_day: 2, currency: "魚幣" } : null;
+      }
+
+      async charge(who: AccountRef, key: string) {
+        if (this.refuse !== null) return { ok: false as const, message: this.refuse };
+        this.charges.push({ who: who.id, key });
+        return { ok: true as const, balance: 0 };
+      }
+
+      async refund(_who: AccountRef, key: string) {
+        if (this.refunds.includes(key)) return 0;
+        this.refunds.push(key);
+        return 40;
+      }
+    }
+
+    const asAmy = (args: Record<string, JsonValue>) =>
+      h.invoke(Principals.command(AMY, TEXT), "sing.request", args);
+
+    async function priced(config: JsonValue = { max_pending_per_user: 10 }) {
+      h = await Harness.create(config, false);
+      const ticket = new FakePriority();
+      h.sup.services.provide("market", SongPriorityKey, ticket);
+      return ticket;
+    }
+
+    it("puts a ticket's song ahead of the songs without one, tickets in their own order", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one" });
+      await asAmy({ query: "two" });
+      const first = await asAmy({ query: "three", priority: true });
+      expect(first.status === "done" && first.result.text).toContain("點歌優先券");
+      await h.invoke(Principals.command(BOB, TEXT), "sing.request", {
+        query: "four",
+        priority: true,
+      });
+      await asAmy({ query: "five" });
+      const order = h.singer.list.open().map((e) => e.query);
+      expect(order).toEqual(["three", "four", "one", "two", "five"]);
+      expect(ticket.charges.map((c) => c.who)).toEqual(["8", "9"]);
+      expect(h.singer.list.get(3)).toMatchObject({ priority: true });
+      // The song asked for again is not a second ticket.
+      const again = await asAmy({ query: "one", priority: true });
+      expect(again.status === "done" && again.result.text).toContain("沒有用點歌優先券");
+      expect(ticket.charges).toHaveLength(2);
+    });
+
+    it("never spends money on her call, and refuses with the market's reason", async () => {
+      const ticket = await priced();
+      // Her tool call in a turn of hers, for someone in chat: no ticket.
+      const hers = { query: "one", priority: true };
+      await h.invoke(Principals.user(AMY, TEXT), "sing.request", hers, "t1");
+      expect(ticket.charges).toEqual([]);
+      expect(h.singer.list.get(1)?.priority).toBeUndefined();
+      // The member page: their own request, no turn of hers.
+      await h.invoke(Principals.user(AMY, TEXT), "sing.request", { query: "two", priority: true });
+      expect(ticket.charges).toHaveLength(1);
+      ticket.refuse = "點歌優先券一天最多用 2 張";
+      const refused = await asAmy({ query: "three", priority: true });
+      expect(refused.status === "failed" && refused.error).toContain("一天最多用 2 張");
+      expect(h.singer.list.open().map((e) => e.query)).toEqual(["two", "one"]);
+      ticket.refuse = null;
+      ticket.onSale = false;
+      const off = await asAmy({ query: "four", priority: true });
+      expect(off.status === "failed" && off.error).toContain("沒有賣");
+    });
+
+    it("gives the ticket back when the song fails or is dropped, once", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one", priority: true });
+      h.worker.fail("j1", "no search result");
+      await settle(200);
+      expect(h.singer.list.get(1)?.state).toBe("failed");
+      expect(ticket.refunds).toEqual([ticket.charges[0]?.key]);
+      expect(h.singer.list.get(1)?.priority_key).toBeNull();
+      await asAmy({ query: "two", priority: true });
+      await h.singer.stop(true);
+      expect(ticket.refunds).toHaveLength(2);
+      // The set list keeps it across a restart: still marked, nothing more to give back.
+      const stored = h.singer.list.snapshot() as { entries: { priority?: boolean }[] };
+      expect(stored.entries.map((e) => e.priority)).toEqual([true, true]);
+    });
+
+    it("gives it back when the list has no room for the song", async () => {
+      const ticket = await priced({ max_pending_per_user: 2 });
+      for (const q of ["a", "b"]) await asAmy({ query: q });
+      const full = await asAmy({ query: "c", priority: true });
+      expect(full.status).toBe("failed");
+      expect(ticket.charges).toHaveLength(1);
+      expect(ticket.refunds).toEqual([ticket.charges[0]?.key]);
+    });
   });
 
   it("tells the requester's channel when a song could not be prepared", async () => {

@@ -68,13 +68,22 @@ export interface SongEntry {
    * own, her mind hears about it once, and she sings it when she wants and someone is there.
    */
   practice?: boolean;
+  /**
+   * Requested with a song priority ticket (點歌優先券, docs/design/v5-play.md §11.4): it stands
+   * ahead of every song still to sing that was requested without one.
+   */
+  priority?: boolean;
+  /** The ticket's key while its coins can still go back (the song is not sung yet). */
+  priority_key?: string | null;
 }
 
 export type NewSong = Pick<
   SongEntry,
   "query" | "key" | "requester" | "requester_name" | "context"
 > &
-  Partial<Pick<SongEntry, "backing" | "forced" | "practice" | "queue_item">>;
+  Partial<
+    Pick<SongEntry, "backing" | "forced" | "practice" | "queue_item" | "priority" | "priority_key">
+  >;
 
 export class SetListError extends Error {
   override readonly name = "SetListError";
@@ -121,6 +130,8 @@ const StoredEntrySchema = z.object({
   ready_at: z.string().nullable().catch(null),
   reminders: z.number().int().nonnegative().catch(0),
   last_reminder_ms: z.number().nullable().catch(null),
+  priority: z.boolean().catch(false),
+  priority_key: z.string().nullable().catch(null),
 });
 
 const StoredSetListSchema = z.object({
@@ -248,8 +259,20 @@ export class SetList {
       ready_at: null,
       reminders: 0,
       last_reminder_ms: null,
+      ...(song.priority === true
+        ? { priority: true, priority_key: song.priority_key ?? null }
+        : {}),
     };
-    this.#entries.push(entry);
+    // A ticket's song goes in front of the first song still to sing that has none; the songs with
+    // a ticket keep their order among themselves.
+    const behind =
+      entry.priority === true
+        ? this.#entries.findIndex(
+            (e) => (e.state === "preparing" || e.state === "ready") && e.priority !== true,
+          )
+        : -1;
+    if (behind < 0) this.#entries.push(entry);
+    else this.#entries.splice(behind, 0, entry);
     return entry;
   }
 

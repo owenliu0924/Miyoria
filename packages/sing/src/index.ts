@@ -52,6 +52,7 @@ export {
   SingError,
   Singer,
   type SkipVote,
+  SongPriorityError,
   type SongRequest,
   skipVotesNeeded,
   workerQuery,
