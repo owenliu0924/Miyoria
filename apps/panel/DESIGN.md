@@ -197,7 +197,7 @@ answer is one plain line. Nothing here is invented: a number the Core does not s
   the Core sends.
   - 健康度: 這七天回收率 as one `ChartBlock` with a `TimeChart` of what went out and came back,
     怎麼算 as a `dl`, and 每天 as a table.
-  - 委託: 等她做的委託 as a table. 預測: each question with its bets. 房間: 她的房間 as a table
+  - 預測: each question with its bets. 房間: 她的房間 as a table
     with a `Meter` for how much of the price is funded.
   - No ranking of people. Someone's own quests show in their page under 角色 / 人.
 - 評測 (`/eval`): the participation metrics under 參與度指標, `ChartBlock`s 回合怎麼結束 and

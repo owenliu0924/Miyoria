@@ -279,16 +279,6 @@ export const EconomyConfigSchema = z.object({
       },
       { message: "series and item ids must be unique" },
     ),
-  // Commissions (commissions.ts): prices by kind (`0` takes a kind off), how many one person may
-  // ask a day, how many may wait for her at once, after how many days an untouched one is given
-  // back, and the share of a delivered price she keeps (the rest leaves the economy).
-  commission_prices: z
-    .partialRecord(z.enum(["poem", "name", "tool", "song", "voice"]), coins)
-    .default({ poem: 40, name: 30, tool: 120, song: 80, voice: 60 }),
-  commissions_per_day: coins.default(3),
-  commissions_open: z.number().int().positive().default(10),
-  commission_days: z.number().int().positive().default(3),
-  commission_share: z.number().min(0).max(1).default(0.5),
   // Predictions (predictions.ts): the most one person may stake on one and in a day, how long
   // betting may stay open at most (minutes), how many may be open, and how long an unresolved one
   // waits after it closed before every stake is given back (hours).

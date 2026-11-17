@@ -142,6 +142,14 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
     "broken_cap",
     "owe_days",
   ].map((key) => `modules.economy.${key}`),
+  // Commissions (paying her to write a poem, a name, a tool, a song, a line of voice).
+  ...[
+    "commission_prices",
+    "commissions_per_day",
+    "commissions_open",
+    "commission_days",
+    "commission_share",
+  ].map((key) => `modules.economy.${key}`),
 ];
 
 /** The removed paths `config` still holds, in the order of `REMOVED_CONFIG_KEYS`. */

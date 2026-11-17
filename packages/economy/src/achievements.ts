@@ -27,7 +27,6 @@ export interface Stats {
   games: number;
   draws: number;
   bets: number;
-  commissions: number;
   room_funds: number;
   /** Distinct collectibles owned. */
   items: number;
@@ -143,13 +142,6 @@ const BASE: readonly Def[] = [
     test: (s) => s.bets >= 1,
   },
   {
-    id: "first_commission",
-    label: "第一次委託她",
-    title: "委託人",
-    size: "small",
-    test: (s) => s.commissions >= 1,
-  },
-  {
     id: "first_room",
     label: "第一次一起布置她的房間",
     title: "室內設計",
@@ -193,14 +185,13 @@ export class AchievementDesk {
       ledger.entries(this.e.profile, who.wallet, { reasons, limit: MAX_ROWS });
     const offset = this.e.config.utc_offset_minutes;
     const days = new Set((await count(["checkin"])).map((r) => localDay(Date.parse(r.ts), offset)));
-    const [feeds, songs, quests, plays, draws, bets, commissions, room] = await Promise.all([
+    const [feeds, songs, quests, plays, draws, bets, room] = await Promise.all([
       count(["feed"]),
       count(["song"]),
       count(["quest"]),
       count(["play"]),
       count(["draw"]),
       count(["bet"]),
-      count(["commission"]),
       count(["room_fund"]),
     ]);
     const owned = await this.e.v2.collection.owned(who);
@@ -213,7 +204,6 @@ export class AchievementDesk {
       games: plays.filter((r) => (r.ref ?? "").startsWith("game_")).length,
       draws: draws.length,
       bets: bets.length,
-      commissions: commissions.length,
       room_funds: room.length,
       items: owned.items.size,
       series: owned.series,

@@ -16,7 +16,7 @@
 //   for them (a pledge's id is its ledger row), by the account that pledged.
 // - `economy_bounties`: tasks she pays for out of her purse, and the account it was paid to.
 // - `economy_docs`: economy 2.0's documents (collection items, predictions and bets,
-//   commissions, her room), one table, `kind` says which; by the account that owns one.
+//   her room, and the commissions of before they were retired), one table, `kind` says which; by the account that owns one.
 //
 // Rows that name an account (identity's `accounts.id`) go with it; "a person's" are the rows of
 // the person's accounts. Coins are never kept outside the ledger: these tables say what the coins
@@ -174,7 +174,7 @@ export const economyBounties = sqliteTable(
 export const economyDocs = sqliteTable(
   "economy_docs",
   {
-    /** `item`, `prediction`, `bet`, `commission`, `room`. */
+    /** `item`, `prediction`, `bet`, `commission` (retired, still kept), `room`. */
     kind: text().notNull(),
     /** ULID, or a deterministic id that makes a create idempotent. */
     id: text().notNull(),

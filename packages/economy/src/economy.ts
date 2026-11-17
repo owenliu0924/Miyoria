@@ -174,6 +174,8 @@ const RETIRED_LABEL: Readonly<Record<string, string>> = {
   letter: "寫信給她",
   expression: "送她表情",
   deal_escrow: "先付給她的約定",
+  commission: "委託她",
+  commission_pay: "委託做完了",
 };
 
 /** Ledger reasons that are gifts to her (they diminish each other). */
@@ -315,7 +317,7 @@ export class EconomyService implements Economy {
 
   // ---- what economy 2.0 uses ---------------------------------------------------------------
 
-  /** Whether the documents (collection, bets, commissions, room) outlive a restart. */
+  /** Whether the documents (collection, bets, room) outlive a restart. */
   get docsAreDurable(): boolean {
     return this.#d.services.get(EconomyDocsKey) !== undefined;
   }

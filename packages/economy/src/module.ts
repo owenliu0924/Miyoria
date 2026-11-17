@@ -31,7 +31,7 @@ const VOICE_TICK_MS = 30_000;
  * (`economy.treat`, `buy_self`, `propose_goal`, `cancel_goal`, `post_bounty`, `award_bounty`,
  * `cancel_bounty`; agency-tools.ts, purse.ts, goals.ts, bounties.ts). Also provides `Participation`
  * (the web page's head-pats) and `PartyRewards` (party games, party.ts). Uses `EconomyDocs` (collection,
- * bets, commissions, her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
+ * bets, her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
  * `RelationshipEffects` (a hair of affinity per gift), `PersonNoteWriter`, `Directives`,
  * `PeopleStore`, `SocialSignals` / `AffectState` (who is blocked), `SelfState` (her hunger),
  * `Singer`, `CommandRegistry`, `ActuatorRegistry` (`stage.expression`), `Moderation` and `EventLog` when present.
@@ -88,7 +88,7 @@ export class EconomyModule implements Module {
     ctx.provide(PartyRewardsKey, economy.v2.party);
     if (!economy.docsAreDurable) {
       ctx.log.warn(
-        "no store provides EconomyDocs: collection, bets, commissions and the room are kept in memory only",
+        "no store provides EconomyDocs: collection, bets and the room are kept in memory only",
       );
     }
     ctx.provide(SongPaymentsKey, songPayments(economy));

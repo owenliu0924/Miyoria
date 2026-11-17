@@ -290,7 +290,7 @@ export interface BountyStore {
 export interface EconomyDoc {
   /** ULID, or a deterministic id that makes `create` idempotent (a card trait: `card:<n>:<trait>`). */
   id: string;
-  /** `item`, `prediction`, `bet`, `commission`, `room`. */
+  /** `item`, `prediction`, `bet`, `commission` (retired, still kept), `room`. */
   kind: string;
   /** Who it belongs to; `null` for what belongs to nobody in particular (a prediction, a room item). */
   owner: AccountRef | null;

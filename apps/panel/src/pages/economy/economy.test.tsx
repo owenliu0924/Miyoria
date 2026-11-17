@@ -73,40 +73,16 @@ describe("經濟 / 健康度", () => {
   });
 });
 
-describe("經濟 / 委託、預測、房間", () => {
-  it("lists the commissions that wait for her", async () => {
-    mockFetch((_m, u) =>
-      u.pathname === "/api/economy/commissions"
-        ? {
-            body: {
-              currency: "魚幣",
-              commissions: [
-                { id: "C1", kind: "poem", label: "寫詩", brief: "寫一首關於下雨的詩", price: 80, status: "open", created_at: new Date().toISOString(), due_at: new Date(Date.now() + 86_400_000).toISOString(), result: null, note: null },
-              ],
-            },
-          }
-        : undefined,
-    );
-    renderRoute("/economy?tab=commissions");
-    const table = await screen.findByRole("table", { name: "委託" });
-    const row = within(table).getByText("寫一首關於下雨的詩").closest("tr") as HTMLElement;
-    expect(within(row).getByText("寫詩")).toBeInTheDocument();
-    expect(row).toHaveTextContent("80 魚幣");
-  });
-
-  it("has empty states for commissions, predictions and the room", async () => {
+describe("經濟 / 預測、房間", () => {
+  it("has empty states for predictions and the room", async () => {
     mockFetch((_m, u) => {
-      if (u.pathname === "/api/economy/commissions") return { body: { currency: "魚幣", commissions: [] } };
       if (u.pathname === "/api/economy/predictions") return { body: { currency: "魚幣", predictions: [] } };
       if (u.pathname === "/api/economy/room") return { body: { currency: "魚幣", room: [] } };
       return undefined;
     });
-    const a = renderRoute("/economy?tab=commissions");
-    expect(await screen.findByText("沒有等她做的委託")).toBeInTheDocument();
-    a.unmount();
-    const b = renderRoute("/economy?tab=predictions");
+    const a = renderRoute("/economy?tab=predictions");
     expect(await screen.findByText("沒有預測")).toBeInTheDocument();
-    b.unmount();
+    a.unmount();
     renderRoute("/economy?tab=room");
     expect(await screen.findByText("房間裡還沒有可以集資的東西")).toBeInTheDocument();
   });

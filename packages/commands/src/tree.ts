@@ -12,8 +12,7 @@
 //   /stream   start · stop · status · scene
 //   /me       i · profile · call · link · privacy · wallet · checkin · feed · give · board ·
 //             screen · card · fortune · goals · pledge · bounties · memory show|export|forget ·
-//             play quests|draw|album|giveitem|predictions|bet|titles|commission|commissions|
-//             room|shop (regrouped for Discord, see `SLASH_REGROUP`)
+//             play quests|draw|album|giveitem|predictions|bet|titles|room|shop (regrouped for Discord, see `SLASH_REGROUP`)
 //   /queue    add · list · upvote · manage ... · vote start|end · song request|list|skip|stop
 //   /game     start · stop · goal · status · party
 //   /channel  mode · activeness
@@ -33,7 +32,7 @@ export const COMMAND_GROUPS: Readonly<Record<string, GroupInit>> = {
   stream: { description: "直播：透過直播機控制 OBS", guild_only: true },
   me: { description: "你的資料：她怎麼稱呼你、帳號連結與她記得的事" },
   "me memory": { description: "她記得的關於你的事" },
-  "me play": { description: "玩與收藏：每日任務、抽收藏、預測、委託、小店與她的房間" },
+  "me play": { description: "玩與收藏：每日任務、抽收藏、預測、小店與她的房間" },
   queue: { description: "請求佇列與投票", guild_only: true },
   "queue manage": { description: "管理佇列（叫號、跳過、清空等）" },
   "queue vote": { description: "投票" },
@@ -69,8 +68,6 @@ export const SLASH_REGROUP: Readonly<Record<string, string>> = {
   "me predictions": "me play predictions",
   "me bet": "me play bet",
   "me titles": "me play titles",
-  "me commission": "me play commission",
-  "me commissions": "me play commissions",
   "me room": "me play room",
   "me shop": "me play shop",
 };

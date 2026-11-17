@@ -284,10 +284,6 @@ export {
   DirectivesViewSchema,
 } from "./directives.js";
 export {
-  type CommissionKind,
-  CommissionKindSchema,
-  type CommissionView,
-  CommissionViewSchema,
   type EconomyHealth,
   EconomyHealthSchema,
   type HealthDay,

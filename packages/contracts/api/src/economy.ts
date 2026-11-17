@@ -41,28 +41,6 @@ export const EconomyHealthSchema = z
   .meta({ id: "ApiEconomyHealth" });
 export type EconomyHealth = z.output<typeof EconomyHealthSchema>;
 
-export const CommissionKindSchema = z
-  .enum(["poem", "name", "tool", "song", "voice"])
-  .meta({ id: "ApiCommissionKind" });
-export type CommissionKind = z.output<typeof CommissionKindSchema>;
-
-/** Something a person commissioned. */
-export const CommissionViewSchema = z
-  .object({
-    id: z.string(),
-    kind: CommissionKindSchema,
-    label: z.string(),
-    brief: z.string(),
-    price: z.number(),
-    status: z.enum(["open", "delivered", "declined", "expired"]),
-    created_at: z.string(),
-    due_at: z.string(),
-    result: z.string().nullable(),
-    note: z.string().nullable(),
-  })
-  .meta({ id: "ApiCommissionView" });
-export type CommissionView = z.output<typeof CommissionViewSchema>;
-
 /** A prediction people can stake on. `my_bet` is always `null` here: this is not one person's view. */
 export const PredictionViewSchema = z
   .object({
@@ -155,11 +133,6 @@ export const economy = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/economy/health" })
     .output(EconomyHealthSchema),
-  /** What people commissioned that she has not handed in. */
-  commissions: route
-    .meta({ audience: "admin", permission: null })
-    .route({ method: "GET", path: "/api/economy/commissions" })
-    .output(z.object({ currency: z.string(), commissions: z.array(CommissionViewSchema) })),
   /** The open predictions and the ones settled lately. */
   predictions: route
     .meta({ audience: "admin", permission: null })

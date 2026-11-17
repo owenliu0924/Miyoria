@@ -176,6 +176,20 @@ const RETIRE_DEALS = `${refundHeld(
 
 DROP TABLE economy_deals;`;
 
+/**
+ * Commissions are gone: the price of every commission still waiting for her (its document is
+ * `open`; the document's id is the charge's ledger row) goes back to whoever paid it, and the
+ * document is marked declined with a note. Delivered, declined and expired commissions stay as
+ * documents: they are what people were given, and nothing reads them any more.
+ */
+const RETIRE_COMMISSIONS = `${refundHeld("SELECT id FROM economy_docs WHERE kind = 'commission' AND status = 'open'")}
+
+UPDATE economy_docs
+SET status = 'declined', version = version + 1,
+  updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000000,
+  data = json_set(data, '$.note', '委託功能已移除,錢已退回')
+WHERE kind = 'commission' AND status = 'open';`;
+
 /** The coin ledger, the wallets, fortune slips, goals, bounties and the 2.0 documents. */
 export const economySchema: PluginSchema = {
   plugin: "economy",
@@ -183,5 +197,6 @@ export const economySchema: PluginSchema = {
   migrations: [
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "retire_deals", sql: RETIRE_DEALS },
+    { version: 3, name: "retire_commissions", sql: RETIRE_COMMISSIONS },
   ],
 };

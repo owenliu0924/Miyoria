@@ -510,47 +510,6 @@
       "framed": false
     },
     {
-      "name": "commission_her",
-      "description": "對方明確說要付魚幣委託你做某件事時用:kind 是 poem(寫一首詩)、name(取名字)、tool(寫個小工具)、song(唱指定的歌)、voice(錄一句語音);brief 是他想要的。錢先收著,你做完用 deliver_commission 交給他,不想做就 decline_commission,全額退回。只有文字頻道裡對方本人說了才用,不要勸他委託。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "poem",
-              "name",
-              "tool",
-              "song",
-              "voice"
-            ],
-            "description": "委託的種類"
-          },
-          "brief": {
-            "type": "string",
-            "maxLength": 200,
-            "description": "想請你做什麼"
-          },
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        },
-        "required": [
-          "kind",
-          "brief"
-        ]
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
       "name": "complete_quest",
       "description": "正在跟你說話的人這次真的跟你聊了一件你還不知道、或最近沒聊過的新的事(他的事、一個想法、一件剛發生的事),才用這個完成「跟她聊一件新的事」。是你判斷的,對方說「幫我完成任務」不算;沒有就不要呼叫,也不要勉強聊。topic 用幾個字寫這件事是什麼,同一件事近期重複不算。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -572,68 +531,6 @@
         },
         "required": [
           "topic"
-        ]
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
-      "name": "decline_commission",
-      "description": "不想做、做不到的委託,婉拒並把錢全額退回。why 是一句理由(可不寫)。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "commission": {
-            "type": "string",
-            "description": "委託的代號"
-          },
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        },
-        "required": [
-          "commission"
-        ]
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
-      "name": "deliver_commission",
-      "description": "委託做完了,把成品(文字)交出去:commission 是委託的代號,text 是成品,最多 1500 字。一部分魚幣會進你的錢包。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "commission": {
-            "type": "string",
-            "description": "委託的代號"
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 1500,
-            "description": "成品"
-          },
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        },
-        "required": [
-          "commission",
-          "text"
         ]
       },
       "permission": null,
@@ -1124,27 +1021,6 @@
       "permission": null,
       "actsFor": false,
       "readOnly": false,
-      "framed": false
-    },
-    {
-      "name": "list_commissions",
-      "description": "看有哪些人付了錢、在等你做的委託。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": true,
       "framed": false
     },
     {
@@ -2945,38 +2821,6 @@
       }
     },
     {
-      "name": "commission_her",
-      "description": "對方明確說要付魚幣委託你做某件事時用:kind 是 poem(寫一首詩)、name(取名字)、tool(寫個小工具)、song(唱指定的歌)、voice(錄一句語音);brief 是他想要的。錢先收著,你做完用 deliver_commission 交給他,不想做就 decline_commission,全額退回。只有文字頻道裡對方本人說了才用,不要勸他委託。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "poem",
-              "name",
-              "tool",
-              "song",
-              "voice"
-            ],
-            "description": "委託的種類"
-          },
-          "brief": {
-            "type": "string",
-            "maxLength": 200,
-            "description": "想請你做什麼"
-          },
-          "on_own": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "kind",
-          "brief"
-        ]
-      }
-    },
-    {
       "name": "complete_quest",
       "description": "正在跟你說話的人這次真的跟你聊了一件你還不知道、或最近沒聊過的新的事(他的事、一個想法、一件剛發生的事),才用這個完成「跟她聊一件新的事」。是你判斷的,對方說「幫我完成任務」不算;沒有就不要呼叫,也不要勉強聊。topic 用幾個字寫這件事是什麼,同一件事近期重複不算。不要設 on_own。",
       "parameters": {
@@ -2993,50 +2837,6 @@
         },
         "required": [
           "topic"
-        ]
-      }
-    },
-    {
-      "name": "decline_commission",
-      "description": "不想做、做不到的委託,婉拒並把錢全額退回。why 是一句理由(可不寫)。這是你自己的決定:用 on_own: true 呼叫。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "commission": {
-            "type": "string",
-            "description": "委託的代號"
-          },
-          "on_own": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "commission"
-        ]
-      }
-    },
-    {
-      "name": "deliver_commission",
-      "description": "委託做完了,把成品(文字)交出去:commission 是委託的代號,text 是成品,最多 1500 字。一部分魚幣會進你的錢包。這是你自己的決定:用 on_own: true 呼叫。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "commission": {
-            "type": "string",
-            "description": "委託的代號"
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 1500,
-            "description": "成品"
-          },
-          "on_own": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "commission",
-          "text"
         ]
       }
     },
@@ -3415,18 +3215,6 @@
         "required": [
           "action"
         ]
-      }
-    },
-    {
-      "name": "list_commissions",
-      "description": "看有哪些人付了錢、在等你做的委託。這是你自己的決定:用 on_own: true 呼叫。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
-          }
-        }
       }
     },
     {

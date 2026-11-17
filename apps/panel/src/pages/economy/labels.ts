@@ -40,14 +40,6 @@ export const reasonLabel = (reason: string): string => (EARN_REASON_LABEL as Rec
 export const ISSUED_REASONS = ["checkin", "talked", "voice", "song", "her_gift", "quest", "play", "achievement"] as const;
 export const RECOVERED_REASONS = ["feed", "screen_message", "dedication", "draw", "shop", "room", "commission"] as const;
 
-export const COMMISSION_KIND_LABEL: Record<string, string> = {
-  poem: "寫詩",
-  name: "取名",
-  tool: "小工具",
-  song: "唱歌",
-  voice: "錄一句話",
-};
-
 export const PREDICTION_STATUS_LABEL = {
   open: "可以下注",
   closed: "截止,等結果",

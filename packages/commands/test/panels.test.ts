@@ -1025,8 +1025,6 @@ describe("the economy hub on /me i", () => {
     "me bet",
     "me shop",
     "me room",
-    "me commission",
-    "me commissions",
   ];
   const ARGS: Record<string, ArgSpec[]> = {
     "me giveitem": [argSpec("user", "u", ArgKind.user), argSpec("item", "i", ArgKind.string)],
@@ -1040,7 +1038,6 @@ describe("the economy hub on /me i", () => {
       argSpec("item", "i", ArgKind.string, { required: false }),
       argSpec("amount", "a", ArgKind.integer, { required: false }),
     ],
-    "me commission": [argSpec("kind", "k", ArgKind.string), argSpec("brief", "b", ArgKind.string)],
   };
 
   function withEconomy() {
@@ -1065,15 +1062,7 @@ describe("the economy hub on /me i", () => {
     const page = updated(
       await registry.dispatchComponent(click(nav?.id ?? "", MEMBER, { values: ["play"] })),
     );
-    for (const label of [
-      "抽收藏",
-      "收藏冊",
-      "稱號",
-      "看預測",
-      "她的小店",
-      "她的房間",
-      "我的委託",
-    ]) {
+    for (const label of ["抽收藏", "收藏冊", "稱號", "看預測", "她的小店", "她的房間"]) {
       expect(button(page, label)).toBeDefined();
     }
     await registry.dispatchComponent(click(button(page, "抽收藏").id, MEMBER));
@@ -1088,9 +1077,5 @@ describe("the economy hub on /me i", () => {
     expect(calls.find((c) => c.path === "me bet")).toMatchObject({
       args: { prediction: "p1", option: "2", amount: 10 },
     });
-    const commission = modalOf(
-      await registry.dispatchComponent(click(button(page, "委託她做一件事").id, MEMBER)),
-    );
-    expect(commission.fields.map((f) => f.id)).toEqual(["kind", "brief"]);
   });
 });

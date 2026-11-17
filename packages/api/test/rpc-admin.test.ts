@@ -10,7 +10,6 @@ import {
   type ArbiterDecisionView as ContractArbiterDecisionView,
   type AuthScope as ContractAuthScope,
   type CauseChain as ContractCauseChain,
-  type CommissionView as ContractCommissionView,
   type ConversationNote as ContractConversationNote,
   type CostReport as ContractCostReport,
   type DataCategoryId as ContractDataCategoryId,
@@ -234,7 +233,6 @@ const CASES: Case[] = [
   // No client in this repository calls the next one; only the tests do.
   { name: "facts.deliveries", method: "GET", path: "/api/facts/deliveries" },
   { name: "economy.health", method: "GET", path: "/api/economy/health" },
-  { name: "economy.commissions", method: "GET", path: "/api/economy/commissions" },
   { name: "economy.predictions", method: "GET", path: "/api/economy/predictions" },
   { name: "economy.room", method: "GET", path: "/api/economy/room" },
   { name: "economy.goals", method: "GET", path: "/api/economy/goals" },
@@ -472,17 +470,15 @@ describe("the schemas agree with the types of the packages that own the shapes",
 
   it("the economy", () => {
     type Health = Awaited<ReturnType<Economy2["health"]>>;
-    type Commission = Awaited<ReturnType<Economy2["commissionsWaiting"]>>[number];
     type Prediction = Awaited<ReturnType<Economy2["predictions"]>>[number];
     type Room = Awaited<ReturnType<Economy2["room"]>>[number];
     type Quests = Awaited<ReturnType<Economy2["quests"]>>;
     const health: Same<ContractEconomyHealth, Health & { currency: string }> = true;
-    const commission: Same<ContractCommissionView, Commission> = true;
     const prediction: Same<ContractPredictionView, Prediction> = true;
     const room: Same<ContractRoomItem, Room> = true;
     const quests: Same<ContractQuestsView, Quests & { currency: string }> = true;
     const goal: Same<ContractReachedGoal, ReachedGoalView> = true;
-    expect([health, commission, prediction, room, quests, goal]).toEqual(Array(6).fill(true));
+    expect([health, prediction, room, quests, goal]).toEqual(Array(5).fill(true));
   });
 
   it("her inner state, her world, her mood and her goals", () => {

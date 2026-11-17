@@ -1611,20 +1611,6 @@
           }
         }
       },
-      "commissions": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/economy/commissions"
-          }
-        }
-      },
       "predictions": {
         "~orpc": {
           "errorMap": {},

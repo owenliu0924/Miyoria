@@ -4,11 +4,11 @@ import { Page, PageHeader } from "@/components/page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GoalsTab } from "./GoalsTab";
 import { HealthTab } from "./HealthTab";
-import { CommissionsTab, PredictionsTab, RoomTab } from "./OpenTabs";
+import { PredictionsTab, RoomTab } from "./OpenTabs";
 
 const route = getRouteApi("/economy");
 
-/** The coin economy as a whole (economy 2.0): health, commissions, predictions, her room, goals. */
+/** The coin economy as a whole (economy 2.0): health, predictions, her room, goals. */
 export function EconomyPage() {
   const tab = route.useSearch().tab ?? "health";
   const navigate = useNavigate();
@@ -25,9 +25,6 @@ export function EconomyPage() {
         <PageHeader title="經濟" />
         <TabsContent value="health">
           <HealthTab />
-        </TabsContent>
-        <TabsContent value="commissions">
-          <CommissionsTab />
         </TabsContent>
         <TabsContent value="predictions">
           <PredictionsTab />

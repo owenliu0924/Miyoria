@@ -96,9 +96,9 @@ describe("retiring deals", () => {
     expect(balance(alice.person)).toBe(100 - 30 - 20);
     expect(balance(bob.person)).toBe(100 - 10 - 15 + 15);
 
-    expect(migrate(t.db, [identitySchema, economySchema]).map((m) => m.name)).toEqual([
+    expect(migrate(t.db, [identitySchema, economySchema]).map((m) => m.name)).toContain(
       "retire_deals",
-    ]);
+    );
 
     expect(refunds(t)).toEqual([
       {
@@ -136,5 +136,65 @@ describe("retiring deals", () => {
     // Nothing is left to apply, and a second run changes nothing.
     expect(migrate(t.db, [identitySchema, economySchema])).toEqual([]);
     expect(refunds(t)).toHaveLength(2);
+  });
+});
+
+describe("retiring commissions", () => {
+  it("returns the price of every commission still waiting, and keeps the rest", () => {
+    const { t, people, row, balance } = oldDatabase();
+    const [alice, bob] = people;
+    if (!alice || !bob) throw new Error("people");
+    row(alice.person, 200, "checkin");
+    row(bob.person, 200, "checkin");
+    const doc = (who: { account: string }, id: string, status: string) =>
+      t.db.run(
+        `INSERT INTO economy_docs (kind, id, owner_account_id, status, version, data, created_at, updated_at)
+         VALUES ('commission', $id, $account, $status, 1, $data, $ts, $ts)`,
+        {
+          id,
+          account: who.account,
+          status,
+          data: JSON.stringify({ kind: "poem", brief: "rain", price: 40, entry: id, note: null }),
+          ts: NOW,
+        },
+      );
+    // Waiting: one each. Delivered, declined (refunded at the time) and expired are not held.
+    const waitingA = row(alice.person, -40, "commission", "poem");
+    const waitingB = row(bob.person, -120, "commission", "tool");
+    doc(alice, waitingA, "open");
+    doc(bob, waitingB, "open");
+    doc(alice, row(alice.person, -30, "commission", "name"), "delivered");
+    const declined = row(bob.person, -80, "commission", "song");
+    row(bob.person, 80, "refund", declined);
+    doc(bob, declined, "declined");
+    expect(balance(alice.person)).toBe(200 - 40 - 30);
+    expect(balance(bob.person)).toBe(200 - 120);
+
+    expect(migrate(t.db, [identitySchema, economySchema]).map((m) => m.name)).toContain(
+      "retire_commissions",
+    );
+
+    expect(refunds(t).map((r) => [r.person_id, r.delta, r.ref])).toEqual([
+      [alice.person, 40, waitingA],
+      [bob.person, 120, waitingB],
+    ]);
+    expect(balance(alice.person)).toBe(200 - 30);
+    expect(balance(bob.person)).toBe(200);
+    const docs = t.db.all(
+      "SELECT id, status, version, data FROM economy_docs WHERE kind = 'commission' ORDER BY created_at, id",
+    );
+    expect(docs).toHaveLength(4);
+    const waiting = docs.find((d) => d.id === waitingA);
+    expect(waiting).toMatchObject({ status: "declined", version: 2 });
+    expect(JSON.parse(String(waiting?.data)).note).toContain("退回");
+    expect(
+      docs
+        .filter((d) => d.version === 1)
+        .map((d) => d.status)
+        .sort(),
+    ).toEqual(["declined", "delivered"]);
+    expect(
+      t.db.all("SELECT 1 FROM events WHERE type = 'economy.posted' AND key LIKE 'ledger:%'"),
+    ).toHaveLength(2);
   });
 });
