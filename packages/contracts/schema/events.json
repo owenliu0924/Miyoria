@@ -3194,6 +3194,112 @@
         }
       ]
     },
+    "EventsHeartCause": {
+      "type": "string",
+      "enum": [
+        "feel",
+        "reflect",
+        "evidence",
+        "decay",
+        "admin",
+        "migrate"
+      ]
+    },
+    "EventsHeartChanged": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "field": {
+          "$ref": "#/$defs/EventsHeartField"
+        },
+        "delta": {
+          "type": "number"
+        },
+        "value_after": {
+          "type": "number"
+        },
+        "proposed": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reason_quote": {
+          "type": "string"
+        },
+        "cause": {
+          "$ref": "#/$defs/EventsHeartCause"
+        }
+      },
+      "required": [
+        "person",
+        "field",
+        "delta",
+        "value_after",
+        "proposed",
+        "reason_quote",
+        "cause"
+      ]
+    },
+    "EventsHeartEvidence": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EventsHeartEvidenceKind"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "weight": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "person",
+        "kind",
+        "detail",
+        "weight",
+        "at"
+      ]
+    },
+    "EventsHeartEvidenceKind": {
+      "type": "string",
+      "enum": [
+        "voice_together",
+        "heard_song",
+        "played_together",
+        "task_together",
+        "gift",
+        "card",
+        "deal_kept",
+        "deal_broken"
+      ]
+    },
+    "EventsHeartField": {
+      "type": "string",
+      "enum": [
+        "bond",
+        "trust",
+        "familiarity",
+        "warmth",
+        "respect",
+        "ease",
+        "grudge",
+        "longing",
+        "rapport"
+      ]
+    },
     "EventsHerActivity": {
       "oneOf": [
         {

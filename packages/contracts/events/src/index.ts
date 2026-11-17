@@ -342,6 +342,21 @@ export {
   ThoughtTriggerSchema,
 } from "./heart.js";
 export {
+  HEART_LOG_EVENTS,
+  type HeartCauseName,
+  HeartCauseSchema,
+  HeartChanged,
+  type HeartChangedData,
+  HeartChangedSchema,
+  HeartEvidence,
+  type HeartEvidenceData,
+  type HeartEvidenceKindName,
+  HeartEvidenceKindSchema,
+  HeartEvidenceSchema,
+  type HeartFieldName,
+  HeartFieldSchema,
+} from "./heart-log.js";
+export {
   IdentityImported,
   type IdentityImportedData,
   IdentityImportedSchema,
