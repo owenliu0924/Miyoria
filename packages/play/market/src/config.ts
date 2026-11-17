@@ -70,7 +70,7 @@ export const MarketConfigSchema = z
       .meta(
         setting({
           kind: "switch",
-          label: "每週拍賣",
+          label: "拍賣開關",
           help: "關掉時不再開新的拍品,正在拍的會取消並退回每一筆出價",
           group: "auction",
         }),
@@ -172,7 +172,7 @@ export const MarketConfigSchema = z
       .meta(
         setting({
           kind: "switch",
-          label: "每週樂透",
+          label: "樂透開關",
           help: "關掉時不再賣票,這週已賣的會退回",
           group: "lottery",
         }),

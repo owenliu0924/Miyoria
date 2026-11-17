@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-query";
 import { isApiError } from "@/api/http";
 import type { DecisionsQuery, E2eRecord, FactEventsQuery, LlmCallsQuery, LlmThinkingQuery, MemoryQuery, ModuleAction, PeopleQuery } from "@/api/types";
-import type { AddDirectiveRequest, AdjustPersonRequest, UpdatePersonRequest,ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, LotPlanRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SayRequest, SceneRolesState, SettleRequest, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
+import type { AddDirectiveRequest, AdjustPersonRequest, UpdatePersonRequest,ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, LotPlanRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SaveSettingsRequest, SayRequest, SceneRolesState, SettleRequest, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
 import type { ContextKey, Timestamp } from "@miyoria/contracts/wire";
 import { type EvalData, loadEvalData } from "@/lib/eval-data";
 import { factEventsInput } from "@/lib/fact-events";
@@ -130,6 +130,103 @@ export function useModuleAction() {
       qc.setQueryData<ModuleInfo[]>(queryKeys.modules, (list) => list?.map((m) => (m.id === updated.id ? updated : m)));
       void qc.invalidateQueries({ queryKey: queryKeys.modules });
     },
+  });
+}
+
+// --- one module: card, settings, history ---------------------------------------
+
+/** Never retried: a 404 (no such module) or a 403 is the answer, not a hiccup. */
+const settingsKeys = {
+  detail: (id: string) => ["modules", "detail", id] as const,
+  settings: (id: string) => ["modules", "settings", id] as const,
+  history: (id: string) => ["modules", "history", id] as const,
+  rooms: (kind: string) => ["places", "rooms", kind] as const,
+};
+
+export function useModuleDetail(id: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: settingsKeys.detail(id),
+    queryFn: ({ signal }) => api.rpc.modules.get({ params: { id } }, { signal }),
+    refetchInterval: poll(15_000),
+    retry: false,
+  });
+}
+
+export function useModuleSettings(id: string) {
+  const api = useApi();
+  return useQuery({
+    queryKey: settingsKeys.settings(id),
+    queryFn: ({ signal }) => api.rpc.modules.settings({ params: { id } }, { signal }),
+    retry: false,
+  });
+}
+
+export function useSettingsHistory(id: string) {
+  const api = useApi();
+  return useInfiniteQuery({
+    queryKey: settingsKeys.history(id),
+    initialPageParam: undefined as number | undefined,
+    queryFn: ({ signal, pageParam }) =>
+      api.rpc.modules.settingsHistory(
+        { params: { id }, query: { limit: "10", ...(pageParam === undefined ? {} : { before: String(pageParam) }) } },
+        { signal },
+      ),
+    getNextPageParam: (last) => last.next_before ?? undefined,
+    retry: false,
+  });
+}
+
+/** After a save or a revert: the module's settings, history, card and the list are stale. */
+function useSettingsRefresh(id: string) {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: settingsKeys.settings(id) });
+    void qc.invalidateQueries({ queryKey: settingsKeys.history(id) });
+    void qc.invalidateQueries({ queryKey: settingsKeys.detail(id) });
+    void qc.invalidateQueries({ queryKey: queryKeys.modules, exact: true });
+  };
+}
+
+export function useSaveSettings(id: string) {
+  const api = useApi();
+  const refresh = useSettingsRefresh(id);
+  return useMutation({
+    mutationFn: (body: SaveSettingsRequest) => api.rpc.modules.saveSettings({ params: { id }, body }),
+    onSuccess: refresh,
+  });
+}
+
+export function useRevertSettings(id: string) {
+  const api = useApi();
+  const refresh = useSettingsRefresh(id);
+  return useMutation({
+    mutationFn: (body: { version: number; expected: number }) => api.rpc.modules.revertSettings({ params: { id }, body }),
+    onSuccess: refresh,
+  });
+}
+
+export function useCardAction() {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: string }) => api.rpc.modules.cardAction({ params: { id, action } }),
+    onSuccess: (_r, { id }) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.modules, exact: true });
+      void qc.invalidateQueries({ queryKey: settingsKeys.detail(id) });
+    },
+  });
+}
+
+/** The rooms the channel picker offers; asked only while a picker is open. */
+export function usePlaceRooms(kind: "text" | "voice" | "thread" | null, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: settingsKeys.rooms(kind ?? "all"),
+    queryFn: ({ signal }) => api.rpc.places.rooms({ query: kind === null ? {} : { kind } }, { signal }),
+    enabled,
+    staleTime: 30_000,
+    retry: false,
   });
 }
 
