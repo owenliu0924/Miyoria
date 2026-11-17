@@ -33,6 +33,13 @@ export const InitiativeConfigSchema = z.object({
   quiet_mins: z.number().positive().default(10),
   /** How much she must miss someone (0..1, the `missing` feeling) to think of a DM. New. */
   longing_min: fraction().default(0.5),
+  /**
+   * How much her feelings move her own starts (0: not at all). Her wish to start things
+   * (`biases.initiative`, -1..1) shortens or lengthens the quiet she waits for and lowers or
+   * raises how much she must miss someone, by up to half; wanting to talk with someone lowers it
+   * for them by this times how much. New (phase 4).
+   */
+  mood_weight: fraction().default(0.5),
   /** Between two starts of the same kind (minutes; 0: none). */
   cooldown_mins: z
     .object({

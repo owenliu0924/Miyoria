@@ -14,8 +14,12 @@ import {
   type Attitude,
   type ContextKey,
   Events,
+  HeartKey,
+  type HeartPeople,
+  type HeartView,
   type LedgerEntry,
   type PersonCard,
+  type PersonId,
   SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -372,5 +376,72 @@ describe("longing", () => {
     expect(rig.model.requests).toHaveLength(1);
     const stopped = decisions(rig).find((d) => d.impulse.startsWith("longing:"));
     expect(stopped).toMatchObject({ verdict: "rejected", reason: "consent" });
+  });
+
+  /** The heart (docs/design/v5-heart.md H5): the one she cares about most, and their longing. */
+  function withHeart(most: { person: PersonId; cares: number } | null, longing: number) {
+    const heart: Pick<HeartPeople, "mostCared" | "view"> = {
+      mostCared: () => most,
+      view: (p) =>
+        p === "p-owen"
+          ? ({ person: p, longing, call_name: "歐歐", blocked: false } as HeartView)
+          : null,
+    };
+    return (sup: Rig["sup"]) => sup.services.provide("app", HeartKey, heart as HeartPeople);
+  }
+
+  async function heartRig(most: { person: PersonId; cares: number } | null, longing: number) {
+    const rig = await Rig.create({
+      provide: (sup, tools) => {
+        const registry = new ActuatorRegistry({
+          services: sup.services,
+          tools,
+          publish: sup.bus.publisher("actions"),
+          builtins: false,
+        });
+        void registry.privacy.set(owen, { dm: true });
+        sup.services.provide("app", ActuatorRegistryKey, registry);
+        sup.services.provide("app", SocialSignalsKey, {
+          attitude: (a: AccountRef) =>
+            a.id === "owen" ? ({ person: "p-owen", blocked: false } as Attitude) : null,
+        } as never);
+        // The old card: attached and missing them, which the heart replaces.
+        const quiet = { ...card, emotions: {} };
+        sup.services.provide("app", AffectStateKey, {
+          cards: () => [quiet],
+          card: (p: PersonId) => (p === "p-owen" ? quiet : null),
+        } as never);
+        withHeart(most, longing)(sup);
+      },
+    });
+    rig.model.push(says("晚安"));
+    rig.say(line(DM, "owen", "晚安"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "the DM answer");
+    await sleep(50);
+    return rig;
+  }
+
+  it("with the heart: the one she cares about most, when the heart says she misses them", async () => {
+    const rig = await heartRig({ person: "p-owen", cares: 0.6 }, 0.8);
+    rig.model.push(says("在幹嘛~"));
+    rig.shift = toNoon();
+    await tick(rig);
+    await until(() => rig.sink.texts().length === 2, 3_000, "her DM");
+    expect(rig.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
+    expect(textOf(rig.model.requests[1])).toContain("歐歐");
+  });
+
+  it("with the heart: nobody she cares about, or not missed enough: no DM", async () => {
+    for (const [most, longing] of [
+      [null, 0.9],
+      [{ person: "p-owen", cares: 0.6 }, 0.1],
+    ] as const) {
+      const rig = await heartRig(most, longing);
+      rig.shift = toNoon();
+      await tick(rig);
+      await sleep(100);
+      expect(rig.model.requests).toHaveLength(1);
+      await rig.stop();
+    }
   });
 });
