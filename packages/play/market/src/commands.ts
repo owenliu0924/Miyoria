@@ -53,7 +53,7 @@ async function auctionCard(
 ): Promise<CommandReply> {
   const view = await market.auctionView(null);
   if (view.lot !== null && view.lot.min_bid !== null) {
-    return auctionNotice(view.lot, view.currency, note);
+    return auctionNotice(view.lot, view.currency, note, market.config);
   }
   if (!view.running) return notice("info", "現在沒有拍賣。");
   const next = view.next;

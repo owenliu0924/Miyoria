@@ -67,6 +67,11 @@ export const MarketConfigSchema = z.object({
   /** A bid this close to the end moves the end this much later. */
   auction_extend_mins: z.number().int().min(0).max(60).default(5),
   /**
+   * The latest the extensions may take the end: this many minutes after the scheduled end
+   * (`auction_time` + `auction_hours`); 0: never past it.
+   */
+  auction_extend_max_mins: z.number().int().min(0).max(1440).default(30),
+  /**
    * The lot kinds she picks from (and the rotation goes through); with one kind there is nothing
    * to pick and no model call. Default: the frame only (`DEFAULT_LOTS`).
    */

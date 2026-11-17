@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { marketConfig } from "../src/config.js";
 import { parsePick, rotationKind } from "../src/lots.js";
 import { retireMarketSql } from "../src/migrations.js";
+import { auctionNotice } from "../src/notices.js";
 import {
   ALICE,
   ALICE_TWO,
@@ -211,6 +212,59 @@ describe("bids", () => {
     r.clock.at = OPENS + DAY + 6 * MIN;
     await r.service.tick();
     expect(r.store.lotsIn(["open"])).toEqual([]);
+  });
+
+  it("never move the end past 30 minutes after the scheduled end, and the notice shows it", async () => {
+    const r = await open("frame");
+    const cap = OPENS + DAY + 30 * MIN;
+    let amount = 50;
+    // A bid every two minutes from three minutes before the end: each moves it, up to the cap.
+    for (let t = OPENS + DAY - 3 * MIN; t < cap; t += 2 * MIN) {
+      r.clock.at = t;
+      const who = amount % 10 === 0 ? ALICE : BOB;
+      const bid = await r.service.bid(who, amount);
+      expect(bid).toMatchObject({ ok: true });
+      if (bid.ok) expect(Date.parse(bid.ends_at)).toBe(Math.min(t + 5 * MIN, cap));
+      expect(Date.parse(r.store.lotsIn(["open"])[0]?.ends_at ?? "")).toBeLessThanOrEqual(cap);
+      amount += 5;
+    }
+    const lot = (await r.service.auctionView(null)).lot;
+    expect(lot).toMatchObject({ ends_at: new Date(cap).toISOString(), extended: true });
+    // The card redrawn after a bid shows the real end.
+    if (lot) {
+      expect(auctionNotice(lot, "魚幣", null, r.service.config).text).toContain(
+        `延長到:<t:${cap / 1000}:f>`,
+      );
+    }
+    // At the cap the lot takes no more bids and closes.
+    r.clock.at = cap;
+    expect(await r.service.bid(ALICE, amount + 100)).toMatchObject({ ok: false, status: 409 });
+    await r.service.tick();
+    expect(r.store.lotsIn(["open"])).toEqual([]);
+    expect(r.store.history(1)[0]).toMatchObject({
+      status: "done",
+      closed_at: new Date(cap).toISOString(),
+    });
+  });
+
+  it("keep the end where it is when the cap is 0, and the notice says nothing about extending", async () => {
+    const r = await rig({ lottery: false, auction_extend_max_mins: 0 });
+    r.clock.at = OPENS;
+    await r.service.tick();
+    r.wallet.fund(ALICE, 1000);
+    r.clock.at = OPENS + DAY - MIN;
+    expect(await r.service.bid(ALICE, 50)).toMatchObject({
+      ok: true,
+      extended: false,
+      ends_at: new Date(OPENS + DAY).toISOString(),
+    });
+    expect(r.posted[0]?.reply.text).not.toContain("延長");
+    const shown = await rig({ lottery: false });
+    shown.clock.at = OPENS;
+    await shown.service.tick();
+    expect(shown.posted[0]?.reply.text).toContain(
+      "最後 5 分鐘有人出價就延長 5 分鐘,最多延到原本結束後 30 分鐘",
+    );
   });
 });
 

@@ -11,7 +11,7 @@
 //   `auction_time` for `auction_hours`. The kind is the owner's plan for the week, else her pick,
 //   else the rotation. A bid holds the bidder's coins (a raise of one's own bid holds the
 //   difference); an outbid bidder's holds go back at once; a bid in the last `auction_extend_mins`
-//   moves the end. At the end the leader's price is burned and their holds released. A name lot
+//   moves the end, never past `auction_extend_max_mins` after the scheduled end. At the end the leader's price is burned and their holds released. A name lot
 //   waits for a name she accepts (shape, moderation, and not from someone she cannot stand) for
 //   `auction_name_hours`; given up or late, the holds go back and nothing is burned. The name is
 //   what she calls them for `auction_call_days`, then the old one is back unless they changed it.
@@ -397,9 +397,7 @@ export class MarketService {
         this.#d.store.setBid(id, { status: "void", released_at: now });
         return this.#refusal(held, "");
       }
-      const window = c.auction_extend_mins * MINUTE_MS;
-      const ends = Date.parse(lot.ends_at);
-      const extend = window > 0 && ends - now < window ? now + window : null;
+      const extend = this.#extendedEnd(lot, now);
       const outbid = this.#d.store.lead(id, extend);
       // An outbid bidder's coins go back at once; a release that fails is retried by the pass.
       for (const b of outbid) await this.#release(b).catch(() => undefined);
@@ -412,6 +410,22 @@ export class MarketService {
         again: false,
       };
     });
+  }
+
+  /**
+   * The lot's new end after a bid at `now`, or `null` when it stays: a bid in the last
+   * `auction_extend_mins` moves the end that much after it, but never past
+   * `auction_extend_max_mins` after the scheduled end (the lot's opening plus `auction_hours`).
+   */
+  #extendedEnd(lot: Lot, now: number): number | null {
+    const c = this.#d.config;
+    const window = c.auction_extend_mins * MINUTE_MS;
+    const ends = Date.parse(lot.ends_at);
+    if (window <= 0 || ends - now >= window) return null;
+    const scheduled = Date.parse(lot.opens_at) + c.auction_hours * HOUR_MS;
+    const latest = scheduled + c.auction_extend_max_mins * MINUTE_MS;
+    const moved = Math.min(now + window, latest);
+    return moved > ends ? moved : null;
   }
 
   /** Gives a bid's hold back and marks it released. */
@@ -1163,7 +1177,10 @@ export class MarketService {
     this.#d.log.info({ lot: lot.id, kind, picked }, "market: a lot opened");
     const view = this.#lotView(lot);
     if (view === null) return;
-    const id = await this.#d.post(c.auction_channel, auctionNotice(view, this.#currency(), null));
+    const id = await this.#d.post(
+      c.auction_channel,
+      auctionNotice(view, this.#currency(), null, c),
+    );
     if (id !== null) this.#d.store.setLot(lot.id, ["open"], { message_id: id });
   }
 

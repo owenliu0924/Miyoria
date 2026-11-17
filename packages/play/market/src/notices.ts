@@ -41,8 +41,22 @@ function when(iso: string, style: "R" | "f" = "R"): string {
   return Number.isFinite(ms) ? `<t:${Math.floor(ms / 1000)}:${style}>` : iso;
 }
 
+/** How the end moves, in one sentence; empty when it never does. */
+export function extensionRule(
+  config: Pick<MarketConfig, "auction_extend_mins" | "auction_extend_max_mins">,
+): string {
+  const mins = config.auction_extend_mins;
+  if (mins === 0 || config.auction_extend_max_mins === 0) return "";
+  return `最後 ${mins} 分鐘有人出價就延長 ${mins} 分鐘,最多延到原本結束後 ${config.auction_extend_max_mins} 分鐘。`;
+}
+
 /** The lot while it takes bids (and after, without the bid button). */
-export function auctionNotice(view: LotView, currency: string, note: string | null): CommandReply {
+export function auctionNotice(
+  view: LotView,
+  currency: string,
+  note: string | null,
+  config: Pick<MarketConfig, "auction_extend_mins" | "auction_extend_max_mins">,
+): CommandReply {
   const open = view.min_bid !== null;
   const lines = [`**${view.name}**`, view.detail];
   lines.push(
@@ -74,7 +88,7 @@ export function auctionNotice(view: LotView, currency: string, note: string | nu
   });
   blocks.push({
     type: "muted",
-    text: `出價會先押住你的${currency},被別人超過就馬上退回;得標的${currency}會燒掉。每次至少加 ${view.step}。最後幾分鐘有人出價就延長。`,
+    text: `出價會先押住你的${currency},被別人超過就馬上退回;得標的${currency}會燒掉。每次至少加 ${view.step}。${extensionRule(config)}`,
   });
   return cardReply(blocks, { accent: "neutral", title: "每週拍賣" });
 }
