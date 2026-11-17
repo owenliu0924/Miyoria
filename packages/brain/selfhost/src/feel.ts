@@ -5,7 +5,8 @@
 // is (`nameMatcher`: case, the cleaned name, the handle, a unique first word), and the turn's caps
 // are kept (two people, three lines). Blocked people and her own accounts are never among them. Her
 // own emotion goes to the emotion engine through the entry Appraise uses (`AffectState.appraise`),
-// her proposals to the heart (`HeartPeople.feel`, which writes each change with the turn's id).
+// her proposals to the heart (`HeartPeople.feel`, which writes each change with the turn's id),
+// and a line of what she felt to her journal (`MindKey.note`, the panel's "內心" page).
 // What does not read, names nobody or is over the caps is dropped and counted in a debug line,
 // never an error.
 
@@ -16,11 +17,15 @@ import {
   type AffectState,
   AffectStateKey,
   type ContextKey,
+  FEEL_FIELD_WORDS,
+  FEEL_STRENGTH_WORDS,
   type FeelProposal,
   type Handle,
   HeartKey,
   type HeartPeople,
   type IncomingMessage,
+  type Mind,
+  MindKey,
   type PersonId,
   sameAccount,
   toTimestamp,
@@ -51,6 +56,8 @@ export interface FeelDeps {
   handleOf(account: AccountRef, name: string): Handle;
   heart(): HeartPeople | null;
   affect(): AffectState | null;
+  /** Her journal (`MindKey`); absent or `null`: nothing is noted. */
+  journal?(): Pick<Mind, "note"> | null;
   log: Pick<Logger, "debug">;
   now(): number;
 }
@@ -62,6 +69,7 @@ export function feelDeps(agent: Agent): FeelDeps {
     handleOf: (account, name) => agent.handleOf(account, name),
     heart: () => agent.ctx.services.get(HeartKey) ?? null,
     affect: () => agent.ctx.services.get(AffectStateKey) ?? null,
+    journal: () => agent.ctx.services.get(MindKey) ?? null,
     log: agent.log,
     now: () => agent.ctx.clock.now(),
   };
@@ -82,6 +90,8 @@ export interface FeelInput {
 /** One proposal as applied. */
 export interface FeelApplied extends FeelProposal {
   person: PersonId;
+  /** The name of the person present it matched. */
+  name: string;
 }
 
 export interface FeelOutcome {
@@ -173,10 +183,38 @@ export function readFeel(
       unmatched += 1;
       continue;
     }
-    matched.push({ person, field: line.field, direction: line.direction, quote: line.quote });
+    const name = targets.find((t) => t.key === person)?.name ?? line.name;
+    matched.push({
+      person,
+      name,
+      field: line.field,
+      direction: line.direction,
+      quote: line.quote,
+    });
   }
   const { kept, over } = limitProposals(matched);
   return { self, proposals: kept, unmatched, unreadable, over };
+}
+
+const STRENGTH_WORDS: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(FEEL_STRENGTH_WORDS).map(([word, strength]) => [strength, word]),
+);
+
+/**
+ * Her journal's line for a feel block: her emotion as she wrote it (`開心 中`) and one line per
+ * proposal kept (`小明 羈絆 +「他記得」`). What the heart's caps did to them is the heart's log.
+ */
+export function journalEntry(read: Pick<FeelOutcome, "self" | "proposals">): {
+  text: string;
+  changes: string[];
+} {
+  const self = read.self;
+  const text = self === null ? "" : `${self.word} ${STRENGTH_WORDS[self.strength] ?? ""}`.trim();
+  const changes = read.proposals.map(
+    (p) =>
+      `${p.name} ${FEEL_FIELD_WORDS[p.field]} ${p.direction === "up" ? "+" : "-"}「${p.quote}」`,
+  );
+  return { text: text === "" ? (changes[0] ?? "") : text, changes };
 }
 
 /** Applies her feel blocks of the run of `input.turn`. */
@@ -216,6 +254,9 @@ export function applyFeel(deps: FeelDeps, input: FeelInput): FeelOutcome {
     }
   }
   const outcome: FeelOutcome = { ...read, felt, applied };
+  if (read.self !== null || read.proposals.length > 0) {
+    deps.journal?.()?.note?.({ kind: "feel", ...journalEntry(read), context: input.context });
+  }
   if (input.feel.length > 0) {
     deps.log.debug(
       {

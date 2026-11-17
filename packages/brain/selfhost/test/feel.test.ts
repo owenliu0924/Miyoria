@@ -8,6 +8,7 @@ import type {
   AffectState,
   FeelProposal,
   HeartPeople,
+  MindNote,
   PersonId,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
@@ -36,10 +37,11 @@ const WAKE: Wake = {
 interface Recorded {
   appraised: AffectInput[];
   felt: { person: PersonId; proposals: readonly FeelProposal[]; turn: string | null }[];
+  noted: MindNote[];
 }
 
 function deps(): { deps: FeelDeps; rec: Recorded } {
-  const rec: Recorded = { appraised: [], felt: [] };
+  const rec: Recorded = { appraised: [], felt: [], noted: [] };
   const heart = {
     feel(person: PersonId, proposals: readonly FeelProposal[], o: { turn: string | null }) {
       rec.felt.push({ person, proposals, turn: o.turn });
@@ -60,6 +62,7 @@ function deps(): { deps: FeelDeps; rec: Recorded } {
       handleOf: (a, name) => (a.id === "2" ? "ming" : name),
       heart: () => heart,
       affect: () => affect,
+      journal: () => ({ note: (n: MindNote) => rec.noted.push(n) }),
       log: { debug: () => undefined },
       now: () => Date.UTC(2026, 10, 17, 4),
     },
@@ -157,6 +160,15 @@ describe("applying a feel block", () => {
         turn: "t1",
       },
     ]);
+    // One line of her journal: what she felt and what she proposed, by the names she used.
+    expect(rec.noted).toEqual([
+      {
+        kind: "feel",
+        text: "開心 強",
+        changes: ["Owen Liu 羈絆 +「他記得我想吃布丁」", "阿哲 好感 +「他也有買」"],
+        context: CTX,
+      },
+    ]);
   });
 
   it("moves nothing for calm and no proposal, and nothing without the services", () => {
@@ -171,6 +183,8 @@ describe("applying a feel block", () => {
     });
     expect(calm).toMatchObject({ felt: false, applied: 0 });
     expect(rec.appraised).toEqual([]);
+    // Calm is still something she felt: noted, with nothing changed.
+    expect(rec.noted).toEqual([{ kind: "feel", text: "平靜 弱", changes: [], context: CTX }]);
     const off = applyFeel(
       { ...d, heart: () => null, affect: () => null },
       {
