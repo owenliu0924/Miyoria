@@ -328,9 +328,7 @@ class Handler {
       inventory.categories.flatMap((c) => c.parts).find((p) => p.id === id)?.count ?? 0;
     const counts = [
       `記憶 ${part("memory_records")} 筆`,
-      ...(scope !== "memories"
-        ? [`關係 ${part("relationships")} 筆（變化紀錄 ${part("relationship_deltas")} 筆）`]
-        : []),
+      ...(scope !== "memories" ? [`關係 ${part("heart_person")} 人`] : []),
       ...(scope === "history" || scope === "everything"
         ? [`聊天紀錄 ${part("message_log")} 則、決策紀錄 ${part("decision_log")} 筆`]
         : []),
@@ -416,9 +414,9 @@ class Handler {
     const n = (...parts: string[]) => parts.reduce((sum, p) => sum + (counts[p] ?? 0), 0);
     const lines = [
       `記憶 ${n("memory_records")} 筆`,
-      `關係 ${n("relationships")} 筆、變化紀錄 ${n("relationship_deltas")} 筆`,
+      `關係 ${n("heart_person")} 人`,
       `聊天紀錄 ${n("message_log")} 則、決策紀錄 ${n("decision_log")} 筆`,
-      `設定 ${n("memory_maintenance", "memory_watermarks", "self_state", "self_feelings", "mood", "initiative")} 項`,
+      `設定 ${n("memory_maintenance", "memory_watermarks", "heart_self", "self_state", "self_feelings", "mood", "initiative")} 項`,
     ];
     const blocks: CardBlock[] = [
       { type: "text", text: `已刪除：\n${lines.join("\n")}` },

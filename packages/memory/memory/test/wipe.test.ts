@@ -7,6 +7,7 @@ import {
   CommandsModule,
   type ComponentInvocationData,
 } from "@miyoria/commands";
+import { heartTables } from "@miyoria/heart/person";
 import { type LlmRouter, LlmRouterKey, MockProvider } from "@miyoria/llm/llm";
 import {
   defineManifest,
@@ -81,7 +82,7 @@ afterEach(async () => {
 });
 
 async function setup() {
-  const store = await SqliteStore.open(":memory:");
+  const store = await SqliteStore.open(":memory:", { plugins: [heartTables] });
   const services = new ServiceRegistry();
   const sup = new Supervisor({ services });
   cleanup.push(async () => {
@@ -104,6 +105,24 @@ async function setup() {
 
   // Data of this profile and of another one.
   const owen = await store.people.upsertAccount(acct("2"), "Owen");
+  // Her feelings about Owen are a heart row; the frozen old tables hold a row nobody reads.
+  store.plugin(heartTables).people.adminSet(owen, "bond", 40);
+  const old = toTimestamp(Date.UTC(2026, 0, 1));
+  for (const person of [owen, "gone-1", "gone-2"]) {
+    await store.relationships.upsert({
+      profile: profile(),
+      person,
+      affinity: 1,
+      trust: 1,
+      familiarity: 1,
+      tags: [],
+      notes: "",
+      call_name: null,
+      interactions: 0,
+      last_interaction: null,
+      updated_at: old,
+    });
+  }
   const ctx = guildCtx("g1", "c1");
   const now = toTimestamp(Date.now());
   // The memories are the character's (one database each): one record, not one per profile.
@@ -238,6 +257,8 @@ describe("memory wipe", () => {
     expect(confirmCard?.card?.accent).toBe("danger");
     expect(confirmCard?.text).toContain("記憶 1 筆");
     expect(confirmCard?.text).toContain("聊天紀錄 1 則");
+    // The people whose rows are deleted are the heart's, not the frozen old table's.
+    expect(confirmCard?.text).toContain("關係 1 人");
 
     const modal = await registry.dispatchComponent(click("1", "mi:admin:memory:wipe:ask:history"));
     expect(modal?.result.type).toBe("modal");
@@ -271,6 +292,9 @@ describe("memory wipe", () => {
       },
     );
     expect(done?.result.type).toBe("update");
+    const doneText = done?.result.type === "update" ? done.result.reply.text : "";
+    expect(doneText).toContain("關係 1 人");
+    expect(store.plugin(heartTables).people.list().total).toBe(0);
     expect(messagesAtBackup).toBe(1);
     expect(sent).toHaveLength(1);
     const file = sent[0]?.files?.[0];
