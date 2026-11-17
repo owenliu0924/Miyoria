@@ -21,9 +21,10 @@ import {
   defineRoute,
   type Invocation,
   notice,
+  pictureParts,
 } from "@miyoria/commands";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
-import { type KeepsakeFortune, KeepsakesKey, newId } from "@miyoria/types";
+import { type KeepsakeFortune, KeepsakesKey, newId, PicturesKey } from "@miyoria/types";
 import { registerV2, unregisterV2 } from "./commands-v2.js";
 import { STRANGER, WALLET_NODE } from "./economy.js";
 import { mutedText, unlockLines } from "./notices.js";
@@ -144,13 +145,16 @@ class Handler {
     }
   }
 
-  wallet(inv: Invocation): Promise<CommandReply> {
+  wallet(inv: Invocation, picture = true): Promise<CommandReply> {
     return this.#guard(async (economy) => {
       const view = await economy.wallet(inv.invoker);
       // A stranger or a blocked person: the same plain line as the web page, no buttons.
       if (!view.can_earn) return notice("info", STRANGER);
       const price = (item: FeedItem) => view.shop.find((s) => s.id === item);
+      // This week's coins as a picture over the text (docs/design/v5-play.md §11.5).
+      const drawn = picture ? await this.#picture(inv) : pictureParts(null);
       const blocks: CardBlock[] = [
+        ...drawn.blocks,
         { type: "text", text: walletText(view) },
         {
           type: "buttons",
@@ -177,8 +181,21 @@ class Handler {
       }).filter((t) => t !== null);
       if (prices.length > 0)
         blocks.push({ type: "muted", text: `${prices.join("・")} ${view.currency}` });
-      return cardReply(blocks, { accent: "neutral", title: "錢包" });
+      return cardReply(blocks, { accent: "neutral", title: "錢包", files: drawn.files });
     });
+  }
+
+  /** The wallet's picture; nothing without the renderer or when it cannot be drawn. */
+  async #picture(inv: Invocation): Promise<ReturnType<typeof pictureParts>> {
+    try {
+      const result = await this.services
+        .get(PicturesKey)
+        ?.forMember({ account: inv.invoker, name: inv.invoker_display_name }, "wallet");
+      return pictureParts(result?.file);
+    } catch (error) {
+      log.warn({ error: errorMessage(error) }, "cannot draw the wallet");
+      return pictureParts(null);
+    }
   }
 
   /**
@@ -364,9 +381,14 @@ function register(registry: CommandRegistry, handler: Handler): void {
   ];
   registry.register(
     commandSpec("me wallet", "你的魚幣：餘額、今天還能賺多少，可以簽到和餵她", {
+      args: [
+        argSpec("picture", "附上這一週收支的圖（預設附上；false 只要文字）", ArgKind.boolean, {
+          required: false,
+        }),
+      ],
       permission: WALLET_NODE,
     }),
-    (inv) => handler.wallet(inv),
+    (inv) => handler.wallet(inv, inv.bool("picture") !== false),
     { components: routes },
   );
   registry.register(

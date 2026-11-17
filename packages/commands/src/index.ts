@@ -140,6 +140,7 @@ export {
   type Page,
   pageButtons,
   pageOf,
+  pictureParts,
   type ReplyFile,
   type ReplySession,
   replyEphemeral,

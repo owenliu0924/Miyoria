@@ -24,10 +24,18 @@ import {
   type Keepsakes,
   KeepsakesKey,
   newId,
+  PicturesKey,
 } from "@miyoria/types";
 import { type ComponentInvocation, ComponentResult, defineRoute } from "./components.js";
 import type { CommandRegistry } from "./registry.js";
-import { type CardBlock, type CardOptions, type CommandReply, cardReply, notice } from "./reply.js";
+import {
+  type CardBlock,
+  type CardOptions,
+  type CommandReply,
+  cardReply,
+  notice,
+  pictureParts,
+} from "./reply.js";
 import { ArgKind, argSpec, commandSpec, type Invocation } from "./spec.js";
 
 const log = getLogger("commands.keepsakes");
@@ -198,6 +206,19 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
     }
   };
 
+  /** The dex or the odds as a picture over their text (v5-play §11.5); nothing without one. */
+  const picture = async (inv: Invocation, kind: "dex" | "odds") => {
+    try {
+      const result = await services
+        .get(PicturesKey)
+        ?.forMember({ account: inv.invoker, name: inv.invoker_display_name }, kind);
+      return pictureParts(result?.file);
+    } catch (error) {
+      log.warn({ error: errorMessage(error) }, "cannot draw a card picture");
+      return pictureParts(null);
+    }
+  };
+
   registry.register(
     commandSpec("me card", "她給你的每日卡：今天還沒有就發一張（要花魚幣），有了就看今天的", {
       permission: CARD_NODE,
@@ -228,13 +249,23 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
         if (action === CARD_ODDS) {
           const odds = await keepsakes.cardOdds();
           if (!odds) return notice("info", UNAVAILABLE);
-          return cardReply(oddsText(odds), { accent: "neutral", title: "每日卡的機率" });
+          const drawn = await picture(inv, "odds");
+          return cardReply([...drawn.blocks, ...oddsText(odds)], {
+            accent: "neutral",
+            title: "每日卡的機率",
+            files: drawn.files,
+          });
         }
         if (action === CARD_DEX || action === CARD_PITY) {
           const book = await keepsakes.cardBook(inv.invoker);
           if (!book.ok) return refusal(book);
           if (action === CARD_PITY) return notice("info", pityText(book.value.pity));
-          return cardReply(bookText(book.value), { accent: "neutral", title: "你的圖鑑" });
+          const drawn = await picture(inv, "dex");
+          return cardReply([...drawn.blocks, ...bookText(book.value)], {
+            accent: "neutral",
+            title: "你的圖鑑",
+            files: drawn.files,
+          });
         }
         if (action === CARD_WISH) {
           const parts = wishes(inv.str("wish"));

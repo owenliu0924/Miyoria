@@ -55,6 +55,7 @@ import {
   type JsonValue,
   ModerationKey,
   type PersonId,
+  PicturesKey,
   type ProfileId,
   parseSongCue,
   RelationshipEffectsKey,
@@ -548,7 +549,13 @@ export class HeartModule implements Module {
     const commands = new CommandMount(
       "heart",
       (registry) =>
-        registerCommands(registry, directory, screen, () => ctx.services.get(BondRingImagesKey)),
+        registerCommands(
+          registry,
+          directory,
+          screen,
+          () => ctx.services.get(BondRingImagesKey),
+          () => ctx.services.get(PicturesKey),
+        ),
       unregisterCommands,
     );
     commands.attach(ctx);
