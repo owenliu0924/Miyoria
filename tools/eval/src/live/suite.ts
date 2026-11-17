@@ -1,6 +1,7 @@
 // What a live suite is given and what it returns, and the registry the runner picks suites from.
 // A suite scores a `Subject`; it never knows which one.
 
+import type { Completer } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import type { Judge } from "./judge.js";
 import type { Meter } from "./meter.js";
@@ -11,6 +12,12 @@ export interface SuiteContext {
   judge: Judge;
   /** The run's meter: a suite stops when it has refused a call (`stopped: "budget"`). */
   meter: Meter;
+  /**
+   * The run's router, for a suite that calls the model itself instead of going through the subject
+   * (the words on a card, the turtle-soup referee). Unset in a test with no model: such a suite
+   * is then skipped.
+   */
+  router?: Completer;
   /** Her persona (identity and style), for a judge that scores her voice. */
   persona: string;
   /** Every item is run this many times. */

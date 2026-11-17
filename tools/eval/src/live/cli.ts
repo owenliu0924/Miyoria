@@ -1,4 +1,4 @@
-// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections] [--subject self]
+// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play] [--subject self]
 //  [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>]`
 //
 // Runs the live suites against the real model and writes the run to `--out` (default
@@ -136,6 +136,7 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
       subject,
       judge: routerJudge(model.router),
       meter: model.meter,
+      router: model.router,
       registry,
       suites,
       persona: profile.personaPrompt(),
