@@ -88,6 +88,12 @@ describe("bond ring", () => {
     ).not.toContain("var(");
   });
 
+  it("builds the props from the bond itself, or from a position the page was given", () => {
+    expect(bondRingProps(742)).toEqual({ lap: 7, fraction: expect.closeTo(0.42), below: 0, full: false });
+    expect(bondRingProps(1000)).toMatchObject({ lap: 9, fraction: 1, full: true });
+    expect(bondRingProps(-50)).toMatchObject({ lap: 0, fraction: 0, below: 0.5, full: false });
+  });
+
   it("builds the props from a ring position", () => {
     expect(bondRingProps({ lap: 9, fraction: 1, below: 0 }, 1000)).toEqual({
       lap: 9,

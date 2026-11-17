@@ -515,6 +515,7 @@ export {
   type AppraisalStrength,
   type AppraisedPromise,
   affinityLevel,
+  BOND_BAND_WORDS,
   BOND_BANDS,
   BOND_LADDER,
   BOND_SCALE_LINE,

@@ -33,6 +33,8 @@ const config = defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       // The card's drawing is shared with the Core (it renders the link preview); no build step in between.
       "@miyoria/card-face": fileURLToPath(new URL("../../packages/card-face/src/index.tsx", import.meta.url)),
+      // What the card reads of the bond: the narrow entry with no imports, not all of the types.
+      "@miyoria/types/bond": fileURLToPath(new URL("../../packages/types/src/bond.ts", import.meta.url)),
       // The route table: its types from source like the card, and at run time the table without
       // its schemas (`pnpm contracts:gen`), so zod stays out of the bundle.
       "@miyoria/contracts/api": fileURLToPath(new URL("../../packages/contracts/api/src/index.ts", import.meta.url)),

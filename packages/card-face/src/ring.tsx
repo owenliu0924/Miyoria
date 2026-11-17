@@ -5,6 +5,7 @@
 // list rows and the PNG Discord shows. It needs only the lap and the fraction, never the raw bond.
 // Geometry follows docs/design/mock/heart-ring.html.
 
+import { ringOf } from "@miyoria/types/bond";
 import type { CSSProperties, ReactElement } from "react";
 
 /** Lucide "heart", the icon set the panel uses. */
@@ -99,15 +100,27 @@ export interface RingPositionLike {
 }
 
 /**
- * Props for a caller that has the bond: `<BondRing {...bondRingProps(ringOf(bond), bond)} title=… />`.
- * Pass the `ringOf` result so this package needs no dependency on `@miyoria/types`. `bond` is only
- * used for `full`; the number is not passed on (add `value` yourself on the admin page).
+ * The ring's props: from the bond (`<BondRing {...bondRingProps(bond)} title=… />`, the admin side,
+ * `ringOf` from `@miyoria/types/bond`), or from a position someone else worked out (the public
+ * page, which has the lap and the fraction and never the bond; `bond`, when given, only says
+ * `full`). The number is not passed on: add `value` yourself on the admin page.
  */
+export function bondRingProps(
+  bond: number,
+): Pick<BondRingProps, "lap" | "fraction" | "below" | "full">;
 export function bondRingProps(
   position: RingPositionLike,
   bond?: number,
+): Pick<BondRingProps, "lap" | "fraction" | "below" | "full">;
+export function bondRingProps(
+  from: number | RingPositionLike,
+  bond?: number,
 ): Pick<BondRingProps, "lap" | "fraction" | "below" | "full"> {
-  const { lap, fraction, below } = position;
+  if (typeof from === "number") {
+    const { lap, fraction, below } = ringOf(from);
+    return { lap, fraction, below, full: from >= 1000 };
+  }
+  const { lap, fraction, below } = from;
   return { lap, fraction, below, full: bond === undefined ? undefined : bond >= 1000 };
 }
 
