@@ -455,6 +455,7 @@ dirs = ["extensions"]
 # portrait_model = "C:/Program Files (x86)/Steam/steamapps/common/VTube Studio/VTube Studio_Data/StreamingAssets/Live2DModels/DeepSeek-chan/大肥鱼.model3.json"   # 沒設 = 用固定立繪
 # portrait_studio = "tools/card-studio"        # card-studio 的資料夾(照它的 vendor.md 放好 Live2D 的檔案再 build)
 # portrait_cache = "data/cards/portraits"     # 算好的圖,依「抽到什麼」的雜湊存,同一張卡只算一次
+# portrait_cache_max_mb = 2048                # 算好的圖最多佔多少 MB(一張約 1 MB);超過就刪最久沒用到的,要用時再算
 # portrait_browser = "msedge"                 # 無頭瀏覽器:msedge 或 chrome
 # portrait_timeout_secs = 30                  # 一張圖最多等多久
 # # 頻道裡的掉落(v5-play.md §6.2):頻道熱鬧時她偶爾丟一張卡,第一個按「撿起來」的人拿走(免費,帶一個只有掉落才有的部件)

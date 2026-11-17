@@ -232,6 +232,7 @@ describe("the Live2D portrait", () => {
       portrait_studio: studioDir,
       portrait_model: model,
       portrait_cache: cacheDir,
+      portrait_cache_max_mb: 2048,
       portrait_browser: "msedge",
       portrait_timeout_secs: 30,
     };

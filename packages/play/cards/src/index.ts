@@ -112,6 +112,12 @@ export {
   type PortraitInput,
   portraitPose,
 } from "./portrait.js";
+export {
+  cacheBytes,
+  PortraitCache,
+  type PortraitCacheOptions,
+  type SweepResult,
+} from "./portrait-cache.js";
 export { cardRelationship } from "./relationship.js";
 export {
   type CardsCardRow,

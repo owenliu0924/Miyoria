@@ -12,19 +12,24 @@
 // - One picture at a time (the studio's queue); at most `MAX_WAITING` wait, more get `null`.
 // - A picture that takes longer than the timeout answers `null`; the studio closes that browser.
 // - Pictures are kept on disk by the hash of what they are drawn from (the spec, the model file and
-//   this file's `RENDER_VERSION`), so a card is rendered once and its picture survives restarts.
+//   this file's `RENDER_VERSION`), so a card is rendered once and its picture survives restarts;
+//   the folder is kept under `portrait_cache_max_mb`, the pictures used longest ago going first
+//   (`portrait-cache.ts`), since any of them can be rendered again.
 // - Three failures in a row pause rendering for ten minutes; one warning, not one per card.
 
 import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { CardPortrait, PortraitInput } from "./portrait.js";
+import { cacheBytes, PortraitCache, type SweepResult } from "./portrait-cache.js";
 import { type PortraitSpec, portraitSpec } from "./portrait-spec.js";
 
 /** Bump to draw every kept picture again after the look of the pictures changes. */
 export const RENDER_VERSION = "1";
+
+/** The cap of the kept pictures when none is given (`portrait_cache_max_mb`'s default). */
+export const DEFAULT_CACHE_MB = 2048;
 
 /** Pictures that may wait behind the one being drawn. */
 const MAX_WAITING = 4;
@@ -65,6 +70,8 @@ export interface Live2dPortraitOptions {
   model: string;
   /** Where pictures are kept. */
   cacheDir: string;
+  /** Most bytes the kept pictures may take; default `DEFAULT_CACHE_MB` megabytes. */
+  cacheMaxBytes?: number;
   /** Longest wait for one picture. */
   timeoutMs: number;
   /** `msedge` or `chrome` (playwright-core's channels). */
@@ -109,11 +116,18 @@ export class Live2dPortrait implements CardPortrait {
   #pausedUntil = 0;
   #idle: NodeJS.Timeout | null = null;
   readonly #inflight = new Map<string, Promise<Uint8Array | null>>();
+  readonly #cache: PortraitCache;
   #closed = false;
 
   constructor(options: Live2dPortraitOptions) {
     this.#o = options;
     this.#now = options.now ?? Date.now;
+    this.#cache = new PortraitCache({
+      dir: options.cacheDir,
+      maxBytes: options.cacheMaxBytes ?? cacheBytes(DEFAULT_CACHE_MB),
+      log: options.log,
+      ...(options.now === undefined ? {} : { now: options.now }),
+    });
   }
 
   /**
@@ -164,8 +178,8 @@ export class Live2dPortrait implements CardPortrait {
       return null;
     }
     const file = join(this.#o.cacheDir, `${key}.png`);
-    const kept = await readFile(file).catch(() => null);
-    if (kept !== null) return new Uint8Array(kept);
+    const kept = await this.#cache.read(file);
+    if (kept !== null) return kept;
     const running = this.#inflight.get(key);
     if (running !== undefined) return running;
     if (this.#now() < this.#pausedUntil) return null;
@@ -194,7 +208,7 @@ export class Live2dPortrait implements CardPortrait {
       );
       // The studio gives a Buffer; answer a plain Uint8Array, as a kept picture is.
       const png = new Uint8Array(drawn.buffer, drawn.byteOffset, drawn.byteLength);
-      await this.#keep(file, png);
+      await this.#cache.keep(file, png);
       this.#succeeded();
       return png;
     } catch (error) {
@@ -249,15 +263,12 @@ export class Live2dPortrait implements CardPortrait {
     return this.#studio.catch(() => null);
   }
 
-  async #keep(file: string, png: Uint8Array): Promise<void> {
-    try {
-      await mkdir(dirname(file), { recursive: true });
-      const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-      await writeFile(tmp, png);
-      await rename(tmp, file);
-    } catch (error) {
-      this.#o.log.debug({ err: reason(error), file }, "card portraits: cannot keep a picture");
-    }
+  /**
+   * Keeps the kept pictures under the cap (`portrait-cache.ts`): at start, and by itself after
+   * each picture written.
+   */
+  sweepCache(): Promise<SweepResult> {
+    return this.#cache.sweep();
   }
 
   #succeeded(): void {
@@ -321,6 +332,7 @@ export interface PortraitConfig {
   portrait_model: string;
   portrait_studio: string;
   portrait_cache: string;
+  portrait_cache_max_mb: number;
   portrait_browser: "msedge" | "chrome";
   portrait_timeout_secs: number;
 }
@@ -328,7 +340,8 @@ export interface PortraitConfig {
 /**
  * The portrait `[modules.cards]` asks for, its paths resolved against `cwd` (the working folder,
  * like every other path in the config); `null` for `portrait = "fixed"` or when it cannot render
- * here (said once in the log).
+ * here (said once in the log). Either way with `live2d` the kept pictures are brought under the
+ * cap now, in the background: a cap lowered while nothing renders still holds.
  */
 export function livePortrait(
   config: PortraitConfig,
@@ -340,10 +353,12 @@ export function livePortrait(
     studioDir: resolve(cwd, config.portrait_studio),
     model: config.portrait_model === "" ? "" : resolve(cwd, config.portrait_model),
     cacheDir: resolve(cwd, config.portrait_cache),
+    cacheMaxBytes: cacheBytes(config.portrait_cache_max_mb),
     timeoutMs: config.portrait_timeout_secs * 1000,
     channel: config.portrait_browser,
     log,
   });
+  void portrait.sweepCache();
   return portrait.check() ? portrait : null;
 }
 
