@@ -170,7 +170,7 @@ pnpm dev chat                          # 在終端機跟她聊天,不需要 Disc
 
 ```bash
 miyoria init                    # 第一題:這台電腦要做什麼;寫 host.toml(要跑 Core 的也寫 miyoria.toml 和 .env)
-miyoria add asr tts turn        # 加服務:uv 建環境、下載缺的檔案,最後列出還要你自己處理的事
+miyoria add asr tts turn        # 加服務:uv 建環境、下載缺的模型檔(先問),最後列出還要你自己處理的事
 miyoria up                      # 在背景啟動 hostd,再由它依序啟動 host.toml 啟用的服務
 miyoria status                  # 看每個服務的狀態、健康、埠
 ```
@@ -179,19 +179,33 @@ miyoria status                  # 看每個服務的狀態、健康、埠
 
 1. 在 `host.toml` 加 `[services.<名稱>]`(沒有 `host.toml` 就建一份);
 2. 用 uv 把服務資料夾的 `pyproject.toml` 和 `uv.lock` 裝成 `<狀態資料夾>/envs/<名稱>`(`uv sync --frozen`,版本全部照 lock 檔,包括 CUDA 版的 torch);沒有 uv 會停下來告訴你怎麼裝,裝好後重新執行同一個指令,做完的會跳過;
-3. 下載服務 `[install.files]` 列的檔案(例如 turn 的兩個小模型);
+3. 下載服務 `[[install.files]]` 列的模型檔(見下面 [自動下載的模型檔](#自動下載的模型檔));
 4. 檢查 `[install] system` 的程式有沒有在 PATH 上(例如 ffmpeg;不會替你裝),列出 `[install.manual]` 要你自己放的東西。
+
+#### 自動下載的模型檔
+
+`service.toml` 的 `[[install.files]]` 每一個檔案都寫明:放在哪裡(`<狀態資料夾>/models/` 底下的相對路徑)、從哪裡來(https 網址,或 Hugging Face 的 repository、檔名和**固定的 commit**)、SHA-256、大小、是什麼、授權。只放公開、可以自由下載的權重;她的聲音模型、參考音這類私人的東西一律是 `[install.manual]`,不會自動下載。
+
+- `add`、`update`、`doctor --fix` 下載之前先列出每個檔案的大小、授權和來源,加總後**問一次**;`-y` / `--yes` 不問。沒有終端機又沒有 `--yes` 時,印出清單和要執行的指令後以失敗結束,什麼都不下載。回答「不要」時其他步驟照做,缺的檔案留著,之後 `miyoria doctor --fix` 可以補。
+- 只從 https、只從允許的主機下載:huggingface.co(和它的 CDN)、github.com 的 release 檔案、raw.githubusercontent.com;每一次轉址都重新檢查,最多 5 次。擴充的 `service.toml` 不能自己加主機,寫了清單外的主機那個服務會被標成有問題。
+- 先寫到 `<檔名>.part`,中斷了重跑會用 Range 續傳;一段時間收不到資料或伺服器暫時出錯會等一下再重試。SHA-256 對了才改名成正式的檔名,不對就刪掉並報錯。磁碟剩的空間不夠「要下載的大小 + 512 MB」時不開始,訊息會寫出數字。下載的檔案只會放在模型資料夾裡,也從來不會被執行。
+- 缺少必要的檔案(沒標 `optional = true` 的)時 hostd 不會啟動那個服務,`miyoria status` 的原因會寫是哪個檔案;標了 `optional` 的(服務沒有它也能跑,只是退回比較陽春的做法)不擋啟動。
+- 算過的 SHA-256 記在 `<狀態資料夾>/models.verified.json`(連同檔案的大小和修改時間),之後 `doctor` 只重算有變的檔案;`doctor --deep` 每個都重算。
+- `miyoria doctor --print-hashes <服務>` 印出這台電腦上那個服務的檔案(`[[install.files]]` 的,和 `[install.manual]` 資料夾裡的)的 SHA-256 和大小,照 `service.toml` 的寫法,方便把手動放的檔案改成自動下載。
+
+**目前還沒有任何服務自動下載**:turn 的兩個小模型、sing 的兩個分離模型都已經寫成 `[[install.files]]`,但 repository 裡沒有它們的 SHA-256 和 commit,所以先註解掉、照舊列成手動項目。在有這些檔案的電腦上執行 `miyoria doctor --print-hashes turn`(和 `sing`)填進去、取消註解後就會自動下載(見 `workers/turn/service.toml`、`workers/sing/service.toml` 的 `TODO(owner machine)`)。
 
 Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務自己下載,或先 `miyoria models pull <服務>`(下載到 `<狀態資料夾>/models`)。要同步別的 extras(例如 ASR 的 `sensevoice`):`miyoria add asr --extra sensevoice`(只能用在一個服務,另外要在 `[services.asr]` 用 `env` 設 `ASR_BACKEND`,見 [workers/README.md](../workers/README.md))。`--no-install` 只寫 `host.toml`,不建環境。
 
 `miyoria remove <服務>` 停止它、刪掉它的環境(下載的模型留著)、從 `host.toml` 拿掉;`--keep-env` 保留環境。`miyoria models gc` 列出沒有任何服務用到的模型,確認後才刪。
 
-**要人自己放的東西**(`add` 的輸出、`doctor` 都會列;路徑是從 repository 根目錄算起):
+**要人自己放的東西**(`add` 的輸出、`doctor` 都會列;路徑是從 repository 根目錄算起,`<模型資料夾>` 是 `<狀態資料夾>/models`):
 
 | 服務 | 要自己放的 | 說明 |
 |---|---|---|
 | `tts` | `workers/voices/<聲音>/ref.wav` 和 `ref.txt` | 她的聲音參考音,不進 git;`<聲音>` 預設 `deepseek-chan`([workers/README.md](../workers/README.md) 第 4 節) |
-| `sing` | `workers/models/applio`、`models/lead-split`、`models/vocal-split`、`models/seed-vc` | 她的 RVC 歌聲模型和幾個分離模型;沒有的部分會退回或略過,見 [workers/README.md](../workers/README.md) 第 9 節 |
+| `turn` | `<模型資料夾>/smart-turn/smart-turn-v3.2-cpu.onnx`、`<模型資料夾>/silero-vad/silero_vad.onnx` | 兩個公開的小模型,填好檢查碼後改成自動下載(見上面);沒有也能跑,Core 退回舊的判斷 |
+| `sing` | `workers/models/applio`、`models/lead-split`、`models/vocal-split`、`models/seed-vc` | 她的 RVC 歌聲模型(私人)、兩個分離模型(公開,填好檢查碼後改成自動下載)和 Seed-VC 原始碼(是程式碼,不自動下載);沒有的部分會退回或略過,見 [workers/README.md](../workers/README.md) 第 9 節 |
 | `mediamtx` | `workers/mediamtx/mediamtx.exe` | 見下面 [MediaMTX](#mediamtx) |
 | `voice-node` | `apps/voice-node/.env` | `SELF_TOKEN`,見下面 [Voice node](#voice-node) |
 
@@ -207,7 +221,7 @@ Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務�
 | `miyoria up --foreground` | 不經背景的 hostd,在這個終端機監管並顯示狀態;Ctrl+C 依相反順序停止全部 |
 | `miyoria down [服務...]` | 停止指定的服務;沒給名字就停止全部並結束 hostd |
 | `miyoria restart <服務>` | 重新啟動一個服務(重啟前會重新讀 `host.toml` 和 `service.toml`) |
-| `miyoria doctor [--deep] [--fix]` | 檢查這台缺什麼,見下面 [用 doctor 檢查](#用-doctor-檢查) |
+| `miyoria doctor [--deep] [--fix]` | 檢查這台缺什麼,見下面 [用 doctor 檢查](#用-doctor-檢查);`--print-hashes <服務>` 印出現有檔案的 SHA-256 和大小 |
 | `miyoria update` | 更新程式碼和環境,見 [§6](#6-升級) |
 | `miyoria add` / `remove` / `models pull` `ls` `gc` | 見上面 |
 | `miyoria hostd` | 在這個終端機執行 hostd 本身(`up` 平常會替你在背景啟動它) |
@@ -229,7 +243,8 @@ Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務�
 |---|---|
 | `host.toml` | 這台電腦的設定(工作資料夾,不進 git) |
 | `<狀態資料夾>/envs/<服務>/` | uv 建的 Python 環境。`host.toml` 的 `[services.<名稱>] python = "<路徑>"` 指定的環境不在這裡,`add`、`update`、`remove` 都不會動它 |
-| `<狀態資料夾>/models/` | 下載的模型;`hf/` 是 Hugging Face 的快取(hostd 啟動的 Python 服務用它當 `HF_HUB_CACHE`) |
+| `<狀態資料夾>/models/` | 下載的模型;`hf/` 是 Hugging Face 的快取(hostd 啟動的 Python 服務用它當 `HF_HUB_CACHE`),其他是 `[[install.files]]` 的檔案(和沒下載完的 `.part`) |
+| `<狀態資料夾>/models.verified.json` | 已經驗證過的模型檔 SHA-256,連同大小和修改時間;刪掉只會讓下次 `doctor` 重算 |
 | `<狀態資料夾>/logs/<服務>.log` | 服務的 stdout 和 stderr;每 10 MB 輪替一次,留舊的 5 份(`<服務>.log.1` 到 `.5`)。hostd 自己的日誌是 `hostd.log` |
 | `<狀態資料夾>/run/hostd.json` | 正在跑的 hostd 的 pid、本機 API 埠和 CLI 用的 token(只有你的使用者讀得到) |
 | `<狀態資料夾>/host.key` | 這台加入 Core 之後的金鑰(`{ "id", "key" }`,不要給別人) |
@@ -257,7 +272,8 @@ Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務�
 | 環境 | uv 環境沒建、或和 `uv.lock`、extras、`service.toml` 不一致;`host.toml` 的 `python` 指到不存在的環境 |
 | 系統程式 | `[install] system` 的程式(例如 ffmpeg)不在 PATH 上 |
 | 手動項目 | `[install.manual]` 要你自己放的東西缺了(警告) |
-| 檔案、模型 | `[install.files]` 還沒下載;Hugging Face 模型還不在快取裡(警告,第一次啟動會自己下載) |
+| 檔案 | `[[install.files]]` 每個檔案:在而且 SHA-256 對(✓)、缺(必要的 ✗,hostd 不會啟動服務;`optional` 的 !)、大小或 SHA-256 不對(✗)。SHA-256 只在檔案新出現或改過時重算,`--deep` 全部重算 |
+| 模型 | Hugging Face 模型還不在快取裡(警告,第一次啟動會自己下載) |
 | host.key、Core 連線 | 只在 `host.toml` 有 `[cluster]` 時:這台有沒有加入、Core 有沒有接受、連線通不通 |
 
 `--deep`(`--deep-only` 只跑部署檢查,不連 LLM、Discord、資料庫)另外加。只讀:不會改 Windows、防火牆或防毒設定,每個 ✗ / ! 都附修正步驟:
@@ -273,7 +289,7 @@ Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務�
 | Minecraft mod | jar 比原始碼舊、遊戲 `mods/` 裡的 jar 和建置出來的不同、`Protocol.java` 與 `PROTOCOL.md` 的協定版本不一致、找不到 JDK 21(PATH 上是 Java 8 也會說) |
 | 暫存檔 | 在暫存資料夾寫、讀、刪 2 MB 檔案(防毒鎖檔的症狀)、殘留的 `esbuild-*`、偵測到 Kaspersky 等會說明 |
 
-`--fix` 只做安全的修復:把缺的或過期的環境同步一次、下載缺的 `install.files`。不裝系統程式、不改任何系統設定、不重啟服務。
+`--fix` 只做安全的修復:把缺的或過期的環境同步一次、下載缺的或不對的模型檔(先列出來問一次,`-y` 不問)。不裝系統程式、不改任何系統設定、不重啟服務。
 
 Windows 保留埠的處理需要系統管理員,要自己做:`netsh interface ipv4 show excludedportrange protocol=tcp` 查看,`net stop winnat` 再 `net start winnat` 釋放;長期做法是 `netsh int ipv4 set dynamic tcp start=49152 num=16384`(要重開機)。
 
@@ -542,6 +558,7 @@ miyoria doctor --deep
 5. mod 用找到的 JDK 21 建置(只對這次 Gradle 設 `JAVA_HOME`,不改系統設定)。要覆蓋 `<minecraft_dir>/mods` 裡的 jar 時**先問**,舊檔備份到 `<minecraft_dir>/miyoria-backup/<時間>/`;自動化加 `--yes`,非互動又沒有 `--yes` 就不覆蓋。請先關掉遊戲。
 6. **Python 環境**:`host.toml` 啟用的每個 Python 服務,如果它的環境和現在的 `uv.lock`、extras、`service.toml` 不一致,就重新 `uv sync --frozen`(`host.toml` 用 `python = ...` 指定的環境不動)。
 7. **重啟**:跑著、而且環境剛同步過或自己的資料夾在這次 pull 有變的服務,**一次一個**重啟,每個都經過[保護](#受保護的服務):她在唱歌或直播時,Core、Voice node 和 Stage **不會被動**,`update` 印出「還在忙所以沒有重啟」和之後要執行的 `miyoria restart <服務>`(要先同步環境的,重新執行 `miyoria update`)。`--no-restart` 同步環境但不重啟任何服務。
+8. **模型檔**:`[[install.files]]` 缺的或不對的(例如 pull 進來的 `service.toml` 加了新檔案、換了版本),列出大小、授權和來源後問一次再下載(`--yes` 不問;沒有終端機又沒有 `--yes` 就印出清單、這一項算失敗)。還在忙沒有重啟的服務這次不下載。見 [自動下載的模型檔](#自動下載的模型檔)。
 
 `--dry-run` 只列出會做的事。`doctor --deep` 會比對執行中的 Core 版本和這份 CLI,不同時提醒重啟。
 
