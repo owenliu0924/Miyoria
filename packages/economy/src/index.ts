@@ -15,7 +15,6 @@ export {
   STRANGER,
   WALLET_NODE,
 } from "./economy.js";
-export { GoalDesk } from "./goals.js";
 export { TaskRefusal } from "./guard.js";
 export { economySchema } from "./migrations.js";
 export { EconomyModule } from "./module.js";
@@ -40,13 +39,6 @@ export {
   type FortuneRecord,
   type FortuneStore,
   FortuneStoreKey,
-  type Goal,
-  type GoalFulfiller,
-  type GoalPatch,
-  type GoalPledge,
-  type GoalStatus,
-  type GoalStore,
-  GoalStoreKey,
   type LedgerDayTotal,
   LedgerStatsKey,
   type LedgerStatsStore,
@@ -59,16 +51,10 @@ export {
   economyBounties,
   economyDocs,
   economyFortunes,
-  economyGoalPledges,
-  economyGoals,
   economyLedger,
   economyWallets,
   type FortuneRow,
-  GOAL_FULFILLERS,
-  GOAL_STATUSES,
-  type GoalRow,
   type LedgerRow,
-  type PledgeRow,
   type WalletRow,
 } from "./schema.js";
 export { MAX_SCREEN_CHARS, screenText } from "./screen.js";
@@ -79,7 +65,6 @@ export {
   type EconomyTables,
   economyTables,
   FortuneTables,
-  GoalTables,
   LedgerTables,
 } from "./tables.js";
 export { NO_RECEIVER, NO_TRANSFERS, OWN_ACCOUNT } from "./transfer.js";
@@ -100,16 +85,13 @@ export {
   GIFT_TOPIC,
   type GiftEvent,
   type GiftItem,
-  type GoalView,
   type Hunger,
   type LedgerLine,
   MAX_ADJUST,
   MAX_ADJUST_NOTE_CHARS,
   PAID_ITEMS,
   type PaidItem,
-  type PledgeResult,
   type Purchase,
-  type ReachedGoalView,
   SCREEN_TOPIC,
   type ScreenEvent,
   type ShopItem,

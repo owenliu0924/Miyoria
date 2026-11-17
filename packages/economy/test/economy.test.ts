@@ -595,7 +595,8 @@ describe("screen messages", () => {
     expect(topics(r, SCREEN_TOPIC)).toEqual([
       { kind: "message", name: "Alice", text: "加油 喔", song: null },
     ]);
-    expect(r.observed.at(-1)).toEqual({
+    // Her purse note may land after it, so look for the line instead of taking the last.
+    expect(r.observed).toContainEqual({
       source: "economy.screen_message",
       summary: "Alice把一則留言放上了大螢幕:「加油 喔」",
     });

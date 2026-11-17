@@ -139,6 +139,47 @@ describe("retiring deals", () => {
   });
 });
 
+describe("retiring goals", () => {
+  it("returns the pledges of a goal nobody funded, and keeps those of a funded one", () => {
+    const { t, people, row, balance } = oldDatabase();
+    const [alice, bob] = people;
+    if (!alice || !bob) throw new Error("people");
+    row(alice.person, 200, "checkin");
+    row(bob.person, 200, "checkin");
+    // Open goal "g1": both pledged. Expired goal "g2": pledged, then returned at the time.
+    // Reached goal "g3": pledged, and the purse took the funds.
+    const openA = row(alice.person, -30, "goal_pledge", "g1");
+    const openB = row(bob.person, -50, "goal_pledge", "g1");
+    const gone = row(alice.person, -20, "goal_pledge", "g2");
+    row(alice.person, 20, "refund", gone);
+    row(bob.person, -40, "goal_pledge", "g3");
+    row("self", 40, "goal_funds", "g3");
+    // An expired goal whose pledge was never returned (the old code would have): still given back.
+    const stuck = row(bob.person, -10, "goal_pledge", "g4");
+    expect(balance(alice.person)).toBe(200 - 30);
+    expect(balance(bob.person)).toBe(200 - 50 - 40 - 10);
+
+    expect(migrate(t.db, [identitySchema, economySchema]).map((m) => m.name)).toContain(
+      "retire_goals",
+    );
+
+    expect(refunds(t).map((r) => [r.person_id, r.delta, r.ref])).toEqual([
+      [alice.person, 30, openA],
+      [bob.person, 50, openB],
+      [bob.person, 10, stuck],
+    ]);
+    expect(balance(alice.person)).toBe(200);
+    expect(balance(bob.person)).toBe(200 - 40);
+    expect(tableExists(t, "economy_goals")).toBe(false);
+    expect(tableExists(t, "economy_goal_pledges")).toBe(false);
+    expect(
+      t.db.all("SELECT 1 FROM events WHERE type = 'economy.posted' AND key LIKE 'ledger:%'"),
+    ).toHaveLength(3);
+    expect(migrate(t.db, [identitySchema, economySchema])).toEqual([]);
+    expect(refunds(t)).toHaveLength(3);
+  });
+});
+
 describe("retiring commissions", () => {
   it("returns the price of every commission still waiting, and keeps the rest", () => {
     const { t, people, row, balance } = oldDatabase();

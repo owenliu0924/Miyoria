@@ -408,14 +408,10 @@ dirs = ["extensions"]
 # treat_per_person = 30       # 她請一個人一天最多
 # treat_total = 100           # 她請所有人一天最多
 # self_expressions_per_day = 3   # 她自己買表情一天幾次(價格是 expression)
-# goal_max_target = 2000      # 集資目標:一個最多要多少
-# goal_max_days = 7           # 最久開幾天
-# goal_pledge_max = 500       # 一個人最多出多少
-# goal_keep_days = 3          # 結束的目標留在清單上幾天
 # bounty_max = 50             # 懸賞:一個最多付多少
 # bounties_open = 3           # 同時最多幾個
 # bounty_days = 3             # 一個開幾天
-# agency_sweep_s = 60         # 多久結算一次結束的集資和懸賞
+# agency_sweep_s = 60         # 多久結算一次結束的懸賞
 # # ---- 經濟 2.0(docs/design/v4-plan.md §10)------------------------------------------------
 # # 一起玩、參與(play.ts):各種活動給多少、一種活動一天最多給一個人幾次、全部加起來一天最多。0 = 關掉
 # play_rewards = { game_join = 5, game_finish = 10, game_win = 5, sing_along = 5, headpat = 1, web_reaction = 1, prediction_join = 3 }

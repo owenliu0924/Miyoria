@@ -1,7 +1,7 @@
 // The shapes shared with the panel, the stage overlay and the Discord commands. Changing one
 // changes the contract (docs/design/economy.md).
 
-import { type AccountRef, type ContextKey, Events, serviceKey } from "@miyoria/types";
+import { type AccountRef, Events, serviceKey } from "@miyoria/types";
 import type { AchievementUnlocked } from "./v2-types.js";
 
 export type FeedItem = "rice" | "big_bowl" | "dessert";
@@ -212,31 +212,6 @@ export interface Economy {
   refund(account: AccountRef, entryId: string): Promise<boolean>;
   /** What `item` costs now, and how many one person may buy a day (`0`: off sale). */
   price(item: PaidItem): { price: number; per_day: number };
-  /**
-   * Her crowdfunding goals (docs/design/economy.md §13): the open one and the ones that ended
-   * lately. Anyone may read them; a stranger's `my_pledge` is 0.
-   */
-  goals(account: AccountRef): Promise<GoalView[]>;
-  /**
-   * Holds `amount` for the open goal `goal` (`EconomyError`: 400 a bad amount, 402 short, 403 a
-   * stranger, 409 the goal is over, 429 the most one person may pledge). The same key twice
-   * answers what the first did. Pledges are returned if the goal is not met. `context` is where
-   * the pledge was made: when it meets the target, a card says so there (none without one).
-   */
-  pledge(
-    account: AccountRef,
-    goal: string,
-    amount: number,
-    key: string,
-    context?: ContextKey | null,
-  ): Promise<PledgeResult>;
-  /** Reached goals, kept or still owed, newest first (the panel). */
-  reachedGoals(): Promise<ReachedGoalView[]>;
-  /**
-   * Marks a reached goal's promise kept (`goalId` `null`: the newest one owed). `EconomyError`
-   * 409 when it is not reached or was marked already (the first mark stands).
-   */
-  fulfillGoal(goalId: string | null, by: "owner" | "self"): Promise<ReachedGoalView>;
   /** The bounties she has open. */
   bounties(): Promise<BountyView[]>;
   /**
@@ -269,49 +244,6 @@ export interface BoardLine {
   name: string;
   /** Coins spent on her over the board's window. */
   spent: number;
-}
-
-/** One of her goals as people see it. */
-export interface GoalView {
-  id: string;
-  title: string;
-  /** What she will do when it is reached. */
-  promise: string;
-  target: number;
-  raised: number;
-  /** What this person put in. */
-  my_pledge: number;
-  /** When it ends if it has not been reached. */
-  deadline: string;
-  status: "open" | "reached" | "expired" | "cancelled";
-  /** A reached goal whose promise she kept (marked by the owner or by her). */
-  fulfilled: boolean;
-}
-
-/** A reached goal for the owner: what she promised and whether she kept it. */
-export interface ReachedGoalView {
-  id: string;
-  title: string;
-  promise: string;
-  target: number;
-  /** When it was reached. */
-  reached_at: string | null;
-  /** When the promise was marked kept; `null` while it is owed. */
-  fulfilled_at: string | null;
-  fulfilled_by: "owner" | "self" | null;
-}
-
-/** What a pledge did. */
-export interface PledgeResult {
-  /** What was held (less than asked when the goal needed less). */
-  pledged: number;
-  raised: number;
-  target: number;
-  /** This pledge met the target. */
-  reached: boolean;
-  balance: number;
-  /** The key was used before: nothing new was held. */
-  duplicate: boolean;
 }
 
 /** One bounty she has open. */

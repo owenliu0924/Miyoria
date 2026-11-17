@@ -47,7 +47,6 @@ import {
   type ProposedTool as ContractProposedTool,
   type QuestsView as ContractQuestsView,
   type QueueItemInfo as ContractQueueItemInfo,
-  type ReachedGoal as ContractReachedGoal,
   type ReflectionRun as ContractReflectionRun,
   type ReflectionStats as ContractReflectionStats,
   type ReminderView as ContractReminderView,
@@ -71,7 +70,7 @@ import {
   contract,
   routeMeta,
 } from "@miyoria/contracts/api";
-import type { Economy2, ReachedGoalView } from "@miyoria/economy";
+import type { Economy2 } from "@miyoria/economy";
 import { NODE_APPROVE, type PendingApproval } from "@miyoria/gate/actions";
 import type {
   CostReport,
@@ -235,13 +234,6 @@ const CASES: Case[] = [
   { name: "economy.health", method: "GET", path: "/api/economy/health" },
   { name: "economy.predictions", method: "GET", path: "/api/economy/predictions" },
   { name: "economy.room", method: "GET", path: "/api/economy/room" },
-  { name: "economy.goals", method: "GET", path: "/api/economy/goals" },
-  {
-    name: "economy.fulfill",
-    method: "POST",
-    path: "/api/economy/goals/:id/fulfill",
-    permission: "admin.economy.goals",
-  },
   { name: "people.quests", method: "GET", path: "/api/people/:id/quests" },
   { name: "activity.snapshot", method: "GET", path: "/api/activity" },
   { name: "activity.tasks", method: "GET", path: "/api/activity/tasks" },
@@ -477,8 +469,7 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const prediction: Same<ContractPredictionView, Prediction> = true;
     const room: Same<ContractRoomItem, Room> = true;
     const quests: Same<ContractQuestsView, Quests & { currency: string }> = true;
-    const goal: Same<ContractReachedGoal, ReachedGoalView> = true;
-    expect([health, prediction, room, quests, goal]).toEqual(Array(5).fill(true));
+    expect([health, prediction, room, quests]).toEqual(Array(4).fill(true));
   });
 
   it("her inner state, her world, her mood and her goals", () => {

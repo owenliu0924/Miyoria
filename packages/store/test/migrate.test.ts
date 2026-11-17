@@ -120,8 +120,6 @@ describe("bookkeeping", () => {
         "coin_ledger",
         "coin_wallets",
         "fortunes",
-        "goals",
-        "goal_pledges",
         "bounties",
         "economy_docs",
         // The memory plugin's tables (v5-data §8 step 9b).

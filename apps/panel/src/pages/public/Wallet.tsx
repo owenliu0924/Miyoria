@@ -16,7 +16,7 @@ import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 import { FRAME_SWATCH } from "./card";
-import { Board, Bounties, Fortune, Goals } from "./Extras";
+import { Board, Bounties, Fortune } from "./Extras";
 import { newKey, priceText, say, usePatchWallet, useWallet } from "./spend";
 
 const SCREEN_MAX = 60;
@@ -390,10 +390,7 @@ export function WalletMain() {
         <Fortune />
         <Board />
       </div>
-      <div className="grid items-start gap-(--stage-gap) lg:grid-cols-2">
-        <Goals />
-        <Bounties />
-      </div>
+      <Bounties />
       <div className="grid gap-(--stage-gap) lg:grid-cols-2">
         <Earn w={w} />
         <Recent w={w} />

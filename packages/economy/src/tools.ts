@@ -600,10 +600,9 @@ export function lookCapability(economy: EconomyService): Capability {
         const shop = known && w !== null ? w.shop : economy.shop();
         out.push(
           `商店(價格單位:${cur}):\n${shopText(shop, known)}`,
-          "不在商店的:募資目標(投給她現在的目標)、" +
-            "懸賞(她貼的任務)、轉帳(給她認識的人)、贊助排行榜。",
+          "不在商店的:" + "懸賞(她貼的任務)、轉帳(給她認識的人)、贊助排行榜。",
           "在哪裡花:公開面板的會員頁,或 Discord 的 /me wallet、/me feed、/me screen、" +
-            "/me goals、/me pledge、/me bounties、/me give、/me board。" +
+            "/me bounties、/me give、/me board。" +
             "用自己的話說,只講上面有的,不要加沒列出的東西。",
         );
         data.shop = shop.map((i) => ({

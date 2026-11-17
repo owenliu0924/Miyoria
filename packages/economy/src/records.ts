@@ -173,49 +173,7 @@ export interface FortuneStore {
   deleteFor(profile: ProfileId, accounts: readonly AccountRef[]): Promise<number>;
 }
 
-// ---- goals and bounties -----------------------------------------------------------------
-
-/**
- * `open`: people may pledge; `reached`: the target was met and the pledges are hers (a promise);
- * `expired`: the deadline passed short, every pledge was returned; `cancelled`: she withdrew it,
- * every pledge was returned.
- */
-export type GoalStatus = "open" | "reached" | "expired" | "cancelled";
-
-/** A crowdfunding goal of hers (docs/design/economy.md §13): what she will do if it is met. */
-export interface Goal {
-  /** ULID. */
-  id: string;
-  title: string;
-  /** What she will do when the target is reached. */
-  promise: string;
-  target: number;
-  status: GoalStatus;
-  created_at: Timestamp;
-  deadline: Timestamp;
-  closed_at: Timestamp | null;
-  /** A reached goal whose promise she kept: when it was marked done. Absent while it is owed. */
-  fulfilled_at?: Timestamp;
-  /** Who marked it: `owner` (the panel) or `self` (she said she did it). */
-  fulfilled_by?: GoalFulfiller;
-}
-
-export type GoalFulfiller = "owner" | "self";
-
-/** What `GoalStore.transition` changes besides the status. */
-export interface GoalPatch {
-  status: GoalStatus;
-  closed_at?: Timestamp | null;
-}
-
-/** Coins held for a goal; `id` is the escrow's coin ledger row. */
-export interface GoalPledge {
-  id: string;
-  goal: string;
-  account: AccountRef;
-  amount: number;
-  created_at: Timestamp;
-}
+// ---- bounties ---------------------------------------------------------------------------
 
 /**
  * `open`: posted, the reward is held; `awarded`: paid to someone; `cancelled` / `expired`: the held
@@ -244,27 +202,6 @@ export interface BountyPatch {
   status: BountyStatus;
   closed_at?: Timestamp | null;
   winner?: AccountRef | null;
-}
-
-/** Her crowdfunding goals and what people pledged (docs/design/economy.md §13). */
-export interface GoalStore {
-  create(goal: Goal): Promise<void>;
-  get(id: string): Promise<Goal | null>;
-  /** Changes the goal only while its status is one of `from`; `false` when it was not. */
-  transition(id: string, from: readonly GoalStatus[], patch: GoalPatch): Promise<boolean>;
-  /** Goals newest first; `statuses` narrows them. */
-  list(
-    profile: ProfileId,
-    filter: { statuses?: readonly GoalStatus[]; limit: number },
-  ): Promise<Goal[]>;
-  /**
-   * Marks a reached goal's promise kept; `false` when the goal is not reached or was marked
-   * already (the first mark stands).
-   */
-  fulfill(id: string, by: GoalFulfiller, at: Timestamp): Promise<boolean>;
-  addPledge(pledge: GoalPledge): Promise<void>;
-  /** Every pledge of a goal, oldest first. */
-  pledges(goal: string): Promise<GoalPledge[]>;
 }
 
 /** Bounties she posted from her purse (docs/design/economy.md §13). */
@@ -346,6 +283,5 @@ export interface EconomyDocStore {
 export const CoinLedgerStoreKey = serviceKey<CoinLedgerStore>("CoinLedgerStore");
 export const LedgerStatsKey = serviceKey<LedgerStatsStore>("LedgerStats");
 export const FortuneStoreKey = serviceKey<FortuneStore>("FortuneStore");
-export const GoalStoreKey = serviceKey<GoalStore>("GoalStore");
 export const BountyStoreKey = serviceKey<BountyStore>("BountyStore");
 export const EconomyDocsKey = serviceKey<EconomyDocStore>("EconomyDocs");

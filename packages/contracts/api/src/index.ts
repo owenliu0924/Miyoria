@@ -64,14 +64,6 @@ export {
   BountyListSchema,
   type BountyView,
   BountyViewSchema,
-  type GoalList,
-  GoalListSchema,
-  type GoalView,
-  GoalViewSchema,
-  type PledgeRequest,
-  PledgeRequestSchema,
-  type PledgeResult,
-  PledgeResultSchema,
 } from "./agency.js";
 export {
   type AuthMethods,
@@ -292,8 +284,6 @@ export {
   PredictionViewSchema,
   type QuestsView,
   QuestsViewSchema,
-  type ReachedGoal,
-  ReachedGoalSchema,
   type RoomItem,
   RoomItemSchema,
 } from "./economy.js";

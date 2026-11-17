@@ -73,8 +73,6 @@ const CASES: Case[] = [
   post("wallet.board", "/api/member/board", { on: true }),
   post("wallet.frame", "/api/member/frame", { buy: "sakura" }),
   post("member.pat", "/api/member/live/pat", {}),
-  { name: "agency.goals", method: "GET", path: "/api/member/goals", audience: "member" },
-  post("agency.pledge", "/api/member/goals/g1/pledge", { amount: 1 }),
   { name: "agency.bounties", method: "GET", path: "/api/member/bounties", audience: "member" },
   { name: "fortune.today", method: "GET", path: "/api/member/fortune", audience: "member" },
   post("fortune.draw", "/api/member/fortune", {}),
@@ -212,29 +210,6 @@ const ANSWERS = {
     selected: null,
     balance: 1,
   } satisfies ApiOutputs["wallet"]["frame"],
-  "agency.goals": {
-    goals: [
-      {
-        id: "g1",
-        title: "a",
-        promise: "b",
-        target: 2,
-        raised: 1,
-        my_pledge: 0,
-        deadline: "2099-01-01T00:00:00Z",
-        status: "open",
-        fulfilled: false,
-      },
-    ],
-  } satisfies ApiOutputs["agency"]["goals"],
-  "agency.pledge": {
-    pledged: 1,
-    raised: 1,
-    target: 2,
-    reached: false,
-    balance: 1,
-    duplicate: false,
-  } satisfies ApiOutputs["agency"]["pledge"],
   "agency.bounties": {
     bounties: [{ id: "b1", task: "a", reward: 1, posted_at: "x", expires_at: "y" }],
   } satisfies ApiOutputs["agency"]["bounties"],
@@ -290,7 +265,6 @@ describe("the public and member routes of the table", () => {
 /** The route's Hono path: `/api/public/card/MYR-0` is the `:serial` route. */
 function pathOf(c: Case): string {
   if (c.name === "public.card") return "/api/public/card/:serial";
-  if (c.name === "agency.pledge") return "/api/member/goals/:id/pledge";
   return c.path;
 }
 
@@ -332,8 +306,6 @@ describe("the answers", () => {
       frame: os.wallet.frame.handler(answer("wallet.frame")),
     },
     agency: {
-      goals: os.agency.goals.handler(answer("agency.goals")),
-      pledge: os.agency.pledge.handler(answer("agency.pledge")),
       bounties: os.agency.bounties.handler(answer("agency.bounties")),
     },
     fortune: {

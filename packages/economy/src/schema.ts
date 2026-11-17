@@ -12,8 +12,6 @@
 //   sponsor board). It goes with the person.
 // - `economy_fortunes`: the fortune slips she wrote on the member page (§13), at most one per
 //   person per local day, by the session account it was written for.
-// - `economy_goals`, `economy_goal_pledges`: her crowdfunding goals and the coins people held
-//   for them (a pledge's id is its ledger row), by the account that pledged.
 // - `economy_bounties`: tasks she pays for out of her purse, and the account it was paid to.
 // - `economy_docs`: economy 2.0's documents (collection items, predictions and bets,
 //   her room, and the commissions of before they were retired), one table, `kind` says which; by the account that owns one.
@@ -26,7 +24,6 @@ import { accounts, micros, persons } from "@miyoria/store";
 import type { JsonObject } from "@miyoria/types";
 import { sql } from "drizzle-orm";
 import {
-  type AnySQLiteColumn,
   check,
   index,
   integer,
@@ -79,8 +76,6 @@ export const economyWallets = sqliteTable("economy_wallets", {
   off_board: integer({ mode: "boolean" }).notNull().default(false),
 });
 
-export const GOAL_STATUSES = ["open", "reached", "expired", "cancelled"] as const;
-export const GOAL_FULFILLERS = ["owner", "self"] as const;
 export const BOUNTY_STATUSES = ["open", "awarded", "cancelled", "expired"] as const;
 
 export const economyFortunes = sqliteTable(
@@ -103,50 +98,6 @@ export const economyFortunes = sqliteTable(
   },
   // One per account per day in the table; one per person (every account of theirs) in `put`.
   (t) => [uniqueIndex("economy_fortunes_day_idx").on(t.account_id, t.day)],
-);
-
-export const economyGoals = sqliteTable(
-  "economy_goals",
-  {
-    /** ULID. */
-    id: text().primaryKey(),
-    title: text().notNull(),
-    /** What she will do when the target is reached. */
-    promise: text().notNull(),
-    target: integer().notNull(),
-    status: text({ enum: GOAL_STATUSES }).notNull(),
-    created_at: micros().notNull(),
-    deadline: micros().notNull(),
-    closed_at: micros(),
-    /** A reached goal's promise kept: when, and by whom (the owner, or she said so herself). */
-    fulfilled_at: micros(),
-    fulfilled_by: text({ enum: GOAL_FULFILLERS }),
-  },
-  (t) => [
-    index("economy_goals_status_idx").on(t.status, t.created_at),
-    check("economy_goals_status_check", sql`${t.status} IN (${oneOf(GOAL_STATUSES)})`),
-    check(
-      "economy_goals_fulfilled_by_check",
-      sql`${t.fulfilled_by} IN (${oneOf(GOAL_FULFILLERS)})`,
-    ),
-  ],
-);
-
-export const economyGoalPledges = sqliteTable(
-  "economy_goal_pledges",
-  {
-    /** The escrow's ledger row. */
-    id: text().primaryKey(),
-    goal_id: text()
-      .notNull()
-      .references((): AnySQLiteColumn => economyGoals.id, { onDelete: "cascade" }),
-    account_id: text()
-      .notNull()
-      .references(() => accounts.id, { onDelete: "cascade" }),
-    amount: integer().notNull(),
-    created_at: micros().notNull(),
-  },
-  (t) => [index("economy_goal_pledges_goal_idx").on(t.goal_id, t.created_at)],
 );
 
 export const economyBounties = sqliteTable(
@@ -198,7 +149,5 @@ export const economyDocs = sqliteTable(
 export type LedgerRow = typeof economyLedger.$inferSelect;
 export type WalletRow = typeof economyWallets.$inferSelect;
 export type FortuneRow = typeof economyFortunes.$inferSelect;
-export type GoalRow = typeof economyGoals.$inferSelect;
-export type PledgeRow = typeof economyGoalPledges.$inferSelect;
 export type BountyRow = typeof economyBounties.$inferSelect;
 export type DocRow = typeof economyDocs.$inferSelect;

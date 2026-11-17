@@ -255,7 +255,7 @@ describe("handleContextMenuInteraction", () => {
 
 describe("a crowded /me", () => {
   const ME = [
-    "profile call link privacy wallet checkin feed give board screen goals pledge bounties",
+    "profile call link privacy wallet checkin feed give board screen bounties",
     "quests draw album giveitem predictions bet titles room",
     "memory show",
     "memory export",

@@ -15,7 +15,6 @@ import {
   EconomyKey,
   EconomyService,
   FortuneStoreKey,
-  GoalStoreKey,
 } from "@miyoria/economy";
 import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import { type HeartStore, heartTables } from "@miyoria/heart/person";
@@ -672,7 +671,6 @@ describe("the route table", () => {
       "GET /api/member/card",
       "GET /api/member/export",
       "GET /api/member/fortune",
-      "GET /api/member/goals",
       "GET /api/member/me",
       "GET /api/member/session",
       "GET /api/member/wallet",
@@ -684,19 +682,14 @@ describe("the route table", () => {
       "POST /api/member/forget",
       "POST /api/member/fortune",
       "POST /api/member/frame",
-      "POST /api/member/goals/:id/pledge",
       "POST /api/member/live/pat",
       "POST /api/member/screen",
       "POST /api/member/songs",
       "POST /api/member/transfer",
     ]);
     expect(all.filter((r) => !r.public && !r.member).length).toBeGreaterThan(90);
-    // No member route takes a parameter that could name a person (a goal is not one).
-    expect(
-      all.filter(
-        (r) => r.member && r.path.includes(":") && !r.path.startsWith("/api/member/goals/"),
-      ),
-    ).toEqual([]);
+    // No member route takes a parameter that could name a person.
+    expect(all.filter((r) => r.member && r.path.includes(":"))).toEqual([]);
   });
 
   it("drops the public and member routes when switched off", () => {
@@ -1927,21 +1920,10 @@ describe("the wallet", () => {
     });
   });
 
-  it("shows her goals and bounties, takes pledges and keeps strangers out of them", async () => {
+  it("shows her bounties to everyone", async () => {
     const r = await walletRig();
-    r.sup.services.provide("economy", GoalStoreKey, r.economy.goals);
     r.sup.services.provide("economy", BountyStoreKey, r.economy.bounties);
     const now = Date.now();
-    await r.economy.goals.create({
-      id: "goal-1",
-      title: "新麥克風",
-      promise: "學三種貓叫",
-      target: 50,
-      status: "open",
-      created_at: new Date(now).toISOString() as never,
-      deadline: new Date(now + 86_400_000).toISOString() as never,
-      closed_at: null,
-    });
     await r.economy.bounties.create({
       id: "bounty-1",
       task: "猜她的幸運數字",
@@ -1955,27 +1937,6 @@ describe("the wallet", () => {
     });
     await r.fund(ALICE, 100);
     const alice = await r.login("alice");
-    const read = await r.get("/api/member/goals", alice);
-    expect(read.status).toBe(200);
-    expect(shape(read.body)).toEqual(
-      [
-        "goals[].deadline",
-        "goals[].fulfilled",
-        "goals[].id",
-        "goals[].my_pledge",
-        "goals[].promise",
-        "goals[].raised",
-        "goals[].status",
-        "goals[].target",
-        "goals[].title",
-      ].sort(),
-    );
-    expect((read.body as { goals: unknown[] }).goals[0]).toMatchObject({
-      id: "goal-1",
-      raised: 0,
-      my_pledge: 0,
-      status: "open",
-    });
     const bounties = await r.get("/api/member/bounties", alice);
     expect(shape(bounties.body)).toEqual(
       [
@@ -1991,81 +1952,11 @@ describe("the wallet", () => {
       reward: 30,
     });
 
-    const pledge = await r.spend("/api/member/goals/goal-1/pledge", alice, { amount: 20 }, "p-1");
-    expect(pledge.status).toBe(200);
-    expect(pledge.body).toEqual({
-      pledged: 20,
-      raised: 20,
-      target: 50,
-      reached: false,
-      balance: 80,
-      duplicate: false,
-    });
-    const same = await r.spend("/api/member/goals/goal-1/pledge", alice, { amount: 20 }, "p-1");
-    expect(same.body).toMatchObject({ pledged: 20, duplicate: true, balance: 80 });
-    expect(await r.balanceOf(ALICE)).toBe(80);
-    expect(
-      ((await r.get("/api/member/goals", alice)).body as { goals: unknown[] }).goals[0],
-    ).toMatchObject({
-      raised: 20,
-      my_pledge: 20,
-    });
-    for (const bad of [{ amount: 0 }, { amount: 1.5 }, { amount: 5, to: BOB }]) {
-      expect((await r.spend("/api/member/goals/goal-1/pledge", alice, bad, "p-bad")).status).toBe(
-        422,
-      );
-    }
-    expect(
-      (await r.spend("/api/member/goals/nope/pledge", alice, { amount: 5 }, "p-2")).status,
-    ).toBe(400);
-
-    // Strangers and blocked people read the goal like anyone, and cannot pledge.
+    // Strangers and blocked people read the bounties like anyone.
     for (const who of ["dave", "carol", "erin", "frank"]) {
       const cookie = await r.login(who);
-      const view = await r.get("/api/member/goals", cookie);
-      expect(view.status, who).toBe(200);
-      expect((view.body as { goals: unknown[] }).goals[0], who).toMatchObject({
-        raised: 20,
-        my_pledge: 0,
-      });
-      const res = await r.spend("/api/member/goals/goal-1/pledge", cookie, { amount: 5 }, "p-s");
-      expect(res.status, who).toBe(403);
-      expect(res.body).toEqual({ error: "她還不認識你,先和她說說話吧" });
+      expect((await r.get("/api/member/bounties", cookie)).status, who).toBe(200);
     }
-    // Reaching it ends it.
-    const bob = await r.login("bob");
-    expect(
-      (await r.spend("/api/member/goals/goal-1/pledge", bob, { amount: 5 }, "p-0")).status,
-    ).toBe(402);
-    await r.fund(BOB, 100);
-    const done = await r.spend("/api/member/goals/goal-1/pledge", bob, { amount: 100 }, "p-b");
-    expect(done.body).toMatchObject({ pledged: 30, reached: true });
-    expect(
-      (await r.spend("/api/member/goals/goal-1/pledge", bob, { amount: 5 }, "p-c")).status,
-    ).toBe(409);
-    expect(await r.economy.goals.get("goal-1")).toMatchObject({ status: "reached" });
-
-    // The owner sees it owed and marks it kept, once; a member cannot.
-    const owed = await raw(r.base, "GET", "/api/economy/goals", { token: TOKEN });
-    expect(owed.body).toMatchObject({
-      goals: [{ id: "goal-1", promise: "學三種貓叫", fulfilled_at: null, fulfilled_by: null }],
-    });
-    const memberTry = await r.post("/api/economy/goals/goal-1/fulfill", alice, {});
-    expect([401, 403]).toContain(memberTry.status);
-    const mark = (id: string) =>
-      raw(r.base, "POST", `/api/economy/goals/${id}/fulfill`, {
-        token: TOKEN,
-        json: {},
-        headers: { "x-miyoria-request": "1" },
-      });
-    const kept = await mark("goal-1");
-    expect(kept.status).toBe(200);
-    expect(kept.body).toMatchObject({ goal: { id: "goal-1", fulfilled_by: "owner" } });
-    expect((await mark("goal-1")).status).toBe(409);
-    expect((await mark("nope")).status).toBe(409);
-    expect(
-      ((await r.get("/api/member/goals", alice)).body as { goals: unknown[] }).goals[0],
-    ).toMatchObject({ status: "reached", fulfilled: true });
   });
 
   it("checks in once a day", async () => {

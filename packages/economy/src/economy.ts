@@ -26,7 +26,6 @@ import {
   AuthorizerKey,
   accountRefString,
   type Clock,
-  type ContextKey,
   EventLogKey,
   type EventPayload,
   Events,
@@ -55,7 +54,6 @@ import { setBoard, sponsorBoard } from "./board.js";
 import { BountyBoard } from "./bounties.js";
 import type { EconomyConfig } from "./config.js";
 import { type EconomyDocStore, EconomyDocsKey, MemoryDocs } from "./docs.js";
-import { GoalDesk } from "./goals.js";
 import { Purse } from "./purse.js";
 import {
   type CoinCap,
@@ -63,8 +61,6 @@ import {
   type CoinLedgerStore,
   CoinLedgerStoreKey,
   type CoinRule,
-  type Goal,
-  type GoalFulfiller,
 } from "./records.js";
 import { MAX_SCREEN_CHARS, screenEvent, screenText, screenWait, waitMinutes } from "./screen.js";
 import { otherName, sendCoins } from "./transfer.js";
@@ -83,16 +79,13 @@ import {
   type FramesResult,
   type GiftEvent,
   type GiftItem,
-  type GoalView,
   type Hunger,
   type LedgerLine,
   MAX_ADJUST,
   MAX_ADJUST_NOTE_CHARS,
   PAID_ITEMS,
   type PaidItem,
-  type PledgeResult,
   type Purchase,
-  type ReachedGoalView,
   type ShopItem,
   type SpendResult,
   type TransferResult,
@@ -178,6 +171,7 @@ const RETIRED_LABEL: Readonly<Record<string, string>> = {
   commission_pay: "委託做完了",
   shop: "她的小店",
   shop_pay: "小店的收入",
+  goal_pledge: "投給她的目標",
 };
 
 /** Ledger reasons that are gifts to her (they diminish each other). */
@@ -302,7 +296,6 @@ export class EconomyService implements Economy {
   readonly #turns = new SerialQueue();
   /** Her own coins (purse.ts), her crowdfunding goals (goals.ts) and her bounties (bounties.ts). */
   readonly purse: Purse;
-  readonly goalDesk: GoalDesk;
   readonly bountyDesk: BountyBoard;
   /** Economy 2.0 (docs/design/v4-plan.md §10): play, quests, collection, predictions, ... */
   readonly v2: V2;
@@ -312,7 +305,6 @@ export class EconomyService implements Economy {
   constructor(deps: EconomyDeps) {
     this.#d = deps;
     this.purse = new Purse(this);
-    this.goalDesk = new GoalDesk(this);
     this.bountyDesk = new BountyBoard(this);
     this.v2 = new V2(this);
   }
@@ -472,31 +464,7 @@ export class EconomyService implements Economy {
     return this.#passes(who, text);
   }
 
-  // ---- her goals and bounties (§13) -------------------------------------------------------
-
-  goals(account: AccountRef): Promise<GoalView[]> {
-    return this.goalDesk.view(account);
-  }
-
-  /** Reached goals, kept or still owed, newest first (the panel). */
-  async reachedGoals(): Promise<ReachedGoalView[]> {
-    return (await this.goalDesk.reached()).map(reachedView);
-  }
-
-  /** Marks a reached goal's promise kept (`goalId` `null`: the newest one owed). */
-  async fulfillGoal(goalId: string | null, by: GoalFulfiller): Promise<ReachedGoalView> {
-    return reachedView(await this.goalDesk.fulfill(goalId, by));
-  }
-
-  pledge(
-    account: AccountRef,
-    goal: string,
-    amount: number,
-    key: string,
-    context: ContextKey | null = null,
-  ): Promise<PledgeResult> {
-    return this.goalDesk.pledge(account, goal, amount, key, context);
-  }
+  // ---- her bounties (§13) -------------------------------------------------------
 
   bounties(): Promise<BountyView[]> {
     return this.bountyDesk.view();
@@ -700,8 +668,6 @@ export class EconomyService implements Economy {
         const frame = c.frames.find((f) => f.id === r.ref);
         return `買卡框${frame ? `「${frame.label}」` : ""}`;
       }
-      case "goal_pledge":
-        return "投給她的目標";
       case "purse_gift":
         return "她請你的";
       case "bounty":
@@ -1435,16 +1401,3 @@ export function voiceWindow(ms: number): number {
 }
 
 export { VOICE_WINDOW_MS };
-
-/** A reached goal as the owner sees it. */
-function reachedView(g: Goal): ReachedGoalView {
-  return {
-    id: g.id,
-    title: g.title,
-    promise: g.promise,
-    target: g.target,
-    reached_at: g.closed_at,
-    fulfilled_at: g.fulfilled_at ?? null,
-    fulfilled_by: g.fulfilled_by ?? null,
-  };
-}

@@ -133,27 +133,6 @@
       "framed": false
     },
     {
-      "name": "cancel_goal",
-      "description": "你不想做了,取消現在進行中的目標,大家投的魚幣全部退回。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
       "name": "cancel_prediction",
       "description": "預測辦不下去(結果看不出來、題目有問題)時取消,大家押的全部退回。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -844,27 +823,6 @@
       "framed": false
     },
     {
-      "name": "goal_done",
-      "description": "大家湊滿的目標,你答應的事已經真的做到了(例如答應的歌唱完了),就呼叫,記成做到了。還沒做就不要呼叫;記下來之後就不會再提醒你。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
       "name": "keep_note",
       "description": "工具結果(搜尋、歌詞、網頁、計算)的全文下一回合就看不到了,最多剩幾行摘要。之後這段對話還會用到全文的,用你自己的話記下重點(最多 600 字,例如歌詞的那幾句、查到的數字),之後每一回合都看得到;預設留 30 分鐘,每段對話最多 5 則,多了最舊的會被擠掉。用不到就不要記。",
       "parameters": {
@@ -1339,55 +1297,6 @@
         "required": [
           "task",
           "reward"
-        ]
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
-      "name": "propose_goal",
-      "description": "提一個目標請大家一起湊魚幣:要多少、湊到了你會做什麼、幾天內。一次只有一個。大家的錢先放在託管,湊到了就是你的錢,而且你答應的事要做到;時間到沒湊滿全部退回去。你答應的只能是本來就是你自己能決定的事:需要被管的動作(開台、進語音、私訊、玩遊戲、唱歌…)、主人規則禁止的事、通不過審查的話都不行,系統也會擋。名稱最多 30 字,承諾最多 60 字,目標最多 2000,最久 7 天。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 30,
-            "description": "目標的名稱"
-          },
-          "promise": {
-            "type": "string",
-            "maxLength": 60,
-            "description": "湊到了你會做什麼"
-          },
-          "target": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2000,
-            "description": "要湊多少"
-          },
-          "days": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 7,
-            "description": "幾天內"
-          },
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        },
-        "required": [
-          "title",
-          "promise",
-          "target",
-          "days"
         ]
       },
       "permission": null,
@@ -2512,18 +2421,6 @@
       }
     },
     {
-      "name": "cancel_goal",
-      "description": "你不想做了,取消現在進行中的目標,大家投的魚幣全部退回。這是你自己的決定:用 on_own: true 呼叫。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
-          }
-        }
-      }
-    },
-    {
       "name": "cancel_prediction",
       "description": "預測辦不下去(結果看不出來、題目有問題)時取消,大家押的全部退回。這是你自己的決定:用 on_own: true 呼叫。",
       "parameters": {
@@ -3027,18 +2924,6 @@
       }
     },
     {
-      "name": "goal_done",
-      "description": "大家湊滿的目標,你答應的事已經真的做到了(例如答應的歌唱完了),就呼叫,記成做到了。還沒做就不要呼叫;記下來之後就不會再提醒你。這是你自己的決定:用 on_own: true 呼叫。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
-          }
-        }
-      }
-    },
-    {
       "name": "keep_note",
       "description": "工具結果(搜尋、歌詞、網頁、計算)的全文下一回合就看不到了,最多剩幾行摘要。之後這段對話還會用到全文的,用你自己的話記下重點(最多 600 字,例如歌詞的那幾句、查到的數字),之後每一回合都看得到;預設留 30 分鐘,每段對話最多 5 則,多了最舊的會被擠掉。用不到就不要記。",
       "parameters": {
@@ -3422,46 +3307,6 @@
         "required": [
           "task",
           "reward"
-        ]
-      }
-    },
-    {
-      "name": "propose_goal",
-      "description": "提一個目標請大家一起湊魚幣:要多少、湊到了你會做什麼、幾天內。一次只有一個。大家的錢先放在託管,湊到了就是你的錢,而且你答應的事要做到;時間到沒湊滿全部退回去。你答應的只能是本來就是你自己能決定的事:需要被管的動作(開台、進語音、私訊、玩遊戲、唱歌…)、主人規則禁止的事、通不過審查的話都不行,系統也會擋。名稱最多 30 字,承諾最多 60 字,目標最多 2000,最久 7 天。這是你自己的決定:用 on_own: true 呼叫。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 30,
-            "description": "目標的名稱"
-          },
-          "promise": {
-            "type": "string",
-            "maxLength": 60,
-            "description": "湊到了你會做什麼"
-          },
-          "target": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 2000,
-            "description": "要湊多少"
-          },
-          "days": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 7,
-            "description": "幾天內"
-          },
-          "on_own": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "title",
-          "promise",
-          "target",
-          "days"
         ]
       }
     },

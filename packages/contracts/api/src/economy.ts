@@ -1,13 +1,8 @@
 // Economy 2.0 for the admins: the economy as a whole, never one person's coins (the people routes
-// have those), and the goals people filled that she owes a promise for. Every answer of the
-// economy routes carries the currency's name.
+// have those). Every answer of the economy routes carries the currency's name.
 
 import { z } from "zod";
-import { EmptyRequestSchema } from "./member.js";
 import { route } from "./route.js";
-
-/** The permission node of marking a reached goal kept. */
-const NODE_ECONOMY_GOALS = "admin.economy.goals";
 
 /** One day of coins issued against coins recovered. */
 export const HealthDaySchema = z
@@ -112,22 +107,6 @@ export const QuestsViewSchema = z
   .meta({ id: "ApiQuestsView" });
 export type QuestsView = z.output<typeof QuestsViewSchema>;
 
-/** A goal people filled, and whether she kept its promise. */
-export const ReachedGoalSchema = z
-  .object({
-    id: z.string(),
-    title: z.string(),
-    promise: z.string(),
-    target: z.number(),
-    /** When it was reached. */
-    reached_at: z.string().nullable(),
-    /** When the promise was marked kept; `null` while it is owed. */
-    fulfilled_at: z.string().nullable(),
-    fulfilled_by: z.enum(["owner", "self"]).nullable(),
-  })
-  .meta({ id: "ApiReachedGoal" });
-export type ReachedGoal = z.output<typeof ReachedGoalSchema>;
-
 export const economy = {
   health: route
     .meta({ audience: "admin", permission: null })
@@ -143,20 +122,6 @@ export const economy = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/economy/room" })
     .output(z.object({ currency: z.string(), room: z.array(RoomItemSchema) })),
-  /** The reached goals, newest first, with whether each was kept. */
-  goals: route
-    .meta({ audience: "admin", permission: null })
-    .route({ method: "GET", path: "/api/economy/goals" })
-    .output(z.object({ goals: z.array(ReachedGoalSchema) })),
-  /**
-   * The owner marks a goal kept. `409` when it is not a reached goal or was marked already (by her
-   * own `goal_done`, say): the first mark stands.
-   */
-  fulfill: route
-    .meta({ audience: "admin", permission: NODE_ECONOMY_GOALS })
-    .route({ method: "POST", path: "/api/economy/goals/{id}/fulfill" })
-    .input(z.object({ params: z.object({ id: z.string() }), body: EmptyRequestSchema }))
-    .output(z.object({ goal: ReachedGoalSchema })),
 };
 
 /** The one economy route that is about a person; it joins the `people` group. */

@@ -190,7 +190,19 @@ SET status = 'declined', version = version + 1,
   data = json_set(data, '$.note', '委託功能已移除,錢已退回')
 WHERE kind = 'commission' AND status = 'open';`;
 
-/** The coin ledger, the wallets, fortune slips, goals, bounties and the 2.0 documents. */
+/**
+ * Goals are gone: a pledge whose goal was never funded (no `goal_funds` row of the purse for it)
+ * goes back to its pledger, then both tables are dropped. The pledges of a funded goal were
+ * hers already and stay as spent.
+ */
+const RETIRE_GOALS = `${refundHeld(
+  "SELECT l.id FROM economy_ledger l WHERE l.reason = 'goal_pledge' AND NOT EXISTS (SELECT 1 FROM economy_ledger f WHERE f.reason = 'goal_funds' AND f.ref = l.ref)",
+)}
+
+DROP TABLE economy_goal_pledges;
+DROP TABLE economy_goals;`;
+
+/** The coin ledger, the wallets, fortune slips, bounties and the 2.0 documents. */
 export const economySchema: PluginSchema = {
   plugin: "economy",
   requires: ["identity"],
@@ -198,5 +210,6 @@ export const economySchema: PluginSchema = {
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "retire_deals", sql: RETIRE_DEALS },
     { version: 3, name: "retire_commissions", sql: RETIRE_COMMISSIONS },
+    { version: 4, name: "retire_goals", sql: RETIRE_GOALS },
   ],
 };

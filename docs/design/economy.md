@@ -201,22 +201,20 @@ overlay 的新東西走 `economy.screen`(`ScreenEvent`:留言或獻詞)。
 
 **她自己的錢(§3.3 開始做)**:她有一個錢包。別人餵她、送她東西,有一部分進她的錢包;她可以用來送人、買給自己(例如自己換表情)、開懸賞。她錢包裡有多少、在存什麼,她自己看得到。
 
-- **群眾募資目標**:她提一個目標(要多少、到了她會做什麼、幾天內),一次一個;大家投錢,錢先託管;到了就變成她的承諾,錢進她的錢包;時間到沒達成全部退回。承諾的內容和約定一樣要是她自己能決定的事(§12 的閘門)。
+- **群眾募資目標**(2026-11-17 已移除,`v5-play.md` §10):設定 `goal_*`、工具 `propose_goal` / `cancel_goal` / `goal_done`、`/me goals` / `/me pledge`、`/api/member/goals`、`/api/economy/goals`、面板「經濟 → 目標」都沒了。migration 4(`retire_goals`)把沒湊滿的目標還在託管裡的投入退給投的人(帳本一行,原因 `refund_removed`),然後刪掉 `goals`、`goal_pledges`;湊滿的目標的投入已經是她的,留在帳本裡,贊助排行榜照舊算(`goal_pledge`)。
 - **懸賞**:她用自己的錢貼一個懸賞(任務、獎金),誰完成由她判定,獎金付給正在跟她說話的人。這是多一種賺錢的方法,錢從她的錢包出,不是憑空生。
 
 **實作(她自己的錢)**:
 
 - **錢包**:帳本上的一個合成帳號 `{ platform: "self", id: <profile> }`。每筆付費禮物(餵食、信、表情、留言上大螢幕、歌曲獻詞)的 `her_share`(0.2,無條件捨去)進她的錢包(`her_share`,`ref` 是那筆扣款);退款時按她還剩的拿回(`her_share_back`)。她的工作脈絡有 `purse`(餘額、在存的目標、貼著的懸賞、答應過大家的事)和 `purse_news`(剛發生的事)兩個桶。
-- **她的工具**(中風險,要 `economy.agency`,沒有人有,所以她用 `on_own` 呼叫):`treat_from_purse`(請正在跟她說話的人,每人每天 `treat_per_person`、所有人 `treat_total`,不算進 `give_coins` 的上限)、`buy_for_self`(花 `expression` 買自己的表情,每天 `self_expressions_per_day`,沒做出來就退回錢包)、`propose_goal` / `cancel_goal`、`post_bounty` / `award_bounty` / `cancel_bounty`。
-- **目標**:一次一個,名稱 30 字、承諾 60 字,目標最多 `goal_max_target`(2000),最多 `goal_max_days`(7)天;承諾和懸賞任務過約定的同一道閘門(`guardTask`)。投的錢是 `goal_pledge`(託管,每人每個目標最多 `goal_pledge_max`);湊滿就變成她的(`goal_funds` 進錢包),她被告知「大家湊到了…你答應過要…」,承諾留在 `purse` 桶 `goal_keep_days` 天,直到記成做到了。
-- **做到了**(2026-11-12):湊滿的目標在記成做到了之前都算欠著(`goals.fulfilled_at` / `fulfilled_by`,migration 0017)。主人在面板「經濟 → 目標」按「記成做到了」(`POST /api/economy/goals/:id/fulfill`,`admin.economy.goals`;`GET /api/economy/goals` 列出湊滿的目標),或她自己用 `goal_done`(最新一個還欠著的)。第一次記的算數,之後再記是 409。記下之後 `purse` 桶不再提醒,`purse_news` 告訴她一聲,`/me goals` 和會員頁顯示「她做到了」。沒有用她的承諾簿(`CommitmentBook`):那是給幾分鐘內就做的事,預設 120 秒到期、逾期 30 分鐘記成沒做到,只在說出口的頻道顯示。時間到沒湊滿或她取消,每筆退一次。
+- **她的工具**(中風險,要 `economy.agency`,沒有人有,所以她用 `on_own` 呼叫):`treat_from_purse`(請正在跟她說話的人,每人每天 `treat_per_person`、所有人 `treat_total`,不算進 `give_coins` 的上限)、`buy_for_self`(花 `expression` 買自己的表情,每天 `self_expressions_per_day`,沒做出來就退回錢包)、`post_bounty` / `award_bounty` / `cancel_bounty`。
 - **懸賞**:`bounty_max`(50)以內,同時最多 `bounties_open`(3)個,獎金先從錢包扣下(`bounty_hold`),付給說話的人(`bounty`,一個懸賞只付一次,不付給自己),取消或 `bounty_days`(3)天沒人領就回到錢包。
-- **API**:`GET /api/member/goals`、`POST /api/member/goals/:id/pledge {amount}`(`Idempotency-Key`)、`GET /api/member/bounties`(`packages/api/src/agency.ts`)。陌生人看得到目標,不能投(403)。表:`goals`、`goal_pledges`、`bounties`(migration 0013)。
+- **API**:`GET /api/member/bounties`(`packages/api/src/agency.ts`)。表:`bounties`(migration 0013)。
 
 **人與人之間**:
 
 - **轉帳**:只能轉給她認識、沒被封鎖的人;每人每天轉出、收到都有上限;自己轉自己(連在一起的帳號)不行;收不到時的回答不透露對方被封鎖。轉帳不是給她的禮物,不影響她。
-- **贊助排行榜**:最近 `board_days`(30)天內所有花在她身上的錢都算(餵食、信、表情、卡框、商店買的東西、籤詩、獻詞、留言、目標投入、放給她的預付約定);預設在榜上,任何人隨時可以退出(也可以再加入);轉給別人的錢不算;不顯示餘額。
+- **贊助排行榜**:最近 `board_days`(30)天內所有花在她身上的錢都算(餵食、信、表情、卡框、商店買的東西、籤詩、獻詞、留言、放給她的預付約定);預設在榜上,任何人隨時可以退出(也可以再加入);轉給別人的錢不算;不顯示餘額。
 - **實作(migration 0014)**:
   - 轉帳 `Economy.transfer`:一次 1 到 `transfer_max`(50),每人每天轉出 `transfer_out_per_day`(100)、收到 `transfer_in_per_day`(100)。帳本沒有跨兩列的交易,所以先寫轉出那列(扣得起才寫),再寫收到那列(鍵由轉出那列的 id 推出);中間當掉,同一個冪等鍵重送會補完,不會付兩次;收的人到上限就把轉出那列退回。對方是陌生人、被封鎖、沒有 `me.wallet`、今天收滿了,一律回「對方現在收不到」。入口:Discord `/me give user amount`(預設只有本人看得到)和 `POST /api/member/transfer {to_discord_id, amount}`。
   - 排行榜 `Economy.board` / `setOnBoard`:退出記在 `coin_wallets.off_board`(migration 0015,舊的 `on_board` 不再讀),連在一起的帳號任一個退出就退出,`setOnBoard` 一次寫整個錢包;一個人一行、帳號的花費加總。算 `BOARD_REASONS`:`feed`、`letter`、`expression`、`frame`、全部 `PAID_ITEMS`(`card_reroll`、`card_pose`、`card_foil`、`song_ticket`、`dedication`、`screen_message`、`fortune`)、`goal_pledge`,以及已經放給她的預付約定(`deal_escrow` 且約定 `settled`);退回的不算(目標沒達成退回的投入也不算);`transfer_out`、懸賞託管、`purse_gift` 不算;`board_days`(30)天內。同額同名次。入口:Discord `/me board [join]`、`POST /api/member/board {on}`、`GET /api/public/board`(只有名字和數字)。

@@ -26,14 +26,13 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import type { EconomyService, Member } from "./economy.js";
-import { BountyStoreKey, type CoinEntry, type CoinPost, GoalStoreKey, PURSE } from "./records.js";
+import { BountyStoreKey, type CoinEntry, type CoinPost, PURSE } from "./records.js";
 import { EconomyError, GIFT_EXPRESSIONS, type GiftExpression } from "./types.js";
 
 /** The platform of the purse's account. */
 export const PURSE_PLATFORM = "self";
 /** Ledger reasons whose price she gets a share of. */
 export const SHARED_REASONS: readonly string[] = ["feed", "screen_message", "dedication"];
-const DAY_MS = 86_400_000;
 const MAX_ROWS = 2_000;
 const MAX_NEWS = 6;
 const NOT_ENOUGH = "你的錢包不夠";
@@ -284,31 +283,7 @@ export class Purse {
   async describe(): Promise<string> {
     const s = this.e.services;
     const c = this.e.config;
-    const now = this.e.now();
     const parts = [`你的小錢包有 ${await this.balance()} ${c.currency}(別人送你的禮物分你一份)`];
-    const days = (iso: string) => Math.max(Math.ceil((Date.parse(iso) - now) / DAY_MS), 0);
-    const goals = await s.get(GoalStoreKey)?.list(this.e.profile, { limit: 10 });
-    for (const g of goals ?? []) {
-      if (g.status === "open") {
-        const raised = (await s.get(GoalStoreKey)?.pledges(g.id))?.reduce(
-          (n, p) => n + p.amount,
-          0,
-        );
-        parts.push(
-          `你在存的目標「${g.title}」:${raised ?? 0}/${g.target},還有 ${days(g.deadline)} 天,` +
-            `湊到了你要:${g.promise}`,
-        );
-      } else if (
-        g.status === "reached" &&
-        g.fulfilled_at === undefined &&
-        g.closed_at !== null &&
-        now - Date.parse(g.closed_at) < c.goal_keep_days * DAY_MS
-      ) {
-        parts.push(
-          `你答應過大家、還沒做到的(目標「${g.title}」湊到了):${g.promise}(做到了用 goal_done 記下來)`,
-        );
-      }
-    }
     const bounties = await s.get(BountyStoreKey)?.list(this.e.profile, {
       statuses: ["open"],
       limit: 10,

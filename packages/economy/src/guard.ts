@@ -1,5 +1,5 @@
-// The screen for what she may promise (docs/design/economy.md §12): bounties and goals call it
-// before she puts a task up. Text the moderation, an owner rule, a forbidden or gated capability or
+// The screen for what she may promise (docs/design/economy.md §12): bounties call it before she puts a
+// task up. Text the moderation, an owner rule, a forbidden or gated capability or
 // a missing permission stops is refused, so a snack never buys what is hers to decide.
 
 import { ActuatorRegistryKey, capabilityMatches } from "@miyoria/gate/actions";
@@ -43,7 +43,7 @@ export function cleanTask(task: string): string {
 }
 
 /**
- * What she may promise (the gate of the bribe, shared by goals and bounties): the text
+ * What she may promise (the gate of her bounties): the text
  * passes moderation, no owner rule forbids it, and what it stands for is something she may do.
  * `who` is the person it is for (their permissions are checked), `null` for her own promise.
  * Throws `TaskRefusal`.

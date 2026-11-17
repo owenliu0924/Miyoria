@@ -13,7 +13,6 @@ import {
   EconomyDocsKey,
   economyTables,
   FortuneStoreKey,
-  GoalStoreKey,
   LedgerStatsKey,
 } from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
@@ -257,7 +256,6 @@ export async function buildCoreWith(
   services.provide(k, LedgerStatsKey, economy.ledger);
   services.provide(k, EconomyDocsKey, economy.docs);
   services.provide(k, FortuneStoreKey, economy.fortunes);
-  services.provide(k, GoalStoreKey, economy.goals);
   services.provide(k, BountyStoreKey, economy.bounties);
   services.provide(k, PeopleStoreKey, store.people);
   // The memory plugin's tables (`@miyoria/memory/memory` `tables.ts`).

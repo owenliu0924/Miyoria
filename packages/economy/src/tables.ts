@@ -1,6 +1,6 @@
 // The `economy` plugin's tables on the store's database (`schema.ts`): the coin ledger and the
 // wallets (`CoinLedgerStore`), the fortune slips (`FortuneStore`), her
-// goals and bounties (`GoalStore`, `BountyStore`) and economy 2.0's documents (`EconomyDocStore`).
+// bounties (`BountyStore`) and economy 2.0's documents (`EconomyDocStore`).
 // What names an account keeps the `AccountRef` in its record and identity's `accounts.id` in its
 // row, made on first use like a link code's account. Core opens the store with
 // `economyTables` and provides `store.plugin(economyTables)` under the economy's service keys
@@ -33,7 +33,7 @@ import {
   type ProfileId,
   type Timestamp,
 } from "@miyoria/types";
-import { and, asc, desc, eq, getColumns, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getColumns, inArray, type SQL, sql } from "drizzle-orm";
 import { economySchema } from "./migrations.js";
 import {
   type Bounty,
@@ -51,12 +51,6 @@ import {
   type EconomyDocStore,
   type FortuneRecord,
   type FortuneStore,
-  type Goal,
-  type GoalFulfiller,
-  type GoalPatch,
-  type GoalPledge,
-  type GoalStatus,
-  type GoalStore,
   type LedgerDayTotal,
   PURSE,
 } from "./records.js";
@@ -66,12 +60,9 @@ import {
   economyBounties,
   economyDocs,
   economyFortunes,
-  economyGoalPledges,
-  economyGoals,
   economyLedger,
   economyWallets,
   type FortuneRow,
-  type GoalRow,
 } from "./schema.js";
 
 /** `limit` as SQLite's `LIMIT`: a negative one is none (the store's `sqlLimit`). */
@@ -579,142 +570,9 @@ export class FortuneTables implements FortuneStore {
   }
 }
 
-// ---- goals and bounties ---------------------------------------------------------------------
+// ---- bounties ---------------------------------------------------------------------
 
-const G = economyGoals;
-const P = economyGoalPledges;
 const B = economyBounties;
-
-function goalOf(row: GoalRow): Goal {
-  const goal: Goal = {
-    id: row.id,
-    title: row.title,
-    promise: row.promise,
-    target: row.target,
-    status: row.status,
-    created_at: row.created_at,
-    deadline: row.deadline,
-    closed_at: row.closed_at,
-  };
-  // The kept promise only once it was kept.
-  if (row.fulfilled_at === null) return goal;
-  return {
-    ...goal,
-    fulfilled_at: row.fulfilled_at,
-    fulfilled_by: row.fulfilled_by === "self" ? "self" : "owner",
-  };
-}
-
-/** Her goals and their pledges (`GoalStore`) on `economy_goals` and `economy_goal_pledges`. */
-export class GoalTables implements GoalStore {
-  readonly #db: Db;
-  readonly #identity: Identity;
-
-  constructor(db: Db, identity: Identity) {
-    this.#db = db;
-    this.#identity = identity;
-  }
-
-  async create(goal: Goal): Promise<void> {
-    try {
-      this.#db.orm
-        .insert(G)
-        .values({
-          id: goal.id,
-          title: goal.title,
-          promise: goal.promise,
-          target: goal.target,
-          status: goal.status,
-          created_at: goal.created_at,
-          deadline: goal.deadline,
-          closed_at: goal.closed_at,
-          fulfilled_at: goal.fulfilled_at ?? null,
-          fulfilled_by: goal.fulfilled_by ?? null,
-        })
-        .run();
-    } catch (cause) {
-      throw new StoreError("cannot write the goal", { cause });
-    }
-  }
-
-  async get(id: string): Promise<Goal | null> {
-    const row = this.#db.orm.select().from(G).where(eq(G.id, id)).get();
-    return row ? goalOf(row) : null;
-  }
-
-  async transition(id: string, from: readonly GoalStatus[], patch: GoalPatch): Promise<boolean> {
-    if (from.length === 0) return false;
-    const set: Partial<typeof G.$inferInsert> = { status: patch.status };
-    if (patch.closed_at !== undefined) set.closed_at = patch.closed_at;
-    const changed = this.#db.orm
-      .update(G)
-      .set(set)
-      .where(and(eq(G.id, id), inArray(G.status, [...from])))
-      .run();
-    return changed.changes > 0;
-  }
-
-  async list(
-    _profile: ProfileId,
-    filter: { statuses?: readonly GoalStatus[]; limit: number },
-  ): Promise<Goal[]> {
-    if (filter.statuses?.length === 0) return [];
-    return this.#db.orm
-      .select()
-      .from(G)
-      .where(filter.statuses ? inArray(G.status, [...filter.statuses]) : undefined)
-      .orderBy(desc(G.created_at), sql`${G}.rowid DESC`)
-      .limit(limitOf(filter.limit))
-      .all()
-      .map(goalOf);
-  }
-
-  async fulfill(id: string, by: GoalFulfiller, at: Timestamp): Promise<boolean> {
-    const changed = this.#db.orm
-      .update(G)
-      .set({ fulfilled_at: at, fulfilled_by: by })
-      .where(and(eq(G.id, id), eq(G.status, "reached"), isNull(G.fulfilled_at)))
-      .run();
-    return changed.changes > 0;
-  }
-
-  async addPledge(pledge: GoalPledge): Promise<void> {
-    try {
-      this.#db.tx(() => {
-        const account = this.#identity.ensureAccount(pledge.account);
-        this.#db.orm
-          .insert(P)
-          .values({
-            id: pledge.id,
-            goal_id: pledge.goal,
-            account_id: account.id,
-            amount: pledge.amount,
-            created_at: pledge.created_at,
-          })
-          .run();
-      });
-    } catch (cause) {
-      throw new StoreError("cannot write the pledge", { cause });
-    }
-  }
-
-  async pledges(goal: string): Promise<GoalPledge[]> {
-    return this.#db.orm
-      .select({ ...getColumns(P), ...accountColumns(accounts) })
-      .from(P)
-      .innerJoin(accounts, eq(accounts.id, P.account_id))
-      .where(eq(P.goal_id, goal))
-      .orderBy(asc(P.created_at), sql`${P}.rowid`)
-      .all()
-      .map((row) => ({
-        id: row.id,
-        goal: row.goal_id,
-        account: { platform: row.platform, id: row.external_id },
-        amount: row.amount,
-        created_at: row.created_at,
-      }));
-  }
-}
 
 function bountyOf(
   row: BountyRow & { platform: string | null; external_id: string | null },
@@ -933,7 +791,6 @@ export class DocTables implements EconomyDocStore {
 export interface EconomyTables {
   readonly ledger: LedgerTables;
   readonly fortunes: FortuneTables;
-  readonly goals: GoalTables;
   readonly bounties: BountyTables;
   readonly docs: DocTables;
 }
@@ -973,26 +830,7 @@ const economyData: readonly CategoryData[] = [
         entry_id: "text",
         slip: "json",
       }),
-      // Her crowdfunding goals, the pledges to them and the bounties from her purse.
-      tablePart("goals", "economy_goals", "node", "created_at", "created_at, id", {
-        id: "text",
-        title: "text",
-        promise: "text",
-        target: "num",
-        status: "text",
-        created_at: "ts",
-        deadline: "ts",
-        closed_at: "ts",
-        fulfilled_at: "ts",
-        fulfilled_by: "text",
-      }),
-      tablePart("goal_pledges", "economy_goal_pledges", "node", "created_at", "created_at, id", {
-        id: "text",
-        goal_id: "text",
-        account_id: "text",
-        amount: "num",
-        created_at: "ts",
-      }),
+      // The bounties from her purse.
       tablePart("bounties", "economy_bounties", "node", "created_at", "created_at, id", {
         id: "text",
         task: "text",
@@ -1027,7 +865,6 @@ export const economyTables: StorePlugin<EconomyTables> = {
   open: ({ db, events, identity }) => ({
     ledger: new LedgerTables(db, identity, events),
     fortunes: new FortuneTables(db, identity),
-    goals: new GoalTables(db, identity),
     bounties: new BountyTables(db, identity),
     docs: new DocTables(db, identity),
   }),

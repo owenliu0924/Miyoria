@@ -3577,20 +3577,6 @@
         "close_reason"
       ]
     },
-    "ApiGoalList": {
-      "type": "object",
-      "properties": {
-        "goals": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiGoalView"
-          }
-        }
-      },
-      "required": [
-        "goals"
-      ]
-    },
     "ApiGoalStatus": {
       "type": "string",
       "enum": [
@@ -3662,55 +3648,6 @@
             "kind"
           ]
         }
-      ]
-    },
-    "ApiGoalView": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "promise": {
-          "type": "string"
-        },
-        "target": {
-          "type": "number"
-        },
-        "raised": {
-          "type": "number"
-        },
-        "my_pledge": {
-          "type": "number"
-        },
-        "deadline": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "open",
-            "reached",
-            "expired",
-            "cancelled"
-          ]
-        },
-        "fulfilled": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "promise",
-        "target",
-        "raised",
-        "my_pledge",
-        "deadline",
-        "status",
-        "fulfilled"
       ]
     },
     "ApiGoalsView": {
@@ -8233,51 +8170,6 @@
         }
       }
     },
-    "ApiPledgeRequest": {
-      "type": "object",
-      "properties": {
-        "amount": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000000
-        }
-      },
-      "required": [
-        "amount"
-      ],
-      "additionalProperties": false
-    },
-    "ApiPledgeResult": {
-      "type": "object",
-      "properties": {
-        "pledged": {
-          "type": "number"
-        },
-        "raised": {
-          "type": "number"
-        },
-        "target": {
-          "type": "number"
-        },
-        "reached": {
-          "type": "boolean"
-        },
-        "balance": {
-          "type": "number"
-        },
-        "duplicate": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "pledged",
-        "raised",
-        "target",
-        "reached",
-        "balance",
-        "duplicate"
-      ]
-    },
     "ApiPredictionView": {
       "type": "object",
       "properties": {
@@ -9067,58 +8959,6 @@
         "context",
         "at",
         "status"
-      ]
-    },
-    "ApiReachedGoal": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "promise": {
-          "type": "string"
-        },
-        "target": {
-          "type": "number"
-        },
-        "reached_at": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fulfilled_at": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fulfilled_by": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "owner",
-                "self"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "promise",
-        "target",
-        "reached_at",
-        "fulfilled_at",
-        "fulfilled_by"
       ]
     },
     "ApiReasoningLevel": {

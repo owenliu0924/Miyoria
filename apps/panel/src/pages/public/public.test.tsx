@@ -2,7 +2,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import type { GoalView, IssuedCard, IssuedFortune, MemberSession, MemberView, PublicSongs, PublicStatus, SessionInfo, WalletView } from "@miyoria/contracts/api";
+import type { IssuedCard, IssuedFortune, MemberSession, MemberView, PublicSongs, PublicStatus, SessionInfo, WalletView } from "@miyoria/contracts/api";
 import { App } from "@/app/App";
 import { STORAGE_BASE_URL, STORAGE_TOKEN } from "@/app/connection";
 import { createAppRouter } from "@/app/router";
@@ -121,18 +121,6 @@ const SLIP: IssuedFortune = {
   line: "記得喝水",
 };
 
-const GOAL: GoalView = {
-  id: "g1",
-  title: "新的麥克風",
-  promise: "唱一整晚的歌",
-  target: 500,
-  raised: 200,
-  my_pledge: 0,
-  deadline: "2099-01-01T00:00:00Z",
-  status: "open",
-  fulfilled: false,
-};
-
 const OFFERS_FOR_REROLL = {
   poses: [],
   prices: { pose: null, foil: null, reroll: 30 },
@@ -188,7 +176,6 @@ function core(o: Options = {}) {
   let latest: IssuedCard | null = o.noCard ? null : CARD;
   let wallet: WalletView = o.wallet ?? WALLET;
   let slip: IssuedFortune | null = o.slip ? SLIP : null;
-  let pledged = 0;
   const keys: (string | null)[] = [];
   const fn = mockFetch((method, url, body, headers) => {
     const path = url.pathname;
@@ -240,24 +227,6 @@ function core(o: Options = {}) {
     }
     if (path === "/api/public/board") {
       return { body: { entries: [{ rank: 1, name: "小明", spent: 340 }, { rank: 2, name: "匿名", spent: 120 }] } };
-    }
-    if (path === "/api/member/goals") {
-      return {
-        body: {
-          goals: [
-            { ...GOAL, my_pledge: pledged, raised: GOAL.raised + pledged },
-            { ...GOAL, id: "g0", title: "舊的耳機", status: "expired" },
-          ],
-        },
-      };
-    }
-    if (path === "/api/member/goals/g1/pledge") {
-      const amount = (body as { amount: number }).amount;
-      pledged += amount;
-      wallet = { ...wallet, balance: wallet.balance - amount };
-      return {
-        body: { pledged: amount, raised: 200 + pledged, target: 500, reached: false, balance: wallet.balance, duplicate: false },
-      };
     }
     if (path === "/api/member/bounties") {
       return {
@@ -931,23 +900,6 @@ describe("the newer places to spend", () => {
     await waitFor(() => expect(toggle).toBeChecked());
     await userEvent.click(toggle);
     await waitFor(() => expect(posts.filter((p) => p.path === "/api/member/board")[1]?.body).toEqual({ on: false }));
-  });
-
-  it("shows her goal with its progress and pledges to it", async () => {
-    const { posts, keys } = core({ member: USER });
-    renderApp();
-    const section = await screen.findByRole("region", { name: "她的目標" });
-    expect(await within(section).findByText("新的麥克風")).toBeInTheDocument();
-    expect(within(section).getByText(/唱一整晚的歌/)).toBeInTheDocument();
-    expect(within(section).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "200");
-    expect(within(section).getByText("舊的耳機")).toBeInTheDocument();
-    await userEvent.type(within(section).getByLabelText("投多少"), "50");
-    await userEvent.click(within(section).getByRole("button", { name: "投入" }));
-    await waitFor(() =>
-      expect(posts.find((p) => p.path === "/api/member/goals/g1/pledge")?.body).toEqual({ amount: 50 }),
-    );
-    expect(keys.at(-1)).toBeTruthy();
-    expect(await within(section).findByText(/你已經投了 50/)).toBeInTheDocument();
   });
 
   it("lists her open bounties and says she judges them", async () => {

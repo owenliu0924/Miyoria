@@ -28,8 +28,8 @@ const VOICE_TICK_MS = 30_000;
  * feeding her and small gifts. Provides `EconomyKey` (the member routes and the Discord commands
  * use it) and registers `economy.give` (her tool `give_coins`) and the speaker's own
  * `economy.accept_food` / `economy.checkin` / `economy.look` and her own money's tools
- * (`economy.treat`, `buy_self`, `propose_goal`, `cancel_goal`, `post_bounty`, `award_bounty`,
- * `cancel_bounty`; agency-tools.ts, purse.ts, goals.ts, bounties.ts). Also provides `Participation`
+ * (`economy.treat`, `buy_self`, `post_bounty`, `award_bounty`,
+ * `cancel_bounty`; agency-tools.ts, purse.ts, bounties.ts). Also provides `Participation`
  * (the web page's head-pats) and `PartyRewards` (party games, party.ts). Uses `EconomyDocs` (collection,
  * bets, her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
  * `RelationshipEffects` (a hair of affinity per gift), `PersonNoteWriter`, `Directives`,
@@ -110,17 +110,16 @@ export class EconomyModule implements Module {
     ctx.spawn("earn", async () => {
       for await (const env of events) await earnings.onEvent(env, ctx.clock.now());
     });
-    // Her goals and bounties run out here; her purse note is written once at the start.
+    // Her bounties run out here; her purse note is written once at the start.
     ctx.spawn("agency", async (signal) => {
       await economy.purse.refresh().catch((error: unknown) => {
         ctx.log.warn({ err: errorMessage(error) }, "cannot write her purse note");
       });
       for await (const _ of interval(Math.max(config.agency_sweep_s, 1) * 1000, signal)) {
         try {
-          await economy.goalDesk.sweep();
           await economy.bountyDesk.sweep();
         } catch (error) {
-          ctx.log.warn({ err: errorMessage(error) }, "the goal and bounty sweep failed");
+          ctx.log.warn({ err: errorMessage(error) }, "the bounty sweep failed");
         }
         try {
           await economy.v2.sweep();

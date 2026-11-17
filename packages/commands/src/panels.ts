@@ -644,26 +644,10 @@ function mePages(policyUrl: string | null): PanelPage[] {
     {
       id: "wishes",
       label: "她的願望",
-      description: "她的目標、懸賞",
+      description: "她的懸賞",
       refresh: true,
-      status: [
-        { path: "me goals", label: "她的目標" },
-        { path: "me bounties", label: "她的懸賞" },
-      ],
-      actions: [
-        {
-          id: "pledge",
-          label: "投給目標",
-          path: "me pledge",
-          style: "primary",
-          ask: {
-            title: "投給她的目標",
-            fields: [field("amount", "多少魚幣", { placeholder: "例如 20" })],
-          },
-        },
-        { id: "goals", label: "看目標", path: "me goals" },
-        { id: "bounties", label: "看懸賞", path: "me bounties" },
-      ],
+      status: [{ path: "me bounties", label: "她的懸賞" }],
+      actions: [{ id: "bounties", label: "看懸賞", path: "me bounties", style: "primary" }],
     },
     {
       id: "memory",

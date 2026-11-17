@@ -190,12 +190,6 @@ export const EconomyConfigSchema = z.object({
   treat_total: coins.default(100),
   /** Expressions she may buy for herself per day (the price is `expression`). */
   self_expressions_per_day: coins.default(3),
-  /** Crowdfunding goals: the most one may ask for, the longest it may run, one person's share. */
-  goal_max_target: z.number().int().positive().default(2000),
-  goal_max_days: z.number().int().positive().default(7),
-  goal_pledge_max: z.number().int().positive().default(500),
-  /** How long a finished goal stays on the list (and a reached one in her mind), in days. */
-  goal_keep_days: z.number().int().positive().default(3),
   /** Bounties: the most one pays, how many may be open, how long one stays open (days). */
   bounty_max: z.number().int().positive().default(50),
   bounties_open: z.number().int().positive().default(3),

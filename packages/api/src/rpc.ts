@@ -64,7 +64,6 @@ import { evalRpc } from "./eval/route.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
-import { goalAdminRpc } from "./goals-admin.js";
 import { selfRpc, worldRpc } from "./inner.js";
 import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
 import { lifeRpc } from "./life.js";
@@ -125,7 +124,7 @@ export const router = os.router({
   ...coreRpc,
   events: eventsRpc,
   llm: { ...coreRpc.llm, ...llmCallsRpc },
-  economy: { ...economyRpc, ...goalAdminRpc },
+  economy: economyRpc,
   channels: channelRpc,
   cluster: clusterRpc,
   mind: { ...mindRpc, ...thoughtRpc, ...digestRpc, ...planRpc },
@@ -154,7 +153,7 @@ export function defaultResponseCheck(env: NodeJS.ProcessEnv = process.env): Resp
   return FROM_SOURCE ? "strict" : "production";
 }
 
-/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the wallet, goals and fortune are member pages too). */
+/** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the wallet and fortune are member pages too). */
 const PUBLIC_SIDE = new Set(["public", "member", "wallet", "agency", "fortune"]);
 
 /** Whether a route is served at all: the public side's routes go away with its switch. */

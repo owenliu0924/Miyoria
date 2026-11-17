@@ -34,7 +34,6 @@ import {
   EconomyKey,
   FEED_ITEMS,
   type FeedItem,
-  type GoalView,
   type Hunger,
   type WalletView,
 } from "./types.js";
@@ -48,8 +47,6 @@ export const PATHS = [
   "me give",
   "me board",
   "me screen",
-  "me goals",
-  "me pledge",
   "me bounties",
 ] as const;
 
@@ -57,11 +54,7 @@ const R = {
   checkin: "me:wallet:checkin",
   feed: "me:wallet:feed",
   board: "me:board:set",
-  pledge: "me:goal:pledge",
 } as const;
-
-/** Quick pledge buttons on the goals card; the exact amount is `/me pledge`. */
-const PLEDGE_BUTTONS = [10, 50] as const;
 
 /** Bounties `/me bounties` lists. */
 const BOUNTY_PLACES = 10;
@@ -264,53 +257,6 @@ class Handler {
     });
   }
 
-  /** `/me goals`: her open goal (and the last one that ended), with quick pledge buttons. */
-  goals(inv: Invocation): Promise<CommandReply> {
-    return this.#guard(async (economy) => {
-      const [goals, view] = await Promise.all([
-        economy.goals(inv.invoker),
-        economy.wallet(inv.invoker),
-      ]);
-      const open = goals.find((g) => g.status === "open");
-      const ended = goals.find((g) => g.status !== "open");
-      const blocks: CardBlock[] = [];
-      if (open) {
-        blocks.push({ type: "text", text: goalText(open, view.currency) });
-        if (view.can_earn) {
-          blocks.push({
-            type: "buttons",
-            buttons: PLEDGE_BUTTONS.map(
-              (n): CardButton => ({
-                id: componentId(R.pledge, open.id, String(n)),
-                label: `投 ${n}`,
-              }),
-            ),
-          });
-        }
-      } else {
-        blocks.push({ type: "text", text: "她現在沒有開著的目標" });
-      }
-      if (ended) blocks.push({ type: "muted", text: `上一個：${goalEnded(ended)}` });
-      return cardReply(blocks, { accent: "neutral", title: "她的目標" });
-    });
-  }
-
-  /** `/me pledge`: coins to the open goal (the answer is only for the sender). */
-  pledge(inv: Invocation, amount: number | null, goalId: string | null): Promise<CommandReply> {
-    return this.#guard(async (economy) => {
-      if (amount === null) return notice("warn", "要投多少?");
-      const id =
-        goalId ?? (await economy.goals(inv.invoker)).find((g) => g.status === "open")?.id ?? null;
-      if (id === null) return notice("info", "她現在沒有開著的目標");
-      const r = await economy.pledge(inv.invoker, id, amount, `discord:${newId()}`, inv.context);
-      const view = await economy.wallet(inv.invoker);
-      const tail = r.reached ? "目標到了。" : "";
-      return result(
-        `投了 ${r.pledged} ${view.currency}，現在 ${r.raised} / ${r.target}，剩 ${r.balance}。${tail}`,
-      );
-    });
-  }
-
   /** `/me bounties`: what she has posted. */
   bounties(): Promise<CommandReply> {
     return this.#guard(async (economy) => {
@@ -326,28 +272,6 @@ class Handler {
       );
     });
   }
-}
-
-/** One goal as lines: title, promise, progress, deadline, what this person put in. */
-export function goalText(g: GoalView, currency: string): string {
-  const lines = [
-    `**${g.title}**`,
-    `她答應：${g.promise}`,
-    `${g.raised} / ${g.target} ${currency}　到 ${when(g.deadline)}`,
-  ];
-  if (g.my_pledge > 0) lines.push(`你投了 ${g.my_pledge}`);
-  return lines.join("\n");
-}
-
-function goalEnded(g: GoalView): string {
-  const word = {
-    reached: "達成了",
-    expired: "沒湊滿，已退回",
-    cancelled: "取消了，已退回",
-    open: "",
-  }[g.status];
-  const kept = g.status === "reached" ? (g.fulfilled ? "，她做到了" : "，她還沒做到") : "";
-  return `${g.title}　${word}${kept}`;
 }
 
 function unregister(registry: CommandRegistry): void {
@@ -372,18 +296,6 @@ function register(registry: CommandRegistry, handler: Handler): void {
       route: R.board,
       parse: (p) => (p[0] === "on" ? true : p[0] === "off" ? false : null),
       handle: async (inv, on) => ComponentResult.reply(await handler.board(inv, on)),
-    }),
-  ];
-  const goalRoutes: AnyComponentRoute[] = [
-    defineRoute<{ goal: string; amount: number }>({
-      route: R.pledge,
-      ephemeral: true,
-      parse: (p) => {
-        const amount = Number(p[1]);
-        return p[0] && PLEDGE_BUTTONS.some((n) => n === amount) ? { goal: p[0], amount } : null;
-      },
-      handle: async (inv, { goal, amount }) =>
-        ComponentResult.reply(await handler.pledge(inv, amount, goal)),
     }),
   ];
   registry.register(
@@ -441,21 +353,6 @@ function register(registry: CommandRegistry, handler: Handler): void {
       permission: WALLET_NODE,
     }),
     (inv) => handler.screen(inv),
-  );
-  registry.register(
-    commandSpec("me goals", "她現在的目標：要做什麼、湊到哪、你投了多少", {
-      permission: WALLET_NODE,
-    }),
-    (inv) => handler.goals(inv),
-    { components: goalRoutes },
-  );
-  registry.register(
-    commandSpec("me pledge", "把魚幣投給她現在的目標", {
-      args: [argSpec("amount", "多少魚幣", ArgKind.integer)],
-      permission: WALLET_NODE,
-      ephemeral: true,
-    }),
-    (inv) => handler.pledge(inv, inv.int("amount"), null),
   );
   registry.register(commandSpec("me bounties", "她貼著的懸賞", { permission: WALLET_NODE }), () =>
     handler.bounties(),

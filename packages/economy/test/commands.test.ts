@@ -19,7 +19,6 @@ import {
   EconomyError,
   EconomyKey,
   type FeedItem,
-  type GoalView,
   type WalletView,
 } from "../src/types.js";
 
@@ -60,7 +59,6 @@ interface Fake {
     fail: EconomyError | null;
     full: boolean;
     board: { rank: number; name: string; spent: number }[];
-    goals: GoalView[];
     bounties: BountyView[];
     screenOk: boolean;
   };
@@ -73,7 +71,6 @@ function fake(): Fake {
     fail: null as EconomyError | null,
     full: false,
     board: [] as { rank: number; name: string; spent: number }[],
-    goals: [] as GoalView[],
     bounties: [] as BountyView[],
     screenOk: true,
   };
@@ -107,19 +104,6 @@ function fake(): Fake {
       if (!state.screenOk)
         return { accepted: false, charged: 0, balance: 120, message: "現在沒有開台" };
       return { accepted: true, charged: 30, balance: 90, message: "留言送上大螢幕了" };
-    },
-    goals: async () => state.goals,
-    pledge: async (_a: AccountRef, goal: string, amount: number, key: string) => {
-      calls.push(`pledge:${goal}:${amount}:${key}`);
-      if (state.fail) throw state.fail;
-      return {
-        pledged: amount,
-        raised: 300 + amount,
-        target: 500,
-        reached: false,
-        balance: 70,
-        duplicate: false,
-      };
     },
     bounties: async () => state.bounties,
     setOnBoard: async (_a: AccountRef, on: boolean) => {
@@ -307,13 +291,11 @@ describe("wallet commands", () => {
     ]);
   });
 
-  it("the_me_panel_has_a_wishes_page_for_goals_and_bounties", () => {
+  it("the_me_panel_has_a_wishes_page_for_bounties", () => {
     const me = panelDefs().find((d) => d.command === "me");
     const page = me?.pages.find((p) => p.id === "wishes");
-    expect(page?.status?.map((s) => s.path)).toEqual(["me goals", "me bounties"]);
+    expect(page?.status?.map((s) => s.path)).toEqual(["me bounties"]);
     expect(page?.actions.map((a) => [a.path, a.ask?.fields.map((f) => f.arg)])).toEqual([
-      ["me pledge", ["amount"]],
-      ["me goals", undefined],
       ["me bounties", undefined],
     ]);
   });
@@ -332,76 +314,6 @@ describe("wallet commands", () => {
     state.fail = new EconomyError(429, "10 分鐘內只能留一則");
     expect((await run(registry, "me screen", { text: "嗨" })).tone).toBe("info");
     expect((await run(registry, "me screen", { text: "  " })).tone).toBe("warn");
-  });
-
-  it("goals_show_the_open_one_with_my_pledge_and_quick_buttons", async () => {
-    const { registry, state, calls } = setup();
-    expect((await run(registry, "me goals")).text).toContain("沒有開著的目標");
-    const goal = (over: Partial<GoalView>): GoalView => ({
-      id: "g1",
-      title: "新泳裝",
-      promise: "穿給大家看",
-      target: 500,
-      raised: 300,
-      my_pledge: 40,
-      deadline: "2026-11-10T00:00:00.000Z",
-      status: "open",
-      fulfilled: false,
-      ...over,
-    });
-    state.goals = [goal({}), goal({ id: "g0", title: "舊的", status: "expired" })];
-    const reply = await run(registry, "me goals");
-    expect(reply.card?.title).toBe("她的目標");
-    expect(reply.text).toContain("新泳裝");
-    expect(reply.text).toContain("她答應：穿給大家看");
-    expect(reply.text).toContain("300 / 500 魚幣");
-    expect(reply.text).toContain("你投了 40");
-    expect(reply.text).toContain("舊的");
-    expect(buttons(reply).map((b) => b.label)).toEqual(["投 10", "投 50"]);
-
-    const pressed = await press(registry, "mi:me:goal:pledge:g1:50");
-    expect(pressed?.ephemeral).toBe(true);
-    expect(replyOf(pressed).text).toContain("現在 350 / 500");
-    expect(calls[0]).toMatch(/^pledge:g1:50:discord:/);
-    // A forged amount never reaches the ledger.
-    expect(replyOf(await press(registry, "mi:me:goal:pledge:g1:9999")).tone).toBe("error");
-    expect(calls).toHaveLength(1);
-
-    state.view = view({ can_earn: false });
-    expect(buttons(await run(registry, "me goals"))).toEqual([]);
-    // A reached goal says whether she kept the promise yet.
-    state.goals = [goal({ id: "g2", title: "唱歌", status: "reached" })];
-    expect((await run(registry, "me goals")).text).toContain("上一個：唱歌　達成了，她還沒做到");
-    state.goals = [goal({ id: "g2", title: "唱歌", status: "reached", fulfilled: true })];
-    expect((await run(registry, "me goals")).text).toContain("上一個：唱歌　達成了，她做到了");
-  });
-
-  it("pledge_goes_to_the_open_goal_privately_and_refusals_are_plain", async () => {
-    const { registry, state, calls } = setup();
-    expect(registry.get(["me", "pledge"])?.ephemeral).toBe(true);
-    const none = await run(registry, "me pledge", { amount: 20 });
-    expect(none.text).toContain("沒有開著的目標");
-    expect(calls).toHaveLength(0);
-    state.goals = [
-      {
-        id: "g1",
-        title: "t",
-        promise: "p",
-        target: 500,
-        raised: 0,
-        my_pledge: 0,
-        deadline: "2026-11-10T00:00:00.000Z",
-        status: "open",
-        fulfilled: false,
-      },
-    ];
-    const reply = await run(registry, "me pledge", { amount: 20 });
-    expect(reply.text).toBe("投了 20 魚幣，現在 320 / 500，剩 70。");
-    expect(calls[0]).toMatch(/^pledge:g1:20:discord:/);
-    state.fail = new EconomyError(429, "每個目標最多投 200 魚幣");
-    const refused = await run(registry, "me pledge", { amount: 20 });
-    expect(refused.text).toBe("每個目標最多投 200 魚幣");
-    expect(refused.tone).toBe("info");
   });
 
   it("bounties_list_what_she_has_posted", async () => {
