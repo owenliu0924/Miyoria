@@ -17,6 +17,7 @@ import {
   type ModuleStateKind,
   serviceKey,
 } from "@miyoria/types";
+import { z } from "zod";
 
 /** The key zod copies into the JSON Schema of a marked field (and of a schema's groups). */
 export const SETTING_KEY = "x-miyoria";
@@ -410,6 +411,34 @@ export interface ModuleSettingsService {
 }
 
 export const ModuleSettingsKey = serviceKey<ModuleSettingsService>("ModuleSettings");
+
+/** One reason a module's section does not fit its schema: where, and zod's words. */
+export interface SectionIssue {
+  keys: (string | number)[];
+  message: string;
+}
+
+let zhTW: z.core.$ZodErrorMap | undefined;
+
+/**
+ * Every issue of `value` against a module's `schema`, worded in zh-TW (zod's own locale, for this
+ * parse only: the global setting is left alone). A message the schema wrote itself wins.
+ */
+export function sectionIssues(schema: z.ZodType, value: JsonValue | null): SectionIssue[] {
+  zhTW ??= z.locales.zhTW().localeError;
+  let result: ReturnType<z.ZodType["safeParse"]>;
+  try {
+    result = schema.safeParse(value ?? {}, { error: zhTW });
+  } catch (error) {
+    // A transform that throws instead of reporting an issue.
+    return [{ keys: [], message: error instanceof Error ? error.message : String(error) }];
+  }
+  if (result.success) return [];
+  return result.error.issues.map((issue) => ({
+    keys: issue.path.map((k) => (typeof k === "number" ? k : String(k))),
+    message: issue.message,
+  }));
+}
 
 /** The value at `keys` of a JSON tree, `undefined` when the path does not lead anywhere. */
 export function jsonAt(doc: JsonValue | undefined, keys: readonly string[]): JsonValue | undefined {

@@ -119,6 +119,8 @@ export {
   type ModuleSettingsView,
   SETTING_KEY,
   SETTING_KINDS,
+  type SectionIssue,
+  sectionIssues,
   type SettingApply,
   type SettingDescriptor,
   type SettingField,
