@@ -14,6 +14,7 @@ import type {
   MyCard,
   PersonCards,
 } from "@miyoria/contracts/api";
+import { STRANGER } from "@miyoria/economy";
 import {
   CARD_TEXTS,
   type CardRecord,
@@ -155,8 +156,8 @@ export const cardsRpc = {
     const who = await me(context.state, context.c);
     const cards = service(context.state);
     const person = who.person?.id ?? null;
-    // Someone she has never met has no cards to wish among yet.
-    if (person === null) throw new ApiError(403, CARD_TEXTS.no_wallet);
+    // Someone she has never met has no cards to wish among yet, and is told so.
+    if (person === null) throw new ApiError(403, STRANGER);
     const problem = cards.setWishlist(person, input.body.parts);
     if (problem !== null) throw ApiError.badRequest(CARD_TEXTS[problem]);
     return { parts: wishlistOf(cards, person), max: MAX_WISHES };

@@ -65,7 +65,8 @@ export type WishlistProblem = "too_many" | "duplicate" | "unknown_part";
 
 /**
  * Why `ids` cannot be a wishlist, or `null` when it can: at most `MAX_WISHES`, each once, each a
- * part of the catalogue that can be collected (not blank). Wishing changes no odds.
+ * part of the catalogue that can be collected (not blank, not disabled; a drop-only part can, from
+ * a drop). Wishing changes no odds.
  */
 export function wishlistProblem(
   catalogue: readonly Part[],
@@ -73,7 +74,7 @@ export function wishlistProblem(
 ): WishlistProblem | null {
   if (ids.length > MAX_WISHES) return "too_many";
   if (new Set(ids).size !== ids.length) return "duplicate";
-  const known = new Set(catalogue.filter((p) => !p.blank).map((p) => p.id));
+  const known = new Set(catalogue.filter((p) => !p.blank && p.enabled).map((p) => p.id));
   if (ids.some((id) => !known.has(id))) return "unknown_part";
   return null;
 }

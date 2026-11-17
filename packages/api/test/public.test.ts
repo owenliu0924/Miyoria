@@ -2376,6 +2376,21 @@ describe("her cards", () => {
     expect((await r.get("/api/member/cards/wishlist", bob)).body).toEqual({ parts: [], max: 3 });
     const stranger = await put(r, await r.login("dave"), { parts: [a.id] });
     expect(stranger.status).toBe(403);
+    expect(stranger.body).toEqual({ error: "她還不認識你,先和她說說話吧" });
+  });
+
+  it("takes the wishlist from the command by name, full-width brackets too", async () => {
+    const r = await rig();
+    const keepsakes = r.sup.services.require(KeepsakesKey);
+    const who = { account: discord(ALICE), name: "Alice", avatar_url: null };
+    const got = await keepsakes.setCardWishlist(who, ["歪頭（左）", "pose.sway"]);
+    expect(got).toMatchObject({ ok: true, value: ["歪頭(左)", "搖擺"] });
+    const dave = { account: discord(DAVE), name: "Dave", avatar_url: null };
+    expect(await keepsakes.setCardWishlist(dave, ["pose.sway"])).toEqual({
+      ok: false,
+      status: 403,
+      message: "她還不認識你,先和她說說話吧",
+    });
   });
 
   it("publishes the odds to anyone, each list summing to 100.00", async () => {

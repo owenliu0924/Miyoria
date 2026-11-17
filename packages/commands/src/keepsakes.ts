@@ -197,7 +197,8 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
       guard(async () => {
         const keepsakes = services.get(KeepsakesKey);
         if (!keepsakes) return notice("info", UNAVAILABLE);
-        const action = inv.str("action");
+        // `wish:` alone sets the wishlist: it never buys a card.
+        const action = inv.str("action") ?? (inv.str("wish") === null ? null : CARD_WISH);
         const foil = inv.bool("foil") === true;
         if (action === CARD_ODDS) {
           const odds = await keepsakes.cardOdds();

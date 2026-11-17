@@ -437,6 +437,10 @@ describe("the wishlist", () => {
     expect(cards.wishlist("p1")).toEqual(["pose.sway", "pose.shy", "pose.front"]);
     expect(cards.setWishlist("p1", ["background.aurora"])).toBeNull();
     expect(cards.wishlist("p1")).toEqual(["background.aurora"]);
+    // A part only a drop gives can be wished for; one no card can give now cannot.
+    expect(cards.setWishlist("p1", ["background.fireworks"])).toBeNull();
+    t.db.run("UPDATE cards_parts SET enabled = 0 WHERE id = 'pose.sway'");
+    expect(cards.setWishlist("p1", ["pose.sway"])).toBe("unknown_part");
     cards.clearWishlist("p1");
     expect(cards.wishlist("p1")).toEqual([]);
   });

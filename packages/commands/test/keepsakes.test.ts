@@ -337,6 +337,10 @@ describe("me card", () => {
     const cleared = await run("me card", { action: "願望單", wish: "清空" });
     expect(cleared.text).toBe("願望單清空了。");
     expect(fake.wishlist).toEqual([]);
+    // `wish:` without an action is the wishlist too, never a card bought.
+    expect((await run("me card", { wish: "貓" })).text).toBe(
+      "願望單：貓。機率不會變，抽到時她會知道。",
+    );
     expect(fake.issued).toEqual([]);
   });
 

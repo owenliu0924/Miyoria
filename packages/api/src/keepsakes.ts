@@ -6,7 +6,7 @@
 // an exception.
 
 import type { IssuedCard } from "@miyoria/contracts/api";
-import { EconomyKey } from "@miyoria/economy";
+import { EconomyKey, STRANGER } from "@miyoria/economy";
 import { CARD_TEXTS, CardsKey } from "@miyoria/play/cards";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import {
@@ -220,12 +220,16 @@ export class KeepsakeService implements Keepsakes {
     try {
       const member = await loadMemberOf(this.state, who.account);
       const person = member.person?.id ?? null;
-      if (person === null) return { ok: false, status: 403, message: CARD_TEXTS.no_wallet };
+      if (person === null) return { ok: false, status: 403, message: STRANGER };
       const catalogue = cards.catalogue();
       const ids: string[] = [];
       for (const asked of parts) {
         const want = asked.trim();
-        const part = catalogue.find((p) => !p.blank && (p.id === want || p.name === want));
+        // Typed in chat: full-width brackets and spaces read as the catalogue's own.
+        const plain = want.normalize("NFKC");
+        const part = catalogue.find(
+          (p) => !p.blank && (p.id === want || p.name.normalize("NFKC") === plain),
+        );
         if (!part) return { ok: false, status: 400, message: `${CARD_TEXTS.unknown_part}:${want}` };
         ids.push(part.id);
       }
