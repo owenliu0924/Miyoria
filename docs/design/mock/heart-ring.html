@@ -127,13 +127,20 @@ function band(svg, r, w, frac, color) {
   const n = el("circle", { cx: 80, cy: 80, r, fill: "none", "stroke-width": w,
     "stroke-dasharray": (c * frac) + " " + c, transform: "rotate(-90 80 80)" }, svg);
   n.style.stroke = color;
+  // A lap that is still being filled ends round, like the panel's bars and columns.
+  if (frac < 1) {
+    n.setAttribute("stroke-linecap", "round");
+    const cap = w / 2;
+    n.setAttribute("stroke-dasharray", Math.max(c * frac - cap * 2, 0.01) + " " + c);
+    n.setAttribute("transform", "rotate(" + (-90 + (cap / c) * 360) + " 80 80)");
+  }
   return n;
 }
 // One track. Each lap lies on the one before and is a little narrower, so the laps under it show
 // as steps at both edges and can be counted.
 function ring(bond, number) {
   const svg = el("svg", { viewBox: "0 0 160 160", role: "img", "aria-label": "羈絆環" });
-  const R = 56, BASE = 40, STEP = 3.2;
+  const R = 58, BASE = 32, STEP = 2.6;
   const laps = Math.min(Math.floor(Math.max(bond, 0) / 100), 10);
   const frac = bond >= 1000 ? 0 : (Math.max(bond, 0) % 100) / 100;
   el("circle", { cx: 80, cy: 80, r: R, fill: "none", stroke: TRACK, "stroke-width": BASE }, svg);
