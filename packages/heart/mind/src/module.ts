@@ -52,13 +52,8 @@ import { MindLoop } from "./mind.js";
 const STORE_TIMEOUT_MS = 5_000;
 
 export interface MindModuleOptions {
-  /** Her display name. */
+  /** Her display name (her journal's digests are in her voice). */
   name?: string;
-  /**
-   * Her persona (`PersonaHandle.corePrompt()`, the agent's live one when it runs); looked up on
-   * every call, and only its 3–5 sentence character core is used.
-   */
-  persona?: (services: ServiceLookup) => string;
   /** Replaces the time source (default: the module context's clock). */
   clock?: Clock;
   /**
@@ -71,48 +66,27 @@ export interface MindModuleOptions {
 
 /** Bus topics the mind follows. */
 export const MIND_TOPICS = [
-  Events.PlatformReady.type,
-  Events.PlatformMessageCreated.type,
   Events.WorldSalient.type,
-  Events.AgentTurnCompleted.type,
-  Events.AgentDecision.type,
-  Events.GateDecision.type,
-  Events.VoiceJoined.type,
-  Events.VoiceParticipants.type,
-  Events.VoiceUtteranceEvent.type,
-  Events.LlmBudget.type,
-  // What she is doing (the one owner of it): a game coming up, an activity ending.
+  // What she is doing (the one owner of it): an activity ending fires `after_activity` goals.
   Events.ActivityChanged.type,
   Events.ActivityDone.type,
   Events.ActivityFailed.type,
-  Events.AffectChanged.type,
   Events.DirectiveChanged.type,
+  // Her reflections go into her journal.
+  Events.ReflectRun.type,
 ];
 
 /**
- * Module `mind`: her Deliberate calls. Appraise after an interaction segment ends (into
- * `AffectStateKey`); Plan on goal triggers, activity ends, salient changes, her mood dropping,
- * suggestions (`MindKey.suggest`) and an adaptive heartbeat, producing goal changes and her day
- * plan (it starts nothing itself). Provides her goals (`GoalAgendaKey`, settings `mind:goal:<id>`, topic
- * `plan.goal`) and `MindKey`; keeps her thought journal (settings `mind:thought:<id>`) and
- * publishes `mind.thought`. Paused with autonomy.
+ * Module `mind`: her thought journal (`MindKey`, settings `mind:thought:<id>`, topic
+ * `mind.thought`), her goals (`GoalAgendaKey`, settings `mind:goal:<id>`, topic `plan.goal`; a goal
+ * whose trigger fires becomes an item of her inbox on the new runner), her life log and her old
+ * timers. It calls no model except to condense old journal entries.
  */
 export class MindModule implements Module {
   static readonly ID = "mind";
   readonly manifest = defineManifest(MindModule.ID, "Mind", {
-    description: "Her Deliberate calls: Appraise, Plan, her goals and the impulses she acts on",
-    requires: ["llm"],
-    optional: [
-      "self",
-      "world",
-      "agent",
-      "actions",
-      "social",
-      "memory",
-      "activity",
-      "arbiter",
-      "facts",
-    ],
+    description: "Her thought journal, her goals, her life log and her old timers",
+    optional: ["llm", "world", "agent", "actions", "memory", "activity", "facts"],
     configSchema: MindConfigSchema,
   });
   readonly #profile: ProfileId;
@@ -179,20 +153,14 @@ export class MindModule implements Module {
     ctx.provide(GoalAgendaKey, goals);
     const life = await this.#startLife(ctx, config, store);
     await this.#followWishes(ctx, goals);
-    const persona = this.#options.persona;
     const loop = new MindLoop({
       config,
-      profile: this.#profile,
-      name: this.#options.name ?? "她",
-      persona: () => (persona ? persona(ctx.services) : ""),
       services: ctx.services,
       clock: this.#options.clock ?? ctx.clock,
       publish: ctx.publisher,
       log: ctx.log,
       journal,
       goals,
-      store,
-      life,
     });
     ctx.provide(MindKey, loop);
     const sub = ctx.subscribe(MIND_TOPICS);

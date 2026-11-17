@@ -1,17 +1,25 @@
-// `/api/people*`: people the active profile knows and how she feels about them. Reads come from
-// the stores (with the social engine's cached numbers when it runs); every change goes through
-// the social engine. Everyone in the people store is listed; people she has no relationship with
-// yet have `relationship: null` and the label of a neutral relationship.
+// `/api/people*`: people the active profile knows and how she feels about them, read from the
+// heart's rows (`heart_person`, phase 4 step 5; the old `relationships` table is only read by the
+// heart's migration). The contract's `relationship` is the row in the old words: `affinity` is the
+// bond, `notes` her impression. Every change goes to the row. Everyone in the people store is
+// listed; people without a row yet have `relationship: null` and the label of a stranger.
 
 import type {
   AdjustPersonRequest,
   PersonDetail,
   PersonPage,
   PersonSummary,
+  Relationship,
+  RelationshipDelta,
   UpdatePersonRequest,
 } from "@miyoria/contracts/api";
-import type { HeartStore } from "@miyoria/heart/person";
-import { attitude, BLOCKED_TAG, label, type Social, SocialKey } from "@miyoria/heart/social";
+import {
+  BLOCKED_TAG,
+  type HeartHistoryEntry,
+  type HeartPerson,
+  type HeartStore,
+  labelOf,
+} from "@miyoria/heart/person";
 import { MemoryEngineKey } from "@miyoria/memory/memory";
 import {
   type IdentityStore,
@@ -21,12 +29,8 @@ import {
   type PeopleStore,
   PeopleStoreKey,
   type Person,
-  type Relationship,
-  type RelationshipDelta,
-  type RelationshipStore,
-  RelationshipStoreKey,
 } from "@miyoria/store";
-import { isUlid, type PersonId, type ProfileId, toTimestamp } from "@miyoria/types";
+import { isUlid, type PersonId, type ProfileId } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { heartRows } from "./heart-rows.js";
@@ -58,44 +62,44 @@ function ms(ts: string | null): number {
   return ts === null ? Number.NEGATIVE_INFINITY : Date.parse(ts);
 }
 
-/** The label of someone she has no relationship with yet (all levels at zero: 陌生人). */
-const NEUTRAL_LABEL = label({
-  profile: "",
-  person: "",
-  affinity: 0,
-  trust: 0,
-  familiarity: 0,
-  tags: [],
-  notes: "",
-  call_name: null,
-  interactions: 0,
-  last_interaction: null,
-  updated_at: toTimestamp(0),
-});
+/** The label of someone without a row yet. */
+const NEUTRAL_LABEL = labelOf(null);
+
+/** A row in the contract's old words. */
+export function relationshipOf(profile: ProfileId, p: HeartPerson): Relationship {
+  return {
+    profile,
+    person: p.person_id,
+    affinity: p.bond,
+    trust: p.trust,
+    familiarity: p.familiarity,
+    tags: [...p.tags],
+    notes: p.impression,
+    call_name: p.call_name,
+    interactions: p.interactions,
+    last_interaction: p.last_interaction,
+    updated_at: p.updated_at,
+  };
+}
 
 /** The services people routes read from. */
 class PeopleCtx {
   readonly profile: ProfileId;
-  readonly relationships: RelationshipStore;
   readonly identity: IdentityStore;
   readonly people: PeopleStore | undefined;
-  readonly social: Social | undefined;
-  readonly heart: HeartStore | null;
+  readonly heart: HeartStore;
 
   constructor(state: ApiState) {
-    this.social = state.optional(SocialKey);
-    this.heart = heartRows(state);
-    this.profile = this.social ? this.social.profile : state.profile();
-    this.relationships = state.service(RelationshipStoreKey, "relationship store");
+    this.profile = state.profile();
     this.identity = state.service(IdentityStoreKey, "identity store");
     this.people = state.optional(PeopleStoreKey);
+    const heart = heartRows(state);
+    if (heart === null) throw ApiError.unavailable("the heart's rows are not available");
+    this.heart = heart;
   }
 
-  /** The social engine's cached relationship, else the stored one. */
-  async relationship(person: PersonId): Promise<Relationship | null> {
-    const cached = this.social?.relationship(person) ?? null;
-    if (cached) return cached;
-    return this.relationships.get(this.profile, person);
+  row(person: PersonId): HeartPerson | null {
+    return this.heart.get(person);
   }
 
   /** The person with their accounts; `null` when nobody has this id. */
@@ -114,22 +118,20 @@ class PeopleCtx {
     return { id, display_name: first.display_name, created_at: created, accounts };
   }
 
-  async summary(id: PersonId, relationship: Relationship | null): Promise<PersonSummary | null> {
-    const person = await this.person(id);
-    return person ? summarize(person, relationship) : null;
+  summarize(person: Person, row: HeartPerson | null): PersonSummary {
+    return {
+      person,
+      relationship: row === null ? null : relationshipOf(this.profile, row),
+      label: row === null ? NEUTRAL_LABEL : labelOf(row),
+      blocked: row?.tags.includes(BLOCKED_TAG) ?? false,
+    };
   }
 
   async requireSummary(id: PersonId): Promise<PersonSummary> {
-    const relationship = await this.relationship(id);
-    const summary = await this.summary(id, relationship);
-    if (!summary) throw unknownPerson(id);
-    return summary;
+    const person = await this.person(id);
+    if (!person) throw unknownPerson(id);
+    return this.summarize(person, this.row(id));
   }
-}
-
-function summarize(person: Person, relationship: Relationship | null): PersonSummary {
-  const a = relationship ? attitude(relationship) : null;
-  return { person, relationship, label: a?.label ?? NEUTRAL_LABEL, blocked: a?.blocked ?? false };
 }
 
 /** When one of the person's accounts was last seen. */
@@ -140,8 +142,8 @@ function lastSeen(person: Person): number {
 }
 
 /**
- * Most recent interaction first, then the most recently changed relationship, then whoever was
- * seen last (people without a relationship sort after those with one of the same recency).
+ * Most recent interaction first, then the most recently changed row, then whoever was seen last
+ * (people without a row sort after those with one of the same recency).
  */
 function byRecency(a: PersonSummary, b: PersonSummary): number {
   const ra = a.relationship;
@@ -164,9 +166,21 @@ function matches(summary: PersonSummary, needle: string): boolean {
   );
 }
 
+/** Every heart row (the list is paged in the store). */
+function allRows(heart: HeartStore): HeartPerson[] {
+  const out: HeartPerson[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const page = heart.list({ offset, limit: 200 });
+    for (const e of page.entries) out.push(e.person);
+    offset = page.next;
+  }
+  return out;
+}
+
 /**
  * `GET /api/people?q=&limit=&cursor=`: every known person, most recent interaction first. Without
- * a people store only people with a relationship are known.
+ * a people store only people with a row are known.
  */
 async function list(
   state: ApiState,
@@ -182,52 +196,56 @@ async function list(
   const limit = Math.min(Math.max(q.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
   const needle = q.q?.trim().toLowerCase() || null;
 
-  const social = ctx.social;
-  const rels = new Map<PersonId, Relationship>();
-  for (const r of await ctx.relationships.list(ctx.profile)) {
-    rels.set(r.person, social?.relationship(r.person) ?? r);
-  }
+  const rows = new Map<PersonId, HeartPerson>();
+  for (const r of allRows(ctx.heart)) rows.set(r.person_id, r);
   const all: PersonSummary[] = [];
   if (ctx.people) {
     for (const person of await ctx.people.all()) {
-      // The engine may hold a relationship it has not written yet.
-      const relationship = rels.get(person.id) ?? social?.relationship(person.id) ?? null;
-      all.push(summarize(person, relationship));
+      all.push(ctx.summarize(person, rows.get(person.id) ?? null));
     }
   } else {
-    for (const r of rels.values()) {
-      const summary = await ctx.summary(r.person, r);
-      if (summary) all.push(summary);
+    for (const r of rows.values()) {
+      const person = await ctx.person(r.person_id);
+      if (person) all.push(ctx.summarize(person, r));
     }
   }
   const items = all
     .filter((summary) => needle === null || matches(summary, needle))
     .sort(byRecency);
-  const page: PersonPage = {
+  return {
     items: items.slice(offset, offset + limit),
     next_cursor: items.length > offset + limit ? String(offset + limit) : null,
   };
-  return page;
 }
 
 /**
- * Turns stored deltas (oldest first) into the absolute levels after each one, walking back
- * from the current values.
+ * Her changes of the bond, trust and familiarity (`heart.changed`, newest first) as the levels
+ * after each one, oldest first, walking back from the current values. The reason is the cause and
+ * the quote (`feel: 他記得我說過的話`).
  */
 export function absoluteHistory(
-  deltas: readonly RelationshipDelta[],
-  current: Relationship | null,
+  changes: readonly HeartHistoryEntry[],
+  current: HeartPerson | null,
 ): RelationshipDelta[] {
-  let a = current?.affinity ?? 0;
+  let a = current?.bond ?? 0;
   let t = current?.trust ?? 0;
   let f = current?.familiarity ?? 0;
   const out: RelationshipDelta[] = [];
-  for (let i = deltas.length - 1; i >= 0; i--) {
-    const d = deltas[i] as RelationshipDelta;
-    out.push({ at: d.at, affinity: a, trust: t, familiarity: f, reason: d.reason });
-    a -= d.affinity;
-    t -= d.trust;
-    f -= d.familiarity;
+  for (const { at, change } of changes) {
+    if (change.field !== "bond" && change.field !== "trust" && change.field !== "familiarity") {
+      continue;
+    }
+    const quote = change.reason_quote.trim();
+    out.push({
+      at,
+      affinity: a,
+      trust: t,
+      familiarity: f,
+      reason: quote === "" ? change.cause : `${change.cause}: ${quote}`,
+    });
+    if (change.field === "bond") a -= change.delta;
+    if (change.field === "trust") t -= change.delta;
+    if (change.field === "familiarity") f -= change.delta;
   }
   return out.reverse();
 }
@@ -256,11 +274,10 @@ async function detail(state: ApiState, id: string): Promise<PersonDetail> {
   const person = parsePerson(id);
   const ctx = new PeopleCtx(state);
   const summary = await ctx.requireSummary(person);
-  let deltas = await ctx.relationships.deltasSince(ctx.profile, person, toTimestamp(0));
-  if (deltas.length > MAX_HISTORY) deltas = deltas.slice(deltas.length - MAX_HISTORY);
+  const changes = ctx.heart.log.history(person, { limit: MAX_HISTORY });
   return {
     ...summary,
-    history: absoluteHistory(deltas, summary.relationship),
+    history: absoluteHistory(changes, ctx.row(person)),
     memory_count: await memoryCount(state, ctx.profile, person),
   };
 }
@@ -308,50 +325,26 @@ function validate(request: PersonChange): void {
   }
 }
 
-/** Tags to add and remove so the non-`blocked` tags become `wanted`. */
-function tagChanges(current: readonly string[], wanted: readonly string[]) {
-  return {
-    add: wanted.filter((t) => !current.includes(t)),
-    remove: current.filter((t) => t !== BLOCKED_TAG && !wanted.includes(t)),
-  };
-}
-
-async function applyUpdate(
+function applyUpdate(
   ctx: PeopleCtx,
-  social: Social,
   person: PersonId,
   request: PersonChange,
-  tags: { add: string[]; remove: string[] } | null,
-  actor: string,
+  wanted: string[] | null,
   now: number,
-): Promise<void> {
-  if (tags) {
-    for (const tag of tags.remove) await social.setTag(person, tag, false, actor, now);
-    for (const tag of tags.add) await social.setTag(person, tag, true, actor, now);
+): void {
+  const heart = ctx.heart;
+  if (wanted !== null) {
+    const current = heart.get(person)?.tags ?? [];
+    const kept = current.filter((t) => t === BLOCKED_TAG);
+    heart.edit(person, { tags: [...kept, ...wanted] }, { now });
   }
-  if (request.blocked !== undefined) {
-    await social.setTag(person, BLOCKED_TAG, request.blocked, actor, now);
-  }
+  if (request.blocked !== undefined) heart.setTag(person, BLOCKED_TAG, request.blocked, { now });
   if (request.call_name !== undefined) {
-    const name = request.call_name?.trim() || null;
-    await social.setCallName(person, name, now);
+    heart.edit(person, { call_name: request.call_name?.trim() || null }, { now });
   }
-  if (request.notes !== undefined) {
-    // The panel's notes are her impression of them on the heart's row.
-    ctx.heart?.edit(person, { impression: request.notes.trim() }, { now });
-    // The engine has no notes setter: write the stored row and reload its cache (after flushing
-    // its pending counters).
-    await social.flush();
-    const rel =
-      (await ctx.relationships.get(ctx.profile, person)) ??
-      (await social.adjust(person, 0, actor, now));
-    await ctx.relationships.upsert({
-      ...rel,
-      notes: request.notes.trim(),
-      updated_at: toTimestamp(now),
-    });
-    await social.load();
-  }
+  // The panel's notes are her impression of them.
+  if (request.notes !== undefined)
+    heart.edit(person, { impression: request.notes.trim() }, { now });
 }
 
 /** `PATCH /api/people/{id}`. */
@@ -365,18 +358,11 @@ async function update(
   const person = parsePerson(id);
   validate(request);
   const wanted = request.tags ? cleanTags(request.tags) : null;
-  const social = state.service(SocialKey, "social module");
   const ctx = new PeopleCtx(state);
   if (!(await ctx.person(person))) throw unknownPerson(id);
-  let tags: { add: string[]; remove: string[] } | null = null;
-  if (wanted) {
-    const current = (await ctx.relationship(person))?.tags ?? [];
-    tags = tagChanges(current, wanted);
-  }
-  const actor = actorOf(c);
   let failure: unknown = null;
   try {
-    await applyUpdate(ctx, social, person, request, tags, actor, state.now());
+    applyUpdate(ctx, person, request, wanted, state.now());
   } catch (error) {
     failure = error;
   }
@@ -387,7 +373,7 @@ async function update(
   return ctx.requireSummary(person);
 }
 
-/** `POST /api/people/{id}/adjust`: adds to the affinity, ignoring caps. */
+/** `POST /api/people/{id}/adjust`: adds to the bond, ignoring caps (cause `admin`). */
 async function adjust(
   state: ApiState,
   c: ApiContext,
@@ -398,12 +384,15 @@ async function adjust(
   if (!Number.isFinite(request.affinity) || Math.abs(request.affinity) > 1100) {
     throw ApiError.badRequest("`affinity` must be a number between -1100 and 1100");
   }
-  const social = state.service(SocialKey, "social module");
   const ctx = new PeopleCtx(state);
   if (!(await ctx.person(person))) throw unknownPerson(id);
   let failure: unknown = null;
   try {
-    await social.adjust(person, request.affinity, actorOf(c), state.now());
+    const bond = ctx.row(person)?.bond ?? 0;
+    ctx.heart.adminSet(person, "bond", bond + request.affinity, {
+      now: state.now(),
+      quote: `adjust by ${actorOf(c)}`,
+    });
   } catch (error) {
     failure = error;
   }

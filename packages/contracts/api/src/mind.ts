@@ -37,17 +37,12 @@ export const EmergencyReportSchema = z
   .meta({ id: "ApiEmergencyReport" });
 export type EmergencyReport = z.output<typeof EmergencyReportSchema>;
 
-/** Calls of her mind loop. */
+/** How her journal is going. */
 export const MindStatsSchema = z
   .object({
-    /** Calls in the last hour. */
-    calls_last_hour: z.number(),
-    max_calls_per_hour: z.number(),
-    calls_total: z.number(),
-    tokens_total: z.number(),
+    /** Her newest journal entry. */
     last_at: TimestampSchema.nullable(),
-    next_heartbeat_at: TimestampSchema.nullable(),
-    /** Why she is not thinking right now (`paused`, `budget exhausted`, ...). */
+    /** Why the module is not looking at her goals right now (`not running`). */
     idle_reason: z.string().nullable(),
   })
   .meta({ id: "ApiMindStats" });
@@ -60,8 +55,6 @@ export const MindViewSchema = z
     paused: z.boolean(),
     /** The `mind` module is running. */
     running: z.boolean(),
-    /** Her mind takes triggers right now. */
-    accepting: z.boolean(),
     stats: MindStatsSchema.nullable(),
     /** High-risk actions waiting for an owner. */
     pending_approvals: z.number(),

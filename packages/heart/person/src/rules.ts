@@ -488,8 +488,7 @@ export function cares(person: Pick<HeartPerson, "bond" | "warmth" | "longing">):
 
 /**
  * How deep one line is (1..4), for familiarity: any line counts, one said to her counts more,
- * and a longer one more still. The same as `social`'s (`heart/social/src/rel.ts`), which step 5
- * of the phase removes.
+ * and a longer one more still (as the old `social` module had it).
  */
 export function lineDepth(text: string, directed: boolean): number {
   const length = [...text.trim()].length;

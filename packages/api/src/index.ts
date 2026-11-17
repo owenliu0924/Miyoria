@@ -53,8 +53,8 @@
 // * `GET /api/activity` (presence, broadcast, activity, scene), `GET /api/activity/tasks?limit=20`
 // * `GET /api/arbiter/ledger?context=&limit=`, `GET /api/arbiter/decisions?limit=&context=&verdict=`
 //   (the arbiter's verdicts since the `api` module started)
-// * `GET /api/affect` (emotions, mood, drives, biases), `GET /api/affect/people` (person cards)
-// * `GET /api/mind/goals?closed=false`, `GET /api/mind/plan` (her agenda and today's plan)
+// * `GET /api/affect` (emotions, mood, drives, biases), `GET /api/affect/people` (heart rows)
+// * `GET /api/mind/goals?closed=false` (her agenda)
 // * `GET /api/prompts?context=&limit=`, `GET /api/prompts/{turn}` (saved prompts per turn),
 //   `GET /api/turns/outcomes?context=&outcome=&limit=` (how turns ended); read-only
 // * `GET /api/knowledge` (her documents), `GET /api/knowledge/conversations` (her conversation

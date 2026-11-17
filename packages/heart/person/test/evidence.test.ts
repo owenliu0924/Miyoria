@@ -7,7 +7,6 @@ import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
 import {
   type AccountRef,
-  type Attitude,
   type Clock,
   type ContextKey,
   Events,
@@ -93,16 +92,7 @@ describe("evidence through the heart's service", () => {
     const people = store.plugin(heartTables).people;
     const heart = new HeartService(people, clock);
     const known: Record<string, string> = { amy: "p-amy" };
-    const services = {
-      get: (key: unknown) =>
-        key === SocialSignalsKey
-          ? {
-              attitude: (a: AccountRef) =>
-                known[a.id] ? ({ person: known[a.id] } as Attitude) : null,
-            }
-          : undefined,
-    };
-    const together = togetherOf({ services } as never, heart);
+    const together = togetherOf((a) => known[a.id] ?? null, heart);
     const env = (type: string, data: unknown) => ({ type, v: 1, data }) as never;
     together.on(
       env(Events.VoiceJoined.type, {
@@ -285,9 +275,6 @@ describe("module heart", () => {
     const sup = new Supervisor();
     cleanup.push(() => sup.stopAll());
     sup.services.provide("app", StoreKey, store);
-    sup.services.provide("app", SocialSignalsKey, {
-      attitude: (a: AccountRef) => (a.id === "amy" ? ({ person: "p-amy" } as Attitude) : null),
-    });
     await sup.register(new HeartModule("p", { clock }), null, true);
     await sup.startAll();
     expect(sup.services.get(RelationshipEffectsKey)).toBeInstanceOf(HeartEffects);
@@ -300,13 +287,14 @@ describe("module heart", () => {
     await new Promise((r) => setTimeout(r, 20));
     clock.at += 12 * MIN;
     sup.bus.publish("voice", Events.VoiceLeft, { context: VOICE } as never);
-    const people = store.plugin(heartTables).people;
-    await waitFor(
-      () => people.log.evidence("p-amy", toTimestamp(T0), toTimestamp(T0 + 60 * MIN)).length > 0,
-    );
-    expect(
-      people.log.evidence("p-amy", toTimestamp(T0), toTimestamp(T0 + 60 * MIN))[0]?.evidence,
-    ).toMatchObject({ kind: "voice_together", weight: 12 });
+    // Amy was never seen in chat: her account is made a person when she is in the channel.
+    const evidence = () => store.events?.query({ types: ["heart.evidence"], limit: 10 }) ?? [];
+    await waitFor(() => evidence().length > 0);
+    const amy = await store.people.personByAccount(account("amy"));
+    expect(evidence()[0]?.envelope.person_id).toBe(amy?.id);
+    expect(evidence()[0]?.envelope.data).toMatchObject({ kind: "voice_together", weight: 12 });
+    // And she is who the bus's account is to everyone else now (`SocialSignalsKey`).
+    expect(sup.services.require(SocialSignalsKey).attitude(account("amy"))).toBeNull();
   });
 });
 

@@ -8,7 +8,6 @@ import {
 import { knownNames, PeopleStoreKey } from "@miyoria/store";
 import {
   ActivityManagerKey,
-  AffectStateKey,
   EventLogKey,
   Events,
   HandleDirectoryKey,
@@ -42,24 +41,21 @@ export interface LiveModuleOptions {
 
 /**
  * Who `by` is to her: someone she knows, a stranger, or blocked. Blocked is also the answer when
- * nothing can tell (no social tag and no cards): a pat must not reach her because a module is
- * down. Read only; nothing is counted or assigned here, no handle for a stranger either.
+ * nothing can tell (no heart rows to read): a pat must not reach her because a module is down. Read only; nothing is counted or assigned here, no handle for a stranger either.
  */
 export async function whoPats(ctx: ModuleContext, by: LivePatter): Promise<PatWho> {
   const s = ctx.services;
   const social = s.get(SocialSignalsKey);
-  const affect = s.get(AffectStateKey);
-  if (!social && !affect) return { kind: "blocked" };
-  if (social?.attitude(by.account)?.blocked) return { kind: "blocked" };
+  if (!social) return { kind: "blocked" };
+  if (social.attitude(by.account)?.blocked) return { kind: "blocked" };
   const person = (await s.get(PeopleStoreKey)?.personByAccount(by.account)) ?? null;
   if (person === null) return { kind: "stranger" };
-  const card = affect?.card(person.id) ?? null;
-  if (card?.blocked) return { kind: "blocked" };
+  if (social.attitudeOf?.(person.id)?.blocked) return { kind: "blocked" };
   const own = person.accounts.find((a) => sameAccount(a.account, by.account));
   return {
     kind: "known",
     person: person.id,
-    handle: s.get(HandleDirectoryKey)?.ofPerson(person.id) ?? card?.handle ?? null,
+    handle: s.get(HandleDirectoryKey)?.ofPerson(person.id) ?? null,
     name: own?.display_name ?? person.display_name,
   };
 }

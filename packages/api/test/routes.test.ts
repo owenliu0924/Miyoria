@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
 import type { AssignRoleRequest } from "@miyoria/contracts/api";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
-import { Social, SocialKey, socialConfig } from "@miyoria/heart/social";
+import { type HeartStore, heartTables } from "@miyoria/heart/person";
 import { LlmRouter, LlmRouterKey } from "@miyoria/llm/llm";
 import {
   type Embedder,
@@ -45,9 +45,9 @@ import {
   type MemoryRecord,
   MemoryRecordStoreKey,
   PeopleStoreKey,
-  RelationshipStoreKey,
   type RoleMapping,
   SqliteStore,
+  StoreKey,
 } from "@miyoria/store";
 import {
   type AccountRef,
@@ -80,7 +80,8 @@ const PROFILE = "test-chan";
 interface Harness {
   sup: Supervisor;
   store: TestStore;
-  social: Social;
+  /** Her rows for people (`heart_person`), the only place the people routes read and write. */
+  heart: HeartStore;
   queue: RequestQueue;
   sink: FakeSink;
   base: string;
@@ -88,10 +89,12 @@ interface Harness {
 
 const harnesses: Harness[] = [];
 const dirs: string[] = [];
+const closers: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
   for (const h of harnesses.splice(0)) await h.sup.stopAll();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const f of closers.splice(0)) await f();
 });
 
 async function harness(
@@ -105,22 +108,17 @@ async function harness(
   s.provide(k, SupervisorKey, sup);
   s.provide(k, ActiveProfileKey, PROFILE);
   s.provide(k, PeopleStoreKey, store.people);
-  s.provide(k, RelationshipStoreKey, store.relationships);
   s.provide(k, IdentityStoreKey, store.identity);
   s.provide(k, MemoryRecordStoreKey, store.memories);
   s.provide(k, AuthStoreKey, store.auth);
   s.provide(k, AuditLogKey, store.audit);
   s.provide("llm", LlmRouterKey, new LlmRouter(new Map(), new Map()));
 
-  const social = new Social(
-    PROFILE,
-    "Test",
-    [],
-    socialConfig(),
-    { people: store.people, relationships: store.relationships, identity: store.identity },
-    () => {},
-  );
-  s.provide("social", SocialKey, social);
+  const heartDb = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+  closers.push(() => heartDb.close());
+  const heart = heartDb.plugin(heartTables).people;
+  // Only the heart's rows are read through the whole store here.
+  s.provide("store", StoreKey, { plugin: (p: never) => heartDb.plugin(p) } as never);
   const auth = await AuthService.load(store.auth, store.audit, [], "user");
   s.provide("auth", AuthServiceKey, auth);
   const queue = new RequestQueue();
@@ -147,9 +145,14 @@ async function harness(
 
   const base = api.url();
   if (!base) throw new Error("api is not running");
-  const h = { sup, store, social, queue, sink, base };
+  const h = { sup, store, heart, queue, sink, base };
   harnesses.push(h);
   return h;
+}
+
+/** Adds to the bond the way an admin does (cause `admin`). */
+function bump(h: Harness, person: PersonId, by: number): void {
+  h.heart.adminSet(person, "bond", (h.heart.get(person)?.bond ?? 0) + by);
 }
 
 async function audited(h: Harness, action: string): Promise<AuditEntry> {
@@ -267,12 +270,11 @@ describe("routes", () => {
   it("people_list_detail_and_changes", async () => {
     const h = await harness();
     const adm = adminCalls(h.base, TOKEN);
-    const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
-    await h.social.adjust(owen, 10, "test", now);
-    await h.social.adjust(owen, 5, "test", now);
-    await h.social.adjust(mika, -3, "test", now);
+    bump(h, owen, 10);
+    bump(h, owen, 5);
+    bump(h, mika, -3);
     await h.store.memories.upsert(memory(owen, "fact", "Owen 喜歡拉麵", 0));
 
     let page = await adm.people();
@@ -316,7 +318,7 @@ describe("routes", () => {
     expect(rel?.notes).toBe("喜歡拉麵");
     expect(rel?.call_name).toBe("歐文");
     expect(updated.blocked).toBe(true);
-    expect(h.social.relationship(owen)?.notes, "the engine's cache sees the notes").toBe(
+    expect(h.heart.get(owen)?.impression, "the notes are her impression on the row").toBe(
       "喜歡拉麵",
     );
     const entry = await audited(h, "person.update");
@@ -349,20 +351,19 @@ describe("routes", () => {
     }
     expect(await statusOf(adm.updatePerson(newId(), {}))).toBe(404);
 
-    h.sup.services.removeOwnedBy("social");
+    // Without the heart's rows there is nothing to read or write.
+    h.sup.services.removeOwnedBy("store");
     expect(await statusOf(adm.updatePerson(owen, {}))).toBe(503);
-    // Reads still work from the stores.
-    expect((await adm.people()).items).toHaveLength(2);
+    expect(await statusOf(adm.people())).toBe(503);
   });
 
   it("people_list_includes_people_without_a_relationship", async () => {
     const h = await harness();
     const adm = adminCalls(h.base, TOKEN);
-    const now = Date.now();
     const owen = await h.store.people.upsertAccount(account("1"), "Owen");
     const mika = await h.store.people.upsertAccount(account("2"), "Mika");
     const lurker = await h.store.people.upsertAccount(account("3"), "Lurker");
-    await h.social.adjust(owen, 10, "test", now);
+    bump(h, owen, 10);
 
     let page = await adm.people();
     const order = page.items.map((i) => i.person.id);
@@ -393,8 +394,8 @@ describe("routes", () => {
     expect(page.items.map((i) => i.person.id)).toEqual(order.slice(2));
     expect(page.next_cursor).toBeNull();
 
-    // A relationship the engine has not written yet still shows.
-    await h.social.adjust(mika, 1, "test", now);
+    // A row written after the first read shows.
+    bump(h, mika, 1);
     page = await adm.people();
     expect(page.items.find((i) => i.person.id === mika)?.relationship?.affinity).toBe(1);
     const detail = await adm.person(lurker);

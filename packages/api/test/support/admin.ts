@@ -7,7 +7,6 @@ import type {
   AssignRoleRequest,
   ConversationNote as ConversationNoteView,
   CostReport as CostInfo,
-  DayPlanView,
   ExtensionInfo,
   GoalsView,
   KnowledgeView,
@@ -17,6 +16,7 @@ import type {
   MemoryRecordView,
   MindView,
   ModuleInfo,
+  PersonCard,
   PersonDetail,
   PersonPage,
   PersonSummary,
@@ -45,7 +45,6 @@ import type {
   ArbiterVerdict,
   ContextKey,
   LedgerView,
-  PersonCard,
   PlatformId,
   SavedPrompt,
   ThoughtDigest,
@@ -175,7 +174,6 @@ export function adminCalls(base: string, token: string) {
     affectPeople: () => get<PersonCard[]>("/api/affect/people"),
     goals: (closed = false) =>
       get<GoalsView>("/api/mind/goals", { closed: closed ? "true" : undefined }),
-    dayPlan: () => get<DayPlanView>("/api/mind/plan"),
 
     // ---- what she was told and how her turns ended
     prompts: (context: ContextKey | null = null, limit = 30) =>

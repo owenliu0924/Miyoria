@@ -1,7 +1,7 @@
 // The activity table of v4 §8.1 and who decides (§8.2): every want leads to something real, rows
 // whose package is not running are skipped, and her day stays varied.
 
-import type { AffectSnapshot, LifeActivityId } from "@miyoria/types";
+import type { LifeActivityId } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   activityOfCapability,
@@ -13,9 +13,7 @@ import {
   lifeOptions,
   lifeTable,
   overShare,
-  rankDesires,
 } from "../src/index.js";
-import { FakeAffect } from "./fakes.js";
 
 const T0 = Date.parse("2026-11-10T07:00:00.000Z"); // 15:00 at UTC+8
 const MIN = 60_000;
@@ -54,10 +52,6 @@ function situation(p: Partial<LifeSituation> = {}): LifeSituation {
 
 function done(entries: [LifeActivityId, Partial<LifeTally>][]): Map<LifeActivityId, LifeTally> {
   return new Map(entries.map(([id, t]) => [id, { count: 1, minutes: 0, last: null, ...t }]));
-}
-
-function affect(p: Partial<AffectSnapshot> = {}): AffectSnapshot {
-  return { ...new FakeAffect().snap, ...p };
 }
 
 describe("the activity table", () => {
@@ -157,91 +151,5 @@ describe("the activity table", () => {
     expect(overShare(game, { count: 1, minutes: 30, last: null }, 10, 0.35)).toContain("30 分鐘");
     expect(activityOfCapability("game.start")?.id).toBe("game");
     expect(activityOfCapability("chat.start")).toBeNull();
-  });
-});
-
-describe("wants lead somewhere (§8.2)", () => {
-  const base = {
-    cards: [],
-    where: () => "offline" as const,
-    goals: [],
-    fired: new Set<string>(),
-    capabilities: TODAY,
-    activity: null,
-    inVoice: false,
-    cared: 0.3,
-  };
-  const want = (w: string, weight = 0.7) => ({
-    want: w,
-    weight,
-    why: "想換件事做",
-    person: null,
-  });
-
-  it("explore is no longer a dead end: it names a row and its capability", () => {
-    const desires = rankDesires({
-      ...base,
-      affect: affect({ biases: { talkativeness: 0, initiative: 0, wants: [want("explore")] } }),
-      life: situation(),
-    });
-    expect(desires[0]).toMatchObject({
-      want: "explore",
-      label: "逛網路",
-      capability: "web.search",
-    });
-    expect(desires[0]?.why).toContain("今天還沒做過");
-  });
-
-  it("without her day it still reaches the web, and only says the wish without one", () => {
-    const wants = { talkativeness: 0, initiative: 0, wants: [want("explore")] };
-    const plain = rankDesires({ ...base, affect: affect({ biases: wants }) });
-    expect(plain[0]).toMatchObject({ label: "逛網路", capability: "web.search" });
-    const none = rankDesires({
-      ...base,
-      capabilities: new Set(["chat.start"]),
-      affect: affect({ biases: wants }),
-    });
-    expect(none[0]).toMatchObject({ label: "找點新鮮事", capability: null });
-  });
-
-  it("curiosity and boredom find different things of her own", () => {
-    const desires = rankDesires({
-      ...base,
-      affect: affect({
-        boredom: 0.8,
-        drives: { ...new FakeAffect().snap.drives, curiosity: 0.8 },
-      }),
-      life: situation(),
-    });
-    const caps = desires.map((d) => d.capability);
-    expect(caps).toContain("web.search");
-    expect(desires.find((d) => d.want === "life")?.capability).not.toBe("web.search");
-  });
-
-  it("a wish to play past the game share leads to something else", () => {
-    const desires = rankDesires({
-      ...base,
-      affect: affect({ biases: { talkativeness: 0, initiative: 0, wants: [want("play", 0.8)] } }),
-      life: situation({ done: done([["game", { count: 3, minutes: 4 * 60 }]]) }),
-    });
-    const play = desires.find((d) => d.want === "play");
-    expect(play).toMatchObject({ capability: null });
-    expect(play?.why).toContain("超過今天的 35%");
-    expect(desires.find((d) => d.want === "explore")).toMatchObject({
-      label: "逛網路",
-      capability: "web.search",
-    });
-  });
-
-  it("tired in the evening: her diary, once it exists", () => {
-    const desires = rankDesires({
-      ...base,
-      affect: affect({ biases: { talkativeness: 0, initiative: 0, wants: [want("rest")] } }),
-      life: situation({ hour: 22, capabilities: new Set([...TODAY, "diary.write"]) }),
-    });
-    expect(desires.find((d) => d.want === "calm")).toMatchObject({
-      label: "寫日記",
-      capability: "diary.write",
-    });
   });
 });

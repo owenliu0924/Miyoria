@@ -51,7 +51,6 @@ import {
   type LedgerView,
   LifeLogKey,
   MemoryRetrievalKey,
-  MindKey,
   type Participant,
   PartyStatusKey,
   PersonProfilesKey,
@@ -572,9 +571,7 @@ export class HostPrompt implements PromptSource {
     }
     const services = this.#services;
     const body = peopleBody(present, {
-      affect: services.get(AffectStateKey) ?? null,
       attitude: (a) => agent.attitude(a),
-      self: services.get(SelfStateKey) ?? null,
       heart: services.get(HeartKey) ?? null,
     });
     return { body: body === "" ? null : body, settled };
@@ -800,7 +797,6 @@ export class HostPrompt implements PromptSource {
       mood: agent.mood(),
       self: services.get(SelfStateKey) ?? null,
       her: services.get(WorldStateKey)?.snapshot().her ?? null,
-      unanswered: services.get(MindKey)?.unanswered?.(context) ?? [],
       level: levelHint(agent.handle.channelMode(context), context),
       notices: [],
     });

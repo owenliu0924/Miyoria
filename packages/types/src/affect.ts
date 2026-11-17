@@ -1,8 +1,8 @@
 // Affect and People (docs/design/v2-architecture.md §3.1, §3.6): her feelings with one writer.
 //
-// Three layers at three speeds: drives (hours, pure homeostasis), emotions (minutes, rule
-// events + Appraise) and bonds (days, one card per person). Mood is no longer stored: it is
-// derived from the three layers (plus the time-of-day energy curve).
+// Two layers here: drives (hours, pure homeostasis) and emotions (minutes, rule events and her
+// `feel`). How she feels about each person is the heart's (`heart.ts`, `heart_person`). Mood is not
+// stored: it is derived from the layers (plus the time-of-day energy curve).
 //
 // The only inputs to emotions are *events* (`AffectEvent` rule events and `AppraisalEvent`s);
 // nobody writes absolute numbers, and the program turns events into numbers (habituation,
@@ -13,10 +13,15 @@
 // `ShownEmotion` (self.ts) and `Mood` (social.ts) are reused as they are.
 
 import type { AffectEventData, AffectSnapshotData } from "@miyoria/contracts/events";
+import {
+  BOND_TIER_FLOORS,
+  RELATIONSHIP_LABELS,
+  type RelationshipLabel,
+} from "@miyoria/contracts/wire";
 import type { Handle } from "./handle.js";
 import type { PersonId } from "./ids.js";
 import type { ContextKey } from "./platform.js";
-import type { DriveName, EmotionName, EmotionReading, PersonEmotionName } from "./self.js";
+import type { DriveName, EmotionName, EmotionReading } from "./self.js";
 import { serviceKey } from "./service-key.js";
 import type { Timestamp } from "./time.js";
 
@@ -112,49 +117,20 @@ export interface AppliedAppraisal {
 
 // ---- people ---------------------------------------------------------------------------------
 
-export const RELATIONSHIP_LABELS = [
-  "很討厭",
-  "討厭",
-  "陌生人",
-  "認識",
-  "朋友",
-  "好朋友",
-  "摯友",
-  "知心",
-  "知己",
-  "至交",
-  "莫逆之交",
-  "心有靈犀",
-  "形影不離",
-  "家人般",
-  "生死之交",
-  "命運相連",
-  "無可取代",
-  "心之所歸",
-  "永恆羈絆",
-] as const;
-
-/** The one relationship scale (every prompt, `/me` and the panel use this). */
-export type RelationshipLabel = (typeof RELATIONSHIP_LABELS)[number];
+/**
+ * The one relationship scale (every prompt, `/me` and the panel use this). The list itself is the
+ * wire contract's (`@miyoria/contracts/wire`, so the API's enum is made from it); this is where
+ * everyone else reads it.
+ */
+export { RELATIONSHIP_LABELS, type RelationshipLabel };
 
 /**
  * The tiers past 摯友, highest first: `[lowest bond level, label]`. Bond only grows past 100
  * once someone is already a 摯友 (affinity 100), so these need the same familiarity.
  */
 export const BOND_TIERS: readonly (readonly [number, RelationshipLabel])[] = [
-  [1000, "永恆羈絆"],
-  [870, "心之所歸"],
-  [750, "無可取代"],
-  [640, "命運相連"],
-  [540, "生死之交"],
-  [450, "家人般"],
-  [370, "形影不離"],
-  [300, "心有靈犀"],
-  [240, "莫逆之交"],
-  [190, "至交"],
-  [150, "知己"],
-  [120, "知心"],
-];
+  ...BOND_TIER_FLOORS,
+].reverse();
 
 /** One line naming the whole bond scale, for a prompt that shows levels. */
 export const BOND_SCALE_LINE =
@@ -368,69 +344,6 @@ export function familiarityBand(value: number): string {
   return "很熟";
 }
 
-/**
- * One card per person: replaces affinity / trust / notes (social), feelings / hearts / romance
- * / emotions toward people (self), the knowledge person card and per-person lessons as the
- * place her feeling about someone lives.
- */
-export interface PersonCard {
-  person: PersonId;
-  handle: Handle;
-  /** How she addresses them (`null`: by handle). */
-  call_name: string | null;
-  /** -100..100 */
-  affinity: number;
-  /** 0..100 */
-  trust: number;
-  /** 0..100, from how much and how deeply they interact (not +1 a day). */
-  familiarity: number;
-  /** 0..1, how much she cares (a crush grows from here; Reflect moves it in small steps). */
-  attachment: number;
-  /** Active emotions toward them (0..1, decayed to now; absent = none). */
-  emotions: Partial<Record<PersonEmotionName, number>>;
-  /** Her feeling about them in her own words, using names (Appraise edits, Reflect rewrites). */
-  feeling: string;
-  /**
-   * One line for that person's own eyes, written by Reflect: about them alone, other names
-   * filtered, passed through moderation (§17.1). Only the member page reads it, never a prompt.
-   * `null` or absent: she has none yet, and nothing takes its place.
-   */
-  public_feeling?: string | null;
-  label: RelationshipLabel;
-  /** `affinityLevel(affinity)`: -100..100, one per affinity point. Prompt-only, never shown to people. */
-  level: number;
-  /**
-   * How she acts with them now, one short line in her own words (dere/tsun, teasing, honesty).
-   * Written by her (Reflect); prompt-only like `feeling`. `null` or absent: none yet.
-   */
-  stance?: string | null;
-  /** The `level` the stance was written at (`null` or absent: no stance). */
-  stance_level?: number | null;
-  owner: boolean;
-  blocked: boolean;
-  last_seen: Timestamp | null;
-  last_together: Timestamp | null;
-  updated_at: Timestamp;
-}
-
-/** A proposed change to a bond (Appraise: small; Reflect: daily, capped). */
-export interface BondChange {
-  affinity?: number;
-  trust?: number;
-  familiarity?: number;
-  attachment?: number;
-  /** Replaces her feeling text. */
-  feeling?: string;
-  /** Replaces the line shown to the person (`null` clears it); already filtered by the writer. */
-  public_feeling?: string | null;
-  /**
-   * Replaces her stance toward them (one short line; Reflect only). It is stored with the level
-   * the card has at that moment.
-   */
-  stance?: string;
-  why: string;
-}
-
 // ---- snapshot and effects -------------------------------------------------------------------
 
 /**
@@ -462,27 +375,18 @@ export interface AffectState {
   /** What she feels, strongest first, at or above `min`. */
   emotions(min?: number): EmotionReading[];
   /**
-   * The only write path for what an interaction meant: events in, numbers computed here. The one
-   * reader that calls it for a conversation is Appraise (packages/heart/mind/src/appraise.ts).
+   * The only write path for what an interaction meant: events in, numbers computed here. Her
+   * `feel` block is the one that calls it for a conversation (source `feel`).
    */
   appraise(input: AffectInput): AppliedAppraisal[];
   /** A drive was satisfied (`amount` < 0) or frustrated (> 0) by something she did. */
   satisfy(drive: DriveName, amount: number, reason: string): void;
-
-  card(person: PersonId): PersonCard | null;
-  cardByHandle(handle: Handle): PersonCard | null;
-  /** Every card, highest attachment first. */
-  cards(): PersonCard[];
-  /** Applies a bond change within the daily caps; `null` when there is no such person. */
-  adjustBond(person: PersonId, change: BondChange, by: AffectSource): Promise<PersonCard | null>;
 
   /**
    * The canonical prompt text of her mood (`renderAffectMood` of the snapshot): the mood line
    * and her strongest 2-3 emotions. Optional so test doubles need not implement it.
    */
   renderMood?(): string;
-  /** One line per person (`renderPersonLine`), in the order of `people` (unknown ones skipped). */
-  renderPeople?(people: readonly PersonId[]): string[];
 }
 
 export const AffectStateKey = serviceKey<AffectState>("AffectState");

@@ -15,8 +15,6 @@ import {
   GoalBook,
   GoalError,
   goalKey,
-  parseTrigger,
-  resolveTrigger,
   TriggerWatch,
 } from "../src/index.js";
 
@@ -129,27 +127,6 @@ describe("goal triggers", () => {
     );
     expect(describeTrigger({ kind: "when_online", person: "Owen" }, 480)).toBe("Owen 上線時");
     expect(describeTrigger({ kind: "whenever" }, 480)).toBe("有空的時候");
-  });
-
-  it("resolve what she wrote: a clock time today or tomorrow, minutes from now", () => {
-    expect(resolveTrigger({ kind: "at", time: "21:30", inMin: null }, T0, 480)).toEqual({
-      kind: "at",
-      time: "2026-11-02T13:30:00.000Z",
-    });
-    expect(resolveTrigger({ kind: "at", time: "09:00", inMin: null }, T0, 480)).toEqual({
-      kind: "at",
-      time: "2026-11-03T01:00:00.000Z",
-    });
-    expect(resolveTrigger({ kind: "at", time: null, inMin: 30 }, T0, 480)).toEqual({
-      kind: "at",
-      time: toTimestamp(T0 + 30 * MIN),
-    });
-    expect(parseTrigger({ kind: "at" })).toBeNull();
-    expect(parseTrigger({ kind: "when_online", person: " Owen " })).toEqual({
-      kind: "when_online",
-      person: "Owen",
-    });
-    expect(parseTrigger("whenever")).toEqual({ kind: "whenever" });
   });
 });
 

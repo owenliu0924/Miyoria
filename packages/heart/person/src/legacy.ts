@@ -12,7 +12,7 @@
 // - `self:feeling:<person>` cards: her feeling text is the impression; stance, public line and
 //   call name are carried over; the card's numbers stand in when there is no relationship.
 // - the `hearts` of `self:state`: missing (想念) is longing and resentment (不爽) is grudge; her
-//   `romance` (在意) stays in `legacy.romance` until the owner decides what replaces it (H5), and
+//   `romance` stays in `legacy.romance`, kept and never read (H5: 在意 is computed now), and
 //   jealousy and gratitude stay in `legacy.emotions`.
 //
 // Warmth starts where the daily pass would take it for the bond (its baseline), the other numbers
@@ -31,7 +31,6 @@ import {
   type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
-import type { CardRecord } from "../../self/src/feelings.js";
 import type { HeartPersonConfig } from "./config.js";
 import {
   BLOCKED_TAG,
@@ -41,6 +40,7 @@ import {
   OWNER_TAG,
   type TierAnchor,
 } from "./model.js";
+import type { CardRecord } from "./old-cards.js";
 import { ANCHORED_TIERS, type HeartChange, settle, warmthBaseline } from "./rules.js";
 
 /** One person of the `hearts` part of `self:state`. */
@@ -61,7 +61,7 @@ export interface LegacyInput {
   relationships: readonly Relationship[];
   /** `relationship_deltas` by person. */
   deltas: ReadonlyMap<PersonId, readonly RelationshipDelta[]>;
-  /** Every `self:feeling:<person>` record (`FeelingsBook.records()`). */
+  /** Every `self:feeling:<person>` record (`readOldCards`). */
   cards: readonly CardRecord[];
   /** `self:state` as saved; `null` when there is none. */
   selfState: JsonValue | null;

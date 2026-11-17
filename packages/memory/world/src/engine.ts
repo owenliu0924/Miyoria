@@ -53,7 +53,7 @@ export interface Signals {
   attitude(account: AccountRef): Attitude | null;
   /**
    * Whether she cares about `person` (the heart's one definition, `CARES_THRESHOLD`, H5); unset:
-   * `care_min_affinity` and `care_min_familiarity` of the attitude, as before the heart.
+   * nobody (the heart does not run).
    */
   cares?(person: PersonId): boolean;
 }
@@ -793,11 +793,7 @@ export class WorldEngine {
 
   #cares(att: Attitude | null, sig: Signals): boolean {
     if (!att || att.blocked) return false;
-    if (sig.cares !== undefined) return sig.cares(att.person);
-    return (
-      att.affinity >= this.config.care_min_affinity ||
-      att.familiarity >= this.config.care_min_familiarity
-    );
+    return sig.cares?.(att.person) ?? false;
   }
 
   #noteMember(account: AccountRef, guild: string, name: string, isBot: boolean): void {

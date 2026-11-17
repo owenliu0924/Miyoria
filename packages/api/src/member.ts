@@ -39,6 +39,7 @@ import type {
 } from "@miyoria/contracts/api";
 import type { WalletExport } from "@miyoria/economy";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { BLOCKED_TAG, type HeartPerson, hasTag } from "@miyoria/heart/person";
 import {
   FORGET_KEEPS,
   FORGET_REMOVES,
@@ -50,17 +51,17 @@ import { SingerKey, type SongEntry } from "@miyoria/sing";
 import { type MemoryRecord, MessageLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {
   type AccountRef,
-  AffectStateKey,
   AuthorizerKey,
   accountRefString,
   ephemeralHandlesIn,
   familiarityBand,
+  HandleDirectoryKey,
   holdsBack,
   inspectInput,
   mentionsAnother,
   type NameSplit,
-  type PersonCard,
   Principals,
+  relationshipLabel,
   SocialSignalsKey,
   sameAccount,
   splitNames,
@@ -142,7 +143,8 @@ export { familiarityBand, trustBand };
 interface Member {
   account: AccountRef;
   person: Person | null;
-  card: PersonCard | null;
+  /** Their heart row (`heart_person`); `null` before she has one for them. */
+  row: HeartPerson | null;
   /** Answers exactly like someone she has never met. */
   hidden: boolean;
 }
@@ -152,16 +154,15 @@ function record(c: ApiContext): SessionRecord {
 }
 
 /**
- * Whether `account` is blocked, in any of the ways there are: the social tag, the card, or a role
- * that took `/me memory` away. When none of that can be read, the answer is yes: a page must not
- * open up because a module is down.
+ * Whether `account` is blocked, in any of the ways there are: the `blocked` tag on their heart
+ * row (by account or by person), or a role that took `/me memory` away. When none of that can be
+ * read, the answer is yes: a page must not open up because a module is down.
  */
-function isBlocked(state: ApiState, account: AccountRef, card: PersonCard | null): boolean {
+function isBlocked(state: ApiState, account: AccountRef, row: HeartPerson | null): boolean {
   const social = state.optional(SocialSignalsKey);
-  const affect = state.optional(AffectStateKey);
   const authorizer = state.optional(AuthorizerKey);
-  if ((!social && !affect) || !authorizer) return true;
-  if (social?.attitude(account)?.blocked || card?.blocked) return true;
+  if (!social || !authorizer) return true;
+  if (social.attitude(account)?.blocked || (row !== null && hasTag(row, BLOCKED_TAG))) return true;
   return !authorizer.allows(account, NODE_SHOW);
 }
 
@@ -173,8 +174,8 @@ async function member(state: ApiState, c: ApiContext): Promise<Member> {
 async function memberOf(state: ApiState, account: AccountRef): Promise<Member> {
   const people = state.optional(PeopleStoreKey);
   const person = (await people?.personByAccount(account)) ?? null;
-  const card = person ? (state.optional(AffectStateKey)?.card(person.id) ?? null) : null;
-  return { account, person, card, hidden: isBlocked(state, account, card) };
+  const row = person ? (heartRows(state)?.get(person.id) ?? null) : null;
+  return { account, person, row, hidden: isBlocked(state, account, row) };
 }
 
 /** The session account and every account of the person she knows them as. */
@@ -190,10 +191,14 @@ async function namesFor(state: ApiState, who: Member): Promise<NameSplit | null>
   if (known === null) return null;
   const accounts = who.person?.accounts.map((a) => a.account) ?? [];
   const split = splitNames(known, who.person?.id ?? null, [who.account, ...accounts]);
-  const card = who.card;
+  const handle = who.person ? state.optional(HandleDirectoryKey)?.ofPerson(who.person.id) : null;
   return {
     others: split.others,
-    own: [...split.own, ...(card ? [card.handle, card.call_name ?? ""] : [])],
+    own: [
+      ...split.own,
+      ...(handle ? [handle] : []),
+      ...(who.row?.call_name ? [who.row.call_name] : []),
+    ],
   };
 }
 
@@ -208,8 +213,8 @@ function shown(state: ApiState, text: string, names: NameSplit | null): string |
 // ---- views ----------------------------------------------------------------------------------
 
 function cardView(state: ApiState, who: Member, names: NameSplit | null): MemberCard {
-  const card = who.hidden ? null : who.card;
-  if (!card) {
+  const row = who.hidden ? null : who.row;
+  if (!row) {
     return {
       call_name: null,
       relationship: null,
@@ -219,15 +224,16 @@ function cardView(state: ApiState, who: Member, names: NameSplit | null): Member
       public_feeling: null,
     };
   }
-  const call = (card.call_name ?? card.handle).trim();
+  const handle = state.optional(HandleDirectoryKey)?.ofPerson(row.person_id) ?? "";
+  const call = (row.call_name ?? handle).trim();
   return {
     call_name: call !== "" && state.publicSide.passes(state, call) ? call : null,
-    relationship: card.label,
-    affinity: affinityBand(card.affinity),
-    trust: trustBand(card.trust),
-    familiarity: familiarityBand(card.familiarity),
-    // Only the line written for them: her private `feeling` names other people.
-    public_feeling: shown(state, card.public_feeling ?? "", names),
+    relationship: relationshipLabel({ affinity: row.bond, familiarity: row.familiarity }),
+    affinity: affinityBand(row.bond),
+    trust: trustBand(row.trust),
+    familiarity: familiarityBand(row.familiarity),
+    // Only the line written for them: her private impression names other people.
+    public_feeling: shown(state, row.public_feeling ?? "", names),
   };
 }
 
@@ -413,9 +419,6 @@ async function forgetMine(state: ApiState, c: ApiContext): Promise<MemberForgetR
   if (person !== null) {
     const heart = heartRows(state);
     if (heart?.has(person)) heart.edit(person, { public_feeling: null }, { now: state.now() });
-    await state
-      .optional(AffectStateKey)
-      ?.adjustBond(person, { public_feeling: null, why: "本人要求忘記" }, "panel");
   }
   await state.auditAs(actor, "member.forget", actor, { deleted: report.deleted }, true);
   return {

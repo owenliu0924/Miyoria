@@ -68,7 +68,6 @@ export const queryKeys = {
   affect: ["affect"] as const,
   affectPeople: ["affect", "people"] as const,
   goals: ["mind", "goals"] as const,
-  dayPlan: ["mind", "plan"] as const,
   prompts: ["prompts"] as const,
   turnOutcomes: (q: object) => ["turns", "outcomes", q] as const,
   turnsAll: ["turns"] as const,
@@ -844,10 +843,6 @@ export function useGoals(closed: boolean) {
   });
 }
 
-export function useDayPlan() {
-  const api = useApi();
-  return useQuery({ queryKey: queryKeys.dayPlan, queryFn: ({ signal }) => api.rpc.mind.plan(undefined, { signal }), refetchInterval: poll(60_000) });
-}
 
 export function usePrompts(limit = 30) {
   const api = useApi();

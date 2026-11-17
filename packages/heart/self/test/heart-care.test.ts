@@ -1,6 +1,6 @@
-// One definition of 在意 (docs/design/v5-heart.md H5, §2.9): with the heart running, how much she
-// cares is the heart's (from `CARES_THRESHOLD` on), and the old crush's behaviours hang on the one
-// she cares about most; the old `romance` and crush are not read.
+// One definition of 在意 (docs/design/v5-heart.md H5, §2.9, §2.10): how much she cares is the
+// heart's (from `CARES_THRESHOLD` on), and the old crush's behaviours hang on the one she cares
+// about most. There is no other source any more.
 
 import { CARES_THRESHOLD, type HeartPeople, type PersonId } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,6 @@ function heart(cares: Record<string, number>): HeartPeople {
 describe("在意 from the heart", () => {
   it("cares from the threshold on, and not below it, whatever the old affinity", () => {
     const r = rig({ heart: heart({ p1: 0.62, p2: 0.2 }) });
-    r.attitudes.set("p2", { affinity: 90 });
     expect(r.self.care("p1")).toBeCloseTo(0.62);
     expect(r.self.care("p2")).toBe(0);
     expect(r.self.care("p3")).toBe(0);
@@ -41,14 +40,6 @@ describe("在意 from the heart", () => {
     const other = rig({ heart: heart({ p1: 0.7 }) });
     other.affect.applyEvent(ev("praised", other.clock.at, { person: "p2", key: "praise|p2" }));
     expect(level(most, "shy")).toBeGreaterThan(level(other, "shy"));
-  });
-
-  it("without the heart, the affinity alone as before (no romance)", () => {
-    const r = rig();
-    r.attitudes.set("p1", { affinity: 70 });
-    expect(r.self.care("p1")).toBeGreaterThan(0.4);
-    r.attitudes.set("p2", { affinity: 10 });
-    expect(r.self.care("p2")).toBe(0);
   });
 });
 

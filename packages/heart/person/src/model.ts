@@ -138,7 +138,7 @@ export interface HeartPerson {
   last_together: Timestamp | null;
   /** Her local day the daily pass last ran for them; `null`: never. */
   decayed_on: number | null;
-  /** What the migration carried over that has no column (`romance` among it, H5 still open). */
+  /** What the migration carried over that has no column (the old `romance`, kept, never read: H5). */
   legacy: JsonObject;
   created_at: Timestamp;
   updated_at: Timestamp;

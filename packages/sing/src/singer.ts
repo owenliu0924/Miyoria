@@ -5,9 +5,10 @@
 // * A request (her `sing_request` tool, `/queue song request`, a called `[modules.queue]` item
 //   of kind `song`) adds a set list entry and submits a worker job; she keeps talking meanwhile.
 // * Ready: songs asked for by command or the queue are sung as soon as she is in voice and free
-//   (forced). Others are offered to her mind (`MindKey.suggest`), which picks the moment with a
-//   `sing.play` intent and an opening line; she is reminded a couple of times, and her turns see
-//   the set list (prompt section `sing`). Without a mind, ready songs start on their own.
+//   (forced). For the others she is told (an impulse of source `song`, `song_ready`, which the
+//   Arbiter admits and her runner wakes her with): she picks the moment with `sing.play` and an
+//   opening line, or not; she is told again a couple of times, and her turns see the set list
+//   (prompt section `sing`). Without the Arbiter and her runner, ready songs start on their own.
 // * Before a song starts she finishes what she is saying (the turn that started it, then a quiet
 //   moment). While it plays the module holds her voice channel (`VoiceFloorKey`: her speech there
 //   is dropped instead of queueing behind the song), barge-in does not apply (it is not her
@@ -28,14 +29,15 @@ import { SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   type ArbiterDecision,
+  ArbiterKey,
   type BusEvent,
   type ContextKey,
   contextKeyEquals,
   Events,
+  ImpulseHostKey,
   is,
   isJsonObject,
   type JsonValue,
-  MindKey,
   newImpulse,
   type PlaybackState,
   type SetlistLine,
@@ -584,9 +586,15 @@ export class Singer implements VoiceFloor, SpeechPause {
     return this.ctx.services.get(WorldStateKey)?.snapshot().her.game ?? null;
   }
 
+  /** She can be told and decide: the Arbiter admits her impulses and her runner wakes her. */
+  #sheDecides(): boolean {
+    const s = this.ctx.services;
+    return s.get(ArbiterKey) !== undefined && s.get(ImpulseHostKey) !== undefined;
+  }
+
   #mindDecides(entry: SongEntry): boolean {
     // A song she prepared for herself is hers to sing or not: it never starts on its own.
-    if (entry.practice === true) return this.ctx.services.get(MindKey)?.accepting === true;
+    if (entry.practice === true) return this.#sheDecides();
     if (this.cfg.start === "auto") return false;
     const gaming = this.#game() !== null;
     // An owner's command overrides; a request from the queue waits while she plays.
@@ -599,7 +607,7 @@ export class Singer implements VoiceFloor, SpeechPause {
       // She let every reminder pass: someone is still waiting for it, so it starts on its own.
       return false;
     }
-    return this.ctx.services.get(MindKey)?.accepting === true;
+    return this.#sheDecides();
   }
 
   #onReady(entry: SongEntry): void {
@@ -619,9 +627,8 @@ export class Singer implements VoiceFloor, SpeechPause {
     return gaming || e.reminders <= this.cfg.max_reminders;
   }
 
-  /** Tells her mind the song is ready (again). */
+  /** Tells her the song is ready (again): an impulse she is woken with, and decides on. */
   #remind(entry: SongEntry): void {
-    const mind = this.ctx.services.get(MindKey);
     const where = this.voiceContext(entry.context?.scope ?? null) ?? entry.context;
     entry.reminders += 1;
     entry.last_reminder_ms = this.ctx.clock.now();
@@ -637,14 +644,11 @@ export class Singer implements VoiceFloor, SpeechPause {
           `有人在語音、你想唱的時候用 sing.play(song = ${entry.no}),opening 寫一句開場;不用急,之後也可以跟大家提一下新歌。${voice}${busy}`
         : `${entry.requester_name} 點的${songLabel(entry)}已經準備好了(#${entry.no}${dedicationNote(entry)})。` +
           `想唱就用 sing.play(song = ${entry.no}),opening 寫一句開場;現在不想唱也可以晚點再唱。${voice}${busy}`;
-    const ok = mind?.suggest({
-      source: "sing",
-      reason: REASONS.ready,
-      context: where,
-      hint,
-      about: entry.requester ? [entry.requester] : [],
-    });
-    if (!ok) this.#autoStart();
+    if (where === null || !this.#sheDecides()) {
+      this.#autoStart();
+      return;
+    }
+    this.#tell(where, REASONS.ready, hint, entry);
   }
 
   /**

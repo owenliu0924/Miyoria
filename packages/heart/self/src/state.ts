@@ -1,24 +1,21 @@
-// The `SelfStateKey` service: the engine advanced to "now" on every call, plus her mood and the
-// feelings records. Every change calls `changed` so the module saves it.
+// The `SelfStateKey` service: the engine advanced to "now" on every call, plus her mood. Every
+// change calls `changed` so the module saves it. How she feels about each person is the heart's
+// (`HeartKey`, docs/design/v5-heart.md §2.10): 在意, the one she cares about most and how much she
+// misses someone are read from it, never kept here.
 
 import type {
   Affect,
   AgendaInput,
   AgendaItem,
-  Attitude,
   Clock,
   ContextKey,
-  Crush,
   Drives,
   EffectiveTalkativeness,
   EmotionName,
   EmotionReading,
   EmotionSample,
-  Feeling,
-  Heart,
   HeartPeople,
   Mood,
-  PersonEmotionName,
   PersonId,
   SelfSnapshot,
   SelfState,
@@ -26,29 +23,22 @@ import type {
   Talkativeness,
   TalkativenessInput,
 } from "@miyoria/types";
-import {
-  CARES_THRESHOLD,
-  EMOTION_LABELS,
-  PERSON_EMOTION_LABELS,
-  toTimestamp,
-} from "@miyoria/types";
+import { CARES_THRESHOLD, EMOTION_LABELS, toTimestamp } from "@miyoria/types";
 import type { SelfConfig } from "./config.js";
 import { type Audience, shownEmotion } from "./display.js";
 import type { Circumstances, SelfEngine } from "./engine.js";
-import type { FeelingsBook } from "./feelings.js";
 
 export interface SelfServiceDeps {
   engine: SelfEngine;
-  feelings: FeelingsBook;
   clock: Clock;
   config: SelfConfig;
-  /** What she is doing right now (playing, live, energy, her crush with her). */
+  /** What she is doing right now (playing, live, energy, the one she cares about with her). */
   circumstances: () => Circumstances;
   mood: () => Mood | null;
-  /** The social numbers of someone, when the social module runs. */
-  attitudeOf?: (person: PersonId) => Attitude | null;
-  /** The heart (`HeartKey`), when the module `heart` runs: 在意 and the one she cares about most. */
-  heart?: () => HeartPeople | null;
+  /** The heart (`HeartKey`): 在意, the one she cares about most, how much she misses someone. */
+  heart: () => HeartPeople | null;
+  /** Someone's name as people see it (for the cause of an emotion); `null`: unknown. */
+  nameOf?: (person: PersonId) => string | null;
   /** Who she is with right now (for what she shows); `undefined` = nobody in particular. */
   audience?: () => Audience | undefined;
   /** Called after every change of the persisted state. */
@@ -60,6 +50,8 @@ const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(Math.max(v, 0), 1)
 export class SelfService implements SelfState {
   readonly #history: EmotionSample[] = [];
   #sampledAt = Number.NEGATIVE_INFINITY;
+  /** When she last saw each person say or do anything (this run): a return is news once. */
+  readonly #lastSeen = new Map<PersonId, number>();
 
   constructor(private readonly d: SelfServiceDeps) {}
 
@@ -68,21 +60,12 @@ export class SelfService implements SelfState {
     return this.d.engine;
   }
 
-  get feelingsBook(): FeelingsBook {
-    return this.d.feelings;
-  }
-
   get config(): SelfConfig {
     return this.d.config;
   }
 
   get clock(): Clock {
     return this.d.clock;
-  }
-
-  /** The social numbers of someone, when the social module runs. */
-  attitudeOf(person: PersonId): Attitude | null {
-    return this.d.attitudeOf?.(person) ?? null;
   }
 
   /** Records that something changed (the module saves it). */
@@ -94,11 +77,11 @@ export class SelfService implements SelfState {
   now(): number {
     const now = this.d.clock.now();
     const e = this.d.engine;
-    e.advance(now, { ...this.d.circumstances(), care: (p) => this.care(p) });
+    e.advance(now, this.d.circumstances());
     // An agenda item for someone ran out before she did it: a promise she did not keep.
     for (const item of e.takeExpired()) {
       if (item.person === null) continue;
-      const name = e.hearts.heart(item.person, now)?.name ?? "別人";
+      const name = this.d.nameOf?.(item.person) ?? "別人";
       e.emotions.feel("guilt", 0.35, `答應${name}的事沒做到`, item.person, now);
       this.d.changed("event");
     }
@@ -118,8 +101,6 @@ export class SelfService implements SelfState {
       agenda: e.allAgenda(now),
       emotions,
       shown: this.#shown(emotions),
-      hearts: e.hearts.hearts(now),
-      crush: e.hearts.crush(now),
     };
   }
 
@@ -134,21 +115,6 @@ export class SelfService implements SelfState {
     if (!Number.isFinite(amount) || amount === 0) return;
     const now = this.now();
     this.d.engine.emotions.feel(emotion, amount, cause || EMOTION_LABELS[emotion], person, now);
-    this.d.changed("event");
-  }
-
-  feelToward(person: PersonId, emotion: PersonEmotionName, amount: number, cause: string): void {
-    if (!Number.isFinite(amount) || amount === 0) return;
-    const now = this.now();
-    const e = this.d.engine;
-    // The same cause again within two hours counts less (toward someone as for her own).
-    const factor =
-      amount > 0 ? e.emotions.habituate(`toward|${person}|${emotion}|${cause}`, now) : 1;
-    const v = e.hearts.feel(person, emotion, amount * factor, now);
-    // The matching feeling of her own (不爽 toward someone is anger).
-    const own: EmotionName = emotion === "resentment" ? "anger" : emotion;
-    const why = cause || PERSON_EMOTION_LABELS[emotion];
-    if (amount > 0) e.emotions.atLeast(own, own === "anger" ? v * 0.8 : v, why, person, now);
     this.d.changed("event");
   }
 
@@ -169,18 +135,6 @@ export class SelfService implements SelfState {
   /** Never advances through `circumstances` (which reads the mood, which reads this). */
   affect(): Affect {
     return this.d.engine.emotions.affect(this.d.clock.now());
-  }
-
-  heart(person: PersonId): Heart | null {
-    return this.d.engine.hearts.heart(person, this.now());
-  }
-
-  hearts(): Heart[] {
-    return this.d.engine.hearts.hearts(this.now());
-  }
-
-  crush(): Crush | null {
-    return this.d.engine.hearts.crush(this.now());
   }
 
   history(): EmotionSample[] {
@@ -214,55 +168,39 @@ export class SelfService implements SelfState {
   // ---- people (for the rules; not part of `SelfState`) -------------------------------
 
   /**
-   * How much she cares about someone, 0..1; 0 when she does not (yet). With the heart running it
-   * is the one definition (`HeartPeople.cares`, counted from `CARES_THRESHOLD` on, owner decision
-   * H5); without it, the affinity alone as before (`care_affinity`). The old `romance` is not read.
+   * How much she cares about someone, 0..1; 0 when she does not (yet): the heart's one definition
+   * (`HeartPeople.cares`, counted from `CARES_THRESHOLD` on, owner decision H5). 0 without it.
    */
   care(person: PersonId): number {
-    const heart = this.d.heart?.() ?? null;
-    if (heart !== null) {
-      const cares = heart.cares(person);
-      return cares >= CARES_THRESHOLD ? clamp01(cares) : 0;
-    }
-    const a = this.d.attitudeOf?.(person) ?? null;
-    if (a?.blocked) return 0;
-    const min = this.d.config.emotions.care_affinity;
-    if (a === null || a.affinity < min) return 0;
-    return clamp01(0.4 + (0.6 * (a.affinity - min)) / Math.max(100 - min, 1));
+    const cares = this.d.heart()?.cares(person) ?? 0;
+    return cares >= CARES_THRESHOLD ? clamp01(cares) : 0;
+  }
+
+  /** The one she cares about most, above the threshold (H5); `null` for nobody. */
+  mostCared(): { person: PersonId; cares: number } | null {
+    return this.d.heart()?.mostCared() ?? null;
   }
 
   /**
-   * The one she cares about most, above the threshold (the heart's), where the old crush's
-   * behaviours hang (H5); `undefined` without the heart, `null` for nobody.
+   * They said or did something. Returns how much she had been missing them (their longing on the
+   * heart's row, which the heart's daily pass eases once they are back) when this is the first
+   * she sees of them for `missing_after_hours`; 0 otherwise, so a return is news once.
    */
-  mostCared(): { person: PersonId; cares: number } | null | undefined {
-    const heart = this.d.heart?.() ?? null;
-    return heart === null ? undefined : heart.mostCared();
+  seen(person: PersonId): number {
+    const now = this.d.clock.now();
+    const last = this.#lastSeen.get(person) ?? Number.NEGATIVE_INFINITY;
+    this.#lastSeen.set(person, now);
+    if (now - last < this.d.config.emotions.missing_after_hours * 3_600_000) return 0;
+    const longing = this.d.heart()?.view(person)?.longing ?? 0;
+    return clamp01(longing);
   }
 
   /**
-   * They said or did something. Returns how much she had been missing them (想念 toward them,
-   * before it eased).
-   */
-  seen(person: PersonId, name: string | null, together: boolean): number {
-    const now = this.now();
-    const h = this.d.engine.hearts;
-    const missed = h.emotion(person, "missing", now);
-    h.seen(person, name, together, now);
-    // They are back: missing them eases (what is left fades at its own pace).
-    if (missed > 0) h.feel(person, "missing", -missed * 0.7, now);
-    this.d.changed("event");
-    return missed;
-  }
-
-  /**
-   * Who the old crush rules are about, without advancing (cheap, for event routing): the one she
-   * cares about most (H5); without the heart, the old crush.
+   * Who the old crush rules are about (praise makes her shy, jealousy, longing eased by them):
+   * the one she cares about most (H5).
    */
   crushPerson(): PersonId | null {
-    const cared = this.mostCared();
-    if (cared !== undefined) return cared?.person ?? null;
-    return this.d.engine.hearts.crush(this.d.clock.now())?.person ?? null;
+    return this.mostCared()?.person ?? null;
   }
 
   drives(): Drives {
@@ -348,17 +286,5 @@ export class SelfService implements SelfState {
     const item = this.d.engine.unblockAgenda(id, this.now());
     if (item) this.d.changed("agenda");
     return item;
-  }
-
-  feeling(person: PersonId): Feeling | null {
-    return this.d.feelings.get(person);
-  }
-
-  feelings(): Feeling[] {
-    return this.d.feelings.all();
-  }
-
-  setFeeling(person: PersonId, text: string, by: string): Promise<Feeling | null> {
-    return this.d.feelings.set(person, text, by, this.d.clock.now());
   }
 }

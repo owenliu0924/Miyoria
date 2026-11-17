@@ -44,6 +44,17 @@ export class FakeSocial implements Signals {
   attitude(account: AccountRef): Attitude | null {
     return this.attitudes.get(account.id) ?? null;
   }
+
+  /**
+   * Whether she cares about `person`: the heart's 在意 in production; here someone with an
+   * affinity of 30 or a familiarity of 40, so the tests read as they always did.
+   */
+  cares(person: string): boolean {
+    for (const a of this.attitudes.values()) {
+      if (a.person === person) return a.affinity >= 30 || a.familiarity >= 40;
+    }
+    return false;
+  }
 }
 
 export function playing(name: string, startedAt: number | null = null): PresenceActivity {

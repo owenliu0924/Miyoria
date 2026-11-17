@@ -340,8 +340,6 @@ export {
   AgendaStatusSchema,
   type ChannelActivityView,
   ChannelActivityViewSchema,
-  type Crush,
-  CrushSchema,
   type DriveName,
   DriveNameSchema,
   type Drives,
@@ -352,8 +350,6 @@ export {
   EmotionReadingSchema,
   type FeelingView,
   FeelingViewSchema,
-  type Heart,
-  HeartSchema,
   type HerStatus,
   HerStatusSchema,
   type Mood,
@@ -663,8 +659,6 @@ export {
   SetPersonaResponseSchema,
 } from "./persona.js";
 export {
-  type DayPlanView,
-  DayPlanViewSchema,
   type Goal,
   GoalSchema,
   type GoalStatus,

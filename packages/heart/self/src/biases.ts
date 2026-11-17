@@ -1,5 +1,5 @@
 // How her feelings lean her behaviour (docs/design/v3-architecture.md §12): weighted offsets, not
-// switches. Plan decides what she does; the Floor and the Arbiter keep the limits. Pure.
+// switches. Her turns and initiative read them; the Floor and the Arbiter keep the limits. Pure.
 //
 // What each emotion does is `EMOTION_OUTPUTS` (packages/types/src/affect-outputs.ts). Here the
 // weights become numbers, with what her drives add:
@@ -17,9 +17,7 @@ import {
   type EmotionOutputs,
   type EmotionWant,
   type Handle,
-  PERSON_EMOTION_NAMES,
   PERSON_EMOTION_OUTPUTS,
-  type PersonCard,
 } from "@miyoria/types";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
@@ -35,13 +33,16 @@ const BACKGROUND = 0.15;
 export interface BiasInputs {
   /** Emotion intensities now (absent = 0). */
   emotions: Partial<Record<EmotionName, number>>;
-  /** Who stirred them, when someone with a card. */
+  /** Who stirred them, when someone she cares about. */
   causes?: Partial<Record<EmotionName, Handle>>;
   drives: Drives;
   boredom: number;
   valence: number;
-  /** People by attachment, highest first. */
-  cards: readonly Pick<PersonCard, "handle" | "attachment" | "emotions" | "blocked">[];
+  /**
+   * The people she cares about (the heart's 在意, at or above the threshold), most first, with how
+   * much she misses each (the heart's longing, 0..1).
+   */
+  people: readonly { handle: Handle; longing: number }[];
 }
 
 const round = (v: number) => Math.round(v * 1000) / 1000;
@@ -85,12 +86,11 @@ export function computeBiases(i: BiasInputs): AffectBiases {
       ...(from === undefined ? {} : { from }),
     });
   };
-  const closest = i.cards.find((c) => !c.blocked && c.attachment > 0) ?? null;
+  const closest = i.people[0] ?? null;
   const about = (want: EmotionWant, name: EmotionName): Handle | null => {
     if (want.toward === null) return null;
     const cause = i.causes?.[name];
-    const named = cause === undefined ? undefined : i.cards.find((c) => c.handle === cause);
-    return named && !named.blocked ? named.handle : (closest?.handle ?? null);
+    return cause ?? closest?.handle ?? null;
   };
   for (const name of EMOTION_NAMES) {
     const level = i.emotions[name] ?? 0;
@@ -98,18 +98,19 @@ export function computeBiases(i: BiasInputs): AffectBiases {
     if (want === null || level < BACKGROUND) continue;
     add(want.want, want.base + want.gain * level, about(want, name), want.why, name);
   }
-  // A feeling toward someone in particular: the person it is strongest for.
-  for (const name of PERSON_EMOTION_NAMES) {
-    const want = PERSON_EMOTION_OUTPUTS[name].want;
-    if (want === null) continue;
-    let held: { handle: Handle; v: number } | null = null;
-    for (const c of i.cards) {
-      const v = c.emotions[name] ?? 0;
-      if (!c.blocked && v > (held?.v ?? 0)) held = { handle: c.handle, v };
-    }
-    if (held === null) continue;
-    const why = name === "missing" ? `想念${held.handle}` : want.why;
-    add(want.want, want.base + want.gain * held.v, held.handle, why, name as EmotionName);
+  // Missing someone she cares about: the one she misses most (the heart's longing).
+  const missing = PERSON_EMOTION_OUTPUTS.missing.want;
+  let held: { handle: Handle; v: number } | null = null;
+  for (const p of i.people)
+    if (p.longing > (held?.v ?? 0)) held = { handle: p.handle, v: p.longing };
+  if (missing !== null && held !== null) {
+    add(
+      missing.want,
+      missing.base + missing.gain * held.v,
+      held.handle,
+      `想念${held.handle}`,
+      "missing",
+    );
   }
   const play = Math.max(i.drives.play, above(i.boredom, 0.3));
   if (play > 0.4) add("play", 0.25 + above(play, 0.4), null, "想玩遊戲、有點無聊");

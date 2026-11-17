@@ -11,17 +11,18 @@ import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   type AnyEventDefinition,
+  type Arbiter,
+  ArbiterKey,
   AuthorizerKey,
   BaseAuthorizer,
   type ContextKey,
   type EventPayload,
   Events,
   type Impulse,
+  type ImpulseHost,
+  ImpulseHostKey,
   impulseReason,
   type JsonValue,
-  type Mind,
-  MindKey,
-  type MindSuggestion,
   type PlaybackState,
   type PlayChunk,
   type PlayHandle,
@@ -300,29 +301,6 @@ class FakeVoice implements VoicePlayer {
   }
 }
 
-class FakeMind implements Mind {
-  accepting = true;
-  readonly suggestions: MindSuggestion[] = [];
-  suggest(s: MindSuggestion): boolean {
-    this.suggestions.push(s);
-    return this.accepting;
-  }
-  thoughts() {
-    return [];
-  }
-  stats() {
-    return {
-      calls_last_hour: 0,
-      max_calls_per_hour: 0,
-      calls_total: 0,
-      tokens_total: 0,
-      last_at: null,
-      next_heartbeat_at: null,
-      idle_reason: null,
-    };
-  }
-}
-
 const playback = (state: "started" | "finished") =>
   [
     Events.VoicePlaybackEvent,
@@ -349,7 +327,6 @@ class Harness {
   readonly sup = new Supervisor();
   worker = new FakeWorker();
   readonly voice = new FakeVoice();
-  readonly mind = new FakeMind();
   readonly prompts = new PromptContributors();
   readonly commands = new CommandRegistry(Permissions.fromStrings(["discord:7"]));
   readonly queue: RequestQueue;
@@ -371,7 +348,11 @@ class Harness {
     s.provide("app", PromptContributorsKey, this.prompts);
     s.provide("app", RequestQueueKey, this.queue);
     s.provide("voice.link", VoicePlayerKey, this.voice);
-    if (withMind) s.provide("mind", MindKey, this.mind);
+    // She can be told and decide: the Arbiter admits her impulses and her runner wakes her.
+    if (withMind) {
+      s.provide("arbiter", ArbiterKey, {} as Arbiter);
+      s.provide("agent", ImpulseHostKey, {} as ImpulseHost);
+    }
     const sub = this.sup.bus.subscribe("*");
     void (async () => {
       for await (const env of sub) this.events.push({ type: env.type, data: env.data });
@@ -451,6 +432,11 @@ class Harness {
 
   cues(): SongCue[] {
     return this.events.filter((e) => e.type === Events.SingCue.type).map((e) => e.data as SongCue);
+  }
+
+  /** What she was told is ready (impulses `song_ready`): she decides whether to sing it now. */
+  get mind() {
+    return { suggestions: this.initiatives().filter((i) => i.reason === "song_ready") };
   }
 
   /** Her announcements: impulses of source `song` for the Arbiter (never `agent.initiative`). */

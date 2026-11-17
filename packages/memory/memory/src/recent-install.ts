@@ -6,7 +6,6 @@
 import type { ToolRegistry } from "@miyoria/llm/tools";
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
-  AffectStateKey,
   type Clock,
   ConversationStatesKey,
   HeartKey,
@@ -22,7 +21,6 @@ import {
   type PromptRequest,
   type PromptSection,
   type ServiceKey,
-  SocialSignalsKey,
   type Whereabouts,
 } from "@miyoria/types";
 import type { NotesNotebook } from "../../notes/src/notebook.js";
@@ -100,8 +98,6 @@ export class RecentPast {
     );
     this.profiles = new Profiles(engine, this.log, this.threads, this.deps, {
       config: () => engine.config.profiles,
-      affect: () => services.get(AffectStateKey) ?? null,
-      social: () => services.get(SocialSignalsKey) ?? null,
       heart: () => services.get(HeartKey) ?? null,
       knowledge: () => services.get(KnowledgeKey) ?? null,
       events: () => engine.events,

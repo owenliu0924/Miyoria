@@ -170,22 +170,6 @@ describe("rule events on the bus", () => {
     h.publish(Events.ActivityDone, { type: "done", task: "t2", ...ended, detail: "", data: null });
     await vi.waitFor(() => expect(h.self.emotions(0).map((e) => e.name)).toContain("pride"));
   });
-
-  it("a social appraisal arrives as appraisals (a strength, never her reading as a level)", async () => {
-    const h = await boot();
-    h.publish(Events.SocialAppraisal, {
-      context: { platform: "discord", scope: "g", channel: "c", kind: "channel" },
-      her: { joy: 0.95, shy: 0.2, pride: 0.5, sorrow: 0.4 },
-      people: [],
-    });
-    await vi.waitFor(() => expect(h.self.emotions(0).length).toBeGreaterThan(0));
-    const by = Object.fromEntries(h.self.emotions(0).map((e) => [e.name, e.intensity]));
-    // The top three readings, as strong / medium / medium steps: 0.35, 0.2, 0.2 (not 0.95).
-    expect(by.joy).toBeCloseTo(0.35, 2);
-    expect(by.pride).toBeCloseTo(0.2, 2);
-    expect(by.sorrow ?? 0).toBeCloseTo(0.2, 2);
-    expect(by.shy ?? 0).toBe(0);
-  });
 });
 
 describe("affect.changed", () => {

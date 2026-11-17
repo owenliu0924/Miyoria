@@ -1,12 +1,20 @@
-// Module `heart`: the owner of `heart_person` (docs/design/v5-heart.md §2.9). It puts the rules of
-// its config section (`[modules.heart]`, `HeartPersonConfigSchema` and the job's own key) in force,
-// moves the old records over once (owner decision H8), runs the daily pass, and provides
-// `HeartKey` for everyone else: the host applies her `feel` through it, `social` tells it who said
-// a line, the prompt and her initiative read it.
+// Module `heart`: the owner of `heart_person` (docs/design/v5-heart.md §2.9, §2.10). It puts the
+// rules of its config section (`[modules.heart]`, `HeartPersonConfigSchema` and the module's own
+// keys) in force, moves the old records over once (owner decision H8), runs the daily pass, counts
+// the lines people say, writes the evidence it hears on the bus, and provides `HeartKey` for
+// everyone else: the host applies her `feel` through it, the prompt, her initiative and the
+// nightly reflection read and write it.
+//
+// Since phase 4 step 5 it is also who people are (`directory.ts`, the old `social` module's
+// account map and `/me link`), which it provides as `SocialSignalsKey` (an `Attitude` from the
+// row) and `PeopleDirectoryKey`, with `/me profile | call | link`, `/admin person ...` and the
+// tool `set_call_name`.
 //
 // Config changes reach it the way they reach every module: the supervisor restarts it, and `start`
 // puts the section's rules in force again (`setRules`).
 
+import { CommandMount } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import {
   defineManifest,
   errorMessage,
@@ -15,7 +23,10 @@ import {
   type Module,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
 import {
+  IdentityStoreKey,
+  PeopleStoreKey,
   type Relationship,
   type RelationshipDelta,
   type SettingsStore,
@@ -23,6 +34,7 @@ import {
 } from "@miyoria/store";
 import {
   type AccountRef,
+  AuthorizerKey,
   type BusEvent,
   type Clock,
   contextKeyString,
@@ -39,6 +51,7 @@ import {
   type HeartView,
   is,
   type JsonValue,
+  ModerationKey,
   type PersonId,
   type ProfileId,
   parseSongCue,
@@ -47,11 +60,19 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
-import { FeelingsBook } from "../../self/src/feelings.js";
+import { callNameCapability } from "./call-name-tool.js";
+import {
+  registerCommands,
+  type ScreenCallName,
+  UNFIT_CALL_NAME,
+  unregisterCommands,
+} from "./commands.js";
 import { HeartPersonConfigSchema } from "./config.js";
+import { PeopleDirectory, PeopleDirectoryKey } from "./directory.js";
 import { HeartEffects } from "./effects.js";
 import type { LegacyResult } from "./legacy.js";
 import { BLOCKED_TAG, type HeartPerson, hasTag, isProposalField } from "./model.js";
+import { readOldCards } from "./old-cards.js";
 import { CARES_THRESHOLD, cares, type HeartChangeRequest } from "./rules.js";
 import { type HeartStore, heartTables } from "./store.js";
 import { Together } from "./together.js";
@@ -64,6 +85,8 @@ export const HeartConfigSchema = HeartPersonConfigSchema.extend({
    * It runs once per person and local day however often it looks.
    */
   decay_check_mins: z.number().int().positive().default(10),
+  /** Accounts the authorizer treats as owners get the `owner` tag. */
+  auto_owner_tag: z.boolean().default(true),
 });
 
 export type HeartConfig = z.output<typeof HeartConfigSchema>;
@@ -72,8 +95,6 @@ export type HeartConfig = z.output<typeof HeartConfigSchema>;
 export const MIGRATED_KEY = "heart:migrated";
 /** Where `self` keeps its state (`SelfModule`'s `STATE_KEY`), with the old `hearts`. */
 const SELF_STATE_KEY = "self:state";
-/** The feeling cards are read whole (the book only cuts what it writes). */
-const CARD_CHARS = 100_000;
 /** At most this many people are looked through for the one she cares about most. */
 const MOST_CARED_POOL = 200;
 
@@ -163,6 +184,10 @@ export class HeartService implements HeartPeople {
     return this.#people.reflect(person, reflection, { now: options.now ?? this.#clock.now() });
   }
 
+  callNames(): { person: PersonId; call_name: string }[] {
+    return this.#people.callNames();
+  }
+
   /**
    * Everyone she cares about, most first, read again at most every `CARED_TTL_MS`: her emotions
    * ask on every event, and who she cares about moves by the day.
@@ -225,9 +250,7 @@ export async function migrateOnStart(d: MigrationDeps): Promise<LegacyResult | n
   for (const r of relationships) {
     deltas.set(r.person, await d.relationships.deltasSince(d.profile, r.person, toTimestamp(0)));
   }
-  const book = new FeelingsBook(d.settings, d.profile, CARD_CHARS);
-  await book.load();
-  const cards = book.records();
+  const cards = await readOldCards(d.settings, d.profile);
   const selfState: JsonValue | null = await d.settings.get(d.profile, SELF_STATE_KEY);
   const result = d.people.migrateLegacy(
     { relationships, deltas, cards, selfState },
@@ -269,15 +292,13 @@ export function runDecay(people: HeartStore, now: number): { people: number; cha
 
 /**
  * Time together in her voice channel and the songs people heard her sing (`together.ts`), written
- * as evidence for whoever the bus's accounts are (`SocialSignalsKey`; someone she does not know
- * yet is left out).
+ * as evidence for whoever the bus's accounts are (`personOf`; someone it does not know is left
+ * out).
  */
 export function togetherOf(
-  ctx: Pick<ModuleContext, "services">,
+  personOf: (account: AccountRef) => PersonId | null,
   heart: Pick<HeartService, "evidence">,
 ): { on(env: BusEvent, now: number): void } {
-  const personOf = (account: AccountRef): PersonId | null =>
-    ctx.services.get(SocialSignalsKey)?.attitude(account)?.person ?? null;
   const together = new Together((stay) => {
     const person = personOf(stay.account);
     if (person === null) return;
@@ -324,23 +345,87 @@ export function togetherOf(
 export interface HeartModuleOptions {
   /** Replaces the module context's clock (tests). */
   clock?: Clock;
+  /** Her display name and the names people call her by (a line naming her is said to her). */
+  name?: string;
+  names?: readonly string[];
+}
+
+/** What a line someone said is, as the heart counts it. */
+interface Line {
+  account: AccountRef;
+  display_name: string;
+  text: string;
+  /** Said to her: a mention, a reply, a DM. */
+  directed: boolean;
+  /** Said in the voice channel she is in (she hears only that one). */
+  voice: boolean;
+}
+
+/** The line of a chat or voice event from someone other than her; `null` for anything else. */
+export function lineOf(env: BusEvent, people: PeopleDirectory): Line | null {
+  if (is(Events.PlatformMessageCreated, env)) {
+    const m = env.data;
+    if (m.author.is_bot || people.isSelf(m.author.account)) return null;
+    return {
+      account: m.author.account,
+      display_name: m.author.display_name,
+      text: m.text,
+      directed: m.mentions_self || m.reply_to_self || m.id.context.kind === "dm",
+      voice: false,
+    };
+  }
+  if (is(Events.VoiceUtteranceEvent, env)) {
+    const u = env.data;
+    if (u.speaker.is_bot || people.isSelf(u.speaker.account)) return null;
+    return {
+      account: u.speaker.account,
+      display_name: u.speaker.display_name,
+      text: u.text,
+      directed: false,
+      voice: true,
+    };
+  }
+  return null;
+}
+
+/** A call name moderation would refuse, through `ModerationKey` when it runs. */
+function screenWith(ctx: ModuleContext): ScreenCallName {
+  return async (call) => {
+    const moderation = ctx.services.get(ModerationKey);
+    if (!moderation) return null;
+    try {
+      const verdict = await moderation.screenAsync({ path: "other", visible: call });
+      return verdict.ok ? null : UNFIT_CALL_NAME;
+    } catch {
+      return null;
+    }
+  };
 }
 
 export class HeartModule implements Module {
   static readonly ID = "heart";
   readonly manifest = defineManifest(HeartModule.ID, "Heart", {
     description:
-      "Her numbers and words for each person (heart_person): her feel proposals, the daily pass, the migration from the old records",
-    // After the modules whose old records it moves over once.
-    optional: ["social", "self"],
+      "Her numbers and words for each person (heart_person) and who people are: her feel proposals, the lines people say, evidence, the daily pass, /me and /admin person",
+    optional: ["commands", "actions", "auth", "moderation"],
     configSchema: HeartConfigSchema,
   });
   readonly #profile: ProfileId;
   readonly #options: HeartModuleOptions;
+  #stop: (() => void) | null = null;
 
   constructor(profile: ProfileId, options: HeartModuleOptions = {}) {
     this.#profile = profile;
     this.#options = options;
+  }
+
+  /** Uses the profile's id, display name and nicknames. */
+  static fromProfile(profile: Profile, options: HeartModuleOptions = {}): HeartModule {
+    return new HeartModule(profile.id, {
+      name: profile.displayName,
+      names: profile.names(),
+      ...options,
+    });
   }
 
   async start(ctx: ModuleContext): Promise<void> {
@@ -366,23 +451,81 @@ export class HeartModule implements Module {
       // The old records stay where they are; the next start tries again.
       ctx.log.warn({ err: errorMessage(error) }, "heart: the old records could not be moved");
     }
+    const directory = new PeopleDirectory(
+      this.#profile,
+      this.#options.name ?? "",
+      this.#options.names ?? [],
+      {
+        people: ctx.services.get(PeopleStoreKey) ?? store.people,
+        identity: ctx.services.get(IdentityStoreKey) ?? store.identity ?? null,
+        heart: people,
+      },
+      clock,
+      { autoOwnerTag: config.auto_owner_tag },
+    );
+    directory.setAuthorizer(ctx.services.get(AuthorizerKey) ?? null);
+    try {
+      await directory.load();
+    } catch (error) {
+      ctx.log.warn({ err: errorMessage(error) }, "heart: cannot load who people are");
+    }
     const service = new HeartService(people, clock);
     ctx.provide(HeartKey, service);
+    ctx.provide(SocialSignalsKey, directory);
+    ctx.provide(PeopleDirectoryKey, directory);
     // The economy's small gift and deal effects, on `heart_person` with cause `evidence`.
     ctx.provide(RelationshipEffectsKey, new HeartEffects(people));
-    const together = togetherOf(ctx, service);
+
+    const screen = screenWith(ctx);
+    const commands = new CommandMount(
+      "heart",
+      (registry) => registerCommands(registry, directory, screen),
+      unregisterCommands,
+    );
+    commands.attach(ctx);
+    // Her tool `set_call_name`: the speaker's own 稱呼, said in chat.
+    const off = actuatorsFor(ctx).register(callNameCapability(directory, screen));
+    this.#stop = () => {
+      commands.detach();
+      off();
+    };
+
+    const together = togetherOf((account) => directory.personOf(account), service);
+    // Subscribe before returning so no event published after start is missed.
     const sub = ctx.subscribe([
+      Events.PlatformReady.type,
+      Events.PlatformMessageCreated.type,
+      Events.VoiceUtteranceEvent.type,
       Events.VoiceJoined.type,
       Events.VoiceParticipants.type,
       Events.VoiceLeft.type,
       Events.SingCue.type,
     ]);
-    ctx.spawn("together", async () => {
+    ctx.spawn("events", async () => {
       for await (const env of sub) {
+        const now = clock.now();
         try {
-          together.on(env, clock.now());
+          if (is(Events.PlatformReady, env)) {
+            directory.addSelfAccount(env.data.self_account);
+            continue;
+          }
+          const line = lineOf(env, directory);
+          if (line !== null) {
+            await countLine(ctx, directory, service, line, now);
+            continue;
+          }
+          // Who is in her voice channel is known by person before their time is counted.
+          if (is(Events.VoiceJoined, env) || is(Events.VoiceParticipants, env)) {
+            for (const p of env.data.participants) {
+              if (!p.is_self) await directory.resolve(p.account, p.display_name, now);
+            }
+          }
+          together.on(env, now);
         } catch (error) {
-          ctx.log.warn({ err: errorMessage(error) }, "heart: cannot record time together");
+          ctx.log.warn(
+            { err: errorMessage(error), event: env.type },
+            "heart: cannot take an event",
+          );
         }
       }
     });
@@ -399,4 +542,29 @@ export class HeartModule implements Module {
       for await (const _ of interval(config.decay_check_mins * 60_000, signal)) decay();
     });
   }
+
+  async stop(): Promise<void> {
+    this.#stop?.();
+    this.#stop = null;
+  }
+}
+
+/**
+ * One line someone said (`HeartPeople.seen`): who they are (a person is made on first sight),
+ * then when she last saw them, talked and was with them, and familiarity. A line in a voice
+ * channel is said with her (she hears only the one she is in); one naming her is said to her.
+ */
+async function countLine(
+  ctx: Pick<ModuleContext, "services">,
+  directory: PeopleDirectory,
+  heart: HeartService,
+  line: Line,
+  now: number,
+): Promise<void> {
+  // The authorizer may be replaced at runtime (e.g. by `auth`).
+  directory.setAuthorizer(ctx.services.get(AuthorizerKey) ?? null);
+  const person = await directory.resolve(line.account, line.display_name, now);
+  if (person === null) return;
+  const directed = line.directed || directory.mentionsHer(line.text);
+  heart.seen(person, { text: line.text, directed, together: line.voice, at: now });
 }

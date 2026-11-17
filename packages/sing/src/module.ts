@@ -86,7 +86,7 @@ export class SingModule implements Module {
   static readonly ID = "sing";
   readonly manifest = defineManifest(SingModule.ID, "Singing", {
     description: "Song requests: AI covers in her voice, sung in voice with lyrics",
-    optional: ["voice.link", "mind", "queue", "commands", "actions", "agent", "activity"],
+    optional: ["voice.link", "arbiter", "queue", "commands", "actions", "agent", "activity"],
     configSchema: SingConfigSchema,
   });
   readonly #worker: SingWorkerFactory | null;

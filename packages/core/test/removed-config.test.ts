@@ -16,6 +16,13 @@ runner = "v2"
 debounce_ms = 900
 [modules.mind]
 max_calls_per_hour = 7
+journal_keep = 7
+[modules.social]
+appraisal_every_lines = 8
+[modules.self.heart]
+crush_threshold = 0.4
+[modules.world]
+care_min_affinity = 20
 [modules.mind.daily_posts]
 enabled = true
 channel = "1"
@@ -40,6 +47,7 @@ reactions_per_hour = 9
 chat = true
 [llm.reasoning]
 chat_text = "low"
+plan = "high"
 `);
 
   it("load without an error and their values are ignored", () => {
@@ -49,7 +57,8 @@ chat_text = "low"
     expect(agent.debounce_ms).toBe(900);
     const mind = MindConfigSchema.parse(old.section("modules.mind"));
     expect(mind).not.toHaveProperty("daily_posts");
-    expect(mind.max_calls_per_hour).toBe(7);
+    expect(mind).not.toHaveProperty("max_calls_per_hour");
+    expect(mind.journal_keep).toBe(7);
     // The keys beside the removed ones are still read.
     expect(agent.voice.debounce_ms).toBe(650);
     expect(agent.voice).not.toHaveProperty("gray_low");
@@ -75,19 +84,24 @@ chat_text = "low"
       "modules.agent.corrections.claims",
       "modules.agent.rhythm.looks_per_hour",
       "modules.mind.daily_posts",
+      "modules.social",
+      "modules.self.heart",
+      "modules.world.care_min_affinity",
+      "modules.mind.max_calls_per_hour",
+      "llm.reasoning.plan",
     ];
     expect(found).toEqual(expected);
     for (const path of expected) expect(lines[0]).toContain(`\`${path}\``);
     // Keys that are still read are not named, nor is a table that stays.
     for (const kept of [
       "debounce_ms`",
-      "max_calls_per_hour",
+      "journal_keep",
       "voice.debounce_ms",
       "self_chars",
       "daily_tokens",
       "self_talk",
       "reactions_per_hour",
-      "llm.reasoning",
+      "`llm.reasoning`",
     ]) {
       expect(lines[0]).not.toContain(kept);
     }

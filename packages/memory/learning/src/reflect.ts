@@ -1,9 +1,10 @@
 // Her reflections (Reflect, docs/design/v2-architecture.md §3.4, §3.6). Daily (in a quiet
-// moment after `daily_hour`): she reviews the day's memories, feedback, documents, person cards
-// and lessons, merges scattered memories into insights, marks outdated ones, updates documents,
-// tidies up her person cards (`adjustBond(..., "reflect")`: attachment and feelings move in
-// small steps, each person at most once a day, within the affect service's daily caps),
-// critiques herself from the feedback, writes lessons and long-term goals (her `GoalAgenda`).
+// moment after `daily_hour`): she reviews the day's memories, feedback, documents and lessons,
+// merges scattered memories into insights, marks outdated ones, updates documents, critiques
+// herself from the feedback, writes lessons and long-term goals (her `GoalAgenda`). Then, within
+// the same nightly figure, one call per person she had to do with that day (`reflectPeople`,
+// `person-reflect.ts`, docs/design/v5-heart.md §2.4): what she makes of them goes to their heart
+// row (`HeartKey.reflect`).
 // Light: after a long session went quiet (that conversation), or once enough was said anywhere
 // since her last reflection (the interaction threshold), without the memory review. One
 // structured call each with a short system of its own (her character core, the rules, a format

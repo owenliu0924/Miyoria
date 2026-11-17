@@ -26,11 +26,11 @@ import {
 import { PeopleStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
-  AffectStateKey,
   accountRefString,
   type Clock,
   contextKeyString,
   HandleDirectoryKey,
+  HeartKey,
   type JsonObject,
   type MessageRef,
   type PersonId,
@@ -86,10 +86,9 @@ export function personNamed(services: Lookup, to: string): PersonId | null {
       found.add(e.person);
     }
   }
-  for (const card of services.get(AffectStateKey)?.cards() ?? []) {
-    if (squash(card.handle) === want || (card.call_name && squash(card.call_name) === want)) {
-      found.add(card.person);
-    }
+  // What she calls people (their heart rows).
+  for (const { person, call_name } of services.get(HeartKey)?.callNames?.() ?? []) {
+    if (squash(call_name) === want) found.add(person);
   }
   return found.size === 1 ? ([...found][0] ?? null) : null;
 }

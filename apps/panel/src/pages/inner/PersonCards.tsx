@@ -6,50 +6,22 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
-import { EMOTION_LABEL } from "./labels";
-
-const LABEL_TONE: Record<string, Tone> = {
-  很討厭: "danger",
-  討厭: "danger",
-  陌生人: "neutral",
-  認識: "neutral",
-  朋友: "success",
-  好朋友: "success",
-  摯友: "brand",
-  知心: "brand",
-  知己: "brand",
-  至交: "brand",
-  莫逆之交: "brand",
-  心有靈犀: "brand",
-  形影不離: "brand",
-  家人般: "brand",
-  生死之交: "brand",
-  命運相連: "brand",
-  無可取代: "brand",
-  心之所歸: "brand",
-  永恆羈絆: "brand",
-};
 
 /**
- * Her stance toward them, with the level it was written at when that is not the level now (she
- * rewrites it every 5 levels, at her daily reflection): `嘴硬但會照顧他(Lv.30 時寫的)`. A card from a
- * Core older than the bond levels has no `level`.
+ * The tone of a tier: the two names for someone she dislikes, the two before 朋友, 朋友 and 好朋友,
+ * and every closer tier. The names come from the API (one list, in `@miyoria/types`), never a
+ * copy here.
  */
-export function stanceText(card: Omit<PersonCard, "level"> & { level?: number }): string | null {
-  const stance = card.stance?.trim();
-  if (!stance) return null;
-  const at = card.stance_level;
-  const stale = typeof at === "number" && typeof card.level === "number" && at !== card.level;
-  return stale ? `${stance}(Lv.${at} 時寫的)` : stance;
+export function labelTone(label: string): Tone {
+  if (label === "很討厭" || label === "討厭") return "danger";
+  if (label === "陌生人" || label === "認識") return "neutral";
+  if (label === "朋友" || label === "好朋友") return "success";
+  return "brand";
 }
 
-/** The active emotions toward one person, strongest first: `想念 0.60 · 感激 0.20`. */
-export function emotionsText(card: PersonCard): string {
-  return Object.entries(card.emotions)
-    .filter((e): e is [string, number] => typeof e[1] === "number" && e[1] > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, v]) => `${EMOTION_LABEL[name] ?? name} ${v.toFixed(2)}`)
-    .join(" · ");
+/** How she acts with them, one line she wrote in her reflection; `null`: none yet. */
+export function stanceText(card: Pick<PersonCard, "stance">): string | null {
+  return card.stance?.trim() || null;
 }
 
 function Gauge({ children, label, value }: { children: string; label: string; value: number }) {
@@ -62,9 +34,8 @@ function Gauge({ children, label, value }: { children: string; label: string; va
 }
 
 /**
- * One card per person: how she feels about them (the numbers, the label and level, the emotions
- * toward them, her words and how she acts with them). Nothing is shown on a Core without the
- * affect module.
+ * One card per person with a heart row: how she feels about them (the numbers, the label and
+ * level, her words and how she acts with them).
  */
 export function PersonCards() {
   const cards = useAffectPeople();
@@ -86,14 +57,12 @@ export function PersonCards() {
               <TableHead className="hidden w-28 md:table-cell">羈絆</TableHead>
               <TableHead className="hidden w-24 lg:table-cell">信任</TableHead>
               <TableHead className="hidden w-24 lg:table-cell">熟悉</TableHead>
-              <TableHead className="hidden w-24 sm:table-cell">在意</TableHead>
               <TableHead>她的感覺</TableHead>
               <TableHead className="w-24">最後見到</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {list.map((c) => {
-              const emotions = emotionsText(c);
               const stance = stanceText(c);
               return (
                 <TableRow key={c.person}>
@@ -107,7 +76,7 @@ export function PersonCards() {
                         {c.call_name ?? c.handle}
                       </Link>
                       <span className="flex flex-wrap items-center gap-1">
-                        <StatusBadge tone={LABEL_TONE[c.label] ?? "neutral"}>{c.label}</StatusBadge>
+                        <StatusBadge tone={labelTone(c.label)}>{c.label}</StatusBadge>
                         {typeof c.level === "number" && (
                           <Badge variant="outline" className="font-mono tabular-nums" title="羈絆等級(每 1 點一級,上限 1000)">
                             Lv.{c.level}
@@ -134,11 +103,6 @@ export function PersonCards() {
                       {String(Math.round(c.familiarity))}
                     </Gauge>
                   </TableCell>
-                  <TableCell className="hidden align-top sm:table-cell">
-                    <Gauge label={`${c.handle} 在意 ${c.attachment.toFixed(2)}`} value={c.attachment}>
-                      {c.attachment.toFixed(2)}
-                    </Gauge>
-                  </TableCell>
                   <TableCell className="max-w-[48ch] align-top whitespace-pre-wrap leading-relaxed">
                     {c.feeling || <span className="text-muted-foreground">—</span>}
                     {stance && (
@@ -147,7 +111,6 @@ export function PersonCards() {
                         {stance}
                       </span>
                     )}
-                    {emotions && <span className="mt-1 block text-[13px] text-muted-foreground">{emotions}</span>}
                   </TableCell>
                   <TableCell className="align-top text-muted-foreground">
                     {c.last_seen ? (

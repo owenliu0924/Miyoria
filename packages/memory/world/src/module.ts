@@ -133,11 +133,11 @@ export class WorldModule implements Module {
       book.presenceAllowed(a),
     );
     const salience = new Salience(config);
-    // Who she cares about is the heart's (`CARES_THRESHOLD`, H5) when it runs.
+    // Who she cares about is the heart's (`CARES_THRESHOLD`, H5); nobody without it.
     const signals = (): Signals => {
       const social = ctx.services.get(SocialSignalsKey) ?? NO_SIGNALS;
       const heart = ctx.services.get(HeartKey);
-      if (heart === undefined) return social;
+      if (heart === undefined) return { attitude: (account) => social.attitude(account) };
       return {
         attitude: (account) => social.attitude(account),
         cares: (person) => heart.cares(person) >= CARES_THRESHOLD,

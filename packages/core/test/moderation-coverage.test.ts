@@ -156,7 +156,7 @@ describe("everything people write is judged", () => {
       "packages/memory/memory/src/module.ts",
       "packages/heart/self/src/module.ts",
       "packages/heart/self/src/rules.ts",
-      "packages/heart/social/src/module.ts",
+      "packages/heart/person/src/module.ts",
       "packages/stage/src/link/module.ts",
       "packages/memory/world/src/module.ts",
     ];
@@ -164,16 +164,14 @@ describe("everything people write is judged", () => {
       [
         "packages/brain/agent/src/runtime.ts",
         "packages/memory/facts/src/bus.ts",
-        "packages/heart/mind/src/mind.ts",
         // Players' answers in the voice channel's chat: judged before they reach a game.
         "packages/play/party/src/module.ts",
       ].sort(),
     );
-    for (const file of ["runtime", "bus", "mind", "party"]) {
+    for (const file of ["runtime", "bus", "party"]) {
       const path = {
         runtime: "packages/brain/agent/src/runtime.ts",
         bus: "packages/memory/facts/src/bus.ts",
-        mind: "packages/heart/mind/src/mind.ts",
         party: "packages/play/party/src/module.ts",
       }[file] as string;
       expect(read(path), path).toContain("inspectInput(");

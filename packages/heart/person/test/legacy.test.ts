@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { type Relationship, type RelationshipDelta, SqliteStore } from "@miyoria/store";
 import { type JsonValue, toTimestamp } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { type CardRecord, emptyExtras } from "../../self/src/feelings.js";
 import {
   applyBond,
   heartPersonConfig,
@@ -17,6 +16,7 @@ import {
   parseLegacyHearts,
   warmthBaseline,
 } from "../src/index.js";
+import { type CardRecord, emptyExtras } from "../src/old-cards.js";
 
 const rules = heartPersonConfig();
 const NOW = Date.UTC(2026, 10, 17, 2, 0, 0);

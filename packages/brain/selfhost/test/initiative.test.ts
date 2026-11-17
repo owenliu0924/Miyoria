@@ -8,7 +8,6 @@ import { sleep } from "@miyoria/runtime/kernel";
 import { SqliteStore } from "@miyoria/store";
 import {
   type AccountRef,
-  AffectStateKey,
   type ArbiterDecision,
   ArbiterKey,
   type Attitude,
@@ -18,7 +17,6 @@ import {
   type HeartPeople,
   type HeartView,
   type LedgerEntry,
-  type PersonCard,
   type PersonId,
   SocialSignalsKey,
   toTimestamp,
@@ -307,24 +305,6 @@ describe("her starts in the Arbiter's ledger", () => {
 
 describe("longing", () => {
   const owen = account("owen");
-  const card = {
-    person: "p-owen",
-    handle: "Owen",
-    call_name: null,
-    affinity: 60,
-    trust: 60,
-    familiarity: 60,
-    attachment: 0.8,
-    emotions: { missing: 0.9 },
-    feeling: "",
-    label: "朋友",
-    level: 60,
-    owner: false,
-    blocked: false,
-    last_seen: null,
-    last_together: null,
-    updated_at: toTimestamp(Date.now()),
-  } as PersonCard;
 
   async function rigWith(dmOk: boolean): Promise<Rig> {
     const options: RigOptions = {
@@ -341,7 +321,8 @@ describe("longing", () => {
           attitude: (a: AccountRef) =>
             a.id === "owen" ? ({ person: "p-owen", blocked: false } as Attitude) : null,
         } as never);
-        sup.services.provide("app", AffectStateKey, { cards: () => [card] } as never);
+        // The one she cares about most, missing them a lot (the heart's longing).
+        withHeart({ person: "p-owen", cares: 0.8 }, 0.9)(sup);
       },
     };
     const rig = await Rig.create(options);
@@ -360,7 +341,7 @@ describe("longing", () => {
     await tick(rig);
     await until(() => rig.sink.texts().length === 2, 3_000, "her DM");
     expect(rig.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
-    expect(textOf(rig.model.requests[1])).toContain("你有點想念 Owen");
+    expect(textOf(rig.model.requests[1])).toContain("你有點想念 歐歐");
     // Once a day.
     rig.shift += 5 * HOUR;
     await tick(rig);
@@ -404,12 +385,6 @@ describe("longing", () => {
         sup.services.provide("app", SocialSignalsKey, {
           attitude: (a: AccountRef) =>
             a.id === "owen" ? ({ person: "p-owen", blocked: false } as Attitude) : null,
-        } as never);
-        // The old card: attached and missing them, which the heart replaces.
-        const quiet = { ...card, emotions: {} };
-        sup.services.provide("app", AffectStateKey, {
-          cards: () => [quiet],
-          card: (p: PersonId) => (p === "p-owen" ? quiet : null),
         } as never);
         withHeart(most, longing)(sup);
       },

@@ -1,5 +1,11 @@
 import { Supervisor } from "@miyoria/runtime/kernel";
-import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
+import {
+  MemorySettingsStore,
+  type SettingsStore,
+  SettingsStoreKey,
+  SqliteStore,
+  StoreKey,
+} from "@miyoria/store";
 import {
   type AnyEventDefinition,
   type Clock,
@@ -16,7 +22,9 @@ import {
   WorldStateKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { heartTables } from "../../person/src/store.js";
 import { selfConfig } from "../src/config.js";
+import { SelfEngine } from "../src/engine.js";
 import { eventDelta, SelfModule, STATE_KEY } from "../src/index.js";
 
 /** An event as the bus delivers it. */
@@ -68,13 +76,18 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0)) await fn();
 });
 
-async function boot(store = new MemorySettingsStore(), clock = new ManualClock()) {
+async function boot(
+  store: SettingsStore = new MemorySettingsStore(),
+  clock = new ManualClock(),
+  sqlite: SqliteStore | null = null,
+) {
   const sup = new Supervisor();
   cleanup.push(() => sup.stopAll());
   const contributors = new PromptContributors();
   const baseline: Mood = { valence: 0.1, arousal: 0.4, energy: 0.8 };
   const world = new FakeWorld();
   sup.services.provide("app", SettingsStoreKey, store);
+  if (sqlite !== null) sup.services.provide("app", StoreKey, sqlite);
   sup.services.provide("app", PromptContributorsKey, contributors);
   sup.services.provide("app", WorldStateKey, world);
   await sup.register(new SelfModule("p", { clock, baseline }), null, true);
@@ -85,7 +98,9 @@ async function boot(store = new MemorySettingsStore(), clock = new ManualClock()
 
 describe("self module", () => {
   it("serves the snapshot with her mood and persists policy and agenda changes", async () => {
-    const h = await boot();
+    const sqlite = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+    cleanup.push(() => sqlite.close());
+    const h = await boot(sqlite.settings, new ManualClock(), sqlite);
     const snap = h.self.snapshot();
     // The mood is derived (baseline, the hour, her emotions and drives), not stored.
     expect(snap.mood?.valence).toBeCloseTo(0.1, 2);
@@ -94,8 +109,8 @@ describe("self module", () => {
     expect(snap.drives.social).toBeCloseTo(0.3);
     h.self.setTalkativeness("discord:g1:c1", { level: 0.8, forMs: 60_000, why: "熱鬧" });
     const item = h.self.addAgenda({ text: "等 Owen 上線" });
-    await vi.waitFor(async () => {
-      const saved = (await h.store.get("p", STATE_KEY)) as { agenda: { id: string }[] } | null;
+    await vi.waitFor(() => {
+      const saved = sqlite.plugin(heartTables).self.get() as { agenda: { id: string }[] } | null;
       expect(saved?.agenda.map((a) => a.id)).toEqual([item.id]);
     });
     expect(h.self.talkativeness(ctx)?.level).toBe(0.8);
@@ -105,33 +120,27 @@ describe("self module", () => {
     expect(h.self.agenda()).toEqual([]);
   });
 
-  it("restores state and feelings after a restart", async () => {
-    const store = new MemorySettingsStore();
-    const first = await boot(store);
+  it("keeps her state in heart_self, never in self:state, and restores it after a restart", async () => {
+    const sqlite = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+    cleanup.push(() => sqlite.close());
+    const first = await boot(sqlite.settings, new ManualClock(), sqlite);
     first.self.setInitiative(0.9, "想主動");
-    await first.self.setFeeling("person-1", "  Owen 最近常陪我聊天,有點在意他  ", "self");
-    await first.self.setFeeling("person-2", "", "self");
     await first.sup.stopAll();
-    expect(await store.get("p", "self:feeling:person-1")).toMatchObject({
-      text: "Owen 最近常陪我聊天,有點在意他",
-      by: "self",
-    });
-    // A part of the person's card (her handle for them), as the affect service writes it.
-    const saved = (await store.get("p", "self:feeling:person-1")) as { card: object };
-    await store.set("p", "self:feeling:person-1", {
-      ...saved,
-      card: { ...saved.card, handle: "Owen" },
-    });
-
-    const second = await boot(store, new ManualClock(T0 + 3_600_000));
+    const kept = sqlite.plugin(heartTables).self.get() as { policy?: { initiative?: number } };
+    expect(kept.policy?.initiative).toBe(0.9);
+    expect(await sqlite.settings.get("p", STATE_KEY)).toBeNull();
+    const second = await boot(sqlite.settings, new ManualClock(T0 + 3_600_000), sqlite);
     expect(second.self.initiative()).toBe(0.9);
-    expect(second.self.feeling("person-1")?.text).toBe("Owen 最近常陪我聊天,有點在意他");
-    expect(second.self.feelings().map((f) => f.person)).toEqual(["person-1"]);
-    // Empty text deletes.
-    expect(await second.self.setFeeling("person-1", " ", "panel")).toBeNull();
-    // The person's card stays (only the feeling text goes).
-    expect(await store.get("p", "self:feeling:person-1")).toMatchObject({ text: "" });
-    expect(second.self.feeling("person-1")).toBeNull();
+  });
+
+  it("reads the old self:state once while heart_self is empty", async () => {
+    const sqlite = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+    cleanup.push(() => sqlite.close());
+    const old = new SelfEngine(selfConfig(), T0);
+    old.setInitiative(0.7, "以前的");
+    await sqlite.settings.set("p", STATE_KEY, old.toJson());
+    const h = await boot(sqlite.settings, new ManualClock(), sqlite);
+    expect(h.self.initiative()).toBe(0.7);
   });
 
   it("is satisfied by what happens on the bus", async () => {

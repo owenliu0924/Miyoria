@@ -2,12 +2,12 @@ import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { AffectSnapshot, DayPlanView, Goal, GoalsView, PersonCard, SelfView, WorldView } from "@miyoria/contracts/api";
+import type { AffectSnapshot, Goal, GoalsView, PersonCard, SelfView, WorldView } from "@miyoria/contracts/api";
 import { applyCustomEvent } from "@/app/events-store";
 import { queryKeys } from "@/app/queries";
 import { envelope } from "@/test/envelope";
 import { mockFetch, renderRoute } from "@/test/render";
-import { emotionsText, stanceText } from "./PersonCards";
+import { labelTone, stanceText } from "./PersonCards";
 import { triggerText } from "./GoalsTab";
 
 const AT = "2026-11-02T12:00:00.000Z";
@@ -40,13 +40,10 @@ const CARD: PersonCard = {
   affinity: 60,
   trust: 50,
   familiarity: 40,
-  attachment: 0.5,
-  emotions: { missing: 0.6, gratitude: 0.2 },
   feeling: "最近常陪我聊天,有點在意他",
   label: "好朋友",
   level: 60,
   stance: "嘴硬但會照顧他",
-  stance_level: 55,
   owner: true,
   blocked: false,
   last_seen: AT,
@@ -61,7 +58,7 @@ const SELF: SelfView = {
   drives: { social: 0.7, play: 0.5, attention: 0.3, rest: 0.2, curiosity: 0.6, esteem: 0.4, hunger: 0.3, longing: 0 },
   policy: { talkativeness: {}, initiative: 0.5, initiative_why: "" },
   agenda: [],
-  feelings: [{ person: "p1", display_name: "Owen", text: "有點在意他", updated_at: AT, by: "self" }],
+  feelings: [{ person: "p1", display_name: "Owen", text: "有點在意他", updated_at: AT }],
 };
 
 const WORLD: WorldView = {
@@ -104,8 +101,6 @@ function serve(extra?: Parameters<typeof mockFetch>[0]) {
         return { body: AFFECT };
       case "/api/affect/people":
         return { body: [CARD] };
-      case "/api/mind/plan":
-        return { body: { day_plan: "下午玩 MC,晚上陪 Owen 聊天" } satisfies DayPlanView };
       case "/api/mind/goals": {
         const closed = url.searchParams.get("closed") === "true";
         return { body: { goals: closed ? [GOAL, DONE] : [GOAL], closed_included: true } satisfies GoalsView };
@@ -160,11 +155,9 @@ describe("Inner: people cards", () => {
     expect(within(cards).getByText("好朋友")).toBeInTheDocument();
     expect(within(cards).getByText("主人")).toBeInTheDocument();
     expect(within(cards).getByRole("meter", { name: "owen 羈絆 60" })).toBeInTheDocument();
-    expect(within(cards).getByRole("meter", { name: "owen 在意 0.50" })).toBeInTheDocument();
     expect(within(cards).getByText("最近常陪我聊天,有點在意他")).toBeInTheDocument();
-    expect(within(cards).getByText("想念 0.60 · 感激 0.20")).toBeInTheDocument();
     expect(within(cards).getByText("Lv.60")).toBeInTheDocument();
-    expect(within(cards).getByText("嘴硬但會照顧他(Lv.55 時寫的)")).toBeInTheDocument();
+    expect(within(cards).getByText("嘴硬但會照顧他")).toBeInTheDocument();
     expect(await screen.findByRole("table", { name: "感情" })).toBeInTheDocument();
   });
 
@@ -175,27 +168,27 @@ describe("Inner: people cards", () => {
     expect(screen.queryByRole("table", { name: "人物卡" })).toBeNull();
   });
 
-  it("orders the emotions toward a person by strength", () => {
-    expect(emotionsText({ ...CARD, emotions: { gratitude: 0.2, missing: 0.6, jealousy: 0 } })).toBe("想念 0.60 · 感激 0.20");
-    expect(emotionsText({ ...CARD, emotions: {} })).toBe("");
+  it("gives every tier a tone, closer tiers the brand's", () => {
+    expect(labelTone("討厭")).toBe("danger");
+    expect(labelTone("陌生人")).toBe("neutral");
+    expect(labelTone("好朋友")).toBe("success");
+    expect(labelTone("永恆羈絆")).toBe("brand");
   });
 
-  it("says when her stance was written at another level, and nothing without one", () => {
-    expect(stanceText({ ...CARD, stance_level: 60 })).toBe("嘴硬但會照顧他");
-    expect(stanceText(CARD)).toBe("嘴硬但會照顧他(Lv.55 時寫的)");
+  it("shows her stance as she wrote it, and nothing without one", () => {
+    expect(stanceText(CARD)).toBe("嘴硬但會照顧他");
+    expect(stanceText({ ...CARD, stance: "  " })).toBeNull();
     expect(stanceText({ ...CARD, stance: null })).toBeNull();
-    // An older Core sends neither.
-    const { level: _l, stance: _s, stance_level: _sl, ...old } = CARD;
-    expect(stanceText(old)).toBeNull();
+    // An older Core sends none.
+    expect(stanceText({})).toBeNull();
   });
 });
 
 describe("Inner: goals", () => {
-  it("shows today's plan and her goals, with the closed ones on request", async () => {
+  it("shows her goals, with the closed ones on request", async () => {
     const fetch = serve();
     const user = userEvent.setup();
     renderRoute("/inner?tab=goals");
-    expect(await screen.findByText("下午玩 MC,晚上陪 Owen 聊天")).toBeInTheDocument();
     const goals = await screen.findByRole("table", { name: "目標" });
     expect(within(goals).getByText("找 Owen 問報告結果")).toBeInTheDocument();
     expect(within(goals).getByText("好幾天沒講話了")).toBeInTheDocument();
@@ -214,13 +207,6 @@ describe("Inner: goals", () => {
     expect(triggerText({ kind: "after_activity", activity: "game:minecraft" })).toBe("game:minecraft 結束後");
     expect(triggerText({ kind: "whenever" })).toBe("有空就做");
     expect(triggerText({ kind: "at", time: AT })).toMatch(/之後$/);
-  });
-
-  it("shows the day plan as missing without hiding the goals", async () => {
-    serve((_m, url) => (url.pathname === "/api/mind/plan" ? { body: { day_plan: null } } : undefined));
-    renderRoute("/inner?tab=goals");
-    expect(await screen.findByText("今天還沒寫計畫")).toBeInTheDocument();
-    expect(await screen.findByRole("table", { name: "目標" })).toBeInTheDocument();
   });
 });
 

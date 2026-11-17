@@ -424,6 +424,8 @@ export interface HeartPeople {
     reflection: HeartReflection,
     options?: { now?: number },
   ): HeartReflected;
+  /** What she calls each person who has a call name (for the checks that keep names apart). */
+  callNames?(): { person: PersonId; call_name: string }[];
 }
 
 export const HeartKey = serviceKey<HeartPeople>("HeartPeople");

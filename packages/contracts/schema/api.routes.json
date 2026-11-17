@@ -777,20 +777,6 @@
             "path": "/api/mind/goals"
           }
         }
-      },
-      "plan": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "admin",
-            "permission": null
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "GET",
-            "path": "/api/mind/plan"
-          }
-        }
       }
     },
     "roles": {

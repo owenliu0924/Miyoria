@@ -15,14 +15,38 @@
 // - `public.ts`: what a member may see (words, the ring, the tier; no raw value).
 // - `module.ts`: module `heart`, the owner of the tables: its config section, the migration on
 //   start, the daily pass and `HeartKey` (`@miyoria/types`), through which her `feel` is applied.
-//
-// `social`, `self` and `mind` still keep their own records beside it until step 5 of the phase.
+// - `directory.ts`, `commands.ts`, `call-name-tool.ts`: who people are (accounts, names, `/me link`),
+//   `SocialSignalsKey` from the rows, `/me profile | call | link`, `/admin person ...` and the tool
+//   `set_call_name` (the old `social` module's, phase 4 step 5).
+// - `old-cards.ts`: the old `self:feeling:*` cards, read once by the migration.
+// - `effects.ts`, `together.ts`: the economy's effects (cause `evidence`) and the evidence of time
+//   together in voice and songs heard.
 
+export { callNameCapability } from "./call-name-tool.js";
+export {
+  CLEAR_WORDS,
+  checkCallName,
+  FEELINGS,
+  labelOf,
+  NODE_OWNER_TAG,
+  PATHS,
+  registerCommands,
+  type ScreenCallName,
+  UNFIT_CALL_NAME,
+  unregisterCommands,
+} from "./commands.js";
 export {
   type HeartPersonConfig,
   HeartPersonConfigSchema,
   heartPersonConfig,
 } from "./config.js";
+export {
+  attitudeOf,
+  type DirectoryStores,
+  type LinkOutcome,
+  PeopleDirectory,
+  PeopleDirectoryKey,
+} from "./directory.js";
 export { GAIN_QUOTES, HeartEffects } from "./effects.js";
 export {
   type LegacyHearts,
@@ -66,12 +90,23 @@ export {
   HeartModule,
   type HeartModuleOptions,
   HeartService,
+  lineOf,
   MIGRATED_KEY,
   type MigrationDeps,
   migrateOnStart,
   runDecay,
   togetherOf,
 } from "./module.js";
+export {
+  type BondLedger,
+  type BondSnapshot,
+  type CardExtras,
+  type CardLegacy,
+  type CardRecord,
+  FEELING_PREFIX,
+  feelingKey,
+  readOldCards,
+} from "./old-cards.js";
 export { type PublicBond, type PublicRing, publicBond } from "./public.js";
 export {
   ANCHORED_TIERS,

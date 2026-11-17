@@ -43,6 +43,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -379,6 +380,18 @@ export class HeartStore {
       const changes = requests.length === 0 ? [] : this.applyAll(person, requests, options);
       return { changes: changes.length, texts, public_feeling: feeling, anchored };
     });
+  }
+
+  /** Everyone with a call name, and the name. */
+  callNames(): { person: PersonId; call_name: string }[] {
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select({ person: P.person_id, call_name: P.call_name })
+      .from(P)
+      .where(isNotNull(P.call_name))
+      .orderBy(asc(P.person_id))
+      .all()
+      .flatMap((r) => (r.call_name === null ? [] : [{ person: r.person, call_name: r.call_name }]));
   }
 
   /** The people the daily pass has not run for on the local day of `now`. */
@@ -741,7 +754,7 @@ export interface HeartTables {
 /**
  * The heart's parts of the data categories: the rows about people go with `relationships` (with
  * every change and piece of evidence recorded about them, which the event log keeps otherwise),
- * her own state with `inner`.
+ * what she calls them with `call_names` (cleared, the row stays), her own state with `inner`.
  */
 const heartData: readonly CategoryData[] = [
   {
@@ -779,6 +792,10 @@ const heartData: readonly CategoryData[] = [
       }),
     ],
     keptEvents: "type IN ('heart.changed', 'heart.evidence')",
+  },
+  {
+    category: "call_names",
+    parts: [{ kind: "call_names", id: "heart_call_names", table: "heart_person", rows: "node" }],
   },
   {
     category: "inner",

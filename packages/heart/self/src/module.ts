@@ -7,7 +7,7 @@ import {
   SerialQueue,
   withTimeout,
 } from "@miyoria/runtime/kernel";
-import { type SettingsStore, SettingsStoreKey } from "@miyoria/store";
+import { type SettingsStore, SettingsStoreKey, StoreKey } from "@miyoria/store";
 import {
   AFFECT_EVENT_KINDS,
   type AffectEvent,
@@ -22,6 +22,7 @@ import {
   HeartKey,
   is,
   isJsonObject,
+  type JsonObject,
   type JsonValue,
   type Mood,
   MoodSignalsKey,
@@ -30,18 +31,23 @@ import {
   SocialSignalsKey,
   WorldStateKey,
 } from "@miyoria/types";
+import { type HeartSelfStore, heartTables } from "../../person/src/store.js";
 import { AffectService } from "./affect.js";
 import { type SelfConfig, SelfConfigSchema } from "./config.js";
 import { type TemperamentInput, temperament } from "./emotions.js";
 import { type Circumstances, IDLE, SelfEngine } from "./engine.js";
-import { FeelingsBook } from "./feelings.js";
 import { EmotionRules } from "./rules.js";
 import { SelfService } from "./state.js";
 
-/** Settings key of the persisted state (drives, boredom, policy, agenda). */
+/**
+ * Settings key where her state was kept before `heart_self` (read once, when `heart_self` is still
+ * empty; never written again).
+ */
 export const STATE_KEY = "self:state";
 
 const STORE_TIMEOUT_MS = 5_000;
+/** At most this many people she cares about are looked through for the one she misses most. */
+const CARED_POOL = 10;
 
 export interface SelfModuleOptions {
   /** Replaces the time source (default: the module context's clock). */
@@ -136,11 +142,11 @@ interface Running {
 
 /**
  * Module `self`, her Affect module (docs/design/v3-architecture.md §12): her emotions, drives,
- * boredom, the mood derived from them, self-set policy, agenda and feelings about people. Provides
- * `AffectStateKey`, `SelfStateKey`, `MoodSignalsKey` and the `self` and `emotion` prompt sections.
- * Uses `SettingsStoreKey` to persist, `WorldStateKey` (playing / live / who is in her voice
- * channel) and `SocialSignalsKey` (who someone is, how much she likes them) when present. It
- * starts before the `mood` module, which then stays idle.
+ * boredom, the mood derived from them, self-set policy and agenda. Provides `AffectStateKey`,
+ * `SelfStateKey` and `MoodSignalsKey`. Persists to `heart_self` (the store's `heart` plugin) only
+ * when something changed; reads `WorldStateKey` (playing / live / who is in her voice channel),
+ * `SocialSignalsKey` (who an account is) and `HeartKey` (在意, the one she cares about most,
+ * longing) when present.
  */
 export class SelfModule implements Module {
   static readonly ID = "self";
@@ -167,16 +173,17 @@ export class SelfModule implements Module {
       ctx.log.warn({ names: temper.unknown }, "temperament names unknown emotions; ignored");
     }
     const engine = new SelfEngine(config, clock.now(), temper.temperament);
-    const store: SettingsStore | null = ctx.services.get(SettingsStoreKey) ?? null;
-    const persist = config.persist ? store : null;
-    const feelings = new FeelingsBook(store, profile, config.max_feeling_chars);
-    if (store) {
+    const settings: SettingsStore | null = ctx.services.get(SettingsStoreKey) ?? null;
+    let kept: HeartSelfStore | null = null;
+    try {
+      kept = config.persist ? (ctx.services.get(StoreKey)?.plugin(heartTables).self ?? null) : null;
+    } catch (error) {
+      ctx.log.warn({ err: errorMessage(error) }, "no heart_self: her inner state is not kept");
+    }
+    if (config.persist && (kept !== null || settings !== null)) {
       try {
         const loaded = await withTimeout(
-          (async () => {
-            await feelings.load();
-            return persist ? await persist.get(profile, STATE_KEY) : null;
-          })(),
+          (async () => kept?.get() ?? (settings ? await settings.get(profile, STATE_KEY) : null))(),
           STORE_TIMEOUT_MS,
         );
         if (loaded === undefined) ctx.log.warn("loading her inner state timed out");
@@ -201,16 +208,16 @@ export class SelfModule implements Module {
         config.utc_offset_minutes,
         config.mood.night_dip,
       );
-      // The one she cares about most (H5), from the heart when it runs; the old crush otherwise
-      // (the engine's own: asking the service would advance it again).
+      // The one she cares about most (H5) and the one she misses most, from the heart.
       const heart = ctx.services.get(HeartKey);
-      const cared = heart === undefined ? undefined : heart.mostCared();
-      const withCared = cared === undefined ? {} : { cared };
-      if (!her) return { ...IDLE, energy, ...withCared };
-      const crush =
-        cared === undefined
-          ? (engine.hearts.crush(clock.now())?.person ?? null)
-          : (cared?.person ?? null);
+      const cared = heart?.mostCared() ?? null;
+      let missed: { person: string; longing: number } | null = null;
+      for (const c of heart?.caredAbout(CARED_POOL) ?? []) {
+        const longing = heart?.view(c.person)?.longing ?? 0;
+        if (longing > (missed?.longing ?? 0)) missed = { person: c.person, longing };
+      }
+      if (!her) return { ...IDLE, energy, cared, missed };
+      const crush = cared?.person ?? null;
       const voice = her.voice ?? null;
       const members =
         voice === null
@@ -227,7 +234,8 @@ export class SelfModule implements Module {
         playing: her.game !== null && her.game !== undefined,
         streaming: her.streaming || her.golive === "live",
         crushTogether,
-        ...withCared,
+        cared,
+        missed,
       };
     };
     /** Who she is with (for what she shows): the people in her voice channel. */
@@ -249,26 +257,30 @@ export class SelfModule implements Module {
     };
     const saves = new SerialQueue();
     let dirty = false;
+    // Only what changed is written: something happened since the last save (drift alone is not a
+    // change; it is worked out again from the saved time on restore), and `heart_self` itself
+    // skips a state equal to the stored one.
     const save = async () => {
-      if (!persist || !dirty) return;
+      if (kept === null || !dirty) return;
       dirty = false;
       try {
-        await persist.set(profile, STATE_KEY, engine.toJson());
+        const state = engine.toJson();
+        if (isJsonObject(state)) kept.save(state as JsonObject, { now: clock.now() });
       } catch (error) {
         dirty = true;
         ctx.log.warn({ err: errorMessage(error) }, "cannot persist her inner state");
       }
     };
+    const nameOf = (person: string) => social()?.attitudeOf?.(person)?.display_name ?? null;
     const service: SelfService = new SelfService({
       engine,
-      feelings,
       clock,
       config,
       circumstances,
       mood: () => affect.mood(),
       audience,
-      attitudeOf: (person) => social()?.attitudeOf?.(person) ?? null,
       heart: () => ctx.services.get(HeartKey) ?? null,
+      nameOf,
       changed: (reason) => {
         dirty = true;
         ctx.log.debug({ reason }, "inner state changed");
@@ -282,6 +294,8 @@ export class SelfModule implements Module {
       handleOf: (person) => directory()?.ofPerson(person) ?? null,
       personOfHandle: (handle) => directory()?.resolve(handle)?.person ?? null,
       publish: ctx.publisher,
+      heart: () => ctx.services.get(HeartKey) ?? null,
+      nameOf,
     });
     ctx.provide(SelfStateKey, service);
     ctx.provide(AffectStateKey, affect);
@@ -306,7 +320,6 @@ export class SelfModule implements Module {
       Events.SelfNudge.type,
       Events.SelfFeel.type,
       Events.SocialEvent.type,
-      Events.SocialAppraisal.type,
       Events.SingCue.type,
       Events.LlmBudget.type,
       "game.*",
@@ -348,10 +361,8 @@ export class SelfModule implements Module {
       for await (const _ of interval(Math.max(config.tick_secs, 1) * 1000, signal)) {
         service.now();
         service.sample();
-        dirty = true;
         await saves.run(save);
         affect.publishIfChanged();
-        await affect.syncSnapshots().catch(() => 0);
       }
     });
   }

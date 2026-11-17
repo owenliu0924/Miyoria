@@ -167,49 +167,21 @@ export const AgendaItemSchema = z
   .meta({ id: "ApiAgendaItem" });
 export type AgendaItem = z.output<typeof AgendaItemSchema>;
 
-/** One of her feelings about a person, with the person's name. */
+/** Her impression of a person (their heart row's), with the person's name. */
 export const FeelingViewSchema = z
   .object({
     person: PersonIdSchema,
     text: z.string(),
+    /** When their row last changed. */
     updated_at: TimestampSchema,
-    /** Who wrote it: `self` (her), `panel`, ... */
-    by: z.string(),
     display_name: z.string().nullable(),
   })
   .meta({ id: "ApiFeelingView" });
 export type FeelingView = z.output<typeof FeelingViewSchema>;
 
-/** How she feels about one person beyond the social numbers. */
-export const HeartSchema = z
-  .object({
-    person: PersonIdSchema,
-    /** Last display name she saw (untrusted). */
-    name: z.string().nullable(),
-    /** 心動 0..1. */
-    romance: z.number(),
-    /** Active emotions toward them (0..1; absent: none). */
-    emotions: z.partialRecord(PersonEmotionNameSchema, z.number()),
-    last_seen: TimestampSchema.nullable(),
-    last_together: TimestampSchema.nullable(),
-  })
-  .meta({ id: "ApiHeart" });
-export type Heart = z.output<typeof HeartSchema>;
-
-/** The person she secretly has a crush on: the highest romance above the threshold. */
-export const CrushSchema = z
-  .object({
-    person: PersonIdSchema,
-    name: z.string().nullable(),
-    romance: z.number(),
-    since: TimestampSchema,
-  })
-  .meta({ id: "ApiCrush" });
-export type Crush = z.output<typeof CrushSchema>;
-
 /**
- * `GET /api/self`: her inner state and her feelings about people (newest first). The emotions, what
- * shows of them, the hearts and the crush are there when the `self` module reports them.
+ * `GET /api/self`: her inner state and her impressions of people (newest first, from the heart's
+ * rows). The emotions and what shows of them are there when the `self` module reports them.
  */
 export const SelfViewSchema = z
   .object({
@@ -224,8 +196,6 @@ export const SelfViewSchema = z
     agenda: z.array(AgendaItemSchema),
     emotions: z.array(EmotionReadingSchema).optional(),
     shown: ShownEmotionSchema.nullable().optional(),
-    hearts: z.array(HeartSchema).optional(),
-    crush: CrushSchema.nullable().optional(),
     feelings: z.array(FeelingViewSchema),
   })
   .meta({ id: "ApiSelfView" });

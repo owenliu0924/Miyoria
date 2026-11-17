@@ -12,8 +12,6 @@ import {
   RELATIONSHIP_LABELS,
   relationshipLabel,
   renderAffectMood,
-  renderPeople,
-  renderPersonLine,
   stanceStale,
   toTimestamp,
 } from "../src/index.js";
@@ -129,17 +127,6 @@ describe("the one mood renderer", () => {
       "你現在心情普通、精神還可以。",
     );
     expect([0.1, 0.4, 0.65].map(intensityWord)).toEqual(["淡", "中", "強"]);
-  });
-
-  it("one line per person: handle, one-word label, her feeling sentence", () => {
-    const card = { handle: "Owen", label: "好朋友" as const, feeling: "他很可靠,\n有點在意。" };
-    expect(renderPersonLine(card)).toBe("- Owen:好朋友;他很可靠, 有點在意。");
-    expect(renderPersonLine({ ...card, feeling: "" })).toBe("- Owen:好朋友");
-    expect(renderPersonLine({ ...card, feeling: "字".repeat(200) }).length).toBeLessThan(110);
-    expect(renderPeople([card, { ...card, handle: "Amy", label: "陌生人", feeling: "" }])).toEqual([
-      "- Owen:好朋友;他很可靠, 有點在意。",
-      "- Amy:陌生人",
-    ]);
   });
 });
 

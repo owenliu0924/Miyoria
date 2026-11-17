@@ -22,7 +22,7 @@ import {
   CapabilityError,
   defineCapability,
 } from "@miyoria/gate/actions";
-import { SocialKey } from "@miyoria/heart/social";
+import { PeopleDirectoryKey } from "@miyoria/heart/person";
 import {
   defineManifest,
   errorMessage,
@@ -296,7 +296,7 @@ export class GameChat implements ChatHandled {
   ): Promise<void> {
     let outcome = "invalid_code";
     if (code !== "") {
-      const social = this.#ctx.services.get(SocialKey);
+      const social = this.#ctx.services.get(PeopleDirectoryKey);
       if (!social) outcome = "unavailable";
       else {
         try {
@@ -472,7 +472,7 @@ interface Running {
 
 /**
  * Module `game.chat`. Services used: `PlatformSinksKey` (required), the actuator registry,
- * `SocialKey` (account linking), `MouthKey` (her spoken replies) and `PromptContributorsKey`
+ * `PeopleDirectoryKey` (account linking), `MouthKey` (her spoken replies) and `PromptContributorsKey`
  * (optional).
  * Provides `GameChatKey`.
  */
@@ -480,7 +480,7 @@ export class GameChatModule implements Module {
   static readonly ID = "game.chat";
   readonly manifest = defineManifest(GameChatModule.ID, "Game chat", {
     description: "In-game chat as its own conversation, with her replies typed or spoken",
-    optional: ["game", "social", "voice", "extensions"],
+    optional: ["game", "heart", "voice", "extensions"],
     configSchema: GameChatConfigSchema,
   });
   #running: Running | null = null;

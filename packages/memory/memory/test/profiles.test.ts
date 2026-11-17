@@ -1,12 +1,10 @@
 // v4 §5.4 and §5.6: retrieval over the turn, and one profile per person.
 
 import {
-  type AffectState,
   BOND_SCALE_LINE,
   type HeartPeople,
   type HeartView,
   type KnowledgeBase,
-  type PersonCard,
   type PersonId,
   type Timestamp,
 } from "@miyoria/types";
@@ -35,7 +33,8 @@ const pT = "person-tomo";
 
 async function setup(
   options: {
-    card?: Partial<PersonCard>;
+    /** Sora's heart row (a view of it); unset: none. */
+    card?: Partial<HeartView>;
     knowledge?: string;
     notes?: ProfileSources["notes"];
     heart?: ProfileSources["heart"];
@@ -71,41 +70,42 @@ async function setup(
     () => handles,
     (w, win) => viewerFor(w, win, deps),
   );
-  const card: PersonCard | null =
+  const card: HeartView | null =
     options.card === undefined
       ? null
       : {
           person: pS,
-          handle: S,
-          call_name: null,
-          affinity: 30,
+          bond: 30,
           trust: 50,
           familiarity: 40,
-          attachment: 0.3,
-          emotions: {},
-          feeling: "",
-          label: "朋友",
-          level: 30,
+          warmth: 0,
+          respect: 0,
+          ease: 0,
+          grudge: 0,
+          longing: 0,
+          rapport: 0,
+          stance: "",
+          impression: "",
+          call_name: null,
+          tags: [],
           owner: false,
           blocked: false,
           last_seen: null,
           last_together: null,
-          updated_at: at(0),
           ...options.card,
         };
-  const affect = { card: (p: PersonId) => (p === pS ? card : null) } as unknown as AffectState;
+  const cardHeart: ProfileSources["heart"] = () =>
+    ({ view: (p: PersonId) => (p === pS ? card : null) }) as unknown as HeartPeople;
   const kb = {
     render: () => options.knowledge ?? "",
   } as unknown as KnowledgeBase;
   const profiles = new Profiles(engine, window, threads, deps, {
     config: () => config.profiles,
-    affect: () => affect,
-    social: () => null,
     knowledge: () => kb,
     events: () => log,
     handles: () => handles,
     ...(options.notes === undefined ? {} : { notes: options.notes }),
-    ...(options.heart === undefined ? {} : { heart: options.heart }),
+    heart: options.heart ?? cardHeart,
   });
   const fact = async (content: string, importance: number, when: Timestamp) =>
     storedId(
@@ -132,7 +132,7 @@ async function setup(
 describe("person profiles", () => {
   it("print last seen, last topic, the card and points, retrieved ones left out", async () => {
     const t = await setup({
-      card: { feeling: "很可靠", stance: "會吐槽他", call_name: "小空" },
+      card: { impression: "很可靠", stance: "會吐槽他", call_name: "小空" },
       knowledge: "#abc123 人物卡「Sora」\n  生日: 3/14",
     });
     const ramen = await t.fact("Sora 喜歡拉麵", 0.8, at(-48));
@@ -156,7 +156,7 @@ describe("person profiles", () => {
     const text = await t.profiles.render(where, 1000, { exclude: [ramen] });
     expect(text).toBe(
       `<scale>${BOND_SCALE_LINE}</scale>
-<person name="Sora" relation="朋友" level="30/1000" trust="50" call_as="小空" impression="很可靠" stance="會吐槽他" last_seen="昨天 21:30,這裡" last_topic="Sora說:「我先下線了」" notes="Sora 在準備面試;生日: 3/14"/>`,
+<person name="Sora" relation="朋友" level="30/1000" trust="信任" familiar="熟" respect="普通" ease="拘謹" rapport="還沒默契" call_as="小空" impression="很可靠" stance="會吐槽他" last_seen="昨天 21:30,這裡" last_topic="Sora說:「我先下線了」" notes="Sora 在準備面試;生日: 3/14"/>`,
     );
   });
 
@@ -291,7 +291,6 @@ describe("person profiles from the heart (docs/design/v5-heart.md §2.9)", () =>
 
   it("read the tier, the level and the slow values in words from the heart's row", async () => {
     const t = await setup({
-      card: { feeling: "很可靠", label: "朋友", level: 30 },
       heart: heart(sora),
     });
     const where = { context: guild("lobby"), present: [pS], now: at(10, 1) };
@@ -307,7 +306,7 @@ describe("person profiles from the heart (docs/design/v5-heart.md §2.9)", () =>
         ease: "自在",
         rapport: "有點默契",
       },
-      // Her words are the heart's for anyone with a row: the card's are not read.
+      // Her words are the heart's.
       feeling: "很會煮飯",
       call_name: "空空",
     });
@@ -325,11 +324,11 @@ describe("person profiles from the heart (docs/design/v5-heart.md §2.9)", () =>
     expect(await t.profiles.profiles(where)).toEqual([]);
   });
 
-  it("read the card as before when the heart has no row", async () => {
-    const t = await setup({ card: { feeling: "很可靠" }, heart: heart(null) });
+  it("know nothing of how she feels about someone without a row", async () => {
+    const t = await setup({ heart: heart(null) });
     const where = { context: guild("lobby"), present: [pS], now: at(10, 1) };
     const [p] = await t.profiles.profiles(where);
-    expect(p).toMatchObject({ label: "朋友", level: 30, trust: 50, values: null });
+    expect(p).toMatchObject({ label: null, level: null, trust: null, values: null, feeling: null });
   });
 });
 

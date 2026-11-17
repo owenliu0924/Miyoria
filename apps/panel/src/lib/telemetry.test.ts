@@ -23,7 +23,6 @@ function point(min: number, calls: number, firstToken: { count: number; buckets:
       errors: 0,
       first_token: { count: firstToken.count, sum_s: 0, buckets: firstToken.buckets.map(([le_s, count]) => ({ le_s, count })) },
     },
-    mind: null,
     voice_sessions: 0,
     speaking: false,
     events,

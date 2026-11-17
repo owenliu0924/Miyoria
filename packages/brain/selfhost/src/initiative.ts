@@ -626,64 +626,39 @@ export class Initiative {
   /**
    * The one she cares about most, when she misses them enough, in her DM with them, once a day
    * (owner decision H5: the old crush's DM hangs on that person, the heart's 在意). How much she
-   * misses them is the heart's longing or her 想念 toward them, whichever is more; how much is
-   * enough comes down when her feelings make her want to start things or to talk with them.
-   * Without the heart, everyone whose old attachment reaches `cared_attachment`.
+   * misses them is the heart's longing; how much is enough comes down when her feelings make her
+   * want to start things or to talk with them. Nothing without the heart.
    */
   async #longing(now: number): Promise<Opportunity[]> {
-    const affect = this.#services.get(AffectStateKey);
     const heart = this.#services.get(HeartKey);
+    if (heart === undefined) return [];
     const { factor, wants } = this.#willing();
-    const day = this.#day(now);
-    const out: Opportunity[] = [];
-    if (heart !== undefined) {
-      const cared = heart.mostCared();
-      if (cared === null) return [];
-      const view = heart.view(cared.person);
-      const card = affect?.card(cared.person) ?? null;
-      const handle =
-        this.#services.get(HandleDirectoryKey)?.ofPerson(cared.person) ?? card?.handle ?? null;
-      if (view === null || view.blocked || handle === null) return [];
-      const missing = Math.max(view.longing, card?.emotions.missing ?? 0);
-      const min = this.#h.settings.own.longing_min * factor - (wants.get(handle) ?? 0);
-      if (missing < Math.max(min, 0.05)) return [];
-      const id = `longing:${cared.person}:${day}`;
-      if (this.#woken.includes(id)) return [];
-      const dm = this.#dmWith(cared.person);
-      return [
-        {
-          id,
-          kind: "longing",
-          place: dm?.place ?? null,
-          person: cared.person,
-          account: dm?.account ?? null,
-          dm: true,
-          note: WAKE_NOTES.longing(view.call_name ?? card?.call_name ?? handle),
-          item: null,
-        },
-      ];
-    }
-    if (!affect) return [];
-    const { caredAttachment } = this.#h.settings;
-    const min = this.#h.settings.own.longing_min * factor;
-    for (const card of affect.cards()) {
-      if (card.blocked || card.attachment < caredAttachment) continue;
-      if ((card.emotions.missing ?? 0) < min - (wants.get(card.handle) ?? 0)) continue;
-      const id = `longing:${card.person}:${day}`;
-      if (this.#woken.includes(id)) continue;
-      const dm = this.#dmWith(card.person);
-      out.push({
+    const cared = heart.mostCared();
+    if (cared === null) return [];
+    const view = heart.view(cared.person);
+    if (view === null || view.blocked) return [];
+    const handle =
+      this.#services.get(HandleDirectoryKey)?.ofPerson(cared.person) ??
+      this.#services.get(SocialSignalsKey)?.attitudeOf?.(cared.person)?.display_name ??
+      view.call_name;
+    if (handle === null) return [];
+    const min = this.#h.settings.own.longing_min * factor - (wants.get(handle) ?? 0);
+    if (view.longing < Math.max(min, 0.05)) return [];
+    const id = `longing:${cared.person}:${this.#day(now)}`;
+    if (this.#woken.includes(id)) return [];
+    const dm = this.#dmWith(cared.person);
+    return [
+      {
         id,
         kind: "longing",
         place: dm?.place ?? null,
-        person: card.person,
+        person: cared.person,
         account: dm?.account ?? null,
         dm: true,
-        note: WAKE_NOTES.longing(card.call_name ?? card.handle),
+        note: WAKE_NOTES.longing(view.call_name ?? handle),
         item: null,
-      });
-    }
-    return out;
+      },
+    ];
   }
 
   /** Her DM with `person`, from the transcripts: the place and their account there. */

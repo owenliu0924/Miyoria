@@ -36,8 +36,7 @@ export function applyCustomEvent(queryClient: QueryClient, env: BusEnvelope): vo
       stale(queryKeys.affectPeople);
       break;
     case "plan.goal":
-      stale(queryKeys.goals);
-      stale(queryKeys.dayPlan);
+      stale(queryKeys.goals);
       break;
     case "agent.turn.outcome":
       stale(queryKeys.turnsAll);

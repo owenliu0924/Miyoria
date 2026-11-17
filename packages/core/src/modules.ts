@@ -3,7 +3,7 @@
 //
 // Boot order (after `facts`, which every other module outlives, and `moderation`,
 // which is there before anything can say a word): llm, cluster, speech, voice.link, voice, scheduler, agent, commands,
-// auth, actions, directive, activity, social, mood, world, self, heart, memory, arbiter, mind, knowledge, conversation,
+// auth, actions, directive, activity, heart, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
 // stage.link, economy, web, sandbox (opt-in), imagegen (opt-in), party, eval, Discord bot, Admin API, terminal chat, then the
 // extension host and one `ext.<id>` per extension. `facts` also writes the raw record (chat lines,
@@ -27,7 +27,6 @@ import { ModerationModule } from "@miyoria/gate/moderation";
 import { MindModule, parseAt } from "@miyoria/heart/mind";
 import { HeartModule } from "@miyoria/heart/person";
 import { SelfModule } from "@miyoria/heart/self";
-import { SocialModule } from "@miyoria/heart/social";
 import { LiveModule } from "@miyoria/live";
 import {
   type LlmConfig,
@@ -177,7 +176,9 @@ async function coreModules({
     new ActionsModule(profile.displayName),
     new DirectiveModule(),
     new ActivityModule(),
-    SocialModule.fromProfile(profile),
+    // Her numbers and words for each person (`heart_person`) and who people are: her `feel`, the
+    // lines people say, evidence, the daily pass, `/me` and `/admin person`.
+    HeartModule.fromProfile(profile),
     new WorldModule({
       interests: profile.manifest.interests,
       game: (services) => services.get(GameHandleKey)?.status()?.game_name ?? null,
@@ -186,14 +187,10 @@ async function coreModules({
       temperament: profile.manifest.temperament,
       baseline: profile.manifest.mood,
     }),
-    // Her numbers and words for each person (`heart_person`): her `feel`, the daily pass.
-    new HeartModule(profileId),
     new MemoryModule(profileId, config.get("memory.embedding", EmbeddingConfigSchema)),
     new ArbiterModule(profileId),
     new MindModule(profileId, {
       name: profile.displayName,
-      persona: (services) =>
-        services.get(PersonaHandleKey)?.corePrompt() ?? profile.personaPrompt(),
       reminders: (services) => services.get(ScheduleRemindersKey) ?? null,
     }),
     new KnowledgeModule(profileId),

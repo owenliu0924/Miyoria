@@ -1,10 +1,10 @@
 // `GET /api/self` and `GET /api/world` against fake `SelfState` / `WorldState` services.
 
-import { type Social, SocialKey } from "@miyoria/heart/social";
+import { heartTables, type PeopleDirectory, PeopleDirectoryKey } from "@miyoria/heart/person";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
+import { SqliteStore, StoreKey } from "@miyoria/store";
 import {
   type ContextKey,
-  type Feeling,
   type PlatformSink,
   PlatformSinks,
   PlatformSinksKey,
@@ -65,11 +65,6 @@ const SNAPSHOT: SelfSnapshot = {
   ],
 };
 
-const FEELINGS: Feeling[] = [
-  { person: "person-1", text: "有點在意他", updated_at: "2026-11-02T11:30:00.000Z", by: "self" },
-  { person: "person-9", text: "不太熟", updated_at: "2026-11-01T11:30:00.000Z", by: "panel" },
-];
-
 const WORLD: WorldSnapshot = {
   at: "2026-11-02T12:00:00.000Z",
   time: {
@@ -107,11 +102,11 @@ const WORLD: WorldSnapshot = {
   ],
 };
 
-const fakeSelf = { snapshot: () => SNAPSHOT, feelings: () => FEELINGS } as unknown as SelfState;
+const fakeSelf = { snapshot: () => SNAPSHOT } as unknown as SelfState;
 const fakeWorld = { snapshot: () => WORLD } as unknown as WorldState;
 const fakeSocial = {
   displayName: (p: string) => (p === "person-1" ? "Owen" : null),
-} as unknown as Social;
+} as unknown as PeopleDirectory;
 
 const sups: Supervisor[] = [];
 afterEach(async () => {
@@ -144,16 +139,37 @@ describe("inner routes", () => {
     expect((await raw(h.base, "POST", "/api/self", { token: TOKEN })).status).toBe(405);
   });
 
-  it("serve her inner state with named feelings", async () => {
+  it("serve her inner state with her impressions of people from the heart's rows", async () => {
     const h = await harness();
+    const store = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+    sups.push({ stopAll: () => store.close() } as unknown as Supervisor);
+    const rows = store.plugin(heartTables).people;
+    rows.edit(
+      "person-1",
+      { impression: "有點在意他" },
+      { now: Date.parse("2026-11-02T11:30:00Z") },
+    );
+    rows.edit("person-9", { impression: "不太熟" }, { now: Date.parse("2026-11-01T11:30:00Z") });
+    rows.edit("person-7", { call_name: "沒印象的人" });
+    h.sup.services.provide("app", StoreKey, store);
     h.sup.services.provide("self", SelfStateKey, fakeSelf);
-    h.sup.services.provide("social", SocialKey, fakeSocial);
+    h.sup.services.provide("heart", PeopleDirectoryKey, fakeSocial);
     const self = await h.adm.self();
     expect(self).toEqual({
       ...SNAPSHOT,
       feelings: [
-        { ...FEELINGS[0], display_name: "Owen" },
-        { ...FEELINGS[1], display_name: null },
+        {
+          person: "person-1",
+          text: "有點在意他",
+          updated_at: "2026-11-02T11:30:00.000Z",
+          display_name: "Owen",
+        },
+        {
+          person: "person-9",
+          text: "不太熟",
+          updated_at: "2026-11-01T11:30:00.000Z",
+          display_name: null,
+        },
       ],
     });
   });

@@ -189,22 +189,6 @@ describe("the main line", () => {
     });
   });
 
-  describe("2026-11-07: told to stop", () => {
-    it("what people just said to her is in front of Plan, with the rule to keep to a stop request", async () => {
-      const { run: r } = await run(load("told-to-stop-playing.jsonl"));
-      const plans = r.llm.requests.filter((q) => q.reasoning_purpose === "plan");
-      expect(plans.length).toBeGreaterThanOrEqual(1);
-      const text = JSON.stringify(plans[0]?.messages);
-      expect(text).toContain('source=\\"heard\\"');
-      expect(text).toContain("Alice: Miyoria, please stop playing Minecraft.");
-      // The rule that makes it count: a request to stop is not made up for with another reason.
-      expect(text).toContain("叫你停下或別做某件事");
-      // The Plan before anyone said anything (the daily one) has no such block.
-      const daily = r.llm.requests.find((q) => q.reasoning_purpose === "plan_daily");
-      expect(JSON.stringify(daily?.messages)).not.toContain('source=\\"heard\\"');
-    });
-  });
-
   describe("2026-11-07: her own lines stay where she is", () => {
     it("game commentary meant for a text channel is said in voice", async () => {
       const { run: r } = await run(load("own-lines-stay-in-voice.jsonl"));

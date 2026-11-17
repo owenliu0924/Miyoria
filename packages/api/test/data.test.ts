@@ -5,6 +5,7 @@ import { AuthService, AuthServiceKey, authTables } from "@miyoria/auth";
 import { ACTIVENESS_PREFIX, AgentHandleKey, MODE_PREFIX } from "@miyoria/brain/agent";
 import * as arbiter from "@miyoria/brain/arbiter";
 import type { DataInventoryView, DataWipeResult } from "@miyoria/contracts/api";
+import { FEELING_PREFIX } from "@miyoria/heart/person";
 import * as self from "@miyoria/heart/self";
 import { MAINTENANCE_KEY, memoryTables, WATERMARK_PREFIX } from "@miyoria/memory/memory";
 import * as queue from "@miyoria/play/queue";
@@ -361,7 +362,8 @@ describe("data categories", () => {
     expect(has("active", MODE_PREFIX)).toBe(true);
     expect(has("active", ACTIVENESS_PREFIX)).toBe(true);
     expect(has("active", self.STATE_KEY)).toBe(true);
-    expect(has("active", self.FEELING_PREFIX)).toBe(true);
+    // The old per-person cards stay in the catalog (archived, read once by the heart).
+    expect(has("active", FEELING_PREFIX)).toBe(true);
     expect(has("active", "mood:last")).toBe(true);
     expect(has("active", TOOL_KEY_PREFIX)).toBe(true);
     for (const [profile, name] of [

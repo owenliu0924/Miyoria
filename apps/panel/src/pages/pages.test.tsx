@@ -530,10 +530,10 @@ describe("Live", () => {
   it("stops her autonomy with one click", async () => {
     let paused = false;
     mockFetch((method, url) => {
-      if (url.pathname === "/api/mind") return { body: { paused, running: true, accepting: !paused, stats: null, pending_approvals: 0 } };
+      if (url.pathname === "/api/mind") return { body: { paused, running: true, stats: null, pending_approvals: 0 } };
       if (method === "POST" && url.pathname === "/api/mind/pause") {
         paused = true;
-        return { body: { paused, running: true, accepting: false, stats: null, pending_approvals: 0 } };
+        return { body: { paused, running: true, stats: null, pending_approvals: 0 } };
       }
       return undefined;
     });
@@ -556,7 +556,6 @@ describe("Live", () => {
     const view = () => ({
       paused,
       running: true,
-      accepting: !paused,
       stats: null,
       pending_approvals: 0,
       emergency: paused ? emergency : null,

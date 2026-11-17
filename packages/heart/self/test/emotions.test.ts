@@ -4,7 +4,6 @@ import { selfConfig } from "../src/config.js";
 import { shownEmotion } from "../src/display.js";
 import { EmotionEngine, temperament } from "../src/emotions.js";
 import { IDLE, REST_OVER_TIREDNESS, SelfEngine } from "../src/engine.js";
-import { HeartBook } from "../src/heart.js";
 
 const T0 = Date.parse("2026-11-02T12:00:00.000Z");
 const MINUTE = 60_000;
@@ -150,75 +149,17 @@ describe("display rules", () => {
   });
 });
 
-describe("romance and crush", () => {
-  const book = (now = T0) => new HeartBook(selfConfig().heart, base, 20 * HOUR, now);
-
-  it("the crush is the highest romance above the threshold, or nobody", () => {
-    const h = book();
-    h.attach("a", 0.06, T0);
-    expect(h.crush(T0)).toBeNull();
-    let t = T0;
-    for (let day = 1; day <= 8; day++) {
-      t = T0 + day * DAY;
-      h.attach("a", 0.06, t);
-    }
-    expect(h.romanceOf("a")).toBeGreaterThan(0.35);
-    expect(h.crush(t)?.person).toBe("a");
-  });
-
-  it("changes only when someone clearly passes the current one, and can fall to nobody", () => {
-    const h = book();
-    for (let d = 0; d < 9; d++) {
-      h.attach("a", 0.06, T0 + d * DAY);
-      h.attach("b", 0.06, T0 + d * DAY);
-    }
-    const t = T0 + 9 * DAY;
-    const a = h.romanceOf("a");
-    expect(h.romanceOf("b")).toBeCloseTo(a, 6);
-    expect(h.crush(t)?.person).toBe("a");
-    // b a little ahead: not enough.
-    h.attach("b", 0.03, t);
-    expect(h.crush(t)?.person).toBe("a");
-    // a hurt her: b takes the place.
-    h.attach("a", -0.3, t);
-    expect(h.crush(t)?.person).toBe("b");
-    h.attach("b", -1, t);
-    expect(h.crush(t)).toBeNull();
-    // It fades slowly on its own.
-    h.attach("c", 0.06, t);
-    h.advance(t + 45 * DAY);
-    expect(h.romanceOf("c")).toBeCloseTo(0.03, 2);
-  });
-
-  it("persists the people and the crush", () => {
-    const h = book();
-    for (let d = 0; d < 9; d++) h.attach("a", 0.06, T0 + d * DAY);
-    h.seen("a", "Owen", true, T0 + 9 * DAY);
-    h.feel("a", "gratitude", 0.5, T0 + 9 * DAY);
-    const copy = book(T0 + 9 * DAY);
-    copy.restore(h.toJson(), T0 + 9 * DAY);
-    expect(copy.crush(T0 + 9 * DAY)).toMatchObject({ person: "a", name: "Owen" });
-    expect(copy.heart("a", T0 + 9 * DAY)?.emotions.gratitude).toBeCloseTo(0.5, 6);
-  });
-});
-
 describe("drives and emotions", () => {
-  /** An engine whose crush is `a`. */
-  function withCrush(): SelfEngine {
-    const e = new SelfEngine(selfConfig(), T0, base);
-    for (let d = 0; d < 10; d++) e.hearts.attach("a", 0.06, T0 - (10 - d) * DAY);
-    e.hearts.seen("a", "Owen", true, T0);
-    expect(e.hearts.crush(T0)?.person).toBe("a");
-    return e;
-  }
+  /** The one she cares about most is `a` (the heart's 在意). */
+  const CARED = { ...IDLE, cared: { person: "a", cares: 0.7 } };
 
-  it("longing rises while the crush is away and is satisfied by time together", () => {
-    const e = withCrush();
+  it("longing rises while the one she cares about most is away and is satisfied by time together", () => {
+    const e = new SelfEngine(selfConfig(), T0, base);
     expect(e.drives().longing).toBe(0);
-    e.advance(T0 + 4 * HOUR, IDLE);
+    e.advance(T0 + 4 * HOUR, CARED);
     const away = e.drives().longing;
     expect(away).toBeGreaterThan(0.2);
-    e.advance(T0 + 5 * HOUR, { ...IDLE, crushTogether: true });
+    e.advance(T0 + 5 * HOUR, { ...CARED, crushTogether: true });
     expect(e.drives().longing).toBeLessThan(0.05);
 
     // Without a crush there is nobody to long for.
@@ -241,33 +182,29 @@ describe("drives and emotions", () => {
   });
 
   it("longing unmet for long turns into 想念, kept while it lasts", () => {
-    const e = withCrush();
-    // The longing alone (not yet an absence: no care function) builds 想念 over a day or two.
-    for (let h = 1; h <= 48; h++) e.advance(T0 + h * HOUR, IDLE);
+    const e = new SelfEngine(selfConfig(), T0, base);
+    // The longing alone builds 想念 over a day or two.
+    for (let h = 1; h <= 48; h++) e.advance(T0 + h * HOUR, CARED);
     const felt = e.emotions.readings(T0 + 48 * HOUR, 0.1);
     expect(felt.find((r) => r.name === "missing")?.person).toBe("a");
     // Together again: the pressure is gone and the feeling starts to fade.
     const before = e.emotions.value("missing", T0 + 48 * HOUR);
-    e.advance(T0 + 54 * HOUR, { ...IDLE, crushTogether: true });
+    e.advance(T0 + 54 * HOUR, { ...CARED, crushTogether: true });
     expect(e.emotions.value("missing", T0 + 54 * HOUR)).toBeLessThan(before);
   });
 
-  it("someone she cares about away for days is missed, and it does not fade while they are away", () => {
+  it("someone she cares about away for days is missed: the heart's longing holds 想念, about them", () => {
     const e = new SelfEngine(selfConfig(), T0, base);
-    e.hearts.seen("b", "Bob", true, T0);
-    const care = { ...IDLE, care: (p: string) => (p === "b" ? 0.8 : 0) };
-    e.advance(T0 + 10 * HOUR, care);
-    expect(e.hearts.emotion("b", "missing", T0 + 10 * HOUR)).toBe(0);
-    for (let h = 21; h <= 24 * 4; h++) e.advance(T0 + h * HOUR, care);
-    const missing = e.hearts.emotion("b", "missing", T0 + 4 * DAY);
-    expect(missing).toBeGreaterThan(0.3);
-    expect(missing).toBeLessThanOrEqual(0.8);
-    expect(e.emotions.value("missing", T0 + 4 * DAY)).toBeCloseTo(missing, 2);
-    // Someone she does not care about is not missed.
+    const missed = { ...IDLE, missed: { person: "b", longing: 0.6 } };
+    for (let h = 1; h <= 24 * 4; h++) e.advance(T0 + h * HOUR, missed);
+    expect(e.emotions.value("missing", T0 + 4 * DAY)).toBeCloseTo(0.6, 2);
+    expect(e.emotions.readings(T0 + 4 * DAY, 0.1).find((r) => r.name === "missing")?.person).toBe(
+      "b",
+    );
+    // Nobody missed: nothing held.
     const other = new SelfEngine(selfConfig(), T0, base);
-    other.hearts.seen("c", "C", true, T0);
-    other.advance(T0 + 4 * DAY, { ...IDLE, care: () => 0 });
-    expect(other.hearts.emotion("c", "missing", T0 + 4 * DAY)).toBe(0);
+    other.advance(T0 + 4 * DAY, IDLE);
+    expect(other.emotions.value("missing", T0 + 4 * DAY)).toBe(0);
   });
 
   it("ignored for a long time: 寂寞; esteem and hunger unmet: 不甘心", () => {
@@ -282,15 +219,14 @@ describe("drives and emotions", () => {
     expect(e.emotions.value("lonely", T0 + 7 * HOUR)).toBeLessThan(0.05);
   });
 
-  it("saves and restores emotions, hearts and the new drives", () => {
-    const e = withCrush();
+  it("saves and restores emotions and the new drives", () => {
+    const e = new SelfEngine(selfConfig(), T0, base);
     e.emotions.feel("pride", 0.5, "唱完一首歌", null, T0);
     e.adjust({ esteem: 0.2 });
     const copy = new SelfEngine(selfConfig(), T0, base);
     expect(copy.restore(e.toJson(), T0)).toBe(true);
     expect(copy.emotions.value("pride", T0)).toBeCloseTo(0.5, 6);
     expect(copy.drives().esteem).toBeCloseTo(0.5, 6);
-    expect(copy.hearts.crush(T0)?.person).toBe("a");
     // Records saved before emotions existed still load.
     const old = e.toJson() as Record<string, unknown>;
     delete old.emotions;

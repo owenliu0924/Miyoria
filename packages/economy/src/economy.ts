@@ -23,7 +23,6 @@ import { SingerKey } from "@miyoria/sing";
 import { AuditLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {
   type AccountRef,
-  AffectStateKey,
   type AnyEventDefinition,
   AuthorizerKey,
   accountRefString,
@@ -554,11 +553,11 @@ export class EconomyService implements Economy {
     if (!people) return null;
     const person = await people.personByAccount(account);
     if (!person) return null;
+    // Whether she blocked them: their heart row (`SocialSignalsKey`, by account or by person).
     const social = s.get(SocialSignalsKey);
-    const affect = s.get(AffectStateKey);
     const authorizer = s.get(AuthorizerKey);
-    if ((!social && !affect) || !authorizer?.allows(account, WALLET_NODE)) return null;
-    if (social?.attitude(account)?.blocked || affect?.card(person.id)?.blocked) return null;
+    if (!social || !authorizer?.allows(account, WALLET_NODE)) return null;
+    if (social.attitude(account)?.blocked || social.attitudeOf?.(person.id)?.blocked) return null;
     return memberOf(account, person);
   }
 

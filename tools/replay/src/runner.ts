@@ -207,7 +207,7 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
   const chain: ModelRef[] = [parseModelRef("scripted:m")];
   const router = new LlmRouter(
     new Map([["scripted", llm]]),
-    new Map(["chat", "fast", "mind", "summarizer"].map((p) => [p, chain])),
+    new Map(["chat", "fast", "summarizer"].map((p) => [p, chain])),
   );
   const sink = new ReplaySink(sup.bus, now);
   const profile = profileOf(log);
@@ -228,10 +228,7 @@ export async function replay(log: ReplayLog, options: ReplayRunOptions): Promise
     new WorldModule(),
     new SelfModule(PROFILE_ID),
     new ArbiterModule(PROFILE_ID),
-    new MindModule(PROFILE_ID, {
-      name: profile.displayName,
-      persona: () => profile.personaPrompt(),
-    }),
+    new MindModule(PROFILE_ID, { name: profile.displayName }),
   ];
   for (const m of modules) await sup.register(m, config(m.manifest.id), true);
   await sup.startAll();

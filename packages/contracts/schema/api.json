@@ -2059,32 +2059,6 @@
         "month"
       ]
     },
-    "ApiCrush": {
-      "type": "object",
-      "properties": {
-        "person": {
-          "type": "string"
-        },
-        "name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "romance": {
-          "type": "number"
-        },
-        "since": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "person",
-        "name",
-        "romance",
-        "since"
-      ]
-    },
     "ApiDataCategoryId": {
       "type": "string",
       "enum": [
@@ -2319,20 +2293,6 @@
         "counts",
         "failed_modules",
         "notes"
-      ]
-    },
-    "ApiDayPlanView": {
-      "type": "object",
-      "properties": {
-        "day_plan": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "day_plan"
       ]
     },
     "ApiDealView": {
@@ -3290,9 +3250,6 @@
         "updated_at": {
           "type": "string"
         },
-        "by": {
-          "type": "string"
-        },
         "display_name": {
           "type": [
             "string",
@@ -3304,7 +3261,6 @@
         "person",
         "text",
         "updated_at",
-        "by",
         "display_name"
       ]
     },
@@ -3876,52 +3832,6 @@
       "required": [
         "status",
         "version"
-      ]
-    },
-    "ApiHeart": {
-      "type": "object",
-      "properties": {
-        "person": {
-          "type": "string"
-        },
-        "name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "romance": {
-          "type": "number"
-        },
-        "emotions": {
-          "type": "object",
-          "propertyNames": {
-            "$ref": "#/$defs/ApiPersonEmotionName"
-          },
-          "additionalProperties": {
-            "type": "number"
-          }
-        },
-        "last_seen": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "last_together": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "person",
-        "name",
-        "romance",
-        "emotions",
-        "last_seen",
-        "last_together"
       ]
     },
     "ApiHerActivity": {
@@ -6601,25 +6511,7 @@
     "ApiMindStats": {
       "type": "object",
       "properties": {
-        "calls_last_hour": {
-          "type": "number"
-        },
-        "max_calls_per_hour": {
-          "type": "number"
-        },
-        "calls_total": {
-          "type": "number"
-        },
-        "tokens_total": {
-          "type": "number"
-        },
         "last_at": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "next_heartbeat_at": {
           "type": [
             "string",
             "null"
@@ -6633,12 +6525,7 @@
         }
       },
       "required": [
-        "calls_last_hour",
-        "max_calls_per_hour",
-        "calls_total",
-        "tokens_total",
         "last_at",
-        "next_heartbeat_at",
         "idle_reason"
       ]
     },
@@ -6688,9 +6575,6 @@
         "running": {
           "type": "boolean"
         },
-        "accepting": {
-          "type": "boolean"
-        },
         "stats": {
           "anyOf": [
             {
@@ -6718,7 +6602,6 @@
       "required": [
         "paused",
         "running",
-        "accepting",
         "stats",
         "pending_approvals",
         "emergency"
@@ -7659,18 +7542,6 @@
         "familiarity": {
           "type": "number"
         },
-        "attachment": {
-          "type": "number"
-        },
-        "emotions": {
-          "type": "object",
-          "propertyNames": {
-            "$ref": "#/$defs/ApiPersonEmotionName"
-          },
-          "additionalProperties": {
-            "type": "number"
-          }
-        },
         "feeling": {
           "type": "string"
         },
@@ -7689,12 +7560,6 @@
         "stance": {
           "type": [
             "string",
-            "null"
-          ]
-        },
-        "stance_level": {
-          "type": [
-            "number",
             "null"
           ]
         },
@@ -7727,8 +7592,6 @@
         "affinity",
         "trust",
         "familiarity",
-        "attachment",
-        "emotions",
         "feeling",
         "label",
         "level",
@@ -9790,22 +9653,6 @@
             }
           ]
         },
-        "hearts": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiHeart"
-          }
-        },
-        "crush": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ApiCrush"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "feelings": {
           "type": "array",
           "items": {
@@ -10568,28 +10415,6 @@
         "llm": {
           "$ref": "#/$defs/ApiTelemetryLlm"
         },
-        "mind": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "calls_total": {
-                  "type": "number"
-                },
-                "tokens_total": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "calls_total",
-                "tokens_total"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "voice_sessions": {
           "type": "number"
         },
@@ -10613,7 +10438,6 @@
         "drives",
         "initiative",
         "llm",
-        "mind",
         "voice_sessions",
         "speaking",
         "events"

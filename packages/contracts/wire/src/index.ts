@@ -55,6 +55,7 @@ export {
   type Sticker,
   StickerSchema,
 } from "./platform.js";
+export { BOND_TIER_FLOORS, RELATIONSHIP_LABELS, type RelationshipLabel } from "./tiers.js";
 export {
   type PlaybackState,
   PlaybackStateSchema,

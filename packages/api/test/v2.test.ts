@@ -2,8 +2,9 @@
 // `/api/mind/plan`, `/api/prompts*` and `/api/turns/outcomes`, against fake services.
 
 import { SavedPromptsKey } from "@miyoria/brain/agent";
+import { heartTables } from "@miyoria/heart/person";
 import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
-import { DecisionLogKey } from "@miyoria/store";
+import { DecisionLogKey, SqliteStore, StoreKey } from "@miyoria/store";
 import {
   type ActivityManager,
   ActivityManagerKey,
@@ -22,9 +23,6 @@ import {
   GoalAgendaKey,
   type LedgerEntry,
   type LedgerView,
-  type Mind,
-  MindKey,
-  type PersonCard,
   type SavedPrompt,
   type TurnOutcomeRecord,
 } from "@miyoria/types";
@@ -155,29 +153,7 @@ const AFFECT: AffectSnapshot = {
   biases: BIASES,
 };
 
-const CARD: PersonCard = {
-  person: "p1",
-  handle: "owen",
-  call_name: null,
-  affinity: 60,
-  trust: 50,
-  familiarity: 40,
-  attachment: 0.5,
-  emotions: { missing: 0.6 },
-  feeling: "有點在意他",
-  label: "好朋友",
-  level: 12,
-  owner: true,
-  blocked: false,
-  last_seen: AT,
-  last_together: null,
-  updated_at: AT,
-};
-
-const fakeAffect = {
-  snapshot: () => AFFECT,
-  cards: () => [CARD],
-} as unknown as AffectState;
+const fakeAffect = { snapshot: () => AFFECT } as unknown as AffectState;
 
 const GOAL: Goal = {
   id: "G1",
@@ -258,8 +234,10 @@ const OUTCOMES = [
 ];
 
 const sups: Supervisor[] = [];
+const stores: SqliteStore[] = [];
 afterEach(async () => {
   for (const s of sups.splice(0)) await s.stopAll();
+  for (const s of stores.splice(0)) await s.close();
   ledgerContexts.length = 0;
 });
 
@@ -284,7 +262,6 @@ const GET_ROUTES = [
   "/api/affect",
   "/api/affect/people",
   "/api/mind/goals",
-  "/api/mind/plan",
   "/api/prompts",
   "/api/prompts/T",
   "/api/turns/outcomes",
@@ -307,7 +284,6 @@ describe("v2 routes", () => {
     expect(await statusOf(h.adm.affect())).toBe(503);
     expect(await statusOf(h.adm.affectPeople())).toBe(503);
     expect(await statusOf(h.adm.goals())).toBe(503);
-    expect(await statusOf(h.adm.dayPlan())).toBe(503);
     expect(await statusOf(h.adm.prompts())).toBe(503);
     expect(await statusOf(h.adm.prompt("T"))).toBe(503);
     expect(await statusOf(h.adm.turnOutcomes())).toBe(503);
@@ -380,21 +356,31 @@ describe("v2 routes", () => {
     const affect = await h.adm.affect();
     expect(affect).toEqual(AFFECT);
     expect(affect.biases.wants[0]?.want).toBe("chat_with");
-    expect(await h.adm.affectPeople()).toEqual([CARD]);
+    // The cards are the heart's rows.
+    const store = await SqliteStore.open(":memory:", { plugins: [heartTables] });
+    stores.push(store);
+    const rows = store.plugin(heartTables).people;
+    rows.adminSet("p-owen", "bond", 60);
+    rows.edit("p-owen", { impression: "很可靠", call_name: "歐文" });
+    h.sup.services.provide("app", StoreKey, store);
+    expect(await h.adm.affectPeople()).toEqual([
+      expect.objectContaining({
+        person: "p-owen",
+        call_name: "歐文",
+        affinity: 60,
+        feeling: "很可靠",
+        // Close, but they have not spent time with her yet.
+        label: "朋友",
+        level: 60,
+      }),
+    ]);
   });
 
-  it("serve goals and the day plan", async () => {
+  it("serve goals", async () => {
     const h = await harness();
     h.sup.services.provide("mind", GoalAgendaKey, new FakeAgenda() as unknown as GoalAgenda);
     expect(await h.adm.goals()).toEqual({ goals: [GOAL], closed_included: false });
     expect(await h.adm.goals(true)).toEqual({ goals: [GOAL, DONE], closed_included: true });
-    // The mind does not know the day plan yet.
-    expect(await statusOf(h.adm.dayPlan())).toBe(503);
-    const mind = { accepting: true, dayPlan: () => "下午玩 MC,晚上陪 Owen" } as unknown as Mind;
-    h.sup.services.provide("mind", MindKey, mind);
-    expect(await h.adm.dayPlan()).toEqual({ day_plan: "下午玩 MC,晚上陪 Owen" });
-    h.sup.services.provide("mind", MindKey, { accepting: true } as unknown as Mind);
-    expect(await h.adm.dayPlan()).toEqual({ day_plan: null });
   });
 
   it("an agenda without a closed list still answers", async () => {

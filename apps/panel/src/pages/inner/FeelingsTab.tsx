@@ -6,8 +6,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fmtDateTime, fmtRelative } from "@/lib/format";
 import { PersonCards } from "./PersonCards";
 
-const BY_LABEL: Record<string, string> = { self: "她", panel: "面板" };
-
 export function FeelingsTab({ self }: { self: SelfView }) {
   return (
     <div className="grid gap-(--stage-gap)">
@@ -17,19 +15,18 @@ export function FeelingsTab({ self }: { self: SelfView }) {
   );
 }
 
-/** Her short notes about people (`self:feeling:*`), the older form of the person card's feeling. */
+/** Her impression of each person, from their heart row. */
 function FeelingNotes({ self }: { self: SelfView }) {
   return (
     <Card>
       {self.feelings.length === 0 ? (
-        <EmptyLine>還沒有對任何人的感情描述</EmptyLine>
+        <EmptyLine>還沒有對任何人的印象</EmptyLine>
       ) : (
         <Table aria-label="感情">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="w-40">人</TableHead>
               <TableHead>她的感覺</TableHead>
-              <TableHead className="hidden w-16 sm:table-cell">寫的人</TableHead>
               <TableHead className="w-24">更新</TableHead>
             </TableRow>
           </TableHeader>
@@ -46,9 +43,6 @@ function FeelingNotes({ self }: { self: SelfView }) {
                   </Link>
                 </TableCell>
                 <TableCell className="max-w-[60ch] whitespace-pre-wrap leading-relaxed">{f.text}</TableCell>
-                <TableCell className="hidden align-top text-muted-foreground sm:table-cell">
-                  {BY_LABEL[f.by] ?? f.by}
-                </TableCell>
                 <TableCell className="align-top text-muted-foreground">
                   <time dateTime={f.updated_at} title={fmtDateTime(f.updated_at)} className="whitespace-nowrap">
                     {fmtRelative(f.updated_at)}

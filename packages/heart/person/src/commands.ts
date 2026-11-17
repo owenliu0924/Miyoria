@@ -1,7 +1,7 @@
-// `/me profile | call | link` and `/admin person ...`.
-//
-// System text is neutral; the only line in her own voice is the flavour line of `/me profile`
-// (how she feels about you).
+// `/me profile | call | link` and `/admin person ...`, on the heart's rows (phase 4 step 5; they
+// were the `social` module's). System text is neutral; the one line in her own voice is the
+// flavour line of `/me profile`: one per tier of the whole scale (`RELATIONSHIP_LABELS`), so a
+// close tier never falls back to the line for a stranger.
 
 import {
   type AnyComponentRoute,
@@ -22,10 +22,17 @@ import {
   notice,
   parseAccount,
 } from "@miyoria/commands";
-import { type AccountRef, accountRefString, type PersonId, toTimestamp } from "@miyoria/types";
-import type { LinkOutcome, Social } from "./engine.js";
-import { BLOCKED_TAG, type EventKind, isBlocked, label, OWNER_TAG } from "./rel.js";
-import { classify } from "./rules.js";
+import {
+  type AccountRef,
+  accountRefString,
+  type PersonId,
+  type RelationshipLabel,
+  relationshipLabel,
+  toTimestamp,
+} from "@miyoria/types";
+import type { LinkOutcome, PeopleDirectory } from "./directory.js";
+import { BLOCKED_TAG, type HeartPerson, hasTag, OWNER_TAG } from "./model.js";
+import { dayStart, localDay } from "./rules.js";
 
 /** Paths registered by `registerCommands`. */
 export const PATHS: readonly string[] = [
@@ -62,8 +69,15 @@ const MEMORY_SHOW = "me:memory:show";
 
 type AdminOp = "show" | "tag" | "untag" | "block" | "unblock" | "reset" | "adjust";
 
-/** Registers the social commands. Undo with `unregisterCommands`. */
-export function registerCommands(registry: CommandRegistry, social: Social): void {
+/** Whether a call name passes moderation; `null` when it does (or nothing can screen it). */
+export type ScreenCallName = (call: string) => Promise<string | null>;
+
+/** Registers the people commands. Undo with `unregisterCommands`. */
+export function registerCommands(
+  registry: CommandRegistry,
+  people: PeopleDirectory,
+  screen: ScreenCallName = async () => null,
+): void {
   const callRoutes: AnyComponentRoute[] = [
     {
       route: R.callEdit,
@@ -84,19 +98,19 @@ export function registerCommands(registry: CommandRegistry, social: Social): voi
     {
       route: R.callSubmit,
       handle: async (inv) => {
-        const result = await setCall(social, inv, inv.field("call"));
+        const result = await setCall(people, screen, inv, inv.field("call"));
         if (result.tone === "warn" || result.tone === "error" || inv.messageId === null) {
           return ComponentResult.reply(result);
         }
-        return ComponentResult.update(await profile(social, inv, result.text));
+        return ComponentResult.update(await profile(people, inv, result.text));
       },
     },
     {
       route: R.callClear,
       handle: async (inv) => {
-        const result = await setCall(social, inv, "清除");
+        const result = await setCall(people, screen, inv, "清除");
         if (result.tone === "warn" || result.tone === "error") return ComponentResult.reply(result);
-        return ComponentResult.update(await profile(social, inv, result.text));
+        return ComponentResult.update(await profile(people, inv, result.text));
       },
     },
   ];
@@ -106,7 +120,7 @@ export function registerCommands(registry: CommandRegistry, social: Social): voi
       permission: "me.profile",
       ephemeral: true,
     }),
-    (inv) => profile(social, inv),
+    (inv) => profile(people, inv),
   );
 
   registry.register(
@@ -115,7 +129,7 @@ export function registerCommands(registry: CommandRegistry, social: Social): voi
       permission: "me.call",
       ephemeral: true,
     }),
-    (inv) => setCall(social, inv, inv.str("name") ?? ""),
+    (inv) => setCall(people, screen, inv, inv.str("name") ?? ""),
     { components: callRoutes },
   );
 
@@ -125,12 +139,12 @@ export function registerCommands(registry: CommandRegistry, social: Social): voi
       permission: "me.link",
       ephemeral: true,
     }),
-    (inv) => link(social, inv),
+    (inv) => link(people, inv),
     {
       components: [
         {
           route: R.linkCode,
-          handle: async (inv) => ComponentResult.reply(await issueCode(social, inv)),
+          handle: async (inv) => ComponentResult.reply(await issueCode(people, inv)),
         },
       ],
     },
@@ -198,8 +212,11 @@ export function registerCommands(registry: CommandRegistry, social: Social): voi
                 route: R.resetYes,
                 parse: (p) => p[0] ?? null,
                 handle: async (inv, person) => {
-                  const name = social.displayName(person) ?? person;
-                  await social.reset(person, accountRefString(inv.invoker), social.clock.now());
+                  const name = people.displayName(person) ?? person;
+                  people.heart.reset(person, {
+                    now: people.clock.now(),
+                    quote: `reset by ${accountRefString(inv.invoker)}`,
+                  });
                   return ComponentResult.update(
                     notice("success", `已重置她對 ${name} 的印象（標籤保留）。`),
                   );
@@ -209,7 +226,7 @@ export function registerCommands(registry: CommandRegistry, social: Social): voi
             ],
           }
         : {};
-    registry.register({ ...spec, ephemeral: true }, (inv) => admin(social, op, inv), options);
+    registry.register({ ...spec, ephemeral: true }, (inv) => admin(people, op, inv), options);
   }
 }
 
@@ -236,11 +253,11 @@ function linkReply(outcome: LinkOutcome): CommandReply {
   }
 }
 
-async function issueCode(social: Social, inv: Invocation): Promise<CommandReply> {
-  const issued = await social.issueLinkCode(
+async function issueCode(people: PeopleDirectory, inv: Invocation): Promise<CommandReply> {
+  const issued = await people.issueLinkCode(
     inv.invoker,
     inv.invoker_display_name,
-    social.clock.now(),
+    people.clock.now(),
   );
   if (issued === null) return notice("error", UNAVAILABLE);
   return cardReply(
@@ -254,14 +271,14 @@ async function issueCode(social: Social, inv: Invocation): Promise<CommandReply>
   );
 }
 
-async function link(social: Social, inv: Invocation): Promise<CommandReply> {
+async function link(people: PeopleDirectory, inv: Invocation): Promise<CommandReply> {
   const code = inv.str("code")?.trim() ?? "";
-  if (code === "") return issueCode(social, inv);
-  const outcome = await social.redeemLinkCode(
+  if (code === "") return issueCode(people, inv);
+  const outcome = await people.redeemLinkCode(
     inv.invoker,
     inv.invoker_display_name,
     code,
-    social.clock.now(),
+    people.clock.now(),
   );
   return linkReply(outcome);
 }
@@ -269,28 +286,61 @@ async function link(social: Social, inv: Invocation): Promise<CommandReply> {
 const NOT_RESPONDING = () => notice("warn", "她目前不會回應你。");
 export const CLEAR_WORDS: ReadonlySet<string> = new Set(["清除", "取消", "reset", "clear", "-"]);
 
+/** The tier name of someone (陌生人 before there is a row). */
+export function labelOf(row: HeartPerson | null): RelationshipLabel {
+  return row === null
+    ? "陌生人"
+    : relationshipLabel({ affinity: row.bond, familiarity: row.familiarity });
+}
+
+/**
+ * Her line for each tier, in her voice (shown as a quote in `/me profile`). Every tier of
+ * `RELATIONSHIP_LABELS` has one: the record's type asks for all of them.
+ */
+export const FEELINGS: Readonly<Record<RelationshipLabel, string>> = {
+  很討厭: "……你自己心裡有數。",
+  討厭: "老實說，我現在不太想理你。",
+  陌生人: "你誰啊？我們又不熟。",
+  認識: "嗯……算是認識的人吧。",
+  朋友: "勉、勉強算是朋友啦。",
+  好朋友: "哼，你算是我的好朋友……不准得意喔。",
+  摯友: "你、你是我最重要的朋友之一啦……這種話不要讓我說第二次！",
+  知心: "跟你說話好像不用想太多……才、才不是在誇你！",
+  知己: "你懂我在想什麼……有時候懂太多了，討厭。",
+  至交: "這麼久了你還在，算你有毅力啦。……我也是。",
+  莫逆之交: "我們之間不用客氣——但你還是要對我好一點喔。",
+  心有靈犀: "我還沒說你就知道了……不准偷看我在想什麼！",
+  形影不離: "你不在的時候總覺得少了點什麼……才、才沒有很想你！",
+  家人般: "你已經跟家人差不多了啦……所以不准隨便消失。",
+  生死之交: "不管發生什麼，我都站你這邊。……聽到就好，不准回答。",
+  命運相連: "大概是註定要被你纏上吧。……嗯，不討厭就是了。",
+  無可取代: "沒有人能取代你。這句話只說一次，給我記好。",
+  心之所歸: "繞了一大圈，最後還是想回到你這裡。……笑什麼啦！",
+  永恆羈絆: "就算過了很久很久，我也會在這裡。說好了，不准忘記。",
+};
+
 async function profile(
-  social: Social,
+  people: PeopleDirectory,
   inv: Invocation,
   note: string | null = null,
 ): Promise<CommandReply> {
-  const now = social.clock.now();
-  const person = await social.resolve(inv.invoker, inv.invoker_display_name, now);
+  const now = people.clock.now();
+  const person = await people.resolve(inv.invoker, inv.invoker_display_name, now);
   if (person === null) return notice("error", "無法讀取你的資料。");
-  const rel = social.relationship(person);
-  if (rel !== null && isBlocked(rel)) return NOT_RESPONDING();
-  const labelNow = rel === null ? "陌生人" : label(rel);
-  const callName = rel?.call_name ?? null;
+  const row = people.heart.get(person);
+  if (row !== null && hasTag(row, BLOCKED_TAG)) return NOT_RESPONDING();
+  const tier = labelOf(row);
+  const callName = row?.call_name ?? null;
   const blocks: CardBlock[] = [
     {
       type: "text",
       text: [
-        `關係：${labelNow}`,
+        `關係：${tier}`,
         callName !== null ? `她怎麼稱呼你：「${callName}」` : "她怎麼稱呼你：尚未設定",
       ].join("\n"),
     },
     // Her own voice: the one place a system card quotes her.
-    { type: "text", text: `> ${FEELINGS[labelNow] ?? "你誰啊？我們又不熟。"}` },
+    { type: "text", text: `> ${FEELINGS[tier]}` },
   ];
   if (note) blocks.push({ type: "muted", text: note });
   blocks.push({
@@ -311,43 +361,30 @@ async function profile(
   });
 }
 
-async function setCall(social: Social, inv: Invocation, rawCall: string): Promise<CommandReply> {
-  const now = social.clock.now();
-  const person = await social.resolve(inv.invoker, inv.invoker_display_name, now);
+async function setCall(
+  people: PeopleDirectory,
+  screen: ScreenCallName,
+  inv: Invocation,
+  rawCall: string,
+): Promise<CommandReply> {
+  const now = people.clock.now();
+  const person = await people.resolve(inv.invoker, inv.invoker_display_name, now);
   if (person === null) return notice("error", "無法讀取你的資料。");
-  const rel = social.relationship(person);
-  if (rel !== null && isBlocked(rel)) return NOT_RESPONDING();
+  const row = people.heart.get(person);
+  if (row !== null && hasTag(row, BLOCKED_TAG)) return NOT_RESPONDING();
   const call = rawCall.trim();
   if (CLEAR_WORDS.has(call)) {
-    await social.setCallName(person, null, now);
+    people.heart.edit(person, { call_name: null }, { now });
     return notice("success", "已清除稱呼，她會用一般的方式稱呼你。");
   }
-  const why = checkCallName(call);
+  const why = checkCallName(call) ?? (await screen(call));
   if (why !== null) return notice("warn", why);
-  const labelNow = rel === null ? "陌生人" : label(rel);
-  if (labelNow === "很討厭") return notice("warn", "她目前不接受你設定稱呼。");
-  await social.setCallName(person, call, now);
+  if (labelOf(row) === "很討厭") return notice("warn", "她目前不接受你設定稱呼。");
+  people.heart.edit(person, { call_name: call }, { now });
   return notice("success", `已設定：她會稱呼你「${call}」。`);
 }
 
-/** Her feelings by relationship label (persona voice; shown as a quote in `/me profile`). */
-const FEELINGS: Readonly<Record<string, string>> = {
-  很討厭: "……你自己心裡有數。",
-  討厭: "老實說，我現在不太想理你。",
-  摯友: "你、你是我最重要的朋友之一啦……這種話不要讓我說第二次！",
-  好朋友: "哼，你算是我的好朋友……不准得意喔。",
-  朋友: "勉、勉強算是朋友啦。",
-  認識: "嗯……算是認識的人吧。",
-};
-
-const RUDE_KINDS: ReadonlySet<EventKind> = new Set([
-  "rude",
-  "insult",
-  "harassment",
-  "flirt_too_far",
-]);
-
-/** Rejects names she would not use: too long, links / mentions, rude words. */
+/** Rejects names she would not use by their shape: too long, links, mentions, markup. */
 export function checkCallName(call: string): string | null {
   const len = [...call].length;
   if (len === 0) return "稱呼不能是空的。";
@@ -355,20 +392,23 @@ export function checkCallName(call: string): string | null {
   if (/[\n@<>`]/.test(call) || call.includes("://")) {
     return "稱呼不能包含連結、提及或特殊符號。";
   }
-  if (classify(call).some((k) => RUDE_KINDS.has(k))) return "這個稱呼不適合，請換一個。";
   return null;
 }
 
-async function admin(social: Social, op: AdminOp, inv: Invocation): Promise<CommandReply> {
-  const now = social.clock.now();
+/** What moderation says of a call name she would use: `null` passes. */
+export const UNFIT_CALL_NAME = "這個稱呼不適合，請換一個。";
+
+async function admin(people: PeopleDirectory, op: AdminOp, inv: Invocation): Promise<CommandReply> {
+  const now = people.clock.now();
   const user = inv.str("user") ?? "";
-  const person = await findPerson(social, inv, user);
+  const person = await findPerson(people, inv, user);
   if (person === null) return notice("warn", `找不到「${user.trim()}」這個人。`);
-  const name = social.displayName(person) ?? user.trim();
+  const name = people.displayName(person) ?? user.trim();
   const by = accountRefString(inv.invoker);
+  const heart = people.heart;
   switch (op) {
     case "show":
-      return show(social, person, name, now);
+      return show(people, person, name, now);
     case "tag":
     case "untag": {
       const on = op === "tag";
@@ -377,8 +417,7 @@ async function admin(social: Social, op: AdminOp, inv: Invocation): Promise<Comm
       if (tag === OWNER_TAG && !(await inv.allowed(NODE_OWNER_TAG))) {
         return notice("error", "只有擁有者可以變更 `owner` 標籤。", `需要權限：${NODE_OWNER_TAG}`);
       }
-      const changed = await social.setTag(person, tag, on, by, now);
-      if (changed) {
+      if (heart.setTag(person, tag, on, { now })) {
         return notice(
           "success",
           on ? `已為 ${name} 加上標籤 \`${tag}\`。` : `已移除 ${name} 的標籤 \`${tag}\`。`,
@@ -392,8 +431,7 @@ async function admin(social: Social, op: AdminOp, inv: Invocation): Promise<Comm
     case "block":
     case "unblock": {
       const on = op === "block";
-      const changed = await social.setTag(person, BLOCKED_TAG, on, by, now);
-      if (changed) {
+      if (heart.setTag(person, BLOCKED_TAG, on, { now })) {
         return notice(
           "success",
           on ? `已封鎖 ${name}，她不會再回應這個人。` : `已解除 ${name} 的封鎖。`,
@@ -404,7 +442,7 @@ async function admin(social: Social, op: AdminOp, inv: Invocation): Promise<Comm
     case "reset":
       return confirm({
         title: "重置印象",
-        text: `確定要重置她對 ${name} 的印象嗎？羈絆、信任、熟悉度與印象筆記都會歸零，標籤會保留。`,
+        text: `確定要重置她對 ${name} 的印象嗎？羈絆、信任、熟悉度與她寫的文字都會回到剛認識的樣子，標籤會保留。`,
         confirmId: componentId(R.resetYes, person),
         cancelId: componentId(R.resetNo),
         confirmLabel: "重置",
@@ -414,11 +452,12 @@ async function admin(social: Social, op: AdminOp, inv: Invocation): Promise<Comm
       if (delta < -1000 || delta > 1000 || delta === 0) {
         return notice("warn", "羈絆變化必須介於 -1000 到 1000 之間，且不能是 0。");
       }
-      const r = await social.adjust(person, delta, by, now);
+      const bond = heart.get(person)?.bond ?? 0;
+      const r = heart.adminSet(person, "bond", bond + delta, { now, quote: `adjust by ${by}` });
       const signed = delta > 0 ? `+${delta}` : `${delta}`;
       return notice(
         "success",
-        `已調整 ${name} 的羈絆 ${signed}，目前為 ${fixed1(r.affinity)}（${label(r)}）。`,
+        `已調整 ${name} 的羈絆 ${signed}，目前為 ${fixed1(r.person.bond)}（${labelOf(r.person)}）。`,
       );
     }
   }
@@ -435,24 +474,34 @@ function utcMinutes(ts: string): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }
 
-function show(social: Social, person: PersonId, name: string, now: number): CommandReply {
-  const r = social.relationship(person);
+function show(people: PeopleDirectory, person: PersonId, name: string, now: number): CommandReply {
+  const r = people.heart.get(person);
   if (r === null) return notice("info", `她和 ${name} 還沒有任何互動。`);
   const lines = [
-    `羈絆 ${fixed1(r.affinity)}／信任 ${fixed1(r.trust)}／熟悉 ${fixed1(r.familiarity)} → ${label(r)}`,
+    `羈絆 ${fixed1(r.bond)}／信任 ${fixed1(r.trust)}／熟悉 ${fixed1(r.familiarity)} → ${labelOf(r)}`,
     `標籤：${r.tags.length === 0 ? "無" : r.tags.join("、")}`,
     `稱呼：${r.call_name ?? "未設定"}`,
     `互動 ${r.interactions} 次，最後一次：${r.last_interaction === null ? "從未" : utcMinutes(r.last_interaction)}`,
   ];
-  const day = social.today(person, now);
-  if (day !== null) {
+  const rules = people.heart.rules;
+  const day = localDay(now, rules);
+  const today = people.heart.log.changesBetween(
+    person,
+    toTimestamp(dayStart(day, rules)),
+    toTimestamp(dayStart(day + 1, rules)),
+  );
+  if (today.length > 0) {
+    const sum = (field: string, up: boolean) =>
+      today
+        .filter((e) => e.change.field === field && (up ? e.change.delta > 0 : e.change.delta < 0))
+        .reduce((n, e) => n + Math.abs(e.change.delta), 0);
     lines.push(
-      `今天：羈絆 +${fixed1(day.affinity_gained)}／-${fixed1(day.affinity_lost)}，` +
-        `信任 +${fixed1(day.trust_gained)}／-${fixed1(day.trust_lost)}`,
+      `今天：羈絆 +${fixed1(sum("bond", true))}／-${fixed1(sum("bond", false))}，` +
+        `信任 +${fixed1(sum("trust", true))}／-${fixed1(sum("trust", false))}`,
     );
   }
-  const notes = r.notes.trim() === "" ? "（尚無）" : r.notes.trim();
-  lines.push(`印象：${notes}`);
+  const impression = r.impression.trim() === "" ? "（尚無）" : r.impression.trim();
+  lines.push(`印象：${impression}`);
   return cardReply(
     [
       { type: "text", text: lines.join("\n") },
@@ -473,7 +522,11 @@ function normalizeTag(tag: string): string | null {
  * `platform:id`, a bare numeric id on the invoker's platform, or a unique display name she
  * knows.
  */
-async function findPerson(social: Social, inv: Invocation, user: string): Promise<PersonId | null> {
+async function findPerson(
+  people: PeopleDirectory,
+  inv: Invocation,
+  user: string,
+): Promise<PersonId | null> {
   const s = user.trim();
   if (s === "") return null;
   let account: AccountRef | null = null;
@@ -486,7 +539,7 @@ async function findPerson(social: Social, inv: Invocation, user: string): Promis
       account = null;
     }
   }
-  if (account !== null) return social.resolve(account, null, social.clock.now());
-  const named = social.peopleNamed(s);
+  if (account !== null) return people.resolve(account, null, people.clock.now());
+  const named = people.peopleNamed(s);
   return named.length === 1 ? (named[0] as PersonId) : null;
 }
