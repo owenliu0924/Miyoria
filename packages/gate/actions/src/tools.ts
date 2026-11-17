@@ -98,7 +98,13 @@ export class CapabilityTool implements Tool {
     if (typeof run === "string") return { ok: true, text: run };
     switch (run.status) {
       case "done":
-        return { ok: true, text: run.result.text };
+        return {
+          ok: true,
+          text: run.result.text,
+          ...(run.result.images === undefined || run.result.images.length === 0
+            ? {}
+            : { images: run.result.images }),
+        };
       case "denied":
         return {
           ok: false,

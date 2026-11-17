@@ -112,6 +112,7 @@ import {
   type Wake,
   type WakeAuthor,
   wakeAuthor,
+  withLimits,
 } from "../../self/src/index.js";
 import { LookAround } from "./around.js";
 import { answeredLine, applyFeel, feelApplies, feelDeps } from "./feel.js";
@@ -941,7 +942,7 @@ export class SelfHost implements TextRunner {
         this.runner.run({
           session: { id: place.session, context },
           wake: run.wake,
-          profile: PROFILES.text,
+          profile: withLimits(PROFILES.text, { pictureBytes: agent.config.vision.max_total_bytes }),
           signal: run.controller.signal,
           turn,
         }),

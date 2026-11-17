@@ -10,7 +10,7 @@
 
 import type { ContentPart } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import { type Attachment, imageType, safeName } from "@miyoria/types";
+import { type Attachment, imageType, safeName, sniffImage } from "@miyoria/types";
 import type { VisionConfig } from "./config.js";
 import { timeout } from "./util.js";
 
@@ -148,17 +148,6 @@ async function download(
   if (sniffed === null) return null;
   type = sniffed;
   return { dataUrl: `data:${type};base64,${body.toString("base64")}`, bytes: body.length };
-}
-
-/** png / jpeg / webp / gif by their first bytes, else `null`. */
-export function sniffImage(bytes: Uint8Array): string | null {
-  const at = (i: number, text: string) =>
-    [...text].every((c, k) => bytes[i + k] === c.charCodeAt(0));
-  if (bytes[0] === 0x89 && at(1, "PNG")) return "image/png";
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (at(0, "GIF87a") || at(0, "GIF89a")) return "image/gif";
-  if (at(0, "RIFF") && at(8, "WEBP")) return "image/webp";
-  return null;
 }
 
 /** The line before an image: who sent it and where it was. */

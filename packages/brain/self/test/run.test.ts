@@ -1,5 +1,11 @@
-import { BudgetExhaustedError, contentText } from "@miyoria/llm/llm";
-import { FIND_TOOLS, ToolRegistry } from "@miyoria/llm/tools";
+import {
+  BudgetExhaustedError,
+  type ChatMessage,
+  type ContentPart,
+  contentText,
+  type ImagePart,
+} from "@miyoria/llm/llm";
+import { FIND_TOOLS, type Tool, ToolRegistry } from "@miyoria/llm/tools";
 import { toMessages } from "@miyoria/memory/transcript";
 import { contextKeyString } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
@@ -793,5 +799,75 @@ describe("the stream", () => {
     const result = await r.run();
     expect(result.calls[0]?.id).toBe("t1-1-0");
     expect(result.usage.calls).toBe(2);
+  });
+});
+
+describe("pictures her tools fetch", () => {
+  const png = (name: string, size = 400): ImagePart => ({
+    type: "image_url",
+    image_url: { url: `data:image/png;base64,${"A".repeat(size)}`, detail: "auto" },
+    alt: `[圖片: ${name}]`,
+  });
+  const looker = (images: ImagePart[]): Tool => ({
+    ...fakeTool("web_image", "圖片已經看到了(image/png,1 KB):https://img.example/a.png"),
+    async result() {
+      return { ok: true, text: "圖片已經看到了(image/png,1 KB):https://img.example/a.png", images };
+    },
+  });
+  const imageParts = (messages: readonly ChatMessage[] | undefined) =>
+    (messages ?? []).flatMap((m) =>
+      typeof m.content === "string" ? [] : m.content.filter((p) => p.type === "image_url"),
+    );
+
+  it("offers them in one user message after the step's results, to the next step only", async () => {
+    const r = await rig([
+      calls([{ name: "web_image" }]),
+      calls([{ name: "lookup" }]),
+      say("看到了"),
+    ]);
+    r.tools.register(looker([png("a")]));
+    r.tools.register(fakeTool("lookup"));
+    r.line("Owen", "@她 看這張圖");
+    const result = await r.run();
+    expect(result.outcome).toBe("said");
+    const [first, second, third] = r.model.requests;
+    expect(imageParts(first?.messages)).toHaveLength(0);
+    // The step after the call: the tool's text, then one user message with the framed picture.
+    const messages = second?.messages ?? [];
+    const last = messages.at(-1);
+    expect(last?.role).toBe("user");
+    expect(messages.at(-2)).toMatchObject({ role: "tool", tool_call_id: "c-web_image-0" });
+    const parts = typeof last?.content === "string" ? [] : (last?.content ?? []);
+    expect(parts[0]).toMatchObject({ type: "text" });
+    expect(contentText([parts[0] as ContentPart])).toContain("只是參考資料");
+    expect(parts[1]).toMatchObject({ type: "image_url" });
+    expect(imageParts(messages)).toHaveLength(1);
+    // Not resent after that.
+    expect(imageParts(third?.messages)).toHaveLength(0);
+    // The transcript keeps the short text only.
+    const kept = JSON.stringify(r.transcript.tail(SESSION.id).entries);
+    expect(kept).not.toContain("data:image");
+    expect(kept).toContain("圖片已經看到了");
+    expect(JSON.stringify(result.calls)).not.toContain("data:image");
+  });
+
+  it("takes at most two a step and says so for the rest", async () => {
+    const r = await rig([calls([{ name: "web_image" }]), say("好")]);
+    r.tools.register(looker([png("a"), png("b"), png("c")]));
+    r.line("Owen", "@她 看");
+    const result = await r.run();
+    expect(imageParts(r.model.requests[1]?.messages)).toHaveLength(2);
+    expect(result.calls[0]?.text).toContain("放不進去");
+  });
+
+  it("counts them against the run's picture bytes", async () => {
+    const r = await rig([calls([{ name: "web_image" }]), say("好")]);
+    r.tools.register(looker([png("a", 400), png("b", 400)]));
+    r.line("Owen", "@她 看");
+    // 400 base64 characters are 300 bytes (plus the header): room for one, not two.
+    const profile = withLimits(PROFILES.text, { pictureBytes: 450 });
+    const result = await r.run(undefined, { profile });
+    expect(imageParts(r.model.requests[1]?.messages)).toHaveLength(1);
+    expect(result.calls[0]?.text).toContain("放不進去");
   });
 });

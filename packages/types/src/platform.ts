@@ -80,6 +80,17 @@ export function imageType(a: Attachment): string | null {
   return IMAGE_EXTENSIONS[ext] ?? null;
 }
 
+/** png / jpeg / webp / gif by their first bytes, else `null`: what the bytes are, not what was said. */
+export function sniffImage(bytes: Uint8Array): string | null {
+  const at = (i: number, text: string) =>
+    [...text].every((c, k) => bytes[i + k] === c.charCodeAt(0));
+  if (bytes[0] === 0x89 && at(1, "PNG")) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (at(0, "GIF87a") || at(0, "GIF89a")) return "image/gif";
+  if (at(0, "RIFF") && at(8, "WEBP")) return "image/webp";
+  return null;
+}
+
 /** `[圖片: cat.png(一隻橘貓)]` for images, `[附件: notes.pdf]` for other files. */
 export function attachmentLabel(a: Attachment): string {
   const alt = a.description?.trim() ?? "";

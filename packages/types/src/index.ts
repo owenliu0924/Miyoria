@@ -226,6 +226,7 @@ export {
   type SentMessage,
   type Sticker,
   sameAccount,
+  sniffImage,
 } from "./platform.js";
 export {
   mergePrivacy,
