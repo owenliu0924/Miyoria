@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { fmtInt } from "@/lib/format";
 import { notify } from "@/lib/notify";
-import { FRAME_NAME, cardFileName, cardPng, saveBlob, shareCard, verifyUrl } from "../card";
+import { cardFileName, cardPng, frameName, saveBlob, shareCard, verifyUrl } from "../card";
 import { HoloCard } from "../HoloCard";
 import { KIND_LABEL, kindOf, RarityBadge, SLOT_LABEL, shortDate } from "./labels";
 
@@ -38,7 +38,7 @@ function Details({ card, svg, currency }: { card: ListedCard; svg: React.RefObje
       setBusy(null);
     }
   };
-  const finish = [card.frame ? (FRAME_NAME[card.frame] ?? card.frame) : null, card.foil ? "閃卡" : null]
+  const finish = [card.frame ? (frameName(card.frame) ?? card.frame) : null, card.foil ? "閃卡" : null]
     .filter((s): s is string => s !== null)
     .join(" · ");
   const line = card.line ?? card.public_feeling;

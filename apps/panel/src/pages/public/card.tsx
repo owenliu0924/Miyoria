@@ -7,7 +7,7 @@ import { type CardFaceProps, CardFace, W, H } from "@miyoria/card-face";
 import { useState } from "react";
 import type { IssuedCard } from "@miyoria/contracts/api";
 
-export { AFFINITY, CardFace, FAMILIARITY, FRAME_NAME, FRAME_SWATCH, TRUST } from "@miyoria/card-face";
+export { AFFINITY, CardFace, FAMILIARITY, FRAME_NAME, FRAME_SWATCH, frameName, isUniqueFrame, TRUST } from "@miyoria/card-face";
 export type { CardFaceProps };
 
 /** Her pictures are the owner's renders of her model, kept out of git like the background. */

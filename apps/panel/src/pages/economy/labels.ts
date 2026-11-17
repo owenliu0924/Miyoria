@@ -34,6 +34,15 @@ export const SPEND_REASON_LABEL: Record<string, string> = {
   shop_pay: "小店的收入",
   commission: "委託她",
   commission_pay: "委託做完了",
+  // the weekly market
+  song_priority: "點歌優先券",
+  song_priority_refund: "優先券退回",
+  lottery_ticket: "樂透彩券",
+  lottery_refund: "彩券退回",
+  lottery_prize: "樂透中獎",
+  auction_hold: "拍賣出價押住",
+  auction_release: "拍賣押款還回",
+  auction_won: "拍賣得標",
 };
 
 /** A ledger reason in words; an unknown one stays as it is. */

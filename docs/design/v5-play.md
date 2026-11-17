@@ -516,7 +516,9 @@ owner:每個子系統要能有自己的設定;面板的系統頁把每個系統�
 
 **關掉和拿掉**:`auction = false` 或沒有頻道:正在拍的取消、押著的全退,等名字的也退;`lottery = false`:不賣,還沒開獎那週的全額退回。整個外掛要刪時,`retireMarketSql`(`migrations.ts`,有測試)就是要加的 migration:沒有 `auction_release` 的押款、還沒開獎那週的彩券退回(帳本一行 `refund_removed`,和之前移除的功能同一個樣子),再刪表。
 
-**API**:會員 `GET /api/member/market/auction|bids|lottery|tickets`,`POST /api/member/market/bid|name|lottery`;owner `GET /api/market/history`、`POST /api/market/plan`、`POST /api/market/settle`(後兩個要 `admin.economy.adjust`)。面板的頁還沒做(另一個 PR)。
+**API**:會員 `GET /api/member/market/auction|bids|lottery|tickets`,`POST /api/member/market/bid|name|lottery`;owner `GET /api/market/history`(也回 `offered`:設定開放的拍品種類,和 `next`:下一場和 owner 的安排)、`POST /api/market/plan`、`POST /api/market/settle`(後兩個要 `admin.economy.adjust`)。
+
+**面板**(2026-11-18,最少讓會員不卡住):會員頁的「市集」區塊(這一週的拍賣:拍品、最高價和出價的人、還剩多久和有沒有延長、出價表單,被拒的句子就寫在按鈕下面;得標的稱呼拍品有取名和「不要了」;這一週的樂透:一張多少、我這週幾張、獎池和獎金、開獎時間、買 1 張 / 買 5 張、上一期;我的出價、我的彩券;載入中、「這一週沒有拍賣」、模組沒開、錯誤各一種樣子)、點歌表單的「用點歌優先券」勾選(市集有回應時才出現;價錢和每天幾張 API 沒給,所以沒寫)、商店的卡框列出得標的「只此一件」(名字用 `frameName()`,卡片頁和卡片視窗也是);管理端「經濟 / 市集」:拍賣和樂透紀錄、下一場(只列設定開放的種類,顯示目前的安排)、現在結算(先確認),帳號沒有權限時 `403` 之後按鈕變灰並說明。
 
 **決定了、會影響大家看到或付的**:
 

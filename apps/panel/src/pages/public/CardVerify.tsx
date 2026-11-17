@@ -8,7 +8,7 @@ import { Logo } from "@/components/logo";
 import { SkeletonRows } from "@/components/query-state";
 import { Button } from "@/components/ui/button";
 import { notify } from "@/lib/notify";
-import { FRAME_NAME, cardFileName, cardPng, verifyUrl } from "./card";
+import { cardFileName, cardPng, frameName, verifyUrl } from "./card";
 import { HoloCard } from "./HoloCard";
 
 /** `/card/<serial>`: the serial in the page path, or `null`. */
@@ -68,7 +68,7 @@ function Details({ card, svg }: { card: PublicCard; svg: React.RefObject<SVGSVGE
       notify.error(e);
     }
   };
-  const finish = [card.frame ? (FRAME_NAME[card.frame] ?? card.frame) : null, card.foil ? "閃卡" : null]
+  const finish = [card.frame ? (frameName(card.frame) ?? card.frame) : null, card.foil ? "閃卡" : null]
     .filter((s): s is string => s !== null)
     .join(" · ");
   const line = card.line ?? card.public_feeling;
