@@ -440,25 +440,47 @@ describe("feeding her", () => {
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(70);
   });
 
-  it("is refused when she is full, and what she cannot eat is not bought", async () => {
+  it("is refused to someone who fed her their share of the day, not to the next person", async () => {
     const r = await rig();
-    await funded(r, ALICE, 100);
-    r.hunger.value = 0.1;
-    expect(await r.economy.feed(ALICE, "big_bowl", 1, "k")).toEqual({
+    await funded(r, ALICE, 300);
+    await funded(r, BOB, 100);
+    // 0.85 a day: five rice take 0.75, and the sixth is the last one she takes.
+    expect(await r.economy.feed(ALICE, "rice", 5, "k1")).toMatchObject({ eaten: 5, charged: 50 });
+    expect(await r.economy.feed(ALICE, "rice", 5, "k2")).toMatchObject({
+      accepted: true,
+      eaten: 1,
+      charged: 10,
+      balance: 240,
+    });
+    const events = r.bus.length;
+    expect(await r.economy.feed(ALICE, "big_bowl", 1, "k3")).toEqual({
       accepted: false,
       eaten: 0,
       charged: 0,
-      balance: 100,
-      message: "她吃飽了,吃不下",
+      balance: 240,
+      message: "你今天餵得夠多了,她吃不下",
     });
-    expect(r.bus).toEqual([]);
-    expect((await r.economy.wallet(ALICE)).hungry).toBe("full");
-    expect((await r.economy.wallet(ALICE)).shop.find((s) => s.id === "rice")?.why).toBe("她吃飽了");
-    // 0.4: two bowls take her to 0.1, the other three stay in the shop.
-    r.hunger.value = 0.4;
+    expect(r.bus).toHaveLength(events);
+    const view = await r.economy.wallet(ALICE);
+    expect(view.hungry).toBe("full");
+    expect(view.shop.find((s) => s.id === "rice")?.why).toBe("你今天餵夠了");
+    // Her own hunger is not what stops it: Bob feeds her at 0 hunger, and is not full.
+    r.hunger.value = 0;
+    expect(await r.economy.feed(BOB, "rice", 1, "b1")).toMatchObject({ accepted: true, eaten: 1 });
+    expect((await r.economy.wallet(BOB)).hungry).toBe("ok");
+    expect((await r.economy.wallet(BOB)).shop.find((s) => s.id === "rice")?.available).toBe(true);
+    // The next local day is a new share.
+    r.clock.at += DAY;
+    expect((await r.economy.wallet(ALICE)).hungry).toBe("ok");
+    expect(await r.economy.feed(ALICE, "rice", 1, "k5")).toMatchObject({ accepted: true });
+  });
+
+  it("only charges for what fits in the share: what she cannot eat is not bought", async () => {
+    const r = await rig({ feed_hunger_cap: 0.3 });
+    await funded(r, ALICE, 100);
     const fed = await r.economy.feed(ALICE, "rice", 5, "k2");
     expect(fed).toMatchObject({ accepted: true, eaten: 2, charged: 20, balance: 80 });
-    expect(r.hunger.value).toBeCloseTo(0.1, 5);
+    expect(r.hunger.value).toBeCloseTo(0.5, 5);
   });
 
   it("needs the coins: 402 in the configured currency, nothing eaten", async () => {
@@ -533,8 +555,8 @@ describe("a paid gift and affinity", () => {
     const r = await rig();
     const calls = bonds(r);
     await funded(r, ALICE, 200);
-    // She is full: nothing eaten, nothing charged, nothing bonded.
-    r.hunger.value = 0.05;
+    // They fed her their share already: nothing eaten, nothing charged, nothing bonded.
+    (r.economy.config as { feed_hunger_cap: number }).feed_hunger_cap = 0;
     await r.economy.feed(ALICE, "rice", 1, "f1");
     expect(calls).toHaveLength(0);
     // Strangers and the blocked have no gift to bond.

@@ -152,6 +152,8 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
   ].map((key) => `modules.economy.${key}`),
   // Her weekly shop (titles and collectibles on a shelf that changed every week).
   ...["shop_catalog", "shop_slots", "shop_her_share"].map((key) => `modules.economy.${key}`),
+  // The global hunger limit for feeding, replaced by a per-person one (feed_hunger_cap).
+  "modules.economy.full_below",
   // Song tickets and dedications (extras on a song request).
   ...["song_ticket", "song_tickets_per_day", "dedication", "dedications_per_day"].map(
     (key) => `modules.economy.${key}`,

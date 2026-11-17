@@ -135,8 +135,13 @@ export const EconomyConfigSchema = z.object({
   dessert: coins.default(25),
   /** An expression on her own face, bought from her purse while the stage is up (`buy_for_self`). */
   expression: coins.default(20),
-  /** Under this hunger she is full: a feed is refused and nothing is charged. */
-  full_below: z.number().min(0).max(1).default(0.15),
+  /**
+   * The most hunger one person may take off her in a local day (rice −0.15, a big bowl −0.5,
+   * dessert −0.05): past it a feed from them is refused and nothing is charged, whatever her own
+   * hunger. 0.85 is what the old limit allowed for her as a whole (from starving at 1 down to full
+   * at 0.15), now for each person.
+   */
+  feed_hunger_cap: z.number().min(0).max(1).default(0.85),
   /** Gift emotion multiplier per earlier gift of the same person today. */
   diminish: z.number().min(0).max(1).default(0.6),
   /**

@@ -99,12 +99,14 @@ export const STRANGER = "她還不認識你,先和她說說話吧";
 /** Permission node of a wallet (`me.*`): a role without it, like `blocked`, has a stranger's. */
 export const WALLET_NODE = "me.wallet";
 export const ALREADY_CHECKED_IN = "今天已經簽到過了";
-/** A feed refused because she is full (nothing charged). */
-export const FULL = "她吃飽了,吃不下";
+/** A feed refused because this person fed her their share of the day (nothing charged). */
+export const FULL = "你今天餵得夠多了,她吃不下";
 /** A feed refused because her hunger cannot be read. */
 export const CANNOT_FEED = "現在沒辦法餵她";
 
 const DAY_MS = 86_400_000;
+/** Below this much of a share left, it is spent (floats of 0.15 steps never land exactly). */
+const FEED_EPSILON = 1e-9;
 const VOICE_WINDOW_MS = 10 * 60_000;
 /** Feeds per request at most. */
 export const MAX_FEED_COUNT = 5;
@@ -182,12 +184,20 @@ export function feedLabel(item: FeedItem, count: number): string {
   return count === 1 ? one : `${count} ${unit}`;
 }
 
-/** Her hunger in words: a number on a page is something to farm. */
-export function hungerWord(hunger: number, fullBelow: number): Hunger {
-  if (hunger < fullBelow) return "full";
+/**
+ * Her hunger in words: a number on a page is something to farm. Never "full": that is what a
+ * person who fed her their share of the day sees (`feedLeft`).
+ */
+export function hungerWord(hunger: number): Hunger {
   if (hunger < 0.4) return "ok";
   if (hunger < 0.7) return "hungry";
   return "starving";
+}
+
+/** What one `feed` row took off her hunger (`rice:2` is two bowls). */
+export function hungerOf(entry: CoinEntry): number {
+  const { item, eaten } = fedOf(entry);
+  return item === null ? 0 : HUNGER_OF[item] * eaten;
 }
 
 /** The local day number of `ms`. */
@@ -562,6 +572,20 @@ export class EconomyService implements Economy {
     });
   }
 
+  /**
+   * How much hunger this person may still take off her today: their share (`feed_hunger_cap`)
+   * less what their feed rows of the day took, the refunded ones not counted. At `0` she is full
+   * for them.
+   */
+  #feedLeft(rows: readonly CoinEntry[]): number {
+    const refunded = new Set(rows.filter((r) => r.reason === "refund").map((r) => r.ref));
+    const taken = rows
+      .filter((r) => r.reason === "feed" && !refunded.has(r.id))
+      .reduce((n, r) => n + hungerOf(r), 0);
+    const left = this.#d.config.feed_hunger_cap - taken;
+    return left > FEED_EPSILON ? left : 0;
+  }
+
   /** What a cap of `reason` allows per day, for this person. */
   #cap(reason: EarnReason, streakDay: boolean): number {
     const c = this.#d.config;
@@ -745,6 +769,8 @@ export class EconomyService implements Economy {
     state: {
       balance: number;
       hunger: number | null;
+      /** What this person may still feed her today (`#feedLeft`). */
+      feedLeft: number;
       owned: ReadonlySet<string>;
     } | null,
   ): ShopItem[] {
@@ -763,7 +789,7 @@ export class EconomyService implements Economy {
     };
     for (const item of FEED_ITEMS) {
       const why =
-        state?.hunger == null ? "現在沒辦法餵她" : state.hunger < c.full_below ? "她吃飽了" : null;
+        state?.hunger == null ? "現在沒辦法餵她" : state.feedLeft <= 0 ? "你今天餵夠了" : null;
       add(item, "feed", FEED_NAME[item][0], c[item], why);
     }
     for (const f of c.frames) {
@@ -809,6 +835,7 @@ export class EconomyService implements Economy {
       cap: this.#cap(reason, (checked ? streak : streak + 1) % 7 === 0),
     }));
     const hunger = this.#hunger();
+    const feedLeft = this.#feedLeft(today);
     return {
       currency: c.currency,
       balance,
@@ -822,10 +849,11 @@ export class EconomyService implements Economy {
       shop: this.#shop({
         balance,
         hunger,
+        feedLeft,
         owned: new Set(frames.owned),
       }),
       frames,
-      hungry: hunger === null ? null : hungerWord(hunger, c.full_below),
+      hungry: hunger === null ? null : feedLeft <= 0 ? "full" : hungerWord(hunger),
       recent: recent.map((r) => this.#line(r)),
       on_board: await ledger.onBoard(this.#d.profile, who.wallet),
       transfer_fee: c.transfer_fee,
@@ -975,9 +1003,11 @@ export class EconomyService implements Economy {
       const self = this.#d.services.get(SelfStateKey);
       const hunger = this.#hunger();
       if (!self || hunger === null) throw new EconomyError(503, CANNOT_FEED);
-      // She eats one at a time while she is still hungry; what she cannot eat is not bought.
+      // She eats one at a time while this person's share of the day lasts; what she cannot eat
+      // is not bought. Her own hunger does not stop it (one person cannot fill her for the rest).
       let eaten = 0;
-      for (let h = hunger; eaten < count && h >= c.full_below; h -= HUNGER_OF[item]) eaten += 1;
+      let left = this.#feedLeft(await this.#todayRows(who));
+      for (; eaten < count && left > FEED_EPSILON; left -= HUNGER_OF[item]) eaten += 1;
       if (eaten === 0) {
         const balance = await this.#balance(who);
         return { accepted: false, eaten: 0, charged: 0, balance, message: FULL };

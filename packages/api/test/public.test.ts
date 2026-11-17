@@ -1973,7 +1973,8 @@ describe("the wallet", () => {
   });
 
   it("feeds her once per key, and says when coins are short or she is full", async () => {
-    const r = await walletRig();
+    // Their share of the day is two bowls of rice.
+    const r = await walletRig({ feed_hunger_cap: 0.3 });
     await r.fund(ALICE, 25);
     const cookie = await r.login("alice");
     const first = await r.spend("/api/member/feed", cookie, { item: "rice" }, "click-1");
@@ -1990,14 +1991,15 @@ describe("the wallet", () => {
     const short = await r.spend("/api/member/feed", cookie, { item: "big_bowl" }, "click-2");
     expect(short.status).toBe(402);
     expect(short.body).toEqual({ error: "魚幣不夠" });
-    r.hunger.value = 0.05;
-    const full = await r.spend("/api/member/feed", cookie, { item: "rice", count: 1 }, "c-3");
-    expect(full.body).toMatchObject({ accepted: false, charged: 0, balance: 15 });
+    const second = await r.spend("/api/member/feed", cookie, { item: "rice", count: 1 }, "c-3");
+    expect(second.body).toMatchObject({ accepted: true, charged: 10, balance: 5 });
+    const full = await r.spend("/api/member/feed", cookie, { item: "rice", count: 1 }, "c-3b");
+    expect(full.body).toMatchObject({ accepted: false, charged: 0, balance: 5 });
     for (const bad of [{ item: "steak" }, { item: "rice", count: 6 }, { item: "rice", to: BOB }]) {
       expect((await r.spend("/api/member/feed", cookie, bad, "c-4")).status).toBe(422);
     }
     expect((await r.spend("/api/member/feed", cookie, { item: "rice" }, "a b")).status).toBe(400);
-    expect(await r.balanceOf(ALICE)).toBe(15);
+    expect(await r.balanceOf(ALICE)).toBe(5);
   });
 
   it("answers a stranger and every blocked person alike, and charges nothing", async () => {
