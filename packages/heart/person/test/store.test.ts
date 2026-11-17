@@ -207,7 +207,7 @@ describe("evidence and people's requests", () => {
     expect(read.map((e) => e.id)).toEqual([id]);
   });
 
-  it("forgets a person's row and moves one on a merge only when the other has none", () => {
+  it("moves a row on a merge only when the other has none", () => {
     const at = toTimestamp(NOW);
     store.upsert({ ...newPerson("a", at), bond: 10 });
     store.upsert({ ...newPerson("b", at), bond: 20 });
@@ -215,8 +215,6 @@ describe("evidence and people's requests", () => {
     expect(store.get("c")?.bond).toBe(10);
     expect(store.merge("c", "b").declined).toBeDefined();
     expect(store.get("b")?.bond).toBe(20);
-    expect(store.forget(["b", "c"])).toBe(2);
-    expect(store.list().total).toBe(0);
   });
 });
 

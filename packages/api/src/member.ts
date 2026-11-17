@@ -427,12 +427,9 @@ async function forgetMine(state: ApiState, c: ApiContext): Promise<MemberForgetR
   const engine = state.optional(MemoryEngineKey);
   if (!engine) throw ApiError.unavailable("not available right now");
   const person = who.person?.id ?? null;
+  // Everything of theirs goes in one transaction, the heart's words and the member page's line
+  // with it (the heart plugin's "forget me" hook); her numbers for them stay.
   const report = await engine.forget(person, account, null);
-  // The line was written from those memories; it goes with them.
-  if (person !== null) {
-    const heart = heartRows(state);
-    if (heart?.has(person)) heart.edit(person, { public_feeling: null }, { now: state.now() });
-  }
   await state.auditAs(actor, "member.forget", actor, { deleted: report.deleted }, true);
   return {
     deleted: report.deleted,

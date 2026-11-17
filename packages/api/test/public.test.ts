@@ -435,6 +435,8 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
     }),
     forget: async (person: PersonId | null, account: AccountRef) => {
       forgotten.push({ person, account });
+      // The store's "forget me" runs the heart plugin's hook in the same transaction.
+      if (person !== null) heart.forgetWords([person], "forget me", "memory");
       return { deleted: 3, about: 2, derived: 1, unverified: 1 };
     },
   } as never);
@@ -1452,7 +1454,7 @@ describe("forgetting", () => {
     expect(res.body).toEqual({ deleted: 3, about: 2, derived: 1, unverified: 1 });
     const alice = r.people.get(ALICE);
     expect(r.forgotten).toEqual([{ person: alice, account: discord(ALICE) }]);
-    // The line was written from those memories: it goes with them.
+    // The line was written from what they said: it goes with them.
     expect(r.heart.get(alice as PersonId)?.public_feeling).toBeNull();
     const audit = await r.store.audit.recent(10, `discord:${ALICE}`);
     expect(audit.find((a) => a.action === "member.forget")?.detail).toEqual({ deleted: 3 });

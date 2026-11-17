@@ -13,6 +13,8 @@ import {
   type CategoryData,
   type Db,
   type EventStore,
+  HeartChanged,
+  HeartEvidence,
   type HeartEvidenceData,
   type PersonForget,
   type PersonHookResult,
@@ -42,7 +44,6 @@ import {
   desc,
   eq,
   gte,
-  inArray,
   isNotNull,
   isNull,
   lt,
@@ -671,16 +672,52 @@ export class HeartStore {
     });
   }
 
-  /** Deletes the rows of `ids` (a forgotten person); how many. Their events go with the log's. */
-  forget(ids: readonly PersonId[]): number {
-    if (ids.length === 0) return 0;
-    this.#db.ensureOpen();
-    return Number(
-      this.#db.orm
-        .delete(P)
-        .where(inArray(P.person_id, [...ids]))
-        .run().changes,
-    );
+  /**
+   * "Forget me" for `ids` (the person and everyone merged into them). Her numbers stay (the bond,
+   * the tier floor, the anchors' tiers, the tags, what she calls them, the counters): the forget
+   * text promises that much. What she made of what they said goes: her words about them, the member
+   * page's line, the anchors' quotes and note refs, the old notes the migration kept; and on the
+   * event log the quotes of their `heart.changed` and the details of their `heart.evidence`, taken
+   * out the way their chat lines are, but keeping the rest (`EventStore.redactFields`: the numbers
+   * stay readable, so the day's caps and their history still add up). Rows and events, by kind.
+   */
+  forgetWords(
+    ids: readonly PersonId[],
+    reason: string,
+    source: string,
+    options: { now?: number } = {},
+  ): { people: number; changes: number; evidence: number } {
+    const at = toTimestamp(this.#now(options.now));
+    return this.#write(() => {
+      let people = 0;
+      let changes = 0;
+      let evidence = 0;
+      for (const id of new Set(ids)) {
+        const row = this.get(id);
+        if (row !== null) {
+          const { notes: _notes, knowledge: _knowledge, ...legacy } = row.legacy;
+          this.upsert({
+            ...row,
+            stance: "",
+            impression: "",
+            unfinished: "",
+            jokes: "",
+            dislikes: "",
+            public_feeling: null,
+            anchors: row.anchors.map((a) => ({ ...a, quote: "", note_ref: null })),
+            legacy,
+            updated_at: at,
+          });
+          people += 1;
+        }
+        const words = (type: string, field: string) =>
+          this.#events.redactFields({ personId: id, types: [type] }, [field], reason, source)
+            .length;
+        changes += words(HeartChanged.type, "reason_quote");
+        evidence += words(HeartEvidence.type, "detail");
+      }
+      return { people, changes, evidence };
+    });
   }
 
   /**
@@ -826,7 +863,7 @@ export const heartTables: StorePlugin<HeartTables> = {
   open: ({ db, events }) => ({ people: new HeartStore(db, events), self: new HeartSelfStore(db) }),
   data: heartData,
   forgetPerson: (opened, request: PersonForget) => ({
-    counts: { people: opened.people.forget(request.ids) },
+    counts: opened.people.forgetWords(request.ids, request.reason, request.source),
   }),
   mergePerson: (opened, { keep, absorb }: PersonMerge) => opened.people.merge(keep, absorb),
 };

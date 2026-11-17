@@ -108,11 +108,11 @@ describe("the migration on start", () => {
       { rows: 2, skipped: 0, relationships: 2, cards: 0, self_state: true },
     ]);
     expect(await store.settings.get(PROFILE, MIGRATED_KEY)).toMatchObject({ rows: 2 });
-    // Run again, and again with the table emptied (everyone forgotten): nothing moves.
+    // Run again, and again once everyone was forgotten: nothing moves back.
     expect(await migrateOnStart(deps)).toBeNull();
-    people.forget(["amy", "owen"]);
+    people.forgetWords(["amy", "owen"], "forget me", "memory");
     expect(await migrateOnStart(deps)).toBeNull();
-    expect(people.list().total).toBe(0);
+    expect(people.get("amy")?.impression).toBe("");
   });
 
   it("does not move anything into a table that has rows, and remembers that", async () => {
@@ -233,6 +233,84 @@ describe("the heart as the others see it", () => {
     expect(heart.mostCared()?.person).toBe("owen");
     expect(heart.mostCared(["amy"])).toBeNull();
     expect(heart.cares("nobody")).toBe(0);
+  });
+});
+
+describe("forget me", () => {
+  it("keeps her numbers for them and takes out what she made of their words", async () => {
+    const clock = new ManualClock();
+    const store = await openStore(clock);
+    const people = store.plugin(heartTables).people;
+    const amy = await store.people.upsertAccount({ platform: "discord", id: "1" }, "Amy");
+    const heart = new HeartService(people, clock);
+    heart.feel(amy, [{ field: "bond", direction: "up", quote: "她說她住在台南" }], {
+      turn: "t1",
+    });
+    heart.evidence({
+      person: amy,
+      kind: "played_together",
+      detail: "一起玩了〈她家附近的店〉",
+      weight: null,
+    });
+    people.adminSet(amy, "bond", 130);
+    people.setAnchor(amy, {
+      tier: 120,
+      note_ref: "n1",
+      quote: "她說她小時候養過貓",
+      at: toTimestamp(T0),
+      by: "reflect",
+    });
+    people.edit(amy, {
+      impression: "住台南的工程師",
+      stance: "會鬧她",
+      unfinished: "她換工作的事",
+      jokes: "貓",
+      dislikes: "遲到",
+      public_feeling: "很好聊",
+      call_name: "阿咪",
+      tags: ["regular"],
+    });
+    const before = people.get(amy) ?? fail();
+    const result = store.personData.forget(amy, { reason: "forget me", source: "memory" });
+    expect(result.hooks.find((h) => h.plugin === "heart")?.counts).toEqual({
+      people: 1,
+      changes: 1,
+      evidence: 1,
+    });
+    const after = people.get(amy) ?? fail();
+    // The numbers, the floor, the tiers of the anchors, the tags and the call name stay.
+    expect(after).toMatchObject({
+      bond: before.bond,
+      trust: before.trust,
+      warmth: before.warmth,
+      tier_floor: before.tier_floor,
+      tags: ["regular"],
+      call_name: "阿咪",
+      interactions: before.interactions,
+    });
+    expect(after.anchors).toEqual([
+      { tier: 120, note_ref: null, quote: "", at: toTimestamp(T0), by: "reflect" },
+    ]);
+    expect(after).toMatchObject({
+      impression: "",
+      stance: "",
+      unfinished: "",
+      jokes: "",
+      dislikes: "",
+      public_feeling: null,
+    });
+    // The log keeps the numbers of the change and loses the words.
+    const history = people.log.history(amy);
+    expect(history.map((h) => h.change.reason_quote)).toEqual(["", ""]);
+    expect(history.at(-1)?.change).toMatchObject({ field: "bond", delta: 3, cause: "feel" });
+    expect(people.log.recentEvidence(amy)[0]?.evidence).toMatchObject({
+      kind: "played_together",
+      detail: "",
+    });
+    const all = JSON.stringify(store.events?.query({ limit: 1000 }) ?? []);
+    for (const words of ["台南", "她家附近", "養過貓", "很好聊"]) expect(all).not.toContain(words);
+    // Today's caps still count the change that was made.
+    expect(people.log.dayLedger(amy, T0).fields.bond.up).toBe(3);
   });
 });
 
