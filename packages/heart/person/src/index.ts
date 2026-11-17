@@ -10,9 +10,11 @@
 // - `legacy.ts`: the migration from `relationships`, `relationship_deltas`, the
 //   `self:feeling:<person>` cards and the `hearts` of `self:state`.
 // - `config.ts`: every number of the rules, with its default.
+// - `schema.ts`, `migrations.ts`, `store.ts`: the `heart` store plugin (`heart_person`,
+//   `heart_self`) and the code that writes a row and its event in one transaction.
 //
-// Nothing runs these yet: the modules still use `social`, `self` and `mind` until the next steps
-// of the phase switch them over.
+// Nothing runs these yet, and no store is opened with `heartTables`: the modules still use
+// `social`, `self` and `mind` until the next steps of the phase switch them over.
 
 export {
   type HeartPersonConfig,
@@ -34,6 +36,7 @@ export {
   type HeartHistoryEntry,
   HeartLog,
 } from "./log.js";
+export { heartSchema } from "./migrations.js";
 export {
   type AnchorSource,
   BLOCKED_TAG,
@@ -89,3 +92,15 @@ export {
   settle,
   warmthBaseline,
 } from "./rules.js";
+export { type HeartPersonRow, type HeartSelfRow, heartPerson, heartSelf } from "./schema.js";
+export {
+  type HeartApplied,
+  type HeartApplyOptions,
+  type HeartListEntry,
+  type HeartListOptions,
+  type HeartPersonPage,
+  HeartSelfStore,
+  HeartStore,
+  type HeartTables,
+  heartTables,
+} from "./store.js";

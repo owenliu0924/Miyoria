@@ -1,13 +1,17 @@
 // The migration on fixture data shaped like the old records: a relationship with deltas, a
 // feeling card, the hearts of `self:state`, and people who are in only one of them.
 
-import type { Relationship, RelationshipDelta } from "@miyoria/store";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type Relationship, type RelationshipDelta, SqliteStore } from "@miyoria/store";
 import { type JsonValue, toTimestamp } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { type CardRecord, emptyExtras } from "../../self/src/feelings.js";
 import {
   applyBond,
   heartPersonConfig,
+  heartTables,
   type LegacyInput,
   migrateLegacy,
   parseLegacyHearts,
@@ -255,5 +259,43 @@ describe("migrateLegacy", () => {
     });
     expect(parseLegacyHearts({ at: at(0) }).size).toBe(0);
     expect(parseLegacyHearts([1, 2]).size).toBe(0);
+  });
+});
+
+describe("HeartStore.migrateLegacy", () => {
+  it("writes through the store on a database file, and a second run changes nothing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "heart-migrate-"));
+    const path = join(dir, "miyoria.db");
+    const clock = { now: () => NOW };
+    try {
+      let store = await SqliteStore.open(path, { plugins: [heartTables], clock });
+      const first = store.plugin(heartTables).people.migrateLegacy(input());
+      expect(first.rows.map((r) => r.person_id)).toEqual(["ghost", "mei", "owen", "solo", "troll"]);
+      await store.close();
+
+      // Opened again, later: the rows and their events are there, and nothing more is written.
+      store = await SqliteStore.open(path, {
+        plugins: [heartTables],
+        clock: { now: () => NOW + 60_000 },
+      });
+      const people = store.plugin(heartTables).people;
+      const snapshot = () => ({
+        rows: people.list({ limit: 200 }).entries.map((e) => e.person),
+        events: store.events
+          .query({ types: ["heart.changed"], limit: 1000 })
+          .map((e) => e.envelope.id),
+      });
+      const before = snapshot();
+      expect(before.rows).toHaveLength(5);
+      expect(before.events).toHaveLength(5);
+      expect(people.get("mei")).toEqual(first.rows.find((r) => r.person_id === "mei"));
+      const second = people.migrateLegacy(input());
+      expect(second.rows).toEqual([]);
+      expect(second.skipped).toEqual(["ghost", "mei", "owen", "solo", "troll"]);
+      expect(snapshot()).toEqual(before);
+      await store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
