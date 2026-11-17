@@ -483,6 +483,52 @@ owner:每個子系統要能有自己的設定;面板的系統頁把每個系統�
 - 舊的 `karaoke` 專案可以讀;裡面的模型不一定是最好的,要查音高判斷、歌詞判斷有沒有更好的;音高判斷要先分出主唱。
 - 排程我定。設計另寫,有細節要問再問。
 
+### 11.4 點歌優先券、每週拍賣、每週樂透:做了什麼
+
+§4.5 的三個去處,照 §11.1 的數字,做完就開。新的可選外掛 `packages/play/market`(`@miyoria/play/market`,模組 `market`,設定 `[modules.market]`);沒有新的頂層指令。
+
+**錢怎麼走**:經濟提供 `MarketWalletKey`(`@miyoria/types` 的 `market.ts`,和 `CardWalletKey` 一樣是埠,兩個套件互不依賴)。每一筆是帳本的一列、有自己的原因,以外掛的列 id 為冪等鍵:
+
+| 原因 | 什麼 | 健康表 |
+|---|---|---|
+| `song_priority` / `song_priority_refund` | 一張優先券 / 退回 | 回收 / 減回收 |
+| `lottery_ticket` / `lottery_refund` | 一次買的彩券 / 退回 | 回收 / 減回收 |
+| `lottery_prize` | 中獎的人拿到的 | 減回收(所以淨回收是三成) |
+| `auction_hold` / `auction_release` | 出價押住 / 還回去 | 都不算 |
+| `auction_won` | 得標的價錢,燒掉 | 回收 |
+
+退過的扣款再被問到一律拒絕,不會當成付過。得標時先寫 `auction_won`(不管餘額,因為錢押著),再把得標的人押著的還回去,所以中間任何時候錢都不會白送;每一筆押款最後都有一列 `auction_release`,沒有的就是還押著的。花錢買不到羈絆:這些都不碰 heart 的數字,也不上贊助榜(不是送她的)。她不能參加:她的帳號在扣任何錢之前就被拒;她的錢包(`self`)本來就不是人,解析不出會員。
+
+**點歌優先券**:`/queue song request priority:true`、會員頁 `POST /api/member/songs { priority: true }`。只有本人自己的請求才收錢:指令,或沒有她的回合在後面的會員頁請求(principal `user` 且沒有 turn);她替人呼叫 `sing_request` 時一律不收(工具的參數也沒有這一項)。歌手先經 `SongPriorityKey`(市集提供)扣一張,扣到才放進歌單:放在第一首還沒唱、沒用券的歌前面,用券的照先後(歌單的順序就是全部的效果,她的提示詞不提券)。退回:放不進歌單、沒做成、失敗、在唱之前被取消;唱完或唱到一半被跳過不退。同一首已經在歌單上的不再點一次,也不收券。每人每天的張數從帳本算(她的當地日,退回的不算)。歌單卡片標「優先券」。
+
+**每週拍賣**:
+
+- 一週一件,在 `auction_channel`(沒設就不辦)。週六 20:00 開 24 小時(`auction_weekday`、`auction_time`、`auction_hours`),起標 50,每次至少加 `auction_step`(5),最後 `auction_extend_mins`(5)分鐘有人出價,結束時間就移到出價後 5 分鐘(可以一直延)。
+- 拍什麼:owner 用 `POST /api/market/plan` 指定或跳過下一場;否則她挑:一次小的模型呼叫(`auction_purpose`,只回選項代號和一句理由,理由記在拍品上),模型不在或回的不是選項就照週數輪流。第一批是 `call_name`(這一週她怎麼叫你)和 `frame`(只此一件的卡框)。
+- 頻道裡是一則中性的通知:拍品、目前最高和出價的人、結束時間,「出價」按鈕開一個填金額的表單,送出後同一則通知更新;`/me auction bid:` 也能出價。出價先押住錢,同一個人加價只押差額;被超過的人押著的馬上還。得標的錢燒掉;沒人出價就什麼都不發生。
+- 卡框:得標的人馬上有一個只有他有的卡框 `one-<拍品 id>`(經濟從他的 `auction_won` 列認得,只有他能選;卡面依 id 決定兩個顏色和花紋,名字是「只此一件」)。
+- 這一週她怎麼叫你:結束後等得標的人按「取名」(或 `/me auction name:`、會員頁)給一個稱呼,`auction_name_hours`(72)小時內。稱呼過 `/me call` 同一套形狀檢查和審查;她很討厭的人(或被封鎖的)不收。收了才燒錢,寫進 heart 的 `call_name`,`auction_call_days`(7)天後換回原本的;他自己中途用 `/me call` 改過就不動。被拒可以換一個;按「不要了」或過期,押著的全退、不燒。
+- 結束和得標的人、取了什麼名字,她都會聽到一句(和卡片的通知一樣,她可以用自己的話講)。
+
+**每週樂透**:一張 `lottery_price`(10),每人每週 `lottery_per_week`(20)張,週日 20:00 開獎(`lottery_weekday`、`lottery_time`)。這一週是「下一次開獎之前」:開獎那一刻之後買的算下週。開獎時少於 `lottery_min_buyers`(3)個不同的人就不開,每一筆全額退回;否則用系統的 CSPRNG(`crypto.randomInt`)在全部張數裡抽一張,所以每個人的機會就是他的張數比例,中的人拿 `floor(賣出 × lottery_prize_share)`(七成),其餘燒掉。抽到誰、抽到第幾張、獎池、獎金、燒掉多少都記在 `market_lottery_weeks`,先記下中的人再付錢,付錢失敗下一輪補付,不會重抽。開獎結果和下週的公告(「買 1 張」「買 5 張」按鈕,只回給買的人)發在 `lottery_channel`,沒設用拍賣的頻道;開獎前不公開誰買了。她聽到誰中了。
+
+**資料和重啟**:四張表(`market_lots`、`market_bids`、`market_lottery_weeks`、`market_lottery_tickets`),migration 1 由 `schema:sql market` 產生。結束的拍品和開過的週各一個事件(`market.lot_closed`、`market.lottery_drawn`,owner 範圍、永久留)。模組啟動時和之後每 30 秒走一輪,時間全部從設定和表裡存的時間算:該開的開、該結束的結束、該開獎的開獎;停在一半的補完(押了錢沒記下的出價退回、扣了錢沒標成已付的彩券照帳本補成已付、還沒燒或還沒付的補上)。所有扣款、押款、退款都以表的 id 為冪等鍵。「忘記我」不刪這些(是錢的紀錄);合併兩個人時移到留下的人。
+
+**關掉和拿掉**:`auction = false` 或沒有頻道:正在拍的取消、押著的全退,等名字的也退;`lottery = false`:不賣,還沒開獎那週的全額退回。整個外掛要刪時,`retireMarketSql`(`migrations.ts`,有測試)就是要加的 migration:沒有 `auction_release` 的押款、還沒開獎那週的彩券退回(帳本一行 `refund_removed`,和之前移除的功能同一個樣子),再刪表。
+
+**API**:會員 `GET /api/member/market/auction|bids|lottery|tickets`,`POST /api/member/market/bid|name|lottery`;owner `GET /api/market/history`、`POST /api/market/plan`、`POST /api/market/settle`(後兩個要 `admin.economy.adjust`)。面板的頁還沒做(另一個 PR)。
+
+**決定了、會影響大家看到或付的**:
+
+- 被取消(owner 清歌單)的優先券歌也退錢,不只是沒做成的;唱到一半被跳過不退。
+- 已經在歌單上的同一首,用券點不收錢也不移位置。
+- 歌單卡片公開標示哪些用了優先券。
+- 出價是公開的(通知上有最高價和名字);彩券開獎前不公開誰買了幾張。
+- 一個人加價只押差額;每次至少加 5;結束時間可以一直延長。
+- 取名的等待時間 72 小時,過了退款;她拒絕的條件是 `/me call` 那一套加上「很討厭」或被封鎖。
+- 樂透的「一週」到開獎那一刻為止,開獎後買的算下週;獎金無條件捨去,餘數一起燒掉。
+- 沒有頻道的時候樂透照樣賣、照樣開獎,只是不公告。
+
 ### 11.5 圖片訊息:做了什麼
 
 §9 的做法,照 owner 的「能做的都做」:現在有資料的五張接上了,樂透和拍賣只有模板,交易所的幾張等交易所。
