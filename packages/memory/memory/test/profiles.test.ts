@@ -3,6 +3,8 @@
 import {
   type AffectState,
   BOND_SCALE_LINE,
+  type HeartPeople,
+  type HeartView,
   type KnowledgeBase,
   type PersonCard,
   type PersonId,
@@ -32,7 +34,12 @@ const pS = "person-sora";
 const pT = "person-tomo";
 
 async function setup(
-  options: { card?: Partial<PersonCard>; knowledge?: string; notes?: ProfileSources["notes"] } = {},
+  options: {
+    card?: Partial<PersonCard>;
+    knowledge?: string;
+    notes?: ProfileSources["notes"];
+    heart?: ProfileSources["heart"];
+  } = {},
 ) {
   const store = await openAreas("fake");
   const log = new FakeLog();
@@ -98,6 +105,7 @@ async function setup(
     events: () => log,
     handles: () => handles,
     ...(options.notes === undefined ? {} : { notes: options.notes }),
+    ...(options.heart === undefined ? {} : { heart: options.heart }),
   });
   const fact = async (content: string, importance: number, when: Timestamp) =>
     storedId(
@@ -252,6 +260,76 @@ describe("person profiles", () => {
     });
     expect(p?.last_topic).toBe("和 Sora 聊了期末考的準備");
     expect(p?.questions).toEqual([]);
+  });
+});
+
+describe("person profiles from the heart (docs/design/v5-heart.md §2.9)", () => {
+  const sora: HeartView = {
+    person: pS,
+    bond: 60,
+    trust: 45,
+    familiarity: 35,
+    warmth: 0.9,
+    respect: 0.2,
+    ease: 0.45,
+    grudge: 0.7,
+    longing: 0.8,
+    rapport: 0.2,
+    stance: "",
+    impression: "很會煮飯",
+    call_name: "空空",
+    tags: [],
+    owner: false,
+    blocked: false,
+    last_seen: null,
+    last_together: null,
+  };
+  const heart = (v: HeartView | null): ProfileSources["heart"] => {
+    const fake: Pick<HeartPeople, "view"> = { view: (p) => (p === pS ? v : null) };
+    return () => fake as HeartPeople;
+  };
+
+  it("read the tier, the level and the slow values in words from the heart's row", async () => {
+    const t = await setup({
+      card: { feeling: "很可靠", label: "朋友", level: 30 },
+      heart: heart(sora),
+    });
+    const where = { context: guild("lobby"), present: [pS], now: at(10, 1) };
+    const [p] = await t.profiles.profiles(where);
+    expect(p).toMatchObject({
+      label: "好朋友",
+      level: 60,
+      trust: null,
+      values: {
+        trust: "信任",
+        familiarity: "熟",
+        respect: "欣賞",
+        ease: "自在",
+        rapport: "有點默契",
+      },
+      // Her words are still written to the card until step 4: the card's first.
+      feeling: "很可靠",
+      call_name: "空空",
+    });
+    const text = await t.profiles.render(where, 2000);
+    expect(text).toContain(
+      '<person name="Sora" relation="好朋友" level="60/1000" trust="信任" familiar="熟" respect="欣賞" ease="自在" rapport="有點默契" call_as="空空" impression="很可靠"',
+    );
+    // The values that move by the day are block 7's, not this cached block's.
+    expect(text).not.toMatch(/心結|想念|好感/);
+  });
+
+  it("leave someone the heart has blocked out", async () => {
+    const t = await setup({ card: {}, heart: heart({ ...sora, blocked: true }) });
+    const where = { context: guild("lobby"), present: [pS], now: at(10, 1) };
+    expect(await t.profiles.profiles(where)).toEqual([]);
+  });
+
+  it("read the card as before when the heart has no row", async () => {
+    const t = await setup({ card: { feeling: "很可靠" }, heart: heart(null) });
+    const where = { context: guild("lobby"), present: [pS], now: at(10, 1) };
+    const [p] = await t.profiles.profiles(where);
+    expect(p).toMatchObject({ label: "朋友", level: 30, trust: 50, values: null });
   });
 });
 

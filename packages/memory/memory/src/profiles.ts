@@ -17,12 +17,15 @@ import {
   type EventLog,
   type Handle,
   type HandleDirectory,
+  type HeartPeople,
+  heartWords,
   type KnowledgeBase,
   type PersonId,
   type PersonProfile,
   type PersonProfiles,
   type PlaceRef,
   type ProfileOptions,
+  relationshipLabel,
   type SocialSignals,
   safeName,
   type Timestamp,
@@ -49,6 +52,11 @@ export interface ProfileSources {
   config: () => ProfilesConfig;
   affect: () => AffectState | null;
   social: () => SocialSignals | null;
+  /**
+   * Her numbers for each person (`HeartKey`, docs/design/v5-heart.md §2.9): when it has a row,
+   * the tier, the level and the slow values come from there. Unset or `null`: the cards'.
+   */
+  heart?: () => HeartPeople | null;
   knowledge: () => KnowledgeBase | null;
   events: () => Pick<EventLog, "query"> | null;
   handles: () => HandleDirectory | null;
@@ -116,7 +124,8 @@ export class Profiles implements PersonProfiles {
     if (handle === "") return null;
     const card = this.#src.affect()?.card(person) ?? null;
     const attitude = card === null ? (this.#src.social()?.attitudeOf?.(person) ?? null) : null;
-    if (attitude?.blocked || card?.blocked) return null;
+    const view = this.#src.heart?.()?.view(person) ?? null;
+    if (attitude?.blocked || card?.blocked || view?.blocked) return null;
 
     const nowMs = timestampMs(where.now);
     const window = await this.#log.window(nowMs);
@@ -176,16 +185,37 @@ export class Profiles implements PersonProfiles {
       points.push({ text: line, origin: "experienced", said_by: null });
     }
 
+    // Her words (call name, impression, stance) are still written where they were until the
+    // nightly reflection writes `heart_person` (step 4): the live ones first, the heart's after.
+    const said = (...texts: (string | null | undefined)[]) =>
+      texts.find((t) => t !== null && t !== undefined && t.trim() !== "") ?? null;
+    const words = view === null ? null : heartWords(view);
     return {
       person,
       handle,
-      label: card?.label ?? attitude?.label ?? null,
-      level: card?.level ?? (attitude ? affinityLevel(attitude.affinity) : null),
-      owner: card?.owner ?? attitude?.owner ?? false,
-      trust: card?.trust ?? attitude?.trust ?? null,
-      call_name: card?.call_name ?? attitude?.call_name ?? null,
-      feeling: card !== null && card.feeling.trim() !== "" ? card.feeling : null,
-      stance: card?.stance?.trim() ? card.stance : null,
+      label:
+        view !== null
+          ? relationshipLabel({ affinity: view.bond, familiarity: view.familiarity })
+          : (card?.label ?? attitude?.label ?? null),
+      level:
+        view !== null
+          ? affinityLevel(view.bond)
+          : (card?.level ?? (attitude ? affinityLevel(attitude.affinity) : null)),
+      owner: view?.owner ?? card?.owner ?? attitude?.owner ?? false,
+      trust: view !== null ? null : (card?.trust ?? attitude?.trust ?? null),
+      values:
+        words === null
+          ? null
+          : {
+              trust: words.trust,
+              familiarity: words.familiarity,
+              respect: words.respect,
+              ease: words.ease,
+              rapport: words.rapport,
+            },
+      call_name: said(card?.call_name, attitude?.call_name, view?.call_name),
+      feeling: said(card?.feeling, view?.impression),
+      stance: said(card?.stance, view?.stance),
       last_seen:
         seen.at === null ? fallbackSeen(card, attitude, seen.stretchStart) : toTimestamp(seen.at),
       last_place: seen.place,
@@ -355,7 +385,14 @@ export function profileLine(
     ["relation", p.label],
     ["level", p.label === null || p.level === null ? null : `${p.level}/${AFFINITY_LEVEL_MAX}`],
     ["owner", p.owner === true ? "主人" : null],
-    ["trust", p.label === null || p.trust == null ? null : Math.round(p.trust)],
+    [
+      "trust",
+      p.label === null ? null : (p.values?.trust ?? (p.trust == null ? null : Math.round(p.trust))),
+    ],
+    ["familiar", p.values?.familiarity ?? null],
+    ["respect", p.values?.respect ?? null],
+    ["ease", p.values?.ease ?? null],
+    ["rapport", p.values?.rapport ?? null],
     ["call_as", p.call_name ? safeName(p.call_name, 16) : null],
     ["impression", p.feeling],
     ["stance", p.stance],
