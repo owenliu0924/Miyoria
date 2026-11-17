@@ -1,9 +1,11 @@
 // What she writes on a card: cut to size, passed field by field, a pose only from the band's, and
 // a card without her words when she cannot write.
 
+import { PersonaHandleKey } from "@miyoria/brain/agent";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { describe, expect, it } from "vitest";
 import {
+  CARD_VOICE,
   type CardContext,
   checked,
   MAX_FIELDS,
@@ -82,11 +84,59 @@ describe("her words on a card", () => {
     ).toEqual({ line: "嗨", pose: "hand", stamp: null, fields: [] });
   });
 
-  function stateWith(router: unknown): ApiState {
+  it("never name a tier, and carry no chat markup", () => {
+    const words = checked(
+      {
+        line: "<emo:happy>又來啦,今天也要討飯喔",
+        pose: null,
+        stamp: "摯友認證",
+        fields: [
+          { label: "稱號", text: "深夜好朋友" },
+          { label: "今天", text: "被你抓到在摸魚" },
+        ],
+      },
+      context.poses,
+      pass,
+    );
+    expect(words.line).toBe("又來啦,今天也要討飯喔");
+    expect(words.stamp).toBeNull();
+    expect(words.fields).toEqual([{ label: "今天", text: "被你抓到在摸魚" }]);
+  });
+
+  function stateWith(router: unknown, persona?: unknown): ApiState {
     return {
-      optional: (key: unknown) => (key === LlmRouterKey ? router : undefined),
+      optional: (key: unknown) =>
+        key === LlmRouterKey ? router : key === PersonaHandleKey ? persona : undefined,
     } as unknown as ApiState;
   }
+
+  it("are written by her whole persona and examples, with the card's own rules", async () => {
+    const asked: { messages: { content: string }[] }[] = [];
+    const router = {
+      complete: async (_purpose: string, request: { messages: { content: string }[] }) => {
+        asked.push(request);
+        return { text: JSON.stringify({ line: "嗨" }), finish_reason: "stop", usage: null };
+      },
+    };
+    const persona = {
+      corePrompt: () => "# 你是鯨魚\n\n開場。\n\n# 說話風格\n\n- 短、口語,帶尾音",
+      examples: () => ["## 被餵白飯\n\n**阿明**:請你吃飯\n**鯨魚**:<emo:happy>好耶"],
+      names: () => ["鯨魚"],
+      displayName: () => "鯨魚",
+    };
+    await writeCard(stateWith(router, persona), context, pass);
+    const system = asked[0]?.messages[0]?.content ?? "";
+    // Her speaking style and examples, not only the opening of the persona.
+    expect(system).toContain("短、口語,帶尾音");
+    expect(system).toContain("<examples");
+    expect(system).toContain("好耶</reply>");
+    expect(system).toContain(CARD_VOICE);
+    expect(system).toContain("摯友");
+    // A milestone without a scene asks for nothing made up.
+    expect(occasionLine({ kind: "milestone", tier: "知心", scene: null })).toContain(
+      "不要補上沒寫到的細節",
+    );
+  });
 
   it("come from her model, and the card goes out without them when it fails", async () => {
     const asked: unknown[] = [];

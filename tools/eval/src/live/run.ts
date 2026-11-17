@@ -6,7 +6,7 @@ import type { Completer } from "@miyoria/llm/llm";
 import type { Judge } from "./judge.js";
 import type { Meter } from "./meter.js";
 import type { ModelUsage, Subject } from "./subject.js";
-import { SuiteRegistry, type SuiteResult } from "./suite.js";
+import { type PersonaParts, SuiteRegistry, type SuiteResult } from "./suite.js";
 import { runCorrections } from "./suites/corrections.js";
 import { runFeel } from "./suites/feel.js";
 import { runPersona } from "./suites/persona.js";
@@ -56,6 +56,8 @@ export interface LiveRunOptions {
   /** Suite names, in the order to run. */
   suites: readonly string[];
   persona: string;
+  /** Her persona as her chat reads it (`SuiteContext.handle`). */
+  handle?: PersonaParts;
   repeat?: number;
   seed?: string;
   /** The git commit the run is of (`null`: unknown). */
@@ -117,6 +119,7 @@ export async function runLive(options: LiveRunOptions): Promise<LiveRun> {
       meter: options.meter,
       ...(options.router === undefined ? {} : { router: options.router }),
       persona: options.persona,
+      ...(options.handle === undefined ? {} : { handle: options.handle }),
       repeat,
       seed,
       log,

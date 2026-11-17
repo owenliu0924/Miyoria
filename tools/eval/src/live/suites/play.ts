@@ -52,7 +52,13 @@ import {
 import type { ToolEnv } from "../../tasks/run.js";
 import { REGULAR } from "../scenes.js";
 import { type Scene, subUsage } from "../subject.js";
-import { attempt, type SuiteContext, type SuiteResult, share } from "../suite.js";
+import {
+  attempt,
+  type PersonaParts,
+  type SuiteContext,
+  type SuiteResult,
+  share,
+} from "../suite.js";
 
 export type PlayPart = "card" | "milestone" | "told" | "soup-referee" | "soup-host" | "fortune";
 export const PLAY_PARTS: readonly PlayPart[] = [
@@ -127,11 +133,20 @@ function recording(router: Completer): { router: Completer; last: () => string }
   };
 }
 
-/** What `writeCard` and `writeFortune` look up of the API state: the router, her persona, her mood. */
-function stateOf(router: Completer, persona: string, mood: string) {
+/**
+ * What `writeCard` and `writeFortune` look up of the API state: the router, her persona (the run's
+ * `PersonaHandle` when there is one, else the persona text with no examples), her mood.
+ */
+function stateOf(router: Completer, ctx: Pick<SuiteContext, "persona" | "handle">, mood: string) {
+  const persona: PersonaParts = ctx.handle ?? {
+    corePrompt: () => ctx.persona,
+    examples: () => [],
+    names: () => ["她"],
+    displayName: () => "她",
+  };
   const services = new Map<unknown, unknown>([
     [LlmRouterKey, router],
-    [PersonaHandleKey, { corePrompt: () => persona, displayName: () => "她" }],
+    [PersonaHandleKey, persona],
     [AffectStateKey, { snapshot: () => ({ mood_line: mood }) }],
   ]);
   return { optional: (key: unknown) => services.get(key) } as never;
@@ -365,11 +380,7 @@ async function runCard(ctx: SuiteContext, c: CardCase, run: number): Promise<Pla
   const rec = recording(router);
   const before = ctx.meter.usage();
   const started = Date.now();
-  const words = await writeCard(
-    stateOf(rec.router, ctx.persona, c.mood),
-    cardContext(c),
-    everything,
-  );
+  const words = await writeCard(stateOf(rec.router, ctx, c.mood), cardContext(c), everything);
   const raw = rawJson(rec.last());
   const text = rec.last();
   let fault: string | null =
@@ -475,7 +486,7 @@ async function runMilestone(ctx: SuiteContext, c: MilestoneCase, run: number): P
     mood: "心情不錯",
   };
   const words = await writeCard(
-    stateOf(rec.router, ctx.persona, card.mood),
+    stateOf(rec.router, ctx, card.mood),
     cardContext(card, occasionLine({ kind: "milestone", tier: c.tier, scene: c.scene })),
     everything,
   );
@@ -1073,7 +1084,7 @@ async function runFortune(ctx: SuiteContext, c: FortuneCase, run: number): Promi
   const rec = recording(ctx.router as Completer);
   const before = ctx.meter.usage();
   const started = Date.now();
-  const slip = await writeFortune(stateOf(rec.router, ctx.persona, c.mood), c.ctx, everything);
+  const slip = await writeFortune(stateOf(rec.router, ctx, c.mood), c.ctx, everything);
   const text = rec.last();
   let fault: string | null =
     slip === null

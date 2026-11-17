@@ -2156,7 +2156,8 @@ describe("cards she gives", () => {
       name: "Alice",
       call_name: "小愛",
       line: "那天妳唱完最後一句",
-      stamp: "好朋友",
+      // The tier is printed on the card already: her stamp naming it is left off.
+      stamp: null,
       number: 2,
     });
     expect(got?.relationship).toMatchObject({

@@ -12,6 +12,7 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PersonaHandle } from "@miyoria/brain/agent";
 import type { LlmRouter } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { Profile } from "@miyoria/runtime/profile";
@@ -140,6 +141,7 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
       registry,
       suites,
       persona: profile.personaPrompt(),
+      handle: new PersonaHandle(profile),
       repeat,
       ...(seed === undefined ? {} : { seed }),
       commit: commitOf(REPO),

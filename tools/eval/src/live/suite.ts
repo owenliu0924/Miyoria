@@ -7,6 +7,14 @@ import type { Judge } from "./judge.js";
 import type { Meter } from "./meter.js";
 import type { Subject } from "./subject.js";
 
+/** What of `PersonaHandle` her writers read. */
+export interface PersonaParts {
+  corePrompt(): string;
+  examples(): string[];
+  names(): string[];
+  displayName(): string;
+}
+
 export interface SuiteContext {
   subject: Subject;
   judge: Judge;
@@ -20,6 +28,11 @@ export interface SuiteContext {
   router?: Completer;
   /** Her persona (identity and style), for a judge that scores her voice. */
   persona: string;
+  /**
+   * Her persona as her chat reads it (`PersonaHandle`: the persona sections, the example dialogues,
+   * her names), for a suite that calls her writers itself (`play`). Unset: `persona` stands in.
+   */
+  handle?: PersonaParts;
   /** Every item is run this many times. */
   repeat: number;
   /** Seeds whatever a suite draws (the order two replies are shown in). */
