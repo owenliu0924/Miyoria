@@ -7,7 +7,14 @@ import {
   VOICE_TOOLS,
   withLimits,
 } from "../src/profiles.js";
-import { LIMIT_NOTE_QUIET, LIMIT_NOTES, PROFILE_NOTES, RULES, rulesFor } from "../src/rules.js";
+import {
+  BASE_RULES,
+  LIMIT_NOTE_QUIET,
+  LIMIT_NOTES,
+  PROFILE_NOTES,
+  RULES,
+  rulesFor,
+} from "../src/rules.js";
 import { addressed, calls, fakeTool, rig, say } from "./harness.js";
 
 const entry = (name: string, effect: ToolEntry["effect"]): ToolEntry =>
@@ -60,6 +67,12 @@ describe("profiles", () => {
   it("each profile adds its note to the rules", () => {
     expect(rulesFor("text")).toBe(RULES);
     expect(rulesFor("voice")).toBe(`${RULES}\n${PROFILE_NOTES.voice}`);
+    // The background profiles never apply a feel block, so they are not told of it.
+    for (const profile of ["subagent", "reflect"] as const) {
+      expect(rulesFor(profile)).not.toContain("<feel>");
+      expect(rulesFor(profile).startsWith(BASE_RULES)).toBe(true);
+    }
+    expect(RULES).toContain("<feel>");
   });
 
   it("voice: two rounds, no reasoning, a cap on a step", async () => {

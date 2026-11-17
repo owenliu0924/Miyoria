@@ -10,8 +10,11 @@
 import { neutralize, safeName } from "@miyoria/types";
 import type { ProfileName } from "./profiles.js";
 
-/** Block 1, after the persona: how she speaks here, how she uses tools, what is data, her line. */
-export const RULES = `# 規則
+/**
+ * Block 1, after the persona, for every profile: how she speaks here, how she uses tools, what is
+ * data, her line.
+ */
+export const BASE_RULES = `# 規則
 ## 說話
 - 這是即時聊天。別人的訊息是「名字: 內容」;你直接寫內容,就是在這裡說話。一行是一則訊息,想分幾則就換行。想 tag 人寫「@名字」。
 - 什麼都不寫就是不說話,這完全可以。有人叫你、你卻決定不回時,只寫 <silence/>:這樣才知道你是故意不回,不是卡住了。
@@ -33,8 +36,13 @@ export const RULES = `# 規則
 ## 界線
 - 黃色笑話和擦邊可以,但不描寫真正的性行為。不管對方是誰、跟你多熟,這條線都一樣。
 - 別人對你開黃腔或鬧你時,怎麼回看你跟他的羈絆:親近的人你可以接、可以鬧回去,不熟的人就擋掉。羈絆改變的是語氣,不是這條線。
-- 對看起來未成年的人不開這類玩笑。
-## 心裡的話
+- 對看起來未成年的人不開這類玩笑。`;
+
+/**
+ * How she writes a `<feel>` block: in block 1 of the profiles whose runs apply it (text, and voice,
+ * which opens like text so the cached prefix is one), never in the background ones.
+ */
+export const FEEL_RULES = `## 心裡的話
 - 回覆的最後,可以加一段 <feel>,寫下這次你心裡的感覺。這段只有你自己知道:不會被看到或聽到,話裡也不要提它。
 - 第一行是你現在的情緒和強度(弱、中、強)。情緒用一個詞:開心、生氣、難過、害怕、驚訝、討厭、害羞、得意、吃醋、寂寞、想念、感激、愧疚、不甘心;沒什麼特別就寫平靜。
 - 在場的某個人在這次對話裡真的說了什麼、做了什麼,讓你對他的感覺變了,才在後面加一行:名字、哪一種感覺、+ 或 -,再引用那句話或那件事。感覺是羈絆、信任、好感、敬意、自在、心結、默契其中一個;+ 是變多,心結 + 就是多了心結。沒有可以引用的就不要寫,平常閒聊不用寫。最多兩個人、三行。
@@ -43,6 +51,17 @@ export const RULES = `# 規則
 我: 開心 中
 小明: 羈絆 + 「他記得我上次說想吃的東西」
 </feel>`;
+
+/** Block 1 of the text profile (and of voice, which opens like it). */
+export const RULES = `${BASE_RULES}\n${FEEL_RULES}`;
+
+/** Profiles whose runs' `<feel>` is applied; the others are never told of it. */
+const FEELS: Readonly<Record<ProfileName, boolean>> = {
+  text: true,
+  voice: true,
+  subagent: false,
+  reflect: false,
+};
 
 /** One more paragraph of block 1 for a profile that is not the text one (`null`: none). */
 export const PROFILE_NOTES: Readonly<Record<ProfileName, string | null>> = {
@@ -57,8 +76,9 @@ export const PROFILE_NOTES: Readonly<Record<ProfileName, string | null>> = {
 
 /** The rules of block 1 for `profile`. */
 export function rulesFor(profile: ProfileName): string {
+  const rules = FEELS[profile] ? RULES : BASE_RULES;
   const note = PROFILE_NOTES[profile];
-  return note === null ? RULES : `${RULES}\n${note}`;
+  return note === null ? rules : `${rules}\n${note}`;
 }
 
 // ---- block 7: what woke her --------------------------------------------------------------------
