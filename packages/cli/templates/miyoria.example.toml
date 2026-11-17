@@ -719,6 +719,8 @@ enabled = true
 max_images = 3             # 每回合最多幾張
 max_image_bytes = 5000000  # 單張上限
 # detail = "auto"          # auto | low | high(low 最便宜)
+# 連結預覽的圖也算那則訊息的圖,只拿 Discord 自己代理的那份,不會連到第三方網站
+# allowed_hosts = ["cdn.discordapp.com", "media.discordapp.net", "images-ext-1.discordapp.net", "images-ext-2.discordapp.net"]
 
 # 別人傳來的檔案(文字、程式碼、markdown、csv、json、pdf、docx、xlsx、pptx):在沙箱裡開、
 # 當資料給她看,見 docs/design/file-attachments.md。要有 tools.file(member 以上預設有)。

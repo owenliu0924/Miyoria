@@ -26,6 +26,9 @@ function image(id: string, extra: Partial<Attachment> = {}): Attachment {
   };
 }
 
+/** What the downloader checks the bytes against. */
+const PNG_HEAD = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 const vision = () => defaultAgentConfig().vision;
 
 /** A fake `fetch` serving `bytes` bytes per URL, counting calls. */
@@ -40,7 +43,9 @@ function server(
       calls.push(url);
       const headers = new Headers({ "content-type": options.type ?? "image/png" });
       if (options.length !== undefined) headers.set("content-length", String(options.length));
-      return new Response(new Uint8Array(bytes).fill(7), {
+      const body = new Uint8Array(bytes).fill(7);
+      body.set(PNG_HEAD.subarray(0, Math.min(bytes, PNG_HEAD.length)));
+      return new Response(body, {
         status: options.status ?? 200,
         headers,
       });
@@ -66,11 +71,11 @@ describe("image loader", () => {
     }));
 
   it("downloads_as_data_urls_and_caches_by_attachment_id", async () => {
-    const srv = server(3);
+    const srv = server(8);
     const loader = new ImageLoader(srv.fetch);
     const [first] = await loader.load(candidates(["a"]), vision(), signal);
-    expect(first?.dataUrl).toBe("data:image/png;base64,BwcH");
-    expect(first?.bytes).toBe(3);
+    expect(first?.dataUrl).toBe("data:image/png;base64,iVBORw0KGgo=");
+    expect(first?.bytes).toBe(8);
     // A fresh signed URL of the same attachment hits the cache.
     await loader.load(candidates(["a"]), vision(), signal);
     expect(srv.calls).toHaveLength(1);
@@ -80,7 +85,7 @@ describe("image loader", () => {
       { type: "text", text: "(owen 這則訊息附的圖片 a.png)" },
       {
         type: "image_url",
-        image_url: { url: "data:image/png;base64,BwcH", detail: "low" },
+        image_url: { url: "data:image/png;base64,iVBORw0KGgo=", detail: "low" },
         alt: "[圖片: a.png]",
       },
     ]);
@@ -92,23 +97,37 @@ describe("image loader", () => {
     expect((await loader.load(candidates(["a", "b", "c"]), cfg, signal)).length).toBe(2);
     const big = new ImageLoader(server(300).fetch);
     expect(await big.load(candidates(["x"]), cfg, signal)).toEqual([]);
-    const declared = new ImageLoader(server(10, { length: 999 }).fetch);
+    const declared = new ImageLoader(server(16, { length: 999 }).fetch);
     expect(await declared.load(candidates(["y"]), cfg, signal)).toEqual([]);
     const errors: string[] = [];
-    const down = new ImageLoader(server(10, { status: 403 }).fetch, (_k, e) => errors.push(e));
+    const down = new ImageLoader(server(16, { status: 403 }).fetch, (_k, e) => errors.push(e));
     expect(await down.load(candidates(["z"]), cfg, signal)).toEqual([]);
     expect(errors).toEqual(["HTTP 403"]);
     // A page instead of an image is skipped; an untyped body keeps the attachment's type.
-    const html = new ImageLoader(server(10, { type: "text/html" }).fetch);
+    const html = new ImageLoader(server(16, { type: "text/html" }).fetch);
     expect(await html.load(candidates(["h"]), cfg, signal)).toEqual([]);
-    const untyped = new ImageLoader(server(10, { type: "application/octet-stream" }).fetch);
+    const untyped = new ImageLoader(server(16, { type: "application/octet-stream" }).fetch);
     expect((await untyped.load(candidates(["u"]), cfg, signal))[0]?.dataUrl).toMatch(
       /^data:image\/png;base64,/,
     );
   });
 
+  it("goes_by_the_bytes_not_by_the_name_or_the_server", async () => {
+    const cfg = vision();
+    // A link preview's type is a guess from its name: the bytes decide.
+    const guessed = candidates(["g"]).map((c) => ({ ...c, type: "image/jpeg" }));
+    const png = new ImageLoader(server(16, { type: "image/jpeg" }).fetch);
+    expect((await png.load(guessed, cfg, signal))[0]?.dataUrl).toMatch(/^data:image\/png;base64,/);
+    // Something that says "image" and is not one is dropped.
+    const fake: FetchLike = async () =>
+      new Response(new TextEncoder().encode("<html>login</html>"), {
+        headers: { "content-type": "image/png" },
+      });
+    expect(await new ImageLoader(fake).load(candidates(["h"]), cfg, signal)).toEqual([]);
+  });
+
   it("cache_is_bounded", async () => {
-    const loader = new ImageLoader(server(1).fetch);
+    const loader = new ImageLoader(server(8).fetch);
     const cfg = { ...vision(), cache_entries: 2 };
     for (const id of ["a", "b", "c"]) await loader.load(candidates([id]), cfg, signal);
     expect(loader.cached).toBe(2);

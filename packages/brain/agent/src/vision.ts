@@ -137,13 +137,28 @@ async function download(
   if (declared && !declared.startsWith("image/") && declared !== "application/octet-stream") {
     return null;
   }
-  const type = declared?.startsWith("image/") ? declared : candidate.type;
+  let type = declared?.startsWith("image/") ? declared : candidate.type;
   if (imageType({ url: "", filename: "", content_type: type }) === null) return null;
   const length = Number(response.headers.get("content-length") ?? Number.NaN);
   if (Number.isFinite(length) && length > maxBytes) return null;
   const body = Buffer.from(await response.arrayBuffer());
   if (body.length === 0 || body.length > maxBytes) return null;
+  // What the bytes are wins over what the name or the server said (a link preview's type is a guess).
+  const sniffed = sniffImage(body);
+  if (sniffed === null) return null;
+  type = sniffed;
   return { dataUrl: `data:${type};base64,${body.toString("base64")}`, bytes: body.length };
+}
+
+/** png / jpeg / webp / gif by their first bytes, else `null`. */
+export function sniffImage(bytes: Uint8Array): string | null {
+  const at = (i: number, text: string) =>
+    [...text].every((c, k) => bytes[i + k] === c.charCodeAt(0));
+  if (bytes[0] === 0x89 && at(1, "PNG")) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (at(0, "GIF87a") || at(0, "GIF89a")) return "image/gif";
+  if (at(0, "RIFF") && at(8, "WEBP")) return "image/webp";
+  return null;
 }
 
 /** The line before an image: who sent it and where it was. */

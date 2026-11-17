@@ -67,6 +67,13 @@ export const EmbedSchema = z
     title: z.string().nullable(),
     description: z.string().nullable(),
     url: z.string().nullable(),
+    /**
+     * The large preview picture, as the platform's own proxy serves it (never the third-party
+     * original, which only the platform's proxy is allowed to fetch).
+     */
+    image: z.string().nullable().optional(),
+    /** The small preview picture, by the same rule. */
+    thumbnail: z.string().nullable().optional(),
   })
   .meta({ id: "WireEmbed" });
 export type Embed = z.output<typeof EmbedSchema>;

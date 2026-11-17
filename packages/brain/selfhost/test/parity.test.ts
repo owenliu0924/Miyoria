@@ -705,6 +705,59 @@ describe("images", () => {
     expect(firstImage(rig.model.requests[0])).toBe(-1);
     expect(partsOf(rig.model.requests[0]).join("\n")).toContain("[圖片: dog.png]");
   });
+  it("looks at a link preview's picture as one of its message's, from Discord's proxy only", async () => {
+    const fetch = fakeFetch();
+    const rig = await Rig.create({ mode: "mention-only", fetchImage: fetch });
+    rig.model.push(says("看到了"), says("也看到了"), says("第三次"));
+    const proxy = "https://images-ext-1.discordapp.net/external/k/https/example.com/hero.jpg";
+    const embed = {
+      title: "標題",
+      description: null,
+      url: "https://example.com/post",
+      image: proxy,
+    };
+    rig.say({ ...mention(C1, "amy", "@她 這篇在講什麼"), embeds: [embed] });
+    await until(() => rig.sink.texts().length === 1, 3_000, "the first answer");
+    const parts = partsOf(rig.model.requests[0]);
+    const at = parts.indexOf("user: (amy 這則訊息附的圖片 hero.jpg)");
+    expect(at).toBeGreaterThan(-1);
+    expect(parts[at + 1]).toBe("user: [image [圖片: hero.jpg]]");
+    expect(fetch.urls).toEqual([proxy]);
+    // The history keeps a short marker, no data.
+    const entry = rig.entries(C1).find((e) => e.content.includes("這篇在講什麼"));
+    expect(entry?.content).toContain("[圖片: 連結預覽]");
+    expect(JSON.stringify(rig.entries(C1))).not.toContain("data:image");
+
+    // A forwarded message's preview counts like a forwarded attachment.
+    const forwarded = {
+      text: "",
+      attachments: [],
+      stickers: [],
+      embeds: [{ ...embed, image: null, thumbnail: proxy.replace("hero", "thumb") }],
+    };
+    rig.say({ ...mention(C1, "amy", "@她 轉傳的"), forwarded: [forwarded] });
+    await until(() => rig.sink.texts().length === 2, 3_000, "the second answer");
+    expect(fetch.urls).toHaveLength(2);
+    expect(partsOf(rig.model.requests[1]).join("\n")).toContain("thumb.jpg");
+  });
+
+  it("never fetches a third party's own picture URL from an embed", async () => {
+    const fetch = fakeFetch();
+    const rig = await Rig.create({ mode: "mention-only", fetchImage: fetch });
+    rig.model.push(says("嗯"));
+    // Not Discord's proxy: such a URL cannot come from the adapter, and is refused if it does.
+    const embed = {
+      title: "t",
+      description: null,
+      url: "https://example.com/post",
+      image: "https://tracker.example.com/pixel.png",
+      thumbnail: "http://images-ext-1.discordapp.net/plain-http.png",
+    };
+    rig.say({ ...mention(C1, "amy", "@她 看"), embeds: [embed] });
+    await until(() => rig.sink.texts().length === 1, 3_000, "the answer");
+    expect(fetch.urls).toEqual([]);
+    expect(firstImage(rig.model.requests[0])).toBe(-1);
+  });
 });
 
 describe("files", () => {
