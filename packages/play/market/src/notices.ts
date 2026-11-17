@@ -6,6 +6,9 @@
 // - the result when it closes (a name lot: 取名 opens a modal, 不要了 refunds);
 // - the lottery's week (buy buttons) and its draw.
 //
+// Each goes out with its picture above it when one can be drawn (`pictures.ts`); these cards are
+// the text under it, and all there is without one.
+//
 // Names are people's display names: Markdown in them is escaped.
 
 import { type CardBlock, type CommandReply, cardReply, componentId } from "@miyoria/commands";

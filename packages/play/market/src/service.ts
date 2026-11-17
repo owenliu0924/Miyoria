@@ -35,6 +35,8 @@ import {
   type MarketWallet,
   newId,
   type PersonId,
+  type PictureFile,
+  type Pictures,
   type SongPriority,
   type SongPriorityTerms,
   type Timestamp,
@@ -50,6 +52,13 @@ import {
   lotteryNotice,
   lotteryResultNotice,
 } from "./notices.js";
+import {
+  auctionPictureData,
+  drawPicture,
+  drawPictureData,
+  lotteryPictureData,
+  withPicture,
+} from "./pictures.js";
 import type { Bid, Lot, LotStatus, LotteryWeek, MarketStore, Ticket, WeekStatus } from "./store.js";
 import {
   DAY_MS,
@@ -233,6 +242,8 @@ export interface MarketDeps {
   log: Pick<Logger, "info" | "warn">;
   /** An integer in [0, n) (the system CSPRNG unless a test pins it). */
   randomInt?: (n: number) => number;
+  /** The picture renderer (`PicturesKey`), looked up at each use; absent: text cards only. */
+  pictures?: () => Pictures | null;
 }
 
 /** Throws when a ledger call did not go through, so the pass tries again. */
@@ -677,15 +688,7 @@ export class MarketService {
         }
       }
     }
-    const history =
-      lot === null
-        ? []
-        : this.#d.store
-            .bids(lot.id)
-            .filter((b) => b.status !== "pending" && b.status !== "void")
-            .reverse()
-            .slice(0, 10)
-            .map((b) => ({ amount: b.amount, name: b.name, at: b.created_at }));
+    const history = lot === null ? [] : this.#bidHistory(lot.id);
     return {
       currency: this.#currency(),
       running: this.auctionRunning(),
@@ -700,6 +703,49 @@ export class MarketService {
       mine,
       history,
     };
+  }
+
+  /** A lot's newest bids, newest first. */
+  #bidHistory(lot: string): AuctionView["history"] {
+    return this.#d.store
+      .bids(lot)
+      .filter((b) => b.status !== "pending" && b.status !== "void")
+      .reverse()
+      .slice(0, 10)
+      .map((b) => ({ amount: b.amount, name: b.name, at: b.created_at }));
+  }
+
+  // ---- pictures (best-effort, never part of a money step) ---------------------------------
+
+  /** The auction's picture for `view` (its `mine` included); `null` without a lot or a picture. */
+  async auctionPicture(view: AuctionView): Promise<PictureFile | null> {
+    if (view.lot === null) return null;
+    return drawPicture(
+      this.#d.pictures?.(),
+      "auction",
+      auctionPictureData(view.lot, view, this.#d.config),
+    );
+  }
+
+  /** The lottery week's picture for `view` (its `mine` included); `null` without a picture. */
+  lotteryPicture(view: LotteryView): Promise<PictureFile | null> {
+    return drawPicture(this.#d.pictures?.(), "lottery", lotteryPictureData(view, this.#d.config));
+  }
+
+  /**
+   * Posts a notice with its picture above it; when the post with the picture does not go (the
+   * channel takes no files, say), the text card alone. The message id, or `null`.
+   */
+  async #postNotice(
+    channel: string,
+    reply: CommandReplyLike,
+    picture: PictureFile | null,
+  ): Promise<string | null> {
+    if (picture !== null) {
+      const id = await this.#d.post(channel, withPicture(reply, picture));
+      if (id !== null) return id;
+    }
+    return this.#d.post(channel, reply);
   }
 
   #lastWeek(): LotteryView["last"] {
@@ -1076,7 +1122,13 @@ export class MarketService {
   async #announceDraw(w: LotteryWeek): Promise<void> {
     const channel = lotteryChannel(this.#d.config);
     if (channel !== "") {
-      await this.#d.post(channel, lotteryResultNotice(w, this.#d.config, this.#currency()));
+      const currency = this.#currency();
+      const picture = await drawPicture(
+        this.#d.pictures?.(),
+        "lottery",
+        drawPictureData(w, this.#d.config, currency),
+      );
+      await this.#postNotice(channel, lotteryResultNotice(w, this.#d.config, currency), picture);
     }
     this.#d.tell(
       lotteryNote(w, this.#currency()),
@@ -1095,9 +1147,11 @@ export class MarketService {
     if (row.status !== "open" || row.notice_at !== null) return;
     // Marked first: a notice that failed is not posted again and again.
     this.#d.store.setWeek(week, ["open"], { notice_at: toTimestamp(now) });
-    const id = await this.#d.post(
+    const view = await this.lotteryViewUnlocked();
+    const id = await this.#postNotice(
       channel,
-      lotteryNotice(await this.lotteryViewUnlocked(), this.#d.config),
+      lotteryNotice(view, this.#d.config),
+      await this.lotteryPicture(view),
     );
     if (id !== null) this.#d.store.setWeek(week, ["open"], { notice_message: id });
   }
@@ -1177,9 +1231,16 @@ export class MarketService {
     this.#d.log.info({ lot: lot.id, kind, picked }, "market: a lot opened");
     const view = this.#lotView(lot);
     if (view === null) return;
-    const id = await this.#d.post(
+    const currency = this.#currency();
+    const picture = await drawPicture(
+      this.#d.pictures?.(),
+      "auction",
+      auctionPictureData(view, { currency, mine: null, history: [] }, c),
+    );
+    const id = await this.#postNotice(
       c.auction_channel,
-      auctionNotice(view, this.#currency(), null, c),
+      auctionNotice(view, currency, null, c),
+      picture,
     );
     if (id !== null) this.#d.store.setLot(lot.id, ["open"], { message_id: id });
   }
@@ -1245,7 +1306,19 @@ export class MarketService {
     const view = this.#lotView(lot);
     if (view === null) return;
     const channel = lot.channel ?? this.#d.config.auction_channel;
-    if (channel !== "") await this.#d.post(channel, lotResultNotice(view, this.#currency()));
+    if (channel !== "") {
+      const currency = this.#currency();
+      const picture = await drawPicture(
+        this.#d.pictures?.(),
+        "auction",
+        auctionPictureData(
+          view,
+          { currency, mine: null, history: this.#bidHistory(lot.id) },
+          this.#d.config,
+        ),
+      );
+      await this.#postNotice(channel, lotResultNotice(view, currency), picture);
+    }
     const winner = lot.winner_bid === null ? null : this.#d.store.bid(lot.winner_bid);
     this.#d.tell(
       auctionClosedNote(view, this.#currency()),

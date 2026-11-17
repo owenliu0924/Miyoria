@@ -139,7 +139,7 @@ export interface OddsPictureData {
 }
 
 /**
- * The week's lottery (docs/design/v5-play.md §11.1): to be filled by the lottery when it exists.
+ * The week's lottery (docs/design/v5-play.md §11.4), filled by the market (`@miyoria/play/market`).
  * Times are ISO 8601; they are drawn in `utc_offset_minutes`.
  */
 export interface LotteryPictureData {
@@ -165,7 +165,7 @@ export interface LotteryPictureData {
   winners: { name: string; prize: number }[];
 }
 
-/** One auction (docs/design/v5-play.md §11.1): to be filled by the auction when it exists. */
+/** One auction (docs/design/v5-play.md §11.4), filled by the market (`@miyoria/play/market`). */
 export interface AuctionPictureData {
   state: "upcoming" | "open" | "closed" | "cancelled";
   /** What is sold: 「這一週她怎麼叫你」, 「只此一件的卡框」. */

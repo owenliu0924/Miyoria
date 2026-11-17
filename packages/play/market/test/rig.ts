@@ -13,7 +13,12 @@ import {
   type MarketChargeReason,
   type MarketPerson,
   type MarketWallet,
+  type MemberPictureResult,
   type PersonId,
+  type PictureDataMap,
+  type PictureFile,
+  type PictureKind,
+  type Pictures,
 } from "@miyoria/types";
 import { afterEach } from "vitest";
 import { type MarketConfig, marketConfig } from "../src/config.js";
@@ -242,6 +247,38 @@ export interface RigOptions {
   /** People she cannot stand. */
   refuses?: PersonId[];
   names?: boolean;
+  /** The picture renderer (`PicturesKey`); none by default. */
+  pictures?: Pictures | null;
+  /** Posts that carry files fail (the channel takes no uploads). */
+  noUploads?: boolean;
+}
+
+/** A renderer that records what it was asked to draw and answers a tiny PNG with an alt line. */
+export class FakePictures implements Pictures {
+  readonly drawn: { kind: PictureKind; data: PictureDataMap[PictureKind] }[] = [];
+  /** `null`: it cannot draw; `"hang"`: it never answers; `"throw"`: it throws. */
+  mode: "ok" | "null" | "hang" | "throw" = "ok";
+
+  async render<K extends PictureKind>(
+    kind: K,
+    data: PictureDataMap[K],
+  ): Promise<PictureFile | null> {
+    this.drawn.push({ kind, data });
+    if (this.mode === "null") return null;
+    if (this.mode === "throw") throw new Error("cannot draw");
+    if (this.mode === "hang") return new Promise<PictureFile | null>(() => undefined);
+    return {
+      name: `miyoria-${kind}.png`,
+      data: new Uint8Array([137, 80, 78, 71]),
+      contentType: "image/png",
+      alt: `${kind} 的摘要`,
+      artifact_id: null,
+    };
+  }
+
+  async forMember(): Promise<MemberPictureResult | null> {
+    return null;
+  }
 }
 
 export async function rig(
@@ -281,9 +318,11 @@ export async function rig(
         options.unfit?.test(name) ? "這個稱呼不適合，請換一個。" : name.length > 20 ? "太長" : null,
       picker: options.picker ?? null,
       post: async (channel, reply) => {
+        if (options.noUploads && (reply.files?.length ?? 0) > 0) return null;
         posted.push({ channel, reply });
         return `m${++n}`;
       },
+      pictures: () => options.pictures ?? null,
       tell: (summary, key, person) => told.push({ summary, key, person }),
       log: { info: () => undefined, warn: () => undefined },
       randomInt: (max) => {

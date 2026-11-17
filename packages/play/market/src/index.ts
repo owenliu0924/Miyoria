@@ -9,6 +9,7 @@
 // - `service.ts`: `MarketService`: bids and holds, a won lot burned, the name lot, lottery tickets
 //   and the draw, the song priority ticket (`SongPriorityKey`), the views and the owner's controls.
 // - `notices.ts`, `commands.ts`: the neutral cards it posts and `/me auction`, `/me lottery`.
+// - `pictures.ts`: their `auction` / `lottery` pictures (`PicturesKey`), best-effort above the text.
 // - `notes.ts`: what she hears of a lot won and of a draw.
 // - `module.ts`: module `market` and `MarketKey`.
 
@@ -35,11 +36,20 @@ export { MarketKey, MarketModule, type MarketModuleOptions, TICK_MS } from "./mo
 export {
   auctionNotice,
   BUY_COUNTS,
+  extensionRule,
   lotResultNotice,
   lotteryNotice,
   lotteryResultNotice,
   ROUTES,
 } from "./notices.js";
+export {
+  auctionPictureData,
+  drawPicture,
+  drawPictureData,
+  lotteryPictureData,
+  PICTURE_TIMEOUT_MS,
+  withPicture,
+} from "./pictures.js";
 export {
   type AuctionView,
   type BidResult,

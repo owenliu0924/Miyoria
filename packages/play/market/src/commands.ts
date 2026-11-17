@@ -24,9 +24,10 @@ import {
   intParam,
   notice,
 } from "@miyoria/commands";
-import { newId } from "@miyoria/types";
+import { type AccountRef, newId } from "@miyoria/types";
 import { LOT_TITLE } from "./lots.js";
 import { auctionNotice, BUY_COUNTS, lotteryNotice, md, ROUTES } from "./notices.js";
+import { withPicture } from "./pictures.js";
 import type { MarketRefusal, MarketService } from "./service.js";
 
 export const PATHS = ["me auction", "me lottery"] as const;
@@ -46,16 +47,31 @@ function result(text: string, muted: string | null = null): CommandReply {
   );
 }
 
-/** The auction's card now, or a line saying when the next one opens. */
+/**
+ * The auction's card now, or a line saying when the next one opens, with the lot's picture above
+ * it when one can be drawn. `viewer`: whose own bid the picture shows (`null` for a card everyone
+ * sees, such as the channel's notice).
+ */
 async function auctionCard(
   market: MarketService,
   note: string | null = null,
+  viewer: AccountRef | null = null,
 ): Promise<CommandReply> {
-  const view = await market.auctionView(null);
+  // A viewer's own bid needs the wallet; after a bid that went through, never fail on it.
+  const view = await market.auctionView(viewer).catch(() => market.auctionView(null));
   if (view.lot !== null && view.lot.min_bid !== null) {
-    return auctionNotice(view.lot, view.currency, note, market.config);
+    const card = auctionNotice(view.lot, view.currency, note, market.config);
+    return withPicture(card, await market.auctionPicture(view));
   }
   if (!view.running) return notice("info", "現在沒有拍賣。");
+  return withPicture(lastLotCard(view, note), await market.auctionPicture(view));
+}
+
+/** The last lot's result and when the next one opens (no lot taking bids now). */
+function lastLotCard(
+  view: Awaited<ReturnType<MarketService["auctionView"]>>,
+  note: string | null,
+): CommandReply {
   const next = view.next;
   const lines: string[] = [];
   if (view.lot !== null && view.lot.winner !== null) {
@@ -121,7 +137,9 @@ function registerAll(registry: CommandRegistry, service: () => MarketService | n
           const amount = /^\d{1,9}$/.test(raw) ? Number(raw) : Number.NaN;
           const r = await market.bid(inv.invoker, amount);
           if (!r.ok) return ComponentResult.reply(refusal(r));
-          const card = await auctionCard(market);
+          // The bid stands; the card (and its picture) is drawn after. An edited notice is
+          // everyone's, so it shows nobody's own bid.
+          const card = await auctionCard(market, null, inv.messageId === null ? inv.invoker : null);
           return inv.messageId === null
             ? ComponentResult.reply(card)
             : ComponentResult.update(card);
@@ -185,9 +203,9 @@ function registerAll(registry: CommandRegistry, service: () => MarketService | n
         if (amount !== null && amount !== undefined) {
           const r = await market.bid(inv.invoker, amount);
           if (!r.ok) return refusal(r);
-          return auctionCard(market, `${inv.invoker_display_name} 出價 ${amount}。`);
+          return auctionCard(market, `${inv.invoker_display_name} 出價 ${amount}。`, inv.invoker);
         }
-        return auctionCard(market);
+        return auctionCard(market, null, inv.invoker);
       }),
     { components: auctionRoutes },
   );
@@ -208,9 +226,7 @@ function registerAll(registry: CommandRegistry, service: () => MarketService | n
     {
       route: ROUTES.lotteryRefresh,
       handle: () =>
-        runComponent(async (market) =>
-          ComponentResult.update(lotteryNotice(await market.lotteryView(null), market.config)),
-        ),
+        runComponent(async (market) => ComponentResult.update(await lotteryCard(market, null))),
     },
   ];
 
@@ -224,7 +240,7 @@ function registerAll(registry: CommandRegistry, service: () => MarketService | n
       run(async (market) => {
         const count = inv.int("count");
         if (count !== null && count !== undefined) return buy(market, inv.invoker, count);
-        return lotteryNotice(await market.lotteryView(inv.invoker), market.config);
+        return lotteryCard(market, inv.invoker);
       }),
     { components: lotteryRoutes },
   );
@@ -251,7 +267,25 @@ async function buy(
   const r = await market.buyTickets(account, count, `discord:${newId()}`);
   if (!r.ok) return refusal(r);
   const left = r.balance === null ? "" : `,剩 ${r.balance}`;
-  return result(`買了 ${r.count} 張,這週你一共 ${r.mine} 張。花了 ${r.charged}${left}。`);
+  const done = result(`買了 ${r.count} 張,這週你一共 ${r.mine} 張。花了 ${r.charged}${left}。`);
+  // Paid already: the week's picture with their tickets is drawn after, best-effort.
+  const picture = await market
+    .lotteryView(account)
+    .then((view) => market.lotteryPicture(view))
+    .catch(() => null);
+  return withPicture(done, picture);
+}
+
+/**
+ * The lottery's week, with its picture above it when one can be drawn. `viewer`: whose own tickets
+ * it shows (`null` for the channel's notice, which everyone sees).
+ */
+async function lotteryCard(
+  market: MarketService,
+  viewer: AccountRef | null,
+): Promise<CommandReply> {
+  const view = await market.lotteryView(viewer);
+  return withPicture(lotteryNotice(view, market.config), await market.lotteryPicture(view));
 }
 
 export function registerCommands(

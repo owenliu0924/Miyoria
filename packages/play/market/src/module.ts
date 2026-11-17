@@ -5,7 +5,8 @@
 // nothing that costs anything goes through.
 //
 // It posts in Discord through the platform's `ReplySink` (the lot, the results, the lottery's week
-// and its draw), registers `/me auction` and `/me lottery` with the routes of those notices' buttons
+// and its draw, each with its picture from `PicturesKey` above the text when one can be drawn),
+// registers `/me auction` and `/me lottery` with the routes of those notices' buttons
 // and modals, and runs one pass at start and every `TICK_MS`: what is due opens, closes, is drawn
 // or is settled then, from the times in its tables. What she calls a winner of a name lot is the
 // heart's `call_name`; her pick of the week's lot is one small model call (`LlmRouterKey`), and
@@ -39,6 +40,7 @@ import {
   MarketWalletKey,
   ModerationKey,
   type PersonId,
+  PicturesKey,
   SongPriorityKey,
   serviceKey,
 } from "@miyoria/types";
@@ -129,6 +131,7 @@ export class MarketModule implements Module {
       post: (channel, reply) => post(ctx, channel, reply),
       tell: (summary, key, person) => tell(ctx, summary, key, person),
       log: ctx.log,
+      pictures: () => ctx.services.get(PicturesKey) ?? null,
       ...(this.#options.randomInt === undefined ? {} : { randomInt: this.#options.randomInt }),
     });
     ctx.provide(MarketKey, service);
