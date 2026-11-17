@@ -105,17 +105,17 @@ const NS = "http://www.w3.org/2000/svg";
 // Lucide "heart", the icon set the panel uses.
 const HEART = "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z";
 const TRACK = "rgba(255,255,255,.07)";
-// Three candidate palettes, ten laps each.
+// Three candidate palettes. Each takes the lap and whether it is the one on top.
 const PALETTES = {
-  // Ten hues at the primary's own lightness and chroma, from the secondary's violet round to the primary's pink.
-  "十色": [290, 258, 228, 198, 168, 135, 100, 70, 35, 352].map((h) => "oklch(0.78 0.115 " + h + ")"),
-  // The two accents only: violet to pink, lightness alternating so neighbours part.
-  "紫到粉": Array.from({ length: 10 }, (_, i) => "color-mix(in oklab, color-mix(in oklab, var(--primary) " + Math.round((i / 9) * 100) + "%, var(--secondary)) " + (i % 2 ? 78 : 100) + "%, white)"),
-  // One colour: the primary, two shades in turn; the steps alone count the laps.
-  "單色": Array.from({ length: 10 }, (_, i) => (i % 2 ? "color-mix(in oklab, var(--primary) 72%, #2a1a26)" : "var(--primary)")),
+  // The panel's own rule: neutral for what is past, the primary only for the lap being filled.
+  "中性,最上面一圈粉": (i, top) => top ? "var(--primary)" : "color-mix(in oklab, #f1f0f4 " + (i % 2 ? 22 : 40) + "%, #14151f)",
+  // The two accents: past laps in the secondary, darker to lighter, the lap being filled in the primary.
+  "紫,最上面一圈粉": (i, top) => top ? "var(--primary)" : "color-mix(in oklab, var(--secondary) " + (100 - i * 5) + "%, " + (i % 2 ? "white" : "#14151f") + ")",
+  // One hue: past laps in two deep pinks in turn, the lap being filled in the primary.
+  "深粉,最上面一圈粉": (i, top) => top ? "var(--primary)" : "color-mix(in oklab, var(--primary) " + (i % 2 ? 34 : 58) + "%, #1c1220)",
 };
-let PALETTE = PALETTES["十色"];
-function lapColor(i) { return PALETTE[i]; }
+let PALETTE = PALETTES["中性,最上面一圈粉"];
+function lapColor(i, top) { return PALETTE(i, top); }
 function el(name, attrs, parent) {
   const n = document.createElementNS(NS, name);
   for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -139,8 +139,8 @@ function ring(bond) {
   el("circle", { cx: 80, cy: 80, r: R, fill: "none", stroke: TRACK, "stroke-width": BASE }, svg);
   for (let i = 0; i < 10; i++) {
     const w = BASE - STEP * i;
-    if (i < laps) band(svg, R, w, 1, lapColor(i));
-    else if (i === laps && frac > 0) band(svg, R, w, frac, lapColor(i));
+    if (i < laps) band(svg, R, w, 1, lapColor(i, bond >= 1000 && i === 9));
+    else if (i === laps && frac > 0) band(svg, R, w, frac, lapColor(i, true));
   }
   if (bond < 0) {
     band(svg, R, BASE, Math.abs(bond) / 100, "rgba(241,240,244,.38)")
@@ -157,7 +157,7 @@ function mark(bond) {
   const svg = el("svg", { viewBox: "0 0 160 160", "aria-hidden": "true" });
   const lap = Math.min(Math.floor(bond / 100), 9), frac = bond >= 1000 ? 1 : (bond % 100) / 100;
   el("circle", { cx: 80, cy: 80, r: 66, fill: "none", stroke: "rgba(255,255,255,.1)", "stroke-width": 22 }, svg);
-  band(svg, 66, 22, frac, lapColor(lap));
+  band(svg, 66, 22, frac, lapColor(lap, true));
   const g = el("g", { transform: "translate(80 82) scale(3) translate(-12 -12)" }, svg);
   el("path", { d: HEART }, g).style.fill = "var(--foreground)";
   return svg;
@@ -174,7 +174,7 @@ for (const name of Object.keys(PALETTES)) {
     f.appendChild(c); states.appendChild(f);
   }
 }
-PALETTE = PALETTES["十色"];
+PALETTE = PALETTES["中性,最上面一圈粉"];
 for (const b of [0, -40]) {
   const f = document.createElement("figure");
   f.appendChild(ring(b));
