@@ -141,9 +141,12 @@ export class MindLoop implements Mind {
     const text = short(entry.text, MAX_NOTE);
     if (text === "") return;
     const at = toTimestamp(this.#d.clock.now());
+    // A feel in a DM is marked (and keeps its DM context): the daily reflection leaves it out of
+    // what may reach public writing.
+    const dm = entry.context?.kind === "dm";
     const trigger: ThoughtTrigger = {
       kind: entry.kind === "feel" ? "turn" : "heartbeat",
-      detail: entry.kind === "feel" ? "她說話時的感受" : "她的反思",
+      detail: entry.kind === "feel" ? (dm ? "她在私訊裡的感受" : "她說話時的感受") : "她的反思",
       context: entry.context ?? null,
       at,
     };

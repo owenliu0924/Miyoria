@@ -660,8 +660,11 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
         ),
       );
     }
-    // Her recent thoughts.
-    const thoughts = (s.get(MindKey)?.thoughts(8) ?? []).filter((t) => t.thought.trim() !== "");
+    // Her recent thoughts. Not one felt in a DM: what she writes here may reach her public diary,
+    // and a feel line quotes what was said.
+    const thoughts = (s.get(MindKey)?.thoughts(8) ?? []).filter(
+      (t) => t.thought.trim() !== "" && !t.triggers.some((tr) => tr.context?.kind === "dm"),
+    );
     if (thoughts.length > 0) {
       blocks.push(
         dataBlock(

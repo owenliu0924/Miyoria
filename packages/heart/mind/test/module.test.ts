@@ -74,6 +74,17 @@ describe("her journal", () => {
     expect(felt?.triggers[0]?.kind).toBe("turn");
     expect(h.mind.stats().last_at).not.toBeNull();
   });
+
+  it("marks a feel from a DM as one", async () => {
+    const h = await boot();
+    const dm = { platform: "discord", scope: null, channel: "d1", kind: "dm" } as const;
+    h.mind.note?.({ kind: "feel", text: "開心 中", context: dm });
+    await vi.waitFor(() => expect(h.mind.thoughts(10)).toHaveLength(1));
+    expect(h.mind.thoughts(1)[0]?.triggers[0]).toMatchObject({
+      detail: "她在私訊裡的感受",
+      context: dm,
+    });
+  });
 });
 
 describe("her goals", () => {

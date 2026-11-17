@@ -11,9 +11,11 @@ import {
   LessonsKey,
   type MemoryCurator,
   MemoryCuratorKey,
+  MindKey,
   type PersonId,
   ReflectionKey,
   SelfStateKey,
+  type Thought,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,6 +98,9 @@ const note = (
   said_by: null,
 });
 
+/** Her journal as the reflection reads it (`MindKey.thoughts`). */
+const MIND = { thoughts: [] as Thought[] };
+
 function setup(reply: string) {
   const provider = new MockProvider("p").reply(reply);
   const services = new ServiceRegistry();
@@ -112,6 +117,7 @@ function setup(reply: string) {
     note("m5", "Amy 的私事", "channel:discord:g2:c2", ["p-amy"]),
   ]);
   services.provide("t", MemoryCuratorKey, curator);
+  services.provide("t", MindKey, { thoughts: (n?: number) => MIND.thoughts.slice(0, n) } as never);
   const store = new MemorySettingsStore();
   const kb = new KnowledgeStore(store, "p", knowledgeConfig(), { now: () => Date.now() });
   services.provide("t", KnowledgeKey, kb);
@@ -237,6 +243,34 @@ describe("daily reflection", () => {
     const run = await reflector.reflect("daily", null);
     expect(run?.insights).toBe(0);
     expect(curator.insights).toEqual([]);
+  });
+
+  it("leaves what she felt in a DM out of what may reach her diary", async () => {
+    const { provider, reflector } = setup(JSON.stringify({ summary: "嗯" }));
+    const thought = (text: string, kind: "dm" | "channel"): Thought => ({
+      id: text,
+      at: "2026-11-17T01:00:00.000Z",
+      triggers: [
+        {
+          kind: "turn",
+          detail: "",
+          context: { platform: "discord", scope: kind === "dm" ? null : "g1", channel: "c", kind },
+          at: "2026-11-17T01:00:00.000Z",
+        },
+      ],
+      thought: text,
+      changes: [],
+      intents: [],
+      tokens: null,
+      error: null,
+      ms: 0,
+    });
+    MIND.thoughts = [thought("Owen 羈絆 +「他說他住在台南」", "dm"), thought("開心 中", "channel")];
+    await reflector.reflect("daily", null);
+    const sent = JSON.stringify(provider.requests());
+    expect(sent).toContain("開心 中");
+    expect(sent).not.toContain("住在台南");
+    MIND.thoughts = [];
   });
 
   it("runs once a day in a quiet moment, and lighter after a long session", () => {
