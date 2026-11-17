@@ -34,6 +34,7 @@ import {
   MAX_PUBLIC_FEELING,
   PersonReflectionError,
   personRules,
+  REFLECT_STATE_KEY,
   Reflector,
   reflectConfig,
   reflectionOf,
@@ -126,7 +127,7 @@ class FakeHeart {
       held: this.held[person] ?? null,
     };
   }
-  reflect(person: PersonId, reflection: HeartReflection) {
+  reflect(person: PersonId, reflection: HeartReflection, _options?: unknown) {
     this.reflected.push({ person, reflection });
     return {
       changes: reflection.proposals.length,
@@ -445,6 +446,42 @@ describe("the nightly reflection on each person", () => {
       [],
     );
     expect(reflector.peopleDue(Date.now(), "ok")).toBe(false);
+  });
+
+  it("is over for the day when it failed under the guard, not tried at every tick", async () => {
+    const { reflector, services } = setup('{"summary": "嗯"}', person(), person());
+    await reflector.reflect("daily", null);
+    let runs = 0;
+    services.provide("t", ReflectGuardKey, {
+      run: async () => {
+        runs += 1;
+        // The guard caught what the pass threw: it ran, and has no result.
+        return { ran: true, result: null, why: "出錯了:disk" };
+      },
+    });
+    const ctx = { services, clock: { now: () => Date.now() }, log: silentLog() };
+    await reflectOnPeople(ctx as never, reflector, new AbortController().signal);
+    expect(reflector.peopleDue(Date.now(), "ok")).toBe(false);
+    expect(runs).toBe(1);
+  });
+
+  it("marks someone done before applying, and caps against the day it reviewed", async () => {
+    const { heart, reflector, store } = setup('{"summary": "嗯"}', person(), person());
+    await reflector.reflect("daily", null);
+    const marked: Promise<unknown>[] = [];
+    const options: unknown[] = [];
+    const apply = heart.reflect.bind(heart);
+    heart.reflect = (p: PersonId, r: HeartReflection, o?: unknown) => {
+      marked.push(store.get("p", REFLECT_STATE_KEY));
+      options.push(o);
+      return apply(p, r);
+    };
+    await reflector.reflectPeople(new AbortController().signal);
+    const states = (await Promise.all(marked)) as { people: { done: string[] } }[];
+    expect(states.map((s) => s.people.done)).toEqual([["p-owen"], ["p-owen", "p-amy"]]);
+    // The first night's span is the day before now: its middle is the day it reviewed.
+    const [since, until] = heart.spans[0] as [number, number];
+    expect(options[0]).toEqual({ now: until, capsAt: since + Math.floor((until - since) / 2) });
   });
 });
 

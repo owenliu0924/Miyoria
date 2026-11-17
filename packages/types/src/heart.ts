@@ -417,12 +417,13 @@ export interface HeartPeople {
   day?(person: PersonId, since: number, until: number): HeartDay | null;
   /**
    * Applies her nightly reflection on `person` in one transaction (texts, `reflect` proposals,
-   * the anchor). Throws (and changes nothing) when it cannot be applied whole.
+   * the anchor). Throws (and changes nothing) when it cannot be applied whole. `capsAt`: an
+   * instant of the day she reviewed, whose caps the corrections count against (default `now`).
    */
   reflect?(
     person: PersonId,
     reflection: HeartReflection,
-    options?: { now?: number },
+    options?: { now?: number; capsAt?: number },
   ): HeartReflected;
   /** What she calls each person who has a call name (for the checks that keep names apart). */
   callNames?(): { person: PersonId; call_name: string }[];

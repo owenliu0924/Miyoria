@@ -137,7 +137,15 @@ export async function reflectOnPeople(
         reflector.peopleFinished(ctx.clock.now());
         return [];
       }
-      names = out.result ?? [];
+      if (out.result === null) {
+        // The guard caught a failure (or the figure ran out): over for today, not tried again at
+        // every tick, each try a job row of its own.
+        if (signal.aborted) return [];
+        ctx.log.warn({ why: out.why }, "the nightly reflection on people failed");
+        reflector.peopleFinished(ctx.clock.now());
+        return [];
+      }
+      names = out.result;
     }
   } catch (error) {
     if (signal.aborted) return [];

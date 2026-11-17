@@ -96,6 +96,11 @@ export interface HeartApplyOptions {
   now?: number;
   /** The turn the change came from (a `feel` proposal's), on the event's envelope. */
   turn?: string | null;
+  /**
+   * An instant of the local day whose caps apply (default `now`): her nightly reflection counts
+   * its corrections against the day she reviewed, not the day it runs on.
+   */
+  capsAt?: number;
 }
 
 /** What one change did. */
@@ -443,7 +448,7 @@ export class HeartStore {
     return this.#write(() => {
       const stored = this.get(person);
       let current = stored ?? newPerson(person, at, this.#rules.default_trust);
-      let ledger = this.#log.dayLedger(person, now);
+      let ledger = this.#log.dayLedger(person, options.capsAt ?? now);
       const out: HeartApplied[] = [];
       for (const request of requests) {
         const applied = applyChange(current, request, ledger, this.#rules, now);

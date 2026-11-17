@@ -205,9 +205,12 @@ export class HeartService implements HeartPeople {
   reflect(
     person: PersonId,
     reflection: HeartReflection,
-    options: { now?: number } = {},
+    options: { now?: number; capsAt?: number } = {},
   ): HeartReflected {
-    return this.#people.reflect(person, reflection, { now: options.now ?? this.#clock.now() });
+    return this.#people.reflect(person, reflection, {
+      now: options.now ?? this.#clock.now(),
+      ...(options.capsAt === undefined ? {} : { capsAt: options.capsAt }),
+    });
   }
 
   callNames(): { person: PersonId; call_name: string }[] {

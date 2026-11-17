@@ -114,6 +114,25 @@ describe("apply", () => {
   });
 });
 
+describe("caps of another day", () => {
+  it("counts a reflection's corrections against the day it reviewed when told to", () => {
+    const yesterday = NOW - DAY;
+    // Yesterday's good-direction bond cap (12) used up by her proposals.
+    for (let i = 0; i < 40; i++) store.apply("p1", up(), { now: yesterday });
+    const correction = {
+      anchor: null,
+      texts: {},
+      proposals: [{ field: "bond" as const, direction: "up" as const, quote: "其實很開心" }],
+    };
+    const reviewed = store.reflect("p1", correction, { now: NOW, capsAt: yesterday });
+    expect(reviewed.changes).toBe(1);
+    expect(store.log.history("p1", { limit: 1 })[0]?.change.delta).toBeCloseTo(0, 3);
+    // Against today's caps the same correction is a full step.
+    store.reflect("p1", correction, { now: NOW });
+    expect(store.log.history("p1", { limit: 1 })[0]?.change.delta).toBe(3);
+  });
+});
+
 describe("anchors", () => {
   it("replace the anchor of the same tier and refuse a tier without one", () => {
     store.apply("p1", up());

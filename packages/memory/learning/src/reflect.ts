@@ -429,7 +429,7 @@ export class Reflector {
       if (kind !== "daily") return;
       this.#lastDaily = before.day;
       this.#lastDailyAt = before.at;
-      this.#saveState();
+      void this.#saveState();
     };
     try {
       this.cap.record(started);
@@ -438,7 +438,7 @@ export class Reflector {
         this.#lastDaily = day;
         this.#lastDailyAt = run.at;
       } else this.#lastLightAt = run.at;
-      this.#saveState();
+      void this.#saveState();
       const input = await this.#gather(kind, context, started, signal);
       const result = await withLlmTag({ module: "learning", label: `reflect:${kind}` }, () =>
         completeJson(
@@ -900,7 +900,7 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
     const { day } = localParts(now, this.#d.config.utc_offset_minutes);
     this.#peopleDay(day, now);
     this.#people.finished = true;
-    this.#saveState();
+    void this.#saveState();
   }
 
   /**
@@ -943,6 +943,10 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
         const today = heart.day(person, since, now);
         if (today === null) continue;
         const name = names.get(person)?.name ?? this.#handleOf(person, names);
+        // Marked done, and the mark stored, before anything of hers about them is applied: a crash
+        // after the call may cost someone tonight's reflection, never give them a second one.
+        state.done.add(person);
+        await this.#saveState();
         try {
           const applied = await this.#reflectOn(person, name, today, episodes, since, signal);
           if (applied) done.push(name);
@@ -950,12 +954,9 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
           if (signal.aborted) break;
           log.warn({ err: errorMessage(error), person }, "her reflection on someone was skipped");
         }
-        // Done (or skipped) for today either way: nobody twice.
-        state.done.add(person);
-        this.#saveState();
       }
       state.finished = true;
-      this.#saveState();
+      void this.#saveState();
     } finally {
       this.#running = false;
     }
@@ -1005,7 +1006,10 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
       const line = await this.#publicFeeling(public_feeling, entry, names);
       if (line !== null) reflection.public_feeling = line;
     }
-    heart.reflect(person, reflection, { now: d.clock.now() });
+    // Her corrections count against the caps of the day she reviewed (the middle of the span):
+    // a pass after midnight does not get a fresh day's caps for yesterday.
+    const now = d.clock.now();
+    heart.reflect(person, reflection, { now, capsAt: since + Math.floor((now - since) / 2) });
     return true;
   }
 
@@ -1124,9 +1128,10 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
       .catch(() => undefined);
   }
 
-  #saveState(): void {
+  /** Stores the state; the promise settles once it is written (or could not be). */
+  #saveState(): Promise<void> {
     const store = this.#d.store;
-    if (!store) return;
+    if (!store) return Promise.resolve();
     const value = {
       last_daily: this.#lastDaily,
       last_daily_at: this.#lastDailyAt,
@@ -1139,7 +1144,7 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
         finished: this.#people.finished,
       },
     };
-    void this.#writes
+    return this.#writes
       .run(async () => {
         await store.set(this.#d.profile, REFLECT_STATE_KEY, value).catch(() => undefined);
       })
