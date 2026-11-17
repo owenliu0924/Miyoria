@@ -144,11 +144,11 @@
 - **在意** = 分級對應的值(認識 0、朋友 0.1、好朋友 0.26、摯友 0.4、知心 0.5 … 永恆羈絆 1)+ 0.2 × 好感 + 0.15 × 想念,門檻 0.3:好朋友加上羈絆對應的平常好感剛好到。
 - **會員的文字分段**到 1000:120 很親近、240 心意相通、450 像家人一樣、750 無可取代、1000 永恆的羈絆;120 以下照舊。
 - **搬移**:好感從羈絆對應的基準開始(不是 0,不然衰減會先把老朋友拉冷再拉回來);舊的社交筆記在她沒寫感覺時當印象,其他留在 `legacy`。搬移經過 `HeartStore.migrateLegacy` 寫,列和 `migrate` 事件在同一個交易;已經有列的人跳過,所以跑第二次什麼都不變。
-- **表**:`heart_person`(一人一列,欄位就是 `HeartPerson`)和 `heart_self`(一列 JSON)是 store 的 `heart` plugin(`schema.ts`、`migrations.ts`、`store.ts`)。沒有連到 `persons` 的外鍵:舊紀錄裡可能有 identity 不認得的人;忘記某人時由 plugin 的 hook 刪那一列。資料分類:`heart_person` 跟「關係」,`heart_self` 跟「內心」;`heart.changed` 和 `heart.evidence` 由「關係」認領,只清事件記錄時變動紀錄留著,兩個一起清才刪。這一步沒有任何 store 開這個 plugin。
+- **表**:`heart_person`(一人一列,欄位就是 `HeartPerson`)和 `heart_self`(一列 JSON)是 store 的 `heart` plugin(`schema.ts`、`migrations.ts`、`store.ts`)。沒有連到 `persons` 的外鍵:舊紀錄裡可能有 identity 不認得的人;忘記某人時 plugin 的 hook 留下數值、清掉文字(§2.12)。資料分類:`heart_person` 跟「關係」,`heart_self` 跟「內心」;`heart.changed` 和 `heart.evidence` 由「關係」認領,只清事件記錄時變動紀錄留著,兩個一起清才刪。這一步沒有任何 store 開這個 plugin。
 - **數值只經 `HeartStore.apply` 動**(`applyAll`、`applyDecay`、`adminSet`、`migrateLegacy` 都走同一條):列和事件在同一個交易寫,當天的上限從當天的事件算。`upsert` 只寫文字、標籤這類,不記變動。錨點只改錨點、不動羈絆:停在門檻前的羈絆要等下一次往上才會過去。
 - **`heart_self` 只在內容變了才寫**:和存著的那份比(不管鍵的順序),一樣就不寫。
 - **清單**:羈絆高的在前,分頁;用 identity 的名字、handle 和她的稱呼找,identity 不認得的人用 id 找。
-- **合併兩個人**:被併的人有列、留下的人沒有,就改到留下的人名下;兩個都有就兩列都留著,hook 回報不處理,由管理員決定哪份對。
+- **合併兩個人**:被併的人有列、留下的人沒有,就改到留下的人名下;兩個都有就合成一列(§2.12)。
 - **衰減的事件不另設保留期**:事件記錄的保留期是按事件類型分級的(`heart.changed` 是 `keep`),不能每一筆自己設,所以 `cause: "decay"` 的變動也永久保留(每人每天最多五筆,動不到 0.005 的不寫)。之後如果太多,做法是另開一個 `long` 分級的事件類型給衰減,不是在同一個類型裡分。
 - **會員看到的**(`publicBond`):分級名稱、下一級、分級內的進度、環的第幾圈和這一圈滿了多少、是不是十圈全滿、親近程度、信任和熟悉的文字、她對外的那句話和稱呼。只有環和分級內進度是數字,而且以 1/20 為一格往下取,看得出大概、算不回羈絆。羈絆 −15 以下顯示「討厭」「很討厭」,環是空的。信任和熟悉的文字從 `api` 搬到 `packages/types`,和羈絆的文字放在一起;要不要顯示、那句話和稱呼過不過得了審核,還是呼叫的一方決定。
 
@@ -167,13 +167,13 @@
 - 一個回合(run)結束後套用一次,不是每一步:多步的 feel 合在一起算這回合的上限。被取消的回合照樣套用已經寫出來的;語音提早開始又被丟掉的回合不算。
 - 第一行「我: 情緒 強度」:情緒詞對到情緒引擎(`FEEL_EMOTION_WORDS`:開心、生氣、難過、害怕、驚訝、討厭、害羞、得意、吃醋、寂寞、想念、感激、愧疚、不甘心,加常見的同義詞;平靜、普通、還好不動情緒),強度弱中強對到 Appraise 用的 weak / medium / strong,經 `AffectState.appraise`(來源 `feel`)。對象是叫醒她的人;原因是她回的那句(「名字: 內容」),沒有的話用叫醒她的事,再沒有用第一個提議的引用。沒寫強度當作中。
 - 後面每行「名字: 值 + 「引用」」:值是七個詞(`FEEL_FIELD_WORDS`),全形半形的 +、-、冒號都收;沒有引用、不認得的值、看不懂的行丟掉,只記 debug 的次數。
-- 名字和 `@名字` 用同一套比對(`nameMatcher`):不分大小寫、整理過的名字、handle、只有一個人有的第一個字。在場的人:文字是這裡最近說話的人加上叫她的人,語音頻道的文字區再加上語音頻道裡的人;語音是頻道裡的人加上說話的人。封鎖的人和她自己的帳號從來不算;一個名字對到兩個人就都不算。
+- 名字和 `@名字` 用同一套比對(`nameMatcher`):不分大小寫、整理過的名字、handle、只有一個人有的第一個字。在場的人:文字是這裡最近說話的人加上叫她的人,語音頻道的文字區再加上語音頻道裡的人;語音是頻道裡的人加上說話的人。封鎖的人和她自己的帳號從來不算。比對分三輪:名字、別名(handle、她的稱呼)、第一個字,前面一輪對到的先算;同一輪裡兩個人同一個寫法就都不算(所以一個人的名字和另一個人的 handle 一樣時,算名字的那個人)。
 - 一回合最多兩個人、三行(先寫的先算);同一個人同一個值同一個方向只算一次。之後經 `HeartKey.feel` 交給 `HeartStore.applyAll`,帶這回合的 turn id;標了 `blocked` 的人不動。
 
 **module `heart`**(`heart/person/src/module.ts`)
 
-- 設定是 `[modules.heart]`:`HeartPersonConfigSchema` 加上 `decay_check_mins`(10)。設定改了是 supervisor 重啟這個模組,`start` 再 `setRules` 一次。排在 `self` 之後;Core 開 store 時就帶 `heartTables`。
-- **搬移只跑一次**:`heart:migrated`(settings)沒有、而且 `heart_person` 是空的才跑;不管有沒有東西可搬,跑完都記下來,所以之後把表清空(忘記所有人)也不會再從舊紀錄搬回來。表裡已經有列時直接記下來、不搬。一行 log 寫搬了幾個、跳過幾個、讀到幾筆舊關係和卡片。
+- 設定是 `[modules.heart]`:`HeartPersonConfigSchema` 加上 `decay_check_mins`(10)。設定改了是 supervisor 重啟這個模組,`start` 再 `setRules` 一次。可選依賴 commands、actions、auth、moderation;讀它的模組(self、world、queue、arbiter、economy、live、反思這些)把 `heart` 列在可選依賴裡,所以排在它後面。Core 開 store 時就帶 `heartTables`。這個模組不能關(§2.12)。
+- **搬移只跑一次**:`heart:migrated`(settings)沒有時跑,已經有列的人跳過;跑完才記下來,所以之後把表清空也不會再從舊紀錄搬回來;跑失敗不記,下次啟動再跑(§2.12)。一行 log 寫搬了幾個、跳過幾個、讀到幾筆舊關係和卡片。
 - **衰減**:每 `decay_check_mins` 分鐘看一次 `decayDue`(她的當地日,模組的 clock),每人每天只跑一次。
 - **每一句話**(`HeartStore.seen`,從 social 觀察每一句話的地方呼叫,social 自己的計數照舊):最後看到的時間、熟悉照 `lineDepth`/`familiarityGain` 長;對她說的(提到她、回她、私訊、叫她名字)或在她所在的語音頻道說的,算一次互動、`last_interaction` 和 `last_together`。不寫 `heart.changed`:一句話一筆會淹沒變動紀錄,這和 `interactions` 一樣是計數。只對 social 認得、沒封鎖的人。
 
@@ -192,10 +192,10 @@
   | 默契 | 很有默契 0.7、有默契 0.4、有點默契 0.15、還沒默契 |
 
   心結到 0.3、想念到 0.4 時加一句(「你對他還有心結,還沒說開」「你很想他」)。
-- **區塊 4**(`PersonProfiles` 和沒有它時的 `peopleBody`):有 `heart_person` 列的人,分級名稱和 `N/1000` 從羈絆算,信任、熟悉、敬意、自在、默契用文字,不再有數字。對人的情緒(想念、感激…)和「你偷偷喜歡他」不再出現。**文字欄位**(稱呼、印象、立場)在第 4 步之前寫的人還是舊的(反思寫卡片、`set_call_name` 寫 `relationships`),所以先讀舊的、沒有才讀 `heart_person`;第 4 步反思改寫 `heart_person` 之後拿掉。區塊 4 的快取鍵沒改。
+- **區塊 4**(`PersonProfiles` 和沒有它時的 `peopleBody`):有 `heart_person` 列的人,分級名稱和 `N/1000` 從羈絆算,信任、熟悉、敬意、自在、默契用文字,不再有數字。對人的情緒(想念、感激…)和「你偷偷喜歡他」不再出現。**文字欄位**(稱呼、印象、立場)在第 4 步之前寫的人還是舊的(反思寫卡片、`set_call_name` 寫 `relationships`),所以先讀舊的、沒有才讀 `heart_person`;第 4 步反思改寫 `heart_person` 之後拿掉。區塊 4 的快取鍵在 §2.12 加上了 heart 顯示的文字。
 - **區塊 7**:這裡的人(說話的人、叫她的人、語音頻道裡的人)的好感、心結、想念用文字列在 `<now>` 裡,標題「你現在對在場的人的感覺:」。
 - **在意**:門檻 `CARES_THRESHOLD`(0.3)放在 `packages/types`,值是 `cares()`。heart 在跑時:self 的 `care()` 是 heart 的在意(到門檻才算);舊的暗戀行為(被稱讚會害羞、吃醋、她說話或在語音裡一起時想念降下來、想念的驅力)掛在最在意的那個人(`mostCared`)上;social 評估的「她喜歡的人」、mind 的 `cared_attachment`、world 誰上線算數,都改用它。沒有 heart 時各自照舊(self 不再讀 `romance`)。`HeartService` 的在意名單一分鐘讀一次(情緒每個事件都問)。
-- **主動**:`[modules.agent.initiative] mood_weight`(0.5,0 是關):她想主動(`biases.initiative`)時安靜要等的時間和想念的門檻最多少一半,不想時最多多一半;想找某人聊(`chat_with`、`find_person`)時那個人的想念門檻再降。想念私訊只給最在意的那個人,用 heart 的想念或她對他的想念(取大的)。Gate 的間隔和上限沒動。
+- **主動**:`[modules.agent.initiative] mood_weight`(0.5,0 是關):她想主動(`biases.initiative`)時安靜要等的時間和想念的門檻最多少一半,不想時最多多一半;想找某人聊(`chat_with`、`find_person`)時那個人的想念門檻再降。想念私訊只給最在意的那個人,用 heart 的想念(第 5 步之後 self 不再有對人的想念)。Gate 的間隔和上限沒動。
 - **`<style_note>`**:`[modules.agent.prompt] mood_style`(開):話多(talkativeness ≥ 0.25)或話少時一句「可以多講幾句」「回短一點」;文字時心情好(valence ≥ 0.4)一句可以用 react,心情差一句不用特地 react。程式不硬切。
 - **`@名字`**:除了最近說話的人和她回的人,再加上這個地方語音頻道裡的人,和這回合提示詞裡出現的人(區塊 4 的人、區塊 7 的人;`say` 到別的地方的話不加)。封鎖的人和她自己的帳號不算。
 
@@ -287,18 +287,91 @@
 
 - 多一個 `bond`:`{tier, next_tier, tier_progress, ring: {lap, fraction, full}}`,陌生人或被擋的人是 `null`。來自 `publicBond`,環和分級內進度以 1/20 為一格往下取。放在 `card` 外面,因為 `card` 是會員卡和籤詩抄的那份。
 - 沒有 `below`:討厭的人環是空的、`tier` 是「討厭」。
-- 「羈絆」的文字(`card.affinity`)改用 `bondBand`,涵蓋到 1000(很親近、心意相通、像家人一樣、無可取代、永恆的羈絆);會員卡的立繪表給這五段和「非常好」同一組。會員卡的 SVG(`card-face`)還只認六段,新的五個字會照寫,但那一格的條不畫。
+- 「羈絆」的文字(`card.affinity`)改用 `bondBand`,涵蓋到 1000(很親近、心意相通、像家人一樣、無可取代、永恆的羈絆);會員卡的立繪表給這五段和「非常好」同一組。會員卡的 SVG(`card-face`)那一格的條在 §2.12 改成每個字都有一格。
 - 公開和會員的回應都由 schema 驗過、多的欄位砍掉,所以 schema 裡沒有原始數值的欄位,測試確認羈絆 742.3 的人拿到的回應裡沒有「742」。
 
 **Discord 的環**
 
 - `/me profile` 和 `/admin person show` 的卡片帶一張 PNG(`file` 區塊加 `files`,`packages/commands` 的回覆本來就支援)。圖由 api 的 `RingImages`(`packages/api/src/ring-image.ts`,`@miyoria/card-face/render` 加 resvg,和 `og.ts` 同一條路)畫,透過 `BondRingImagesKey`(定義在 `heart/person`,api 模組提供)給指令用;沒有這個服務或畫失敗,就回文字版。
 - 會員的圖用 `publicBond` 的環(沒有數字);低於 0 時畫一小段固定長度的負弧(只知道在下面,不知道多少)。管理員的圖帶數字。圖按 `(lap, fraction, full, below, 數字)` 快取,最多留 256 張;底色用深色,因為環的顏色是為暗色主題配的。
-- `/me profile` 的分級名稱照舊是 `labelOf`(看熟悉度),和環的分級(只看羈絆)在熟悉度低、羈絆高的時候會不一樣。
+- `/me profile` 的分級名稱和環一樣只看羈絆(§2.12)。
 
-**沒做**
+**沒做**(§2.12 做了)
 
-- `card-face` 的 `bondRingProps` 還是收 `ringOf` 的結果:`card-face` 的 `node_modules` 沒有 `@miyoria` 的連結,不跑 `pnpm install` 就不能依賴 `@miyoria/types`。
+- `card-face` 的 `bondRingProps` 還是收 `ringOf` 的結果。
+
+### 2.12 稽核之後改的(2026-11-17)
+
+一次從啟動路徑往下的獨立稽核(§4 第 8 步的前半)找到的問題,和 owner 當天加的 H10。
+
+**忘記我**
+
+- 以前 heart 的 hook 刪掉整列,和「不會刪除:她對你的羈絆與印象」對不上。現在:數值、`tier_floor`、錨點的分級、標籤、稱呼、互動次數留著;從對方的話整理出來的清掉:立場、印象、還沒聊完的事、共同的梗、不喜歡的地方、對外那句話、錨點的引用和筆記代號、搬移留下的 `legacy.notes` 和 `legacy.knowledge`。
+- 事件記錄:這個人的 `heart.changed` 的 `reason_quote` 和 `heart.evidence` 的 `detail` 清成空字串,其他欄位留著(當天的上限和變動紀錄要算得出來)。核心原本只能把整個 payload 換成 `{"redacted":true}`,所以加了 core migration 7(`partial_redaction`):觸發器多允許一種遮蔽,payload 還是 JSON 物件、帶 `"redacted": true`、只能一次;`EventStore.redactFields` 用它,每一筆一樣寫 `privacy.redacted`。
+- 舊表:`relationships.notes` 和 `relationship_deltas.reason` 也清掉(legacy 的 hook 原本什麼都不做),數值留著。
+- 會員頁的 API 不再自己清那句話,hook 在同一個交易裡清。
+- 用關鍵字忘記時 heart 不動。
+- 現在的說明(`FORGET_REMOVES`、`FORGET_KEEPS`,`/me memory forget` 和會員頁共用):
+  - 會刪除:關於你的記憶、你告訴她的事,以及從你說過的話整理出來的記憶(經歷、事實、她的筆記);全部忘記時還會刪除:她筆記本裡關於你的頁面、聊天紀錄裡你說過的話的內容(只留下時間),以及她從你的話寫下的東西:對你的印象、和你相處的方式、還沒聊完的事、你們的梗、她不喜歡的地方、會員頁上她對你說的那句話,和她記下心情變化時引用的話。
+  - 不會刪除:她和你的羈絆、信任、熟悉這些數值、已經到過的分級和她怎麼稱呼你;事件紀錄裡的其他事(只有擁有者能用 /admin memory wipe 清除);以及和你無關、也不是從你的話整理出來的記憶。用關鍵字忘記時,只刪符合的記憶,聊天紀錄和她對你的印象都不變。之後你再說起同樣的事,她可能會重新記下來。
+
+**module `heart`**
+
+- 搬移:`heart:migrated` 沒有就跑(已經有列的人跳過),跑完才記;失敗記 error、不記下來,下次啟動再跑。
+- 她自己的帳號存在 `heart:self_accounts`(`PlatformReady` 說到新的就寫,啟動時讀),重啟後她自己的話不會被當成別人的。
+- 不能關:`heart` 和 `agent`、`arbiter` 一樣列在 `REQUIRED_MODULES`。還寫著舊模組 `social` 的可選依賴(world、conversation、knowledge、reflect、arbiter、live、economy)改成 `heart`,有測試確認每個 manifest 只寫存在的模組。
+- 機器人:`platform.voice_state`、`platform.member` 和機器人的訊息會記下哪些帳號是機器人;機器人不會因為在語音頻道裡就變成一個人,也沒有證據、沒有列。
+- 證據寫給沒有列的人時先給他一列(只在語音裡聽的人,每晚反思才看得到他)。`Together` 在她被移到另一個語音頻道時,結束舊頻道的停留、開始新的。
+- 每天的衰減每 50 人讓一次事件迴圈,啟動時讀人每 200 人一頁讓一次。
+- 合併兩個都有列的人:羈絆高的那列為主(數值、`tier_floor`、文字;它沒寫的文字用另一列的),錨點和標籤合起來,互動次數相加,時間取最新,被併的那列刪掉。事件不能改名下(只能附加),留在原來的 id。
+- 標成 owner 時,信任 100 和羈絆的下限馬上套用,各寫一筆 `heart.changed`(`cause: admin`);一個值的變動不會再順便動到另一個值。owner 的「在意」不會低於門檻。
+- `[modules.heart]` 每個鍵都寫進範例檔(兩份一樣),`bond_gain_caps` 要由低到高排,不然設定不收。
+
+**feel**
+
+- 情緒的原因:私訊裡一律是「私訊裡的事」;其他地方只有她感覺的對象自己說的那句才當原因。
+- 她的稱呼也算那個人的名字(`feel` 和 `@名字` 都是)。
+- 被 token 上限切斷的行不算:引號開了沒收的丟掉;沒有引號的最後一行、後面沒有換行的也丟掉(`cut`)。
+- 多步時情緒取最後一步的。
+- 因為同一個人又說話而被重來的回合(`cause: input`),它的 feel 不套用,由重來的回合寫。
+- 子代理和反思的 profile 不再收到 feel 的規則(它們的前綴本來就是自己的,文字和語音的快取不變)。
+- 私訊裡的 feel 在想法日誌標成「她在私訊裡的感受」,每晚的整體反思不讀它(那份回顧會變成公開的日記)。
+
+**讀的那一邊**
+
+- 區塊 4 的快取鍵多了在場的人從 heart 顯示出來的文字(分級、慢變的值的文字、稱呼、印象、立場)的雜湊;用顯示的文字而不是 `updated_at`,所以每一句話(熟悉、時間)不會讓快取失效,除非顯示的字變了。人物卡的暖讀取也用同一個鍵。
+- 一條梯子:所有顯示的分級名稱(會員頁、`/me profile`、人物 API、區塊 4、會員卡)都從只看羈絆的 `BOND_LADDER` 來;`relationshipLabel` 不再看熟悉度,沒見過(沒有列,或沒有互動、羈絆 0)是陌生人,-15 以下討厭、-50 以下很討厭。
+- 請求佇列每次用的時候才查 `SocialSignalsKey`,heart 重啟後不會拿著舊的。
+
+**每晚一人一次**
+
+- 先記下「這個人今天做過了」並寫進設定,才呼叫模型、套用結果:當機最多讓一個人少一次,不會多一次。
+- 修正受「被回顧的那一天」的上限(跨度的中間那天,`capsAt`),不是跑的那天的。
+- 在花費的守衛裡失敗(守衛會接住錯誤)時當天就結束,不再每 30 秒重試、每次多一筆工作。
+
+**清掉的**
+
+- 事件 `affect.bond`、`social.appraisal`、`social.relationship`(沒有人發也沒有人聽)從合約、SDK 和匯流排清單拿掉:這是公開事件合約的變動,擴充如果用了它們會找不到。`affinityStep`、`stanceStale`、`RelationshipStoreKey` 也拿掉(搬移直接讀 `store.relationships`)。
+- `/admin memory wipe` 的確認和結果算的是 `heart_person`(真的會刪的),不是凍結的舊表。
+
+**會員卡**
+
+- `bondRingProps(bond)` 自己算環;給 lap 和 fraction 的寫法留給公開頁。卡面「羈絆」那一格每個 `bondBand` 的字都有一格。兩個都從新的窄入口 `@miyoria/types/bond` 讀(沒有任何 import),面板的 bundle 不會帶進整個 `@miyoria/types`;面板和卡面一樣用別名指到原始碼。
+
+**分級的小階(H10)**
+
+- 每個有名字的分級(認識到心之所歸,16 個)分三個小階,寫在名字後面空一格:「知心 I」「知心 II」「知心 III」。小階是羈絆在這一級範圍(到下一級的門檻)的哪一個三分之一。永恆羈絆、陌生人、討厭、很討厭沒有小階;停在沒錨點的分級前的羈絆,自然是下一級前那一級的 III。
+- 只算不存:`tierProgress` 多回傳 `stage`,`tierLabel` 寫成字,`tierStanding` 給分級、小階、顯示的字和「下一步」(下一個小階,III 之後是下一級的 I;下一級是永恆羈絆就是它本身)。`tier_floor` 和錨點照舊按分級。小階換了不是一個事件。
+- 給人看的地方用帶小階的字:會員頁的 `bond`(多 `stage`、`tier_label`、`next_label`,`tier` 照舊是名字給程式用)、會員卡的「關係」、`/me profile`、人物 API(`stage`、`tier_label`;人物頁多 `next_label`)。程式依名字判斷的地方(面板的色調、她每一級的那句話、立繪)照舊用名字;區塊 4 照舊是名字和 `N/1000`。新的合約欄位都是可選的;會員看到的還是沒有原始數值(小階只是粗的分段)。
+- 450 那一級改名「宛若家人」(原本「家人般」)。V4 的分級表(切換程式讀舊紀錄用)照舊是 V4 的名字;已經發出去的會員卡留著發卡時的字,不改。
+
+**切換到線上要做的事**
+
+1. 停掉舊的 Core。
+2. 備份資料庫,連同同目錄的 `-wal` 和 `-shm` 一起。
+3. 啟動一次。這次會跑 core migration 7(只換觸發器,不動資料)和 heart 的搬移。
+4. 看 log 有沒有 `heart: the old records moved to heart_person`,和它的數字:`rows`(搬了幾個人)、`skipped`(已經有列跳過的)、`relationships`、`cards`、`self_state`。`rows + skipped` 應該差不多是舊關係和卡片的人數。
+5. 如果看到 `heart: the old records could not be moved; the next start tries again`(error):舊的紀錄還在原地、沒有記下已搬,先看 log 裡的錯誤,修好(或還原備份)再啟動一次;每次啟動都會再試,已經有列的人不會被重搬。
 
 ## 3. owner 的決定(2026-11-17)
 
@@ -313,6 +386,7 @@
 | H7 | mind 的 Plan | 刪 |
 | H8 | 現有的關係資料 | 搬進新表 |
 | H9 | 衰減 | 七天沒有互動後每天掉 1,只掉到已達成分級的門檻 |
+| H10 | 分級太少 | 2026-11-17:分級太少,每個分級再分三個小階,寫法 I / II / III(永恆羈絆、陌生人、討厭、很討厭沒有);「家人般」改名「宛若家人」。見 §2.12 |
 
 **H5 的取代機制**:不存獨立的數字,改成算出來的「在意」:由羈絆的分級、好感和想念合成一個 0 到 1 的值,world、self 和主動都用這一個(現在是三套門檻)。原本掛在「暗戀對象」上的行為照留,改掛在「最在意的那個人」上:被這個人稱讚會害羞、這個人只理別人會吃醋、這個人在語音裡她比較不寂寞、太久沒見會想私訊。少掉的只有一件事:現在的數字可以和親近程度分開(很熟但不心動,或不熟卻心動),算出來的做不到。owner 接受這一點,不加第十個值。
 

@@ -230,9 +230,15 @@
 - **`task_together` 證據沒有人寫**:任務、懸賞完成時沒有記;Minecraft 沒有玩家名單,也沒記 `played_together`。
 - **V4 的分級對照表還是手抄的**(`store` 的切換程式):V4 切換拿掉時一起刪,或改成從 `BOND_TIERS` 產生。
 - **`tools/replay` 的 `announcements-not-her-topics.jsonl` 還帶著 `plans`**:Plan 刪了以後腳本不讀它,留著不影響結果;下次重錄時拿掉。
-- **`social.appraisal` 事件沒有人發也沒有人聽**(社交評估刪了):它在 SDK 公開的事件清單裡,和 `agent.initiative` 一樣,要拿掉是改公開的事件合約,另外決定。
 - **self 裡「暗戀」的名字還在**(`crushPerson`、`crush_spoke`、`crush_message_longing` 這些):讀的已經是 heart 算的「最在意的人」(H5),只是名字沒改;設定鍵要改名得一起改 `removed-config.ts` 和範例檔。
 - **`relationships`、`relationship_deltas`、`self:feeling:*`、`self:state` 沒人寫了**,只有搬移讀;等 v5-data §8 第 14 步刪表。
+
+### V5 階段 4 稽核之後留下的(2026-11-17)
+
+- **多個 profile 共用 `heart_person`**(稽核 M10):表沒有 profile 欄,同一個資料庫開兩個角色時她們對人的數值是同一份;要分開得加欄位和搬移,等 Space / 角色分開(階段 6)時一起做。
+- **稽核 M18 的既有競態**:階段 4 之前就有,這一輪沒有修;細節在稽核報告裡,修的時候先寫一個會失敗的測試。
+- **合併兩個人時事件不改名下**:`heart.changed`、`heart.evidence` 是只能附加的,被併的人的事件留在原來的 id 下,留下的人的變動紀錄和當天的上限看不到它們(列已經合成一列)。要看得到得讓讀的一方把 `absorbedInto` 的 id 一起查。
+- **「忘記我」沒清舊的 `self:feeling:<person>` 卡片**:搬移讀完就沒人讀,v5-data §8 第 14 步刪表時一起刪;在那之前它們還留著她以前寫的感覺。
 
 ## 4. 自我修復與自我改進(備忘)
 
