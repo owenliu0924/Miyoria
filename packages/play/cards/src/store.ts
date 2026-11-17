@@ -1230,13 +1230,6 @@ const cardsData: readonly CategoryData[] = [
         kind: "text",
         at: "ts",
       }),
-      tablePart("cards_pending", "cards_pending", "node", "created_at", "person_id, issue_key", {
-        person_id: "text",
-        issue_key: "text",
-        serial: "text",
-        created_at: "ts",
-        foil: "bool",
-      }),
       tablePart("cards_legacy", "cards_legacy", "node", "acquired_at", "account_id, acquired_at", {
         id: "text",
         account_id: "text",
@@ -1251,12 +1244,26 @@ const cardsData: readonly CategoryData[] = [
   },
   // Who was given their keepsake: it goes with the people, as `persons.legacy` that made them
   // eligible does, not with their relationship (a wipe of that leaves them eligible).
+  //
+  // And the serials of paid cards charged and not written yet: a wipe of the relationships leaves
+  // them, so the settling (`CardService.settlePending`) still gives back what was charged under
+  // them (nothing, when the wallet was wiped with the relationships). A wipe is a set of
+  // statements with no code before it, so the store cannot settle them first; and a deleted row is
+  // a charge nothing would ever give back. Only a wipe of the people takes them, and with them the
+  // persons and the wallets.
   {
     category: "people",
     parts: [
       tablePart("cards_keepsake", "cards_keepsake", "node", "given_at", "person_id", {
         person_id: "text",
         given_at: "ts",
+      }),
+      tablePart("cards_pending", "cards_pending", "node", "created_at", "person_id, issue_key", {
+        person_id: "text",
+        issue_key: "text",
+        serial: "text",
+        created_at: "ts",
+        foil: "bool",
       }),
     ],
   },

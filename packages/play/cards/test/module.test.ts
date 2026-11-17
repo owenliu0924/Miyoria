@@ -10,12 +10,14 @@ import { EventLogKey, Events, type JsonObject } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CardFacesKey,
+  CardService,
   CardsKey,
   CardsModule,
   type CardsModuleOptions,
   type CardWallet,
   CardWalletKey,
   cardRelationship,
+  cardsConfig,
   cardsTables,
   expressionsFor,
 } from "../src/index.js";
@@ -163,6 +165,38 @@ describe("module cards", () => {
     expect(cards?.cards("p1")).toEqual([]);
     // The catalogue is not anyone's data and stays.
     expect(cards?.catalogue().length).toBeGreaterThan(0);
+  });
+
+  it("leaves a charged card's serial through a wipe of the relationships, for the settling", async () => {
+    const { store } = await start({ price: 0 });
+    const tables = store.plugin(cardsTables);
+    const mei = await store.people.upsertAccount({ platform: "discord", id: "a1" }, "小美");
+    tables.reserve(mei, "daily:k1", "MYR-KEPT-0000-0001", T0 - 3 * 60_000);
+    const counts = await store.profileData.wipe("p", ["relationships"]);
+    expect(counts).not.toHaveProperty("cards_pending");
+    expect(tables.pending()).toHaveLength(1);
+    // The settling gives back what was charged under it, then the row goes.
+    const refunds: string[] = [];
+    const service = new CardService(tables, {
+      config: cardsConfig(),
+      clock,
+      wallet: () => ({
+        ...walletWith(0),
+        async refund(_p, key) {
+          refunds.push(key);
+          return 30;
+        },
+      }),
+      relationship: () => cardRelationship(null),
+      account: async () => ({ platform: "discord", id: "a1" }),
+    });
+    expect(await service.settlePending()).toMatchObject({ refunded: 1 });
+    expect(refunds).toEqual(["MYR-KEPT-0000-0001"]);
+    expect(tables.pending()).toEqual([]);
+    // A wipe of the people takes it, with the persons and their wallets.
+    tables.reserve(mei, "daily:k2", "MYR-KEPT-0000-0002", T0);
+    expect(await store.profileData.wipe("p", ["people"])).toMatchObject({ cards_pending: 1 });
+    expect(tables.pending()).toEqual([]);
   });
 
   it("gives a milestone card for each tier a bond enters, once, with her words when it can", async () => {
