@@ -1,7 +1,7 @@
 {
   "name": "@miyoria/heart",
   "version": "0.1.0",
-  "description": "mind: Her Deliberate calls (module `mind`): Appraise, Plan, her goals and the impulses she acts on; social: Relationships, appraisal, account linking (module `social`) and her mood (module `mood`); self: Her inner state (module `self`): drives, boredom, her own policy, agenda and feelings about people",
+  "description": "mind: Her Deliberate calls (module `mind`): Appraise, Plan, her goals and the impulses she acts on; social: Relationships, appraisal, account linking (module `social`) and her mood (module `mood`); self: Her inner state (module `self`): drives, boredom, her own policy, agenda and feelings about people; person: Her numbers and words for each person, the rules that move them (steps, daily caps, tier anchors, decay) and the migration from the old records",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -21,6 +21,11 @@
       "@miyoria/source": "./self/src/index.ts",
       "types": "./dist/self/src/index.d.ts",
       "default": "./dist/self/src/index.js"
+    },
+    "./person": {
+      "@miyoria/source": "./person/src/index.ts",
+      "types": "./dist/person/src/index.d.ts",
+      "default": "./dist/person/src/index.js"
     }
   },
   "files": [
