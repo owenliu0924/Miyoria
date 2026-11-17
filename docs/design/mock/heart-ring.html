@@ -65,11 +65,6 @@
   </section>
 
   <section>
-    <h2>對照:疊圈的版本</h2>
-    <div class="states" id="stackedRow"></div>
-  </section>
-
-  <section>
     <h2>人物頁</h2>
     <div class="person">
       <div class="ring">
@@ -110,10 +105,6 @@ const NS = "http://www.w3.org/2000/svg";
 // Lucide "heart", the icon set the panel uses.
 const HEART = "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z";
 const TRACK = "rgba(255,255,255,.07)";
-// One hue, ten shades: every lap is a step lighter than the one under it, and the lap being
-// filled is the primary itself.
-const PALETTE = (i, top) => top ? "var(--primary)" : "color-mix(in oklab, var(--primary) " + (22 + i * 7) + "%, #1c1220)";
-function lapColor(i, top) { return PALETTE(i, top); }
 function el(name, attrs, parent) {
   const n = document.createElementNS(NS, name);
   for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -133,38 +124,6 @@ function band(svg, r, w, frac, color) {
     n.setAttribute("transform", "rotate(" + (-90 + (cap / c) * 360) + " 80 80)");
   }
   return n;
-}
-// One track. Each lap lies on the one before and is narrower from the outside in, so the laps
-// under it show as a staircase along the outer edge: one step, one lap.
-function stacked(bond, number) {
-  const svg = el("svg", { viewBox: "0 0 160 160", role: "img", "aria-label": "羈絆環" });
-  const R = 63, BASE = 26, STEP = 2.3, IN = R - BASE / 2;
-  const laps = Math.min(Math.floor(Math.max(bond, 0) / 100), 10);
-  const frac = bond >= 1000 ? 0 : (Math.max(bond, 0) % 100) / 100;
-  el("circle", { cx: 80, cy: 80, r: R, fill: "none", stroke: TRACK, "stroke-width": BASE }, svg);
-  for (let i = 0; i < 10; i++) {
-    const w = BASE - STEP * i, r = IN + w / 2;
-    if (i < laps) band(svg, r, w, 1, lapColor(i, bond >= 1000 && i === 9));
-    else if (i === laps && frac > 0) band(svg, r, w, frac, lapColor(i, true));
-  }
-  if (bond < 0) {
-    band(svg, R, BASE, Math.abs(bond) / 100, "rgba(241,240,244,.38)")
-      .setAttribute("transform", "rotate(-90 80 80) scale(1 -1) translate(0 -160)");
-  }
-  const g = el("g", { transform: "translate(80 81) scale(2.6) translate(-12 -12)" }, svg);
-  const h = el("path", { d: HEART, "stroke-width": 1.6, "stroke-linejoin": "round" }, g);
-  if (bond <= 0) { h.style.fill = "none"; h.style.stroke = "rgba(241,240,244,.45)"; }
-  else { h.style.fill = "var(--foreground)"; h.style.stroke = "var(--foreground)"; }
-  // The admin panel writes the value on the heart; the public ring leaves the heart plain.
-  if (number !== false) {
-    const text = String(Math.round(bond)).replace("-", "−");
-    const t = el("text", { x: 80, y: 79, "text-anchor": "middle", "dominant-baseline": "central",
-      "font-size": text.length >= 4 ? 15 : text.length === 3 ? 17.5 : 19, "font-weight": 650 }, svg);
-    t.style.fill = bond <= 0 ? "var(--muted-foreground)" : "#1f1218";
-    t.style.fontVariantNumeric = "tabular-nums";
-    t.textContent = text;
-  }
-  return svg;
 }
 // The ring of the lap being filled, and round it a thin ring of ten segments: one lit segment,
 // one lap done. Ten segments are read at a glance, like the hours of a clock.
@@ -203,7 +162,7 @@ function mark(bond) {
   const svg = el("svg", { viewBox: "0 0 160 160", "aria-hidden": "true" });
   const lap = Math.min(Math.floor(bond / 100), 9), frac = bond >= 1000 ? 1 : (bond % 100) / 100;
   el("circle", { cx: 80, cy: 80, r: 66, fill: "none", stroke: "rgba(255,255,255,.1)", "stroke-width": 22 }, svg);
-  band(svg, 66, 22, frac, lapColor(lap, true));
+  band(svg, 66, 22, frac, "var(--primary)");
   const g = el("g", { transform: "translate(80 82) scale(3) translate(-12 -12)" }, svg);
   el("path", { d: HEART }, g).style.fill = "var(--foreground)";
   return svg;
@@ -222,10 +181,6 @@ for (const b of [0, -40]) {
   const c = document.createElement("figcaption");
   c.innerHTML = '<span class="dim">' + (b < 0 ? "負的" : "還沒有") + '</span><span class="num">' + String(b).replace("-", "−") + "</span>";
   f.appendChild(c); states.appendChild(f);
-}
-for (const b of [160, 480, 730, 1000]) {
-  const f = document.createElement("figure"); f.appendChild(stacked(b));
-  document.getElementById("stackedRow").appendChild(f);
 }
 document.getElementById("personRing").appendChild(ring(342));
 document.getElementById("pub").appendChild(ring(342, false));
