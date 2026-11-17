@@ -13,8 +13,8 @@
 // - `economy_fortunes`: the fortune slips she wrote on the member page (§13), at most one per
 //   person per local day, by the session account it was written for.
 // - `economy_bounties`: tasks she pays for out of her purse, and the account it was paid to.
-// - `economy_docs`: economy 2.0's documents (collection items, predictions and bets,
-//   her room, and the commissions of before they were retired), one table, `kind` says which; by the account that owns one.
+// - `economy_docs`: economy 2.0's documents (predictions and bets, her room, and the collectibles
+//   and commissions of before they were retired), one table, `kind` says which; by the account that owns one.
 //
 // Rows that name an account (identity's `accounts.id`) go with it; "a person's" are the rows of
 // the person's accounts. Coins are never kept outside the ledger: these tables say what the coins

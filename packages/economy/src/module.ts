@@ -35,8 +35,8 @@ const VOICE_TICK_MS = 30_000;
  * `economy.accept_food` / `economy.checkin` / `economy.look` and her own money's tools
  * (`economy.treat`, `buy_self`, `post_bounty`, `award_bounty`,
  * `cancel_bounty`; agency-tools.ts, purse.ts, bounties.ts). Also provides `Participation`
- * (the web page's head-pats) and `PartyRewards` (party games, party.ts). Uses `EconomyDocs` (collection,
- * bets, her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
+ * (the web page's head-pats) and `PartyRewards` (party games, party.ts). Uses `EconomyDocs` (bets,
+ * her room) and `LedgerStats` (the health table) when the app provides them, and `CoinLedgerStore`,
  * `RelationshipEffects` (a hair of affinity per gift), `PersonNoteWriter`, `Directives`,
  * `PeopleStore`, `SocialSignals` / `AffectState` (who is blocked), `SelfState` (her hunger),
  * `Singer`, `CommandRegistry`, `ActuatorRegistry` (`stage.expression`), `Moderation` and `EventLog` when present.
@@ -94,9 +94,7 @@ export class EconomyModule implements Module {
     ctx.provide(Economy2Key, economy.v2);
     ctx.provide(PartyRewardsKey, economy.v2.party);
     if (!economy.docsAreDurable) {
-      ctx.log.warn(
-        "no store provides EconomyDocs: collection, bets and the room are kept in memory only",
-      );
+      ctx.log.warn("no store provides EconomyDocs: bets and the room are kept in memory only");
     }
     const mount = () => {
       const registry = ctx.services.get(CommandRegistryKey);

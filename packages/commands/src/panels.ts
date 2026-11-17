@@ -586,25 +586,14 @@ function mePages(policyUrl: string | null): PanelPage[] {
       ],
     },
     {
-      // The economy's second generation (quests, collection, predictions, her room). Commands come from the economy module; without it the page is hidden.
+      // The economy's second generation (quests, titles, predictions, her room). Commands come from the economy module; without it the page is hidden.
       id: "play",
-      label: "玩與收藏",
-      description: "每日任務、抽收藏、預測、她的房間",
+      label: "一起玩",
+      description: "每日任務、稱號、預測、她的房間",
       refresh: true,
       status: [{ path: "me quests", label: "今天的任務" }],
       actions: [
-        { id: "draw", label: "抽收藏", path: "me draw", style: "primary" },
-        { id: "album", label: "收藏冊", path: "me album" },
         { id: "titles", label: "稱號", path: "me titles" },
-        {
-          id: "giveitem",
-          label: "送重複的收藏",
-          path: "me giveitem",
-          ask: {
-            title: "送收藏給別人",
-            fields: [USER_FIELD, field("item", "哪一個收藏（名字）")],
-          },
-        },
         { id: "predictions", label: "看預測", path: "me predictions" },
         {
           id: "bet",

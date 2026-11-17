@@ -31,7 +31,7 @@ export const RECOVERED_REASONS: readonly string[] = [
   "feed",
   "screen_message",
   "dedication",
-  "draw",
+  "draw", // drawing collectibles, removed: the days before still count
   "shop",
   "room",
   "commission",

@@ -162,6 +162,20 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
   ...["goal_max_target", "goal_max_days", "goal_pledge_max", "goal_keep_days"].map(
     (key) => `modules.economy.${key}`,
   ),
+  // Drawing collectibles (the album, the odds, the pity and giving spares), replaced by the cards
+  // plugin's daily card and dex.
+  ...[
+    "draw_price",
+    "draws_per_day",
+    "rarity_weights",
+    "draw_pity",
+    "item_gifts_per_day",
+    "collection_series",
+  ].map((key) => `modules.economy.${key}`),
+  // Re-drawing a card and picking its picture (paid card extras).
+  ...["card_reroll", "card_rerolls_per_day", "card_pose", "card_poses_per_day"].map(
+    (key) => `modules.economy.${key}`,
+  ),
 ];
 
 /** The removed paths `config` still holds, in the order of `REMOVED_CONFIG_KEYS`. */

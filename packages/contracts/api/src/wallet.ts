@@ -29,7 +29,7 @@ export type EarnLine = z.output<typeof EarnLineSchema>;
 
 export const ShopItemSchema = z
   .object({
-    /** `rice`, `frame:sakura`, `card_reroll`, ... */
+    /** `rice`, `frame:sakura`, `card_foil`, ... */
     id: z.string(),
     kind: z.enum(["feed", "frame", "card", "stream", "fortune"]),
     label: z.string(),

@@ -12,7 +12,7 @@
 //   /stream   start · stop · status · scene
 //   /me       i · profile · call · link · privacy · wallet · checkin · feed · give · board ·
 //             screen · card · bounties · memory show|export|forget ·
-//             play quests|draw|album|giveitem|predictions|bet|titles|room (regrouped for Discord, see `SLASH_REGROUP`)
+//             play quests|predictions|bet|titles|room (regrouped for Discord, see `SLASH_REGROUP`)
 //   /queue    add · list · upvote · manage ... · vote start|end · song request|list|skip|stop
 //   /game     start · stop · goal · status · party
 //   /channel  mode · activeness
@@ -32,7 +32,7 @@ export const COMMAND_GROUPS: Readonly<Record<string, GroupInit>> = {
   stream: { description: "直播：透過直播機控制 OBS", guild_only: true },
   me: { description: "你的資料：她怎麼稱呼你、帳號連結與她記得的事" },
   "me memory": { description: "她記得的關於你的事" },
-  "me play": { description: "玩與收藏：每日任務、抽收藏、預測與她的房間" },
+  "me play": { description: "一起玩：每日任務、稱號、預測與她的房間" },
   queue: { description: "請求佇列與投票", guild_only: true },
   "queue manage": { description: "管理佇列（叫號、跳過、清空等）" },
   "queue vote": { description: "投票" },
@@ -53,7 +53,7 @@ export const COMMAND_GROUPS: Readonly<Record<string, GroupInit>> = {
 
 /**
  * Commands that Discord shows under another path. Discord allows 25 subcommands per command,
- * and `/me` has more than that (the economy's second generation alone added eleven), so the
+ * and `/me` has more than that (the economy's second generation alone added several), so the
  * surplus goes into the `me play` group instead of being cut off at the end of the list.
  *
  * Only the presentation changes: the registry still knows (and audits, and applies
@@ -62,9 +62,6 @@ export const COMMAND_GROUPS: Readonly<Record<string, GroupInit>> = {
  */
 export const SLASH_REGROUP: Readonly<Record<string, string>> = {
   "me quests": "me play quests",
-  "me draw": "me play draw",
-  "me album": "me play album",
-  "me giveitem": "me play giveitem",
   "me predictions": "me play predictions",
   "me bet": "me play bet",
   "me titles": "me play titles",
@@ -72,7 +69,7 @@ export const SLASH_REGROUP: Readonly<Record<string, string>> = {
 };
 
 /**
- * The command line a person on `platform` types for `path` (`me album` is `/me play album` on
+ * The command line a person on `platform` types for `path` (`me bet` is `/me play bet` on
  * Discord). Texts that tell people what to type use this, so they never name a path that the
  * platform does not have.
  */

@@ -710,35 +710,60 @@ describe("frames", () => {
 
 describe("paid things other parts sell", () => {
   it("charge once per key, within the day's limit, and refund once", async () => {
-    const r = await rig({ card_rerolls_per_day: 1 });
+    const r = await rig({ card_foils_per_day: 1 });
     await funded(r, ALICE, 100);
-    const first = await r.economy.purchase(ALICE, "card_reroll", "k1", "SERIAL");
-    expect(first).toMatchObject({ charged: 30, balance: 70, duplicate: false });
-    expect(await r.economy.purchase(ALICE, "card_reroll", "k1")).toMatchObject({
+    const first = await r.economy.purchase(ALICE, "card_foil", "k1", "SERIAL");
+    expect(first).toMatchObject({ charged: 50, balance: 50, duplicate: false });
+    expect(await r.economy.purchase(ALICE, "card_foil", "k1")).toMatchObject({
       entry_id: first.entry_id,
-      balance: 70,
+      balance: 50,
       duplicate: true,
     });
-    await rejects(r.economy.purchase(ALICE_TWO, "card_reroll", "k2"), 429);
+    await rejects(r.economy.purchase(ALICE_TWO, "card_foil", "k2"), 429);
     // A refunded one does not count toward the day's limit.
     expect(await r.economy.refund(ALICE, first.entry_id)).toBe(true);
     expect(await r.economy.refund(ALICE, first.entry_id)).toBe(false);
-    expect(await r.economy.purchase(ALICE, "card_reroll", "k3")).toMatchObject({ balance: 70 });
+    expect(await r.economy.purchase(ALICE, "card_foil", "k3")).toMatchObject({ balance: 50 });
     // Someone else's row is not theirs to refund.
     expect(await r.economy.refund(BOB, first.entry_id)).toBe(false);
     const view = await r.economy.wallet(ALICE);
-    expect(view.recent.map((l) => l.label)).toContain("抽卡重製券");
+    expect(view.recent.map((l) => l.label)).toContain("閃卡加工");
     expect(view.shop.find((s) => s.id === "fortune")).toMatchObject({ kind: "fortune", price: 10 });
   });
 
   it("are refused to strangers, when short, and when off sale", async () => {
     const r = await rig({ fortunes_per_day: 0 });
     await funded(r, ALICE, 5);
-    await rejects(r.economy.purchase(DAVE, "card_reroll", "k"), 403);
-    await rejects(r.economy.purchase(ALICE, "card_reroll", "k"), 402);
+    await rejects(r.economy.purchase(DAVE, "card_foil", "k"), 403);
+    await rejects(r.economy.purchase(ALICE, "card_foil", "k"), 402);
     await rejects(r.economy.purchase(ALICE, "fortune", "k"), 400);
     expect(r.economy.price("fortune")).toEqual({ price: 10, per_day: 0 });
     expect((await r.economy.wallet(ALICE)).shop.some((s) => s.id === "fortune")).toBe(false);
+  });
+
+  it("keep their names on a statement once they are not sold any more", async () => {
+    const r = await rig();
+    await funded(r, ALICE, 100);
+    for (const [reason, delta] of [
+      ["card_reroll", -30],
+      ["card_pose", -20],
+      ["draw", -30],
+    ] as const) {
+      await ledgerOf(r.store).post({
+        id: `old-${reason}`,
+        person: walletOf(r.store, ALICE),
+        delta,
+        reason,
+        ref: null,
+        idem_key: null,
+        ts: new Date(r.clock.at - DAY).toISOString(),
+      });
+    }
+    const view = await r.economy.wallet(ALICE);
+    expect(view.recent.map((l) => l.label)).toEqual(
+      expect.arrayContaining(["重抽卡片", "指定立繪", "抽收藏"]),
+    );
+    expect(view.shop.some((s) => s.id === "card_reroll" || s.id === "card_pose")).toBe(false);
   });
 });
 
@@ -823,10 +848,11 @@ describe("the module", () => {
       expect(registry.get("economy.make_deal")).toBeUndefined();
       expect(registry.get("economy.commission")).toBeUndefined();
       expect(registry.get("economy.buy_from_shop")).toBeUndefined();
+      expect(registry.get("economy.draw")).toBeUndefined();
+      expect(registry.get("economy.collection")).toBeUndefined();
       // Economy 2.0: her tools, and the two services others call.
       for (const name of [
         "economy.quests",
-        "economy.draw",
         "economy.place_bet",
         "economy.open_prediction",
         "economy.fund_room",

@@ -26,15 +26,9 @@ export interface EarnLine {
  * Paid things another part of her sells (docs/design/economy.md §13): the card routes, the overlay, the fortune. The economy only charges, caps per day and refunds; what is bought is
  * the caller's. Prices and daily limits are `[modules.economy]` keys of the same name.
  */
-export type PaidItem = "card_reroll" | "card_pose" | "card_foil" | "screen_message" | "fortune";
+export type PaidItem = "card_foil" | "screen_message" | "fortune";
 
-export const PAID_ITEMS: readonly PaidItem[] = [
-  "card_reroll",
-  "card_pose",
-  "card_foil",
-  "screen_message",
-  "fortune",
-];
+export const PAID_ITEMS: readonly PaidItem[] = ["card_foil", "screen_message", "fortune"];
 
 /** Most coins one hand adjustment may add or take (docs/design/economy.md §14). */
 export const MAX_ADJUST = 100_000;
@@ -58,7 +52,7 @@ export interface Purchase {
 }
 
 export interface ShopItem {
-  /** `rice`, `frame:sakura`, `card_reroll`, ... */
+  /** `rice`, `frame:sakura`, `card_foil`, ... */
   id: string;
   kind: "feed" | "frame" | "card" | "stream" | "fortune";
   label: string;

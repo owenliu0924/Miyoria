@@ -229,27 +229,6 @@
       "framed": false
     },
     {
-      "name": "check_collection",
-      "description": "有人問他集到了什麼、收藏冊、稀有度和機率、抽收藏要多少魚幣、有什麼稱號和成就的時候用這個,不要自己猜。只看正在跟你說話的人自己的。稀有度只是一個標籤,不代表你比較喜歡他。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
-      },
-      "permission": null,
-      "actsFor": true,
-      "readOnly": false,
-      "framed": false
-    },
-    {
       "name": "check_predictions",
       "description": "有人問現在有什麼預測、能押什麼的時候用。預測是押魚幣猜一件事的結果,猜中的人平分大家押的,不是你給的獎勵。只會顯示正在跟你說話的人自己押了什麼。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -562,27 +541,6 @@
       },
       "permission": null,
       "actsFor": false,
-      "readOnly": false,
-      "framed": false
-    },
-    {
-      "name": "draw_collectible",
-      "description": "對方明確要抽一次收藏(花 30 魚幣)的時候用。只有文字頻道裡對方本人說了才用,不要自己提議、不要勸他抽。結果是機率決定的,稀有度不代表你比較喜歡他。不要設 on_own。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "why": {
-            "type": "string",
-            "description": "你為什麼要這樣做(一句話,會記錄下來)"
-          },
-          "on_own": {
-            "type": "boolean",
-            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
-          }
-        }
-      },
-      "permission": null,
-      "actsFor": true,
       "readOnly": false,
       "framed": false
     },
@@ -2518,18 +2476,6 @@
       }
     },
     {
-      "name": "check_collection",
-      "description": "有人問他集到了什麼、收藏冊、稀有度和機率、抽收藏要多少魚幣、有什麼稱號和成就的時候用這個,不要自己猜。只看正在跟你說話的人自己的。稀有度只是一個標籤,不代表你比較喜歡他。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
-          }
-        }
-      }
-    },
-    {
       "name": "check_predictions",
       "description": "有人問現在有什麼預測、能押什麼的時候用。預測是押魚幣猜一件事的結果,猜中的人平分大家押的,不是你給的獎勵。只會顯示正在跟你說話的人自己押了什麼。不要設 on_own。",
       "parameters": {
@@ -2761,18 +2707,6 @@
           "match": {
             "type": "string",
             "description": "規則裡的字,例如 minecraft"
-          }
-        }
-      }
-    },
-    {
-      "name": "draw_collectible",
-      "description": "對方明確要抽一次收藏(花 30 魚幣)的時候用。只有文字頻道裡對方本人說了才用,不要自己提議、不要勸他抽。結果是機率決定的,稀有度不代表你比較喜歡他。不要設 on_own。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "on_own": {
-            "type": "boolean"
           }
         }
       }

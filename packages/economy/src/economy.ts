@@ -145,8 +145,6 @@ const EARN_LABEL: Readonly<Record<EarnReason, string>> = {
 
 /** The `[modules.economy]` key of each paid thing's daily limit. */
 const PER_DAY = {
-  card_reroll: "card_rerolls_per_day",
-  card_pose: "card_poses_per_day",
   card_foil: "card_foils_per_day",
   screen_message: "screen_messages_per_day",
   fortune: "fortunes_per_day",
@@ -154,8 +152,6 @@ const PER_DAY = {
 
 /** How a paid thing reads in the shop and the ledger, and its shop kind. */
 export const PAID_NAME: Readonly<Record<PaidItem, { label: string; kind: ShopItem["kind"] }>> = {
-  card_reroll: { label: "抽卡重製券", kind: "card" },
-  card_pose: { label: "指定立繪", kind: "card" },
   card_foil: { label: "閃卡加工", kind: "card" },
   screen_message: { label: "留言上大螢幕", kind: "stream" },
   fortune: { label: "今日籤詩", kind: "fortune" },
@@ -173,6 +169,9 @@ const RETIRED_LABEL: Readonly<Record<string, string>> = {
   goal_pledge: "投給她的目標",
   song_ticket: "點歌加點券",
   dedication: "歌曲獻詞",
+  card_reroll: "重抽卡片",
+  card_pose: "指定立繪",
+  draw: "抽收藏",
 };
 
 /** Ledger reasons that are gifts to her (they diminish each other). */
@@ -306,7 +305,7 @@ export class EconomyService implements Economy {
   /** Her own coins (purse.ts), her crowdfunding goals (goals.ts) and her bounties (bounties.ts). */
   readonly purse: Purse;
   readonly bountyDesk: BountyBoard;
-  /** Economy 2.0 (docs/design/v4-plan.md §10): play, quests, collection, predictions, ... */
+  /** Economy 2.0 (docs/design/v4-plan.md §10): play, quests, predictions, her room, ... */
   readonly v2: V2;
   /** Used when no store provides `EconomyDocsKey` (what is kept there is gone on restart). */
   #fallbackDocs: MemoryDocs | null = null;
@@ -320,7 +319,7 @@ export class EconomyService implements Economy {
 
   // ---- what economy 2.0 uses ---------------------------------------------------------------
 
-  /** Whether the documents (collection, bets, room) outlive a restart. */
+  /** Whether the documents (bets, room) outlive a restart. */
   get docsAreDurable(): boolean {
     return this.#d.services.get(EconomyDocsKey) !== undefined;
   }
@@ -695,8 +694,6 @@ export class EconomyService implements Economy {
         return "她請你的";
       case "bounty":
         return "領到她的懸賞";
-      case "card_reroll":
-      case "card_pose":
       case "card_foil":
       case "screen_message":
       case "fortune":
@@ -800,7 +797,7 @@ export class EconomyService implements Economy {
     for (const f of c.frames) {
       add(`frame:${f.id}`, "frame", f.label, f.price, state?.owned.has(f.id) ? "已經有了" : null);
     }
-    // Whether one can be used right now (a card to re-draw) is the seller's.
+    // Whether one can be used right now (a card to make shiny) is the seller's.
     for (const item of PAID_ITEMS) {
       const { price, per_day } = this.price(item);
       if (per_day === 0) continue;

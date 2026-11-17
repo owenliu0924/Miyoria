@@ -220,8 +220,9 @@ export interface BountyStore {
 // ---- economy documents ------------------------------------------------------------------
 
 /**
- * One document of economy 2.0 (docs/design/v4-plan.md §10): a collection item, a prediction and
- * its bets, a commission, what the audience funded of her room. Coins are never kept here; every
+ * One document of economy 2.0 (docs/design/v4-plan.md §10): a prediction and its bets, what the
+ * audience funded of her room, and what retired features left (a collectible drawn before drawing
+ * was removed, which the cards plugin copies; a commission). Coins are never kept here; every
  * balance change is a row of the coin ledger.
  */
 export interface EconomyDoc {
@@ -257,8 +258,8 @@ export interface DocUpdate {
 }
 
 /**
- * The versioned documents of economy 2.0: collection items, predictions and bets, commissions and
- * her room (docs/design/v4-plan.md §10). One table, keyed by (kind, id).
+ * The versioned documents of economy 2.0: predictions and bets, her room, and the collectibles and
+ * commissions of retired features (docs/design/v4-plan.md §10). One table, keyed by (kind, id).
  */
 export interface EconomyDocStore {
   /** Stores `doc`; `false` when the id already exists (nothing changes). */

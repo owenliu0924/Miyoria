@@ -383,10 +383,6 @@ dirs = ["extensions"]
 # gift_affinity_cap = 1.5     # 禮物本身每人每天最多加的好感(也算進一般每日上限)
 # gift_trust_cap = 0.5        # ...和信任
 # # ---- 花在卡片、歌、畫面上(docs/design/economy.md §13):價格,和一個人一天最多買幾次(每日 0 = 下架;退款的不算)
-# card_reroll = 30            # 重抽今天最新的一張卡(舊的作廢,她重新發一張)
-# card_rerolls_per_day = 2
-# card_pose = 20              # 選下一張卡用她的哪張圖(限好感等級允許的)
-# card_poses_per_day = 5
 # card_foil = 50              # 下一張卡的亮面,只是外觀
 # card_foils_per_day = 5
 # screen_message = 30         # 在直播 overlay 顯示一則短訊息(她可能念出來)
@@ -423,13 +419,6 @@ dirs = ["extensions"]
 # achievement_small = 10
 # achievement_big = 30
 # achievement_cap = 60
-# # 收藏(抽卡):一次多少、一天幾次、機率(權重,公開)、幾抽沒出 SR 以上就保底一張(0 = 不保底)
-# draw_price = 30
-# draws_per_day = 10
-# rarity_weights = { N = 70, R = 22, SR = 7, SSR = 1 }
-# draw_pity = 30
-# item_gifts_per_day = 3      # 一個人一天最多送出幾件收藏(0 = 不能送)
-# # collection_series = [ ... ] # 系列和收藏品(預設三個系列:眼鏡、手上的東西、背景);每個 { id, label, title, items = [{ id, label, rarity }] }
 # # 預測:一個人一場最多下注、一天最多、最長開放幾分鐘、同時最多幾場、關閉後沒結算幾小時就退回全部賭注
 # bet_max = 50
 # bet_daily_max = 100

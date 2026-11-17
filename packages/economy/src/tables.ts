@@ -842,7 +842,7 @@ const economyData: readonly CategoryData[] = [
         closed_at: "ts",
         winner_account_id: "text",
       }),
-      // Economy 2.0: collection items, predictions and bets, her room.
+      // Economy 2.0: predictions and bets, her room, and the collectibles of before drawing was removed.
       tablePart("economy_docs", "economy_docs", "node", "updated_at", "created_at, kind, id", {
         kind: "text",
         id: "text",

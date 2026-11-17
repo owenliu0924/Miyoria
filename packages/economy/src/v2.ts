@@ -4,8 +4,7 @@
 import { errorMessage } from "@miyoria/runtime/kernel";
 import type { AccountRef } from "@miyoria/types";
 import { AchievementDesk } from "./achievements.js";
-import { Collection } from "./collection.js";
-import type { EconomyConfig, Rarity } from "./config.js";
+import type { EconomyConfig } from "./config.js";
 import type { EconomyService, Member } from "./economy.js";
 import { Health } from "./health.js";
 import { PartyRewardDesk } from "./party.js";
@@ -17,13 +16,9 @@ import { RoomDesk } from "./room.js";
 import type {
   AchievementsView,
   AchievementUnlocked,
-  AlbumView,
   BetResult,
-  DrawResult,
   Economy2,
-  GiveItemResult,
   HealthView,
-  OddsRow,
   PredictionView,
   QuestId,
   QuestResult,
@@ -54,8 +49,6 @@ export function labelV2(r: CoinEntry, _config: EconomyConfig): string | null {
       return "押預測";
     case "bet_win":
       return "預測猜中了";
-    case "draw":
-      return "抽收藏";
     case "room":
       return "一起佈置她的房間";
     case "quest":
@@ -70,7 +63,6 @@ export class V2 implements Economy2 {
   /** What party games pay when one ends (party.ts). */
   readonly party: PartyRewardDesk;
   readonly quest: QuestDesk;
-  readonly collection: Collection;
   readonly achievement: AchievementDesk;
   readonly prediction: PredictionDesk;
   readonly roomDesk: RoomDesk;
@@ -80,7 +72,6 @@ export class V2 implements Economy2 {
     this.play = new PlayDesk(e);
     this.party = new PartyRewardDesk(e);
     this.quest = new QuestDesk(e);
-    this.collection = new Collection(e);
     this.achievement = new AchievementDesk(e);
     this.prediction = new PredictionDesk(e);
     this.roomDesk = new RoomDesk(e);
@@ -128,34 +119,6 @@ export class V2 implements Economy2 {
 
   completeQuest(account: AccountRef, quest: QuestId, topic?: string): Promise<QuestResult> {
     return this.quest.completeFor(account, quest, topic);
-  }
-
-  album(account: AccountRef): Promise<AlbumView> {
-    return this.collection.album(account);
-  }
-
-  odds(): OddsRow[] {
-    return this.collection.odds();
-  }
-
-  rarityOdds(): { rarity: Rarity; percent: number }[] {
-    return this.collection.rarityOdds();
-  }
-
-  rollRarity(): Rarity {
-    return this.collection.rollRarity();
-  }
-
-  draw(account: AccountRef, key: string): Promise<DrawResult> {
-    return this.collection.draw(account, key);
-  }
-
-  giveItem(from: AccountRef, to: AccountRef, item: string, key: string): Promise<GiveItemResult> {
-    return this.collection.give(from, to, item, key);
-  }
-
-  recordCard(account: AccountRef, serial: string, traits: readonly string[]): Promise<number> {
-    return this.collection.recordCard(account, serial, traits);
   }
 
   achievements(account: AccountRef): Promise<AchievementsView> {

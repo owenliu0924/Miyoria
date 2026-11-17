@@ -17,66 +17,7 @@ export const DEFAULT_FRAMES: Frame[] = [
   { id: "gold", label: "金框", price: 300 },
 ];
 
-/** Rarities of a collectible, most common first (docs/design/cards.md §4). */
-export const RARITIES = ["N", "R", "SR", "SSR"] as const;
-export type Rarity = (typeof RARITIES)[number];
-
 const slug = z.string().regex(/^[a-z0-9_-]{1,32}$/);
-
-/** One collectible of a series (docs/design/cards.md §3: the traits a card is made of). */
-export const CollectibleSchema = z.object({
-  id: slug,
-  label: z.string().min(1).max(32),
-  rarity: z.enum(RARITIES),
-});
-export type Collectible = z.output<typeof CollectibleSchema>;
-
-/** A set of collectibles; owning all of it earns a title and a one-time reward. */
-export const SeriesSchema = z.object({
-  id: slug,
-  label: z.string().min(1).max(32),
-  /** The title the person holds once they own every item. */
-  title: z.string().min(1).max(16),
-  items: z.array(CollectibleSchema).min(1).max(40),
-});
-export type Series = z.output<typeof SeriesSchema>;
-
-export const DEFAULT_SERIES: Series[] = [
-  {
-    id: "glasses",
-    label: "眼鏡系列",
-    title: "眼鏡收藏家",
-    items: [
-      { id: "glasses_black", label: "黑框眼鏡", rarity: "N" },
-      { id: "glasses_round", label: "圓框眼鏡", rarity: "R" },
-      { id: "glasses_monocle", label: "單片眼鏡", rarity: "SR" },
-      { id: "glasses_star", label: "星星眼鏡", rarity: "SSR" },
-    ],
-  },
-  {
-    id: "hands",
-    label: "手上的東西",
-    title: "牽手達人",
-    items: [
-      { id: "hand_none", label: "空著手", rarity: "N" },
-      { id: "hand_foxtail", label: "狗尾草", rarity: "N" },
-      { id: "hand_finger", label: "豎食指", rarity: "R" },
-      { id: "hand_pot", label: "大鋼盆", rarity: "SR" },
-    ],
-  },
-  {
-    id: "sky",
-    label: "背景系列",
-    title: "旅行家",
-    items: [
-      { id: "bg_dusk", label: "黃昏漸層", rarity: "N" },
-      { id: "bg_water", label: "水面", rarity: "R" },
-      { id: "bg_stars", label: "星點", rarity: "R" },
-      { id: "bg_night", label: "夜空", rarity: "SR" },
-      { id: "bg_aurora", label: "極光", rarity: "SSR" },
-    ],
-  },
-];
 
 /** One piece of furniture, a costume or a background the audience funds together. */
 export const RoomItemSchema = z.object({
@@ -155,12 +96,6 @@ export const EconomyConfigSchema = z.object({
   gift_trust_cap: z.number().nonnegative().default(0.5),
   // Paid things beyond food and gifts (docs/design/economy.md §13): a price, and how many one
   // person may buy per local day (refunded ones do not count); `0` per day takes it off sale.
-  /** Re-draw today's newest card: it is voided and she issues a new one (same day's count). */
-  card_reroll: coins.default(30),
-  card_rerolls_per_day: coins.default(2),
-  /** Pick which picture of her goes on the next card, from the ones its affinity band allows. */
-  card_pose: coins.default(20),
-  card_poses_per_day: coins.default(5),
   /** A foil finish on the next card; looks only, like a frame. */
   card_foil: coins.default(50),
   card_foils_per_day: coins.default(5),
@@ -225,36 +160,6 @@ export const EconomyConfigSchema = z.object({
   achievement_small: z.number().int().positive().default(10),
   achievement_big: z.number().int().positive().default(30),
   achievement_cap: coins.default(60),
-  // Collection (collection.ts): what a draw costs, how many a day, the odds (weights, public), and
-  // after how many draws without an SR or better one is guaranteed (`0`: no pity).
-  draw_price: coins.default(30),
-  draws_per_day: coins.default(10),
-  rarity_weights: z
-    .object({
-      N: z.number().nonnegative(),
-      R: z.number().nonnegative(),
-      SR: z.number().nonnegative(),
-      SSR: z.number().nonnegative(),
-    })
-    .default({ N: 70, R: 22, SR: 7, SSR: 1 })
-    .refine((w) => w.N + w.R + w.SR + w.SSR > 0, { message: "the weights must not all be 0" }),
-  draw_pity: coins.default(30),
-  /** Items one person may give away per day, and receive. `0` closes gifting. */
-  item_gifts_per_day: coins.default(3),
-  collection_series: z
-    .array(SeriesSchema)
-    .max(30)
-    .default(DEFAULT_SERIES)
-    .refine(
-      (list) => {
-        const items = list.flatMap((s) => s.items);
-        return (
-          new Set(list.map((s) => s.id)).size === list.length &&
-          new Set(items.map((i) => i.id)).size === items.length
-        );
-      },
-      { message: "series and item ids must be unique" },
-    ),
   // Predictions (predictions.ts): the most one person may stake on one and in a day, how long
   // betting may stay open at most (minutes), how many may be open, and how long an unresolved one
   // waits after it closed before every stake is given back (hours).

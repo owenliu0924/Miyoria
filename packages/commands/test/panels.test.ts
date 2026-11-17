@@ -1015,18 +1015,8 @@ describe("public panels", () => {
 });
 
 describe("the economy hub on /me i", () => {
-  const V2 = [
-    "me quests",
-    "me draw",
-    "me album",
-    "me titles",
-    "me giveitem",
-    "me predictions",
-    "me bet",
-    "me room",
-  ];
+  const V2 = ["me quests", "me titles", "me predictions", "me bet", "me room"];
   const ARGS: Record<string, ArgSpec[]> = {
-    "me giveitem": [argSpec("user", "u", ArgKind.user), argSpec("item", "i", ArgKind.string)],
     "me bet": [
       argSpec("prediction", "p", ArgKind.string),
       argSpec("option", "o", ArgKind.string),
@@ -1049,23 +1039,25 @@ describe("the economy hub on /me i", () => {
   it("without_the_economy_there_is_no_play_page", async () => {
     const { registry } = setup();
     const labels = selectOf(await open(registry, "me", MEMBER))?.options.map((o) => o.label);
-    expect(labels).not.toContain("玩與收藏");
+    expect(labels).not.toContain("一起玩");
   });
 
   it("the_play_page_reaches_every_second_generation_feature", async () => {
     const { registry, calls } = withEconomy();
     const home = await open(registry, "me", MEMBER);
     const nav = selectOf(home);
-    expect(nav?.options.map((o) => o.label)).toContain("玩與收藏");
+    expect(nav?.options.map((o) => o.label)).toContain("一起玩");
     const page = updated(
       await registry.dispatchComponent(click(nav?.id ?? "", MEMBER, { values: ["play"] })),
     );
-    for (const label of ["抽收藏", "收藏冊", "稱號", "看預測", "她的房間"]) {
+    for (const label of ["稱號", "看預測", "她的房間"]) {
       expect(button(page, label)).toBeDefined();
     }
-    await registry.dispatchComponent(click(button(page, "抽收藏").id, MEMBER));
-    // (The status line of the page runs again after a press, so the draw is not the last call.)
-    expect(calls.some((c) => c.path === "me draw")).toBe(true);
+    const labels = buttons(page).map((b) => b.label);
+    for (const gone of ["抽收藏", "收藏冊", "送重複的收藏"]) expect(labels).not.toContain(gone);
+    await registry.dispatchComponent(click(button(page, "稱號").id, MEMBER));
+    // (The status line of the page runs again after a press, so the titles are not the last call.)
+    expect(calls.some((c) => c.path === "me titles")).toBe(true);
     // Commands with arguments ask for them in a modal.
     const bet = modalOf(await registry.dispatchComponent(click(button(page, "押預測").id, MEMBER)));
     expect(bet.fields.map((f) => f.id)).toEqual(["prediction", "option", "amount"]);
