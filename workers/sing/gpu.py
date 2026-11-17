@@ -50,6 +50,7 @@ takes the card (the old behaviour).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -601,9 +602,12 @@ class GpuJob:
     """One job's decisions, made before every GPU stage and again while it runs."""
 
     def __init__(self, machine: Machine, job_id: str, urls: list[str], *, core_expected: bool,
-                 urgent: Callable[[], bool], audio_s: float | None = None) -> None:
+                 urgent: Callable[[], bool], audio_s: float | None = None, share_only: bool = False) -> None:
         self.machine = machine
         self.job_id = job_id
+        # Never takes her voice offline (a karaoke job): where the rules would, it waits for room
+        # instead, and gives up after SING_WAIT_MAX_S; a spill waits too.
+        self.share_only = share_only
         self.limits = Limits.from_env()
         self.policy, self.policy_source = policy_from_env()
         self.speech = Speech(urls, machine.get, clock=machine.clock)
@@ -683,7 +687,15 @@ class GpuJob:
 
     def decide(self, stage: str, on_gpu: bool = True, pauses: bool = True) -> Decision:
         self.facts = self.gather(stage, on_gpu, pauses)
+        if self.share_only and self.facts.policy == "offload":
+            self.facts = dataclasses.replace(self.facts, policy="yield")  # ``offload`` would always ask
         d = decide(self.facts)
+        if self.share_only and d.mode in ("offload", "exclusive"):
+            if self.facts.waited_total_s >= self.limits.wait_max_s:
+                d = Decision("give_up", "no_room", f"等了 {self.facts.waited_total_s / 60:.0f} 分鐘顯示卡還是放不下,"
+                                                   "這個工作不讓語音離線")
+            else:
+                d = Decision("wait", "share_only", f"這個工作不讓語音離線,等空間({d.reason})")
         self._note(stage, d)
         if d.mode == "wait":
             if self._wait_from is None:
@@ -902,7 +914,7 @@ class GpuJob:
         gap = self.machine.gap_until - self.clock()
         loaded = self.speech.read().loaded
         if self.policy in ("auto", "yield") and loaded and not self.offload_useless and gap <= 0 and (
-                self.urgent() or self.people() is False):
+                self.urgent() or self.people() is False) and not self.share_only:
             return self._do(Action("offload", "spill_offload", "溢出了,這時候可以請語音讓出來"))
         self.crowded_mb = room
         return self._do(Action("suspend", "spill_wait", "溢出了,放掉顯存,等空間再從這裡接著做"))
