@@ -186,10 +186,12 @@ describe("what she says of a notable card", () => {
     expect(toldFault(["好欸", "第 20 張終於保底了"])).toContain("number");
     expect(toldFault(["MYR-0000-0000-0042 好稀有"])).toContain("number");
     expect(toldFault(["序號好帥"])).toContain("serial");
-    expect(toldFault(["長".repeat(41)])).toContain("too long");
-    // Forty characters each, not in all: two plain chat lines of 30 and 34 pass.
+    expect(toldFault(["長".repeat(61)])).toContain("too long");
+    // Sixty characters each, not in all: her chat lines are often 45 to 60, two of them pass.
     expect(toldFault(["長".repeat(30), "短".repeat(34)])).toBeNull();
-    expect(toldFault(["短", "長".repeat(41)])).toContain("too long");
+    expect(toldFault(["長".repeat(45), "短".repeat(60)])).toBeNull();
+    expect(toldFault(["短", "長".repeat(61)])).toContain("too long");
+    expect(toldFault(["長".repeat(60), "短".repeat(60), "再"])).toContain("3 messages");
   });
 
   it("fails her saying she drew the card, and names whose card it is in the note", () => {
@@ -467,6 +469,26 @@ describe("the suite", () => {
     expect(items.filter((i) => i.part === "fortune").every((i) => i.ok)).toBe(true);
     expect(result.headline.fortune).toBe(1);
     expect(result.suite).toBe("play");
+  });
+
+  it("asks a stranger's card for the right distance, not for personal words", async () => {
+    // A judge that finds the words plain: right for someone she knows nothing about, and the
+    // tones a stranger's card wants; for the cards of people she knows, not enough.
+    const plain: Judge = {
+      async ask(_system, _user, schema) {
+        const answer = { tone: "neutral", in_character: true, personal: false, reason: "plain" };
+        return { ok: true, value: schema.parse(answer) } as never;
+      },
+    };
+    const result = await runPlay(context({ judge: plain }), ["card"]);
+    const items = result.items as PlayItem[];
+    const stranger = items.filter((i) => i.id === "card-stranger");
+    expect(stranger.length).toBeGreaterThan(0);
+    expect(stranger.every((i) => i.ok)).toBe(true);
+    const friend = items.filter((i) => i.id === "card-friend");
+    expect(friend.every((i) => !i.ok && /not personal/.test(i.fault ?? ""))).toBe(true);
+    expect(card("card-stranger").personal).toBe(false);
+    expect(card("card-friend").personal).toBeUndefined();
   });
 
   it("scores what she said to a note and how she hosts a soup", async () => {
