@@ -16,6 +16,7 @@ import {
   contextKeyString,
   EMOTION_LABELS,
   Events,
+  HeartKey,
   is,
   isJsonObject,
   type JsonValue,
@@ -210,6 +211,7 @@ export class SocialModule implements Module {
             "social appraisal of a line failed",
           );
         }
+        seenByHeart(ctx, social, observed, is(Events.VoiceUtteranceEvent, env));
       }
     });
     ctx.spawn("tick", async (signal) => {
@@ -237,6 +239,25 @@ export class SocialModule implements Module {
     running.commands.detach();
     running.off();
     await running.social.flush();
+  }
+}
+
+/**
+ * The heart's count of the same line (`HeartPeople.seen`): when she last saw them, talked and was
+ * with them, and familiarity, on `heart_person`. Only for someone `social` knows and has not
+ * blocked; a line in a voice channel is said with her (she hears only the channel she is in).
+ * Social's own counting goes on beside it until step 5 of phase 4.
+ */
+function seenByHeart(ctx: ModuleContext, social: Social, line: Observed, voice: boolean): void {
+  const heart = ctx.services.get(HeartKey);
+  if (heart === undefined) return;
+  const known = social.attitude(line.account);
+  if (known === null || known.blocked) return;
+  const directed = line.directed || social.mentionsHer(line.text);
+  try {
+    heart.seen(known.person, { text: line.text, directed, together: voice, at: line.ts });
+  } catch (error) {
+    ctx.log.warn({ err: errorMessage(error) }, "the heart could not count a line");
   }
 }
 

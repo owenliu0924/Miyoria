@@ -442,7 +442,8 @@ export class Social implements SocialSignals, RelationshipEffects {
     return person;
   }
 
-  #mentionsHer(text: string): boolean {
+  /** Whether `text` names her (one of her names, any case). */
+  mentionsHer(text: string): boolean {
     const lower = text.toLowerCase();
     return this.#names.some((n) => lower.includes(n));
   }
@@ -464,7 +465,7 @@ export class Social implements SocialSignals, RelationshipEffects {
     const rel = this.#rels.get(person);
     if (rel && isBlocked(rel)) return false;
     const directed =
-      line.directed || this.#mentionsHer(line.text) || this.#spokeRecently(line.context, now);
+      line.directed || this.mentionsHer(line.text) || this.#spokeRecently(line.context, now);
     const kinds = directed ? classify(line.text) : [];
     const events: CappedEvent[] = kinds.map((k) => ["rule", k, 1] as const);
     await this.applyEvents(person, events, now, line.context, now, lineDepth(line.text, directed));
