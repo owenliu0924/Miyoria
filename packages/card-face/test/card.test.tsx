@@ -45,3 +45,30 @@ describe("the card's bond meter", () => {
     expect(lit("永恆的羈絆")).toBe(AFFINITY.length);
   });
 });
+
+describe("a daily card", () => {
+  const draw = (data: CardData) =>
+    renderToStaticMarkup(
+      <CardFace
+        card={data}
+        art={null}
+        avatar={null}
+        colors={{ primary: PRIMARY, secondary: "#654321" }}
+        verifyUrl="https://example.invalid/c/S-1"
+      />,
+    );
+
+  it("prints its rarity, her expression and the parts drawn onto it", () => {
+    const svg = draw({
+      ...card("很好"),
+      rarity: "SR",
+      expression: "臉紅",
+      parts: [{ name: "單片眼鏡" }, { name: "夜空" }],
+    });
+    expect(svg).toContain("SR・臉紅・單片眼鏡・夜空");
+  });
+
+  it("prints nothing of a draw on an older card", () => {
+    expect(draw(card("很好"))).not.toContain("・");
+  });
+});

@@ -28,6 +28,12 @@ export interface CardData {
   fields?: { label: string; text: string }[];
   frame?: string | null;
   foil?: boolean;
+  /** A daily card's rarity; none on an older card. */
+  rarity?: string | null;
+  /** The parts drawn onto a daily card, printed as words until her picture shows them. */
+  parts?: { name: string }[];
+  /** Her expression on a daily card, in words. */
+  expression?: string | null;
 }
 
 /** Every word of the bond's bands (`bondBand`), lowest first: the meter has a step for each. */
@@ -645,11 +651,19 @@ export const CardFace = forwardRef<SVGSVGElement, CardFaceProps>(function CardFa
   const fieldsTop = QUOTE_Y - lift + quoteBlock;
   const titleY = (known && card.call_name ? 566 : 590) - lift;
   const initial = [...card.name.trim()][0] ?? "?";
+  // A daily card says what was drawn onto it: its rarity, her expression and the parts.
+  const drawn =
+    card.rarity || (card.parts ?? []).length > 0
+      ? [card.rarity, card.expression, ...(card.parts ?? []).map((p) => p.name)]
+          .filter((s): s is string => typeof s === "string" && s !== "")
+          .join("・")
+      : null;
   const id = card.serial.replace(/[^A-Z0-9]/gi, "");
   const label = [
     `${card.name} 的卡,${title}`,
     card.call_name ? `她叫你${card.call_name}` : null,
     card.foil ? "閃卡" : null,
+    drawn,
     card.stamp ? `蓋了「${card.stamp}」` : null,
     feeling ? `她說「${feeling}」` : null,
     ...fields.map((f) => `${f.label}:${f.text}`),
@@ -843,6 +857,14 @@ export const CardFace = forwardRef<SVGSVGElement, CardFaceProps>(function CardFa
         <rect x={W - PAD - 104} y={742} width={104} height={104} rx={10} fill="#ffffff" />
         <Qr text={verifyUrl} x={W - PAD - 96} y={750} size={88} />
       </g>
+      {drawn && (
+        <g>
+          <rect x={PAD - 10} y={30} width={W - 2 * PAD + 20} height={30} rx={8} fill="rgba(11,13,20,0.62)" />
+          <text x={PAD} y={50} fontSize={13} fill="rgba(255,255,255,0.86)">
+            {wrap(drawn, 40, 1)[0]}
+          </text>
+        </g>
+      )}
       <Frame frame={card.frame} id={id} />
     </svg>
   );
