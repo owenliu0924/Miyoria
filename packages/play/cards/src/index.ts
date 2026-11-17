@@ -122,6 +122,7 @@ export {
   cardsLegacy,
   cardsParts,
   cardsPity,
+  cardsTally,
   cardsTitles,
   cardsWishlist,
 } from "./schema.js";
@@ -158,11 +159,15 @@ export {
   cardsTables,
   type DexEntry,
   type DropRecord,
+  FORGOTTEN_CLAIMER,
   type IssuedCard,
   type IssueInput,
   issueKey,
   milestoneTier,
   type PendingCard,
+  TALLIED_KINDS,
+  TALLY_KEPT_MS,
+  type TalliedKind,
 } from "./store.js";
 export {
   CARD_REASONS,

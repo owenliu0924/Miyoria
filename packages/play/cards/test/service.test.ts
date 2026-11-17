@@ -754,6 +754,64 @@ describe("a person", () => {
     expect(store.cards("p2")).toHaveLength(1);
   });
 
+  it("forgotten, still has had the day's cards: a forget resets no limit", async () => {
+    wallet.balances.set("p1", 1000);
+    const cards = service();
+    for (let i = 0; i < 5; i++) expect((await cards.issueDaily(payer("p1"), face)).ok).toBe(true);
+    expect(store.forgetPerson(["p1"])).toMatchObject({ cards_card: 5 });
+    expect(store.cards("p1")).toEqual([]);
+    expect(cards.dailyLeft("p1")).toBe(0);
+    expect(await cards.issueDaily(payer("p1"), face)).toEqual({
+      ok: false,
+      reason: "daily_cap",
+      cap: 5,
+    });
+    // The next local day is a new day, and what the limits counted two days back is gone.
+    now = dayStart(T0, 480) + DAY;
+    expect(cards.dailyLeft("p1")).toBe(5);
+    expect((await cards.issueDaily(payer("p1"), face)).ok).toBe(true);
+    now += 2 * DAY + 3_600_000;
+    expect((await cards.issueDaily(payer("p1"), face)).ok).toBe(true);
+    expect(t.db.all("SELECT kind, at FROM cards_tally WHERE person_id = 'p1'")).toHaveLength(1);
+  });
+
+  it("merged, keeps what the day's limits counted of both", async () => {
+    wallet.balances.set("a", 1000);
+    wallet.balances.set("k", 1000);
+    const cards = service();
+    for (let i = 0; i < 3; i++) await cards.issueDaily(payer("a"), face);
+    for (let i = 0; i < 2; i++) await cards.issueDaily(payer("k"), face);
+    store.merge("k", "a");
+    expect(cards.dailyLeft("k")).toBe(0);
+    expect(cards.dailyLeft("a")).toBe(5);
+  });
+
+  it("has today's cards counted when the count comes apart from them (migration 7)", () => {
+    const before = { ...cardsSchema, migrations: cardsSchema.migrations.slice(0, 6) };
+    const old = openTestDb({ identity: true, plugins: [before], clock: { now: () => now } });
+    try {
+      const card = (serial: string, person: string, kind: string, ago: number) =>
+        old.db.run(
+          "INSERT INTO cards_card (serial, person_id, kind, rarity, parts, created_at) VALUES ($serial, $person, $kind, 'N', '{}', $at)",
+          { serial, person, kind, at: (Date.now() - ago) * 1000 },
+        );
+      card("MYR-OLD-0000-0001", "p1", "daily", 60_000);
+      card("MYR-OLD-0000-0002", "p1", "drop", 60_000);
+      card("MYR-OLD-0000-0003", "p1", "milestone", 60_000);
+      card("MYR-OLD-0000-0004", "p2", "daily", 3 * DAY);
+      migrate(old.db, [identitySchema, cardsSchema]);
+      expect(old.db.all("SELECT person_id, kind FROM cards_tally ORDER BY kind")).toEqual([
+        { person_id: "p1", kind: "daily" },
+        { person_id: "p1", kind: "drop" },
+      ]);
+      const migrated = new CardStore(old.db, old.events);
+      expect(migrated.countSince("p1", "daily", Date.now() - DAY)).toBe(1);
+      expect(migrated.countSince("p2", "daily", Date.now() - 4 * DAY)).toBe(0);
+    } finally {
+      old.close();
+    }
+  });
+
   it("merged into another keeps the cards, adds up the dex and keeps the longer pity run", () => {
     for (let i = 0; i < 3; i++) issue("a");
     issue("k");

@@ -12,6 +12,7 @@
 // - `cards_wishlist`: per person, at most three parts (`position` 1..3).
 // - `cards_titles`: per person, the series they completed and the title it gave; private unless
 //   they make it public.
+// - `cards_tally`: what the day's limits count, kept apart from the cards so a forget resets none.
 //
 // No foreign key to `persons`, like the heart's tables: forgetting a person deletes their rows
 // through the plugin's hook (`store.ts`).
@@ -228,6 +229,25 @@ export const cardsKeepsake = sqliteTable("cards_keepsake", {
   person_id: text().primaryKey(),
   given_at: micros().notNull(),
 });
+
+/**
+ * What the day's limits count (a daily card, a card picked up from a drop), one row per card,
+ * apart from the cards: a forget deletes the cards but not these rows, so asking to be forgotten
+ * gives nobody a fresh day's cards. Only the last two days are kept (`issue` drops older rows):
+ * a local day is at most a day back.
+ */
+export const cardsTally = sqliteTable(
+  "cards_tally",
+  {
+    person_id: text().notNull(),
+    kind: text().notNull(),
+    at: micros().notNull(),
+  },
+  (t) => [
+    index("cards_tally_person_idx").on(t.person_id, t.kind, t.at),
+    index("cards_tally_at_idx").on(t.at),
+  ],
+);
 
 export type CardsCardRow = typeof cardsCard.$inferSelect;
 export type CardsPartRow = typeof cardsParts.$inferSelect;

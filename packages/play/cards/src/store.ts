@@ -79,6 +79,7 @@ import {
   cardsParts,
   cardsPending,
   cardsPity,
+  cardsTally,
   cardsTitles,
   cardsWishlist,
 } from "./schema.js";
@@ -255,6 +256,22 @@ export function milestoneTier(card: Pick<CardRecord, "kind" | "issue_key">): Bon
   const min = Number(card.issue_key.slice("milestone:".length));
   return BOND_LADDER.find((t) => t.min === min) ?? null;
 }
+
+/** The kinds of card a day's limit counts (`cards_tally`). */
+export const TALLIED_KINDS = ["daily", "drop"] as const;
+export type TalliedKind = (typeof TALLIED_KINDS)[number];
+
+const isTallied = (kind: CardKind): kind is TalliedKind =>
+  (TALLIED_KINDS as readonly string[]).includes(kind);
+
+/** How long a tally row is kept: a local day starts at most a day back. */
+export const TALLY_KEPT_MS = 2 * 86_400_000;
+
+/**
+ * Who picked up a drop, once they asked her to forget them: the drop stays taken and counts for its
+ * channel's day, and names nobody.
+ */
+export const FORGOTTEN_CLAIMER = "";
 
 /** The day's cap was reached (by a card issued meanwhile). */
 export class CardCapError extends CardsError {
@@ -485,14 +502,17 @@ export class CardStore {
     return row?.n ?? 0;
   }
 
-  /** Cards of `kind` a person got since `since` (epoch ms). */
-  countSince(person: PersonId, kind: CardKind, since: number): number {
+  /**
+   * Cards of `kind` (a daily or a dropped one) a person got since `since` (epoch ms, at most
+   * `TALLY_KEPT_MS` back), counted from `cards_tally`: the cards they asked her to forget too.
+   */
+  countSince(person: PersonId, kind: TalliedKind, since: number): number {
     this.#db.ensureOpen();
-    const C = cardsCard;
+    const T = cardsTally;
     const row = this.#db.orm
       .select({ n: count() })
-      .from(C)
-      .where(and(eq(C.person_id, person), eq(C.kind, kind), gte(C.created_at, at(since))))
+      .from(T)
+      .where(and(eq(T.person_id, person), eq(T.kind, kind), gte(T.at, at(since))))
       .get();
     return row?.n ?? 0;
   }
@@ -620,8 +640,13 @@ export class CardStore {
           return { card: found, pity, new_parts: [], titles: [], again: true };
         }
       }
-      if (input.cap && this.countSince(person, input.kind, input.cap.since) >= input.cap.max) {
-        throw new CardCapError(`${person} already has ${input.cap.max} ${input.kind} cards today`);
+      if (input.cap) {
+        if (!isTallied(input.kind)) throw new CardsError(`no day's cap for ${input.kind} cards`);
+        if (this.countSince(person, input.kind, input.cap.since) >= input.cap.max) {
+          throw new CardCapError(
+            `${person} already has ${input.cap.max} ${input.kind} cards today`,
+          );
+        }
       }
       const ts = at(now);
       const catalogue = this.catalogue();
@@ -663,6 +688,16 @@ export class CardStore {
         this.#db.orm
           .delete(cardsPending)
           .where(and(eq(cardsPending.person_id, person), eq(cardsPending.issue_key, key)))
+          .run();
+      }
+      if (isTallied(input.kind)) {
+        this.#db.orm
+          .insert(cardsTally)
+          .values({ person_id: person, kind: input.kind, at: ts })
+          .run();
+        this.#db.orm
+          .delete(cardsTally)
+          .where(lt(cardsTally.at, at(now - TALLY_KEPT_MS)))
           .run();
       }
       if (input.kind === "keepsake") {
@@ -951,6 +986,9 @@ export class CardStore {
    * is no way to a second one. And so do the serials kept for paid cards not written yet
    * (`cards_pending`): their coins are still taken, and the settling (`CardService.settlePending`)
    * gives them back and deletes the rows within minutes; deleted now, the coins would stay taken.
+   * What the day's limits count stays too (`cards_tally`: a person id, a kind and a time, two days
+   * at most), so a forget is no way to a fresh day's cards; and a drop they picked up stays taken,
+   * naming nobody (`FORGOTTEN_CLAIMER`), so its channel's day keeps its count.
    */
   forgetPerson(ids: readonly PersonId[]): Record<string, number> {
     if (ids.length === 0) return {};
@@ -974,7 +1012,11 @@ export class CardStore {
           o.delete(cardsTitles).where(inArray(cardsTitles.person_id, list)).run().changes,
         ),
         cards_drop: Number(
-          o.delete(cardsDrop).where(inArray(cardsDrop.claimed_by, list)).run().changes,
+          o
+            .update(cardsDrop)
+            .set({ claimed_by: FORGOTTEN_CLAIMER, serial: null })
+            .where(inArray(cardsDrop.claimed_by, list))
+            .run().changes,
         ),
       };
     });
@@ -1043,6 +1085,12 @@ export class CardStore {
         .update(cardsDrop)
         .set({ claimed_by: keep })
         .where(eq(cardsDrop.claimed_by, absorb))
+        .run();
+      // What the day's limits counted of either is the kept person's.
+      this.#db.orm
+        .update(cardsTally)
+        .set({ person_id: keep })
+        .where(eq(cardsTally.person_id, absorb))
         .run();
       // A try still pending under the absorbed id is the kept person's: retried by them, or settled
       // (its coins given back). One whose key the kept person has a try of too keeps its serial
@@ -1130,6 +1178,11 @@ const cardsData: readonly CategoryData[] = [
         claimed_by: "text",
         claimed_at: "ts",
         serial: "text",
+      }),
+      tablePart("cards_tally", "cards_tally", "node", "at", "at, person_id", {
+        person_id: "text",
+        kind: "text",
+        at: "ts",
       }),
       tablePart("cards_pending", "cards_pending", "node", "created_at", "person_id, issue_key", {
         person_id: "text",

@@ -206,6 +206,27 @@ INSERT OR IGNORE INTO \`cards_keepsake\` (\`person_id\`, \`given_at\`)
 const PENDING_FOIL = `ALTER TABLE \`cards_pending\` ADD \`foil\` integer DEFAULT false NOT NULL;
 `;
 
+/**
+ * Migration 7: what the day's limits count, apart from the cards (`cards_tally`), so a forget
+ * resets none of them; made like migration 3 (`schema:sql cards` stops at the new table's "rename
+ * or create?"), then filled from the daily and dropped cards of the last two days (by hand), so
+ * the day the migration runs keeps its count.
+ */
+const TALLY = `CREATE TABLE \`cards_tally\` (
+	\`person_id\` text NOT NULL,
+	\`kind\` text NOT NULL,
+	\`at\` integer NOT NULL
+) STRICT;
+
+CREATE INDEX \`cards_tally_person_idx\` ON \`cards_tally\` (\`person_id\`,\`kind\`,\`at\`);
+
+CREATE INDEX \`cards_tally_at_idx\` ON \`cards_tally\` (\`at\`);
+
+INSERT INTO \`cards_tally\` (\`person_id\`, \`kind\`, \`at\`)
+	SELECT \`person_id\`, \`kind\`, \`created_at\` FROM \`cards_card\`
+	WHERE \`kind\` IN ('daily', 'drop') AND \`created_at\` >= (CAST(strftime('%s', 'now') AS INTEGER) - 172800) * 1000000;
+`;
+
 /** Her cards for each person, the catalogue they are drawn from, the pity, the dex, wishes, titles. */
 export const cardsSchema: PluginSchema = {
   plugin: "cards",
@@ -217,5 +238,6 @@ export const cardsSchema: PluginSchema = {
     { version: 4, name: "pending", sql: PENDING },
     { version: 5, name: "keepsake", sql: KEEPSAKE },
     { version: 6, name: "pending_foil", sql: PENDING_FOIL },
+    { version: 7, name: "tally", sql: TALLY },
   ],
 };
