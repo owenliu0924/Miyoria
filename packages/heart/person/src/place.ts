@@ -46,8 +46,7 @@ export function bondPlace(bond: number): BondPlace {
   const first = (BOND_LADDER[0]?.label ?? "認識") as RelationshipLabel;
   const disliked = b <= DISLIKE_AT;
   return {
-    // Familiarity only separates 陌生人 from 認識, which the ladder does not: ask with 100.
-    tier: disliked ? relationshipLabel({ affinity: b, familiarity: 100 }) : place.tier.label,
+    tier: disliked ? relationshipLabel({ affinity: b }) : place.tier.label,
     next_tier: disliked ? first : (place.next?.label ?? null),
     tier_progress: disliked ? 0 : place.progress,
     ring: {

@@ -223,7 +223,10 @@ function cardView(state: ApiState, who: Member, names: NameSplit | null): Member
   const call = (row.call_name ?? handle).trim();
   return {
     call_name: call !== "" && state.publicSide.passes(state, call) ? call : null,
-    relationship: relationshipLabel({ affinity: row.bond, familiarity: row.familiarity }),
+    relationship: relationshipLabel({
+      affinity: row.bond,
+      met: row.interactions > 0 || row.bond !== 0,
+    }),
     affinity: bondBand(row.bond),
     trust: trustBand(row.trust),
     familiarity: familiarityBand(row.familiarity),

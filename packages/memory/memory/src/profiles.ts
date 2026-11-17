@@ -188,10 +188,7 @@ export class Profiles implements PersonProfiles {
     return {
       person,
       handle,
-      label:
-        view === null
-          ? null
-          : relationshipLabel({ affinity: view.bond, familiarity: view.familiarity }),
+      label: view === null ? null : relationshipLabel({ affinity: view.bond }),
       level: view === null ? null : affinityLevel(view.bond),
       owner: view?.owner ?? false,
       trust: null,

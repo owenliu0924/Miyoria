@@ -150,8 +150,7 @@ export function personData(
   const r = day.record;
   const words = heartWords(r);
   const place = tierProgress(r.bond);
-  const label =
-    r.bond < 0 ? relationshipLabel({ affinity: r.bond, familiarity: 100 }) : place.tier.label;
+  const label = relationshipLabel({ affinity: r.bond });
   const feeling = [
     `羈絆:${label}(${fixed(r.bond, 1)}/1000)${place.next ? `,下一級「${place.next.label}」在 ${place.next.min}` : ""}`,
     `信任:${words.trust}(${fixed(r.trust, 1)}/100)`,

@@ -113,7 +113,7 @@ function attitudeOf(index: number, person: ScenePerson, c: Closeness): Attitude 
     trust: clamp(c.trust ?? c.bond, 0, 100),
     familiarity,
     blocked: false,
-    label: relationshipLabel({ affinity: c.bond, familiarity }),
+    label: relationshipLabel({ affinity: c.bond }),
     call_name: null,
     display_name: person.name,
   };

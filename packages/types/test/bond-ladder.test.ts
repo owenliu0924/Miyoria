@@ -24,11 +24,12 @@ describe("the bond ladder", () => {
     for (const t of BOND_LADDER) expect(RELATIONSHIP_LABELS).toContain(t.label);
   });
 
-  it("agrees with relationshipLabel wherever familiarity is high", () => {
-    for (let bond = 15; bond <= 1000; bond += 1) {
-      const label = relationshipLabel({ affinity: bond, familiarity: 100 });
-      expect(tierProgress(bond).tier.label).toBe(label);
+  it("is where every tier name comes from: relationshipLabel is the ladder's", () => {
+    for (let bond = -14; bond <= 1000; bond += 1) {
+      expect(relationshipLabel({ affinity: bond })).toBe(tierProgress(bond).tier.label);
     }
+    // Familiarity gates no tier any more: high tiers wait for their anchors instead.
+    expect(relationshipLabel({ affinity: 80 })).toBe("摯友");
   });
 
   it("says how far into a tier a bond is and what comes next", () => {

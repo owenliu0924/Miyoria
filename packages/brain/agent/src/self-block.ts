@@ -418,7 +418,7 @@ function personAttrs(p: PresentPerson, src: PeopleSources): PersonAttrs | null {
     // heart's too: the nightly reflection, `set_call_name` and the panel write them there.
     if (view.blocked) return null;
     const words = heartWords(view);
-    attrs.relation = relationshipLabel({ affinity: view.bond, familiarity: view.familiarity });
+    attrs.relation = relationshipLabel({ affinity: view.bond });
     attrs.level = `${affinityLevel(view.bond)}/${AFFINITY_LEVEL_MAX}`;
     if (view.owner) attrs.owner = "主人";
     attrs.trust = words.trust;

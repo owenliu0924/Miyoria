@@ -177,10 +177,10 @@ describe("arbiter", () => {
 
 describe("affect", () => {
   it("one relationship scale", () => {
-    expect(relationshipLabel({ affinity: 39.87, familiarity: 50 })).toBe("朋友");
-    expect(relationshipLabel({ affinity: 5, familiarity: 1 })).toBe("陌生人");
-    expect(relationshipLabel({ affinity: 80, familiarity: 40 })).toBe("摯友");
-    expect(relationshipLabel({ affinity: -60, familiarity: 90 })).toBe("很討厭");
+    expect(relationshipLabel({ affinity: 39.87 })).toBe("朋友");
+    expect(relationshipLabel({ affinity: 5, met: false })).toBe("陌生人");
+    expect(relationshipLabel({ affinity: 80 })).toBe("摯友");
+    expect(relationshipLabel({ affinity: -60 })).toBe("很討厭");
   });
 });
 

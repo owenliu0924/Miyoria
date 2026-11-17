@@ -124,10 +124,7 @@ export interface AppliedAppraisal {
  */
 export { RELATIONSHIP_LABELS, type RelationshipLabel };
 
-/**
- * The tiers past 摯友, highest first: `[lowest bond level, label]`. Bond only grows past 100
- * once someone is already a 摯友 (affinity 100), so these need the same familiarity.
- */
+/** The tiers past 摯友, highest first: `[lowest bond, label]`. */
 export const BOND_TIERS: readonly (readonly [number, RelationshipLabel])[] = [
   ...BOND_TIER_FLOORS,
 ].reverse();
@@ -140,28 +137,26 @@ export const BOND_SCALE_LINE =
     .map(([lv, name]) => `${lv} ${name}`)
     .join("、");
 
-/** The numbers the label depends on. */
+/** What the tier name depends on. */
 export interface RelationshipNumbers {
-  /** -100..1000 (past 100 is bond stacked on a full affinity) */
+  /** The bond, -100..1000. */
   affinity: number;
-  /** 0..100 */
-  familiarity: number;
+  /** `false`: she has not met them yet (no row, or nothing done with her): 陌生人. Default `true`. */
+  met?: boolean;
 }
 
-/** The relationship label of `rel` (same thresholds as `social`'s `label()` today). */
+/**
+ * The tier name shown for someone, everywhere (the member page, `/me profile`, the people API, the
+ * prompt, the card): the bond-only ladder (`BOND_LADDER`, `tierProgress`), 討厭 and 很討厭 below
+ * it, 陌生人 for someone she has not met. Familiarity no longer gates a tier: from 知心 up the
+ * anchors do (H4).
+ */
 export function relationshipLabel(rel: RelationshipNumbers): RelationshipLabel {
-  const a = rel.affinity;
-  const f = rel.familiarity;
+  if (rel.met === false) return "陌生人";
+  const a = clampAffinity(rel.affinity);
   if (a <= -50) return "很討厭";
   if (a <= -15) return "討厭";
-  if (a >= 75 && f >= 30) {
-    for (const [min, name] of BOND_TIERS) if (a >= min) return name;
-    return "摯友";
-  }
-  if (a >= 45 && f >= 10) return "好朋友";
-  if (a >= 15) return "朋友";
-  if (f < 3) return "陌生人";
-  return "認識";
+  return tierProgress(a).tier.label;
 }
 
 /** Lowest and highest affinity (and `affinityLevel()`): past 100 is bond (羈絆) stacking. */
@@ -200,11 +195,8 @@ export interface BondTier {
 }
 
 /**
- * The tiers a bond of 0 or more climbs through, lowest first, by bond alone. 朋友, 好朋友 and 摯友
- * sit where `relationshipLabel` puts them, and from 知心 up they are `BOND_TIERS`. The first tier
- * is named 認識 here; `relationshipLabel` calls it 陌生人 while familiarity is low, and it also
- * asks for familiarity before 好朋友 and 摯友. The ladder leaves familiarity out because the ring,
- * the anchors and the decay floor go by bond alone.
+ * The tiers a bond of 0 or more climbs through, lowest first, by bond alone: the one ladder every
+ * tier name comes from (`relationshipLabel`). From 知心 up they are `BOND_TIERS`.
  */
 export const BOND_LADDER: readonly BondTier[] = [
   { min: 0, label: "認識" },

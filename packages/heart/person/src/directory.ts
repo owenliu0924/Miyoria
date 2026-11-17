@@ -63,7 +63,7 @@ export function attitudeOf(p: HeartPerson, displayName: string | null): Attitude
     trust: p.trust,
     familiarity: p.familiarity,
     blocked: hasTag(p, BLOCKED_TAG),
-    label: relationshipLabel({ affinity: p.bond, familiarity: p.familiarity }),
+    label: relationshipLabel({ affinity: p.bond, met: p.interactions > 0 || p.bond !== 0 }),
     call_name: p.call_name,
     owner: hasTag(p, OWNER_TAG),
     display_name: displayName,

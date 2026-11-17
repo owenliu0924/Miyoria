@@ -130,19 +130,18 @@ describe("the one mood renderer", () => {
 
 describe("the relationship label scale", () => {
   const grid = [
-    [-60, 50, "很討厭"],
-    [-20, 50, "討厭"],
-    [0, 0, "陌生人"],
-    [0, 5, "認識"],
-    [20, 0, "朋友"],
-    [50, 12, "好朋友"],
-    [50, 5, "朋友"],
-    [80, 35, "摯友"],
-    [80, 20, "好朋友"],
+    [-60, true, "很討厭"],
+    [-20, true, "討厭"],
+    [0, false, "陌生人"],
+    [0, true, "認識"],
+    [20, true, "朋友"],
+    [50, true, "好朋友"],
+    [80, true, "摯友"],
+    [130, true, "知心"],
   ] as const;
 
-  it.each(grid)("affinity %s, familiarity %s: %s", (affinity, familiarity, label) => {
-    expect(relationshipLabel({ affinity, familiarity })).toBe(label);
+  it.each(grid)("bond %s, met %s: %s", (affinity, met, label) => {
+    expect(relationshipLabel({ affinity, met })).toBe(label);
     expect(RELATIONSHIP_LABELS).toContain(label);
   });
 });

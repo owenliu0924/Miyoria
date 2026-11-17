@@ -11,15 +11,18 @@ import {
   HeartKey,
   RELATIONSHIP_LABELS,
   SocialSignalsKey,
+  toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  bondPlace,
   callNameCapability,
   checkCallName,
   FEELINGS,
   HeartModule,
   heartTables,
   labelOf,
+  newPerson,
   PeopleDirectory,
   PeopleDirectoryKey,
   SELF_ACCOUNTS_KEY,
@@ -147,6 +150,14 @@ describe("/me profile lines", () => {
     const stranger = FEELINGS.陌生人;
     for (const tier of RELATIONSHIP_LABELS.slice(3)) expect(FEELINGS[tier]).not.toBe(stranger);
     expect(labelOf(null)).toBe("陌生人");
+  });
+
+  it("names the tier by the one bond-only ladder, as the ring and the people API do", () => {
+    const row = { ...newPerson("p", toTimestamp(T0)), bond: 80, familiarity: 5, interactions: 4 };
+    expect(labelOf(row)).toBe("摯友");
+    expect(labelOf(row)).toBe(bondPlace(80).tier);
+    expect(labelOf({ ...row, bond: 0, interactions: 0 })).toBe("陌生人");
+    expect(labelOf({ ...row, bond: 0 })).toBe("認識");
   });
 
   it("refuses call names by their shape", () => {

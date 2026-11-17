@@ -323,11 +323,14 @@ async function link(people: PeopleDirectory, inv: Invocation): Promise<CommandRe
 const NOT_RESPONDING = () => notice("warn", "她目前不會回應你。");
 export const CLEAR_WORDS: ReadonlySet<string> = new Set(["清除", "取消", "reset", "clear", "-"]);
 
-/** The tier name of someone (陌生人 before there is a row). */
+/** The tier name of someone: the one ladder, 陌生人 before there is a row or anything done. */
 export function labelOf(row: HeartPerson | null): RelationshipLabel {
-  return row === null
-    ? "陌生人"
-    : relationshipLabel({ affinity: row.bond, familiarity: row.familiarity });
+  return row === null ? "陌生人" : relationshipLabel({ affinity: row.bond, met: metOf(row) });
+}
+
+/** Whether she has met `row`'s person: anything done with her, or a bond off 0. */
+export function metOf(row: Pick<HeartPerson, "interactions" | "bond">): boolean {
+  return row.interactions > 0 || row.bond !== 0;
 }
 
 /**
