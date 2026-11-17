@@ -115,7 +115,7 @@ export const EconomyConfigSchema = z.object({
   /** Extra on every 7th consecutive check-in day. */
   streak_bonus: coins.default(20),
   /** Once per local day she saw them say something (text or voice). */
-  talked: coins.default(10),
+  talked: coins.default(5),
   /** Per 10 minutes in her voice channel, when they spoke in that window. */
   voice_per_10min: coins.default(2),
   voice_cap: coins.default(20),

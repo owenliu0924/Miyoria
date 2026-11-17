@@ -296,13 +296,13 @@ describe("earning", () => {
     await r.earnings.onEvent(message(ALICE), r.clock.at + 1000);
     await r.earnings.onEvent(message(DAVE), r.clock.at);
     await r.earnings.onEvent(message(CAROL), r.clock.at);
-    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(10);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(5);
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, CAROL))).toBe(0);
     // Local midnight is 16:00 UTC: a new day pays again.
     const tomorrow = Date.UTC(2026, 10, 8, 16, 0, 1);
     r.clock.at = tomorrow;
     await r.earnings.onEvent(message(ALICE), tomorrow);
-    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(20);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(10);
   });
 
   it("pays voice time only to those who spoke in the window and are still there, up to the cap", async () => {
@@ -336,7 +336,7 @@ describe("earning", () => {
     r.clock.at = start + 4 * window + 1000;
     await r.earnings.settleVoice(r.clock.at);
     // Four windows of 2, capped at 4; Bob sat in silence. Alice also earned `talked` once.
-    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(4 + 10);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBe(4 + 5);
     expect(await ledgerOf(r.store).balance("p", walletOf(r.store, BOB))).toBe(0);
     // Gone before the window ended: nothing.
     const r2 = await rig();
