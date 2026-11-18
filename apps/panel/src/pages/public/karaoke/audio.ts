@@ -3,15 +3,27 @@
 // played through Web Audio so song time is the context's clock. The microphone goes into the
 // pitch worklet (`pitch.worklet.ts`), whose detections reach the page; when the session allows a
 // recording for the official score, it also goes, mixed to one channel, to a `MediaRecorder`
-// (`recorder.ts`), sent once at the end. Nothing else of it leaves the browser.
+// (`recorder.ts`), sent once at the end. In a room it also goes to the stream worklet
+// (`stream.worklet.ts`), which Core is sent from while the song plays (`room-stream.ts`). Nothing
+// else of it leaves the browser.
 //
 // `KaraokeEngine` is what the screens use; `setEngineFactory` swaps it (the dev demo's fake).
 
 import { estimateLatency } from "./latency";
 import { heardContextTime } from "./clock";
+import type { StreamPiece } from "./mulaw";
 import type { Detection } from "./pitch";
 import workletUrl from "./pitch.worklet.ts?worker&url";
 import { createVoiceRecorder, type RecordingLimits, type VoiceRecorder } from "./recorder";
+import streamWorkletUrl from "./stream.worklet.ts?worker&url";
+
+/** The microphone as 16 kHz µ-law pieces on the context's clock, for a room's stream. */
+export interface MicStream {
+  /** Starts (anew: the stream's first sample is the next one). */
+  start(onPiece: (piece: StreamPiece) => void): void;
+  /** Stops; what was gathered so far comes first. */
+  stop(): void;
+}
 
 export interface KaraokeEngine {
   /** The context's time now. */
@@ -29,6 +41,12 @@ export interface KaraokeEngine {
   loadBacking(url: string, signal?: AbortSignal): Promise<number>;
   /** Plays the backing track from `offset` seconds; the context time it starts at. */
   play(offset: number): number;
+  /**
+   * Plays the backing track so that song time `offset` is rendered at context time `at` (a room's
+   * shared start); when `at` has passed it starts a moment from now, that much further in. The
+   * context time it starts at and the song time there.
+   */
+  playAt(at: number, offset: number): { at: number; offset: number };
   stop(): void;
   /** Short beeps at these context times. */
   beeps(at: readonly number[]): void;
@@ -37,6 +55,8 @@ export interface KaraokeEngine {
    * is not open or the browser cannot record. `songTime` reads the song's clock (seconds).
    */
   recorder(limits: RecordingLimits, songTime: () => number): VoiceRecorder | null;
+  /** The microphone for a room's stream; `null` when it is not open or the browser cannot. */
+  micStream(): Promise<MicStream | null>;
   close(): void;
 }
 
@@ -46,6 +66,9 @@ export class DecodeError extends Error {
 }
 
 const NODE = "miyoria-pitch";
+const STREAM_NODE = "miyoria-stream";
+/** How soon a start can be scheduled, in seconds. */
+const LEAD_S = 0.05;
 
 class WebAudioEngine implements KaraokeEngine {
   readonly #ctx: AudioContext;
@@ -53,6 +76,7 @@ class WebAudioEngine implements KaraokeEngine {
   #micSource: MediaStreamAudioSourceNode | null = null;
   #mono: MediaStreamAudioDestinationNode | null = null;
   #node: AudioWorkletNode | null = null;
+  #stream: AudioWorkletNode | null = null;
   #backing: AudioBuffer | null = null;
   #source: AudioBufferSourceNode | null = null;
   readonly #listeners = new Set<(d: Detection) => void>();
@@ -132,6 +156,25 @@ class WebAudioEngine implements KaraokeEngine {
     return at;
   }
 
+  playAt(at: number, offset: number): { at: number; offset: number } {
+    this.stop();
+    if (!this.#backing) throw new Error("伴唱帶還沒準備好");
+    if (this.#ctx.state === "suspended") void this.#ctx.resume();
+    let when = at;
+    let from = offset;
+    const earliest = this.#ctx.currentTime + LEAD_S;
+    if (when < earliest) {
+      from += earliest - when;
+      when = earliest;
+    }
+    const source = this.#ctx.createBufferSource();
+    source.buffer = this.#backing;
+    source.connect(this.#ctx.destination);
+    source.start(when, Math.max(0, from));
+    this.#source = source;
+    return { at: when, offset: from };
+  }
+
   stop(): void {
     if (!this.#source) return;
     try {
@@ -171,6 +214,34 @@ class WebAudioEngine implements KaraokeEngine {
     return createVoiceRecorder(this.#mono.stream, limits, songTime);
   }
 
+  async micStream(): Promise<MicStream | null> {
+    if (!this.#micSource) return null;
+    if (!this.#stream) {
+      try {
+        await this.#ctx.audioWorklet.addModule(streamWorkletUrl);
+        const node = new AudioWorkletNode(this.#ctx, STREAM_NODE, {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+        });
+        this.#micSource?.connect(node);
+        // Connected so the graph pulls it; it writes silence.
+        node.connect(this.#ctx.destination);
+        this.#stream = node;
+      } catch {
+        return null;
+      }
+    }
+    const node = this.#stream;
+    return {
+      start: (onPiece) => {
+        node.port.onmessage = (e: MessageEvent<StreamPiece>) => onPiece(e.data);
+        node.port.postMessage({ run: true });
+      },
+      stop: () => node.port.postMessage({ run: false }),
+    };
+  }
+
   close(): void {
     this.stop();
     this.#listeners.clear();
@@ -181,6 +252,8 @@ class WebAudioEngine implements KaraokeEngine {
     this.#mono = null;
     this.#node?.disconnect();
     this.#node = null;
+    this.#stream?.disconnect();
+    this.#stream = null;
     void this.#ctx.close().catch(() => undefined);
   }
 }

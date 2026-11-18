@@ -746,13 +746,13 @@ describe("recording the singer", () => {
 describe("預估 and 正式分數", () => {
   const result = (over: Partial<Pick<KaraokeResult, "source" | "voice">>): Pick<KaraokeResult, "source" | "voice"> => ({
     source: "estimate",
-    voice: { state: "none", estimate_total: null, checks: [] },
+    voice: { state: "none", estimate_total: null, checks: [], upload: false },
     ...over,
   });
 
   it("calls the browser's pitch 預估 and the recording's score 正式分數 with the estimate beside it", () => {
     expect(voiceView(result({}))).toEqual({ label: "預估", pending: false, note: null, estimate: null, checks: [] });
-    expect(voiceView(result({ source: "voice", voice: { state: "scored", estimate_total: 71.2, checks: [] } }))).toEqual({
+    expect(voiceView(result({ source: "voice", voice: { state: "scored", estimate_total: 71.2, checks: [], upload: false } }))).toEqual({
       label: "正式分數",
       pending: false,
       note: null,
@@ -762,9 +762,9 @@ describe("預估 and 正式分數", () => {
   });
 
   it("says while the official score is being worked out, and when it will not come", () => {
-    const scoring = result({ voice: { state: "scoring", estimate_total: null, checks: [] } });
+    const scoring = result({ voice: { state: "scoring", estimate_total: null, checks: [], upload: false } });
     expect(voiceView(scoring)).toMatchObject({ label: "預估", pending: true, note: "正在算正式分數" });
-    expect(voiceView(result({ voice: { state: "waiting", estimate_total: null, checks: [] } }))).toMatchObject({
+    expect(voiceView(result({ voice: { state: "waiting", estimate_total: null, checks: [], upload: true } }))).toMatchObject({
       pending: true,
     });
     expect(voiceView(scoring, { waitedOut: true })).toMatchObject({ pending: false, note: "正式分數還沒算好,晚點回來看看" });
@@ -773,14 +773,14 @@ describe("預估 and 正式分數", () => {
       pending: false,
       note: "正式分數沒有算成,這次以預估為準",
     });
-    expect(voiceView(result({ voice: { state: "failed", estimate_total: null, checks: [] } }))).toMatchObject({
+    expect(voiceView(result({ voice: { state: "failed", estimate_total: null, checks: [], upload: false } }))).toMatchObject({
       label: "預估",
       note: "正式分數沒有算成,這次以預估為準",
     });
   });
 
   it("says what the checks of the recording found, plainly", () => {
-    const v = voiceView(result({ source: "voice", voice: { state: "scored", estimate_total: 60, checks: ["quiet", "bleed"] } }));
+    const v = voiceView(result({ source: "voice", voice: { state: "scored", estimate_total: 60, checks: ["quiet", "bleed"], upload: false } }));
     expect(v.checks).toEqual(["收到的聲音很小,分數可能不準", "間奏也收到了音高,可能是喇叭的伴奏,請戴耳機"]);
     for (const line of v.checks) expect(line).not.toMatch(/[!!]/);
   });

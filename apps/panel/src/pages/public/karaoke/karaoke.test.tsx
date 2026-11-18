@@ -41,6 +41,7 @@ const song = (over: Partial<KaraokeSongView> = {}): KaraokeSongView => ({
 
 const overview = (over: Partial<KaraokeOverview> = {}): KaraokeOverview => ({
   open: true,
+  admin: false,
   preparing: true,
   songs: [
     song(),
@@ -256,7 +257,7 @@ const coreResult =(over: Partial<KaraokeResult> = {}): KaraokeResult =>
   ({
     session: "S1",
     source: "estimate",
-    voice: { state: "none", estimate_total: null, checks: [] },
+    voice: { state: "none", estimate_total: null, checks: [], upload: false },
     song: { id: "k1", title: "夜に駆ける", artist: "YOASOBI" },
     at: "2026-11-18T01:00:00Z",
     total: 78.6,
@@ -381,7 +382,7 @@ describe("唱歌: the result", () => {
   });
 
   it("shows the official score with the earlier estimate small beside it", async () => {
-    results([coreResult({ source: "voice", total: 83.4, voice: { state: "scored", estimate_total: 78.6, checks: [] } })]);
+    results([coreResult({ source: "voice", total: 83.4, voice: { state: "scored", estimate_total: 78.6, checks: [], upload: false } })]);
     renderPage(<Result session="S1" title="夜に駆ける" artist={null} onAgain={() => {}} onBack={() => {}} />);
     expect(await screen.findByLabelText("正式分數 83.4")).toBeInTheDocument();
     const summary = screen.getByRole("region", { name: "分數" });
@@ -395,7 +396,7 @@ describe("唱歌: the result", () => {
         source: "voice",
         total: 90,
         unranked: true,
-        voice: { state: "scored", estimate_total: 70, checks: ["bleed"] },
+        voice: { state: "scored", estimate_total: 70, checks: ["bleed"], upload: false },
       }),
     ]);
     renderPage(<Result session="S1" title="夜に駆ける" artist={null} onAgain={() => {}} onBack={() => {}} />);
@@ -405,12 +406,12 @@ describe("唱歌: the result", () => {
   });
 
   it("sends the recording once after the result, then goes 預估 → 正在算 → 正式分數", async () => {
-    const waiting = coreResult({ total: 78.6, voice: { state: "waiting", estimate_total: null, checks: [] } });
-    const scoring = coreResult({ total: 78.6, voice: { state: "scoring", estimate_total: null, checks: [] } });
+    const waiting = coreResult({ total: 78.6, voice: { state: "waiting", estimate_total: null, checks: [], upload: true } });
+    const scoring = coreResult({ total: 78.6, voice: { state: "scoring", estimate_total: null, checks: [], upload: false } });
     const official = coreResult({
       source: "voice",
       total: 82.1,
-      voice: { state: "scored", estimate_total: 78.6, checks: [] },
+      voice: { state: "scored", estimate_total: 78.6, checks: [], upload: false },
     });
     const { posts, uploads, fn } = results([scoring, official], { submit: waiting });
     const body = { track: "AAAA", latency_ms: 120, calibrated: true, client_total: 79.9, browser: "Chrome 131", recording: true };
@@ -441,7 +442,7 @@ describe("唱歌: the result", () => {
   }, 15_000);
 
   it("stays 預估 with a short note when the recording could not be sent, and does not send it again", async () => {
-    const waiting = coreResult({ voice: { state: "waiting", estimate_total: null, checks: [] } });
+    const waiting = coreResult({ voice: { state: "waiting", estimate_total: null, checks: [], upload: true } });
     const { uploads } = results([waiting], { status: 500 });
     const pending = {
       session: "S1",
@@ -528,6 +529,8 @@ function fakeEngine(recorder: VoiceRecorder | null) {
     },
     loadBacking: async () => 30,
     play: () => performance.now() / 1000 + 0.05,
+    playAt: (at, offset) => ({ at, offset }),
+    micStream: async () => null,
     stop: () => {},
     beeps: () => {},
     recorder: (limits) => {

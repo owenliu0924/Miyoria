@@ -12,6 +12,12 @@
 // moved (the Core has the worker render the backing in it; the reference moves here by the same).
 // There is no pause: the recording is one stretch of the song. At the song's end (or 「唱完了」)
 // the track is encoded and handed on with the recording; nothing is sent while singing.
+//
+// In a room (`room`, docs/design/karaoke.md 「做了什麼第四步」) the stage is the same, with the
+// round's session given, the key the room's, and no start button: the backing starts by itself at
+// the room's moment (a countdown before it), there is no restart, and what the room runs beside
+// the song (the microphone's stream, the pitch posts) starts with it and ends with it. Its one
+// extra plate, under the number, is the singer's trend; there is never a ranking here.
 
 import {
   ArrowLeft,
@@ -52,8 +58,9 @@ import { HeardBadge, Lyrics, ReadingToggle } from "./Lyrics";
 import { keyLabel, loadKey, loadReading, type ReadingMode, saveKey, saveReading } from "./lyric-text";
 import type { RecorderState, VoiceRecorder, VoiceTake } from "./recorder";
 import { clock } from "./result-text";
+import { secondsLeft } from "./room-clock";
 import { StageBackground } from "./StageBackground";
-import { browserName } from "./support";
+import { browserName, micError } from "./support";
 import { finishTake, phrasesOf, referenceCurve, Take } from "./take";
 
 /** What a finished singing hands on: to be sent, and the number shown until Core answers. */
@@ -87,6 +94,33 @@ interface Loaded {
 
 /** How often the words and numbers on the stage are refreshed. */
 const TICK_MS = 100;
+/** How long the end of a room's stream is waited for before the result goes, in ms. */
+const RUN_FINISH_WAIT_MS = 3_000;
+
+/** What a room adds to the stage: the round's session, the shared start, and one plate. */
+export interface StageRoom {
+  /** The round's session (signed links), as a singer alone gets from starting a song. */
+  session: KaraokeSession;
+  /**
+   * The context time the backing must start at and the song time there, worked out on the
+   * engine's clock; `null` while Core's clock is not known yet (asked again shortly).
+   */
+  schedule: (engine: KaraokeEngine) => { at: number; offset: number } | null;
+  /** The song is scheduled: what runs beside it until the end. `songTime` reads any context time. */
+  begin: (o: { engine: KaraokeEngine; songTime: (contextTime: number) => number }) => StageRun;
+  /** The plate under the number: the singer's trend. */
+  plate?: ReactNode;
+}
+
+/** What a room runs beside the song. */
+export interface StageRun {
+  /** A detection at song time `t`. */
+  detect(t: number, midi: number | null): void;
+  /** The song ended (or 唱完了): the last of it goes. */
+  finish(): Promise<void>;
+  /** They left: everything stops, nothing more goes. */
+  cancel(): void;
+}
 
 /**
  * The stage: the whole window, over the panel's frame (dialogs stay above it). It is a size
@@ -97,13 +131,13 @@ export const STAGE_BOX =
   "fixed inset-0 z-40 isolate overflow-hidden bg-black text-white [container-type:size] [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]";
 
 /** The safe area (a notch, rounded corners) plus a margin, as CSS. */
-const SAFE = {
+export const SAFE = {
   top: "env(safe-area-inset-top, 0px)",
   right: "env(safe-area-inset-right, 0px)",
   bottom: "env(safe-area-inset-bottom, 0px)",
   left: "env(safe-area-inset-left, 0px)",
 };
-const EDGE = "max(12px, 2.2cqmin)";
+export const EDGE = "max(12px, 2.2cqmin)";
 
 /** Where each layer sits over the picture. */
 export const LAYOUT: Record<"title" | "score" | "lane" | "lyrics" | "bar", CSSProperties> = {
@@ -128,7 +162,7 @@ export const LAYOUT: Record<"title" | "score" | "lane" | "lyrics" | "bar", CSSPr
 };
 
 /** A plate over the picture: the overlay's floating glass, in the panel's colours. */
-const PLATE = "glass-float rounded-[14px]";
+export const PLATE = "glass-float rounded-[14px]";
 
 /** Fades a layer that comes on demand; under reduced motion it just shows or goes. */
 function onDemand(shown: boolean): string {
@@ -162,6 +196,7 @@ export function Singing({
   onFinished,
   onQuit,
   onCalibrate,
+  room,
 }: {
   engine: () => KaraokeEngine;
   song: KaraokeSongView;
@@ -171,6 +206,8 @@ export function Singing({
   onFinished: (f: Finished) => void;
   onQuit: () => void;
   onCalibrate: () => void;
+  /** A room's round: its session, its start and its plate (`StageRoom`). */
+  room?: StageRoom;
 }) {
   const { api, config } = useConnection();
   const reduced = useReducedMotion();
@@ -182,7 +219,11 @@ export function Singing({
     rec: "idle",
   });
   const [quitting, setQuitting] = useState(false);
-  const [shift, setShift] = useState(() => loadKey(song.id, KARAOKE_MAX_SHIFT));
+  const [shift, setShift] = useState(() => (room ? room.session.shift : loadKey(song.id, KARAOKE_MAX_SHIFT)));
+  const roomRef = useRef(room);
+  roomRef.current = room;
+  const roomSession = room?.session ?? null;
+  const runRef = useRef<StageRun | null>(null);
   const [reading, setReading] = useState<ReadingMode>(() => loadReading());
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
@@ -211,7 +252,15 @@ export function Singing({
     const link = (u: string) => (/^https?:/.test(u) ? u : joinUrl(config.baseUrl, u));
     void (async () => {
       try {
-        const session = await api.rpc.karaoke.start({ params: { id: song.id }, body: { shift } });
+        // A room's singer may not have opened the microphone here yet (it is opened with 準備好了).
+        if (roomSession) {
+          try {
+            await audio.openMic();
+          } catch (e) {
+            throw new Error(micError(e));
+          }
+        }
+        const session = roomSession ?? (await api.rpc.karaoke.start({ params: { id: song.id }, body: { shift } }));
         const res = await fetch(link(session.reference_url), { credentials: "same-origin" });
         if (!res.ok) throw new Error("這首歌的旋律拿不到");
         // Version 1 or 2, in version 2's shape, moved to the key the backing is in.
@@ -244,7 +293,7 @@ export function Singing({
       }
     })();
     return () => void (alive.current = false);
-  }, [api, config.baseUrl, engine, song.id, latency.latency_ms, knownFloor, shift]);
+  }, [api, config.baseUrl, engine, song.id, latency.latency_ms, knownFloor, shift, roomSession]);
 
   /** Another key, before the start: a new session with the backing in it. */
   const moveKey = (by: number) => {
@@ -268,14 +317,17 @@ export function Singing({
       const t = clockRef.current.songTimeAt(d.t);
       if (t === null || t < 0) return;
       take.current?.push(t, d.midi);
+      runRef.current?.detect(t, d.midi);
     });
   }, [engine, loaded]);
 
-  // Leaving the screen: the backing stops, a recording is thrown away.
+  // Leaving the screen: the backing stops, a recording is thrown away, a room's stream stops.
   useEffect(
     () => () => {
       window.clearTimeout(recWait.current);
       loadedRef.current?.recorder?.cancel();
+      runRef.current?.cancel();
+      runRef.current = null;
       engine().stop();
     },
     [engine],
@@ -297,7 +349,13 @@ export function Singing({
     audio.stop();
     window.clearTimeout(recWait.current);
     setPhase({ kind: "finishing" });
-    const voice = loaded.recorder ? await loaded.recorder.stop() : null;
+    // A room's stream ends with its last chunk (waited on a little, so Core knows before the result).
+    const run = runRef.current;
+    runRef.current = null;
+    const ended = run
+      ? Promise.race([run.finish().catch(() => undefined), new Promise((r) => window.setTimeout(r, RUN_FINISH_WAIT_MS))])
+      : Promise.resolve();
+    const [voice] = await Promise.all([loaded.recorder ? loaded.recorder.stop() : Promise.resolve(null), ended]);
     const done = await finishTake(t, {
       calibrated: latency.calibrated,
       phrases: phrasesOf(loaded.reference),
@@ -317,14 +375,14 @@ export function Singing({
   }, [engine, loaded, latency.calibrated, onFinished]);
 
   const start = () => {
-    if (phase.kind !== "ready") return;
+    if (phase.kind !== "ready" || roomRef.current) return;
     const at = engine().play(0);
     clockRef.current.start(at, 0);
     recordFrom(at);
     setPhase({ kind: "playing" });
   };
   const restart = () => {
-    if (!take.current || phase.kind !== "playing") return;
+    if (!take.current || phase.kind !== "playing" || roomRef.current) return;
     const audio = engine();
     audio.stop();
     take.current.restart();
@@ -334,6 +392,31 @@ export function Singing({
   };
   const startRef = useRef(start);
   startRef.current = start;
+
+  // A room's round starts by itself at the room's moment, once Core's clock is known.
+  const ready = phase.kind === "ready";
+  useEffect(() => {
+    if (!ready || !roomRef.current) return;
+    const audio = engine();
+    let timer = 0;
+    const tryStart = () => {
+      const r = roomRef.current;
+      if (!r || phaseRef.current.kind !== "ready") return;
+      const when = r.schedule(audio);
+      if (when === null) {
+        timer = window.setTimeout(tryStart, 200);
+        return;
+      }
+      const started = audio.playAt(when.at, when.offset);
+      clockRef.current.start(started.at, started.offset);
+      recordFrom(started.at);
+      runRef.current = r.begin({ engine: audio, songTime: (t) => clockRef.current.songTime(t) });
+      setPhase({ kind: "playing" });
+    };
+    tryStart();
+    return () => window.clearTimeout(timer);
+    // `recordFrom` reads `loaded`, which is set before the phase is ready.
+  }, [ready, engine]);
 
   // ---- the controls on demand, and fullscreen ----
 
@@ -510,9 +593,13 @@ export function Singing({
   const leave = () => {
     window.clearTimeout(recWait.current);
     loaded?.recorder?.cancel();
+    runRef.current?.cancel();
+    runRef.current = null;
     engine().stop();
     onQuit();
   };
+  const inRoom = room !== undefined;
+  const waiting = inRoom && playing ? secondsLeft(tick.now) : 0;
 
   return (
     <section
@@ -554,6 +641,17 @@ export function Singing({
       {phase.kind === "loading" && (
         <p className="absolute inset-0 grid place-items-center text-[15px]">準備伴唱帶中,先不要出聲</p>
       )}
+      {inRoom && phase.kind === "ready" && (
+        <p className="absolute inset-0 grid place-items-center text-[15px]">對時中,馬上開始</p>
+      )}
+      {waiting > 0 && (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center pb-[22cqh]" data-countdown>
+          <p className="grid justify-items-center gap-1" role="timer" aria-live="off">
+            <span className="font-mono text-[clamp(40px,12cqmin,96px)] font-semibold tabular-nums">{waiting}</span>
+            <span className="text-[13px] text-muted-foreground">秒後一起開始</span>
+          </p>
+        </div>
+      )}
       {phase.kind === "error" && (
         <div className="absolute inset-0 grid place-items-center p-4">
           <div className={cn(PLATE, "grid max-w-md gap-3 p-5 [text-shadow:none]")}>
@@ -583,7 +681,11 @@ export function Singing({
           {shown && (
             <div className="mt-1.5 grid gap-1 border-t border-line-soft pt-2 text-xs [&_p]:text-xs [&_svg]:size-3.5">
               <HeadphonesLine />
-              <PrivacyLine recording={recording} />
+              {inRoom ? (
+                <p className="text-muted-foreground">唱的時候麥克風的聲音會即時送去算分,算完不保存</p>
+              ) : (
+                <PrivacyLine recording={recording} />
+              )}
               {recordable && loaded !== null && !recording && (
                 <p className="text-muted-foreground">這個瀏覽器不能錄音,這次只有預估分數</p>
               )}
@@ -629,13 +731,18 @@ export function Singing({
           </dl>
         </div>
       )}
-      {tick.rec === "over" && (
-        <p
-          className={cn(PLATE, "absolute rounded-full px-3 py-1 text-xs [text-shadow:none]")}
+      {(room?.plate || tick.rec === "over") && phase.kind !== "error" && (
+        <div
+          className="absolute grid justify-items-end gap-2"
           style={{ ...LAYOUT.score, top: `calc(${SAFE.top} + ${EDGE} + 44px)` }}
         >
-          錄音超過上限,這次只有預估分數
-        </p>
+          {room?.plate}
+          {tick.rec === "over" && (
+            <p className={cn(PLATE, "rounded-full px-3 py-1 text-xs [text-shadow:none]")}>
+              錄音超過上限,這次只有預估分數
+            </p>
+          )}
+        </div>
       )}
 
       {/* Layer 4, on demand: the bar of controls, bottom centre. */}
@@ -651,22 +758,25 @@ export function Singing({
               onDemand(shown),
             )}
           >
-            {phase.kind === "ready" || phase.kind === "loading" ? (
+            {inRoom && (phase.kind === "ready" || phase.kind === "loading") ? null : phase.kind === "ready" ||
+              phase.kind === "loading" ? (
               <Button size="sm" onClick={start} disabled={phase.kind !== "ready"}>
                 <Play aria-hidden />
                 開始
               </Button>
             ) : (
               <>
-                <Button variant="ghost" size="sm" onClick={restart} disabled={!playing} aria-label="從頭開始">
-                  <RotateCcw aria-hidden />
-                  <Label>從頭開始</Label>
-                </Button>
+                {!inRoom && (
+                  <Button variant="ghost" size="sm" onClick={restart} disabled={!playing} aria-label="從頭開始">
+                    <RotateCcw aria-hidden />
+                    <Label>從頭開始</Label>
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => void finish()}
-                  disabled={!playing}
+                  disabled={!playing || waiting > 0}
                   busy={phase.kind === "finishing"}
                 >
                   <Check aria-hidden />
@@ -675,15 +785,21 @@ export function Singing({
               </>
             )}
             <Divider />
-            <KeyControl
-              shift={shift}
-              can={phase.kind === "ready"}
-              busy={phase.kind === "loading" && started.current !== null && loaded === null}
-              onMove={moveKey}
-            />
+            {inRoom ? (
+              <span className="px-2 font-mono text-[13px] text-muted-foreground tabular-nums" title="房間的調">
+                {keyLabel(shift)}
+              </span>
+            ) : (
+              <KeyControl
+                shift={shift}
+                can={phase.kind === "ready"}
+                busy={phase.kind === "loading" && started.current !== null && loaded === null}
+                onMove={moveKey}
+              />
+            )}
             <ReadingToggle lyrics={lyrics} mode={reading} onMode={chooseReading} />
             <Divider />
-            {phase.kind === "ready" && (
+            {phase.kind === "ready" && !inRoom && (
               <Button variant="ghost" size="sm" onClick={onCalibrate} aria-label="校正延遲" title="校正延遲">
                 <Timer aria-hidden />
                 <Label>校正延遲</Label>
@@ -728,7 +844,7 @@ export function Singing({
 
       <ConfirmDialog
         open={quitting}
-        title="離開這首歌"
+        title={inRoom ? "離開房間" : "離開這首歌"}
         confirmLabel="離開"
         onConfirm={() => {
           setQuitting(false);
@@ -736,7 +852,7 @@ export function Singing({
         }}
         onClose={() => setQuitting(false)}
       >
-        這次唱的不會送出,也不會記分。
+        {inRoom ? "這次唱的不會送出,也不會記分;你會離開這個房間。" : "這次唱的不會送出,也不會記分。"}
       </ConfirmDialog>
     </section>
   );

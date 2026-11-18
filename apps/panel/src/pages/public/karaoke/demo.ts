@@ -14,10 +14,25 @@
 // so the stage falls back to the still; the others have none. A singing goes 預估 → 正在算 →
 // 正式分數 (a little higher than the estimate, which stays shown small); the second of 最近唱的 had
 // the backing in its recording (`bleed`).
+//
+// Rooms (step 4) without a Core: `?karaoke-demo=lobby`, `=singer`, `=spectator` or `=results` opens
+// the made-up room KTV888 in that scene (the address becomes `/karaoke/room/KTV888`); plain
+// `?karaoke-demo` starts at the list, where 一起唱 opens a room of your own. The room's event stream
+// is faked (`setRoomEventsFactory`): the singer's scene counts down five seconds and cycles their
+// trend (上升中 → 保持 → 下降中, 正式 and 預估); the spectator's has four made-up singers whose
+// ranking moves every second and whose pitch lines follow the tune, each a little off in its own
+// way; the results have a winner, a 預估 line, a check and a note. The stream and pitch posts are
+// answered `live` and 204; a room singer's result needs no recording upload (the stream held).
 
 import type {
+  KaraokeBoardLine,
   KaraokeOverview,
   KaraokeResult,
+  KaraokeRoomEvent,
+  KaraokeRoomMember,
+  KaraokeRoomResult,
+  KaraokeRooms,
+  KaraokeRoomView,
   KaraokeSession,
   KaraokeSongView,
   KaraokeSubmit,
@@ -27,14 +42,16 @@ import type {
   WorkersKaraokePiece,
   WorkersKaraokeReferenceV2,
 } from "@miyoria/contracts/workers/karaoke";
-import { decodeTrack, fromBase64, scoreSinging, TRACK_HZ } from "@miyoria/play/karaoke/score";
-import { type KaraokeEngine, setEngineFactory } from "./audio";
+import { decodeTrack, encodeTrack, fromBase64, scoreSinging, TRACK_HZ, toBase64 } from "@miyoria/play/karaoke/score";
+import { type KaraokeEngine, type MicStream, setEngineFactory } from "./audio";
 // A 64 s test pattern with a seconds counter (ffmpeg's `testsrc`, 1280x720 at 12 fps, H.264, no
 // sound, ~260 KB), so the video's cover and its sync with the song can be seen. Only this file
 // refers to it, and this file is only in the dev server, so a production build has none of it.
 import demoVideo from "./demo-video.mp4?url";
+import type { StreamPiece } from "./mulaw";
 import type { Detection } from "./pitch";
 import { type RecorderState, type RecordingLimits, recordingOffsetMs, type VoiceRecorder, type VoiceTake } from "./recorder";
+import { type RoomEventsHandlers, setRoomEventsFactory } from "./room-api";
 
 // ---------------------------------------------------------------------------
 // a made-up song: an original tune and words
@@ -190,6 +207,7 @@ function preparing(): KaraokeSongView {
 function overview(): KaraokeOverview {
   return {
     open: true,
+    admin: false,
     preparing: true,
     songs: [
       song({ best: 84.6, sung: 4, video: true }),
@@ -243,7 +261,10 @@ function scored(body: KaraokeSubmit, session: string): KaraokeResult {
     ...r,
     session,
     source: "estimate",
-    voice: { state: body.recording ? "waiting" : "none", estimate_total: null, checks: [] },
+    // A room's singer whose stream held: the official score comes from the stream, no upload.
+    voice: roomSessions.has(session)
+      ? { state: "scoring", estimate_total: null, checks: [], upload: false }
+      : { state: body.recording ? "waiting" : "none", estimate_total: null, checks: [], upload: body.recording === true },
     song: { id: "demo-song", title: "紙船", artist: "示範" },
     at: new Date().toISOString(),
     phrases: r.phrases.map((p) => ({ ...p, text: WORDS[p.index] ?? null })),
@@ -263,7 +284,7 @@ function officially(r: KaraokeResult): KaraokeResult {
     source: "voice",
     total,
     pitch: { ...r.pitch, score: Math.min(r.pitch.max, Math.round((r.pitch.score + 4.6) * 10) / 10) },
-    voice: { state: "scored", estimate_total: r.total, checks: [] },
+    voice: { state: "scored", estimate_total: r.total, checks: [], upload: false },
   };
 }
 
@@ -284,7 +305,7 @@ function oldResult(session: string): KaraokeResult {
     ...r,
     session,
     source: "voice",
-    voice: { state: "scored", estimate_total: Math.round((r.total - 3.1) * 10) / 10, checks: bleed ? ["bleed"] : [] },
+    voice: { state: "scored", estimate_total: Math.round((r.total - 3.1) * 10) / 10, checks: bleed ? ["bleed"] : [], upload: false },
     song: { id: "demo-song", title: "紙船", artist: "示範" },
     at: ago(26),
     phrases: r.phrases.map((p) => ({ ...p, text: WORDS[p.index] ?? null })),
@@ -301,6 +322,361 @@ function json(body: unknown, status = 200): Response {
 }
 
 let sessions = 0;
+
+/** A singing's signed links (the made-up ones). */
+function newSession(songId: string, shift: number): KaraokeSession {
+  const id = `demo-${++sessions}`;
+  keys.set(id, shift);
+  singingKey = shift;
+  const backing = shift === 0 ? "karaoke.m4a" : `karaoke.k${shift > 0 ? "+" : "-"}${Math.abs(shift)}.m4a`;
+  // 紙船 has a real (made-up) video; 夜空中最亮的星 "has" one whose link leads nowhere, so the
+  // stage shows the still; the others have none.
+  const video = songId === "demo-song" ? demoVideo : songId === "d2" ? `/karaoke-demo-missing-${id}.mp4` : null;
+  return {
+    session: id,
+    song: song({ video: video !== null }),
+    backing_url: `/api/member/karaoke/files/${id}/${backing}?exp=1&sig=demo`,
+    reference_url: `/api/member/karaoke/files/${id}/reference.json?exp=1&sig=demo`,
+    video_url: video,
+    expires_at: new Date(Date.now() + 600_000).toISOString(),
+    tolerance_cents: 50,
+    frame_hz: TRACK_HZ,
+    shift,
+    recording: { max_bytes: 8 * 1024 * 1024, max_seconds: Math.ceil(DURATION) + 30 },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// rooms
+
+/** The room's code (letters people can read out), and Core's clock ahead of this one by a little. */
+const ROOM = "KTV888";
+const CORE_AHEAD_MS = 37;
+const coreNow = () => Date.now() + CORE_AHEAD_MS;
+const COUNTDOWN_MS = 5_000;
+const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 5, max_singers: 8 };
+const ME = "m-me";
+
+interface DemoRoom {
+  state: KaraokeRoomView["state"];
+  closed_reason: string | null;
+  song: KaraokeSongView | null;
+  shift: number;
+  members: KaraokeRoomMember[];
+  /** `null`: not in it (they may join). */
+  me: string | null;
+  round: number;
+  start_at_ms: number | null;
+  result: KaraokeRoomResult | null;
+  session: KaraokeSession | null;
+}
+
+const roomSessions = new Set<string>();
+let demoRoom: DemoRoom | null = null;
+const listeners = new Set<RoomEventsHandlers>();
+let roomTimers: number[] = [];
+
+const others: KaraokeRoomMember[] = [
+  { id: "m-a", name: "海苔", role: "singer", ready: true, opener: false, color: 1 },
+  { id: "m-b", name: "鯨魚寶寶", role: "singer", ready: false, opener: false, color: 2 },
+  { id: "m-c", name: "Akari", role: "singer", ready: true, opener: false, color: 3 },
+  { id: "m-d", name: "路過的人", role: "spectator", ready: false, opener: false, color: 4 },
+];
+
+function roomView(r: DemoRoom): KaraokeRoomView {
+  const me = r.members.find((m) => m.id === r.me) ?? null;
+  const running = r.state === "countdown" || r.state === "singing";
+  return {
+    code: ROOM,
+    state: r.state,
+    closed_reason: r.closed_reason,
+    song: r.song,
+    shift: r.shift,
+    members: r.members,
+    me:
+      me === null
+        ? null
+        : {
+            id: me.id,
+            role: me.role,
+            opener: me.opener,
+            singing: running && me.role === "singer",
+            // A spectator gets files to watch with, a singer their own singing.
+            session: running ? r.session : null,
+          },
+    round: r.round,
+    rounds_left: TERMS.rounds - r.round,
+    start_at_ms: running ? r.start_at_ms : null,
+    result: r.result,
+    terms: TERMS,
+  };
+}
+
+function emit(e: KaraokeRoomEvent): void {
+  for (const h of listeners) h.onEvent(e);
+}
+
+function changed(): KaraokeRoomView | null {
+  if (!demoRoom) return null;
+  const v = roomView(demoRoom);
+  emit({ type: "room", room: v });
+  return v;
+}
+
+function later(ms: number, fn: () => void): void {
+  roomTimers.push(window.setTimeout(fn, ms));
+}
+
+function every(ms: number, fn: () => void): void {
+  roomTimers.push(window.setInterval(fn, ms));
+}
+
+function clearRoomTimers(): void {
+  for (const t of roomTimers) {
+    window.clearTimeout(t);
+    window.clearInterval(t);
+  }
+  roomTimers = [];
+}
+
+/** A made-up singer's pitch at frame `i`: the tune, a little off in their own way. */
+function fakePitch(k: number, i: number): number | null {
+  const ref = curve[i];
+  if (ref === null || ref === undefined) return null;
+  // Now and then a breath.
+  if ((i + k * 37) % 97 < 4) return null;
+  const off = [0.1, -12.2, 0.6, -0.35][k] ?? 0;
+  const lag = [2, 4, 1, 6][k] ?? 2;
+  const late = curve[i - lag] ?? ref;
+  return (late ?? ref) + off + 0.18 * Math.sin((i + k * 13) / (5 + k));
+}
+
+const BOARD_SINGERS = [
+  { member: "m-b", name: "鯨魚寶寶", color: 2 },
+  { member: "m-a", name: "海苔", color: 1 },
+  { member: "m-c", name: "Akari", color: 3 },
+  { member: "m-e", name: "很長很長的名字的人", color: 5 },
+];
+
+/** The board now: running totals that move, a pitch line each for the last 1.5 s. */
+function boardNow(r: DemoRoom, previous: Map<string, number>): KaraokeBoardLine[] {
+  const t = r.start_at_ms === null ? 0 : (coreNow() - r.start_at_ms) / 1000;
+  const nowFrame = Math.max(0, Math.floor(t * HZ));
+  const from = Math.max(0, nowFrame - 75);
+  const rows = BOARD_SINGERS.map((s, k) => {
+    const base = [78, 74, 81, 69][k] ?? 70;
+    const total = Math.max(0, Math.min(100, base + 4 * Math.sin(t / (4 + k) + k) + (k === 3 ? t / 20 : 0)));
+    const frames: (number | null)[] = [];
+    for (let i = from; i < nowFrame; i++) frames.push(fakePitch(k, i));
+    return { ...s, total: Math.round(total * 10) / 10, source: k === 2 ? ("estimate" as const) : ("voice" as const), frames };
+  });
+  const ranked = [...rows].sort((a, b) => b.total - a.total);
+  return rows.map((row) => {
+    const rank = ranked.indexOf(row) + 1;
+    const before = previous.get(row.member);
+    previous.set(row.member, rank);
+    return {
+      member: row.member,
+      name: row.name,
+      color: row.color,
+      rank,
+      total: row.total,
+      source: row.source,
+      move: before === undefined || before === rank ? ("same" as const) : before > rank ? ("up" as const) : ("down" as const),
+      pitch: nowFrame > from ? { from, track: toBase64(encodeTrack(row.frames)) } : null,
+    };
+  });
+}
+
+function demoResult(r: DemoRoom): KaraokeRoomResult {
+  const place = (o: Partial<KaraokeRoomResult["places"][number]> & { member: string; name: string; color: number }) => ({
+    rank: null,
+    total: null,
+    pitch: null,
+    stability: null,
+    rhythm: null,
+    expression: null,
+    source: null,
+    finished: true,
+    checks: [],
+    coins: 0,
+    winner: false,
+    note: null,
+    ...o,
+  });
+  return {
+    round: Math.max(1, r.round),
+    song: { id: "demo-song", title: "紙船", artist: "示範" },
+    settling: false,
+    note: null,
+    places: [
+      place({ member: "m-c", name: "Akari", color: 3, rank: 1, total: 86.4, pitch: 52.1, stability: 13.2, rhythm: 12.8, expression: 8.3, source: "voice", coins: 18, winner: true }),
+      place({ member: ME, name: "小魚乾", color: 0, rank: 2, total: 81.7, pitch: 49.6, stability: 12.4, rhythm: 12.1, expression: 7.6, source: "voice", coins: 3 }),
+      place({ member: "m-a", name: "海苔", color: 1, rank: 3, total: 74.9, pitch: 45.0, stability: 11.8, rhythm: 11.0, expression: 7.1, source: "estimate", coins: 3, note: "這次是預估分數,不能拿獎" }),
+      place({ member: "m-b", name: "鯨魚寶寶", color: 2, rank: 4, total: 61.2, pitch: 36.2, stability: 10.1, rhythm: 9.4, expression: 5.5, source: "voice", checks: ["bleed"], coins: 3 }),
+      place({ member: "m-e", name: "很長很長的名字的人", color: 5, finished: false, note: "沒有唱到一半" }),
+    ],
+  };
+}
+
+/** The round runs: countdown, singing (the spectators' board or the singer's trend), results. */
+function startRound(r: DemoRoom, opts: { startIn: number; scene: "singer" | "spectator" }): void {
+  clearRoomTimers();
+  r.round++;
+  r.result = null;
+  r.state = "countdown";
+  r.start_at_ms = coreNow() + opts.startIn;
+  r.session = newSession(r.song?.id ?? "demo-song", r.shift);
+  roomSessions.add(r.session.session);
+  later(Math.max(0, opts.startIn), () => {
+    r.state = "singing";
+    changed();
+  });
+  if (opts.scene === "singer") {
+    const cycle = [
+      { trend: "rising", source: "voice" },
+      { trend: "holding", source: "voice" },
+      { trend: "dropping", source: "voice" },
+      { trend: "rising", source: "estimate" },
+      { trend: "holding", source: "estimate" },
+    ] as const;
+    let n = 0;
+    every(3_000, () => {
+      if (r.state !== "singing") return;
+      const c = cycle[n++ % cycle.length] as (typeof cycle)[number];
+      emit({ type: "trend", round: r.round, trend: c.trend, source: c.source });
+    });
+  } else {
+    const ranks = new Map<string, number>();
+    every(1_000, () => {
+      if (r.state !== "singing" && r.state !== "countdown") return;
+      emit({ type: "board", round: r.round, at_ms: coreNow(), lines: boardNow(r, ranks) });
+    });
+  }
+  // The song ends for everyone: the ranking.
+  later(opts.startIn + (DURATION + 4) * 1000, () => {
+    clearRoomTimers();
+    r.state = "results";
+    r.start_at_ms = null;
+    r.result = demoResult(r);
+    changed();
+  });
+  changed();
+}
+
+function lobbyRoom(opener: boolean): DemoRoom {
+  return {
+    state: "lobby",
+    closed_reason: null,
+    song: song({ video: true }),
+    shift: 0,
+    members: [{ id: ME, name: "小魚乾", role: "singer", ready: false, opener, color: 0 }, ...others.map((m) => ({ ...m, opener: false }))],
+    me: ME,
+    round: 0,
+    start_at_ms: null,
+    result: null,
+    session: null,
+  };
+}
+
+/** Puts the room in a scene. */
+function roomScene(scene: string): void {
+  const r = lobbyRoom(true);
+  demoRoom = r;
+  if (scene === "singer") startRound(r, { startIn: COUNTDOWN_MS, scene: "singer" });
+  if (scene === "spectator") {
+    const me = r.members[0] as KaraokeRoomMember;
+    me.role = "spectator";
+    me.opener = false;
+    (r.members[1] as KaraokeRoomMember).opener = true;
+    r.members.push({ id: "m-e", name: "很長很長的名字的人", role: "singer", ready: true, opener: false, color: 5 });
+    startRound(r, { startIn: -8_000, scene: "spectator" });
+  }
+  if (scene === "results") {
+    r.round = 1;
+    r.state = "results";
+    r.result = demoResult(r);
+  }
+}
+
+function rooms(): KaraokeRooms {
+  return { available: true, reason: null, terms: TERMS, balance: 128, mine: demoRoom?.me && demoRoom.state !== "closed" ? ROOM : null };
+}
+
+function roomAnswer(method: string, path: string, body: unknown): Response | null {
+  if (path === "/api/member/karaoke/rooms") {
+    if (method !== "POST") return json(rooms());
+    const b = body as { song: string; shift?: number };
+    clearRoomTimers();
+    demoRoom = { ...lobbyRoom(true), song: overview().songs.find((x) => x.id === b.song) ?? song({}), shift: b.shift ?? 0 };
+    demoRoom.members = demoRoom.members.slice(0, 1);
+    later(1_500, () => {
+      if (!demoRoom) return;
+      demoRoom.members.push({ ...(others[0] as KaraokeRoomMember) });
+      changed();
+    });
+    return json(changed());
+  }
+  const m = /^\/api\/member\/karaoke\/rooms\/([^/]+)(?:\/([a-z]+))?$/.exec(path);
+  if (!m) return null;
+  if (m[1] !== ROOM || !demoRoom) return json({ error: "沒有這個房間" }, 404);
+  const r = demoRoom;
+  const what = m[2];
+  if (!what) return json(roomView(r));
+  if (what === "clock") return json({ t0: (body as { t0: number }).t0, server_ms: coreNow() });
+  if (what === "audio") return json({ stream: "live" });
+  if (what === "pitch") return new Response(null, { status: 204 });
+  const me = r.members.find((x) => x.id === ME);
+  if (what === "join") {
+    const as = (body as { as?: "singer" | "spectator" }).as ?? "singer";
+    if (me) me.role = as;
+    else r.members.push({ id: ME, name: "小魚乾", role: as, ready: false, opener: false, color: 6 });
+    r.me = ME;
+    return json(changed());
+  }
+  if (what === "leave") {
+    r.members = r.members.filter((x) => x.id !== ME);
+    r.me = null;
+    clearRoomTimers();
+    return json(changed());
+  }
+  if (what === "ready" && me) {
+    me.ready = (body as { ready: boolean }).ready;
+    return json(changed());
+  }
+  if (what === "song") {
+    const b = body as { song: string; shift?: number };
+    r.song = overview().songs.find((x) => x.id === b.song) ?? r.song;
+    r.shift = b.shift ?? 0;
+    r.state = "lobby";
+    return json(changed());
+  }
+  if (what === "start") {
+    startRound(r, { startIn: COUNTDOWN_MS, scene: me?.role === "singer" ? "singer" : "spectator" });
+    return json(roomView(r));
+  }
+  if (what === "close") {
+    clearRoomTimers();
+    r.state = "closed";
+    r.closed_reason = "房主關掉了這間房";
+    return json(changed());
+  }
+  return json({ error: "no such endpoint" }, 404);
+}
+
+function installRoomEvents(): void {
+  setRoomEventsFactory((_url, h) => {
+    listeners.add(h);
+    const first = window.setTimeout(() => {
+      h.onLink?.("open");
+      if (demoRoom) h.onEvent({ type: "room", room: roomView(demoRoom) });
+    }, 150);
+    return () => {
+      window.clearTimeout(first);
+      listeners.delete(h);
+    };
+  });
+}
 
 function answer(method: string, path: string, body: unknown): Response | null {
   if (path === "/api/auth/methods") return json({ token: true, discord: true });
@@ -322,38 +698,21 @@ function answer(method: string, path: string, body: unknown): Response | null {
     return json({ song: preparing(), created: true });
   }
   if (path === "/api/member/karaoke/songs/demo-prep") return json(preparing());
+  const room = roomAnswer(method, path, body);
+  if (room) return room;
   const start = /^\/api\/member\/karaoke\/songs\/([^/]+)\/sessions$/.exec(path);
   if (start && method === "POST") {
-    const id = `demo-${++sessions}`;
     const shift = (body as { shift?: number } | undefined)?.shift ?? 0;
-    keys.set(id, shift);
-    singingKey = shift;
-    const backing = shift === 0 ? "karaoke.m4a" : `karaoke.k${shift > 0 ? "+" : "-"}${Math.abs(shift)}.m4a`;
-    // 紙船 has a real (made-up) video; 夜空中最亮的星 "has" one whose link leads nowhere, so the
-    // stage shows the still; the others have none.
-    const video =
-      start[1] === "demo-song" ? demoVideo : start[1] === "d2" ? `/karaoke-demo-missing-${id}.mp4` : null;
-    const s: KaraokeSession = {
-      session: id,
-      song: song({ video: video !== null }),
-      backing_url: `/api/member/karaoke/files/${id}/${backing}?exp=1&sig=demo`,
-      reference_url: `/api/member/karaoke/files/${id}/reference.json?exp=1&sig=demo`,
-      video_url: video,
-      expires_at: new Date(Date.now() + 600_000).toISOString(),
-      tolerance_cents: 50,
-      frame_hz: TRACK_HZ,
-      shift,
-      recording: { max_bytes: 8 * 1024 * 1024, max_seconds: Math.ceil(DURATION) + 30 },
-    };
-    return json(s);
+    return json(newSession(start[1] as string, shift));
   }
+
   const voice = /^\/api\/member\/karaoke\/sessions\/([^/]+)\/voice$/.exec(path);
   if (voice && method === "POST") {
     const kept = results.get(voice[1] as string);
     if (!kept || kept.uploaded) return json({ error: "這次的錄音已經收過了" }, 409);
     kept.uploaded = true;
     kept.polls = 0;
-    kept.result = { ...kept.result, voice: { ...kept.result.voice, state: "scoring" } };
+    kept.result = { ...kept.result, voice: { ...kept.result.voice, state: "scoring", upload: false } };
     return json({ state: "scoring" }, 202);
   }
   if (/\/reference\.json$/.test(path)) return json(REFERENCE);
@@ -435,6 +794,33 @@ class DemoEngine implements KaraokeEngine {
     const at = this.now() + 0.12;
     this.#playing = { at, offset };
     return at;
+  }
+  playAt(at: number, offset: number): { at: number; offset: number } {
+    let when = at;
+    let from = offset;
+    const earliest = this.now() + 0.05;
+    if (when < earliest) {
+      from += earliest - when;
+      when = earliest;
+    }
+    this.#playing = { at: when, offset: from };
+    return { at: when, offset: from };
+  }
+  async micStream(): Promise<MicStream | null> {
+    let timer = 0;
+    let index = 0;
+    return {
+      start: (onPiece: (p: StreamPiece) => void) => {
+        index = 0;
+        const began = this.now();
+        timer = window.setInterval(() => {
+          // A tenth of a second of near silence, µ-law (0xff is zero).
+          onPiece({ index, t: began + index / 16_000, bytes: new Uint8Array(1_600).fill(0xff) });
+          index += 1_600;
+        }, 100);
+      },
+      stop: () => window.clearInterval(timer),
+    };
   }
   stop(): void {
     this.#playing = null;
@@ -527,7 +913,14 @@ class DemoRecorder implements VoiceRecorder {
 
 export function installDemo(): void {
   installFetch();
+  installRoomEvents();
   setEngineFactory(() => new DemoEngine());
+  // A room's scene: the room's own address, the scene kept in the query.
+  const scene = new URLSearchParams(window.location.search).get("karaoke-demo") ?? "";
+  if (["lobby", "singer", "spectator", "results"].includes(scene)) {
+    roomScene(scene);
+    window.history.replaceState(null, "", `/karaoke/room/${ROOM}?karaoke-demo=${scene}`);
+  }
   // The page checks for Web Audio first; the demo needs none.
   const w = window as unknown as Record<string, unknown>;
   w.AudioWorkletNode ??= function AudioWorkletNode() {};

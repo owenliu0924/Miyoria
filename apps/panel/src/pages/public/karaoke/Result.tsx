@@ -4,8 +4,10 @@
 //
 // Where the number came from is said over it: 「預估」 from the pitch the browser detected, or
 // 「正式分數」 once the song worker scored the recording of the singer. When the singing was
-// recorded, the recording is sent once, right after the result (never again on a failure), and
-// the result is asked for every few seconds until the official score is in, for a while.
+// recorded, the recording is sent once when Core asks for it (`voice.upload`: right after the
+// result for a singer alone; for a room's singer only when their live stream did not hold, which
+// may be said by a later look), never again on a failure, and the result is asked for every few
+// seconds until the official score is in, for a while.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Info, MicVocal, RotateCcw } from "lucide-react";
@@ -22,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { Bar, Fact, Refusal } from "./bits";
 import { COMMENT_POLL_MS, COMMENT_WAIT_MS, OVERVIEW, resultKey, VOICE_POLL_MS, VOICE_WAIT_MS } from "./queries";
 import { uploadVoice } from "./recorder";
+import { wantsUpload } from "./room-text";
 import { clock, coreScored, partLines, pct, type Scored, score1, type VoiceView, voiceView } from "./result-text";
 import type { Finished } from "./Singing";
 
@@ -231,9 +234,9 @@ export function Result({
   const [uploadFailed, setUploadFailed] = useState(false);
   const [, rerender] = useState(0);
 
-  /** The recording, once, after the result: a failure leaves the result 預估. */
+  /** The recording, once, when Core wants it: a failure leaves the result 預估. */
   const sendVoice = (f: Finished, r: KaraokeResult) => {
-    if (!f.voice || voiceSent.current || r.voice.state !== "waiting") return;
+    if (!f.voice || voiceSent.current || !wantsUpload(r.voice)) return;
     voiceSent.current = true;
     uploadVoice(http, f.session, f.voice).then(
       () => {
@@ -266,6 +269,13 @@ export function Result({
     refetchInterval: (q) => resultPollMs(q.state.data, since.current, Date.now(), uploadFailed),
     retry: false,
   });
+
+  // A later look may ask for the recording after all.
+  const later = result.data;
+  useEffect(() => {
+    if (pending && later) sendVoice(pending, later);
+    // `sendVoice` sends at most once (`voiceSent`).
+  }, [pending, later]);
 
   const core = result.data ?? submit.data;
   const shown: Scored | null | undefined = core ? coreScored(core) : pending?.provisional;
