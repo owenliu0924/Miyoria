@@ -290,6 +290,8 @@ export function Singing({
         take.current = new Take(referenceCurve(reference), {
           tolerance_cents: session.tolerance_cents,
           latency_ms: latency.latency_ms,
+          calibrated: latency.calibrated,
+          phrases: phrasesOf(reference),
         });
         const range = midiRange(reference.pitch.midi, reference.notes);
         if (!alive.current || token !== loadToken.current) return;
@@ -307,7 +309,7 @@ export function Singing({
       }
     })();
     return () => void (alive.current = false);
-  }, [api, config.baseUrl, engine, song.id, latency.latency_ms, knownFloor, shift, roomSession]);
+  }, [api, config.baseUrl, engine, song.id, latency.latency_ms, latency.calibrated, knownFloor, shift, roomSession]);
 
   /** Another key, before the start: a new session with the backing in it. */
   const moveKey = (by: number) => {
@@ -602,7 +604,7 @@ export function Singing({
       }
       if (ms - last >= TICK_MS) {
         last = ms;
-        setTick({ now, score: take.current?.live.score ?? 0, rec: loaded.recorder?.state ?? "idle" });
+        setTick({ now, score: take.current?.running.score ?? 0, rec: loaded.recorder?.state ?? "idle" });
       }
       if (phaseRef.current.kind === "playing" && now >= loaded.duration + END_PAST_S) void finishRef.current();
     };
