@@ -15,6 +15,7 @@ import {
   type WorkersKaraokeReferenceV1,
 } from "@miyoria/contracts/workers/karaoke";
 import {
+  countdown,
   isDoubtful,
   keyLabel,
   lineProgress,
@@ -26,8 +27,11 @@ import {
   rubyOf,
   saveKey,
   saveReading,
+  stageLines,
+  stepped,
+  sungEnd,
 } from "./lyric-text";
-import { Lyrics } from "./Lyrics";
+import { fillClip, HeardBadge, LYRIC_MAIN, LYRIC_NEXT, LYRIC_RUBY, Lyrics, ReadingToggle } from "./Lyrics";
 
 const piece = (text: string, start: number | null, end: number | null, over: Partial<WorkersKaraokePiece> = {}) => ({
   text,
@@ -85,6 +89,34 @@ describe("the lyrics' logic", () => {
     expect(lineProgress(l, 9)).toEqual([1, 1, 1, 1]);
     expect(lineProgress(line({ aligned: false }), 2)).toBeNull();
     expect(lineProgress(line({ pieces: null }), 2)).toBeNull();
+  });
+
+  it("puts the line being sung (or the one coming) over the one after, and counts a line in after a rest", () => {
+    const lines = [
+      { start: 5, end: 9 },
+      { start: 9.5, end: 12 },
+      { start: 20, end: 24 },
+      { start: 24, end: 27 },
+    ];
+    expect(stageLines(lines, 1)).toEqual({ main: 0, second: 1 });
+    expect(stageLines(lines, 6)).toEqual({ main: 0, second: 1 });
+    expect(stageLines(lines, 10)).toEqual({ main: 1, second: 2 });
+    // Over a second past the end of a line, the coming one takes its place.
+    expect(stageLines(lines, 15)).toEqual({ main: 2, second: 3 });
+    expect(stageLines(lines, 25)).toEqual({ main: 3, second: null });
+    expect(stageLines([], 3)).toEqual({ main: null, second: null });
+    // The first line, and a line after a rest of four seconds or more, are counted in.
+    expect(countdown(lines, 0.5)).toBeNull();
+    expect(countdown(lines, 1.2)).toBe(4);
+    expect(countdown(lines, 4.1)).toBe(1);
+    expect(countdown(lines, 17.5)).toBe(3);
+    // A line right after another is not.
+    expect(countdown(lines, 9.2)).toBeNull();
+    expect(countdown(lines, 22)).toBeNull();
+    expect([stepped(0), stepped(0.01), stepped(1)]).toEqual([0, 1, 1]);
+    // An aligned line ends with its last timed piece, not at the next line's start.
+    expect(sungEnd(line({ end: 9 }))).toBe(3.5);
+    expect(sungEnd(line({ end: 9, aligned: false }))).toBe(9);
   });
 
   it("offers the readings the pieces carry, named for the language", () => {
@@ -164,50 +196,97 @@ describe("the lyrics' logic", () => {
   });
 });
 
-describe("the lyrics on screen", () => {
-  it("lights the line being sung and shows the next one", () => {
+/** The words as read out: the fill over a piece is a copy hidden from assistive technology. */
+function shownText(el: HTMLElement): string {
+  const copy = el.cloneNode(true) as HTMLElement;
+  for (const hidden of copy.querySelectorAll("[aria-hidden]")) hidden.remove();
+  return copy.textContent ?? "";
+}
+
+describe("the lyrics on the stage", () => {
+  const lit = (root: HTMLElement) => [...root.querySelectorAll("[data-lit]")].map((el) => el.getAttribute("data-lit"));
+
+  it("lights the line being sung, large, over the next one", () => {
     const next = line({ start: 4, end: 7, text: "次", pieces: [piece("次", 4, 5)] });
-    const { container } = render(
-      <Lyrics lyrics={lyrics([line(), next])} now={2.25} loaded mode="off" onMode={() => {}} />,
-    );
-    const lit = [...container.querySelectorAll("[data-lit]")].map((el) => el.getAttribute("data-lit"));
+    const { container } = render(<Lyrics lyrics={lyrics([line(), next])} now={2.25} loaded mode="off" />);
     // 私 sung, は half way, 歌う not yet; the next line is not lit.
-    expect(lit).toEqual(["all", "part", "none", "none"]);
-    expect(screen.getByText("次")).toBeInTheDocument();
+    expect(lit(container)).toEqual(["all", "part", "none", "none"]);
+    const current = container.querySelector("[data-line=current]") as HTMLElement;
+    const following = container.querySelector("[data-line=next]") as HTMLElement;
+    expect(shownText(current)).toBe("私は 歌う");
+    expect(following).toHaveTextContent("次");
+    // Karaoke-box sizes: the line being sung up to 52 px, the next one up to 38 px, both outlined.
+    expect(current.className).toContain(LYRIC_MAIN);
+    expect(following.className).toContain(LYRIC_NEXT);
+    expect(current.className).toContain("[-webkit-text-stroke:");
     expect(container.querySelector("rt")).toBeNull();
+    // The fill shows up to the share sung, and past the box on the other sides (the outline).
+    expect(fillClip(0.5)).toBe("inset(-0.3em 50% -0.3em -0.2em)");
+    expect(fillClip(1)).toBe("inset(-0.3em -0.2em -0.3em -0.2em)");
+    const half = container.querySelector("[data-lit=part]") as HTMLElement;
+    expect(half.style.clipPath).toBe("inset(-0.3em 50% -0.3em -0.2em)");
   });
 
-  it("shows readings above the words when asked, and the choice goes back", async () => {
+  it("lights each piece whole as it begins under reduced motion", () => {
+    const { container } = render(<Lyrics lyrics={lyrics([line()])} now={2.25} loaded mode="off" reduced />);
+    expect(lit(container)).toEqual(["all", "all", "none", "none"]);
+  });
+
+  it("shows the coming line in place before it is sung, counted in after a rest", () => {
+    const base = line();
+    const first = line({
+      start: 10,
+      end: 13,
+      pieces: base.pieces?.map((p) => ({ ...p, start: p.start === null ? null : p.start + 9, end: p.end === null ? null : p.end + 9 })) ?? null,
+    });
+    const second = line({ start: 13, end: 16, text: "二", pieces: [piece("二", 13, 14)] });
+    const { container } = render(<Lyrics lyrics={lyrics([first, second])} now={7.5} loaded mode="off" />);
+    expect(shownText(container.querySelector("[data-line=current]") as HTMLElement)).toBe("私は 歌う");
+    expect(lit(container)).toEqual(["none", "none", "none", "none"]);
+    expect(container.querySelector("[data-line=next]")).toHaveTextContent("二");
+    expect(screen.getByRole("img", { name: "3 秒後開始" })).toBeInTheDocument();
+    expect([...container.querySelectorAll("[data-dot]")].map((d) => d.getAttribute("data-dot"))).toEqual([
+      "off",
+      "on",
+      "on",
+      "on",
+    ]);
+  });
+
+  it("shows readings above the words at a readable size when asked", () => {
+    const { container } = render(<Lyrics lyrics={lyrics([line()])} now={1} loaded mode="reading" />);
+    const rts = [...container.querySelectorAll("rt")];
+    expect(rts.map((r) => r.textContent)).toEqual(["わたし", "うたう"]);
+    expect(rts[0]?.className).toContain("text-[max(12px,");
+    expect(rts[0]?.className).toBe(LYRIC_RUBY);
+  });
+
+  it("offers the readings in the bar, and the choice goes back", async () => {
     let chosen = "";
-    const { container } = render(
-      <Lyrics lyrics={lyrics([line()])} now={1} loaded mode="reading" onMode={(m) => void (chosen = m)} />,
-    );
-    expect([...container.querySelectorAll("rt")].map((r) => r.textContent)).toEqual(["わたし", "うたう"]);
+    render(<ReadingToggle lyrics={lyrics([line()])} mode="reading" onMode={(m) => void (chosen = m)} />);
     await userEvent.click(screen.getByRole("radio", { name: "羅馬字" }));
     expect(chosen).toBe("roman");
     expect(screen.getByRole("radio", { name: "假名" })).toHaveAttribute("aria-checked", "true");
+    const { container } = render(<ReadingToggle lyrics={lyrics([line({ pieces: null })])} mode="off" onMode={() => {}} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("says heard lyrics are 聽寫, and marks a line that did not match", () => {
     const doubtful = line({ status: "uncertain", aligned: false, start: 0 });
-    render(
-      <Lyrics
-        lyrics={lyrics([{ ...doubtful, source: "heard" }], { source: "heard" })}
-        now={0.5}
-        loaded
-        mode="off"
-        onMode={() => {}}
-      />,
-    );
+    const heard = lyrics([{ ...doubtful, source: "heard" }], { source: "heard" });
+    render(<HeardBadge lyrics={heard} />);
     expect(screen.getByText("聽寫")).toBeInTheDocument();
+    render(<Lyrics lyrics={heard} now={0.5} loaded mode="off" />);
     // Heard lines are all unsure: the badge says so, the line gets no mark of its own.
     expect(screen.queryByTitle("這一行和聽到的不太一樣")).toBeNull();
-    render(<Lyrics lyrics={lyrics([doubtful])} now={0.5} loaded mode="off" onMode={() => {}} />);
+    const { container } = render(<HeardBadge lyrics={lyrics([doubtful])} />);
+    expect(container).toBeEmptyDOMElement();
+    render(<Lyrics lyrics={lyrics([doubtful])} now={0.5} loaded mode="off" />);
     expect(screen.getByTitle("這一行和聽到的不太一樣")).toHaveTextContent("私は 歌う");
   });
 
   it("says so when there are no lyrics", () => {
-    render(<Lyrics lyrics={null} now={0} loaded mode="off" onMode={() => {}} />);
+    render(<Lyrics lyrics={null} now={0} loaded mode="off" />);
     expect(screen.getByText("沒有找到歌詞")).toBeInTheDocument();
   });
 });

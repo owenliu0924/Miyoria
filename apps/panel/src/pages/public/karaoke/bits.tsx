@@ -1,8 +1,27 @@
 // Small pieces the karaoke screens share.
 
 import { Headphones, ShieldCheck } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
+
+const REDUCE = "(prefers-reduced-motion: reduce)";
+
+function reduceQuery(): MediaQueryList | null {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(REDUCE) : null;
+}
+
+/** Whether the viewer asked for less motion; follows the setting while the page is open. */
+export function useReducedMotion(): boolean {
+  return useSyncExternalStore(
+    (on) => {
+      const q = reduceQuery();
+      q?.addEventListener("change", on);
+      return () => q?.removeEventListener("change", on);
+    },
+    () => reduceQuery()?.matches ?? false,
+    () => false,
+  );
+}
 
 /** Label over value, spaced, no cell walls. */
 export function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
@@ -27,19 +46,26 @@ export function Refusal({ children }: { children: ReactNode }) {
 /** Wear headphones: the speakers would sing along. */
 export function HeadphonesLine() {
   return (
-    <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <Headphones aria-hidden className="size-4 shrink-0" />
+    <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
+      <Headphones aria-hidden className="mt-0.5 size-4 shrink-0" />
       請戴耳機:用喇叭的話,伴唱會被麥克風收進去
     </p>
   );
 }
 
+/** The words for what leaves the browser: with a recording for the official score, or without. */
+export function privacyText(recording: boolean): string {
+  return recording
+    ? "唱完會把這首的錄音送出一次,只用來算正式分數,算完就刪掉,不會保存"
+    : "麥克風的聲音只在這個瀏覽器裡處理,不會送出去;唱完只送出一小段音高紀錄";
+}
+
 /** What leaves the browser. */
-export function PrivacyLine() {
+export function PrivacyLine({ recording = false }: { recording?: boolean }) {
   return (
-    <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <ShieldCheck aria-hidden className="size-4 shrink-0" />
-      麥克風的聲音只在這個瀏覽器裡處理,不會送出去;唱完只送出一小段音高紀錄
+    <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
+      <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0" />
+      {privacyText(recording)}
     </p>
   );
 }

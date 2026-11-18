@@ -97,6 +97,50 @@ export function partLines(r: Parts): PartLine[] {
   }));
 }
 
+// ---- the official score ----------------------------------------------------------------------
+
+/** What a check of the recording found, said to the singer. */
+export const CHECK_LINES: Record<KaraokeResult["voice"]["checks"][number], string> = {
+  quiet: "收到的聲音很小,分數可能不準",
+  bleed: "間奏也收到了音高,可能是喇叭的伴奏,請戴耳機",
+};
+
+export interface VoiceView {
+  /** Over the total: 「正式分數」 once the recording was scored, else 「預估」. */
+  label: "正式分數" | "預估";
+  /** The official score is being worked out (a dot and a line say so). */
+  pending: boolean;
+  /** One short line about the official score, or `null`. */
+  note: string | null;
+  /** The earlier estimate, shown small beside an official score. */
+  estimate: number | null;
+  /** What the checks found, in words. */
+  checks: string[];
+}
+
+/**
+ * How a result reads as to where its number came from. `uploadFailed`: this browser could not send
+ * the recording; `waitedOut`: the official score was looked for long enough.
+ */
+export function voiceView(
+  r: Pick<KaraokeResult, "source" | "voice">,
+  o: { uploadFailed?: boolean; waitedOut?: boolean } = {},
+): VoiceView {
+  const checks = r.voice.checks.map((c) => CHECK_LINES[c]).filter(Boolean);
+  if (r.source === "voice") {
+    return { label: "正式分數", pending: false, note: null, estimate: r.voice.estimate_total, checks };
+  }
+  const state = r.voice.state;
+  if (state === "failed" || ((state === "waiting" || state === "scoring") && o.uploadFailed)) {
+    return { label: "預估", pending: false, note: "正式分數沒有算成,這次以預估為準", estimate: null, checks };
+  }
+  if (state === "waiting" || state === "scoring") {
+    if (o.waitedOut) return { label: "預估", pending: false, note: "正式分數還沒算好,晚點回來看看", estimate: null, checks };
+    return { label: "預估", pending: true, note: "正在算正式分數", estimate: null, checks };
+  }
+  return { label: "預估", pending: false, note: null, estimate: null, checks };
+}
+
 /** `3:05` */
 export function clock(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return "—";
