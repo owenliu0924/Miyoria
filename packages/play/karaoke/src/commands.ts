@@ -2,17 +2,27 @@
 // `/me play`, see `SLASH_REGROUP`) and the room notices in the comment channel. No new top-level
 // command: one entry beside the coin commands that tells the caller, only them, where karaoke is
 // (a link to the member site when `site_url` is set), whether it is open to them, their coins, what
-// a room costs and pays, and the rooms open now with a link to each (theirs first). Singing is on
-// the member page; Discord only points there.
+// a room costs and pays, the rooms open now with a link to each (theirs first), and lets them open
+// a room. Singing is on the member page; Discord only points there.
+//
+// - 開房 (on the notice, only when the caller may open one now and has the coins): an ephemeral
+//   confirmation with the price and their coins; nothing is charged before 確定. 確定 opens the
+//   room through `RoomDesk.open`, the web's own path (same charge, same refusals, one opening per
+//   person at a time), and the confirmation turns into the room's code and a link to it.
 //
 // Every answer is a neutral system card; names are people's and are escaped.
 
 import {
+  type AnyComponentRoute,
   type CardBlock,
+  type CardButton,
   type CommandRegistry,
   type CommandReply,
+  ComponentResult,
+  cancelled,
   cardReply,
   commandSpec,
+  componentId,
   type Invocation,
   notice,
 } from "@miyoria/commands";
@@ -31,7 +41,17 @@ const NODE = "me.wallet";
 /** A panel admin (the panel's own node): karaoke is open to them while it is closed to members. */
 const PANEL_ACCESS = "admin.panel.access";
 const OFF = "唱 K 現在沒有開";
+const FAILED = "唱 K 現在打不開,等一下再試";
 const TITLE = "唱 K";
+
+/** The routes of the notice's 開房 and its confirmation. */
+export const ROUTES = {
+  open: "karaoke:room:open",
+  yes: "karaoke:room:yes",
+  no: "karaoke:room:no",
+} as const;
+/** A confirmation's buttons stay usable this long. */
+const CONFIRM_TTL_MS = 2 * 60_000;
 
 /** Display names come from people: no Markdown in them. */
 export function md(text: string): string {
@@ -58,6 +78,13 @@ export interface KaraokeNoticeInput {
   rooms: readonly RoomBrief[];
   /** The caller is a panel admin (karaoke is theirs to try while closed). */
   admin: boolean;
+}
+
+/** The caller may open a room now: it is open to them, they are in none, they have the coins. */
+export function mayOpen(overview: KaraokeRooms): boolean {
+  if (!overview.available || overview.mine !== null) return false;
+  const price = overview.terms.price;
+  return price <= 0 || (overview.balance !== null && overview.balance >= price);
 }
 
 /** The answer of `/me play karaoke` (only the caller sees it). */
@@ -116,6 +143,10 @@ export function karaokeNotice(input: KaraokeNoticeInput): CommandReply {
       }
     }
   }
+  const buttons: CardButton[] = [];
+  if (mayOpen(overview)) {
+    buttons.push({ id: componentId(ROUTES.open), label: "開房", style: "primary" });
+  }
   const page = siteLink(config, "/karaoke");
   if (page === null) {
     blocks.push({
@@ -123,10 +154,59 @@ export function karaokeNotice(input: KaraokeNoticeInput): CommandReply {
       text: "唱 K 在會員頁的「唱 K」(/karaoke),用 Discord 登入就能用。",
     });
   } else {
-    blocks.push({
-      type: "buttons",
-      buttons: [{ id: "", label: "打開唱 K", url: page }],
-    });
+    buttons.push({ id: "", label: "打開唱 K", url: page });
+  }
+  if (buttons.length > 0) blocks.push({ type: "buttons", buttons });
+  return cardReply(blocks, { accent: "neutral", title: TITLE, ephemeral: true });
+}
+
+/** The confirmation before a room is opened: its price and the caller's coins, nothing charged. */
+export function openConfirm(overview: KaraokeRooms): CommandReply {
+  const t = overview.terms;
+  const cost =
+    t.price <= 0
+      ? `開房不用${t.currency}`
+      : `開房要 ${t.price} ${t.currency}${overview.balance === null ? "" : `,你有 ${overview.balance}`}`;
+  return cardReply(
+    [
+      { type: "text", text: `${cost},確定?` },
+      {
+        type: "muted",
+        text: `一間包 ${t.rounds} 首、最多 ${t.max_singers} 人一起唱;一首都沒唱完就全退。`,
+      },
+      {
+        type: "buttons",
+        buttons: [
+          { id: componentId(ROUTES.yes), label: "確定", style: "primary" },
+          { id: componentId(ROUTES.no), label: "取消", style: "secondary" },
+        ],
+      },
+    ],
+    {
+      accent: "neutral",
+      title: TITLE,
+      ephemeral: true,
+      // Only the one who pressed 開房 may confirm, and not after a while.
+      session: { ttlMs: CONFIRM_TTL_MS, initiatorOnly: true },
+    },
+  );
+}
+
+/** What a confirmation turns into once the room is open: its code and where it is. */
+export function openedCard(config: Pick<KaraokeConfig, "site_url">, code: string): CommandReply {
+  const url = siteLink(config, roomPath(code));
+  const blocks: CardBlock[] = [
+    { type: "text", text: `房間開好了,房號 **${code}**。` },
+    {
+      type: "muted",
+      text:
+        url === null
+          ? "到會員頁的「唱 K」(/karaoke)就會看到你的房間。"
+          : "進房間後點歌,大家一起唱。",
+    },
+  ];
+  if (url !== null) {
+    blocks.push({ type: "buttons", buttons: [{ id: "", label: "進房間", url }] });
   }
   return cardReply(blocks, { accent: "neutral", title: TITLE, ephemeral: true });
 }
@@ -163,24 +243,89 @@ export function roomNotice(
   return cardReply(blocks, { accent: "neutral", title: TITLE });
 }
 
-async function answer(
-  inv: Invocation,
-  rooms: () => RoomDesk | null,
-  config: () => KaraokeConfig,
-): Promise<CommandReply> {
-  const desk = rooms();
+/** A refusal in the service's own words; anything else is logged and said plainly. */
+function refusal(error: unknown, what: string): CommandReply {
+  if (error instanceof KaraokeError) {
+    return notice(error.status >= 500 ? "warn" : "info", error.message);
+  }
+  log.warn({ error: errorMessage(error) }, `${what} failed`);
+  return notice("warn", FAILED);
+}
+
+export interface KaraokeCommandDeps {
+  rooms: () => RoomDesk | null;
+  config: () => KaraokeConfig;
+}
+
+async function answer(inv: Invocation, d: KaraokeCommandDeps): Promise<CommandReply> {
+  const desk = d.rooms();
   if (desk === null) return notice("info", OFF);
   try {
     const admin = await inv.allowed(PANEL_ACCESS);
     const overview = await desk.overview(inv.invoker, admin);
-    return karaokeNotice({ config: config(), overview, rooms: desk.briefs(), admin });
+    return karaokeNotice({ config: d.config(), overview, rooms: desk.briefs(), admin });
   } catch (error) {
-    if (error instanceof KaraokeError) {
-      return notice(error.status >= 500 ? "warn" : "info", error.message);
-    }
-    log.warn({ error: errorMessage(error) }, "/me play karaoke failed");
-    return notice("warn", "唱 K 現在打不開,等一下再試");
+    return refusal(error, "/me play karaoke");
   }
+}
+
+function routes(d: KaraokeCommandDeps): AnyComponentRoute[] {
+  return [
+    {
+      // 開房 on the notice: checked again now, then only a confirmation (nothing is charged).
+      route: ROUTES.open,
+      ephemeral: true,
+      handle: async (inv) => {
+        const desk = d.rooms();
+        if (desk === null) return ComponentResult.reply(notice("info", OFF));
+        try {
+          const admin = await inv.allowed(PANEL_ACCESS);
+          const overview = await desk.overview(inv.invoker, admin);
+          if (!overview.available) {
+            return ComponentResult.reply(notice("info", overview.reason ?? OFF));
+          }
+          if (overview.mine !== null) {
+            return ComponentResult.reply(
+              notice("info", `你已經在房間 **${overview.mine}** 裡了。`),
+            );
+          }
+          const t = overview.terms;
+          if (t.price > 0 && overview.balance !== null && overview.balance < t.price) {
+            return ComponentResult.reply(
+              notice("info", `開房要 ${t.price} ${t.currency},你有 ${overview.balance}`),
+            );
+          }
+          // A stranger (no coins to see) still gets the confirmation: the wallet refuses them.
+          return ComponentResult.reply(openConfirm(overview));
+        } catch (error) {
+          return ComponentResult.reply(refusal(error, "karaoke: 開房"));
+        }
+      },
+    },
+    {
+      // 確定: the web's own opening (one per person at a time); the confirmation becomes the room.
+      // A refusal is a new notice: the message may already be the room (a second press).
+      route: ROUTES.yes,
+      ephemeral: true,
+      requiresSession: true,
+      handle: async (inv) => {
+        const desk = d.rooms();
+        if (desk === null) return ComponentResult.reply(notice("info", OFF));
+        try {
+          const admin = await inv.allowed(PANEL_ACCESS);
+          const room = await desk.open(inv.invoker, inv.invoker_display_name, null, 0, admin);
+          return ComponentResult.update(openedCard(d.config(), room.code));
+        } catch (error) {
+          return ComponentResult.reply(refusal(error, "karaoke: opening a room"));
+        }
+      },
+    },
+    {
+      route: ROUTES.no,
+      ephemeral: true,
+      handle: () => ComponentResult.update(cancelled()),
+    },
+  ];
 }
 
 export function registerCommands(
@@ -188,12 +333,14 @@ export function registerCommands(
   rooms: () => RoomDesk | null,
   config: () => KaraokeConfig,
 ): void {
+  const d: KaraokeCommandDeps = { rooms, config };
   registry.register(
-    commandSpec("me karaoke", "唱 K:會員頁的連結、開著的房間、房費和你的魚幣", {
+    commandSpec("me karaoke", "唱 K:會員頁的連結、開著的房間、開房和你的魚幣", {
       permission: NODE,
       ephemeral: true,
     }),
-    (inv) => answer(inv, rooms, config),
+    (inv) => answer(inv, d),
+    { components: routes(d) },
   );
 }
 
