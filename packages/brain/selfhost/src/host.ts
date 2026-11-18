@@ -192,8 +192,10 @@ interface TurnState {
   tally: CorrectionTally;
   /** The files and images of its lines, once asked for (`LookAround`). */
   attached: Promise<ContentPart[]> | null;
-  /** Stops the typing notices of the run; `null` until her first visible text streams. */
+  /** Stops the typing notices of the run; `null` before it started, or for a run that needs none. */
   typing: AbortController | null;
+  /** Her first visible text of the run streamed. */
+  spoke: boolean;
 }
 
 /** Something she started that has not come back. */
@@ -890,6 +892,7 @@ export class SelfHost implements TextRunner {
       tally: new CorrectionTally(false),
       attached: null,
       typing: null,
+      spoke: false,
     };
     agent.mainline.own(turn);
     agent.ctx.publish(Events.AgentTurnStarted, { turn, context }, { turn });
@@ -1088,20 +1091,15 @@ export class SelfHost implements TextRunner {
           agent.log.debug({ turn: event.turn, lines: event.count }, "feel lines left out");
         } else if (event.kind !== "tag_stripped") state.tally.count(event.kind, event.count);
         break;
-      case "speaking": {
-        // Discord has no "stop typing": a notice only once she is going to say something.
-        const kind = state.run.wake.kind;
-        if (state.typing === null && (kind === "addressed" || kind === "result")) {
-          state.typing = new AbortController();
-          void this.#keepTyping(
-            context,
-            event.turn,
-            AbortSignal.any([state.typing.signal, state.run.controller.signal]),
-          );
-        }
+      case "speaking":
+        // Her words began after the notices were stopped (she reacted first): show them again.
+        state.spoke = true;
+        this.#startTyping(state, context, event.turn);
         break;
-      }
       case "tool_call":
+        // Discord has no "stop typing", a notice lingers about ten seconds. A reaction with no
+        // word yet is most often all she does: stop the notices now; `speaking` starts them again.
+        if (event.name === "react" && !state.spoke) state.typing?.abort();
         if (event.job !== null) {
           this.#jobs.set(event.job, {
             context,
@@ -1137,9 +1135,26 @@ export class SelfHost implements TextRunner {
         );
         break;
       case "started":
+        // People see that she is answering while she thinks: the wait before her first word is
+        // the long part (2026-11-18: notices only once she spoke came with or after the message).
+        this.#startTyping(state, context, event.turn);
+        break;
       case "finished":
         break;
     }
+  }
+
+  /** Starts the typing notices of a run that answers someone, unless they are going already. */
+  #startTyping(state: TurnState, context: ContextKey, turn: string): void {
+    const kind = state.run.wake.kind;
+    if (kind !== "addressed" && kind !== "result") return;
+    if (state.typing !== null && !state.typing.signal.aborted) return;
+    state.typing = new AbortController();
+    void this.#keepTyping(
+      context,
+      turn,
+      AbortSignal.any([state.typing.signal, state.run.controller.signal]),
+    );
   }
 
   /**

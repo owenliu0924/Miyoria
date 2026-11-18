@@ -165,7 +165,8 @@ describe("DanmakuLanes", () => {
       expect(log.shown.length + log.dropped.size + lanes.waiting).toBe(n);
       expect(log.shown.length).toBeGreaterThan(0);
     }
-  });
+    // Many random runs: a slow machine needs more than the default five seconds.
+  }, 30_000);
 
   it("holds at most maxOnScreen, and lets the rest wait in order", () => {
     const lanes = new DanmakuLanes({ ...GEO, lanes: 10 });

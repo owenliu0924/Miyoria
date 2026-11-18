@@ -41,34 +41,51 @@ function kinds(rig: Rig): string[] {
 }
 
 describe("the typing notice", () => {
-  it("is not sent for a run that only reacts", async () => {
+  // Discord has no "stop typing": a notice lingers about ten seconds. She shows that she is
+  // answering from the start (the wait before her first word is the long part), and the notices
+  // stop as early as it is known that nothing will be said.
+  it("stops being refreshed once she only reacts", async () => {
     const rig = await Rig.create({
       config: { typing_refresh_ms: 1000 },
-      provide: (_sup, tools) => tools.register(tool("thumbs", 20)),
+      provide: (_sup, tools) => tools.register(tool("react", 2_300)),
     });
-    rig.model.push(calls("thumbs", {}), says("<silence/>"));
+    rig.model.push(calls("react", {}), says("<silence/>"));
     rig.say(mention(C1, "amy", "@她 看這個"));
-    await until(() => rig.model.requests.length === 2, 3_000, "the run");
+    await until(() => rig.model.requests.length === 2, 6_000, "the run");
     await sleep(150);
-    expect(kinds(rig)).toEqual([]);
+    // One at the start; none during the 2.3 s the reaction took, none after.
+    expect(kinds(rig)).toEqual(["typing"]);
   });
 
-  it("is not sent for a silent run", async () => {
+  it("starts again when she speaks after reacting", async () => {
+    const rig = await Rig.create({
+      config: { typing_refresh_ms: 1000 },
+      provide: (_sup, tools) => tools.register(tool("react", 50)),
+    });
+    rig.model.push(calls("react", {}), says("好啦"));
+    rig.say(mention(C1, "amy", "@她 看這個"));
+    await until(() => rig.sink.texts().length === 1, 6_000, "the reply");
+    const seen = kinds(rig);
+    expect(seen.filter((k) => k === "typing").length).toBeGreaterThanOrEqual(2);
+    expect(seen.lastIndexOf("typing")).toBeLessThan(seen.lastIndexOf("send"));
+  });
+
+  it("is sent once for a silent run and not again", async () => {
     const rig = await Rig.create({ config: { typing_refresh_ms: 1000 } });
     rig.model.push(says("<silence/>"));
     rig.say(mention(C1, "amy", "@她 嗯"));
     await until(() => rig.model.requests.length === 1, 3_000, "the run");
-    await sleep(150);
-    expect(kinds(rig)).toEqual([]);
+    await sleep(1_300);
+    expect(kinds(rig)).toEqual(["typing"]);
   });
 
-  it("is not sent for a run that only feels", async () => {
+  it("is sent once for a run that only feels and not again", async () => {
     const rig = await Rig.create({ config: { typing_refresh_ms: 1000 } });
     rig.model.push(says("<feel>\n我: 難過 弱\n</feel>"));
     rig.say(mention(C1, "amy", "@她 嗯"));
     await until(() => rig.model.requests.length === 1, 3_000, "the run");
-    await sleep(150);
-    expect(kinds(rig)).toEqual([]);
+    await sleep(1_300);
+    expect(kinds(rig)).toEqual(["typing"]);
   });
 
   it("comes before the first message of a run that speaks", async () => {
@@ -80,7 +97,7 @@ describe("the typing notice", () => {
     expect(kinds(rig)).toContain("send");
   });
 
-  it("is refreshed while a long run goes on after she began to speak", async () => {
+  it("is refreshed while a long run goes on", async () => {
     const rig = await Rig.create({
       config: { typing_refresh_ms: 1000 },
       provide: (_sup, tools) => tools.register(tool("slow", 2_300)),
