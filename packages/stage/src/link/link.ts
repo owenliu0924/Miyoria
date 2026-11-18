@@ -252,6 +252,8 @@ export class StageLink {
           scenes: [...status.scenes],
           hotkeys: [...status.hotkeys],
           overlay_url: status.overlay_url,
+          obs_collection: status.obs_collection,
+          obs_warning: status.obs_warning,
         }
       : { connected: false };
     this.#bus.publish(this.#module, Events.StageStatus, payload);

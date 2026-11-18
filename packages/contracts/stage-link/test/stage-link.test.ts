@@ -24,6 +24,8 @@ const stageMessages: StageMessageIn[] = [
     scenes: ["Talk", "Sing"],
     hotkeys: ["wave"],
     overlay_url: "http://pc:7884/overlay/",
+    obs_collection: "我的場景",
+    obs_warning: "OBS 不在「Miyoria」這份場景集合上(現在是「我的場景」)",
   },
   { type: "error", message: "no obs", id: 3 },
   { type: "clip_saved", reason: "laugh", path: "C:\\clips\\a.mkv" },
@@ -97,6 +99,8 @@ describe("StageMessage", () => {
       scenes: [],
       hotkeys: [],
       overlay_url: null,
+      obs_collection: null,
+      obs_warning: null,
     });
     expect(StageLinkStageMessageSchema.parse({ type: "hello", version: 1, token: "" })).toEqual({
       type: "hello",

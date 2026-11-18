@@ -6712,6 +6712,18 @@
                 "string",
                 "null"
               ]
+            },
+            "obs_collection": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "obs_warning": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
@@ -6722,7 +6734,9 @@
             "streaming",
             "scenes",
             "hotkeys",
-            "overlay_url"
+            "overlay_url",
+            "obs_collection",
+            "obs_warning"
           ]
         },
         {

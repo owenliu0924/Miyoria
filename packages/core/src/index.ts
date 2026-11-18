@@ -57,6 +57,7 @@ export {
   llmModule,
   openStore,
   runStageNode,
+  type StageObsSetupResult,
   setupStageObs,
 } from "./modules.js";
 export {

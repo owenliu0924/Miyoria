@@ -51,6 +51,8 @@ describe("parseStageMessage", () => {
         scenes: ["Talk", "Sing"],
         hotkeys: ["wave"],
         overlay_url: "http://pc:7884/overlay/",
+        obs_collection: "我的場景",
+        obs_warning: "OBS 不在「Miyoria」這份場景集合上(現在是「我的場景」)",
       }),
     ).toStrictEqual({
       type: "status",
@@ -62,6 +64,8 @@ describe("parseStageMessage", () => {
       scenes: ["Talk", "Sing"],
       hotkeys: ["wave"],
       overlay_url: "http://pc:7884/overlay/",
+      obs_collection: "我的場景",
+      obs_warning: "OBS 不在「Miyoria」這份場景集合上(現在是「我的場景」)",
     });
   });
 
@@ -77,6 +81,8 @@ describe("parseStageMessage", () => {
       scenes: [],
       hotkeys: [],
       overlay_url: null,
+      obs_collection: null,
+      obs_warning: null,
     });
   });
 
@@ -90,6 +96,8 @@ describe("parseStageMessage", () => {
       scenes: [],
       hotkeys: [],
       overlay_url: null,
+      obs_collection: null,
+      obs_warning: null,
     });
   });
 
@@ -103,6 +111,8 @@ describe("parseStageMessage", () => {
       scenes: [],
       hotkeys: [],
       overlay_url: null,
+      obs_collection: null,
+      obs_warning: null,
     });
   });
 

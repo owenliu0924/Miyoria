@@ -351,6 +351,7 @@ const stage = (over: Partial<StageState> = {}): StageState => ({
   speaking: false,
   node: "stage",
   streaming: false,
+  obs_warning: null,
   ...over,
 });
 
@@ -433,6 +434,21 @@ describe("Live", () => {
     await user.click(within(scenes).getByRole("radio", { name: "Game" }));
     await waitFor(() => expect(switched).toEqual({ scene: "Game" }));
     expect(await screen.findByText("已切到「Game」")).toBeInTheDocument();
+  });
+
+  it("says when OBS is not on Miyoria's scene collection", async () => {
+    const warning = "OBS 不在「Miyoria」這份場景集合上(現在是「我的場景」)";
+    mockFetch((method, url) => {
+      if (url.pathname === "/api/stage" && method === "GET") {
+        return { body: stage({ obs_warning: warning }) };
+      }
+      if (url.pathname === "/api/voice") return { body: { sessions: [] } };
+      if (url.pathname === "/api/queue") return { body: { paused: false, items: [] } };
+      return undefined;
+    });
+    renderRoute("/live");
+    const status = await screen.findByText((_, el) => el?.tagName === "P" && (el.textContent ?? "").startsWith(warning));
+    expect(status).toHaveAttribute("role", "status");
   });
 
   it("requests, sings and stops songs, and shows a song being prepared", async () => {

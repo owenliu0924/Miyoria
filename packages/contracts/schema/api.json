@@ -14128,6 +14128,12 @@
         },
         "streaming": {
           "type": "boolean"
+        },
+        "obs_warning": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -14141,7 +14147,8 @@
         "overlay_url",
         "speaking",
         "node",
-        "streaming"
+        "streaming",
+        "obs_warning"
       ]
     },
     "ApiStageStreamRequest": {
