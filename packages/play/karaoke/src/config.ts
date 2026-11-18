@@ -351,7 +351,7 @@ export const KaraokeConfigSchema = z
       .int()
       .min(1)
       .max(20)
-      .default(5)
+      .default(4)
       .meta(
         setting({
           kind: "number",

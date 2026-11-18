@@ -90,7 +90,7 @@ const session = (id = "S7"): KaraokeSession => ({
   recording: { max_bytes: 8_000_000, max_seconds: 600 },
 });
 
-const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 5, max_singers: 8 };
+const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 4, max_singers: 8 };
 
 const room = (over: Partial<KaraokeRoomView> = {}): KaraokeRoomView => ({
   code: "KTV888",
@@ -105,7 +105,7 @@ const room = (over: Partial<KaraokeRoomView> = {}): KaraokeRoomView => ({
   ],
   me: { id: "me", role: "singer", opener: true, singing: false, session: null },
   round: 0,
-  rounds_left: 5,
+  rounds_left: 4,
   start_at_ms: null,
   result: null,
   terms: TERMS,

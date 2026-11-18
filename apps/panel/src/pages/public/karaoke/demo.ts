@@ -354,7 +354,7 @@ const ROOM = "KTV888";
 const CORE_AHEAD_MS = 37;
 const coreNow = () => Date.now() + CORE_AHEAD_MS;
 const COUNTDOWN_MS = 5_000;
-const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 5, max_singers: 8 };
+const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 4, max_singers: 8 };
 const ME = "m-me";
 
 interface DemoRoom {
