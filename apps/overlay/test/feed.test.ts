@@ -249,6 +249,32 @@ describe("reduce", () => {
     expect(long?.type === "activity" && long.activity?.detail?.length).toBe(160);
   });
 
+  it("parses the secondary line of a song being prepared; older frames have none", () => {
+    const m = parseMessage(
+      '{"type":"activity","kind":"tool","label":"查資料中","secondary":{"label":"準備歌曲","detail":"夜に駆ける","progress":0.4}}',
+    );
+    expect(m).toEqual({
+      type: "activity",
+      activity: {
+        kind: "tool", label: "查資料中", detail: null, progress: null, elapsedMs: null, durationMs: null,
+        secondary: { label: "準備歌曲", detail: "夜に駆ける", progress: 0.4 },
+      },
+    });
+    // Waiting has no progress; junk is no secondary; a frame without one parses as before.
+    expect(parseMessage('{"type":"activity","kind":"game","label":"玩遊戲中","secondary":{"label":"連不上"}}')).toMatchObject({
+      activity: { secondary: { label: "連不上", detail: null, progress: null } },
+    });
+    expect(parseMessage('{"type":"activity","kind":"game","label":"x","secondary":{"label":" "}}')).not.toHaveProperty("activity.secondary");
+    expect(parseMessage('{"type":"activity","kind":"game","label":"x","secondary":7}')).not.toHaveProperty("activity.secondary");
+    expect(parseMessage('{"type":"activity","kind":"thinking","label":"思考中…"}')).not.toHaveProperty("activity.secondary");
+    // The same frame is no change; a new progress of the secondary line is.
+    const at = (p: number) =>
+      parseMessage(`{"type":"activity","kind":"tool","label":"x","secondary":{"label":"準備歌曲","progress":${p}}}`) as Action;
+    const s = run([at(0.1)]);
+    expect(reduce(s, at(0.1))).toBe(s);
+    expect(reduce(s, at(0.2))).not.toBe(s);
+  });
+
   it("keeps the activity; the same one again is no change; a dropped feed clears it", () => {
     const thinking = parseMessage('{"type":"activity","kind":"thinking","label":"思考中…"}') as Action;
     const s = run([{ type: "connection", connected: true }, thinking]);

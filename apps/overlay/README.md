@@ -14,7 +14,7 @@
 | `{"type":"status","core","vts","obs","scene","streaming"}` | 狀態面板:直播中 / 場景名 / Core、VTS、OBS 連線點。 |
 | `{"type":"queue","items":[…]}` | 請求佇列(「接下來」)。`items` 可以是字串,或帶 `title`(也認 `text` / `name` / `song` / `request`…)與 `by`(也認 `user` / `requester`…)的物件;最多顯示 5 筆,多的寫「還有 N 項」。 |
 
-| `{"type":"activity","kind","label","detail","progress","elapsed_ms","duration_ms"}` | 活動膠囊(見下面)。`kind`:`thinking`(思考中…)、`synthesizing`(產生語音…)、`song_prepare`(下載中 / 讓出顯示卡中 / 分離人聲 / 轉換歌聲 / 混音 / 找歌詞,`detail` 是歌名,`progress` 是 worker 的進度)、`singing`(正在唱,`elapsed_ms` + `duration_ms` 由 overlay 自己的時鐘推進度);`kind: null` 隱藏。不認得的 `kind` 當成沒有進度的狀態顯示。 |
+| `{"type":"activity","kind","label","detail","progress","elapsed_ms","duration_ms","secondary"?}` | 活動膠囊(見下面)。`kind`:`thinking`(思考中…)、`synthesizing`(產生語音…)、`tool`(查資料中 / 使用工具中…,只有類別、不帶參數)、`game`(玩遊戲中,`detail` 是遊戲名)、`song_prepare`(下載中 / 等待中 / 分離人聲 / 轉換歌聲 / 混音 / 找歌詞…,`detail` 是歌名,`progress` 是整首的進度,排隊和等待是 `null`)、`singing`(正在唱,`elapsed_ms` + `duration_ms` 由 overlay 自己的時鐘推進度);`kind: null` 隱藏。不認得的 `kind` 當成沒有進度的狀態顯示。`secondary`(可省略)`{label, detail, progress}`:她在做別的事時,背景準備中的歌,畫成膠囊旁邊一個小小的第二行(歌名 + 一條細的進度條,`progress: null` 是微光);沒有它的舊版訊息照常顯示。 |
 | `{"type":"gift","text"}` | 禮物那一行(上方中間的小膠囊,例如「Owen 餵了她一碗白飯」)。Stage 把 60 秒內同一種禮物合併成一行(「Owen 和另外 3 人餵了她 5 碗白飯」),送出最新的一行,`text: ""` 表示淡出(最後一份禮物後約 8 秒)。 |
 | `{"type":"touch","x","y","part"}` | 觀眾在網站上摸了直播畫面(Core 的 `live.touch`,Stage 每秒最多轉 8 個)。`x`、`y` 是 0..1(左上為原點),`part` 是 `head` / `face` / `body` / `screen`。overlay 在畫面的 (x·寬, y·高) 畫一圈小小的波紋和一顆往上飄的愛心,約 1.3 秒淡出,同時最多 12 個(超過時最舊的立刻拿掉);`prefers-reduced-motion` 時不動、只淡入淡出。範圍外或型別不對的整則略過。`?demo=1` 會隨機在她的頭、臉、身體和空白處摸。她本人的反應由 Stage 驅動(`[stage.touch]`),不在 overlay。 |
 | `{"type":"danmaku","id","name","text","max_on_screen","queue_max","max_wait_ms"}` | 彈幕:觀眾付幾枚硬幣送出的一行字,從右邊進來橫越畫面(見下面「彈幕」)。`name` 是 `null` 表示名字隱藏。三個上限是實況主的設定,每一行都附上,以最新收到的為準。overlay 要回覆每一行的下場。 |
@@ -95,7 +95,7 @@ VTube Studio 要用透明背景(背景選純色、勾透明),OBS 用「遊戲擷
 - **打字機**:整行文字從第一個 frame 就排好版(還沒打到的字是透明的),所以字不會在打的過程中跳行。以 code point 計算,不會把 emoji 拆開。字幕修正(同 turn 的文字前綴改變)時,只重打有變的部分。
 - **字幕消失**:`final` 之後,等打完、她停止說話,再停留 `2.2 秒 + 每字 55 ms`(上限 9 秒)後淡出。沒有 `final` 又 8 秒沒更新、也不在說話,視為殘留,淡出。
 - **字型**:用系統字型(Segoe UI Variable / 微軟正黑體 / Noto Sans TC)。中文字型檔太大,不內嵌;OBS 所在的 Windows 都有。
-- **活動膠囊**:左下角、她的聲音條右邊(`left: 10rem`,比字幕底板低,不會重疊)。一個情緒色的點、短短的狀態文字、歌名(太長會省略),底部膠囊裡面一條進度條:有進度時平順地長到新的值;唱歌時從唱到的地方線性跑到歌的結尾(CSS 動畫,不用一直收訊息);沒有進度時是一道慢慢移動的微光。換狀態時文字交叉淡化、膠囊寬度緩動到新的長度;沒事做時淡出。
+- **活動膠囊**:(旁邊有時有第二行:準備中的歌,比膠囊小、安靜一點,不會取代她正在做的事。)左下角、她的聲音條右邊(`left: 10rem`,比字幕底板低,不會重疊)。一個情緒色的點、短短的狀態文字、歌名(太長會省略),底部膠囊裡面一條進度條:有進度時平順地長到新的值;唱歌時從唱到的地方線性跑到歌的結尾(CSS 動畫,不用一直收訊息);沒有進度時是一道慢慢移動的微光。換狀態時文字交叉淡化、膠囊寬度緩動到新的長度;沒事做時淡出。
 - **動態**:全部用同一套:出現時淡入 + 輕微位移(或高度展開),`--t-enter` 260 ms、`--ease-out`;消失 `--t-exit` 200 ms;文字改變交叉淡化 `--t-change` 240 ms;排序、寬度 `--t-move` 280 ms;進度 `--t-progress` 700 ms(都在 `style.css` 的 `:root`)。元素要等消失的動畫跑完才移出版面(`hidden`)。側邊面板的區塊(情緒、狀態、佇列)和裡面的「直播中」、場景名稱、「還有 N 項」用 0fr → 1fr 的 grid 列展開 / 收起,面板高度跟著平順變化;佇列每一項有自己的 key,新的展開進來、移除的收起後才刪掉、換位置的滑過去(FLIP);情緒名稱、場景名稱交叉淡化;連線點換色。`prefers-reduced-motion` 時所有時間變成 1 ms,微光、呼吸都停掉(唱歌的進度條照常走,那是資訊)。
 
 ## 結構

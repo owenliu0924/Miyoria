@@ -21,7 +21,7 @@ const SONGS = ["夜に駆ける", "残酷な天使のテーゼ (Director's Edit 
 /** How a song's preparation goes: the worker's stages, end progress, seconds. */
 const PREPARE: [label: string, upTo: number, seconds: number][] = [
   ["下載中", 0.16, 2],
-  ["讓出顯示卡中", 0.16, 1.4],
+  ["等待中", 0.16, 1.4],
   ["分離人聲", 0.46, 2.5],
   ["轉換歌聲", 0.9, 3],
   ["混音", 0.97, 1],
@@ -110,9 +110,11 @@ export function startDemo(emit: (m: FeedMessage) => void): () => void {
 
   const speak = async (turn: string, line: Line) => {
     // Her turn: thinking, then the line at TTS, then she speaks (the capsule goes away).
-    activity(busy("thinking", "思考中…"));
+    // A song prepared in the background shows beside her, never in place of what she does.
+    const side = { label: "準備歌曲", detail: SONGS[1] as string, progress: Math.min(0.85, 0.25 + (turn.length % 5) * 0.12) };
+    activity({ ...busy("thinking", "思考中…"), secondary: side });
     await wait(1500);
-    activity(busy("synthesizing", "產生語音…"));
+    activity({ ...busy("synthesizing", "產生語音…"), secondary: { ...side, progress: side.progress + 0.05 } });
     await wait(900);
     activity(null);
     emit({ type: "emotion", name: line.emotion, intensity: line.emotion === "neutral" ? 0.6 : 1 });
@@ -140,7 +142,8 @@ export function startDemo(emit: (m: FeedMessage) => void): () => void {
       const from = progress;
       for (let i = 1; i <= steps && !stopped; i++) {
         progress = from + ((upTo - from) * i) / steps;
-        activity({ kind: "song_prepare", label, detail: song, progress, elapsedMs: null, durationMs: null });
+        // Waiting has no bar (a shimmer), like the real worker's `gpu_wait`.
+        activity({ kind: "song_prepare", label, detail: song, progress: label === "等待中" ? null : progress, elapsedMs: null, durationMs: null });
         await wait(250);
       }
     }

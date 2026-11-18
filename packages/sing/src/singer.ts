@@ -225,6 +225,10 @@ export class Singer implements VoiceFloor, SpeechPause {
   readonly #jobs = new Map<SongNo, { title: string; exclusive: string | null }>();
   /** JSON of the `Events.SingPrepare` payload last published. */
   #prepareSent = JSON.stringify(NOT_PREPARING);
+  /** The song the overlay is shown, and the furthest its progress got: it stays until it ends. */
+  #shown: { no: SongNo; progress: number } | null = null;
+  /** Since when no poll of the worker got an answer (epoch ms), or `null`. */
+  #lostSince: number | null = null;
 
   /**
    * `videoDir`: the worker's cache dir (absolute) when song videos are shown on stream
@@ -1186,6 +1190,8 @@ export class Singer implements VoiceFloor, SpeechPause {
         .context(context, signal)
         .catch((e: unknown) => log.debug({ err: errorMessage(e) }, "could not update the worker"));
     }
+    let answered = 0;
+    let lost = 0;
     for (const entry of this.list.preparing()) {
       try {
         if (entry.job === null) {
@@ -1194,6 +1200,7 @@ export class Singer implements VoiceFloor, SpeechPause {
           continue;
         }
         this.#apply(entry, await this.worker.job(entry.job, signal));
+        answered += 1;
       } catch (error) {
         if (signal?.aborted) return;
         if (error instanceof SingWorkerError && error.status === 404) {
@@ -1203,9 +1210,12 @@ export class Singer implements VoiceFloor, SpeechPause {
           );
           continue;
         }
+        lost += 1;
         log.debug({ no: entry.no, err: errorMessage(error) }, "could not check a song job");
       }
     }
+    if (answered > 0) this.#lostSince = null;
+    else if (lost > 0) this.#lostSince ??= this.ctx.clock.now();
     this.#publishPrepare();
   }
 
@@ -1228,28 +1238,53 @@ export class Singer implements VoiceFloor, SpeechPause {
     };
   }
 
-  /** Publishes the song being prepared (`Events.SingPrepare`) when it changed. */
+  /**
+   * Publishes the song being prepared (`Events.SingPrepare`) when it changed. One song at a time:
+   * the one shown stays until it is no longer preparing (it is not swapped for another that got
+   * further, which made the overlay flip between two jobs); the next is the one furthest along,
+   * the lowest number on a tie. Its progress never goes back, and a worker that has not answered
+   * for `LOST_AFTER_MS` is reported as `unreachable` instead of freezing the bar.
+   */
   #publishPrepare(): void {
     const preparing = this.#closed ? [] : this.list.preparing();
     for (const no of this.#jobs.keys()) {
       if (!preparing.some((e) => e.no === no)) this.#jobs.delete(no);
     }
-    // The one furthest along: a job the worker runs before the queued ones.
-    const rank = (e: SongEntry) => (e.stage !== "queued" && e.stage !== "" ? 1 : 0) + e.progress;
+    if (preparing.length === 0) this.#lostSince = null;
     let best: SongEntry | null = null;
-    for (const e of preparing) if (best === null || rank(e) > rank(best)) best = e;
+    const idle = (e: SongEntry) => e.stage === "queued" || e.stage === "";
+    const stuck =
+      this.#shown === null ? undefined : preparing.find((e) => e.no === this.#shown?.no);
+    // Only a song still waiting its turn gives way, and only to one the worker already runs.
+    if (stuck !== undefined && !(idle(stuck) && preparing.some((e) => !idle(e)))) best = stuck;
+    else {
+      // A job the worker already runs goes before the queued ones.
+      const rank = (e: SongEntry) => (idle(e) ? 0 : 1) + e.progress;
+      for (const e of preparing) {
+        if (best === null || rank(e) > rank(best) || (rank(e) === rank(best) && e.no < best.no)) {
+          best = e;
+        }
+      }
+      this.#shown = best === null ? null : { no: best.no, progress: 0 };
+    }
     let payload: SongPrepare = NOT_PREPARING;
-    if (best !== null) {
+    if (best !== null && this.#shown !== null) {
       const info = this.#jobs.get(best.no);
       const query = best.query.trim();
       // A link or a library path is no title; the worker's comes once it found the song.
       const asked = LINK.test(query) || query.toLowerCase().startsWith("library:") ? "" : query;
+      const progress = Math.min(Math.max(best.progress, this.#shown.progress, 0), 1);
+      this.#shown.progress = progress;
+      const lost =
+        this.#lostSince !== null && this.ctx.clock.now() - this.#lostSince >= LOST_AFTER_MS;
+      const by = best.practice === true ? "" : best.requester_name.trim();
       payload = {
         no: best.no,
         title: info?.title || asked,
-        stage: best.stage,
-        progress: Math.round(Math.min(Math.max(best.progress, 0), 1) * 1000) / 1000,
+        stage: lost ? "unreachable" : best.stage,
+        progress: Math.round(progress * 1000) / 1000,
         exclusive: info?.exclusive ?? null,
+        ...(by === "" ? {} : { by }),
       };
     }
     const json = JSON.stringify(payload);
@@ -1380,6 +1415,9 @@ export class Singer implements VoiceFloor, SpeechPause {
     this.ctx.publish(Events.SingCue, cue);
   }
 }
+
+/** A worker that has not answered a poll for this long is shown as out of reach (ms). */
+const LOST_AFTER_MS = 20_000;
 
 const NOT_PREPARING: SongPrepare = { no: null, title: "", stage: "", progress: 0, exclusive: null };
 

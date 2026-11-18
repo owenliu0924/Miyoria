@@ -62,8 +62,10 @@ export {
   ActivityTracker,
   prepareLabel,
   SINGING_LABEL,
+  STAGE_LABELS,
   SYNTH_LABEL,
   THINKING_LABEL,
+  toolLabel,
 } from "./link/activity.js";
 export {
   describeStatus,
