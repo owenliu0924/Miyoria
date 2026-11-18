@@ -53,7 +53,7 @@ function SongMeta({ song }: { song: KaraokeSongView }) {
   return (
     <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground tabular-nums">
       <span className="font-mono">{clock(song.duration_s)}</span>
-      <span>{song.lyrics ? "有歌詞" : "只有旋律"}</span>
+      <span>{song.lyrics ? (song.lyrics_source === "heard" ? "聽寫的歌詞" : "有歌詞") : "只有旋律"}</span>
       {song.best !== null && (
         <span>
           最好 <span className="font-medium text-foreground">{score1(song.best)}</span>

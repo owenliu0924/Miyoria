@@ -425,6 +425,7 @@ describe("the song list's logic", () => {
     position: null,
     error: null,
     lyrics: true,
+    lyrics_source: "found",
     notes: 100,
     mine: false,
     best: null,

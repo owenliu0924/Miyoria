@@ -15,7 +15,11 @@ import type {
   KaraokeSongView,
   KaraokeSubmit,
 } from "@miyoria/contracts/api";
-import type { WorkersKaraokeReference } from "@miyoria/contracts/workers/karaoke";
+import type {
+  WorkersKaraokeLineV2,
+  WorkersKaraokePiece,
+  WorkersKaraokeReferenceV2,
+} from "@miyoria/contracts/workers/karaoke";
 import { decodeTrack, fromBase64, scoreSinging, TRACK_HZ } from "@miyoria/play/karaoke/score";
 import { type KaraokeEngine, setEngineFactory } from "./audio";
 import type { Detection } from "./pitch";
@@ -39,7 +43,20 @@ const WORDS = [
 const LINE_S = 7;
 const FIRST = 2;
 const SCALE = [0, 2, 4, 5, 7, 9, 11, 12];
-const lines = WORDS.map((text, i) => {
+/** The demo's own pinyin (the worker gives it with pypinyin). */
+const PINYIN: Record<string, string> = Object.fromEntries(
+  (
+    "窗chuāng 外wài 的de 燈dēng 一yì 盞zhǎn 亮liàng 起qǐ 來lái 我wǒ 把bǎ 今jīn 天tiān 心xīn 事shì 折zhé " +
+    "成chéng 紙zhǐ 船chuán 順shùn 著zhe 夜yè 色sè 慢màn 地de 往wǎng 前qián 漂piāo 你nǐ 說shuō 明míng 也yě " +
+    "會huì 是shì 晴qíng 跟gēn 拍pāi 子zi 輕qīng 唱chàng 想xiǎng 話huà 都dōu 交jiāo 給gěi 風fēng 等děng 到dào " +
+    "星xīng 睡shuì 以yǐ 後hòu 再zài 回huí 家jiā 吧ba"
+  )
+    .split(" ")
+    .map((w) => [w.slice(0, 1), w.slice(1)]),
+);
+/** The fourth line is one the recogniser did not hear as written: shown, not aligned. */
+const DOUBTFUL_LINE = 3;
+const lines: WorkersKaraokeLineV2[] = WORDS.map((text, i) => {
   const start = FIRST + i * LINE_S;
   // Six notes a line, the last one held.
   let t = start;
@@ -49,7 +66,29 @@ const lines = WORDS.map((text, i) => {
     TUNE.push([t, len - 0.06, 62 + degree - (i % 2 === 0 ? 0 : 2)]);
     t += len;
   }
-  return { start, end: t, text, check: "unchecked" as const, confidence: null, chars: null };
+  const aligned = i !== DOUBTFUL_LINE;
+  const chars = [...text];
+  const step = (t - start - 0.3) / chars.length;
+  const pieces: WorkersKaraokePiece[] = chars.map((c, k) => ({
+    text: c,
+    sung: true,
+    start: aligned ? start + k * step : null,
+    end: aligned ? start + (k + 1) * step : null,
+    reading: PINYIN[c] ?? null,
+    roman: null,
+  }));
+  return {
+    start,
+    end: t,
+    text,
+    status: aligned ? ("matched" as const) : ("uncertain" as const),
+    source: "found" as const,
+    similarity: aligned ? 1 : 0.62,
+    heard: text,
+    aligned,
+    pieces,
+    edited: false,
+  };
 });
 const DURATION = FIRST + WORDS.length * LINE_S + 3;
 
@@ -65,9 +104,9 @@ const curve: (number | null)[] = Array.from({ length: Math.ceil(DURATION * HZ) }
   return midi + scoop + vib;
 });
 
-const REFERENCE: WorkersKaraokeReference = {
+const REFERENCE: WorkersKaraokeReferenceV2 = {
   format: "miyoria.karaoke.reference",
-  version: 1,
+  version: 2,
   id: "demo-song",
   title: "紙船",
   artist: "示範",
@@ -82,9 +121,16 @@ const REFERENCE: WorkersKaraokeReference = {
     line: null,
     char: null,
   })),
-  lyrics: { provider: "demo", timing: "line", lines },
+  lyrics: {
+    provider: "demo",
+    source: "found",
+    language: "zh",
+    timing: "char",
+    check: { matched: WORDS.length - 1, uncertain: 1, failed: 0, verdict: "kept" },
+    lines,
+  },
   quality: { ok: true, reason: null, voiced_ratio: 0.8, notes: TUNE.length, lead_split: true },
-  made: { pitch: "demo", notes: "demo", lyrics: "demo" },
+  made: { pitch: "demo", notes: "demo", lyrics: "demo", asr: "demo", aligner: "demo" },
 };
 
 // ---------------------------------------------------------------------------
@@ -101,6 +147,7 @@ const song = (over: Partial<KaraokeSongView>): KaraokeSongView => ({
   position: null,
   error: null,
   lyrics: true,
+  lyrics_source: "found",
   notes: TUNE.length,
   mine: false,
   best: null,
@@ -134,8 +181,8 @@ function overview(): KaraokeOverview {
     songs: [
       song({ best: 84.6, sung: 4 }),
       song({ id: "d2", title: "夜空中最亮的星", artist: "逃跑計劃", duration_s: 252, best: 77.2, sung: 2 }),
-      song({ id: "d3", title: "群青", artist: "YOASOBI", duration_s: 248 }),
-      song({ id: "d4", title: "小幸運", artist: "田馥甄", duration_s: 265, lyrics: false }),
+      song({ id: "d3", title: "群青", artist: "YOASOBI", duration_s: 248, lyrics_source: "heard" }),
+      song({ id: "d4", title: "小幸運", artist: "田馥甄", duration_s: 265, lyrics: false, lyrics_source: null }),
       song({ id: "d5", title: "First Love", artist: "宇多田ヒカル", duration_s: 259, best: 69.8, sung: 1 }),
       preparing(),
       song({
@@ -163,13 +210,17 @@ function ago(minutes: number): string {
 }
 
 const results = new Map<string, { result: KaraokeResult; polls: number }>();
+/** The key of each session, and of the one singing now (the made-up singer follows it). */
+const keys = new Map<string, number>();
+let singingKey = 0;
 const COMMENT =
   "第三句那個長音拉得很穩,還帶了一點顫音,我有聽到喔。副歌開頭稍微搶拍了,下次跟著伴奏的鼓再等半拍就更好了。";
 
 function scored(body: KaraokeSubmit, session: string): KaraokeResult {
   const bytes = fromBase64(body.track) ?? new Uint8Array();
+  const shift = keys.get(session) ?? 0;
   const r = scoreSinging({
-    reference: { hz: HZ, start: 0, midi: curve },
+    reference: { hz: HZ, start: 0, midi: curve.map((m) => (m === null ? null : m + shift)) },
     sung: { hz: TRACK_HZ, midi: decodeTrack(bytes) },
     latency_ms: body.latency_ms,
     calibrated: body.calibrated,
@@ -243,14 +294,19 @@ function answer(method: string, path: string, body: unknown): Response | null {
   const start = /^\/api\/member\/karaoke\/songs\/([^/]+)\/sessions$/.exec(path);
   if (start && method === "POST") {
     const id = `demo-${++sessions}`;
+    const shift = (body as { shift?: number } | undefined)?.shift ?? 0;
+    keys.set(id, shift);
+    singingKey = shift;
+    const backing = shift === 0 ? "karaoke.m4a" : `karaoke.k${shift > 0 ? "+" : "-"}${Math.abs(shift)}.m4a`;
     const s: KaraokeSession = {
       session: id,
       song: song({}),
-      backing_url: `/api/member/karaoke/files/${id}/karaoke.m4a?exp=1&sig=demo`,
+      backing_url: `/api/member/karaoke/files/${id}/${backing}?exp=1&sig=demo`,
       reference_url: `/api/member/karaoke/files/${id}/reference.json?exp=1&sig=demo`,
       expires_at: new Date(Date.now() + 600_000).toISOString(),
       tolerance_cents: 50,
       frame_hz: TRACK_HZ,
+      shift,
     };
     return json(s);
   }
@@ -356,7 +412,7 @@ class DemoEngine implements KaraokeEngine {
       const wobble = 0.12 * Math.sin(t * 9) + (Math.random() - 0.5) * 0.15;
       const off = line === 3 ? 0.8 : -0.1;
       if (ref !== null && ref !== undefined && Math.random() > 0.04) {
-        midi = ref - 12 + off + wobble;
+        midi = ref - 12 + singingKey + off + wobble;
         level = 0.05;
       }
     }

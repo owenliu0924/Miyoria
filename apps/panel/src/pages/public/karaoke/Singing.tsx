@@ -1,11 +1,19 @@
 // The singing screen: the backing track through Web Audio, the microphone through the pitch
-// worklet, the lane on a canvas, the lyrics by line, the running number. At the song's end (or
-// 「唱完了」) the track is encoded and handed on to be sent; nothing is sent while singing.
+// worklet, the lane on a canvas, the lyrics lit as they are sung, the running number. Before the
+// start the key can be moved (the Core has the worker render the backing in it; the reference
+// moves here by the same). At the song's end (or 「唱完了」) the track is encoded and handed on to
+// be sent; nothing is sent while singing.
 
-import { ArrowLeft, Check, Pause, Play, RotateCcw, Timer } from "lucide-react";
+import { ArrowLeft, Check, Minus, Pause, Play, Plus, RotateCcw, Timer } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KaraokeSession, KaraokeSongView, KaraokeSubmit } from "@miyoria/contracts/api";
-import type { WorkersKaraokeReference } from "@miyoria/contracts/workers/karaoke";
+import {
+  KARAOKE_MAX_SHIFT,
+  karaokeReferenceV2,
+  shiftKaraokeReference,
+  type WorkersKaraokeReference,
+  type WorkersKaraokeReferenceV2,
+} from "@miyoria/contracts/workers/karaoke";
 import type { ScoreResult } from "@miyoria/play/karaoke/score";
 import { describeError, joinUrl } from "@/api/http";
 import { useConnection } from "@/app/connection";
@@ -17,8 +25,10 @@ import type { KaraokeEngine } from "./audio";
 import { Bar, Fact, HeadphonesLine, PrivacyLine, Refusal } from "./bits";
 import { noiseFloor } from "./latency";
 import { SongClock } from "./clock";
-import { LANE_SECONDS, LANE_SECONDS_NARROW, type LaneView, lyricAt, type MidiRange, midiRange } from "./lane";
+import { LANE_SECONDS, LANE_SECONDS_NARROW, type LaneView, type MidiRange, midiRange } from "./lane";
 import { drawLane, type LaneColors, laneColors } from "./lane-draw";
+import { Lyrics } from "./Lyrics";
+import { keyLabel, loadKey, loadReading, type ReadingMode, saveKey, saveReading } from "./lyric-text";
 import { clock } from "./result-text";
 import { browserName } from "./support";
 import { finishTake, phrasesOf, referenceCurve, Take } from "./take";
@@ -43,7 +53,8 @@ type Phase =
 
 interface Loaded {
   session: KaraokeSession;
-  reference: WorkersKaraokeReference;
+  /** In version 2's shape, moved to the session's key. */
+  reference: WorkersKaraokeReferenceV2;
   duration: number;
   range: MidiRange;
 }
@@ -74,32 +85,42 @@ export function Singing({
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [tick, setTick] = useState({ now: 0, score: 0 });
   const [quitting, setQuitting] = useState(false);
+  const [shift, setShift] = useState(() => loadKey(song.id, KARAOKE_MAX_SHIFT));
+  const [reading, setReading] = useState<ReadingMode>(() => loadReading());
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
   const clockRef = useRef(new SongClock());
   const take = useRef<Take | null>(null);
   const alive = useRef(true);
-  const started = useRef(false);
+  /** The key a session was started for, and which load is the latest. */
+  const started = useRef<number | null>(null);
+  const loadToken = useRef(0);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
-  // Load once: the session's signed links, the reference, the backing track. Meanwhile the room
-  // is listened to for its level.
+  // Load once per key: the session's signed links, the reference, the backing track. Meanwhile the
+  // room is listened to for its level.
   useEffect(() => {
     alive.current = true;
-    if (started.current) return () => void (alive.current = false);
-    started.current = true;
+    if (started.current === shift) return () => void (alive.current = false);
+    started.current = shift;
+    const token = ++loadToken.current;
     const audio = engine();
     const levels: number[] = [];
     const off = audio.onDetection((d) => levels.push(d.level));
     const link = (u: string) => (/^https?:/.test(u) ? u : joinUrl(config.baseUrl, u));
     void (async () => {
       try {
-        const session = await api.rpc.karaoke.start({ params: { id: song.id } });
+        const session = await api.rpc.karaoke.start({ params: { id: song.id }, body: { shift } });
         const res = await fetch(link(session.reference_url), { credentials: "same-origin" });
         if (!res.ok) throw new Error("這首歌的旋律拿不到");
-        const reference = (await res.json()) as WorkersKaraokeReference;
+        // Version 1 or 2, in version 2's shape, moved to the key the backing is in.
+        const reference = shiftKaraokeReference(
+          karaokeReferenceV2((await res.json()) as WorkersKaraokeReference),
+          session.shift,
+        );
         const duration = await audio.loadBacking(link(session.backing_url));
+        if (token !== loadToken.current) return;
         off();
         const measured = levels.length >= 40 ? noiseFloor(levels) : null;
         audio.setFloor(Math.min(measured ?? Number.POSITIVE_INFINITY, knownFloor ?? measured ?? 0.002));
@@ -108,16 +129,30 @@ export function Singing({
           latency_ms: latency.latency_ms,
         });
         const range = midiRange(reference.pitch.midi, reference.notes);
-        if (!alive.current) return;
+        if (!alive.current || token !== loadToken.current) return;
         setLoaded({ session, reference, duration: Math.max(duration, 1), range });
         setPhase({ kind: "ready" });
       } catch (e) {
         off();
-        if (alive.current) setPhase({ kind: "error", message: describeError(e) });
+        if (alive.current && token === loadToken.current) setPhase({ kind: "error", message: describeError(e) });
       }
     })();
     return () => void (alive.current = false);
-  }, [api, config.baseUrl, engine, song.id, latency.latency_ms, knownFloor]);
+  }, [api, config.baseUrl, engine, song.id, latency.latency_ms, knownFloor, shift]);
+
+  /** Another key, before the start: a new session with the backing in it. */
+  const moveKey = (by: number) => {
+    const next = Math.max(-KARAOKE_MAX_SHIFT, Math.min(KARAOKE_MAX_SHIFT, shift + by));
+    if (next === shift || phase.kind !== "ready") return;
+    saveKey(song.id, next);
+    setLoaded(null);
+    setPhase({ kind: "loading" });
+    setShift(next);
+  };
+  const chooseReading = (m: ReadingMode) => {
+    saveReading(m);
+    setReading(m);
+  };
 
   // Detections go to the take by the moment they were captured.
   useEffect(() => {
@@ -266,10 +301,6 @@ export function Singing({
     );
   }
 
-  const lines = loaded?.reference.lyrics?.lines ?? [];
-  const at = lyricAt(lines, tick.now);
-  const current = at.current === null ? null : (lines[at.current]?.text ?? null);
-  const following = at.next === null ? null : (lines[at.next]?.text ?? null);
   const duration = loaded?.duration ?? song.duration_s ?? 0;
   const playing = phase.kind === "playing";
   const begun = phase.kind === "playing" || phase.kind === "paused";
@@ -319,16 +350,13 @@ export function Singing({
       </div>
       <Bar value={duration > 0 ? Math.max(0, tick.now) / duration : 0} label="歌曲進度" />
 
-      <div aria-live="off" className="grid min-h-20 content-start gap-1.5">
-        {lines.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">{loaded ? "沒有找到歌詞" : " "}</p>
-        ) : (
-          <>
-            <p className="min-h-8 text-2xl font-semibold tracking-[-0.01em] text-balance">{current ?? " "}</p>
-            <p className="min-h-6 text-[15px] text-muted-foreground">{following ?? " "}</p>
-          </>
-        )}
-      </div>
+      <Lyrics
+        lyrics={loaded?.reference.lyrics ?? null}
+        now={tick.now}
+        loaded={loaded !== null}
+        mode={reading}
+        onMode={chooseReading}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         {playing ? (
@@ -355,6 +383,12 @@ export function Singing({
           <Check aria-hidden />
           唱完了
         </Button>
+        <KeyControl
+          shift={shift}
+          can={phase.kind === "ready"}
+          busy={phase.kind === "loading" && started.current !== null && loaded === null}
+          onMove={moveKey}
+        />
         {phase.kind === "ready" && (
           <Button variant="ghost" onClick={onCalibrate}>
             <Timer aria-hidden />
@@ -390,5 +424,50 @@ export function Singing({
         這次唱的不會送出,也不會記分。
       </ConfirmDialog>
     </section>
+  );
+}
+
+/** − key + : before the start only (the backing is made again for each key). */
+function KeyControl({
+  shift,
+  can,
+  busy,
+  onMove,
+}: {
+  shift: number;
+  can: boolean;
+  busy: boolean;
+  onMove: (by: number) => void;
+}) {
+  const why = can ? undefined : "開始前才能換調";
+  return (
+    <div role="group" aria-label="升降調" className="flex items-center gap-1">
+      <Button
+        variant="outline"
+        size="icon-sm"
+        aria-label="降半音"
+        title={why ?? "降半音"}
+        disabled={!can || shift <= -KARAOKE_MAX_SHIFT}
+        onClick={() => onMove(-1)}
+      >
+        <Minus aria-hidden />
+      </Button>
+      <span
+        aria-live="polite"
+        className={cn("w-10 text-center font-mono text-sm tabular-nums", busy && "text-muted-foreground")}
+      >
+        {keyLabel(shift)}
+      </span>
+      <Button
+        variant="outline"
+        size="icon-sm"
+        aria-label="升半音"
+        title={why ?? "升半音"}
+        disabled={!can || shift >= KARAOKE_MAX_SHIFT}
+        onClick={() => onMove(1)}
+      >
+        <Plus aria-hidden />
+      </Button>
+    </div>
   );
 }
