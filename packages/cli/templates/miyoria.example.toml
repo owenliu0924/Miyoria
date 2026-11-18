@@ -528,7 +528,7 @@ dirs = ["extensions"]
 # [modules.karaoke]
 # enabled = true
 # utc_offset_minutes = 480    # 「今天」從哪個時區算(每人每天的上限)
-# open = true                 # false = 會員頁不能點歌、不能開始唱;唱完的結果照常
+# open = true                 # false = 會員不能點歌、唱、開房間;唱完的結果照常;面板管理員關著時也能用,可以先試
 # max_song_secs = 480         # 一首最長幾秒,超過的準備失敗
 # daily_songs = 10            # 每人每天能準備幾首新歌;已經準備好的歌不算(0 = 只能唱準備好的)
 # tolerance_cents = 50        # 離原唱幾 cents 內算唱對,兩倍遠就不算
@@ -539,6 +539,20 @@ dirs = ["extensions"]
 # video = true                # 背景影片:準備歌時留一份來源的畫面(最高 720p、沒有聲音),唱的時候放在歌詞後面
 # video_keep_hours = 24       # 影片在 Core 上最後一次唱過後留幾小時,再唱時從 worker 再拿
 # cache_dir = "data/karaoke"  # 伴唱軌和參考旋律在 Core 上放哪(相對 miyoria.toml);一天沒人唱就刪
+# 多人房間:她在語音頻道時,會員在會員頁開房間、用房號加入,大家同時唱同一首(房間開在講評頻道的伺服器)
+# rooms = true                # false = 不能開房間
+# room_price = 20             # 開房費(燒掉);一首都沒唱完就關掉的房間全退;0 = 免費
+# room_prize = 15             # 每一首的第一名:至少兩個人唱完、要是正式分數、沒有被標記;同分都給
+# room_finish = 3             # 唱完一首的人各拿這麼多
+# room_finish_share = 0.5     # 原唱有聲的地方唱到這麼多(而且音比亂唱準)才算唱完
+# room_prizes_per_day = 2     # 每人每天第一名獎勵最多幾次
+# room_finishes_per_day = 5   # 每人每天唱完獎勵最多幾次
+# room_rounds = 5             # 一間房最多唱幾首(開房費只收一次)
+# room_singers = 8            # 一間房最多幾個人唱(旁觀不算)
+# room_max = 2                # 同時最多幾間房
+# room_idle_mins = 10         # 房間閒置多久(沒有開始唱)就關掉
+# room_countdown_secs = 6     # 按開始後倒數幾秒,大家的伴奏同時開始
+# room_stream = true          # 唱的時候把麥克風即時送到唱歌 worker 算正式分數(不存);false = 唱的時候只有預估,唱完送錄音
 # 歌詞:唱歌 worker 把查到的歌詞一行一行和主唱聽到的比對,對上的逐字對齊、照字切音符;
 # 查不到或對不上就用聽寫的。下面只影響之後準備的歌
 # aligner = "w2v"             # w2v(Apache-2.0)| mms(難的歌準很多,權重 CC-BY-NC-4.0,只能非商業使用)
