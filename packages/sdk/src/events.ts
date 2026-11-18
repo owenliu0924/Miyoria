@@ -27,6 +27,7 @@ export {
   AgentNotice,
   AgentPrompt,
   AgentTool,
+  AgentToolRunning,
   AgentTurnCompleted,
   AgentTurnFocus,
   AgentTurnOutcome,

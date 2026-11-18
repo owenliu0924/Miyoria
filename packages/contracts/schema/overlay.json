@@ -7,6 +7,8 @@
       "enum": [
         "thinking",
         "synthesizing",
+        "tool",
+        "game",
         "song_prepare",
         "singing"
       ]
@@ -54,6 +56,16 @@
             "number",
             "null"
           ]
+        },
+        "secondary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OverlayActivitySide"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -64,6 +76,29 @@
         "progress",
         "elapsed_ms",
         "duration_ms"
+      ]
+    },
+    "OverlayActivitySide": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "label"
       ]
     },
     "OverlayDanmakuClearMessage": {

@@ -117,10 +117,11 @@ export type TouchPart = z.output<typeof StageLinkTouchPartSchema>;
 
 /**
  * What she is doing, for the overlay's activity line: `thinking` (a turn runs, nothing said yet),
- * `synthesizing` (her line is at TTS), `song_prepare` (the song worker makes a song), `singing`.
+ * `synthesizing` (her line is at TTS), `tool` (a tool of hers runs), `game` (she plays one),
+ * `song_prepare` (the song worker makes a song), `singing`.
  */
 export const StageLinkActivityKindSchema = z
-  .enum(["thinking", "synthesizing", "song_prepare", "singing"])
+  .enum(["thinking", "synthesizing", "tool", "game", "song_prepare", "singing"])
   .meta({ id: "StageLinkActivityKind" });
 export type ActivityKind = z.output<typeof StageLinkActivityKindSchema>;
 
@@ -421,6 +422,19 @@ export const StageLinkNoticeMessageSchema = z
  * it was when the message was sent) and `duration_ms`, so its progress runs on the receiver's
  * clock instead.
  */
+/**
+ * What happens beside the main line: a song being prepared while she does something else. Its own
+ * label and song title, one overall `progress` (`null`: waiting, no bar).
+ */
+export const StageLinkActivitySideSchema = z
+  .object({
+    label: z.string().max(ACTIVITY_LABEL_MAX),
+    detail: z.string().max(ACTIVITY_DETAIL_MAX).nullable().default(null),
+    progress: z.number().min(0).max(1).nullable().default(null),
+  })
+  .meta({ id: "StageLinkActivitySide" });
+export type ActivitySide = z.output<typeof StageLinkActivitySideSchema>;
+
 export const StageLinkActivitySchema = z
   .object({
     kind: StageLinkActivityKindSchema.nullable(),
@@ -429,6 +443,8 @@ export const StageLinkActivitySchema = z
     progress: z.number().min(0).max(1).nullable().default(null),
     elapsed_ms: z.number().min(0).max(DAY_MS).nullable().default(null),
     duration_ms: z.number().positive().max(DAY_MS).nullable().default(null),
+    /** Left out (or `null`) when nothing happens beside the main line; an older node never reads it. */
+    secondary: StageLinkActivitySideSchema.nullable().optional(),
   })
   .meta({ id: "StageLinkActivity" });
 export type Activity = z.output<typeof StageLinkActivitySchema>;

@@ -1096,7 +1096,19 @@ export class SelfHost implements TextRunner {
         state.spoke = true;
         this.#startTyping(state, context, event.turn);
         break;
+      case "tool_start":
+        agent.ctx.publish(
+          Events.AgentToolRunning,
+          { turn: event.turn, context, tool: event.name, state: "started" },
+          { turn: event.turn },
+        );
+        break;
       case "tool_call":
+        agent.ctx.publish(
+          Events.AgentToolRunning,
+          { turn: event.turn, context, tool: event.name, state: "ended" },
+          { turn: event.turn },
+        );
         // Discord has no "stop typing", a notice lingers about ten seconds. A reaction with no
         // word yet is most often all she does: stop the notices now; `speaking` starts them again.
         if (event.name === "react" && !state.spoke) state.typing?.abort();
