@@ -630,6 +630,10 @@ export {
   VoiceUpcoming,
   type VoiceUpcomingData,
   VoiceUpcomingSchema,
+  VoiceWatch,
+  type VoiceWatchData,
+  VoiceWatchSchema,
+  WatchStateSchema,
 } from "./voice.js";
 export {
   ImagegenJob,
