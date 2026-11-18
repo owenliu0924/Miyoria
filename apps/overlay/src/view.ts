@@ -1,8 +1,10 @@
 // DOM for the overlay. Holds the reducer state plus the time-based bits the reducer must not know about
 // (typewriter position, linger timers) and paints them from one animation-frame loop. Everything that
 // appears, disappears or changes goes through motion.ts, so nothing pops.
+import type { OverlayReply } from "@miyoria/contracts/overlay";
 import { ActivityCapsule } from "./activity.js";
 import type { OverlayConfig } from "./config.js";
+import { DanmakuLayer } from "./danmaku-view.js";
 import {
   type Action,
   initialState,
@@ -97,19 +99,27 @@ export class Overlay {
   private readonly touchLayer: HTMLElement;
   private readonly touches = new TouchSet();
   private readonly touchEls = new Map<number, HTMLElement>();
+  /** Paid lines crossing the top of the picture; null when `show=` leaves them out. */
+  private readonly danmaku: DanmakuLayer | null;
   /** The card whose time is running, and its timer. */
   private screenShown: number | null = null;
   private screenTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /** `reply` takes the page's answers about danmaku lines (to the socket, or nowhere in the demo). */
   constructor(
     root: HTMLElement,
     private readonly cfg: OverlayConfig,
+    reply: (r: OverlayReply) => void = () => {},
   ) {
     root.replaceChildren();
     const main = el("main", "overlay", root);
 
     this.wave = new Wave(main);
     this.wave.hidden = !cfg.show.has("wave");
+
+    // Paid lines crossing the top of the picture. Under every plate (the panel, the gift line, the
+    // paid message), so those stay readable; a line passes behind them and comes out again.
+    this.danmaku = cfg.show.has("danmaku") ? new DanmakuLayer(main, cfg.danmakuBand, reply) : null;
 
     this.subtitle = el("section", "subtitle is-hidden", main);
     const p = el("p", "subtitle__text", this.subtitle);
@@ -195,6 +205,19 @@ export class Overlay {
       this.showTouch(action);
       return;
     }
+    // With the layer hidden, lines are not answered at all (the node does not wait for this page).
+    if (action.type === "danmaku") {
+      this.danmaku?.receive(action, performance.now());
+      return;
+    }
+    if (action.type === "danmaku_clear") {
+      this.danmaku?.clear();
+      return;
+    }
+    if (action.type === "connection") {
+      if (action.connected) this.danmaku?.ready();
+      else this.danmaku?.disconnect();
+    }
     const prev = this.state;
     this.state = reduce(prev, action);
     if (this.state === prev) return;
@@ -218,6 +241,7 @@ export class Overlay {
       this.maybeHide(now, total);
     }
     this.wave.frame(dt, now);
+    this.danmaku?.frame(now);
     for (const id of this.touches.expire(performance.now())) this.dropTouch(id);
     present(this.offline, this.cfg.debug && !this.state.connected);
   }

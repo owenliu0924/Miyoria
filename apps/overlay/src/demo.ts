@@ -1,6 +1,7 @@
 // Scripted feed for `?demo=1`: lets the overlay be designed, previewed in OBS and screenshotted
 // without the Stage. It speaks the same messages the Stage sends, and walks through every activity
-// (thinking, getting a line ready, preparing a song stage by stage, singing it) and queue change.
+// (thinking, getting a line ready, preparing a song stage by stage, singing it) and queue change,
+// with danmaku lines crossing the top (bursts larger than the lanes, so some wait and some drop).
 import type { Activity, FeedMessage, QueueItem } from "./feed.js";
 
 interface Line {
@@ -35,6 +36,26 @@ const LATER: QueueItem[] = [
   { title: "Minecraft:挖到鑽石", by: "小明" },
   { title: "講一個鬼故事", by: "阿翔" },
 ];
+
+/** Paid danmaku lines (at most 30 characters, like the default limit). */
+const DANMAKU_TEXTS = [
+  "來了來了",
+  "晚安~今天也辛苦了",
+  "這首歌好好聽!!!",
+  "草",
+  "剛下班,剛好趕上",
+  "她剛剛是不是在偷笑",
+  "88888888",
+  "第一次來,請多指教",
+  "可以再唱一次副歌嗎?拜託拜託拜託",
+  "今天的聲音特別有精神耶",
+  "白飯配什麼最好吃,大家投票",
+  "w",
+  "從台南來的,大家好",
+  "Minecraft 那座塔後來蓋好了嗎",
+];
+/** Who sent them; `null` is a line with the names hidden. */
+const DANMAKU_NAMES: (string | null)[] = ["Mia", "小明", null, "阿翔", "Owen", "Kai", "一隻路過的貓", null];
 
 const busy = (kind: string, label: string): Activity => ({
   kind,
@@ -160,6 +181,36 @@ export function startDemo(emit: (m: FeedMessage) => void): () => void {
     emit({ type: "touch", x: Math.min(Math.max(x + jitter(), 0), 1), y: Math.min(Math.max(y + jitter(), 0), 1), part });
   }, 900);
 
+  // Danmaku: a line now and then, and every so often a burst bigger than the lanes and the queue,
+  // so lines wait, and some are dropped (queue full, or waited too long). Some come without a name.
+  let danmakuSeq = 0;
+  const danmaku = (): void => {
+    const i = danmakuSeq++;
+    emit({
+      type: "danmaku",
+      id: `demo-dm-${i}`,
+      name: DANMAKU_NAMES[i % DANMAKU_NAMES.length] ?? null,
+      text: DANMAKU_TEXTS[(i * 5) % DANMAKU_TEXTS.length] as string,
+      max_on_screen: 12,
+      queue_max: 6,
+      max_wait_ms: 8000,
+    });
+  };
+  const burst = (n: number): void => {
+    for (let k = 0; k < n; k++) {
+      const t = setTimeout(() => {
+        timers.delete(t);
+        danmaku();
+      }, k * 90);
+      timers.add(t);
+    }
+  };
+  burst(16);
+  const trickle = setInterval(() => {
+    if (Math.random() < 0.55) danmaku();
+  }, 1400);
+  const bursts = setInterval(() => burst(18), 30_000);
+
   void (async () => {
     status("Game");
     setQueue(queue);
@@ -188,6 +239,8 @@ export function startDemo(emit: (m: FeedMessage) => void): () => void {
     stopped = true;
     clearInterval(levels);
     clearInterval(touches);
+    clearInterval(trickle);
+    clearInterval(bursts);
     for (const t of timers) clearTimeout(t);
     timers.clear();
   };
