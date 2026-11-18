@@ -13,6 +13,8 @@ import { pipeline } from "node:stream/promises";
 import {
   type WORKERS_SING_PCM_TRACKS,
   WorkersHealthSchema,
+  type WorkersKaraokeKeyReply,
+  WorkersKaraokeKeyReplySchema,
   type WorkersSingGpuContext,
   WorkersSingGpuStatusSchema,
   type WorkersSingJob,
@@ -108,6 +110,12 @@ export interface SingWorker {
   download(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void>;
   /** Saves one of a karaoke song's files (`GET /karaoke/{id}/files/{name}`) to `dest`. */
   karaokeFile(song: string, file: string, dest: string, signal?: AbortSignal): Promise<void>;
+  /** Has a karaoke song's backing made in another key (`POST /karaoke/{id}/keys`). */
+  karaokeKey(
+    song: string,
+    semitones: number,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeKeyReply>;
   /** `null` when healthy, else why not. */
   health(signal?: AbortSignal): Promise<string | null>;
 }
@@ -302,6 +310,27 @@ export class HttpSingWorker implements SingWorker {
       dest,
       signal,
     );
+  }
+
+  async karaokeKey(
+    song: string,
+    semitones: number,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeKeyReply> {
+    // Rubber Band on a whole song takes a while on the worker's CPU.
+    const res = await this.#call(
+      `/karaoke/${encodeURIComponent(song)}/keys`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ semitones }),
+      },
+      Math.max(this.#timeoutMs * 20, 180_000),
+      signal,
+    );
+    const parsed = WorkersKaraokeKeyReplySchema.safeParse(await res.json());
+    if (!parsed.success) throw new SingWorkerError("song worker sent a malformed key answer");
+    return parsed.data;
   }
 
   async #save(path: string, timeoutMs: number, dest: string, signal?: AbortSignal): Promise<void> {

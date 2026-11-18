@@ -334,12 +334,14 @@ export function karaokeWorker(worker: SingWorker): KaraokeWorker {
           ...(query.artist === undefined ? {} : { artist: query.artist }),
           force: query.force ?? false,
           purpose: "karaoke",
+          ...(query.lyrics === undefined ? {} : { karaoke_lyrics: query.lyrics }),
         },
         signal,
       ),
     job: (id, signal) => worker.job(id, signal),
     cancel: (id) => worker.cancel(id),
     file: (song, name, dest, signal) => worker.karaokeFile(song, name, dest, signal),
+    key: (song, semitones, signal) => worker.karaokeKey(song, semitones, signal),
   };
 }
 

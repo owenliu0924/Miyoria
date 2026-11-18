@@ -3,7 +3,8 @@
 
     <root>/_karaoke/<karaoke id>/       one karaoke song, apart from her covers: ``GET /songs``
         karaoke.m4a                     never lists it (songs.Store skips ``_`` dirs)
-        reference.json                  WorkersKaraokeReference
+        karaoke.k+3.m4a                 the backing in another key, made when a singer asks (``keys``)
+        reference.json                  WorkersKaraokeReference (version 2: WorkersKaraokeReferenceV2)
         meta.json                       what made it (source, lead split, lyrics, timings); written
                                         last, so a folder without it is a job that did not finish
 
@@ -17,6 +18,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 import wave
@@ -30,7 +32,7 @@ log = logging.getLogger("miyoria.sing.karaoke")
 
 KARAOKE_DIR = "_karaoke"
 REFERENCE_FORMAT = "miyoria.karaoke.reference"
-REFERENCE_VERSION = 1
+REFERENCE_VERSION = 2
 BACKING_FILE = "karaoke.m4a"
 REFERENCE_FILE = "reference.json"
 META_FILE = "meta.json"
@@ -109,7 +111,7 @@ def summary(meta: dict[str, Any]) -> dict[str, Any]:
 
 
 def lyric_lines(lines: Sequence[dict[str, Any]], voiced: Sequence[bool], hz: float) -> list[dict[str, Any]]:
-    """``WorkersKaraokeLine``s from the song's synced lines (``{"t", "text"}``, already moved by the
+    """The looked-up lines (start, end, text; lyricstage.py checks them) from the song's synced lines (``{"t", "text"}``, already moved by the
     lookup's overall offset). Empty lines are breaks: they end the line before them and are not
     lines themselves. A line ends where the next one (or break) starts; the last one where the lead
     last sings after it starts (``voiced``: the reference curve's voiced flags), or ``None``."""
@@ -125,20 +127,16 @@ def lyric_lines(lines: Sequence[dict[str, Any]], voiced: Sequence[bool], hz: flo
             first = int(math.ceil(start * hz))
             last = next((j for j in range(len(voiced) - 1, first - 1, -1) if voiced[j]), None)
             end = (last + 1) / hz if last is not None else None
-        out.append({"start": round(start, 3), "end": None if end is None else round(end, 3), "text": text,
-                    "check": "unchecked", "confidence": None, "chars": None})
+        out.append({"start": round(start, 3), "end": None if end is None else round(end, 3), "text": text})
     return out
 
 
-def lyrics_block(lyrics_meta: dict[str, Any] | None, voiced: Sequence[bool], hz: float) -> dict[str, Any] | None:
-    """reference.json ``lyrics`` from the lookup's result (server._lyrics_meta), ``None`` when there are
-    no synced lines (plain lyrics have no times to show them by)."""
+def found_lines(lyrics_meta: dict[str, Any] | None, voiced: Sequence[bool], hz: float) -> list[dict[str, Any]]:
+    """The looked-up lines of the lookup's result (server._lyrics_meta); none when they are not
+    synced (plain lyrics have no times to show them by)."""
     if not lyrics_meta or not lyrics_meta.get("synced"):
-        return None
-    lines = lyric_lines(lyrics_meta.get("lines") or [], voiced, hz)
-    if not lines:
-        return None
-    return {"provider": lyrics_meta.get("provider"), "timing": "line", "lines": lines}
+        return []
+    return lyric_lines(lyrics_meta.get("lines") or [], voiced, hz)
 
 
 # ── the backing track ────────────────────────────────────────────────────────
@@ -236,13 +234,63 @@ def encode_backing(parts: Sequence[Path], out: Path, target_lufs: float = -16.0)
             "rate": BACKING_RATE, "channels": BACKING_CHANNELS, "bitrate": BACKING_BITRATE}
 
 
+# ── another key (docs/design/karaoke.md 「做了什麼第二步」) ─────────────────────────
+
+# Semitones a singer may move the key by, either way (karaoke.ts KARAOKE_MAX_SHIFT).
+KEY_MAX = 6
+KEY_FILE = re.compile(r"^karaoke\.k([+-])([1-9]|1[0-2])\.m4a$")
+
+
+def key_file(semitones: int) -> str:
+    """The backing's file name in a key ``semitones`` away (karaoke.ts karaokeBackingName)."""
+    if semitones == 0:
+        return BACKING_FILE
+    return f"karaoke.k{'+' if semitones > 0 else '-'}{abs(semitones)}.m4a"
+
+
+def is_key_file(name: str) -> bool:
+    m = KEY_FILE.match(name)
+    return m is not None and int(m.group(2)) <= KEY_MAX
+
+
+def shift_backing(src: Path, out: Path, semitones: int) -> str:
+    """The backing track ``src`` moved by ``semitones`` into ``out`` (the same AAC settings), the
+    length kept so the reference still lines up. Rubber Band (ffmpeg's ``rubberband`` filter, as a
+    cover's key change); ffmpeg without it: resampling and time-stretching back (``asetrate``,
+    cruder: the timbre moves with the pitch). Returns the method."""
+    from engine import JobError, ffmpeg_has_filter
+
+    if shutil.which("ffmpeg") is None:
+        raise JobError("ffmpeg is not installed: the backing cannot be moved to another key")
+    ratio = 2 ** (semitones / 12)
+    if ffmpeg_has_filter("rubberband"):
+        method, af = "rubberband", f"rubberband=pitch={ratio:.8f}:pitchq=quality:channels=together"
+    else:
+        method = "asetrate"
+        af = f"asetrate={BACKING_RATE * ratio:.3f},aresample={BACKING_RATE},atempo={1 / ratio:.8f}"
+    part = out.with_name(out.stem + ".part" + out.suffix)
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-af", af,
+           "-c:a", "aac", "-b:a", BACKING_BITRATE, "-ar", str(BACKING_RATE), "-ac", str(BACKING_CHANNELS),
+           "-movflags", "+faststart", "-f", "mp4", str(part)]
+    try:
+        r = subprocess.run(cmd, capture_output=True)
+        if r.returncode != 0:
+            raise JobError(f"ffmpeg could not move the backing's key: "
+                           f"{r.stderr.decode('utf-8', 'replace').strip()[:300]}")
+        os.replace(part, out)
+    finally:
+        part.unlink(missing_ok=True)
+    return method
+
+
 # ── reference.json ───────────────────────────────────────────────────────────
 
 
 def reference(kid: str, title: str, artist: str | None, duration_s: float, midi: list[float | None], hz: int,
               notes: list[dict[str, Any]], lyrics: dict[str, Any] | None, quality: dict[str, Any],
-              notes_method: str) -> dict[str, Any]:
-    """``WorkersKaraokeReference``."""
+              notes_method: str, made: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``WorkersKaraokeReferenceV2``. ``made``: the lyrics stage's (``lyrics``, ``asr``, ``aligner``)."""
+    m = {"lyrics": "line" if lyrics else "none", "asr": None, "aligner": None, **(made or {})}
     return {
         "format": REFERENCE_FORMAT,
         "version": REFERENCE_VERSION,
@@ -255,5 +303,6 @@ def reference(kid: str, title: str, artist: str | None, duration_s: float, midi:
         "notes": notes,
         "lyrics": lyrics,
         "quality": quality,
-        "made": {"pitch": PITCH_METHOD, "notes": notes_method, "lyrics": "line" if lyrics else "none"},
+        "made": {"pitch": PITCH_METHOD, "notes": notes_method, "lyrics": m["lyrics"], "asr": m["asr"],
+                 "aligner": m["aligner"]},
     }

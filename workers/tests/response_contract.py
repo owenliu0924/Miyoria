@@ -70,6 +70,7 @@ ROUTES: dict[str, dict[tuple[str, str], str | dict[str, str]]] = {
         ("GET", "/songs/{sid}/files/{name}"): NOT_JSON,
         ("GET", "/karaoke"): NOT_IN_CONTRACT,
         ("GET", "/karaoke/{kid}/files/{name}"): {"reference.json": "WorkersKaraokeReference", "*": NOT_JSON},
+        ("POST", "/karaoke/{kid}/keys"): "WorkersKaraokeKeyReply",
         ("POST", "/gpu/context"): "WorkersSingOk",
         ("GET", "/cache"): NOT_IN_CONTRACT,
         ("POST", "/cache/prune"): NOT_IN_CONTRACT,

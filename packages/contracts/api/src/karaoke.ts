@@ -26,6 +26,11 @@ export const KaraokeSongViewSchema = z
     error: z.string().nullable(),
     /** It has lyrics with line times. */
     lyrics: z.boolean(),
+    /**
+     * Where they came from: `found` (looked up), `heard` (what the recogniser heard: shown as
+     * 「聽寫」, may be wrong); `null` without lyrics, or for a song prepared before this was known.
+     */
+    lyrics_source: z.enum(["found", "heard"]).nullable(),
     /** Guide bars on screen. */
     notes: z.number().int(),
     /** The member asked for it. */
@@ -101,8 +106,22 @@ export const KaraokeSessionSchema = z
     tolerance_cents: z.number(),
     /** Frames per second of the track to send. */
     frame_hz: z.number().int(),
+    /**
+     * Semitones the key was moved by: the backing at `backing_url` is in that key, and the
+     * browser moves the reference's curve and notes by the same (`shiftKaraokeReference`).
+     */
+    shift: z.number().int(),
   })
   .meta({ id: "ApiKaraokeSession" });
+
+/** Body of `POST /api/member/karaoke/songs/{id}/sessions` (may be left out: the song's own key). */
+export const KaraokeStartSchema = z
+  .strictObject({
+    /** Semitones to move the key by, -6..6. */
+    shift: z.number().int().min(-6).max(6).default(0),
+  })
+  .meta({ id: "ApiKaraokeStart" });
+export type KaraokeStart = z.input<typeof KaraokeStartSchema>;
 export type KaraokeSession = z.output<typeof KaraokeSessionSchema>;
 
 /** Body of `POST /api/member/karaoke/sessions/{id}/result`. */
@@ -235,10 +254,10 @@ export const karaoke = {
     .route({ method: "GET", path: "/api/member/karaoke/songs/{id}" })
     .input(z.object({ params: id }))
     .output(KaraokeSongViewSchema),
-  /** Starts a singing of a ready song: its signed links. */
+  /** Starts a singing of a ready song, in its key or moved (`shift`): its signed links. */
   start: member()
     .route({ method: "POST", path: "/api/member/karaoke/songs/{id}/sessions" })
-    .input(z.object({ params: id }))
+    .input(z.object({ params: id, body: KaraokeStartSchema.optional() }))
     .output(KaraokeSessionSchema),
   /** The track, once, at the end: Core's score. */
   submit: member()

@@ -16,6 +16,9 @@
                                       video.mp4 (library: video.<ext>) when ``has_video``
     GET    /karaoke             -> {"karaoke": [...]}      karaoke songs (job.karaoke + created_at), newest first
     GET    /karaoke/{id}/files/{name}   karaoke.m4a · reference.json (karaoke.py, packages/contracts karaoke.ts)
+                                        · karaoke.k±N.m4a once made by:
+    POST   /karaoke/{id}/keys   {semitones: -6..6} -> {file, semitones, cached, method}   the backing in
+                                another key (Rubber Band), made once and kept with the song
     GET    /library             -> {"entries": [...]}      the owner's local song folder
     GET    /cache               -> {bytes, songs, sources, limits, last}   the song cache (cache.py)
     POST   /cache/prune         {dry_run?} -> what the cleanup removed (or would remove)
@@ -70,6 +73,12 @@ above (the same cached stems), then no conversion and no mix:
     encode    the backing track: everything but the lead (instrumental + backing voices; the
               instrumental alone without a split), loudness-normalised, AAC 128 kbps 48 kHz stereo
     lyrics    the same lookup as a cover's, line times only
+    lyrics_asr    Qwen3-ASR-1.7B checks every looked-up line against the lead, or transcribes the lead
+              when there are none (or they are the wrong song); lyrics_align: a CTC aligner (w2v, or
+              mms by the request's ``karaoke_lyrics``) times each character / mora of the lines that
+              hold; their notes are cut one per unit (lyricstage.py, lyricsync.py). Both run in the
+              align environment as a subprocess, one model per step, placed on the GPU like any stage
+              (alignenv.py; without that environment the lines stay unchecked, as in step 1)
 into SING_DATA_DIR/_karaoke/k-<source key>/ (karaoke.py), never one of her songs. The job ends
 ``done`` with ``karaoke`` = {id, title, artist, duration_s, quality} also when the quality is not ok
 (Core does not offer such a song); ``song_id`` stays null. A karaoke job is never urgent and never
@@ -218,6 +227,7 @@ from contracts import WorkersSingGpuContext as GpuContext  # noqa: E402
 from contracts import WorkersSingJobRequest as JobRequest  # noqa: E402
 from contracts import WorkersSingLyricsRequest as LyricsRequest  # noqa: E402
 from contracts import WorkersSingPruneRequest as PruneRequest  # noqa: E402
+from contracts import WorkersKaraokeKeyRequest as KaraokeKeyRequest  # noqa: E402
 from engine import Cancelled, ConvertWork, JobError, Suspended, allowed_url, env_float, env_int, is_oom  # noqa: E402
 from exclusive import Exclusive, http_post, parse_urls  # noqa: E402
 from gpu import CPU_FALLBACK, CPU_STAGES, Action, Audience, GpuJob, Limits, Machine, Profile  # noqa: E402
@@ -254,8 +264,8 @@ MAX_JOBS_KEPT = 100
 WEIGHTS = {"resolve": 0.04, "download": 0.12, "exclusive": 0.0, "separate": 0.26, "lead": 0.08, "convert": 0.40, "mix": 0.07, "lyrics": 0.03,
            "video": 0.0}
 # The same for a karaoke job (no conversion, no mix).
-KARAOKE_WEIGHTS = {"resolve": 0.06, "download": 0.2, "separate": 0.4, "lead": 0.14, "reference": 0.1, "encode": 0.07,
-                   "lyrics": 0.03}
+KARAOKE_WEIGHTS = {"resolve": 0.05, "download": 0.16, "separate": 0.32, "lead": 0.11, "reference": 0.08, "encode": 0.05,
+                   "lyrics": 0.03, "lyrics_asr": 0.14, "lyrics_align": 0.06}
 # Sources whose link has a video to fetch (a library entry brings its own file).
 VIDEO_KINDS = ("youtube", "url", "mock")
 
@@ -308,6 +318,8 @@ class MockBackend:
         self.idle_hook: Callable[[bool], None] | None = None  # tests: runs in ``idle``
         self.karaoke_f0_inputs: list[tuple[str, str | None]] = []  # (file, device) of each karaoke pitch track
         self.karaoke_parts: list[list[str]] = []  # what each karaoke backing was made of
+        self.lyrics_steps: list[tuple[str, str]] = []  # (step, device) of each karaoke lyrics step
+        self.karaoke_shifts: list[int] = []
 
     def _wait(self) -> None:
         if self.delay:
@@ -507,6 +519,55 @@ class MockBackend:
         out.write_bytes(b"\x00\x00\x00\x18ftypM4A mock karaoke")
         return {"duration_s": round(_wav_seconds(parts[0]) or self.seconds, 2), "mock": True}
 
+    def karaoke_lyrics_step(self, step: str, payload: dict[str, Any], device: str) -> dict[str, Any]:
+        """align/run.py's answers without models: every looked-up line heard as written (one that
+        contains ``wrong`` heard as nothing), the units of a line spread over the voiced frames of
+        its window. ``SING_MOCK_ALIGN=0``: as if the align environment were missing."""
+        import lyricsync
+        from readings import Lang, detect
+
+        self.lyrics_steps.append((step, device))
+        if step == "asr":
+            lines = payload.get("lines") or []
+            heard = [{"heard": "" if "wrong" in x["text"] else x["text"],
+                      "similarity": 0.0 if "wrong" in x["text"] else 1.0} for x in lines]
+            for h in heard:
+                h["status"] = lyricsync.line_status(h["similarity"])
+            verdict = lyricsync.song_verdict([h["status"] for h in heard])
+            chunks = None
+            if not lines or verdict == "wrong_song":
+                chunks = [{"a": 0.0, "b": self.seconds, "heard": "la la la"}]
+            return {"language": payload.get("language") or "en", "lines": heard, "verdict": verdict, "chunks": chunks}
+        lang = Lang(payload.get("language") or detect("".join(s["text"] for s in payload["segments"])) or "en")
+        out = []
+        for seg in payload["segments"]:
+            pieces = lang.pieces(seg["text"])
+            units = [u for p in pieces for u in p.say]
+            a, b = float(seg["a"]) + 0.5, float(seg["b"]) - 0.3  # the line itself, not its window
+            step_s = (b - a) / max(1, len(units))
+            entry = []
+            k = 0
+            for p in pieces:
+                times = None
+                if seg.get("align"):
+                    times = [[round(a + (k + j) * step_s, 3), round(a + (k + j + 1) * step_s, 3)] for j in range(len(p.say))]
+                k += len(p.say)
+                entry.append({"text": p.text, "reading": p.reading, "roman": p.roman, "say": p.say, "units": times})
+            out.append({"pieces": entry, "error": None})
+        return {"language": lang.language, "segments": out}
+
+    def karaoke_shift(self, src: Path, out: Path, semitones: int) -> str:
+        """The real key change when ffmpeg can read the backing, else a copy."""
+        import shutil
+
+        import karaoke
+
+        self.karaoke_shifts.append(semitones)
+        if shutil.which("ffmpeg") is not None and src.read_bytes()[4:8] == b"ftyp" and b"mock karaoke" not in src.read_bytes():
+            return karaoke.shift_backing(src, out, semitones)
+        shutil.copyfile(src, out)
+        return "mock"
+
     def unload(self) -> None:
         return None
 
@@ -633,6 +694,11 @@ class _RealAdapter:
         import karaoke
 
         return karaoke.encode_backing(parts, out, env_float("SING_TARGET_LUFS", -16.0))
+
+    def karaoke_shift(self, src: Path, out: Path, semitones: int) -> str:
+        import karaoke
+
+        return karaoke.shift_backing(src, out, semitones)
 
 
 # ── jobs ─────────────────────────────────────────────────────────────────────
@@ -1138,8 +1204,9 @@ def _start_gpu(job: Job, audio_s: float | None) -> None:
 def _stage_pauses(stage: str) -> bool:
     """Whether the stage stops between steps while she speaks. Her RVC model (``SING_VOICE=rvc``, or
     the ``+rvc`` pass after the conversion) runs as one subprocess from start to end; RMVPE reads a
-    karaoke song's lead in one go (``reference``)."""
-    if stage == "reference":
+    karaoke song's lead in one go (``reference``); the karaoke lyrics' models run as subprocesses
+    (``lyrics_asr``, ``lyrics_align``)."""
+    if stage in ("reference", "lyrics_asr", "lyrics_align"):
         return False
     return not (stage == "convert" and getattr(state.backend, "rvc", False))
 
@@ -1871,29 +1938,70 @@ def _karaoke_parts(sdir: Path, split: bool) -> list[Path]:
     return parts
 
 
-def _karaoke_melody(f0: Any, vocal: Path, duration: float, lead_used: bool) -> tuple[Any, list[Any], dict[str, Any]]:
-    """(the 50 Hz curve, the notes, the quality) of the lead from RMVPE's F0 (melody.py)."""
+def _karaoke_curve(f0: Any, vocal: Path, duration: float) -> tuple[Any, list[dict[str, Any]]]:
+    """(the 50 Hz curve, the notes cut from the pitch alone) of the lead from RMVPE's F0 (melody.py)."""
     import melody
     from karaoke import mono_of
 
     mono, sr = mono_of(vocal)
     midi = melody.curve(f0, melody.frame_rms(mono, sr), frames=int(round(duration * melody.CURVE_HZ)),
                         clean=os.environ.get("SING_F0_CLEAN", "1") != "0")
-    notes = melody.cut_notes(midi)
-    quality = melody.quality(midi, len(notes), lead_used,
-                             min_voiced=env_float("SING_KARAOKE_MIN_VOICED", melody.MIN_VOICED_RATIO),
-                             min_notes=env_int("SING_KARAOKE_MIN_NOTES", melody.MIN_NOTES))
-    return midi, notes, quality
+    return midi, [n.json() for n in melody.cut_notes(midi)]
+
+
+def _karaoke_quality(midi: Any, notes: int, lead_used: bool) -> dict[str, Any]:
+    import melody
+
+    return melody.quality(midi, notes, lead_used,
+                          min_voiced=env_float("SING_KARAOKE_MIN_VOICED", melody.MIN_VOICED_RATIO),
+                          min_notes=env_int("SING_KARAOKE_MIN_NOTES", melody.MIN_NOTES))
+
+
+def _lyrics_runner(job: Job, vocal: Path, work: Path, duration: float) -> tuple[Callable[[str, dict[str, Any]], dict[str, Any]] | None, str | None]:
+    """(how a karaoke lyrics step runs, why it cannot): each step a GPU stage of its own (``lyrics_asr``,
+    ``lyrics_align``), placed and given way like the others; the mock backend answers itself."""
+    import alignenv
+    from lyricstage import StepFailed
+
+    fake = getattr(state.backend, "karaoke_lyrics_step", None)
+    if fake is not None:
+        if os.environ.get("SING_MOCK_ALIGN", "1") == "0":
+            return None, "SING_MOCK_ALIGN=0"
+    else:
+        why = alignenv.available()
+        if why is not None:
+            return None, why
+    audio = work / "lead16k.npy"
+
+    def run(step: str, payload: dict[str, Any]) -> dict[str, Any]:
+        stage = f"lyrics_{step}"
+        _set(job, stage)
+
+        def go(device: str) -> dict[str, Any]:
+            if fake is not None:
+                return fake(step, payload, device)
+            return alignenv.run_step(step, payload, device, alignenv.lead_16k(vocal, audio), work)
+
+        try:
+            return _gpu_stage(job, stage, vocal, duration, go)
+        except (Cancelled, Suspended):
+            raise
+        except StepFailed:
+            raise
+        except Exception as e:  # noqa: BLE001 - the lyrics fall back, the song goes on
+            raise StepFailed(f"{step}: {e}") from e
+
+    return run, None
 
 
 def _run_karaoke(job: Job) -> None:
     """A karaoke song: the front of a cover (resolve, download, separate, lead: the same cached stems),
-    then the reference melody of the lead, the backing track and the lyrics; no conversion, no mix."""
-    import math
-
+    then the reference melody of the lead, the backing track, the lyrics checked and aligned; no
+    conversion, no mix."""
     import karaoke as kara
+    import lyricstage
     import melody
-    from contracts import WorkersKaraokeReference
+    from contracts import WorkersKaraokeReferenceV2
 
     store, b, req = state.store, state.backend, job.request
     timings: dict[str, float] = {}
@@ -1917,35 +2025,50 @@ def _run_karaoke(job: Job) -> None:
     out = state.karaoke.dir(kid)
     out.mkdir(parents=True, exist_ok=True)
     (out / kara.META_FILE).unlink(missing_ok=True)  # made again: not a finished song until it is written
+    for old in out.glob("karaoke.k*.m4a"):  # keys of the song made before
+        old.unlink(missing_ok=True)
     parts = _karaoke_parts(sdir, lead["used"])
     lengths = [s for s in (kara.wav_seconds(p) for p in parts) if s]
     duration = min(lengths) if lengths else (src.duration_s or _wav_seconds(vocal) or 0.0)
     lookup = LyricsLookup(job, src, vocal, out, _wav_seconds(vocal) or src.duration_s).start()
 
-    def reference() -> tuple[Any, list[Any], dict[str, Any]]:
-        try:
+    try:
+        def reference() -> tuple[Any, list[dict[str, Any]]]:
             f0 = _gpu_stage(job, "reference", vocal, src.duration_s,
                             lambda device: b.karaoke_f0(vocal, "cpu" if device == "cpu" else None))
-        finally:
-            _give_gpu_back(job)  # the last GPU stage of a karaoke job
-        job.converted.set()  # the lyrics' ASR spot check may go on
-        return _karaoke_melody(f0, vocal, duration, lead["used"])
+            job.converted.set()  # the lyrics' ASR spot check may go on
+            return _karaoke_curve(f0, vocal, duration)
 
-    midi, notes, quality = timed("reference", reference)
-    encoded = timed("encode", lambda: b.karaoke_encode(parts, out / kara.BACKING_FILE))
-    if lookup.running():
-        _set(job, "lyrics")
-        t_wait = time.perf_counter()
-        lookup.wait(job.cancel)
-        timings["lyrics_wait_s"] = round(time.perf_counter() - t_wait, 2)
-    if lookup.seconds is not None:
-        timings["lyrics_s"] = lookup.seconds
-    (out / "lyrics.lrc").unlink(missing_ok=True)  # the lookup's own file; the lines are in reference.json
-    lyrics_meta = lookup.meta
-    lyrics = kara.lyrics_block(lyrics_meta, [not math.isnan(v) for v in midi], melody.CURVE_HZ)
+        midi, pitch_notes = timed("reference", reference)
+        encoded = timed("encode", lambda: b.karaoke_encode(parts, out / kara.BACKING_FILE))
+        if lookup.running():
+            _set(job, "lyrics")
+            t_wait = time.perf_counter()
+            lookup.wait(job.cancel)
+            timings["lyrics_wait_s"] = round(time.perf_counter() - t_wait, 2)
+        if lookup.seconds is not None:
+            timings["lyrics_s"] = lookup.seconds
+        (out / "lyrics.lrc").unlink(missing_ok=True)  # the lookup's own file; the lines are in reference.json
+        lyrics_meta = lookup.meta
+        voiced = [not math.isnan(v) for v in midi]
+        found = kara.found_lines(lyrics_meta, voiced, melody.CURVE_HZ)
+        run, why = _lyrics_runner(job, vocal, out, duration)
+        t_lyr = time.perf_counter()
+        lyr = lyricstage.build(found, (lyrics_meta or {}).get("provider"), midi, duration,
+                               lyricstage.Options.of(req.karaoke_lyrics), run, melody.CURVE_HZ)
+        if run is not None:
+            timings["lyrics_check_s"] = round(time.perf_counter() - t_lyr, 2)
+        else:
+            lyr.info["skipped"] = why
+    finally:
+        _give_gpu_back(job)  # the last GPU stage of a karaoke job
+        (out / "lead16k.npy").unlink(missing_ok=True)
+    notes = lyricstage.L.merge_notes(pitch_notes, lyr.notes, lyr.spans)
+    notes_method = melody.NOTES_METHOD if not lyr.notes else f"{lyricstage.L.NOTES_METHOD}+{melody.NOTES_METHOD}"
+    quality = _karaoke_quality(midi, len(notes), lead["used"])
     ref = kara.reference(kid, src.title, src.artist, duration, melody.curve_json(midi), melody.CURVE_HZ,
-                         [n.json() for n in notes], lyrics, quality, melody.NOTES_METHOD)
-    WorkersKaraokeReference.model_validate(ref)  # the format (karaoke.ts) before anyone reads it
+                         notes, lyr.block, quality, notes_method, lyr.made)
+    WorkersKaraokeReferenceV2.model_validate(ref)  # the format (karaoke.ts) before anyone reads it
     state.karaoke.write_json(kid, kara.REFERENCE_FILE, ref)
     timings["total_s"] = round(time.perf_counter() - t_job, 2)
     g = job.gpu
@@ -1961,6 +2084,7 @@ def _run_karaoke(job: Job) -> None:
         "lead_split": lead,
         "lyrics": None if lyrics_meta is None else {k: v for k, v in lyrics_meta.items() if k != "lines"},
         "lyrics_input": _lyrics_hints_of(src),
+        "lyrics_check": {**lyr.made, **lyr.info},
         "backing": {"parts": [p.name for p in parts], **encoded},
         "engine": {"backend": b.name, "model": b.model_name, "device": b.device,
                    "separator": _separator_of(b), "lead": _lead_tag_of(b) if lead["used"] else None},
@@ -1972,8 +2096,8 @@ def _run_karaoke(job: Job) -> None:
     state.karaoke.write_json(kid, kara.META_FILE, meta)  # last: the song is there from now on
     state.cache.touch(karaoke=kid, source=src.key)
     job.karaoke = kara.summary(meta)
-    log.info("karaoke %s ready: %s, %d notes, quality %s (%s)", kid, src.title, len(notes),
-             "ok" if quality["ok"] else quality["reason"], timings)
+    log.info("karaoke %s ready: %s, %d notes (%d from lyrics), lyrics %s, quality %s (%s)", kid, src.title,
+             len(notes), len(lyr.notes), lyr.made.get("lyrics"), "ok" if quality["ok"] else quality["reason"], timings)
 
 
 def _lyrics_hints_of(src: Source) -> dict[str, Any]:
@@ -2321,7 +2445,9 @@ async def list_karaoke() -> dict[str, Any]:
 
 @app.get("/karaoke/{kid}/files/{name}")
 async def get_karaoke_file(kid: str, name: str):
-    if name not in KARAOKE_FILES:
+    import karaoke as kara
+
+    if name not in KARAOKE_FILES and not kara.is_key_file(name):
         return _error(404, f"no file {name}")
     kid = safe_id(kid, 96)
     if state.karaoke.meta(kid) is None:  # unfinished, or being made again
@@ -2330,7 +2456,36 @@ async def get_karaoke_file(kid: str, name: str):
     state.cache.touch(karaoke=kid)  # Core is about to hand it to a singer
     if not p.exists():
         return _error(404, f"karaoke song {kid} has no {name}")
-    return FileResponse(p, media_type=KARAOKE_FILES[name])
+    return FileResponse(p, media_type=KARAOKE_FILES.get(name, "audio/mp4"))
+
+
+_key_locks: dict[str, threading.Lock] = {}
+
+
+@app.post("/karaoke/{kid}/keys")
+def make_karaoke_key(kid: str, req: KaraokeKeyRequest):
+    """The song's backing in another key (``semitones`` from it), made once: a singer's key change.
+    The reference is not made again: Core and the browser move its curve and notes by the same."""
+    import karaoke as kara
+
+    kid = safe_id(kid, 96)
+    if state.karaoke.meta(kid) is None:
+        return _error(404, f"no karaoke song {kid}")
+    name = kara.key_file(req.semitones)
+    d = state.karaoke.dir(kid)
+    with state.lock:
+        lock = _key_locks.setdefault(kid, threading.Lock())
+    with lock:
+        state.cache.touch(karaoke=kid)
+        if (d / name).is_file():
+            return {"file": name, "semitones": req.semitones, "cached": True,
+                    "method": "none" if req.semitones == 0 else "kept"}
+        try:
+            method = state.backend.karaoke_shift(d / kara.BACKING_FILE, d / name, req.semitones)
+        except JobError as e:
+            return _error(503, str(e))
+        log.info("karaoke %s: backing moved by %+d semitones (%s)", kid, req.semitones, method)
+        return {"file": name, "semitones": req.semitones, "cached": False, "method": method}
 
 
 @app.post("/gpu/context")

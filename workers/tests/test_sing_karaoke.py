@@ -194,14 +194,11 @@ def test_lyric_lines_end_where_the_next_starts_or_where_the_lead_stops():
     got = karaoke.lyric_lines(lines, voiced, HZ)
     assert [(x["start"], x["end"], x["text"]) for x in got] == [
         (0.5, 2.0, "one"), (2.0, 3.0, "two"), (3.5, 5.0, "three"), (3.5, 5.0, "three again")]
-    assert all(x["check"] == "unchecked" and x["confidence"] is None and x["chars"] is None for x in got)
     # Nothing sung after the last line starts: nothing tells where it ends.
     assert karaoke.lyric_lines([{"t": 6.0, "text": "late"}], voiced, HZ)[0]["end"] is None
-    block = karaoke.lyrics_block({"provider": "lrclib", "synced": True, "lines": lines}, voiced, HZ)
-    assert block is not None and block["timing"] == "line" and block["provider"] == "lrclib"
-    contracts.WorkersKaraokeLyrics.model_validate(block, strict=True)
-    assert karaoke.lyrics_block({"provider": "lrclib", "synced": False, "lines": []}, voiced, HZ) is None
-    assert karaoke.lyrics_block(None, voiced, HZ) is None
+    assert karaoke.found_lines({"provider": "lrclib", "synced": True, "lines": lines}, voiced, HZ) == got
+    assert karaoke.found_lines({"provider": "lrclib", "synced": False, "lines": lines}, voiced, HZ) == []
+    assert karaoke.found_lines(None, voiced, HZ) == []
 
 
 def test_the_reference_is_the_contracts_format():
@@ -209,8 +206,14 @@ def test_the_reference_is_the_contracts_format():
     notes = [n.json() for n in cut(flat(60.0, 1.0))]
     q = melody.quality(np.array(flat(60.0, 1.0)), len(notes), True)
     ref = karaoke.reference("k-x", "T", None, 1.2, midi, HZ, notes, None, q, melody.NOTES_METHOD)
-    parsed = contracts.WorkersKaraokeReference.model_validate_json(json.dumps(ref), strict=True)
-    assert parsed.made.model_dump() == {"pitch": "rmvpe", "notes": "pitch-runs-1", "lyrics": "none"}
+    parsed = contracts.WorkersKaraokeReferenceV2.model_validate_json(json.dumps(ref), strict=True)
+    assert parsed.version == 2
+    assert parsed.made.model_dump() == {"pitch": "rmvpe", "notes": "pitch-runs-1", "lyrics": "none", "asr": None,
+                                        "aligner": None}
+    # A reader takes both versions.
+    v1 = {**ref, "version": 1, "made": {"pitch": "rmvpe", "notes": "pitch-runs-1", "lyrics": "none"}}
+    assert contracts.WorkersKaraokeReference.model_validate_json(json.dumps(v1), strict=True).root.version == 1
+    assert contracts.WorkersKaraokeReference.model_validate_json(json.dumps(ref), strict=True).root.version == 2
     assert ref["pitch"] == {"hz": 50, "start": 0, "midi": midi} and len(midi) == 60
     assert karaoke.karaoke_id("yt-abc") == "k-yt-abc"
 
@@ -307,25 +310,32 @@ def test_a_karaoke_job_makes_a_backing_track_and_a_reference(worker):
     # reference.json, as served (tests/response_contract.py holds it to WorkersKaraokeReference too).
     r = client.get(f"/karaoke/{k['id']}/files/reference.json")
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/json")
-    ref = contracts.WorkersKaraokeReference.model_validate_json(r.content, strict=True)
-    assert ref.format == "miyoria.karaoke.reference" and ref.version == 1 and ref.id == k["id"]
+    ref = contracts.WorkersKaraokeReferenceV2.model_validate_json(r.content, strict=True)
+    assert ref.format == "miyoria.karaoke.reference" and ref.version == 2 and ref.id == k["id"]
     assert ref.backing == "karaoke.m4a" and ref.duration_s == pytest.approx(3.0, abs=0.01)
     assert ref.pitch.hz == 50 and ref.pitch.start == 0 and len(ref.pitch.midi) == 150
     voiced = [m for m in ref.pitch.midi if m is not None]
     assert set(voiced) <= {60.0, 62.0, 64.0, 65.0, 67.0, 69.0, 71.0, 72.0}
-    # 0.3 s a note, 60 ms between: the ninth starts at 2.88 s and is cut by the end at 3 s.
-    assert [n.midi for n in ref.notes] == [60.0, 62.0, 64.0, 65.0, 67.0, 69.0, 71.0, 72.0, 71.0]
-    assert len(ref.notes) == 9 == q["notes"]
-    assert all(n.source == "pitch" and n.line is None and n.char is None for n in ref.notes)
-    assert all(0.28 <= n.end - n.start <= 0.32 for n in ref.notes[:-1])
-    assert ref.notes[-1].end == pytest.approx(3.0) and ref.notes[0].start == 0.0
-    assert ref.made.model_dump() == {"pitch": "rmvpe", "notes": "pitch-runs-1", "lyrics": "line"}
+    # The mock's lines are heard as written and aligned word by word: a note per word, at the
+    # lead's pitch; before the first word, the note cut from the pitch alone (0.3 s, the scale's C).
+    assert len(ref.notes) == q["notes"] and ref.notes[0].source == "pitch" and ref.notes[0].midi == 60.0
+    lyric = [n for n in ref.notes if n.source == "lyric"]
+    assert {(n.line, n.char) for n in lyric} == {(i, c) for i in range(3) for c in (0, 2, 4)}
+    assert set(n.midi for n in lyric) <= {60.0, 62.0, 64.0, 65.0, 67.0, 69.0, 71.0, 72.0}
+    assert ref.notes[-1].end == pytest.approx(3.0)
+    assert ref.made.model_dump() == {"pitch": "rmvpe", "notes": "lyric-units-1+pitch-runs-1", "lyrics": "found-checked",
+                                     "asr": "qwen3-asr-1.7b", "aligner": "w2v"}
     assert ref.quality.model_dump() == q
+    assert [s for s, _ in b.lyrics_steps[-2:]] == ["asr", "align"]
     lines = ref.lyrics.lines if ref.lyrics else []
-    assert ref.lyrics is not None and ref.lyrics.provider == "mock" and ref.lyrics.timing == "line"
+    assert ref.lyrics is not None and ref.lyrics.provider == "mock" and ref.lyrics.timing == "char"
+    assert ref.lyrics.source == "found" and ref.lyrics.language == "en"
+    assert ref.lyrics.check is not None and ref.lyrics.check.verdict == "kept" and ref.lyrics.check.matched == 3
     assert [x.text for x in lines] == ["mock line 1", "mock line 2", "mock line 3"]
     assert [a.end for a in lines[:-1]] == [b.start for b in lines[1:]] and lines[-1].end is not None
-    assert all(x.check == "unchecked" and x.chars is None for x in lines)
+    assert all(x.status == "matched" and x.source == "found" and x.aligned and not x.edited for x in lines)
+    assert [p.text for p in lines[0].pieces or []] == ["mock", " ", "line", " ", "1"]
+    assert all(p.start is not None for p in lines[0].pieces or [] if p.sung)
 
     # The backing track.
     r = client.get(f"/karaoke/{k['id']}/files/karaoke.m4a")
@@ -338,6 +348,7 @@ def test_a_karaoke_job_makes_a_backing_track_and_a_reference(worker):
         assert float(info["format"]["duration"]) == pytest.approx(3.0, abs=0.1)
     meta = json.loads((folder / "meta.json").read_text("utf-8"))
     assert meta["backing"]["parts"] == ["rest.wav"] and meta["source"]["key"] == key
+    assert meta["lyrics_check"]["verdict"] == "kept" and meta["lyrics_check"]["aligned"] == 3
     assert list(meta["timings"])[:3] == ["resolve_s", "download_s", "lead_s"]
     assert "reference_s" in meta["timings"] and "encode_s" in meta["timings"]
 
@@ -390,7 +401,8 @@ def test_the_quality_thresholds_can_be_set(worker, monkeypatch):
     client, _server, _root = worker
     monkeypatch.setenv("SING_KARAOKE_MIN_NOTES", "5")
     q = karaoke_job(client, "karaoke lenient")["karaoke"]["quality"]
-    assert q == {"ok": True, "reason": None, "voiced_ratio": q["voiced_ratio"], "notes": 9, "lead_split": True}
+    assert q == {"ok": True, "reason": None, "voiced_ratio": q["voiced_ratio"], "notes": q["notes"], "lead_split": True}
+    assert q["notes"] >= 9
     monkeypatch.setenv("SING_KARAOKE_MIN_VOICED", "0.95")
     q = karaoke_job(client, "karaoke strict")["karaoke"]["quality"]
     assert q["ok"] is False and "voiced in" in q["reason"]
@@ -432,3 +444,61 @@ def test_karaoke_songs_take_part_in_the_cache_cleanup(worker, monkeypatch):
     assert ("karaoke", k["id"]) in removed
     assert ("source", key) in removed
     assert out["removed_karaoke"] >= 1
+
+
+def test_without_the_align_environment_the_lyrics_stay_unchecked(worker, monkeypatch):
+    client, _server, _root = worker
+    monkeypatch.setenv("SING_MOCK_ALIGN", "0")
+    k = karaoke_job(client, "karaoke unchecked")["karaoke"]
+    ref = contracts.WorkersKaraokeReferenceV2.model_validate_json(
+        client.get(f"/karaoke/{k['id']}/files/reference.json").content, strict=True)
+    assert ref.lyrics is not None and ref.lyrics.timing == "line" and ref.lyrics.check is None
+    assert all(x.status == "unchecked" and not x.aligned and x.pieces is None for x in ref.lyrics.lines)
+    assert all(n.source == "pitch" for n in ref.notes)
+    assert ref.made.model_dump() == {"pitch": "rmvpe", "notes": "pitch-runs-1", "lyrics": "line", "asr": None,
+                                     "aligner": None}
+
+
+def test_the_job_carries_cores_lyrics_settings(worker):
+    client, _server, _root = worker
+    k = karaoke_job(client, "karaoke mms", karaoke_lyrics={"aligner": "mms", "matched": 0.9})["karaoke"]
+    ref = client.get(f"/karaoke/{k['id']}/files/reference.json").json()
+    assert ref["made"]["aligner"] == "mms"
+    r = client.post("/jobs", json={"query": "x", "purpose": "karaoke", "karaoke_lyrics": {"aligner": "nope"}})
+    assert r.status_code == 400  # the worker's answer to a body it cannot read
+
+
+def test_the_backing_is_made_in_another_key_once(worker):
+    client, server, root = worker
+    b = server.state.backend
+    k = karaoke_job(client, "karaoke keys")["karaoke"]
+    r = client.post(f"/karaoke/{k['id']}/keys", json={"semitones": 3})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert {k: got[k] for k in ("file", "semitones", "cached")} == {"file": "karaoke.k+3.m4a", "semitones": 3,
+                                                                    "cached": False}
+    # Rubber Band where ffmpeg has it and could encode the backing; else the mock's copy.
+    assert got["method"] in ("rubberband", "asetrate", "mock")
+    assert b.karaoke_shifts[-1] == 3
+    again = client.post(f"/karaoke/{k['id']}/keys", json={"semitones": 3}).json()
+    assert again["cached"] is True and b.karaoke_shifts.count(3) == 1
+    down = client.post(f"/karaoke/{k['id']}/keys", json={"semitones": -6}).json()
+    assert down["file"] == "karaoke.k-6.m4a"
+    f = client.get(f"/karaoke/{k['id']}/files/karaoke.k+3.m4a")
+    assert f.status_code == 200 and f.headers["content-type"] == "audio/mp4"
+    assert client.post(f"/karaoke/{k['id']}/keys", json={"semitones": 0}).json()["file"] == "karaoke.m4a"
+    assert client.post(f"/karaoke/{k['id']}/keys", json={"semitones": 7}).status_code == 400
+    assert client.post("/karaoke/k-nosuch/keys", json={"semitones": 1}).status_code == 404
+    for name in ("karaoke.k+5.m4a", "karaoke.k+7.m4a", "karaoke.k3.m4a"):
+        assert client.get(f"/karaoke/{k['id']}/files/{name}").status_code == 404, name
+    # Made again: the old keys go with it.
+    karaoke_job(client, "karaoke keys", force=True)
+    assert not (root / "_karaoke" / k["id"] / "karaoke.k+3.m4a").exists()
+
+
+def test_the_key_names_are_karaoke_ts_ones():
+    assert karaoke.key_file(0) == "karaoke.m4a" and karaoke.key_file(2) == "karaoke.k+2.m4a"
+    assert karaoke.key_file(-6) == "karaoke.k-6.m4a"
+    assert karaoke.is_key_file("karaoke.k+6.m4a") and karaoke.is_key_file("karaoke.k-1.m4a")
+    assert not karaoke.is_key_file("karaoke.k+7.m4a") and not karaoke.is_key_file("karaoke.k+0.m4a")
+    assert not karaoke.is_key_file("karaoke.m4a") and not karaoke.is_key_file("../karaoke.k+1.m4a")

@@ -25,6 +25,7 @@ const song = (over: Partial<KaraokeSongView> = {}): KaraokeSongView => ({
   position: null,
   error: null,
   lyrics: true,
+  lyrics_source: "found",
   notes: 240,
   mine: false,
   best: 82.4,
@@ -122,6 +123,13 @@ describe("唱歌: picking a song", () => {
     await userEvent.clear(within(list).getByLabelText("找歌名或歌手"));
     await userEvent.type(within(list).getByLabelText("找歌名或歌手"), "沒有這首");
     expect(list).toHaveTextContent("沒有符合的歌");
+  });
+
+  it("says when a song's lyrics are what was heard", async () => {
+    karaoke({ overview: overview({ songs: [song({ lyrics_source: "heard" })] }) });
+    renderPage(<KaraokePage member={MEMBER as never} home="/" />);
+    const list = await listed();
+    expect(within(list).getByRole("listitem")).toHaveTextContent("聽寫的歌詞");
   });
 
   it("shows their song being prepared, its stage, how far and its place, until it is ready", async () => {

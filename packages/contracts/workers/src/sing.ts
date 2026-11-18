@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { WorkersHealthSchema } from "./common.js";
-import { WorkersKaraokeSongSchema } from "./karaoke.js";
+import { WorkersKaraokeLyricsOptionsSchema, WorkersKaraokeSongSchema } from "./karaoke.js";
 
 // The song worker (`workers/sing/server.py`). Most of what it answers is read leniently: a field a
 // worker predating it does not send, or sends in an unexpected form, falls back to the value after
@@ -39,6 +39,8 @@ export const WorkersSingJobRequestSchema = z
      * (`karaoke.ts`); no conversion, `pitch`, `key` and `backing` are not read.
      */
     purpose: z.enum(["cover", "karaoke"]).default("cover"),
+    /** A karaoke job: how its lyrics are checked and aligned; left out, the worker's defaults. */
+    karaoke_lyrics: WorkersKaraokeLyricsOptionsSchema.nullable().optional(),
   })
   .meta({ id: "WorkersSingJobRequest" });
 export type WorkersSingJobRequest = z.output<typeof WorkersSingJobRequestSchema>;

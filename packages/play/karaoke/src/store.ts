@@ -430,6 +430,7 @@ const karaokeData: readonly CategoryData[] = [
         error: "text",
         error_detail: "text",
         lyrics: "bool",
+        lyrics_source: "text",
         notes: "num",
         requested_by: "text",
         created_at: "ts",
@@ -453,6 +454,7 @@ const karaokeData: readonly CategoryData[] = [
         started_at: "ts",
         expires_at: "ts",
         scored_at: "ts",
+        shift: "num",
       }),
       tablePart(
         "karaoke_tracks",

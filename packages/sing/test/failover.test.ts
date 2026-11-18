@@ -143,6 +143,12 @@ class FakeWorker implements SingWorker {
     if (!this.karaoke.has(song)) throw new SingWorkerError(`no karaoke ${song}`, { status: 404 });
   }
 
+  async karaokeKey(song: string, semitones: number) {
+    this.#call(`key ${song} ${semitones}`);
+    if (!this.karaoke.has(song)) throw new SingWorkerError(`no karaoke ${song}`, { status: 404 });
+    return { file: `karaoke.k+${semitones}.m4a`, semitones, cached: false, method: "fake" };
+  }
+
   async health(): Promise<string | null> {
     return this.up ? null : `unreachable at ${this.name}`;
   }

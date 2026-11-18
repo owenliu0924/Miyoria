@@ -18,8 +18,12 @@ import type {
 } from "@miyoria/contracts/api";
 import {
   KARAOKE_FRAME_HZ,
-  type WorkersKaraokeReference,
+  KARAOKE_MAX_SHIFT,
+  karaokeBackingName,
+  karaokeReferenceV2,
+  shiftKaraokeReference,
   WorkersKaraokeReferenceSchema,
+  type WorkersKaraokeReferenceV2,
   type WorkersSingJob,
 } from "@miyoria/contracts/workers";
 import {
@@ -32,7 +36,7 @@ import {
   safeName,
   toTimestamp,
 } from "@miyoria/types";
-import { commentContext, type KaraokeConfig } from "./config.js";
+import { commentContext, type KaraokeConfig, lyricsOptions } from "./config.js";
 import { resultNote } from "./notes.js";
 import { decodeTrack, fromBase64, type ScoreResult, scoreSinging } from "./score/index.js";
 import { FileSigner, LINK_MS } from "./signing.js";
@@ -53,6 +57,13 @@ const COMMENT_COVERAGE = 0.15;
 const KEEP_PARSED = 6;
 
 export const KARAOKE_FILES: readonly KaraokeFileName[] = ["reference.json", "karaoke.m4a"];
+
+/** A file a signed link may name: the two, or the backing in another key. */
+function servable(name: string): name is KaraokeFileName {
+  if ((KARAOKE_FILES as readonly string[]).includes(name)) return true;
+  const m = /^karaoke\.k([+-])([1-9]\d?)\.m4a$/.exec(name);
+  return m !== null && Number(m[2]) <= KARAOKE_MAX_SHIFT;
+}
 
 /** A refusal: its HTTP status and a sentence for the member. */
 export class KaraokeError extends Error {
@@ -139,8 +150,10 @@ export class KaraokeService {
   readonly #d: KaraokeDeps;
   readonly #signer: FileSigner;
   readonly #live = new Map<string, Live>();
-  /** Parsed references, the most recently used last. */
-  readonly #parsed = new Map<string, WorkersKaraokeReference>();
+  /** Parsed references (version 2's shape, whichever was written), the most recently used last. */
+  readonly #parsed = new Map<string, WorkersKaraokeReferenceV2>();
+  /** Backings in another key being fetched, so two sessions do not fetch one twice. */
+  readonly #keying = new Map<string, Promise<void>>();
   /** Songs whose files are being fetched, so two sessions do not fetch them twice. */
   readonly #fetching = new Map<string, Promise<void>>();
 
@@ -186,6 +199,10 @@ export class KaraokeService {
       position: song.status === "preparing" ? (live?.position ?? null) : null,
       error: song.status === "failed" ? song.error : null,
       lyrics: song.lyrics,
+      lyrics_source:
+        song.lyrics_source === "found" || song.lyrics_source === "heard"
+          ? song.lyrics_source
+          : null,
       notes: song.notes,
       mine: person !== null && song.requested_by === person,
       best: mine?.best ?? null,
@@ -264,6 +281,7 @@ export class KaraokeService {
       job = await worker.prepare({
         ...(source.url === undefined ? {} : { url: source.url }),
         ...(source.query === undefined ? {} : { query: source.query }),
+        lyrics: lyricsOptions(cfg),
       });
     } catch (error) {
       this.#d.log.warn({ err: errorText(error) }, "karaoke: the worker did not take the song");
@@ -348,6 +366,8 @@ export class KaraokeService {
         artist: made.artist ?? ref.artist,
         duration_ms: Math.round(ref.duration_s * 1000),
         lyrics: ref.lyrics !== null && ref.lyrics.lines.length > 0,
+        lyrics_source:
+          ref.lyrics !== null && ref.lyrics.lines.length > 0 ? ref.lyrics.source : null,
         notes: ref.notes.length,
         ready_at: toTimestamp(this.#d.now()),
       });
@@ -405,8 +425,8 @@ export class KaraokeService {
     }
   }
 
-  /** The song's reference, parsed (kept for the next few). */
-  async reference(song: string): Promise<WorkersKaraokeReference> {
+  /** The song's reference, parsed, in version 2's shape (kept for the next few). */
+  async reference(song: string): Promise<WorkersKaraokeReferenceV2> {
     const kept = this.#parsed.get(song);
     if (kept !== undefined) {
       this.#parsed.delete(song);
@@ -417,7 +437,7 @@ export class KaraokeService {
     if (row === null) throw new KaraokeError(404, "沒有這首歌");
     await this.#fetch(row);
     const raw = await readFile(join(this.#dir(song), "reference.json"), "utf8");
-    const parsed = WorkersKaraokeReferenceSchema.parse(JSON.parse(raw));
+    const parsed = karaokeReferenceV2(WorkersKaraokeReferenceSchema.parse(JSON.parse(raw)));
     this.#parsed.set(song, parsed);
     while (this.#parsed.size > KEEP_PARSED) {
       const oldest = this.#parsed.keys().next().value as string;
@@ -428,10 +448,43 @@ export class KaraokeService {
 
   // ---- singing --------------------------------------------------------------------------------
 
-  /** One singing of a ready song: a session and its signed links. */
-  async start(account: AccountRef, name: string, songId: string): Promise<KaraokeSession> {
+  /** The backing `shift` semitones away onto Core: made by the worker that has the song, once. */
+  async #fetchKey(song: SongRow, shift: number): Promise<void> {
+    const name = karaokeBackingName(shift) as KaraokeFileName;
+    const dest = join(this.#dir(song.id), name);
+    if (await exists(dest)) return;
+    const key = `${song.id}/${shift}`;
+    const running = this.#keying.get(key);
+    if (running !== undefined) return running;
+    const work = (async () => {
+      const worker = this.#d.worker();
+      if (worker === null || song.worker_song === null) throw new Error("no worker has the song");
+      const made = await worker.key(song.worker_song, shift);
+      await worker.file(song.worker_song, made.file as KaraokeFileName, dest);
+    })();
+    this.#keying.set(key, work);
+    try {
+      await work;
+    } finally {
+      this.#keying.delete(key);
+    }
+  }
+
+  /**
+   * One singing of a ready song: a session and its signed links. `shift`: semitones to move the
+   * key by (the worker renders the backing in that key; the reference moves with it).
+   */
+  async start(
+    account: AccountRef,
+    name: string,
+    songId: string,
+    shift = 0,
+  ): Promise<KaraokeSession> {
     const { person } = this.#person(account);
     if (!this.#d.config.open) throw new KaraokeError(409, "現在沒有開放唱 K");
+    if (!Number.isInteger(shift) || Math.abs(shift) > KARAOKE_MAX_SHIFT) {
+      throw new KaraokeError(400, `升降調最多 ${KARAOKE_MAX_SHIFT} 個半音`);
+    }
     const song = this.#d.store.song(songId);
     if (song === null) throw new KaraokeError(404, "沒有這首歌");
     if (song.status !== "ready") throw new KaraokeError(409, "這首還沒準備好");
@@ -442,6 +495,17 @@ export class KaraokeService {
       if (error instanceof KaraokeError) throw error;
       this.#d.log.warn({ song: song.id, err: errorText(error) }, "karaoke: the files are gone");
       throw new KaraokeError(503, "這首的檔案現在拿不到,等一下再試");
+    }
+    if (shift !== 0) {
+      try {
+        await this.#fetchKey(song, shift);
+      } catch (error) {
+        this.#d.log.warn(
+          { song: song.id, shift, err: errorText(error) },
+          "karaoke: no backing in that key",
+        );
+        throw new KaraokeError(503, "現在做不出這個調,換回原調或等一下再試");
+      }
     }
     const now = this.#d.now();
     const duration = song.duration_ms ?? this.#d.config.max_song_secs * 1000;
@@ -455,16 +519,18 @@ export class KaraokeService {
       name: safeName(name, 60),
       started_at: toTimestamp(now),
       expires_at: toTimestamp(now + duration * 3 + 30 * 60_000),
+      shift,
     });
     const exp = now + LINK_MS;
     return {
       session: id,
       song: this.#view(song, person, person === null ? undefined : this.#d.store.bestsOf(person)),
-      backing_url: this.#signer.url(id, "karaoke.m4a", account, exp),
+      backing_url: this.#signer.url(id, karaokeBackingName(shift) as KaraokeFileName, account, exp),
       reference_url: this.#signer.url(id, "reference.json", account, exp),
       expires_at: toTimestamp(exp),
       tolerance_cents: this.#d.config.tolerance_cents,
       frame_hz: KARAOKE_FRAME_HZ,
+      shift,
     };
   }
 
@@ -479,12 +545,14 @@ export class KaraokeService {
     exp: string | undefined,
     sig: string | undefined,
   ): Promise<{ path: string; type: string } | null> {
-    if (!(KARAOKE_FILES as readonly string[]).includes(name)) return null;
+    if (!servable(name)) return null;
     if (!this.#signer.check(session, name, account, exp, sig, this.#d.now())) return null;
     const row = this.#d.store.session(session);
     if (row === null || row.platform !== account.platform || row.account_id !== account.id) {
       return null;
     }
+    // A backing in another key only for the session sung in it.
+    if (name.startsWith("karaoke.k") && name !== karaokeBackingName(row.shift)) return null;
     const path = join(this.#dir(row.song_id), name);
     if (!(await exists(path))) return null;
     return { path, type: name.endsWith(".json") ? "application/json" : "audio/mp4" };
@@ -509,7 +577,8 @@ export class KaraokeService {
     if (song === null) throw new KaraokeError(404, "沒有這首歌");
     const bytes = fromBase64(body.track);
     if (bytes === null) throw new KaraokeError(400, "音高軌的格式不對");
-    const reference = await this.reference(song.id);
+    // Sung in another key: the reference moves with the backing.
+    const reference = shiftKaraokeReference(await this.reference(song.id), session.shift);
     const most = Math.ceil(reference.duration_s * KARAOKE_FRAME_HZ) + 5 * KARAOKE_FRAME_HZ;
     if (bytes.length > most) throw new KaraokeError(400, "音高軌比歌還長");
     // A track takes as long to sing as it is long: one made beforehand arrives too soon.
