@@ -86,13 +86,97 @@ describe("karaoke frames", () => {
         ],
         positionMs: 12_500,
         board: [
-          { name: "Mia", color: 0, rank: 1, total: 81.44, source: "voice", move: "up", winner: false, coins: 0, finished: false, onAir: true },
+          {
+            name: "Mia",
+            color: 0,
+            rank: 1,
+            total: 81.44,
+            source: "voice",
+            move: "up",
+            winner: false,
+            coins: 0,
+            finished: false,
+            onAir: true,
+            parts: null,
+            pitch: null,
+          },
         ],
         note: null,
         currency: "魚幣",
         air: { backing: true, relay: "Mia", delayMs: 2000, backingGain: 0.8, voiceGain: 1.5, duckGain: 0.35 },
+        // An older Core's frame has none of these: the defaults.
+        queue: [],
+        joinUrl: null,
+        qrWhileSinging: false,
+        settling: null,
       },
     });
+  });
+
+  it("reads the queue, the join link, the settling, a line's parts and its recent pitch", () => {
+    // Frames 600.. : not voiced, MIDI 64, MIDI 64.25, MIDI 87.5 (bytes 0, 161, 162, 255).
+    const track = Buffer.from([0, 161, 162, 255]).toString("base64");
+    const m = parse(
+      wire({
+        queue: [
+          { title: "群青", artist: "YOASOBI", by: "小明", state: "ready" },
+          { title: "怪物", artist: null, by: "Mia", state: "preparing" },
+          { title: "壞掉的", artist: "", by: "", state: "failed" },
+          { title: "  ", by: "x", state: "ready" },
+          { title: "odd", by: "x", state: "lost" },
+          "not one",
+        ],
+        join_url: "https://example.com/karaoke/room/K7PQ2M",
+        qr_while_singing: true,
+        settling: { waiting: ["Mia", "", 3, " 阿翔 "] },
+        board: [
+          {
+            name: "Mia",
+            color: 0,
+            rank: 1,
+            total: 81.4,
+            source: "voice",
+            move: "same",
+            parts: { pitch: 50.25, stability: 12, rhythm: null, expression: "lots" },
+            pitch: { from: 600, track },
+          },
+        ],
+      }),
+    );
+    if (m?.type !== "karaoke" || m.scene === null) throw new Error("not parsed");
+    expect(m.scene.queue).toEqual([
+      { title: "群青", artist: "YOASOBI", by: "小明", state: "ready" },
+      { title: "怪物", artist: null, by: "Mia", state: "preparing" },
+      { title: "壞掉的", artist: null, by: "", state: "failed" },
+    ]);
+    expect(m.scene.joinUrl).toBe("https://example.com/karaoke/room/K7PQ2M");
+    expect(m.scene.qrWhileSinging).toBe(true);
+    expect(m.scene.settling).toEqual({ waiting: ["Mia", "阿翔"] });
+    expect(m.scene.board[0]?.parts).toEqual({ pitch: 50.25, stability: 12, rhythm: null, expression: null });
+    expect(m.scene.board[0]?.pitch).toEqual({ from: 600, midi: [null, 64, 64.25, 87.5] });
+  });
+
+  it("takes only a short http(s) join link, at most five queue entries, and drops pitch it cannot read", () => {
+    const scene = (extra: Record<string, unknown>) => {
+      const m = parse(wire(extra));
+      if (m?.type !== "karaoke" || m.scene === null) throw new Error("not parsed");
+      return m.scene;
+    };
+    for (const url of ["javascript:alert(1)", "karaoke/room/K7PQ2M", `https://example.com/${"x".repeat(200)}`, 7, ""]) {
+      expect(scene({ join_url: url }).joinUrl, String(url)).toBeNull();
+    }
+    const many = Array.from({ length: 9 }, (_, i) => ({ title: `歌 ${i}`, artist: null, by: "Mia", state: "ready" }));
+    expect(scene({ queue: many }).queue).toHaveLength(5);
+    expect(scene({ settling: "soon", qr_while_singing: "yes" })).toMatchObject({ settling: null, qrWhileSinging: false });
+    const line = (pitch: unknown) => scene({ board: [{ name: "Mia", color: 0, pitch }] }).board[0]?.pitch;
+    expect(line(null)).toBeNull();
+    expect(line({ from: -1, track: "AAAA" })).toBeNull();
+    expect(line({ from: 1.5, track: "AAAA" })).toBeNull();
+    expect(line({ from: 0, track: "not base64!" })).toBeNull();
+    expect(line({ from: 0, track: "AAA" })).toBeNull();
+    expect(line({ from: 0, track: "A".repeat(2_004) })).toBeNull();
+    expect(line({ from: 0, track: "" })).toBeNull();
+    expect(line({ from: 0, track: "AAAA" })).toEqual({ from: 0, midi: [null, null, null] });
   });
 
   it("room null ends the scene; a frame without a room code or state is skipped", () => {
@@ -167,6 +251,35 @@ describe("karaoke frames", () => {
     // A line whose pieces are not all pieces shows as its text, never wiped.
     expect(lines[2]).toMatchObject({ pieces: null, aligned: false, text: "piece broken" });
     expect(m.lyrics.lyrics?.source).toBe("heard");
+  });
+
+  it("reads the round's reference notes in time order, dropping odd ones", () => {
+    const m = parse({
+      type: "karaoke_lyrics",
+      room: "K7PQ2M",
+      round: 2,
+      song: "s",
+      lyrics: null,
+      video: null,
+      backing: null,
+      notes: [
+        { start: 3, end: 3.5, midi: 64.5 },
+        { start: 1, end: 2, midi: 60 },
+        { start: 2, end: 1, midi: 60 },
+        { start: -1, end: 1, midi: 60 },
+        { start: 4, end: 5, midi: 300 },
+        { start: 4, end: 5 },
+        "C4",
+      ],
+    });
+    if (m?.type !== "karaoke_lyrics") throw new Error("not parsed");
+    expect(m.lyrics.notes).toEqual([
+      { start: 1, end: 2, midi: 60 },
+      { start: 3, end: 3.5, midi: 64.5 },
+    ]);
+    // An older Core sends none.
+    const old = parse({ type: "karaoke_lyrics", room: "K7PQ2M", round: 2, song: "s", lyrics: null, video: null });
+    expect(old?.type === "karaoke_lyrics" && old.lyrics.notes).toEqual([]);
   });
 
   it("skips words without their round, and takes no video it cannot load", () => {
@@ -278,7 +391,7 @@ describe("what of the room shows", () => {
   });
 
   it("uses a round's words only for that round", () => {
-    const words = { room: "K7PQ2M", round: 2, song: "yt-abc", lyrics: null, video: null, backing: null };
+    const words = { room: "K7PQ2M", round: 2, song: "yt-abc", lyrics: null, video: null, backing: null, notes: [] };
     expect(lyricsFor(scene(), words)).toBe(words);
     expect(lyricsFor(scene({ round: 3 }), words)).toBeNull();
     expect(lyricsFor(scene({ room: "ABCDEF" }), words)).toBeNull();
@@ -312,6 +425,8 @@ describe("the board", () => {
     coins: 0,
     finished: false,
     onAir: false,
+    parts: null,
+    pitch: null,
     ...extra,
   });
 

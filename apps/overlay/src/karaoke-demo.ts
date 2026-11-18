@@ -266,7 +266,7 @@ export function startKaraokeDemo(emit: (m: FeedMessage) => void): () => void {
     if (backingUrl !== null) URL.revokeObjectURL(backingUrl);
     backingUrl = URL.createObjectURL(new Blob([demoBacking(song.seconds)], { type: "application/octet-stream" }));
     const backing = { url: backingUrl, format: "pcm" as const, rate: BACKING_RATE };
-    emit({ type: "karaoke_lyrics", lyrics: { room, round, song: song.id, lyrics, video, backing } });
+    emit({ type: "karaoke_lyrics", lyrics: { room, round, song: song.id, lyrics, video, backing, notes: [] } });
     const singers = state.members.filter((m) => m.role === "singer");
     // One singer's voice is on the stream, and halfway another's (Core crossfades the change).
     const first = loop % 2 === 0 ? "Mia" : "Kai";
@@ -320,6 +320,8 @@ export function startKaraokeDemo(emit: (m: FeedMessage) => void): () => void {
           coins: 0,
           finished: false,
           onAir: m.name === relay,
+          parts: null,
+          pitch: null,
         };
       });
       ranks = new Map(board.map((l) => [l.name, l.rank as number]));
@@ -376,5 +378,9 @@ function blank(room: string): KaraokeScene {
     note: null,
     currency: CURRENCY,
     air: QUIET,
+    queue: [],
+    joinUrl: null,
+    qrWhileSinging: false,
+    settling: null,
   };
 }
