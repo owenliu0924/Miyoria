@@ -51,6 +51,11 @@
       "@miyoria/source": "./karaoke/src/lyrics/index.ts",
       "types": "./dist/karaoke/src/lyrics/index.d.ts",
       "default": "./dist/karaoke/src/lyrics/index.js"
+    },
+    "./karaoke/edit": {
+      "@miyoria/source": "./karaoke/src/edit/index.ts",
+      "types": "./dist/karaoke/src/edit/index.d.ts",
+      "default": "./dist/karaoke/src/edit/index.js"
     }
   },
   "files": [

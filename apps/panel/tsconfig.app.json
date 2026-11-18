@@ -32,6 +32,7 @@
       "@miyoria/contracts/workers": ["../../packages/contracts/workers/src/index.ts"],
       "@miyoria/play/karaoke/score": ["../../packages/play/karaoke/src/score/index.ts"],
       "@miyoria/play/karaoke/lyrics": ["../../packages/play/karaoke/src/lyrics/index.ts"],
+      "@miyoria/play/karaoke/edit": ["../../packages/play/karaoke/src/edit/index.ts"],
       "@miyoria/contracts/schema/api.routes.json": ["../../packages/contracts/schema/api.routes.json"]
     },
     "resolveJsonModule": true

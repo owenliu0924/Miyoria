@@ -33,13 +33,15 @@ import { RoomsEntry } from "./RoomsEntry";
 import { type Finished, Singing } from "./Singing";
 import { AskForSong, LatencyBlock, RecentResults, SongList } from "./SongList";
 import { micError, missingSupport } from "./support";
+import { ReferenceEditor } from "./editor/ReferenceEditor";
 
 type View =
   | { kind: "list" }
   | { kind: "room"; code: string }
   | { kind: "calibrate"; after: KaraokeSongView | null; room?: string }
   | { kind: "sing"; song: KaraokeSongView }
-  | { kind: "result"; session: string; title: string; artist: string | null; song: string; pending?: Finished };
+  | { kind: "result"; session: string; title: string; artist: string | null; song: string; pending?: Finished }
+  | { kind: "edit"; song: string };
 
 function Header({ member, home }: { member: MemberSession | null; home: string }) {
   return (
@@ -69,18 +71,28 @@ function keptLatency(key: string | null): StoredLatency | null {
   return key ? loadLatency(key) : null;
 }
 
-/** The page's query without `room` (the demo's flag stays). */
+/** The page's query without `room` and `edit` (the demo's flag stays). */
 function restOfQuery(): string {
   const q = new URLSearchParams(window.location.search);
   q.delete("room");
+  q.delete("edit");
   const s = q.toString();
   return s ? `?${s}` : "";
 }
 
-/** What the address asks for: a room, or the list. */
+/** The song the address opens the reference editor on (`?edit=<song>`; an admin's only). */
+function editIn(search: string): string | null {
+  const id = new URLSearchParams(search).get("edit");
+  return id && /^[\w-]{1,64}$/.test(id) ? id : null;
+}
+
+/** What the address asks for: a room, a song's editor, or the list. */
 function viewFromAddress(): View {
-  const code = typeof window === "undefined" ? null : roomCodeIn(`${window.location.pathname}${window.location.search}`);
-  return code ? { kind: "room", code } : { kind: "list" };
+  if (typeof window === "undefined") return { kind: "list" };
+  const code = roomCodeIn(`${window.location.pathname}${window.location.search}`);
+  if (code) return { kind: "room", code };
+  const edit = editIn(window.location.search);
+  return edit ? { kind: "edit", song: edit } : { kind: "list" };
 }
 
 function Karaoke({ overview }: { overview: KaraokeOverview }) {
@@ -120,6 +132,12 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
   const exitRoom = useCallback(() => {
     window.history.pushState(null, "", `${KARAOKE_PAGE}${restOfQuery()}`);
     setView({ kind: "list" });
+  }, []);
+  // The editor has its own address too, so a reload stays on the song.
+  const openEditor = useCallback((song: string) => {
+    const rest = restOfQuery();
+    window.history.pushState(null, "", `${KARAOKE_PAGE}${rest ? `${rest}&` : "?"}edit=${encodeURIComponent(song)}`);
+    setView({ kind: "edit", song });
   }, []);
 
   /** Opens the microphone for a room: the latency kept for it, else the browser's estimate. */
@@ -213,6 +231,10 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
     );
   }
 
+  if (view.kind === "edit" && overview.admin) {
+    return <ReferenceEditor songId={view.song} onBack={exitRoom} />;
+  }
+
   if (view.kind === "room") {
     return (
       <RoomPage
@@ -296,7 +318,7 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
           {blocked ?? unsupported}
         </p>
       )}
-      <SongList overview={overview} onSing={(s) => void sing(s)} busy={opening} />
+      <SongList overview={overview} onSing={(s) => void sing(s)} onEdit={overview.admin ? (s) => openEditor(s.id) : undefined} busy={opening} />
     </Page>
   );
 }

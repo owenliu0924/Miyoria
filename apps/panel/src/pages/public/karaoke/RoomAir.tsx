@@ -24,8 +24,11 @@ export const LEAD_ON_LINE = "這間房會播出第一名的歌聲";
 export const MUTE_STREAM_NOTICE = "唱的時候請把直播靜音(或不要看直播):你會聽到晚兩秒的伴奏和歌聲";
 export const NOT_ALLOWED_FALLBACK = "這間房現在不播出聲音";
 
-/** Singers of the room now. */
-export const singerCount = (room: KaraokeRoomView): number => room.members.filter((m) => m.role === "singer").length;
+/**
+ * Singers Core counts for alone or not: the round's own during a round (a member who chose to sing
+ * but was not ready does not sing it), else the members who would sing.
+ */
+export const singerCount = (room: KaraokeRoomView): number => room.air.singers;
 
 /** Seconds the stream is behind the singers, for the one line that says it. */
 const delaySeconds = (room: KaraokeRoomView): string => String(Math.max(1, Math.round(room.air.delay_ms / 1000)));

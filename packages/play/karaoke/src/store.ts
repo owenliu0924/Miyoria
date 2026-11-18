@@ -6,7 +6,8 @@
 // A person who asks to be forgotten loses their sessions, tracks, results and requests; the songs
 // stay (nobody's), with who asked for them cleared. A merge moves them. Rooms (step 4) keep what
 // the coins need across a restart: the room and its opening charge, its rounds, and what each
-// settled round pays whom.
+// settled round pays whom. An edited reference (step 6) is the song's, so it stays when the person
+// who saved it is forgotten; their person and name on it and on its record are cleared.
 
 import {
   type CategoryData,
@@ -22,6 +23,8 @@ import { and, count, desc, eq, gte, inArray, isNull, lte, max, sql } from "drizz
 import { type KaraokeScoredData, karaokeScoredWrite } from "./events.js";
 import { karaokeSchema } from "./migrations.js";
 import {
+  karaokeReferenceEdits,
+  karaokeReferences,
   karaokeRequests,
   karaokeResults,
   karaokeRoomPayouts,
@@ -59,9 +62,21 @@ export type RoundRow = typeof karaokeRoomRounds.$inferSelect;
 export type PayoutRow = typeof karaokeRoomPayouts.$inferSelect;
 export type RoomCharge = "charging" | "charged" | "free" | "failed";
 export type PayoutKey = Pick<PayoutRow, "room_id" | "round" | "person_id" | "kind">;
+export type OverrideRow = typeof karaokeReferences.$inferSelect;
+export type EditRow = typeof karaokeReferenceEdits.$inferSelect;
 
 /** What a song row may change once it is made. */
 export type SongPatch = Partial<Omit<SongRow, "id" | "source_key" | "source" | "created_at">>;
+
+/** What the song row says of the reference that is sung (its lyrics and notes). */
+export type SongSung = Pick<SongRow, "lyrics" | "lyrics_source" | "notes">;
+
+/** Who saved or restored a song's reference, and when. */
+export interface EditBy {
+  person: PersonId | null;
+  name: string;
+  at: number;
+}
 
 const at = (ms: number): Timestamp => toTimestamp(ms);
 
@@ -643,6 +658,151 @@ export class KaraokeStore {
     });
   }
 
+  // ---- edited references (step 6) -----------------------------------------------------------
+
+  /** The song's edited reference, `null` while the worker's is sung. */
+  override(song: string): OverrideRow | null {
+    return (
+      this.#read()
+        .select()
+        .from(karaokeReferences)
+        .where(eq(karaokeReferences.song_id, song))
+        .get() ?? null
+    );
+  }
+
+  /** The highest revision the song's reference ever had (its edit now, or any save before). */
+  #lastRevision(song: string): number {
+    const now = this.override(song)?.revision ?? 0;
+    const before = this.#db.orm
+      .select({ n: max(karaokeReferenceEdits.revision) })
+      .from(karaokeReferenceEdits)
+      .where(eq(karaokeReferenceEdits.song_id, song))
+      .get();
+    return Math.max(now, before?.n ?? 0);
+  }
+
+  /**
+   * An edit saved as the song's reference over revision `expected` (`0`: the worker's), with its
+   * record and the song row's lyrics and notes made the edit's, in one transaction. The new
+   * revision counts on from the song's last one, so a revision is never used twice (a save over
+   * an edit someone restored in between is refused). `null` when the song's reference is not at
+   * `expected` any more.
+   */
+  saveOverride(
+    song: string,
+    expected: number,
+    edit: Pick<OverrideRow, "reference" | "pitch_shift" | "base_hash" | "worker_hash">,
+    counts: { lines: number; notes: number },
+    sung: SongSung,
+    by: EditBy,
+  ): number | null {
+    return this.#write(() => {
+      const o = this.#db.orm;
+      if ((this.override(song)?.revision ?? 0) !== expected) return null;
+      const revision = this.#lastRevision(song) + 1;
+      const row: OverrideRow = {
+        song_id: song,
+        ...edit,
+        revision,
+        saved_person: by.person,
+        saved_name: by.name,
+        saved_at: at(by.at),
+      };
+      o.insert(karaokeReferences)
+        .values(row)
+        .onConflictDoUpdate({ target: karaokeReferences.song_id, set: row })
+        .run();
+      o.insert(karaokeReferenceEdits)
+        .values({
+          id: newId(),
+          song_id: song,
+          action: "save",
+          revision,
+          lines: counts.lines,
+          notes: counts.notes,
+          pitch_shift: edit.pitch_shift,
+          person_id: by.person,
+          name: by.name,
+          at: at(by.at),
+        })
+        .run();
+      o.update(karaokeSongs).set(sung).where(eq(karaokeSongs.id, song)).run();
+      return revision;
+    });
+  }
+
+  /**
+   * The song's edit dropped (the worker's reference is sung again), with its record and the song
+   * row's lyrics and notes made the worker's, in one transaction: `none` when there is no edit,
+   * `moved` when it is not at revision `expected`.
+   */
+  dropOverride(
+    song: string,
+    expected: number,
+    sung: SongSung,
+    by: EditBy,
+  ): "done" | "none" | "moved" {
+    return this.#write(() => {
+      const o = this.#db.orm;
+      const row = this.override(song);
+      if (row === null) return "none";
+      if (row.revision !== expected) return "moved";
+      o.delete(karaokeReferences).where(eq(karaokeReferences.song_id, song)).run();
+      o.insert(karaokeReferenceEdits)
+        .values({
+          id: newId(),
+          song_id: song,
+          action: "restore",
+          revision: 0,
+          lines: 0,
+          notes: sung.notes,
+          pitch_shift: 0,
+          person_id: by.person,
+          name: by.name,
+          at: at(by.at),
+        })
+        .run();
+      o.update(karaokeSongs).set(sung).where(eq(karaokeSongs.id, song)).run();
+      return "done";
+    });
+  }
+
+  /** The hash of the latest worker's reference Core read for a song with an edit. */
+  setWorkerHash(song: string, hash: string): void {
+    this.#write(() => {
+      this.#db.orm
+        .update(karaokeReferences)
+        .set({ worker_hash: hash })
+        .where(eq(karaokeReferences.song_id, song))
+        .run();
+    });
+  }
+
+  /** The song's latest saves and restores, newest first. */
+  edits(song: string, limit = 20): EditRow[] {
+    return (
+      this.#read()
+        .select()
+        .from(karaokeReferenceEdits)
+        .where(eq(karaokeReferenceEdits.song_id, song))
+        // Ids are ULIDs made in order: two in the same microsecond keep theirs.
+        .orderBy(desc(karaokeReferenceEdits.at), desc(karaokeReferenceEdits.id))
+        .limit(limit)
+        .all()
+    );
+  }
+
+  /** How many results were recorded on a song. */
+  resultsOn(song: string): number {
+    const row = this.#read()
+      .select({ n: count() })
+      .from(karaokeResults)
+      .where(eq(karaokeResults.song_id, song))
+      .get();
+    return row?.n ?? 0;
+  }
+
   // ---- upkeep -------------------------------------------------------------------------------
 
   /** Tracks past their week: deleted (the results stay). */
@@ -705,6 +865,21 @@ export class KaraokeStore {
             .where(inArray(karaokeRooms.opener_person, list))
             .run().changes,
         ),
+        // An edit stays (the song is nobody's); who made it goes.
+        karaoke_references: Number(
+          o
+            .update(karaokeReferences)
+            .set({ saved_person: null, saved_name: "" })
+            .where(inArray(karaokeReferences.saved_person, list))
+            .run().changes,
+        ),
+        karaoke_reference_edits: Number(
+          o
+            .update(karaokeReferenceEdits)
+            .set({ person_id: null, name: "" })
+            .where(inArray(karaokeReferenceEdits.person_id, list))
+            .run().changes,
+        ),
       };
     });
   }
@@ -749,6 +924,20 @@ export class KaraokeStore {
               .update(karaokeRooms)
               .set({ opener_person: keep })
               .where(eq(karaokeRooms.opener_person, absorb))
+              .run(),
+          ),
+          karaoke_references: moved(
+            o
+              .update(karaokeReferences)
+              .set({ saved_person: keep })
+              .where(eq(karaokeReferences.saved_person, absorb))
+              .run(),
+          ),
+          karaoke_reference_edits: moved(
+            o
+              .update(karaokeReferenceEdits)
+              .set({ person_id: keep })
+              .where(eq(karaokeReferenceEdits.person_id, absorb))
               .run(),
           ),
           // Two rows of one round for one person cannot both stay (the key): the absorbed one's
@@ -874,6 +1063,36 @@ const karaokeData: readonly CategoryData[] = [
           paid_at: "ts",
         },
       ),
+      tablePart(
+        "karaoke_references",
+        "karaoke_references",
+        "node",
+        "saved_at",
+        "saved_at, song_id",
+        {
+          song_id: "text",
+          reference: "text",
+          pitch_shift: "num",
+          revision: "num",
+          base_hash: "text",
+          worker_hash: "text",
+          saved_person: "text",
+          saved_name: "text",
+          saved_at: "ts",
+        },
+      ),
+      tablePart("karaoke_reference_edits", "karaoke_reference_edits", "node", "at", "at, id", {
+        id: "text",
+        song_id: "text",
+        action: "text",
+        revision: "num",
+        lines: "num",
+        notes: "num",
+        pitch_shift: "num",
+        person_id: "text",
+        name: "text",
+        at: "ts",
+      }),
       tablePart(
         "karaoke_tracks",
         "karaoke_tracks",

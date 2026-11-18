@@ -1,14 +1,16 @@
 // The karaoke service on a real store (SQLite in memory) with a song worker in memory: asking for
 // a song, following its preparation, sessions and their signed links, scoring a submitted track,
-// her note and her comment, the daily limit, the upkeep and forgetting a person.
+// her note and her comment, the daily limit, the upkeep and forgetting a person, and the reference
+// editor's saves and restores (step 6).
 
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTestDb, type TestDb } from "@miyoria/store/testing";
-import type { AccountRef, PersonId } from "@miyoria/types";
+import { type AccountRef, type PersonId, toTimestamp } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type KaraokeConfig, KaraokeConfigSchema } from "../src/config.js";
+import { deleteNotes, docOf, type EditDoc, setLineText, shiftSong } from "../src/edit/index.js";
 import { karaokeSchema } from "../src/migrations.js";
 import { type PitchTrack, resampleTrack, TrackRecorder } from "../src/score/index.js";
 import {
@@ -667,5 +669,295 @@ describe("the background video", () => {
     rig.clock.t += 2 * 3_600_000;
     await rig.service.tick(signal, true);
     expect((await readdir(join(rig.dir, id))).sort()).toEqual(["karaoke.m4a", "reference.json"]);
+  });
+});
+
+describe("the reference editor", () => {
+  /** The song's editor view as Alice (a panel admin), its edit changed by `change` and saved. */
+  async function saveAs(
+    r: Rig,
+    id: string,
+    change: (d: EditDoc) => EditDoc,
+    options: { revision?: number; who?: AccountRef; name?: string } = {},
+  ) {
+    const who = options.who ?? ALICE;
+    const view = await r.service.editor(who, id, true);
+    const d = change(docOf(view.reference, view.edit.pitch_shift));
+    return r.service.saveEdit(
+      who,
+      options.name ?? "Alice",
+      id,
+      { ...d, revision: options.revision ?? view.edit.revision },
+      true,
+    );
+  }
+
+  /** What a session's signed `reference.json` link serves. */
+  async function servedReference(r: Rig, id: string) {
+    const session = await r.service.start(ALICE, "Alice", id);
+    const url = new URL(session.reference_url, "http://x");
+    const [, , , , , sid, name] = url.pathname.split("/");
+    return r.service.file(
+      ALICE,
+      sid as string,
+      name as string,
+      url.searchParams.get("exp") ?? undefined,
+      url.searchParams.get("sig") ?? undefined,
+    );
+  }
+
+  const refuses = async (p: Promise<unknown>, status: number, message?: string) => {
+    const error = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(KaraokeError);
+    expect((error as KaraokeError).status).toBe(status);
+    if (message !== undefined) expect((error as KaraokeError).message).toBe(message);
+  };
+
+  it("is for panel admins only, on a ready song", async () => {
+    const id = await ready(rig);
+    const only = "只有管理員能改歌詞和音符";
+    await refuses(rig.service.editor(ALICE, id, false), 403, only);
+    await refuses(
+      rig.service.saveEdit(
+        ALICE,
+        "Alice",
+        id,
+        { ...docOf(await rig.service.reference(id), 0), revision: 0 },
+        false,
+      ),
+      403,
+      only,
+    );
+    await refuses(rig.service.restoreEdit(ALICE, "Alice", id, 0, false), 403, only);
+    await refuses(rig.service.editBacking(ALICE, id, false), 403, only);
+    await refuses(rig.service.editor(ALICE, "nope", true), 404, "沒有這首歌");
+    const preparing = await rig.service.request(ALICE, "https://youtu.be/later");
+    await refuses(rig.service.editor(ALICE, preparing.song.id, true), 409, "這首還沒準備好");
+    // The worker's own, with nothing edited yet.
+    const view = await rig.service.editor(ALICE, id, true);
+    const worker = await rig.service.workerReference(id);
+    expect(view).toMatchObject({
+      song: { id, title: "測試的歌", artist: "某人", duration_s: worker.reference.duration_s },
+      original: { lyrics: worker.reference.lyrics, notes: worker.reference.notes, pitch_shift: 0 },
+      edit: { revision: 0, pitch_shift: 0, saved_by: null, saved_at: null, worker_changed: false },
+      history: [],
+      results: 0,
+      backing_url: `/api/member/karaoke/edit/${id}/backing`,
+    });
+    expect(view.reference).toEqual(worker.reference);
+    expect(worker.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(await rig.service.editBacking(ALICE, id, true)).toBe(join(rig.dir, id, "karaoke.m4a"));
+  });
+
+  it("saves an edit everyone sings against from then on; recorded scores stay", async () => {
+    const id = await ready(rig);
+    const before = await sing(rig, id);
+    expect(before.result.total).toBeGreaterThan(85);
+    // The whole curve three semitones up, and the first line's words corrected.
+    const saved = await saveAs(rig, id, (d) => shiftSong(setLineText(d, 0, "改過的第一句"), 3));
+    expect(saved.edit).toMatchObject({
+      revision: 1,
+      pitch_shift: 3,
+      saved_by: "Alice",
+      saved_at: toTimestamp(rig.clock.t),
+      worker_changed: false,
+    });
+    expect(saved.history).toEqual([
+      {
+        action: "save",
+        name: "Alice",
+        at: saved.edit.saved_at,
+        revision: 1,
+        lines: 1,
+        notes: song.notes.length,
+        pitch_shift: 3,
+      },
+    ]);
+    expect(saved.results).toBe(1);
+    const ref = await rig.service.reference(id);
+    expect(ref.lyrics?.lines[0]).toMatchObject({ text: "改過的第一句", edited: true });
+    expect(ref.lyrics?.lines[1]?.edited).toBe(false);
+    expect(ref).toEqual(saved.reference);
+    // The worker's file is as it was.
+    expect((await rig.service.workerReference(id)).reference.lyrics?.lines[0]?.text).toBe(
+      "第 1 句",
+    );
+    // The member's signed link serves the edit, from memory.
+    const served = await servedReference(rig, id);
+    if (served === null || !("data" in served)) throw new Error("not served from memory");
+    expect(served.type).toBe("application/json");
+    expect(JSON.parse(new TextDecoder().decode(served.data))).toEqual(ref);
+    // Scored against the edited curve: the original's key is now three semitones off.
+    const flat = await sing(rig, id);
+    expect(flat.result.total).toBeLessThan(50);
+    const up = humanSinger(song);
+    const sharp = await sing(rig, id, {
+      ...up,
+      midi: up.midi.map((m) => (m === null ? null : m + 3)),
+    });
+    expect(sharp.result.total).toBeGreaterThan(85);
+    // What was recorded before stays as it was scored.
+    expect(rig.service.result(ALICE, before.result.session).total).toBe(before.result.total);
+  });
+
+  it("refuses a save over a newer one, and a broken one with its problems", async () => {
+    const id = await ready(rig);
+    await saveAs(rig, id, (d) => setLineText(d, 0, "第一次"));
+    const conflict = "有人在你之後存過了,重新載入再改";
+    await refuses(
+      saveAs(rig, id, (d) => setLineText(d, 0, "晚了"), { revision: 0 }),
+      409,
+      conflict,
+    );
+    // Five notes out of range: the first three, and how many more.
+    await refuses(
+      saveAs(rig, id, (d) => ({
+        ...d,
+        notes: d.notes.map((n, i) => (i < 5 ? { ...n, midi: 200 } : n)),
+      })),
+      400,
+      `${[1, 2, 3].map((i) => `第 ${i} 個音符:音高超出範圍(C1 到 C7)`).join("；")}(還有 2 個問題)`,
+    );
+    const late = await rig.service.reference(id);
+    await refuses(
+      saveAs(rig, id, (d) => {
+        const lines = [...(d.lyrics?.lines ?? [])];
+        lines[0] = {
+          ...(lines[0] as (typeof lines)[number]),
+          start: late.duration_s + 5,
+          end: null,
+        };
+        return { ...d, lyrics: { ...(d.lyrics as NonNullable<EditDoc["lyrics"]>), lines } };
+      }),
+      400,
+    );
+    await refuses(
+      saveAs(rig, id, (d) => {
+        const lines = [...(d.lyrics?.lines ?? [])];
+        lines[0] = { ...(lines[0] as (typeof lines)[number]), heard: "字".repeat(1_600_000) };
+        return { ...d, lyrics: { ...(d.lyrics as NonNullable<EditDoc["lyrics"]>), lines } };
+      }),
+      400,
+      "改的內容太大了",
+    );
+    // Nothing of the refused ones was kept.
+    const view = await rig.service.editor(ALICE, id, true);
+    expect(view.edit.revision).toBe(1);
+    expect(view.history).toHaveLength(1);
+    expect(view.reference.lyrics?.lines[0]?.text).toBe("第一次");
+  });
+
+  it("restores the worker's, and counts revisions on after it", async () => {
+    const id = await ready(rig);
+    await refuses(rig.service.restoreEdit(ALICE, "Alice", id, 0, true), 409, "這首沒有改過");
+    const saved = await saveAs(rig, id, (d) => ({ ...d, notes: deleteNotes(d, [0]).doc.notes }));
+    expect(rig.service.song(ALICE, id).notes).toBe(song.notes.length - 1);
+    await refuses(
+      rig.service.restoreEdit(ALICE, "Alice", id, saved.edit.revision + 1, true),
+      409,
+      "有人在你之後存過了,重新載入再改",
+    );
+    rig.clock.t += 60_000;
+    const restored = await rig.service.restoreEdit(BOB, "Bob", id, saved.edit.revision, true);
+    expect(restored.edit).toEqual({
+      revision: 0,
+      pitch_shift: 0,
+      saved_by: null,
+      saved_at: null,
+      worker_changed: false,
+    });
+    expect(restored.history.map((h) => [h.action, h.name, h.revision])).toEqual([
+      ["restore", "Bob", 0],
+      ["save", "Alice", 1],
+    ]);
+    const worker = await rig.service.workerReference(id);
+    expect(await rig.service.reference(id)).toEqual(worker.reference);
+    expect(rig.service.song(ALICE, id).notes).toBe(song.notes.length);
+    expect(await servedReference(rig, id)).toMatchObject({
+      path: join(rig.dir, id, "reference.json"),
+    });
+    await refuses(rig.service.restoreEdit(ALICE, "Alice", id, 0, true), 409, "這首沒有改過");
+    // The next save is a new revision: a page that still shows the first one cannot save over it.
+    const again = await saveAs(rig, id, (d) => setLineText(d, 1, "又改了"));
+    expect(again.edit.revision).toBe(2);
+    await refuses(
+      saveAs(rig, id, (d) => d, { revision: 1 }),
+      409,
+      "有人在你之後存過了,重新載入再改",
+    );
+  });
+
+  it("keeps the edit when the worker's reference changes, and says it changed", async () => {
+    const id = await ready(rig);
+    await saveAs(rig, id, (d) =>
+      setLineText({ ...d, notes: deleteNotes(d, [0]).doc.notes }, 0, "改過"),
+    );
+    const made = rig.store.song(id)?.worker_song as string;
+    const changed = referenceOf(song, made);
+    const lines = changed.lyrics?.lines ?? [];
+    lines[1] = { ...(lines[1] as (typeof lines)[number]), text: "新的第二句" };
+    rig.worker.references.set(made, changed);
+    // Nobody sang it for a day: its files go from Core, and come back from the worker.
+    rig.clock.t += FILES_KEEP_MS + 1000;
+    await rig.service.tick(signal, true);
+    await expect(readdir(join(rig.dir, id))).rejects.toThrow();
+    const { result } = await sing(rig, id);
+    expect(result.phrases[0]?.text).toBe("改過");
+    const view = await rig.service.editor(ALICE, id, true);
+    expect(view.edit).toMatchObject({ revision: 1, worker_changed: true });
+    expect(view.original.lyrics?.lines[1]?.text).toBe("新的第二句");
+    expect(view.reference.lyrics?.lines.map((l) => l.text).slice(0, 2)).toEqual([
+      "改過",
+      "第 2 句",
+    ]);
+    // Saving again builds on the worker's new one.
+    const resaved = await saveAs(rig, id, (d) => d);
+    expect(resaved.edit.worker_changed).toBe(false);
+  });
+
+  it("keeps the edit when the song is prepared again, and the song row says what is sung", async () => {
+    const id = await ready(rig);
+    await saveAs(rig, id, (d) => ({ ...d, notes: deleteNotes(d, [0, 1]).doc.notes }));
+    const made = rig.store.song(id)?.worker_song as string;
+    const changed = referenceOf(song, made, "新版");
+    changed.pitch = {
+      ...changed.pitch,
+      midi: changed.pitch.midi.map((m) => (m === null ? m : m + 0.01)),
+    };
+    // Prepared again by a new job of the worker (as after a failure and a retry).
+    const job = await rig.worker.prepare({ query: "again" });
+    rig.store.patchSong(id, { status: "preparing", job: job.id });
+    rig.worker.finish(job.id, changed);
+    await rig.service.tick(signal);
+    const row = rig.service.song(ALICE, id);
+    expect(row).toMatchObject({ state: "ready", notes: song.notes.length - 2, title: "新版" });
+    expect((await rig.service.reference(id)).notes).toHaveLength(song.notes.length - 2);
+    const view = await rig.service.editor(ALICE, id, true);
+    expect(view.edit.worker_changed).toBe(true);
+    expect(view.original.notes).toHaveLength(song.notes.length);
+  });
+
+  it("forgets who saved an edit, and keeps the edit; a merge moves it", async () => {
+    const id = await ready(rig);
+    await saveAs(rig, id, (d) => setLineText(d, 0, "改過"), { who: BOB, name: "Bob" });
+    expect(rig.store.override(id)?.saved_person).toBe("p-bob");
+    expect(rig.store.merge("p-alice", "p-bob").counts).toMatchObject({
+      karaoke_references: 1,
+      karaoke_reference_edits: 1,
+    });
+    expect(rig.store.override(id)?.saved_person).toBe("p-alice");
+    expect(rig.store.forgetPerson(["p-alice"])).toMatchObject({
+      karaoke_references: 1,
+      karaoke_reference_edits: 1,
+    });
+    const view = await rig.service.editor(ALICE, id, true);
+    expect(view.edit).toMatchObject({ revision: 1, saved_by: "" });
+    expect(view.history.map((h) => h.name)).toEqual([""]);
+    expect(view.reference.lyrics?.lines[0]?.text).toBe("改過");
+    expect(rig.store.override(id)?.saved_person).toBeNull();
+    expect(rig.store.edits(id)[0]?.person_id).toBeNull();
   });
 });

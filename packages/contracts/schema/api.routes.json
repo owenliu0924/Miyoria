@@ -2804,6 +2804,53 @@
             "path": "/api/member/karaoke/sessions/{id}"
           }
         }
+      },
+      "editor": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/karaoke/songs/{id}/edit"
+          }
+        }
+      },
+      "saveEdit": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": "admin.panel.write",
+            "refusal": "這個帳號只能看,不能存",
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/member/karaoke/songs/{id}/edit"
+          }
+        }
+      },
+      "restoreEdit": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": "admin.panel.write",
+            "refusal": "這個帳號只能看,不能存",
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/karaoke/songs/{id}/edit/restore"
+          }
+        }
       }
     },
     "karaokeAdmin": {

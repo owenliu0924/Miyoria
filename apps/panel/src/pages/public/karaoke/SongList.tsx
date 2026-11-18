@@ -2,7 +2,7 @@
 // failed, and the rail (ask for a new one, the device's latency, what they sang lately).
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mic, MicVocal, RotateCcw, Search, Timer } from "lucide-react";
+import { Mic, MicVocal, PencilLine, RotateCcw, Search, Timer } from "lucide-react";
 import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 import type { KaraokeOverview, KaraokeResultSummary, KaraokeSongView } from "@miyoria/contracts/api";
 import { describeError } from "@/api/http";
@@ -64,7 +64,18 @@ function SongMeta({ song }: { song: KaraokeSongView }) {
   );
 }
 
-function ReadyRow({ song, onSing, disabled }: { song: KaraokeSongView; onSing: () => void; disabled: boolean }) {
+function ReadyRow({
+  song,
+  onSing,
+  onEdit,
+  disabled,
+}: {
+  song: KaraokeSongView;
+  onSing: () => void;
+  /** A panel admin's way into the reference editor (members never get it). */
+  onEdit?: () => void;
+  disabled: boolean;
+}) {
   return (
     <li className="flex items-center gap-3 py-(--row-y)">
       <div className="grid min-w-0 flex-1 gap-0.5">
@@ -74,6 +85,11 @@ function ReadyRow({ song, onSing, disabled }: { song: KaraokeSongView; onSing: (
         </p>
         <SongMeta song={song} />
       </div>
+      {onEdit && (
+        <Button variant="ghost" size="sm" onClick={onEdit} disabled={disabled} aria-label={`改 ${song.title} 的歌詞和音符`}>
+          <PencilLine aria-hidden />改
+        </Button>
+      )}
       <Button
         variant="outline"
         size="sm"
@@ -138,10 +154,13 @@ function PreparingRow({ song }: { song: KaraokeSongView }) {
 export function SongList({
   overview,
   onSing,
+  onEdit,
   busy,
 }: {
   overview: KaraokeOverview;
   onSing: (song: KaraokeSongView) => void;
+  /** Panel admins: open a song's reference editor. */
+  onEdit?: (song: KaraokeSongView) => void;
   /** A song is being opened: the other buttons wait. */
   busy: boolean;
 }) {
@@ -193,7 +212,7 @@ export function SongList({
         ) : (
           <ul className="divide-y divide-line-soft">
             {ready.map((s) => (
-              <ReadyRow key={s.id} song={s} onSing={() => onSing(s)} disabled={busy} />
+              <ReadyRow key={s.id} song={s} onSing={() => onSing(s)} onEdit={onEdit && (() => onEdit(s))} disabled={busy} />
             ))}
           </ul>
         )}

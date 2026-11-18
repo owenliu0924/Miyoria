@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   contract,
+  type KaraokeEditView,
   type KaraokeResult,
   type KaraokeSession,
   routeMeta,
@@ -21,6 +22,7 @@ import {
   KaraokeStore,
   karaokeSchema,
 } from "@miyoria/play/karaoke";
+import { docOf, setLineText } from "@miyoria/play/karaoke/edit";
 import { type PitchTrack, resampleTrack, TrackRecorder } from "@miyoria/play/karaoke/score";
 import {
   FAKE_BACKING,
@@ -51,8 +53,8 @@ interface Rig {
   service: KaraokeService;
   worker: FakeKaraokeWorker;
   clock: { t: number };
-  /** Who the next request is from. */
-  as: { account: typeof ALICE };
+  /** Who the next request is from: their account, their session tier, and whether it may write. */
+  as: { account: typeof ALICE; tier: "admin" | "member"; write: boolean };
   raw: TestDb;
   dir: string;
 }
@@ -75,10 +77,14 @@ beforeEach(async () => {
     together: () => {},
     log: { info: () => {}, warn: () => {} },
   });
-  const as = { account: ALICE };
+  const as: Rig["as"] = { account: ALICE, tier: "member", write: true };
   const state = {
     publicSide: { config: { enabled: true }, admitMember: () => null },
-    optional: (key: unknown) => (key === AuthorizerKey ? { allows: () => true } : undefined),
+    // A session holds every permission node, unless it may not write (`admin.panel.write`).
+    optional: (key: unknown) =>
+      key === AuthorizerKey
+        ? { allows: (_: unknown, node: string) => as.write || node !== "admin.panel.write" }
+        : undefined,
     service: (key: unknown, what: string) => {
       if (key === KaraokeKey) return service;
       throw ApiError.unavailable(`${what} is not available`);
@@ -92,7 +98,9 @@ beforeEach(async () => {
   ];
   for (const r of all) {
     hono.on(r.method, r.path, async (c) => {
-      if (r.member) c.set("member", { account: as.account, name: "Alice" } as never);
+      if (r.member) {
+        c.set("member", { account: as.account, name: "Alice", tier: as.tier } as never);
+      }
       try {
         return await r.handler(c);
       } catch (error) {
@@ -184,11 +192,19 @@ async function singThrough(
 }
 
 describe("the karaoke routes", () => {
-  it("are member routes, limited; the owner's list is an admin route", () => {
-    for (const name of ["overview", "request", "song", "start", "submit", "result"]) {
+  it("are member routes, limited (saving an edit needs a node); the owner's list is an admin route", () => {
+    for (const name of ["overview", "request", "song", "start", "submit", "result", "editor"]) {
       expect(routeMeta(contract, ["karaoke", name])).toEqual({
         audience: "member",
         permission: null,
+        limited: true,
+      });
+    }
+    for (const name of ["saveEdit", "restoreEdit"]) {
+      expect(routeMeta(contract, ["karaoke", name])).toEqual({
+        audience: "member",
+        permission: "admin.panel.write",
+        refusal: "這個帳號只能看,不能存",
         limited: true,
       });
     }
@@ -348,5 +364,79 @@ describe("the recording and the background video", () => {
     expect(byteRange("bytes=10-", 10)).toBe("unsatisfiable");
     expect(byteRange("bytes=0-1,4-5", 10)).toBeNull();
     expect(byteRange("items=0-1", 10)).toBeNull();
+  });
+});
+
+describe("the reference editor's routes", () => {
+  const put = (body: unknown) => ({ ...post(body), method: "PUT" });
+
+  it("are a panel admin's, and saving needs admin.panel.write", async () => {
+    const id = await prepared();
+    const path = `/api/member/karaoke/songs/${id}/edit`;
+    const only = { error: "只有管理員能改歌詞和音符" };
+    expect(await call(path)).toMatchObject({ status: 403, body: only });
+    rig.as.tier = "admin";
+    const view = await call<KaraokeEditView>(path);
+    expect(view.status).toBe(200);
+    expect(view.body.edit).toMatchObject({ revision: 0, worker_changed: false });
+    const doc = setLineText(docOf(view.body.reference, 0), 0, "改過的第一句");
+    // A session that may only look.
+    rig.as.write = false;
+    expect(await call(path, put({ ...doc, revision: 0 }))).toMatchObject({
+      status: 403,
+      body: { error: "這個帳號只能看,不能存" },
+    });
+    rig.as.write = true;
+    const saved = await call<KaraokeEditView>(path, put({ ...doc, revision: 0 }));
+    expect(saved.status).toBe(200);
+    expect(saved.body.edit).toMatchObject({ revision: 1, saved_by: "Alice" });
+    expect(saved.body.reference.lyrics?.lines[0]?.text).toBe("改過的第一句");
+    expect(await call(path, put({ ...doc, revision: 0 }))).toMatchObject({
+      status: 409,
+      body: { error: "有人在你之後存過了,重新載入再改" },
+    });
+    const broken = { ...doc, notes: doc.notes.map((n) => ({ ...n, midi: 200 })), revision: 1 };
+    const refused = await call<{ error: string }>(path, put(broken));
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toMatch(/^第 1 個音符:音高超出範圍/);
+    // A member singing it gets the edit through the signed link.
+    rig.as.tier = "member";
+    const started = await call<KaraokeSession>(
+      `/api/member/karaoke/songs/${id}/sessions`,
+      post({}),
+    );
+    const ref = await rig.hono.request(started.body.reference_url);
+    expect(ref.status).toBe(200);
+    expect(ref.headers.get("content-type")).toBe("application/json");
+    expect(ref.headers.get("content-disposition")).toBeNull();
+    const served = WorkersKaraokeReferenceSchema.parse(await ref.json());
+    expect(served.version === 2 && served.lyrics?.lines[0]?.text).toBe("改過的第一句");
+    expect(await call(`${path}/restore`, post({ revision: 1 }))).toMatchObject({
+      status: 403,
+      body: only,
+    });
+    rig.as.tier = "admin";
+    const restored = await call<KaraokeEditView>(`${path}/restore`, post({ revision: 1 }));
+    expect(restored.status).toBe(200);
+    expect(restored.body.edit.revision).toBe(0);
+    expect(restored.body.history.map((h) => h.action)).toEqual(["restore", "save"]);
+    expect(restored.body.reference.lyrics?.lines[0]?.text).toBe(song.lines[0]?.text);
+  });
+
+  it("serve the backing to a panel admin only, in byte ranges", async () => {
+    const id = await prepared();
+    rig.as.tier = "admin";
+    const view = await call<KaraokeEditView>(`/api/member/karaoke/songs/${id}/edit`);
+    const whole = await rig.hono.request(view.body.backing_url);
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("content-type")).toBe("audio/mp4");
+    expect(whole.headers.get("content-disposition")).toBeNull();
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(FAKE_BACKING);
+    const part = await rig.hono.request(view.body.backing_url, { headers: { range: "bytes=2-3" } });
+    expect(part.status).toBe(206);
+    expect(new Uint8Array(await part.arrayBuffer())).toEqual(FAKE_BACKING.slice(2, 4));
+    expect((await rig.hono.request("/api/member/karaoke/edit/nope/backing")).status).toBe(404);
+    rig.as.tier = "member";
+    expect((await rig.hono.request(view.body.backing_url)).status).toBe(404);
   });
 });

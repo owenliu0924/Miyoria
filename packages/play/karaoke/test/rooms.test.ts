@@ -843,6 +843,44 @@ describe("her stream (step 5)", () => {
   });
 });
 
+describe("what a room's round is sung against", () => {
+  it("counts the round's singers for alone, not the members who chose to sing", async () => {
+    const room = await rig.desk.open(ALICE, "Alice", rig.songId, 0);
+    await rig.desk.join(room.code, BOB, "Bob", "singer");
+    expect(rig.desk.view(room.code, ALICE).air.singers).toBe(2);
+    // Only Alice is ready: the round is hers alone, though Bob is a singer of the room.
+    rig.desk.ready(room.code, ALICE, { ready: true, latency_ms: 0, calibrated: true });
+    const started = await rig.desk.start(room.code, ALICE);
+    expect(started.air.singers).toBe(1);
+    expect(rig.desk.view(room.code, BOB).air.singers).toBe(1);
+  });
+
+  it("sings a round started after an edit was saved against the edit", async () => {
+    const view = await rig.service.editor(ALICE, rig.songId, true);
+    const lines = [...(view.reference.lyrics?.lines ?? [])];
+    const first = lines[0] as (typeof lines)[number];
+    lines[0] = { ...first, text: "改過的第一句", pieces: null, edited: true };
+    await rig.service.saveEdit(
+      ALICE,
+      "Alice",
+      rig.songId,
+      {
+        lyrics: { ...(view.reference.lyrics as NonNullable<typeof view.reference.lyrics>), lines },
+        notes: view.reference.notes,
+        pitch_shift: 0,
+        revision: 0,
+      },
+      true,
+    );
+    const room = await lobby(rig, []);
+    const started = await rig.desk.start(room.code, ALICE);
+    rig.clock.t = started.start_at_ms as number;
+    await rig.desk.tick();
+    await rig.desk.idle();
+    expect(rig.staged.lyrics[0]?.lyrics?.lines[0]?.text).toBe("改過的第一句");
+  });
+});
+
 describe("the trend a singer sees", () => {
   it("needs a few looks to move, more to settle, and does not flicker", () => {
     const t = new TrendTracker();

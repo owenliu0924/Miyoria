@@ -183,7 +183,43 @@ CREATE INDEX \`karaoke_room_rounds_state_idx\` ON \`karaoke_room_rounds\` (\`sta
 CREATE INDEX \`karaoke_room_payouts_state_idx\` ON \`karaoke_room_payouts\` (\`state\`);
 `;
 
-/** The songs, requests, sessions, tracks and results; since migration 4 the rooms. */
+/**
+ * Step 6: a song's edited reference and the record of its saves and restores. (Written in
+ * drizzle-kit's form by hand, like migration 4; the drift test checks it against the tables.)
+ */
+const REFERENCE_EDITS = `CREATE TABLE \`karaoke_references\` (
+	\`song_id\` text PRIMARY KEY,
+	\`reference\` text NOT NULL,
+	\`pitch_shift\` integer DEFAULT 0 NOT NULL,
+	\`revision\` integer NOT NULL,
+	\`base_hash\` text NOT NULL,
+	\`worker_hash\` text,
+	\`saved_person\` text,
+	\`saved_name\` text NOT NULL,
+	\`saved_at\` integer NOT NULL
+) STRICT;
+
+CREATE TABLE \`karaoke_reference_edits\` (
+	\`id\` text PRIMARY KEY,
+	\`song_id\` text NOT NULL,
+	\`action\` text NOT NULL,
+	\`revision\` integer NOT NULL,
+	\`lines\` integer NOT NULL,
+	\`notes\` integer NOT NULL,
+	\`pitch_shift\` integer NOT NULL,
+	\`person_id\` text,
+	\`name\` text NOT NULL,
+	\`at\` integer NOT NULL,
+	CONSTRAINT "karaoke_reference_edits_action_check" CHECK("action" IN ('save', 'restore'))
+) STRICT;
+
+CREATE INDEX \`karaoke_reference_edits_song_idx\` ON \`karaoke_reference_edits\` (\`song_id\`,\`at\`);
+`;
+
+/**
+ * The songs, requests, sessions, tracks and results; since migration 4 the rooms; since migration
+ * 5 the edited references.
+ */
 export const karaokeSchema: PluginSchema = {
   plugin: "karaoke",
   migrations: [
@@ -191,5 +227,6 @@ export const karaokeSchema: PluginSchema = {
     { version: 2, name: "key_and_lyrics", sql: KEY_AND_LYRICS },
     { version: 3, name: "video_and_voice", sql: VIDEO_AND_VOICE },
     { version: 4, name: "rooms", sql: ROOMS },
+    { version: 5, name: "reference_edits", sql: REFERENCE_EDITS },
   ],
 };

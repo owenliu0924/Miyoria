@@ -15,6 +15,10 @@
 // 正式分數 (a little higher than the estimate, which stays shown small); the second of 最近唱的 had
 // the backing in its recording (`bleed`).
 //
+// The reference editor (step 6): `?karaoke-demo=editor` makes the visitor a panel admin and opens
+// the editor on 紙船 (its fourth line is the doubtful one, listed first); saves and restores are kept
+// in memory and checked with the same rules Core uses, and the backing is a made-up WAV.
+//
 // Rooms (step 4) without a Core: `?karaoke-demo=lobby`, `=singer`, `=solo` (alone, on air), `=spectator` or `=results` opens
 // the made-up room KTV888 in that scene (the address becomes `/karaoke/room/KTV888`); plain
 // `?karaoke-demo` starts at the list, where 一起唱 opens a room of your own. The room's event stream
@@ -26,6 +30,8 @@
 
 import type {
   KaraokeBoardLine,
+  KaraokeEditSave,
+  KaraokeEditView,
   KaraokeOverview,
   KaraokeResult,
   KaraokeRoomEvent,
@@ -42,6 +48,7 @@ import type {
   WorkersKaraokePiece,
   WorkersKaraokeReferenceV2,
 } from "@miyoria/contracts/workers/karaoke";
+import { composeReference, editedLines, validateEdit } from "@miyoria/play/karaoke/edit";
 import { decodeTrack, encodeTrack, fromBase64, scoreSinging, TRACK_HZ, toBase64 } from "@miyoria/play/karaoke/score";
 import { type KaraokeEngine, type MicStream, setEngineFactory } from "./audio";
 // A 64 s test pattern with a seconds counter (ffmpeg's `testsrc`, 1280x720 at 12 fps, H.264, no
@@ -204,10 +211,13 @@ function preparing(): KaraokeSongView {
   });
 }
 
+/** `?karaoke-demo=editor`: the visitor is a panel admin, and the page opens the editor on 紙船. */
+let asAdmin = false;
+
 function overview(): KaraokeOverview {
   return {
     open: true,
-    admin: false,
+    admin: asAdmin,
     preparing: true,
     songs: [
       song({ best: 84.6, sung: 4, video: true }),
@@ -396,6 +406,7 @@ function roomAir(r: DemoRoom, me: KaraokeRoomMember | null, running: boolean): K
     backing: true,
     delay_ms: 2_000,
     lead: r.lead,
+    singers: singers.length,
     relay: { allowed: true, reason: null, member, live: member !== null && r.state === "singing" },
   };
 }
@@ -701,6 +712,127 @@ function roomAnswer(method: string, path: string, body: unknown): Response | nul
   return json({ error: "no such endpoint" }, 404);
 }
 
+// ---------------------------------------------------------------------------
+// the reference editor (`?karaoke-demo=editor`): 紙船's reference, saved and restored in memory,
+// and a made-up backing (a soft chord under each line and a tick on every beat) to play
+
+const editor = {
+  revision: 0,
+  /** The highest revision ever saved: a restore does not reuse it. */
+  top: 0,
+  shift: 0,
+  saved: null as WorkersKaraokeReferenceV2 | null,
+  savedAt: null as string | null,
+  history: [] as KaraokeEditView["history"],
+};
+
+function editorView(): KaraokeEditView {
+  const reference = editor.saved ?? REFERENCE;
+  return {
+    song: { id: REFERENCE.id, title: REFERENCE.title, artist: REFERENCE.artist, duration_s: DURATION },
+    reference,
+    original: { lyrics: REFERENCE.lyrics, notes: REFERENCE.notes, pitch_shift: 0 },
+    edit: {
+      revision: editor.revision,
+      pitch_shift: editor.shift,
+      saved_by: editor.saved ? "小魚乾" : null,
+      saved_at: editor.savedAt,
+      worker_changed: false,
+    },
+    history: editor.history,
+    results: 4,
+    backing_url: `/api/member/karaoke/edit/${REFERENCE.id}/backing`,
+  };
+}
+
+function editorAnswer(method: string, path: string, body: unknown): Response | null {
+  if (path === `/api/member/karaoke/edit/${REFERENCE.id}/backing`) {
+    return new Response(demoBacking(), { headers: { "content-type": "audio/wav" } });
+  }
+  const m = /^\/api\/member\/karaoke\/songs\/([^/]+)\/edit(\/restore)?$/.exec(path);
+  if (!m) return null;
+  if (m[1] !== REFERENCE.id) return json({ error: "這首在示範裡不能改" }, 404);
+  if (method === "GET" && !m[2]) return json(editorView());
+  const asked = body as KaraokeEditSave;
+  if (asked.revision !== editor.revision) return json({ error: "有人在你之後存過了,重新載入再改" }, 409);
+  const at = new Date().toISOString();
+  if (m[2]) {
+    if (editor.revision === 0) return json({ error: "這首沒有改過" }, 409);
+    Object.assign(editor, { revision: 0, shift: 0, saved: null, savedAt: null });
+    editor.history = [{ action: "restore", name: "小魚乾", at, revision: 0, lines: 0, notes: REFERENCE.notes.length, pitch_shift: 0 }, ...editor.history];
+    return json(editorView());
+  }
+  const doc = { lyrics: asked.lyrics, notes: asked.notes, pitch_shift: asked.pitch_shift };
+  const problems = validateEdit(doc, { duration_s: DURATION, curve: REFERENCE.pitch.midi });
+  if (problems.length > 0) {
+    const more = problems.length - 3;
+    return json({ error: `${problems.slice(0, 3).map((p) => p.message).join("；")}${more > 0 ? `(還有 ${more} 個問題)` : ""}` }, 400);
+  }
+  const saved = composeReference(REFERENCE, doc);
+  editor.top += 1;
+  Object.assign(editor, { revision: editor.top, shift: doc.pitch_shift, saved, savedAt: at });
+  editor.history = [
+    {
+      action: "save",
+      name: "小魚乾",
+      at,
+      revision: editor.top,
+      lines: editedLines(saved.lyrics?.lines ?? []),
+      notes: saved.notes.length,
+      pitch_shift: doc.pitch_shift,
+    },
+    ...editor.history,
+  ];
+  return json(editorView());
+}
+
+let backing: Blob | null = null;
+
+/** A plain backing for 紙船 as a WAV: a soft chord a fifth under each note's line, a tick on each beat. */
+function demoBacking(): Blob {
+  if (backing) return backing;
+  const rate = 22_050;
+  const n = Math.ceil(DURATION * rate);
+  const pcm = new Int16Array(n);
+  for (const [start, len, midi] of TUNE) {
+    const f = 440 * 2 ** ((midi - 12 - 69) / 12);
+    const from = Math.floor(start * rate);
+    const to = Math.min(n, Math.floor((start + len) * rate));
+    for (let i = from; i < to; i++) {
+      const t = (i - from) / rate;
+      const env = Math.min(1, t / 0.03) * Math.min(1, (to - i) / rate / 0.05);
+      const v = 0.16 * env * (Math.sin(2 * Math.PI * f * t) + 0.5 * Math.sin(2 * Math.PI * f * 1.5 * t));
+      pcm[i] = Math.max(-32_767, Math.min(32_767, (pcm[i] ?? 0) + v * 32_767));
+    }
+  }
+  for (let beat = 0; beat < DURATION * 2; beat++) {
+    const from = Math.floor(beat * 0.5 * rate);
+    for (let i = from; i < Math.min(n, from + 600); i++) {
+      const v = 0.12 * Math.exp(-(i - from) / 120) * Math.sin(2 * Math.PI * 1800 * ((i - from) / rate));
+      pcm[i] = Math.max(-32_767, Math.min(32_767, (pcm[i] ?? 0) + v * 32_767));
+    }
+  }
+  const header = new DataView(new ArrayBuffer(44));
+  const text = (at: number, s: string) => {
+    for (let i = 0; i < s.length; i++) header.setUint8(at + i, s.charCodeAt(i));
+  };
+  text(0, "RIFF");
+  header.setUint32(4, 36 + n * 2, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  header.setUint32(16, 16, true);
+  header.setUint16(20, 1, true);
+  header.setUint16(22, 1, true);
+  header.setUint32(24, rate, true);
+  header.setUint32(28, rate * 2, true);
+  header.setUint16(32, 2, true);
+  header.setUint16(34, 16, true);
+  text(36, "data");
+  header.setUint32(40, n * 2, true);
+  backing = new Blob([header.buffer, pcm.buffer], { type: "audio/wav" });
+  return backing;
+}
+
 function installRoomEvents(): void {
   setRoomEventsFactory((_url, h) => {
     listeners.add(h);
@@ -735,6 +867,8 @@ function answer(method: string, path: string, body: unknown): Response | null {
     return json({ song: preparing(), created: true });
   }
   if (path === "/api/member/karaoke/songs/demo-prep") return json(preparing());
+  const edit = editorAnswer(method, path, body);
+  if (edit) return edit;
   const room = roomAnswer(method, path, body);
   if (room) return room;
   const start = /^\/api\/member\/karaoke\/songs\/([^/]+)\/sessions$/.exec(path);
@@ -954,6 +1088,10 @@ export function installDemo(): void {
   setEngineFactory(() => new DemoEngine());
   // A room's scene: the room's own address, the scene kept in the query.
   const scene = new URLSearchParams(window.location.search).get("karaoke-demo") ?? "";
+  if (scene === "editor") {
+    asAdmin = true;
+    window.history.replaceState(null, "", `/karaoke?karaoke-demo=editor&edit=${REFERENCE.id}`);
+  }
   if (["lobby", "singer", "solo", "spectator", "results"].includes(scene)) {
     roomScene(scene);
     window.history.replaceState(null, "", `/karaoke/room/${ROOM}?karaoke-demo=${scene}`);
