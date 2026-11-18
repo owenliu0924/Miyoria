@@ -15,6 +15,7 @@ import {
   shownActivity,
 } from "./feed.js";
 import { emotionColor } from "./emotion.js";
+import { KaraokeLayer } from "./karaoke-view.js";
 import { isPresent, present, reflow, removeAfterExit, Swap } from "./motion.js";
 import {
   advance,
@@ -101,6 +102,8 @@ export class Overlay {
   private readonly touchEls = new Map<number, HTMLElement>();
   /** Paid lines crossing the top of the picture; null when `show=` leaves them out. */
   private readonly danmaku: DanmakuLayer | null;
+  /** The karaoke room on the stream; null when `show=` leaves it out. */
+  private readonly karaoke: KaraokeLayer | null;
   /** The card whose time is running, and its timer. */
   private screenShown: number | null = null;
   private screenTimer: ReturnType<typeof setTimeout> | undefined;
@@ -120,6 +123,18 @@ export class Overlay {
     // Paid lines crossing the top of the picture. Under every plate (the panel, the gift line, the
     // paid message), so those stay readable; a line passes behind them and comes out again.
     this.danmaku = cfg.show.has("danmaku") ? new DanmakuLayer(main, cfg.danmakuBand, reply) : null;
+
+    // The karaoke room on the stream: its screen (the round's video) under everything on the page,
+    // its plates and lyrics over the danmaku lane like every other plate. Nothing of it is on the
+    // page until a room is.
+    if (cfg.show.has("karaoke")) {
+      const under = document.createElement("div");
+      under.className = "karaoke-under";
+      main.prepend(under);
+      this.karaoke = new KaraokeLayer(under, main, cfg.karaokeRuby, cfg.demo || cfg.debug);
+    } else {
+      this.karaoke = null;
+    }
 
     this.subtitle = el("section", "subtitle is-hidden", main);
     const p = el("p", "subtitle__text", this.subtitle);
@@ -214,14 +229,32 @@ export class Overlay {
       this.danmaku?.clear();
       return;
     }
+    if (action.type === "karaoke") {
+      this.karaoke?.scene(action.scene, performance.now());
+      return;
+    }
+    if (action.type === "karaoke_lyrics") {
+      this.karaoke?.lyrics(action.lyrics);
+      return;
+    }
+    if (action.type === "karaoke_voice") {
+      this.karaoke?.voice(action.voice);
+      return;
+    }
     if (action.type === "connection") {
       if (action.connected) this.danmaku?.ready();
-      else this.danmaku?.disconnect();
+      else {
+        this.danmaku?.disconnect();
+        // Nobody drives the room without the feed; the Stage gives it again on reconnect.
+        this.karaoke?.scene(null, performance.now());
+      }
     }
     const prev = this.state;
     this.state = reduce(prev, action);
     if (this.state === prev) return;
     if (action.type === "speaking" && !this.state.speaking) this.quietSince = this.lastFrame;
+    // The karaoke round's sound dips under her lines (and a dropped feed ends her speaking).
+    this.karaoke?.speaking(this.state.speaking);
     if (this.state.subtitleSeq !== this.seenSeq) this.onSubtitle();
     this.renderPanel();
   }
@@ -242,6 +275,7 @@ export class Overlay {
     }
     this.wave.frame(dt, now);
     this.danmaku?.frame(now);
+    this.karaoke?.frame(performance.now());
     for (const id of this.touches.expire(performance.now())) this.dropTouch(id);
     present(this.offline, this.cfg.debug && !this.state.connected);
   }

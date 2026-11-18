@@ -4,6 +4,7 @@ import { mountBackdrop } from "./backdrop.js";
 import { parseConfig } from "./config.js";
 import { connectFeed, type FeedConnection } from "./connection.js";
 import { startDemo } from "./demo.js";
+import { startKaraokeDemo } from "./karaoke-demo.js";
 import { Overlay } from "./view.js";
 
 const cfg = parseConfig(window.location.search, window.location);
@@ -28,7 +29,7 @@ if (cfg.layer === "backdrop") {
 
   if (cfg.demo) {
     overlay.dispatch({ type: "connection", connected: true });
-    startDemo((m) => overlay.dispatch(m));
+    (cfg.karaokeDemo ? startKaraokeDemo : startDemo)((m) => overlay.dispatch(m));
   } else {
     // `danmaku_ready` goes out from the view on each (re)connect, when its danmaku layer is on.
     feed = connectFeed({

@@ -89,6 +89,7 @@ describe("parseConfig", () => {
       "danmaku",
       "emotion",
       "gifts",
+      "karaoke",
       "queue",
       "screen",
       "status",
@@ -103,8 +104,8 @@ describe("parseConfig", () => {
   it("show= selects sections, ignoring unknown names and falling back when none are valid", () => {
     expect([...parseConfig("?show=subtitles,queue", loc).show]).toEqual(["subtitles", "queue"]);
     expect([...parseConfig("?show=Subtitles,%20EMOTION,bogus", loc).show]).toEqual(["subtitles", "emotion"]);
-    expect(parseConfig("?show=bogus", loc).show.size).toBe(10);
-    expect(parseConfig("?show=", loc).show.size).toBe(10);
+    expect(parseConfig("?show=bogus", loc).show.size).toBe(11);
+    expect(parseConfig("?show=", loc).show.size).toBe(11);
     expect([...parseConfig("?show=subtitles,danmaku", loc).show]).toEqual(["subtitles", "danmaku"]);
   });
 
@@ -138,7 +139,23 @@ describe("parseConfig", () => {
   it("layer= and layout= pick a known value, else the overlay in the default layout", () => {
     expect(parseConfig("", loc)).toMatchObject({ layer: "overlay", layout: "default" });
     expect(parseConfig("?layer=Backdrop&layout=sing", loc)).toMatchObject({ layer: "backdrop", layout: "sing" });
-    expect(parseConfig("?layer=top&layout=karaoke", loc)).toMatchObject({ layer: "overlay", layout: "default" });
+    expect(parseConfig("?layer=top&layout=bogus", loc)).toMatchObject({ layer: "overlay", layout: "default" });
+    expect(parseConfig("?layer=backdrop&layout=Karaoke", loc)).toMatchObject({ layer: "backdrop", layout: "karaoke" });
+  });
+
+  it("karaoke: the section is on by default, readings off unless asked, and the demo is its own", () => {
+    expect(parseConfig("", loc)).toMatchObject({ karaokeDemo: false, karaokeRuby: "off" });
+    expect(parseConfig("?show=subtitles", loc).show.has("karaoke")).toBe(false);
+    expect(parseConfig("?karaoke_ruby=reading", loc).karaokeRuby).toBe("reading");
+    expect(parseConfig("?karaoke_ruby=ROMAN", loc).karaokeRuby).toBe("roman");
+    expect(parseConfig("?karaoke_ruby=kana", loc).karaokeRuby).toBe("off");
+    expect(parseConfig("?demo=karaoke", loc)).toMatchObject({ demo: true, karaokeDemo: true, karaokeRuby: "reading" });
+    expect(parseConfig("?karaoke_demo=1&karaoke_ruby=off", loc)).toMatchObject({
+      demo: true,
+      karaokeDemo: true,
+      karaokeRuby: "off",
+    });
+    expect(parseConfig("?demo=1", loc)).toMatchObject({ demo: true, karaokeDemo: false });
   });
 });
 
