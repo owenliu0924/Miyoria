@@ -8,7 +8,12 @@ import type { KaraokeRoomEvent, KaraokeRoomView } from "@miyoria/contracts/api";
 import type { KaraokeStageVoice } from "@miyoria/contracts/stage-link";
 import type { AccountRef } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { END_GRACE_MS, SETTLE_WAIT_MS } from "../src/rooms.js";
+import {
+  END_GRACE_MS,
+  OWN_RESULT_GRACE_MS,
+  SETTLE_WAIT_MS,
+  STREAM_QUIET_MS,
+} from "../src/rooms.js";
 import { karaokeRooms } from "../src/schema.js";
 import { asSubmitted, encodeTrack, TRACK_HZ, toBase64 } from "../src/score/index.js";
 import { KaraokeError, type KaraokeService } from "../src/service.js";
@@ -73,7 +78,7 @@ async function singRound(
   r: Rig,
   code: string,
   tracks: Map<AccountRef, (number | null)[]>,
-  options: { stream?: Set<AccountRef>; stepMs?: number } = {},
+  options: { stream?: Set<AccountRef>; stepMs?: number; end?: boolean } = {},
 ): Promise<void> {
   const stepMs = options.stepMs ?? 500;
   const view = r.desk.view(code, ALICE);
@@ -107,6 +112,7 @@ async function singRound(
     await r.desk.idle();
   }
   for (const [a] of tracks) {
+    if (options.end === false) break;
     if (options.stream === undefined || options.stream.has(a)) {
       try {
         r.desk.audio(
@@ -154,6 +160,16 @@ async function submitAll(
   await r.desk.idle();
   await r.desk.settleMoney();
   return out;
+}
+
+/** Time passes by `ms` in quarter seconds, the desk looking each time. */
+async function pass(r: Rig, ms: number): Promise<void> {
+  for (let t = 0; t < ms; t += 250) {
+    r.clock.t += 250;
+    await r.desk.tick();
+    await r.desk.idle();
+    await r.service.voiceSettled();
+  }
 }
 
 /** A good singer, a looser one, and noise (closer than this to the reference reads as made up). */
@@ -359,12 +375,14 @@ describe("a round", () => {
     const during = alice.filter((e) => e.type !== "room");
     expect(during.length).toBeGreaterThan(5);
     expect(during.every((e) => e.type === "trend")).toBe(true);
-    // Nothing a singer receives during the song names another singer or carries a score.
+    // Nothing a singer receives during the song names another singer, a rank or a score but
+    // their own.
     for (const e of alice.filter((x) => x.type !== "room")) {
       const text = JSON.stringify(e);
       expect(text).not.toContain("P2");
       expect(text).not.toContain("P3");
-      expect(text).not.toMatch(/"total"|"rank"|"lines"/);
+      expect(text).not.toMatch(/"rank"|"lines"|"board"/);
+      expect(Object.keys(e).sort()).toEqual(["round", "source", "total", "trend", "type"]);
     }
     // While singing, the singer's room view has no result and no ranking either.
     for (const e of alice.filter((x) => x.type === "room")) {
@@ -378,6 +396,12 @@ describe("a round", () => {
     expect(last.lines.find((l) => l.name === "P3")?.rank).toBe(3);
     expect(last.lines.every((l) => l.source === "voice")).toBe(true);
     expect(last.lines[0]?.pitch?.track).toEqual(expect.any(String));
+    // Alice's own running total is in her trend: the board's number for her (one decimal).
+    const mine = during.filter((e) => e.type === "trend").at(-1);
+    const hers = last.lines.find((l) => l.name === "Alice")?.total as number;
+    expect(mine?.type === "trend" && mine.total).toBe(Math.round(hers * 10) / 10);
+    expect(mine?.type === "trend" && mine.source).toBe("voice");
+    expect(hers).toBeGreaterThan(0);
     // The noise singer's trend, told to them only, is never "rising" at the bottom for long.
     expect(dave.some((e) => e.type === "trend")).toBe(false);
   });
@@ -601,6 +625,138 @@ describe("a round", () => {
   });
 });
 
+describe("a round without the browsers' results", () => {
+  it("scores each singer from their live stream alone and settles right after the streams end", async () => {
+    const room = await lobby(rig, [BOB]);
+    await rig.desk.start(room.code, ALICE);
+    const spectator =
+      (await rig.desk.join(room.code, DAVE, "Dave", "spectator")) && follow(rig, room.code, DAVE);
+    const tracks = new Map([
+      [ALICE, good(1)],
+      [BOB, great(2)],
+    ]);
+    const sessions = [ALICE, BOB].map((a) => sessionOf(rig, room.code, a));
+    const startAt = rig.desk.view(room.code, ALICE).start_at_ms as number;
+    // Both browsers stream the whole song and send their last chunk, but never submit.
+    await singRound(rig, room.code, tracks);
+    const songEnd = startAt + (song.reference.midi.length / song.reference.hz) * 1000;
+    await pass(rig, OWN_RESULT_GRACE_MS + 1_000);
+    const view = rig.desk.view(room.code, ALICE);
+    expect(view.state).toBe("results");
+    expect(view.settling).toBeNull();
+    // Long before the last-resort wait (the song, the end grace and the settle wait).
+    expect(rig.clock.t).toBeLessThan(songEnd + 10_000);
+    for (const id of sessions) {
+      expect(rig.store.result(id)).toMatchObject({ source: "voice", voice_state: "scored" });
+      expect(rig.store.track(id)).not.toBeNull();
+      expect(rig.store.session(id)?.status).toBe("scored");
+    }
+    expect(view.result?.places.map((p) => [p.name, p.source, p.finished])).toEqual([
+      ["P2", "voice", true],
+      ["Alice", "voice", true],
+    ]);
+    await rig.desk.settleMoney();
+    expect(rig.wallet.of("p-bob", "karaoke_prize")).toEqual([15]);
+    // The browser's submit after that gets the result, not an error.
+    const late = await rig.service.submit(ALICE, sessions[0] as string, {
+      track: toBase64(encodeTrack(good(1))),
+      latency_ms: 0,
+      calibrated: true,
+      client_total: 50,
+      browser: "test",
+      recording: true,
+    });
+    expect(late).toMatchObject({ session: sessions[0], source: "voice" });
+    expect(late.voice.upload).toBe(false);
+    expect(late.total).toBe(view.result?.places[1]?.total);
+    // The spectators were told it was being settled, and whom it waited for (names only).
+    const settling = spectator.filter((e) => e.type === "room" && e.room.settling !== null);
+    expect(settling.length).toBeGreaterThan(0);
+    const first = settling[0];
+    if (first?.type !== "room") throw new Error("no room");
+    expect(first.room.settling?.until_ms).toBe(songEnd + END_GRACE_MS + SETTLE_WAIT_MS);
+    expect(JSON.stringify(settling.map((e) => e.type === "room" && e.room.settling))).not.toMatch(
+      /total|rank/,
+    );
+  });
+
+  it("ends a stream that stops at the song's end without its last chunk, and still scores it", async () => {
+    const room = await lobby(rig, [BOB]);
+    await rig.desk.start(room.code, ALICE);
+    const tracks = new Map([
+      [ALICE, good(1)],
+      [BOB, great(2)],
+    ]);
+    const startAt = rig.desk.view(room.code, ALICE).start_at_ms as number;
+    await singRound(rig, room.code, tracks, { end: false });
+    await pass(rig, STREAM_QUIET_MS + OWN_RESULT_GRACE_MS + 2_000);
+    const view = rig.desk.view(room.code, ALICE);
+    expect(view.state).toBe("results");
+    expect(view.result?.places.every((p) => p.source === "voice")).toBe(true);
+    const songEnd = startAt + (song.reference.midi.length / song.reference.hz) * 1000;
+    expect(rig.clock.t).toBeLessThan(songEnd + END_GRACE_MS);
+  });
+
+  it("waits for a singer with neither a stream nor a result only until the last-resort wait", async () => {
+    const room = await lobby(rig, [BOB]);
+    await rig.desk.start(room.code, ALICE);
+    const bob = follow(rig, room.code, BOB);
+    const tracks = new Map([
+      [ALICE, great(1)],
+      [BOB, good(2)],
+    ]);
+    const bobSession = sessionOf(rig, room.code, BOB);
+    const startAt = rig.desk.view(room.code, ALICE).start_at_ms as number;
+    const settleBy =
+      startAt +
+      (song.reference.midi.length / song.reference.hz) * 1000 +
+      END_GRACE_MS +
+      SETTLE_WAIT_MS;
+    // Bob's browser never streams and never submits; Alice streams and does not submit either.
+    await singRound(rig, room.code, tracks, { stream: new Set([ALICE]) });
+    await pass(rig, OWN_RESULT_GRACE_MS + 1_000);
+    const waiting = rig.desk.view(room.code, ALICE);
+    expect(waiting.state).toBe("singing");
+    expect(waiting.settling).toEqual({ waiting: ["P2"], until_ms: settleBy });
+    expect(rig.staged.scenes.at(-1)?.settling).toEqual({ waiting: ["P2"] });
+    // Bob was told too: whom it waits for, never a score.
+    const told = bob.filter((e) => e.type === "room" && e.room.settling !== null);
+    expect(told.at(-1)?.type === "room" && told.at(-1)).toMatchObject({
+      room: { settling: { waiting: ["P2"] } },
+    });
+    // Just before the wait is over: still waiting; then it settles without him.
+    rig.clock.t = settleBy - 500;
+    await rig.desk.tick();
+    expect(rig.desk.view(room.code, ALICE).state).toBe("singing");
+    rig.clock.t = settleBy;
+    await rig.desk.tick();
+    await rig.desk.idle();
+    const view = rig.desk.view(room.code, ALICE);
+    expect(view.state).toBe("results");
+    expect(view.settling).toBeNull();
+    expect(rig.staged.scenes.at(-1)?.settling).toBeNull();
+    expect(view.result?.places.find((p) => p.name === "P2")).toMatchObject({
+      rank: null,
+      note: "沒有交出分數",
+    });
+    expect(view.result?.places.find((p) => p.name === "Alice")).toMatchObject({ source: "voice" });
+    // His session takes nothing any more.
+    expect(Date.parse(rig.store.session(bobSession)?.expires_at as string)).toBeLessThan(settleBy);
+    await refused(
+      rig.service.submit(BOB, bobSession, {
+        track: toBase64(encodeTrack(good(2))),
+        latency_ms: 0,
+        calibrated: true,
+        client_total: null,
+        browser: "test",
+      }),
+      409,
+    );
+    // Everyone readies again for the next round.
+    expect(view.members.every((m) => !m.ready)).toBe(true);
+  });
+});
+
 describe("her stream (step 5)", () => {
   /** µ-law of a steady, audible level. */
   const voiced = (n: number) => new Uint8Array(n).fill(0x9f);
@@ -723,7 +879,7 @@ describe("her stream (step 5)", () => {
           expect(e.room.air.relay.live).toBe(false);
         } else {
           expect(e.type).toBe("trend");
-          expect(JSON.stringify(e)).not.toMatch(/on_air|"rank"|"total"|relay/);
+          expect(JSON.stringify(e)).not.toMatch(/on_air|"rank"|relay/);
         }
       }
     }

@@ -30,6 +30,12 @@
 //
 // A panel admin (session tier `admin`) may use everything while karaoke is not open, to try it;
 // members see it closed. Without the `karaoke` module every route is a `503` that names it.
+//
+// A refused submit, recording, room microphone chunk or room pitch (any 4xx or 5xx, the input
+// check and the member rate limit included) is logged at warn with the route, the status, the
+// sentence and the session or room: a singer's lost result can be traced. Never the body (the
+// pitch, the audio, the recording). The same refusal of one account is logged once per
+// `REFUSAL_LOG_MS`, with how many were left out.
 
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -44,12 +50,84 @@ import {
   MAX_AUDIO_BYTES,
   type RoomDesk,
 } from "@miyoria/play/karaoke";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, accountRefString } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { json, noContent, param, type Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
+
+const log = getLogger("api.karaoke");
+
+/** The same refusal (route, status, account) is logged at most once in this long. */
+export const REFUSAL_LOG_MS = 10_000;
+const refusalsSeen = new Map<string, { at: number; left: number }>();
+
+/**
+ * A karaoke request answered with an error: logged at warn (route, status, sentence, where), never
+ * its body. `where`: the session or room it was about.
+ */
+export function logRefusal(
+  route: string,
+  c: ApiContext,
+  error: unknown,
+  where: Record<string, string | null>,
+): void {
+  const status = error instanceof ApiError ? error.status : 500;
+  if (status < 400) return;
+  const member = c.get("member") as SessionRecord | undefined;
+  const who = member === undefined ? null : accountRefString(member.account);
+  const key = `${route}|${status}|${who ?? ""}`;
+  const now = Date.now();
+  const seen = refusalsSeen.get(key);
+  if (seen !== undefined && now - seen.at < REFUSAL_LOG_MS) {
+    seen.left++;
+    return;
+  }
+  refusalsSeen.set(key, { at: now, left: 0 });
+  if (refusalsSeen.size > 1_000) {
+    for (const [k, v] of refusalsSeen) if (now - v.at >= REFUSAL_LOG_MS) refusalsSeen.delete(k);
+  }
+  log.warn(
+    {
+      route,
+      status,
+      message: errorMessage(error).slice(0, 200),
+      ...where,
+      account: who,
+      ...(seen !== undefined && seen.left > 0 ? { left_out: seen.left } : {}),
+    },
+    "karaoke: a request was refused",
+  );
+}
+
+/**
+ * The table's karaoke routes whose refusals are logged (`rpc.ts` asks for each route): the
+ * browser's result of a session. `null` for any other route.
+ */
+export function karaokeRefusals(
+  path: readonly string[],
+): ((c: ApiContext, error: unknown) => void) | null {
+  if (path[0] !== "karaoke" || path[1] !== "submit") return null;
+  return (c, error) =>
+    logRefusal("karaoke.submit", c, error, { session: c.req.param("id") ?? null });
+}
+
+/** `handler` with its refusals logged as `route`, about the session or room of the path. */
+function logged(route: string, handler: (c: ApiContext) => Promise<Response>) {
+  return async (c: ApiContext): Promise<Response> => {
+    try {
+      return await handler(c);
+    } catch (error) {
+      logRefusal(route, c, error, {
+        session: c.req.param("id") ?? null,
+        room: c.req.param("code") ?? null,
+      });
+      throw error;
+    }
+  };
+}
 
 function service(state: ApiState): KaraokeService {
   return state.service(KaraokeKey, "karaoke module");
@@ -178,11 +256,6 @@ export const karaokeRoomsRpc = {
   ),
   ready: os.karaokeRooms.ready.handler(({ input, context: { state, c } }) =>
     refusals(() => rooms(state).ready(input.params.code, accountOf(c), input.body)),
-  ),
-  song: os.karaokeRooms.song.handler(({ input, context: { state, c } }) =>
-    refusals(() =>
-      rooms(state).song(input.params.code, accountOf(c), input.body.song, input.body.shift),
-    ),
   ),
   relay: os.karaokeRooms.relay.handler(({ input, context: { state, c } }) =>
     refusals(() => rooms(state).relay(input.params.code, accountOf(c), input.body, adminOf(c))),
@@ -493,7 +566,7 @@ export function karaokeRoutes(state: ApiState): Route[] {
       method: "POST",
       path: "/api/member/karaoke/sessions/:id/voice",
       member: true,
-      handler: (c) => voice(state, c),
+      handler: logged("karaoke.voice", (c) => voice(state, c)),
     },
     {
       method: "GET",
@@ -511,13 +584,13 @@ export function karaokeRoutes(state: ApiState): Route[] {
       method: "POST",
       path: "/api/member/karaoke/rooms/:code/audio",
       member: true,
-      handler: (c) => roomAudio(state, c),
+      handler: logged("karaokeRooms.audio", (c) => roomAudio(state, c)),
     },
     {
       method: "POST",
       path: "/api/member/karaoke/rooms/:code/pitch",
       member: true,
-      handler: (c) => roomPitch(state, c),
+      handler: logged("karaokeRooms.pitch", (c) => roomPitch(state, c)),
     },
   ];
 }

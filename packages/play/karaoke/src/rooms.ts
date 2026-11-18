@@ -44,11 +44,12 @@ import type {
   KaraokeSession,
   KaraokeVoiceCheck,
 } from "@miyoria/contracts/api";
-import type {
-  KaraokeStageLine,
-  KaraokeStageLyrics,
-  KaraokeStageScene,
-  KaraokeStageVoice,
+import {
+  KARAOKE_BOARD_MAX,
+  type KaraokeStageLine,
+  type KaraokeStageLyrics,
+  type KaraokeStageScene,
+  type KaraokeStageVoice,
 } from "@miyoria/contracts/stage-link";
 import {
   KARAOKE_FRAME_HZ,
@@ -74,12 +75,15 @@ import { commentContext, type KaraokeConfig } from "./config.js";
 import { sungEnd } from "./lyrics/index.js";
 import { type RoundLine, roomOpenedNote, roundResultNote, roundStartNote } from "./notes.js";
 import {
+  cleanPitch,
   DEFAULT_TUNING,
   decodeTrack,
   encodeTrack,
   fromBase64,
+  recordingInSong,
   type ScoreResult,
   StreamScore,
+  TRACK_HZ,
   toBase64,
 } from "./score/index.js";
 import {
@@ -116,6 +120,13 @@ export const RUNNING_MS = 2_000;
 export const END_GRACE_MS = 20_000;
 /** After that, official scores are waited for this long at most before the round settles. */
 export const SETTLE_WAIT_MS = 90_000;
+/**
+ * A singer whose live stream gave its final pitch and whose browser sent no result within this is
+ * given the result from the stream alone (a hidden tab may never submit); at once after the song.
+ */
+export const OWN_RESULT_GRACE_MS = 5_000;
+/** This long after the song's end on Core's clock, every stream still open is over. */
+export const STREAM_END_MS = 5_000;
 /** A member not following the room (no open page) for this long has left. */
 export const AWAY_MS = 60_000;
 /** Frames of a singer's recent pitch on the board (1.5 s). */
@@ -260,8 +271,14 @@ interface Singer {
   dropped: boolean;
   audio: Audio;
   voice: StreamScore;
+  /** The browser's detections as they came (cleaned when scored, as the browser does). */
   estimate: StreamScore;
+  input: ReturnType<KaraokeService["scoreInput"]>;
   final: { pitch: WorkersKaraokeVoicePitch; offset_ms: number } | null;
+  /** When the final pitch came. */
+  finalAt: number;
+  /** The result made from the stream when the browser's did not come (`done`: a result is in). */
+  own: "none" | "making" | "done" | "failed";
   trend: TrendTracker;
   shown: Trend | null;
   rank: number;
@@ -280,8 +297,14 @@ interface Round {
   song: SongRow;
   shift: number;
   startAt: number;
+  /** The song's end on Core's clock (the start and its length). */
+  songEnd: number;
   endAt: number;
   settleBy: number;
+  /** The longest track a result may have (the song and a few seconds, at `TRACK_HZ`). */
+  maxFrames: number;
+  /** The waiting list last sent while settling (JSON), `null` before it started. */
+  settling: string | null;
   singers: Map<string, Singer>;
   /** The files to watch the round with, for the members not singing it (never submitted). */
   watch: Map<string, KaraokeSession>;
@@ -710,8 +733,11 @@ export class RoomDesk implements RoomLink {
       song,
       shift,
       startAt,
+      songEnd: startAt + duration,
       endAt: startAt + duration + END_GRACE_MS,
       settleBy: startAt + duration + END_GRACE_MS + SETTLE_WAIT_MS,
+      maxFrames: Math.ceil(reference.duration_s * TRACK_HZ) + 4 * TRACK_HZ,
+      settling: null,
       singers: new Map(),
       watch: new Map(),
       ended: false,
@@ -750,7 +776,10 @@ export class RoomDesk implements RoomLink {
         },
         voice: new StreamScore(input, maxS),
         estimate: new StreamScore(input, maxS),
+        input,
         final: null,
+        finalAt: 0,
+        own: "none",
         trend: new TrendTracker(),
         shown: null,
         rank: 1,
@@ -976,6 +1005,7 @@ export class RoomDesk implements RoomLink {
       lyrics: lyricsForStage(lyrics),
       video: files.video,
       backing: this.#cfg.stream_backing ? files.backing : null,
+      notes: [],
     };
     // A scene that showed this round before its files came gets them now.
     const f = this.#featured;
@@ -1043,6 +1073,10 @@ export class RoomDesk implements RoomLink {
         note: null,
         currency: terms.currency.slice(0, 16),
         air: this.#airScene(null),
+        queue: [],
+        join_url: null,
+        qr_while_singing: false,
+        settling: null,
       };
     }
     const now = this.#d.now();
@@ -1065,6 +1099,8 @@ export class RoomDesk implements RoomLink {
           coins: 0,
           finished: false,
           on_air: onAir === s.member.key,
+          parts: null,
+          pitch: null,
         }));
     } else if (room.state === "results" && room.result !== null) {
       board = room.result.places.map((p) => ({
@@ -1078,6 +1114,8 @@ export class RoomDesk implements RoomLink {
         coins: Math.max(0, p.coins),
         finished: p.finished,
         on_air: false,
+        parts: null,
+        pitch: null,
       }));
     }
     return {
@@ -1114,7 +1152,19 @@ export class RoomDesk implements RoomLink {
         onAir === null ? null : (round?.singers.get(onAir)?.member.name ?? null),
         running && round?.stage?.backing != null,
       ),
+      queue: [],
+      join_url: null,
+      qr_while_singing: false,
+      settling: this.#sceneSettling(room),
     };
+  }
+
+  /** The stream's side of settling: whom it waits for, names only. */
+  #sceneSettling(room: Room): KaraokeStageScene["settling"] {
+    const settling = this.#settling(room);
+    return settling === null
+      ? null
+      : { waiting: settling.waiting.slice(0, KARAOKE_BOARD_MAX).map((n) => n.slice(0, 60)) };
   }
 
   #airScene(relay: string | null, backing = false): KaraokeStageScene["air"] {
@@ -1219,11 +1269,13 @@ export class RoomDesk implements RoomLink {
       const singer = round.singers.get(f.key);
       let event: KaraokeRoomEvent;
       if (singer !== undefined) {
+        // Their own running number only: never a rank, never anyone else's.
         event = {
           type: "trend",
           round: round.n,
           trend: singer.trend.trend,
           source: singer.source,
+          total: singer.total > 0 ? Math.round(singer.total * 10) / 10 : null,
         };
       } else event = { type: "board", round: round.n, at_ms: at, lines: board };
       try {
@@ -1299,6 +1351,11 @@ export class RoomDesk implements RoomLink {
     if (singer.stream !== "live" || singer.final !== null) {
       bytes.fill(0);
       return { stream: "estimate" };
+    }
+    // Over (the song ended on Core's clock): what comes after is not the song.
+    if (a.ended) {
+      bytes.fill(0);
+      return { stream: "live" };
     }
     a.lastAt = now;
     if (a.startMs === null) {
@@ -1391,7 +1448,10 @@ export class RoomDesk implements RoomLink {
 
   changed(session: string): void {
     const at = this.#sessions.get(session);
-    if (at !== undefined) this.#trySettle(at.room);
+    if (at === undefined) return;
+    this.#trySettle(at.room);
+    const round = at.room.round;
+    if (round !== null) this.#settlingTick(at.room, round, this.#d.now());
   }
 
   // ---- the pass --------------------------------------------------------------------------------
@@ -1426,15 +1486,16 @@ export class RoomDesk implements RoomLink {
         this.#changed(room);
       }
       if (room.state !== "singing") continue;
-      // Streams that went quiet, and the end of the song.
+      // Streams that went quiet, and the end of the song. A stream that ran into the song's last
+      // seconds and stopped is over, not lost (a browser may stop without its last chunk: its
+      // final is asked for all the same); a few seconds after the song every stream is over.
       for (const s of round.singers.values()) {
         const a = s.audio;
-        if (
-          s.stream === "live" &&
-          !a.ended &&
-          now - Math.max(a.lastAt, round.startAt) > STREAM_QUIET_MS
-        ) {
-          this.#dropStream(s, new Uint8Array());
+        if (s.stream !== "live" || a.ended) continue;
+        if (now >= round.songEnd + STREAM_END_MS) a.ended = true;
+        else if (now - Math.max(a.lastAt, round.startAt) > STREAM_QUIET_MS) {
+          if (a.startMs !== null && a.lastAt >= round.songEnd - STREAM_QUIET_MS) a.ended = true;
+          else this.#dropStream(s, new Uint8Array());
         }
       }
       if (!round.ended && now >= round.endAt) {
@@ -1451,7 +1512,9 @@ export class RoomDesk implements RoomLink {
         this.#board(room, now);
       }
       this.#airTick(room, now);
+      this.#ownResults(room, round, now);
       this.#trySettle(room);
+      this.#settlingTick(room, round, now);
     }
   }
 
@@ -1552,6 +1615,7 @@ export class RoomDesk implements RoomLink {
           },
           offset_ms: s.audio.startMs,
         };
+        s.finalAt = this.#d.now();
         this.#d.service.streamFinal(s.session.session, s.final.pitch, s.final.offset_ms);
       }
     }
@@ -1577,7 +1641,7 @@ export class RoomDesk implements RoomLink {
       if (now - s.ranAt < RUNNING_MS && s.ranAt !== 0 && i % 2 !== Math.floor(now / BOARD_MS) % 2)
         return;
       const useVoice = s.final !== null || (s.stream === "live" && s.voice.length > 0);
-      const score = useVoice ? s.voice : s.estimate;
+      const score = useVoice ? s.voice : this.#cleanEstimate(s);
       s.total = score.length > 0 ? score.score().total : 0;
       s.source = useVoice ? "voice" : "estimate";
       s.ranAt = now;
@@ -1616,20 +1680,113 @@ export class RoomDesk implements RoomLink {
     this.#stage();
   }
 
+  /**
+   * The browser's detections so far cleaned the way the browser's own running number cleans them
+   * (`RunningScore`: octave slips folded, spikes filtered), so the board and the singer's screen
+   * read the same singing alike.
+   */
+  #cleanEstimate(s: Singer): StreamScore {
+    const raw = s.estimate.track;
+    const clean = new StreamScore(s.input, raw.midi.length / TRACK_HZ + 1);
+    clean.put(0, cleanPitch(raw.midi, TRACK_HZ));
+    return clean;
+  }
+
   // ---- the end of a round ----------------------------------------------------------------------
 
-  /** Settles the round once every singer's result is in and official (or the wait is over). */
+  /**
+   * Singers whose live stream gave its final pitch but whose browser sent no result (within
+   * `OWN_RESULT_GRACE_MS` of the final, or by the end of the round's grace): their result is made
+   * from the stream, through the same submit as the browser's (scored officially from the stream
+   * right after), so a round never waits on a page that stopped.
+   */
+  #ownResults(room: Room, round: Round, now: number): void {
+    for (const s of round.singers.values()) {
+      if (s.final === null || s.own !== "none") continue;
+      if (!round.ended && now < s.finalAt + OWN_RESULT_GRACE_MS) continue;
+      if (this.#d.store.result(s.session.session) !== null) {
+        s.own = "done";
+        continue;
+      }
+      s.own = "making";
+      this.#track(this.#streamResult(room, round, s));
+    }
+  }
+
+  async #streamResult(room: Room, round: Round, s: Singer): Promise<void> {
+    const final = s.final;
+    if (final === null) return;
+    const session = s.session.session;
+    // The stream's pitch in song time, as the browser's track would be (its samples are on the
+    // browser's own audio clock), no longer than a result may be.
+    const frames = recordingInSong(
+      { hz: final.pitch.hz, midi: final.pitch.midi },
+      final.offset_ms,
+    ).slice(0, round.maxFrames);
+    try {
+      await this.#d.service.submit(s.member.account, session, {
+        track: toBase64(encodeTrack(frames)),
+        latency_ms: s.member.latency_ms,
+        calibrated: s.member.calibrated,
+        client_total: null,
+        browser: "live stream",
+        recording: false,
+      });
+      s.own = "done";
+      this.#d.log.info(
+        { room: room.id, round: round.n, session },
+        "karaoke: a singer's result made from their live stream (no result from the browser)",
+      );
+    } catch (error) {
+      s.own = this.#d.store.result(session) === null ? "failed" : "done";
+      if (s.own === "failed") {
+        this.#d.log.warn(
+          { room: room.id, round: round.n, session, err: String(error) },
+          "karaoke: no result from a singer's live stream",
+        );
+      }
+    }
+    this.#trySettle(room);
+    if (room.round === round) this.#settlingTick(room, round, this.#d.now());
+  }
+
+  /** Whether a singer's result is in and final (not waiting for an official score). */
+  #settled(s: Singer): boolean {
+    const r = this.#d.store.result(s.session.session);
+    return r !== null && r.voice_state !== "waiting" && r.voice_state !== "scoring";
+  }
+
+  /** While settling: the names of the singers still waited for and the latest moment, else `null`. */
+  #settling(room: Room): { waiting: string[]; until_ms: number } | null {
+    const round = room.round;
+    if (round === null || room.state !== "singing" || this.#d.now() < round.songEnd) return null;
+    const waiting = [...round.singers.values()]
+      .filter((s) => !this.#settled(s))
+      .sort((a, b) => a.member.joined - b.member.joined)
+      .map((s) => s.member.name);
+    return { waiting, until_ms: round.settleBy };
+  }
+
+  /** Everyone is told when settling starts and whenever whom it waits for changes. */
+  #settlingTick(room: Room, round: Round, now: number): void {
+    if (room.round !== round || room.state !== "singing" || now < round.songEnd) return;
+    const key = JSON.stringify(this.#settling(room)?.waiting ?? []);
+    if (key === round.settling) return;
+    round.settling = key;
+    this.#changed(room);
+  }
+
+  /**
+   * Settles the round at once when every singer's result is in and final (official, or no official
+   * score is coming); else at the last-resort wait (`settleBy`), which only a singer with neither a
+   * stream's final nor a browser's result can make it wait for.
+   */
   #trySettle(room: Room): void {
     const round = room.round;
     if (round === null || room.state !== "singing") return;
     const now = this.#d.now();
-    const rows = [...round.singers.values()].map((s) => this.#d.store.result(s.session.session));
-    const allIn = rows.every(
-      (r) => r !== null && r.voice_state !== "waiting" && r.voice_state !== "scoring",
-    );
-    if (!(allIn || now >= round.settleBy || (round.ended && now >= round.endAt + SETTLE_WAIT_MS))) {
-      return;
-    }
+    const allIn = [...round.singers.values()].every((s) => this.#settled(s));
+    if (!(allIn || now >= round.settleBy)) return;
     this.#settle(room, round, now);
   }
 
@@ -1723,6 +1880,13 @@ export class RoomDesk implements RoomLink {
     room.state = "results";
     room.activity = now;
     for (const s of round.singers.values()) this.#sessions.delete(s.session.session);
+    // A singing that never gave a result takes none from now on (not left open).
+    this.#d.store.expireSessions(
+      entries.filter((e) => e.row === null).map((e) => e.s.session.session),
+      now,
+    );
+    // Everyone readies again for the next round.
+    for (const m of room.members.values()) m.ready = false;
     this.#endAir(room, round);
     // 「讓大家聽到我」 is asked for again every round.
     for (const m of room.members.values()) m.hear = false;
@@ -1953,6 +2117,13 @@ export class RoomDesk implements RoomLink {
       result: room.result,
       terms: this.#terms(),
       air: this.#air(room, me),
+      queue: [],
+      next: null,
+      queue_limits: {
+        per_person: this.#cfg.room_queue_per_person,
+        max: this.#cfg.room_queue_max,
+      },
+      settling: this.#settling(room),
     };
   }
 
