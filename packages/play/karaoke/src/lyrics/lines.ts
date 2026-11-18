@@ -119,7 +119,14 @@ export function countdown<L extends { start: number; end: number | null }>(
   return Math.ceil(left);
 }
 
-/** A found line that did not match what was heard: shown with a light mark. */
+/**
+ * A found line that did not match what was heard: shown with a light mark, unless a person has
+ * since corrected or checked it in the reference editor (`edited`).
+ */
 export function isDoubtful(line: WorkersKaraokeLineV2): boolean {
-  return line.source === "found" && (line.status === "uncertain" || line.status === "failed");
+  return (
+    !line.edited &&
+    line.source === "found" &&
+    (line.status === "uncertain" || line.status === "failed")
+  );
 }
