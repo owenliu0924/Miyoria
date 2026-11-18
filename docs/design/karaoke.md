@@ -1,6 +1,6 @@
 # 線上唱 K:她當主持人
 
-> 2026-11-17 規劃;2026-11-18 做了第一步(單人網頁唱 K,見最後的「做了什麼(第一步)」)。依據是 owner 2026-11-17 的回答([v5-play.md](v5-play.md) §11.3),讀過舊的 `karaoke` 專案(SUMI,唯讀)和這個 repo 的唱歌 worker、派對遊戲、Stage、overlay、voice node、面板和經濟。模型和評分的資料是網路上查的,來源在 §15,沒查到的在 §16。數字標「草案」的都是設定。
+> 2026-11-17 規劃;2026-11-18 做了第一步(單人網頁唱 K,見「做了什麼(第一步)」)和第二步(歌詞核對、逐字對齊、讀音、升降調,見最後的「做了什麼第二步」)。依據是 owner 2026-11-17 的回答([v5-play.md](v5-play.md) §11.3),讀過舊的 `karaoke` 專案(SUMI,唯讀)和這個 repo 的唱歌 worker、派對遊戲、Stage、overlay、voice node、面板和經濟。模型和評分的資料是網路上查的,來源在 §15,沒查到的在 §16。數字標「草案」的都是設定。
 
 ## 0. 結論
 
@@ -489,3 +489,97 @@ owner 接受在 Discord 裡的風險。能做的範圍:
 - 面板:`karaoke-logic.test.ts`(時鐘、跑道的座標、校正的數學和儲存、階段的字、結果的字、軌的編解碼)和 `karaoke.test.tsx`(歌單、點歌、拒絕、準備中、失敗、結果的講評和「沒有驗證」)。
 
 真的人聲、真的麥克風、藍牙耳機和手機都還沒試過;第一步做完請 owner 唱一首。
+
+## 對齊實驗(2026-11-18)
+
+實驗在 `.tmp-test/align-lab/`(不進 git;第二輪的報告是那裡的 `ROUND2.txt`)。歌詞查自 lrclib,主唱用 worker 的 becruily 分離;驗證是「一行的(正規化後)字有多少照順序出現在辨識結果裡」,matched ≥ 0.75、uncertain 0.5–0.75、failed < 0.5;「錯的歌詞」是拿另一首同語言的歌詞來比。對齊的「整行都過」:一行每個字都有時間、每個字的條裡有人聲、不超過 6 秒、順序對,而且第一個字離那一行的時間不到 1 秒。
+
+### 第一輪(CPU;Qwen3-ASR-0.6B 和 Whisper large-v3-turbo;五首)
+
+| 歌 | 行 | 0.6B matched / uncertain / failed | Whisper | 對齊整行都過:Qwen-FA / w2v / MMS |
+|---|---|---|---|---|
+| 又三郎(日) | 42 | 31 / 3 / 8 | 30 / 1 / 11 | 10% / 36% / 64% |
+| キス(日) | 46 | 29 / 15 / 2 | 34 / 5 / 7 | 13% / 52% / 67% |
+| 海百合(日,初音) | 80 | 19 / 24 / 37 | 39 / 22 / 19 | 13% / 48% / 59% |
+| 英文歌 | 82 | 55 / 14 / 13 | 56 / 12 / 14 | 49% / 98% / 89% |
+| 中文歌(68 秒) | 12 | 10 / 1 / 1 | — | 8% / 75% / 83% |
+
+錯的歌詞:兩個辨識都是 0 行 matched(Whisper 一首有 1 行 uncertain)。MMS 的條有人聲的比例 92–98%,Qwen-FA 只有 58–82%。
+
+### 第二輪(GPU;櫻ノ詩完整版 237 秒,難的歌;又三郎再一次)
+
+| | 櫻ノ詩(23 行) | 又三郎(42 行) |
+|---|---|---|
+| 驗證 matched / uncertain / failed:0.6B | 13 / 9 / 1 | 31 / 3 / 8 |
+| 1.7B | **17 / 5 / 1** | 30 / 4 / 8 |
+| Whisper(7 行捏造「ご視聴ありがとうございました」之類) | 12 / 1 / 10 | 32 / 1 / 9 |
+| 錯的歌詞 matched | 三個都 0 | 三個都 0 |
+| 沒有歌詞時整首辨識的 CER(假名):0.6B / 1.7B / Whisper | 43% / **28%** / 80% | 20% / **18%** / 42% |
+| 能回收的行(≥ 0.75):0.6B / 1.7B / Whisper | 7 / **15** / 4(共 23) | 29 / **30** / 16(共 42) |
+| 對齊整行都過:Qwen-FA / w2v / MMS | 0% / 13% / **95.7%** | 11.9% / 35.7% / **64.3%** |
+| 對齊有人聲的條:Qwen-FA / w2v / MMS | 52.8% / 61.7% / 99.7% | 70.0% / 83.5% / 92.8% |
+| 短於 60 ms 的條:Qwen-FA / w2v / MMS | 46.9% / 40.8% / 0.3% | 29.1% / 16.1% / 9.7% |
+
+GPU(4070 SUPER,fp16):1.7B 驗證 17 秒、整首辨識 45 秒,VRAM 4.8 GB;MMS 一首 1.3 秒,1.8 GB(30 秒的窗 2.9 GB);w2v(只能 fp32)18 秒,2.8–3.9 GB。特殊讀法(即興劇=エチュード、詩=うた)會讓那幾行掉到 uncertain,把讀音寫進去對 MMS 幾乎沒差(95.7% → 95.7%)。
+
+**結論(owner 的決定)**:辨識只用 Qwen3-ASR-1.7B(驗證和聽寫同一個);對齊在 owner 的實例用 MMS_FA(非商業),repo 的預設是授權乾淨的 w2v;門檻照上面;Whisper 不用(幻聽)、Qwen3-ForcedAligner 不用。
+
+## 做了什麼第二步
+
+2026-11-18,分支 `v5p5h`。owner 的三個改變裡「切音符照歌詞的每個字,而且歌詞要自己聽過對過」的大半,加上讀音和升降調。**沒有下載、沒有跑任何模型**;模型的部分全用假的測,真的模型和真的人聲都還沒試。
+
+### 唱歌 worker
+
+唱 K 的工作在 `reference`、`encode`、等歌詞之後多兩個 GPU 階段(`lyrics_asr`、`lyrics_align`),之後才把顯示卡還回去:
+
+1. **核對**(`lyrics_asr`):每一行查到的歌詞,取「開始前 0.5 秒到下一行開始後 0.3 秒、最長 12 秒」那一段主唱給 Qwen3-ASR-1.7B 聽,比對(中文轉簡體、日文轉平假名讀音、英文字母)得到相似度和 `matched` / `uncertain` / `failed`。整首 matched ≥ 50%:用查到的歌詞(`kept`);20–50%:照樣用,每行留著自己的狀態(`doubtful`,這一段 owner 沒說,是我的假設);< 20%:查錯歌,丟掉,改聽寫。
+2. **聽寫**(同一個階段,模型不重新載入):沒有查到歌詞、或查錯歌時,整首主唱切成 20–30 秒、切在最安靜的 0.1 秒,每塊給 1.7B 聽。
+3. **對齊**(`lyrics_align`):只對 matched 的行(聽寫的話是每一塊)。字切成「片」:中文一個字、日文一個假名(一拍)或一個漢字詞、英文一個字;對齊的單位是拍(日文)/ 字。`w2v`:每個語言一個 wav2vec2 CTC 模型(日文、中文 jonatasgrosman XLSR-53,英文 facebook base-960h,都是 Apache-2.0);`mms`:torchaudio MMS_FA 的權重(轉成 transformers 格式的那份),羅馬拼音,頭尾加 star。CTC 的 Viterbi 自己寫(`lyricsync.ctc_align`,numpy),不依賴 torchaudio 的版本。
+4. **整行檢查**(實驗的那一套):每個字都要有時間、條裡有人聲(50 Hz 參考曲線有聲的格至少兩格且四分之一)、不超過 6 秒、順序對、短於 60 ms 的條不超過四分之一、第一個字離那一行的時間不到 1 秒。不過就那一行不逐字(`aligned: false`)。
+5. **音符**:對齊過的行一個拍 / 字一條,高度是那段主唱曲線的中位數;一個字裡唱出幾個各 0.15 秒以上的音(轉音)就照音高再細分(用第一步的切法)。其他行留著第一步只用音高切的音符。**不會比第一步差**:任何一步失敗都退回第一步的樣子。
+6. **聽寫的行**:對齊後在停頓 ≥ 0.4 秒處切行,超過 10 秒的行在最長的停頓再切;一行裡有人聲的條不到一半的丟掉(開頭和間奏的「はい」「このようにして」這類)。聽寫的行狀態都是 `uncertain`、`source: "heard"`。
+
+兩個模型各用一個子程序跑(`workers/sing/align/run.py`),跑完程序結束,顯存就還了;一次只有一個模型。因為 qwen-asr 要 transformers 4.57.6、Seed-VC 要 4.46.3,它們有自己的環境 `workers/sing/align`(`uv sync --frozen`;`SING_ALIGN_PYTHON` 可指定)。沒有這個環境、或沒有模型檔時,歌詞照第一步不核對(`status: "unchecked"`)。模型檔在 `service.toml` 的 `[[install.files]]`(都 `optional`,放在模型資料夾的 `karaoke/`)。
+
+**換調**:`POST /karaoke/{id}/keys {semitones: -6..6}`,worker 用 Rubber Band(ffmpeg 的 `rubberband` 濾鏡,和翻唱換調同一個;R2 引擎、`pitchq=quality`、長度不變,所以參考的時間不用動)把伴唱帶做一份 `karaoke.k+3.m4a`,同一首同一個調只做一次,歌重做時一起刪。ffmpeg 沒有 Rubber Band 時退回 `asetrate` + `atempo`(音色會跟著變)。選 Rubber Band 是因為它在鼓和和弦上比相位聲碼器乾淨很多,worker 本來就用它。
+
+### `reference.json` 第 2 版
+
+定義還是 `packages/contracts/workers/src/karaoke.ts`(`WorkersKaraokeReferenceV2Schema`;讀的人用 `WorkersKaraokeReferenceSchema`,第 1、2 版都收,`karaokeReferenceV2` 轉成第 2 版的樣子)。和第 1 版不同的:
+
+| 欄位 | 內容 |
+|---|---|
+| `lyrics.source` / 每行 `source` | `found`(查到的)或 `heard`(聽寫) |
+| `lyrics.language` | `ja` / `zh` / `en` / `null` |
+| `lyrics.check` | `{matched, uncertain, failed, verdict: kept / doubtful / wrong_song / unchecked}`,沒有查到歌詞時 `null` |
+| 每行 `status` | `matched` / `uncertain` / `failed` / `unchecked`(取代第 1 版的 `check`) |
+| 每行 `similarity`、`heard` | 相似度、那一段聽到的字(給之後的編輯器) |
+| 每行 `aligned` | 有逐字時間而且過了整行檢查 |
+| 每行 `pieces` | `[{text, sung, start, end, reading, roman}]`:合起來就是那一行;日文漢字詞的 `reading` 是假名(unidic),`roman` 是羅馬字(pykakasi);中文 `reading` 是帶聲調的拼音(pypinyin) |
+| 每行 `edited` | 之後的編輯器用;worker 寫 `false` |
+| 音符 `source: "lyric"` | `line` 是行,`char` 是 `pieces` 的索引 |
+| `made.asr`、`made.aligner` | `qwen3-asr-1.7b`、`w2v` / `mms` |
+
+### Core
+
+- 設定(系統頁「歌詞」組):`aligner`(`w2v` / `mms`,說明寫了 CC-BY-NC-4.0)、`lyrics_matched`、`lyrics_uncertain`、`lyrics_keep_share`、`lyrics_wrong_share`。每首點歌時一起送給 worker(`karaoke_lyrics`);已經準備好的歌不重做。
+- migration 2:`karaoke_sessions.shift`、`karaoke_songs.lyrics_source`。歌單的 `lyrics_source` 讓會員頁標「聽寫的歌詞」。
+- 換調:`POST .../sessions` 可以帶 `{shift}`;Core 叫做那首歌的 worker 做那個調的伴唱帶、抓回來、簽名網址指到它(只有那個 session 拿得到);重算分數時參考曲線也移同樣的半音(`shiftKaraokeReference`)。
+
+### 會員頁
+
+- 歌詞:對齊過的行一片一片從暗變亮(不加新顏色);沒對齊的行整行顯示,和第一步一樣。聽寫的歌詞旁邊有「聽寫」標籤(歌單上寫「聽寫的歌詞」);查到但對不上的行加點狀底線,滑過寫「這一行和聽到的不太一樣」。
+- 讀音:「不顯示 / 假名 / 羅馬字」(日文)或「不顯示 / 拼音」(中文),用 `<ruby>` 放在字上面;預設不顯示,選的記在瀏覽器。讀音是 worker 給的(和對齊用的是同一份),瀏覽器不用另外裝字典。考慮過瀏覽器端的 kuroshiro + kuromoji(字典十幾 MB,讀音可能和對齊的不同)、pinyin-pro、wanakana,都沒用。
+- 換調:開始前「− 原調 +」,每按一次就重新開一次 session、載入那個調的伴唱帶;記在瀏覽器,每首歌各自的。
+
+### 還沒做、要真的跑過才知道的
+
+| 什麼 | 狀況 |
+|---|---|
+| 真的模型 | 1.7B、w2v、MMS 都沒在 worker 裡跑過;align 環境 `uv lock` 過、沒 `uv sync` 過。MMS 用的是 MahmoudAshraf 轉的 transformers 版,和實驗用的 torchaudio 原版應該一樣,沒驗證 |
+| 日文 w2v 的輸入 | 實驗給的是平假名讀音,這裡也是;字典裡沒有的字(片假名的長音等)被跳過 |
+| 特殊讀法 | 還是 unidic 的讀法;實驗建議「對不上的行如果聽到的讀音長度合理,拿聽到的讀音去對齊」,沒做 |
+| hostd 的 GPU 租約 | 兩個新階段的 VRAM 預估(5.2 / 4 GB)只在 worker 自己決定時用;hostd 那邊用它自己的預設 |
+| 第二步結束前 worker 一直握著 GPU 的租約 | 包括等歌詞查詢的時間;karaoke 只用 share,不會讓語音離線 |
+| 編輯器 | 資料的樣子準備好了(`edited`、`heard`),畫面沒做 |
+| 會員頁沒在瀏覽器裡實際看過 | 元件測試有,示範模式(`?karaoke-demo`)有對齊、拼音、不確定的一行和換調 |
